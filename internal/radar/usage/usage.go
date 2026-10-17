@@ -159,14 +159,7 @@ func Aggregate(rows []Row, window Window, prices Pricer, loc *time.Location) Rep
 	sessions := map[string]*sessionAcc{}
 	for _, row := range rows {
 		date := time.UnixMilli(row.TS).In(loc).Format(dayLayout)
-		// a harness-reported cost wins over the list prices; nothing else is known about
-		// the rates it saw, so it carries no saving
-		price, priced := RowPrice{}, false
-		if row.CostUSD != nil {
-			price, priced = RowPrice{CostUSD: *row.CostUSD}, true
-		} else {
-			price, priced = prices.PriceOf(row)
-		}
+		price, priced := priceRow(row, prices)
 		if !priced {
 			report.Unpriced++
 			report.Approximate = true
@@ -200,6 +193,15 @@ func harnessOf(harness string) string {
 		return shared.HarnessClaude
 	}
 	return harness
+}
+
+// priceRow prices one row: a harness-reported cost wins over the list prices, and nothing is
+// known about the rates that harness saw, so its price carries no saving.
+func priceRow(row Row, prices Pricer) (RowPrice, bool) {
+	if row.CostUSD != nil {
+		return RowPrice{CostUSD: *row.CostUSD}, true
+	}
+	return prices.PriceOf(row)
 }
 
 // daysOf answers one zeroed day per local date the window spans, first to last.

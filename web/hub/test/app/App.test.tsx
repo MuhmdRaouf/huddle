@@ -212,6 +212,7 @@ describe("routes and panes", () => {
       "costs",
       "models",
       "usage",
+      "blocks",
       "requests",
       "tools",
       "agents",
@@ -222,6 +223,7 @@ describe("routes and panes", () => {
     expect(views.map((a) => a.getAttribute("aria-current"))).toEqual([
       null,
       "page",
+      null,
       null,
       null,
       null,

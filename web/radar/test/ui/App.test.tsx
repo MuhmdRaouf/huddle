@@ -72,6 +72,7 @@ describe("App", () => {
       "models",
       "costs",
       "usage",
+      "blocks",
       "alerts",
       "router",
       "settings",

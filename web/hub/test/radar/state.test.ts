@@ -333,6 +333,7 @@ describe("TABS", () => {
       ["models", "Models", "cpu"],
       ["costs", "Costs", "coins"],
       ["usage", "Usage", "history"],
+      ["blocks", "Blocks", "timer"],
       ["alerts", "Alerts", "bell"],
       ["router", "Router", "route"],
       ["settings", "Settings", "settings"],

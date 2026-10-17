@@ -16,6 +16,7 @@ const VIEWS: readonly (readonly [
   ["overview", "Overview", "heading", /Top sessions by spend/],
   ["costs", "Costs", "heading", /Cost attribution/],
   ["usage", "Usage", "heading", /Daily usage/],
+  ["blocks", "Blocks", "heading", /Metering blocks/],
   ["models", "Models", "heading", /^Models$/],
   ["requests", "Requests", "row", /open details/],
   ["tools", "Tools", "heading", /Most used tools/],
@@ -62,6 +63,38 @@ test("the overview's Day cards show the seeded totals", async ({ page }) => {
   const requests = page.locator("[data-stat='requests']");
   await expect(requests).toContainText("3");
   await expect(requests).toContainText("0 failed");
+});
+
+test("the blocks view counts the seeded block once the scope includes the provider models", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/radar/blocks`);
+
+  // the fixture holds no Claude-model request, so the Claude-only default says so plainly
+  const card = page.locator("[data-block-card]");
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("No active block");
+  await expect(page.getByText("No blocks in this window")).toBeVisible();
+
+  // widening the scope to every model brings the seeded block in: the three glm calls of this
+  // morning, one window, ten thousand tokens, and the flash call of yesterday in its own
+  await page.getByRole("group", { name: "Model scope" }).getByRole("button", { name: "All models" }).click();
+  await expect(card).toContainText("left");
+  await expect(card).toContainText("3");
+  await expect(card).toContainText("10k"); // the fixture's three glm calls summed
+  await expect(card.locator("[data-block-left]")).toHaveText(/\dh\d{2}m/);
+  const rows = page.locator("[data-blocks-table] tbody tr");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText("3");
+  await expect(rows.nth(1)).toContainText("1"); // the flash call twenty-five hours back
+
+  // the overview's card carries the same widened scope
+  await page
+    .getByRole("navigation", { name: "Radar views" })
+    .getByRole("link", { name: "Overview" })
+    .click();
+  await expect(page.locator("[data-block-card]")).toContainText("10k");
 });
 
 test("the requests table lists the seeded rows and the inspector opens one", async ({

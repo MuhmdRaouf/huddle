@@ -15,6 +15,7 @@ import { fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { STATUS_COLOR } from "../../palette.ts";
 import { bucketPlan, stampOf } from "../../shared/time-range.ts";
 import { type ClientState, flowSource, requestCost, visibleRequests } from "../../state.ts";
+import { ActiveBlock } from "../ActiveBlock.tsx";
 import { alertWhere } from "../AlertStrip.tsx";
 import { useApp } from "../context.ts";
 import { Flow, requestsInRange } from "../Flow.tsx";
@@ -589,8 +590,9 @@ function AlertCard() {
   );
 }
 
-/** The Overview: the stat row over the chart and the sessions table, the alert, routers and tools
- *  beside them; the phone keeps the first two cards, the chart and the routers. */
+/** The Overview: the stat row over the active-block card, the chart and the sessions table, the
+ *  alert, routers and tools beside them; the phone keeps the first two cards, the chart and the
+ *  routers. */
 export function OverviewView(): JSX.Element {
   const { state, now } = useApp();
   const numbers = rangeNumbers(state, now);
@@ -602,6 +604,9 @@ export function OverviewView(): JSX.Element {
         <TokensStat summary={state.summary} numbers={numbers} />
         <SessionsStat />
         <RoutersStat />
+      </div>
+      <div class="grid min-w-0 gap-4 xl:col-span-2">
+        <ActiveBlock />
       </div>
       <div class="grid min-w-0 gap-4">
         <SpendChart />

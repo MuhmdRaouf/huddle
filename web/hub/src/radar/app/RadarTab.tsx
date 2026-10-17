@@ -15,6 +15,7 @@ import { useApp } from "./context.ts";
 import { Drawer } from "./Drawer.tsx";
 import { AgentsView } from "./views/Agents.tsx";
 import { AlertsView } from "./views/Alerts.tsx";
+import { BlocksView } from "./views/Blocks.tsx";
 import { CostsView } from "./views/Costs.tsx";
 import { ModelsView } from "./views/Models.tsx";
 import { OverviewView } from "./views/Overview.tsx";
@@ -35,6 +36,7 @@ const VIEWS: Record<Exclude<Tab, "settings">, ComponentType> = {
   models: ModelsView,
   costs: CostsView,
   usage: UsageView,
+  blocks: BlocksView,
   alerts: AlertsView,
   router: RouterView,
 };
@@ -45,6 +47,7 @@ const VIEW_LABEL: Record<RadarView, string> = {
   costs: "Costs",
   models: "Models",
   usage: "Usage",
+  blocks: "Blocks",
   requests: "Requests",
   tools: "Tools",
   agents: "Agents",

@@ -63,3 +63,37 @@ export type UsageWindow = 7 | 30 | 90;
 
 /** The window sizes the view's tabs carry, in display order. */
 export const USAGE_WINDOWS: readonly UsageWindow[] = [7, 30, 90];
+
+/** One 5-hour metering window: the requests that fell in it, the burn rate over the minutes it
+ *  has been active, and the linear projection to its end. `start` is the first request's own
+ *  hour, floored; `end` is five hours later; a request can sit past `end` when the gaps stayed
+ *  under five hours. */
+export type UsageBlock = UsageTotals & {
+  start: number;
+  end: number;
+  firstTs: number;
+  lastTs: number;
+  active: boolean;
+  burnTokensPerHour: number;
+  burnCostPerHour: number;
+  projectedTokens: number;
+  projectedCostUsd: number;
+};
+
+/** The blocks answer /api/blocks serves, mirrored from internal/radar/usage: the windows
+ *  newest first and the honesty flags about prices. */
+export type BlocksReport = {
+  blocks: UsageBlock[];
+  approximate: boolean;
+  unpriced: number;
+};
+
+/** Which requests the blocks count: Claude's models alone (what a subscription meters), or
+ *  every model — the routed provider ones included. */
+export type BlocksModels = "claude" | "all";
+
+/** The windows the blocks view offers, as the route's days query takes them. */
+export type BlocksWindow = 7 | 30;
+
+/** The window sizes the blocks view's tabs carry, in display order. */
+export const BLOCKS_WINDOWS: readonly BlocksWindow[] = [7, 30];

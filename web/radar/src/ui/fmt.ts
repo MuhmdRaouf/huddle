@@ -83,6 +83,12 @@ export function fmtClock(ts: number): string {
   return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
 }
 
+/** Local HH:MM — a metering window's ends. */
+export function fmtHour(ts: number): string {
+  const date = new Date(ts);
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
 /** Local HH:MM for a day-old timestamp; HH:MM:SS for today. */
 export function fmtTime(ts: number): string {
   const date = new Date(ts);

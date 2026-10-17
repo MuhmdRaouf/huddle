@@ -10,6 +10,7 @@ import { fmtNum } from "../fmt.ts";
 import type { IconName } from "../icons.ts";
 import type { Tab } from "../state.ts";
 import { TABS } from "../state.ts";
+import { ActiveBlock } from "./ActiveBlock.tsx";
 import { AgentTranscript } from "./AgentTranscript.tsx";
 import { AlertStrip } from "./AlertStrip.tsx";
 import { Banner } from "./Banner.tsx";
@@ -21,6 +22,7 @@ import { Rail } from "./Rail.tsx";
 import { ScopeHeader } from "./ScopeHeader.tsx";
 import { BudgetCard, StatCards } from "./StatCards.tsx";
 import { AgentsView } from "./views/Agents.tsx";
+import { BlocksView } from "./views/Blocks.tsx";
 import { AlertsView } from "./views/Alerts.tsx";
 import { CostsView } from "./views/Costs.tsx";
 import { ModelsView } from "./views/Models.tsx";
@@ -41,17 +43,20 @@ const VIEWS: Record<Tab, ComponentType> = {
   models: ModelsView,
   costs: CostsView,
   usage: UsageView,
+  blocks: BlocksView,
   alerts: AlertsView,
   router: RouterView,
   settings: SettingsView,
 };
 
-/** The default view: the alert strip, the summary cards, the budget bars and the token flow. */
+/** The default view: the alert strip, the summary cards, the active block, the budget bars and
+ *  the token flow. */
 function OverviewView() {
   return (
     <div class="grid gap-5">
       <AlertStrip />
       <StatCards />
+      <ActiveBlock />
       <BudgetCard />
       <Flow />
     </div>
@@ -61,7 +66,7 @@ function OverviewView() {
 /** The three tab groups, side by side: reading (Activity), money (Spend), and the machinery (System). */
 const NAV_GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: "Activity", tabs: ["overview", "requests", "agents", "tools", "timeline"] },
-  { label: "Spend", tabs: ["models", "costs", "usage"] },
+  { label: "Spend", tabs: ["models", "costs", "usage", "blocks"] },
   { label: "System", tabs: ["alerts", "router", "settings"] },
 ];
 
@@ -79,6 +84,8 @@ const PAGE_INTROS: Record<Tab, string> = {
   costs: "Where the money goes, from repo down to session, agent and model. Estimates use list prices.",
   usage:
     "Every request over the last 7, 30 or 90 days: tokens, estimated cost and what the cache saved, per model and per project. Click a day on the chart for that day's split; open a model or a project for its own series and top sessions.",
+  blocks:
+    "The 5-hour metering windows a subscription counts: what the live one holds, its burn rate and the projection to its end, and every window before it. Claude's models count by default; the toggle includes the routed provider models.",
   alerts: "Things that need a look: context nearly full, failures, slow requests and budgets crossed.",
   router: "The local model router: whether it is healthy, where it sends each model, and recent retries.",
   settings: "Appearance, budgets, history retention and where Radar reads its data.",

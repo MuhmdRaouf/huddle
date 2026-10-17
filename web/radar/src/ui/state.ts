@@ -32,7 +32,7 @@ import type {
 } from "../shared/model.ts";
 import { providerOf } from "../shared/provider.ts";
 import { DEFAULT_RANGE, rangeToHash, resolveRange, type TimeRange } from "../shared/time-range.ts";
-import type { UsageReport, UsageWindow } from "../shared/usage.ts";
+import type { BlocksModels, BlocksReport, BlocksWindow, UsageReport, UsageWindow } from "../shared/usage.ts";
 import { httpStatusOf } from "./app/inspector/util.ts";
 import type { IconName } from "./icons.ts";
 
@@ -51,6 +51,7 @@ export type Tab =
   | "models"
   | "costs"
   | "usage"
+  | "blocks"
   | "alerts"
   | "router"
   | "settings";
@@ -65,6 +66,7 @@ export const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: "models", label: "Models", icon: "cpu" },
   { id: "costs", label: "Costs", icon: "coins" },
   { id: "usage", label: "Usage", icon: "history" },
+  { id: "blocks", label: "Blocks", icon: "timer" },
   { id: "alerts", label: "Alerts", icon: "bell" },
   { id: "router", label: "Router", icon: "route" },
   { id: "settings", label: "Settings", icon: "settings" },
@@ -341,6 +343,16 @@ export type ClientState = {
   usageDay: string | null;
   /** The open drill-down (a model's or a project's own series), or null. */
   usageDrill: UsageDrill | null;
+  /** The blocks view's window in days; the /api/blocks route takes 7 or 30. */
+  blocksDays: BlocksWindow;
+  /** Which requests the blocks count: Claude's models alone, or every model. */
+  blocksModels: BlocksModels;
+  /** The /api/blocks answer for the picked window and scope, with the key it answers (null =
+   *  none yet). The overview's active-block card reads this too. */
+  blocks: { key: string; report: BlocksReport } | null;
+  /** Why the last blocks fetch failed (null = none); the card and the view say it when they
+   *  have nothing else to show. */
+  blocksError: string | null;
   router: RouterHealth | null;
   advisor: AdvisorReport | null;
   /** Budgets as saved (settings tab); null until fetched. */
@@ -465,6 +477,10 @@ export function initialClientState(): ClientState {
     usageHidden: [],
     usageDay: null,
     usageDrill: null,
+    blocksDays: 7,
+    blocksModels: "claude",
+    blocks: null,
+    blocksError: null,
     router: null,
     advisor: null,
     budgets: null,
@@ -896,6 +912,12 @@ export function usageDrillAlive(report: UsageReport, drill: UsageDrill): boolean
   const slices =
     drill.kind === "model" ? report.byModel : drill.kind === "project" ? report.byProject : report.byHarness;
   return slices.some((slice) => slice.key === drill.key);
+}
+
+/** The blocks answer's scope key: the window and the model scope in one word, so an answer a
+ *  newer choice superseded never lands. */
+export function blocksKey(days: BlocksWindow, models: BlocksModels): string {
+  return `${days}|${models}`;
 }
 
 /** A fresh draft: the first provider seen, or total; this month; $10; warn only. */

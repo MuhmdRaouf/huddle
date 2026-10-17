@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import type { SessionListItem } from "../src/shared/api.ts";
 import type { Summary } from "../src/shared/model.ts";
 import { DEFAULT_RANGE } from "../src/shared/time-range.ts";
-import type { UsageReport } from "../src/shared/usage.ts";
+import type { BlocksReport, UsageReport } from "../src/shared/usage.ts";
 import { type HttpResponse, hashOf, hashParse, type Io, RadarController } from "../src/ui/app/controller.ts";
 import { exportName } from "../src/ui/export.ts";
 import type { ClientState, ThemePref } from "../src/ui/state.ts";
@@ -106,6 +106,7 @@ function defaultAnswers(): Map<string, Answer> {
       }),
     ],
     ["/api/settings", ok({ settings: { notifications: true } })],
+    ["/api/blocks?days=7", ok({ blocks: [], approximate: false, unpriced: 0 })],
     ["/api/health", ok({ ok: true, version: "0.0.1", startedAt: 5, port: 4000, sessions: 2, uptimeMs: 100 })],
     ["/api/requests?limit=1000", ok({ requests: [makeRequest()] })],
     [
@@ -2450,6 +2451,105 @@ describe("the usage view's fetch", () => {
     await vi.advanceTimersByTimeAsync(30_000);
     await settle();
     expect(callsTo(harness, "/api/usage?days=30")).toBe(off);
+  });
+});
+
+const BLOCKS_REPORT = (requests: number): BlocksReport => ({
+  blocks: [
+    {
+      start: 1_793_000_000_000,
+      end: 1_793_000_000_000 + 5 * 3_600_000,
+      firstTs: 1_793_000_000_000,
+      lastTs: 1_793_000_000_000,
+      active: true,
+      requests,
+      input: 2_400,
+      output: 600,
+      cacheRead: 5_000,
+      cacheWrite: 2_000,
+      costUsd: 0.01,
+      savingsUsd: 0,
+      burnTokensPerHour: 5_000,
+      burnCostPerHour: 0.005,
+      projectedTokens: 25_000,
+      projectedCostUsd: 0.025,
+    },
+  ],
+  approximate: false,
+  unpriced: 0,
+});
+
+describe("the blocks fetch", () => {
+  it("serves the overview's card from the boot's own fetch, then follows the scope", async () => {
+    const harness = makeHarness();
+    harness.answers.set("/api/blocks?days=7", ok(BLOCKS_REPORT(3)));
+    harness.answers.set("/api/blocks?days=7&providers=1", ok(BLOCKS_REPORT(4)));
+    await started(harness);
+    // the overview boots with the active-block card, so the fetch runs without a tab switch
+    expect(callsTo(harness, "/api/blocks?days=7")).toBe(1);
+    expect(harness.controller.getState().blocks).toEqual({ key: "7|claude", report: BLOCKS_REPORT(3) });
+
+    // widening the scope to every model clears the held answer and asks again
+    harness.controller.act("blocks-models", "all");
+    await settle();
+    expect(callsTo(harness, "/api/blocks?days=7&providers=1")).toBe(1);
+    expect(harness.controller.getState().blocks).toEqual({ key: "7|all", report: BLOCKS_REPORT(4) });
+  });
+
+  it("switches windows, dropping the answer the old one held", async () => {
+    const harness = makeHarness();
+    harness.answers.set("/api/blocks?days=7", ok(BLOCKS_REPORT(3)));
+    harness.answers.set("/api/blocks?days=30", ok({ ...BLOCKS_REPORT(3), blocks: [] }));
+    await started(harness);
+    harness.controller.act("blocks-days", "30");
+    await settle();
+    expect(harness.controller.getState().blocksDays).toBe(30);
+    expect(harness.controller.getState().blocks?.key).toBe("30|claude");
+    expect(harness.controller.getState().blocks?.report.blocks).toEqual([]);
+  });
+
+  it("drops a superseded answer and names a failure", async () => {
+    const harness = makeHarness();
+    const gate = deferred();
+    harness.answers.set("/api/blocks?days=7", gate.answer);
+    harness.answers.set("/api/blocks?days=30", ok(BLOCKS_REPORT(1)));
+    await started(harness);
+    harness.controller.act("blocks-days", "30"); // in flight, so the 7-day answer will be dropped
+    await settle();
+    gate.resolve(BLOCKS_REPORT(3));
+    await settle();
+    expect(harness.controller.getState().blocks?.key).toBe("30|claude");
+    const bad = makeHarness();
+    bad.answers.set("/api/blocks?days=7", fail(503, {}));
+    await started(bad);
+    expect(bad.controller.getState().blocksError).toBe("GET /api/blocks?days=7 → 503");
+  });
+
+  it("re-asks on the auto-refresh tick while the overview or the blocks tab shows, and not off it", async () => {
+    const harness = makeHarness();
+    harness.answers.set("/api/blocks?days=7", ok(BLOCKS_REPORT(3)));
+    await started(harness);
+    const boot = callsTo(harness, "/api/blocks?days=7");
+    await vi.advanceTimersByTimeAsync(5_000);
+    await settle();
+    expect(callsTo(harness, "/api/blocks?days=7")).toBe(boot + 1);
+    harness.controller.act("tab", "requests");
+    await settle();
+    const off = callsTo(harness, "/api/blocks?days=7");
+    await vi.advanceTimersByTimeAsync(30_000);
+    await settle();
+    expect(callsTo(harness, "/api/blocks?days=7")).toBe(off);
+  });
+
+  it("ignores malformed blocks actions", async () => {
+    const harness = makeHarness();
+    await started(harness);
+    const before = harness.controller.getState();
+    harness.controller.act("blocks-days", "10");
+    harness.controller.act("blocks-days", "7"); // already the default
+    harness.controller.act("blocks-models", "glm");
+    harness.controller.act("blocks-models", "claude"); // already the default
+    expect(harness.controller.getState()).toEqual(before);
   });
 });
 

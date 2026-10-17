@@ -341,6 +341,7 @@ const RADAR_EXPORT: Record<RadarView, string> = {
   costs: "attribution",
   models: "requests",
   usage: "requests",
+  blocks: "requests",
   requests: "requests",
   tools: "tools",
   agents: "requests",

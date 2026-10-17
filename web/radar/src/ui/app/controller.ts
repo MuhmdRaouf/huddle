@@ -28,7 +28,7 @@ import {
   rangeToHash,
   type TimeRange,
 } from "../../shared/time-range.ts";
-import type { UsageReport, UsageWindow } from "../../shared/usage.ts";
+import type { BlocksReport, BlocksWindow, UsageReport, UsageWindow } from "../../shared/usage.ts";
 import { attributionCsv, exportName, requestsCsv, toolsCsv } from "../export.ts";
 import {
   type AgentTranscriptState,
@@ -40,6 +40,7 @@ import {
   applyContext,
   applyDetail,
   applyMessage,
+  blocksKey,
   type BudgetDraft,
   budgetFromDraft,
   type ClientState,
@@ -304,6 +305,8 @@ export class RadarController {
   private modelsInFlight = false;
   /** The usage view's fetch in flight, so a burst of window switches fetches the route once at a time. */
   private usageInFlight = false;
+  /** The blocks fetch in flight, so a burst of scope switches fetches the route once at a time. */
+  private blocksInFlight = false;
   /** The lists' backfill in flight, so a refresh landing on one cannot fetch the same lists twice. */
   private backfillInFlight = false;
   private stream: EventStream | null = null;
@@ -549,6 +552,19 @@ export class RadarController {
       this.setState({ ...this.state, usageDrill: { kind: parsed.kind, key: parsed.key } });
     },
     "usage-drill-close": () => this.setState({ ...this.state, usageDrill: null }),
+    "blocks-days": (value) => {
+      const days = Number(value);
+      if (days !== 7 && days !== 30) return;
+      if (days === this.state.blocksDays) return;
+      this.setState({ ...this.state, blocksDays: days as BlocksWindow, blocks: null });
+      void this.ensureBlocks();
+    },
+    "blocks-models": (value) => {
+      if (value !== "claude" && value !== "all") return;
+      if (value === this.state.blocksModels) return;
+      this.setState({ ...this.state, blocksModels: value, blocks: null });
+      void this.ensureBlocks();
+    },
     "new-budget": () =>
       this.setState({ ...this.state, draft: newDraft(this.state.providers), formMessage: null }),
     "edit-budget": (value) => this.editBudget(value),
@@ -1116,6 +1132,7 @@ export class RadarController {
     void this.ensureFlow();
     void this.ensureModels();
     void this.ensureUsage();
+    void this.ensureBlocks();
   }
 
   /** The reader's own refresh (the button, the R key): the lists' backfill again, then the flow. */
@@ -1228,6 +1245,36 @@ export class RadarController {
       this.usageInFlight = false;
     }
     if (stale) void this.ensureUsage();
+  }
+
+  /**
+   * The metering blocks for the picked window and model scope. Like the usage view: the held
+   * answer stays up while a refresh runs, one a newer choice superseded is dropped, and a
+   * failure is named only while nothing else can be shown. The overview reads this too — its
+   * active-block card — so both tabs it serves fetch it.
+   */
+  private async ensureBlocks(): Promise<void> {
+    if ((this.state.tab !== "blocks" && this.state.tab !== "overview") || this.blocksInFlight) return;
+    const days = this.state.blocksDays;
+    const models = this.state.blocksModels;
+    const key = blocksKey(days, models);
+    this.blocksInFlight = true;
+    let stale = false;
+    try {
+      const query = models === "all" ? `days=${days}&providers=1` : `days=${days}`;
+      const report = await this.fetchJson<BlocksReport>(`/api/blocks?${query}`);
+      if (blocksKey(this.state.blocksDays, this.state.blocksModels) !== key) {
+        stale = true; // the reader moved to another scope meanwhile
+      } else {
+        this.setState({ ...this.state, blocks: { key, report }, blocksError: null });
+      }
+    } catch (error) {
+      if (blocksKey(this.state.blocksDays, this.state.blocksModels) !== key) stale = true;
+      else this.setState({ ...this.state, blocksError: this.describe(error) });
+    } finally {
+      this.blocksInFlight = false;
+    }
+    if (stale) void this.ensureBlocks();
   }
 
   private async loadRouter(): Promise<void> {
@@ -1660,6 +1707,7 @@ export class RadarController {
     if (tab === "agents") await this.ensureDetails();
     if (tab === "models") await this.ensureModels();
     if (tab === "usage") await this.ensureUsage();
+    if (tab === "blocks" || tab === "overview") await this.ensureBlocks();
   }
 
   private async saveBudgets(budgets: Budget[], done: string): Promise<boolean> {

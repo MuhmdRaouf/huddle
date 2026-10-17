@@ -42,6 +42,7 @@ describe("parseHash: the five tabs", () => {
       "costs",
       "models",
       "usage",
+      "blocks",
       "requests",
       "tools",
       "agents",
