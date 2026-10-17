@@ -29,69 +29,52 @@ type externalCase struct {
 	task      string // "" when neither a prompt nor a tool name says one
 }
 
-// externalCases are the recorded payloads, one per agent and event kind.
-func externalCases(t *testing.T) []externalCase {
-	cwd := t.TempDir()
-	write := func(name, body string) string {
-		t.Helper()
-		path := filepath.Join("testdata", "external", name)
-		body = strings.ReplaceAll(body, "__CWD__", cwd)
-		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-			t.Fatalf("write the %s fixture: %v", name, err)
-		}
-		return name
-	}
+// externalCases are the recorded payloads, one per agent and event kind. The files hold
+// __CWD__ where the agent names its directory; each run fills in its own temp dir in memory.
+func externalCases() []externalCase {
 	return []externalCase{
 		{
 			name: "codex", event: "PreToolUse", session: "cx-1", lastEvent: "PreToolUse", harness: "codex",
-			task: "shell",
-			fixture: write("codex-pre-tool-use.json",
-				`{"session_id":"cx-1","hook_event_name":"PreToolUse","transcript_path":null,"cwd":"__CWD__","tool_name":"shell","tool_input":{"command":["ls","-la"]}}`),
+			task:    "shell",
+			fixture: "codex-pre-tool-use.json",
 		},
 		{
 			name: "codex", event: "SessionEnd", session: "cx-1", lastEvent: "SessionEnd", harness: "codex",
-			fixture: write("codex-session-end.json",
-				`{"session_id":"cx-1","hook_event_name":"SessionEnd","cwd":"__CWD__"}`),
+			fixture: "codex-session-end.json",
 		},
 		{
 			name: "gemini", event: "BeforeAgent", session: "gm-1", lastEvent: "UserPromptSubmit", harness: "gemini",
 			title: "Write the release notes", task: "Write the release notes",
-			fixture: write("gemini-before-agent.json",
-				`{"session_id":"gm-1","transcript_path":"","cwd":"__CWD__","hook_event_name":"BeforeAgent","timestamp":"2026-10-16T09:00:00Z","prompt":"Write the release notes"}`),
+			fixture: "gemini-before-agent.json",
 		},
 		{
 			name: "gemini", event: "AfterAgent", session: "gm-1", lastEvent: "Stop", harness: "gemini",
 			title: "Write the release notes", task: "Write the release notes",
-			fixture: write("gemini-after-agent.json",
-				`{"session_id":"gm-1","transcript_path":"","cwd":"__CWD__","hook_event_name":"AfterAgent","prompt":"Write the release notes","prompt_response":"Done."}`),
+			fixture: "gemini-after-agent.json",
 		},
 		{
 			name: "qwen", event: "UserPromptSubmit", session: "qw-1", lastEvent: "UserPromptSubmit", harness: "qwen",
 			title: "Fix the failing test", task: "Fix the failing test",
-			fixture: write("qwen-user-prompt-submit.json",
-				`{"session_id":"qw-1","transcript_path":"","cwd":"__CWD__","hook_event_name":"UserPromptSubmit","timestamp":"2026-10-16T09:00:00Z","permission_mode":"default","prompt":"Fix the failing test"}`),
+			fixture: "qwen-user-prompt-submit.json",
 		},
 		{
 			name: "crush", event: "PreToolUse", session: "cr-1", lastEvent: "PreToolUse", harness: "crush",
-			task: "bash",
-			fixture: write("crush-pre-tool-use.json",
-				`{"event":"PreToolUse","session_id":"cr-1","cwd":"__CWD__","tool_name":"bash","tool_input":{"command":"make test"}}`),
+			task:    "bash",
+			fixture: "crush-pre-tool-use.json",
 		},
 		{
 			name: "opencode", event: "session.created", session: "oc-1", lastEvent: "SessionStart", harness: "opencode",
-			fixture: write("opencode-session-created.json",
-				`{"session_id":"oc-1","cwd":"__CWD__"}`),
+			fixture: "opencode-session-created.json",
 		},
 		{
 			name: "opencode", event: "session.idle", session: "oc-1", lastEvent: "Stop", harness: "opencode",
-			fixture: write("opencode-session-idle.json",
-				`{"session_id":"oc-1","cwd":""}`),
+			fixture: "opencode-session-idle.json",
 		},
 	}
 }
 
 func TestTheExternalWordReportsEachAgentUnderItsHarness(t *testing.T) {
-	for _, tc := range externalCases(t) {
+	for _, tc := range externalCases() {
 		t.Run(tc.name+" "+tc.event, func(t *testing.T) {
 			reg, url := startRegistry(t)
 			home := reportHome(t)
@@ -99,7 +82,8 @@ func TestTheExternalWordReportsEachAgentUnderItsHarness(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read the fixture: %v", err)
 			}
-			stdout := runExternalHook(t, string(raw), tc.name, tc.event, home,
+			payload := strings.ReplaceAll(string(raw), "__CWD__", t.TempDir())
+			stdout := runExternalHook(t, payload, tc.name, tc.event, home,
 				map[string]string{"HUDDLE_URL": url, "HUDDLE_CHANNEL": "hooks", "HUDDLE_AS": "me"})
 			if stdout != "" {
 				t.Errorf("the word printed %q, want silence", stdout)
