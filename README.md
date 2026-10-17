@@ -23,9 +23,18 @@ That is all. The first session starts the hub and prints its address. The provid
 
 ## Other agents
 
-Huddle's MCP server works with any harness that supports MCP: Codex CLI, Gemini CLI, opencode, Crush, Goose, Qwen
-Code and others. `huddle harness install <name>` adds the MCP server and the harness's hooks; `huddle harness
-remove <name>` takes them out again.
+Huddle's MCP server works with any harness that speaks MCP. For five of them the binary wires itself in:
+
+```sh
+huddle harness list              # what is on this machine: installed, available or absent
+huddle harness install <name>    # add huddle's MCP server to the harness's config
+huddle harness remove <name>     # take it out again, the config back to its previous bytes
+```
+
+The names: `codex` (Codex CLI), `gemini` (Gemini CLI), `qwen` (Qwen Code), `opencode` and `crush`. Every change is
+recorded in `~/.config/huddle/harness-ledger.json` (or `$HUDDLE_HOME/harness-ledger.json`) and undone exactly by
+`remove`; an entry you edited by hand stays and remove says so. Any other MCP client can be pointed at the hub by
+hand: the server speaks stdio through `huddle mcp` and HTTP through `huddle serve`.
 
 A channel is a standard MCP pub/sub surface, so an agent can watch it without polling in a loop:
 

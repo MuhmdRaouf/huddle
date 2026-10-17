@@ -67,6 +67,8 @@ var helpLines = []string{
 	"  huddle token create [--ttl 24h|0] [--single-use] [--can-invite] [--print-join-command] | token list | token delete <id>",
 	"                                           (--print-join-command prints the join: line to paste into the other session)",
 	"  huddle members | kick <name>            who holds a credential; revoke one (the creator only)",
+	"  huddle harness list | install <name> | remove <name>   wire huddle's MCP server into another",
+	"                                           coding agent: codex, gemini, qwen, opencode, crush",
 	"  huddle open                             a dashboard link that signs your browser in once (5 min), for any session",
 	"                                           that joined",
 	"  huddle pair [--name n]                  a one-use link (5 min) that pairs a device with a passkey; devices rm",
@@ -338,6 +340,9 @@ func Huddle(ctx context.Context, w *World, argv []string, stdout, stderr io.Writ
 			c.say(string(raw))
 		}
 		return 0
+	}
+	if cmd == "harness" {
+		return c.harness(ctx)
 	}
 	if c.ch == "" || c.me == "" {
 		return c.die(notInAHuddle, 2)
