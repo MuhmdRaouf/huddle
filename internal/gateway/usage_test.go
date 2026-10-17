@@ -3,6 +3,7 @@ package gateway
 import (
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -103,5 +104,72 @@ func TestUsageCollectorCapsItsCopy(t *testing.T) {
 	}
 	if got := finder.Usage(); got != nil {
 		t.Errorf("usage = %+v, want nil: the usage sat past the cap", got)
+	}
+}
+
+// Usage with no counter said records nothing: the route line carries no usage block
+// rather than a block of zeros.
+func TestUsageWithNoCountersRecordsNothing(t *testing.T) {
+	if got := (&Usage{}).spool(); got != nil {
+		t.Errorf("spool = %+v, want nil: no counter was said", got)
+	}
+}
+
+// A document that does not parse as its family's answer reads as unknown, family by
+// family; a kind the gateway does not speak reads as unknown too.
+func TestUsageFromAnUnreadableDocumentStaysUnknown(t *testing.T) {
+	cases := []struct {
+		name string
+		kind apiKind
+		body string
+	}{
+		{"anthropic", kindAnthropic, "not json"},
+		{"chat", kindChat, "nope"},
+		{"an unspoken kind", apiKind("mystery"), `{"usage":{}}`},
+	}
+	for _, tc := range cases {
+		if got := feedUsage(t, tc.kind, false, []byte(tc.body), false); got != nil {
+			t.Errorf("%s: usage = %+v, want nil", tc.name, got)
+		}
+	}
+}
+
+// A stream of a kind the gateway does not speak reads as unknown, events or no events.
+func TestUsageFromAnUnspokenStreamStaysUnknown(t *testing.T) {
+	if got := feedUsage(t, apiKind("mystery"), true, []byte("data: {\"usage\":{}}\n\n"), false); got != nil {
+		t.Errorf("usage = %+v, want nil", got)
+	}
+}
+
+// One SSE data line past the cap is not held: the event costs its usage, never the
+// stream, and a later in-cap event still reads.
+func TestStreamCollectorCapsOneEvent(t *testing.T) {
+	finder := newUsageFinder(kindChat, true)
+	big := strings.Repeat("x", sseDataCap+1)
+	if n, err := finder.Write([]byte("data: " + big + "\n\n")); err != nil || n != len(big)+len("data: \n\n") {
+		t.Fatalf("write = %d bytes, err %v", n, err)
+	}
+	if got := finder.Usage(); got != nil {
+		t.Errorf("usage = %+v, want nil: the event sat past the cap", got)
+	}
+	if got := feedUsage(t, kindChat, true, []byte("data: {\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":1}}\n\n"), false); !reflect.DeepEqual(got, counters(whole(5), whole(1), nil, nil)) {
+		t.Errorf("usage after the capped event = %+v, want the next event's", got)
+	}
+}
+
+// A delta overlays every field it names on the opening block, whatever the start said.
+func TestOverlayUsageTakesEveryFieldTheDeltaNames(t *testing.T) {
+	delta := &anthropicUsageBlock{
+		Input: whole(9), Output: whole(8), CacheRead: whole(7), CacheWrite: whole(6),
+	}
+	want := counters(whole(9), whole(8), whole(7), whole(6))
+	if got := overlayUsage(nil, delta); !reflect.DeepEqual(got, want) {
+		t.Errorf("overlay on nothing = %+v, want the delta as it stands", got)
+	}
+	start := &anthropicUsageBlock{
+		Input: whole(1), Output: whole(2), CacheRead: whole(3), CacheWrite: whole(4),
+	}
+	if got := overlayUsage(start, delta); !reflect.DeepEqual(got, want) {
+		t.Errorf("overlay = %+v, want the delta's every field", got)
 	}
 }

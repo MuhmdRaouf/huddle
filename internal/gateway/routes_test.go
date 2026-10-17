@@ -152,3 +152,53 @@ func TestUpstreamFor(t *testing.T) {
 		t.Errorf("tied globs = %q, want the first named", got)
 	}
 }
+
+// A config that is there but cannot be read — a directory where the file belongs, for one
+// — is refused with the file named, the way a broken one is.
+func TestLoadConfigRefusesAnUnreadableFile(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "gateway.json")
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadFrom(t, domain.EnvLookup{"HUDDLE_HOME": home})
+	var bad *ConfigError
+	if !errors.As(err, &bad) {
+		t.Fatalf("error %T (%v), want a *ConfigError", err, err)
+	}
+	if bad.Path != path {
+		t.Errorf("path = %q, want %q", bad.Path, path)
+	}
+}
+
+// The OpenAI default holds itself to the same rule as the Anthropic one and as every route.
+func TestLoadConfigRefusesABadOpenAIDefault(t *testing.T) {
+	_, err := loadFrom(t, envWithConfig(t, `{"openai":"api.openai.com"}`))
+	var bad *ConfigError
+	if !errors.As(err, &bad) {
+		t.Fatalf("error %T (%v), want a *ConfigError", err, err)
+	}
+	if !strings.Contains(bad.Reason, "openai") {
+		t.Errorf("reason = %q, want the openai default named", bad.Reason)
+	}
+}
+
+// resolveHome reads the one variable the environment names, in the order every entry does:
+// HUDDLE_HOME, then XDG_CONFIG_HOME, then HOME, and an error when none is set.
+func TestResolveHomeFollowsTheEnvironment(t *testing.T) {
+	if _, err := resolveHome(domain.EnvLookup{}); err == nil {
+		t.Error("resolveHome with an empty environment = nil error, want one")
+	}
+	given := t.TempDir()
+	if got, err := resolveHome(domain.EnvLookup{"HUDDLE_HOME": given}); err != nil || got != given {
+		t.Errorf("resolveHome = %q, %v; want %q, nil", got, err, given)
+	}
+	xdg := t.TempDir()
+	if got, err := resolveHome(domain.EnvLookup{"XDG_CONFIG_HOME": xdg}); err != nil || got != filepath.Join(xdg, "huddle") {
+		t.Errorf("resolveHome = %q, %v; want the huddle dir under the XDG root", got, err)
+	}
+	user := t.TempDir()
+	if got, err := resolveHome(domain.EnvLookup{"HOME": user}); err != nil || got != filepath.Join(user, ".config", "huddle") {
+		t.Errorf("resolveHome = %q, %v; want the huddle dir under the user's config", got, err)
+	}
+}

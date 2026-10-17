@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -467,7 +468,9 @@ func TestProxyRecordsTheHarness(t *testing.T) {
 
 	post(t, gateway.URL, "/v1/messages", messageBody, map[string]string{"X-Huddle-Harness": "codex"})
 	post(t, gateway.URL, "/v1/messages", messageBody, nil)
-	events := rec.waitFor(t, 1)
+	// Both posts must have landed before the length is judged: waiting for one and
+	// asserting two raced the handler that had not written its line yet.
+	events := rec.waitFor(t, 2)
 	if len(events) != 2 {
 		t.Fatalf("recorded %d route lines, want 2", len(events))
 	}
@@ -557,5 +560,146 @@ func TestServeRefusesAnInvalidConfig(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), bad) {
 		t.Errorf("stderr = %q, want it to name %s", stderr.String(), bad)
+	}
+}
+
+// A body that cannot be read, and one past the cap, are refused before any upstream is
+// named: 413, and no route line, for both.
+func TestProxyRefusesABodyItCannotRead(t *testing.T) {
+	var rec recorder
+	gateway := NewServer(Config{Anthropic: "https://api.anthropic.example"}, rec.record, nil)
+	t.Run("a body that fails to read", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		gateway.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "http://127.0.0.1:18870/v1/messages", errReader{}))
+		if w.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("status = %d, want 413", w.Code)
+		}
+	})
+	t.Run("a body past the cap", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		body := bytes.NewReader(make([]byte, maxRequestBytes+1))
+		gateway.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "http://127.0.0.1:18870/v1/messages", body))
+		if w.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("status = %d, want 413", w.Code)
+		}
+	})
+	if events := rec.all(); len(events) != 0 {
+		t.Errorf("recorded %d route lines, want none: no request reached an upstream", len(events))
+	}
+}
+
+// errReader is a request body whose read always fails.
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) { return 0, errors.New("the body is gone") }
+
+// A config with nothing to say sends no request anywhere: the client learns there is no
+// upstream, and the gateway keeps no line for a request it did not forward.
+func TestProxyRefusesARequestWithNoUpstream(t *testing.T) {
+	var rec recorder
+	gateway := gatewayOver(t, Config{}, &rec)
+	response := post(t, gateway.URL, "/v1/messages", messageBody, nil)
+	body, _ := io.ReadAll(response.Body)
+	if response.StatusCode != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502", response.StatusCode)
+	}
+	if !strings.Contains(string(body), "no upstream") {
+		t.Errorf("body = %q, want the missing upstream named", body)
+	}
+	if events := rec.all(); len(events) != 0 {
+		t.Errorf("recorded %d route lines, want none: nothing left the gateway", len(events))
+	}
+}
+
+// A config that skipped validation can name an upstream no URL can parse; the request
+// build fails, and the client learns of it.
+func TestProxyRefusesAnUpstreamItCannotName(t *testing.T) {
+	var rec recorder
+	gateway := gatewayOver(t, Config{Anthropic: "http://exa mple.invalid"}, &rec)
+	response := post(t, gateway.URL, "/v1/messages", messageBody, nil)
+	if response.StatusCode != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502", response.StatusCode)
+	}
+}
+
+// An upstream that never answers is 502 to the client and one recorded line with the
+// problem on it — the model is still the body's.
+func TestProxyRecordsAnUnreachableUpstream(t *testing.T) {
+	var rec recorder
+	gateway := gatewayOver(t, Config{Anthropic: "http://127.0.0.1:1"}, &rec)
+	response := post(t, gateway.URL, "/v1/messages", messageBody, nil)
+	if response.StatusCode != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502", response.StatusCode)
+	}
+	events := rec.waitFor(t, 1)
+	if len(events) != 1 {
+		t.Fatalf("recorded %d route lines, want 1", len(events))
+	}
+	if events[0].Status != http.StatusBadGateway {
+		t.Errorf("line status = %d, want 502", events[0].Status)
+	}
+	if events[0].Error == nil || !strings.Contains(*events[0].Error, "upstream unreachable") {
+		t.Errorf("line error = %v, want the unreachable upstream named", events[0].Error)
+	}
+	if events[0].Model != "glm-5.3" {
+		t.Errorf("line model = %q, want the body's model", events[0].Model)
+	}
+}
+
+// The header copy to the client takes the answer's headers and leaves the hop-by-hop ones
+// behind.
+func TestCopyHeadersLeavesTheHopByHopOnesBehind(t *testing.T) {
+	dst := http.Header{}
+	src := http.Header{
+		"Connection":   {"close"},
+		"Content-Type": {"application/json"},
+	}
+	copyHeaders(dst, src)
+	if len(dst["Connection"]) != 0 {
+		t.Errorf("Connection rode along: %v", dst)
+	}
+	if got := dst.Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type = %q, want it copied", got)
+	}
+}
+
+// The model a request names: the body's, and none when the body names nothing readable.
+func TestModelOfReadsWhatTheBodyNames(t *testing.T) {
+	if got := modelOf([]byte(messageBody)); got != "glm-5.3" {
+		t.Errorf("model = %q, want glm-5.3", got)
+	}
+	for name, body := range map[string]string{
+		"not json":       "not json",
+		"the wrong type": `{"model":42}`,
+		"no model":       `{"messages":[]}`,
+	} {
+		if got := modelOf([]byte(body)); got != "" {
+			t.Errorf("%s: model = %q, want none", name, got)
+		}
+	}
+}
+
+// The gateway answers only a loopback Host, whatever port or bracket form it carries.
+func TestLoopbackHost(t *testing.T) {
+	cases := []struct {
+		host string
+		want bool
+	}{
+		{"127.0.0.1:18870", true},
+		{"localhost:18870", true},
+		{"LOCALHOST", true},
+		{"127.0.0.1", true},
+		{"[127.0.0.1]:80", true},
+		{"[localhost]:8080", true},
+		{"[::1]:80", false},
+		{"example.com:443", false},
+		{"127.0.0.2", false},
+		{"localhost.example.com", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := loopbackHost(tc.host); got != tc.want {
+			t.Errorf("loopbackHost(%q) = %v, want %v", tc.host, got, tc.want)
+		}
 	}
 }
