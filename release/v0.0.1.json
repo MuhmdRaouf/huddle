@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "tag": "v0.0.1",
+  "assets": {
+    "darwin-amd64": {
+      "name": "huddle-darwin-amd64",
+      "sha256": "0c4ef4cc4592673fa377a78d5b78c4a0f0efab1c0bea4e53a280fe131b347856",
+      "size": 23614240
+    },
+    "darwin-arm64": {
+      "name": "huddle-darwin-arm64",
+      "sha256": "8efd0b67a5999c87ad14061ece5e750af738f913d1237ebfd8233f8ab3f06346",
+      "size": 22225122
+    },
+    "linux-amd64": {
+      "name": "huddle-linux-amd64",
+      "sha256": "ecbb39fd4059baa6e6599e4363665bddbadca5574d84268b5c84d193dbdc3436",
+      "size": 23392380
+    },
+    "linux-arm64": {
+      "name": "huddle-linux-arm64",
+      "sha256": "15e5903ca3199a11bf12eced3389af3559dd6db3a662df3bc143ea6d354fd939",
+      "size": 21954684
+    }
+  }
+}

@@ -1,0 +1,5 @@
+#!/bin/sh
+# huddle-mcp — the plugin's stdio MCP server on the huddle binary, which dist/run downloads and verifies on
+# first use. The loop resolves a symlinked call back inside this plugin.
+f=$0; while [ -L "$f" ]; do l=$(readlink "$f"); case $l in /*) f=$l ;; *) f=$(dirname "$f")/$l ;; esac; done; d=$(cd "$(dirname "$f")/.." && pwd)
+exec sh "$d/dist/run" mcp "$@"

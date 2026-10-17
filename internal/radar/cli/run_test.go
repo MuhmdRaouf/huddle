@@ -476,6 +476,26 @@ func TestStop(t *testing.T) {
 		}
 	})
 
+	t.Run("signals a live satellite server behind the huddle word", func(t *testing.T) {
+		rec := makeDeps(t, overrides{
+			alive: func(pid int64) bool { return pid == 4242 },
+			command: func(int64) (string, bool) {
+				return "/Users/you/.agents/huddle-bin/0.0.1/huddle radar start --foreground --since 1d\n", true
+			},
+		})
+		writeInfo(t, rec.env, info)
+		if code := cli.RunCli(t.Context(), []string{"stop"}, rec.deps); code != 0 {
+			t.Fatalf("runCli = %d, want 0", code)
+		}
+		if !reflect.DeepEqual(rec.signalled, []int64{4242}) {
+			t.Errorf("signalled %v, want [4242]", rec.signalled)
+		}
+		if paths.FileExists(t.Context(), paths.ServerInfoPath(t.Context(), rec.env)) {
+			t.Error("server.json survived the stop")
+		}
+		assertLines(t, rec.out, []string{"radar: stopped"})
+	})
+
 	t.Run("signals nothing when the pid belongs to another process", func(t *testing.T) {
 		rec := makeDeps(t, overrides{
 			alive:   func(pid int64) bool { return pid == 4242 },

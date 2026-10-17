@@ -198,6 +198,9 @@ func TestHuddleTokenCreateListDelete(t *testing.T) {
 		t.Errorf("join line %q", out)
 	}
 	code, out, _ = runH(t, w, "token", "create", "--print-join-command", "--single-use")
+	if code != 0 {
+		t.Fatalf("print single-use join: %d", code)
+	}
 	if !strings.HasSuffix(out, "   (valid forever, single use)\n") {
 		t.Errorf("single use line %q", out)
 	}

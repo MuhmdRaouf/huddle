@@ -1,0 +1,20 @@
+{
+  "name": "huddle",
+  "version": "0.0.1",
+  "description": "One local hub where AI coding sessions work as a team: channels over MCP with shared events, tasks, messages and knowledge; the session hub with approvals from your phone; radar, the token-free dashboard; and kanban, the project's board.",
+  "author": {
+    "name": "Raouf"
+  },
+  "keywords": [
+    "coordination",
+    "multi-session",
+    "subagents",
+    "mcp",
+    "pubsub",
+    "observability",
+    "kanban"
+  ],
+  "repository": "https://github.com/MuhmdRaouf/huddle",
+  "homepage": "https://github.com/MuhmdRaouf/huddle",
+  "license": "GPL-3.0-or-later"
+}

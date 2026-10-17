@@ -390,9 +390,10 @@ func runForeground(ctx context.Context, parsed ParsedArgs, deps Deps) int {
 }
 
 // radarServer matches the command line of this binary serving the dashboard — the detached
-// `start --foreground` a start leaves behind. A stale record may name any process, so only a
-// radar server is ours to signal. The trailing newline is ps's own.
-var radarServer = regexp.MustCompile(`(?:^|/)radar start(?:[ \n]|$)`)
+// `radar start --foreground` a start leaves behind, direct or behind the satellite word
+// (`huddle radar start`). A stale record may name any process, so only a radar server is ours to
+// signal. The trailing newline is ps's own.
+var radarServer = regexp.MustCompile(`(?:^|/)(?:huddle +)?radar start(?:[ \n]|$)`)
 
 // huddleServer matches a huddle server's command line. While huddle owns radar's lock, the pid
 // server.json names is huddle's, and the hub it serves is not radar's to end.

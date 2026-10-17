@@ -29,13 +29,6 @@ import (
 // child.
 var huddleBin string
 
-// hookTimeoutMs is Claude Code's budget for one hook run, the timeout the radar plugin's
-// hooks.json grants every event's hook: 5 seconds.
-func hookTimeoutMs(t *testing.T, event string) int {
-	t.Helper()
-	return 5 * 1000
-}
-
 // TestMain builds the binary the process cases spawn, so they exercise the exact entry the
 // plugin will run.
 func TestMain(m *testing.M) {

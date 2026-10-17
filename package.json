@@ -9,8 +9,10 @@
     "web/*"
   ],
   "scripts": {
-    "check": "bun run --filter='@huddle/*' check",
-    "build": "bun run --filter='@huddle/*' build",
+    "check": "bun run --filter='@huddle/*' check && node --test scripts/*.test.mjs && node scripts/launcher.mjs --check",
+    "build": "bun run --filter='@huddle/*' build && node scripts/launcher.mjs",
+    "build:launcher": "node scripts/launcher.mjs",
+    "check:launcher": "node scripts/launcher.mjs --check",
     "format": "bun run --filter='@huddle/*' format"
   },
   "devDependencies": {

@@ -342,6 +342,78 @@ func stopServerAt(t *testing.T, world, url string) {
 	_ = cmd.Run()
 }
 
+// ── the hooks.json timeouts ──────────────────────────────────────────────────
+
+// hooksTimeouts reads the timeout Claude Code grants each event, in ms, from the plugin's
+// hooks.json — the same file the launcher case of the plugin's own suite pins. Huddle's hooks
+// come first on every event they serve, so the first group's timeout is huddle's.
+func hooksTimeouts(t *testing.T) map[string]int {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "plugin", "hooks", "hooks.json"))
+	if err != nil {
+		t.Fatalf("read hooks.json: %v", err)
+	}
+	var file struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Timeout int `json:"timeout"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatalf("parse hooks.json: %v", err)
+	}
+	out := map[string]int{}
+	for event, groups := range file.Hooks {
+		if len(groups) > 0 && len(groups[0].Hooks) > 0 {
+			out[event] = groups[0].Hooks[0].Timeout * 1000
+		}
+	}
+	return out
+}
+
+// TestDeadlinesSitInsideTheHooksJsonTimeouts holds each hook's own deadlines at most 70 % inside
+// the timeout hooks.json grants each event it serves, with a full second still to spare: the
+// hook is dead to Claude Code at the timeout, and the answer must land well before it.
+func TestDeadlinesSitInsideTheHooksJsonTimeouts(t *testing.T) {
+	timeouts := hooksTimeouts(t)
+	worst := map[string]int{
+		"approve":       approveStdinMS + approveFetchMS,
+		"listen":        listenStdinMS + listenTouchMS + listenFeedMS,
+		"permit":        permitStdinMS + permitPostMS + permitBudgetMS + permitWaitMS + permitSlackMS,
+		"session-start": startBudgetMS,
+		"stop":          stopStdinMS + stopInboxMS,
+		"report":        reportBudgetMS,
+	}
+	serves := map[string][]string{
+		"approve":       {"PreToolUse"},
+		"listen":        {"PostToolUse", "UserPromptSubmit"},
+		"permit":        {"PermissionRequest"},
+		"session-start": {"SessionStart"},
+		"stop":          {"Stop"},
+		"report": {
+			"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification",
+			"PermissionRequest", "Stop", "SubagentStop", "SessionEnd",
+		},
+	}
+	for hook, events := range serves {
+		for _, event := range events {
+			ms, ok := timeouts[event]
+			if !ok {
+				t.Fatalf("hooks.json grants %s no timeout", event)
+			}
+			t.Run(hook+" vs "+event, func(t *testing.T) {
+				if worst[hook] > ms*7/10 {
+					t.Errorf("%s can take %d ms; %s grants %d (70%% is %d)", hook, worst[hook], event, ms, ms*7/10)
+				}
+				if want := ms - 1000; worst[hook] >= want {
+					t.Errorf("%s can take %d ms, within the last second of %s's %d ms", hook, worst[hook], event, ms)
+				}
+			})
+		}
+	}
+}
+
 // ── listen ───────────────────────────────────────────────────────────────────
 
 func TestTheListenHookDownSlowGarbageOrWrongShapeHuddle(t *testing.T) {
