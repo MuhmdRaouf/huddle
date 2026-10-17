@@ -79,3 +79,9 @@ description = "core: the fake Z.ai key the headless worker tests hand to fake wo
 condition = "AND"
 regexes = ['''^zai-test-key-0123456789abcdef$''']
 paths = ['''^internal/adapters/claude_headless_test\.go$''']
+
+[[allowlists]]
+description = "radar: the fake key the page's redaction tests prove gets masked"
+condition = "AND"
+regexes = ['''^sk-abcdefgh123456$''']
+paths = ['''^web/radar/test/redact\.test\.ts$''']

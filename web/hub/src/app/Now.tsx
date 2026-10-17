@@ -1,0 +1,1079 @@
+// Now.tsx — the registry's screens: the Now list (what needs the owner first, then the sessions
+// at work and the idle ones, grouped by machine or project; picking several to send new work to,
+// and the needs-you card's deny and snooze) and the Session screen (the header with its chips and
+// context bar, the stream of the session's events, and the action bar its open ask carries). One
+// tree serves the three layouts: the phone paints the list or the session, the tablet and the
+// desktop paint the list beside the session, and the desktop adds the context pane (the linked
+// sessions and the session's facts). Session text is rendered as text, never HTML (SPEC 9).
+import { Dialog } from "@huddle/ui/dialog.tsx";
+import { modelColor } from "@huddle/ui/model-color.ts";
+import { stampMs } from "@huddle/ui/time.ts";
+import type { ComponentChildren, JSX } from "preact";
+import { useEffect, useRef, useState } from "preact/hooks";
+import type { Api, ApiError } from "../api.ts";
+import { Icon } from "../icons.tsx";
+import type { ChannelLinks } from "../links.ts";
+import {
+  ageText,
+  type GroupMode,
+  groupSessions,
+  machinesLine,
+  machinesOf,
+  openItemOf,
+  permissionOf,
+  projectName,
+  type RegistrySession,
+  type StreamItem,
+  sessionName,
+  shortModel,
+  stateWord,
+  streamItems,
+} from "../registry.ts";
+import { readPref, writePref } from "../storage.ts";
+import { errText, useHuddle } from "./context.tsx";
+import { LinkSheet } from "./LinkSheet.tsx";
+import type { Layout } from "./layout.ts";
+import { ActComposer, type NeedsAct, NeedsBar, SnoozeMenu, useNeedsAct, useStepUp } from "./Needs.tsx";
+import { MachinesLine } from "./TopBar.tsx";
+
+/** One state's mark: its shape and its colour class around the svg it draws. */
+type Mark = { shape: string; cls: string; draw: JSX.Element };
+
+/** The marks, keyed by the registry's state name. The word the aria-label carries is part of
+ *  the signal, so colour is never the only difference. */
+const MARKS: Record<string, Mark> = {
+  "needs-you": {
+    shape: "ring",
+    cls: "text-warning",
+    draw: <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="5" />,
+  },
+  working: {
+    shape: "dot",
+    cls: "text-success",
+    draw: <circle cx="12" cy="12" r="9" fill="currentColor" />,
+  },
+  idle: {
+    shape: "hollow",
+    cls: "text-base-content/50",
+    draw: <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.5" />,
+  },
+  stale: {
+    shape: "dash",
+    cls: "text-base-content/50",
+    draw: <path d="M6 12h12" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />,
+  },
+  ended: {
+    shape: "cross",
+    cls: "text-base-content/40",
+    draw: (
+      <path
+        d="M7 7l10 10M17 7L7 17"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="3.5"
+        stroke-linecap="round"
+      />
+    ),
+  },
+};
+
+/** The mark an unknown state falls back to: the idle hollow circle. */
+const HOLLOW: Mark = {
+  shape: "hollow",
+  cls: "text-base-content/50",
+  draw: <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.5" />,
+};
+
+/** A session's state as one 10 px mark: shape plus word, so the state never rides on colour
+ *  alone. An unknown state draws the hollow mark and says its own name. */
+export function StateMark({
+  state,
+  class: c = "",
+}: {
+  state: string;
+  class?: string | undefined;
+}): JSX.Element {
+  const m = MARKS[state] ?? HOLLOW;
+  return (
+    <svg
+      data-shape={m.shape}
+      class={`size-2.5 shrink-0 ${m.cls} ${c}`.trim()}
+      viewBox="0 0 24 24"
+      role="img"
+      aria-label={stateWord(state)}
+    >
+      {m.draw}
+    </svg>
+  );
+}
+
+/** A model as its chip: the family's colour behind the short name, the raw id on hover. */
+export function ModelChip({
+  model,
+  pill = false,
+}: {
+  model: string;
+  /** The session header's round pill; the list's rows carry the small square chip. */
+  pill?: boolean | undefined;
+}): JSX.Element {
+  return (
+    <span
+      class={`inline-flex items-center whitespace-nowrap font-mono text-[11px] leading-4 text-base-300 ${
+        pill ? "rounded-full px-2.5 py-[3px] text-xs" : "rounded-md px-1.5 py-px"
+      }`}
+      style={`background:${modelColor(model)}`}
+      title={model}
+    >
+      {shortModel(model)}
+    </span>
+  );
+}
+
+/** The context bar: how full the session's window is, one primary fill over a quiet track.
+ *  Nothing at zero — a session that never said reads as unknown, not empty. */
+export function ContextBar({
+  pct,
+  class: c = "",
+}: {
+  pct: number;
+  class?: string | undefined;
+}): JSX.Element | null {
+  if (!pct) return null;
+  const n = Math.round(pct);
+  return (
+    <div
+      class={`h-1.5 w-full overflow-hidden rounded-full bg-base-content/15 ${c}`.trim()}
+      role="img"
+      aria-label={`Context ${n} percent used`}
+    >
+      <div class="h-full rounded-full bg-primary" style={`width:${n}%`} />
+    </div>
+  );
+}
+
+/** A row's where: machine · project · branch, the parts that exist joined by middots. */
+const whereOf = (s: RegistrySession): string =>
+  [s.machine, projectName(s.project), s.branch].filter(Boolean).join(" · ");
+
+/** The link that opens one session from the list. */
+const openHref = (s: RegistrySession): string => `#/now/${s.session_id}`;
+
+/** The needs-you card: the session that waits on the owner, what it asks, and the answers the
+ *  phone offers — Deny posts the session's open permission ask at once, the menu snoozes or
+ *  dismisses the item, and Review opens the session. */
+function NeedsCard({
+  s,
+  now,
+  sel,
+  act,
+}: {
+  s: RegistrySession;
+  now: number;
+  sel: boolean;
+  act: NeedsAct;
+}): JSX.Element {
+  const { registry } = useHuddle();
+  const needs = registry.getState().needs;
+  const ask = permissionOf(needs, s.session_id);
+  const item = openItemOf(needs, s.session_id);
+  return (
+    <article
+      class={`flex flex-col gap-2.5 rounded-[14px] border bg-base-100 p-3.5 ${
+        sel ? "border-primary" : "hairline"
+      }`}
+      data-row={s.session_id}
+      aria-current={sel ? "true" : undefined}
+    >
+      <a href={openHref(s)} class="flex min-w-0 flex-col gap-1.5 text-base-content">
+        <div class="flex items-baseline justify-between gap-2">
+          <span class="truncate text-base font-semibold">{sessionName(s)}</span>
+          <span class="shrink-0 text-xs muted">{ageText(s.last_event_at, now)}</span>
+        </div>
+        <div class="truncate text-xs muted">{whereOf(s)}</div>
+        <div class="line-clamp-2 text-sm">{s.task || s.title || stateWord(s.state)}</div>
+      </a>
+      <div class="flex gap-2">
+        {item ? <SnoozeMenu item={item} /> : null}
+        <button
+          type="button"
+          data-act="deny"
+          disabled={!ask}
+          title={ask ? undefined : "No permission ask on this session"}
+          onClick={() => ask && act.deny(ask)}
+          class="min-h-11 flex-1 rounded-[10px] border border-error bg-transparent text-[15px] font-medium text-error disabled:opacity-50"
+        >
+          Deny
+        </button>
+        <a
+          href={openHref(s)}
+          class="flex min-h-11 flex-1 items-center justify-center rounded-[10px] bg-primary text-[15px] font-semibold text-base-300"
+        >
+          Review
+        </a>
+      </div>
+    </article>
+  );
+}
+
+/** A working or stale row: the mark, the name, the model chip, where it works and how full its
+ *  window is. `sel` is the desktop's keyboard selection. */
+function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element {
+  return (
+    <a
+      href={openHref(s)}
+      data-row={s.session_id}
+      aria-current={sel ? "true" : undefined}
+      class={`grid grid-cols-[14px_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1 px-1.5 py-2.5 ${
+        sel ? "rounded-[10px] bg-base-100 ring-1 ring-primary" : "border-b hairline"
+      }`}
+    >
+      <StateMark state={s.state} />
+      <span class="min-w-0 truncate text-[15px] font-medium">{sessionName(s)}</span>
+      {s.model ? <ModelChip model={s.model} /> : <span />}
+      <span />
+      <span class="min-w-0 truncate text-[13px] muted">
+        {[s.machine, s.task].filter(Boolean).join(" · ")}
+      </span>
+      <span class="text-right text-xs muted tnum">
+        {s.context_percent ? `${Math.round(s.context_percent)}%` : ""}
+      </span>
+    </a>
+  );
+}
+
+/** An idle or ended row: the mark, the name with its machine, and how long it has been quiet. */
+function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolean }): JSX.Element {
+  return (
+    <a
+      href={openHref(s)}
+      data-row={s.session_id}
+      aria-current={sel ? "true" : undefined}
+      class={`grid grid-cols-[14px_minmax(0,1fr)_auto] items-center gap-x-2.5 px-1.5 py-2.5 ${
+        sel ? "rounded-[10px] bg-base-100 ring-1 ring-primary" : "border-b hairline"
+      }`}
+    >
+      <StateMark state={s.state} />
+      <span class="min-w-0 truncate text-[15px]">
+        {sessionName(s)} {s.machine ? <span class="text-[13px] muted">· {s.machine}</span> : null}
+      </span>
+      <span class="shrink-0 text-xs muted">{ageText(s.last_event_at, now)}</span>
+    </a>
+  );
+}
+
+/** The list's five sections, in the order the Now tab shows them; empty ones draw nothing. */
+const SECTIONS: readonly (readonly [
+  key: "needsYou" | "working" | "idle" | "stale" | "ended",
+  label: string,
+  warn: boolean,
+])[] = [
+  ["needsYou", "Needs you", true],
+  ["working", "Working", false],
+  ["idle", "Idle", false],
+  ["stale", "Stale", false],
+  ["ended", "Ended", false],
+];
+
+/** One row's shell: the desktop carries a checkbox beside it (the pick a send to many sends to),
+ *  the phone hears a long-press for the same. A tap toggles the row only while a pick is on. */
+function RowShell({
+  layout,
+  s,
+  picked,
+  tap,
+  onPick,
+  onHoldStart,
+  onHoldStop,
+  children,
+}: {
+  layout: Layout;
+  s: RegistrySession;
+  picked: boolean;
+  tap: (e: MouseEvent) => void;
+  onPick: () => void;
+  onHoldStart: () => void;
+  onHoldStop: () => void;
+  children: ComponentChildren;
+}): JSX.Element {
+  if (layout === "desktop") {
+    return (
+      // biome-ignore lint/a11y/noStaticElementInteractions: the row's link keeps the keyboard; the click only toggles a pick
+      // biome-ignore lint/a11y/useKeyWithClickEvents: the row's link keeps the keyboard; the click only toggles a pick
+      <div class="flex items-start gap-2" data-select-row={s.session_id} onClick={tap}>
+        <input
+          type="checkbox"
+          class="checkbox checkbox-xs mt-3 shrink-0"
+          aria-label={`Select ${sessionName(s)}`}
+          checked={picked}
+          onClick={(e) => e.stopPropagation()}
+          onChange={onPick}
+        />
+        <div class="min-w-0 flex-1">{children}</div>
+      </div>
+    );
+  }
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: the phone's long-press picks a row for a send
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the row's link keeps the keyboard; the click only toggles a pick
+    <div
+      data-hold-row={s.session_id}
+      onClick={tap}
+      onPointerDown={onHoldStart}
+      onPointerUp={onHoldStop}
+      onPointerLeave={onHoldStop}
+      onPointerMove={onHoldStop}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** The Now list: the registry's sessions as the three layouts' list pane. The tablet carries its
+ *  own header (the phone's shell and the desktop's bar draw theirs); the group-by toggle rides
+ *  under it; the desktop's j and k move a selection Enter opens and a, d and r answer, the
+ *  checkboxes pick sessions to send new work to, and the phone's long-press picks the same. */
+export function NowPane({ layout }: { layout: Layout }): JSX.Element {
+  const { registry, now } = useHuddle();
+  const act = useNeedsAct();
+  const st = registry.getState();
+  const groups = groupSessions(st.sessions);
+  const [group, setGroup] = useState<GroupMode>(() =>
+    readPref(localStorage, "nowgroup", "machine" as GroupMode),
+  );
+  const [selId, setSelId] = useState<string | null>(null);
+  const [picked, setPicked] = useState<readonly string[]>([]);
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const hold = useRef<number | null>(null);
+
+  const rows = [...groups.needsYou, ...groups.working, ...groups.idle, ...groups.stale, ...groups.ended];
+  const selIdx = rows.findIndex((r) => r.session_id === selId);
+  const cur = selIdx >= 0 ? selIdx : 0;
+
+  const stopHold = (): void => {
+    if (hold.current !== null) window.clearTimeout(hold.current);
+    hold.current = null;
+  };
+  const startHold = (id: string): void => {
+    stopHold();
+    hold.current = window.setTimeout(() => {
+      hold.current = null;
+      setPicked((picks) => (picks.includes(id) ? picks : [...picks, id]));
+    }, 500);
+  };
+  // no dependency list: the pane repaints on every change, and the cleanup rides along
+  useEffect(() => () => stopHold());
+
+  const togglePick = (id: string): void =>
+    setPicked((picks) => (picks.includes(id) ? picks.filter((x) => x !== id) : [...picks, id]));
+  /** A row's tap does nothing while nobody is picked; with a pick on, it toggles the row. */
+  const onRowTap =
+    (id: string) =>
+    (e: MouseEvent): void => {
+      if (picked.length === 0) return;
+      e.preventDefault();
+      togglePick(id);
+    };
+  const routeOf = (id: string): string | undefined =>
+    st.sessions?.find((s) => s.session_id === id)?.delivery_route;
+  const replyRow = replyTo ? st.sessions?.find((s) => s.session_id === replyTo) : undefined;
+
+  // no dependency list: the pane repaints on every change, and the handler reads rows fresh
+  useEffect(() => {
+    if (layout !== "desktop") return;
+    // oxlint-disable-next-line complexity -- one guard per key the list owns
+    const on = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (document.querySelector("dialog[open]")) return;
+      const t = e.target instanceof HTMLElement ? e.target : null;
+      if (t?.closest("input, textarea, select, [contenteditable]")) return;
+      if (e.key === "L") {
+        // linking needs the pick of two or more; anything less leaves the bar to do the talking
+        if (picked.length < 2) return;
+        e.preventDefault();
+        setLinking(true);
+        return;
+      }
+      if (
+        e.key !== "j" &&
+        e.key !== "k" &&
+        e.key !== "Enter" &&
+        e.key !== "a" &&
+        e.key !== "d" &&
+        e.key !== "r"
+      )
+        return;
+      if (rows.length === 0) return;
+      e.preventDefault();
+      if (e.key === "Enter") {
+        const s = rows[cur];
+        if (s) location.hash = openHref(s);
+        return;
+      }
+      if (e.key === "j" || e.key === "k") {
+        const next = Math.min(rows.length - 1, Math.max(0, cur + (e.key === "j" ? 1 : -1)));
+        setSelId(rows[next]?.session_id ?? null);
+        return;
+      }
+      const s = rows[cur];
+      if (!s) return;
+      if (e.key === "r") {
+        setReplyTo(s.session_id);
+        return;
+      }
+      const ask = permissionOf(st.needs, s.session_id);
+      if (!ask) return;
+      if (e.key === "a") act.allow(ask);
+      else act.deny(ask);
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  });
+
+  /** One section's rows, each under a sub-heading when the toggle groups them. */
+  const sectionRows = (list: RegistrySession[]): JSX.Element => {
+    if (group === "machine" && new Set(list.map((s) => s.machine ?? "")).size <= 1) {
+      // one machine needs no sub-heading: the rows already carry it
+      return <>{list.map((s) => rowOf(s))}</>;
+    }
+    const byKey = new Map<string, RegistrySession[]>();
+    for (const s of list) {
+      const key = group === "machine" ? s.machine || "No machine" : projectName(s.project) || "No project";
+      byKey.set(key, [...(byKey.get(key) ?? []), s]);
+    }
+    return (
+      <>
+        {[...byKey.entries()].map(([key, keyed]) => (
+          <div key={key} class="flex flex-col">
+            <h3 class="px-1.5 pt-1 text-xs font-medium text-base-content/50">
+              {key} · {keyed.length}
+            </h3>
+            {keyed.map((s) => rowOf(s))}
+          </div>
+        ))}
+      </>
+    );
+  };
+
+  /** One row, as its group draws it, in the shell its layout gives it. */
+  const rowOf = (s: RegistrySession): JSX.Element => {
+    const sel = layout === "desktop" && rows[cur]?.session_id === s.session_id;
+    const row =
+      s.state === "needs-you" ? (
+        <NeedsCard s={s} now={now} sel={sel} act={act} />
+      ) : s.state === "idle" || s.state === "ended" ? (
+        <IdleRow s={s} now={now} sel={sel} />
+      ) : (
+        <WorkRow s={s} sel={sel} />
+      );
+    return (
+      <RowShell
+        layout={layout}
+        s={s}
+        picked={picked.includes(s.session_id)}
+        tap={onRowTap(s.session_id)}
+        onPick={() => togglePick(s.session_id)}
+        onHoldStart={() => startHold(s.session_id)}
+        onHoldStop={stopHold}
+      >
+        {row}
+      </RowShell>
+    );
+  };
+
+  return (
+    <div class="flex min-h-0 min-w-0 flex-col" data-now-pane="">
+      {layout === "tablet" ? (
+        <header class="flex shrink-0 items-center justify-between px-4 pt-5 pb-3">
+          <h1 class="text-2xl font-semibold tracking-tight">Now</h1>
+          <MachinesLine live={st.live} text={machinesLine(layout, machinesOf(st.sessions))} />
+        </header>
+      ) : null}
+      <div class="flex shrink-0 items-center gap-2 border-b hairline px-4 py-2">
+        <span class="text-xs muted">Group by</span>
+        <div class="flex overflow-hidden rounded-lg border hairline">
+          {(["machine", "project"] as const).map((k, i) => (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={group === k ? "true" : "false"}
+              class={`min-h-8 px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                i > 0 ? "border-l hairline" : ""
+              } ${group === k ? "bg-base-100 font-semibold text-base-content" : "muted"}`}
+              onClick={() => {
+                setGroup(k);
+                writePref(localStorage, "nowgroup", k);
+              }}
+            >
+              {k === "machine" ? "Machine" : "Project"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto pb-4" data-now-sections="">
+        {st.sessions === null ? (
+          <p class="px-4 py-10 text-center text-sm muted">Reading the registry…</p>
+        ) : rows.length === 0 ? (
+          <div class="mx-auto m-4 flex max-w-lg flex-col items-center gap-2 rounded-box border border-dashed border-base-content/20 px-6 py-16 text-center text-sm muted">
+            <b class="text-base font-semibold text-base-content">Nothing needs you</b>
+            <p>When a session needs you, it shows up here first.</p>
+          </div>
+        ) : (
+          SECTIONS.filter(([key]) => groups[key].length > 0).map(([key, label, warn]) => (
+            <section key={key} aria-labelledby={`now-${key}`} class="flex flex-col gap-1 px-3 pt-2">
+              <h2
+                id={`now-${key}`}
+                class={`flex items-center gap-2 px-1 pb-1 text-[13px] font-semibold tracking-[0.06em] uppercase ${
+                  warn ? "text-warning" : "muted"
+                }`}
+              >
+                {warn ? <StateMark state="needs-you" /> : null}
+                {label} · {groups[key].length}
+              </h2>
+              {sectionRows(groups[key])}
+            </section>
+          ))
+        )}
+      </div>
+      {picked.length > 0 ? (
+        <PickBar
+          n={picked.length}
+          onClear={() => setPicked([])}
+          onSend={() => setSending(true)}
+          onLink={() => setLinking(true)}
+        />
+      ) : null}
+      {layout === "desktop" ? (
+        <div class="flex shrink-0 gap-3.5 border-t hairline p-2.5 text-xs text-base-content/50">
+          <span>
+            <kbd class="kbd kbd-xs">j</kbd> <kbd class="kbd kbd-xs">k</kbd> move
+          </span>
+          <span>
+            <kbd class="kbd kbd-xs">a</kbd> allow <kbd class="kbd kbd-xs">d</kbd> deny{" "}
+            <kbd class="kbd kbd-xs">r</kbd> reply
+          </span>
+        </div>
+      ) : null}
+      {act.sheet}
+      <NowDialogs
+        replyTo={replyTo}
+        replyRow={replyRow}
+        sending={sending}
+        picked={picked}
+        routeOf={routeOf}
+        onReplyClose={() => setReplyTo(null)}
+        onSendClose={() => {
+          setSending(false);
+          setPicked([]);
+        }}
+      />
+      {linking ? (
+        <LinkSheet sessions={picked} onClose={() => setLinking(false)} onLinked={() => setPicked([])} />
+      ) : null}
+    </div>
+  );
+}
+
+/** The pick bar: how many rows are picked, the clear, the link of two or more into a channel,
+ *  and the send the composer opens. */
+function PickBar({
+  n,
+  onClear,
+  onSend,
+  onLink,
+}: {
+  n: number;
+  onClear: () => void;
+  onSend: () => void;
+  onLink: () => void;
+}): JSX.Element {
+  return (
+    <div class="flex shrink-0 items-center gap-2 border-t hairline px-3 py-2" data-select-bar="">
+      <span class="text-sm muted">{n} selected</span>
+      <span class="flex-1" />
+      <button type="button" class="btn btn-ghost btn-sm" onClick={onClear}>
+        Clear
+      </button>
+      {n >= 2 ? (
+        <button type="button" class="btn btn-ghost btn-sm" onClick={onLink}>
+          Link {n} sessions
+        </button>
+      ) : null}
+      <button type="button" class="btn btn-primary btn-sm" onClick={onSend}>
+        Send to {n} {n === 1 ? "session" : "sessions"}
+      </button>
+    </div>
+  );
+}
+
+/** The list's two dialogs: the reply one row's composer answers, and the send to every picked
+ *  session. Both close on their own Cancel; a send closes the dialog and drops the picks. */
+function NowDialogs({
+  replyTo,
+  replyRow,
+  sending,
+  picked,
+  routeOf,
+  onReplyClose,
+  onSendClose,
+}: {
+  replyTo: string | null;
+  replyRow: RegistrySession | undefined;
+  sending: boolean;
+  picked: readonly string[];
+  routeOf: (id: string) => string | undefined;
+  onReplyClose: () => void;
+  onSendClose: () => void;
+}): JSX.Element {
+  return (
+    <>
+      <Dialog
+        open={replyTo !== null}
+        onClose={onReplyClose}
+        title={replyRow ? `Reply to ${sessionName(replyRow)}` : "Reply"}
+      >
+        {replyTo && replyRow ? (
+          <ActComposer
+            kind="answer"
+            targets={[replyRow.session_id]}
+            routes={[replyRow.delivery_route]}
+            placeholder={`Reply to ${sessionName(replyRow)}…`}
+            onClose={onReplyClose}
+          />
+        ) : null}
+      </Dialog>
+      <Dialog open={sending} onClose={onSendClose} title={`Send to ${picked.length} sessions`}>
+        {sending ? (
+          <ActComposer
+            kind="send"
+            targets={picked}
+            routes={picked.map((id) => routeOf(id))}
+            placeholder="What should they do?"
+            onClose={onSendClose}
+          />
+        ) : null}
+      </Dialog>
+    </>
+  );
+}
+
+/** The session's chips: its state (mark and word), its model, and its channel when it is in one. */
+function Chips({ s }: { s: RegistrySession }): JSX.Element {
+  return (
+    <span class="flex min-w-0 flex-wrap items-center gap-1.5">
+      <span class="inline-flex items-center gap-1.5 rounded-full border border-warning px-2.5 py-0.5 text-xs text-warning">
+        <StateMark state={s.state} />
+        {stateWord(s.state)}
+      </span>
+      {s.model ? <ModelChip model={s.model} pill /> : null}
+      {s.channel ? (
+        <span class="rounded-full border hairline px-2.5 py-0.5 text-xs muted">#{s.channel}</span>
+      ) : null}
+    </span>
+  );
+}
+
+/** One timestamp's wall-clock time, always 24 h, whatever the browser's locale spells. */
+function hhmm(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** One stream item's day, the way the design's dividers spell it: Today, Yesterday or the date,
+ *  with the item's time. */
+function dayLabel(at: string, now: number): string {
+  const ms = stampMs(at);
+  if (ms === null) return "";
+  const d = new Date(ms);
+  const day = new Date(now);
+  const sameDay = (a: Date, b: Date): boolean =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  const yesterday = new Date(day);
+  yesterday.setDate(day.getDate() - 1);
+  if (sameDay(d, day)) return `Today ${hhmm(ms)}`;
+  if (sameDay(d, yesterday)) return `Yesterday ${hhmm(ms)}`;
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${hhmm(ms)}`;
+}
+
+/** One item of the session's stream: a prompt as a right bubble, a tool event as one line with
+ *  its check and target, anything else that carries text as a plain paragraph. */
+function StreamPart({ item }: { item: StreamItem }): JSX.Element {
+  if (item.kind === "prompt") {
+    return (
+      <div class="max-w-[85%] self-end rounded-[14px_14px_4px_14px] bg-base-content/15 px-3 py-2.5 break-words">
+        {item.text}
+      </div>
+    );
+  }
+  if (item.kind === "tool") {
+    return (
+      <div class="flex items-center gap-2 text-[13px] muted" data-tool="">
+        <Icon name="check" class="size-4 shrink-0 text-success" />
+        <span>Tool</span>
+        <code class="min-w-0 truncate font-mono text-xs">{item.target}</code>
+      </div>
+    );
+  }
+  return <div class="break-words whitespace-pre-wrap">{item.text}</div>;
+}
+
+/** One act the session's menu can run on a linked peer: a brief carries this session's newest
+ *  digest into the peer, a hand over also moves its open tasks and leaves the channel (SPEC 8). */
+type LinkAct = "brief" | "handover";
+
+/** Reads the links list once; a failed read reads as none, so a server hiccup only hides the menu. */
+async function readLinks(api: Api): Promise<{ channels?: ChannelLinks[] }> {
+  try {
+    return (await api.api("/api/links")) as { channels?: ChannelLinks[] };
+  } catch {
+    return {};
+  }
+}
+
+/** The sessions that share a channel with this one, deduped, each with its display name. */
+function linkedPeersOf(
+  session: string,
+  channels: ChannelLinks[] | null,
+  nameOf: (id: string) => string,
+): { id: string; name: string }[] {
+  const out: { id: string; name: string }[] = [];
+  for (const ch of channels ?? []) {
+    if (!ch.links.some((l) => l.session_id === session)) continue;
+    for (const l of ch.links) {
+      if (l.session_id !== session && !out.some((c) => c.id === l.session_id)) {
+        out.push({ id: l.session_id, name: nameOf(l.session_id) });
+      }
+    }
+  }
+  return out;
+}
+
+/** The act's own dialog: the target picked among the linked peers, and what the act would do. */
+function LinkActDialog({
+  act,
+  to,
+  candidates,
+  busy,
+  onTo,
+  onClose,
+  onRun,
+}: {
+  act: LinkAct;
+  to: string;
+  candidates: readonly { id: string; name: string }[];
+  busy: boolean;
+  onTo: (id: string) => void;
+  onClose: () => void;
+  onRun: () => void;
+}): JSX.Element {
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={act === "handover" ? "Hand over to another session" : "Brief another session"}
+    >
+      <div class="flex flex-col gap-3">
+        <select
+          class="select"
+          aria-label="Target session"
+          value={to}
+          onChange={(e) => onTo(e.currentTarget.value)}
+        >
+          {candidates.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <p class="m-0 text-xs muted">
+          {act === "handover"
+            ? "Briefs the session you pick, moves this session's open tasks to it and leaves this session out of the channel."
+            : "Sends this session's newest digest to the session you pick, on its next prompt."}
+        </p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="btn btn-ghost btn-sm" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" disabled={busy || to === ""} onClick={onRun}>
+            {act === "handover" ? "Hand over" : "Brief"}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/** The linked session's actions (SPEC 8): `Brief another session…` and `Hand over to…`, their
+ *  target picked among the sessions that share a channel with this one, whatever the channel —
+ *  the one read of GET /api/links answers that. A session linked nowhere draws nothing. */
+function SessionActions({ session }: { session: RegistrySession }): JSX.Element | null {
+  const { api, toast, registry } = useHuddle();
+  const { ask, sheet } = useStepUp();
+  const [channels, setChannels] = useState<ChannelLinks[] | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [act, setAct] = useState<LinkAct | null>(null);
+  const [to, setTo] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void readLinks(api).then((r) => {
+      if (alive) setChannels(r.channels ?? []);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [api]);
+
+  const nameOf = (id: string): string => {
+    const row = registry.getState().sessions?.find((s) => s.session_id === id);
+    return row ? sessionName(row) : id;
+  };
+  const candidates = linkedPeersOf(session.session_id, channels, nameOf);
+  if (channels === null || candidates.length === 0) return null;
+
+  const post = (): Promise<unknown> =>
+    api.api(act === "handover" ? "/api/handover" : "/api/brief", {
+      body: { from: session.session_id, to },
+    });
+  const done = (r: { moved?: string[] }): void => {
+    toast(
+      act === "handover"
+        ? `Handed over to ${nameOf(to)}: ${(r.moved ?? []).length} tasks moved`
+        : `Briefed ${nameOf(to)}`,
+    );
+    setBusy(false);
+    setAct(null);
+  };
+  // both acts carry this session's words or work into another (SPEC 7.4): a 401 runs the
+  // passkey sheet once and posts the same body again
+  const run = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      done(((await post()) as { moved?: string[] }) ?? {});
+    } catch (e) {
+      await runRetry(e as ApiError);
+    }
+  };
+  const runRetry = async (e: ApiError): Promise<void> => {
+    if (e.status !== 401 || e.message !== "step-up required") {
+      toast(errText(e), { bad: true });
+      setBusy(false);
+      return;
+    }
+    if (!(await ask({ action: act === "handover" ? "Hand over" : "Brief", session: nameOf(to) }))) {
+      setBusy(false);
+      return;
+    }
+    try {
+      const r = (await post()) as { moved?: string[] };
+      done(r);
+    } catch (e2) {
+      toast(errText(e2), { bad: true });
+      setBusy(false);
+    }
+  };
+  const open = (kind: LinkAct): void => {
+    setMenuOpen(false);
+    setTo(candidates[0]?.id ?? "");
+    setAct(kind);
+  };
+
+  return (
+    <>
+      {sheet}
+      <span class="relative inline-flex" data-session-actions="">
+        <button
+          type="button"
+          aria-label="More actions"
+          aria-expanded={menuOpen ? "true" : "false"}
+          class="flex size-9 items-center justify-center rounded-lg text-base-content/60 outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          <Icon name="more" class="size-4" />
+        </button>
+        {menuOpen ? (
+          <div
+            role="menu"
+            aria-label="Link actions"
+            class="absolute top-full right-0 z-20 mt-1 flex min-w-52 flex-col rounded-[10px] border hairline bg-base-100 p-1 shadow-lg"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              class="flex min-h-9 items-center rounded-md px-2.5 text-left text-sm outline-none hover:bg-base-200 focus-visible:bg-base-200"
+              onClick={() => open("brief")}
+            >
+              Brief another session…
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="flex min-h-9 items-center rounded-md px-2.5 text-left text-sm outline-none hover:bg-base-200 focus-visible:bg-base-200"
+              onClick={() => open("handover")}
+            >
+              Hand over to…
+            </button>
+          </div>
+        ) : null}
+      </span>
+      {act !== null ? (
+        <LinkActDialog
+          act={act}
+          to={to}
+          candidates={candidates}
+          busy={busy}
+          onTo={setTo}
+          onClose={() => setAct(null)}
+          onRun={() => void run()}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** The Session screen: the header (name, where, chips, context bar), the stream of the session's
+ *  events, and the action bar its open needs-you ask carries (the phone's sheet, the wide
+ *  layouts' inline box). The phone paints its own header with the back link; the tablet and the
+ *  desktop carry theirs in a bar. */
+export function SessionScreen({ id, layout }: { id: string; layout: Layout }): JSX.Element {
+  const { registry, now } = useHuddle();
+  const st = registry.getState();
+  const d = st.open;
+
+  if (!d) {
+    const line = st.openMissing ? `There is no session ${id}.` : "Reading the session…";
+    return (
+      <div class="grid min-h-0 flex-1 place-items-center px-6">
+        <p class="text-sm muted">{line}</p>
+      </div>
+    );
+  }
+  const ask = openItemOf(st.needs, id);
+
+  const items = streamItems(d.events ?? []);
+  let lastDay = "";
+  const pct = d.context_percent ? Math.round(d.context_percent) : 0;
+
+  return (
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col" data-session="">
+      {layout === "phone" ? (
+        <header class="flex shrink-0 flex-col gap-2.5 border-b hairline bg-base-200 px-3 pt-3.5 pb-3">
+          <div class="flex items-center gap-1">
+            <a
+              href="#/now"
+              aria-label="Back to Now"
+              class="flex size-11 shrink-0 items-center justify-center rounded-lg text-base-content outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <Icon name="left" class="size-[22px]" />
+            </a>
+            <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+              <div class="truncate text-lg font-semibold">{sessionName(d)}</div>
+              <div class="truncate text-xs muted">{whereOf(d)}</div>
+            </div>
+            <SessionActions session={d} />
+          </div>
+          <div class="px-2">
+            <Chips s={d} />
+          </div>
+          {pct ? (
+            <div class="flex items-center gap-2.5 px-2">
+              <ContextBar pct={pct} class="min-w-0 flex-1" />
+              <span class="shrink-0 text-xs muted">{pct}% context</span>
+            </div>
+          ) : null}
+        </header>
+      ) : (
+        <header class="flex shrink-0 flex-wrap items-center gap-3.5 border-b hairline px-6 pt-4 pb-3.5">
+          <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div class="truncate text-xl font-semibold">{sessionName(d)}</div>
+            <div class="truncate text-[13px] muted">{whereOf(d)}</div>
+          </div>
+          <Chips s={d} />
+          <SessionActions session={d} />
+          {pct ? (
+            <span class="flex w-[140px] shrink-0 items-center gap-2">
+              <ContextBar pct={pct} />
+              <span class="shrink-0 text-xs muted">{pct}%</span>
+            </span>
+          ) : null}
+        </header>
+      )}
+      <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 sm:px-6" data-stream="">
+        <div class="mx-auto flex max-w-[720px] flex-col gap-3 text-sm leading-relaxed sm:text-[15px]">
+          {items.map((item, i) => {
+            const parts: JSX.Element[] = [];
+            const day = dayLabel(item.at, now);
+            const dayKey = day.split(" ").slice(0, -1).join(" ");
+            if (day && dayKey !== lastDay) {
+              lastDay = dayKey;
+              parts.push(
+                <div key={`d${i}`} class="py-1 text-center text-xs text-base-content/50">
+                  {day}
+                </div>,
+              );
+            }
+            parts.push(<StreamPart key={i} item={item} />);
+            return <>{parts}</>;
+          })}
+          {items.length === 0 ? <p class="py-6 text-center text-sm muted">No events yet.</p> : null}
+        </div>
+      </div>
+      {ask ? <NeedsBar item={ask} session={d} layout={layout} /> : null}
+    </div>
+  );
+}
+
+/** The desktop's context pane: the sessions linked with the open one, and the session's own
+ *  facts. The digest arrives with the linking work; the cost shows when Radar knows the session. */
+export function NowContext(): JSX.Element | null {
+  const { registry, now } = useHuddle();
+  const st = registry.getState();
+  const d = st.open;
+  if (!d) return null;
+  const linked = (st.sessions ?? []).filter(
+    (s) => s.channel && s.channel === d.channel && s.session_id !== d.session_id,
+  );
+  const startedAt = d.events?.[0]?.report.last_event_at ?? d.last_event_at;
+  const startedMs = stampMs(startedAt);
+  const started = startedMs === null ? "—" : `${hhmm(startedMs)} · ${ageText(startedAt, now)}`;
+  return (
+    <aside
+      class="flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto border-l hairline bg-base-200 p-4"
+      data-now-context=""
+    >
+      {d.channel ? (
+        <section class="flex flex-col gap-2.5">
+          <h2 class="text-xs font-semibold tracking-[0.06em] uppercase muted">Linked in #{d.channel}</h2>
+          {linked.length === 0 ? (
+            <p class="text-[13px] muted">No other session is linked here yet.</p>
+          ) : (
+            linked.map((s) => (
+              <a
+                key={s.session_id}
+                href={openHref(s)}
+                class="flex min-w-0 items-center gap-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <StateMark state={s.state} />
+                <span class="truncate">{sessionName(s)}</span>
+                <span class="shrink-0 text-xs text-base-content/50">{s.machine}</span>
+              </a>
+            ))
+          )}
+        </section>
+      ) : null}
+      <section class="flex flex-col gap-2">
+        <h2 class="text-xs font-semibold tracking-[0.06em] uppercase muted">Session</h2>
+        <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
+          <dt class="text-base-content/50">Model</dt>
+          <dd class="m-0 truncate font-mono">{d.model || "—"}</dd>
+          <dt class="text-base-content/50">Context</dt>
+          <dd class="m-0">{d.context_percent ? `${Math.round(d.context_percent)}% used` : "—"}</dd>
+          <dt class="text-base-content/50">Started</dt>
+          <dd class="m-0">{started}</dd>
+        </dl>
+      </section>
+    </aside>
+  );
+}

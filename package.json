@@ -1,0 +1,23 @@
+{
+  "name": "huddle",
+  "version": "0.0.1",
+  "private": true,
+  "description": "One local hub where AI coding sessions work as a team: channels over MCP, the session hub, radar and kanban.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "workspaces": [
+    "web/*"
+  ],
+  "scripts": {
+    "check": "bun run --filter='@huddle/*' check",
+    "build": "bun run --filter='@huddle/*' build",
+    "format": "bun run --filter='@huddle/*' format"
+  },
+  "devDependencies": {
+    "vite-plus": "1.3.0"
+  },
+  "engines": {
+    "bun": ">=1.3",
+    "node": ">=22.3"
+  }
+}
