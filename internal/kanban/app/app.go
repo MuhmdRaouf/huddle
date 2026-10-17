@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/MuhmdRaouf/huddle/internal/kanban/board"
 	"github.com/MuhmdRaouf/huddle/internal/kanban/cli"
 	"github.com/MuhmdRaouf/huddle/internal/kanban/server"
 )
@@ -130,12 +131,16 @@ func cliEntry(name string) runner {
 
 // world builds the real world one invocation runs in, the detached serve aimed
 // at this word: the child this binary spawns is `huddle kanban serve …`, so
-// the server it starts answers for the word the caller used.
+// the server it starts answers for the word the caller used. The flow commands
+// go to the local huddle hub when one answers, and stay direct when none does.
 func world(version string) cli.World {
 	w := cli.DefaultWorld(version)
 	fx := server.DefaultEffects()
 	w.SpawnServe = func(command string, args []string, logFile string) int64 {
 		return fx.SpawnServe(command, append([]string{"kanban"}, args...), logFile)
+	}
+	w.HubFlow = func(ctx context.Context, key string, req board.FlowRequest) ([]string, string, bool) {
+		return hubFlow(ctx, w.Getenv, key, req)
 	}
 	return w
 }

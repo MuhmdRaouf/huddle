@@ -16,24 +16,6 @@ import (
 // flowBodyMax is the most bytes one flow command's body may carry.
 const flowBodyMax = 64 << 10
 
-// flowRequest is one flow command: the command's name, the actor it runs for
-// and the flags the cli's own command of that name takes.
-type flowRequest struct {
-	Command  string   `json:"command"`
-	Actor    string   `json:"actor"`
-	ID       string   `json:"id"`
-	Note     string   `json:"note"`
-	Branch   string   `json:"branch"`
-	Worktree string   `json:"worktree"`
-	Until    string   `json:"until"`
-	Column   string   `json:"column"`
-	Checks   string   `json:"checks"`
-	Merge    string   `json:"merge"`
-	On       []string `json:"on"`
-	Pairs    []string `json:"pairs"`
-	Force    bool     `json:"force"`
-}
-
 // flowAnswer is one command's 200 body; the list is never null.
 type flowAnswer struct {
 	Lines []string `json:"lines"`
@@ -42,44 +24,44 @@ type flowAnswer struct {
 // flowCommands answers the command table, one entry per command the route
 // accepts, each running the board call the cli's command of the same name runs
 // with the same fields.
-func flowCommands() map[string]func(ctx context.Context, b board.Board, req flowRequest) ([]string, error) {
-	return map[string]func(context.Context, board.Board, flowRequest) ([]string, error){
-		"promote": func(ctx context.Context, b board.Board, req flowRequest) ([]string, error) {
+func flowCommands() map[string]func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
+	return map[string]func(context.Context, board.Board, board.FlowRequest) ([]string, error){
+		"promote": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Promote(ctx, board.Args{Actor: req.Actor, ID: req.ID, Force: req.Force})
 		},
-		"pull": func(ctx context.Context, b board.Board, req flowRequest) ([]string, error) {
+		"pull": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Pull(ctx, board.Args{
 				Actor: req.Actor, ID: req.ID, Branch: req.Branch,
 				Worktree: req.Worktree, Force: req.Force})
 		},
-		"review": func(ctx context.Context, b board.Board, req flowRequest) ([]string, error) {
+		"review": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Review(ctx, board.Args{Actor: req.Actor, ID: req.ID, Note: req.Note})
 		},
-		"reject": func(ctx context.Context, b board.Board, req flowRequest) ([]string, error) {
+		"reject": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Reject(ctx, board.Args{Actor: req.Actor, ID: req.ID, Note: req.Note})
 		},
-		"unblock": func(ctx context.Context, b board.Board, req flowRequest) ([]string, error) {
+		"unblock": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Unblock(ctx, board.Args{Actor: req.Actor, ID: req.ID, Note: req.Note})
 		},
-		"test": func(ctx context.Context, b board.Board, req flowRequest) ([]string, error) {
+		"test": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Test(ctx, board.Args{Actor: req.Actor, ID: req.ID, Note: req.Note})
 		},
-		"done": func(ctx context.Context, b board.Board, req flowRequest) ([]string, error) {
+		"done": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Done(ctx, board.Args{
 				Actor: req.Actor, ID: req.ID, Note: req.Note,
 				Checks: req.Checks, Merge: req.Merge})
 		},
-		"block": func(ctx context.Context, b board.Board, req flowRequest) ([]string, error) {
+		"block": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Block(ctx, board.Args{
 				Actor: req.Actor, ID: req.ID, Note: req.Note, On: req.On, Until: req.Until})
 		},
-		"move": func(ctx context.Context, b board.Board, req flowRequest) ([]string, error) {
+		"move": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Move(ctx, board.Args{Actor: req.Actor, ID: req.ID, Note: req.Note, Column: req.Column})
 		},
-		"log": func(ctx context.Context, b board.Board, req flowRequest) ([]string, error) {
+		"log": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Log(ctx, board.Args{Actor: req.Actor, ID: req.ID, Note: req.Note})
 		},
-		"set": func(ctx context.Context, b board.Board, req flowRequest) ([]string, error) {
+		"set": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Set(ctx, req.Actor, req.ID, req.Pairs)
 		},
 	}
@@ -95,7 +77,7 @@ func (t *Tab) flowRoute(w http.ResponseWriter, r *http.Request, key string) {
 // board's own refusal is 409 with its message, any other failure 500.
 func (t *Tab) serveFlow(w http.ResponseWriter, r *http.Request, key string) {
 	r.Body = http.MaxBytesReader(w, r.Body, flowBodyMax)
-	var req flowRequest
+	var req board.FlowRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {

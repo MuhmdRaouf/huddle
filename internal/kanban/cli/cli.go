@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/kanban/board"
+	"github.com/MuhmdRaouf/huddle/internal/kanban/server"
 )
 
 // World is every effect one command run can have; the binary builds the real
@@ -31,6 +33,10 @@ type World struct {
 	// ServerFetch answers one board-server request; nil is the real loopback
 	// client.
 	ServerFetch func(ctx context.Context, method, url string, header map[string]string) (int, []byte, bool)
+	// HubFlow runs one flow command through the local huddle hub: lines are
+	// the command's answer, refusal a *board.Refused's message, and handled
+	// false leaves the direct path to run. nil means no hub.
+	HubFlow func(ctx context.Context, key string, req board.FlowRequest) (lines []string, refusal string, handled bool)
 	// SpawnServe starts the detached serve; nil starts this binary.
 	SpawnServe func(command string, args []string, logFile string) int64
 	// OpenBrowser opens one url; nil is the platform opener.
@@ -411,6 +417,9 @@ func Run(ctx context.Context, w World, argv []string, stdout, stderr io.Writer) 
 		lines, err := board.Init(ctx, initRoot(ctx, w, boardPath), v.str("from"), w.Now())
 		return answer(stdout, stderr, lines, err, false)
 	}
+	if code, handled := runHubFlow(ctx, w, command, v, positional, boardPath, stdout, stderr); handled {
+		return code
+	}
 	b, closeBoard, err := boardAt(ctx, w, boardPath)
 	if err != nil {
 		fmt.Fprintln(stderr, noBoardLine)
@@ -570,6 +579,88 @@ func flowByID(ctx context.Context, b board.Board, command string, a board.Args) 
 	default:
 		return b.Unblock(ctx, a)
 	}
+}
+
+// hubFlowCommands are the flow commands the huddle hub's tab serves: one move
+// or edit of one ticket. new writes a whole ticket, and the board's remaining
+// commands (list, show, stop-line, …) are the cli's own, so none of them goes
+// to the hub.
+var hubFlowCommands = map[string]bool{
+	"promote": true, "pull": true, "review": true, "reject": true, "unblock": true,
+	"test": true, "done": true, "block": true, "move": true, "log": true, "set": true,
+}
+
+// runHubFlow sends one flow command to the huddle hub first. handled says the
+// hub answered it and code is the command's exit; anything else — no hub, no
+// answer, a board the hub does not serve — leaves the direct path to run, with
+// the same output and exit codes either way.
+func runHubFlow(ctx context.Context, w World, command string, v *flagValues, positional []string,
+	boardPath string, stdout, stderr io.Writer) (int, bool) {
+	if w.HubFlow == nil || !hubFlowCommands[command] {
+		return 0, false
+	}
+	key := hubKey(ctx, w, boardPath)
+	if key == "" {
+		return 0, false
+	}
+	lines, refusal, handled := w.HubFlow(ctx, key, hubFlowRequest(command, v, positional))
+	if !handled {
+		return 0, false
+	}
+	if refusal != "" {
+		return answer(stdout, stderr, nil, &board.Refused{Message: refusal}, false), true
+	}
+	return answer(stdout, stderr, lines, nil, false), true
+}
+
+// hubFlowRequest builds the wire shape of one flow command from the parsed
+// flags, the same fields the direct path reads into board.Args.
+func hubFlowRequest(command string, v *flagValues, positional []string) board.FlowRequest {
+	req := board.FlowRequest{Command: command, Actor: v.str("actor"), ID: at(positional, 0)}
+	switch command {
+	case "promote":
+		req.Force = v.boolean("force")
+	case "pull":
+		req.ID = v.str("id")
+		req.Branch, req.Worktree = v.str("branch"), v.str("worktree")
+		req.Force = v.boolean("force")
+	case "done":
+		req.Note, req.Checks, req.Merge = v.str("note"), v.str("checks"), v.str("merge")
+	case "block":
+		req.Note, req.On, req.Until = v.str("note"), v.list("on"), v.str("until")
+	case "move":
+		req.Note, req.Column = v.str("note"), at(positional, 1)
+	case "set":
+		req.Pairs = positional[1:]
+	default: // review, reject, unblock, test, log
+		req.Note = v.str("note")
+	}
+	return req
+}
+
+// hubKey answers the key the hub's tab computes for the board this run
+// resolves: the repository's origin when one answers, else the path key — so
+// both clones of one repository name one board. Empty when no board resolves.
+func hubKey(ctx context.Context, w World, explicit string) string {
+	b, err := board.Resolve(explicit, w.Getenv, w.Cwd())
+	if err != nil {
+		return ""
+	}
+	root := filepath.Dir(filepath.Dir(b.Root)) // the repo: the parent of .agents
+	return board.RepoKey(originOf(ctx, root), server.KeyOf(b.Root))
+}
+
+// originOf answers the repository's origin URL from git's own config: one read
+// bounded at a second, empty on any error, so a repo without an origin keeps
+// the path key and no command waits on it.
+func originOf(ctx context.Context, repoRoot string) string {
+	callCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(callCtx, "git", "-C", repoRoot, "config", "--get", "remote.origin.url").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // at answers the positional at i, "" when it is not there.
