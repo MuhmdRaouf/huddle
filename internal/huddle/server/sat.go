@@ -513,6 +513,33 @@ func (s *server) relayFlowToHub(ctx context.Context, key string, body []byte) (i
 	return status, answer, true
 }
 
+// readFromHub carries one read of a board the hub hosts onto it and answers the hub's response
+// for the tab to stream through (KBN-SAT-READS). Reads may show the last local state while the
+// hub cannot be reached — the page already carries its stale marker — so a transport error
+// falls back to the local copy, and so do no link, a key the hub does not list and the hub's
+// own 404; any other hub answer is the page's.
+func (s *server) readFromHub(ctx context.Context, key, path string) (*http.Response, bool) {
+	s.satMu.Lock()
+	link := s.satLink
+	s.satMu.Unlock()
+	if link == nil {
+		return nil, false
+	}
+	hosted, _ := link.HubBoards(ctx)
+	if !hosted[key] {
+		return nil, false
+	}
+	response, err := link.Read(ctx, key, path)
+	if err != nil {
+		return nil, false
+	}
+	if response.StatusCode == http.StatusNotFound {
+		_ = response.Body.Close()
+		return nil, false
+	}
+	return response, true
+}
+
 // wakeAppliedItem wakes this machine's own permission polls and streams the moment a decision
 // from the hub lands on one of its items: the terminal prompt must end at once, not on the
 // next re-poll.

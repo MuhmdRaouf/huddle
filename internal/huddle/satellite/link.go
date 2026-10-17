@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -72,6 +73,10 @@ type Link struct {
 	hubURL     string
 	credential string
 	client     *http.Client
+	// readClient carries the board reads a relayed page asks for (KBN-SAT-READS):
+	// no overall timeout, so the hub's event stream lasts as long as the hub
+	// holds it, and a dial bound so a hub that never accepts costs one connect.
+	readClient *http.Client
 	now        func() time.Time
 	log        func(string)
 	wake       func(int64)
@@ -111,8 +116,27 @@ func New(o Options) *Link {
 	return &Link{
 		reg: o.Reg, home: o.Home, hubURL: o.HubURL, credential: o.Credential,
 		client: client, now: now, log: log, wake: o.Wake,
+		readClient: readClientOf(o.Client),
 		flushEvery: flushEvery, pollWait: pollWait,
 	}
+}
+
+// readClientOf answers the client the board reads go through: no overall timeout, so a live
+// stream lasts, but a hub that never connects, never finishes its handshake or never sends its
+// headers is given up on after 5 s. A link built with its own client keeps that client's
+// transport, and with it whatever trust the client was given.
+func readClientOf(given *http.Client) *http.Client {
+	if given != nil {
+		reads := *given
+		reads.Timeout = 0
+		return &reads
+	}
+	return &http.Client{Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: 5 * time.Second,
+	}}
 }
 
 // Run links the machine to its hub until the context ends: one goroutine forwards what this
@@ -395,6 +419,21 @@ func (l *Link) Flow(ctx context.Context, key string, body []byte) (status int, a
 		return 0, nil, err
 	}
 	return response.StatusCode, raw, nil
+}
+
+// Read carries one read of a hub-hosted board to the hub under this machine's credential
+// (KBN-SAT-READS) and answers the hub's response whole — status, headers and streaming body —
+// for the caller to write through. The request runs on the caller's context, so the body ends
+// when that context does, and the caller closes it; the read client carries no overall timeout,
+// so the hub's event stream can last.
+func (l *Link) Read(ctx context.Context, key, path string) (*http.Response, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		l.hubURL+kanbantab.Prefix+"/b/"+key+"/api/"+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	l.authorize(request)
+	return l.readClient.Do(request)
 }
 
 // HubBoards answers the set of board keys the hub serves, held for hubBoardsEvery so a relayed

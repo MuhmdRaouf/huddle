@@ -1,9 +1,10 @@
 // Package kanbantab serves the boards of the sessions huddle knows about under
 // /api/kanban: the read routes the kanban page loads with, answered in-process
-// by each board's own app with no port of its own, and the flow commands that
-// write a board's cards. Huddle's credential guards the prefix; the board apps
-// run without the Host guard the standalone server answers with, because the
-// server that mounts them owns host and origin.
+// by each board's own app with no port of its own — or streamed from the
+// huddle that hosts the board, when a ReadRelay carries them there — and the
+// flow commands that write a board's cards. Huddle's credential guards the
+// prefix; the board apps run without the Host guard the standalone server
+// answers with, because the server that mounts them owns host and origin.
 package kanbantab
 
 import (
@@ -34,13 +35,17 @@ const Prefix = "/api/kanban"
 // took it. Relay, when set, carries one flow command for a board another
 // huddle hosts to that huddle before the local board is read; relayed names a
 // verdict to write through unchanged, false leaves the command local.
+// ReadRelay, when set, carries one GET read under a board's api/ to that
+// huddle first; relayed names a response to stream through, false leaves the
+// read on the local app.
 type Options struct {
-	Roots   func(ctx context.Context) []string
-	Origin  func(ctx context.Context, repoRoot string) string
-	Version string
-	Now     func() time.Time
-	Audit   func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
-	Relay   func(ctx context.Context, key string, body []byte) (status int, answer []byte, relayed bool)
+	Roots     func(ctx context.Context) []string
+	Origin    func(ctx context.Context, repoRoot string) string
+	Version   string
+	Now       func() time.Time
+	Audit     func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
+	Relay     func(ctx context.Context, key string, body []byte) (status int, answer []byte, relayed bool)
+	ReadRelay func(ctx context.Context, key, path string) (response *http.Response, relayed bool)
 }
 
 // entry is one mounted board: its app, the watch run under the cancel, and the
@@ -54,13 +59,14 @@ type entry struct {
 // Tab is every board a Roots pass has answered through the prefix, each held
 // with its watch running until Stop.
 type Tab struct {
-	ctx     context.Context
-	roots   func(ctx context.Context) []string
-	origin  func(ctx context.Context, repoRoot string) string
-	version string
-	now     func() time.Time
-	audit   func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
-	relay   func(ctx context.Context, key string, body []byte) (int, []byte, bool)
+	ctx       context.Context
+	roots     func(ctx context.Context) []string
+	origin    func(ctx context.Context, repoRoot string) string
+	version   string
+	now       func() time.Time
+	audit     func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
+	relay     func(ctx context.Context, key string, body []byte) (int, []byte, bool)
+	readRelay func(ctx context.Context, key, path string) (*http.Response, bool)
 
 	mu     sync.Mutex
 	apps   map[string]*entry
@@ -78,14 +84,15 @@ func Mount(ctx context.Context, opts Options) *Tab {
 		opts.Origin = originOf
 	}
 	return &Tab{
-		ctx:     ctx,
-		roots:   opts.Roots,
-		origin:  opts.Origin,
-		version: opts.Version,
-		now:     opts.Now,
-		audit:   opts.Audit,
-		relay:   opts.Relay,
-		apps:    map[string]*entry{},
+		ctx:       ctx,
+		roots:     opts.Roots,
+		origin:    opts.Origin,
+		version:   opts.Version,
+		now:       opts.Now,
+		audit:     opts.Audit,
+		relay:     opts.Relay,
+		readRelay: opts.ReadRelay,
+		apps:      map[string]*entry{},
 	}
 }
 
@@ -129,7 +136,10 @@ func (t *Tab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // serveBoard hands one request to its board's app: the key decides the board,
 // the rest of the path is the app's own to answer. The slash after the key is
-// the cut's separator, so the app's path gains its own leading slash back.
+// the cut's separator, so the app's path gains its own leading slash back. A
+// GET read under the board's api/ asks the ReadRelay first: a board another
+// huddle hosts is that huddle's to answer, its event stream included, and
+// anything the relay does not take serves from the local app.
 func (t *Tab) serveBoard(w http.ResponseWriter, r *http.Request, tail string) {
 	key, rest, _ := strings.Cut(tail, "/")
 	if key == "" {
@@ -140,6 +150,12 @@ func (t *Tab) serveBoard(w http.ResponseWriter, r *http.Request, tail string) {
 		t.flowRoute(w, r, key)
 		return
 	}
+	if t.readRelay != nil && relayedRead(r.Method, rest) {
+		if response, relayed := t.readRelay(r.Context(), key, strings.TrimPrefix(rest, "api/")); relayed {
+			writeRelayedRead(w, response)
+			return
+		}
+	}
 	app := t.appFor(r.Context(), key)
 	if app == nil {
 		writeJSON(w, http.StatusNotFound, errorAnswer{Error: "no board " + key})
@@ -149,6 +165,48 @@ func (t *Tab) serveBoard(w http.ResponseWriter, r *http.Request, tail string) {
 	forwarded.URL.Path = "/" + rest
 	forwarded.URL.RawPath = ""
 	app.API().ServeHTTP(w, forwarded)
+}
+
+// relayedRead answers whether one board path is a read another huddle may
+// answer: a GET under the board's own api/, never the control routes — refresh
+// and shutdown are the standalone server's, and a satellite pulls nothing of
+// them.
+func relayedRead(method, rest string) bool {
+	return method == http.MethodGet && strings.HasPrefix(rest, "api/") &&
+		rest != "api/refresh" && rest != "api/shutdown"
+}
+
+// writeRelayedRead streams one relayed read through: the hub's status, its
+// answer headers, then its body with a flush after every write, so the event
+// stream reaches the page as the hub sends it. The stream ends when the client
+// or the hub does — the read runs on the request's context, and the hub's body
+// ends with it.
+func writeRelayedRead(w http.ResponseWriter, response *http.Response) {
+	defer func() { _ = response.Body.Close() }()
+	header := w.Header()
+	if ct := response.Header.Get("Content-Type"); ct != "" {
+		header.Set("Content-Type", ct)
+	}
+	if cc := response.Header.Get("Cache-Control"); cc != "" {
+		header.Set("Cache-Control", cc)
+	}
+	w.WriteHeader(response.StatusCode)
+	flusher, _ := w.(http.Flusher)
+	buffer := make([]byte, 32*1024)
+	for {
+		n, err := response.Body.Read(buffer)
+		if n > 0 {
+			if _, werr := w.Write(buffer[:n]); werr != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 // appFor answers the board's app, starting its watch on first use; nil when no

@@ -53,7 +53,8 @@ Two machines work one board when they share the repository it belongs to:
 - The hub away, the satellite answers one plain line and changes nothing: a claim needs the hub's answer and
   is never queued.
 - `new` stays local: a ticket is written to the clone the session sits in, never through the hub.
-- The hub's Kanban tab shows the shared board. A satellite's own Kanban tab shows its local copy.
+- Both machines' Kanban tabs show the hub's board, its live event stream included. While the hub is away, a
+  satellite's tab shows its local copy.
 
 ## Other agents
 

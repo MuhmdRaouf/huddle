@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -270,6 +271,90 @@ func TestRelayFlowToHubAnswersTheBranches(t *testing.T) {
 	want := fmt.Sprintf("the hub at %s is unreachable; a claim needs its answer, try again when it is back", hubSrv.URL)
 	if line.Error != want {
 		t.Fatalf("the 503 line = %q, want %q", line.Error, want)
+	}
+}
+
+// TestReadFromHubAnswersTheBranches pins the read relay's wiring (KBN-SAT-READS): no link and a
+// board the hub does not list stay local, the hub's 404 falls back to the local copy, any other
+// hub answer is the page's, and a hub that cannot be reached costs the read its local copy.
+func TestReadFromHubAnswersTheBranches(t *testing.T) {
+	var mu sync.Mutex
+	boardReads := 0
+	hubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/kanban/boards":
+			_, _ = w.Write([]byte(`{"boards":[{"key":"held12345678"},{"key":"gone87654321"}]}`))
+		case strings.HasPrefix(r.URL.Path, "/api/kanban/b/"):
+			key, _, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/api/kanban/b/"), "/")
+			if key == "gone87654321" {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"no board gone87654321"}`))
+				return
+			}
+			mu.Lock()
+			boardReads++
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{\"cards\":[{\"id\":\"R-1\",\"column\":\"in-progress\"}]}\n"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(hubSrv.Close)
+	db, err := hub.Open(context.Background(), filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatalf("open the registry: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	link := satellite.New(satellite.Options{
+		Reg: db, Home: home.Home{Root: t.TempDir()},
+		HubURL: hubSrv.URL, Credential: "hsat_test-credential-0001",
+	})
+	wired := &server{}
+	read := func(key string) (*http.Response, bool) {
+		return wired.readFromHub(context.Background(), key, "board")
+	}
+
+	// no link yet: nothing leaves the machine
+	if response, relayed := read("held12345678"); relayed || response != nil {
+		t.Fatalf("a server with no link relayed %v (%v), want nothing", relayed, response)
+	}
+	wired.satMu.Lock()
+	wired.satLink, wired.satHubURL = link, hubSrv.URL
+	wired.satMu.Unlock()
+
+	// a board the hub does not list stays local, without a read call
+	if response, relayed := read("nothere000000"); relayed || response != nil {
+		t.Fatalf("a board the hub does not list relayed %v (%v), want the local copy", relayed, response)
+	}
+	mu.Lock()
+	calls := boardReads
+	mu.Unlock()
+	if calls != 0 {
+		t.Fatalf("the hub took %d reads, want none", calls)
+	}
+
+	// the hub's 404 falls back to the local copy
+	if response, relayed := read("gone87654321"); relayed || response != nil {
+		t.Fatalf("a hub 404 relayed %v (%v), want the local copy", relayed, response)
+	}
+
+	// any other hub answer is the page's, its headers and body whole
+	response, relayed := read("held12345678")
+	if !relayed || response == nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("the relayed read = %v (%v), want the hub's 200", response, relayed)
+	}
+	raw, _ := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if !strings.Contains(string(raw), `"column":"in-progress"`) {
+		t.Fatalf("the relayed body = %s, want the hub's board", raw)
+	}
+
+	// a hub that cannot be reached costs the read its local copy
+	hubSrv.Close()
+	if response, relayed := read("held12345678"); relayed || response != nil {
+		t.Fatalf("a read at the dead hub relayed %v (%v), want the local copy", relayed, response)
 	}
 }
 

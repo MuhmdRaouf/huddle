@@ -567,6 +567,9 @@ func Serve(ctx context.Context, o Options) error {
 			// a satellite relays the boards its hub hosts onto it (sat.go): the tab
 			// asks per command, and a solo machine's nil link answers nothing
 			Relay: s.relayFlowToHub,
+			// its reads of those boards come from the hub too, its live event
+			// stream included, with the local copy standing in while the hub is away
+			ReadRelay: s.readFromHub,
 		})
 		mux.Handle(kanbantab.Prefix, s.kanban)
 		mux.Handle(kanbantab.Prefix+"/", s.kanban)

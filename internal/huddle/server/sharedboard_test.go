@@ -2,8 +2,8 @@ package server
 
 // The shared board's own proof (KBN-SHARED): one card, two machines, one holder. Twenty pulls
 // of the same card at one moment — ten at the hub's own tab, ten at the satellite's local tab,
-// where they relay onto the hub — leave exactly one claim on the hub's kanban.db, and the hub's
-// live event stream carries the move within a second of the satellite's answer.
+// where they relay onto the hub — leave exactly one claim on the hub's kanban.db, and both
+// machines' live event streams carry the move within a second of the satellite's answer.
 
 import (
 	"bufio"
@@ -26,6 +26,8 @@ type sharedBoard struct {
 	hubBase, satBase string
 	hubRoot, satRoot string
 	key              string
+	stopHub          func()
+	hubDone          <-chan error
 }
 
 // startSharedBoard builds both machines the way two real machines link: one origin cloned in two
@@ -81,7 +83,8 @@ func startSharedBoard(t *testing.T, id string) *sharedBoard {
 	return &sharedBoard{
 		hubBase: hubBase, satBase: satBase,
 		hubRoot: hubRoot, satRoot: satRoot,
-		key: board.RepoKey(origin, kanban.KeyOf(hubRoot)),
+		key:     board.RepoKey(origin, kanban.KeyOf(hubRoot)),
+		stopHub: stopHub, hubDone: hubDone,
 	}
 }
 
@@ -207,29 +210,6 @@ func untilEvent(t *testing.T, events <-chan sseEvent, failed <-chan error, bound
 	}
 }
 
-// during reads one stream for the whole bound and fails the test when an event matches: the
-// assertion that something never crossed.
-func during(t *testing.T, events <-chan sseEvent, failed <-chan error, bound time.Duration,
-	what string, match func(name, data string) bool) {
-	t.Helper()
-	deadline := time.After(bound)
-	for {
-		select {
-		case event, open := <-events:
-			if !open {
-				return
-			}
-			if match(event.name, event.data) {
-				t.Fatalf("%s crossed: %s", what, event.data)
-			}
-		case err := <-failed:
-			t.Fatalf("%s: the stream failed: %v", what, err)
-		case <-deadline:
-			return
-		}
-	}
-}
-
 // TestOneCardPulledFromBothMachinesHasExactlyOneHolder is the race the shared board promises:
 // twenty pulls of one card at one moment, half through the hub's own tab and half through the
 // satellite's local tab (each relaying onto the hub), and exactly one claim stands — on the
@@ -307,11 +287,10 @@ func TestOneCardPulledFromBothMachinesHasExactlyOneHolder(t *testing.T) {
 	}
 }
 
-// TestBothEventStreamsSeeTheMoveWithinASecond proves the move reaches the pages live: the hub's
-// stream carries the satellite's claim within a second of its answer. The satellite's own
-// stream reads its local copy — only flow commands relay onto the hub, reads stay local — so it
-// keeps showing its own board, where the card never left ready; reads of the shared board
-// through the relay are the gap this pin leaves open.
+// TestBothEventStreamsSeeTheMoveWithinASecond proves the move reaches both machines' pages live:
+// the satellite's reads and its event stream come from the hub for a board the hub hosts
+// (KBN-SAT-READS), so its stream carries the claim within a second of its answer too, and each
+// machine's page reads the hub's board through its own tab.
 func TestBothEventStreamsSeeTheMoveWithinASecond(t *testing.T) {
 	rig := startSharedBoard(t, "SH-1")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -333,16 +312,44 @@ func TestBothEventStreamsSeeTheMoveWithinASecond(t *testing.T) {
 			strings.Contains(data, `"column":"in-progress"`)
 	}
 	untilEvent(t, hubEvents, hubFailed, time.Second, "the hub's SH-1 move", moved)
-	during(t, satEvents, satFailed, 2*time.Second, "the hub's move on the satellite's stream", moved)
+	untilEvent(t, satEvents, satFailed, time.Second, "the satellite's SH-1 move", moved)
 
-	// each machine's page reads its own tab: the hub's board carries the move, the
-	// satellite's its unchanged copy
+	// each machine's page reads its own tab, and both tabs answer the hub's board
 	status, boardBody := call(t, rig.hubBase, http.MethodGet, "/api/kanban/b/"+rig.key+"/api/board", "hub-token", "", "")
 	if status != 200 || !strings.Contains(boardBody, `"column":"in-progress"`) {
 		t.Fatalf("the hub's board = %d %s, want SH-1 in in-progress", status, boardBody)
 	}
 	status, boardBody = call(t, rig.satBase, http.MethodGet, "/api/kanban/b/"+rig.key+"/api/board", "sat-token", "", "")
+	if status != 200 || !strings.Contains(boardBody, `"column":"in-progress"`) {
+		t.Fatalf("the satellite's board = %d %s, want the hub's SH-1 in in-progress", status, boardBody)
+	}
+}
+
+// TestAStoppedHubLeavesTheSatelliteServingItsLocalCopy proves the read fallback: with the hub
+// away, the satellite's board read answers its own local copy — no error page — because a read
+// may show the last local state while the hub cannot be reached.
+func TestAStoppedHubLeavesTheSatelliteServingItsLocalCopy(t *testing.T) {
+	rig := startSharedBoard(t, "SH-1")
+
+	// one pull through the satellite, so the hub holds the card in-progress and the
+	// satellite's read path knows the hub hosts the board
+	status, body := call(t, rig.satBase, http.MethodPost, "/api/kanban/b/"+rig.key+"/flow", "sat-token", "",
+		`{"command":"pull","actor":"w1","id":"SH-1"}`)
+	if status != 200 || !strings.Contains(body, "in-progress") {
+		t.Fatalf("the satellite's pull = %d %s, want 200 with the card's new column", status, body)
+	}
+
+	rig.stopHub()
+	select {
+	case <-rig.hubDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the hub never stopped")
+	}
+
+	// the satellite's own tab answers its local copy: the card never moved there
+	status, boardBody := call(t, rig.satBase, http.MethodGet, "/api/kanban/b/"+rig.key+"/api/board", "sat-token", "", "")
 	if status != 200 || !strings.Contains(boardBody, `"column":"ready"`) {
-		t.Fatalf("the satellite's own board = %d %s, want SH-1 still in ready", status, boardBody)
+		t.Fatalf("the satellite's board with the hub away = %d %s, want 200 with its local copy (SH-1 in ready)",
+			status, boardBody)
 	}
 }
