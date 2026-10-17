@@ -78,7 +78,8 @@ func TestThePlanCoversTheHooksJsonLines(t *testing.T) {
 					t.Fatalf("hooks.json runs the %s event line twice", word)
 				}
 				seen[word] = entry.Timeout
-				parts, planned := Events[word]
+				parts := Parts(word)
+				planned := parts != nil
 				if !planned {
 					t.Fatalf("hooks.json runs hook %s, the plan has no such event", word)
 				}
@@ -99,13 +100,13 @@ func TestThePlanCoversTheHooksJsonLines(t *testing.T) {
 			}
 		}
 	}
-	for word := range Events {
+	for word := range Events() {
 		if _, ran := seen[word]; !ran {
 			t.Errorf("the plan plans %s, hooks.json runs no such line", word)
 		}
 	}
 	for word := range wantParts {
-		if _, planned := Events[word]; !planned {
+		if Parts(word) == nil {
 			t.Errorf("the old lines' coverage names %s, the plan has no such event", word)
 		}
 	}
@@ -124,7 +125,7 @@ func TestEveryPartKeepsItsHandlersWorstCase(t *testing.T) {
 	}
 	for part, ms := range worst {
 		largest := time.Duration(0)
-		for _, parts := range Events {
+		for _, parts := range Events() {
 			for _, listed := range parts {
 				if listed.Name == part && listed.Budget > largest {
 					largest = listed.Budget
@@ -146,4 +147,35 @@ func namesOf(parts []Part) []string {
 		out = append(out, part.Name)
 	}
 	return out
+}
+
+func TestBudget(t *testing.T) {
+	cases := []struct {
+		event, part string
+		want        time.Duration
+		ok          bool
+	}{
+		{"stop", "stop", 6000 * time.Millisecond, true},
+		{"session-start", "kanban", 2500 * time.Millisecond, true},
+		{"no-such-event", "report", 0, false},
+		{"pre-compact", "report", 0, false},
+	}
+	for _, c := range cases {
+		got, ok := Budget(c.event, c.part)
+		if got != c.want || ok != c.ok {
+			t.Errorf("Budget(%q, %q) = %v, %v; want %v, %v", c.event, c.part, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestEventsIsAFreshTableEachCall(t *testing.T) {
+	first := Events()
+	first["stop"][0].Budget = 0
+	delete(first, "pre-compact")
+	if got, _ := Budget("stop", "stop"); got != 6000*time.Millisecond {
+		t.Fatalf("a caller's change reached the plan: stop budget %v", got)
+	}
+	if Parts("pre-compact") == nil {
+		t.Fatal("a caller's delete reached the plan")
+	}
 }

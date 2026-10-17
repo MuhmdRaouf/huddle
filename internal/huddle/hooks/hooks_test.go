@@ -417,7 +417,7 @@ func ownLineTimeout(t *testing.T, hook string) (int, bool) {
 // event whose parts hold it.
 func largestBudget(hook string) (time.Duration, bool) {
 	largest, found := time.Duration(0), false
-	for _, parts := range hookplan.Events {
+	for _, parts := range hookplan.Events() {
 		for _, part := range parts {
 			if part.Name == hook && part.Budget > largest {
 				largest, found = part.Budget, true

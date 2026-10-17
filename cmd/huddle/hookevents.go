@@ -32,7 +32,7 @@ const stdinBudget = 750 * time.Millisecond
 func eventHook(event string) entry {
 	return func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		payload := readStdinOnce(stdinBudget)
-		for _, part := range hookplan.Events[event] {
+		for _, part := range hookplan.Parts(event) {
 			if out, ok := runPart(ctx, part, payload); ok {
 				_, _ = stdout.Write(out)
 			}

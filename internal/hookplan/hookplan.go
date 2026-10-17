@@ -17,57 +17,65 @@ type Part struct {
 	Budget time.Duration
 }
 
-// Events maps every event the plugin serves to its parts, in the order they run.
-var Events = map[string][]Part{
-	"session-start": {
-		{"session-start", 3000 * time.Millisecond},
-		{"report", 1900 * time.Millisecond},
-		{"radar", 1600 * time.Millisecond},
-		{"kanban", 2500 * time.Millisecond},
-	},
-	"user-prompt-submit": {
-		{"listen", 2600 * time.Millisecond},
-		{"report", 1300 * time.Millisecond},
-		{"radar", 600 * time.Millisecond},
-	},
-	"pre-tool-use": {
-		{"report", 4500 * time.Millisecond},
-	},
-	"post-tool-use": {
-		{"listen", 3000 * time.Millisecond},
-		{"report", 1500 * time.Millisecond},
-	},
-	"notification": {
-		{"report", 1900 * time.Millisecond},
-		{"radar", 2600 * time.Millisecond},
-	},
-	"permission-request": {
-		{"report", 4500 * time.Millisecond},
-	},
-	"stop": {
-		{"stop", 6000 * time.Millisecond},
-		{"report", 1900 * time.Millisecond},
-		{"radar", 1500 * time.Millisecond},
-	},
-	"subagent-start": {
-		{"radar", 4500 * time.Millisecond},
-	},
-	"subagent-stop": {
-		{"report", 1900 * time.Millisecond},
-		{"radar", 2600 * time.Millisecond},
-	},
-	"session-end": {
-		{"report", 1900 * time.Millisecond},
-		{"radar", 2600 * time.Millisecond},
-	},
-	"pre-compact": {
-		{"radar", 4500 * time.Millisecond},
-	},
+// Events maps every event the plugin serves to its parts, in the order they run. Each call builds
+// a fresh table, so no caller can change another's plan.
+func Events() map[string][]Part {
+	return map[string][]Part{
+		"session-start": {
+			{"session-start", 3000 * time.Millisecond},
+			{"report", 1900 * time.Millisecond},
+			{"radar", 1600 * time.Millisecond},
+			{"kanban", 2500 * time.Millisecond},
+		},
+		"user-prompt-submit": {
+			{"listen", 2600 * time.Millisecond},
+			{"report", 1300 * time.Millisecond},
+			{"radar", 600 * time.Millisecond},
+		},
+		"pre-tool-use": {
+			{"report", 4500 * time.Millisecond},
+		},
+		"post-tool-use": {
+			{"listen", 3000 * time.Millisecond},
+			{"report", 1500 * time.Millisecond},
+		},
+		"notification": {
+			{"report", 1900 * time.Millisecond},
+			{"radar", 2600 * time.Millisecond},
+		},
+		"permission-request": {
+			{"report", 4500 * time.Millisecond},
+		},
+		"stop": {
+			{"stop", 6000 * time.Millisecond},
+			{"report", 1900 * time.Millisecond},
+			{"radar", 1500 * time.Millisecond},
+		},
+		"subagent-start": {
+			{"radar", 4500 * time.Millisecond},
+		},
+		"subagent-stop": {
+			{"report", 1900 * time.Millisecond},
+			{"radar", 2600 * time.Millisecond},
+		},
+		"session-end": {
+			{"report", 1900 * time.Millisecond},
+			{"radar", 2600 * time.Millisecond},
+		},
+		"pre-compact": {
+			{"radar", 4500 * time.Millisecond},
+		},
+	}
+}
+
+// Parts answers the parts the named event runs, in order; nil for an event the plugin does not serve.
+func Parts(event string) []Part {
+	return Events()[event]
 }
 
 // Budget answers the deadline the named part owns on the named event.
 func Budget(event, part string) (time.Duration, bool) {
-	for _, listed := range Events[event] {
+	for _, listed := range Parts(event) {
 		if listed.Name == part {
 			return listed.Budget, true
 		}
