@@ -73,6 +73,70 @@ func TestPairPrintsTheLinkCodeAndQR(t *testing.T) {
 	}
 }
 
+// TestHubBaseURLCarriesTheNonDefaultPort pins the hub's public base: the name alone when the
+// listener serves 443, the port appended when it serves anything else — a link without the port
+// opens nothing. An IPv6 listen address parses whole, so its port carries too, and a listen
+// whose port cannot be read leaves the URL bare.
+func TestHubBaseURLCarriesTheNonDefaultPort(t *testing.T) {
+	cases := []struct {
+		name   string
+		listen string
+		want   string
+	}{
+		{"no listen at all", "", "https://hub.raouf.dev"},
+		{"443 stays bare", "127.0.0.1:443", "https://hub.raouf.dev"},
+		{"8443 is appended", "127.0.0.1:8443", "https://hub.raouf.dev:8443"},
+		{"an IPv6 listen keeps its port", "[::1]:8443", "https://hub.raouf.dev:8443"},
+		{"an IPv6 listen on 443 stays bare", "[2001:db8::1]:443", "https://hub.raouf.dev"},
+		{"a listen without a port stays bare", "127.0.0.1", "https://hub.raouf.dev"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hubBaseURL("hub.raouf.dev", tc.listen); got != tc.want {
+				t.Errorf("hubBaseURL(hub.raouf.dev, %q) = %q, want %q", tc.listen, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPairCarriesThePortTheHubListensOn pins the printed links against the bug: with hub.listen
+// on 8443, the pairing link (and the QR code over it) and the satellite's join line all name the
+// port — a bare hub.raouf.dev link opens nothing.
+func TestPairCarriesThePortTheHubListensOn(t *testing.T) {
+	homeDir, w := oneHome(t)
+	cfg := savedCfg(t, homeDir)
+	cfg.Hub.Host = "hub.raouf.dev"
+	cfg.Hub.Listen = "127.0.0.1:8443"
+	if err := home.SaveConfig(home.Home{Root: homeDir}, cfg); err != nil {
+		t.Fatalf("save the config: %v", err)
+	}
+
+	code, out, errOut := pairOut(t, w, []string{"pair", "--name", "iPhone"})
+	if code != 0 {
+		t.Fatalf("huddle pair = %d: %s", code, errOut)
+	}
+	if regexp.MustCompile(`https://hub\.raouf\.dev:8443/pair#[A-Z2-7]{26}`).FindString(out) == "" {
+		t.Fatalf("the link does not carry the hub's port:\n%s", out)
+	}
+	if strings.Contains(out, "https://hub.raouf.dev/pair#") {
+		t.Errorf("a bare link without the port is on the terminal:\n%s", out)
+	}
+	if !strings.Contains(out, "▀") && !strings.Contains(out, "█") {
+		t.Errorf("no QR code was printed:\n%s", out)
+	}
+
+	code, out, errOut = pairOut(t, w, []string{"pair", "--satellite", "--name", "studio"})
+	if code != 0 {
+		t.Fatalf("huddle pair --satellite = %d: %s", code, errOut)
+	}
+	if regexp.MustCompile(`huddle join-hub https://hub\.raouf\.dev:8443 (hsat_[A-Za-z0-9_-]{20,64})`).FindStringSubmatch(out) == nil {
+		t.Fatalf("the join line does not carry the hub's port:\n%s", out)
+	}
+	if strings.Contains(out, "join-hub https://hub.raouf.dev hsat_") {
+		t.Errorf("a bare join line without the port is on the terminal:\n%s", out)
+	}
+}
+
 // TestPairNeeds somewhere to point at: with no server, no saved port and no hub name, the word
 // refuses with exit 6 rather than print a link nothing answers.
 func TestPairNeedsAPort(t *testing.T) {

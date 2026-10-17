@@ -10,6 +10,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
+	"strconv"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
@@ -17,6 +19,18 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/mdp/qrterminal/v3"
 )
+
+// hubBaseURL answers the hub's public https base: the name alone when the hub listener serves
+// 443, the port appended when it serves anything else — a printed link without the port opens
+// nothing. A listen whose port cannot be read leaves the URL bare.
+func hubBaseURL(host, listen string) string {
+	if _, port, err := net.SplitHostPort(listen); err == nil {
+		if n, err := strconv.Atoi(port); err == nil && n > 0 && n < 65536 && n != 443 {
+			return fmt.Sprintf("https://%s:%d", host, n)
+		}
+	}
+	return "https://" + host
+}
 
 // Pair mints one pairing link and prints it: a QR code to scan, the link itself, the code both
 // sides compare, and the name the device pairs as.
@@ -43,15 +57,17 @@ func Pair(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 		fmt.Fprintf(stderr, "huddle: %v\n", err)
 		return 1
 	}
-	host, scheme, port := cfg.Hub.Host, "https", 0
-	if host == "" {
+	base, port := "", 0
+	if cfg.Hub.Host == "" {
 		port = pairPort(ctx, w, root)
 		if port <= 0 {
 			fmt.Fprintln(stderr, "huddle: no server to pair with: run `huddle up` first (or set hub.host in config.toml)")
 			return 6
 		}
 		// a passkey needs a domain relying party: browsers refuse one on a bare IP address
-		host, scheme = fmt.Sprintf("localhost:%d", port), "http"
+		base = fmt.Sprintf("http://localhost:%d", port)
+	} else {
+		base = hubBaseURL(cfg.Hub.Host, cfg.Hub.Listen)
 	}
 	p, done, err := pairCore(ctx, root, cfg.Hub.Host, port)
 	if err != nil {
@@ -64,7 +80,7 @@ func Pair(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 		fmt.Fprintf(stderr, "huddle: could not mint the pairing link: %v\n", err)
 		return 1
 	}
-	link := fmt.Sprintf("%s://%s/pair#%s", scheme, host, invite.Token)
+	link := fmt.Sprintf("%s/pair#%s", base, invite.Token)
 	qrterminal.GenerateHalfBlock(link, qrterminal.L, stdout)
 	fmt.Fprintf(stdout, "\nPair this device as %s\n\n  %s\n\n  code %s · expires in 5 minutes · one use\n", name, link, invite.Code)
 	fmt.Fprintf(stdout, "  open the link (or scan the code), check the code matches, create the passkey\n")
@@ -144,7 +160,7 @@ func pairSatellite(ctx context.Context, w *World, root, name string, stdout, std
 	}
 	url := ""
 	if cfg.Hub.Host != "" {
-		url = "https://" + cfg.Hub.Host
+		url = hubBaseURL(cfg.Hub.Host, cfg.Hub.Listen)
 	} else if port := pairPort(ctx, w, root); port > 0 {
 		url = fmt.Sprintf("http://localhost:%d", port)
 	} else {
