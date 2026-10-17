@@ -1,7 +1,7 @@
 // radar.spec.ts — the Radar tab over seeded data: every view loads without a console error,
 // the overview's Day cards carry the fixture's exact totals, and the requests table lists the
-// three seeded calls with the inspector showing one request's numbers. Each view is reached by
-// its own page load, the way a link or a bookmark opens it.
+// three seeded calls with the inspector showing one request's numbers. The views are walked
+// through the sub-tab row in one document, the way owners switch views.
 
 import { expect, test } from "@playwright/test";
 import { ConsoleErrors, n, openTab, signIn, SEEDED, theSetup, TOTALS } from "./helpers.ts";
@@ -27,10 +27,13 @@ const VIEWS: readonly (readonly [
 test("every radar view loads with no console error", async ({ page }) => {
   const errors = new ConsoleErrors(page);
   await signIn(page); // a first signed-in load proves the cookie works before the loop
-  for (const [view, label, role, loaded] of VIEWS) {
-    // one document per view: the query differs per view, so each is a real page load that
-    // boots straight onto its view
-    await page.goto(`${theSetup().rootUrl}/?view=${view}#/radar/${view}`);
+  await openTab(page, "Radar");
+  for (const [, label, role, loaded] of VIEWS) {
+    // the sub-tab row's hash link repaints onto the view, no reload
+    await page
+      .getByRole("navigation", { name: "Radar views" })
+      .getByRole("link", { name: label })
+      .click();
     await expect(page.getByRole(role, { name: loaded }).first()).toBeVisible();
     await expect(
       page.getByRole("navigation", { name: "Radar views" }).getByRole("link", { name: label }),

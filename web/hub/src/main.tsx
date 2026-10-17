@@ -24,6 +24,7 @@ import { Overview } from "./pages/Overview.tsx";
 import { Settings } from "./pages/Settings.tsx";
 import { Team } from "./pages/Team.tsx";
 import { Today } from "./pages/Today.tsx";
+import { paintGuard } from "./paint.ts";
 import { registerServiceWorker, syncAppBadge } from "./pwa.ts";
 import { ensureRadar, stopRadar } from "./radar/mount.tsx";
 import { createRegistry } from "./registry.ts";
@@ -430,7 +431,7 @@ function ensureRadarTab(): void {
   });
 }
 
-function paint(): void {
+function paintBody(): void {
   syncBadgeCount();
   ensureRadarTab();
   const value: HuddleContextValue = {
@@ -452,6 +453,10 @@ function paint(): void {
     root,
   );
 }
+
+/** One render on the stack at a time: a radar flush landing mid-render queues one trailing
+ *  paint instead of re-entering preact's render, which would append a second whole app. */
+const paint = paintGuard(paintBody);
 
 // every store change moves the rail footer's "updated Xs ago"; the 15 s repaint tick does not
 let updatedAt = Date.now();
