@@ -959,11 +959,6 @@ func isUpdatedWith(uri string) func(*jsfmt.Value) bool {
 	}
 }
 
-// isListChanged answers a matcher for one resources/list_changed notification.
-func isListChanged(v *jsfmt.Value) bool {
-	return mcpText(v, "method") == "notifications/resources/list_changed"
-}
-
 // mcpResources answers every resource entry of a resources/list reply.
 func mcpResources(v *jsfmt.Value) []*jsfmt.Value {
 	resources := mcpField(mcpField(v, "result"), "resources")

@@ -7,7 +7,7 @@ package server
 
 import (
 	"context"
-	"crypto/elliptic"
+	"crypto/ecdh"
 	"encoding/base64"
 	"fmt"
 	"math/big"
@@ -174,15 +174,19 @@ func vapidKeysOf(private string) (vapidKeys, error) {
 	if err != nil || len(raw) == 0 || len(raw) > 66 {
 		return vapidKeys{}, fmt.Errorf("not a vapid private key")
 	}
-	curve := elliptic.P256()
 	d := new(big.Int).SetBytes(raw)
-	if d.Sign() == 0 || d.Cmp(curve.Params().N) >= 0 {
+	// a scalar wider than the key size names no P-256 key, and the fixed-size key form needs it
+	// to fit; the key's own range check (zero, and nothing at or past the curve order) runs next
+	if d.Sign() == 0 || d.BitLen() > 256 {
 		return vapidKeys{}, fmt.Errorf("not a vapid private key")
 	}
-	x, y := curve.ScalarBaseMult(raw)
+	key, err := ecdh.P256().NewPrivateKey(d.FillBytes(make([]byte, 32)))
+	if err != nil {
+		return vapidKeys{}, fmt.Errorf("not a vapid private key")
+	}
 	return vapidKeys{
 		Private: private,
-		Public:  base64.RawURLEncoding.EncodeToString(elliptic.Marshal(curve, x, y)),
+		Public:  base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes()),
 	}, nil
 }
 

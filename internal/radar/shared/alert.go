@@ -42,17 +42,7 @@ type Alert struct {
 // first and costUsd after detail.
 func (a Alert) MarshalJSON() ([]byte, error) {
 	if a.Kind == AlertBudget {
-		return domain.MarshalCompactJSON(budgetAlertOrder{
-			ID:        a.ID,
-			Kind:      a.Kind,
-			SessionID: a.SessionID,
-			AgentID:   a.AgentID,
-			Project:   a.Project,
-			Since:     a.Since,
-			Detail:    a.Detail,
-			CostUsd:   a.CostUsd,
-			Severity:  a.Severity,
-		})
+		return domain.MarshalCompactJSON(budgetAlertOrder(a))
 	}
 	return domain.MarshalCompactJSON(sessionAlertOrder{
 		Kind:      a.Kind,

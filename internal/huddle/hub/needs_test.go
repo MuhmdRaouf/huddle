@@ -77,7 +77,7 @@ func TestAQuestionSummaryIsOneCleanedLine(t *testing.T) {
 	// a control character, a bidi override and two lines in one message
 	if err := db.Report(ctx, Report{SessionID: "s-c", LastEvent: "Notification", LastEventAt: "2026-10-16T09:00:00.000Z",
 		Notification: &Notification{Type: "elicitation_dialog",
-			Message: "first‬ line‮\x00second\r\nline\ttabbed"}}); err != nil {
+			Message: "first\u202c line\u202e\x00second\r\nline\ttabbed"}}); err != nil {
 		t.Fatalf("report: %v", err)
 	}
 	items, err := db.Items(ctx, readNow)
@@ -87,7 +87,7 @@ func TestAQuestionSummaryIsOneCleanedLine(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("items = %+v, want the one question", items)
 	}
-	for _, bad := range []string{"\x00", "\r", "\n", "\t", "‬", "‮"} {
+	for _, bad := range []string{"\x00", "\r", "\n", "\t", "\u202c", "\u202e"} {
 		if strings.Contains(items[0].Summary, bad) {
 			t.Errorf("summary %q holds %q", items[0].Summary, bad)
 		}

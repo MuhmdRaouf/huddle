@@ -61,11 +61,12 @@ func wireText(t *testing.T, v any) string {
 // coseKey encodes the public key as the COSE map an attested credential carries: EC2, ES256,
 // P-256, the two coordinates as byte strings.
 func (a *softToken) coseKey() []byte {
-	x := make([]byte, 32)
-	y := make([]byte, 32)
-	a.key.PublicKey.X.FillBytes(x)
-	a.key.PublicKey.Y.FillBytes(y)
-	encoded, err := cbor.Marshal(map[int64]any{1: 2, 3: -7, -1: 1, -2: x, -3: y})
+	// the uncompressed 0x04 ‖ X ‖ Y encoding, each half 32 bytes
+	point, err := a.key.PublicKey.Bytes()
+	if err != nil {
+		panic(err)
+	}
+	encoded, err := cbor.Marshal(map[int64]any{1: 2, 3: -7, -1: 1, -2: point[1:33], -3: point[33:]})
 	if err != nil {
 		panic(err)
 	}

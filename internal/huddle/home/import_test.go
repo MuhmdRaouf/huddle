@@ -258,9 +258,7 @@ func authJSON(t *testing.T, path string) (roots, inviteSecrets, memberCreds, bro
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		t.Fatalf("parse %s: %v", path, err)
 	}
-	for _, r := range parsed.Roots {
-		roots = append(roots, r)
-	}
+	roots = append(roots, parsed.Roots...)
 	for _, i := range parsed.Invites {
 		inviteSecrets = append(inviteSecrets, i.Secret)
 	}

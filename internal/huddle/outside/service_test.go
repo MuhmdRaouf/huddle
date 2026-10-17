@@ -56,17 +56,6 @@ func serviceReadFile(path string) string {
 	return string(raw)
 }
 
-// serviceLines are a file's non-empty lines.
-func serviceLines(path string) []string {
-	var lines []string
-	for line := range strings.SplitSeq(serviceReadFile(path), "\n") {
-		if line != "" {
-			lines = append(lines, line)
-		}
-	}
-	return lines
-}
-
 // TestRenderLaunchdPlist pins the launchd agent's bytes: the label, the binary running
 // serve --foreground, started at load and kept alive, its output in the home's own log. The
 // renderer knows no platform, so both files are tested wherever the tests run.

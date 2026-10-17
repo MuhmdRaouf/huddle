@@ -4212,11 +4212,7 @@ func (c *Channel) Attention(ctx context.Context) (Attention, error) {
 	}
 	paused := []PausedItem{}
 	stale := []StaleItem{}
-	live := []SessionView{}
 	for _, s := range allSess {
-		if s.State != "left" {
-			live = append(live, s)
-		}
 		if s.Control == "pause" {
 			paused = append(paused, PausedItem{Name: s.Name, By: s.ControlBy, At: s.ControlAt})
 		}

@@ -31,9 +31,9 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/store"
 )
 
-// SliceMs is how long one slice of a pass may run before the watcher yields: a stop or another
+// Slice is how long one slice of a pass may run before the watcher yields: a stop or another
 // caller lands between slices, however large the first catch-up.
-const SliceMs = 20 * time.Millisecond
+const Slice = 20 * time.Millisecond
 
 // DefaultIntervalMs is the poll cadence a watcher without an explicit interval runs on.
 const DefaultIntervalMs int64 = 1_000
@@ -324,7 +324,7 @@ func (w *Watcher) sliceStep() (finished bool) {
 // sliceLocked runs the pass until the slice budget is out; true while work remains.
 func (w *Watcher) sliceLocked() bool {
 	start := time.Now()
-	for time.Since(start) < SliceMs {
+	for time.Since(start) < Slice {
 		if w.pass == nil || !w.pass.step() {
 			return false
 		}
@@ -1402,7 +1402,7 @@ func (w *Watcher) scanDir(dir string) ([]string, []walkDir) {
 	}
 	walkDirs := make([]walkDir, 0, len(dirs))
 	for _, dir := range dirs {
-		walkDirs = append(walkDirs, walkDir{path: dir.path, mtimeMs: dir.mtimeMs})
+		walkDirs = append(walkDirs, walkDir(dir))
 	}
 	return paths, walkDirs
 }

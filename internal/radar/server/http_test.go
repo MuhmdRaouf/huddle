@@ -188,9 +188,8 @@ func TestHttpWritesAndMetrics(t *testing.T) {
 
 // A flipping watcher tells the streams when the ingest backlog word moves.
 type flipWatcher struct {
-	mu    sync.Mutex
-	word  bool
-	flips int
+	mu   sync.Mutex
+	word bool
 }
 
 func (f *flipWatcher) CatchingUp() bool {
@@ -262,7 +261,7 @@ func TestHttpReads(t *testing.T) {
 			t.Fatalf("dial the server: %v", err)
 		}
 		defer func() { _ = conn.Close() }()
-		request := fmt.Sprintf("GET /api/summary HTTP/1.1\r\nHost: evil.test\r\nConnection: close\r\n\r\n")
+		request := "GET /api/summary HTTP/1.1\r\nHost: evil.test\r\nConnection: close\r\n\r\n"
 		if _, err := conn.Write([]byte(request)); err != nil {
 			t.Fatalf("write the probe: %v", err)
 		}

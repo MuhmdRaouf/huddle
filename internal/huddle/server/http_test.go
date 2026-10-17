@@ -243,27 +243,6 @@ func (s *childServer) kill() {
 	}
 }
 
-// stop signals a clean shutdown and answers the process's exit code.
-func (s *childServer) stop() int {
-	_ = s.cmd.Process.Signal(os.Interrupt)
-	done := make(chan int, 1)
-	go func() {
-		err := s.cmd.Wait()
-		code := 0
-		if exit, ok := err.(*exec.ExitError); ok {
-			code = exit.ExitCode()
-		}
-		done <- code
-	}()
-	select {
-	case code := <-done:
-		return code
-	case <-time.After(15 * time.Second):
-		_ = s.cmd.Process.Kill()
-		return -1
-	}
-}
-
 // request runs one HTTP request; a "Host" header names the Host header, not a real one. A write
 // that names no action gets the route's path as one, the way the real clients do; the guard
 // tests build their own requests instead.

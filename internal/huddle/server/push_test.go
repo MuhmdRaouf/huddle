@@ -8,10 +8,11 @@ package server
 // test's own subscription keys.
 
 import (
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/elliptic"
+	"crypto/ecdh"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -45,13 +46,13 @@ var pushClock = time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 type browserKeys struct {
 	p256dh  string
 	auth    string
-	private []byte
+	private *ecdh.PrivateKey
 }
 
 // newBrowserKeys draws one subscription's keys.
 func newBrowserKeys(t *testing.T) browserKeys {
 	t.Helper()
-	private, x, y, err := elliptic.GenerateKey(elliptic.P256(), rand.Reader)
+	private, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("draw the browser's key: %v", err)
 	}
@@ -60,7 +61,7 @@ func newBrowserKeys(t *testing.T) browserKeys {
 		t.Fatalf("draw the auth secret: %v", err)
 	}
 	return browserKeys{
-		p256dh:  base64.RawURLEncoding.EncodeToString(elliptic.Marshal(elliptic.P256(), x, y)),
+		p256dh:  base64.RawURLEncoding.EncodeToString(private.PublicKey().Bytes()),
 		auth:    base64.RawURLEncoding.EncodeToString(auth),
 		private: private,
 	}
@@ -270,15 +271,15 @@ func decryptPush(t *testing.T, message []byte, keys browserKeys) []byte {
 	serverPub := message[21 : 21+keyLen]
 	body := message[21+keyLen:]
 
-	curve := elliptic.P256()
 	browserPub, _ := base64.RawURLEncoding.DecodeString(keys.p256dh)
-	x, y := elliptic.Unmarshal(curve, serverPub)
-	if x == nil {
+	serverKey, err := ecdh.P256().NewPublicKey(serverPub)
+	if err != nil {
 		t.Fatal("the message's ephemeral key is not a point on the curve")
 	}
-	sx, _ := curve.ScalarMult(x, y, keys.private)
-	shared := make([]byte, 32)
-	sx.FillBytes(shared)
+	shared, err := keys.private.ECDH(serverKey)
+	if err != nil {
+		t.Fatalf("the shared secret: %v", err)
+	}
 	auth, _ := base64.RawURLEncoding.DecodeString(keys.auth)
 
 	prkInfo := append(append([]byte("WebPush: info\x00"), browserPub...), serverPub...)
@@ -545,6 +546,30 @@ func TestAGoneSubscriptionIsDropped(t *testing.T) {
 	}
 	if len(subs) != 0 {
 		t.Fatalf("the subscriptions after a 410 = %v, want none left", subs)
+	}
+}
+
+func TestTheVapidPublicHalfIsTheKeysOwnP256Point(t *testing.T) {
+	// d = 2 on P-256, a published point: the public half must be the point's exact uncompressed
+	// bytes, the encoding every browser subscription and push service reads
+	scalar := make([]byte, 32)
+	scalar[31] = 2
+	keys, err := vapidKeysOf(base64.RawURLEncoding.EncodeToString(scalar))
+	if err != nil {
+		t.Fatalf("the known key: %v", err)
+	}
+	point, err := base64.RawURLEncoding.DecodeString(keys.Public)
+	if err != nil {
+		t.Fatalf("the public half: %v", err)
+	}
+	want := append([]byte{0x04},
+		0x7c, 0xf2, 0x7b, 0x18, 0x8d, 0x03, 0x4f, 0x7e, 0x8a, 0x52, 0x38, 0x03, 0x04, 0xb5, 0x1a, 0xc3,
+		0xc0, 0x89, 0x69, 0xe2, 0x77, 0xf2, 0x1b, 0x35, 0xa6, 0x0b, 0x48, 0xfc, 0x47, 0x66, 0x99, 0x78,
+		0x07, 0x77, 0x55, 0x10, 0xdb, 0x8e, 0xd0, 0x40, 0x29, 0x3d, 0x9a, 0xc6, 0x9f, 0x74, 0x30, 0xdb,
+		0xba, 0x7d, 0xad, 0xe6, 0x3c, 0xe9, 0x82, 0x29, 0x9e, 0x04, 0xb7, 0x9d, 0x22, 0x78, 0x73, 0xd1,
+	)
+	if !bytes.Equal(point, want) {
+		t.Fatalf("the public half = %x, want the known 2·G point %x", point, want)
 	}
 }
 

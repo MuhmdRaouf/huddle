@@ -39,15 +39,6 @@ func makeEnv(t *testing.T) testEnv {
 	}
 }
 
-// cloneEnv copies a map-built env so one case's overrides never leak into the next.
-func cloneEnv(env domain.EnvLookup) domain.EnvLookup {
-	copied := make(domain.EnvLookup, len(env)+2)
-	for key, value := range env {
-		copied[key] = value
-	}
-	return copied
-}
-
 // ptr is the usual pointer-of helper.
 func ptr[T any](value T) *T { return &value }
 

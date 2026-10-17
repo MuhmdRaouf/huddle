@@ -72,14 +72,6 @@ func valueOf(t *testing.T, answer ApiResponse) *jsfmt.Value {
 	return value
 }
 
-// textOf reads a string value; empty for any other shape.
-func textOf(value *jsfmt.Value) string {
-	if value != nil && value.Kind() == jsfmt.KindString {
-		return value.Text()
-	}
-	return ""
-}
-
 // readClock is a moment after the seeds: a read always runs a little after the fixtures it
 // reads were written, and that is what pulls a request sitting exactly on a bucket boundary
 // into the bar before it.
@@ -822,28 +814,6 @@ func routeInsights(t *testing.T) *Insights {
 	})
 	t.Cleanup(created.Stop)
 	return created
-}
-
-// rootIDsOf lists one scope's top-level trees straight from the history.
-func rootIDsOf(t *testing.T, h *history.History, scope history.Scope) []string {
-	t.Helper()
-	roots, err := h.Roots(history.RootsQuery{Scope: scope, Now: readClock().UnixMilli(), LiveMs: HistoryLiveMs, Limit: 50})
-	if err != nil {
-		t.Fatalf("read the %s roots: %v", scope, err)
-	}
-	ids := make([]string, 0, len(roots))
-	for _, root := range roots {
-		ids = append(ids, root.ID)
-	}
-	return ids
-}
-
-// allTreeIDs is every top-level tree, either scope: live and history together.
-func allTreeIDs(t *testing.T, h *history.History) []string {
-	t.Helper()
-	ids := append(append([]string{}, rootIDsOf(t, h, history.ScopeLive)...), rootIDsOf(t, h, history.ScopeHistory)...)
-	slices.Sort(ids)
-	return ids
 }
 
 // one shaped row the roots assertions read.

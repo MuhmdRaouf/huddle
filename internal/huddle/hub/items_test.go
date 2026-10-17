@@ -105,8 +105,8 @@ func TestThePermissionSummaryIsOneCleanLine(t *testing.T) {
 		{"a newline becomes one space", `{"command":"rm\n-rf /tmp"}`, "Bash: rm -rf /tmp"},
 		{"a control character becomes one space", `{"command":"a\u0000b"}`, "Bash: a b"},
 		{"an escape becomes one space", `{"command":"a\u001bb"}`, "Bash: a b"},
-		{"bidi overrides become one space", `{"command":"a‮b"}`, "Bash: a b"},
-		{"bidi isolates become one space", `{"command":"a⁦b⁩"}`, "Bash: a b"},
+		{"bidi overrides become one space", `{"command":"a\u202eb"}`, "Bash: a b"},
+		{"bidi isolates become one space", `{"command":"a\u2066b\u2069"}`, "Bash: a b"},
 		{"a run of spaces collapses", `{"command":"a  b"}`, "Bash: a b"},
 	}
 	for _, tc := range cases {

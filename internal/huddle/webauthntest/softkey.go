@@ -107,11 +107,10 @@ func (k *SoftKey) authData(rpID string, flags byte, extra []byte) []byte {
 
 // attested is the attested credential data: a zero AAGUID, the credential id, the COSE key.
 func (k *SoftKey) attested(t testing.TB) []byte {
-	x := make([]byte, 32)
-	y := make([]byte, 32)
-	k.key.PublicKey.X.FillBytes(x)
-	k.key.PublicKey.Y.FillBytes(y)
-	cose := mustCBOR(t, map[int64]any{1: 2, 3: -7, -1: 1, -2: x, -3: y})
+	// the uncompressed 0x04 ‖ X ‖ Y encoding, each half 32 bytes
+	point, err := k.key.PublicKey.Bytes()
+	must(t, err)
+	cose := mustCBOR(t, map[int64]any{1: 2, 3: -7, -1: 1, -2: point[1:33], -3: point[33:]})
 	out := append([]byte{}, make([]byte, 16)...)
 	var len16 [2]byte
 	binary.BigEndian.PutUint16(len16[:], uint16(len(k.credID)))

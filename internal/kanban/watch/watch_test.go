@@ -748,7 +748,7 @@ func TestDeltaAndSnapshotJSONNames(t *testing.T) {
 			t.Errorf("snapshot JSON lacks %q: %s", key, marshal(t, s))
 		}
 	}
-	if v, _ := keys["stopLine"].(any); v != nil {
+	if v := keys["stopLine"]; v != nil {
 		t.Errorf("stopLine = %v, want null", v)
 	}
 	colKeys := marshalKeys(t, s.Columns[0])
