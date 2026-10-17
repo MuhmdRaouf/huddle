@@ -559,9 +559,12 @@ type WaitingIDs interface {
 	Delete(id string)
 }
 
-// waitingSet is a set of ids in arrival order.
+// waitingSet is a set of ids in arrival order. newest is the newest call ts the queue
+// has waited on: the mark its prune runs against, so an older copy waits its full window
+// for a route even when the session's next call is already past it.
 type waitingSet struct {
-	order orderedIDs
+	order  orderedIDs
+	newest int64
 }
 
 func newWaitingSet() *waitingSet { return &waitingSet{} }
@@ -1283,15 +1286,22 @@ func (s *Store) closestRouteLocked(routes *waitingMap, transcript shared.Request
 }
 
 // waitCopyLocked leaves a call with no twin in reach waiting under its key, pruned
-// against the call arriving now.
+// against the newest call the queue has already waited on — not the call arriving now.
+// A burst of one session's calls can sit minutes apart in stream time while arriving
+// together, and each copy's route line can still cross a pass boundary after the burst;
+// pruning against the arriving copy's own ts would evict the copy its line has not
+// passed yet, and the line would stand alone and store the call twice.
 func (s *Store) waitCopyLocked(key string, transcript shared.RequestRecord) shared.RequestRecord {
 	copies := s.lonelyCopies[key]
 	if copies == nil {
 		copies = newWaitingSet()
 		s.lonelyCopies[key] = copies
 	}
-	s.pruneWaitingLocked(copies, transcript.Ts)
+	s.pruneWaitingLocked(copies, copies.newest)
 	copies.Add(transcript.ID)
+	if transcript.Ts > copies.newest {
+		copies.newest = transcript.Ts
+	}
 	return transcript
 }
 

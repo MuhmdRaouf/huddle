@@ -364,6 +364,54 @@ func TestPruneWaiting(t *testing.T) {
 	})
 }
 
+func TestBurstCopiesKeepTheirRouteWindow(t *testing.T) {
+	t.Run("keeps an older copy's route window when a newer call of the same session waits too", func(t *testing.T) {
+		// the probe: two copies of one (session, model) 26 s apart in one burst, then the
+		// first call's route line. The older copy must still be waiting when its line comes.
+		store := newTestStore()
+		store.AddRequest(transcriptCopy(func(r *shared.RequestRecord) { r.ID = "copy-early" }), nil)
+		store.AddRequest(transcriptCopy(func(r *shared.RequestRecord) { r.ID = "copy-late"; r.Ts = routeT + 26_000 }), nil)
+		store.AddRequest(route(func(r *shared.RequestRecord) { r.ID = "route-early"; r.Ts = routeT + 800 }), nil)
+		rows := store.Requests(RequestFilter{})
+		if len(rows) != 2 {
+			t.Fatalf("requests: got %d, want 2", len(rows))
+		}
+		early := findRequest(rows, "copy-early")
+		if early == nil || early.Route == nil || early.Upstream != "api.anthropic.com" {
+			t.Errorf("copy-early: got %+v, want the call paired with its route line", early)
+		}
+		if late := findRequest(rows, "copy-late"); late == nil || late.Route != nil {
+			t.Errorf("copy-late: got %+v, want the transcript-only call", late)
+		}
+		if summary := store.Summary(); summary.Requests != 2 {
+			t.Errorf("summary requests: got %d, want 2", summary.Requests)
+		}
+	})
+
+	t.Run("pairs a route line crossing a pass boundary before the session's next copy waits", func(t *testing.T) {
+		// pass 1 tails the copy; pass 2's spool delivers the line before its phase tails the
+		// session's next copy. This boundary pairs today and must keep pairing.
+		store := newTestStore()
+		store.AddRequest(transcriptCopy(func(r *shared.RequestRecord) { r.ID = "copy-early" }), nil)
+		store.AddRequest(route(func(r *shared.RequestRecord) { r.ID = "route-early"; r.Ts = routeT + 800 }), nil)
+		store.AddRequest(transcriptCopy(func(r *shared.RequestRecord) { r.ID = "copy-late"; r.Ts = routeT + 26_000 }), nil)
+		rows := store.Requests(RequestFilter{})
+		if len(rows) != 2 {
+			t.Fatalf("requests: got %d, want 2", len(rows))
+		}
+		early := findRequest(rows, "copy-early")
+		if early == nil || early.Route == nil || early.Upstream != "api.anthropic.com" {
+			t.Errorf("copy-early: got %+v, want the call paired with its route line", early)
+		}
+		if late := findRequest(rows, "copy-late"); late == nil || late.Route != nil {
+			t.Errorf("copy-late: got %+v, want the transcript-only call", late)
+		}
+		if summary := store.Summary(); summary.Requests != 2 {
+			t.Errorf("summary requests: got %d, want 2", summary.Requests)
+		}
+	})
+}
+
 // storm feeds n unpairable transcript calls of one session and model, spaced past the match
 // window.
 func storm(store *Store, n int) {
