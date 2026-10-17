@@ -48,7 +48,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(dir)
 	huddleBin = filepath.Join(dir, "huddle")
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {
@@ -63,7 +62,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "building the huddle binary:", err)
 		os.Exit(1)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	// os.Exit would skip a defer, so the build dir goes here: the suite must leave no temp behind.
+	os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 // hookByName runs one hook by its entry-point name.

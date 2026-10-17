@@ -47,7 +47,16 @@ func TestMain(m *testing.M) {
 		runStoreChild(mode)
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	// Every throwaway directory (fakeclaude's build, the children's) lands under one root removed
+	// at the end: the suite must leave no temp behind.
+	root, err := os.MkdirTemp("", "adapters-test-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("TMPDIR", root)
+	code := m.Run()
+	os.RemoveAll(root)
+	os.Exit(code)
 }
 
 // runStoreChild is the store child the suite spawns: one mode per case, configured through

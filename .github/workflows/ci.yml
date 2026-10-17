@@ -186,9 +186,11 @@ jobs:
         run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
-      - name: Tests (race, coverage)
+      # tmpguard runs the suite with TMPDIR pointed at one empty directory and fails on any
+      # entry a test leaves there.
+      - name: Tests (race, coverage, nothing left in TMPDIR)
         timeout-minutes: 8
-        run: go test -race -timeout 7m -coverprofile=coverage.out -covermode=atomic ./...
+        run: go run ./scripts/tmpguard -race -timeout 7m -coverprofile=coverage.out -covermode=atomic ./...
       # Saved here, not only in the post step: a job that later fails or hits its cap still leaves the raced build.
       - if: always()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

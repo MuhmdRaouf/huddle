@@ -45,7 +45,7 @@ depends = ["lint"]
 run = [
   "test -z \"$(gofmt -l .)\"",
   "go vet ./...",
-  "go test -race ./...",
+  "go run ./scripts/tmpguard -race ./...",
   "bun run check",
   "bun run e2e",
 ]

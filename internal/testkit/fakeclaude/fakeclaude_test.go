@@ -27,6 +27,19 @@ import (
 
 const goldenDir = "../../../testdata/fakeclaude"
 
+// TestMain points TMPDIR at one root the suite removes: compile's build dirs (the broken-build
+// cases leave theirs too) and the subprocesses' land under it, so no run leaves a temp behind.
+func TestMain(m *testing.M) {
+	root, err := os.MkdirTemp("", "fakeclaude-test-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("TMPDIR", root)
+	code := m.Run()
+	os.RemoveAll(root)
+	os.Exit(code)
+}
+
 // goldenScenario is one recorded scenario of the manifest.
 type goldenScenario struct {
 	Name              string            `json:"name"`

@@ -49,7 +49,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "radar app tests: %v\n", err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(dir)
 	bin := filepath.Join(dir, "huddle")
 	build := exec.Command("go", "build", "-o", bin, "./cmd/huddle")
 	build.Dir = "../../.."
@@ -58,7 +57,10 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	huddleBin = bin
-	os.Exit(m.Run())
+	code := m.Run()
+	// os.Exit would skip a defer, so the build dir goes here: the suite must leave no temp behind.
+	os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 func TestRun(t *testing.T) {
