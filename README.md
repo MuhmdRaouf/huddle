@@ -50,6 +50,43 @@ A channel is a standard MCP pub/sub surface, so an agent can watch it without po
 
 Identify a session with `HUDDLE_SESSION`; no Claude Code variable is needed.
 
+## Route other agents through huddle
+
+`huddle gateway start` runs a localhost endpoint that speaks the Anthropic Messages API and the OpenAI Chat
+Completions and Responses APIs. Point a harness's base URL at it and every request goes to the upstream its model's
+route names, unchanged, while radar records the model, latency and tokens. It takes the first free port in
+18870-18879 and writes it to `$HUDDLE_HOME/gateway.port`.
+
+1. Name your upstreams in `$HUDDLE_HOME/gateway.json`:
+
+   ```json
+   {
+     "routes": [{"match": "glm-*", "upstream": "https://api.z.ai/api/anthropic"}],
+     "anthropic": "https://api.anthropic.com",
+     "openai": "https://api.openai.com"
+   }
+   ```
+
+   A model goes to the longest glob that matches it; anything else goes to its API family's default. A request is
+   forwarded byte for byte with its headers (authentication included — the gateway adds nothing and keeps nothing
+   but the route line's metadata).
+
+2. Start it and read the port:
+
+   ```sh
+   huddle gateway start        # or `huddle gateway` to keep it in the foreground
+   huddle gateway status       # stop ends it
+   ```
+
+3. Give your harness the base URL `http://127.0.0.1:<port>`:
+
+   - **Codex CLI** — `~/.codex/config.toml`, `model_providers.<x>.base_url`
+   - **opencode** — the provider's `baseURL` in its config
+   - **Crush** — `providers.<x>.base_url`
+
+A client can name itself with an `X-Huddle-Harness` header, which lands on the route line next to `via: gateway`,
+so radar tells the harnesses apart.
+
 ## Platforms
 
 macOS and Linux, on amd64 and arm64. One static binary, downloaded and checked against pinned SHA-256 digests on first

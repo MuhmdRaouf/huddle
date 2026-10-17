@@ -37,6 +37,12 @@ type RouteEvent struct {
 	Usage         *RouteUsage        `json:"usage,omitempty"`
 	Headers       *map[string]string `json:"headers,omitempty"`
 	PromptHash    *string            `json:"prompt_hash,omitempty"`
+	// Harness names the harness that sent the request as its own header said; only the huddle
+	// gateway writes it, a router has no way to know.
+	Harness string `json:"harness,omitempty"`
+	// Via names the forwarder on the line itself; the routers leave it unset and radar reads
+	// their plugin as the via.
+	Via string `json:"via,omitempty"`
 }
 
 // CaptureEvent is one distinct prompt's content, appended once per hash per router process: gzip of the JSON the

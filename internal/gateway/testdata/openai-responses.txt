@@ -1,0 +1,9 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_1","object":"response","status":"in_progress","model":"glm-5.3","output":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hi"}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":2,"response":{"id":"resp_1","object":"response","status":"completed","model":"glm-5.3","output":[],"usage":{"input_tokens":50,"input_tokens_details":{"cached_tokens":10},"output_tokens":8,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":58}}}
+

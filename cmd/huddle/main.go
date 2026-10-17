@@ -1,7 +1,7 @@
 // Command huddle is the huddle binary: one dispatch over the plugin's entry points (the CLI,
 // the MCP server, the HTTP server and the hooks), each behind the subcommand the plugin invokes
-// it with, over radar's and kanban's command lines (the radar and kanban words), and over the
-// binary's own words for running without Claude Code (alone.go).
+// it with, over radar's, kanban's and the gateway's command lines (the radar, kanban and gateway
+// words), and over the binary's own words for running without Claude Code (alone.go).
 package main
 
 import (
@@ -9,12 +9,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	kanbanapp "github.com/MuhmdRaouf/huddle/internal/kanban/app"
 	radarapp "github.com/MuhmdRaouf/huddle/internal/radar/app"
 
+	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/gateway"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 )
 
@@ -34,8 +38,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "huddle %s\n", version)
 		return 0
 	}
-	// The satellite words: radar and kanban run their own command lines inside this binary,
-	// ahead of every huddle word and the legacy import — a radar or kanban invocation never
+	// The satellite words: radar, kanban and the gateway run their own command lines inside this
+	// binary, ahead of every huddle word and the legacy import — a satellite invocation never
 	// imports a huddle home.
 	if len(args) > 0 {
 		switch args[0] {
@@ -43,6 +47,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return radarapp.Run(args[1:], stdout, stderr, version)
 		case "kanban":
 			return kanbanapp.Run(args[1:], stdout, stderr, version)
+		case "gateway":
+			return gateway.Run(args[1:], stdout, stderr, gateway.RunOptions{
+				Env:    envOf(os.Environ()),
+				Signal: foregroundSignals(),
+			})
 		}
 	}
 	command, rest := splitCommand(args)
@@ -71,6 +80,24 @@ func importLegacy(key string) {
 		budget = hookImportBudget
 	}
 	cli.ImportLegacy(context.Background(), &cli.World{}, budget)
+}
+
+// foregroundSignals is the channel a foreground run ends on: the process's SIGTERM and interrupt,
+// so a detached child stops cleanly and cleans its files up.
+func foregroundSignals() <-chan os.Signal {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM, os.Interrupt)
+	return signals
+}
+
+// envOf splits an ordered environment into the lookup the state resolvers take.
+func envOf(environ []string) domain.EnvLookup {
+	env := make(domain.EnvLookup, len(environ))
+	for _, entry := range environ {
+		key, value, _ := strings.Cut(entry, "=")
+		env[key] = value
+	}
+	return env
 }
 
 // splitCommand mirrors the CLI's argument split: a --flag takes the next argument as its value
