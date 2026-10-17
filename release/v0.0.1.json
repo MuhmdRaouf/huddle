@@ -4,23 +4,23 @@
   "assets": {
     "darwin-amd64": {
       "name": "huddle-darwin-amd64",
-      "sha256": "0c4ef4cc4592673fa377a78d5b78c4a0f0efab1c0bea4e53a280fe131b347856",
-      "size": 23614240
+      "sha256": "64696d8fa525349deb20d65dd83101f9ecb46987c4df49386cafc9fcac58a2cb",
+      "size": 23794256
     },
     "darwin-arm64": {
       "name": "huddle-darwin-arm64",
-      "sha256": "8efd0b67a5999c87ad14061ece5e750af738f913d1237ebfd8233f8ab3f06346",
-      "size": 22225122
+      "sha256": "3a6a96bbd7a87ceaf6cf5d2c76e9b62a54bfe3f7447b8e4d389beb8b2a80b1d7",
+      "size": 22395970
     },
     "linux-amd64": {
       "name": "huddle-linux-amd64",
-      "sha256": "ecbb39fd4059baa6e6599e4363665bddbadca5574d84268b5c84d193dbdc3436",
-      "size": 23392380
+      "sha256": "29ce135acf57595344dc47cd9ab908570823726783ffacb6260f05da2c39eb5d",
+      "size": 23568508
     },
     "linux-arm64": {
       "name": "huddle-linux-arm64",
-      "sha256": "15e5903ca3199a11bf12eced3389af3559dd6db3a662df3bc143ea6d354fd939",
-      "size": 21954684
+      "sha256": "650aee3c6b602b7f85544b05dd5152b55c444795840e0dd2bee276dc61f67098",
+      "size": 22085756
     }
   }
 }
