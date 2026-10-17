@@ -801,8 +801,14 @@ func TestWriterContainment(t *testing.T) {
 		if stats.Requests != int64(requests) {
 			t.Errorf("the stored requests: got %d, want %d", stats.Requests, requests)
 		}
-		if !testkit.RaceEnabled && elapsed >= 2*time.Second {
-			t.Errorf("the write load: %s for 5,000 requests, want under 2s", elapsed)
+		// atomic coverage counters slow every statement; the limit stays a load check, not a
+		// benchmark of the instrumented build
+		limit := 2 * time.Second
+		if testing.CoverMode() == "atomic" {
+			limit = 6 * time.Second
+		}
+		if !testkit.RaceEnabled && elapsed >= limit {
+			t.Errorf("the write load: %s for 5,000 requests, want under %s", elapsed, limit)
 		}
 	})
 }
