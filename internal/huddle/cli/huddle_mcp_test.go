@@ -951,6 +951,316 @@ func TestStdioBridgePushes(t *testing.T) {
 	})
 }
 
+// isUpdatedWith answers a matcher for one resources/updated notification naming uri.
+func isUpdatedWith(uri string) func(*jsfmt.Value) bool {
+	return func(v *jsfmt.Value) bool {
+		return mcpText(v, "method") == "notifications/resources/updated" &&
+			mcpText(mcpField(v, "params"), "uri") == uri
+	}
+}
+
+// isListChanged answers a matcher for one resources/list_changed notification.
+func isListChanged(v *jsfmt.Value) bool {
+	return mcpText(v, "method") == "notifications/resources/list_changed"
+}
+
+// mcpResources answers every resource entry of a resources/list reply.
+func mcpResources(v *jsfmt.Value) []*jsfmt.Value {
+	resources := mcpField(mcpField(v, "result"), "resources")
+	if resources == nil || resources.Kind() != jsfmt.KindArray {
+		return nil
+	}
+	return resources.Items()
+}
+
+// mcpResourceOf answers one resource entry of a resources/list reply by its uri, nil when absent.
+func mcpResourceOf(v *jsfmt.Value, uri string) *jsfmt.Value {
+	for _, r := range mcpResources(v) {
+		if mcpText(r, "uri") == uri {
+			return r
+		}
+	}
+	return nil
+}
+
+// mcpOpJSON runs one channel operation as a plain HTTP client and answers the decoded body.
+func mcpOpJSON(t *testing.T, u, channel, name, as, body, token string) *jsfmt.Value {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, u+"/api/c/"+channel+"/op/"+name+"?as="+as, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("x-huddle-token", token)
+	req.Header.Set(server.ActionHeader, "/api/c/"+channel+"/op/"+name)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("op %s: %v", name, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		t.Fatalf("op %s = %d: %s", name, resp.StatusCode, string(raw))
+	}
+	value, err := jsfmt.DecodeValue(raw)
+	if err != nil {
+		t.Fatalf("op %s body: %v", name, err)
+	}
+	return value
+}
+
+// mcpLastSeq answers the channel's newest event seq.
+func mcpLastSeq(t *testing.T, u, channel, token string) int64 {
+	t.Helper()
+	answer := mcpOpJSON(t, u, channel, "events", "a", `{"limit":1}`, token)
+	result := mcpField(answer, "result")
+	if result == nil || result.Kind() != jsfmt.KindArray || len(result.Items()) == 0 {
+		return 0
+	}
+	return int64(mcpNumberOf(mcpField(result.Items()[len(result.Items())-1], "seq")))
+}
+
+func TestInitializeDeclaresResourcesAndListChanged(t *testing.T) {
+	b := runMcpBridge(t, "", map[string]string{"HUDDLE_PUSH": "off"})
+	init := b.until(8000, mcpIDIs("1"))
+	if init == nil {
+		t.Fatal("no initialize answer")
+	}
+	caps := mcpField(mcpField(init, "result"), "capabilities")
+	resources := mcpField(caps, "resources")
+	if resources == nil {
+		t.Fatalf("capabilities = %s, want a resources object", caps.EncodeJSON())
+	}
+	for _, flag := range []string{"subscribe", "listChanged"} {
+		if field := mcpField(resources, flag); field == nil || field.EncodeJSON() != "true" {
+			t.Errorf("resources.%s = %v, want true", flag, field)
+		}
+	}
+	if field := mcpField(mcpField(caps, "tools"), "listChanged"); field == nil || field.EncodeJSON() != "true" {
+		t.Errorf("tools.listChanged = %v, want true", field)
+	}
+}
+
+func TestResourcesListNamesTheChannelTopics(t *testing.T) {
+	u := startMcpHuddle(t, mcpRootToken)
+	mcpOp(t, u, "cr", "join", "a", "{}", mcpRootToken)
+	mcpOp(t, u, "cr", "join", "b", "{}", mcpRootToken)
+	mcpOp(t, u, "cr", "publish", "a", `{"topic":"note.ready","msg":"one"}`, mcpRootToken)
+	mcpOp(t, u, "cr", "publish", "a", `{"topic":"build.done","msg":"two"}`, mcpRootToken)
+	b := runMcpBridge(t, "", map[string]string{
+		"HUDDLE_URL": u, "HUDDLE_CHANNEL": "cr", "HUDDLE_AS": "b", "HUDDLE_TOKEN": mcpRootToken,
+		"HUDDLE_PUSH": "off",
+	})
+	b.send(`{"jsonrpc":"2.0","id":2,"method":"resources/list"}`)
+	listed := b.until(8000, mcpIDIs("2"))
+	if listed == nil {
+		t.Fatal("no resources/list answer")
+	}
+	for _, uri := range []string{"huddle://cr/events", "huddle://cr/topic/note.ready", "huddle://cr/topic/build.done"} {
+		entry := mcpResourceOf(listed, uri)
+		if entry == nil {
+			t.Errorf("resources/list has no %s (got %v)", uri, mcpResources(listed))
+			continue
+		}
+		if mime := mcpText(entry, "mimeType"); mime != "application/json" {
+			t.Errorf("%s mimeType = %q, want application/json", uri, mime)
+		}
+	}
+}
+
+func TestResourcesReadReturnsEventsAfterCursor(t *testing.T) {
+	u := startMcpHuddle(t, mcpRootToken)
+	mcpOp(t, u, "cd", "join", "a", "{}", mcpRootToken)
+	mcpOp(t, u, "cd", "join", "b", "{}", mcpRootToken)
+	mcpOp(t, u, "cd", "publish", "a", `{"topic":"ev.one","msg":"first"}`, mcpRootToken)
+	mcpOp(t, u, "cd", "publish", "a", `{"topic":"ev.two","msg":"second"}`, mcpRootToken)
+	seq := mcpLastSeq(t, u, "cd", mcpRootToken)
+	mcpOp(t, u, "cd", "publish", "a", `{"topic":"ev.three","msg":"third"}`, mcpRootToken)
+	b := runMcpBridge(t, "", map[string]string{
+		"HUDDLE_URL": u, "HUDDLE_CHANNEL": "cd", "HUDDLE_AS": "b", "HUDDLE_TOKEN": mcpRootToken,
+		"HUDDLE_PUSH": "off",
+	})
+	uri := fmt.Sprintf("huddle://cd/events?after=%d", seq)
+	b.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":%q}}`, uri))
+	read := b.until(8000, mcpIDIs("2"))
+	if read == nil {
+		t.Fatal("no resources/read answer")
+	}
+	contents := mcpField(mcpField(read, "result"), "contents")
+	if contents == nil || contents.Kind() != jsfmt.KindArray || len(contents.Items()) != 1 {
+		t.Fatalf("read = %s, want one content entry", read.EncodeJSON())
+	}
+	entry := contents.Items()[0]
+	if got := mcpText(entry, "uri"); got != uri {
+		t.Errorf("content uri = %q, want %q", got, uri)
+	}
+	if mime := mcpText(entry, "mimeType"); mime != "application/json" {
+		t.Errorf("content mimeType = %q, want application/json", mime)
+	}
+	events, err := jsfmt.DecodeValue([]byte(mcpText(entry, "text")))
+	if err != nil {
+		t.Fatalf("content text is not JSON: %v: %q", err, mcpText(entry, "text"))
+	}
+	if events.Kind() != jsfmt.KindArray || len(events.Items()) != 1 {
+		t.Fatalf("content holds %d events, want the one after the cursor", len(events.Items()))
+	}
+	if topic := mcpText(events.Items()[0], "topic"); topic != "ev.three" {
+		t.Errorf("event topic = %q, want ev.three", topic)
+	}
+	// a read answers at most 100 events
+	for i := 0; i < 105; i++ {
+		mcpOp(t, u, "cd", "publish", "a", fmt.Sprintf(`{"topic":"ev.bulk","msg":"n%d"}`, i), mcpRootToken)
+	}
+	b.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":%q}}`, uri))
+	capped := b.until(8000, mcpIDIs("3"))
+	if capped == nil {
+		t.Fatal("no answer to the capped read")
+	}
+	capContents := mcpField(mcpField(capped, "result"), "contents")
+	if capContents == nil || capContents.Kind() != jsfmt.KindArray || len(capContents.Items()) != 1 {
+		t.Fatalf("capped read = %s, want one content entry", capped.EncodeJSON())
+	}
+	capEvents, err := jsfmt.DecodeValue([]byte(mcpText(capContents.Items()[0], "text")))
+	if err != nil {
+		t.Fatalf("capped content text is not JSON: %v", err)
+	}
+	if n := len(capEvents.Items()); n != 100 {
+		t.Errorf("capped read holds %d events, want at most 100", n)
+	}
+}
+
+func TestSubscribeSendsUpdatedOnAMatchingEvent(t *testing.T) {
+	u := startMcpHuddle(t, mcpRootToken)
+	mcpOp(t, u, "cs", "join", "a", "{}", mcpRootToken)
+	mcpOp(t, u, "cs", "join", "b", "{}", mcpRootToken)
+	b := runMcpBridge(t, "", map[string]string{
+		"HUDDLE_URL": u, "HUDDLE_CHANNEL": "cs", "HUDDLE_AS": "b", "HUDDLE_TOKEN": mcpRootToken,
+	})
+	uri := "huddle://cs/topic/note.ready"
+	b.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"resources/subscribe","params":{"uri":%q}}`, uri))
+	if ack := b.until(8000, mcpIDIs("2")); ack == nil {
+		t.Fatal("no answer to the subscribe")
+	}
+	mcpOp(t, u, "cs", "publish", "a", `{"topic":"note.ready","msg":"for the subscriber"}`, mcpRootToken)
+	if updated := b.until(2000, isUpdatedWith(uri)); updated == nil {
+		t.Fatal("no resources/updated within 2 s of the publish")
+	}
+}
+
+func TestUnsubscribeStops(t *testing.T) {
+	u := startMcpHuddle(t, mcpRootToken)
+	mcpOp(t, u, "cu", "join", "a", "{}", mcpRootToken)
+	mcpOp(t, u, "cu", "join", "b", "{}", mcpRootToken)
+	b := runMcpBridge(t, "", map[string]string{
+		"HUDDLE_URL": u, "HUDDLE_CHANNEL": "cu", "HUDDLE_AS": "b", "HUDDLE_TOKEN": mcpRootToken,
+	})
+	uri := "huddle://cu/topic/note.ready"
+	b.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"resources/subscribe","params":{"uri":%q}}`, uri))
+	if ack := b.until(8000, mcpIDIs("2")); ack == nil {
+		t.Fatal("no answer to the subscribe")
+	}
+	mcpOp(t, u, "cu", "publish", "a", `{"topic":"note.ready","msg":"while subscribed"}`, mcpRootToken)
+	if b.until(2000, isUpdatedWith(uri)) == nil {
+		t.Fatal("no resources/updated while subscribed")
+	}
+	b.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"resources/unsubscribe","params":{"uri":%q}}`, uri))
+	if ack := b.until(8000, mcpIDIs("3")); ack == nil {
+		t.Fatal("no answer to the unsubscribe")
+	}
+	mcpOp(t, u, "cu", "publish", "a", `{"topic":"note.ready","msg":"after unsubscribing"}`, mcpRootToken)
+	deadline := time.Now().Add(1500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if got := len(b.out.findAll(isUpdatedWith(uri))); got != 1 {
+			t.Fatalf("resources/updated arrived %d times after the unsubscribe, want once", got)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestPollToolReturnsAfterCursorOrTimesOut(t *testing.T) {
+	u := startMcpHuddle(t, mcpRootToken)
+	mcpOp(t, u, "cpl", "join", "a", "{}", mcpRootToken)
+	mcpOp(t, u, "cpl", "join", "b", "{}", mcpRootToken)
+	mcpOp(t, u, "cpl", "publish", "a", `{"topic":"poll.one","msg":"early"}`, mcpRootToken)
+	seq := mcpLastSeq(t, u, "cpl", mcpRootToken)
+	mcpOp(t, u, "cpl", "publish", "a", `{"topic":"poll.two","msg":"later"}`, mcpRootToken)
+	b := runMcpBridge(t, "", map[string]string{
+		"HUDDLE_URL": u, "HUDDLE_CHANNEL": "cpl", "HUDDLE_AS": "b", "HUDDLE_TOKEN": mcpRootToken,
+		"HUDDLE_PUSH": "off",
+	})
+	b.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"poll","arguments":{"after":%d}}}`, seq))
+	got := b.until(8000, mcpIDIs("2"))
+	if got == nil {
+		t.Fatal("no answer to poll")
+	}
+	if mcpErrorOf(got) {
+		t.Fatalf("poll is an error: %s", mcpContentText(got))
+	}
+	events, err := jsfmt.DecodeValue([]byte(mcpContentText(got)))
+	if err != nil {
+		t.Fatalf("poll result is not JSON: %v: %q", err, mcpContentText(got))
+	}
+	if events.Kind() != jsfmt.KindArray || len(events.Items()) != 1 {
+		t.Fatalf("poll returned %d events, want the one after the cursor", len(events.Items()))
+	}
+	if topic := mcpText(events.Items()[0], "topic"); topic != "poll.two" {
+		t.Errorf("poll event topic = %q, want poll.two", topic)
+	}
+	after := mcpLastSeq(t, u, "cpl", mcpRootToken)
+	// b has unread events, so a single server wait would wake at once: poll must still hold the
+	// call until its timeout, or a harness spins on empty answers.
+	started := time.Now()
+	b.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"poll","arguments":{"after":%d,"timeout_ms":1500}}}`, after))
+	timed := b.until(8000, mcpIDIs("3"))
+	if timed == nil {
+		t.Fatal("no answer to the timing-out poll")
+	}
+	if text := mcpContentText(timed); text != "[]" {
+		t.Errorf("timing-out poll = %q, want []", text)
+	}
+	if held := time.Since(started); held < 1400*time.Millisecond {
+		t.Errorf("timing-out poll answered after %v, want it held about 1.5 s", held)
+	}
+}
+
+func TestSessionWithoutClaudeJoinsAndPublishes(t *testing.T) {
+	u := startMcpHuddle(t, mcpRootToken)
+	state := t.TempDir()
+	b := runMcpBridge(t, "", map[string]string{
+		"HUDDLE_TOKEN": "", "HUDDLE_URL": "", "HUDDLE_CHANNEL": "", "HUDDLE_AS": "",
+		"HUDDLE_HOME":        filepath.Join(state, "home"),
+		"CLAUDE_PROJECT_DIR": "",
+		"XDG_STATE_HOME":     state,
+		"HUDDLE_SESSION":     "s-agent",
+		"HUDDLE_PUSH":        "off",
+	})
+	invite := mcpInvite(t, u, "cagent")
+	b.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"join","arguments":{"host_port":"127.0.0.1:%s","token":%q,"as":"agentx"}}}`, mcpPort(u), invite))
+	joined := b.until(8000, mcpIDIs("2"))
+	if joined == nil {
+		t.Fatal("no answer to the join")
+	}
+	if text := mcpContentText(joined); !strings.Contains(text, "as agentx") || mcpErrorOf(joined) {
+		t.Fatalf("join = %q, want it to name agentx without an error", text)
+	}
+	b.send(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"publish","arguments":{"topic":"agent.ready","msg":"published without Claude"}}}`)
+	pub := b.until(8000, mcpIDIs("3"))
+	if pub == nil {
+		t.Fatal("no answer to the publish")
+	}
+	if mcpErrorOf(pub) {
+		t.Fatalf("publish = %q, want no error", mcpContentText(pub))
+	}
+	answer := mcpOpJSON(t, u, "cagent", "events", "a", `{"topic":"agent.ready"}`, mcpRootToken)
+	result := mcpField(answer, "result")
+	if result == nil || result.Kind() != jsfmt.KindArray || len(result.Items()) == 0 {
+		t.Fatalf("the published event never reached the channel: %s", answer.EncodeJSON())
+	}
+	if from := mcpText(result.Items()[len(result.Items())-1], "from"); from != "agentx" {
+		t.Errorf("the event is from %q, want agentx", from)
+	}
+}
+
 func TestMcpReadsJavaScriptShapes(t *testing.T) {
 	value := func(text string) *jsfmt.Value {
 		v, err := jsfmt.DecodeValue([]byte(text))

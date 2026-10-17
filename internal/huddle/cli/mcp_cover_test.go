@@ -111,18 +111,18 @@ func TestOpListAnswersTheResultListOrSaysWhy(t *testing.T) {
 		}
 	})
 	b := &mcpBridge{w: w, url: fake.server.URL, channelName: "c", me: "a", callMS: 1000}
-	items, err := b.opList(context.Background(), "inbox", jsfmt.Object(nil, nil))
+	items, err := b.opList(context.Background(), "inbox", jsfmt.Object(nil, nil), 1000)
 	if err != nil || len(items) != 2 {
 		t.Errorf("opList(inbox) = (%d items, %v)", len(items), err)
 	}
-	if _, err := b.opList(context.Background(), "events", jsfmt.Object(nil, nil)); err == nil {
+	if _, err := b.opList(context.Background(), "events", jsfmt.Object(nil, nil), 1000); err == nil {
 		t.Error("opList over garbage answered no error")
 	}
-	if _, err := b.opList(context.Background(), "map", jsfmt.Object(nil, nil)); err == nil || !strings.Contains(err.Error(), "no result list") {
+	if _, err := b.opList(context.Background(), "map", jsfmt.Object(nil, nil), 1000); err == nil || !strings.Contains(err.Error(), "no result list") {
 		t.Errorf("opList over an object result = %v", err)
 	}
 	gone := &mcpBridge{w: w, url: "http://127.0.0.1:1", channelName: "c", me: "a", callMS: 500}
-	if _, err := gone.opList(context.Background(), "inbox", jsfmt.Object(nil, nil)); err == nil {
+	if _, err := gone.opList(context.Background(), "inbox", jsfmt.Object(nil, nil), 500); err == nil {
 		t.Error("opList over an unreachable huddle answered no error")
 	}
 }

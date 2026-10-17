@@ -4,8 +4,10 @@
 // else is forwarded to this session's Huddle (POST /mcp/<channel>?as=<you>) and the answer is
 // written out as it came. While connected it follows the channel's live stream and writes each
 // event meant for this session (addressed to it, an ask, or a pushed topic) as a
-// notifications/claude/channel push, so an idle session wakes up without polling. stdout is the
-// protocol; diagnostics go to stderr.
+// notifications/claude/channel push, so an idle session wakes up without polling; the same
+// stream drives the standard MCP resource surface: the channel's events and topics read as
+// resources, a subscription told with notifications/resources/updated, and the poll tool for
+// clients without subscriptions. stdout is the protocol; diagnostics go to stderr.
 package cli
 
 import (
@@ -46,6 +48,16 @@ var mcpJoinURL = regexp.MustCompile(`^https?://[\w.-]+:\d+$`)
 // mcpProtocolVersion is the MCP revision the bridge speaks when the client names none.
 const mcpProtocolVersion = "2025-06-18"
 
+// Poll and resource-read bounds: one read answers at most this many events, and a poll waits at
+// most mcpPollMaxMS, and mcpPollDefaultMS when the caller names no timeout.
+const (
+	mcpReadLimit     = 100
+	mcpPollMaxMS     = 60000
+	mcpPollDefaultMS = 25000
+	// mcpPollRecheck paces a poll whose wait woke without anything after the cursor.
+	mcpPollRecheck = 250 * time.Millisecond
+)
+
 // McpStdio serves one Claude Code session over stdin and stdout until stdin ends, and answers
 // the process's exit code (0: a session served).
 func McpStdio(ctx context.Context, w *World, version string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -55,10 +67,12 @@ func McpStdio(ctx context.Context, w *World, version string, stdin io.Reader, st
 	b := &mcpBridge{
 		w: w, version: version, stdout: stdout, stderr: stderr,
 		url: id.URL, channelName: id.Channel, me: id.As,
-		pushed:  map[int64]bool{},
-		wait:    id.Wait,
-		callMS:  int(jsNumber(firstNonEmpty(w.getenv("HUDDLE_CALL_TIMEOUT_MS"), "10000"))),
-		pushOff: len(id.Push) > 0 && id.Push[0] == "off",
+		pushed:   map[int64]bool{},
+		subs:     map[string]bool{},
+		knownTop: map[string]bool{},
+		wait:     id.Wait,
+		callMS:   int(jsNumber(firstNonEmpty(w.getenv("HUDDLE_CALL_TIMEOUT_MS"), "10000"))),
+		pushOff:  len(id.Push) > 0 && id.Push[0] == "off",
 	}
 	for _, glob := range id.Push {
 		b.pushGlobs = append(b.pushGlobs, regexp.MustCompile("^(?:"+mcpGlobExpr(glob)+")$"))
@@ -115,6 +129,9 @@ type mcpBridge struct {
 	pushing     bool
 	lastSeq     int64
 	pushed      map[int64]bool
+	subs        map[string]bool // resource uris this client subscribed to
+	knownTop    map[string]bool // topics a resources/list has shown
+	resListed   bool            // the client listed resources: a new topic is worth list_changed
 
 	pushGlobs []*regexp.Regexp
 	pushOff   bool
@@ -250,6 +267,14 @@ func (b *mcpBridge) forward(ctx context.Context, msg *jsfmt.Value) {
 	sent := msg
 	method := mcpMethod(msg)
 	name := mcpTextOf(mcpFieldOf(msg, "params"), "name")
+	if method == "tools/call" && name == "poll" {
+		params, _ := fieldOf(msg, "params")
+		args, _ := fieldOf(params, "arguments")
+		if id, hasID := mcpID(msg); hasID {
+			go b.pollTool(ctx, id, mcpObjectOf(args))
+		}
+		return
+	}
 	ms := b.callMS
 	if method == "tools/call" && mcpBlockingTools[name] {
 		params, _ := fieldOf(msg, "params")
@@ -354,8 +379,10 @@ func (b *mcpBridge) local(ctx context.Context, msg *jsfmt.Value) bool {
 			protocol = given
 		}
 		capabilities := jsfmt.Object(
-			[]string{"tools", "experimental"},
-			[]*jsfmt.Value{jsfmt.Object(nil, nil),
+			[]string{"tools", "resources", "experimental"},
+			[]*jsfmt.Value{
+				jsfmt.Object([]string{"listChanged"}, []*jsfmt.Value{jsfmt.Bool(true)}),
+				jsfmt.Object([]string{"subscribe", "listChanged"}, []*jsfmt.Value{jsfmt.Bool(true), jsfmt.Bool(true)}),
 				jsfmt.Object([]string{"claude/channel"}, []*jsfmt.Value{jsfmt.Object(nil, nil)})})
 		serverInfo := jsfmt.Object([]string{"name", "version"},
 			[]*jsfmt.Value{jsfmt.String("huddle"), jsfmt.String(b.version)})
@@ -384,23 +411,66 @@ func (b *mcpBridge) local(ctx context.Context, msg *jsfmt.Value) bool {
 		}
 		return ok(jsfmt.Object([]string{"tools"}, []*jsfmt.Value{jsfmt.Array(tools)}))
 	case "resources/list":
-		return ok(jsfmt.Object([]string{"resources"}, []*jsfmt.Value{jsfmt.Array(nil)}))
+		if !hasID {
+			return true
+		}
+		if !b.isIn(ctx) {
+			return ok(jsfmt.Object([]string{"resources"}, []*jsfmt.Value{jsfmt.Array(nil)}))
+		}
+		go b.resourceList(ctx, id)
+		return true
+	case "resources/read":
+		if hasID {
+			go b.resourceRead(ctx, id, mcpTextOf(params, "uri"))
+		}
+		return true
+	case "resources/subscribe":
+		b.mu.Lock()
+		b.subs[mcpTextOf(params, "uri")] = true
+		b.mu.Unlock()
+		return ok(jsfmt.Object(nil, nil))
+	case "resources/unsubscribe":
+		b.mu.Lock()
+		delete(b.subs, mcpTextOf(params, "uri"))
+		b.mu.Unlock()
+		return ok(jsfmt.Object(nil, nil))
 	case "prompts/list":
 		return ok(jsfmt.Object([]string{"prompts"}, []*jsfmt.Value{jsfmt.Array(nil)}))
 	}
 	return false
 }
 
-// mcpAllTools lists every channel operation as a tool.
+// mcpAllTools lists every channel operation as a tool, plus the bridge's own poll.
 func mcpAllTools() []*jsfmt.Value {
 	defs := channel.ToolDefs()
-	tools := make([]*jsfmt.Value, 0, len(defs))
+	tools := make([]*jsfmt.Value, 0, len(defs)+1)
 	for _, d := range defs {
 		tools = append(tools, jsfmt.Object(
 			[]string{"name", "description", "inputSchema"},
 			[]*jsfmt.Value{jsfmt.String(d.Name), jsfmt.String(d.Description), d.Schema}))
 	}
-	return tools
+	return append(tools, mcpPollDef())
+}
+
+// mcpPollDef is the poll tool as the tool list shows it: the long poll for agents whose harness
+// cannot subscribe to resources.
+func mcpPollDef() *jsfmt.Value {
+	return jsfmt.Object([]string{"name", "description", "inputSchema"}, []*jsfmt.Value{
+		jsfmt.String("poll"),
+		jsfmt.String("Long poll: the channel's events after a cursor, waiting up to timeout_ms for the topics (globs) to produce one. Returns the events as a JSON array (newest last, at most 100), or [] on timeout."),
+		jsfmt.Object([]string{"type", "properties"}, []*jsfmt.Value{
+			jsfmt.String("object"),
+			jsfmt.Object([]string{"after", "topics", "timeout_ms"}, []*jsfmt.Value{
+				jsfmt.Object([]string{"type", "description"}, []*jsfmt.Value{
+					jsfmt.String("integer"), jsfmt.String("the last seq you saw; events after it come back")}),
+				jsfmt.Object([]string{"type", "items", "description"}, []*jsfmt.Value{
+					jsfmt.String("array"), jsfmt.Object([]string{"type"}, []*jsfmt.Value{jsfmt.String("string")}),
+					jsfmt.String("topic globs, e.g. build.*; omit for any")}),
+				jsfmt.Object([]string{"type", "description"}, []*jsfmt.Value{
+					jsfmt.String("integer"), jsfmt.String("how long to wait, at most 60000")}),
+			}),
+		}),
+	})
 }
 
 // mcpOutTools lists the two tools a session that is not in a huddle has.
@@ -665,6 +735,7 @@ func (b *mcpBridge) frame(ctx context.Context, frame string) error {
 		return nil
 	case "event":
 		event, _ := fieldOf(msg, "data")
+		b.resource(event)
 		b.deliver(event, true)
 		return nil
 	}
@@ -702,7 +773,7 @@ func (b *mcpBridge) catchUp(ctx context.Context, last int64) {
 		if known {
 			events, err := b.opList(ctx, "events", jsfmt.Object(
 				[]string{"after", "limit"},
-				[]*jsfmt.Value{jsfmt.Number(float64(b.lastSeqLocked())), jsfmt.Number(500)}))
+				[]*jsfmt.Value{jsfmt.Number(float64(b.lastSeqLocked())), jsfmt.Number(500)}), b.callMS)
 			if err != nil {
 				return err
 			}
@@ -711,7 +782,7 @@ func (b *mcpBridge) catchUp(ctx context.Context, last int64) {
 			}
 			return nil
 		}
-		events, err := b.opList(ctx, "inbox", jsfmt.Object(nil, nil))
+		events, err := b.opList(ctx, "inbox", jsfmt.Object(nil, nil), b.callMS)
 		if err != nil {
 			return err
 		}
@@ -736,13 +807,13 @@ func (b *mcpBridge) lastSeqLocked() int64 {
 	return b.lastSeq
 }
 
-// opList runs one channel operation and answers its result list.
-func (b *mcpBridge) opList(ctx context.Context, name string, args *jsfmt.Value) ([]*jsfmt.Value, error) {
+// opList runs one channel operation and answers its result list; ms is the call's timeout.
+func (b *mcpBridge) opList(ctx context.Context, name string, args *jsfmt.Value, ms int) ([]*jsfmt.Value, error) {
 	s := b.state()
 	resp, err := HFetch(ctx, b.w, http.MethodPost,
 		s.url+"/api/c/"+s.channelName+"/op/"+name+"?as="+queryEscape(s.me),
 		map[string]string{"content-type": "application/json"}, []byte(args.EncodeJSON()),
-		time.Duration(b.callMS)*time.Millisecond, "")
+		time.Duration(ms)*time.Millisecond, "")
 	if err != nil {
 		return nil, err
 	}
@@ -757,6 +828,268 @@ func (b *mcpBridge) opList(ctx context.Context, name string, args *jsfmt.Value) 
 		return nil, errors.New("no result list")
 	}
 	return result.Items(), nil
+}
+
+// opWait runs the blocking wait op and answers only whether the service answered: its result (a
+// hit or a timeout) carries nothing poll needs, and it is an object, not a list.
+func (b *mcpBridge) opWait(ctx context.Context, args *jsfmt.Value, ms int) error {
+	s := b.state()
+	resp, err := HFetch(ctx, b.w, http.MethodPost,
+		s.url+"/api/c/"+s.channelName+"/op/wait?as="+queryEscape(s.me),
+		map[string]string{"content-type": "application/json"}, []byte(args.EncodeJSON()),
+		time.Duration(ms)*time.Millisecond, "")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil
+}
+
+// ── resources, subscriptions and poll ───────────────────────────────────────────────────────
+
+// mcpResource is one entry of a resources/list reply.
+type mcpResource struct {
+	URI         string
+	Name        string
+	Description string
+}
+
+// value renders the resource the way the list answers.
+func (r mcpResource) value() *jsfmt.Value {
+	return jsfmt.Object([]string{"uri", "name", "description", "mimeType"},
+		[]*jsfmt.Value{jsfmt.String(r.URI), jsfmt.String(r.Name), jsfmt.String(r.Description),
+			jsfmt.String("application/json")})
+}
+
+// mcpResourceURI names one channel resource: the whole event log, or one topic's events.
+func mcpResourceURI(channelName, topic string) string {
+	if topic == "" {
+		return "huddle://" + channelName + "/events"
+	}
+	return "huddle://" + channelName + "/topic/" + topic
+}
+
+// mcpResourceRef is one parsed resource uri: the topic (empty for the whole log) and the cursor
+// its after query names.
+type mcpResourceRef struct {
+	Topic string
+	After int64
+}
+
+// mcpParseResource reads one resource uri of this channel; ok is false for any other. Only the
+// channel this bridge sits in is served: another channel's uri is not a resource here.
+func mcpParseResource(uri, channelName string) (mcpResourceRef, bool) {
+	ref := mcpResourceRef{}
+	parsed, err := url.Parse(uri)
+	if err != nil || parsed.Scheme != "huddle" || parsed.Host != channelName {
+		return ref, false
+	}
+	switch {
+	case parsed.Path == "/events":
+	case strings.HasPrefix(parsed.Path, "/topic/"):
+		ref.Topic = strings.TrimPrefix(parsed.Path, "/topic/")
+		if ref.Topic == "" {
+			return ref, false
+		}
+	default:
+		return ref, false
+	}
+	if after := parsed.Query().Get("after"); after != "" {
+		ref.After = int64(jsNumber(after))
+	}
+	return ref, true
+}
+
+// mcpError shapes one JSON-RPC error reply for the resource methods.
+func mcpError(id *jsfmt.Value, code float64, message string) *jsfmt.Value {
+	err := jsfmt.Object([]string{"code", "message"}, []*jsfmt.Value{jsfmt.Number(code), jsfmt.String(message)})
+	return jsfmt.Object([]string{"jsonrpc", "id", "error"}, []*jsfmt.Value{jsfmt.String("2.0"), id, err})
+}
+
+// resourceList answers resources/list for a session in a huddle: the channel's event log and one
+// resource per topic the recent history shows.
+func (b *mcpBridge) resourceList(ctx context.Context, id *jsfmt.Value) {
+	s := b.state()
+	resources := []mcpResource{{
+		URI: mcpResourceURI(s.channelName, ""), Name: s.channelName + " events",
+		Description: "every event of the channel, oldest last; read one with ?after=<seq>",
+	}}
+	items, err := b.opList(ctx, "events", jsfmt.Object(nil, nil), b.callMS)
+	if err != nil {
+		b.logf("resources/list: %v", err)
+	} else {
+		seen := map[string]bool{}
+		for _, ev := range items {
+			topic := mcpTextOf(ev, "topic")
+			if topic == "" || seen[topic] {
+				continue
+			}
+			seen[topic] = true
+			resources = append(resources, mcpResource{
+				URI: mcpResourceURI(s.channelName, topic), Name: s.channelName + " topic " + topic,
+				Description: "events on " + topic + ", oldest last; read one with ?after=<seq>",
+			})
+		}
+		b.mu.Lock()
+		for topic := range seen {
+			b.knownTop[topic] = true
+		}
+		b.resListed = true
+		b.mu.Unlock()
+	}
+	values := make([]*jsfmt.Value, len(resources))
+	for i, r := range resources {
+		values[i] = r.value()
+	}
+	b.write(mcpReply(id, jsfmt.Object([]string{"resources"}, []*jsfmt.Value{jsfmt.Array(values)})))
+}
+
+// resourceRead answers resources/read: the events after the uri's cursor as one JSON text, at
+// most mcpReadLimit of them.
+func (b *mcpBridge) resourceRead(ctx context.Context, id *jsfmt.Value, uri string) {
+	s := b.state()
+	if s.url == "" || s.channelName == "" || s.me == "" {
+		b.write(mcpError(id, -32002, "huddle: "+notInYet))
+		return
+	}
+	ref, ok := mcpParseResource(uri, s.channelName)
+	if !ok {
+		b.write(mcpError(id, -32002, "huddle: unknown resource: "+uri))
+		return
+	}
+	keys := []string{"after", "limit"}
+	fields := []*jsfmt.Value{jsfmt.Number(float64(ref.After)), jsfmt.Number(mcpReadLimit)}
+	if ref.Topic != "" {
+		keys = append(keys, "topic")
+		fields = append(fields, jsfmt.String(ref.Topic))
+	}
+	items, err := b.opList(ctx, "events", jsfmt.Object(keys, fields), b.callMS)
+	if err != nil {
+		b.write(mcpError(id, -32000, "huddle: "+err.Error()))
+		return
+	}
+	content := jsfmt.Object([]string{"uri", "mimeType", "text"}, []*jsfmt.Value{
+		jsfmt.String(uri), jsfmt.String("application/json"), jsfmt.String(jsfmt.Array(items).EncodeJSON())})
+	b.write(mcpReply(id, jsfmt.Object([]string{"contents"}, []*jsfmt.Value{jsfmt.Array([]*jsfmt.Value{content})})))
+}
+
+// resource tells a subscriber that an event touched its resource: one resources/updated per
+// subscribed uri the event matches, and a resources/list_changed once a shown list gains a topic.
+func (b *mcpBridge) resource(event *jsfmt.Value) {
+	if event == nil || event.Kind() != jsfmt.KindObject {
+		return
+	}
+	topic := mcpTextOf(event, "topic")
+	channelName := b.state().channelName
+	uris := []string{mcpResourceURI(channelName, "")}
+	if topic != "" {
+		uris = append(uris, mcpResourceURI(channelName, topic))
+	}
+	b.mu.Lock()
+	subscribed := []string{}
+	for _, uri := range uris {
+		if b.subs[uri] {
+			subscribed = append(subscribed, uri)
+		}
+	}
+	listChanged := b.resListed && topic != "" && !b.knownTop[topic]
+	if listChanged {
+		b.knownTop[topic] = true
+	}
+	b.mu.Unlock()
+	for _, uri := range subscribed {
+		b.write(jsfmt.Object([]string{"jsonrpc", "method", "params"}, []*jsfmt.Value{
+			jsfmt.String("2.0"), jsfmt.String("notifications/resources/updated"),
+			jsfmt.Object([]string{"uri"}, []*jsfmt.Value{jsfmt.String(uri)})}))
+	}
+	if listChanged {
+		b.write(mcpNotification("notifications/resources/list_changed"))
+	}
+}
+
+// mcpPollArgs is the poll tool's arguments: what came after a cursor, waiting up to timeout_ms
+// for the topics.
+type mcpPollArgs struct {
+	After     int64
+	Topics    []string
+	TimeoutMS int64
+}
+
+// pollTool runs the poll tool: read what came after the cursor; when nothing is there, one wait
+// for the topics, then a second read. The answer is the events as one JSON array, [] on timeout.
+func (b *mcpBridge) pollTool(ctx context.Context, id *jsfmt.Value, args *jsfmt.Value) {
+	in := mcpPollArgs{
+		After:     int64(mcpNumberOf(mcpFieldOf(args, "after"))),
+		TimeoutMS: int64(mcpNumberOf(mcpFieldOf(args, "timeout_ms"))),
+	}
+	if items := mcpFieldOf(args, "topics"); items != nil && items.Kind() == jsfmt.KindArray {
+		for _, item := range items.Items() {
+			if item.Kind() == jsfmt.KindString && item.Text() != "" {
+				in.Topics = append(in.Topics, item.Text())
+			}
+		}
+	}
+	if in.TimeoutMS <= 0 {
+		in.TimeoutMS = mcpPollDefaultMS
+	}
+	if in.TimeoutMS > mcpPollMaxMS {
+		in.TimeoutMS = mcpPollMaxMS
+	}
+	// The server's wait wakes on any unread event, including ones before the caller's cursor, so
+	// one wait can return at once with nothing new; poll re-checks until its deadline instead of
+	// handing a harness an early empty answer it would spin on.
+	deadline := time.Now().Add(time.Duration(in.TimeoutMS) * time.Millisecond)
+	events := b.eventsAfter(ctx, in.After, in.Topics)
+	for len(events) == 0 {
+		left := time.Until(deadline)
+		if left <= 0 || ctx.Err() != nil {
+			break
+		}
+		secs := int64((left + time.Second - 1) / time.Second)
+		started := time.Now()
+		if err := b.opWait(ctx, jsfmt.Object(
+			[]string{"topics", "timeout"},
+			[]*jsfmt.Value{mcpStrings(in.Topics), jsfmt.Number(float64(secs))}),
+			b.callMS+int(secs)*1000); err != nil {
+			b.logf("poll wait: %v", err)
+		}
+		events = b.eventsAfter(ctx, in.After, in.Topics)
+		if len(events) == 0 && time.Since(started) < mcpPollRecheck {
+			select {
+			case <-ctx.Done():
+			case <-time.After(min(mcpPollRecheck, time.Until(deadline))):
+			}
+		}
+	}
+	b.write(textResult(id, jsfmt.Array(events).EncodeJSON(), false))
+}
+
+// mcpStrings is a JSON array of strings.
+func mcpStrings(items []string) *jsfmt.Value {
+	out := make([]*jsfmt.Value, len(items))
+	for i, item := range items {
+		out[i] = jsfmt.String(item)
+	}
+	return jsfmt.Array(out)
+}
+
+// eventsAfter reads the channel's events after a cursor that match the topic globs.
+func (b *mcpBridge) eventsAfter(ctx context.Context, after int64, topics []string) []*jsfmt.Value {
+	items, err := b.opList(ctx, "events", jsfmt.Object(
+		[]string{"after", "limit"},
+		[]*jsfmt.Value{jsfmt.Number(float64(after)), jsfmt.Number(mcpReadLimit)}), b.callMS)
+	if err != nil {
+		b.logf("poll events: %v", err)
+		return []*jsfmt.Value{}
+	}
+	out := []*jsfmt.Value{}
+	for _, ev := range items {
+		if channel.GlobMatch(mcpTextOf(ev, "topic"), topics) {
+			out = append(out, ev)
+		}
+	}
+	return out
 }
 
 // deliver writes one channel event meant for this session as a claude/channel push; advance
