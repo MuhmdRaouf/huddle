@@ -105,47 +105,55 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 		}
 		rep.Pid = claudePid(ctx, min(reportProcMS, left()))
 
-		raw, err := domain.MarshalCompactJSON(rep)
-		if err != nil {
-			return err
-		}
-		post := func(body []byte, ms int) bool {
-			if id.URL == "" || ms <= 0 {
-				return false
-			}
-			resp, err := cli.HFetch(ctx, w, http.MethodPost, id.URL+registryPath,
-				map[string]string{"content-type": "application/json"}, body,
-				time.Duration(ms)*time.Millisecond, input.SessionID)
-			if err != nil {
-				return false
-			}
-			defer resp.Body.Close()
-			_, _ = io.Copy(io.Discard, resp.Body)
-			return resp.StatusCode >= 200 && resp.StatusCode < 300
-		}
-		outbox := ""
-		if root := cli.Home(ctx, w); root != "" {
-			outbox = home.Home{Root: root}.Outbox()
-		}
-		// the outbox replays first, in order: a report never lands before an older one
-		if lines := readOutbox(outbox); len(lines) > 0 {
-			for i, line := range lines {
-				if !post([]byte(line), left()) {
-					// the rest stays queued, and this report queues behind it
-					writeOutbox(outbox, append(append([]string{}, lines[i:]...), string(raw)))
-					capOutbox(ctx, w, outbox)
-					return nil
-				}
-			}
-			// drop only what was replayed: another session's hook may have appended meanwhile
-			writeOutbox(outbox, dropPrefix(readOutbox(outbox), lines))
-		}
-		if post(raw, left()) {
-			return nil
-		}
-		appendOutbox(ctx, w, outbox, string(raw))
-		return nil
+		return deliverReport(ctx, w, id, rep, left)
 	})
+}
+
+// deliverReport marshals one report and lands it: the outbox replays first, in order, then
+// the post itself, and what cannot land queues behind what is already there. left answers the
+// milliseconds of the hook's budget still left. The report hook and the external word share
+// it, so every session's events reach the registry the same way.
+func deliverReport(ctx context.Context, w *cli.World, id cli.Identity, rep hub.Report, left func() int) error {
+	raw, err := domain.MarshalCompactJSON(rep)
+	if err != nil {
+		return err
+	}
+	post := func(body []byte, ms int) bool {
+		if id.URL == "" || ms <= 0 {
+			return false
+		}
+		resp, err := cli.HFetch(ctx, w, http.MethodPost, id.URL+registryPath,
+			map[string]string{"content-type": "application/json"}, body,
+			time.Duration(ms)*time.Millisecond, rep.SessionID)
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return resp.StatusCode >= 200 && resp.StatusCode < 300
+	}
+	outbox := ""
+	if root := cli.Home(ctx, w); root != "" {
+		outbox = home.Home{Root: root}.Outbox()
+	}
+	// the outbox replays first, in order: a report never lands before an older one
+	if lines := readOutbox(outbox); len(lines) > 0 {
+		for i, line := range lines {
+			if !post([]byte(line), left()) {
+				// the rest stays queued, and this report queues behind it
+				writeOutbox(outbox, append(append([]string{}, lines[i:]...), string(raw)))
+				capOutbox(ctx, w, outbox)
+				return nil
+			}
+		}
+		// drop only what was replayed: another session's hook may have appended meanwhile
+		writeOutbox(outbox, dropPrefix(readOutbox(outbox), lines))
+	}
+	if post(raw, left()) {
+		return nil
+	}
+	appendOutbox(ctx, w, outbox, string(raw))
+	return nil
 }
 
 // machineOf answers this machine's name as the home's config.toml sets it.

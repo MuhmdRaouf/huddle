@@ -33,19 +33,28 @@ type RemoveResult struct {
 	NotThere bool   // nothing of ours was in the file
 }
 
-// Install wires the entry into the named harness's config file and records the change in the
+// Install wires the entries into the named harness's config file — the MCP server, and the
+// lifecycle hooks where the harness has a mechanism for them — and records the change in the
 // ledger. A malformed config is refused before anything is written.
 func Install(ctx context.Context, hudHome string, env Env, name string, entry Entry) (InstallResult, error) {
 	a, err := ByName(name)
 	if err != nil {
 		return InstallResult{}, err
 	}
+	// the plugin shim comes first: the config names it, so a config without the file behind
+	// it would point the harness at nothing
+	shim := wantShim(hudHome, name)
+	if shim != "" {
+		if err := writeShim(shim, entry.Command); err != nil {
+			return InstallResult{}, err
+		}
+	}
 	path := a.ConfigPath(env)
 	before, existed, err := readIfExists(path)
 	if err != nil {
 		return InstallResult{}, err
 	}
-	out, err := a.Install(before, entry)
+	out, err := installAll(a, before, entry, shim)
 	if err != nil {
 		return InstallResult{}, &MalformedError{Path: path, Err: err}
 	}
@@ -63,14 +72,16 @@ func Install(ctx context.Context, hudHome string, env Env, name string, entry En
 	return InstallResult{Path: path, Changed: changed, Created: !existed, Already: !changed}, nil
 }
 
-// Remove takes the entry back out of the named harness's config file and drops the ledger's
-// record. A file install created and nothing else holds is gone entirely; a file that is back
-// to its previous bytes is said to be; an entry the user changed is left alone.
+// Remove takes every entry of ours back out of the named harness's config file — the MCP
+// server and the hook entries with it — and drops the ledger's record. A file install created
+// and nothing else holds is gone entirely; a file that is back to its previous bytes is said
+// to be; an entry the user changed is left alone, hooks and server with it.
 func Remove(ctx context.Context, hudHome string, env Env, name string, entry Entry) (RemoveResult, error) {
 	a, err := ByName(name)
 	if err != nil {
 		return RemoveResult{}, err
 	}
+	shim := wantShim(hudHome, name)
 	ledger := readLedger(ledgerPath(hudHome))
 	record, hasRecord := ledger.named(name)
 	path := a.ConfigPath(env)
@@ -87,15 +98,17 @@ func Remove(ctx context.Context, hudHome string, env Env, name string, entry Ent
 				return RemoveResult{}, err
 			}
 		}
+		removeShim(shim)
 		return RemoveResult{Path: path, NotThere: true}, nil
 	}
-	out, err := a.Remove(before, entry)
+	out, err := removeAll(a, before, entry, shim)
 	if errors.Is(err, ErrEntryChanged) {
 		if err := dropLedger(hudHome, name); err != nil {
 			return RemoveResult{}, err
 		}
 		// no entry of ours at all, or one the user's hand changed: the parse told them apart
-		if !containsEntry(a, before) {
+		if !holdsOurs(a, before, entry, shim) {
+			removeShim(shim)
 			return RemoveResult{Path: path, NotThere: true}, nil
 		}
 		return RemoveResult{Path: path, Kept: true}, nil
@@ -110,6 +123,7 @@ func Remove(ctx context.Context, hudHome string, env Env, name string, entry Ent
 		if err := dropLedger(hudHome, name); err != nil {
 			return RemoveResult{}, err
 		}
+		removeShim(shim)
 		return RemoveResult{Path: path, Removed: true, FileGone: true}, nil
 	}
 	if !bytes.Equal(out, before) {
@@ -120,8 +134,18 @@ func Remove(ctx context.Context, hudHome string, env Env, name string, entry Ent
 	if err := dropLedger(hudHome, name); err != nil {
 		return RemoveResult{}, err
 	}
+	removeShim(shim)
 	exact := hasRecord && sha256hex(out) == record.BeforeSHA256
 	return RemoveResult{Path: path, Removed: true, Exact: exact}, nil
+}
+
+// wantShim answers the plugin file path the named harness's config names, "" when its hooks
+// are config-only.
+func wantShim(hudHome, name string) string {
+	if _, isPlugin := hookFor(name).(pluginHooks); isPlugin {
+		return shimPath(hudHome)
+	}
+	return ""
 }
 
 // Status is one harness's place on this machine.
@@ -129,6 +153,7 @@ type Status struct {
 	Name      string
 	Path      string
 	Installed bool // the config holds the huddle entry
+	Hooks     bool // the config also holds huddle's hook entries
 	Available bool // the harness is here: its binary or its config directory
 }
 
@@ -136,6 +161,9 @@ type Status struct {
 func (s Status) State() string {
 	if s.Installed {
 		return "installed"
+	}
+	if s.Hooks {
+		return "hooks"
 	}
 	if s.Available {
 		return "available"
@@ -150,6 +178,7 @@ func List(env Env) []Status {
 		one := Status{Name: a.Name(), Path: a.ConfigPath(env), Available: a.Detect(env)}
 		if raw, existed, err := readIfExists(one.Path); err == nil && existed {
 			one.Installed = containsEntry(a, raw)
+			one.Hooks = holdsHooks(a, raw)
 		}
 		out = append(out, one)
 	}
@@ -215,6 +244,93 @@ func emptiedConfig(a Adapter, cfg []byte) bool {
 		return v.emptied(cfg)
 	}
 	return false
+}
+
+// installAll answers the config with every entry of ours in it: the MCP server, and the
+// harness's hook entries. Every harness ByName answers has a hook edit, so the lookup cannot
+// miss.
+func installAll(a Adapter, cfg []byte, entry Entry, shim string) ([]byte, error) {
+	out, err := a.Install(cfg, entry)
+	if err != nil {
+		return nil, err
+	}
+	return hookFor(a.Name()).install(out, entry.Command, a.Name(), shim)
+}
+
+// removeAll answers the config with every entry of ours out of it. An entry the user changed
+// — hook or server — refuses the whole remove: the file's ledger record covers both.
+func removeAll(a Adapter, cfg []byte, entry Entry, shim string) ([]byte, error) {
+	out, err := a.Remove(cfg, entry)
+	if err != nil {
+		return nil, err
+	}
+	return hookFor(a.Name()).remove(out, entry.Command, a.Name(), shim)
+}
+
+// holdsOurs answers whether any entry of ours — server or hooks — is in the config.
+func holdsOurs(a Adapter, cfg []byte, entry Entry, shim string) bool {
+	return containsEntry(a, cfg) || holdsHooks(a, cfg)
+}
+
+// holdsHooks answers whether a config holds huddle's hook entries, by the harness's own edit.
+func holdsHooks(a Adapter, cfg []byte) bool {
+	return hookFor(a.Name()).contains(cfg, "", a.Name(), "")
+}
+
+// writeShim lays the opencode plugin shim down: the bytes this install's binary runs, private
+// modes, rewritten only when they differ.
+func writeShim(path, bin string) error {
+	want := opencodeShim(bin)
+	if have, err := os.ReadFile(path); err == nil && bytes.Equal(have, want) {
+		return nil
+	}
+	return writeAtomic0600(path, want)
+}
+
+// removeShim takes the plugin shim back out; a shim that is not there is fine.
+func removeShim(path string) {
+	if path == "" {
+		return
+	}
+	_ = os.Remove(path)
+}
+
+// opencodeShim answers the plugin module huddle writes into its own home for opencode to
+// load: it maps the session events opencode fires onto the external hook word and pipes the
+// session's facts through (the payload shapes are the v1 SDK's: session.created carries the
+// session under info, session.idle names it directly). Bun runs it inside opencode; the node
+// module it imports is one Bun provides. Spawned fire and forget: a hook never holds the
+// agent, and the kill timer is the 3 s deadline the card grants one.
+func opencodeShim(bin string) []byte {
+	return fmt.Appendf(nil, `// huddle's opencode plugin: the session events opencode fires reach the hub's registry.
+// Written by huddle harness install opencode, which rewrites it; do not edit.
+// Runs: %s hook external --harness opencode --event <type>
+import { spawn } from "node:child_process";
+
+const BIN = %s;
+const EVENTS = {
+  "session.created": (p) => ({ session_id: p?.info?.id ?? "", cwd: p?.info?.directory ?? "" }),
+  "session.idle": (p) => ({ session_id: p?.sessionID ?? "", cwd: "" }),
+};
+
+export const Huddle = async () => ({
+  event: async ({ event }) => {
+    const map = event ? EVENTS[event.type] : undefined;
+    if (!map) return;
+    const payload = map(event.properties);
+    if (!payload?.session_id) return;
+    const proc = spawn(BIN,
+      ["hook", "external", "--harness", "opencode", "--event", String(event.type)],
+      { stdio: ["pipe", "ignore", "ignore"] });
+    proc.on("error", () => {});
+    proc.stdin?.on("error", () => {});
+    const timer = setTimeout(() => { try { proc.kill(); } catch {} }, 3000);
+    proc.on("exit", () => clearTimeout(timer));
+    try { proc.stdin?.end(JSON.stringify(payload)); } catch {}
+    try { proc.unref?.(); } catch {}
+  },
+});
+`, bin, jsonString(bin))
 }
 
 // sha256hex answers the hex digest of one file's bytes: what the ledger compares.

@@ -168,6 +168,19 @@ export function ContextBar({
 const whereOf = (s: RegistrySession): string =>
   [s.machine, projectName(s.project), s.branch].filter(Boolean).join(" · ");
 
+/** A session's harness as its small badge: the coding agent a non-Claude session runs in. */
+function HarnessBadge({ harness }: { harness: string }): JSX.Element {
+  return (
+    <span
+      data-harness={harness}
+      title={`This session runs in ${harness}`}
+      class="shrink-0 rounded-md border hairline px-1 py-px font-mono text-[11px] leading-4 text-base-content/70"
+    >
+      {harness}
+    </span>
+  );
+}
+
 /** The link that opens one session from the list. */
 const openHref = (s: RegistrySession): string => `#/now/${s.session_id}`;
 
@@ -199,7 +212,10 @@ function NeedsCard({
     >
       <a href={openHref(s)} class="flex min-w-0 flex-col gap-1.5 text-base-content">
         <div class="flex items-baseline justify-between gap-2">
-          <span class="truncate text-base font-semibold">{sessionName(s)}</span>
+          <span class="flex min-w-0 items-center gap-1.5">
+            <span class="truncate text-base font-semibold">{sessionName(s)}</span>
+            {s.harness ? <HarnessBadge harness={s.harness} /> : null}
+          </span>
           <span class="flex shrink-0 items-center gap-1.5">
             <StateChip state={s.state} />
             <span class="text-xs muted">{ageText(s.last_event_at, now)}</span>
@@ -246,6 +262,7 @@ function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element 
       <StateMark state={s.state} />
       <span class="flex min-w-0 items-center gap-1.5">
         <span class="min-w-0 truncate text-[15px] font-medium">{sessionName(s)}</span>
+        {s.harness ? <HarnessBadge harness={s.harness} /> : null}
         <StateChip state={s.state} />
       </span>
       {s.model ? <ModelChip model={s.model} /> : <span />}
@@ -277,6 +294,7 @@ function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolea
         <span class="min-w-0 truncate text-[15px]">
           {sessionName(s)} {s.machine ? <span class="text-[13px] muted">· {s.machine}</span> : null}
         </span>
+        {s.harness ? <HarnessBadge harness={s.harness} /> : null}
         <StateChip state={s.state} />
       </span>
       <span class="shrink-0 text-xs muted">{ageText(s.last_event_at, now)}</span>
@@ -715,6 +733,14 @@ function Chips({ s }: { s: RegistrySession }): JSX.Element {
       {s.model ? <ModelChip model={s.model} pill /> : null}
       {s.channel ? (
         <span class="rounded-full border hairline px-2.5 py-0.5 text-xs muted">#{s.channel}</span>
+      ) : null}
+      {s.harness ? (
+        <span
+          data-harness={s.harness}
+          class="rounded-full border hairline px-2.5 py-0.5 font-mono text-xs text-base-content/70"
+        >
+          {s.harness}
+        </span>
       ) : null}
     </span>
   );

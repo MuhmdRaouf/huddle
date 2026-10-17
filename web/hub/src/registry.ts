@@ -21,6 +21,8 @@ export type RegistryReport = {
   cwd?: string;
   pid?: number;
   channel?: string;
+  /** The coding agent the session runs in, when it is not Claude Code. */
+  harness?: string;
   last_event: string;
   last_event_at: string;
 };

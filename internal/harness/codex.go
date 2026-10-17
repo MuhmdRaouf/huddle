@@ -106,13 +106,19 @@ type tomlBlock struct {
 // find walks the file line by line for the markers. A begin marker with no end ends the file
 // as far as huddle is concerned: everything after it is the block.
 func (tomlAdapter) find(cfg []byte) (tomlBlock, bool) {
+	return findMarked(cfg, tomlBegin, tomlEnd)
+}
+
+// findMarked is find over any one pair of marker lines, so the MCP block and the hooks block
+// share the walk and the cut arithmetic.
+func findMarked(cfg []byte, begin, end string) (tomlBlock, bool) {
 	lines := bytes.Split(cfg, []byte("\n"))
 	beginLine, endLine := -1, -1
 	for i, line := range lines {
 		trimmed := strings.TrimRight(string(line), " \t\r")
-		if trimmed == tomlBegin && beginLine < 0 {
+		if trimmed == begin && beginLine < 0 {
 			beginLine = i
-		} else if trimmed == tomlEnd && beginLine >= 0 && endLine < 0 {
+		} else if trimmed == end && beginLine >= 0 && endLine < 0 {
 			endLine = i
 		}
 	}

@@ -325,6 +325,47 @@ describe("the Now list", () => {
     expect(localStorage.getItem("huddle:nowneeds")).toBe("false");
   });
 
+  it("badges the harness a non-Claude session runs in, and none on a Claude one", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    mountNow("phone", [
+      row({
+        session_id: "s-oc",
+        title: "board-fix",
+        machine: "studio",
+        harness: "opencode",
+        task: "Fix the board",
+      }),
+      row({ session_id: "s-cc", title: "lead", machine: "studio", task: "Release kanban 0.0.1" }),
+      row({
+        session_id: "s-idle-oc",
+        state: "idle",
+        title: "notes",
+        machine: "studio",
+        harness: "crush",
+        last_event: "Stop",
+      }),
+      row({
+        session_id: "s-need-oc",
+        state: "needs-you",
+        title: "gateway",
+        machine: "studio",
+        harness: "codex",
+        task: "Asks: keep the timeout?",
+      }),
+    ]);
+    for (const id of ["s-oc", "s-idle-oc", "s-need-oc"]) {
+      const rowEl = document.querySelector(`[data-row="${id}"]`);
+      expect(rowEl).not.toBeNull();
+      expect(rowEl?.querySelector("[data-harness]")).not.toBeNull();
+    }
+    const claude = document.querySelector('[data-row="s-cc"]');
+    expect(claude?.querySelector("[data-harness]")).toBeNull();
+    // the badge names the agent in words, so colour never carries it alone
+    expect(screen.getByText("opencode")).toBeDefined();
+    expect(screen.getByText("crush")).toBeDefined();
+    expect(screen.getByText("codex")).toBeDefined();
+  });
+
   it("draws the idle row: hollow mark, name, machine, age", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone");

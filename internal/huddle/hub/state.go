@@ -80,23 +80,25 @@ type SessionsFilter struct {
 // from the radar tab when the row is served, and stay null when radar knows nothing of the
 // session.
 type SessionRow struct {
-	SessionID      string   `json:"session_id"`
-	Machine        string   `json:"machine,omitempty"`
-	Project        string   `json:"project,omitempty"`
-	Branch         string   `json:"branch,omitempty"`
-	Title          string   `json:"title,omitempty"`
-	Task           string   `json:"task,omitempty"`
-	Model          string   `json:"model,omitempty"`
-	ContextPercent float64  `json:"context_percent,omitempty"`
-	Cwd            string   `json:"cwd,omitempty"`
-	Pid            int      `json:"pid,omitempty"`
-	Channel        string   `json:"channel,omitempty"`
-	Member         string   `json:"member,omitempty"`
-	LastEvent      string   `json:"last_event"`
-	LastEventAt    string   `json:"last_event_at"`
-	CostUSD        *float64 `json:"cost_usd"`
-	Provider       *string  `json:"provider"`
-	State          string   `json:"state"`
+	SessionID      string  `json:"session_id"`
+	Machine        string  `json:"machine,omitempty"`
+	Project        string  `json:"project,omitempty"`
+	Branch         string  `json:"branch,omitempty"`
+	Title          string  `json:"title,omitempty"`
+	Task           string  `json:"task,omitempty"`
+	Model          string  `json:"model,omitempty"`
+	ContextPercent float64 `json:"context_percent,omitempty"`
+	Cwd            string  `json:"cwd,omitempty"`
+	Pid            int     `json:"pid,omitempty"`
+	Channel        string  `json:"channel,omitempty"`
+	Member         string  `json:"member,omitempty"`
+	// Harness names the coding agent the session runs in when it is not Claude Code.
+	Harness     string   `json:"harness,omitempty"`
+	LastEvent   string   `json:"last_event"`
+	LastEventAt string   `json:"last_event_at"`
+	CostUSD     *float64 `json:"cost_usd"`
+	Provider    *string  `json:"provider"`
+	State       string   `json:"state"`
 	// DeliveryRoute says how a message to this session arrives (SPEC 6.4): pushed now while its
 	// bridge proves its channel pushes flow, else on its next prompt.
 	DeliveryRoute string `json:"delivery_route"`
@@ -117,7 +119,7 @@ type SessionDetail struct {
 
 // sessionColumns is what a registry read selects, in the row's own order.
 const sessionColumns = `session_id, machine, project, branch, title, task, model, context_percent,
-                        cwd, pid, channel, member, last_event, last_event_at, ended_at, opened_at`
+                        cwd, pid, channel, member, harness, last_event, last_event_at, ended_at, opened_at`
 
 // Sessions answers every registered session that passes the filter, newest activity first,
 // each with its state computed at now.
@@ -230,6 +232,7 @@ func (d *DB) rowOfSession(ctx context.Context, row store.Row, now time.Time, wai
 		Cwd:         textOfRow(row, "cwd"),
 		Channel:     textOfRow(row, "channel"),
 		Member:      textOfRow(row, "member"),
+		Harness:     textOfRow(row, "harness"),
 		LastEvent:   textOfRow(row, "last_event"),
 		LastEventAt: textOfRow(row, "last_event_at"),
 	}

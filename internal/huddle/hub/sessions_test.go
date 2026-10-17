@@ -367,3 +367,47 @@ func TestABrokenDatabaseRefusesTheReport(t *testing.T) {
 		t.Fatal("a report landed on a broken database, want the refusal")
 	}
 }
+
+func TestAReportTagsItsSessionWithItsHarnessAndKeepsTheTag(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	if err := db.Report(ctx, Report{
+		SessionID: "s-hud", Machine: "box", Project: "/shop", Harness: "codex",
+		LastEvent: "PreToolUse", LastEventAt: "2026-10-16T09:00:10.000Z",
+	}); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	row, err := db.SessionRow(ctx, "s-hud", readNow)
+	if err != nil || row == nil {
+		t.Fatalf("row: %v (%v)", row, err)
+	}
+	if row.Harness != "codex" {
+		t.Errorf("harness = %q, want codex", row.Harness)
+	}
+	// a report that names no harness — Claude Code's own — leaves the tag alone
+	if err := db.Report(ctx, Report{
+		SessionID: "s-hud", LastEvent: "Stop", LastEventAt: "2026-10-16T09:00:20.000Z",
+	}); err != nil {
+		t.Fatalf("second report: %v", err)
+	}
+	row, err = db.SessionRow(ctx, "s-hud", readNow)
+	if err != nil || row == nil {
+		t.Fatalf("row after: %v (%v)", row, err)
+	}
+	if row.Harness != "codex" {
+		t.Errorf("harness after a plain report = %q, want codex", row.Harness)
+	}
+	// a Claude Code session of its own carries no tag at all
+	if err := db.Report(ctx, Report{
+		SessionID: "s-cc", LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:15.000Z",
+	}); err != nil {
+		t.Fatalf("claude report: %v", err)
+	}
+	row, err = db.SessionRow(ctx, "s-cc", readNow)
+	if err != nil || row == nil {
+		t.Fatalf("row: %v (%v)", row, err)
+	}
+	if row.Harness != "" {
+		t.Errorf("harness = %q, want none", row.Harness)
+	}
+}

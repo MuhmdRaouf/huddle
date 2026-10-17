@@ -31,7 +31,8 @@ var entries = map[string]entry{
 	"hook approve": hookEntry(hooks.Approve),
 	"hook permit":  hookEntry(hooks.Permit),
 	// One entry per event, one process per event: the parts run in plan order and the exit code
-	// is 0 whatever happened.
+	// is 0 whatever happened. The hidden word another agent's hook runs (`hook external`) is
+	// dispatched in run(), outside this table: it serves no hooks.json line.
 	"hook session-start":      eventHook("session-start"),
 	"hook user-prompt-submit": eventHook("user-prompt-submit"),
 	"hook pre-tool-use":       eventHook("pre-tool-use"),
@@ -95,4 +96,33 @@ func hookEntry(hook func(context.Context, *cli.World, io.Reader, io.Writer)) ent
 		hook(ctx, &cli.World{}, os.Stdin, stdout)
 		return 0
 	}
+}
+
+// externalEntry runs the hidden word another agent's hook runs:
+// `huddle hook external --harness <name> --event <event>`, the agent's own payload on stdin.
+// The answer is silence with exit 0 whatever happened: a hook never blocks the agent that ran
+// it, so a wrong flag or an unknown harness changes nothing.
+func externalEntry(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	name, event := externalArgs(args)
+	hooks.External(ctx, &cli.World{}, name, event, os.Stdin, stdout)
+	return 0
+}
+
+// externalArgs reads the word's two flags; anything else on the line is ignored.
+func externalArgs(args []string) (name, event string) {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--harness":
+			if i+1 < len(args) {
+				i++
+				name = args[i]
+			}
+		case "--event":
+			if i+1 < len(args) {
+				i++
+				event = args[i]
+			}
+		}
+	}
+	return name, event
 }

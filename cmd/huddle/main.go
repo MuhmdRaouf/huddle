@@ -55,6 +55,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	command, rest := splitCommand(args)
+	// The hidden word another agent's hook runs is no plugin entry point: it is its own
+	// dispatch, ahead of the entries map and the legacy import it does not need.
+	if command == "hook" && len(rest) > 0 && rest[0] == "external" {
+		return externalEntry(context.Background(), args[2:], stdout, stderr)
+	}
 	key := command
 	if command == "hook" && len(rest) > 0 {
 		key = "hook " + rest[0]

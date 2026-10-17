@@ -2,7 +2,8 @@
 // Codex CLI, Gemini CLI, Qwen Code, opencode and Crush. Every adapter is a pure edit over the
 // harness's config bytes, so install and remove round-trip a config byte for byte, and the one
 // file-touching path (Install, Remove) records every change in the huddle home's ledger so
-// remove undoes exactly what install did. Harness hooks and transcripts are other cards.
+// remove undoes exactly what install did. Install also wires each agent's own lifecycle hooks
+// where it has a mechanism for them (hook.go); radar's transcript collectors are other cards.
 package harness
 
 import (

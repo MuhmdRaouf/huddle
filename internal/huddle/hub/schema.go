@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 14
+const SchemaVersion = 15
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -205,6 +205,9 @@ var migrations = []string{
 	// an entry that has had none, and the pass clears it when the session leaves the state, so
 	// a re-entry pushes again.
 	`ALTER TABLE sessions ADD COLUMN state_pushed_at TEXT;`,
+	// 15: the harness a session runs in — codex, gemini, qwen, opencode, crush — as its hook
+	// reported it; NULL and empty are Claude Code itself, which names no harness.
+	`ALTER TABLE sessions ADD COLUMN harness TEXT;`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

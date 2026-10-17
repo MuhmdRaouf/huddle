@@ -47,14 +47,34 @@ Huddle's MCP server works with any harness that speaks MCP. For five of them the
 
 ```sh
 huddle harness list              # what is on this machine: installed, available or absent
-huddle harness install <name>    # add huddle's MCP server to the harness's config
-huddle harness remove <name>     # take it out again, the config back to its previous bytes
+huddle harness install <name>    # add huddle's MCP server, and the harness's own lifecycle
+                                 # hooks where it has them, to the harness's config
+huddle harness remove <name>     # take both out again, the config back to its previous bytes
 ```
 
 The names: `codex` (Codex CLI), `gemini` (Gemini CLI), `qwen` (Qwen Code), `opencode` and `crush`. Every change is
 recorded in `~/.config/huddle/harness-ledger.json` (or `$HUDDLE_HOME/harness-ledger.json`) and undone exactly by
 `remove`; an entry you edited by hand stays and remove says so. Any other MCP client can be pointed at the hub by
 hand: the server speaks stdio through `huddle mcp` and HTTP through `huddle serve`.
+
+### Lifecycle hooks
+
+Install also wires each agent's own hook mechanism, so its sessions show up in the hub's Now list next to Claude
+Code's — a session start, a prompt, a tool call and a session end report to the registry, and the row carries the
+agent's name as a small badge:
+
+- **codex** — inline `[[hooks.<Event>]]` tables in `~/.codex/config.toml`, in a marker-delimited block of huddle's
+  own: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop and SessionEnd.
+- **gemini** — the `hooks` object in `~/.gemini/settings.json`: SessionStart, BeforeAgent, BeforeTool, AfterTool,
+  AfterAgent and SessionEnd.
+- **qwen** — the same `hooks` object in `~/.qwen/settings.json`, under that CLI's Claude-Code-style event names.
+- **opencode** — one `file://` entry in the `plugin` array of `opencode.json`, naming a small module huddle writes
+  into its own home: it forwards `session.created` and `session.idle`, the only events that carry a session id.
+- **crush** — the `hooks` object in `crush.json`. Crush's only hook event is PreToolUse, so a crush session reports
+  tool calls and then ages idle; it never says it ended.
+
+A hook never blocks the agent it runs in: it posts to the local hub and answers in silence, inside a 3 s deadline.
+Remove takes the hooks out with the MCP server, through the same ledger.
 
 A channel is a standard MCP pub/sub surface, so an agent can watch it without polling in a loop:
 

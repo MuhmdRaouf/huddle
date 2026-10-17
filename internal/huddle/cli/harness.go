@@ -25,7 +25,11 @@ func (c *cli) harness(ctx context.Context) int {
 	switch sub {
 	case "list":
 		for _, one := range harness.List(harnessEnv(c.w)) {
-			c.say(fmt.Sprintf("%-9s %-10s %s", one.Name, one.State(), one.Path))
+			state := one.State()
+			if one.Hooks {
+				state += "+hooks"
+			}
+			c.say(fmt.Sprintf("%-9s %-19s %s", one.Name, state, one.Path))
 		}
 		return 0
 	case "install", "remove":
@@ -49,19 +53,24 @@ func (c *cli) harness(ctx context.Context) int {
 	}
 }
 
-// harnessInstall wires the harness and says what changed.
+// harnessInstall wires the harness and says what changed. The hooks ride the same install
+// where the agent has a lifecycle mechanism; the note names them.
 func (c *cli) harnessInstall(ctx context.Context, hudHome, name string) int {
 	got, err := harness.Install(ctx, hudHome, harnessEnv(c.w), name, harness.NewEntry(name, harnessBin(c.w)))
 	if err != nil {
 		return c.die(err.Error(), 1)
 	}
+	note := ""
+	if events, err := harness.HookEvents(name); err == nil && len(events) > 0 {
+		note = fmt.Sprintf(", hooks for %d events", len(events))
+	}
 	switch {
 	case got.Already:
-		c.say(fmt.Sprintf("%s: already wired into %s", name, got.Path))
+		c.say(fmt.Sprintf("%s: already wired into %s%s", name, got.Path, note))
 	case got.Created:
-		c.say(fmt.Sprintf("%s: wired into %s (created it)", name, got.Path))
+		c.say(fmt.Sprintf("%s: wired into %s (created it)%s", name, got.Path, note))
 	default:
-		c.say(fmt.Sprintf("%s: wired into %s", name, got.Path))
+		c.say(fmt.Sprintf("%s: wired into %s%s", name, got.Path, note))
 	}
 	return 0
 }
