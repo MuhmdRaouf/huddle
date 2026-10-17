@@ -10,7 +10,7 @@ Huddle keeps one **channel** per piece of shared work.
 - Every session in a channel, whatever project it runs in, and every subagent it starts, sees the
   same events, plan, pause switches and knowledge.
 - The server is the single source of truth; nothing is shared through files or guesses.
-- It runs at http://127.0.0.1:<port>: a random five-digit port per project that `huddle up` picks,
+- It runs at `http://127.0.0.1:<port>`: a random five-digit port per project that `huddle up` picks,
   saves and shows.
 - Set it up with `/huddle:setup`, start it with `huddle up`, see the address with `huddle server`.
 
