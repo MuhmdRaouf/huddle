@@ -1,21 +1,12 @@
-// Process and process-group signalling shared by the worker and ProcessControl.
+// Process and process-group existence probes and signalling.
 package process
 
 import (
-	"context"
 	"os"
 	"syscall"
-	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
 )
-
-// pollMs is how often a terminating group is probed for its last member.
-const pollMs = 25 * time.Millisecond
-
-// killSettleMs: after SIGKILL only the kernel is left to act; this bounds the wait for a process stuck
-// in an uninterruptible call.
-const killSettleMs = 2_000
 
 // IsAlive reports whether pid names a live process. Signal 0 probes existence; EPERM means it exists
 // but belongs to someone else.
@@ -30,46 +21,6 @@ func IsAlive(pid int64) bool {
 	// A process of ours that has exited but not been waited for still answers the probe, so the
 	// caller has to keep reaping its children (exec.Cmd.Wait, the orphan's reaper).
 	return lastErrnoIsEPerm(err)
-}
-
-// TerminateGroup SIGTERMs the group led by pid (started as its own group), resolving once no
-// member is left. It returns the signal that ended the group's leader, or "" when no signal of
-// ours did: the exit reporting reads it where a wait status cannot say, the way Node's close
-// event reports the signal it killed with.
-func TerminateGroup(ctx context.Context, pid int64, graceMs int64) string {
-	if !isForeignGroupLeader(pid) {
-		return ""
-	}
-	last := ""
-	if delivered, ended := stopGroup(pid, syscall.SIGTERM); delivered {
-		last = ended
-	}
-	if groupGoneWithin(ctx, pid, graceMs) {
-		return last
-	}
-	if delivered, ended := stopGroup(pid, syscall.SIGKILL); delivered {
-		last = ended
-	}
-	groupGoneWithin(ctx, pid, killSettleMs)
-	return last
-}
-
-// groupGoneWithin polls the group until no member answers or the deadline passes.
-func groupGoneWithin(ctx context.Context, pid int64, ms int64) bool {
-	deadline := time.Now().Add(time.Duration(ms) * time.Millisecond)
-	for SignalGroup(pid, 0) {
-		if time.Now().After(deadline) {
-			return false
-		}
-		timer := time.NewTimer(pollMs)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return false
-		case <-timer.C:
-		}
-	}
-	return true
 }
 
 // SignalGroup signals the group pid leads (a no-op for 0, 1, negatives and our own pid); true when the

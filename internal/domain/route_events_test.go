@@ -63,11 +63,6 @@ func TestSpoolEventJSON(t *testing.T) {
 				`"parent_agent_id":"p1","usage":{"input_tokens":10},"headers":{"request-id":"r"},"prompt_hash":"h"}`,
 		},
 		{
-			"a capture event",
-			CaptureEvent{Ts: "t", Event: EventCapture, Plugin: "zai", PromptHash: "h", Gz: "g"},
-			`{"ts":"t","event":"capture","plugin":"zai","prompt_hash":"h","gz":"g"}`,
-		},
-		{
 			"a router start event",
 			RouterEvent{Ts: "t", Event: EventRouter, Plugin: "zai", Port: 18787, State: RouterStateStart, Version: 1},
 			`{"ts":"t","event":"router","plugin":"zai","port":18787,"state":"start","version":1}`,
@@ -116,31 +111,9 @@ func routeEventFull() RouteEvent {
 	}
 }
 
-// The markers keep the SpoolEvent union closed to exactly these four variants.
+// The markers keep the SpoolEvent union closed to exactly these three variants.
 func TestSpoolEventUnionIsClosed(t *testing.T) {
 	RouteEvent{Event: EventRoute}.spoolEvent()
-	CaptureEvent{Event: EventCapture}.spoolEvent()
 	RouterEvent{Event: EventRouter}.spoolEvent()
 	RouterHealthEvent{Kind: HealthEventKind}.spoolEvent()
-}
-
-func TestIsHealthEvent(t *testing.T) {
-	cases := []struct {
-		name  string
-		event SpoolEvent
-		want  bool
-	}{
-		{"a health event", HealthEvent("zai", HealthFallback, "r", "m", 1), true},
-		{"a health event by pointer", &RouterHealthEvent{Kind: HealthEventKind}, true},
-		{"a route event", RouteEvent{Event: EventRoute}, false},
-		{"a router event", RouterEvent{Event: EventRouter}, false},
-		{"a capture event", CaptureEvent{Event: EventCapture}, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := IsHealthEvent(tc.event); got != tc.want {
-				t.Fatalf("IsHealthEvent(%T) = %v, want %v", tc.event, got, tc.want)
-			}
-		})
-	}
 }

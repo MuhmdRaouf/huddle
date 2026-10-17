@@ -81,11 +81,6 @@ func NewStateRootRule(provider domain.Provider) StateRootRule {
 	}
 }
 
-// StateRoot is a provider's state root (see ResolveStateRoot).
-func StateRoot(ctx context.Context, provider domain.Provider, env domain.EnvLookup) string {
-	return ResolveStateRoot(ctx, env, NewStateRootRule(provider), stderrLog)
-}
-
 // nodeBasename is Node's basename: everything after the last separator, so a path ending in one
 // has no name and "" has none either — no trailing-slash rescue the way path/filepath.Base
 // rescues one.
@@ -94,9 +89,4 @@ func nodeBasename(path string) string {
 		return path[i+1:]
 	}
 	return path
-}
-
-// stderrLog is the default log (stderr).
-func stderrLog(line string) {
-	fmt.Fprintln(os.Stderr, line)
 }

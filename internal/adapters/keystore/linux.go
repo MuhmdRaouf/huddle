@@ -5,8 +5,6 @@ package keystore
 import (
 	"context"
 	"strings"
-
-	"github.com/MuhmdRaouf/huddle/internal/ports"
 )
 
 const (
@@ -20,11 +18,11 @@ type linuxStore struct {
 }
 
 // LinuxKeyStore is the provider's key in the freedesktop Secret Service, through secret-tool.
-func LinuxKeyStore(id KeyIdentity, run Runner) ports.KeyStore {
+func LinuxKeyStore(id KeyIdentity, run Runner) KeyStore {
 	return &linuxStore{id: id, run: run}
 }
 
-func (s *linuxStore) Kind() ports.KeyStoreKind { return ports.KeyStoreLinux }
+func (s *linuxStore) Kind() KeyStoreKind { return KeyStoreLinux }
 
 func (s *linuxStore) Label() string { return linuxLabel }
 

@@ -5,8 +5,6 @@ package keystore
 
 import (
 	"context"
-
-	"github.com/MuhmdRaouf/huddle/internal/ports"
 )
 
 // Security is the macOS Keychain's tool.
@@ -20,11 +18,11 @@ type macosStore struct {
 }
 
 // MacosKeyStore is the provider's key in the macOS Keychain, through /usr/bin/security.
-func MacosKeyStore(id KeyIdentity, run Runner) ports.KeyStore {
+func MacosKeyStore(id KeyIdentity, run Runner) KeyStore {
 	return &macosStore{id: id, run: run}
 }
 
-func (s *macosStore) Kind() ports.KeyStoreKind { return ports.KeyStoreMacOS }
+func (s *macosStore) Kind() KeyStoreKind { return KeyStoreMacOS }
 
 func (s *macosStore) Label() string { return macosLabel }
 

@@ -1,4 +1,4 @@
-// The process runtime's system layer: group creation, signalling, reaping and exit decoding.
+// The process runtime's system layer: session and group signalling and exit decoding.
 
 package process
 
@@ -8,12 +8,6 @@ import (
 	"os/exec"
 	"syscall"
 )
-
-// groupLeaderAttr puts the child at the head of its own process group, so a stop reaches every tool it
-// started.
-func groupLeaderAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{Setpgid: true}
-}
 
 // detachedAttr starts a child in its own session and group, outliving its caller: nothing that kills
 // the caller's process tree reaches it.
@@ -29,27 +23,9 @@ func killGroup(pid int64, signal syscall.Signal) error {
 	return syscall.Kill(-int(pid), signal)
 }
 
-// exitedPid reports whether the process has exited, reaping it when it has: the parent-side half of
-// what Node's exitCode tracking did. ECHILD means someone already waited for it.
-func exitedPid(pid int64) bool {
-	var status syscall.WaitStatus
-	reaped, err := syscall.Wait4(int(pid), &status, syscall.WNOHANG, nil)
-	if err != nil {
-		return true
-	}
-	return reaped == int(pid)
-}
-
 // termProcess is the timeout stop: SIGTERM, like Node's own timeout kill.
 func termProcess(child *exec.Cmd) error {
 	return child.Process.Signal(syscall.SIGTERM)
-}
-
-// stopGroup delivers a stop to the group pid leads. Unix reads how the leader ended off the wait
-// status, so ended stays empty: the exit never needs the sender's word for it.
-func stopGroup(pid int64, signal syscall.Signal) (delivered bool, ended string) {
-	err := killGroup(pid, signal)
-	return err == nil || lastErrnoIsEPerm(err), ""
 }
 
 // applyKilled folds the signal our own stop sent into a wait result. Unix keeps the wait status's

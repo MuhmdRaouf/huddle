@@ -1,7 +1,6 @@
 package adapters
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -97,24 +96,6 @@ func assertStateRoots(t *testing.T, rule StateRootRule, envVar, own, name string
 			t.Fatalf("resolveStateRoot(%v) = %q, want %q", tc.env, got, tc.want)
 		}
 	}
-}
-
-func TestStateRoot(t *testing.T) {
-	t.Run("derives the rule and resolves the root for a whole provider", func(t *testing.T) {
-		if got := StateRoot(t.Context(), referenceProvider, domain.EnvLookup{"ZAI_STATE_DIR": "/explicit"}); got != "/explicit" {
-			t.Fatalf("stateRoot(reference) = %q, want %q", got, "/explicit")
-		}
-		if got := StateRoot(t.Context(), acmeProvider, domain.EnvLookup{"HOME": "/h"}); got != filepath.Join("/h", ".agents", "acme") {
-			t.Fatalf("stateRoot(acme) = %q, want %q", got, filepath.Join("/h", ".agents", "acme"))
-		}
-	})
-
-	t.Run("a data dir named without a slash leaves the root at ~/.agents too", func(t *testing.T) {
-		env := domain.EnvLookup{"CLAUDE_PLUGIN_DATA": "zai-plugin-m", "HOME": "/h"}
-		if got := ResolveStateRoot(t.Context(), env, referenceStateRoot, quietLog); got != filepath.Join("/h", ".agents", "zai") {
-			t.Fatalf("resolveStateRoot(relative own data dir) = %q, want %q", got, filepath.Join("/h", ".agents", "zai"))
-		}
-	})
 }
 
 // newDataWorld is a home whose provider's own Claude Code data dir holds entries, for the
@@ -253,29 +234,6 @@ func TestMigratePluginDataState(t *testing.T) {
 		}
 		if len(lines) != 0 {
 			t.Fatalf("logged %v, want nothing", lines)
-		}
-	})
-}
-
-func TestStderrLog(t *testing.T) {
-	t.Run("writes the line to stderr", func(t *testing.T) {
-		reader, writer, err := os.Pipe()
-		if err != nil {
-			t.Fatalf("pipe: %v", err)
-		}
-		oldStderr := os.Stderr
-		os.Stderr = writer
-		stderrLog("state migrate: a line")
-		os.Stderr = oldStderr
-		if err := writer.Close(); err != nil {
-			t.Fatalf("close the pipe's writer: %v", err)
-		}
-		text, err := io.ReadAll(reader)
-		if err != nil {
-			t.Fatalf("read the pipe: %v", err)
-		}
-		if string(text) != "state migrate: a line\n" {
-			t.Fatalf("stderrLog wrote %q, want %q", text, "state migrate: a line\n")
 		}
 	})
 }

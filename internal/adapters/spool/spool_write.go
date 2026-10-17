@@ -17,7 +17,7 @@ import (
 // report too: where the radar lives, the day's file, and the append that never lets a failing disk
 // reach a client.
 
-// stderrLog is the default log (stderr); internal/adapters has its own twin.
+// stderrLog is the default log (stderr).
 func stderrLog(line string) {
 	fmt.Fprintln(os.Stderr, line)
 }

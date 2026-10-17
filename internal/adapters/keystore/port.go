@@ -7,10 +7,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
-
-	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // RunResult is what a platform tool returned. A nil Code is a signal; Missing means the tool
@@ -26,8 +23,8 @@ type RunResult struct {
 // fake.
 type Runner func(ctx context.Context, cmd string, args []string, stdin *string) RunResult
 
-// KeyIdentity is the store's names for one provider: service `<name>-plugin-cc`, account
-// `api-key`.
+// KeyIdentity is a store's names for one secret: the service it lives under and the account it
+// belongs to.
 type KeyIdentity struct {
 	Service string
 	Account string
@@ -35,21 +32,25 @@ type KeyIdentity struct {
 	Display string
 }
 
-// keyAccount is the account name every provider's key uses.
-const keyAccount = "api-key"
+// KeyStoreKind is which store a key lives in at rest.
+type KeyStoreKind string
 
-// serviceShape keeps the service name quotable into a `security -i` command line.
-var serviceShape = regexp.MustCompile(`^[a-z0-9-]+$`)
+const (
+	KeyStoreMacOS KeyStoreKind = "macos"
+	KeyStoreLinux KeyStoreKind = "linux"
+)
 
-// NewKeyIdentity returns the store's names for the provider: service `<name>-plugin-cc`, account
-// `api-key`. It panics on a service name that is not plain [a-z0-9-]: the name is quoted into a
-// `security -i` command line, so an odd one is a programmer error.
-func NewKeyIdentity(provider domain.Provider) KeyIdentity {
-	service := provider.Name + "-plugin-cc"
-	if !serviceShape.MatchString(service) {
-		panic("unsupported key service name " + strconv.Quote(service))
-	}
-	return KeyIdentity{Service: service, Account: keyAccount, Display: provider.Display}
+// KeyStore is where a secret lives at rest: the OS secret store.
+type KeyStore interface {
+	Kind() KeyStoreKind
+	// How setup and status lines name the store: "macOS Keychain", "Secret Service", or a path.
+	Label() string
+	Available(ctx context.Context) bool
+	Get(ctx context.Context) (string, bool)
+	// Set rejects an invalid key before any tool runs; the error says why the store refused it,
+	// never the key itself.
+	Set(ctx context.Context, key string) error
+	Remove(ctx context.Context) error
 }
 
 // keyShape is a provider key as the stores accept it: 16-512 characters of [A-Za-z0-9._-]. This

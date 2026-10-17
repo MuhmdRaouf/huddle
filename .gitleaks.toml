@@ -6,20 +6,6 @@ title = "huddle"
 useDefault = true
 
 [[allowlists]]
-description = "core: the fake keystore's stored key"
-condition = "AND"
-regexes = ['''^zt-SECRET\.key_0123456789abcdef$''']
-paths = [
-  '''^internal/testkit/fake_keystore\.go$''',
-]
-
-[[allowlists]]
-description = "core: the keystore file tests' second fake key"
-condition = "AND"
-regexes = ['''^zt-OTHER\.key_9876543210fedcba$''']
-paths = ['''^internal/adapters/keystore/file_test\.go$''']
-
-[[allowlists]]
 description = "radar: the fake key the Go redaction tests prove gets masked"
 condition = "AND"
 regexes = ['''^sk-abcdefgh123456$''']
@@ -73,12 +59,6 @@ description = "huddle: the fake one-use pairing token the server tests send to p
 condition = "AND"
 regexes = ['''^A234567890BCDEFGHIJKLMNOPQR$''']
 paths = ['''^internal/huddle/server/[a-z_]+_test\.go$''']
-
-[[allowlists]]
-description = "core: the fake Z.ai key the headless worker tests hand to fake workers"
-condition = "AND"
-regexes = ['''^zai-test-key-0123456789abcdef$''']
-paths = ['''^internal/adapters/claude_headless_test\.go$''']
 
 [[allowlists]]
 description = "radar: the fake key the page's redaction tests prove gets masked"

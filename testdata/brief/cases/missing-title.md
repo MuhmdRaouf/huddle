@@ -1,4 +1,0 @@
----
-mode: edit
----
-Body.

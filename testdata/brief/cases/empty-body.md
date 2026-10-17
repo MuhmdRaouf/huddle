@@ -1,4 +1,0 @@
----
-title: Rename the helper
----
-

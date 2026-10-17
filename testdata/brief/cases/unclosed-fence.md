@@ -1,3 +1,0 @@
----
-title: Never closed
-Body

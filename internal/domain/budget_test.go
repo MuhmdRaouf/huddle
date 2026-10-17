@@ -122,18 +122,6 @@ func TestBudgetStop(t *testing.T) {
 		}
 	})
 
-	t.Run("words the refusal the same in every router", func(t *testing.T) {
-		got := BudgetMessage("Z.ai GLM", BudgetStop{Scope: "provider:zai", Period: budgetPeriodPtr(BudgetMonth)})
-		want := "Z.ai GLM budget reached for this month: raise or lift it in the Radar dashboard (/radar:open)"
-		if got != want {
-			t.Fatalf("budgetMessage = %q, want %q", got, want)
-		}
-		got = BudgetMessage("Kimi", BudgetStop{Scope: "total"})
-		want = "Kimi budget reached for this period: raise or lift it in the Radar dashboard (/radar:open)"
-		if got != want {
-			t.Fatalf("budgetMessage = %q, want %q", got, want)
-		}
-	})
 }
 
 // The zod shapes behind budgetStop, as direct tables: what parses and what does not.
