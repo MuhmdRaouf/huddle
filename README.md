@@ -21,6 +21,26 @@ In Claude Code:
 That is all. The first session starts the hub and prints its address. The provider plugins in
 [claude-code-plugins](https://github.com/MuhmdRaouf/claude-code-plugins) install huddle for you.
 
+## Commands
+
+Ten slash commands, one product:
+
+| Command | What it does |
+|---|---|
+| `/huddle:setup` | Set up Huddle on this machine and join this project to a channel |
+| `/huddle:invite` | Make a join line that brings another Claude session into this Huddle |
+| `/huddle:join` | Join a Huddle with the join line `/huddle:invite` showed |
+| `/huddle:open` | Ensure the hub is running and print its dashboard URL (Hub, Radar and Kanban tabs) |
+| `/huddle:status` | One table: hub, radar, board server, gateway; running or not, address |
+| `/huddle:stop` | Stop the hub, radar and the board server this user started |
+| `/huddle:kanban-init` | Create this project's kanban board, or migrate an old backlog board into it |
+| `/huddle:kanban-lint` | Check every ticket against the bar; exit 1 when any fails |
+| `/huddle:kanban-refresh` | Rescan the board now and reload every open board page |
+| `/huddle:kanban-export` | Write the board as one self-contained HTML page for sharing |
+
+The hooks start the servers, so there is nothing to start by hand: each event runs one hook process, and
+huddle's, radar's and kanban's parts ride inside it.
+
 ## Other agents
 
 Huddle's MCP server works with any harness that speaks MCP. For five of them the binary wires itself in:

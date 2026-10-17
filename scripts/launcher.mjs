@@ -56,9 +56,10 @@ export function huddleSpec(release) {
 # huddle lives under \${AGENTS_HUDDLE_HOME:-$HOME/.agents/huddle-bin}/${release.version}; the first
 # command downloads it from ${release.repo}'s GitHub releases and verifies its sha256 there
 # (HUDDLE_DOWNLOAD_BASE overrides the release URL for tests), waiting up to 120 s — 60 s for mcp,
-# which Claude Code starts and waits for. A hook never blocks or fails Claude Code: it exits 0 at
-# once, starting one detached download — guarded by a lock in the version dir so every hook shares
-# it — that installs the binary for the next hook.`,
+# which Claude Code starts and waits for. Every verified install also points $home/current at the
+# binary — the stable path a harness config names, good across upgrades. A hook never blocks or
+# fails Claude Code: it exits 0 at once, starting one detached download — guarded by a lock in the
+# version dir so every hook shares it — that installs the binary for the next hook.`,
     name: "huddle",
     binary: "huddle",
     downloadFn: "download_huddle",
@@ -121,12 +122,14 @@ export function huddleSpec(release) {
         "pass",
         "leave",
         "ops",
+        "status",
       ]),
       ["mcp", "mcp"],
       ["serve", "serve"],
       ["hook", "hook"],
       ["radar", "radar"],
       ["kanban", "kanban"],
+      ["gateway", "gateway"],
     ],
     hookFlag: false,
     hookEntries: ["hook"],
@@ -217,10 +220,10 @@ ${downloadReport(spec, "  ")}`;
 export function launcherScript(spec) {
   const hookInit = spec.hookEntries.map((entry) => `[ "$entry" = ${entry} ] && hook=1`);
   const hookLines = ["hook=", ...hookInit, "detached="].join("\n");
-  // A hook is huddle's own `hook` entry, or the word `hook` in the arguments — radar's `radar hook` and
-  // kanban's `kanban hook session-start` carry it second, where the entry alone cannot see it. A stray
-  // `hook` in another command's arguments only moves the missing-binary case from exit 127 to the silent
-  // hook path, never changes a run that finds the binary.
+  // A hook is huddle's own `hook` entry, or the word `hook` in the arguments — a satellite's hook
+  // line (`radar hook`, `kanban hook session-start`) carries it second, where the entry alone cannot
+  // see it. A stray `hook` in another command's arguments only moves the missing-binary case from
+  // exit 127 to the silent hook path, never changes a run that finds the binary.
   const scanBody = `  [ "$arg" = hook ] && hook=1
   [ "$arg" = "--detached-fetch" ] && detached=1`;
   const dispatch = [
@@ -309,6 +312,13 @@ ${spec.downloadFn}() {
   if [ -n "$want" ] && [ "\${sum%% *}" = "$want" ]; then
     chmod 755 "$tmp"
     mv -f "$tmp" "$bin"
+    # $home/current names the installed binary for configs that must survive an upgrade: the link
+    # is created beside $home and renamed over any old one, so a reader sees one path or the
+    # other, never half of either. A machine without ln skips it — the resolved path is written
+    # instead, as before this link existed.
+    if command -v ln >/dev/null 2>&1; then
+      ln -s "${spec.version}/${spec.binary}" "$home/.current.$$" && mv -f "$home/.current.$$" "$home/current"
+    fi
     return 0
   fi
   rm -f "$tmp"

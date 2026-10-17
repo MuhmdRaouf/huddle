@@ -59,6 +59,20 @@ func NewEntry(name, bin string) Entry {
 	}
 }
 
+// StableBin answers the binary path an entry should name: the launcher's current link when one
+// sits beside the running binary — <home>/current, which every verified install re-points at the
+// new version, so a config naming it survives an upgrade — else the binary's own resolved path.
+func StableBin(bin string) string {
+	if real, err := filepath.EvalSymlinks(bin); err == nil {
+		bin = real
+	}
+	current := filepath.Join(filepath.Dir(filepath.Dir(bin)), "current")
+	if info, err := os.Stat(current); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+		return current
+	}
+	return bin
+}
+
 // Adapter is one harness's config edit: bytes in, bytes out, nothing but the huddle entry
 // changed. A nil cfg is a config file that is not there yet.
 type Adapter interface {

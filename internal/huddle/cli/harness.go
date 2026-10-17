@@ -106,11 +106,9 @@ func harnessEnv(w *World) harness.Env {
 	}
 }
 
-// harnessBin answers the binary the entry runs: the running executable, symlinks resolved.
+// harnessBin answers the binary the entry runs: the launcher's stable current path when one sits
+// beside the running binary — it survives an upgrade, so the config never goes stale — else the
+// running executable, symlinks resolved, as before the launcher kept that link.
 func harnessBin(w *World) string {
-	bin := w.bin()
-	if real, err := filepath.EvalSymlinks(bin); err == nil {
-		return real
-	}
-	return bin
+	return harness.StableBin(w.bin())
 }

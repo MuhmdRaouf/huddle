@@ -60,10 +60,8 @@ type launcherHook struct {
 	Timeout int
 }
 
-// launcherHooks reads every event's huddle line out of the committed hooks.json. The one file also
-// carries radar's and kanban's hooks, whose words follow theirs (`radar hook`,
-// `kanban hook session-start`); the huddle hooks this package pins run the launcher's own hook
-// entry, so their lines are the ones dist/run leads with the word hook.
+// launcherHooks reads every hook line out of the committed hooks.json. One line per event runs
+// one process for all three parts; approve and permit keep their own lines for their matchers.
 func launcherHooks(t *testing.T) []launcherHook {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(launcherPluginRoot(t), "hooks", "hooks.json"))
@@ -89,7 +87,8 @@ func launcherHooks(t *testing.T) []launcherHook {
 	// a deterministic order: the events a session sees, first to last
 	order := map[string]int{
 		"SessionStart": 0, "UserPromptSubmit": 1, "PreToolUse": 2, "PostToolUse": 3, "Notification": 4,
-		"PermissionRequest": 5, "Stop": 6, "SubagentStop": 7, "SessionEnd": 8,
+		"PermissionRequest": 5, "Stop": 6, "SubagentStart": 7, "SubagentStop": 8, "SessionEnd": 9,
+		"PreCompact": 10,
 	}
 	for i := 0; i < len(events); i++ {
 		for j := i + 1; j < len(events); j++ {
@@ -103,9 +102,6 @@ func launcherHooks(t *testing.T) []launcherHook {
 		for _, group := range file.Hooks[event] {
 			if len(group.Hooks) != 1 {
 				t.Fatalf("%s has a group holding %d hooks; want one hook per group", event, len(group.Hooks))
-			}
-			if command := group.Hooks[0].Command; !strings.HasPrefix(command, `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook`) {
-				continue // radar's and kanban's share of the file, pinned by their own suites
 			}
 			name := ""
 			if m := regexp.MustCompile(` hook ([a-z-]+)$`).FindStringSubmatch(group.Hooks[0].Command); m != nil {
@@ -129,26 +125,25 @@ func launcherLine(name string) string {
 	return fmt.Sprintf(`sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook %s`, name)
 }
 
-// TestHooksJSONRunsTheLauncher pins hooks.json whole: every event's every hook runs the launcher
-// with its name, today's matchers and timeouts, one hook per group. The report hook rides every
-// event; PermissionRequest also holds the permit hook, the one that may answer the prompt.
+// TestHooksJSONRunsTheLauncher pins hooks.json whole: one launcher line per event, naming the
+// event, with the old matchers and the largest old timeout, one hook per group. PreToolUse keeps
+// the approve line for Bash and PermissionRequest the permit line: the two that answer Claude
+// Code, not only observe it.
 func TestHooksJSONRunsTheLauncher(t *testing.T) {
 	want := []launcherHook{
 		{Event: "SessionStart", Matcher: "startup|resume|clear|compact", Name: "session-start", Command: launcherLine("session-start"), Timeout: 10},
-		{Event: "SessionStart", Name: "report", Command: launcherLine("report"), Timeout: 5},
-		{Event: "UserPromptSubmit", Name: "listen", Command: launcherLine("listen"), Timeout: 5},
-		{Event: "UserPromptSubmit", Name: "report", Command: launcherLine("report"), Timeout: 5},
+		{Event: "UserPromptSubmit", Name: "user-prompt-submit", Command: launcherLine("user-prompt-submit"), Timeout: 5},
 		{Event: "PreToolUse", Matcher: "Bash", Name: "approve", Command: launcherLine("approve"), Timeout: 5},
-		{Event: "PreToolUse", Name: "report", Command: launcherLine("report"), Timeout: 5},
-		{Event: "PostToolUse", Name: "listen", Command: launcherLine("listen"), Timeout: 5},
-		{Event: "PostToolUse", Name: "report", Command: launcherLine("report"), Timeout: 5},
-		{Event: "Notification", Name: "report", Command: launcherLine("report"), Timeout: 5},
+		{Event: "PreToolUse", Name: "pre-tool-use", Command: launcherLine("pre-tool-use"), Timeout: 5},
+		{Event: "PostToolUse", Name: "post-tool-use", Command: launcherLine("post-tool-use"), Timeout: 5},
+		{Event: "Notification", Name: "notification", Command: launcherLine("notification"), Timeout: 5},
 		{Event: "PermissionRequest", Name: "permit", Command: launcherLine("permit"), Timeout: 600},
-		{Event: "PermissionRequest", Name: "report", Command: launcherLine("report"), Timeout: 5},
+		{Event: "PermissionRequest", Name: "permission-request", Command: launcherLine("permission-request"), Timeout: 5},
 		{Event: "Stop", Name: "stop", Command: launcherLine("stop"), Timeout: 15},
-		{Event: "Stop", Name: "report", Command: launcherLine("report"), Timeout: 5},
-		{Event: "SubagentStop", Name: "report", Command: launcherLine("report"), Timeout: 5},
-		{Event: "SessionEnd", Name: "report", Command: launcherLine("report"), Timeout: 5},
+		{Event: "SubagentStart", Name: "subagent-start", Command: launcherLine("subagent-start"), Timeout: 5},
+		{Event: "SubagentStop", Name: "subagent-stop", Command: launcherLine("subagent-stop"), Timeout: 5},
+		{Event: "SessionEnd", Name: "session-end", Command: launcherLine("session-end"), Timeout: 5},
+		{Event: "PreCompact", Name: "pre-compact", Command: launcherLine("pre-compact"), Timeout: 5},
 	}
 	got := launcherHooks(t)
 	if len(got) != len(want) {
@@ -206,9 +201,9 @@ func TestTheMcpJsonStartsTheBridge(t *testing.T) {
 }
 
 // TestTheThreeCommandsRunTheCLI pins huddle's command files: the three among the merged plugin's
-// fifteen (radar's and kanban's carry their own words and are pinned by their suites), each running
-// the plugin's CLI and showing its join and dashboard lines verbatim, with no wording that hides a
-// token or a link from the user it is for.
+// ten (the hub's and kanban's carry their own words and are pinned by the plugin's own suite), each
+// running the plugin's CLI and showing its join and dashboard lines verbatim, with no wording that
+// hides a token or a link from the user it is for.
 func TestTheThreeCommandsRunTheCLI(t *testing.T) {
 	commands := filepath.Join(launcherPluginRoot(t), "commands")
 	entries, err := os.ReadDir(commands)
@@ -732,21 +727,12 @@ func TestLauncherFreshInstall(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("session-start = %d, stdout %q, stderr %q", code, stdout, stderr)
 		}
-		var out struct {
-			HookSpecificOutput struct {
-				AdditionalContext string `json:"additionalContext"`
-			} `json:"hookSpecificOutput"`
-			SystemMessage any `json:"systemMessage"`
-		}
-		if err := json.Unmarshal([]byte(stdout), &out); err != nil {
-			t.Fatalf("session-start printed %q, want its context", stdout)
-		}
-		context := out.HookSpecificOutput.AdditionalContext
+		context, systemMessages := sessionStartOutput(t, stdout)
 		if !strings.Contains(context, `You are in Huddle channel "fresh-install" as "fresh-install"`) {
 			t.Errorf("the context is %q, want it to name the channel and the session", context)
 		}
-		if out.SystemMessage != nil {
-			t.Errorf("session-start printed a systemMessage (%v); its lines come from the CLI, not a hook", out.SystemMessage)
+		if len(systemMessages) > 0 {
+			t.Errorf("session-start printed systemMessages (%v); its lines come from the CLI, not a hook", systemMessages)
 		}
 		// the launcher passes CLAUDE_PLUGIN_ROOT and CLAUDE_ENV_FILE through: the PATH line names
 		// the committed plugin's bin/, once per session
@@ -790,16 +776,9 @@ func TestLauncherFreshInstall(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("session-start after the crash = %d, stdout %q, stderr %q", code, stdout, stderr)
 		}
-		var out struct {
-			HookSpecificOutput struct {
-				AdditionalContext string `json:"additionalContext"`
-			} `json:"hookSpecificOutput"`
-		}
-		if err := json.Unmarshal([]byte(stdout), &out); err != nil {
-			t.Fatalf("session-start printed %q, want its context", stdout)
-		}
-		if !strings.Contains(out.HookSpecificOutput.AdditionalContext, `You are in Huddle channel "fresh-install"`) {
-			t.Errorf("the context after the crash is %q, want the member remembered and the channel named", out.HookSpecificOutput.AdditionalContext)
+		context, _ := sessionStartOutput(t, stdout)
+		if !strings.Contains(context, `You are in Huddle channel "fresh-install"`) {
+			t.Errorf("the context after the crash is %q, want the member remembered and the channel named", context)
 		}
 		until(t, 30*time.Second, func() bool { return e2eHealthy(url) }, "the restarted server to answer /health")
 	})
@@ -811,6 +790,37 @@ func TestLauncherFreshInstall(t *testing.T) {
 		}
 		until(t, 10*time.Second, func() bool { return !e2eHealthy(url) }, "the server to stop answering")
 	})
+}
+
+// sessionStartOutput reads a session-start line's stdout: one JSON line per part with something
+// to tell Claude (the merged process concatenates its parts' output). It answers every part's
+// additionalContext joined, and every systemMessage any part printed.
+func sessionStartOutput(t *testing.T, stdout string) (context string, systemMessages []string) {
+	t.Helper()
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var out struct {
+			HookSpecificOutput struct {
+				AdditionalContext string `json:"additionalContext"`
+			} `json:"hookSpecificOutput"`
+			SystemMessage any `json:"systemMessage"`
+		}
+		if err := json.Unmarshal([]byte(line), &out); err != nil {
+			t.Fatalf("session-start printed %q, want one JSON line per part", stdout)
+		}
+		if out.HookSpecificOutput.AdditionalContext != "" {
+			if context != "" {
+				context += "\n\n"
+			}
+			context += out.HookSpecificOutput.AdditionalContext
+		}
+		if out.SystemMessage != nil {
+			systemMessages = append(systemMessages, fmt.Sprintf("%v", out.SystemMessage))
+		}
+	}
+	return context, systemMessages
 }
 
 // jsonPath walks one decoded answer to a text field, rendered as the message it holds.

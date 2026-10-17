@@ -1,9 +1,9 @@
-// The installed plugin's surface, plugin/ as Claude Code loads it: one hooks.json carrying every hook the
-// three parts registered, commands and skills with unique names, each file running the launcher with the
-// right word, and the manifest and marketplace naming the one plugin. hooks.json is load-bearing: Claude
-// Code runs it in every session, and a malformed file (hook objects listed directly under an event instead
-// of matcher groups) makes hooks silently not run — or worse, a bad entry can break the session. Run with
-// `node --test scripts/plugin.test.mjs`.
+// The installed plugin's surface, plugin/ as Claude Code loads it: one hooks.json running one
+// hook process per event, commands and skills with unique names, each file running the launcher
+// with the right word, and the manifest and marketplace naming the one plugin. hooks.json is
+// load-bearing: Claude Code runs it in every session, and a malformed file (hook objects listed
+// directly under an event instead of matcher groups) makes hooks silently not run — or worse, a
+// bad entry can break the session. Run with `node --test scripts/plugin.test.mjs`.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,46 +18,48 @@ const readJSON = (path) => JSON.parse(readFileSync(path, "utf8"));
 /** The launcher line one hook runs, with the words after dist/run. */
 const runLine = (...words) => `sh "\${CLAUDE_PLUGIN_ROOT}/dist/run" ${words.join(" ")}`;
 
-/** One huddle hook's place in hooks.json: the event it serves, its matcher, name and timeout. */
-const HUDDLE_HOOKS = [
+/** One hooks.json line: the event it serves, its matcher, the hook word and the timeout. One line
+ *  per event — the launcher's hook word names the event and one process runs every part of it.
+ *  PreToolUse keeps `hook approve` for Bash and PermissionRequest keeps `hook permit` as their
+ *  own lines: the two hooks that answer Claude Code, not only observe it. Each event line keeps
+ *  the largest timeout its parts had, each decision line its own. */
+const HOOK_LINES = [
   { event: "SessionStart", matcher: "startup|resume|clear|compact", name: "session-start", timeout: 10 },
-  { event: "SessionStart", name: "report", timeout: 5 },
-  { event: "UserPromptSubmit", name: "listen", timeout: 5 },
-  { event: "UserPromptSubmit", name: "report", timeout: 5 },
+  { event: "UserPromptSubmit", name: "user-prompt-submit", timeout: 5 },
   { event: "PreToolUse", matcher: "Bash", name: "approve", timeout: 5 },
-  { event: "PreToolUse", name: "report", timeout: 5 },
-  { event: "PostToolUse", name: "listen", timeout: 5 },
-  { event: "PostToolUse", name: "report", timeout: 5 },
-  { event: "Notification", name: "report", timeout: 5 },
+  { event: "PreToolUse", name: "pre-tool-use", timeout: 5 },
+  { event: "PostToolUse", name: "post-tool-use", timeout: 5 },
+  { event: "Notification", name: "notification", timeout: 5 },
   { event: "PermissionRequest", name: "permit", timeout: 600 },
-  { event: "PermissionRequest", name: "report", timeout: 5 },
+  { event: "PermissionRequest", name: "permission-request", timeout: 5 },
   { event: "Stop", name: "stop", timeout: 15 },
-  { event: "Stop", name: "report", timeout: 5 },
-  { event: "SubagentStop", name: "report", timeout: 5 },
-  { event: "SessionEnd", name: "report", timeout: 5 },
+  { event: "SubagentStart", name: "subagent-start", timeout: 5 },
+  { event: "SubagentStop", name: "subagent-stop", timeout: 5 },
+  { event: "SessionEnd", name: "session-end", timeout: 5 },
+  { event: "PreCompact", name: "pre-compact", timeout: 5 },
 ];
 
-/** The eight events radar observed in its own plugin. */
-const RADAR_EVENTS = [
-  "SessionStart",
-  "SessionEnd",
-  "UserPromptSubmit",
-  "SubagentStart",
-  "SubagentStop",
-  "Stop",
-  "PreCompact",
-  "Notification",
-];
-
-/** Events fired per tool call: neither radar nor kanban hooks them, or every tool call starts a process. */
-const TOOL_EVENTS = ["PreToolUse", "PostToolUse", "PostToolUseFailure"];
-
-/** The 15 command files, by part. The open/start/status/stop clash between radar and kanban is resolved by
- *  prefixing kanban's four with its part name; every other name is the one it had. */
+/** The ten command files, by part. Hooks start the servers, so radar's start/stop/status/open and
+ *  kanban's four open/start/status/stop are gone; open, status and stop cover the hub, radar and
+ *  the board server together, and kanban's own words carry the kanban- prefix. */
 const COMMANDS = {
   huddle: ["invite", "join", "setup"],
-  radar: ["open", "start", "status", "stop"],
-  kanban: ["export", "init", "kanban-open", "kanban-start", "kanban-status", "kanban-stop", "lint", "refresh"],
+  hub: ["open", "status", "stop"],
+  kanban: ["kanban-export", "kanban-init", "kanban-lint", "kanban-refresh"],
+};
+
+/** The one-line description each hub command's front matter carries. */
+const HUB_DESCRIPTIONS = {
+  open: "Ensure the hub is running and print its dashboard URL (Hub, Radar and Kanban tabs)",
+  status: "One table: hub, radar, board server, gateway; running or not, address",
+  stop: "Stop the hub, radar and the board server this user started",
+};
+
+/** The launcher lines one hub command runs, in order. */
+const HUB_LINES = {
+  open: [runLine("up"), runLine("open", "--print")],
+  status: [runLine("status"), runLine("radar", "status"), runLine("kanban", "status"), runLine("gateway", "status")],
+  stop: [runLine("down"), runLine("radar", "stop"), runLine("kanban", "stop", "$ARGUMENTS")],
 };
 
 const hooks = readJSON(join(plugin, "hooks", "hooks.json"));
@@ -74,10 +76,10 @@ function allEntries() {
 }
 
 describe("plugin/hooks/hooks.json", () => {
-  it("carries every event the three parts registered", () => {
+  it("carries every event a session fires", () => {
     assert.deepEqual(
       Object.keys(hooks.hooks ?? {}).sort(),
-      [...new Set([...HUDDLE_HOOKS.map((hook) => hook.event), ...RADAR_EVENTS])].sort(),
+      [...new Set(HOOK_LINES.map((hook) => hook.event))].sort(),
     );
   });
 
@@ -91,16 +93,16 @@ describe("plugin/hooks/hooks.json", () => {
     }
   });
 
-  it("runs huddle's hooks first on every event they serve, with the matchers and timeouts they had", () => {
-    const huddleLines = allEntries().filter(({ entry }) => entry.command.startsWith(runLine("hook", "")));
+  it("runs one launcher line per event, with the old matchers and the largest old timeout", () => {
+    const lines = allEntries().map(({ event, group, entry }) => ({
+      event,
+      matcher: group.matcher,
+      command: entry.command,
+      timeout: entry.timeout,
+    }));
     assert.deepEqual(
-      huddleLines.map(({ event, group, entry }) => ({
-        event,
-        matcher: group.matcher,
-        command: entry.command,
-        timeout: entry.timeout,
-      })),
-      HUDDLE_HOOKS.map(({ event, matcher, name, timeout }) => ({
+      lines,
+      HOOK_LINES.map(({ event, matcher, name, timeout }) => ({
         event,
         matcher,
         command: runLine("hook", name),
@@ -109,37 +111,10 @@ describe("plugin/hooks/hooks.json", () => {
     );
   });
 
-  it("runs radar's hook once on each of its events, within its 5 s budget", () => {
-    for (const event of RADAR_EVENTS) {
-      const mine = (hooks.hooks?.[event] ?? []).filter((group) =>
-        (group.hooks ?? []).some((entry) => entry.command === runLine("radar", "hook")),
-      );
-      assert.equal(mine.length, 1, `${event}: radar runs one hook`);
-      assert.equal(mine[0].matcher, undefined, `${event}: radar's hook names no matcher`);
-      assert.equal(mine[0].hooks[0].command, runLine("radar", "hook"));
-      assert.equal(mine[0].hooks[0].timeout, 5, `${event}: radar's hook keeps its 5 s timeout`);
-    }
-  });
-
-  it("runs kanban's session-start on session start, within its 5 s budget", () => {
-    const mine = (hooks.hooks?.SessionStart ?? []).filter((group) =>
-      (group.hooks ?? []).some((entry) => entry.command.startsWith(runLine("kanban", ""))),
-    );
-    assert.equal(mine.length, 1, "kanban runs one hook, on SessionStart only");
-    assert.equal(mine[0].matcher, "startup|resume|clear|compact");
-    assert.equal(mine[0].hooks[0].command, runLine("kanban", "hook", "session-start"));
-    assert.equal(mine[0].hooks[0].timeout, 5);
-  });
-
-  it("never runs radar or kanban per tool call: tool events come from the transcripts", () => {
-    for (const event of TOOL_EVENTS) {
-      for (const { entry } of allEntries().filter(({ event: served }) => served === event)) {
-        const command = String(entry.command);
-        assert.ok(
-          !command.startsWith(runLine("radar", "")) && !command.startsWith(runLine("kanban", "")),
-          `${event}: ${command} would start a process per tool call`,
-        );
-      }
+  it("keeps every non-decision line inside a 15 s budget", () => {
+    for (const { event, entry } of allEntries()) {
+      if (["approve", "permit"].some((name) => entry.command.endsWith(`hook ${name}`))) continue;
+      assert.ok(entry.timeout <= 15, `${event}: timeout ${entry.timeout} exceeds 15 s`);
     }
   });
 });
@@ -166,24 +141,48 @@ describe("plugin/commands", () => {
     }
   });
 
-  it("radar's commands run the launcher's radar word", () => {
-    const wanted = {
-      open: runLine("radar", "open"),
-      start: runLine("radar", "start", "$ARGUMENTS"),
-      status: runLine("radar", "status"),
-      stop: runLine("radar", "stop"),
-    };
-    for (const [name, line] of Object.entries(wanted)) {
+  it("each hub command names in one line what it does for the user", () => {
+    for (const name of COMMANDS.hub) {
       const text = readFileSync(join(plugin, "commands", `${name}.md`), "utf8");
-      assert.ok(text.includes(`!\`${line} 2>&1\``), `${name}: runs ${line}`);
+      assert.ok(text.startsWith("---\n"), `${name}: front matter first`);
       assert.ok(
-        text.includes("Show the output above to the user as it is"),
-        `${name}: shows its output as is`,
+        text.includes(`description: ${HUB_DESCRIPTIONS[name]}`),
+        `${name}: its description must be "${HUB_DESCRIPTIONS[name]}"`,
       );
+      assert.match(text, /^allowed-tools: Bash$/m, `${name}: runs Bash only`);
+    }
+  });
+
+  it("open ensures the hub and prints its dashboard URL", () => {
+    const text = readFileSync(join(plugin, "commands", "open.md"), "utf8");
+    for (const line of HUB_LINES.open) {
+      assert.ok(text.includes(`!\`${line} 2>&1\``), `open runs ${line}`);
     }
     assert.ok(
-      readFileSync(join(plugin, "commands", "start.md"), "utf8").includes(runLine("radar", "watch")),
-      "start's monitor follows the radar word too",
+      text.includes("Show the output above to the user as it is"),
+      "open shows its output as is",
+    );
+  });
+
+  it("status gathers hub, radar, the board server and the gateway into one table", () => {
+    const text = readFileSync(join(plugin, "commands", "status.md"), "utf8");
+    for (const line of HUB_LINES.status) {
+      assert.ok(text.includes(`!\`${line} 2>&1\``), `status runs ${line}`);
+    }
+    assert.ok(
+      text.includes("Show the output above to the user as it is"),
+      "status shows its output as is",
+    );
+  });
+
+  it("stop stops the hub, radar and the board server", () => {
+    const text = readFileSync(join(plugin, "commands", "stop.md"), "utf8");
+    for (const line of HUB_LINES.stop) {
+      assert.ok(text.includes(`!\`${line} 2>&1\``), `stop runs ${line}`);
+    }
+    assert.ok(
+      text.includes("Show the output above to the user as it is"),
+      "stop shows its output as is",
     );
   });
 
@@ -201,10 +200,10 @@ describe("plugin/commands", () => {
       );
     }
     assert.ok(
-      readFileSync(join(plugin, "commands", "init.md"), "utf8").includes(
+      readFileSync(join(plugin, "commands", "kanban-init.md"), "utf8").includes(
         "write the first tickets with the kanban skill",
       ),
-      "init offers the kanban skill",
+      "kanban-init offers the kanban skill",
     );
   });
 });
@@ -222,6 +221,16 @@ describe("plugin/skills and plugin/agents", () => {
   it("ships the kanban skill's references", () => {
     for (const reference of ["flow", "lead", "rundown", "tickets"]) {
       assert.equal(existsSync(join(plugin, "skills", "kanban", "references", `${reference}.md`)), true, `${reference}.md`);
+    }
+  });
+
+  it("names only commands the plugin ships", () => {
+    const shipped = new Set(Object.values(COMMANDS).flat());
+    for (const name of ["huddle", "kanban"]) {
+      const text = readFileSync(join(plugin, "skills", name, "SKILL.md"), "utf8");
+      for (const match of text.matchAll(/\/huddle:([a-z-]+)/g)) {
+        assert.ok(shipped.has(match[1]), `${name}: names /huddle:${match[1]}, which the plugin does not ship`);
+      }
     }
   });
 

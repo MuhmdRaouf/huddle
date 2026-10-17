@@ -5,8 +5,9 @@ import { describe, expect, it } from "vite-plus/test";
 /**
  * The installed plugin's kanban share. hooks.json runs in every session of every project: a malformed file
  * (hook objects listed directly under an event instead of matcher groups) makes the hook silently not run.
- * The command files and the bin wrapper name the launcher's entry words; a wrong word prints an
- * unknown-command error instead of the command's output, and the marketplace entry is what Claude Code
+ * One line per event runs one process for all three parts, kanban's session start among them on
+ * SessionStart. The command files and the bin wrapper name the launcher's entry words; a wrong word prints
+ * an unknown-command error instead of the command's output, and the marketplace entry is what Claude Code
  * installs from. The three parts share the one plugin, so the launcher, the manifest and the marketplace
  * are huddle's; these cases hold kanban's lines in them.
  */
@@ -23,58 +24,69 @@ const parsed = JSON.parse(readFileSync(`${plugin}/hooks/hooks.json`, "utf8")) as
 /** The launcher line one command file runs, with the part word and the command's own word. */
 const runLine = (name: string) => `!\`sh "\${CLAUDE_PLUGIN_ROOT}/dist/run" kanban ${name} $ARGUMENTS 2>&1\``;
 
-/** The eight commands kanban installs; the open/start/status/stop clash with radar's is resolved in
- *  kanban's favour of its own part name. */
-const COMMANDS = [
-  "export",
-  "init",
-  "kanban-open",
-  "kanban-start",
-  "kanban-status",
-  "kanban-stop",
-  "lint",
-  "refresh",
-] as const;
+/** The four commands kanban installs; every name carries its part name, and the board's servers
+ *  are the hooks' business, so open/start/status/stop name no commands of their own. */
+const COMMANDS = ["kanban-export", "kanban-init", "kanban-lint", "kanban-refresh"] as const;
 
 /** Every command body ends with the same instruction about its output. */
 const SHOW_AS_IS = "Show the output above to the user as it is, with no preamble or recap.";
 
 describe("plugin/hooks/hooks.json, kanban's share", () => {
-  /** The groups of one event whose command runs the launcher's kanban word. */
-  const kanbanGroups = (event: string): Group[] =>
-    (parsed.hooks?.[event] ?? []).filter((group) =>
+  it("names the event in every line it runs", () => {
+    for (const [event, groups] of Object.entries(parsed.hooks ?? {})) {
+      const lines = groups.flatMap((group) => (group?.hooks ?? []) as HookEntry[]);
+      const words = lines.map((entry) =>
+        String(entry.command).replace(`sh "\${CLAUDE_PLUGIN_ROOT}/dist/run" hook `, ""),
+      );
+      for (const word of words) {
+        expect(word, `${event}: the launcher line names the event`).toMatch(/^[a-z]+(-[a-z]+)*$/);
+      }
+    }
+  });
+
+  it("runs one merged SessionStart line, with the matcher that keeps kanban's part", () => {
+    const groups = (parsed.hooks?.SessionStart ?? []).filter((group) =>
       ((group?.hooks ?? []) as HookEntry[]).some((entry) =>
-        String(entry.command).startsWith(`sh "\${CLAUDE_PLUGIN_ROOT}/dist/run" kanban `),
+        String(entry.command).endsWith(" hook session-start"),
       ),
     );
-
-  it("runs one hook, on SessionStart", () => {
-    const groups = kanbanGroups("SessionStart");
-    expect(groups).toHaveLength(1);
+    expect(groups, "SessionStart runs one merged line").toHaveLength(1);
     expect(groups[0]?.matcher).toBe("startup|resume|clear|compact");
     const entries = groups[0]?.hooks as HookEntry[] | undefined;
     expect(entries).toHaveLength(1);
     expect(entries?.[0]?.type).toBe("command");
-    expect(entries?.[0]?.command).toBe(`sh "\${CLAUDE_PLUGIN_ROOT}/dist/run" kanban hook session-start`);
-    expect(entries?.[0]?.timeout).toBe(5);
+    expect(entries?.[0]?.command).toBe(`sh "\${CLAUDE_PLUGIN_ROOT}/dist/run" hook session-start`);
+    expect(entries?.[0]?.timeout).toBe(10);
   });
 
-  it("hooks no other event", () => {
-    for (const event of Object.keys(parsed.hooks ?? {})) {
-      if (event === "SessionStart") continue;
-      expect(kanbanGroups(event), `${event}: kanban hooks SessionStart only`).toHaveLength(0);
-    }
+  it("hooks every event a session fires, one line each", () => {
+    expect(Object.keys(parsed.hooks ?? {}).sort()).toEqual(
+      [
+        "Notification",
+        "PermissionRequest",
+        "PostToolUse",
+        "PreCompact",
+        "PreToolUse",
+        "SessionEnd",
+        "SessionStart",
+        "Stop",
+        "SubagentStart",
+        "SubagentStop",
+        "UserPromptSubmit",
+      ].sort(),
+    );
   });
 });
 
 describe("plugin/commands, kanban's share", () => {
-  it("holds exactly kanban's eight commands among the plugin's fifteen", () => {
+  it("holds exactly kanban's four commands among the plugin's ten", () => {
     const files = readdirSync(`${plugin}/commands`).sort();
     for (const name of COMMANDS) {
       expect(files).toContain(`${name}.md`);
     }
-    expect(files.filter((file) => file === "kanban-open.md" || file.startsWith("kanban-"))).toHaveLength(4);
+    expect(files.filter((file) => file.startsWith("kanban-"))).toHaveLength(4);
     expect(new Set(files).size, "command names are unique").toBe(files.length);
+    expect(files).toHaveLength(10);
   });
 
   it.each(COMMANDS)("runs %s through the launcher's kanban word and shows its output as is", (name) => {
@@ -88,13 +100,13 @@ describe("plugin/commands, kanban's share", () => {
   });
 
   it("offers the kanban skill after init", () => {
-    expect(readFileSync(`${plugin}/commands/init.md`, "utf8")).toContain(
+    expect(readFileSync(`${plugin}/commands/kanban-init.md`, "utf8")).toContain(
       "write the first tickets with the kanban skill",
     );
   });
 
   it("tells export where to write and how to publish", () => {
-    const text = readFileSync(`${plugin}/commands/export.md`, "utf8");
+    const text = readFileSync(`${plugin}/commands/kanban-export.md`, "utf8");
     expect(text).toContain("--out");
     expect(text).toContain("Artifact tool");
   });

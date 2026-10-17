@@ -5,8 +5,8 @@ import { describe, expect, it } from "vite-plus/test";
 /**
  * The merged plugin's hooks.json is load-bearing: Claude Code runs it in every session, and a malformed
  * file (hook objects listed directly under an event instead of matcher groups) makes hooks silently not
- * run — or worse, a bad entry can break the session. One file carries all three parts' hooks; these are
- * radar's cases over its share.
+ * run — or worse, a bad entry can break the session. One line per event runs one process for all three
+ * parts, radar's among them; these are radar's cases over its share.
  */
 type HookEntry = { type?: unknown; command?: unknown; timeout?: unknown };
 type Group = { matcher?: unknown; hooks?: unknown };
@@ -27,20 +27,19 @@ const EXPECTED_EVENTS = [
   "Notification",
 ];
 
-/** Events fired per tool call: a hook on them would start a process for every tool Claude runs. */
-const TOOL_EVENTS = ["PreToolUse", "PostToolUse", "PostToolUseFailure"];
+/** The event's word in the launcher line: SessionStart -> session-start. */
+const eventWord = (event: string): string => event.replaceAll(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
 
-/**
- * The one command every radar hook runs: the committed launcher's radar word, which starts the huddle
- * binary (downloading it on first use) and never blocks or fails Claude Code. A regex here: the literal
- * ${…} in a plain string would trip lint.
- */
-const COMMAND = /^sh "\$\{CLAUDE_PLUGIN_ROOT\}\/dist\/run" radar hook$/;
+/** The one command the event line runs: the committed launcher's hook word naming the event, which
+ *  starts the huddle binary (downloading it on first use) and never blocks or fails Claude Code.
+ *  Radar's hook is one part of that event's process. */
+const eventLine = (event: string): RegExp =>
+  new RegExp(`^sh "\\$\\{CLAUDE_PLUGIN_ROOT\\}/dist/run" hook ${eventWord(event)}$`);
 
-/** The groups of one event whose command is radar's launcher line. */
-const radarGroups = (event: string): Group[] =>
+/** The groups of one event whose command is the event's launcher line. */
+const eventGroups = (event: string): Group[] =>
   (parsed.hooks?.[event] ?? []).filter((group) =>
-    ((group?.hooks ?? []) as HookEntry[]).some((entry) => COMMAND.test(String(entry.command))),
+    ((group?.hooks ?? []) as HookEntry[]).some((entry) => eventLine(event).test(String(entry.command))),
   );
 
 /** One group must hold only command hooks with a command and a bounded timeout. */
@@ -55,17 +54,10 @@ function expectCommandGroup(event: string, group: Group): void {
   }
 }
 
-/** Every radar hook runs the bundled entrypoint behind the guard. */
-function expectGroupWiring(event: string, group: Group): void {
-  for (const entry of group.hooks as HookEntry[]) {
-    expect(entry.command, `${event}: runs the bundled radar hook`).toMatch(COMMAND);
-  }
-}
-
 describe("plugin/hooks/hooks.json, radar's share", () => {
   it("covers every radar event exactly once", () => {
     for (const event of EXPECTED_EVENTS) {
-      expect(radarGroups(event), `${event}: radar runs one hook`).toHaveLength(1);
+      expect(eventGroups(event), `${event}: one line names the event`).toHaveLength(1);
     }
   });
 
@@ -77,25 +69,25 @@ describe("plugin/hooks/hooks.json, radar's share", () => {
     }
   });
 
-  it("keeps every radar hook inside a 10 s budget", () => {
+  it("keeps every event line inside a 15 s budget", () => {
     for (const event of EXPECTED_EVENTS) {
-      for (const group of radarGroups(event)) {
+      for (const group of eventGroups(event)) {
         for (const entry of group.hooks as HookEntry[]) {
-          expect(entry.timeout, `${event}: radar's timeout must be a number <= 10`).toBeLessThanOrEqual(10);
+          expect(entry.timeout, `${event}: the event's timeout must be a number <= 15`).toBeLessThanOrEqual(
+            15,
+          );
         }
       }
     }
   });
 
-  it("never runs a process per tool call: tool calls come from the transcripts", () => {
-    for (const event of TOOL_EVENTS) {
-      expect(radarGroups(event), `${event}: radar hooks no tool event`).toHaveLength(0);
-    }
-  });
-
-  it("runs the launcher's radar word", () => {
+  it("runs the launcher's hook word naming the event", () => {
     for (const event of EXPECTED_EVENTS) {
-      for (const group of radarGroups(event)) expectGroupWiring(event, group);
+      for (const group of eventGroups(event)) {
+        for (const entry of group.hooks as HookEntry[]) {
+          expect(entry.command, `${event}: the event's launcher line`).toMatch(eventLine(event));
+        }
+      }
     }
   });
 });

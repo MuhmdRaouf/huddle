@@ -18,9 +18,9 @@ shows every change on the live board within half a second.
 ## First move in any session
 
 1. Run `kanban status`. It prints the epoch, any stopped line, the expedite lane and a count per column.
-2. Exit 4 means there is no board here. Offer `/huddle:init` (or `kanban init`); never create the folders by hand.
+2. Exit 4 means there is no board here. Offer `/huddle:kanban-init` (or `kanban init`); never create the folders by hand.
 3. `kanban: command not found`: the session hook has not put `kanban` on PATH yet (its first run downloads the
-   binary in the background). Ask the user to run `/huddle:kanban-status`: it runs the plugin's launcher directly and
+   binary in the background). Ask the user to run `/huddle:status`: it runs the plugin's launcher directly and
    downloads the binary if it is missing. `kanban` is on PATH from the next session. Do not search for the binary
    or install anything.
 
@@ -42,7 +42,7 @@ shows every change on the live board within half a second.
 | Urgent work | `kanban new ID ... --expedite --body-file F` | `references/flow.md` §Expedite |
 | Main is broken, everyone stop | `kanban stop-line --actor A --note '...'`, later `resume-line` | `references/flow.md` §Stop the line |
 | Plan a goal into tickets, run workers | | `references/lead.md` |
-| Open the live board | `/huddle:kanban-start` or `kanban start` | §The live board |
+| Open the live board | `kanban start` | §The live board |
 | Share a snapshot link | `kanban export --out FILE`, then the Artifact tool | §The live board |
 
 Every command that changes the board takes `--actor`, a short id that is yours alone (`lead`, `w1`, `rev`). Exit
@@ -112,9 +112,9 @@ A rundown is read-only: no moves, no edits. Done tickets appear only as a count.
 
 ## The live board
 
-- `/huddle:kanban-start` starts the board server for this project (one per board, localhost only) and opens the page.
-  The session hook starts it on its own when the project has a board. `/huddle:kanban-stop` stops it;
-  `/huddle:kanban-refresh` rescans now and reloads open pages; `/huddle:kanban-open` opens the page again.
+- The session hook starts the board's server for this project (one per board, localhost only) when the project
+  has a board; `kanban start` ensures it by hand and prints its address, `kanban stop` stops it.
+  `/huddle:kanban-refresh` rescans now and reloads open pages; `kanban open` opens the page again.
 - The page shows each column, an expedite lane, badges (priority, type, size, blocked, holder, waits on, moved by
   hand, incomplete), tags, and a drawer with the whole ticket. It works on a phone.
 - To share it beyond this machine: `kanban export --out <scratchpad>/kanban-board.html`, then publish that file

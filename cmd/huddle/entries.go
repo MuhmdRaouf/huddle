@@ -18,20 +18,31 @@ import (
 type entry = func(ctx context.Context, args []string, stdout, stderr io.Writer) int
 
 // entries holds one function per entry point this binary runs itself: the MCP server, the HTTP
-// server and the six hooks hooks.json runs. Every CLI subcommand and any operation by name go
-// through the CLI (run hands it the whole argv), which reads one line.
+// server, the two decision hooks that keep their own hook lines, and one entry per Claude Code
+// event, whose one process runs every part internal/hookplan lists for it. Every CLI subcommand
+// and any operation by name go through the CLI (run hands it the whole argv), which reads one
+// line.
 var entries = map[string]entry{
 	// The MCP server and the HTTP server.
 	"mcp":   mcpEntry,
 	"serve": serveEntry,
-	// The hooks: a hook never fails the session it runs in, so each stays silent and returns 0
-	// whatever happens.
-	"hook session-start": hookEntry(hooks.SessionStart),
-	"hook approve":       hookEntry(hooks.Approve),
-	"hook listen":        hookEntry(hooks.Listen),
-	"hook permit":        hookEntry(hooks.Permit),
-	"hook stop":          hookEntry(hooks.Stop),
-	"hook report":        hookEntry(hooks.Report),
+	// The decision hooks, still their own lines (approve for Bash, permit for the prompt): each
+	// stays silent and returns 0 whatever happens.
+	"hook approve": hookEntry(hooks.Approve),
+	"hook permit":  hookEntry(hooks.Permit),
+	// One entry per event, one process per event: the parts run in plan order and the exit code
+	// is 0 whatever happened.
+	"hook session-start":      eventHook("session-start"),
+	"hook user-prompt-submit": eventHook("user-prompt-submit"),
+	"hook pre-tool-use":       eventHook("pre-tool-use"),
+	"hook post-tool-use":      eventHook("post-tool-use"),
+	"hook notification":       eventHook("notification"),
+	"hook permission-request": eventHook("permission-request"),
+	"hook stop":               eventHook("stop"),
+	"hook subagent-start":     eventHook("subagent-start"),
+	"hook subagent-stop":      eventHook("subagent-stop"),
+	"hook session-end":        eventHook("session-end"),
+	"hook pre-compact":        eventHook("pre-compact"),
 }
 
 // serveEntry runs the HTTP server in the foreground, as the detached server `huddle up` starts

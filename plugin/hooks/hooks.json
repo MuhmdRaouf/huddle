@@ -2,52 +2,40 @@
   "hooks": {
     "SessionStart": [
       { "matcher": "startup|resume|clear|compact",
-        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook session-start", "timeout": 10 }] },
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook report", "timeout": 5 }] },
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" radar hook", "timeout": 5 }] },
-      { "matcher": "startup|resume|clear|compact",
-        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" kanban hook session-start", "timeout": 5 }] }
+        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook session-start", "timeout": 10 }] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook listen", "timeout": 5 }] },
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook report", "timeout": 5 }] },
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" radar hook", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook user-prompt-submit", "timeout": 5 }] }
     ],
     "PreToolUse": [
       { "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook approve", "timeout": 5 }] },
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook report", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook pre-tool-use", "timeout": 5 }] }
     ],
     "PostToolUse": [
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook listen", "timeout": 5 }] },
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook report", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook post-tool-use", "timeout": 5 }] }
     ],
     "Notification": [
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook report", "timeout": 5 }] },
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" radar hook", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook notification", "timeout": 5 }] }
     ],
     "PermissionRequest": [
       { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook permit", "timeout": 600 }] },
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook report", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook permission-request", "timeout": 5 }] }
     ],
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook stop", "timeout": 15 }] },
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook report", "timeout": 5 }] },
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" radar hook", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook stop", "timeout": 15 }] }
     ],
     "SubagentStart": [
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" radar hook", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook subagent-start", "timeout": 5 }] }
     ],
     "SubagentStop": [
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook report", "timeout": 5 }] },
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" radar hook", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook subagent-stop", "timeout": 5 }] }
     ],
     "SessionEnd": [
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook report", "timeout": 5 }] },
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" radar hook", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook session-end", "timeout": 5 }] }
     ],
     "PreCompact": [
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" radar hook", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook pre-compact", "timeout": 5 }] }
     ]
   }
 }

@@ -56,4 +56,4 @@ When a worker reports:
 - After every wave, `kanban status`: promote the tickets whose dependencies are now done.
 - A ticket in progress twice as long as its estimate: ask the worker for its state, or block it with the cause.
 - A broken main stops the line before anyone builds on it.
-- Keep the live board open (`/huddle:kanban-start`) and, when the user wants a link, export and publish it.
+- Keep the live board open (`kanban start`) and, when the user wants a link, export and publish it.

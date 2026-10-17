@@ -32,23 +32,25 @@ const repoRoot = "../../.."
 var huddleBin string
 
 // TestMain builds the binary the launcher cases install, so they exercise the exact binary the
-// plugin downloads.
+// plugin downloads. The build dir is removed before the exit, which a defer would not survive.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "radar-launcher-test-")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "radar launcher tests: %v\n", err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(dir)
 	bin := filepath.Join(dir, "huddle")
 	build := exec.Command("go", "build", "-ldflags", "-X main.version="+launcherVersion(nil), "-o", bin, "./cmd/huddle")
 	build.Dir = repoRoot
 	if out, err := build.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "building ./cmd/huddle: %v\n%s", err, out)
+		os.RemoveAll(dir)
 		os.Exit(1)
 	}
 	huddleBin = bin
-	os.Exit(m.Run())
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 // launcherVersion is the version the root VERSION names — the release the launcher pins, so the binary
@@ -86,7 +88,8 @@ func launcherPath(t *testing.T) string {
 	return path
 }
 
-// hooksCommand is the one command hooks.json gives radar's part of an event, as Claude Code reads it.
+// hooksCommand is the one command hooks.json runs for an event, radar's part inside it, as Claude
+// Code reads it: the launcher's hook line naming the event.
 func hooksCommand(t *testing.T) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(repoRoot, "plugin", "hooks", "hooks.json"))
@@ -107,15 +110,15 @@ func hooksCommand(t *testing.T) string {
 	if !ok || len(groups) == 0 {
 		t.Fatal("hooks.json gives SessionStart no command")
 	}
-	const radarLine = `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" radar hook`
+	const eventLine = `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook session-start`
 	for _, group := range groups {
 		for _, hook := range group.Hooks {
-			if hook.Command == radarLine {
+			if hook.Command == eventLine {
 				return hook.Command
 			}
 		}
 	}
-	t.Fatal("hooks.json runs no radar hook on SessionStart")
+	t.Fatal("hooks.json runs no event line on SessionStart")
 	return ""
 }
 
@@ -388,10 +391,10 @@ func pluginRoot(t *testing.T) string {
 	return root
 }
 
-// TestHooksJsonCommand runs the command hooks.json gives radar's part of every event, the way Claude
-// Code runs it: through /bin/sh, with the plugin root Claude Code sets and only the POSIX tools on
-// PATH. A hook never blocks or fails Claude Code, so every failure mode owes silence and exit 0; a
-// healthy one records its event.
+// TestHooksJsonCommand runs the command hooks.json runs for an event, radar's part inside it, the
+// way Claude Code runs it: through /bin/sh, with the plugin root Claude Code sets and only the
+// POSIX tools on PATH. A hook never blocks or fails Claude Code, so every failure mode owes silence
+// and exit 0; a healthy one records its event.
 func TestHooksJsonCommand(t *testing.T) {
 	command := hooksCommand(t)
 	plugin := pluginRoot(t)

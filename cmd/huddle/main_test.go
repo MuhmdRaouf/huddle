@@ -56,6 +56,8 @@ func TestRun(t *testing.T) {
 	t.Setenv("HUDDLE_CHANNEL", "")
 	t.Setenv("HUDDLE_AS", "")
 	t.Setenv("HUDDLE_TOKEN", "")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("RADAR_HOME", t.TempDir())
 	t.Setenv("HUDDLE_HOME", t.TempDir())
 	t.Setenv("CLAUDE_PROJECT_DIR", t.TempDir())
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
@@ -137,14 +139,19 @@ func TestSplitCommand(t *testing.T) {
 }
 
 // TestEntriesAreThePluginEntryPoints pins the table to the entry points the plugin runs itself:
-// the MCP server, the HTTP server and the six hooks hooks.json runs. Every CLI word — a
-// subcommand or an operation by name — goes to the CLI, which reads one argv.
+// the MCP server, the HTTP server, the two decision hooks (their own lines) and one hook entry
+// per event hooks.json serves. Every CLI word — a subcommand or an operation by name — goes to
+// the CLI, which reads one argv.
 func TestEntriesAreThePluginEntryPoints(t *testing.T) {
 	want := []string{
 		// The MCP server and the HTTP server.
 		"mcp", "serve",
-		// The hooks: a hook never fails the session it runs in.
-		"hook session-start", "hook approve", "hook listen", "hook permit", "hook stop", "hook report",
+		// The two decision hooks, still their own lines.
+		"hook approve", "hook permit",
+		// One entry per event, one process per event.
+		"hook session-start", "hook user-prompt-submit", "hook pre-tool-use", "hook post-tool-use",
+		"hook notification", "hook permission-request", "hook stop", "hook subagent-start",
+		"hook subagent-stop", "hook session-end", "hook pre-compact",
 	}
 	if len(entries) != len(want) {
 		t.Fatalf("entries has %d keys (%v), want %d", len(entries), keysOf(entries), len(want))
@@ -157,12 +164,16 @@ func TestEntriesAreThePluginEntryPoints(t *testing.T) {
 }
 
 // TestTheHookEntriesStaySilent checks every hook entry hooks.json runs: silent and exit 0
-// outside a huddle, because a hook never fails the session it runs in.
+// outside a huddle, because a hook never fails the session it runs in. The merged entries also
+// run radar's and kanban's parts, whose homes point at temp dirs like every test's.
 func TestTheHookEntriesStaySilent(t *testing.T) {
 	t.Setenv("HUDDLE_URL", "")
 	t.Setenv("HUDDLE_CHANNEL", "")
 	t.Setenv("HUDDLE_AS", "")
 	t.Setenv("HUDDLE_AUTOSTART", "0")
+	t.Setenv("RADAR_AUTOSTART", "0")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("RADAR_HOME", t.TempDir())
 	t.Setenv("HUDDLE_HOME", t.TempDir())
 	t.Setenv("CLAUDE_PROJECT_DIR", t.TempDir())
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
@@ -179,7 +190,12 @@ func TestTheHookEntriesStaySilent(t *testing.T) {
 
 // hookKeys lists the hook entries hooks.json runs.
 func hookKeys() []string {
-	return []string{"hook session-start", "hook approve", "hook listen", "hook permit", "hook stop", "hook report"}
+	return []string{
+		"hook approve", "hook permit",
+		"hook session-start", "hook user-prompt-submit", "hook pre-tool-use", "hook post-tool-use",
+		"hook notification", "hook permission-request", "hook stop", "hook subagent-start",
+		"hook subagent-stop", "hook session-end", "hook pre-compact",
+	}
 }
 
 // TestRunDispatchesThroughTheTable swaps the table for a recording one-key table, so every key

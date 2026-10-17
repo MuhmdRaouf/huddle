@@ -1,12 +1,12 @@
 package hooks
 
 // The hooks run inside every session and must never block one: silent on any failure, back
-// within the hooks.json timeout (their own internal deadlines sit at most 70 % inside it), never
-// a blocking decision — the Stop hook's deliberate block, only while asks await a reply,
-// excepted. Each case runs the hook itself against a Huddle that is down, slow (accepts and
-// never answers), answers garbage, or with odd env; the block cases run against the real server.
-// The cases run the hook functions in process (their entry points, run as child processes by
-// Claude Code, are covered by their own case below: exit 0, nothing on stderr).
+// within the deadline the hook plan grants their part of the event, never a blocking decision —
+// the Stop hook's deliberate block, only while asks await a reply, excepted. Each case runs the
+// hook itself against a Huddle that is down, slow (accepts and never answers), answers garbage,
+// or with odd env; the block cases run against the real server. The cases run the hook functions
+// in process (their entry points, run as child processes by Claude Code, are covered by their own
+// case below: exit 0, nothing on stderr).
 
 import (
 	"bufio"
@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/hookplan"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 )
@@ -342,12 +343,47 @@ func stopServerAt(t *testing.T, world, url string) {
 	_ = cmd.Run()
 }
 
-// ── the hooks.json timeouts ──────────────────────────────────────────────────
+// ── the plan's deadlines ─────────────────────────────────────────────────────
 
-// hooksTimeouts reads the timeout Claude Code grants each event, in ms, from the plugin's
-// hooks.json — the same file the launcher case of the plugin's own suite pins. Huddle's hooks
-// come first on every event they serve, so the first group's timeout is huddle's.
-func hooksTimeouts(t *testing.T) map[string]int {
+// TestDeadlinesSitInsideThePlanBudgets holds each hook's own worst-case deadlines against the
+// largest budget the hook plan grants it: the merged event process cuts a part at its budget, so
+// a handler whose internals overshoot every slice it gets would answer nothing but cuts. The
+// plan's own suite holds the sums against the timeout hooks.json grants each event. approve and
+// permit keep their own lines, so theirs are held against the timeouts those lines carry.
+func TestDeadlinesSitInsideThePlanBudgets(t *testing.T) {
+	worst := map[string]time.Duration{
+		"listen":        (listenStdinMS + listenTouchMS + listenFeedMS) * time.Millisecond,
+		"session-start": startBudgetMS * time.Millisecond,
+		"stop":          (stopStdinMS + stopInboxMS) * time.Millisecond,
+		"report":        reportBudgetMS * time.Millisecond,
+	}
+	for hook, ms := range worst {
+		largest, found := largestBudget(hook)
+		if !found {
+			t.Fatalf("the plan grants %s no budget", hook)
+		}
+		if ms > largest {
+			t.Errorf("%s can take %s inside itself, the plan never grants it more than %s", hook, ms, largest)
+		}
+	}
+	for hook, ms := range map[string]time.Duration{
+		"approve": (approveStdinMS + approveFetchMS) * time.Millisecond,
+		"permit":  (permitStdinMS + permitPostMS + permitBudgetMS + permitWaitMS + permitSlackMS) * time.Millisecond,
+	} {
+		seconds, ok := ownLineTimeout(t, hook)
+		if !ok {
+			t.Fatalf("hooks.json gives %s no line of its own", hook)
+		}
+		budget := time.Duration(seconds) * time.Second
+		if ms > budget*7/10 {
+			t.Errorf("%s can take %s; its own line grants %s (70%% is %s)", hook, ms, budget, budget*7/10)
+		}
+	}
+}
+
+// ownLineTimeout reads the timeout of the hook's own hooks.json line, in seconds: the one line
+// whose command ends in `hook <name>`.
+func ownLineTimeout(t *testing.T, hook string) (int, bool) {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "plugin", "hooks", "hooks.json"))
 	if err != nil {
@@ -356,62 +392,39 @@ func hooksTimeouts(t *testing.T) map[string]int {
 	var file struct {
 		Hooks map[string][]struct {
 			Hooks []struct {
-				Timeout int `json:"timeout"`
+				Command string `json:"command"`
+				Timeout int    `json:"timeout"`
 			} `json:"hooks"`
 		} `json:"hooks"`
 	}
 	if err := json.Unmarshal(raw, &file); err != nil {
 		t.Fatalf("parse hooks.json: %v", err)
 	}
-	out := map[string]int{}
-	for event, groups := range file.Hooks {
-		if len(groups) > 0 && len(groups[0].Hooks) > 0 {
-			out[event] = groups[0].Hooks[0].Timeout * 1000
+	suffix := " hook " + hook
+	for _, groups := range file.Hooks {
+		for _, group := range groups {
+			for _, entry := range group.Hooks {
+				if strings.HasSuffix(entry.Command, suffix) {
+					return entry.Timeout, true
+				}
+			}
 		}
 	}
-	return out
+	return 0, false
 }
 
-// TestDeadlinesSitInsideTheHooksJsonTimeouts holds each hook's own deadlines at most 70 % inside
-// the timeout hooks.json grants each event it serves, with a full second still to spare: the
-// hook is dead to Claude Code at the timeout, and the answer must land well before it.
-func TestDeadlinesSitInsideTheHooksJsonTimeouts(t *testing.T) {
-	timeouts := hooksTimeouts(t)
-	worst := map[string]int{
-		"approve":       approveStdinMS + approveFetchMS,
-		"listen":        listenStdinMS + listenTouchMS + listenFeedMS,
-		"permit":        permitStdinMS + permitPostMS + permitBudgetMS + permitWaitMS + permitSlackMS,
-		"session-start": startBudgetMS,
-		"stop":          stopStdinMS + stopInboxMS,
-		"report":        reportBudgetMS,
-	}
-	serves := map[string][]string{
-		"approve":       {"PreToolUse"},
-		"listen":        {"PostToolUse", "UserPromptSubmit"},
-		"permit":        {"PermissionRequest"},
-		"session-start": {"SessionStart"},
-		"stop":          {"Stop"},
-		"report": {
-			"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification",
-			"PermissionRequest", "Stop", "SubagentStop", "SessionEnd",
-		},
-	}
-	for hook, events := range serves {
-		for _, event := range events {
-			ms, ok := timeouts[event]
-			if !ok {
-				t.Fatalf("hooks.json grants %s no timeout", event)
+// largestBudget answers the largest deadline the hook plan grants one huddle hook, over every
+// event whose parts hold it.
+func largestBudget(hook string) (time.Duration, bool) {
+	largest, found := time.Duration(0), false
+	for _, parts := range hookplan.Events {
+		for _, part := range parts {
+			if part.Name == hook && part.Budget > largest {
+				largest, found = part.Budget, true
 			}
-			t.Run(hook+" vs "+event, func(t *testing.T) {
-				if worst[hook] > ms*7/10 {
-					t.Errorf("%s can take %d ms; %s grants %d (70%% is %d)", hook, worst[hook], event, ms, ms*7/10)
-				}
-				if want := ms - 1000; worst[hook] >= want {
-					t.Errorf("%s can take %d ms, within the last second of %s's %d ms", hook, worst[hook], event, ms)
-				}
-			})
 		}
 	}
+	return largest, found
 }
 
 // ── listen ───────────────────────────────────────────────────────────────────
@@ -572,15 +585,21 @@ func TestAutostartOffLeavesHuddleDownWithNoChannel(t *testing.T) {
 // ── the entry points as Claude Code runs them ────────────────────────────────
 
 // TestTheHookEntriesExitZeroInSilence runs the binary the way hooks.json runs each hook: with no
-// channel configured every hook answers 0 and prints nothing anywhere.
+// channel configured every event entry (and the two decision entries) answers 0 and prints
+// nothing anywhere.
 func TestTheHookEntriesExitZeroInSilence(t *testing.T) {
-	for _, name := range []string{"session-start", "approve", "listen", "stop"} {
+	for _, name := range []string{
+		"session-start", "approve", "user-prompt-submit", "pre-tool-use", "post-tool-use",
+		"notification", "permission-request", "stop", "subagent-start", "subagent-stop",
+		"session-end", "pre-compact",
+	} {
 		t.Run(name, func(t *testing.T) {
 			world := t.TempDir()
 			cmd := exec.Command(huddleBin, "hook", name)
 			cmd.Dir = world
 			cmd.Env = []string{
-				"HOME=" + t.TempDir(), "HUDDLE_HOME=" + world, "CLAUDE_PROJECT_DIR=" + world,
+				"HOME=" + t.TempDir(), "RADAR_HOME=" + t.TempDir(), "RADAR_AUTOSTART=0",
+				"HUDDLE_HOME=" + world, "CLAUDE_PROJECT_DIR=" + world,
 				"HUDDLE_NO_PROJECT_CRED=1", "HUDDLE_TOKEN=test-root", "HUDDLE_AUTOSTART=0",
 				"XDG_STATE_HOME=" + t.TempDir(),
 				"PATH=" + os.Getenv("PATH"),

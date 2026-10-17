@@ -1,14 +1,15 @@
 // The hooks.json cases. hooks.json is
 // load-bearing: Claude Code runs it in every session, and a malformed file (hook objects
 // listed directly under an event instead of matcher groups) makes the plugin's hooks silently
-// not run — or worse, a bad entry can break the session. The one file carries all three parts'
-// hooks; these cases hold radar's share of it.
+// not run — or worse, a bad entry can break the session. One line per event runs one process
+// for all three parts, radar's among them; these cases hold radar's share of it.
 package hook_test
 
 import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,16 +44,49 @@ func loadHooksJSON(t *testing.T) hooksFile {
 	return file
 }
 
-// radarHooks answers the one group per event whose command is radar's launcher line.
-func radarHooks(t *testing.T) map[string]hooksGroup {
+// launcherPrefix begins every hook line: the committed launcher's hook word, which starts the
+// huddle binary (downloading it on first use) and never blocks or fails Claude Code. The word
+// after it names the event, and radar's hook is one part of that event's process.
+const launcherPrefix = `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook `
+
+// eventWord is the Claude Code event's word in the launcher line: SessionStart -> session-start.
+func eventWord(event string) string {
+	var b strings.Builder
+	for i, r := range event {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				b.WriteByte('-')
+			}
+			b.WriteRune(r + ('a' - 'A'))
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// hookTimeoutMs is the timeout hooks.json grants the named event's line, in ms: Claude Code's
+// budget for the whole event, radar's part inside it.
+func hookTimeoutMs(t *testing.T, event string) int {
+	t.Helper()
+	group, ok := eventGroups(t)[event]
+	if !ok || len(group.Hooks) == 0 || group.Hooks[0].Timeout == nil {
+		t.Fatalf("hooks.json gives %s no hook timeout", event)
+	}
+	return int(*group.Hooks[0].Timeout * 1000)
+}
+
+// eventGroups answers the one group per event whose command is the event's launcher line.
+func eventGroups(t *testing.T) map[string]hooksGroup {
 	t.Helper()
 	out := map[string]hooksGroup{}
 	for event, groups := range loadHooksJSON(t).Hooks {
+		word := eventWord(event)
 		for _, group := range groups {
 			for _, entry := range group.Hooks {
-				if entry.Command == launcherCommand {
+				if entry.Command == launcherPrefix+word {
 					if _, again := out[event]; again {
-						t.Fatalf("%s runs radar's hook twice", event)
+						t.Fatalf("%s runs the event line twice", event)
 					}
 					out[event] = group
 				}
@@ -62,34 +96,15 @@ func radarHooks(t *testing.T) map[string]hooksGroup {
 	return out
 }
 
-// hookTimeoutMs is the timeout hooks.json gives radar's hook for an event, in ms: Claude Code's
-// budget for it.
-func hookTimeoutMs(t *testing.T, event string) int {
-	t.Helper()
-	group, ok := radarHooks(t)[event]
-	if !ok || len(group.Hooks) == 0 || group.Hooks[0].Timeout == nil {
-		t.Fatalf("hooks.json gives %s no radar hook timeout", event)
-	}
-	return int(*group.Hooks[0].Timeout * 1000)
-}
-
-// launcherCommand is the one command every radar hook runs: the committed launcher's radar word,
-// which starts the huddle binary (downloading it on first use) and never blocks or fails Claude
-// Code.
-const launcherCommand = `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" radar hook`
-
 func TestHooksJSON(t *testing.T) {
 	// Every event Claude Code fires that radar observes.
 	expectedEvents := []string{
 		"SessionStart", "SessionEnd", "UserPromptSubmit", "SubagentStart", "SubagentStop",
 		"Stop", "PreCompact", "Notification",
 	}
-	// Events fired per tool call: a hook on them would start a process for every tool Claude
-	// runs.
-	toolEvents := []string{"PreToolUse", "PostToolUse", "PostToolUseFailure"}
 
 	t.Run("covers every radar event exactly once", func(t *testing.T) {
-		mine := radarHooks(t)
+		mine := eventGroups(t)
 		var missing []string
 		for _, event := range expectedEvents {
 			if _, ok := mine[event]; !ok {
@@ -97,10 +112,7 @@ func TestHooksJSON(t *testing.T) {
 			}
 		}
 		if len(missing) > 0 {
-			t.Fatalf("hooks.json gives radar no hook on %v", missing)
-		}
-		if got := len(mine); got != len(expectedEvents) {
-			t.Fatalf("radar hooks %d events, want %d", got, len(expectedEvents))
+			t.Fatalf("hooks.json gives %v no event line", missing)
 		}
 	})
 
@@ -129,30 +141,21 @@ func TestHooksJSON(t *testing.T) {
 		}
 	})
 
-	t.Run("keeps every radar hook inside a 10 s budget", func(t *testing.T) {
-		for event, group := range radarHooks(t) {
+	t.Run("keeps every event line inside a 15 s budget", func(t *testing.T) {
+		for event, group := range eventGroups(t) {
 			for _, entry := range group.Hooks {
-				if entry.Timeout == nil || *entry.Timeout > 10 {
-					t.Errorf("%s: radar's timeout = %v, want a number <= 10", event, entry.Timeout)
+				if entry.Timeout == nil || *entry.Timeout > 15 {
+					t.Errorf("%s: timeout = %v, want a number <= 15", event, entry.Timeout)
 				}
 			}
 		}
 	})
 
-	t.Run("never runs radar per tool call: tool calls come from the transcripts", func(t *testing.T) {
-		mine := radarHooks(t)
-		for _, event := range toolEvents {
-			if _, ok := mine[event]; ok {
-				t.Errorf("%s: a radar hook on a tool event starts a process per tool call", event)
-			}
-		}
-	})
-
-	t.Run("runs the launcher's radar word", func(t *testing.T) {
-		for event, group := range radarHooks(t) {
+	t.Run("runs the launcher's hook word naming the event", func(t *testing.T) {
+		for event, group := range eventGroups(t) {
 			for _, entry := range group.Hooks {
-				if entry.Command != launcherCommand {
-					t.Errorf("%s: command = %q, want the launcher's radar word", event, entry.Command)
+				if entry.Command != launcherPrefix+eventWord(event) {
+					t.Errorf("%s: command = %q, want the launcher's %s line", event, entry.Command, eventWord(event))
 				}
 			}
 		}

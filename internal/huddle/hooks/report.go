@@ -251,7 +251,7 @@ func sessionPid(start int, parent func(int) (int, bool), command func(int) (stri
 }
 
 // hookChainLine is one ancestor the hook chain runs through: a shell, or the plugin's launcher
-// (`sh …/<plugin>/dist/run hook report`).
+// (`sh …/<plugin>/dist/run hook <event>`).
 func hookChainLine(line string) bool {
 	if strings.Contains(line, "/dist/run ") || strings.HasSuffix(strings.TrimSpace(line), "/dist/run") {
 		return true
