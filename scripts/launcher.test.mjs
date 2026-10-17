@@ -111,6 +111,7 @@ function rig(t, release, runtimes = [], uname) {
     chmodSync(join(bin, "uname"), 0o755);
   }
   const binHome = join(dir, "bin-home");
+  const lock = join(binHome, RELEASE.version, HUDDLE.lock);
   // Spawned, not spawnSync: a sync spawn would block this process's event loop and with it the asset server a
   // download test serves its fake binary from.
   const run = (args, env = {}) =>
@@ -124,8 +125,14 @@ function rig(t, release, runtimes = [], uname) {
       child.stderr.on("data", (chunk) => (stderr += chunk));
       child.on("close", (status) => resolve(ran(status, stdout, stderr)));
     });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return { dir, dist, bin, binHome, lock: join(binHome, RELEASE.version, HUDDLE.lock), run };
+  // A hook test's detached fetch is a child this process does not own and it keeps writing under dir after
+  // the test: removing the rig waits it out first (and ends it only when it is the rig's own), so rmSync
+  // never races it. The retries cover a fetcher that was just told to stop.
+  t.after(async () => {
+    await endDetachedFetch(dir, lock);
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  });
+  return { dir, dist, bin, binHome, lock, run };
 }
 
 /** A fresh directory under the system temp dir, removed by the caller. */
@@ -142,7 +149,15 @@ async function assetServer(t, body) {
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
-  t.after(() => server.close());
+  // closeAllConnections first: a keep-alive or half-open socket would otherwise hold close — and with it
+  // the test's teardown — open long after the downloader that opened it is gone.
+  t.after(
+    () =>
+      new Promise((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
+  );
   return { base: `http://127.0.0.1:${port}`, urls };
 }
 
@@ -171,6 +186,26 @@ async function until(probe, ms) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   return true;
+}
+
+/** Wait for the detached fetch a hook test started, so removing the rig dir never races the fetcher
+ *  still writing under it. The version dir's lock names the fetcher's pid; a live holder gets 5 s to
+ *  finish. One that overstays is sent SIGTERM only when its command line carries the rig dir — the
+ *  fetcher runs `sh <rig>/dist/run <word> --detached-fetch` — so a recycled pid or a foreign holder is
+ *  never signalled. */
+async function endDetachedFetch(dir, lock) {
+  if (!existsSync(lock)) return;
+  const [pid] = readFileSync(lock, "utf8").trim().split(/\s+/);
+  const holder = Number(pid);
+  if (!Number.isInteger(holder) || holder <= 0) return;
+  try {
+    process.kill(holder, 0);
+  } catch {
+    return; // the holder is gone; nothing is writing under the rig any more
+  }
+  if (await until(() => !existsSync(lock), 5_000)) return;
+  const line = spawnSync("ps", ["-ww", "-o", "command=", "-p", String(holder)], { encoding: "utf8" }).stdout;
+  if ((line ?? "").includes(dir)) process.kill(holder, "SIGTERM");
 }
 
 /** A fetch lock in the version dir holding `content`, as a detached download writes "<pid> <epoch seconds>". */
