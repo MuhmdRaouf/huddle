@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -160,7 +161,36 @@ func newLauncherWorld(t *testing.T, extras ...string) *launcherWorld {
 	// Registered after both TempDir calls so it runs before either removal: the fetch the wait
 	// is for still needs this PATH's mkdir, date and rm while it finishes.
 	t.Cleanup(func() { world.waitForDetachedDownloads(t) })
+	// Registered last so it runs first: a hook event can start this home's hub (autostart), and a
+	// hub left running holds a port of the walk after the test is gone.
+	t.Cleanup(func() { world.stopHub(t) })
 	return world
+}
+
+// stopHub stops the hub this world's home started, if any: the pid in its run directory, and only
+// while that process still names this home in its command line.
+func (w *launcherWorld) stopHub(t *testing.T) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(w.home, ".config", "huddle", "run", "huddle.pid"))
+	if err != nil {
+		return
+	}
+	pid, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil || pid <= 0 || !process.IsAlive(pid) {
+		return
+	}
+	command, err := exec.Command("ps", "-o", "command=", "-p", strconv.FormatInt(pid, 10)).Output()
+	if err != nil || !strings.Contains(string(command), w.home) {
+		return
+	}
+	process.SignalGroup(pid, syscall.SIGTERM)
+	deadline := time.Now().Add(10 * time.Second)
+	for process.IsAlive(pid) && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if process.IsAlive(pid) {
+		process.SignalGroup(pid, syscall.SIGKILL)
+	}
 }
 
 // contains answers whether names holds one name.
