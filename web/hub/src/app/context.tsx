@@ -13,6 +13,10 @@ import type { HuddleState } from "../store.ts";
  *  with an Undo where the action offers one. The shared toast's own type. */
 export type { ToastFn };
 
+/** Which credential this browser holds: "owner" (a sign-in link), "device" (a paired passkey),
+ *  "member", "satellite", or "" while the boot's whoami has not answered. */
+export type WhoAmI = { kind: string };
+
 /** The value under HuddleProvider, rebuilt on every change. */
 export type HuddleContextValue = {
   /** The open channel's state, Home's included (ch null). Mutated in place by the loaders. */
@@ -20,6 +24,8 @@ export type HuddleContextValue = {
   /** The registry of every reported session (the Now list and the Session screen). */
   registry: RegistryStore;
   api: Api;
+  /** Which credential this browser holds, from the boot's one whoami (main.tsx). */
+  who: WhoAmI;
   /** This paint's time; a component never reads the clock itself, so tests stay deterministic. */
   now: number;
   /** When the store last changed (epoch ms): the rail footer's "updated Xs ago". */

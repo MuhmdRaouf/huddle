@@ -142,7 +142,7 @@ func TestPairingOverHTTP(t *testing.T) {
 	if strings.Contains(setCookie, "Secure") {
 		t.Errorf("the loopback Set-Cookie %q asks for Secure, which http refuses", setCookie)
 	}
-	for _, want := range []string{"Path=/", "Max-Age=43200", "HttpOnly", "SameSite=Strict"} {
+	for _, want := range []string{"Path=/", "Max-Age=604800", "HttpOnly", "SameSite=Strict"} {
 		if !strings.Contains(setCookie, want) {
 			t.Errorf("the Set-Cookie %q misses %q", setCookie, want)
 		}

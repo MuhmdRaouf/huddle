@@ -14,13 +14,14 @@ import type { ComposeOptions } from "../compose/drafts.ts";
 import { Icon, type IconName, Logo } from "../icons.tsx";
 import { Time } from "../kit.tsx";
 import { KanbanTab } from "../kanban/KanbanTab.tsx";
+import { assertionFromJSON, credentialToJSON } from "../passkey.ts";
 import { RadarTab } from "../radar/app/RadarTab.tsx";
 import { radarAct, useRadarState } from "../radar/mount.tsx";
 import { machinesLine, machinesOf } from "../registry.ts";
 import { FIN } from "../status.ts";
 import { readPref, writePref } from "../storage.ts";
 import type { HuddleState } from "../store.ts";
-import { useHuddle } from "./context.tsx";
+import { errText, useHuddle } from "./context.tsx";
 import { IntroCtx } from "./intro.tsx";
 import { type Layout, useLayout } from "./layout.ts";
 import { NowContext, NowPane, SessionScreen } from "./Now.tsx";
@@ -496,10 +497,15 @@ function CopyButton({
   );
 }
 
-/** The page this browser gets when its sign-in has ended: how to get a new link — /huddle:setup
- *  in a Claude session, or `huddle open` in a terminal — and the server's version. */
+/** The page this browser gets when its sign-in has ended: one passkey touch when the home holds
+ *  a passkey, and the link commands under a smaller heading either way — /huddle:setup in a
+ *  Claude session, `huddle open` in a terminal — with the server's version under it all. */
 export function SignedOut(): JSX.Element {
+  const { api } = useHuddle();
   const [ver, setVer] = useState("Huddle");
+  const [passkeys, setPasskeys] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     document.title = "Huddle: signed out";
     fetch("/health")
@@ -508,7 +514,42 @@ export function SignedOut(): JSX.Element {
         if (h.version) setVer(`Huddle v${h.version}`);
       })
       .catch(() => {});
+    api
+      .api("/api/login/available")
+      .then((r) => {
+        if ((r as { passkeys?: unknown }).passkeys === true) setPasskeys(true);
+      })
+      .catch(() => {});
   }, []);
+
+  /** One touch: begin, the browser's own credential, finish, and the reload that lands the shell. */
+  const signIn = async (): Promise<void> => {
+    setBusy(true);
+    setError("");
+    try {
+      const r = (await api.api("/api/login/begin", { body: {} })) as { options?: unknown };
+      let cred: PublicKeyCredential;
+      try {
+        cred = (await navigator.credentials.get({
+          publicKey: assertionFromJSON(r.options).publicKey,
+        })) as PublicKeyCredential;
+      } catch (e) {
+        if ((e as { name?: string }).name === "NotAllowedError") {
+          setError("Sign-in cancelled. Try again.");
+        } else {
+          setError("No passkey on this device. Save one below, or use a sign-in link.");
+        }
+        return;
+      }
+      await api.api("/api/login/finish", { body: { response: credentialToJSON(cred) } });
+      location.reload();
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <main class="grid min-h-dvh place-items-center bg-base-200 p-4">
       <div class="flex w-full max-w-md flex-col gap-8">
@@ -528,30 +569,101 @@ export function SignedOut(): JSX.Element {
                   Signed out.
                 </b>{" "}
                 <span class="muted">
-                  This browser's sign-in ended: Huddle was set up again, its member was removed, or the link
-                  expired.
+                  This browser's sign-in ended: Huddle was set up again, its member was removed, the link
+                  expired, or the sign-in expired after 7 days unused.
                 </span>
               </span>
             </div>
-            <p class="text-sm muted">
-              Run <code>/huddle:setup</code> in any session of this huddle — or <code>huddle open</code> in a
-              terminal — for a new sign-in link, then open it here.
-            </p>
-            <CmdField id="so-c" label="In a Claude session" cmd="/huddle:setup" />
-            <CmdField id="so-t" label="Or in a terminal" cmd="huddle open" />
-            <CopyButton
-              text="/huddle:setup"
-              done="Copied: paste it into a Claude session"
-              class="btn btn-primary h-10 w-full text-sm"
-            >
-              <Icon name="copy" />
-              Copy /huddle:setup
-            </CopyButton>
+            {passkeys ? (
+              <>
+                <button
+                  type="button"
+                  class="btn btn-primary h-12 w-full text-sm"
+                  disabled={busy}
+                  onClick={() => void signIn()}
+                >
+                  <Icon name="key" />
+                  Sign in with a passkey
+                </button>
+                {error ? (
+                  <p role="alert" class="m-0 text-sm text-error">
+                    {error}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p class="text-sm muted">
+                Run <code>huddle open</code> once, then save a passkey: next time Touch ID signs you in.
+              </p>
+            )}
+            <div class="flex flex-col gap-3">
+              <h2 class="text-sm font-semibold">No passkey on this device?</h2>
+              <p class="text-sm muted">
+                Run <code>/huddle:setup</code> in any session of this huddle — or <code>huddle open</code> in
+                a terminal — for a new sign-in link, then open it here.
+              </p>
+              <CmdField id="so-c" label="In a Claude session" cmd="/huddle:setup" />
+              <CmdField id="so-t" label="Or in a terminal" cmd="huddle open" />
+              <CopyButton
+                text="/huddle:setup"
+                done="Copied: paste it into a Claude session"
+                class="btn btn-primary h-10 w-full text-sm"
+              >
+                <Icon name="copy" />
+                Copy /huddle:setup
+              </CopyButton>
+            </div>
           </div>
         </Panel>
         <p class="muted text-center text-xs">{ver}</p>
       </div>
     </main>
+  );
+}
+
+/** The banner a browser signed in by link shows at the top of the shell: save a passkey here and
+ *  the next sign-in is Touch ID, with no terminal and no link. */
+function SavePasskeyBanner({
+  busy,
+  error,
+  onSave,
+  onClose,
+}: {
+  busy: boolean;
+  error: string;
+  onSave: () => void;
+  onClose: () => void;
+}): JSX.Element {
+  return (
+    <div
+      class="flex shrink-0 flex-col gap-1.5 border-b hairline bg-base-100 px-4 py-2.5 sm:px-6"
+      data-banner="passkey"
+    >
+      <div class="flex items-center gap-3">
+        <span class="shrink-0 text-primary">
+          <Icon name="key" />
+        </span>
+        <p class="m-0 min-w-0 flex-1 text-sm muted">
+          Save a passkey for this browser — next time Touch ID signs you in.
+        </p>
+        <button type="button" class="btn btn-primary btn-sm" disabled={busy} onClick={onSave}>
+          Save passkey
+        </button>
+        <button
+          type="button"
+          class="btn btn-ghost btn-square btn-sm muted"
+          aria-label="Dismiss"
+          onClick={onClose}
+        >
+          <Icon name="x" />
+        </button>
+      </div>
+      {error ? (
+        <p role="alert" class="m-0 pl-9 text-sm text-error">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -656,7 +768,12 @@ export function App({
   // the pairing link's screen owns this window until it says otherwise (the state, not the
   // pathname, drops the gate — a repaint with the session cookie in lands the shell on Now)
   const [pairing, setPairing] = useState(() => location.pathname === "/pair");
-  const { state, registry, now, go } = useHuddle();
+  // the token the banner minted, which runs the same pair screen in place
+  const [pairToken, setPairToken] = useState<string | null>(null);
+  const [bannerOff, setBannerOff] = useState(() => readPref(localStorage, "passkey-banner", false));
+  const [minting, setMinting] = useState(false);
+  const [mintError, setMintError] = useState("");
+  const { state, registry, now, go, who, api } = useHuddle();
   const layout = useLayout();
   const [hash, setHash] = useState(location.hash);
   // the page-wide controls the open page handed up, kept with the page that named them
@@ -701,8 +818,44 @@ export function App({
 
   // the gate stands under every hook, so the render that leaves it keeps its hook order: the
   // pair screen needs no credential and no channel, and onPaired drops it once the finish's
-  // cookie is in
-  if (pairing) return <Pair onPaired={() => setPairing(false)} />;
+  // cookie is in. A pairing the banner opened leaves the banner off for good.
+  const paired = (): void => {
+    setPairing(false);
+    setPairToken(null);
+    writePref(localStorage, "passkey-banner", true);
+    setBannerOff(true);
+  };
+  if (pairing) return <Pair token={pairToken ?? undefined} onPaired={paired} />;
+
+  /** Mints one pairing link without a terminal and opens the ceremony it pays for. */
+  const savePasskey = async (): Promise<void> => {
+    setMinting(true);
+    setMintError("");
+    try {
+      const r = (await api.api("/api/pair/mint", { body: { action: "mint" } })) as { token?: string };
+      if (!r.token) throw new Error("the server sent no pairing link");
+      setPairToken(r.token);
+      setPairing(true);
+    } catch (e) {
+      setMintError(errText(e));
+    } finally {
+      setMinting(false);
+    }
+  };
+  // the banner asks only a browser whose credential is the owner's link session: a paired
+  // device already has its passkey, and a member may not mint one
+  const shellBanner: ComponentChildren =
+    who.kind === "owner" && !bannerOff ? (
+      <SavePasskeyBanner
+        busy={minting}
+        error={mintError}
+        onSave={() => void savePasskey()}
+        onClose={() => {
+          writePref(localStorage, "passkey-banner", true);
+          setBannerOff(true);
+        }}
+      />
+    ) : null;
 
   const steps = state.board?.steps ?? [];
   const roster = state.sessions?.sessions ?? [];
@@ -804,6 +957,7 @@ export function App({
   if (layout === "phone") {
     return (
       <div class="flex h-dvh flex-col bg-base-300">
+        {shellBanner}
         {nowId ? null : (
           <header class="flex shrink-0 items-center justify-between gap-3 px-5 pt-[22px] pb-3">
             <h1 class="text-[28px] font-semibold tracking-tight">{tabLabel(route.tab)}</h1>
@@ -819,11 +973,14 @@ export function App({
   // the tablet: the icon rail, then the list beside the detail when the tab has a list
   if (layout === "tablet") {
     return (
-      <div class="grid h-dvh grid-cols-[72px_minmax(0,1fr)] bg-base-300">
-        <IconRail tab={route.tab} n={n} />
-        <div class={`grid min-h-0 min-w-0 ${list ? "grid-cols-[360px_minmax(0,1fr)]" : "grid-cols-1"}`}>
-          {list}
-          {main}
+      <div class="flex h-dvh flex-col bg-base-300">
+        {shellBanner}
+        <div class="grid min-h-0 min-w-0 flex-1 grid-cols-[72px_minmax(0,1fr)]">
+          <IconRail tab={route.tab} n={n} />
+          <div class={`grid min-h-0 min-w-0 ${list ? "grid-cols-[360px_minmax(0,1fr)]" : "grid-cols-1"}`}>
+            {list}
+            {main}
+          </div>
         </div>
       </div>
     );
@@ -831,27 +988,30 @@ export function App({
 
   // the desktop: the top bar over the list, the detail and the context pane
   return (
-    <div class="grid h-dvh grid-rows-[52px_minmax(0,1fr)] bg-base-300">
-      <DesktopBar
-        tab={route.tab}
-        n={n}
-        live={liveOf}
-        machines={mline}
-        onPalette={onPalette}
-        onHelp={onHelp}
-      />
-      <div
-        class={`grid min-h-0 min-w-0 ${
-          list && context
-            ? "grid-cols-[320px_minmax(0,1fr)_340px]"
-            : list
-              ? "grid-cols-[320px_minmax(0,1fr)]"
-              : "grid-cols-1"
-        }`}
-      >
-        {list}
-        {main}
-        {context}
+    <div class="flex h-dvh flex-col bg-base-300">
+      {shellBanner}
+      <div class="grid min-h-0 min-w-0 flex-1 grid-rows-[52px_minmax(0,1fr)]">
+        <DesktopBar
+          tab={route.tab}
+          n={n}
+          live={liveOf}
+          machines={mline}
+          onPalette={onPalette}
+          onHelp={onHelp}
+        />
+        <div
+          class={`grid min-h-0 min-w-0 ${
+            list && context
+              ? "grid-cols-[320px_minmax(0,1fr)_340px]"
+              : list
+                ? "grid-cols-[320px_minmax(0,1fr)]"
+                : "grid-cols-1"
+          }`}
+        >
+          {list}
+          {main}
+          {context}
+        </div>
       </div>
     </div>
   );

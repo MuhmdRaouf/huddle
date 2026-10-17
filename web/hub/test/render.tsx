@@ -45,6 +45,7 @@ export function renderHuddle(
     state: { ...initialHuddleState(), ...state },
     registry: registry ?? createRegistry({ api }),
     api,
+    who: { kind: "" },
     now,
     updatedAt: now,
     go,

@@ -1,10 +1,12 @@
 package server
 
-// The pairing routes (SPEC 7.3): the four ceremonies a browser runs to pair a device with a
-// passkey and sign in with it later, and the page the printed link opens. They are the only
-// uncredentialed /api paths beside the join: they are how a session begins. Every write still
-// passes the guard — JSON that names its action, our Host, our own Origin — and the answers set
-// no token in a body: the session rides a cookie the browser keeps for itself.
+// The pairing routes (SPEC 7.3): the ceremonies a browser runs to pair a device with a passkey
+// and sign in with it later, the availability fact the signed-out page asks first, the link an
+// owner's own browser mints for itself, and the page the printed link opens. The ceremonies and
+// the availability are the only uncredentialed /api paths beside the join: they are how a
+// session begins. Every write still passes the guard — JSON that names its action, our Host, our
+// own Origin — and the answers set no token in a body: the session rides a cookie the browser
+// keeps for itself.
 
 import (
 	"encoding/json"
@@ -157,5 +159,47 @@ func (s *server) loginFinishRoute(w http.ResponseWriter, r *http.Request) error 
 		Device    string `json:"device"`
 		ExpiresIn int64  `json:"expires_in"`
 	}{session.Device, session.ExpiresIn}, nil)
+	return nil
+}
+
+// loginAvailableRoute answers the signed-out page's one question — does this home hold a passkey
+// at all — with the boolean and nothing else: no device names, no counts, nothing that differs
+// in shape or timing between a home with a passkey and one without.
+func (s *server) loginAvailableRoute(w http.ResponseWriter, r *http.Request) error {
+	any := false
+	if s.pairs != nil {
+		any = s.pairs.AnyDevicePaired(r.Context())
+	}
+	s.writeJSON(w, 200, struct {
+		Passkeys bool `json:"passkeys"`
+	}{any}, nil)
+	return nil
+}
+
+// pairMintRoute draws one pairing link for a browser that already holds the owner's credential:
+// the banner a link sign-in shows needs a token no terminal is printing. Only the owner and a
+// paired device's session may call it — the one credential a satellite or a member never holds —
+// and the token appears exactly once, in this answer.
+func (s *server) pairMintRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
+	if s.pairs == nil {
+		return &channel.HuddleError{Status: 500, Msg: "the pairing store is unavailable"}
+	}
+	if !me.Root {
+		return &channel.HuddleError{Status: 403, Msg: "only the owner may mint a pairing link"}
+	}
+	body, err := s.body(r)
+	if err != nil {
+		return err
+	}
+	if textOf(fieldOf(body, "action")) != "mint" {
+		return &channel.HuddleError{Status: 400, Msg: "a pairing mint names its action: {\"action\":\"mint\"}"}
+	}
+	invite, err := s.pairs.Mint(r.Context())
+	if err != nil {
+		return err
+	}
+	s.writeJSON(w, 200, struct {
+		Token string `json:"token"`
+	}{invite.Token}, nil)
 	return nil
 }

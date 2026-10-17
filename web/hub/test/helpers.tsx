@@ -60,6 +60,7 @@ export function makeCtx(state: HuddleState, over: Partial<HuddleContextValue> = 
       channelPath: (ch, p) => `/api/c/${ch}${p}`,
       channelHref: (ch, p) => `#/channels/${ch}${p}`,
     },
+    who: { kind: "" },
     now: NOW,
     updatedAt: NOW,
     go: (h) => {

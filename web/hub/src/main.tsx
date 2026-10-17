@@ -137,6 +137,10 @@ const act = createAct(
   (text, o) => toastFn(text, o),
 );
 
+/** Which credential this browser holds, from the boot's one whoami: the passkey banner an
+ *  owner's link session shows reads it, and a paired device's session keeps it hidden. */
+const who = { kind: "" };
+
 /** Navigates: the same hash re-routes, another one moves the address bar (app.js go). */
 function go(h: string): void {
   if (location.hash === h) {
@@ -438,6 +442,7 @@ function paintBody(): void {
     state: store.getState(),
     registry,
     api,
+    who,
     now: Date.now(),
     updatedAt,
     go,
@@ -488,3 +493,12 @@ setInterval(paint, 15_000); // relative times stay live (app.js's 15 s tick)
 
 registry.connect();
 void syncChannel().finally(paint);
+// the one boot request that names who this browser is; its answer repaints the shell's banner
+void api
+  .api("/api/whoami")
+  .then((w) => {
+    const kind = (w as { kind?: unknown }).kind;
+    if (typeof kind === "string" && kind) who.kind = kind;
+  })
+  .catch(() => {})
+  .then(() => paint());

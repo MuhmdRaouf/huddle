@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 15
+const SchemaVersion = 16
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -47,7 +47,7 @@ var migrations = []string{
 	// stays computed on read.
 	`ALTER TABLE sessions ADD COLUMN ended_at TEXT;`,
 	// 4: device pairing (SPEC 7.3): one-use links kept as digests only, the devices their
-	// passkeys enrolled, the twelve-hour sessions their cookies carry, and the audit and alert
+	// passkeys enrolled, the sessions their cookies carry, and the audit and alert
 	// rows a pairing owes. Times are whole milliseconds; a session dies with its device (the
 	// removal cascades), and audit rows are never deleted by the app.
 	`CREATE TABLE pairings (
@@ -208,6 +208,10 @@ var migrations = []string{
 	// 15: the harness a session runs in — codex, gemini, qwen, opencode, crush — as its hook
 	// reported it; NULL and empty are Claude Code itself, which names no harness.
 	`ALTER TABLE sessions ADD COLUMN harness TEXT;`,
+	// 16: the rolling device sessions: the moment a session last renewed, so a request more than
+	// an hour past it rolls the expiry seven days on and no other request writes. NULL is a
+	// session an older build granted: its next request renews it.
+	`ALTER TABLE device_sessions ADD COLUMN renewed INTEGER;`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

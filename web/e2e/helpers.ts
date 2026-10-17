@@ -1,9 +1,10 @@
 // helpers.ts — what every spec shares: a root sign-in code minted over the API, the browser
-// sign-in through that one-time link, and the headers a direct API call needs. The tests read
-// the setup file the global setup wrote.
+// sign-in through that one-time link, the virtual authenticator a passkey ceremony runs on, and
+// the headers a direct API call needs. The tests read the setup file the global setup wrote.
 
-import { expect, type Page } from "@playwright/test";
-import { readSetup, type E2eSetup } from "./paths.ts";
+import { expect, type CDPSession, type Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { readSetup, repoRoot, runDir, type E2eSetup } from "./paths.ts";
 
 /** The fixture's token numbers, as the transcript and the spool both carry them: three glm-5.3
  *  requests whose totals the dashboard must show exactly. A fourth call twenty-five hours back
@@ -74,13 +75,85 @@ export async function loginCode(): Promise<string> {
 }
 
 /** Signs this browser in the way the owner does: the one-time link becomes a cookie, then the
- *  shell paints. */
-export async function signIn(page: Page): Promise<void> {
+ *  shell paints. `base` names the origin to sign in at (the localhost one, when a passkey
+ *  ceremony follows: the relying party is that name). */
+export async function signIn(page: Page, base: string = theSetup().rootUrl): Promise<void> {
   const code = await loginCode();
   const settled = page.waitForURL((url) => !url.searchParams.has("code"));
-  await page.goto(`${theSetup().rootUrl}/?code=${code}`);
+  await page.goto(`${base}/?code=${code}`);
   await settled;
   // signed in is the shell itself: the five tabs stand in the top bar
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+}
+
+/** The run's environment: the temp homes the server runs on, so `huddle pair` mints its link
+ *  into the same hub database the server spends it from. */
+function pairEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    HOME: `${runDir}/home`,
+    HUDDLE_HOME: `${runDir}/huddle-home`,
+    RADAR_HOME: `${runDir}/radar-home`,
+    CLAUDE_CONFIG_DIR: `${runDir}/claude-config`,
+  };
+}
+
+/** Runs `huddle pair` and answers the link and the code it printed. */
+export function mintPairLink(name: string): { link: string; code: string } {
+  const out = execFileSync(`${runDir}/bin/huddle`, ["pair", "--name", name], {
+    cwd: repoRoot,
+    env: pairEnv(),
+    encoding: "utf8",
+  });
+  const link = /http:\/\/localhost:\d+\/pair#[A-Z2-7]{26}/.exec(out)?.[0];
+  const code = /code ([A-Z2-7]{3}-[A-Z2-7]{3}) /.exec(out)?.[1];
+  if (link === undefined || code === undefined) {
+    throw new Error(`huddle pair printed no link or code:\n${out}`);
+  }
+  return { link, code };
+}
+
+/** Arms a virtual platform authenticator on the page, the way a phone's passkey works. */
+export async function useVirtualAuthenticator(page: Page): Promise<CDPSession> {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+    },
+  });
+  return cdp;
+}
+
+/** Drives the whole pairing a `huddle pair` link opens: the name stage, the code stage, the
+ *  passkey the virtual authenticator makes, and the shell its cookie lands on. */
+export async function pairThroughLink(page: Page, name: string): Promise<void> {
+  const { link, code } = mintPairLink(name);
+  await page.goto(link);
+  const field = page.getByLabel("Device name");
+  await expect(field).toBeVisible();
+  await field.fill(name);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText("Pairing code")).toBeVisible();
+  await expect(page.getByText(code)).toBeVisible();
+  await page.getByRole("button", { name: "It matches" }).click();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+}
+
+/** The pairing the shell's banner opens: the page mints its own link, then the same two stages
+ *  run on the token the server answered with. */
+export async function pairThroughBanner(page: Page, name: string): Promise<void> {
+  await page.getByRole("button", { name: "Save passkey" }).click();
+  const field = page.getByLabel("Device name");
+  await expect(field).toBeVisible();
+  await field.fill(name);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText("Pairing code")).toBeVisible();
+  await page.getByRole("button", { name: "It matches" }).click();
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 }
 

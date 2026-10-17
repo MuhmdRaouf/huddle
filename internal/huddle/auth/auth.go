@@ -60,15 +60,26 @@ const (
 // Who a credential is: the owner (a root or a browser), a member, or nobody. Browser names the
 // member whose login code signed this browser in (empty for sessions and the root's browsers);
 // Device names the paired device whose passkey signed this session in; Satellite names the
-// machine whose credential the hub listener verified.
+// machine whose credential the hub listener verified. Kind names which of those this is, for the
+// page that asks who it is.
 type Who struct {
 	Name      string `json:"name"`
+	Kind      string `json:"kind,omitempty"`
 	Root      bool   `json:"root"`
 	Invite    bool   `json:"invite"`
 	Browser   string `json:"browser,omitempty"`
 	Device    string `json:"device,omitempty"`
 	Satellite string `json:"satellite,omitempty"`
 }
+
+// The kinds a Who carries: the owner's link session or root token, a paired device's session, a
+// member's token or browser, a satellite machine's credential.
+const (
+	KindOwner     = "owner"
+	KindDevice    = "device"
+	KindMember    = "member"
+	KindSatellite = "satellite"
+)
 
 // InviteOptions is a new invite; TTL is seconds, nil the 24 h default and 0 no expiry.
 type InviteOptions struct {
@@ -543,7 +554,7 @@ func (a *Auth) Who(cred string) (Who, bool) {
 	ok := false
 	for _, r := range a.roots {
 		if same(d, r) {
-			found, ok = Who{Name: "owner", Root: true, Invite: true}, true
+			found, ok = Who{Name: "owner", Root: true, Invite: true, Kind: KindOwner}, true
 		}
 	}
 	for _, b := range a.browsers {
@@ -551,16 +562,16 @@ func (a *Auth) Who(cred string) (Who, bool) {
 			continue
 		}
 		if b.by == nil {
-			found, ok = Who{Name: "owner", Root: true, Invite: true}, true
+			found, ok = Who{Name: "owner", Root: true, Invite: true, Kind: KindOwner}, true
 		} else if _, isMember := a.member(*b.by); isMember {
-			found, ok = Who{Name: "owner", Browser: *b.by}, true
+			found, ok = Who{Name: "owner", Browser: *b.by, Kind: KindMember}, true
 		}
 	}
 	for _, m := range a.members {
 		if !same(d, m.cred) {
 			continue
 		}
-		found, ok = Who{Name: m.name, Invite: m.invite}, true
+		found, ok = Who{Name: m.name, Invite: m.invite, Kind: KindMember}, true
 		m.seen = a.nowMs()
 		a.later()
 	}

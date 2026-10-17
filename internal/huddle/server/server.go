@@ -938,7 +938,7 @@ func (s *server) who(r *http.Request) (auth.Who, bool) {
 		// a satellite the hub listener's gate verified carries its machine in the context
 		// (roles.go): the owner's machine, not a session or a browser
 		if machine, satellite := satelliteFrom(r.Context()); satellite {
-			who, ok = auth.Who{Name: "satellite:" + machine, Satellite: machine}, true
+			who, ok = auth.Who{Name: "satellite:" + machine, Kind: auth.KindSatellite, Satellite: machine}, true
 		}
 	}
 	return who, ok
@@ -1012,7 +1012,7 @@ func (s *server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	// the pairing and sign-in ceremonies are how a browser earns a session: they run before any
 	// credential exists (every other /api and /mcp path demands one)
 	if (strings.HasPrefix(path, "/api/") || path == "/mcp" || strings.HasPrefix(path, "/mcp/")) &&
-		!strings.HasPrefix(path, "/api/pair/") && !strings.HasPrefix(path, "/api/login/") {
+		path != "/api/pair/begin" && path != "/api/pair/finish" && !strings.HasPrefix(path, "/api/login/") {
 		credentialed = true
 		who, ok := s.who(r)
 		if !ok {
@@ -1025,6 +1025,12 @@ func (s *server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			s.writeJSON(w, 403, errorAnswer{Error: fmt.Sprintf(
 				"this credential is %s's: it acts as %s or %s.<role>, not %s", me.Name, me.Name, me.Name, as)}, nil)
 			return
+		}
+		// a device session in use rolls forward: a request more than an hour past its last
+		// renewal buys seven more days, and the answer carries the cookie's fresh life. The
+		// stream's own heartbeats never run here, so an open stream alone renews nothing.
+		if s.pairs != nil && me.Device != "" && s.pairs.Renew(r.Context(), auth.PairCookie(r)) {
+			w.Header().Set("Set-Cookie", auth.PairCookieSet(r.TLS != nil, auth.PairCookie(r)))
 		}
 	}
 
@@ -1262,10 +1268,14 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.pairBeginRoute(w, r)
 	case path == "/api/pair/finish" && r.Method == http.MethodPost:
 		return s.pairFinishRoute(w, r)
+	case path == "/api/login/available" && r.Method == http.MethodGet:
+		return s.loginAvailableRoute(w, r)
 	case path == "/api/login/begin" && r.Method == http.MethodPost:
 		return s.loginBeginRoute(w, r)
 	case path == "/api/login/finish" && r.Method == http.MethodPost:
 		return s.loginFinishRoute(w, r)
+	case credentialed && path == "/api/pair/mint" && r.Method == http.MethodPost:
+		return s.pairMintRoute(w, r, me)
 	case credentialed && path == "/api/stepup/begin" && r.Method == http.MethodPost:
 		return s.stepUpBeginRoute(w, r, me)
 	case credentialed && path == "/api/stepup/finish" && r.Method == http.MethodPost:

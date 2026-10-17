@@ -75,8 +75,8 @@ func (d *DB) PairFinish(ctx context.Context, digest string, dev Device, sessionD
 			return err
 		}
 		if err := q.Run(ctx,
-			"INSERT INTO device_sessions (digest, device, expires, stepup_at) VALUES (?, ?, ?, ?)",
-			sessionDigest, dev.Name, sessionExpiresMS, nowMS); err != nil {
+			"INSERT INTO device_sessions (digest, device, expires, stepup_at, renewed) VALUES (?, ?, ?, ?, ?)",
+			sessionDigest, dev.Name, sessionExpiresMS, nowMS, nowMS); err != nil {
 			return err
 		}
 		if err := auditRow(ctx, q, nowMS, dev.Name, "pair", dev.Name); err != nil {
@@ -101,8 +101,8 @@ func (d *DB) LoginFinish(ctx context.Context, dev Device, sessionDigest string, 
 			return err
 		}
 		if err := q.Run(ctx,
-			"INSERT OR REPLACE INTO device_sessions (digest, device, expires, stepup_at) VALUES (?, ?, ?, ?)",
-			sessionDigest, dev.Name, sessionExpiresMS, nowMS); err != nil {
+			"INSERT OR REPLACE INTO device_sessions (digest, device, expires, stepup_at, renewed) VALUES (?, ?, ?, ?, ?)",
+			sessionDigest, dev.Name, sessionExpiresMS, nowMS, nowMS); err != nil {
 			return err
 		}
 		return auditRow(ctx, q, nowMS, dev.Name, "signin", dev.Name)
@@ -178,6 +178,29 @@ func (d *DB) DeviceSession(ctx context.Context, digest string, nowMS int64) (str
 			nowMS, device, nowMS-deviceSeenWindow)
 	})
 	return device, live, err
+}
+
+// SessionRenew rolls one session's expiry forward when its holder keeps using it, at most once
+// per renewal window: the write lands only on a live session whose last renewal is older than
+// renewEveryMS (a NULL renewal moment — a session an older build granted — always reads due) and
+// only when the new expiry is later than the one it holds. A removed device's sessions are
+// already gone with it, so there is nothing to write.
+func (d *DB) SessionRenew(ctx context.Context, digest string, nowMS, renewEveryMS, expiresMS int64) (bool, error) {
+	renewed := false
+	err := d.st.Tx(ctx, func(ctx context.Context, q store.Q) error {
+		if err := q.Run(ctx,
+			"UPDATE device_sessions SET expires = ?, renewed = ? WHERE digest = ? AND expires > ? AND expires < ? AND (renewed IS NULL OR renewed < ?)",
+			expiresMS, nowMS, digest, nowMS, expiresMS, nowMS-renewEveryMS); err != nil {
+			return err
+		}
+		changed, err := changesOf(ctx, q)
+		if err != nil {
+			return err
+		}
+		renewed = changed
+		return nil
+	})
+	return renewed, err
 }
 
 // SessionSteppedUp answers whether a live device session holds an assertion at most one window

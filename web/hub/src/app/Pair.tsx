@@ -31,9 +31,14 @@ function Tick(): JSX.Element {
   );
 }
 
-export function Pair({ onPaired }: { onPaired?: () => void } = {}): JSX.Element {
+export function Pair({
+  token: given,
+  onPaired,
+}: { token?: string | undefined; onPaired?: () => void } = {}): JSX.Element {
   const { api } = useHuddle();
-  const [token] = useState(() => location.hash.replace(/^#/, ""));
+  // the link's token rides the fragment at /pair; the banner's minted token arrives as a prop
+  const [hashToken] = useState(() => location.hash.replace(/^#/, ""));
+  const token = given ?? hashToken;
   const [name, setName] = useState(() => deviceNameFromUA(navigator.userAgent));
   const [stage, setStage] = useState<Stage>("name");
   const [code, setCode] = useState("");

@@ -165,11 +165,11 @@ func TestAuth(t *testing.T) {
 		if strings.Contains(j.Credential, secretHalf(inv.Token)) {
 			t.Error("the member credential carries the invite's secret")
 		}
-		if w, ok := a.Who(j.Credential); !ok || w != (Who{Name: "api"}) {
-			t.Errorf("who(member) = %+v (found %v), want {api false false}", w, ok)
+		if w, ok := a.Who(j.Credential); !ok || w != (Who{Name: "api", Kind: KindMember}) {
+			t.Errorf("who(member) = %+v (found %v), want {api member}", w, ok)
 		}
-		if w, ok := a.Who("root-cred-xyz"); !ok || w != (Who{Name: "owner", Root: true, Invite: true}) {
-			t.Errorf("who(root) = %+v (found %v), want {owner true true}", w, ok)
+		if w, ok := a.Who("root-cred-xyz"); !ok || w != (Who{Name: "owner", Kind: KindOwner, Root: true, Invite: true}) {
+			t.Errorf("who(root) = %+v (found %v), want {owner owner true true}", w, ok)
 		}
 		if _, ok := a.Who("nope"); ok {
 			t.Error("who of an unknown credential found someone")
@@ -241,7 +241,7 @@ func TestAuth(t *testing.T) {
 			t.Fatal("the member's login code did not redeem")
 		}
 		w, found := a.Who(cookie)
-		if !found || w != (Who{Name: "owner", Browser: "api"}) {
+		if !found || w != (Who{Name: "owner", Kind: KindMember, Browser: "api"}) {
 			t.Fatalf("who(cookie) = %+v (found %v), want the owner as api's browser", w, found)
 		}
 		if !MayAct(w, "owner") {

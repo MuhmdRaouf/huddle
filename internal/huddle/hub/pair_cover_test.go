@@ -7,9 +7,12 @@ package hub
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 )
 
 // pairNow is one moment the pairing fixtures build their times from.
@@ -217,5 +220,101 @@ func TestDeviceSessionRefreshesAStaleLastSeen(t *testing.T) {
 	}
 	if _, live, err := db.DeviceSession(ctx, "session", pairNow.Add(2*time.Hour).UnixMilli()); err != nil || live {
 		t.Errorf("an expired session = (_, %v, %v), want none", live, err)
+	}
+}
+
+// TestSessionRenewWritesOnlyWhenDue proves the one-write-per-hour rule at the storage layer: a
+// session renews when its last renewal is older than the window (or it never had one), refuses
+// when it is not due, and a session that is expired or gone writes nothing.
+func TestSessionRenewWritesOnlyWhenDue(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	savePairing(t, db, "digest", pairNow.Add(10*time.Minute))
+	granted := pairNow.UnixMilli()
+	if err := db.PairFinish(ctx, "digest", pairDevice("phone"), "session", granted+(7*24*time.Hour).Milliseconds(), granted); err != nil {
+		t.Fatalf("PairFinish: %v", err)
+	}
+
+	// inside the window: no write, and the row keeps its grant
+	hour := int64(time.Hour.Milliseconds())
+	inside := granted + hour - 1000
+	if renewed, err := db.SessionRenew(ctx, "session", inside, hour, inside+(7*24*time.Hour).Milliseconds()); err != nil || renewed {
+		t.Errorf("a renewal inside the window = (%v, %v), want none", renewed, err)
+	}
+
+	// past the window: the expiry and the renewal moment both move
+	due := granted + hour + 1000
+	newExpires := due + (7 * 24 * time.Hour).Milliseconds()
+	if renewed, err := db.SessionRenew(ctx, "session", due, hour, newExpires); err != nil || !renewed {
+		t.Fatalf("a renewal past the window = (%v, %v), want one", renewed, err)
+	}
+	row, err := db.st.Get(ctx, "SELECT expires, renewed FROM device_sessions WHERE digest = 'session'")
+	if err != nil || row == nil {
+		t.Fatalf("read the session: %v %v", row, err)
+	}
+	if row["expires"] != newExpires || row["renewed"] != due {
+		t.Errorf("the renewed row = %v, want expires %d renewed %d", row, newExpires, due)
+	}
+
+	// an expired session and a digest of no session write nothing
+	late := newExpires + 1000
+	if renewed, err := db.SessionRenew(ctx, "session", late, hour, late+(7*24*time.Hour).Milliseconds()); err != nil || renewed {
+		t.Errorf("an expired session renewed = (%v, %v)", renewed, err)
+	}
+	if renewed, err := db.SessionRenew(ctx, "no-session", due, hour, newExpires); err != nil || renewed {
+		t.Errorf("a digest of no session renewed = (%v, %v)", renewed, err)
+	}
+}
+
+// TestMigration16KeepsExistingSessionsAndDuesThem builds the schema the previous release wrote
+// (a device_sessions table with no renewal column), opens it with this build, and proves the
+// session it holds stays valid and reads due for its first renewal.
+func TestMigration16KeepsExistingSessionsAndDuesThem(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "hub.db")
+	st, err := store.Open(context.Background(), file)
+	if err != nil {
+		t.Fatalf("open the v15 store: %v", err)
+	}
+	if err := st.Run(context.Background(), "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"); err != nil {
+		t.Fatalf("meta: %v", err)
+	}
+	for n := 0; n < 15; n++ {
+		if err := st.Run(context.Background(), migrations[n]); err != nil {
+			t.Fatalf("migration %d: %v", n+1, err)
+		}
+	}
+	if err := st.Run(context.Background(), "INSERT INTO meta (key, value) VALUES ('schema_version', '15')"); err != nil {
+		t.Fatalf("version: %v", err)
+	}
+	at := pairNow.UnixMilli()
+	if err := st.Run(context.Background(),
+		"INSERT INTO devices (name, handle, credential, added, seen) VALUES ('phone', ?, '{}', ?, ?)",
+		[]byte("handle-phone"), at, at); err != nil {
+		t.Fatalf("the old device row: %v", err)
+	}
+	expires := at + (12 * time.Hour).Milliseconds()
+	if err := st.Run(context.Background(),
+		"INSERT INTO device_sessions (digest, device, expires) VALUES ('session', 'phone', ?)", expires); err != nil {
+		t.Fatalf("the old session row: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close the v15 store: %v", err)
+	}
+
+	db, err := Open(context.Background(), file)
+	if err != nil {
+		t.Fatalf("open with this build: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if name, live, err := db.DeviceSession(ctx, "session", at+time.Second.Milliseconds()); err != nil || !live || name != "phone" {
+		t.Fatalf("the migrated session = (%q, %v, %v), want phone live", name, live, err)
+	}
+	// the row the old build wrote carries no renewal moment: its next request renews it
+	hour := int64(time.Hour.Milliseconds())
+	later := at + time.Second.Milliseconds()
+	if renewed, err := db.SessionRenew(ctx, "session", later, hour, later+(7*24*time.Hour).Milliseconds()); err != nil || !renewed {
+		t.Errorf("a session with no renewal moment = (%v, %v), want renewed", renewed, err)
 	}
 }

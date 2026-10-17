@@ -2,7 +2,7 @@
 // rail, the desktop top bar with the jump field and the machines line), the five tabs' placeholder
 // panes, today's pages reachable under Channels, the routes with their redirects, the shell's
 // keys, and the signed-out and no-channel pages.
-import { act, render, screen } from "@testing-library/preact";
+import { act, cleanup, screen } from "@testing-library/preact";
 import type { ComponentType } from "preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { App, inboxOf, NoChannel, SignedOut } from "../../src/app/App.tsx";
@@ -589,7 +589,7 @@ describe("NoChannel and SignedOut", () => {
   });
 
   it("renders the sign-in card, sets the title and shows the server's version", async () => {
-    render(<SignedOut />);
+    renderIn(<SignedOut />);
     expect(document.title).toBe("Huddle: signed out");
     expect(screen.getByText("Signed out.")).toBeDefined();
     expect(screen.getByText("In a Claude session")).toBeDefined();
@@ -600,7 +600,7 @@ describe("NoChannel and SignedOut", () => {
   });
 
   it("offers /huddle:setup, the command that replaced /huddle:open", () => {
-    render(<SignedOut />);
+    renderIn(<SignedOut />);
     expect(screen.getByLabelText("Copy /huddle:setup")).toBeDefined();
     expect(screen.queryByLabelText("Copy /huddle:open")).toBeNull();
     expect(screen.queryByLabelText("Copy huddle:open")).toBeNull();
@@ -609,7 +609,7 @@ describe("NoChannel and SignedOut", () => {
   it("copies /huddle:setup and flashes the button", async () => {
     vi.useFakeTimers();
     const { writes } = stubClipboard();
-    render(<SignedOut />);
+    renderIn(<SignedOut />);
     // the card's own button (the cmd field's carries the same command, so target by class)
     const big = document.querySelector("main .btn-primary") as HTMLButtonElement;
     await act(async () => {
@@ -627,7 +627,7 @@ describe("NoChannel and SignedOut", () => {
 
   it("copies a command field's command", () => {
     const { writes } = stubClipboard();
-    render(<SignedOut />);
+    renderIn(<SignedOut />);
     void act(() => {
       screen.getByLabelText("Copy huddle open").click();
     });
@@ -636,7 +636,7 @@ describe("NoChannel and SignedOut", () => {
 
   it("stays quiet when the clipboard refuses", () => {
     stubClipboard(() => Promise.reject(new Error("no")));
-    render(<SignedOut />);
+    renderIn(<SignedOut />);
     void act(() => {
       screen.getByLabelText("Copy /huddle:setup").click();
     });
@@ -648,9 +648,81 @@ describe("NoChannel and SignedOut", () => {
       "fetch",
       vi.fn(() => Promise.resolve({ json: () => Promise.resolve({}) })),
     );
-    render(<SignedOut />);
+    renderIn(<SignedOut />);
     await flush();
     expect(screen.queryByText(/Huddle v/)).toBeNull(); // no version: the bare name stays
     expect(document.querySelector("p.muted.text-center.text-xs")?.textContent).toBe("Huddle");
+  });
+});
+
+describe("the save-passkey banner", () => {
+  /** Mounts the shell as a browser holding one kind of credential, over a recording api. */
+  function mountAs(kind: string, mintAnswer: unknown = { token: "ABCDEFGHijklmnopqrstuvwx" }) {
+    const calls: { path: string; body: unknown }[] = [];
+    const api = {
+      api: (path: string, o?: { body?: unknown }) => {
+        calls.push({ path, body: o?.body });
+        if (path === "/api/pair/mint") {
+          if (mintAnswer instanceof Error) return Promise.reject(mintAnswer);
+          return Promise.resolve(mintAnswer);
+        }
+        return Promise.resolve({});
+      },
+      op: () => Promise.resolve({}),
+      channelPath: (ch: string, p: string) => `/api/c/${ch}${p}`,
+      channelHref: (ch: string, p: string) => `#/channels/${ch}${p}`,
+    };
+    renderIn(<App pages={{}} />, makeCtx(makeState(), { api, who: { kind } }));
+    return { calls };
+  }
+
+  it("shows for an owner's link session, with its save and close buttons", () => {
+    mountAs("owner");
+    expect(
+      screen.getByText("Save a passkey for this browser — next time Touch ID signs you in."),
+    ).toBeDefined();
+    expect(screen.getByRole("button", { name: "Save passkey" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeDefined();
+  });
+
+  it("hides for a paired device's session and for a member's browser", () => {
+    mountAs("device");
+    expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
+    cleanup();
+    mountAs("member");
+    expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
+  });
+
+  it("stays hidden after its dismissal, across remounts", () => {
+    mountAs("owner");
+    void act(() => {
+      screen.getByRole("button", { name: "Dismiss" }).click();
+    });
+    expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
+    cleanup();
+    mountAs("owner");
+    expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
+  });
+
+  it("mints a link and opens the pair screen with its token", async () => {
+    const h = mountAs("owner");
+    await act(async () => {
+      screen.getByRole("button", { name: "Save passkey" }).click();
+    });
+    await flush();
+    expect(h.calls).toContainEqual({ path: "/api/pair/mint", body: { action: "mint" } });
+    // the pair screen owns the window: the name stage of the ceremony the token opened
+    expect(screen.getByLabelText("Device name")).toBeDefined();
+  });
+
+  it("says the refusal and keeps the banner when the mint fails", async () => {
+    mountAs("owner", Object.assign(new Error("only the owner may mint a pairing link"), { status: 403 }));
+    await act(async () => {
+      screen.getByRole("button", { name: "Save passkey" }).click();
+    });
+    await flush();
+    expect(screen.getByText("only the owner may mint a pairing link")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Save passkey" })).toBeDefined();
+    expect(screen.queryByLabelText("Device name")).toBeNull();
   });
 });

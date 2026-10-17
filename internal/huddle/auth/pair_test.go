@@ -1,9 +1,10 @@
 package auth
 
 // Device pairing (SPEC 7.3): one-use links of five minutes, WebAuthn passkeys with user
-// verification required, twelve-hour device sessions the owner can revoke at once. The store is
-// the real hub database over a temp file and the browser is the software authenticator beside
-// this file, so every refusal below is proven against the same checks the server runs.
+// verification required, device sessions that roll forward while their device uses them and end
+// after seven days without a request. The store is the real hub database over a temp file and the
+// browser is the software authenticator beside this file, so every refusal below is proven
+// against the same checks the server runs.
 
 import (
 	"context"
@@ -128,8 +129,8 @@ func TestPairFlow(t *testing.T) {
 	if session.Device != "iPhone" {
 		t.Errorf("paired device = %q, want iPhone", session.Device)
 	}
-	if session.ExpiresIn != 12*60*60 {
-		t.Errorf("session lasts %d s, want 43200", session.ExpiresIn)
+	if session.ExpiresIn != 7*24*60*60 {
+		t.Errorf("session lasts %d s, want 604800", session.ExpiresIn)
 	}
 	if !strings.HasPrefix(session.Cookie, "hdev_") {
 		t.Errorf("cookie %q carries no hdev_ mark", session.Cookie)
@@ -402,27 +403,91 @@ func TestLoginRefusals(t *testing.T) {
 	}
 }
 
-// TestSessionExpiresAtTwelveHours proves the twelve-hour life is the server's, not only the
-// cookie's.
-func TestSessionExpiresAtTwelveHours(t *testing.T) {
+// TestSessionEndsAfterSevenDaysIdle proves the idle window is the server's, not only the
+// cookie's: seven days without a request end the session even though each request rolls it.
+func TestSessionEndsAfterSevenDaysIdle(t *testing.T) {
 	h := newPairHarness(t)
 	ctx := context.Background()
 	_, session := h.pair(t, "iPhone", "http://localhost:18860")
 	if _, ok := h.p.Session(ctx, session.Cookie); !ok {
 		t.Fatal("the fresh session does not resolve")
 	}
-	h.add(12*60*60 + 1)
+	h.add(7*24*60*60 + 1)
 	if _, ok := h.p.Session(ctx, session.Cookie); ok {
-		t.Error("the session outlived twelve hours")
+		t.Error("the session outlived seven days without a request")
+	}
+}
+
+// TestSessionRenewsAtMostOnceAnHour proves the rolling life's edges: inside the hour after the
+// last renewal a request writes nothing, one past the hour rolls the expiry and the renewal
+// moment seven days on, and a session the database no longer holds — expired or removed with its
+// device — renews nothing.
+func TestSessionRenewsAtMostOnceAnHour(t *testing.T) {
+	h := newPairHarness(t)
+	ctx := context.Background()
+	_, session := h.pair(t, "iPhone", "http://localhost:18860")
+	granted := h.p.nowMS()
+
+	h.add(60*60 - 1)
+	if _, ok := h.p.Session(ctx, session.Cookie); !ok {
+		t.Fatal("the session died inside its renewal hour")
+	}
+	if h.p.Renew(ctx, session.Cookie) {
+		t.Error("a session inside its renewal hour renewed")
+	}
+	if expires, renewed := h.sessionRow(t, session.Cookie); expires != granted+PairSessionMS || renewed != granted {
+		t.Errorf("the row moved inside the hour: expires %d renewed %d, want %d and %d",
+			expires, renewed, granted+PairSessionMS, granted)
+	}
+
+	h.add(2) // one second past the hour
+	if !h.p.Renew(ctx, session.Cookie) {
+		t.Error("a session past its renewal hour did not renew")
+	}
+	rolled := h.p.nowMS()
+	if expires, renewed := h.sessionRow(t, session.Cookie); expires != rolled+PairSessionMS || renewed != rolled {
+		t.Errorf("the row after the renewal: expires %d renewed %d, want %d and %d",
+			expires, renewed, rolled+PairSessionMS, rolled)
+	}
+
+	// the rolled session answers a request that is seven days later still, then dies idle
+	h.add(7*24*60*60 - 2*60*60)
+	if _, ok := h.p.Session(ctx, session.Cookie); !ok {
+		t.Fatal("the rolled session died before its new expiry")
+	}
+	h.add(2*60*60 + 1)
+	if _, ok := h.p.Session(ctx, session.Cookie); ok {
+		t.Error("the session outlived seven days without a renewal")
+	}
+	if h.p.Renew(ctx, session.Cookie) {
+		t.Error("an expired session renewed")
+	}
+}
+
+// TestARemovedDevicesSessionRenewsNothing proves the renewal never reaches a session the
+// database says is gone: removing the device ends it, and its cookie renews nothing after.
+func TestARemovedDevicesSessionRenewsNothing(t *testing.T) {
+	h := newPairHarness(t)
+	ctx := context.Background()
+	_, session := h.pair(t, "iPhone", "http://localhost:18860")
+	h.add(2 * 60 * 60) // past the renewal hour, so a live session would renew
+	if !h.p.Remove(ctx, "iPhone") {
+		t.Fatal("remove iPhone answered false")
+	}
+	if _, ok := h.p.Session(ctx, session.Cookie); ok {
+		t.Error("the removed device's session survived")
+	}
+	if h.p.Renew(ctx, session.Cookie) {
+		t.Error("a removed device's session renewed")
 	}
 }
 
 // TestPairCookieNames serves both listeners: the TLS one takes __Host-huddle with Secure, the
 // plain loopback one a name without the prefix and without Secure (a browser refuses Secure on
-// http). Both are HttpOnly, SameSite=Strict, Path=/, twelve hours.
+// http). Both are HttpOnly, SameSite=Strict, Path=/, seven days.
 func TestPairCookieNames(t *testing.T) {
 	secure := PairCookieSet(true, "hdev_value")
-	for _, want := range []string{"__Host-huddle=hdev_value", "Path=/", "Max-Age=43200", "HttpOnly", "Secure", "SameSite=Strict"} {
+	for _, want := range []string{"__Host-huddle=hdev_value", "Path=/", "Max-Age=604800", "HttpOnly", "Secure", "SameSite=Strict"} {
 		if !strings.Contains(secure, want) {
 			t.Errorf("secure cookie %q misses %q", secure, want)
 		}
@@ -431,7 +496,7 @@ func TestPairCookieNames(t *testing.T) {
 	if !strings.HasPrefix(plain, "huddle=hdev_value") {
 		t.Errorf("plain cookie = %q, want the huddle name", plain)
 	}
-	for _, want := range []string{"Path=/", "Max-Age=43200", "HttpOnly", "SameSite=Strict"} {
+	for _, want := range []string{"Path=/", "Max-Age=604800", "HttpOnly", "SameSite=Strict"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("plain cookie %q misses %q", plain, want)
 		}
@@ -482,6 +547,20 @@ func (h *pairHarness) pairHandle(t *testing.T, name string) string {
 	}
 	handle, _ := rows[0]["handle"].([]byte)
 	return b64(handle)
+}
+
+// sessionRow reads one session's expiry and renewal moment straight from the database, the shape
+// the renewal's own writes are asserted against. A NULL renewal moment reads as 0.
+func (h *pairHarness) sessionRow(t *testing.T, cookie string) (expires, renewed int64) {
+	t.Helper()
+	rows, err := readRows(t, h.file, "SELECT expires, renewed FROM device_sessions WHERE digest = ?",
+		PairDigest(cookie))
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("read the session row: %v (%d rows)", err, len(rows))
+	}
+	expires, _ = rows[0]["expires"].(int64)
+	renewed, _ = rows[0]["renewed"].(int64)
+	return expires, renewed
 }
 
 // readRows queries the pairing's own database through a second read-only connection, the way

@@ -21,6 +21,20 @@ In Claude Code:
 That is all. The first session starts the hub and prints its address. The provider plugins in
 [claude-code-plugins](https://github.com/MuhmdRaouf/claude-code-plugins) install huddle for you.
 
+## Signing in
+
+The dashboard signs you in with a passkey first:
+
+1. Open the address the first session printed (or run `huddle open`). The page offers to save a
+   passkey for that browser — accept, and the passkey lives in your password manager or Touch ID.
+2. Every later visit is one touch: the signed-out page's "Sign in with a passkey" button signs
+   the shell back in on its own.
+3. A device session rolls forward while you use it and ends after 7 days unused; one touch
+   starts a fresh one. Remove a device from Settings on any paired device to end it at once.
+
+`huddle open` in a terminal, or `/huddle:setup` in a session, always prints a fresh one-time link
+as the fallback.
+
 ## Commands
 
 Ten slash commands, one product:

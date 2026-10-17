@@ -1,10 +1,10 @@
 // Pairing, passkeys and device sessions (SPEC 7.3): one-use links of five minutes, WebAuthn
-// credentials with user verification required, and twelve-hour cookie sessions the owner
-// revokes by removing the device. Nothing here writes crypto by hand: the ceremonies run
-// through go-webauthn, the tokens and sessions come from crypto/rand, and only sha256 digests
-// ever reach the database. A pairing token is hashed before any lookup — like every
-// password-reset token — so there is no secret comparison to time: the digest is the key, and
-// a leaked database names no live link.
+// credentials with user verification required, and cookie sessions that live while their device
+// uses them — seven days without a request ends one, and the owner revokes it by removing the
+// device. Nothing here writes crypto by hand: the ceremonies run through go-webauthn, the tokens
+// and sessions come from crypto/rand, and only sha256 digests ever reach the database. A pairing
+// token is hashed before any lookup — like every password-reset token — so there is no secret
+// comparison to time: the digest is the key, and a leaked database names no live link.
 package auth
 
 import (
@@ -34,11 +34,14 @@ const (
 	PairPlainCookie = "huddle"
 )
 
-// The pairing clocks SPEC 7.3 fixes: a link lives five minutes, a session twelve hours. The
-// ceremony's own challenge lives only as long as the link beside it.
+// The pairing clocks SPEC 7.3 fixes: a link lives five minutes, a session seven days of use. A
+// request more than PairRenewEveryMS past the session's last renewal rolls its expiry that far
+// on, so a session in use never ends and an abandoned one dies within the week. The ceremony's
+// own challenge lives only as long as the link beside it.
 const (
-	PairLinkMS    int64 = 5 * 60 * 1000
-	PairSessionMS int64 = 12 * 60 * 60 * 1000
+	PairLinkMS       int64 = 5 * 60 * 1000
+	PairSessionMS    int64 = 7 * 24 * 60 * 60 * 1000
+	PairRenewEveryMS int64 = 60 * 60 * 1000
 )
 
 // PairTokenRe is a pairing token's shape: 26 characters of base32, 130 bits of crypto/rand.
@@ -351,7 +354,24 @@ func (p *Pairing) Session(ctx context.Context, cookie string) (Who, bool) {
 	if err != nil || !ok {
 		return Who{}, false
 	}
-	return Who{Name: "owner", Root: true, Invite: true, Device: device}, true
+	return Who{Name: "owner", Root: true, Invite: true, Device: device, Kind: KindDevice}, true
+}
+
+// Renew rolls the session a cookie names forward while its holder keeps using it: a request
+// more than an hour past the session's last renewal buys seven more days, at most one write an
+// hour, and a session the database no longer holds — expired, or removed with its device —
+// renews nothing. The caller re-sends the cookie so the browser's own copy keeps the new life.
+func (p *Pairing) Renew(ctx context.Context, cookie string) bool {
+	if cookie == "" {
+		return false
+	}
+	now := p.nowMS()
+	renewed, err := p.db.SessionRenew(ctx, PairDigest(cookie), now, PairRenewEveryMS, now+PairSessionMS)
+	if err != nil {
+		p.log("device session renewal failed: " + err.Error())
+		return false
+	}
+	return renewed
 }
 
 // Devices lists the paired devices, the oldest first.
@@ -420,7 +440,7 @@ func (p *Pairing) sweep() {
 
 // PairCookieSet renders the session cookie's Set-Cookie line: __Host-huddle with Secure on a
 // TLS listener, plain huddle without it on the loopback one (a browser refuses Secure over
-// http). Both are HttpOnly, Path=/, SameSite=Strict, and last twelve hours.
+// http). Both are HttpOnly, Path=/, SameSite=Strict, and last the session's seven days.
 func PairCookieSet(secure bool, value string) string {
 	name := PairPlainCookie
 	mark := ""
