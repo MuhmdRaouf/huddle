@@ -42,7 +42,15 @@ func TestMain(m *testing.M) {
 		// no test matches the child's -test.run; m.Run's teardown flushes a coverage run's counters
 		os.Exit(m.Run())
 	}
-	os.Exit(m.Run())
+	// Every throwaway directory (tempDir's, the children's) lands under one root removed at the end.
+	root, err := os.MkdirTemp("", "huddle-server-test-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("TMPDIR", root)
+	code := m.Run()
+	os.RemoveAll(root)
+	os.Exit(code)
 }
 
 // childServer is one server process on a port of its own, ready to answer.
