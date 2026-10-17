@@ -678,19 +678,26 @@ func TestUpAloneStartsTheServerWithoutTheRemovalWatch(t *testing.T) {
 	}
 }
 
-// pinFreePort saves a port the OS just handed out in the home's config, so the server a test
-// starts keeps that port: with no saved one the port choice walks 18860-18869, where test
-// packages running in parallel race for the same port.
+// pinFreePort saves a free port in the home's config, so the server a test starts keeps that
+// port: with no saved one the port choice walks 18860-18869, where test packages running in
+// parallel race for the same port. The port comes from 20000-29999, below the ephemeral ranges
+// of macOS (49152+) and Linux (32768+): a port the OS hands out for port 0 would be free again
+// once the probe closes, and another test binding port 0 could take it before the server binds.
 func pinFreePort(t *testing.T, homeRoot string) int {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("bind a free port: %v", err)
+	start := 20000 + int(time.Now().UnixNano()%10000)
+	for i := range 10000 {
+		port := 20000 + (start-20000+i)%10000
+		listener, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+		if err != nil {
+			continue
+		}
+		_ = listener.Close()
+		if _, err := home.SavePort(home.Home{Root: homeRoot}, port, true); err != nil {
+			t.Fatalf("save the port in %s: %v", homeRoot, err)
+		}
+		return port
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	_ = listener.Close()
-	if _, err := home.SavePort(home.Home{Root: homeRoot}, port, true); err != nil {
-		t.Fatalf("save the port in %s: %v", homeRoot, err)
-	}
-	return port
+	t.Fatal("no free port in 20000-29999")
+	return 0
 }
