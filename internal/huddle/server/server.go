@@ -549,6 +549,15 @@ func Serve(ctx context.Context, o Options) error {
 			Roots:   s.boardRoots,
 			Version: o.Version,
 			Now:     now,
+			// one audit row per board write the tab runs: the member the credential
+			// names, the command and the card, and whether the board took it
+			Audit: func(ctx context.Context, r *http.Request, command, key, id string, ok bool) {
+				actor := "root"
+				if who, named := s.who(r); named && who.Name != "" {
+					actor = who.Name
+				}
+				_, _ = s.audit(ctx, actor, "kanban."+command, key+"/"+id, kanbanAuditDetail{OK: ok})
+			},
 		})
 		mux.Handle(kanbantab.Prefix, s.kanban)
 		mux.Handle(kanbantab.Prefix+"/", s.kanban)

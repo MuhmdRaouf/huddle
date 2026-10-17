@@ -27,6 +27,12 @@ var errNoRegistry = errors.New("the registry's database is unavailable")
 // auditLimitMax is the most rows one audit read may answer.
 const auditLimitMax = 500
 
+// kanbanAuditDetail is one kanban flow row's detail: whether the board took the
+// write the row names.
+type kanbanAuditDetail struct {
+	OK bool `json:"ok"`
+}
+
 // AlertEvent is one raised owner alert as it fans out in-process: Type is the alert's own name
 // (alert.device_paired, alert.remote_allow, …), the same string the alerts table stores as its
 // kind. The body arrives already redacted.

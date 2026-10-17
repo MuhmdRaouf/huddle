@@ -1,8 +1,9 @@
 // Package kanbantab serves the boards of the sessions huddle knows about under
 // /api/kanban: the read routes the kanban page loads with, answered in-process
-// by each board's own app with no port of its own. Huddle's credential guards
-// the prefix; the board apps run without the Host guard the standalone server
-// answers with, because the server that mounts them owns host and origin.
+// by each board's own app with no port of its own, and the flow commands that
+// write a board's cards. Huddle's credential guards the prefix; the board apps
+// run without the Host guard the standalone server answers with, because the
+// server that mounts them owns host and origin.
 package kanbantab
 
 import (
@@ -26,11 +27,13 @@ const Prefix = "/api/kanban"
 
 // Options shapes the mount. Roots answers the working dirs to look for boards
 // from — huddle hands it the registry's sessions' cwds — and Version and Now
-// travel into every board app.
+// travel into every board app. Audit, when set, sees one call per write the
+// flow route runs, ok naming whether the board took it.
 type Options struct {
 	Roots   func(ctx context.Context) []string
 	Version string
 	Now     func() time.Time
+	Audit   func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
 }
 
 // entry is one mounted board: its app and the watch run under the cancel.
@@ -46,9 +49,11 @@ type Tab struct {
 	roots   func(ctx context.Context) []string
 	version string
 	now     func() time.Time
+	audit   func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
 
-	mu   sync.Mutex
-	apps map[string]*entry
+	mu     sync.Mutex
+	apps   map[string]*entry
+	flowMu sync.Mutex
 }
 
 // Mount builds the tab. Serving starts when the caller serves its handler;
@@ -63,6 +68,7 @@ func Mount(ctx context.Context, opts Options) *Tab {
 		roots:   opts.Roots,
 		version: opts.Version,
 		now:     opts.Now,
+		audit:   opts.Audit,
 		apps:    map[string]*entry{},
 	}
 }
@@ -112,6 +118,10 @@ func (t *Tab) serveBoard(w http.ResponseWriter, r *http.Request, tail string) {
 	key, rest, _ := strings.Cut(tail, "/")
 	if key == "" {
 		writeJSON(w, http.StatusNotFound, errorAnswer{Error: "not found: " + r.URL.Path})
+		return
+	}
+	if rest == "flow" {
+		t.flowRoute(w, r, key)
 		return
 	}
 	app := t.appFor(r.Context(), key)

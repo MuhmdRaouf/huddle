@@ -83,3 +83,55 @@ func TestTheKanbanTabNeedsHuddlesCredential(t *testing.T) {
 		}
 	}
 }
+
+func TestTheKanbanTabRunsTheFlowAndWritesTheAuditRow(t *testing.T) {
+	home := t.TempDir()
+	repo := filepath.Join(home, "alpha")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(repo, ".agents", "kanban")
+	if _, err := board.Init(context.Background(), root, "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	card := "---\nid: FLW-1\ntitle: \"one card\"\ntype: docs\ncluster: kanban\n" +
+		"summary: \"one\"\n---\n\n# FLW-1\n\nBody text.\n"
+	if err := os.WriteFile(filepath.Join(root, "ready", "FLW-1.md"), []byte(card), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv := startServer(t, nil)
+	report := `{"session_id":"s-flow","cwd":"` + repo +
+		`","last_event":"UserPromptSubmit","last_event_at":"2026-10-17T09:00:00.000Z"}`
+	if code, out := srv.post(t, "/api/registry/report", report, nil); code != 200 {
+		t.Fatalf("report the session: %d %s", code, out)
+	}
+	key := kanban.KeyOf(root)
+
+	// the flow command runs under huddle's credential, like every /api write
+	code, out := srv.post(t, "/api/kanban/b/"+key+"/flow", `{"command":"pull","actor":"w1","id":"FLW-1"}`, nil)
+	if code != 200 || !strings.Contains(out, "in-progress") {
+		t.Fatalf("the flow pull = %d %s, want 200 with the card's new path", code, out)
+	}
+	code, _, body := srv.get(t, "/api/kanban/b/"+key+"/api/board", nil)
+	if code != 200 || !strings.Contains(body, `"column":"in-progress"`) {
+		t.Fatalf("the board after the pull = %d %s, want the card in in-progress", code, body)
+	}
+
+	// one audit row names the write: who ran it, the command, the card and that the board took it
+	_, _, body = srv.get(t, "/api/audit", nil)
+	var row map[string]any
+	for _, entry := range bodyMap(t, body)["entries"].([]any) {
+		if candidate, _ := entry.(map[string]any); candidate["action"] == "kanban.pull" {
+			row = candidate
+		}
+	}
+	if row == nil {
+		t.Fatalf("no kanban.pull row in the audit %s", body)
+	}
+	if row["actor"] != "owner" || row["target"] != key+"/FLW-1" {
+		t.Errorf("the kanban.pull row = %v, want the owner writing FLW-1 on board %s", row, key)
+	}
+	if detail, _ := row["detail"].(map[string]any); detail["ok"] != true {
+		t.Errorf("the kanban.pull detail = %v, want ok true", row["detail"])
+	}
+}
