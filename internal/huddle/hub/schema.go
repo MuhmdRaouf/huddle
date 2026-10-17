@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 13
+const SchemaVersion = 14
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -200,6 +200,11 @@ var migrations = []string{
 	   text TEXT NOT NULL,
 	   at TEXT NOT NULL
 	 );`,
+	// 14: the needs-you entry push (SPEC 7.6): one push when a session enters needs-you, none
+	// while it stays there. The mark names the moment the entry's push went out; NULL reads as
+	// an entry that has had none, and the pass clears it when the session leaves the state, so
+	// a re-entry pushes again.
+	`ALTER TABLE sessions ADD COLUMN state_pushed_at TEXT;`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

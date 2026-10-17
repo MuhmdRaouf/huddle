@@ -110,14 +110,18 @@
     );
   });
 
-  /** The app's own address of one needs-you item: the session's screen, scrolled to the item. */
+  /** The app's own address of one needs-you item: the session's screen, scrolled to the item.
+   *  A session's own entry push names no item, and lands on the session's screen alone. */
   function itemPath(payload) {
-    return "/#/now/" + encodeURIComponent(payload.session || "") + "?item=" + payload.item;
+    var path = "/#/now/" + encodeURIComponent(payload.session || "");
+    return payload.item == null ? path : path + "?item=" + payload.item;
   }
 
   // The push (SPEC 7.6): the payload carries who, what kind and the tool name, so the
   // notification says no more than that — the command and the prompt text never reach the
-  // browser at all. A permission item carries Allow, Deny and Open; the other kinds carry Open.
+  // browser at all. A permission item carries Allow, Deny and Open; the other kinds carry
+  // Open. A session's own needs-you entry (kind "session") says Needs you and is tagged by
+  // its session, so a re-entry replaces it instead of piling up.
   self.addEventListener("push", function (event) {
     var payload = null;
     try {
@@ -134,12 +138,13 @@
         { action: "open", title: "Open" },
       ];
     }
+    var isSession = payload.kind === "session";
     event.waitUntil(
-      self.registration.showNotification(payload.tool || payload.kind, {
+      self.registration.showNotification(isSession ? "Needs you" : payload.tool || payload.kind, {
         body: payload.session + (payload.machine ? " on " + payload.machine : ""),
         icon: "/icons/icon-192.png",
         badge: "/icons/icon-192.png",
-        tag: "huddle-item-" + payload.item,
+        tag: isSession ? "huddle-session-" + payload.session : "huddle-item-" + payload.item,
         data: payload,
         actions: actions,
       }),

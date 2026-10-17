@@ -184,6 +184,65 @@ func (d *DB) MarkItemEscalated(ctx context.Context, id int64, at string) error {
 	return d.st.Run(ctx, "UPDATE items SET escalated_at = ? WHERE id = ?", at, id)
 }
 
+// FreshPushSessions answers the live sessions whose state at now is needs-you with no push sent
+// for this entry, oldest activity first: the rows the session pass carries. An entry whose
+// open item pushed already carries its mark, so it waits here no more than the item pass takes
+// to set it.
+func (d *DB) FreshPushSessions(ctx context.Context, now time.Time) ([]SessionRow, error) {
+	rows, err := d.st.All(ctx,
+		"SELECT "+sessionColumns+" FROM sessions "+
+			"WHERE state_pushed_at IS NULL AND ended_at IS NULL ORDER BY last_event_at, session_id")
+	if err != nil {
+		return nil, err
+	}
+	waiting, err := d.OpenItemSessions(ctx, now)
+	if err != nil {
+		return nil, err
+	}
+	out := []SessionRow{}
+	for _, row := range rows {
+		id := textOfRow(row, "session_id")
+		s := d.rowOfSession(ctx, row, now, waiting[id], d.asksOf(ctx, id, textOfRow(row, "last_event")))
+		if s.State == StateNeedsYou {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+// MarkSessionPushed records that the session's entry push went out at at.
+func (d *DB) MarkSessionPushed(ctx context.Context, session, at string) error {
+	return d.st.Run(ctx, "UPDATE sessions SET state_pushed_at = ? WHERE session_id = ?", at, session)
+}
+
+// LeftNeedsYou answers the session ids whose state at now is no longer needs-you but whose
+// entry push still stands: the marks the pass clears, so a later entry pushes again.
+func (d *DB) LeftNeedsYou(ctx context.Context, now time.Time) ([]string, error) {
+	rows, err := d.st.All(ctx,
+		"SELECT "+sessionColumns+" FROM sessions WHERE state_pushed_at IS NOT NULL")
+	if err != nil {
+		return nil, err
+	}
+	waiting, err := d.OpenItemSessions(ctx, now)
+	if err != nil {
+		return nil, err
+	}
+	out := []string{}
+	for _, row := range rows {
+		id := textOfRow(row, "session_id")
+		s := d.rowOfSession(ctx, row, now, waiting[id], d.asksOf(ctx, id, textOfRow(row, "last_event")))
+		if s.State != StateNeedsYou {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// ClearSessionPush drops one session's entry mark.
+func (d *DB) ClearSessionPush(ctx context.Context, session string) error {
+	return d.st.Run(ctx, "UPDATE sessions SET state_pushed_at = NULL WHERE session_id = ?", session)
+}
+
 // itemOfRow reads one item row into its served shape; the state is what is stored, for the
 // reads that compute a fresh one over it.
 func itemOfRow(row store.Row) Item {

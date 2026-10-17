@@ -18,41 +18,45 @@ const (
 	StateNeedsYou = "needs-you"
 	StateWorking  = "working"
 	StateIdle     = "idle"
-	StateStale    = "stale"
+	StateStuck    = "stuck"
 	StateEnded    = "ended"
 )
 
 // states lists the five states; a filter's state must be one of them.
-var states = []string{StateNeedsYou, StateWorking, StateIdle, StateStale, StateEnded}
+var states = []string{StateNeedsYou, StateWorking, StateIdle, StateStuck, StateEnded}
 
-// staleAfter is the quiet that turns a session stale: the spec's 10-minute limit, the same one
-// that ages a working event out of working.
-const staleAfter = 10 * time.Minute
+// stuckAfter is the quiet past which a session that never said it stopped may be stuck: the
+// spec's 10-minute limit. A tool run that fires no event for minutes is normal work; ten quiet
+// minutes is not.
+const stuckAfter = 10 * time.Minute
 
-// Facts is what one session's state is computed from.
+// Facts is what one session's state is computed from. Asking says the last event itself waits
+// on the owner: a Notification that asks (a permission request names itself in LastEvent).
 type Facts struct {
 	LastEvent   string
 	LastEventAt time.Time
+	Asking      bool
 	OpenItem    bool
 	Ended       bool
 }
 
 // StateOf answers the state of one session at now. Ended outranks everything: a session whose
 // SessionEnd was seen, or whose machine reports its pid gone, is over whatever else it holds.
-// An open needs-you item comes next, then idle — a Stop never goes stale — then stale, and
-// working otherwise: the turn's events name the working rule, and a young event of another kind
-// (a session that just started, a notification) still reads working, so every live session
-// shows one of the five states.
+// Needs-you comes next — an open item, or the last event itself waiting on the owner, a
+// permission request or a Notification that asks, with no later prompt or tool event after it —
+// then idle, whose Stops never go stuck, then stuck past the quiet limit, and working
+// otherwise: a young event of another kind (a session that just started, a notification that
+// asks nothing) still reads working, so every live session shows one of the five states.
 func StateOf(f Facts, now time.Time) string {
 	switch {
 	case f.Ended:
 		return StateEnded
-	case f.OpenItem:
+	case f.OpenItem, f.LastEvent == "PermissionRequest", f.LastEvent == "Notification" && f.Asking:
 		return StateNeedsYou
 	case f.LastEvent == "Stop" || f.LastEvent == "SubagentStop":
 		return StateIdle
-	case now.Sub(f.LastEventAt) >= staleAfter:
-		return StateStale
+	case now.Sub(f.LastEventAt) >= stuckAfter:
+		return StateStuck
 	default:
 		return StateWorking
 	}
@@ -129,7 +133,9 @@ func (d *DB) Sessions(ctx context.Context, filter SessionsFilter, now time.Time)
 	}
 	out := []SessionRow{}
 	for _, row := range rows {
-		s := d.rowOfSession(ctx, row, now, waiting[textOfRow(row, "session_id")])
+		id := textOfRow(row, "session_id")
+		lastEvent := textOfRow(row, "last_event")
+		s := d.rowOfSession(ctx, row, now, waiting[id], d.asksOf(ctx, id, lastEvent))
 		if filter.Machine != "" && s.Machine != filter.Machine {
 			continue
 		}
@@ -150,7 +156,8 @@ func (d *DB) SessionRow(ctx context.Context, id string, now time.Time) (*Session
 	if err != nil || row == nil {
 		return nil, err
 	}
-	out := d.rowOfSession(ctx, row, now, d.sessionWaits(ctx, id, now))
+	out := d.rowOfSession(ctx, row, now, d.sessionWaits(ctx, id, now),
+		d.asksOf(ctx, id, textOfRow(row, "last_event")))
 	return &out, nil
 }
 
@@ -209,9 +216,9 @@ func (d *DB) MarkEndedPids(ctx context.Context, at string, probe PidProbe) ([]st
 }
 
 // rowOfSession builds one session row from its stored columns, with the state and the delivery
-// route computed at now. waiting says the session holds an open needs-you item; the route reads
-// the bridge acks.
-func (d *DB) rowOfSession(ctx context.Context, row store.Row, now time.Time, waiting bool) SessionRow {
+// route computed at now. waiting says the session holds an open needs-you item; asking says its
+// last event itself waits on the owner; the route reads the bridge acks.
+func (d *DB) rowOfSession(ctx context.Context, row store.Row, now time.Time, waiting, asking bool) SessionRow {
 	out := SessionRow{
 		SessionID:   textOfRow(row, "session_id"),
 		Machine:     textOfRow(row, "machine"),
@@ -232,11 +239,37 @@ func (d *DB) rowOfSession(ctx context.Context, row store.Row, now time.Time, wai
 	out.State = StateOf(Facts{
 		LastEvent:   out.LastEvent,
 		LastEventAt: parseEventTime(out.LastEventAt),
+		Asking:      asking,
 		OpenItem:    waiting,
 		Ended:       textOfRow(row, "ended_at") != "",
 	}, now)
 	out.DeliveryRoute = d.routeOfMember(ctx, out.Channel, out.Member, now)
 	return out
+}
+
+// asksOf answers whether the session's newest event itself waits on the owner with nothing
+// that records the wait: a permission request, or a Notification that asks and carries no
+// words to grow a needs-you item from (SPEC 5.2). An ask whose item exists is the item's own
+// rule — open it holds the session in needs-you, and one the owner snoozed, answered or
+// dismissed is handled and holds it no more. A Notification this read cannot parse counts as
+// not asking, so a torn row never holds a session in needs-you.
+func (d *DB) asksOf(ctx context.Context, id, lastEvent string) bool {
+	if lastEvent == "PermissionRequest" {
+		return true
+	}
+	if lastEvent != "Notification" {
+		return false
+	}
+	row, err := d.st.Get(ctx,
+		"SELECT json FROM events WHERE session_id = ? AND kind = 'Notification' ORDER BY seq DESC LIMIT 1", id)
+	if err != nil || row == nil {
+		return false
+	}
+	var rep Report
+	if err := json.Unmarshal([]byte(textOfRow(row, "json")), &rep); err != nil {
+		return false
+	}
+	return asksOwner(rep.Notification) && cleanSummary(rep.Notification.Message) == ""
 }
 
 // sessionWaits says whether one session holds an open needs-you item at now.

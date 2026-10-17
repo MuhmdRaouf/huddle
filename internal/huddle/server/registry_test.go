@@ -106,6 +106,8 @@ func reportStates(t *testing.T, srv *childServer) map[string]map[string]any {
 		`{"session_id":"s-idle","machine":"box","project":"/site","last_event":"Stop","last_event_at":"` + isoAgo(5*time.Second) + `"}`,
 		`{"session_id":"s-old","machine":"laptop","project":"/shop","last_event":"UserPromptSubmit","last_event_at":"` + isoAgo(15*time.Minute) + `"}`,
 		`{"session_id":"s-done","machine":"laptop","project":"/site","last_event":"SessionEnd","last_event_at":"` + isoAgo(8*time.Second) + `"}`,
+		`{"session_id":"s-ask","machine":"laptop","project":"/site","last_event":"Notification","notification":{"type":"agent_needs_input"},"last_event_at":"` + isoAgo(3*time.Second) + `"}`,
+		`{"session_id":"s-permit","machine":"box","project":"/shop","last_event":"PermissionRequest","last_event_at":"` + isoAgo(4*time.Second) + `"}`,
 	} {
 		if code, out := srv.post(t, "/api/registry/report", body, nil); code != 200 {
 			t.Fatalf("post a report: %d %s", code, out)
@@ -132,7 +134,10 @@ func TestTheRegistryListRouteComputesEveryStateWhenRead(t *testing.T) {
 	srv := startServer(t, nil)
 	byID := reportStates(t, srv)
 	for id, want := range map[string]string{
-		"s-work": "working", "s-idle": "idle", "s-old": "stale", "s-done": "ended",
+		"s-work": "working", "s-idle": "idle", "s-old": "stuck", "s-done": "ended",
+		// the last event itself waits on the owner: a permission request, and a Notification
+		// that asks
+		"s-ask": "needs-you", "s-permit": "needs-you",
 	} {
 		row := byID[id]
 		if row == nil {
@@ -154,9 +159,11 @@ func TestTheRegistryListRouteFiltersByMachineProjectAndState(t *testing.T) {
 		query string
 		want  []string
 	}{
-		{"machine=box", []string{"s-work", "s-idle"}},
-		{"project=/shop", []string{"s-work", "s-old"}},
+		{"machine=box", []string{"s-work", "s-permit", "s-idle"}},
+		{"project=/shop", []string{"s-work", "s-permit", "s-old"}},
 		{"state=ended", []string{"s-done"}},
+		{"state=needs-you", []string{"s-ask", "s-permit"}},
+		{"state=stuck", []string{"s-old"}},
 		{"machine=box&project=/site", []string{"s-idle"}},
 		{"machine=nowhere", nil},
 	}

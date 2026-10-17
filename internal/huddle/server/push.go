@@ -43,6 +43,15 @@ type pushPayload struct {
 	Tool    string `json:"tool,omitempty"`
 }
 
+// sessionPushPayload is one session's needs-you entry push (SPEC 7.6): who and that it waits.
+// No item rides it — an entry with an open item has the item's own push — and nothing of the
+// session's words does.
+type sessionPushPayload struct {
+	Kind    string `json:"kind"` // "session"
+	Session string `json:"session"`
+	Machine string `json:"machine,omitempty"`
+}
+
 // alertPayload is one owner alert's push: the alert's own name for the kind, who it names, and
 // the tool when the alert carries one. An alert names no item row to decide on.
 type alertPayload struct {
@@ -61,6 +70,11 @@ func needsPushPayload(item hub.Item, machine string) pushPayload {
 		Kind:    item.Kind,
 		Tool:    item.Tool,
 	}
+}
+
+// sessionPushOf builds one session's needs-you entry push payload.
+func sessionPushOf(row hub.SessionRow) sessionPushPayload {
+	return sessionPushPayload{Kind: "session", Session: row.SessionID, Machine: row.Machine}
 }
 
 // alertPushPayload builds one alert's push payload from the alert's own body.
@@ -108,9 +122,10 @@ func (s *server) wakePushes() {
 }
 
 // sweepPushes carries one pass: every item waiting for its first push, then every escalation
-// due. An item with no device to hear it waits unmarked, so the next device paired still hears
-// of it once; one the pass did carry is marked, whatever the push service said, so an item
-// never pushes twice because a service answered slowly.
+// due, then the sessions' own needs-you entries. An item with no device to hear it waits
+// unmarked, so the next device paired still hears of it once; one the pass did carry is
+// marked, whatever the push service said, so an item never pushes twice because a service
+// answered slowly.
 func (s *server) sweepPushes(ctx context.Context) {
 	if s.registry == nil || s.vapid == nil {
 		return
@@ -126,19 +141,72 @@ func (s *server) sweepPushes(ctx context.Context) {
 		fmt.Fprintf(s.o.Stderr, "push: fresh items: %v\n", err)
 		return
 	}
-	s.pushItems(ctx, now, subs, fresh, s.registry.MarkItemPushed)
+	// the item's first push is its session's entry push: the session pass sends no second one
+	// for the same entry
+	s.pushItems(ctx, now, subs, fresh, func(ctx context.Context, item hub.Item, at string) error {
+		if err := s.registry.MarkItemPushed(ctx, item.ID, at); err != nil {
+			return err
+		}
+		return s.registry.MarkSessionPushed(ctx, item.SessionID, at)
+	})
 	due, err := s.registry.EscalatePushItems(ctx, now)
 	if err != nil {
 		fmt.Fprintf(s.o.Stderr, "push: escalations: %v\n", err)
 		return
 	}
-	s.pushItems(ctx, now, subs, due, s.registry.MarkItemEscalated)
+	s.pushItems(ctx, now, subs, due, func(ctx context.Context, item hub.Item, at string) error {
+		return s.registry.MarkItemEscalated(ctx, item.ID, at)
+	})
+	s.pushSessionEntries(ctx, now, subs)
+}
+
+// pushSessionEntries carries the pass's session halves: one push for every session whose state
+// at now is needs-you with no push sent for this entry, then the marks of the sessions that
+// left the state, so a later entry pushes again. A session with no device to hear it waits
+// unmarked, the same rule the items keep.
+func (s *server) pushSessionEntries(ctx context.Context, now time.Time, subs []hub.PushSubscription) {
+	hearing := make([]hub.PushSubscription, 0, len(subs))
+	for _, sub := range subs {
+		if sub.Notify != hub.NotifyOff {
+			hearing = append(hearing, sub)
+		}
+	}
+	if len(hearing) == 0 {
+		return
+	}
+	entries, err := s.registry.FreshPushSessions(ctx, now)
+	if err != nil {
+		fmt.Fprintf(s.o.Stderr, "push: fresh sessions: %v\n", err)
+		return
+	}
+	for _, row := range entries {
+		payload, err := json.Marshal(sessionPushOf(row))
+		if err != nil {
+			continue
+		}
+		for _, sub := range hearing {
+			s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
+		}
+		if err := s.registry.MarkSessionPushed(ctx, row.SessionID, jsfmt.ISOTime(now)); err != nil {
+			fmt.Fprintf(s.o.Stderr, "push: mark session %s: %v\n", row.SessionID, err)
+		}
+	}
+	left, err := s.registry.LeftNeedsYou(ctx, now)
+	if err != nil {
+		fmt.Fprintf(s.o.Stderr, "push: sessions left: %v\n", err)
+		return
+	}
+	for _, id := range left {
+		if err := s.registry.ClearSessionPush(ctx, id); err != nil {
+			fmt.Fprintf(s.o.Stderr, "push: clear session %s: %v\n", id, err)
+		}
+	}
 }
 
 // pushItems carries one pass's items to every device that chose to hear them, then marks each
 // carried item once.
 func (s *server) pushItems(ctx context.Context, now time.Time, subs []hub.PushSubscription,
-	items []hub.Item, mark func(context.Context, int64, string) error) {
+	items []hub.Item, mark func(context.Context, hub.Item, string) error) {
 	if len(items) == 0 {
 		return
 	}
@@ -159,7 +227,7 @@ func (s *server) pushItems(ctx context.Context, now time.Time, subs []hub.PushSu
 		for _, sub := range hearing {
 			s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
 		}
-		if err := mark(ctx, item.ID, jsfmt.ISOTime(now)); err != nil {
+		if err := mark(ctx, item, jsfmt.ISOTime(now)); err != nil {
 			fmt.Fprintf(s.o.Stderr, "push: mark item %d: %v\n", item.ID, err)
 		}
 	}

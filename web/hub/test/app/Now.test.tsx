@@ -23,7 +23,7 @@ const row = (over: Partial<RegistrySession> & { session_id: string }): RegistryS
   ...over,
 });
 
-/** The fixture the list reads: two that need the owner, three at work, two idle, one stale, one
+/** The fixture the list reads: two that need the owner, three at work, two idle, one stuck, one
  *  ended, over three machines and two projects. */
 const fixture = (): RegistrySession[] => [
   row({
@@ -92,8 +92,8 @@ const fixture = (): RegistrySession[] => [
     last_event_at: "2026-10-08T11:00:00Z",
   }),
   row({
-    session_id: "s-stale",
-    state: "stale",
+    session_id: "s-stuck",
+    state: "stuck",
     title: "quiet-one",
     machine: "studio",
     project: "/work/gateway",
@@ -207,7 +207,7 @@ describe("the Now list", () => {
   it("groups the sessions and counts each group, hiding the empty ones", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone");
-    expect(headings()).toEqual(["Needs you · 2", "Working · 3", "Idle · 2", "Stale · 1", "Ended · 1"]);
+    expect(headings()).toEqual(["Needs you · 2", "Working · 3", "Idle · 2", "Stuck · 1", "Ended · 1"]);
     cleanup();
     const registry = makeRegistry({
       sessions: [row({ session_id: "s-1", title: "only" })],
@@ -230,7 +230,7 @@ describe("the Now list", () => {
       ["needs-you", "ring", "needs you"],
       ["working", "dot", "working"],
       ["idle", "hollow", "idle"],
-      ["stale", "dash", "stale"],
+      ["stuck", "dash", "stuck"],
       ["ended", "cross", "ended"],
     ] as const) {
       const mark = renderIn(<StateMark state={state} />);
@@ -291,6 +291,40 @@ describe("the Now list", () => {
     expect(within(rowEl).getByText("41%")).toBeDefined();
   });
 
+  it("carries the state as a word on every row, never colour alone", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    mountNow("phone");
+    for (const [title, word, state] of [
+      ["lead", "working", "working"],
+      ["docs-sweep", "idle", "idle"],
+      ["quiet-one", "stuck", "stuck"],
+      ["finished", "ended", "ended"],
+      ["kanban-e2e", "needs you", "needs-you"],
+    ] as const) {
+      const rowEl = screen.getByText(title).closest("[data-row]") as HTMLElement;
+      const chip = within(rowEl).getByText(word);
+      expect(chip.getAttribute("data-state"), title).toBe(state);
+    }
+  });
+
+  it("filters the list down to the sessions that need the owner, and keeps the choice", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    localStorage.clear();
+    mountNow("phone");
+    void act(() => {
+      screen.getByRole("button", { name: "Needs you" }).click();
+    });
+    expect(headings()).toEqual(["Needs you · 2"]);
+    expect(localStorage.getItem("huddle:nowneeds")).toBe("true");
+    expect(screen.getByText("kanban-e2e")).toBeDefined();
+    expect(screen.queryByText("lead")).toBeNull();
+    void act(() => {
+      screen.getByRole("button", { name: "Needs you" }).click();
+    });
+    expect(headings()).toEqual(["Needs you · 2", "Working · 3", "Idle · 2", "Stuck · 1", "Ended · 1"]);
+    expect(localStorage.getItem("huddle:nowneeds")).toBe("false");
+  });
+
   it("draws the idle row: hollow mark, name, machine, age", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone");
@@ -308,7 +342,7 @@ describe("the Now list", () => {
     void act(() => {
       registry.applyRow(row({ session_id: "s-work-1", state: "idle", title: "lead", last_event: "Stop" }));
     });
-    expect(headings()).toEqual(["Needs you · 2", "Working · 2", "Idle · 3", "Stale · 1", "Ended · 1"]);
+    expect(headings()).toEqual(["Needs you · 2", "Working · 2", "Idle · 3", "Stuck · 1", "Ended · 1"]);
     // a session the list has never seen arrives without a reload
     void act(() => {
       registry.applyRow(row({ session_id: "s-fresh", title: "fresh" }));

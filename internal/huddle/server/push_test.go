@@ -376,6 +376,114 @@ func TestThePushSweepSendsOnceAndEscalatesOnceAndNeverAfterADecision(t *testing.
 	}
 }
 
+// A session that enters needs-you pushes once — a permission request with no item to speak for
+// it is an entry of its own — and pushes no second time while it stays there; leaving the state
+// ends the entry, and the next entry pushes again.
+func TestAPushGoesOncePerNeedsYouEntry(t *testing.T) {
+	service := newFakePush(t)
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return pushClock })
+	keys := newBrowserKeys(t)
+	subscribeDevice(t, s, "phone", service.srv.URL, keys, hub.NotifyNeeds)
+	report := func(event string) {
+		if err := s.registry.Report(context.Background(), hub.Report{
+			SessionID: "s-1", Machine: "laptop", LastEvent: event,
+			LastEventAt: jsfmt.ISOTime(pushClock),
+		}); err != nil {
+			t.Fatalf("report %s: %v", event, err)
+		}
+	}
+
+	report("PermissionRequest")
+	s.sweepPushes(context.Background())
+	if service.count() != 1 {
+		t.Fatalf("the pushes after the entry = %d, want the one", service.count())
+	}
+	plaintext := decryptPush(t, service.body(0), keys)
+	if !strings.Contains(string(plaintext), `"kind":"session"`) ||
+		!strings.Contains(string(plaintext), `"session":"s-1"`) ||
+		!strings.Contains(string(plaintext), `"machine":"laptop"`) {
+		t.Fatalf("the entry's plaintext = %s, want who and that the session waits", plaintext)
+	}
+	if strings.Contains(string(plaintext), `"item"`) {
+		t.Fatalf("the entry's plaintext %s carries an item row", plaintext)
+	}
+
+	// still in needs-you: the sweeps repeat, the push does not
+	s.sweepPushes(context.Background())
+	s.sweepPushes(context.Background())
+	if service.count() != 1 {
+		t.Fatalf("the pushes after three sweeps = %d, want no repeat", service.count())
+	}
+
+	// a prompt answers the ask: the session left needs-you, and no push goes out for that
+	report("UserPromptSubmit")
+	s.sweepPushes(context.Background())
+	if service.count() != 1 {
+		t.Fatalf("the pushes after the answer = %d, want none", service.count())
+	}
+
+	// a second permission request is a new entry: it pushes once more
+	report("PermissionRequest")
+	s.sweepPushes(context.Background())
+	if service.count() != 2 {
+		t.Fatalf("the pushes after the re-entry = %d, want the one more", service.count())
+	}
+	s.sweepPushes(context.Background())
+	if service.count() != 2 {
+		t.Fatalf("the pushes after the re-entry's second sweep = %d, want no repeat", service.count())
+	}
+}
+
+// An item's first push is its session's entry push: the session pass sends no second one for
+// the same entry, and after the item is answered the next entry pushes once.
+func TestAnItemsFirstPushSpeaksForTheSessionsEntry(t *testing.T) {
+	service := newFakePush(t)
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return pushClock })
+	keys := newBrowserKeys(t)
+	subscribeDevice(t, s, "phone", service.srv.URL, keys, hub.NotifyNeeds)
+	report := func(event string) {
+		if err := s.registry.Report(context.Background(), hub.Report{
+			SessionID: "s-1", Machine: "laptop", LastEvent: event,
+			LastEventAt: jsfmt.ISOTime(pushClock),
+		}); err != nil {
+			t.Fatalf("report %s: %v", event, err)
+		}
+	}
+
+	report("UserPromptSubmit")
+	if _, err := s.registry.CreatePermissionItem(context.Background(), "s-1", "Bash",
+		[]byte(`{"command":"npm test"}`), pushClock); err != nil {
+		t.Fatalf("create the item: %v", err)
+	}
+	s.sweepPushes(context.Background())
+	s.sweepPushes(context.Background())
+	if service.count() != 1 {
+		t.Fatalf("the pushes after the item = %d, want the item's one alone", service.count())
+	}
+	if strings.Contains(string(service.body(0)), `"kind":"session"`) {
+		t.Fatalf("the item's push %s came from the session pass", service.body(0))
+	}
+
+	// the tool runs: the session leaves needs-you, and the next entry pushes again
+	if _, err := s.registry.WithdrawPermissions(context.Background(), "s-1",
+		jsfmt.ISOTime(pushClock)); err != nil {
+		t.Fatalf("withdraw the item: %v", err)
+	}
+	report("PostToolUse")
+	s.sweepPushes(context.Background())
+	if service.count() != 1 {
+		t.Fatalf("the pushes after the answer = %d, want none", service.count())
+	}
+	report("PermissionRequest")
+	s.sweepPushes(context.Background())
+	if service.count() != 2 {
+		t.Fatalf("the pushes after the new entry = %d, want the one more", service.count())
+	}
+	if plaintext := string(decryptPush(t, service.body(1), keys)); !strings.Contains(plaintext, `"kind":"session"`) {
+		t.Fatalf("the new entry's push %s is not the session's", plaintext)
+	}
+}
+
 func TestAlertsReachOnlyTheDevicesThatAskedForThem(t *testing.T) {
 	service := newFakePush(t)
 	s := pushServerForTest(t, service.srv.URL, func() time.Time { return pushClock })

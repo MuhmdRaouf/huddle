@@ -36,7 +36,7 @@ func TestSessionsComputesTheStateWhenRead(t *testing.T) {
 		states[row.SessionID] = row.State
 	}
 	for id, want := range map[string]string{
-		"s-work": StateWorking, "s-idle": StateIdle, "s-old": StateStale, "s-done": StateEnded,
+		"s-work": StateWorking, "s-idle": StateIdle, "s-old": StateStuck, "s-done": StateEnded,
 	} {
 		if states[id] != want {
 			t.Errorf("%s state = %q, want %q", id, states[id], want)
@@ -254,7 +254,7 @@ func TestMarkEndedPidsEndsSessionsWhoseProcessIsGone(t *testing.T) {
 }
 
 func TestKnownStateNamesTheFiveStates(t *testing.T) {
-	for _, s := range []string{StateNeedsYou, StateWorking, StateIdle, StateStale, StateEnded} {
+	for _, s := range []string{StateNeedsYou, StateWorking, StateIdle, StateStuck, StateEnded} {
 		if !KnownState(s) {
 			t.Errorf("KnownState(%q) = false, want true", s)
 		}
@@ -264,7 +264,7 @@ func TestKnownStateNamesTheFiveStates(t *testing.T) {
 			t.Errorf("KnownState(%q) = true, want false", s)
 		}
 	}
-	want := "needs-you, working, idle, stale, ended"
+	want := "needs-you, working, idle, stuck, ended"
 	if got := StateNames(); got != want {
 		t.Errorf("StateNames() = %q, want %q", got, want)
 	}
@@ -281,8 +281,62 @@ func TestAMalformedTimestampNeverReadsYoung(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sessions: %v", err)
 	}
-	if len(got) != 1 || got[0].State != StateStale {
-		t.Fatalf("a session with a malformed timestamp = %+v, want stale", got)
+	if len(got) != 1 || got[0].State != StateStuck {
+		t.Fatalf("a session with a malformed timestamp = %+v, want stuck", got)
+	}
+}
+
+// The state rules read the stored events too: a Notification that asks the owner holds the
+// session in needs-you until a later event answers it, and one that asks nothing does not.
+func TestAReportedNotificationHoldsTheStateItsWordsAsk(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	reports := []Report{
+		{SessionID: "s-ask", LastEvent: "Notification",
+			Notification: &Notification{Type: "agent_needs_input", Message: "Which database?"},
+			LastEventAt:  "2026-10-16T09:00:20.000Z"},
+		{SessionID: "s-tell", LastEvent: "Notification",
+			Notification: &Notification{Type: "auth_success", Message: "Signed in"},
+			LastEventAt:  "2026-10-16T09:00:20.000Z"},
+		{SessionID: "s-bare", LastEvent: "Notification", LastEventAt: "2026-10-16T09:00:20.000Z"},
+		{SessionID: "s-wordless", LastEvent: "Notification",
+			Notification: &Notification{Type: "elicitation_dialog"}, LastEventAt: "2026-10-16T09:00:20.000Z"},
+		{SessionID: "s-permit", LastEvent: "PermissionRequest", LastEventAt: "2026-10-16T09:00:20.000Z"},
+	}
+	for _, rep := range reports {
+		if err := db.Report(ctx, rep); err != nil {
+			t.Fatalf("report %s: %v", rep.SessionID, err)
+		}
+	}
+	// s-answered asked once, then a tool event answered it: the newer event wins
+	if err := db.Report(ctx, Report{SessionID: "s-answered", LastEvent: "Notification",
+		Notification: &Notification{Type: "elicitation_dialog"}, LastEventAt: "2026-10-16T09:00:20.000Z"}); err != nil {
+		t.Fatalf("report the ask: %v", err)
+	}
+	if err := db.Report(ctx, Report{SessionID: "s-answered", LastEvent: "PostToolUse",
+		LastEventAt: "2026-10-16T09:00:25.000Z"}); err != nil {
+		t.Fatalf("report the tool event: %v", err)
+	}
+	got, err := db.Sessions(ctx, SessionsFilter{}, readNow)
+	if err != nil {
+		t.Fatalf("sessions: %v", err)
+	}
+	states := map[string]string{}
+	for _, row := range got {
+		states[row.SessionID] = row.State
+	}
+	for id, want := range map[string]string{
+		"s-ask":  StateNeedsYou,
+		"s-tell": StateWorking,
+		"s-bare": StateWorking,
+		// an ask with no words to grow an item from is the event rule's own entry
+		"s-wordless": StateNeedsYou,
+		"s-permit":   StateNeedsYou,
+		"s-answered": StateWorking,
+	} {
+		if states[id] != want {
+			t.Errorf("%s state = %q, want %q", id, states[id], want)
+		}
 	}
 }
 

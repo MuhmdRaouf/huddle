@@ -45,7 +45,7 @@ const need = (over: Partial<NeedItem> & { id: number }): NeedItem => ({
 });
 
 /** The fixture the list's groups and counts are read from: two that need the owner, three at
- *  work, two idle, one stale, one ended, over three machines and two projects. */
+ *  work, two idle, one stuck, one ended, over three machines and two projects. */
 const fixture = (): RegistrySession[] => [
   row({ session_id: "s-need-1", state: "needs-you", title: "kanban-e2e", machine: "laptop", channel: "reg" }),
   row({ session_id: "s-need-2", state: "needs-you", title: "api-gateway", machine: "build-box" }),
@@ -80,7 +80,7 @@ const fixture = (): RegistrySession[] => [
     machine: "laptop",
     last_event: "SubagentStop",
   }),
-  row({ session_id: "s-stale", state: "stale", title: "quiet-one", machine: "studio" }),
+  row({ session_id: "s-stuck", state: "stuck", title: "quiet-one", machine: "studio" }),
   row({ session_id: "s-done", state: "ended", title: "finished", machine: "build-box" }),
 ];
 
@@ -90,7 +90,7 @@ describe("the list's pure reads", () => {
     expect(g.needsYou.map((s) => s.session_id)).toEqual(["s-need-1", "s-need-2"]);
     expect(g.working.map((s) => s.session_id)).toEqual(["s-work-1", "s-work-2", "s-work-3"]);
     expect(g.idle.map((s) => s.session_id)).toEqual(["s-idle-1", "s-idle-2"]);
-    expect(g.stale.map((s) => s.session_id)).toEqual(["s-stale"]);
+    expect(g.stuck.map((s) => s.session_id)).toEqual(["s-stuck"]);
     expect(g.ended.map((s) => s.session_id)).toEqual(["s-done"]);
     expect(needsYouCount(fixture())).toBe(2);
     expect(needsYouCount(null)).toBe(0);
@@ -98,7 +98,7 @@ describe("the list's pure reads", () => {
       needsYou: [],
       working: [],
       idle: [],
-      stale: [],
+      stuck: [],
       ended: [],
     });
   });
@@ -141,7 +141,7 @@ describe("the list's pure reads", () => {
     expect(stateWord("needs-you")).toBe("needs you");
     expect(stateWord("working")).toBe("working");
     expect(stateWord("idle")).toBe("idle");
-    expect(stateWord("stale")).toBe("stale");
+    expect(stateWord("stuck")).toBe("stuck");
     expect(stateWord("ended")).toBe("ended");
   });
 });

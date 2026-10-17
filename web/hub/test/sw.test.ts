@@ -334,6 +334,18 @@ describe("push", () => {
     expect(shown.options.actions).toEqual([{ action: "open", title: "Open" }]);
   });
 
+  it("shows a session's needs-you entry as Needs you, tagged by its session", async () => {
+    const w = worker();
+    await w.pushed({ kind: "session", session: "s-3", machine: "studio" });
+    expect(w.shown).toHaveLength(1);
+    const shown = w.shown[0];
+    if (!shown) throw new Error("nothing shown");
+    expect(shown.title).toBe("Needs you");
+    expect(shown.options.body).toBe("s-3 on studio");
+    expect(shown.options.tag).toBe("huddle-session-s-3");
+    expect(shown.options.actions).toEqual([{ action: "open", title: "Open" }]);
+  });
+
   it("shows nothing for a message it cannot read", async () => {
     const w = worker();
     await w.pushed(null);
@@ -352,6 +364,13 @@ describe("notificationclick", () => {
       await w.clicked(action, permission);
       expect(w.opened).toEqual(["/#/now/s-1?item=7"]);
     }
+  });
+
+  it("opens a session's entry at the session itself, with no item query", async () => {
+    const w = worker();
+    await w.install();
+    await w.clicked("open", { kind: "session", session: "s-3", machine: "studio" });
+    expect(w.opened).toEqual(["/#/now/s-3"]);
   });
 
   it("brings the window that is already there to the item", async () => {

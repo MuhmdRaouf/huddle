@@ -21,38 +21,45 @@ func TestStateOfFollowsTheRulesOfTheSpec(t *testing.T) {
 		f    Facts
 		want string
 	}{
+		// ended outranks everything: a SessionEnd seen, or the machine reports the pid gone
+		{"a young SessionEnd", Facts{LastEvent: "SessionEnd", LastEventAt: ago(time.Minute), Ended: true}, StateEnded},
+		{"a pid gone under a young working event", Facts{LastEvent: "UserPromptSubmit", LastEventAt: ago(time.Minute), Ended: true}, StateEnded},
+		{"a pid gone with an open item", Facts{LastEvent: "PermissionRequest", LastEventAt: ago(time.Minute), OpenItem: true, Ended: true}, StateEnded},
+		{"a pid gone over an idle session", Facts{LastEvent: "Stop", LastEventAt: ago(time.Minute), Ended: true}, StateEnded},
+		{"a pid gone over a permission request", Facts{LastEvent: "PermissionRequest", LastEventAt: ago(time.Minute), Ended: true}, StateEnded},
+
 		// needs-you: an open needs-you item for the session
 		{"an open item with a young working event", Facts{LastEvent: "UserPromptSubmit", LastEventAt: ago(5 * time.Minute), OpenItem: true}, StateNeedsYou},
 		{"an open item over an idle session", Facts{LastEvent: "Stop", LastEventAt: ago(time.Minute), OpenItem: true}, StateNeedsYou},
 		{"an open item over a session quiet for an hour", Facts{LastEvent: "UserPromptSubmit", LastEventAt: ago(time.Hour), OpenItem: true}, StateNeedsYou},
 
-		// working: last event is UserPromptSubmit, PreToolUse or PostToolUse, younger than 10 min
+		// needs-you: the last event itself waits on the owner — a permission request, or a
+		// Notification that asks — with no later prompt or tool event
+		{"a PermissionRequest just now", Facts{LastEvent: "PermissionRequest", LastEventAt: ago(2 * time.Second)}, StateNeedsYou},
+		{"a PermissionRequest half an hour old with nothing after", Facts{LastEvent: "PermissionRequest", LastEventAt: ago(30 * time.Minute)}, StateNeedsYou},
+		{"a Notification that asks", Facts{LastEvent: "Notification", LastEventAt: ago(time.Minute), Asking: true}, StateNeedsYou},
+		{"a Notification that asked an hour ago and was never answered", Facts{LastEvent: "Notification", LastEventAt: ago(time.Hour), Asking: true}, StateNeedsYou},
+		{"an asking Notification over an idle session", Facts{LastEvent: "Notification", LastEventAt: ago(time.Minute), Asking: true, OpenItem: true}, StateNeedsYou},
+
+		// working: a live session whose last event is young — a prompt or tool call keeps it
+		// working, and so does any other young sign of life
 		{"UserPromptSubmit five minutes ago", Facts{LastEvent: "UserPromptSubmit", LastEventAt: ago(5 * time.Minute)}, StateWorking},
 		{"PreToolUse just now", Facts{LastEvent: "PreToolUse", LastEventAt: ago(time.Second)}, StateWorking},
 		{"PostToolUse under the limit", Facts{LastEvent: "PostToolUse", LastEventAt: ago(10*time.Minute - time.Second)}, StateWorking},
-		{"a working event exactly ten minutes old is no longer young", Facts{LastEvent: "UserPromptSubmit", LastEventAt: ago(10 * time.Minute)}, StateStale},
+		{"a SessionStart half a minute ago", Facts{LastEvent: "SessionStart", LastEventAt: ago(30 * time.Second)}, StateWorking},
+		{"a Notification a minute ago that asks nothing", Facts{LastEvent: "Notification", LastEventAt: ago(time.Minute)}, StateWorking},
 
-		// idle: last event is Stop or SubagentStop
+		// idle: last event is Stop or SubagentStop with nothing after
 		{"Stop", Facts{LastEvent: "Stop", LastEventAt: ago(time.Minute)}, StateIdle},
 		{"SubagentStop", Facts{LastEvent: "SubagentStop", LastEventAt: ago(3 * time.Minute)}, StateIdle},
-		{"a Stop two hours old stays idle, never stale", Facts{LastEvent: "Stop", LastEventAt: ago(2 * time.Hour)}, StateIdle},
+		{"a Stop two hours old stays idle, never stuck", Facts{LastEvent: "Stop", LastEventAt: ago(2 * time.Hour)}, StateIdle},
 
-		// stale: no event for 10 min and not idle
-		{"a UserPromptSubmit eleven minutes ago", Facts{LastEvent: "UserPromptSubmit", LastEventAt: ago(11 * time.Minute)}, StateStale},
-		{"a SessionStart fifteen minutes ago", Facts{LastEvent: "SessionStart", LastEventAt: ago(15 * time.Minute)}, StateStale},
-		{"a Notification an hour ago", Facts{LastEvent: "Notification", LastEventAt: ago(time.Hour)}, StateStale},
-
-		// ended: SessionEnd seen, or the machine reports the pid gone — over everything else
-		{"a young SessionEnd", Facts{LastEvent: "SessionEnd", LastEventAt: ago(time.Minute), Ended: true}, StateEnded},
-		{"a pid gone under a young working event", Facts{LastEvent: "UserPromptSubmit", LastEventAt: ago(time.Minute), Ended: true}, StateEnded},
-		{"a pid gone with an open item", Facts{LastEvent: "PermissionRequest", LastEventAt: ago(time.Minute), OpenItem: true, Ended: true}, StateEnded},
-		{"a pid gone over an idle session", Facts{LastEvent: "Stop", LastEventAt: ago(time.Minute), Ended: true}, StateEnded},
-
-		// a young event of none of the named kinds still belongs to a live session: every
-		// session reads one of the five states
-		{"a SessionStart half a minute ago", Facts{LastEvent: "SessionStart", LastEventAt: ago(30 * time.Second)}, StateWorking},
-		{"a Notification a minute ago", Facts{LastEvent: "Notification", LastEventAt: ago(time.Minute)}, StateWorking},
-		{"a PermissionRequest just now", Facts{LastEvent: "PermissionRequest", LastEventAt: ago(2 * time.Second)}, StateWorking},
+		// stuck: working, but no event for 10 min
+		{"a UserPromptSubmit exactly ten minutes old is no longer young", Facts{LastEvent: "UserPromptSubmit", LastEventAt: ago(10 * time.Minute)}, StateStuck},
+		{"a UserPromptSubmit eleven minutes ago", Facts{LastEvent: "UserPromptSubmit", LastEventAt: ago(11 * time.Minute)}, StateStuck},
+		{"a SessionStart fifteen minutes ago", Facts{LastEvent: "SessionStart", LastEventAt: ago(15 * time.Minute)}, StateStuck},
+		{"a Notification an hour ago that asks nothing", Facts{LastEvent: "Notification", LastEventAt: ago(time.Hour)}, StateStuck},
+		{"a torn timestamp reads as long ago", Facts{LastEvent: "UserPromptSubmit", LastEventAt: time.Time{}}, StateStuck},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

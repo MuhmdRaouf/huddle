@@ -56,7 +56,7 @@ export type RegistryGroups = {
   needsYou: RegistrySession[];
   working: RegistrySession[];
   idle: RegistrySession[];
-  stale: RegistrySession[];
+  stuck: RegistrySession[];
   ended: RegistrySession[];
 };
 
@@ -70,12 +70,12 @@ export function stateWord(state: string): string {
 
 /** Splits the rows into the Now list's groups, keeping the read's newest-activity order. */
 export function groupSessions(sessions: RegistrySession[] | null): RegistryGroups {
-  const g: RegistryGroups = { needsYou: [], working: [], idle: [], stale: [], ended: [] };
+  const g: RegistryGroups = { needsYou: [], working: [], idle: [], stuck: [], ended: [] };
   for (const s of sessions ?? []) {
     if (s.state === "needs-you") g.needsYou.push(s);
     else if (s.state === "working") g.working.push(s);
     else if (s.state === "idle") g.idle.push(s);
-    else if (s.state === "stale") g.stale.push(s);
+    else if (s.state === "stuck") g.stuck.push(s);
     else if (s.state === "ended") g.ended.push(s);
   }
   return g;

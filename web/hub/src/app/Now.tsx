@@ -57,7 +57,7 @@ const MARKS: Record<string, Mark> = {
     cls: "text-base-content/50",
     draw: <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.5" />,
   },
-  stale: {
+  stuck: {
     shape: "dash",
     cls: "text-base-content/50",
     draw: <path d="M6 12h12" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />,
@@ -104,6 +104,19 @@ export function StateMark({
     >
       {m.draw}
     </svg>
+  );
+}
+
+/** A session's state as one word in a chip: the text the mark's shape stands for, so the
+ *  state never rides on colour or shape alone. */
+export function StateChip({ state }: { state: string }): JSX.Element {
+  return (
+    <span
+      data-state={state}
+      class="shrink-0 rounded-full border hairline px-1.5 text-[10px] font-medium uppercase tracking-wide muted"
+    >
+      {stateWord(state)}
+    </span>
   );
 }
 
@@ -187,7 +200,10 @@ function NeedsCard({
       <a href={openHref(s)} class="flex min-w-0 flex-col gap-1.5 text-base-content">
         <div class="flex items-baseline justify-between gap-2">
           <span class="truncate text-base font-semibold">{sessionName(s)}</span>
-          <span class="shrink-0 text-xs muted">{ageText(s.last_event_at, now)}</span>
+          <span class="flex shrink-0 items-center gap-1.5">
+            <StateChip state={s.state} />
+            <span class="text-xs muted">{ageText(s.last_event_at, now)}</span>
+          </span>
         </div>
         <div class="truncate text-xs muted">{whereOf(s)}</div>
         <div class="line-clamp-2 text-sm">{s.task || s.title || stateWord(s.state)}</div>
@@ -215,8 +231,8 @@ function NeedsCard({
   );
 }
 
-/** A working or stale row: the mark, the name, the model chip, where it works and how full its
- *  window is. `sel` is the desktop's keyboard selection. */
+/** A working or stuck row: the mark, the name with its state word, the model chip, where it
+ *  works and how full its window is. `sel` is the desktop's keyboard selection. */
 function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element {
   return (
     <a
@@ -228,7 +244,10 @@ function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element 
       }`}
     >
       <StateMark state={s.state} />
-      <span class="min-w-0 truncate text-[15px] font-medium">{sessionName(s)}</span>
+      <span class="flex min-w-0 items-center gap-1.5">
+        <span class="min-w-0 truncate text-[15px] font-medium">{sessionName(s)}</span>
+        <StateChip state={s.state} />
+      </span>
       {s.model ? <ModelChip model={s.model} /> : <span />}
       <span />
       <span class="min-w-0 truncate text-[13px] muted">
@@ -241,7 +260,8 @@ function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element 
   );
 }
 
-/** An idle or ended row: the mark, the name with its machine, and how long it has been quiet. */
+/** An idle or ended row: the mark, the name with its state word and its machine, and how long
+ *  it has been quiet. */
 function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolean }): JSX.Element {
   return (
     <a
@@ -253,8 +273,11 @@ function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolea
       }`}
     >
       <StateMark state={s.state} />
-      <span class="min-w-0 truncate text-[15px]">
-        {sessionName(s)} {s.machine ? <span class="text-[13px] muted">· {s.machine}</span> : null}
+      <span class="flex min-w-0 items-center gap-1.5">
+        <span class="min-w-0 truncate text-[15px]">
+          {sessionName(s)} {s.machine ? <span class="text-[13px] muted">· {s.machine}</span> : null}
+        </span>
+        <StateChip state={s.state} />
       </span>
       <span class="shrink-0 text-xs muted">{ageText(s.last_event_at, now)}</span>
     </a>
@@ -263,14 +286,14 @@ function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolea
 
 /** The list's five sections, in the order the Now tab shows them; empty ones draw nothing. */
 const SECTIONS: readonly (readonly [
-  key: "needsYou" | "working" | "idle" | "stale" | "ended",
+  key: "needsYou" | "working" | "idle" | "stuck" | "ended",
   label: string,
   warn: boolean,
 ])[] = [
   ["needsYou", "Needs you", true],
   ["working", "Working", false],
   ["idle", "Idle", false],
-  ["stale", "Stale", false],
+  ["stuck", "Stuck", false],
   ["ended", "Ended", false],
 ];
 
@@ -340,6 +363,8 @@ export function NowPane({ layout }: { layout: Layout }): JSX.Element {
   const [group, setGroup] = useState<GroupMode>(() =>
     readPref(localStorage, "nowgroup", "machine" as GroupMode),
   );
+  // the needs-you filter: on, the list holds the sessions that need the owner and nothing else
+  const [onlyNeeds, setOnlyNeeds] = useState<boolean>(() => readPref(localStorage, "nowneeds", false));
   const [selId, setSelId] = useState<string | null>(null);
   const [picked, setPicked] = useState<readonly string[]>([]);
   const [replyTo, setReplyTo] = useState<string | null>(null);
@@ -347,7 +372,9 @@ export function NowPane({ layout }: { layout: Layout }): JSX.Element {
   const [linking, setLinking] = useState(false);
   const hold = useRef<number | null>(null);
 
-  const rows = [...groups.needsYou, ...groups.working, ...groups.idle, ...groups.stale, ...groups.ended];
+  const rows = onlyNeeds
+    ? groups.needsYou
+    : [...groups.needsYou, ...groups.working, ...groups.idle, ...groups.stuck, ...groups.ended];
   const selIdx = rows.findIndex((r) => r.session_id === selId);
   const cur = selIdx >= 0 ? selIdx : 0;
 
@@ -490,26 +517,43 @@ export function NowPane({ layout }: { layout: Layout }): JSX.Element {
           <MachinesLine live={st.live} text={machinesLine(layout, machinesOf(st.sessions))} />
         </header>
       ) : null}
-      <div class="flex shrink-0 items-center gap-2 border-b hairline px-4 py-2">
-        <span class="text-xs muted">Group by</span>
-        <div class="flex overflow-hidden rounded-lg border hairline">
-          {(["machine", "project"] as const).map((k, i) => (
-            <button
-              key={k}
-              type="button"
-              aria-pressed={group === k ? "true" : "false"}
-              class={`min-h-8 px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                i > 0 ? "border-l hairline" : ""
-              } ${group === k ? "bg-base-100 font-semibold text-base-content" : "muted"}`}
-              onClick={() => {
-                setGroup(k);
-                writePref(localStorage, "nowgroup", k);
-              }}
-            >
-              {k === "machine" ? "Machine" : "Project"}
-            </button>
-          ))}
+      <div class="flex shrink-0 items-center justify-between gap-2 border-b hairline px-4 py-2">
+        <div class="flex items-center gap-2">
+          <span class="text-xs muted">Group by</span>
+          <div class="flex overflow-hidden rounded-lg border hairline">
+            {(["machine", "project"] as const).map((k, i) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={group === k ? "true" : "false"}
+                class={`min-h-8 px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                  i > 0 ? "border-l hairline" : ""
+                } ${group === k ? "bg-base-100 font-semibold text-base-content" : "muted"}`}
+                onClick={() => {
+                  setGroup(k);
+                  writePref(localStorage, "nowgroup", k);
+                }}
+              >
+                {k === "machine" ? "Machine" : "Project"}
+              </button>
+            ))}
+          </div>
         </div>
+        <button
+          type="button"
+          data-needs-filter=""
+          aria-pressed={onlyNeeds ? "true" : "false"}
+          class={`min-h-8 rounded-lg border px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+            onlyNeeds ? "border-warning bg-base-100 font-semibold text-warning" : "hairline muted"
+          }`}
+          onClick={() => {
+            const next = !onlyNeeds;
+            setOnlyNeeds(next);
+            writePref(localStorage, "nowneeds", next);
+          }}
+        >
+          Needs you
+        </button>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto pb-4" data-now-sections="">
         {st.sessions === null ? (
@@ -520,20 +564,22 @@ export function NowPane({ layout }: { layout: Layout }): JSX.Element {
             <p>When a session needs you, it shows up here first.</p>
           </div>
         ) : (
-          SECTIONS.filter(([key]) => groups[key].length > 0).map(([key, label, warn]) => (
-            <section key={key} aria-labelledby={`now-${key}`} class="flex flex-col gap-1 px-3 pt-2">
-              <h2
-                id={`now-${key}`}
-                class={`flex items-center gap-2 px-1 pb-1 text-[13px] font-semibold tracking-[0.06em] uppercase ${
-                  warn ? "text-warning" : "muted"
-                }`}
-              >
-                {warn ? <StateMark state="needs-you" /> : null}
-                {label} · {groups[key].length}
-              </h2>
-              {sectionRows(groups[key])}
-            </section>
-          ))
+          SECTIONS.filter(([key]) => (!onlyNeeds || key === "needsYou") && groups[key].length > 0).map(
+            ([key, label, warn]) => (
+              <section key={key} aria-labelledby={`now-${key}`} class="flex flex-col gap-1 px-3 pt-2">
+                <h2
+                  id={`now-${key}`}
+                  class={`flex items-center gap-2 px-1 pb-1 text-[13px] font-semibold tracking-[0.06em] uppercase ${
+                    warn ? "text-warning" : "muted"
+                  }`}
+                >
+                  {warn ? <StateMark state="needs-you" /> : null}
+                  {label} · {groups[key].length}
+                </h2>
+                {sectionRows(groups[key])}
+              </section>
+            ),
+          )
         )}
       </div>
       {picked.length > 0 ? (

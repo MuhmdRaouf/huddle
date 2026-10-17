@@ -180,6 +180,61 @@ func TestThePushSweepReadsEachWaitingItemOnce(t *testing.T) {
 	}
 }
 
+// The sessions' own entry bookkeeping: one push per needs-you entry — the read answers the
+// entries that have had no push, the mark ends one, and leaving the state clears the mark so
+// the next entry pushes again.
+func TestTheSessionEntryPushIsReadMarkedAndClearedPerEntry(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	report := func(session, event string) {
+		if err := db.Report(ctx, Report{SessionID: session, LastEvent: event, LastEventAt: isoPerm(now)}); err != nil {
+			t.Fatalf("report %s: %v", session, err)
+		}
+	}
+	report("s-ask", "PermissionRequest") // needs-you with no item: an entry of its own
+	report("s-work", "UserPromptSubmit") // working: never an entry
+	report("s-done", "SessionEnd")       // ended: never an entry, whatever its mark
+
+	entries, err := db.FreshPushSessions(ctx, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("the fresh entries: %v", err)
+	}
+	if len(entries) != 1 || entries[0].SessionID != "s-ask" {
+		t.Fatalf("the fresh entries = %v, want s-ask alone", entries)
+	}
+
+	// the pass pushed it: the entry is spoken for, and the reads answer none
+	if err := db.MarkSessionPushed(ctx, "s-ask", isoPerm(now.Add(time.Second))); err != nil {
+		t.Fatalf("mark pushed: %v", err)
+	}
+	if again, err := db.FreshPushSessions(ctx, now.Add(2*time.Second)); err != nil || len(again) != 0 {
+		t.Fatalf("the fresh entries after the push = (%v, %v), want none", again, err)
+	}
+
+	// a prompt answers the ask: the session left needs-you, and its mark is there to clear
+	report("s-ask", "UserPromptSubmit")
+	left, err := db.LeftNeedsYou(ctx, now.Add(3*time.Second))
+	if err != nil {
+		t.Fatalf("the leavers: %v", err)
+	}
+	if len(left) != 1 || left[0] != "s-ask" {
+		t.Fatalf("the leavers = %v, want s-ask alone", left)
+	}
+	if err := db.ClearSessionPush(ctx, "s-ask"); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if left, err = db.LeftNeedsYou(ctx, now.Add(4*time.Second)); err != nil || len(left) != 0 {
+		t.Fatalf("the leavers after the clear = (%v, %v), want none", left, err)
+	}
+
+	// a second permission request is a new entry: the read answers it once more
+	report("s-ask", "PermissionRequest")
+	if entries, err = db.FreshPushSessions(ctx, now.Add(5*time.Second)); err != nil || len(entries) != 1 {
+		t.Fatalf("the fresh entries after the re-entry = (%v, %v), want s-ask", entries, err)
+	}
+}
+
 func TestThePushSweepSkipsWhatNoLongerWaits(t *testing.T) {
 	db := openForTest(t)
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
