@@ -27,6 +27,15 @@ export const TOTALS = {
   cacheWrite: 2000,
 } as const;
 
+/** The seeded Codex session: one turn twenty-five hours back (800 uncached in, 200 cached, 100
+ *  out), outside the Day window and inside the usage ones. */
+export const CODEX = {
+  session: "9a1f0c3e-2b4d-4e5f-8a6b-7c8d9e0f1a2b",
+  input: 800,
+  output: 100,
+  cacheRead: 200,
+} as const;
+
 /** 1,200 — the grouping the dashboard's number cells carry. */
 export const n = (value: number): string => value.toLocaleString("en-US");
 

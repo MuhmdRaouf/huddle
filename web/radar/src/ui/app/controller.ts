@@ -539,7 +539,12 @@ export class RadarController {
       } catch {
         return;
       }
-      if ((parsed.kind !== "model" && parsed.kind !== "project") || typeof parsed.key !== "string") return;
+      if (
+        (parsed.kind !== "model" && parsed.kind !== "project" && parsed.kind !== "harness") ||
+        typeof parsed.key !== "string"
+      ) {
+        return;
+      }
       if (parsed.key === "") return;
       this.setState({ ...this.state, usageDrill: { kind: parsed.kind, key: parsed.key } });
     },

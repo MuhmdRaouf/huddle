@@ -368,6 +368,30 @@ func TestAggregateByHarness(t *testing.T) {
 		}
 	})
 
+	t.Run("a top session carries its harness, claude the untagged default", func(t *testing.T) {
+		rows := []Row{
+			row(func(r *Row) { r.SessionID = "s-claude" }),
+			row(func(r *Row) { r.SessionID = "s-codex"; r.Harness = shared.HarnessCodex }),
+		}
+		report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2}}, zone)
+		sessions := report.TopSessions["app"]
+		harnessFor := func(id string) string {
+			for _, session := range sessions {
+				if session.SessionID == id {
+					return session.Harness
+				}
+			}
+			t.Fatalf("no %q session in %+v", id, sessions)
+			return ""
+		}
+		if got := harnessFor("s-claude"); got != shared.HarnessClaude {
+			t.Errorf("claude session harness = %q, want %q", got, shared.HarnessClaude)
+		}
+		if got := harnessFor("s-codex"); got != shared.HarnessCodex {
+			t.Errorf("codex session harness = %q, want %q", got, shared.HarnessCodex)
+		}
+	})
+
 	t.Run("a harness-reported cost wins over the price table and prices the row", func(t *testing.T) {
 		rows := []Row{
 			row(func(r *Row) { r.Harness = shared.HarnessOpencode; r.CostUSD = dollars(0.25) }),

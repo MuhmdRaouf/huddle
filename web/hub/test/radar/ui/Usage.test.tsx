@@ -1,10 +1,17 @@
 import { fireEvent, screen, within } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it } from "vite-plus/test";
-import type { UsageDay, UsageReport, UsageSlice, UsageTotals } from "../../../src/radar/shared/usage.ts";
+import type {
+  UsageDay,
+  UsageHarness,
+  UsageReport,
+  UsageSlice,
+  UsageTotals,
+} from "../../../src/radar/shared/usage.ts";
 import {
   dayRows,
   processedTokens,
+  resumeCommand,
   stepDay,
   unpricedModels,
   UsageView,
@@ -96,12 +103,14 @@ const REPORT: UsageReport = {
   byModel: [GLM, FLASH],
   byProject: [PROJECT],
   byKind: [{ key: "main", ...TOTALS, days: REPORT_DAYS }],
+  byHarness: [{ key: "claude", ...TOTALS, days: REPORT_DAYS }],
   topSessions: {
     "/w/e2e": [
       {
         sessionId: "s-1",
         label: "seed the dashboard",
         project: "/w/e2e",
+        harness: "claude",
         lastTs: NOW,
         requests: 3,
         input: 2400,
@@ -115,6 +124,7 @@ const REPORT: UsageReport = {
         sessionId: "i-23456789",
         label: "",
         project: "/w/e2e",
+        harness: "claude",
         lastTs: NOW - 60_000,
         requests: 1,
         input: 10,
@@ -156,10 +166,86 @@ const EMPTY: UsageReport = {
   byModel: [],
   byProject: [],
   byKind: [],
+  byHarness: [],
   topSessions: {},
   approximate: false,
   unpriced: 0,
   pricesRetrieved: "2026-10-01",
+};
+
+/** A codex session's and an opencode session's one request each, on days the window already
+ *  holds; the numbers the By agent table and the per-harness resume commands read. */
+const CODEX: UsageTotals = {
+  requests: 1,
+  input: 500,
+  output: 50,
+  cacheRead: 0,
+  cacheWrite: 0,
+  costUsd: 0,
+  savingsUsd: 0,
+};
+const OPENCODE: UsageTotals = {
+  requests: 1,
+  input: 100,
+  output: 10,
+  cacheRead: 0,
+  cacheWrite: 0,
+  costUsd: 0,
+  savingsUsd: 0,
+};
+
+/** A window three agents ran: claude's REPORT plus one codex and one opencode request. */
+const AGENTS: UsageReport = {
+  ...REPORT,
+  totals: {
+    requests: TOTALS.requests + 2,
+    input: TOTALS.input + 600,
+    output: TOTALS.output + 60,
+    cacheRead: TOTALS.cacheRead,
+    cacheWrite: TOTALS.cacheWrite,
+    costUsd: TOTALS.costUsd,
+    savingsUsd: TOTALS.savingsUsd,
+  },
+  byHarness: [
+    { key: "claude", ...TOTALS, days: REPORT_DAYS },
+    {
+      key: "codex",
+      ...CODEX,
+      days: DATES.map((date) => day(date)).with(
+        6,
+        day("2026-10-17", { requests: 1, input: 500, output: 50 }),
+      ),
+    },
+    {
+      key: "opencode",
+      ...OPENCODE,
+      days: DATES.map((date) => day(date)).with(
+        1,
+        day("2026-10-12", { requests: 1, input: 100, output: 10 }),
+      ),
+    },
+  ],
+  topSessions: {
+    "/w/e2e": [
+      ...(REPORT.topSessions["/w/e2e"] ?? []),
+      {
+        sessionId: "c-1",
+        label: "run with codex",
+        project: "/w/e2e",
+        harness: "codex",
+        lastTs: NOW - 30_000,
+        ...CODEX,
+      },
+      {
+        sessionId: "o-1",
+        label: "opencode run",
+        project: "/w/e2e",
+        harness: "opencode",
+        lastTs: NOW - 90_000,
+        ...OPENCODE,
+      },
+    ],
+  },
 };
 
 function usageState(over: Partial<ClientState> = {}): Partial<ClientState> {
@@ -229,6 +315,16 @@ describe("unpricedModels", () => {
   it("names the models the window ran without a price", () => {
     expect(unpricedModels(REPORT)).toEqual(["glm-5.3-flash"]);
     expect(unpricedModels(PRICED)).toEqual([]);
+  });
+});
+
+describe("resumeCommand", () => {
+  it("offers each agent CLI its own resume command, opencode none", () => {
+    const command = (harness: UsageHarness): string | null =>
+      resumeCommand({ ...CODEX, sessionId: "s 9", label: "", project: "/w/e2e", harness, lastTs: NOW });
+    expect(command("claude")).toBe("claude --resume s 9");
+    expect(command("codex")).toBe("codex resume s 9");
+    expect(command("opencode")).toBeNull();
   });
 });
 
@@ -444,6 +540,62 @@ describe("UsageView", () => {
     expect(view.container.textContent).toContain("i-234567"); // a session with no label reads by its id prefix
     fireEvent.click(screen.getByRole("button", { name: "Copy the resume command for i-234567" }));
     expect(texts).toEqual(["claude --resume i-23456789"]);
+    Object.defineProperty(window.navigator, "clipboard", { value: undefined, configurable: true });
+  });
+
+  it("shows every agent's tokens in a By agent table, and hides it when claude ran alone", () => {
+    const view = renderApp(<UsageView />, usageState({ usage: { key: 7, report: AGENTS } }), NOW);
+    const table = view.container.querySelector("[data-key='usage-harness']");
+    expect(table?.textContent).toContain("Claude");
+    expect(table?.textContent).toContain("10,015"); // claude's window tokens
+    expect(table?.textContent).toContain("Codex");
+    expect(table?.textContent).toContain("550");
+    expect(table?.textContent).toContain("Opencode");
+    expect(table?.textContent).toContain("110");
+
+    // a window only claude ran in keeps the table out entirely
+    const alone = renderApp(<UsageView />, usageState(), NOW);
+    expect(alone.container.querySelector("[data-key='usage-harness']")).toBeNull();
+    expect(alone.container.textContent).not.toContain("By agent");
+  });
+
+  it("opens an agent's own daily series from its By agent row", async () => {
+    const view = renderApp(<UsageView />, usageState({ usage: { key: 7, report: AGENTS } }), NOW);
+    await userEvent.click(screen.getByRole("cell", { name: "Codex" }));
+    expect(view.act).toHaveBeenCalledWith("usage-drill", JSON.stringify({ kind: "harness", key: "codex" }));
+
+    const open = renderApp(
+      <UsageView />,
+      usageState({ usage: { key: 7, report: AGENTS }, usageDrill: { kind: "harness", key: "codex" } }),
+      NOW,
+    );
+    expect(open.container.textContent).toContain("Agent · Codex");
+    const drill = open.container.querySelector("[data-usage-drill]");
+    expect(drill?.querySelectorAll("path.chart-line")).toHaveLength(1);
+    expect(drill?.querySelector("[data-key='usage-sessions']")).toBeNull();
+  });
+
+  it("offers each harness's resume command, and none for opencode", () => {
+    const texts: string[] = [];
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText: (text: string) => (texts.push(text), Promise.resolve()) },
+      configurable: true,
+    });
+    renderApp(
+      <UsageView />,
+      usageState({ usage: { key: 7, report: AGENTS }, usageDrill: { kind: "project", key: "/w/e2e" } }),
+      NOW,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Copy the resume command for run with codex" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy the resume command for seed the dashboard" }));
+    expect(texts).toEqual(["codex resume c-1", "claude --resume s-1"]);
+    // opencode has no resume command: its row carries the dash, never a button
+    expect(
+      within(screen.getByRole("row", { name: /opencode run/ })).queryByRole("button", {
+        name: /Copy the resume command/,
+      }),
+    ).toBeNull();
+    expect(screen.getByRole("row", { name: /opencode run/ }).textContent).toContain("–");
     Object.defineProperty(window.navigator, "clipboard", { value: undefined, configurable: true });
   });
 

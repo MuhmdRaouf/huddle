@@ -1,10 +1,10 @@
 /**
  * The usage view: the long-range picture the Costs view's periods cannot give — every request over the
- * last 7, 30 or 90 days as five tiles, one layered line per model on a daily chart, per-model and
- * per-project tables that drill into their own series, and each project's costliest sessions with the
- * resume command a click away. The estimates carry the honesty labels: `*` at API list price, `~` once
- * a model without a price is in the window, the unpriced models named. Everything renders from the one
- * held report — drill-downs never refetch.
+ * last 7, 30 or 90 days as five tiles, one layered line per model on a daily chart, per-model,
+ * per-project and per-agent tables that drill into their own series, and each project's costliest
+ * sessions with the resume command a click away. The estimates carry the honesty labels: `*` at API
+ * list price, `~` once a model without a price is in the window, the unpriced models named. Everything
+ * renders from the one held report — drill-downs never refetch.
  */
 
 import type { ComponentChildren } from "preact";
@@ -101,6 +101,19 @@ export function stepDay(dates: string[], current: string | null, delta: 1 | -1):
   if (at < 0) return null;
   const next = Math.min(count - 1, Math.max(0, at + delta));
   return dates[next] as string;
+}
+
+/** The command that resumes one session on the agent CLI that ran it; null when that CLI has no
+ *  resume command to offer. */
+export function resumeCommand(session: UsageSession): string | null {
+  if (session.harness === "claude") return `claude --resume ${session.sessionId}`;
+  if (session.harness === "codex") return `codex resume ${session.sessionId}`;
+  return null;
+}
+
+/** One harness key as the tables print it: the key with its first letter capitalised. */
+function agentName(key: string): string {
+  return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
 /** A money figure with its honesty marks: `~` once the window holds unpriced models, `*` always —
@@ -400,8 +413,8 @@ const SLICE_COLUMNS: { key: string; label: string; numeric?: boolean }[] = [
   { key: "share", label: "Share", numeric: true },
 ];
 
-/** The by-model and by-project tables: one row per slice, its share bar, and the row opens the
- *  slice's own daily series. */
+/** The by-model, by-project and by-agent tables: one row per slice, its share bar, and the row opens
+ *  the slice's own daily series. */
 function SliceTable({
   title,
   icon,
@@ -410,25 +423,28 @@ function SliceTable({
   drillKind,
 }: {
   title: string;
-  icon: "cpu" | "folder";
+  icon: "cpu" | "folder" | "bot";
   slices: UsageSlice[];
   metric: UsageMetric;
-  drillKind: "model" | "project";
+  drillKind: UsageDrill["kind"];
 }) {
   const { act } = useApp();
   const total = slices.reduce((acc, slice) => acc + metricValue(slice, metric), 0);
+  const keyLabel = drillKind === "model" ? "Model" : drillKind === "harness" ? "Agent" : "Project";
+  const nameOf = (key: string): string =>
+    drillKind === "model" ? shortModelName(key) : drillKind === "harness" ? agentName(key) : key;
   return (
     <Panel icon={icon} title={title} flush>
       <Table dataKey={`usage-${drillKind}`}>
         <TableHeadStatic
           columns={SLICE_COLUMNS.map((column) => ({
             ...column,
-            label: column.key === "key" ? (drillKind === "model" ? "Model" : "Project") : column.label,
+            label: column.key === "key" ? keyLabel : column.label,
           }))}
         />
         <tbody>
           {slices.map((slice) => {
-            const name = drillKind === "model" ? shortModelName(slice.key) : slice.key;
+            const name = nameOf(slice.key);
             const value = metricValue(slice, metric);
             return (
               <TableRow
@@ -487,48 +503,75 @@ function SessionTable({ sessions, now }: { sessions: UsageSession[]; now: number
         ]}
       />
       <tbody>
-        {sessions.map((session) => (
-          <TableRow key={session.sessionId}>
-            <td class="min-w-0">
-              <span class="block truncate font-medium" title={session.sessionId}>
-                {name(session)}
-              </span>
-            </td>
-            <td class="num text-right">{fmtAgo(session.lastTs, now)}</td>
-            <td class="num text-right">{fmtNum(session.requests)}</td>
-            <td class="num text-right">{fmtNum(processedTokens(session))}</td>
-            <td class="num text-right">
-              <SliceCost slice={{ ...session, key: session.sessionId, days: [] }} />
-            </td>
-            <td class="text-right">
-              <CopyButton
-                text={`claude --resume ${session.sessionId}`}
-                label={`Copy the resume command for ${name(session)}`}
-                class="btn btn-ghost btn-sm"
-              />
-            </td>
-          </TableRow>
-        ))}
+        {sessions.map((session) => {
+          const command = resumeCommand(session);
+          return (
+            <TableRow key={session.sessionId}>
+              <td class="min-w-0">
+                <span class="block truncate font-medium" title={session.sessionId}>
+                  {name(session)}
+                </span>
+              </td>
+              <td class="num text-right">{fmtAgo(session.lastTs, now)}</td>
+              <td class="num text-right">{fmtNum(session.requests)}</td>
+              <td class="num text-right">{fmtNum(processedTokens(session))}</td>
+              <td class="num text-right">
+                <SliceCost slice={{ ...session, key: session.sessionId, days: [] }} />
+              </td>
+              <td class="text-right">
+                {command === null ? (
+                  <span class="text-base-content/60" title="This agent CLI has no resume command">
+                    –
+                  </span>
+                ) : (
+                  <CopyButton
+                    text={command}
+                    label={`Copy the resume command for ${name(session)}`}
+                    class="btn btn-ghost btn-sm"
+                  />
+                )}
+              </td>
+            </TableRow>
+          );
+        })}
       </tbody>
     </Table>
   );
 }
 
-/** The open drill-down: one model's or one project's own daily series from the held report, and —
- *  for a project — its costliest sessions with their resume commands. */
+/** One drill kind's dressing: the word and the icon its panel leads with. */
+const DRILL_WORD = { model: "Model", project: "Project", harness: "Agent" } as const;
+const DRILL_ICON = { model: "cpu", project: "folder", harness: "bot" } as const;
+
+/** The report's slices one drill kind opens on. */
+function drillSlices(report: UsageReport, kind: UsageDrill["kind"]): UsageSlice[] {
+  if (kind === "model") return report.byModel;
+  if (kind === "project") return report.byProject;
+  return report.byHarness;
+}
+
+/** One drill kind's key as its title prints it. */
+function drillTitle(kind: UsageDrill["kind"], key: string): string {
+  if (kind === "model") return shortModelName(key);
+  if (kind === "harness") return agentName(key);
+  return key;
+}
+
+/** The open drill-down: one model's, one project's or one agent's own daily series from the held
+ *  report, and — for a project — its costliest sessions with their resume commands. */
 function Drill({ report, drill, metric }: { report: UsageReport; drill: UsageDrill; metric: UsageMetric }) {
   const { act, now } = useApp();
-  const slices = drill.kind === "model" ? report.byModel : report.byProject;
+  const slices = drillSlices(report, drill.kind);
   const slice = slices.find((entry) => entry.key === drill.key);
   if (slice === undefined) return null;
   const values = slice.days.map((day) => metricValue(day, metric));
   const peak = layeredMax([values]);
-  const title = drill.kind === "model" ? shortModelName(slice.key) : slice.key;
+  const title = drillTitle(drill.kind, slice.key);
   const sessions = drill.kind === "project" ? (report.topSessions[slice.key] ?? []) : [];
   return (
     <Panel
-      icon={drill.kind === "model" ? "cpu" : "folder"}
-      title={`${drill.kind === "model" ? "Model" : "Project"} · ${title}`}
+      icon={DRILL_ICON[drill.kind]}
+      title={`${DRILL_WORD[drill.kind]} · ${title}`}
       subtitle={metric === "cost" ? "daily estimated cost" : "daily processed tokens"}
       actions={
         <button
@@ -566,7 +609,7 @@ function Drill({ report, drill, metric }: { report: UsageReport; drill: UsageDri
 }
 
 /** The whole view: the tiles, the honesty line, the daily chart with its series and day controls,
- *  the two breakdown tables and the open drill-down — all from the one held report. */
+ *  the breakdown tables and the open drill-down — all from the one held report. */
 export function UsageView() {
   const { state } = useApp();
   const held = state.usage;
@@ -655,6 +698,15 @@ export function UsageView() {
         metric={metric}
         drillKind="project"
       />
+      {report.byHarness.some((slice) => slice.key !== "claude") && (
+        <SliceTable
+          title="By agent"
+          icon="bot"
+          slices={report.byHarness}
+          metric={metric}
+          drillKind="harness"
+        />
+      )}
       {state.usageDrill !== null && <Drill report={report} drill={state.usageDrill} metric={metric} />}
       <p class="text-meta text-base-content/60">{ESTIMATE_NOTE}</p>
     </div>

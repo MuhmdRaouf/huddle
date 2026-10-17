@@ -26,6 +26,9 @@ const bin = path.join(runDir, "bin", "huddle");
 /** The seeded session's id: the transcript file's name, the registry report's session_id. */
 const SESSION_ID = "e2e-seed";
 
+/** The seeded Codex session's id: the rollout file's own name and the session_meta's id. */
+const CODEX_SESSION = "9a1f0c3e-2b4d-4e5f-8a6b-7c8d9e0f1a2b";
+
 /** The root credential this one server run answers. */
 const TOKEN = `huddle-e2e-${randomUUID().replace(/-/g, "")}`;
 
@@ -105,6 +108,15 @@ function writeFixtures(port: number): void {
   fs.writeFileSync(
     path.join(radarHome, "spool", `${day}.jsonl`),
     fill(fs.readFileSync(path.join(here, "fixtures", "spool.jsonl"), "utf8")),
+  );
+  // the codex rollout: one turn twenty-five hours back, in the usage windows and outside the Day one
+  const codexAt = new Date(t0 - 90_000_000);
+  const [year, month, codexDay] = codexAt.toISOString().split("-");
+  const codexDir = path.join(home, ".codex", "sessions", year, month, codexDay.slice(0, 2));
+  fs.mkdirSync(codexDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(codexDir, `rollout-${CODEX_SESSION}.jsonl`),
+    fill(fs.readFileSync(path.join(here, "fixtures", "codex-rollout.jsonl"), "utf8")),
   );
   const board = path.join(projectDir, ".agents", "kanban");
   fs.cpSync(path.join(here, "fixtures", "kanban"), board, { recursive: true });
@@ -193,8 +205,8 @@ async function seedRegistry(): Promise<void> {
   });
 }
 
-/** Waits until radar's ingest has landed the four seeded requests, so the first view a test
- *  opens already carries them. */
+/** Waits until radar's ingest has landed the five seeded requests (four Claude, one Codex), so
+ *  the first view a test opens already carries them. */
 async function waitIngested(): Promise<void> {
   const port = readPort();
   const deadline = Date.now() + 30_000;
@@ -205,7 +217,7 @@ async function waitIngested(): Promise<void> {
       });
       if (r.ok) {
         const body = (await r.json()) as { requests?: unknown[] };
-        if ((body.requests?.length ?? 0) >= 4) return;
+        if ((body.requests?.length ?? 0) >= 5) return;
       }
     } catch {
       // not ingested yet

@@ -39,8 +39,8 @@ import type { IconName } from "./icons.ts";
 /** What the usage chart plots: token counts or estimated cost. */
 export type UsageMetric = "tokens" | "cost";
 
-/** The usage view's open drill-down: one model's or one project's own series. */
-export type UsageDrill = { kind: "model" | "project"; key: string };
+/** The usage view's open drill-down: one model's, one project's or one agent's own series. */
+export type UsageDrill = { kind: "model" | "project" | "harness"; key: string };
 
 export type Tab =
   | "overview"
@@ -893,7 +893,8 @@ export function toggleUsageHidden(hidden: string[], keys: string[], key: string)
 
 /** True when the report still carries what the drill-down opened on, so it may stay open. */
 export function usageDrillAlive(report: UsageReport, drill: UsageDrill): boolean {
-  const slices = drill.kind === "model" ? report.byModel : report.byProject;
+  const slices =
+    drill.kind === "model" ? report.byModel : drill.kind === "project" ? report.byProject : report.byHarness;
   return slices.some((slice) => slice.key === drill.key);
 }
 

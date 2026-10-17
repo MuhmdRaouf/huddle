@@ -2254,6 +2254,7 @@ const USAGE_REPORT = (dates: string[]): UsageReport => ({
   byModel: [],
   byProject: [],
   byKind: [],
+  byHarness: [],
   topSessions: {},
   approximate: false,
   unpriced: 0,

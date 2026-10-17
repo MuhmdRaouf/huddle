@@ -1,17 +1,19 @@
-// usage.spec.ts — the Usage view over the seeded transcript: the four seeded requests land in the
+// usage.spec.ts — the Usage view over the seeded transcript: the five seeded requests land in the
 // window's tiles as exact token totals, the 7-day window answers, a click on the seeded day shows
-// that day's split (today carries only the three glm calls), and a project's drill-down offers the
-// resume command for the seeded session.
+// that day's split (today carries only the three glm calls), a project's drill-down offers the
+// resume command for the seeded session, and the By agent table splits the window over Claude and
+// the seeded Codex session.
 
 import { expect, test } from "@playwright/test";
-import { ConsoleErrors, signIn, theSetup } from "./helpers.ts";
+import { CODEX, ConsoleErrors, signIn, theSetup } from "./helpers.ts";
 
-/** The four seeded requests summed: three glm-5.3 today plus one glm-5.3-flash twenty-five hours back. */
+/** The five seeded requests summed: three glm-5.3 today, one glm-5.3-flash and one codex turn
+ *  twenty-five hours back. */
 const USAGE = {
-  processed: 10_015,
-  cached: 5_000,
-  uncached: 2_410,
-  output: 605,
+  processed: 10_015 + CODEX.input + CODEX.output + CODEX.cacheRead,
+  cached: 5_000 + CODEX.cacheRead,
+  uncached: 2_410 + CODEX.input,
+  output: 605 + CODEX.output,
   today: 10_000,
 } as const;
 
@@ -33,10 +35,10 @@ test("the usage view shows the seeded totals and splits the picked day", async (
   await expect(tiles).toContainText(USAGE.output.toLocaleString("en-US"));
   await expect(tiles).toContainText("Cache savings");
 
-  // the daily chart drew one line per model, with the first, middle and last day marked
+  // the daily chart drew one line per model (the two glm ones and the codex turn's)
   const plot = page.locator("[data-usage-plot]");
   await expect(plot).toBeVisible();
-  await expect(plot.locator("path.chart-line")).toHaveCount(2);
+  await expect(plot.locator("path.chart-line")).toHaveCount(3);
 
   // the 7-day window answers with the same requests as the default 30
   await page.getByRole("group", { name: "Window" }).getByRole("button", { name: "7 days" }).click();
@@ -72,4 +74,38 @@ test("a project's drill-down opens from its table row and offers the resume comm
   const copy = page.getByRole("button", { name: /Copy the resume command/ }).first();
   await expect(copy).toHaveCount(1);
   await expect(page.locator("[data-key='usage-sessions']")).toContainText("e2e-seed");
+});
+
+test("the By agent table splits the window over the agent CLIs, each resuming its own way", async ({
+  page,
+}) => {
+  const errors = new ConsoleErrors(page);
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/radar/usage`);
+
+  // claude's four requests and the seeded codex turn, opencode absent
+  const agents = page.locator("[data-key='usage-harness']");
+  await expect(agents).toBeVisible();
+  await expect(agents).toContainText("Claude");
+  await expect(agents).toContainText("Codex");
+  expect(await agents.textContent()).not.toContain("Opencode");
+
+  // the codex row opens its own daily series
+  await agents.getByRole("row", { name: /Codex/ }).click();
+  await expect(page.getByRole("heading", { name: "Agent · Codex" })).toBeVisible();
+
+  // the project's codex session copies its own CLI's resume command
+  await page.locator("[data-key='usage-project'] tbody tr").first().click();
+  const sessions = page.locator("[data-key='usage-sessions']");
+  await expect(sessions).toContainText(CODEX.session.slice(0, 8));
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: new URL(theSetup().rootUrl).origin,
+  });
+  await sessions
+    .getByRole("row", { name: new RegExp(CODEX.session.slice(0, 8)) })
+    .getByRole("button", { name: /Copy the resume command/ })
+    .click();
+  const copied = page.evaluate(() => navigator.clipboard.readText());
+  await expect(copied).resolves.toBe(`codex resume ${CODEX.session}`);
+  expect(errors.errors()).toEqual([]);
 });

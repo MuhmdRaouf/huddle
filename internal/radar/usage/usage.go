@@ -106,7 +106,9 @@ type Session struct {
 	SessionID string `json:"sessionId"`
 	Label     string `json:"label"`
 	Project   string `json:"project"`
-	LastTS    int64  `json:"lastTs"`
+	// Harness is the agent CLI the session ran on; an untagged one reads as claude.
+	Harness string `json:"harness"`
+	LastTS  int64  `json:"lastTs"`
 	Totals
 }
 
@@ -263,12 +265,17 @@ func (a *sessionAcc) add(row Row, price RowPrice) {
 	addRow(&a.session.Totals, row, price)
 }
 
-// sessionAt answers one session's accumulator, creating it on first sight.
+// sessionAt answers one session's accumulator, creating it on first sight with the harness
+// its first row names.
 func sessionAt(sessions map[string]*sessionAcc, row Row) *sessionAcc {
 	key := row.Project + "\x00" + row.SessionID
 	acc, ok := sessions[key]
 	if !ok {
-		acc = &sessionAcc{session: Session{SessionID: row.SessionID, Project: row.Project}}
+		acc = &sessionAcc{session: Session{
+			SessionID: row.SessionID,
+			Project:   row.Project,
+			Harness:   harnessOf(row.Harness),
+		}}
 		sessions[key] = acc
 	}
 	return acc

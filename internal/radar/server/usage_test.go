@@ -88,7 +88,9 @@ type usageSession struct {
 	SessionID string `json:"sessionId"`
 	Label     string `json:"label"`
 	Project   string `json:"project"`
-	LastTS    int64  `json:"lastTs"`
+	// Harness is the agent CLI the session ran on ("claude", "codex", "opencode").
+	Harness string `json:"harness"`
+	LastTS  int64  `json:"lastTs"`
 	usageTotals
 }
 
@@ -297,6 +299,22 @@ func TestUsageRoute(t *testing.T) {
 		}
 		if harnessTotal != report.Totals.Requests {
 			t.Errorf("byHarness sums to %d requests, want the grand %d", harnessTotal, report.Totals.Requests)
+		}
+		// every top session names the agent CLI it ran on, the untagged ones claude
+		sessionHarness := func(project, id string) string {
+			for _, session := range report.TopSessions[project] {
+				if session.SessionID == id {
+					return session.Harness
+				}
+			}
+			t.Fatalf("no %q session in project %q", id, project)
+			return ""
+		}
+		if got := sessionHarness("web", "u2"); got != shared.HarnessClaude {
+			t.Errorf("u2 harness = %q, want %q", got, shared.HarnessClaude)
+		}
+		if got := sessionHarness("app", "u9"); got != shared.HarnessCodex {
+			t.Errorf("u9 harness = %q, want %q", got, shared.HarnessCodex)
 		}
 	})
 }

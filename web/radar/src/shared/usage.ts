@@ -1,8 +1,8 @@
 /**
  * The long-range usage report /api/usage serves, mirrored from internal/radar/usage: one window's
- * zero-filled daily series of requests, tokens and estimated cost by model, project and agent kind,
- * each project's costliest sessions, and the honesty flags about prices. Pure types — the browser
- * imports them as types only, so the bundle never carries server code.
+ * zero-filled daily series of requests, tokens and estimated cost by model, project, agent kind and
+ * harness, each project's costliest sessions, and the honesty flags about prices. Pure types — the
+ * browser imports them as types only, so the bundle never carries server code.
  */
 
 /** One group's usage: the requests, the token kinds and the money. */
@@ -21,14 +21,20 @@ export type UsageTotals = {
 /** One local day's totals; `date` spells YYYY-MM-DD in the report's own location. */
 export type UsageDay = UsageTotals & { date: string };
 
-/** One key's totals and its zero-filled daily series, the rows of byModel, byProject and byKind. */
+/** One key's totals and its zero-filled daily series, the rows of byModel, byProject, byKind and
+ *  byHarness. */
 export type UsageSlice = UsageTotals & { key: string; days: UsageDay[] };
+
+/** The agent CLIs a request can name; the report spells an untagged one "claude". */
+export type UsageHarness = "claude" | "codex" | "opencode";
 
 /** One project's session in its top list; `label` is the head of the session's first prompt. */
 export type UsageSession = UsageTotals & {
   sessionId: string;
   label: string;
   project: string;
+  /** The agent CLI the session ran on, which picks the resume command it offers. */
+  harness: UsageHarness;
   lastTs: number;
 };
 
@@ -42,6 +48,7 @@ export type UsageReport = {
   byModel: UsageSlice[];
   byProject: UsageSlice[];
   byKind: UsageSlice[];
+  byHarness: UsageSlice[];
   topSessions: Record<string, UsageSession[]>;
   /** True when some request's model had no price: the true cost is higher than the estimate. */
   approximate: boolean;
