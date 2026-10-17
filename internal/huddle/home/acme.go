@@ -12,8 +12,10 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -24,10 +26,12 @@ type ACME interface {
 }
 
 // The renewal loop's timing (SPEC 7.2): a renewal is tried 30 days before expiry, and a failed
-// one is tried again 6 hours later.
+// one is tried again 6 hours later. An imported certificate has nothing to renew from; the loop
+// looks at its expiry once a day instead, so the log says it is running out in time.
 const (
-	RenewBefore = 30 * 24 * time.Hour
-	RenewRetry  = 6 * time.Hour
+	RenewBefore   = 30 * 24 * time.Hour
+	RenewRetry    = 6 * time.Hour
+	importedWatch = 24 * time.Hour
 )
 
 // RenewalOptions shapes the certificate renewal loop's world: the clock, the sleep and the log.
@@ -56,6 +60,10 @@ func IssueCertificate(ctx context.Context, h Home, acme ACME, host string) (time
 	if err := SaveCertificate(h, cert, key); err != nil {
 		return time.Time{}, err
 	}
+	// the pair is the issuer's now: a marker an earlier import left no longer speaks for it
+	if err := os.Remove(filepath.Join(h.TLS(), "imported")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return time.Time{}, err
+	}
 	expiry, err := leafExpiry(cert)
 	if err != nil {
 		return time.Time{}, err
@@ -74,6 +82,35 @@ func SaveCertificate(h Home, cert, key []byte) error {
 		return err
 	}
 	return writeFile0600(filepath.Join(h.TLS(), "key.pem"), key)
+}
+
+// ImportCertificate lays a pair the owner already holds (mkcert's, a company CA's) into the
+// home's tls/ for the hub listener, and marks the home's certificate imported for the host the
+// config names: no issuer stands behind it to renew from, so the renewal loop leaves it alone
+// and watches its expiry instead.
+func ImportCertificate(h Home, cert, key []byte) error {
+	cfg, err := LoadConfig(h)
+	if err != nil {
+		return err
+	}
+	if cfg.Hub.Host == "" {
+		return errors.New("no hub name to import for — huddle role hub --listen <addr:port> --host <name> writes it first")
+	}
+	if err := SaveCertificate(h, cert, key); err != nil {
+		return err
+	}
+	return writeFile0600(filepath.Join(h.TLS(), "imported"), []byte(cfg.Hub.Host))
+}
+
+// importedName answers the host the home's tls/imported marker names, when the pair on disk
+// arrived by import.
+func importedName(h Home) (string, bool) {
+	body, err := os.ReadFile(filepath.Join(h.TLS(), "imported"))
+	if err != nil {
+		return "", false
+	}
+	name := strings.TrimSpace(string(body))
+	return name, name != ""
 }
 
 // CertificateExpiry answers the leaf certificate's NotAfter from the home's tls/cert.pem.
@@ -104,6 +141,23 @@ func RenewCertificates(ctx context.Context, h Home, issuer func(ctx context.Cont
 		log = func(string) {}
 	}
 	for {
+		if name, ok := importedName(h); ok && name == host {
+			// an imported pair has no issuer behind it to renew from: nothing is asked, and the
+			// expiry is said once a day inside the window, so a fresh import happens in time. The
+			// marker is read again every round: a pair the issuer replaced goes back to renewal.
+			expiry, err := CertificateExpiry(h)
+			if err != nil {
+				log(fmt.Sprintf("huddle: the imported certificate in %s cannot be read: %v (huddle cert --import lays a fresh one)", h.TLS(), err))
+				return
+			}
+			if expiry.Sub(now()) < RenewBefore {
+				log(fmt.Sprintf("huddle: the imported certificate for %s expires %s — huddle cert --import lays a fresh one", host, expiry.Format(time.DateOnly)))
+			}
+			if !sleep(ctx, importedWatch) {
+				return
+			}
+			continue
+		}
 		expiry, err := CertificateExpiry(h)
 		if err != nil {
 			log(fmt.Sprintf("huddle: no certificate to renew in %s: %v (huddle cert obtains the first one)", h.TLS(), err))

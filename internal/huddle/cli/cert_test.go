@@ -136,6 +136,236 @@ func certRun(t *testing.T, world *certWorld, argv ...string) (int, string, strin
 // holds it (or must not) names this constant.
 const testToken = "dns-token-0123456789abcdef"
 
+// mintedLeaf is one leaf a test mints the way a file from mkcert or a company CA looks: signed by
+// its own CA, the leaf alone and the chain (leaf first) beside its key.
+type mintedLeaf struct {
+	cert    []byte
+	chain   []byte
+	key     []byte
+	expires time.Time
+}
+
+// mintLeaf answers one leaf for host, signed by a fresh CA and valid until expires.
+func mintLeaf(t *testing.T, host string, expires time.Time) mintedLeaf {
+	t.Helper()
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate the CA key: %v", err)
+	}
+	caTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "test CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("mint the CA: %v", err)
+	}
+	ca, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatalf("parse the CA: %v", err)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate the leaf key: %v", err)
+	}
+	// a leaf that expired before it began is no leaf: an expired test pair starts an hour earlier
+	notBefore := time.Now().Add(-time.Hour)
+	if expires.Before(notBefore) {
+		notBefore = expires.Add(-time.Hour)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{CommonName: host},
+		DNSNames:     []string{host},
+		NotBefore:    notBefore,
+		NotAfter:     expires,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, ca, &key.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("mint the leaf: %v", err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal the leaf key: %v", err)
+	}
+	cert := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+	return mintedLeaf{
+		cert:    cert,
+		chain:   append(append([]byte{}, cert...), caPEM...),
+		key:     pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}),
+		expires: expires,
+	}
+}
+
+// writeImportFiles lays one minted leaf on disk as the pair to import and answers both paths.
+func writeImportFiles(t *testing.T, dir string, certPEM, keyPEM []byte) (string, string) {
+	t.Helper()
+	certPath := filepath.Join(dir, "cert.pem")
+	keyPath := filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(certPath, certPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return certPath, keyPath
+}
+
+func TestCertImportInstallsThePairTheOwnerHolds(t *testing.T) {
+	world := newCertWorld(t, strings.NewReader(""))
+	// a fixed noon UTC, so the date the certificate carries reads back the same in any zone
+	expires := time.Date(2027, 1, 16, 12, 0, 0, 0, time.UTC)
+	leaf := mintLeaf(t, "hub.mine.test", expires)
+	certPath, keyPath := writeImportFiles(t, t.TempDir(), leaf.cert, leaf.key)
+	code, out, errOut := certRun(t, world, "cert", "--import", certPath, keyPath)
+	if code != 0 {
+		t.Fatalf("huddle cert --import = %d: %s%s", code, out, errOut)
+	}
+	h := home.Home{Root: world.home}
+	cert, err := os.ReadFile(filepath.Join(h.TLS(), "cert.pem"))
+	if err != nil {
+		t.Fatalf("cert.pem: %v", err)
+	}
+	key, err := os.ReadFile(filepath.Join(h.TLS(), "key.pem"))
+	if err != nil {
+		t.Fatalf("key.pem: %v", err)
+	}
+	if string(cert) != string(leaf.cert) || string(key) != string(leaf.key) {
+		t.Error("the pair in tls/ is not the pair handed over")
+	}
+	marker, err := os.ReadFile(filepath.Join(h.TLS(), "imported"))
+	if err != nil {
+		t.Fatalf("imported: %v", err)
+	}
+	if string(marker) != "hub.mine.test" {
+		t.Errorf("the marker holds %q, want the hub's name", marker)
+	}
+	for _, name := range []string{"cert.pem", "key.pem", "imported"} {
+		info, err := os.Stat(filepath.Join(h.TLS(), name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Errorf("%s mode = %o, want 0600", name, info.Mode().Perm())
+		}
+	}
+	if !strings.Contains(out, "hub.mine.test") || !strings.Contains(out, h.TLS()) ||
+		!strings.Contains(out, leaf.expires.Format(time.DateOnly)) {
+		t.Errorf("the answer does not name the host, the tls directory and the expiry:\n%s", out)
+	}
+	if strings.Contains(out+errOut, string(leaf.key)) {
+		t.Error("the key's bytes reached a stream")
+	}
+}
+
+func TestCertImportKeepsAChainWhole(t *testing.T) {
+	world := newCertWorld(t, strings.NewReader(""))
+	leaf := mintLeaf(t, "hub.mine.test", time.Now().Add(90*24*time.Hour).Truncate(time.Second))
+	certPath, keyPath := writeImportFiles(t, t.TempDir(), leaf.chain, leaf.key)
+	code, out, errOut := certRun(t, world, "cert", "--import", certPath, keyPath)
+	if code != 0 {
+		t.Fatalf("huddle cert --import = %d: %s%s", code, out, errOut)
+	}
+	cert, err := os.ReadFile(filepath.Join(home.Home{Root: world.home}.TLS(), "cert.pem"))
+	if err != nil {
+		t.Fatalf("cert.pem: %v", err)
+	}
+	if string(cert) != string(leaf.chain) {
+		t.Error("the chain on disk is not the file as it was handed over")
+	}
+}
+
+func TestCertImportRefusesAPairThatCannotServeTheHub(t *testing.T) {
+	world := newCertWorld(t, strings.NewReader(""))
+	good := mintLeaf(t, "hub.mine.test", time.Now().Add(90*24*time.Hour))
+	other := mintLeaf(t, "elsewhere.test", time.Now().Add(90*24*time.Hour))
+	expired := mintLeaf(t, "hub.mine.test", time.Now().Add(-24*time.Hour))
+	cases := []struct {
+		name    string
+		certPEM []byte
+		keyPEM  []byte
+		refusal string
+	}{
+		{"a key from another pair", good.cert, other.key, "key"},
+		{"a leaf for another host", other.cert, other.key, "elsewhere.test"},
+		{"an expired leaf", expired.cert, expired.key, "expire"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			certPath, keyPath := writeImportFiles(t, t.TempDir(), c.certPEM, c.keyPEM)
+			code, out, errOut := certRun(t, world, "cert", "--import", certPath, keyPath)
+			if code != 1 || out != "" || errOut == "" {
+				t.Fatalf("huddle cert --import = (%d, %q, %q), want 1 naming why", code, out, errOut)
+			}
+			if !strings.Contains(errOut, c.refusal) {
+				t.Errorf("the refusal %q does not name %q", errOut, c.refusal)
+			}
+			if _, err := os.Stat(filepath.Join(world.home, "tls")); !os.IsNotExist(err) {
+				t.Errorf("a refused pair wrote into tls anyway: %v", err)
+			}
+			if strings.Contains(out+errOut, string(c.keyPEM)) {
+				t.Error("the key's bytes reached a stream")
+			}
+		})
+	}
+}
+
+func TestCertImportNeedsTheHubsNameFirst(t *testing.T) {
+	world := newCertWorld(t, strings.NewReader(""))
+	if err := home.SaveConfig(home.Home{Root: world.home}, home.Config{Role: "solo"}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	leaf := mintLeaf(t, "hub.mine.test", time.Now().Add(90*24*time.Hour))
+	certPath, keyPath := writeImportFiles(t, t.TempDir(), leaf.cert, leaf.key)
+	code, out, errOut := certRun(t, world, "cert", "--import", certPath, keyPath)
+	if code != 2 || out != "" || errOut == "" {
+		t.Fatalf("huddle cert --import = (%d, %q, %q), want 2 with one line", code, out, errOut)
+	}
+	if !strings.Contains(errOut, "no hub name to certify") || !strings.Contains(errOut, "role hub") {
+		t.Errorf("the refusal does not match the ACME path's:\n%s", errOut)
+	}
+	if _, err := os.Stat(filepath.Join(world.home, "tls")); !os.IsNotExist(err) {
+		t.Errorf("a refused line wrote into tls anyway: %v", err)
+	}
+}
+
+func TestCertImportRefusesEveryWrongShape(t *testing.T) {
+	world := newCertWorld(t, strings.NewReader(""))
+	leaf := mintLeaf(t, "hub.mine.test", time.Now().Add(90*24*time.Hour))
+	certPath, keyPath := writeImportFiles(t, t.TempDir(), leaf.cert, leaf.key)
+	cases := []struct {
+		name string
+		argv []string
+	}{
+		{"no files", []string{"cert", "--import"}},
+		{"one file", []string{"cert", "--import", certPath}},
+		{"three files", []string{"cert", "--import", certPath, keyPath, certPath}},
+		{"beside --provider", []string{"cert", "--import", certPath, keyPath, "--provider", "fakeprov"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			code, out, errOut := certRun(t, world, c.argv...)
+			if code != 2 || out != "" || errOut == "" {
+				t.Fatalf("huddle %v = (%d, %q, %q), want 2 with the usage", c.argv, code, out, errOut)
+			}
+			if !strings.Contains(errOut, "usage: huddle cert") {
+				t.Errorf("the refusal does not carry the usage:\n%s", errOut)
+			}
+			if _, err := os.Stat(filepath.Join(world.home, "tls")); !os.IsNotExist(err) {
+				t.Errorf("a refused line wrote into tls anyway: %v", err)
+			}
+			if world.gotPro != "" || len(world.issuer.asked) != 0 {
+				t.Errorf("a refused line reached the issuer: %q %v", world.gotPro, world.issuer.asked)
+			}
+		})
+	}
+}
+
 func TestCertObtainsTheCertificateAndStoresTheToken(t *testing.T) {
 	world := newCertWorld(t, strings.NewReader(testToken+"\n"))
 	code, out, errOut := certRun(t, world, "cert", "--provider", "fakeprov")

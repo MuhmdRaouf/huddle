@@ -200,6 +200,8 @@ var aloneHelpLines = []string{
 	"                           satellite --hub https://<host>:<port> (a restart takes it up)",
 	"  huddle cert --provider p obtain the hub's certificate over DNS-01 (asks for the provider's token",
 	"                           with the echo off; the server renews it 30 days before expiry)",
+	"  huddle cert --import c k install a pair you already hold (mkcert, a company CA) for the hub's",
+	"                           name; it is never renewed — import a fresh one before it expires",
 	"  huddle serve             run the server in the foreground (the entry huddle up spawns)",
 	"  huddle mcp               the stdio MCP bridge a Claude session runs",
 	"  huddle hook <name>       one plugin hook entry: session-start, approve, listen, permit, stop",

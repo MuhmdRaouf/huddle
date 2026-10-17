@@ -282,6 +282,159 @@ func TestRenewalLogsOneLinePerFailureAndRetriesInSixHours(t *testing.T) {
 	}
 }
 
+// writeMarker lays the imported marker the way ImportCertificate writes it.
+func writeMarker(t *testing.T, h Home, host string) {
+	t.Helper()
+	if err := os.MkdirAll(h.TLS(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h.TLS(), "imported"), []byte(host), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestImportCertificateLaysThePairAndNamesTheHost(t *testing.T) {
+	h := Home{Root: t.TempDir()}
+	cfg := Config{Role: "hub", Hub: HubConfig{Listen: "127.0.0.2:8443", Host: "hub.test"}}
+	if err := SaveConfig(h, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	pair := mintPair(t, 90*24*time.Hour)
+	if err := ImportCertificate(h, pair.certPEM, pair.keyPEM); err != nil {
+		t.Fatalf("ImportCertificate: %v", err)
+	}
+	cert, err := os.ReadFile(filepath.Join(h.TLS(), "cert.pem"))
+	if err != nil {
+		t.Fatalf("cert.pem: %v", err)
+	}
+	key, err := os.ReadFile(filepath.Join(h.TLS(), "key.pem"))
+	if err != nil {
+		t.Fatalf("key.pem: %v", err)
+	}
+	if string(cert) != string(pair.certPEM) || string(key) != string(pair.keyPEM) {
+		t.Error("the pair on disk is not the pair handed over")
+	}
+	marker, err := os.ReadFile(filepath.Join(h.TLS(), "imported"))
+	if err != nil {
+		t.Fatalf("imported: %v", err)
+	}
+	if string(marker) != "hub.test" {
+		t.Errorf("the marker holds %q, want the hub's name", marker)
+	}
+	for _, name := range []string{"cert.pem", "key.pem", "imported"} {
+		info, err := os.Stat(filepath.Join(h.TLS(), name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Errorf("%s mode = %o, want 0600", name, info.Mode().Perm())
+		}
+	}
+}
+
+func TestImportCertificateNeedsTheHubsName(t *testing.T) {
+	h := Home{Root: t.TempDir()}
+	pair := mintPair(t, 90*24*time.Hour)
+	if err := ImportCertificate(h, pair.certPEM, pair.keyPEM); err == nil {
+		t.Error("a home with no hub name answered no error")
+	}
+	if _, err := os.Stat(h.TLS()); !os.IsNotExist(err) {
+		t.Errorf("a refused import wrote into %s: %v", h.TLS(), err)
+	}
+}
+
+func TestIssueCertificateRetiresTheImportedMarker(t *testing.T) {
+	h := Home{Root: t.TempDir()}
+	writeMarker(t, h, "hub.test")
+	acme := &fakeACME{from: func() time.Time { return time.Now() }, life: 90 * 24 * time.Hour}
+	if _, err := IssueCertificate(bg(), h, acme, "hub.test"); err != nil {
+		t.Fatalf("IssueCertificate: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(h.TLS(), "imported")); !os.IsNotExist(err) {
+		t.Errorf("the marker outlived the issuer's pair: %v", err)
+	}
+}
+
+func TestRenewalLeavesAnImportedCertificateAlone(t *testing.T) {
+	h := Home{Root: t.TempDir()}
+	start := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	first, err := mintPairAt(start, 20*24*time.Hour)
+	if err != nil {
+		t.Fatalf("mint the standing pair: %v", err)
+	}
+	writePair(t, h, first)
+	writeMarker(t, h, "hub.test")
+	acme := &fakeACME{from: func() time.Time { return start }, life: 90 * 24 * time.Hour}
+	deps := &renewDeps{
+		clock:  fakeClock{now: start, stopAt: 3},
+		issuer: func(context.Context) (ACME, error) { return acme, nil },
+	}
+	RenewCertificates(bg(), h, deps.issuer, "hub.test", deps.options())
+	if acme.asked != 0 {
+		t.Errorf("asked = %d, want none: an imported pair has no issuer to renew from", acme.asked)
+	}
+	want := []time.Duration{24 * time.Hour, 24 * time.Hour, 24 * time.Hour}
+	if len(deps.clock.slept) != len(want) {
+		t.Fatalf("slept = %v, want one day at a time %v", deps.clock.slept, want)
+	}
+	for i, d := range want {
+		if deps.clock.slept[i] != d {
+			t.Fatalf("slept = %v, want %v", deps.clock.slept, want)
+		}
+	}
+	if len(deps.lines) != 3 {
+		t.Fatalf("lines = %d (%v), want one per day inside the window", len(deps.lines), deps.lines)
+	}
+	for _, line := range deps.lines {
+		if !strings.Contains(line, "imported") || !strings.Contains(line, first.notAfter.Format(time.DateOnly)) {
+			t.Errorf("line %q does not say the imported certificate's expiry", line)
+		}
+	}
+}
+
+func TestRenewalLogsAnImportedExpiryOnlyInsideTheWindow(t *testing.T) {
+	h := Home{Root: t.TempDir()}
+	start := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	first, err := mintPairAt(start, 30*24*time.Hour+time.Hour)
+	if err != nil {
+		t.Fatalf("mint the standing pair: %v", err)
+	}
+	writePair(t, h, first)
+	writeMarker(t, h, "hub.test")
+	acme := &fakeACME{from: func() time.Time { return start }, life: 90 * 24 * time.Hour}
+	deps := &renewDeps{
+		clock:  fakeClock{now: start, stopAt: 2},
+		issuer: func(context.Context) (ACME, error) { return acme, nil },
+	}
+	RenewCertificates(bg(), h, deps.issuer, "hub.test", deps.options())
+	if acme.asked != 0 {
+		t.Errorf("asked = %d, want none", acme.asked)
+	}
+	if len(deps.lines) != 1 {
+		t.Fatalf("lines = %d (%v), want the one line from inside the window", len(deps.lines), deps.lines)
+	}
+}
+
+func TestRenewalKeepsRenewingWhenTheMarkerNamesAnotherHost(t *testing.T) {
+	h := Home{Root: t.TempDir()}
+	start := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	first, err := mintPairAt(start, 90*24*time.Hour)
+	if err != nil {
+		t.Fatalf("mint the standing pair: %v", err)
+	}
+	writePair(t, h, first)
+	writeMarker(t, h, "elsewhere.test")
+	acme := &fakeACME{from: func() time.Time { return start.Add(60 * 24 * time.Hour) }, life: 90 * 24 * time.Hour}
+	deps := &renewDeps{
+		clock:  fakeClock{now: start, stopAt: 2},
+		issuer: func(context.Context) (ACME, error) { return acme, nil },
+	}
+	RenewCertificates(bg(), h, deps.issuer, "hub.test", deps.options())
+	if acme.asked != 1 {
+		t.Errorf("asked = %d, want the renewal: the marker names another host", acme.asked)
+	}
+}
+
 func TestRenewalEndsWithoutACertificateToKeepFresh(t *testing.T) {
 	h := Home{Root: t.TempDir()}
 	acme := &fakeACME{from: func() time.Time { return time.Now() }, life: 90 * 24 * time.Hour}
