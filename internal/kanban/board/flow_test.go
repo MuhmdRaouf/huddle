@@ -417,6 +417,22 @@ func TestFlow(t *testing.T) {
 		contains(t, s, `result: "written"`, "fm")
 	})
 
+	t.Run("test_set_writes_tags_and_retags_a_done_card", func(t *testing.T) {
+		f := newFixture(t)
+		f.card("backlog", "X-1", "id: X-1\ntitle: \"x\"\ntype: feature")
+		f.card("done", "D-1", "id: D-1\ntitle: \"d\"\ntype: docs\ncluster: split")
+		mustLines(t, f.set("lead", "X-1", []string{"tags=[huddle, Hub, radar]"}))
+		contains(t, f.fm("backlog", "X-1"), "tags: [huddle, hub, radar]", "fm")
+		// tags and cluster classify a card; changing them on a done card rewrites no history
+		mustLines(t, f.set("lead", "D-1", []string{"tags=[cc-plugins, router]", "cluster=remote control"}))
+		s := f.fm("done", "D-1")
+		contains(t, s, "tags: [cc-plugins, router]", "fm")
+		contains(t, s, "cluster: remote control", "fm")
+		contains(t, mustRefuse(t, f.set("lead", "D-1", []string{"title=other"})), "done cards are not edited", "refusal")
+		contains(t, mustRefuse(t, f.set("lead", "X-1", []string{"tags=[Not_A Tag!]"})), "lowercase words joined by dashes", "refusal")
+		contains(t, mustRefuse(t, f.set("lead", "X-1", []string{"tags=[a, b, c, d, e, f, g, h, i]"})), "at most 8", "refusal")
+	})
+
 	t.Run("test_set_writes_descriptive_fields", func(t *testing.T) {
 		f := newFixture(t)
 		f.card("backlog", "X-1", "id: X-1\ntitle: \"old\"\ntype: feature")

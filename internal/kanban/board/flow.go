@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -1002,8 +1003,12 @@ func foldedValue(key, text string) string {
 // through the flow commands.
 var settable = []string{
 	"cluster", "summary", "title", "type", "priority", "est", "branch", "worktree",
-	"depends_on", "repos", "blocked_on", "unblock_when",
+	"depends_on", "repos", "blocked_on", "unblock_when", "tags",
 }
+
+// classifying are the fields set may still write on a done card: they group cards and rewrite
+// none of their history.
+var classifying = []string{"cluster", "tags"}
 
 func settableList() string { return strings.Join(settable, ", ") }
 
@@ -1045,10 +1050,24 @@ func (b Board) set(ctx context.Context, actor, id string, pairs []string) ([]str
 	}
 	t, _ := b.loadCard(col, id)
 	if col == "done" {
-		return nil, refused("%s: done cards are not edited (it is in done/)", id)
+		for _, w := range wants {
+			if !slices.Contains(classifying, w.key) {
+				return nil, refused("%s: done cards are not edited (it is in done/); only cluster and tags still change", id)
+			}
+		}
 	}
 	for _, w := range wants {
 		switch w.key {
+		case "tags":
+			tags := ticket.ParseList(strings.ToLower(w.value))
+			for _, tag := range tags {
+				if !tagRe.MatchString(tag) || len(tag) > 24 {
+					return nil, refused("tag '%s': lowercase words joined by dashes, at most 24 characters", tag)
+				}
+			}
+			if len(tags) > 8 {
+				return nil, refused("%d tags; at most 8", len(tags))
+			}
 		case "type":
 			v := strings.ToLower(strings.TrimSpace(w.value))
 			if !oneOfType(v) {
@@ -1110,6 +1129,8 @@ func (b Board) set(ctx context.Context, actor, id string, pairs []string) ([]str
 			text = setFieldPanicFree(text, "depends_on", ticket.FormatList(ticket.ParseList(w.value)))
 		case "blocked_on":
 			text = setFieldPanicFree(text, "blocked_on", ticket.FormatList(ticket.ParseList(w.value)))
+		case "tags":
+			text = setFieldPanicFree(text, "tags", ticket.FormatList(ticket.ParseList(strings.ToLower(w.value))))
 		case "cluster", "type":
 			text = setFieldPanicFree(text, w.key, strings.ToLower(collapse(w.value)))
 		default:
