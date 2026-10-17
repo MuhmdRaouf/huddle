@@ -122,6 +122,7 @@ func TestHandleApi(t *testing.T) {
 			"/api/settings",
 			"/api/router",
 			"/api/advisor",
+			"/api/usage",
 			"/api/history/roots",
 			"/api/history/tree/:rootId",
 			"/api/history/requests",

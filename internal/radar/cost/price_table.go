@@ -407,6 +407,24 @@ func OfferingOfHost(urlOrHost string) (OfferingID, bool) {
 	return "", false
 }
 
+// RatesOf is the base rates a model bills at on the offering its upstream host names —
+// or, with no upstream, the one offering that serves the id — or false when no price
+// covers it. Views that compare rates (a cache read against the input rate) read these;
+// the per-request price itself stays with RequestCost.
+func RatesOf(model, upstream string) (Rates, bool) {
+	var offering *OfferingID
+	if upstream != "" {
+		if id, ok := OfferingOfHost(upstream); ok {
+			offering = &id
+		}
+	}
+	ref := resolveSheet(offering, model)
+	if ref == nil {
+		return Rates{}, false
+	}
+	return ref.sheet.Base, true
+}
+
 // TokenUse is what a request used, as the spool and the job attempts record them.
 type TokenUse struct {
 	Input        float64 `json:"input"`

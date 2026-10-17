@@ -78,6 +78,7 @@ var Routes = []string{
 	"/api/settings",
 	"/api/router",
 	"/api/advisor",
+	"/api/usage",
 	"/api/history/roots",
 	"/api/history/tree/:rootId",
 	"/api/history/requests",
@@ -1532,6 +1533,11 @@ func HandleApi(st *store.Store, info AppInfo, request ApiRequest, insights Insig
 		return jsonOf(200, summaryAnswer{Summary: st.Summary()}), nil
 	case path == "/api/sessions":
 		return jsonOf(200, sessionsAnswer{Sessions: store.SessionTree(st.SessionList())}), nil
+	case path == "/api/usage":
+		if h == nil {
+			return errorOf(503, "history unavailable"), nil
+		}
+		return usageRoute(h, query, now)
 	}
 	if session, ok := sessionRoute(st, path); ok {
 		return session, nil
