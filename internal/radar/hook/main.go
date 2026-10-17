@@ -50,7 +50,7 @@ func sessionStartMessage(ctx context.Context, hookIO *HookIo, event string, star
 	if port, ok := paths.SavedPort(ctx, hookIO.Env); ok {
 		return fmt.Sprintf("radar: dashboard at http://127.0.0.1:%d", port)
 	}
-	return "radar: starting the dashboard (/radar:status shows its address)"
+	return "radar: starting the dashboard (/huddle:status shows its address)"
 }
 
 // systemMessage is the line wrapped in the one-object JSON a systemMessage rides in on.

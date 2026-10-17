@@ -259,7 +259,7 @@ func RunCli(ctx context.Context, argv []string, deps Deps) int {
 	case "url":
 		return runURL(ctx, deps)
 	case "open":
-		// "start if needed, then open": a first /radar:open must not answer "not running"
+		// "start if needed, then open": a first /huddle:open must not answer "not running"
 		started := runStart(ctx, parsed, deps)
 		if started == 0 {
 			if info := server.ReadServerInfo(ctx, deps.Env); info != nil {
@@ -299,7 +299,7 @@ func reportRunning(ctx context.Context, parsed ParsedArgs, deps Deps, recorded *
 		asked = append(asked, "--port "+strconv.Itoa(parsed.Port))
 	}
 	if len(asked) > 0 {
-		deps.Out("radar: already running; " + strings.Join(asked, " and ") + " applies after /radar:stop")
+		deps.Out("radar: already running; " + strings.Join(asked, " and ") + " applies after /huddle:stop")
 	}
 }
 
@@ -440,7 +440,7 @@ func runStop(ctx context.Context, deps Deps) int {
 }
 
 // notRunning is what a wanted-but-absent server prints, with the command that starts one.
-const notRunning = "radar: not running — /radar:start (or /radar:open) starts it"
+const notRunning = "radar: not running — /huddle:open starts it"
 
 func runStatus(ctx context.Context, deps Deps) int {
 	info := server.ReadServerInfo(ctx, deps.Env)

@@ -115,7 +115,7 @@ export function autostartPath(env: NodeJS.ProcessEnv): string {
 /**
  * Should a SessionStart hook start the server? RADAR_AUTOSTART decides when it is set (1 yes, anything else
  * no); otherwise yes once the user started the dashboard with `start` and has not stopped it since, so nothing
- * needs configuring after the first `/radar:start`.
+ * needs configuring after the first `/huddle:open`.
  */
 export function wantsAutostart(env: NodeJS.ProcessEnv): boolean {
   if (env.RADAR_AUTOSTART !== undefined) return env.RADAR_AUTOSTART === "1";

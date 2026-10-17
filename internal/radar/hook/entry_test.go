@@ -135,7 +135,7 @@ func TestRunEntry(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("runEntry = %d, want 0", code)
 		}
-		want := "{\"systemMessage\":\"radar: starting the dashboard (/radar:status shows its address)\"}\n"
+		want := "{\"systemMessage\":\"radar: starting the dashboard (/huddle:status shows its address)\"}\n"
 		if stdout.String() != want {
 			t.Errorf("stdout = %q, want %q", stdout.String(), want)
 		}

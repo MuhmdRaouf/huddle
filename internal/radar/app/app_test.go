@@ -36,7 +36,7 @@ const usageLine = "usage: huddle radar start|stop|status|url|open|watch [--port 
 const cliUsageLine = "usage: radar start|stop|status|url|open|watch [--port N] [--since 24h]"
 
 // notRunningLine is what a wanted-but-absent server prints.
-const notRunningLine = "radar: not running — /radar:start (or /radar:open) starts it"
+const notRunningLine = "radar: not running — /huddle:open starts it"
 
 // huddleBin is the huddle binary TestMain builds once; the spawn case starts it for real.
 var huddleBin string
@@ -251,7 +251,7 @@ func TestCLIEntries(t *testing.T) {
 }
 
 // TestStartSpawnsTheServerItFollows runs the real detached start: the built binary serves in a
-// temp world and the parent follows its server.json to health — the flow a first /radar:start
+// temp world and the parent follows its server.json to health — the flow a first /huddle:open
 // takes. The child is `huddle radar start --foreground`, the word this binary runs radar with.
 // Only the process this test's start spawned is stopped, and only by its recorded pid.
 func TestStartSpawnsTheServerItFollows(t *testing.T) {

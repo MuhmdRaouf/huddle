@@ -20,7 +20,7 @@ import (
 
 const (
 	usageLine   = "usage: radar start|stop|status|url|open|watch [--port N] [--since 24h]"
-	notRunning  = "radar: not running — /radar:start (or /radar:open) starts it"
+	notRunning  = "radar: not running — /huddle:open starts it"
 	testVersion = "test"
 )
 
@@ -294,7 +294,7 @@ func TestStart(t *testing.T) {
 		}
 		assertLines(t, rec.out, []string{
 			"radar: http://127.0.0.1:8787",
-			"radar: already running; --since 7d and --port 9100 applies after /radar:stop",
+			"radar: already running; --since 7d and --port 9100 applies after /huddle:stop",
 		})
 		if len(rec.spawned) != 0 {
 			t.Errorf("spawned %q, want nothing", rec.spawned)
@@ -317,7 +317,7 @@ func TestStart(t *testing.T) {
 			}
 			assertLines(t, rec.out, []string{
 				"radar: http://127.0.0.1:8787",
-				"radar: already running; " + tc.echo + " applies after /radar:stop",
+				"radar: already running; " + tc.echo + " applies after /huddle:stop",
 			})
 		}
 	})
@@ -648,7 +648,7 @@ func TestUrlAndOpen(t *testing.T) {
 		assertLines(t, unhealthy.out, []string{notRunning})
 	})
 
-	t.Run("starts the server when none runs, then opens it (a first /radar:open just works)", func(t *testing.T) {
+	t.Run("starts the server when none runs, then opens it (a first /huddle:open just works)", func(t *testing.T) {
 		childUp := false
 		var rec *recording
 		rec = makeDeps(t, overrides{

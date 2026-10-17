@@ -590,7 +590,7 @@ func commandWord(command string) string {
 }
 
 // noBoardLine is what a resolution that found no board prints, with exit 4.
-const noBoardLine = "kanban: no board here; run kanban init (or /kanban:init)"
+const noBoardLine = "kanban: no board here; run kanban init (or /huddle:kanban-init)"
 
 // usageError prints one usage error: the problem, then the way to the command's
 // help.

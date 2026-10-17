@@ -153,7 +153,7 @@ func AutostartPath(ctx context.Context, env domain.EnvLookup) string {
 // WantsAutostart says whether a SessionStart hook should start the server. RADAR_AUTOSTART
 // decides when it is set (1 yes, anything else no); otherwise yes once the user started the
 // dashboard with `start` and has not stopped it since, so nothing needs configuring after the
-// first /radar:start.
+// first /huddle:open.
 func WantsAutostart(ctx context.Context, env domain.EnvLookup) bool {
 	if value, ok := env["RADAR_AUTOSTART"]; ok {
 		return value == "1"
