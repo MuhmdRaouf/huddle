@@ -41,6 +41,20 @@ Ten slash commands, one product:
 The hooks start the servers, so there is nothing to start by hand: each event runs one hook process, and
 huddle's, radar's and kanban's parts ride inside it.
 
+## Shared board
+
+Two machines work one board when they share the repository it belongs to:
+
+- A board's key is its repository's origin, so every clone of one repository names one board. Join a second
+  machine with `huddle pair --satellite` on the hub and `huddle join-hub` on the other machine: its sessions'
+  claims and moves on that board relay to the hub, which holds the one `kanban.db` and the audit.
+- A claim either machine asks for is one claim: the first pull wins, and every other pull — from either
+  machine — gets the board's own refusal.
+- The hub away, the satellite answers one plain line and changes nothing: a claim needs the hub's answer and
+  is never queued.
+- `new` stays local: a ticket is written to the clone the session sits in, never through the hub.
+- The hub's Kanban tab shows the shared board. A satellite's own Kanban tab shows its local copy.
+
 ## Other agents
 
 Huddle's MCP server works with any harness that speaks MCP. For five of them the binary wires itself in:

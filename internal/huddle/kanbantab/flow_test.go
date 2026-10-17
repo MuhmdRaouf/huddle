@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/kanban/board"
 	"github.com/MuhmdRaouf/huddle/internal/kanban/server"
@@ -152,6 +153,35 @@ func TestFlowPullWritesADatabaseBoardThroughItsStore(t *testing.T) {
 	defer func() { _ = closeBoard() }()
 	if _, err := b.Pull(context.Background(), board.Args{Actor: "w2", ID: "FLW-DB"}); err == nil {
 		t.Fatal("a second pull straight on kanban.db succeeded, want the tab's claim to hold")
+	}
+}
+
+func TestTheTabServesADatabaseBoardsReadsFromItsRows(t *testing.T) {
+	home := t.TempDir()
+	repo := newRepo(t, home, "alpha")
+	writeTicket(t, repo, "ready", "FLW-DB")
+	if _, err := board.MigrateDB(context.Background(), board.Board{Root: boardRoot(repo), Now: pinnedNow}); err != nil {
+		t.Fatalf("migrate the board to kanban.db: %v", err)
+	}
+	tab := Mount(context.Background(), Options{Roots: staticRoots(repo), Version: "test", Now: pinnedNow})
+	key := server.KeyOf(boardRoot(repo))
+
+	// the read API answers the rows kanban.db holds, not the folder the migration archived
+	if col := columnOf(t, tab, key, "FLW-DB"); col != "ready" {
+		t.Fatalf("FLW-DB sits in %s on the database board, want ready", col)
+	}
+	flow(t, tab, key, `{"command":"pull","actor":"w1","id":"FLW-DB"}`,
+		filepath.Join("in-progress", "FLW-DB.md"))
+	// the watch answers on its own 300 ms cadence, so the moved row reaches the
+	// read API within a few passes
+	column := ""
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if column = columnOf(t, tab, key, "FLW-DB"); column == "in-progress" {
+			break
+		}
+	}
+	if column != "in-progress" {
+		t.Fatalf("FLW-DB sits in %s after the pull, want in-progress", column)
 	}
 }
 

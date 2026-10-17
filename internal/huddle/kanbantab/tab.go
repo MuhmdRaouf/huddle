@@ -43,10 +43,12 @@ type Options struct {
 	Relay   func(ctx context.Context, key string, body []byte) (status int, answer []byte, relayed bool)
 }
 
-// entry is one mounted board: its app and the watch run under the cancel.
+// entry is one mounted board: its app, the watch run under the cancel, and the
+// close that ends the board's own store binding with them.
 type entry struct {
 	app    *server.App
 	cancel context.CancelFunc
+	close  func() error
 }
 
 // Tab is every board a Roots pass has answered through the prefix, each held
@@ -151,7 +153,10 @@ func (t *Tab) serveBoard(w http.ResponseWriter, r *http.Request, tail string) {
 
 // appFor answers the board's app, starting its watch on first use; nil when no
 // board answers the key. A key the last Roots pass missed is resolved again
-// once, so a board created after the mount answers without a restart.
+// once, so a board created after the mount answers without a restart. The board
+// opens the way the cli opens it — a root holding kanban.db binds its store, so
+// the watch and the reads see its rows, not the folder the migration archived
+// away.
 func (t *Tab) appFor(ctx context.Context, key string) *server.App {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -162,23 +167,28 @@ func (t *Tab) appFor(ctx context.Context, key string) *server.App {
 		if row.Key != key {
 			continue
 		}
-		app := server.NewApp(server.Options{Board: board.Board{Root: row.Root}, Version: t.version, Now: t.now})
+		b, closeBoard, err := board.Open(ctx, board.Board{Root: row.Root, Now: t.now})
+		if err != nil {
+			return nil
+		}
+		app := server.NewApp(server.Options{Board: b, Version: t.version, Now: t.now})
 		runCtx, cancel := context.WithCancel(t.ctx)
 		app.Run(runCtx)
-		e := &entry{app: app, cancel: cancel}
+		e := &entry{app: app, cancel: cancel, close: closeBoard}
 		t.apps[key] = e
 		return e.app
 	}
 	return nil
 }
 
-// Stop ends every mounted board's watch and closes its event streams. A board
-// asked for later mounts again fresh. Idempotent.
+// Stop ends every mounted board's watch, closes its event streams and releases
+// its store binding. A board asked for later mounts again fresh. Idempotent.
 func (t *Tab) Stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for key, e := range t.apps {
 		e.cancel()
+		_ = e.close()
 		delete(t.apps, key)
 	}
 }
