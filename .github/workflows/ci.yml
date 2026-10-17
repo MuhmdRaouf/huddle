@@ -1,0 +1,311 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Everything, unfiltered.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Flow:
+#   1. Plan: which parts changed (a manual run checks everything). A part whose folder does not exist yet is skipped.
+#   2. Repository rules on every push: secrets, AI attribution, the pre-commit hooks (Markdown, YAML, workflows, hygiene), the plugin catalogue.
+#   3. Tests: the Go module (huddle, radar, kanban) and the web workspace.
+#   4. Compatibility: the Go suite on macOS and the cross-host reproducible-build proof.
+#   5. All checks passed: the one check branch protection requires; a skipped job counts as passed.
+# Runners are pinned so an image migration never changes the toolchain under a green build. Third-party actions are
+# pinned to commit SHAs; Dependabot proposes the bumps. Every job is capped at 10 minutes.
+
+jobs:
+  # 1. Plan
+
+  plan:
+    name: "Plan: what changed"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    outputs:
+      go: ${{ steps.pick.outputs.go }}
+      web: ${{ steps.pick.outputs.web }}
+      plugin: ${{ steps.pick.outputs.plugin }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name != 'workflow_dispatch'
+        id: filter
+        with:
+          filters: |
+            go:
+              - go.mod
+              - go.sum
+              - VERSION
+              - CHANGELOG.md
+              - '**/*.go'
+              - 'internal/**'
+              - 'cmd/**'
+              - 'scripts/**'
+              - 'release/**'
+              - 'testdata/**'
+              - .github/workflows/ci.yml
+            web:
+              - package.json
+              - bun.lock
+              - 'web/**'
+              # the pages are embedded from here
+              - 'internal/*/web/dist/**'
+              - .github/workflows/ci.yml
+            plugin:
+              - '.claude-plugin/**'
+              - 'plugin/**'
+              - .github/workflows/ci.yml
+      - id: pick
+        env:
+          ALL: ${{ github.event_name == 'workflow_dispatch' }}
+          GO: ${{ steps.filter.outputs.go }}
+          WEB: ${{ steps.filter.outputs.web }}
+          PLUGIN: ${{ steps.filter.outputs.plugin }}
+        run: |
+          pick() { # name, changed, the file that must exist
+            if [ ! -e "$3" ]; then echo "$1=false"; elif [ "$ALL" = true ]; then echo "$1=true"; else echo "$1=${2:-false}"; fi
+          }
+          {
+            pick go "$GO" go.mod
+            pick web "$WEB" package.json
+            pick plugin "$PLUGIN" .claude-plugin/marketplace.json
+          } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+  # 2. Repository rules
+
+  secrets:
+    name: "Repo: no secrets in history"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # every commit, not just the tip
+      # The gitleaks CLI at a pinned release, its tarball checked against the published SHA-256. The default rules,
+      # extended by .gitleaks.toml with the exact fake keys the tests use.
+      - name: Install gitleaks 8.30.1
+        run: |
+          curl -sSfLo gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          rm gitleaks.tar.gz
+      - name: Scan every commit for secrets
+        run: ./gitleaks git --redact --verbose .
+
+  # GitHub lists every author and co-author as a contributor: no commit may credit an AI tool.
+  attribution:
+    name: "Repo: no AI attribution in history"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: node scripts/check-attribution.mjs
+
+  # The pre-commit hooks at the versions .pre-commit-config.yaml pins: Markdown, YAML, workflows (actionlint with
+  # shellcheck), file hygiene and private keys. A clone without the hook is caught here.
+  lint:
+    name: "Repo: lint (pre-commit hooks)"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14.7"
+      - name: Run every hook on every file
+        run: |
+          pip install pre-commit==4.6.2
+          pre-commit run --all-files --show-diff-on-failure
+
+  catalogue:
+    name: "Repo: marketplace and plugin valid"
+    needs: plan
+    if: needs.plan.outputs.plugin == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Validate the marketplace and the plugin
+        run: |
+          npx -y @anthropic-ai/claude-code plugin validate .
+          npx -y @anthropic-ai/claude-code plugin validate ./plugin
+
+  # 3. Tests
+
+  go:
+    name: "Test: Go (huddle, radar, kanban)"
+    needs: plan
+    if: needs.plan.outputs.go == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      # setup-go keys its cache on go.sum alone, so a saved build cache never refreshes; this key follows the
+      # sources, and the restore key brings back the newest one when they change.
+      - id: gocache
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', '**/*.go') }}
+          restore-keys: go-${{ runner.os }}-
+      - name: No file needs gofmt
+        run: test -z "$(gofmt -l .)"
+      - name: go.mod and go.sum are tidy
+        run: go mod tidy -diff
+      # Builds every package without its tests, so production code never leans on a test-only helper.
+      - run: CGO_ENABLED=0 go build ./...
+      - run: go vet ./...
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - name: Tests (race, coverage)
+        timeout-minutes: 8
+        run: go test -race -timeout 7m -coverprofile=coverage.out -covermode=atomic ./...
+      # Saved here, not only in the post step: a job that later fails or hits its cap still leaves the raced build.
+      - if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', '**/*.go') }}
+      - run: go run ./scripts/covergate -profile coverage.out
+      - run: go run ./scripts/build -out dist
+      # A version with no CHANGELOG.md section fails here, before a tag can publish it.
+      - name: VERSION has a CHANGELOG.md section
+        run: go run ./scripts/releasenotes -version "$(cat VERSION)" -sums /dev/null -commit x >/dev/null
+      # The manifest is compared while it can still change: once v<VERSION> is tagged it is immutable.
+      - name: Release manifest matches the built digests
+        run: |
+          version=$(cat VERSION)
+          if [ ! -f "release/v$version.json" ]; then
+            echo "no release manifest for v$version yet; nothing to compare with"
+            exit 0
+          fi
+          if [ -n "$(git ls-remote --tags origin "v$version")" ]; then
+            echo "v$version is already tagged; the manifest is immutable"
+            exit 0
+          fi
+          go run ./scripts/build -check
+      # The macOS job rebuilds linux/amd64 and must reproduce these digests byte for byte.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: huddle-sha256sums
+          path: dist/SHA256SUMS
+          if-no-files-found: error
+
+  web:
+    name: "Test: web (hub, radar, kanban pages)"
+    needs: plan
+    if: needs.plan.outputs.web == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2" # bun.lock is lockfile v2
+      - run: bun install --frozen-lockfile
+      # vp check (format, lint, types), vp test with coverage gates, no it.todo left, and every committed page a
+      # fresh build.
+      - run: bun run check
+      # The browser end-to-end suite drives the real huddle binary's pages in headless Chromium.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Install headless Chromium
+        run: bunx playwright install --with-deps chromium
+      - name: Browser end-to-end (headless Chromium)
+        timeout-minutes: 6
+        run: bun run e2e
+
+  # 4. Compatibility
+
+  go-macos:
+    name: "Compat: macOS (Go, reproducible build)"
+    needs: [plan, go]
+    if: ${{ !failure() && !cancelled() && needs.plan.outputs.go == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - id: gocache
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', '**/*.go') }}
+          restore-keys: go-${{ runner.os }}-
+      - name: Tests
+        timeout-minutes: 8
+        run: go test -timeout 7m ./...
+      - run: go run ./scripts/build -target linux/amd64 -out dist-mac
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: huddle-sha256sums
+          path: sums
+      # Equal digests mean the bytes depend on nothing but the sources, the version and the target.
+      - name: linux/amd64 digests match the ubuntu build
+        run: |
+          for f in dist-mac/*-linux-amd64; do
+            name=$(basename "$f")
+            want=$(awk -v n="$name" '$2 == n {print $1}' sums/SHA256SUMS)
+            got=$(shasum -a 256 "$f" | awk '{print $1}')
+            echo "$name ubuntu=$want macos=$got"
+            test -n "$want" && test "$want" = "$got"
+          done
+
+  # 5. Gate
+
+  all-checks:
+    name: All checks passed
+    if: always()
+    needs: [plan, secrets, attribution, lint, catalogue, go, web, go-macos]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - env:
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          if [ "$FAILED" = true ]; then
+            echo "a required job failed or was cancelled"
+            exit 1
+          fi
+          echo "every required job passed or was skipped"

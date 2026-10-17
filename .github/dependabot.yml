@@ -1,0 +1,25 @@
+# Every dependency is pinned exactly (Go, Bun) or to a commit SHA (actions), so nothing moves unless a pull request
+# moves it: Dependabot proposes those once a week, grouped so one review covers a batch.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      go:
+        patterns: ["*"]
+  - package-ecosystem: bun
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      bun:
+        patterns: ["*"]
