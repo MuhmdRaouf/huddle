@@ -1,0 +1,13 @@
+{
+  "seq": 16,
+  "route": "/api/router",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"windowMs\":86400000,\"buckets\":24,\"providers\":[],\"recent\":[]}\n"
+    }
+  ]
+}

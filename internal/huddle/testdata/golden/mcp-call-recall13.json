@@ -1,0 +1,12 @@
+{
+  "seq": 64,
+  "kind": "mcp",
+  "name": "mcp-call-recall13",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":23,\"method\":\"tools/call\",\"params\":{\"name\":\"recall\",\"arguments\":{\"q\":\"port\",\"json\":true}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":23,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"[\\n {\\n  \\\"id\\\": 100000,\\n  \\\"kind\\\": \\\"fact\\\",\\n  \\\"title\\\": \\\"The golden server binds port zero\\\",\\n  \\\"by\\\": \\\"scout\\\",\\n  \\\"tags\\\": [\\n   \\\"testing\\\",\\n   \\\"ports\\\"\\n  ],\\n  \\\"refs\\\": [\\n   \\\"scripts/record-goldens.ts\\\"\\n  ],\\n  \\\"task\\\": null,\\n  \\\"created_at\\\": \\\"<volatile>\\\",\\n  \\\"hit\\\": \\\"«PORT»=0 makes the server bind any free «port» and print the one it got, so a recording … \\\",\\n  \\\"scope\\\": \\\"server\\\",\\n  \\\"origin\\\": \\\"golden\\\",\\n  \\\"verified_by\\\": \\\"owner\\\",\\n  \\\"verified_at\\\": \\\"<volatile>\\\",\\n  \\\"age_days\\\": 0,\\n  \\\"stale\\\": null\\n },\\n {\\n  \\\"id\\\": 3,\\n  \\\"kind\\\": \\\"fact\\\",\\n  \\\"title\\\": \\\"Ports outlive pids\\\",\\n  \\\"by\\\": \\\"lead\\\",\\n  \\\"tags\\\": [\\n   \\\"router\\\",\\n   \\\"testing\\\"\\n  ],\\n  \\\"refs\\\": [],\\n  \\\"task\\\": null,\\n  \\\"created_at\\\": \\\"<volatile>\\\",\\n  \\\"hit\\\": \\\"A saved «port» is the address; the pid only says who held it once.\\\",\\n  \\\"scope\\\": \\\"channel\\\",\\n  \\\"origin\\\": null,\\n  \\\"verified_by\\\": null,\\n  \\\"verified_at\\\": null,\\n  \\\"age_days\\\": 0,\\n  \\\"stale\\\": null\\n }\\n]\"}]}}"
+}

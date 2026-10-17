@@ -1,0 +1,11 @@
+{
+  "seq": 3,
+  "kind": "api",
+  "name": "channel",
+  "method": "GET",
+  "path": "/api/c/golden",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"name\":\"golden\",\"config\":{\"title\":\"The golden channel\",\"description\":\"One channel holding every kind of thing, so the recorded answers are full.\",\"start\":\"lead\",\"handover\":{},\"profile\":null,\"repo\":null,\"created_at\":\"<volatile>\",\"members\":[],\"orchestrator\":\"lead\"},\"stats\":{\"events\":22,\"tasks\":5,\"done\":1,\"sessions\":3,\"knowledge\":3,\"open_asks\":1,\"last\":22},\"turn\":{\"holder\":\"scout\",\"since\":{\"seq\":22,\"ts\":\"<volatile>\",\"from\":\"lead\",\"to\":\"scout\",\"topic\":\"turn.pass\",\"ref\":null,\"msg\":\"t-check is yours once t-write lands\",\"data\":null,\"reply_to\":null,\"needs_reply\":false}},\"views\":[]}"
+}

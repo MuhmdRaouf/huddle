@@ -1,0 +1,2 @@
+# wire bytes with chunked CRLF framing git must not rewrite
+http_sse_open_golden.txt binary

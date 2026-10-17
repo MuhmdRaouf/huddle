@@ -1,0 +1,575 @@
+package server
+
+// Web Push (SPEC 7.6): the payload carries who, what kind and the tool name only — never the
+// command, path, prompt or answer text — encrypted to each paired device's subscription; one
+// push per needs-you item plus one escalation while it still waits, an alert to the devices
+// that asked for them, and a subscription the push service calls gone is dropped. The sends go
+// to a fake push service on a free loopback port; the payloads are decrypted back with the
+// test's own subscription keys.
+
+import (
+	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/elliptic"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+
+	"github.com/MuhmdRaouf/huddle/internal/huddle/webauthntest"
+)
+
+// pushClock is one fixed moment the sweep cases build their timestamps around.
+var pushClock = time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+
+// browserKeys is one subscription's key pair as the browser generated it: the public values the
+// subscription carries, and the private key only this test holds, to decrypt what arrives.
+type browserKeys struct {
+	p256dh  string
+	auth    string
+	private []byte
+}
+
+// newBrowserKeys draws one subscription's keys.
+func newBrowserKeys(t *testing.T) browserKeys {
+	t.Helper()
+	private, x, y, err := elliptic.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("draw the browser's key: %v", err)
+	}
+	auth := make([]byte, 16)
+	if _, err := rand.Read(auth); err != nil {
+		t.Fatalf("draw the auth secret: %v", err)
+	}
+	return browserKeys{
+		p256dh:  base64.RawURLEncoding.EncodeToString(elliptic.Marshal(elliptic.P256(), x, y)),
+		auth:    base64.RawURLEncoding.EncodeToString(auth),
+		private: private,
+	}
+}
+
+// fakePush is the push service: one loopback endpoint that records every message it is handed
+// and answers the status the case set.
+type fakePush struct {
+	srv    *httptest.Server
+	mu     sync.Mutex
+	bodies [][]byte
+	status int
+}
+
+// newFakePush starts the push service on a free loopback port.
+func newFakePush(t *testing.T) *fakePush {
+	t.Helper()
+	service := &fakePush{status: http.StatusCreated}
+	service.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		service.mu.Lock()
+		service.bodies = append(service.bodies, body)
+		status := service.status
+		service.mu.Unlock()
+		w.WriteHeader(status)
+	}))
+	t.Cleanup(service.srv.Close)
+	return service
+}
+
+// count answers how many messages the service took.
+func (f *fakePush) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.bodies)
+}
+
+// body answers the message at i.
+func (f *fakePush) body(i int) []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if i >= len(f.bodies) {
+		return nil
+	}
+	return f.bodies[i]
+}
+
+// answer switches the status every later message meets.
+func (f *fakePush) answer(status int) {
+	f.mu.Lock()
+	f.status = status
+	f.mu.Unlock()
+}
+
+// pushServerForTest builds the server face over a real registry in a temp home, its clock in
+// the case's hands: the sweep and the payload run in-process, only the send leaves to the fake
+// push service.
+func pushServerForTest(t *testing.T, endpoint string, now func() time.Time) *server {
+	t.Helper()
+	dir := t.TempDir()
+	db, err := hub.Open(context.Background(), home.Home{Root: dir}.HubDB())
+	if err != nil {
+		t.Fatalf("open the registry: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	log := func(string, ...any) {}
+	return &server{
+		o:        Options{Home: dir, Data: dir, Stdout: io.Discard, Stderr: io.Discard},
+		hub:      channel.NewHub(dir, true),
+		registry: db,
+		now:      now,
+		alerts:   newAlertFanout(),
+		vapid:    newVapidSource(nil, filepath.Join(dir, "keys", "vapid"), log),
+		pushHTTP: &http.Client{Timeout: 5 * time.Second},
+	}
+}
+
+// subscribeDevice pairs one device in the registry and stores its subscription with the push
+// service the fake serves, under the notification choice the case names.
+func subscribeDevice(t *testing.T, s *server, name, endpoint string, keys browserKeys, notify string) {
+	t.Helper()
+	if err := s.registry.SavePairing(context.Background(), "digest-"+name, 10_000); err != nil {
+		t.Fatalf("save the pairing: %v", err)
+	}
+	if err := s.registry.PairFinish(context.Background(), "digest-"+name, hub.Device{
+		Name: name, Handle: []byte("handle-" + name), CredentialJSON: []byte("{}"),
+	}, "session-"+name, 2, 1); err != nil {
+		t.Fatalf("finish the pairing: %v", err)
+	}
+	if err := s.registry.SavePushSubscription(context.Background(), hub.PushSubscription{
+		Device: name, Endpoint: endpoint, P256dh: keys.p256dh, Auth: keys.auth,
+	}, 1); err != nil {
+		t.Fatalf("save the subscription: %v", err)
+	}
+	if notify != hub.NotifyNeeds {
+		if err := s.registry.SetDeviceNotify(context.Background(), name, notify); err != nil {
+			t.Fatalf("set the choice: %v", err)
+		}
+	}
+}
+
+func TestThePushPayloadCarriesOnlyWhoKindAndTool(t *testing.T) {
+	// a permission item whose input carries a secret: the payload may name the tool, never the
+	// command the tool was about to run
+	item := hub.Item{
+		ID: 7, SessionID: "s-1", Kind: hub.KindPermission, Summary: "Bash: echo secret-token",
+		Tool: "Bash", Input: `{"command":"echo secret-token"}`,
+	}
+	raw, err := json.Marshal(needsPushPayload(item, "laptop"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var asMap map[string]any
+	if err := json.Unmarshal(raw, &asMap); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"item", "session", "machine", "kind", "tool"} {
+		if _, has := asMap[key]; !has {
+			t.Fatalf("the payload %s misses %q", raw, key)
+		}
+	}
+	if len(asMap) != 5 {
+		t.Fatalf("the payload %s carries more than who, the kind and the tool name", raw)
+	}
+	if asMap["session"] != "s-1" || asMap["machine"] != "laptop" ||
+		asMap["kind"] != hub.KindPermission || asMap["tool"] != "Bash" || asMap["item"] != float64(7) {
+		t.Fatalf("the payload = %s, want who and the kind the item carries", raw)
+	}
+	if strings.Contains(string(raw), "secret-token") || strings.Contains(string(raw), "command") {
+		t.Fatalf("the payload %s carries the command's text", raw)
+	}
+
+	// a question names no tool: the field stays off the answer
+	question := hub.Item{ID: 8, SessionID: "s-2", Kind: hub.KindQuestion, Summary: "Pick a database?"}
+	raw, _ = json.Marshal(needsPushPayload(question, ""))
+	if strings.Contains(string(raw), `"tool"`) {
+		t.Fatalf("a question's payload %s carries a tool", raw)
+	}
+
+	// an alert's payload is the same shape: the alert's own name for the kind, who it names, and
+	// no item row to decide on
+	event := AlertEvent{Type: "alert.remote_allow", ID: 3, At: jsfmt.ISOTime(pushClock), Body: vv(t,
+		`{"item":9,"session":"s-3","tool":"Bash"}`)}
+	raw, _ = json.Marshal(alertPushPayload(event, "laptop"))
+	for _, want := range []string{`"kind":"alert.remote_allow"`, `"session":"s-3"`, `"machine":"laptop"`, `"tool":"Bash"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("the alert payload %s misses %s", raw, want)
+		}
+	}
+	if strings.Contains(string(raw), `"item"`) {
+		t.Fatalf("the alert payload %s carries an item row", raw)
+	}
+}
+
+func TestTheEncryptedPushCarriesNoCommandText(t *testing.T) {
+	service := newFakePush(t)
+	keys := newBrowserKeys(t)
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return pushClock })
+	subscribeDevice(t, s, "phone", service.srv.URL, keys, hub.NotifyNeeds)
+
+	// the session reports its machine, so the push can name who waits
+	if err := s.registry.Report(context.Background(), hub.Report{
+		SessionID: "s-1", Machine: "laptop", LastEvent: "UserPromptSubmit",
+		LastEventAt: jsfmt.ISOTime(pushClock),
+	}); err != nil {
+		t.Fatalf("report the session: %v", err)
+	}
+	id, err := s.registry.CreatePermissionItem(context.Background(), "s-1", "Bash",
+		[]byte(`{"command":"npm test with secret-token inside"}`), pushClock)
+	if err != nil {
+		t.Fatalf("create the item: %v", err)
+	}
+	s.sweepPushes(context.Background())
+	if service.count() != 1 {
+		t.Fatalf("the push service took %d messages, want the one push", service.count())
+	}
+
+	// decrypt the message with the subscription's own keys: the plaintext must be the payload,
+	// and it must not carry the command's text
+	plaintext := decryptPush(t, service.body(0), keys)
+	var payload map[string]any
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		t.Fatalf("the plaintext %q is not the payload's JSON: %v", plaintext, err)
+	}
+	if payload["kind"] != hub.KindPermission || payload["tool"] != "Bash" ||
+		payload["session"] != "s-1" || payload["machine"] != "laptop" || payload["item"] != float64(id) {
+		t.Fatalf("the plaintext payload = %s", plaintext)
+	}
+	if strings.Contains(string(plaintext), "secret-token") || strings.Contains(string(plaintext), "npm test") {
+		t.Fatalf("the encrypted plaintext %s carries the command's text", plaintext)
+	}
+}
+
+// decryptPush opens one aes128gcm Web Push message (RFC 8291) with the subscription's keys:
+// the shared secret is the ephemeral server key against the browser's private key, the CEK and
+// the nonce come off the header's salt, and the plaintext ends at its padding delimiter.
+func decryptPush(t *testing.T, message []byte, keys browserKeys) []byte {
+	t.Helper()
+	if len(message) < 16+4+1 {
+		t.Fatalf("the message %x is shorter than its header", message)
+	}
+	salt := message[:16]
+	keyLen := int(message[20])
+	if len(message) < 21+keyLen {
+		t.Fatalf("the message %x is shorter than its key id", message)
+	}
+	serverPub := message[21 : 21+keyLen]
+	body := message[21+keyLen:]
+
+	curve := elliptic.P256()
+	browserPub, _ := base64.RawURLEncoding.DecodeString(keys.p256dh)
+	x, y := elliptic.Unmarshal(curve, serverPub)
+	if x == nil {
+		t.Fatal("the message's ephemeral key is not a point on the curve")
+	}
+	sx, _ := curve.ScalarMult(x, y, keys.private)
+	shared := make([]byte, 32)
+	sx.FillBytes(shared)
+	auth, _ := base64.RawURLEncoding.DecodeString(keys.auth)
+
+	prkInfo := append(append([]byte("WebPush: info\x00"), browserPub...), serverPub...)
+	ikm := hkdfBytes(auth, shared, prkInfo, 32)
+	cek := hkdfBytes(salt, ikm, []byte("Content-Encoding: aes128gcm\x00"), 16)
+	nonce := hkdfBytes(salt, ikm, []byte("Content-Encoding: nonce\x00"), 12)
+
+	block, err := aes.NewCipher(cek)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	open, err := gcm.Open([]byte{}, nonce, body, nil)
+	if err != nil {
+		t.Fatalf("open the message: %v", err)
+	}
+	// the record ends in the padding delimiter (0x02), and the JSON before it never carries one
+	if at := strings.IndexByte(string(open), '\x02'); at >= 0 {
+		open = open[:at]
+	}
+	return open
+}
+
+// hkdfBytes is RFC 5869 over SHA-256: extract with the salt, expand with the info, answer
+// length bytes.
+func hkdfBytes(salt, secret, info []byte, length int) []byte {
+	extractor := hmac.New(sha256.New, salt)
+	extractor.Write(secret)
+	prk := extractor.Sum(nil)
+	var out, round []byte
+	for i := byte(1); len(out) < length; i++ {
+		expander := hmac.New(sha256.New, prk)
+		expander.Write(round)
+		expander.Write(info)
+		expander.Write([]byte{i})
+		round = expander.Sum(nil)
+		out = append(out, round...)
+	}
+	return out[:length]
+}
+
+func TestThePushSweepSendsOnceAndEscalatesOnceAndNeverAfterADecision(t *testing.T) {
+	service := newFakePush(t)
+	clock := pushClock
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return clock })
+	subscribeDevice(t, s, "phone", service.srv.URL, newBrowserKeys(t), hub.NotifyNeeds)
+
+	if _, err := s.registry.CreatePermissionItem(context.Background(), "s-1", "Bash",
+		[]byte(`{"command":"npm test"}`), clock); err != nil {
+		t.Fatalf("create the item: %v", err)
+	}
+
+	// the first sweep pushes once; another sweep before five minutes adds nothing
+	s.sweepPushes(context.Background())
+	s.sweepPushes(context.Background())
+	if service.count() != 1 {
+		t.Fatalf("the pushes after two sweeps = %d, want the one", service.count())
+	}
+
+	// at five minutes still open, one escalation — and one only
+	clock = clock.Add(hub.PushEscalatesAfter)
+	s.sweepPushes(context.Background())
+	s.sweepPushes(context.Background())
+	if service.count() != 2 {
+		t.Fatalf("the pushes after the escalation window = %d, want the one escalation too", service.count())
+	}
+
+	// a decided item never pushes: the second item is answered before any sweep sees it
+	clock = clock.Add(time.Minute)
+	second, err := s.registry.CreatePermissionItem(context.Background(), "s-2", "Read",
+		[]byte(`{"file_path":"/tmp/x"}`), clock)
+	if err != nil {
+		t.Fatalf("create the second item: %v", err)
+	}
+	if won, err := s.registry.DecidePermission(context.Background(), second, "deny", "",
+		jsfmt.ISOTime(clock), clock); err != nil || !won {
+		t.Fatalf("decide the second = (%v, %v), want the decision to win", won, err)
+	}
+	s.sweepPushes(context.Background())
+	if service.count() != 2 {
+		t.Fatalf("the pushes after a decided item = %d, want none for it", service.count())
+	}
+	// and the bookkeeping keeps its marks: the decided item never waits for a push again
+	fresh, err := s.registry.FreshPushItems(context.Background(), clock.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range fresh {
+		if item.ID == second {
+			t.Fatalf("the decided item %d waits for a push", second)
+		}
+	}
+}
+
+func TestAlertsReachOnlyTheDevicesThatAskedForThem(t *testing.T) {
+	service := newFakePush(t)
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return pushClock })
+	// each device holds its own subscription: the endpoint is the push service's own name for
+	// one, so no two of them share one
+	subscribeDevice(t, s, "quiet", service.srv.URL+"/quiet", newBrowserKeys(t), hub.NotifyNeeds)
+	watching := newBrowserKeys(t)
+	subscribeDevice(t, s, "watching", service.srv.URL+"/watching", watching, hub.NotifyAll)
+	subscribeDevice(t, s, "dark", service.srv.URL+"/dark", newBrowserKeys(t), hub.NotifyOff)
+
+	// a fresh item reaches every device but the one that chose off
+	if _, err := s.registry.CreatePermissionItem(context.Background(), "s-1", "Bash",
+		[]byte(`{"command":"npm test"}`), pushClock); err != nil {
+		t.Fatalf("create the item: %v", err)
+	}
+	s.sweepPushes(context.Background())
+	if service.count() != 2 {
+		t.Fatalf("the item's pushes = %d, want one for each device but the dark one", service.count())
+	}
+
+	// an alert reaches only the devices that chose needs-and-alerts
+	before := service.count()
+	s.pushAlertEvent(context.Background(), AlertEvent{
+		Type: "alert.device_paired", ID: 1, At: jsfmt.ISOTime(pushClock),
+		Body: vv(t, `{"device":"tablet","at":"2026-10-16T12:00:00.000Z"}`),
+	})
+	if service.count() != before+1 {
+		t.Fatalf("the alert's pushes = %d, want the one for the watching device", service.count()-before)
+	}
+	plaintext := decryptPush(t, service.body(before), watching)
+	if !strings.Contains(string(plaintext), `"kind":"alert.device_paired"`) {
+		t.Fatalf("the alert's plaintext = %s, want the alert's own kind", plaintext)
+	}
+}
+
+func TestAGoneSubscriptionIsDropped(t *testing.T) {
+	service := newFakePush(t)
+	clock := pushClock
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return clock })
+	subscribeDevice(t, s, "phone", service.srv.URL, newBrowserKeys(t), hub.NotifyNeeds)
+
+	if _, err := s.registry.CreatePermissionItem(context.Background(), "s-1", "Bash",
+		[]byte(`{"command":"npm test"}`), pushClock); err != nil {
+		t.Fatalf("create the item: %v", err)
+	}
+	s.sweepPushes(context.Background())
+	if service.count() != 1 {
+		t.Fatalf("the pushes = %d, want the one", service.count())
+	}
+	service.answer(http.StatusGone)
+
+	// the escalation meets a gone subscription: it is dropped, and the sweep after it finds
+	// nothing left to send to
+	clock = clock.Add(hub.PushEscalatesAfter)
+	s.sweepPushes(context.Background())
+	subs, err := s.registry.PushSubscriptions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subs) != 0 {
+		t.Fatalf("the subscriptions after a 410 = %v, want none left", subs)
+	}
+}
+
+func TestTheVapidKeysFallBackToTheFileWhenTheKeystoreCannotAnswer(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "keys", "vapid")
+	source := newVapidSource(hangingVapidStore{}, file, func(string, ...any) {})
+
+	first, err := source.Keys(context.Background())
+	if err != nil {
+		t.Fatalf("the first keys: %v", err)
+	}
+	if first.Private == "" || first.Public == "" {
+		t.Fatalf("the keys = %+v, want a made pair", first)
+	}
+	// the file holds the private key, private by mode
+	stored, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("the key file: %v", err)
+	}
+	if string(stored) != first.Private {
+		t.Fatalf("the key file holds %q, want the private key", stored)
+	}
+	if info, err := os.Stat(file); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("the key file's mode = %v (%v), want 0600", info, err)
+	}
+	// a second source over the same file answers the same pair without making a new one
+	second, err := newVapidSource(hangingVapidStore{}, file, func(string, ...any) {}).Keys(context.Background())
+	if err != nil {
+		t.Fatalf("the second keys: %v", err)
+	}
+	if second != first {
+		t.Fatalf("the second keys = %+v, want the stored pair", second)
+	}
+}
+
+// hangingVapidStore is a keystore that never answers: every call falls through to the file.
+type hangingVapidStore struct{}
+
+func (hangingVapidStore) Get(context.Context) (string, bool) {
+	select {}
+}
+
+func (hangingVapidStore) Set(context.Context, string) error {
+	select {}
+}
+
+// ── the routes, over the real server ───────────────────────────────────────────────────────────────────────────────
+
+// deviceHeaders is one paired device's cookie as request headers.
+func pushDeviceHeaders(cookie string) map[string]string {
+	return map[string]string{"Cookie": cookie, "x-huddle-token": "", "content-type": "application/json"}
+}
+
+func TestThePushRoutesOverTheServer(t *testing.T) {
+	srv := startServer(t, map[string]string{"HUDDLE_PUSH_SWEEP_MS": "150"})
+	service := newFakePush(t)
+	keys := newBrowserKeys(t)
+	setCookie, _ := pairDevice(t, srv, webauthntest.NewSoftKey(t), "iPhone")
+	cookie := auth.PairPlainCookie + "=" + cookieValueOf(t, setCookie)
+	device := pushDeviceHeaders(cookie)
+
+	// the public key the browser subscribes with: 65 bytes of P-256 point, base64url
+	code, _, out := srv.get(t, "/api/push/key", nil)
+	if code != 200 {
+		t.Fatalf("the public key = %d %s", code, out)
+	}
+	public, _ := bodyMap(t, out)["public_key"].(string)
+	point, err := base64.RawURLEncoding.DecodeString(public)
+	if err != nil || len(point) != 65 {
+		t.Fatalf("the public key %q is not a P-256 point", public)
+	}
+
+	// a subscription is a paired device's: the root's own credential may not hold one
+	body := fmt.Sprintf(`{"endpoint":%q,"keys":{"p256dh":%q,"auth":%q}}`,
+		service.srv.URL, keys.p256dh, keys.auth)
+	if code, out := srv.post(t, "/api/push/subscribe", body, map[string]string{"x-huddle-token": srv.token}); code != 403 {
+		t.Fatalf("the root's subscribe = %d %s, want 403", code, out)
+	}
+	if code, out := srv.post(t, "/api/push/subscribe", body, device); code != 200 {
+		t.Fatalf("the device's subscribe = %d %s", code, out)
+	}
+	if code, out := srv.post(t, "/api/push/subscribe", `{"endpoint":"","keys":{}}`, device); code != 400 {
+		t.Fatalf("a torn subscribe = %d %s, want 400", code, out)
+	}
+
+	// the choice the Settings screen reads and writes
+	if code, _, out := srv.get(t, "/api/push/notify", device); code != 200 || bodyMap(t, out)["notify"] != hub.NotifyNeeds {
+		t.Fatalf("the default choice = %d %s, want needs you only", code, out)
+	}
+	if code, out := srv.post(t, "/api/push/notify", `{"notify":"all"}`, device); code != 200 {
+		t.Fatalf("choose all = %d %s", code, out)
+	}
+	if code, out := srv.post(t, "/api/push/notify", `{"notify":"sometimes"}`, device); code != 400 {
+		t.Fatalf("a torn choice = %d %s, want 400", code, out)
+	}
+	if code, _, _ := srv.get(t, "/api/push/notify", map[string]string{"x-huddle-token": srv.token}); code != 403 {
+		t.Fatalf("the root's choice read = %d, want 403", code)
+	}
+
+	// a needs-you item pushes the device: the sweep the create wakes reaches the push service
+	id := permitPost(t, srv, "s-1", "Bash", `{"command":"npm test"}`)
+	if !until(5*time.Second, func() bool { return service.count() >= 1 }) {
+		t.Fatalf("the push service took %d messages, want the item's push", service.count())
+	}
+	plaintext := decryptPush(t, service.body(0), keys)
+	if !strings.Contains(string(plaintext), `"kind":"permission"`) ||
+		!strings.Contains(string(plaintext), fmt.Sprintf(`"item":%d`, id)) {
+		t.Fatalf("the push's plaintext = %s, want the item's payload", plaintext)
+	}
+
+	// a remote allow raises the alert, and this device chose needs-and-alerts: it pushes too
+	if code, out := srv.post(t, fmt.Sprintf("/api/needs/%d/decide", id), `{"decision":"allow"}`,
+		map[string]string{"x-huddle-token": srv.token}); code != 200 {
+		t.Fatalf("the allow = %d %s", code, out)
+	}
+	if !until(5*time.Second, func() bool { return service.count() >= 2 }) {
+		t.Fatalf("the push service took %d messages, want the alert's push too", service.count())
+	}
+	alert := decryptPush(t, service.body(service.count()-1), keys)
+	if !strings.Contains(string(alert), `"kind":"alert.remote_allow"`) {
+		t.Fatalf("the alert's plaintext = %s, want the remote allow's kind", alert)
+	}
+
+	// the device ends its subscription: removing what is gone answers 404 the second time
+	if code, _, _, err := srv.request(context.Background(), http.MethodDelete,
+		"/api/push/subscribe?endpoint="+service.srv.URL, "",
+		map[string]string{"Cookie": cookie, "x-huddle-token": "", "x-huddle-action": "/api/push/subscribe"}); err != nil || code != 200 {
+		t.Fatalf("the unsubscribe = %d (%v), want 200", code, err)
+	}
+	if code, _, _, _ := srv.request(context.Background(), http.MethodDelete,
+		"/api/push/subscribe?endpoint="+service.srv.URL, "",
+		map[string]string{"Cookie": cookie, "x-huddle-token": "", "x-huddle-action": "/api/push/subscribe"}); code != 404 {
+		t.Fatalf("the unsubscribe again = %d, want 404", code)
+	}
+}

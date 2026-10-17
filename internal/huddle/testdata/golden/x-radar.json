@@ -1,0 +1,11 @@
+{
+  "seq": 34,
+  "kind": "api",
+  "name": "x-radar",
+  "method": "GET",
+  "path": "/api/c/golden/x/radar",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"available\":true,\"range\":\"day\",\"alerts\":[],\"cost\":{},\"total\":0}"
+}

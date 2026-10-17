@@ -1,0 +1,11 @@
+{
+  "seq": 95,
+  "kind": "api",
+  "name": "x-approvals",
+  "method": "GET",
+  "path": "/api/c/golden/x/approvals",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"approvals\":[{\"seq\":23,\"from\":\"scout\",\"ts\":\"<volatile>\",\"rules\":[\"force_push\",\"git_push\"],\"labels\":[\"Force push\",\"Git push\"]}]}"
+}

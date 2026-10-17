@@ -1,0 +1,12 @@
+{
+  "seq": 87,
+  "kind": "api",
+  "name": "tokens-create-plain",
+  "method": "POST",
+  "path": "/api/tokens",
+  "auth": "root",
+  "sent": "{}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"token\":\"<volatile>\",\"id\":\"<volatile>\",\"created\":\"<volatile>\",\"expires\":\"<volatile>\",\"single_use\":false,\"uses\":0,\"can_invite\":false,\"channel\":null,\"description\":null,\"by\":\"owner\"}"
+}

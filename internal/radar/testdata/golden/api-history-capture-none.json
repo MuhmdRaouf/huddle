@@ -1,0 +1,13 @@
+{
+  "seq": 28,
+  "route": "/api/history/request/req_a2/capture",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 404,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"error\":\"no capture for request: req_a2\"}\n"
+    }
+  ]
+}

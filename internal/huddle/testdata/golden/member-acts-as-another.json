@@ -1,0 +1,11 @@
+{
+  "seq": 83,
+  "kind": "api",
+  "name": "member-acts-as-another",
+  "method": "GET",
+  "path": "/api/c/golden?as=scout",
+  "auth": "member",
+  "status": 403,
+  "contentType": "application/json",
+  "body": "{\"error\":\"this credential is newbie's: it acts as newbie or newbie.<role>, not scout\"}"
+}

@@ -1,0 +1,11 @@
+{
+  "seq": 12,
+  "kind": "api",
+  "name": "review",
+  "method": "GET",
+  "path": "/api/c/golden/review",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"open\":[{\"id\":1,\"task_id\":\"t-write\",\"kind\":\"direction\",\"body\":\"Keep the diff under two hundred lines.\",\"by\":\"owner\",\"resolved\":0,\"created_at\":\"<volatile>\",\"step_id\":\"t-write\",\"title\":\"Write the recorder\"}],\"edits\":[{\"step_id\":\"t-read\",\"field\":\"what\",\"updated_at\":\"<volatile>\",\"by\":\"owner\",\"title\":\"Read the golden fixture\"}],\"moved\":[]}"
+}

@@ -1,0 +1,13 @@
+{
+  "seq": 14,
+  "route": "/api/spend",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"todayUsd\":null,\"pricesRetrieved\":\"2026-10-08\"}\n"
+    }
+  ]
+}

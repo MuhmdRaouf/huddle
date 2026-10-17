@@ -1,0 +1,11 @@
+{
+  "seq": 40,
+  "kind": "api",
+  "name": "channel-missing",
+  "method": "GET",
+  "path": "/api/c/none",
+  "auth": "root",
+  "status": 404,
+  "contentType": "application/json",
+  "body": "{\"error\":\"no channel none\"}"
+}

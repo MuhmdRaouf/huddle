@@ -1,0 +1,11 @@
+{
+  "seq": 22,
+  "kind": "api",
+  "name": "conflicts",
+  "method": "GET",
+  "path": "/api/c/golden/conflicts",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"window_min\":30,\"conflicts\":[{\"repo\":\"/w/golden\",\"repo_name\":\"golden\",\"path\":\"src/one.go\",\"last\":\"<volatile>\",\"sessions\":[{\"name\":\"lead\",\"at\":\"<volatile>\"},{\"name\":\"scout\",\"at\":\"<volatile>\"}]}]}"
+}

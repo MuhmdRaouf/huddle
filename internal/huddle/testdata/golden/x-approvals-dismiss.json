@@ -1,0 +1,12 @@
+{
+  "seq": 96,
+  "kind": "api",
+  "name": "x-approvals-dismiss",
+  "method": "POST",
+  "path": "/api/c/golden/x/approvals/dismiss?as=owner",
+  "auth": "root",
+  "sent": "{\"seq\":23}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"approvals\":[]}"
+}

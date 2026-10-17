@@ -1,0 +1,132 @@
+{
+  "channel": "golden",
+  "configure": {
+    "title": "The golden channel",
+    "description": "One channel holding every kind of thing, so the recorded answers are full.",
+    "start": "lead",
+    "orchestrator": "lead"
+  },
+  "ops": [
+    { "op": "join", "as": "gone", "args": { "role": "leaves early" } },
+    { "op": "join", "as": "lead", "args": { "role": "runs the plan with the owner" } },
+    { "op": "join", "as": "lead.research", "args": { "role": "a subagent of lead, digging" } },
+    { "op": "join", "as": "scout", "args": { "role": "reads the code before anyone writes" } },
+    {
+      "op": "import_plan",
+      "as": "owner",
+      "args": {
+        "plan": {
+          "phases": [
+            {
+              "n": 1,
+              "title": "Foundations",
+              "summary": "Read the fixture, then write the recorder.",
+              "needs": "the committed fixture under testdata",
+              "make": ["record", "check"],
+              "value": "goldens that replay byte for byte",
+              "steps": [
+                {
+                  "id": "t-read",
+                  "title": "Read the golden fixture",
+                  "owner": "scout",
+                  "kind": "code",
+                  "what": "List every route and tool the recorder must cover.",
+                  "why": "A route left out of the recording is a route nothing holds to parity.",
+                  "how": ["Open the fixture", "Note every route it names"],
+                  "verify": [{ "cmd": "bun scripts/record-goldens.ts", "expect": "every golden rewritten" }]
+                },
+                {
+                  "id": "t-write",
+                  "title": "Write the recorder",
+                  "owner": "lead",
+                  "kind": "code",
+                  "risk": "low",
+                  "gate": "owner",
+                  "depends": ["t-read"],
+                  "what": "One bun script that builds this state and records every answer.",
+                  "how": ["Start the server in a temp home", "Replay the plan", "Write the goldens"]
+                }
+              ]
+            },
+            {
+              "n": 2,
+              "title": "Polish",
+              "summary": "Check the recordings, then document them.",
+              "needs": "the recorded goldens",
+              "steps": [
+                {
+                  "id": "t-check",
+                  "title": "Replay the goldens against the engine",
+                  "owner": "scout",
+                  "kind": "code",
+                  "depends": ["t-write"],
+                  "what": "The Go test replays every recording byte for byte."
+                },
+                { "id": "t-doc", "title": "Document the recordings", "kind": "doc", "gate": "ask-first", "what": "One README section on re-recording." }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    { "op": "task_update", "as": "owner", "args": { "id": "t-read", "field": "what", "value": "Read the golden fixture and list every route and tool it names." } },
+    { "op": "task_status", "as": "scout", "args": { "id": "t-read", "status": "done", "note": "bun test green" } },
+    { "op": "start", "as": "lead", "args": {} },
+    { "op": "task_status", "as": "lead", "args": { "id": "t-doc", "status": "blocked", "note": "waits on the design review" } },
+    { "op": "task_create", "as": "lead", "args": { "id": "t-extra", "title": "Wire the goldens into CI", "owner": "scout", "after": ["t-check"], "phase": 2, "what": "One job, under the ten-minute cap." } },
+    { "op": "note", "as": "owner", "args": { "id": "t-write", "kind": "direction", "body": "Keep the diff under two hundred lines." } },
+    { "op": "note", "as": "owner", "args": { "id": "t-read", "kind": "question", "body": "Is the fixture committed under testdata?" } },
+    { "op": "note_edit", "as": "owner", "args": { "id": 2, "resolved": true } },
+    {
+      "op": "remember",
+      "as": "scout",
+      "args": { "kind": "fact", "title": "The golden server binds port zero", "body": "PORT=0 makes the server bind any free port and print the one it got, so a recording never races a fixed one.", "tags": ["testing", "ports"], "refs": ["scripts/record-goldens.ts"] }
+    },
+    {
+      "op": "remember",
+      "as": "lead",
+      "args": { "kind": "lesson", "title": "Never trust a pid from a state file", "body": "A pid alone can name another process after a reboot; check the port and whose process it is before waiting on or killing anything.", "tags": ["router"] }
+    },
+    { "op": "verify", "as": "owner", "args": { "id": 1 } },
+    {
+      "op": "remember",
+      "as": "lead",
+      "args": { "kind": "fact", "title": "Ports outlive pids", "body": "A saved port is the address; the pid only says who held it once.", "tags": ["router", "testing"], "supersedes": 2 }
+    },
+    { "op": "share", "as": "owner", "args": { "id": 1 } },
+    { "op": "publish", "as": "scout", "args": { "topic": "finding.ready", "msg": "the fixture is loaded", "ref": "testdata/fixture/script.json" } },
+    { "op": "send", "as": "lead", "args": { "to": "scout", "msg": "how does the plan look?", "ask": true, "task": "t-write" } },
+    { "op": "send", "as": "scout", "args": { "to": "lead", "msg": "who owns t-doc?", "ask": true } },
+    { "op": "reply", "as": "lead", "args": { "seq": 17, "msg": "nobody yet; take it if you want it" } },
+    { "op": "ack", "as": "scout", "args": { "seq": 15 } },
+    { "op": "state", "as": "scout", "args": { "state": "waiting", "task": "waiting on the design review" } },
+    { "op": "brief", "as": "owner", "args": { "session": "scout", "msg": "Start from t-check once t-write is approved." } },
+    { "op": "touched", "as": "scout", "args": { "path": "src/one.go", "repo": "/w/golden" } },
+    { "op": "sleep", "as": "", "args": { "ms": 1100 } },
+    { "op": "touched", "as": "lead", "args": { "path": "src/one.go", "repo": "/w/golden" } },
+    { "op": "touched", "as": "lead", "args": { "path": "src/two.go", "repo": "/w/golden" } },
+    { "op": "pause", "as": "owner", "args": { "target": "lead.research", "why": "until the plan settles" } },
+    { "op": "leave", "as": "gone", "args": { "summary": "nothing left for me" } },
+    { "op": "pass", "as": "lead", "args": { "to": "scout", "msg": "t-check is yours once t-write lands" } }
+  ],
+  "tools": [
+    { "name": "status", "as": "scout", "arguments": {} },
+    { "name": "status", "as": "lead", "arguments": { "as": "lead.research" } },
+    { "name": "sessions", "as": "scout", "arguments": {} },
+    { "name": "next", "as": "scout", "arguments": {} },
+    { "name": "next", "as": "scout", "arguments": { "json": true } },
+    { "name": "map", "as": "scout", "arguments": {} },
+    { "name": "tasks", "as": "scout", "arguments": {} },
+    { "name": "task", "as": "scout", "arguments": { "id": "t-write" } },
+    { "name": "task", "as": "scout", "arguments": { "id": "nope" } },
+    { "name": "turn", "as": "scout", "arguments": {} },
+    { "name": "inbox", "as": "scout", "arguments": {} },
+    { "name": "events", "as": "scout", "arguments": { "limit": 6 } },
+    { "name": "recall", "as": "scout", "arguments": { "q": "port" } },
+    { "name": "recall", "as": "scout", "arguments": { "q": "port", "json": true } },
+    { "name": "digest", "as": "scout", "arguments": {} },
+    { "name": "gate", "as": "scout", "arguments": { "block": false } },
+    { "name": "nope", "as": "scout", "arguments": {} },
+    { "name": "send", "as": "scout", "arguments": {} }
+  ]
+}

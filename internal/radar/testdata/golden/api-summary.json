@@ -1,0 +1,13 @@
+{
+  "seq": 1,
+  "route": "/api/summary",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"summary\":{\"sessions\":2,\"liveSessions\":0,\"agents\":4,\"requests\":5,\"tokens\":{\"input\":560,\"output\":154,\"cacheRead\":3800,\"cacheWrite\":182},\"errors\":1,\"toolCalls\":1,\"latencyP50\":2400,\"latencyP95\":11400,\"startedAt\":1785747605000,\"now\":\"<volatile>\",\"costUsd\":0.0019337999999999998}}\n"
+    }
+  ]
+}

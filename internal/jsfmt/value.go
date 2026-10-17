@@ -1,0 +1,267 @@
+package jsfmt
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+)
+
+// Kind is which JSON shape a Value holds.
+type Kind uint8
+
+const (
+	KindNull Kind = iota
+	KindBool
+	KindNumber
+	KindString
+	KindObject
+	KindArray
+)
+
+// Value is a JSON value decoded for rewriting: an object keeps its keys in arrival
+// order and every scalar keeps its decoded value, so a rewritten value re-encodes to
+// the bytes JavaScript's JSON.stringify writes for the same data (a number like 1.0
+// comes back out as 1, the double it parses to).
+type Value struct {
+	kind    Kind
+	boolean bool
+	number  json.Number
+	text    string
+	keys    []string
+	fields  []*Value
+	items   []*Value
+}
+
+// DecodeValue reads exactly one JSON value; anything after it, or nothing at all, is an
+// error, like JSON.parse.
+func DecodeValue(data []byte) (*Value, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	value, err := decodeValue(dec)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, errors.New("jsfmt: trailing data after the JSON value")
+	}
+	return value, nil
+}
+
+// decodeValue reads the next value token: an opening delimiter recurses, a scalar rides
+// along with its literal.
+func decodeValue(dec *json.Decoder) (*Value, error) {
+	token, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	switch token := token.(type) {
+	case json.Delim:
+		switch token {
+		case '{':
+			return decodeObject(dec)
+		case '[':
+			return decodeArray(dec)
+		}
+		return nil, fmt.Errorf("jsfmt: unexpected %q in value position", rune(token))
+	case bool:
+		return &Value{kind: KindBool, boolean: token}, nil
+	case json.Number:
+		return &Value{kind: KindNumber, number: token}, nil
+	case string:
+		return &Value{kind: KindString, text: token}, nil
+	default:
+		return &Value{kind: KindNull}, nil
+	}
+}
+
+// decodeObject reads an object's fields in arrival order.
+func decodeObject(dec *json.Decoder) (*Value, error) {
+	object := &Value{kind: KindObject}
+	for dec.More() {
+		keyToken, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return nil, errors.New("jsfmt: object key is not a string")
+		}
+		field, err := decodeValue(dec)
+		if err != nil {
+			return nil, err
+		}
+		object.keys = append(object.keys, key)
+		object.fields = append(object.fields, field)
+	}
+	if _, err := dec.Token(); err != nil { // the closing brace
+		return nil, err
+	}
+	return object, nil
+}
+
+// decodeArray reads an array's items in order.
+func decodeArray(dec *json.Decoder) (*Value, error) {
+	array := &Value{kind: KindArray}
+	for dec.More() {
+		item, err := decodeValue(dec)
+		if err != nil {
+			return nil, err
+		}
+		array.items = append(array.items, item)
+	}
+	if _, err := dec.Token(); err != nil { // the closing bracket
+		return nil, err
+	}
+	return array, nil
+}
+
+// EncodeJSON writes v as JSON text, byte for byte the way JSON.stringify does: no
+// spaces, object keys in arrival order, numbers as String(n), strings with
+// JSON.stringify's minimal escaping.
+func (v *Value) EncodeJSON() string {
+	var out strings.Builder
+	v.encode(&out)
+	return out.String()
+}
+
+// MarshalJSON answers the value's own JSON, so a value inside a struct keeps its keys in
+// insertion order through the standard encoder too, never re-sorted the way a Go map's are.
+// A nil value is null.
+func (v *Value) MarshalJSON() ([]byte, error) {
+	if v == nil {
+		return []byte("null"), nil
+	}
+	return []byte(v.EncodeJSON()), nil
+}
+
+// encode writes one value's bytes.
+func (v *Value) encode(out *strings.Builder) {
+	switch v.kind {
+	case KindNull:
+		out.WriteString("null")
+	case KindBool:
+		out.WriteString(strconv.FormatBool(v.boolean))
+	case KindNumber:
+		number, _ := v.number.Float64()
+		out.WriteString(JSNumber(number))
+	case KindString:
+		jsQuote(out, v.text)
+	case KindObject:
+		out.WriteByte('{')
+		for i, key := range v.keys {
+			if i > 0 {
+				out.WriteByte(',')
+			}
+			jsQuote(out, key)
+			out.WriteByte(':')
+			v.fields[i].encode(out)
+		}
+		out.WriteByte('}')
+	case KindArray:
+		out.WriteByte('[')
+		for i, item := range v.items {
+			if i > 0 {
+				out.WriteByte(',')
+			}
+			item.encode(out)
+		}
+		out.WriteByte(']')
+	}
+}
+
+// jsQuote writes s as a JSON string the way JSON.stringify does: only the quote, the
+// backslash and the C0 controls escape, the five controls with short forms take them,
+// the rest take \u00xx in lowercase hex, and a lone surrogate — a UTF-16 cut can leave
+// one at the end of a truncated string — takes \udXXX.
+func jsQuote(out *strings.Builder, s string) {
+	out.WriteByte('"')
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			if unit, ok := wtf16Unit(s[i:]); ok {
+				fmt.Fprintf(out, "\\u%04x", unit)
+				i += 3
+				continue
+			}
+			out.WriteRune(utf8.RuneError)
+			i++
+			continue
+		}
+		switch r {
+		case '"':
+			out.WriteString(`\"`)
+		case '\\':
+			out.WriteString(`\\`)
+		case '\b':
+			out.WriteString(`\b`)
+		case '\f':
+			out.WriteString(`\f`)
+		case '\n':
+			out.WriteString(`\n`)
+		case '\r':
+			out.WriteString(`\r`)
+		case '\t':
+			out.WriteString(`\t`)
+		default:
+			if r < 0x20 {
+				fmt.Fprintf(out, "\\u%04x", r)
+			} else {
+				out.WriteString(s[i : i+size])
+			}
+		}
+		i += size
+	}
+	out.WriteByte('"')
+}
+
+// wtf16Unit reads one lone-surrogate unit a UTF-16 cut left behind in its WTF-8 form;
+// ok is false when the bytes are not that shape.
+func wtf16Unit(s string) (uint16, bool) {
+	if len(s) < 3 || s[0] != 0xED || s[1] < 0xA0 || s[1] > 0xBF || s[2] < 0x80 || s[2] > 0xBF {
+		return 0, false
+	}
+	return 0xD000 | uint16(s[1]&0x3F)<<6 | uint16(s[2]&0x3F), true
+}
+
+// Kind reports which JSON shape the value holds.
+func (v *Value) Kind() Kind { return v.kind }
+
+// Text is a string value's text; empty for any other shape.
+func (v *Value) Text() string { return v.text }
+
+// Keys lists an object's keys in arrival order; nil for any other shape.
+func (v *Value) Keys() []string { return v.keys }
+
+// Fields lists an object's field values, one per key in Keys; nil for any other shape.
+func (v *Value) Fields() []*Value { return v.fields }
+
+// Items lists an array's items in order; nil for any other shape.
+func (v *Value) Items() []*Value { return v.items }
+
+// String builds a string value.
+func String(text string) *Value { return &Value{kind: KindString, text: text} }
+
+// Bool builds a boolean value.
+func Bool(b bool) *Value { return &Value{kind: KindBool, boolean: b} }
+
+// Number builds a number value that prints the way JavaScript prints f.
+func Number(f float64) *Value {
+	if math.IsInf(f, 0) || math.IsNaN(f) {
+		return &Value{kind: KindNull}
+	}
+	return &Value{kind: KindNumber, number: json.Number(JSNumber(f))}
+}
+
+// Object builds an object value whose keys pair with fields positionally.
+func Object(keys []string, fields []*Value) *Value {
+	return &Value{kind: KindObject, keys: keys, fields: fields}
+}
+
+// Array builds an array value.
+func Array(items []*Value) *Value { return &Value{kind: KindArray, items: items} }

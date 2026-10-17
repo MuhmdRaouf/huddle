@@ -1,0 +1,12 @@
+{
+  "seq": 93,
+  "kind": "api",
+  "name": "x-rules-post",
+  "method": "POST",
+  "path": "/api/c/golden/x/rules?as=owner",
+  "auth": "root",
+  "sent": "{\"rules\":{\"git_push\":true}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"rules\":[{\"id\":\"force_push\",\"label\":\"Force push\",\"help\":\"git push --force, -f, --force-with-lease or a +ref\",\"on\":true,\"default\":true},{\"id\":\"delete\",\"label\":\"Delete files or branches\",\"help\":\"rm, git rm, git clean, git branch -d/-D, git push --delete, find -delete, rmdir, unlink\",\"on\":true,\"default\":true},{\"id\":\"git_push\",\"label\":\"Git push\",\"help\":\"every git push\",\"on\":true,\"default\":false},{\"id\":\"git_tag\",\"label\":\"Git tag\",\"help\":\"creating, moving or deleting a tag (listing is fine)\",\"on\":false,\"default\":false},{\"id\":\"publish\",\"label\":\"Publish a package\",\"help\":\"npm/pnpm/yarn/bun publish, cargo publish, twine upload, gem push, poetry/uv/flit publish, docker push, gh release create\",\"on\":false,\"default\":false}]}"
+}

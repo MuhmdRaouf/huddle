@@ -1,0 +1,11 @@
+{
+  "seq": 31,
+  "kind": "api",
+  "name": "settings",
+  "method": "GET",
+  "path": "/api/settings",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"notify\":true,\"notifier\":\"log\",\"forced_off\":false}"
+}

@@ -1,0 +1,43 @@
+{
+  "seq": 11,
+  "route": "/api/attribution",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"by\":\"repo\",\"range\":\"day\",\"rows\":[]}\n"
+    },
+    {
+      "query": "?by=tree",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"by\":\"tree\",\"range\":\"day\",\"tree\":[]}\n"
+    },
+    {
+      "query": "?range=week&by=session",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"by\":\"session\",\"range\":\"week\",\"rows\":[]}\n"
+    },
+    {
+      "query": "?range=month",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"by\":\"repo\",\"range\":\"month\",\"rows\":[]}\n"
+    },
+    {
+      "query": "?range=bad",
+      "status": 400,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"error\":\"range: one of day, week, month\"}\n"
+    },
+    {
+      "query": "?by=bad",
+      "status": 400,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"error\":\"by: one of repo, project, session, agent, model, tree\"}\n"
+    }
+  ]
+}

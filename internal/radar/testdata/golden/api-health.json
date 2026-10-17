@@ -1,0 +1,13 @@
+{
+  "seq": 9,
+  "route": "/api/health",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"ok\":true,\"version\":\"golden\",\"startedAt\":\"<volatile>\",\"port\":\"<volatile>\",\"sessions\":2,\"uptimeMs\":\"<volatile>\"}\n"
+    }
+  ]
+}

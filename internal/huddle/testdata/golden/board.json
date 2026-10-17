@@ -1,0 +1,11 @@
+{
+  "seq": 5,
+  "kind": "api",
+  "name": "board",
+  "method": "GET",
+  "path": "/api/c/golden/board",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"phases\":[{\"n\":1,\"title\":\"Foundations\",\"summary\":\"Read the fixture, then write the recorder.\",\"needs\":\"the committed fixture under testdata\",\"make\":[\"record\",\"check\"],\"value\":\"goldens that replay byte for byte\"},{\"n\":2,\"title\":\"Polish\",\"summary\":\"Check the recordings, then document them.\",\"needs\":\"the recorded goldens\"}],\"steps\":[{\"id\":\"t-read\",\"phase_n\":1,\"title\":\"Read the golden fixture\",\"owner\":\"scout\",\"kind\":\"code\",\"status\":\"done\",\"depends\":[],\"status_by\":\"scout\",\"blocked_by\":[],\"comments\":{\"n\":1,\"open\":0,\"kinds\":[\"question\"]},\"edited\":true},{\"id\":\"t-write\",\"phase_n\":1,\"title\":\"Write the recorder\",\"owner\":\"lead\",\"kind\":\"code\",\"gate\":\"owner\",\"risk\":\"low\",\"status\":\"doing\",\"depends\":[\"t-read\"],\"status_by\":\"lead\",\"blocked_by\":[],\"comments\":{\"n\":1,\"open\":1,\"kinds\":[\"direction\"]},\"edited\":false},{\"id\":\"t-check\",\"phase_n\":2,\"title\":\"Replay the goldens against the engine\",\"owner\":\"scout\",\"kind\":\"code\",\"status\":\"todo\",\"depends\":[\"t-write\"],\"status_by\":null,\"blocked_by\":[\"t-write\"],\"comments\":null,\"edited\":false},{\"id\":\"t-doc\",\"phase_n\":2,\"title\":\"Document the recordings\",\"owner\":null,\"kind\":\"doc\",\"gate\":\"ask-first\",\"status\":\"blocked\",\"depends\":[],\"status_by\":\"lead\",\"blocked_by\":[],\"comments\":null,\"edited\":false},{\"id\":\"t-extra\",\"phase_n\":2,\"title\":\"Wire the goldens into CI\",\"owner\":\"scout\",\"status\":\"todo\",\"depends\":[\"t-check\"],\"status_by\":null,\"blocked_by\":[\"t-check\"],\"comments\":null,\"edited\":false}],\"meta\":{\"title\":\"The golden channel\",\"description\":\"One channel holding every kind of thing, so the recorded answers are full.\",\"start\":\"lead\",\"handover\":{},\"profile\":null,\"repo\":null,\"created_at\":\"<volatile>\",\"members\":[],\"orchestrator\":\"lead\",\"fts\":true,\"plan_at\":\"<volatile>\"}}"
+}

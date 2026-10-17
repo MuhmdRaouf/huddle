@@ -1,0 +1,11 @@
+{
+  "seq": 18,
+  "kind": "api",
+  "name": "kb-shared",
+  "method": "GET",
+  "path": "/api/c/golden/kb/100000",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"id\":100000,\"kind\":\"fact\",\"title\":\"The golden server binds port zero\",\"by\":\"scout\",\"tags\":[\"testing\",\"ports\"],\"refs\":[\"scripts/record-goldens.ts\"],\"task\":null,\"created_at\":\"<volatile>\",\"hit\":\"PORT=0 makes the server bind any free port and print the one it got, so a recording never races a fixed one.\",\"scope\":\"server\",\"origin\":\"golden\",\"verified_by\":\"owner\",\"verified_at\":\"<volatile>\",\"age_days\":0,\"stale\":null,\"body\":\"PORT=0 makes the server bind any free port and print the one it got, so a recording never races a fixed one.\",\"hits\":1,\"supersedes\":null,\"superseded_by\":null,\"moved_to\":null}"
+}

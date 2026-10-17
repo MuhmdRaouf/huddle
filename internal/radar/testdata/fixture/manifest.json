@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "sinceMs": 31536000000,
+  "flow": { "from": 1785744000000, "to": 1785754800000 },
+  "files": [
+    {
+      "from": "transcript-main.jsonl",
+      "to": "__CONFIG__/projects/-w-app/sess-a.jsonl",
+      "mtimeMs": 1785747790000
+    },
+    {
+      "from": "transcript-subagent.jsonl",
+      "to": "__CONFIG__/projects/-w-app/sess-a/subagents/agent-sub1.jsonl",
+      "mtimeMs": 1785747670000
+    },
+    {
+      "from": "agent-meta.json",
+      "to": "__CONFIG__/projects/-w-app/sess-a/subagents/agent-sub1.meta.json",
+      "mtimeMs": 1785747670000
+    },
+    { "from": "job.json", "to": "__ZAI__/jobs/goldjob/job.json", "mtimeMs": 1785751490000 },
+    {
+      "from": "attempt-1.jsonl",
+      "to": "__ZAI__/jobs/goldjob/attempt-1.jsonl",
+      "mtimeMs": 1785751440000
+    },
+    { "from": "settings.json", "to": "__RADAR__/settings.json" },
+    { "from": "budgets.json", "to": "__RADAR__/budgets.json" },
+    { "from": "installed_plugins.json", "to": "__CONFIG__/plugins/installed_plugins.json" }
+  ]
+}

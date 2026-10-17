@@ -1,0 +1,13 @@
+{
+  "seq": 24,
+  "route": "/api/history/content/req_a2",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"input\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_a1\",\"text\":\"3 tests, 0 failing\"}],\"output\":[{\"type\":\"text\",\"text\":\"The timing wait was too short; bumped to 200 ms.\"}],\"bytes\":152}\n"
+    }
+  ]
+}

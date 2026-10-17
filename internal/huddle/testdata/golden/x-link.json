@@ -1,0 +1,12 @@
+{
+  "seq": 97,
+  "kind": "api",
+  "name": "x-link",
+  "method": "POST",
+  "path": "/api/c/golden/x/link?as=scout",
+  "auth": "root",
+  "sent": "{\"claude_session\":\"sess-golden-9\"}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"ok\":true}"
+}

@@ -1,0 +1,12 @@
+{
+  "seq": 71,
+  "kind": "mcp",
+  "name": "mcp-notification",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}",
+  "status": 202,
+  "contentType": "",
+  "body": ""
+}

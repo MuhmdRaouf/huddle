@@ -1,0 +1,12 @@
+{
+  "seq": 58,
+  "kind": "mcp",
+  "name": "mcp-call-task",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":17,\"method\":\"tools/call\",\"params\":{\"name\":\"task\",\"arguments\":{\"id\":\"t-write\"}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":17,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"t-write  Write the recorder\\ncode · low risk · gate owner · doing · owner lead (last by lead)\\n\\nOWNER NOTES (read first; they override the text below):\\n  [direction] Keep the diff under two hundred lines.\\n\\nWHAT\\nOne bun script that builds this state and records every answer.\\n\\nHOW\\n  1. Start the server in a temp home\\n  2. Replay the plan\\n  3. Write the goldens\\n\\ndepends on t-read\\nneeded by t-check\\n\\nboard: /#/c/golden/t/t-write\"}]}}"
+}

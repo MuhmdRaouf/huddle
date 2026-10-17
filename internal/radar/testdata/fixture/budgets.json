@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "budgets": [
+    { "id": "day-cap", "scope": "total", "period": "day", "limitUsd": 5, "action": "warn" },
+    { "id": "zai-month", "scope": "provider:zai", "period": "month", "limitUsd": 25, "action": "stop" }
+  ]
+}

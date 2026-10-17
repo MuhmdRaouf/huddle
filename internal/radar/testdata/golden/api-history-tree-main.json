@@ -1,0 +1,13 @@
+{
+  "seq": 21,
+  "route": "/api/history/tree/sess-a%2Fmain",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"nodes\":[{\"id\":\"sess-a/main\",\"kind\":\"main\",\"parentId\":null,\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"label\":null,\"agentType\":null,\"description\":null,\"project\":\"app\",\"cwd\":\"/w/app\",\"model\":\"glm-5.3\",\"provider\":null,\"toolUseId\":null,\"spawnDepth\":null,\"jobState\":null,\"repo\":null,\"branch\":\"fix/ci\",\"name\":\"Fix the flaky test\",\"parentSessionId\":null,\"startedAt\":1785747605000,\"endedAt\":1785747780000,\"lastAt\":1785747780000,\"live\":false,\"requests\":4,\"tokens\":{\"input\":480,\"output\":132,\"cacheRead\":3500,\"cacheWrite\":170},\"costUsd\":0.0019018000000000001},{\"id\":\"sess-a/agent-sub1\",\"kind\":\"subagent\",\"parentId\":\"sess-a/main\",\"sessionId\":\"sess-a\",\"agentId\":\"agent-sub1\",\"label\":null,\"agentType\":\"Explore\",\"description\":\"Find the timeout setting\",\"project\":null,\"cwd\":null,\"model\":\"glm-5.3-flash\",\"provider\":null,\"toolUseId\":null,\"spawnDepth\":null,\"jobState\":null,\"repo\":null,\"branch\":null,\"name\":\"Explore — Find the timeout setting\",\"parentSessionId\":null,\"startedAt\":null,\"endedAt\":null,\"lastAt\":1785747669000,\"live\":false,\"requests\":1,\"tokens\":{\"input\":80,\"output\":22,\"cacheRead\":300,\"cacheWrite\":12},\"costUsd\":0.000032}]}\n"
+    }
+  ]
+}

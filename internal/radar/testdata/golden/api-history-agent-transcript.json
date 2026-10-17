@@ -1,0 +1,13 @@
+{
+  "seq": 29,
+  "route": "/api/history/agent/sess-a%2Fagent-sub1/transcript",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"requestId\":\"msg_sub1\",\"nodeId\":\"sess-a/agent-sub1\",\"model\":\"glm-5.3-flash\",\"totals\":{\"messages\":2,\"approxTokens\":32,\"usage\":{\"input\":80,\"output\":22,\"cacheRead\":300,\"cacheWrite\":12},\"cacheTokens\":312},\"messages\":[{\"role\":\"user\",\"kind\":\"text\",\"requestId\":\"msg_sub1\",\"ts\":1785747669000,\"bytes\":64,\"preview\":\"Find where the timeout is configured.\",\"blocks\":[{\"type\":\"text\",\"text\":\"Find where the timeout is configured.\"}]},{\"role\":\"assistant\",\"kind\":\"text\",\"requestId\":\"msg_sub1\",\"ts\":1785747669000,\"bytes\":65,\"preview\":\"It is testTimeout in vitest.config.ts.\",\"blocks\":[{\"type\":\"text\",\"text\":\"It is testTimeout in vitest.config.ts.\"}]}],\"next\":null,\"note\":\"System prompt and tool definitions are not in the transcript.\"}\n"
+    }
+  ]
+}

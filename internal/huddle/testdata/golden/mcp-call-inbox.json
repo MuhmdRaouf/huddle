@@ -1,0 +1,12 @@
+{
+  "seq": 61,
+  "kind": "mcp",
+  "name": "mcp-call-inbox",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":20,\"method\":\"tools/call\",\"params\":{\"name\":\"inbox\",\"arguments\":{}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":20,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"[\\n {\\n  \\\"seq\\\": 16,\\n  \\\"ts\\\": \\\"<volatile>\\\",\\n  \\\"from\\\": \\\"lead\\\",\\n  \\\"to\\\": \\\"scout\\\",\\n  \\\"topic\\\": \\\"ask\\\",\\n  \\\"ref\\\": null,\\n  \\\"msg\\\": \\\"how does the plan look?\\\",\\n  \\\"data\\\": {\\n   \\\"task\\\": \\\"t-write\\\"\\n  },\\n  \\\"reply_to\\\": null,\\n  \\\"needs_reply\\\": true\\n }\\n]\"}]}}"
+}

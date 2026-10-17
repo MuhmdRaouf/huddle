@@ -1,0 +1,11 @@
+{
+  "seq": 13,
+  "kind": "api",
+  "name": "attention",
+  "method": "GET",
+  "path": "/api/c/golden/attention",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"asks\":[],\"gates\":[{\"id\":\"t-write\",\"title\":\"Write the recorder\",\"gate\":\"owner\",\"owner\":\"lead\",\"status\":\"doing\",\"phase_n\":1},{\"id\":\"t-doc\",\"title\":\"Document the recordings\",\"gate\":\"ask-first\",\"owner\":null,\"status\":\"blocked\",\"phase_n\":2}],\"blocked\":[{\"id\":\"t-doc\",\"title\":\"Document the recordings\",\"owner\":null,\"note\":\"waits on the design review\",\"waits_on\":[]}],\"open_notes\":1,\"paused\":[{\"name\":\"lead.research\",\"by\":\"owner\",\"at\":\"<volatile>\"}],\"stale\":[],\"next\":[{\"session\":\"lead\",\"task\":{\"id\":\"t-write\",\"title\":\"Write the recorder\",\"ready\":true,\"unmet\":[]}},{\"session\":\"scout\",\"task\":{\"id\":\"t-check\",\"title\":\"Replay the goldens against the engine\",\"ready\":false,\"unmet\":[\"t-write\"]}}],\"unblocked_by\":2,\"total\":3}"
+}

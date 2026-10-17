@@ -1,0 +1,11 @@
+{
+  "seq": 9,
+  "kind": "api",
+  "name": "timeline-topic",
+  "method": "GET",
+  "path": "/api/c/golden/timeline?topic=task.*",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "[{\"seq\":5,\"ts\":\"<volatile>\",\"from\":\"scout\",\"to\":null,\"topic\":\"task.status\",\"ref\":\"t-read\",\"msg\":\"t-read → done · bun test green\",\"data\":{\"task\":\"t-read\",\"status\":\"done\",\"note\":\"bun test green\"},\"reply_to\":null,\"needs_reply\":false},{\"seq\":6,\"ts\":\"<volatile>\",\"from\":\"scout\",\"to\":\"lead\",\"topic\":\"task.ready\",\"ref\":\"t-write\",\"msg\":\"t-write Write the recorder: everything it waits on is done\",\"data\":{\"task\":\"t-write\",\"after\":[\"t-read\"]},\"reply_to\":null,\"needs_reply\":false},{\"seq\":7,\"ts\":\"<volatile>\",\"from\":\"lead\",\"to\":null,\"topic\":\"task.status\",\"ref\":\"t-write\",\"msg\":\"t-write → doing\",\"data\":{\"task\":\"t-write\",\"status\":\"doing\",\"note\":\"\"},\"reply_to\":null,\"needs_reply\":false},{\"seq\":8,\"ts\":\"<volatile>\",\"from\":\"lead\",\"to\":null,\"topic\":\"task.status\",\"ref\":\"t-doc\",\"msg\":\"t-doc → blocked · waits on the design review\",\"data\":{\"task\":\"t-doc\",\"status\":\"blocked\",\"note\":\"waits on the design review\"},\"reply_to\":null,\"needs_reply\":false},{\"seq\":9,\"ts\":\"<volatile>\",\"from\":\"lead\",\"to\":\"scout\",\"topic\":\"task.created\",\"ref\":\"t-extra\",\"msg\":\"t-extra Wire the goldens into CI → scout after t-check\",\"data\":{\"task\":\"t-extra\"},\"reply_to\":null,\"needs_reply\":false}]"
+}

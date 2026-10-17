@@ -1,0 +1,13 @@
+{
+  "seq": 2,
+  "route": "/api/sessions",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"sessions\":[{\"id\":\"sess-a\",\"project\":\"app\",\"cwd\":\"/w/app\",\"name\":\"Fix the flaky test\",\"branch\":\"fix/ci\",\"repo\":null,\"parentSessionId\":null,\"startedAt\":1785747605000,\"endedAt\":1785747780000,\"live\":false,\"status\":null,\"activity\":{\"bucketMs\":3646,\"counts\":[0,0,0,0,0,2,0,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"models\":[\"\",\"\",\"\",\"\",\"\",\"glm-5.3\",\"\",\"\",\"\",\"\",\"\",\"\",\"glm-5.3\",\"\",\"\",\"\",\"\",\"glm-5.3-flash\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"claude-sonnet-5-5\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]},\"model\":\"glm-5.3\",\"agentCount\":2,\"liveAgentCount\":0,\"requestCount\":5,\"tokens\":4696,\"lastAt\":1785747780000,\"external\":false,\"title\":\"Find where the timeout is configured.\",\"costUsd\":0.0019337999999999998,\"costSplitUsd\":{\"claude\":0.00037500000000000006,\"glm\":0.0015588,\"other\":null},\"now\":null,\"context\":null}]}\n"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "seq": 16,
+  "kind": "api",
+  "name": "kb-kind",
+  "method": "GET",
+  "path": "/api/c/golden/kb?kind=lesson",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "[]"
+}

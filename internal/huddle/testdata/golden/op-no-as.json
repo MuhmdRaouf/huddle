@@ -1,0 +1,12 @@
+{
+  "seq": 38,
+  "kind": "api",
+  "name": "op-no-as",
+  "method": "POST",
+  "path": "/api/c/golden/op/status",
+  "auth": "root",
+  "sent": "{}",
+  "status": 400,
+  "contentType": "application/json",
+  "body": "{\"error\":\"say who you are: ?as=<session> or header x-huddle-as\"}"
+}

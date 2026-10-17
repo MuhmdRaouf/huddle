@@ -1,0 +1,390 @@
+{
+  "now": 1800000000000,
+  "presets": [
+    {
+      "key": "5m",
+      "label": "Last 5 minutes",
+      "ms": 300000,
+      "resolve": {
+        "from": 1799999700000,
+        "to": 1800000000000
+      },
+      "resolveOldest": {
+        "from": 1799999700000,
+        "to": 1800000000000
+      },
+      "rangeLabel": "Last 5 minutes",
+      "hash": "range=5m"
+    },
+    {
+      "key": "15m",
+      "label": "Last 15 minutes",
+      "ms": 900000,
+      "resolve": {
+        "from": 1799999100000,
+        "to": 1800000000000
+      },
+      "resolveOldest": {
+        "from": 1799999100000,
+        "to": 1800000000000
+      },
+      "rangeLabel": "Last 15 minutes",
+      "hash": "range=15m"
+    },
+    {
+      "key": "1h",
+      "label": "Last 1 hour",
+      "ms": 3600000,
+      "resolve": {
+        "from": 1799996400000,
+        "to": 1800000000000
+      },
+      "resolveOldest": {
+        "from": 1799996400000,
+        "to": 1800000000000
+      },
+      "rangeLabel": "Last 1 hour",
+      "hash": "range=1h"
+    },
+    {
+      "key": "6h",
+      "label": "Last 6 hours",
+      "ms": 21600000,
+      "resolve": {
+        "from": 1799978400000,
+        "to": 1800000000000
+      },
+      "resolveOldest": {
+        "from": 1799978400000,
+        "to": 1800000000000
+      },
+      "rangeLabel": "Last 6 hours",
+      "hash": "range=6h"
+    },
+    {
+      "key": "24h",
+      "label": "Last 24 hours",
+      "ms": 86400000,
+      "resolve": {
+        "from": 1799913600000,
+        "to": 1800000000000
+      },
+      "resolveOldest": {
+        "from": 1799913600000,
+        "to": 1800000000000
+      },
+      "rangeLabel": "Last 24 hours",
+      "hash": "range=24h"
+    },
+    {
+      "key": "7d",
+      "label": "Last 7 days",
+      "ms": 604800000,
+      "resolve": {
+        "from": 1799395200000,
+        "to": 1800000000000
+      },
+      "resolveOldest": {
+        "from": 1799395200000,
+        "to": 1800000000000
+      },
+      "rangeLabel": "Last 7 days",
+      "hash": "range=7d"
+    },
+    {
+      "key": "30d",
+      "label": "Last 30 days",
+      "ms": 2592000000,
+      "resolve": {
+        "from": 1797408000000,
+        "to": 1800000000000
+      },
+      "resolveOldest": {
+        "from": 1797408000000,
+        "to": 1800000000000
+      },
+      "rangeLabel": "Last 30 days",
+      "hash": "range=30d"
+    },
+    {
+      "key": "all",
+      "label": "All time",
+      "ms": null,
+      "resolve": {
+        "from": 0,
+        "to": 1800000000000
+      },
+      "resolveOldest": {
+        "from": 555,
+        "to": 1800000000000
+      },
+      "rangeLabel": "All time",
+      "hash": "range=all"
+    }
+  ],
+  "unknownPreset": {
+    "resolve": {
+      "from": 42,
+      "to": 1800000000000
+    },
+    "rangeLabel": "All time"
+  },
+  "stamps": [
+    {
+      "local": [
+        2026,
+        9,
+        6,
+        14,
+        0
+      ],
+      "year": 2026,
+      "out": "6 Oct 14:00"
+    },
+    {
+      "local": [
+        2025,
+        2,
+        1,
+        9,
+        5
+      ],
+      "year": 2026,
+      "out": "1 Mar 2025 09:05"
+    }
+  ],
+  "custom": [
+    {
+      "now": [
+        2026,
+        9,
+        6,
+        18,
+        30
+      ],
+      "from": [
+        2026,
+        9,
+        6,
+        14,
+        0
+      ],
+      "to": [
+        2026,
+        9,
+        6,
+        18,
+        30
+      ],
+      "label": "6 Oct 14:00 – 6 Oct 18:30"
+    },
+    {
+      "now": [
+        2026,
+        9,
+        6,
+        18,
+        30
+      ],
+      "from": [
+        2025,
+        2,
+        1,
+        9,
+        5
+      ],
+      "to": [
+        2026,
+        9,
+        6,
+        18,
+        30
+      ],
+      "label": "1 Mar 2025 09:05 – 6 Oct 18:30"
+    },
+    {
+      "now": [
+        2026,
+        9,
+        6,
+        18,
+        30
+      ],
+      "from": [
+        2026,
+        9,
+        6,
+        14,
+        0
+      ],
+      "to": null,
+      "label": "6 Oct 14:00 – now"
+    }
+  ],
+  "parse": [
+    {
+      "hash": "range=1h",
+      "range": {
+        "preset": "1h",
+        "from": 0,
+        "to": null
+      }
+    },
+    {
+      "hash": "range=30d",
+      "range": {
+        "preset": "30d",
+        "from": 0,
+        "to": null
+      }
+    },
+    {
+      "hash": "range=all",
+      "range": {
+        "preset": "all",
+        "from": 0,
+        "to": null
+      }
+    },
+    {
+      "hash": "from=100&to=200",
+      "range": {
+        "preset": null,
+        "from": 100,
+        "to": 200
+      }
+    },
+    {
+      "hash": "from=100",
+      "range": {
+        "preset": null,
+        "from": 100,
+        "to": null
+      }
+    },
+    {
+      "hash": "range=yesterday",
+      "range": {
+        "preset": "1h",
+        "from": 0,
+        "to": null
+      }
+    },
+    {
+      "hash": "from=abc",
+      "range": {
+        "preset": "1h",
+        "from": 0,
+        "to": null
+      }
+    },
+    {
+      "hash": "from=100&to=later",
+      "range": {
+        "preset": null,
+        "from": 100,
+        "to": null
+      }
+    },
+    {
+      "hash": "range=24h&from=100",
+      "range": {
+        "preset": "24h",
+        "from": 0,
+        "to": null
+      }
+    }
+  ],
+  "roundTrips": [
+    "range=5m",
+    "range=all",
+    "from=100&to=200",
+    "from=100"
+  ],
+  "buckets": [
+    {
+      "from": 0,
+      "to": 300000,
+      "target": 60,
+      "bucketMs": 5000,
+      "buckets": 60
+    },
+    {
+      "from": 0,
+      "to": 3600000,
+      "target": 60,
+      "bucketMs": 60000,
+      "buckets": 60
+    },
+    {
+      "from": 0,
+      "to": 21600000,
+      "target": 60,
+      "bucketMs": 900000,
+      "buckets": 24
+    },
+    {
+      "from": 0,
+      "to": 86400000,
+      "target": 60,
+      "bucketMs": 1800000,
+      "buckets": 48
+    },
+    {
+      "from": 0,
+      "to": 604800000,
+      "target": 60,
+      "bucketMs": 10800000,
+      "buckets": 56
+    },
+    {
+      "from": 0,
+      "to": 2592000000,
+      "target": 60,
+      "bucketMs": 43200000,
+      "buckets": 60
+    },
+    {
+      "from": 0,
+      "to": 300000,
+      "target": 5,
+      "bucketMs": 60000,
+      "buckets": 5
+    },
+    {
+      "from": 0,
+      "to": 300000,
+      "target": 1000,
+      "bucketMs": 1000,
+      "buckets": 240
+    },
+    {
+      "from": 0,
+      "to": 61000,
+      "target": 60,
+      "bucketMs": 5000,
+      "buckets": 13
+    },
+    {
+      "from": 0,
+      "to": 500,
+      "target": 60,
+      "bucketMs": 1000,
+      "buckets": 1
+    },
+    {
+      "from": 0,
+      "to": 34560000000,
+      "target": 60,
+      "bucketMs": 86400000,
+      "buckets": 240
+    },
+    {
+      "from": 3600000,
+      "to": 3960000,
+      "target": 60,
+      "bucketMs": 15000,
+      "buckets": 24
+    }
+  ]
+}

@@ -13,6 +13,8 @@ repos:
     hooks:
       - id: markdownlint
         args: ['--config', '.markdownlint.yaml']
+        # Fixtures are byte-exact inputs, and connect.md is a template full of <placeholders>.
+        exclude: (^|/)testdata/|^internal/huddle/server/connect\.md$
 
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.38.0
@@ -30,13 +32,13 @@ repos:
     hooks:
       # Generated outputs (launchers, built pages, golden fixtures) are compared byte for byte by their own checks.
       - id: trailing-whitespace
-        exclude: (^|/)(dist|testdata)/
+        exclude: (^|/)(dist|testdata)/|^internal/adapters/spool/spool/
       - id: end-of-file-fixer
-        exclude: (^|/)(dist|testdata)/
+        exclude: (^|/)(dist|testdata)/|^internal/adapters/spool/spool/
       - id: check-merge-conflict
       - id: check-added-large-files
         args: ['--maxkb=500']
-        exclude: (^|/)dist/
+        exclude: (^|/)(dist|testdata)/
       - id: check-yaml
       - id: check-json
         exclude: (^|/)testdata/

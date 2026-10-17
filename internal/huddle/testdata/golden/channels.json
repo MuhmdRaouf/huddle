@@ -1,0 +1,11 @@
+{
+  "seq": 2,
+  "kind": "api",
+  "name": "channels",
+  "method": "GET",
+  "path": "/api/channels",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "[{\"name\":\"golden\",\"title\":\"The golden channel\",\"description\":\"One channel holding every kind of thing, so the recorded answers are full.\",\"profile\":null,\"turn\":\"scout\",\"sessions\":[{\"name\":\"lead\",\"state\":\"working\",\"stale\":false,\"control\":\"run\"},{\"name\":\"lead.research\",\"state\":\"working\",\"stale\":false,\"control\":\"pause\"},{\"name\":\"scout\",\"state\":\"waiting\",\"stale\":false,\"control\":\"run\"}],\"stats\":{\"events\":22,\"tasks\":5,\"done\":1,\"sessions\":3,\"knowledge\":3,\"open_asks\":1,\"last\":22}}]"
+}

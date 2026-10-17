@@ -1,0 +1,19 @@
+{
+  "seq": 26,
+  "route": "/api/history/context/req_a2",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"requestId\":\"req_a2\",\"nodeId\":\"sess-a/main\",\"model\":\"glm-5.3\",\"totals\":{\"messages\":3,\"approxTokens\":87,\"usage\":{\"input\":210,\"output\":48,\"cacheRead\":1200,\"cacheWrite\":80},\"cacheTokens\":1280},\"messages\":[{\"role\":\"user\",\"kind\":\"text\",\"requestId\":\"route:sess-a:main:glm-5.3:1785747626000:200\",\"ts\":1785747626000,\"bytes\":45,\"preview\":\"fix the flaky test\",\"blocks\":[{\"type\":\"text\",\"text\":\"fix the flaky test\"}]},{\"role\":\"assistant\",\"kind\":\"thinking\",\"requestId\":\"route:sess-a:main:glm-5.3:1785747626000:200\",\"ts\":1785747626000,\"bytes\":224,\"preview\":\"On it — running the suite.\",\"blocks\":[{\"type\":\"thinking\",\"thinking\":\"The suite flakes on a 50 ms timing wait.\"},{\"type\":\"text\",\"text\":\"On it — running the suite.\"},{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"npm test\",\"description\":\"Run the suite\"}}]},{\"role\":\"user\",\"kind\":\"tool_result\",\"requestId\":\"req_a2\",\"ts\":1785747652000,\"bytes\":77,\"preview\":\"3 tests, 0 failing\",\"blocks\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_a1\",\"text\":\"3 tests, 0 failing\"}]}],\"next\":null,\"note\":\"System prompt and tool definitions are not in the transcript.\"}\n"
+    },
+    {
+      "query": "?limit=1",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"requestId\":\"req_a2\",\"nodeId\":\"sess-a/main\",\"model\":\"glm-5.3\",\"totals\":{\"messages\":3,\"approxTokens\":87,\"usage\":{\"input\":210,\"output\":48,\"cacheRead\":1200,\"cacheWrite\":80},\"cacheTokens\":1280},\"messages\":[{\"role\":\"user\",\"kind\":\"tool_result\",\"requestId\":\"req_a2\",\"ts\":1785747652000,\"bytes\":77,\"preview\":\"3 tests, 0 failing\",\"blocks\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_a1\",\"text\":\"3 tests, 0 failing\"}]}],\"next\":\"1785747652000:req_a2:0\",\"note\":\"System prompt and tool definitions are not in the transcript.\"}\n"
+    }
+  ]
+}

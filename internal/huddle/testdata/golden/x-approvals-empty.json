@@ -1,0 +1,11 @@
+{
+  "seq": 33,
+  "kind": "api",
+  "name": "x-approvals-empty",
+  "method": "GET",
+  "path": "/api/c/golden/x/approvals",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"approvals\":[]}"
+}

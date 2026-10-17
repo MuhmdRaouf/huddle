@@ -1,0 +1,192 @@
+package server
+
+import (
+	"regexp"
+	"strings"
+	"testing"
+)
+
+// The PWA's own routes: the manifest answers with its type, the service worker with the root
+// scope it registers for and no caching, the icons as PNGs — and nothing else under /icons/.
+func TestPWARoutes(t *testing.T) {
+	srv := startServer(t, nil)
+
+	t.Run("(a) /manifest.webmanifest answers application/manifest+json", func(t *testing.T) {
+		code, header, body := srv.get(t, "/manifest.webmanifest", nil)
+		if code != 200 || header.Get("Content-Type") != "application/manifest+json" {
+			t.Fatalf("/manifest.webmanifest = %d %q", code, header.Get("Content-Type"))
+		}
+		m := bodyMap(t, body)
+		if m["name"] != "Huddle" || m["display"] != "standalone" || m["start_url"] != "/#/now" {
+			t.Fatalf("the manifest holds %v / %v / %v", m["name"], m["display"], m["start_url"])
+		}
+	})
+
+	t.Run("(b) /sw.js is a worker script allowed the root scope, uncached", func(t *testing.T) {
+		code, header, body := srv.get(t, "/sw.js", nil)
+		if code != 200 || !strings.Contains(header.Get("Content-Type"), "text/javascript") {
+			t.Fatalf("/sw.js = %d %q", code, header.Get("Content-Type"))
+		}
+		if header.Get("Service-Worker-Allowed") != "/" {
+			t.Fatalf("Service-Worker-Allowed = %q, want /", header.Get("Service-Worker-Allowed"))
+		}
+		if header.Get("Cache-Control") != "no-cache" {
+			t.Fatalf("Cache-Control = %q, want no-cache", header.Get("Cache-Control"))
+		}
+		if !strings.Contains(body, `addEventListener("fetch"`) {
+			t.Fatal("the worker catches no fetch")
+		}
+	})
+
+	t.Run("(c) the icons answer image/png with PNG bytes; anything else under /icons/ is a 404", func(t *testing.T) {
+		for _, name := range []string{"icon-192.png", "icon-512.png", "icon-maskable-512.png"} {
+			code, header, body := srv.get(t, "/icons/"+name, nil)
+			if code != 200 || !strings.Contains(header.Get("Content-Type"), "image/png") {
+				t.Fatalf("/icons/%s = %d %q", name, code, header.Get("Content-Type"))
+			}
+			if !strings.HasPrefix(body, "\x89PNG") {
+				t.Fatalf("/icons/%s is not a PNG", name)
+			}
+		}
+		for _, path := range []string{"/icons/nope.png", "/icons/icon-192.gif", "/icons/../sw.js"} {
+			if code, _, _ := srv.get(t, path, nil); code != 404 {
+				t.Fatalf("%s = %d, want 404", path, code)
+			}
+		}
+	})
+}
+
+// The static shell the server hands out: every asset the page loads is served, nothing points
+// off-box, the compiled CSS carries the shared mocha/latte themes through daisyUI, and the
+// bundled fonts answer with their type.
+func TestUI(t *testing.T) {
+	srv := startServer(t, nil)
+
+	t.Run("(a) / is HTML that loads /static/app.css and /static/app.js", func(t *testing.T) {
+		code, header, body := srv.get(t, "/", nil)
+		if code != 200 {
+			t.Fatalf("/ = %d, want 200", code)
+		}
+		if !strings.Contains(header.Get("Content-Type"), "text/html") {
+			t.Fatalf("content-type = %q", header.Get("Content-Type"))
+		}
+		for _, want := range []string{"/static/app.css", "/static/app.js", `<div id="app"></div>`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("/ does not contain %q", want)
+			}
+		}
+	})
+
+	t.Run("(b) the stylesheet and the app module answer 200 with the right type, on both path shapes", func(t *testing.T) {
+		cssCode, cssHeader, _ := srv.get(t, "/static/app.css", nil)
+		if cssCode != 200 || !strings.Contains(cssHeader.Get("Content-Type"), "text/css") {
+			t.Fatalf("/static/app.css = %d %q", cssCode, cssHeader.Get("Content-Type"))
+		}
+		jsCode, jsHeader, _ := srv.get(t, "/static/app.js", nil)
+		if jsCode != 200 || !strings.Contains(jsHeader.Get("Content-Type"), "text/javascript") {
+			t.Fatalf("/static/app.js = %d %q", jsCode, jsHeader.Get("Content-Type"))
+		}
+		for _, p := range []string{"/app.js", "/app.css"} {
+			code, header, _ := srv.get(t, p, nil)
+			want := "text/javascript"
+			if strings.HasSuffix(p, ".css") {
+				want = "text/css"
+			}
+			if code != 200 || !strings.Contains(header.Get("Content-Type"), want) {
+				t.Fatalf("%s = %d %q, want 200 %s", p, code, header.Get("Content-Type"), want)
+			}
+		}
+	})
+
+	t.Run("(c) the served HTML and JS point nowhere off-box: no http(s) URL beyond the w3.org namespace", func(t *testing.T) {
+		_, _, html := srv.get(t, "/", nil)
+		_, _, js := srv.get(t, "/static/app.js", nil)
+		urlRe := regexp.MustCompile(`https?://[^\s"'` + "`" + `)<]+`)
+		for _, u := range urlRe.FindAllString(html+js, -1) {
+			if !strings.HasPrefix(u, "http://www.w3.org/") {
+				t.Fatalf("an off-box URL in the shell: %s", u)
+			}
+		}
+	})
+
+	t.Run("(d) the compiled CSS is Catppuccin through the shared theme, with daisyUI's components", func(t *testing.T) {
+		_, _, body := srv.get(t, "/static/app.css", nil)
+		css := strings.ToLower(body)
+		for _, want := range []string{"#1e1e2e", "#cba6f7", "#89b4fa", "#11111b", "#eff1f5", "#8839ef", "#1e66f5", "#4c4f69"} {
+			if !strings.Contains(css, want) {
+				t.Fatalf("the CSS misses the theme colour %s", want)
+			}
+		}
+		for _, gone := range []string{"#0b0f14", "#22d3ee", "#34d399"} {
+			if strings.Contains(css, gone) {
+				t.Fatalf("the CSS carries the foreign colour %s", gone)
+			}
+		}
+		if !strings.Contains(css, "prefers-color-scheme:dark") || !strings.Contains(css, "[data-theme=latte]") {
+			t.Fatal("the CSS misses the dark default or the latte switch")
+		}
+		for _, part := range []string{".btn{", ".badge{", ".menu{", ".card{", ".join{", ".stat{", ".skeleton{", ".kbd{"} {
+			if !strings.Contains(css, part) {
+				t.Fatalf("the CSS misses daisyUI's %s", part)
+			}
+		}
+		if regexp.MustCompile(`url\((["']?)https?://`).MatchString(css) {
+			t.Fatal("the CSS loads a font from the network")
+		}
+		if !strings.Contains(css, "url(/fonts/") {
+			t.Fatal("the CSS does not point at the bundled fonts")
+		}
+	})
+
+	t.Run("(e) every font the stylesheet names answers 200 as font/woff2; anything else is a 404", func(t *testing.T) {
+		_, _, css := srv.get(t, "/static/app.css", nil)
+		names := map[string]bool{}
+		for _, m := range regexp.MustCompile(`url\((/fonts/[^)]+)\)`).FindAllStringSubmatch(css, -1) {
+			names[strings.TrimPrefix(m[1], "/fonts/")] = true
+		}
+		if len(names) == 0 {
+			t.Fatal("the stylesheet names no fonts")
+		}
+		for name := range names {
+			if !strings.HasSuffix(name, ".woff2") {
+				continue // the .woff fallbacks ship only as woff2, like radar's
+			}
+			code, header, body := srv.get(t, "/fonts/"+name, nil)
+			if code != 200 || !strings.Contains(header.Get("Content-Type"), "font/woff2") {
+				t.Fatalf("%s = %d %q, want 200 font/woff2", name, code, header.Get("Content-Type"))
+			}
+			if len(body) <= 1000 {
+				t.Fatalf("%s carries %d bytes", name, len(body))
+			}
+		}
+		for _, path := range []string{
+			"/fonts/ibm-plex-mono-latin-400-normal.woff",
+			"/fonts/nope.woff2",
+			"/fonts/..%2Findex.html.woff2",
+			"/fonts/../../etc/passwd.woff2",
+		} {
+			if code, _, _ := srv.get(t, path, nil); code != 404 {
+				t.Fatalf("%s = %d, want 404", path, code)
+			}
+		}
+	})
+}
+
+// The signed-out page loads its look from /signed-out.css: the CSP admits no inline style, so a
+// page that carried one would render bare.
+func TestTheSignedOutPageStylesComeFromItsOwnStylesheet(t *testing.T) {
+	if strings.Contains(signedOutPage("1.2.3"), "<style") {
+		t.Fatal("the signed-out page carries an inline style the CSP blocks")
+	}
+	if !strings.Contains(signedOutPage("1.2.3"), `<link rel="stylesheet" href="/signed-out.css">`) {
+		t.Fatal("the signed-out page links no stylesheet")
+	}
+	srv := startServer(t, nil)
+	code, header, body := srv.get(t, "/signed-out.css", nil)
+	if code != 200 || header.Get("Content-Type") != "text/css" {
+		t.Fatalf("/signed-out.css = %d %q", code, header.Get("Content-Type"))
+	}
+	if header.Get("Content-Security-Policy") != ContentSecurityPolicy || !strings.Contains(body, "--bg:") {
+		t.Fatalf("/signed-out.css answered %q under %q", body, header.Get("Content-Security-Policy"))
+	}
+}

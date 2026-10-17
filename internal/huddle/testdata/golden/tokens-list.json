@@ -1,0 +1,11 @@
+{
+  "seq": 88,
+  "kind": "api",
+  "name": "tokens-list",
+  "method": "GET",
+  "path": "/api/tokens",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "[{\"id\":\"<volatile>\",\"created\":\"<volatile>\",\"expires\":\"<volatile>\",\"single_use\":false,\"uses\":0,\"can_invite\":false,\"channel\":null,\"description\":null,\"by\":\"owner\"}]"
+}

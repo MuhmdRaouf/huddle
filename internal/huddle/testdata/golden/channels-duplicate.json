@@ -1,0 +1,12 @@
+{
+  "seq": 92,
+  "kind": "api",
+  "name": "channels-duplicate",
+  "method": "POST",
+  "path": "/api/channels",
+  "auth": "root",
+  "sent": "{\"name\":\"golden\"}",
+  "status": 409,
+  "contentType": "application/json",
+  "body": "{\"error\":\"channel golden exists\"}"
+}

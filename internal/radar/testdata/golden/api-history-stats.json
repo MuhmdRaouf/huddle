@@ -1,0 +1,13 @@
+{
+  "seq": 32,
+  "route": "/api/history/stats",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"bytes\":86016,\"nodes\":3,\"requests\":5,\"roots\":1,\"retentionDays\":0}\n"
+    }
+  ]
+}

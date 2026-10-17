@@ -1,0 +1,9 @@
+{
+  "id": "goldjob",
+  "state": "accepted",
+  "brief": { "title": "Add the 0.0.2 changelog", "model": "glm-5.3" },
+  "attempts": [{ "n": 1, "sessionId": null }],
+  "updatedAt": "2026-08-03T10:05:00.000Z",
+  "workspace": { "repoRoot": "/w/app", "branch": "job/changelog" },
+  "origin": {}
+}

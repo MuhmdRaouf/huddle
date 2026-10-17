@@ -1,0 +1,14 @@
+{
+  "seq": 34,
+  "route": "/api/settings",
+  "method": "PUT",
+  "variants": [
+    {
+      "query": "",
+      "sent": "{\"notifications\":false}",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"settings\":{\"notifications\":false,\"historyRetentionDays\":0}}\n"
+    }
+  ]
+}

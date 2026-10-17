@@ -1,0 +1,25 @@
+{
+  "seq": 8,
+  "route": "/api/models",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"models\":[{\"model\":\"glm-5.3\",\"provider\":\"Z.ai\",\"requests\":3,\"errors\":0,\"tokens\":{\"input\":430,\"output\":112,\"cacheRead\":3000,\"cacheWrite\":160},\"latencyP50\":2400,\"costUsd\":0.0015268},{\"model\":\"claude-sonnet-5-5\",\"provider\":\"Anthropic\",\"requests\":1,\"errors\":0,\"tokens\":{\"input\":50,\"output\":20,\"cacheRead\":500,\"cacheWrite\":10},\"latencyP50\":900,\"costUsd\":0.00037500000000000006},{\"model\":\"glm-5.3-flash\",\"provider\":\"Z.ai\",\"requests\":1,\"errors\":0,\"tokens\":{\"input\":80,\"output\":22,\"cacheRead\":300,\"cacheWrite\":12},\"latencyP50\":9000,\"costUsd\":0.000032}],\"upstreams\":[{\"upstream\":\"https://api.z.ai/api/anthropic\",\"host\":\"api.z.ai\",\"requests\":3,\"tokens\":{\"input\":410,\"output\":134,\"cacheRead\":2500,\"cacheWrite\":156},\"costUsd\":0.0015588},{\"upstream\":\"https://api.anthropic.com\",\"host\":\"api.anthropic.com\",\"requests\":2,\"tokens\":{\"input\":150,\"output\":20,\"cacheRead\":1300,\"cacheWrite\":26},\"costUsd\":0.00037500000000000006}],\"tools\":[{\"name\":\"Bash\",\"count\":1,\"failures\":0}]}\n"
+    },
+    {
+      "query": "?from=1785744000000&to=1785754800000",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"models\":[{\"model\":\"glm-5.3\",\"provider\":\"Z.ai\",\"requests\":3,\"errors\":0,\"tokens\":{\"input\":430,\"output\":112,\"cacheRead\":3000,\"cacheWrite\":160},\"latencyP50\":2400,\"costUsd\":0.0015268},{\"model\":\"claude-sonnet-5-5\",\"provider\":\"Anthropic\",\"requests\":1,\"errors\":0,\"tokens\":{\"input\":50,\"output\":20,\"cacheRead\":500,\"cacheWrite\":10},\"latencyP50\":900,\"costUsd\":0.00037500000000000006},{\"model\":\"glm-5.3-flash\",\"provider\":\"Z.ai\",\"requests\":1,\"errors\":0,\"tokens\":{\"input\":80,\"output\":22,\"cacheRead\":300,\"cacheWrite\":12},\"latencyP50\":9000,\"costUsd\":0.000032}],\"upstreams\":[{\"upstream\":\"https://api.z.ai/api/anthropic\",\"host\":\"api.z.ai\",\"requests\":3,\"tokens\":{\"input\":410,\"output\":134,\"cacheRead\":2500,\"cacheWrite\":156},\"costUsd\":0.0015588},{\"upstream\":\"https://api.anthropic.com\",\"host\":\"api.anthropic.com\",\"requests\":2,\"tokens\":{\"input\":150,\"output\":20,\"cacheRead\":1300,\"cacheWrite\":26},\"costUsd\":0.00037500000000000006}],\"tools\":[{\"name\":\"Bash\",\"count\":1,\"failures\":0}]}\n"
+    },
+    {
+      "query": "?session=sess-a",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"models\":[{\"model\":\"glm-5.3\",\"provider\":\"Z.ai\",\"requests\":3,\"errors\":0,\"tokens\":{\"input\":430,\"output\":112,\"cacheRead\":3000,\"cacheWrite\":160},\"latencyP50\":2400,\"costUsd\":0.0015268},{\"model\":\"claude-sonnet-5-5\",\"provider\":\"Anthropic\",\"requests\":1,\"errors\":0,\"tokens\":{\"input\":50,\"output\":20,\"cacheRead\":500,\"cacheWrite\":10},\"latencyP50\":900,\"costUsd\":0.00037500000000000006},{\"model\":\"glm-5.3-flash\",\"provider\":\"Z.ai\",\"requests\":1,\"errors\":0,\"tokens\":{\"input\":80,\"output\":22,\"cacheRead\":300,\"cacheWrite\":12},\"latencyP50\":9000,\"costUsd\":0.000032}],\"upstreams\":[{\"upstream\":\"https://api.z.ai/api/anthropic\",\"host\":\"api.z.ai\",\"requests\":3,\"tokens\":{\"input\":410,\"output\":134,\"cacheRead\":2500,\"cacheWrite\":156},\"costUsd\":0.0015588},{\"upstream\":\"https://api.anthropic.com\",\"host\":\"api.anthropic.com\",\"requests\":2,\"tokens\":{\"input\":150,\"output\":20,\"cacheRead\":1300,\"cacheWrite\":26},\"costUsd\":0.00037500000000000006}],\"tools\":[{\"name\":\"Bash\",\"count\":1,\"failures\":0}]}\n"
+    }
+  ]
+}

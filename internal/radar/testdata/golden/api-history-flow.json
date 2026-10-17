@@ -1,0 +1,25 @@
+{
+  "seq": 31,
+  "route": "/api/history/flow",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "?from=1785744000000&to=1785754800000&buckets=8",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"from\":1785744000000,\"to\":1785754800000,\"bucketMs\":1800000,\"requests\":[0,0,5,0,0,0],\"kinds\":{\"input\":[0,0,560,0,0,0],\"output\":[0,0,154,0,0,0],\"cacheRead\":[0,0,3800,0,0,0],\"cacheWrite\":[0,0,182,0,0,0]}}\n"
+    },
+    {
+      "query": "?to=1785754800000",
+      "status": 400,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"error\":\"from: epoch ms the window starts at\"}\n"
+    },
+    {
+      "query": "?from=1785754800000&to=1785744000000",
+      "status": 400,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"error\":\"from must be before to\"}\n"
+    }
+  ]
+}

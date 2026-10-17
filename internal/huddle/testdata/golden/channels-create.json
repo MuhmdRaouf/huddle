@@ -1,0 +1,12 @@
+{
+  "seq": 91,
+  "kind": "api",
+  "name": "channels-create",
+  "method": "POST",
+  "path": "/api/channels",
+  "auth": "root",
+  "sent": "{\"name\":\"second\",\"title\":\"A second channel\"}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"name\":\"second\",\"config\":{\"title\":\"A second channel\",\"description\":\"\",\"start\":null,\"handover\":{},\"profile\":null,\"repo\":null,\"created_at\":\"<volatile>\",\"members\":[],\"orchestrator\":null}}"
+}

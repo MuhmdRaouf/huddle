@@ -1,0 +1,11 @@
+{
+  "seq": 11,
+  "kind": "api",
+  "name": "search-empty",
+  "method": "GET",
+  "path": "/api/c/golden/search?q=",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "[]"
+}

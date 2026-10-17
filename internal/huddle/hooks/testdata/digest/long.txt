@@ -1,0 +1,10 @@
+Goal: Fix the checkout flow before Friday's release and make sure the totals round the way the ledger expects them to so the nightly reconciliation job stops flagging phantom cents on every batch that runs 
+Decisions:
+- Decision 1: round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-ha
+- Decision 2: round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-ha
+- Decision 3: round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-ha
+- Decision 4: round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-ha
+- Decision 5: round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-half-even on the cents column round-ha
+Files: src/file01.go, src/file02.go, src/file03.go, src/file04.go, src/file05.go, src/file06.go, src/file07.go, src/file08.go, src/file09.go, src/file10.go
+Open:
+- Question 1: does the ledger accept the rounding does the ledger accept the rounding does the ledger …

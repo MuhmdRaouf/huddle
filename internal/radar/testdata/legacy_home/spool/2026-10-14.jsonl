@@ -1,0 +1,2 @@
+{"ts":"2026-10-14T10:04:58.000Z","event":"SessionStart","session_id":"demo-sess-2","cwd":"/tmp/demo/app"}
+{"ts":"2026-10-14T10:04:59.000Z","event":"UserPromptSubmit","session_id":"demo-sess-2","prompt":"check the lock file"}

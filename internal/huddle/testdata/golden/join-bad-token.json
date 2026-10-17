@@ -1,0 +1,12 @@
+{
+  "seq": 79,
+  "kind": "api",
+  "name": "join-bad-token",
+  "method": "POST",
+  "path": "/api/join",
+  "auth": "none",
+  "sent": "{\"token\":\"nope.nope\",\"name\":\"newbie\"}",
+  "status": 401,
+  "contentType": "application/json",
+  "body": "{\"error\":\"invalid or expired join token: ask the owner for a new join command\"}"
+}

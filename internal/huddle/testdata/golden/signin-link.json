@@ -1,0 +1,13 @@
+{
+  "seq": 85,
+  "kind": "api",
+  "name": "signin-link",
+  "method": "GET",
+  "path": "/?code=<code>",
+  "auth": "none",
+  "status": 303,
+  "contentType": "",
+  "location": "/",
+  "setCookie": "<volatile>; Path=/; HttpOnly; SameSite=Strict",
+  "body": ""
+}

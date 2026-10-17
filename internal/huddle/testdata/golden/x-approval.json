@@ -1,0 +1,12 @@
+{
+  "seq": 94,
+  "kind": "api",
+  "name": "x-approval",
+  "method": "POST",
+  "path": "/api/c/golden/x/approval?as=scout",
+  "auth": "root",
+  "sent": "{\"command\":\"git push --force origin main\"}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"ask\":true,\"rules\":[\"force_push\",\"git_push\"],\"labels\":[\"Force push\",\"Git push\"],\"event\":23,\"reason\":\"Huddle (channel golden): the owner asked to approve force push and git push — allow only if this is intended.\"}"
+}

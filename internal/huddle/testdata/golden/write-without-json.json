@@ -1,0 +1,13 @@
+{
+  "seq": 44,
+  "kind": "api",
+  "name": "write-without-json",
+  "method": "POST",
+  "path": "/api/settings",
+  "auth": "root",
+  "sent": "notify=true",
+  "sendContentType": "text/plain",
+  "status": 403,
+  "contentType": "text/plain;charset=utf-8",
+  "body": "writes need content-type: application/json"
+}

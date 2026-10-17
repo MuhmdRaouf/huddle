@@ -1,0 +1,12 @@
+{
+  "seq": 98,
+  "kind": "api",
+  "name": "op-unknown",
+  "method": "POST",
+  "path": "/api/c/golden/op/nope?as=scout",
+  "auth": "root",
+  "sent": "{}",
+  "status": 404,
+  "contentType": "application/json",
+  "body": "{\"error\":\"no operation nope\"}"
+}

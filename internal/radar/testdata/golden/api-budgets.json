@@ -1,0 +1,13 @@
+{
+  "seq": 12,
+  "route": "/api/budgets",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"budgets\":[{\"id\":\"day-cap\",\"scope\":\"total\",\"period\":\"day\",\"limitUsd\":5,\"action\":\"warn\"},{\"id\":\"zai-month\",\"scope\":\"provider:zai\",\"period\":\"month\",\"limitUsd\":25,\"action\":\"stop\"}],\"providers\":[\"zai\",\"kimi\",\"deepseek\",\"minimax\",\"qwen\"]}\n"
+    }
+  ]
+}

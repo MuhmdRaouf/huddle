@@ -1,0 +1,12 @@
+{
+  "seq": 72,
+  "kind": "mcp",
+  "name": "mcp-no-as",
+  "method": "POST",
+  "path": "/mcp/golden",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"ping\"}",
+  "status": 400,
+  "contentType": "application/json",
+  "body": "{\"error\":\"use /mcp/<channel>?as=<session>\"}"
+}

@@ -1,0 +1,11 @@
+{
+  "seq": 21,
+  "kind": "api",
+  "name": "knowledge-md-verified",
+  "method": "GET",
+  "path": "/api/c/golden/knowledge.md?verified=1",
+  "auth": "root",
+  "status": 200,
+  "contentType": "text/markdown; charset=utf-8",
+  "body": "## Team knowledge (Huddle channel \"The golden channel\")\n\n<!-- exported from Huddle <volatile>, verified entries only: 1 entry -->\n\n### Facts\n\n- **The golden server binds port zero**: PORT=0 makes the server bind any free port and print the one it got, so a recording never races a fixed one. (see `scripts/record-goldens.ts`; every channel)\n"
+}

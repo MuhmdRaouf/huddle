@@ -1,0 +1,12 @@
+{
+  "seq": 66,
+  "kind": "mcp",
+  "name": "mcp-call-gate",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":25,\"method\":\"tools/call\",\"params\":{\"name\":\"gate\",\"arguments\":{\"block\":false}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":25,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n \\\"control\\\": \\\"run\\\"\\n}\"}]}}"
+}

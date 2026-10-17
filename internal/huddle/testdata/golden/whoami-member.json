@@ -1,0 +1,11 @@
+{
+  "seq": 82,
+  "kind": "api",
+  "name": "whoami-member",
+  "method": "GET",
+  "path": "/api/whoami",
+  "auth": "member",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"name\":\"newbie\",\"root\":false,\"invite\":false}"
+}

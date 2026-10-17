@@ -1,0 +1,12 @@
+{
+  "seq": 73,
+  "kind": "mcp",
+  "name": "mcp-bad-token",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "bad",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"ping\"}",
+  "status": 401,
+  "contentType": "application/json",
+  "body": "{\"error\":\"not in this huddle: this session holds no credential for it. In a session that is in it, run /huddle:invite and paste the join line it shows into this session (/huddle:join …)\"}"
+}

@@ -1,0 +1,43 @@
+{
+  "seq": 5,
+  "route": "/api/requests",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"requests\":[{\"id\":\"route:sess-a:main:claude-sonnet-5-5:1785747700000:200\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"model\":\"claude-sonnet-5-5\",\"upstream\":\"https://api.anthropic.com\",\"ts\":1785747700000,\"latencyMs\":900,\"tokens\":{\"input\":50,\"output\":20,\"cacheRead\":500,\"cacheWrite\":10},\"stopReason\":null,\"provider\":\"Anthropic\",\"route\":\"anthropic\",\"via\":\"zai\"},{\"id\":\"msg_sub1\",\"sessionId\":\"sess-a\",\"agentId\":\"agent-sub1\",\"model\":\"glm-5.3-flash\",\"upstream\":\"https://api.z.ai\",\"ts\":1785747669000,\"latencyMs\":9000,\"tokens\":{\"input\":80,\"output\":22,\"cacheRead\":300,\"cacheWrite\":12},\"stopReason\":\"end_turn\",\"provider\":\"Z.ai\",\"what\":\"↳ prompt: Find where the timeout is configured.  → text\",\"via\":\"127.0.0.1:18787\"},{\"id\":\"req_a2\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"model\":\"glm-5.3\",\"upstream\":\"https://api.z.ai\",\"ts\":1785747652000,\"latencyMs\":12000,\"tokens\":{\"input\":210,\"output\":48,\"cacheRead\":1200,\"cacheWrite\":80},\"stopReason\":\"end_turn\",\"provider\":\"Z.ai\",\"what\":\"↳ 1 tool result  → text\",\"via\":\"127.0.0.1:18787\"},{\"id\":\"route:sess-a:main:glm-5.3:1785747626000:200\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"model\":\"glm-5.3\",\"upstream\":\"https://api.z.ai/api/anthropic\",\"ts\":1785747626000,\"latencyMs\":2400,\"tokens\":{\"input\":120,\"output\":64,\"cacheRead\":1000,\"cacheWrite\":64,\"thinking\":16},\"cacheWrite1h\":32,\"stopReason\":\"tool_use\",\"provider\":\"Z.ai\",\"what\":\"↳ prompt: fix the flaky test  → Bash npm test\",\"via\":\"zai\",\"route\":\"direct\",\"promptHash\":\"cap-golden-1\",\"headers\":{\"request-id\":\"req_zai_7f3a\",\"x-ratelimit-remaining\":\"99\",\"content-type\":\"application/json\"}},{\"id\":\"route:sess-a::glm-5.3:1785747624000:429\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"error\":\"rate limited by api.z.ai\",\"model\":\"glm-5.3\",\"upstream\":\"https://api.anthropic.com\",\"ts\":1785747624000,\"latencyMs\":310,\"tokens\":{\"input\":100,\"output\":0,\"cacheRead\":800,\"cacheWrite\":16},\"stopReason\":\"429\",\"provider\":\"Z.ai\",\"route\":\"direct\",\"via\":\"zai\"}]}\n"
+    },
+    {
+      "query": "?session=sess-a",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"requests\":[{\"id\":\"route:sess-a:main:claude-sonnet-5-5:1785747700000:200\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"model\":\"claude-sonnet-5-5\",\"upstream\":\"https://api.anthropic.com\",\"ts\":1785747700000,\"latencyMs\":900,\"tokens\":{\"input\":50,\"output\":20,\"cacheRead\":500,\"cacheWrite\":10},\"stopReason\":null,\"provider\":\"Anthropic\",\"route\":\"anthropic\",\"via\":\"zai\"},{\"id\":\"msg_sub1\",\"sessionId\":\"sess-a\",\"agentId\":\"agent-sub1\",\"model\":\"glm-5.3-flash\",\"upstream\":\"https://api.z.ai\",\"ts\":1785747669000,\"latencyMs\":9000,\"tokens\":{\"input\":80,\"output\":22,\"cacheRead\":300,\"cacheWrite\":12},\"stopReason\":\"end_turn\",\"provider\":\"Z.ai\",\"what\":\"↳ prompt: Find where the timeout is configured.  → text\",\"via\":\"127.0.0.1:18787\"},{\"id\":\"req_a2\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"model\":\"glm-5.3\",\"upstream\":\"https://api.z.ai\",\"ts\":1785747652000,\"latencyMs\":12000,\"tokens\":{\"input\":210,\"output\":48,\"cacheRead\":1200,\"cacheWrite\":80},\"stopReason\":\"end_turn\",\"provider\":\"Z.ai\",\"what\":\"↳ 1 tool result  → text\",\"via\":\"127.0.0.1:18787\"},{\"id\":\"route:sess-a:main:glm-5.3:1785747626000:200\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"model\":\"glm-5.3\",\"upstream\":\"https://api.z.ai/api/anthropic\",\"ts\":1785747626000,\"latencyMs\":2400,\"tokens\":{\"input\":120,\"output\":64,\"cacheRead\":1000,\"cacheWrite\":64,\"thinking\":16},\"cacheWrite1h\":32,\"stopReason\":\"tool_use\",\"provider\":\"Z.ai\",\"what\":\"↳ prompt: fix the flaky test  → Bash npm test\",\"via\":\"zai\",\"route\":\"direct\",\"promptHash\":\"cap-golden-1\",\"headers\":{\"request-id\":\"req_zai_7f3a\",\"x-ratelimit-remaining\":\"99\",\"content-type\":\"application/json\"}},{\"id\":\"route:sess-a::glm-5.3:1785747624000:429\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"error\":\"rate limited by api.z.ai\",\"model\":\"glm-5.3\",\"upstream\":\"https://api.anthropic.com\",\"ts\":1785747624000,\"latencyMs\":310,\"tokens\":{\"input\":100,\"output\":0,\"cacheRead\":800,\"cacheWrite\":16},\"stopReason\":\"429\",\"provider\":\"Z.ai\",\"route\":\"direct\",\"via\":\"zai\"}]}\n"
+    },
+    {
+      "query": "?agent=agent-sub1",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"requests\":[{\"id\":\"msg_sub1\",\"sessionId\":\"sess-a\",\"agentId\":\"agent-sub1\",\"model\":\"glm-5.3-flash\",\"upstream\":\"https://api.z.ai\",\"ts\":1785747669000,\"latencyMs\":9000,\"tokens\":{\"input\":80,\"output\":22,\"cacheRead\":300,\"cacheWrite\":12},\"stopReason\":\"end_turn\",\"provider\":\"Z.ai\",\"what\":\"↳ prompt: Find where the timeout is configured.  → text\",\"via\":\"127.0.0.1:18787\"}]}\n"
+    },
+    {
+      "query": "?model=glm-5.3",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"requests\":[{\"id\":\"req_a2\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"model\":\"glm-5.3\",\"upstream\":\"https://api.z.ai\",\"ts\":1785747652000,\"latencyMs\":12000,\"tokens\":{\"input\":210,\"output\":48,\"cacheRead\":1200,\"cacheWrite\":80},\"stopReason\":\"end_turn\",\"provider\":\"Z.ai\",\"what\":\"↳ 1 tool result  → text\",\"via\":\"127.0.0.1:18787\"},{\"id\":\"route:sess-a:main:glm-5.3:1785747626000:200\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"model\":\"glm-5.3\",\"upstream\":\"https://api.z.ai/api/anthropic\",\"ts\":1785747626000,\"latencyMs\":2400,\"tokens\":{\"input\":120,\"output\":64,\"cacheRead\":1000,\"cacheWrite\":64,\"thinking\":16},\"cacheWrite1h\":32,\"stopReason\":\"tool_use\",\"provider\":\"Z.ai\",\"what\":\"↳ prompt: fix the flaky test  → Bash npm test\",\"via\":\"zai\",\"route\":\"direct\",\"promptHash\":\"cap-golden-1\",\"headers\":{\"request-id\":\"req_zai_7f3a\",\"x-ratelimit-remaining\":\"99\",\"content-type\":\"application/json\"}},{\"id\":\"route:sess-a::glm-5.3:1785747624000:429\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"error\":\"rate limited by api.z.ai\",\"model\":\"glm-5.3\",\"upstream\":\"https://api.anthropic.com\",\"ts\":1785747624000,\"latencyMs\":310,\"tokens\":{\"input\":100,\"output\":0,\"cacheRead\":800,\"cacheWrite\":16},\"stopReason\":\"429\",\"provider\":\"Z.ai\",\"route\":\"direct\",\"via\":\"zai\"}]}\n"
+    },
+    {
+      "query": "?since=1785747640000",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"requests\":[{\"id\":\"route:sess-a:main:claude-sonnet-5-5:1785747700000:200\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"model\":\"claude-sonnet-5-5\",\"upstream\":\"https://api.anthropic.com\",\"ts\":1785747700000,\"latencyMs\":900,\"tokens\":{\"input\":50,\"output\":20,\"cacheRead\":500,\"cacheWrite\":10},\"stopReason\":null,\"provider\":\"Anthropic\",\"route\":\"anthropic\",\"via\":\"zai\"},{\"id\":\"msg_sub1\",\"sessionId\":\"sess-a\",\"agentId\":\"agent-sub1\",\"model\":\"glm-5.3-flash\",\"upstream\":\"https://api.z.ai\",\"ts\":1785747669000,\"latencyMs\":9000,\"tokens\":{\"input\":80,\"output\":22,\"cacheRead\":300,\"cacheWrite\":12},\"stopReason\":\"end_turn\",\"provider\":\"Z.ai\",\"what\":\"↳ prompt: Find where the timeout is configured.  → text\",\"via\":\"127.0.0.1:18787\"},{\"id\":\"req_a2\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"model\":\"glm-5.3\",\"upstream\":\"https://api.z.ai\",\"ts\":1785747652000,\"latencyMs\":12000,\"tokens\":{\"input\":210,\"output\":48,\"cacheRead\":1200,\"cacheWrite\":80},\"stopReason\":\"end_turn\",\"provider\":\"Z.ai\",\"what\":\"↳ 1 tool result  → text\",\"via\":\"127.0.0.1:18787\"}]}\n"
+    },
+    {
+      "query": "?limit=1",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"requests\":[{\"id\":\"route:sess-a:main:claude-sonnet-5-5:1785747700000:200\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"model\":\"claude-sonnet-5-5\",\"upstream\":\"https://api.anthropic.com\",\"ts\":1785747700000,\"latencyMs\":900,\"tokens\":{\"input\":50,\"output\":20,\"cacheRead\":500,\"cacheWrite\":10},\"stopReason\":null,\"provider\":\"Anthropic\",\"route\":\"anthropic\",\"via\":\"zai\"}]}\n"
+    }
+  ]
+}

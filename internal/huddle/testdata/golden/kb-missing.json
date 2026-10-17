@@ -1,0 +1,11 @@
+{
+  "seq": 19,
+  "kind": "api",
+  "name": "kb-missing",
+  "method": "GET",
+  "path": "/api/c/golden/kb/99999",
+  "auth": "root",
+  "status": 404,
+  "contentType": "application/json",
+  "body": "{\"error\":\"no knowledge entry 99999\"}"
+}

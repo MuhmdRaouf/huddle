@@ -1,0 +1,11 @@
+{
+  "seq": 20,
+  "kind": "api",
+  "name": "knowledge-md",
+  "method": "GET",
+  "path": "/api/c/golden/knowledge.md",
+  "auth": "root",
+  "status": 200,
+  "contentType": "text/markdown; charset=utf-8",
+  "body": "## Team knowledge (Huddle channel \"The golden channel\")\n\n<!-- exported from Huddle <volatile>: 2 entries -->\n\n### Facts\n\n- **Ports outlive pids**: A saved port is the address; the pid only says who held it once.\n- **The golden server binds port zero**: PORT=0 makes the server bind any free port and print the one it got, so a recording never races a fixed one. (see `scripts/record-goldens.ts`; every channel)\n"
+}

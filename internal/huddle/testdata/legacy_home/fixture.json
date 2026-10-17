@@ -1,0 +1,24 @@
+{
+  "note": "the recorded home's own facts: every plaintext here is a fake the recording minted",
+  "t0": 1792081822483,
+  "root": "hcred_0000000000000000000000000000000000000000000",
+  "invite": "mjow0t.0000000000000000",
+  "members": {
+    "atlas": "hcred_e3Olrcw-H8Vg13ZRvluYdXnqH3l0xS_ts5P2KLUOtdQ",
+    "beacon": "hcred_41UXixYPYXj8rkW9FPugAnSxVr1HU1TrDp7Vzwf1VC4",
+    "cyrus": "hcred_IcPZbsDAAzKsVg7FAPxBhb9T-vHRFOoeNQ_CSv9cDro",
+    "delta": "hcred_Ferp_7MQ8uxnFXr3e0vonY_KyKWhAEfZRBZWNb5G1Zs"
+  },
+  "cookie": {
+    "root": "hcred_esECyqpEZY5J-FCb3lRHi57QK9dxgiQq122IRetRwe8",
+    "member": {
+      "name": "atlas",
+      "cred": "hcred_a-whhCgAEcuAX5gntcJ5jZkXRySFeycsp_OnF-4ybYk"
+    }
+  },
+  "channels": [
+    "atelier",
+    "relay",
+    "orbiter"
+  ]
+}

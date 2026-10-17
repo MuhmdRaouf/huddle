@@ -1,0 +1,72 @@
+[
+  {
+    "limit": 2048,
+    "in": "[{\"model\":\"claude-sonnet-5-5\",\"api_key\":\"sk-abcdefgh123456\",\"nested\":{\"sessionToken\":\"top\",\"keep\":\"me\"},\"list\":[{\"password\":\"hunter2\"},\"plain item\"]}]",
+    "out": "[{\"model\":\"claude-sonnet-5-5\",\"api_key\":\"[redacted]\",\"nested\":{\"sessionToken\":\"[redacted]\",\"keep\":\"me\"},\"list\":[{\"password\":\"[redacted]\"},\"plain item\"]}]"
+  },
+  {
+    "limit": 2048,
+    "in": "{\"list\":[1,[2,{\"api_key\":\"sk-abcdefgh123456\"}]],\"model\":\"glm-5.3\",\"deep\":{\"deeper\":{\"clientSecret\":\"s\",\"value\":\"kept value\"}}}",
+    "out": "{\"list\":[1,[2,{\"api_key\":\"[redacted]\"}]],\"model\":\"glm-5.3\",\"deep\":{\"deeper\":{\"clientSecret\":\"[redacted]\",\"value\":\"kept value\"}}}"
+  },
+  {
+    "limit": 2048,
+    "in": "{\"file_path\":\"/srv/app/.env\",\"command\":\"cat /etc/passwd\",\"content\":\"SECRET=1\",\"text\":\"body\",\"model\":\"glm-5.3\"}",
+    "out": "{\"file_path\":\"/srv/app/.env\",\"command\":\"[redacted]\",\"content\":\"[redacted]\",\"text\":\"[redacted]\",\"model\":\"glm-5.3\"}"
+  },
+  {
+    "limit": 2048,
+    "in": "{\"outer\":{\"file_path\":\".env\"},\"command\":\"npm test\",\"contents\":\"x\"}",
+    "out": "{\"outer\":{\"file_path\":\".env\"},\"command\":\"npm test\",\"contents\":\"x\"}"
+  },
+  {
+    "limit": 2048,
+    "in": "{\"prompt\":\"héllo 😀 wörld — 日本語\",\"snow\":\"❄️ snowman\",\"arrow\":\"→ text\"}",
+    "out": "{\"prompt\":\"héllo 😀 wörld — 日本語\",\"snow\":\"❄️ snowman\",\"arrow\":\"→ text\"}"
+  },
+  {
+    "limit": 2048,
+    "in": "[1e21,0.1,1.0,9007199254740993,-0,3.5e-7,42]",
+    "out": "[1e+21,0.1,1,9007199254740992,0,3.5e-7,42]"
+  },
+  {
+    "limit": 2048,
+    "in": "{\"a\":null,\"b\":true,\"c\":false,\"empt\":{},\"arr\":[],\"nul\":[null]}",
+    "out": "{\"a\":null,\"b\":true,\"c\":false,\"empt\":{},\"arr\":[],\"nul\":[null]}"
+  },
+  {
+    "limit": 64,
+    "in": "{\"note\":\"Authorization: Bearer abc123XYZ and sk-abcdefgh123456 leaked plus a long tail of text to push past the limit\"}",
+    "out": "{\"note\":\"Authorization: Bearer [redacted] and [redacted] leaked plus a lo…[truncated 38 chars]\"}"
+  },
+  {
+    "limit": 4,
+    "in": "{\"accented\":\"éééééééééééé\"}",
+    "out": "{\"accented\":\"éééé…[truncated 8 chars]\"}"
+  },
+  {
+    "limit": 3,
+    "in": "{\"emoji\":\"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\"}",
+    "out": "{\"emoji\":\"😀\\ud83d…[truncated 97 chars]\"}"
+  },
+  {
+    "limit": 2048,
+    "in": "\"a string with Bearer xyz and sk-abcdefgh123456 inside\"",
+    "out": "\"a string with Bearer [redacted] and [redacted] inside\""
+  },
+  {
+    "limit": 2048,
+    "in": "[\"sk-abcdefgh123456\",\"plain\",\"Authorization: Bearer abc123XYZ\"]",
+    "out": "[\"[redacted]\",\"plain\",\"Authorization: Bearer [redacted]\"]"
+  },
+  {
+    "limit": 2048,
+    "in": "{\"rows\":[{\"path\":\".env.local\",\"body\":\"SECRET\"}],\"ctl\":\"\\u0001x\\b\\f\\r\\t/\"}",
+    "out": "{\"rows\":[{\"path\":\".env.local\",\"body\":\"[redacted]\"}],\"ctl\":\"\\u0001x\\b\\f\\r\\t/\"}"
+  },
+  {
+    "limit": 2048,
+    "in": "{\"quote\":\"a\\\"b\\\\c<d>&e\"}",
+    "out": "{\"quote\":\"a\\\"b\\\\c<d>&e\"}"
+  }
+]

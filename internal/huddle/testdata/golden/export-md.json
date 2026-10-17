@@ -1,0 +1,11 @@
+{
+  "seq": 26,
+  "kind": "api",
+  "name": "export-md",
+  "method": "GET",
+  "path": "/api/c/golden/export.md",
+  "auth": "root",
+  "status": 200,
+  "contentType": "text/markdown; charset=utf-8",
+  "body": "# The golden channel\n\nExported <volatile> from Huddle (channel golden).\n\n## Step 1: Foundations\n\nRead the fixture, then write the recorder.\n\n- **Needs:** the committed fixture under testdata\n- **Make:** `make record`, `make check`\n- **Value:** goldens that replay byte for byte\n\n### t-read Read the golden fixture\n\n`code` · gate `undefined` · risk `undefined` · status **done** · owner scout · *edited*\n\n**What.** Read the golden fixture and list every route and tool it names.\n\n**Why.** A route left out of the recording is a route nothing holds to parity.\n\n**How:**\n\n1. Open the fixture\n2. Note every route it names\n\n**Verify:**\n\n- `bun scripts/record-goldens.ts` → every golden rewritten\n\n### t-write Write the recorder\n\n`code` · gate `owner` · risk `low` · status **doing** · owner lead\n\n**What.** One bun script that builds this state and records every answer.\n\n**How:**\n\n1. Start the server in a temp home\n2. Replay the plan\n3. Write the goldens\n\n**Owner review:**\n\n- [direction] Keep the diff under two hundred lines.\n\n## Step 2: Polish\n\nCheck the recordings, then document them.\n\n- **Needs:** the recorded goldens\n- **Make:** -\n- **Value:** -\n\n### t-check Replay the goldens against the engine\n\n`code` · gate `undefined` · risk `undefined` · status **todo** · owner scout\n\n**What.** The Go test replays every recording byte for byte.\n\n### t-doc Document the recordings\n\n`doc` · gate `ask-first` · risk `undefined` · status **blocked**\n\n**What.** One README section on re-recording.\n\n### t-extra Wire the goldens into CI\n\n`undefined` · gate `undefined` · risk `undefined` · status **todo** · owner scout\n\n**What.** One job, under the ten-minute cap.\n"
+}

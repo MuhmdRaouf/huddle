@@ -1,0 +1,11 @@
+{
+  "seq": 36,
+  "kind": "api",
+  "name": "x-digest-bad",
+  "method": "GET",
+  "path": "/api/c/golden/x/digest?since=whenever",
+  "auth": "root",
+  "status": 400,
+  "contentType": "application/json",
+  "body": "{\"error\":\"since: 24h, 90m, 7d or an ISO date, not whenever\"}"
+}

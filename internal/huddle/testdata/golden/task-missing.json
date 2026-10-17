@@ -1,0 +1,11 @@
+{
+  "seq": 24,
+  "kind": "api",
+  "name": "task-missing",
+  "method": "GET",
+  "path": "/api/c/golden/task/nope",
+  "auth": "root",
+  "status": 404,
+  "contentType": "application/json",
+  "body": "{\"error\":\"no such task\"}"
+}

@@ -1,0 +1,2 @@
+{"timestamp":"2026-08-03T09:01:00.000Z","type":"user","message":{"role":"user","content":"Find where the timeout is configured."}}
+{"timestamp":"2026-08-03T09:01:09.000Z","type":"assistant","message":{"id":"msg_sub1","role":"assistant","model":"glm-5.3-flash","content":[{"type":"text","text":"It is testTimeout in vitest.config.ts."}],"stop_reason":"end_turn","usage":{"input_tokens":80,"output_tokens":22,"cache_read_input_tokens":300,"cache_creation_input_tokens":12}}}

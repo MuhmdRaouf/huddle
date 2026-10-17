@@ -1,0 +1,12 @@
+{
+  "seq": 65,
+  "kind": "mcp",
+  "name": "mcp-call-digest",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":24,\"method\":\"tools/call\",\"params\":{\"name\":\"digest\",\"arguments\":{}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":24,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"digest: The golden channel · since <volatile>\\n1 task finished · 3 knowledge · 2 notes · 1 blocked · 1 open question · est. cost $0 (radar, this day)\\n\\nlead (working) · 10 events\\n  kb #2 [lesson] Never trust a pid from a state file\\n  kb #3 [fact] Ports outlive pids\\n\\nscout (waiting) · 6 events\\n  done t-read Read the golden fixture — bun test green\\n  kb #1 [fact] The golden server binds port zero\\n\\ngone (left) · 2 events\\n  nothing finished or shared\\n\\nowner (you) · 4 events\\n  note on t-write [direction] Keep the diff under two hundred lines.\\n  note on t-read [question] Is the fixture committed under testdata?\\n\\nblocked now:\\n  t-doc Document the recordings — waits on the design review\\n\\nopen questions:\\n  #16 lead → scout: how does the plan look?\"}]}}"
+}

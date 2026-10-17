@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "plugins": {
+    "radar@muhmdraouf": [{ "scope": "user", "installPath": "/x", "version": "1" }]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "seq": 15,
+  "route": "/api/settings",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"settings\":{\"notifications\":true,\"historyRetentionDays\":0}}\n"
+    }
+  ]
+}

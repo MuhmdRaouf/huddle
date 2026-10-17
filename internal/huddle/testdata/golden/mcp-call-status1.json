@@ -1,0 +1,12 @@
+{
+  "seq": 52,
+  "kind": "mcp",
+  "name": "mcp-call-status1",
+  "method": "POST",
+  "path": "/mcp/golden?as=lead",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"tools/call\",\"params\":{\"name\":\"status\",\"arguments\":{\"as\":\"lead.research\"}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":11,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"channel golden · you are lead.research · PAUSED: call gate before any work\\nturn: scout (since #22 lead turn.pass)\\norchestrator: lead\\nothers: lead working: t-write Write the recorder · scout waiting: waiting on the design review\\ninbox: 0\\nunread: 19 → #11 lead kb.added, #12 owner kb.verified, #13 lead kb.added, #14 owner kb.shared, #15 scout finding.ready, #16 lead→scout ask, #17 scout→lead ask, #18 lead→scout reply, #19 owner→scout msg, #20 owner→lead.research control.pause, #21 gone session.left, #22 lead→scout turn.pass\\nnext task: t-doc Document the recordings\\nknowledge: 3 entries\\n  #3 [fact] Ports outlive pids (lead) — recall before you read or re-derive\"}]}}"
+}

@@ -1,0 +1,12 @@
+{
+  "seq": 62,
+  "kind": "mcp",
+  "name": "mcp-call-events",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":21,\"method\":\"tools/call\",\"params\":{\"name\":\"events\",\"arguments\":{\"limit\":6}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":21,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"[\\n {\\n  \\\"seq\\\": 17,\\n  \\\"ts\\\": \\\"<volatile>\\\",\\n  \\\"from\\\": \\\"scout\\\",\\n  \\\"to\\\": \\\"lead\\\",\\n  \\\"topic\\\": \\\"ask\\\",\\n  \\\"ref\\\": null,\\n  \\\"msg\\\": \\\"who owns t-doc?\\\",\\n  \\\"data\\\": null,\\n  \\\"reply_to\\\": null,\\n  \\\"needs_reply\\\": true\\n },\\n {\\n  \\\"seq\\\": 18,\\n  \\\"ts\\\": \\\"<volatile>\\\",\\n  \\\"from\\\": \\\"lead\\\",\\n  \\\"to\\\": \\\"scout\\\",\\n  \\\"topic\\\": \\\"reply\\\",\\n  \\\"ref\\\": null,\\n  \\\"msg\\\": \\\"nobody yet; take it if you want it\\\",\\n  \\\"data\\\": null,\\n  \\\"reply_to\\\": 17,\\n  \\\"needs_reply\\\": false\\n },\\n {\\n  \\\"seq\\\": 19,\\n  \\\"ts\\\": \\\"<volatile>\\\",\\n  \\\"from\\\": \\\"owner\\\",\\n  \\\"to\\\": \\\"scout\\\",\\n  \\\"topic\\\": \\\"msg\\\",\\n  \\\"ref\\\": null,\\n  \\\"msg\\\": \\\"Start from t-check once t-write is approved.\\\",\\n  \\\"data\\\": {\\n   \\\"brief\\\": true\\n  },\\n  \\\"reply_to\\\": null,\\n  \\\"needs_reply\\\": false\\n },\\n {\\n  \\\"seq\\\": 20,\\n  \\\"ts\\\": \\\"<volatile>\\\",\\n  \\\"from\\\": \\\"owner\\\",\\n  \\\"to\\\": \\\"lead.research\\\",\\n  \\\"topic\\\": \\\"control.pause\\\",\\n  \\\"ref\\\": null,\\n  \\\"msg\\\": \\\"until the plan settles\\\",\\n  \\\"data\\\": null,\\n  \\\"reply_to\\\": null,\\n  \\\"needs_reply\\\": false\\n },\\n {\\n  \\\"seq\\\": 21,\\n  \\\"ts\\\": \\\"<volatile>\\\",\\n  \\\"from\\\": \\\"gone\\\",\\n  \\\"to\\\": null,\\n  \\\"topic\\\": \\\"session.left\\\",\\n  \\\"ref\\\": null,\\n  \\\"msg\\\": \\\"gone left: nothing left for me\\\",\\n  \\\"data\\\": null,\\n  \\\"reply_to\\\": null,\\n  \\\"needs_reply\\\": false\\n },\\n {\\n  \\\"seq\\\": 22,\\n  \\\"ts\\\": \\\"<volatile>\\\",\\n  \\\"from\\\": \\\"lead\\\",\\n  \\\"to\\\": \\\"scout\\\",\\n  \\\"topic\\\": \\\"turn.pass\\\",\\n  \\\"ref\\\": null,\\n  \\\"msg\\\": \\\"t-check is yours once t-write lands\\\",\\n  \\\"data\\\": null,\\n  \\\"reply_to\\\": null,\\n  \\\"needs_reply\\\": false\\n }\\n]\"}]}}"
+}

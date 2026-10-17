@@ -1,0 +1,13 @@
+{
+  "seq": 22,
+  "route": "/api/history/tree/outside-a-session",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"nodes\":[{\"id\":\"job:zai:goldjob\",\"kind\":\"job\",\"parentId\":null,\"sessionId\":\"zai:goldjob\",\"agentId\":\"goldjob\",\"label\":null,\"agentType\":null,\"description\":null,\"project\":null,\"cwd\":null,\"model\":\"zai:glm-5.3\",\"provider\":null,\"toolUseId\":null,\"spawnDepth\":null,\"jobState\":null,\"repo\":\"/w/app\",\"branch\":\"job/changelog\",\"name\":\"Add the 0.0.2 changelog\",\"parentSessionId\":null,\"startedAt\":null,\"endedAt\":1785751500000,\"lastAt\":0,\"live\":false,\"requests\":0,\"tokens\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"costUsd\":null}]}\n"
+    }
+  ]
+}

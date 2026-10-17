@@ -1,0 +1,12 @@
+{
+  "seq": 51,
+  "kind": "mcp",
+  "name": "mcp-call-status",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/call\",\"params\":{\"name\":\"status\",\"arguments\":{}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":10,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"channel golden · you are scout · running\\nturn: scout (since #22 lead turn.pass)\\norchestrator: lead\\nothers: lead working: t-write Write the recorder · lead.research(paused) working: joined\\ninbox: 1\\n  #16 from lead: how does the plan look?\\nunread: 6 → #16 lead→scout ask, #18 lead→scout reply, #19 owner→scout msg, #20 owner→lead.research control.pause, #21 gone session.left, #22 lead→scout turn.pass\\nnext task: t-check Replay the goldens against the engine (waits on t-write@lead:doing)\\nknowledge: 3 entries\\n  #3 [fact] Ports outlive pids (lead) — recall before you read or re-derive\"}]}}"
+}

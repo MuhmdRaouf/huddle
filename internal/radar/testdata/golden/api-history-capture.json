@@ -1,0 +1,13 @@
+{
+  "seq": 27,
+  "route": "/api/history/request/route:sess-a:main:glm-5.3:1785747626000:200/capture",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"hash\":\"cap-golden-1\",\"system\":[{\"type\":\"text\",\"text\":\"You are Claude Code, the command-line assistant.\"}],\"tools\":[{\"name\":\"Bash\",\"description\":\"Executes a given bash command in a persistent shell.\"}],\"bytes\":181,\"headers\":{\"request-id\":\"req_zai_7f3a\",\"x-ratelimit-remaining\":\"99\",\"content-type\":\"application/json\"}}\n"
+    }
+  ]
+}

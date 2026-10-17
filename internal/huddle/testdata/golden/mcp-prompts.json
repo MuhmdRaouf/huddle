@@ -1,0 +1,12 @@
+{
+  "seq": 50,
+  "kind": "mcp",
+  "name": "mcp-prompts",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"prompts/list\"}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":{\"prompts\":[]}}"
+}

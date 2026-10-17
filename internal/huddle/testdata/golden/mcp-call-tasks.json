@@ -1,0 +1,12 @@
+{
+  "seq": 57,
+  "kind": "mcp",
+  "name": "mcp-call-tasks",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":16,\"method\":\"tools/call\",\"params\":{\"name\":\"tasks\",\"arguments\":{}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":16,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"t-read [done] @scout Read the golden fixture\\nt-write [doing] @lead Write the recorder\\nt-check [todo] @scout Replay the goldens against the engine  ⟵ waits on t-write\\nt-doc [blocked] Document the recordings\\nt-extra [todo] @scout Wire the goldens into CI  ⟵ waits on t-check\"}]}}"
+}

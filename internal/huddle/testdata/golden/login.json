@@ -1,0 +1,12 @@
+{
+  "seq": 84,
+  "kind": "api",
+  "name": "login",
+  "method": "POST",
+  "path": "/api/login",
+  "auth": "root",
+  "sent": "{}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"code\":\"<volatile>\",\"expires_in\":300}"
+}

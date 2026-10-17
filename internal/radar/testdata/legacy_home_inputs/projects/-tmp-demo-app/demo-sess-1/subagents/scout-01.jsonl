@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-10-15T09:00:20.000Z","cwd":"/tmp/demo/app"}
+{"type":"assistant","timestamp":"2026-10-15T09:00:26.000Z","requestId":"req_2001","message":{"role":"assistant","model":"glm-5.3-flash","stop_reason":"end_turn","usage":{"input_tokens":50,"output_tokens":12,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"found it"}]}}

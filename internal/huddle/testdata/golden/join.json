@@ -1,0 +1,12 @@
+{
+  "seq": 78,
+  "kind": "api",
+  "name": "join",
+  "method": "POST",
+  "path": "/api/join",
+  "auth": "none",
+  "sent": "{\"token\":\"<invite>\",\"name\":\"newbie\"}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"credential\":\"<volatile>\",\"name\":\"newbie\",\"channel\":\"golden\"}"
+}

@@ -1,0 +1,13 @@
+{
+  "seq": 10,
+  "route": "/api/alerts",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"alerts\":[]}\n"
+    }
+  ]
+}

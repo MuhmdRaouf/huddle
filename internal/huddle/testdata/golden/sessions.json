@@ -1,0 +1,11 @@
+{
+  "seq": 6,
+  "kind": "api",
+  "name": "sessions",
+  "method": "GET",
+  "path": "/api/c/golden/sessions",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"sessions\":[{\"name\":\"gone\",\"parent\":null,\"label\":null,\"role\":\"leaves early\",\"state\":\"left\",\"task\":\"nothing left for me\",\"step\":null,\"last_seen\":\"<volatile>\",\"stale\":false,\"control\":\"run\",\"control_by\":null,\"control_at\":null,\"cursor\":1,\"context\":null,\"brief_waiting\":false,\"unread\":20,\"open\":0,\"holds_turn\":false},{\"name\":\"lead\",\"parent\":null,\"label\":null,\"role\":\"runs the plan with the owner\",\"state\":\"working\",\"task\":\"t-write Write the recorder\",\"step\":\"t-write\",\"last_seen\":\"<volatile>\",\"stale\":false,\"control\":\"run\",\"control_by\":null,\"control_at\":null,\"cursor\":2,\"context\":null,\"brief_waiting\":false,\"unread\":12,\"open\":0,\"holds_turn\":false},{\"name\":\"lead.research\",\"parent\":\"lead\",\"label\":null,\"role\":\"a subagent of lead, digging\",\"state\":\"working\",\"task\":\"joined\",\"step\":null,\"last_seen\":\"<volatile>\",\"stale\":false,\"control\":\"pause\",\"control_by\":\"owner\",\"control_at\":\"<volatile>\",\"cursor\":3,\"context\":null,\"brief_waiting\":false,\"unread\":19,\"open\":0,\"holds_turn\":false},{\"name\":\"scout\",\"parent\":null,\"label\":null,\"role\":\"reads the code before anyone writes\",\"state\":\"waiting\",\"task\":\"waiting on the design review\",\"step\":null,\"last_seen\":\"<volatile>\",\"stale\":false,\"control\":\"run\",\"control_by\":null,\"control_at\":null,\"cursor\":15,\"context\":null,\"brief_waiting\":true,\"unread\":6,\"open\":1,\"holds_turn\":true}],\"turn\":{\"holder\":\"scout\",\"since\":{\"seq\":22,\"ts\":\"<volatile>\",\"from\":\"lead\",\"to\":\"scout\",\"topic\":\"turn.pass\",\"ref\":null,\"msg\":\"t-check is yours once t-write lands\",\"data\":null,\"reply_to\":null,\"needs_reply\":false}},\"config\":{\"title\":\"The golden channel\",\"description\":\"One channel holding every kind of thing, so the recorded answers are full.\",\"start\":\"lead\",\"handover\":{},\"profile\":null,\"repo\":null,\"created_at\":\"<volatile>\",\"members\":[],\"orchestrator\":\"lead\"}}"
+}

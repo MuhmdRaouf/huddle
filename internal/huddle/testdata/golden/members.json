@@ -1,0 +1,11 @@
+{
+  "seq": 81,
+  "kind": "api",
+  "name": "members",
+  "method": "GET",
+  "path": "/api/members",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "[{\"name\":\"newbie\",\"since\":\"<volatile>\",\"seen\":\"<volatile>\",\"can_invite\":false,\"invite\":\"<volatile>\"}]"
+}

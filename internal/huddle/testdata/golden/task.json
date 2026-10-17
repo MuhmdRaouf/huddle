@@ -1,0 +1,11 @@
+{
+  "seq": 23,
+  "kind": "api",
+  "name": "task",
+  "method": "GET",
+  "path": "/api/c/golden/task/t-write",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"kind\":\"code\",\"risk\":\"low\",\"gate\":\"owner\",\"what\":\"One bun script that builds this state and records every answer.\",\"how\":[\"Start the server in a temp home\",\"Replay the plan\",\"Write the goldens\"],\"id\":\"t-write\",\"phase_n\":1,\"ord\":1,\"title\":\"Write the recorder\",\"owner\":\"lead\",\"status\":\"doing\",\"depends\":[\"t-read\"],\"origin\":\"plan\",\"created_by\":\"owner\",\"status_at\":\"<volatile>\",\"status_by\":\"lead\",\"status_note\":\"\",\"alternatives\":[],\"snippets\":[],\"verify\":[],\"files\":[],\"refs\":[],\"edited\":{},\"comments\":[{\"id\":1,\"task_id\":\"t-write\",\"kind\":\"direction\",\"body\":\"Keep the diff under two hundred lines.\",\"by\":\"owner\",\"resolved\":0,\"created_at\":\"<volatile>\"}],\"needed_by\":[\"t-check\"],\"unmet\":[],\"ready\":true,\"open_notes\":[{\"id\":1,\"task_id\":\"t-write\",\"kind\":\"direction\",\"body\":\"Keep the diff under two hundred lines.\",\"by\":\"owner\",\"resolved\":0,\"created_at\":\"<volatile>\"}]}"
+}

@@ -1,0 +1,13 @@
+{
+  "seq": 17,
+  "route": "/api/advisor",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"runsChecked\":0,\"candidates\":0,\"savingUsd\":null,\"byModel\":[],\"examples\":[]}\n"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "seq": 69,
+  "kind": "mcp",
+  "name": "mcp-batch",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "[{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"},{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}]",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "[{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{}}]"
+}

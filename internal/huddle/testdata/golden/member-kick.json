@@ -1,0 +1,11 @@
+{
+  "seq": 90,
+  "kind": "api",
+  "name": "member-kick",
+  "method": "DELETE",
+  "path": "/api/members/newbie",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"kicked\":\"newbie\"}"
+}

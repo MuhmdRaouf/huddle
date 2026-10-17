@@ -1,0 +1,11 @@
+{
+  "seq": 89,
+  "kind": "api",
+  "name": "token-revoke",
+  "method": "DELETE",
+  "path": "/api/tokens/<inviteId>",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"deleted\":\"<volatile>\"}"
+}

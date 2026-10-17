@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":"Add the changelog section for 0.0.2"}}
+{"type":"assistant","message":{"id":"msg_j1","role":"assistant","model":"glm-5.3","content":[{"type":"text","text":"Added the 0.0.2 section with the two fixes."}],"stop_reason":"end_turn","usage":{"input_tokens":300,"output_tokens":90,"cache_read_input_tokens":1500,"cache_creation_input_tokens":100}}}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":31000,"usage":{"input_tokens":300,"output_tokens":90,"cache_read_input_tokens":1500,"cache_creation_input_tokens":100}}

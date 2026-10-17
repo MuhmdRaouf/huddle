@@ -1,0 +1,12 @@
+{
+  "seq": 49,
+  "kind": "mcp",
+  "name": "mcp-resources",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"resources/list\"}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"resources\":[]}}"
+}

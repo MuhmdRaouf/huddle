@@ -1,0 +1,11 @@
+{
+  "seq": 29,
+  "kind": "api",
+  "name": "whoami",
+  "method": "GET",
+  "path": "/api/whoami",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"name\":\"owner\",\"root\":true,\"invite\":true}"
+}

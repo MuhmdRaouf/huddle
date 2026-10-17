@@ -1,0 +1,43 @@
+{
+  "seq": 20,
+  "route": "/api/history/roots",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"roots\":[],\"next\":null}\n"
+    },
+    {
+      "query": "?scope=history",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"roots\":[{\"id\":\"sess-a/main\",\"kind\":\"main\",\"parentId\":null,\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"label\":null,\"agentType\":null,\"description\":null,\"project\":\"app\",\"cwd\":\"/w/app\",\"model\":\"glm-5.3\",\"provider\":null,\"toolUseId\":null,\"spawnDepth\":null,\"jobState\":null,\"repo\":null,\"branch\":\"fix/ci\",\"name\":\"Fix the flaky test\",\"parentSessionId\":null,\"startedAt\":1785747605000,\"endedAt\":1785747780000,\"lastAt\":1785747780000,\"requests\":5,\"tokens\":{\"input\":560,\"output\":154,\"cacheRead\":3800,\"cacheWrite\":182},\"nodes\":2,\"liveNodes\":0,\"activity\":{\"bucketMs\":3646,\"counts\":[0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"models\":[\"\",\"\",\"\",\"\",\"\",\"glm-5.3\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"glm-5.3-flash\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"claude-sonnet-5-5\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]},\"costUsd\":0.0019338},{\"id\":\"outside-a-session\",\"kind\":\"job\",\"parentId\":null,\"sessionId\":\"outside-a-session\",\"agentId\":\"\",\"label\":null,\"agentType\":null,\"description\":null,\"project\":null,\"cwd\":null,\"model\":null,\"provider\":null,\"toolUseId\":null,\"spawnDepth\":null,\"jobState\":null,\"repo\":null,\"branch\":null,\"name\":\"Unattached\",\"parentSessionId\":null,\"startedAt\":null,\"endedAt\":1785751500000,\"lastAt\":0,\"requests\":0,\"tokens\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"nodes\":1,\"liveNodes\":0,\"activity\":{\"bucketMs\":1,\"counts\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"models\":[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]},\"costUsd\":null}],\"next\":null}\n"
+    },
+    {
+      "query": "?scope=history&limit=1",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"roots\":[{\"id\":\"sess-a/main\",\"kind\":\"main\",\"parentId\":null,\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"label\":null,\"agentType\":null,\"description\":null,\"project\":\"app\",\"cwd\":\"/w/app\",\"model\":\"glm-5.3\",\"provider\":null,\"toolUseId\":null,\"spawnDepth\":null,\"jobState\":null,\"repo\":null,\"branch\":\"fix/ci\",\"name\":\"Fix the flaky test\",\"parentSessionId\":null,\"startedAt\":1785747605000,\"endedAt\":1785747780000,\"lastAt\":1785747780000,\"requests\":5,\"tokens\":{\"input\":560,\"output\":154,\"cacheRead\":3800,\"cacheWrite\":182},\"nodes\":2,\"liveNodes\":0,\"activity\":{\"bucketMs\":3646,\"counts\":[0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"models\":[\"\",\"\",\"\",\"\",\"\",\"glm-5.3\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"glm-5.3-flash\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"claude-sonnet-5-5\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]},\"costUsd\":0.0019338},{\"id\":\"outside-a-session\",\"kind\":\"job\",\"parentId\":null,\"sessionId\":\"outside-a-session\",\"agentId\":\"\",\"label\":null,\"agentType\":null,\"description\":null,\"project\":null,\"cwd\":null,\"model\":null,\"provider\":null,\"toolUseId\":null,\"spawnDepth\":null,\"jobState\":null,\"repo\":null,\"branch\":null,\"name\":\"Unattached\",\"parentSessionId\":null,\"startedAt\":null,\"endedAt\":1785751500000,\"lastAt\":0,\"requests\":0,\"tokens\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"nodes\":1,\"liveNodes\":0,\"activity\":{\"bucketMs\":1,\"counts\":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"models\":[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]},\"costUsd\":null}],\"next\":null}\n"
+    },
+    {
+      "query": "?scope=history&q=fix",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"roots\":[{\"id\":\"sess-a/main\",\"kind\":\"main\",\"parentId\":null,\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"label\":null,\"agentType\":null,\"description\":null,\"project\":\"app\",\"cwd\":\"/w/app\",\"model\":\"glm-5.3\",\"provider\":null,\"toolUseId\":null,\"spawnDepth\":null,\"jobState\":null,\"repo\":null,\"branch\":\"fix/ci\",\"name\":\"Fix the flaky test\",\"parentSessionId\":null,\"startedAt\":1785747605000,\"endedAt\":1785747780000,\"lastAt\":1785747780000,\"requests\":5,\"tokens\":{\"input\":560,\"output\":154,\"cacheRead\":3800,\"cacheWrite\":182},\"nodes\":2,\"liveNodes\":0,\"activity\":{\"bucketMs\":3646,\"counts\":[0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\"models\":[\"\",\"\",\"\",\"\",\"\",\"glm-5.3\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"glm-5.3-flash\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"claude-sonnet-5-5\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]},\"costUsd\":0.0019338}],\"next\":null}\n"
+    },
+    {
+      "query": "?scope=history&repo=%2Fw%2Fapp",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"roots\":[],\"next\":null}\n"
+    },
+    {
+      "query": "?scope=bad",
+      "status": 400,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"error\":\"scope: one of live, history\"}\n"
+    }
+  ]
+}

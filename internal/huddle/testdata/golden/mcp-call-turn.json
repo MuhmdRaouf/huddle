@@ -1,0 +1,12 @@
+{
+  "seq": 60,
+  "kind": "mcp",
+  "name": "mcp-call-turn",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":19,\"method\":\"tools/call\",\"params\":{\"name\":\"turn\",\"arguments\":{}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":19,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n \\\"holder\\\": \\\"scout\\\",\\n \\\"since\\\": {\\n  \\\"seq\\\": 22,\\n  \\\"ts\\\": \\\"<volatile>\\\",\\n  \\\"from\\\": \\\"lead\\\",\\n  \\\"to\\\": \\\"scout\\\",\\n  \\\"topic\\\": \\\"turn.pass\\\",\\n  \\\"ref\\\": null,\\n  \\\"msg\\\": \\\"t-check is yours once t-write lands\\\",\\n  \\\"data\\\": null,\\n  \\\"reply_to\\\": null,\\n  \\\"needs_reply\\\": false\\n }\\n}\"}]}}"
+}

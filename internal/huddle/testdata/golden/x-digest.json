@@ -1,0 +1,11 @@
+{
+  "seq": 35,
+  "kind": "api",
+  "name": "x-digest",
+  "method": "GET",
+  "path": "/api/c/golden/x/digest",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"channel\":\"golden\",\"title\":\"The golden channel\",\"since\":\"<volatile>\",\"until\":\"<volatile>\",\"totals\":{\"done\":1,\"notes\":2,\"knowledge\":3,\"events\":22,\"blocked\":1,\"questions\":1,\"approvals\":0},\"sessions\":[{\"name\":\"lead\",\"state\":\"working\",\"role\":\"runs the plan with the owner\",\"done\":[],\"notes\":[],\"knowledge\":[{\"id\":2,\"kind\":\"lesson\",\"title\":\"Never trust a pid from a state file\",\"at\":\"<volatile>\"},{\"id\":3,\"kind\":\"fact\",\"title\":\"Ports outlive pids\",\"at\":\"<volatile>\"}],\"approvals\":[],\"asked\":1,\"events\":10,\"cost\":null},{\"name\":\"scout\",\"state\":\"waiting\",\"role\":\"reads the code before anyone writes\",\"done\":[{\"id\":\"t-read\",\"title\":\"Read the golden fixture\",\"status\":\"done\",\"note\":\"bun test green\",\"at\":\"<volatile>\"}],\"notes\":[],\"knowledge\":[{\"id\":1,\"kind\":\"fact\",\"title\":\"The golden server binds port zero\",\"at\":\"<volatile>\"}],\"approvals\":[],\"asked\":0,\"events\":6,\"cost\":null},{\"name\":\"gone\",\"state\":\"left\",\"role\":\"leaves early\",\"done\":[],\"notes\":[],\"knowledge\":[],\"approvals\":[],\"asked\":0,\"events\":2,\"cost\":null},{\"name\":\"owner\",\"state\":null,\"role\":null,\"done\":[],\"notes\":[{\"task\":\"t-write\",\"title\":\"Write the recorder\",\"kind\":\"direction\",\"body\":\"Keep the diff under two hundred lines.\",\"at\":\"<volatile>\"},{\"task\":\"t-read\",\"title\":\"Read the golden fixture\",\"kind\":\"question\",\"body\":\"Is the fixture committed under testdata?\",\"at\":\"<volatile>\"}],\"knowledge\":[],\"approvals\":[],\"asked\":0,\"events\":4,\"cost\":null}],\"blocked\":[{\"id\":\"t-doc\",\"title\":\"Document the recordings\",\"owner\":null,\"waits_on\":[],\"note\":\"waits on the design review\"}],\"questions\":[{\"seq\":16,\"from\":\"lead\",\"to\":\"scout\",\"msg\":\"how does the plan look?\",\"at\":\"<volatile>\",\"task\":\"t-write\"}],\"cost\":{\"available\":true,\"total\":0,\"range\":\"day\"}}"
+}

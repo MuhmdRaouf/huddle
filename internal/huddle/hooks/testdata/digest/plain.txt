@@ -1,0 +1,6 @@
+Goal: Fix the login redirect
+Decisions:
+- Decided: the session cookie carries the return URL.
+Files: web/login.go
+Open:
+- Should the refresh token rotate on every use?

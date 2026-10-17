@@ -1,0 +1,12 @@
+{
+  "seq": 70,
+  "kind": "mcp",
+  "name": "mcp-method-missing",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"bogus\"}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":9,\"error\":{\"code\":-32601,\"message\":\"method not found: bogus\"}}"
+}

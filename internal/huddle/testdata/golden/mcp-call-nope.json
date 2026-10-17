@@ -1,0 +1,12 @@
+{
+  "seq": 67,
+  "kind": "mcp",
+  "name": "mcp-call-nope",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":26,\"method\":\"tools/call\",\"params\":{\"name\":\"nope\",\"arguments\":{}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":26,\"error\":{\"code\":-32602,\"message\":\"no operation nope\"}}"
+}

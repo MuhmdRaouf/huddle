@@ -1,0 +1,13 @@
+{
+  "seq": 43,
+  "kind": "api",
+  "name": "cross-origin",
+  "method": "POST",
+  "path": "/api/settings",
+  "auth": "root",
+  "sent": "{\"notify\":true}",
+  "origin": "http://evil.example",
+  "status": 403,
+  "contentType": "text/plain;charset=utf-8",
+  "body": "cross-origin write refused"
+}

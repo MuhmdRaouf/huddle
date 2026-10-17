@@ -1,0 +1,12 @@
+{
+  "seq": 99,
+  "kind": "api",
+  "name": "op-unknown-session",
+  "method": "POST",
+  "path": "/api/c/golden/op/status?as=ghost",
+  "auth": "root",
+  "sent": "{}",
+  "status": 404,
+  "contentType": "application/json",
+  "body": "{\"error\":\"\\\"ghost\\\" has not joined channel golden (call join first)\"}"
+}

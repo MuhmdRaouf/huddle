@@ -1,0 +1,61 @@
+{
+  "root": "golden-root",
+  "invite_id": "2yojgy",
+  "invite_token": "2yojgy.ktzjwf3lx4pdhulb",
+  "member_cred": "hcred_V7UGwQp42qeGK0Emqc43JtMaZ58WFDNChdttvFx8-P4",
+  "code": "jFyqmdKm4e7z9fSD5wqgHyU8",
+  "cases": [
+    {
+      "in": "{\"type\":\"message\",\"text\":\"join with 2yojgy.ktzjwf3lx4pdhulb please\",\"channel\":\"ops\"}",
+      "out": "{\"type\":\"message\",\"text\":\"join with 2yojgy.<redacted> please\",\"channel\":\"ops\"}"
+    },
+    {
+      "in": "{\"msg\":\"cred hcred_V7UGwQp42qeGK0Emqc43JtMaZ58WFDNChdttvFx8-P4 root golden-root code jFyqmdKm4e7z9fSD5wqgHyU8\",\"nested\":[{\"deep\":[true,null,1.0,1e21,-0]}]}",
+      "out": "{\"msg\":\"cred <redacted> root <redacted> code <redacted>\",\"nested\":[{\"deep\":[true,null,1,1e+21,0]}]}"
+    },
+    {
+      "in": "{\"keep\":\"abcdef.0123456789abcdef\",\"also\":\"zzzzzz.0123456789abcdef\"}",
+      "out": "{\"keep\":\"abcdef.0123456789abcdef\",\"also\":\"zzzzzz.0123456789abcdef\"}"
+    },
+    {
+      "in": "{\"note\":\"saw hcred_QmFramVkdGNoZWNr in a log\",\"n\":42}",
+      "out": "{\"note\":\"saw <redacted> in a log\",\"n\":42}"
+    },
+    {
+      "in": "[{\"a\":\"2yojgy.ktzjwf3lx4pdhulb\"},{\"b\":[\"hcred_V7UGwQp42qeGK0Emqc43JtMaZ58WFDNChdttvFx8-P4\"]},\"plain\"]",
+      "out": "[{\"a\":\"2yojgy.<redacted>\"},{\"b\":[\"<redacted>\"]},\"plain\"]"
+    },
+    {
+      "in": "\"2yojgy.ktzjwf3lx4pdhulb and golden-root\"",
+      "out": "\"2yojgy.<redacted> and <redacted>\""
+    },
+    {
+      "in": "{\"n\":42,\"b\":true,\"nil\":null,\"empty\":{},\"arr\":[],\"s\":\"text\"}",
+      "out": "{\"n\":42,\"b\":true,\"nil\":null,\"empty\":{},\"arr\":[],\"s\":\"text\"}"
+    },
+    {
+      "in": "{\"html\":\"<b>bold</b> & <i>it</i>\",\"mark\":\"<redacted>\"}",
+      "out": "{\"html\":\"<b>bold</b> & <i>it</i>\",\"mark\":\"<redacted>\"}"
+    },
+    {
+      "in": "{\"ls\":\"a\\u2028b\\u2029c\"}",
+      "out": "{\"ls\":\"a b c\"}"
+    },
+    {
+      "in": "{\"id\":\"2yojgy\",\"token\":\"2yojgy.ktzjwf3lx4pdhulb\"}",
+      "out": "{\"id\":\"2yojgy\",\"token\":\"2yojgy.<redacted>\"}"
+    },
+    {
+      "in": "{\"a\":{\"b\":{\"c\":[{\"d\":{\"e\":\"hcred_V7UGwQp42qeGK0Emqc43JtMaZ58WFDNChdttvFx8-P4\"}}]}},\"f\":[[\"jFyqmdKm4e7z9fSD5wqgHyU8\"]]}",
+      "out": "{\"a\":{\"b\":{\"c\":[{\"d\":{\"e\":\"<redacted>\"}}]}},\"f\":[[\"<redacted>\"]]}"
+    },
+    {
+      "in": "{\"edge\":\"(2yojgy.ktzjwf3lx4pdhulb) [jFyqmdKm4e7z9fSD5wqgHyU8]\"}",
+      "out": "{\"edge\":\"(2yojgy.<redacted>) [<redacted>]\"}"
+    },
+    {
+      "in": "\"golden-root\"",
+      "out": "\"<redacted>\""
+    }
+  ]
+}

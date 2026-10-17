@@ -1,0 +1,11 @@
+{
+  "seq": 74,
+  "kind": "mcp",
+  "name": "mcp-get",
+  "method": "GET",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "status": 405,
+  "contentType": "text/plain;charset=utf-8",
+  "body": "this endpoint answers POST; pushes come from bin/huddle-mcp"
+}

@@ -1,0 +1,13 @@
+{
+  "seq": 4,
+  "route": "/api/sessions/nobody",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 404,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"error\":\"unknown session: nobody\"}\n"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "seq": 48,
+  "kind": "mcp",
+  "name": "mcp-ping",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{}}"
+}

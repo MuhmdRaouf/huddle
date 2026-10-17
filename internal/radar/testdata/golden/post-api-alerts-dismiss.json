@@ -1,0 +1,14 @@
+{
+  "seq": 36,
+  "route": "/api/alerts/dismiss",
+  "method": "POST",
+  "variants": [
+    {
+      "query": "",
+      "sent": "{\"id\":\"stuck:sess-a:1785747652000\"}",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"dismissed\":\"stuck:sess-a:1785747652000\"}\n"
+    }
+  ]
+}

@@ -4,3 +4,78 @@ title = "huddle"
 
 [extend]
 useDefault = true
+
+[[allowlists]]
+description = "core: the fake keystore's stored key"
+condition = "AND"
+regexes = ['''^zt-SECRET\.key_0123456789abcdef$''']
+paths = [
+  '''^internal/testkit/fake_keystore\.go$''',
+]
+
+[[allowlists]]
+description = "core: the keystore file tests' second fake key"
+condition = "AND"
+regexes = ['''^zt-OTHER\.key_9876543210fedcba$''']
+paths = ['''^internal/adapters/keystore/file_test\.go$''']
+
+[[allowlists]]
+description = "radar: the fake key the Go redaction tests prove gets masked"
+condition = "AND"
+regexes = ['''^sk-abcdefgh123456$''']
+paths = [
+  '''^internal/radar/shared/redact_test\.go$''',
+  '''^internal/radar/shared/redact_json_test\.go$''',
+]
+
+[[allowlists]]
+description = "huddle: the pinned fake invite digest in the recorded compat home (sha256 of sixteen zeros, the token the compat suite joins with)"
+condition = "AND"
+regexes = ['''^fcdb4b423f4e5283afa249d762ef6aef150e91fccd810d43e5e719d14512dec7$''']
+# Any *_home: commits in the history hold the same file under an earlier folder name.
+paths = ['''^internal/huddle/testdata/[a-z]+_home/data/auth\.json$''']
+
+[[allowlists]]
+description = "huddle: the fake invite token the auth redaction golden proves gets masked"
+condition = "AND"
+regexes = ['''^2yojgy\.ktzjwf3lx4pdhulb$''']
+paths = ['''^internal/huddle/auth/testdata/redact_golden\.json$''']
+
+[[allowlists]]
+description = "huddle: the sha256 digests of fake invites in the auth tests' state file, which stores digests only"
+condition = "AND"
+regexes = [
+  '''^6cee19c873ed077fc0e0d9158d6436cbaa59f307ddbea92ebe25a868d0dcf281$''',
+  '''^90f513f3308fd1d89ba9b4f73d9eb36cc1b9494f1605246e2dc27bc64f08f293$''',
+]
+paths = ['''^internal/huddle/auth/testdata/state\.json$''']
+
+[[allowlists]]
+description = "huddle: the fake invite token the CLI's invite test serves from its fake server"
+condition = "AND"
+regexes = ['''^abc123\.def0123456789abcdef$''']
+paths = ['''^internal/huddle/cli/serve_test\.go$''']
+
+[[allowlists]]
+description = "huddle: the fake join tokens the stdio MCP bridge test hands its fake server"
+condition = "AND"
+regexes = ['''^zzzzzz\.0123456789abcdef$''', '''^abcdef\.0123456789abcdef$''']
+paths = ['''^internal/huddle/cli/huddle_mcp_test\.go$''']
+
+[[allowlists]]
+description = "huddle: the fake invite token the CLI's invite test serves"
+condition = "AND"
+regexes = ['''^abc123\.0123456789abcdef$''']
+paths = ['''^internal/huddle/cli/huddle_test\.go$''']
+
+[[allowlists]]
+description = "huddle: the fake one-use pairing token the server tests send to prove a spent or unknown link is refused"
+condition = "AND"
+regexes = ['''^A234567890BCDEFGHIJKLMNOPQR$''']
+paths = ['''^internal/huddle/server/[a-z_]+_test\.go$''']
+
+[[allowlists]]
+description = "core: the fake Z.ai key the headless worker tests hand to fake workers"
+condition = "AND"
+regexes = ['''^zai-test-key-0123456789abcdef$''']
+paths = ['''^internal/adapters/claude_headless_test\.go$''']

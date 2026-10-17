@@ -1,0 +1,12 @@
+{
+  "seq": 63,
+  "kind": "mcp",
+  "name": "mcp-call-recall",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":22,\"method\":\"tools/call\",\"params\":{\"name\":\"recall\",\"arguments\":{\"q\":\"port\"}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":22,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"#100000 [fact] The golden server binds port zero — scout · today · verified (owner) · every channel {testing,ports}\\n   «PORT»=0 makes the server bind any free «port» and print the one it got, so a recording … \\n#3 [fact] Ports outlive pids — lead · today {router,testing}\\n   A saved «port» is the address; the pid only says who held it once.\"}]}}"
+}

@@ -1,0 +1,13 @@
+{
+  "seq": 30,
+  "route": "/api/history/repos",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"repos\":[]}\n"
+    }
+  ]
+}

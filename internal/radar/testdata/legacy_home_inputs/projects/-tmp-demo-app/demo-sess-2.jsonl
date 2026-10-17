@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-10-14T10:05:00.000Z","cwd":"/tmp/demo/app","version":"2.1.0","message":{"role":"user","content":[{"type":"text","text":"check the lock file"}]}}
+{"type":"assistant","timestamp":"2026-10-14T10:05:06.000Z","requestId":"req_3001","message":{"role":"assistant","model":"kimi-k2","stop_reason":"end_turn","usage":{"input_tokens":40,"output_tokens":8,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"held by pid 421"}]}}

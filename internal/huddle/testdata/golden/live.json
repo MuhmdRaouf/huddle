@@ -1,0 +1,11 @@
+{
+  "seq": 27,
+  "kind": "api",
+  "name": "live",
+  "method": "GET",
+  "path": "/api/c/golden/live",
+  "auth": "root",
+  "status": 200,
+  "contentType": "text/event-stream",
+  "body": "retry: 3000\ndata: {\"ch\":\"golden\",\"type\":\"hello\",\"data\":{\"last\":22}}\n\n"
+}

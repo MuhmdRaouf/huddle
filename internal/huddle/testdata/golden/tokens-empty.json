@@ -1,0 +1,11 @@
+{
+  "seq": 30,
+  "kind": "api",
+  "name": "tokens-empty",
+  "method": "GET",
+  "path": "/api/tokens",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "[]"
+}

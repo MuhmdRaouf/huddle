@@ -1,0 +1,12 @@
+{
+  "seq": 59,
+  "kind": "mcp",
+  "name": "mcp-call-task8",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":18,\"method\":\"tools/call\",\"params\":{\"name\":\"task\",\"arguments\":{\"id\":\"nope\"}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":18,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"huddle: no task nope\"}],\"isError\":true}}"
+}

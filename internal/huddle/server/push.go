@@ -1,0 +1,391 @@
+package server
+
+// Web Push (SPEC 7.6): the needs-you items and the owner alerts reach the paired devices'
+// subscriptions, each payload encrypted to that device's own keys. A payload carries who (the
+// session and its machine), what kind and the tool name — never the command, path, prompt or
+// answer text, which stay in the registry's rows. An item pushes once at create and once more
+// only on its five-minute escalation; a subscription the push service calls gone is dropped on
+// the spot.
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/SherClockHolmes/webpush-go"
+)
+
+// The send's shape: a subscription the push service cannot deliver to dies at once, and the
+// message itself outlives the server by no more than an item's own waiting time.
+const (
+	pushSweepEvery  = 30 * time.Second
+	pushSendTimeout = 10 * time.Second
+	pushTTL         = 300 // seconds, the five minutes an escalation may take to reach its item
+	pushSubscriber  = "mailto:huddle-push@localhost"
+)
+
+// pushPayload is one needs-you item's push (SPEC 7.6): who, what kind and the tool name. The
+// summary, the input and every other field of the item's row stay off it — the payload crosses
+// a push service outside this machine, and its plaintext is decrypted only by the devices.
+type pushPayload struct {
+	Item    int64  `json:"item"`
+	Session string `json:"session"`
+	Machine string `json:"machine"`
+	Kind    string `json:"kind"`
+	Tool    string `json:"tool,omitempty"`
+}
+
+// alertPayload is one owner alert's push: the alert's own name for the kind, who it names, and
+// the tool when the alert carries one. An alert names no item row to decide on.
+type alertPayload struct {
+	Kind    string `json:"kind"`
+	Session string `json:"session,omitempty"`
+	Machine string `json:"machine"`
+	Tool    string `json:"tool,omitempty"`
+}
+
+// needsPushPayload builds one needs-you item's push payload.
+func needsPushPayload(item hub.Item, machine string) pushPayload {
+	return pushPayload{
+		Item:    item.ID,
+		Session: item.SessionID,
+		Machine: machine,
+		Kind:    item.Kind,
+		Tool:    item.Tool,
+	}
+}
+
+// alertPushPayload builds one alert's push payload from the alert's own body.
+func alertPushPayload(event AlertEvent, machine string) alertPayload {
+	payload := alertPayload{Kind: event.Type, Machine: machine}
+	if session := fieldOf(event.Body, "session"); session != nil {
+		payload.Session = textOf(session)
+	}
+	if tool := fieldOf(event.Body, "tool"); tool != nil {
+		payload.Tool = textOf(tool)
+	}
+	return payload
+}
+
+// watchPushes runs the push sweep on its interval and on every wake from a fresh item: one pass
+// carries the first pushes and the due escalations alike.
+func (s *server) watchPushes(ctx context.Context) {
+	interval := time.Duration(s.o.PushSweepMS) * time.Millisecond
+	if interval <= 0 {
+		interval = pushSweepEvery
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		case <-s.pushWake:
+		}
+		s.sweepPushes(ctx)
+	}
+}
+
+// wakePushes nudges the sweep; a nudge that lands while the sweep runs is dropped, and the
+// ticker is the floor.
+func (s *server) wakePushes() {
+	if s.pushWake == nil {
+		return
+	}
+	select {
+	case s.pushWake <- struct{}{}:
+	default:
+	}
+}
+
+// sweepPushes carries one pass: every item waiting for its first push, then every escalation
+// due. An item with no device to hear it waits unmarked, so the next device paired still hears
+// of it once; one the pass did carry is marked, whatever the push service said, so an item
+// never pushes twice because a service answered slowly.
+func (s *server) sweepPushes(ctx context.Context) {
+	if s.registry == nil || s.vapid == nil {
+		return
+	}
+	now := s.now()
+	subs, err := s.registry.PushSubscriptions(ctx)
+	if err != nil {
+		fmt.Fprintf(s.o.Stderr, "push: subscriptions: %v\n", err)
+		return
+	}
+	fresh, err := s.registry.FreshPushItems(ctx, now)
+	if err != nil {
+		fmt.Fprintf(s.o.Stderr, "push: fresh items: %v\n", err)
+		return
+	}
+	s.pushItems(ctx, now, subs, fresh, s.registry.MarkItemPushed)
+	due, err := s.registry.EscalatePushItems(ctx, now)
+	if err != nil {
+		fmt.Fprintf(s.o.Stderr, "push: escalations: %v\n", err)
+		return
+	}
+	s.pushItems(ctx, now, subs, due, s.registry.MarkItemEscalated)
+}
+
+// pushItems carries one pass's items to every device that chose to hear them, then marks each
+// carried item once.
+func (s *server) pushItems(ctx context.Context, now time.Time, subs []hub.PushSubscription,
+	items []hub.Item, mark func(context.Context, int64, string) error) {
+	if len(items) == 0 {
+		return
+	}
+	hearing := make([]hub.PushSubscription, 0, len(subs))
+	for _, sub := range subs {
+		if sub.Notify != hub.NotifyOff {
+			hearing = append(hearing, sub)
+		}
+	}
+	if len(hearing) == 0 {
+		return
+	}
+	for _, item := range items {
+		payload, err := json.Marshal(needsPushPayload(item, s.machineOf(ctx, item.SessionID, now)))
+		if err != nil {
+			continue
+		}
+		for _, sub := range hearing {
+			s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
+		}
+		if err := mark(ctx, item.ID, jsfmt.ISOTime(now)); err != nil {
+			fmt.Fprintf(s.o.Stderr, "push: mark item %d: %v\n", item.ID, err)
+		}
+	}
+}
+
+// pushAlertEvent carries one raised alert to the devices that chose needs-and-alerts.
+func (s *server) pushAlertEvent(ctx context.Context, event AlertEvent) {
+	if s.registry == nil || s.vapid == nil {
+		return
+	}
+	subs, err := s.registry.PushSubscriptions(ctx)
+	if err != nil {
+		fmt.Fprintf(s.o.Stderr, "push: subscriptions: %v\n", err)
+		return
+	}
+	payload, err := json.Marshal(alertPushPayload(event, s.thisMachine(ctx)))
+	if err != nil {
+		return
+	}
+	for _, sub := range subs {
+		if sub.Notify == hub.NotifyAll {
+			s.sendPush(ctx, sub, payload, webpush.UrgencyNormal)
+		}
+	}
+}
+
+// sendPush encrypts one payload to one subscription and carries it to its endpoint. A
+// subscription the push service calls gone (404 or 410) is dropped here, so the next sweep
+// stops carrying it; any other failure keeps the subscription and costs a log line.
+func (s *server) sendPush(ctx context.Context, sub hub.PushSubscription, payload []byte, urgency webpush.Urgency) {
+	keys, err := s.vapid.Keys(ctx)
+	if err != nil {
+		fmt.Fprintf(s.o.Stderr, "push: vapid keys: %v\n", err)
+		return
+	}
+	resp, err := webpush.SendNotificationWithContext(ctx, payload, &webpush.Subscription{
+		Endpoint: sub.Endpoint,
+		Keys:     webpush.Keys{Auth: sub.Auth, P256dh: sub.P256dh},
+	}, &webpush.Options{
+		VAPIDPublicKey: keys.Public, VAPIDPrivateKey: keys.Private,
+		Subscriber: pushSubscriber, TTL: pushTTL, Urgency: urgency,
+		HTTPClient: s.pushHTTP,
+	})
+	if err != nil {
+		// the endpoint's service may be down; the subscription stays for the next sweep
+		fmt.Fprintf(s.o.Stderr, "push: send: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone:
+		if _, err := s.registry.RemovePushSubscription(ctx, sub.Endpoint); err != nil {
+			fmt.Fprintf(s.o.Stderr, "push: drop %s: %v\n", sub.Device, err)
+		}
+	case resp.StatusCode >= 300:
+		fmt.Fprintf(s.o.Stderr, "push: send to %s answered %d\n", sub.Device, resp.StatusCode)
+	}
+}
+
+// machineOf answers the machine a session runs on, the who a payload names; a session that
+// never reported names none.
+func (s *server) machineOf(ctx context.Context, sessionID string, now time.Time) string {
+	row, err := s.registry.SessionRow(ctx, sessionID, now)
+	if err != nil || row == nil {
+		return ""
+	}
+	return row.Machine
+}
+
+// thisMachine answers the machine this server runs on, the who an alert names.
+func (s *server) thisMachine(ctx context.Context) string {
+	cfg, err := home.LoadConfig(home.Home{Root: s.o.Home})
+	if err != nil {
+		return ""
+	}
+	return cfg.Machine
+}
+
+// ── the routes ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+// deviceOnly holds a route to paired devices: a subscription and its choice belong to the
+// browser whose passkey enrolled the device, and nothing else carries one.
+func deviceOnly(me auth.Who) error {
+	if me.Device == "" {
+		return &channel.HuddleError{Status: 403, Msg: "only a paired device holds a push subscription"}
+	}
+	return nil
+}
+
+// pushUnavailable is what a server without its registry or its keys answers: nothing here can
+// be promised.
+func pushUnavailable() error {
+	return &channel.HuddleError{Status: 503, Msg: "push is unavailable"}
+}
+
+// pushKeyRoute answers the VAPID public key the browser subscribes with: the P-256 point, 65
+// bytes, base64url — the same pair every push send signs with.
+func (s *server) pushKeyRoute(w http.ResponseWriter, r *http.Request) error {
+	if s.vapid == nil {
+		return pushUnavailable()
+	}
+	keys, err := s.vapid.Keys(r.Context())
+	if err != nil {
+		return err
+	}
+	s.writeJSON(w, 200, struct {
+		PublicKey string `json:"public_key"`
+	}{keys.Public}, nil)
+	return nil
+}
+
+// pushSubscribeRoute stores the browser's subscription for the device at the cookie (SPEC 7.6):
+// the endpoint and the keys it encrypted for. A re-subscribe replaces the row the endpoint
+// holds — the push service's own name for one subscription.
+func (s *server) pushSubscribeRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
+	if err := deviceOnly(me); err != nil {
+		return err
+	}
+	if s.registry == nil {
+		return pushUnavailable()
+	}
+	body, err := s.body(r)
+	if err != nil {
+		return err
+	}
+	endpoint := textOf(fieldOf(body, "endpoint"))
+	keys := fieldOf(body, "keys")
+	p256dh, authSecret := "", ""
+	if keys != nil {
+		p256dh = textOf(fieldOf(keys, "p256dh"))
+		authSecret = textOf(fieldOf(keys, "auth"))
+	}
+	if endpoint == "" || p256dh == "" || authSecret == "" {
+		return &channel.HuddleError{Status: 400, Msg: "a subscription needs an endpoint and its p256dh and auth keys"}
+	}
+	if err := s.registry.SavePushSubscription(r.Context(), hub.PushSubscription{
+		Device: me.Device, Endpoint: endpoint, P256dh: p256dh, Auth: authSecret,
+	}, s.now().UnixMilli()); err != nil {
+		return err
+	}
+	s.writeJSON(w, 200, struct {
+		OK bool `json:"ok"`
+	}{true}, nil)
+	return nil
+}
+
+// pushUnsubscribeRoute ends the device's own subscription; an endpoint that is nobody's here —
+// already gone, or another device's — answers 404, never a touch.
+func (s *server) pushUnsubscribeRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
+	if err := deviceOnly(me); err != nil {
+		return err
+	}
+	if s.registry == nil {
+		return pushUnavailable()
+	}
+	endpoint := r.URL.Query().Get("endpoint")
+	if endpoint == "" {
+		return &channel.HuddleError{Status: 400, Msg: "endpoint: the subscription's endpoint"}
+	}
+	subs, err := s.registry.PushSubscriptions(r.Context())
+	if err != nil {
+		return err
+	}
+	ours := false
+	for _, sub := range subs {
+		if sub.Endpoint == endpoint {
+			ours = sub.Device == me.Device
+			break
+		}
+	}
+	if !ours {
+		return &channel.HuddleError{Status: 404, Msg: "no such subscription"}
+	}
+	if _, err := s.registry.RemovePushSubscription(r.Context(), endpoint); err != nil {
+		return err
+	}
+	s.writeJSON(w, 200, struct {
+		OK bool `json:"ok"`
+	}{true}, nil)
+	return nil
+}
+
+// pushNotifyRoute answers the device's own notification choice.
+func (s *server) pushNotifyRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
+	if err := deviceOnly(me); err != nil {
+		return err
+	}
+	if s.registry == nil {
+		return pushUnavailable()
+	}
+	notify, _, err := s.registry.DeviceNotify(r.Context(), me.Device)
+	if err != nil {
+		return err
+	}
+	if notify == "" {
+		notify = hub.NotifyNeeds
+	}
+	s.writeJSON(w, 200, struct {
+		Notify string `json:"notify"`
+	}{notify}, nil)
+	return nil
+}
+
+// pushSetNotifyRoute records the device's own notification choice: needs-you only, needs-you
+// and alerts, or off.
+func (s *server) pushSetNotifyRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
+	if err := deviceOnly(me); err != nil {
+		return err
+	}
+	if s.registry == nil {
+		return pushUnavailable()
+	}
+	body, err := s.body(r)
+	if err != nil {
+		return err
+	}
+	notify := textOf(fieldOf(body, "notify"))
+	if err := s.registry.SetDeviceNotify(r.Context(), me.Device, notify); err != nil {
+		var unknown *hub.UnknownNotifyError
+		if errors.As(err, &unknown) {
+			return &channel.HuddleError{Status: 400, Msg: unknown.Error()}
+		}
+		return err
+	}
+	s.writeJSON(w, 200, struct {
+		OK bool `json:"ok"`
+	}{true}, nil)
+	return nil
+}

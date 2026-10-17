@@ -1,0 +1,19 @@
+{
+  "seq": 7,
+  "route": "/api/tools",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"tools\":[{\"id\":\"toolu_a1\",\"sessionId\":\"sess-a\",\"agentId\":\"main\",\"name\":\"Bash\",\"startedAt\":1785747626000,\"durationMs\":14000,\"ok\":true,\"inputKey\":\"e2fb1d09\"}]}\n"
+    },
+    {
+      "query": "?failed=1",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"tools\":[]}\n"
+    }
+  ]
+}

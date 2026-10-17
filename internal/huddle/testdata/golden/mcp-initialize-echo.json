@@ -1,0 +1,13 @@
+{
+  "seq": 46,
+  "kind": "mcp",
+  "name": "mcp-initialize-echo",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "sessionHeader": true,
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":6,\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{},\"experimental\":{\"claude/channel\":{}}},\"serverInfo\":{\"name\":\"huddle\",\"version\":\"0.0.2\"},\"instructions\":\"You are \\\"scout\\\" in Huddle channel \\\"golden\\\": every session (and subagent) in this channel sees the same events, tasks and shared knowledge, so act as one team.\\nProtocol (the huddle skill has the full version):\\n1. You are already joined (the session start did it): call status to refresh; join only to change your role or context. Tools are mcp__plugin_huddle_huddle__<op>; from Bash, `huddle <op>`.\\n2. recall before reading files or re-deriving anything; remember what you learn (fact, lesson, decision, context, result, howto).\\n3. gate before any change (paused = stop). Answer every inbox message with reply.\\n4. Work: start (takes your next task, or the id you name) → do it → finish \\\"<command + result>\\\" (releases what waited on it, names your next). When start says the task waits on another session's: wait with topics [\\\"task.ready\\\"] (or wait_task) instead of polling or guessing.\\n5. Need someone else: send (ask=true for a reply), or task_create with owner and after. Ping-pong work: only the turn holder acts; pass the turn when done.\\n6. Idle or blocked on others: wait (it returns kind message | event | timeout; on event, handle it and its skipped list, then ack its seq; on timeout, wait again).\\n7. Subagents you start: they join as \\\"scout.<role>\\\" (pass as), share results with remember, and leave when done.\"}}"
+}

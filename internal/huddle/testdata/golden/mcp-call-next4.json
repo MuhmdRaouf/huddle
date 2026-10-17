@@ -1,0 +1,12 @@
+{
+  "seq": 55,
+  "kind": "mcp",
+  "name": "mcp-call-next4",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":14,\"method\":\"tools/call\",\"params\":{\"name\":\"next\",\"arguments\":{\"json\":true}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":14,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\n \\\"kind\\\": \\\"code\\\",\\n \\\"what\\\": \\\"The Go test replays every recording byte for byte.\\\",\\n \\\"id\\\": \\\"t-check\\\",\\n \\\"phase_n\\\": 2,\\n \\\"ord\\\": 0,\\n \\\"title\\\": \\\"Replay the goldens against the engine\\\",\\n \\\"owner\\\": \\\"scout\\\",\\n \\\"status\\\": \\\"todo\\\",\\n \\\"depends\\\": [\\n  \\\"t-write\\\"\\n ],\\n \\\"origin\\\": \\\"plan\\\",\\n \\\"created_by\\\": \\\"owner\\\",\\n \\\"status_at\\\": null,\\n \\\"status_by\\\": null,\\n \\\"status_note\\\": null,\\n \\\"alternatives\\\": [],\\n \\\"how\\\": [],\\n \\\"snippets\\\": [],\\n \\\"verify\\\": [],\\n \\\"files\\\": [],\\n \\\"refs\\\": [],\\n \\\"edited\\\": {},\\n \\\"comments\\\": [],\\n \\\"needed_by\\\": [\\n  \\\"t-extra\\\"\\n ],\\n \\\"unmet\\\": [\\n  {\\n   \\\"id\\\": \\\"t-write\\\",\\n   \\\"owner\\\": \\\"lead\\\",\\n   \\\"status\\\": \\\"doing\\\",\\n   \\\"title\\\": \\\"Write the recorder\\\"\\n  }\\n ],\\n \\\"ready\\\": false,\\n \\\"open_notes\\\": []\\n}\"}]}}"
+}

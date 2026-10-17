@@ -1,0 +1,11 @@
+{
+  "seq": 39,
+  "kind": "api",
+  "name": "api-missing",
+  "method": "GET",
+  "path": "/api/nope",
+  "auth": "root",
+  "status": 404,
+  "contentType": "application/json",
+  "body": "{\"error\":\"not found\"}"
+}

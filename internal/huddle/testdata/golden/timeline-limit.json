@@ -1,0 +1,11 @@
+{
+  "seq": 8,
+  "kind": "api",
+  "name": "timeline-limit",
+  "method": "GET",
+  "path": "/api/c/golden/timeline?limit=3&after=10",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "[{\"seq\":20,\"ts\":\"<volatile>\",\"from\":\"owner\",\"to\":\"lead.research\",\"topic\":\"control.pause\",\"ref\":null,\"msg\":\"until the plan settles\",\"data\":null,\"reply_to\":null,\"needs_reply\":false},{\"seq\":21,\"ts\":\"<volatile>\",\"from\":\"gone\",\"to\":null,\"topic\":\"session.left\",\"ref\":null,\"msg\":\"gone left: nothing left for me\",\"data\":null,\"reply_to\":null,\"needs_reply\":false},{\"seq\":22,\"ts\":\"<volatile>\",\"from\":\"lead\",\"to\":\"scout\",\"topic\":\"turn.pass\",\"ref\":null,\"msg\":\"t-check is yours once t-write lands\",\"data\":null,\"reply_to\":null,\"needs_reply\":false}]"
+}

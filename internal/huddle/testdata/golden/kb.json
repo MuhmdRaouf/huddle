@@ -1,0 +1,11 @@
+{
+  "seq": 14,
+  "kind": "api",
+  "name": "kb",
+  "method": "GET",
+  "path": "/api/c/golden/kb",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "[{\"id\":100000,\"kind\":\"fact\",\"title\":\"The golden server binds port zero\",\"by\":\"scout\",\"tags\":[\"testing\",\"ports\"],\"refs\":[\"scripts/record-goldens.ts\"],\"task\":null,\"created_at\":\"<volatile>\",\"hit\":\"PORT=0 makes the server bind any free port and print the one it got, so a recording never races a fixed one.\",\"scope\":\"server\",\"origin\":\"golden\",\"verified_by\":\"owner\",\"verified_at\":\"<volatile>\",\"age_days\":0,\"stale\":null},{\"id\":3,\"kind\":\"fact\",\"title\":\"Ports outlive pids\",\"by\":\"lead\",\"tags\":[\"router\",\"testing\"],\"refs\":[],\"task\":null,\"created_at\":\"<volatile>\",\"hit\":\"A saved port is the address; the pid only says who held it once.\",\"scope\":\"channel\",\"origin\":null,\"verified_by\":null,\"verified_at\":null,\"age_days\":0,\"stale\":null}]"
+}

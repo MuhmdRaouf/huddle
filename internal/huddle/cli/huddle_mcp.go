@@ -1,0 +1,977 @@
+// Huddle's MCP server over stdio, for a harness that spawns it: one JSON-RPC message per line
+// in, one per line out. What needs no service (initialize, tools/list, the two tools a session
+// outside a huddle has) is answered here, so the bridge connects in every state; everything
+// else is forwarded to this session's Huddle (POST /mcp/<channel>?as=<you>) and the answer is
+// written out as it came. While connected it follows the channel's live stream and writes each
+// event meant for this session (addressed to it, an ask, or a pushed topic) as a
+// notifications/claude/channel push, so an idle session wakes up without polling. stdout is the
+// protocol; diagnostics go to stderr.
+package cli
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+)
+
+// notInYet is what a session that is not in a huddle yet is told, with the two ways in.
+const notInYet = "not in a huddle yet: run /huddle:setup in this project (the first session), or paste the /huddle:join line that /huddle:invite shows in a session that is in one"
+
+// noPortYet is what a session in a channel whose Huddle has no url is told.
+const noPortYet = "huddle: this project's Huddle has no port yet: start it with huddle up (it picks one and saves it). Treat yourself as paused and retry."
+
+// mcpBlockingTools wait for the channel to answer, so they get the long stdio timeout unless
+// the caller chose one.
+var mcpBlockingTools = map[string]bool{
+	"wait": true, "wait_task": true, "gate": true, "depend": true, "handoff": true, "ask_wait": true,
+}
+
+// mcpJoinURL accepts the host:port (or full url) a join line carries: scheme, host, port.
+var mcpJoinURL = regexp.MustCompile(`^https?://[\w.-]+:\d+$`)
+
+// mcpProtocolVersion is the MCP revision the bridge speaks when the client names none.
+const mcpProtocolVersion = "2025-06-18"
+
+// McpStdio serves one Claude Code session over stdin and stdout until stdin ends, and answers
+// the process's exit code (0: a session served).
+func McpStdio(ctx context.Context, w *World, version string, stdin io.Reader, stdout, stderr io.Writer) int {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	id := Identify(runCtx, w, "")
+	b := &mcpBridge{
+		w: w, version: version, stdout: stdout, stderr: stderr,
+		url: id.URL, channelName: id.Channel, me: id.As,
+		pushed:  map[int64]bool{},
+		wait:    id.Wait,
+		callMS:  int(jsNumber(firstNonEmpty(w.getenv("HUDDLE_CALL_TIMEOUT_MS"), "10000"))),
+		pushOff: len(id.Push) > 0 && id.Push[0] == "off",
+	}
+	for _, glob := range id.Push {
+		b.pushGlobs = append(b.pushGlobs, regexp.MustCompile("^(?:"+mcpGlobExpr(glob)+")$"))
+	}
+	go b.watchList(runCtx)
+	data := []byte{}
+	chunk := make([]byte, 4096)
+	for {
+		n, err := stdin.Read(chunk)
+		data = append(data, chunk[:n]...)
+		for {
+			at := bytes.IndexByte(data, '\n')
+			if at < 0 {
+				break
+			}
+			line := jsfmt.Trim(string(data[:at]))
+			data = data[at+1:]
+			if line == "" {
+				continue
+			}
+			msg, perr := jsfmt.DecodeValue([]byte(line))
+			if perr != nil {
+				b.write(mcpParseError())
+				continue
+			}
+			if mcpMethod(msg) == "notifications/initialized" {
+				b.mu.Lock()
+				b.initialized = true
+				b.mu.Unlock()
+				b.startPush(runCtx)
+			}
+			b.forward(runCtx, msg)
+		}
+		if err != nil {
+			return 0
+		}
+	}
+}
+
+// mcpBridge is one stdio session: its identity, its push stream and its stdout, all under one
+// mutex that also keeps each written line whole.
+type mcpBridge struct {
+	w       *World
+	version string
+	stdout  io.Writer
+	stderr  io.Writer
+
+	mu          sync.Mutex
+	url         string
+	channelName string
+	me          string
+	listed      int8 // what the last tools/list showed: 0 none yet, 1 the short list, 2 every tool
+	initialized bool
+	pushing     bool
+	lastSeq     int64
+	pushed      map[int64]bool
+
+	pushGlobs []*regexp.Regexp
+	pushOff   bool
+	wait      int
+	callMS    int
+}
+
+// what the last tools/list showed
+const (
+	mcpListNone int8 = 0
+	mcpListOut  int8 = 1
+	mcpListIn   int8 = 2
+)
+
+// mcpState is one reading of the bridge's identity fields.
+type mcpState struct {
+	url         string
+	channelName string
+	me          string
+}
+
+// state answers the current identity fields.
+func (b *mcpBridge) state() mcpState {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return mcpState{url: b.url, channelName: b.channelName, me: b.me}
+}
+
+// refresh re-reads who this session is: a join or a session start elsewhere changes it.
+func (b *mcpBridge) refresh(ctx context.Context) {
+	id := Identify(ctx, b.w, "")
+	b.mu.Lock()
+	b.url, b.channelName, b.me = id.URL, id.Channel, id.As
+	b.mu.Unlock()
+}
+
+// isIn says whether this session is in a huddle: a channel, a name, an address and a credential.
+func (b *mcpBridge) isIn(ctx context.Context) bool {
+	s := b.state()
+	return s.url != "" && s.channelName != "" && s.me != "" && TokenFor(ctx, b.w, s.url, "") != ""
+}
+
+// write puts one message on stdout as one line.
+func (b *mcpBridge) write(msg *jsfmt.Value) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, _ = io.WriteString(b.stdout, msg.EncodeJSON()+"\n")
+}
+
+// logf puts one diagnostic on stderr, never stdout.
+func (b *mcpBridge) logf(format string, args ...any) {
+	fmt.Fprintf(b.stderr, "huddle-mcp: "+format+"\n", args...)
+}
+
+// mcpID answers the message's id and whether it has one at all (a notification has none; an
+// explicit null still gets its reply with id null, the way the bridge writes it).
+func mcpID(msg *jsfmt.Value) (*jsfmt.Value, bool) {
+	id, ok := fieldOf(msg, "id")
+	if !ok {
+		return nil, false
+	}
+	return id, true
+}
+
+// mcpReply shapes one JSON-RPC reply.
+func mcpReply(id, result *jsfmt.Value) *jsfmt.Value {
+	return jsfmt.Object([]string{"jsonrpc", "id", "result"},
+		[]*jsfmt.Value{jsfmt.String("2.0"), id, result})
+}
+
+// mcpNotification shapes one JSON-RPC notification that carries nothing but its method.
+func mcpNotification(method string) *jsfmt.Value {
+	return jsfmt.Object([]string{"jsonrpc", "method"},
+		[]*jsfmt.Value{jsfmt.String("2.0"), jsfmt.String(method)})
+}
+
+// mcpNull is the JSON null.
+func mcpNull() *jsfmt.Value {
+	v, _ := jsfmt.DecodeValue([]byte("null"))
+	return v
+}
+
+// mcpParseError is the reply to a line that is not JSON.
+func mcpParseError() *jsfmt.Value {
+	err := jsfmt.Object([]string{"code", "message"},
+		[]*jsfmt.Value{jsfmt.Number(-32700), jsfmt.String("parse error")})
+	return jsfmt.Object([]string{"jsonrpc", "id", "error"},
+		[]*jsfmt.Value{jsfmt.String("2.0"), mcpNull(), err})
+}
+
+// textResult shapes one tool result: a text, and whether it is an error.
+func textResult(id *jsfmt.Value, text string, isErr bool) *jsfmt.Value {
+	content := jsfmt.Object([]string{"type", "text"}, []*jsfmt.Value{jsfmt.String("text"), jsfmt.String(text)})
+	keys := []string{"content"}
+	fields := []*jsfmt.Value{jsfmt.Array([]*jsfmt.Value{content})}
+	if isErr {
+		keys = append(keys, "isError")
+		fields = append(fields, jsfmt.Bool(true))
+	}
+	return mcpReply(id, jsfmt.Object(keys, fields))
+}
+
+// replyText answers a message with a tool result, when it has an id to echo.
+func (b *mcpBridge) replyText(msg *jsfmt.Value, text string, isErr bool) {
+	id, ok := mcpID(msg)
+	if !ok {
+		return
+	}
+	b.write(textResult(id, text, isErr))
+}
+
+// forward serves one message: what is local or needs no service here, the rest at the service.
+func (b *mcpBridge) forward(ctx context.Context, msg *jsfmt.Value) {
+	b.refresh(ctx)
+	if s := b.state(); b.isInitialized() && s.url != "" && s.channelName != "" && s.me != "" {
+		b.startPush(ctx)
+	}
+	if b.local(ctx, msg) {
+		return
+	}
+	if b.outside(ctx, msg) {
+		return
+	}
+	s := b.state()
+	if s.channelName == "" || s.me == "" {
+		b.replyText(msg, "huddle: "+notInYet, true)
+		return
+	}
+	if s.url == "" {
+		b.replyText(msg, noPortYet, true)
+		return
+	}
+	sent := msg
+	method := mcpMethod(msg)
+	name := mcpTextOf(mcpFieldOf(msg, "params"), "name")
+	ms := b.callMS
+	if method == "tools/call" && mcpBlockingTools[name] {
+		params, _ := fieldOf(msg, "params")
+		args, _ := fieldOf(params, "arguments")
+		timeout, hasTimeout := fieldOf(args, "timeout")
+		if !hasTimeout {
+			value := float64(b.wait)
+			if name == "gate" {
+				value = 0
+			}
+			args = mcpWithField(mcpObjectOf(args), "timeout", jsfmt.Number(value))
+			params = mcpWithField(mcpObjectOf(params), "arguments", args)
+			sent = mcpWithField(msg, "params", params)
+			timeout = jsfmt.Number(value)
+		}
+		secs := mcpNumberOf(timeout)
+		if secs == 0 || math.IsNaN(secs) {
+			secs = 3600
+		}
+		if secs > 3600 {
+			secs = 3600
+		}
+		ms = int((secs + 30) * 1000)
+	}
+	id, hasID := mcpID(msg)
+	go b.exchange(ctx, s, sent, ms, id, hasID)
+}
+
+// isInitialized says whether the client finished initializing.
+func (b *mcpBridge) isInitialized() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.initialized
+}
+
+// exchange runs one forwarded call at the service and writes its answer.
+func (b *mcpBridge) exchange(ctx context.Context, s mcpState, sent *jsfmt.Value, ms int, id *jsfmt.Value, hasID bool) {
+	reply := func(text string) {
+		if hasID {
+			b.write(textResult(id, text, true))
+		}
+	}
+	resp, err := HFetch(ctx, b.w, http.MethodPost,
+		s.url+"/mcp/"+s.channelName+"?as="+queryEscape(s.me),
+		map[string]string{"content-type": "application/json", "accept": "application/json"},
+		[]byte(sent.EncodeJSON()), time.Duration(ms)*time.Millisecond, "")
+	if err != nil {
+		b.transportFailure(s.url, ms, err, reply)
+		return
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusAccepted:
+		return
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		raw, _ := io.ReadAll(resp.Body)
+		reason := fmt.Sprintf("HTTP %d", resp.StatusCode)
+		if answer, perr := jsfmt.DecodeValue(raw); perr == nil {
+			if text := mcpTextOf(answer, "error"); text != "" {
+				reason = text
+			}
+		}
+		reply("huddle: " + reason)
+	default:
+		raw, _ := io.ReadAll(resp.Body)
+		answer, perr := jsfmt.DecodeValue(raw)
+		if perr != nil {
+			b.transportFailure(s.url, ms, nil, reply)
+			return
+		}
+		b.write(answer)
+	}
+}
+
+// transportFailure writes what a stalled or absent service means for the caller.
+func (b *mcpBridge) transportFailure(rawURL string, ms int, err error, reply func(string)) {
+	late := err != nil && mcpIsTimeout(err)
+	if late {
+		reply("huddle: no answer from " + rawURL + " within " + jsfmt.JSNumber(float64(ms)/1000) +
+			" s. Treat yourself as paused and retry.")
+		return
+	}
+	reply("huddle: service unreachable at " + rawURL + " (start it: huddle up). Treat yourself as paused and retry.")
+}
+
+// local answers what needs no service, so the bridge connects in every state; handled says
+// whether it did.
+func (b *mcpBridge) local(ctx context.Context, msg *jsfmt.Value) bool {
+	id, hasID := mcpID(msg)
+	ok := func(result *jsfmt.Value) bool {
+		if hasID {
+			b.write(mcpReply(id, result))
+		}
+		return true
+	}
+	params, _ := fieldOf(msg, "params")
+	s := b.state()
+	switch mcpMethod(msg) {
+	case "initialize":
+		protocol := jsfmt.String(mcpProtocolVersion)
+		if given, present := fieldOf(params, "protocolVersion"); present && given.Kind() != jsfmt.KindNull {
+			protocol = given
+		}
+		capabilities := jsfmt.Object(
+			[]string{"tools", "experimental"},
+			[]*jsfmt.Value{jsfmt.Object(nil, nil),
+				jsfmt.Object([]string{"claude/channel"}, []*jsfmt.Value{jsfmt.Object(nil, nil)})})
+		serverInfo := jsfmt.Object([]string{"name", "version"},
+			[]*jsfmt.Value{jsfmt.String("huddle"), jsfmt.String(b.version)})
+		instructions := jsfmt.String("Huddle: this session is " + notInYet +
+			". Its tools (mcp__plugin_huddle_huddle__*) are listed once it is in.")
+		if s.channelName != "" && s.me != "" {
+			instructions = jsfmt.String(server.Instructions(s.channelName, s.me))
+		}
+		return ok(jsfmt.Object(
+			[]string{"protocolVersion", "capabilities", "serverInfo", "instructions"},
+			[]*jsfmt.Value{protocol, capabilities, serverInfo, instructions}))
+	case "ping":
+		return ok(jsfmt.Object(nil, nil))
+	case "tools/list":
+		in := b.isIn(ctx)
+		b.mu.Lock()
+		if in {
+			b.listed = mcpListIn
+		} else {
+			b.listed = mcpListOut
+		}
+		b.mu.Unlock()
+		tools := mcpOutTools()
+		if in {
+			tools = mcpAllTools()
+		}
+		return ok(jsfmt.Object([]string{"tools"}, []*jsfmt.Value{jsfmt.Array(tools)}))
+	case "resources/list":
+		return ok(jsfmt.Object([]string{"resources"}, []*jsfmt.Value{jsfmt.Array(nil)}))
+	case "prompts/list":
+		return ok(jsfmt.Object([]string{"prompts"}, []*jsfmt.Value{jsfmt.Array(nil)}))
+	}
+	return false
+}
+
+// mcpAllTools lists every channel operation as a tool.
+func mcpAllTools() []*jsfmt.Value {
+	defs := channel.ToolDefs()
+	tools := make([]*jsfmt.Value, 0, len(defs))
+	for _, d := range defs {
+		tools = append(tools, jsfmt.Object(
+			[]string{"name", "description", "inputSchema"},
+			[]*jsfmt.Value{jsfmt.String(d.Name), jsfmt.String(d.Description), d.Schema}))
+	}
+	return tools
+}
+
+// mcpOutTools lists the two tools a session that is not in a huddle has.
+func mcpOutTools() []*jsfmt.Value {
+	return []*jsfmt.Value{
+		jsfmt.Object([]string{"name", "description", "inputSchema"}, []*jsfmt.Value{
+			jsfmt.String("status"),
+			jsfmt.String("Is this session in a Huddle? (Until it is, only this and join are listed.)"),
+			jsfmt.Object([]string{"type", "properties"}, []*jsfmt.Value{
+				jsfmt.String("object"), jsfmt.Object(nil, nil)}),
+		}),
+		jsfmt.Object([]string{"name", "description", "inputSchema"}, []*jsfmt.Value{
+			jsfmt.String("join"),
+			jsfmt.String("Join a Huddle with an invite: the host:port and token from the /huddle:join line the user pasted."),
+			jsfmt.Object([]string{"type", "properties", "required"}, []*jsfmt.Value{
+				jsfmt.String("object"),
+				jsfmt.Object([]string{"host_port", "token", "as"}, []*jsfmt.Value{
+					jsfmt.Object([]string{"type", "description"}, []*jsfmt.Value{
+						jsfmt.String("string"), jsfmt.String("e.g. 127.0.0.1:41873")}),
+					jsfmt.Object([]string{"type", "description"}, []*jsfmt.Value{
+						jsfmt.String("string"), jsfmt.String("<id>.<secret> from the join line")}),
+					jsfmt.Object([]string{"type", "description"}, []*jsfmt.Value{
+						jsfmt.String("string"), jsfmt.String("your name (default: the project folder's)")}),
+				}),
+				jsfmt.Array([]*jsfmt.Value{jsfmt.String("host_port"), jsfmt.String("token")}),
+			}),
+		}),
+	}
+}
+
+// outside answers the tools a session that is not in a huddle has; handled says whether it did.
+func (b *mcpBridge) outside(ctx context.Context, msg *jsfmt.Value) bool {
+	if mcpMethod(msg) != "tools/call" || b.isIn(ctx) {
+		return false
+	}
+	params, _ := fieldOf(msg, "params")
+	args, _ := fieldOf(params, "arguments")
+	name := mcpTextOf(params, "name")
+	if name != "join" {
+		b.replyText(msg, "huddle: "+notInYet, name != "status")
+		return true
+	}
+	go b.join(ctx, msg, mcpObjectOf(args))
+	return true
+}
+
+// join runs the one tool that works outside a huddle: joining with an invite.
+func (b *mcpBridge) join(ctx context.Context, msg *jsfmt.Value, args *jsfmt.Value) {
+	host := jsfmt.Trim(mcpStringOf(mcpFieldOf(args, "host_port")))
+	rawURL := host
+	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
+		rawURL = "http://" + host
+	}
+	rawURL = strings.TrimSuffix(rawURL, "/")
+	token, hasToken := fieldOf(args, "token")
+	if !mcpJoinURL.MatchString(rawURL) || !hasToken || token.Kind() != jsfmt.KindString {
+		b.replyText(msg, "huddle: join needs host_port (host:port) and token", true)
+		return
+	}
+	asValue, _ := fieldOf(args, "as")
+	s := b.state()
+	wish := ""
+	if mcpTruthy(asValue) {
+		wish = mcpStringOf(asValue)
+	} else if s.me != "" {
+		wish = strings.SplitN(s.me, ".", 2)[0]
+	} else {
+		wish = Slug(firstNonEmpty(b.w.getenv("CLAUDE_PROJECT_DIR"), b.w.dir()), "session")
+	}
+	body := jsfmt.Object(
+		[]string{"token", "name", "unique"},
+		[]*jsfmt.Value{token, jsfmt.String(wish), jsfmt.Bool(!mcpTruthy(asValue))})
+	if s.channelName != "" {
+		body = mcpWithField(body, "channel", jsfmt.String(s.channelName))
+	}
+	client := &http.Client{Timeout: time.Duration(b.callMS) * time.Millisecond}
+	joinReq, err := http.NewRequest(http.MethodPost, rawURL+"/api/join", strings.NewReader(body.EncodeJSON()))
+	if err != nil {
+		b.replyText(msg, "huddle: Huddle unreachable at "+rawURL, true)
+		return
+	}
+	joinReq.Header.Set("content-type", "application/json")
+	joinReq.Header.Set(server.ActionHeader, "/api/join")
+	resp, err := client.Do(joinReq)
+	if err != nil {
+		b.replyText(msg, "huddle: Huddle unreachable at "+rawURL, true)
+		return
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	answer, perr := jsfmt.DecodeValue(raw)
+	if perr != nil {
+		answer = jsfmt.Object(nil, nil)
+	}
+	credential := mcpTextOf(answer, "credential")
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || credential == "" {
+		reason := fmt.Sprintf("HTTP %d", resp.StatusCode)
+		if text := mcpTextOf(answer, "error"); text != "" {
+			reason = text
+		}
+		b.replyText(msg, "huddle: "+reason, true)
+		return
+	}
+	channelName := firstNonEmpty(mcpTextOf(answer, "channel"), s.channelName)
+	if channelName == "" {
+		b.replyText(msg, "huddle: joined, but the invite names no channel: ask for an invite made in a channel", true)
+		return
+	}
+	if err := SaveCred(ctx, b.w, Cred{
+		URL: rawURL, Channel: channelName, As: mcpTextOf(answer, "name"), Credential: credential,
+	}, ""); err != nil {
+		b.replyText(msg, "huddle: Huddle unreachable at "+rawURL, true)
+		return
+	}
+	b.refresh(ctx)
+	// in the channel, too, like `huddle join … --token` (the server keeps who is here)
+	if after := b.state(); after.url != "" && after.channelName != "" && after.me != "" {
+		if resp, err := HFetch(ctx, b.w, http.MethodPost,
+			after.url+"/api/c/"+after.channelName+"/op/join?as="+queryEscape(after.me),
+			map[string]string{"content-type": "application/json"}, []byte("{}"),
+			time.Duration(b.callMS)*time.Millisecond, ""); err == nil {
+			_ = resp.Body.Close()
+		}
+	}
+	b.mu.Lock()
+	b.listed = mcpListNone
+	b.mu.Unlock()
+	b.write(mcpNotification("notifications/tools/list_changed"))
+	link := Dashboard(ctx, b.w, b.state().url, "", 1500)
+	tail := " (huddle open, or /huddle:setup, prints the user a dashboard link that signs their browser in.)"
+	if link != "" {
+		tail = "\ndashboard: " + link + "   (signs your browser in once, within 5 min)"
+	}
+	s = b.state()
+	b.replyText(msg, "joined "+rawURL+", channel "+s.channelName+", as "+s.me+
+		"; this project's next sessions are in it too. Every Huddle tool is listed now: call status for the picture."+tail, false)
+}
+
+// watchList announces the full tool list once a session that listed the short one is in: it may
+// have joined outside this bridge (a session start, /huddle:join from Bash).
+func (b *mcpBridge) watchList(ctx context.Context) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			b.mu.Lock()
+			watch := b.listed == mcpListOut
+			b.mu.Unlock()
+			if !watch {
+				continue
+			}
+			b.refresh(ctx)
+			if b.isIn(ctx) {
+				b.mu.Lock()
+				b.listed = mcpListNone
+				b.mu.Unlock()
+				b.write(mcpNotification("notifications/tools/list_changed"))
+			}
+		}
+	}
+}
+
+// startPush starts the channel's live stream once per session.
+func (b *mcpBridge) startPush(ctx context.Context) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.pushing || b.pushOff || b.url == "" || b.channelName == "" || b.me == "" {
+		return
+	}
+	b.pushing = true
+	go b.pushLoop(ctx)
+}
+
+// pushLoop follows the channel's live stream, reconnecting with backoff, until the session ends.
+func (b *mcpBridge) pushLoop(ctx context.Context) {
+	backoff := time.Second
+	for {
+		err, connected := b.streamOnce(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		if connected {
+			backoff = time.Second
+		}
+		b.logf("live stream: %v retry in %ds", err, int(backoff/time.Second))
+		if !mcpSleep(ctx, backoff) {
+			return
+		}
+		if backoff < 30*time.Second {
+			backoff *= 2
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
+			}
+		}
+	}
+}
+
+// streamOnce reads the live stream until it ends or breaks; connected says it ever answered.
+func (b *mcpBridge) streamOnce(ctx context.Context) (error, bool) {
+	s := b.state()
+	resp, err := HFetch(ctx, b.w, http.MethodGet,
+		s.url+"/api/c/"+s.channelName+"/live?as="+queryEscape(s.me),
+		map[string]string{"accept": "text/event-stream"}, nil, 0, "")
+	if err != nil {
+		return err, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode), false
+	}
+	frameErr := error(nil)
+	connected := true
+	data := []byte{}
+	chunk := make([]byte, 4096)
+	for {
+		n, rerr := resp.Body.Read(chunk)
+		data = append(data, chunk[:n]...)
+		for frameErr == nil {
+			at := bytes.Index(data, []byte("\n\n"))
+			if at < 0 {
+				break
+			}
+			frame := string(data[:at])
+			data = data[at+2:]
+			frameErr = b.frame(ctx, frame)
+		}
+		if frameErr != nil {
+			return frameErr, true
+		}
+		if rerr != nil {
+			return errors.New("stream ended"), connected
+		}
+	}
+}
+
+// frame handles one server-sent event frame; an error breaks the stream. A frame with no data
+// is the stream's heartbeat: the bridge acks on it, so its proof stays fresh while the stream
+// is up even when nothing flows.
+func (b *mcpBridge) frame(ctx context.Context, frame string) error {
+	data := ""
+	for _, line := range strings.Split(frame, "\n") {
+		if strings.HasPrefix(line, "data: ") {
+			data = line[len("data: "):]
+			break
+		}
+	}
+	if data == "" {
+		b.ack(ctx)
+		return nil
+	}
+	msg, err := jsfmt.DecodeValue([]byte(data))
+	if err != nil {
+		return err
+	}
+	switch mcpTextOf(msg, "type") {
+	case "hello":
+		b.catchUp(ctx, int64(mcpNumberOf(mcpFieldOf(mcpFieldOf(msg, "data"), "last"))))
+		b.ack(ctx)
+		return nil
+	case "event":
+		event, _ := fieldOf(msg, "data")
+		b.deliver(event, true)
+		return nil
+	}
+	return nil
+}
+
+// ack tells the registry this bridge's channel pushes flow (SPEC 6.4): while an ack is fresh,
+// the hub delivers the owner's words by push instead of waiting for the session's next prompt.
+// Best effort: an ack that cannot land costs one line on stderr and the next heartbeat's retry.
+func (b *mcpBridge) ack(ctx context.Context) {
+	s := b.state()
+	if s.url == "" || s.channelName == "" || s.me == "" {
+		return
+	}
+	body := []byte(jsfmt.Object(
+		[]string{"channel", "as"},
+		[]*jsfmt.Value{jsfmt.String(s.channelName), jsfmt.String(s.me)}).EncodeJSON())
+	resp, err := HFetch(ctx, b.w, http.MethodPost, s.url+"/api/registry/push-ack",
+		map[string]string{"content-type": "application/json"}, body, 2*time.Second, "")
+	if err != nil {
+		b.logf("push ack: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+}
+
+// catchUp delivers what the stream cannot replay: on the first connect the asks already waiting,
+// after a reconnect everything since the last pushed seq.
+func (b *mcpBridge) catchUp(ctx context.Context, last int64) {
+	b.mu.Lock()
+	known := b.lastSeq > 0
+	b.mu.Unlock()
+	if err := func() error {
+		if known {
+			events, err := b.opList(ctx, "events", jsfmt.Object(
+				[]string{"after", "limit"},
+				[]*jsfmt.Value{jsfmt.Number(float64(b.lastSeqLocked())), jsfmt.Number(500)}))
+			if err != nil {
+				return err
+			}
+			for _, event := range events {
+				b.deliver(event, true)
+			}
+			return nil
+		}
+		events, err := b.opList(ctx, "inbox", jsfmt.Object(nil, nil))
+		if err != nil {
+			return err
+		}
+		for _, event := range events {
+			b.deliver(event, false)
+		}
+		return nil
+	}(); err != nil {
+		b.logf("catch-up: %v", err)
+	}
+	b.mu.Lock()
+	if last > b.lastSeq {
+		b.lastSeq = last
+	}
+	b.mu.Unlock()
+}
+
+// lastSeqLocked answers the last pushed seq.
+func (b *mcpBridge) lastSeqLocked() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.lastSeq
+}
+
+// opList runs one channel operation and answers its result list.
+func (b *mcpBridge) opList(ctx context.Context, name string, args *jsfmt.Value) ([]*jsfmt.Value, error) {
+	s := b.state()
+	resp, err := HFetch(ctx, b.w, http.MethodPost,
+		s.url+"/api/c/"+s.channelName+"/op/"+name+"?as="+queryEscape(s.me),
+		map[string]string{"content-type": "application/json"}, []byte(args.EncodeJSON()),
+		time.Duration(b.callMS)*time.Millisecond, "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	answer, perr := jsfmt.DecodeValue(raw)
+	if perr != nil {
+		return nil, perr
+	}
+	result, ok := fieldOf(answer, "result")
+	if !ok || result.Kind() != jsfmt.KindArray {
+		return nil, errors.New("no result list")
+	}
+	return result.Items(), nil
+}
+
+// deliver writes one channel event meant for this session as a claude/channel push; advance
+// moves the cursor (a catch-up from the inbox does not: what it shows may be superseded live).
+func (b *mcpBridge) deliver(event *jsfmt.Value, advance bool) {
+	if event == nil || event.Kind() != jsfmt.KindObject {
+		return
+	}
+	seq := int64(mcpNumberOf(mcpFieldOf(event, "seq")))
+	b.mu.Lock()
+	if b.pushed[seq] || (advance && seq <= b.lastSeq) {
+		b.mu.Unlock()
+		return
+	}
+	if advance {
+		b.lastSeq = seq
+	} else {
+		b.pushed[seq] = true
+	}
+	from := mcpTextOf(event, "from")
+	to := mcpTextOf(event, "to")
+	topic := mcpTextOf(event, "topic")
+	needsReply := false
+	if flag := mcpFieldOf(event, "needs_reply"); flag != nil {
+		needsReply = flag.EncodeJSON() == "true"
+	}
+	ref := mcpTextOf(event, "ref")
+	text := mcpTextOf(event, "msg")
+	channelName, me := b.channelName, b.me
+	b.mu.Unlock()
+	if from == me {
+		return
+	}
+	overheard := to != "" && to != me
+	if overheard {
+		if topic != "msg" && topic != "ask" && topic != "reply" {
+			return
+		}
+	} else if !(to == me || needsReply || b.matches(topic)) {
+		return
+	}
+	addressee := to
+	if addressee == "" {
+		addressee = "all"
+	}
+	note := ""
+	if ref != "" {
+		note = " (" + ref + ")"
+	}
+	suffix := ""
+	switch {
+	case overheard:
+		suffix = "\n(overheard: between other sessions, for your knowledge)"
+	case needsReply:
+		suffix = fmt.Sprintf("\n(needs your reply: tool reply seq=%d)", seq)
+	}
+	content := fmt.Sprintf("%s → %s · %s #%d%s: %s%s", from, addressee, topic, seq, note, text, suffix)
+	meta := jsfmt.Object(
+		[]string{"channel", "seq", "topic", "from"},
+		[]*jsfmt.Value{
+			jsfmt.String(channelName), jsfmt.String(strconv.FormatInt(seq, 10)),
+			jsfmt.String(strings.ReplaceAll(topic, ".", "_")), jsfmt.String(strings.ReplaceAll(from, ".", "_")),
+		})
+	b.write(jsfmt.Object(
+		[]string{"jsonrpc", "method", "params"},
+		[]*jsfmt.Value{jsfmt.String("2.0"), jsfmt.String("notifications/claude/channel"),
+			jsfmt.Object([]string{"content", "meta"}, []*jsfmt.Value{jsfmt.String(content), meta})}))
+}
+
+// matches says whether one topic is in the pushed globs.
+func (b *mcpBridge) matches(topic string) bool {
+	if b.pushOff {
+		return false
+	}
+	for _, pattern := range b.pushGlobs {
+		if pattern.MatchString(topic) {
+			return true
+		}
+	}
+	return false
+}
+
+// mcpGlobExpr turns one topic glob into a regular expression body: everything but * is literal.
+func mcpGlobExpr(glob string) string {
+	var out strings.Builder
+	for _, r := range glob {
+		switch r {
+		case '.', '+', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\':
+			out.WriteByte('\\')
+			out.WriteRune(r)
+		case '*':
+			out.WriteString(".*")
+		default:
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
+}
+
+// mcpSleep waits for d, or until the session ends; false says it ended.
+func mcpSleep(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+// mcpIsTimeout says whether an HTTP failure was a deadline.
+func mcpIsTimeout(err error) bool {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Timeout()
+	}
+	return errors.Is(err, context.DeadlineExceeded)
+}
+
+// mcpMethod answers a message's method.
+func mcpMethod(msg *jsfmt.Value) string {
+	return mcpTextOf(msg, "method")
+}
+
+// mcpFieldOf answers one field of a value, nil when absent.
+func mcpFieldOf(v *jsfmt.Value, key string) *jsfmt.Value {
+	field, _ := fieldOf(v, key)
+	return field
+}
+
+// mcpTextOf answers one field's string text, empty for any other shape.
+func mcpTextOf(v *jsfmt.Value, key string) string {
+	if v == nil {
+		return ""
+	}
+	field := mcpFieldOf(v, key)
+	if field == nil || field.Kind() != jsfmt.KindString {
+		return ""
+	}
+	return field.Text()
+}
+
+// mcpObjectOf answers v as an object, an empty one for any other shape (or nil).
+func mcpObjectOf(v *jsfmt.Value) *jsfmt.Value {
+	if v != nil && v.Kind() == jsfmt.KindObject {
+		return v
+	}
+	return jsfmt.Object(nil, nil)
+}
+
+// mcpStringOf prints a value the way JavaScript's String() does, for the shapes a name can be.
+func mcpStringOf(v *jsfmt.Value) string {
+	if v == nil {
+		return ""
+	}
+	switch v.Kind() {
+	case jsfmt.KindString:
+		return v.Text()
+	case jsfmt.KindNumber:
+		return jsfmt.JSNumber(mcpNumberOf(v))
+	case jsfmt.KindBool:
+		return v.EncodeJSON()
+	default:
+		return v.EncodeJSON()
+	}
+}
+
+// mcpNumberOf reads a value as a number: strings parse, anything unparsable is 0.
+func mcpNumberOf(v *jsfmt.Value) float64 {
+	if v == nil {
+		return 0
+	}
+	switch v.Kind() {
+	case jsfmt.KindNumber:
+		f, _ := strconv.ParseFloat(v.EncodeJSON(), 64)
+		return f
+	case jsfmt.KindString:
+		return jsNumber(v.Text())
+	case jsfmt.KindBool:
+		if v.EncodeJSON() == "true" {
+			return 1
+		}
+		return 0
+	default:
+		return 0
+	}
+}
+
+// mcpTruthy reads a value the way JavaScript's if does.
+func mcpTruthy(v *jsfmt.Value) bool {
+	if v == nil || v.Kind() == jsfmt.KindNull {
+		return false
+	}
+	if v.Kind() == jsfmt.KindBool {
+		return v.EncodeJSON() == "true"
+	}
+	if v.Kind() == jsfmt.KindNumber {
+		return v.EncodeJSON() != "0"
+	}
+	if v.Kind() == jsfmt.KindString {
+		return v.Text() != ""
+	}
+	return true
+}
+
+// mcpWithField answers a copy of an object with one field replaced or appended.
+func mcpWithField(obj *jsfmt.Value, key string, value *jsfmt.Value) *jsfmt.Value {
+	keys := append([]string{}, obj.Keys()...)
+	fields := append([]*jsfmt.Value{}, obj.Fields()...)
+	for i, name := range keys {
+		if name == key {
+			fields[i] = value
+			return jsfmt.Object(keys, fields)
+		}
+	}
+	return jsfmt.Object(append(keys, key), append(fields, value))
+}

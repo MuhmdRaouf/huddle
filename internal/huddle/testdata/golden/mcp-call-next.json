@@ -1,0 +1,12 @@
+{
+  "seq": 54,
+  "kind": "mcp",
+  "name": "mcp-call-next",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":13,\"method\":\"tools/call\",\"params\":{\"name\":\"next\",\"arguments\":{}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":13,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"t-check  Replay the goldens against the engine\\ncode · todo · owner scout\\nWAITS ON: t-write (lead, doing) → wait with topics [\\\"task.ready\\\"] or wait_task\\n\\nWHAT\\nThe Go test replays every recording byte for byte.\\n\\ndepends on t-write\\nneeded by t-extra\\n\\nboard: /#/c/golden/t/t-check\"}]}}"
+}

@@ -1,0 +1,13 @@
+{
+  "seq": 13,
+  "route": "/api/budget-status",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"version\":1,\"updatedAt\":\"<volatile>\",\"stopped\":[],\"spend\":[{\"id\":\"day-cap\",\"spentUsd\":0,\"limitUsd\":5,\"pct\":0,\"scope\":\"total\",\"period\":\"day\",\"action\":\"warn\",\"periodStart\":\"<volatile>\"},{\"id\":\"zai-month\",\"spentUsd\":0,\"limitUsd\":25,\"pct\":0,\"scope\":\"provider:zai\",\"period\":\"month\",\"action\":\"stop\",\"periodStart\":\"<volatile>\"}]}\n"
+    }
+  ]
+}

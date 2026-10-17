@@ -1,0 +1,12 @@
+{
+  "seq": 56,
+  "kind": "mcp",
+  "name": "mcp-call-map",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":15,\"method\":\"tools/call\",\"params\":{\"name\":\"map\",\"arguments\":{}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":15,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"map: The golden channel · 1/5 tasks done · orchestrator lead\\nphases:\\n    1   1/2  Foundations\\n    2   0/3  Polish\\nsessions:\\n  lead (working): doing t-write Write the recorder\\n  scout (waiting): nothing in progress · next t-check (waits)\\ncritical path (3 open tasks in a chain): \\n  t-write [doing] @lead Write the recorder\\n  t-check [todo] @scout Replay the goldens against the engine\\n  t-extra [todo] @scout Wire the goldens into CI\"}]}}"
+}

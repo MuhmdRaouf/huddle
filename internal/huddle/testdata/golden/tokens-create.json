@@ -1,0 +1,12 @@
+{
+  "seq": 77,
+  "kind": "api",
+  "name": "tokens-create",
+  "method": "POST",
+  "path": "/api/tokens",
+  "auth": "root",
+  "sent": "{\"channel\":\"golden\",\"description\":\"the golden join invite\",\"single_use\":true}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"token\":\"<volatile>\",\"id\":\"<volatile>\",\"created\":\"<volatile>\",\"expires\":\"<volatile>\",\"single_use\":true,\"uses\":0,\"can_invite\":false,\"channel\":\"golden\",\"description\":\"the golden join invite\",\"by\":\"owner\"}"
+}

@@ -1,0 +1,14 @@
+{
+  "seq": 35,
+  "route": "/api/budgets",
+  "method": "PUT",
+  "variants": [
+    {
+      "query": "",
+      "sent": "{\"budgets\":[{\"id\":\"day-cap\",\"scope\":\"total\",\"period\":\"day\",\"limitUsd\":2,\"action\":\"warn\"}]}",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"budgets\":[{\"id\":\"day-cap\",\"scope\":\"total\",\"period\":\"day\",\"limitUsd\":2,\"action\":\"warn\"}]}\n"
+    }
+  ]
+}

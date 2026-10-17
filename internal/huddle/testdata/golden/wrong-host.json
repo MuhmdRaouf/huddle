@@ -1,0 +1,12 @@
+{
+  "seq": 42,
+  "kind": "api",
+  "name": "wrong-host",
+  "method": "GET",
+  "path": "/health",
+  "auth": "root",
+  "host": "evil.example",
+  "status": 421,
+  "contentType": "text/plain;charset=utf-8",
+  "body": "wrong host"
+}

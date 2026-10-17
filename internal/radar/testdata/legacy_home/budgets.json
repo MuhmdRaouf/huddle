@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "budgets": [
+    {
+      "id": "zai-month",
+      "scope": "provider:zai",
+      "period": "month",
+      "limitUsd": 25,
+      "action": "warn"
+    }
+  ]
+}

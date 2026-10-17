@@ -1,0 +1,13 @@
+{
+  "seq": 33,
+  "route": "/api/nope",
+  "method": "GET",
+  "variants": [
+    {
+      "query": "",
+      "status": 404,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{\"error\":\"no such route: /api/nope\",\"routes\":[\"/api/summary\",\"/api/sessions\",\"/api/sessions/:id\",\"/api/requests\",\"/api/events\",\"/api/tools\",\"/api/models\",\"/api/health\",\"/api/alerts\",\"/api/attribution\",\"/api/budgets\",\"/api/budget-status\",\"/api/spend\",\"/api/settings\",\"/api/router\",\"/api/advisor\",\"/api/history/roots\",\"/api/history/tree/:rootId\",\"/api/history/requests\",\"/api/history/content/:requestId\",\"/api/history/context/:requestId\",\"/api/history/request/:requestId/capture\",\"/api/history/agent/:nodeId/transcript\",\"/api/history/repos\",\"/api/history/flow\",\"/api/history/stats\",\"/api/history/clear\"]}\n"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "seq": 10,
+  "kind": "api",
+  "name": "search",
+  "method": "GET",
+  "path": "/api/c/golden/search?q=golden",
+  "auth": "root",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "[{\"id\":\"t-read\",\"title\":\"Read the golden fixture\",\"hit\":\"{\\\"kind\\\":\\\"code\\\",\\\"what\\\":\\\"Read the «golden» fixture and list every route and tool it … \"},{\"id\":\"t-extra\",\"title\":\"Wire the goldens into CI\",\"hit\":\"{\\\"what\\\":\\\"One job, under the ten-minute cap.\\\",\\\"how\\\":[],\\\"verify\\\":[],\\\"phase_n\\\":2,\\\"ord … \"},{\"id\":\"t-check\",\"title\":\"Replay the goldens against the engine\",\"hit\":\"{\\\"kind\\\":\\\"code\\\",\\\"what\\\":\\\"The Go test replays every recording byte for byte.\\\",\\\"phase_n … \"},{\"id\":\"t-write\",\"title\":\"Write the recorder\",\"hit\":\" … home\\\",\\\"Replay the plan\\\",\\\"Write the «goldens»\\\"],\\\"phase_n\\\":1,\\\"ord\\\":1,\\\"owner\\\":\\\"lead … \"}]"
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "updatedAt": 1792075838305,
+  "stopped": [],
+  "spend": [
+    {
+      "id": "zai-month",
+      "spentUsd": 0.0026,
+      "limitUsd": 25,
+      "pct": 0,
+      "scope": "provider:zai",
+      "period": "month",
+      "action": "warn",
+      "periodStart": 1790802000000
+    }
+  ]
+}

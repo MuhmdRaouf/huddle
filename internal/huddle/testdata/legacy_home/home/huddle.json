@@ -1,0 +1,8 @@
+{
+  "channel": "atelier",
+  "as": "atlas",
+  "role": "weaves the harness",
+  "autostart": true,
+  "port": 50800,
+  "port_auto": true
+}
