@@ -83,17 +83,17 @@ func TestHubBaseURLCarriesTheNonDefaultPort(t *testing.T) {
 		listen string
 		want   string
 	}{
-		{"no listen at all", "", "https://hub.raouf.dev"},
-		{"443 stays bare", "127.0.0.1:443", "https://hub.raouf.dev"},
-		{"8443 is appended", "127.0.0.1:8443", "https://hub.raouf.dev:8443"},
-		{"an IPv6 listen keeps its port", "[::1]:8443", "https://hub.raouf.dev:8443"},
-		{"an IPv6 listen on 443 stays bare", "[2001:db8::1]:443", "https://hub.raouf.dev"},
-		{"a listen without a port stays bare", "127.0.0.1", "https://hub.raouf.dev"},
+		{"no listen at all", "", "https://hub.example.test"},
+		{"443 stays bare", "127.0.0.1:443", "https://hub.example.test"},
+		{"8443 is appended", "127.0.0.1:8443", "https://hub.example.test:8443"},
+		{"an IPv6 listen keeps its port", "[::1]:8443", "https://hub.example.test:8443"},
+		{"an IPv6 listen on 443 stays bare", "[2001:db8::1]:443", "https://hub.example.test"},
+		{"a listen without a port stays bare", "127.0.0.1", "https://hub.example.test"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := hubBaseURL("hub.raouf.dev", tc.listen); got != tc.want {
-				t.Errorf("hubBaseURL(hub.raouf.dev, %q) = %q, want %q", tc.listen, got, tc.want)
+			if got := hubBaseURL("hub.example.test", tc.listen); got != tc.want {
+				t.Errorf("hubBaseURL(hub.example.test, %q) = %q, want %q", tc.listen, got, tc.want)
 			}
 		})
 	}
@@ -101,11 +101,11 @@ func TestHubBaseURLCarriesTheNonDefaultPort(t *testing.T) {
 
 // TestPairCarriesThePortTheHubListensOn pins the printed links against the bug: with hub.listen
 // on 8443, the pairing link (and the QR code over it) and the satellite's join line all name the
-// port — a bare hub.raouf.dev link opens nothing.
+// port — a bare hub.example.test link opens nothing.
 func TestPairCarriesThePortTheHubListensOn(t *testing.T) {
 	homeDir, w := oneHome(t)
 	cfg := savedCfg(t, homeDir)
-	cfg.Hub.Host = "hub.raouf.dev"
+	cfg.Hub.Host = "hub.example.test"
 	cfg.Hub.Listen = "127.0.0.1:8443"
 	if err := home.SaveConfig(home.Home{Root: homeDir}, cfg); err != nil {
 		t.Fatalf("save the config: %v", err)
@@ -115,10 +115,10 @@ func TestPairCarriesThePortTheHubListensOn(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("huddle pair = %d: %s", code, errOut)
 	}
-	if regexp.MustCompile(`https://hub\.raouf\.dev:8443/pair#[A-Z2-7]{26}`).FindString(out) == "" {
+	if regexp.MustCompile(`https://hub\.example\.test:8443/pair#[A-Z2-7]{26}`).FindString(out) == "" {
 		t.Fatalf("the link does not carry the hub's port:\n%s", out)
 	}
-	if strings.Contains(out, "https://hub.raouf.dev/pair#") {
+	if strings.Contains(out, "https://hub.example.test/pair#") {
 		t.Errorf("a bare link without the port is on the terminal:\n%s", out)
 	}
 	if !strings.Contains(out, "▀") && !strings.Contains(out, "█") {
@@ -129,10 +129,10 @@ func TestPairCarriesThePortTheHubListensOn(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("huddle pair --satellite = %d: %s", code, errOut)
 	}
-	if regexp.MustCompile(`huddle join-hub https://hub\.raouf\.dev:8443 (hsat_[A-Za-z0-9_-]{20,64})`).FindStringSubmatch(out) == nil {
+	if regexp.MustCompile(`huddle join-hub https://hub\.example\.test:8443 (hsat_[A-Za-z0-9_-]{20,64})`).FindStringSubmatch(out) == nil {
 		t.Fatalf("the join line does not carry the hub's port:\n%s", out)
 	}
-	if strings.Contains(out, "join-hub https://hub.raouf.dev hsat_") {
+	if strings.Contains(out, "join-hub https://hub.example.test hsat_") {
 		t.Errorf("a bare join line without the port is on the terminal:\n%s", out)
 	}
 }
