@@ -38,6 +38,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/kanbantab"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/radartab"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/satellite"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/web"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
@@ -270,6 +271,11 @@ type server struct {
 	// satQueue wakes the satellites' long polls when a decision or a message is queued for
 	// their machine (SPEC 6.7).
 	satQueue *satWaiters
+	// satMu guards satLink and satHubURL: the kanban tab mounts before the satellite link
+	// starts, and every relayed flow command reads the link per request — nil until it is up.
+	satMu     sync.Mutex
+	satLink   *satellite.Link
+	satHubURL string
 	// alerts fans the raised owner alerts out to the in-process subscribers (the push sender).
 	alerts *alertFanout
 	// vapid signs every push send; pushHTTP carries it; pushWake nudges the push sweep. All
@@ -558,6 +564,9 @@ func Serve(ctx context.Context, o Options) error {
 				}
 				_, _ = s.audit(ctx, actor, "kanban."+command, key+"/"+id, kanbanAuditDetail{OK: ok})
 			},
+			// a satellite relays the boards its hub hosts onto it (sat.go): the tab
+			// asks per command, and a solo machine's nil link answers nothing
+			Relay: s.relayFlowToHub,
 		})
 		mux.Handle(kanbantab.Prefix, s.kanban)
 		mux.Handle(kanbantab.Prefix+"/", s.kanban)
@@ -566,8 +575,15 @@ func Serve(ctx context.Context, o Options) error {
 		handler = func(w http.ResponseWriter, r *http.Request) {
 			if p := r.URL.Path; p == kanbantab.Prefix || strings.HasPrefix(p, kanbantab.Prefix+"/") {
 				if _, ok := s.who(r); !ok {
-					s.refuseCredential(w, r)
-					return
+					// a satellite's credential is the one other way in (SPEC 6.7):
+					// its machine's boards write through this prefix, on the hub
+					// that holds them
+					machine, verified := s.satelliteBearer(r)
+					if !verified {
+						s.refuseCredential(w, r)
+						return
+					}
+					r = r.WithContext(withSatellite(r.Context(), machine))
 				}
 				kanbanMux.ServeHTTP(w, r)
 				return

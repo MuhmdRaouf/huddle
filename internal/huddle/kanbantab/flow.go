@@ -5,9 +5,11 @@ package kanbantab
 // huddle serves shares one board without a port of its own.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/MuhmdRaouf/huddle/internal/kanban/board"
@@ -73,12 +75,14 @@ func (t *Tab) flowRoute(w http.ResponseWriter, r *http.Request, key string) {
 	t.oneMethod(w, r, http.MethodPost, func() { t.serveFlow(w, r, key) })
 }
 
-// serveFlow runs one flow command. The answer carries the command's lines; the
+// serveFlow runs one flow command. A Relay set on the tab sees the command
+// first: a board another huddle hosts is that huddle's to answer, its verdict
+// written through unchanged. The local answer carries the command's lines; the
 // board's own refusal is 409 with its message, any other failure 500.
 func (t *Tab) serveFlow(w http.ResponseWriter, r *http.Request, key string) {
 	r.Body = http.MaxBytesReader(w, r.Body, flowBodyMax)
-	var req board.FlowRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
 			writeJSON(w, http.StatusRequestEntityTooLarge, errorAnswer{Error: "the flow body is over 64 KiB"})
@@ -87,10 +91,21 @@ func (t *Tab) serveFlow(w http.ResponseWriter, r *http.Request, key string) {
 		writeJSON(w, http.StatusBadRequest, errorAnswer{Error: "the flow body is not one command: " + err.Error()})
 		return
 	}
+	var req board.FlowRequest
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorAnswer{Error: "the flow body is not one command: " + err.Error()})
+		return
+	}
 	run, known := flowCommands()[req.Command]
 	if !known {
 		writeJSON(w, http.StatusBadRequest, errorAnswer{Error: req.Command + " is not a flow command"})
 		return
+	}
+	if t.relay != nil {
+		if status, answer, relayed := t.relay(r.Context(), key, raw); relayed {
+			writeRelayed(w, status, answer)
+			return
+		}
 	}
 	b, found := t.boardFor(r.Context(), key)
 	if !found {
@@ -126,6 +141,16 @@ func (t *Tab) serveFlow(w http.ResponseWriter, r *http.Request, key string) {
 		lines = []string{}
 	}
 	writeJSON(w, http.StatusOK, flowAnswer{Lines: lines})
+}
+
+// writeRelayed writes one relayed verdict whole: the huddle that ran the
+// command already encoded its answer, so its status and body pass through
+// unchanged under the answer headers the tab's own writes carry.
+func writeRelayed(w http.ResponseWriter, status int, answer []byte) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_, _ = w.Write(answer)
 }
 
 // boardFor answers the board a key names for a flow command to run on — the

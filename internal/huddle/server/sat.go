@@ -455,7 +455,8 @@ func (s *server) secrets(ctx context.Context, h home.Home) home.SecretStore {
 // startSatelliteLink opens the outbound link a satellite role keeps to its hub (SPEC 3): it
 // rides this server's process and registry, stops with the server, and never blocks a start —
 // a machine whose config or credential is not in order serves its own sessions as solo does,
-// with one line saying what is missing.
+// with one line saying what is missing. The link also carries this machine's board writes for
+// the boards its hub hosts (KBN-SHARED): it is held on the server for the kanban tab's relay.
 func (s *server) startSatelliteLink(ctx context.Context) {
 	cfg, err := home.LoadConfig(home.Home{Root: s.o.Home})
 	if err != nil || cfg.Role != "satellite" || cfg.Hub.URL == "" {
@@ -476,8 +477,40 @@ func (s *server) startSatelliteLink(ctx context.Context) {
 		Wake:       s.wakeAppliedItem,
 	})
 	link.StartCursor(ctx)
+	s.satMu.Lock()
+	s.satLink, s.satHubURL = link, cfg.Hub.URL
+	s.satMu.Unlock()
 	go link.Run(ctx)
 	fmt.Fprintf(s.o.Stdout, "satellite link to %s as %s\n", cfg.Hub.URL, cfg.Machine)
+}
+
+// relayFlowToHub carries one flow command for a board the hub hosts onto it, under this
+// machine's satellite credential (KBN-SHARED): a claim either machine asks for is the hub's
+// answer alone. A board the hub does not list — or a machine with no link, solo or a link that
+// never came up — stays local, and so does one the hub no longer answers for (its 404). A hub
+// that cannot be reached answers 503 with the one plain line, because a claim needs the hub's
+// answer and is never queued.
+func (s *server) relayFlowToHub(ctx context.Context, key string, body []byte) (int, []byte, bool) {
+	s.satMu.Lock()
+	link, hubURL := s.satLink, s.satHubURL
+	s.satMu.Unlock()
+	if link == nil {
+		return 0, nil, false
+	}
+	hosted, _ := link.HubBoards(ctx)
+	if !hosted[key] {
+		return 0, nil, false
+	}
+	status, answer, err := link.Flow(ctx, key, body)
+	if err != nil {
+		line, _ := json.Marshal(errorAnswer{Error: fmt.Sprintf(
+			"the hub at %s is unreachable; a claim needs its answer, try again when it is back", hubURL)})
+		return http.StatusServiceUnavailable, append(line, '\n'), true
+	}
+	if status == http.StatusNotFound {
+		return 0, nil, false
+	}
+	return status, answer, true
 }
 
 // wakeAppliedItem wakes this machine's own permission polls and streams the moment a decision

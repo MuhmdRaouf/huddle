@@ -37,7 +37,7 @@ func hubFlow(ctx context.Context, getenv func(string) (string, bool), key string
 	body, _ := json.Marshal(req) // a struct of strings and bools always marshals
 	resp, err := huddlecli.HFetch(ctx, &huddlecli.World{Getenv: envOf(getenv)}, http.MethodPost,
 		base+kanbantab.Prefix+"/b/"+key+"/flow",
-		map[string]string{"content-type": "application/json"}, body, 5*time.Second, "")
+		map[string]string{"content-type": "application/json"}, body, 10*time.Second, "")
 	if err != nil {
 		return nil, "", false
 	}
@@ -51,7 +51,10 @@ func hubFlow(ctx context.Context, getenv func(string) (string, bool), key string
 			return nil, "", false
 		}
 		return answer.Lines, "", true
-	case http.StatusConflict:
+	case http.StatusConflict, http.StatusServiceUnavailable:
+		// 409 is the board's refusal; 503 is a satellite whose hub cannot answer a board
+		// the hub hosts — a claim needs the hub's word, so the command is refused, never
+		// run on this machine's copy
 		var refusal struct {
 			Error string `json:"error"`
 		}

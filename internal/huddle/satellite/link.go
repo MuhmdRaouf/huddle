@@ -22,15 +22,21 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/kanbantab"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
 // The link's own pace: a flush batches this machine's news, a poll holds the handout wait. The
 // hub caps the wait at 30 s; the link asks for a little less so a poll never outlives its
-// client's patience.
+// client's patience. One flow command waits 5 s for the hub's answer; a hub board list is read
+// within 2 s and stands for half a minute.
 const (
 	defaultFlushEvery = time.Second
 	defaultPollWait   = 25 * time.Second
+
+	flowTimeout      = 5 * time.Second
+	hubBoardsTimeout = 2 * time.Second
+	hubBoardsEvery   = 30 * time.Second
 
 	forwardBatch = 200
 	outboxLimit  = 5000
@@ -74,6 +80,10 @@ type Link struct {
 
 	mu     sync.Mutex
 	cursor int64
+	// hubBoards is the hub's board keys as of hubBoardsAt, the copy a relayed
+	// flow command decides against (KBN-SHARED): nil before the first read.
+	hubBoards   map[string]bool
+	hubBoardsAt time.Time
 }
 
 // New builds one link over the given options.
@@ -360,6 +370,66 @@ func (l *Link) StartCursor(ctx context.Context) {
 		return
 	}
 	l.setCursor(seq)
+}
+
+// Flow carries one flow command for a hub-hosted board to the hub under this machine's
+// credential (KBN-SHARED) and answers the hub's verdict whole — its status and body, so a
+// claim this machine asks for is the hub's answer alone. A transport error is the link's own,
+// never a verdict; 5 s bound the wait.
+func (l *Link) Flow(ctx context.Context, key string, body []byte) (status int, answer []byte, err error) {
+	callCtx, cancel := context.WithTimeout(ctx, flowTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(callCtx, http.MethodPost,
+		l.hubURL+kanbantab.Prefix+"/b/"+key+"/flow", bytes.NewReader(body))
+	if err != nil {
+		return 0, nil, err
+	}
+	l.authorize(request)
+	response, err := l.client.Do(request)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	raw, err := io.ReadAll(response.Body)
+	if err != nil {
+		return 0, nil, err
+	}
+	return response.StatusCode, raw, nil
+}
+
+// HubBoards answers the set of board keys the hub serves, held for hubBoardsEvery so a relayed
+// command costs the hub one read per hold, not one per command. A hub that cannot be read
+// answers the last good set with the error: a board the hub hosted still relays to it, so its
+// claims stay one claim, and a set never read answers nil.
+func (l *Link) HubBoards(ctx context.Context) (map[string]bool, error) {
+	l.mu.Lock()
+	set, at := l.hubBoards, l.hubBoardsAt
+	l.mu.Unlock()
+	if set != nil && l.now().Sub(at) < hubBoardsEvery {
+		return set, nil
+	}
+	var answer struct {
+		Boards []struct {
+			Key string `json:"key"`
+		} `json:"boards"`
+	}
+	// bounded on its own: the link's client waits out a long poll, and a relayed command
+	// must not wait that long on a hub that accepts and never answers
+	boardsCtx, cancel := context.WithTimeout(ctx, hubBoardsTimeout)
+	defer cancel()
+	if err := l.get(boardsCtx, kanbantab.Prefix+"/boards", &answer); err != nil {
+		return set, err
+	}
+	fresh := make(map[string]bool, len(answer.Boards))
+	for _, row := range answer.Boards {
+		if row.Key != "" {
+			fresh[row.Key] = true
+		}
+	}
+	l.mu.Lock()
+	l.hubBoards, l.hubBoardsAt = fresh, l.now()
+	l.mu.Unlock()
+	return fresh, nil
 }
 
 // reportBatch is one body the link posts to /api/sat/report: the machine's events since its

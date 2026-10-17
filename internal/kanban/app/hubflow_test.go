@@ -113,6 +113,21 @@ func TestHubFlowAnswersOnlyAVerdictItRecognises(t *testing.T) {
 			t.Fatalf("the 409's refusal = %q, want the board's message", refusal)
 		}
 	})
+	t.Run("503 from a satellite whose hub is away answers the refusal", func(t *testing.T) {
+		port := fakeHub(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/health" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"the hub at https://hub.example is unreachable"}`))
+		})
+		writePort(t, port)
+		lines, refusal, handled := hubFlow(context.Background(), getenv, key, req)
+		if !handled || lines != nil || !strings.Contains(refusal, "unreachable") {
+			t.Fatalf("the 503 = handled %t lines %v refusal %q, want a handled refusal", handled, lines, refusal)
+		}
+	})
 	t.Run("a 200 that is no answer leaves the command", func(t *testing.T) {
 		port := fakeHub(t, func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/health" {

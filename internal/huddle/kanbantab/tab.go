@@ -31,13 +31,16 @@ const Prefix = "/api/kanban"
 // repository's origin URL (the default reads git's config, bounded at a
 // second), and Version and Now travel into every board app. Audit, when set,
 // sees one call per write the flow route runs, ok naming whether the board
-// took it.
+// took it. Relay, when set, carries one flow command for a board another
+// huddle hosts to that huddle before the local board is read; relayed names a
+// verdict to write through unchanged, false leaves the command local.
 type Options struct {
 	Roots   func(ctx context.Context) []string
 	Origin  func(ctx context.Context, repoRoot string) string
 	Version string
 	Now     func() time.Time
 	Audit   func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
+	Relay   func(ctx context.Context, key string, body []byte) (status int, answer []byte, relayed bool)
 }
 
 // entry is one mounted board: its app and the watch run under the cancel.
@@ -55,6 +58,7 @@ type Tab struct {
 	version string
 	now     func() time.Time
 	audit   func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
+	relay   func(ctx context.Context, key string, body []byte) (int, []byte, bool)
 
 	mu     sync.Mutex
 	apps   map[string]*entry
@@ -78,6 +82,7 @@ func Mount(ctx context.Context, opts Options) *Tab {
 		version: opts.Version,
 		now:     opts.Now,
 		audit:   opts.Audit,
+		relay:   opts.Relay,
 		apps:    map[string]*entry{},
 	}
 }
