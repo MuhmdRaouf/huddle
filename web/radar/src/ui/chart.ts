@@ -5,7 +5,7 @@
  */
 
 import type { RequestRecord, Tokens } from "../shared/model.ts";
-import { stampOf } from "../shared/time-range.ts";
+import { MONTHS, stampOf } from "../shared/time-range.ts";
 import { TOKEN_KINDS } from "./palette.ts";
 
 export type Point = { x: number; y: number };
@@ -148,9 +148,46 @@ export type StackedOptions = Frame & {
   series: { values: number[]; color: string }[];
 };
 
+export type LayeredOptions = Frame & {
+  /** independent series, each drawn on its own values over one shared scale */
+  series: { values: number[]; color: string }[];
+  /** the picked point's index, drawn as a dashed reference line; null or out of range draws none */
+  mark?: number | null;
+};
+
 /** Vertical position of a value: 3px headroom at the top, the baseline at the bottom edge. */
 export function scaleY(value: number, max: number, height: number): number {
   return height - (value / max) * (height - 4);
+}
+
+/** The tallest value across every series, at least 1, so an all-zero window still draws a scale. */
+export function layeredMax(series: number[][]): number {
+  let max = 1;
+  for (const values of series) {
+    for (const value of values) {
+      if (value > max) max = value;
+    }
+  }
+  return max;
+}
+
+/** "17 Oct" out of "2026-10-17", by hand, so the label stays locale-stable; anything that does not
+ *  spell a date reads as nothing. */
+export function dayWords(date: string | undefined): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date ?? "");
+  if (match === null) return "";
+  return `${match[3]} ${MONTHS[Number(match[2]) - 1] ?? ""}`.trim();
+}
+
+/** The x labels a per-day chart carries: the first, middle and last day, pinned to the edges and the middle. */
+export function dayLabels(dates: string[]): ChartLabel[] {
+  if (dates.length === 0) return [];
+  const first = { text: dayWords(dates[0]), at: 0 };
+  const last = { text: dayWords(dates.at(-1)), at: 1 };
+  if (dates.length === 1) return [first];
+  if (dates.length === 2) return [first, last];
+  const middle = dates[Math.floor((dates.length - 1) / 2)];
+  return [first, { text: dayWords(middle), at: 0.5 }, last];
 }
 
 /** A path that walks `points` backwards, continuing the current subpath (its leading M becomes an L). */

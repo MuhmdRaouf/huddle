@@ -32,8 +32,15 @@ import type {
 } from "../shared/model.ts";
 import { providerOf } from "../shared/provider.ts";
 import { DEFAULT_RANGE, rangeToHash, resolveRange, type TimeRange } from "../shared/time-range.ts";
+import type { UsageReport, UsageWindow } from "../shared/usage.ts";
 import { httpStatusOf } from "./app/inspector/util.ts";
 import type { IconName } from "./icons.ts";
+
+/** What the usage chart plots: token counts or estimated cost. */
+export type UsageMetric = "tokens" | "cost";
+
+/** The usage view's open drill-down: one model's or one project's own series. */
+export type UsageDrill = { kind: "model" | "project"; key: string };
 
 export type Tab =
   | "overview"
@@ -43,6 +50,7 @@ export type Tab =
   | "timeline"
   | "models"
   | "costs"
+  | "usage"
   | "alerts"
   | "router"
   | "settings";
@@ -56,6 +64,7 @@ export const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: "timeline", label: "Timeline", icon: "clock" },
   { id: "models", label: "Models", icon: "cpu" },
   { id: "costs", label: "Costs", icon: "coins" },
+  { id: "usage", label: "Usage", icon: "history" },
   { id: "alerts", label: "Alerts", icon: "bell" },
   { id: "router", label: "Router", icon: "route" },
   { id: "settings", label: "Settings", icon: "settings" },
@@ -318,6 +327,20 @@ export type ClientState = {
   attributionSort: Sort<AttributionSortKey>;
   /** collapsed costs-tree keys, by `${kind}:${key}` */
   costsCollapsed: Set<string>;
+  /** The usage view's window in days; the /api/usage route takes 7, 30 or 90. */
+  usageDays: UsageWindow;
+  /** What the usage tiles and chart plot: token counts or estimated cost. */
+  usageMetric: UsageMetric;
+  /** The /api/usage answer for the picked window, with the window it answers (null = none yet). */
+  usage: { key: UsageWindow; report: UsageReport } | null;
+  /** Why the last usage fetch failed (null = none); the view says it when it has nothing else to show. */
+  usageError: string | null;
+  /** The model series the reader hid on the usage chart; the last visible series cannot be hidden. */
+  usageHidden: string[];
+  /** The picked day's date (YYYY-MM-DD) on the usage chart, or null. */
+  usageDay: string | null;
+  /** The open drill-down (a model's or a project's own series), or null. */
+  usageDrill: UsageDrill | null;
   router: RouterHealth | null;
   advisor: AdvisorReport | null;
   /** Budgets as saved (settings tab); null until fetched. */
@@ -435,6 +458,13 @@ export function initialClientState(): ClientState {
     attributionTree: null,
     attributionSort: { key: "cost", dir: "desc" },
     costsCollapsed: new Set<string>(),
+    usageDays: 30,
+    usageMetric: "tokens",
+    usage: null,
+    usageError: null,
+    usageHidden: [],
+    usageDay: null,
+    usageDrill: null,
     router: null,
     advisor: null,
     budgets: null,
@@ -849,6 +879,22 @@ export function sortTree(nodes: AttributionNode[], sort: Sort<AttributionSortKey
     ...node,
     children: sortTree(node.children, sort),
   }));
+}
+
+/** The hidden set after toggling one series, never hiding the last visible one: `keys` are the
+ *  series the report carries, so a stale toggle for a series that left the window is ignored too. */
+export function toggleUsageHidden(hidden: string[], keys: string[], key: string): string[] {
+  if (!keys.includes(key)) return hidden;
+  if (hidden.includes(key)) return hidden.filter((held) => held !== key);
+  const visible = keys.filter((held) => !hidden.includes(held));
+  if (visible.length <= 1) return hidden;
+  return [...hidden, key];
+}
+
+/** True when the report still carries what the drill-down opened on, so it may stay open. */
+export function usageDrillAlive(report: UsageReport, drill: UsageDrill): boolean {
+  const slices = drill.kind === "model" ? report.byModel : report.byProject;
+  return slices.some((slice) => slice.key === drill.key);
 }
 
 /** A fresh draft: the first provider seen, or total; this month; $10; warn only. */

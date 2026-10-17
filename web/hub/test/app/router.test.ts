@@ -36,11 +36,12 @@ describe("parseHash: the five tabs", () => {
     expect(parseHash("#/settings/theme", reader()).replace).toBeNull();
   });
 
-  it("reads Radar's nine views, and names the missing or unknown one Overview with a rewrite", () => {
+  it("reads Radar's views, and names the missing or unknown one Overview with a rewrite", () => {
     expect(RADAR_VIEWS).toEqual([
       "overview",
       "costs",
       "models",
+      "usage",
       "requests",
       "tools",
       "agents",

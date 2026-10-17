@@ -30,6 +30,7 @@ import { SessionAgentsView } from "./views/SessionAgents.tsx";
 import { SettingsView } from "./views/Settings.tsx";
 import { TimelineView } from "./views/Timeline.tsx";
 import { ToolsView } from "./views/Tools.tsx";
+import { UsageView } from "./views/Usage.tsx";
 
 const VIEWS: Record<Tab, ComponentType> = {
   overview: OverviewView,
@@ -39,6 +40,7 @@ const VIEWS: Record<Tab, ComponentType> = {
   timeline: TimelineView,
   models: ModelsView,
   costs: CostsView,
+  usage: UsageView,
   alerts: AlertsView,
   router: RouterView,
   settings: SettingsView,
@@ -59,7 +61,7 @@ function OverviewView() {
 /** The three tab groups, side by side: reading (Activity), money (Spend), and the machinery (System). */
 const NAV_GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: "Activity", tabs: ["overview", "requests", "agents", "tools", "timeline"] },
-  { label: "Spend", tabs: ["models", "costs"] },
+  { label: "Spend", tabs: ["models", "costs", "usage"] },
   { label: "System", tabs: ["alerts", "router", "settings"] },
 ];
 
@@ -75,6 +77,8 @@ const PAGE_INTROS: Record<Tab, string> = {
   timeline: "What happened, in order: sessions starting and ending, agents spawning, compactions and errors.",
   models: "Requests, tokens, latency and cost for each model, side by side.",
   costs: "Where the money goes, from repo down to session, agent and model. Estimates use list prices.",
+  usage:
+    "Every request over the last 7, 30 or 90 days: tokens, estimated cost and what the cache saved, per model and per project. Click a day on the chart for that day's split; open a model or a project for its own series and top sessions.",
   alerts: "Things that need a look: context nearly full, failures, slow requests and budgets crossed.",
   router: "The local model router: whether it is healthy, where it sends each model, and recent retries.",
   settings: "Appearance, budgets, history retention and where Radar reads its data.",

@@ -203,7 +203,7 @@ describe("routes and panes", () => {
     expect(document.querySelector("[data-view-tabs]")).toBeNull();
   });
 
-  it("renders Radar's nine views as sub-tabs with the named one current", () => {
+  it("renders Radar's views as sub-tabs with the named one current", () => {
     nav("#/radar/costs");
     mountApp();
     const views = [...document.querySelectorAll('[aria-label="Radar views"] a')] as HTMLAnchorElement[];
@@ -211,6 +211,7 @@ describe("routes and panes", () => {
       "overview",
       "costs",
       "models",
+      "usage",
       "requests",
       "tools",
       "agents",
@@ -221,6 +222,7 @@ describe("routes and panes", () => {
     expect(views.map((a) => a.getAttribute("aria-current"))).toEqual([
       null,
       "page",
+      null,
       null,
       null,
       null,

@@ -343,6 +343,13 @@ h2 {
   vector-effect: non-scaling-stroke;
 }
 
+.chart-mark-line {
+  stroke: var(--primary);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+
 .chart-band {
   fill-opacity: 0.22;
 }

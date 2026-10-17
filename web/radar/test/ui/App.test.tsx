@@ -71,6 +71,7 @@ describe("App", () => {
       "timeline",
       "models",
       "costs",
+      "usage",
       "alerts",
       "router",
       "settings",

@@ -1,7 +1,7 @@
 import { render } from "@testing-library/preact";
 import { describe, expect, it } from "vite-plus/test";
-import { AreaChart, StackedAreaChart, StackedBar } from "../../../src/radar/app/Chart.tsx";
-import type { ChartOptions, StackedOptions } from "../../../src/radar/chart.ts";
+import { AreaChart, LineChart, StackedAreaChart, StackedBar } from "../../../src/radar/app/Chart.tsx";
+import type { ChartOptions, LayeredOptions, StackedOptions } from "../../../src/radar/chart.ts";
 
 function fullAreaOptions(): ChartOptions {
   return {
@@ -229,5 +229,38 @@ describe("StackedBar", () => {
     const none = render(<StackedBar segments={[]} max={10} />);
     expect(none.container.querySelector(".bar-empty")).toBeTruthy();
     expect(none.container.querySelector(".bar-seg")).toBeNull();
+  });
+});
+
+const LAYERED: LayeredOptions = {
+  series: [
+    { values: [0, 10, 5], color: "a" },
+    { values: [5, 0, 0], color: "b" },
+  ],
+  width: 200,
+  height: 60,
+};
+
+describe("LineChart", () => {
+  it("draws one independent line per series over the shared scale, never stacked", () => {
+    const { container } = render(<LineChart {...LAYERED} />);
+    const lines = [...container.querySelectorAll("path.chart-line")];
+    expect(lines.map((line) => line.getAttribute("stroke"))).toEqual(["a", "b"]);
+    // the first series holds the tallest value, so its peak reaches the headroom
+    expect(lines[0]?.getAttribute("d")).toContain("100.0 4.0");
+    // the second series' 5 sits at half the plot, not stacked on the first
+    expect(lines[1]?.getAttribute("d")).toContain("0.0 32.0");
+  });
+
+  it("marks the picked day with a dashed reference line, and draws none without one", () => {
+    const marked = render(<LineChart {...LAYERED} mark={1} />);
+    const line = marked.container.querySelector("line.chart-mark-line");
+    expect(line?.getAttribute("x1")).toBe("100.0");
+    expect(line?.getAttribute("x2")).toBe("100.0");
+    expect(line?.getAttribute("y1")).toBe("0");
+    expect(line?.getAttribute("y2")).toBe("60");
+    marked.unmount();
+    const plain = render(<LineChart {...LAYERED} />);
+    expect(plain.container.querySelector("line.chart-mark-line")).toBeNull();
   });
 });

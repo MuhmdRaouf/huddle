@@ -6,6 +6,9 @@ import {
   bucketizeTokenKindsRange,
   cacheHitRate,
   catmullRomPath,
+  dayLabels,
+  dayWords,
+  layeredMax,
   nearestIndex,
   spanWord,
   windowLabels,
@@ -186,5 +189,55 @@ describe("cacheHitRate", () => {
   it("computes the cache hit rate over everything the model read", () => {
     expect(cacheHitRate({ input: 0, cacheRead: 0, cacheWrite: 0 })).toBeNull();
     expect(cacheHitRate({ input: 10, cacheRead: 80, cacheWrite: 10 })).toBe(0.8);
+  });
+});
+
+describe("dayLabels", () => {
+  it("marks the first, middle and last day of a span as '17 Oct'", () => {
+    const dates = [
+      "2026-10-11",
+      "2026-10-12",
+      "2026-10-13",
+      "2026-10-14",
+      "2026-10-15",
+      "2026-10-16",
+      "2026-10-17",
+    ];
+    expect(dayLabels(dates)).toEqual([
+      { text: "11 Oct", at: 0 },
+      { text: "14 Oct", at: 0.5 },
+      { text: "17 Oct", at: 1 },
+    ]);
+  });
+
+  it("marks both ends of a two-day span, the one day it has, and nothing for none", () => {
+    expect(dayLabels(["2026-10-11", "2026-10-12"])).toEqual([
+      { text: "11 Oct", at: 0 },
+      { text: "12 Oct", at: 1 },
+    ]);
+    expect(dayLabels(["2026-10-11"])).toEqual([{ text: "11 Oct", at: 0 }]);
+    expect(dayLabels([])).toEqual([]);
+  });
+});
+
+describe("layeredMax", () => {
+  it("answers the tallest value across every series, never under 1", () => {
+    expect(
+      layeredMax([
+        [0, 0],
+        [0, 5, 3],
+      ]),
+    ).toBe(5);
+    expect(layeredMax([[0], [0]])).toBe(1);
+    expect(layeredMax([])).toBe(1);
+  });
+});
+
+describe("dayWords", () => {
+  it("reads nothing for a day that does not spell a date, and still names the day of a bad month", () => {
+    expect(dayWords(undefined)).toBe("");
+    expect(dayWords("")).toBe("");
+    expect(dayWords("2026-99-17")).toBe("17");
+    expect(dayWords("garbage")).toBe("");
   });
 });

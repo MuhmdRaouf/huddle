@@ -23,6 +23,7 @@ import { RouterView } from "./views/Router.tsx";
 import { SessionAgentsView } from "./views/SessionAgents.tsx";
 import { TimelineView } from "./views/Timeline.tsx";
 import { ToolsView } from "./views/Tools.tsx";
+import { UsageView } from "./views/Usage.tsx";
 
 /** The views by radar's own tab id; the settings view lives in Settings › Radar, not here. */
 const VIEWS: Record<Exclude<Tab, "settings">, ComponentType> = {
@@ -33,6 +34,7 @@ const VIEWS: Record<Exclude<Tab, "settings">, ComponentType> = {
   timeline: () => <TimelineView />,
   models: ModelsView,
   costs: CostsView,
+  usage: UsageView,
   alerts: AlertsView,
   router: RouterView,
 };
@@ -42,6 +44,7 @@ const VIEW_LABEL: Record<RadarView, string> = {
   overview: "Overview",
   costs: "Costs",
   models: "Models",
+  usage: "Usage",
   requests: "Requests",
   tools: "Tools",
   agents: "Agents",

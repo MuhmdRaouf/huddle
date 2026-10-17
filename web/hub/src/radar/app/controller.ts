@@ -23,6 +23,7 @@ import type {
 import type { EventRecord, RequestRecord, SessionView, ToolCallRecord } from "../shared/model.ts";
 import { isInFlight } from "../shared/model.ts";
 import { DEFAULT_RANGE, PRESETS, parseRangeHash, rangeToHash, type TimeRange } from "../shared/time-range.ts";
+import type { UsageReport, UsageWindow } from "../shared/usage.ts";
 import {
   type AgentTranscriptState,
   type AttributionSortKey,
@@ -69,6 +70,8 @@ import {
   tableRequests,
   tableTools,
   toggleSelected,
+  toggleUsageHidden,
+  usageDrillAlive,
   withBudget,
   withSelection,
 } from "../state.ts";
@@ -318,6 +321,8 @@ export class RadarController {
   private flowInFlight = false;
   /** The models tab's fetch in flight, so a burst of scope changes fetches the route once at a time. */
   private modelsInFlight = false;
+  /** The usage view's fetch in flight, so a burst of window switches fetches the route once at a time. */
+  private usageInFlight = false;
   /** The lists' backfill in flight, so a refresh landing on one cannot fetch the same lists twice. */
   private backfillInFlight = false;
   private stream: EventStream | null = null;
@@ -520,6 +525,41 @@ export class RadarController {
           attributionSort: nextSort(this.state.attributionSort, value as AttributionSortKey),
         });
     },
+    "usage-days": (value) => {
+      const days = Number(value);
+      if (days !== 7 && days !== 30 && days !== 90) return;
+      if (days === this.state.usageDays) return;
+      // the held answer and the hidden series go with the old window; a picked day and an open
+      // drill-down wait for the fresh report, which keeps them when it still carries them
+      this.setState({ ...this.state, usageDays: days as UsageWindow, usage: null, usageHidden: [] });
+      void this.ensureUsage();
+    },
+    "usage-metric": (value) => {
+      if (value !== "tokens" && value !== "cost") return;
+      this.setState({ ...this.state, usageMetric: value });
+    },
+    "usage-hide": (value) =>
+      this.setState({
+        ...this.state,
+        usageHidden: toggleUsageHidden(
+          this.state.usageHidden,
+          (this.state.usage?.report.byModel ?? []).map((slice) => slice.key),
+          value,
+        ),
+      }),
+    "usage-day": (value) => this.setState({ ...this.state, usageDay: value === "" ? null : value }),
+    "usage-drill": (value) => {
+      let parsed: { kind?: unknown; key?: unknown } = {};
+      try {
+        parsed = JSON.parse(value) as { kind?: unknown; key?: unknown };
+      } catch {
+        return;
+      }
+      if ((parsed.kind !== "model" && parsed.kind !== "project") || typeof parsed.key !== "string") return;
+      if (parsed.key === "") return;
+      this.setState({ ...this.state, usageDrill: { kind: parsed.kind, key: parsed.key } });
+    },
+    "usage-drill-close": () => this.setState({ ...this.state, usageDrill: null }),
     "new-budget": () =>
       this.setState({ ...this.state, draft: newDraft(this.state.providers), formMessage: null }),
     "edit-budget": (value) => this.editBudget(value),
@@ -1068,14 +1108,15 @@ export class RadarController {
   /**
    * The auto-refresh timer's tick. Everything the live views show arrives on the stream — the record
    * deltas and the session/summary refreshes — so a tick re-asks only the reads the stream cannot
-   * answer: the history flow for a range served by the history route, and the models tab's tables
-   * while it shows (its scope is the range, which a preset keeps moving). On a live range with the
-   * models tab off it fetches nothing at all; re-pulling the lists here only burned the server
-   * without changing a pixel the stream had not already drawn.
+   * answer: the history flow for a range served by the history route, the models tab's tables while
+   * it shows (its scope is the range, which a preset keeps moving), and the usage view's report
+   * while it shows. On a live range with neither open it fetches nothing at all; re-pulling the
+   * lists here only burned the server without changing a pixel the stream had not already drawn.
    */
   private refreshNow(): void {
     void this.ensureFlow();
     void this.ensureModels();
+    void this.ensureUsage();
   }
 
   /** The reader's own refresh (the button, the R key): the lists' backfill again, then the flow. */
@@ -1152,6 +1193,42 @@ export class RadarController {
     } catch {
       // keep what is shown; the next poll retries
     }
+  }
+
+  /**
+   * The usage view's report for its picked window. Like the models tab: the held answer stays up
+   * while a refresh runs, a stale one (the window moved meanwhile) is dropped, a picked day and an
+   * open drill-down survive only while the fresh report still carries them, and a failure is named
+   * only while nothing else can be shown. A fetch another window superseded asks again for the
+   * window that is current by the time it lands.
+   */
+  private async ensureUsage(): Promise<void> {
+    if (this.state.tab !== "usage" || this.usageInFlight) return;
+    const days = this.state.usageDays;
+    this.usageInFlight = true;
+    let stale = false;
+    try {
+      const report = await this.fetchJson<UsageReport>(`/api/usage?days=${days}`);
+      if (this.state.usageDays !== days) {
+        stale = true; // the reader moved to another window meanwhile
+      } else {
+        const day = this.state.usageDay;
+        const drill = this.state.usageDrill;
+        this.setState({
+          ...this.state,
+          usage: { key: days, report },
+          usageError: null,
+          usageDay: day !== null && report.days.some((entry) => entry.date === day) ? day : null,
+          usageDrill: drill !== null && usageDrillAlive(report, drill) ? drill : null,
+        });
+      }
+    } catch (error) {
+      if (this.state.usageDays !== days) stale = true;
+      else this.setState({ ...this.state, usageError: this.describe(error) });
+    } finally {
+      this.usageInFlight = false;
+    }
+    if (stale) void this.ensureUsage();
   }
 
   private async loadRouter(): Promise<void> {
@@ -1585,6 +1662,7 @@ export class RadarController {
     if (tab === "settings") await this.loadSettings();
     if (tab === "agents") await this.ensureDetails();
     if (tab === "models") await this.ensureModels();
+    if (tab === "usage") await this.ensureUsage();
   }
 
   private async saveBudgets(budgets: Budget[], done: string): Promise<boolean> {

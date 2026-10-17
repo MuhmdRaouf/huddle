@@ -15,6 +15,7 @@ const VIEWS: readonly (readonly [
 ])[] = [
   ["overview", "Overview", "heading", /Top sessions by spend/],
   ["costs", "Costs", "heading", /Cost attribution/],
+  ["usage", "Usage", "heading", /Daily usage/],
   ["models", "Models", "heading", /^Models$/],
   ["requests", "Requests", "row", /open details/],
   ["tools", "Tools", "heading", /Most used tools/],

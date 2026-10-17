@@ -10,6 +10,7 @@ import { exportName } from "../../src/radar/export.ts";
 import type { SessionListItem } from "../../src/radar/shared/api.ts";
 import type { Summary } from "../../src/radar/shared/model.ts";
 import { DEFAULT_RANGE } from "../../src/radar/shared/time-range.ts";
+import type { UsageReport } from "../../src/radar/shared/usage.ts";
 import type { ClientState } from "../../src/radar/state.ts";
 import { makeRequest, makeSessionView, makeTool, uiFixtures } from "./helpers.ts";
 
@@ -2225,6 +2226,206 @@ describe("the models tab's scoped fetch", () => {
     const harness = makeHarness();
     await started(harness);
     expect(harness.controller.getState().health).toEqual({ startedAt: 5, uptimeMs: 100 });
+  });
+});
+
+const USAGE_REPORT = (dates: string[]): UsageReport => ({
+  from: dates[0] ?? "",
+  to: dates.at(-1) ?? "",
+  days: dates.map((date) => ({
+    date,
+    requests: 1,
+    input: 10,
+    output: 2,
+    cacheRead: 0,
+    cacheWrite: 0,
+    costUsd: 0.01,
+    savingsUsd: 0,
+  })),
+  totals: {
+    requests: dates.length,
+    input: 10 * dates.length,
+    output: 2 * dates.length,
+    cacheRead: 0,
+    cacheWrite: 0,
+    costUsd: 0.01 * dates.length,
+    savingsUsd: 0,
+  },
+  byModel: [],
+  byProject: [],
+  byKind: [],
+  topSessions: {},
+  approximate: false,
+  unpriced: 0,
+  pricesRetrieved: "2026-10-01",
+});
+
+describe("the usage view's fetch", () => {
+  it("fetches the window the tab opens with and refetches on a switch, clearing the old answer", async () => {
+    const harness = makeHarness();
+    harness.answers.set("/api/usage?days=30", ok(USAGE_REPORT(["2026-10-01"])));
+    harness.answers.set("/api/usage?days=7", ok(USAGE_REPORT(["2026-10-11"])));
+    await started(harness);
+    harness.controller.act("tab", "usage");
+    await settle();
+    expect(callsTo(harness, "/api/usage?days=30")).toBe(1);
+    expect(harness.controller.getState().usage).toEqual({ key: 30, report: USAGE_REPORT(["2026-10-01"]) });
+
+    // a pick made on the old window's chart goes with it
+    harness.controller.act("usage-day", "2026-10-01");
+    harness.controller.act("usage-hide", "glm-5.3");
+    harness.controller.act("usage-days", "7");
+    await settle();
+    expect(callsTo(harness, "/api/usage?days=7")).toBe(1);
+    expect(harness.controller.getState().usageDays).toBe(7);
+    expect(harness.controller.getState().usage).toEqual({ key: 7, report: USAGE_REPORT(["2026-10-11"]) });
+    expect(harness.controller.getState().usageDay).toBeNull();
+    expect(harness.controller.getState().usageHidden).toEqual([]);
+  });
+
+  it("keeps a picked day only while the fresh report still has it", async () => {
+    const harness = makeHarness();
+    harness.answers.set("/api/usage?days=30", ok(USAGE_REPORT(["2026-10-01", "2026-10-02"])));
+    harness.answers.set("/api/usage?days=90", ok(USAGE_REPORT(["2026-09-01"])));
+    await started(harness);
+    harness.controller.act("tab", "usage");
+    await settle();
+    harness.controller.act("usage-day", "2026-10-01");
+    expect(harness.controller.getState().usageDay).toBe("2026-10-01");
+    harness.controller.act("usage-days", "90");
+    await settle();
+    expect(harness.controller.getState().usageDay).toBeNull();
+  });
+
+  it("closes a model's drill-down when its window no longer carries the model", async () => {
+    const harness = makeHarness();
+    harness.answers.set("/api/usage?days=30", ok(USAGE_REPORT(["2026-10-01", "2026-10-02"])));
+    harness.answers.set("/api/usage?days=90", ok(USAGE_REPORT(["2026-09-01"])));
+    await started(harness);
+    harness.controller.act("tab", "usage");
+    await settle();
+    harness.controller.act("usage-drill", JSON.stringify({ kind: "model", key: "glm-5.3" }));
+    expect(harness.controller.getState().usageDrill).toEqual({ kind: "model", key: "glm-5.3" });
+    harness.controller.act("usage-days", "90");
+    await settle();
+    expect(harness.controller.getState().usageDrill).toBeNull();
+  });
+
+  it("keeps a project's drill-down while the fresh window still carries the project", async () => {
+    const harness = makeHarness();
+    const slice = {
+      key: "/w/app",
+      requests: 1,
+      input: 10,
+      output: 2,
+      cacheRead: 0,
+      cacheWrite: 0,
+      costUsd: 0.01,
+      savingsUsd: 0,
+      days: [],
+    };
+    harness.answers.set("/api/usage?days=30", ok(USAGE_REPORT(["2026-10-01"])));
+    harness.answers.set("/api/usage?days=90", ok({ ...USAGE_REPORT(["2026-09-01"]), byProject: [slice] }));
+    await started(harness);
+    harness.controller.act("tab", "usage");
+    await settle();
+    harness.controller.act("usage-drill", JSON.stringify({ kind: "project", key: "/w/app" }));
+    harness.controller.act("usage-days", "90");
+    await settle();
+    expect(harness.controller.getState().usageDrill).toEqual({ kind: "project", key: "/w/app" });
+  });
+
+  it("ignores malformed usage actions", async () => {
+    const harness = makeHarness();
+    await started(harness);
+    const before = harness.controller.getState();
+    harness.controller.act("usage-days", "45");
+    harness.controller.act("usage-days", "30"); // already the default
+    harness.controller.act("usage-metric", "usd");
+    harness.controller.act("usage-drill", "{not json");
+    harness.controller.act("usage-drill", JSON.stringify({ kind: "repo", key: "x" }));
+    harness.controller.act("usage-drill", JSON.stringify({ kind: "model", key: "" }));
+    harness.controller.act("usage-hide", "glm-5.3"); // no report, so no series to hide
+    expect(harness.controller.getState()).toEqual(before);
+  });
+
+  it("hides and shows a series while two others stay visible, ignoring unknown keys", async () => {
+    const harness = makeHarness();
+    const slice = (key: string) => ({
+      key,
+      requests: 1,
+      input: 10,
+      output: 2,
+      cacheRead: 0,
+      cacheWrite: 0,
+      costUsd: 0.01,
+      savingsUsd: 0,
+      days: [],
+    });
+    harness.answers.set(
+      "/api/usage?days=30",
+      ok({ ...USAGE_REPORT(["2026-10-01"]), byModel: [slice("m1"), slice("m2"), slice("m3")] }),
+    );
+    await started(harness);
+    harness.controller.act("tab", "usage");
+    await settle();
+    harness.controller.act("usage-hide", "m2");
+    expect(harness.controller.getState().usageHidden).toEqual(["m2"]);
+    harness.controller.act("usage-hide", "m2");
+    expect(harness.controller.getState().usageHidden).toEqual([]);
+    harness.controller.act("usage-hide", "gone");
+    expect(harness.controller.getState().usageHidden).toEqual([]);
+  });
+
+  it("drops an answer whose window moved while it was in flight, and names a failure", async () => {
+    const harness = makeHarness();
+    const gate = deferred();
+    harness.answers.set("/api/usage?days=30", gate.answer);
+    harness.answers.set("/api/usage?days=7", ok(USAGE_REPORT(["2026-10-11"])));
+    await started(harness);
+    harness.controller.act("tab", "usage");
+    harness.controller.act("usage-days", "7"); // in flight, so the 30-day answer will be dropped
+    await settle();
+    gate.resolve(USAGE_REPORT(["2026-10-01"]));
+    await settle();
+    expect(harness.controller.getState().usageDays).toBe(7);
+    expect(harness.controller.getState().usage).toEqual({ key: 7, report: USAGE_REPORT(["2026-10-11"]) });
+    const bad = makeHarness();
+    bad.answers.set("/api/usage?days=30", fail(503, {}));
+    bad.controller.act("tab", "usage");
+    await settle();
+    expect(bad.controller.getState().usageError).toBe("GET /api/usage?days=30 → 503");
+  });
+
+  it("refuses to hide the last visible series", async () => {
+    const harness = makeHarness();
+    harness.answers.set(
+      "/api/usage?days=30",
+      ok({ ...USAGE_REPORT(["2026-10-01"]), byModel: [{ key: "glm-5.3", days: [] }] }),
+    );
+    await started(harness);
+    harness.controller.act("tab", "usage");
+    await settle();
+    harness.controller.act("usage-hide", "glm-5.3");
+    expect(harness.controller.getState().usageHidden).toEqual([]);
+  });
+
+  it("re-asks the report on the auto-refresh tick while the tab shows, and not off it", async () => {
+    const harness = makeHarness();
+    harness.answers.set("/api/usage?days=30", ok(USAGE_REPORT(["2026-10-01"])));
+    await started(harness);
+    harness.controller.act("tab", "usage");
+    await settle();
+    const first = callsTo(harness, "/api/usage?days=30");
+    await vi.advanceTimersByTimeAsync(5_000);
+    await settle();
+    expect(callsTo(harness, "/api/usage?days=30")).toBe(first + 1);
+    harness.controller.act("tab", "overview");
+    await settle();
+    const off = callsTo(harness, "/api/usage?days=30");
+    await vi.advanceTimersByTimeAsync(30_000);
+    await settle();
+    expect(callsTo(harness, "/api/usage?days=30")).toBe(off);
   });
 });
 

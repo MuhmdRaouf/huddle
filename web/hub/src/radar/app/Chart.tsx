@@ -8,6 +8,8 @@ import {
   type ChartOptions,
   catmullRomPath,
   type Frame,
+  layeredMax,
+  type LayeredOptions,
   type Point,
   plotBounds,
   reversedContinuation,
@@ -130,6 +132,27 @@ export function StackedAreaChart(options: StackedOptions): VNode {
 
 /** One segment of StackedBar: a measured value and its fill color. */
 export type BarSegment = { value: number; color: string };
+
+/** Layered lines: one smooth line per series over one shared scale, never stacked, so no series reads as
+ *  bigger by its position. `mark` draws the picked point's dashed reference line. Same frame and grid as
+ *  the other charts. */
+export function LineChart(options: LayeredOptions): VNode {
+  const { series, width, height, mark } = options;
+  const length = series.reduce((longest, band) => Math.max(longest, band.values.length), 0);
+  const max = layeredMax(series.map((band) => band.values));
+  const step = length > 1 ? width / (length - 1) : 0;
+  const bounds = plotBounds(height);
+  const plot: VNode[] = [];
+  if (mark !== null && mark !== undefined && mark >= 0 && mark < length) {
+    const at = (mark * step).toFixed(1);
+    plot.push(<line key="mark" class="chart-mark-line" x1={at} x2={at} y1="0" y2={String(height)} />);
+  }
+  series.forEach((band, index) => {
+    const points: Point[] = band.values.map((value, at) => ({ x: at * step, y: scaleY(value, max, height) }));
+    plot.push(<path key={index} stroke={band.color} class="chart-line" d={catmullRomPath(points, bounds)} />);
+  });
+  return framed(options, plot);
+}
 
 /** One horizontal stacked bar as plain divs (models tab); segments are proportional to the max. */
 export function StackedBar({ segments, max }: { segments: BarSegment[]; max: number }): VNode {

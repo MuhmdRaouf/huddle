@@ -44,7 +44,8 @@ export function resolveRange(range: TimeRange, now: number, oldest?: number): { 
   return { from: now - preset.ms, to: now };
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** The months' short words, by index; hand-built so labels stay locale-stable. */
+export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const pad2 = (value: number): string => String(value).padStart(2, "0");
 
