@@ -44,6 +44,12 @@ func textOf(row map[string]SqlValue, key string) string {
 	return value
 }
 
+// rowFloat reads one column a row holds as a float, 0 when it holds anything else.
+func rowFloat(row map[string]SqlValue, key string) float64 {
+	value, _ := row[key].(float64)
+	return value
+}
+
 // versionOf reads the schema version the meta table records.
 func versionOf(t *testing.T, db DB) string {
 	t.Helper()
@@ -195,6 +201,30 @@ func buildV5(t *testing.T) (DB, string) {
 	return db, file
 }
 
+// buildV7 writes the v7 shape: requests carry prompt_hash and headers, not yet harness or
+// cost_usd.
+func buildV7(t *testing.T) (DB, string) {
+	t.Helper()
+	db, file := openDB(t)
+	if err := db.Exec(`
+      CREATE TABLE requests (
+        id TEXT PRIMARY KEY, node_id TEXT NOT NULL, session_id TEXT, agent_id TEXT, model TEXT,
+        upstream TEXT, ts INTEGER NOT NULL, latency_ms INTEGER, input INTEGER, output INTEGER,
+        cache_read INTEGER, cache_write INTEGER, cache_write_1h INTEGER, speed TEXT, geo TEXT,
+        service_tier TEXT, stop_reason TEXT, error TEXT, parent_agent_id TEXT, provider TEXT,
+        route TEXT, via TEXT, what TEXT, thinking INTEGER, prompt_hash TEXT, headers TEXT,
+        totals INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO meta (key, value) VALUES ('schema_version', '7');
+    `); err != nil {
+		t.Fatalf("write the v7 shape: %v", err)
+	}
+	if _, err := db.Run("INSERT INTO requests (id, node_id, ts, totals) VALUES ('r1', 's1/main', 5, 0)"); err != nil {
+		t.Fatalf("insert the v7 request: %v", err)
+	}
+	return db, file
+}
+
 func TestMigration(t *testing.T) {
 	t.Run("is a no-op the second time and records the version", func(t *testing.T) {
 		db, _ := openMigrated(t)
@@ -331,6 +361,42 @@ func TestMigration(t *testing.T) {
 		}
 		if got := main["label"]; got != "before" {
 			t.Errorf("label = %v, want before", got)
+		}
+		if got, want := versionOf(t, db), strconv.Itoa(SchemaVersion); got != want {
+			t.Errorf("version = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("upgrades a v7 database, reading its requests under the claude harness", func(t *testing.T) {
+		db, _ := buildV7(t)
+		if err := Migrate(db); err != nil {
+			t.Fatalf("migrate: %v", err)
+		}
+		row, err := db.Get("SELECT harness, cost_usd FROM requests WHERE id = 'r1'")
+		if err != nil {
+			t.Fatalf("read the old request: %v", err)
+		}
+		if got := textOf(row, "harness"); got != "claude" {
+			t.Errorf("harness = %q, want claude", got)
+		}
+		if got := row["cost_usd"]; got != nil {
+			t.Errorf("cost_usd = %v, want nil", got)
+		}
+		// a request through the widened columns, the way the harness collectors put one
+		if _, err := db.Run(
+			"INSERT INTO requests (id, node_id, ts, totals, harness, cost_usd) " +
+				"VALUES ('r2', 's1/main', 9, 0, 'codex', 0.5)"); err != nil {
+			t.Fatalf("insert the new request: %v", err)
+		}
+		fresh, err := db.Get("SELECT harness, cost_usd FROM requests WHERE id = 'r2'")
+		if err != nil {
+			t.Fatalf("read the new request: %v", err)
+		}
+		if got := textOf(fresh, "harness"); got != "codex" {
+			t.Errorf("harness = %q, want codex", got)
+		}
+		if got := rowFloat(fresh, "cost_usd"); got != 0.5 {
+			t.Errorf("cost_usd = %v, want 0.5", got)
 		}
 		if got, want := versionOf(t, db), strconv.Itoa(SchemaVersion); got != want {
 			t.Errorf("version = %q, want %q", got, want)

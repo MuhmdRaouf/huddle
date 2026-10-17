@@ -1,8 +1,8 @@
 // Package usage builds the long-range usage report: zero-filled daily series of requests,
-// tokens and estimated cost by model, project and agent kind, the saving cached input made
-// against the input rate, and each project's costliest sessions. Pure core: it reads the
-// rows its caller hands it and prices them through the Pricer given — it imports neither
-// the history nor the server.
+// tokens and estimated cost by model, project, agent kind and harness, the saving cached
+// input made against the input rate, and each project's costliest sessions. Pure core: it
+// reads the rows its caller hands it and prices them through the Pricer given — it imports
+// neither the history nor the server.
 package usage
 
 import (
@@ -34,7 +34,8 @@ const labelLimit = 80
 
 // Row is one request's usage facts, already joined with the node it ran on: its project,
 // kind and label. Upstream rides along so pricing picks the same offering the Costs view
-// does.
+// does. Harness groups the row in ByHarness (empty reads as claude); CostUSD, when the
+// harness itself reported one, wins over the pricer's estimate.
 type Row struct {
 	TS           int64
 	Model        string
@@ -49,6 +50,8 @@ type Row struct {
 	CacheRead    int64
 	CacheWrite   int64
 	CacheWrite1h int64
+	Harness      string
+	CostUSD      *float64
 }
 
 // RowPrice is one row's money: its estimated cost and the estimated saving its cache reads
@@ -108,7 +111,8 @@ type Session struct {
 }
 
 // Report is one window's usage: the daily series, the totals, the breakdowns by model,
-// project and kind, each project's top sessions, and the honest flags about prices.
+// project, kind and harness, each project's top sessions, and the honest flags about
+// prices.
 type Report struct {
 	From            string               `json:"from"`
 	To              string               `json:"to"`
@@ -117,6 +121,7 @@ type Report struct {
 	ByModel         []Slice              `json:"byModel"`
 	ByProject       []Slice              `json:"byProject"`
 	ByKind          []Slice              `json:"byKind"`
+	ByHarness       []Slice              `json:"byHarness"`
 	TopSessions     map[string][]Session `json:"topSessions"`
 	Approximate     bool                 `json:"approximate"`
 	Unpriced        int                  `json:"unpriced"`
@@ -124,10 +129,11 @@ type Report struct {
 }
 
 // Aggregate sums the window's rows into one report: a zero-filled day per local date the
-// window spans in loc, the grand totals, the breakdowns by model, project and kind, each
-// project's top sessions, and the price honesty flags. Slices order by cost, ties by key;
-// sessions by cost, then last activity, then id. A row no price covers still counts its
-// requests and tokens at no cost, sits in Unpriced, and turns Approximate on.
+// window spans in loc, the grand totals, the breakdowns by model, project, kind and
+// harness, each project's top sessions, and the price honesty flags. Slices order by cost,
+// ties by key; sessions by cost, then last activity, then id. A row no price covers still
+// counts its requests and tokens at no cost, sits in Unpriced, and turns Approximate on;
+// a row whose harness reported its cost is priced by that.
 func Aggregate(rows []Row, window Window, prices Pricer, loc *time.Location) Report {
 	report := Report{
 		From:            midnightOf(time.UnixMilli(window.From).In(loc)).Format(dayLayout),
@@ -136,6 +142,7 @@ func Aggregate(rows []Row, window Window, prices Pricer, loc *time.Location) Rep
 		ByModel:         []Slice{},
 		ByProject:       []Slice{},
 		ByKind:          []Slice{},
+		ByHarness:       []Slice{},
 		TopSessions:     map[string][]Session{},
 		PricesRetrieved: cost.PricesRetrieved,
 	}
@@ -146,10 +153,18 @@ func Aggregate(rows []Row, window Window, prices Pricer, loc *time.Location) Rep
 	models := map[string]*group{}
 	projects := map[string]*group{}
 	kinds := map[string]*group{}
+	harnesses := map[string]*group{}
 	sessions := map[string]*sessionAcc{}
 	for _, row := range rows {
 		date := time.UnixMilli(row.TS).In(loc).Format(dayLayout)
-		price, priced := prices.PriceOf(row)
+		// a harness-reported cost wins over the list prices; nothing else is known about
+		// the rates it saw, so it carries no saving
+		price, priced := RowPrice{}, false
+		if row.CostUSD != nil {
+			price, priced = RowPrice{CostUSD: *row.CostUSD}, true
+		} else {
+			price, priced = prices.PriceOf(row)
+		}
 		if !priced {
 			report.Unpriced++
 			report.Approximate = true
@@ -162,6 +177,7 @@ func Aggregate(rows []Row, window Window, prices Pricer, loc *time.Location) Rep
 		groupAt(models, row.Model).add(row, price, date)
 		groupAt(projects, row.Project).add(row, price, date)
 		groupAt(kinds, row.Kind).add(row, price, date)
+		groupAt(harnesses, harnessOf(row.Harness)).add(row, price, date)
 		sessionAt(sessions, row).add(row, price)
 	}
 	dates := make([]string, len(report.Days))
@@ -171,8 +187,17 @@ func Aggregate(rows []Row, window Window, prices Pricer, loc *time.Location) Rep
 	report.ByModel = slicesOf(models, dates)
 	report.ByProject = slicesOf(projects, dates)
 	report.ByKind = slicesOf(kinds, dates)
+	report.ByHarness = slicesOf(harnesses, dates)
 	topSessions(report.TopSessions, sessions)
 	return report
+}
+
+// harnessOf is the harness a row groups under: an untagged row is Claude Code's.
+func harnessOf(harness string) string {
+	if harness == "" {
+		return shared.HarnessClaude
+	}
+	return harness
 }
 
 // daysOf answers one zeroed day per local date the window spans, first to last.

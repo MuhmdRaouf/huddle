@@ -140,6 +140,41 @@ func TestPathResolution(t *testing.T) {
 			t.Fatalf("ZaiStateDir = %q, want %q", got, e.zai)
 		}
 	})
+
+	t.Run("honours CODEX_HOME, OPENCODE_DATA and XDG_DATA_HOME overrides", func(t *testing.T) {
+		e := makeEnv(t)
+		if got := paths.CodexHome(e.env); got != filepath.Join(e.home, ".codex") {
+			t.Fatalf("CodexHome = %q, want the default under HOME", got)
+		}
+		if got := paths.OpencodeDBPath(e.env); got != filepath.Join(e.home, ".local", "share", "opencode", "opencode.db") {
+			t.Fatalf("OpencodeDBPath = %q, want the default under HOME", got)
+		}
+		codex := filepath.Join(e.home, "codex")
+		env := cloneEnv(e.env)
+		env["CODEX_HOME"] = codex
+		if got := paths.CodexHome(env); got != codex {
+			t.Fatalf("CodexHome = %q, want the override %q", got, codex)
+		}
+		db := filepath.Join(e.home, "opencode-fixture.db")
+		env["OPENCODE_DATA"] = db
+		if got := paths.OpencodeDBPath(env); got != db {
+			t.Fatalf("OpencodeDBPath = %q, want the override %q", got, db)
+		}
+		xdg := cloneEnv(e.env)
+		xdg["XDG_DATA_HOME"] = filepath.Join(e.home, "xdg")
+		if got := paths.OpencodeDBPath(xdg); got != filepath.Join(e.home, "xdg", "opencode", "opencode.db") {
+			t.Fatalf("OpencodeDBPath = %q, want the database under XDG_DATA_HOME", got)
+		}
+		// an override that names nothing counts as unset
+		empty := cloneEnv(e.env)
+		empty["CODEX_HOME"], empty["OPENCODE_DATA"] = "", ""
+		if got := paths.CodexHome(empty); got != filepath.Join(e.home, ".codex") {
+			t.Fatalf("CodexHome = %q, want the default for an empty override", got)
+		}
+		if got := paths.OpencodeDBPath(empty); got != filepath.Join(e.home, ".local", "share", "opencode", "opencode.db") {
+			t.Fatalf("OpencodeDBPath = %q, want the default for an empty override", got)
+		}
+	})
 }
 
 // TestProviderStateDirMatchesStateRoot pins providerStateDir to the state root plugin-core

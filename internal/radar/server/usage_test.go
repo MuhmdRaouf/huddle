@@ -101,6 +101,7 @@ type usageReport struct {
 	ByModel         []usageSlice              `json:"byModel"`
 	ByProject       []usageSlice              `json:"byProject"`
 	ByKind          []usageSlice              `json:"byKind"`
+	ByHarness       []usageSlice              `json:"byHarness"`
 	TopSessions     map[string][]usageSession `json:"topSessions"`
 	Approximate     bool                      `json:"approximate"`
 	Unpriced        int                       `json:"unpriced"`
@@ -259,6 +260,43 @@ func TestUsageRoute(t *testing.T) {
 		}
 		if report.PricesRetrieved == "" {
 			t.Error("pricesRetrieved is empty, want the price table's day")
+		}
+	})
+
+	t.Run("breaks the report down by harness, claude the untagged default", func(t *testing.T) {
+		h := openTestHistory(t)
+		seedUsage(t, h)
+		project, label := "app", "Try Codex"
+		node := history.NodeUpsert{ID: "u9/main", Kind: shared.NodeMain, SessionID: "u9", AgentID: "main"}
+		node.Project, node.Label = &project, &label
+		if err := h.UpsertNode(node); err != nil {
+			t.Fatalf("upsert the node: %v", err)
+		}
+		if err := h.PutRequest("u9/main", shared.RequestRecord{
+			ID: "ur9", SessionID: "u9", AgentID: "main", Model: "gpt-5-codex",
+			Ts: usageMoment(-1, 12, 0), Tokens: shared.Tokens{Input: 1_000, Output: 100},
+			Harness: shared.HarnessCodex,
+		}); err != nil {
+			t.Fatalf("put the codex request: %v", err)
+		}
+		var report usageReport
+		decodeBody(t, historyGet(t, h, "/api/usage?days=7", nil, nil), &report)
+		if len(report.ByHarness) != 2 || report.ByHarness[0].Key != "claude" || report.ByHarness[1].Key != "codex" {
+			t.Fatalf("byHarness = %+v, want claude then codex", report.ByHarness)
+		}
+		claude, codex := report.ByHarness[0], report.ByHarness[1]
+		if claude.Requests != 6 {
+			t.Errorf("claude requests = %d, want the 6 untagged ones", claude.Requests)
+		}
+		if codex.Requests != 1 || codex.Input != 1_000 || codex.Output != 100 {
+			t.Errorf("codex totals = %+v, want its one request's tokens", codex.usageTotals)
+		}
+		var harnessTotal int64
+		for _, slice := range report.ByHarness {
+			harnessTotal += slice.Requests
+		}
+		if harnessTotal != report.Totals.Requests {
+			t.Errorf("byHarness sums to %d requests, want the grand %d", harnessTotal, report.Totals.Requests)
 		}
 	})
 }

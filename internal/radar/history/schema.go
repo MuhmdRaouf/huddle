@@ -12,7 +12,7 @@ import (
 // every open, WAL included, since the file is read while the server writes it.
 
 // SchemaVersion is the history schema's version, recorded in the meta table.
-const SchemaVersion = 7
+const SchemaVersion = 8
 
 // One row per main session, subagent or job; every node of a tree carries its root's id.
 const nodesDDL = `
@@ -71,6 +71,8 @@ CREATE TABLE IF NOT EXISTS requests (
   provider TEXT,
   route TEXT,
   via TEXT,
+  harness TEXT NOT NULL DEFAULT 'claude',
+  cost_usd REAL,
   what TEXT,
   thinking INTEGER,
   prompt_hash TEXT,
@@ -157,8 +159,9 @@ type columnBatch struct {
 }
 
 // The columns each later version added to tables an older database already has; every one
-// nullable, so ADD COLUMN needs no default. Batched by the version that introduced them, in
-// the order the batches run.
+// nullable, so ADD COLUMN needs no default — except harness, whose NOT NULL carries its own
+// 'claude' default, the one shape ADD COLUMN allows. Batched by the version that introduced
+// them, in the order the batches run.
 var versionColumns = []columnBatch{
 	{
 		version: 2,
@@ -172,6 +175,11 @@ var versionColumns = []columnBatch{
 	{version: 5, tables: []tableColumns{{"requests", []string{"parent_agent_id TEXT"}}}},
 	{version: 6, tables: []tableColumns{{"content", []string{"in_len INTEGER", "out_len INTEGER"}}}},
 	{version: 7, tables: []tableColumns{{"requests", []string{"prompt_hash TEXT", "headers TEXT"}}}},
+	// the harness the request's agent CLI names; claude is every row an older radar wrote.
+	// cost_usd is the cost the harness itself reported, winning over the estimate.
+	{version: 8, tables: []tableColumns{{"requests", []string{
+		"harness TEXT NOT NULL DEFAULT 'claude'", "cost_usd REAL",
+	}}}},
 }
 
 // NewerSchemaError names a database written by a newer radar: an older one refuses it.

@@ -67,6 +67,9 @@ func row(edit func(*Row)) Row {
 // close reports whether two dollar figures sit within a tenth of a cent.
 func close(a, b shared.USD) bool { return math.Abs(float64(a-b)) < 0.001 }
 
+// dollars points at one dollar figure, the shape a harness-reported cost rides in on.
+func dollars(value float64) *float64 { return &value }
+
 // wantTotals fails the test when a totals block misses its numbers.
 func wantTotals(t *testing.T, name string, got Totals, requests, in, out, cacheRead, cacheWrite int64, cost, savings shared.USD) {
 	t.Helper()
@@ -341,4 +344,44 @@ func TestAggregatePricesRetrieved(t *testing.T) {
 	if len(report.ByModel) != 0 || len(report.ByProject) != 0 || len(report.ByKind) != 0 {
 		t.Error("an empty report still carries slices, want empty ones")
 	}
+}
+
+func TestAggregateByHarness(t *testing.T) {
+	t.Run("groups every row under its harness, claude the untagged default", func(t *testing.T) {
+		rows := []Row{
+			row(nil),
+			row(func(r *Row) { r.Harness = shared.HarnessCodex; r.Model = "gpt-5-codex" }),
+			row(func(r *Row) { r.Harness = shared.HarnessOpencode }),
+		}
+		report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2, cacheRead: 0.1}}, zone)
+		if len(report.ByHarness) != 3 {
+			t.Fatalf("byHarness rows = %d, want 3", len(report.ByHarness))
+		}
+		claude := sliceOf(t, report.ByHarness, shared.HarnessClaude)
+		wantTotals(t, "claude", claude.Totals, 1, 1_000, 100, 0, 0, 0.0012, 0)
+		codex := sliceOf(t, report.ByHarness, shared.HarnessCodex)
+		wantTotals(t, "codex", codex.Totals, 1, 1_000, 100, 0, 0, 0, 0)
+		opencode := sliceOf(t, report.ByHarness, shared.HarnessOpencode)
+		wantTotals(t, "opencode", opencode.Totals, 1, 1_000, 100, 0, 0, 0.0012, 0)
+		if got := sumsOf(report.ByHarness); got.Requests != report.Totals.Requests {
+			t.Errorf("byHarness sums to %d requests, want the grand %d", got.Requests, report.Totals.Requests)
+		}
+	})
+
+	t.Run("a harness-reported cost wins over the price table and prices the row", func(t *testing.T) {
+		rows := []Row{
+			row(func(r *Row) { r.Harness = shared.HarnessOpencode; r.CostUSD = dollars(0.25) }),
+		}
+		report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2, cacheRead: 0.1}}, zone)
+		slice := sliceOf(t, report.ByHarness, shared.HarnessOpencode)
+		if !close(slice.Totals.CostUSD, 0.25) {
+			t.Errorf("cost = %.6f, want the harness's 0.25", slice.Totals.CostUSD)
+		}
+		if report.Unpriced != 0 || report.Approximate {
+			t.Errorf("unpriced = %d approximate = %v, want the harness cost to price the row", report.Unpriced, report.Approximate)
+		}
+		if !close(slice.Totals.SavingsUSD, 0) {
+			t.Errorf("savings = %.6f, want none behind a harness-reported cost", slice.Totals.SavingsUSD)
+		}
+	})
 }

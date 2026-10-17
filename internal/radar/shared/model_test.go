@@ -162,6 +162,34 @@ func TestRequestRecordJSON(t *testing.T) {
 		}
 	})
 
+	t.Run("prints a harness tag and a harness-reported cost, claude printing neither", func(t *testing.T) {
+		cost := 0.0123
+		tagged, err := json.Marshal(RequestRecord{
+			ID: "r1", SessionID: "s1", AgentID: "main", Model: "gpt-5-codex", Ts: 1,
+			Tokens: Tokens{Input: 1}, Provider: "other",
+			Harness: HarnessCodex, CostUSD: &cost,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `{"id":"r1","sessionId":"s1","agentId":"main","model":"gpt-5-codex","upstream":"",` +
+			`"ts":1,"latencyMs":null,"tokens":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0},` +
+			`"stopReason":null,"provider":"other","harness":"codex","costUsd":0.0123}`
+		if string(tagged) != want {
+			t.Errorf("json = %s, want %s", tagged, want)
+		}
+		plain, err := json.Marshal(RequestRecord{
+			ID: "r1", SessionID: "s1", AgentID: "main", Model: "m", Ts: 1,
+			Tokens: Tokens{Input: 1}, Provider: "p", Harness: HarnessClaude,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(plain), "harness") {
+			t.Errorf("json = %s, want no harness key on a claude record", plain)
+		}
+	})
+
 	t.Run("prints a route line's own extras before the model and its route after provider", func(t *testing.T) {
 		b, err := json.Marshal(RequestRecord{
 			ID: "r1", SessionID: "s1", AgentID: "a1", Model: "m", Upstream: "u", Ts: 1,

@@ -46,7 +46,8 @@ const maxWalkDepth = 6
 
 // WatcherOptions configures the ingest loop. Now is the clock the cadences and windows read
 // (epoch ms); Alive decides who counts as a living pid in the session registry; NewTicker builds
-// the poll clock, so tests drive the interval by hand.
+// the poll clock, so tests drive the interval by hand. Log receives the one line a failing
+// harness collector leaves (stderr when nil).
 type WatcherOptions struct {
 	Env        domain.EnvLookup
 	Store      *store.Store
@@ -56,6 +57,10 @@ type WatcherOptions struct {
 	Now        func() int64
 	Alive      PidAlive
 	NewTicker  func(interval time.Duration) (<-chan time.Time, func())
+	// HarnessCollectors are the other agents' transcript collectors (Codex, opencode) one
+	// rescanning pass runs after the jobs; nil keeps radar on Claude transcripts alone.
+	HarnessCollectors []HarnessCollector
+	Log               func(line string)
 }
 
 // fileTail is one transcript file's read position and its parser.
@@ -163,6 +168,13 @@ type Watcher struct {
 	sinceMs   int64
 	rescanMs  int64
 	newTicker func(interval time.Duration) (<-chan time.Time, func())
+	log       func(line string)
+
+	// harnessCollectors are the other agents' transcript stores, each read once per
+	// rescanning pass; harnessMetas remembers the cwd each harness session last filed, so
+	// a quiet collector never re-upserts its sessions.
+	harnessCollectors []HarnessCollector
+	harnessMetas      map[string]string
 
 	mu      sync.Mutex
 	stopped bool
@@ -212,6 +224,10 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 			return ticker.C, ticker.Stop
 		}
 	}
+	log := options.Log
+	if log == nil {
+		log = func(line string) { fmt.Fprintln(os.Stderr, line) }
+	}
 	w := &Watcher{
 		ctx:                 ctx,
 		env:                 options.Env,
@@ -221,6 +237,9 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 		sinceMs:             options.SinceMs,
 		rescanMs:            rescan,
 		newTicker:           newTicker,
+		log:                 log,
+		harnessCollectors:   options.HarnessCollectors,
+		harnessMetas:        make(map[string]string),
 		spoolTails:          make(map[string]*TailState),
 		sessionUpstreams:    make(map[string][]upstreamAt),
 		routerUpstreams:     make(map[string]string),
@@ -1102,6 +1121,7 @@ const (
 	phaseTailing
 	phaseEviction
 	phaseJobs
+	phaseHarness
 	phaseDone
 )
 
@@ -1152,6 +1172,10 @@ type passWork struct {
 	jobLineAt           int
 	curJobTail          *fileTail
 	retired             bool
+
+	harnessRead    bool
+	harnessRecords []shared.RequestRecord
+	harnessAt      int
 }
 
 // walkFrame is one directory of the projects walk: its fresh files, then its subdirectories,
@@ -1204,6 +1228,8 @@ func (p *passWork) stepPhase() bool {
 		return p.stepEviction()
 	case phaseJobs:
 		return p.stepJobs()
+	case phaseHarness:
+		return p.stepHarness()
 	}
 	return false
 }
@@ -1508,4 +1534,49 @@ func mtimeOf(path string) (int64, bool) {
 		return 0, false
 	}
 	return info.ModTime().UnixMilli(), true
+}
+
+// stepHarness runs every harness collector once on a rescanning pass, then lands its
+// records one a step.
+func (p *passWork) stepHarness() bool {
+	if !p.rescan {
+		return false
+	}
+	if !p.harnessRead {
+		p.harnessRead = true
+		p.harnessRecords = p.w.collectHarness()
+		return true
+	}
+	if p.harnessAt < len(p.harnessRecords) {
+		record := p.harnessRecords[p.harnessAt]
+		p.harnessAt++
+		p.w.landHarness(record)
+		return true
+	}
+	return false
+}
+
+// collectHarness runs each collector once; one failing logs its line and the rest go on.
+func (w *Watcher) collectHarness() []shared.RequestRecord {
+	var out []shared.RequestRecord
+	for _, collector := range w.harnessCollectors {
+		records, err := collector.Collect(w.ctx, w.sinceCutoff())
+		if err != nil {
+			w.log(fmt.Sprintf("radar: harness collector failed (%v)", err))
+			continue
+		}
+		out = append(out, records...)
+	}
+	return out
+}
+
+// landHarness files one harness record: the session's cwd the record carried, then the
+// request itself. The session is a plain one — the registry's next rescan ends it at its
+// last activity, which is what an agent CLI's quieted session is.
+func (w *Watcher) landHarness(record shared.RequestRecord) {
+	if record.Cwd != nil && *record.Cwd != "" && w.harnessMetas[record.SessionID] != *record.Cwd {
+		w.harnessMetas[record.SessionID] = *record.Cwd
+		w.applySessionMeta(SessionMeta{ID: record.SessionID, Cwd: record.Cwd})
+	}
+	w.store.AddRequest(w.defaultUpstream(record), nil)
 }

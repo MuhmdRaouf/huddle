@@ -593,8 +593,8 @@ func (h *History) reRoot(id, root string) error {
 // cascade-delete its content row.
 const upsertRequest = "INSERT INTO requests (id, node_id, session_id, agent_id, model, upstream, ts, latency_ms, " +
 	"input, output, cache_read, cache_write, cache_write_1h, speed, geo, service_tier, stop_reason, " +
-	"error, parent_agent_id, provider, route, via, what, thinking, prompt_hash, headers, totals) " +
-	"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+	"error, parent_agent_id, provider, route, via, harness, cost_usd, what, thinking, prompt_hash, headers, totals) " +
+	"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
 	"ON CONFLICT(id) DO UPDATE SET node_id = excluded.node_id, session_id = excluded.session_id, " +
 	"agent_id = excluded.agent_id, model = excluded.model, upstream = excluded.upstream, ts = excluded.ts, " +
 	"latency_ms = excluded.latency_ms, input = excluded.input, output = excluded.output, " +
@@ -602,13 +602,14 @@ const upsertRequest = "INSERT INTO requests (id, node_id, session_id, agent_id, 
 	"cache_write_1h = excluded.cache_write_1h, speed = excluded.speed, geo = excluded.geo, " +
 	"service_tier = excluded.service_tier, stop_reason = excluded.stop_reason, error = excluded.error, " +
 	"parent_agent_id = excluded.parent_agent_id, provider = excluded.provider, " +
-	"route = excluded.route, via = excluded.via, what = excluded.what, " +
+	"route = excluded.route, via = excluded.via, harness = excluded.harness, " +
+	"cost_usd = excluded.cost_usd, what = excluded.what, " +
 	"thinking = excluded.thinking, prompt_hash = excluded.prompt_hash, headers = excluded.headers, " +
 	"totals = excluded.totals"
 
 const requestColumns = "id, node_id, session_id, agent_id, model, upstream, ts, latency_ms, input, output, " +
 	"cache_read, cache_write, cache_write_1h, speed, geo, service_tier, stop_reason, error, " +
-	"parent_agent_id, provider, route, via, what, thinking, prompt_hash, headers, totals"
+	"parent_agent_id, provider, route, via, harness, cost_usd, what, thinking, prompt_hash, headers, totals"
 
 // requestRow is one requests row, column names and all.
 type requestRow struct {
@@ -633,6 +634,8 @@ type requestRow struct {
 	provider      *string
 	route         *string
 	via           *string
+	harness       *string
+	costUSD       *float64
 	what          *string
 	thinking      *int64
 	promptHash    *string
@@ -663,12 +666,22 @@ func requestRowOf(row map[string]SqlValue) requestRow {
 		provider:      rowText(row, "provider"),
 		route:         rowText(row, "route"),
 		via:           rowText(row, "via"),
+		harness:       rowText(row, "harness"),
+		costUSD:       rowFloat64(row, "cost_usd"),
 		what:          rowText(row, "what"),
 		thinking:      rowInt64(row, "thinking"),
 		promptHash:    rowText(row, "prompt_hash"),
 		headers:       rowText(row, "headers"),
 		totals:        derep(rowInt64(row, "totals"), 0),
 	}
+}
+
+// harnessOf is the harness a request row stores: an untagged record is a Claude Code one.
+func harnessOf(r shared.RequestRecord) string {
+	if r.Harness == "" {
+		return shared.HarnessClaude
+	}
+	return r.Harness
 }
 
 // PutRequest stores one request, then bumps its node's last_at: a request after the
@@ -697,6 +710,8 @@ func (h *History) PutRequest(nodeID string, r shared.RequestRecord) error {
 		r.Provider,
 		sqlText(r.Route),
 		sqlText(r.Via),
+		harnessOf(r),
+		sqlFloat64(r.CostUSD),
 		sqlText(r.What),
 		sqlInt64(r.Tokens.Thinking),
 	}
@@ -758,6 +773,13 @@ func toRequest(row requestRow) shared.RequestRecord {
 	}
 	if row.via != nil {
 		r.Via = row.via
+	}
+	// claude rows keep no harness: absence reads as Claude Code, as it prints
+	if row.harness != nil && *row.harness != shared.HarnessClaude {
+		r.Harness = *row.harness
+	}
+	if row.costUSD != nil {
+		r.CostUSD = row.costUSD
 	}
 	if row.what != nil {
 		r.What = row.what
@@ -2345,8 +2367,31 @@ func rowBytes(row map[string]SqlValue, key string) []byte {
 	return blob
 }
 
+// rowFloat64 reads one column as a nullable float.
+func rowFloat64(row map[string]SqlValue, key string) *float64 {
+	switch value := row[key].(type) {
+	case nil:
+		return nil
+	case float64:
+		return &value
+	case int64:
+		parsed := float64(value)
+		return &parsed
+	}
+	parsed := float64(0)
+	return &parsed
+}
+
 // sqlText and its kin bind a nullable value as a parameter.
 func sqlText(v *string) SqlValue {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+// sqlFloat64 binds a nullable float as a parameter.
+func sqlFloat64(v *float64) SqlValue {
 	if v == nil {
 		return nil
 	}

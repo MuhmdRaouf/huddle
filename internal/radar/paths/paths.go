@@ -56,6 +56,28 @@ func ClaudeConfigDir(env domain.EnvLookup) string {
 	return filepath.Join(homeDir(env), ".claude")
 }
 
+// CodexHome is the Codex CLI's home directory: $CODEX_HOME, else ~/.codex — its rollout
+// files live under sessions/. An override that names nothing counts as unset.
+func CodexHome(env domain.EnvLookup) string {
+	if home, ok := env["CODEX_HOME"]; ok && home != "" {
+		return home
+	}
+	return filepath.Join(homeDir(env), ".codex")
+}
+
+// OpencodeDBPath is opencode's SQLite database: $OPENCODE_DATA names the file outright,
+// else $XDG_DATA_HOME/opencode/opencode.db, else ~/.local/share/opencode/opencode.db. An
+// override that names nothing counts as unset.
+func OpencodeDBPath(env domain.EnvLookup) string {
+	if file, ok := env["OPENCODE_DATA"]; ok && file != "" {
+		return file
+	}
+	if data, ok := env["XDG_DATA_HOME"]; ok && data != "" {
+		return filepath.Join(data, "opencode", "opencode.db")
+	}
+	return filepath.Join(homeDir(env), ".local", "share", "opencode", "opencode.db")
+}
+
 // ZaiStateDir is the zai plugin's state dir, the one its jobs live in.
 func ZaiStateDir(ctx context.Context, env domain.EnvLookup) string {
 	return ProviderStateDir(ctx, env, "zai")

@@ -210,6 +210,14 @@ func (h *Headers) add(name, value string) {
 	*h = append(*h, HeaderPair{Name: name, Value: value})
 }
 
+// The harnesses a request names. An empty Harness on a record reads as HarnessClaude: the
+// Claude transcripts never tagged themselves, and the history column defaults to claude.
+const (
+	HarnessClaude   = "claude"
+	HarnessCodex    = "codex"
+	HarnessOpencode = "opencode"
+)
+
 // RequestRecord is one model request = one assistant message (streaming duplicates merged
 // by requestId before this point).
 type RequestRecord struct {
@@ -223,6 +231,15 @@ type RequestRecord struct {
 	Tokens     Tokens  `json:"tokens"`
 	StopReason *string `json:"stopReason"`
 	Provider   string  `json:"provider"`
+	// Harness is the agent CLI that made the call ("codex", "opencode"); empty reads as
+	// Claude Code and prints nothing.
+	Harness string `json:"-"`
+	// CostUSD is the cost the harness itself reported for the call; nil when radar prices
+	// it from the token counts.
+	CostUSD *float64 `json:"-"`
+	// Cwd is where the harness ran, from its own session store; the watcher files it on
+	// the session once, never printed on the request.
+	Cwd *string `json:"-"`
 	// Route is how a provider plugin's router sent it ("anthropic" passthrough,
 	// "provider"); nil when no router saw it.
 	Route *string `json:"route,omitempty"`
@@ -281,6 +298,8 @@ type RequestRecord struct {
 const (
 	keyRoute        = "route"
 	keyVia          = "via"
+	keyHarness      = "harness"
+	keyCostUsd      = "costUsd"
 	keyTotals       = "totals"
 	keyError        = "error"
 	keyParentAgent  = "parentAgentId"
@@ -298,8 +317,8 @@ var billingKeys = []string{keyCacheWrite1h, keySpeed, keyGeo, keyServiceTier}
 
 // historyKeys is the order a record read back out of the history answers its optionals in.
 var historyKeys = []string{
-	keyRoute, keyVia, keyWhat, keyError, keyParentAgent, keyPromptHash, keyHeaders, keyTotals,
-	keyCacheWrite1h, keySpeed, keyGeo, keyServiceTier,
+	keyRoute, keyVia, keyHarness, keyCostUsd, keyWhat, keyError, keyParentAgent, keyPromptHash,
+	keyHeaders, keyTotals, keyCacheWrite1h, keySpeed, keyGeo, keyServiceTier,
 }
 
 // MarshalJSON prints the record's keys in the wire's fixed order: the base fields first, and
@@ -335,6 +354,14 @@ func (r RequestRecord) MarshalJSON() ([]byte, error) {
 		case keyVia:
 			if r.Via != nil {
 				add(keyVia, *r.Via)
+			}
+		case keyHarness:
+			if r.Harness != "" && r.Harness != HarnessClaude {
+				add(keyHarness, r.Harness)
+			}
+		case keyCostUsd:
+			if r.CostUSD != nil {
+				add(keyCostUsd, USD(*r.CostUSD))
 			}
 		case keyTotals:
 			if r.Totals {

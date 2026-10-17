@@ -20,7 +20,7 @@ func (h *History) UsageRows(ctx context.Context, fromMs, toMs int64) ([]usage.Ro
 		"SELECT r.ts, r.model, r.upstream, r.provider, r.session_id AS requestSession, "+
 			"n.session_id AS nodeSession, n.project, n.kind, n.label, "+
 			"r.input, r.output, r.cache_read AS cacheRead, r.cache_write AS cacheWrite, "+
-			"r.cache_write_1h AS cacheWrite1h "+
+			"r.cache_write_1h AS cacheWrite1h, r.harness, r.cost_usd AS costUsd "+
 			"FROM requests r JOIN nodes n ON n.id = r.node_id "+
 			"WHERE r.ts >= ? AND r.ts <= ? ORDER BY r.ts, r.id", fromMs, toMs)
 	if err != nil {
@@ -42,6 +42,8 @@ func (h *History) UsageRows(ctx context.Context, fromMs, toMs int64) ([]usage.Ro
 			CacheRead:    derep(rowInt64(row, "cacheRead"), 0),
 			CacheWrite:   derep(rowInt64(row, "cacheWrite"), 0),
 			CacheWrite1h: derep(rowInt64(row, "cacheWrite1h"), 0),
+			Harness:      rowTextString(row, "harness"),
+			CostUSD:      rowFloat64(row, "costUsd"),
 		})
 		// a request that never carried a session reads as its node's
 		if out[len(out)-1].SessionID == "" {

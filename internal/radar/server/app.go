@@ -233,6 +233,11 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		SinceMs:    options.SinceMs,
 		IntervalMs: options.IntervalMs,
 		Now:        func() int64 { return now().UnixMilli() },
+		Log:        log,
+		HarnessCollectors: []ingest.HarnessCollector{
+			ingest.NewCodexCollector(options.Env),
+			ingest.NewOpencodeCollector(options.Env),
+		},
 	})
 	tickMs := options.InsightsTickMs
 	if tickMs == 0 {

@@ -18,6 +18,7 @@ func TestUsageRows(t *testing.T) {
 	base := time.Date(2026, time.October, 15, 12, 0, 0, 0, time.UTC).UnixMilli()
 	project, label := "app", "Fix the login flow"
 	write1h := int64(5)
+	harnessCost := 0.0123
 	if err := h.UpsertNode(NodeUpsert{
 		ID: "s1/main", Kind: shared.NodeMain, SessionID: "s1", AgentID: "main",
 		Project: &project, Label: &label,
@@ -50,6 +51,17 @@ func TestUsageRows(t *testing.T) {
 		ID: "r3", SessionID: "s1", AgentID: "main", Model: "glm-5.3", Provider: "zai",
 		Ts: base - 3*3_600_000, Tokens: shared.Tokens{Input: 9, Output: 9},
 	})
+	// a harness collector's rows: one Codex turn, one opencode message whose own cost rides
+	// along to win over the estimate
+	put("s1/main", shared.RequestRecord{
+		ID: "r4", SessionID: "s1", AgentID: "main", Model: "gpt-5-codex", Ts: base + 120_000,
+		Tokens: shared.Tokens{Input: 800, Output: 300, CacheRead: 200}, Harness: shared.HarnessCodex,
+	})
+	put("s1/main", shared.RequestRecord{
+		ID: "r5", SessionID: "s1", AgentID: "main", Model: "glm-5.3", Provider: "zai", Ts: base + 180_000,
+		Tokens: shared.Tokens{Input: 600, Output: 400, CacheRead: 300, CacheWrite: 40}, Harness: shared.HarnessOpencode,
+		CostUSD: &harnessCost,
+	})
 	rows, err := h.UsageRows(context.Background(), base-3_600_000, base+3_600_000)
 	if err != nil {
 		t.Fatalf("read the usage rows: %v", err)
@@ -59,11 +71,23 @@ func TestUsageRows(t *testing.T) {
 			TS: base, Model: "glm-5.3", Upstream: "https://api.z.ai", Provider: "zai",
 			Project: "app", SessionID: "s1", Kind: "main", Label: "Fix the login flow",
 			Input: 1000, Output: 100, CacheRead: 50, CacheWrite: 20, CacheWrite1h: 5,
+			Harness: shared.HarnessClaude,
 		},
 		{
 			TS: base + 60_000, Model: "glm-5.3-flash", Upstream: "https://api.z.ai", Provider: "zai",
 			SessionID: "s1", Kind: "subagent",
-			Input: 200, Output: 40,
+			Input: 200, Output: 40, Harness: shared.HarnessClaude,
+		},
+		{
+			TS: base + 120_000, Model: "gpt-5-codex", SessionID: "s1", Kind: "main",
+			Label: "Fix the login flow", Project: "app",
+			Input: 800, Output: 300, CacheRead: 200, Harness: shared.HarnessCodex,
+		},
+		{
+			TS: base + 180_000, Model: "glm-5.3", Provider: "zai",
+			Project: "app", SessionID: "s1", Kind: "main", Label: "Fix the login flow",
+			Input: 600, Output: 400, CacheRead: 300, CacheWrite: 40,
+			Harness: shared.HarnessOpencode, CostUSD: &harnessCost,
 		},
 	}
 	if !reflect.DeepEqual(rows, want) {

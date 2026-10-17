@@ -181,6 +181,11 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		SinceMs:    since,
 		IntervalMs: options.IntervalMs,
 		Now:        func() int64 { return now().UnixMilli() },
+		Log:        log,
+		HarnessCollectors: []ingest.HarnessCollector{
+			ingest.NewCodexCollector(env),
+			ingest.NewOpencodeCollector(env),
+		},
 	})
 	tickMs := options.InsightsTickMs
 	if tickMs == 0 {
