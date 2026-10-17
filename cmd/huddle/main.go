@@ -1,6 +1,7 @@
 // Command huddle is the huddle binary: one dispatch over the plugin's entry points (the CLI,
 // the MCP server, the HTTP server and the hooks), each behind the subcommand the plugin invokes
-// it with, and over the binary's own words for running without Claude Code (alone.go).
+// it with, over radar's and kanban's command lines (the radar and kanban words), and over the
+// binary's own words for running without Claude Code (alone.go).
 package main
 
 import (
@@ -10,6 +11,9 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	kanbanapp "github.com/MuhmdRaouf/huddle/internal/kanban/app"
+	radarapp "github.com/MuhmdRaouf/huddle/internal/radar/app"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 )
@@ -29,6 +33,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "--version" {
 		fmt.Fprintf(stdout, "huddle %s\n", version)
 		return 0
+	}
+	// The satellite words: radar and kanban run their own command lines inside this binary,
+	// ahead of every huddle word and the legacy import — a radar or kanban invocation never
+	// imports a huddle home.
+	if len(args) > 0 {
+		switch args[0] {
+		case "radar":
+			return radarapp.Run(args[1:], stdout, stderr, version)
+		case "kanban":
+			return kanbanapp.Run(args[1:], stdout, stderr, version)
+		}
 	}
 	command, rest := splitCommand(args)
 	key := command

@@ -82,86 +82,18 @@ func TestTargets(t *testing.T) {
 	}
 }
 
-func TestBinaryByName(t *testing.T) {
-	for _, name := range []string{"huddle", "radar", "kanban"} {
-		bin, ok := binaryByName(name)
-		if !ok {
-			t.Errorf("binaryByName(%q) not found", name)
-			continue
-		}
-		if bin.name != name {
-			t.Errorf("binaryByName(%q).name = %q", name, bin.name)
-		}
-	}
-	if _, ok := binaryByName("plugin-core"); ok {
-		t.Error("binaryByName(\"plugin-core\") found, want only huddle, radar and kanban")
-	}
-}
-
-func TestBinaryAssetNames(t *testing.T) {
-	want := []struct {
-		key    string
-		radar  string
-		huddle string
-		kanban string
-	}{
-		{"darwin-amd64", "radar-darwin-amd64", "huddle-darwin-amd64", "kanban-darwin-amd64"},
-		{"darwin-arm64", "radar-darwin-arm64", "huddle-darwin-arm64", "kanban-darwin-arm64"},
-		{"linux-amd64", "radar-linux-amd64", "huddle-linux-amd64", "kanban-linux-amd64"},
-		{"linux-arm64", "radar-linux-arm64", "huddle-linux-arm64", "kanban-linux-arm64"},
-	}
-	radar, ok := binaryByName("radar")
-	if !ok {
-		t.Fatal("radar binary not found")
-	}
-	huddle, ok := binaryByName("huddle")
-	if !ok {
-		t.Fatal("huddle binary not found")
-	}
-	kanban, ok := binaryByName("kanban")
-	if !ok {
-		t.Fatal("kanban binary not found")
-	}
-	for i, tt := range want {
-		if got := targets[i].key(); got != tt.key {
-			t.Errorf("targets[%d].key() = %q, want %q", i, got, tt.key)
-		}
-		if got := targets[i].asset(radar.name); got != tt.radar {
-			t.Errorf("targets[%d].asset(radar) = %q, want %q", i, got, tt.radar)
-		}
-		if got := targets[i].asset(huddle.name); got != tt.huddle {
-			t.Errorf("targets[%d].asset(huddle) = %q, want %q", i, got, tt.huddle)
-		}
-		if got := targets[i].asset(kanban.name); got != tt.kanban {
-			t.Errorf("targets[%d].asset(kanban) = %q, want %q", i, got, tt.kanban)
-		}
-	}
-}
-
-func TestBinaryPaths(t *testing.T) {
+// TestReleasePaths pins the one release binary's shape: the huddle package,
+// the root VERSION file, and the manifest at release/v<VERSION>.json.
+func TestReleasePaths(t *testing.T) {
 	root := t.TempDir()
-	tests := []struct {
-		bin          string
-		versionFile  string
-		manifestPath string
-	}{
-		{"huddle", "VERSION", filepath.Join("release", "huddle", "v0.0.1.json")},
-		{"radar", "VERSION", filepath.Join("release", "radar", "v0.0.1.json")},
-		{"kanban", "VERSION", filepath.Join("release", "kanban", "v0.0.1.json")},
+	if got, want := release.pkg, "./cmd/huddle"; got != want {
+		t.Errorf("pkg = %q, want %q", got, want)
 	}
-	for _, tt := range tests {
-		t.Run(tt.bin, func(t *testing.T) {
-			bin, ok := binaryByName(tt.bin)
-			if !ok {
-				t.Fatalf("binaryByName(%q) not found", tt.bin)
-			}
-			if got, want := bin.versionFile, tt.versionFile; got != want {
-				t.Errorf("versionFile = %q, want %q", got, want)
-			}
-			if got, want := bin.manifestPath(root, "0.0.1"), filepath.Join(root, tt.manifestPath); got != want {
-				t.Errorf("manifestPath() = %q, want %q", got, want)
-			}
-		})
+	if got, want := release.versionFile, "VERSION"; got != want {
+		t.Errorf("versionFile = %q, want %q", got, want)
+	}
+	if got, want := release.manifestPath(root, "0.0.1"), filepath.Join(root, "release", "v0.0.1.json"); got != want {
+		t.Errorf("manifestPath() = %q, want %q", got, want)
 	}
 }
 
@@ -196,7 +128,7 @@ func TestSHA256SUMS(t *testing.T) {
 func TestManifestJSON(t *testing.T) {
 	want := `{
   "version": "0.1.0",
-  "tag": "huddle-v0.1.0",
+  "tag": "v0.1.0",
   "assets": {
     "darwin-amd64": {
       "name": "huddle-darwin-amd64",
@@ -221,7 +153,7 @@ func TestManifestJSON(t *testing.T) {
   }
 }
 `
-	data, err := manifestBytes(buildManifest(defaultBinary(t), "0.1.0", goldenAssets()))
+	data, err := manifestBytes(buildManifest(release, "0.1.0", goldenAssets()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,84 +162,24 @@ func TestManifestJSON(t *testing.T) {
 	}
 }
 
-func TestRadarManifestJSON(t *testing.T) {
-	want := `{
-  "version": "0.0.1",
-  "tag": "radar-v0.0.1",
-  "assets": {
-    "darwin-amd64": {
-      "name": "radar-darwin-amd64",
-      "sha256": "aa",
-      "size": 1024
-    },
-    "linux-arm64": {
-      "name": "radar-linux-arm64",
-      "sha256": "ff",
-      "size": 6144
-    }
-  }
-}
-`
-	assets := []builtAsset{
-		{Target: target{OS: "darwin", Arch: "amd64"}, Name: "radar-darwin-amd64", SHA256: "aa", Size: 1024},
-		{Target: target{OS: "linux", Arch: "arm64"}, Name: "radar-linux-arm64", SHA256: "ff", Size: 6144},
+// TestReleaseManifestHoldsEveryTarget pins the manifest shape: one entry per
+// release target, in release order, each naming its huddle-<os>-<arch> asset.
+func TestReleaseManifestHoldsEveryTarget(t *testing.T) {
+	m := buildManifest(release, "0.0.1", goldenAssets())
+	if m.Tag != "v0.0.1" {
+		t.Errorf("tag = %q, want v0.0.1", m.Tag)
 	}
-	radar, ok := binaryByName("radar")
-	if !ok {
-		t.Fatal("radar binary not found")
+	if len(m.Assets) != len(targets) {
+		t.Fatalf("manifest holds %d assets, want %d", len(m.Assets), len(targets))
 	}
-	data, err := manifestBytes(buildManifest(radar, "0.0.1", assets))
-	if err != nil {
-		t.Fatal(err)
+	for i, entry := range m.Assets {
+		if entry.Key != targets[i].key() {
+			t.Errorf("asset %d = %s, want %s", i, entry.Key, targets[i].key())
+		}
+		if want := targets[i].asset(release.name); entry.Value.Name != want {
+			t.Errorf("asset %s name = %q, want %q", entry.Key, entry.Value.Name, want)
+		}
 	}
-	if string(data) != want {
-		t.Errorf("manifest bytes =\n%s\nwant\n%s", data, want)
-	}
-}
-
-func TestKanbanManifestJSON(t *testing.T) {
-	want := `{
-  "version": "0.0.1",
-  "tag": "kanban-v0.0.1",
-  "assets": {
-    "darwin-arm64": {
-      "name": "kanban-darwin-arm64",
-      "sha256": "aa",
-      "size": 1024
-    },
-    "linux-amd64": {
-      "name": "kanban-linux-amd64",
-      "sha256": "cc",
-      "size": 3072
-    }
-  }
-}
-`
-	assets := []builtAsset{
-		{Target: target{OS: "darwin", Arch: "arm64"}, Name: "kanban-darwin-arm64", SHA256: "aa", Size: 1024},
-		{Target: target{OS: "linux", Arch: "amd64"}, Name: "kanban-linux-amd64", SHA256: "cc", Size: 3072},
-	}
-	kanban, ok := binaryByName("kanban")
-	if !ok {
-		t.Fatal("kanban binary not found")
-	}
-	data, err := manifestBytes(buildManifest(kanban, "0.0.1", assets))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != want {
-		t.Errorf("manifest bytes =\n%s\nwant\n%s", data, want)
-	}
-}
-
-// defaultBinary is the huddle binary spec, the -bin default.
-func defaultBinary(t *testing.T) binary {
-	t.Helper()
-	bin, ok := binaryByName("huddle")
-	if !ok {
-		t.Fatal("huddle binary not found")
-	}
-	return bin
 }
 
 func TestCompareLines(t *testing.T) {
@@ -368,7 +240,7 @@ func TestCompareLines(t *testing.T) {
 
 func TestLoadManifestAssets(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v0.1.0.json")
-	data, err := manifestBytes(buildManifest(defaultBinary(t), "0.1.0", goldenAssets()))
+	data, err := manifestBytes(buildManifest(release, "0.1.0", goldenAssets()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,59 +268,21 @@ func TestLoadManifestAssetsMissing(t *testing.T) {
 }
 
 func TestGoBuildArgs(t *testing.T) {
-	huddle := defaultBinary(t)
 	out := filepath.Join("dist", "huddle-linux-amd64")
 	want := []string{
 		"build",
 		"-trimpath",
 		"-buildvcs=false",
-		"-ldflags", ldflags(huddle, "0.1.0"),
+		"-ldflags", ldflags(release, "0.1.0"),
 		"-o", out,
 		"./cmd/huddle",
 	}
-	if got := goBuildArgs(huddle, out, "0.1.0"); !reflect.DeepEqual(got, want) {
+	if got := goBuildArgs(release, out, "0.1.0"); !reflect.DeepEqual(got, want) {
 		t.Errorf("goBuildArgs() = %q, want %q", got, want)
 	}
 	const oneTwoThree = "-s -w -buildid= -X main.version=1.2.3"
-	if got := ldflags(huddle, "1.2.3"); got != oneTwoThree {
+	if got := ldflags(release, "1.2.3"); got != oneTwoThree {
 		t.Errorf("ldflags(1.2.3) = %q, want %q", got, oneTwoThree)
-	}
-}
-
-func TestGoBuildArgsRadarKanban(t *testing.T) {
-	tests := []struct {
-		bin     string
-		pkg     string
-		ldflags string
-	}{
-		{"radar", "./cmd/radar", "-s -w -buildid= -X main.version=0.0.1"},
-		{"kanban", "./cmd/kanban", "-s -w -buildid= -X main.version=0.0.1"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.bin, func(t *testing.T) {
-			bin, ok := binaryByName(tt.bin)
-			if !ok {
-				t.Fatalf("binaryByName(%q) not found", tt.bin)
-			}
-			if bin.pkg != tt.pkg {
-				t.Errorf("pkg = %q, want %q", bin.pkg, tt.pkg)
-			}
-			out := filepath.Join("dist", bin.name+"-linux-amd64")
-			want := []string{
-				"build",
-				"-trimpath",
-				"-buildvcs=false",
-				"-ldflags", tt.ldflags,
-				"-o", out,
-				tt.pkg,
-			}
-			if got := goBuildArgs(bin, out, "0.0.1"); !reflect.DeepEqual(got, want) {
-				t.Errorf("goBuildArgs() = %q, want %q", got, want)
-			}
-			if got := ldflags(bin, "0.0.1"); got != tt.ldflags {
-				t.Errorf("ldflags() = %q, want %q", got, tt.ldflags)
-			}
-		})
 	}
 }
 
@@ -492,8 +326,6 @@ func TestRunUsageErrors(t *testing.T) {
 	}{
 		{"unknown flag", []string{"-fresh"}},
 		{"stray argument", []string{"extra"}},
-		{"unknown binary", []string{"-bin", "zai"}},
-		{"empty binary", []string{"-bin", ""}},
 		{"target with manifest", []string{"-target", "linux/amd64", "-manifest"}},
 		{"manifest with check", []string{"-manifest", "-check"}},
 		{"unknown target", []string{"-target", "plan9/amd64"}},
@@ -544,51 +376,13 @@ func TestRunCheckWithoutManifest(t *testing.T) {
 	}
 }
 
-// repoWithVersion builds a throwaway module root and writes content to the
-// root VERSION file every binary takes its version from.
-func repoWithVersion(t *testing.T, name, content string) string {
-	t.Helper()
-	bin, ok := binaryByName(name)
-	if !ok {
-		t.Fatalf("binaryByName(%q) not found", name)
-	}
-	root := t.TempDir()
-	path := bin.versionPath(root)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return root
-}
-
-func TestRunBinCheckWithoutManifest(t *testing.T) {
-	for _, bin := range []string{"huddle", "radar", "kanban"} {
-		t.Run(bin, func(t *testing.T) {
-			root := repoWithVersion(t, bin, "0.0.1\n")
-			var stdout, stderr bytes.Buffer
-			code := run([]string{"-bin", bin, "-check"}, root, &stdout, &stderr)
-			if code != 4 {
-				t.Fatalf("exit = %d, want 4", code)
-			}
-			if got, want := stderr.String(), "no manifest for 0.0.1\n"; got != want {
-				t.Errorf("stderr = %q, want %q", got, want)
-			}
-			if stdout.Len() != 0 {
-				t.Errorf("stdout = %q, want empty", stdout.String())
-			}
-		})
-	}
-}
-
 // TestReproducibleLinuxAmd64Build builds the same target twice from scratch
 // and requires identical digests: the whole point of the pinned flags.
 func TestReproducibleLinuxAmd64Build(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real cross-build skipped in -short")
 	}
-	b := builder{GoTool: "go", Root: "../..", Bin: defaultBinary(t), Version: "0.0.0-test", Stderr: os.Stderr}
+	b := builder{GoTool: "go", Root: "../..", Bin: release, Version: "0.0.0-test", Stderr: os.Stderr}
 	linuxAmd64 := target{OS: "linux", Arch: "amd64"}
 	first, err := b.build(context.Background(), linuxAmd64, t.TempDir())
 	if err != nil {

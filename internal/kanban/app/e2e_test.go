@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"bufio"
@@ -17,16 +17,17 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 )
 
-// The whole server flow through the built binary: init, start --no-open, a
-// ticket seen live on /api/events, refresh, stop, and nothing left behind — no
-// child process, no state file. Every temp home and project is the test's own;
-// the port is the OS's pick, never a fixed one.
+// The whole server flow through the built huddle binary's kanban word: init,
+// start --no-open, a ticket seen live on /api/events, refresh, stop, and
+// nothing left behind — no child process, no state file. Every temp home and
+// project is the test's own; the port is the OS's pick, never a fixed one.
 
-// buildKanban builds the binary once for the e2e.
-func buildKanban(t *testing.T) string {
+// buildHuddle builds the binary once for the e2e.
+func buildHuddle(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "kanban")
-	build := exec.Command("go", "build", "-o", bin, ".")
+	bin := filepath.Join(t.TempDir(), "huddle")
+	build := exec.Command("go", "build", "-o", bin, "./cmd/huddle")
+	build.Dir = "../../.."
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
@@ -47,17 +48,17 @@ func newE2E(t *testing.T) *e2e {
 	t.Helper()
 	project := t.TempDir()
 	e := &e2e{
-		t: t, bin: buildKanban(t), project: project, home: t.TempDir(),
+		t: t, bin: buildHuddle(t), project: project, home: t.TempDir(),
 		boardDir: filepath.Join(project, ".agents", "kanban"),
 	}
 	return e
 }
 
-// run runs one kanban command in the project and answers its exit code and
-// combined output.
+// run runs one kanban word of the binary in the project and answers its exit
+// code and combined output.
 func (e *e2e) run(args ...string) (int, string) {
 	e.t.Helper()
-	cmd := exec.Command(e.bin, args...)
+	cmd := exec.Command(e.bin, append([]string{"kanban"}, args...)...)
 	cmd.Dir = e.project
 	cmd.Env = append(os.Environ(), "KANBAN_HOME="+e.home, "KANBAN_NO_OPEN=1")
 	var out strings.Builder

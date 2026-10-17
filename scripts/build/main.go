@@ -1,8 +1,7 @@
-// build cross-compiles one of the release binaries (huddle, radar or kanban)
-// for the four release targets and writes the SHA256SUMS file and the release
-// manifest:
+// build cross-compiles the release binary (huddle) for the four release
+// targets and writes the SHA256SUMS file and the release manifest:
 //
-//	go run ./scripts/build [-bin huddle|radar|kanban] [-out dir] [-manifest] [-check] [-target os/arch]
+//	go run ./scripts/build [-out dir] [-manifest] [-check] [-target os/arch]
 package main
 
 import (
@@ -25,7 +24,7 @@ import (
 	"sync"
 )
 
-// binary is one release binary: the command package built into it, the VERSION
+// binary is the release binary: the command package built into it, the VERSION
 // file its version comes from and the release directory its manifest goes into,
 // both relative to the module root (the module sits at the repository root).
 type binary struct {
@@ -36,40 +35,15 @@ type binary struct {
 	tagPrefix   string
 }
 
-// binaries lists every release binary, keyed by the -bin flag value. All three
-// take their version from the root VERSION file.
-var binaries = []binary{
-	{
-		name:        "huddle",
-		pkg:         "./cmd/huddle",
-		versionFile: "VERSION",
-		releaseDir:  "release/huddle",
-		tagPrefix:   "huddle-v",
-	},
-	{
-		name:        "radar",
-		pkg:         "./cmd/radar",
-		versionFile: "VERSION",
-		releaseDir:  "release/radar",
-		tagPrefix:   "radar-v",
-	},
-	{
-		name:        "kanban",
-		pkg:         "./cmd/kanban",
-		versionFile: "VERSION",
-		releaseDir:  "release/kanban",
-		tagPrefix:   "kanban-v",
-	},
-}
-
-// binaryByName looks a binary up by its -bin flag value.
-func binaryByName(name string) (binary, bool) {
-	for _, b := range binaries {
-		if b.name == name {
-			return b, true
-		}
-	}
-	return binary{}, false
+// release is the one release binary: huddle, whose radar and kanban words run
+// every part. Its version comes from the root VERSION file and its manifest
+// lands at release/v<VERSION>.json.
+var release = binary{
+	name:        "huddle",
+	pkg:         "./cmd/huddle",
+	versionFile: "VERSION",
+	releaseDir:  "release",
+	tagPrefix:   "v",
 }
 
 // versionPath is the VERSION file's path under the module root.
@@ -453,15 +427,14 @@ func runCheck(ctx context.Context, root string, bin binary, version string, sele
 	return 0
 }
 
-// run parses the flags, reads the binary's VERSION file and drives the
-// requested mode; root is the module root holding go.mod, the cmd/ packages
-// and the VERSION file every binary takes its version from.
+// run parses the flags, reads the VERSION file and drives the requested mode;
+// root is the module root holding go.mod, the cmd/ packages and the VERSION
+// file the release binary takes its version from.
 func run(args []string, root string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("build", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	binName := fs.String("bin", "huddle", "binary to build: huddle, radar or kanban")
 	out := fs.String("out", "dist", "directory for the assets and SHA256SUMS")
-	wantManifest := fs.Bool("manifest", false, "also write the binary's release manifest")
+	wantManifest := fs.Bool("manifest", false, "also write the release manifest")
 	check := fs.Bool("check", false, "rebuild into a temporary directory and compare with the manifest")
 	list := &targetList{}
 	fs.Var(list, "target", "os/arch to build, repeatable")
@@ -481,23 +454,17 @@ func run(args []string, root string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	bin, ok := binaryByName(*binName)
-	if !ok {
-		fmt.Fprintf(stderr, "build: unknown binary %q, want huddle, radar or kanban\n", *binName)
-		return 2
-	}
-
-	version, err := readVersionFile(bin.versionPath(root))
+	version, err := readVersionFile(release.versionPath(root))
 	if err != nil {
 		fmt.Fprintln(stderr, "build:", err)
 		return 2
 	}
 
 	if *check {
-		return runCheck(context.Background(), root, bin, version, selectTargets(list.keys), stdout, stderr)
+		return runCheck(context.Background(), root, release, version, selectTargets(list.keys), stdout, stderr)
 	}
 
-	b := builder{GoTool: "go", Root: root, Bin: bin, Version: version, Stderr: stderr}
+	b := builder{GoTool: "go", Root: root, Bin: release, Version: version, Stderr: stderr}
 	assets, err := b.buildAll(context.Background(), *out, selectTargets(list.keys))
 	if err != nil {
 		fmt.Fprintln(stderr, "build:", err)
@@ -510,12 +477,12 @@ func run(args []string, root string, stdout, stderr io.Writer) int {
 	if !*wantManifest {
 		return 0
 	}
-	data, err := manifestBytes(buildManifest(bin, version, assets))
+	data, err := manifestBytes(buildManifest(release, version, assets))
 	if err != nil {
 		fmt.Fprintln(stderr, "build:", err)
 		return 1
 	}
-	path := bin.manifestPath(root, version)
+	path := release.manifestPath(root, version)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		fmt.Fprintln(stderr, "build:", err)
 		return 1

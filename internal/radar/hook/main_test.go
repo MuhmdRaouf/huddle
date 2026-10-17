@@ -25,8 +25,9 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/testkit"
 )
 
-// radarBin is the radar binary TestMain builds once; the cases below run it as a child.
-var radarBin string
+// huddleBin is the huddle binary TestMain builds once; the cases below run its radar hook as a
+// child.
+var huddleBin string
 
 // hookTimeoutMs is Claude Code's budget for one hook run, the timeout the radar plugin's
 // hooks.json grants every event's hook: 5 seconds.
@@ -44,14 +45,14 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	defer os.RemoveAll(dir)
-	bin := filepath.Join(dir, "radar")
-	build := exec.Command("go", "build", "-o", bin, "./cmd/radar")
+	bin := filepath.Join(dir, "huddle")
+	build := exec.Command("go", "build", "-o", bin, "./cmd/huddle")
 	build.Dir = "../../.."
 	if out, err := build.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "building ./cmd/radar: %v\n%s", err, out)
+		fmt.Fprintf(os.Stderr, "building ./cmd/huddle: %v\n%s", err, out)
 		os.Exit(1)
 	}
-	radarBin = bin
+	huddleBin = bin
 	os.Exit(m.Run())
 }
 
@@ -67,7 +68,7 @@ func runHookProcess(t *testing.T, input string, env []string) run {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, radarBin, "hook")
+	cmd := exec.CommandContext(ctx, huddleBin, "radar", "hook")
 	cmd.Env = env
 	cmd.Stdin = strings.NewReader(input)
 	var stdout, stderr bytes.Buffer
@@ -77,7 +78,7 @@ func runHookProcess(t *testing.T, input string, env []string) run {
 	if err != nil {
 		var exitErr *exec.ExitError
 		if !errors.As(err, &exitErr) {
-			t.Fatalf("running %s hook: %v", radarBin, err)
+			t.Fatalf("running %s radar hook: %v", huddleBin, err)
 		}
 		code = exitErr.ExitCode()
 	}
@@ -196,7 +197,7 @@ func TestBuiltHookUnderHostileInput(t *testing.T) {
 	// it.
 	t.Run("exits 0 well inside its hooks.json timeout when stdin never closes (internal deadline)", func(t *testing.T) {
 		e := makeEnv(t)
-		cmd := exec.Command(radarBin, "hook")
+		cmd := exec.Command(huddleBin, "radar", "hook")
 		cmd.Env = e.environ
 		stdin, err := cmd.StdinPipe()
 		if err != nil {

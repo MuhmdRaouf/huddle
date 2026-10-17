@@ -96,12 +96,13 @@ func serverRunning(ctx context.Context, env domain.EnvLookup) bool {
 	return process.IsAlive(info.PID)
 }
 
-// autostart starts the dashboard server detached; true when a start was launched. Any failure
-// is silent: never let observability break the session it observes.
+// autostart starts the dashboard server detached; true when a start was launched. The child
+// takes the same radar word this hook runs under — the binary routes every radar command line
+// through it. Any failure is silent: never let observability break the session it observes.
 func autostart() bool {
 	executable, err := os.Executable()
 	if err != nil {
 		return false
 	}
-	return process.StartDetached(executable, []string{"start"}, process.DetachedOptions{}).Pid != 0
+	return process.StartDetached(executable, []string{"radar", "start"}, process.DetachedOptions{}).Pid != 0
 }
