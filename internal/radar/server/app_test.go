@@ -627,10 +627,13 @@ func TestAppHoldsNotificationsWhileCatchingUp(t *testing.T) {
 }
 
 func TestProjectDirsOf(t *testing.T) {
-	t.Run("lists each project a tracked session ran in once, in session order", func(t *testing.T) {
+	t.Run("lists each project a tracked session ran in once, newest session first", func(t *testing.T) {
 		st := store.CreateStore(time.Now)
+		// one millisecond apart: sessions started in the same millisecond have no order
+		at := time.Now().UnixMilli()
 		session := func(id, cwd string) shared.SpoolLine {
-			line := shared.SpoolLine{Ts: isoOf(time.Now().UnixMilli()), Event: "SessionStart", SessionID: &id}
+			at++
+			line := shared.SpoolLine{Ts: isoOf(at), Event: "SessionStart", SessionID: &id}
 			if cwd != "" {
 				line.Cwd = &cwd
 			}
@@ -641,7 +644,7 @@ func TestProjectDirsOf(t *testing.T) {
 		st.AddSpoolLine(session("s3", ""))       // no cwd: no project
 		st.AddSpoolLine(session("s4", "/w/other"))
 		got := projectDirsOf(st)
-		want := []string{"/w/app", "/w/other"}
+		want := []string{"/w/other", "/w/app"}
 		if !slices.Equal(got, want) {
 			t.Fatalf("the projects this server tracked: got %v, want %v", got, want)
 		}
