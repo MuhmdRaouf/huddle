@@ -149,7 +149,7 @@ func (t *Tab) serveFlow(w http.ResponseWriter, r *http.Request, key string) {
 // boardFor answers the board a key names for a flow command to run on — the
 // same row lookup appFor mounts an app from, answering the Board itself.
 func (t *Tab) boardFor(ctx context.Context, key string) (board.Board, bool) {
-	for _, row := range boardsOf(t.roots(ctx)) {
+	for _, row := range t.boardsOf(ctx) {
 		if row.Key == key {
 			return board.Board{Root: row.Root, Now: t.now}, true
 		}

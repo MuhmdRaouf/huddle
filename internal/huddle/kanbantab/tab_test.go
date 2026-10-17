@@ -31,6 +31,10 @@ func pinnedNow() time.Time {
 // board sits at .agents/kanban.
 func newRepo(t *testing.T, home, name string) string {
 	t.Helper()
+	// the default Origin runs git against these repos; it reads no config
+	// outside the test
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	repo := filepath.Join(home, name)
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)

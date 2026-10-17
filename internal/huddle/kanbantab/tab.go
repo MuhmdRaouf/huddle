@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -26,11 +27,14 @@ import (
 const Prefix = "/api/kanban"
 
 // Options shapes the mount. Roots answers the working dirs to look for boards
-// from — huddle hands it the registry's sessions' cwds — and Version and Now
-// travel into every board app. Audit, when set, sees one call per write the
-// flow route runs, ok naming whether the board took it.
+// from — huddle hands it the registry's sessions' cwds — Origin answers a
+// repository's origin URL (the default reads git's config, bounded at a
+// second), and Version and Now travel into every board app. Audit, when set,
+// sees one call per write the flow route runs, ok naming whether the board
+// took it.
 type Options struct {
 	Roots   func(ctx context.Context) []string
+	Origin  func(ctx context.Context, repoRoot string) string
 	Version string
 	Now     func() time.Time
 	Audit   func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
@@ -47,6 +51,7 @@ type entry struct {
 type Tab struct {
 	ctx     context.Context
 	roots   func(ctx context.Context) []string
+	origin  func(ctx context.Context, repoRoot string) string
 	version string
 	now     func() time.Time
 	audit   func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
@@ -63,9 +68,13 @@ func Mount(ctx context.Context, opts Options) *Tab {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+	if opts.Origin == nil {
+		opts.Origin = originOf
+	}
 	return &Tab{
 		ctx:     ctx,
 		roots:   opts.Roots,
+		origin:  opts.Origin,
 		version: opts.Version,
 		now:     opts.Now,
 		audit:   opts.Audit,
@@ -102,7 +111,7 @@ func (t *Tab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch rest := strings.TrimPrefix(path, Prefix); {
 	case rest == "/boards":
 		t.oneMethod(w, r, http.MethodGet, func() {
-			writeJSON(w, http.StatusOK, boardsAnswer{Boards: boardsOf(t.roots(r.Context()))})
+			writeJSON(w, http.StatusOK, boardsAnswer{Boards: t.boardsOf(r.Context())})
 		})
 	case strings.HasPrefix(rest, "/b/"):
 		t.serveBoard(w, r, strings.TrimPrefix(rest, "/b/"))
@@ -144,7 +153,7 @@ func (t *Tab) appFor(ctx context.Context, key string) *server.App {
 	if e, ok := t.apps[key]; ok {
 		return e.app
 	}
-	for _, row := range boardsOf(t.roots(ctx)) {
+	for _, row := range t.boardsOf(ctx) {
 		if row.Key != key {
 			continue
 		}
@@ -171,12 +180,14 @@ func (t *Tab) Stop() {
 
 // boardsOf resolves every working dir to its board, folding the dirs of one
 // repo into one row: the walk stops at the repo root, so every cwd in a repo
-// names the same board. The list is deduped by key and sorted by name, then
-// key.
-func boardsOf(roots []string) []boardRow {
+// names the same board. A row's key is the repository's identity — the
+// normalised origin, so clones of one repository share their board — and a
+// repo with no origin keeps the key its path decides. The list is deduped by
+// key and sorted by name, then key.
+func (t *Tab) boardsOf(ctx context.Context) []boardRow {
 	seen := map[string]bool{}
 	out := []boardRow{}
-	for _, cwd := range roots {
+	for _, cwd := range t.roots(ctx) {
 		if cwd == "" {
 			continue
 		}
@@ -184,7 +195,7 @@ func boardsOf(roots []string) []boardRow {
 		if err != nil {
 			continue // a dir with no board is no row, never an error
 		}
-		key := server.KeyOf(b.Root)
+		key := board.RepoKey(t.origin(ctx, repoRoot(b.Root)), server.KeyOf(b.Root))
 		if seen[key] {
 			continue
 		}
@@ -204,6 +215,19 @@ func boardsOf(roots []string) []boardRow {
 // picks a board for a session's working dir.
 func noEnv(string) (string, bool) { return "", false }
 
+// originOf answers a repository's origin URL from git's own config: one read
+// bounded at a second, empty on any error, so a repo without an origin — or a
+// git that never answers — keeps the path key and no request waits on it.
+func originOf(ctx context.Context, repoRoot string) string {
+	callCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(callCtx, "git", "-C", repoRoot, "config", "--get", "remote.origin.url").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // absRoot answers the board root absolute and clean — the spelling the
 // watcher stamps into every snapshot's board field, so a listed root matches
 // the answer its board's API gives.
@@ -215,9 +239,14 @@ func absRoot(root string) string {
 	return abs
 }
 
+// repoRoot answers the dir a board's repo lives in: the parent of .agents.
+func repoRoot(root string) string {
+	return filepath.Dir(filepath.Dir(root))
+}
+
 // repoName answers the dir a board sits in: the repo, the parent of .agents.
 func repoName(root string) string {
-	return filepath.Base(filepath.Dir(filepath.Dir(root)))
+	return filepath.Base(repoRoot(root))
 }
 
 // oneMethod answers one route for its one method, 405 for the others.
