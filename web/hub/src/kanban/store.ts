@@ -4,7 +4,16 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
-import type { Card, Delta, Snapshot, StaticBoard, Stream, StreamHandlers, Ticket } from "./types.ts";
+import type {
+  Card,
+  ColumnId,
+  Delta,
+  Snapshot,
+  StaticBoard,
+  Stream,
+  StreamHandlers,
+  Ticket,
+} from "./types.ts";
 
 export type BoardState = {
   mode: "live" | "static";
@@ -42,6 +51,21 @@ export const EMPTY_FILTERS: Filters = {
   picks: { cluster: [], tag: [], holder: [], type: [], priority: [] },
   hideDone: false,
 };
+
+/** Above this many done cards, a URL that says nothing about done means hide. */
+export const DONE_HIDE_THRESHOLD = 50;
+
+/** The filters with one kind's pick of a value added or dropped. */
+export function togglePick(filters: Filters, kind: FilterKind, value: string): Filters {
+  const picked = filters.picks[kind];
+  const next = picked.includes(value) ? picked.filter((v) => v !== value) : [...picked, value];
+  return { ...filters, picks: { ...filters.picks, [kind]: next } };
+}
+
+/** The filters with every pick dropped; the search and hide-done stay. */
+export function clearPicks(filters: Filters): Filters {
+  return { ...filters, picks: { ...EMPTY_FILTERS.picks } };
+}
 
 /** Apply one delta: upserts replace in place (order kept, new ids appended), removes drop out. */
 export function applyDelta(snapshot: Snapshot, delta: Delta): Snapshot {
@@ -90,7 +114,8 @@ export function staticBoardState(win: { __KANBAN__?: StaticBoard } | null | unde
   return { ...initialBoardState(), mode: "static", snapshot: board.snapshot };
 }
 
-function valuesOf(card: Card, kind: FilterKind): string[] {
+/** The values a card carries for one filter kind. */
+export function valuesOfKind(card: Card, kind: FilterKind): string[] {
   switch (kind) {
     case "cluster":
       return [card.cluster];
@@ -115,7 +140,7 @@ export function matchesFilters(card: Card, filters: Filters): boolean {
   for (const kind of FILTER_KINDS) {
     const picked = filters.picks[kind];
     if (picked.length === 0) continue;
-    const values = valuesOf(card, kind);
+    const values = valuesOfKind(card, kind);
     if (!picked.some((value) => values.includes(value))) return false;
   }
   return !(filters.hideDone && card.column === "done");
@@ -125,8 +150,39 @@ export function filterCards(cards: Card[], filters: Filters): Card[] {
   return cards.filter((card) => matchesFilters(card, filters));
 }
 
-/** The filters a URL query carries, with or without the leading question mark. */
-export function filtersFromSearch(search: string): Filters {
+/** The cards a facet menu counts: they pass every filter except this kind's own picks. */
+function facetBase(cards: Card[], filters: Filters, kind: FilterKind): Card[] {
+  return cards.filter((card) =>
+    matchesFilters(card, { ...filters, picks: { ...filters.picks, [kind]: [] } }),
+  );
+}
+
+export type Facet = { value: string; count: number };
+
+/** One kind's menu values over the other filters' cards: a value's count, sorted by count then value. */
+export function facetValues(cards: Card[], filters: Filters, kind: FilterKind): Facet[] {
+  const counts = new Map<string, number>();
+  for (const card of facetBase(cards, filters, kind)) {
+    for (const value of valuesOfKind(card, kind)) counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count || (a.value < b.value ? -1 : 1));
+}
+
+/** The columns whose holders a session is working right now; the rest read as earlier. */
+const WORKING_COLUMNS: readonly ColumnId[] = ["ready", "in-progress", "review", "testing", "blocked"];
+
+/** True when the holder works a card now among the cards that pass the other filters. */
+export function holderWorkingNow(cards: Card[], filters: Filters, value: string): boolean {
+  return facetBase(cards, filters, "holder").some(
+    (card) => card.holder === value && WORKING_COLUMNS.includes(card.column),
+  );
+}
+
+/** The filters a URL query carries, with or without the leading question mark. A URL that says
+ *  nothing about done hides it on a done-heavy board (`doneCount`, 0 while the board is unknown). */
+export function filtersFromSearch(search: string, doneCount = 0): Filters {
   const params = new URLSearchParams(search);
   const picks: Record<FilterKind, string[]> = { ...EMPTY_FILTERS.picks };
   for (const kind of FILTER_KINDS) {
@@ -137,11 +193,14 @@ export function filtersFromSearch(search: string): Filters {
         .map(decodeURIComponent)
         .filter((v) => v !== "");
   }
-  return { q: params.get("q") ?? "", picks, hideDone: params.get("done") === "hide" };
+  const done = params.get("done");
+  const hideDone = done === "hide" ? true : done === "show" ? false : doneCount > DONE_HIDE_THRESHOLD;
+  return { q: params.get("q") ?? "", picks, hideDone };
 }
 
-/** The query for the filters, holding only what is set: the empty filter has no query. */
-export function searchFromFilters(filters: Filters): string {
+/** The query for the filters, holding only what is set: the empty filter has no query. On a
+ *  done-heavy board silence reads as hide, so showing done has to say so. */
+export function searchFromFilters(filters: Filters, doneCount = 0): string {
   const params = new URLSearchParams();
   if (filters.q !== "") params.set("q", filters.q);
   for (const kind of FILTER_KINDS) {
@@ -149,6 +208,7 @@ export function searchFromFilters(filters: Filters): string {
     if (picked.length > 0) params.set(kind, picked.map(encodeURIComponent).join(","));
   }
   if (filters.hideDone) params.set("done", "hide");
+  else if (doneCount > DONE_HIDE_THRESHOLD) params.set("done", "show");
   return params.toString();
 }
 

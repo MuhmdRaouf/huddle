@@ -1,5 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/preact";
+import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { orderedTags, tagClass } from "../../src/kanban/components/Card.tsx";
 import { CardView } from "../../src/kanban/components/Card.tsx";
 import { cardOf, makeCard } from "./helpers.ts";
 import { stubMatchMedia } from "./match-media.ts";
@@ -7,11 +9,11 @@ import { stubMatchMedia } from "./match-media.ts";
 const TITLE = "kanban: Preact board page, responsive and live, with its Vitest suite";
 
 describe("CardView", () => {
-  it("shows the cluster chip, the id, the title and the summary", () => {
+  it("shows the epic as a small muted label beside the id, the title and the summary", () => {
     const { container } = render(<CardView card={cardOf("KBN-UI")} flash={0} onOpen={() => undefined} />);
     const card = container.querySelector<HTMLElement>("article.card");
     expect(card?.dataset.id).toBe("KBN-UI");
-    expect(card?.querySelector("header .chip")?.textContent).toBe("kanban ui");
+    expect(card?.querySelector("header .epic")?.textContent).toBe("kanban ui");
     expect(card?.querySelector("header .cid")?.textContent).toBe("KBN-UI");
     expect(card?.querySelector("h3")?.textContent).toBe(TITLE);
     expect(card?.querySelector("p.summary")?.textContent).toContain("Preact board page");
@@ -28,12 +30,44 @@ describe("CardView", () => {
     expect(container.querySelector("ul.badges li")?.classList.contains("b-expedite")).toBe(true);
   });
 
-  it("lists the tags", () => {
-    const { container } = render(<CardView card={cardOf("KBN-UI")} flash={0} onOpen={() => undefined} />);
-    expect([...container.querySelectorAll("ul.tags li")].map((li) => li.textContent)).toEqual([
-      "kanban",
-      "ui",
+  it("lists the tags as chips, the repo tags first", () => {
+    const { container } = render(
+      <CardView
+        card={makeCard({ tags: ["router", "cc-plugins", "huddle"] })}
+        flash={0}
+        onOpen={() => undefined}
+      />,
+    );
+    const chips = [...container.querySelectorAll("ul.tags button")];
+    expect(chips.map((chip) => chip.textContent)).toEqual(["huddle", "cc-plugins", "router"]);
+    expect(chips.map((chip) => chip.className)).toEqual(["repo-huddle", "repo-cc-plugins", ""]);
+  });
+
+  it("hands a tag up when its chip is clicked, without opening the ticket", async () => {
+    const onTag = vi.fn();
+    const onOpen = vi.fn();
+    render(<CardView card={cardOf("KBN-UI")} flash={0} onOpen={onOpen} onTag={onTag} />);
+    await userEvent.click(screen.getByRole("button", { name: "kanban" }));
+    expect(onTag).toHaveBeenCalledWith("kanban");
+    expect(onTag).not.toHaveBeenCalledWith("ui");
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("orders the tags with the repo tags leading", () => {
+    expect(orderedTags(["web", "huddle", "router", "cc-plugins"])).toEqual([
+      "huddle",
+      "cc-plugins",
+      "web",
+      "router",
     ]);
+    expect(orderedTags(["web", "router"])).toEqual(["web", "router"]);
+    expect(orderedTags([])).toEqual([]);
+  });
+
+  it("marks only the repo tags with an accent class", () => {
+    expect(tagClass("huddle")).toBe("repo-huddle");
+    expect(tagClass("cc-plugins")).toBe("repo-cc-plugins");
+    expect(tagClass("router")).toBe("");
   });
 
   it("shows the holder's initials with the full name on hover, nothing for an unheld card", () => {

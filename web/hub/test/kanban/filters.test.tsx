@@ -1,15 +1,16 @@
-import { fireEvent, render, screen } from "@testing-library/preact";
-import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vite-plus/test";
-import { Toolbar } from "../../src/kanban/components/Toolbar.tsx";
+import { describe, expect, it } from "vite-plus/test";
 import {
+  DONE_HIDE_THRESHOLD,
   EMPTY_FILTERS,
   type Filters,
+  facetValues,
   filterCards,
   filtersFromSearch,
+  holderWorkingNow,
   searchFromFilters,
+  togglePick,
 } from "../../src/kanban/store.ts";
-import { snapshot } from "./helpers.ts";
+import { makeCard, snapshot } from "./helpers.ts";
 
 const withPicks = (picks: Partial<Filters["picks"]>, over: Partial<Filters> = {}): Filters => ({
   ...EMPTY_FILTERS,
@@ -56,6 +57,78 @@ describe("filterCards", () => {
   });
 });
 
+describe("facetValues", () => {
+  it("counts one kind's values and sorts by count, then value", () => {
+    expect(facetValues(snapshot.cards, EMPTY_FILTERS, "cluster")).toEqual([
+      { value: "kanban docs", count: 3 },
+      { value: "kanban board", count: 2 },
+      { value: "kanban plugin", count: 2 },
+      { value: "kanban ui", count: 2 },
+      { value: "kanban server", count: 1 },
+      { value: "kanban skill", count: 1 },
+      { value: "kanban ticket", count: 1 },
+    ]);
+  });
+
+  it("applies the search, hide done and the other kinds, but not this kind's own picks", () => {
+    expect(facetValues(snapshot.cards, withPicks({}, { q: "KBN-UI" }), "tag")).toEqual([
+      { value: "kanban", count: 1 },
+      { value: "ui", count: 1 },
+    ]);
+    const open = facetValues(snapshot.cards, withPicks({}, { hideDone: true }), "tag");
+    expect(open.map((f) => f.value)).not.toContain("spec");
+    expect(open.find((f) => f.value === "kanban")?.count).toBe(9);
+    expect(facetValues(snapshot.cards, withPicks({ tag: ["go"] }), "tag")[0]).toEqual({
+      value: "kanban",
+      count: 12,
+    });
+    expect(
+      facetValues(snapshot.cards, withPicks({ cluster: ["kanban ui"] }), "tag")
+        .map((f) => f.value)
+        .sort(),
+    ).toEqual(["export", "kanban", "ui"]);
+  });
+
+  it("drops a holder only found on done cards once hide done is on", () => {
+    const doneHolder = makeCard({ id: "D-1", holder: "glm-DONE", column: "done" });
+    const cards = [...snapshot.cards, doneHolder];
+    expect(facetValues(cards, EMPTY_FILTERS, "holder").map((f) => f.value)).toContain("glm-DONE");
+    expect(facetValues(cards, withPicks({}, { hideDone: true }), "holder").map((f) => f.value)).not.toContain(
+      "glm-DONE",
+    );
+  });
+});
+
+describe("holderWorkingNow", () => {
+  it("is true for the holders of cards a session is working, false for backlog and done", () => {
+    const cards = [
+      makeCard({ id: "W-1", holder: "glm-WORK", column: "in-progress" }),
+      makeCard({ id: "R-1", holder: "glm-REVIEW", column: "review" }),
+      makeCard({ id: "B-1", holder: "glm-BACKLOG", column: "backlog" }),
+      makeCard({ id: "D-1", holder: "glm-DONE", column: "done" }),
+    ];
+    expect(holderWorkingNow(cards, EMPTY_FILTERS, "glm-WORK")).toBe(true);
+    expect(holderWorkingNow(cards, EMPTY_FILTERS, "glm-REVIEW")).toBe(true);
+    expect(holderWorkingNow(cards, EMPTY_FILTERS, "glm-BACKLOG")).toBe(false);
+    expect(holderWorkingNow(cards, EMPTY_FILTERS, "glm-DONE")).toBe(false);
+  });
+
+  it("reads through the other filters, so a hidden card does not make a holder working", () => {
+    const cards = [makeCard({ id: "W-1", holder: "glm-WORK", column: "in-progress", tags: ["go"] })];
+    expect(holderWorkingNow(cards, withPicks({ tag: ["go"] }), "glm-WORK")).toBe(true);
+    expect(holderWorkingNow(cards, withPicks({ tag: ["ui"] }), "glm-WORK")).toBe(false);
+  });
+});
+
+describe("togglePick", () => {
+  it("adds and drops one value of one kind, leaving the rest of the filters alone", () => {
+    expect(togglePick(EMPTY_FILTERS, "tag", "go")).toEqual(withPicks({ tag: ["go"] }));
+    expect(togglePick(withPicks({ tag: ["go"], holder: ["h"] }), "tag", "go")).toEqual(
+      withPicks({ holder: ["h"] }),
+    );
+  });
+});
+
 describe("the URL query", () => {
   it("parses q, every chip kind and hide done", () => {
     expect(
@@ -92,36 +165,25 @@ describe("the URL query", () => {
   it("reads a bare search string with no leading question mark", () => {
     expect(filtersFromSearch("q=x")).toEqual(withPicks({}, { q: "x" }));
   });
-});
 
-describe("Toolbar", () => {
-  it("focuses the search box when the reader presses / outside an input", () => {
-    render(<Toolbar cards={snapshot.cards} filters={EMPTY_FILTERS} onChange={() => undefined} />);
-    fireEvent.keyDown(document, { key: "/" });
-    const box = screen.getByRole("searchbox", { name: "Search" });
-    expect(document.activeElement).toBe(box);
-    fireEvent.keyDown(box, { key: "/" });
-    expect(document.activeElement).toBe(box);
+  it(`hides done by default only above ${DONE_HIDE_THRESHOLD} done cards, and done=show overrules`, () => {
+    expect(filtersFromSearch("", 0).hideDone).toBe(false);
+    expect(filtersFromSearch("", DONE_HIDE_THRESHOLD).hideDone).toBe(false);
+    expect(filtersFromSearch("", DONE_HIDE_THRESHOLD + 1).hideDone).toBe(true);
+    expect(filtersFromSearch("?done=show", 278).hideDone).toBe(false);
+    expect(filtersFromSearch("?done=hide", 0).hideDone).toBe(true);
   });
 
-  it("toggles a chip by handing its parent the next filters", async () => {
-    const onChange = vi.fn();
-    render(<Toolbar cards={snapshot.cards} filters={EMPTY_FILTERS} onChange={onChange} />);
-    await userEvent.click(screen.getByRole("button", { name: "go" }));
-    expect(onChange).toHaveBeenCalledWith(withPicks({ tag: ["go"] }));
+  it("writes done=show on a done-heavy board once the reader shows done again", () => {
+    expect(searchFromFilters(EMPTY_FILTERS, DONE_HIDE_THRESHOLD + 1)).toBe("done=show");
+    expect(searchFromFilters(EMPTY_FILTERS, DONE_HIDE_THRESHOLD)).toBe("");
+    expect(searchFromFilters(withPicks({}, { hideDone: true }), DONE_HIDE_THRESHOLD + 1)).toBe("done=hide");
   });
 
-  it("drops a picked chip when it is clicked again", async () => {
-    const onChange = vi.fn();
-    render(<Toolbar cards={snapshot.cards} filters={withPicks({ tag: ["go"] })} onChange={onChange} />);
-    await userEvent.click(screen.getByRole("button", { name: "go" }));
-    expect(onChange).toHaveBeenCalledWith(withPicks({}));
-  });
-
-  it("hands the hide-done toggle's new state to its parent", async () => {
-    const onChange = vi.fn();
-    render(<Toolbar cards={snapshot.cards} filters={EMPTY_FILTERS} onChange={onChange} />);
-    await userEvent.click(screen.getByRole("button", { name: "Hide done" }));
-    expect(onChange).toHaveBeenCalledWith(withPicks({}, { hideDone: true }));
+  it("round trips the done default both ways on a done-heavy board", () => {
+    const shown = filtersFromSearch(`?${searchFromFilters(EMPTY_FILTERS, 278)}`, 278);
+    expect(shown.hideDone).toBe(false);
+    const hidden = filtersFromSearch(`?${searchFromFilters(EMPTY_FILTERS, 3)}`, 278);
+    expect(hidden.hideDone).toBe(true);
   });
 });

@@ -9,7 +9,23 @@ export type CardProps = {
   /** the changeSeq of the delta that changed this card; 0 when it did not change */
   flash: number;
   onOpen: (id: string, opener: HTMLElement) => void;
+  /** hands a tag chip's tag up, so the page can add it to the Domain filter */
+  onTag?: ((tag: string) => void) | undefined;
 };
+
+/** The repo tags, each with its own accent, leading a mixed board's tags. */
+export const REPO_TAGS: readonly string[] = ["huddle", "cc-plugins"];
+
+/** A card's tags for its face: the repo tags first, the rest in the ticket's order. */
+export function orderedTags(tags: string[]): string[] {
+  const lead = REPO_TAGS.filter((repo) => tags.includes(repo));
+  return [...lead, ...tags.filter((tag) => !REPO_TAGS.includes(tag))];
+}
+
+/** The accent class a repo tag chip carries; a plain tag has none. */
+export function tagClass(tag: string): string {
+  return REPO_TAGS.includes(tag) ? `repo-${tag}` : "";
+}
 
 /** The holder's initials: one letter per dash-, underscore- or space-separated segment, two at most. */
 export function initials(holder: string): string {
@@ -27,7 +43,7 @@ export function initials(holder: string): string {
  */
 export const CardView = memo(CardViewBase);
 
-function CardViewBase({ card, flash, onOpen }: CardProps) {
+function CardViewBase({ card, flash, onOpen, onTag }: CardProps) {
   const reduced = useMedia("(prefers-reduced-motion: reduce)");
   const [lit, setLit] = useState(false);
   useEffect(() => {
@@ -39,6 +55,7 @@ function CardViewBase({ card, flash, onOpen }: CardProps) {
     const timer = setTimeout(() => setLit(false), 1500);
     return () => clearTimeout(timer);
   }, [flash, reduced]);
+  const tags = orderedTags(card.tags);
   return (
     <article class={lit ? "card changed" : "card"} data-id={card.id}>
       <button
@@ -48,7 +65,7 @@ function CardViewBase({ card, flash, onOpen }: CardProps) {
         onClick={(event) => onOpen(card.id, event.currentTarget)}
       />
       <header class="card-head">
-        <span class="chip">{card.cluster}</span>
+        <span class="epic">{card.cluster}</span>
         <span class="cid">{card.id}</span>
       </header>
       <h3 class="title">{card.title}</h3>
@@ -58,10 +75,14 @@ function CardViewBase({ card, flash, onOpen }: CardProps) {
           <Badge key={`${badge.kind}:${badge.label}`} badge={badge} />
         ))}
       </ul>
-      {card.tags.length > 0 && (
+      {tags.length > 0 && (
         <ul class="tags">
-          {card.tags.map((tag) => (
-            <li key={tag}>{tag}</li>
+          {tags.map((tag) => (
+            <li key={tag}>
+              <button type="button" class={tagClass(tag)} onClick={() => onTag?.(tag)}>
+                {tag}
+              </button>
+            </li>
           ))}
         </ul>
       )}

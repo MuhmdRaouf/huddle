@@ -11,8 +11,16 @@ import { Board } from "./components/Board.tsx";
 import { Drawer, idFromHash } from "./components/Drawer.tsx";
 import { Header } from "./components/Header.tsx";
 import { Toolbar } from "./components/Toolbar.tsx";
-import { BoardStore, type Filters, filtersFromSearch, searchFromFilters, staticBoardState } from "./store.ts";
-import type { Ticket } from "./types.ts";
+import {
+  BoardStore,
+  DONE_HIDE_THRESHOLD,
+  type Filters,
+  filtersFromSearch,
+  searchFromFilters,
+  staticBoardState,
+  togglePick,
+} from "./store.ts";
+import type { Snapshot, Ticket } from "./types.ts";
 
 const queried = document.querySelector<HTMLElement>("#root");
 if (queried === null) throw new Error("kanban: #root missing");
@@ -55,14 +63,37 @@ function closeTicket(): void {
 
 function setFilters(filters: Filters): void {
   ui.filters = filters;
-  const query = searchFromFilters(filters);
+  filtersTouched = true;
+  const state = staticState ?? store.getState();
+  const doneCount = state.snapshot?.cards.filter((card) => card.column === "done").length ?? 0;
+  const query = searchFromFilters(filters, doneCount);
   history.replaceState(null, "", query === "" ? location.pathname : `?${query}`);
   paint();
+}
+
+/** A tag chip on a card lands here: the tag joins (or leaves) the Domain filter. */
+function pickTag(tag: string): void {
+  setFilters(togglePick(ui.filters, "tag", tag));
+}
+
+let filtersTouched = false;
+let doneDecided = false;
+
+/** Once, on the first board: a URL that says nothing about done hides it on a done-heavy board.
+ *  A reader who touched the filters, or a URL that named done, has already decided. */
+function decideDoneDefault(snapshot: Snapshot): void {
+  if (doneDecided) return;
+  doneDecided = true;
+  const heavy = snapshot.cards.filter((card) => card.column === "done").length > DONE_HIDE_THRESHOLD;
+  if (heavy && !filtersTouched && !new URLSearchParams(location.search).has("done")) {
+    ui.filters = { ...ui.filters, hideDone: true };
+  }
 }
 
 function paint(): void {
   const state = staticState ?? store.getState();
   const snapshot = state.snapshot;
+  if (snapshot !== null) decideDoneDefault(snapshot);
   const openCard = ui.openId === null ? null : (snapshot?.cards.find((c) => c.id === ui.openId) ?? null);
   render(
     <>
@@ -74,6 +105,7 @@ function paint(): void {
         changeSeq={state.changeSeq}
         changedIds={state.changedIds}
         onOpen={openTicket}
+        onTag={pickTag}
       />
       {openCard !== null && (
         <Drawer

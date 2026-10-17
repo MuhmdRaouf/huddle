@@ -5,13 +5,13 @@
 // an unmount stops it for good.
 
 import type { JSX } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import "./kanban.css";
 import { Board } from "./components/Board.tsx";
 import { Drawer, useDrawerSelection } from "./components/Drawer.tsx";
 import { Toolbar } from "./components/Toolbar.tsx";
 import { type BoardRef, boardIo, fetchBoards } from "./io.ts";
-import { BoardStore, EMPTY_FILTERS, type Filters } from "./store.ts";
+import { BoardStore, DONE_HIDE_THRESHOLD, EMPTY_FILTERS, type Filters, togglePick } from "./store.ts";
 
 const LOADING_LINE = "Loading the boards…";
 const EMPTY_LINE = "No boards yet. A session working in a repo with .agents/kanban adds its board here.";
@@ -68,12 +68,28 @@ function useBoardStore(key: string): BoardStore | null {
 function BoardPane({ boardKey }: { boardKey: string }): JSX.Element {
   const store = useBoardStore(boardKey);
   const sel = useDrawerSelection();
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
+  const touched = useRef(false);
+  const setFilters = (next: Filters): void => {
+    touched.current = true;
+    setFiltersState(next);
+  };
+  const pickTag = useCallback((tag: string): void => {
+    touched.current = true;
+    setFiltersState((current) => togglePick(current, "tag", tag));
+  }, []);
+  const snapshot = store?.getState().snapshot ?? null;
+  // once, on the first board: a done-heavy board hides its done cards until the reader asks
+  useEffect(() => {
+    if (snapshot === null || touched.current) return;
+    if (snapshot.cards.filter((card) => card.column === "done").length > DONE_HIDE_THRESHOLD) {
+      setFiltersState((current) => ({ ...current, hideDone: true }));
+    }
+  }, [snapshot]);
   if (store === null) {
     return <Board snapshot={null} filters={filters} changeSeq={0} changedIds={new Set()} onOpen={sel.open} />;
   }
   const state = store.getState();
-  const snapshot = state.snapshot;
   const cards = snapshot?.cards ?? [];
   const openCard = sel.openId === null ? null : (cards.find((card) => card.id === sel.openId) ?? null);
   return (
@@ -85,6 +101,7 @@ function BoardPane({ boardKey }: { boardKey: string }): JSX.Element {
         changeSeq={state.changeSeq}
         changedIds={state.changedIds}
         onOpen={sel.open}
+        onTag={pickTag}
       />
       {openCard !== null && (
         <Drawer

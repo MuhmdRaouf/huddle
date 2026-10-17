@@ -57,6 +57,7 @@ class FakeSource {
 function stubNet(
   boards: { key: string; root: string; name: string }[] = BOARDS,
   failBoards = false,
+  firstBoard: Snapshot = snapshot,
 ): string[] {
   const calls: string[] = [];
   vi.stubGlobal(
@@ -77,7 +78,7 @@ function stubNet(
           return {
             ok: true,
             status: 200,
-            json: async () => clone(key === "b2b2" ? betaSnapshot() : snapshot),
+            json: async () => clone(key === "b2b2" ? betaSnapshot() : firstBoard),
           };
         }
         if (/\/api\/kanban\/b\/[^/]+\/api\/tickets\//.test(url))
@@ -142,6 +143,24 @@ describe("KanbanTab", () => {
     expect(FakeSource.made.length).toBe(2);
     expect(FakeSource.made[0]?.closed).toBe(true);
     expect(FakeSource.made[1]?.closed).toBe(false);
+  });
+
+  it("hides done on a done-heavy board until the reader asks for it", async () => {
+    const shown = [makeCard({ id: "R-1", column: "ready", holder: "", tags: [] })];
+    for (let i = 0; i < 60; i += 1)
+      shown.push(makeCard({ id: `D-${i}`, column: "done", holder: "", tags: [] }));
+    const heavy: Snapshot = { ...clone(snapshot), cards: shown, columns: countColumns(shown) };
+    stubNet(BOARDS.slice(0, 1), false, heavy);
+    render(<KanbanTab boardKey="a1a1" />);
+    await screen.findByRole("button", { name: /R-1:/ });
+    const toggle = screen.getByRole("button", { name: "Hide done" });
+    // the default lands one render after the first paint of the board
+    await vi.waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
+    expect(screen.getByRole("heading", { name: "Done 0" })).toBeDefined();
+    await userEvent.click(toggle);
+    // shown again, capped at twenty with the show-all button beside them
+    expect(screen.getByRole("heading", { name: "Done 20" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "show all 60" })).toBeDefined();
   });
 
   it("a gone board says so and keeps the picker", async () => {

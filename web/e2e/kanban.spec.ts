@@ -31,3 +31,25 @@ test("the kanban tab lists the board and its three cards in the right columns", 
     await expect(column.getByRole("button", { name: `${id}: ${title}` })).toBeVisible();
   }
 });
+
+test("the Holder menu filters the board to a pick, with a pill and a Clear all", async ({ page }) => {
+  await signIn(page);
+  await openTab(page, "Kanban");
+  await expect(page.getByRole("button", { name: "E2E-1: First card" })).toBeVisible();
+
+  // open the Holder menu and pick the seeded holder
+  await page.getByRole("button", { name: "Holder", exact: true }).click();
+  await page.getByRole("menuitemcheckbox", { name: "e2e-agent 1" }).click();
+
+  // the pick shows as a pill, and only the held card stays on the board
+  const pill = page.getByRole("button", { name: "Remove Holder e2e-agent" });
+  await expect(pill).toBeVisible();
+  await expect(page.getByRole("button", { name: "E2E-3: Third card" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "E2E-1: First card" })).toHaveCount(0);
+
+  // Clear all drops the pill and the board comes back whole
+  await page.getByRole("button", { name: "Clear all" }).click();
+  await expect(pill).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "E2E-1: First card" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "E2E-3: Third card" })).toBeVisible();
+});

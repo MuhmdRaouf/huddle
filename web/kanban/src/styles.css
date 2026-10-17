@@ -23,6 +23,8 @@
   --b-holder: #7c3aed;
   --b-waits: #b45309;
   --b-hand: #a16207;
+  --t-huddle: #0f766e;
+  --t-cc-plugins: #7c3aed;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -49,6 +51,8 @@
     --b-holder: #c4b5fd;
     --b-waits: #fcd34d;
     --b-hand: #fde047;
+    --t-huddle: #2dd4bf;
+    --t-cc-plugins: #c4b5fd;
   }
 }
 
@@ -144,7 +148,7 @@ button {
   font-weight: 500;
 }
 
-/* toolbar */
+/* toolbar: one row of search, kind menus and the hide-done toggle, with the picks as pills below */
 
 .toolbar {
   display: flex;
@@ -164,13 +168,12 @@ button {
   width: min(280px, 100%);
 }
 
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.menu-wrap {
+  position: relative;
+  display: inline-flex;
 }
 
-.chip,
+.menu-btn,
 .toggle,
 .show-all {
   background: var(--card);
@@ -179,13 +182,144 @@ button {
   padding: 4px 10px;
   font-size: 12px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
-.chip.picked,
+.menu-btn[aria-expanded="true"],
 .toggle[aria-pressed="true"] {
   border-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
+}
+
+/* a kind's menu, anchored under its button */
+
+.fmenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 25;
+  min-width: 230px;
+  max-width: min(320px, 90vw);
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(15 30 50 / 14%);
+  padding: 6px;
+}
+
+.fmenu input[type="search"] {
+  width: 100%;
+  margin-bottom: 6px;
+  background: var(--board);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-size: 12.5px;
+}
+
+.fmenu .group {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 8px 6px 2px;
+}
+
+.fmenu .fold {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  padding: 6px;
+}
+
+.fmenu .opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 7px;
+  padding: 6px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fmenu .opt::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--muted);
+  border-radius: 4px;
+  margin-right: 8px;
+  vertical-align: -2px;
+}
+
+.fmenu .opt[aria-checked="true"]::before {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2.5px var(--card);
+}
+
+.fmenu .opt:hover,
+.fmenu .opt:focus-visible,
+.fmenu .fold:hover,
+.fmenu .fold:focus-visible {
+  background: var(--chip);
+  outline: none;
+}
+
+.fmenu .c {
+  float: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  padding-left: 12px;
+}
+
+.fmenu .empty {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin: 4px 6px;
+}
+
+/* the picks: one pill per picked value, all of them gone at once with Clear all */
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 0 16px 10px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pill.clear {
+  border-color: var(--line);
+  color: var(--muted);
 }
 
 /* board */
@@ -269,9 +403,12 @@ button {
   margin-bottom: 4px;
 }
 
-.card-head .chip {
-  padding: 2px 7px;
+.epic {
   font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cid {
@@ -373,12 +510,28 @@ button {
   padding: 0;
 }
 
-.card .tags li {
+/* the chips sit above the card's open overlay, so a tag click filters instead of opening */
+.card .tags button {
+  position: relative;
+  z-index: 2;
+  display: inline-block;
   background: var(--chip);
+  border: 0;
   border-radius: 5px;
   padding: 1px 6px;
   font-size: 11px;
   color: var(--muted);
+  cursor: pointer;
+}
+
+.card .tags button.repo-huddle {
+  color: var(--t-huddle);
+  background: color-mix(in srgb, var(--t-huddle) 12%, var(--card));
+}
+
+.card .tags button.repo-cc-plugins {
+  color: var(--t-cc-plugins);
+  background: color-mix(in srgb, var(--t-cc-plugins) 12%, var(--card));
 }
 
 .holder {

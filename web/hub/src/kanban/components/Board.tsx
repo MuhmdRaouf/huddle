@@ -45,12 +45,14 @@ export type BoardProps = {
   changeSeq: number;
   changedIds: ReadonlySet<string>;
   onOpen: (id: string, opener: HTMLElement) => void;
+  /** hands a card's tag chip up to the page's Domain filter */
+  onTag?: ((tag: string) => void) | undefined;
 };
 
 /** Done shows its latest cards first, capped until the reader asks for the rest. */
 const DONE_CAP = 20;
 
-export function Board({ snapshot, filters, changeSeq, changedIds, onOpen }: BoardProps) {
+export function Board({ snapshot, filters, changeSeq, changedIds, onOpen, onTag }: BoardProps) {
   const narrow = useMedia("(max-width: 639px)");
   const [showAllDone, setShowAllDone] = useState(false);
   const [tab, setTab] = useState<ColumnId | null>(null);
@@ -88,6 +90,7 @@ export function Board({ snapshot, filters, changeSeq, changedIds, onOpen }: Boar
     changeSeq,
     changedIds,
     onOpen,
+    onTag,
     extra: id === "done" ? doneExtra : null,
   });
 
@@ -104,6 +107,7 @@ export function Board({ snapshot, filters, changeSeq, changedIds, onOpen }: Boar
               card={card}
               flash={changedIds.has(card.id) ? changeSeq : 0}
               onOpen={onOpen}
+              onTag={onTag}
             />
           ))}
         </section>

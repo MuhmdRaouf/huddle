@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "preact/hooks";
-import { FILTER_KINDS, type FilterKind, type Filters } from "../store.ts";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { type FilterKind, type Filters, clearPicks, togglePick } from "../store.ts";
 import type { Card } from "../types.ts";
+import { FilterMenu } from "./FilterMenu.tsx";
 
 export type ToolbarProps = {
   cards: Card[];
@@ -8,81 +9,140 @@ export type ToolbarProps = {
   onChange: (filters: Filters) => void;
 };
 
-/** The values a card carries for one filter kind: what the chips of that kind offer. */
-const valuesOfKind: Record<FilterKind, (card: Card) => string[]> = {
-  cluster: (card) => [card.cluster],
-  tag: (card) => card.tags,
-  holder: (card) => (card.holder === "" ? [] : [card.holder]),
-  type: (card) => [card.type],
-  priority: (card) => [card.priority],
-};
+/** The row's kinds in their standing order: Domain is the tag kind, Epic the cluster. */
+const KINDS: readonly { kind: FilterKind; label: string }[] = [
+  { kind: "tag", label: "Domain" },
+  { kind: "cluster", label: "Epic" },
+  { kind: "holder", label: "Holder" },
+  { kind: "type", label: "Type" },
+  { kind: "priority", label: "Priority" },
+];
 
-function optionsFor(cards: Card[], kind: FilterKind): string[] {
-  const valuesOf = valuesOfKind[kind];
-  if (valuesOf === undefined) return [];
-  const values = new Set<string>();
-  for (const card of cards) {
-    for (const value of valuesOf(card)) values.add(value);
-  }
-  return [...values].sort();
+/** One kind's menu button and, when open, its menu. */
+function KindMenu({
+  kind,
+  label,
+  cards,
+  filters,
+  open,
+  onOpen,
+  onClose,
+  onChange,
+}: {
+  kind: FilterKind;
+  label: string;
+  cards: Card[];
+  filters: Filters;
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onChange: (filters: Filters) => void;
+}) {
+  const button = useRef<HTMLButtonElement>(null);
+  const count = filters.picks[kind].length;
+  return (
+    <span class="menu-wrap">
+      <button
+        ref={button}
+        type="button"
+        class="menu-btn"
+        data-kind={kind}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => (open ? onClose() : onOpen())}
+      >
+        {label}
+        {count > 0 ? `: ${count}` : ""}
+      </button>
+      {open && (
+        <FilterMenu
+          kind={kind}
+          label={label}
+          cards={cards}
+          filters={filters}
+          buttonRef={button}
+          onToggle={(value) => onChange(togglePick(filters, kind, value))}
+          onClose={onClose}
+        />
+      )}
+    </span>
+  );
 }
 
-/** Search, one chip row per filter kind, and the hide-done toggle. `/` jumps to the search box. */
+/** Search, one menu per filter kind, the hide-done toggle, and the picks as pills below.
+ *  `/` jumps to the search box, but never while a menu holds the keyboard. */
 export function Toolbar({ cards, filters, onChange }: ToolbarProps) {
   const search = useRef<HTMLInputElement>(null);
+  const [openKind, setOpenKind] = useState<FilterKind | null>(null);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       const typing = event.target instanceof HTMLElement && event.target.matches("input, textarea, select");
-      if (event.key !== "/" || typing || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key !== "/" || typing || openKind !== null || event.metaKey || event.ctrlKey || event.altKey)
+        return;
       event.preventDefault();
       search.current?.focus();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  }, [openKind]);
 
-  const toggle = (kind: FilterKind, value: string): void => {
-    const picked = filters.picks[kind];
-    const next = picked.includes(value) ? picked.filter((v) => v !== value) : [...picked, value];
-    onChange({ ...filters, picks: { ...filters.picks, [kind]: next } });
-  };
+  const kinds = KINDS.filter(({ kind }) => kind !== "tag" || cards.some((card) => card.tags.length > 0));
+  const picks = KINDS.flatMap(({ kind, label }) =>
+    filters.picks[kind].map((value) => ({ kind, label, value })),
+  );
 
   return (
-    <div class="toolbar">
-      <input
-        ref={search}
-        type="search"
-        aria-label="Search"
-        placeholder="Search (press /)"
-        value={filters.q}
-        onInput={(event) => onChange({ ...filters, q: event.currentTarget.value })}
-      />
-      {FILTER_KINDS.map((kind) => (
-        <div class="chips" data-kind={kind} key={kind}>
-          {optionsFor(cards, kind).map((value) => {
-            const picked = filters.picks[kind].includes(value);
-            return (
-              <button
-                key={value}
-                type="button"
-                class={picked ? "chip picked" : "chip"}
-                aria-pressed={picked}
-                onClick={() => toggle(kind, value)}
-              >
-                {value}
-              </button>
-            );
-          })}
+    <>
+      <div class="toolbar">
+        <input
+          ref={search}
+          type="search"
+          aria-label="Search"
+          placeholder="Search (press /)"
+          value={filters.q}
+          onInput={(event) => onChange({ ...filters, q: event.currentTarget.value })}
+        />
+        {kinds.map((entry) => (
+          <KindMenu
+            key={entry.kind}
+            kind={entry.kind}
+            label={entry.label}
+            cards={cards}
+            filters={filters}
+            open={openKind === entry.kind}
+            onOpen={() => setOpenKind(entry.kind)}
+            onClose={() => setOpenKind(null)}
+            onChange={onChange}
+          />
+        ))}
+        <button
+          type="button"
+          class="toggle"
+          aria-pressed={filters.hideDone}
+          onClick={() => onChange({ ...filters, hideDone: !filters.hideDone })}
+        >
+          Hide done
+        </button>
+      </div>
+      {picks.length > 0 && (
+        <div class="pills">
+          {picks.map((pick) => (
+            <button
+              key={`${pick.kind}:${pick.value}`}
+              type="button"
+              class="pill"
+              aria-label={`Remove ${pick.label} ${pick.value}`}
+              onClick={() => onChange(togglePick(filters, pick.kind, pick.value))}
+            >
+              {pick.label}: {pick.value} <span aria-hidden="true">×</span>
+            </button>
+          ))}
+          <button type="button" class="pill clear" onClick={() => onChange(clearPicks(filters))}>
+            Clear all
+          </button>
         </div>
-      ))}
-      <button
-        type="button"
-        class="toggle"
-        aria-pressed={filters.hideDone}
-        onClick={() => onChange({ ...filters, hideDone: !filters.hideDone })}
-      >
-        Hide done
-      </button>
-    </div>
+      )}
+    </>
   );
 }
