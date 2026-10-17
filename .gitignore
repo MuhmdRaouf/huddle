@@ -649,3 +649,5 @@ $RECYCLE.BIN/
 !plugin/dist/
 !internal/*/web/dist/
 !scripts/build/
+# The plugin's MCP entry: a global ignore of .mcp.json must not drop it.
+!plugin/.mcp.json
