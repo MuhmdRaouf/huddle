@@ -65,3 +65,31 @@ description = "radar: the fake key the page's redaction tests prove gets masked"
 condition = "AND"
 regexes = ['''^sk-abcdefgh123456$''']
 paths = ['''^web/radar/test/redact\.test\.ts$''']
+
+[[allowlists]]
+description = "huddle: the fake key the test kit's TEST_KEY holds (a key no real provider issues; the file lives only in history)"
+condition = "AND"
+regexes = ['''^zt-SECRET\.key_0123456789abcdef$''']
+paths = ['''^internal/testkit/fake_keystore\.go$''']
+
+[[allowlists]]
+description = "huddle: the fake Z.ai key the headless worker tests handed their fake workers (history only)"
+condition = "AND"
+regexes = ['''^zai-test-key-0123456789abcdef$''']
+paths = ['''^internal/adapters/claude_headless_test\.go$''']
+
+[[allowlists]]
+description = "huddle: the keystore file tests' second throwaway key (history only)"
+condition = "AND"
+regexes = ['''^zt-OTHER\.key_9876543210fedcba$''']
+paths = ['''^internal/adapters/keystore/file_test\.go$''']
+
+[[allowlists]]
+description = "huddle: the fake board keys and hub key the kanban and satellite flow tests serve from their fake hubs"
+condition = "AND"
+regexes = ['''^held12345678$''', '''^gone87654321$''', '''^abc123def456$''']
+paths = [
+  '''^internal/kanban/app/hubflow_test\.go$''',
+  '''^internal/huddle/satellite/flow_test\.go$''',
+  '''^internal/huddle/server/satflow_test\.go$''',
+]
