@@ -26,8 +26,8 @@
 | Goal | Read |
 |---|---|
 | Install and connect your sessions | [Quick start](#quick-start) |
-| Learn the workflow | [How it works](#how-it-works) |
 | Run the commands | [Commands](#commands) |
+| Learn the workflow | [How it works](#how-it-works) |
 | Change a setting, find a file | [Configuration](#configuration) · [Storage](#storage) |
 | Use the CLI, other agents, the gateway, your phone | [The main README](../README.md) |
 | Turn it off | [Uninstalling](#uninstalling) |
@@ -60,6 +60,12 @@
 4. **Bring in each other project.** Paste the join line into a session there (`/huddle:join 127.0.0.1:<port>
    --token …`), or run `/huddle:invite` for a new one (24 h by default). A project with no settings joins the Huddle
    that already runs instead of starting a second one; `/huddle:setup --new` starts a separate one on purpose.
+
+## Requirements
+
+- Claude Code with plugin support.
+- macOS or Linux, amd64 or arm64. No runtime to install: the launcher downloads the static `huddle` binary and
+  checks its sha256 against the committed manifest.
 
 ## Commands
 
@@ -158,22 +164,6 @@ routing their model requests through the gateway, serving the hub on a local nam
   downloads and verifies that release's binary on first use, so an update is the marketplace refresh and a
   restart.
 
-## Requirements
-
-- Claude Code with plugin support.
-- macOS or Linux, amd64 or arm64. No runtime to install: the launcher downloads the static `huddle` binary and
-  checks its sha256 against the committed manifest.
-
-## Development
-
-The repository's [Development section](../README.md#development) holds the check and build commands.
-
-## Trademarks
-
-This is an independent project, not affiliated with or endorsed by Anthropic. Claude and Claude Code are
-trademarks of Anthropic, PBC. Codex, Gemini, Qwen, opencode, crush, omp, pi and ZCode belong to their respective
-owners; they are named only to say what Huddle works with.
-
 ## Uninstalling
 
 Run `/plugin uninstall huddle@huddle`.
@@ -186,6 +176,21 @@ Run `/plugin uninstall huddle@huddle`.
   to delete them (`rm -rf <home>/channels`).
 - Nothing in a project is touched: `.agents/huddle/huddle.json` and `.agents/kanban/` stay as they are.
 
+## Development
+
+- The repository's [Development section](../README.md#development) holds the check and build commands.
+- Bugs and ideas: [open an issue](https://github.com/MuhmdRaouf/huddle/issues).
+
+## Security
+
+- Report security problems privately through [GitHub security advisories](https://github.com/MuhmdRaouf/huddle/security/advisories/new); never open a public issue.
+
+## Trademarks
+
+This is an independent project, not affiliated with or endorsed by Anthropic. Claude and Claude Code are
+trademarks of Anthropic, PBC. Codex, Gemini, Qwen, opencode, crush, omp, pi and ZCode belong to their respective
+owners; they are named only to say what Huddle works with.
+
 ## Support
 
 <p align="center">
@@ -195,8 +200,6 @@ Run `/plugin uninstall huddle@huddle`.
 <p align="center">
   <a href="https://github.com/sponsors/MuhmdRaouf"><img src="https://img.shields.io/badge/Sponsor_on_GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" height="36" alt="Sponsor on GitHub"></a>&nbsp;&nbsp;<a href="https://buymeacoffee.com/muhmdraouf"><img src="https://img.shields.io/badge/Buy_me_a_coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" height="36" alt="Buy me a coffee"></a>
 </p>
-
-- Bugs and ideas: [open an issue](https://github.com/MuhmdRaouf/huddle/issues).
 
 ## License
 

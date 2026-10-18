@@ -30,11 +30,12 @@ static binary, one plugin, four jobs:
 | I want to… | Start here |
 |---|---|
 | Install Huddle | [Quick start](#quick-start) |
+| Check the requirements | [Requirements](#requirements) |
 | Sign in, with a code, a passkey or a phone | [Signing in](#signing-in) |
-| Connect Codex, Gemini, Qwen, opencode or crush | [Other agents](#other-agents) |
-| Run a hub on a local name | [A local name](#a-local-name) |
 | Read costs and requests | [Radar](#radar) |
 | Work a kanban board from sessions | [Kanban](#kanban) |
+| Connect Codex, Gemini, Qwen, opencode or crush | [Other agents](#other-agents) |
+| Run a hub on a local name | [A local name](#a-local-name) |
 | Develop on Huddle | [Development](#development) · [Test plan](docs/TESTPLAN.md) |
 
 ## Quick start
@@ -53,6 +54,14 @@ static binary, one plugin, four jobs:
 That is all: the hooks start the hub, radar and the board server, and bring each one back on the next hook after
 a crash or a reboot. The provider plugins in
 [claude-code-plugins](https://github.com/MuhmdRaouf/claude-code-plugins) install Huddle for you.
+
+## Requirements
+
+- Claude Code with plugin support.
+- macOS or Linux, on amd64 or arm64: one static binary, no JS runtime. The launcher (`plugin/dist/run`) downloads
+  it with `sh` from the GitHub release on first use and checks its SHA-256 against the committed manifest
+  (`release/v<VERSION>.json`); a hook never blocks — it exits 0 and the download runs detached.
+- Developing on Huddle also needs Go and Bun 1.3 or later — see [Development](#development).
 
 ## The plugin
 
@@ -211,14 +220,6 @@ Settings → Devices has an "Add a phone" button that shows the same QR.
   under `data/channels/`, and each project's `.agents/huddle/huddle.json` is left as it is.
 - After uninstalling, run `/plugin marketplace remove huddle`.
 
-## Requirements
-
-- Claude Code with plugin support.
-- macOS or Linux, on amd64 or arm64: one static binary, no JS runtime. The launcher (`plugin/dist/run`) downloads
-  it with `sh` from the GitHub release on first use and checks its SHA-256 against the committed manifest
-  (`release/v<VERSION>.json`); a hook never blocks — it exits 0 and the download runs detached.
-- Developing on Huddle also needs Go and Bun 1.3 or later — see [Development](#development).
-
 ## Development
 
 Install the pinned tools once, from the repository root: `mise run setup`.
@@ -238,6 +239,11 @@ CI (`.github/workflows/ci.yml`) runs the same gates on every push; every job is 
 pages and the launcher are committed, so installs need no build step. [AGENTS.md](AGENTS.md) has the commit
 rules, [CHANGELOG.md](CHANGELOG.md) lists each release, and [docs/TESTPLAN.md](docs/TESTPLAN.md) maps every
 feature to the test that proves it.
+- Bugs and ideas: [open an issue](https://github.com/MuhmdRaouf/huddle/issues).
+
+## Security
+
+- Report security problems privately through [GitHub security advisories](https://github.com/MuhmdRaouf/huddle/security/advisories/new); never open a public issue.
 
 ## Trademarks
 
@@ -254,8 +260,6 @@ feature to the test that proves it.
 <p align="center">
   <a href="https://github.com/sponsors/MuhmdRaouf"><img src="https://img.shields.io/badge/Sponsor_on_GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" height="36" alt="Sponsor on GitHub"></a>&nbsp;&nbsp;<a href="https://buymeacoffee.com/muhmdraouf"><img src="https://img.shields.io/badge/Buy_me_a_coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" height="36" alt="Buy me a coffee"></a>
 </p>
-
-- Bugs and ideas: [open an issue](https://github.com/MuhmdRaouf/huddle/issues).
 
 ## License
 
