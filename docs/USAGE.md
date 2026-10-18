@@ -1,0 +1,379 @@
+# Using Huddle
+
+The walk from a fresh install to a hub two machines share, without reading source code. The
+[README](../README.md) says what each part is; this page says what you type. Every command below
+runs the `huddle` binary the plugin's launcher downloaded (macOS and Linux, amd64 and arm64).
+
+## First run
+
+1. Install the plugin in Claude Code and restart it:
+
+   ```text
+   /plugin marketplace add MuhmdRaouf/huddle
+   /plugin install huddle@huddle
+   ```
+
+   The launcher downloads the binary from the GitHub release and checks its SHA-256 against the
+   committed manifest. No JS runtime is needed on the PATH.
+
+2. Start any session in any project. The first session's `SessionStart` hook starts the hub
+   through the launcher; the next `SessionStart`, prompt or tool call brings it back after a
+   crash or a reboot, so there is nothing to start or baby-sit by hand. One hook process runs per
+   Claude Code event, and huddle's, radar's and kanban's parts ride inside it, each with its own
+   deadline.
+
+3. Ask for the dashboard:
+
+   ```text
+   /huddle:open
+   ```
+
+   It runs `huddle up` (starts the hub when it is down) and prints a one-time link that signs the
+   browser in within 5 minutes. The dashboard carries the Now, Channels, Radar and Kanban tabs.
+
+4. Work the first-run checklist at the top of the Now list. Four items tick themselves from
+   server state, and the panel hides once all four hold:
+
+   | Item | Where the button goes |
+   |---|---|
+   | Set up your authenticator app | Settings → Sign-in |
+   | Connect a session | Channels |
+   | Create a channel | Channels |
+   | Set a budget | Settings (Radar) |
+
+`/huddle:status` prints one table — hub, radar, board server, gateway — with running or not and
+the address. `/huddle:stop` stops the hub, radar and the board server this user started; the next
+session hook starts them again. The command table lives in [README · The plugin](../README.md#the-plugin).
+
+## Signing in
+
+The ways in and what each is for are in [README · Signing in](../README.md#signing-in). The
+walkthrough for the first one:
+
+1. Open the link `/huddle:open` (or `/huddle:setup`) printed. With no authenticator enrolled yet,
+   the link lands on the set-up page: scan the QR with your authenticator app (Google
+   Authenticator, 1Password, Authy), type the confirming code, and the page shows ten one-time
+   recovery codes once — copy or download them. "Later" skips it; Settings → Sign-in offers it
+   again. From a terminal, `huddle totp setup` does the same, and `huddle totp off` removes it.
+
+2. Every later visit is six digits on the landing page. A new code arrives every 30 seconds.
+
+3. After a code sign-in the page offers to save this browser's lock — Touch ID, Face ID, a
+   fingerprint — as a passkey. "Not now" asks again in 30 days; the code keeps working either way.
+   `huddle pair --name phone` pairs another device, and Settings → Devices lists and removes them.
+
+4. Lost everywhere? `huddle open` in a terminal always prints a fresh one-time link (5 minutes)
+   as the fallback.
+
+A device session rolls forward while you use it and ends after 7 days unused; one code or touch
+starts a fresh one. Removing the device in Settings ends it at once.
+
+## Bring sessions together
+
+A channel is one piece of shared work: every session in it sees the same events, tasks, messages
+and knowledge, whatever project each runs in.
+
+1. In a session that is in a huddle (the one that ran `/huddle:setup`, or any session of that
+   project), make a join line:
+
+   ```text
+   /huddle:invite
+   ```
+
+   It prints `/huddle:join 127.0.0.1:<port> --token <id.secret>`, valid 24 hours. Optional
+   arguments: `--ttl 2h` (any `s`, `m`, `h`, `d`; `0` never expires), `--single-use`,
+   `--can-invite` (lets the joiner invite too). Only the session that started Huddle, its
+   project's sessions, or one invited with `--can-invite` may invite.
+
+2. Run that line in the other Claude session, in any project. It trades the invite for that
+   session's own credential — kept for its project, so the project's next sessions are in on their
+   own — and joins the invite's channel. Each session reads the other's digest exactly once, and
+   the channel lists its members present.
+
+3. Give the work order with tasks that wait on each other:
+
+   ```sh
+   huddle new "Write the migration guide" --after api-change,docs-review
+   huddle start            # takes your next task, marks it doing, prints it
+   huddle finish "done: docs/migration.md written"   # marks done, names your next
+   huddle depend api "land the API change first"     # a task for them, yours waits on it
+   huddle wait-task <id>   # block until a task is done
+   ```
+
+   A `start` on a task that still waits refuses and names what it waits on; wait for `task.ready`
+   instead of polling. `huddle wait` blocks until an event (exit 0), a message for you (exit 3)
+   or a timeout (exit 124).
+
+4. Watch the Now list on the dashboard. Every session on every machine sits in it, grouped by
+   state: needs you, working, idle, stuck (10 quiet minutes), ended.
+
+5. Answer approvals from the dashboard or a paired phone. A session waiting on a permission sits
+   in needs you, one push when it appears and one escalation after 5 minutes open, and its prompt holds
+   10 minutes; an allow or
+   a deny settles it once. Snooze from the app for 15 minutes, an hour, or tomorrow at nine.
+
+Messages (`huddle send`, `reply`), shared knowledge (`huddle remember`, `recall`) and the whole
+surface live in the huddle skill and `huddle help`.
+
+## Another machine
+
+Two machines work one board and one hub when they share the repository the board belongs to. A
+board's key is its repository's origin, so every clone of one repository names one board.
+
+1. On the hub machine, mint the invite (one use, lives 10 minutes):
+
+   ```sh
+   huddle pair --satellite
+   ```
+
+2. On the other machine (install the plugin there too, so the binary is on its PATH), spend
+   the invite:
+
+   ```sh
+   huddle join-hub https://hub.example.dev:8443 <invite> --name desk-2
+   ```
+
+   The machine keeps its credential and takes the satellite role; a restart links it.
+
+What relays and what stays local:
+
+| What | Where it goes |
+|---|---|
+| Claims and moves on the shared board | Relay to the hub, which holds the one `kanban.db` and the audit |
+| A claim either machine asks for | One claim: the first pull wins, every other pull gets the board's refusal |
+| New tickets | Stay local: written to the clone the session sits in, never through the hub |
+| Sessions and their state | The satellite's sessions appear in the hub's Now list |
+| The Kanban tab | The hub's board, live stream included; the satellite's local copy while the hub is away |
+
+With the hub away, a claim is answered with one plain line and changes nothing — a claim needs
+the hub's answer and is never queued.
+
+## Other agents
+
+Huddle's MCP server works with any harness that speaks MCP. For five of them the binary wires
+itself in ([README · Other agents](../README.md#other-agents) has what each install edits):
+
+```sh
+huddle harness list             # installed, available or absent, per harness
+huddle harness install codex    # or gemini, qwen, opencode, crush
+huddle harness remove codex     # config back to its previous bytes
+```
+
+The names are exactly `codex`, `gemini`, `qwen`, `opencode` and `crush` (exit 4 names nothing
+else). Install adds the MCP entry plus the harness's own lifecycle hooks, so its sessions sit in
+the Now list beside Claude Code's, badged by agent; a hook posts to the local hub inside a 3
+second deadline and never blocks its agent. Every change is recorded in
+`~/.config/huddle/harness-ledger.json` (or `$HUDDLE_HOME/harness-ledger.json`) and undone exactly
+by `remove`.
+
+Any other MCP client, by hand:
+
+1. Over HTTP, POST JSON-RPC to the channel's endpoint — `http://127.0.0.1:<port>/mcp/<channel>?as=<session>` —
+   for the channel's tools: `join`, `send`, `publish`, `reply`, `start`, `finish`, `wait`, the
+   task and knowledge operations.
+
+2. Over stdio, run `huddle mcp`. The bridge adds the pub/sub surface:
+
+   - `resources/list` names `huddle://<channel>/events` and one `huddle://<channel>/topic/<topic>`
+     per topic the recent history shows.
+   - `resources/read` returns the events as one JSON array; add `?after=<seq>` to read only what
+     came after a cursor, at most 100 events.
+   - `resources/subscribe` gets `notifications/resources/updated` on every event that touches the
+     uri; `resources/unsubscribe` stops it.
+   - The `poll` tool long-polls for harnesses without subscriptions: `after` (a seq), `topics`
+     (globs) and `timeout_ms` (at most 60000); it answers the events after the cursor, or `[]` on
+     timeout.
+
+Identify a session with the `HUDDLE_SESSION` environment variable; no Claude Code variable is
+needed.
+
+## Read what happened
+
+The Radar tab spends no tokens: it is fed by hooks, the transcripts Claude Code already writes,
+and the provider routers' spool. Twelve views:
+
+| View | What it shows |
+|---|---|
+| Overview | Day cards: the day's requests, token sums and cost |
+| Agents | Sessions and agents, live transcripts included |
+| Requests | Every request, with a per-request inspector |
+| Tools | Tool calls per session and agent |
+| Timeline | Events in order |
+| Models | Rankings per model |
+| Costs | The cost series over the window |
+| Usage | Daily tokens, cost and cache savings by model and project |
+| Blocks | The active 5-hour metering window: tokens, cost, burn rate, projection to its end |
+| Alerts | Alert rules and their history |
+| Router | The provider routers' health |
+| Settings | Budgets and the rest |
+
+Every request line carries its model, latency, input, output, cache-read and cache-write tokens
+and its cost. Usage also splits tokens and cost by agent, copies each agent's resume command, and
+counts codex rollouts and opencode sessions, tagged by agent.
+
+Budgets stop and lift from Settings — on a hub, from a paired phone too. A stopped budget lands
+in `budget-status.json` in radar's state dir (`$RADAR_HOME`, else `~/.agents/radar`), which the
+provider plugins' routers read before serving a provider model: while its scope (or `total`) is
+stopped, the router refuses that provider's models. A missing file, one older than 10 minutes, or
+one that does not parse stops nothing — a broken radar never cuts you off.
+
+## Kanban
+
+One board per repository, in `.agents/kanban/`: each column a subfolder (backlog, ready,
+in-progress, review, testing, blocked, done), each ticket one Markdown file, plus `kanban.db` and
+the audit. Move tickets only with the `kanban` command — it checks the gates and writes the audit.
+
+1. Create the board:
+
+   ```text
+   /huddle:kanban-init
+   ```
+
+   `kanban: command not found` on the very first run means the session hook is still downloading
+   the binary in the background; `/huddle:status` waits it out, and `kanban` is on PATH from the
+   next session.
+
+2. Claim a card and take it end to end. One ticket in progress per actor, and the first claim
+   wins — every other pull, from either machine, gets the board's refusal:
+
+   ```sh
+   kanban pull --actor w1 --id T-14 --branch t-14-guide --worktree ../wt-t14
+   kanban show T-14          # the whole ticket: plan, acceptance, verification
+   kanban log T-14 --actor w1 --note 'go test ./... : exit 0'
+   ```
+
+3. The review wave. The author hands the card over:
+
+   ```sh
+   kanban review T-14 --actor w1 --note 'docs/USAGE.md; check the flags against the code'
+   ```
+
+4. The testing wave. A different agent than the author and every holder re-runs every
+   Verification command in a clean state:
+
+   ```sh
+   kanban test T-14 --actor rev --note 'go test ./... : exit 0'
+   kanban done  T-14 --actor rev --note 'guide merged'
+   ```
+
+   Anything failing or the diff breaking acceptance: `kanban reject T-14 --actor rev --note '<what
+   failed, the command and its output line>'`. A ticket that cannot go on: `kanban block T-14
+   --actor w1 --note '<cause>' --on X --until '<condition>'`. Main broken: `kanban stop-line`, later
+   `kanban resume-line`.
+
+5. `/huddle:kanban-lint` checks every ticket against the bar (exit 1 when any fails);
+   `/huddle:kanban-refresh` rescans now and reloads every open board page; `/huddle:kanban-export`
+   writes the board as one self-contained HTML page for sharing (`--out <path>`).
+
+The board's server is localhost only, on the first free port in 18800-18849, and shows every
+folder change on the live page within half a second. A second machine works the same board through
+the satellite relay — see [Another machine](#another-machine).
+
+## A hub on a local name
+
+Loopback alone needs nothing else. To serve paired devices and satellites on one name — approvals
+from a phone, a second machine — give the hub a name and a certificate
+([README · A local name](../README.md#a-local-name)):
+
+1. Point the name at this machine: dnsmasq, or one line in `/etc/hosts`.
+
+2. Set the role:
+
+   ```sh
+   huddle role hub --listen 127.0.0.1:8443 --host hub.example.dev
+   ```
+
+3. Trust the root and open `https://hub.example.dev:8443`:
+
+   ```sh
+   huddle trust        # installs <home>/pki/root.crt into the OS's and Firefox's trust stores
+   huddle untrust      # removes it again
+   ```
+
+   The local CA is huddle's own: a 10-year root, a 7-day intermediate, 12-hour leaves renewed at
+   two thirds of their life — nothing to run, nothing that expires behind your back.
+
+4. Already hold a pair (mkcert, a company CA)? Install it instead; `huddle cert` says which
+   certificate is in use:
+
+   ```sh
+   huddle cert --import cert.pem key.pem
+   ```
+
+   An imported pair is never renewed; the hub's log names its expiry once a day from 30 days out.
+   A public name takes its certificate over ACME DNS-01 instead: `huddle cert --provider <p>`,
+   renewed 30 days before expiry.
+
+5. Bring the phone in: `huddle trust --phone` prints a QR (the page it opens serves for 10
+   minutes and installs nothing on the computer); then `huddle pair --name phone`, scan, and save
+   the passkey. The dashboard's Settings → Devices carries the same "Add a phone" QR.
+
+6. Keep it running through logouts and reboots with the machine's own service manager:
+
+   ```sh
+   huddle service install      # a launchd agent on macOS, a systemd user unit on Linux
+   huddle service uninstall
+   ```
+
+   A hub started by hand (`huddle serve`, from a terminal or the service) leaves its owner key in
+   `<home>/run/owner.key` (mode 0600), so `huddle open` on the same machine still signs the owner
+   in. `<home>` is `$HUDDLE_HOME`, else `$XDG_CONFIG_HOME/huddle`, else `~/.config/huddle`.
+
+## Route other models
+
+`huddle gateway start` runs a localhost endpoint that speaks the Anthropic Messages API and the
+OpenAI Chat Completions and Responses APIs, so a harness keeps its own protocol and still shows up
+in radar ([README · The gateway](../README.md#the-gateway)).
+
+1. Name your upstreams in `$HUDDLE_HOME/gateway.json`:
+
+   ```json
+   {
+     "routes": [{"match": "glm-*", "upstream": "https://api.z.ai/api/anthropic"}],
+     "anthropic": "https://api.anthropic.com",
+     "openai": "https://api.openai.com"
+   }
+   ```
+
+   A model goes to the longest glob that matches it; anything else goes to its API family's
+   default. Requests are forwarded byte for byte with their headers — the gateway adds nothing and
+   keeps nothing but the route line's metadata.
+
+2. Start it and read the port (the first free port in 18870-18879, written to
+   `$HUDDLE_HOME/gateway.port`):
+
+   ```sh
+   huddle gateway start     # detached
+   huddle gateway status    # running, address
+   huddle gateway stop
+   huddle gateway           # foreground instead
+   ```
+
+3. Give your harness the base URL `http://127.0.0.1:<port>` — `model_providers.<x>.base_url` in
+   `~/.codex/config.toml` for Codex CLI, the provider's `baseURL` for opencode,
+   `providers.<x>.base_url` for Crush. A client can name itself with an `X-Huddle-Harness` header,
+   which lands on the route line next to `via: gateway`, so radar tells the harnesses apart.
+
+## Troubleshooting
+
+| Symptom | What to do |
+|---|---|
+| Signed out after a break | A device session ends after 7 days unused; one code or touch starts a fresh one |
+| A port is already taken | The hub walks 18860, then 18861-18869, then an OS pick; `huddle up --port <n>` pins one |
+| The link expired | Links live 5 minutes; print a fresh one with `huddle open` or `/huddle:open` |
+| Code sign-in locked | Wait the 15 minutes, or sign in with a passkey or a recovery code |
+| `huddle is not running` | `huddle status` exits 6; `huddle up` starts it, or just open a session |
+| `kanban: command not found` | First run downloads the binary; `/huddle:status` waits it out |
+| Something looks wrong | The log is `<home>/run/huddle.log`, the pid and port beside it |
+
+The details behind the quick fixes:
+
+- A device session ends after 7 days unused. Remove a device in Settings to end it at once.
+- The hub's port choice is saved in `<home>/run/huddle.port`: 18860 first, then the next free port
+  in 18861-18869, then one the OS picks.
+- Five wrong codes in 5 minutes lock code sign-in for 15 minutes ("Too many tries. Wait 15 minutes
+  or use a passkey."). The hub has one owner, so the lock is global.
+- The first kanban run downloads the binary in the background; `kanban` is on PATH from the next
+  session.
+
+See also: [README.md](../README.md) · [docs/TESTPLAN.md](TESTPLAN.md) · [CHANGELOG.md](../CHANGELOG.md)
