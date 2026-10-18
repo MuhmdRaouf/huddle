@@ -234,8 +234,8 @@ func (w *Watch) Stop() {
 }
 
 // RemoveRunFiles deletes the run files that leave with the server: its run directory (pid, port,
-// log), the hooks' log and their state (what each session already saw, the asks a stop was
-// blocked for); nothing a person wrote.
+// log, the owner key), the hooks' log and their state (what each session already saw, the asks a
+// stop was blocked for); nothing a person wrote.
 func RemoveRunFiles(home string) {
 	_ = os.RemoveAll(filepath.Join(home, "run"))
 	for _, name := range []string{"hooks.log", "stop-raised.json"} {

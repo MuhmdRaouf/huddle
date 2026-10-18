@@ -2,11 +2,14 @@ package cli
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -233,5 +236,152 @@ func TestHFetchSendsTheCredentialAndRetriesOnceOn401(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || !reflect.DeepEqual(seen, []string{"root-1"}) {
 		t.Errorf("status %d, tokens %q", resp.StatusCode, seen)
+	}
+}
+
+// ownerKeyHome lays one home out with its server's port named in the run directory and the
+// owner key in place, the state a serve no one handed a root to leaves behind.
+func ownerKeyHome(t *testing.T, port, key string, keyMode os.FileMode) string {
+	t.Helper()
+	homeDir := t.TempDir()
+	run := filepath.Join(homeDir, "run")
+	if err := os.MkdirAll(run, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(run, "huddle.port"), port)
+	if key != "" {
+		file := filepath.Join(run, "owner.key")
+		if err := os.WriteFile(file, []byte(key+"\n"), keyMode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return homeDir
+}
+
+func TestTokenForReadsTheOwnerKeyOfThisHomesOwnLoopbackServer(t *testing.T) {
+	ctx := context.Background()
+	url := "http://127.0.0.1:29731"
+	w := world(t, t.TempDir(), map[string]string{"HUDDLE_HOME": ownerKeyHome(t, "29731", "hcred_owner", 0o600)})
+	if got := TokenFor(ctx, w, url, ""); got != "hcred_owner" {
+		t.Errorf("TokenFor(own server) = %q, want the owner key", got)
+	}
+	if got := TokenFor(ctx, w, "http://localhost:29731", ""); got != "hcred_owner" {
+		t.Errorf("TokenFor(localhost spelling) = %q, want the owner key", got)
+	}
+	// only this home's own address: another port, another machine's address, no key at all
+	for _, c := range []struct {
+		name string
+		url  string
+		env  map[string]string
+	}{
+		{"another port", "http://127.0.0.1:29732", nil},
+		{"a remote address", "https://hub.example.dev:8443", nil},
+		{"another home", url, map[string]string{"HUDDLE_HOME": ownerKeyHome(t, "29740", "", 0o600)}},
+		{"no key file", url, map[string]string{"HUDDLE_HOME": ownerKeyHome(t, "29731", "", 0o600)}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			env := map[string]string{"HUDDLE_HOME": w.getenv("HUDDLE_HOME")}
+			for key, value := range c.env {
+				env[key] = value
+			}
+			if got := TokenFor(ctx, world(t, t.TempDir(), env), c.url, ""); got != "" {
+				t.Errorf("TokenFor(%s) = %q, want none", c.url, got)
+			}
+		})
+	}
+	// the port the home's config saves names the same server (a serve with no port named)
+	other := ownerKeyHome(t, "", "hcred_owner", 0o600)
+	SavePort(ctx, world(t, t.TempDir(), nil), 29733, false, other)
+	configured := world(t, t.TempDir(), map[string]string{"HUDDLE_HOME": other})
+	if got := TokenFor(ctx, configured, "http://127.0.0.1:29733", ""); got != "hcred_owner" {
+		t.Errorf("TokenFor(config's port) = %q, want the owner key", got)
+	}
+	// a session's own credential and HUDDLE_TOKEN both win over the key
+	mine := world(t, t.TempDir(), map[string]string{"HUDDLE_HOME": w.getenv("HUDDLE_HOME")})
+	if err := SaveCred(ctx, mine, Cred{URL: url, Credential: "hcred_mine"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := TokenFor(ctx, mine, url, ""); got != "hcred_mine" {
+		t.Errorf("TokenFor with a session credential = %q", got)
+	}
+	rooted := world(t, t.TempDir(), map[string]string{"HUDDLE_HOME": w.getenv("HUDDLE_HOME"), "HUDDLE_TOKEN": "root-cred"})
+	if got := TokenFor(ctx, rooted, url, ""); got != "root-cred" {
+		t.Errorf("TokenFor with HUDDLE_TOKEN = %q", got)
+	}
+}
+
+// fakeOwnerKeyStat is a stat whose owner is whoever the test says: the uid check reads it through
+// the World's hook, because no test may chown a file to another user.
+type fakeOwnerKeyStat struct {
+	mode os.FileMode
+	sys  any
+}
+
+func (fakeOwnerKeyStat) Name() string        { return "owner.key" }
+func (f fakeOwnerKeyStat) Size() int64       { return 32 }
+func (f fakeOwnerKeyStat) Mode() os.FileMode { return f.mode }
+func (fakeOwnerKeyStat) ModTime() time.Time  { return time.Unix(0, 0) }
+func (fakeOwnerKeyStat) IsDir() bool         { return false }
+func (f fakeOwnerKeyStat) Sys() any          { return f.sys }
+
+func TestTheOwnerKeyAnotherUserOwnsOrOthersReadIsRefusedWithALine(t *testing.T) {
+	ctx := context.Background()
+	url := "http://127.0.0.1:29751"
+	hearStderr := func(t *testing.T, ask func() string) (string, string) {
+		t.Helper()
+		reader, writer, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("pipe: %v", err)
+		}
+		old := os.Stderr
+		os.Stderr = writer
+		got := ask()
+		os.Stderr = old
+		if err := writer.Close(); err != nil {
+			t.Fatalf("close the pipe's writer: %v", err)
+		}
+		raw, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatalf("read the pipe: %v", err)
+		}
+		return got, string(raw)
+	}
+	// group and others may read it
+	open := world(t, t.TempDir(), map[string]string{"HUDDLE_HOME": ownerKeyHome(t, "29751", "hcred_owner", 0o644)})
+	if got, said := hearStderr(t, func() string { return TokenFor(ctx, open, url, "") }); got != "" {
+		t.Errorf("TokenFor(0644 key) = %q, want none", got)
+	} else if !strings.Contains(said, "owner.key") || !strings.Contains(said, "group or others") {
+		t.Errorf("the refusal says %q, want the file and the reason", said)
+	}
+	// another user owns it (a fake stat: no test may chown to one)
+	homeDir := ownerKeyHome(t, "29751", "hcred_owner", 0o600)
+	key := filepath.Join(homeDir, "run", "owner.key")
+	for _, c := range []struct {
+		name string
+		stat fakeOwnerKeyStat
+		why  string
+	}{
+		{"owned by another uid", fakeOwnerKeyStat{mode: 0o600, sys: &syscall.Stat_t{Uid: 4242}}, "another user"},
+		{"no owner to read", fakeOwnerKeyStat{mode: 0o600}, "another user"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			w := world(t, t.TempDir(), map[string]string{"HUDDLE_HOME": homeDir})
+			w.FileStat = func(path string) (os.FileInfo, error) {
+				if path == key {
+					return c.stat, nil
+				}
+				return os.Stat(path)
+			}
+			if got, said := hearStderr(t, func() string { return TokenFor(ctx, w, url, "") }); got != "" {
+				t.Errorf("TokenFor = %q, want none", got)
+			} else if !strings.Contains(said, "owner.key") || !strings.Contains(said, c.why) {
+				t.Errorf("the refusal says %q, want the file and %q", said, c.why)
+			}
+		})
+	}
+	// the port file names another port: the key is not even considered, so nothing is said
+	away := world(t, t.TempDir(), map[string]string{"HUDDLE_HOME": homeDir})
+	if got, said := hearStderr(t, func() string { return TokenFor(ctx, away, "http://127.0.0.1:29761", "") }); got != "" || said != "" {
+		t.Errorf("TokenFor(another port) = %q, stderr %q, want silence", got, said)
 	}
 }

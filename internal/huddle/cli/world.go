@@ -53,6 +53,10 @@ type World struct {
 	// LanAddress answers this machine's address on the network a phone shares with it; nil
 	// walks the interfaces. Tests answer loopback so no test binds a real interface.
 	LanAddress func() string
+	// FileStat answers one file's stat the way the platform reports it; nil stats the
+	// filesystem. The owner key check reads the file's owner from it, and tests fake a foreign
+	// owner — no test may chown a file to another user.
+	FileStat func(path string) (os.FileInfo, error)
 }
 
 // stdin is the world's input.
@@ -131,6 +135,14 @@ func (w *World) environ() []string {
 	return w.Environ()
 }
 
+// fileStat stats one file; nil on the world answers the filesystem's own.
+func (w *World) fileStat(path string) (os.FileInfo, error) {
+	if w != nil && w.FileStat != nil {
+		return w.FileStat(path)
+	}
+	return os.Stat(path)
+}
+
 // dir is the world's working directory.
 func (w *World) dir() string {
 	if w != nil && w.Dir != "" {
@@ -185,6 +197,7 @@ func (w *World) WithVar(key, value string) *World {
 		TrustStore: w.TrustStore,
 		SystemPool: w.SystemPool,
 		LanAddress: w.LanAddress,
+		FileStat:   w.FileStat,
 	}
 }
 

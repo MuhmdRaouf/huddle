@@ -60,7 +60,9 @@ Ten slash commands, one product:
 | `/huddle:kanban-export` | Write the board as one self-contained HTML page for sharing |
 
 The hooks start the servers, so there is nothing to start by hand: each event runs one hook process, and
-huddle's, radar's and kanban's parts ride inside it.
+huddle's, radar's and kanban's parts ride inside it. A service manager (a launchd agent, a systemd unit) or a
+terminal can also run `huddle serve` itself: the server leaves its root credential in `<home>/run/owner.key`,
+and `huddle open` on the same machine still signs the owner in.
 
 ## Shared board
 

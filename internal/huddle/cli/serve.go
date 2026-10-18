@@ -6,10 +6,10 @@
 //
 // Its files live in this user's home (identity's HomeOf; the home package resolves it):
 // channels/, auth.json (under HUDDLE_DATA when that is set) and run/huddle.pid, run/huddle.port,
-// run/huddle.log — one line in the log per start and stop, with its reason. `huddle up` lays the
-// home out first (home.Ensure). The server a session's up starts watches for the plugin's removal
-// (the outside package) and stops itself, taking the run files with it and leaving a note by the
-// channels; UpAlone, the start without Claude Code, carries no watch.
+// run/huddle.log, run/owner.key — one line in the log per start and stop, with its reason.
+// `huddle up` lays the home out first (home.Ensure). The server a session's up starts watches for
+// the plugin's removal (the outside package) and stops itself, taking the run files with it and
+// leaving a note by the channels; UpAlone, the start without Claude Code, carries no watch.
 //
 // The port comes from the url (identity: HUDDLE_URL, huddle.json's url, HUDDLE_PORT, or the port
 // saved in the home's config.toml); with none yet, `huddle up` picks one with the server
@@ -17,8 +17,9 @@
 // a saved port it picked that another program has since taken moves to a new one (a port someone
 // chose is never rewritten). Other server settings pass through from the environment. Whoever
 // starts it is its creator: `huddle up` makes the root credential, hands it to the server on
-// stdin (never a file or the environment) and keeps it as this session's credential (creds.go);
-// everyone else joins with an invite the creator mints.
+// stdin (never through the environment) and keeps it as this session's credential (creds.go);
+// the server also leaves the run's root in run/owner.key for this machine's owner (ownerkey.go
+// on the server side); everyone else joins with an invite the creator mints.
 package cli
 
 import (
@@ -496,6 +497,7 @@ func Down(ctx context.Context, w *World, rawURL string) Result {
 	for i := 0; i < 50; i++ {
 		if !processAlive(pid) {
 			_ = os.Remove(pidFile(h))
+			_ = os.Remove(home.Home{Root: h}.OwnerKey())
 			noteRun(h, w.now(), fmt.Sprintf("stop pid %d (huddle down)", pid))
 			return Result{OK: true, Msg: fmt.Sprintf("Huddle stopped (pid %d)", pid)}
 		}
@@ -505,6 +507,7 @@ func Down(ctx context.Context, w *World, rawURL string) Result {
 	// is our server
 	if forceStop(pid) {
 		_ = os.Remove(pidFile(h))
+		_ = os.Remove(home.Home{Root: h}.OwnerKey()) // a forced stop had no clean exit to take it
 		noteRun(h, w.now(), fmt.Sprintf("stop pid %d (huddle down, forced)", pid))
 		return Result{OK: true, Msg: fmt.Sprintf("Huddle stopped (pid %d)", pid)}
 	}

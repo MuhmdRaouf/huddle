@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 )
 
@@ -1103,4 +1104,145 @@ func TestE2EListenSurvivesAStreamThatGoesQuiet(t *testing.T) {
 	if extra := l.quiet(); len(extra) != 0 {
 		t.Errorf("re-reads and reconnects showed something twice: %v", extra)
 	}
+}
+
+// A serve no one handed a root to (a service manager's, a terminal's) leaves it in the home's
+// run directory, so `huddle open --print` on the same machine signs the owner in — and a clean
+// stop takes the key with it.
+func TestE2EAServeStartedByHandStillSignsTheOwnerIn(t *testing.T) {
+	base := e2eBase(t)
+	homeDir := filepath.Join(t.TempDir(), "home")
+	data := filepath.Join(t.TempDir(), "data")
+	port := freePort(t)
+	url := fmt.Sprintf("http://127.0.0.1:%d", port)
+	// the home knows its port the way a set-up machine's does: saved in config.toml
+	home.SavePort(home.Home{Root: homeDir}, port, false)
+	cmd := exec.Command(huddleBin, "serve")
+	cmd.Env = e2eEntries(e2eEnv(base, map[string]string{
+		"HUDDLE_HOME": homeDir,
+		"HUDDLE_DATA": data,
+		"PORT":        strconv.Itoa(port),
+	}))
+	var out strings.Builder
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start the server: %v", err)
+	}
+	t.Cleanup(func() { stopProcess(cmd.Process.Pid) })
+	until(t, 15*time.Second, func() bool { return e2eHealthy(url) }, "the server to answer /health")
+
+	key := filepath.Join(homeDir, "run", "owner.key")
+	raw, err := os.ReadFile(key)
+	if err != nil {
+		t.Fatalf("no owner key: %v", err)
+	}
+	root := strings.TrimSpace(string(raw))
+	if root == "" {
+		t.Fatal("the owner key is empty")
+	}
+	if strings.Contains(out.String(), root) {
+		t.Errorf("the server's output says its root credential")
+	}
+	info, err := os.Stat(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("owner.key mode %o, want 0600", info.Mode().Perm())
+	}
+
+	code, printed, errOut := e2eRun(t, huddleBin, e2eEnv(base, map[string]string{"HUDDLE_HOME": homeDir}), "open", "--print")
+	if code != 0 {
+		t.Fatalf("open --print: %d %s %s", code, printed, errOut)
+	}
+	if !strings.Contains(printed, url+"/?code=") {
+		t.Fatalf("open --print said %q, want a link with a code", printed)
+	}
+
+	// a clean stop takes the key with it
+	if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatalf("stop the server: %v", err)
+	}
+	done := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the server never stopped")
+	}
+	if _, err := os.Stat(key); !os.IsNotExist(err) {
+		t.Errorf("owner.key after a clean stop: %v, want it gone", err)
+	}
+}
+
+// The server restarted more roots than it keeps digests of, so the credential this session
+// saved (the first start's) no longer works: the owner key of the last start still opens the
+// dashboard.
+func TestE2EARootThatAgedOutOverNineRestartsStillOpensThroughTheOwnerKey(t *testing.T) {
+	base := e2eBase(t)
+	homeDir := filepath.Join(t.TempDir(), "home")
+	data := filepath.Join(t.TempDir(), "data")
+	port := freePort(t)
+	url := fmt.Sprintf("http://127.0.0.1:%d", port)
+	run := filepath.Join(homeDir, "run")
+	if err := os.MkdirAll(run, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(run, "huddle.port"), strconv.Itoa(port))
+	env := e2eEnv(base, map[string]string{
+		"HUDDLE_HOME": homeDir,
+		"HUDDLE_DATA": data,
+		"PORT":        strconv.Itoa(port),
+	})
+	var stop func()
+	t.Cleanup(func() {
+		if stop != nil {
+			stop()
+		}
+	})
+	start := func() {
+		cmd := exec.Command(huddleBin, "serve")
+		cmd.Env = e2eEntries(env)
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start the server: %v", err)
+		}
+		stop = func() {
+			_ = cmd.Process.Signal(os.Interrupt)
+			done := make(chan struct{})
+			go func() { _ = cmd.Wait(); close(done) }()
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				_ = cmd.Process.Kill()
+				<-done
+			}
+		}
+		until(t, 15*time.Second, func() bool { return e2eHealthy(url) }, "the server to answer /health")
+	}
+
+	start()
+	first, err := os.ReadFile(filepath.Join(run, "owner.key"))
+	if err != nil {
+		t.Fatalf("no owner key: %v", err)
+	}
+	// the session that started the first server holds its root, the way `huddle up` keeps it
+	sessions := filepath.Join(homeDir, "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(sessions, "terminal.json"),
+		fmt.Sprintf(`{"url":%q,"credential":%q,"root":true}`, url, strings.TrimSpace(string(first))))
+	for i := 0; i < 8; i++ {
+		stop()
+		start()
+	}
+
+	link := Dashboard(context.Background(), world(t, t.TempDir(), map[string]string{"HUDDLE_HOME": homeDir}), url, "", 1500)
+	if !strings.Contains(link, "/?code=") {
+		t.Fatalf("Dashboard = %q, want a link with a code through the owner key", link)
+	}
+	stop()
 }

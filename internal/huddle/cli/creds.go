@@ -26,7 +26,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
@@ -234,7 +236,7 @@ func ProjectCred(ctx context.Context, w *World, dir, url string) *Cred {
 }
 
 // TokenFor answers the credential to send to url: HUDDLE_TOKEN, else this session's for that
-// url, else none.
+// url, else this home's own server's owner key, else none.
 func TokenFor(ctx context.Context, w *World, url, sid string) string {
 	if token := w.getenv("HUDDLE_TOKEN"); token != "" {
 		return token
@@ -242,7 +244,82 @@ func TokenFor(ctx context.Context, w *World, url, sid string) string {
 	if cred := LoadCred(ctx, w, url, sid); cred != nil {
 		return cred.Credential
 	}
-	return ""
+	return ownerKeyFor(w, url)
+}
+
+// ownerKeyFor answers the root credential this home's own server leaves for this machine's
+// owner (run/owner.key, ownerkey.go on the server side), or "": only for the loopback address
+// the home itself names, so one home's key never vouches for another server and the key never
+// leaves the machine. A file another user owns, or one group or others may read, is refused
+// with one line saying why; a missing one is the common case and says nothing.
+func ownerKeyFor(w *World, rawURL string) string {
+	h, err := home.Resolve(w.getenv)
+	if err != nil {
+		return ""
+	}
+	if !ownLoopback(rawURL, h.Root) {
+		return ""
+	}
+	file := h.OwnerKey()
+	info, err := w.fileStat(file)
+	if err != nil {
+		return ""
+	}
+	if uid, ok := uidOf(info); !ok || uid != uint32(os.Getuid()) {
+		sayOwnerKeyRefused(file, "another user owns it")
+		return ""
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		sayOwnerKeyRefused(file, "group or others may read it")
+		return ""
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+// ownLoopback answers whether rawURL is the loopback address this home's own server answers
+// on: the port its home names, in the run directory's port file (what `huddle up` wrote) or
+// saved in its config.toml (what a serve with no port named saves itself).
+func ownLoopback(rawURL, root string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme != "http" {
+		return false
+	}
+	switch strings.ToLower(parsed.Hostname()) {
+	case "127.0.0.1", "localhost":
+	default:
+		return false
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil || port <= 0 {
+		return false
+	}
+	if savedRunPort(root) == port {
+		return true
+	}
+	if choice, has := SavedPort(root); has && choice.Port == port {
+		return true
+	}
+	return false
+}
+
+// uidOf answers the user that owns info's file. A stat without a Stat_t (a test's fake) answers
+// nothing, and the caller treats the file as not this user's.
+func uidOf(info os.FileInfo) (uint32, bool) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return stat.Uid, true
+}
+
+// sayOwnerKeyRefused says on stderr why the owner key was not used: the machine's owner is the
+// one person who can fix it.
+func sayOwnerKeyRefused(file, why string) {
+	fmt.Fprintf(os.Stderr, "huddle: owner key %s: %s: not used\n", file, why)
 }
 
 // HFetch does one HTTP call to a Huddle server with this session's credential in the header. A
@@ -287,6 +364,11 @@ func HFetch(ctx context.Context, w *World, method, rawURL string, headers map[st
 		return resp, nil
 	}
 	again := TokenFor(ctx, w, origin, sid)
+	if again == "" || again == token {
+		// the saved credential aged out (the server restarted more roots than it keeps
+		// digests of): this machine's owner key is the one credential left
+		again = ownerKeyFor(w, origin)
+	}
 	if again == "" || again == token {
 		return resp, nil
 	}

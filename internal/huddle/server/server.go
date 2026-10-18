@@ -482,6 +482,13 @@ func Serve(ctx context.Context, o Options) error {
 	if port == 0 {
 		port = listener.Addr().(*net.TCPAddr).Port
 	}
+	// the run's root reaches this machine's owner through the run directory (ownerkey.go): a
+	// start no CLI handed a root to is the case that needs it, and a start that did writes the
+	// same file, so the owner's fallback is always the current root. A home that refuses the
+	// write keeps serving.
+	if err := writeOwnerKey(ctx, o.Home, root); err != nil {
+		fmt.Fprintf(o.Stderr, "owner key: %v\n", err)
+	}
 	s := &server{
 		o:            o,
 		hub:          channel.NewHub(o.Data, o.AutoCreate),
@@ -739,6 +746,7 @@ func Serve(ctx context.Context, o Options) error {
 		if watch != nil {
 			watch.Stop()
 		}
+		removeOwnerKey(o.Home)
 		s.auth.Flush()
 		s.stopRadar()
 		s.stopKanban()
@@ -773,6 +781,7 @@ func Serve(ctx context.Context, o Options) error {
 			<-goneDone
 			return nil
 		}
+		removeOwnerKey(o.Home) // this process ends here: its root leaves with it
 		return err
 	}
 }

@@ -711,3 +711,26 @@ func pinFreePort(t *testing.T, homeRoot string) int {
 	t.Fatal("no free port in 20000-29999")
 	return 0
 }
+
+// `huddle down` leaves no owner key behind: the server takes it on its clean exit, and a forced
+// one (the process would not stop) loses it to down itself.
+func TestDownTakesTheOwnerKeyWithIt(t *testing.T) {
+	port := freePort(t)
+	homeDir := t.TempDir()
+	state := filepath.Join(t.TempDir(), "state")
+	w := cliWorld(t, homeDir, state, map[string]string{
+		"HUDDLE_DATA": "", "HUDDLE_URL": fmt.Sprintf("http://127.0.0.1:%d", port), "HUDDLE_CHANNEL": "up", "HUDDLE_AS": "a"})
+	if code, out := runServerCommand(t, w, "up"); code != 0 || !strings.Contains(out, "started") {
+		t.Fatalf("up = (%d, %q)", code, out)
+	}
+	key := filepath.Join(homeDir, "run", "owner.key")
+	if _, err := os.Stat(key); err != nil {
+		t.Fatalf("no owner key after up: %v", err)
+	}
+	if code, out := runServerCommand(t, w, "down"); code != 0 || !strings.Contains(out, "stopped") {
+		t.Fatalf("down = (%d, %q)", code, out)
+	}
+	if _, err := os.Stat(key); !os.IsNotExist(err) {
+		t.Errorf("owner.key after down: %v, want it gone", err)
+	}
+}

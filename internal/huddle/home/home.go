@@ -105,8 +105,12 @@ func (h Home) Imports() string { return filepath.Join(h.Root, "imports.json") }
 // systemd user unit written outside the home), removed with the service.
 func (h Home) Service() string { return filepath.Join(h.Root, "service.json") }
 
-// Run is the run directory: the pid, the port and the log of the running server.
+// Run is the run directory: the pid, the port, the log and the owner key of the running server.
 func (h Home) Run() string { return filepath.Join(h.Root, "run") }
+
+// OwnerKey is the running server's root credential, there for this machine's owner while the
+// server runs (the CLI reads it in creds.go when it holds no working credential).
+func (h Home) OwnerKey() string { return filepath.Join(h.Run(), "owner.key") }
 
 // PidFile is the running server's pid.
 func (h Home) PidFile() string { return filepath.Join(h.Run(), "huddle.pid") }

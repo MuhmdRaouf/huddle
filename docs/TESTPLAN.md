@@ -26,6 +26,7 @@ Run everything from the repo root: `go run ./scripts/tmpguard -count=1 ./...`, `
 | Kanban view | `web/e2e/kanban.spec.ts` "the kanban tab lists the board and its three cards in the right columns" | The board names itself and holds each card in the column its folder put it in; the Holder filter narrows the board and Clear all restores it. |
 | Layout at phone width | `web/e2e/layout.spec.ts` "every view lays out clean: dark phone" and "every view lays out clean: light phone" | Every tab and radar view opens at 390x844 with no console error, no sideways page scroll and no overlapping Kanban toolbar controls. |
 | Radar settings writes from a paired device | `cmd/huddle/fulltest_e2e_test.go:TestFullScenarioOnALocalDevName/radar_writes` | A phone paired over TLS saves a budget through the Radar tab under the hub's own Origin; a foreign Origin gets 403. |
+| The owner key of a serve no CLI started | `internal/huddle/cli/e2e_test.go:TestE2EAServeStartedByHandStillSignsTheOwnerIn`; `internal/huddle/cli/creds_test.go:TestTokenForReadsTheOwnerKeyOfThisHomesOwnLoopbackServer`; `internal/huddle/cli/e2e_test.go:TestE2EARootThatAgedOutOverNineRestartsStillOpensThroughTheOwnerKey` | A serve with no root handed to it leaves it 0600 in the home's run directory, never in its log; `huddle open --print` on the same machine prints a link with a code, a credential that aged out over nine restarts still opens through it, a file another user owns or others may read is refused with a line, and a clean stop takes it away. |
 
 ## Needs a human
 
