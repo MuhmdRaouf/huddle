@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -678,6 +679,15 @@ func TestUpAloneStartsTheServerWithoutTheRemovalWatch(t *testing.T) {
 	}
 }
 
+// pinnedPorts hands each pinFreePort call its own starting offset, 97 ports past the last one:
+// two calls in one clock tick (one test pinning two homes) must never land on the same port,
+// since each probe is closed before its server binds.
+var pinnedPorts = func() *atomic.Int64 {
+	var n atomic.Int64
+	n.Store(time.Now().UnixNano() % 10000)
+	return &n
+}()
+
 // pinFreePort saves a free port in the home's config, so the server a test starts keeps that
 // port: with no saved one the port choice walks 18860-18869, where test packages running in
 // parallel race for the same port. The port comes from 20000-29999, below the ephemeral ranges
@@ -685,9 +695,9 @@ func TestUpAloneStartsTheServerWithoutTheRemovalWatch(t *testing.T) {
 // once the probe closes, and another test binding port 0 could take it before the server binds.
 func pinFreePort(t *testing.T, homeRoot string) int {
 	t.Helper()
-	start := 20000 + int(time.Now().UnixNano()%10000)
+	start := int(pinnedPorts.Add(97))
 	for i := range 10000 {
-		port := 20000 + (start-20000+i)%10000
+		port := 20000 + (start+i)%10000
 		listener, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
 		if err != nil {
 			continue
