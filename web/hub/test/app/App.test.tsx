@@ -4,14 +4,25 @@
 // keys, the no-channel page, and the first-run checklist the Now list carries.
 import { act, cleanup, screen } from "@testing-library/preact";
 import type { ComponentType } from "preact";
+import { useEffect } from "preact/hooks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { App, inboxOf, NoChannel } from "../../src/app/App.tsx";
 import { IntroActions } from "../../src/app/intro.tsx";
 import { DESKTOP_QUERY, TABLET_QUERY } from "../../src/app/layout.ts";
 import { parseHash } from "../../src/app/router.ts";
 import type { ComposeOptions } from "../../src/compose/drafts.ts";
+import type { RegistrySession } from "../../src/registry.ts";
 import type { HuddleState } from "../../src/store.ts";
-import { attention, flush, makeCtx, makeState, renderIn, sess, stubMedia } from "../helpers.tsx";
+import {
+  attention,
+  flush,
+  makeCtx,
+  makeRegistry,
+  makeState,
+  renderIn,
+  sess,
+  stubMedia,
+} from "../helpers.tsx";
 
 /** The three widths the layouts are cut at, as the two breakpoint queries answer them. */
 const PHONE: Record<string, boolean> = { [TABLET_QUERY]: false, [DESKTOP_QUERY]: false };
@@ -186,6 +197,29 @@ describe("routes and panes", () => {
     expect(screen.getByText("Reading the session…")).toBeDefined();
   });
 
+  it("carries the empty registry's welcome in the main pane, once, and keeps the dashed box once sessions stand", () => {
+    stubMedia(DESKTOP);
+    nav("#/now");
+    // nothing registered: the welcome and its start-a-session card stand in the main pane, and
+    // the list beside them drops its copy of the card
+    mountApp();
+    expect(screen.getByText("No sessions yet")).toBeDefined();
+    expect(screen.getAllByRole("tab", { name: "Claude Code" })).toHaveLength(1);
+    expect(document.querySelector("#main [data-no-sessions]")).not.toBeNull();
+    expect(screen.queryByText("No session open")).toBeNull();
+    // sessions stand and none is picked: the main pane keeps its pointer at the list
+    cleanup();
+    const row: RegistrySession = {
+      session_id: "s-1",
+      state: "working",
+      last_event: "UserPromptSubmit",
+      last_event_at: "2026-10-08T11:00:00Z",
+    };
+    renderIn(<App pages={{}} />, makeCtx(makeState(), { registry: makeRegistry({ sessions: [row] }) }));
+    expect(screen.getByText("No session open")).toBeDefined();
+    expect(screen.queryByText("No sessions yet")).toBeNull();
+  });
+
   it("renders the channels page when no channel is named", () => {
     nav("#/channels");
     mountApp({ home: () => <div>channels page</div> }, makeState({ ch: null }));
@@ -278,6 +312,22 @@ describe("routes and panes", () => {
     nav("#/");
     mountApp();
     expect(location.hash).toBe("#/channels");
+  });
+
+  it("leaves an address that moved on before the rewrite ran where it moved to", () => {
+    // a page's own mount effect stands for a move that lands between the shell's render and its
+    // rewrite (a click or a goto the instant the first-run gate closes): the rewrite must not
+    // pull the address back to the canonical form of the route it replaced
+    nav("#/");
+    mountApp({
+      home: () => {
+        useEffect(() => {
+          location.hash = "#/radar/requests";
+        }, []);
+        return <div>home page</div>;
+      },
+    });
+    expect(location.hash).toBe("#/radar/requests");
   });
 
   it("rewrites an old channel address into its channels one and keeps the page working", () => {

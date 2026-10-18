@@ -21,10 +21,10 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/webauthntest"
 )
 
-// TestLoginAvailableAnswersTheMethods proves the signed-out page's two facts — does this home
-// hold a passkey, does it hold an authenticator enrolment — as the two booleans and nothing
-// else: no device names, no counts, nothing that differs in shape or timing between a home
-// with a method and one without.
+// TestLoginAvailableAnswersTheMethods proves the signed-out page's three facts — does this home
+// hold a passkey, does it hold an authenticator enrolment, does this browser's session stand —
+// as the three booleans and nothing else: no device names, no counts, nothing that differs in
+// shape or timing between a home with a method and one without.
 func TestLoginAvailableAnswersTheMethods(t *testing.T) {
 	srv := startServer(t, nil)
 
@@ -32,42 +32,43 @@ func TestLoginAvailableAnswersTheMethods(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("available with no device = %d: %s", code, out)
 	}
-	if out != `{"passkeys":false,"totp":false}` {
-		t.Errorf("available with no device = %s, want the two booleans alone", out)
+	if out != `{"passkeys":false,"totp":false,"signedIn":false}` {
+		t.Errorf("available with no device = %s, want the three booleans alone", out)
 	}
 
 	pairDevice(t, srv, webauthntest.NewSoftKey(t), "iPhone")
 	code, _, out = srv.get(t, "/api/login/available", map[string]string{"x-huddle-token": ""})
-	if code != 200 || out != `{"passkeys":true,"totp":false}` {
-		t.Errorf("available after a pairing = %d %s, want the two booleans alone", code, out)
+	if code != 200 || out != `{"passkeys":true,"totp":false,"signedIn":false}` {
+		t.Errorf("available after a pairing = %d %s, want the three booleans alone", code, out)
 	}
 
 	_, _ = enrolTOTP(t, srv, linkBrowser(t, srv))
 	code, _, out = srv.get(t, "/api/login/available", map[string]string{"x-huddle-token": ""})
-	if code != 200 || out != `{"passkeys":true,"totp":true}` {
-		t.Errorf("available after an enrolment = %d %s, want the two booleans alone", code, out)
+	if code != 200 || out != `{"passkeys":true,"totp":true,"signedIn":false}` {
+		t.Errorf("available after an enrolment = %d %s, want the three booleans alone", code, out)
 	}
 }
 
 // TestLoginAvailableNamesWhyTheSignInEnded proves the reason line the landing page shows: none
 // on a first visit (no cookie was sent, so nothing ended), the removed-device line once the
 // owner removed the device a cookie belonged to, and the plain ended line for a link cookie that
-// no longer vouches.
+// no longer vouches. A cookie that still vouches says so in signedIn, the fact the shell's boot
+// reads to pick the landing over the shell without one 401 in the console.
 func TestLoginAvailableNamesWhyTheSignInEnded(t *testing.T) {
 	srv := startServer(t, nil)
 
-	code, _, out := srv.get(t, "/api/login/available", nil)
-	if code != 200 || out != `{"passkeys":false,"totp":false}` {
-		t.Fatalf("a first visit = %d %s, want the two booleans alone", code, out)
+	code, _, out := srv.get(t, "/api/login/available", map[string]string{"x-huddle-token": ""})
+	if code != 200 || out != `{"passkeys":false,"totp":false,"signedIn":false}` {
+		t.Fatalf("a first visit = %d %s, want the three booleans alone", code, out)
 	}
 
-	// a paired device: its cookie still vouches, so the answer names no end
+	// a paired device: its cookie still vouches, so the answer names no end and says so
 	setCookie, _ := pairDevice(t, srv, webauthntest.NewSoftKey(t), "iPad")
 	cookie := cookieValueOf(t, setCookie)
 	code, _, out = srv.get(t, "/api/login/available",
 		map[string]string{"Cookie": auth.PairPlainCookie + "=" + cookie})
-	if code != 200 || out != `{"passkeys":true,"totp":false}` {
-		t.Fatalf("a live device cookie = %d %s, want the two booleans alone", code, out)
+	if code != 200 || out != `{"passkeys":true,"totp":false,"signedIn":true}` {
+		t.Fatalf("a live device cookie = %d %s, want the three booleans with signedIn", code, out)
 	}
 
 	// the owner removes the device: the same cookie now names the removal

@@ -163,10 +163,12 @@ func (s *server) loginFinishRoute(w http.ResponseWriter, r *http.Request) error 
 }
 
 // loginAvailableRoute answers the signed-out page's questions — does this home hold a passkey,
-// does it hold an authenticator enrolment, and why this browser's last sign-in ended — with the
-// two booleans, the one plain line and nothing else: no device names, no counts, nothing that
-// differs in shape or timing between a home with a method and one without. The reason line is
-// empty on a first visit: no cookie was sent, so nothing ended.
+// does it hold an authenticator enrolment, does this browser's own session stand, and why its
+// last sign-in ended — with the three booleans, the one plain line and nothing else: no device
+// names, no counts, nothing that differs in shape or timing between a home with a method and one
+// without. The shell asks this before any real API call because it answers 200 in both states,
+// so a signed-out visit logs no 401 in the console; whoami and the rest stay 401. The reason
+// line is empty on a first visit: no cookie was sent, so nothing ended.
 func (s *server) loginAvailableRoute(w http.ResponseWriter, r *http.Request) error {
 	any, enrolled := false, false
 	if s.pairs != nil {
@@ -175,11 +177,13 @@ func (s *server) loginAvailableRoute(w http.ResponseWriter, r *http.Request) err
 	if s.totp != nil {
 		enrolled = s.totp.Enrolled(r.Context())
 	}
+	_, signedIn := s.who(r)
 	s.writeJSON(w, 200, struct {
 		Passkeys bool   `json:"passkeys"`
 		TOTP     bool   `json:"totp"`
+		SignedIn bool   `json:"signedIn"`
 		Reason   string `json:"reason,omitempty"`
-	}{any, enrolled, s.signinReason(r)}, nil)
+	}{any, enrolled, signedIn, s.signinReason(r)}, nil)
 	return nil
 }
 

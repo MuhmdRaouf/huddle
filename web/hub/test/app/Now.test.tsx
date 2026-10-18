@@ -229,6 +229,11 @@ describe("the Now list", () => {
       ),
     ).toBeDefined();
     expect(screen.getByRole("tab", { name: "Claude Code" })).toBeDefined();
+    // the wide layouts carry the welcome in the main pane instead: the list drops its copy, so
+    // the start-a-session card never shows twice
+    mountNow("desktop", []);
+    expect(screen.queryByText("No sessions yet")).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Claude Code" })).toBeNull();
     // the needs-you filter alone keeps the dashed box: sessions exist, none needs the owner
     mountNow("phone", [row({ session_id: "s-1", title: "only" })]);
     void act(() => {

@@ -44,7 +44,7 @@ func Pair(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 		return 2
 	}
 	if opt.has("satellite") {
-		return pairSatellite(ctx, w, root, name, stdout, stderr)
+		return pairSatellite(ctx, w, root, stdout, stderr)
 	}
 	cfg, err := home.LoadConfig(home.Home{Root: root})
 	if err != nil {
@@ -144,9 +144,10 @@ func Devices(ctx context.Context, w *World, argv []string, stdout, stderr io.Wri
 }
 
 // pairSatellite mints a satellite invite (SPEC 6.7: one use, 10 minutes) and prints the line
-// the other machine runs. The invite lives in the same hub database the server spends it from,
-// so no server restart is needed.
-func pairSatellite(ctx context.Context, w *World, root, name string, stdout, stderr io.Writer) int {
+// the other machine runs. The invite names no device — the other machine's own join names
+// itself — and lives in the same hub database the server spends it from, so no server restart
+// is needed.
+func pairSatellite(ctx context.Context, w *World, root string, stdout, stderr io.Writer) int {
 	cfg, err := home.LoadConfig(home.Home{Root: root})
 	if err != nil {
 		fmt.Fprintf(stderr, "huddle: %v\n", err)
@@ -172,7 +173,7 @@ func pairSatellite(ctx context.Context, w *World, root, name string, stdout, std
 		fmt.Fprintf(stderr, "huddle: could not mint the satellite invite: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "Satellite invite for %s · one use · expires in 10 minutes\n\n  huddle join-hub %s %s\n\n  Run that line on the other machine: it becomes that machine's credential,\n  and this hub then carries its sessions on the Now list.\n", name, url, invite)
+	fmt.Fprintf(stdout, "Satellite invite · one use · expires in 10 minutes\n\n  huddle join-hub %s %s\n\n  Run that line on the other machine: it becomes that machine's credential,\n  and this hub then carries its sessions on the Now list.\n", url, invite)
 	return 0
 }
 

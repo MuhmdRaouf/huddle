@@ -87,19 +87,16 @@ for (const scheme of SCHEMES) {
       };
 
       // the landing page first: the screen a browser with no session lands on, in this scheme
-      // and at this width, with the same no-scroll demand. A signed-out visit's only console
-      // noise is the server's own 401 refusals of the boot's reads; anything else fails here.
+      // and at this width, with the same no-scroll demand. A signed-out visit logs nothing in
+      // the console: the boot's one question answers 200 in both states and the shell's reads
+      // never run.
       await page.goto(`${theSetup().rootUrl}/`);
       await expect(page.locator("[data-landing]")).toBeVisible();
       await settled(page);
       await expectNoPageScroll(page, `landing ${scheme} ${kind}`);
       await shot(`landing-${kind}`);
       const landingErrors = errors.errors();
-      for (const line of landingErrors) {
-        expect(line, `the landing's console on ${scheme} ${kind}`).toMatch(
-          /^Failed to load resource: the server responded with a status of 401/,
-        );
-      }
+      expect(landingErrors, `the landing's console on ${scheme} ${kind}`).toEqual([]);
 
       await signIn(page);
 

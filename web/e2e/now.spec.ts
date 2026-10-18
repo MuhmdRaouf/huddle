@@ -1,6 +1,7 @@
 // now.spec.ts — the owner's first screen: the sign-in link lands the browser on the hub, and
-// the Now list shows the session the run seeded into the registry, and one whose last event
-// asks for permission waits in Needs you with its state word, behind the filter too.
+// the Now list shows the session the run seeded into the registry with the main pane's dashed
+// pointer beside it while none is picked, and one whose last event asks for permission waits in
+// Needs you with its state word, behind the filter too.
 
 import { expect, test } from "@playwright/test";
 import { api, openTab, signIn, theSetup } from "./helpers.ts";
@@ -14,6 +15,8 @@ test("the sign-in link opens the hub and the Now list shows the seeded session",
   // the seeded session sits in the Working group, one row strong
   await expect(page.getByRole("heading", { name: "Working · 1" })).toBeVisible();
   await expect(page.getByText(theSetup().sessionTitle)).toBeVisible();
+  // sessions stand and none is picked: the main pane keeps its pointer at the list
+  await expect(page.getByText("No session open")).toBeVisible();
 });
 
 test("a session whose last event asks for permission waits in Needs you first", async ({

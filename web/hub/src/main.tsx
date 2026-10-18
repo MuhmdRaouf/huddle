@@ -1,13 +1,16 @@
 // main.tsx — the browser entry: the API client, the store, the live stream and the toast stack
-// over the browser's own IO; navigation (channel opens and closes follow the hash); the composer
-// the shell opens (its button and the C key); and one paint of <App/> per change. Thin glue on
-// purpose: everything testable lives in the modules it wires together (same call as radar's main).
+// over the browser's own IO; the boot question that tells a signed-in browser from a signed-out
+// one before any real API call runs; navigation (channel opens and closes follow the hash); the
+// composer the shell opens (its button and the C key); and one paint of <App/> per change. Thin
+// glue on purpose: everything testable lives in the modules it wires together (same call as
+// radar's main).
 
 import { type ToastFn, ToastProvider, useToast } from "@huddle/ui/toast.tsx";
 import type { ComponentChildren, ComponentType } from "preact";
 import { render } from "preact";
 import { createApi } from "./api.ts";
 import "./app.css";
+import { boot } from "./boot.ts";
 import { App, NoChannel } from "./app/App.tsx";
 import { Landing } from "./app/Landing.tsx";
 import { createAct, createCopy, type HuddleContextValue, HuddleProvider } from "./app/context.tsx";
@@ -517,24 +520,34 @@ window.addEventListener("hashchange", () => {
 });
 setInterval(paint, 15_000); // relative times stay live (app.js's 15 s tick)
 
-registry.connect();
-void syncChannel().finally(paint);
-// the one boot request that names who this browser is; its answer repaints the shell's banner
-// and, for a link session over an un-enrolled hub, opens the first-run authenticator set-up
-void api
-  .api("/api/whoami")
-  .then((w) => {
-    const kind = (w as { kind?: unknown }).kind;
-    if (typeof kind === "string" && kind) who.kind = kind;
-    const totp = (w as { totp?: unknown }).totp;
-    who.totp = totp === true;
-    const passkey = (w as { device_passkey?: unknown }).device_passkey;
-    who.devicePasskey = passkey === true;
-    if (who.kind === "owner" && who.totp === false && !readPref(localStorage, "totp-later", false)) {
-      // the gate stands between the link sign-in and the shell: a slow answer arriving after
-      // this browser already moved must not pull it back onto the set-up
-      if (["", "#/", "#/channels"].includes(location.hash)) totpGate.on = true;
-    }
-  })
-  .catch(() => {})
-  .then(() => paint());
+/** The shell's own reads: the registry's stream, the address's channel, and the one request
+ *  that names who this browser is. */
+function startShell(): void {
+  registry.connect();
+  void syncChannel().finally(paint);
+  // the one boot request that names who this browser is; its answer repaints the shell's banner
+  // and, for a link session over an un-enrolled hub, opens the first-run authenticator set-up
+  void api
+    .api("/api/whoami")
+    .then((w) => {
+      const kind = (w as { kind?: unknown }).kind;
+      if (typeof kind === "string" && kind) who.kind = kind;
+      const totp = (w as { totp?: unknown }).totp;
+      who.totp = totp === true;
+      const passkey = (w as { device_passkey?: unknown }).device_passkey;
+      who.devicePasskey = passkey === true;
+      if (who.kind === "owner" && who.totp === false && !readPref(localStorage, "totp-later", false)) {
+        // the gate stands between the link sign-in and the shell: a slow answer arriving after
+        // this browser already moved must not pull it back onto the set-up
+        if (["", "#/", "#/channels"].includes(location.hash)) totpGate.on = true;
+      }
+    })
+    .catch(() => {})
+    .then(() => paint());
+}
+
+// the pairing link's screen owns its window before any credential exists (its ceremonies need
+// none), so it starts at once; every other address asks first (boot.ts), so a signed-out visit
+// paints the landing with no 401 in the console
+if (location.pathname === "/pair") startShell();
+else boot({ api, start: startShell, signedOut: paintSignedOut });

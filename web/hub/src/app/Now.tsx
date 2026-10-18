@@ -595,17 +595,11 @@ export function NowPane({
               <b class="text-base font-semibold text-base-content">Nothing needs you</b>
               <p>When a session needs you, it shows up here first.</p>
             </div>
-          ) : (
-            <div class="m-4 flex flex-col gap-4" data-no-sessions="">
-              <div>
-                <h2 class="text-lg font-semibold tracking-tight">No sessions yet</h2>
-                <p class="m-0 text-sm muted">
-                  Bring a coding agent in: install, join, and it reports here with everything it does.
-                </p>
-              </div>
-              <ConnectCard ch="" invite={false} />
+          ) : layout === "phone" ? (
+            <div class="m-4">
+              <NoSessionsWelcome />
             </div>
-          )
+          ) : null
         ) : (
           SECTIONS.filter(([key]) => (!onlyNeeds || key === "needsYou") && groups[key].length > 0).map(
             ([key, label, warn]) => (
@@ -660,6 +654,23 @@ export function NowPane({
       {linking ? (
         <LinkSheet sessions={picked} onClose={() => setLinking(false)} onLinked={() => setPicked([])} />
       ) : null}
+    </div>
+  );
+}
+
+/** The welcome an empty registry shows: one heading, one sentence, and the start-a-session
+ *  card. The phone paints it in the list (the list is the whole screen); the tablet and the
+ *  desktop paint it in the main pane, where a picked session's screen stands. */
+export function NoSessionsWelcome(): JSX.Element {
+  return (
+    <div class="flex flex-col gap-4" data-no-sessions="">
+      <div>
+        <h2 class="text-lg font-semibold tracking-tight">No sessions yet</h2>
+        <p class="m-0 text-sm muted">
+          Bring a coding agent in: install, join, and it reports here with everything it does.
+        </p>
+      </div>
+      <ConnectCard ch="" invite={false} />
     </div>
   );
 }

@@ -25,7 +25,7 @@ import { useHuddle } from "./context.tsx";
 import { FirstRunChecklist } from "./FirstRun.tsx";
 import { IntroCtx } from "./intro.tsx";
 import { type Layout, useLayout } from "./layout.ts";
-import { NowContext, NowPane, SessionScreen } from "./Now.tsx";
+import { NoSessionsWelcome, NowContext, NowPane, SessionScreen } from "./Now.tsx";
 import { Pair } from "./Pair.tsx";
 import { Rail } from "./Rail.tsx";
 import {
@@ -608,10 +608,16 @@ export function App({
 
   const route = useMemo(() => parseHash(hash, (k, fb) => readPref(localStorage, k, fb)), [hash]);
 
-  // an alias, an old address or an unknown one rewrites the address to the canonical form
+  // an alias, an old address or an unknown one rewrites the address to the canonical form — but
+  // only while the address still names the route this render parsed: a move that lands between
+  // the render and this effect owns the address, and rewriting it would pull the shell off the
+  // page it just opened
   useEffect(() => {
-    if (route.replace) history.replaceState(null, "", route.replace);
-  }, [route.replace]);
+    if (!route.replace) return;
+    const now = parseHash(location.hash, (k, fb) => readPref(localStorage, k, fb));
+    if (now.key !== route.key) return;
+    history.replaceState(null, "", route.replace);
+  }, [route.replace, route.key]);
 
   // the preferences an alias carried land in this browser's settings before any view reads them
   useEffect(() => {
@@ -679,6 +685,10 @@ export function App({
   // context pane where a screen carries one (Now's session screen: the linked sessions and the
   // session's facts). The Now list carries the first-run checklist at its top.
   const nowId = route.tab === "now" ? (route.sub[0] ?? null) : null;
+  const reg = registry.getState();
+  // the registry read answered and holds nothing: no session ever reported, so the main pane
+  // leads with the welcome (the list beside it drops its copy of the card)
+  const noSessions = reg.sessions !== null && reg.sessions.length === 0;
   const firstRun = (
     <FirstRunChecklist
       onPairToken={(token) => {
@@ -703,6 +713,12 @@ export function App({
       ) : layout === "phone" ? (
         <div class="min-h-0 flex-1">
           <NowPane layout="phone" above={firstRun} />
+        </div>
+      ) : noSessions ? (
+        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+          <div class="mx-auto max-w-lg">
+            <NoSessionsWelcome />
+          </div>
         </div>
       ) : (
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5">
@@ -749,7 +765,6 @@ export function App({
 
   // the machines line reads the registry; its live dot follows the stream the open tab runs on
   // (the registry's on Now, the channel's everywhere else)
-  const reg = registry.getState();
   const mline = machinesLine(layout, machinesOf(reg.sessions));
   const liveOf = route.tab === "now" ? reg.live : state.live;
 
