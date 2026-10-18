@@ -120,6 +120,10 @@ func (h Home) LogFile() string { return filepath.Join(h.Run(), "huddle.log") }
 // TLS is the hub's certificate directory.
 func (h Home) TLS() string { return filepath.Join(h.Root, "tls") }
 
+// PKI is the local CA's directory: the root and intermediate the hub listener issues its own
+// leaf certificates from when no imported pair and no ACME setup stands.
+func (h Home) PKI() string { return filepath.Join(h.Root, "pki") }
+
 // Keys holds the secrets the OS keystore would not answer: a 0600 file each.
 func (h Home) Keys() string { return filepath.Join(h.Root, "keys") }
 

@@ -156,21 +156,22 @@ route names, unchanged, while radar records the model, latency and tokens. It ta
 A client can name itself with an `X-Huddle-Harness` header, which lands on the route line next to `via: gateway`,
 so radar tells the harnesses apart.
 
-## A local name with mkcert
+## A local name
 
 A hub on a local name (`hub.example.dev`, pointed at your machine by dnsmasq or `/etc/hosts`) cannot get a
-Let's Encrypt certificate without a public DNS token, but you may already hold a pair — from mkcert or a
-company CA. `huddle cert --import` installs it, and the hub serves HTTPS on that name with no ACME.
+Let's Encrypt certificate without a public DNS token, so huddle keeps its own local CA — the approach
+Caddy takes. It issues the hub's leaf certificates itself: 12 hours each, renewed on its own, nothing to
+run and nothing to expire behind your back.
 
 1. Point the name at this machine: dnsmasq, or one line in `/etc/hosts`.
-2. Run `mkcert hub.example.dev`. It writes `hub.example.dev.pem` and `hub.example.dev-key.pem`.
-3. Run `huddle role hub --listen 127.0.0.1:8443 --host hub.example.dev`.
-4. Run `huddle cert --import hub.example.dev.pem hub.example.dev-key.pem`.
-5. Open `https://hub.example.dev:8443`.
+2. Run `huddle role hub --listen 127.0.0.1:8443 --host hub.example.dev`.
+3. Run `huddle trust` once. It installs huddle's root (`<home>/pki/root.crt`) into your OS's and Firefox's
+   trust stores; your OS asks for your password itself. `huddle untrust` removes it again.
+4. Open `https://hub.example.dev:8443`.
 
-`mkcert -install` — the step that makes your browser trust mkcert's CA — is yours, done once, outside
-huddle. An imported pair is never renewed: the hub's log names its expiry once a day from 30 days out, so
-import a fresh one in time.
+Already hold a pair — from mkcert or a company CA? `huddle cert --import cert.pem key.pem` installs it and
+the hub serves that instead (`huddle cert` says which one is in use). An imported pair is never renewed:
+the hub's log names its expiry once a day from 30 days out, so import a fresh one in time.
 
 ## Platforms
 

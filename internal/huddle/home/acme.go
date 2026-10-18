@@ -102,9 +102,9 @@ func ImportCertificate(h Home, cert, key []byte) error {
 	return writeFile0600(filepath.Join(h.TLS(), "imported"), []byte(cfg.Hub.Host))
 }
 
-// importedName answers the host the home's tls/imported marker names, when the pair on disk
-// arrived by import.
-func importedName(h Home) (string, bool) {
+// ImportedName answers the host the home's tls/imported marker names, when the pair on disk
+// arrived by import: an imported pair wins over ACME and over the local CA alike.
+func ImportedName(h Home) (string, bool) {
 	body, err := os.ReadFile(filepath.Join(h.TLS(), "imported"))
 	if err != nil {
 		return "", false
@@ -141,7 +141,7 @@ func RenewCertificates(ctx context.Context, h Home, issuer func(ctx context.Cont
 		log = func(string) {}
 	}
 	for {
-		if name, ok := importedName(h); ok && name == host {
+		if name, ok := ImportedName(h); ok && name == host {
 			// an imported pair has no issuer behind it to renew from: nothing is asked, and the
 			// expiry is said once a day inside the window, so a fresh import happens in time. The
 			// marker is read again every round: a pair the issuer replaced goes back to renewal.

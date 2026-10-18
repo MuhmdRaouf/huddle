@@ -342,16 +342,21 @@ func TestHubListenerServesPairedDevicesAndSatellites(t *testing.T) {
 	}
 }
 
-// TestHubListenerWithoutACertificateStaysOnLoopback pins the graceful half: a hub role whose
-// tls/ holds no certificate warns once and keeps serving loopback, never stranding the machine.
-func TestHubListenerWithoutACertificateStaysOnLoopback(t *testing.T) {
-	dir := roleHome(t, "role = \"hub\"\n\n[hub]\nlisten = \"[::1]:0\"\nhost = \"hub.mine.test\"\n")
+// TestHubListenerWhoseCertificateIsACMEsToObtainStaysOnLoopback pins the graceful half: a hub
+// role whose certificate an ACME setup promises but tls/ does not hold yet warns once and keeps
+// serving loopback, never stranding the machine — the local CA never stands in for a
+// certificate `huddle cert` still has to obtain.
+func TestHubListenerWhoseCertificateIsACMEsToObtainStaysOnLoopback(t *testing.T) {
+	dir := roleHome(t, "role = \"hub\"\n\n[hub]\nlisten = \"[::1]:0\"\nhost = \"hub.mine.test\"\n\n[cert]\ndns_provider = \"fakeprov\"\n")
 	srv := startServer(t, map[string]string{"HUDDLE_HOME": dir})
 	if strings.Contains(srv.log.joined(), "hub listener on") {
-		t.Fatalf("a hub without a certificate opened a listener: %s", srv.log.joined())
+		t.Fatalf("a hub whose certificate is ACME's to obtain opened a listener: %s", srv.log.joined())
 	}
 	if !strings.Contains(srv.log.joined(), "certificate") {
 		t.Fatalf("no line names the missing certificate: %s", srv.log.joined())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "pki")); err == nil {
+		t.Fatalf("the local CA stood in for an ACME setup: %s", srv.log.joined())
 	}
 	if code, _, _ := srv.get(t, "/health", nil); code != 200 {
 		t.Fatalf("loopback /health = %d, want 200", code)

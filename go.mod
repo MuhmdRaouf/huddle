@@ -12,6 +12,7 @@ require (
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/go-webauthn/webauthn v0.16.4
 	github.com/mdp/qrterminal/v3 v3.2.1
+	github.com/smallstep/truststore v0.13.0
 	modernc.org/sqlite v1.60.1
 )
 
@@ -237,6 +238,7 @@ require (
 	gopkg.in/ns1/ns1-go.v2 v2.17.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	howett.net/plist v1.0.0 // indirect
 	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect

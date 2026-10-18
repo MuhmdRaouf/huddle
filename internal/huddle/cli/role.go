@@ -17,6 +17,7 @@ import (
 	"strconv"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
 )
 
 // hubNameRe is the shape a hub's own name takes: a domain-style word, never a bare address — a
@@ -91,18 +92,45 @@ func Role(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 		fmt.Fprintf(stderr, "huddle: %v\n", err)
 		return 1
 	}
-	roleLines(cfg, home.Home{Root: root}, stdout)
+	roleLines(cfg, home.Home{Root: root}, w, stdout)
 	return 0
 }
 
+// localCAServes answers whether the hub listener falls to the local CA: no imported pair stands
+// and no ACME setup is written — the choice the listener itself makes.
+func localCAServes(cfg home.Config, h home.Home) bool {
+	if _, imported := home.ImportedName(h); imported {
+		return false
+	}
+	return cfg.Cert.DNSProvider == ""
+}
+
+// listenPort answers the port a listen address names, or none.
+func listenPort(listen string) string {
+	if _, port, err := net.SplitHostPort(listen); err == nil {
+		return port
+	}
+	return ""
+}
+
 // roleLines says what the machine now is and what the role still needs: one line of state, one
-// of what the owner does next.
-func roleLines(cfg home.Config, h home.Home, stdout io.Writer) {
+// of what the owner does next. A hub the local CA serves adds the trust line when no machine
+// vouches for the root yet — trust itself is never run here: it writes outside the home, and
+// the OS asks for the password itself.
+func roleLines(cfg home.Config, h home.Home, w *World, stdout io.Writer) {
 	switch cfg.Role {
 	case "hub":
 		fmt.Fprintf(stdout, "role hub: paired devices and satellites answer on %s, as %s\n",
 			cfg.Hub.Listen, cfg.Hub.Host)
 		fmt.Fprintf(stdout, "restart huddle for the role to take effect; the listener serves the certificate in %s\n", h.TLS())
+		if localCAServes(cfg, h) {
+			authority := pki.New(h.PKI(), pki.Options{})
+			root, err := authority.ReadRoot()
+			if err != nil || !pki.TrustedBy(w.systemPool(), root) {
+				fmt.Fprintf(stdout, "run `huddle trust` once so browsers accept https://%s\n",
+					net.JoinHostPort(cfg.Hub.Host, listenPort(cfg.Hub.Listen)))
+			}
+		}
 	case "satellite":
 		fmt.Fprintf(stdout, "role satellite: this machine reaches the hub at %s and listens on loopback only\n", cfg.Hub.URL)
 		fmt.Fprintln(stdout, "restart huddle for the role to take effect")

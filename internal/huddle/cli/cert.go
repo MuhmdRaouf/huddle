@@ -6,8 +6,11 @@ package cli
 // chat, never printed) and kept in the keystore under `dns:<provider>`, and the server renews
 // the certificate 30 days before expiry on its own. `--import` instead installs a pair the owner
 // already holds (mkcert's, a company CA's) for the hub's own name: no issuer stands behind it,
-// so it is never renewed — the log says when it runs out. A machine whose config names no hub
-// host has nothing to certify, so that shape is refused before anything is typed.
+// so it is never renewed — the log says when it runs out. With no flag at all the word says
+// which certificate is in use: the imported pair, the ACME one, or the local CA's leaf, with
+// its names, its expiry and, for the local CA, whether this machine trusts the root. A machine
+// whose config names no hub host has nothing to certify, so that shape is refused before
+// anything is typed.
 
 import (
 	"context"
@@ -17,24 +20,31 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
 )
 
-// certUsage is the two lines every wrong shape answers.
-const certUsage = "usage: huddle cert --provider <name>   (the DNS provider that answers the DNS-01 challenge, as cloudflare or digitalocean)\n" +
+// certUsage is the lines every wrong shape answers.
+const certUsage = "usage: huddle cert   (the certificate in use: where from, for which names, until when)\n" +
+	"       huddle cert --provider <name>   (the DNS provider that answers the DNS-01 challenge, as cloudflare or digitalocean)\n" +
 	"       huddle cert --import <cert.pem> <key.pem>   (a pair you already hold, as mkcert's or a company CA's)"
 
 // certNoHost is the one line both paths answer on a machine whose config names no hub host.
 const certNoHost = "huddle: no hub name to certify — huddle role hub --listen <addr:port> --host <name> writes it first"
 
-// Cert obtains the hub's certificate over DNS-01 and stores the provider's token, or installs a
-// pair the owner already holds. Exit: 0 the certificate is in tls/, 1 the issuer refused or the
-// pair is refused, 2 a wrong line or a machine with no hub name.
+// Cert obtains the hub's certificate over DNS-01 and stores the provider's token, installs a
+// pair the owner already holds, or — with no flag at all — says which certificate the hub serves:
+// the imported pair, the ACME one, or the local CA's leaf, with its names and expiry and, for the
+// local CA, whether this machine trusts the root. Exit: 0 the certificate is in tls/ or the
+// status is said, 1 the issuer or the pair is refused, 2 a wrong line or a machine with no hub
+// name.
 func Cert(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer) int {
 	root := Home(ctx, w)
 	if root == "" {
@@ -54,8 +64,11 @@ func Cert(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 	}
 	provider, hasProvider := opt.text("provider")
 	if !hasProvider {
-		fmt.Fprintln(stderr, certUsage)
-		return 2
+		if opt.has("provider") { // given without its name
+			fmt.Fprintln(stderr, certUsage)
+			return 2
+		}
+		return certStatus(w, root, stdout, stderr)
 	}
 	if !w.dnsKnown(provider) {
 		fmt.Fprintf(stderr, "huddle: unknown DNS provider %q — the issuer knows its providers by name, as cloudflare or digitalocean\n", provider)
@@ -118,6 +131,64 @@ func Cert(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 	}
 	fmt.Fprintf(stdout, "certificate for %s in %s, expires %s\n", cfg.Hub.Host, h.TLS(), expiry.Format(time.DateOnly))
 	fmt.Fprintln(stdout, "the hub listener serves it (huddle up, or the service); the server renews it 30 days before expiry")
+	return 0
+}
+
+// certStatus says which certificate the hub serves and from where it came. The choice is the
+// listener's own: an imported pair over ACME over the local CA. Exit: 0 the status is said, 1
+// the standing pair cannot be read, 2 a machine with no hub name.
+func certStatus(w *World, root string, stdout, stderr io.Writer) int {
+	h := home.Home{Root: root}
+	cfg, err := home.LoadConfig(h)
+	if err != nil {
+		fmt.Fprintf(stderr, "huddle: %v\n", err)
+		return 1
+	}
+	if cfg.Hub.Host == "" {
+		fmt.Fprintln(stderr, certNoHost)
+		return 2
+	}
+	_, imported := home.ImportedName(h)
+	switch {
+	case imported:
+		expiry, err := home.CertificateExpiry(h)
+		if err != nil {
+			fmt.Fprintf(stderr, "huddle: the imported pair in %s cannot be read: %v (huddle cert --import lays a fresh one)\n", h.TLS(), err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "certificate for %s: an imported pair in %s, expires %s\n", cfg.Hub.Host, h.TLS(), expiry.Format(time.DateOnly))
+		fmt.Fprintln(stdout, "an imported pair is never renewed — import a fresh one before it expires")
+	case cfg.Cert.DNSProvider != "":
+		expiry, err := home.CertificateExpiry(h)
+		if err != nil {
+			fmt.Fprintf(stdout, "no certificate for %s yet — huddle cert --provider %s obtains the first one\n", cfg.Hub.Host, cfg.Cert.DNSProvider)
+			return 0
+		}
+		fmt.Fprintf(stdout, "certificate for %s: %s over DNS-01, expires %s\n", cfg.Hub.Host, cfg.Cert.DNSProvider, expiry.Format(time.DateOnly))
+		fmt.Fprintln(stdout, "the server renews it 30 days before expiry")
+	default:
+		authority := pki.New(h.PKI(), pki.Options{})
+		fmt.Fprintf(stdout, "certificate for %s: huddle's local CA — a 12-hour leaf for %s, renewed on its own\n",
+			cfg.Hub.Host, strings.Join(pki.HubLeafNames(cfg.Hub.Host), ", "))
+		cert, err := authority.ReadRoot()
+		if err != nil {
+			fmt.Fprintf(stdout, "no root yet: the hub listener creates it on first start, huddle trust creates and installs it now\n")
+			return 0
+		}
+		if pki.TrustedBy(w.systemPool(), cert) {
+			fmt.Fprintf(stdout, "the root in %s is trusted by this machine (expires %s)\n", authority.RootFile(), cert.NotAfter.Format(time.DateOnly))
+			return 0
+		}
+		port := ""
+		if _, named, err := net.SplitHostPort(cfg.Hub.Listen); err == nil {
+			port = named
+		}
+		address := cfg.Hub.Host
+		if port != "" {
+			address = net.JoinHostPort(cfg.Hub.Host, port)
+		}
+		fmt.Fprintf(stdout, "the root in %s is not trusted yet — run huddle trust once so browsers accept https://%s\n", authority.RootFile(), address)
+	}
 	return 0
 }
 

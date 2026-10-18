@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
+
+	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
 )
 
 // huddleBin is the huddle binary TestMain builds once: the servers the tests start run it with
@@ -19,6 +21,8 @@ import (
 var huddleBin string
 
 func TestMain(m *testing.M) {
+	// the binaries these tests build and run inherit this, so none reaches a real trust store
+	_ = os.Setenv(pki.StoreOffEnv, "1")
 	dir, err := os.MkdirTemp("", "huddle-cli-bin-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

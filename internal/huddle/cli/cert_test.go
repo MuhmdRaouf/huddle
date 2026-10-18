@@ -433,11 +433,12 @@ func TestCertRefusesEveryUsageShapeBeforeAnythingIsTyped(t *testing.T) {
 		world *certWorld
 		argv  []string
 	}{
-		{"no provider", hubHome(t), []string{"cert"}},
 		{"a provider the issuer does not know", hubHome(t), []string{"cert", "--provider", "nope"}},
 		{"a provider that is not a name", hubHome(t), []string{"cert", "--provider", "not a name"}},
+		{"a provider given without its name", hubHome(t), []string{"cert", "--provider"}},
 		{"a second word", hubHome(t), []string{"cert", "extra", "--provider", "fakeprov"}},
 		{"no hub name to certify", soloHome(t), []string{"cert", "--provider", "fakeprov"}},
+		{"no hub name to say the status of", soloHome(t), []string{"cert"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

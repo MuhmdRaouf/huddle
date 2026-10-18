@@ -287,7 +287,7 @@ func TestAlonePairNeedsAServer(t *testing.T) {
 // TestAloneWordsAreTheirOwnTable pins the binary's own words: every one the alone table holds is
 // dispatched by it, and none of them collides with a plugin entry.
 func TestAloneWordsAreTheirOwnTable(t *testing.T) {
-	want := []string{"cert", "devices", "down", "help", "-h", "open", "pair", "role", "service", "status", "up"}
+	want := []string{"cert", "devices", "down", "help", "-h", "open", "pair", "role", "service", "status", "trust", "untrust", "up"}
 	if len(aloneWords) != len(want) {
 		t.Fatalf("aloneWords has %v, want exactly %v", keysOfAlone(), want)
 	}

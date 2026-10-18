@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"crypto/x509"
 	"io"
 	"os"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
 )
 
 // World is where one command runs. A nil World is the process's own.
@@ -40,6 +42,13 @@ type World struct {
 	// CertIssue answers the issuer for a DNS provider, its token and the path the ACME account
 	// key is kept at; nil takes the real one, which talks to Let's Encrypt.
 	CertIssue func(provider, token, accountKey string) (home.ACME, error)
+	// TrustStore answers the store the trust words reach; nil takes the machine's real stores
+	// (the OS's and Firefox's, through smallstep/truststore). Tests answer from a fake so no
+	// real trust store is ever touched.
+	TrustStore func() pki.Store
+	// SystemPool answers the certificate pool a root's trust is checked against; nil takes the
+	// system pool — a read, never a write.
+	SystemPool func() *x509.CertPool
 }
 
 // stdin is the world's input.
@@ -72,6 +81,26 @@ func (w *World) certIssue(provider, token, accountKey string) (home.ACME, error)
 		return w.CertIssue(provider, token, accountKey)
 	}
 	return outside.NewACME(provider, token, accountKey)
+}
+
+// trustStore answers the store the trust words reach.
+func (w *World) trustStore() pki.Store {
+	if w != nil && w.TrustStore != nil {
+		return w.TrustStore()
+	}
+	return pki.SystemStore{}
+}
+
+// systemPool answers the pool a root's trust is checked against.
+func (w *World) systemPool() *x509.CertPool {
+	if w != nil && w.SystemPool != nil {
+		return w.SystemPool()
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		return nil
+	}
+	return pool
 }
 
 // getenv reads one variable of the world.
@@ -132,15 +161,17 @@ func (w *World) WithVar(key, value string) *World {
 			}
 			return base(k)
 		},
-		Environ:   w.environ,
-		Dir:       w.Dir,
-		Now:       w.Now,
-		Proc:      w.Proc,
-		Bin:       w.Bin,
-		Stdin:     w.Stdin,
-		Secrets:   w.Secrets,
-		DNSKnown:  w.DNSKnown,
-		CertIssue: w.CertIssue,
+		Environ:    w.environ,
+		Dir:        w.Dir,
+		Now:        w.Now,
+		Proc:       w.Proc,
+		Bin:        w.Bin,
+		Stdin:      w.Stdin,
+		Secrets:    w.Secrets,
+		DNSKnown:   w.DNSKnown,
+		CertIssue:  w.CertIssue,
+		TrustStore: w.TrustStore,
+		SystemPool: w.SystemPool,
 	}
 }
 

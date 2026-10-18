@@ -23,6 +23,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
 )
 
 // hubSignedOut is what a browser with no pairing is told on the hub listener: the passkey is the
@@ -78,7 +79,7 @@ func (s *server) applyRole(ctx context.Context, handler http.HandlerFunc) {
 				"huddle: role hub without hub.listen — the hub answers loopback only (huddle role hub --listen <addr:port> --host <name>)\n")
 			return
 		}
-		s.startHubListener(cfg, handler)
+		s.startHubListener(ctx, cfg, handler)
 	default: // solo, satellite and anything else a newer release may write: loopback only
 		if cfg.Hub.Listen != "" {
 			fmt.Fprintf(s.o.Stdout, "huddle: role %s: hub.listen %s is ignored — only the hub role listens beyond loopback\n",
@@ -116,17 +117,40 @@ func (s *server) startRenewal(ctx context.Context, cfg home.Config) {
 	})
 }
 
-// startHubListener binds hub.listen and serves TLS from the home's tls/ on it, behind the same
-// request guards plus the hub gate. Any failure answers one line and leaves the server as it was.
-func (s *server) startHubListener(cfg home.Config, handler http.HandlerFunc) {
+// startHubListener binds hub.listen and serves TLS on it, behind the same request guards plus
+// the hub gate. The certificate is whichever stands first: the pair in the home's tls/ (an
+// imported pair, or one ACME issued — both belong to their owner and are never replaced), else
+// an ACME setup whose first certificate `huddle cert` still has to obtain, else a leaf from
+// huddle's own local CA, issued at once and renewed in the background. Any failure answers one
+// line and leaves the server as it was.
+func (s *server) startHubListener(ctx context.Context, cfg home.Config, handler http.HandlerFunc) {
 	tlsDir := home.Home{Root: s.o.Home}.TLS()
-	cert, err := tls.LoadX509KeyPair(
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	cert, pairErr := tls.LoadX509KeyPair(
 		filepath.Join(tlsDir, "cert.pem"), filepath.Join(tlsDir, "key.pem"))
-	if err != nil {
+	switch {
+	case pairErr == nil:
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	case cfg.Cert.DNSProvider != "" || importedStands(s.o.Home):
+		// a certificate this word never stands in for: an ACME setup waits for its first one,
+		// an imported pair for the owner's fresh import
 		fmt.Fprintf(s.o.Stdout,
 			"huddle: the hub listener needs a certificate in %s — the hub answers loopback only: %v\n",
-			tlsDir, err)
+			tlsDir, pairErr)
 		return
+	default:
+		h := home.Home{Root: s.o.Home}
+		leaf, err := pki.NewLeaf(pki.New(h.PKI(), pki.Options{}), pki.HubLeafNames(cfg.Hub.Host))
+		if err != nil {
+			fmt.Fprintf(s.o.Stdout,
+				"huddle: the local CA in %s could not issue the hub's certificate — the hub answers loopback only: %v\n",
+				h.PKI(), err)
+			return
+		}
+		tlsConfig.GetCertificate = leaf.GetCertificate
+		go leaf.KeepFresh(ctx, pki.KeepFreshOptions{
+			Log: func(line string) { fmt.Fprintln(s.o.Stdout, line) },
+		})
 	}
 	listener, err := net.Listen("tcp", cfg.Hub.Listen)
 	if err != nil {
@@ -138,7 +162,7 @@ func (s *server) startHubListener(cfg home.Config, handler http.HandlerFunc) {
 	s.hubListener = listener
 	s.hubSrv = &http.Server{
 		Handler:           s.guard(s.hubGate(handler)),
-		TLSConfig:         &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12},
+		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: 60 * time.Second,
 		IdleTimeout:       5 * time.Second,
 	}
@@ -152,6 +176,13 @@ func (s *server) startHubListener(cfg home.Config, handler http.HandlerFunc) {
 			fmt.Fprintf(s.o.Stdout, "huddle: the hub listener ended: %v\n", err)
 		}
 	}()
+}
+
+// importedStands answers whether the home's tls/ holds the import marker: a pair the owner laid
+// by hand, whose absence on disk is the owner's to fix — never a silent switch to the local CA.
+func importedStands(root string) bool {
+	_, ok := home.ImportedName(home.Home{Root: root})
+	return ok
 }
 
 // hubListenHosts answers the Host spellings the hub listener's own address makes legitimate: the

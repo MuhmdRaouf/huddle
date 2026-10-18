@@ -41,6 +41,8 @@ var aloneWords = map[string]aloneEntry{
 	"devices": devicesAlone,
 	"role":    roleAlone,
 	"cert":    certAlone,
+	"trust":   trustAlone,
+	"untrust": untrustAlone,
 	"help":    helpAlone,
 	"-h":      helpAlone,
 }
@@ -173,6 +175,16 @@ func certAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr 
 	return cli.Cert(ctx, w, argv, stdout, stderr)
 }
 
+// trustAlone and untrustAlone put huddle's local CA root into this machine's trust stores and
+// take it out: terminal words, because the OS asks for the password itself.
+func trustAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr io.Writer) int {
+	return cli.Trust(ctx, w, argv, stdout, stderr)
+}
+
+func untrustAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr io.Writer) int {
+	return cli.Untrust(ctx, w, argv, stdout, stderr)
+}
+
 // helpAlone lists the binary's entries, one line each, then the channel CLI's own list.
 func helpAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr io.Writer) int {
 	for _, line := range aloneHelpLines {
@@ -202,6 +214,10 @@ var aloneHelpLines = []string{
 	"                           with the echo off; the server renews it 30 days before expiry)",
 	"  huddle cert --import c k install a pair you already hold (mkcert, a company CA) for the hub's",
 	"                           name; it is never renewed — import a fresh one before it expires",
+	"  huddle cert              say which certificate the hub serves — imported, ACME, or the local",
+	"                           CA's leaf — and whether this machine trusts its root",
+	"  huddle trust             install the local CA's root so browsers accept the hub's https address",
+	"                           (the OS asks for your password); huddle untrust removes it again",
 	"  huddle serve             run the server in the foreground (the entry huddle up spawns)",
 	"  huddle mcp               the stdio MCP bridge a Claude session runs",
 	"  huddle hook <name>       one plugin hook entry: session-start, approve, listen, permit, stop",
