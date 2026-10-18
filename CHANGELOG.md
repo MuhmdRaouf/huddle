@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.0.1 (2026-10-17)
+## 0.0.1 (2026-10-18)
 
 First release: one local hub where AI coding sessions work as a team, from Claude Code or any agent that speaks
 MCP. One static binary, `huddle` — `huddle radar …` and `huddle kanban …` run the dashboard's and the board's
