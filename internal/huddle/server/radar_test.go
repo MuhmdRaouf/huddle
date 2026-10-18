@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -102,6 +103,35 @@ func TestRadarTabServed(t *testing.T) {
 			map[string]string{"Host": "evil.example"})
 		if err != nil || code != 421 {
 			t.Fatalf("a foreign host through the tab = %d (%v), want the guard's 421", code, err)
+		}
+	})
+
+	t.Run("the tab takes the writes this server's own guard takes", func(t *testing.T) {
+		hub := startServer(t, map[string]string{"HUDDLE_HOSTS": "hub.example.test:8443"})
+		budgets := `{"budgets":[{"id":"a","scope":"total","period":"week","limitUsd":3,"action":"warn"}]}`
+		write := func(origin string) int {
+			code, _, _, err := hub.request(context.Background(), http.MethodPut,
+				"/api/radar/api/budgets", budgets, map[string]string{
+					"content-type":   "application/json",
+					"Origin":         origin,
+					"x-huddle-token": hub.token,
+				})
+			if err != nil {
+				t.Fatalf("the budget write from %s: %v", origin, err)
+			}
+			return code
+		}
+		// the host HUDDLE_HOSTS names is one this server answers, so its own write guard takes
+		// the origin spelled with it — and the tab takes that write too
+		if code := write("https://hub.example.test:8443"); code != 200 {
+			t.Fatalf("the write from the named host's origin = %d, want 200", code)
+		}
+		if code := write("https://evil.example"); code != 403 {
+			t.Fatalf("the write from a foreign origin = %d, want 403", code)
+		}
+		// the loopback origin radar would take alone still passes: the server's own list has it
+		if code := write(fmt.Sprintf("http://127.0.0.1:%d", hub.port)); code != 200 {
+			t.Fatalf("the write from the loopback origin = %d, want 200", code)
 		}
 	})
 

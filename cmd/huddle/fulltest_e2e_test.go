@@ -19,11 +19,13 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"math"
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -34,8 +36,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/webauthntest"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
@@ -512,6 +517,57 @@ func TestFullScenarioOnALocalDevName(t *testing.T) {
 		t.Fatalf("the usage report carries no day %s: %s", today, body)
 	})
 
+	step("radar_writes", func(t *testing.T) {
+		// the owner's phone pairs over TLS: the passkey ceremony is the one way the hub
+		// listener admits a browser
+		env := machineEnv(hubRoot, hubUser, binHome, pluginCopy, hubProject, release.URL, nil)
+		code, stdout, stderr := runSh(t, 60*time.Second, env, hubProject,
+			`sh "${CLAUDE_PLUGIN_ROOT}/bin/huddle" pair --name fulltest-phone`, "")
+		if code != 0 {
+			t.Fatalf("huddle pair = %d, stdout %q, stderr %q", code, stdout, stderr)
+		}
+		link := regexp.MustCompile(regexp.QuoteMeta(hubBase()) + `/pair#(\S+)`).FindStringSubmatch(stdout)
+		if link == nil {
+			t.Fatalf("no pairing link for %s in the pair output: %q", hubBase(), stdout)
+		}
+		phone := webauthntest.NewSoftKey(t)
+		browser := newTLSBrowser(t, caPEM, fullHubName, tlsPort)
+		code, body := tlsBrowserSend(t, browser, http.MethodPost, "/api/pair/begin", "",
+			fmt.Sprintf(`{"token":%q,"name":"fulltest-phone"}`, link[1]))
+		if code != 200 {
+			t.Fatalf("the pair begin = %d: %s", code, body)
+		}
+		options, _ := parseBegin(t, body)
+		answer := phone.Create(t, options, hubBase())
+		code, body = tlsBrowserSend(t, browser, http.MethodPost, "/api/pair/finish", "",
+			fmt.Sprintf(`{"token":%q,"response":%s}`, link[1], answer))
+		if code != 200 {
+			t.Fatalf("the pair finish = %d: %s", code, body)
+		}
+		// the TLS listener sets the session cookie under its __Host- name
+		if cookie := browser.cookie(t, auth.PairHostCookie); cookie == "" {
+			t.Fatal("the pairing over TLS earned no session cookie")
+		}
+
+		// the paired phone saves a budget through the Radar tab, its Origin the hub's own name
+		budgets := `{"budgets":[{"id":"fulltest","scope":"total","period":"week","limitUsd":3,"action":"warn"}]}`
+		code, body = tlsBrowserSend(t, browser, http.MethodPut, "/api/radar/api/budgets", hubBase(), budgets)
+		if code != 200 {
+			t.Fatalf("the phone's budget save = %d: %s", code, body)
+		}
+		// a foreign Origin never writes, here as anywhere else
+		code, body = tlsBrowserSend(t, browser, http.MethodPut, "/api/radar/api/budgets",
+			"https://evil.example", budgets)
+		if code != 403 {
+			t.Fatalf("the foreign origin's budget save = %d: %s, want 403", code, body)
+		}
+		// the save landed: the budgets the tab holds name it
+		code, body = tlsFetch(t, hubTLS, hubBase(), "/api/radar/api/budgets", "Bearer "+credA)
+		if code != 200 || !strings.Contains(body, `"fulltest"`) {
+			t.Fatalf("the saved budgets = %d: %s, want the phone's budget listed", code, body)
+		}
+	})
+
 	step("local_ca_hub", func(t *testing.T) {
 		const secondName = "hub2.example.test"
 		secondPort := freeLoopPort(t)
@@ -694,6 +750,45 @@ func tlsFetch(t *testing.T, client *http.Client, base, path, bearer string) (int
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err.Error()
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(raw)
+}
+
+// newTLSBrowser answers the paired phone's browser over the hub's TLS listener: the same
+// mapped dialer and root tlsFetch trusts, with a cookie jar the pairing fills.
+func newTLSBrowser(t *testing.T, rootPEM []byte, name string, port int) *browserClient {
+	t.Helper()
+	client := mappedClient(t, rootPEM, name, port)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("make the cookie jar: %v", err)
+	}
+	client.Jar = jar
+	return &browserClient{
+		base:   "https://" + net.JoinHostPort(name, strconv.Itoa(port)),
+		client: client,
+	}
+}
+
+// tlsBrowserSend sends one request the phone's browser sends: JSON and the action header the
+// guard demands on a write, the jar's cookies along, and the Origin a browser names on one —
+// empty names none.
+func tlsBrowserSend(t *testing.T, browser *browserClient, method, path, origin, body string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(method, browser.base+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("build %s %s: %v", method, path, err)
+	}
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set(server.ActionHeader, path)
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
+	resp, err := browser.client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)

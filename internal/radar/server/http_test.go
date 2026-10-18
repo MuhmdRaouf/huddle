@@ -681,6 +681,56 @@ func TestHostAllowed(t *testing.T) {
 	})
 }
 
+func TestOriginAllowed(t *testing.T) {
+	budgets := `{"budgets":[{"id":"a","scope":"total","period":"week","limitUsd":3,"action":"warn"}]}`
+	writeFrom := func(t *testing.T, port int, origin string) int {
+		t.Helper()
+		return call(t, port, "PUT", "/api/budgets", budgets, map[string]string{
+			"Content-Type": "application/json",
+			"Origin":       origin,
+		}).status
+	}
+
+	t.Run("the embedding server's predicate is the whole Origin check on writes", func(t *testing.T) {
+		fresh := seededInsights(t)
+		const hub = "https://hub.example.test:8443"
+		_, port := serve(t, HttpOptions{
+			Store:         fresh.store,
+			Version:       "0.0.1",
+			StartedAt:     1,
+			Insights:      fresh.insights,
+			OriginAllowed: func(origin string) bool { return origin == hub },
+		})
+		if code := writeFrom(t, port, hub); code != 200 {
+			t.Errorf("the hub origin's write = %d, want 200", code)
+		}
+		if held := fresh.insights.Budgets(); len(held) != 1 {
+			t.Errorf("the saved budgets hold %d entries, want 1", len(held))
+		}
+		// the predicate replaces the rule, so radar's own loopback spelling passes only when
+		// the embedding server names it too
+		if code := writeFrom(t, port, fmt.Sprintf("http://127.0.0.1:%d", port)); code != 403 {
+			t.Errorf("a loopback origin the predicate does not name = %d, want 403", code)
+		}
+		if code := writeFrom(t, port, "https://evil.example"); code != 403 {
+			t.Errorf("a foreign origin = %d, want 403", code)
+		}
+	})
+
+	t.Run("standalone radar keeps its loopback-only Origin rule", func(t *testing.T) {
+		fresh := seededInsights(t)
+		_, port := serve(t, HttpOptions{
+			Store:     fresh.store,
+			Version:   "0.0.1",
+			StartedAt: 1,
+			Insights:  fresh.insights,
+		})
+		if code := writeFrom(t, port, "https://hub.example.test:8443"); code != 403 {
+			t.Errorf("a non-loopback origin on standalone radar = %d, want 403", code)
+		}
+	})
+}
+
 func TestWriteAllowedBoundary(t *testing.T) {
 	t.Run("takes JSON from our own origin only", func(t *testing.T) {
 		for _, table := range []struct {

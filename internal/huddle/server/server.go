@@ -618,7 +618,10 @@ func Serve(ctx context.Context, o Options) error {
 			// spellings join the loopback ones when that listener binds, so the Radar tab
 			// serves the hub's own name too
 			HostAllowed: s.hostAllowed,
-			Log:         func(line string) { fmt.Fprintln(o.Stdout, line) },
+			// and it takes the writes this server's own guard takes: the same host list,
+			// read the way the guard reads an Origin
+			OriginAllowed: func(origin string) bool { return s.hostAllowed(originHost(origin)) },
+			Log:           func(line string) { fmt.Fprintln(o.Stdout, line) },
 		})
 		s.hub.Radar.Source = s.radar
 		// only radar's own paths reach its mux: the mux cleans paths, and huddle's routes keep

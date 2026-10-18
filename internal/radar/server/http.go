@@ -107,6 +107,10 @@ type HttpOptions struct {
 	// listeners it serves this server's routes on beyond loopback. Nil keeps radar's
 	// loopback-only rule.
 	HostAllowed func(host string) bool
+	// OriginAllowed, when set, is the whole Origin check on writes: the embedding server's
+	// own, naming the origins its write guard accepts beyond loopback. Nil keeps radar's
+	// loopback-only rule.
+	OriginAllowed func(origin string) bool
 }
 
 // FlightTracker counts the requests a shutdown must let finish. An SSE response is not one
@@ -175,10 +179,11 @@ type HttpServer struct {
 
 	// files is the dashboard's built files, resolved once at creation: RADAR_PUBLIC_DIR
 	// names a directory of them; the embedded build serves otherwise.
-	files   fs.FS
-	port    func() int64
-	hostOK  func(string) bool
-	flights *FlightTracker
+	files    fs.FS
+	port     func() int64
+	hostOK   func(string) bool
+	originOK func(string) bool
+	flights  *FlightTracker
 
 	streamsMu sync.Mutex
 	streams   map[*streamConn]struct{}
@@ -199,14 +204,15 @@ func CreateHttpServer(options HttpOptions) *HttpServer {
 		files = os.DirFS(dir)
 	}
 	h := &HttpServer{
-		Server:  &http.Server{},
-		options: options,
-		files:   files,
-		port:    func() int64 { return port },
-		hostOK:  options.HostAllowed,
-		flights: CreateFlightTracker(),
-		streams: map[*streamConn]struct{}{},
-		closed:  make(chan struct{}),
+		Server:   &http.Server{},
+		options:  options,
+		files:    files,
+		port:     func() int64 { return port },
+		hostOK:   options.HostAllowed,
+		originOK: options.OriginAllowed,
+		flights:  CreateFlightTracker(),
+		streams:  map[*streamConn]struct{}{},
+		closed:   make(chan struct{}),
 	}
 	if options.Watcher != nil {
 		go h.watchIngest()
@@ -252,6 +258,19 @@ func (h *HttpServer) hostAllowed(host string) bool {
 	return HostAllowed(host, int(h.port()))
 }
 
+// originAllowed answers whether one Origin header names a writer this server takes. The
+// embedding server's predicate, when one was given, is the whole check; nil keeps radar's
+// loopback-only rule, read against the port live so a request racing SetPort is still checked
+// against the eventual value.
+func (h *HttpServer) originAllowed(origin string) bool {
+	if h.originOK != nil {
+		return h.originOK(origin)
+	}
+	ours := fmt.Sprintf("http://127.0.0.1:%d", h.port())
+	local := fmt.Sprintf("http://localhost:%d", h.port())
+	return origin == ours || origin == local
+}
+
 // handle routes one request.
 func (h *HttpServer) handle(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.EscapedPath()
@@ -278,7 +297,7 @@ func (h *HttpServer) writeRoute(w http.ResponseWriter, r *http.Request, path str
 		sendJSON(w, 405, errorBody{Error: "method not allowed"})
 		return
 	}
-	if !WriteAllowed(r.Header, int(h.port())) {
+	if !writeAllowed(r.Header, h.originAllowed) {
 		sendJSON(w, 403, errorBody{Error: "writes take application/json from the dashboard only"})
 		return
 	}
@@ -672,17 +691,22 @@ func sendJSON(w http.ResponseWriter, status int, body any) {
 // itself — JSON (a cross-site form or a "simple" fetch cannot send that without a preflight
 // we never answer), and when the browser says where it came from, our own origin.
 func WriteAllowed(header http.Header, port int) bool {
+	return writeAllowed(header, func(origin string) bool {
+		ours := fmt.Sprintf("http://127.0.0.1:%d", port)
+		local := fmt.Sprintf("http://localhost:%d", port)
+		return origin == ours || origin == local
+	})
+}
+
+// writeAllowed is the write guard with the Origin check plugged in: standalone radar takes
+// its loopback spellings, the embedding server names the origins its own guard takes.
+func writeAllowed(header http.Header, originOK func(origin string) bool) bool {
 	contentType := joinedHeader(header, "Content-Type")
 	if !strings.HasPrefix(strings.ToLower(contentType), "application/json") {
 		return false
 	}
-	if len(header.Values("Origin")) > 0 {
-		origin := joinedHeader(header, "Origin")
-		ours := fmt.Sprintf("http://127.0.0.1:%d", port)
-		local := fmt.Sprintf("http://localhost:%d", port)
-		if origin != ours && origin != local {
-			return false
-		}
+	if len(header.Values("Origin")) > 0 && !originOK(joinedHeader(header, "Origin")) {
+		return false
 	}
 	if len(header.Values("Sec-Fetch-Site")) > 0 {
 		switch joinedHeader(header, "Sec-Fetch-Site") {
