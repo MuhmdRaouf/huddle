@@ -173,6 +173,24 @@ Already hold a pair — from mkcert or a company CA? `huddle cert --import cert.
 the hub serves that instead (`huddle cert` says which one is in use). An imported pair is never renewed:
 the hub's log names its expiry once a day from 30 days out, so import a fresh one in time.
 
+## Use Huddle on your phone
+
+The dashboard is a PWA that signs in with a passkey, so a phone works as the needs-you screen:
+
+1. Trust the root. Run `huddle trust --phone` on the computer and scan the QR it prints with the
+   phone's camera. The page it opens downloads the root and shows the exact taps for iOS and
+   Android, and the fingerprint to compare with the terminal's. On the computer itself, run
+   `huddle trust` once (the OS asks for your password); the phone installs its copy by hand, from
+   Settings → Profile Downloaded on iOS or Settings → Security → Install a certificate on Android.
+2. Install the PWA. Open the hub's address in the phone's browser and add it to the home screen.
+3. Sign in with the code. Run `huddle pair --name phone` on the computer, scan that QR, check the
+   code matches and create the passkey.
+4. Turn on Face ID (or the Android equivalent) when the browser offers to use it for the passkey:
+   one glance answers an approval.
+
+`huddle trust --phone` serves for 10 minutes and installs nothing on the computer; the dashboard's
+Settings → Devices has an "Add a phone" button that shows the same QR.
+
 ## Platforms
 
 macOS and Linux, on amd64 and arm64. One static binary, downloaded and checked against pinned SHA-256 digests on first

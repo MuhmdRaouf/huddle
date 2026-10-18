@@ -14,6 +14,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/phone"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
 )
 
@@ -49,6 +50,9 @@ type World struct {
 	// SystemPool answers the certificate pool a root's trust is checked against; nil takes the
 	// system pool — a read, never a write.
 	SystemPool func() *x509.CertPool
+	// LanAddress answers this machine's address on the network a phone shares with it; nil
+	// walks the interfaces. Tests answer loopback so no test binds a real interface.
+	LanAddress func() string
 }
 
 // stdin is the world's input.
@@ -101,6 +105,14 @@ func (w *World) systemPool() *x509.CertPool {
 		return nil
 	}
 	return pool
+}
+
+// lanAddress answers the machine's address on the network a phone shares with it.
+func (w *World) lanAddress() string {
+	if w != nil && w.LanAddress != nil {
+		return w.LanAddress()
+	}
+	return phone.LANAddress()
 }
 
 // getenv reads one variable of the world.
@@ -172,6 +184,7 @@ func (w *World) WithVar(key, value string) *World {
 		CertIssue:  w.CertIssue,
 		TrustStore: w.TrustStore,
 		SystemPool: w.SystemPool,
+		LanAddress: w.LanAddress,
 	}
 }
 

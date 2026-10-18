@@ -14,6 +14,7 @@ require (
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/smallstep/truststore v0.13.0
 	modernc.org/sqlite v1.60.1
+	rsc.io/qr v0.2.0
 )
 
 require (
@@ -242,5 +243,4 @@ require (
 	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	rsc.io/qr v0.2.0 // indirect
 )

@@ -49,6 +49,68 @@ function RadarSettings(): JSX.Element {
 /** One paired device as the server lists it. */
 type DeviceRow = { name: string; added: string; seen: string };
 
+/** The phone guide the server's "Add a phone" started: where it answers and the root's
+ *  fingerprint, which the phone's page shows too. */
+type PhoneGuide = { url: string; fingerprint: string; expires_in: number };
+
+/** The "Add a phone" card: starts the guide the server serves (10 minutes, loopback-bound QR)
+ *  and shows its QR and the fingerprint to compare with the phone's page. */
+function AddAPhone(): JSX.Element {
+  const { api, toast } = useHuddle();
+  const [guide, setGuide] = useState<PhoneGuide | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const start = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const r = await api.api("/api/phone", { body: { action: "start" } });
+      setGuide(r as PhoneGuide);
+    } catch (e) {
+      toast(errText(e), { bad: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div class="mt-6 flex flex-col gap-1.5">
+      <h3 class="m-0 text-[15px] font-semibold">Add a phone</h3>
+      <p class="m-0 text-sm muted">
+        A phone trusts the hub's root once: it scans a QR this computer serves for 10 minutes, and the page it
+        opens walks the taps.
+      </p>
+      {guide ? (
+        <div class="flex flex-wrap items-start gap-4">
+          <img
+            data-phone-qr=""
+            src="/api/phone/qr.svg"
+            alt="QR code: the phone's trust guide"
+            width={160}
+            height={160}
+            class="size-40 shrink-0 rounded-lg bg-white p-2"
+          />
+          <div class="flex min-w-0 flex-col gap-1.5">
+            <code class="break-all font-mono text-xs">{guide.fingerprint}</code>
+            <span class="text-xs muted">
+              Scan with the phone's camera. The page it opens shows the same fingerprint — compare before
+              installing. The guide stops itself after 10 minutes.
+            </span>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          class="btn btn-sm btn-primary w-fit"
+          disabled={busy}
+          onClick={() => void start()}
+        >
+          {busy ? "Starting…" : "Add a phone"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** Settings › Devices (SPEC 7.3): every paired device with its ages, the removal that asks for
  *  the passkey when the server says step-up, and the `huddle pair` line that pairs the next
  *  device. A removed device's browser is signed out server-side by the removal itself. */
@@ -158,6 +220,7 @@ export function Devices(): JSX.Element {
           </button>
         </div>
       </div>
+      <AddAPhone />
     </section>
   );
 }

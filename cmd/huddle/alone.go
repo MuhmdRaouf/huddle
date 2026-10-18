@@ -13,10 +13,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
@@ -176,9 +178,12 @@ func certAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr 
 }
 
 // trustAlone and untrustAlone put huddle's local CA root into this machine's trust stores and
-// take it out: terminal words, because the OS asks for the password itself.
+// take it out: terminal words, because the OS asks for the password itself. trust --phone serves
+// its guide in the foreground for ten minutes, so the terminal's own interrupt ends it.
 func trustAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr io.Writer) int {
-	return cli.Trust(ctx, w, argv, stdout, stderr)
+	foreground, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	return cli.Trust(foreground, w, argv, stdout, stderr)
 }
 
 func untrustAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr io.Writer) int {
@@ -216,8 +221,10 @@ var aloneHelpLines = []string{
 	"                           name; it is never renewed — import a fresh one before it expires",
 	"  huddle cert              say which certificate the hub serves — imported, ACME, or the local",
 	"                           CA's leaf — and whether this machine trusts its root",
-	"  huddle trust             install the local CA's root so browsers accept the hub's https address",
-	"                           (the OS asks for your password); huddle untrust removes it again",
+	"  huddle trust [--phone]    install the local CA's root so browsers accept the hub's https address",
+	"                           (the OS asks for your password); huddle untrust removes it again;",
+	"                           --phone instead prints a QR the phone scans for the same root",
+	"                           (10 minutes, installs nothing here)",
 	"  huddle serve             run the server in the foreground (the entry huddle up spawns)",
 	"  huddle mcp               the stdio MCP bridge a Claude session runs",
 	"  huddle hook <name>       one plugin hook entry: session-start, approve, listen, permit, stop",

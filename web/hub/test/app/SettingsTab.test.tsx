@@ -161,4 +161,45 @@ describe("the devices section", () => {
     });
     expect(h.copy).toHaveBeenCalledWith("huddle pair");
   });
+
+  it("TestAddAPhoneStartsTheGuideAndShowsItsQR", async () => {
+    const h = mount([
+      { status: 200, body: { devices: [] } },
+      {
+        status: 200,
+        body: { url: "http://127.0.0.1:51111/", fingerprint: "AA:BB:CC", expires_in: 600 },
+      },
+    ]);
+    await waitFor(() => expect(screen.getByText("No devices paired yet.")).toBeDefined());
+    await act(async () => {
+      screen.getByRole("button", { name: "Add a phone" }).click();
+    });
+    await flush();
+    // the start names its action the way the server demands
+    const post = h.calls.find((c) => c.url === "/api/phone");
+    expect(post?.init?.method).toBe("POST");
+    expect(JSON.parse(post?.init?.body as string)).toEqual({ action: "start" });
+    // the QR the hub serves sits beside the fingerprint to compare
+    const qr = document.querySelector("img[data-phone-qr]");
+    expect(qr?.getAttribute("src")).toBe("/api/phone/qr.svg");
+    expect(qr?.getAttribute("alt")).toBe("QR code: the phone's trust guide");
+    expect(screen.getByText("AA:BB:CC")).toBeDefined();
+    expect(screen.getByText(/compare before installing/)).toBeDefined();
+  });
+
+  it("TestAddAPhoneSaysARefusedStart", async () => {
+    const h = mount([
+      { status: 200, body: { devices: [] } },
+      { status: 500, body: { error: "could not start the phone guide: no address" } },
+    ]);
+    await waitFor(() => expect(screen.getByText("No devices paired yet.")).toBeDefined());
+    await act(async () => {
+      screen.getByRole("button", { name: "Add a phone" }).click();
+    });
+    await flush();
+    expect(h.toast).toHaveBeenCalledWith("could not start the phone guide: no address", {
+      bad: true,
+    });
+    expect(document.querySelector("img[data-phone-qr]")).toBeNull();
+  });
 });

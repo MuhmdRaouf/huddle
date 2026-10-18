@@ -37,6 +37,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/kanbantab"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/phone"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/radartab"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/satellite"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/web"
@@ -286,6 +287,11 @@ type server struct {
 
 	hostsMu sync.Mutex
 	hosts   map[string]bool
+
+	// phoneMu guards phone: the guide the owner's "Add a phone" starts (phone.go), one at a
+	// time; nil while none serves.
+	phoneMu sync.Mutex
+	phone   *phone.Helper
 
 	flights *flightTracker
 
@@ -672,6 +678,7 @@ func Serve(ctx context.Context, o Options) error {
 		s.closeStreams()                                // live streams end
 		s.stopRadar()                                   // the radar tab and its lock go with us
 		s.stopKanban()                                  // the boards' watches go with us
+		s.closePhone()                                  // the phone guide ends with the server
 		s.flights.whenIdle(ctx, 30*time.Second)         // requests in flight finish, up to 30 s
 		time.Sleep(100 * time.Millisecond)              // their last bytes flush
 		_ = s.httpSrv.Close()                           // what outwaited the drain goes with its connection
@@ -714,6 +721,7 @@ func Serve(ctx context.Context, o Options) error {
 		s.auth.Flush()
 		s.stopRadar()
 		s.stopKanban()
+		s.closePhone()
 		s.closeHTTP()
 		_ = s.hub.Close(context.Background())
 		if s.registry != nil {
@@ -1248,6 +1256,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return nil
 	case path == "/manifest.webmanifest":
 		return s.staticFile(w, "manifest.webmanifest", staticTypes[".webmanifest"], true)
+	case path == "/ca.crt" || path == "/ca.mobileconfig":
+		return s.caRoute(w, r, path == "/ca.mobileconfig")
 	case path == "/sw.js":
 		return s.swRoute(w)
 	case strings.HasPrefix(path, "/icons/"):
@@ -1284,6 +1294,12 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.devicesRoute(w, r)
 	case credentialed && devicePath.MatchString(path) && r.Method == http.MethodDelete:
 		return s.deviceRemoveRoute(w, r, path, me)
+	// the phone guide the dashboard's "Add a phone" shows: started here, its QR served beside
+	// it (phone.go)
+	case credentialed && path == "/api/phone" && r.Method == http.MethodPost:
+		return s.phoneStartRoute(w, r, me)
+	case credentialed && path == "/api/phone/qr.svg" && r.Method == http.MethodGet:
+		return s.phoneQRRoute(w, r)
 	case path == "/pair":
 		// the link `huddle pair` prints opens the app, which reads the token from the fragment
 		// the browser never sends; the pair screen itself is the UI's to build

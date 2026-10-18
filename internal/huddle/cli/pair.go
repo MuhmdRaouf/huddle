@@ -10,13 +10,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
-	"strconv"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/phone"
 	"github.com/mdp/qrterminal/v3"
 )
 
@@ -24,12 +23,7 @@ import (
 // 443, the port appended when it serves anything else — a printed link without the port opens
 // nothing. A listen whose port cannot be read leaves the URL bare.
 func hubBaseURL(host, listen string) string {
-	if _, port, err := net.SplitHostPort(listen); err == nil {
-		if n, err := strconv.Atoi(port); err == nil && n > 0 && n < 65536 && n != 443 {
-			return fmt.Sprintf("https://%s:%d", host, n)
-		}
-	}
-	return "https://" + host
+	return phone.HubURL(host, listen)
 }
 
 // Pair mints one pairing link and prints it: a QR code to scan, the link itself, the code both
