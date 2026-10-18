@@ -52,4 +52,25 @@ Run everything from the repo root: `go run ./scripts/tmpguard -count=1 ./...`, `
 
 ## Report
 
-Filled in by the lead after the live run.
+Live run on 2026-10-18 against https://hub.raouf.test:8443 (a hub on 127.0.0.2:8443 with an imported mkcert pair,
+headless Chromium on the system's DNS and trust store, every home temporary).
+
+What passed:
+
+1. `huddle open --print` on the hub printed `https://hub.raouf.test:8443/?code=…`, and the link signed the browser in.
+2. The first link showed the authenticator set-up; a code computed from the shown secret enrolled it, and the page
+   showed 10 recovery codes once.
+3. With cookies cleared, the landing page signed in with a fresh code, then offered Touch ID; a passkey saved there
+   signed in again with one touch.
+4. Now, Channels, Radar, Kanban and Settings all opened; Now showed the first-run checklist with the authenticator
+   item ticked.
+5. `huddle pair --satellite` minted an invite; `huddle join-hub https://hub.raouf.test:8443 <invite>` joined one
+   machine over TLS, and the same invite was refused for a second one (exit 2).
+
+What the run found and fixed:
+
+- A hub started with `huddle serve` held a root no CLI had, so `huddle open` printed no code: the owner key fixes it.
+- The setup link was refused on the hub's own name: the hub listener now accepts the one-time code.
+- The signed-out page logged two 401s to the console, and an empty Now pointed at an empty list (UI-POLISH-2).
+
+Still for the owner: the items under "Needs a human".
