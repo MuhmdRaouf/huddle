@@ -175,6 +175,28 @@ describe("channel switching", () => {
 });
 
 describe("loaders", () => {
+  it("loadChannels fetches the list and broadcasts channels", async () => {
+    const h = harness({ "/api/channels": [{ name: "e2e" }] });
+    await h.store.loadChannels();
+    expect(h.store.getState().channels).toEqual([{ name: "e2e" }]);
+    expect(h.seen.at(-1)?.what).toBe("channels");
+  });
+
+  it("setChannels broadcasts channels, so a view reading the list repaints", () => {
+    const h = harness();
+    h.store.setChannels([{ name: "c1" }]);
+    expect(h.store.getState().channels).toEqual([{ name: "c1" }]);
+    expect(h.seen.at(-1)?.what).toBe("channels");
+  });
+
+  it("loadChannels keeps the old list when the read fails, broadcasting nothing", async () => {
+    const h = harness({}, { "/api/channels": new Error("down") });
+    h.store.setChannels([{ name: "old" }]);
+    await h.store.loadChannels();
+    expect(h.store.getState().channels).toEqual([{ name: "old" }]);
+    expect(h.seen.filter((s) => s.what === "channels").length).toBe(1); // setChannels alone
+  });
+
   it("loadInfo fetches the channel row and broadcasts info", async () => {
     const h = harness({ "/api/c/c1": { name: "c1", config: { title: "Ch" } } });
     h.store.setChannel("c1");

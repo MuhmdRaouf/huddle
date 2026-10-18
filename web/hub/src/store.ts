@@ -37,6 +37,7 @@ export type ChangeWhat =
   | "task"
   | "ack"
   | "channel"
+  | "channels"
   | "conflict"
   | "kb"
   | "ext";
@@ -545,12 +546,16 @@ export function createStore(deps: StoreDeps): HuddleStore {
     async loadChannels() {
       try {
         state.channels = (await api("/api/channels")) as ChannelSummary[];
+        // broadcast like every loader: a view reading the list (the switcher, the first-run
+        // checklist) repaints when the answer lands, not when an unrelated change next does
+        changed("channels");
       } catch {
         // the switcher simply offers nothing this once
       }
     },
     setChannels(list) {
       state.channels = list;
+      changed("channels");
     },
     loadInfo,
     loadBoard,

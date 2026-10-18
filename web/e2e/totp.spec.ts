@@ -7,7 +7,6 @@
 
 import { devices, expect, test, type Page } from "@playwright/test";
 import {
-  freshTotpStep,
   loginCode,
   signIn,
   theSetup,
@@ -111,14 +110,14 @@ test("a phone browser is offered its lock as a passkey after a code sign-in", as
   await expect(page.getByText("Or enter your authenticator code")).toBeVisible();
 
   // the fallback runs in a browser that holds no passkey of its own here (the field's autofill
-  // offer is what a saved passkey earns): the code field is the way in, and a code signs in — a
-  // step past the one the first code spent, a code being one use
+  // offer is what a saved passkey earns): the code field is the way in, and a code signs in — the
+  // step past the one the first code spent, a code being one use. The hub's one-step skew accepts
+  // that code the moment the first is spent, so no step boundary is waited out
   await page.evaluate(() => localStorage.removeItem("huddle:passkey-here"));
   await page.context().clearCookies();
   await page.goto(`${pairOrigin}/`);
   await expect(page.getByText("Enter the code from your authenticator app")).toBeVisible();
-  await freshTotpStep();
-  await typeCode(page, totpCode(secret));
+  await typeCode(page, totpCode(secret, 1));
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 
   // and one touch is the next sign-in, the mark its own sign-in leaves in this browser

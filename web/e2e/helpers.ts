@@ -173,13 +173,6 @@ export async function typeCode(page: Page, code: string): Promise<void> {
 export const MAC_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36";
 
-/** Sleeps past the authenticator's current 30-second step: a code is one use, so a second code
- *  sign-in waits for the step the first one spent to roll over. */
-export async function freshTotpStep(): Promise<void> {
-  const ms = 30_000 - (Date.now() % 30_000) + 250;
-  await new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
 /** The run's environment: the temp homes the server runs on, so `huddle pair` mints its link
  *  into the same hub database the server spends it from. */
 function pairEnv(target: PairHome): NodeJS.ProcessEnv {
