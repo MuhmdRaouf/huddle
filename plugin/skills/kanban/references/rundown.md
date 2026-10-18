@@ -2,7 +2,7 @@
 
 About 150 words, built from `kanban status` and `kanban list`, nothing written:
 
-```
+```text
 Look at first: CHECKOUT-3DS, P0 in review since Oct 10; the provider declines EU cards from 2026-11-01.
 
 In flight (3):

@@ -28,7 +28,7 @@ kanban pull --actor <worker> --id <ID> --branch work/<ID> --worktree <scratch>/w
 
 The worker's prompt carries only what the ticket cannot: the worktree path, the actor name, and how to report.
 
-```
+```text
 You are worker <actor>. Ticket: <ID>.
 Worktree (work only here): <path> (branch work/<ID>).
 Read the whole ticket first: kanban show <ID>. It holds the plan, the decisions, the proof.

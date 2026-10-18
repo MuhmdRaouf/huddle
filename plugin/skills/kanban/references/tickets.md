@@ -109,7 +109,7 @@ Left empty when writing. Workers append evidence and findings with `kanban log`;
 
 ## A complete example
 
-~~~~markdown
+````markdown
 ---
 id: AUTH-RESET
 title: "auth: emailed password reset token with a 30 minute expiry"
@@ -176,7 +176,7 @@ go vet ./... && test -z "$(gofmt -l .)"  # exit 0
 - The reset page's HTML (AUTH-MAIL-UI). Rate limiting (AUTH-RATE).
 
 ## Log
-~~~~
+````
 
 ## The blind test
 

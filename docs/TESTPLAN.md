@@ -46,13 +46,13 @@ Run everything from the repo root: `go run ./scripts/tmpguard -count=1 ./...`, `
    `listen` holding 8443.
 2. Install the pair you hold (mkcert, a company CA): `huddle cert --import cert.pem key.pem`.
 3. Start the server (`huddle serve`) and wait for its `hub listener on https://...:8443` line.
-4. Open https://hub.raouf.test:8443 in a browser and sign in with the owner link or a paired passkey.
+4. Open <https://hub.raouf.test:8443> in a browser and sign in with the owner link or a paired passkey.
 5. Walk each view: Now, Channels, every Radar view, Kanban, Settings.
 6. Note anything off — a view that errors, a number that looks wrong — for the Report below.
 
 ## Report
 
-Live run on 2026-10-18 against https://hub.raouf.test:8443 (a hub on 127.0.0.2:8443 with an imported mkcert pair,
+Live run on 2026-10-18 against <https://hub.raouf.test:8443> (a hub on 127.0.0.2:8443 with an imported mkcert pair,
 headless Chromium on the system's DNS and trust store, every home temporary).
 
 What passed:

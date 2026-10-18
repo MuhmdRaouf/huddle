@@ -9,7 +9,7 @@ The board is a folder. Each column is a subfolder; each ticket is one Markdown f
 folder it sits in. The `kanban` command moves tickets and enforces the gates. A local server watches the folders and
 shows every change on the live board within half a second.
 
-```
+```text
 .agents/kanban/
   backlog/  ready/  in-progress/  review/  testing/  blocked/  done/
   README.md   LOG   EPOCH   STOP-LINE (only while the line is stopped)
