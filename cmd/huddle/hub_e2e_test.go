@@ -543,6 +543,9 @@ type serveEnv struct {
 	// pushSweepMS shrinks the push sweep's 30 s floor for a leg that cannot wait a tick; the
 	// create of an item wakes the sweep anyway, this is only the backstop
 	pushSweepMS int
+	// extra layers variables over the child's environment a leg needs beyond the machine's
+	// own: a proxy and a certificate file for a server that reaches a hub over TLS
+	extra map[string]string
 }
 
 // serveLog collects one server child's stdout from any goroutine.
@@ -592,6 +595,9 @@ func startServe(parent, t *testing.T, bin string, cfg serveEnv) *serveLog {
 	}
 	if cfg.pushSweepMS > 0 {
 		env["HUDDLE_PUSH_SWEEP_MS"] = strconv.Itoa(cfg.pushSweepMS)
+	}
+	for key, value := range cfg.extra {
+		env[key] = value
 	}
 	cmd := exec.Command(bin, "serve")
 	cmd.Env = envList(env)

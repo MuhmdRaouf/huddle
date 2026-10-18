@@ -55,6 +55,10 @@ type MountOptions struct {
 	Env     domain.EnvLookup
 	Version string
 	Port    int
+	// HostAllowed names the hosts the embedding server answers — the hub listener's
+	// spellings beside loopback — so the tab serves the names that server serves; nil keeps
+	// radar's loopback-only rule.
+	HostAllowed func(host string) bool
 	// SinceMs is how far back the first ingest pass reads; 0 takes radar's own default.
 	SinceMs int64
 	// IntervalMs is the ingest poll cadence; 0 takes the watcher's default.
@@ -209,13 +213,14 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 	// live only in their owner's memory, so the lock record is the one ground two huddles share
 	t.token = auth.Rand36(32)
 	t.httpServer = server.CreateHttpServer(server.HttpOptions{
-		Store:     st,
-		Version:   options.Version,
-		StartedAt: startedAt,
-		Port:      options.Port,
-		Insights:  insights,
-		History:   hist,
-		Watcher:   watcher,
+		Store:       st,
+		Version:     options.Version,
+		StartedAt:   startedAt,
+		Port:        options.Port,
+		Insights:    insights,
+		History:     hist,
+		Watcher:     watcher,
+		HostAllowed: options.HostAllowed,
 	})
 	mux.HandleFunc(Prefix, t.serveRadar)
 	mux.HandleFunc(Prefix+"/", t.serveRadar)

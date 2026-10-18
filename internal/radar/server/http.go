@@ -103,6 +103,10 @@ type HttpOptions struct {
 	// in production. The store is subscribed by then, so a change landed here must still
 	// reach this client.
 	SnapshotSent func()
+	// HostAllowed, when set, is the whole host check: the embedding server's own, naming the
+	// listeners it serves this server's routes on beyond loopback. Nil keeps radar's
+	// loopback-only rule.
+	HostAllowed func(host string) bool
 }
 
 // FlightTracker counts the requests a shutdown must let finish. An SSE response is not one
@@ -173,6 +177,7 @@ type HttpServer struct {
 	// names a directory of them; the embedded build serves otherwise.
 	files   fs.FS
 	port    func() int64
+	hostOK  func(string) bool
 	flights *FlightTracker
 
 	streamsMu sync.Mutex
@@ -198,6 +203,7 @@ func CreateHttpServer(options HttpOptions) *HttpServer {
 		options: options,
 		files:   files,
 		port:    func() int64 { return port },
+		hostOK:  options.HostAllowed,
 		flights: CreateFlightTracker(),
 		streams: map[*streamConn]struct{}{},
 		closed:  make(chan struct{}),
@@ -235,6 +241,17 @@ func (h *HttpServer) CloseStreams() {
 	})
 }
 
+// hostAllowed answers whether one Host header names a listener this server answers. The
+// embedding server's predicate, when one was given, is the whole check; nil keeps radar's
+// loopback-only rule, read against the port live so a request racing SetPort is still checked
+// against the eventual value.
+func (h *HttpServer) hostAllowed(host string) bool {
+	if h.hostOK != nil {
+		return h.hostOK(host)
+	}
+	return HostAllowed(host, int(h.port()))
+}
+
 // handle routes one request.
 func (h *HttpServer) handle(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.EscapedPath()
@@ -243,7 +260,7 @@ func (h *HttpServer) handle(w http.ResponseWriter, r *http.Request) {
 		release := h.flights.Track()
 		defer release()
 	}
-	if !HostAllowed(r.Host, int(h.port())) {
+	if !h.hostAllowed(r.Host) {
 		sendJSON(w, 403, errorBody{Error: "forbidden host"})
 		return
 	}
