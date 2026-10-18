@@ -5,17 +5,7 @@
 // the seeded Codex session.
 
 import { expect, test } from "@playwright/test";
-import { CODEX, ConsoleErrors, signIn, theSetup } from "./helpers.ts";
-
-/** The five seeded requests summed: three glm-5.3 today, one glm-5.3-flash and one codex turn
- *  twenty-five hours back. */
-const USAGE = {
-  processed: 10_015 + CODEX.input + CODEX.output + CODEX.cacheRead,
-  cached: 5_000 + CODEX.cacheRead,
-  uncached: 2_410 + CODEX.input,
-  output: 605 + CODEX.output,
-  today: 10_000,
-} as const;
+import { CODEX, ConsoleErrors, USAGE, signIn, theSetup } from "./helpers.ts";
 
 test("the usage view shows the seeded totals and splits the picked day", async ({ page }) => {
   const errors = new ConsoleErrors(page);

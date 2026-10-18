@@ -85,9 +85,12 @@ export function Pair({
         throw e;
       }
       await api.api("/api/pair/finish", { body: { token, response: credentialToJSON(cred) } });
-      // the cookie is in: the clean address, the shell over the Now tab, and the gate dropped
+      // the cookie is in: a full reload onto the Now tab, the way the signed-out passkey lands
+      // the shell — the app this page runs in opened its streams before the cookie existed (the
+      // TLS hub's only sign-in is this ceremony), and no stream reconnects on a hash change
       history.replaceState(null, "", "/");
       location.hash = "#/now";
+      location.reload();
       onPaired?.();
     } catch (e) {
       setError(errText(e));

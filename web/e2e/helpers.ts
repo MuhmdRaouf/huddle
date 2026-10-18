@@ -37,6 +37,16 @@ export const CODEX = {
   cacheRead: 200,
 } as const;
 
+/** The five seeded requests summed, the numbers the Usage view's tiles carry wherever it opens:
+ *  three glm-5.3 today, one glm-5.3-flash and one codex turn twenty-five hours back. */
+export const USAGE = {
+  processed: 10_015 + CODEX.input + CODEX.output + CODEX.cacheRead,
+  cached: 5_000 + CODEX.cacheRead,
+  uncached: 2_410 + CODEX.input,
+  output: 605 + CODEX.output,
+  today: 10_000,
+} as const;
+
 /** 1,200 — the grouping the dashboard's number cells carry. */
 export const n = (value: number): string => value.toLocaleString("en-US");
 
@@ -86,26 +96,61 @@ export async function signIn(page: Page, base: string = theSetup().rootUrl): Pro
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 }
 
+/** One hub's temp dirs, the set `huddle pair` runs against so its link lands in that hub's
+ *  own database. */
+export type PairHome = {
+  home: string;
+  huddleHome: string;
+  radarHome: string;
+  claudeConfig: string;
+  xdg: string;
+};
+
+/** The solo hub's home: the default every localhost spec mints its link in. */
+export const soloPairHome: PairHome = {
+  home: `${runDir}/home`,
+  huddleHome: `${runDir}/huddle-home`,
+  radarHome: `${runDir}/radar-home`,
+  claudeConfig: `${runDir}/claude-config`,
+  xdg: `${runDir}/xdg`,
+};
+
+/** The TLS hub's home: its link carries the https origin and the reserved name. */
+export const tlsHubPairHome: PairHome = {
+  home: `${runDir}/home-hub`,
+  huddleHome: `${runDir}/huddle-home-hub`,
+  radarHome: `${runDir}/radar-home-hub`,
+  claudeConfig: `${runDir}/claude-config-hub`,
+  xdg: `${runDir}/xdg-hub`,
+};
+
 /** The run's environment: the temp homes the server runs on, so `huddle pair` mints its link
  *  into the same hub database the server spends it from. */
-function pairEnv(): NodeJS.ProcessEnv {
+function pairEnv(target: PairHome): NodeJS.ProcessEnv {
   return {
     ...process.env,
-    HOME: `${runDir}/home`,
-    HUDDLE_HOME: `${runDir}/huddle-home`,
-    RADAR_HOME: `${runDir}/radar-home`,
-    CLAUDE_CONFIG_DIR: `${runDir}/claude-config`,
+    HOME: target.home,
+    HUDDLE_HOME: target.huddleHome,
+    RADAR_HOME: target.radarHome,
+    CLAUDE_CONFIG_DIR: target.claudeConfig,
+    XDG_CONFIG_HOME: `${target.xdg}-config`,
+    XDG_CACHE_HOME: `${target.xdg}-cache`,
+    XDG_DATA_HOME: `${target.xdg}-data`,
+    XDG_STATE_HOME: `${target.xdg}-state`,
   };
 }
 
 /** Runs `huddle pair` and answers the link and the code it printed. */
-export function mintPairLink(name: string): { link: string; code: string } {
+export function mintPairLink(
+  name: string,
+  target: PairHome = soloPairHome,
+): { link: string; code: string } {
   const out = execFileSync(`${runDir}/bin/huddle`, ["pair", "--name", name], {
     cwd: repoRoot,
-    env: pairEnv(),
+    env: pairEnv(target),
     encoding: "utf8",
   });
-  const link = /http:\/\/localhost:\d+\/pair#[A-Z2-7]{26}/.exec(out)?.[0];
+  const link = /https?:\/\/[^\s]+\/pair#[A-Z2-7]{26}/.exec(out)?.[0];
   const code = /code ([A-Z2-7]{3}-[A-Z2-7]{3}) /.exec(out)?.[1];
   if (link === undefined || code === undefined) {
     throw new Error(`huddle pair printed no link or code:\n${out}`);
@@ -130,9 +175,14 @@ export async function useVirtualAuthenticator(page: Page): Promise<CDPSession> {
 }
 
 /** Drives the whole pairing a `huddle pair` link opens: the name stage, the code stage, the
- *  passkey the virtual authenticator makes, and the shell its cookie lands on. */
-export async function pairThroughLink(page: Page, name: string): Promise<void> {
-  const { link, code } = mintPairLink(name);
+ *  passkey the virtual authenticator makes, and the shell its cookie lands on. A caller that
+ *  minted its own link (against another hub's home) passes it in. */
+export async function pairThroughLink(
+  page: Page,
+  name: string,
+  minted?: { link: string; code: string },
+): Promise<void> {
+  const { link, code } = minted ?? mintPairLink(name);
   await page.goto(link);
   const field = page.getByLabel("Device name");
   await expect(field).toBeVisible();

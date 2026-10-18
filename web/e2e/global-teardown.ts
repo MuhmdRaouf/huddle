@@ -1,5 +1,5 @@
-// global-teardown.ts — stops the one process the global setup started (SIGTERM, then SIGKILL
-// after five seconds) and removes the run folder with the temp homes in it.
+// global-teardown.ts — stops the two processes the global setup started (SIGTERM, then SIGKILL
+// after five seconds each) and removes the run folder with the temp homes in it.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -7,10 +7,11 @@ import { runDir } from "./paths.ts";
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** The server's pid, from the file the global setup wrote; null when it never got there. */
-function serverPid(): number | null {
+/** One server's pid, from the state file the global setup wrote; null when it never got
+ *  there. */
+function serverPid(stateName: string): number | null {
   try {
-    const saved = JSON.parse(fs.readFileSync(path.join(runDir, "server.json"), "utf8")) as {
+    const saved = JSON.parse(fs.readFileSync(path.join(runDir, stateName), "utf8")) as {
       pid?: number;
     };
     return typeof saved.pid === "number" ? saved.pid : null;
@@ -19,31 +20,37 @@ function serverPid(): number | null {
   }
 }
 
-export default async function globalTeardown(): Promise<void> {
-  const pid = serverPid();
-  if (pid !== null) {
+/** Stops one pid: SIGTERM, then SIGKILL once five seconds pass without an exit. */
+async function stop(pid: number): Promise<void> {
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    // already gone
+    return;
+  }
+  const deadline = Date.now() + 5_000;
+  for (;;) {
     try {
-      process.kill(pid, "SIGTERM");
+      process.kill(pid, 0);
     } catch {
-      // already gone
+      return; // exited
     }
-    const deadline = Date.now() + 5_000;
-    for (;;) {
+    if (Date.now() > deadline) {
       try {
-        process.kill(pid, 0);
+        process.kill(pid, "SIGKILL");
       } catch {
-        break; // exited
+        // gone between the check and the kill
       }
-      if (Date.now() > deadline) {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch {
-          // gone between the check and the kill
-        }
-        break;
-      }
-      await sleep(100);
+      return;
     }
+    await sleep(100);
+  }
+}
+
+export default async function globalTeardown(): Promise<void> {
+  for (const stateName of ["server.json", "server-hub.json"]) {
+    const pid = serverPid(stateName);
+    if (pid !== null) await stop(pid);
   }
   fs.rmSync(runDir, { recursive: true, force: true });
 }

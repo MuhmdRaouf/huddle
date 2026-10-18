@@ -6,6 +6,7 @@
 import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 import { here, repoRoot } from "./paths.ts";
+import { chromiumTlsArgs } from "./tls.ts";
 
 export default defineConfig({
   testDir: here,
@@ -20,6 +21,10 @@ export default defineConfig({
   forbidOnly: true,
   use: {
     headless: true,
+    // the reserved name hub.example.test mapped onto loopback, and the run's own CA pinned by
+    // its key hash — a pin, not a blanket certificate ignore: minted here (the module runs
+    // once, before any browser launches) so the pair the setup imports is the one pinned
+    launchOptions: { args: chromiumTlsArgs() },
     // the app-shell worker serves cached pages mid-run and double-paints the shell; the tests
     // measure the app itself, so they run with no worker
     serviceWorkers: "block",

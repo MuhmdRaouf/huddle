@@ -35,6 +35,10 @@ export type E2eSetup = {
   sessionTitle: string;
   /** The seeded board's name: the project folder the board sits in. */
   boardName: string;
+  /** The TLS hub's address: https://hub.example.test:<port>, the run's own CA behind it. */
+  hubUrl: string;
+  /** The TLS hub's root credential (HUDDLE_TOKEN of its own run). */
+  hubToken: string;
 };
 
 /** Reads the setup file the global setup wrote; a missing file says the run is broken. */
