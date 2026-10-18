@@ -101,6 +101,13 @@ afterEach(() => {
 });
 
 describe("KanbanTab", () => {
+  it("shows a skeleton while the board list is on its way", () => {
+    stubNet();
+    render(<KanbanTab boardKey={null} />);
+    const loading = document.querySelector('[role="status"][aria-label="Loading the boards"]');
+    expect(loading?.querySelector(".skeleton")).toBeTruthy();
+  });
+
   it("lists the boards and opens the first", async () => {
     stubNet();
     const view = render(<KanbanTab boardKey={null} />);
@@ -153,9 +160,9 @@ describe("KanbanTab", () => {
     stubNet(BOARDS.slice(0, 1), false, heavy);
     render(<KanbanTab boardKey="a1a1" />);
     await screen.findByRole("button", { name: /R-1:/ });
-    const toggle = screen.getByRole("button", { name: "Hide done" });
+    const toggle = screen.getByRole("checkbox", { name: "Hide done" });
     // the default lands one render after the first paint of the board
-    await vi.waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
+    await vi.waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
     expect(screen.getByRole("heading", { name: "Done 0" })).toBeDefined();
     await userEvent.click(toggle);
     // shown again, capped at twenty with the show-all button beside them

@@ -1,10 +1,15 @@
 import { render, screen } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { Board } from "../../src/kanban/components/Board.tsx";
 import { EMPTY_FILTERS } from "../../src/kanban/store.ts";
 import type { Snapshot } from "../../src/kanban/types.ts";
 import { makeCard, makeSnapshot, snapshot } from "./helpers.ts";
+import { stubMatchMedia } from "./match-media.ts";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function renderBoard(snap: Snapshot | null = snapshot, filters = EMPTY_FILTERS) {
   return render(
@@ -121,9 +126,20 @@ describe("Board", () => {
     expect(shown.map((card) => card.dataset.id)).toEqual(["D-OLDISH", "D-NOFINISH", "D-LAST"]);
   });
 
-  it("shows a loading state while no snapshot has arrived", () => {
-    renderBoard(null);
-    expect(screen.getByRole("status").textContent).toContain("Loading the board");
+  it("shows a skeleton while no snapshot has arrived", () => {
+    const { container } = renderBoard(null);
+    const loading = container.querySelector('[data-layout="loading"] [role="status"]');
+    expect(loading?.getAttribute("aria-label")).toBe("Loading the board");
+    expect(loading?.querySelector(".skeleton")).toBeTruthy();
+  });
+
+  it("tabs its columns on a phone, the count a badge beside the title", () => {
+    stubMatchMedia((query) => query.includes("max-width"));
+    const { container } = renderBoard();
+    const tab = container.querySelector('[role="tab"]') as HTMLElement;
+    expect(tab.textContent).toBe("Backlog3");
+    expect(tab.querySelector("span")?.textContent).toBe("Backlog");
+    expect(tab.querySelector(".count-badge")?.textContent).toBe("3");
   });
 
   it("renders every card the snapshot holds across its columns", () => {

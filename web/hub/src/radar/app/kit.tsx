@@ -102,14 +102,14 @@ export function CardHead({
 }) {
   return (
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-base-content/8 px-5 py-3.5">
-      <div class="flex min-w-0 flex-1 items-center gap-2.5">
+      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1">
         {icon !== undefined && (
           <span class="text-primary [&_svg]:size-4.5" aria-hidden="true">
             <Icon name={icon} />
           </span>
         )}
         <h2 class="truncate text-base font-semibold">{title}</h2>
-        {subtitle !== null && <span class="shrink-0 text-sm text-base-content/60">{subtitle}</span>}
+        {subtitle !== null && <span class="text-sm text-base-content/60">{subtitle}</span>}
       </div>
       {children != null && children !== false && (
         <div class="flex flex-wrap items-center gap-2">{children}</div>

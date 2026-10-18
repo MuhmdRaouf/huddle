@@ -10,6 +10,13 @@ import type { Stream, StreamHandlers } from "./types.ts";
 /** One board huddle knows: its key (the API's address for it), the repo root it lives under. */
 export type BoardRef = { key: string; root: string; name: string };
 
+/** The picker's label: the repo's name, disambiguated with its root once the name repeats. */
+export function optionLabel(boards: BoardRef[], board: BoardRef): string {
+  return boards.some((other) => other !== board && other.name === board.name)
+    ? `${board.name} (${board.root})`
+    : board.name;
+}
+
 /** The boards every known session works with, sorted by name as the API sends them. */
 export async function fetchBoards(): Promise<BoardRef[]> {
   const response = await fetch("/api/kanban/boards");

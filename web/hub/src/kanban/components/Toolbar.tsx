@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { type BoardRef, optionLabel } from "../io.ts";
 import { type FilterKind, type Filters, clearPicks, togglePick } from "../store.ts";
 import type { Card } from "../types.ts";
 import { FilterMenu } from "./FilterMenu.tsx";
@@ -7,6 +8,12 @@ export type ToolbarProps = {
   cards: Card[];
   filters: Filters;
   onChange: (filters: Filters) => void;
+  /** the boards the picker lists, empty while the list is on its way */
+  boards: BoardRef[];
+  /** the open board's key, or none before one is adopted */
+  boardKey: string | null;
+  /** hands a picker choice up, as the address change that reopens the tab */
+  onBoard: (key: string) => void;
 };
 
 /** The row's kinds in their standing order: Domain is the tag kind, Epic the cluster. */
@@ -69,9 +76,10 @@ function KindMenu({
   );
 }
 
-/** Search, one menu per filter kind, the hide-done toggle, and the picks as pills below.
- *  `/` jumps to the search box, but never while a menu holds the keyboard. */
-export function Toolbar({ cards, filters, onChange }: ToolbarProps) {
+/** The toolbar as one wrapping flex row: the board picker, search, one menu per filter kind, the
+ *  hide-done toggle with its label beside it — and the picks as pills below. `/` jumps to the
+ *  search box, but never while a menu holds the keyboard. */
+export function Toolbar({ cards, filters, onChange, boards, boardKey, onBoard }: ToolbarProps) {
   const search = useRef<HTMLInputElement>(null);
   const [openKind, setOpenKind] = useState<FilterKind | null>(null);
 
@@ -95,6 +103,20 @@ export function Toolbar({ cards, filters, onChange }: ToolbarProps) {
   return (
     <>
       <div class="toolbar">
+        {boards.length > 0 && (
+          <select
+            class="board-select"
+            aria-label="Board"
+            value={boardKey ?? ""}
+            onChange={(event) => onBoard(event.currentTarget.value)}
+          >
+            {boards.map((board) => (
+              <option key={board.key} value={board.key}>
+                {optionLabel(boards, board)}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           ref={search}
           type="search"
@@ -116,14 +138,16 @@ export function Toolbar({ cards, filters, onChange }: ToolbarProps) {
             onChange={onChange}
           />
         ))}
-        <button
-          type="button"
-          class="toggle"
-          aria-pressed={filters.hideDone}
-          onClick={() => onChange({ ...filters, hideDone: !filters.hideDone })}
-        >
-          Hide done
-        </button>
+        <label class="hide-done">
+          <input
+            type="checkbox"
+            class="toggle"
+            checked={filters.hideDone}
+            aria-checked={filters.hideDone ? "true" : "false"}
+            onChange={() => onChange({ ...filters, hideDone: !filters.hideDone })}
+          />
+          <span>Hide done</span>
+        </label>
       </div>
       {picks.length > 0 && (
         <div class="pills">

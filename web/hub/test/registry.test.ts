@@ -116,6 +116,11 @@ describe("the list's pure reads", () => {
     expect(machinesLine("phone", [])).toBe("This machine");
   });
 
+  it("pluralises the phone's count only when there is more than one", () => {
+    expect(machinesLine("phone", ["laptop"])).toBe("1 machine");
+    expect(machinesLine("phone", ["laptop", "studio"])).toBe("2 machines");
+  });
+
   it("names a session by its title, falling back to its id", () => {
     expect(sessionName(row({ session_id: "abcdefgh-1", title: "kanban-e2e" }))).toBe("kanban-e2e");
     expect(sessionName(row({ session_id: "abcdefgh-1" }))).toBe("abcdefgh");

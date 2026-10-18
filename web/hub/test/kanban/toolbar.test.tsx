@@ -13,6 +13,37 @@ const withPicks = (picks: Partial<Filters["picks"]>, over: Partial<Filters> = {}
   picks: { ...EMPTY_FILTERS.picks, ...picks },
 });
 
+/** The boards the picker lists, as /api/kanban/boards sends them. */
+const BOARDS = [
+  { key: "a1a1", root: "/repo/alpha", name: "alpha" },
+  { key: "b2b2", root: "/repo/beta", name: "beta" },
+];
+
+/** The toolbar as the page owns it: the boards' picker, the filters in state. */
+function Row({
+  cards,
+  initial,
+  boardKey = "a1a1",
+  onBoard = () => undefined,
+}: {
+  cards: Card[];
+  initial: Filters;
+  boardKey?: string | null;
+  onBoard?: (key: string) => void;
+}) {
+  const [filters, setFilters] = useState(initial);
+  return (
+    <Toolbar
+      cards={cards}
+      filters={filters}
+      onChange={setFilters}
+      boards={BOARDS}
+      boardKey={boardKey}
+      onBoard={onBoard}
+    />
+  );
+}
+
 /** The row's kind buttons, in their standing order. */
 const kindButtons = (container: Element): string[] =>
   [...container.querySelectorAll<HTMLButtonElement>(".toolbar button")].map((b) => b.textContent ?? "");
@@ -47,35 +78,55 @@ function board(): Card[] {
 /** The toolbar as the page owns it: the filters live in state, so a menu click lands. */
 function Harness({ cards, initial }: { cards: Card[]; initial: Filters }) {
   const [filters, setFilters] = useState(initial);
-  return <Toolbar cards={cards} filters={filters} onChange={setFilters} />;
+  return (
+    <Toolbar
+      cards={cards}
+      filters={filters}
+      onChange={setFilters}
+      boards={BOARDS}
+      boardKey="a1a1"
+      onBoard={() => undefined}
+    />
+  );
 }
 
 describe("the toolbar row", () => {
-  it("is one compact row: search, one menu button per kind, hide done — no chip wall", () => {
-    const { container } = render(
-      <Toolbar cards={board()} filters={EMPTY_FILTERS} onChange={() => undefined} />,
-    );
+  it("is one compact row: the board picker, search, one menu button per kind, the hide-done toggle", () => {
+    const { container } = render(<Row cards={board()} initial={EMPTY_FILTERS} />);
     expect(container.querySelectorAll(".chips, .chip")).toHaveLength(0);
-    expect(kindButtons(container)).toEqual(["Domain", "Epic", "Holder", "Type", "Priority", "Hide done"]);
+    expect(kindButtons(container)).toEqual(["Domain", "Epic", "Holder", "Type", "Priority"]);
     expect(screen.getByRole("searchbox", { name: "Search" })).toBeTruthy();
+    const picker = screen.getByRole("combobox", { name: "Board" }) as HTMLSelectElement;
+    expect(picker.textContent).toContain("alpha");
+    expect(picker.textContent).toContain("beta");
+  });
+
+  it("moves the address when the picker picks another board", async () => {
+    const onBoard = vi.fn();
+    render(<Row cards={board()} initial={EMPTY_FILTERS} onBoard={onBoard} />);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Board" }), "b2b2");
+    expect(onBoard).toHaveBeenCalledWith("b2b2");
   });
 
   it("offers Domain only when some card carries tags", () => {
     const untagged = board().map((card) => ({ ...card, tags: [] }));
-    const { container } = render(
-      <Toolbar cards={untagged} filters={EMPTY_FILTERS} onChange={() => undefined} />,
-    );
-    expect(kindButtons(container)).toEqual(["Epic", "Holder", "Type", "Priority", "Hide done"]);
+    const { container } = render(<Row cards={untagged} initial={EMPTY_FILTERS} />);
+    expect(kindButtons(container)).toEqual(["Epic", "Holder", "Type", "Priority"]);
+  });
+
+  it("carries the hide-done toggle as a switch with its label beside it", async () => {
+    const { container } = render(<Row cards={board()} initial={EMPTY_FILTERS} />);
+    const wrap = container.querySelector(".toolbar .hide-done") as HTMLLabelElement;
+    expect(wrap.textContent).toContain("Hide done");
+    const toggle = wrap.querySelector("input") as HTMLInputElement;
+    expect(toggle.type).toBe("checkbox");
+    expect(toggle.checked).toBe(false);
+    await userEvent.click(toggle);
+    expect(toggle.checked).toBe(true);
   });
 
   it("counts the picked values on its kind's button", () => {
-    const { container } = render(
-      <Toolbar
-        cards={board()}
-        filters={withPicks({ holder: ["glm-A", "glm-B"] })}
-        onChange={() => undefined}
-      />,
-    );
+    const { container } = render(<Row cards={board()} initial={withPicks({ holder: ["glm-A", "glm-B"] })} />);
     expect(kindButton("holder", container).textContent).toBe("Holder: 2");
     expect(kindButton("type", container).textContent).toBe("Type");
   });
@@ -84,7 +135,14 @@ describe("the toolbar row", () => {
 describe("a kind's menu", () => {
   it("opens on click, lists the values with counts sorted by count then value, and reads as expanded", async () => {
     const { container } = render(
-      <Toolbar cards={board()} filters={EMPTY_FILTERS} onChange={() => undefined} />,
+      <Toolbar
+        cards={board()}
+        filters={EMPTY_FILTERS}
+        onChange={() => undefined}
+        boards={BOARDS}
+        boardKey="a1a1"
+        onBoard={() => undefined}
+      />,
     );
     expect(kindButton("holder", container).getAttribute("aria-expanded")).toBe("false");
     await userEvent.click(kindButton("holder", container));
@@ -111,7 +169,14 @@ describe("a kind's menu", () => {
 
   it("applies the other kinds' picks but not this kind's own", async () => {
     const { container } = render(
-      <Toolbar cards={board()} filters={withPicks({ holder: ["glm-A"] })} onChange={() => undefined} />,
+      <Toolbar
+        cards={board()}
+        filters={withPicks({ holder: ["glm-A"] })}
+        onChange={() => undefined}
+        boards={BOARDS}
+        boardKey="a1a1"
+        onBoard={() => undefined}
+      />,
     );
     await userEvent.click(kindButton("cluster", container));
     // only glm-A's cards count: alpha on C-1 and C-2, beta nowhere
@@ -132,6 +197,9 @@ describe("a kind's menu", () => {
             onChange(next);
             setFilters(next);
           }}
+          boards={BOARDS}
+          boardKey="a1a1"
+          onBoard={() => undefined}
         />
       );
     }
@@ -149,7 +217,14 @@ describe("a kind's menu", () => {
 
   it("closes on Escape and returns the focus to its button", async () => {
     const { container } = render(
-      <Toolbar cards={board()} filters={EMPTY_FILTERS} onChange={() => undefined} />,
+      <Toolbar
+        cards={board()}
+        filters={EMPTY_FILTERS}
+        onChange={() => undefined}
+        boards={BOARDS}
+        boardKey="a1a1"
+        onBoard={() => undefined}
+      />,
     );
     const button = kindButton("holder", container);
     await userEvent.click(button);
@@ -161,7 +236,14 @@ describe("a kind's menu", () => {
 
   it("closes when a click lands outside the menu", async () => {
     const { container } = render(
-      <Toolbar cards={board()} filters={EMPTY_FILTERS} onChange={() => undefined} />,
+      <Toolbar
+        cards={board()}
+        filters={EMPTY_FILTERS}
+        onChange={() => undefined}
+        boards={BOARDS}
+        boardKey="a1a1"
+        onBoard={() => undefined}
+      />,
     );
     await userEvent.click(kindButton("holder", container));
     expect(screen.getByRole("menu", { name: "Holder" })).toBeTruthy();
@@ -171,7 +253,16 @@ describe("a kind's menu", () => {
 
   it("opens from the keyboard, walks the entries with the arrows, and toggles with Space", async () => {
     const onChange = vi.fn();
-    const { container } = render(<Toolbar cards={board()} filters={EMPTY_FILTERS} onChange={onChange} />);
+    const { container } = render(
+      <Toolbar
+        cards={board()}
+        filters={EMPTY_FILTERS}
+        onChange={onChange}
+        boards={BOARDS}
+        boardKey="a1a1"
+        onBoard={() => undefined}
+      />,
+    );
     const button = kindButton("holder", container);
     button.focus();
     await userEvent.keyboard("{Enter}");
@@ -192,7 +283,14 @@ describe("a kind's menu", () => {
 
   it("keeps / from stealing the focus while a menu is open", async () => {
     const { container } = render(
-      <Toolbar cards={board()} filters={EMPTY_FILTERS} onChange={() => undefined} />,
+      <Toolbar
+        cards={board()}
+        filters={EMPTY_FILTERS}
+        onChange={() => undefined}
+        boards={BOARDS}
+        boardKey="a1a1"
+        onBoard={() => undefined}
+      />,
     );
     await userEvent.click(kindButton("holder", container));
     await userEvent.keyboard("/");
@@ -205,7 +303,14 @@ describe("a kind's menu", () => {
       makeCard({ id: `L-${i}`, holder: `glm-${i}`, column: "ready", tags: [] }),
     );
     const { container } = render(
-      <Toolbar cards={cards} filters={EMPTY_FILTERS} onChange={() => undefined} />,
+      <Toolbar
+        cards={cards}
+        filters={EMPTY_FILTERS}
+        onChange={() => undefined}
+        boards={BOARDS}
+        boardKey="a1a1"
+        onBoard={() => undefined}
+      />,
     );
     await userEvent.click(kindButton("holder", container));
     const box = screen.getByRole("searchbox", { name: "Filter Holder values" });
@@ -222,6 +327,9 @@ describe("a kind's menu", () => {
         cards={board().map((c) => ({ ...c, holder: "" }))}
         filters={EMPTY_FILTERS}
         onChange={() => undefined}
+        boards={BOARDS}
+        boardKey="a1a1"
+        onBoard={() => undefined}
       />,
     );
     await userEvent.click(kindButton("holder", container));
@@ -237,6 +345,9 @@ describe("the pills", () => {
         cards={board()}
         filters={withPicks({ holder: ["glm-A"], tag: ["kanban"] })}
         onChange={onChange}
+        boards={BOARDS}
+        boardKey="a1a1"
+        onBoard={() => undefined}
       />,
     );
     const pill = screen.getByRole("button", { name: "Remove Holder glm-A" });

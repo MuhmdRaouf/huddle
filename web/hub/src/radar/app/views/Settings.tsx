@@ -195,10 +195,10 @@ export function BudgetsPanel() {
       )}
       {state.draft !== null && <BudgetForm draft={state.draft} />}
       {budgets === null ? (
-        <p class="text-sm text-base-content/60">Loading budgets…</p>
+        <div class="skeleton h-24 w-full" role="status" aria-label="Loading budgets" />
       ) : budgets.length === 0 && state.draft === null ? (
         <EmptyState
-          title="No budgets"
+          title="No budgets yet"
           hint="Set a limit for everything or for one provider. A warn budget raises an alert at 80% and 100%; a stop budget also makes that provider's router refuse requests until the period ends. Claude requests are never stopped."
           icon="dollar"
         />
@@ -256,7 +256,7 @@ export function HistoryPanel() {
       {state.historyOff ? (
         <p class="text-sm text-base-content/60">History is off on this machine; nothing is being kept.</p>
       ) : stats === null ? (
-        <p class="text-sm text-base-content/60">Reading the history store…</p>
+        <div class="skeleton h-16 w-full" role="status" aria-label="Reading the history store" />
       ) : (
         <div class="mb-5">
           <p class="m-0 mb-2 font-semibold">

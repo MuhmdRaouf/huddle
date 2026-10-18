@@ -40,6 +40,17 @@ test("the usage view shows the seeded totals and splits the picked day", async (
   await expect(plot).toBeVisible();
   await expect(plot.locator("path.chart-line")).toHaveCount(3);
 
+  // hovering the chart carries the day and every series' value in a tooltip
+  const plotBox = await plot.boundingBox();
+  if (plotBox === null) throw new Error("the usage plot never took its size");
+  await page.mouse.move(plotBox.x + (plotBox.width * 6.5) / 7, plotBox.y + plotBox.height / 2);
+  const tip = page.locator("[data-usage-plot] .chart-tip");
+  await expect(tip).toBeVisible();
+  await expect(tip.locator(".tip-head")).toContainText(/^\d{1,2} [A-Z][a-z]{2}$/);
+  await expect(tip).toContainText("GLM 5.3");
+  await page.mouse.move(0, 0);
+  await expect(tip).toHaveCount(0);
+
   // the 7-day window answers with the same requests as the default 30
   await page.getByRole("group", { name: "Window" }).getByRole("button", { name: "7 days" }).click();
   await expect(tiles).toContainText(USAGE.processed.toLocaleString("en-US"));

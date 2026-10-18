@@ -98,7 +98,8 @@ export function machinesOf(sessions: RegistrySession[] | null): string[] {
 /** The machines line's text: the count on a phone, the names beside each other elsewhere. */
 export function machinesLine(layout: "phone" | "tablet" | "desktop", names: string[]): string {
   if (names.length === 0) return "This machine";
-  return layout === "phone" ? `${names.length} machines` : names.join(" · ");
+  if (layout !== "phone") return names.join(" · ");
+  return `${names.length} ${names.length === 1 ? "machine" : "machines"}`;
 }
 
 /** A project path as the list shows it: its last segment (a bare name stays as it is). */

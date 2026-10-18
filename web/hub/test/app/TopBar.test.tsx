@@ -94,6 +94,7 @@ describe("the machines line", () => {
 
 describe("the theme menu", () => {
   it("opens with the three modes, checks the current one, and keeps a pick", () => {
+    localStorage.setItem("huddle:theme", '{"family":"catppuccin","mode":"dark"}');
     render(<ThemeMenu />);
     void act(() => {
       (screen.getByLabelText("Theme: Dark") as HTMLButtonElement).click();
@@ -120,8 +121,12 @@ describe("the theme menu", () => {
     expect(screen.getByLabelText("Theme: Light")).toBeDefined();
   });
 
-  it("applies Catppuccin dark, the default, when nothing is kept", () => {
+  it("applies the system's variant, the default, when nothing is kept", () => {
     stubMatchMedia(false);
+    render(<ThemeMenu />);
+    expect(document.documentElement.dataset.theme).toBe("latte");
+    localStorage.clear();
+    stubMatchMedia(true);
     render(<ThemeMenu />);
     expect(document.documentElement.dataset.theme).toBe("mocha");
   });
@@ -136,9 +141,9 @@ describe("the theme menu", () => {
   it("does not follow the system once a mode is picked", () => {
     const mq = stubMatchMedia(false);
     render(<ThemeMenu />);
-    expect(document.documentElement.dataset.theme).toBe("mocha"); // the default, not the light system
+    expect(document.documentElement.dataset.theme).toBe("latte"); // the default follows the light system
     void act(() => {
-      (screen.getByLabelText("Theme: Dark") as HTMLButtonElement).click();
+      (screen.getByLabelText("Theme: System") as HTMLButtonElement).click();
     });
     [...(document.querySelector('[role="menu"]')?.querySelectorAll("button") ?? [])]
       .find((b) => b.textContent?.includes("Dark"))

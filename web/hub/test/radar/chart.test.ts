@@ -4,10 +4,10 @@ import {
   bucketizeRange,
   bucketizeTokenKindsRange,
   cacheHitRate,
-  catmullRomPath,
   dayLabels,
   dayWords,
   layeredMax,
+  monotonePath,
   nearestIndex,
   spanWord,
   windowLabels,
@@ -21,46 +21,95 @@ function req(ts: number, output = 0): RequestRecord {
   return makeRequest({ ts, tokens: { ...ZERO_TOKENS, output } });
 }
 
-describe("catmullRomPath", () => {
-  it("degrades to nothing or a single move for empty and single-point series", () => {
-    expect(catmullRomPath([])).toBe("");
-    expect(catmullRomPath([{ x: 10, y: 20 }])).toBe("M 10.0 20.0");
+/** Every y a path touches: the anchors it moves through and each cubic segment sampled inside,
+ *  so a curve that only dips between the points still shows up. */
+function ysOf(d: string): number[] {
+  const out: number[] = [];
+  let at: { x: number; y: number } | null = null;
+  const num = "-?\\d+(?:\\.\\d+)?";
+  const move = new RegExp(`M (${num}) (${num})`).exec(d);
+  if (move !== null) {
+    at = { x: Number(move[1]), y: Number(move[2]) };
+    out.push(at.y);
+  }
+  const line = new RegExp(`L (${num}) (${num})`).exec(d);
+  if (line !== null) out.push(Number(line[2]));
+  const cubic = new RegExp(`C (${num}) (${num}), (${num}) (${num}), (${num}) (${num})`, "g");
+  for (const seg of d.matchAll(cubic)) {
+    const n = seg.map(Number);
+    const c1y = n[2] ?? 0;
+    const c2y = n[4] ?? 0;
+    const y = n[6] ?? 0;
+    const start = at ?? { x: n[1] ?? 0, y: c1y };
+    for (const t of [0.25, 0.5, 0.75]) {
+      const u = 1 - t;
+      out.push(u * u * u * start.y + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * y);
+    }
+    at = { x: n[5] ?? 0, y };
+    out.push(y);
+  }
+  return out;
+}
+
+/** The points a chart draws for values over a plot: the same scaleY the svgs use. */
+function pointsOf(values: number[], height = 100, top = 4): { x: number; y: number }[] {
+  const max = Math.max(...values, 1);
+  return values.map((value, index) => ({
+    x: index * 50,
+    y: height - (value / max) * (height - top),
+  }));
+}
+
+describe("monotonePath", () => {
+  it("degrades to nothing, a single move, or a straight line for tiny series", () => {
+    expect(monotonePath([])).toBe("");
+    expect(monotonePath([{ x: 10, y: 20 }])).toBe("M 10.0 20.0");
+    expect(
+      monotonePath([
+        { x: 0, y: 10 },
+        { x: 30, y: 4 },
+      ]),
+    ).toBe("M 0.0 10.0 L 30.0 4.0");
   });
 
-  it("draws one smooth segment for two points", () => {
-    const d = catmullRomPath([
-      { x: 0, y: 10 },
-      { x: 30, y: 4 },
-    ]);
-    expect(d).toBe("M 0.0 10.0 C 5.0 9.0, 25.0 5.0, 30.0 4.0");
+  it("keeps a monotone series' curve inside the data's min and max", () => {
+    const points = pointsOf([0, 2, 5, 9, 14, 22, 30]);
+    const ys = ysOf(monotonePath(points));
+    const lo = Math.min(...points.map((p) => p.y));
+    const hi = Math.max(...points.map((p) => p.y));
+    for (const y of ys) {
+      expect(y).toBeGreaterThanOrEqual(lo - 0.01);
+      expect(y).toBeLessThanOrEqual(hi + 0.01);
+    }
   });
 
-  it("clamps the phantom end points so edges stay inside the series", () => {
-    const d = catmullRomPath([
-      { x: 0, y: 39 },
-      { x: 100, y: 0 },
-      { x: 200, y: 39 },
-    ]);
-    expect(d).toBe("M 0.0 39.0 C 16.7 32.5, 66.7 0.0, 100.0 0.0 C 133.3 0.0, 183.3 32.5, 200.0 39.0");
-  });
-
-  it("keeps every y inside the plot when the series jumps, so the spline cannot overshoot", () => {
-    const top = 4;
+  it("never dips below the x axis when a quiet series jumps, so the line cannot overshoot", () => {
+    // the same points the usage chart draws: [0, 0, 0, 0, 100] over a plot of height 100
+    const points = pointsOf([0, 0, 0, 0, 100]);
     const baseline = 100;
-    // the same points an area chart draws: [0, 0, 0, 0, 100] over a plot of height 100
-    const points = [0, 0, 0, 0, 100].map((value, index) => ({
-      x: index * 50,
-      y: baseline - (value / 100) * (baseline - top),
-    }));
-    const d = catmullRomPath(points, { top, bottom: baseline });
-    const ys = [...d.matchAll(/-?\d+(?:\.\d+)?/g)]
-      .map((match) => Number(match[0]))
-      .filter((_, index) => index % 2 === 1);
+    const ys = ysOf(monotonePath(points));
     expect(ys.length).toBeGreaterThan(0);
     for (const y of ys) {
-      expect(y, d).toBeGreaterThanOrEqual(top);
-      expect(y, d).toBeLessThanOrEqual(baseline);
+      expect(y).toBeLessThanOrEqual(baseline + 0.01);
+      expect(y).toBeGreaterThanOrEqual(Math.min(...points.map((p) => p.y)) - 0.01);
     }
+  });
+
+  it("holds a spike inside its own value, neither bulging past it nor below the flat sides", () => {
+    const points = pointsOf([0, 0, 100, 0, 0]);
+    const ys = ysOf(monotonePath(points));
+    const lo = Math.min(...points.map((p) => p.y));
+    const hi = Math.max(...points.map((p) => p.y));
+    for (const y of ys) {
+      expect(y).toBeGreaterThanOrEqual(lo - 0.01);
+      expect(y).toBeLessThanOrEqual(hi + 0.01);
+    }
+  });
+
+  it("draws a flat series as the straight line along it", () => {
+    const d = monotonePath(pointsOf([0, 0, 0, 0]));
+    const ys = ysOf(d);
+    for (const y of ys) expect(y).toBeCloseTo(100, 1);
   });
 });
 

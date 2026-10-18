@@ -450,7 +450,12 @@ func insightRoute(insights InsightsView, path string, query url.Values) (ApiResp
 	case "/api/attribution":
 		return attributionRoute(insights, query)
 	case "/api/budgets":
-		return jsonOf(200, budgetsAnswer{Budgets: insights.Budgets(), Providers: insights.Providers()}), true
+		saved := insights.Budgets()
+		if saved == nil {
+			// the dashboard reads null as "not loaded yet"; an empty store is a list, not nothing
+			saved = []budget.Budget{}
+		}
+		return jsonOf(200, budgetsAnswer{Budgets: saved, Providers: insights.Providers()}), true
 	case "/api/budget-status":
 		return jsonOf(200, insights.BudgetStatus()), true
 	case "/api/spend":

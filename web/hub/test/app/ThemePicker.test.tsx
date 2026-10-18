@@ -30,6 +30,11 @@ const mode = (m: string): HTMLButtonElement =>
 /** The mode segment's buttons, in order. */
 const modes = (): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>("[data-mode]")];
 
+/** Seeds a kept dark-mode choice, for the tests whose point is what a pick keeps. */
+const keepDark = (): void => {
+  localStorage.setItem("huddle:theme", '{"family":"catppuccin","mode":"dark"}');
+};
+
 describe("the picker", () => {
   it("offers the six families as cards with their variant sublines, the current one checked", () => {
     render(<ThemePicker />);
@@ -79,12 +84,20 @@ describe("the picker", () => {
   it("offers System, Dark and Light in the segment, the current mode checked", () => {
     render(<ThemePicker />);
     expect(modes().map((m) => m.textContent)).toEqual(["System", "Dark", "Light"]);
-    expect(modes().map((m) => m.getAttribute("aria-checked"))).toEqual(["false", "true", "false"]);
+    expect(modes().map((m) => m.getAttribute("aria-checked"))).toEqual(["true", "false", "false"]);
+  });
+
+  it("checks System when nothing is kept yet", () => {
+    stubMatchMedia(false);
+    render(<ThemePicker />);
+    expect(mode("system").getAttribute("aria-checked")).toBe("true");
+    expect(mode("dark").getAttribute("aria-checked")).toBe("false");
   });
 });
 
 describe("picking", () => {
   it("choosing a card keeps the mode, writes the pref and lands the variant on <html>", async () => {
+    keepDark();
     render(<ThemePicker />);
     await act(async () => {
       fireEvent.click(card("tokyo"));
@@ -113,6 +126,7 @@ describe("picking", () => {
 
 describe("the keyboard", () => {
   it("walks the family grid with the arrows, selecting and focusing as it goes", async () => {
+    keepDark();
     render(<ThemePicker />);
     const first = cards()[0] as HTMLButtonElement;
     first.focus();
@@ -158,6 +172,6 @@ describe("the keyboard", () => {
   it("keeps only the checked radio in the tab order", () => {
     render(<ThemePicker />);
     expect(cards().map((c) => c.tabIndex)).toEqual([0, -1, -1, -1, -1, -1]);
-    expect(modes().map((m) => m.tabIndex)).toEqual([-1, 0, -1]);
+    expect(modes().map((m) => m.tabIndex)).toEqual([0, -1, -1]);
   });
 });

@@ -1,8 +1,8 @@
 /* theme-boot.js — the theme before first paint: the saved choice (a family plus a mode, kept as
  * JSON under "huddle:theme"; a legacy "mocha"/"latte"/"system"/"dark"/"light" reads as its new
- * pref and is written back), else Catppuccin dark, the default. A file of its own because the
- * page's CSP allows no inline script (SPEC 7.5). Mirrors ui/src/app/theme.ts; keep the two in
- * step. */
+ * pref and is written back), else Catppuccin following the system's colour scheme, the default. A
+ * file of its own because the page's CSP allows no inline script (SPEC 7.5). Mirrors
+ * ui/src/app/theme.ts; keep the two in step. */
 (function () {
   const ids = {
     catppuccin: ["mocha", "latte"],
@@ -12,7 +12,7 @@
     nord: ["nord", "nord-light"],
     solarized: ["solarized-dark", "solarized-light"],
   };
-  let pref = { family: "catppuccin", mode: "dark" };
+  let pref = { family: "catppuccin", mode: "system" };
   try {
     const raw = JSON.parse(localStorage.getItem("huddle:theme") || "null");
     if (raw === "mocha" || raw === "dark") pref = { family: "catppuccin", mode: "dark" };

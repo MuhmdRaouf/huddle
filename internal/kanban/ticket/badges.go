@@ -3,8 +3,11 @@ package ticket
 import "strings"
 
 // Badge is one derived marker of a card; the UI colours them and the CLI list
-// prints them.
-type Badge struct{ Kind, Label string } // Kind: expedite, priority, type, est, blocked, holder, waits, hand, incomplete
+// prints them. The json names are the wire the web pages read.
+type Badge struct {
+	Kind  string `json:"kind"` // expedite, priority, type, est, blocked, holder, waits, hand, incomplete
+	Label string `json:"label"`
+}
 
 // Badges derives a ticket's badges in display order: expedite, priority, type,
 // estimate, blocked, holder, one waits-on per open dependency, moved by hand,

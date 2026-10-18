@@ -24,13 +24,14 @@ const buttonsWithAction = (action: string): HTMLElement[] =>
 describe("SettingsView budgets", () => {
   it("invites a first budget when none is saved", () => {
     const { container } = renderApp(<SettingsView />, { budgets: [] }, NOW);
-    expect(container.textContent).toContain("No budgets");
+    expect(container.textContent).toContain("No budgets yet");
     expect(buttonsWithAction("new-budget")).toHaveLength(1);
   });
 
-  it("says it is still loading before the saved budgets arrive", () => {
-    renderApp(<SettingsView />, {}, NOW);
-    expect(screen.getByText("Loading budgets…")).toBeTruthy();
+  it("shows a skeleton while the saved budgets are on their way", () => {
+    const { container } = renderApp(<SettingsView />, {}, NOW);
+    const loading = container.querySelector('[role="status"][aria-label="Loading budgets"]');
+    expect(loading?.classList.contains("skeleton")).toBe(true);
   });
 
   it("lists saved budgets with spend, badges and edit/remove buttons", () => {
@@ -114,7 +115,7 @@ describe("SettingsView budgets", () => {
     );
     expect((screen.getByRole("combobox", { name: "Scope" }) as HTMLSelectElement).value).toBe("provider:zai");
     expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toContain("Saved");
+    expect(screen.getByText("Saved")).toBeTruthy();
     expect(buttonsWithAction("new-budget")).toHaveLength(0);
   });
 
@@ -194,9 +195,11 @@ describe("SettingsView notifications", () => {
 describe("SettingsView history", () => {
   const STATS = { bytes: 49_152, nodes: 3, requests: 421, roots: 2, retentionDays: 30 };
 
-  it("says it is still reading before the stats arrive, and that history is off when it is", () => {
+  it("shows a skeleton before the stats arrive, and that history is off when it is", () => {
     const loading = renderApp(<SettingsView />, { budgets: [] }, NOW);
-    expect(loading.container.textContent).toContain("Reading the history store");
+    expect(
+      loading.container.querySelector('[role="status"][aria-label="Reading the history store"]'),
+    ).toBeTruthy();
     loading.unmount();
     const off = renderApp(<SettingsView />, { budgets: [], historyOff: true }, NOW);
     expect(off.container.textContent).toContain("History is off");

@@ -1,6 +1,7 @@
 package ticket
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -88,6 +89,15 @@ func TestBadges(t *testing.T) {
 		want := []Badge{{"blocked", "BLOCKED"}}
 		if got := Badges(tk, "review", nil, nil); !reflect.DeepEqual(got, want) {
 			t.Errorf("Badges(...) = %q, want %q", got, want)
+		}
+	})
+	t.Run("the wire spells kind and label in lower case", func(t *testing.T) {
+		got, err := json.Marshal(Badge{Kind: "priority", Label: "P1"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != `{"kind":"priority","label":"P1"}` {
+			t.Errorf("json.Marshal(Badge) = %s, want lower-case keys", got)
 		}
 	})
 }

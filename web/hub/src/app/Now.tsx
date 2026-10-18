@@ -247,56 +247,56 @@ function NeedsCard({
   );
 }
 
-/** A working or stuck row: the mark, the name with its state word, the model chip, where it
- *  works and how full its window is. `sel` is the desktop's keyboard selection. */
+/** A working or stuck row: the mark, the name taking the row's free width with the state word and
+ *  the model chip after it, then where it works and how full its window is. `sel` is the desktop's
+ *  keyboard selection. */
 function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element {
   return (
     <a
       href={openHref(s)}
       data-row={s.session_id}
       aria-current={sel ? "true" : undefined}
-      class={`grid grid-cols-[14px_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1 px-1.5 py-2.5 ${
+      class={`flex flex-col gap-1 px-1.5 py-2.5 ${
         sel ? "rounded-[10px] bg-base-100 ring-1 ring-primary" : "border-b hairline"
       }`}
     >
-      <StateMark state={s.state} />
       <span class="flex min-w-0 items-center gap-1.5">
-        <span class="min-w-0 truncate text-[15px] font-medium">{sessionName(s)}</span>
+        <StateMark state={s.state} />
+        <span class="min-w-0 flex-1 truncate text-[15px] font-medium">{sessionName(s)}</span>
         {s.harness ? <HarnessBadge harness={s.harness} /> : null}
         <StateChip state={s.state} />
+        {s.model ? <ModelChip model={s.model} /> : null}
       </span>
-      {s.model ? <ModelChip model={s.model} /> : <span />}
-      <span />
-      <span class="min-w-0 truncate text-[13px] muted">
-        {[s.machine, s.task].filter(Boolean).join(" · ")}
-      </span>
-      <span class="text-right text-xs muted tnum">
-        {s.context_percent ? `${Math.round(s.context_percent)}%` : ""}
+      <span class="flex items-baseline justify-between gap-2.5">
+        <span class="min-w-0 truncate text-[13px] muted">
+          {[s.machine, s.task].filter(Boolean).join(" · ")}
+        </span>
+        <span class="shrink-0 text-right text-xs muted tnum">
+          {s.context_percent ? `${Math.round(s.context_percent)}%` : ""}
+        </span>
       </span>
     </a>
   );
 }
 
-/** An idle or ended row: the mark, the name with its state word and its machine, and how long
- *  it has been quiet. */
+/** An idle or ended row: the mark, the name taking the row's free width with its machine, the
+ *  state word after it, and how long it has been quiet. */
 function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolean }): JSX.Element {
   return (
     <a
       href={openHref(s)}
       data-row={s.session_id}
       aria-current={sel ? "true" : undefined}
-      class={`grid grid-cols-[14px_minmax(0,1fr)_auto] items-center gap-x-2.5 px-1.5 py-2.5 ${
+      class={`flex items-center gap-1.5 px-1.5 py-2.5 ${
         sel ? "rounded-[10px] bg-base-100 ring-1 ring-primary" : "border-b hairline"
       }`}
     >
       <StateMark state={s.state} />
-      <span class="flex min-w-0 items-center gap-1.5">
-        <span class="min-w-0 truncate text-[15px]">
-          {sessionName(s)} {s.machine ? <span class="text-[13px] muted">· {s.machine}</span> : null}
-        </span>
-        {s.harness ? <HarnessBadge harness={s.harness} /> : null}
-        <StateChip state={s.state} />
+      <span class="min-w-0 flex-1 truncate text-[15px]">
+        {sessionName(s)} {s.machine ? <span class="text-[13px] muted">· {s.machine}</span> : null}
       </span>
+      {s.harness ? <HarnessBadge harness={s.harness} /> : null}
+      <StateChip state={s.state} />
       <span class="shrink-0 text-xs muted">{ageText(s.last_event_at, now)}</span>
     </a>
   );
@@ -575,7 +575,11 @@ export function NowPane({ layout }: { layout: Layout }): JSX.Element {
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto pb-4" data-now-sections="">
         {st.sessions === null ? (
-          <p class="px-4 py-10 text-center text-sm muted">Reading the registry…</p>
+          <div class="grid gap-2 px-3 pt-3" role="status" aria-label="Reading the registry">
+            {[0, 1, 2, 3].map((row) => (
+              <div key={row} class="skeleton h-12" aria-hidden="true" />
+            ))}
+          </div>
         ) : rows.length === 0 ? (
           <div class="mx-auto m-4 flex max-w-lg flex-col items-center gap-2 rounded-box border border-dashed border-base-content/20 px-6 py-16 text-center text-sm muted">
             <b class="text-base font-semibold text-base-content">Nothing needs you</b>

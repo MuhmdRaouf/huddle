@@ -19,6 +19,7 @@ import {
 } from "../shared/time-range.ts";
 import { type ClientState, flowSource, selectedSession, visibleRequests } from "../state.ts";
 import { StackedAreaChart } from "./Chart.tsx";
+import { ChartTipBox } from "./ChartTip.tsx";
 import { useApp } from "./context.ts";
 import { useTween } from "./hooks.ts";
 import { Icon } from "./Icon.tsx";
@@ -97,33 +98,18 @@ type Tip = { index: number; x: number; top: number; height: number };
 type Drag = { startX: number; x: number; left: number; width: number };
 
 /** Where the tooltip sits: right of the pointer, or left of it when it would run off the window. */
-function tipLeft(x: number, width: number): number {
-  const left = x + 14 + width > window.innerWidth ? x - 14 - width : x + 14;
-  return Math.max(8, left);
-}
-
 function ChartTip({ tip, series, ts }: { tip: Tip; series: number[][]; ts: number }) {
   const total = series.reduce((acc, values) => acc + (values[tip.index] ?? 0), 0);
   return (
-    <>
-      <div
-        class="chart-tip"
-        style={{ display: "block", left: `${tipLeft(tip.x, 190)}px`, top: `${tip.top + 8}px` }}
-      >
-        <div class="tip-head">{`${fmtClock(ts)}  ${fmtTokens(total)} tokens`}</div>
-        {TOKEN_KINDS.map((kind, k) => (
-          <div key={kind.label} class="tip-line">
-            <span class="swatch" style={{ background: kind.color }} />
-            <span>{kind.label}</span>
-            <span class="tip-value">{fmtNum(series[k]?.[tip.index] ?? 0)}</span>
-          </div>
-        ))}
-      </div>
-      <div
-        class="chart-cross"
-        style={{ display: "block", left: `${tip.x}px`, top: `${tip.top}px`, height: `${tip.height}px` }}
-      />
-    </>
+    <ChartTipBox
+      tip={tip}
+      head={`${fmtClock(ts)}  ${fmtTokens(total)} tokens`}
+      lines={TOKEN_KINDS.map((kind, k) => ({
+        color: kind.color,
+        label: kind.label,
+        value: fmtNum(series[k]?.[tip.index] ?? 0),
+      }))}
+    />
   );
 }
 

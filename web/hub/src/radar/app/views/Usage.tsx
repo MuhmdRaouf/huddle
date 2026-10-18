@@ -15,6 +15,7 @@ import type { UsageDay, UsageReport, UsageSession, UsageSlice, UsageTotals } fro
 import { USAGE_WINDOWS } from "../../shared/usage.ts";
 import type { UsageDrill, UsageMetric } from "../../state.ts";
 import { LineChart, StackedBar } from "../Chart.tsx";
+import { ChartTipBox, useChartTip } from "../ChartTip.tsx";
 import { CopyButton } from "../Content.tsx";
 import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
@@ -52,6 +53,25 @@ export function usageSeries(
 
 /** One model's row of a picked day's split: its value and its share of the day's visible total. */
 export type DayRow = { key: string; value: number; share: number };
+
+/** The chart tooltip's content at one day: the date and every visible model's value for the metric. */
+export function usageTip(
+  data: UsageSeries,
+  index: number,
+  metric: UsageMetric,
+): { head: string; lines: { color: string; label: string; value: string }[] } {
+  const day = data.days[index];
+  if (day === undefined) return { head: "", lines: [] };
+  const cell = (value: number): string => (metric === "cost" ? fmtUsd(value) : fmtNum(value));
+  return {
+    head: dayWords(day.date),
+    lines: data.keys.map((key, series) => ({
+      color: modelColor(key),
+      label: shortModelName(key),
+      value: cell(data.values[series]?.[index] ?? 0),
+    })),
+  };
+}
 
 const ZERO_DAY: UsageDay = {
   date: "",
@@ -216,10 +236,11 @@ function HonestNote({ report }: { report: UsageReport }) {
   );
 }
 
-/** The chart area: click a day to pick it, arrow keys move the pick, Escape clears — and a visually
- *  hidden table carries the same numbers for screen readers. */
+/** The chart area: hover for the day's tooltip, click a day to pick it, arrow keys move the pick,
+ *  Escape clears — and a visually hidden table carries the same numbers for screen readers. */
 function UsagePlot({ data, metric, mark }: { data: UsageSeries; metric: UsageMetric; mark: number | null }) {
   const { state, act } = useApp();
+  const tipper = useChartTip(data.values[0] ?? []);
   const dates = data.days.map((day) => day.date);
   const peak = layeredMax(data.values);
   const shown = data.keys.length;
@@ -251,6 +272,8 @@ function UsagePlot({ data, metric, mark }: { data: UsageSeries; metric: UsageMet
         data-usage-plot=""
         onClick={pick}
         onKeyDown={onKey}
+        onPointerMove={tipper.move}
+        onPointerLeave={tipper.leave}
       >
         <LineChart
           series={data.keys.map((key, index) => ({
@@ -263,6 +286,9 @@ function UsagePlot({ data, metric, mark }: { data: UsageSeries; metric: UsageMet
           xLabels={dayLabels(dates)}
           yLabel={peak > 1 ? `${metric === "cost" ? fmtUsd(peak) : fmtTokens(peak)} per day` : null}
         />
+        {tipper.tip !== null && (
+          <ChartTipBox tip={tipper.tip} {...usageTip(data, tipper.tip.index, metric)} />
+        )}
       </div>
       <UsageTable data={data} metric={metric} />
     </div>
@@ -563,8 +589,9 @@ function Drill({ report, drill, metric }: { report: UsageReport; drill: UsageDri
   const { act, now } = useApp();
   const slices = drillSlices(report, drill.kind);
   const slice = slices.find((entry) => entry.key === drill.key);
+  const values = slice === undefined ? [] : slice.days.map((day) => metricValue(day, metric));
+  const tipper = useChartTip(values);
   if (slice === undefined) return null;
-  const values = slice.days.map((day) => metricValue(day, metric));
   const peak = layeredMax([values]);
   const title = drillTitle(drill.kind, slice.key);
   const sessions = drill.kind === "project" ? (report.topSessions[slice.key] ?? []) : [];
@@ -593,6 +620,8 @@ function Drill({ report, drill, metric }: { report: UsageReport; drill: UsageDri
           role="img"
           aria-label={`${title}'s daily series over the window`}
           data-usage-drill-plot=""
+          onPointerMove={tipper.move}
+          onPointerLeave={tipper.leave}
         >
           <LineChart
             series={[{ values, color: modelColor(slice.key) }]}
@@ -601,6 +630,16 @@ function Drill({ report, drill, metric }: { report: UsageReport; drill: UsageDri
             xLabels={dayLabels(slice.days.map((day) => day.date))}
             yLabel={peak > 1 ? `${metric === "cost" ? fmtUsd(peak) : fmtTokens(peak)} per day` : null}
           />
+          {tipper.tip !== null && (
+            <ChartTipBox
+              tip={tipper.tip}
+              {...usageTip(
+                { keys: [slice.key], values: [values], days: slice.days },
+                tipper.tip.index,
+                metric,
+              )}
+            />
+          )}
         </div>
         {sessions.length > 0 && <SessionTable sessions={sessions} now={now} />}
       </div>

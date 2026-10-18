@@ -67,14 +67,14 @@ export function Panel({
     <section class={`panel min-w-0 ${flush ? "overflow-hidden" : ""} ${c}`.trim()} aria-label={label}>
       {head ? (
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-base-content/8 px-5 py-3.5">
-          <div class="flex min-w-0 flex-1 items-center gap-2.5">
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1">
             {icon ? (
               <span class="text-primary [&_svg]:size-4.5" aria-hidden="true">
                 {icon}
               </span>
             ) : null}
             {title !== undefined ? <h2 class="truncate text-base font-semibold">{title}</h2> : null}
-            {meta !== undefined ? <span class="shrink-0 text-sm text-base-content/60">{meta}</span> : null}
+            {meta !== undefined ? <span class="text-sm text-base-content/60">{meta}</span> : null}
           </div>
           {actions ? <div class="flex flex-wrap items-center gap-2">{actions}</div> : null}
         </div>

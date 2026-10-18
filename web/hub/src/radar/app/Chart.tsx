@@ -6,12 +6,11 @@
 import type { VNode } from "preact";
 import {
   type ChartOptions,
-  catmullRomPath,
   type Frame,
   layeredMax,
   type LayeredOptions,
+  monotonePath,
   type Point,
-  plotBounds,
   reversedContinuation,
   type StackedOptions,
   scaleY,
@@ -80,7 +79,7 @@ export function AreaChart(options: ChartOptions): VNode {
   const max = Math.max(...values, 1);
   const step = values.length > 1 ? width / (values.length - 1) : 0;
   const points: Point[] = values.map((value, index) => ({ x: index * step, y: scaleY(value, max, height) }));
-  const line = catmullRomPath(points, plotBounds(height));
+  const line = monotonePath(points);
   const area = line === "" ? "" : `${line} L ${width} ${height} L 0 ${height} Z`;
   return framed(
     options,
@@ -108,7 +107,6 @@ export function StackedAreaChart(options: StackedOptions): VNode {
   const max = Math.max(...totals, 1);
   const step = length > 1 ? width / (length - 1) : 0;
   const running = Array.from({ length: length }, () => 0);
-  const bounds = plotBounds(height);
   let below: Point[] = running.map((_, index) => ({ x: index * step, y: height }));
   const bands: VNode[] = [];
   const lines: VNode[] = [];
@@ -118,10 +116,10 @@ export function StackedAreaChart(options: StackedOptions): VNode {
       running[index] = (running[index] ?? 0) + value; // missing values count as 0
     });
     const top: Point[] = running.map((value, index) => ({ x: index * step, y: scaleY(value, max, height) }));
-    const edge = catmullRomPath(top, bounds);
+    const edge = monotonePath(top);
     if (edge !== "") {
       bands.push(
-        <path fill={band.color} class="chart-band" d={`${edge} ${reversedContinuation(below, bounds)} Z`} />,
+        <path fill={band.color} class="chart-band" d={`${edge} ${reversedContinuation(below)} Z`} />,
       );
       lines.push(<path stroke={band.color} class="chart-line" d={edge} />);
     }
@@ -141,7 +139,6 @@ export function LineChart(options: LayeredOptions): VNode {
   const length = series.reduce((longest, band) => Math.max(longest, band.values.length), 0);
   const max = layeredMax(series.map((band) => band.values));
   const step = length > 1 ? width / (length - 1) : 0;
-  const bounds = plotBounds(height);
   const plot: VNode[] = [];
   if (mark !== null && mark !== undefined && mark >= 0 && mark < length) {
     const at = (mark * step).toFixed(1);
@@ -149,7 +146,7 @@ export function LineChart(options: LayeredOptions): VNode {
   }
   series.forEach((band, index) => {
     const points: Point[] = band.values.map((value, at) => ({ x: at * step, y: scaleY(value, max, height) }));
-    plot.push(<path key={index} stroke={band.color} class="chart-line" d={catmullRomPath(points, bounds)} />);
+    plot.push(<path key={index} stroke={band.color} class="chart-line" d={monotonePath(points)} />);
   });
   return framed(options, plot);
 }

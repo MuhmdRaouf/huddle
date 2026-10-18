@@ -1,8 +1,9 @@
 // theme.ts — the theme choice: a family (six, each a dark and a light variant) plus a mode (System,
 // Dark, Light), kept per browser under "huddle:theme" as JSON and applied to <html data-theme>
 // before anything paints (public/theme-boot.js does it at boot; this is the running half).
-// Catppuccin dark (mocha) is the default. A choice kept under the old single-palette names
-// ("mocha", "latte", "system", "dark", "light") reads as its new one and is written back migrated.
+// Catppuccin following the system's colour scheme is the default. A choice kept under the old
+// single-palette names ("mocha", "latte", "system", "dark", "light") reads as its new one and is
+// written back migrated.
 
 import type { IconName } from "../icons.tsx";
 import { readPref, type Storage, writePref } from "../storage.ts";
@@ -175,8 +176,8 @@ export const MODES: readonly (readonly [ThemeMode, string, IconName])[] = [
   ["light", "Light", "sun"],
 ];
 
-/** Catppuccin Mocha: the default choice (SPEC 9.2). */
-export const DEFAULT_PREF: ThemePref = { family: "catppuccin", mode: "dark" };
+/** Catppuccin following the system's colour scheme: the default choice (SPEC 9.2). */
+export const DEFAULT_PREF: ThemePref = { family: "catppuccin", mode: "system" };
 
 /** Does this browser prefer the dark palette right now? */
 export const prefersDark = (mq: { matches: boolean }): boolean => mq.matches;

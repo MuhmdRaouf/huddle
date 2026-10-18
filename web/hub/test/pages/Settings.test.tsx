@@ -312,6 +312,7 @@ describe("saving", () => {
 
 describe("this browser", () => {
   it("keeps a theme pick and checks the family card", async () => {
+    localStorage.setItem("huddle:theme", '{"family":"catppuccin","mode":"dark"}');
     mount();
     await flush();
     const nord = document.querySelector('[data-family="nord"]') as HTMLButtonElement;

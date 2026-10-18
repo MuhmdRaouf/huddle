@@ -216,10 +216,10 @@ describe("the Now list", () => {
     expect(headings()).toEqual(["Working · 1"]);
   });
 
-  it("says what it holds before the first read and when nothing is registered", () => {
+  it("shows a skeleton before the first read and its empty state when nothing is registered", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone", null);
-    expect(screen.getByText("Reading the registry…")).toBeDefined();
+    expect(screen.getByRole("status", { name: "Reading the registry" })).toBeDefined();
     mountNow("phone", []);
     expect(screen.getByText("Nothing needs you")).toBeDefined();
     expect(screen.getByText("When a session needs you, it shows up here first.")).toBeDefined();

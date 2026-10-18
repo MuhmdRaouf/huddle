@@ -302,27 +302,25 @@ function TopSessions() {
               const dot = sessionDot(row, item.live);
               const name = item.name ?? item.project ?? item.id.slice(0, 8);
               return (
-                <tr key={item.id}>
+                <tr key={item.id} class="border-t border-base-content/10">
                   <td class="py-2 align-middle">
                     <span class={`size-2.5 ${dot.cls}`} role="img" aria-label={dot.word} title={dot.word} />
                   </td>
                   <td class="min-w-0 py-2">
                     <a
                       href={`#/now/${encodeURIComponent(item.id)}`}
-                      class="block truncate border-t border-base-content/10 py-2 hover:text-primary"
+                      class="block truncate py-2 hover:text-primary"
                       title={item.id}
                     >
                       {name}
                       {row?.machine ? <span class="muted"> · {row.machine}</span> : null}
                     </a>
                   </td>
-                  <td class="truncate border-t border-base-content/10 py-2 font-mono text-[13px]">
+                  <td class="truncate py-2 font-mono text-[13px]">
                     {item.model === null ? "–" : <ModelChip model={item.model} />}
                   </td>
-                  <td class="num border-t border-base-content/10 py-2 text-right">
-                    {fmtNum(item.requestCount)}
-                  </td>
-                  <td class="num border-t border-base-content/10 py-2 text-right">
+                  <td class="num py-2 text-right">{fmtNum(item.requestCount)}</td>
+                  <td class="num py-2 text-right">
                     {item.costUsd === null || item.costUsd === 0 ? "–" : fmtUsd(item.costUsd)}
                   </td>
                 </tr>

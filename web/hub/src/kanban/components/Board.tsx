@@ -11,7 +11,7 @@ import {
 import { CardView } from "./Card.tsx";
 import { Column } from "./Column.tsx";
 
-/** The phone layout's column picker: one tab per column, its count beside its name. */
+/** The phone layout's column picker: one tab per column, its count a small badge beside its name. */
 function TabBar({
   columns,
   active,
@@ -32,7 +32,8 @@ function TabBar({
           aria-selected={col.id === active}
           onClick={() => onPick(col.id)}
         >
-          {col.title} <span class="count">{col.count}</span>
+          <span>{col.title}</span>
+          <span class="count-badge">{col.count}</span>
         </button>
       ))}
     </div>
@@ -59,7 +60,9 @@ export function Board({ snapshot, filters, changeSeq, changedIds, onOpen, onTag 
   if (snapshot === null) {
     return (
       <div class="board" data-layout="loading">
-        <p role="status">Loading the board…</p>
+        <div class="loading" role="status" aria-label="Loading the board">
+          <div class="skeleton board-skeleton" aria-hidden="true" />
+        </div>
       </div>
     );
   }

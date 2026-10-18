@@ -6,12 +6,13 @@
 
 import type { VNode } from "preact";
 import { bucketizeRange, windowLabels } from "../../chart.ts";
-import { bucketWord, costText, fmtCount, fmtDuration, fmtNum, fmtTokens } from "../../fmt.ts";
+import { bucketWord, costText, fmtClock, fmtCount, fmtDuration, fmtNum, fmtTokens } from "../../fmt.ts";
 import { providerColor, TOKEN_KINDS } from "../../palette.ts";
 import { type ModelRow, type Tokens, totalTokens, type UpstreamRow } from "../../shared/model.ts";
 import { bucketPlan, rangeToHash } from "../../shared/time-range.ts";
 import { flowSource, modelsScopeKey, selectedIds, visibleRequests } from "../../state.ts";
 import { AreaChart, StackedBar } from "../Chart.tsx";
+import { ChartTipBox, useChartTip } from "../ChartTip.tsx";
 import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
 import { Code, EmptyState, ModelChip, Panel } from "../kit.tsx";
@@ -150,13 +151,15 @@ function RateCard() {
         ? null
         : bucketizeRange(visibleRequests(state), from, to, plan.buckets);
   const everySession = history && selectedIds(state).length > 0;
+  const tipper = useChartTip(counts ?? []);
+  const bucketMs = fetched?.bucketMs ?? plan.bucketMs;
   return (
     <Panel
       icon="activity"
       title="Request rate"
-      subtitle={`Requests per bucket, ${bucketWord(fetched?.bucketMs ?? plan.bucketMs)} per bar${everySession ? ", every session" : ""}`}
+      subtitle={`Requests per bucket, ${bucketWord(bucketMs)} per bar${everySession ? ", every session" : ""}`}
     >
-      <div class="rate-chart">
+      <div class="rate-chart" onPointerMove={tipper.move} onPointerLeave={tipper.leave}>
         {counts === null ? (
           state.flowError !== null ? (
             <div role="alert" class="alert alert-error">
@@ -178,6 +181,15 @@ function RateCard() {
             gradientId="rate-gradient"
             xLabels={windowLabels(from, to, now)}
             yLabel={`${fmtNum(Math.max(...counts, 0))} max`}
+          />
+        )}
+        {counts !== null && tipper.tip !== null && (
+          <ChartTipBox
+            tip={tipper.tip}
+            head={fmtClock(from + tipper.tip.index * bucketMs)}
+            lines={[
+              { color: "var(--series-2)", label: "Requests", value: fmtNum(counts[tipper.tip.index] ?? 0) },
+            ]}
           />
         )}
       </div>

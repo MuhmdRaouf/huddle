@@ -10,20 +10,12 @@ import "./kanban.css";
 import { Board } from "./components/Board.tsx";
 import { Drawer, useDrawerSelection } from "./components/Drawer.tsx";
 import { Toolbar } from "./components/Toolbar.tsx";
-import { type BoardRef, boardIo, fetchBoards } from "./io.ts";
+import { boardIo, type BoardRef, fetchBoards, optionLabel } from "./io.ts";
 import { BoardStore, DONE_HIDE_THRESHOLD, EMPTY_FILTERS, type Filters, togglePick } from "./store.ts";
 
-const LOADING_LINE = "Loading the boards…";
 const EMPTY_LINE = "No boards yet. A session working in a repo with .agents/kanban adds its board here.";
 const GONE_LINE = "That board is gone. Pick another.";
 const FAILED_LINE = "The board list is unreachable.";
-
-/** The picker's label: the repo's name, disambiguated with its root once the name repeats. */
-export function optionLabel(boards: BoardRef[], board: BoardRef): string {
-  return boards.some((other) => other !== board && other.name === board.name)
-    ? `${board.name} (${board.root})`
-    : board.name;
-}
 
 /** The board list's read: loading until it answers, failed when it throws. */
 type BoardsState = { kind: "loading" } | { kind: "failed" } | { kind: "ok"; boards: BoardRef[] };
@@ -65,7 +57,15 @@ function useBoardStore(key: string): BoardStore | null {
 }
 
 /** The chosen board's page: the toolbar, the board and the drawer on the key's store. */
-function BoardPane({ boardKey }: { boardKey: string }): JSX.Element {
+function BoardPane({
+  boardKey,
+  boards,
+  onBoard,
+}: {
+  boardKey: string;
+  boards: BoardRef[];
+  onBoard: (key: string) => void;
+}): JSX.Element {
   const store = useBoardStore(boardKey);
   const sel = useDrawerSelection();
   const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
@@ -94,7 +94,14 @@ function BoardPane({ boardKey }: { boardKey: string }): JSX.Element {
   const openCard = sel.openId === null ? null : (cards.find((card) => card.id === sel.openId) ?? null);
   return (
     <>
-      <Toolbar cards={cards} filters={filters} onChange={setFilters} />
+      <Toolbar
+        cards={cards}
+        filters={filters}
+        onChange={setFilters}
+        boards={boards}
+        boardKey={boardKey}
+        onBoard={onBoard}
+      />
       <Board
         snapshot={snapshot}
         filters={filters}
@@ -129,28 +136,41 @@ export function KanbanTab({ boardKey }: { boardKey: string | null }): JSX.Elemen
     if (boardKey === null && first !== null) location.hash = `#/kanban/${first.key}`;
   }, [boardKey, first]);
 
+  const toAddress = (key: string): void => {
+    location.hash = `#/kanban/${key}`;
+  };
+
   return (
     <div class="kanban-tab">
-      {boards.length > 0 && (
-        <select
-          aria-label="Board"
-          value={effective ?? ""}
-          onChange={(event) => {
-            location.hash = `#/kanban/${event.currentTarget.value}`;
-          }}
-        >
-          {boards.map((board) => (
-            <option key={board.key} value={board.key}>
-              {optionLabel(boards, board)}
-            </option>
-          ))}
-        </select>
+      {state.kind === "loading" && (
+        <div class="loading" role="status" aria-label="Loading the boards">
+          <div class="skeleton toolbar-skeleton" aria-hidden="true" />
+          <div class="skeleton board-skeleton" aria-hidden="true" />
+        </div>
       )}
-      {state.kind === "loading" && <p role="status">{LOADING_LINE}</p>}
       {state.kind === "failed" && <p role="status">{FAILED_LINE}</p>}
       {state.kind === "ok" && boards.length === 0 && <p role="status">{EMPTY_LINE}</p>}
-      {gone && <p role="status">{GONE_LINE}</p>}
-      {effective !== null && <BoardPane boardKey={effective} />}
+      {gone && (
+        <>
+          {/* a gone key leaves the toolbar's picker standing, so another board is one pick away */}
+          <div class="toolbar">
+            <select
+              class="board-select"
+              aria-label="Board"
+              value=""
+              onChange={(e) => toAddress(e.currentTarget.value)}
+            >
+              {boards.map((board) => (
+                <option key={board.key} value={board.key}>
+                  {optionLabel(boards, board)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p role="status">{GONE_LINE}</p>
+        </>
+      )}
+      {effective !== null && <BoardPane boardKey={effective} boards={boards} onBoard={toAddress} />}
     </div>
   );
 }

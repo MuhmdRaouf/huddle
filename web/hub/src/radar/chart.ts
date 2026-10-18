@@ -1,7 +1,8 @@
 /**
- * Chart geometry as pure math, shared by the Preact charts. Series go through Catmull-Rom → cubic Bézier so
- * the line is smooth without overshooting negative. No external chart library — everything here is plain
- * arithmetic; app/Chart.tsx turns it into svg.
+ * Chart geometry as pure math, shared by the Preact charts. Series go through monotone cubic
+ * interpolation (Fritsch-Carlson, the curve d3's curveMonotoneX draws) so the line is smooth and
+ * never overshoots past a neighbouring value or under the x axis. No external chart library —
+ * everything here is plain arithmetic; app/Chart.tsx turns it into svg.
  */
 
 import { TOKEN_KINDS } from "./palette.ts";
@@ -84,43 +85,57 @@ export function windowLabels(from: number, to: number, now: number): ChartLabel[
   return marks;
 }
 
-/** The y range a chart may draw in: the headroom top, the baseline at the bottom edge. */
-export type PlotBounds = { top: number; bottom: number };
-
-/** Headroom above the tallest value, in svg units. */
-const PLOT_TOP = 4;
-
-/** The plot's y bounds for a frame of this height. */
-export function plotBounds(height: number): PlotBounds {
-  return { top: PLOT_TOP, bottom: height };
-}
+/** Vertical position of a value: 3px headroom at the top, the baseline at the bottom edge. */
 
 /**
- * Catmull-Rom control points converted to a smooth cubic Bézier path. With `bounds`, control-point y values
- * are clamped to the plot: the raw spline overshoots past the top or under the baseline right before a sudden
- * rise, which read as the chart leaving its frame.
+ * Monotone cubic interpolation (Fritsch-Carlson): one cubic Bézier per neighbouring pair, with
+ * tangents chosen so a monotone series stays monotone and a local extreme flattens out instead of
+ * bulging past it. The curve never leaves the data's y range, so it cannot dip under the x axis.
  */
-export function catmullRomPath(points: Point[], bounds?: PlotBounds): string {
-  const clampY = (y: number): number =>
-    bounds === undefined ? y : Math.min(bounds.bottom, Math.max(bounds.top, y));
-  if (points.length === 0) return "";
-  if (points.length === 1) {
-    const only = points[0] as Point;
-    return `M ${only.x.toFixed(1)} ${only.y.toFixed(1)}`;
-  }
+export function monotonePath(points: Point[]): string {
+  const n = points.length;
+  if (n === 0) return "";
   const first = points[0] as Point;
+  if (n === 1) return `M ${first.x.toFixed(1)} ${first.y.toFixed(1)}`;
+  const last = points[n - 1] as Point;
+  if (n === 2)
+    return `M ${first.x.toFixed(1)} ${first.y.toFixed(1)} L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`;
+
+  const slopes: number[] = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    const a = points[i] as Point;
+    const b = points[i + 1] as Point;
+    slopes.push(b.x === a.x ? 0 : (b.y - a.y) / (b.x - a.x));
+  }
+  // the tangent at each point: the one-sided slope at the ends, zero at a turn, and the
+  // weighted harmonic mean of the two slopes elsewhere (the Fritsch-Carlson weighting)
+  const tangents: number[] = [slopes[0] as number];
+  for (let i = 1; i < n - 1; i += 1) {
+    const before = slopes[i - 1] as number;
+    const after = slopes[i] as number;
+    if (before * after <= 0) {
+      tangents.push(0);
+      continue;
+    }
+    const w1 =
+      2 * ((points[i + 1] as Point).x - (points[i] as Point).x) +
+      ((points[i] as Point).x - (points[i - 1] as Point).x);
+    const w2 =
+      (points[i + 1] as Point).x -
+      (points[i] as Point).x +
+      2 * ((points[i] as Point).x - (points[i - 1] as Point).x);
+    tangents.push((w1 + w2) / (w1 / before + w2 / after));
+  }
+  tangents.push(slopes[n - 2] as number);
+
   let d = `M ${first.x.toFixed(1)} ${first.y.toFixed(1)}`;
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const p0 = points[Math.max(0, i - 1)];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[Math.min(points.length - 1, i + 2)];
-    if (p0 === undefined || p1 === undefined || p2 === undefined || p3 === undefined) continue;
-    const c1x = p1.x + (p2.x - p0.x) / 6;
-    const c1y = clampY(p1.y + (p2.y - p0.y) / 6);
-    const c2x = p2.x - (p3.x - p1.x) / 6;
-    const c2y = clampY(p2.y - (p3.y - p1.y) / 6);
-    d += ` C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  for (let i = 0; i < n - 1; i += 1) {
+    const a = points[i] as Point;
+    const b = points[i + 1] as Point;
+    const h = b.x - a.x;
+    const c1y = a.y + ((tangents[i] as number) * h) / 3;
+    const c2y = b.y - ((tangents[i + 1] as number) * h) / 3;
+    d += ` C ${(a.x + h / 3).toFixed(1)} ${c1y.toFixed(1)}, ${(b.x - h / 3).toFixed(1)} ${c2y.toFixed(1)}, ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
   }
   return d;
 }
@@ -191,8 +206,8 @@ export function dayLabels(dates: string[]): ChartLabel[] {
 }
 
 /** A path that walks `points` backwards, continuing the current subpath (its leading M becomes an L). */
-export function reversedContinuation(points: Point[], bounds: PlotBounds): string {
-  const path = catmullRomPath([...points].reverse(), bounds);
+export function reversedContinuation(points: Point[]): string {
+  const path = monotonePath([...points].reverse());
   return path === "" ? "" : `L${path.slice(1)}`;
 }
 

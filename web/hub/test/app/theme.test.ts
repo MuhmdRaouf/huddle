@@ -95,8 +95,8 @@ describe("resolvedTheme", () => {
 });
 
 describe("currentTheme", () => {
-  it("reads the kept choice, falling back to Catppuccin dark", () => {
-    expect(DEFAULT_PREF).toEqual({ family: "catppuccin", mode: "dark" });
+  it("reads the kept choice, falling back to Catppuccin following the system", () => {
+    expect(DEFAULT_PREF).toEqual({ family: "catppuccin", mode: "system" });
     expect(currentTheme(store())).toEqual(DEFAULT_PREF);
     expect(currentTheme(store({ "huddle:theme": '{"family":"nord","mode":"light"}' }))).toEqual({
       family: "nord",

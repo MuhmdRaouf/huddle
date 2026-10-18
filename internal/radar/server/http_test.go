@@ -118,6 +118,12 @@ func TestHttpWritesAndMetrics(t *testing.T) {
 		})
 		jsonHeaders := map[string]string{"Content-Type": "application/json"}
 		budgets := `{"budgets":[{"id":"a","scope":"total","period":"week","limitUsd":3,"action":"warn"}]}`
+		if reply := call(t, port, "GET", "/api/budgets", "", nil); reply.status != 200 {
+			t.Errorf("GET /api/budgets = %d %s, want 200", reply.status, reply.body)
+		} else if reply.body == "" || strings.Contains(reply.body, `"budgets":null`) {
+			// the dashboard reads null as "not loaded yet"; an empty store is a list, not nothing
+			t.Errorf("GET /api/budgets = %s, want budgets as a list", reply.body)
+		}
 		if reply := call(t, port, "PUT", "/api/budgets", budgets, jsonHeaders); reply.status != 200 {
 			t.Errorf("PUT /api/budgets = %d %s, want 200", reply.status, reply.body)
 		}

@@ -14,9 +14,11 @@ import {
   resumeCommand,
   stepDay,
   unpricedModels,
+  usageTip,
   UsageView,
   usageSeries,
 } from "../../../src/radar/app/views/Usage.tsx";
+import { modelColor } from "../../../src/radar/palette.ts";
 import type { ClientState } from "../../../src/radar/state.ts";
 import { renderApp } from "./render.tsx";
 
@@ -272,6 +274,24 @@ describe("usageSeries", () => {
     const cost = usageSeries(REPORT, "cost", []);
     expect(cost.values[0]).toEqual([0, 0, 0, 0, 0, 0, 5.4]);
     expect(cost.values[1]).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  });
+});
+
+describe("usageTip", () => {
+  it("carries the hovered day's date and every visible model's value", () => {
+    const data = usageSeries(REPORT, "tokens", []);
+    const tip = usageTip(data, 6, "tokens");
+    expect(tip.head).toBe("17 Oct");
+    expect(tip.lines).toEqual([
+      { color: modelColor("glm-5.3"), label: "GLM 5.3", value: "10,000" },
+      { color: modelColor("glm-5.3-flash"), label: "GLM 5.3 Flash", value: "0" },
+    ]);
+  });
+
+  it("formats money for the cost metric and answers nothing for an unknown day", () => {
+    const cost = usageSeries(REPORT, "cost", []);
+    expect(usageTip(cost, 6, "cost").lines[0]?.value).toBe("$5.40");
+    expect(usageTip(cost, 99, "cost")).toEqual({ head: "", lines: [] });
   });
 });
 

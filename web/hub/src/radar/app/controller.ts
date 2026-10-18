@@ -1308,7 +1308,9 @@ export class RadarController {
         settings: settings.settings,
       });
     } catch {
-      // keep what is shown
+      // a read that never answers must not read as loading forever: the budgets land on their
+      // empty state, and the next refresh fills them in
+      this.setState({ ...this.state, budgets: this.state.budgets ?? [] });
     }
     void this.loadHistoryStats();
   }
