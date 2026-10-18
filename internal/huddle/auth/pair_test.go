@@ -418,6 +418,35 @@ func TestSessionEndsAfterSevenDaysIdle(t *testing.T) {
 	}
 }
 
+// TestSessionWhyNamesHowTheSignInEnded proves the line the signed-out page reads: nothing while
+// the cookie vouches (or when there is no cookie at all), "expired" once the seven days passed,
+// "gone" once the device's removal took the session with it.
+func TestSessionWhyNamesHowTheSignInEnded(t *testing.T) {
+	h := newPairHarness(t)
+	ctx := context.Background()
+	_, session := h.pair(t, "iPhone", "http://localhost:18860")
+	if why := h.p.SessionWhy(ctx, session.Cookie); why != "" {
+		t.Errorf("a live session's why = %q, want none", why)
+	}
+	if why := h.p.SessionWhy(ctx, ""); why != "" {
+		t.Errorf("no cookie's why = %q, want none", why)
+	}
+	h.add(7*24*60*60 + 1)
+	if why := h.p.SessionWhy(ctx, session.Cookie); why != "expired" {
+		t.Errorf("an idle-expired session's why = %q, want expired", why)
+	}
+	_, second := h.pair(t, "Pixel", "http://localhost:18860")
+	if !h.p.Remove(ctx, "Pixel") {
+		t.Fatal("remove Pixel answered false")
+	}
+	if why := h.p.SessionWhy(ctx, second.Cookie); why != "gone" {
+		t.Errorf("a removed device's why = %q, want gone", why)
+	}
+	if why := h.p.SessionWhy(ctx, "hdev_nobodyholdsthis"); why != "gone" {
+		t.Errorf("an unknown cookie's why = %q, want gone", why)
+	}
+}
+
 // TestSessionRenewsAtMostOnceAnHour proves the rolling life's edges: inside the hour after the
 // last renewal a request writes nothing, one past the hour rolls the expiry and the renewal
 // moment seven days on, and a session the database no longer holds — expired or removed with its

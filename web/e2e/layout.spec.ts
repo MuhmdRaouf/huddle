@@ -1,10 +1,11 @@
-// layout.spec.ts — the screenshot tour as a permanent gate: every tab and every Radar view, in
-// both colour schemes at the desk and the phone width, opens with no console error, no page-level
-// horizontal scroll, and no two Kanban toolbar controls overlapping. Each view also lands a
-// screenshot under the test's own output dir, so a layout report is one run away.
+// layout.spec.ts — the screenshot tour as a permanent gate: the landing page a signed-out
+// browser gets, then every tab and every Radar view, in both colour schemes at the desk and the
+// phone width, opens with no console error, no page-level horizontal scroll, and no two Kanban
+// toolbar controls overlapping. Each view also lands a screenshot under the test's own output
+// dir, so a layout report is one run away.
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { ConsoleErrors, openTab, signIn } from "./helpers.ts";
+import { ConsoleErrors, openTab, signIn, theSetup } from "./helpers.ts";
 
 /** The two viewports the tour shoots: the desk and the phone. */
 const SIZES: readonly (readonly [kind: string, width: number, height: number])[] = [
@@ -85,6 +86,21 @@ for (const scheme of SCHEMES) {
         await page.screenshot({ path: testInfo.outputPath(`${scheme}-${kind}-${view}.png`) });
       };
 
+      // the landing page first: the screen a browser with no session lands on, in this scheme
+      // and at this width, with the same no-scroll demand. A signed-out visit's only console
+      // noise is the server's own 401 refusals of the boot's reads; anything else fails here.
+      await page.goto(`${theSetup().rootUrl}/`);
+      await expect(page.locator("[data-landing]")).toBeVisible();
+      await settled(page);
+      await expectNoPageScroll(page, `landing ${scheme} ${kind}`);
+      await shot(`landing-${kind}`);
+      const landingErrors = errors.errors();
+      for (const line of landingErrors) {
+        expect(line, `the landing's console on ${scheme} ${kind}`).toMatch(
+          /^Failed to load resource: the server responded with a status of 401/,
+        );
+      }
+
       await signIn(page);
 
       /** Opens one of the shell's tabs, waits for its panes to settle, and shoots it. */
@@ -134,7 +150,7 @@ for (const scheme of SCHEMES) {
       await expectNoPageScroll(page, "settings radar");
       await shot("settings-radar");
 
-      expect(errors.errors(), `console errors on ${scheme} ${kind}`).toEqual([]);
+      expect(errors.errors().slice(landingErrors.length), `console errors on ${scheme} ${kind}`).toEqual([]);
       await context.close();
     });
   }

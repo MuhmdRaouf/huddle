@@ -367,6 +367,24 @@ func (p *Pairing) Session(ctx context.Context, cookie string) (Who, bool) {
 	return Who{Name: "owner", Root: true, Invite: true, Device: device, Kind: KindDevice}, true
 }
 
+// SessionWhy names why a pairing cookie no longer vouches for its holder: "expired" once the
+// session's window has passed, "gone" when no session holds it (a removed device's sessions
+// went with the device), and "" while it still does — or when there is no cookie to name.
+func (p *Pairing) SessionWhy(ctx context.Context, cookie string) string {
+	if cookie == "" {
+		return ""
+	}
+	digest := PairDigest(cookie)
+	if _, live, err := p.db.DeviceSession(ctx, digest, p.nowMS()); err == nil && live {
+		return ""
+	}
+	expired, err := p.db.SessionExpired(ctx, digest, p.nowMS())
+	if err == nil && expired {
+		return "expired"
+	}
+	return "gone"
+}
+
 // Renew rolls the session a cookie names forward while its holder keeps using it: a request
 // more than an hour past the session's last renewal buys seven more days, at most one write an
 // hour, and a session the database no longer holds — expired, or removed with its device —

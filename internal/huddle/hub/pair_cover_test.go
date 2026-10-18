@@ -223,6 +223,30 @@ func TestDeviceSessionRefreshesAStaleLastSeen(t *testing.T) {
 	}
 }
 
+// TestSessionExpiredNamesTheKnownButSpentSessions proves the split the sign-in reason reads: a
+// digest whose row holds an expiry that passed is expired, a digest no row holds is not (a
+// removed device's sessions went with it, the same answer as a live one), and a live session is
+// never expired.
+func TestSessionExpiredNamesTheKnownButSpentSessions(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	savePairing(t, db, "digest", pairNow.Add(10*time.Minute))
+	granted := pairNow.UnixMilli()
+	expires := granted + (7 * 24 * time.Hour).Milliseconds()
+	if err := db.PairFinish(ctx, "digest", pairDevice("phone"), "session", expires, granted); err != nil {
+		t.Fatalf("PairFinish: %v", err)
+	}
+	if expired, err := db.SessionExpired(ctx, "session", granted+time.Hour.Milliseconds()); err != nil || expired {
+		t.Errorf("a live session = (%v, %v), want not expired", expired, err)
+	}
+	if expired, err := db.SessionExpired(ctx, "session", expires+1); err != nil || !expired {
+		t.Errorf("a spent session = (%v, %v), want expired", expired, err)
+	}
+	if expired, err := db.SessionExpired(ctx, "no-session", granted); err != nil || expired {
+		t.Errorf("a digest of no row = (%v, %v), want not expired", expired, err)
+	}
+}
+
 // TestSessionRenewWritesOnlyWhenDue proves the one-write-per-hour rule at the storage layer: a
 // session renews when its last renewal is older than the window (or it never had one), refuses
 // when it is not due, and a session that is expired or gone writes nothing.

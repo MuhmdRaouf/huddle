@@ -3,8 +3,8 @@ package server
 // The machine's three roles (SPEC 3) as the running server proves them: solo and satellite keep
 // one listener on loopback — a satellite's leftover hub.listen is refused with one line — and
 // hub adds the TLS listener on hub.listen, where only a paired device's cookie or a satellite's
-// credential gets past the gate; the one-time link that signs a loopback browser in is refused
-// there, and the passkey ceremonies stay open.
+// credential gets past the gate; the one-time link a hub's own `huddle open` prints signs a
+// browser in there once, and the passkey ceremonies stay open.
 
 import (
 	"context"
@@ -208,6 +208,31 @@ func loopbackCode(t *testing.T, srv *childServer, code string) (int, http.Header
 	return response.StatusCode, response.Header
 }
 
+// hubCodeNoFollow opens one path on the hub listener without following its redirect, answering
+// the 303's own headers: the cookie a fresh code earns is read off the redirect itself.
+func hubCodeNoFollow(t *testing.T, srv *childServer, path string) (int, http.Header) {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodGet, "https://"+hubAddress(t, srv)+path, nil)
+	if err != nil {
+		t.Fatalf("build the %s request: %v", path, err)
+	}
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig:   &tls.Config{InsecureSkipVerify: true}, // the test's own certificate
+			DisableKeepAlives: true,
+		},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		Timeout:       30 * time.Second,
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("open %s on the hub listener: %v", path, err)
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, response.Body)
+	return response.StatusCode, response.Header
+}
+
 // satelliteCredential draws one satellite credential and records its digest in the child's own
 // hub database, the way the hub's minting word will.
 func satelliteCredential(t *testing.T, srv *childServer, machine string) string {
@@ -260,10 +285,11 @@ func TestSatelliteNeverListensBeyondLoopback(t *testing.T) {
 
 // TestHubListenerServesPairedDevicesAndSatellites is the hub role whole: the TLS listener answers
 // on hub.listen, refuses a request with no credential, carries a paired device's cookie and a
-// satellite's bearer, refuses the one-time link that signs a loopback browser in, and keeps the
-// passkey ceremonies open — while the loopback listener answers as it always did. The listen
-// address is the IPv6 loopback alias: a second address this machine owns, the way the NetBird
-// address is in production, that binds with no alias set up first.
+// satellite's bearer, signs a browser in with the one-time link the machine itself prints — once,
+// and only while it is fresh — and keeps the passkey ceremonies open — while the loopback listener
+// answers as it always did. The listen address is the IPv6 loopback alias: a second address this
+// machine owns, the way the NetBird address is in production, that binds with no alias set up
+// first.
 func TestHubListenerServesPairedDevicesAndSatellites(t *testing.T) {
 	listenPort := freePort(t)
 	dir := roleHome(t, fmt.Sprintf("role = \"hub\"\n\n[hub]\nlisten = \"[::1]:%d\"\nhost = \"hub.mine.test\"\n", listenPort))
@@ -295,8 +321,8 @@ func TestHubListenerServesPairedDevicesAndSatellites(t *testing.T) {
 		t.Fatalf("the paired device's read = %d %s, want 200", code, out)
 	}
 
-	// the one-time link never signs a browser in from the network, however valid it is: a fresh
-	// code earned on the loopback listener (303, a cookie) is refused outright on the hub one
+	// the one-time link signs a browser in over the hub listener too — the link `huddle open`
+	// prints on a hub names the hub's own origin — once, and only while it is fresh
 	fresh := func() string {
 		code, out := srv.post(t, "/api/login", "{}", nil)
 		if code != 200 {
@@ -314,15 +340,25 @@ func TestHubListenerServesPairedDevicesAndSatellites(t *testing.T) {
 	if status, header := loopbackCode(t, srv, spent); status != 303 || header.Get("Set-Cookie") == "" {
 		t.Fatalf("the code spent on loopback = %d with cookie %q, want 303 and one", status, header.Get("Set-Cookie"))
 	}
-	code, header, out := hubDo(t, srv, http.MethodGet, "/?code="+fresh(), "", nil)
-	if code != 401 {
-		t.Fatalf("a fresh code on the hub listener = %d %s, want 401", code, out)
+	hubCode := fresh()
+	status, header := hubCodeNoFollow(t, srv, "/?code="+hubCode)
+	if status != 303 || header.Get("Set-Cookie") == "" {
+		t.Fatalf("a fresh code on the hub listener = %d with cookie %q, want 303 and one", status, header.Get("Set-Cookie"))
 	}
-	if header.Get("Set-Cookie") != "" {
-		t.Fatalf("the refused link set a cookie: %q", header.Get("Set-Cookie"))
+	// the cookie that code earned is a way past the gate: the shell it lands on reads it there
+	// the way loopback always did, while the token header still is not
+	name, rest, _ := strings.Cut(header.Get("Set-Cookie"), "=")
+	value, _, _ := strings.Cut(rest, ";")
+	if code, _, out := hubDo(t, srv, http.MethodGet, "/api/channels", "",
+		map[string]string{"Cookie": name + "=" + value}); code != 200 {
+		t.Fatalf("the link-signed browser's read = %d %s, want 200", code, out)
 	}
-	if !strings.Contains(out, "passkey") {
-		t.Fatalf("the refusal %q does not name the passkey", out)
+	if code, _, out := hubDo(t, srv, http.MethodGet, "/api/channels", "",
+		map[string]string{"x-huddle-token": value}); code != 401 {
+		t.Fatalf("the token as a header = %d %s, want the gate's 401", code, out)
+	}
+	if status, header := hubCodeNoFollow(t, srv, "/?code="+hubCode); status != 401 || header.Get("Set-Cookie") != "" {
+		t.Fatalf("the spent code on the hub listener = %d with cookie %q, want 401 and none", status, header.Get("Set-Cookie"))
 	}
 
 	// the passkey ceremonies stay open: a browser that holds nothing can still begin a sign-in

@@ -113,3 +113,22 @@ export function deviceNameFromUA(ua: string): string {
   if (ua.includes("Linux")) return "Linux";
   return "Browser";
 }
+
+/** Marks this browser as holding one of this hub's passkeys: the landing page's primary
+ *  sign-in reads the mark, so one touch replaces the code from the next visit on. */
+export function markPasskeyHere(): void {
+  try {
+    localStorage.setItem("huddle:passkey-here", "1");
+  } catch {
+    // site data is blocked: the next visit asks for the code again
+  }
+}
+
+/** Whether this browser marked itself as holding one of this hub's passkeys. */
+export function passkeyHere(): boolean {
+  try {
+    return localStorage.getItem("huddle:passkey-here") !== null;
+  } catch {
+    return false;
+  }
+}

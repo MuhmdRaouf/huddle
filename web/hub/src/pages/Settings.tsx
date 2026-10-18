@@ -12,7 +12,7 @@ import { errText, useHuddle } from "../app/context.tsx";
 import { ThemePicker } from "../app/ThemePicker.tsx";
 import { Icon, type IconName } from "../icons.tsx";
 import { type ChannelInfo, type HuddleStore, hasOrch } from "../store.ts";
-import { ConnectCard } from "./Home.tsx";
+import { ConnectCard } from "../app/ConnectCard.tsx";
 
 /** The notification switch: is it on, and what turning it does (live.ts notifyOn/toggleNotify). */
 export type NotifySwitch = { on(): boolean; toggle(): Promise<void> };

@@ -37,6 +37,8 @@ export type E2eSetup = {
   boardName: string;
   /** The TLS hub's address: https://hub.example.test:<port>, the run's own CA behind it. */
   hubUrl: string;
+  /** The TLS hub's loopback API port: where its own machine's CLI mints and joins. */
+  hubRootUrl: string;
   /** The TLS hub's root credential (HUDDLE_TOKEN of its own run). */
   hubToken: string;
 };

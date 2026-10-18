@@ -30,6 +30,7 @@ import {
   streamItems,
 } from "../registry.ts";
 import { readPref, writePref } from "../storage.ts";
+import { ConnectCard } from "./ConnectCard.tsx";
 import { errText, useHuddle } from "./context.tsx";
 import { LinkSheet } from "./LinkSheet.tsx";
 import type { Layout } from "./layout.ts";
@@ -372,8 +373,15 @@ function RowShell({
 /** The Now list: the registry's sessions as the three layouts' list pane. The tablet carries its
  *  own header (the phone's shell and the desktop's bar draw theirs); the group-by toggle rides
  *  under it; the desktop's j and k move a selection Enter opens and a, d and r answer, the
- *  checkboxes pick sessions to send new work to, and the phone's long-press picks the same. */
-export function NowPane({ layout }: { layout: Layout }): JSX.Element {
+ *  checkboxes pick sessions to send new work to, and the phone's long-press picks the same.
+ *  `above` rides at the top of the list (the first-run checklist the shell hands down). */
+export function NowPane({
+  layout,
+  above = null,
+}: {
+  layout: Layout;
+  above?: ComponentChildren;
+}): JSX.Element {
   const { registry, now } = useHuddle();
   const act = useNeedsAct();
   const st = registry.getState();
@@ -574,6 +582,7 @@ export function NowPane({ layout }: { layout: Layout }): JSX.Element {
         </button>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto pb-4" data-now-sections="">
+        {above}
         {st.sessions === null ? (
           <div class="grid gap-2 px-3 pt-3" role="status" aria-label="Reading the registry">
             {[0, 1, 2, 3].map((row) => (
@@ -581,10 +590,22 @@ export function NowPane({ layout }: { layout: Layout }): JSX.Element {
             ))}
           </div>
         ) : rows.length === 0 ? (
-          <div class="mx-auto m-4 flex max-w-lg flex-col items-center gap-2 rounded-box border border-dashed border-base-content/20 px-6 py-16 text-center text-sm muted">
-            <b class="text-base font-semibold text-base-content">Nothing needs you</b>
-            <p>When a session needs you, it shows up here first.</p>
-          </div>
+          onlyNeeds ? (
+            <div class="mx-auto m-4 flex max-w-lg flex-col items-center gap-2 rounded-box border border-dashed border-base-content/20 px-6 py-16 text-center text-sm muted">
+              <b class="text-base font-semibold text-base-content">Nothing needs you</b>
+              <p>When a session needs you, it shows up here first.</p>
+            </div>
+          ) : (
+            <div class="m-4 flex flex-col gap-4" data-no-sessions="">
+              <div>
+                <h2 class="text-lg font-semibold tracking-tight">No sessions yet</h2>
+                <p class="m-0 text-sm muted">
+                  Bring a coding agent in: install, join, and it reports here with everything it does.
+                </p>
+              </div>
+              <ConnectCard ch="" invite={false} />
+            </div>
+          )
         ) : (
           SECTIONS.filter(([key]) => (!onlyNeeds || key === "needsYou") && groups[key].length > 0).map(
             ([key, label, warn]) => (

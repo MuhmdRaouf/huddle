@@ -180,6 +180,18 @@ func (d *DB) DeviceSession(ctx context.Context, digest string, nowMS int64) (str
 	return device, live, err
 }
 
+// SessionExpired answers whether a session digest is still known but no longer live: its row
+// holds an expiry that has passed. A digest no row holds (a removed device's sessions went with
+// the device) answers false, the same as a live one — the live check stays the caller's.
+func (d *DB) SessionExpired(ctx context.Context, digest string, nowMS int64) (bool, error) {
+	row, err := d.st.Get(ctx,
+		"SELECT 1 FROM device_sessions WHERE digest = ? AND expires <= ?", digest, nowMS)
+	if err != nil || row == nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // SessionRenew rolls one session's expiry forward when its holder keeps using it, at most once
 // per renewal window: the write lands only on a live session whose last renewal is older than
 // renewEveryMS (a NULL renewal moment — a session an older build granted — always reads due) and

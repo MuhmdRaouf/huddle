@@ -1,26 +1,17 @@
 // App.test.tsx — the shell: the three layouts' chrome (the phone bottom nav, the tablet icon
 // rail, the desktop top bar with the jump field and the machines line), the five tabs' placeholder
 // panes, today's pages reachable under Channels, the routes with their redirects, the shell's
-// keys, and the signed-out and no-channel pages.
+// keys, the no-channel page, and the first-run checklist the Now list carries.
 import { act, cleanup, screen } from "@testing-library/preact";
 import type { ComponentType } from "preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { App, inboxOf, NoChannel, SignedOut } from "../../src/app/App.tsx";
+import { App, inboxOf, NoChannel } from "../../src/app/App.tsx";
 import { IntroActions } from "../../src/app/intro.tsx";
 import { DESKTOP_QUERY, TABLET_QUERY } from "../../src/app/layout.ts";
 import { parseHash } from "../../src/app/router.ts";
 import type { ComposeOptions } from "../../src/compose/drafts.ts";
 import type { HuddleState } from "../../src/store.ts";
-import {
-  attention,
-  flush,
-  makeCtx,
-  makeState,
-  renderIn,
-  sess,
-  stubClipboard,
-  stubMedia,
-} from "../helpers.tsx";
+import { attention, flush, makeCtx, makeState, renderIn, sess, stubMedia } from "../helpers.tsx";
 
 /** The three widths the layouts are cut at, as the two breakpoint queries answer them. */
 const PHONE: Record<string, boolean> = { [TABLET_QUERY]: false, [DESKTOP_QUERY]: false };
@@ -187,10 +178,10 @@ describe("the three layouts", () => {
 });
 
 describe("routes and panes", () => {
-  it("renders Now's empty list, and the session screen when the address names one", () => {
+  it("renders Now's empty state, and the session screen when the address names one", () => {
     nav("#/now");
     mountApp();
-    expect(screen.getByText("Nothing needs you")).toBeDefined();
+    expect(screen.getByText("No sessions yet")).toBeDefined();
     nav("#/now/s-1");
     expect(screen.getByText("Reading the session…")).toBeDefined();
   });
@@ -280,7 +271,7 @@ describe("routes and panes", () => {
     nav("#/nope");
     mountApp();
     expect(location.hash).toBe("#/now");
-    expect(screen.getByText("Nothing needs you")).toBeDefined();
+    expect(screen.getByText("No sessions yet")).toBeDefined();
   });
 
   it("rewrites the old home into the channels list", () => {
@@ -587,81 +578,15 @@ describe("under Channels", () => {
   });
 });
 
-describe("NoChannel and SignedOut", () => {
+describe("NoChannel", () => {
   it("says the channel is not there and offers the channels page", () => {
     renderIn(<NoChannel ch="ghost" />);
     expect(screen.getByText(/No channel “ghost”/)).toBeDefined();
     expect(screen.getByText("channels page").getAttribute("href")).toBe("#/channels");
   });
-
-  it("renders the sign-in card, sets the title and shows the server's version", async () => {
-    renderIn(<SignedOut />);
-    expect(document.title).toBe("Huddle: signed out");
-    expect(screen.getByText("Signed out.")).toBeDefined();
-    expect(screen.getByText("In a Claude session")).toBeDefined();
-    expect(screen.getByText("Or in a terminal")).toBeDefined();
-    expect(screen.getAllByText("/huddle:setup").length).toBeGreaterThanOrEqual(2);
-    await flush();
-    expect(screen.getByText("Huddle v1.2.3")).toBeDefined();
-  });
-
-  it("offers /huddle:setup, the command that replaced /huddle:open", () => {
-    renderIn(<SignedOut />);
-    expect(screen.getByLabelText("Copy /huddle:setup")).toBeDefined();
-    expect(screen.queryByLabelText("Copy /huddle:open")).toBeNull();
-    expect(screen.queryByLabelText("Copy huddle:open")).toBeNull();
-  });
-
-  it("copies /huddle:setup and flashes the button", async () => {
-    vi.useFakeTimers();
-    const { writes } = stubClipboard();
-    renderIn(<SignedOut />);
-    // the card's own button (the cmd field's carries the same command, so target by class)
-    const big = document.querySelector("main .btn-primary") as HTMLButtonElement;
-    await act(async () => {
-      big.click();
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(writes).toEqual(["/huddle:setup"]);
-    expect(screen.getByText("Copied: paste it into a Claude session")).toBeDefined();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1700);
-    });
-    expect(screen.queryByText("Copied: paste it into a Claude session")).toBeNull();
-    vi.useRealTimers();
-  });
-
-  it("copies a command field's command", () => {
-    const { writes } = stubClipboard();
-    renderIn(<SignedOut />);
-    void act(() => {
-      screen.getByLabelText("Copy huddle open").click();
-    });
-    expect(writes).toEqual(["huddle open"]);
-  });
-
-  it("stays quiet when the clipboard refuses", () => {
-    stubClipboard(() => Promise.reject(new Error("no")));
-    renderIn(<SignedOut />);
-    void act(() => {
-      screen.getByLabelText("Copy /huddle:setup").click();
-    });
-    expect(screen.queryByText(/Copied/)).toBeNull();
-  });
-
-  it("keeps the sign-in page's name when /health has no version", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => Promise.resolve({ json: () => Promise.resolve({}) })),
-    );
-    renderIn(<SignedOut />);
-    await flush();
-    expect(screen.queryByText(/Huddle v/)).toBeNull(); // no version: the bare name stays
-    expect(document.querySelector("p.muted.text-center.text-xs")?.textContent).toBe("Huddle");
-  });
 });
 
-describe("the save-passkey banner", () => {
+describe("the first-run checklist's passkey row", () => {
   /** Mounts the shell as a browser holding one kind of credential, over a recording api. */
   function mountAs(kind: string, mintAnswer: unknown = { token: "ABCDEFGHijklmnopqrstuvwx" }) {
     const calls: { path: string; body: unknown }[] = [];
@@ -682,8 +607,14 @@ describe("the save-passkey banner", () => {
     return { calls };
   }
 
+  /** The checklist rides the Now list, so the shell mounts there. */
+  const mountOnNow = (kind: string, mintAnswer?: unknown) => {
+    location.hash = "#/now";
+    return mountAs(kind, mintAnswer);
+  };
+
   it("shows for an owner's link session, with its save and close buttons", () => {
-    mountAs("owner");
+    mountOnNow("owner");
     expect(
       screen.getByText("Save a passkey for this browser — next time Touch ID signs you in."),
     ).toBeDefined();
@@ -692,26 +623,26 @@ describe("the save-passkey banner", () => {
   });
 
   it("hides for a paired device's session and for a member's browser", () => {
-    mountAs("device");
+    mountOnNow("device");
     expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
     cleanup();
-    mountAs("member");
+    mountOnNow("member");
     expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
   });
 
   it("stays hidden after its dismissal, across remounts", () => {
-    mountAs("owner");
+    mountOnNow("owner");
     void act(() => {
       screen.getByRole("button", { name: "Dismiss" }).click();
     });
     expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
     cleanup();
-    mountAs("owner");
+    mountOnNow("owner");
     expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
   });
 
   it("mints a link and opens the pair screen with its token", async () => {
-    const h = mountAs("owner");
+    const h = mountOnNow("owner");
     await act(async () => {
       screen.getByRole("button", { name: "Save passkey" }).click();
     });
@@ -722,7 +653,7 @@ describe("the save-passkey banner", () => {
   });
 
   it("says the refusal and keeps the banner when the mint fails", async () => {
-    mountAs("owner", Object.assign(new Error("only the owner may mint a pairing link"), { status: 403 }));
+    mountOnNow("owner", Object.assign(new Error("only the owner may mint a pairing link"), { status: 403 }));
     await act(async () => {
       screen.getByRole("button", { name: "Save passkey" }).click();
     });

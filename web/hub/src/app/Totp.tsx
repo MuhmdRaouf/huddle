@@ -316,6 +316,14 @@ export function AuthenticatorCard({
   );
 }
 
+/** The lock each platform names, in its own word: the name the biometric button carries. */
+export function bioName(ua: string): string {
+  if (ua.includes("iPhone") || ua.includes("iPad")) return "Face ID";
+  if (ua.includes("Mac")) return "Touch ID";
+  if (ua.includes("Android")) return "your fingerprint";
+  return "this device's lock";
+}
+
 /** The lock each platform names, in its own word. */
 export function bioLabel(ua: string): { title: string } {
   if (ua.includes("iPhone") || ua.includes("iPad")) return { title: "Use Face ID next time?" };

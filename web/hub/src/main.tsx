@@ -8,7 +8,8 @@ import type { ComponentChildren, ComponentType } from "preact";
 import { render } from "preact";
 import { createApi } from "./api.ts";
 import "./app.css";
-import { App, NoChannel, SignedOut } from "./app/App.tsx";
+import { App, NoChannel } from "./app/App.tsx";
+import { Landing } from "./app/Landing.tsx";
 import { createAct, createCopy, type HuddleContextValue, HuddleProvider } from "./app/context.tsx";
 import { CmdKeys, CmdPalette, HelpDialog } from "./app/Palette.tsx";
 import { parseHash, pathOf } from "./app/router.ts";
@@ -351,7 +352,7 @@ function paintSignedOut(): void {
 }
 
 function page(): ComponentChildren {
-  if (signedOutPainted) return <SignedOut />;
+  if (signedOutPainted) return <Landing />;
   if (totpGate.on)
     return (
       <TotpFirstRun

@@ -7,5 +7,5 @@
   "auth": "root",
   "status": 200,
   "contentType": "application/json",
-  "body": "{\"ok\":true,\"version\":\"0.0.2\",\"started\":\"<volatile>\",\"channels\":1,\"home\":\"<volatile>\"}"
+  "body": "{\"ok\":true,\"version\":\"0.0.2\",\"started\":\"<volatile>\",\"channels\":1,\"home\":\"<volatile>\",\"machine\":\"<volatile>\"}"
 }

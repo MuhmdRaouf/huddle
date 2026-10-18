@@ -7,6 +7,8 @@ package server
 // without a credential, from a member, or from a foreign origin never draws a link.
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -44,6 +46,45 @@ func TestLoginAvailableAnswersTheMethods(t *testing.T) {
 	code, _, out = srv.get(t, "/api/login/available", map[string]string{"x-huddle-token": ""})
 	if code != 200 || out != `{"passkeys":true,"totp":true}` {
 		t.Errorf("available after an enrolment = %d %s, want the two booleans alone", code, out)
+	}
+}
+
+// TestLoginAvailableNamesWhyTheSignInEnded proves the reason line the landing page shows: none
+// on a first visit (no cookie was sent, so nothing ended), the removed-device line once the
+// owner removed the device a cookie belonged to, and the plain ended line for a link cookie that
+// no longer vouches.
+func TestLoginAvailableNamesWhyTheSignInEnded(t *testing.T) {
+	srv := startServer(t, nil)
+
+	code, _, out := srv.get(t, "/api/login/available", nil)
+	if code != 200 || out != `{"passkeys":false,"totp":false}` {
+		t.Fatalf("a first visit = %d %s, want the two booleans alone", code, out)
+	}
+
+	// a paired device: its cookie still vouches, so the answer names no end
+	setCookie, _ := pairDevice(t, srv, webauthntest.NewSoftKey(t), "iPad")
+	cookie := cookieValueOf(t, setCookie)
+	code, _, out = srv.get(t, "/api/login/available",
+		map[string]string{"Cookie": auth.PairPlainCookie + "=" + cookie})
+	if code != 200 || out != `{"passkeys":true,"totp":false}` {
+		t.Fatalf("a live device cookie = %d %s, want the two booleans alone", code, out)
+	}
+
+	// the owner removes the device: the same cookie now names the removal
+	if !pairCore(t, srv).Remove(context.Background(), "iPad") {
+		t.Fatal("remove iPad answered false")
+	}
+	code, _, out = srv.get(t, "/api/login/available",
+		map[string]string{"Cookie": auth.PairPlainCookie + "=" + cookie})
+	if code != 200 || !strings.Contains(out, `"reason":"This device was removed."`) {
+		t.Fatalf("a removed device's cookie = %d %s, want the removal line", code, out)
+	}
+
+	// a link cookie nobody holds: the plain ended line
+	code, _, out = srv.get(t, "/api/login/available",
+		map[string]string{"Cookie": fmt.Sprintf("huddle_session_%d=spent", srv.port)})
+	if code != 200 || !strings.Contains(out, `"reason":"Your sign-in ended."`) {
+		t.Fatalf("a spent link cookie = %d %s, want the ended line", code, out)
 	}
 }
 

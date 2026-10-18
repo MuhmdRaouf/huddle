@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -301,6 +302,72 @@ func TestHuddleOpenPrintsTheDashboardLinkOrExplains(t *testing.T) {
 	code, _, errOut = runH(t, noURL, "open")
 	if code != 5 || !strings.Contains(errOut, "Huddle has no port here yet") {
 		t.Fatalf("open with no url: %d %q", code, errOut)
+	}
+}
+
+// open on a hub-role home prints the hub's own https link: a browser signed in there can save a
+// passkey for the hub's name (the relying party) and lands on the origin the owner bookmarks.
+// Solo and satellite homes keep the loopback link the asking server answers on.
+func TestHuddleOpenPrintsTheHubsOwnLinkOnARoleHubHome(t *testing.T) {
+	fake := startFakeHuddle(t, func(call fakeCall) (int, string) {
+		if call.Path == "/api/login" {
+			return 200, `{"code":"c1"}`
+		}
+		return 403, `{"error":"no"}`
+	})
+	hubHome := t.TempDir()
+	if err := os.WriteFile(filepath.Join(hubHome, "config.toml"),
+		[]byte("role = \"hub\"\n\n[hub]\nlisten = \"127.0.0.1:8443\"\nhost = \"hub.mine.test\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := huddleWorld(t, fake.server.URL, map[string]string{"HUDDLE_HOME": hubHome})
+	code, out, errOut := runH(t, w, "open")
+	if code != 0 || errOut != "" {
+		t.Fatalf("open on a hub home: %d %q %q", code, out, errOut)
+	}
+	want := "dashboard: https://hub.mine.test:8443/?code=c1   (signs your browser in once, within 5 min)\n"
+	if out != want {
+		t.Errorf("open on a hub home said %q, want %q", out, want)
+	}
+
+	// a listen on 443 carries no port; the asking loopback url never reaches the link
+	hub443 := t.TempDir()
+	if err := os.WriteFile(filepath.Join(hub443, "config.toml"),
+		[]byte("role = \"hub\"\n\n[hub]\nlisten = \"127.0.0.1:443\"\nhost = \"hub.mine.test\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ = runH(t, huddleWorld(t, fake.server.URL, map[string]string{"HUDDLE_HOME": hub443}), "open")
+	if !strings.Contains(out, "dashboard: https://hub.mine.test/?code=c1") {
+		t.Errorf("a hub on 443 said %q", out)
+	}
+
+	// solo and satellite keep the loopback link
+	solo := huddleWorld(t, fake.server.URL, nil)
+	_, out, _ = runH(t, solo, "open")
+	if !strings.Contains(out, "dashboard: "+fake.server.URL+"/?code=c1") {
+		t.Errorf("solo said %q", out)
+	}
+	satHome := t.TempDir()
+	if err := os.WriteFile(filepath.Join(satHome, "config.toml"),
+		[]byte("role = \"satellite\"\n\n[hub]\nurl = \"https://hub.mine.test:8443\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ = runH(t, huddleWorld(t, fake.server.URL, map[string]string{"HUDDLE_HOME": satHome}), "open")
+	if !strings.Contains(out, "dashboard: "+fake.server.URL+"/?code=c1") {
+		t.Errorf("satellite said %q", out)
+	}
+
+	// the base alone: a url off this machine is never rewritten, whatever the home's role says
+	for _, away := range []string{"http://192.168.1.40:18860", "https://hub.other.test:8443", "not a url"} {
+		if got := dashboardBase(context.Background(), solo, away); got != away {
+			t.Errorf("dashboardBase(%q) = %q, want it untouched", away, got)
+		}
+	}
+	if got := dashboardBase(context.Background(), solo, fake.server.URL); got != fake.server.URL {
+		t.Errorf("a loopback url on a solo home = %q, want it untouched", got)
+	}
+	if got := dashboardBase(context.Background(), w, "http://localhost:1"); got != "https://hub.mine.test:8443" {
+		t.Errorf("a localhost url on the hub home = %q", got)
 	}
 }
 

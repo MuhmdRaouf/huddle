@@ -151,6 +151,9 @@ var staticTypes = map[string]string{
 	".css":         "text/css",
 	".svg":         "image/svg+xml",
 	".png":         "image/png",
+	".webp":        "image/webp",
+	".jpg":         "image/jpeg",
+	".jpeg":        "image/jpeg",
 	".html":        "text/html; charset=utf-8",
 	".md":          "text/markdown; charset=utf-8",
 	".webmanifest": "application/manifest+json",
@@ -251,6 +254,8 @@ type server struct {
 	port     int
 	cookie   string
 	started  string
+	// machine is this machine's own name: the word /health and the landing page call the hub by.
+	machine string
 	// hubSrv serves the TLS listener a hub role adds on hub.listen (roles.go); nil in every
 	// other role and whenever it could not start, in which case the loopback listener above
 	// carries the server alone.
@@ -489,6 +494,12 @@ func Serve(ctx context.Context, o Options) error {
 	if err := writeOwnerKey(ctx, o.Home, root); err != nil {
 		fmt.Fprintf(o.Stderr, "owner key: %v\n", err)
 	}
+	// the machine's own name: what /health and the landing page call the hub by, and what the
+	// owner's authenticator app lists the hub as
+	machine := "huddle"
+	if host, err := os.Hostname(); err == nil && host != "" {
+		machine = host
+	}
 	s := &server{
 		o:            o,
 		hub:          channel.NewHub(o.Data, o.AutoCreate),
@@ -500,6 +511,7 @@ func Serve(ctx context.Context, o Options) error {
 		port:         port,
 		cookie:       fmt.Sprintf("huddle_session_%d", port),
 		started:      jsfmt.ISOTime(now()),
+		machine:      machine,
 		hosts:        map[string]bool{},
 		flights:      &flightTracker{},
 		streams:      map[*liveStream]struct{}{},
@@ -536,10 +548,6 @@ func Serve(ctx context.Context, o Options) error {
 		// the authenticator core rides the same database: its secret and its recovery digests
 		// live in hub.db, so the terminal that enrols and the server that verifies share one
 		// truth. The machine's own name is what the owner's app lists the hub as.
-		machine := "huddle"
-		if host, err := os.Hostname(); err == nil && host != "" {
-			machine = host
-		}
 		s.totp = auth.NewTOTP(registry, auth.TOTPOptions{
 			Machine: machine, Now: now,
 			Log: func(line string) { fmt.Fprintf(o.Stdout, "huddle: %s\n", line) },
@@ -687,9 +695,15 @@ func Serve(ctx context.Context, o Options) error {
 	fmt.Fprintf(o.Stdout, "Huddle %s on http://%s:%d · data %s · channels %s\n",
 		o.Version, o.Host, port, s.hub.Where(), channelsLine)
 	if o.ShowRoot {
+		// the link names the hub's own origin on a hub (the base a passkey is saved for), the
+		// loopback listener it answers on everywhere else
+		base := fmt.Sprintf("http://127.0.0.1:%d", port)
+		if own := hubBaseURL(o.Home); own != "" {
+			base = own
+		}
 		fmt.Fprintf(o.Stdout,
-			"root credential (this run only; HUDDLE_TOKEN=… for the CLI): %s\ndashboard: http://127.0.0.1:%d/?code=%s\n",
-			root, port, s.auth.LoginCode(nil))
+			"root credential (this run only; HUDDLE_TOKEN=… for the CLI): %s\ndashboard: %s/?code=%s\n",
+			root, base, s.auth.LoginCode(nil))
 	}
 
 	// the home's role decides whether a second listener exists beside this one (roles.go)
@@ -1260,7 +1274,9 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 			Started  string `json:"started"`
 			Channels int    `json:"channels"`
 			Home     string `json:"home"`
-		}{true, s.o.Version, s.started, len(names), s.o.Home}, nil)
+			Machine  string `json:"machine"`
+			Name     string `json:"name,omitempty"`
+		}{true, s.o.Version, s.started, len(names), s.o.Home, s.machine, hubName(s.o.Home)}, nil)
 		return nil
 	case path == "/" || path == "/index.html":
 		return s.staticFile(w, "index.html", "text/html; charset=utf-8", true)

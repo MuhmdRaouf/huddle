@@ -94,6 +94,7 @@ export default async function globalSetup(): Promise<void> {
     sessionTitle: SESSION_TITLE,
     boardName: BOARD_NAME,
     hubUrl: `https://${HUB_HOST}:${tlsPort}`,
+    hubRootUrl: `http://127.0.0.1:${hubPort}`,
     hubToken: HUB_TOKEN,
   };
   fs.writeFileSync(setupPath, `${JSON.stringify(setup, null, 2)}\n`);

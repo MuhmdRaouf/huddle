@@ -27,17 +27,19 @@ Three ways in, one hub:
 
 1. **Authenticator code** (the primary): set it up once — the first link sign-in offers it, or
    Settings → Sign-in any time after — by scanning the QR with your authenticator app (Google
-   Authenticator, 1Password, Authy). Every later visit is six digits on the signed-out page.
+   Authenticator, 1Password, Authy). Every later visit is six digits on the landing page.
    `huddle totp setup` does the same from a terminal; `huddle totp off` removes it.
 2. **Recovery codes**: ten one-time codes the set-up shows once (copy or download them). Each
    signs in like a code when the app is not at hand; Settings → Sign-in can re-enrol for a
    fresh set.
 3. **Passkey** (optional extra): after a code sign-in the page offers to save this browser's
    lock (Touch ID, Face ID, fingerprint) as a passkey — "Not now" asks again in 30 days, and
-   the code keeps working either way. Settings → Sign-in saves one too, and `huddle pair`
-   pairs another device.
+   the code keeps working either way. A browser that saved one lands on its lock's button, the
+   code field under it. Settings → Sign-in saves one too, and `huddle pair` pairs another
+   device.
 4. **Sign-in link**: `huddle open` in a terminal, or `/huddle:setup` in a session, always prints
-   a fresh one-time link as the fallback.
+   a fresh one-time link as the fallback — loopback on a solo machine, the hub's own https
+   address on a hub.
 
 A device session rolls forward while you use it and ends after 7 days unused; one code or touch
 starts a fresh one. Remove a device from Settings on any paired device to end it at once.

@@ -64,7 +64,8 @@ type goldenScript struct {
 
 // The volatile marks, exactly as the recordings carry them: a wall-clock or process field, the
 // home the server runs from (a path of the machine that runs it), a credential, an invite, a
-// cookie; the ids the auth routes mint themselves.
+// cookie; the ids the auth routes mint themselves, and the machine /health names (the host that
+// runs the test).
 var (
 	goldenISO    = regexp.MustCompile(`20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z`)
 	goldenCred   = regexp.MustCompile(`hcred_[A-Za-z0-9_-]+`)
@@ -80,6 +81,7 @@ var goldenPerRoute = []struct {
 	{"/api/tokens", regexp.MustCompile(`"(id|token|deleted)":"[^"]*"`)},
 	{"/api/members", regexp.MustCompile(`"(invite)":"[^"]*"`)},
 	{"/api/login", regexp.MustCompile(`"(code)":"[^"]*"`)},
+	{"/health", regexp.MustCompile(`"(machine)":"[^"]*"`)},
 }
 
 // goldenMark replaces the volatile fields of one answer, the same rules on both sides.

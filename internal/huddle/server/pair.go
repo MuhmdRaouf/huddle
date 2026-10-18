@@ -162,10 +162,11 @@ func (s *server) loginFinishRoute(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
-// loginAvailableRoute answers the signed-out page's two questions — does this home hold a
-// passkey, does it hold an authenticator enrolment — with the two booleans and nothing else: no
-// device names, no counts, nothing that differs in shape or timing between a home with a method
-// and one without.
+// loginAvailableRoute answers the signed-out page's questions — does this home hold a passkey,
+// does it hold an authenticator enrolment, and why this browser's last sign-in ended — with the
+// two booleans, the one plain line and nothing else: no device names, no counts, nothing that
+// differs in shape or timing between a home with a method and one without. The reason line is
+// empty on a first visit: no cookie was sent, so nothing ended.
 func (s *server) loginAvailableRoute(w http.ResponseWriter, r *http.Request) error {
 	any, enrolled := false, false
 	if s.pairs != nil {
@@ -175,10 +176,31 @@ func (s *server) loginAvailableRoute(w http.ResponseWriter, r *http.Request) err
 		enrolled = s.totp.Enrolled(r.Context())
 	}
 	s.writeJSON(w, 200, struct {
-		Passkeys bool `json:"passkeys"`
-		TOTP     bool `json:"totp"`
-	}{any, enrolled}, nil)
+		Passkeys bool   `json:"passkeys"`
+		TOTP     bool   `json:"totp"`
+		Reason   string `json:"reason,omitempty"`
+	}{any, enrolled, s.signinReason(r)}, nil)
 	return nil
+}
+
+// signinReason names why this browser's sign-in ended, for the page that asks: a paired device's
+// session that ran out of its seven days, a device the owner removed, a link cookie that no
+// longer vouches — and nothing at all when no cookie was sent.
+func (s *server) signinReason(r *http.Request) string {
+	if s.pairs != nil {
+		if cookie := auth.PairCookie(r); cookie != "" {
+			switch s.pairs.SessionWhy(r.Context(), cookie) {
+			case "expired":
+				return "Your sign-in ended after 7 days unused."
+			case "gone":
+				return "This device was removed."
+			}
+		}
+	}
+	if cookie, err := r.Cookie(s.cookie); err == nil && cookie.Value != "" {
+		return "Your sign-in ended."
+	}
+	return ""
 }
 
 // deviceHasPasskey answers whether the device a session belongs to holds a WebAuthn

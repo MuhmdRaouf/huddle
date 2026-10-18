@@ -568,9 +568,9 @@ func downUp(up bool) string {
 
 // Dashboard answers the dashboard link that signs a browser in: a one-time login code, which
 // any session holding a credential gets for itself (the creator's browser has its rights; a
-// member's has no admin rights). Empty for a session that has not joined. The server is
-// localhost-only and the code only signs a browser in for five minutes, so the CLI prints the
-// link wherever it runs; it is not kept from Claude.
+// member's has no admin rights). Empty for a session that has not joined. The code only signs a
+// browser in for five minutes, so the CLI prints the link wherever it runs; it is not kept from
+// Claude.
 func Dashboard(ctx context.Context, w *World, rawURL, sid string, ms int) string {
 	resp, err := HFetch(ctx, w, http.MethodPost, rawURL+"/api/login",
 		map[string]string{"content-type": "application/json"}, []byte("{}"), time.Duration(ms)*time.Millisecond, sid)
@@ -587,7 +587,31 @@ func Dashboard(ctx context.Context, w *World, rawURL, sid string, ms int) string
 	if err := json.NewDecoder(resp.Body).Decode(&answer); err != nil || answer.Code == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/?code=%s", rawURL, queryEscape(answer.Code))
+	return fmt.Sprintf("%s/?code=%s", dashboardBase(ctx, w, rawURL), queryEscape(answer.Code))
+}
+
+// dashboardBase answers the base a printed dashboard link carries: the hub's own https address
+// on a hub machine — the origin the owner bookmarks, and the one a passkey can be saved for (its
+// relying party is the hub's name) — and the asking url everywhere else. Only a server on this
+// machine is rewritten: a link minted on another machine's huddle keeps that machine's address.
+func dashboardBase(ctx context.Context, w *World, rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	host := parsed.Hostname()
+	if host != "localhost" && host != "::1" && !strings.HasPrefix(host, "127.") {
+		return rawURL
+	}
+	root := Home(ctx, w)
+	if root == "" {
+		return rawURL
+	}
+	cfg, err := home.LoadConfig(home.Home{Root: root})
+	if err != nil || cfg.Role != "hub" || cfg.Hub.Host == "" {
+		return rawURL
+	}
+	return hubBaseURL(cfg.Hub.Host, cfg.Hub.Listen)
 }
 
 // queryEscape escapes one value the way JavaScript's encodeURIComponent does: alphanumerics

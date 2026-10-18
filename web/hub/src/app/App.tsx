@@ -3,30 +3,30 @@
 // 1023 px; a 52 px top bar with list, detail and context panes from 1024 px) over the tab the
 // address names — Now, Channels, Radar, Kanban or Settings. Every later tab fills its own panes; today's
 // channel pages stay reachable under Channels, with their destination tabs, their intro and the
-// session rail beside them. The signed-out and no-channel pages stand alone.
+// session rail beside them. The landing and no-channel pages stand alone.
 
 import { Icon as SharedIcon } from "@huddle/ui/icons.tsx";
-import { PageIntro, Panel } from "@huddle/ui/page.tsx";
+import { PageIntro } from "@huddle/ui/page.tsx";
 import type { Stamp } from "@huddle/ui/time.ts";
 import type { ComponentChildren, ComponentType, JSX } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ComposeOptions } from "../compose/drafts.ts";
-import { Icon, type IconName, Logo } from "../icons.tsx";
+import { Icon, type IconName } from "../icons.tsx";
 import { Time } from "../kit.tsx";
 import { KanbanTab } from "../kanban/KanbanTab.tsx";
-import { assertionFromJSON, credentialToJSON } from "../passkey.ts";
+import { markPasskeyHere } from "../passkey.ts";
 import { RadarTab } from "../radar/app/RadarTab.tsx";
 import { radarAct, useRadarState } from "../radar/mount.tsx";
 import { machinesLine, machinesOf } from "../registry.ts";
 import { FIN } from "../status.ts";
 import { readPref, writePref } from "../storage.ts";
 import type { HuddleState } from "../store.ts";
-import { errText, useHuddle } from "./context.tsx";
+import { useHuddle } from "./context.tsx";
+import { FirstRunChecklist } from "./FirstRun.tsx";
 import { IntroCtx } from "./intro.tsx";
 import { type Layout, useLayout } from "./layout.ts";
 import { NowContext, NowPane, SessionScreen } from "./Now.tsx";
 import { Pair } from "./Pair.tsx";
-import { CodeField } from "./CodeField.tsx";
 import { Rail } from "./Rail.tsx";
 import {
   channelHref,
@@ -437,321 +437,6 @@ export function NoChannel({ ch }: { ch: string }): JSX.Element {
   );
 }
 
-/** A read-only command with a copy button at the end. */
-function CmdField({ id, label, cmd }: { id: string; label: string; cmd: string }): JSX.Element {
-  return (
-    <div class="flex flex-col gap-1.5">
-      <span class="text-sm font-medium" id={`${id}-l`}>
-        {label}
-      </span>
-      {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: the cmd field's labelled box */}
-      <div
-        class="flex h-10 items-center gap-2.5 rounded-lg border border-base-content/15 bg-base-200 pr-1 pl-3"
-        aria-labelledby={`${id}-l`}
-      >
-        <span class="muted">
-          <Icon name="terminal" />
-        </span>
-        <code class="min-w-0 flex-1 truncate text-sm">{cmd}</code>
-        <CopyButton text={cmd} done="" ariaLabel={`Copy ${cmd}`} />
-      </div>
-    </div>
-  );
-}
-
-/** A copy button that flashes a check and a word for a moment when the copy landed. */
-function CopyButton({
-  text,
-  done,
-  ariaLabel,
-  class: c = "btn btn-ghost btn-square btn-sm muted",
-  children,
-}: {
-  text: string;
-  done: string;
-  ariaLabel?: string | undefined;
-  class?: string | undefined;
-  children?: ComponentChildren;
-}): JSX.Element {
-  const [hit, setHit] = useState(false);
-  useEffect(() => {
-    if (!hit) return;
-    const t = setTimeout(() => setHit(false), 1600);
-    return () => clearTimeout(t);
-  }, [hit]);
-  const copy = (): void => {
-    navigator.clipboard?.writeText(text).then(
-      () => setHit(true),
-      () => {},
-    );
-  };
-  return (
-    <button type="button" class={c} aria-label={ariaLabel} onClick={copy}>
-      {hit ? (
-        <>
-          <Icon name="check" />
-          {done}
-        </>
-      ) : (
-        children
-      )}
-    </button>
-  );
-}
-
-/** The page this browser gets when its sign-in has ended: the code field when the hub holds an
- *  authenticator enrolment (the primary way in), a passkey touch beside it when the home holds
- *  a passkey, and the link commands under a smaller heading either way — /huddle:setup in a
- *  Claude session, `huddle open` in a terminal — with the server's version under it all. */
-export function SignedOut(): JSX.Element {
-  const { api } = useHuddle();
-  const [ver, setVer] = useState("Huddle");
-  const [passkeys, setPasskeys] = useState(false);
-  const [totp, setTotp] = useState(false);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [recovery, setRecovery] = useState(false);
-  const [recoveryCode, setRecoveryCode] = useState("");
-  useEffect(() => {
-    document.title = "Huddle: signed out";
-    fetch("/health")
-      .then((r) => r.json())
-      .then((h: { version?: string }) => {
-        if (h.version) setVer(`Huddle v${h.version}`);
-      })
-      .catch(() => {});
-    api
-      .api("/api/login/available")
-      .then((r) => {
-        if ((r as { passkeys?: unknown }).passkeys === true) setPasskeys(true);
-        if ((r as { totp?: unknown }).totp === true) setTotp(true);
-      })
-      .catch(() => {});
-  }, []);
-
-  /** One code, six digits or one recovery word: the finish sets the cookie, the reload lands the
-   *  shell, and the marker tells it the biometrics offer may run. */
-  const signInWithCode = async (code: string): Promise<void> => {
-    setBusy(true);
-    setError("");
-    try {
-      await api.api("/api/login/totp", { body: { code } });
-      try {
-        localStorage.setItem("huddle:totp-signed-in", "1");
-      } catch {
-        // site data is blocked: the offer simply waits for its thirty-day turn
-      }
-      location.reload();
-    } catch (e) {
-      setError(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /** One touch: begin, the browser's own credential, finish, and the reload that lands the shell. */
-  const signIn = async (): Promise<void> => {
-    setBusy(true);
-    setError("");
-    try {
-      const r = (await api.api("/api/login/begin", { body: {} })) as { options?: unknown };
-      let cred: PublicKeyCredential;
-      try {
-        cred = (await navigator.credentials.get({
-          publicKey: assertionFromJSON(r.options).publicKey,
-        })) as PublicKeyCredential;
-      } catch (e) {
-        if ((e as { name?: string }).name === "NotAllowedError") {
-          setError("Sign-in cancelled. Try again.");
-        } else {
-          setError("No passkey on this device. Save one below, or use a sign-in link.");
-        }
-        return;
-      }
-      await api.api("/api/login/finish", { body: { response: credentialToJSON(cred) } });
-      location.reload();
-    } catch (e) {
-      setError(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <main class="grid min-h-dvh place-items-center bg-base-200 p-4">
-      <div class="flex w-full max-w-md flex-col gap-8">
-        <div class="flex flex-col items-center gap-3 text-center">
-          <Logo />
-          <h1 class="text-3xl font-bold tracking-tight">Huddle</h1>
-          <p class="text-[15px] muted">Sign in to see your channels and sessions</p>
-        </div>
-        <Panel class="w-full" label="How to sign back in">
-          <div class="flex flex-col gap-5">
-            <div class="alert alert-warning alert-soft text-sm" role="status">
-              <span class="shrink-0">
-                <Icon name="logout" />
-              </span>
-              <span>
-                <b class="font-semibold" id="so-h">
-                  Signed out.
-                </b>{" "}
-                <span class="muted">
-                  This browser's sign-in ended: Huddle was set up again, its member was removed, the link
-                  expired, or the sign-in expired after 7 days unused.
-                </span>
-              </span>
-            </div>
-            {totp ? (
-              <div class="flex flex-col gap-2.5" data-signin-code="">
-                {recovery ? (
-                  <>
-                    <label class="text-sm font-medium" htmlFor="so-recovery">
-                      Recovery code
-                    </label>
-                    <input
-                      id="so-recovery"
-                      class="input h-12 w-full font-mono"
-                      placeholder="xxxx-xxxx"
-                      autocomplete="off"
-                      spellcheck={false}
-                      value={recoveryCode}
-                      disabled={busy}
-                      onInput={(e) => setRecoveryCode(e.currentTarget.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && recoveryCode.trim() !== "") {
-                          void signInWithCode(recoveryCode.trim());
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      class="btn btn-primary h-12 w-full text-sm"
-                      disabled={busy || recoveryCode.trim() === ""}
-                      onClick={() => void signInWithCode(recoveryCode.trim())}
-                    >
-                      Sign in
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-sm self-start"
-                      onClick={() => {
-                        setRecovery(false);
-                        setError("");
-                      }}
-                    >
-                      Use the app's code instead
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span class="text-sm font-medium">Enter the code from your authenticator app</span>
-                    <CodeField onCode={(code) => void signInWithCode(code)} busy={busy} error={error} />
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-sm self-start"
-                      onClick={() => {
-                        setRecovery(true);
-                        setError("");
-                      }}
-                    >
-                      Use a recovery code instead
-                    </button>
-                  </>
-                )}
-              </div>
-            ) : null}
-            {passkeys ? (
-              <button
-                type="button"
-                class={totp ? "btn h-12 w-full text-sm" : "btn btn-primary h-12 w-full text-sm"}
-                disabled={busy}
-                onClick={() => void signIn()}
-              >
-                <Icon name="key" />
-                Sign in with a passkey
-              </button>
-            ) : null}
-            {passkeys && !totp && error ? (
-              <p role="alert" class="m-0 text-sm text-error">
-                {error}
-              </p>
-            ) : null}
-            {!totp && !passkeys ? (
-              <p class="text-sm muted">
-                Run <code>huddle open</code> once, then save a passkey: next time Touch ID signs you in.
-              </p>
-            ) : null}
-            <div class="flex flex-col gap-3">
-              <h2 class="text-sm font-semibold">No code or passkey at hand?</h2>
-              <p class="text-sm muted">
-                Run <code>/huddle:setup</code> in any session of this huddle — or <code>huddle open</code> in
-                a terminal — for a new sign-in link, then open it here.
-              </p>
-              <CmdField id="so-c" label="In a Claude session" cmd="/huddle:setup" />
-              <CmdField id="so-t" label="Or in a terminal" cmd="huddle open" />
-              <CopyButton
-                text="/huddle:setup"
-                done="Copied: paste it into a Claude session"
-                class="btn btn-primary h-10 w-full text-sm"
-              >
-                <Icon name="copy" />
-                Copy /huddle:setup
-              </CopyButton>
-            </div>
-          </div>
-        </Panel>
-        <p class="muted text-center text-xs">{ver}</p>
-      </div>
-    </main>
-  );
-}
-
-/** The banner a browser signed in by link shows at the top of the shell: save a passkey here and
- *  the next sign-in is Touch ID, with no terminal and no link. */
-function SavePasskeyBanner({
-  busy,
-  error,
-  onSave,
-  onClose,
-}: {
-  busy: boolean;
-  error: string;
-  onSave: () => void;
-  onClose: () => void;
-}): JSX.Element {
-  return (
-    <div
-      class="flex shrink-0 flex-col gap-1.5 border-b hairline bg-base-100 px-4 py-2.5 sm:px-6"
-      data-banner="passkey"
-    >
-      <div class="flex items-center gap-3">
-        <span class="shrink-0 text-primary">
-          <Icon name="key" />
-        </span>
-        <p class="m-0 min-w-0 flex-1 text-sm muted">
-          Save a passkey for this browser — next time Touch ID signs you in.
-        </p>
-        <button type="button" class="btn btn-primary btn-sm" disabled={busy} onClick={onSave}>
-          Save passkey
-        </button>
-        <button
-          type="button"
-          class="btn btn-ghost btn-square btn-sm muted"
-          aria-label="Dismiss"
-          onClick={onClose}
-        >
-          <Icon name="x" />
-        </button>
-      </div>
-      {error ? (
-        <p role="alert" class="m-0 pl-9 text-sm text-error">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 /** How long a "Not now" holds the offer away: thirty days, the card's own number. */
 const passkeyAskEveryMS = 30 * 24 * 60 * 60 * 1000;
 
@@ -795,6 +480,7 @@ function PasskeyAsk(): JSX.Element | null {
       onClose={settled}
       onDone={() => {
         who.devicePasskey = true;
+        markPasskeyHere();
         settled();
       }}
     />
@@ -902,12 +588,9 @@ export function App({
   // the pairing link's screen owns this window until it says otherwise (the state, not the
   // pathname, drops the gate — a repaint with the session cookie in lands the shell on Now)
   const [pairing, setPairing] = useState(() => location.pathname === "/pair");
-  // the token the banner minted, which runs the same pair screen in place
+  // the token the checklist minted, which runs the same pair screen in place
   const [pairToken, setPairToken] = useState<string | null>(null);
-  const [bannerOff, setBannerOff] = useState(() => readPref(localStorage, "passkey-banner", false));
-  const [minting, setMinting] = useState(false);
-  const [mintError, setMintError] = useState("");
-  const { state, registry, now, go, who, api } = useHuddle();
+  const { state, registry, now, go, who } = useHuddle();
   const layout = useLayout();
   const [hash, setHash] = useState(location.hash);
   // the page-wide controls the open page handed up, kept with the page that named them
@@ -955,44 +638,17 @@ export function App({
 
   // the gate stands under every hook, so the render that leaves it keeps its hook order: the
   // pair screen needs no credential and no channel, and onPaired drops it once the finish's
-  // cookie is in. A pairing the banner opened leaves the banner off for good.
+  // cookie is in. A pairing the checklist's row opened leaves the row off for good.
   const paired = (): void => {
     setPairing(false);
     setPairToken(null);
     writePref(localStorage, "passkey-banner", true);
-    setBannerOff(true);
+    // this browser now holds a passkey: the checklist's row stands down and the landing page's
+    // next visit leads with it
+    who.devicePasskey = true;
+    markPasskeyHere();
   };
   if (pairing) return <Pair token={pairToken ?? undefined} onPaired={paired} />;
-
-  /** Mints one pairing link without a terminal and opens the ceremony it pays for. */
-  const savePasskey = async (): Promise<void> => {
-    setMinting(true);
-    setMintError("");
-    try {
-      const r = (await api.api("/api/pair/mint", { body: { action: "mint" } })) as { token?: string };
-      if (!r.token) throw new Error("the server sent no pairing link");
-      setPairToken(r.token);
-      setPairing(true);
-    } catch (e) {
-      setMintError(errText(e));
-    } finally {
-      setMinting(false);
-    }
-  };
-  // the banner asks only a browser whose credential is the owner's link session: a paired
-  // device already has its passkey, and a member may not mint one
-  const shellBanner: ComponentChildren =
-    who.kind === "owner" && !bannerOff ? (
-      <SavePasskeyBanner
-        busy={minting}
-        error={mintError}
-        onSave={() => void savePasskey()}
-        onClose={() => {
-          writePref(localStorage, "passkey-banner", true);
-          setBannerOff(true);
-        }}
-      />
-    ) : null;
 
   const steps = state.board?.steps ?? [];
   const roster = state.sessions?.sessions ?? [];
@@ -1021,13 +677,21 @@ export function App({
 
   // each tab's panes: the list beside the detail on tablet and desktop, and the desktop's
   // context pane where a screen carries one (Now's session screen: the linked sessions and the
-  // session's facts).
+  // session's facts). The Now list carries the first-run checklist at its top.
   const nowId = route.tab === "now" ? (route.sub[0] ?? null) : null;
+  const firstRun = (
+    <FirstRunChecklist
+      onPairToken={(token) => {
+        setPairToken(token);
+        setPairing(true);
+      }}
+    />
+  );
   const list =
     route.tab === "channels" && ch && layout !== "phone" ? (
       <Rail onHelp={onHelp} />
     ) : route.tab === "now" && layout !== "phone" ? (
-      <NowPane layout={layout} />
+      <NowPane layout={layout} above={firstRun} />
     ) : null;
   const context: ComponentChildren =
     route.tab === "now" && layout === "desktop" && nowId ? <NowContext /> : null;
@@ -1038,7 +702,7 @@ export function App({
         <SessionScreen id={nowId} layout={layout} />
       ) : layout === "phone" ? (
         <div class="min-h-0 flex-1">
-          <NowPane layout="phone" />
+          <NowPane layout="phone" above={firstRun} />
         </div>
       ) : (
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5">
@@ -1095,7 +759,6 @@ export function App({
   if (layout === "phone") {
     return (
       <div class="flex h-dvh flex-col bg-base-300">
-        {shellBanner}
         {passkeyAsk}
         {nowId ? null : (
           <header class="flex shrink-0 items-center justify-between gap-3 px-5 pt-[22px] pb-3">
@@ -1113,7 +776,6 @@ export function App({
   if (layout === "tablet") {
     return (
       <div class="flex h-dvh flex-col bg-base-300">
-        {shellBanner}
         {passkeyAsk}
         <div class="grid min-h-0 min-w-0 flex-1 grid-cols-[72px_minmax(0,1fr)]">
           <IconRail tab={route.tab} n={n} />
@@ -1129,7 +791,6 @@ export function App({
   // the desktop: the top bar over the list, the detail and the context pane
   return (
     <div class="flex h-dvh flex-col bg-base-300">
-      {shellBanner}
       {passkeyAsk}
       <div class="grid min-h-0 min-w-0 flex-1 grid-rows-[52px_minmax(0,1fr)]">
         <DesktopBar

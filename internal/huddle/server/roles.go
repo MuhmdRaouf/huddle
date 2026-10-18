@@ -3,11 +3,11 @@ package server
 // The machine's role (SPEC 3) decides which listeners exist. Solo, the default, answers loopback
 // only. Hub adds a second listener on hub.listen, the NetBird address, served with the
 // certificate in tls/: a paired device's cookie or a satellite's credential is the only way past
-// its gate — the one-time link that signs a loopback browser in never works there, the passkey
-// ceremonies always do. A satellite serves its own sessions exactly as solo does and never
-// listens beyond loopback, whatever an older role left in the config. Every failure of the second
-// listener (no certificate, a taken address, a death mid-run) leaves the loopback listener
-// serving: the role never strands the machine's own sessions.
+// its gate — beside the shell and the sign-in ways every brand-new browser needs, the one-time
+// link `huddle open` prints on a hub included. A satellite serves its own sessions exactly as
+// solo does and never listens beyond loopback, whatever an older role left in the config. Every
+// failure of the second listener (no certificate, a taken address, a death mid-run) leaves the
+// loopback listener serving: the role never strands the machine's own sessions.
 
 import (
 	"context"
@@ -23,16 +23,33 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/phone"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
 )
+
+// hubBaseURL answers the hub's own https base when the home's role is a hub with a name, else
+// nothing: the base every printed dashboard link carries on a hub machine.
+func hubBaseURL(root string) string {
+	cfg, err := home.LoadConfig(home.Home{Root: root})
+	if err != nil || cfg.Role != "hub" || cfg.Hub.Host == "" {
+		return ""
+	}
+	return phone.HubURL(cfg.Hub.Host, cfg.Hub.Listen)
+}
+
+// hubName answers the name a hub role serves under, else nothing: what /health calls the hub by,
+// so a solo or satellite home is known by its machine alone.
+func hubName(root string) string {
+	cfg, err := home.LoadConfig(home.Home{Root: root})
+	if err != nil || cfg.Role != "hub" {
+		return ""
+	}
+	return cfg.Hub.Host
+}
 
 // hubSignedOut is what a browser with no pairing is told on the hub listener: the passkey is the
 // only way in from the network.
 const hubSignedOut = "This browser is not paired with this Huddle. Sign in with its passkey, or pair it from the hub machine with `huddle pair`."
-
-// hubLinkRefused is the one answer a one-time link earns on the hub listener: the link is minted
-// on and for the machine itself (SPEC 3), never a way in from the network.
-const hubLinkRefused = "the one-time link signs in on the machine itself: sign in with your passkey"
 
 // satelliteKey is the context key the hub gate tucks a verified satellite's machine name under,
 // so the routes past the gate read who is asking the way a cookie's Who is read.
@@ -210,15 +227,12 @@ func hubListenHosts(listen string, bound net.Addr, hubHost string) []string {
 }
 
 // hubGate is the hub listener's own door (SPEC 3): everything a brand-new browser needs to load
-// the app and earn a session passes through, everything else must carry a paired device's cookie
-// or a satellite's credential, and the one-time link never signs anyone in.
+// the app and earn a session passes through — the shell, the sign-in ceremonies, the one-time
+// link `huddle open` prints on a hub (one use, five minutes, minted on the machine itself) —
+// everything else must carry a paired device's cookie or a satellite's credential.
 func (s *server) hubGate(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(withHubListener(r.Context()))
-		if r.URL.Path == "/" && r.URL.Query().Has("code") {
-			writeText(w, 401, hubLinkRefused, nil)
-			return
-		}
 		if hubPublicPath(r.URL.Path) {
 			next(w, r)
 			return
@@ -233,13 +247,22 @@ func (s *server) hubGate(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r.WithContext(withSatellite(r.Context(), machine)))
 			return
 		}
+		// the session the one-time link earns: the sign-in cookie a code redeemed on this very
+		// listener set, read the way loopback always read it. The token header is not a browser's
+		// way in — the machine's own credential stays off the network listener's door.
+		if r.Header.Get(auth.Header) == "" {
+			if _, ok := s.auth.Who(auth.Given(r, s.cookie)); ok {
+				next(w, r)
+				return
+			}
+		}
 		s.writeJSON(w, 401, signinAnswer{Error: hubSignedOut, Signin: true}, nil)
 	}
 }
 
 // hubPublicPath answers whether a browser that holds no credential still needs the path: the app
-// shell it loads, the two ceremonies that turn it into a paired device, and the satellite join
-// that turns a one-use invite into a machine's credential.
+// shell it loads (with its static assets and its health), the two ceremonies that turn it into a
+// paired device, and the satellite join that turns a one-use invite into a machine's credential.
 func hubPublicPath(path string) bool {
 	for _, prefix := range []string{"/static/", "/fonts/", "/icons/", "/api/pair/", "/api/login/"} {
 		if strings.HasPrefix(path, prefix) {
@@ -247,7 +270,7 @@ func hubPublicPath(path string) bool {
 		}
 	}
 	switch path {
-	case "/", "/index.html", "/pair", "/app.js", "/app.css",
+	case "/", "/index.html", "/pair", "/app.js", "/app.css", "/health",
 		"/manifest.webmanifest", "/sw.js", "/signed-out.css", satJoinPath:
 		return true
 	}

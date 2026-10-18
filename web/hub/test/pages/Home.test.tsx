@@ -3,14 +3,8 @@
 import { act, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api } from "../../src/api.ts";
-import {
-  ChannelCard,
-  type ChannelRow,
-  ConnectCard,
-  Home,
-  homeData,
-  type PollTimers,
-} from "../../src/pages/Home.tsx";
+import { ConnectCard } from "../../src/app/ConnectCard.tsx";
+import { ChannelCard, type ChannelRow, Home, homeData, type PollTimers } from "../../src/pages/Home.tsx";
 import { flush, makeCtx, makeState, renderIn, settle, stubClipboard } from "../helpers.tsx";
 
 beforeEach(() => {
@@ -169,15 +163,13 @@ describe("the channel cards", () => {
 });
 
 describe("the page", () => {
-  it("lists the channels, or an empty state, and carries the connect card", async () => {
+  it("lists the channels, or an empty state, and carries the start-a-session card", async () => {
     const api = apiFake({ "/api/channels": ROWS });
     const { unmount } = ctxWith(api);
     await flush();
     expect(document.querySelectorAll("#chlist [data-ch]")).toHaveLength(2);
-    expect(screen.getByText("Connect a session")).toBeDefined();
-    expect(screen.getByText("Bring another Claude session into", { exact: false }).textContent).toContain(
-      "busy",
-    );
+    expect(screen.getByText("Start a session")).toBeDefined();
+    expect(screen.getByRole("tab", { name: "Claude Code" })).toBeDefined();
     unmount();
   });
 
@@ -338,13 +330,12 @@ describe("the New channel dialog", () => {
 });
 
 describe("the connect card", () => {
-  it("shows the three steps, the MCP note and two copyable commands", async () => {
+  it("shows the Claude Code steps and the harness tabs, each command copyable", async () => {
     const { writes } = stubClipboard();
     renderIn(<ConnectCard ch="ch" />);
     expect(screen.getByText("Install Huddle once per machine")).toBeDefined();
     expect(screen.getByText("Invite the session")).toBeDefined();
     expect(screen.getByText("Paste it into the other session")).toBeDefined();
-    expect(screen.getByText("Other clients (MCP over HTTP)")).toBeDefined();
     expect(document.body.textContent).toContain("/plugin install huddle@muhmdraouf");
     const copies = screen.getAllByText("Copy");
     void act(() => {
@@ -352,6 +343,29 @@ describe("the connect card", () => {
     });
     await flush();
     expect(writes[0]).toContain("/plugin marketplace add");
+
+    // the other harnesses: their own tab, their own wire command
+    for (const [tab, cmd] of [
+      ["Codex", "huddle harness install codex"],
+      ["Gemini", "huddle harness install gemini"],
+    ] as const) {
+      void act(() => {
+        screen.getByRole("tab", { name: tab }).click();
+      });
+      expect(document.body.textContent).toContain(cmd);
+    }
+    // the MCP escape hatch: the channel's own URL with the credential header
+    void act(() => {
+      screen.getByRole("tab", { name: "Other MCP" }).click();
+    });
+    expect(document.body.textContent).toContain(`/mcp/ch?as=`);
+    expect(document.body.textContent).toContain("x-huddle-token");
+  });
+
+  it("shows the setup-link commands instead of the invite where no credential stands", () => {
+    renderIn(<ConnectCard ch="" invite={false} />);
+    expect(screen.queryByText("Invite a session")).toBeNull();
+    expect(screen.getByText(/The session that starts this huddle prints the join line/)).toBeDefined();
   });
 
   it("says where the pasted command goes when the copy landed", async () => {

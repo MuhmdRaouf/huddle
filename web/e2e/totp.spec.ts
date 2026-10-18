@@ -7,6 +7,7 @@
 
 import { devices, expect, test, type Page } from "@playwright/test";
 import {
+  freshTotpStep,
   loginCode,
   signIn,
   theSetup,
@@ -94,6 +95,7 @@ test("a phone browser is offered its lock as a passkey after a code sign-in", as
   await page.context().clearCookies();
   await page.goto(`${pairOrigin}/`);
   await expect(page.getByText("Enter the code from your authenticator app")).toBeVisible();
+  await expect(page.locator("[data-landing]")).toBeVisible();
   await typeCode(page, totpCode(secret));
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 
@@ -102,10 +104,28 @@ test("a phone browser is offered its lock as a passkey after a code sign-in", as
   await page.getByRole("button", { name: "Turn on" }).click();
   await expect(page.getByText("Use Face ID next time?")).toHaveCount(0);
 
-  // the saved passkey is the next sign-in: one touch, no code
+  // the landing leads with the lock the platform names, and the code under it stays the fallback
   await page.context().clearCookies();
   await page.goto(`${pairOrigin}/`);
-  await page.getByRole("button", { name: "Sign in with a passkey" }).click();
+  await expect(page.getByRole("button", { name: "Sign in with Face ID" })).toBeVisible();
+  await expect(page.getByText("Or enter your authenticator code")).toBeVisible();
+
+  // the fallback runs in a browser that holds no passkey of its own here (the field's autofill
+  // offer is what a saved passkey earns): the code field is the way in, and a code signs in — a
+  // step past the one the first code spent, a code being one use
+  await page.evaluate(() => localStorage.removeItem("huddle:passkey-here"));
+  await page.context().clearCookies();
+  await page.goto(`${pairOrigin}/`);
+  await expect(page.getByText("Enter the code from your authenticator app")).toBeVisible();
+  await freshTotpStep();
+  await typeCode(page, totpCode(secret));
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+
+  // and one touch is the next sign-in, the mark its own sign-in leaves in this browser
+  await page.evaluate(() => localStorage.setItem("huddle:passkey-here", "1"));
+  await page.context().clearCookies();
+  await page.goto(`${pairOrigin}/`);
+  await page.getByRole("button", { name: "Sign in with Face ID" }).click();
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   await phone.close();
 });

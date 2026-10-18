@@ -216,13 +216,31 @@ describe("the Now list", () => {
     expect(headings()).toEqual(["Working · 1"]);
   });
 
-  it("shows a skeleton before the first read and its empty state when nothing is registered", () => {
+  it("shows a skeleton before the first read, the start-a-session card when nothing is registered, and the dashed box only behind the filter", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    localStorage.clear(); // the filter's preference must not leak from this test
     mountNow("phone", null);
     expect(screen.getByRole("status", { name: "Reading the registry" })).toBeDefined();
     mountNow("phone", []);
+    expect(screen.getByText("No sessions yet")).toBeDefined();
+    expect(
+      screen.getByText(
+        "Bring a coding agent in: install, join, and it reports here with everything it does.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByRole("tab", { name: "Claude Code" })).toBeDefined();
+    // the needs-you filter alone keeps the dashed box: sessions exist, none needs the owner
+    mountNow("phone", [row({ session_id: "s-1", title: "only" })]);
+    void act(() => {
+      screen.getByRole("button", { name: "Needs you" }).click();
+    });
     expect(screen.getByText("Nothing needs you")).toBeDefined();
     expect(screen.getByText("When a session needs you, it shows up here first.")).toBeDefined();
+    // back off, so the preference this test flipped leaves nothing behind
+    void act(() => {
+      screen.getByRole("button", { name: "Needs you" }).click();
+    });
+    expect(screen.getByRole("heading", { name: "Working · 1" })).toBeDefined();
   });
 
   it("gives every state mark a shape and a word, never colour alone", () => {

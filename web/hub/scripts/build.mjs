@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 // Build the dashboard with Vite and write every file the huddle binary embeds. Plain mode writes
@@ -93,6 +93,12 @@ const pwaFiles = [
 ];
 for (const { fileName, contents } of pwaFiles) {
   await ship(join(APP_DIR, fileName), contents);
+}
+
+// The landing page's tour pictures, shipped as written under tour/: small committed screenshots
+// the "see how it works" strip and its lightbox load.
+for (const name of readdirSync(resolve(root, "public/tour"))) {
+  await ship(join(APP_DIR, "tour", name), readFileSync(resolve(root, "public/tour", name)));
 }
 
 const revision = createHash("sha256");

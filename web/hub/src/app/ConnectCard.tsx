@@ -1,0 +1,256 @@
+// ConnectCard.tsx — the start-a-session card every entry shows: the Channels page, the landing
+// page and Now's empty state all hand it the same tabs, one per harness (Claude Code first, then
+// Codex and Gemini, then any MCP client over HTTP), each with the two or three commands to
+// install and join and a Copy button beside every one. A signed-in caller gets the Invite button
+// that mints a join line; the landing (no credential yet) shows the commands instead.
+
+import { CodeBlock } from "@huddle/ui/code.tsx";
+import { Panel } from "@huddle/ui/page.tsx";
+import type { ComponentChildren, JSX } from "preact";
+import { useState } from "preact/hooks";
+import type { ApiError } from "../api.ts";
+import { errText, type ToastFn, useHuddle } from "./context.tsx";
+import { Icon } from "../icons.tsx";
+
+/** Copies text and says so; a blocked clipboard says that instead (core.js copy). */
+async function copyText(text: string, msg: string, toast: ToastFn): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(msg);
+  } catch {
+    toast("Could not copy. Select the text and copy it by hand.", { bad: true });
+  }
+}
+
+/** A command in a box: its label, a Copy button, the code (app.js cxCode). */
+function CxCode({ t, c, msg }: { t: string; c: string; msg: string }): JSX.Element {
+  const { toast } = useHuddle();
+  return (
+    <div class="overflow-hidden rounded-lg border hairline">
+      <div class="flex items-center gap-2 border-b hairline bg-base-200 px-3 py-1 text-xs">
+        <span class="min-w-0 flex-1 truncate font-medium muted">{t}</span>
+        <button type="button" class="btn btn-ghost btn-sm" onClick={() => void copyText(c, msg, toast)}>
+          <Icon name="copy" class="size-3.5" />
+          Copy
+          <span class="sr-only"> {t}</span>
+        </button>
+      </div>
+      <CodeBlock code={c} lang="sh" />
+    </div>
+  );
+}
+
+/** One numbered step of the connect card (app.js cxStep). */
+function CxStep({
+  n,
+  title,
+  children,
+}: {
+  n: number;
+  title: string;
+  children: ComponentChildren;
+}): JSX.Element {
+  return (
+    <li class="relative flex gap-4 pb-6 last:pb-0">
+      <span
+        class="relative z-10 inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-base-content/15 bg-base-100 text-xs font-semibold tabular-nums muted"
+        aria-hidden="true"
+      >
+        {n}
+      </span>
+      <div class="min-w-0 flex-1 pt-0.5">
+        <h3 class="text-[14px] font-semibold">{title}</h3>
+        {children}
+      </div>
+    </li>
+  );
+}
+
+/** The harnesses the card offers, in tab order: Claude Code first, the MCP escape hatch last. */
+const HARNESS_TABS: readonly (readonly [key: string, label: string])[] = [
+  ["claude", "Claude Code"],
+  ["codex", "Codex"],
+  ["gemini", "Gemini"],
+  ["mcp", "Other MCP"],
+];
+
+/** The three-step Claude Code path: install, invite, paste (app.js connectHTML + wireConnect). */
+function ClaudeSteps({ ch, invite }: { ch: string; invite: boolean }): JSX.Element {
+  const { api } = useHuddle();
+  const [inv, setInv] = useState<{ line: string; until: string } | null>(null);
+  const [invErr, setInvErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const inviteSession = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const r = (await api.api("/api/tokens", {
+        body: { channel: ch, description: "made in the dashboard" },
+      })) as { token: string; expires: string };
+      setInv({
+        line: `/huddle:join ${location.host} --token ${r.token}`,
+        until: new Date(r.expires).toLocaleString(),
+      });
+      setInvErr("");
+    } catch (e) {
+      setInvErr(
+        (e as ApiError).status === 403
+          ? "This browser may not invite (it was signed in by a member). Run /huddle:invite in the Claude session that started Huddle."
+          : errText(e),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <ol class="relative before:absolute before:top-3 before:bottom-3 before:left-3.5 before:w-px before:bg-line">
+      <CxStep n={1} title="Install Huddle once per machine">
+        <p class="mt-1 mb-2.5 text-sm muted">In Claude Code:</p>
+        <CxCode
+          t="Claude Code"
+          c={"/plugin marketplace add MuhmdRaouf/claude-code-plugins\n/plugin install huddle@muhmdraouf"}
+          msg="Copied. Paste it where the step says."
+        />
+      </CxStep>
+      <CxStep n={2} title="Invite the session">
+        {invite ? (
+          <>
+            <p class="mt-1 mb-2.5 text-sm muted">
+              A join line for <code>{ch}</code>, valid 24 h, good for one project (its later sessions are in
+              on their own).
+            </p>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <button
+                type="button"
+                class="btn"
+                id="cx-invite"
+                disabled={busy}
+                onClick={() => void inviteSession()}
+              >
+                <Icon name="plus" class="size-4" />
+                Invite a session
+              </button>
+              <span class="text-xs muted" id="cx-inv-note">
+                or run <code>/huddle:invite</code> in a Claude session in this huddle
+              </span>
+            </div>
+            <div id="cx-inv" class="mt-3 empty:hidden" aria-live="polite">
+              {inv ? (
+                <CxCode
+                  t={`Join line for ${ch} (valid until ${inv.until})`}
+                  c={inv.line}
+                  msg="Copied. Paste it into the other Claude session."
+                />
+              ) : null}
+              {invErr ? <p class="text-sm text-error">{invErr}</p> : null}
+            </div>
+          </>
+        ) : (
+          <>
+            <p class="mt-1 mb-2.5 text-sm muted">
+              The session that starts this huddle prints the join line every later session pastes in.
+            </p>
+            <CxCode t="In a Claude session" c="/huddle:setup" msg="Copied. Paste it where the step says." />
+          </>
+        )}
+      </CxStep>
+      <CxStep n={3} title="Paste it into the other session">
+        <p class="mt-1 text-sm muted">
+          It joins this channel and shows its own dashboard link. Do not run <code>/huddle:setup</code> there:
+          setup is for the first project.
+        </p>
+      </CxStep>
+    </ol>
+  );
+}
+
+/** The two-step path of another harness: wire it once, then open it in the project. The word
+ *  names the harness as the install command spells it; the name is the word the prose says. */
+function HarnessSteps({ name, word }: { name: string; word: string }): JSX.Element {
+  return (
+    <ol class="relative before:absolute before:top-3 before:bottom-3 before:left-3.5 before:w-px before:bg-line">
+      <CxStep n={1} title={`Wire ${name} to this huddle once per machine`}>
+        <p class="mt-1 mb-2.5 text-sm muted">
+          In a terminal of this machine (the huddle CLI ships with the plugin):
+        </p>
+        <CxCode
+          t={`huddle harness install ${word}`}
+          c={`huddle harness install ${word}`}
+          msg="Copied. Paste it where the step says."
+        />
+      </CxStep>
+      <CxStep n={2} title={`Open ${name} in a project of this huddle`}>
+        <p class="mt-1 text-sm muted">
+          It joins the project's channel on its own, reports its sessions in and answers the same tools.
+        </p>
+      </CxStep>
+    </ol>
+  );
+}
+
+/** The MCP escape hatch: any client over HTTP, with the credential a session's join keeps. */
+function McpSteps({ ch }: { ch: string }): JSX.Element {
+  const channel = ch || "<channel>";
+  return (
+    <div class="flex flex-col gap-3">
+      <p class="m-0 text-sm muted">
+        Any MCP client can call the channel's tools at <code>/mcp/&lt;channel&gt;?as=&lt;session&gt;</code>{" "}
+        with a credential in the <code>x-huddle-token</code> header (the one <code>huddle join</code> keeps
+        for a session).
+      </p>
+      <CxCode
+        t="claude mcp add"
+        c={`claude mcp add --transport http huddle "${location.origin}/mcp/${channel}?as=my-session" --header "x-huddle-token: <credential>"`}
+        msg="Copied. Paste it where the step says."
+      />
+    </div>
+  );
+}
+
+/** The start-a-session card: one tab per harness, the commands each one needs. `ch` names the
+ *  channel a signed-in invite mints for; an empty one (the landing page) shows the commands the
+ *  first session runs instead of the Invite button. */
+export function ConnectCard({ ch, invite = true }: { ch: string; invite?: boolean }): JSX.Element {
+  const [tab, setTab] = useState("claude");
+  return (
+    <Panel
+      title="Start a session"
+      label="Start a session"
+      icon={<Icon name="plug" />}
+      meta={<span class="text-xs">Bring a coding agent into this huddle.</span>}
+      actions={
+        <a class="btn btn-ghost btn-sm shrink-0" href="/connect.md" target="_blank" rel="noopener">
+          Full guide
+          <Icon name="ext" class="size-3.5" />
+          <span class="sr-only">(opens in a new tab)</span>
+        </a>
+      }
+    >
+      <div class="flex flex-col gap-4" data-connect-card="">
+        <div role="tablist" aria-label="Harnesses" class="tabs tabs-box flex-wrap">
+          {HARNESS_TABS.map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              data-harness={key}
+              aria-selected={tab === key ? "true" : "false"}
+              class={tab === key ? "tab tab-active h-10 px-4 text-sm" : "tab h-10 px-4 text-sm"}
+              onClick={() => setTab(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div role="tabpanel" data-panel={tab}>
+          {tab === "claude" ? (
+            <ClaudeSteps ch={ch} invite={invite} />
+          ) : tab === "mcp" ? (
+            <McpSteps ch={ch} />
+          ) : (
+            <HarnessSteps word={tab} name={tab === "codex" ? "Codex" : "Gemini"} />
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}

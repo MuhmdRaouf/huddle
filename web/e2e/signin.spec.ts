@@ -1,21 +1,33 @@
 // signin.spec.ts — the ways back in without a terminal: a paired browser signs the shell back
-// in with one passkey touch from the signed-out page, and a browser signed in by link is
-// offered a passkey of its own — the banner mints the link, the passkey it saves signs the
-// shell back in once its cookies are gone. The ceremonies run at the localhost origin, the name
-// the relying party is.
+// in with one passkey touch from the landing page, and a browser signed in by link is offered a
+// passkey of its own — the checklist's row mints the link, the passkey it saves signs the shell
+// back in once its cookies are gone. The ceremonies run at the localhost origin, the name the
+// relying party is.
 
 import { expect, test, type Page } from "@playwright/test";
-import { pairThroughBanner, pairThroughLink, signIn, theSetup, useVirtualAuthenticator } from "./helpers.ts";
+import {
+  MAC_UA,
+  openTab,
+  pairThroughBanner,
+  pairThroughLink,
+  signIn,
+  theSetup,
+  useVirtualAuthenticator,
+} from "./helpers.ts";
 
-/** The signed-out page a browser with no session lands on. */
+// a Mac desktop browser: the landing leads with the name the platform gives its own lock
+test.use({ userAgent: MAC_UA });
+
+/** The landing page a browser with no session lands on. */
 async function expectSignedOut(page: Page): Promise<void> {
-  await expect(page.getByText("Sign in to see your channels and sessions")).toBeVisible();
+  await expect(page.locator("[data-landing]")).toBeVisible();
 }
 
-/** One passkey touch from the signed-out page: the discoverable credential, the finish, the
- *  reload that lands the shell. */
+/** One passkey touch from the landing page: the discoverable credential, the finish, the
+ *  reload that lands the shell. This browser paired here, so the landing leads with the
+ *  biometric button the platform names. */
 async function signInWithPasskey(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Sign in with a passkey" }).click();
+  await page.getByRole("button", { name: "Sign in with Touch ID" }).click();
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 }
 
@@ -25,8 +37,8 @@ test("a paired browser signs back in with one passkey touch", async ({ page }) =
   // every spec pairs under its own name: the home keeps each device this run paired
   await pairThroughLink(page, "E2E Pad");
 
-  // the session cookie gone: the next visit is the signed-out page, and with a device paired
-  // its first control is the passkey button
+  // the session cookie gone: the next visit is the landing page, and with a passkey saved in
+  // this browser its first control is the biometric button
   await page.context().clearCookies();
   await page.goto(`${pairOrigin}/`);
   await expectSignedOut(page);
@@ -43,8 +55,9 @@ test("a link sign-in offers a passkey, and the saved one signs in after cookies 
   const { pairOrigin } = theSetup();
   await useVirtualAuthenticator(page);
 
-  // the owner signs in by link: the shell carries the banner
+  // the owner signs in by link: the Now list carries the checklist's passkey row
   await signIn(page, pairOrigin);
+  await openTab(page, "Now");
   await expect(
     page.getByText("Save a passkey for this browser — next time Touch ID signs you in."),
   ).toBeVisible();

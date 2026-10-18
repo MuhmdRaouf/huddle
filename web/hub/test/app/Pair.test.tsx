@@ -185,14 +185,19 @@ describe("the pair screen", () => {
     expect(screen.getByText("The passkey was not created. Try again.")).toBeDefined();
     expect(screen.getByRole("button", { name: "Retry" })).toBeDefined();
     expect(h.calls.map((c) => c.path)).toEqual(["/api/pair/begin"]);
-    // the retry runs the same ceremony again, and this time the passkey lands
+    // the retry runs the same ceremony again, and this time the passkey lands; the shell it
+    // lands on reads its checklist's budgets on the way
     h.setCreate(undefined);
     await act(async () => {
       screen.getByRole("button", { name: "Retry" }).click();
     });
     await flush();
     expect(h.create).toHaveBeenCalledTimes(2);
-    expect(h.calls.map((c) => c.path)).toEqual(["/api/pair/begin", "/api/pair/finish"]);
+    expect(h.calls.map((c) => c.path)).toEqual([
+      "/api/pair/begin",
+      "/api/pair/finish",
+      "/api/radar/api/budgets",
+    ]);
     expect(location.pathname).toBe("/");
   });
 

@@ -1080,8 +1080,8 @@ func TestInvites(t *testing.T) {
 			}
 		}
 		_, _, app := srv.get(t, "/app.js", nil)
-		if !strings.Contains(app, "Signed out") {
-			t.Fatal("the app bundle misses its Signed-out page")
+		if !strings.Contains(app, "Other ways to sign in") {
+			t.Fatal("the app bundle misses its landing page")
 		}
 	})
 }
@@ -1443,4 +1443,30 @@ func TestReadRoutes(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestHealthNamesTheMachineAndTheHub proves the two facts the landing page's head reads off
+// /health: the machine the server runs on, and the hub's own name on a hub-role home — a solo
+// home carries no name, so its machine alone says where this is.
+func TestHealthNamesTheMachineAndTheHub(t *testing.T) {
+	srv := startServer(t, nil)
+	code, _, out := srv.get(t, "/health", nil)
+	if code != 200 {
+		t.Fatalf("health = %d %s", code, out)
+	}
+	machine := regexp.MustCompile(`"machine":"([^"]+)"`).FindStringSubmatch(out)
+	if machine == nil || machine[1] == "" {
+		t.Fatalf("health names no machine: %s", out)
+	}
+	if strings.Contains(out, `"name"`) {
+		t.Fatalf("a solo home names a hub: %s", out)
+	}
+
+	hub := startServer(t, map[string]string{
+		"HUDDLE_HOME": roleHome(t, "role = \"hub\"\n\n[hub]\nlisten = \"127.0.0.1:8443\"\nhost = \"hub.mine.test\"\n"),
+	})
+	code, _, out = hub.get(t, "/health", nil)
+	if code != 200 || !strings.Contains(out, `"name":"hub.mine.test"`) {
+		t.Fatalf("a hub home's health = %d %s, want the hub's own name", code, out)
+	}
 }
