@@ -74,6 +74,8 @@ var helpLines = []string{
 	"                                           that joined",
 	"  huddle pair [--name n]                  a one-use link (5 min) that pairs a device with a passkey; devices rm",
 	"                                           revokes it and ends its sessions",
+	"  huddle totp setup                       set up sign-in with an authenticator app (QR + one-time recovery",
+	"                                           codes); totp off removes it and ends its sessions",
 	"  huddle pair --satellite                 a one-use invite (10 min) that joins another machine as this hub's satellite",
 	"  huddle join-hub <url> <invite> [--name n]   on the satellite: keeps its credential and sets its role (a restart links it)",
 	"  huddle up [--port n] | down | server   run the server bundled with the plugin (files in .agents/huddle/; its",
@@ -330,6 +332,9 @@ func Huddle(ctx context.Context, w *World, argv []string, stdout, stderr io.Writ
 	}
 	if cmd == "devices" {
 		return Devices(ctx, w, argv, stdout, stderr)
+	}
+	if cmd == "totp" {
+		return TOTPCommand(ctx, w, argv, stdout, stderr)
 	}
 	if cmd == "join" && (c.raw.has("token") || (len(c.pos) > 0 && hostPort.MatchString(c.pos[0]))) {
 		if code := c.joinWithInvite(ctx); code != 0 {

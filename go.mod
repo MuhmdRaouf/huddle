@@ -12,6 +12,7 @@ require (
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/go-webauthn/webauthn v0.16.4
 	github.com/mdp/qrterminal/v3 v3.2.1
+	github.com/pquerna/otp v1.5.0
 	github.com/smallstep/truststore v0.13.0
 	modernc.org/sqlite v1.60.1
 	rsc.io/qr v0.2.0
@@ -171,7 +172,6 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/pquerna/otp v1.5.0 // indirect
 	github.com/regfish/regfish-dnsapi-go v0.1.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/sacloud/api-client-go v0.3.5 // indirect

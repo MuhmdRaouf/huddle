@@ -7,5 +7,5 @@
   "auth": "member",
   "status": 200,
   "contentType": "application/json",
-  "body": "{\"name\":\"newbie\",\"kind\":\"member\",\"root\":false,\"invite\":false}"
+  "body": "{\"name\":\"newbie\",\"kind\":\"member\",\"root\":false,\"invite\":false,\"totp\":false,\"device_passkey\":false}"
 }

@@ -4,19 +4,23 @@
 // as their own sections.
 
 import type { JSX } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { ApiError } from "../api.ts";
 import { Icon } from "../icons.tsx";
+import { creationFromJSON, credentialToJSON } from "../passkey.ts";
 import { SettingsView } from "../radar/app/views/Settings.tsx";
 import { RadarProvider, radarController } from "../radar/mount.tsx";
 import { ageText } from "../registry.ts";
 import { Channels } from "./Channels.tsx";
 import { errText, useHuddle } from "./context.tsx";
+import { useLayout } from "./layout.ts";
 import { useStepUp } from "./Needs.tsx";
 import { NotificationsCard } from "./Notifications.tsx";
+import { AuthenticatorCard } from "./Totp.tsx";
 
 /** The sections the Settings tab serves, in row order; each later surface adds its entry. */
 const SECTIONS = [
+  { id: "signin", label: "Sign-in" },
   { id: "radar", label: "Radar" },
   { id: "devices", label: "Devices" },
   { id: "channels", label: "Linked channels" },
@@ -28,7 +32,7 @@ export type SettingsSection = (typeof SECTIONS)[number]["id"];
 
 /** The section the address names; a missing or unknown one reads as the first. */
 export function settingsSectionOf(named: string | undefined): SettingsSection {
-  return SECTIONS.some((entry) => entry.id === named) ? (named as SettingsSection) : "radar";
+  return SECTIONS.some((entry) => entry.id === named) ? (named as SettingsSection) : "signin";
 }
 
 /** The section's own settings: radar's budgets, notifications and history retention, loaded the
@@ -225,13 +229,127 @@ export function Devices(): JSX.Element {
   );
 }
 
-/** The Settings tab: the section row, then the named section's panes. */
+/** Settings › Sign-in: the two ways a browser signs itself in — the authenticator code (the
+ *  primary, one enrolment per hub) and this browser's own passkey — with the enrolment's
+ *  set-up, its removal, and the passkey a code session can save without a link. */
+export function SignInMethods(): JSX.Element {
+  const { api, toast } = useHuddle();
+  const [facts, setFacts] = useState<{ enrolled: boolean; kind: string; passkey: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const alive = useRef(true);
+  const load = (): void => {
+    api
+      .api("/api/whoami")
+      .then((r) => {
+        if (!alive.current) return;
+        const w = r as { totp?: unknown; kind?: unknown; device_passkey?: unknown };
+        setFacts({
+          enrolled: w.totp === true,
+          kind: typeof w.kind === "string" ? w.kind : "",
+          passkey: w.device_passkey === true,
+        });
+      })
+      .catch((e: unknown) => {
+        if (alive.current) setError(errText(e));
+      });
+  };
+
+  useEffect(() => {
+    alive.current = true;
+    load();
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  /** Saves this browser a passkey of its own, on the device row its session belongs to. */
+  const savePasskey = async (): Promise<void> => {
+    setBusy(true);
+    setError("");
+    try {
+      const r = (await api.api("/api/passkey/begin", { body: {} })) as { options?: unknown };
+      let cred: PublicKeyCredential;
+      try {
+        cred = (await navigator.credentials.create({
+          publicKey: creationFromJSON(r.options).publicKey,
+        })) as PublicKeyCredential;
+      } catch {
+        setError("The passkey was not created. Try again.");
+        return;
+      }
+      await api.api("/api/passkey/finish", { body: { response: credentialToJSON(cred) } });
+      toast("Passkey saved for this browser");
+      load();
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section aria-labelledby="signin-h" data-signin="" class="flex flex-col gap-1">
+      <h2 id="signin-h" class="mb-1.5 text-xs font-semibold tracking-[0.06em] uppercase muted">
+        Sign-in methods
+      </h2>
+      {error ? (
+        <p role="alert" class="m-0 text-sm text-error">
+          {error}
+        </p>
+      ) : null}
+      {facts === null ? (
+        <p class="m-0 text-sm muted">Loading…</p>
+      ) : (
+        <>
+          <AuthenticatorCard enrolled={facts.enrolled} onChanged={load} />
+          <div class="flex items-center justify-between gap-3 border-b hairline py-3" data-passkey-row="">
+            <div class="flex min-w-0 flex-col">
+              <span class="text-[15px]">Passkey for this browser</span>
+              <span class="text-xs muted">
+                {facts.kind === "device"
+                  ? facts.passkey
+                    ? "This browser signs in with its passkey."
+                    : "Not saved. This device's lock would sign in without a code."
+                  : "A passkey is saved per browser: sign in with a code first, then accept the offer."}
+              </span>
+            </div>
+            {facts.kind === "device" && !facts.passkey ? (
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                disabled={busy}
+                onClick={() => void savePasskey()}
+              >
+                Save passkey
+              </button>
+            ) : null}
+          </div>
+          <p class="m-0 pt-2 text-xs muted">
+            Every device session ends after 7 days unused; one code or touch starts a fresh one. Manage the
+            devices themselves under Devices.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** The Settings tab: the section row, then the named section's panes. The row is the Radar
+ *  views' own shape: underlined tabs at the desk, pills that scroll inside the row on the
+ *  narrower layouts, so the five sections never push the page sideways. */
 export function SettingsTab({ section }: { section: SettingsSection }): JSX.Element {
+  const layout = useLayout();
   return (
     <div class="flex min-h-0 flex-1 flex-col">
       <nav
         aria-label="Settings sections"
-        class="flex min-h-[52px] shrink-0 items-center gap-0.5 border-b hairline px-5"
+        class={
+          layout === "desktop"
+            ? "flex min-h-[52px] shrink-0 items-center gap-0.5 border-b hairline px-5"
+            : "flex shrink-0 items-center gap-1.5 overflow-x-auto px-4 py-2"
+        }
       >
         {SECTIONS.map((entry) => (
           <a
@@ -239,11 +357,19 @@ export function SettingsTab({ section }: { section: SettingsSection }): JSX.Elem
             href={`#/settings/${entry.id}`}
             data-section={entry.id}
             aria-current={entry.id === section ? "page" : undefined}
-            class={`flex h-full shrink-0 items-center border-b-2 px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-              entry.id === section
-                ? "border-primary font-semibold text-base-content"
-                : "border-transparent text-base-content/70 hover:text-base-content"
-            }`}
+            class={
+              layout === "desktop"
+                ? `flex h-full shrink-0 items-center border-b-2 px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    entry.id === section
+                      ? "border-primary font-semibold text-base-content"
+                      : "border-transparent text-base-content/70 hover:text-base-content"
+                  }`
+                : `flex min-h-11 shrink-0 items-center rounded-full px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    entry.id === section
+                      ? "bg-primary font-semibold text-base-300"
+                      : "border hairline text-base-content/80 hover:bg-base-100"
+                  }`
+            }
           >
             {entry.label}
           </a>
@@ -251,7 +377,9 @@ export function SettingsTab({ section }: { section: SettingsSection }): JSX.Elem
       </nav>
       <div class="min-h-0 flex-1 overflow-y-auto">
         <div class="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
-          {section === "devices" ? (
+          {section === "signin" ? (
+            <SignInMethods />
+          ) : section === "devices" ? (
             <Devices />
           ) : section === "channels" ? (
             <Channels />

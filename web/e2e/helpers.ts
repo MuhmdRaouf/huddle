@@ -4,6 +4,7 @@
 
 import { expect, type CDPSession, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { readSetup, repoRoot, runDir, type E2eSetup } from "./paths.ts";
 
 /** The fixture's token numbers, as the transcript and the spool both carry them: three glm-5.3
@@ -85,13 +86,22 @@ export async function loginCode(): Promise<string> {
 }
 
 /** Signs this browser in the way the owner does: the one-time link becomes a cookie, then the
- *  shell paints. `base` names the origin to sign in at (the localhost one, when a passkey
- *  ceremony follows: the relying party is that name). */
+ *  shell paints. A hub with no authenticator enrolment offers its first-run set-up before the
+ *  shell; these tests are not about that, so they take the skip. `base` names the origin to
+ *  sign in at (the localhost one, when a passkey ceremony follows: the relying party is that
+ *  name). */
 export async function signIn(page: Page, base: string = theSetup().rootUrl): Promise<void> {
   const code = await loginCode();
   const settled = page.waitForURL((url) => !url.searchParams.has("code"));
   await page.goto(`${base}/?code=${code}`);
   await settled;
+  const later = page.getByRole("button", { name: /Later/ });
+  try {
+    await later.waitFor({ state: "visible", timeout: 3_000 });
+    await later.click();
+  } catch {
+    // the hub holds an enrolment (or this run already enrolled one): no gate stood there
+  }
   // signed in is the shell itself: the five tabs stand in the top bar
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 }
@@ -123,6 +133,40 @@ export const tlsHubPairHome: PairHome = {
   claudeConfig: `${runDir}/claude-config-hub`,
   xdg: `${runDir}/xdg-hub`,
 };
+
+/** The secret the set-up shows, as the app gave it: the groups of four joined back together. */
+export async function totpSecret(page: Page): Promise<string> {
+  const shown = await page.locator("[data-secret]").textContent();
+  return (shown ?? "").replace(/\s+/g, "");
+}
+
+/** The RFC 6238 code for one secret at the current step, over node:crypto: HMAC-SHA1, dynamic
+ *  truncation, six digits — the specification itself, not a library. The base32 decode is
+ *  hand-rolled too: the test runner's Buffer knows no base32 spelling. */
+export function totpCode(secret: string, offsetSteps = 0): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const bits = [...secret.toUpperCase().replace(/=+$/, "")]
+    .map((c) => alphabet.indexOf(c).toString(2).padStart(5, "0"))
+    .join("");
+  const bytes: number[] = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(Number.parseInt(bits.slice(i, i + 8), 2));
+  const key = Buffer.from(bytes);
+  const step = BigInt(Math.floor(Date.now() / 1000 / 30) + offsetSteps);
+  const sum = createHmac("sha1", key)
+    .update(Buffer.from(step.toString(16).padStart(16, "0"), "hex"))
+    .digest();
+  const at = sum[sum.length - 1]! & 0x0f;
+  const code = ((sum[at]! & 0x7f) << 24) | (sum[at + 1]! << 16) | (sum[at + 2]! << 8) | sum[at + 3]!;
+  return String(code % 1_000_000).padStart(6, "0");
+}
+
+/** Types one code into the six-box field, one digit per box; the sixth digit submits it. */
+export async function typeCode(page: Page, code: string): Promise<void> {
+  const boxes = page.locator("[data-code-field] input");
+  for (let i = 0; i < code.length; i++) {
+    await boxes.nth(i).fill(code[i] ?? "");
+  }
+}
 
 /** The run's environment: the temp homes the server runs on, so `huddle pair` mints its link
  *  into the same hub database the server spends it from. */

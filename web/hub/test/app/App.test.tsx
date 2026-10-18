@@ -247,15 +247,21 @@ describe("routes and panes", () => {
     ).toBe("page");
   });
 
-  it("renders Settings' section row with Radar current, an unknown section included", () => {
+  it("renders Settings' section row with Sign-in current, an unknown address included", () => {
     nav("#/settings");
     mountApp();
     const sections = [
       ...document.querySelectorAll('[aria-label="Settings sections"] a'),
     ] as HTMLAnchorElement[];
-    expect(sections.map((a) => a.dataset.section)).toEqual(["radar", "devices", "channels", "notifications"]);
+    expect(sections.map((a) => a.dataset.section)).toEqual([
+      "signin",
+      "radar",
+      "devices",
+      "channels",
+      "notifications",
+    ]);
     expect(sections[0]?.getAttribute("aria-current")).toBe("page");
-    nav("#/settings/theme");
+    nav("#/settings/radar");
     mountApp();
     expect(
       document

@@ -33,5 +33,5 @@ test("an unpaired browser stays signed out", async ({ page }) => {
   await page.goto(`${theSetup().rootUrl}/`);
   await expect(page.getByText("Sign in to see your channels and sessions")).toBeVisible();
   // the link commands sit under their own heading whether the home holds a passkey or not
-  await expect(page.getByText("No passkey on this device?")).toBeVisible();
+  await expect(page.getByText("No code or passkey at hand?")).toBeVisible();
 });

@@ -120,6 +120,7 @@ func TestHuddleHelpPrintsTheCommandsBlock(t *testing.T) {
 			"huddle join [--role \"…\"] [--fresh|--sync]",
 			"huddle token create [--ttl 24h|0]",
 			"huddle up [--port n] | down | server",
+			"huddle totp setup",
 			"Exit: 0 ok · 2 usage/error · 3 message · 4 paused · 5 Huddle unreachable · 124 timeout.",
 		} {
 			if !strings.Contains(out, want) {

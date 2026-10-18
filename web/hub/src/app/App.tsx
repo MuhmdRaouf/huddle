@@ -26,6 +26,7 @@ import { IntroCtx } from "./intro.tsx";
 import { type Layout, useLayout } from "./layout.ts";
 import { NowContext, NowPane, SessionScreen } from "./Now.tsx";
 import { Pair } from "./Pair.tsx";
+import { CodeField } from "./CodeField.tsx";
 import { Rail } from "./Rail.tsx";
 import {
   channelHref,
@@ -40,6 +41,7 @@ import {
   tabLabel,
 } from "./router.ts";
 import { SettingsTab, settingsSectionOf } from "./SettingsTab.tsx";
+import { PasskeyOffer } from "./Totp.tsx";
 import { DesktopBar, MachinesLine } from "./TopBar.tsx";
 
 /** What a page registry holds: one component per channel page, picked by name. */
@@ -497,15 +499,19 @@ function CopyButton({
   );
 }
 
-/** The page this browser gets when its sign-in has ended: one passkey touch when the home holds
+/** The page this browser gets when its sign-in has ended: the code field when the hub holds an
+ *  authenticator enrolment (the primary way in), a passkey touch beside it when the home holds
  *  a passkey, and the link commands under a smaller heading either way — /huddle:setup in a
  *  Claude session, `huddle open` in a terminal — with the server's version under it all. */
 export function SignedOut(): JSX.Element {
   const { api } = useHuddle();
   const [ver, setVer] = useState("Huddle");
   const [passkeys, setPasskeys] = useState(false);
+  const [totp, setTotp] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [recovery, setRecovery] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState("");
   useEffect(() => {
     document.title = "Huddle: signed out";
     fetch("/health")
@@ -518,9 +524,30 @@ export function SignedOut(): JSX.Element {
       .api("/api/login/available")
       .then((r) => {
         if ((r as { passkeys?: unknown }).passkeys === true) setPasskeys(true);
+        if ((r as { totp?: unknown }).totp === true) setTotp(true);
       })
       .catch(() => {});
   }, []);
+
+  /** One code, six digits or one recovery word: the finish sets the cookie, the reload lands the
+   *  shell, and the marker tells it the biometrics offer may run. */
+  const signInWithCode = async (code: string): Promise<void> => {
+    setBusy(true);
+    setError("");
+    try {
+      await api.api("/api/login/totp", { body: { code } });
+      try {
+        localStorage.setItem("huddle:totp-signed-in", "1");
+      } catch {
+        // site data is blocked: the offer simply waits for its thirty-day turn
+      }
+      location.reload();
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   /** One touch: begin, the browser's own credential, finish, and the reload that lands the shell. */
   const signIn = async (): Promise<void> => {
@@ -574,30 +601,88 @@ export function SignedOut(): JSX.Element {
                 </span>
               </span>
             </div>
+            {totp ? (
+              <div class="flex flex-col gap-2.5" data-signin-code="">
+                {recovery ? (
+                  <>
+                    <label class="text-sm font-medium" htmlFor="so-recovery">
+                      Recovery code
+                    </label>
+                    <input
+                      id="so-recovery"
+                      class="input h-12 w-full font-mono"
+                      placeholder="xxxx-xxxx"
+                      autocomplete="off"
+                      spellcheck={false}
+                      value={recoveryCode}
+                      disabled={busy}
+                      onInput={(e) => setRecoveryCode(e.currentTarget.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && recoveryCode.trim() !== "") {
+                          void signInWithCode(recoveryCode.trim());
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-primary h-12 w-full text-sm"
+                      disabled={busy || recoveryCode.trim() === ""}
+                      onClick={() => void signInWithCode(recoveryCode.trim())}
+                    >
+                      Sign in
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm self-start"
+                      onClick={() => {
+                        setRecovery(false);
+                        setError("");
+                      }}
+                    >
+                      Use the app's code instead
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span class="text-sm font-medium">Enter the code from your authenticator app</span>
+                    <CodeField onCode={(code) => void signInWithCode(code)} busy={busy} error={error} />
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm self-start"
+                      onClick={() => {
+                        setRecovery(true);
+                        setError("");
+                      }}
+                    >
+                      Use a recovery code instead
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : null}
             {passkeys ? (
-              <>
-                <button
-                  type="button"
-                  class="btn btn-primary h-12 w-full text-sm"
-                  disabled={busy}
-                  onClick={() => void signIn()}
-                >
-                  <Icon name="key" />
-                  Sign in with a passkey
-                </button>
-                {error ? (
-                  <p role="alert" class="m-0 text-sm text-error">
-                    {error}
-                  </p>
-                ) : null}
-              </>
-            ) : (
+              <button
+                type="button"
+                class={totp ? "btn h-12 w-full text-sm" : "btn btn-primary h-12 w-full text-sm"}
+                disabled={busy}
+                onClick={() => void signIn()}
+              >
+                <Icon name="key" />
+                Sign in with a passkey
+              </button>
+            ) : null}
+            {passkeys && !totp && error ? (
+              <p role="alert" class="m-0 text-sm text-error">
+                {error}
+              </p>
+            ) : null}
+            {!totp && !passkeys ? (
               <p class="text-sm muted">
                 Run <code>huddle open</code> once, then save a passkey: next time Touch ID signs you in.
               </p>
-            )}
+            ) : null}
             <div class="flex flex-col gap-3">
-              <h2 class="text-sm font-semibold">No passkey on this device?</h2>
+              <h2 class="text-sm font-semibold">No code or passkey at hand?</h2>
               <p class="text-sm muted">
                 Run <code>/huddle:setup</code> in any session of this huddle — or <code>huddle open</code> in
                 a terminal — for a new sign-in link, then open it here.
@@ -664,6 +749,55 @@ function SavePasskeyBanner({
         </p>
       ) : null}
     </div>
+  );
+}
+
+/** How long a "Not now" holds the offer away: thirty days, the card's own number. */
+const passkeyAskEveryMS = 30 * 24 * 60 * 60 * 1000;
+
+/** The offer a code sign-in earns once: this browser's own lock as a passkey, asked when the
+ *  server knows its device row holds no passkey and the platform can make one, right after the
+ *  sign-in or after the thirty days a "Not now" bought. Renders nothing while none of that
+ *  holds — the code keeps working as the way in whatever the answer was. */
+function PasskeyAsk(): JSX.Element | null {
+  const who = useHuddle().who;
+  const [platform, setPlatform] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    const pk = window.PublicKeyCredential;
+    if (typeof pk?.isUserVerifyingPlatformAuthenticatorAvailable !== "function") return;
+    pk.isUserVerifyingPlatformAuthenticatorAvailable()
+      .then((yes) => setPlatform(yes))
+      .catch(() => {});
+  }, []);
+  if (who.kind !== "device" || who.devicePasskey || !platform || dismissed) return null;
+  let due = false;
+  try {
+    if (localStorage.getItem("huddle:totp-signed-in") !== null) due = true;
+    else due = Date.now() - readPref(localStorage, "passkey-ask", 0) > passkeyAskEveryMS;
+  } catch {
+    due = false;
+  }
+  if (!due) return null;
+  /** Either answer buys the next thirty days and clears the one-shot marker. */
+  const settled = (): void => {
+    try {
+      localStorage.removeItem("huddle:totp-signed-in");
+    } catch {
+      // site data is blocked: the answer holds for this shell alone
+    }
+    writePref(localStorage, "passkey-ask", Date.now());
+    setDismissed(true);
+  };
+  return (
+    <PasskeyOffer
+      open
+      onClose={settled}
+      onDone={() => {
+        who.devicePasskey = true;
+        settled();
+      }}
+    />
   );
 }
 
@@ -779,7 +913,10 @@ export function App({
   // the page-wide controls the open page handed up, kept with the page that named them
   const [introActs, setIntroActs] = useState<{ dest: Dest; render: () => ComponentChildren } | null>(null);
 
-  // the shell follows the address bar
+  // the shell follows the address bar. A remount (the first-run gate closing) re-attaches the
+  // listener in an effect, and a move landing inside that window would be missed for good, so
+  // every render reconciles the state with the address first.
+  if (hash !== location.hash) setHash(location.hash);
   useEffect(() => {
     const on = (): void => setHash(location.hash);
     window.addEventListener("hashchange", on);
@@ -954,10 +1091,12 @@ export function App({
 
   // the phone: a header over the pane, the bottom nav under it. A session's screen paints its
   // own header (the back link and the name), so the shell's steps aside there.
+  const passkeyAsk = <PasskeyAsk />;
   if (layout === "phone") {
     return (
       <div class="flex h-dvh flex-col bg-base-300">
         {shellBanner}
+        {passkeyAsk}
         {nowId ? null : (
           <header class="flex shrink-0 items-center justify-between gap-3 px-5 pt-[22px] pb-3">
             <h1 class="text-[28px] font-semibold tracking-tight">{tabLabel(route.tab)}</h1>
@@ -975,6 +1114,7 @@ export function App({
     return (
       <div class="flex h-dvh flex-col bg-base-300">
         {shellBanner}
+        {passkeyAsk}
         <div class="grid min-h-0 min-w-0 flex-1 grid-cols-[72px_minmax(0,1fr)]">
           <IconRail tab={route.tab} n={n} />
           <div class={`grid min-h-0 min-w-0 ${list ? "grid-cols-[360px_minmax(0,1fr)]" : "grid-cols-1"}`}>
@@ -990,6 +1130,7 @@ export function App({
   return (
     <div class="flex h-dvh flex-col bg-base-300">
       {shellBanner}
+      {passkeyAsk}
       <div class="grid min-h-0 min-w-0 flex-1 grid-rows-[52px_minmax(0,1fr)]">
         <DesktopBar
           tab={route.tab}

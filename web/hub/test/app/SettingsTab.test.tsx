@@ -6,7 +6,7 @@
 import { act, screen, waitFor } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { FetchFn } from "../../src/api.ts";
-import { Devices } from "../../src/app/SettingsTab.tsx";
+import { Devices, SignInMethods } from "../../src/app/SettingsTab.tsx";
 import { flush, NOW, stubMedia } from "../helpers.tsx";
 import { renderHuddle } from "../render.tsx";
 
@@ -201,5 +201,99 @@ describe("the devices section", () => {
       bad: true,
     });
     expect(document.querySelector("img[data-phone-qr]")).toBeNull();
+  });
+});
+
+/** Renders the Sign-in section over one whoami answer (and whatever the test queues after it),
+ * with one passkey creation the stubbed browser always answers. */
+function mountSignin(
+  whoami: { status: number; body: unknown },
+  later: Array<{ status: number; body: unknown }> = [],
+): {
+  toast: ReturnType<typeof renderHuddle>["toast"];
+  create: ReturnType<typeof vi.fn>;
+  calls: string[];
+} {
+  const queue = [whoami, ...later];
+  const calls: string[] = [];
+  const fetchFn: FetchFn = (url) => {
+    calls.push(url);
+    const a = queue.shift() ?? whoami;
+    return Promise.resolve(
+      new Response(JSON.stringify(a.body), {
+        status: a.status,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  };
+  const create = vi.fn(() =>
+    Promise.resolve({
+      id: "cred-9",
+      rawId: new Uint8Array([9]).buffer,
+      type: "public-key",
+      response: {
+        attestationObject: new Uint8Array([5]).buffer,
+        clientDataJSON: new Uint8Array([6]).buffer,
+      },
+    }),
+  );
+  vi.stubGlobal("navigator", { ...navigator, credentials: { create } });
+  const r = renderHuddle(<SignInMethods />, {}, NOW, fetchFn);
+  return { toast: r.toast, create, calls };
+}
+
+describe("the sign-in section", () => {
+  it("TestABrowserWithItsPasskeyNeedsNoOffer", async () => {
+    mountSignin({ status: 200, body: { kind: "device", totp: true, device_passkey: true } });
+    await flush();
+    expect(screen.getByText("This browser signs in with its passkey.")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
+  });
+
+  it("TestAnOwnerIsToldToSignInByCodeFirst", async () => {
+    mountSignin({ status: 200, body: { kind: "owner", totp: true, device_passkey: false } });
+    await flush();
+    expect(
+      screen.getByText("A passkey is saved per browser: sign in with a code first, then accept the offer."),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
+  });
+
+  it("TestSavePasskeyRunsTheWholeRegistrationAndReloads", async () => {
+    const h = mountSignin({ status: 200, body: { kind: "device", totp: true, device_passkey: false } }, [
+      { status: 200, body: { options: { publicKey: { challenge: "aGk", rp: { id: "localhost" } } } } },
+      { status: 200, body: {} },
+      { status: 200, body: { kind: "device", totp: true, device_passkey: true } },
+    ]);
+    await flush();
+    await act(async () => {
+      screen.getByRole("button", { name: "Save passkey" }).click();
+    });
+    await flush();
+    expect(h.create).toHaveBeenCalledTimes(1);
+    expect(h.toast).toHaveBeenCalledWith("Passkey saved for this browser");
+    expect(screen.getByText("This browser signs in with its passkey.")).toBeDefined();
+    expect(h.calls.filter((u) => u.endsWith("/api/whoami"))).toHaveLength(2);
+  });
+
+  it("TestACreationTheBrowserRefusedIsSaidInline", async () => {
+    const h = mountSignin({ status: 200, body: { kind: "device", totp: true, device_passkey: false } }, [
+      { status: 200, body: { options: { publicKey: { challenge: "aGk", rp: { id: "localhost" } } } } },
+    ]);
+    await flush();
+    h.create.mockRejectedValueOnce(new Error("cancelled"));
+    await act(async () => {
+      screen.getByRole("button", { name: "Save passkey" }).click();
+    });
+    await flush();
+    expect(screen.getByText("The passkey was not created. Try again.")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Save passkey" })).toBeDefined();
+  });
+
+  it("TestAWhoamiTheServerRefusedIsSaidInline", async () => {
+    mountSignin({ status: 500, body: {} });
+    await flush();
+    expect(screen.getByRole("alert")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
   });
 });

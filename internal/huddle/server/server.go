@@ -264,6 +264,9 @@ type server struct {
 	// pairs is the pairing core over the same hub.db; nil when the registry or the relying
 	// party could not be built, in which case every pairing route refuses.
 	pairs *auth.Pairing
+	// totp is the authenticator core over the same hub.db; nil when the registry could not be
+	// built, in which case every authenticator route refuses and code sign-in is just wrong.
+	totp *auth.TOTP
 	// permits wakes the permission items' long polls; stepUp gates the dangerous acts (7.4):
 	// a remote allow, an answer, a send — every route that carries the owner's decision or
 	// words into a session.
@@ -523,6 +526,17 @@ func Serve(ctx context.Context, o Options) error {
 			// solo default above stands only where no pairing core could be built
 			s.stepUp = pairStepUp{pairs: pairs, now: now}
 		}
+		// the authenticator core rides the same database: its secret and its recovery digests
+		// live in hub.db, so the terminal that enrols and the server that verifies share one
+		// truth. The machine's own name is what the owner's app lists the hub as.
+		machine := "huddle"
+		if host, err := os.Hostname(); err == nil && host != "" {
+			machine = host
+		}
+		s.totp = auth.NewTOTP(registry, auth.TOTPOptions{
+			Machine: machine, Now: now,
+			Log: func(line string) { fmt.Fprintf(o.Stdout, "huddle: %s\n", line) },
+		})
 	}
 	// the registry's pid checker stops with the server, before the database closes under it
 	pidCtx, stopPidCheck := context.WithCancel(ctx)
@@ -1291,6 +1305,18 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.loginBeginRoute(w, r)
 	case path == "/api/login/finish" && r.Method == http.MethodPost:
 		return s.loginFinishRoute(w, r)
+	case path == "/api/login/totp" && r.Method == http.MethodPost:
+		return s.loginTotpRoute(w, r)
+	case credentialed && path == "/api/totp/begin" && r.Method == http.MethodPost:
+		return s.totpBeginRoute(w, r, me)
+	case credentialed && path == "/api/totp/finish" && r.Method == http.MethodPost:
+		return s.totpFinishRoute(w, r, me)
+	case credentialed && path == "/api/totp" && r.Method == http.MethodDelete:
+		return s.totpRemoveRoute(w, r, me)
+	case credentialed && path == "/api/passkey/begin" && r.Method == http.MethodPost:
+		return s.passkeyBeginRoute(w, r, me)
+	case credentialed && path == "/api/passkey/finish" && r.Method == http.MethodPost:
+		return s.passkeyFinishRoute(w, r, me)
 	case credentialed && path == "/api/pair/mint" && r.Method == http.MethodPost:
 		return s.pairMintRoute(w, r, me)
 	case credentialed && path == "/api/stepup/begin" && r.Method == http.MethodPost:
@@ -1748,7 +1774,14 @@ func (s *server) adminRoute(w http.ResponseWriter, r *http.Request, path string,
 	}
 	switch {
 	case path == "/api/whoami":
-		s.writeJSON(w, 200, me, nil)
+		// the two facts the shell reads beside the identity: whether an authenticator is
+		// enrolled (the first-run set-up gate), and whether this session's device row holds a
+		// passkey (the biometrics offer after a code sign-in)
+		s.writeJSON(w, 200, struct {
+			auth.Who
+			TOTP          bool `json:"totp"`
+			DevicePasskey bool `json:"device_passkey"`
+		}{me, s.totp != nil && s.totp.Enrolled(r.Context()), s.deviceHasPasskey(r, me)}, nil)
 		return true, nil
 	case path == "/api/tokens" && r.Method == http.MethodPost:
 		if !me.Invite {

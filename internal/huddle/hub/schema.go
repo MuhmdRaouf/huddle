@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 16
+const SchemaVersion = 17
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -212,6 +212,24 @@ var migrations = []string{
 	// an hour past it rolls the expiry seven days on and no other request writes. NULL is a
 	// session an older build granted: its next request renews it.
 	`ALTER TABLE device_sessions ADD COLUMN renewed INTEGER;`,
+	// 17: authenticator-app sign-in (RFC 6238): one totp row per hub (id pinned to 1) holding
+	// the shared secret with the last step a code paid for and the lockout's counters, the
+	// sha256 digests of the one-time recovery codes, and how each device session was minted —
+	// 'totp' sessions end when the enrolment is removed, 'passkey' ones ride their device. A
+	// code-born device row carries the credential 'null' until a passkey lands on it.
+	`ALTER TABLE device_sessions ADD COLUMN method TEXT NOT NULL DEFAULT 'passkey';
+	 CREATE TABLE totp (
+	   id INTEGER PRIMARY KEY CHECK (id = 1),
+	   secret TEXT NOT NULL,
+	   last_step INTEGER NOT NULL,
+	   fails INTEGER NOT NULL,
+	   window_start INTEGER NOT NULL,
+	   locked_until INTEGER NOT NULL
+	 );
+	 CREATE TABLE totp_recovery (
+	   digest TEXT PRIMARY KEY,
+	   added INTEGER NOT NULL
+	 );`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

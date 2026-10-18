@@ -1,9 +1,10 @@
-// SignedOut.test.tsx — the signed-out page's own paths: the passkey button only when the home
-// holds a passkey, the ceremony the button runs (begin, the browser's credential, finish, the
-// reload), the inline errors in plain words (a cancelled prompt, the server's refusal), and the
-// command fields that stay under their smaller heading either way.
+// SignedOut.test.tsx — the signed-out page's own paths: the code field only when the hub holds
+// an authenticator enrolment, the passkey button only when the home holds a passkey, the two
+// ceremonies (a code posted, a passkey's begin-credential-finish with the reload), the inline
+// errors in plain words, and the command fields that stay under their smaller heading either
+// way.
 
-import { act, cleanup, screen } from "@testing-library/preact";
+import { act, cleanup, fireEvent, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api } from "../../src/api.ts";
 import { SignedOut } from "../../src/app/App.tsx";
@@ -33,6 +34,8 @@ type Mount = {
   reload: ReturnType<typeof vi.fn>;
   /** Flips the answer the get mock gives from now on. */
   setGet(a: unknown): void;
+  /** Flips the answer the code sign-in gives from now on. */
+  setCodeAnswer(a: unknown): void;
 };
 
 /** Mounts the signed-out page over a recording api and a stubbed navigator and reload. */
@@ -42,6 +45,7 @@ function mount(
     beginAnswer?: unknown;
     getAnswer?: unknown;
     finishAnswer?: unknown;
+    codeAnswer?: unknown;
   } = {},
 ): Mount {
   cleanup();
@@ -58,6 +62,11 @@ function mount(
         if (a instanceof Error) return Promise.reject(a);
         return Promise.resolve(a ?? { passkeys: false });
       }
+      if (path === "/api/login/totp") {
+        const a = code.answer;
+        if (a instanceof Error) return Promise.reject(a);
+        return Promise.resolve(a ?? { device: "Mac", expires_in: 604800 });
+      }
       if (path === "/api/login/begin") {
         const a = over.beginAnswer;
         if (a instanceof Error) return Promise.reject(a);
@@ -72,6 +81,7 @@ function mount(
     channelHref: (ch, p) => `#/channels/${ch}${p}`,
   } as Api;
   const holder = { answer: over.getAnswer as unknown };
+  const code = { answer: over.codeAnswer as unknown };
   const get = vi.fn(() =>
     holder.answer instanceof Error ? Promise.reject(holder.answer) : Promise.resolve(credential),
   );
@@ -79,7 +89,17 @@ function mount(
   const reload = vi.fn();
   vi.stubGlobal("location", { ...location, reload });
   renderIn(<SignedOut />, makeCtx(makeState(), { api }));
-  return { calls, get, reload, setGet: (a) => (holder.answer = a) };
+  return {
+    calls,
+    get,
+    reload,
+    setGet: (a) => {
+      holder.answer = a;
+    },
+    setCodeAnswer: (a) => {
+      code.answer = a;
+    },
+  };
 }
 
 /** Drives the sign-in button and lets the ceremony's promises land. */
@@ -100,21 +120,55 @@ afterEach(() => {
 });
 
 describe("the signed-out page", () => {
-  it("TestShowsThePasskeyButtonOnlyWhenTheHomeHoldsOne", async () => {
-    mount({ available: { passkeys: true } });
+  it("TestShowsTheCodeFieldWhenTheHubHoldsAnEnrolmentAndThePasskeyButtonWhenItHoldsAKey", async () => {
+    mount({ available: { passkeys: true, totp: true } });
     await flush();
+    expect(screen.getByText("Enter the code from your authenticator app")).toBeDefined();
     expect(screen.getByRole("button", { name: "Sign in with a passkey" })).toBeDefined();
-    expect(screen.getByText("No passkey on this device?")).toBeDefined();
+    expect(screen.getByText("No code or passkey at hand?")).toBeDefined();
     expect(screen.getByText("In a Claude session")).toBeDefined();
     cleanup();
 
-    mount({ available: { passkeys: false } });
+    mount({ available: { passkeys: true, totp: false } });
+    await flush();
+    expect(screen.queryByText("Enter the code from your authenticator app")).toBeNull();
+    expect(screen.getByRole("button", { name: "Sign in with a passkey" })).toBeDefined();
+    expect(screen.getByText("No code or passkey at hand?")).toBeDefined();
+    cleanup();
+
+    mount({ available: { passkeys: false, totp: false } });
     await flush();
     expect(screen.queryByRole("button", { name: "Sign in with a passkey" })).toBeNull();
     expect(screen.getByText(/once, then save a passkey: next time Touch ID signs you in/)).toBeDefined();
-    expect(screen.getByText("No passkey on this device?")).toBeDefined();
     expect(screen.getByText("In a Claude session")).toBeDefined();
     expect(screen.getByText("Or in a terminal")).toBeDefined();
+  });
+
+  it("TestACodeSignsInAndMarksTheShellForThePasskeyOffer", async () => {
+    const h = mount({ available: { totp: true } });
+    await flush();
+    localStorage.clear();
+    fireEvent.input(screen.getAllByRole("textbox")[0] as HTMLInputElement, {
+      target: { value: "123456" },
+    });
+    await flush();
+    expect(h.calls.map((c) => c.path)).toEqual(["/api/login/available", "/api/login/totp"]);
+    expect(h.calls[1]?.body).toEqual({ code: "123456" });
+    expect(localStorage.getItem("huddle:totp-signed-in")).toBe("1");
+    expect(h.reload).toHaveBeenCalledTimes(1);
+    // a refused code says so inline and clears the field for the retyping
+    h.setCodeAnswer(new Error("That code did not work. Check your app, or use a recovery code."));
+    cleanup();
+    const second = mount({ available: { totp: true } });
+    second.setCodeAnswer(new Error("That code did not work. Check your app, or use a recovery code."));
+    await flush();
+    fireEvent.paste(screen.getAllByRole("textbox")[0] as HTMLInputElement, {
+      clipboardData: { getData: () => "111111" },
+    });
+    await flush();
+    expect(second.calls.map((c) => c.path)).toEqual(["/api/login/available", "/api/login/totp"]);
+    expect(screen.getByText(/That code did not work/)).toBeDefined();
+    expect((screen.getAllByRole("textbox")[0] as HTMLInputElement).value).toBe("");
   });
 
   it("TestTheButtonRunsTheCeremonyAndReloads", async () => {

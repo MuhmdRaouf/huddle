@@ -19,23 +19,31 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/webauthntest"
 )
 
-// TestLoginAvailableAnswersTheBoolean proves the signed-out page's one fact: false with no
-// device paired, true after one, and never a name, a count or anything else.
-func TestLoginAvailableAnswersTheBoolean(t *testing.T) {
+// TestLoginAvailableAnswersTheMethods proves the signed-out page's two facts — does this home
+// hold a passkey, does it hold an authenticator enrolment — as the two booleans and nothing
+// else: no device names, no counts, nothing that differs in shape or timing between a home
+// with a method and one without.
+func TestLoginAvailableAnswersTheMethods(t *testing.T) {
 	srv := startServer(t, nil)
 
 	code, _, out := srv.get(t, "/api/login/available", map[string]string{"x-huddle-token": ""})
 	if code != 200 {
 		t.Fatalf("available with no device = %d: %s", code, out)
 	}
-	if out != `{"passkeys":false}` {
-		t.Errorf("available with no device = %s, want the boolean alone", out)
+	if out != `{"passkeys":false,"totp":false}` {
+		t.Errorf("available with no device = %s, want the two booleans alone", out)
 	}
 
 	pairDevice(t, srv, webauthntest.NewSoftKey(t), "iPhone")
 	code, _, out = srv.get(t, "/api/login/available", map[string]string{"x-huddle-token": ""})
-	if code != 200 || out != `{"passkeys":true}` {
-		t.Errorf("available after a pairing = %d %s, want the boolean alone", code, out)
+	if code != 200 || out != `{"passkeys":true,"totp":false}` {
+		t.Errorf("available after a pairing = %d %s, want the two booleans alone", code, out)
+	}
+
+	_, _ = enrolTOTP(t, srv, linkBrowser(t, srv))
+	code, _, out = srv.get(t, "/api/login/available", map[string]string{"x-huddle-token": ""})
+	if code != 200 || out != `{"passkeys":true,"totp":true}` {
+		t.Errorf("available after an enrolment = %d %s, want the two booleans alone", code, out)
 	}
 }
 

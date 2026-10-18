@@ -13,6 +13,7 @@ import { createAct, createCopy, type HuddleContextValue, HuddleProvider } from "
 import { CmdKeys, CmdPalette, HelpDialog } from "./app/Palette.tsx";
 import { parseHash, pathOf } from "./app/router.ts";
 import { settingsSectionOf } from "./app/SettingsTab.tsx";
+import { TotpFirstRun } from "./app/Totp.tsx";
 import { ComposeDialog } from "./compose/ComposeDialog.tsx";
 import type { ComposeSent } from "./compose/Composer.tsx";
 import type { ComposeOptions } from "./compose/drafts.ts";
@@ -138,8 +139,19 @@ const act = createAct(
 );
 
 /** Which credential this browser holds, from the boot's one whoami: the passkey banner an
- *  owner's link session shows reads it, and a paired device's session keeps it hidden. */
-const who = { kind: "" };
+ *  owner's link session shows reads it, and a paired device's session keeps it hidden. The two
+ *  facts beside it (an authenticator enrolment, this device's own passkey) drive the first-run
+ *  set-up page and the biometrics offer. */
+const who = { kind: "" } as { kind: string; totp?: boolean; devicePasskey?: boolean };
+
+/** The first-run gate: the link that just signed this browser in stands for the machine, so it
+ *  may enrol the authenticator before the shell; a "Later" keeps it out of this browser until
+ *  Settings opens the same set-up. */
+const totpGate = { on: false };
+const setTotpGate = (on: boolean): void => {
+  totpGate.on = on;
+  paint();
+};
 
 /** Navigates: the same hash re-routes, another one moves the address bar (app.js go). */
 function go(h: string): void {
@@ -340,6 +352,19 @@ function paintSignedOut(): void {
 
 function page(): ComponentChildren {
   if (signedOutPainted) return <SignedOut />;
+  if (totpGate.on)
+    return (
+      <TotpFirstRun
+        onDone={() => {
+          who.totp = true;
+          setTotpGate(false);
+        }}
+        onLater={() => {
+          writePref(localStorage, "totp-later", true);
+          setTotpGate(false);
+        }}
+      />
+    );
   if (failedCh && parseHash(location.hash, (k, fb) => readPref(localStorage, k, fb)).ch === failedCh)
     return <NoChannel ch={failedCh} />;
   const s = store.getState();
@@ -494,11 +519,21 @@ setInterval(paint, 15_000); // relative times stay live (app.js's 15 s tick)
 registry.connect();
 void syncChannel().finally(paint);
 // the one boot request that names who this browser is; its answer repaints the shell's banner
+// and, for a link session over an un-enrolled hub, opens the first-run authenticator set-up
 void api
   .api("/api/whoami")
   .then((w) => {
     const kind = (w as { kind?: unknown }).kind;
     if (typeof kind === "string" && kind) who.kind = kind;
+    const totp = (w as { totp?: unknown }).totp;
+    who.totp = totp === true;
+    const passkey = (w as { device_passkey?: unknown }).device_passkey;
+    who.devicePasskey = passkey === true;
+    if (who.kind === "owner" && who.totp === false && !readPref(localStorage, "totp-later", false)) {
+      // the gate stands between the link sign-in and the shell: a slow answer arriving after
+      // this browser already moved must not pull it back onto the set-up
+      if (["", "#/", "#/channels"].includes(location.hash)) totpGate.on = true;
+    }
   })
   .catch(() => {})
   .then(() => paint());

@@ -249,6 +249,30 @@ func (d *DB) AnyDevice(ctx context.Context) (bool, error) {
 	return err == nil && row != nil, err
 }
 
+// PasskeyFinish lands one registration a signed-in session ran on its own device row: the
+// credential the browser made, with the audit row, in one transaction. The row keeps its name
+// and its handle, so its sessions live on. It answers false when the device is gone (removed
+// between the ceremony's two halves), and nothing is written.
+func (d *DB) PasskeyFinish(ctx context.Context, name string, credentialJSON []byte, nowMS int64) (bool, error) {
+	landed := false
+	err := d.st.Tx(ctx, func(ctx context.Context, q store.Q) error {
+		if err := q.Run(ctx, "UPDATE devices SET credential = ?, seen = ? WHERE name = ?",
+			string(credentialJSON), nowMS, name); err != nil {
+			return err
+		}
+		changed, err := changesOf(ctx, q)
+		if err != nil {
+			return err
+		}
+		landed = changed
+		if !changed {
+			return nil
+		}
+		return auditRow(ctx, q, nowMS, name, "passkey.add", name)
+	})
+	return landed, err
+}
+
 // changesOf answers how many rows the transaction's last statement changed, the way SQLite
 // itself counts: a consume that changed nothing is a pairing already spent.
 func changesOf(ctx context.Context, q store.Q) (bool, error) {

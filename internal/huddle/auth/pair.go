@@ -107,6 +107,7 @@ type Pairing struct {
 	pairs   map[string]*pendingPair  // keyed by the pairing digest
 	logins  map[string]*pendingLogin // keyed by the challenge
 	stepups map[string]*pendingLogin // keyed by the challenge
+	adds    map[string]*pendingAdd   // keyed by the challenge
 }
 
 // pendingPair is one registration ceremony a link opened.
@@ -119,6 +120,15 @@ type pendingPair struct {
 
 // pendingLogin is one sign-in ceremony.
 type pendingLogin struct {
+	session  webauthn.SessionData
+	deadline int64
+}
+
+// pendingAdd is one passkey registration a signed-in session opened on its own device row: the
+// device the credential lands on, with the handle its ceremony enrols.
+type pendingAdd struct {
+	device   string
+	handle   []byte
 	session  webauthn.SessionData
 	deadline int64
 }
@@ -154,7 +164,7 @@ func NewPairing(db *hub.DB, o PairOptions) (*Pairing, error) {
 	return &Pairing{
 		db: db, wa: wa, now: o.Now, log: o.Log,
 		pairs: map[string]*pendingPair{}, logins: map[string]*pendingLogin{},
-		stepups: map[string]*pendingLogin{},
+		stepups: map[string]*pendingLogin{}, adds: map[string]*pendingAdd{},
 	}, nil
 }
 
@@ -416,6 +426,76 @@ func (p *Pairing) refused(msg string, detail error) error {
 	return &channel.HuddleError{Status: 400, Msg: msg}
 }
 
+// BeginSessionPasskey opens one registration a signed-in session runs on its own device row:
+// the shape the biometrics offer after a code sign-in wants — the device's own platform
+// authenticator (the lock the owner's hands already know), a resident key it can be discovered
+// by, user verification required — with no pairing link, because the session is the proof.
+func (p *Pairing) BeginSessionPasskey(ctx context.Context, device string) (*protocol.CredentialCreation, error) {
+	found, ok, err := p.db.DeviceByName(ctx, device)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, &channel.HuddleError{Status: 404, Msg: "no device named " + device}
+	}
+	creation, session, err := p.wa.BeginRegistration(deviceUser{d: found},
+		webauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
+			AuthenticatorAttachment: protocol.Platform,
+			ResidentKey:             protocol.ResidentKeyRequirementRequired,
+			UserVerification:        protocol.VerificationRequired,
+		}))
+	if err != nil {
+		return nil, &channel.HuddleError{Status: 500, Msg: "the passkey ceremony could not begin"}
+	}
+	p.sweep()
+	p.mu.Lock()
+	p.adds[session.Challenge] = &pendingAdd{
+		device: found.Name, handle: found.Handle, session: *session, deadline: p.nowMS() + PairLinkMS,
+	}
+	p.mu.Unlock()
+	return creation, nil
+}
+
+// FinishSessionPasskey verifies one registration against the ceremony the session opened and
+// lands the credential on the device row it named — the row keeps its name and its handle, so
+// every session it holds lives on and its next sign-in can be the passkey itself.
+func (p *Pairing) FinishSessionPasskey(ctx context.Context, device string, body []byte) (string, error) {
+	parsed, err := protocol.ParseCredentialCreationResponseBytes(body)
+	if err != nil {
+		return "", p.refused("the passkey response did not parse", err)
+	}
+	challenge := parsed.Response.CollectedClientData.Challenge
+	p.mu.Lock()
+	pending := p.adds[challenge]
+	delete(p.adds, challenge) // one response spends its challenge, pass or fail
+	p.mu.Unlock()
+	if pending == nil || pending.deadline <= p.nowMS() {
+		return "", &channel.HuddleError{Status: 400, Msg: "this passkey's challenge is spent or stale: begin again"}
+	}
+	if pending.device != device {
+		return "", &channel.HuddleError{Status: 400, Msg: "this passkey's challenge belongs to another device: begin again"}
+	}
+	credential, err := p.wa.CreateCredential(deviceUser{d: hub.Device{
+		Name: pending.device, Handle: pending.handle,
+	}}, pending.session, parsed)
+	if err != nil {
+		return "", p.refused("the passkey response did not verify", err)
+	}
+	record, err := json.Marshal(credential)
+	if err != nil {
+		return "", err
+	}
+	landed, err := p.db.PasskeyFinish(ctx, pending.device, record, p.nowMS())
+	if err != nil {
+		return "", err
+	}
+	if !landed {
+		return "", &channel.HuddleError{Status: 404, Msg: "no device named " + pending.device}
+	}
+	p.log("device " + pending.device + " saved a passkey")
+	return pending.device, nil
+}
+
 // sweep drops the ceremonies past their deadline.
 func (p *Pairing) sweep() {
 	t := p.nowMS()
@@ -433,6 +513,11 @@ func (p *Pairing) sweep() {
 	for key, pending := range p.stepups {
 		if pending.deadline <= t {
 			delete(p.stepups, key)
+		}
+	}
+	for key, pending := range p.adds {
+		if pending.deadline <= t {
+			delete(p.adds, key)
 		}
 	}
 	p.mu.Unlock()

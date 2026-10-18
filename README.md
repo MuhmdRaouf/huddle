@@ -23,17 +23,24 @@ That is all. The first session starts the hub and prints its address. The provid
 
 ## Signing in
 
-The dashboard signs you in with a passkey first:
+Three ways in, one hub:
 
-1. Open the address the first session printed (or run `huddle open`). The page offers to save a
-   passkey for that browser — accept, and the passkey lives in your password manager or Touch ID.
-2. Every later visit is one touch: the signed-out page's "Sign in with a passkey" button signs
-   the shell back in on its own.
-3. A device session rolls forward while you use it and ends after 7 days unused; one touch
-   starts a fresh one. Remove a device from Settings on any paired device to end it at once.
+1. **Authenticator code** (the primary): set it up once — the first link sign-in offers it, or
+   Settings → Sign-in any time after — by scanning the QR with your authenticator app (Google
+   Authenticator, 1Password, Authy). Every later visit is six digits on the signed-out page.
+   `huddle totp setup` does the same from a terminal; `huddle totp off` removes it.
+2. **Recovery codes**: ten one-time codes the set-up shows once (copy or download them). Each
+   signs in like a code when the app is not at hand; Settings → Sign-in can re-enrol for a
+   fresh set.
+3. **Passkey** (optional extra): after a code sign-in the page offers to save this browser's
+   lock (Touch ID, Face ID, fingerprint) as a passkey — "Not now" asks again in 30 days, and
+   the code keeps working either way. Settings → Sign-in saves one too, and `huddle pair`
+   pairs another device.
+4. **Sign-in link**: `huddle open` in a terminal, or `/huddle:setup` in a session, always prints
+   a fresh one-time link as the fallback.
 
-`huddle open` in a terminal, or `/huddle:setup` in a session, always prints a fresh one-time link
-as the fallback.
+A device session rolls forward while you use it and ends after 7 days unused; one code or touch
+starts a fresh one. Remove a device from Settings on any paired device to end it at once.
 
 ## Commands
 

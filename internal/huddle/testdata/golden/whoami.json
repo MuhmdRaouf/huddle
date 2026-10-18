@@ -7,5 +7,5 @@
   "auth": "root",
   "status": 200,
   "contentType": "application/json",
-  "body": "{\"name\":\"owner\",\"kind\":\"owner\",\"root\":true,\"invite\":true}"
+  "body": "{\"name\":\"owner\",\"kind\":\"owner\",\"root\":true,\"invite\":true,\"totp\":false,\"device_passkey\":false}"
 }

@@ -15,10 +15,10 @@ afterEach(() => {
 });
 
 describe("the Settings tab", () => {
-  it("serves Radar as its first section and reads any other address as it", () => {
-    expect(settingsSectionOf(undefined)).toBe("radar");
+  it("serves Sign-in as the first section and reads any other address as it", () => {
+    expect(settingsSectionOf(undefined)).toBe("signin");
     expect(settingsSectionOf("radar")).toBe("radar");
-    expect(settingsSectionOf("somewhere-else")).toBe("radar");
+    expect(settingsSectionOf("somewhere-else")).toBe("signin");
   });
 
   it("renders the section row with Radar current, and the link moves between sections", () => {

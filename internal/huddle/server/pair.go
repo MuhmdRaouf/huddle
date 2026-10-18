@@ -162,18 +162,33 @@ func (s *server) loginFinishRoute(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
-// loginAvailableRoute answers the signed-out page's one question — does this home hold a passkey
-// at all — with the boolean and nothing else: no device names, no counts, nothing that differs
-// in shape or timing between a home with a passkey and one without.
+// loginAvailableRoute answers the signed-out page's two questions — does this home hold a
+// passkey, does it hold an authenticator enrolment — with the two booleans and nothing else: no
+// device names, no counts, nothing that differs in shape or timing between a home with a method
+// and one without.
 func (s *server) loginAvailableRoute(w http.ResponseWriter, r *http.Request) error {
-	any := false
+	any, enrolled := false, false
 	if s.pairs != nil {
 		any = s.pairs.AnyDevicePaired(r.Context())
 	}
+	if s.totp != nil {
+		enrolled = s.totp.Enrolled(r.Context())
+	}
 	s.writeJSON(w, 200, struct {
 		Passkeys bool `json:"passkeys"`
-	}{any}, nil)
+		TOTP     bool `json:"totp"`
+	}{any, enrolled}, nil)
 	return nil
+}
+
+// deviceHasPasskey answers whether the device a session belongs to holds a WebAuthn
+// credential: the fact that separates a browser a code signed in from one that can also touch
+// a passkey. A session with no device (the owner's link, a member) answers false.
+func (s *server) deviceHasPasskey(r *http.Request, me auth.Who) bool {
+	if me.Device == "" || s.registry == nil {
+		return false
+	}
+	return s.registry.DeviceHasPasskey(r.Context(), me.Device)
 }
 
 // pairMintRoute draws one pairing link for a browser that already holds the owner's credential:

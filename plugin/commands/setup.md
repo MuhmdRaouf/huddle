@@ -19,7 +19,7 @@ Ask the user nothing: every choice has a default, and the arguments change it.
 2. Run `huddle status` and show its output.
 3. Show the user, verbatim, the two lines the setup printed:
    - the `join: /huddle:join 127.0.0.1:<port> --token …` line: run that line in any other Claude session to bring it in (`/huddle:join …`); one per project, and its later sessions are in on their own;
-   - the `dashboard: http://127.0.0.1:<port>/?code=…` link: open it in your browser; it signs you in once, within 5 min.
+   - the `dashboard: http://127.0.0.1:<port>/?code=…` link: open it in your browser; it signs you in once, within 5 min. When no authenticator is enrolled yet, the link lands on its set-up page first (scan the QR with an authenticator app; "Later" skips it and Settings → Sign-in offers it again).
 4. If `huddle setup` or `huddle status` fails, show the error and stop; do not work around it. If `huddle status` says this session is not in the huddle, tell the user the way in it printed (`/huddle:invite` in a session that is in, or `/huddle:setup --restart` here when the session that started it is gone).
 
 Report to the user as a short title and bullet points, with the action first. No preamble or recap.
