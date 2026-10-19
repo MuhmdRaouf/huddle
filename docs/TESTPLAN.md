@@ -45,10 +45,14 @@ Run everything from the repo root: `go run ./scripts/tmpguard -count=1 ./...`, `
 `sh scripts/live-e2e.sh` proves the path a first real use takes: it builds the binary, copies the plugin, and
 runs two headless `claude` sessions in throwaway git projects — one runs `/huddle:setup` and prints the join
 line, the other joins with it — then has them `ping` and `pong` through the huddle MCP tools and asserts both
-messages against the channel's own event list. It needs `claude` and the zai router on 127.0.0.1:18787; every
-run gets its own temporary `HOME`, `CLAUDE_CONFIG_DIR` and `XDG_*` directories, so the real `~/.claude`,
-`~/.config/huddle` and `~/.agents` are never touched. `KEEP=1` keeps the temp dir and its logs. It is not part
-of CI.
+messages against the channel's own event list. An opencode leg follows: the script writes a temp
+`opencode.json` whose provider points at the router, runs `huddle harness install opencode`, joins the agent as
+session `oc` with a fresh invite from proj-a, has it `ping` the Claude session and read the `pong` back through
+the huddle MCP tools, asserts both events, and checks `huddle harness remove opencode` restores the temp config
+byte for byte. It needs `claude`, `opencode` and the zai router on 127.0.0.1:18787; with `opencode` off the
+PATH the leg prints a `skip:` line and the claude steps still run. Every run gets its own temporary `HOME`,
+`CLAUDE_CONFIG_DIR` and `XDG_*` directories, so the real `~/.claude`, `~/.config/huddle` and `~/.agents` are
+never touched. `KEEP=1` keeps the temp dir and its logs. It is not part of CI.
 
 ## Live run
 

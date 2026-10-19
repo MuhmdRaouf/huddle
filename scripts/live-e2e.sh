@@ -1,7 +1,10 @@
 #!/bin/sh
 # live-e2e: two real claude sessions set up, join and ping-pong through one huddle channel, and
-# the channel's own events prove it happened. Not part of CI: it needs `claude` and the zai
-# router on 127.0.0.1. sh scripts/live-e2e.sh (KEEP=1 keeps the temp dir and its logs).
+# the channel's own events prove it happened — then an opencode agent, configured by
+# `huddle harness install opencode` in the same temp home, joins the same channel and
+# ping-pongs with the Claude session too. Not part of CI: it needs `claude`, `opencode` and the
+# zai router on 127.0.0.1 (the opencode leg skips with a clear line when opencode is away).
+# sh scripts/live-e2e.sh (KEEP=1 keeps the temp dir and its logs).
 #
 # Everything runs in one mktemp home: the built binary stands in for the release download
 # (AGENTS_HUDDLE_HOME), the plugin loads from a copy, and every claude run gets its own
@@ -33,6 +36,11 @@ step_fail() {
 	printf 'step %s: %s ... FAILED: %s\n' "$1" "$2" "$3"
 	RESULTS="$RESULTS FAILED:$1-$2"
 	FAILED=$((FAILED + 1))
+}
+
+step_skip() {
+	printf 'step %s: %s ... skip: %s\n' "$1" "$2" "$3"
+	RESULTS="$RESULTS skip:$1-$2"
 }
 
 finish() {
@@ -118,6 +126,21 @@ hcli() {
 	(
 		cd "$T/proj-a" || exit 1
 		env_iso "$T/hb/0.0.1/huddle" "$@"
+	)
+}
+
+# oc runs one headless opencode turn in that project, capped at CAP seconds, its stream at
+# $T/log/oc-<tag>.jsonl. The huddle MCP server opencode spawns inherits HUDDLE_SESSION=oc,
+# which names the credential file the oc join wrote.
+oc() {
+	proj=$1
+	prompt=$2
+	tag=$3
+	log="$T/log/oc-$tag.jsonl"
+	(
+		cd "$T/$proj" || exit 1
+		env_iso env HUDDLE_SESSION=oc perl -e 'alarm shift; exec @ARGV' "$CAP" \
+			opencode run "$prompt" --format json >"$log" 2>"$log.err"
 	)
 }
 
@@ -300,6 +323,123 @@ if [ "$pings" = 1 ] && [ "$pongs" = 1 ] && [ -n "$CHANNEL" ]; then
 	echo "message: proj-b -> proj-a: pong"
 else
 	step_fail 8 channel "ping=$pings pong=$pongs channel='$CHANNEL' (events $EVFILE, stderr $T/log/events.err)"
+fi
+
+# ── step 9: opencode leg — provider config, then the harness install ─────────
+if ! command -v opencode >/dev/null 2>&1; then
+	step_skip 9 oc-leg 'opencode is not on PATH'
+	finish
+fi
+OCJSON="$T/xdg/config/opencode/opencode.json"
+mkdir -p "$T/xdg/config/opencode" "$T/proj-oc"
+cat >"$OCJSON" <<EOF
+{
+  "\$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "zai": {
+      "npm": "@ai-sdk/anthropic",
+      "name": "zai router",
+      "options": { "baseURL": "$ROUTER/v1", "apiKey": "dummy" },
+      "models": { "$MODEL": {} }
+    }
+  },
+  "model": "zai/$MODEL"
+}
+EOF
+if ! (
+	cd "$T/proj-oc" || exit 1
+	git init -q 2>>"$T/log/git.err" || exit 1
+	git -c user.name=t -c user.email=t@example.test -c commit.gpgsign=false \
+		commit --allow-empty -qm init 2>>"$T/log/git.err" || exit 1
+); then
+	step_fail 9 oc-install "git init or commit failed in proj-oc (see $T/log/git.err)"
+	finish
+fi
+cp "$OCJSON" "$T/log/oc-before.json"
+if hcli harness install opencode >"$T/log/oc-install.log" 2>"$T/log/oc-install.err" \
+	&& grep -q '"mcp"' "$OCJSON" \
+	&& grep -q 'huddle","mcp"' "$OCJSON" \
+	&& grep -q '"timeout":120000' "$OCJSON" \
+	&& grep -q 'opencode-hook.js' "$OCJSON" \
+	&& [ -f "$T/xdg/config/huddle/harness/opencode-hook.js" ]; then
+	step_pass 9 oc-install
+else
+	step_fail 9 oc-install "the install did not wire the huddle MCP server into $OCJSON (stderr $T/log/oc-install.err)"
+	finish
+fi
+
+# ── step 10: the opencode agent answers through the router ───────────────────
+oc proj-oc 'Reply with exactly: ok' model
+if [ -s "$T/log/oc-model.jsonl" ] \
+	&& grep -q '"type":"text"' "$T/log/oc-model.jsonl" \
+	&& grep -q '"reason":"stop"' "$T/log/oc-model.jsonl"; then
+	step_pass 10 oc-model
+else
+	step_fail 10 oc-model "opencode produced no answer (log $T/log/oc-model.jsonl, stderr $T/log/oc-model.jsonl.err)"
+	finish
+fi
+
+# ── step 11: the opencode agent joins proj-a's channel as oc ─────────────────
+OCJOIN=$(hcli token create --print-join-command 2>"$T/log/oc-token.err" || true)
+OCLINE=$(printf '%s' "$OCJOIN" | grep -o '/huddle:join 127\.0\.0\.1:[0-9]* --token [^ "\\]*' | tail -1 | sed 's/[^A-Za-z0-9._:/-]*$//') || true
+OCHOSTPORT=$(printf '%s' "$OCLINE" | sed -n 's#^/huddle:join \([0-9.]*:[0-9]*\) .*#\1#p')
+OCTOKEN=$(printf '%s' "$OCLINE" | sed -n 's#.* --token \([A-Za-z0-9.]*\)$#\1#p')
+if [ -z "$OCHOSTPORT" ] || [ -z "$OCTOKEN" ]; then
+	step_fail 11 oc-join "no join line in token create output (stderr $T/log/oc-token.err)"
+	finish
+fi
+if (
+	cd "$T/proj-oc" || exit 1
+	env_iso env HUDDLE_SESSION=oc "$T/hb/0.0.1/huddle" join "$OCHOSTPORT" --token "$OCTOKEN" --as oc \
+		>"$T/log/oc-join.log" 2>&1
+) && [ -f "$T/xdg/config/huddle/sessions/oc.json" ]; then
+	step_pass 11 oc-join
+else
+	step_fail 11 oc-join "the cli join failed (log $T/log/oc-join.log)"
+	finish
+fi
+
+# ── step 12: ping-pong, the opencode agent and the Claude session live at once
+oc proj-oc "Use the huddle send tool to send exactly 'ping' to the session proj-a. Then use the huddle wait tool with timeout 90 seconds. Until a message from proj-a whose text is exactly 'pong' arrives, ignore every other event and call the huddle wait tool again. When the pong arrives, print exactly: pong received" run &
+pid_oc=$!
+sleep 5
+(
+	cc proj-a "Use the huddle wait tool to wait (timeout 180 seconds) for a message from the session oc. Until a message whose text is exactly 'ping' arrives from oc, ignore join notices and every other event and call the huddle wait tool again. When it arrives, use the huddle reply or send tool to answer oc with exactly 'pong'. Then stop." \
+		--resume "$SID_A" >"$T/log/sid-a3.txt" 2>&1
+) &
+pid_a2=$!
+st_oc=0
+st_a2=0
+wait "$pid_oc" || st_oc=$?
+wait "$pid_a2" || st_a2=$?
+if [ "$st_oc" -lt 128 ] && [ "$st_a2" -lt 128 ]; then
+	step_pass 12 oc-pingpong
+else
+	step_fail 12 oc-pingpong "a session hit the ${CAP}s cap (oc=$st_oc claude=$st_a2)"
+fi
+
+# ── step 13: the channel itself holds oc's ping and proj-a's pong ────────────
+EVFILE2="$T/log/events-oc.json"
+hcli events --after 0 --limit 500 >"$EVFILE2" 2>"$T/log/events-oc.err" || true
+ocpings=$(json_array_count "$EVFILE2" oc proj-a ping)
+ocpongs=$(json_array_count "$EVFILE2" proj-a oc pong)
+if [ "$ocpings" = 1 ] && [ "$ocpongs" = 1 ]; then
+	step_pass 13 oc-events
+	echo "message: oc -> proj-a: ping"
+	echo "message: proj-a -> oc: pong"
+else
+	step_fail 13 oc-events "ping=$ocpings pong=$ocpongs (events $EVFILE2, stderr $T/log/events-oc.err)"
+fi
+
+# ── step 14: harness remove restores the temp opencode.json ──────────────────
+LEDGER="$T/xdg/config/huddle/harness-ledger.json"
+if hcli harness remove opencode >"$T/log/oc-remove.log" 2>"$T/log/oc-remove.err" \
+	&& cmp -s "$OCJSON" "$T/log/oc-before.json" \
+	&& [ ! -e "$T/xdg/config/huddle/harness/opencode-hook.js" ] \
+	&& ! grep -q '"harness":"opencode"' "$LEDGER" 2>/dev/null; then
+	step_pass 14 oc-remove
+else
+	step_fail 14 oc-remove "$OCJSON did not come back byte for byte, or the shim or its ledger entry stayed (stderr $T/log/oc-remove.err)"
 fi
 
 finish
