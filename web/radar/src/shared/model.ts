@@ -85,6 +85,10 @@ export type RequestRecord = {
   latencyMs: number | null;
   tokens: Tokens;
   stopReason: string | null;
+  /** The HTTP status the router recorded for the call ("200", "429"), from the route line's own
+   *  status; absent when no router saw the call or the line said none. Kept apart from
+   *  `stopReason`, which names how the model ended its turn. */
+  status?: string;
   provider: string;
   /** How a provider plugin's router sent it ("anthropic" passthrough, "provider"); absent when no router saw it. */
   route?: string;

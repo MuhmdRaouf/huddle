@@ -90,7 +90,7 @@ function DrawerHeader({ request }: { request: RequestRecord }) {
           {agentDisplayName(state, request.sessionId, request.agentId)}
         </span>
         {status !== null ? (
-          <span class="badge badge-soft badge-error">HTTP {status}</span>
+          <span class={`badge badge-soft${status >= 400 ? " badge-error" : ""}`}>HTTP {status}</span>
         ) : streaming ? (
           <span class="badge badge-soft badge-info">
             <span class="loading loading-dots loading-sm" aria-hidden="true" />

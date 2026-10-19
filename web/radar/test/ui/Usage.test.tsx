@@ -11,6 +11,7 @@ import {
   UsageView,
   usageSeries,
 } from "../../src/ui/app/views/Usage.tsx";
+import { modelColor } from "../../src/ui/palette.ts";
 import type { ClientState } from "../../src/ui/state.ts";
 import { renderApp } from "./render.tsx";
 
@@ -336,6 +337,50 @@ describe("stepDay", () => {
 });
 
 describe("UsageView", () => {
+  it("draws the daily chart as one stacked bar per day, never a smoothed line", () => {
+    const { container } = renderApp(<UsageView />, usageState(), NOW);
+    const plot = container.querySelector("[data-usage-plot]");
+    expect(plot).toBeTruthy();
+    // one bar slot per day of the window, zero days included; the bars carry the models' colours
+    expect(plot?.querySelectorAll("g[data-day]")).toHaveLength(DATES.length);
+    expect(plot?.querySelectorAll("rect").length).toBeGreaterThanOrEqual(2);
+    expect(plot?.querySelector("path.chart-line")).toBeNull();
+    // the segment colours are the legend's: the glm day's bar segment wears glm's colour
+    const segment = plot?.querySelector("g[data-day='6'] rect");
+    expect(segment?.getAttribute("fill")).toBe(modelColor("glm-5.3"));
+  });
+
+  it("carries the hovered day's date and every model's value in a tooltip", () => {
+    const { container } = renderApp(<UsageView />, usageState(), NOW);
+    for (const svg of container.querySelectorAll("svg")) {
+      svg.getBoundingClientRect = () =>
+        ({
+          x: 0,
+          y: 0,
+          left: 0,
+          top: 0,
+          width: 720,
+          height: 240,
+          right: 720,
+          bottom: 240,
+          toJSON: () => "",
+        }) as DOMRect;
+    }
+    const plot = container.querySelector("[data-usage-plot]");
+    if (plot === null) throw new Error("the usage plot never rendered");
+    fireEvent.pointerMove(plot, { clientX: 700 });
+    const tip = container.querySelector("[data-usage-plot] .chart-tip");
+    expect(tip?.textContent).toContain("GLM 5.3");
+    expect(tip?.textContent).toContain("10,000");
+    // a pointer outside the plot leaves the tooltip away
+    fireEvent.pointerMove(plot, { clientX: -50 });
+    expect(container.querySelector("[data-usage-plot] .chart-tip")).toBeNull();
+    fireEvent.pointerMove(plot, { clientX: 700 });
+    expect(container.querySelector("[data-usage-plot] .chart-tip")).not.toBeNull();
+    fireEvent.pointerLeave(plot);
+    expect(container.querySelector("[data-usage-plot] .chart-tip")).toBeNull();
+  });
+
   it("renders the five tiles from the report, the cache share among them", () => {
     const { container } = renderApp(<UsageView />, usageState(), NOW);
     const tiles = container.querySelector("[data-usage-tiles]")?.textContent ?? "";
@@ -506,7 +551,8 @@ describe("UsageView", () => {
     );
     expect(open.container.textContent).toContain("GLM 5.3 Flash");
     const drill = open.container.querySelector("[data-usage-drill]");
-    expect(drill?.querySelectorAll("path.chart-line")).toHaveLength(1);
+    expect(drill?.querySelectorAll("g[data-day]")).toHaveLength(DATES.length);
+    expect(drill?.querySelectorAll("rect")).toHaveLength(1); // the one day the flash model ran
     await userEvent.click(screen.getByRole("button", { name: "Close the drill-down" }));
     expect(open.act).toHaveBeenCalledWith("usage-drill-close");
 
@@ -565,7 +611,7 @@ describe("UsageView", () => {
     );
     expect(open.container.textContent).toContain("Agent · Codex");
     const drill = open.container.querySelector("[data-usage-drill]");
-    expect(drill?.querySelectorAll("path.chart-line")).toHaveLength(1);
+    expect(drill?.querySelectorAll("rect")).toHaveLength(1); // the one day codex ran
     expect(drill?.querySelector("[data-key='usage-sessions']")).toBeNull();
   });
 

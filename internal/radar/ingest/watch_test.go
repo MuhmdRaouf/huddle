@@ -314,7 +314,8 @@ func TestSpoolIngestion(t *testing.T) {
 			Provider:   "Z.ai",
 			Route:      ptr("router"),
 			Via:        ptr("router"),
-			TailKeys:   []string{"route", "via"},
+			Status:     ptr("ok"),
+			TailKeys:   []string{"status", "route", "via"},
 		}
 		if !reflect.DeepEqual(routed[0], want) {
 			t.Errorf("routed request = %+v, want %+v", routed[0], want)
@@ -413,6 +414,41 @@ func TestSpoolIngestion(t *testing.T) {
 		}
 		if succeeded.Error != nil {
 			t.Errorf("success error = %v, want none", succeeded.Error)
+		}
+	})
+
+	t.Run("carries the route line's status onto the request, success or failure", func(t *testing.T) {
+		e := makeEnv(t)
+		writeText(t, spoolFilePath(t, e.env), jsonl(t,
+			map[string]any{
+				"ts": iso(watchT1), "event": "route", "session_id": "s9", "model": "glm-5.3",
+				"upstream": "http://127.0.0.1:8787", "route": "provider", "status": 200, "latency_ms": 12,
+			},
+			map[string]any{
+				"ts": iso(watchT1), "event": "route", "session_id": "s9", "model": "glm-5.3",
+				"upstream": "http://127.0.0.1:8787", "route": "provider", "status": 429, "latency_ms": 12,
+			},
+		))
+		st := newStore()
+		manualWatcher(t, e.env, st)
+		routed := st.Requests(sessionFilter("s9"))
+		var ok, limited bool
+		for i := range routed {
+			if routed[i].Status != nil && *routed[i].Status == "200" {
+				ok = true
+			}
+			if routed[i].Status != nil && *routed[i].Status == "429" {
+				limited = true
+			}
+		}
+		if !ok || !limited {
+			t.Fatalf("statuses of %+v, want one 200 and one 429", routed)
+		}
+		// the success keeps its empty stop reason: the status is the wire's answer, not the model's
+		for i := range routed {
+			if routed[i].Status != nil && *routed[i].Status == "200" && routed[i].StopReason != nil {
+				t.Errorf("200 request stop reason = %q, want none", *routed[i].StopReason)
+			}
 		}
 	})
 

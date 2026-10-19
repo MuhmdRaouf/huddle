@@ -6,18 +6,25 @@
 
 import { modelColor } from "@huddle/ui/model-color.ts";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { nearestIndex, windowLabels } from "../../chart.ts";
+import { bucketWord, fmtClock, fmtCount, fmtDuration, fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
+import { STATUS_COLOR, TOKEN_KINDS } from "../../palette.ts";
 import { isInFlight, type RequestRecord } from "../../../shared/model.ts";
-import { fmtClock, fmtDuration, fmtNum, fmtUsd } from "../../fmt.ts";
+import { rangeLabel, resolveRange } from "../../../shared/time-range.ts";
 import {
   agentDisplayName,
   modelChoices,
+  oldestRequest,
+  requestChartsData,
   type RequestSortKey,
   requestCost,
   tableRequests,
 } from "../../state.ts";
+import { StackedColumnChart } from "../Chart.tsx";
 import { useApp } from "../context.ts";
 import { httpStatusOf } from "../inspector/util.ts";
 import { EmptyState, ModelChip, Panel, shortModelName } from "../kit.tsx";
+import { stackedPeak } from "./Usage.tsx";
 import { nowAction } from "../SessionCard.tsx";
 import { type Column, ExportButton, HEAD_CELL, Table, TableHead, TableRow, timeText } from "../table.tsx";
 
@@ -122,7 +129,7 @@ export function RequestRow({ request, now }: { request: RequestRecord; now: numb
             class={`badge badge-soft badge-sm${status >= 400 ? " badge-error" : ""}`}
             title={request.error ?? `HTTP ${status}`}
           >
-            HTTP {status}
+            {status}
           </span>
         )}
       </td>
@@ -261,6 +268,205 @@ function ModelFilter() {
   );
 }
 
+/** Where the tooltip sits: right of the pointer, or left of it when it would run off the window. */
+function tipLeft(x: number, width: number): number {
+  const left = x + 14 + width > window.innerWidth ? x - 14 - width : x + 14;
+  return Math.max(8, left);
+}
+
+/** One range chart's tip: the bucket's clock and the series' running total in the head, one line
+ *  per series. */
+function RangeTip({
+  tip,
+  series,
+  colors,
+  labels,
+  from,
+  bucketMs,
+  head,
+}: {
+  tip: { index: number; x: number; top: number; height: number };
+  series: number[][];
+  colors: string[];
+  labels: string[];
+  from: number;
+  bucketMs: number;
+  head: (total: number) => string;
+}) {
+  const at = from + tip.index * bucketMs;
+  const total = series.reduce((acc, values) => acc + (values[tip.index] ?? 0), 0);
+  return (
+    <>
+      <div
+        class="chart-tip"
+        style={{ display: "block", left: `${tipLeft(tip.x, 190)}px`, top: `${tip.top + 8}px` }}
+      >
+        <div class="tip-head">{`${fmtClock(at)} \u00b7 ${head(total)}`}</div>
+        {series.map((values, index) => (
+          <div key={labels[index]} class="tip-line">
+            <span class="swatch" style={{ background: colors[index] }} />
+            <span>{labels[index]}</span>
+            <span class="tip-value">{fmtNum(values[tip.index] ?? 0)}</span>
+          </div>
+        ))}
+      </div>
+      <div
+        class="chart-cross"
+        style={{ display: "block", left: `${tip.x}px`, top: `${tip.top}px`, height: `${tip.height}px` }}
+      />
+    </>
+  );
+}
+
+/** The requests chart: ok and failed counts as one stacked bar per bucket of the range. */
+function RequestsChart({
+  data,
+  from,
+  to,
+  now,
+  label,
+}: {
+  data: ReturnType<typeof requestChartsData>;
+  from: number;
+  to: number;
+  now: number;
+  label: string;
+}) {
+  const [tip, setTip] = useState<{ index: number; x: number; top: number; height: number } | null>(null);
+  const total = data.ok.reduce((acc, count) => acc + count, 0);
+  const failed = data.failed.reduce((acc, count) => acc + count, 0);
+  const peak = stackedPeak([data.ok, data.failed]);
+  const hover = (event: PointerEvent): void => {
+    const box = (event.currentTarget as HTMLElement).querySelector("svg")?.getBoundingClientRect();
+    if (box === undefined || box.width <= 0) return;
+    const index = nearestIndex(data.ok, event.clientX - box.left, box.width);
+    setTip(index === null ? null : { index, x: event.clientX, top: box.top, height: box.height });
+  };
+  return (
+    <div class="min-w-0" data-chart="requests" data-total={String(total)}>
+      <h3 class="mb-1 text-sm font-semibold">Requests</h3>
+      <div
+        class="relative"
+        role="img"
+        aria-label={`Requests per ${bucketWord(data.bucketMs)} over ${label}: ${fmtNum(total)} total, ${fmtNum(failed)} failed`}
+        onPointerMove={hover}
+        onPointerLeave={() => setTip(null)}
+      >
+        <StackedColumnChart
+          series={[
+            { values: data.ok, color: STATUS_COLOR.ok },
+            { values: data.failed, color: STATUS_COLOR.err },
+          ]}
+          width={720}
+          height={180}
+          xLabels={windowLabels(from, to, now)}
+          yLabel={peak > 1 ? `${fmtNum(peak)} per ${bucketWord(data.bucketMs)}` : null}
+        />
+        {tip !== null && (
+          <RangeTip
+            tip={tip}
+            series={[data.ok, data.failed]}
+            colors={[STATUS_COLOR.ok, STATUS_COLOR.err]}
+            labels={["Ok", "Failed"]}
+            from={from}
+            bucketMs={data.bucketMs}
+            head={(count) => fmtCount(count, "request")}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The tokens chart: the four token kinds as one stacked bar per bucket of the range. */
+function TokensChart({
+  data,
+  from,
+  to,
+  now,
+  label,
+}: {
+  data: ReturnType<typeof requestChartsData>;
+  from: number;
+  to: number;
+  now: number;
+  label: string;
+}) {
+  const [tip, setTip] = useState<{ index: number; x: number; top: number; height: number } | null>(null);
+  const total = data.tokens.reduce((acc, values) => acc + values.reduce((a, v) => a + v, 0), 0);
+  const peak = stackedPeak(data.tokens);
+  const hover = (event: PointerEvent): void => {
+    const box = (event.currentTarget as HTMLElement).querySelector("svg")?.getBoundingClientRect();
+    if (box === undefined || box.width <= 0) return;
+    const index = nearestIndex(data.tokens[0] ?? [], event.clientX - box.left, box.width);
+    setTip(index === null ? null : { index, x: event.clientX, top: box.top, height: box.height });
+  };
+  return (
+    <div class="min-w-0" data-chart="tokens" data-total={String(total)}>
+      <h3 class="mb-1 text-sm font-semibold">Tokens</h3>
+      <div
+        class="relative"
+        role="img"
+        aria-label={`Tokens per ${bucketWord(data.bucketMs)} over ${label}: ${fmtTokens(total)} total`}
+        onPointerMove={hover}
+        onPointerLeave={() => setTip(null)}
+      >
+        <StackedColumnChart
+          series={TOKEN_KINDS.map((kind, index) => ({
+            values: data.tokens[index] ?? [],
+            color: kind.color,
+          }))}
+          width={720}
+          height={180}
+          xLabels={windowLabels(from, to, now)}
+          yLabel={peak > 1 ? `${fmtTokens(peak)} per ${bucketWord(data.bucketMs)}` : null}
+        />
+        {tip !== null && (
+          <RangeTip
+            tip={tip}
+            series={TOKEN_KINDS.map((_, index) => data.tokens[index] ?? [])}
+            colors={TOKEN_KINDS.map((kind) => kind.color)}
+            labels={TOKEN_KINDS.map((kind) => kind.label)}
+            from={from}
+            bucketMs={data.bucketMs}
+            head={(count) => `${fmtTokens(count)} tokens`}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The two charts above the table: requests by outcome and tokens by kind over the selected range,
+ *  both drawn from the same narrowed list the table shows. An empty range reads as one line. */
+function RequestsCharts({ requests }: { requests: RequestRecord[] }) {
+  const { state, now } = useApp();
+  const label = rangeLabel(state.range, now);
+  if (requests.length === 0) {
+    return (
+      <Panel icon="activity" title="Requests and tokens" subtitle={label}>
+        <p class="text-sm text-base-content/60">No requests in this range.</p>
+      </Panel>
+    );
+  }
+  const oldest = oldestRequest(state.requests);
+  const { from, to } = resolveRange(state.range, now, oldest ?? undefined);
+  const data = requestChartsData(requests, from, to);
+  return (
+    <Panel
+      icon="activity"
+      title="Requests and tokens"
+      subtitle={`${label}, ${bucketWord(data.bucketMs)} per bar`}
+      flush
+    >
+      <div class="grid gap-6 px-5 py-4 xl:grid-cols-2" data-requests-charts="">
+        <RequestsChart data={data} from={from} to={to} now={now} label={label} />
+        <TokensChart data={data} from={from} to={to} now={now} label={label} />
+      </div>
+    </Panel>
+  );
+}
+
 function LiveRequestsPanel() {
   const { state, now } = useApp();
   const requests = tableRequests(state);
@@ -293,52 +499,57 @@ function LiveRequestsPanel() {
   }, [requests]);
 
   return (
-    <Panel
-      icon="arrows"
-      flush
-      title="Requests"
-      subtitle={subtitle}
-      actions={
-        <>
-          <ModelFilter />
-          <ExportButton kind="requests" count={requests.length} />
-        </>
-      }
-    >
-      {requests.length === 0 ? (
-        <EmptyState
-          title={
-            state.model === null ? "No requests in this view yet" : `No ${state.model} requests in this view`
-          }
-          hint="Model requests stream in live as Claude Code talks to its model. Pick a row to see its tokens and latency."
-          icon="arrows"
-        />
-      ) : (
-        <div class="relative">
-          {held > 0 && (
-            <button
-              type="button"
-              class="btn btn-soft btn-primary btn-block rounded-none border-0 border-b border-base-content/8"
-              aria-label={`${held} new ${held === 1 ? "request" : "requests"}, jump to newest`}
-              onClick={() => {
-                setHeldTs(null);
-                const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-                wrapRef.current?.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
-              }}
-            >
-              {fmtNum(held)} new {held === 1 ? "request" : "requests"}
-            </button>
-          )}
-          <Table dataKey="requests-table" columns={REQUEST_COLUMNS} wrapRef={wrapRef}>
-            <TableHead columns={REQUEST_COLUMNS} sort={state.requestSort} action="sort-requests" />
-            <tbody>
-              {shown.map((request) => (
-                <RequestRow key={request.id} request={request} now={now} />
-              ))}
-            </tbody>
-          </Table>
-        </div>
-      )}
-    </Panel>
+    <div class="grid gap-5">
+      <RequestsCharts requests={requests} />
+      <Panel
+        icon="arrows"
+        flush
+        title="Requests"
+        subtitle={subtitle}
+        actions={
+          <>
+            <ModelFilter />
+            <ExportButton kind="requests" count={requests.length} />
+          </>
+        }
+      >
+        {requests.length === 0 ? (
+          <EmptyState
+            title={
+              state.model === null
+                ? "No requests in this view yet"
+                : `No ${state.model} requests in this view`
+            }
+            hint="Model requests stream in live as Claude Code talks to its model. Pick a row to see its tokens and latency."
+            icon="arrows"
+          />
+        ) : (
+          <div class="relative">
+            {held > 0 && (
+              <button
+                type="button"
+                class="btn btn-soft btn-primary btn-block rounded-none border-0 border-b border-base-content/8"
+                aria-label={`${held} new ${held === 1 ? "request" : "requests"}, jump to newest`}
+                onClick={() => {
+                  setHeldTs(null);
+                  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+                  wrapRef.current?.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
+                }}
+              >
+                {fmtNum(held)} new {held === 1 ? "request" : "requests"}
+              </button>
+            )}
+            <Table dataKey="requests-table" columns={REQUEST_COLUMNS} wrapRef={wrapRef}>
+              <TableHead columns={REQUEST_COLUMNS} sort={state.requestSort} action="sort-requests" />
+              <tbody>
+                {shown.map((request) => (
+                  <RequestRow key={request.id} request={request} now={now} />
+                ))}
+              </tbody>
+            </Table>
+          </div>
+        )}
+      </Panel>
+    </div>
   );
 }

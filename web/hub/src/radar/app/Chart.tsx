@@ -128,6 +128,53 @@ export function StackedAreaChart(options: StackedOptions): VNode {
   return framed(options, [...bands, ...lines]);
 }
 
+/** Stacked columns: one bar per bucket, the bands stacked bottom-to-top, so a day (or a minute)
+ *  reads as exactly its own total — no curve between buckets to overshoot a neighbour. A zero
+ *  bucket keeps its empty slot; a band with no value counts as 0. Same frame, gridlines and labels
+ *  as the other charts; `mark` draws the picked bucket's dashed reference line. */
+export function StackedColumnChart(options: StackedOptions & { mark?: number | null }): VNode {
+  const { series, width, height, mark } = options;
+  const length = series.reduce((longest, band) => Math.max(longest, band.values.length), 0);
+  const totals = Array.from({ length }, (_, index) =>
+    series.reduce((acc, band) => acc + (band.values[index] ?? 0), 0),
+  );
+  const max = Math.max(...totals, 1);
+  const step = length > 0 ? width / length : 0;
+  const bar = step * 0.66;
+  const plot: VNode[] = [];
+  if (mark !== null && mark !== undefined && mark >= 0 && mark < length) {
+    const at = ((mark + 0.5) * step).toFixed(1);
+    plot.push(<line key="mark" class="chart-mark-line" x1={at} x2={at} y1="0" y2={String(height)} />);
+  }
+  for (let index = 0; index < length; index += 1) {
+    let running = 0;
+    const segments: VNode[] = [];
+    for (const band of series) {
+      const value = band.values[index] ?? 0;
+      if (value <= 0) continue;
+      const yTop = scaleY(running + value, max, height);
+      const size = scaleY(running, max, height) - yTop;
+      segments.push(
+        <rect
+          key={band.color}
+          x={Number((index * step + (step - bar) / 2).toFixed(1))}
+          y={Number(yTop.toFixed(1))}
+          width={Number(bar.toFixed(1))}
+          height={Number(Math.max(1, size).toFixed(1))}
+          fill={band.color}
+        />,
+      );
+      running += value;
+    }
+    plot.push(
+      <g key={index} data-day={index}>
+        {segments}
+      </g>,
+    );
+  }
+  return framed(options, plot);
+}
+
 /** One segment of StackedBar: a measured value and its fill color. */
 export type BarSegment = { value: number; color: string };
 

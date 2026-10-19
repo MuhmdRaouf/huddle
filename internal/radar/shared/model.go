@@ -281,6 +281,10 @@ type RequestRecord struct {
 	// Headers are the allow-listed response headers the route line recorded, as the pairs
 	// in the order the line carried them; nil when it recorded none.
 	Headers *Headers `json:"headers,omitempty"`
+	// Status is the HTTP status the request's route line recorded ("200", "429"), as the
+	// wire answered; nil when no router saw the call or the line said none. Kept apart from
+	// StopReason, which names how the model ended its turn — a 200 never was one.
+	Status *string `json:"status,omitempty"`
 
 	// EarlyKeys lists the optional keys that ride between agentId and model, in order: a
 	// route line's own error, parentAgentId, promptHash and headers. Empty for every
@@ -298,6 +302,7 @@ type RequestRecord struct {
 const (
 	keyRoute        = "route"
 	keyVia          = "via"
+	keyStatus       = "status"
 	keyHarness      = "harness"
 	keyCostUsd      = "costUsd"
 	keyTotals       = "totals"
@@ -317,8 +322,8 @@ var billingKeys = []string{keyCacheWrite1h, keySpeed, keyGeo, keyServiceTier}
 
 // historyKeys is the order a record read back out of the history answers its optionals in.
 var historyKeys = []string{
-	keyRoute, keyVia, keyHarness, keyCostUsd, keyWhat, keyError, keyParentAgent, keyPromptHash,
-	keyHeaders, keyTotals, keyCacheWrite1h, keySpeed, keyGeo, keyServiceTier,
+	keyRoute, keyVia, keyStatus, keyHarness, keyCostUsd, keyWhat, keyError, keyParentAgent,
+	keyPromptHash, keyHeaders, keyTotals, keyCacheWrite1h, keySpeed, keyGeo, keyServiceTier,
 }
 
 // MarshalJSON prints the record's keys in the wire's fixed order: the base fields first, and
@@ -402,6 +407,10 @@ func (r RequestRecord) MarshalJSON() ([]byte, error) {
 		case keyHeaders:
 			if r.Headers != nil {
 				add(keyHeaders, r.Headers)
+			}
+		case keyStatus:
+			if r.Status != nil {
+				add(keyStatus, *r.Status)
 			}
 		}
 	}

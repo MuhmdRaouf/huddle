@@ -135,10 +135,23 @@ describe("fmtUsd", () => {
     expect(fmtUsd(null)).toBe("–");
     expect(fmtUsd(undefined)).toBe("–");
     expect(fmtUsd(0)).toBe("$0.00");
-    expect(fmtUsd(0.0012)).toBe("<$0.01"); // never "$0.0000"
-    expect(fmtUsd(0.01)).toBe("$0.01");
     expect(fmtUsd(4.2)).toBe("$4.20");
-    expect(fmtUsd(12_345.6)).toBe("$12,346");
+  });
+
+  it("shows real digits under a cent: two significant, floored at <$0.0001", () => {
+    expect(fmtUsd(-0.0042)).toBe("-$0.0042");
+    expect(fmtUsd(0.0042)).toBe("$0.0042");
+    expect(fmtUsd(0.00004)).toBe("<$0.0001");
+    expect(fmtUsd(0.0123)).toBe("$0.012");
+    expect(fmtUsd(0.0012)).toBe("$0.0012");
+    expect(fmtUsd(0.01)).toBe("$0.01");
+    expect(fmtUsd(0.4)).toBe("$0.40");
+  });
+
+  it("keeps two decimals and thousands separators at a dollar and up", () => {
+    expect(fmtUsd(1.234)).toBe("$1.23");
+    expect(fmtUsd(1234.5)).toBe("$1,234.50");
+    expect(fmtUsd(12_345.6)).toBe("$12,345.60");
   });
 });
 
@@ -154,9 +167,9 @@ describe("costText", () => {
 describe("costDetailText", () => {
   it("joins the sum and every condition that shaped it, or names the unpriced case", () => {
     expect(costDetailText(null)).toBe("tokens only (no price for this model)");
-    expect(costDetailText({ usd: 0.0123, detail: [] })).toBe("$0.01");
+    expect(costDetailText({ usd: 0.0123, detail: [] })).toBe("$0.012");
     expect(costDetailText({ usd: 0.0123, detail: ["Anthropic list", "1 h cache writes"] })).toBe(
-      "$0.01 · Anthropic list · 1 h cache writes",
+      "$0.012 · Anthropic list · 1 h cache writes",
     );
   });
 });

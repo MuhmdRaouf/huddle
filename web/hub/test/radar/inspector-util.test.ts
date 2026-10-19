@@ -15,11 +15,22 @@ import {
 import { makeRequest } from "./helpers.ts";
 
 describe("httpStatusOf", () => {
+  it("reads the recorded status a router line carried, success or failure", () => {
+    expect(httpStatusOf(makeRequest({ status: "200" }))).toBe(200);
+    expect(httpStatusOf(makeRequest({ status: "429" }))).toBe(429);
+    expect(httpStatusOf(makeRequest({ stopReason: "end_turn" }))).toBeNull();
+  });
+
   it("reads a bare three-digit stop reason as the status, anything else as none", () => {
     expect(httpStatusOf(makeRequest({ stopReason: "429" }))).toBe(429);
     expect(httpStatusOf(makeRequest({ stopReason: "end_turn" }))).toBeNull();
     expect(httpStatusOf(makeRequest({ stopReason: null }))).toBeNull();
     expect(httpStatusOf(makeRequest({ stopReason: "99" }))).toBeNull();
+  });
+
+  it("prefers the recorded status over a numeric stop reason, and never reads a real reason", () => {
+    expect(httpStatusOf(makeRequest({ status: "200", stopReason: "502" }))).toBe(200);
+    expect(httpStatusOf(makeRequest({ status: "ok" }))).toBeNull();
   });
 });
 

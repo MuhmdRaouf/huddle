@@ -27,6 +27,13 @@ describe("the inspector's HTTP status", () => {
     expect(httpStatusOf(makeRequest({ stopReason: "4x2" }))).toBeNull();
   });
 
+  it("reads the recorded status a router line carried, success or failure, before the stop reason", () => {
+    expect(httpStatusOf(makeRequest({ status: "200" }))).toBe(200);
+    expect(httpStatusOf(makeRequest({ status: "429" }))).toBe(429);
+    expect(httpStatusOf(makeRequest({ status: "200", stopReason: "502" }))).toBe(200);
+    expect(httpStatusOf(makeRequest({ status: "ok" }))).toBeNull();
+  });
+
   it("counts failed attempts for the same agent in the two minutes before the request", () => {
     const request = at("r", 100_000, { stopReason: "end_turn" });
     const retries = [

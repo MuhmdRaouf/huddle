@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/preact";
+import { fireEvent, screen, within } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it } from "vite-plus/test";
 import { AppContext } from "../../src/ui/app/context.ts";
@@ -22,7 +22,8 @@ function drawerRows(container: Element): HTMLElement[] {
 
 /** The panel head's muted count beside the title (the shared Panel's meta slot). */
 function panelMeta(container: Element): string {
-  return container.querySelector("section h2")?.nextElementSibling?.textContent ?? "";
+  const section = container.querySelector('[data-key="requests-table"]')?.closest("section");
+  return section?.querySelector("h2")?.nextElementSibling?.textContent ?? "";
 }
 
 function requestsState(over: Partial<ClientState> = {}): Partial<ClientState> {
@@ -87,7 +88,42 @@ describe("requests view", () => {
     expect(act).toHaveBeenCalledWith("drawer", "r-old");
   });
 
+  it("shows the recorded status of a success as a plain badge", () => {
+    const { container } = renderApp(
+      <RequestsView />,
+      {
+        requests: [makeRequest({ id: "r-ok", ts: NOW - 1_000, status: "200", stopReason: "end_turn" })],
+      },
+      NOW,
+    );
+    const cell = at(within(at(drawerRows(container), 0)).getAllByRole("cell"), 4);
+    expect(cell.textContent).toBe("200");
+    expect(cell.querySelector(".badge-error")).toBeNull();
+    expect(cell.querySelector(".badge")?.getAttribute("title")).toBe("HTTP 200");
+  });
+
   it("shows a failed request's HTTP status as a red badge, its reason on hover", () => {
+    const { container } = renderApp(
+      <RequestsView />,
+      {
+        requests: [
+          makeRequest({
+            id: "r-fail",
+            ts: NOW - 1_000,
+            status: "429",
+            error: "rate limited, retry in 12s",
+          }),
+        ],
+      },
+      NOW,
+    );
+    const cell = at(within(at(drawerRows(container), 0)).getAllByRole("cell"), 4);
+    expect(cell.textContent).toBe("429");
+    expect(cell.querySelector(".badge-error")).toBeTruthy();
+    expect(cell.querySelector(".badge")?.getAttribute("title")).toBe("rate limited, retry in 12s");
+  });
+
+  it("still reads a bare three-digit stop reason as the status, for rows a router recorded before the field existed", () => {
     const { container } = renderApp(
       <RequestsView />,
       {
@@ -103,7 +139,7 @@ describe("requests view", () => {
       NOW,
     );
     const cell = at(within(at(drawerRows(container), 0)).getAllByRole("cell"), 4);
-    expect(cell.textContent).toBe("HTTP 502");
+    expect(cell.textContent).toBe("502");
     expect(cell.querySelector(".badge-error")).toBeTruthy();
     expect(cell.querySelector(".badge")?.getAttribute("title")).toBe("connection failed (ECONNREFUSED)");
   });
@@ -261,6 +297,112 @@ describe("requests view", () => {
     renderApp(<RequestsView />, {}, NOW);
     expect(screen.getByText("No requests in this view yet")).toBeTruthy();
   });
+
+  it("opens with the requests and tokens charts above the table", () => {
+    const { container } = renderApp(
+      <RequestsView />,
+      {
+        request: null,
+        requests: [
+          makeRequest({
+            id: "a",
+            ts: NOW - 60_000,
+            status: "200",
+            tokens: { input: 100, output: 20, cacheRead: 0, cacheWrite: 0 },
+          }),
+          makeRequest({ id: "b", ts: NOW - 30_000, status: "429" }),
+        ],
+      },
+      NOW,
+    );
+    const charts = container.querySelector("[data-requests-charts]");
+    expect(charts).toBeTruthy();
+    expect(charts?.querySelector("[data-chart='requests'] svg rect")).toBeTruthy();
+    expect(charts?.querySelector("[data-chart='tokens'] svg rect")).toBeTruthy();
+    expect(charts?.querySelector("[data-chart='requests'] [role='img']")?.getAttribute("aria-label")).toMatch(
+      /Requests per/,
+    );
+    expect(charts?.querySelector("[data-chart='tokens'] [role='img']")?.getAttribute("aria-label")).toMatch(
+      /Tokens per/,
+    );
+    expect(drawerRows(container)).toHaveLength(2);
+  });
+
+  it("charts only the requests the model chips let through", () => {
+    const { container } = renderApp(
+      <RequestsView />,
+      {
+        model: "glm-5.3",
+        request: null,
+        requests: [
+          makeRequest({ id: "a", ts: NOW - 60_000, status: "200" }),
+          makeRequest({ id: "b", ts: NOW - 30_000, status: "200", model: "glm-5.3", provider: "Z.ai" }),
+        ],
+      },
+      NOW,
+    );
+    const requestsChart = container.querySelector("[data-chart='requests']");
+    expect(requestsChart?.getAttribute("data-total")).toBe("1");
+    expect(drawerRows(container)).toHaveLength(1);
+  });
+
+  it("says when the range holds no requests, in place of the charts", () => {
+    renderApp(<RequestsView />, { request: null, requests: [] }, NOW);
+    expect(screen.getByText("No requests in this range.")).toBeTruthy();
+  });
+
+  it("shows the hovered bucket's counts and token kinds in the two tips", () => {
+    const { container } = renderApp(
+      <RequestsView />,
+      {
+        request: null,
+        requests: [
+          makeRequest({
+            id: "a",
+            ts: NOW - 60_000,
+            status: "200",
+            tokens: { input: 100, output: 20, cacheRead: 0, cacheWrite: 0 },
+          }),
+          makeRequest({ id: "b", ts: NOW - 30_000, status: "429" }),
+        ],
+      },
+      NOW,
+    );
+    // happy-dom gives every box a zero width, so charts would never hover; pin each svg's box
+    for (const svg of container.querySelectorAll("svg")) {
+      svg.getBoundingClientRect = () =>
+        ({
+          x: 0,
+          y: 0,
+          left: 0,
+          top: 0,
+          width: 720,
+          height: 180,
+          right: 720,
+          bottom: 180,
+          toJSON: () => "",
+        }) as DOMRect;
+    }
+    const requestsPlot = container.querySelector("[data-chart='requests'] [role='img']");
+    if (requestsPlot === null) throw new Error("the requests chart never rendered");
+    fireEvent.pointerMove(requestsPlot, { clientX: 710 });
+    const requestsTip = container.querySelector("[data-chart='requests'] .chart-tip");
+    expect(requestsTip?.textContent).toContain("Ok");
+    expect(requestsTip?.textContent).toContain("2 requests");
+
+    // a tip near the window's right edge flips to the pointer's left, clamped at the margin
+    window.innerWidth = 300;
+    fireEvent.pointerMove(requestsPlot, { clientX: 100 });
+    const flipped = container.querySelector("[data-chart='requests'] .chart-tip") as HTMLElement;
+    expect(flipped.style.left).toBe("8px");
+    window.innerWidth = 1024;
+    const tokensPlot = container.querySelector("[data-chart='tokens'] [role='img']");
+    if (tokensPlot === null) throw new Error("the tokens chart never rendered");
+    fireEvent.pointerMove(tokensPlot, { clientX: 710 });
+    const tokensTip = container.querySelector("[data-chart='tokens'] .chart-tip");
+    expect(tokensTip?.textContent).toContain("Input");
+    expect(tokensTip?.textContent).toContain("110"); // both requests' inputs summed
+  });
 });
 
 describe("new requests pill", () => {
@@ -408,5 +550,6 @@ describe("upstream and router", () => {
 
 /** The panel head's muted count beside the title (the shared Panel's meta slot). */
 function panelMetaOf(container: Element): string {
-  return container.querySelector("section h2")?.nextElementSibling?.textContent ?? "";
+  const section = container.querySelector('[data-key="requests-table"]')?.closest("section");
+  return section?.querySelector("h2")?.nextElementSibling?.textContent ?? "";
 }

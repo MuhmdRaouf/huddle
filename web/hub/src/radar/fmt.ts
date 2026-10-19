@@ -133,13 +133,26 @@ export function fmtCount(value: number, noun: string): string {
   return `${fmtNum(value)} ${noun}${Math.round(value) === 1 ? "" : "s"}`;
 }
 
-/** "$4.20", "$1,234"; zero shows as change and anything under a cent as "<$0.01" — never "$0.0000". */
+/** "$4.20", "$1,234.50"; zero shows as change, under a dollar reads two significant digits
+ *  ("$0.012", "$0.0042") with "<$0.0001" as the floor, so a whole day of sub-cent spend stays
+ *  visible — never "$0.0000". */
 export function fmtUsd(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "–";
   if (value === 0) return "$0.00";
-  if (Math.abs(value) < 0.01) return "<$0.01";
-  if (Math.abs(value) < 1000) return `$${value.toFixed(2)}`;
-  return `$${fmtNum(value)}`;
+  const magnitude = Math.abs(value);
+  if (magnitude < 0.0001) return "<$0.0001";
+  if (magnitude < 1) {
+    const decimals = Math.max(2, 1 - Math.floor(Math.log10(magnitude)));
+    let text = value.toFixed(decimals);
+    const negative = text.startsWith("-");
+    if (negative) text = text.slice(1);
+    if (text.includes(".")) text = text.replace(/0+$/, "").replace(/\.$/, "");
+    const [whole, fraction = ""] = text.split(".");
+    return `${negative ? "-" : ""}$${whole}.${(fraction ?? "").padEnd(2, "0")}`;
+  }
+  const [whole, fraction = ""] = value.toFixed(2).split(".");
+  const grouped = (whole ?? "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `$${grouped}.${fraction}`;
 }
 
 /** 312 → "312 B", 49_152 → "48 kB", 3_221_225 → "3.1 MB", 1_100_000_000 → "1.02 GB"; a dash for no size. */

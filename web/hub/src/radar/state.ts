@@ -5,6 +5,7 @@
  */
 
 import { httpStatusOf } from "./app/inspector/util.ts";
+import { bucketizeRange, bucketizeTokenKindsRange } from "./chart.ts";
 import * as prices from "./cost/prices.ts";
 import type { IconName } from "./icons.ts";
 import type {
@@ -33,7 +34,7 @@ import type {
   UpstreamRow,
 } from "./shared/model.ts";
 import { providerOf } from "./shared/provider.ts";
-import { DEFAULT_RANGE, rangeToHash, resolveRange, type TimeRange } from "./shared/time-range.ts";
+import { bucketPlan, DEFAULT_RANGE, rangeToHash, resolveRange, type TimeRange } from "./shared/time-range.ts";
 import type { BlocksModels, BlocksReport, BlocksWindow, UsageReport, UsageWindow } from "./shared/usage.ts";
 
 /** What the usage chart plots: token counts or estimated cost. */
@@ -856,6 +857,28 @@ export function flowSource(state: ClientState, now: number): { from: number; to:
  *  nothing prices. The same function the server's ledger math runs, on the record the UI already holds. */
 export function requestCost(request: RequestRecord): { usd: number; detail: string[] } | null {
   return prices.requestCost(request);
+}
+
+/** A request that came back 400 or worse, or died with an error before one arrived. */
+export function requestFailed(request: RequestRecord): boolean {
+  return (httpStatusOf(request) ?? 0) >= 400 || request.error !== undefined;
+}
+
+/** The requests view's two charts, over one resolved window: ok and failed counts per bucket, and
+ *  every token kind per bucket, in TOKEN_KINDS order. Buckets follow the range's own plan. */
+export function requestChartsData(
+  requests: RequestRecord[],
+  from: number,
+  to: number,
+): { bucketMs: number; ok: number[]; failed: number[]; tokens: number[][] } {
+  const plan = bucketPlan(from, to);
+  const inRange = requests.filter((request) => request.ts >= from && request.ts <= to);
+  return {
+    bucketMs: plan.bucketMs,
+    ok: bucketizeRange(inRange, from, to, plan.buckets, (request) => (requestFailed(request) ? 0 : 1)),
+    failed: bucketizeRange(inRange, from, to, plan.buckets, (request) => (requestFailed(request) ? 1 : 0)),
+    tokens: bucketizeTokenKindsRange(inRange, from, to, plan.buckets),
+  };
 }
 
 /** The models tab's scope as its fetch and its held answer both read it: the range's hash plus the

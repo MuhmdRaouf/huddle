@@ -12,7 +12,7 @@ import (
 // every open, WAL included, since the file is read while the server writes it.
 
 // SchemaVersion is the history schema's version, recorded in the meta table.
-const SchemaVersion = 8
+const SchemaVersion = 9
 
 // One row per main session, subagent or job; every node of a tree carries its root's id.
 const nodesDDL = `
@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS requests (
   provider TEXT,
   route TEXT,
   via TEXT,
+  status TEXT,
   harness TEXT NOT NULL DEFAULT 'claude',
   cost_usd REAL,
   what TEXT,
@@ -180,6 +181,8 @@ var versionColumns = []columnBatch{
 	{version: 8, tables: []tableColumns{{"requests", []string{
 		"harness TEXT NOT NULL DEFAULT 'claude'", "cost_usd REAL",
 	}}}},
+	// status is the HTTP status a request's route line recorded, kept apart from stop_reason.
+	{version: 9, tables: []tableColumns{{"requests", []string{"status TEXT"}}}},
 }
 
 // NewerSchemaError names a database written by a newer radar: an older one refuses it.

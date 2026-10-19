@@ -25,10 +25,11 @@ test("the usage view shows the seeded totals and splits the picked day", async (
   await expect(tiles).toContainText(USAGE.output.toLocaleString("en-US"));
   await expect(tiles).toContainText("Cache savings");
 
-  // the daily chart drew one line per model (the two glm ones and the codex turn's)
+  // the daily chart drew stacked bars, one per day, never a smoothed line
   const plot = page.locator("[data-usage-plot]");
   await expect(plot).toBeVisible();
-  await expect(plot.locator("path.chart-line")).toHaveCount(3);
+  await expect(plot.locator("path.chart-line")).toHaveCount(0);
+  await expect(plot.locator("rect").first()).toBeVisible();
 
   // hovering the chart carries the day and every series' value in a tooltip
   const plotBox = await plot.boundingBox();
@@ -69,7 +70,7 @@ test("a project's drill-down opens from its table row and offers the resume comm
   await row.click();
   const drill = page.locator("[data-usage-drill]");
   await expect(drill).toBeVisible();
-  await expect(drill.locator("path.chart-line")).toHaveCount(1);
+  await expect(drill.locator("rect").first()).toBeVisible();
 
   // the seeded session's resume id sits one copy click away
   const copy = page.getByRole("button", { name: /Copy the resume command/ }).first();

@@ -131,3 +131,21 @@ test("the requests table lists the seeded rows and the inspector opens one", asy
   await expect(page.getByRole("row", { name: /^Input/ })).toContainText(n(first.input));
   await expect(page.getByRole("row", { name: /^Output/ })).toContainText(n(first.output));
 });
+
+test("the requests view opens with its two charts and the statuses the spool carried", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/radar/requests`);
+
+  // the two chart panels over the range, both drawn
+  const charts = page.locator("[data-requests-charts]");
+  await expect(charts).toBeVisible();
+  await expect(charts.locator("[data-chart='requests'] svg rect").first()).toBeVisible();
+  await expect(charts.locator("[data-chart='tokens'] svg rect").first()).toBeVisible();
+
+  // every seeded call came back 200, and the status cell says so; nothing failed
+  const table = page.locator("[data-key='requests-table']");
+  await expect(table.locator(".badge[title='HTTP 200']").first()).toBeVisible();
+  await expect(table.locator(".badge-error")).toHaveCount(0);
+});

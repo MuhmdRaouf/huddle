@@ -89,6 +89,8 @@ func Combine(transcript, route shared.RequestRecord, id string) shared.RequestRe
 	if transcript.StopReason == nil {
 		merged.StopReason = route.StopReason
 	}
+	// only the route line knows how the wire answered; the transcript never carries a status
+	merged.Status = route.Status
 	merged.Provider = route.Provider
 	if route.Route != nil {
 		merged.Route = route.Route
@@ -106,14 +108,14 @@ func Combine(transcript, route shared.RequestRecord, id string) shared.RequestRe
 	// the transcript's own tail keeps its places; what the route line added lands after it
 	merged.EarlyKeys = nil
 	merged.TailKeys = tailKeysOf(transcript.TailKeys,
-		route.Route != nil, route.Via != nil, route.PromptHash != nil, route.Headers != nil)
+		route.Status != nil, route.Route != nil, route.Via != nil, route.PromptHash != nil, route.Headers != nil)
 	return FillUpstream(merged)
 }
 
 // tailKeysOf lays the merged record's tail: the transcript's keys as they stand, then the
-// route line's route, via, prompt hash and headers, each only when it is new to the tail.
-func tailKeysOf(transcript []string, route, via, promptHash, headers bool) []string {
-	tail := make([]string, len(transcript), len(transcript)+4)
+// route line's status, route, via, prompt hash and headers, each only when it is new to the tail.
+func tailKeysOf(transcript []string, status, route, via, promptHash, headers bool) []string {
+	tail := make([]string, len(transcript), len(transcript)+5)
 	copy(tail, transcript)
 	add := func(key string, present bool) {
 		if !present || slices.Contains(tail, key) {
@@ -121,6 +123,7 @@ func tailKeysOf(transcript []string, route, via, promptHash, headers bool) []str
 		}
 		tail = append(tail, key)
 	}
+	add("status", status)
 	add("route", route)
 	add("via", via)
 	add("promptHash", promptHash)
@@ -148,6 +151,10 @@ func Refresh(existing, record shared.RequestRecord) shared.RequestRecord {
 	}
 	if record.StopReason != nil {
 		merged.StopReason = record.StopReason
+	}
+	if record.Status != nil {
+		merged.Status = record.Status
+		merged.TailKeys = appendTailKey(merged.TailKeys, "status")
 	}
 	// the result event that totals a provider-only stream lands as a later copy of the request it fills
 	if record.Totals {

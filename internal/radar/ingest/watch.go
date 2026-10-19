@@ -930,6 +930,9 @@ func RouteRequest(line shared.SpoolLine, model string, ts int64) shared.RequestR
 		Route:      &route,
 		Via:        &via,
 	}
+	if statusPresent {
+		record.Status = &status
+	}
 	// the optional fields a route line may carry, each on the record only when the line said (an
 	// empty string counts as saying nothing)
 	if line.Error != nil && *line.Error != "" {
@@ -949,7 +952,7 @@ func RouteRequest(line shared.SpoolLine, model string, ts int64) shared.RequestR
 		record.EarlyKeys = append(record.EarlyKeys, "headers")
 	}
 	applySpoolBilling(&record, line.Usage)
-	record.TailKeys = []string{"route", "via"}
+	record.TailKeys = []string{"status", "route", "via"}
 	return record
 }
 

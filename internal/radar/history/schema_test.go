@@ -284,7 +284,7 @@ func TestMigration(t *testing.T) {
 		db, _ := openMigrated(t)
 		for table, want := range map[string][]string{
 			"nodes":    {"repo", "branch", "name", "parent_session_id"},
-			"requests": {"cache_write_1h", "speed", "geo", "service_tier"},
+			"requests": {"cache_write_1h", "speed", "geo", "service_tier", "status"},
 			"content":  {"in_len", "out_len"},
 		} {
 			columns := columnsOfTable(t, db, table)

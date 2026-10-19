@@ -63,7 +63,11 @@ func findRequest(records []shared.RequestRecord, id string) *shared.RequestRecor
 func TestRequestSeenByRouterAndTranscript(t *testing.T) {
 	t.Run("is one request when the spool line comes first", func(t *testing.T) {
 		store := newTestStore()
-		store.AddRequest(route(func(r *shared.RequestRecord) { r.AgentID = "a31cd3de580148dc3" }), nil)
+		store.AddRequest(route(func(r *shared.RequestRecord) {
+			r.AgentID = "a31cd3de580148dc3"
+			r.Status = str("200")
+			r.StopReason = nil
+		}), nil)
 		store.AddRequest(transcriptCopy(nil), nil)
 		rows := store.Requests(RequestFilter{})
 		if len(rows) != 1 {
@@ -74,6 +78,10 @@ func TestRequestSeenByRouterAndTranscript(t *testing.T) {
 			!eqInt(first.LatencyMs, 1951) || !eqStr(first.StopReason, "tool_use") ||
 			first.Route == nil || *first.Route != "anthropic" {
 			t.Errorf("merged row: got %+v, want the transcript's agent under the route's facts", first)
+		}
+		// the route line's HTTP status survives the pairing with the transcript's copy
+		if !eqStr(first.Status, "200") {
+			t.Errorf("merged status: got %v, want 200", first.Status)
 		}
 		if got := shared.TotalTokens(first.Tokens); got != 9523 {
 			t.Errorf("tokens: got %d, want 9523", got)

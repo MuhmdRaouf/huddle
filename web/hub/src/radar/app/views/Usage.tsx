@@ -1,20 +1,20 @@
 /**
  * The usage view: the long-range picture the Costs view's periods cannot give — every request over the
- * last 7, 30 or 90 days as five tiles, one layered line per model on a daily chart, per-model,
- * per-project and per-agent tables that drill into their own series, and each project's costliest
- * sessions with the resume command a click away. The estimates carry the honesty labels: `*` at API
- * list price, `~` once a model without a price is in the window, the unpriced models named. Everything
- * renders from the one held report — drill-downs never refetch.
+ * last 7, 30 or 90 days as five tiles, one stacked bar per day on a daily chart (a segment per model in
+ * the legend's colours), per-model, per-project and per-agent tables that drill into their own series,
+ * and each project's costliest sessions with the resume command a click away. The estimates carry the
+ * honesty labels: `*` at API list price, `~` once a model without a price is in the window, the unpriced
+ * models named. Everything renders from the one held report — drill-downs never refetch.
  */
 
 import type { ComponentChildren } from "preact";
-import { cacheHitRate, dayLabels, dayWords, layeredMax, nearestIndex } from "../../chart.ts";
+import { cacheHitRate, dayLabels, dayWords, nearestIndex } from "../../chart.ts";
 import { ESTIMATE_NOTE, fmtAgo, fmtCount, fmtNum, fmtPercent, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { modelColor } from "../../palette.ts";
 import type { UsageDay, UsageReport, UsageSession, UsageSlice, UsageTotals } from "../../shared/usage.ts";
 import { USAGE_WINDOWS } from "../../shared/usage.ts";
 import type { UsageDrill, UsageMetric } from "../../state.ts";
-import { LineChart, StackedBar } from "../Chart.tsx";
+import { StackedBar, StackedColumnChart } from "../Chart.tsx";
 import { ChartTipBox, useChartTip } from "../ChartTip.tsx";
 import { CopyButton } from "../Content.tsx";
 import { useApp } from "../context.ts";
@@ -49,6 +49,18 @@ export function usageSeries(
     values: slices.map((slice) => slice.days.map((day) => metricValue(day, metric))),
     days: report.days,
   };
+}
+
+/** The tallest day's stacked total, at least 1: the scale a stacked bar chart draws against and
+ *  the y-axis label's figure. */
+export function stackedPeak(series: number[][]): number {
+  const length = series.reduce((longest, values) => Math.max(longest, values.length), 0);
+  let max = 1;
+  for (let index = 0; index < length; index += 1) {
+    const total = series.reduce((acc, values) => acc + (values[index] ?? 0), 0);
+    if (total > max) max = total;
+  }
+  return max;
 }
 
 /** One model's row of a picked day's split: its value and its share of the day's visible total. */
@@ -242,9 +254,9 @@ function UsagePlot({ data, metric, mark }: { data: UsageSeries; metric: UsageMet
   const { state, act } = useApp();
   const tipper = useChartTip(data.values[0] ?? []);
   const dates = data.days.map((day) => day.date);
-  const peak = layeredMax(data.values);
+  const peak = stackedPeak(data.values);
   const shown = data.keys.length;
-  const label = `Layered daily usage chart, one line per model, ${shown} shown; arrow keys move the picked day, and the table under the chart carries the same numbers`;
+  const label = `Stacked daily usage chart, one bar per day, ${shown} shown; arrow keys move the picked day, and the table under the chart carries the same numbers`;
   const pick = (event: MouseEvent): void => {
     const box = (event.currentTarget as HTMLElement).querySelector("svg")?.getBoundingClientRect();
     if (box === undefined || box.width <= 0) return;
@@ -275,7 +287,7 @@ function UsagePlot({ data, metric, mark }: { data: UsageSeries; metric: UsageMet
         onPointerMove={tipper.move}
         onPointerLeave={tipper.leave}
       >
-        <LineChart
+        <StackedColumnChart
           series={data.keys.map((key, index) => ({
             values: data.values[index] ?? [],
             color: modelColor(key),
@@ -592,7 +604,7 @@ function Drill({ report, drill, metric }: { report: UsageReport; drill: UsageDri
   const values = slice === undefined ? [] : slice.days.map((day) => metricValue(day, metric));
   const tipper = useChartTip(values);
   if (slice === undefined) return null;
-  const peak = layeredMax([values]);
+  const peak = stackedPeak([values]);
   const title = drillTitle(drill.kind, slice.key);
   const sessions = drill.kind === "project" ? (report.topSessions[slice.key] ?? []) : [];
   return (
@@ -623,7 +635,7 @@ function Drill({ report, drill, metric }: { report: UsageReport; drill: UsageDri
           onPointerMove={tipper.move}
           onPointerLeave={tipper.leave}
         >
-          <LineChart
+          <StackedColumnChart
             series={[{ values, color: modelColor(slice.key) }]}
             width={720}
             height={160}

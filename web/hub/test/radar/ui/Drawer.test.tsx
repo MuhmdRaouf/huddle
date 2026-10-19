@@ -139,7 +139,7 @@ describe("Drawer", () => {
   it("shows the cost with the conditions that shaped it, or the words for no price", () => {
     // a glm request through a loopback router still prices: the model id alone names one offering
     const priced = openDrawer(pickedRequest());
-    expect(stat(dialog(priced.container), "Est. cost").value).toBe("$0.02");
+    expect(stat(dialog(priced.container), "Est. cost").value).toBe("$0.023");
     expect(stat(dialog(priced.container), "Est. cost").desc).toBe("Z.ai list");
     priced.unmount();
     const unpriced = openDrawer(pickedRequest({ model: "env-local-model" }));

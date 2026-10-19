@@ -11,8 +11,11 @@ import type { CapturedTool } from "../../state.ts";
 /** A stop reason that is a bare three-digit code is the HTTP status a router recorded for the call. */
 const HTTP_CODE = /^\d{3}$/;
 
-/** The HTTP status a request's stop reason carries ("429" from a router line), null for a real stop reason. */
+/** The HTTP status a request's route line recorded ("200", "429"), null when none did. A bare
+ *  three-digit stop reason stands in for rows written before the status rode the record on its
+ *  own — that was how a router line's failure code reached the view. */
 export function httpStatusOf(request: RequestRecord): number | null {
+  if (request.status !== undefined && HTTP_CODE.test(request.status)) return Number(request.status);
   return request.stopReason !== null && HTTP_CODE.test(request.stopReason)
     ? Number(request.stopReason)
     : null;

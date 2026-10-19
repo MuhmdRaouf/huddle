@@ -200,6 +200,7 @@ func TestOpenHistory(t *testing.T) {
 		r2.Ts = 9
 		r2.Speed = sp("fast")
 		r2.CacheWrite1h = i64p(3)
+		r2.Status = sp("200")
 		if err := h.PutRequest("s1/main", r2); err != nil {
 			t.Fatalf("put request: %v", err)
 		}
@@ -218,6 +219,9 @@ func TestOpenHistory(t *testing.T) {
 		}
 		if got := rows[0].CacheWrite1h; got == nil || *got != 3 {
 			t.Errorf("cacheWrite1h = %v, want 3", got)
+		}
+		if got := rows[0].Status; got == nil || *got != "200" {
+			t.Errorf("status = %v, want 200", got)
 		}
 		if got := rows[1].Speed; got != nil {
 			t.Errorf("old request speed = %v, want nil", got)

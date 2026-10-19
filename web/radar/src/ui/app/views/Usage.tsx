@@ -1,20 +1,21 @@
 /**
  * The usage view: the long-range picture the Costs view's periods cannot give — every request over the
- * last 7, 30 or 90 days as five tiles, one layered line per model on a daily chart, per-model,
- * per-project and per-agent tables that drill into their own series, and each project's costliest
- * sessions with the resume command a click away. The estimates carry the honesty labels: `*` at API
- * list price, `~` once a model without a price is in the window, the unpriced models named. Everything
- * renders from the one held report — drill-downs never refetch.
+ * last 7, 30 or 90 days as five tiles, one stacked bar per day on a daily chart (a segment per model in
+ * the legend's colours), per-model, per-project and per-agent tables that drill into their own series,
+ * and each project's costliest sessions with the resume command a click away. The estimates carry the
+ * honesty labels: `*` at API list price, `~` once a model without a price is in the window, the unpriced
+ * models named. Everything renders from the one held report — drill-downs never refetch.
  */
 
 import type { ComponentChildren } from "preact";
-import { cacheHitRate, dayLabels, dayWords, layeredMax, nearestIndex } from "../../chart.ts";
+import { useState } from "preact/hooks";
+import { cacheHitRate, dayLabels, dayWords, nearestIndex } from "../../chart.ts";
 import { ESTIMATE_NOTE, fmtAgo, fmtCount, fmtNum, fmtPercent, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { modelColor } from "../../palette.ts";
 import type { UsageDay, UsageReport, UsageSession, UsageSlice, UsageTotals } from "../../../shared/usage.ts";
 import { USAGE_WINDOWS } from "../../../shared/usage.ts";
 import type { UsageDrill, UsageMetric } from "../../state.ts";
-import { LineChart, StackedBar } from "../Chart.tsx";
+import { StackedBar, StackedColumnChart } from "../Chart.tsx";
 import { CopyButton } from "../Content.tsx";
 import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
@@ -48,6 +49,43 @@ export function usageSeries(
     values: slices.map((slice) => slice.days.map((day) => metricValue(day, metric))),
     days: report.days,
   };
+}
+
+/** The tallest day's stacked total, at least 1: the scale a stacked bar chart draws against and
+ *  the y-axis label's figure. */
+export function stackedPeak(series: number[][]): number {
+  const length = series.reduce((longest, values) => Math.max(longest, values.length), 0);
+  let max = 1;
+  for (let index = 0; index < length; index += 1) {
+    const total = series.reduce((acc, values) => acc + (values[index] ?? 0), 0);
+    if (total > max) max = total;
+  }
+  return max;
+}
+
+/** The chart tooltip's content at one day: the date and every visible model's value for the metric. */
+export function usageTip(
+  data: UsageSeries,
+  index: number,
+  metric: UsageMetric,
+): { head: string; lines: { color: string; label: string; value: string }[] } {
+  const day = data.days[index];
+  if (day === undefined) return { head: "", lines: [] };
+  const cell = (value: number): string => (metric === "cost" ? fmtUsd(value) : fmtNum(value));
+  return {
+    head: dayWords(day.date),
+    lines: data.keys.map((key, series) => ({
+      color: modelColor(key),
+      label: shortModelName(key),
+      value: cell(data.values[series]?.[index] ?? 0),
+    })),
+  };
+}
+
+/** Where the tooltip sits: right of the pointer, or left of it when it would run off the window. */
+function tipLeft(x: number, width: number): number {
+  const left = x + 14 + width > window.innerWidth ? x - 14 - width : x + 14;
+  return Math.max(8, left);
 }
 
 /** One model's row of a picked day's split: its value and its share of the day's visible total. */
@@ -216,14 +254,15 @@ function HonestNote({ report }: { report: UsageReport }) {
   );
 }
 
-/** The chart area: click a day to pick it, arrow keys move the pick, Escape clears — and a visually
- *  hidden table carries the same numbers for screen readers. */
+/** The chart area: hover for the day's tooltip, click a day to pick it, arrow keys move the pick,
+ *  Escape clears — and a visually hidden table carries the same numbers for screen readers. */
 function UsagePlot({ data, metric, mark }: { data: UsageSeries; metric: UsageMetric; mark: number | null }) {
   const { state, act } = useApp();
+  const [tip, setTip] = useState<{ index: number; x: number; top: number; height: number } | null>(null);
   const dates = data.days.map((day) => day.date);
-  const peak = layeredMax(data.values);
+  const peak = stackedPeak(data.values);
   const shown = data.keys.length;
-  const label = `Layered daily usage chart, one line per model, ${shown} shown; arrow keys move the picked day, and the table under the chart carries the same numbers`;
+  const label = `Stacked daily usage chart, one bar per day, ${shown} shown; arrow keys move the picked day, and the table under the chart carries the same numbers`;
   const pick = (event: MouseEvent): void => {
     const box = (event.currentTarget as HTMLElement).querySelector("svg")?.getBoundingClientRect();
     if (box === undefined || box.width <= 0) return;
@@ -241,6 +280,12 @@ function UsagePlot({ data, metric, mark }: { data: UsageSeries; metric: UsageMet
     const next = stepDay(dates, state.usageDay, event.key === "ArrowRight" ? 1 : -1);
     if (next !== null) act("usage-day", next);
   };
+  const hover = (event: PointerEvent): void => {
+    const box = (event.currentTarget as HTMLElement).querySelector("svg")?.getBoundingClientRect();
+    if (box === undefined || box.width <= 0) return;
+    const index = nearestIndex(data.values[0] ?? [], event.clientX - box.left, box.width);
+    setTip(index === null ? null : { index, x: event.clientX, top: box.top, height: box.height });
+  };
   return (
     <div class="min-w-0">
       <div
@@ -251,8 +296,10 @@ function UsagePlot({ data, metric, mark }: { data: UsageSeries; metric: UsageMet
         data-usage-plot=""
         onClick={pick}
         onKeyDown={onKey}
+        onPointerMove={hover}
+        onPointerLeave={() => setTip(null)}
       >
-        <LineChart
+        <StackedColumnChart
           series={data.keys.map((key, index) => ({
             values: data.values[index] ?? [],
             color: modelColor(key),
@@ -263,6 +310,27 @@ function UsagePlot({ data, metric, mark }: { data: UsageSeries; metric: UsageMet
           xLabels={dayLabels(dates)}
           yLabel={peak > 1 ? `${metric === "cost" ? fmtUsd(peak) : fmtTokens(peak)} per day` : null}
         />
+        {tip !== null && (
+          <>
+            <div
+              class="chart-tip"
+              style={{ display: "block", left: `${tipLeft(tip.x, 190)}px`, top: `${tip.top + 8}px` }}
+            >
+              <div class="tip-head">{usageTip(data, tip.index, metric).head}</div>
+              {usageTip(data, tip.index, metric).lines.map((line) => (
+                <div key={line.label} class="tip-line">
+                  <span class="swatch" style={{ background: line.color }} />
+                  <span>{line.label}</span>
+                  <span class="tip-value">{line.value}</span>
+                </div>
+              ))}
+            </div>
+            <div
+              class="chart-cross"
+              style={{ display: "block", left: `${tip.x}px`, top: `${tip.top}px`, height: `${tip.height}px` }}
+            />
+          </>
+        )}
       </div>
       <UsageTable data={data} metric={metric} />
     </div>
@@ -565,7 +633,7 @@ function Drill({ report, drill, metric }: { report: UsageReport; drill: UsageDri
   const slice = slices.find((entry) => entry.key === drill.key);
   if (slice === undefined) return null;
   const values = slice.days.map((day) => metricValue(day, metric));
-  const peak = layeredMax([values]);
+  const peak = stackedPeak([values]);
   const title = drillTitle(drill.kind, slice.key);
   const sessions = drill.kind === "project" ? (report.topSessions[slice.key] ?? []) : [];
   return (
@@ -594,7 +662,7 @@ function Drill({ report, drill, metric }: { report: UsageReport; drill: UsageDri
           aria-label={`${title}'s daily series over the window`}
           data-usage-drill-plot=""
         >
-          <LineChart
+          <StackedColumnChart
             series={[{ values, color: modelColor(slice.key) }]}
             width={720}
             height={160}

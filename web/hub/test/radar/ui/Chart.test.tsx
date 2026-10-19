@@ -1,6 +1,12 @@
 import { render } from "@testing-library/preact";
 import { describe, expect, it } from "vite-plus/test";
-import { AreaChart, LineChart, StackedAreaChart, StackedBar } from "../../../src/radar/app/Chart.tsx";
+import {
+  AreaChart,
+  LineChart,
+  StackedAreaChart,
+  StackedBar,
+  StackedColumnChart,
+} from "../../../src/radar/app/Chart.tsx";
 import type { ChartOptions, LayeredOptions, StackedOptions } from "../../../src/radar/chart.ts";
 
 function fullAreaOptions(): ChartOptions {
@@ -240,6 +246,47 @@ const LAYERED: LayeredOptions = {
   width: 200,
   height: 60,
 };
+
+describe("StackedColumnChart", () => {
+  it("stacks each day's segments bottom-to-top, one bar slot per bucket", () => {
+    const { container } = render(<StackedColumnChart {...TWO_BANDS} />);
+    const days = [...container.querySelectorAll("g[data-day]")];
+    expect(days).toHaveLength(3); // the zero day keeps its empty slot
+    expect(days[0]?.querySelectorAll("rect")).toHaveLength(0);
+    const segments = [...(days[1]?.querySelectorAll("rect") ?? [])];
+    expect(segments.map((rect) => rect.getAttribute("fill"))).toEqual(["a", "b"]);
+    // the first band sits on the baseline, the second on the first band's top
+    expect(segments[0]?.getAttribute("y")).toBe("32");
+    expect(segments[1]?.getAttribute("y")).toBe("4");
+    expect(segments[0]?.getAttribute("height")).toBe("28");
+    // the last day draws only the band that ran
+    expect(days[2]?.querySelectorAll("rect")).toHaveLength(1);
+  });
+
+  it("draws nothing but the frame for an empty series, and ignores an out-of-range mark", () => {
+    const { container } = render(
+      <StackedColumnChart series={[{ values: [], color: "a" }]} width={200} height={60} mark={9} />,
+    );
+    expect(container.querySelectorAll("g[data-day]")).toHaveLength(0);
+    expect(container.querySelector("line.chart-mark-line")).toBeNull();
+    expect(container.querySelector("svg")).toBeTruthy();
+  });
+
+  it("draws the picked day's dashed reference line through the bar's middle, and never a path", () => {
+    const { container } = render(<StackedColumnChart {...TWO_BANDS} mark={1} />);
+    const mark = container.querySelector("line.chart-mark-line");
+    expect(mark?.getAttribute("x1")).toBe("100.0");
+    expect(container.querySelector("path")).toBeNull();
+  });
+
+  it("carries the frame's y label and x marks like the other charts", () => {
+    const { container } = render(
+      <StackedColumnChart {...TWO_BANDS} yLabel="20 per day" xLabels={[{ text: "now", at: 1 }]} />,
+    );
+    expect(container.querySelector(".chart-ymax")?.textContent).toBe("20 per day");
+    expect(container.querySelector(".chart-mark")?.textContent).toBe("now");
+  });
+});
 
 describe("LineChart", () => {
   it("draws one independent line per series over the shared scale, never stacked", () => {

@@ -22,6 +22,7 @@ import {
   nextSort,
   pickedSessions,
   rangeEqual,
+  requestChartsData,
   requestCost,
   type StreamMessage,
   selectedIds,
@@ -690,5 +691,65 @@ describe("flowSource", () => {
   it("reaches back to the oldest request for all time", () => {
     const state = stateOver(preset("all"), [NOW - 5_000]);
     expect(flowSource(state, NOW)).toEqual({ from: NOW - 5_000, to: NOW, history: false });
+  });
+});
+
+describe("requestChartsData", () => {
+  // a one-hour window: the bucket plan answers 60 buckets of one minute
+  const FROM = 3_600_000;
+  const TO = 7_200_000;
+
+  it("buckets ok and failed counts over the range's own bucket plan", () => {
+    const data = requestChartsData(
+      [
+        makeRequest({ id: "ok", ts: FROM + 10_000, status: "200" }),
+        makeRequest({ id: "failed", ts: FROM + 70_000, status: "429" }),
+        makeRequest({ id: "error", ts: FROM + 130_000, error: "connection lost" }),
+        makeRequest({ id: "streaming", ts: FROM + 190_000 }),
+        makeRequest({ id: "outside", ts: TO + 60_000, status: "200" }),
+      ],
+      FROM,
+      TO,
+    );
+    expect(data.bucketMs).toBe(60_000);
+    expect(data.ok.filter((count) => count > 0)).toEqual([1, 1]);
+    expect(data.failed.filter((count) => count > 0)).toEqual([1, 1]);
+    expect(data.ok[0]).toBe(1); // the 200 in the first minute
+    expect(data.failed[1]).toBe(1); // the 429 in the second
+    expect(data.failed[2]).toBe(1); // an error with no status still failed
+    expect(data.ok[3]).toBe(1); // a streaming request counts as ok
+    expect(data.ok).toHaveLength(60);
+  });
+
+  it("splits every token kind per bucket", () => {
+    const data = requestChartsData(
+      [
+        makeRequest({
+          id: "a",
+          ts: FROM + 10_000,
+          tokens: { input: 10, output: 5, cacheRead: 2, cacheWrite: 1 },
+        }),
+        makeRequest({
+          id: "b",
+          ts: FROM + 90_000,
+          tokens: { input: 100, output: 20, cacheRead: 0, cacheWrite: 0 },
+        }),
+      ],
+      FROM,
+      TO,
+    );
+    expect(data.tokens).toEqual([
+      [10, 100, ...Array.from({ length: 58 }, () => 0)],
+      [5, 20, ...Array.from({ length: 58 }, () => 0)],
+      [2, 0, ...Array.from({ length: 58 }, () => 0)],
+      [1, 0, ...Array.from({ length: 58 }, () => 0)],
+    ]);
+  });
+
+  it("keeps an empty window at all-zero buckets", () => {
+    const data = requestChartsData([], FROM, TO);
+    expect(data.ok).toHaveLength(60);
+    expect(data.ok.every((count) => count === 0)).toBe(true);
+    expect(data.failed.every((count) => count === 0)).toBe(true);
   });
 });
