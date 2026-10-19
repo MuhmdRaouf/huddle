@@ -342,7 +342,9 @@ func joinRunning(ctx context.Context, w *World, o *flags, say func(string)) (int
 	}
 	entry := live.entry
 	where := firstNonEmpty(entry.Project, live.home)
-	if held := LoadCred(ctx, w, entry.URL, ""); held != nil {
+	// a credential with no channel is the server's root key, which `huddle up` saves its
+	// creator, not a membership: the project is not in yet
+	if held := LoadCred(ctx, w, entry.URL, ""); held != nil && held.Channel != "" {
 		say(fmt.Sprintf("This project is already in the Huddle at %s (channel %s, as %s). To start a separate one: /huddle:setup --new",
 			entry.URL, firstNonEmpty(held.Channel, entry.Channel), firstNonEmpty(held.As, "?")))
 		return 0, true

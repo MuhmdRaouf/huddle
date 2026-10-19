@@ -366,7 +366,7 @@ func TestSetupInASecondProjectJoinsTheHuddleThisUserAlreadyRuns(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("web setup: %d %q %q", code, out, errOut)
 	}
-	if !strings.Contains(out, "Joined the Huddle that already runs for "+api+": "+url+", channel "+channel[1]+", as ") {
+	if !strings.Contains(out, "Joined the Huddle that already runs for "+realDir(t, api)+": "+url+", channel "+channel[1]+", as ") {
 		t.Errorf("web setup said %q", out)
 	}
 	if noted := Servers(context.Background(), A); len(noted) != 1 {
@@ -458,6 +458,82 @@ func TestSetupWithAHeldCredentialSaysAlreadyIn(t *testing.T) {
 	}
 	if !strings.Contains(out, "This project is already in the Huddle at "+fake.server.URL+" (channel team, as web). To start a separate one: /huddle:setup --new") {
 		t.Errorf("web setup said %q", out)
+	}
+}
+
+// The root credential `huddle up` saves its creator names no channel: it is the server's key,
+// not a membership, so setup still says how to join instead of claiming the project is in.
+func TestSetupWithOnlyARootCredentialSaysHowToJoin(t *testing.T) {
+	fake := startFakeHuddle(t, func(call fakeCall) (int, string) { return 200, `{"ok":true}` })
+	state := filepath.Join(t.TempDir(), "state")
+	api, web := t.TempDir(), t.TempDir()
+	for _, proj := range []string{api, web} {
+		gitInit(t, proj)
+	}
+	if err := os.MkdirAll(filepath.Join(state, "huddle"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(state, "huddle", "servers.json"),
+		`{"`+jsonSpelled(filepath.Join(api, ".agents", "huddle"))+`":{"url":"`+fake.server.URL+`","channel":"team","project":"`+jsonSpelled(api)+`"}}`)
+	W := setupWorld(t, web, map[string]string{
+		"XDG_STATE_HOME": state,
+		"HUDDLE_SESSION": "s-web",
+	})
+	sessions := filepath.Join(userHome(t, W), "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(sessions, "s-web.json"),
+		`{"url":"`+fake.server.URL+`","credential":"hcred_root","root":true}`)
+	code, out, errOut := runSetup(t, W)
+	if code != 0 || errOut != "" {
+		t.Fatalf("web setup: %d %q %q", code, out, errOut)
+	}
+	if strings.Contains(out, "This project is already in the Huddle") {
+		t.Errorf("a credential with no channel is not membership; setup said %q", out)
+	}
+	if !strings.Contains(out, "A Huddle already runs for "+api+" at "+fake.server.URL+" (channel team)") {
+		t.Errorf("web setup said %q", out)
+	}
+}
+
+// The session that started the server sat in this same project through another spelling of its
+// path (a symlinked /var): setup knows the server is its own and prints the way in.
+func TestSetupKnowsItsOwnServerThroughAnySpellingOfOnePath(t *testing.T) {
+	proj := t.TempDir()
+	gitInit(t, proj)
+	state := filepath.Join(t.TempDir(), "state")
+	user := t.TempDir()
+	// the hook's world spells the project the resolved way, setup's world the plain way; one
+	// home serves both, so the port file and the creator's credential carry over
+	hookW := setupWorld(t, proj, map[string]string{
+		"HOME":               user,
+		"HUDDLE_SESSION":     "s-hook",
+		"XDG_STATE_HOME":     state,
+		"CLAUDE_PROJECT_DIR": realDir(t, proj),
+	})
+	pinFreePort(t, userHome(t, hookW))
+	t.Cleanup(func() { stopHome(t, hookW, userHome(t, hookW)) })
+	if code, out := runServerCommand(t, hookW, "up"); code != 0 || !strings.Contains(out, "started") {
+		t.Fatalf("the hook's start: %d %s", code, out)
+	}
+	W := setupWorld(t, proj, map[string]string{
+		"HOME":           user,
+		"HUDDLE_SESSION": "s-1",
+		"XDG_STATE_HOME": state,
+	})
+	code, out, errOut := runSetup(t, W, "--start")
+	if code != 0 {
+		t.Fatalf("setup --start: %d %q %q", code, out, errOut)
+	}
+	if strings.Contains(out, "already in the Huddle") || strings.Contains(out, "already runs for") {
+		t.Fatalf("setup did not know its own server: %q", out)
+	}
+	if !regexp.MustCompile(`(?m)^join:     /huddle:join 127\.0\.0\.1:\d+ --token [a-z0-9]{6}\.[a-z0-9]{16}`).MatchString(out) {
+		t.Errorf("the join line %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(proj, ".agents", "huddle", "huddle.json")); err != nil {
+		t.Errorf("the project's huddle.json: %v", err)
 	}
 }
 

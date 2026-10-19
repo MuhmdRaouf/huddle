@@ -40,6 +40,16 @@ Run everything from the repo root: `go run ./scripts/tmpguard -count=1 ./...`, `
 - Face ID / Touch ID on real hardware: the suites use a virtual authenticator and a soft key.
 - TOTP sign-in with a real authenticator app on a phone: the suites compute codes from the secret.
 
+## Live check
+
+`sh scripts/live-e2e.sh` proves the path a first real use takes: it builds the binary, copies the plugin, and
+runs two headless `claude` sessions in throwaway git projects — one runs `/huddle:setup` and prints the join
+line, the other joins with it — then has them `ping` and `pong` through the huddle MCP tools and asserts both
+messages against the channel's own event list. It needs `claude` and the zai router on 127.0.0.1:18787; every
+run gets its own temporary `HOME`, `CLAUDE_CONFIG_DIR` and `XDG_*` directories, so the real `~/.claude`,
+`~/.config/huddle` and `~/.agents` are never touched. `KEEP=1` keeps the temp dir and its logs. It is not part
+of CI.
+
 ## Live run
 
 1. On the hub machine, read the home's `config.toml`: `role = "hub"`, the hub's `host` set to its name,

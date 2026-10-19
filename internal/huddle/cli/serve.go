@@ -465,13 +465,26 @@ func withoutVar(env []string, key string) []string {
 	return out
 }
 
-// projectOf answers the project the server's channels belong to: the repo around the working
-// directory, else the project dir.
+// projectOf answers the project the server's channels belong to: the repo around the project
+// dir, else the project dir. The answer is resolved first, as ProjectKey resolves it: one
+// checkout reached through two spellings of one path (a symlinked /var) must name one project,
+// or a project does not recognize the server its own session started.
 func projectOf(ctx context.Context, w *World) string {
-	if main := MainCheckout(ctx, w, ""); main != "" {
-		return main
+	start := w.getenv("CLAUDE_PROJECT_DIR")
+	if start == "" {
+		start = w.dir()
 	}
-	return w.getenv("CLAUDE_PROJECT_DIR")
+	if start == "" {
+		return ""
+	}
+	dir := MainCheckout(ctx, w, start)
+	if dir == "" {
+		dir = start
+	}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	return dir
 }
 
 // Down stops the server `huddle up` started. A server someone else started is named, not

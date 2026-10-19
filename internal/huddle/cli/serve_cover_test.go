@@ -208,13 +208,29 @@ func TestProjectOfNamesTheRepoAroundTheWorkingDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := cliWorld(t, repo, t.TempDir(), nil)
-	if got := projectOf(ctx, w); got != repo {
-		t.Errorf("projectOf in a checkout = %q, want %q", got, repo)
+	if got := projectOf(ctx, w); got != realDir(t, repo) {
+		t.Errorf("projectOf in a checkout = %q, want %q", got, realDir(t, repo))
 	}
 	plain := t.TempDir()
 	w2 := cliWorld(t, plain, t.TempDir(), nil)
-	if got := projectOf(ctx, w2); got != plain {
-		t.Errorf("projectOf outside a checkout = %q, want %q", got, plain)
+	if got := projectOf(ctx, w2); got != realDir(t, plain) {
+		t.Errorf("projectOf outside a checkout = %q, want %q", got, realDir(t, plain))
+	}
+}
+
+// TestProjectOfResolvesThePathsSpelling pins the registry's project through any spelling of one
+// path: a project reached as /var/x and as /private/var/x must name itself one way, or setup
+// does not recognize the server its own session started.
+func TestProjectOfResolvesThePathsSpelling(t *testing.T) {
+	proj := t.TempDir()
+	gitInit(t, proj)
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(proj, link); err != nil {
+		t.Fatal(err)
+	}
+	w := world(t, link, nil)
+	if got := projectOf(context.Background(), w); got != realDir(t, proj) {
+		t.Errorf("projectOf through %s = %q, want %q", link, got, realDir(t, proj))
 	}
 }
 
