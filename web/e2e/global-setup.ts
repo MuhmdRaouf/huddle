@@ -332,7 +332,8 @@ async function waitHealthy(port: number): Promise<void> {
 }
 
 /** Seeds what the specs read: one channel for the invite card, one registry session carrying
- *  the board's working dir for the Now list and the Kanban tab. */
+ *  the board's working dir for the Now list and the Kanban tab, and two sessions in the channel
+ *  whose ping and pong the channel page's Messages card shows. */
 async function seedRegistry(port: number, token: string, boardDir: string): Promise<void> {
   await rootCall(`/api/channels`, { name: CHANNEL }, port, token);
   await rootCall(
@@ -350,6 +351,21 @@ async function seedRegistry(port: number, token: string, boardDir: string): Prom
     port,
     token,
   );
+  await channelOp(port, token, "join", "alpha", {});
+  await channelOp(port, token, "join", "beta", {});
+  await channelOp(port, token, "send", "alpha", { to: "beta", msg: "ping" });
+  await channelOp(port, token, "send", "beta", { to: "alpha", msg: "pong" });
+}
+
+/** One channel operation as one named session: the same op endpoint the agents' clients call. */
+async function channelOp(
+  port: number,
+  token: string,
+  op: string,
+  as: string,
+  body: Record<string, unknown>,
+): Promise<void> {
+  await rootCall(`/api/c/${CHANNEL}/op/${op}?as=${as}`, body, port, token);
 }
 
 /** Waits until radar's ingest has landed the five seeded requests (four Claude, one Codex), so

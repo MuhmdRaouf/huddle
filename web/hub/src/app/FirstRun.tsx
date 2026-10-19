@@ -13,7 +13,8 @@ import { readPref, writePref } from "../storage.ts";
 /** One checklist item: its label, whether it stands done, and where its button goes. */
 type Item = { key: string; label: string; done: boolean; href: string };
 
-/** The passkey row: the moved banner, drawn inside the checklist. */
+/** The passkey row: the moved banner, drawn inside the checklist like the items under it —
+ *  one-line label, the why as the muted second line, the actions right-aligned. */
 function PasskeyRow({
   busy,
   error,
@@ -26,20 +27,27 @@ function PasskeyRow({
   onClose: () => void;
 }): JSX.Element {
   return (
-    <div class="flex flex-col gap-1.5 border-b hairline pb-3" data-banner="passkey">
-      <div class="flex items-center gap-3">
+    <div class="flex flex-col gap-1 border-b hairline pb-3" data-banner="passkey">
+      <div class="flex min-h-8 items-center gap-2.5">
         <span class="shrink-0 text-primary">
           <Icon name="key" />
         </span>
-        <p class="m-0 min-w-0 flex-1 text-sm muted">
-          Save a passkey for this browser — next time Touch ID signs you in.
-        </p>
-        <button type="button" class="btn btn-primary btn-sm" disabled={busy} onClick={onSave}>
-          Save passkey
+        <div class="min-w-0 flex-1">
+          <p class="m-0 text-sm">Save a passkey</p>
+          <p class="m-0 text-xs muted">Touch ID signs you in next time.</p>
+        </div>
+        <button
+          type="button"
+          class="btn btn-primary btn-sm shrink-0"
+          aria-label="Save passkey"
+          disabled={busy}
+          onClick={onSave}
+        >
+          Save
         </button>
         <button
           type="button"
-          class="btn btn-ghost btn-square btn-sm muted"
+          class="btn btn-ghost btn-square btn-sm muted shrink-0"
           aria-label="Dismiss"
           onClick={onClose}
         >
@@ -47,7 +55,7 @@ function PasskeyRow({
         </button>
       </div>
       {error ? (
-        <p role="alert" class="m-0 pl-9 text-sm text-error">
+        <p role="alert" class="m-0 pl-7 text-sm text-error">
           {error}
         </p>
       ) : null}

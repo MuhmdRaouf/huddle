@@ -336,13 +336,17 @@ describe("the connect card", () => {
     expect(screen.getByText("Install Huddle once per machine")).toBeDefined();
     expect(screen.getByText("Invite the session")).toBeDefined();
     expect(screen.getByText("Paste it into the other session")).toBeDefined();
-    expect(document.body.textContent).toContain("/plugin install huddle@muhmdraouf");
+    // the install snippet is the README's own two lines, huddle's marketplace, in order
+    const snippet = document.querySelector('[data-panel="claude"] pre')?.textContent ?? "";
+    expect(snippet).toContain("/plugin marketplace add MuhmdRaouf/huddle");
+    expect(snippet).toContain("/plugin install huddle@huddle");
+    expect(snippet.indexOf("/plugin marketplace add")).toBeLessThan(snippet.indexOf("/plugin install"));
     const copies = screen.getAllByText("Copy");
     void act(() => {
       copies[0]?.click();
     });
     await flush();
-    expect(writes[0]).toContain("/plugin marketplace add");
+    expect(writes[0]).toBe("/plugin marketplace add MuhmdRaouf/huddle\n/plugin install huddle@huddle");
 
     // the other harnesses: their own tab, their own wire command
     for (const [tab, cmd] of [

@@ -147,7 +147,7 @@ test("a fresh hub shows the first-time landing, its tour and its copyable comman
   await page.getByRole("button", { name: "Copy Claude Code" }).click();
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toContain("/plugin marketplace add MuhmdRaouf/claude-code-plugins");
+    .toContain("/plugin marketplace add MuhmdRaouf/huddle");
 });
 
 test("a signed-out visit to the landing logs no console error", async ({ page }) => {

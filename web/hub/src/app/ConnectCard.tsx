@@ -107,7 +107,7 @@ function ClaudeSteps({ ch, invite }: { ch: string; invite: boolean }): JSX.Eleme
         <p class="mt-1 mb-2.5 text-sm muted">In Claude Code:</p>
         <CxCode
           t="Claude Code"
-          c={"/plugin marketplace add MuhmdRaouf/claude-code-plugins\n/plugin install huddle@muhmdraouf"}
+          c={"/plugin marketplace add MuhmdRaouf/huddle\n/plugin install huddle@huddle"}
           msg="Copied. Paste it where the step says."
         />
       </CxStep>

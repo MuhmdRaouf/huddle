@@ -58,9 +58,7 @@ test("a link sign-in offers a passkey, and the saved one signs in after cookies 
   // the owner signs in by link: the Now list carries the checklist's passkey row
   await signIn(page, pairOrigin);
   await openTab(page, "Now");
-  await expect(
-    page.getByText("Save a passkey for this browser — next time Touch ID signs you in."),
-  ).toBeVisible();
+  await expect(page.getByText("Save a passkey")).toBeVisible();
 
   // the banner mints its own link and runs the ceremony: no terminal, no pasted code
   await pairThroughBanner(page, "E2E Mac");

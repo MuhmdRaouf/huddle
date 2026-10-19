@@ -665,9 +665,8 @@ describe("the first-run checklist's passkey row", () => {
 
   it("shows for an owner's link session, with its save and close buttons", () => {
     mountOnNow("owner");
-    expect(
-      screen.getByText("Save a passkey for this browser — next time Touch ID signs you in."),
-    ).toBeDefined();
+    expect(screen.getByText("Save a passkey")).toBeDefined();
+    expect(screen.getByText("Touch ID signs you in next time.")).toBeDefined();
     expect(screen.getByRole("button", { name: "Save passkey" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Dismiss" })).toBeDefined();
   });

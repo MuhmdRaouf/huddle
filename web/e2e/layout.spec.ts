@@ -118,6 +118,15 @@ for (const scheme of SCHEMES) {
       await openAndShoot("Now");
       await openAndShoot("Channels");
 
+      // the channel itself, opened the way a channel card opens it: its Messages card is the
+      // view the shot is for, so the shot takes it with the card in view
+      await page.locator('a[data-ch="e2e"]').click();
+      await expect(page.locator("[data-messages]")).toBeVisible();
+      await settled(page);
+      await page.locator("[data-messages]").scrollIntoViewIfNeeded();
+      await expectNoPageScroll(page, "channel");
+      await shot("channel");
+
       // Radar: one screenshot per view, the sub-tab's own currency the wait
       await openAndShoot("Radar", () => Promise.resolve(), "radar-overview");
       for (const label of RADAR.slice(1)) {

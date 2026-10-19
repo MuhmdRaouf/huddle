@@ -120,6 +120,17 @@ describe("the first-run checklist", () => {
     expect(hrefs).toEqual(["#/settings/signin", "#/channels", "#/channels", "#/settings/radar"]);
   });
 
+  it("offers the passkey as one checklist row: one-line label, the why under it, the Save button", () => {
+    mount({});
+    const row = document.querySelector('[data-banner="passkey"]');
+    expect(row).not.toBeNull();
+    const label = screen.getByText("Save a passkey");
+    expect(label.textContent).toBe("Save a passkey");
+    expect(screen.getByText("Touch ID signs you in next time.")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Save passkey" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeDefined();
+  });
+
   it("reads the budgets once, and a refused read counts as none", async () => {
     const h = mount({});
     await flush();
