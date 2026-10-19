@@ -119,6 +119,23 @@ func commonRepo(git string) string {
 	return realPath(resolveIn(gitdir, strings.TrimSpace(string(common))))
 }
 
+// gitRootOf answers the directory above file whose .git marks the repository file belongs to;
+// ok is false when file sits outside any git checkout.
+func gitRootOf(file string) (string, bool) {
+	for dir, i := filepath.Dir(file), 0; i < 64; i++ {
+		git := filepath.Join(dir, ".git")
+		if _, err := os.Stat(git); err == nil {
+			return dir, true
+		}
+		up := filepath.Dir(dir)
+		if up == dir {
+			break
+		}
+		dir = up
+	}
+	return "", false
+}
+
 // TouchOf answers the file one hook input touched, or nil when the tool does not edit or names
 // no file. cwd is the session's working directory the hook runs in.
 func TouchOf(input TouchInput) *Touch {
@@ -142,24 +159,16 @@ func TouchOf(input TouchInput) *Touch {
 	}
 	// as given: a symlinked ancestor is fine, both sides keep it
 	file := resolveIn(cwd, raw)
-	for dir, i := filepath.Dir(file), 0; i < 64; i++ {
-		git := filepath.Join(dir, ".git")
-		if _, err := os.Stat(git); err == nil {
-			path, ok := relPath(dir, file)
-			if !ok {
-				return nil
-			}
-			repo := commonRepo(git)
-			if base := filepath.Base(repo); base == ".git" {
-				repo = filepath.Dir(repo)
-			}
-			return &Touch{Repo: repo, Path: path}
+	if root, ok := gitRootOf(file); ok {
+		path, ok := relPath(root, file)
+		if !ok {
+			return nil
 		}
-		up := filepath.Dir(dir)
-		if up == dir {
-			break
+		repo := commonRepo(filepath.Join(root, ".git"))
+		if base := filepath.Base(repo); base == ".git" {
+			repo = filepath.Dir(repo)
 		}
-		dir = up
+		return &Touch{Repo: repo, Path: path}
 	}
 	path, ok := relPath(resolvePath(cwd), file)
 	if !ok {

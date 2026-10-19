@@ -33,7 +33,8 @@ func Events() map[string][]Part {
 			{"radar", 600 * time.Millisecond},
 		},
 		"pre-tool-use": {
-			{"report", 4500 * time.Millisecond},
+			{"reserve", 300 * time.Millisecond},
+			{"report", 4100 * time.Millisecond},
 		},
 		"post-tool-use": {
 			{"listen", 3000 * time.Millisecond},

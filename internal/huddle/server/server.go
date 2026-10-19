@@ -2076,6 +2076,13 @@ func (s *server) channelRoute(w http.ResponseWriter, r *http.Request, ch *channe
 		}
 		s.writeJSON(w, 200, view, nil)
 		return nil
+	case "reservations":
+		view, err := channel.Reservations(ctx, ch, "")
+		if err != nil {
+			return err
+		}
+		s.writeJSON(w, 200, view, nil)
+		return nil
 	case "plan.json":
 		phases, err := ch.Phases(ctx)
 		if err != nil {

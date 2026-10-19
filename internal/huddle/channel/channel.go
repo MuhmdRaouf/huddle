@@ -59,7 +59,7 @@ var NameRe = regexp.MustCompile(nameReSrc)
 var TopicRe = regexp.MustCompile(topicReSrc)
 
 var taskIDRe = regexp.MustCompile(`^[\w.-]{1,32}$`)
-var reservedTopicRe = regexp.MustCompile(`^(control|reply|session|task)\.`)
+var reservedTopicRe = regexp.MustCompile(`^(control|reply|reserve|session|task)\.`)
 
 var States = []string{"working", "waiting", "paused", "idle", "blocked", "left"}
 var KBKinds = []string{"fact", "lesson", "decision", "context", "result", "howto"}
@@ -1763,6 +1763,7 @@ func (c *Channel) Leave(ctx context.Context, name string, summary string) (Prese
 		if err != nil {
 			return err
 		}
+		c.releaseAll(ctx, name) // the leaver's reservations die with its presence
 		out = p
 		return nil
 	})

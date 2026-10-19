@@ -1,12 +1,14 @@
 // overview.test.tsx — the Overview page: the plan's ring and its per-state breakdown, the stat
 // cards, the needs banner, Radar's estimated cost, the conflicts card over GET /conflicts, the
-// activity chart with its kept window, and the pure helpers (ovVals/ovSub/ovTexts/ovRows/ovSeries).
+// reservations card over GET /reservations (live on the reserve events), the activity chart with
+// its kept window, and the pure helpers (ovVals/ovSub/ovTexts/ovRows/ovSeries).
 import { act, fireEvent, screen, waitFor } from "@testing-library/preact";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { type Api, createApi, type FetchFn } from "../src/api.ts";
 import {
   type ConflictFile,
   Overview,
+  type ReservationItem,
   ovRows,
   ovSeries,
   ovSub,
@@ -79,11 +81,26 @@ const CONFLICTS = {
   ],
 };
 
-/** The fetch the page sees: conflicts for the conflicts path, {} for anything else. */
+const RESERVATIONS = {
+  reservations: [
+    {
+      path: "/repo/src/cart.ts",
+      holder: "api",
+      note: "rewriting the cart",
+      created: "2026-10-08T11:30:00Z",
+      expires: "2026-10-08T12:25:00Z",
+    } satisfies ReservationItem,
+  ],
+};
+
+/** The fetch the page sees: conflicts for the conflicts path, reservations for the reservations
+ *  path, {} for anything else. */
 const fetchF =
-  (conflicts: unknown = CONFLICTS): FetchFn =>
+  (conflicts: unknown = CONFLICTS, reservations: unknown = RESERVATIONS): FetchFn =>
   (url) => {
-    if (String(url).includes("/conflicts")) return Promise.resolve(jsonResponse(conflicts));
+    const path = String(url);
+    if (path.includes("/conflicts")) return Promise.resolve(jsonResponse(conflicts));
+    if (path.includes("/reservations")) return Promise.resolve(jsonResponse(reservations));
     return Promise.resolve(jsonResponse({}));
   };
 
@@ -322,6 +339,63 @@ describe("Overview conflicts", () => {
       // the roster's presence patch does not move state.sessions: the push itself must refetch
       store.changed("conflict", { repo: "/repo", path: "src/app.ts", sessions: ["api", "owl"] });
       await waitFor(() => expect(seen.length).toBe(2));
+      unmount();
+    } finally {
+      store.dispose();
+    }
+  });
+});
+
+describe("Overview reservations", () => {
+  it("lists the live reservations with their holder, note and time left", async () => {
+    renderHuddle(<Overview />, state(), NOW, fetchF());
+    const list = (await waitFor(() => screen.getByRole("list", { name: "Reserved files" }))) as HTMLElement;
+    const text = list.textContent ?? "";
+    expect(text).toContain("/repo/src/cart.ts");
+    expect(text).toContain("api");
+    expect(text).toContain("rewriting the cart");
+    // 12:00:00 now, 12:25:00 expiry: 25 minutes left
+    expect(text).toContain("25 min left");
+  });
+
+  it("says now when a reservation lapsed on the way to the paint", async () => {
+    renderHuddle(
+      <Overview />,
+      state(),
+      NOW,
+      fetchF(CONFLICTS, {
+        reservations: [{ path: "/p", holder: "api", expires: "2026-10-08T11:59:00Z" }],
+      }),
+    );
+    await waitFor(() => expect(screen.getByText("now left")).not.toBeNull());
+  });
+
+  it("stays out when nothing is reserved", async () => {
+    renderHuddle(<Overview />, state(), NOW, fetchF(CONFLICTS, { reservations: [] }));
+    await waitFor(() => expect(screen.queryByText("Reservations")).toBeNull());
+  });
+
+  it("reads again when the stream delivers a reserve event", async () => {
+    const seen: string[] = [];
+    const fetchFn: FetchFn = (url) => {
+      if (String(url).includes("/reservations")) seen.push(String(url));
+      return Promise.resolve(jsonResponse({ reservations: [] }));
+    };
+    const timers: Timers = {
+      after: (fn, ms) => setTimeout(fn, ms),
+      cancel: (h) => clearTimeout(h as number),
+      interval: () => 0,
+      stop: () => {},
+    };
+    const announce = (): void => {};
+    const store = createStore({ api: apiOver(fetchFn), timers, hidden: () => false, announce });
+    try {
+      const { unmount } = renderHuddle(<Overview store={store} />, state(), NOW, fetchFn);
+      await waitFor(() => expect(seen.length).toBe(1));
+      store.changed("event", { topic: "reserve.claim", seq: 9 });
+      await waitFor(() => expect(seen.length).toBe(2));
+      store.changed("event", { topic: "msg", seq: 10 });
+      expect(seen.length).toBe(2); // a message is not a reserve event
       unmount();
     } finally {
       store.dispose();

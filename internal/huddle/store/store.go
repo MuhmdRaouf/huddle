@@ -81,6 +81,10 @@ CREATE TABLE IF NOT EXISTS touches (
   PRIMARY KEY (session, repo, path)
 );
 CREATE INDEX IF NOT EXISTS touches_path ON touches(repo, path, at);
+CREATE TABLE IF NOT EXISTS reservations (
+  path TEXT PRIMARY KEY, repo TEXT NOT NULL DEFAULT '', rel TEXT NOT NULL DEFAULT '',
+  holder TEXT NOT NULL, note TEXT, created TEXT NOT NULL, expires TEXT NOT NULL
+);
 `
 
 // added: [table, column definition] pairs an older channel file may lack, in the order they

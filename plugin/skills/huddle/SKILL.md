@@ -141,6 +141,11 @@ Reach for these first; each one does the bookkeeping the loop above describes.
 - **Same file, two sessions:** when you edit a file another session edited in the last 30
   minutes, one line in your context says who ("payments edited src/cart.ts 4 min ago").
   Nothing is locked: `send` it (or `ask`) what it is changing before you go on.
+- **Reserve before multi-file edits:** about to change several files (or one delicate one) in a
+  shared channel? `reserve` the absolute paths first (`ttl_minutes` 1–480, default 60, a short
+  `note` why; a directory covers what is under it). Another session that reaches for one is
+  warned and told to `send` you first. `reservations` shows who holds what; `release` when done.
+  A reservation warns, never blocks.
 
 ## Subagents in the channel
 
@@ -194,6 +199,6 @@ Never store secrets.
 `join` `status` `sessions` `state` · `publish` `send` `reply` `inbox` `events` · `wait` `ack`
 `gate` `pause` `resume` · `turn` `pass` `take` · `next` `map` `task` `tasks` `task_create`
 `task_update` `task_status` `wait_task` `note` · `start` `finish` `depend` `handoff` `ask_wait` ·
-`remember` `recall` `kb` `verify` `share` · `digest` · `leave` · owner or orchestrator: `import_plan` `configure` `approve`
-`note_edit` `assign` `brief`.
+`remember` `recall` `kb` `verify` `share` · `reserve` `release` `reservations` · `digest` ·
+`leave` · owner or orchestrator: `import_plan` `configure` `approve` `note_edit` `assign` `brief`.
 CLI: `huddle help`; exit codes 0 ok · 3 message · 4 paused · 5 unreachable · 124 timeout.

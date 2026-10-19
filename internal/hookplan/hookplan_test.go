@@ -50,7 +50,7 @@ func eventWord(command string) (word string, ok bool) {
 var wantParts = map[string][]string{
 	"session-start":      {"session-start", "report", "radar", "kanban"},
 	"user-prompt-submit": {"listen", "report", "radar"},
-	"pre-tool-use":       {"report"},
+	"pre-tool-use":       {"reserve", "report"},
 	"post-tool-use":      {"listen", "report"},
 	"notification":       {"report", "radar"},
 	"permission-request": {"report"},

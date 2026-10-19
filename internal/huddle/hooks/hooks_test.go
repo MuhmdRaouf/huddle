@@ -74,6 +74,7 @@ var hookByName = map[string]func(context.Context, *cli.World, io.Reader, io.Writ
 	"approve":       Approve,
 	"listen":        Listen,
 	"permit":        Permit,
+	"reserve":       Reserve,
 	"session-start": SessionStart,
 	"stop":          Stop,
 }

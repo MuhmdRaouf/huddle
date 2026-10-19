@@ -1,8 +1,8 @@
 // Overview.tsx — the channel at a glance: what needs the owner, the plan's progress ring and its
 // per-state breakdown, the stat cards (sessions, questions, knowledge, events), Radar's estimated
-// cost, the files two sessions are both editing, and the activity chart over the timeline the
-// channel already loaded, binned per minute in one of three windows. Port of app.js
-// ovVals/ovSub/ovTexts/ovRows/ovNeeds/ovTopHTML/ovSeries/overviewView and conflicts.js.
+// cost, the files two sessions are both editing, the file reservations, and the activity chart
+// over the timeline the channel already loaded, binned per minute in one of three windows. Port
+// of app.js ovVals/ovSub/ovTexts/ovRows/ovNeeds/ovTopHTML/ovSeries/overviewView and conflicts.js.
 
 import { AreaChart } from "@huddle/ui/area-chart.tsx";
 import { Panel } from "@huddle/ui/page.tsx";
@@ -206,6 +206,28 @@ export type ConflictFile = {
 /** The conflicts read: its window and the files two live sessions both edited. */
 export type Conflicts = { window_min?: number; conflicts?: ConflictFile[] };
 
+/** One reservation as GET /reservations returns it: the path a live session holds, until when. */
+export type ReservationItem = {
+  path: string;
+  holder: string;
+  note?: string;
+  created?: string;
+  expires: string;
+};
+
+/** The reservations read: the live ones, newest first. */
+export type Reservations = { reservations?: ReservationItem[] };
+
+/** The time left on one reservation, the way the list says it: minutes under the hour, then
+ *  hours and minutes, "now" when it lapsed on the way to the paint. */
+export function reservationLeft(expires: string, now: number): string {
+  const ms = Date.parse(expires) - now;
+  if (!Number.isFinite(ms) || ms <= 0) return "now";
+  const min = Math.ceil(ms / 60000);
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} h ${min % 60} min`;
+}
+
 /** The needs banner: N things need you, with the breakdown and the way to the Inbox (ovNeeds). */
 function NeedsBanner({ state, ch, inboxHref }: { state: HuddleState; ch: string; inboxHref: string }) {
   const n = inboxCountOf(state, ch);
@@ -368,6 +390,61 @@ function ConflictsCard({ conf, now }: { conf: Conflicts | null; now: number }): 
   );
 }
 
+/** The reservations card: the paths the channel's sessions hold, who holds each, why, and the
+ *  time left. Live: every reserve.claim and reserve.release event on the stream refetches it. */
+function ReservationsCard({
+  reservations,
+  now,
+}: {
+  reservations: ReservationItem[];
+  now: number;
+}): JSX.Element {
+  return (
+    <Panel
+      icon={<Icon name="file" />}
+      title="Reservations"
+      label="Reservations"
+      meta={<span class="badge badge-ghost badge-sm tnum">{reservations.length}</span>}
+    >
+      <p class="mb-3 text-xs muted">
+        Files the sessions reserved before changing them. A reservation warns, never locks; it lapses or lifts
+        when its holder moves on.
+      </p>
+      <ul class="flex flex-col divide-y divide-base-content/10" aria-label="Reserved files">
+        {reservations.map((r) => (
+          <li
+            key={r.path}
+            class="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:gap-4"
+          >
+            <div class="flex min-w-0 flex-1 items-center gap-2">
+              <span class="c-info ink inline-flex">
+                <Icon name="file" class="size-4" />
+              </span>
+              <code class="truncate text-sm font-medium" title={r.path}>
+                {r.path}
+              </code>
+            </div>
+            <div class="flex shrink-0 items-center gap-3 text-xs muted">
+              <span class="flex items-center gap-1.5">
+                <Avatar name={r.holder} small={true} />
+                <span class="font-medium text-base-content">{r.holder}</span>
+              </span>
+              {r.note ? (
+                <span class="max-w-48 truncate" title={r.note}>
+                  {r.note}
+                </span>
+              ) : null}
+              <time datetime={r.expires} title={`until ${r.expires}`}>
+                {reservationLeft(r.expires, now)} left
+              </time>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
 /** The activity card: the window segment and the events-per-minute chart (app.js overviewView). */
 function ActivityCard({
   state,
@@ -472,8 +549,11 @@ export function Overview({ onCompose, prefs = localStorage, store }: OverviewPro
   const ch = state.ch;
   const [win, setWin] = useState<Win>(() => readPref<Win>(prefs, ch ? `ovwin:${ch}` : "ovwin", "15m"));
   const [conf, setConf] = useState<Conflicts | null>(null);
+  const [res, setRes] = useState<Reservations | null>(null);
   // every live "conflict" push bumps this: the fetch effect reads it as "read again now"
   const [conflictTick, setConflictTick] = useState(0);
+  // every live reserve.* event bumps this, the same way
+  const [reserveTick, setReserveTick] = useState(0);
 
   // a new channel starts from the window this browser kept for it
   useEffect(() => {
@@ -482,8 +562,9 @@ export function Overview({ onCompose, prefs = localStorage, store }: OverviewPro
 
   useEffect(
     () =>
-      store?.subscribe((what) => {
+      store?.subscribe((what, x) => {
         if (what === "conflict") setConflictTick((n) => n + 1);
+        if (what === "event" && isReserveEvent(x)) setReserveTick((n) => n + 1);
       }),
     [store],
   );
@@ -504,11 +585,27 @@ export function Overview({ onCompose, prefs = localStorage, store }: OverviewPro
     };
   }, [api, ch, state.sessions, conflictTick]);
 
+  // the reservations read on the same rhythm, and on every reserve.claim and reserve.release
+  useEffect(() => {
+    if (!ch) return;
+    let on = true;
+    api
+      .api(api.channelPath(ch, "/reservations"))
+      .then((d) => {
+        if (on) setRes(d as Reservations);
+      })
+      .catch(() => {});
+    return () => {
+      on = false;
+    };
+  }, [api, ch, state.sessions, reserveTick]);
+
   if (!ch) return null;
   const v = ovVals(state);
   const t = ovTexts(v);
   const ext = state.extras?.ch === ch ? state.extras : null;
   const conflicts = conf?.conflicts ?? [];
+  const reservations = res?.reservations ?? [];
   const pick = (k: Win): void => {
     writePref(prefs, `ovwin:${ch}`, k);
     setWin(k);
@@ -543,8 +640,17 @@ export function Overview({ onCompose, prefs = localStorage, store }: OverviewPro
       </section>
       {ext?.obs?.available ? <CostCard obs={ext.obs} ch={ch} api={api} /> : null}
       {conflicts.length > 0 ? <ConflictsCard conf={conf} now={now} /> : null}
+      {reservations.length > 0 ? <ReservationsCard reservations={reservations} now={now} /> : null}
       <ActivityCard state={state} win={win} now={now} onWin={pick} />
       <MessagesCard events={state.timeline ?? []} now={now} />
     </div>
   );
+}
+
+/** Whether one store change is a reserve event: the claims and releases the reservations card
+ *  reads again on. */
+function isReserveEvent(x: unknown): boolean {
+  if (typeof x !== "object" || x === null) return false;
+  const topic = (x as { topic?: unknown }).topic;
+  return typeof topic === "string" && topic.startsWith("reserve.");
 }

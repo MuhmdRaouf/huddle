@@ -57,6 +57,10 @@ var helpLines = []string{
 	"  huddle verify <id> [--undo] | share <id>  vouch for an entry · make it one for every channel on this server",
 	"  huddle knowledge export [--verified]    the knowledge as Markdown, grouped by kind, to paste into CLAUDE.md",
 	"  huddle pause|resume <session> [why…] | turn | pass <to> [msg…] | sessions | status | leave [summary…]",
+	"  huddle reserve <path…> [--ttl 60] [--note …]   reserve files you are about to change; others are warned",
+	"                                           before they edit one (never blocked); re-reserving extends",
+	"  huddle release [path…]                   release reservations (all of yours when none are named)",
+	"  huddle reservations [--mine]             the channel's live reservations, newest first",
 	"  huddle map                              the big picture: phases, who does what, the critical path",
 	"  huddle digest [--since 24h]             what happened since then, per session: finished, notes, knowledge,",
 	"                                           blocked, open questions (and the estimated cost when Radar runs)",
@@ -645,6 +649,45 @@ func Huddle(ctx context.Context, w *World, argv []string, stdout, stderr io.Writ
 		return c.op(ctx, "pass", newBody().textAlways("to", to).textAlways("msg", c.rest()))
 	case "leave":
 		return c.op(ctx, "leave", newBody().textAlways("summary", c.rest()))
+	case "reserve":
+		if len(c.pos) == 0 {
+			return c.die("reserve <path…> [--ttl 60] [--note …]", 2)
+		}
+		targets := make([]Target, 0, len(c.pos))
+		for _, given := range c.pos {
+			targets = append(targets, TargetOf(ctx, c.w, given, c.w.dir(), originBudgetMS))
+		}
+		code := 0
+		for _, g := range groupsOf(targets) {
+			args := newBody().rawList("paths", g.Paths)
+			if v, ok := c.opt.text("ttl_minutes"); ok {
+				args.raw("ttl_minutes", jsNumberOrNull(v))
+			} else if v, ok := c.opt.text("ttl"); ok {
+				args.raw("ttl_minutes", jsNumberOrNull(v))
+			}
+			args.flagText(c.opt, "note")
+			if g.Repo != "" {
+				args.textAlways("repo", g.Repo)
+				args.textAlways("root", g.Root)
+			}
+			if got := c.op(ctx, "reserve", args); got != 0 {
+				code = got
+			}
+		}
+		return code
+	case "release":
+		args := newBody()
+		if len(c.pos) > 0 {
+			paths := make([]string, 0, len(c.pos))
+			for _, given := range c.pos {
+				paths = append(paths, resolveIn(c.w.dir(), given))
+			}
+			args.rawList("paths", paths)
+		}
+		return c.op(ctx, "release", args)
+	case "reservations":
+		args := newBody().bool("mine", c.opt.has("mine"))
+		return c.op(ctx, "reservations", args)
 	case "ops":
 		return c.ops(ctx)
 	default:

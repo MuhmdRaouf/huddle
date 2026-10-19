@@ -213,6 +213,7 @@ var opsOrder = []string{
 	"start", "finish", "depend", "handoff", "ask_wait",
 	"remember", "recall", "kb", "verify", "share", "digest",
 	"configure", "import_plan", "approve", "note_edit", "assign", "brief",
+	"reserve", "release", "reservations",
 	"touched",
 }
 
@@ -982,7 +983,61 @@ var ops = map[string]opDef{
 		},
 	},
 
+	// ── reservations: who is about to change what, so two sessions never collide unawares ──
+	"reserve": {
+		desc: "Reserve files you are about to change so other sessions are warned before they edit them. Each path answers held, or taken by <session> until <time> — never blocked; re-reserving your own path extends it. ttl_minutes 1..480 (default 60); note says why. repo (the repository's identity, its normalised origin) with root (the checkout root the paths are under) lets another checkout or machine of the same repository match the same file.",
+		props: jsfmt.Object([]string{"paths", "ttl_minutes", "note", "repo", "root"}, []*jsfmt.Value{
+			arrProp("absolute paths you are about to change"),
+			iProp("1..480; omit it: 60"),
+			sProp("why, shown to whoever reaches a reserved path"),
+			sProp("the repository's identity: its normalised origin, e.g. github.com/org/repo"),
+			sProp("the checkout root the paths are under"),
+		}),
+		required: []string{"paths"},
+		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
+			return Reserve(ctx, c.ch, c.me, ReserveArgs{
+				Paths: argStrs(a, "paths"), TTLMinutes: argIntPtr(a, "ttl_minutes"),
+				Note: argStrPtr(a, "note"), Repo: argStrPtr(a, "repo"), Root: argStrPtr(a, "root"),
+			})
+		},
+		text: reserveText,
+	},
+	"release": {
+		desc: "Release your reservations: the paths named, or all of yours when none are. A leaving session's reservations are released with its leave.",
+		props: jsfmt.Object([]string{"paths"}, []*jsfmt.Value{
+			arrProp("absolute paths to free; omit for all of yours"),
+		}),
+		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
+			return Release(ctx, c.ch, c.me, argStrs(a, "paths"))
+		},
+		text: releaseText,
+	},
+	"reservations": {
+		desc: "The channel's live reservations, newest first: who holds which path, until when, and why.",
+		props: jsfmt.Object([]string{"mine"}, []*jsfmt.Value{
+			bProp("keep yours"),
+		}),
+		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
+			holder := ""
+			if jsTruthy(argOf(a, "mine")) {
+				holder = holderOf(c.me)
+			}
+			return Reservations(ctx, c.ch, holder)
+		},
+		text: reservationsText,
+	},
+
 	// ops the hooks call, not tools an agent sees
+	"reserved": {
+		desc:     "The PreToolUse hook: is this file (or a directory above it) reserved by another live session?",
+		props:    jsfmt.Object([]string{"path", "repo", "rel"}, []*jsfmt.Value{sProp("the absolute path about to be edited"), sProp("the repository's identity, when the file sits in one"), sProp("the path inside that repository")}),
+		required: []string{"path"},
+		hook:     true,
+		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
+			return Reserved(ctx, c.ch, c.me, argStr(a, "path"), argStr(a, "repo"), argStr(a, "rel"))
+		},
+		text: reservedText,
+	},
 	"touched": {
 		desc:     "The PostToolUse hook: this session edited a file (path relative to its repo).",
 		props:    jsfmt.Object([]string{"path", "repo"}, []*jsfmt.Value{sProp(""), sProp("")}),

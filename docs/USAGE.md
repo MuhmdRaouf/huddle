@@ -115,6 +115,30 @@ and knowledge, whatever project each runs in.
 Messages (`huddle send`, `reply`), shared knowledge (`huddle remember`, `recall`) and the whole
 surface live in the huddle skill and `huddle help`.
 
+## Reserve files
+
+Two sessions editing the same file is the usual collision. A session says what it is about to
+change, and every other session in the channel hears it before it edits:
+
+```sh
+huddle reserve internal/huddle/cli internal/huddle/hooks --note "splitting the world type"
+huddle reservations            # the channel's live reservations, newest first
+huddle release internal/huddle/cli            # one path, or no paths for all of yours
+```
+
+- A reservation answers per path: `held`, or `taken by <session> until <time>` — it never blocks.
+  Re-reserving your own path extends it; the default hold is 60 minutes, `--ttl` takes 1 to 480.
+- The MCP tools are the same words: `reserve`, `release`, `reservations` (paths absolute).
+- When a session reaches for a reserved path — a directory reservation covers everything under
+  it — one line in its context names the holder and the moment the hold lapses. Nothing is
+  refused; the line says `huddle send <session>` first.
+- Leaving releases your reservations. A reservation that outlives its session expires on its own.
+- Matching is on absolute paths. When both sessions report the same repository (its normalised
+  origin), the path inside the repository decides, so another checkout or another machine of the
+  same repository is recognised; without an origin, only absolute paths match.
+
+The channel page lists the live reservations with their holder, note and time left.
+
 ## Another machine
 
 Two machines work one board and one hub when they share the repository the board belongs to. A
