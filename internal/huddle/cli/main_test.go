@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/pki"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
@@ -40,7 +41,14 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "building the huddle binary:", err)
 		os.Exit(1)
 	}
+	// Code these tests run in process reads os.Environ: the sandbox keeps it off the owner's home.
+	unsandbox, err := isoenv.Sandbox()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "isoenv:", err)
+		os.Exit(1)
+	}
 	code := m.Run()
+	unsandbox()
 	// os.Exit would skip a defer, so the build dir goes here: the suite must leave no temp behind.
 	os.RemoveAll(dir)
 	os.Exit(code)

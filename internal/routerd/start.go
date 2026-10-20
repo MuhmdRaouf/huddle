@@ -246,6 +246,12 @@ func spawnServe(executable string, env domain.EnvLookup, log *os.File) error {
 // spawnServeArgs runs the daemon detached with extra serve flags — a takeover start passes
 // --takeover, so the new binary takes the running socket over instead of failing on the lock.
 func spawnServeArgs(executable string, env domain.EnvLookup, log *os.File, args ...string) error {
+	// A Go test binary is never the router: started as `router serve` it re-runs its own suite,
+	// detached and with the environment of the test that reached here — on a developer machine,
+	// the owner's real home.
+	if isTestBinary(executable) {
+		return fmt.Errorf("huddle-router: %s is a test binary, not huddle; the daemon is not started", filepath.Base(executable))
+	}
 	argv := append([]string{"router", "serve"}, args...)
 	cmd := exec.Command(executable, argv...)
 	cmd.Env = environ(env)
@@ -266,4 +272,9 @@ func environ(env domain.EnvLookup) []string {
 		out = append(out, name+"="+value)
 	}
 	return out
+}
+
+// isTestBinary says whether an executable is one `go test` built: its name ends in .test.
+func isTestBinary(executable string) bool {
+	return strings.HasSuffix(filepath.Base(executable), ".test")
 }

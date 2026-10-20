@@ -26,6 +26,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 
 	"github.com/MuhmdRaouf/huddle/internal/pki"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // huddleBin is the binary TestMain builds once: the replay suite runs it as a child, with a
@@ -51,7 +52,14 @@ func TestMain(m *testing.M) {
 	}
 	// Run runs the suite and removes the fake claude binary's build dir (the provider e2e compiles
 	// it on first use); this suite's own build dir goes after it: os.Exit would skip a defer.
+	// Code these tests run in process reads os.Environ: the sandbox keeps it off the owner's home.
+	unsandbox, err := isoenv.Sandbox()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "isoenv:", err)
+		os.Exit(1)
+	}
 	code := fakeclaude.Run(m)
+	unsandbox()
 	os.RemoveAll(dir)
 	os.Exit(code)
 }

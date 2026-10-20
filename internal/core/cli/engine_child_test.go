@@ -37,7 +37,15 @@ func TestMain(m *testing.M) {
 	}
 	switch os.Getenv(engineChildEnv) {
 	case "":
-		os.Exit(fakeclaude.Run(m))
+		// Code these tests run in process reads os.Environ: the sandbox keeps it off the owner's home.
+		unsandbox, err := isoenv.Sandbox()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "isoenv:", err)
+			os.Exit(1)
+		}
+		code := fakeclaude.Run(m)
+		unsandbox()
+		os.Exit(code)
 	case "driver":
 		runFakeDriver()
 	case "driver-argv":

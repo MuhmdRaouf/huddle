@@ -13,6 +13,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/providers"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakeclaude"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // Shared helpers for the plugin-directory checks: the repository's plugin dirs, the built huddle
@@ -45,7 +46,14 @@ func TestMain(m *testing.M) {
 	}
 	// Run runs the suite and removes the fake claude binary's build dir (Build compiles it on
 	// first use); this suite's own build dir goes after it: os.Exit would skip a defer.
+	// Code these tests run in process reads os.Environ: the sandbox keeps it off the owner's home.
+	unsandbox, err := isoenv.Sandbox()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "isoenv:", err)
+		os.Exit(1)
+	}
 	code := fakeclaude.Run(m)
+	unsandbox()
 	os.RemoveAll(dir)
 	os.Exit(code)
 }
