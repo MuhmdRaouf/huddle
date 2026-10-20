@@ -23,6 +23,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // The suite re-executes this test binary as the fake opencode (ENGINE_TEST_CHILD names the role),
@@ -133,7 +134,7 @@ func startServerChild(pidFile string) {
 // way the real run did (event shapes recorded from opencode 1.18.34, testdata/engines/opencode).
 func fakeOpenCodeRun() {
 	argv := os.Args[1:]
-	environ := os.Environ()
+	environ := isoenv.Inherited()
 	flags, positionals, ok := fakeParseArgs(argv)
 	if !ok {
 		os.Exit(2)

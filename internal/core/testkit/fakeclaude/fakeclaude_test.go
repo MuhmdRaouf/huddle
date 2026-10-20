@@ -266,6 +266,9 @@ func TestBuildFatalsWhenThePackageCannotBuild(t *testing.T) {
 		return
 	}
 	cmd := exec.Command(os.Args[0], "-test.run", "^TestBuildFatalsWhenThePackageCannotBuild$")
+	// Build-only environment: the subprocess only runs the fake's `go build`, and the toolchain
+	// writes its caches and telemetry under HOME after its caller's cleanup, so it keeps the
+	// machine's own HOME; it never runs huddle.
 	cmd.Env = append(os.Environ(), "FAKE_CLAUDE_TEST_BREAK_BUILD=1")
 	out, err := cmd.CombinedOutput()
 	if err == nil {

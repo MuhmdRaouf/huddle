@@ -18,6 +18,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // hangEnv re-executes this test binary as a hung server (see hangServerChild).
@@ -45,7 +46,7 @@ func hangServerChild() {
 func startHungServer(t *testing.T, home string) int {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=^$")
-	cmd.Env = append(os.Environ(), hangEnv+"=1", "HUDDLE_HOME="+home)
+	cmd.Env = isoenv.Environ(t, t.TempDir(), hangEnv+"=1", "HUDDLE_HOME="+home)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("pipe the hung helper: %v", err)

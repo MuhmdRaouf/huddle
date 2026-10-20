@@ -24,6 +24,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakeclaude"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // providerReport is the change report the fake worker answers with.
@@ -72,31 +73,20 @@ func newProviderJob(t *testing.T, edit, editOnResume, scenario string) *provider
 }
 
 // providerChildEnv is the environment a CLI child runs in: a temp home and Claude config dir, and
-// nothing of the machine's own provider state inherited.
+// nothing of the machine's own provider state inherited. The fake's knobs and the engine's pins
+// are this test's own, so the machine's leftovers of either are filtered out on top of what
+// isoenv already drops.
 func providerChildEnv(t *testing.T, home string) []string {
 	t.Helper()
-	set := map[string]string{
-		"HOME":              home,
-		"TMPDIR":            home,
-		"CLAUDE_CONFIG_DIR": filepath.Join(home, "claude-config"),
+	owns := func(name string) bool {
+		return strings.HasPrefix(name, "FAKE_CLAUDE_") || strings.HasPrefix(name, "PLUGIN_CORE_") ||
+			name == "TEMP" || name == "TMP"
 	}
-	drop := func(name string) bool {
-		switch name {
-		case "HOME", "TMPDIR", "TEMP", "TMP", "CLAUDE_CONFIG_DIR", "AGENTS_HUDDLE_HOME":
-			return true
-		}
-		return strings.HasPrefix(name, "ZAI_") || strings.HasPrefix(name, "PLUGIN_CORE_") ||
-			strings.HasPrefix(name, "FAKE_CLAUDE_")
-	}
-	env := make([]string, 0, len(os.Environ())+len(set))
-	for _, entry := range os.Environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		if !drop(name) {
+	env := make([]string, 0, 40)
+	for _, entry := range isoenv.Environ(t, home, "CLAUDE_CONFIG_DIR="+filepath.Join(home, "claude-config")) {
+		if name, _, _ := strings.Cut(entry, "="); !owns(name) {
 			env = append(env, entry)
 		}
-	}
-	for name, value := range set {
-		env = append(env, name+"="+value)
 	}
 	for name, value := range testkit.ISOLATED_GIT_ENV {
 		env = append(env, name+"="+value)

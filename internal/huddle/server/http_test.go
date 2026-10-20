@@ -18,6 +18,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // The suite's server runs as this binary re-executed in child mode: the real listener, the real
@@ -31,7 +33,7 @@ func runChildServer() {
 		version = "0.0.0"
 	}
 	o := OptionsFromEnv(version, os.Getenv, os.Stdout, os.Stderr, os.Stdin)
-	o.Environ = os.Environ() // the radar tab reads the environment the test pinned
+	o.Environ = isoenv.Inherited() // the radar tab reads the environment the test pinned
 	o.Signals = true
 	_ = Serve(context.Background(), o)
 }
@@ -104,7 +106,7 @@ func tempDir(prefix string) string {
 
 // spawnServer starts one child server with env over the defaults. A value of "" removes the
 // variable (PORT: "" leaves the port unset, so the server draws one).
-func spawnServer(env map[string]string) (*childServer, error) {
+func spawnServer(t testing.TB, env map[string]string) (*childServer, error) {
 	full := map[string]string{
 		"PORT":                "0",
 		"HUDDLE_TEST_VERSION": "9.8.7",
@@ -144,6 +146,14 @@ func spawnServer(env map[string]string) (*childServer, error) {
 		// a coverage-instrumented run keeps the children's counts too
 		childArgs = append(childArgs, "-test.gocoverdir="+dir)
 	}
+	root := full["HOME"]
+	if root == "" {
+		root = tempDir("huddle-home-env-")
+	}
+	entries := make([]string, 0, len(full))
+	for k, v := range full {
+		entries = append(entries, k+"="+v)
+	}
 	srv := &childServer{
 		cmd:       exec.Command(os.Args[0], childArgs...),
 		token:     full["HUDDLE_TOKEN"],
@@ -157,21 +167,7 @@ func spawnServer(env map[string]string) (*childServer, error) {
 		return nil, err
 	}
 	srv.cmd.Stderr = io.Discard
-	environment := []string{}
-	for _, entry := range os.Environ() {
-		name := entry
-		if at := strings.Index(entry, "="); at >= 0 {
-			name = entry[:at]
-		}
-		if _, ours := full[name]; ours {
-			continue
-		}
-		environment = append(environment, entry)
-	}
-	for k, v := range full {
-		environment = append(environment, k+"="+v)
-	}
-	srv.cmd.Env = environment
+	srv.cmd.Env = isoenv.Environ(t, root, entries...)
 	if err := srv.cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -217,7 +213,7 @@ func spawnServer(env map[string]string) (*childServer, error) {
 // startServer spawns a server the test owns; nil env takes the defaults.
 func startServer(t *testing.T, env map[string]string) *childServer {
 	t.Helper()
-	srv, err := spawnServer(env)
+	srv, err := spawnServer(t, env)
 	if err != nil {
 		t.Fatalf("start server: %v", err)
 	}

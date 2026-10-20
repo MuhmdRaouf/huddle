@@ -96,6 +96,8 @@ func freshBuild(t *testing.T, release freshRelease, key string) string {
 		"-ldflags", "-s -w -buildid= -X main.version="+release.version,
 		"-o", out, "./cmd/huddle")
 	build.Dir = freshRoot
+	// Build-only environment: the toolchain's own variables (HOME, GOCACHE, GOPATH) stay, so the
+	// release bytes match the committed manifest; this env never runs huddle itself.
 	build.Env = freshBuildEnv(os.Environ(), goos, goarch)
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build the release binary for %s: %v\n%s", key, err, output)

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // who is what identity() answers in dir with the given variables: the identity plus its home.
@@ -104,7 +105,7 @@ func TestAGitWorktreeOutsideItsRepoSharesTheMainCheckoutsSettingsAndFiles(t *tes
 	if err := os.MkdirAll(filepath.Join(repo, ".agents", "huddle"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	gitEnv := append(os.Environ(),
+	gitEnv := isoenv.Environ(t, base,
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
 		"GIT_CONFIG_GLOBAL=/dev/null")
 	run := func(args ...string) {

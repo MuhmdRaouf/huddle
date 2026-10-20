@@ -15,12 +15,12 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // powerLossChildEnv turns this binary into the group's service child. The names carry the provider
@@ -46,11 +46,7 @@ func runPowerLossServiceChild() {
 	if !service && !passthrough {
 		fail(fmt.Sprintf("power-loss child argv = %v", os.Args))
 	}
-	env := domain.EnvLookup{}
-	for _, entry := range os.Environ() {
-		name, value, _ := strings.Cut(entry, "=")
-		env[name] = value
-	}
+	env := isoenv.Lookup(isoenv.Inherited())
 	if passthrough {
 		resolved := domain.ResolveProvider(processAcme, env)
 		if err := RunEmergency(EmergencyProvider{

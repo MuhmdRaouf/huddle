@@ -24,6 +24,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/engines/shared"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 const childModeEnv = "ENGINE_TEST_CHILD"
@@ -1037,7 +1038,7 @@ func (f *fakeOmp) serve() {
 		writeFakeJSON(path, os.Args[1:])
 	}
 	if path := os.Getenv("FAKE_OMP_ENV_LOG"); path != "" {
-		writeFakeJSON(path, loggedChildEnv(os.Environ()))
+		writeFakeJSON(path, loggedChildEnv(isoenv.Inherited()))
 	}
 	// A resume the session store does not know dies before ready, as the real omp does.
 	if os.Getenv("FAKE_OMP_RESUME_MISSING") == "1" {
@@ -1325,7 +1326,7 @@ func startFake(t *testing.T, fakeEnv map[string]string, options fakeOptions) *Om
 	if err != nil {
 		t.Fatalf("test binary path: %v", err)
 	}
-	env := append(os.Environ(), childModeEnv+"=omp")
+	env := isoenv.Environ(t, t.TempDir(), childModeEnv+"=omp")
 	for name, value := range fakeEnv {
 		env = append(env, name+"="+value)
 	}

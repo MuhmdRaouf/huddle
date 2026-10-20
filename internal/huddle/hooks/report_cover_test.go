@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // coverWorld answers a world whose variables are exactly vars, the way the suite's hook runs
@@ -82,10 +83,10 @@ func TestMachineOfAnswersEmptyWithoutAHomeOrWithABrokenConfig(t *testing.T) {
 // TestEnvironOfFallsBackToTheProcessEnvironment: a world without its own list — or no world —
 // hands the child the process's variables; a world with one hands the child its own.
 func TestEnvironOfFallsBackToTheProcessEnvironment(t *testing.T) {
-	if got := environOf(nil); !sameEnv(got, os.Environ()) {
+	if got := environOf(nil); !sameEnv(got, isoenv.Inherited()) {
 		t.Errorf("environOf(nil) = %v, want the process's environment", got)
 	}
-	if got := environOf(&cli.World{}); !sameEnv(got, os.Environ()) {
+	if got := environOf(&cli.World{}); !sameEnv(got, isoenv.Inherited()) {
 		t.Errorf("environOf of an empty world = %v, want the process's environment", got)
 	}
 	w := &cli.World{Environ: func() []string { return []string{"HOOKS_TEST=1"} }}

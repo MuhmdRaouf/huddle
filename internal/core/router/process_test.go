@@ -29,6 +29,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
@@ -455,7 +456,7 @@ func processSpawnChild(t *testing.T, args ...string) *exec.Cmd {
 		t.Fatal(err)
 	}
 	command := exec.Command(self, args...)
-	command.Env = append(os.Environ(), focusChildEnv+"=hang")
+	command.Env = isoenv.Environ(t, t.TempDir(), focusChildEnv+"=hang")
 	command.Stdout = io.Discard
 	command.Stderr = io.Discard
 	if err := command.Start(); err != nil {
@@ -1861,7 +1862,7 @@ func TestRouterProcessRetiringOnRemove(t *testing.T) {
 			t.Fatal(err)
 		}
 		child := exec.Command(self, "acme", "router", "run")
-		child.Env = append(os.Environ(),
+		child.Env = isoenv.Environ(t, t.TempDir(),
 			focusChildEnv+"=retired",
 			"PROCESS_CHILD_PORT="+strconv.Itoa(s.port),
 			"PROCESS_CHILD_STUBBORN=1",
@@ -1973,7 +1974,7 @@ func TestRouterProcessRetiringOnRemove(t *testing.T) {
 			t.Fatal(err)
 		}
 		child := exec.Command(self, "acme", "router", "run")
-		child.Env = append(os.Environ(),
+		child.Env = isoenv.Environ(t, t.TempDir(),
 			focusChildEnv+"=retired",
 			"PROCESS_CHILD_PORT="+strconv.Itoa(s.port),
 		)

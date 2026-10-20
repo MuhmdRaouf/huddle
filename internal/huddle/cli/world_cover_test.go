@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // TestTheWorldFallsBackToTheProcessForWhatItDoesNotName pins the fallbacks a nil or empty World
@@ -23,7 +24,7 @@ func TestTheWorldFallsBackToTheProcessForWhatItDoesNotName(t *testing.T) {
 	if gone.dir() == "" || gone.bin() == "" {
 		t.Error("dir or bin")
 	}
-	if len(gone.environ()) != len(os.Environ()) {
+	if len(gone.environ()) != len(isoenv.Inherited()) {
 		t.Error("environ")
 	}
 	if gone.proc().Command != nil || gone.proc().ListenOf != nil {

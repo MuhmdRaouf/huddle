@@ -19,6 +19,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // cliWorld is the environment of one throwaway project whose huddle home is home: no url from
@@ -228,9 +229,8 @@ func TestAnExplicit8808StaysARunningServerWithNoSavedPortIsFoundAndItsPortSaved(
 	writeFile(t, filepath.Join(home, "config.toml"), "favourite = \"tea\"\n")
 	port := freePort(t)
 	srv := exec.Command(huddleBin, "serve")
-	srv.Env = append(os.Environ(), fmt.Sprintf("PORT=%d", port), "HOST=127.0.0.1", "HUDDLE_TOKEN=test-root-credential",
-		"HUDDLE_DATA="+filepath.Join(home, "data"), "HUDDLE_HOME="+home, "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir(),
-		"XDG_STATE_HOME="+t.TempDir(), "XDG_DATA_HOME="+t.TempDir())
+	srv.Env = isoenv.Environ(t, t.TempDir(), fmt.Sprintf("PORT=%d", port), "HOST=127.0.0.1", "HUDDLE_TOKEN=test-root-credential",
+		"HUDDLE_DATA="+filepath.Join(home, "data"), "HUDDLE_HOME="+home)
 	logFile, err := os.Create(filepath.Join(t.TempDir(), "child.log"))
 	if err != nil {
 		t.Fatal(err)

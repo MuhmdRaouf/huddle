@@ -21,6 +21,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
@@ -30,25 +31,17 @@ func TestRouterWatchdogE2E(t *testing.T) {
 	routerHome := filepath.Join(root, "router-home")
 	routerPort := ports.Free(t)
 	shim := fakeBrowserShim(t)
-	env := argvLayer(map[string]string{
-		"PATH":                   shim + string(os.PathListSeparator) + os.Getenv("PATH"),
-		"HOME":                   home,
-		"TMPDIR":                 root,
-		"XDG_CONFIG_HOME":        filepath.Join(home, ".config"),
-		"XDG_STATE_HOME":         filepath.Join(home, ".local", "state"),
-		"XDG_DATA_HOME":          filepath.Join(home, ".local", "share"),
-		"XDG_CACHE_HOME":         filepath.Join(home, ".cache"),
-		"RADAR_HOME":             filepath.Join(root, "radar"),
-		"HUDDLE_HOME":            filepath.Join(root, "huddle-home"),
-		"HUDDLE_ROUTER_HOME":     routerHome,
-		"HUDDLE_ROUTER_PORT":     strconv.Itoa(routerPort),
-		"HUDDLE_NO_PROJECT_CRED": "1",
-		"ZAI_API_KEY":            "watchdog-e2e-key",
-	}, nil)
-	lookup := domain.EnvLookup{}
-	for name, value := range env {
-		lookup[name] = value
-	}
+	env := isoenv.Lookup(isoenv.Environ(t, home,
+		"PATH="+shim+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"TMPDIR="+root,
+		"RADAR_HOME="+filepath.Join(root, "radar"),
+		"HUDDLE_HOME="+filepath.Join(root, "huddle-home"),
+		"HUDDLE_ROUTER_HOME="+routerHome,
+		"HUDDLE_ROUTER_PORT="+strconv.Itoa(routerPort),
+		"HUDDLE_NO_PROJECT_CRED=1",
+		"ZAI_API_KEY=watchdog-e2e-key",
+	))
+	lookup := domain.EnvLookup(env)
 	if err := router.SetEnabled(lookup, "zai", true); err != nil {
 		t.Fatal(err)
 	}

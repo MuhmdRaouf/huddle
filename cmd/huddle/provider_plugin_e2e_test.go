@@ -16,15 +16,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // providerLauncherEnv is the environment one launcher run needs: a temp home and Claude config
 // dir, and the huddle binary home the launcher looks its pinned version's binary in.
 func providerLauncherEnv(t *testing.T, home string) []string {
 	t.Helper()
-	return append(
-		os.Environ(),
-		"HOME="+home,
+	return isoenv.Environ(t, home,
 		"CLAUDE_CONFIG_DIR="+filepath.Join(home, "claude-config"),
 		"AGENTS_HUDDLE_HOME="+filepath.Join(home, "huddle-bin"),
 	)

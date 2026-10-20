@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // TestRunningPidMatchesTheServeEntry pins the pid check against the command lines the lookup
@@ -54,10 +56,9 @@ func TestDownStopsTheServerThePidFileNames(t *testing.T) {
 	w := cliWorld(t, home, filepath.Join(t.TempDir(), "state"), nil)
 	port := freePort(t)
 	srv := exec.Command(huddleBin, "serve")
-	srv.Env = append(os.Environ(), fmt.Sprintf("PORT=%d", port), "HOST=127.0.0.1",
+	srv.Env = isoenv.Environ(t, t.TempDir(), fmt.Sprintf("PORT=%d", port), "HOST=127.0.0.1",
 		"HUDDLE_TOKEN=test-root-credential", "HUDDLE_DATA="+filepath.Join(home, "data"),
-		"HUDDLE_HOME="+home, "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir(),
-		"XDG_STATE_HOME="+t.TempDir(), "XDG_DATA_HOME="+t.TempDir())
+		"HUDDLE_HOME="+home)
 	log, err := os.Create(filepath.Join(t.TempDir(), "child.log"))
 	if err != nil {
 		t.Fatal(err)

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakeclaude"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 	"os"
 	"strconv"
 	"strings"
@@ -82,9 +83,8 @@ func writeChildJSON(path string, value any, newline bool) {
 // switch left out.
 func loggedChildEnv() map[string]string {
 	env := map[string]string{}
-	for _, entry := range os.Environ() {
-		name, value, found := strings.Cut(entry, "=")
-		if !found || strings.HasPrefix(name, "FAKE_") || name == engineChildEnv || name == "GOCOVERDIR" {
+	for name, value := range isoenv.Lookup(isoenv.Inherited()) {
+		if strings.HasPrefix(name, "FAKE_") || name == engineChildEnv || name == "GOCOVERDIR" {
 			continue
 		}
 		env[name] = value
@@ -892,13 +892,7 @@ func runFakeZcode(args []string) {
 		writeChildJSON(path, args, false)
 	}
 	if path := os.Getenv("FAKE_ZCODE_ENV_LOG"); path != "" {
-		env := map[string]string{}
-		for _, entry := range os.Environ() {
-			name, value, found := strings.Cut(entry, "=")
-			if found {
-				env[name] = value
-			}
-		}
+		env := isoenv.Lookup(isoenv.Inherited())
 		writeChildJSON(path, env, false)
 	}
 	if os.Getenv("FAKE_ZCODE_HANG") != "" {

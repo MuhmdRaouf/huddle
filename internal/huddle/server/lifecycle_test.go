@@ -43,7 +43,7 @@ func watchedServer(t *testing.T) *childServer {
 	t.Helper()
 	home := tempDir("huddle-gone-")
 	config := tempDir("huddle-gone-cfg-")
-	srv, err := spawnServer(map[string]string{
+	srv, err := spawnServer(t, map[string]string{
 		"HUDDLE_HOME":          home,
 		"HUDDLE_DATA":          "",
 		"CLAUDE_CONFIG_DIR":    config,
@@ -430,7 +430,7 @@ func TestLifecycleRemovalUninstallsTheService(t *testing.T) {
 		t.Fatalf("install the service: %v", err)
 	}
 	config := tempDir("huddle-svc-cfg-")
-	srv, err := spawnServer(map[string]string{
+	srv, err := spawnServer(t, map[string]string{
 		"HUDDLE_HOME":          home,
 		"HUDDLE_DATA":          "",
 		"CLAUDE_CONFIG_DIR":    config,

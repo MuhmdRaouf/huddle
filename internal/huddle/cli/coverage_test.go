@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // TestWorldDefaultsAreTheProcessOwn pins the zero World: it reads the process's variables,
@@ -20,7 +21,7 @@ func TestWorldDefaultsAreTheProcessOwn(t *testing.T) {
 	if w.getenv("PATH") != os.Getenv("PATH") {
 		t.Error("getenv")
 	}
-	if len(w.environ()) != len(os.Environ()) {
+	if len(w.environ()) != len(isoenv.Inherited()) {
 		t.Error("environ")
 	}
 	if w.dir() == "" {

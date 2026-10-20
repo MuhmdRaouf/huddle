@@ -20,6 +20,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters/singleton"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // watchSpy records what one Watch run did.
@@ -150,7 +151,7 @@ func spawnHolder(t *testing.T, lockPath string, ours bool) (int, func() bool, fu
 	// The holder leads its own process group, the way the daemon is spawned, so the
 	// replacement's group signals reach it and nothing else.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Env = append(os.Environ(), holderLockEnv+"="+lockPath)
+	cmd.Env = isoenv.Environ(t, t.TempDir(), holderLockEnv+"="+lockPath)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

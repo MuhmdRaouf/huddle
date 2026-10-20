@@ -26,6 +26,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakeclaude"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 const headlessSessionID = "11111111-2222-4333-8444-555555555555"
@@ -891,11 +892,7 @@ func TestClaudeHeadlessWorkerIntegration(t *testing.T) {
 	t.Run("the key never appears in argv, in logPath or in the fake's dumped argv (fake writes its argv/env names to a file)", func(t *testing.T) {
 		dir := testkit.TempDir(t, "core-worker-")
 		// The real environment of this test run (which may itself be inside Claude Code) plus planted leaks.
-		parentEnv := domain.EnvLookup{}
-		for _, entry := range os.Environ() {
-			name, value, _ := strings.Cut(entry, "=")
-			parentEnv[name] = value
-		}
+		parentEnv := isoenv.Lookup(isoenv.Inherited())
 		for name, value := range headlessParentEnv() {
 			parentEnv[name] = value
 		}

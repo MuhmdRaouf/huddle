@@ -37,6 +37,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // engineChildEnv names the role this binary plays when a test re-executes it as a child.
@@ -137,11 +138,7 @@ type fakeRecord struct {
 func writeFakeRecord(record string, args []string) {
 	promptPath := fakeArgAfter(args, "--attach")
 	prompt, _ := os.ReadFile(promptPath)
-	env := map[string]string{}
-	for _, entry := range os.Environ() {
-		name, value, _ := strings.Cut(entry, "=")
-		env[name] = value
-	}
+	env := isoenv.Lookup(isoenv.Inherited())
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = ""
@@ -173,7 +170,8 @@ func readRecord(t *testing.T, path string) fakeRecord {
 // test's descendant.
 func spawnLingerer(pidFile string) {
 	child := exec.Command(os.Args[0])
-	child.Env = append(os.Environ(), engineChildEnv+"=zcode-linger")
+	// The lingerer inherits what the test parent handed this fake: it holds no env of its own.
+	child.Env = append(isoenv.Inherited(), engineChildEnv+"=zcode-linger")
 	if err := child.Start(); err != nil {
 		return
 	}

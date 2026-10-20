@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 const focusHealth = "/acme-router/health"
@@ -2214,7 +2215,7 @@ func (s *endWorkersDying) Kill(signal string) {
 func hangChild(t *testing.T) *exec.Cmd {
 	t.Helper()
 	command := exec.Command(os.Args[0])
-	command.Env = append(os.Environ(), focusChildEnv+"=hang")
+	command.Env = isoenv.Environ(t, t.TempDir(), focusChildEnv+"=hang")
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -2253,7 +2254,7 @@ func TestFrontFocusedUnixSignals(t *testing.T) {
 
 	t.Run("a child that exits by itself reports its code", func(t *testing.T) {
 		command := exec.Command(os.Args[0])
-		command.Env = append(os.Environ(), focusChildEnv+"=code")
+		command.Env = isoenv.Environ(t, t.TempDir(), focusChildEnv+"=code")
 		if err := command.Start(); err != nil {
 			t.Fatal(err)
 		}

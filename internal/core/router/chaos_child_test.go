@@ -9,9 +9,9 @@ package router
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // chaosChildMode is the TestMain mode of a chaos router child; chaosChildName and chaosChildState
@@ -77,11 +77,7 @@ func runChaosServiceChild() {
 	if !shape && !passthrough {
 		fail(fmt.Sprintf("chaos child argv = %v", os.Args))
 	}
-	env := domain.EnvLookup{}
-	for _, entry := range os.Environ() {
-		name, value, _ := strings.Cut(entry, "=")
-		env[name] = value
-	}
+	env := isoenv.Lookup(isoenv.Inherited())
 	provider := chaosChildProvider()
 	if passthrough {
 		resolved := domain.ResolveProvider(provider, env)

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 func TestStepsRunInOrder(t *testing.T) {
@@ -64,7 +65,7 @@ func TestAStepAfterAFailureIsSkipped(t *testing.T) {
 		return
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestAStepAfterAFailureIsSkipped$", "-test.v")
-	cmd.Env = append(os.Environ(), "BDD_CHILD=1")
+	cmd.Env = isoenv.Environ(t, t.TempDir(), "BDD_CHILD=1")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Errorf("the child exited 0, want non-zero: a failing step must fail the test; output:\n%s", out)

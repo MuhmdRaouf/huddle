@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // devGoCacheEnv pins the build and module caches to the ones the ambient toolchain already filled:
@@ -40,9 +42,9 @@ func devGoCacheEnv(t *testing.T) []string {
 	return env
 }
 
-// devGit runs one git word in dir hermetically: no global or system config, a fixed identity, no
-// signing — the checkout is the test's own.
-func devGit(t *testing.T, dir string, args ...string) string {
+// devGit runs one git word in dir hermetically: a temp home, no global or system config, a fixed
+// identity, no signing — the checkout is the test's own.
+func devGit(t *testing.T, home, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{
 		"-c", "commit.gpgsign=false",
@@ -50,7 +52,7 @@ func devGit(t *testing.T, dir string, args ...string) string {
 		"-c", "user.name=dev",
 	}, args...)...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	cmd.Env = isoenv.Environ(t, home, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
@@ -58,16 +60,16 @@ func devGit(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
-// devMarketplace copies the repository's tracked files into configDir's marketplace path and commits
+// devMarketplace copies the repository's tracked files into the home's marketplace path and commits
 // them — the checkout Claude Code keeps for a marketplace it added — and answers the short commit
 // the launcher's source step names.
-func devMarketplace(t *testing.T, configDir string) string {
+func devMarketplace(t *testing.T, home string) string {
 	t.Helper()
 	out, err := exec.Command("git", "-C", freshRoot, "ls-files", "-z").Output()
 	if err != nil {
 		t.Fatalf("git ls-files: %v", err)
 	}
-	root := filepath.Join(configDir, "plugins", "marketplaces", "muhmdraouf")
+	root := filepath.Join(home, "claude-config", "plugins", "marketplaces", "muhmdraouf")
 	for _, rel := range strings.Split(string(out), "\x00") {
 		if rel == "" {
 			continue
@@ -80,10 +82,10 @@ func devMarketplace(t *testing.T, configDir string) string {
 			t.Fatalf("copy %s: %v", rel, err)
 		}
 	}
-	devGit(t, root, "init", "-q")
-	devGit(t, root, "add", "-A")
-	devGit(t, root, "commit", "-q", "-m", "dev channel")
-	return strings.TrimSpace(devGit(t, root, "rev-parse", "--short=12", "HEAD"))
+	devGit(t, home, root, "init", "-q")
+	devGit(t, home, root, "add", "-A")
+	devGit(t, home, root, "commit", "-q", "-m", "dev channel")
+	return strings.TrimSpace(devGit(t, home, root, "rev-parse", "--short=12", "HEAD"))
 }
 
 // devCopyPlugin copies one provider plugin's dir to a temp one outside the marketplace tree, modes
@@ -124,7 +126,7 @@ func TestDevChannelE2E(t *testing.T) {
 		t.Skip("go is not on PATH: the development channel has no way to build the binary")
 	}
 	home := t.TempDir()
-	commit := devMarketplace(t, filepath.Join(home, "claude-config"))
+	commit := devMarketplace(t, home)
 	pluginDir := devCopyPlugin(t, "zai")
 	launcher := filepath.Join(pluginDir, "dist", "run")
 	env := append(providerLauncherEnv(t, home), "HUDDLE_DOWNLOAD_BASE=http://127.0.0.1:1")

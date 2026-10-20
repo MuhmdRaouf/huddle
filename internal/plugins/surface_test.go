@@ -18,6 +18,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/providers"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // The plugin surface every provider plugin ships, checked the same way for all five: the command
@@ -168,33 +169,14 @@ func openedCalls(t *testing.T, home string) []string {
 // own provider state (its keys, its state dirs, its huddle binary home) inherited.
 func childEnv(t *testing.T, provider domain.Provider, home string) []string {
 	t.Helper()
-	set := map[string]string{
-		"HOME":                            home,
-		"CLAUDE_CONFIG_DIR":               filepath.Join(home, "claude-config"),
-		"PATH":                            browserGuard(t, home) + ":" + os.Getenv("PATH"),
-		provider.EnvPrefix + "_STATE_DIR": filepath.Join(home, "state"),
+	return isoenv.Environ(t, home,
+		"CLAUDE_CONFIG_DIR="+filepath.Join(home, "claude-config"),
+		"PATH="+browserGuard(t, home)+":"+os.Getenv("PATH"),
+		provider.EnvPrefix+"_STATE_DIR="+filepath.Join(home, "state"),
 		// the launcher sits inside this repository: a source root that names no commit keeps it on
 		// the installed binary these tests are about, instead of building the working tree
-		"HUDDLE_SOURCE": filepath.Join(home, "no-source"),
-	}
-	drop := func(name string) bool {
-		switch name {
-		case "HOME", "PATH", "CLAUDE_CONFIG_DIR", "AGENTS_HUDDLE_HOME", "HUDDLE_SOURCE":
-			return true
-		}
-		return strings.HasPrefix(name, provider.EnvPrefix+"_")
-	}
-	env := make([]string, 0, len(os.Environ())+4)
-	for _, entry := range os.Environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		if !drop(name) {
-			env = append(env, entry)
-		}
-	}
-	for name, value := range set {
-		env = append(env, name+"="+value)
-	}
-	return env
+		"HUDDLE_SOURCE="+filepath.Join(home, "no-source"),
+	)
 }
 
 // binaryHelp is one run of the built binary's help: its stdout, the exit code 0 and the empty

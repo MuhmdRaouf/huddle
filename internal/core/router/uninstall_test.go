@@ -27,6 +27,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 const undoRouterURL = "http://127.0.0.1:18787"
@@ -984,11 +985,7 @@ func runServiceChild() {
 		fail(fmt.Sprintf("service child argv = %v", os.Args))
 	}
 	stateRoot := os.Getenv("SERVICE_CHILD_STATE")
-	env := domain.EnvLookup{}
-	for _, entry := range os.Environ() {
-		name, value, _ := strings.Cut(entry, "=")
-		env[name] = value
-	}
+	env := isoenv.Lookup(isoenv.Inherited())
 	self, err := os.Executable()
 	if err != nil {
 		fail("no executable: " + err.Error())

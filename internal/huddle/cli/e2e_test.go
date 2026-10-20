@@ -25,30 +25,20 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
-// e2eBase is a clean child environment: the real one minus every Huddle and Claude variable, so
-// nothing of the real machine's session leaks in, with throwaway homes. The system's tools stay
-// on PATH: the CLI looks its server's pid up with ps, and a stripped PATH would hide it. One
-// state dir serves every session of a test, and no project-wide credential hides a session's own.
+// e2eBase is a clean child environment: nothing of the real machine's session leaks in, with
+// throwaway homes. The system's tools stay on PATH: the CLI looks its server's pid up with ps,
+// and a stripped PATH would hide it. One state dir serves every session of a test, and no
+// project-wide credential hides a session's own.
 func e2eBase(t *testing.T) map[string]string {
 	t.Helper()
-	base := map[string]string{}
-	for _, entry := range os.Environ() {
-		key, value, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(key, "HUDDLE_") || strings.HasPrefix(key, "CLAUDE") {
-			continue
-		}
-		base[key] = value
-	}
-	base["HOME"] = t.TempDir()
-	// the huddle home sits under XDG_CONFIG_HOME: pin it under the throwaway HOME, or a shell
-	// that exports its own would point the runs at the real ~/.config
-	base["XDG_CONFIG_HOME"] = filepath.Join(base["HOME"], ".config")
-	base["XDG_STATE_HOME"] = filepath.Join(t.TempDir(), "state")
-	base["RADAR_HOME"] = filepath.Join(t.TempDir(), "obs")
-	base["HUDDLE_NO_PROJECT_CRED"] = "1"
-	return base
+	home := t.TempDir()
+	return isoenv.Lookup(isoenv.Environ(t, home,
+		"RADAR_HOME="+filepath.Join(t.TempDir(), "obs"),
+		"HUDDLE_NO_PROJECT_CRED=1",
+	))
 }
 
 // e2eEnv layers extra variables over a base.

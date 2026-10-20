@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakeclaude"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // settingsFake is one recording fake upstream the e2e points a lane or Anthropic at.
@@ -114,29 +115,28 @@ func TestRouterSettingsE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	shim := fakeBrowserShim(t)
-	env := argvLayer(map[string]string{
-		"PATH":                        shim + string(os.PathListSeparator) + os.Getenv("PATH"),
-		"HOME":                        home,
-		"TMPDIR":                      root,
-		"XDG_CONFIG_HOME":             filepath.Join(root, "xdg-config"),
-		"XDG_STATE_HOME":              filepath.Join(root, "xdg-state"),
-		"RADAR_HOME":                  filepath.Join(root, "radar"),
-		"HUDDLE_HOME":                 filepath.Join(root, "huddle-home"),
-		"HUDDLE_NO_PROJECT_CRED":      "1",
-		"CLAUDE_CONFIG_DIR":           claudeConfig,
-		"HUDDLE_ROUTER_HOME":          routerHome,
-		"HUDDLE_ROUTER_PORT":          strconv.Itoa(routerPort),
-		"HUDDLE_ROUTER_ANTHROPIC_URL": anthropic.server.URL,
-		"ZAI_ROUTER_URL":              zaiUp.server.URL,
-		"KIMI_ROUTER_URL":             kimiUp.server.URL,
-		"ZAI_API_KEY":                 "zai-settings-e2e-key",
-		"KIMI_API_KEY":                "kimi-settings-e2e-key",
-		"ZAI_STATE_DIR":               filepath.Join(root, "zai-state"),
-		"KIMI_STATE_DIR":              filepath.Join(root, "kimi-state"),
-		"ZAI_CLAUDE_BIN":              fake,
-		"KIMI_CLAUDE_BIN":             fake,
-		"CLAUDE_PLUGIN_ROOT":          fakePluginDir(t),
-	}, nil)
+	env := isoenv.Lookup(isoenv.Environ(t, home,
+		"PATH="+shim+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"TMPDIR="+root,
+		"XDG_CONFIG_HOME="+filepath.Join(root, "xdg-config"),
+		"XDG_STATE_HOME="+filepath.Join(root, "xdg-state"),
+		"RADAR_HOME="+filepath.Join(root, "radar"),
+		"HUDDLE_HOME="+filepath.Join(root, "huddle-home"),
+		"HUDDLE_NO_PROJECT_CRED=1",
+		"CLAUDE_CONFIG_DIR="+claudeConfig,
+		"HUDDLE_ROUTER_HOME="+routerHome,
+		"HUDDLE_ROUTER_PORT="+strconv.Itoa(routerPort),
+		"HUDDLE_ROUTER_ANTHROPIC_URL="+anthropic.server.URL,
+		"ZAI_ROUTER_URL="+zaiUp.server.URL,
+		"KIMI_ROUTER_URL="+kimiUp.server.URL,
+		"ZAI_API_KEY=zai-settings-e2e-key",
+		"KIMI_API_KEY=kimi-settings-e2e-key",
+		"ZAI_STATE_DIR="+filepath.Join(root, "zai-state"),
+		"KIMI_STATE_DIR="+filepath.Join(root, "kimi-state"),
+		"ZAI_CLAUDE_BIN="+fake,
+		"KIMI_CLAUDE_BIN="+fake,
+		"CLAUDE_PLUGIN_ROOT="+fakePluginDir(t),
+	))
 	settingsPath := filepath.Join(claudeConfig, "settings.json")
 	original := "{\n  \"unrelated\": \"keep\"\n}\n"
 	writeSettings := func(t *testing.T) {

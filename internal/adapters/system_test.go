@@ -15,6 +15,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // createSystemClock, createIds and createProcessControl. The tests drive sh children through
@@ -136,7 +137,7 @@ func hostStartGroup(t *testing.T, ignoreTerm bool) (int64, []int64, <-chan proce
 	leader, err := process.StartStreaming(context.Background(), process.StreamCommand{
 		Command: "/bin/sh",
 		Args:    []string{"-c", script},
-		Env:     append(os.Environ(), "PIDS_FILE="+pidsFile),
+		Env:     isoenv.Environ(t, t.TempDir(), "PIDS_FILE="+pidsFile),
 	}, nil)
 	if err != nil {
 		t.Fatalf("start the group leader: %v", err)

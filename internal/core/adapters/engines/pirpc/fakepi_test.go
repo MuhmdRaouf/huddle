@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/engines/shared"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // engineChildEnv names the role this binary plays when a test re-executes it as a child.
@@ -212,8 +213,8 @@ func (p *fakePi) serve() {
 	}
 	if path := os.Getenv("FAKE_PI_ENV_LOG"); path != "" {
 		env := map[string]string{}
-		for _, entry := range os.Environ() {
-			if name, value, found := strings.Cut(entry, "="); found && !strings.HasPrefix(name, "FAKE_") {
+		for name, value := range isoenv.Lookup(isoenv.Inherited()) {
+			if !strings.HasPrefix(name, "FAKE_") {
 				env[name] = value
 			}
 		}

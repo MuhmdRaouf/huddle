@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // The whole server flow through the built huddle binary's kanban word: init,
@@ -42,6 +44,7 @@ type e2e struct {
 	bin       string
 	project   string
 	home      string
+	envHome   string
 	hubHome   string
 	boardDir  string
 	statePath string
@@ -51,7 +54,9 @@ func newE2E(t *testing.T) *e2e {
 	t.Helper()
 	project := t.TempDir()
 	e := &e2e{
-		t: t, bin: buildHuddle(t), project: project, home: t.TempDir(), hubHome: filepath.Join(t.TempDir(), "huddle"),
+		// envHome is the children's HOME, never the kanban home: the child environment's
+		// own tmp dir must not land in the home the tests hold to the end.
+		t: t, bin: buildHuddle(t), project: project, home: t.TempDir(), envHome: t.TempDir(), hubHome: filepath.Join(t.TempDir(), "huddle"),
 		boardDir: filepath.Join(project, ".agents", "kanban"),
 	}
 	return e
@@ -63,7 +68,7 @@ func (e *e2e) run(args ...string) (int, string) {
 	e.t.Helper()
 	cmd := exec.Command(e.bin, append([]string{"kanban"}, args...)...)
 	cmd.Dir = e.project
-	cmd.Env = append(os.Environ(), "KANBAN_HOME="+e.home, "HUDDLE_HOME="+e.hubHome, "KANBAN_NO_OPEN=1")
+	cmd.Env = isoenv.Environ(e.t, e.envHome, "KANBAN_HOME="+e.home, "HUDDLE_HOME="+e.hubHome, "KANBAN_NO_OPEN=1")
 	var out strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -155,7 +160,7 @@ func TestServerEndToEnd(t *testing.T) {
 	// the hand-run foreground server carries the live view
 	serve := exec.Command(e.bin, "kanban", "serve", "--port", "0")
 	serve.Dir = e.project
-	serve.Env = append(os.Environ(), "KANBAN_HOME="+e.home, "KANBAN_NO_OPEN=1")
+	serve.Env = isoenv.Environ(e.t, e.envHome, "KANBAN_HOME="+e.home, "KANBAN_NO_OPEN=1")
 	var serveOut strings.Builder
 	serve.Stdout = &serveOut
 	serve.Stderr = &serveOut

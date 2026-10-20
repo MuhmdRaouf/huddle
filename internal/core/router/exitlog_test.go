@@ -25,6 +25,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // exitLogHealth is the health answer's pids, the processes a case ends and watches.
@@ -316,11 +317,7 @@ func runExitLogChild() {
 	if !starter && !service && !passthrough {
 		fail(fmt.Sprintf("exit-log child argv = %v", os.Args))
 	}
-	env := domain.EnvLookup{}
-	for _, entry := range os.Environ() {
-		name, value, _ := strings.Cut(entry, "=")
-		env[name] = value
-	}
+	env := isoenv.Lookup(isoenv.Inherited())
 	stateRoot := os.Getenv(exitLogChildState)
 	self, err := os.Executable()
 	if err != nil {

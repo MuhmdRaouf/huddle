@@ -11,6 +11,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // testEnv is a whole temp world: HOME, RADAR_HOME, CLAUDE_CONFIG_DIR and ZAI_STATE_DIR all
@@ -93,15 +94,8 @@ func TestPathResolution(t *testing.T) {
 		if got := paths.HistoryPath(t.Context(), e.env); got != filepath.Join(e.state, "history.db") {
 			t.Fatalf("HistoryPath = %q, want %q", got, filepath.Join(e.state, "history.db"))
 		}
-		process := domain.EnvLookup{}
-		for _, entry := range os.Environ() {
-			key, value, _ := strings.Cut(entry, "=")
-			process[key] = value
-		}
-		// A temp home, so the call cannot touch the caller's real state dirs.
-		process["HOME"] = e.home
-		delete(process, "RADAR_HOME")
-		delete(process, "XDG_STATE_HOME")
+		// An environment of the test's own, so the call cannot touch the caller's real state dirs.
+		process := isoenv.Lookup(isoenv.Environ(t, e.home))
 		if got := paths.HistoryPath(t.Context(), process); !strings.HasSuffix(got, "history.db") {
 			t.Fatalf("HistoryPath(process env) = %q, want a path ending in history.db", got)
 		}
