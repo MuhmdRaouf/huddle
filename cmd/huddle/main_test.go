@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakeclaude"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
@@ -48,8 +49,9 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "building the huddle binary:", err)
 		os.Exit(1)
 	}
-	code := m.Run()
-	// os.Exit would skip a defer, so the build dir goes here: the suite must leave no temp behind.
+	// Run runs the suite and removes the fake claude binary's build dir (the provider e2e compiles
+	// it on first use); this suite's own build dir goes after it: os.Exit would skip a defer.
+	code := fakeclaude.Run(m)
 	os.RemoveAll(dir)
 	os.Exit(code)
 }
