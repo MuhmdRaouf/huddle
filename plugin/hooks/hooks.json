@@ -2,7 +2,7 @@
   "hooks": {
     "SessionStart": [
       { "matcher": "startup|resume|clear|compact",
-        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook session-start", "timeout": 10 }] }
+        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook session-start", "timeout": 15 }] }
     ],
     "UserPromptSubmit": [
       { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook user-prompt-submit", "timeout": 5 }] }
@@ -29,7 +29,7 @@
       { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook subagent-start", "timeout": 5 }] }
     ],
     "SubagentStop": [
-      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook subagent-stop", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook subagent-stop", "timeout": 7 }] }
     ],
     "SessionEnd": [
       { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook session-end", "timeout": 5 }] }

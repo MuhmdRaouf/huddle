@@ -737,7 +737,7 @@ describe("the source build", () => {
 });
 
 describe("the provider plugins' dist/run scripts", () => {
-  it("map each provider's four bundles to its provider <p> <entry> words", () => {
+  it("map each provider's three bundles to its provider <p> <entry> words", () => {
     for (const provider of PROVIDERS) {
       const script = launcherScript(providerSpec({ ...RELEASE, sha256: {} }, provider));
       assert.ok(
@@ -748,7 +748,6 @@ describe("the provider plugins' dist/run scripts", () => {
         [`${provider}.js`, "cli"],
         [`${provider}-router.js`, "router"],
         [`${provider}-passthrough.js`, "passthrough"],
-        [`${provider}-ensure.js`, "ensure"],
       ];
       for (const [bundle, entry] of wanted) {
         assert.ok(script.includes(`  ${bundle}) entry=${entry} ;;`), `${provider}: ${bundle} maps to ${entry}`);
@@ -771,7 +770,6 @@ describe("the provider plugins' dist/run scripts", () => {
           await run([`${provider}-passthrough.js`]),
           ran(0, `huddle provider ${provider} passthrough\n`, ""),
         );
-        assert.deepEqual(await run([`${provider}-ensure.js`]), ran(0, `huddle provider ${provider} ensure\n`, ""));
       });
     }
   });
@@ -785,7 +783,7 @@ describe("the provider plugins' dist/run scripts", () => {
   });
 
   it("treat any --hook argument as a hook: exit 0 at once, one detached download lands the binary", async (t) => {
-    for (const args of [["zai-ensure.js", "--hook"], ["zai.js", "board", "--hook"]]) {
+    for (const args of [["zai.js", "setup", "--hook"], ["zai.js", "board", "--hook"]]) {
       await t.test(args.join(" ") + " returns at once", async (t) => {
         const { binHome, run, lock } = rig(t, info(), [], undefined, providerFlavour("zai"));
         const { base, urls } = await assetServer(t, asset("huddle"));
@@ -801,7 +799,7 @@ describe("the provider plugins' dist/run scripts", () => {
         const second = await run(args, { HUDDLE_DOWNLOAD_BASE: base });
         assert.deepEqual(
           second,
-          ran(0, `huddle provider zai ${args[0] === "zai.js" ? "cli board" : "ensure"} --hook\n`, ""),
+          ran(0, `huddle provider zai cli ${args[1]} --hook\n`, ""),
         );
         assert.deepEqual(urls, [`/v9.9.9/huddle-${OS}-${ARCH}`]);
       });

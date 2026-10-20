@@ -3,6 +3,7 @@ package plugins
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -285,11 +286,11 @@ func TestPluginSurface(t *testing.T) {
 				newSurface(t, name).checkInvocations(provider, synopsis)
 			})
 			t.Run("every CLAUDE_PLUGIN_ROOT reference is the quoted launcher starting "+
-				provider.Name+".js, "+provider.Name+"-router.js or "+provider.Name+"-ensure.js", func(t *testing.T) {
+				provider.Name+".js or "+provider.Name+"-router.js", func(t *testing.T) {
 				newSurface(t, name).checkLauncherReferences(provider)
 			})
-			t.Run("hooks.json: SessionStart re-applies the setup (15 s) then runs board --hook (5 s); "+
-				"every prompt, tool call and subagent start runs ensure (3 s)", func(t *testing.T) {
+			t.Run("ships no hooks: huddle's hooks.json runs the session start, the subagent stop and "+
+				"the ensure work for every provider", func(t *testing.T) {
 				newSurface(t, name).checkHooks(provider)
 			})
 			t.Run("setup.md always asks what to set up: built-in only, or built-in plus the tools it then asks for", func(t *testing.T) {
@@ -628,7 +629,7 @@ func (s *surface) checkInvocations(provider domain.Provider, synopsis map[string
 func (s *surface) checkLauncherReferences(provider domain.Provider) {
 	references := regexp.MustCompile(`\$\{?CLAUDE_PLUGIN_ROOT\}?`)
 	canonical := regexp.MustCompile(`"` + regexp.QuoteMeta("${CLAUDE_PLUGIN_ROOT}") + `/dist/run" ` +
-		regexp.QuoteMeta(provider.Name) + `(-router|-ensure)?\.js`)
+		regexp.QuoteMeta(provider.Name) + `(-router)?\.js`)
 	total := 0
 	for _, file := range s.allSurfaceFiles() {
 		text := s.surfaceText(file)
@@ -697,53 +698,24 @@ func jsonKeys(t *testing.T, text, field string) []string {
 	}
 }
 
-// ensureHook is the hook every prompt, tool call and subagent start runs.
-func ensureHook(provider domain.Provider) hookEntry {
-	return hookEntry{Type: "command",
-		Command: `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" ` + provider.Name + `-ensure.js --hook`, Timeout: 3}
-}
-
-// checkHooks is hooks.json's whole shape.
+// checkHooks is what the plugin ships instead of hooks of its own: no hooks directory — huddle's
+// merged hooks.json covers the session start, the subagent stop and the ensure work for every
+// provider plugin.
 func (s *surface) checkHooks(provider domain.Provider) {
-	raw := s.read("hooks/hooks.json")
+	if _, err := os.Stat(filepath.Join(s.dir, "hooks")); err == nil {
+		s.t.Errorf("the plugin ships a hooks directory, want none: huddle's hooks run the providers' work")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		s.t.Errorf("stat the hooks directory: %v", err)
+	}
+	raw := readFile(s.t, filepath.Join(repoRoot, "plugin", "hooks", "hooks.json"))
 	var hooks hooksDocument
 	decodeStrictJSON(s.t, raw, &hooks)
 	events := jsonKeys(s.t, raw, "hooks")
-	wantEvents := []string{"SessionStart", "UserPromptSubmit", "SubagentStart", "PreToolUse", "SubagentStop"}
-	if !slices.Equal(events, wantEvents) {
-		s.t.Errorf("hook events = %v, want %v", events, wantEvents)
-	}
-	sessionStart := []hookEntry{
-		{Type: "command", Command: `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" ` + provider.Name + ".js setup --hook", Timeout: 15},
-		{Type: "command", Command: `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" ` + provider.Name + ".js board --hook", Timeout: 5},
-	}
-	if got := flatten(hooks.Hooks["SessionStart"]); !reflect.DeepEqual(got, sessionStart) {
-		s.t.Errorf("SessionStart = %v, want %v", got, sessionStart)
-	}
-	for _, event := range []string{"UserPromptSubmit", "SubagentStart", "PreToolUse"} {
-		want := []hookEntry{ensureHook(provider)}
-		// A turn's next tool call brings a router that died mid-turn back (the session watchdog
-		// covers the gap between hooks).
-		if got := flatten(hooks.Hooks[event]); !reflect.DeepEqual(got, want) {
-			s.t.Errorf("%s = %v, want %v", event, got, want)
+	for _, event := range []string{"SessionStart", "SubagentStop"} {
+		if !slices.Contains(events, event) {
+			s.t.Errorf("huddle's hooks.json serves %v, want an entry for %s", events, event)
 		}
 	}
-	// After a model agent: one line for the user on what it ran on, inside a 2 s timeout (the hook
-	// aims under 1 s).
-	want := []hookEntry{{Type: "command",
-		Command: `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" ` + provider.Name + ".js usage --hook", Timeout: 2}}
-	if got := flatten(hooks.Hooks["SubagentStop"]); !reflect.DeepEqual(got, want) {
-		s.t.Errorf("SubagentStop = %v, want %v", got, want)
-	}
-}
-
-// flatten is one event's hooks, groups flattened in order.
-func flatten(groups []hookGroup) []hookEntry {
-	var entries []hookEntry
-	for _, group := range groups {
-		entries = append(entries, group.Hooks...)
-	}
-	return entries
 }
 
 // checkSetupMenu is setup.md: the questions and the lines it must carry.

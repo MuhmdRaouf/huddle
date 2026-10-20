@@ -23,7 +23,6 @@ case "$bundle" in
   deepseek.js) entry=cli ;;
   deepseek-router.js) entry=router ;;
   deepseek-passthrough.js) entry=passthrough ;;
-  deepseek-ensure.js) entry=ensure ;;
   *)
     echo "deepseek: unknown bundle $bundle" >&2
     exit 2

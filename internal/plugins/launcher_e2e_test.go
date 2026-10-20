@@ -149,7 +149,7 @@ func checkLauncherRunsBinary(t *testing.T, provider domain.Provider, pluginDir, 
 }
 
 // checkDistHoldsTheLauncher is fresh-install's first check: dist/ holds the executable launcher
-// and nothing else, and every hook command runs it.
+// and nothing else. The plugin ships no hooks; huddle's merged hooks run its hook work.
 func checkDistHoldsTheLauncher(t *testing.T, provider domain.Provider, pluginDir string) {
 	t.Helper()
 	entries, err := os.ReadDir(filepath.Join(pluginDir, "dist"))
@@ -169,16 +169,6 @@ func checkDistHoldsTheLauncher(t *testing.T, provider domain.Provider, pluginDir
 	}
 	if info.Mode().Perm()&0o111 == 0 {
 		t.Errorf("dist/run is not executable: %v", info.Mode())
-	}
-	hookCommand := regexp.MustCompile(`^sh "\$\{CLAUDE_PLUGIN_ROOT\}/dist/run" [a-z-]+\.js `)
-	var hooks hooksDocument
-	decodeStrictJSON(t, readFile(t, filepath.Join(pluginDir, "hooks", "hooks.json")), &hooks)
-	for event, groups := range hooks.Hooks {
-		for _, command := range flatten(groups) {
-			if !hookCommand.MatchString(command.Command) {
-				t.Errorf("%s: hook command %q does not run the launcher", event, command.Command)
-			}
-		}
 	}
 }
 

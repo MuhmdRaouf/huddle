@@ -23,7 +23,6 @@ case "$bundle" in
   zai.js) entry=cli ;;
   zai-router.js) entry=router ;;
   zai-passthrough.js) entry=passthrough ;;
-  zai-ensure.js) entry=ensure ;;
   *)
     echo "zai: unknown bundle $bundle" >&2
     exit 2

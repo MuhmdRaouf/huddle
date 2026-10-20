@@ -23,7 +23,6 @@ case "$bundle" in
   qwen.js) entry=cli ;;
   qwen-router.js) entry=router ;;
   qwen-passthrough.js) entry=passthrough ;;
-  qwen-ensure.js) entry=ensure ;;
   *)
     echo "qwen: unknown bundle $bundle" >&2
     exit 2

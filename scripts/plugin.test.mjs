@@ -25,7 +25,7 @@ const runLine = (...words) => `sh "\${CLAUDE_PLUGIN_ROOT}/dist/run" ${words.join
  *  own lines: the two hooks that answer Claude Code, not only observe it. Each event line keeps
  *  the largest timeout its parts had, each decision line its own. */
 const HOOK_LINES = [
-  { event: "SessionStart", matcher: "startup|resume|clear|compact", name: "session-start", timeout: 10 },
+  { event: "SessionStart", matcher: "startup|resume|clear|compact", name: "session-start", timeout: 15 },
   { event: "UserPromptSubmit", name: "user-prompt-submit", timeout: 5 },
   { event: "PreToolUse", matcher: "Bash", name: "approve", timeout: 5 },
   { event: "PreToolUse", name: "pre-tool-use", timeout: 5 },
@@ -35,7 +35,7 @@ const HOOK_LINES = [
   { event: "PermissionRequest", name: "permission-request", timeout: 5 },
   { event: "Stop", name: "stop", timeout: 15 },
   { event: "SubagentStart", name: "subagent-start", timeout: 5 },
-  { event: "SubagentStop", name: "subagent-stop", timeout: 5 },
+  { event: "SubagentStop", name: "subagent-stop", timeout: 7 },
   { event: "SessionEnd", name: "session-end", timeout: 5 },
   { event: "PreCompact", name: "pre-compact", timeout: 5 },
 ];
@@ -52,8 +52,8 @@ const COMMANDS = {
 /** The one-line description each hub command's front matter carries. */
 const HUB_DESCRIPTIONS = {
   open: "Ensure the hub is running and print its dashboard URL (Hub, Radar and Kanban tabs)",
-  status: "One table: hub, radar, board server, gateway; running or not, address",
-  stop: "Stop the hub, radar and the board server this user started",
+  status: "One table: hub, radar, gateway; running or not, address",
+  stop: "Stop the hub; radar and the boards are served by it",
 };
 
 /** The launcher lines one hub command runs, in order. */

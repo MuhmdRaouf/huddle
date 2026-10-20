@@ -144,7 +144,7 @@ Once routed:
 
 - Picking a GLM model sends its requests through the router to Z.ai.
 - Every `claude-*` model still goes to Anthropic untouched.
-- A session-start hook re-applies all of it after a plugin update, falling back to Sonnet when the router is down or
+- The huddle plugin's session hook re-applies all of it after a plugin update, falling back to Sonnet when the router is down or
   the key is gone.
 
 ### Turning it off and uninstalling
@@ -172,7 +172,7 @@ launcher (see [Commands](#commands)).
    - `zai:glm-5.3` for the rename: it edits, runs the tests itself, and reports what changed;
    - `zai:glm-5.3-flash` when you only asked which calls exist.
 3. Watch both on `/zai:board`; see what they cost on `/zai:usage`.
-4. When an agent finishes, a hook tells you which model it really ran on and what it cost.
+4. When an agent finishes, the huddle plugin's subagent hook tells you which model it really ran on and what it cost.
 
 For changes that must pass gates with automatic fix rounds and a verified landing, submit a job on the CLI instead
 (`zai run <brief.md> --bg`, see [The job loop (CLI)](#the-job-loop-cli)).
@@ -194,7 +194,7 @@ For changes that must pass gates with automatic fix rounds and a verified landin
 - When a change should stay out of your working tree until you review it, run `zai:glm-5.3` with
   `isolation: "worktree"`.
 
-When an agent stops, a `SubagentStop` hook reads the agent's own transcript and shows you one line: the model that
+When an agent stops, the huddle plugin's `SubagentStop` hook reads the agent's own transcript and shows you one line: the model that
 answered, its tokens and its estimated cost. If it ran on a Claude model, because the router was down or setup never
 ran, the line says how to fix that.
 
@@ -241,8 +241,8 @@ Claude Code sends every model request to one address, so the agents can only run
   answer 503, saying what to run).
 - If the router cannot start at all, an emergency passthrough takes the port instead.
 - Updates swap the worker without closing the port.
-- Hooks before every prompt and every subagent bring a router that died back before the next request. When no router
-  of this plugin can hold the port, they take its proxy keys (or the base URL) out of `settings.json`.
+- The router daemon restarts a dead worker itself. When no router
+  of this plugin can hold the port, the session hook takes its proxy keys (or the base URL) out of `settings.json`.
 
 ### Key and balance errors
 
@@ -267,7 +267,7 @@ that quotes it is blanked out first.
   its entries out of `settings.json`, puts the agents' models back and retires the same way, then removes its files
   and exits once the sessions from before have closed.
 - Disabling the plugin does the same, and enabling it again re-applies the setup at the next session start.
-- When jobs are waiting for review, a session-start hook prints one line about them.
+- When jobs are waiting for review, the huddle plugin's session hook prints one line about them.
 
 ## Commands
 
@@ -629,7 +629,7 @@ How to run many jobs:
 The state directory is the first of these that applies, created with mode 0700:
 
 1. `ZAI_STATE_DIR`, when set;
-2. `~/.agents/zai` — one root for hooks, commands and the router. `CLAUDE_PLUGIN_DATA` never picks it,
+2. `~/.agents/zai` — one root for commands, huddle's hooks and the router. `CLAUDE_PLUGIN_DATA` never picks it,
    and state an older build left in `~/.local/state/zai` or the plugin's own data dir moves over once.
 
 ## Troubleshooting
@@ -690,15 +690,14 @@ The job engine is the plugin-core binary (Go, `packages/core`). Its main parts:
 - `internal/render/` and `internal/cli/`: output and the command line.
 
 zai itself is only its data and assets: the `Provider` value its tests read (`test/provider.ts`) and the
-plugin's commands, agents, hooks and launcher.
+plugin's commands, agents and launcher.
 
 ### Tests
 
 - Tests run with Vitest and need no network and no key.
 - The engine's own suites live in `packages/core`, including real git repositories, the router chaos suite and a
   fake `claude` binary.
-- Each plugin's tests check its provider data, the plugin surface every provider plugin shares (commands, agents,
-  hooks) and its launcher, with a bundle smoke test and a fresh-install suite, both on the plugin-core binary.
+- Each plugin's tests check its provider data, the plugin surface every provider plugin shares (commands, agents) and its launcher, with a bundle smoke test and a fresh-install suite, both on the plugin-core binary.
 - See [ARCHITECTURE.md](../../packages/core/ARCHITECTURE.md) for the design in depth.
 
 ## License

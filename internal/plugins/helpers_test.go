@@ -180,10 +180,10 @@ func (s *surface) commandFiles() []string {
 	return append(s.markdownFiles("commands"), s.markdownFiles("commands/setup")...)
 }
 
-// allSurfaceFiles is every file a user-facing surface lives on: the agents, the commands and the
-// hooks file.
+// allSurfaceFiles is every file a user-facing surface lives on: the agents and the commands. The
+// plugins ship no hooks file; huddle's merged hooks run their work.
 func (s *surface) allSurfaceFiles() []string {
-	return append(s.markdownFiles("agents"), append(s.commandFiles(), "hooks/hooks.json")...)
+	return append(s.markdownFiles("agents"), s.commandFiles()...)
 }
 
 // frontMatterOf is one markdown file's front matter, failing the test when the file has none.

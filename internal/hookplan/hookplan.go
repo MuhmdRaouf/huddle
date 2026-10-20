@@ -26,6 +26,9 @@ func Events() map[string][]Part {
 			{"report", 1900 * time.Millisecond},
 			{"radar", 1600 * time.Millisecond},
 			{"kanban", 2500 * time.Millisecond},
+			// The five provider plugins' session-start work in one pass; a cold daemon start
+			// takes what the start itself budgets (4 s).
+			{"providers", 4000 * time.Millisecond},
 		},
 		"user-prompt-submit": {
 			{"listen", 2600 * time.Millisecond},
@@ -58,6 +61,8 @@ func Events() map[string][]Part {
 		"subagent-stop": {
 			{"report", 1900 * time.Millisecond},
 			{"radar", 2600 * time.Millisecond},
+			// The providers' what-did-this-agent-run-on line, the five in one pass.
+			{"usage", 1500 * time.Millisecond},
 		},
 		"session-end": {
 			{"report", 1900 * time.Millisecond},

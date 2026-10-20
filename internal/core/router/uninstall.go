@@ -136,6 +136,37 @@ func PluginPresence(name string, configDir string, marker *string, read ReadText
 	return PresenceDisabled
 }
 
+// PluginInstallPath is the first install path Claude Code's installed_plugins.json records for
+// `<name>-plugin-cc@<marketplace>`: the installed plugin's directory, where its dist bundles and
+// agents sit. "" when the file names none.
+func PluginInstallPath(name string, configDir string, read ReadText) string {
+	if read == nil {
+		read = readText
+	}
+	installed := parseObjectOf(read(filepath.Join(configDir, "plugins", "installed_plugins.json")))
+	if installed == nil {
+		return ""
+	}
+	plugins := installed
+	if value := installed.get("plugins"); value != nil && value.kind != jsonNull {
+		plugins = parseObjectOf(marshalNode(value), true)
+		if plugins == nil {
+			return ""
+		}
+	}
+	for _, key := range plugins.keys {
+		if !strings.HasPrefix(key, name+"-plugin-cc@") {
+			continue
+		}
+		for _, install := range installsOf(plugins.get(key)) {
+			if path := nodeText(install.get("installPath")); path != "" {
+				return path
+			}
+		}
+	}
+	return ""
+}
+
 // installsOf is one plugin key's installs, each as an object (a malformed one counts as a
 // user-scope install).
 func installsOf(value *jsonNode) []*jsonNode {

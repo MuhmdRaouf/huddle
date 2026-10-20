@@ -154,7 +154,7 @@ func TestProviderPluginLauncherE2E(t *testing.T) {
 		}
 	})
 
-	t.Run("the ensure bundle as a hook exits 0 at once and prints nothing with no binary", func(t *testing.T) {
+	t.Run("a hook line exits 0 at once and prints nothing with no binary", func(t *testing.T) {
 		home := t.TempDir()
 		// Registered after t.TempDir(), so the detached worker is waited out before the temp dir
 		// is removed.
@@ -171,7 +171,7 @@ func TestProviderPluginLauncherE2E(t *testing.T) {
 		env = append(env, "HUDDLE_SOURCE="+source)
 
 		started := time.Now()
-		output, code, err := providerLauncherRun(t, launcher, env, "zai-ensure.js", "--hook")
+		output, code, err := providerLauncherRun(t, launcher, env, "zai.js", "setup", "--hook")
 		if err != nil {
 			t.Fatalf("run the launcher: %v", err)
 		}

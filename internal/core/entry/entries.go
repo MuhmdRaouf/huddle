@@ -206,9 +206,9 @@ func passthroughEntry(name string, args []string) int {
 	return 0
 }
 
-// ensureEntry is the UserPromptSubmit and SubagentStart hook's check that the daemon is still
-// there: a provider recorded in providers.json gets the probe and the detached start, never
-// waited for. It never prints and always exits 0.
+// ensureEntry is the ensure bundle's check that the daemon is still there: a provider recorded in
+// providers.json gets the probe and the detached start, never waited for. It never prints and
+// always exits 0.
 func ensureEntry(name string, _ []string) int {
 	if provider, ok := providerOf(name); ok {
 		routerd.Wake(context.Background(), routerd.StartOptions{

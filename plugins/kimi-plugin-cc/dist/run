@@ -23,7 +23,6 @@ case "$bundle" in
   kimi.js) entry=cli ;;
   kimi-router.js) entry=router ;;
   kimi-passthrough.js) entry=passthrough ;;
-  kimi-ensure.js) entry=ensure ;;
   *)
     echo "kimi: unknown bundle $bundle" >&2
     exit 2

@@ -236,7 +236,7 @@ func (UsageCommand) Hidden() bool { return false }
 
 func (UsageCommand) Run(ctx context.Context, call Invocation) (ExitCode, error) {
 	if call.Flag("hook") {
-		return AgentStopHook(ctx, call, ReadStdinWithin(hookStdinMs, os.Stdin)), nil
+		return AgentStopHook(ctx, call.Deps(), []byte(ReadStdinWithin(hookStdinMs, os.Stdin))), nil
 	}
 	deps := call.Deps()
 	events := app.UsageEvents(deps)
@@ -382,15 +382,14 @@ func usageJSON(
 
 // AgentStopHook is the SubagentStop hook (`usage --hook`, input JSON on stdin): one
 // systemMessage for the user about what a model agent ran on, or nothing. Never an error, always
-// exit 0.
-func AgentStopHook(ctx context.Context, call Invocation, stdin string) (code ExitCode) {
+// exit 0. It takes the payload read, so huddle's merged hook can run it in process per provider.
+func AgentStopHook(ctx context.Context, deps app.Deps, payload []byte) (code ExitCode) {
 	defer func() {
 		// A hook never disturbs the session: bad input, a missing transcript, anything, is silence.
 		_ = recover()
 	}()
-	deps := call.Deps()
 	provider := deps.Provider
-	input, err := parseAgentStopInput(stdin)
+	input, err := parseAgentStopInput(string(payload))
 	if err != nil {
 		return ExitOK
 	}

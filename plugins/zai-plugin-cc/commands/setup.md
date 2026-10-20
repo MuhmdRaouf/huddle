@@ -65,7 +65,8 @@ Plain `setup` needs no flags. What it does:
 - Without a key it opens the key page described above and waits for it; otherwise it asks nothing.
 - It checks the key with one minimal request to Z.ai.
 - It starts the zai router: a small background process the plugin starts and repairs itself. Each session's huddle
-  MCP server checks huddle-router every 2 s and restarts it after 5 s of silence.
+  MCP server checks huddle-router every 2 s and restarts it after 5 s of silence. The huddle plugin's session hook
+  re-applies the setup after a plugin update.
 - It adds GLM 5.3 and GLM 5.3 Flash to `/model` next to Sonnet and Opus, and points Claude Code at the router.
 - Picking one of them in `/model` sends those requests through the router to Z.ai. Every `claude-*` model still goes
   to Anthropic untouched, also while the router restarts or updates itself.
@@ -79,7 +80,7 @@ The report leads with the outcome:
   the fix the line names.
 
 If Claude ever can't connect: when part of the router fails, it passes Claude's requests straight to Anthropic, and
-the session hooks take the proxy keys (or the base URL) off a router that cannot come back. Removing the
+the huddle plugin's session hook takes the proxy keys (or the base URL) off a router that cannot come back. Removing the
 `env.HTTPS_PROXY` and `env.NODE_EXTRA_CA_CERTS` entries from `~/.claude/settings.json` (or restoring
 `~/.claude/settings.json.zai-backup`) always restores direct Anthropic access.
 
@@ -90,8 +91,8 @@ while the sessions that still use it are open, and removes its own files once th
 `/zai:remove` (`setup --remove`) undoes all of it: the agents go back to the models they had before setup (as the ledger
 recorded them), the `/model` entries and the proxy keys go away (or the base URL, when a proxy of the user's own
 kept base-URL mode), and the router retires: sessions already open keep
-working through it until they close. A session-start hook re-applies the setup after a
-plugin update overwrote it, falling back to Sonnet when the router is down or the key is gone.
+working through it until they close. The huddle plugin's session hook re-applies the setup after a
+plugin update overwrites it, falling back to Sonnet when the router is down or the key is gone.
 
 If it exits 6, give the fixes above and stop here: set up no tool and run nothing else.
 
