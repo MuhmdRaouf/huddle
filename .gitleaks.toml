@@ -70,19 +70,19 @@ paths = ['''^web/radar/test/redact\.test\.ts$''']
 description = "huddle: the fake key the test kit's TEST_KEY holds (a key no real provider issues; the file lives only in history)"
 condition = "AND"
 regexes = ['''^zt-SECRET\.key_0123456789abcdef$''']
-paths = ['''^internal/testkit/fake_keystore\.go$''']
+paths = ['''^internal/(core/)?testkit/fake_keystore\.go$''']
 
 [[allowlists]]
 description = "huddle: the fake Z.ai key the headless worker tests handed their fake workers (history only)"
 condition = "AND"
 regexes = ['''^zai-test-key-0123456789abcdef$''']
-paths = ['''^internal/adapters/claude_headless_test\.go$''']
+paths = ['''^internal/(core/)?adapters/claude_headless_test\.go$''']
 
 [[allowlists]]
 description = "huddle: the keystore file tests' second throwaway key (history only)"
 condition = "AND"
 regexes = ['''^zt-OTHER\.key_9876543210fedcba$''']
-paths = ['''^internal/adapters/keystore/file_test\.go$''']
+paths = ['''^internal/(core/)?adapters/keystore/file_test\.go$''']
 
 [[allowlists]]
 description = "huddle: the fake board keys and hub key the kanban and satellite flow tests serve from their fake hubs"
@@ -93,3 +93,15 @@ paths = [
   '''^internal/huddle/satellite/flow_test\.go$''',
   '''^internal/huddle/server/satflow_test\.go$''',
 ]
+
+[[allowlists]]
+description = "core: the fake Z.ai key the router's error-reason tests prove gets redacted"
+condition = "AND"
+regexes = ['''^sk\-zai\-9f2c88d4a1b34e6f8d7c5b3a2e1f0d9c8b7a6f5e$''']
+paths = ['''^internal/core/router/router_test\.go$''']
+
+[[allowlists]]
+description = "core: a test child's heartbeat interval, which the generic key rule reads as a key"
+condition = "AND"
+regexes = ['''^FRONT_FOCUS_CHILD_HB=20$''']
+paths = ['''^internal/core/router/front_test\.go$''']
