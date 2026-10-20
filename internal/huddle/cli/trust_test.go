@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // fakeTrustStore counts the installs and removals and can refuse either.

@@ -20,8 +20,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/localca"
 	"github.com/MuhmdRaouf/huddle/internal/netproxy"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // connect serves one CONNECT. Browsers cannot send CONNECT, so the front's Host check (a
@@ -62,7 +62,7 @@ func (f *Front) connect(w http.ResponseWriter, req *http.Request) {
 	client := &bufferedConn{Conn: conn, front: rw.Reader}
 	// Only api.anthropic.com on its real port is decrypted; the same name on any other port is a
 	// blind tunnel like every other host.
-	if f.options.CADir != "" && number == 443 && strings.EqualFold(host, localca.Host) {
+	if f.options.CADir != "" && number == 443 && strings.EqualFold(host, pki.RouterHost) {
 		if _, err := f.leafFor(); err == nil {
 			f.serveDecrypted(client)
 			return
@@ -205,7 +205,7 @@ func (f *Front) leafFor() (*tls.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
-	leaf, err := ca.Leaf(localca.Host, now)
+	leaf, err := ca.Leaf(pki.RouterHost, now)
 	if err != nil {
 		return nil, err
 	}
@@ -216,14 +216,14 @@ func (f *Front) leafFor() (*tls.Certificate, error) {
 // caFor is the front's local CA, loaded once and kept. A load that failed is kept too and retried
 // after a minute, and one line per failure episode goes to the router log — not one per request.
 // Called with f.mu held.
-func (f *Front) caFor(now time.Time) (*localca.CA, error) {
+func (f *Front) caFor(now time.Time) (*pki.RouterCA, error) {
 	if f.ca != nil {
 		return f.ca, nil
 	}
 	if f.caErr != nil && now.Sub(f.caAt) < time.Minute {
 		return nil, f.caErr
 	}
-	ca, err := localca.LoadOrCreate(context.Background(), f.options.CADir, now)
+	ca, err := pki.LoadOrCreateRouterCA(context.Background(), f.options.CADir, now)
 	if err != nil {
 		if !f.caLogged {
 			f.caLogged = true

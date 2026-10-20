@@ -24,7 +24,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 
-	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // huddleBin is the binary TestMain builds once: the replay suite runs it as a child, with a

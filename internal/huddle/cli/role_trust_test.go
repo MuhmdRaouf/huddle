@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
-	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // trustPoolWorld answers a role world whose system pool holds exactly the roots named.

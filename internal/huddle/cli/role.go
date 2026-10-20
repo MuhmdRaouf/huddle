@@ -17,7 +17,7 @@ import (
 	"strconv"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
-	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // hubNameRe is the shape a hub's own name takes: a domain-style word, never a bare address — a

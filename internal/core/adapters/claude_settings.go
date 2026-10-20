@@ -23,9 +23,9 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/fsutil"
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/localca"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // ClaudeConfigDir is Claude Code's config dir: $CLAUDE_CONFIG_DIR (an empty one counts as unset),
@@ -104,7 +104,7 @@ func proxyCAPath(ctx context.Context, dir string) (string, *string) {
 	if dir == "" {
 		return "", nil
 	}
-	ca, err := localca.LoadOrCreate(ctx, dir, time.Now())
+	ca, err := pki.LoadOrCreateRouterCA(ctx, dir, time.Now())
 	if err != nil {
 		note := fmt.Sprintf("the local CA is unusable (%s): routing keeps ANTHROPIC_BASE_URL", err)
 		return "", &note

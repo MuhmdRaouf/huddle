@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // mintRoot answers a fresh local-CA root in one temp directory, the way the hub listener and the

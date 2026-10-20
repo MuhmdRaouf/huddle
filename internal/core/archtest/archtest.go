@@ -6,7 +6,10 @@ import (
 	"strings"
 )
 
-const modulePath = "github.com/MuhmdRaouf/huddle/internal/core"
+const (
+	modulePath = "github.com/MuhmdRaouf/huddle/internal/core"
+	moduleRoot = "github.com/MuhmdRaouf/huddle"
+)
 
 type Layer string
 
@@ -68,6 +71,13 @@ var domainThirdParty = []string{
 	"github.com/bmatcuk/doublestar/v4",
 }
 
+// outside lists the module's packages that live outside the engine root, named relative to the
+// module root, with the layer each counts as. They are never walked, so they appear only as
+// imports.
+var outside = map[string]Layer{
+	"internal/pki": LayerAdapters,
+}
+
 // classify maps a slash package directory, relative to the engine root (internal/core), to its
 // layer.
 func classify(dir string) (Layer, bool) {
@@ -124,6 +134,13 @@ func allowed(f FileImports, imp string) bool {
 		}
 		return contains(allowedLayers[f.Layer], layer)
 	}
+	if rel, ok := modulePackage(imp); ok {
+		layer, ok := outside[rel]
+		if !ok {
+			return false
+		}
+		return contains(allowedLayers[f.Layer], layer)
+	}
 	if isStandard(imp) {
 		return true
 	}
@@ -141,13 +158,22 @@ func allowed(f FileImports, imp string) bool {
 	return false
 }
 
-// internalPackage strips the module prefix, returning the package's directory
-// relative to the module root.
+// internalPackage strips the engine prefix, returning the package's directory
+// relative to the engine root.
 func internalPackage(imp string) (string, bool) {
 	if !strings.HasPrefix(imp, modulePath+"/") {
 		return "", false
 	}
 	return strings.TrimPrefix(imp, modulePath+"/"), true
+}
+
+// modulePackage strips the module root prefix, returning the package's
+// directory relative to the module root.
+func modulePackage(imp string) (string, bool) {
+	if !strings.HasPrefix(imp, moduleRoot+"/") {
+		return "", false
+	}
+	return strings.TrimPrefix(imp, moduleRoot+"/"), true
 }
 
 // isStandard reports whether the import path is in the standard library:

@@ -18,6 +18,10 @@ func mp(segments ...string) string {
 	return modulePath + "/" + strings.Join(segments, "/")
 }
 
+func mr(segments ...string) string {
+	return moduleRoot + "/" + strings.Join(segments, "/")
+}
+
 func TestCheckReportsEveryViolation(t *testing.T) {
 	files := []FileImports{
 		// Every layer's allowed imports, module-internal and third-party.
@@ -38,6 +42,10 @@ func TestCheckReportsEveryViolation(t *testing.T) {
 		{File: "internal/router/router.go", Layer: LayerRouter, Imports: []string{
 			mp("domain/b"), mp("ports"), mp("adapters/c"), mp("router"),
 		}},
+		// The module's packages outside the engine root count as the layer outside lists them
+		// under: internal/pki is the adapters layer, so the router and adapters may import it.
+		{File: "internal/router/connect.go", Layer: LayerRouter, Imports: []string{mr("internal/pki")}},
+		{File: "internal/adapters/claude_settings.go", Layer: LayerAdapters, Imports: []string{mr("internal/pki")}},
 		{File: "internal/providers/providers.go", Layer: LayerProviders, Imports: []string{mp("domain/b")}},
 		{File: "internal/cli/cli.go", Layer: LayerCli, Imports: []string{
 			mp("domain/b"), mp("ports"), mp("app"), mp("adapters/c"),
@@ -77,6 +85,8 @@ func TestCheckReportsEveryViolation(t *testing.T) {
 		{File: "bad/domain_sys.go", Layer: LayerDomain, Imports: []string{"golang.org/x/sys/unix"}},
 		{File: "bad/domain_unknown.go", Layer: LayerDomain, Imports: []string{"github.com/spf13/cobra"}},
 		{File: "bad/domain_router.go", Layer: LayerDomain, Imports: []string{mp("router")}},
+		{File: "bad/domain_pki.go", Layer: LayerDomain, Imports: []string{mr("internal/pki")}},
+		{File: "bad/adapters_outside.go", Layer: LayerAdapters, Imports: []string{mr("internal/radar/hook")}},
 		{File: "bad/adapters_thirdparty.go", Layer: LayerAdapters, Imports: []string{"github.com/spf13/cobra"}},
 		{File: "bad/archtest_domain.go", Layer: LayerArchtest, Imports: []string{mp("domain/b")}},
 		{File: "bad/scripts_domain.go", Layer: LayerScripts, Imports: []string{mp("domain/b")}},
@@ -104,6 +114,8 @@ func TestCheckReportsEveryViolation(t *testing.T) {
 		"bad/domain_sys.go: domain must not import golang.org/x/sys/unix",
 		"bad/domain_unknown.go: domain must not import github.com/spf13/cobra",
 		"bad/domain_router.go: domain must not import " + mp("router"),
+		"bad/domain_pki.go: domain must not import " + mr("internal/pki"),
+		"bad/adapters_outside.go: adapters must not import " + mr("internal/radar/hook"),
 		"bad/adapters_thirdparty.go: adapters must not import github.com/spf13/cobra",
 		"bad/archtest_domain.go: archtest must not import " + mp("domain/b"),
 		"bad/scripts_domain.go: scripts must not import " + mp("domain/b"),

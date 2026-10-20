@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
-	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // statusWorld is one `huddle cert` status run's world: a temp hub home, the pool the trust check

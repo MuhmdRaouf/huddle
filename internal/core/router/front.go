@@ -37,8 +37,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/localca"
 	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // FrontVersion is the front's protocol: its control endpoints and the worker IPC. A running front
@@ -323,7 +323,7 @@ type Front struct {
 	// The HTTPS proxy's certificate state, guarded by mu (connect.go): the local CA, the leaf it
 	// signed for api.anthropic.com, and the last load attempt — its error, when it ran and whether
 	// the failure is already in the log.
-	ca           *localca.CA
+	ca           *pki.RouterCA
 	caErr        error
 	caAt         time.Time
 	caLogged     bool

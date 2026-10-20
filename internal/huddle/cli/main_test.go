@@ -13,7 +13,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 
-	"github.com/MuhmdRaouf/huddle/internal/huddle/pki"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // huddleBin is the huddle binary TestMain builds once: the servers the tests start run it with

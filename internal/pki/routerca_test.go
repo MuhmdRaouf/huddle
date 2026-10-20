@@ -1,4 +1,4 @@
-package localca_test
+package pki_test
 
 import (
 	"context"
@@ -13,16 +13,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/localca"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 var now = time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
 
-func load(t *testing.T, dir string) *localca.CA {
+func routerCALoad(t *testing.T, dir string) *pki.RouterCA {
 	t.Helper()
-	ca, err := localca.LoadOrCreate(context.Background(), dir, now)
+	ca, err := pki.LoadOrCreateRouterCA(context.Background(), dir, now)
 	if err != nil {
-		t.Fatalf("LoadOrCreate: %v", err)
+		t.Fatalf("LoadOrCreateRouterCA: %v", err)
 	}
 	return ca
 }
@@ -38,7 +38,7 @@ func mode(t *testing.T, path string) os.FileMode {
 
 func TestCreatesThePrivateKeyOwnerOnlyAndTheCertificateReadable(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "ca")
-	ca := load(t, dir)
+	ca := routerCALoad(t, dir)
 	if got := mode(t, dir); got != 0o700 {
 		t.Errorf("dir mode %o, want 700", got)
 	}
@@ -56,7 +56,7 @@ func TestCreatesThePrivateKeyOwnerOnlyAndTheCertificateReadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(pem) != string(ca.CertPEM()) {
-		t.Error("ca.pem does not hold the CA certificate")
+		t.Error("ca.pem does not hold the RouterCA certificate")
 	}
 	for _, word := range []string{"PRIVATE KEY"} {
 		if contains(pem, word) {
@@ -79,12 +79,12 @@ func indexOf(s, sub string) int {
 }
 
 func TestTheCaCanSignOnlyTheAnthropicApiHost(t *testing.T) {
-	ca := load(t, t.TempDir())
+	ca := routerCALoad(t, t.TempDir())
 	cert := ca.Certificate()
 	if !cert.IsCA || !cert.PermittedDNSDomainsCritical {
 		t.Fatalf("IsCA=%v critical=%v", cert.IsCA, cert.PermittedDNSDomainsCritical)
 	}
-	if len(cert.PermittedDNSDomains) != 1 || cert.PermittedDNSDomains[0] != localca.Host {
+	if len(cert.PermittedDNSDomains) != 1 || cert.PermittedDNSDomains[0] != pki.RouterHost {
 		t.Fatalf("permitted %v", cert.PermittedDNSDomains)
 	}
 	if _, err := ca.Leaf("evil.example.com", now); err == nil {
@@ -93,15 +93,15 @@ func TestTheCaCanSignOnlyTheAnthropicApiHost(t *testing.T) {
 }
 
 func TestTheLeafVerifiesAgainstTheCaForTheApiHostOnly(t *testing.T) {
-	ca := load(t, t.TempDir())
-	leaf, err := ca.Leaf(localca.Host, now)
+	ca := routerCALoad(t, t.TempDir())
+	leaf, err := ca.Leaf(pki.RouterHost, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(ca.Certificate())
 	cert := leaf.Leaf
-	if _, err := cert.Verify(x509.VerifyOptions{DNSName: localca.Host, Roots: roots, CurrentTime: now}); err != nil {
+	if _, err := cert.Verify(x509.VerifyOptions{DNSName: pki.RouterHost, Roots: roots, CurrentTime: now}); err != nil {
 		t.Fatalf("leaf does not verify: %v", err)
 	}
 	if _, err := cert.Verify(x509.VerifyOptions{DNSName: "claude.ai", Roots: roots, CurrentTime: now}); err == nil {
@@ -113,8 +113,8 @@ func TestTheLeafVerifiesAgainstTheCaForTheApiHostOnly(t *testing.T) {
 }
 
 func TestTheLeafServesATlsHandshake(t *testing.T) {
-	ca := load(t, t.TempDir())
-	leaf, err := ca.Leaf(localca.Host, time.Now())
+	ca := routerCALoad(t, t.TempDir())
+	leaf, err := ca.Leaf(pki.RouterHost, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestTheLeafServesATlsHandshake(t *testing.T) {
 			c.Close()
 		}
 	}()
-	c, err := tls.Dial("tcp", ln.Addr().String(), &tls.Config{RootCAs: roots, ServerName: localca.Host})
+	c, err := tls.Dial("tcp", ln.Addr().String(), &tls.Config{RootCAs: roots, ServerName: pki.RouterHost})
 	if err != nil {
 		t.Fatalf("handshake: %v", err)
 	}
@@ -141,10 +141,10 @@ func TestTheLeafServesATlsHandshake(t *testing.T) {
 
 func TestASecondLoadReturnsTheSameCa(t *testing.T) {
 	dir := t.TempDir()
-	first := load(t, dir)
-	second := load(t, dir)
+	first := routerCALoad(t, dir)
+	second := routerCALoad(t, dir)
 	if string(first.CertPEM()) != string(second.CertPEM()) {
-		t.Fatal("a second load made a new CA")
+		t.Fatal("a second load made a new RouterCA")
 	}
 }
 
@@ -157,7 +157,7 @@ func TestConcurrentRoutersAgreeOnOneCa(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ca, err := localca.LoadOrCreate(context.Background(), dir, now)
+			ca, err := pki.LoadOrCreateRouterCA(context.Background(), dir, now)
 			errs[i] = err
 			if err == nil {
 				pems[i] = string(ca.CertPEM())
@@ -170,7 +170,7 @@ func TestConcurrentRoutersAgreeOnOneCa(t *testing.T) {
 			t.Fatalf("router %d: %v", i, errs[i])
 		}
 		if pems[i] != pems[0] {
-			t.Fatalf("router %d got a different CA", i)
+			t.Fatalf("router %d got a different RouterCA", i)
 		}
 	}
 	entries, _ := os.ReadDir(dir)
@@ -185,27 +185,27 @@ func TestConcurrentRoutersAgreeOnOneCa(t *testing.T) {
 
 func TestRefusesAKeyOthersCanRead(t *testing.T) {
 	dir := t.TempDir()
-	load(t, dir)
+	routerCALoad(t, dir)
 	if err := os.Chmod(filepath.Join(dir, "ca.key"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := localca.LoadOrCreate(context.Background(), dir, now)
-	var insecure *localca.InsecureError
+	_, err := pki.LoadOrCreateRouterCA(context.Background(), dir, now)
+	var insecure *pki.RouterCAInsecureError
 	if !errors.As(err, &insecure) {
-		t.Fatalf("err = %v, want InsecureError", err)
+		t.Fatalf("err = %v, want RouterCAInsecureError", err)
 	}
 }
 
 func TestRefusesADirectoryOthersCanWrite(t *testing.T) {
 	dir := t.TempDir()
-	load(t, dir)
+	routerCALoad(t, dir)
 	if err := os.Chmod(dir, 0o777); err != nil {
 		t.Fatal(err)
 	}
-	_, err := localca.LoadOrCreate(context.Background(), dir, now)
-	var insecure *localca.InsecureError
+	_, err := pki.LoadOrCreateRouterCA(context.Background(), dir, now)
+	var insecure *pki.RouterCAInsecureError
 	if !errors.As(err, &insecure) {
-		t.Fatalf("err = %v, want InsecureError", err)
+		t.Fatalf("err = %v, want RouterCAInsecureError", err)
 	}
 }
 
@@ -214,27 +214,27 @@ func TestRefusesAKeyFileThatIsNotACa(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "ca.key"), []byte("not pem"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := localca.LoadOrCreate(context.Background(), dir, now)
-	var invalid *localca.InvalidError
+	_, err := pki.LoadOrCreateRouterCA(context.Background(), dir, now)
+	var invalid *pki.RouterCAInvalidError
 	if !errors.As(err, &invalid) {
-		t.Fatalf("err = %v, want InvalidError", err)
+		t.Fatalf("err = %v, want RouterCAInvalidError", err)
 	}
 }
 
 func TestRewritesAMissingOrChangedCertificateFile(t *testing.T) {
 	dir := t.TempDir()
-	ca := load(t, dir)
+	ca := routerCALoad(t, dir)
 	pemPath := filepath.Join(dir, "ca.pem")
 	if err := os.WriteFile(pemPath, []byte("tampered"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	load(t, dir)
+	routerCALoad(t, dir)
 	got, _ := os.ReadFile(pemPath)
 	if string(got) != string(ca.CertPEM()) {
 		t.Fatal("ca.pem was not restored from the key file")
 	}
 	os.Remove(pemPath)
-	load(t, dir)
+	routerCALoad(t, dir)
 	if _, err := os.Stat(pemPath); err != nil {
 		t.Fatal("ca.pem was not recreated")
 	}
@@ -242,23 +242,23 @@ func TestRewritesAMissingOrChangedCertificateFile(t *testing.T) {
 
 func TestReplacesAnExpiredCa(t *testing.T) {
 	dir := t.TempDir()
-	old := load(t, dir)
+	old := routerCALoad(t, dir)
 	later := old.Certificate().NotAfter.Add(time.Hour)
-	fresh, err := localca.LoadOrCreate(context.Background(), dir, later)
+	fresh, err := pki.LoadOrCreateRouterCA(context.Background(), dir, later)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(fresh.CertPEM()) == string(old.CertPEM()) {
-		t.Fatal("an expired CA was kept")
+		t.Fatal("an expired RouterCA was kept")
 	}
 	if fresh.Certificate().NotAfter.Before(later) {
-		t.Fatal("the new CA is already expired")
+		t.Fatal("the new RouterCA is already expired")
 	}
 }
 
 func TestRefusesASymlinkedKey(t *testing.T) {
 	dir := t.TempDir()
-	load(t, dir)
+	routerCALoad(t, dir)
 	key := filepath.Join(dir, "ca.key")
 	if err := os.Rename(key, filepath.Join(dir, "real.key")); err != nil {
 		t.Fatal(err)
@@ -266,27 +266,27 @@ func TestRefusesASymlinkedKey(t *testing.T) {
 	if err := os.Symlink(filepath.Join(dir, "real.key"), key); err != nil {
 		t.Fatal(err)
 	}
-	_, err := localca.LoadOrCreate(context.Background(), dir, now)
-	var insecure *localca.InsecureError
+	_, err := pki.LoadOrCreateRouterCA(context.Background(), dir, now)
+	var insecure *pki.RouterCAInsecureError
 	if !errors.As(err, &insecure) || insecure.Error() == "" {
-		t.Fatalf("err = %v, want InsecureError", err)
+		t.Fatalf("err = %v, want RouterCAInsecureError", err)
 	}
 }
 
 func TestRefusesKeyFilesThatAreNotThisCa(t *testing.T) {
 	other := t.TempDir()
-	load(t, other)
+	routerCALoad(t, other)
 	otherKey, _ := os.ReadFile(filepath.Join(other, "ca.key"))
 	keyOnly := otherKey[:indexOf(string(otherKey), "-----BEGIN CERTIFICATE-----")]
 	certOnly := otherKey[len(keyOnly):]
 	mine := t.TempDir()
-	load(t, mine)
+	routerCALoad(t, mine)
 	mineKey, _ := os.ReadFile(filepath.Join(mine, "ca.key"))
 	mineKeyOnly := mineKey[:indexOf(string(mineKey), "-----BEGIN CERTIFICATE-----")]
 	cases := map[string][]byte{
 		"key without certificate": keyOnly,
 		"certificate first":       append(append([]byte{}, certOnly...), keyOnly...),
-		"key of another CA":       append(append([]byte{}, mineKeyOnly...), certOnly...),
+		"key of another RouterCA": append(append([]byte{}, mineKeyOnly...), certOnly...),
 		"bad key bytes":           []byte("-----BEGIN EC PRIVATE KEY-----\nAAAA\n-----END EC PRIVATE KEY-----\n"),
 		"bad certificate bytes": append(append([]byte{}, keyOnly...),
 			[]byte("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n")...),
@@ -297,10 +297,10 @@ func TestRefusesKeyFilesThatAreNotThisCa(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "ca.key"), data, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			_, err := localca.LoadOrCreate(context.Background(), dir, now)
-			var invalid *localca.InvalidError
+			_, err := pki.LoadOrCreateRouterCA(context.Background(), dir, now)
+			var invalid *pki.RouterCAInvalidError
 			if !errors.As(err, &invalid) || invalid.Error() == "" {
-				t.Fatalf("err = %v, want InvalidError", err)
+				t.Fatalf("err = %v, want RouterCAInvalidError", err)
 			}
 		})
 	}
@@ -308,8 +308,8 @@ func TestRefusesKeyFilesThatAreNotThisCa(t *testing.T) {
 
 func TestRefusesACertificateThatIsNotAConstrainedCa(t *testing.T) {
 	dir := t.TempDir()
-	ca := load(t, dir)
-	leaf, err := ca.Leaf(localca.Host, now)
+	ca := routerCALoad(t, dir)
+	leaf, err := ca.Leaf(pki.RouterHost, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,17 +322,17 @@ func TestRefusesACertificateThatIsNotAConstrainedCa(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "ca.key"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = localca.LoadOrCreate(context.Background(), dir, now)
-	var invalid *localca.InvalidError
+	_, err = pki.LoadOrCreateRouterCA(context.Background(), dir, now)
+	var invalid *pki.RouterCAInvalidError
 	if !errors.As(err, &invalid) {
-		t.Fatalf("err = %v, want InvalidError", err)
+		t.Fatalf("err = %v, want RouterCAInvalidError", err)
 	}
 }
 
 func TestStopsOnACancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := localca.LoadOrCreate(ctx, t.TempDir(), now); !errors.Is(err, context.Canceled) {
+	if _, err := pki.LoadOrCreateRouterCA(ctx, t.TempDir(), now); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -340,7 +340,7 @@ func TestStopsOnACancelledContext(t *testing.T) {
 func TestReportsADirectoryItCannotWrite(t *testing.T) {
 	parent := t.TempDir()
 	dir := filepath.Join(parent, "ca")
-	load(t, dir)
+	routerCALoad(t, dir)
 	if err := os.Remove(filepath.Join(dir, "ca.pem")); err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +348,7 @@ func TestReportsADirectoryItCannotWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0o700) })
-	if _, err := localca.LoadOrCreate(context.Background(), dir, now); err == nil {
+	if _, err := pki.LoadOrCreateRouterCA(context.Background(), dir, now); err == nil {
 		t.Fatal("restored ca.pem in a read-only directory")
 	}
 	empty := filepath.Join(parent, "empty")
@@ -356,34 +356,34 @@ func TestReportsADirectoryItCannotWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(empty, 0o700) })
-	if _, err := localca.LoadOrCreate(context.Background(), empty, now); err == nil {
-		t.Fatal("created a CA in a read-only directory")
+	if _, err := pki.LoadOrCreateRouterCA(context.Background(), empty, now); err == nil {
+		t.Fatal("created a RouterCA in a read-only directory")
 	}
-	if _, err := localca.LoadOrCreate(context.Background(), filepath.Join(empty, "sub"), now); err == nil {
+	if _, err := pki.LoadOrCreateRouterCA(context.Background(), filepath.Join(empty, "sub"), now); err == nil {
 		t.Fatal("created a directory under a read-only one")
 	}
 }
 
 func TestReportsAnExpiredCaItCannotReplace(t *testing.T) {
 	dir := t.TempDir()
-	old := load(t, dir)
+	old := routerCALoad(t, dir)
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0o700) })
-	if _, err := localca.LoadOrCreate(context.Background(), dir, old.Certificate().NotAfter); err == nil {
-		t.Fatal("replaced a CA in a read-only directory")
+	if _, err := pki.LoadOrCreateRouterCA(context.Background(), dir, old.Certificate().NotAfter); err == nil {
+		t.Fatal("replaced a RouterCA in a read-only directory")
 	}
 }
 
 func TestTheLastLeafEndsWithTheCa(t *testing.T) {
-	ca := load(t, t.TempDir())
+	ca := routerCALoad(t, t.TempDir())
 	end := ca.Certificate().NotAfter
-	leaf, err := ca.Leaf(localca.Host, end.Add(-time.Hour))
+	leaf, err := ca.Leaf(pki.RouterHost, end.Add(-time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !leaf.Leaf.NotAfter.Equal(end) {
-		t.Fatalf("leaf ends %v, CA ends %v", leaf.Leaf.NotAfter, end)
+		t.Fatalf("leaf ends %v, RouterCA ends %v", leaf.Leaf.NotAfter, end)
 	}
 }

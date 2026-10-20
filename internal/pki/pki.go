@@ -1,9 +1,12 @@
-// Huddle's local CA: the answer for HTTPS on a local name no public certificate authority will
-// serve. The hub keeps its own root (10-year life) under the home's pki/, signs a short-lived
-// intermediate (7 days) with it, and issues the hub listener's leaf certificates (12 hours) from
-// the intermediate — the shape Caddy's internal CA settled on. Each certificate is renewed once
-// two thirds of its life is gone. Only this package reads root.key, and the root is never
-// replaced: a machine that trusted it once keeps trusting the same key.
+// Huddle's local CAs. This package holds two, and their roots never meet: the hub's local CA is
+// the answer for HTTPS on a local name no public certificate authority will serve — the hub keeps
+// its own root (10-year life) under the home's pki/, signs a short-lived intermediate (7 days)
+// with it, and issues the hub listener's leaf certificates (12 hours) from the intermediate, the
+// shape Caddy's internal CA settled on — while the router's CA (routerca.go) stands in for
+// api.anthropic.com behind the HTTPS proxy and is trusted only through NODE_EXTRA_CA_CERTS, never
+// through a trust store. Each certificate is renewed once two thirds of its life is gone. Only
+// this package reads root.key, and the root is never replaced: a machine that trusted it once
+// keeps trusting the same key.
 package pki
 
 import (

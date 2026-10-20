@@ -1,10 +1,10 @@
-// Package localca keeps the per-user certificate authority that lets a provider router stand in for
-// api.anthropic.com when Claude Code reaches it through HTTPS_PROXY. Claude Code trusts the CA only through
+// The router's certificate authority: it lets a provider router stand in for api.anthropic.com
+// when Claude Code reaches it through HTTPS_PROXY. Claude Code trusts this CA only through
 // NODE_EXTRA_CA_CERTS in its settings; it is never added to a system trust store.
 //
 // The CA carries a critical name constraint for api.anthropic.com, so even a leaked key cannot sign a
 // certificate any client accepts for another host.
-package localca
+package pki
 
 import (
 	"bytes"
@@ -19,52 +19,55 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"math/big"
 	"os"
 	"path/filepath"
 	"syscall"
 	"time"
 )
 
-// Host is the one name the CA signs for.
-const Host = "api.anthropic.com"
+// RouterHost is the one name the router CA signs for.
+const RouterHost = "api.anthropic.com"
 
 const (
-	keyFile  = "ca.key"
-	certFile = "ca.pem"
-	caLife   = 10 * 365 * 24 * time.Hour
-	leafLife = 7 * 24 * time.Hour
+	routerCAKeyFile  = "ca.key"
+	routerCACertFile = "ca.pem"
+	routerCACALife   = 10 * 365 * 24 * time.Hour
+	routerCALeafLife = 7 * 24 * time.Hour
 	// A CA this close to expiry is replaced, so no leaf outlives it.
-	renewBefore = leafLife + 24*time.Hour
+	routerCARenewBefore = routerCALeafLife + 24*time.Hour
 )
 
-// CA is a loaded certificate authority.
-type CA struct {
+// RouterCA is a loaded certificate authority.
+type RouterCA struct {
 	cert     *x509.Certificate
 	certPEM  []byte
 	key      *ecdsa.PrivateKey
 	certPath string
 }
 
-// InsecureError means the CA's files can be read or replaced by another user; the CA is not used.
-type InsecureError struct {
+// RouterCAInsecureError means the CA's files can be read or replaced by another user; the CA is not used.
+type RouterCAInsecureError struct {
 	Path   string
 	Reason string
 }
 
-func (e *InsecureError) Error() string { return fmt.Sprintf("local CA %s: %s", e.Path, e.Reason) }
+func (e *RouterCAInsecureError) Error() string {
+	return fmt.Sprintf("local CA %s: %s", e.Path, e.Reason)
+}
 
-// InvalidError means ca.key does not hold a CA this package made.
-type InvalidError struct {
+// RouterCAInvalidError means ca.key does not hold a CA this package made.
+type RouterCAInvalidError struct {
 	Path   string
 	Reason string
 }
 
-func (e *InvalidError) Error() string { return fmt.Sprintf("local CA %s: %s", e.Path, e.Reason) }
+func (e *RouterCAInvalidError) Error() string {
+	return fmt.Sprintf("local CA %s: %s", e.Path, e.Reason)
+}
 
-// LoadOrCreate returns the CA kept in dir, creating it on first use. Five routers may call it at once: the
+// LoadOrCreateRouterCA returns the CA kept in dir, creating it on first use. Five routers may call it at once: the
 // first to link its ca.key wins and the others load that one.
-func LoadOrCreate(ctx context.Context, dir string, now time.Time) (*CA, error) {
+func LoadOrCreateRouterCA(ctx context.Context, dir string, now time.Time) (*RouterCA, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -74,20 +77,20 @@ func LoadOrCreate(ctx context.Context, dir string, now time.Time) (*CA, error) {
 	if err := checkOwnedPrivate(dir, 0o022); err != nil {
 		return nil, err
 	}
-	keyPath := filepath.Join(dir, keyFile)
-	ca, err := load(keyPath)
+	keyPath := filepath.Join(dir, routerCAKeyFile)
+	ca, err := routerCALoad(keyPath)
 	if errors.Is(err, fs.ErrNotExist) {
-		ca, err = create(dir, keyPath, now)
+		ca, err = routerCACreate(dir, keyPath, now)
 	}
 	if err != nil {
 		return nil, err
 	}
-	if ca.cert.NotAfter.Sub(now) < renewBefore {
-		if ca, err = replace(dir, keyPath, now); err != nil {
+	if ca.cert.NotAfter.Sub(now) < routerCARenewBefore {
+		if ca, err = routerCAReplace(dir, keyPath, now); err != nil {
 			return nil, err
 		}
 	}
-	ca.certPath = filepath.Join(dir, certFile)
+	ca.certPath = filepath.Join(dir, routerCACertFile)
 	if err := ensureCertFile(dir, ca); err != nil {
 		return nil, err
 	}
@@ -95,40 +98,40 @@ func LoadOrCreate(ctx context.Context, dir string, now time.Time) (*CA, error) {
 }
 
 // CertPath is the PEM file NODE_EXTRA_CA_CERTS names.
-func (c *CA) CertPath() string { return c.certPath }
+func (c *RouterCA) CertPath() string { return c.certPath }
 
 // CertPEM is the CA certificate in PEM form.
-func (c *CA) CertPEM() []byte { return c.certPEM }
+func (c *RouterCA) CertPEM() []byte { return c.certPEM }
 
 // Certificate is the parsed CA certificate.
-func (c *CA) Certificate() *x509.Certificate { return c.cert }
+func (c *RouterCA) Certificate() *x509.Certificate { return c.cert }
 
-// Leaf signs a short-lived server certificate for host, which must be Host.
-func (c *CA) Leaf(host string, now time.Time) (*tls.Certificate, error) {
-	if host != Host {
-		return nil, fmt.Errorf("local CA signs only %s, not %q", Host, host)
+// Leaf signs a short-lived server certificate for host, which must be RouterHost.
+func (c *RouterCA) Leaf(host string, now time.Time) (*tls.Certificate, error) {
+	if host != RouterHost {
+		return nil, fmt.Errorf("local CA signs only %s, not %q", RouterHost, host)
 	}
-	key := must(ecdsa.GenerateKey(elliptic.P256(), rand.Reader))
-	notAfter := now.Add(leafLife)
+	key := routerCAMust(ecdsa.GenerateKey(elliptic.P256(), rand.Reader))
+	notAfter := now.Add(routerCALeafLife)
 	if notAfter.After(c.cert.NotAfter) {
 		notAfter = c.cert.NotAfter
 	}
 	template := &x509.Certificate{
-		SerialNumber: serial(),
-		Subject:      pkix.Name{CommonName: Host},
-		DNSNames:     []string{Host},
+		SerialNumber: randomSerial(rand.Reader),
+		Subject:      pkix.Name{CommonName: RouterHost},
+		DNSNames:     []string{RouterHost},
 		NotBefore:    now.Add(-time.Hour),
 		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
-	der := must(x509.CreateCertificate(rand.Reader, template, c.cert, &key.PublicKey, c.key))
-	leaf := must(x509.ParseCertificate(der))
+	der := routerCAMust(x509.CreateCertificate(rand.Reader, template, c.cert, &key.PublicKey, c.key))
+	leaf := routerCAMust(x509.ParseCertificate(der))
 	return &tls.Certificate{Certificate: [][]byte{der, c.cert.Raw}, PrivateKey: key, Leaf: leaf}, nil
 }
 
-// load reads ca.key: the PEM private key followed by the CA certificate.
-func load(keyPath string) (*CA, error) {
+// routerCALoad reads ca.key: the PEM private key followed by the CA certificate.
+func routerCALoad(keyPath string) (*RouterCA, error) {
 	if err := checkOwnedPrivate(keyPath, 0o077); err != nil {
 		return nil, err
 	}
@@ -136,35 +139,32 @@ func load(keyPath string) (*CA, error) {
 	if err != nil {
 		return nil, err
 	}
-	invalid := func(reason string) error { return &InvalidError{Path: keyPath, Reason: reason} }
+	invalid := func(reason string) error { return &RouterCAInvalidError{Path: keyPath, Reason: reason} }
 	keyBlock, rest := pem.Decode(data)
 	if keyBlock == nil || keyBlock.Type != "EC PRIVATE KEY" {
 		return nil, invalid("no EC private key")
-	}
-	certBlock, _ := pem.Decode(rest)
-	if certBlock == nil || certBlock.Type != "CERTIFICATE" {
-		return nil, invalid("no certificate after the key")
 	}
 	key, err := x509.ParseECPrivateKey(keyBlock.Bytes)
 	if err != nil {
 		return nil, invalid(err.Error())
 	}
-	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	cert, err := parseCertificate(rest)
 	if err != nil {
 		return nil, invalid(err.Error())
 	}
 	if !cert.IsCA || !cert.PermittedDNSDomainsCritical || len(cert.PermittedDNSDomains) != 1 ||
-		cert.PermittedDNSDomains[0] != Host {
-		return nil, invalid("not a CA constrained to " + Host)
+		cert.PermittedDNSDomains[0] != RouterHost {
+		return nil, invalid("not a CA constrained to " + RouterHost)
 	}
 	if !key.PublicKey.Equal(cert.PublicKey) {
 		return nil, invalid("the key does not match the certificate")
 	}
-	return &CA{cert: cert, key: key, certPEM: pem.EncodeToMemory(certBlock)}, nil
+	certBlock, _ := pem.Decode(rest)
+	return &RouterCA{cert: cert, key: key, certPEM: pem.EncodeToMemory(certBlock)}, nil
 }
 
-func create(dir, keyPath string, now time.Time) (*CA, error) {
-	tmp, err := writeTemp(dir, generate(now), 0o600)
+func routerCACreate(dir, keyPath string, now time.Time) (*RouterCA, error) {
+	tmp, err := writeTemp(dir, routerCAGenerate(now), 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -173,13 +173,13 @@ func create(dir, keyPath string, now time.Time) (*CA, error) {
 	if err := os.Link(tmp, keyPath); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, err
 	}
-	return load(keyPath)
+	return routerCALoad(keyPath)
 }
 
-// replace swaps an expiring CA for a new one. Claude Code sessions started before the swap keep trusting the
+// routerCAReplace swaps an expiring CA for a new one. Claude Code sessions started before the swap keep trusting the
 // old certificate until they restart, so this happens only near the end of a ten-year life.
-func replace(dir, keyPath string, now time.Time) (*CA, error) {
-	tmp, err := writeTemp(dir, generate(now), 0o600)
+func routerCAReplace(dir, keyPath string, now time.Time) (*RouterCA, error) {
+	tmp, err := writeTemp(dir, routerCAGenerate(now), 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -187,28 +187,28 @@ func replace(dir, keyPath string, now time.Time) (*CA, error) {
 		os.Remove(tmp)
 		return nil, err
 	}
-	return load(keyPath)
+	return routerCALoad(keyPath)
 }
 
-// generate makes a new CA key and certificate. P-256 key generation, self-signing a well-formed template and
+// routerCAGenerate makes a new CA key and certificate. P-256 key generation, self-signing a well-formed template and
 // marshalling a P-256 key cannot fail, so a failure there is a broken runtime and panics.
-func generate(now time.Time) []byte {
-	key := must(ecdsa.GenerateKey(elliptic.P256(), rand.Reader))
+func routerCAGenerate(now time.Time) []byte {
+	key := routerCAMust(ecdsa.GenerateKey(elliptic.P256(), rand.Reader))
 	template := &x509.Certificate{
-		SerialNumber:                serial(),
-		Subject:                     pkix.Name{CommonName: "cc-plugins local CA for " + Host},
+		SerialNumber:                randomSerial(rand.Reader),
+		Subject:                     pkix.Name{CommonName: "cc-plugins local CA for " + RouterHost},
 		NotBefore:                   now.Add(-time.Hour),
-		NotAfter:                    now.Add(caLife),
+		NotAfter:                    now.Add(routerCACALife),
 		IsCA:                        true,
 		BasicConstraintsValid:       true,
 		MaxPathLenZero:              true,
 		KeyUsage:                    x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		PermittedDNSDomainsCritical: true,
-		PermittedDNSDomains:         []string{Host},
+		PermittedDNSDomains:         []string{RouterHost},
 	}
-	der := must(x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key))
+	der := routerCAMust(x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key))
 	var out bytes.Buffer
-	_ = pem.Encode(&out, &pem.Block{Type: "EC PRIVATE KEY", Bytes: must(x509.MarshalECPrivateKey(key))})
+	_ = pem.Encode(&out, &pem.Block{Type: "EC PRIVATE KEY", Bytes: routerCAMust(x509.MarshalECPrivateKey(key))})
 	_ = pem.Encode(&out, &pem.Block{Type: "CERTIFICATE", Bytes: der})
 	return out.Bytes()
 }
@@ -235,7 +235,7 @@ func writeTemp(dir string, data []byte, mode os.FileMode) (string, error) {
 }
 
 // ensureCertFile writes ca.pem from the key file when it is missing or differs.
-func ensureCertFile(dir string, ca *CA) error {
+func ensureCertFile(dir string, ca *RouterCA) error {
 	if current, err := os.ReadFile(ca.certPath); err == nil && bytes.Equal(current, ca.certPEM) {
 		return nil
 	}
@@ -257,22 +257,18 @@ func checkOwnedPrivate(path string, forbidden os.FileMode) error {
 		return err
 	}
 	if info.Mode()&fs.ModeSymlink != 0 {
-		return &InsecureError{Path: path, Reason: "is a symbolic link"}
+		return &RouterCAInsecureError{Path: path, Reason: "is a symbolic link"}
 	}
 	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
-		return &InsecureError{Path: path, Reason: "owned by another user"}
+		return &RouterCAInsecureError{Path: path, Reason: "owned by another user"}
 	}
 	if info.Mode().Perm()&forbidden != 0 {
-		return &InsecureError{Path: path, Reason: fmt.Sprintf("mode %o lets other users in", info.Mode().Perm())}
+		return &RouterCAInsecureError{Path: path, Reason: fmt.Sprintf("mode %o lets other users in", info.Mode().Perm())}
 	}
 	return nil
 }
 
-func serial() *big.Int {
-	return must(rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 127)))
-}
-
-func must[T any](v T, err error) T {
+func routerCAMust[T any](v T, err error) T {
 	if err != nil {
 		panic(err)
 	}

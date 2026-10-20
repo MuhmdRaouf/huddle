@@ -26,8 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/localca"
 	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // connectSetup is what one connect rig changes.
@@ -92,7 +92,7 @@ func newConnectRig(t *testing.T, setup connectSetup) *connectRig {
 			t.Fatal(err)
 		}
 	} else {
-		ca, err := localca.LoadOrCreate(context.Background(), caDir, time.UnixMilli(now.Load()))
+		ca, err := pki.LoadOrCreateRouterCA(context.Background(), caDir, time.UnixMilli(now.Load()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -663,7 +663,7 @@ func TestConnect(t *testing.T) {
 		if answer.StatusCode != 200 {
 			t.Fatalf("CONNECT = %d", answer.StatusCode)
 		}
-		tlsConn := tls.Client(conn, r.tlsConfig(localca.Host))
+		tlsConn := tls.Client(conn, r.tlsConfig(pki.RouterHost))
 		tlsConn.SetDeadline(time.Now().Add(10 * time.Second))
 		if err := tlsConn.HandshakeContext(context.Background()); err != nil {
 			t.Fatal(err)
@@ -673,8 +673,8 @@ func TestConnect(t *testing.T) {
 			t.Errorf("negotiated protocol = %q, want http/1.1", state.NegotiatedProtocol)
 		}
 		if len(state.PeerCertificates) == 0 || len(state.PeerCertificates[0].DNSNames) != 1 ||
-			state.PeerCertificates[0].DNSNames[0] != localca.Host {
-			t.Fatalf("the handshake was not with a leaf for %s", localca.Host)
+			state.PeerCertificates[0].DNSNames[0] != pki.RouterHost {
+			t.Fatalf("the handshake was not with a leaf for %s", pki.RouterHost)
 		}
 		upgrade := "GET /ws HTTP/1.1\r\nHost: api.anthropic.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"
 		if _, err := tlsConn.Write([]byte(upgrade)); err != nil {
@@ -764,7 +764,7 @@ func TestConnect(t *testing.T) {
 			if answer.StatusCode != 200 {
 				t.Fatalf("CONNECT = %d, want nothing refused", answer.StatusCode)
 			}
-			tlsConn := tls.Client(conn, &tls.Config{ServerName: localca.Host, InsecureSkipVerify: true})
+			tlsConn := tls.Client(conn, &tls.Config{ServerName: pki.RouterHost, InsecureSkipVerify: true})
 			tlsConn.SetDeadline(time.Now().Add(10 * time.Second))
 			if err := tlsConn.HandshakeContext(context.Background()); err != nil {
 				t.Fatal(err)
@@ -895,7 +895,7 @@ func TestConnectPorts(t *testing.T) {
 		if answer.StatusCode != 200 {
 			t.Fatalf("CONNECT = %d", answer.StatusCode)
 		}
-		tlsConn := tls.Client(conn, &tls.Config{ServerName: localca.Host, InsecureSkipVerify: true})
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: pki.RouterHost, InsecureSkipVerify: true})
 		tlsConn.SetDeadline(time.Now().Add(10 * time.Second))
 		if err := tlsConn.HandshakeContext(context.Background()); err != nil {
 			t.Fatal(err)
@@ -997,7 +997,7 @@ func TestConnectResign(t *testing.T) {
 		if answer.StatusCode != 200 {
 			t.Fatalf("CONNECT = %d", answer.StatusCode)
 		}
-		tlsConn := tls.Client(conn, r.tlsConfig(localca.Host))
+		tlsConn := tls.Client(conn, r.tlsConfig(pki.RouterHost))
 		tlsConn.SetDeadline(time.Now().Add(10 * time.Second))
 		if err := tlsConn.HandshakeContext(context.Background()); err != nil {
 			t.Fatal(err)
