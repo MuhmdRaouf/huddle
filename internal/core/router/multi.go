@@ -1,0 +1,180 @@
+// The one router every provider plugin shares: huddle-router holds one lane per enabled provider
+// (the same routerWorker a per-provider router serves with) and one Anthropic lane, picks the
+// lane from the request's model, and serves both base-URL mode and HTTPS-proxy mode. No peers and
+// no hop: a model no lane claims goes to Anthropic, and each lane's key, budget and refusals are
+// its own.
+package router
+
+import (
+	"context"
+	"net"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/domain"
+)
+
+// MultiName is the router's name: in errors, in the health answer and as the plugin of the
+// Anthropic lane's spool events.
+const MultiName = "huddle-router"
+
+// MultiHealthPath answers GET with the router's name and the providers it serves.
+const MultiHealthPath = "/huddle-router/health"
+
+// MultiOptions is what the multi router needs to know: where Anthropic is, one lane per enabled
+// provider, and the plugs the multi router owns (the CA, the proxy environment, the log, the
+// spool).
+type MultiOptions struct {
+	// Port is the canonical port the base URL names; 0 takes any Host (tests).
+	Port int
+	// Anthropic is where every request for a model no lane claims goes, unchanged.
+	Anthropic *url.URL
+	// Lanes is one entry per enabled provider; Port, Token and Peers are ignored.
+	Lanes []RouterOptions
+	// CADir is the local CA's directory; "" never decrypts (every CONNECT is a blind tunnel).
+	CADir string
+	// Env is the proxy environment upstream requests and blind tunnels honour.
+	Env ProxyEnv
+	// Dial opens a blind tunnel's socket; nil dials through the user's own proxy when one applies,
+	// else directly.
+	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
+	// Log receives one line per request: method, path, model, route, status. Never headers or
+	// bodies.
+	Log func(line string)
+	// Events receives one spool event per forwarded request and the health events, when Radar's
+	// spool is reachable.
+	Events func(event domain.SpoolEvent)
+	// BodyLimit is the largest request body; 0 is the default 64 MiB.
+	BodyLimit int64
+	// Now is the clock, epoch milliseconds; nil is the wall clock.
+	Now func() int64
+}
+
+// Multi is the one router serving every provider. CreateMulti builds it; listen on the server
+// (127.0.0.1) after.
+type Multi struct {
+	lanes     []*routerWorker // provider lanes, in Lanes order
+	anthropic *routerWorker   // the lane for every model no provider claims
+	proxy     *TLSProxy
+	limit     int64
+}
+
+// CreateMulti builds the multi router over the lanes given.
+func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
+	limit := opts.BodyLimit
+	if limit == 0 {
+		limit = BodyLimitBytes
+	}
+	now := opts.Now
+	if now == nil {
+		now = func() int64 { return time.Now().UnixMilli() }
+	}
+	note := opts.Log
+	if note == nil {
+		note = func(string) {}
+	}
+	m := &Multi{limit: limit}
+	for _, lane := range opts.Lanes {
+		laneOpts := lane
+		laneOpts.Port = 0
+		laneOpts.Token = ""
+		laneOpts.Peers = nil
+		laneOpts.Anthropic = opts.Anthropic
+		laneOpts.Env = opts.Env
+		if laneOpts.Log == nil {
+			laneOpts.Log = opts.Log
+		}
+		if laneOpts.Events == nil {
+			laneOpts.Events = opts.Events
+		}
+		m.lanes = append(m.lanes, newRouterWorker(laneOpts, nil))
+	}
+	// The Anthropic lane claims nothing, so its requests always take the Anthropic route, and it
+	// never reads a key (there is none to read).
+	m.anthropic = newRouterWorker(RouterOptions{
+		Provider:  domain.Provider{Name: MultiName, Display: "Anthropic"},
+		Anthropic: opts.Anthropic,
+		Env:       opts.Env,
+		Log:       opts.Log,
+		Events:    opts.Events,
+		BodyLimit: opts.BodyLimit,
+	}, nil)
+	m.proxy = &TLSProxy{
+		Name:      MultiName,
+		CADir:     opts.CADir,
+		Anthropic: opts.Anthropic,
+		Env:       opts.Env,
+		Dial:      opts.Dial,
+		BodyLimit: limit,
+		Now:       now,
+		Note:      note,
+		Route:     m.route,
+	}
+	return Harden(&http.Server{Handler: http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// A CONNECT names the tunnel's target in the authority, so the Host check below (a
+		// DNS-rebinding guard for pages a browser could reach) cannot apply to it; only a proxy
+		// client sends one.
+		if req.Method == http.MethodConnect {
+			m.proxy.Connect(rw, req)
+			return
+		}
+		res := NewResponse(rw)
+		if opts.Port != 0 && RefuseHost(req, res, MultiName, []int{opts.Port}) {
+			return
+		}
+		if req.Method == http.MethodGet && req.URL.Path == MultiHealthPath && req.URL.RawQuery == "" {
+			jsonAnswer(res, 200, struct {
+				OK        bool     `json:"ok"`
+				Name      string   `json:"name"`
+				Providers []string `json:"providers"`
+			}{OK: true, Name: MultiName, Providers: m.Providers()})
+			return
+		}
+		Receive(req, res, MultiName, m.limit, func(body []byte) {
+			m.route(req, res, body)
+		})
+	})}), m
+}
+
+// Providers is the names of the lanes the router serves, in the order they were given.
+func (m *Multi) Providers() []string {
+	names := make([]string, 0, len(m.lanes))
+	for _, lane := range m.lanes {
+		names = append(names, lane.provider.Name)
+	}
+	return names
+}
+
+// laneFor is the lane a model goes to: the one claiming the id exactly, else the one with the
+// longest matching prefix, else the Anthropic lane.
+func (m *Multi) laneFor(model string) *routerWorker {
+	if model != "" {
+		for _, lane := range m.lanes {
+			for _, id := range lane.claim.IDs {
+				if model == id {
+					return lane
+				}
+			}
+		}
+		best, bestLength := (*routerWorker)(nil), 0
+		for _, lane := range m.lanes {
+			for _, prefix := range lane.claim.Prefixes {
+				if strings.HasPrefix(model, prefix) && len(prefix) > bestLength {
+					best, bestLength = lane, len(prefix)
+				}
+			}
+		}
+		if best != nil {
+			return best
+		}
+	}
+	return m.anthropic
+}
+
+// route serves one request on the lane its model picks.
+func (m *Multi) route(req *http.Request, res *Response, body []byte) {
+	node := parseBodyNode(body)
+	m.laneFor(modelIn(node)).forwardParsed(req, res, body, node)
+}

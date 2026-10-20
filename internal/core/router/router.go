@@ -742,10 +742,10 @@ func CreateRouter(opts RouterOptions) *http.Server {
 	return server
 }
 
-// createRouter also returns the worker core, so the worker process can warm the key cache and
-// answer its key checks from it. keyLookup is the worker's own key lookup (the key's source
+// newRouterWorker builds the lane a router server serves with: the key lookup adapter, the key
+// cache and the request state. keyLookup is the worker's own key lookup (the key's source
 // included, which its IPC answers name); nil adapts opts.Key.
-func createRouter(opts RouterOptions, keyLookup func(ctx context.Context) (ports.ProviderKey, *ports.WorkerError)) (*http.Server, *routerWorker) {
+func newRouterWorker(opts RouterOptions, keyLookup func(ctx context.Context) (ports.ProviderKey, *ports.WorkerError)) *routerWorker {
 	lookup := keyLookup
 	if lookup == nil {
 		lookup = func(ctx context.Context) (ports.ProviderKey, *ports.WorkerError) {
@@ -765,7 +765,7 @@ func createRouter(opts RouterOptions, keyLookup func(ctx context.Context) (ports
 	if opts.KeyTimeoutMs != 0 {
 		timeout = opts.KeyTimeoutMs
 	}
-	w := &routerWorker{
+	return &routerWorker{
 		opts:      opts,
 		provider:  opts.Provider,
 		claim:     opts.Provider.ModelClaim(),
@@ -773,6 +773,12 @@ func createRouter(opts RouterOptions, keyLookup func(ctx context.Context) (ports
 		estimator: NewPromptEstimator(),
 		keys:      newKeyCache(lookup, keyStoreBudget(timeout)),
 	}
+}
+
+// createRouter also returns the worker core, so the worker process can warm the key cache and
+// answer its key checks from it.
+func createRouter(opts RouterOptions, keyLookup func(ctx context.Context) (ports.ProviderKey, *ports.WorkerError)) (*http.Server, *routerWorker) {
+	w := newRouterWorker(opts, keyLookup)
 	limit := opts.BodyLimit
 	if limit == 0 {
 		limit = BodyLimitBytes
@@ -1310,8 +1316,13 @@ func keyWithin(ctx context.Context, w *routerWorker) (string, keyOutcome) {
 // forward is one request's decision core: where it goes, what it may carry, and what its event
 // says.
 func (w *routerWorker) forward(req *http.Request, res *Response, original []byte) {
+	w.forwardParsed(req, res, original, parseBodyNode(original))
+}
+
+// forwardParsed is forward on a body already parsed once, so a caller that picked the lane by the
+// parsed model never parses twice.
+func (w *routerWorker) forwardParsed(req *http.Request, res *Response, original []byte, body *jsonNode) {
 	provider := w.provider
-	body := parseBodyNode(original)
 	model := modelIn(body)
 	prompt := &promptRef{}
 	note := w.noteOf(req, model, time.Now().UnixMilli(), prompt)

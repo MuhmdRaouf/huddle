@@ -21,7 +21,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,7 +37,6 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // FrontVersion is the front's protocol: its control endpoints and the worker IPC. A running front
@@ -320,15 +318,10 @@ type Front struct {
 	watchTicker   *time.Ticker
 	retiredTicker *time.Ticker
 
-	// The HTTPS proxy's certificate state, guarded by mu (connect.go): the local CA, the leaf it
-	// signed for api.anthropic.com, and the last load attempt — its error, when it ran and whether
-	// the failure is already in the log.
-	ca           *pki.RouterCA
-	caErr        error
-	caAt         time.Time
-	caLogged     bool
-	leaf         *tls.Certificate
-	leafNotAfter time.Time
+	// proxy is the HTTPS proxy mode (tlsproxy.go): on when CADir is set, it decrypts
+	// api.anthropic.com and routes it as base-URL mode routes a request, and tunnels every other
+	// CONNECT blind.
+	proxy *TLSProxy
 }
 
 // workerReady is a worker requests can go to.
@@ -383,6 +376,17 @@ func CreateFront(options FrontOptions) *Front {
 			go f.finish()
 		}
 	})
+	f.proxy = &TLSProxy{
+		Name:      options.Name,
+		CADir:     options.CADir,
+		Anthropic: options.Anthropic,
+		Env:       options.Env,
+		Dial:      options.Dial,
+		BodyLimit: f.knobs.BodyLimit,
+		Now:       now,
+		Note:      note,
+		Route:     func(req *http.Request, res *Response, body []byte) { f.route(req, res, body, false) },
+	}
 	return f
 }
 
@@ -624,7 +628,7 @@ func (f *Front) handle(w http.ResponseWriter, req *http.Request) {
 	// DNS-rebinding guard for pages a browser could reach) cannot apply to it; only a proxy client
 	// sends one.
 	if req.Method == http.MethodConnect {
-		f.connect(w, req)
+		f.proxy.Connect(w, req)
 		return
 	}
 	res := NewResponse(w)
