@@ -200,19 +200,8 @@ jobs:
       # A version with no CHANGELOG.md section fails here, before a tag can publish it.
       - name: VERSION has a CHANGELOG.md section
         run: go run ./scripts/releasenotes -version "$(cat VERSION)" -sums /dev/null -commit x >/dev/null
-      # The manifest is compared while it can still change: once v<VERSION> is tagged it is immutable.
-      - name: Release manifest matches the built digests
-        run: |
-          version=$(cat VERSION)
-          if [ ! -f "release/v$version.json" ]; then
-            echo "no release manifest for v$version yet; nothing to compare with"
-            exit 0
-          fi
-          if [ -n "$(git ls-remote --tags origin "v$version")" ]; then
-            echo "v$version is already tagged; the manifest is immutable"
-            exit 0
-          fi
-          go run ./scripts/build -check
+      # The manifest digest check runs in release.yml before it publishes: with no tags while there are no
+      # consumers, every source change would otherwise fail every push on a manifest only a release needs.
       # The macOS job rebuilds linux/amd64 and must reproduce these digests byte for byte.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

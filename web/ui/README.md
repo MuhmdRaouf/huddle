@@ -3,13 +3,13 @@
 **Reusable Preact modules and styles for the huddle dashboards.** This package (`@huddle/ui`) is compiled into
 each dashboard in `web/` — `hub`, `radar` and `kanban`. It is private and never installed by plugin users.
 
-| Area | What lives here |
-| --- | --- |
-| Navigation and overlays | Tabs, menus, dialogs, slide-overs and toasts. |
-| Data display | Charts, counters, code and Markdown rendering. |
-| Shared behavior | Time labels, fuzzy matching and model colors. |
-| Visual styles | Theme styles and the IBM Plex font dependencies. |
-| Tests | Component behavior, keyboard interaction and shared helpers. |
+| Area                    | What lives here                                              |
+| ----------------------- | ------------------------------------------------------------ |
+| Navigation and overlays | Tabs, menus, dialogs, slide-overs and toasts.                |
+| Data display            | Charts, counters, code and Markdown rendering.               |
+| Shared behavior         | Time labels, fuzzy matching and model colors.                |
+| Visual styles           | Theme styles and the IBM Plex font dependencies.             |
+| Tests                   | Component behavior, keyboard interaction and shared helpers. |
 
 ## Build the dashboards
 
@@ -32,12 +32,12 @@ Consumers import these sources and fonts directly; each also has its own locked 
 
 ## Checks
 
-| Task | Command from this directory |
-| --- | --- |
-| Full package check | `bun run check` |
-| Behavior tests | `bun run test` |
-| Coverage | `bun run coverage` |
-| Format | `bun run format` |
+| Task               | Command from this directory |
+| ------------------ | --------------------------- |
+| Full package check | `bun run check`             |
+| Behavior tests     | `bun run test`              |
+| Coverage           | `bun run coverage`          |
+| Format             | `bun run format`            |
 
 The consumers' pages: [hub](../hub) · [radar](../radar) · [kanban](../kanban). The repository README and
 `AGENTS.md` at the repository root have the product and the development rules.

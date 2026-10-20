@@ -42,5 +42,6 @@ repos:
       - id: check-yaml
       - id: check-json
         exclude: (^|/)testdata/
+      # The pki suite's bad-key case feeds a fake PEM the code must refuse.
       - id: detect-private-key
-        exclude: (^|/)testdata/
+        exclude: (^|/)testdata/|^internal/pki/routerca_test\.go$

@@ -56,7 +56,7 @@ describe("plugin/hooks/hooks.json, kanban's share", () => {
     expect(entries).toHaveLength(1);
     expect(entries?.[0]?.type).toBe("command");
     expect(entries?.[0]?.command).toBe(`sh "\${CLAUDE_PLUGIN_ROOT}/dist/run" hook session-start`);
-    expect(entries?.[0]?.timeout).toBe(10);
+    expect(entries?.[0]?.timeout).toBe(15);
   });
 
   it("hooks every event a session fires, one line each", () => {
@@ -130,7 +130,7 @@ describe("the kanban skill and the plugin that ships it", () => {
     }
   });
 
-  it("names the plugin huddle at the repository's version, kanban's commands inside", () => {
+  it("names the plugin huddle, ships no version, kanban's commands inside", () => {
     const manifest = JSON.parse(readFileSync(`${plugin}/.claude-plugin/plugin.json`, "utf8")) as {
       name?: string;
       version?: string;
@@ -138,23 +138,24 @@ describe("the kanban skill and the plugin that ships it", () => {
       author?: { name?: string };
     };
     expect(manifest.name).toBe("huddle");
-    expect(manifest.version).toBe(readFileSync(`${root}/VERSION`, "utf8").trim());
+    expect(
+      manifest.version,
+      "the development channel: every marketplace update is one, no version field",
+    ).toBeUndefined();
     expect(manifest.description ?? "").toContain("kanban");
     expect(manifest.author?.name).toBe("Raouf");
   });
 
-  it("is the marketplace's one plugin, installed from ./plugin", () => {
+  it("is one of the marketplace's plugins, installed from ./plugin", () => {
     const marketplace = JSON.parse(readFileSync(`${root}/.claude-plugin/marketplace.json`, "utf8")) as {
       name?: string;
       plugins?: { name?: string; source?: string; version?: string }[];
     };
-    expect(marketplace.name).toBe("huddle");
-    const manifest = JSON.parse(readFileSync(`${plugin}/.claude-plugin/plugin.json`, "utf8")) as {
-      version?: string;
-    };
-    expect(marketplace.plugins).toEqual([
-      expect.objectContaining({ name: "huddle", source: "./plugin", version: manifest.version }),
-    ]);
+    expect(marketplace.name, "the marketplace's own name stays muhmdraouf").toBe("muhmdraouf");
+    const huddle = (marketplace.plugins ?? []).find((entry) => entry.name === "huddle");
+    expect(huddle, "the marketplace lists huddle").toBeDefined();
+    expect(huddle?.source).toBe("./plugin");
+    expect(huddle?.version, "the development channel: no plugin versions").toBeUndefined();
   });
 
   it("commits the launcher the hook and every command run", () => {
