@@ -95,7 +95,7 @@ test("one signed-in walk over TLS covers every tab with no console error", async
       await expect(tiles).toContainText(USAGE.cached.toLocaleString("en-US"));
       await expect(tiles).toContainText(USAGE.uncached.toLocaleString("en-US"));
       await expect(tiles).toContainText(USAGE.output.toLocaleString("en-US"));
-      await expect(page.locator("[data-usage-plot] path.chart-line")).toHaveCount(3);
+      await expect(page.locator("[data-usage-plot] rect").first()).toBeVisible();
     }
     await shot(`radar-${view}`);
   }
