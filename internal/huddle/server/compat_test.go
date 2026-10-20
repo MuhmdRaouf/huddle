@@ -57,12 +57,13 @@ var compatChannels = []compatChannel{
 // compatOwned is every file a running server writes into a home it opened, with the reason. The
 // channels' -wal/-shm pairs join by prefix (they come and go with each open).
 var compatOwned = map[string]string{
-	"data/auth.json":    "re-opened: the root digest re-recorded, the members' last-seen rewrites",
-	"data/shared.db":    "the server-wide knowledge store's earlier spelling, moved onto knowledge.db at the first open",
-	"data/knowledge.db": "the server-wide knowledge store, opened with the first channel",
-	"home/hub.db":       "the registry every session's reports build, opened with the server",
-	"home/hub.db-wal":   "the registry's write-ahead log while the server runs",
-	"home/hub.db-shm":   "the registry's shared-memory index while the server runs",
+	"data/auth.json":      "re-opened: the root digest re-recorded, the members' last-seen rewrites",
+	"data/shared.db":      "the server-wide knowledge store's earlier spelling, moved onto knowledge.db at the first open",
+	"data/knowledge.db":   "the server-wide knowledge store, opened with the first channel",
+	"home/hub.db":         "the registry every session's reports build, opened with the server",
+	"home/hub.db-wal":     "the registry's write-ahead log while the server runs",
+	"home/hub.db-shm":     "the registry's shared-memory index while the server runs",
+	"home/run/serve.lock": "the serve lock, held for the server's whole life",
 }
 
 // compatOwnedPath says whether one path (a changed file, maybe marked removed) belongs to the

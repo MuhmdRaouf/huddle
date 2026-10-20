@@ -463,6 +463,21 @@ func Serve(ctx context.Context, o Options) error {
 	if o.Stderr == nil {
 		o.Stderr = os.Stderr
 	}
+	// one server per home: the lock is taken before anything is bound or opened, so a second
+	// start for the same home never touches its files. A home that cannot hold the lock still
+	// serves, as it keeps serving without its owner key — the run directory is unusable, not
+	// another server's.
+	release, err := LockHome(o.Home)
+	if err != nil {
+		var held *HeldError
+		if !errors.As(err, &held) {
+			fmt.Fprintf(o.Stderr, "serve lock: %v\n", err)
+			release = func() {}
+		} else {
+			return err
+		}
+	}
+	defer release()
 	if o.Host == "" {
 		o.Host = "127.0.0.1"
 	}

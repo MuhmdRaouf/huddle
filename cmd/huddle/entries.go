@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -62,6 +63,12 @@ func serveEntry(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	options.Environ = os.Environ()
 	options.Signals = true
 	if err := server.Serve(ctx, options); err != nil {
+		var held *server.HeldError
+		if errors.As(err, &held) {
+			// a duplicate start is not a failure: the home's server is already up
+			fmt.Fprintf(stderr, "huddle: %v\n", err)
+			return 0
+		}
 		fmt.Fprintf(stderr, "huddle: %v\n", err)
 		return 1
 	}

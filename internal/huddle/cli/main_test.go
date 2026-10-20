@@ -21,6 +21,12 @@ import (
 var huddleBin string
 
 func TestMain(m *testing.M) {
+	// a re-execution as the hung server a replacement scenario runs: take the home's serve lock
+	// and sleep, no tests
+	if os.Getenv(hangEnv) == "1" {
+		hangServerChild()
+		os.Exit(0)
+	}
 	// the binaries these tests build and run inherit this, so none reaches a real trust store
 	_ = os.Setenv(pki.StoreOffEnv, "1")
 	dir, err := os.MkdirTemp("", "huddle-cli-bin-")

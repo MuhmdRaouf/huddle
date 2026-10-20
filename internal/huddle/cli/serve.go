@@ -280,6 +280,61 @@ func newCredential() string {
 	return "hcred_" + base64.RawURLEncoding.EncodeToString(raw[:])
 }
 
+// replaceHung clears the home's serve lock for a fresh start. A holder that answers health — the
+// home's recorded port, else the url this start would take — is the server the start wanted:
+// reuse names it and nothing is signalled. A holder silent twice, 5 s apart, is replaced:
+// SIGTERM, a 5 s wait for the lock (the holder asked every 200 ms), then SIGKILL and a 2 s wait,
+// each step in the run log. Only the holder the lock names is ever signalled, never pid ≤ 1 or
+// this process. When the start's budget runs out first, proceed is false and nothing was
+// spawned.
+func replaceHung(ctx context.Context, w *World, root, rawURL string, rest func() time.Duration) (proceed bool, reuse string) {
+	holder, held := server.LockHolder(root)
+	if !held || holder <= 1 || holder == os.Getpid() {
+		// no holder, or one this process never signals: the start below meets the lock itself
+		return true, ""
+	}
+	at := rawURL
+	if port := savedRunPort(root); port > 0 {
+		at = Local(port)
+	}
+	if Healthy(ctx, at, 3000) {
+		return true, at
+	}
+	if rest() <= 0 {
+		return false, ""
+	}
+	time.Sleep(5 * time.Second) // the second probe: a server still starting answers by then
+	if rest() <= 0 {
+		return false, ""
+	}
+	if Healthy(ctx, at, 3000) {
+		return true, at
+	}
+	noteRun(root, w.now(), fmt.Sprintf("replaced hung server pid %d: SIGTERM", holder))
+	_ = signalTerm(holder)
+	if !lockFreeWithin(root, 5*time.Second) {
+		noteRun(root, w.now(), fmt.Sprintf("replaced hung server pid %d: SIGKILL", holder))
+		_ = signalKill(holder)
+		lockFreeWithin(root, 2*time.Second)
+	}
+	return rest() > 0, ""
+}
+
+// lockFreeWithin answers whether the home's serve lock is free again within ms, asking the lock
+// every 200 ms.
+func lockFreeWithin(root string, ms time.Duration) bool {
+	deadline := time.Now().Add(ms)
+	for {
+		if _, held := server.LockHolder(root); !held {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
 // Up starts the Huddle server the way a session does: detached, and watching for the plugin's
 // removal (only a server the plugin started stops itself with it). See up for the parameters.
 func Up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string) Result {
@@ -335,6 +390,18 @@ func up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string, 
 			return Result{URL: rawURL, Msg: said + err.Error()}
 		}
 		refreshInstalledService(ctx, w, hh.Root)
+	}
+	// one server per home: the home's serve lock names the process that holds it. A holder that
+	// answers health is the server this start wanted — reuse it. A holder silent twice, 5 s
+	// apart, is hung: it is signalled out of the way (SIGTERM, then SIGKILL), so a hung server
+	// never leaves a duplicate or a locked-out start.
+	proceed, reuse := replaceHung(ctx, w, h, rawURL, rest)
+	if reuse != "" {
+		return Result{OK: true, URL: reuse, Msg: fmt.Sprintf("%sHuddle is up at %s", said, reuse)}
+	}
+	if !proceed { // the budget ran out clearing a hung server: nothing was spawned
+		still := fmt.Sprintf(" within %s s (still starting)", jsfmt.JSNumber(math.Round(float64(budgetMS)/100)/10))
+		return Result{URL: rawURL, Msg: fmt.Sprintf("%sHuddle did not come up at %s%s; see %s", said, rawURL, still, logFile(h))}
 	}
 	log, err := os.OpenFile(logFile(h), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
