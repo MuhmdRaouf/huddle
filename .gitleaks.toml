@@ -105,3 +105,15 @@ description = "core: a test child's heartbeat interval, which the generic key ru
 condition = "AND"
 regexes = ['''^FRONT_FOCUS_CHILD_HB=20$''']
 paths = ['''^internal/core/router/front_test\.go$''']
+
+[[allowlists]]
+description = "huddle: the fake key the hub-board test hands its fake keystore"
+condition = "AND"
+regexes = ['''^abc123def456$''']
+paths = ['''^internal/kanban/app/hubboard_test\.go$''']
+
+[[allowlists]]
+description = "core: the fake lane key the provider-route test's httptest upstream expects"
+condition = "AND"
+regexes = ['''^sk-lane-key-0123456789abcdef0123456789abcdef$''']
+paths = ['''^internal/core/router/provider_route_test\.go$''']
