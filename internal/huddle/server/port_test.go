@@ -7,6 +7,8 @@ import (
 	"net"
 	"strings"
 	"testing"
+
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // The port tests share the machine with the other packages' tests, so they never demand that a
@@ -32,16 +34,10 @@ func hold(t *testing.T, ports ...int) (close func()) {
 	}
 }
 
-// freePort answers a port the OS picks, free at this moment.
+// freePort answers a loopback port nothing holds, outside every OS's ephemeral range.
 func freePort(t *testing.T) int {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("bind a free port: %v", err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	_ = listener.Close()
-	return port
+	return ports.Free(t)
 }
 
 // rangeState answers the range's busy ports and the first free one (0 when a stranger holds all

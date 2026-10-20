@@ -16,7 +16,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -29,26 +28,11 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // legacyFixture is the recorded home under testdata: its channels and its settings file's shape.
 const legacyFixture = "../testdata/legacy_home"
-
-// freePort answers a loopback port nothing holds, away from the routers' 18787-18791.
-func freePort(t *testing.T) int {
-	t.Helper()
-	for {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatalf("reserve a port: %v", err)
-		}
-		port := listener.Addr().(*net.TCPAddr).Port
-		_ = listener.Close()
-		if port < 18787 || port > 18791 {
-			return port
-		}
-	}
-}
 
 // copyTree copies one directory tree, files whole.
 func copyTree(t *testing.T, from, to string) {
@@ -185,7 +169,7 @@ func legacyRepoHome(t *testing.T) (repo, source string) {
 	copyTree(t, filepath.Join(legacyFixture, "data"), filepath.Join(source, "data"))
 	settings := map[string]any{
 		"channel": "atelier", "as": "atlas", "autostart": true,
-		"port": freePort(t), "port_auto": true,
+		"port": ports.Free(t), "port_auto": true,
 	}
 	raw, err := json.Marshal(settings)
 	if err != nil {

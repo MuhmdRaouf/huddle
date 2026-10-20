@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +22,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/testkit"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // huddleBin is the huddle binary TestMain builds once; the cases below run its radar hook as a
@@ -287,7 +287,7 @@ func TestAutostart(t *testing.T) {
 		if err := os.MkdirAll(e.state, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		port := freePort(t)
+		port := ports.Free(t)
 		if err := os.WriteFile(filepath.Join(e.state, "port"), []byte(fmt.Sprintf("%d\n", port)), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -310,17 +310,6 @@ func TestAutostart(t *testing.T) {
 		// a server that runs: nothing to say
 		expectSilentSuccess(t, runHookProcess(t, `{"hook_event_name":"SessionStart","session_id":"a2"}`, auto))
 	})
-}
-
-// freePort draws one loopback port nothing holds.
-func freePort(t *testing.T) int {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("draw a free port: %v", err)
-	}
-	defer func() { _ = listener.Close() }()
-	return listener.Addr().(*net.TCPAddr).Port
 }
 
 // waitForServerPid polls server.json until the started dashboard has written it with a pid,

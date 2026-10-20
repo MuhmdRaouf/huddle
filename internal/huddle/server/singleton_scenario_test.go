@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // serving is one in-process server a scenario started: its address, its stop and the error its
@@ -31,10 +31,7 @@ type serving struct {
 func startAServer(scenario *testing.T, home string) (*serving, error) {
 	log := &syncBuffer{}
 	srv := &serving{}
-	port, err := aFreePort()
-	if err != nil {
-		return nil, err
-	}
+	port := ports.Free(scenario)
 	srv.base = fmt.Sprintf("http://127.0.0.1:%d", port)
 	o := Options{
 		Version: "0.0.0", Home: home, Data: home, Token: "scenario-root",
@@ -57,17 +54,6 @@ func startAServer(scenario *testing.T, home string) (*serving, error) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-}
-
-// aFreePort answers a loopback port that is free now.
-func aFreePort() (int, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	_ = listener.Close()
-	return port, nil
 }
 
 // answers says whether a Huddle answers its health path at url.
@@ -102,10 +88,7 @@ func TestOneHuddleServerPerHome(t *testing.T) {
 				}
 			})
 			s.When("a second server starts on the same home", func(t *testing.T) {
-				port, err := aFreePort()
-				if err != nil {
-					t.Fatal(err)
-				}
+				port := ports.Free(t)
 				log := &syncBuffer{}
 				serveErr = Serve(context.Background(), Options{
 					Version: "0.0.0", Home: home, Data: home, Token: "scenario-root",

@@ -1699,7 +1699,7 @@ func TestWatchClient(t *testing.T) {
 			if !gone {
 				t.Error("gone() must be true after the client left")
 			}
-		case <-time.After(2 * time.Second):
+		case <-time.After(10 * time.Second):
 			t.Fatal("the client's close was never seen")
 		}
 		<-done

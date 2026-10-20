@@ -18,10 +18,11 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/providers"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	testports "github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // Direct tests of the support files: builders return their defaults, MakeRepo makes a commit,
-// FreePort returns a usable port, Until times out with an error.
+// testports.Free answers a usable port, Until times out with an error.
 
 func TestBuilders(t *testing.T) {
 	t.Run("aBrief returns the defaults", func(t *testing.T) {
@@ -443,7 +444,7 @@ func TestMakeRepo(t *testing.T) {
 
 func TestFreePort(t *testing.T) {
 	t.Run("returns a port a listener can take", func(t *testing.T) {
-		port := FreePort(t)
+		port := testports.Free(t)
 		if port == 0 {
 			t.Fatal("freePort returned 0")
 		}

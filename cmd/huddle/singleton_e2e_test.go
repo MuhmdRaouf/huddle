@@ -7,7 +7,6 @@ package main
 import (
 	"bytes"
 	"errors"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -18,6 +17,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	freeport "github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // TestE2EOneHuddleServerPerHome starts five servers on one home at once: the serve lock leaves
@@ -26,7 +27,12 @@ func TestE2EOneHuddleServerPerHome(t *testing.T) {
 	root := t.TempDir()
 	homeDir := filepath.Join(root, "home")
 	dataDir := filepath.Join(root, "data")
-	ports := freePorts(t, 5)
+	// five ports free at once: the helper records the ones it answered, so no two of the five
+	// starts meet the same port
+	ports := make([]int, 5)
+	for i := range ports {
+		ports[i] = freeport.Free(t)
+	}
 	env := map[string]string{
 		"PATH":                   os.Getenv("PATH"),
 		"HOME":                   filepath.Join(root, "user"),
@@ -155,24 +161,4 @@ func allStderr(stderr []*bytes.Buffer) string {
 		lines = append(lines, strconv.Itoa(i)+": "+strings.TrimSpace(buf.String()))
 	}
 	return strings.Join(lines, "\n")
-}
-
-// freePorts answers n distinct loopback ports free at once: all n are bound together, so the OS
-// never hands one out twice, then released for the children.
-func freePorts(t *testing.T, n int) []int {
-	t.Helper()
-	listeners := make([]net.Listener, n)
-	ports := make([]int, n)
-	for i := range listeners {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatalf("find a free port: %v", err)
-		}
-		listeners[i] = listener
-		ports[i] = listener.Addr().(*net.TCPAddr).Port
-	}
-	for _, listener := range listeners {
-		_ = listener.Close()
-	}
-	return ports
 }

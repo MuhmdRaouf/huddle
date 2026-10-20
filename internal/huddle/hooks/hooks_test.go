@@ -33,6 +33,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/hookplan"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // huddleBin is the huddle binary TestMain builds once: the entry-point cases run it as Claude
@@ -224,20 +225,6 @@ func wrongShapeURL(t *testing.T) string {
 	}))
 	t.Cleanup(s.Close)
 	return s.URL
-}
-
-// freePort picks an unused port below every OS's ephemeral range, so nothing is handed it by a
-// port-0 bind between the check and the use.
-func freePort(t *testing.T) int {
-	t.Helper()
-	for i := 0; i < 500; i++ {
-		port := 20000 + mathrand.Intn(12000)
-		if server.PortFree(port) {
-			return port
-		}
-	}
-	t.Fatal("no free port in 20000-31999")
-	return 0
 }
 
 // ── the real server, for the cases that need one ─────────────────────────────
@@ -536,7 +523,7 @@ func TestTheSessionStartHookWithAutostartKeepsToItsBudgetWhenTheServerItStartsCa
 // channel anywhere, no setup, no token — leaves a server answering /health, and says nothing
 // (no channel: nothing to join, nothing to report).
 func TestTheFirstSessionStartsHuddleWithNoChannelAndNoSetup(t *testing.T) {
-	port := freePort(t)
+	port := ports.Free(t)
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	stdout, _, world := runHook(t, "session-start", `{"source":"startup","session_id":"s-first"}`,
 		map[string]string{"HUDDLE_URL": url, "HUDDLE_AUTOSTART": "", "HUDDLE_TOKEN": ""})
@@ -564,7 +551,7 @@ func TestTheFirstSessionStartsHuddleWithNoChannelAndNoSetup(t *testing.T) {
 // TestAutostartOffLeavesHuddleDownWithNoChannel: HUDDLE_AUTOSTART=0 keeps the first session
 // from starting anything, and the hook stays silent.
 func TestAutostartOffLeavesHuddleDownWithNoChannel(t *testing.T) {
-	port := freePort(t)
+	port := ports.Free(t)
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	stdout, _, world := runHook(t, "session-start", `{"source":"startup","session_id":"s-first"}`,
 		map[string]string{"HUDDLE_URL": url, "HUDDLE_AUTOSTART": "0", "HUDDLE_TOKEN": ""})
@@ -907,7 +894,7 @@ func TestAJoinedMembersSessionStartCarriesNoSystemMessage(t *testing.T) {
 }
 
 func TestTheSessionThatStartsHuddleHoldsItsRootCredential(t *testing.T) {
-	port := freePort(t)
+	port := ports.Free(t)
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	env := map[string]string{
 		"HUDDLE_URL": url, "HUDDLE_CHANNEL": "made", "HUDDLE_AS": "boss",

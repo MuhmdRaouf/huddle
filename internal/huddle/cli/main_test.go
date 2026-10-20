@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,9 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
-
 	"github.com/MuhmdRaouf/huddle/internal/pki"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // huddleBin is the huddle binary TestMain builds once: the servers the tests start run it with
@@ -105,23 +103,10 @@ func readFile(t *testing.T, path string) string {
 	return string(raw)
 }
 
-// freePort picks an unused port below every OS's ephemeral range, so nothing is handed it by a
-// port-0 bind between the check and the use, and never gives one out twice.
+// freePort answers a loopback port nothing holds, outside every OS's ephemeral range.
 func freePort(t *testing.T) int {
 	t.Helper()
-	seen := map[int]bool{}
-	for i := 0; i < 500; i++ {
-		p := 20000 + rand.Intn(12000)
-		if seen[p] {
-			continue
-		}
-		seen[p] = true
-		if server.PortFree(p) {
-			return p
-		}
-	}
-	t.Fatal("no free port in 20000-31999")
-	return 0
+	return ports.Free(t)
 }
 
 // stopHome stops the server a test started from home and waits for it: no test leaves a server
