@@ -23,6 +23,10 @@ const MultiName = "huddle-router"
 // MultiHealthPath answers GET with the router's name and the providers it serves.
 const MultiHealthPath = "/huddle-router/health"
 
+// GatewayPrefix is the path under which the mounted gateway serves: a harness points its base
+// URL at the router plus this prefix.
+const GatewayPrefix = "/gateway"
+
 // MultiOptions is what the multi router needs to know: where Anthropic is, one lane per enabled
 // provider, and the plugs the multi router owns (the CA, the proxy environment, the log, the
 // spool).
@@ -50,6 +54,8 @@ type MultiOptions struct {
 	BodyLimit int64
 	// Now is the clock, epoch milliseconds; nil is the wall clock.
 	Now func() int64
+	// Gateway serves every path under GatewayPrefix with the prefix removed; nil answers those paths 404.
+	Gateway http.Handler
 }
 
 // Multi is the one router serving every provider. CreateMulti builds it; listen on the server
@@ -58,6 +64,7 @@ type Multi struct {
 	lanes     []*routerWorker // provider lanes, in Lanes order
 	anthropic *routerWorker   // the lane for every model no provider claims
 	proxy     *TLSProxy
+	gateway   http.Handler // serves GatewayPrefix, or nil
 	limit     int64
 }
 
@@ -75,7 +82,7 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 	if note == nil {
 		note = func(string) {}
 	}
-	m := &Multi{limit: limit}
+	m := &Multi{limit: limit, gateway: opts.Gateway}
 	for _, lane := range opts.Lanes {
 		laneOpts := lane
 		laneOpts.Port = 0
@@ -122,6 +129,17 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 		}
 		res := NewResponse(rw)
 		if opts.Port != 0 && RefuseHost(req, res, MultiName, []int{opts.Port}) {
+			return
+		}
+		// The mounted gateway answers its own paths, and adds no key: the client's credentials
+		// go through unchanged. The raw writer passes through, so the gateway streams through
+		// its own flush writer.
+		if req.URL.Path == GatewayPrefix || strings.HasPrefix(req.URL.Path, GatewayPrefix+"/") {
+			if m.gateway == nil {
+				AnthropicError(res, http.StatusNotFound, "not_found_error", "huddle-router: no gateway configured")
+				return
+			}
+			http.StripPrefix(GatewayPrefix, m.gateway).ServeHTTP(rw, req)
 			return
 		}
 		if req.Method == http.MethodGet && req.URL.Path == MultiHealthPath && req.URL.RawQuery == "" {

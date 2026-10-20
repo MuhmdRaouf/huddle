@@ -77,6 +77,8 @@ type multiOpts struct {
 	lanes []multiLaneOpts
 	// portSet: the router answers its reserved port's Host only (otherwise it takes any Host).
 	portSet bool
+	// gateway is the handler mounted under the router's gateway prefix; nil mounts none.
+	gateway http.Handler
 }
 
 // newMultiRig builds the router over the lanes given (zai and kimi when none are named) and
@@ -116,6 +118,7 @@ func newMultiRig(t *testing.T, opts multiOpts) *multiRig {
 		Anthropic: r.anthropic,
 		Lanes:     laneOptions,
 		Events:    r.events.record,
+		Gateway:   opts.gateway,
 	})
 	serveRouter(t, server, r.port)
 	return r

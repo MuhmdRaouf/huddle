@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -435,5 +436,138 @@ func TestMultiRouterScenarios(t *testing.T) {
 				}
 			})
 		})
+
+		f.Scenario("a request under /gateway reaches the gateway handler with the prefix stripped, and no upstream hears of it", func(s *bdd.S) {
+			var (
+				rig *multiRig
+				gw  = &gatewayFake{}
+				got answer
+			)
+			s.Given("zai and kimi lanes and a gateway mounted on the router", func(t *testing.T) {
+				rig = newMultiRig(s.T, multiOpts{gateway: gw})
+			})
+			s.When("POST /gateway/v1/chat/completions arrives", func(t *testing.T) {
+				answer, err := postRawBody(rig.port, "/gateway/v1/chat/completions", `{"model":"test-1","messages":[]}`,
+					map[string]string{"Content-Type": "application/json", "Authorization": "Bearer caller-token"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				got = answer
+			})
+			s.Then(`the gateway answered "gw" and saw the path without the prefix`, func(t *testing.T) {
+				if got.status != http.StatusOK || got.body != "gw" {
+					t.Fatalf("answer = %d %q, want 200 %q", got.status, got.body, "gw")
+				}
+				if paths := gw.pathsSeen(); !slices.Equal(paths, []string{"/v1/chat/completions"}) {
+					t.Fatalf("the gateway saw %v, want [/v1/chat/completions]", paths)
+				}
+			})
+			s.Then("neither the providers nor Anthropic saw it", func(t *testing.T) {
+				if rig.laneOf("zai").seen.len() != 0 || rig.laneOf("kimi").seen.len() != 0 {
+					t.Error("a provider saw a gateway request")
+				}
+				if rig.anthropicSeen.len() != 0 {
+					t.Error("Anthropic saw a gateway request")
+				}
+			})
+		})
+
+		f.Scenario("the gateway's own health check rides under the router's prefix", func(s *bdd.S) {
+			var (
+				rig *multiRig
+				gw  = &gatewayFake{}
+				got answer
+			)
+			s.Given("zai and kimi lanes and a gateway mounted on the router", func(t *testing.T) {
+				rig = newMultiRig(s.T, multiOpts{gateway: gw})
+			})
+			s.When("GET /gateway/health is read", func(t *testing.T) {
+				answer, err := getBody(rig.port, "/gateway/health")
+				if err != nil {
+					t.Fatal(err)
+				}
+				got = answer
+			})
+			s.Then("the gateway answered and saw /health", func(t *testing.T) {
+				if got.status != http.StatusOK || got.body != "gw" {
+					t.Fatalf("answer = %d %q, want 200 %q", got.status, got.body, "gw")
+				}
+				if paths := gw.pathsSeen(); !slices.Equal(paths, []string{"/health"}) {
+					t.Fatalf("the gateway saw %v, want [/health]", paths)
+				}
+			})
+		})
+
+		f.Scenario("with no gateway mounted, a /gateway path answers the not-found error and nothing goes upstream", func(s *bdd.S) {
+			var rig *multiRig
+			var got answer
+			s.Given("zai and kimi lanes and no gateway", func(t *testing.T) {
+				rig = newMultiRig(s.T, multiOpts{})
+			})
+			s.When("POST /gateway/v1/messages arrives", func(t *testing.T) {
+				answer, err := postRawBody(rig.port, "/gateway/v1/messages", `{"model":"test-1","messages":[]}`,
+					map[string]string{"Content-Type": "application/json"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				got = answer
+			})
+			s.Then("it is answered 404 with the not-found error named", func(t *testing.T) {
+				if got.status != http.StatusNotFound {
+					t.Fatalf("status = %d, want 404", got.status)
+				}
+				if !strings.Contains(got.body, `"type":"not_found_error"`) || !strings.Contains(got.body, "no gateway configured") {
+					t.Errorf("body = %q, want the Anthropic error shape naming the missing gateway", got.body)
+				}
+			})
+			s.Then("nothing went upstream", func(t *testing.T) {
+				if rig.laneOf("zai").seen.len() != 0 || rig.laneOf("kimi").seen.len() != 0 || rig.anthropicSeen.len() != 0 {
+					t.Error("an unmounted gateway request reached an upstream")
+				}
+			})
+		})
+
+		f.Scenario("a path that only borrows the prefix's letters takes the normal model route", func(s *bdd.S) {
+			var (
+				rig *multiRig
+				gw  = &gatewayFake{}
+				got answer
+			)
+			s.Given("zai and kimi lanes and a gateway mounted on the router", func(t *testing.T) {
+				rig = newMultiRig(s.T, multiOpts{gateway: gw})
+			})
+			s.When("POST /gatewayx/v1/messages arrives for glm-5.3-flash", func(t *testing.T) {
+				got = rig.postModel(t, "/gatewayx/v1/messages", "glm-5.3-flash")
+			})
+			s.Then("zai answered it and the gateway saw nothing", func(t *testing.T) {
+				if got.status != http.StatusOK || got.body != "data: zai-1\n\ndata: zai-2\n\n" {
+					t.Fatalf("answer = %d %q", got.status, got.body)
+				}
+				if paths := gw.pathsSeen(); len(paths) != 0 {
+					t.Errorf("the gateway saw %v", paths)
+				}
+			})
+		})
 	})
+}
+
+// gatewayFake stands in for the real gateway in the router's scenarios: it records the path
+// every request arrived with and answers 200 "gw".
+type gatewayFake struct {
+	mu    sync.Mutex
+	paths []string
+}
+
+func (g *gatewayFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	g.mu.Lock()
+	g.paths = append(g.paths, r.URL.Path)
+	g.mu.Unlock()
+	_, _ = w.Write([]byte("gw"))
+}
+
+// pathsSeen is every path the fake was handed, in order.
+func (g *gatewayFake) pathsSeen() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]string(nil), g.paths...)
 }
