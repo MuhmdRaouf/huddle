@@ -243,7 +243,7 @@ func noGoOnPath(t *testing.T) {
 func TestRunJudgesGivenProfile(t *testing.T) {
 	dir := writeProfile(t, "mode: atomic\n"+mp+"/internal/domain/job/job.go:1.1,2.2 4 1\n")
 	var stdout, stderr bytes.Buffer
-	code := judge(dir, "coverage.out", listing(mp+"/internal/domain/job"), &stdout, &stderr)
+	code := judge(dir, "coverage.out", false, listing(mp+"/internal/domain/job"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("judge exited %d, want 0; stderr:\n%s", code, stderr.String())
 	}
@@ -260,7 +260,7 @@ func TestRunGivenProfileFailsBelowMinimum(t *testing.T) {
 	// sampleProfile has internal/domain/brief at 40%, under its 95% minimum.
 	dir := writeProfile(t, sampleProfile)
 	var stdout, stderr bytes.Buffer
-	code := judge(dir, "coverage.out", listing(samplePackages()...), &stdout, &stderr)
+	code := judge(dir, "coverage.out", false, listing(samplePackages()...), &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("judge exited %d, want 1; stderr:\n%s", code, stderr.String())
 	}
@@ -277,7 +277,7 @@ func TestRunGivenProfileFailsWhenGatedPackageMissing(t *testing.T) {
 	// The lister knows internal/domain/brief; the profile has no block for it.
 	dir := writeProfile(t, "mode: atomic\n"+mp+"/internal/domain/job/job.go:1.1,2.2 4 1\n")
 	var stdout, stderr bytes.Buffer
-	code := judge(dir, "coverage.out", listing(mp+"/internal/domain/job", mp+"/internal/domain/brief"), &stdout, &stderr)
+	code := judge(dir, "coverage.out", false, listing(mp+"/internal/domain/job", mp+"/internal/domain/brief"), &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("judge exited %d, want 1; stderr:\n%s", code, stderr.String())
 	}
@@ -297,7 +297,7 @@ func TestRunGivenProfileWithEveryPackagePasses(t *testing.T) {
 	dir := writeProfile(t, profile)
 	var stdout, stderr bytes.Buffer
 	pkgs := listing(mp+"/internal/domain/job", mp+"/internal/adapters/fsfiles", mp+"/scripts/build")
-	code := judge(dir, "coverage.out", pkgs, &stdout, &stderr)
+	code := judge(dir, "coverage.out", false, pkgs, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("judge exited %d, want 0; stderr:\n%s", code, stderr.String())
 	}
@@ -320,7 +320,7 @@ func TestRunGivenProfileAllowsExemptPackagesMissing(t *testing.T) {
 		mp+"/scripts/build", mp+"/scripts/covergate",
 	)
 	var stdout, stderr bytes.Buffer
-	if code := judge(dir, "coverage.out", lists, &stdout, &stderr); code != 0 {
+	if code := judge(dir, "coverage.out", false, lists, &stdout, &stderr); code != 0 {
 		t.Fatalf("judge exited %d, want 0; stderr:\n%s", code, stderr.String())
 	}
 	want := "ok   " + mp + "/internal/domain/job 100.0% (min 95%)\n"
@@ -336,7 +336,7 @@ func TestRunGivenProfileNeverRunsGoTest(t *testing.T) {
 	noGoOnPath(t)
 	dir := writeProfile(t, "mode: atomic\n"+mp+"/internal/domain/job/job.go:1.1,2.2 4 1\n")
 	var stdout, stderr bytes.Buffer
-	code := judge(dir, "coverage.out", listing(mp+"/internal/domain/job"), &stdout, &stderr)
+	code := judge(dir, "coverage.out", false, listing(mp+"/internal/domain/job"), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("judge exited %d, want 0; stderr:\n%s", code, stderr.String())
 	}
@@ -347,7 +347,7 @@ func TestRunGivenProfileNeverRunsGoTest(t *testing.T) {
 
 func TestRunMissingProfileFile(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := judge(t.TempDir(), "nope.out", listing(), &stdout, &stderr); code != 1 {
+	if code := judge(t.TempDir(), "nope.out", false, listing(), &stdout, &stderr); code != 1 {
 		t.Fatalf("judge exited %d, want 1", code)
 	}
 	msg := stderr.String()
@@ -362,7 +362,7 @@ func TestRunMissingProfileFile(t *testing.T) {
 func TestRunUnreadableProfileFile(t *testing.T) {
 	// "." resolves to the module dir itself, which is a directory, not a readable profile.
 	var stdout, stderr bytes.Buffer
-	if code := judge(t.TempDir(), ".", listing(), &stdout, &stderr); code != 1 {
+	if code := judge(t.TempDir(), ".", false, listing(), &stdout, &stderr); code != 1 {
 		t.Fatalf("judge exited %d, want 1", code)
 	}
 	if !strings.Contains(stderr.String(), "covergate:") {
@@ -376,7 +376,7 @@ func TestRunFailsWhenPackageListingFails(t *testing.T) {
 		return nil, errors.New("no go tool")
 	}
 	var stdout, stderr bytes.Buffer
-	if code := judge(dir, "coverage.out", lister, &stdout, &stderr); code != 1 {
+	if code := judge(dir, "coverage.out", false, lister, &stdout, &stderr); code != 1 {
 		t.Fatalf("judge exited %d, want 1", code)
 	}
 	msg := stderr.String()
@@ -385,6 +385,97 @@ func TestRunFailsWhenPackageListingFails(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestRunPresentOnlySkipsGatedPackageMissingFromProfile(t *testing.T) {
+	// A shard's profile holds only that shard's packages: with -present-only a
+	// gated package another shard runs does not fail this one.
+	dir := writeProfile(t, "mode: atomic\n"+mp+"/internal/domain/job/job.go:1.1,2.2 4 1\n")
+	var stdout, stderr bytes.Buffer
+	code := judge(dir, "coverage.out", true, listing(mp+"/internal/domain/job", mp+"/internal/domain/brief"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("judge exited %d, want 0; stderr:\n%s", code, stderr.String())
+	}
+	want := "ok   " + mp + "/internal/domain/job 100.0% (min 95%)\n"
+	if stdout.String() != want {
+		t.Errorf("stdout = %q, want %q", stdout.String(), want)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunPresentOnlyStillFailsLowCoverage(t *testing.T) {
+	// -present-only skips absent packages, never a present one under its floor:
+	// sampleProfile has internal/domain/brief at 40%.
+	dir := writeProfile(t, sampleProfile)
+	var stdout, stderr bytes.Buffer
+	code := judge(dir, "coverage.out", true, listing(samplePackages()...), &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("judge exited %d, want 1; stderr:\n%s", code, stderr.String())
+	}
+	want := "FAIL " + mp + "/internal/domain/brief 40.0% (min 95%)\n"
+	if !strings.Contains(stdout.String(), want) {
+		t.Errorf("stdout = %q, want it to contain %q", stdout.String(), want)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+// shardFor mirrors the ci.yml shard selectors: the core shard runs
+// ./internal/core/..., the rest shard runs go list ./... minus every path
+// containing /internal/core/. A path matching the substring but not the
+// directory falls in neither shard: no shard runs it and no covergate pass
+// judges it.
+func shardFor(pkg string) string {
+	rel := strings.TrimPrefix(pkg, modulePath+"/")
+	if rel == "internal/core" || strings.HasPrefix(rel, "internal/core/") {
+		return "core"
+	}
+	if !strings.Contains(pkg, "/internal/core/") {
+		return "rest"
+	}
+	return ""
+}
+
+func TestShardForMirrorsTheShardSelectors(t *testing.T) {
+	tests := []struct {
+		pkg  string
+		want string
+	}{
+		{mp + "/internal/core", "core"},
+		{mp + "/internal/core/domain", "core"},
+		{mp + "/internal/core/domain/brief", "core"},
+		{mp + "/internal/domain/brief", "rest"},
+		{mp + "/internal/radar/store", "rest"},
+		{mp + "/cmd/huddle", "rest"},
+		{mp, "rest"},
+		// The rest shard drops on the bare substring, so a nested package dir
+		// spelled internal/core under another package runs in neither shard.
+		{"example.com/other/internal/core/deep", ""},
+		{mp + "/internal/adapters/internal/core/deep", ""},
+	}
+	for _, tt := range tests {
+		if got := shardFor(tt.pkg); got != tt.want {
+			t.Errorf("shardFor(%s) = %q, want %q", tt.pkg, got, tt.want)
+		}
+	}
+}
+
+func TestEveryModulePackageFallsInAShard(t *testing.T) {
+	pkgs, err := goListPackages("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) == 0 {
+		t.Fatal("go list found no packages; the sweep would guard nothing")
+	}
+	for _, pkg := range pkgs {
+		if shardFor(pkg) == "" {
+			t.Errorf("%s falls in neither shard: core takes ./internal/core/..., rest drops every path containing /internal/core/", pkg)
+		}
 	}
 }
 

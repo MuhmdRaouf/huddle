@@ -17,11 +17,12 @@ concurrency:
 # Flow:
 #   1. Plan: which parts changed (a manual run checks everything). A part whose folder does not exist yet is skipped.
 #   2. Repository rules on every push: secrets, AI attribution, the pre-commit hooks (Markdown, YAML, workflows, hygiene), the plugin catalogue.
-#   3. Tests: the Go module (huddle, radar, kanban) and the web workspace.
-#   4. Compatibility: the Go suite on macOS and the cross-host reproducible-build proof.
+#   3. Tests: the Go module (huddle, radar, kanban), split into a core and a rest shard, and the web workspace.
+#   4. Compatibility: the Go suite on macOS in the same two shards and the cross-host reproducible-build proof.
 #   5. All checks passed: the one check branch protection requires; a skipped job counts as passed.
 # Runners are pinned so an image migration never changes the toolchain under a green build. Third-party actions are
-# pinned to commit SHAs; Dependabot proposes the bumps. Every job is capped at 10 minutes.
+# pinned to commit SHAs; Dependabot proposes the bumps. Jobs are capped at 10 minutes, the Go test shards at 12
+# and macOS at 16.
 
 jobs:
   # 1. Plan
@@ -151,11 +152,11 @@ jobs:
   # 3. Tests
 
   go:
-    name: "Test: Go (huddle, radar, kanban)"
+    name: "Go: vet, staticcheck and the release build"
     needs: plan
     if: needs.plan.outputs.go == 'true'
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -186,12 +187,8 @@ jobs:
         run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
-      # tmpguard runs the suite with TMPDIR pointed at one empty directory and fails on any
-      # entry a test leaves there.
-      - name: Tests (race, coverage, nothing left in TMPDIR)
-        timeout-minutes: 8
-        run: go run ./scripts/tmpguard -race -timeout 7m -coverprofile=coverage.out -covermode=atomic ./...
-      # Saved here, not only in the post step: a job that later fails or hits its cap still leaves the raced build.
+      # Saved here, not only in the post step: a job that later fails or hits its cap still leaves the
+      # build the test shards restore.
       - if: always()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -199,7 +196,6 @@ jobs:
             ${{ steps.gocache.outputs.build }}
             ${{ steps.gocache.outputs.mod }}
           key: go-${{ runner.os }}-${{ hashFiles('go.sum', '**/*.go') }}
-      - run: go run ./scripts/covergate -profile coverage.out
       - run: go run ./scripts/build -out dist
       # A version with no CHANGELOG.md section fails here, before a tag can publish it.
       - name: VERSION has a CHANGELOG.md section
@@ -223,6 +219,70 @@ jobs:
           name: huddle-sha256sums
           path: dist/SHA256SUMS
           if-no-files-found: error
+
+  # The suite split in two so each half fits its step cap: core is the provider engine
+  # (internal/core/...), rest is every other package. Each shard races and gates its own
+  # coverage; -present-only keeps the gate from failing on the other shard's packages, and
+  # the rest shard checks no package falls between the two lists.
+  go-test:
+    name: "Test: Go (${{ matrix.shard }})"
+    needs: plan
+    if: needs.plan.outputs.go == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [core, rest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - id: gocache
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', '**/*.go') }}
+          restore-keys: go-${{ runner.os }}-
+      - name: Packages this shard tests
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          if [ "$SHARD" = core ]; then
+            echo "PKGS=./internal/core/..." >> "$GITHUB_ENV"
+          else
+            echo "PKGS=$(go list ./... | grep -v /internal/core/ | tr '\n' ' ')" >> "$GITHUB_ENV"
+          fi
+      # tmpguard runs the suite with TMPDIR pointed at one empty directory and fails on any
+      # entry a test leaves there.
+      - name: Tests (race, coverage, nothing left in TMPDIR)
+        timeout-minutes: 10
+        run: |
+          # $PKGS is the shard's package list; the word splitting is the point.
+          # shellcheck disable=SC2086
+          go run ./scripts/tmpguard -race -timeout 9m -coverprofile=coverage.out -covermode=atomic $PKGS
+      # Saved here, not only in the post step: a job that later fails or hits its cap still leaves the raced build.
+      - if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', '**/*.go') }}
+      - name: Coverage gate (this shard's packages)
+        timeout-minutes: 10
+        run: go run ./scripts/covergate -present-only -profile coverage.out
+      - name: No package falls between the shards
+        if: matrix.shard == 'rest'
+        timeout-minutes: 5
+        run: go test ./scripts/covergate/...
 
   web:
     name: "Test: web (hub, radar, kanban pages)"
@@ -253,11 +313,15 @@ jobs:
   # 4. Compatibility
 
   go-macos:
-    name: "Compat: macOS (Go, reproducible build)"
+    name: "Compat: macOS (Go ${{ matrix.shard }})"
     needs: [plan, go]
     if: ${{ !failure() && !cancelled() && needs.plan.outputs.go == 'true' }}
     runs-on: macos-26
     timeout-minutes: 16
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [core, rest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -268,36 +332,53 @@ jobs:
         run: |
           echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
           echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - name: Packages this shard tests
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          if [ "$SHARD" = core ]; then
+            echo "PKGS=./internal/core/..." >> "$GITHUB_ENV"
+          else
+            echo "PKGS=$(go list ./... | grep -v /internal/core/ | tr '\n' ' ')" >> "$GITHUB_ENV"
+          fi
       - id: restore
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ steps.gocache.outputs.build }}
             ${{ steps.gocache.outputs.mod }}
-          key: go-${{ runner.os }}-${{ hashFiles('go.sum', '**/*.go') }}
-          restore-keys: go-${{ runner.os }}-
+          key: go-${{ runner.os }}-${{ matrix.shard }}-${{ hashFiles('go.sum', '**/*.go') }}
+          restore-keys: go-${{ runner.os }}-${{ matrix.shard }}-
       # The compiled packages are saved before the tests run: a failing test never leaves the
       # next run to compile from nothing on top of the suite.
       - name: Compile
         timeout-minutes: 6
-        run: go test -count=1 -run '^$' ./... > /dev/null
+        run: |
+          # shellcheck disable=SC2086
+          go test -count=1 -run '^$' $PKGS > /dev/null
       - if: steps.restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ steps.gocache.outputs.build }}
             ${{ steps.gocache.outputs.mod }}
-          key: go-${{ runner.os }}-${{ hashFiles('go.sum', '**/*.go') }}
+          key: go-${{ runner.os }}-${{ matrix.shard }}-${{ hashFiles('go.sum', '**/*.go') }}
       - name: Tests
-        timeout-minutes: 8
-        run: go test -timeout 7m ./...
-      - run: go run ./scripts/build -target linux/amd64 -out dist-mac
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        timeout-minutes: 10
+        run: |
+          # shellcheck disable=SC2086
+          go test -timeout 9m $PKGS
+      # The digest check needs the sums artifact from one shard only.
+      - if: matrix.shard == 'rest'
+        run: go run ./scripts/build -target linux/amd64 -out dist-mac
+      - if: matrix.shard == 'rest'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: huddle-sha256sums
           path: sums
       # Equal digests mean the bytes depend on nothing but the sources, the version and the target.
       - name: linux/amd64 digests match the ubuntu build
+        if: matrix.shard == 'rest'
         run: |
           for f in dist-mac/*-linux-amd64; do
             name=$(basename "$f")
@@ -312,7 +393,7 @@ jobs:
   all-checks:
     name: All checks passed
     if: always()
-    needs: [plan, secrets, attribution, lint, catalogue, go, web, go-macos]
+    needs: [plan, secrets, attribution, lint, catalogue, go, go-test, web, go-macos]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:

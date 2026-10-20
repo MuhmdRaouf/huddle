@@ -1,7 +1,10 @@
 // covergate runs the test suite with coverage and fails unless every gated
 // package reaches its statement-coverage threshold. With -profile it judges an
 // existing coverprofile instead and runs no test. A gated package with no
-// block in the profile fails too: a truncated profile must not pass.
+// block in the profile fails too: a truncated profile must not pass. With
+// -present-only those absent packages are skipped instead: a shard's profile
+// holds only the shard's packages, and the sweep that no package falls between
+// the shards runs separately in the rest shard.
 package main
 
 import (
@@ -36,8 +39,9 @@ type coverage struct {
 
 func main() {
 	profile := flag.String("profile", "", "judge this existing coverprofile instead of running the suite")
+	presentOnly := flag.Bool("present-only", false, "with -profile, skip gated packages absent from the profile: a shard judges only its own packages")
 	flag.Parse()
-	os.Exit(run(".", *profile, os.Stdout, os.Stderr))
+	os.Exit(run(".", *profile, *presentOnly, os.Stdout, os.Stderr))
 }
 
 // packageLister returns the import paths of every package under the module in dir.
@@ -64,12 +68,12 @@ func goListPackages(dir string) ([]string, error) {
 
 // run tests the module in dir and judges the profile the run leaves behind,
 // or judges the coverprofile named by profile and runs no test.
-func run(dir string, profile string, stdout, stderr io.Writer) int {
-	return judge(dir, profile, goListPackages, stdout, stderr)
+func run(dir string, profile string, presentOnly bool, stdout, stderr io.Writer) int {
+	return judge(dir, profile, presentOnly, goListPackages, stdout, stderr)
 }
 
 // judge is run with the package lister injected, so tests never run the go tool.
-func judge(dir string, profile string, listPackages packageLister, stdout, stderr io.Writer) int {
+func judge(dir string, profile string, presentOnly bool, listPackages packageLister, stdout, stderr io.Writer) int {
 	profilePath := profile
 	if profilePath == "" {
 		test := exec.Command("go", "test", "-coverprofile="+profileName, "-covermode=atomic", "./...")
@@ -128,6 +132,11 @@ func judge(dir string, profile string, listPackages packageLister, stdout, stder
 		}
 		c, ok := packages[pkg]
 		if !ok {
+			if presentOnly {
+				// A shard's profile holds only the shard's packages; the
+				// package another shard runs is judged by that shard.
+				continue
+			}
 			// A gated package with no block in the profile has no measured
 			// coverage at all: a truncated or partial profile must not pass.
 			fmt.Fprintf(stdout, "FAIL %s missing from the profile (min %.0f%%)\n", pkg, min)
