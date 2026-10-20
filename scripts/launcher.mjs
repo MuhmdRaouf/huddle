@@ -164,12 +164,12 @@ const selfEntries = (words) => words.map((word) => [word, word]);
 const HUDDLE_MODULE = "github.com/MuhmdRaouf/huddle";
 
 /** The launcher spec for one provider plugin: the same huddle binary, version and checksum table
- *  the huddle launcher pins, exec'd as `huddle provider <p> <entry>` — the bundle names the plugin's
- *  hooks, commands and agents already run (<p>.js, <p>-router.js, <p>-passthrough.js)
- *  map onto the provider engine's entries. Like the huddle launcher there is no setup command: every
- *  bundle downloads the binary on first use, and a hook — any --hook argument, or the word `hook` —
- *  exits 0 at once, starting one detached download. `release` is releaseInfo's result over the
- *  repository's release dir; without one there is no launcher to generate and this throws. */
+ *  the huddle launcher pins, exec'd as `huddle provider <p> <entry>` — the bundle name the
+ *  commands run (<p>.js) maps onto the provider engine's cli entry. Like the huddle launcher there
+ *  is no setup command: every bundle downloads the binary on first use, and a hook — any --hook
+ *  argument, or the word `hook` — exits 0 at once, starting one detached download. `release` is
+ *  releaseInfo's result over the repository's release dir; without one there is no launcher to
+ *  generate and this throws. */
 export function providerSpec(release, provider) {
   if (release === null)
     throw new Error(
@@ -198,13 +198,11 @@ export function providerSpec(release, provider) {
     repo: release.repo,
     sha256: release.sha256,
     argName: "bundle",
-    // The plugin's three bundles (the commands run them; huddle's hooks run the providers' work)
-    // onto the provider engine's entries; the fixed `provider <p>` words ride binaryArg, so each
+    // The one bundle the commands run (huddle's hooks run the providers' work) onto the
+    // provider engine's cli entry; the fixed `provider <p>` words ride binaryArg, so the
     // entry stays one word.
     entries: [
       [`${provider}.js`, "cli"],
-      [`${provider}-router.js`, "router"],
-      [`${provider}-passthrough.js`, "passthrough"],
     ],
     hookFlag: false,
     hookEntries: [],

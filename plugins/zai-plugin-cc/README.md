@@ -202,6 +202,14 @@ how to fix that.
 Claude Code sends every model request to one address, so the agents can only run on GLM through a router:
 huddle-router, the one daemon every provider plugin shares.
 
+### Coming from 0.0.1
+
+One router serves every provider plugin now: huddle-router on port 18786, not one router per
+plugin. The first start after an update moves each 0.0.1 setup over — zai joins `providers.json`,
+Claude Code's settings point at huddle-router, the ledger names it, and the old router's binary
+copy and watch files go. A router that is still serving sessions you have open retires: it keeps
+answering those sessions and exits once they close.
+
 ### What it does
 
 - `/zai:setup` makes sure it runs — one process for every provider plugin, the same on macOS and Linux, no

@@ -41,12 +41,6 @@ type pidShape struct {
 	Token *string  `json:"token"`
 }
 
-// WritePidFile writes the record, 0600 and atomically, as `JSON.stringify(record, null, 2)` plus a
-// newline.
-func WritePidFile(ctx context.Context, stateRoot string, record PidRecord) error {
-	return writePidRecord(ctx, domain.NewStateLayout(stateRoot).RouterPid, record)
-}
-
 // ReadPidFile is the record, or false when there is none or it does not parse.
 func ReadPidFile(ctx context.Context, stateRoot string) (PidRecord, bool) {
 	return readPidRecord(ctx, domain.NewStateLayout(stateRoot).RouterPid)

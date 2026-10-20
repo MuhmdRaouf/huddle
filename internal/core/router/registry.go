@@ -206,43 +206,10 @@ func RemoveRegistryEntry(env domain.EnvLookup, name string) {
 	_ = os.Remove(entryFile(env, name))
 }
 
-// EntryClaim is the model claim a peer announced: its resolved catalog ids and its prefixes (the
-// file keeps its historical keys).
-func EntryClaim(entry RegisteredRouter) domain.ModelClaim {
-	return domain.ModelClaim{IDs: entry.CatalogIds, Prefixes: entry.ModelPrefixes}
-}
-
 // PeerTarget is another plugin's router that serves the model, for the router to forward to.
 type PeerTarget struct {
 	Name string
 	Port int64
-}
-
-// CreatePeerLookup looks up which peer serves a model, re-reading the registry at most every 5 s
-// so forwarding stays cheap. A nil now is the wall clock.
-func CreatePeerLookup(env domain.EnvLookup, self string, now func() int64) func(model string) (PeerTarget, bool) {
-	if now == nil {
-		now = func() int64 { return time.Now().UnixMilli() }
-	}
-	var entries []RegisteredRouter
-	readAt := int64(-1) << 62 // -Infinity: the first lookup always reads
-	return func(model string) (PeerTarget, bool) {
-		if now()-readAt >= 5000 {
-			entries = make([]RegisteredRouter, 0, len(ReadRegistry(env)))
-			for _, entry := range ReadRegistry(env) {
-				if entry.Name != self {
-					entries = append(entries, entry)
-				}
-			}
-			readAt = now()
-		}
-		for _, entry := range entries {
-			if domain.Claims(EntryClaim(entry), model) {
-				return PeerTarget{Name: entry.Name, Port: entry.Port}, true
-			}
-		}
-		return PeerTarget{}, false
-	}
 }
 
 // LiveRouters is the entries whose router answers its health check right now (used to decide where

@@ -158,71 +158,6 @@ func TestRegistryFiles(t *testing.T) {
 	})
 }
 
-func TestEntryClaim(t *testing.T) {
-	t.Parallel()
-	t.Run("claims catalog ids and prefixed ids, never another plugin's", func(t *testing.T) {
-		kimi := registryEntry(nil)
-		claim := EntryClaim(kimi)
-		for _, model := range []string{"kimi-k3", "kimi-future-9"} {
-			if !domain.Claims(claim, model) {
-				t.Fatalf("claims(%q) = false, want true", model)
-			}
-		}
-		for _, model := range []string{"glm-5.3", "claude-sonnet-5-5"} {
-			if domain.Claims(claim, model) {
-				t.Fatalf("claims(%q) = true, want false", model)
-			}
-		}
-	})
-}
-
-func TestCreatePeerLookup(t *testing.T) {
-	t.Parallel()
-	t.Run("finds the peer that serves a model, never itself", func(t *testing.T) {
-		_, env := registryHome(t)
-		mustSaveEntry(t, env, registryEntry(nil))
-
-		lookup := CreatePeerLookup(env, "zai", nil)
-		if peer, ok := lookup("kimi-k3"); !ok || peer != (PeerTarget{Name: "kimi", Port: 18788}) {
-			t.Fatalf("lookup(kimi-k3) = %+v (%v), want kimi on 18788", peer, ok)
-		}
-		for _, model := range []string{"glm-5.3", "claude-sonnet-5-5"} {
-			if _, ok := lookup(model); ok {
-				t.Fatalf("lookup(%q) found a peer, want none", model)
-			}
-		}
-
-		selfLookup := CreatePeerLookup(env, "kimi", nil)
-		if _, ok := selfLookup("kimi-k3"); ok {
-			t.Fatal("the lookup answered with the plugin's own router")
-		}
-	})
-
-	t.Run("re-reads the registry at most every 5 s", func(t *testing.T) {
-		_, env := registryHome(t)
-		mustSaveEntry(t, env, registryEntry(nil))
-		now := int64(1_000_000)
-		lookup := CreatePeerLookup(env, "zai", func() int64 { return now })
-		if peer, ok := lookup("kimi-k3"); !ok || peer.Name != "kimi" {
-			t.Fatalf("lookup(kimi-k3) = %+v (%v), want kimi", peer, ok)
-		}
-
-		mustSaveEntry(t, env, registryEntry(func(e *RegisteredRouter) {
-			e.Name = "deepseek"
-			e.Port = 18789
-			e.ModelPrefixes = []string{"deepseek-"}
-		}))
-		if _, ok := lookup("deepseek-v4-pro"); ok {
-			t.Fatal("the lookup re-read the registry before 5 s passed")
-		}
-
-		now += 5000
-		if peer, ok := lookup("deepseek-v4-pro"); !ok || peer != (PeerTarget{Name: "deepseek", Port: 18789}) {
-			t.Fatalf("lookup(deepseek-v4-pro) = %+v (%v), want deepseek on 18789", peer, ok)
-		}
-	})
-}
-
 func TestLiveRouters(t *testing.T) {
 	t.Parallel()
 	t.Run("keeps only the entries whose router answers, minus this plugin's own", func(t *testing.T) {
@@ -502,28 +437,6 @@ func assertFileText(t *testing.T, path, want string) {
 	}
 }
 
-// The 5 s re-read boundary itself, at its edges.
-func TestCreatePeerLookupRereadBoundary(t *testing.T) {
-	t.Parallel()
-	_, env := registryHome(t)
-	now := int64(500)
-	lookup := CreatePeerLookup(env, "zai", func() int64 { return now })
-	if _, ok := lookup("kimi-k3"); ok {
-		t.Fatal("an empty registry answered")
-	}
-	mustSaveEntry(t, env, registryEntry(nil))
-	now += 4999
-	if _, ok := lookup("kimi-k3"); ok {
-		t.Fatal("the registry was re-read a millisecond early")
-	}
-	now++
-	if _, ok := lookup("kimi-k3"); !ok {
-		t.Fatal("the registry was not re-read after 5 s")
-	}
-}
-
-// The health check's own timeout: a peer that never answers is not live either. The server below
-// accepts the connection and stalls, so the 500 ms budget is the only way this test passes.
 func TestLiveRoutersHealthTimeout(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {

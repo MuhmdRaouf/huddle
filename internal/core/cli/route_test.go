@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -140,30 +138,6 @@ func (h *harness) deps() cli.SetupDeps {
 			return h.routerKey, h.routerKeyErr
 		},
 	}
-}
-
-// healthyServer is a loopback server that answers one plugin router's health path the way a router
-// does, on an OS-picked 127.0.0.1 port.
-func healthyServer(t *testing.T, healthPath string) int {
-	t.Helper()
-	name := strings.TrimSuffix(strings.Split(healthPath, "/")[1], "-router")
-	display := name
-	if name == "zai" {
-		display = "Z.ai GLM"
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc(healthPath, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": name, "provider": display})
-	})
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	server := &http.Server{Handler: mux}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { _ = server.Close() })
-	return listener.Addr().(*net.TCPAddr).Port
 }
 
 func settingsOf(t *testing.T, h *harness) map[string]any {
@@ -366,65 +340,6 @@ func TestModelsReportLine(t *testing.T) {
 		}
 		if got := cli.AgentText(cli.AgentsResult{Error: "glm-5.3.md: not found"}); got != "FAILED: glm-5.3.md: not found" {
 			t.Fatalf("agentText = %q, want %q", got, "FAILED: glm-5.3.md: not found")
-		}
-	})
-}
-
-func TestBaseUrlReport(t *testing.T) {
-	t.Run("is ok when ANTHROPIC_BASE_URL points at this plugin's router", func(t *testing.T) {
-		ok, text := cli.BaseUrlReport(testkit.ReferenceProvider, domain.EnvLookup{"ANTHROPIC_BASE_URL": routedEnv})
-
-		if !ok {
-			t.Fatal("ok = false, want true")
-		}
-		if !strings.Contains(text, "zai router ("+routedEnv+")") {
-			t.Fatalf("text = %q, want it to name the zai router url", text)
-		}
-	})
-
-	t.Run("names the other plugin when it points at another router", func(t *testing.T) {
-		ok, text := cli.BaseUrlReport(testkit.ReferenceProvider, domain.EnvLookup{"ANTHROPIC_BASE_URL": "http://127.0.0.1:18788"})
-
-		if ok {
-			t.Fatal("ok = true, want false")
-		}
-		if !strings.Contains(text, "kimi plugin's router") {
-			t.Fatalf("text = %q, want it to name the kimi plugin", text)
-		}
-		if !strings.Contains(text, "run /zai:setup to point Claude Code at the zai router") {
-			t.Fatalf("text = %q, want it to name the setup command", text)
-		}
-	})
-
-	t.Run("says unset or elsewhere when it points nowhere known, and follows the router port override", func(t *testing.T) {
-		_, text := cli.BaseUrlReport(testkit.ReferenceProvider, domain.EnvLookup{})
-		if !strings.Contains(text, "unset or elsewhere") {
-			t.Fatalf("text = %q, want it to say unset or elsewhere", text)
-		}
-		if !strings.Contains(text, "run /zai:setup to point Claude Code at the zai router") {
-			t.Fatalf("text = %q, want it to name the setup command", text)
-		}
-		ok, _ := cli.BaseUrlReport(testkit.ReferenceProvider, domain.EnvLookup{
-			"HUDDLE_ROUTER_PORT": "19000",
-			"ANTHROPIC_BASE_URL": "http://127.0.0.1:19000",
-		})
-		if !ok {
-			t.Fatal("ok = false with the port override matching, want true")
-		}
-	})
-
-	t.Run("never asks for an export, whatever the base URL points at", func(t *testing.T) {
-		envs := []domain.EnvLookup{
-			{"ANTHROPIC_BASE_URL": routedEnv},
-			{"ANTHROPIC_BASE_URL": "http://127.0.0.1:18788"},
-			{"ANTHROPIC_BASE_URL": "http://127.0.0.1:9999"},
-			{},
-		}
-		for _, env := range envs {
-			_, text := cli.BaseUrlReport(testkit.ReferenceProvider, env)
-			if strings.Contains(text, "export") {
-				t.Fatalf("BaseUrlReport(%v) = %q, want no line that asks for an export", env, text)
-			}
 		}
 	})
 }
@@ -1126,17 +1041,6 @@ func TestLedgerMarkerAgentsGate(t *testing.T) {
 			t.Fatal("disabled ledger survives remove, want it gone")
 		}
 	})
-
-	t.Run("knows its own router's health from any other 200", func(t *testing.T) {
-		own := healthyServer(t, "/zai-router/health")
-		if !cli.RouterUp(context.Background(), testkit.ReferenceProvider, domain.EnvLookup{"HUDDLE_ROUTER_PORT": fmt.Sprint(own)}) {
-			t.Fatal("routerUp = false on our own health answer, want true")
-		}
-		other := healthyServer(t, "/kimi-router/health")
-		if cli.RouterUp(context.Background(), testkit.ReferenceProvider, domain.EnvLookup{"HUDDLE_ROUTER_PORT": fmt.Sprint(other)}) {
-			t.Fatal("routerUp = true on another plugin's health answer, want false")
-		}
-	})
 }
 
 func TestAgentsDir(t *testing.T) {
@@ -1257,36 +1161,6 @@ func TestRemoveRoutingSettingsUnparsable(t *testing.T) {
 	}
 }
 
-func TestRouterUpFailures(t *testing.T) {
-	ctx := context.Background()
-	// A port nothing listens on any more: the health check cannot even connect.
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	dead := listener.Addr().(*net.TCPAddr).Port
-	_ = listener.Close()
-	if cli.RouterUp(ctx, testkit.ReferenceProvider, domain.EnvLookup{"HUDDLE_ROUTER_PORT": fmt.Sprint(dead)}) {
-		t.Fatal("routerUp = true on a dead port, want false")
-	}
-
-	// A 200-less answer is not ours either.
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	})
-	alive, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	server := &http.Server{Handler: mux}
-	go func() { _ = server.Serve(alive) }()
-	t.Cleanup(func() { _ = server.Close() })
-	if cli.RouterUp(ctx, testkit.ReferenceProvider, domain.EnvLookup{"ZAI_ROUTER_PORT": fmt.Sprint(alive.Addr().(*net.TCPAddr).Port)}) {
-		t.Fatal("routerUp = true on a 404, want false")
-	}
-}
-
 func TestInstalledMarkerUnwritable(t *testing.T) {
 	root := testkit.TempDir(t, "core-route-data-")
 	occupied := filepath.Join(root, "zai-occupied")
@@ -1400,31 +1274,6 @@ func TestRoutingHookRepairsSettings(t *testing.T) {
 	}
 	if len(h.out.Lines) != 0 {
 		t.Fatalf("lines = %q, want none", h.out.Lines)
-	}
-}
-
-func TestRouterUpTruncatedBody(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go func(c net.Conn) {
-				// A header promising a body the answer never delivers.
-				_, _ = c.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort"))
-				_ = c.Close()
-			}(conn)
-		}
-	}()
-	t.Cleanup(func() { _ = listener.Close() })
-	port := listener.Addr().(*net.TCPAddr).Port
-	if cli.RouterUp(context.Background(), testkit.ReferenceProvider, domain.EnvLookup{"HUDDLE_ROUTER_PORT": fmt.Sprint(port)}) {
-		t.Fatal("routerUp = true on a truncated body, want false")
 	}
 }
 

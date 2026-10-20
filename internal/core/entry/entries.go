@@ -11,23 +11,18 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/cli"
 	providerdata "github.com/MuhmdRaouf/huddle/internal/core/providers"
-	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/routerd"
 )
 
 // providers are the five sibling plugins this binary serves.
 var providers = []string{"zai", "kimi", "deepseek", "minimax", "qwen"}
 
 // entryNames are the entry points dist/run maps bundles onto.
-var entryNames = []string{"cli", "router", "passthrough", "ensure"}
+var entryNames = []string{"cli"}
 
 // entries dispatches a valid (provider, entry) pair.
 var entries = map[string]func(provider string, args []string) int{
-	"cli":         cliEntry,
-	"router":      routerEntry,
-	"passthrough": passthroughEntry,
-	"ensure":      ensureEntry,
+	"cli": cliEntry,
 }
 
 // entryStderr receives the entries' output; Run points it at the caller's
@@ -150,73 +145,6 @@ func environLookup() domain.EnvLookup {
 // refused anything else, so a miss (a renamed provider mid-release) is a usage error.
 func providerOf(name string) (domain.Provider, bool) {
 	return providerdata.ByName(name)
-}
-
-// routerEntry is the router bundle's entry: run | worker | start | stop | status. Its usage
-// error goes to entryStderr (the caller's stderr); its command output is the process's own
-// stdout.
-func routerEntry(name string, args []string) int {
-	// A hook must never fail Claude Code, whatever the arguments look like.
-	if contains(args, "--hook") {
-		return 0
-	}
-	provider, ok := providerOf(name)
-	if !ok {
-		fmt.Fprintf(entryStderr, "plugin-core: unknown provider %s\n", name)
-		return 2
-	}
-	return router.RouterService(router.RouterServiceOptions{
-		Provider: provider,
-		Script:   executablePath(),
-		Env:      environLookup(),
-		Argv:     args,
-		Err:      entryStderr,
-	})
-}
-
-// passthroughEntry is the emergency passthrough bundle's entry: serve until
-// handed over (or told to go).
-func passthroughEntry(name string, args []string) int {
-	if contains(args, "--hook") {
-		return 0
-	}
-	provider, ok := providerOf(name)
-	if !ok {
-		fmt.Fprintf(entryStderr, "plugin-core: unknown provider %s\n", name)
-		return 2
-	}
-	env := environLookup()
-	resolved := domain.ResolveProvider(provider, env)
-	err := router.RunEmergency(
-		router.EmergencyProvider{
-			Name:       resolved.Name,
-			Display:    resolved.Display,
-			EnvPrefix:  resolved.EnvPrefix,
-			HealthPath: resolved.Router.HealthPath,
-			Port:       resolved.Router.Port,
-			Claim:      resolved.ModelClaim(),
-		},
-		env,
-		nil,
-	)
-	if err != nil {
-		fmt.Fprintf(entryStderr, "plugin-core: %s passthrough failed: %s\n", name, err.Error())
-		return 1
-	}
-	return 0
-}
-
-// ensureEntry is the ensure bundle's check that the daemon is still there: a provider recorded in
-// providers.json gets the probe and the detached start, never waited for. It never prints and
-// always exits 0.
-func ensureEntry(name string, _ []string) int {
-	if provider, ok := providerOf(name); ok {
-		routerd.Wake(context.Background(), routerd.StartOptions{
-			Env:        environLookup(),
-			Executable: executablePath(),
-		}, provider.Name)
-	}
-	return 0
 }
 
 // executablePath is this binary, the script the router forks and copies; "" when even that fails

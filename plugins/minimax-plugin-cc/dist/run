@@ -21,8 +21,6 @@ bundle=$1
 shift
 case "$bundle" in
   minimax.js) entry=cli ;;
-  minimax-router.js) entry=router ;;
-  minimax-passthrough.js) entry=passthrough ;;
   *)
     echo "minimax: unknown bundle $bundle" >&2
     exit 2

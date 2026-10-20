@@ -18,7 +18,7 @@ var version = "dev"
 // SetVersion stamps the version the provider entries report and compare.
 func SetVersion(v string) { version = v; adapters.SetVersion(v) }
 
-const usageLine = "usage: plugin-core <zai|kimi|deepseek|minimax|qwen> <cli|router|passthrough|ensure> [args...]"
+const usageLine = "usage: plugin-core <zai|kimi|deepseek|minimax|qwen> cli [args...]"
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	noteStart()

@@ -44,9 +44,7 @@ var namesPort = []string{"isoenv.Environ(", "wireSandbox("}
 // startAllowed lists the files whose router-start matches were inspected and cannot reach the
 // live router, each with the reason.
 var startAllowed = map[string]string{
-	"internal/core/router/ensure_test.go":             "the ensure check probes the provider's own port ($ACME_ROUTER_PORT or DefaultPort), never the huddle-router's",
-	"internal/core/router/power_loss_test.go":         "the service child serves the provider's own $ACME_ROUTER_PORT; nothing in the path reads the huddle-router's",
-	"internal/core/router/upgrade_front_test.go":      "the front scenes serve the provider's own $ACME_ROUTER_PORT; nothing in the path reads the huddle-router's",
+	"internal/core/cli/route_test.go":                 "the start match reads the fake host's recorded line back; the ensure call dials nothing",
 	"internal/core/testkit/fakedeps/fakedeps_test.go": "the host under test is the fake, whose EnsureRouter answers a canned line and dials nothing",
 }
 

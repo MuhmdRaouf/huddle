@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-const wantUsage = "usage: plugin-core <zai|kimi|deepseek|minimax|qwen> <cli|router|passthrough|ensure> [args...]"
+const wantUsage = "usage: plugin-core <zai|kimi|deepseek|minimax|qwen> cli [args...]"
 
 var allProviders = []string{"zai", "kimi", "deepseek", "minimax", "qwen"}
-var allEntries = []string{"cli", "router", "passthrough", "ensure"}
+var allEntries = []string{"cli"}
 
 func TestRunVersion(t *testing.T) {
 	var stdout, stderr bytes.Buffer
@@ -92,11 +92,9 @@ func TestRunHookIsSilent(t *testing.T) {
 		{"hook with unknown provider", []string{"glm", "cli", "--hook"}},
 		{"hook with unknown entry", []string{"zai", "shell", "--hook"}},
 		{"hook in place of the entry", []string{"zai", "--hook"}},
-		// The cli entry runs its own hook commands (usage --hook, setup --hook); a bare --hook
-		// as the command name is a usage error there, so the always-silent pair this case pins
-		// is ensure's.
-		{"hook with a valid pair", []string{"zai", "ensure", "--hook"}},
-		{"hook after entry args", []string{"zai", "router", "watch", "--hook"}},
+		// The cli entry runs its own hook commands (usage --hook, setup --hook): a --hook
+		// argument anywhere on the line is silence before the entry runs.
+		{"hook after entry args", []string{"zai", "cli", "board", "--hook"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -199,20 +197,6 @@ func captureStdout(t *testing.T, call func() int) string {
 		t.Fatalf("exit = %d, want 0", code)
 	}
 	return string(text)
-}
-
-func TestRunRouterUsage(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"zai", "router", "explode"}, &stdout, &stderr)
-	if code != 2 {
-		t.Fatalf("exit = %d, want 2", code)
-	}
-	if stdout.Len() != 0 {
-		t.Errorf("stdout = %q, want empty", stdout.String())
-	}
-	if want := "usage: zai-router run | start | stop | status\n"; stderr.String() != want {
-		t.Errorf("stderr = %q, want %q", stderr.String(), want)
-	}
 }
 
 func TestRunDispatchesThroughTable(t *testing.T) {

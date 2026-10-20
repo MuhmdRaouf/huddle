@@ -220,3 +220,18 @@ func (m *Multi) route(req *http.Request, res *Response, body []byte) {
 	node := parseBodyNode(body)
 	m.laneFor(modelIn(node)).forwardParsed(req, res, body, node)
 }
+
+// jsonAnswer writes one JSON answer.
+func jsonAnswer(res *Response, status int, value any) {
+	res.Header().Set("Content-Type", "application/json")
+	res.WriteHeader(status)
+	res.End([]byte(marshalCompact(value)))
+}
+
+// modelOrDash is the model a log line names, "-" when the request carried none.
+func modelOrDash(model string) string {
+	if model == "" {
+		return "-"
+	}
+	return model
+}

@@ -14,13 +14,10 @@ package cli
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
@@ -316,51 +313,6 @@ func AgentText(applied AgentsResult) string {
 		}
 	}
 	return strings.Join(each, ", ")
-}
-
-// RouterUp is whether this plugin's router answers its health path with its own name (any other
-// 200 is someone else).
-func RouterUp(ctx context.Context, provider domain.Provider, env domain.EnvLookup) bool {
-	callCtx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	request, err := http.NewRequestWithContext(callCtx, http.MethodGet,
-		domain.RouterBaseURL(provider, env)+provider.Router.HealthPath, nil)
-	if err != nil {
-		return false
-	}
-	answer, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return false
-	}
-	body, readErr := io.ReadAll(answer.Body)
-	closeErr := answer.Body.Close()
-	if readErr != nil || closeErr != nil {
-		return false
-	}
-	if answer.StatusCode < 200 || answer.StatusCode >= 300 {
-		return false
-	}
-	_, ours := router.OurHealth(string(body), provider.Name, provider.Display)
-	return ours
-}
-
-// BaseUrlReport is what ANTHROPIC_BASE_URL points at: ok only when it is this plugin's router; the
-// text names the fix setup applies itself, never a line to export.
-func BaseUrlReport(provider domain.Provider, env domain.EnvLookup) (bool, string) {
-	expected := domain.RouterBaseURL(provider, env)
-	actual, has := env["ANTHROPIC_BASE_URL"]
-	if has && actual == expected {
-		return true, "points at the " + provider.Name + " router (" + expected + ")"
-	}
-	fix := "run " + provider.Slash + "setup to point Claude Code at the " + provider.Name + " router"
-	other := ""
-	if has {
-		other = domain.PluginRouters[domain.PortOf(actual)]
-	}
-	if other != "" {
-		return false, "points at the " + other + " plugin's router; " + fix
-	}
-	return false, "unset or elsewhere; " + fix
 }
 
 // SetupDeps is the slice `setup`, `setup --remove` and their hook need; the CLI maps it out of

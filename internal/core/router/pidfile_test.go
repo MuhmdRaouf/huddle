@@ -4,6 +4,7 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 
@@ -27,7 +28,7 @@ func TestPidFile(t *testing.T) {
 			Mode:         PidModeRouter,
 			Token:        "x",
 		}
-		if err := WritePidFile(context.Background(), root, record); err != nil {
+		if err := writeTestPidRecord(root, record); err != nil {
 			t.Fatal(err)
 		}
 		read, ok := ReadPidFile(context.Background(), root)
@@ -64,7 +65,7 @@ func TestPidFile(t *testing.T) {
 			Mode:         PidModeEmergency,
 			Token:        "tok",
 		}
-		if err := WritePidFile(context.Background(), root, record); err != nil {
+		if err := writeTestPidRecord(root, record); err != nil {
 			t.Fatal(err)
 		}
 		if err := RetirePidFile(context.Background(), root, record); err != nil {
@@ -90,4 +91,14 @@ func TestPidFile(t *testing.T) {
 			t.Fatal("retiring over a directory reported no error")
 		}
 	})
+}
+
+// writeTestPidRecord lays a pid record down the way the retired starter wrote it, for the tests
+// of the reads and the retire that follow it.
+func writeTestPidRecord(root string, record PidRecord) error {
+	data, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(domain.NewStateLayout(root).RouterPid, data, 0o600)
 }

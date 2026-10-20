@@ -418,6 +418,15 @@ shows up in radar ([README · The gateway](../README.md#the-gateway)).
    `X-Huddle-Harness` header, which lands on the route line next to `via: gateway`, so radar
    tells the harnesses apart.
 
+### Coming from 0.0.1
+
+A machine set up with 0.0.1 runs one router per provider (zai on 18787, kimi on 18788 and so on). It
+moves to huddle-router on the first start of the daemon: each provider joins
+`~/.agents/huddle-router/providers.json`, Claude Code's `HTTPS_PROXY` moves to the daemon's port,
+the ledger names it, and the old router's binary copy and watch files go. A router that is still
+serving sessions you have open retires — it keeps answering those sessions and exits once they
+close, so nothing running is cut off.
+
 ## Troubleshooting
 
 | Symptom | What to do |

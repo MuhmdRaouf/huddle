@@ -7,10 +7,26 @@ import (
 	"context"
 	"net/url"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/spool"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
+
+// envOrDefault is `env[name] ?? fallback`
+func envOrDefault(env domain.EnvLookup, name, fallback string) string {
+	if value, ok := env[name]; ok && value != "" {
+		return value
+	}
+	return fallback
+}
+
+// workerKey is the provider key the way setup reads it (env, OS store, key file), never logged.
+func workerKey(ctx context.Context, provider domain.Provider, env domain.EnvLookup) (ports.ProviderKey, *ports.WorkerError) {
+	store := keystore.PlatformKeyStore(provider, env, keystore.PlatformOptions{})
+	return adapters.LoadKey(ctx, provider, env, provider.KeyFile, store)
+}
 
 // BadURL is a lane's unusable endpoint override: the env variable that named it and the parse
 // error, so each caller logs the failure in its own words.

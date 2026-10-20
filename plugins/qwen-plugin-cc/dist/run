@@ -21,8 +21,6 @@ bundle=$1
 shift
 case "$bundle" in
   qwen.js) entry=cli ;;
-  qwen-router.js) entry=router ;;
-  qwen-passthrough.js) entry=passthrough ;;
   *)
     echo "qwen: unknown bundle $bundle" >&2
     exit 2

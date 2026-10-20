@@ -200,6 +200,9 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 		log("huddle-router: " + err.Error())
 	}
 	before := statOf(enabledFile)
+	// The 0.0.1 setups move once per start: a machine the per-provider routers served joins
+	// huddle-router on its first serve, old routers retiring as their sessions' lanes come up.
+	go migrateOnce(ctx, env, log)
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
 	ceiling := rssCeilingOf(env, o)

@@ -737,39 +737,29 @@ describe("the source build", () => {
 });
 
 describe("the provider plugins' dist/run scripts", () => {
-  it("map each provider's three bundles to its provider <p> <entry> words", () => {
+  it("map each provider's bundle to its provider <p> cli words", () => {
     for (const provider of PROVIDERS) {
       const script = launcherScript(providerSpec({ ...RELEASE, sha256: {} }, provider));
       assert.ok(
         script.includes(`exec "$bin" provider ${provider} "$entry" "$@"`),
-        `${provider}: the bundles exec huddle provider ${provider} <entry>`,
+        `${provider}: the bundle execs huddle provider ${provider} <entry>`,
       );
-      const wanted = [
-        [`${provider}.js`, "cli"],
-        [`${provider}-router.js`, "router"],
-        [`${provider}-passthrough.js`, "passthrough"],
-      ];
-      for (const [bundle, entry] of wanted) {
-        assert.ok(script.includes(`  ${bundle}) entry=${entry} ;;`), `${provider}: ${bundle} maps to ${entry}`);
-      }
+      assert.ok(script.includes(`  ${provider}.js) entry=cli ;;`), `${provider}: ${provider}.js maps to cli`);
+      assert.doesNotMatch(script, /-router\.js|-passthrough\.js|-ensure\.js/, `${provider}: no retired bundle maps`);
       assert.doesNotMatch(script, /entry=provider /, `${provider}: the entry stays one word`);
     }
   });
 
   it("run the installed huddle binary with the provider word and every argument", async (t) => {
     for (const provider of PROVIDERS) {
-      await t.test(`${provider} runs its bundles`, async (t) => {
+      await t.test(`${provider} runs its bundle`, async (t) => {
         const { binHome, run } = rig(t, info(), [], undefined, providerFlavour(provider));
         install(binHome);
         assert.deepEqual(
           await run([`${provider}.js`, "board", "--json"]),
           ran(0, `huddle provider ${provider} cli board --json\n`, ""),
         );
-        assert.deepEqual(await run([`${provider}-router.js`, "status"]), ran(0, `huddle provider ${provider} router status\n`, ""));
-        assert.deepEqual(
-          await run([`${provider}-passthrough.js`]),
-          ran(0, `huddle provider ${provider} passthrough\n`, ""),
-        );
+        assert.deepEqual(await run([`${provider}-router.js`]), ran(2, "", `${provider}: unknown bundle ${provider}-router.js\n`));
       });
     }
   });

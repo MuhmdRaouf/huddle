@@ -93,9 +93,3 @@ func refused(message string) Replacement {
 		Body:    marshalCompact(anthropicEvent{Type: "error", Error: anthropicDetail{Type: "invalid_request_error", Message: message}}),
 	}
 }
-
-// RemovedAnswer is the answer for a provider or peer request on a retired router: the plugin is
-// gone, and only a restart moves the session off this router.
-func RemovedAnswer(display string) Replacement {
-	return refused(display + " was removed: restart Claude Code to stop using its router")
-}

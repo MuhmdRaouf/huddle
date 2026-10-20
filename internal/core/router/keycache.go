@@ -99,8 +99,3 @@ func (c *keyCache) clear() {
 	c.answer = keyAnswer{}
 	c.mu.Unlock()
 }
-
-// warm starts the first lookup now, so the first request normally finds the key ready.
-func (c *keyCache) warm() {
-	go func() { c.get(context.Background()) }()
-}

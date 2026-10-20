@@ -222,91 +222,6 @@ func Harden(server *http.Server) *http.Server {
 	return server
 }
 
-// Connections tracks the sockets of one or more servers. A streaming response keeps its socket in
-// flight until its last byte, and the router closes sockets itself: Drain ends each socket with no
-// request in flight now and each other one as soon as its last response is done, CloseAll ends
-// every one at once. Go's own CloseIdleConnections leaves a streaming response open and cannot be
-// told apart from an idle one at shutdown time, which is why the router tracks sockets itself.
-type Connections struct {
-	mu       sync.Mutex
-	sockets  map[net.Conn]http.ConnState
-	draining bool
-	closed   func(open int)
-}
-
-// TrackConnections tracks connections; closed runs after each socket closes, with how many are
-// still open.
-func TrackConnections(closed func(open int)) *Connections {
-	if closed == nil {
-		closed = func(int) {}
-	}
-	return &Connections{sockets: map[net.Conn]http.ConnState{}, closed: closed}
-}
-
-// Watch tracks this server's sockets from now on. The connection states are the in-flight count:
-// a socket is busy exactly from the moment a request reached it to the moment its response is
-// fully flushed (Go moves it to StateIdle only after the last byte went out).
-func (c *Connections) Watch(server *http.Server) {
-	server.ConnState = func(conn net.Conn, state http.ConnState) {
-		c.mu.Lock()
-		if state == http.StateClosed {
-			delete(c.sockets, conn)
-			// The callback runs inside the same locked transition as the deletion (delete and
-			// closed in one synchronous step): once Size() reports the socket gone, closed has
-			// already run for it. The callback must not call back into the tracker, which would
-			// deadlock on the lock held here.
-			c.closed(len(c.sockets))
-			c.mu.Unlock()
-			return
-		}
-		c.sockets[conn] = state
-		draining := c.draining
-		c.mu.Unlock()
-		// Draining: a keep-alive socket whose last response just went out closes now, not at the
-		// drain deadline.
-		if draining && state == http.StateIdle {
-			conn.Close()
-		}
-	}
-}
-
-// Size is the number of open sockets.
-func (c *Connections) Size() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return len(c.sockets)
-}
-
-// Drain ends every socket with no request in flight; each other one ends as soon as its last
-// response is done.
-func (c *Connections) Drain() {
-	c.mu.Lock()
-	c.draining = true
-	var idle []net.Conn
-	for conn, state := range c.sockets {
-		if state != http.StateActive {
-			idle = append(idle, conn)
-		}
-	}
-	c.mu.Unlock()
-	for _, conn := range idle {
-		conn.Close()
-	}
-}
-
-// CloseAll ends every tracked socket at once.
-func (c *Connections) CloseAll() {
-	c.mu.Lock()
-	sockets := make([]net.Conn, 0, len(c.sockets))
-	for conn := range c.sockets {
-		sockets = append(sockets, conn)
-	}
-	c.mu.Unlock()
-	for _, conn := range sockets {
-		conn.Close()
-	}
-}
-
 // SafePath is a request path the router may forward: exactly one leading slash. `//host/x` would
 // make the upstream URL resolve to another host, so it is refused (and so is anything absolute).
 func SafePath(path string) (string, bool) {
@@ -377,21 +292,6 @@ func Receive(req *http.Request, res *Response, name string, limit int64, then fu
 		return
 	}
 	then(body)
-}
-
-// RequestModel is the `model` field of a JSON body, or "" when there is none (unparsable bodies
-// included: never block on them).
-func RequestModel(body []byte) string {
-	var parsed struct {
-		Model any `json:"model"`
-	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return ""
-	}
-	if model, ok := parsed.Model.(string); ok {
-		return model
-	}
-	return ""
 }
 
 // WatchClient watches the client's close from the moment its request is in: gone turns true once

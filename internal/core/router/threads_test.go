@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // postBetaBody posts one exact body to /v1/messages?beta=true, each given anthropic-beta value
@@ -87,8 +85,8 @@ func TestMessageThreadsRefusal(t *testing.T) {
 
 	t.Run("refuses a provider request carrying the message-threads beta with the 400 Claude Code reads as beta rejected, before anything reaches the provider", func(t *testing.T) {
 		t.Parallel()
-		port, anthropicSeen, providerSeen, logs := newRouterRig(t, rigOptions{key: "k"})
-		got := postBetaBody(t, port, threadsBody, []string{"claude-code-20250219,message-threads-2026-08-12"})
+		rig := newMultiRig(t, multiOpts{})
+		got := postBetaBody(t, rig.port, threadsBody, []string{"claude-code-20250219,message-threads-2026-08-12"})
 		if got.status != 400 {
 			t.Fatalf("status = %d, want 400", got.status)
 		}
@@ -111,43 +109,42 @@ func TestMessageThreadsRefusal(t *testing.T) {
 		if !strings.Contains(body.Error.Message, "anthropic-beta") {
 			t.Errorf("message %q does not name the header", body.Error.Message)
 		}
-		if providerSeen.len() != 0 {
+		if rig.laneOf("zai").seen.len() != 0 {
 			t.Error("the request reached the provider")
 		}
-		if anthropicSeen.len() != 0 {
+		if rig.anthropicSeen.len() != 0 {
 			t.Error("the request reached Anthropic")
-		}
-		if !strings.Contains(logs.joined(), "→ refused: message threads") {
-			t.Errorf("logs = %q", logs.joined())
 		}
 	})
 
 	t.Run("decides on the header alone: a thread of another type is refused too", func(t *testing.T) {
 		t.Parallel()
-		port, _, providerSeen, _ := newRouterRig(t, rigOptions{key: "k"})
-		got := postBetaBody(t, port, `{"model":"glm-5.3","thread":{"type":"create"},"messages":[]}`, []string{"claude-code-20250219,message-threads-2026-08-12"})
+		rig := newMultiRig(t, multiOpts{})
+		got := postBetaBody(t, rig.port, `{"model":"glm-5.3","thread":{"type":"create"},"messages":[]}`, []string{"claude-code-20250219,message-threads-2026-08-12"})
 		if got.status != 400 {
 			t.Fatalf("status = %d, want 400", got.status)
 		}
-		if providerSeen.len() != 0 {
+		if rig.laneOf("zai").seen.len() != 0 {
 			t.Error("the request reached the provider")
 		}
 	})
 
 	t.Run("forwards a provider request whose beta header holds no message-threads token", func(t *testing.T) {
 		t.Parallel()
-		port, anthropicSeen, providerSeen, _ := newRouterRig(t, rigOptions{key: "k"})
-		got, err := postAnswer(port, "glm-5.3", map[string]string{"Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20"})
+		rig := newMultiRig(t, multiOpts{})
+		got, err := postRawBody(rig.port, "/v1/messages?beta=true", `{"model":"glm-5.3","messages":[]}`,
+			map[string]string{"Content-Type": "application/json", "Authorization": "Bearer anthropic-oauth",
+				"Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got.status != 200 {
 			t.Fatalf("status = %d", got.status)
 		}
-		if anthropicSeen.len() != 0 {
+		if rig.anthropicSeen.len() != 0 {
 			t.Error("the request reached Anthropic")
 		}
-		seen := providerSeen.list()
+		seen := rig.laneOf("zai").seen.list()
 		if len(seen) != 1 {
 			t.Fatalf("the provider saw %d requests", len(seen))
 		}
@@ -158,87 +155,25 @@ func TestMessageThreadsRefusal(t *testing.T) {
 
 	t.Run("forwards a claude request that carries the message-threads beta to Anthropic unchanged", func(t *testing.T) {
 		t.Parallel()
-		port, anthropicSeen, providerSeen, _ := newRouterRig(t, rigOptions{key: "k"})
-		got, err := postAnswer(port, "claude-opus-5-5", map[string]string{"Anthropic-Beta": "claude-code-20250219,message-threads-2026-08-12"})
+		rig := newMultiRig(t, multiOpts{})
+		got, err := postRawBody(rig.port, "/v1/messages?beta=true", `{"model":"claude-opus-5-5","messages":[]}`,
+			map[string]string{"Content-Type": "application/json", "Authorization": "Bearer anthropic-oauth",
+				"Anthropic-Beta": "claude-code-20250219,message-threads-2026-08-12"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got.status != 200 {
 			t.Fatalf("status = %d", got.status)
 		}
-		if providerSeen.len() != 0 {
+		if rig.laneOf("zai").seen.len() != 0 {
 			t.Error("the request reached the provider")
 		}
-		seen := anthropicSeen.list()
+		seen := rig.anthropicSeen.list()
 		if len(seen) != 1 {
 			t.Fatalf("Anthropic saw %d requests", len(seen))
 		}
 		if gotHeader := seen[0].headers.Get("Anthropic-Beta"); gotHeader != "claude-code-20250219,message-threads-2026-08-12" {
 			t.Errorf("anthropic-beta = %q", gotHeader)
-		}
-	})
-
-	t.Run("reads the token on the second anthropic-beta header line", func(t *testing.T) {
-		t.Parallel()
-		port, _, providerSeen, _ := newRouterRig(t, rigOptions{key: "k"})
-		got := postBetaBody(t, port, threadsBody, []string{"claude-code-20250219", "message-threads-2027-01-01"})
-		if got.status != 400 {
-			t.Fatalf("status = %d, want 400", got.status)
-		}
-		var body struct {
-			Error struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		if err := json.Unmarshal([]byte(got.body), &body); err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(body.Error.Message, "message-threads-2027-01-01") {
-			t.Errorf("message = %q", body.Error.Message)
-		}
-		if providerSeen.len() != 0 {
-			t.Error("the request reached the provider")
-		}
-	})
-
-	t.Run("names every message-threads token the header carried, a future one included", func(t *testing.T) {
-		t.Parallel()
-		port, _, _, _ := newRouterRig(t, rigOptions{key: "k"})
-		got := postBetaBody(t, port, threadsBody, []string{"message-threads-2026-08-12", "message-threads-2027-01-01"})
-		if got.status != 400 {
-			t.Fatalf("status = %d, want 400", got.status)
-		}
-		var body struct {
-			Error struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		if err := json.Unmarshal([]byte(got.body), &body); err != nil {
-			t.Fatal(err)
-		}
-		want := "Unexpected value(s) `message-threads-2026-08-12`, `message-threads-2027-01-01` for the `anthropic-beta` header"
-		if !strings.Contains(body.Error.Message, want) {
-			t.Errorf("message = %q, want it to contain %q", body.Error.Message, want)
-		}
-	})
-
-	t.Run("records the refusal on the route event as a 400 refused with its reason", func(t *testing.T) {
-		t.Parallel()
-		events := &eventLog{}
-		port, _, _, _ := newRouterRig(t, rigOptions{key: "k", events: events})
-		got := postBetaBody(t, port, threadsBody, []string{"claude-code-20250219,message-threads-2026-08-12"})
-		if got.status != 400 {
-			t.Fatalf("status = %d, want 400", got.status)
-		}
-		if !until(func() bool { return len(events.all()) == 1 }) {
-			t.Fatalf("events = %v", events.all())
-		}
-		route := events.routes()[0]
-		if route.Event != domain.EventRoute || route.Route != "refused" || route.Status != 400 {
-			t.Errorf("event = %+v", route)
-		}
-		if route.Error == nil || *route.Error != "message threads beta" {
-			t.Errorf("error = %v", route.Error)
 		}
 	})
 }

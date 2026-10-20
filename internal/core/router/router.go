@@ -532,28 +532,6 @@ func (p *promptRef) Hash() *string {
 
 // ── the provider-bound body ────────────────────────────────────────────────────────────────────────────────────────
 
-// StripRejected removes the request fields a provider rejects, wherever they appear (top level,
-// content blocks, metadata), and returns the original bytes when the body is not JSON or nothing
-// was stripped.
-func StripRejected(body []byte, fields []string) []byte {
-	return stripParsedBody(body, parseBodyNode(body), fields)
-}
-
-// stripParsedBody is StripRejected on a body already parsed once.
-func stripParsedBody(body []byte, json *jsonNode, fields []string) []byte {
-	if len(fields) == 0 || json == nil {
-		return body
-	}
-	rejected := make(map[string]bool, len(fields))
-	for _, field := range fields {
-		rejected[field] = true
-	}
-	if !stripFromNode(json, rejected) {
-		return body
-	}
-	return []byte(marshalNode(json))
-}
-
 // stripFromNode removes the fields in place; true when at least one was present anywhere. Every
 // element is visited: a field found in the first must not end the walk, or the rest keep theirs.
 func stripFromNode(value *jsonNode, rejected map[string]bool) bool {
@@ -739,12 +717,6 @@ func (w *routerWorker) budget(model string) (domain.BudgetStop, bool) {
 	return stop, stopped
 }
 
-// CreateRouter builds the router's server; listen on it (127.0.0.1) after.
-func CreateRouter(opts RouterOptions) *http.Server {
-	server, _ := createRouter(opts, nil)
-	return server
-}
-
 // newRouterWorker builds the lane a router server serves with: the key lookup adapter, the key
 // cache and the request state. keyLookup is the worker's own key lookup (the key's source
 // included, which its IPC answers name); nil takes opts.KeyLookup when it is set, else adapts
@@ -780,44 +752,6 @@ func newRouterWorker(opts RouterOptions, keyLookup func(ctx context.Context) (po
 		estimator: NewPromptEstimator(),
 		keys:      newKeyCache(lookup, keyStoreBudget(timeout)),
 	}
-}
-
-// createRouter also returns the worker core, so the worker process can warm the key cache and
-// answer its key checks from it.
-func createRouter(opts RouterOptions, keyLookup func(ctx context.Context) (ports.ProviderKey, *ports.WorkerError)) (*http.Server, *routerWorker) {
-	w := newRouterWorker(opts, keyLookup)
-	limit := opts.BodyLimit
-	if limit == 0 {
-		limit = BodyLimitBytes
-	}
-	return Harden(&http.Server{Handler: http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		res := NewResponse(rw)
-		// Port 0 (tests, and the worker behind its front) takes any Host: only the front faces
-		// Claude Code.
-		if opts.Port != 0 && RefuseHost(req, res, w.provider.Name, []int{opts.Port}) {
-			return
-		}
-		if req.Method == http.MethodGet && req.URL.Path == w.provider.Router.HealthPath && req.URL.RawQuery == "" {
-			res.Header().Set("Content-Type", "application/json")
-			res.WriteHeader(200)
-			res.End([]byte(marshalCompact(struct {
-				OK       bool   `json:"ok"`
-				Name     string `json:"name"`
-				Provider string `json:"provider"`
-			}{OK: true, Name: w.provider.Name, Provider: w.provider.Display})))
-			return
-		}
-		// The worker's data path answers with the provider's key in play, so nothing is read or
-		// forwarded before the front's token is on the request (the front stamps it on the hop it
-		// hands its worker).
-		if opts.Token != "" && req.Header.Get(TokenHeader) != opts.Token {
-			AnthropicError(res, 403, "permission_error", w.provider.Name+" router: data path refused")
-			return
-		}
-		Receive(req, res, w.provider.Name, limit, func(body []byte) {
-			w.forward(req, res, body)
-		})
-	})}), w
 }
 
 // routeOf is where a request for this model goes: "provider", "anthropic", or "peer:<name>".
@@ -1319,12 +1253,6 @@ func keyWithin(ctx context.Context, w *routerWorker) (string, keyOutcome) {
 }
 
 // ── the forward ────────────────────────────────────────────────────────────────────────────────────────────────────
-
-// forward is one request's decision core: where it goes, what it may carry, and what its event
-// says.
-func (w *routerWorker) forward(req *http.Request, res *Response, original []byte) {
-	w.forwardParsed(req, res, original, parseBodyNode(original))
-}
 
 // forwardParsed is forward on a body already parsed once, so a caller that picked the lane by the
 // parsed model never parses twice.
