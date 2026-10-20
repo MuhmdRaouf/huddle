@@ -28,6 +28,10 @@ const healthWait = 300 * time.Millisecond
 // startBudget is how long Start waits for a spawned daemon's health answer.
 const startBudget = 3 * time.Second
 
+// updateWait is how long a start waits for a takeover by this binary to finish: the old daemon
+// keeps serving while the new one takes the socket, so the wait is only the handover's.
+const updateWait = 10 * time.Second
+
 // spawnPoll is how often the start re-probes while its daemon comes up.
 const spawnPoll = 50 * time.Millisecond
 
@@ -90,7 +94,7 @@ func Start(ctx context.Context, o StartOptions) (string, error) {
 		return "", err
 	}
 	if health, up := Health(ctx, port); up {
-		return upLine(port, health), nil
+		return updatedOrUp(ctx, o, env, port, health)
 	}
 	names, err := router.ReadEnabled(env)
 	if err != nil {
@@ -190,10 +194,38 @@ func (o StartOptions) executable() string {
 	if o.Executable != "" {
 		return o.Executable
 	}
-	if self, err := os.Executable(); err == nil {
-		return self
+	return selfExecutable()
+}
+
+// updatedOrUp is a start's answer when a healthy daemon already serves: when the daemon's
+// record names another executable than this one, this binary replaces the running one — a
+// takeover serves the same socket at once and the daemon under it drains — and the line names
+// the handover. The same executable is the quiet address line as always.
+func updatedOrUp(ctx context.Context, o StartOptions, env domain.EnvLookup, port int, health HealthAnswer) (string, error) {
+	record, ok := readRecord(env)
+	if !ok || record.Executable == "" || record.Executable == o.executable() {
+		return upLine(port, health), nil
 	}
-	return os.Args[0]
+	old := record.PID
+	log, err := startLog(env)
+	if err != nil {
+		return "", err
+	}
+	defer log.Close()
+	if err := spawnServeArgs(o.executable(), env, log, "--takeover"); err != nil {
+		return "", err
+	}
+	deadline := time.Now().Add(updateWait)
+	for {
+		if fresh, ok := readRecord(env); ok && fresh.PID > 0 && fresh.PID != old {
+			return fmt.Sprintf("huddle-router: updated (pid %d → %d)", old, fresh.PID), nil
+		}
+		if !time.Now().Before(deadline) {
+			return "", fmt.Errorf("huddle-router: the daemon (pid %d) never handed over to %s (its log: %s)",
+				old, o.executable(), filepath.Join(router.HomeOf(env), "router.log"))
+		}
+		time.Sleep(spawnPoll)
+	}
 }
 
 // startLog opens the router log the spawned daemon's output appends to.
@@ -208,7 +240,14 @@ func startLog(env domain.EnvLookup) (*os.File, error) {
 // spawnServe runs the daemon detached: its output on the router log, its own session, so it
 // outlives this command and no signal of the caller's ends it except the one delivered to it.
 func spawnServe(executable string, env domain.EnvLookup, log *os.File) error {
-	cmd := exec.Command(executable, "router", "serve")
+	return spawnServeArgs(executable, env, log)
+}
+
+// spawnServeArgs runs the daemon detached with extra serve flags — a takeover start passes
+// --takeover, so the new binary takes the running socket over instead of failing on the lock.
+func spawnServeArgs(executable string, env domain.EnvLookup, log *os.File, args ...string) error {
+	argv := append([]string{"router", "serve"}, args...)
+	cmd := exec.Command(executable, argv...)
 	cmd.Env = environ(env)
 	cmd.Stdout, cmd.Stderr = log, log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

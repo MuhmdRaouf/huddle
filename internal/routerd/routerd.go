@@ -2,6 +2,7 @@ package routerd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -34,7 +35,8 @@ const (
 // Options shapes one daemon run.
 type Options struct {
 	Env domain.EnvLookup
-	// Port is the port to serve; 0 takes 18786. Tests pass a free port.
+	// Port is the port to serve; 0 takes 18786. Tests pass a free port. A takeover ignores it:
+	// the taken socket's port comes with the socket.
 	Port int
 	// Version is recorded in router.json, for status.
 	Version string
@@ -42,6 +44,13 @@ type Options struct {
 	Log func(line string)
 	// Poll is how often providers.json is re-read; 0 is two seconds.
 	Poll time.Duration
+	// Takeover first asks the daemon serving the home for its listening socket over the
+	// handover socket and serves on it at once; a takeover that finds nobody to take from falls
+	// back to the normal path (lock, listen).
+	Takeover bool
+	// RSSCeiling is the resident size over which the daemon hands itself over to a fresh copy
+	// of its own binary; 0 takes $HUDDLE_ROUTER_RSS_CEILING_MB, else one GiB.
+	RSSCeiling int64
 	// panicOnce is a test-only hook the handler runs before serving, so a scenario can put a
 	// panic in a lane and prove the recovery.
 	panicOnce func(req *http.Request)
@@ -52,12 +61,16 @@ type record struct {
 	PID     int    `json:"pid"`
 	Port    int    `json:"port"`
 	Version string `json:"version"`
-	Started string `json:"started"`
+	// Executable is the binary the daemon runs, so a start from another binary knows the
+	// running daemon is not this one and takes the socket over.
+	Executable string `json:"executable,omitempty"`
+	Started    string `json:"started"`
 }
 
 // Run serves huddle-router until ctx ends. It answers a *singleton.HeldError when another
-// process serves it, and nil after a clean stop. While no provider is enabled the port stays
-// free: the daemon polls for one instead of binding an empty router.
+// process serves it, and nil after a clean stop or after handing its socket to a taker. While
+// no provider is enabled the port stays free: the daemon polls for one instead of binding an
+// empty router.
 func Run(ctx context.Context, o Options) error {
 	env := o.Env
 	if env == nil {
@@ -72,6 +85,18 @@ func Run(ctx context.Context, o Options) error {
 	log := o.Log
 	if log == nil {
 		log = router.RotatingLog(filepath.Join(home, "router.log"), nil, 0)
+	}
+	if o.Takeover {
+		listener, err := Takeover(ctx, home)
+		if err == nil {
+			// The previous daemon holds the router lock while it drains, up to ten minutes:
+			// this one picks the lock up in the background when it lets go.
+			done := make(chan struct{})
+			go holdRouterLock(filepath.Join(runDir, "router.lock"), done, log)
+			port := listener.Addr().(*net.TCPAddr).Port
+			return serve(ctx, o, env, home, log, listener, port, done)
+		}
+		log("huddle-router: takeover: " + err.Error())
 	}
 	// One router per user: whoever holds the lock serves the port. A standing holder is named
 	// at once; a dead one never blocks — the kernel has already dropped its lock. The lock file
@@ -107,11 +132,41 @@ func Run(ctx context.Context, o Options) error {
 			return err
 		}
 	}
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		return fmt.Errorf("huddle-router: cannot listen on 127.0.0.1:%d (%s)", port, fsutil.ErrorMessage(err))
+	}
+	return serve(ctx, o, env, home, log, listener, port, nil)
+}
+
+// serve runs one daemon's router on the listener until ctx ends, a taker takes the socket over,
+// or the serve loop dies: it mounts the lanes, publishes its record, follows providers.json,
+// and watches its own resident size. done closes when serve returns; a takeover start's lock
+// holder waits on it.
+func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, log func(line string), listener net.Listener, port int, done chan struct{}) error {
+	if done != nil {
+		defer close(done)
+	}
+	poll := o.Poll
+	if poll == 0 {
+		poll = pollDefault
+	}
 	anthropic, err := anthropicOf(env)
 	if err != nil {
+		_ = listener.Close()
 		return err
 	}
-	recordFile := filepath.Join(runDir, "router.json")
+	enabledFile := router.EnabledFile(env)
+	recordFile := filepath.Join(home, "run", "router.json")
+	names, err := router.ReadEnabled(env)
+	if err != nil {
+		log("huddle-router: " + err.Error())
+		names = nil
+	}
+	if len(names) == 0 {
+		// a takeover serves an empty router rather than closing the port it just took
+		log("huddle-router: no provider is enabled yet; waiting for " + enabledFile)
+	}
 	// The CA is the one directory every provider's setup points NODE_EXTRA_CA_CERTS at: the
 	// state roots' parent, where the shared local CA lives.
 	server, multi := router.CreateMulti(router.MultiOptions{
@@ -125,10 +180,6 @@ func Run(ctx context.Context, o Options) error {
 		Gateway:   gatewayOf(env, log),
 	})
 	server.Handler = guardPanics(server.Handler, log, o.panicOnce)
-	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-	if err != nil {
-		return fmt.Errorf("huddle-router: cannot listen on 127.0.0.1:%d (%s)", port, fsutil.ErrorMessage(err))
-	}
 	served := make(chan error, 1)
 	go func() {
 		defer func() {
@@ -139,13 +190,19 @@ func Run(ctx context.Context, o Options) error {
 		}()
 		served <- server.Serve(listener)
 	}()
-	if err := writeRecord(ctx, recordFile, port, o.Version); err != nil {
+	handed := make(chan int, 1)
+	stopHandover := serveHandover(home, port, listener, handed, log)
+	defer stopHandover()
+	if err := writeRecord(ctx, recordFile, port, o.Version, selfExecutable()); err != nil {
 		// A router without its record still serves; status and start are the ones that miss it.
 		log("huddle-router: " + err.Error())
 	}
 	before := statOf(enabledFile)
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
+	ceiling := rssCeilingOf(env, o)
+	spawned := time.Time{}
+	nextRSS := time.Now().Add(rssInterval)
 	for {
 		select {
 		case <-ctx.Done():
@@ -156,28 +213,27 @@ func Run(ctx context.Context, o Options) error {
 				return nil
 			}
 			return err
+		case taker := <-handed:
+			return handOver(server, taker, log)
 		case <-ticker.C:
 			now := statOf(enabledFile)
-			if now == before {
-				continue
+			if now != before {
+				before = now
+				names, err := router.ReadEnabled(env)
+				if err != nil {
+					log("huddle-router: " + err.Error())
+				} else if len(names) == 0 {
+					// Nothing is enabled: keep serving. Sessions still point at the router until
+					// their settings are restored, and an empty answer would cut them off.
+				} else if lanes := lanesOf(env, names, log); len(lanes) != 0 {
+					multi.Reload(lanes)
+					log("huddle-router: now serving " + strings.Join(multi.Providers(), ", "))
+				}
 			}
-			before = now
-			names, err := router.ReadEnabled(env)
-			if err != nil {
-				log("huddle-router: " + err.Error())
-				continue
+			if !nextRSS.After(time.Now()) {
+				nextRSS = time.Now().Add(rssInterval)
+				spawned = checkRSS(ceiling, spawned, env, log)
 			}
-			if len(names) == 0 {
-				// Nothing is enabled: keep serving. Sessions still point at the router until
-				// their settings are restored, and an empty answer would cut them off.
-				continue
-			}
-			lanes := lanesOf(env, names, log)
-			if len(lanes) == 0 {
-				continue
-			}
-			multi.Reload(lanes)
-			log("huddle-router: now serving " + strings.Join(multi.Providers(), ", "))
 		}
 	}
 }
@@ -259,20 +315,35 @@ func stop(server *http.Server, recordFile string, log func(line string)) error {
 	return nil
 }
 
-// writeRecord publishes what the running router is: the pid to signal, the port to talk to and
-// when it came up.
-func writeRecord(ctx context.Context, path string, port int, version string) error {
+// writeRecord publishes what the running router is: the pid to signal, the port to talk to,
+// which binary serves it and when it came up.
+func writeRecord(ctx context.Context, path string, port int, version, executable string) error {
 	text, err := fsutil.MarshalJSON(record{
-		PID:     os.Getpid(),
-		Port:    port,
-		Version: version,
-		Started: time.Now().Format(time.RFC3339),
+		PID:        os.Getpid(),
+		Port:       port,
+		Version:    version,
+		Executable: executable,
+		Started:    time.Now().Format(time.RFC3339),
 	})
 	if err != nil {
 		return err
 	}
 	_, err = fsutil.WriteFileAtomic(ctx, path, text, fsutil.WriteOptions{Mkdir: true})
 	return err
+}
+
+// readRecord reads the record the running daemon published in the home's run dir; false when
+// there is none or it does not parse.
+func readRecord(env domain.EnvLookup) (record, bool) {
+	raw, err := os.ReadFile(filepath.Join(router.HomeOf(env), "run", "router.json"))
+	if err != nil {
+		return record{}, false
+	}
+	var parsed record
+	if json.Unmarshal(raw, &parsed) != nil {
+		return record{}, false
+	}
+	return parsed, true
 }
 
 // fingerprint is what a watched file must keep for its reader to skip it: size and mtime. A

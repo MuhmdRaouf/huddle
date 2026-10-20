@@ -32,13 +32,13 @@ func routerWord(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	}
 	switch word {
 	case "serve":
-		return routerServe(ctx, env, stdout, stderr)
+		return routerServe(ctx, env, args[1:], stdout, stderr)
 	case "start":
 		return routerStart(ctx, env, stdout, stderr)
 	case "status":
 		return routerStatus(ctx, env, args[1:], stdout, stderr)
 	default:
-		fmt.Fprintln(stderr, "usage: huddle router serve | start | status [--json]")
+		fmt.Fprintln(stderr, "usage: huddle router serve [--takeover] | start | status [--json]")
 		return 2
 	}
 }
@@ -55,15 +55,17 @@ func routerPortOf(env domain.EnvLookup, stderr io.Writer) (int, bool) {
 }
 
 // routerServe runs the daemon in the foreground until a signal ends it. A daemon already
-// serving is the happy answer, not a failure.
-func routerServe(ctx context.Context, env domain.EnvLookup, stdout, stderr io.Writer) int {
+// serving is the happy answer, not a failure. With --takeover the run first asks the serving
+// daemon for its listening socket over the handover socket — the flag behind updates and the
+// memory ceiling — and falls back to the normal start when nobody answers.
+func routerServe(ctx context.Context, env domain.EnvLookup, args []string, stdout, stderr io.Writer) int {
 	port, ok := routerPortOf(env, stderr)
 	if !ok {
 		return 2
 	}
 	foreground, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err := routerd.Run(foreground, routerd.Options{Env: env, Port: port, Version: version})
+	err := routerd.Run(foreground, routerd.Options{Env: env, Port: port, Version: version, Takeover: hasFlag(args, "--takeover")})
 	var held *singleton.HeldError
 	if errors.As(err, &held) {
 		fmt.Fprintf(stdout, "huddle-router: already served by pid %d\n", held.PID)

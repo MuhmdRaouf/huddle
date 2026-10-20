@@ -68,7 +68,8 @@ func (u *daemonUpstream) requests() []daemonSeen {
 // daemonRig is one daemon Run over a temp home, with a fake upstream per lane and one for
 // Anthropic. The Run itself is a goroutine of the test process; Cleanup stops it. The cancel and
 // done pair is guarded: a restarted Run (the watchdog scenarios') replaces it from another
-// goroutine.
+// goroutine. The home is a short one: the daemon's handover socket is a unix socket under
+// run/, and macOS caps a socket path at 104 bytes.
 type daemonRig struct {
 	t         *testing.T
 	env       domain.EnvLookup
@@ -83,6 +84,11 @@ type daemonRig struct {
 	done      <-chan error
 	// panicOnFirst makes the daemon's own handler panic once, to prove the recovery.
 	panicOnFirst bool
+	// takeover starts the Run with Takeover set: a first start with nobody to take from
+	// serves normally.
+	takeover bool
+	// returned says the Run ended by itself (a handover's drain), so stop only cancels.
+	returned bool
 }
 
 // daemonLog records the daemon's lines.
@@ -115,7 +121,7 @@ func newDaemonRig(t *testing.T) *daemonRig {
 		kimi:      newDaemonUpstream(t, "kimi"),
 		anthropic: newDaemonUpstream(t, "anthropic"),
 	}
-	rig.home = filepath.Join(root, "router-home")
+	rig.home = shortHome(t)
 	rig.port = daemonFreePort(t)
 	rig.env = domain.EnvLookup{
 		"HOME":                        root,
@@ -135,7 +141,7 @@ func newDaemonRig(t *testing.T) *daemonRig {
 // start runs the daemon until the test ends, and fails when it stops on its own.
 func (r *daemonRig) start() {
 	r.t.Helper()
-	options := Options{Env: r.env, Port: r.port, Version: "test", Log: r.logs.add, Poll: 30 * time.Millisecond}
+	options := Options{Env: r.env, Port: r.port, Version: "test", Log: r.logs.add, Poll: 30 * time.Millisecond, Takeover: r.takeover}
 	if r.panicOnFirst {
 		var calls atomic.Int64
 		// The test-only hook the handler runs before serving: its first panic on the data path
@@ -158,7 +164,8 @@ func (r *daemonRig) start() {
 	go func() { done <- Run(ctx, options) }()
 }
 
-// stop ends the daemon and waits for it; a daemon that never stops fails the test.
+// stop ends the daemon and waits for it; a daemon that never stops fails the test. A daemon
+// that ended by itself — a handover's drain — is only cancelled.
 func (r *daemonRig) stop() {
 	r.mu.Lock()
 	cancel, done := r.cancel, r.done
@@ -167,6 +174,9 @@ func (r *daemonRig) stop() {
 		return
 	}
 	cancel()
+	if r.returned {
+		return
+	}
 	select {
 	case err := <-done:
 		if err != nil {

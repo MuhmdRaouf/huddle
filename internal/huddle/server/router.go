@@ -16,15 +16,28 @@ import (
 
 // hostHuddleRouter runs the router daemon beside the hub, on a context the server cancels at
 // shutdown. The hub never waits on the router, and the router never waits on the hub: a held
-// router lock and any other error are one stderr line each.
+// router lock and any other error are one stderr line each. A standalone `huddle router serve`
+// holding the lock is taken over instead — the hub asks its Run for the listening socket over
+// the handover socket, so the user ends with one process and the port never closes.
 func hostHuddleRouter(ctx context.Context, o Options) {
 	defer func() {
 		if reason := recover(); reason != nil {
 			fmt.Fprintf(o.Stderr, "huddle-router: recovered: %v\n", reason)
 		}
 	}()
-	err := routerd.Run(ctx, routerd.Options{Env: routerEnv(o), Version: o.Version})
+	env := routerEnv(o)
+	err := routerd.Run(ctx, routerd.Options{Env: env, Version: o.Version})
 	var held *singleton.HeldError
+	if errors.As(err, &held) && standaloneRouter(held.PID) {
+		// The takeover's Run serves until the hub stops, so the line names the handover as it
+		// starts, not at the end of the hub's life. A takeover that finds nobody to take from
+		// falls back to the normal start and its answer follows below.
+		fmt.Fprintf(o.Stderr, "huddle-router: taken over from pid %d\n", held.PID)
+		err = routerd.Run(ctx, routerd.Options{Env: env, Version: o.Version, Takeover: true})
+		if err == nil {
+			return
+		}
+	}
 	switch {
 	case err == nil:
 		return
@@ -33,6 +46,12 @@ func hostHuddleRouter(ctx context.Context, o Options) {
 	default:
 		fmt.Fprintf(o.Stderr, "huddle-router: %v\n", err)
 	}
+}
+
+// standaloneRouter says whether the pid runs `huddle router serve`: a standalone daemon, not
+// another hub, so the full edition takes its socket over instead of serving alone.
+func standaloneRouter(pid int) bool {
+	return strings.HasSuffix(routerd.CommandLine(pid), "router serve")
 }
 
 // routerEnv is the environment the hub's router goroutine reads: the process environment the
