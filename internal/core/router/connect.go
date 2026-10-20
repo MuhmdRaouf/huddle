@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/localca"
+	"github.com/MuhmdRaouf/huddle/internal/netproxy"
 )
 
 // connect serves one CONNECT. Browsers cannot send CONNECT, so the front's Host check (a
@@ -101,7 +102,7 @@ func (f *Front) tunnelDial(ctx context.Context, network, addr string) (net.Conn,
 		return f.options.Dial(ctx, network, addr)
 	}
 	target := &url.URL{Scheme: "https", Host: addr}
-	if proxy, ok := ProxyFor(target, f.options.Env); ok {
+	if proxy, ok := netproxy.ProxyFor(target, f.options.Env); ok {
 		return tunnel(proxy)(ctx, network, addr)
 	}
 	// A name can resolve to this machine as well as a literal can name it: the check runs again on

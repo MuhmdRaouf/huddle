@@ -36,6 +36,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/fsutil"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/netproxy"
 )
 
 // ── where the router lives ──────────────────────────────────────────────────────────────────────────────────────────
@@ -302,7 +303,7 @@ func childExactSet(provider domain.Provider) map[string]bool {
 		"HOME": true, "PATH": true, "TMPDIR": true, "TEMP": true, "TMP": true,
 		"LANG": true, "LC_ALL": true,
 		"NODE_EXTRA_CA_CERTS": true, "SSL_CERT_FILE": true, "SSL_CERT_DIR": true,
-		"NODE_USE_ENV_PROXY": true, "CLAUDE_CONFIG_DIR": true, "XDG_STATE_HOME": true,
+		"CLAUDE_CONFIG_DIR": true, "XDG_STATE_HOME": true,
 		"XDG_CONFIG_HOME": true, "RADAR_HOME": true, "PROVIDER_ROUTERS_HOME": true,
 	}
 	for _, name := range provider.KeyEnv {
@@ -342,7 +343,7 @@ func ChildEnv(provider domain.Provider, env domain.EnvLookup, stateRoot string, 
 	for name, value := range extra {
 		out[name] = value
 	}
-	return ExemptLoopback(out)
+	return netproxy.ExemptLoopback(out)
 }
 
 // ── the starter ─────────────────────────────────────────────────────────────────────────────────────────────────────

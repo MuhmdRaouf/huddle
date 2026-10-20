@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -52,12 +53,31 @@ func New(resolver Resolver) *Decider {
 	return &Decider{resolver: resolver, now: time.Now, cache: make(map[string]cacheEntry)}
 }
 
-// FromEnvironment answers the proxy the request goes through: nil, nil sends it direct.
+// FromEnvironment answers the proxy the request goes through: nil, nil sends it direct. A request
+// whose host is this machine goes direct; every other request is decided by the process's proxy
+// variables through ProxyFor.
 func (d *Decider) FromEnvironment(req *http.Request) (*url.URL, error) {
 	if d.isLocal(req.Context(), req.URL.Hostname()) {
 		return nil, nil
 	}
-	return http.ProxyFromEnvironment(req)
+	proxy, ok := ProxyFor(req.URL, envFromProcess())
+	if !ok {
+		return nil, nil
+	}
+	return proxy, nil
+}
+
+// envFromProcess reads the process's proxy variables into an Env: the scheme variables in either
+// case and NO_PROXY, the set ProxyFor reads.
+func envFromProcess() Env {
+	return Env{
+		"HTTPS_PROXY": os.Getenv("HTTPS_PROXY"),
+		"https_proxy": os.Getenv("https_proxy"),
+		"HTTP_PROXY":  os.Getenv("HTTP_PROXY"),
+		"http_proxy":  os.Getenv("http_proxy"),
+		"NO_PROXY":    os.Getenv("NO_PROXY"),
+		"no_proxy":    os.Getenv("no_proxy"),
+	}
 }
 
 // isLocal answers whether the host is this machine: a literal loopback, unspecified or
