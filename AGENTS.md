@@ -89,6 +89,8 @@ node scripts/check-attribution.mjs             # no AI attribution in the histor
    and in CI.
 4. **CI runs every test.** A test that runs on one machine only does not count. `mise run check` runs the gates
    locally; `.github/workflows/ci.yml` runs them on every push.
+- Behaviour tests are scenarios: `internal/testkit/bdd` (Feature, Scenario, Given/When/Then/And) in
+  `*_scenario_test.go`; e2e tests build the binary in `cmd/huddle/*_e2e_test.go`.
 
 ## Agent files
 
