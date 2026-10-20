@@ -310,6 +310,10 @@ type server struct {
 	// carries encoded SSE frames waiting for its writer.
 	registrySubsMu sync.Mutex
 	registrySubs   map[chan string]struct{}
+
+	// boardSeen remembers the boards the kanban tab has served, so a board stays listed after
+	// its last live session ends; it throttles the store's writes.
+	boardSeen boardsSeen
 }
 
 // OptionsFromEnv reads the environment a server start finds itself in. A value of "" for a
@@ -838,8 +842,9 @@ func (s *server) stopKanban() {
 	}
 }
 
-// boardRoots answers the working dir of every session the registry knows — the dirs the kanban
-// tab looks for boards from; a session without a cwd offers no board.
+// boardRoots answers the dirs the kanban tab looks for boards from: the working dir of every
+// live session the registry knows — an ended session's cwd drops out — then the boards the hub
+// remembers from earlier sightings (boards_seen.go).
 func (s *server) boardRoots(ctx context.Context) []string {
 	rows, err := s.registry.Sessions(ctx, hub.SessionsFilter{}, s.now())
 	if err != nil {
@@ -847,11 +852,11 @@ func (s *server) boardRoots(ctx context.Context) []string {
 	}
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {
-		if row.Cwd != "" {
+		if row.State != hub.StateEnded && row.Cwd != "" {
 			out = append(out, row.Cwd)
 		}
 	}
-	return out
+	return s.seenBoards(ctx, out)
 }
 
 // closeHTTP ends the listener and the connections: a client holding a keep-alive connection

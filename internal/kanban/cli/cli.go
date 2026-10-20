@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -37,6 +36,10 @@ type World struct {
 	// the command's answer, refusal a *board.Refused's message, and handled
 	// false leaves the direct path to run. nil means no hub.
 	HubFlow func(ctx context.Context, key string, req board.FlowRequest) (lines []string, refusal string, handled bool)
+	// HubBoard answers the hub's address for one board key, e.g.
+	// "http://127.0.0.1:42101/#/kanban/<key>", and false when no hub answers.
+	// nil means no hub.
+	HubBoard func(ctx context.Context, key string) (string, bool)
 	// SpawnServe starts the detached serve; nil starts this binary.
 	SpawnServe func(command string, args []string, logFile string) int64
 	// OpenBrowser opens one url; nil is the platform opener.
@@ -307,7 +310,7 @@ var commands = map[string]*command{
 	},
 	"start": {
 		word: "start", use: "start", min: 0, max: 0,
-		short: "ensure the board's server and print its address",
+		short: "print the board's page: the huddle hub's when one answers, else one server of its own",
 		defs: []flagDef{
 			{name: "port", kind: kindString,
 				help: "pin one port; 0 lets the OS pick (default: 18800 up to 18849, then the OS)"},
@@ -356,7 +359,7 @@ var commands = map[string]*command{
 	},
 	"hook": {
 		word: "hook", use: "hook session-start", min: 1, max: 1,
-		short:       "the Claude Code session hook: ensure the board's server, then name the board",
+		short:       "the Claude Code session hook: name the board's page in the huddle hub",
 		positionals: []positional{{"session-start", "the hook Claude Code runs when a session starts"}},
 	},
 }
@@ -646,21 +649,7 @@ func hubKey(ctx context.Context, w World, explicit string) string {
 	if err != nil {
 		return ""
 	}
-	root := filepath.Dir(filepath.Dir(b.Root)) // the repo: the parent of .agents
-	return board.RepoKey(originOf(ctx, root), server.KeyOf(b.Root))
-}
-
-// originOf answers the repository's origin URL from git's own config: one read
-// bounded at a second, empty on any error, so a repo without an origin keeps
-// the path key and no command waits on it.
-func originOf(ctx context.Context, repoRoot string) string {
-	callCtx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(callCtx, "git", "-C", repoRoot, "config", "--get", "remote.origin.url").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
+	return board.RepoKey(board.OriginOf(ctx, board.RepoRootOf(b.Root)), server.KeyOf(b.Root))
 }
 
 // at answers the positional at i, "" when it is not there.

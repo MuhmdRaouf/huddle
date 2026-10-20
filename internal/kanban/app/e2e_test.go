@@ -34,12 +34,14 @@ func buildHuddle(t *testing.T) string {
 	return bin
 }
 
-// e2e is one throwaway project with its own kanban home.
+// e2e is one throwaway project with its own kanban home and its own huddle
+// home, where no hub answers: the server words stay standalone here.
 type e2e struct {
 	t         *testing.T
 	bin       string
 	project   string
 	home      string
+	hubHome   string
 	boardDir  string
 	statePath string
 }
@@ -48,7 +50,7 @@ func newE2E(t *testing.T) *e2e {
 	t.Helper()
 	project := t.TempDir()
 	e := &e2e{
-		t: t, bin: buildHuddle(t), project: project, home: t.TempDir(),
+		t: t, bin: buildHuddle(t), project: project, home: t.TempDir(), hubHome: t.TempDir(),
 		boardDir: filepath.Join(project, ".agents", "kanban"),
 	}
 	return e
@@ -60,7 +62,7 @@ func (e *e2e) run(args ...string) (int, string) {
 	e.t.Helper()
 	cmd := exec.Command(e.bin, append([]string{"kanban"}, args...)...)
 	cmd.Dir = e.project
-	cmd.Env = append(os.Environ(), "KANBAN_HOME="+e.home, "KANBAN_NO_OPEN=1")
+	cmd.Env = append(os.Environ(), "KANBAN_HOME="+e.home, "HUDDLE_HOME="+e.hubHome, "KANBAN_NO_OPEN=1")
 	var out strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &out

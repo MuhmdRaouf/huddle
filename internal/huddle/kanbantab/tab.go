@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -81,7 +80,7 @@ func Mount(ctx context.Context, opts Options) *Tab {
 		opts.Now = time.Now
 	}
 	if opts.Origin == nil {
-		opts.Origin = originOf
+		opts.Origin = board.OriginOf
 	}
 	return &Tab{
 		ctx:       ctx,
@@ -268,7 +267,7 @@ func (t *Tab) boardsOf(ctx context.Context) []boardRow {
 		if err != nil {
 			continue // a dir with no board is no row, never an error
 		}
-		key := board.RepoKey(t.origin(ctx, repoRoot(b.Root)), server.KeyOf(b.Root))
+		key := board.RepoKey(t.origin(ctx, board.RepoRootOf(b.Root)), server.KeyOf(b.Root))
 		if seen[key] {
 			continue
 		}
@@ -288,19 +287,6 @@ func (t *Tab) boardsOf(ctx context.Context) []boardRow {
 // picks a board for a session's working dir.
 func noEnv(string) (string, bool) { return "", false }
 
-// originOf answers a repository's origin URL from git's own config: one read
-// bounded at a second, empty on any error, so a repo without an origin — or a
-// git that never answers — keeps the path key and no request waits on it.
-func originOf(ctx context.Context, repoRoot string) string {
-	callCtx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(callCtx, "git", "-C", repoRoot, "config", "--get", "remote.origin.url").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
 // absRoot answers the board root absolute and clean — the spelling the
 // watcher stamps into every snapshot's board field, so a listed root matches
 // the answer its board's API gives.
@@ -312,14 +298,9 @@ func absRoot(root string) string {
 	return abs
 }
 
-// repoRoot answers the dir a board's repo lives in: the parent of .agents.
-func repoRoot(root string) string {
-	return filepath.Dir(filepath.Dir(root))
-}
-
 // repoName answers the dir a board sits in: the repo, the parent of .agents.
 func repoName(root string) string {
-	return filepath.Base(repoRoot(root))
+	return filepath.Base(board.RepoRootOf(root))
 }
 
 // oneMethod answers one route for its one method, 405 for the others.

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -29,13 +28,16 @@ func fillBoard(s *serverFixture) {
 }
 
 // hookAnswer is the whole stdout the hook owes for the given counts: one
-// compact SessionStart document carrying the board line.
-func hookAnswer(t *testing.T, open, inProgress, inReview int) string {
+// compact SessionStart document carrying the board line. A link is the board's
+// page in the huddle hub; without one the line says where the board will be.
+func hookAnswer(t *testing.T, open, inProgress, inReview int, link string) string {
 	t.Helper()
-	line := fmt.Sprintf(
-		"Kanban board: .agents/kanban (%d open, %d in progress, %d in review) live at %s. "+
-			"Use the kanban skill to work it; move tickets only with the kanban command.",
-		open, inProgress, inReview, "http://127.0.0.1:45678")
+	board := fmt.Sprintf(".agents/kanban (%d open, %d in progress, %d in review)", open, inProgress, inReview)
+	line := "Kanban board: " + board + ". Open it in the huddle hub once it runs (/huddle:setup)."
+	if link != "" {
+		line = "Kanban board: " + board + " in the huddle hub at " + link + "."
+	}
+	line += " Use the kanban skill to work it; move tickets only with the kanban command."
 	return fmt.Sprintf(`{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":%s}}`+"\n",
 		jsonString(t, line))
 }
@@ -66,19 +68,19 @@ func TestHookSessionStart(t *testing.T) {
 			},
 		},
 		{
-			name: "a board answers one context line with the counts and the server url",
+			name: "a board answers one context line with the counts and the hub's link",
 			prepare: func(t *testing.T, s *serverFixture) {
-				s.recorded()
 				fillBoard(s)
 				// a subdirectory: resolution walks up from the project dir
 				s.env["CLAUDE_PROJECT_DIR"] = filepath.Join(s.cwd, "pkg")
+				s.hubLinks["*"] = "http://127.0.0.1:42101/#/kanban/board-key"
 			},
 			argv:   []string{"hook", "session-start"},
 			code:   0,
-			stdout: hookAnswer(t, 8, 1, 2),
+			stdout: hookAnswer(t, 8, 1, 2, "http://127.0.0.1:42101/#/kanban/board-key"),
 			check: func(t *testing.T, s *serverFixture) {
 				if len(s.spawns) != 0 {
-					t.Errorf("a healthy server was spawned again: %v", s.spawns)
+					t.Errorf("the hook started a server: %v", s.spawns)
 				}
 				if len(s.browsers) != 0 {
 					t.Errorf("the hook opened a browser: %v", s.browsers)
@@ -86,47 +88,41 @@ func TestHookSessionStart(t *testing.T) {
 			},
 		},
 		{
-			name: "a board with no server starts one, then answers the same line",
+			name: "with no hub, the line names the counts and starts no server",
 			prepare: func(t *testing.T, s *serverFixture) {
 				fillBoard(s)
 				s.env["CLAUDE_PROJECT_DIR"] = s.cwd
 			},
 			argv:   []string{"hook", "session-start"},
 			code:   0,
-			stdout: hookAnswer(t, 8, 1, 2),
+			stdout: hookAnswer(t, 8, 1, 2, ""),
 			check: func(t *testing.T, s *serverFixture) {
-				if len(s.spawns) != 1 {
-					t.Fatalf("spawns = %v, want one serve", s.spawns)
-				}
-				joined := strings.Join(s.spawns[0], " ")
-				if !strings.Contains(joined, "serve") || !strings.Contains(joined, s.boardAbs) {
-					t.Errorf("spawn args = %q, want serve for the board", s.spawns[0])
+				if len(s.spawns) != 0 {
+					t.Errorf("spawns = %v, want none", s.spawns)
 				}
 			},
 		},
 		{
 			name: "an empty board answers zero counts",
 			prepare: func(t *testing.T, s *serverFixture) {
-				s.recorded()
 				s.env["CLAUDE_PROJECT_DIR"] = s.cwd
 			},
 			argv:   []string{"hook", "session-start"},
 			code:   0,
-			stdout: hookAnswer(t, 0, 0, 0),
+			stdout: hookAnswer(t, 0, 0, 0, ""),
 		},
 		{
-			name: "a start that never answers is silence, not a failed session",
+			name: "an unopenable board is silence, not a failed session",
 			prepare: func(t *testing.T, s *serverFixture) {
-				s.healthOK(false)
 				s.env["CLAUDE_PROJECT_DIR"] = s.cwd
+				// a kanban.db that opens for no store: the hook loses one
+				// line, the session keeps its start
+				if err := os.WriteFile(filepath.Join(s.root, "kanban.db"), []byte("not a database"), 0o644); err != nil {
+					t.Fatal(err)
+				}
 			},
 			argv: []string{"hook", "session-start"},
 			code: 0,
-			check: func(t *testing.T, s *serverFixture) {
-				if len(s.spawns) != 1 {
-					t.Errorf("spawns = %v, want one attempt", s.spawns)
-				}
-			},
 		},
 		{
 			name:   "a wrong hook word is a usage error",
@@ -176,7 +172,6 @@ func TestHookSessionStart(t *testing.T) {
 func TestHookPutsThePluginBinOnPathOnce(t *testing.T) {
 	dir := t.TempDir()
 	s := newServerFixture(t)
-	s.recorded()
 	s.env["CLAUDE_PROJECT_DIR"] = s.cwd
 	s.env["CLAUDE_ENV_FILE"] = filepath.Join(dir, "env")
 	s.env["CLAUDE_PLUGIN_ROOT"] = filepath.Join(dir, "plugin")
@@ -201,7 +196,6 @@ func TestHookPutsThePluginBinOnPathOnce(t *testing.T) {
 func TestHookWithoutAPluginRootWritesNoEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	s := newServerFixture(t)
-	s.recorded()
 	s.env["CLAUDE_PROJECT_DIR"] = s.cwd
 	s.env["CLAUDE_ENV_FILE"] = filepath.Join(dir, "env")
 	if code, _, _ := s.run("hook", "session-start"); code != 0 {

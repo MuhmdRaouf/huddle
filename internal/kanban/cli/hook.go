@@ -8,20 +8,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/kanban/board"
 	"github.com/MuhmdRaouf/huddle/internal/kanban/server"
 )
 
 // The session hook. Claude Code runs it at every session start of a project;
-// it puts the plugin's bin on the session's PATH, brings the board's server
-// up and answers one line of context. Anything that fails ends in silence and
-// exit 0: a hook never costs a session its start.
-
-// hookBudget bounds the whole hook. Claude Code allows 5 s (hooks.json); the
-// server ensure keeps itself to 3 s of that, and the browser is never opened.
-const hookBudget = 3 * time.Second
+// it puts the plugin's bin on the session's PATH and answers one line of
+// context naming the board's page in the huddle hub — the hub serves every
+// board in process, so the hook starts no server of its own. Anything that
+// fails ends in silence and exit 0: a hook never costs a session its start.
 
 // hookOutput is the hook's one answer: the document Claude Code's hook
 // protocol reads, one compact line.
@@ -58,31 +54,17 @@ func runHook(ctx context.Context, w World, positional []string, boardPath string
 	if resolved, err := filepath.Abs(b.Root); err == nil {
 		abs = resolved
 	}
-	fx := server.DefaultEffects()
-	if w.ServerFetch != nil {
-		fx.Fetch = w.ServerFetch
-	}
-	if w.SpawnServe != nil {
-		fx.SpawnServe = w.SpawnServe
-	}
-	if w.Sleep != nil {
-		fx.Sleep = w.Sleep
-	}
-	hookCtx, cancel := context.WithTimeout(ctx, hookBudget)
-	defer cancel()
-	url, err := server.Start(hookCtx, abs, server.StateDir(w.Getenv), 0, fx)
-	if err != nil {
-		return 0 // a start that fails costs the session one line, nothing else
-	}
-	st, err := b.Status(hookCtx)
+	st, err := b.Status(ctx)
 	if err != nil {
 		return 0
 	}
 	open, inProgress, inReview := hookCounts(st)
-	line := fmt.Sprintf(
-		"Kanban board: .agents/kanban (%d open, %d in progress, %d in review) live at %s. "+
-			"Use the kanban skill to work it; move tickets only with the kanban command.",
-		open, inProgress, inReview, url)
+	counts := fmt.Sprintf(".agents/kanban (%d open, %d in progress, %d in review)", open, inProgress, inReview)
+	line := counts + ". Open it in the huddle hub once it runs (/huddle:setup)."
+	if link, ok := hubLink(ctx, w, abs); ok {
+		line = counts + " in the huddle hub at " + link + "."
+	}
+	line = "Kanban board: " + line + " Use the kanban skill to work it; move tickets only with the kanban command."
 	var out hookOutput
 	out.HookSpecificOutput.HookEventName = "SessionStart"
 	out.HookSpecificOutput.AdditionalContext = line
@@ -90,6 +72,18 @@ func runHook(ctx context.Context, w World, positional []string, boardPath string
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(out)
 	return 0
+}
+
+// hubLink answers the board's page in the local huddle hub: the key the hub's
+// tab lists the board under, resolved the same way — the repository's origin
+// when one answers, else the path key — through the world's hub. No hub is no
+// link.
+func hubLink(ctx context.Context, w World, boardRoot string) (string, bool) {
+	if w.HubBoard == nil {
+		return "", false
+	}
+	key := board.RepoKey(board.OriginOf(ctx, board.RepoRootOf(boardRoot)), server.KeyOf(boardRoot))
+	return w.HubBoard(ctx, key)
 }
 
 // hookCounts answers the three counts the hook line names: every ticket

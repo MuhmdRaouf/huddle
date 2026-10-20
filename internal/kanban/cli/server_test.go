@@ -39,6 +39,24 @@ type serverFixture struct {
 	fetches  []fetchRecord
 	answers  map[string]fetchAnswer
 	state    bool
+	// hubLinks pins the links the fake hub answers for a board key; the "*"
+	// entry answers every key. Empty means no hub answers.
+	hubLinks map[string]string
+	// hubAsked holds every key the hook asked the hub for, in order.
+	hubAsked []string
+}
+
+// hubBoard is the fake HubBoard: it records the key asked and answers the link
+// pinned for it. Nothing pinned is no hub.
+func (s *serverFixture) hubBoard(ctx context.Context, key string) (string, bool) {
+	s.hubAsked = append(s.hubAsked, key)
+	if link, ok := s.hubLinks[key]; ok {
+		return link, true
+	}
+	if link, ok := s.hubLinks["*"]; ok {
+		return link, true
+	}
+	return "", false
 }
 
 func newServerFixture(t *testing.T) *serverFixture {
@@ -54,7 +72,7 @@ func newServerFixture(t *testing.T) *serverFixture {
 	}
 	s := &serverFixture{
 		fixture: f, home: t.TempDir(), boardAbs: abs, port: 45678,
-		answers: map[string]fetchAnswer{},
+		answers: map[string]fetchAnswer{}, hubLinks: map[string]string{},
 	}
 	f.env = map[string]string{"KANBAN_HOME": s.home}
 	s.healthOK(true)
@@ -122,6 +140,7 @@ func (s *serverFixture) world() World {
 			return 1
 		},
 		OpenBrowser: func(url string) { s.browsers = append(s.browsers, url) },
+		HubBoard:    s.hubBoard,
 		Sleep:       func(int64) {},
 		Version:     "test",
 	}

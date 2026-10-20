@@ -67,6 +67,21 @@ func hubFlow(ctx context.Context, getenv func(string) (string, bool), key string
 	}
 }
 
+// hubBoard answers the hub page's address for one board key: the base url the
+// port file names, its health probed, with the key as the page's hash. No
+// credential or token travels in the link — the page's own sign-in is the
+// hub's business. False when no hub answers.
+func hubBoard(ctx context.Context, getenv func(string) (string, bool), key string) (string, bool) {
+	base := hubBase(getenv)
+	if base == "" {
+		return "", false
+	}
+	if !hubHealthy(ctx, base) {
+		return "", false
+	}
+	return base + "/#/kanban/" + key, true
+}
+
 // hubBase answers the local huddle's base url from its port file, in the home
 // the environment resolves. Empty when no home or no readable port is there.
 func hubBase(getenv func(string) (string, bool)) string {

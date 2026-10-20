@@ -54,8 +54,25 @@ func runServerCommand(ctx context.Context, w World, command string, v *flagValue
 		}
 		return true
 	}
+	// the hub's page is the board's address wherever a hub answers: start and
+	// open name it and start nothing, so no board holds a port of its own. A
+	// machine with no hub still serves one board itself.
+	hub := func() (string, bool) {
+		if w.HubBoard == nil {
+			return "", false
+		}
+		key := board.RepoKey(board.OriginOf(ctx, board.RepoRootOf(abs)), server.KeyOf(abs))
+		return w.HubBoard(ctx, key)
+	}
 	switch command {
 	case "start":
+		if link, ok := hub(); ok {
+			fmt.Fprintf(stdout, "kanban: board at %s (%s)\n", link, abs)
+			if mayOpen() {
+				fx.OpenBrowser(link)
+			}
+			return 0
+		}
 		port, bad := portFlag(v)
 		if bad != "" {
 			usageError(stderr, commands["start"], bad)
@@ -79,6 +96,13 @@ func runServerCommand(ctx context.Context, w World, command string, v *flagValue
 		fmt.Fprintln(stdout, "kanban: stopped")
 		return 0
 	case "open":
+		if link, ok := hub(); ok {
+			fmt.Fprintf(stdout, "kanban: board at %s (%s)\n", link, abs)
+			if mayOpen() {
+				fx.OpenBrowser(link)
+			}
+			return 0
+		}
 		recorded := server.Looking(ctx, abs, home, fx)
 		if recorded == nil {
 			fmt.Fprintf(stderr, "kanban: no server for %s; run kanban start\n", abs)
