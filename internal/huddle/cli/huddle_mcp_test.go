@@ -1186,14 +1186,14 @@ func TestSubscribeBeforeTheStreamStillGetsTheUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	// the server answers 421 to a Host it does not serve, so the proxy must present the target's
-	forward := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		forward(req)
-		req.Host = target.Host
+	proxy := &httputil.ReverseProxy{
+		// the server answers 421 to a Host it does not serve, so the proxy must present the target's
+		Rewrite: func(r *httputil.ProxyRequest) {
+			r.SetURL(target)
+			r.Out.Host = target.Host
+		},
+		FlushInterval: -1, // frames must reach the bridge as the stream writes them
 	}
-	proxy.FlushInterval = -1 // frames must reach the bridge as the stream writes them
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/live") {
 			time.Sleep(1500 * time.Millisecond)
