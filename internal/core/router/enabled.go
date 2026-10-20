@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
@@ -24,6 +25,24 @@ func HomeOf(env domain.EnvLookup) string {
 		return home
 	}
 	return adapters.AgentsStateDir(env, "huddle-router")
+}
+
+// portDefault is the canonical port huddle-router serves when none is named.
+const portDefault = 18786
+
+// PortOf is the port the router serves: $HUDDLE_ROUTER_PORT, else 18786. The words, the daemon
+// and the gateway all take it from here, so one variable moves every edition off the canonical
+// port.
+func PortOf(env domain.EnvLookup) (int, error) {
+	raw := env["HUDDLE_ROUTER_PORT"]
+	if raw == "" {
+		return portDefault, nil
+	}
+	port, err := strconv.Atoi(raw)
+	if err != nil || port < 1 || port > 65535 {
+		return 0, fmt.Errorf("huddle-router: $HUDDLE_ROUTER_PORT (%q) is not a port", raw)
+	}
+	return port, nil
 }
 
 // EnabledFile is HomeOf/providers.json: {"providers":["zai","kimi"]}.

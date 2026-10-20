@@ -41,8 +41,8 @@ runs the `huddle` binary the plugin's launcher downloaded (macOS and Linux, amd6
    | Create a channel | Channels |
    | Set a budget | Settings (Radar) |
 
-`/huddle:status` prints one table — hub, radar, board server, gateway — with running or not and
-the address. `/huddle:stop` stops the hub, radar and the board server this user started; the next
+`/huddle:status` prints one table — hub, radar, gateway — with running or not and
+the address. `/huddle:stop` stops the hub this user started; the next
 session hook starts them again. The command table lives in [README · The plugin](../README.md#the-plugin).
 
 ## Signing in
@@ -303,9 +303,10 @@ the audit. Move tickets only with the `kanban` command — it checks the gates a
    `/huddle:kanban-refresh` rescans now and reloads every open board page; `/huddle:kanban-export`
    writes the board as one self-contained HTML page for sharing (`--out <path>`).
 
-The board's server is localhost only, on the first free port in 18800-18849, and shows every
-folder change on the live page within half a second. A second machine works the same board through
-the satellite relay — see [Another machine](#another-machine).
+The hub serves every board in process: `kanban start` and `kanban open` name the board's page in
+the hub (starting the hub when the huddle home is set up), and the live page shows every folder
+change within half a second. A second machine works the same board through the satellite relay —
+see [Another machine](#another-machine).
 
 ## A hub on a local name
 
@@ -361,9 +362,9 @@ in proxy mode:
 
 ## Route other models
 
-`huddle gateway start` runs a localhost endpoint that speaks the Anthropic Messages API and the
-OpenAI Chat Completions and Responses APIs, so a harness keeps its own protocol and still shows up
-in radar ([README · The gateway](../README.md#the-gateway)).
+The huddle-router daemon serves a gateway under `/gateway` that speaks the Anthropic Messages API
+and the OpenAI Chat Completions and Responses APIs, so a harness keeps its own protocol and still
+shows up in radar ([README · The gateway](../README.md#the-gateway)).
 
 1. Name your upstreams in `$HUDDLE_HOME/gateway.json`:
 
@@ -379,20 +380,18 @@ in radar ([README · The gateway](../README.md#the-gateway)).
    default. Requests are forwarded byte for byte with their headers — the gateway adds nothing and
    keeps nothing but the route line's metadata.
 
-2. Start it and read the port (the first free port in 18870-18879, written to
-   `$HUDDLE_HOME/gateway.port`):
+2. Run the router and read the address:
 
    ```sh
-   huddle gateway start     # detached
-   huddle gateway status    # running, address
-   huddle gateway stop
-   huddle gateway           # foreground instead
+   huddle router start      # the daemon, if it is not up already
+   huddle gateway status    # the /gateway address, or the way to start the router
    ```
 
-3. Give your harness the base URL `http://127.0.0.1:<port>` — `model_providers.<x>.base_url` in
-   `~/.codex/config.toml` for Codex CLI, the provider's `baseURL` for opencode,
-   `providers.<x>.base_url` for Crush. A client can name itself with an `X-Huddle-Harness` header,
-   which lands on the route line next to `via: gateway`, so radar tells the harnesses apart.
+3. Give your harness the base URL `http://127.0.0.1:<router port>/gateway` —
+   `model_providers.<x>.base_url` in `~/.codex/config.toml` for Codex CLI, the provider's
+   `baseURL` for opencode, `providers.<x>.base_url` for Crush. A client can name itself with an
+   `X-Huddle-Harness` header, which lands on the route line next to `via: gateway`, so radar
+   tells the harnesses apart.
 
 ## Troubleshooting
 

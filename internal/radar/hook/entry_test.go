@@ -1,5 +1,6 @@
-// The entry's own cases: the stdin deadline, the autostart decision and the one systemMessage
-// it prints, with the dashboard start injected so nothing here spawns a process.
+// The entry's own cases: the stdin deadline and the one systemMessage it
+// prints. The hook starts no server of its own — with a hub it names the hub's
+// radar page, with none it answers nothing — so nothing here spawns a process.
 package hook
 
 import (
@@ -7,7 +8,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,25 +29,17 @@ func entryEnviron(t *testing.T, extra ...string) []string {
 	return append(environ, extra...)
 }
 
-// refusingStarter fails the test the moment the entry tries to start a server.
-func refusingStarter(t *testing.T) func() bool {
-	return func() bool {
-		t.Error("the entry started a dashboard it should not have")
-		return true
-	}
-}
-
 // noHub is the hub lookup for the cases that run with no hub on the machine.
 func noHub(context.Context) (string, bool) { return "", false }
 
 func TestRunEntry(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("records the payload and stays silent when autostart is off", func(t *testing.T) {
+	t.Run("records the payload and stays silent outside SessionStart", func(t *testing.T) {
 		environ := entryEnviron(t)
 		var stdout bytes.Buffer
 		code := runEntry(ctx, strings.NewReader(`{"hook_event_name":"Stop","session_id":"e1"}`),
-			&stdout, environ, func() time.Time { return entryNow }, 7, 8, refusingStarter(t), noHub)
+			&stdout, environ, func() time.Time { return entryNow }, 7, 8, noHub)
 		if code != 0 {
 			t.Fatalf("runEntry = %d, want 0", code)
 		}
@@ -64,7 +56,7 @@ func TestRunEntry(t *testing.T) {
 		}
 	})
 
-	t.Run("Main stays silent and exits 0 when autostart is off", func(t *testing.T) {
+	t.Run("Main stays silent and exits 0 with no hub and autostart off", func(t *testing.T) {
 		environ := entryEnviron(t)
 		var stdout bytes.Buffer
 		if code := Main(ctx, strings.NewReader(`{}`), &stdout, environ, func() time.Time { return entryNow }, 1, 2); code != 0 {
@@ -75,72 +67,29 @@ func TestRunEntry(t *testing.T) {
 		}
 	})
 
-	t.Run("prints the systemMessage a started dashboard owes the user", func(t *testing.T) {
-		environ := entryEnviron(t, "RADAR_AUTOSTART=1")
-		state := radarHome(environ)
-		if err := os.MkdirAll(state, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(state, "port"), []byte("29871\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		var stdout bytes.Buffer
-		code := runEntry(ctx, strings.NewReader(`{"hook_event_name":"SessionStart"}`),
-			&stdout, environ, func() time.Time { return entryNow }, 1, 2, func() bool { return true }, noHub)
-		if code != 0 {
-			t.Fatalf("runEntry = %d, want 0", code)
-		}
-		want := "{\"systemMessage\":\"radar: dashboard at http://127.0.0.1:29871\"}\n"
-		if stdout.String() != want {
-			t.Errorf("stdout = %q, want %q", stdout.String(), want)
-		}
-	})
-
-	t.Run("starts nothing while a server already runs", func(t *testing.T) {
-		environ := entryEnviron(t, "RADAR_AUTOSTART=1")
-		state := radarHome(environ)
-		if err := os.MkdirAll(state, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		info := "{\"pid\":" + strconv.Itoa(os.Getpid()) + "}\n"
-		if err := os.WriteFile(filepath.Join(state, "server.json"), []byte(info), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		var stdout bytes.Buffer
-		code := runEntry(ctx, strings.NewReader(`{"hook_event_name":"SessionStart"}`),
-			&stdout, environ, func() time.Time { return entryNow }, 1, 2, refusingStarter(t), noHub)
-		if code != 0 {
-			t.Fatalf("runEntry = %d, want 0", code)
-		}
-		if stdout.String() != "" {
-			t.Errorf("stdout = %q, want empty", stdout.String())
-		}
-	})
-
-	t.Run("says nothing when the start never launched", func(t *testing.T) {
-		environ := entryEnviron(t, "RADAR_AUTOSTART=1")
-		var stdout bytes.Buffer
-		code := runEntry(ctx, strings.NewReader(`{"hook_event_name":"SessionStart"}`),
-			&stdout, environ, func() time.Time { return entryNow }, 1, 2, func() bool { return false }, noHub)
-		if code != 0 {
-			t.Fatalf("runEntry = %d, want 0", code)
-		}
-		if stdout.String() != "" {
-			t.Errorf("stdout = %q, want empty", stdout.String())
-		}
-	})
-
-	t.Run("points at the status command when no port is saved yet", func(t *testing.T) {
-		environ := entryEnviron(t, "RADAR_AUTOSTART=1")
-		var stdout bytes.Buffer
-		code := runEntry(ctx, strings.NewReader(`{"hook_event_name":"SessionStart"}`),
-			&stdout, environ, func() time.Time { return entryNow }, 1, 2, func() bool { return true }, noHub)
-		if code != 0 {
-			t.Fatalf("runEntry = %d, want 0", code)
-		}
-		want := "{\"systemMessage\":\"radar: starting the dashboard (/huddle:status shows its address)\"}\n"
-		if stdout.String() != want {
-			t.Errorf("stdout = %q, want %q", stdout.String(), want)
+	t.Run("SessionStart with no hub answers nothing, autostart on or not", func(t *testing.T) {
+		for _, extra := range []string{"RADAR_AUTOSTART=1", ""} {
+			environ := entryEnviron(t, extra)
+			// even a dashboard of an older edition recorded as running starts nothing
+			state := radarHome(environ)
+			if err := os.MkdirAll(state, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(state, "server.json"), []byte(`{"pid":1}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(state, "port"), []byte("29871\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout bytes.Buffer
+			code := runEntry(ctx, strings.NewReader(`{"hook_event_name":"SessionStart"}`),
+				&stdout, environ, func() time.Time { return entryNow }, 1, 2, noHub)
+			if code != 0 {
+				t.Fatalf("runEntry(%q) = %d, want 0", extra, code)
+			}
+			if stdout.String() != "" {
+				t.Errorf("stdout = %q, want empty: with no hub the hook starts and says nothing", stdout.String())
+			}
 		}
 	})
 }
@@ -177,52 +126,11 @@ func TestReadStdin(t *testing.T) {
 	})
 }
 
-func TestServerRunning(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("no server.json is not a running server", func(t *testing.T) {
-		if serverRunning(ctx, envOf(entryEnviron(t))) {
-			t.Error("a missing server.json counts as running")
-		}
-	})
-
-	t.Run("an unreadable pid is not a running server", func(t *testing.T) {
-		for _, info := range []string{"not json", `{"pid":0}`, `{"pid":-2}`} {
-			environ := entryEnviron(t)
-			state := radarHome(environ)
-			if err := os.MkdirAll(state, 0o700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(state, "server.json"), []byte(info), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if serverRunning(ctx, envOf(environ)) {
-				t.Errorf("server.json %q counts as running", info)
-			}
-		}
-	})
-
-	t.Run("a live pid is a running server", func(t *testing.T) {
-		environ := entryEnviron(t)
-		state := radarHome(environ)
-		if err := os.MkdirAll(state, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		info := "{\"pid\":" + strconv.Itoa(os.Getpid()) + "}\n"
-		if err := os.WriteFile(filepath.Join(state, "server.json"), []byte(info), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if !serverRunning(ctx, envOf(environ)) {
-			t.Error("this test's own pid counts as dead")
-		}
-	})
-}
-
 // The systemMessage line is JSON.stringify's bytes: `<`, `>`, `&` and the two line separators
 // raw, so Claude's context sees the message exactly as written.
 func TestSystemMessageKeepsJSONStringifyBytes(t *testing.T) {
-	want := "{\"systemMessage\":\"a<b>c&d e f\"}"
-	if got := systemMessage("a<b>c&d e f"); got != want {
+	want := "{\"systemMessage\":\"a<b>c&d e f\"}"
+	if got := systemMessage("a<b>c&d e f"); got != want {
 		t.Errorf("systemMessage = %q, want %q", got, want)
 	}
 }

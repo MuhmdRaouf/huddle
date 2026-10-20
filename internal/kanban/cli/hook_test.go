@@ -62,8 +62,8 @@ func TestHookSessionStart(t *testing.T) {
 			argv: []string{"hook", "session-start"},
 			code: 0,
 			check: func(t *testing.T, s *serverFixture) {
-				if len(s.fetches) != 0 || len(s.spawns) != 0 {
-					t.Errorf("fetches = %v, spawns = %v, want none", s.fetches, s.spawns)
+				if len(s.fetches) != 0 {
+					t.Errorf("fetches = %v, want none", s.fetches)
 				}
 			},
 		},
@@ -79,8 +79,8 @@ func TestHookSessionStart(t *testing.T) {
 			code:   0,
 			stdout: hookAnswer(t, 8, 1, 2, "http://127.0.0.1:42101/#/kanban/board-key"),
 			check: func(t *testing.T, s *serverFixture) {
-				if len(s.spawns) != 0 {
-					t.Errorf("the hook started a server: %v", s.spawns)
+				if len(s.ensures) != 0 {
+					t.Errorf("the hook asked to start a hub: %v", s.ensures)
 				}
 				if len(s.browsers) != 0 {
 					t.Errorf("the hook opened a browser: %v", s.browsers)
@@ -97,8 +97,8 @@ func TestHookSessionStart(t *testing.T) {
 			code:   0,
 			stdout: hookAnswer(t, 8, 1, 2, ""),
 			check: func(t *testing.T, s *serverFixture) {
-				if len(s.spawns) != 0 {
-					t.Errorf("spawns = %v, want none", s.spawns)
+				if len(s.ensures) != 0 {
+					t.Errorf("ensures = %v, want none: the hook starts nothing", s.ensures)
 				}
 			},
 		},

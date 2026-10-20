@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -16,12 +15,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
-	"github.com/MuhmdRaouf/huddle/internal/radar/cli"
+	huddlehome "github.com/MuhmdRaouf/huddle/internal/huddle/home"
 )
 
 // testVersion is the version the tests pass to Run; the binary passes the one
@@ -36,7 +33,7 @@ const usageLine = "usage: huddle radar start|stop|status|url|open|watch [--port 
 const cliUsageLine = "usage: radar start|stop|status|url|open|watch [--port N] [--since 24h]"
 
 // notRunningLine is what a wanted-but-absent server prints.
-const notRunningLine = "radar: not running — /huddle:open starts it"
+const notRunningLine = "radar: the huddle hub is not running"
 
 // huddleBin is the huddle binary TestMain builds once; the spawn case starts it for real.
 var huddleBin string
@@ -123,28 +120,50 @@ func TestEntriesAreTheCLIEntryPoints(t *testing.T) {
 	}
 }
 
-// TestCLIEntries proves each CLI entry runs the real command line against the state dir it
-// resolves: the lines, the exit codes and the files it leaves behind.
+// TestCLIEntries proves each CLI entry runs the real command line against the world it
+// resolves: the lines, the exit codes and the files it leaves behind. The hub is the one
+// server, so every row's world is a temp home whose hub answers — or no home at all.
 func TestCLIEntries(t *testing.T) {
 	t.Run("help, --help and -h print the usage on stdout and exit 0", func(t *testing.T) {
 		for _, command := range []string{"help", "--help", "-h"} {
+			isolateState(t)
 			var stdout, stderr bytes.Buffer
 			if code := Run([]string{command}, &stdout, &stderr, testVersion); code != 0 {
 				t.Fatalf("Run(%s) = %d, want 0", command, code)
 			}
-			want := cliUsageLine + "\nstart runs the dashboard server on 127.0.0.1 on a random port unless --port is given\n"
+			want := cliUsageLine + "\nstart names the huddle hub's radar page, starting the hub when the huddle home is set up\n"
 			if stdout.String() != want {
 				t.Errorf("Run(%s) stdout = %q, want %q", command, stdout.String(), want)
 			}
 		}
 	})
 
-	t.Run("status and url answer not running, exit 3, with nothing recorded", func(t *testing.T) {
+	t.Run("status and url answer the hub page while a hub answers", func(t *testing.T) {
 		for _, command := range []string{"status", "url"} {
 			isolateState(t)
+			hub := healthServer(t, `{"ok":true}`, http.StatusOK)
+			setUpHome(t, portOf(t, hub))
 			var stdout, stderr bytes.Buffer
-			if code := Run([]string{command}, &stdout, &stderr, testVersion); code != 3 {
-				t.Fatalf("Run(%s) = %d, want 3", command, code)
+			if code := Run([]string{command}, &stdout, &stderr, testVersion); code != 0 {
+				t.Fatalf("Run(%s) = %d, stderr %q", command, code, stderr.String())
+			}
+			want := "radar: in the huddle hub at http://127.0.0.1:" + strconv.Itoa(portOf(t, hub)) + "/#/radar\n"
+			if command == "url" {
+				want = "radar: http://127.0.0.1:" + strconv.Itoa(portOf(t, hub)) + "/#/radar\n"
+			}
+			if stdout.String() != want {
+				t.Errorf("Run(%s) stdout = %q, want %q", command, stdout.String(), want)
+			}
+		}
+	})
+
+	t.Run("status and url are exit 6 with no hub answering", func(t *testing.T) {
+		for _, command := range []string{"status", "url"} {
+			isolateState(t)
+			setUpHome(t, closedPort(t)) // a home whose port nothing answers
+			var stdout, stderr bytes.Buffer
+			if code := Run([]string{command}, &stdout, &stderr, testVersion); code != 6 {
+				t.Fatalf("Run(%s) = %d, want 6", command, code)
 			}
 			if stdout.String() != notRunningLine+"\n" {
 				t.Errorf("Run(%s) stdout = %q, want the not-running line", command, stdout.String())
@@ -152,154 +171,69 @@ func TestCLIEntries(t *testing.T) {
 		}
 	})
 
-	t.Run("status reports the recorded server's uptime, sessions and version", func(t *testing.T) {
-		state := isolateState(t)
-		health := healthServer(t, `{"ok":true,"sessions":1,"uptimeMs":65000}`, http.StatusOK)
-		recordRunning(t, state, int64(os.Getpid()), portOf(t, health))
-		var stdout, stderr bytes.Buffer
-		if code := Run([]string{"status"}, &stdout, &stderr, testVersion); code != 0 {
-			t.Fatalf("Run(status) = %d, stderr %q", code, stderr.String())
-		}
-		want := "radar: http://127.0.0.1:" + strconv.Itoa(portOf(t, health)) +
-			"\n  up 1m5s, 1 session tracked, v" + testVersion + "\n"
-		if stdout.String() != want {
-			t.Errorf("stdout = %q, want %q", stdout.String(), want)
-		}
-	})
-
-	t.Run("url prints the recorded server's url when health answers", func(t *testing.T) {
-		state := isolateState(t)
-		health := healthServer(t, `{"ok":true}`, http.StatusOK)
-		recordRunning(t, state, int64(os.Getpid()), portOf(t, health))
-		var stdout, stderr bytes.Buffer
-		if code := Run([]string{"url"}, &stdout, &stderr, testVersion); code != 0 {
-			t.Fatalf("Run(url) = %d, stderr %q", code, stderr.String())
-		}
-		want := "radar: http://127.0.0.1:" + strconv.Itoa(portOf(t, health)) + "\n"
-		if stdout.String() != want {
-			t.Errorf("stdout = %q, want %q", stdout.String(), want)
-		}
-	})
-
-	t.Run("url answers not running when health answers an error status", func(t *testing.T) {
-		state := isolateState(t)
-		health := healthServer(t, "nope", http.StatusInternalServerError)
-		recordRunning(t, state, int64(os.Getpid()), portOf(t, health))
-		var stdout, stderr bytes.Buffer
-		if code := Run([]string{"url"}, &stdout, &stderr, testVersion); code != 3 {
-			t.Fatalf("Run(url) = %d, want 3", code)
-		}
-		if stdout.String() != notRunningLine+"\n" {
-			t.Errorf("stdout = %q, want the not-running line", stdout.String())
-		}
-	})
-
-	t.Run("url answers not running when the server is unreachable", func(t *testing.T) {
-		state := isolateState(t)
-		recordRunning(t, state, int64(os.Getpid()), closedPort(t))
-		var stdout, stderr bytes.Buffer
-		if code := Run([]string{"url"}, &stdout, &stderr, testVersion); code != 3 {
-			t.Fatalf("Run(url) = %d, want 3", code)
-		}
-		if stdout.String() != notRunningLine+"\n" {
-			t.Errorf("stdout = %q, want the not-running line", stdout.String())
-		}
-	})
-
-	t.Run("stop without a record is a no-op that exits 0", func(t *testing.T) {
+	t.Run("stop names the hub and stops nothing", func(t *testing.T) {
 		isolateState(t)
 		var stdout, stderr bytes.Buffer
 		if code := Run([]string{"stop"}, &stdout, &stderr, testVersion); code != 0 {
 			t.Fatalf("Run(stop) = %d, stderr %q", code, stderr.String())
 		}
-		if stdout.String() != "radar: not running\n" {
-			t.Errorf("stdout = %q, want the not-running line", stdout.String())
+		if want := "radar: runs inside the huddle hub; /huddle:stop stops it\n"; stdout.String() != want {
+			t.Errorf("stdout = %q, want %q", stdout.String(), want)
 		}
 	})
 
-	t.Run("stop removes the record and answers stopped", func(t *testing.T) {
+	t.Run("start with a hub answering names the hub's radar page and starts nothing", func(t *testing.T) {
 		state := isolateState(t)
-		recordRunning(t, state, int64(os.Getpid()), 29871)
-		var stdout, stderr bytes.Buffer
-		if code := Run([]string{"stop"}, &stdout, &stderr, testVersion); code != 0 {
-			t.Fatalf("Run(stop) = %d, stderr %q", code, stderr.String())
-		}
-		if stdout.String() != "radar: stopped\n" {
-			t.Errorf("stdout = %q, want the stopped line", stdout.String())
-		}
-		if _, err := os.Stat(filepath.Join(state, "server.json")); !os.IsNotExist(err) {
-			t.Error("server.json survived the stop")
-		}
-	})
-
-	t.Run("start reuses the recorded healthy server and remembers autostart", func(t *testing.T) {
-		state := isolateState(t)
-		health := healthServer(t, `{"ok":true}`, http.StatusOK)
-		port := portOf(t, health)
-		recordRunning(t, state, int64(os.Getpid()), port)
+		hub := healthServer(t, `{"ok":true}`, http.StatusOK)
+		setUpHome(t, portOf(t, hub))
 		var stdout, stderr bytes.Buffer
 		if code := Run([]string{"start"}, &stdout, &stderr, testVersion); code != 0 {
 			t.Fatalf("Run(start) = %d, stderr %q", code, stderr.String())
 		}
-		if want := "radar: http://127.0.0.1:" + strconv.Itoa(port) + "\n"; stdout.String() != want {
+		want := "radar: in the huddle hub at http://127.0.0.1:" + strconv.Itoa(portOf(t, hub)) + "/#/radar\n"
+		if stdout.String() != want {
 			t.Errorf("stdout = %q, want %q", stdout.String(), want)
 		}
-		if _, err := os.Stat(filepath.Join(state, "autostart")); err != nil {
-			t.Errorf("the start remembered autostart: %v", err)
+		if _, err := os.Stat(filepath.Join(state, "server.json")); !os.IsNotExist(err) {
+			t.Errorf("a standalone dashboard left server.json behind (err %v)", err)
+		}
+	})
+
+	t.Run("start with no set-up home says to run /huddle:setup and exits 6", func(t *testing.T) {
+		isolateState(t)
+		t.Setenv("HUDDLE_HOME", filepath.Join(t.TempDir(), "huddle")) // never created
+		var stdout, stderr bytes.Buffer
+		if code := Run([]string{"start"}, &stdout, &stderr, testVersion); code != 6 {
+			t.Fatalf("Run(start) = %d, stdout %q, stderr %q, want 6", code, stdout.String(), stderr.String())
+		}
+		if want := "radar: the huddle hub is not set up; run /huddle:setup\n"; stderr.String() != want {
+			t.Errorf("stderr = %q, want %q", stderr.String(), want)
 		}
 	})
 }
 
-// TestStartSpawnsTheServerItFollows runs the real detached start: the built binary serves in a
-// temp world and the parent follows its server.json to health — the flow a first /huddle:open
-// takes. The child is `huddle radar start --foreground`, the word this binary runs radar with.
-// Only the process this test's start spawned is stopped, and only by its recorded pid.
-func TestStartSpawnsTheServerItFollows(t *testing.T) {
-	state := t.TempDir()
-	home := t.TempDir()
-	t.Setenv("RADAR_HOME", state)
-	t.Setenv("HOME", home)
-	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, "claude"))
-	t.Cleanup(func() { stopRecordedServer(t, state) })
-	original := cli.Executable
-	t.Cleanup(func() { cli.Executable = original })
-	cli.Executable = func() (string, error) { return huddleBin, nil }
-	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"start"}, &stdout, &stderr, testVersion); code != 0 {
-		t.Fatalf("Run(start) = %d, stdout %q stderr %q", code, stdout.String(), stderr.String())
+// setUpHome lays a huddle home out and records port in its port file, the way a
+// started hub leaves it, so the words find the hub.
+func setUpHome(t *testing.T, port int) {
+	t.Helper()
+	homeDir := t.TempDir()
+	t.Setenv("HUDDLE_HOME", homeDir)
+	if err := os.MkdirAll(huddlehome.Home{Root: homeDir}.Run(), 0o700); err != nil {
+		t.Fatal(err)
 	}
-	portText, ok := strings.CutPrefix(strings.TrimSuffix(stdout.String(), "\n"), "radar: http://127.0.0.1:")
-	if !ok {
-		t.Fatalf("stdout = %q, want the dashboard url", stdout.String())
-	}
-	var info struct {
-		Pid  int64 `json:"pid"`
-		Port int   `json:"port"`
-	}
-	data, err := os.ReadFile(filepath.Join(state, "server.json"))
-	if err != nil {
-		t.Fatalf("read server.json: %v", err)
-	}
-	if err := json.Unmarshal(data, &info); err != nil {
-		t.Fatalf("parse server.json: %v", err)
-	}
-	if !process.IsAlive(info.Pid) {
-		t.Fatalf("the pid server.json holds (%d) is not live", info.Pid)
-	}
-	if portText != strconv.Itoa(info.Port) {
-		t.Errorf("stdout says port %s, server.json says %d", portText, info.Port)
+	if err := os.WriteFile(huddlehome.Home{Root: homeDir}.PortFile(), []byte(strconv.Itoa(port)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
-// TestOpenLaunchesTheOpener proves `open` hands the dashboard url to the platform's opener
+// TestOpenLaunchesTheOpener proves `open` hands the hub's radar page to the platform's opener
 // without a real browser: a fake `open` earlier on PATH records what it got.
 func TestOpenLaunchesTheOpener(t *testing.T) {
-	state := isolateState(t)
-	health := healthServer(t, `{"ok":true}`, http.StatusOK)
-	port := portOf(t, health)
-	recordRunning(t, state, int64(os.Getpid()), port)
+	isolateState(t)
+	hub := healthServer(t, `{"ok":true}`, http.StatusOK)
+	setUpHome(t, portOf(t, hub))
 	bin := t.TempDir()
-	marker := filepath.Join(state, "opened")
+	marker := filepath.Join(t.TempDir(), "opened")
 	script := "#!/bin/sh\nprintf '%s\\n' \"$1\" > \"" + marker + "\"\n"
 	// macOS runs open, Linux xdg-open: the fake answers to both names.
 	for _, name := range []string{"open", "xdg-open"} {
@@ -312,7 +246,7 @@ func TestOpenLaunchesTheOpener(t *testing.T) {
 	if code := Run([]string{"open"}, &stdout, &stderr, testVersion); code != 0 {
 		t.Fatalf("Run(open) = %d, stderr %q", code, stderr.String())
 	}
-	want := "http://127.0.0.1:" + strconv.Itoa(port)
+	want := "http://127.0.0.1:" + strconv.Itoa(portOf(t, hub)) + "/#/radar"
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		data, err := os.ReadFile(marker)
@@ -412,48 +346,6 @@ func closedPort(t *testing.T) int {
 	port := listener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
 	return port
-}
-
-// recordRunning writes the server.json a healthy dashboard leaves behind.
-func recordRunning(t *testing.T, state string, pid int64, port int) {
-	t.Helper()
-	body := fmt.Sprintf("{\"pid\":%d,\"port\":%d,\"url\":\"http://127.0.0.1:%d\",\"startedAt\":5000}\n", pid, port, port)
-	if err := os.WriteFile(filepath.Join(state, "server.json"), []byte(body), 0o600); err != nil {
-		t.Fatalf("write server.json: %v", err)
-	}
-}
-
-// stopRecordedServer stops the server server.json names — only the process this test's start
-// spawned. The stop is done when the server's own shutdown takes server.json away or the pid
-// stops answering: the pid alone cannot say it, because a stopped server this process spawned
-// turns into an unreaped zombie that keeps answering liveness probes.
-func stopRecordedServer(t *testing.T, state string) {
-	t.Helper()
-	path := filepath.Join(state, "server.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return // nothing recorded: nothing to stop
-	}
-	var info struct {
-		Pid int64 `json:"pid"`
-	}
-	if json.Unmarshal(data, &info) != nil || info.Pid <= 0 || !process.IsAlive(info.Pid) {
-		return
-	}
-	process.SignalGroup(info.Pid, syscall.SIGTERM)
-	deadline := time.Now().Add(10 * time.Second)
-	for fileIsThere(path) && process.IsAlive(info.Pid) && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
-	}
-	if fileIsThere(path) && process.IsAlive(info.Pid) {
-		process.SignalGroup(info.Pid, syscall.SIGKILL)
-	}
-}
-
-// fileIsThere mirrors the filesystem.
-func fileIsThere(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 // keysOf returns the table's keys in a stable order.

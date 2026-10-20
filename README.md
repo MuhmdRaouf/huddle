@@ -53,8 +53,8 @@ static binary, one plugin, five jobs:
 3. Run `/huddle:setup` in any project. It names the channel and this session after the project folder, joins the
    project to it, starts the hub and prints the dashboard link — it signs you in once, within 5 minutes.
 
-That is all: the hooks start the hub, radar and the board server, and bring each one back on the next hook after
-a crash or a reboot. The provider plugins in
+That is all: the hooks start the hub — the one server, with Radar and the board living inside it — and bring it
+back on the next hook after a crash or a reboot. The provider plugins in
 [claude-code-plugins](https://github.com/MuhmdRaouf/claude-code-plugins) install Huddle for you.
 
 ## Requirements
@@ -78,8 +78,8 @@ Ten slash commands, one product:
 | `/huddle:invite` | Make a join line that brings another Claude session into this Huddle |
 | `/huddle:join` | Join a Huddle with the join line `/huddle:invite` showed |
 | `/huddle:open` | Ensure the hub is running and print its dashboard URL (Now, Radar and Kanban tabs) |
-| `/huddle:status` | One table: hub, radar, board server, gateway; running or not, address |
-| `/huddle:stop` | Stop the hub, radar and the board server this user started |
+| `/huddle:status` | One table: hub, radar, gateway; running or not, address |
+| `/huddle:stop` | Stop the hub this user started; radar and the boards are served by it |
 | `/huddle:kanban-init` | Create this project's kanban board, or migrate an old backlog board into it |
 | `/huddle:kanban-lint` | Check every ticket against the bar; exit 1 when any fails |
 | `/huddle:kanban-refresh` | Rescan the board now and reload every open board page |
@@ -164,11 +164,11 @@ Identify a session with `HUDDLE_SESSION`; no Claude Code variable is needed. See
 
 ## The gateway
 
-`huddle gateway start` runs a localhost endpoint that speaks the Anthropic Messages API and the OpenAI Chat
-Completions and Responses APIs. Point a harness's base URL at it and every request goes to the upstream its
-model's route names, unchanged, while radar records the model, latency and tokens: it takes the first free
-port in 18870-18879 and writes it to `$HUDDLE_HOME/gateway.port`. Name your upstreams in `$HUDDLE_HOME/gateway.json`;
-a model goes to the longest glob that matches it, anything else to its API family's default:
+The huddle-router daemon serves a gateway under `/gateway` that speaks the Anthropic Messages API and the
+OpenAI Chat Completions and Responses APIs. Point a harness's base URL at it and every request goes to the
+upstream its model's route names, unchanged, while radar records the model, latency and tokens. Name your
+upstreams in `$HUDDLE_HOME/gateway.json`; a model goes to the longest glob that matches it, anything else to
+its API family's default:
 
 ```json
 {
@@ -179,9 +179,9 @@ a model goes to the longest glob that matches it, anything else to its API famil
 ```
 
 A request is forwarded byte for byte with its headers (authentication included — the gateway adds nothing and
-keeps nothing but the route line's metadata). Start it with `huddle gateway start`; `huddle gateway` runs it in
-the foreground, `huddle gateway status` reports, and stop ends it. Point a harness at the base URL
-`http://127.0.0.1:<port>`. A client can identify itself with `X-Huddle-Harness`, which lands on the route line
+keeps nothing but the route line's metadata). `huddle router start` runs the daemon the gateway rides on, and
+`huddle gateway status` answers the address — `http://127.0.0.1:18786/gateway` when the router keeps its
+canonical port. A client can identify itself with `X-Huddle-Harness`, which lands on the route line
 next to `via: gateway`, so radar tells the harnesses apart.
 
 ## A local name

@@ -10,10 +10,8 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/signal"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	kanbanapp "github.com/MuhmdRaouf/huddle/internal/kanban/app"
@@ -71,8 +69,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return kanbanapp.Run(args[1:], stdout, stderr, version)
 		case "gateway":
 			return gateway.Run(args[1:], stdout, stderr, gateway.RunOptions{
-				Env:    envOf(os.Environ()),
-				Signal: foregroundSignals(),
+				Env: envOf(os.Environ()),
 			})
 		case "router":
 			// The huddle-router daemon's words: ahead of the CLI, so a session's identity never
@@ -111,14 +108,6 @@ func importLegacy(key string) {
 		budget = hookImportBudget
 	}
 	cli.ImportLegacy(context.Background(), &cli.World{}, budget)
-}
-
-// foregroundSignals is the channel a foreground run ends on: the process's SIGTERM and interrupt,
-// so a detached child stops cleanly and cleans its files up.
-func foregroundSignals() <-chan os.Signal {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGTERM, os.Interrupt)
-	return signals
 }
 
 // envOf splits an ordered environment into the lookup the state resolvers take.

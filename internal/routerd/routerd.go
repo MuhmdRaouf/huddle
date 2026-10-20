@@ -19,11 +19,10 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/providers"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/gateway"
 )
 
 const (
-	// portDefault is the canonical port the router serves when none is named.
-	portDefault = 18786
 	// pollDefault is how often providers.json is re-read.
 	pollDefault = 2 * time.Second
 	// anthropicDefault is where Claude models go when no override names another Anthropic.
@@ -54,21 +53,6 @@ type record struct {
 	Port    int    `json:"port"`
 	Version string `json:"version"`
 	Started string `json:"started"`
-}
-
-// PortOf is the port the router serves: $HUDDLE_ROUTER_PORT, else 18786. The words, the daemon
-// and the hub's own router goroutine all take it from here, so one variable moves every
-// edition off the canonical port.
-func PortOf(env domain.EnvLookup) (int, error) {
-	raw := env["HUDDLE_ROUTER_PORT"]
-	if raw == "" {
-		return portDefault, nil
-	}
-	port, err := strconv.Atoi(raw)
-	if err != nil || port < 1 || port > 65535 {
-		return 0, fmt.Errorf("huddle-router: $HUDDLE_ROUTER_PORT (%q) is not a port", raw)
-	}
-	return port, nil
 }
 
 // Run serves huddle-router until ctx ends. It answers a *singleton.HeldError when another
@@ -119,7 +103,7 @@ func Run(ctx context.Context, o Options) error {
 	}
 	port := o.Port
 	if port == 0 {
-		if port, err = PortOf(env); err != nil {
+		if port, err = router.PortOf(env); err != nil {
 			return err
 		}
 	}
@@ -138,6 +122,7 @@ func Run(ctx context.Context, o Options) error {
 		Env:       router.ProxyEnv(env),
 		Log:       log,
 		Events:    spool.CreateSpoolWriter(env, log, nil),
+		Gateway:   gatewayOf(env, log),
 	})
 	server.Handler = guardPanics(server.Handler, log, o.panicOnce)
 	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
@@ -209,6 +194,19 @@ func anthropicOf(env domain.EnvLookup) (*url.URL, error) {
 		return nil, fmt.Errorf("huddle-router: $HUDDLE_ROUTER_ANTHROPIC_URL: %w", err)
 	}
 	return parsed, nil
+}
+
+// gatewayOf builds the gateway the router mounts under /gateway from the huddle home's
+// gateway.json, its route lines riding the same spool writer the lanes use. A config that does
+// not hold up is logged once and the router runs without a gateway: never fail the router over
+// an extra.
+func gatewayOf(env domain.EnvLookup, log func(line string)) http.Handler {
+	config, err := gateway.LoadConfig(env)
+	if err != nil {
+		log("huddle-router: gateway: " + err.Error())
+		return nil
+	}
+	return gateway.NewServer(config, gateway.SpoolRecorder(env, log), nil)
 }
 
 // lanesOf builds the lane options for every enabled provider; one whose lane cannot be built (a

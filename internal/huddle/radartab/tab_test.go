@@ -141,8 +141,8 @@ func TestOneIngesterAStandaloneRadarOwnsTheLock(t *testing.T) {
 }
 
 // TestOneIngesterHuddleOwnsAndRadarDefers: with no live owner, huddle takes the lock the way
-// radar's own app does, answers radar's health path, and radar's command line — the standalone
-// plugin's start — reuses the recorded owner instead of spawning a second ingester.
+// radar's own app does, answers radar's health path, and radar's command line — the words the
+// plugin runs — name the hub that owns the ingester and start no second one.
 func TestOneIngesterHuddleOwnsAndRadarDefers(t *testing.T) {
 	env := tempEnv(t)
 	tab, client, base := mountMux(t, env, MountOptions{IntervalMs: quietMs, InsightsTickMs: quietMs})
@@ -166,49 +166,21 @@ func TestOneIngesterHuddleOwnsAndRadarDefers(t *testing.T) {
 		t.Fatalf("/api/health = %d %v, want radar's ok answer", status, health)
 	}
 
-	// radar's start, run with radar's own decision logic, must reuse the recorded owner
-	var spawned []string
-	var spawnMu sync.Mutex
+	// radar's start, run with radar's own decision logic, names the hub that owns
+	// the ingester — the hub this mount runs — and starts nothing of its own
 	deps := cli.Deps{
-		Env:     env,
-		Version: "standalone",
-		Out:     func(string) {},
-		Err:     func(line string) { t.Logf("radar: %s", line) },
-		FetchJSON: func(url string) cli.FetchResult {
-			request, err := http.NewRequest(http.MethodGet, url, nil)
-			if err != nil {
-				return cli.FetchResult{}
-			}
-			response, err := client.Do(request)
-			if err != nil {
-				return cli.FetchResult{}
-			}
-			defer func() { _ = response.Body.Close() }()
-			if response.StatusCode < 200 || response.StatusCode > 299 {
-				return cli.FetchResult{}
-			}
-			var body map[string]any
-			if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
-				return cli.FetchResult{}
-			}
-			return cli.FetchResult{OK: true, Body: body}
-		},
-		SpawnDetached: func(args []string) int64 {
-			spawnMu.Lock()
-			defer spawnMu.Unlock()
-			spawned = append(spawned, strings.Join(args, " "))
-			return 1
-		},
-		IsAlive: func(pid int64) bool { return pid == int64(os.Getpid()) },
-		Signal:  func(int64) bool { return true },
-		Now:     func() int64 { return time.Now().UnixMilli() },
-		SinceMs: cli.DefaultSinceMs,
+		Env:       env,
+		Version:   "standalone",
+		Out:       func(string) {},
+		Err:       func(line string) { t.Logf("radar: %s", line) },
+		IsAlive:   func(pid int64) bool { return pid == int64(os.Getpid()) },
+		Now:       func() int64 { return time.Now().UnixMilli() },
+		SinceMs:   cli.DefaultSinceMs,
+		Hub:       func() (string, bool) { return base, true },
+		EnsureHub: func(int) (string, bool, string) { return base, true, "" },
 	}
 	if code := cli.RunCli(context.Background(), []string{"start"}, deps); code != 0 {
-		t.Fatalf("radar start = %d, want the reuse 0", code)
-	}
-	if len(spawned) != 0 {
-		t.Fatalf("radar start spawned %v, want no second ingester", spawned)
+		t.Fatalf("radar start = %d, want the hub page 0", code)
 	}
 	if code := cli.RunCli(context.Background(), []string{"status"}, deps); code != 0 {
 		t.Fatalf("radar status = %d, want 0", code)

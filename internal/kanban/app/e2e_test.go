@@ -9,18 +9,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
-
-	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 )
 
 // The whole server flow through the built huddle binary's kanban word: init,
-// start --no-open, a ticket seen live on /api/events, refresh, stop, and
-// nothing left behind — no child process, no state file. Every temp home and
-// project is the test's own; the port is the OS's pick, never a fixed one.
+// start naming the hub (and starting nothing), stop pointing at the hub, then
+// the hand-run foreground server carrying the live view — a ticket seen on
+// /api/events, refresh through it, its exit, and nothing left behind. Every
+// temp home and project is the test's own; the port is the OS's pick, never a
+// fixed one.
 
 // buildHuddle builds the binary once for the e2e.
 func buildHuddle(t *testing.T) string {
@@ -35,7 +35,8 @@ func buildHuddle(t *testing.T) string {
 }
 
 // e2e is one throwaway project with its own kanban home and its own huddle
-// home, where no hub answers: the server words stay standalone here.
+// home, where no hub answers and none can be started: the home was never set
+// up.
 type e2e struct {
 	t         *testing.T
 	bin       string
@@ -50,7 +51,7 @@ func newE2E(t *testing.T) *e2e {
 	t.Helper()
 	project := t.TempDir()
 	e := &e2e{
-		t: t, bin: buildHuddle(t), project: project, home: t.TempDir(), hubHome: t.TempDir(),
+		t: t, bin: buildHuddle(t), project: project, home: t.TempDir(), hubHome: filepath.Join(t.TempDir(), "huddle"),
 		boardDir: filepath.Join(project, ".agents", "kanban"),
 	}
 	return e
@@ -114,25 +115,6 @@ func (e *e2e) recordedState(t *testing.T) (pid int, port int) {
 	return st.Pid, st.Port
 }
 
-// reap stops the server the test started and waits for its exit, so no process
-// outlives the test and no temp dir is removed under an open log file. The
-// kill is the last resort for a server that ignored its stop.
-func (e *e2e) reap(pid int) {
-	e.t.Helper()
-	e.t.Cleanup(func() {
-		_, _ = e.run("stop")
-		deadline := time.Now().Add(5 * time.Second)
-		for process.IsAlive(int64(pid)) && time.Now().Before(deadline) {
-			time.Sleep(50 * time.Millisecond)
-		}
-		if process.IsAlive(int64(pid)) {
-			if proc, err := os.FindProcess(pid); err == nil {
-				_ = proc.Kill()
-			}
-		}
-	})
-}
-
 // eventsLine answers the next stream line within the budget.
 func eventsLine(t *testing.T, lines chan string, budget time.Duration) string {
 	t.Helper()
@@ -155,19 +137,46 @@ func TestServerEndToEnd(t *testing.T) {
 		t.Fatalf("init = %d, %q", code, out)
 	}
 
-	code, out := e.run("start", "--no-open", "--port", "0")
-	if code != 0 {
-		t.Fatalf("start = %d, %q", code, out)
+	// with no hub and no set-up home, start starts nothing and says so
+	if code, out := e.run("start", "--no-open"); code != 6 ||
+		!strings.Contains(out, "kanban: the huddle hub is not set up; run /huddle:setup") {
+		t.Fatalf("start = %d, %q, want 6 with the setup line", code, out)
 	}
-	address := regexp.MustCompile(`http://127\.0\.0\.1:\d+`).FindString(out)
-	if address == "" {
-		t.Fatalf("start printed no address: %q", out)
+	if entries, err := filepath.Glob(filepath.Join(e.home, "*")); err != nil || len(entries) != 0 {
+		t.Fatalf("start left %v in the home, want it empty", entries)
 	}
+
+	// stop is words: the hub is what serves the boards, and /huddle:stop ends it
+	if code, out := e.run("stop"); code != 0 ||
+		!strings.Contains(out, "kanban: boards are served by the huddle hub; /huddle:stop stops it") {
+		t.Fatalf("stop = %d, %q, want 0 and the hub line", code, out)
+	}
+
+	// the hand-run foreground server carries the live view
+	serve := exec.Command(e.bin, "kanban", "serve", "--port", "0")
+	serve.Dir = e.project
+	serve.Env = append(os.Environ(), "KANBAN_HOME="+e.home, "KANBAN_NO_OPEN=1")
+	var serveOut strings.Builder
+	serve.Stdout = &serveOut
+	serve.Stderr = &serveOut
+	if err := serve.Start(); err != nil {
+		t.Fatalf("start serve: %v", err)
+	}
+	t.Cleanup(func() {
+		if serve.Process != nil && serve.ProcessState == nil {
+			_ = serve.Process.Signal(syscall.SIGTERM)
+			done := make(chan struct{})
+			go func() { _ = serve.Wait(); close(done) }()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				_ = serve.Process.Kill()
+				<-done
+			}
+		}
+	})
 	pid, port := e.recordedState(t)
-	if want := fmt.Sprintf(":%d", port); !strings.HasSuffix(address, want) {
-		t.Errorf("start printed %q, the server listens on %s", address, want)
-	}
-	e.reap(pid)
+	address := fmt.Sprintf("http://127.0.0.1:%d", port)
 
 	// the live view: the snapshot first, then the ticket this test writes
 	ctx, cancel := context.WithCancel(context.Background())
@@ -231,30 +240,33 @@ func TestServerEndToEnd(t *testing.T) {
 		t.Errorf("refresh = %d, %q", code, out)
 	}
 
-	if code, out := e.run("stop"); code != 0 || !strings.Contains(out, "kanban: stopped") {
-		t.Fatalf("stop = %d, %q", code, out)
+	// the server ends with its signal and takes its state file with it. Wait
+	// first: a child not yet reaped is a zombie that answers every liveness
+	// probe, so the wait is the proof the signal ended it.
+	if err := serve.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("signal serve: %v", err)
 	}
-	gone := time.Now().Add(3 * time.Second)
-	for process.IsAlive(int64(pid)) && time.Now().Before(gone) {
-		time.Sleep(50 * time.Millisecond)
-	}
-	if process.IsAlive(int64(pid)) {
-		t.Fatal("the server process survived its stop")
+	waited := make(chan error, 1)
+	go func() { waited <- serve.Wait() }()
+	select {
+	case err := <-waited:
+		if err != nil {
+			t.Fatalf("serve ended with %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		_ = serve.Process.Kill()
+		t.Fatal("the server process survived its signal")
 	}
 	if _, err := os.Stat(e.statePath); err == nil {
 		t.Error("the state file survived the stop")
 	}
+	_ = pid
 	logData, err := os.ReadFile(strings.TrimSuffix(e.statePath, ".json") + ".log")
 	if err != nil {
 		t.Fatalf("the server log is missing: %v", err)
 	}
 	log := string(logData)
-	if !strings.Contains(log, "kanban: listening on ") || !strings.Contains(log, "kanban: stopped (reason: stop)") {
-		t.Errorf("log = %q, want a listening line and the stop line", log)
-	}
-
-	code, out = e.run("stop")
-	if code != 6 || !strings.Contains(out, "kanban: no server for ") {
-		t.Errorf("second stop = %d, %q, want 6 naming the board", code, out)
+	if !strings.Contains(log, "kanban: listening on ") || !strings.Contains(log, "kanban: stopped (reason: signal)") {
+		t.Errorf("log = %q, want a listening line and the signal line", log)
 	}
 }

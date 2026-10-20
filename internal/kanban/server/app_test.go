@@ -253,21 +253,6 @@ func TestServeRefusesAHomeItCannotWrite(t *testing.T) {
 	}
 }
 
-func TestStartWithoutAServerThatListensFails(t *testing.T) {
-	b := newBoard(t)
-	home := t.TempDir()
-	fx := DefaultEffects()
-	fx.Sleep = func(int64) {} // the whole budget at once
-	fx.SpawnServe = func(string, []string, string) int64 { return 0 }
-	_, err := Start(context.Background(), b.Root, home, -1, fx)
-	if err == nil {
-		t.Fatal("a start whose child never listened answered healthy")
-	}
-	if !strings.Contains(err.Error(), "did not become healthy") {
-		t.Errorf("error = %v", err)
-	}
-}
-
 func TestRefreshAndStopOverBrokenAnswers(t *testing.T) {
 	b := newBoard(t)
 	home := t.TempDir()
@@ -305,7 +290,7 @@ func TestRefreshAndStopOverBrokenAnswers(t *testing.T) {
 		}
 	})
 
-	t.Run("a refused stop removes the record", func(t *testing.T) {
+	t.Run("a refresh past a refused answer is no server", func(t *testing.T) {
 		if err := WriteState(ctx, home, key, st); err != nil {
 			t.Fatal(err)
 		}
@@ -313,8 +298,8 @@ func TestRefreshAndStopOverBrokenAnswers(t *testing.T) {
 		fx.Fetch = func(context.Context, string, string, map[string]string) (int, []byte, bool) {
 			return 403, []byte(`{"error":"forbidden token"}`), true
 		}
-		if err := Stop(ctx, b.Root, home, fx); !errorsIsNoServer(err) {
-			t.Fatalf("stop = %v, want no server", err)
+		if _, err := Refresh(ctx, b.Root, home, fx); !errorsIsNoServer(err) {
+			t.Fatalf("refresh = %v, want no server", err)
 		}
 		if ReadState(home, key) != nil {
 			t.Error("the refused record survived")
@@ -333,22 +318,6 @@ func TestEffects(t *testing.T) {
 		if browserOpener() == "" {
 			t.Error("no browser opener on this platform")
 		}
-	})
-
-	t.Run("spawnServe starts a process and takes its log", func(t *testing.T) {
-		home := t.TempDir()
-		log := LogPath(home, "k")
-		if pid := spawnServe("/bin/sh", []string{"-c", "echo started"}, log); pid == 0 {
-			t.Fatal("the spawn failed")
-		}
-		deadline := time.Now().Add(3 * time.Second)
-		for time.Now().Before(deadline) {
-			if data, err := os.ReadFile(log); err == nil && strings.Contains(string(data), "started") {
-				return
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-		t.Fatal("the child's output never reached the log")
 	})
 
 	t.Run("fetch refuses a request it cannot build", func(t *testing.T) {

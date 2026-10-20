@@ -46,9 +46,10 @@ node scripts/check-attribution.mjs             # no AI attribution in the histor
 
 ## Architecture
 
-- One process per role: the hub server (channels, registry, needs-you, the dashboard with Radar and Kanban tabs),
-  radar's server and the board server. Each is started by a hook or a command, never by an OS service, and comes
-  back by itself on the next hook after a crash or a reboot.
+- One server: the hub (channels, registry, needs-you, the dashboard with Radar and Kanban tabs, the router and
+  its gateway). It is started by a hook or a command, never by an OS service, and comes back by itself on the
+  next hook after a crash or a reboot. No satellite word or hook starts a server of its own: radar's and
+  kanban's words name the hub's page and reach it through one EnsureHub.
 - MCP is the interface for every agent: `publish`, `subscribe`, `poll` (long poll after a cursor), channels, tasks,
   claims and needs. Harnesses that support resource subscriptions get `notifications/resources/updated`; Claude Code
   also gets channel pushes.

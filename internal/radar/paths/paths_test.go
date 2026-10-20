@@ -386,33 +386,10 @@ func TestWantsAutostart(t *testing.T) {
 		}
 	})
 
-	t.Run("otherwise the autostart file decides", func(t *testing.T) {
+	t.Run("unset means yes: the hub line shows by default", func(t *testing.T) {
 		e := makeEnv(t)
-		if paths.WantsAutostart(t.Context(), e.env) {
-			t.Fatal("installed, never started: the hooks start nothing, want false")
-		}
-		paths.RememberAutostart(t.Context(), e.env, true)
 		if !paths.WantsAutostart(t.Context(), e.env) {
-			t.Fatal("after start: WantsAutostart = false, want true")
-		}
-		paths.RememberAutostart(t.Context(), e.env, false)
-		if paths.WantsAutostart(t.Context(), e.env) {
-			t.Fatal("after stop: WantsAutostart = true, want false")
-		}
-	})
-
-	t.Run("remembering start keeps quiet when the state dir cannot be made", func(t *testing.T) {
-		e := makeEnv(t)
-		writeText(t, filepath.Join(e.home, "blocker"), "file")
-		blocked := cloneEnv(e.env)
-		blocked["RADAR_HOME"] = filepath.Join(e.home, "blocker")
-		paths.RememberAutostart(t.Context(), blocked, true)
-		if pathExists(t, filepath.Join(e.home, "blocker", "autostart")) {
-			t.Fatal("RememberAutostart wrote into a location that cannot be made")
-		}
-		paths.RememberAutostart(t.Context(), blocked, false)
-		if paths.WantsAutostart(t.Context(), blocked) {
-			t.Fatal("WantsAutostart over a blocker = true, want false")
+			t.Fatal("WantsAutostart with RADAR_AUTOSTART unset = false, want true")
 		}
 	})
 }

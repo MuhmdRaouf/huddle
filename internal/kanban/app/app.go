@@ -9,9 +9,9 @@ import (
 	"io"
 	"strings"
 
+	huddlecli "github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/kanban/board"
 	"github.com/MuhmdRaouf/huddle/internal/kanban/cli"
-	"github.com/MuhmdRaouf/huddle/internal/kanban/server"
 )
 
 // usage is the line an unknown command prints, naming the word the huddle
@@ -129,22 +129,20 @@ func cliEntry(name string) runner {
 	}
 }
 
-// world builds the real world one invocation runs in, the detached serve aimed
-// at this word: the child this binary spawns is `huddle kanban serve …`, so
-// the server it starts answers for the word the caller used. The flow commands
-// go to the local huddle hub when one answers, and stay direct when none does;
-// the hub's board link answers the same way.
+// world builds the real world one invocation runs in: the flow commands go to
+// the local huddle hub when one answers and stay direct when none does, the
+// hub's board link answers the same way, and start and open start the hub
+// through huddle's own EnsureHub — the one way a kanban word starts anything.
 func world(version string) cli.World {
 	w := cli.DefaultWorld(version)
-	fx := server.DefaultEffects()
-	w.SpawnServe = func(command string, args []string, logFile string) int64 {
-		return fx.SpawnServe(command, append([]string{"kanban"}, args...), logFile)
-	}
 	w.HubFlow = func(ctx context.Context, key string, req board.FlowRequest) ([]string, string, bool) {
 		return hubFlow(ctx, w.Getenv, key, req)
 	}
 	w.HubBoard = func(ctx context.Context, key string) (string, bool) {
 		return hubBoard(ctx, w.Getenv, key)
+	}
+	w.EnsureHub = func(ctx context.Context, budgetMS int) (string, bool, string) {
+		return huddlecli.EnsureHub(ctx, &huddlecli.World{Getenv: envOf(w.Getenv)}, budgetMS)
 	}
 	return w
 }

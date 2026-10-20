@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	huddlecli "github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cli"
 	"github.com/MuhmdRaouf/huddle/internal/radar/hook"
 )
@@ -64,8 +65,9 @@ func commandName(command string) string {
 	return command
 }
 
-// hookEntry is the hook entry point: read stdin, record one spool line, maybe start the
-// dashboard. A hook never fails Claude Code, so it stays silent and returns 0 whatever happens.
+// hookEntry is the hook entry point: read stdin, record one spool line, and on SessionStart
+// maybe name the hub's radar page. A hook never fails Claude Code, so it stays silent and
+// returns 0 whatever happens.
 func hookEntry(ctx context.Context, args []string, stdout, stderr io.Writer, _ string) int {
 	return hook.Main(ctx, os.Stdin, stdout, os.Environ(), time.Now, int64(os.Getpid()), int64(os.Getppid()))
 }
@@ -73,18 +75,19 @@ func hookEntry(ctx context.Context, args []string, stdout, stderr io.Writer, _ s
 // cliEntry runs one CLI subcommand, the command back at the front of the argv it parses.
 func cliEntry(name string) runner {
 	return func(ctx context.Context, args []string, stdout, stderr io.Writer, version string) int {
-		return cli.RunCli(ctx, append([]string{name}, args...), realDeps(version, stdout, stderr))
+		return cli.RunCli(ctx, append([]string{name}, args...), realDeps(ctx, version, stdout, stderr))
 	}
 }
 
-// realDeps builds the effects a real invocation runs with, the detached start aimed at this
-// word: the child this binary spawns is `huddle radar …`, so the start it follows is the same
-// word the caller used.
-func realDeps(version string, stdout, stderr io.Writer) cli.Deps {
+// realDeps builds the effects a real invocation runs with, the hub effects included: the words
+// reach the hub through huddle's own EnsureHub, and status and url take the same lookup the
+// hook takes.
+func realDeps(ctx context.Context, version string, stdout, stderr io.Writer) cli.Deps {
 	deps := cli.RealDeps(version, stdout, stderr)
-	spawn := deps.SpawnDetached
-	deps.SpawnDetached = func(args []string) int64 {
-		return spawn(append([]string{"radar"}, args...))
+	world := &huddlecli.World{Getenv: func(key string) string { return deps.Env[key] }}
+	deps.Hub = func() (string, bool) { return hook.HubLookup(os.Environ())(ctx) }
+	deps.EnsureHub = func(budgetMS int) (string, bool, string) {
+		return huddlecli.EnsureHub(ctx, world, budgetMS)
 	}
 	return deps
 }

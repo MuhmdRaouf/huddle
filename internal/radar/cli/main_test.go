@@ -1,10 +1,9 @@
-// The wiring cases for the real effects: the deps a process builds, the fetch it runs, and the
-// failed spawn it swallows.
+// The wiring cases for the real effects: the deps a process builds and the fetch it runs.
 package cli
 
 import (
 	"bytes"
-	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -74,13 +73,15 @@ func TestFetchJSON(t *testing.T) {
 	}
 }
 
-// TestSpawnDetachedAnswersZeroWhenTheBinaryCannotBeResolved pins the failed-start answer the
-// start loop ignores.
-func TestSpawnDetachedAnswersZeroWhenTheBinaryCannotBeResolved(t *testing.T) {
-	original := Executable
-	t.Cleanup(func() { Executable = original })
-	Executable = func() (string, error) { return "", errors.New("gone") }
-	if pid := spawnDetached([]string{"--version"}); pid != 0 {
-		t.Errorf("a failed start answered pid %d, want 0", pid)
+// TestRealDepsWiringContinued: no detached spawn and no signal lookups remain in the deps —
+// the words start nothing and stop nothing of their own.
+func TestRealDepsStartNothing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	deps := RealDeps("9.9.9", io.Discard, io.Discard)
+	if deps.EnsureHub != nil {
+		t.Error("RealDeps wires no EnsureHub: the radar app adds the hub effects")
+	}
+	if deps.Hub != nil {
+		t.Error("RealDeps wires no Hub: the radar app adds the hub effects")
 	}
 }

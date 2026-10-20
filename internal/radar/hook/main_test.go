@@ -16,13 +16,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/testkit"
-	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // huddleBin is the huddle binary TestMain builds once; the cases below run its radar hook as a
@@ -280,92 +277,23 @@ func TestBuiltHookOnTheHealthyPath(t *testing.T) {
 }
 
 func TestAutostart(t *testing.T) {
-	// The dashboard the hook starts writes server.json itself, with the pid only the test stops:
-	// after the first SessionStart it must be there, live, within the start budget (15 s).
-	t.Run("tells the user, in one systemMessage, where a dashboard it started is; silent when one already runs", func(t *testing.T) {
+	// The hook starts no server of its own: with no hub a SessionStart stays
+	// silent and leaves no dashboard behind, autostart on or not.
+	t.Run("with no hub a SessionStart starts no dashboard and stays silent", func(t *testing.T) {
 		e := makeEnv(t)
 		if err := os.MkdirAll(e.state, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		port := ports.Free(t)
-		if err := os.WriteFile(filepath.Join(e.state, "port"), []byte(fmt.Sprintf("%d\n", port)), 0o600); err != nil {
+		auto := withEnv(e, "RADAR_AUTOSTART", "1")
+		expectSilentSuccess(t, runHookProcess(t, `{"hook_event_name":"SessionStart","session_id":"a1"}`, auto))
+		left, err := filepath.Glob(filepath.Join(e.state, "*"))
+		if err != nil {
 			t.Fatal(err)
 		}
-		auto := withEnv(e, "RADAR_AUTOSTART", "1")
-		t.Cleanup(func() { stopRecordedServer(t, e.state) })
-		first := runHookProcess(t, `{"hook_event_name":"SessionStart","session_id":"a1"}`, auto)
-		if first.code != 0 {
-			t.Fatalf("first hook exited %d", first.code)
+		for _, path := range left {
+			if filepath.Base(path) == "server.json" {
+				t.Errorf("a standalone dashboard left %s behind", path)
+			}
 		}
-		if first.stderr != "" {
-			t.Errorf("first hook wrote %q to stderr", first.stderr)
-		}
-		if want := fmt.Sprintf("{\"systemMessage\":\"radar: dashboard at http://127.0.0.1:%d\"}\n", port); first.stdout != want {
-			t.Errorf("first hook stdout = %q, want %q", first.stdout, want)
-		}
-		pid := waitForServerPid(t, e.state)
-		if !process.IsAlive(pid) {
-			t.Fatalf("the dashboard the hook started (pid %d) is not live", pid)
-		}
-		// a server that runs: nothing to say
-		expectSilentSuccess(t, runHookProcess(t, `{"hook_event_name":"SessionStart","session_id":"a2"}`, auto))
 	})
-}
-
-// waitForServerPid polls server.json until the started dashboard has written it with a pid,
-// within the start budget the CLI gives its child (15 s).
-func waitForServerPid(t *testing.T, state string) int64 {
-	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		if pid := recordedPid(filepath.Join(state, "server.json")); pid > 0 {
-			return pid
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the dashboard the hook started never wrote a live pid to server.json")
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
-// stopRecordedServer stops the dashboard server.json names — only the process this test's hook
-// started. The stop is done when the server's own shutdown takes server.json away or the pid
-// stops answering: the pid alone cannot say it, because a stopped server whose parent is still
-// running turns into an unreaped zombie that keeps answering liveness probes.
-func stopRecordedServer(t *testing.T, state string) {
-	t.Helper()
-	path := filepath.Join(state, "server.json")
-	pid := recordedPid(path)
-	if pid <= 0 || !process.IsAlive(pid) {
-		return // nothing recorded (or already gone): nothing to stop
-	}
-	process.SignalGroup(pid, syscall.SIGTERM)
-	deadline := time.Now().Add(10 * time.Second)
-	for fileIsThere(path) && process.IsAlive(pid) && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
-	}
-	if fileIsThere(path) && process.IsAlive(pid) {
-		process.SignalGroup(pid, syscall.SIGKILL)
-	}
-}
-
-// fileIsThere mirrors the filesystem.
-func fileIsThere(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-// recordedPid is the pid server.json holds, 0 when it holds none.
-func recordedPid(path string) int64 {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0
-	}
-	var info struct {
-		PID int64 `json:"pid"`
-	}
-	if json.Unmarshal(data, &info) != nil {
-		return 0
-	}
-	return info.PID
 }

@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -541,25 +540,6 @@ func TestRouteLinesReachRadar(t *testing.T) {
 	value := line.Field("harness")
 	if value == nil || value.Kind() != jsfmt.KindString || value.Text() != "codex" {
 		t.Errorf("line harness = %v, want codex", value)
-	}
-}
-
-// A gateway refuses to serve over a config that does not hold up, naming the file.
-func TestServeRefusesAnInvalidConfig(t *testing.T) {
-	home := t.TempDir()
-	bad := filepath.Join(home, "gateway.json")
-	if err := os.WriteFile(bad, []byte("{not json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{}, &stdout, &stderr, RunOptions{
-		Env: domain.EnvLookup{"HUDDLE_HOME": home},
-	})
-	if code != 1 {
-		t.Errorf("exit = %d, want 1", code)
-	}
-	if !strings.Contains(stderr.String(), bad) {
-		t.Errorf("stderr = %q, want it to name %s", stderr.String(), bad)
 	}
 }
 

@@ -14,7 +14,8 @@ import (
 
 // The server commands: start, stop, open, refresh and serve — their wording,
 // their exit codes and the effects they drive. Every effect is recorded; no
-// row binds a port or starts a process.
+// row binds a port or starts a process, and no row spawns a serve: the huddle
+// hub serves the boards, and start and open only name its page.
 
 // fetchRecord is one request the fake client saw.
 type fetchRecord struct {
@@ -34,16 +35,20 @@ type serverFixture struct {
 	home     string
 	boardAbs string
 	port     int
-	spawns   [][]string
 	browsers []string
 	fetches  []fetchRecord
 	answers  map[string]fetchAnswer
-	state    bool
 	// hubLinks pins the links the fake hub answers for a board key; the "*"
 	// entry answers every key. Empty means no hub answers.
 	hubLinks map[string]string
 	// hubAsked holds every key the hook asked the hub for, in order.
 	hubAsked []string
+	// ensureBase, ensureOK and ensureMsg are what the fake EnsureHub answers;
+	// ensures records every budget it was called with.
+	ensureBase string
+	ensureOK   bool
+	ensureMsg  string
+	ensures    []int
 }
 
 // hubBoard is the fake HubBoard: it records the key asked and answers the link
@@ -57,6 +62,13 @@ func (s *serverFixture) hubBoard(ctx context.Context, key string) (string, bool)
 		return link, true
 	}
 	return "", false
+}
+
+// ensureHub is the fake EnsureHub: it records the budget and answers what the
+// case pinned.
+func (s *serverFixture) ensureHub(ctx context.Context, budgetMS int) (string, bool, string) {
+	s.ensures = append(s.ensures, budgetMS)
+	return s.ensureBase, s.ensureOK, s.ensureMsg
 }
 
 func newServerFixture(t *testing.T) *serverFixture {
@@ -103,7 +115,6 @@ func jsonString(t *testing.T, value string) string {
 
 // recorded writes the state file the way the running server does.
 func (s *serverFixture) recorded() {
-	s.state = true
 	st := server.State{
 		Pid: 1, Port: s.port, Board: s.boardAbs,
 		Version: "test", Token: "tok", StartedAt: "2026-10-15T12:00:00Z",
@@ -132,16 +143,9 @@ func (s *serverFixture) world() World {
 		Cwd:         func() string { return s.cwd },
 		Now:         func() time.Time { return fixedNow },
 		ServerFetch: s.fetch,
-		SpawnServe: func(command string, args []string, logFile string) int64 {
-			s.spawns = append(s.spawns, args)
-			if !s.state {
-				s.recorded() // the child publishes its state once listening
-			}
-			return 1
-		},
 		OpenBrowser: func(url string) { s.browsers = append(s.browsers, url) },
 		HubBoard:    s.hubBoard,
-		Sleep:       func(int64) {},
+		EnsureHub:   s.ensureHub,
 		Version:     "test",
 	}
 }
@@ -154,8 +158,17 @@ func (s *serverFixture) run(argv ...string) (int, string, string) {
 	return code, out.String(), errOut.String()
 }
 
+// hubLink is the page a fake hub answers with for this fixture's board.
+func (s *serverFixture) hubLink() string {
+	return "http://127.0.0.1:42101/#/kanban/" + server.KeyOf(s.boardAbs)
+}
+
+// ensuredLink is the page the fake EnsureHub's base names for this board.
+func (s *serverFixture) ensuredLink() string {
+	return s.ensureBase + "/#/kanban/" + server.KeyOf(s.boardAbs)
+}
+
 func TestServerCommands(t *testing.T) {
-	line := "kanban: board at http://127.0.0.1:45678 ("
 	tests := []struct {
 		name    string
 		prepare func(t *testing.T, s *serverFixture)
@@ -166,47 +179,70 @@ func TestServerCommands(t *testing.T) {
 		check   func(t *testing.T, s *serverFixture, stdout string)
 	}{
 		{
-			name:    "start reuses a healthy server and opens the browser",
-			prepare: func(t *testing.T, s *serverFixture) { s.recorded() },
-			argv:    []string{"start"},
-			code:    0,
-			outHas:  []string{line},
-			check: func(t *testing.T, s *serverFixture, _ string) {
-				if len(s.spawns) != 0 {
-					t.Errorf("a healthy server was spawned again: %v", s.spawns)
-				}
-				if len(s.browsers) != 1 || s.browsers[0] != "http://127.0.0.1:45678" {
-					t.Errorf("browsers = %v", s.browsers)
-				}
-			},
-		},
-		{
-			name: "start spawns serve when nothing answers",
+			name: "start names the hub's page and starts nothing",
 			prepare: func(t *testing.T, s *serverFixture) {
-				// no state and no health answer: the spawn alone brings the
-				// server up (the fake child publishes the state, then health
-				// answers)
+				s.hubLinks["*"] = s.hubLink()
 			},
 			argv:   []string{"start"},
 			code:   0,
-			outHas: []string{line},
-			check: func(t *testing.T, s *serverFixture, _ string) {
-				if len(s.spawns) != 1 {
-					t.Fatalf("spawns = %v", s.spawns)
+			outHas: []string{"kanban: board at "},
+			check: func(t *testing.T, s *serverFixture, stdout string) {
+				if !strings.Contains(stdout, "kanban: board at "+s.hubLink()+" (") {
+					t.Errorf("stdout = %q, want the hub page", stdout)
 				}
-				args := s.spawns[0]
-				joined := strings.Join(args, " ")
-				if !strings.Contains(joined, "serve") || !strings.Contains(joined, s.boardAbs) {
-					t.Errorf("spawn args = %q, want serve for the board", args)
+				if len(s.browsers) != 1 || s.browsers[0] != s.hubLink() {
+					t.Errorf("browsers = %v, want the hub page once", s.browsers)
+				}
+				if len(s.ensures) != 0 {
+					t.Errorf("EnsureHub ran %d times, want none: the hub already answers", len(s.ensures))
+				}
+				if len(s.fetches) != 0 {
+					t.Errorf("fetches = %v, want none: start talks to no server", s.fetches)
 				}
 			},
 		},
 		{
-			name:    "start --no-open never opens the browser",
-			prepare: func(t *testing.T, s *serverFixture) { s.recorded() },
-			argv:    []string{"start", "--no-open"},
-			code:    0,
-			outHas:  []string{line},
+			name: "start with no hub starts the hub and names its page",
+			prepare: func(t *testing.T, s *serverFixture) {
+				s.ensureBase, s.ensureOK = "http://127.0.0.1:41860", true
+			},
+			argv:   []string{"start"},
+			code:   0,
+			outHas: []string{"kanban: board at "},
+			check: func(t *testing.T, s *serverFixture, stdout string) {
+				if !strings.Contains(stdout, "kanban: board at "+s.ensuredLink()+" (") {
+					t.Errorf("stdout = %q, want the started hub's page", stdout)
+				}
+				if len(s.ensures) != 1 || s.ensures[0] != 35_000 {
+					t.Fatalf("EnsureHub budgets = %v, want [35000]", s.ensures)
+				}
+				if len(s.browsers) != 1 || s.browsers[0] != s.ensuredLink() {
+					t.Errorf("browsers = %v, want the started hub's page once", s.browsers)
+				}
+			},
+		},
+		{
+			name: "start with no hub to start is exit 6 with the message on stderr",
+			prepare: func(t *testing.T, s *serverFixture) {
+				s.ensureMsg = "the huddle hub is not set up; run /huddle:setup"
+			},
+			argv:   []string{"start"},
+			code:   6,
+			errHas: []string{"kanban: the huddle hub is not set up; run /huddle:setup"},
+			check: func(t *testing.T, s *serverFixture, _ string) {
+				if len(s.browsers) != 0 {
+					t.Errorf("browsers = %v, want none", s.browsers)
+				}
+			},
+		},
+		{
+			name: "start --no-open never opens the browser",
+			prepare: func(t *testing.T, s *serverFixture) {
+				s.hubLinks["*"] = s.hubLink()
+			},
+			argv:   []string{"start", "--no-open"},
+			code:   0,
+			outHas: []string{"kanban: board at "},
 			check: func(t *testing.T, s *serverFixture, _ string) {
 				if len(s.browsers) != 0 {
 					t.Errorf("browsers = %v, want none", s.browsers)
@@ -216,7 +252,7 @@ func TestServerCommands(t *testing.T) {
 		{
 			name: "start honours KANBAN_NO_OPEN",
 			prepare: func(t *testing.T, s *serverFixture) {
-				s.recorded()
+				s.hubLinks["*"] = s.hubLink()
 				s.env["KANBAN_NO_OPEN"] = "1"
 			},
 			argv: []string{"start"},
@@ -234,56 +270,70 @@ func TestServerCommands(t *testing.T) {
 			errHas: []string{"--port"},
 		},
 		{
-			name: "stop posts the shutdown with the token",
-			prepare: func(t *testing.T, s *serverFixture) {
-				s.recorded()
-				s.answers["/api/shutdown"] = fetchAnswer{status: 200, body: `{}`}
-			},
-			argv:   []string{"stop"},
-			code:   0,
-			outHas: []string{"kanban: stopped"},
-			check: func(t *testing.T, s *serverFixture, _ string) {
-				var stop *fetchRecord
-				for i := range s.fetches {
-					if s.fetches[i].method == "POST" {
-						stop = &s.fetches[i]
-					}
-				}
-				if stop == nil {
-					t.Fatal("stop posted nothing")
-				}
-				if !strings.HasSuffix(stop.url, "/api/shutdown") || stop.token != "tok" {
-					t.Errorf("stop posted %s %s with token %q", stop.method, stop.url, stop.token)
-				}
-			},
-		},
-		{
-			name:   "stop with no server is exit 6",
-			argv:   []string{"stop"},
-			code:   6,
-			errHas: []string{"kanban: no server for "},
-			outHas: []string{},
-		},
-		{
-			name:    "open prints the address and opens the browser",
+			name:    "stop names the hub that serves the boards and stops nothing",
 			prepare: func(t *testing.T, s *serverFixture) { s.recorded() },
-			argv:    []string{"open"},
+			argv:    []string{"stop"},
 			code:    0,
-			outHas:  []string{line},
+			outHas:  []string{"kanban: boards are served by the huddle hub; /huddle:stop stops it"},
 			check: func(t *testing.T, s *serverFixture, _ string) {
-				if len(s.browsers) != 1 {
-					t.Errorf("browsers = %v", s.browsers)
+				if len(s.fetches) != 0 {
+					t.Errorf("fetches = %v, want none: no shutdown is posted", s.fetches)
 				}
 			},
 		},
 		{
-			name:   "open with no server is exit 6 with the hint",
+			name: "open names the hub's page and opens the browser",
+			prepare: func(t *testing.T, s *serverFixture) {
+				s.hubLinks["*"] = s.hubLink()
+			},
+			argv:   []string{"open"},
+			code:   0,
+			outHas: []string{"kanban: board at "},
+			check: func(t *testing.T, s *serverFixture, _ string) {
+				if len(s.browsers) != 1 || s.browsers[0] != s.hubLink() {
+					t.Errorf("browsers = %v, want the hub page once", s.browsers)
+				}
+			},
+		},
+		{
+			name: "open with no hub starts the hub and opens its page",
+			prepare: func(t *testing.T, s *serverFixture) {
+				s.ensureBase, s.ensureOK = "http://127.0.0.1:41860", true
+			},
+			argv:   []string{"open"},
+			code:   0,
+			outHas: []string{"kanban: board at "},
+			check: func(t *testing.T, s *serverFixture, _ string) {
+				if len(s.browsers) != 1 || s.browsers[0] != s.ensuredLink() {
+					t.Errorf("browsers = %v, want the started hub's page once", s.browsers)
+				}
+			},
+		},
+		{
+			name: "open with no hub to start is exit 6 with the message on stderr",
+			prepare: func(t *testing.T, s *serverFixture) {
+				s.ensureMsg = "the huddle hub is not set up; run /huddle:setup"
+			},
 			argv:   []string{"open"},
 			code:   6,
-			errHas: []string{"kanban: no server for ", "run kanban start"},
+			errHas: []string{"kanban: the huddle hub is not set up; run /huddle:setup"},
 		},
 		{
-			name: "refresh answers the rev",
+			name: "refresh says the hub watches the board while a hub answers",
+			prepare: func(t *testing.T, s *serverFixture) {
+				s.hubLinks["*"] = s.hubLink()
+			},
+			argv:   []string{"refresh"},
+			code:   0,
+			outHas: []string{"kanban: the hub watches the board; nothing to refresh"},
+			check: func(t *testing.T, s *serverFixture, _ string) {
+				if len(s.fetches) != 0 {
+					t.Errorf("fetches = %v, want none: the hub needs no refresh", s.fetches)
+				}
+			},
+		},
+		{
+			name: "refresh answers the rev through a server someone runs by hand",
 			prepare: func(t *testing.T, s *serverFixture) {
 				s.recorded()
 				s.answers["/api/refresh"] = fetchAnswer{status: 200, body: `{"rev":7}`}
@@ -296,7 +346,7 @@ func TestServerCommands(t *testing.T) {
 			name:   "refresh with no server is exit 6 with the hint",
 			argv:   []string{"refresh"},
 			code:   6,
-			errHas: []string{"kanban: no server for ", "run kanban start"},
+			errHas: []string{"kanban: no server for ", "run kanban serve"},
 		},
 		{
 			name:   "serve --port garbage is a usage error",

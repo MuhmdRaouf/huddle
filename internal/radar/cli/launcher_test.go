@@ -10,7 +10,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -387,30 +386,6 @@ func (w *launcherWorld) lastSpoolLine(t *testing.T) map[string]any {
 	return lines[len(lines)-1]
 }
 
-// stopRecordedServer stops the server server.json names — only the process a test's own start
-// spawned — and answers whether it had to.
-func (w *launcherWorld) stopRecordedServer(t *testing.T) {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(w.state, "server.json"))
-	if err != nil {
-		return // nothing recorded: nothing to stop
-	}
-	var info struct {
-		Pid int64 `json:"pid"`
-	}
-	if json.Unmarshal(data, &info) != nil || info.Pid <= 0 || !process.IsAlive(info.Pid) {
-		return
-	}
-	process.SignalGroup(info.Pid, syscall.SIGTERM)
-	deadline := time.Now().Add(10 * time.Second)
-	for process.IsAlive(info.Pid) && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
-	}
-	if process.IsAlive(info.Pid) {
-		process.SignalGroup(info.Pid, syscall.SIGKILL)
-	}
-}
-
 // pluginRoot is the committed plugin dir Claude Code points CLAUDE_PLUGIN_ROOT at.
 func pluginRoot(t *testing.T) string {
 	t.Helper()
@@ -465,13 +440,12 @@ func TestHooksJsonCommand(t *testing.T) {
 
 // TestLauncherFreshInstall is the fresh-install leg: the committed launcher on a PATH holding no
 // JavaScript runtime, with the binary preinstalled the way its own download leaves it — one
-// SessionStart hook through the radar word, one start, a health answer, one stop, and nothing left
-// behind.
+// SessionStart hook through the radar word, the words pointing at the huddle hub, and nothing
+// left behind: no dashboard of radar's own is ever started.
 func TestLauncherFreshInstall(t *testing.T) {
 	world := newLauncherWorld(t, "curl", "shasum", "openssl")
 	world.installBin(t)
 	env := world.env()
-	t.Cleanup(func() { world.stopRecordedServer(t) })
 
 	code, stdout, stderr := world.launcherRun(t, 20*time.Second, `{"hook_event_name":"SessionStart","session_id":"e2e-1"}`, "radar hook", env)
 	expectSilentSuccess(t, code, stdout, stderr)
@@ -479,46 +453,25 @@ func TestLauncherFreshInstall(t *testing.T) {
 		t.Errorf("the spool line is %v, want the SessionStart event of session e2e-1", last)
 	}
 
+	// a fresh install has no set-up huddle home: start says so and starts nothing
 	code, stdout, stderr = world.launcherRun(t, 30*time.Second, "", "radar start", env)
-	if code != 0 {
-		t.Fatalf("radar start = %d, stdout %q, stderr %q", code, stdout, stderr)
+	if code != 6 {
+		t.Fatalf("radar start = %d, stdout %q, stderr %q, want 6", code, stdout, stderr)
 	}
-	port, ok := strings.CutPrefix(strings.TrimSuffix(strings.TrimSpace(stdout), "\n"), "radar: http://127.0.0.1:")
-	if !ok {
-		t.Fatalf("start printed %q, want the dashboard url", stdout)
-	}
-	t.Cleanup(func() { world.stopRecordedServer(t) })
-
-	health := &http.Client{Timeout: 5 * time.Second}
-	response, err := health.Get(fmt.Sprintf("http://127.0.0.1:%s/api/health", port))
-	if err != nil {
-		t.Fatalf("get /api/health: %v", err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	var body map[string]any
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
-		t.Fatalf("read /api/health: %v", err)
-	}
-	if response.StatusCode != http.StatusOK || body["ok"] != true {
-		t.Errorf("/api/health answered %d %v, want 200 with ok true", response.StatusCode, body)
+	if want := "radar: the huddle hub is not set up; run /huddle:setup"; strings.TrimSpace(stderr) != want {
+		t.Errorf("stderr = %q, want %q", stderr, want)
 	}
 
 	code, stdout, stderr = world.launcherRun(t, 20*time.Second, "", "radar stop", env)
-	if code != 0 || strings.TrimSpace(stdout) != "radar: stopped" {
-		t.Fatalf("radar stop = %d, stdout %q, stderr %q, want 0 and the stopped line", code, stdout, stderr)
+	if code != 0 || strings.TrimSpace(stdout) != "radar: runs inside the huddle hub; /huddle:stop stops it" {
+		t.Fatalf("radar stop = %d, stdout %q, stderr %q, want 0 and the hub line", code, stdout, stderr)
 	}
-	// stop answers once the record is gone; the server lets its in-flight requests end first,
-	// so the port frees a moment later — poll for it, never long enough to outlive a hang.
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", port))
-		if err == nil {
-			_ = listener.Close()
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the port %s never came free after stop: %v", port, err)
-		}
-		time.Sleep(100 * time.Millisecond)
+
+	// nothing of radar's own ever listened: no server record, nothing to stop
+	if _, err := os.Stat(filepath.Join(world.state, "server.json")); !os.IsNotExist(err) {
+		t.Errorf("a standalone dashboard left server.json behind (err %v)", err)
+	}
+	if procs := fetchProcesses(launcherPath(t)); len(procs) != 0 {
+		t.Errorf("the launcher left %v running", procs)
 	}
 }

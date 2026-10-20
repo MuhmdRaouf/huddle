@@ -112,9 +112,10 @@ A rundown is read-only: no moves, no edits. Done tickets appear only as a count.
 
 ## The live board
 
-- The session hook starts the board's server for this project (one per board, localhost only) when the project
-  has a board; `kanban start` ensures it by hand and prints its address, `kanban stop` stops it.
-  `/huddle:kanban-refresh` rescans now and reloads open pages; `kanban open` opens the page again.
+- The huddle hub serves the board: the session hook names its page when the project has a board; `kanban start`
+  prints the same address by hand (starting the hub when the huddle home is set up), `kanban open` opens the page
+  again, and `/huddle:kanban-refresh` rescans now and reloads open pages. `/huddle:stop` stops the hub the boards
+  are served by.
 - The page shows each column, an expedite lane, badges (priority, type, size, blocked, holder, waits on, moved by
   hand, incomplete), tags, and a drawer with the whole ticket. It works on a phone.
 - To share it beyond this machine: `kanban export --out <scratchpad>/kanban-board.html`, then publish that file

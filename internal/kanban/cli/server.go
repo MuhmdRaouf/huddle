@@ -13,11 +13,16 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/kanban/server"
 )
 
-// The server commands: start, stop, open, refresh and serve. The board is
-// still the subject — a missing board is exit 4 — but the effects reach a
-// server, not the files: start spawns one detached and follows its state file,
-// stop and refresh talk to the running one, and serve is the foreground server
-// kanban start runs.
+// The server commands: start, stop, open, refresh and serve. The huddle hub
+// serves every board in process, so start and open only name its page — and
+// start the hub through EnsureHub when the huddle home is set up and nothing
+// answers yet. stop is words: /huddle:stop is what ends the hub. refresh asks
+// the hub when one answers and else a server someone runs by hand; serve stays
+// that hand-run foreground server, and nothing spawns it.
+
+// ensureBudgetMs is what start and open grant EnsureHub: the hub's own start
+// runs inside it, detached, and the answer comes back within it too.
+const ensureBudgetMs = 35_000
 
 // runServerCommand runs one server command; v is the parsed flags.
 func runServerCommand(ctx context.Context, w World, command string, v *flagValues, boardPath string, stdout, stderr io.Writer) int {
@@ -35,14 +40,8 @@ func runServerCommand(ctx context.Context, w World, command string, v *flagValue
 	if w.ServerFetch != nil {
 		fx.Fetch = w.ServerFetch
 	}
-	if w.SpawnServe != nil {
-		fx.SpawnServe = w.SpawnServe
-	}
 	if w.OpenBrowser != nil {
 		fx.OpenBrowser = w.OpenBrowser
-	}
-	if w.Sleep != nil {
-		fx.Sleep = w.Sleep
 	}
 	home := server.StateDir(w.Getenv)
 	mayOpen := func() bool {
@@ -55,69 +54,57 @@ func runServerCommand(ctx context.Context, w World, command string, v *flagValue
 		return true
 	}
 	// the hub's page is the board's address wherever a hub answers: start and
-	// open name it and start nothing, so no board holds a port of its own. A
-	// machine with no hub still serves one board itself.
+	// open name it and start no server, so no board holds a port of its own.
+	key := board.RepoKey(board.OriginOf(ctx, board.RepoRootOf(abs)), server.KeyOf(abs))
 	hub := func() (string, bool) {
 		if w.HubBoard == nil {
 			return "", false
 		}
-		key := board.RepoKey(board.OriginOf(ctx, board.RepoRootOf(abs)), server.KeyOf(abs))
 		return w.HubBoard(ctx, key)
 	}
-	switch command {
-	case "start":
-		if link, ok := hub(); ok {
-			fmt.Fprintf(stdout, "kanban: board at %s (%s)\n", link, abs)
-			if mayOpen() {
-				fx.OpenBrowser(link)
-			}
-			return 0
+	// ensure is the one way a word without an answer starts the hub; its failure
+	// is the word's answer too.
+	ensure := func() (string, bool) {
+		if w.EnsureHub == nil {
+			return "", false
 		}
-		port, bad := portFlag(v)
-		if bad != "" {
-			usageError(stderr, commands["start"], bad)
+		base, ok, msg := w.EnsureHub(ctx, ensureBudgetMs)
+		if !ok {
+			fmt.Fprintln(stderr, "kanban: "+msg)
+			return "", false
+		}
+		return base + "/#/kanban/" + key, true
+	}
+	switch command {
+	case "start", "open":
+		// --port is kept for older scripts; it names no server any more, but a
+		// value that is no port stays a usage error.
+		if _, bad := portFlag(v); bad != "" {
+			usageError(stderr, commands[command], bad)
 			return 2
 		}
-		url, err := server.Start(ctx, abs, home, port, fx)
-		if err != nil {
-			fmt.Fprintf(stderr, "kanban: %v\n", err)
-			return 1
+		link, ok := hub()
+		if !ok {
+			if link, ok = ensure(); !ok {
+				return 6
+			}
 		}
-		fmt.Fprintf(stdout, "kanban: board at %s (%s)\n", url, abs)
+		fmt.Fprintf(stdout, "kanban: board at %s (%s)\n", link, abs)
 		if mayOpen() {
-			fx.OpenBrowser(url)
+			fx.OpenBrowser(link)
 		}
 		return 0
 	case "stop":
-		if err := server.Stop(ctx, abs, home, fx); err != nil {
-			fmt.Fprintf(stderr, "kanban: %v\n", err)
-			return 6
-		}
-		fmt.Fprintln(stdout, "kanban: stopped")
-		return 0
-	case "open":
-		if link, ok := hub(); ok {
-			fmt.Fprintf(stdout, "kanban: board at %s (%s)\n", link, abs)
-			if mayOpen() {
-				fx.OpenBrowser(link)
-			}
-			return 0
-		}
-		recorded := server.Looking(ctx, abs, home, fx)
-		if recorded == nil {
-			fmt.Fprintf(stderr, "kanban: no server for %s; run kanban start\n", abs)
-			return 6
-		}
-		url := fmt.Sprintf("http://127.0.0.1:%d", recorded.Port)
-		fmt.Fprintf(stdout, "kanban: board at %s (%s)\n", url, abs)
-		if mayOpen() {
-			fx.OpenBrowser(url)
-		}
+		fmt.Fprintln(stdout, "kanban: boards are served by the huddle hub; /huddle:stop stops it")
 		return 0
 	case "refresh":
+		if _, ok := hub(); ok {
+			fmt.Fprintln(stdout, "kanban: the hub watches the board; nothing to refresh")
+			return 0
+		}
 		rev, err := server.Refresh(ctx, abs, home, fx)
 		if err != nil {
-			fmt.Fprintf(stderr, "kanban: no server for %s; run kanban start\n", abs)
+			fmt.Fprintf(stderr, "kanban: no server for %s; run kanban serve\n", abs)
 			return 6
 		}
 		fmt.Fprintf(stdout, "kanban: refreshed (rev %d)\n", rev)

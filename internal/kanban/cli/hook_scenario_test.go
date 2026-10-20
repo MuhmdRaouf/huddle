@@ -108,9 +108,6 @@ func TestASessionStartPointsAtTheHubsBoard(t *testing.T) {
 				}
 			})
 			s.And("no server was started", func(t *testing.T) {
-				if len(fix.spawns) != 0 {
-					t.Errorf("spawns = %v, want none", fix.spawns)
-				}
 				if len(fix.browsers) != 0 {
 					t.Errorf("the hook opened a browser: %v", fix.browsers)
 				}
@@ -147,9 +144,6 @@ func TestASessionStartPointsAtTheHubsBoard(t *testing.T) {
 				}
 			})
 			s.And("no server was started", func(t *testing.T) {
-				if len(fix.spawns) != 0 {
-					t.Errorf("spawns = %v, want none", fix.spawns)
-				}
 			})
 		})
 

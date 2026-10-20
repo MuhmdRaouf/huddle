@@ -1,6 +1,6 @@
 // Package cli is the kanban command line: argv parsing, help text, output
 // wording and exit codes over the board package. Exit codes: 0 ok, 1 refused,
-// 2 usage, 4 no board, 6 no server.
+// 2 usage, 4 no board, 6 the hub that serves the boards is not there.
 package cli
 
 import (
@@ -40,12 +40,13 @@ type World struct {
 	// "http://127.0.0.1:42101/#/kanban/<key>", and false when no hub answers.
 	// nil means no hub.
 	HubBoard func(ctx context.Context, key string) (string, bool)
-	// SpawnServe starts the detached serve; nil starts this binary.
-	SpawnServe func(command string, args []string, logFile string) int64
+	// EnsureHub starts the huddle hub when the huddle home is set up and no hub
+	// answers, and answers its base url; false with the message that says why
+	// not. start and open take it when HubBoard has no answer. nil means no hub
+	// can be started.
+	EnsureHub func(ctx context.Context, budgetMS int) (string, bool, string)
 	// OpenBrowser opens one url; nil is the platform opener.
 	OpenBrowser func(url string)
-	// Sleep waits between polls; nil really sleeps.
-	Sleep func(ms int64)
 }
 
 // DefaultWorld is the process's world: the real environment, working directory
@@ -310,24 +311,24 @@ var commands = map[string]*command{
 	},
 	"start": {
 		word: "start", use: "start", min: 0, max: 0,
-		short: "print the board's page: the huddle hub's when one answers, else one server of its own",
+		short: "print the board's page in the huddle hub, starting the hub when the huddle home is set up",
 		defs: []flagDef{
 			{name: "port", kind: kindString,
-				help: "pin one port; 0 lets the OS pick (default: 18800 up to 18849, then the OS)"},
+				help: "pin one port (kept for older scripts; the hub chooses its own)"},
 			{name: "no-open", kind: kindBool, help: "do not open the browser"},
 		},
 	},
 	"stop": {
 		word: "stop", use: "stop", min: 0, max: 0,
-		short: "stop the board's server",
+		short: "point at the hub that serves the boards",
 	},
 	"open": {
 		word: "open", use: "open", min: 0, max: 0,
-		short: "print the board's address and open it in the browser",
+		short: "print the board's page in the hub and open it in the browser",
 	},
 	"refresh": {
 		word: "refresh", use: "refresh", min: 0, max: 0,
-		short: "rescan the board now through the running server",
+		short: "rescan a board a server of its own serves; the hub watches its boards itself",
 	},
 	"export": {
 		word: "export", use: "export", min: 0, max: 0,
@@ -351,7 +352,7 @@ var commands = map[string]*command{
 	},
 	"serve": {
 		word: "serve", use: "serve", min: 0, max: 0,
-		short: "the foreground server kanban start runs",
+		short: "the foreground board server, for tests and debugging; nothing starts it",
 		defs: []flagDef{
 			{name: "port", kind: kindString,
 				help: "pin one port; 0 lets the OS pick (default: 18800 up to 18849, then the OS)"},

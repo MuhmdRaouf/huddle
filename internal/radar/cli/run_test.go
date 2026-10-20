@@ -14,13 +14,16 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cli"
-	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/server"
 )
 
 const (
 	usageLine   = "usage: radar start|stop|status|url|open|watch [--port N] [--since 24h]"
-	notRunning  = "radar: not running — /huddle:open starts it"
+	notRunning  = "radar: not running"
+	notOnHub    = "radar: the huddle hub is not running"
+	hubBase     = "http://127.0.0.1:41860"
+	hubPage     = "radar: in the huddle hub at " + hubBase + "/#/radar"
+	notSetUpMsg = "the huddle hub is not set up; run /huddle:setup"
 	testVersion = "test"
 )
 
@@ -46,26 +49,16 @@ func makeEnv(t *testing.T) testEnv {
 	return testEnv{env: env, home: home, state: filepath.Join(home, "state")}
 }
 
-// envWith copies the environment with one key replaced, the way a spawned child would meet it.
-func envWith(env domain.EnvLookup, key, value string) domain.EnvLookup {
-	copied := make(domain.EnvLookup, len(env)+1)
-	for name, item := range env {
-		copied[name] = item
-	}
-	copied[key] = value
-	return copied
-}
-
 // overrides are the answers one case injects.
 type overrides struct {
 	// responses answers one fetched url; nil answers failure everywhere.
 	responses func(url string) cli.FetchResult
 	// alive says whether one pid names a live process; nil answers false everywhere.
 	alive func(pid int64) bool
-	// command answers a pid's command line as ps prints it; nil answers a radar server's.
-	command func(pid int64) (string, bool)
-	// onSpawn runs when the detached child is spawned.
-	onSpawn func()
+	// hub answers the hub lookup; nil answers no hub.
+	hub func() (string, bool)
+	// ensure answers the EnsureHub effect; nil answers the hub page with its budget recorded.
+	ensure func(budgetMS int) (string, bool, string)
 	// now is the clock; nil never moves off zero.
 	now func() int64
 	// stopAfter ends the watch loop once this many polls of /api/alerts have run; 0 never ends it.
@@ -74,15 +67,15 @@ type overrides struct {
 
 // recording is every side effect the injected deps left behind.
 type recording struct {
-	deps      cli.Deps
-	out       []string
-	errLines  []string
-	spawned   [][]string
-	signalled []int64
-	opened    []string
-	slept     []int64
-	env       domain.EnvLookup
-	state     string
+	deps     cli.Deps
+	out      []string
+	errLines []string
+	opened   []string
+	slept    []int64
+	ensured  []int
+	hubAsked int
+	env      domain.EnvLookup
+	state    string
 }
 
 // makeDeps builds a Deps with every side effect recorded, a fresh temp state dir, and the
@@ -101,11 +94,19 @@ func makeDeps(t *testing.T, over overrides) *recording {
 	if over.now != nil {
 		now = over.now
 	}
-	command := func(int64) (string, bool) {
-		return "/Users/you/.agents/radar-bin/0.0.1/radar start --foreground --since 1d\n", true
+	hub := func() (string, bool) { return "", false }
+	if over.hub != nil {
+		hub = func() (string, bool) { rec.hubAsked++; return over.hub() }
 	}
-	if over.command != nil {
-		command = over.command
+	ensure := func(budgetMS int) (string, bool, string) {
+		rec.ensured = append(rec.ensured, budgetMS)
+		return hubBase, true, ""
+	}
+	if over.ensure != nil {
+		ensure = func(budgetMS int) (string, bool, string) {
+			rec.ensured = append(rec.ensured, budgetMS)
+			return over.ensure(budgetMS)
+		}
 	}
 	rec.deps = cli.Deps{
 		Env:     world.env,
@@ -121,21 +122,14 @@ func makeDeps(t *testing.T, over overrides) *recording {
 			}
 			return cli.FetchResult{}
 		},
-		Sleep:      func(ms int64) { rec.slept = append(rec.slept, ms) },
-		ShouldStop: func() bool { return over.stopAfter != 0 && alertPolls >= over.stopAfter },
-		SpawnDetached: func(args []string) int64 {
-			rec.spawned = append(rec.spawned, args)
-			if over.onSpawn != nil {
-				over.onSpawn()
-			}
-			return 999
-		},
-		Signal:      func(pid int64) bool { rec.signalled = append(rec.signalled, pid); return true },
-		Command:     command,
+		Sleep:       func(ms int64) { rec.slept = append(rec.slept, ms) },
+		ShouldStop:  func() bool { return over.stopAfter != 0 && alertPolls >= over.stopAfter },
 		IsAlive:     alive,
 		OpenBrowser: func(url string) { rec.opened = append(rec.opened, url) },
 		Now:         now,
 		SinceMs:     dayMs,
+		Hub:         hub,
+		EnsureHub:   ensure,
 	}
 	return rec
 }
@@ -252,7 +246,7 @@ func TestRunCliDispatch(t *testing.T) {
 			}
 			assertLines(t, rec.out, []string{
 				usageLine,
-				"start runs the dashboard server on 127.0.0.1 on a random port unless --port is given",
+				"start names the huddle hub's radar page, starting the hub when the huddle home is set up",
 			})
 		}
 	})
@@ -282,411 +276,114 @@ func TestRunCliDispatch(t *testing.T) {
 	})
 }
 
-func TestStart(t *testing.T) {
-	t.Run("says a running server cannot take --since or a new --port until it stops", func(t *testing.T) {
-		rec := makeDeps(t, overrides{
-			alive:     func(pid int64) bool { return pid == 4242 },
-			responses: func(string) cli.FetchResult { return okBody(map[string]any{"ok": true}) },
-		})
-		writeInfo(t, rec.env, info)
-		if code := cli.RunCli(t.Context(), []string{"start", "--since", "7d", "--port", "9100"}, rec.deps); code != 0 {
-			t.Fatalf("runCli = %d, want 0", code)
-		}
-		assertLines(t, rec.out, []string{
-			"radar: http://127.0.0.1:8787",
-			"radar: already running; --since 7d and --port 9100 applies after /huddle:stop",
-		})
-		if len(rec.spawned) != 0 {
-			t.Errorf("spawned %q, want nothing", rec.spawned)
-		}
-	})
-
-	t.Run("rounds the window back to the flag the child re-parses", func(t *testing.T) {
-		for _, tc := range []struct{ flag, echo string }{
-			{"2h", "--since 2h"},
-			{"30m", "--since 30m"},
-			{"45s", "--since 45s"},
-		} {
-			rec := makeDeps(t, overrides{
-				alive:     func(pid int64) bool { return pid == 4242 },
-				responses: func(string) cli.FetchResult { return okBody(map[string]any{"ok": true}) },
-			})
-			writeInfo(t, rec.env, info)
-			if code := cli.RunCli(t.Context(), []string{"start", "--since", tc.flag}, rec.deps); code != 0 {
-				t.Fatalf("runCli(--since %s) = %d, want 0", tc.flag, code)
-			}
-			assertLines(t, rec.out, []string{
-				"radar: http://127.0.0.1:8787",
-				"radar: already running; " + tc.echo + " applies after /huddle:stop",
-			})
-		}
-	})
-
-	t.Run("says so when the saved port was taken and the server moved", func(t *testing.T) {
-		childUp := false
-		var rec *recording
-		rec = makeDeps(t, overrides{
-			responses: func(string) cli.FetchResult {
-				return cli.FetchResult{OK: childUp, Body: map[string]any{"ok": true}}
-			},
-			onSpawn: func() {
-				childUp = true
-				writeInfo(t, rec.env, server.ServerInfo{Pid: 555, Port: 9003, URL: "http://127.0.0.1:9003", StartedAt: 3})
-			},
-		})
-		paths.SavePort(t.Context(), rec.env, 9001)
+func TestStartAndOpen(t *testing.T) {
+	t.Run("start names the hub's radar page and starts nothing itself", func(t *testing.T) {
+		rec := makeDeps(t, overrides{})
 		if code := cli.RunCli(t.Context(), []string{"start"}, rec.deps); code != 0 {
 			t.Fatalf("runCli = %d, want 0", code)
 		}
-		assertLines(t, rec.out, []string{"radar: http://127.0.0.1:9003", "radar: port 9001 was taken; moved to 9003"})
+		assertLines(t, rec.out, []string{hubPage})
+		assertLines(t, rec.opened, nil)
+		if len(rec.ensured) != 1 {
+			t.Fatalf("EnsureHub ran %d times, want once", len(rec.ensured))
+		}
+		if rec.ensured[0] != 35_000 {
+			t.Errorf("EnsureHub budget = %d, want 35000", rec.ensured[0])
+		}
 	})
 
-	t.Run("reuses a recorded healthy server without spawning", func(t *testing.T) {
+	t.Run("start with no hub to start is exit 6 with the message on stderr", func(t *testing.T) {
 		rec := makeDeps(t, overrides{
-			alive:     func(pid int64) bool { return pid == 4242 },
-			responses: func(string) cli.FetchResult { return okBody(map[string]any{"ok": true}) },
+			ensure: func(int) (string, bool, string) { return "", false, notSetUpMsg },
 		})
+		if code := cli.RunCli(t.Context(), []string{"start"}, rec.deps); code != 6 {
+			t.Fatalf("runCli = %d, want 6", code)
+		}
+		assertLines(t, rec.errLines, []string{"radar: " + notSetUpMsg})
+		assertLines(t, rec.out, nil)
+	})
+
+	t.Run("open names the hub's radar page and hands it to the browser", func(t *testing.T) {
+		rec := makeDeps(t, overrides{})
+		if code := cli.RunCli(t.Context(), []string{"open"}, rec.deps); code != 0 {
+			t.Fatalf("runCli = %d, want 0", code)
+		}
+		assertLines(t, rec.out, []string{hubPage})
+		assertLines(t, rec.opened, []string{hubBase + "/#/radar"})
+	})
+
+	t.Run("open with no hub to start opens nothing and exits 6", func(t *testing.T) {
+		rec := makeDeps(t, overrides{
+			ensure: func(int) (string, bool, string) { return "", false, notSetUpMsg },
+		})
+		if code := cli.RunCli(t.Context(), []string{"open"}, rec.deps); code != 6 {
+			t.Fatalf("runCli = %d, want 6", code)
+		}
+		assertLines(t, rec.errLines, []string{"radar: " + notSetUpMsg})
+		assertLines(t, rec.opened, nil)
+	})
+
+	t.Run("a recorded server of an older edition is never reused, signalled or started again", func(t *testing.T) {
+		rec := makeDeps(t, overrides{})
 		writeInfo(t, rec.env, info)
 		if code := cli.RunCli(t.Context(), []string{"start"}, rec.deps); code != 0 {
 			t.Fatalf("runCli = %d, want 0", code)
 		}
-		assertLines(t, rec.out, []string{"radar: http://127.0.0.1:8787"})
-		if len(rec.spawned) != 0 {
-			t.Errorf("spawned %q, want nothing", rec.spawned)
-		}
-	})
-
-	t.Run("spawns a replacement when the recorded pid answers no more, and prints the new url", func(t *testing.T) {
-		childUp := false
-		var rec *recording
-		rec = makeDeps(t, overrides{
-			alive: func(pid int64) bool { return pid == 4242 },
-			responses: func(url string) cli.FetchResult {
-				if childUp && url == "http://127.0.0.1:9001/api/health" {
-					return okBody(map[string]any{"ok": true})
-				}
-				return cli.FetchResult{}
-			},
-			onSpawn: func() {
-				childUp = true // the child binds its own port and writes server.json itself
-				writeInfo(t, rec.env, server.ServerInfo{Pid: 555, Port: 9001, URL: "http://127.0.0.1:9001", StartedAt: 2})
-			},
-		})
-		writeInfo(t, rec.env, info)
-		if code := cli.RunCli(t.Context(), []string{"start"}, rec.deps); code != 0 {
-			t.Fatalf("runCli = %d, want 0", code)
-		}
-		want := [][]string{{"start", "--foreground", "--since", "1d"}}
-		if !reflect.DeepEqual(rec.spawned, want) {
-			t.Errorf("spawned %q, want %q", rec.spawned, want)
-		}
-		assertLines(t, rec.out, []string{"radar: http://127.0.0.1:9001"})
-		if got := server.ReadServerInfo(t.Context(), rec.env); got == nil || got.Port != 9001 {
-			t.Errorf("the stale record gave way: %v", got) // the stale record gave way
-		}
-	})
-
-	t.Run("starts fresh when the recorded pid is dead, polling until the child is healthy", func(t *testing.T) {
-		childUp := false
-		var rec *recording
-		rec = makeDeps(t, overrides{
-			responses: func(string) cli.FetchResult {
-				return cli.FetchResult{OK: childUp, Body: map[string]any{"ok": true}}
-			},
-			onSpawn: func() {
-				childUp = true
-				writeInfo(t, rec.env, server.ServerInfo{Pid: 555, Port: 9002, URL: "http://127.0.0.1:9002", StartedAt: 3})
-			},
-		})
-		writeInfo(t, rec.env, info) // IsAlive answers false everywhere here
-		if code := cli.RunCli(t.Context(), []string{"start"}, rec.deps); code != 0 {
-			t.Fatalf("runCli = %d, want 0", code)
-		}
-		assertLines(t, rec.out, []string{"radar: http://127.0.0.1:9002"})
-	})
-
-	t.Run("gives up after the timeout, passing the window and pinned port to the child", func(t *testing.T) {
-		ticks := 0
-		rec := makeDeps(t, overrides{
-			now: func() int64 {
-				ticks++
-				if ticks == 1 {
-					return 0
-				}
-				return 16_000 // the deadline sits at 0; the next look is past it, so no real sleep
-			},
-		})
-		if code := cli.RunCli(t.Context(), []string{"start", "--port", "8123"}, rec.deps); code != 1 {
-			t.Fatalf("runCli = %d, want 1", code)
-		}
-		assertLines(t, rec.errLines, []string{"radar: server did not become healthy within 15s"})
-		want := [][]string{{"start", "--foreground", "--since", "1d", "--port", "8123"}}
-		if !reflect.DeepEqual(rec.spawned, want) {
-			t.Errorf("spawned %q, want %q", rec.spawned, want)
-		}
+		assertLines(t, rec.out, []string{hubPage})
 	})
 }
 
 func TestStop(t *testing.T) {
-	t.Run("is a no-op when nothing is recorded", func(t *testing.T) {
+	t.Run("names the hub that serves radar and stops nothing", func(t *testing.T) {
 		rec := makeDeps(t, overrides{})
+		writeInfo(t, rec.env, info) // a record of an older edition: still nothing to signal
 		if code := cli.RunCli(t.Context(), []string{"stop"}, rec.deps); code != 0 {
 			t.Fatalf("runCli = %d, want 0", code)
 		}
-		assertLines(t, rec.out, []string{"radar: not running"})
-		if len(rec.signalled) != 0 {
-			t.Errorf("signalled %v, want nothing", rec.signalled)
-		}
-	})
-
-	t.Run("signals a live server and forgets it", func(t *testing.T) {
-		rec := makeDeps(t, overrides{alive: func(pid int64) bool { return pid == 4242 }})
-		writeInfo(t, rec.env, info)
-		if code := cli.RunCli(t.Context(), []string{"stop"}, rec.deps); code != 0 {
-			t.Fatalf("runCli = %d, want 0", code)
-		}
-		if !reflect.DeepEqual(rec.signalled, []int64{4242}) {
-			t.Errorf("signalled %v, want [4242]", rec.signalled)
-		}
-		if paths.FileExists(t.Context(), paths.ServerInfoPath(t.Context(), rec.env)) {
-			t.Error("server.json survived the stop")
-		}
-		assertLines(t, rec.out, []string{"radar: stopped"})
-	})
-
-	t.Run("signals nothing when huddle owns the lock", func(t *testing.T) {
-		rec := makeDeps(t, overrides{
-			alive: func(pid int64) bool { return pid == 4242 },
-			command: func(int64) (string, bool) {
-				return "/Users/you/.agents/huddle-bin/0.0.1/huddle serve\n", true
-			},
-		})
-		writeInfo(t, rec.env, info)
-		if code := cli.RunCli(t.Context(), []string{"stop"}, rec.deps); code != 0 {
-			t.Fatalf("runCli = %d, want 0", code)
-		}
-		assertLines(t, rec.out, []string{
-			"radar runs inside huddle here; stop it with: huddle down",
-		})
-		if len(rec.signalled) != 0 {
-			t.Errorf("signalled %v, want nothing: the pid is huddle's", rec.signalled)
-		}
-		if !paths.FileExists(t.Context(), paths.ServerInfoPath(t.Context(), rec.env)) {
-			t.Error("the lock huddle owns went with the stop")
-		}
-	})
-
-	t.Run("signals a live satellite server behind the huddle word", func(t *testing.T) {
-		rec := makeDeps(t, overrides{
-			alive: func(pid int64) bool { return pid == 4242 },
-			command: func(int64) (string, bool) {
-				return "/Users/you/.agents/huddle-bin/0.0.1/huddle radar start --foreground --since 1d\n", true
-			},
-		})
-		writeInfo(t, rec.env, info)
-		if code := cli.RunCli(t.Context(), []string{"stop"}, rec.deps); code != 0 {
-			t.Fatalf("runCli = %d, want 0", code)
-		}
-		if !reflect.DeepEqual(rec.signalled, []int64{4242}) {
-			t.Errorf("signalled %v, want [4242]", rec.signalled)
-		}
-		if paths.FileExists(t.Context(), paths.ServerInfoPath(t.Context(), rec.env)) {
-			t.Error("server.json survived the stop")
-		}
-		assertLines(t, rec.out, []string{"radar: stopped"})
-	})
-
-	t.Run("signals nothing when the pid belongs to another process", func(t *testing.T) {
-		rec := makeDeps(t, overrides{
-			alive:   func(pid int64) bool { return pid == 4242 },
-			command: func(int64) (string, bool) { return "/usr/sbin/cupsd\n", true },
-		})
-		writeInfo(t, rec.env, info)
-		if code := cli.RunCli(t.Context(), []string{"stop"}, rec.deps); code != 0 {
-			t.Fatalf("runCli = %d, want 0", code)
-		}
-		if len(rec.signalled) != 0 {
-			t.Errorf("signalled %v, want nothing: the pid is not radar's", rec.signalled)
-		}
-		if paths.FileExists(t.Context(), paths.ServerInfoPath(t.Context(), rec.env)) {
-			t.Error("the stale record survived the stop")
-		}
-		assertLines(t, rec.out, []string{"radar: stopped"})
-	})
-
-	t.Run("still removes the record when the pid is already gone", func(t *testing.T) {
-		rec := makeDeps(t, overrides{})
-		writeInfo(t, rec.env, info)
-		if code := cli.RunCli(t.Context(), []string{"stop"}, rec.deps); code != 0 {
-			t.Fatalf("runCli = %d, want 0", code)
-		}
-		if len(rec.signalled) != 0 {
-			t.Errorf("signalled %v, want nothing to signal", rec.signalled)
-		}
-		if paths.FileExists(t.Context(), paths.ServerInfoPath(t.Context(), rec.env)) {
-			t.Error("server.json survived the stop")
-		}
-		assertLines(t, rec.out, []string{"radar: stopped"})
+		assertLines(t, rec.out, []string{"radar: runs inside the huddle hub; /huddle:stop stops it"})
+		assertLines(t, rec.errLines, nil)
 	})
 }
 
-func TestStatus(t *testing.T) {
-	t.Run("exits 3 with nothing recorded or when health fails", func(t *testing.T) {
-		down := makeDeps(t, overrides{})
-		if code := cli.RunCli(t.Context(), []string{"status"}, down.deps); code != 3 {
-			t.Fatalf("runCli = %d, want 3", code)
+func TestStatusAndURL(t *testing.T) {
+	t.Run("status and url name the hub's radar page while a hub answers", func(t *testing.T) {
+		status := makeDeps(t, overrides{hub: func() (string, bool) { return hubBase, true }})
+		if code := cli.RunCli(t.Context(), []string{"status"}, status.deps); code != 0 {
+			t.Fatalf("runCli(status) = %d, want 0", code)
 		}
-		assertLines(t, down.out, []string{notRunning})
+		assertLines(t, status.out, []string{hubPage})
+		if status.hubAsked != 1 {
+			t.Errorf("status asked for the hub %d times, want once", status.hubAsked)
+		}
 
-		unhealthy := makeDeps(t, overrides{alive: func(pid int64) bool { return pid == 4242 }})
-		writeInfo(t, unhealthy.env, info)
-		if code := cli.RunCli(t.Context(), []string{"status"}, unhealthy.deps); code != 3 {
-			t.Fatalf("runCli = %d, want 3", code)
-		}
-		assertLines(t, unhealthy.out, []string{notRunning})
-	})
-
-	t.Run("reports hours once the uptime passes an hour", func(t *testing.T) {
-		rec := makeDeps(t, overrides{
-			alive: func(pid int64) bool { return pid == 4242 },
-			responses: func(string) cli.FetchResult {
-				return okBody(map[string]any{"sessions": float64(1), "uptimeMs": float64(3_900_000)})
-			},
-			now: func() int64 { return 3_900_000 },
-		})
-		writeInfo(t, rec.env, info)
-		if code := cli.RunCli(t.Context(), []string{"status"}, rec.deps); code != 0 {
-			t.Fatalf("runCli = %d, want 0", code)
-		}
-		if want := "  up 1h5m, 1 session tracked, v" + testVersion; rec.out[1] != want {
-			t.Errorf("second line = %q, want %q", rec.out[1], want)
-		}
-	})
-
-	t.Run("reports uptime and sessions from the health body", func(t *testing.T) {
-		rec := makeDeps(t, overrides{
-			alive: func(pid int64) bool { return pid == 4242 },
-			responses: func(string) cli.FetchResult {
-				return okBody(map[string]any{"sessions": float64(2), "uptimeMs": float64(65_000)})
-			},
-			now: func() int64 { return 70_000 },
-		})
-		writeInfo(t, rec.env, info)
-		if code := cli.RunCli(t.Context(), []string{"status"}, rec.deps); code != 0 {
-			t.Fatalf("runCli = %d, want 0", code)
-		}
-		assertLines(t, rec.out, []string{
-			"radar: http://127.0.0.1:8787",
-			"  up 1m5s, 2 sessions tracked, v" + testVersion,
-		})
-	})
-
-	t.Run("falls back to the recorded startedAt when the body is bare", func(t *testing.T) {
-		rec := makeDeps(t, overrides{
-			alive:     func(pid int64) bool { return pid == 4242 },
-			responses: func(string) cli.FetchResult { return okBody(map[string]any{"ok": true}) },
-			now:       func() int64 { return 74_000 },
-		})
-		writeInfo(t, rec.env, server.ServerInfo{Pid: 4242, Port: 8787, URL: "http://127.0.0.1:8787", StartedAt: 5_000})
-		if code := cli.RunCli(t.Context(), []string{"status"}, rec.deps); code != 0 {
-			t.Fatalf("runCli = %d, want 0", code)
-		}
-		if want := "  up 1m9s, 0 sessions tracked, v" + testVersion; rec.out[1] != want {
-			t.Errorf("second line = %q, want %q (69s from now − startedAt)", rec.out[1], want)
-		}
-	})
-}
-
-func TestUrlAndOpen(t *testing.T) {
-	t.Run("prints the url; open additionally launches the browser", func(t *testing.T) {
-		url := makeDeps(t, overrides{
-			alive:     func(pid int64) bool { return pid == 4242 },
-			responses: func(string) cli.FetchResult { return okBody(map[string]any{"ok": true}) },
-		})
-		writeInfo(t, url.env, info)
+		url := makeDeps(t, overrides{hub: func() (string, bool) { return hubBase, true }})
 		if code := cli.RunCli(t.Context(), []string{"url"}, url.deps); code != 0 {
 			t.Fatalf("runCli(url) = %d, want 0", code)
 		}
-		assertLines(t, url.out, []string{"radar: http://127.0.0.1:8787"})
-		if len(url.opened) != 0 {
-			t.Errorf("opened %q, want nothing", url.opened)
+		assertLines(t, url.out, []string{"radar: " + hubBase + "/#/radar"})
+		if url.hubAsked != 1 {
+			t.Errorf("url asked for the hub %d times, want once", url.hubAsked)
 		}
-
-		open := makeDeps(t, overrides{
-			alive:     func(pid int64) bool { return pid == 4242 },
-			responses: func(string) cli.FetchResult { return okBody(map[string]any{"ok": true}) },
-		})
-		writeInfo(t, open.env, info)
-		if code := cli.RunCli(t.Context(), []string{"open"}, open.deps); code != 0 {
-			t.Fatalf("runCli(open) = %d, want 0", code)
-		}
-		assertLines(t, open.opened, []string{"http://127.0.0.1:8787"})
 	})
 
-	t.Run("sends url away when nothing is recorded or health fails", func(t *testing.T) {
-		none := makeDeps(t, overrides{})
-		if code := cli.RunCli(t.Context(), []string{"url"}, none.deps); code != 3 {
-			t.Fatalf("runCli = %d, want 3", code)
+	t.Run("status and url are exit 6 when no hub answers", func(t *testing.T) {
+		for _, command := range []string{"status", "url"} {
+			rec := makeDeps(t, overrides{})
+			if code := cli.RunCli(t.Context(), []string{command}, rec.deps); code != 6 {
+				t.Fatalf("runCli(%s) = %d, want 6", command, code)
+			}
+			assertLines(t, rec.out, []string{notOnHub})
+			assertLines(t, rec.errLines, nil)
 		}
-		assertLines(t, none.out, []string{notRunning})
-
-		dead := makeDeps(t, overrides{})
-		writeInfo(t, dead.env, info) // IsAlive answers false everywhere, so the health check misses
-		if code := cli.RunCli(t.Context(), []string{"url"}, dead.deps); code != 3 {
-			t.Fatalf("runCli = %d, want 3", code)
-		}
-		assertLines(t, dead.out, []string{notRunning})
-
-		unhealthy := makeDeps(t, overrides{
-			alive:     func(pid int64) bool { return pid == 4242 },
-			responses: func(string) cli.FetchResult { return cli.FetchResult{} },
-		})
-		writeInfo(t, unhealthy.env, info)
-		if code := cli.RunCli(t.Context(), []string{"url"}, unhealthy.deps); code != 3 {
-			t.Fatalf("runCli = %d, want 3", code)
-		}
-		assertLines(t, unhealthy.out, []string{notRunning})
 	})
 
-	t.Run("starts the server when none runs, then opens it (a first /huddle:open just works)", func(t *testing.T) {
-		childUp := false
-		var rec *recording
-		rec = makeDeps(t, overrides{
-			responses: func(string) cli.FetchResult {
-				return cli.FetchResult{OK: childUp, Body: map[string]any{"ok": true}}
-			},
-			onSpawn: func() {
-				childUp = true
-				writeInfo(t, rec.env, server.ServerInfo{Pid: 555, Port: 9003, URL: "http://127.0.0.1:9003", StartedAt: 3})
-			},
-		})
-		if code := cli.RunCli(t.Context(), []string{"open"}, rec.deps); code != 0 {
-			t.Fatalf("runCli = %d, want 0", code)
+	t.Run("status and url never start the hub", func(t *testing.T) {
+		rec := makeDeps(t, overrides{})
+		if code := cli.RunCli(t.Context(), []string{"status"}, rec.deps); code != 6 {
+			t.Fatalf("runCli = %d, want 6", code)
 		}
-		want := [][]string{{"start", "--foreground", "--since", "1d"}}
-		if !reflect.DeepEqual(rec.spawned, want) {
-			t.Errorf("spawned %q, want %q", rec.spawned, want)
-		}
-		assertLines(t, rec.out, []string{"radar: http://127.0.0.1:9003"})
-		assertLines(t, rec.opened, []string{"http://127.0.0.1:9003"})
-	})
-
-	t.Run("opens nothing when the server will not start", func(t *testing.T) {
-		ticks := 0
-		rec := makeDeps(t, overrides{
-			now: func() int64 {
-				ticks++
-				if ticks == 1 {
-					return 0
-				}
-				return 16_000
-			},
-		})
-		if code := cli.RunCli(t.Context(), []string{"open"}, rec.deps); code != 1 {
-			t.Fatalf("runCli = %d, want 1", code)
-		}
-		if len(rec.opened) != 0 {
-			t.Errorf("opened %q, want nothing", rec.opened)
+		if len(rec.ensured) != 0 {
+			t.Errorf("EnsureHub ran %d times, want none: status reports, it does not start", len(rec.ensured))
 		}
 	})
 }
@@ -869,40 +566,9 @@ func TestWatch(t *testing.T) {
 	})
 }
 
-func TestAutostart(t *testing.T) {
-	t.Run("is remembered by start and forgotten by stop, so the dashboard returns with the next session", func(t *testing.T) {
-		rec := makeDeps(t, overrides{
-			alive:     func(pid int64) bool { return pid == 4242 },
-			responses: func(string) cli.FetchResult { return okBody(map[string]any{"ok": true}) },
-		})
-		ctx := t.Context()
-		if paths.WantsAutostart(ctx, rec.env) {
-			t.Fatal("installed, never started: the hooks start nothing")
-		}
-		writeInfo(t, rec.env, info)
-		if code := cli.RunCli(ctx, []string{"start"}, rec.deps); code != 0 {
-			t.Fatalf("runCli(start) = %d, want 0", code)
-		}
-		if !paths.WantsAutostart(ctx, rec.env) {
-			t.Error("the start remembered autostart")
-		}
-		if paths.WantsAutostart(ctx, envWith(rec.env, "RADAR_AUTOSTART", "0")) {
-			t.Error("the variable decides when set")
-		}
-		if code := cli.RunCli(ctx, []string{"stop"}, rec.deps); code != 0 {
-			t.Fatalf("runCli(stop) = %d, want 0", code)
-		}
-		if paths.WantsAutostart(ctx, rec.env) {
-			t.Error("the stop forgot autostart")
-		}
-		if !paths.WantsAutostart(ctx, envWith(rec.env, "RADAR_AUTOSTART", "1")) {
-			t.Error("the variable decides when set")
-		}
-	})
-}
-
 // TestStartForeground runs the real dashboard in-process: the foreground start prints its url
-// and holds the caller until the context ends, then the whole app is gone.
+// and holds the caller until the context ends, then the whole app is gone. The hub's own radar
+// tab is the only caller left that serves one; no code path spawns this word any more.
 func TestStartForeground(t *testing.T) {
 	t.Run("start --foreground serves the dashboard until its context ends", func(t *testing.T) {
 		world := makeEnv(t)
@@ -911,19 +577,17 @@ func TestStartForeground(t *testing.T) {
 		var mu sync.Mutex
 		lines := []string{}
 		deps := cli.Deps{
-			Env:           world.env,
-			Version:       testVersion,
-			SinceMs:       dayMs,
-			Out:           func(line string) { mu.Lock(); lines = append(lines, line); mu.Unlock() },
-			Err:           func(string) {},
-			FetchJSON:     func(string) cli.FetchResult { return cli.FetchResult{} },
-			Sleep:         func(int64) {},
-			ShouldStop:    func() bool { return false },
-			SpawnDetached: func([]string) int64 { return 0 },
-			Signal:        func(int64) bool { return true },
-			IsAlive:       func(int64) bool { return false },
-			OpenBrowser:   func(string) {},
-			Now:           func() int64 { return 0 },
+			Env:         world.env,
+			Version:     testVersion,
+			SinceMs:     dayMs,
+			Out:         func(line string) { mu.Lock(); lines = append(lines, line); mu.Unlock() },
+			Err:         func(string) {},
+			FetchJSON:   func(string) cli.FetchResult { return cli.FetchResult{} },
+			Sleep:       func(int64) {},
+			ShouldStop:  func() bool { return false },
+			IsAlive:     func(int64) bool { return false },
+			OpenBrowser: func(string) {},
+			Now:         func() int64 { return 0 },
 		}
 		code := make(chan int, 1)
 		go func() { code <- cli.RunCli(ctx, []string{"start", "--foreground"}, deps) }()

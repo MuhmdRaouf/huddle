@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -12,9 +11,9 @@ import (
 	"time"
 )
 
-// The lifecycle: start is idempotent, a stale record never wins, stop ends the
-// one server and a second stop has nothing to stop, and serve exits on its four
-// exits with one log line each.
+// The lifecycle: nothing starts a server any more — the hub serves every
+// board — so what is tested is refresh through a running server and serve's
+// four exits, one log line each.
 
 // serveRun is one in-process server Serve started; reason answers why it ended.
 type serveRun struct {
@@ -73,140 +72,6 @@ func closedPort(t *testing.T) int {
 		t.Fatal(err)
 	}
 	return port
-}
-
-// spawnInProcess is the SpawnServe effect that runs the server inside this
-// process instead of a detached child.
-func spawnInProcess(t *testing.T, opts Options) func(string, []string, string) int64 {
-	return func(string, []string, string) int64 {
-		serveInProcess(t, opts)
-		return 1
-	}
-}
-
-func TestStartEnsuresOneServerPerBoard(t *testing.T) {
-	b := newBoard(t)
-	home := t.TempDir()
-	ctx := context.Background()
-	fx := DefaultEffects()
-	spawns := 0
-	fx.SpawnServe = func(command string, args []string, logFile string) int64 {
-		spawns++
-		serveInProcess(t, Options{Board: b, Home: home, Version: "test", Port: -1, EveryMs: 25})
-		return 1
-	}
-
-	first, err := Start(ctx, b.Root, home, -1, fx)
-	if err != nil {
-		t.Fatalf("first start: %v", err)
-	}
-	st := waitState(t, home, b.Root)
-	if want := fmt.Sprintf("http://127.0.0.1:%d", st.Port); first != want {
-		t.Fatalf("first start = %q, want %q", first, want)
-	}
-	if st.Board == "" || st.Token == "" || st.Version != "test" {
-		t.Errorf("state = %+v", st)
-	}
-
-	second, err := Start(ctx, b.Root, home, -1, fx)
-	if err != nil {
-		t.Fatalf("second start: %v", err)
-	}
-	if second != first {
-		t.Errorf("second start = %q, want the running server's %q", second, first)
-	}
-	if spawns != 1 {
-		t.Errorf("a healthy server was spawned %d times, want 1", spawns)
-	}
-	log := readServerLog(t, home, b.Root)
-	if !strings.Contains(log, "kanban: listening on ") {
-		t.Errorf("log = %q, want a listening line", log)
-	}
-}
-
-func TestStartReplacesAStaleState(t *testing.T) {
-	b := newBoard(t)
-	home := t.TempDir()
-	ctx := context.Background()
-	abs := absPath(b.Root)
-	key := KeyOf(abs)
-	stale := State{
-		Pid: 999_999, Port: closedPort(t), Board: abs,
-		Version: "old", Token: "stale", StartedAt: "2026-01-01T00:00:00Z",
-	}
-	if err := WriteState(ctx, home, key, stale); err != nil {
-		t.Fatal(err)
-	}
-
-	fx := DefaultEffects()
-	fx.SpawnServe = spawnInProcess(t, Options{Board: b, Home: home, Version: "test", Port: -1, EveryMs: 25})
-	url, err := Start(ctx, b.Root, home, -1, fx)
-	if err != nil {
-		t.Fatalf("start over a stale state: %v", err)
-	}
-	st := waitState(t, home, b.Root)
-	if st.Token == "stale" || st.Port == stale.Port {
-		t.Errorf("the stale state survived: %+v", st)
-	}
-	if want := fmt.Sprintf("http://127.0.0.1:%d", st.Port); url != want {
-		t.Errorf("start = %q, want %q", url, want)
-	}
-}
-
-func TestStopStopsTheServer(t *testing.T) {
-	b := newBoard(t)
-	home := t.TempDir()
-	ctx := context.Background()
-	run := serveInProcess(t, Options{Board: b, Home: home, Version: "test", Port: -1, EveryMs: 25})
-	waitState(t, home, b.Root)
-
-	if err := Stop(ctx, b.Root, home, DefaultEffects()); err != nil {
-		t.Fatalf("stop: %v", err)
-	}
-	if reason := run.waitReason(t, 3*time.Second); reason != ReasonStop {
-		t.Errorf("reason = %q, want %q", reason, ReasonStop)
-	}
-	key := KeyOf(b.Root)
-	if ReadState(home, key) != nil {
-		t.Error("the state file survived the stop")
-	}
-	log := readServerLog(t, home, b.Root)
-	if !strings.Contains(log, "kanban: stopped (reason: stop)") {
-		t.Errorf("log = %q, want the stop line", log)
-	}
-
-	err := Stop(ctx, b.Root, home, DefaultEffects())
-	var noServer *ErrNoServer
-	if !errors.As(err, &noServer) {
-		t.Fatalf("second stop = %v, want ErrNoServer", err)
-	}
-	if noServer.Board != absPath(b.Root) {
-		t.Errorf("ErrNoServer board = %q, want the board's one spelling", noServer.Board)
-	}
-}
-
-func TestStopRemovesAStaleState(t *testing.T) {
-	b := newBoard(t)
-	home := t.TempDir()
-	ctx := context.Background()
-	abs := absPath(b.Root)
-	key := KeyOf(abs)
-	stale := State{Pid: 999_999, Port: closedPort(t), Board: abs, Token: "stale"}
-	if err := WriteState(ctx, home, key, stale); err != nil {
-		t.Fatal(err)
-	}
-
-	err := Stop(ctx, b.Root, home, DefaultEffects())
-	var noServer *ErrNoServer
-	if !errors.As(err, &noServer) {
-		t.Fatalf("stop over a stale state = %v, want ErrNoServer", err)
-	}
-	if ReadState(home, key) != nil {
-		t.Error("the stale state survived the stop")
-	}
-	if Looking(ctx, b.Root, home, DefaultEffects()) != nil {
-		t.Error("Looking answers a server for a stale record")
-	}
 }
 
 func TestRefreshAnswersTheRev(t *testing.T) {

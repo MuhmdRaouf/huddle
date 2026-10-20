@@ -1,23 +1,22 @@
 // Package cli holds the radar command line — start, stop, status, url, open and watch — with
-// every effect injected, so the logic runs under test without processes or sockets. `start`
-// reuses a healthy server recorded in server.json; otherwise it spawns itself detached — the
-// child binds the port and writes server.json itself, which makes the parent's view race-free —
-// then the parent polls health briefly and prints exactly one line. `watch` polls the running
-// server's alerts and prints one line per new alert id. Exit codes: 0 ok, 1 start failed,
-// 3 wanted-a-server-and-found-none.
+// every effect injected, so the logic runs under test without processes or sockets. The huddle
+// hub serves radar in process, so the words only name its page: start and open reach the hub
+// through EnsureHub (starting it when the huddle home is set up), stop explains that /huddle:stop
+// is the way, and status and url report where the hub's radar page lives. `start --foreground`
+// stays the one way to serve a dashboard in this process; no code path spawns it any more.
+// `watch` polls a running server's alerts and prints one line per new alert id. Exit codes:
+// 0 ok, 1 usage, 3 a watch whose server is gone, 6 the hub is not there.
 package cli
 
 import (
 	"context"
 	"fmt"
-	"math"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
-	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/server"
 )
 
@@ -31,7 +30,7 @@ type FetchResult struct {
 // Deps is every effect one command run can have; the process shim builds the real ones, the
 // tests record them.
 type Deps struct {
-	// Env resolves the state dir everything reads and writes.
+	// Env resolves the state dir everything reads.
 	Env domain.EnvLookup
 	// Version prints in the status line.
 	Version string
@@ -43,20 +42,19 @@ type Deps struct {
 	Sleep func(ms int64)
 	// ShouldStop ends the watch loop quietly; the real one never does.
 	ShouldStop func() bool
-	// SpawnDetached starts this binary again with the given sub-args; 0 when the start failed.
-	SpawnDetached func(args []string) int64
-	// Signal delivers the stop signal to one pid; true when a process took it.
-	Signal func(pid int64) bool
-	// Command answers a pid's command line as `ps -o command=` prints it; false when the pid
-	// is gone or ps cannot name it.
-	Command func(pid int64) (string, bool)
-	IsAlive func(pid int64) bool
+	IsAlive    func(pid int64) bool
 	// OpenBrowser hands one url to the platform's browser opener.
 	OpenBrowser func(url string)
-	// Now is the epoch-milliseconds clock the start budget reads.
+	// Now is the epoch-milliseconds clock.
 	Now func() int64
 	// SinceMs is the default --since window.
 	SinceMs int64
+	// Hub answers the base url of the huddle hub when one answers health; false when none
+	// does. url and status report its radar page.
+	Hub func() (string, bool)
+	// EnsureHub starts the hub when the huddle home is set up and answers its base url; false
+	// with the message that says why not. start and open take this one way in.
+	EnsureHub func(budgetMS int) (string, bool, string)
 }
 
 // ParsedArgs is one command line read: the command, its flags, or the first complaint.
@@ -206,10 +204,12 @@ func ParseSince(raw string) (int64, bool) {
 	return amount * unitMs[unit], true
 }
 
-const (
-	startTimeoutMs = 15_000
-	pollIntervalMs = 250
-)
+// ensureBudgetMs is what start and open grant EnsureHub: the hub's own start
+// runs inside it, detached, and the answer comes back within it too.
+const ensureBudgetMs = 35_000
+
+// exitNotReady is the exit code for a word whose hub is not there.
+const exitNotReady = 6
 
 // usage is the one line every misuse prints.
 const usage = "usage: radar start|stop|status|url|open|watch [--port N] [--since 24h]"
@@ -217,22 +217,6 @@ const usage = "usage: radar start|stop|status|url|open|watch [--port N] [--since
 // healthy fetches one recorded server's health endpoint.
 func healthy(deps Deps, info *server.ServerInfo) FetchResult {
 	return deps.FetchJSON(fmt.Sprintf("http://127.0.0.1:%d/api/health", info.Port))
-}
-
-// fmtUptime is the compact uptime a status line shows: seconds, then minutes, then hours.
-func fmtUptime(ms int64) string {
-	seconds := int64(math.Round(float64(ms) / 1000))
-	if seconds < 0 {
-		seconds = 0
-	}
-	if seconds < 60 {
-		return strconv.FormatInt(seconds, 10) + "s"
-	}
-	minutes := seconds / 60
-	if minutes < 60 {
-		return fmt.Sprintf("%dm%ds", minutes, seconds%60)
-	}
-	return fmt.Sprintf("%dh%dm", minutes/60, minutes%60)
 }
 
 // RunCli runs one command line — argv with the command first — and answers the process exit
@@ -249,27 +233,20 @@ func RunCli(ctx context.Context, argv []string, deps Deps) int {
 		if parsed.Foreground {
 			return runForeground(ctx, parsed, deps)
 		}
-		return runStart(ctx, parsed, deps)
+		return runEnsure(deps, false)
+	case "open":
+		return runEnsure(deps, true)
 	case "stop":
-		return runStop(ctx, deps)
+		return runStop(deps)
 	case "status":
-		return runStatus(ctx, deps)
+		return runStatus(deps)
 	case "watch":
 		return runWatch(ctx, deps)
 	case "url":
-		return runURL(ctx, deps)
-	case "open":
-		// "start if needed, then open": a first /huddle:open must not answer "not running"
-		started := runStart(ctx, parsed, deps)
-		if started == 0 {
-			if info := server.ReadServerInfo(ctx, deps.Env); info != nil {
-				deps.OpenBrowser(info.URL)
-			}
-		}
-		return started
+		return runURL(deps)
 	case "help", "--help", "-h":
 		deps.Out(usage)
-		deps.Out("start runs the dashboard server on 127.0.0.1 on a random port unless --port is given")
+		deps.Out("start names the huddle hub's radar page, starting the hub when the huddle home is set up")
 		return 0
 	default:
 		deps.Err("radar: unknown command: " + commandName(parsed.Command))
@@ -286,90 +263,80 @@ func commandName(command string) string {
 	return command
 }
 
-// reportRunning prints what a healthy recorded server owes: its url, and the flags it cannot
-// take until it stops.
-func reportRunning(ctx context.Context, parsed ParsedArgs, deps Deps, recorded *server.ServerInfo) {
-	paths.RememberAutostart(ctx, deps.Env, true)
-	deps.Out("radar: " + recorded.URL)
-	asked := []string{}
-	if parsed.SinceGiven {
-		asked = append(asked, "--since "+sinceArg(parsed.SinceMs))
-	}
-	if parsed.Port != 0 && parsed.Port != recorded.Port {
-		asked = append(asked, "--port "+strconv.Itoa(parsed.Port))
-	}
-	if len(asked) > 0 {
-		deps.Out("radar: already running; " + strings.Join(asked, " and ") + " applies after /huddle:stop")
-	}
+// radarPage is the hub's radar page for one base url.
+func radarPage(base string) string {
+	return base + "/#/radar"
 }
 
-// reportStarted prints what a start this run launched owes: the url, and a word when the child
-// could not have its saved port.
-func reportStarted(deps Deps, info *server.ServerInfo, before int, hadBefore bool) {
-	deps.Out("radar: " + info.URL)
-	if hadBefore && before != info.Port {
-		deps.Out(fmt.Sprintf("radar: port %d was taken; moved to %d", before, info.Port))
+// runEnsure is start and open: name the hub's radar page, starting the hub when the huddle home
+// is set up. open hands the page to the browser as well. Nothing here serves anything itself.
+func runEnsure(deps Deps, open bool) int {
+	base, ok, msg := "", false, ""
+	if deps.EnsureHub != nil {
+		base, ok, msg = deps.EnsureHub(ensureBudgetMs)
 	}
+	if !ok {
+		deps.Err("radar: " + msg)
+		return exitNotReady
+	}
+	page := radarPage(base)
+	deps.Out("radar: in the huddle hub at " + page)
+	if open {
+		deps.OpenBrowser(page)
+	}
+	return 0
 }
 
-// runStart brings the dashboard up: a recorded server that still answers health is reused, a
-// dead record is cleared, and anything else launches a detached child this binary runs as
-// `start --foreground`, whose server.json the parent follows until it answers health.
-func runStart(ctx context.Context, parsed ParsedArgs, deps Deps) int {
-	recorded := server.ReadServerInfo(ctx, deps.Env)
-	if recorded != nil && deps.IsAlive(recorded.Pid) {
-		if healthy(deps, recorded).OK {
-			reportRunning(ctx, parsed, deps, recorded)
-			return 0
-		}
-		server.RemoveServerInfo(ctx, deps.Env)
-	}
-	// Remembered before the launch, not once it answers: a stop in between (the server takes a
-	// moment) must win.
-	paths.RememberAutostart(ctx, deps.Env, true)
-	before, hadBefore := 0, false
-	if parsed.Port == 0 {
-		before, hadBefore = paths.SavedPort(ctx, deps.Env)
-	}
-	args := []string{"start", "--foreground", "--since", sinceArg(parsed.SinceMs)}
-	if parsed.Port != 0 {
-		args = append(args, "--port", strconv.Itoa(parsed.Port))
-	}
-	deps.SpawnDetached(args)
-	deadline := deps.Now() + startTimeoutMs
-	for deps.Now() < deadline {
-		deps.Sleep(pollIntervalMs)
-		info := server.ReadServerInfo(ctx, deps.Env)
-		if info == nil {
-			continue
-		}
-		if healthy(deps, info).OK {
-			reportStarted(deps, info, before, hadBefore)
-			return 0
-		}
-	}
-	deps.Err(fmt.Sprintf("radar: server did not become healthy within %ds", startTimeoutMs/1000))
-	return 1
+// runStop only points at the hub that serves radar: the hub is the one server
+// this edition runs, and /huddle:stop is what ends it.
+func runStop(deps Deps) int {
+	deps.Out("radar: runs inside the huddle hub; /huddle:stop stops it")
+	return 0
 }
 
-// sinceArg rounds ms back to a compact flag value the child re-parses to the same window.
-func sinceArg(ms int64) string {
-	switch {
-	case ms%86_400_000 == 0:
-		return strconv.FormatInt(ms/86_400_000, 10) + "d"
-	case ms%3_600_000 == 0:
-		return strconv.FormatInt(ms/3_600_000, 10) + "h"
-	case ms%60_000 == 0:
-		return strconv.FormatInt(ms/60_000, 10) + "m"
-	default:
-		return strconv.FormatInt(int64(math.Round(float64(ms)/1000)), 10) + "s"
+// notOnHub is what url and status print when no hub answers: the words report,
+// they never start.
+const notOnHub = "radar: the huddle hub is not running"
+
+// hubPage answers the hub's radar page when a hub answers; ok false and the
+// not-running line when none does.
+func hubPage(deps Deps) (string, bool) {
+	if deps.Hub == nil {
+		return "", false
 	}
+	base, ok := deps.Hub()
+	if !ok {
+		return "", false
+	}
+	return radarPage(base), true
 }
 
-// runForeground is the detached child: it serves until SIGTERM. The context it takes never ends
-// in production — StartApp's own SIGTERM handling stops the process — so the wait holds the
-// process for its whole life; a context the caller cancels unblocks it (and stops the app) for
-// runs inside another process.
+// runStatus reports the hub's radar page.
+func runStatus(deps Deps) int {
+	page, ok := hubPage(deps)
+	if !ok {
+		deps.Out(notOnHub)
+		return exitNotReady
+	}
+	deps.Out("radar: in the huddle hub at " + page)
+	return 0
+}
+
+// runURL prints the hub's radar page's address.
+func runURL(deps Deps) int {
+	page, ok := hubPage(deps)
+	if !ok {
+		deps.Out(notOnHub)
+		return exitNotReady
+	}
+	deps.Out("radar: " + page)
+	return 0
+}
+
+// runForeground is the hub's own way to serve a dashboard in this process (and
+// the shape the tests drive): it serves until its context ends. The context it
+// takes never ends in production — StartApp's own SIGTERM handling stops the
+// process — so the wait holds the process for its whole life.
 func runForeground(ctx context.Context, parsed ParsedArgs, deps Deps) int {
 	app, err := server.StartApp(ctx, server.AppOptions{
 		Env:     deps.Env,
@@ -386,107 +353,6 @@ func runForeground(ctx context.Context, parsed ParsedArgs, deps Deps) int {
 	}
 	<-ctx.Done()
 	app.Stop()
-	return 0
-}
-
-// radarServer matches the command line of this binary serving the dashboard — the detached
-// `radar start --foreground` a start leaves behind, direct or behind the satellite word
-// (`huddle radar start`). A stale record may name any process, so only a radar server is ours to
-// signal. The trailing newline is ps's own.
-var radarServer = regexp.MustCompile(`(?:^|/)(?:huddle +)?radar start(?:[ \n]|$)`)
-
-// huddleServer matches a huddle server's command line. While huddle owns radar's lock, the pid
-// server.json names is huddle's, and the hub it serves is not radar's to end.
-var huddleServer = regexp.MustCompile(`(?:^|/)huddle serve(?:[ \n]|$)`)
-
-// huddleStopLine is the one line a stop prints when huddle owns the lock: how to stop the hub,
-// because that is what the recorded pid runs.
-const huddleStopLine = "radar runs inside huddle here; stop it with: huddle down"
-
-// commandLineOf reads the recorded pid's command line; a stop without the effect reads nothing,
-// so no pid is ever signalled on a look it could not make.
-func commandLineOf(deps Deps, pid int64) (string, bool) {
-	if deps.Command == nil {
-		return "", false
-	}
-	return deps.Command(pid)
-}
-
-// runStop stops the recorded server and forgets it; nothing recorded is a no-op. The pid is
-// signalled only when its command line is a radar server: a record huddle owns names huddle —
-// the hub stays, with the line that stops it — and a reboot may have given the pid to any other
-// process, which is not radar's to signal either.
-func runStop(ctx context.Context, deps Deps) int {
-	info := server.ReadServerInfo(ctx, deps.Env)
-	if info == nil {
-		paths.RememberAutostart(ctx, deps.Env, false)
-		deps.Out("radar: not running")
-		return 0
-	}
-	if deps.IsAlive(info.Pid) {
-		command, _ := commandLineOf(deps, info.Pid)
-		switch {
-		case radarServer.MatchString(command):
-			deps.Signal(info.Pid)
-		case huddleServer.MatchString(command):
-			deps.Out(huddleStopLine)
-			return 0
-		}
-	}
-	server.RemoveServerInfo(ctx, deps.Env)
-	paths.RememberAutostart(ctx, deps.Env, false)
-	deps.Out("radar: stopped")
-	return 0
-}
-
-// notRunning is what a wanted-but-absent server prints, with the command that starts one.
-const notRunning = "radar: not running — /huddle:open starts it"
-
-func runStatus(ctx context.Context, deps Deps) int {
-	info := server.ReadServerInfo(ctx, deps.Env)
-	if info == nil || !deps.IsAlive(info.Pid) {
-		deps.Out(notRunning)
-		return 3
-	}
-	health := healthy(deps, info)
-	if !health.OK {
-		deps.Out(notRunning)
-		return 3
-	}
-	sessions := int64(0)
-	if counted, ok := numberField(health.Body, "sessions"); ok {
-		sessions = int64(counted)
-	}
-	uptime := deps.Now() - int64(info.StartedAt)
-	if up, ok := numberField(health.Body, "uptimeMs"); ok {
-		uptime = int64(up)
-	}
-	plural := "s"
-	if sessions == 1 {
-		plural = ""
-	}
-	deps.Out("radar: " + info.URL)
-	deps.Out(fmt.Sprintf("  up %s, %d session%s tracked, v%s", fmtUptime(uptime), sessions, plural, deps.Version))
-	return 0
-}
-
-// numberField reads one JSON number field, the only shape typeof n === "number" admits.
-func numberField(body map[string]any, key string) (float64, bool) {
-	value, ok := body[key].(float64)
-	return value, ok
-}
-
-func runURL(ctx context.Context, deps Deps) int {
-	info := server.ReadServerInfo(ctx, deps.Env)
-	if info == nil {
-		deps.Out(notRunning)
-		return 3
-	}
-	if !healthy(deps, info).OK {
-		deps.Out(notRunning)
-		return 3
-	}
-	deps.Out("radar: " + info.URL)
 	return 0
 }
 

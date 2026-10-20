@@ -2,14 +2,14 @@ package hook
 
 // radar at session start, as scenarios: with a healthy huddle hub the hook
 // points at the hub's radar page and starts nothing, whether autostart is on
-// or off; with no hub, today's standalone behaviour stands.
+// or off; with no hub it answers nothing — the hook starts no server of its
+// own, whatever autostart says.
 
 import (
 	"bytes"
 	"context"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +29,6 @@ func TestRadarAtSessionStartScenarios(t *testing.T) {
 			var (
 				environ   []string
 				stdout    bytes.Buffer
-				starts    int
 				hubAsked  bool
 				startCode int
 			)
@@ -40,7 +39,6 @@ func TestRadarAtSessionStartScenarios(t *testing.T) {
 				startCode = runEntry(context.Background(),
 					strings.NewReader(`{"hook_event_name":"SessionStart"}`), &stdout, environ,
 					func() time.Time { return entryNow }, 1, 2,
-					func() bool { starts++; return true },
 					func(context.Context) (string, bool) { hubAsked = true; return hubBase, true })
 			})
 			s.Then("the hook exits 0 and its line names the hub's radar page", func(t *testing.T) {
@@ -53,11 +51,11 @@ func TestRadarAtSessionStartScenarios(t *testing.T) {
 				}
 			})
 			s.And("no dashboard was started", func(t *testing.T) {
-				if starts != 0 {
-					t.Errorf("the dashboard was started %d times, want none", starts)
-				}
 				if !hubAsked {
 					t.Error("the hook never asked for the hub")
+				}
+				if _, err := os.Stat(filepath.Join(radarHome(environ), "server.json")); !os.IsNotExist(err) {
+					t.Errorf("a standalone dashboard left its record behind (err %v)", err)
 				}
 			})
 		})
@@ -66,17 +64,15 @@ func TestRadarAtSessionStartScenarios(t *testing.T) {
 			var (
 				environ   []string
 				stdout    bytes.Buffer
-				starts    int
 				startCode int
 			)
 			s.Given("a session world with autostart off and a healthy hub answering", func(t *testing.T) {
-				environ = entryEnviron(s.T)
+				environ = entryEnviron(s.T, "RADAR_AUTOSTART=0")
 			})
 			s.When("a SessionStart hook runs", func(t *testing.T) {
 				startCode = runEntry(context.Background(),
 					strings.NewReader(`{"hook_event_name":"SessionStart"}`), &stdout, environ,
 					func() time.Time { return entryNow }, 1, 2,
-					func() bool { starts++; return true },
 					func(context.Context) (string, bool) { return hubBase, true })
 			})
 			s.Then("the hook exits 0 in silence", func(t *testing.T) {
@@ -87,18 +83,12 @@ func TestRadarAtSessionStartScenarios(t *testing.T) {
 					t.Errorf("stdout = %q, want empty", stdout.String())
 				}
 			})
-			s.And("no dashboard was started", func(t *testing.T) {
-				if starts != 0 {
-					t.Errorf("the dashboard was started %d times, want none", starts)
-				}
-			})
 		})
 
-		f.Scenario("with no hub and autostart on, the hook starts the dashboard as before", func(s *bdd.S) {
+		f.Scenario("with no hub the hook says nothing and starts nothing, autostart on or not", func(s *bdd.S) {
 			var (
 				environ   []string
 				stdout    bytes.Buffer
-				starts    int
 				startCode int
 			)
 			s.Given("a session world with autostart on, a saved port and no hub answering", func(t *testing.T) {
@@ -115,47 +105,6 @@ func TestRadarAtSessionStartScenarios(t *testing.T) {
 				startCode = runEntry(context.Background(),
 					strings.NewReader(`{"hook_event_name":"SessionStart"}`), &stdout, environ,
 					func() time.Time { return entryNow }, 1, 2,
-					func() bool { starts++; return true },
-					func(context.Context) (string, bool) { return "", false })
-			})
-			s.Then("the hook exits 0 and its line names the dashboard it started", func(t *testing.T) {
-				if startCode != 0 {
-					t.Errorf("runEntry = %d, want 0", startCode)
-				}
-				want := "{\"systemMessage\":\"radar: dashboard at http://127.0.0.1:29871\"}\n"
-				if stdout.String() != want {
-					t.Errorf("stdout = %q, want %q", stdout.String(), want)
-				}
-			})
-			s.And("the dashboard was started exactly once", func(t *testing.T) {
-				if starts != 1 {
-					t.Errorf("the dashboard was started %d times, want once", starts)
-				}
-			})
-		})
-
-		f.Scenario("with no hub and a radar server already running, nothing starts", func(s *bdd.S) {
-			var (
-				environ   []string
-				stdout    bytes.Buffer
-				startCode int
-			)
-			s.Given("a session world with autostart on and a live radar server recorded", func(t *testing.T) {
-				environ = entryEnviron(s.T, "RADAR_AUTOSTART=1")
-				state := radarHome(environ)
-				if err := os.MkdirAll(state, 0o700); err != nil {
-					t.Fatal(err)
-				}
-				info := "{\"pid\":" + strconv.Itoa(os.Getpid()) + "}\n"
-				if err := os.WriteFile(filepath.Join(state, "server.json"), []byte(info), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			})
-			s.When("a SessionStart hook runs", func(t *testing.T) {
-				startCode = runEntry(context.Background(),
-					strings.NewReader(`{"hook_event_name":"SessionStart"}`), &stdout, environ,
-					func() time.Time { return entryNow }, 1, 2,
-					refusingStarter(s.T),
 					func(context.Context) (string, bool) { return "", false })
 			})
 			s.Then("the hook exits 0 in silence", func(t *testing.T) {
@@ -164,6 +113,11 @@ func TestRadarAtSessionStartScenarios(t *testing.T) {
 				}
 				if stdout.String() != "" {
 					t.Errorf("stdout = %q, want empty", stdout.String())
+				}
+			})
+			s.And("no dashboard was started and none is recorded", func(t *testing.T) {
+				if _, err := os.Stat(filepath.Join(radarHome(environ), "server.json")); !os.IsNotExist(err) {
+					t.Errorf("a standalone dashboard left its record behind (err %v)", err)
 				}
 			})
 		})

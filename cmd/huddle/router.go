@@ -49,7 +49,7 @@ func routerWord(ctx context.Context, args []string, stdout, stderr io.Writer) in
 // routerPortOf is the port the router words talk to, or false after naming a bad
 // $HUDDLE_ROUTER_PORT.
 func routerPortOf(env domain.EnvLookup, stderr io.Writer) (int, bool) {
-	port, err := routerd.PortOf(env)
+	port, err := router.PortOf(env)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 0, false

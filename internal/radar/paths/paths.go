@@ -173,35 +173,13 @@ func SavePort(ctx context.Context, env domain.EnvLookup, port int) {
 	_ = os.WriteFile(PortPath(ctx, env), []byte(fmt.Sprintf("%d\n", port)), 0o600)
 }
 
-// AutostartPath is present once `start` ran and until `stop`: the SessionStart hook brings the
-// dashboard back after a reboot.
-func AutostartPath(ctx context.Context, env domain.EnvLookup) string {
-	return filepath.Join(StateDir(ctx, env), "autostart")
-}
-
-// WantsAutostart says whether a SessionStart hook should start the server. RADAR_AUTOSTART
-// decides when it is set (1 yes, anything else no); otherwise yes once the user started the
-// dashboard with `start` and has not stopped it since, so nothing needs configuring after the
-// first /huddle:open.
+// WantsAutostart says whether a SessionStart hook names radar's page in the huddle hub: yes
+// unless RADAR_AUTOSTART is set to anything but 1.
 func WantsAutostart(ctx context.Context, env domain.EnvLookup) bool {
 	if value, ok := env["RADAR_AUTOSTART"]; ok {
 		return value == "1"
 	}
-	_, err := os.Stat(AutostartPath(ctx, env))
-	return err == nil
-}
-
-// RememberAutostart remembers (start) or forgets (stop) that the dashboard should come back with
-// the next session; never fails (the dashboard still runs now).
-func RememberAutostart(ctx context.Context, env domain.EnvLookup, on bool) {
-	if !on {
-		_ = os.Remove(AutostartPath(ctx, env))
-		return
-	}
-	if !EnsureStateDirs(ctx, env) {
-		return
-	}
-	_ = os.WriteFile(AutostartPath(ctx, env), []byte("start the dashboard with the next session\n"), 0o600)
+	return true
 }
 
 // EnsureStateDirs creates the state dir (and the spool dir) with 0700, root included; it returns

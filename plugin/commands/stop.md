@@ -1,5 +1,5 @@
 ---
-description: Stop the hub, radar and the board server this user started
+description: Stop the hub; radar and the boards are served by it
 allowed-tools: Bash
 ---
 
