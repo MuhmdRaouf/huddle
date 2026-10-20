@@ -370,9 +370,19 @@ func TestFullScenarioOnALocalDevName(t *testing.T) {
 
 	step("now_lists_both", func(t *testing.T) {
 		for _, machine := range []satMachine{machineA, machineB} {
-			if pollFor(40*time.Second, func() bool { return registryLists("s-full-"+machine.name, machine.name) }) {
+			listed := func() bool { return registryLists("s-full-"+machine.name, machine.name) }
+			// a report that outruns its hook's budget on a loaded machine waits in the outbox,
+			// and the session's next event replays it: each next prompt is that event
+			delivered := pollFor(10*time.Second, listed)
+			for deadline := time.Now().Add(40 * time.Second); !delivered && time.Now().Before(deadline); {
+				promptOf(t, satEnvOf(t, machine), machine.project, "s-full-"+machine.name)
+				delivered = pollFor(5*time.Second, listed)
+			}
+			if delivered {
 				continue
 			}
+			_, hubNow := tlsFetch(t, hubTLS, hubBase(), "/api/registry/sessions", "Bearer "+credA)
+			t.Logf("=== the hub's registry now === %s", hubNow)
 			dumpChildDiagnostics(t, machine.root, machine.bin, machine.user, machine.project)
 			t.Logf("=== %s's serve log ===\n%s", machine.name, satLogs[machine.name])
 			t.Logf("=== %s's registry now === %s", machine.name, registryNow(t,

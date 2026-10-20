@@ -136,7 +136,9 @@ func TestTotpSetupPrintsCodesAndOffRemoves(t *testing.T) {
 	if !strings.Contains(out, "did not work") {
 		t.Errorf("the wrong code's refusal is missing:\n%s", out)
 	}
-	recovery := regexp.MustCompile(`[a-z2-7]{4}-[a-z2-7]{4}`).FindAllString(out, -1)
+	// each code sits on its own line: the otpauth label carries the hostname, which can hold
+	// the same shape
+	recovery := regexp.MustCompile(`(?m)^\s*[a-z2-7]{4}-[a-z2-7]{4}\s*$`).FindAllString(out, -1)
 	if len(recovery) != 10 {
 		t.Fatalf("the setup printed %d recovery codes, want 10:\n%s", len(recovery), out)
 	}
