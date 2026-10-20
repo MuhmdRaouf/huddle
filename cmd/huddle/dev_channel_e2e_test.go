@@ -43,16 +43,26 @@ func devGoCacheEnv(t *testing.T) []string {
 }
 
 // devGit runs one git word in dir hermetically: a temp home, no global or system config, a fixed
-// identity, no signing — the checkout is the test's own.
+// identity, no signing. Auto maintenance is off because commit's detached `git maintenance run
+// --auto` keeps packing the clone's objects long after the word returns, and a temp dir removed
+// under it fails its RemoveAll with a directory that is not empty — the checkout is the test's
+// own, nothing in it needs the packing.
 func devGit(t *testing.T, home, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{
 		"-c", "commit.gpgsign=false",
 		"-c", "user.email=dev@example.com",
 		"-c", "user.name=dev",
+		"-c", "gc.auto=0",
+		"-c", "maintenance.auto=false",
+		"-c", "core.fsmonitor=false",
 	}, args...)...)
 	cmd.Dir = dir
-	cmd.Env = isoenv.Environ(t, home, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	cmd.Env = isoenv.Environ(t, home,
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_SYSTEM=/dev/null",
+	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
@@ -118,6 +128,24 @@ func devCopyPlugin(t *testing.T, provider string) string {
 	return dst
 }
 
+// devHomeCleanup waits out — then kills — whatever still names the temp home before it goes: a
+// detached child writing after the body only rebuilds the dir the removal takes down. Registered
+// after t.TempDir(), cleanups run last-in first-out, so this lands ahead of the temp dir's own
+// removal. Git's detached maintenance never shows up here — its command line names no path — so
+// devGit keeps it from starting in the first place.
+func devHomeCleanup(t *testing.T, home string) {
+	t.Helper()
+	t.Cleanup(func() {
+		deadline := time.Now().Add(15 * time.Second)
+		for len(providerWorkerPids(home)) > 0 && time.Now().Before(deadline) {
+			time.Sleep(20 * time.Millisecond)
+		}
+		for _, pid := range providerWorkerPids(home) {
+			_ = exec.Command("kill", pid).Run()
+		}
+	})
+}
+
 // TestDevChannelE2E runs the development channel as an installed plugin lives it: no release to
 // download, the marketplace checkout under CLAUDE_CONFIG_DIR, Go on PATH — the launcher builds the
 // checkout's commit once, runs the provider CLI on it, and the next run reuses that build.
@@ -126,10 +154,16 @@ func TestDevChannelE2E(t *testing.T) {
 		t.Skip("go is not on PATH: the development channel has no way to build the binary")
 	}
 	home := t.TempDir()
+	devHomeCleanup(t, home)
 	commit := devMarketplace(t, home)
 	pluginDir := devCopyPlugin(t, "zai")
 	launcher := filepath.Join(pluginDir, "dist", "run")
-	env := append(providerLauncherEnv(t, home), "HUDDLE_DOWNLOAD_BASE=http://127.0.0.1:1")
+	// The launcher's own git word (the source step's rev-parse) takes the same no-system-config
+	// rule the clone's git runs answer to.
+	env := append(providerLauncherEnv(t, home),
+		"HUDDLE_DOWNLOAD_BASE=http://127.0.0.1:1",
+		"GIT_CONFIG_NOSYSTEM=1",
+	)
 	env = append(env, devGoCacheEnv(t)...)
 
 	direct := exec.Command(huddleBin, "provider", "zai", "cli", "--help")

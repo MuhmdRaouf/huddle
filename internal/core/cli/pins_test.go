@@ -2,6 +2,9 @@ package cli_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
@@ -9,6 +12,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakes"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	freeports "github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 func TestPinsOf(t *testing.T) {
@@ -109,8 +113,27 @@ func TestWirePins(t *testing.T) {
 	})
 
 	t.Run("without the router pin the start still runs", func(t *testing.T) {
-		env := wireSandbox(t, map[string]string{"ZAI_ROUTER_PORT": "18999"})
-		deps := wired(t, testkit.ReferenceProvider, env, &fakes.RecordingOutput{}, "/zai.js")
+		// The start probes the daemon's own port, so it is pinned to one nothing answers: left
+		// unset it falls back to the canonical 18786, where the owner's live huddle-router
+		// answers the health probe and the start reports up.
+		env := wireSandbox(t, map[string]string{
+			"ZAI_ROUTER_PORT":    strconv.Itoa(freeports.Free(t)),
+			"HUDDLE_ROUTER_PORT": strconv.Itoa(freeports.Free(t)),
+		})
+		// The daemon is this binary run as `router serve`; re-entered that way the test binary
+		// runs its whole suite again, detached, for minutes. The stub is a start that can never
+		// answer, which is the case this subtest names.
+		stub := filepath.Join(testkit.TempDir(t, "core-notrouter-"), "not-a-router")
+		if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		deps := cli.Wire(context.Background(), cli.WireOptions{
+			Provider:   testkit.ReferenceProvider,
+			Env:        domain.EnvLookup(env),
+			Executable: stub,
+			BundlePath: "/zai.js",
+			Out:        &fakes.RecordingOutput{},
+		})
 		if _, err := deps.Host.EnsureRouter(context.Background()); err == nil {
 			t.Fatal("ensureRouter with no pin and no router binary = nil error")
 		}
