@@ -10,13 +10,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	huddlecli "github.com/MuhmdRaouf/huddle/internal/huddle/cli"
-	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/hubaddr"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/kanbantab"
 	"github.com/MuhmdRaouf/huddle/internal/kanban/board"
 )
@@ -27,11 +24,11 @@ import (
 // direct path.
 func hubFlow(ctx context.Context, getenv func(string) (string, bool), key string,
 	req board.FlowRequest) ([]string, string, bool) {
-	base := hubBase(getenv)
+	base := hubaddr.Base(getenv)
 	if base == "" {
 		return nil, "", false
 	}
-	if !hubHealthy(ctx, base) {
+	if !hubaddr.Healthy(ctx, base) {
 		return nil, "", false
 	}
 	body, _ := json.Marshal(req) // a struct of strings and bools always marshals
@@ -72,53 +69,18 @@ func hubFlow(ctx context.Context, getenv func(string) (string, bool), key string
 // credential or token travels in the link — the page's own sign-in is the
 // hub's business. False when no hub answers.
 func hubBoard(ctx context.Context, getenv func(string) (string, bool), key string) (string, bool) {
-	base := hubBase(getenv)
+	base := hubaddr.Base(getenv)
 	if base == "" {
 		return "", false
 	}
-	if !hubHealthy(ctx, base) {
+	if !hubaddr.Healthy(ctx, base) {
 		return "", false
 	}
 	return base + "/#/kanban/" + key, true
 }
 
-// hubBase answers the local huddle's base url from its port file, in the home
-// the environment resolves. Empty when no home or no readable port is there.
-func hubBase(getenv func(string) (string, bool)) string {
-	h, err := home.Resolve(envOf(getenv))
-	if err != nil {
-		return ""
-	}
-	raw, err := os.ReadFile(h.PortFile())
-	if err != nil {
-		return ""
-	}
-	port := strings.TrimSpace(string(raw))
-	if _, err := strconv.Atoi(port); err != nil {
-		return ""
-	}
-	return "http://127.0.0.1:" + port
-}
-
-// hubHealthy says whether the port's holder answers huddle's health path: the
-// port file alone never vouches for a server.
-func hubHealthy(ctx context.Context, base string) bool {
-	probe, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
-	defer cancel()
-	req, err := http.NewRequestWithContext(probe, http.MethodGet, base+"/health", nil)
-	if err != nil {
-		return false
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = resp.Body.Close() }()
-	return resp.StatusCode == http.StatusOK
-}
-
-// envOf adapts the kanban world's lookup to the one-value read the huddle home
-// and the huddle world take.
+// envOf adapts the kanban world's lookup to the one-value read the huddle
+// world takes.
 func envOf(getenv func(string) (string, bool)) func(string) string {
 	return func(key string) string { v, _ := getenv(key); return v }
 }

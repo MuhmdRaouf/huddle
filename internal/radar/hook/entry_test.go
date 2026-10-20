@@ -37,6 +37,9 @@ func refusingStarter(t *testing.T) func() bool {
 	}
 }
 
+// noHub is the hub lookup for the cases that run with no hub on the machine.
+func noHub(context.Context) (string, bool) { return "", false }
+
 func TestRunEntry(t *testing.T) {
 	ctx := context.Background()
 
@@ -44,7 +47,7 @@ func TestRunEntry(t *testing.T) {
 		environ := entryEnviron(t)
 		var stdout bytes.Buffer
 		code := runEntry(ctx, strings.NewReader(`{"hook_event_name":"Stop","session_id":"e1"}`),
-			&stdout, environ, func() time.Time { return entryNow }, 7, 8, refusingStarter(t))
+			&stdout, environ, func() time.Time { return entryNow }, 7, 8, refusingStarter(t), noHub)
 		if code != 0 {
 			t.Fatalf("runEntry = %d, want 0", code)
 		}
@@ -83,7 +86,7 @@ func TestRunEntry(t *testing.T) {
 		}
 		var stdout bytes.Buffer
 		code := runEntry(ctx, strings.NewReader(`{"hook_event_name":"SessionStart"}`),
-			&stdout, environ, func() time.Time { return entryNow }, 1, 2, func() bool { return true })
+			&stdout, environ, func() time.Time { return entryNow }, 1, 2, func() bool { return true }, noHub)
 		if code != 0 {
 			t.Fatalf("runEntry = %d, want 0", code)
 		}
@@ -105,7 +108,7 @@ func TestRunEntry(t *testing.T) {
 		}
 		var stdout bytes.Buffer
 		code := runEntry(ctx, strings.NewReader(`{"hook_event_name":"SessionStart"}`),
-			&stdout, environ, func() time.Time { return entryNow }, 1, 2, refusingStarter(t))
+			&stdout, environ, func() time.Time { return entryNow }, 1, 2, refusingStarter(t), noHub)
 		if code != 0 {
 			t.Fatalf("runEntry = %d, want 0", code)
 		}
@@ -118,7 +121,7 @@ func TestRunEntry(t *testing.T) {
 		environ := entryEnviron(t, "RADAR_AUTOSTART=1")
 		var stdout bytes.Buffer
 		code := runEntry(ctx, strings.NewReader(`{"hook_event_name":"SessionStart"}`),
-			&stdout, environ, func() time.Time { return entryNow }, 1, 2, func() bool { return false })
+			&stdout, environ, func() time.Time { return entryNow }, 1, 2, func() bool { return false }, noHub)
 		if code != 0 {
 			t.Fatalf("runEntry = %d, want 0", code)
 		}
@@ -131,7 +134,7 @@ func TestRunEntry(t *testing.T) {
 		environ := entryEnviron(t, "RADAR_AUTOSTART=1")
 		var stdout bytes.Buffer
 		code := runEntry(ctx, strings.NewReader(`{"hook_event_name":"SessionStart"}`),
-			&stdout, environ, func() time.Time { return entryNow }, 1, 2, func() bool { return true })
+			&stdout, environ, func() time.Time { return entryNow }, 1, 2, func() bool { return true }, noHub)
 		if code != 0 {
 			t.Fatalf("runEntry = %d, want 0", code)
 		}

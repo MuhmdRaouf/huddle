@@ -19,29 +19,41 @@ import (
 const safetyDeadline = 750 * time.Millisecond
 
 // Main runs one hook invocation and returns its exit code, always 0: a hook never fails the
-// session it observes. It reads stdin, records one spool line, and maybe starts the dashboard
-// server; every rule the line follows lives in record.go.
+// session it observes. It reads stdin, records one spool line, and maybe points at the hub or
+// starts the dashboard server; every rule the line follows lives in record.go.
 func Main(ctx context.Context, stdin io.Reader, stdout io.Writer, environ []string, now func() time.Time, pid, ppid int64) int {
-	return runEntry(ctx, stdin, stdout, environ, now, pid, ppid, autostart)
+	return runEntry(ctx, stdin, stdout, environ, now, pid, ppid, autostart, hubLookup(environ))
 }
 
-// runEntry is Main with the dashboard start injected, so the entry's decision runs under test
-// without spawning anything.
-func runEntry(ctx context.Context, stdin io.Reader, stdout io.Writer, environ []string, now func() time.Time, pid, ppid int64, startServer func() bool) int {
+// runEntry is Main with the dashboard start and the hub lookup injected, so the entry's
+// decision runs under test without spawning anything or touching the network.
+func runEntry(ctx context.Context, stdin io.Reader, stdout io.Writer, environ []string, now func() time.Time, pid, ppid int64, startServer func() bool, hub func(ctx context.Context) (string, bool)) int {
 	hookIO := MakeIo(environ, now, pid, ppid)
 	event, _ := RunHook(ctx, readStdin(stdin), &hookIO)
-	if message := sessionStartMessage(ctx, &hookIO, event, startServer); message != "" {
+	if message := sessionStartMessage(ctx, &hookIO, event, startServer, hub); message != "" {
 		fmt.Fprintf(stdout, "%s\n", systemMessage(message))
 	}
 	return 0
 }
 
-// sessionStartMessage is the one line a SessionStart that started the dashboard owes the user:
-// the saved port's address once the server keeps one, else a pointer at the status command.
-// Empty when it owes nothing — not a SessionStart, autostart off, a server already running, or
+// sessionStartMessage is the one line a SessionStart owes the user: where radar lives in the
+// running huddle hub, or — with no hub — the address of the dashboard it started. Empty when
+// it owes nothing — not a SessionStart, no hub and autostart off, a server already running, or
 // a start that never launched (the user sees and Claude's context never gets the message).
-func sessionStartMessage(ctx context.Context, hookIO *HookIo, event string, startServer func() bool) string {
-	if event != "SessionStart" || !paths.WantsAutostart(ctx, hookIO.Env) || serverRunning(ctx, hookIO.Env) {
+func sessionStartMessage(ctx context.Context, hookIO *HookIo, event string, startServer func() bool, hub func(ctx context.Context) (string, bool)) string {
+	if event != "SessionStart" {
+		return ""
+	}
+	if base, ok := hub(ctx); ok {
+		// the hub serves radar in process: a standalone dashboard would fight it over
+		// history.db, so one starts only when no hub runs. With autostart off the user
+		// asked for nothing — no line, nothing changed.
+		if paths.WantsAutostart(ctx, hookIO.Env) {
+			return fmt.Sprintf("radar: in the huddle hub at %s/#/radar", base)
+		}
+		return ""
+	}
+	if !paths.WantsAutostart(ctx, hookIO.Env) || serverRunning(ctx, hookIO.Env) {
 		return ""
 	}
 	if !startServer() {
