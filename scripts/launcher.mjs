@@ -1,12 +1,16 @@
 // The launcher the plugin ships as plugin/dist/run: Claude Code's hooks, commands, agents and the MCP
 // server start it with `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" <entry> [args...]`. It maps the entry to the
 // huddle binary's word and runs it on the installed binary, which the launcher itself downloads and
-// checksum-verifies on first use of any entry — huddle has no setup command. The satellite words ride the
-// same launcher: `radar <args>` and `kanban <args>` run radar's and kanban's command lines in the one
-// binary. There is no JS fallback: with no binary available and none downloadable the launcher says why and
-// exits 127, and a hook never blocks or fails Claude Code — a hook (`hook <name>`, or the word `hook` in
-// radar's and kanban's hook lines) exits 0 at once, starting one detached download of the binary, locked so
-// all hooks share it. scripts/build.mjs renders plugin/dist/run from this spec and the committed manifest.
+// checksum-verifies on first use of any entry — huddle has no setup command. While no release is
+// published, the launcher instead builds the binary of the checkout's own commit: $HUDDLE_SOURCE, the
+// first directory at or above the launcher's plugin dir whose go.mod names the module, or the marketplace
+// checkout under CLAUDE_CONFIG_DIR — once per commit, hooks starting that build detached. The satellite
+// words ride the same launcher: `radar <args>` and `kanban <args>` run radar's and kanban's command lines
+// in the one binary. There is no JS fallback: with no binary available and none downloadable the launcher
+// says why and exits 127, and a hook never blocks or fails Claude Code — a hook (`hook <name>`, or the
+// word `hook` in radar's and kanban's hook lines) exits 0 at once, starting one detached download or
+// build of the binary, locked so all hooks share it. scripts/launcher.mjs renders plugin/dist/run from
+// this spec and the committed manifest.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -59,10 +63,15 @@ export function huddleSpec(release) {
 # huddle lives under \${AGENTS_HUDDLE_HOME:-$HOME/.agents/huddle-bin}/${release.version}; the first
 # command downloads it from ${release.repo}'s GitHub releases and verifies its sha256 there
 # (HUDDLE_DOWNLOAD_BASE overrides the release URL for tests), waiting up to 120 s — 60 s for mcp,
-# which Claude Code starts and waits for. Every verified install also points $home/current at the
-# binary — the stable path a harness config names, good across upgrades. A hook never blocks or
-# fails Claude Code: it exits 0 at once, starting one detached download — guarded by a lock in the
-# version dir so every hook shares it — that installs the binary for the next hook.`,
+# which Claude Code starts and waits for. While no release is published, the launcher instead builds
+# the binary of the checkout's own commit: $HUDDLE_SOURCE, the first directory at or above the
+# plugin dir whose go.mod names the module, or the marketplace checkout under CLAUDE_CONFIG_DIR —
+# once per commit, under a lock so one build serves every invocation, and a hook starts it detached.
+# Without Go the release download stays the path, its failure naming the install-Go line. Every
+# verified install also points $home/current at the binary — the stable path a harness config names,
+# good across upgrades. A hook never blocks or fails Claude Code: it exits 0 at once, starting one
+# detached download or build — guarded by a lock so every hook shares it — that installs the binary
+# for the next hook.`,
     name: "huddle",
     binary: "huddle",
     downloadFn: "download_huddle",
@@ -151,6 +160,9 @@ export function huddleSpec(release) {
 /** Each word as its own entry pair: the word is its own subcommand. */
 const selfEntries = (words) => words.map((word) => [word, word]);
 
+/** The module whose sources the launcher builds while no release is published. */
+const HUDDLE_MODULE = "github.com/MuhmdRaouf/huddle";
+
 /** The launcher spec for one provider plugin: the same huddle binary, version and checksum table
  *  the huddle launcher pins, exec'd as `huddle provider <p> <entry>` — the bundle names the plugin's
  *  hooks, commands and agents already run (<p>.js, <p>-router.js, <p>-passthrough.js, <p>-ensure.js)
@@ -169,11 +181,15 @@ export function providerSpec(release, provider) {
 #   sh "\${CLAUDE_PLUGIN_ROOT}/dist/run" <bundle>.js [args...]
 # huddle lives under \${AGENTS_HUDDLE_HOME:-$HOME/.agents/huddle-bin}/${release.version}; the first
 # command downloads it from ${release.repo}'s GitHub releases and verifies its sha256 there
-# (HUDDLE_DOWNLOAD_BASE overrides the release URL for tests), waiting up to 120 s. Every verified
-# install also points $home/current at the binary — the stable path a harness config names, good
-# across upgrades. A hook never blocks or fails Claude Code: it exits 0 at once, starting one
-# detached download — guarded by a lock in the version dir so every hook shares it — that installs
-# the binary for the next hook.`,
+# (HUDDLE_DOWNLOAD_BASE overrides the release URL for tests), waiting up to 120 s. While no release
+# is published, the launcher instead builds the binary of the checkout's own commit: $HUDDLE_SOURCE,
+# the first directory at or above the plugin dir whose go.mod names the module, or the marketplace
+# checkout under CLAUDE_CONFIG_DIR — once per commit, under a lock so one build serves every
+# invocation, and a hook starts it detached. Without Go the release download stays the path, its
+# failure naming the install-Go line. Every verified install also points $home/current at the
+# binary — the stable path a harness config names, good across upgrades. A hook never blocks or
+# fails Claude Code: it exits 0 at once, starting one detached download or build — guarded by a
+# lock so every hook shares it — that installs the binary for the next hook.`,
     name: provider,
     binary: "huddle",
     downloadFn: "download_huddle",
@@ -218,12 +234,12 @@ function caseMapping(spec) {
   return spec.entries.map(([arg, entry]) => `  ${arg}) entry=${entry} ;;`).join("\n");
 }
 
-/** The exec line every dispatch point shares: the binary, the entry and the caller's arguments. An entry
- *  that adds no word of its own (huddle's cli, whose CLI word follows it) expands to nothing here rather
- *  than to an empty argument. */
-const execLine = (spec) => {
+/** The exec line every dispatch point shares: a binary variable, the entry and the caller's arguments.
+ *  An entry that adds no word of its own (huddle's cli, whose CLI word follows it) expands to nothing
+ *  here rather than to an empty argument. */
+const execLine = (spec, bin = '"$bin"') => {
   const entry = spec.entries.some(([, word]) => word === "") ? '${entry:+"$entry"}' : '"$entry"';
-  return `exec "$bin" ${spec.binaryArg}${entry} "$@"`;
+  return `exec ${bin} ${spec.binaryArg}${entry} "$@"`;
 };
 
 /** status=$? and the exec when a foreground download landed its binary. */
@@ -276,9 +292,147 @@ ${downloadRun(spec, "  ")}
 ${downloadReport(spec, "  ")}`;
 }
 
+/** The source step all six launchers share, the development channel's path while no release is
+ *  published: build_from_source finds the repository root, execs the commit's binary or has its build
+ *  started; build_under_lock builds under the commit dir's lock; prune_src_builds keeps the three
+ *  newest builds. The release path keeps its own error, plus the install-Go line. */
+function sourceStep(spec) {
+  const exec = execLine(spec, '"$src_bin"');
+  const repoint = `if command -v ln >/dev/null 2>&1; then
+      ln -s "src/$src_commit/huddle" "$home/.current.$$" && mv -f "$home/.current.$$" "$home/current"
+    fi`;
+  return `# huddle_mod <path>: whether the go.mod at <path> names the huddle module — the source step's match test.
+huddle_mod() {
+  [ -f "$1" ] || return 1
+  read -r mod_line <"$1" || return 1
+  [ "$mod_line" = "module ${HUDDLE_MODULE}" ]
+}
+
+# prune_src_builds keeps the three newest commit builds under $home/src; older ones go, oldest first.
+prune_src_builds() {
+  [ -d "$home/src" ] || return 0
+  for old in $(ls -t "$home/src" 2>/dev/null | tail -n +4); do
+    rm -rf "$home/src/$old"
+  done
+}
+
+# build_under_lock: the source build the words wait for and a detached hook starts. The commit dir's
+# lock holds the builder's pid and start time ("<pid> <epoch seconds>"); another builder's lock makes
+# this build return 0 without building — the caller waits for its binary — and a lock whose holder
+# died or stalled is taken over, so one build serves every invocation. The build's output lands in
+# <commit dir>/build.log; a build that lands moves the binary to $src_bin, repoints $home/current and
+# prunes older builds; one that fails returns 1, its own caller owing no wait.
+build_under_lock() {
+  trap '' HUP
+  mkdir -p "$src_dir"
+  lock=$src_dir/.huddle.build.lock
+  now=$(date +%s)
+  if (set -C; echo "$$ $now" >"$lock") 2>/dev/null; then
+    :
+  else
+    read -r pid when <"$lock" || :
+    if [ -z "$pid" ]; then
+      sleep 1
+      read -r pid when <"$lock" || :
+    fi
+    case "$pid" in *[!0-9]*|"") pid=0 ;; esac
+    case "$when" in *[!0-9]*|"") when=0 ;; esac
+    if [ "$pid" -ne 0 ] && kill -0 "$pid" 2>/dev/null && [ $(( $(date +%s) - when )) -lt 600 ]; then
+      return 0
+    fi
+    rm -f "$lock"
+    (set -C; echo "$$ $now" >"$lock") 2>/dev/null || return 0
+  fi
+  if [ -x "$src_bin" ]; then
+    rm -f "$lock"
+    return 0
+  fi
+  tmp=$src_dir/.huddle.$$.build
+  if (cd -- "$src_root" && CGO_ENABLED=0 go build -trimpath -o "$tmp" ./cmd/huddle) >>"$src_dir/build.log" 2>&1; then
+    chmod 755 "$tmp"
+    mv -f "$tmp" "$src_bin"
+    ${repoint}
+    prune_src_builds
+    rm -f "$tmp"
+    rm -f "$lock"
+    return 0
+  fi
+  rm -f "$tmp"
+  rm -f "$lock"
+  return 1
+}
+
+# build_from_source: run the binary of the checkout's own commit while no release is published. The
+# repository root is $HUDDLE_SOURCE, or the first directory at or above the launcher's plugin dir
+# whose go.mod names the module, or the marketplace checkout Claude Code keeps under CLAUDE_CONFIG_DIR;
+# a root git cannot name a commit of skips the step. A built binary execs at once. With Go on PATH a
+# missing one is built under the commit dir's lock — a hook leaves that to one detached run, every
+# other word waits up to 300 s and names the build log on failure — and without Go, src_nogo has the
+# release path add its install-Go line to the failure it prints anyway.
+build_from_source() {
+  src_root=\${HUDDLE_SOURCE:-}
+  if [ -z "$src_root" ]; then
+    src_walk=$(cd -- "$dir/.." 2>/dev/null && pwd) || src_walk=
+    while [ -n "$src_walk" ]; do
+      if huddle_mod "$src_walk/go.mod"; then
+        src_root=$src_walk
+        break
+      fi
+      [ "$src_walk" = / ] && break
+      src_walk=$(dirname -- "$src_walk")
+    done
+  fi
+  if [ -z "$src_root" ]; then
+    src_market=\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/muhmdraouf
+    if huddle_mod "$src_market/go.mod"; then src_root=$src_market; fi
+  fi
+  [ -n "$src_root" ] || return 0
+  src_commit=$(git -C "$src_root" rev-parse --short=12 HEAD 2>/dev/null) || { src_root=; return 0; }
+  [ -n "$src_commit" ] || { src_root=; return 0; }
+  src_dir=$home/src/$src_commit
+  src_bin=$src_dir/huddle
+  if [ -x "$src_bin" ]; then
+    ${repoint}
+    ${exec}
+  fi
+  command -v go >/dev/null 2>&1 || { src_nogo=1; return 0; }
+  if [ -n "$detached" ]; then
+    build_under_lock
+    exit 0
+  fi
+  if [ -n "$hook" ]; then
+    # the build starts here even when an older release binary is installed: the dispatch below may
+    # exec that binary for this hook, and the next hook finds the commit's own build
+    (
+      trap '' HUP
+      sh_cmd=$(command -v sh 2>/dev/null) || sh_cmd=/bin/sh
+      exec "$sh_cmd" "$0" "$command" --detached-fetch
+    ) >/dev/null 2>&1 </dev/null &
+    src_build=1
+    return 0
+  fi
+  build_under_lock
+  if [ "$?" -eq 0 ] && [ ! -x "$src_bin" ]; then
+    # another builder holds the commit dir's lock: its binary is this word's binary, so wait for it
+    waited=0
+    while [ ! -x "$src_bin" ] && [ "$waited" -lt 300 ]; do
+      sleep 1
+      waited=$((waited + 1))
+    done
+  fi
+  if [ -x "$src_bin" ]; then
+    ${repoint}
+    ${exec}
+  fi
+  echo "${spec.name}: building huddle from $src_root failed; see $src_dir/build.log" >&2
+  exit 1
+}`;
+}
+
 /** The launcher script for the spec (huddleSpec's or providerSpec's result): the entry's word on the installed
- *  binary, which the launcher itself downloads and checksum-verifies; a hook whose binary is missing starts one
- *  detached, lock-guarded download so the next hook finds it installed. */
+ *  binary, which the launcher itself downloads and checksum-verifies — or, while no release is published,
+ *  builds from the checkout's own commit; a hook whose binary is missing starts one detached, lock-guarded
+ *  download or build so the next hook finds it installed. */
 export function launcherScript(spec) {
   const hookInit = spec.hookEntries.map((entry) => `[ "$entry" = ${entry} ] && hook=1`);
   const hookLines = ["hook=", ...hookInit, "detached="].join("\n");
@@ -304,9 +458,11 @@ export function launcherScript(spec) {
     fetch_under_lock
     exit 0
   fi`,
-    `  if [ -n "$hook" ]; then
-    # One detached download for every hook: it re-runs this script on $0 with --detached-fetch, so the fetch
-    # reuses the same URL and checksum table; it ignores HUP and outlives the hook that started it.
+    `  [ -n "$hook" ] && [ -n "$src_build" ] && exit 0
+  if [ -n "$hook" ]; then
+    # One detached fetch for every hook: it re-runs this script on $0 with --detached-fetch, so the
+    # release download or the source build reuses the same steps; it ignores HUP and outlives the
+    # hook that started it.
     (
       trap '' HUP
       sh_cmd=$(command -v sh 2>/dev/null) || sh_cmd=/bin/sh
@@ -426,6 +582,14 @@ fetch_under_lock() {
   rm -f "$lock"
   return 0
 }
+
+${sourceStep(spec)}
+
+# the step's exec runs on the caller's arguments, so they ride in as its own positionals
+build_from_source "$@"
+if [ -n "$src_nogo" ] && [ -z "$hook" ] && [ -z "$detached" ]; then
+  echo "${spec.name}: no huddle release is published; install Go to build it from the marketplace checkout" >&2
+fi
 
 ${dispatch}
 [ -n "$hook" ] && exit 0

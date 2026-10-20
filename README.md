@@ -60,9 +60,12 @@ a crash or a reboot. The provider plugins in
 ## Requirements
 
 - Claude Code with plugin support.
-- macOS or Linux, on amd64 or arm64: one static binary, no JS runtime. The launcher (`plugin/dist/run`) downloads
-  it with `sh` from the GitHub release on first use and checks its SHA-256 against the committed manifest
-  (`release/v<VERSION>.json`); a hook never blocks — it exits 0 and the download runs detached.
+- macOS or Linux, on amd64 or arm64: one static binary, no JS runtime. The launcher (`plugin/dist/run`) runs the
+  binary of the marketplace checkout's own commit while no release is published: it builds it once per commit with
+  `go` (`$HUDDLE_SOURCE` or the checkout under `CLAUDE_CONFIG_DIR` names the sources; a hook starts that build
+  detached), and falls back to the GitHub release download, checked against the committed manifest
+  (`release/v<VERSION>.json`), where Go is missing. A hook never blocks — it exits 0 and the download or build
+  runs detached.
 - Developing on Huddle also needs Go and Bun 1.3 or later — see [Development](#development).
 
 ## The plugin

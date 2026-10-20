@@ -40,10 +40,12 @@ func providerLauncherRun(t *testing.T, launcher string, env []string, args ...st
 	return output, 0, err
 }
 
-// TestProviderPluginLauncherE2E drives the zai plugin's launcher end to end.
+// TestProviderPluginLauncherE2E drives the zai plugin's launcher end to end: the launcher a copy
+// outside the repository, as an installed plugin runs it, so the source step finds no checkout and
+// the release path — the installed binary, or the dead download base — is what the launcher meets.
 func TestProviderPluginLauncherE2E(t *testing.T) {
 	release := freshReleaseOf(t)
-	pluginDir := filepath.Join(freshRoot, "plugins", "zai-plugin-cc")
+	pluginDir := devCopyPlugin(t, "zai")
 	launcher := filepath.Join(pluginDir, "dist", "run")
 
 	t.Run("the cli bundle runs the huddle binary's provider cli word", func(t *testing.T) {

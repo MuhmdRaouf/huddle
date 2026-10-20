@@ -3,8 +3,11 @@
 // checksum-verifies on first use of any entry. There is no JS fallback: with no binary available and none
 // downloadable the launcher says why and exits 127, and any hook spelling — huddle's own `hook <event>`, or
 // a satellite's line carrying the word `hook` — exits 0 silently, starting one detached download whose lock
-// lives in the version dir. Downloads go to a local server through HUDDLE_DOWNLOAD_BASE; nothing here touches
-// the network. Run with `node --test scripts/launcher.test.mjs`.
+// lives in the version dir. When no release is published the launcher builds the binary of the
+// checkout's own commit instead — $HUDDLE_SOURCE, the first go.mod naming the module at or above the
+// launcher's plugin dir, or the marketplace checkout under CLAUDE_CONFIG_DIR — and a fake `go` on
+// PATH stands in for the toolchain. Downloads go to a local server through HUDDLE_DOWNLOAD_BASE;
+// nothing here touches the network. Run with `node --test scripts/launcher.test.mjs`.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -52,10 +55,13 @@ const ARCH = ARCHES[process.arch] ?? "unsupported";
 /** Every external tool the launcher may call; the rig symlinks each one the machine has into its tools dir. */
 const TOOLS = [
   "chmod",
+  "cp",
   "curl",
   "date",
   "dirname",
+  "git",
   "ln",
+  "ls",
   "mkdir",
   "mv",
   "openssl",
@@ -64,6 +70,7 @@ const TOOLS = [
   "sh",
   "shasum",
   "sleep",
+  "tail",
   "uname",
   "wget",
 ];
@@ -98,7 +105,7 @@ function info(digest = createHash("sha256").update(asset(HUDDLE.binary)).digest(
  * the machine has); /usr/bin itself may hold a node (some CI images), so it stays off PATH. `t` owns the
  * temp dir: everything is removed when the test finishes.
  */
-function rig(t, release, runtimes = [], uname, flavour = HUDDLE) {
+function rig(t, release, runtimes = [], uname, flavour = HUDDLE, watches = []) {
   const dir = realpathSync(mktemp("launcher-"));
   const dist = join(dir, "dist");
   const bin = join(dir, "bin");
@@ -136,9 +143,11 @@ function rig(t, release, runtimes = [], uname, flavour = HUDDLE) {
     });
   // A hook test's detached fetch is a child this process does not own and it keeps writing under dir after
   // the test: removing the rig waits it out first (and ends it only when it is the rig's own), so rmSync
-  // never races it. The retries cover a fetcher that was just told to stop.
+  // never races it. `watches` names further locks a test learned about while running — a detached source
+  // build's — that get the same wait. The retries cover a fetcher that was just told to stop.
   t.after(async () => {
     await endDetachedFetch(dir, lock);
+    for (const watch of watches) await endDetachedFetch(dir, watch);
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
   return { dir, dist, bin, binHome, lock, run };
@@ -222,6 +231,76 @@ function writeLock(binHome, content) {
   const dir = join(binHome, RELEASE.version);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, HUDDLE.lock), `${content}\n`);
+}
+
+/** The source build's lock: one per commit dir under the binary home's src/. */
+const buildLockPath = (binHome, commit) => join(binHome, "src", commit, ".huddle.build.lock");
+
+/** The number of builds the fake go counted in $GO_CALLS: one line per call. */
+const goCalls = (calls) => (existsSync(calls) ? readFileSync(calls, "utf8").split("\n").filter(Boolean).length : 0);
+
+/** A git invocation inside `repo`, hermetic: no global or system config, a fixed identity, no signing.
+ *  Returns stdout; throws with the output when git fails. */
+function gitIn(repo, args) {
+  const result = spawnSync(
+    "git",
+    ["-c", "commit.gpgsign=false", "-c", "user.email=agent@example.com", "-c", "user.name=agent", ...args],
+    {
+      cwd: repo,
+      encoding: "utf8",
+      env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+    },
+  );
+  if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
+  return result.stdout;
+}
+
+/** A stand-in huddle checkout at `root`: go.mod naming the module and a fake cmd/huddle printing
+ *  `built <marker>`, committed so the launcher's `git rev-parse` answers a commit. commitAll rewrites
+ *  the fake binary with a new marker, commits and returns the new short commit. */
+function sourceRepo(root, marker) {
+  const writeSources = (tag) => {
+    mkdirSync(join(root, "cmd"), { recursive: true });
+    writeFileSync(join(root, "go.mod"), "module github.com/MuhmdRaouf/huddle\n");
+    writeFileSync(join(root, "cmd", "huddle"), `#!/bin/sh\necho built ${tag} "$@"\n`);
+    chmodSync(join(root, "cmd", "huddle"), 0o755);
+  };
+  const commit = () => gitIn(root, ["rev-parse", "--short=12", "HEAD"]).trim();
+  writeSources(marker);
+  gitIn(root, ["init", "-q"]);
+  gitIn(root, ["add", "-A"]);
+  gitIn(root, ["commit", "-q", "-m", marker]);
+  return {
+    commit: commit(),
+    commitAll: (nextMarker) => {
+      writeSources(nextMarker);
+      gitIn(root, ["add", "-A"]);
+      gitIn(root, ["commit", "-q", "-m", nextMarker]);
+      return commit();
+    },
+  };
+}
+
+/** A fake go on the rig's bin dir: one call appends a line to $GO_CALLS and copies the checkout's
+ *  fake cmd/huddle to the -o path, so a "build" lands whatever the commit's cmd/huddle prints. The
+ *  launcher runs go from the checkout's root, so `./cmd/huddle` is the commit's own source. */
+function fakeGo(bin) {
+  writeFileSync(
+    join(bin, "go"),
+    [
+      "#!/bin/sh",
+      'echo call >> "$GO_CALLS"',
+      "out=",
+      "prev=",
+      'for arg in "$@"; do',
+      '  if [ "$prev" = -o ]; then out=$arg; fi',
+      "  prev=$arg",
+      "done",
+      'cp ./cmd/huddle "$out" && chmod 755 "$out"',
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "go"), 0o755);
 }
 
 describe("dist/run", () => {
@@ -491,6 +570,169 @@ describe("dist/run", () => {
 
   it("huddleSpec refuses to generate a launcher with no release to pin", () => {
     assert.throws(() => huddleSpec(null), /no huddle release/);
+  });
+});
+
+describe("the source build", () => {
+  it("a command builds the checkout's commit once and execs it", async (t) => {
+    const watches = [];
+    const { dir, bin, binHome, run } = rig(t, info(), [], undefined, HUDDLE, watches);
+    const repo = sourceRepo(dir, "one");
+    fakeGo(bin);
+    const calls = join(dir, "go-calls");
+    const result = await run(["serve"], { GO_CALLS: calls });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "built one serve\n");
+    const built = join(binHome, "src", repo.commit, "huddle");
+    assert.equal(readFileSync(built, "utf8"), '#!/bin/sh\necho built one "$@"\n');
+    assert.equal(statSync(built).mode & 0o777, 0o755);
+    assert.equal(goCalls(calls), 1, "one go call built the binary");
+  });
+
+  it("a second run reuses the built binary: the go call count stays at one", async (t) => {
+    const watches = [];
+    const { dir, bin, binHome, run } = rig(t, info(), [], undefined, HUDDLE, watches);
+    const repo = sourceRepo(dir, "one");
+    fakeGo(bin);
+    const calls = join(dir, "go-calls");
+    assert.deepEqual(await run(["serve"], { GO_CALLS: calls }), ran(0, "built one serve\n", ""));
+    assert.deepEqual(await run(["serve"], { GO_CALLS: calls }), ran(0, "built one serve\n", ""));
+    assert.equal(goCalls(calls), 1, "the second run reused the first build");
+    assert.deepEqual(readdirSync(join(binHome, "src")), [repo.commit], "the one commit dir holds the build");
+  });
+
+  it("a new commit builds again and the new binary runs", async (t) => {
+    const watches = [];
+    const { dir, bin, binHome, run } = rig(t, info(), [], undefined, HUDDLE, watches);
+    const repo = sourceRepo(dir, "one");
+    fakeGo(bin);
+    const calls = join(dir, "go-calls");
+    assert.deepEqual(await run(["serve"], { GO_CALLS: calls }), ran(0, "built one serve\n", ""));
+    const second = repo.commitAll("two");
+    const result = await run(["serve"], { GO_CALLS: calls });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "built two serve\n");
+    assert.equal(goCalls(calls), 2, "the new commit built again");
+    assert.equal(existsSync(join(binHome, "src", second, "huddle")), true, "the new commit's binary is kept");
+  });
+
+  it("a hook returns at once with exit 0 and the build finishes detached", async (t) => {
+    const watches = [];
+    const { dir, bin, binHome, run } = rig(t, info(), [], undefined, HUDDLE, watches);
+    const repo = sourceRepo(dir, "hook");
+    fakeGo(bin);
+    const calls = join(dir, "go-calls");
+    const built = join(binHome, "src", repo.commit, "huddle");
+    watches.push(buildLockPath(binHome, repo.commit));
+    const started = Date.now();
+    const first = await run(["hook", "session-start"], { GO_CALLS: calls });
+    assert.ok(Date.now() - started < 1000, `the hook returned in ${Date.now() - started} ms`);
+    assert.deepEqual(first, ran(0, "", ""));
+    assert.ok(
+      await until(() => existsSync(built) && !existsSync(buildLockPath(binHome, repo.commit)), 10_000),
+      "the detached build lands the commit's binary",
+    );
+    assert.equal(goCalls(calls), 1, "one detached build served the hook");
+    assert.deepEqual(await run(["serve"], { GO_CALLS: calls }), ran(0, "built hook serve\n", ""));
+  });
+
+  it("a hook with an older release binary installed runs it and still starts the commit's build", async (t) => {
+    const watches = [];
+    const { dir, bin, binHome, run } = rig(t, info(), [], undefined, HUDDLE, watches);
+    install(binHome);
+    const repo = sourceRepo(dir, "fresh");
+    fakeGo(bin);
+    const calls = join(dir, "go-calls");
+    const built = join(binHome, "src", repo.commit, "huddle");
+    watches.push(buildLockPath(binHome, repo.commit));
+    const first = await run(["hook", "session-start"], { GO_CALLS: calls });
+    assert.equal(first.status, 0);
+    assert.ok(
+      await until(() => existsSync(built) && !existsSync(buildLockPath(binHome, repo.commit)), 10_000),
+      "the hook started the commit's build although a release binary was installed",
+    );
+    assert.deepEqual(await run(["serve"], { GO_CALLS: calls }), ran(0, "built fresh serve\n", ""));
+  });
+
+  it("with no go on PATH a command falls through to the release path's error plus the install-Go line", async (t) => {
+    const watches = [];
+    const { dir, binHome, run } = rig(t, info(), [], undefined, HUDDLE, watches);
+    const repo = sourceRepo(dir, "nogo");
+    const calls = join(dir, "go-calls");
+    const command = await run(["serve"], { HUDDLE_DOWNLOAD_BASE: "http://127.0.0.1:1", GO_CALLS: calls });
+    assert.equal(command.status, 127);
+    assert.ok(
+      command.stderr.startsWith("huddle: no huddle release is published; install Go to build it from the marketplace checkout\n"),
+      `stderr carries the install-Go line first: ${command.stderr}`,
+    );
+    assert.ok(
+      command.stderr.endsWith(`huddle: could not download huddle 9.9.9 (http://127.0.0.1:1/v9.9.9/huddle-${OS}-${ARCH})\n`),
+      `the release path's error stays the last word: ${command.stderr}`,
+    );
+    assert.equal(goCalls(calls), 0, "nothing built without go");
+    assert.equal(existsSync(join(binHome, "src", repo.commit)), false, "the commit dir holds no build");
+  });
+
+  it("HUDDLE_SOURCE wins over the checkout the walk-up finds", async (t) => {
+    const watches = [];
+    const { dir, bin, run } = rig(t, info(), [], undefined, HUDDLE, watches);
+    sourceRepo(dir, "walkup");
+    const other = join(dir, "other");
+    mkdirSync(other);
+    sourceRepo(other, "env");
+    fakeGo(bin);
+    const calls = join(dir, "go-calls");
+    const result = await run(["serve"], { GO_CALLS: calls, HUDDLE_SOURCE: other });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "built env serve\n");
+    assert.equal(goCalls(calls), 1);
+  });
+
+  it("the marketplace checkout under CLAUDE_CONFIG_DIR is found when the walk-up matches nothing", async (t) => {
+    const watches = [];
+    const { dir, bin, binHome, run } = rig(t, info(), [], undefined, HUDDLE, watches);
+    const config = join(dir, "config");
+    const market = join(config, "plugins", "marketplaces", "muhmdraouf");
+    mkdirSync(market, { recursive: true });
+    const repo = sourceRepo(market, "market");
+    fakeGo(bin);
+    const calls = join(dir, "go-calls");
+    const result = await run(["serve"], { GO_CALLS: calls, CLAUDE_CONFIG_DIR: config });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "built market serve\n");
+    assert.equal(existsSync(join(binHome, "src", repo.commit, "huddle")), true);
+  });
+
+  it("only the three newest commit builds are kept", async (t) => {
+    const watches = [];
+    const { dir, bin, binHome, run } = rig(t, info(), [], undefined, HUDDLE, watches);
+    const repo = sourceRepo(dir, "keep1");
+    fakeGo(bin);
+    const calls = join(dir, "go-calls");
+    const runFor = async () => {
+      const result = await run(["serve"], { GO_CALLS: calls });
+      assert.equal(result.status, 0, result.stderr);
+      return result;
+    };
+    assert.equal((await runFor()).stdout, "built keep1 serve\n");
+    const second = repo.commitAll("keep2");
+    assert.equal((await runFor()).stdout, "built keep2 serve\n");
+    const third = repo.commitAll("keep3");
+    assert.equal((await runFor()).stdout, "built keep3 serve\n");
+    const fourth = repo.commitAll("keep4");
+    assert.equal((await runFor()).stdout, "built keep4 serve\n");
+    assert.deepEqual(readdirSync(join(binHome, "src")).sort(), [second, third, fourth].sort());
+  });
+
+  it("a provider launcher builds the same way and execs its provider word", async (t) => {
+    const watches = [];
+    const { dir, bin, run } = rig(t, info(), [], undefined, providerFlavour("zai"), watches);
+    sourceRepo(dir, "one");
+    fakeGo(bin);
+    const calls = join(dir, "go-calls");
+    const result = await run(["zai.js", "--help"], { GO_CALLS: calls });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "built one provider zai cli --help\n");
   });
 });
 

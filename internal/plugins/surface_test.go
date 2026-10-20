@@ -172,10 +172,13 @@ func childEnv(t *testing.T, provider domain.Provider, home string) []string {
 		"CLAUDE_CONFIG_DIR":               filepath.Join(home, "claude-config"),
 		"PATH":                            browserGuard(t, home) + ":" + os.Getenv("PATH"),
 		provider.EnvPrefix + "_STATE_DIR": filepath.Join(home, "state"),
+		// the launcher sits inside this repository: a source root that names no commit keeps it on
+		// the installed binary these tests are about, instead of building the working tree
+		"HUDDLE_SOURCE": filepath.Join(home, "no-source"),
 	}
 	drop := func(name string) bool {
 		switch name {
-		case "HOME", "PATH", "CLAUDE_CONFIG_DIR", "AGENTS_HUDDLE_HOME":
+		case "HOME", "PATH", "CLAUDE_CONFIG_DIR", "AGENTS_HUDDLE_HOME", "HUDDLE_SOURCE":
 			return true
 		}
 		return strings.HasPrefix(name, provider.EnvPrefix+"_")

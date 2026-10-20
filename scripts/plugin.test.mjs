@@ -270,9 +270,9 @@ describe("plugin/bin", () => {
 describe("the plugin manifest, the marketplace and the committed launcher", () => {
   const manifest = readJSON(join(plugin, ".claude-plugin", "plugin.json"));
 
-  it("names the plugin huddle at version 0.0.1", () => {
+  it("names the plugin huddle, carrying no version: an unchanged version would stop updates", () => {
     assert.equal(manifest.name, "huddle");
-    assert.equal(manifest.version, "0.0.1");
+    assert.equal(manifest.version, undefined);
     assert.equal(manifest.author?.name, "Raouf");
     assert.equal(manifest.license, "GPL-3.0-or-later");
   });
@@ -286,30 +286,32 @@ describe("the plugin manifest, the marketplace and the committed launcher", () =
     assert.ok((manifest.keywords ?? []).length > 0, "the manifest carries keywords");
   });
 
-  it("is the huddle plugin of the muhmdraouf marketplace, installed from ./plugin beside the five providers", () => {
+  it("is the huddle plugin of the muhmdraouf marketplace, installed from ./plugin beside the five providers, none of them versioned", () => {
     const marketplace = readJSON(join(root, ".claude-plugin", "marketplace.json"));
     assert.equal(marketplace.name, "muhmdraouf");
     assert.equal(marketplace.owner?.name, "Raouf");
     const entries = (marketplace.plugins ?? []).map((entry) => ({
       name: entry.name,
       source: entry.source,
-      version: entry.version,
       dependencies: entry.dependencies,
     }));
     assert.equal(entries.length, 6, "the marketplace lists huddle and the five providers");
+    for (const entry of marketplace.plugins ?? []) {
+      assert.equal(entry.version, undefined, `${entry.name}: an unchanged version would stop updates`);
+    }
     assert.deepEqual(
       entries.filter((entry) => entry.name === "huddle"),
-      [{ name: "huddle", source: "./plugin", version: manifest.version, dependencies: undefined }],
+      [{ name: "huddle", source: "./plugin", dependencies: undefined }],
     );
     for (const provider of PROVIDERS) {
       const manifestOf = readJSON(join(root, "plugins", `${provider}-plugin-cc`, ".claude-plugin", "plugin.json"));
+      assert.equal(manifestOf.version, undefined, `${provider}: an unchanged version would stop updates`);
       assert.deepEqual(
         entries.filter((entry) => entry.name === `${provider}-plugin-cc`),
         [
           {
             name: `${provider}-plugin-cc`,
             source: `./plugins/${provider}-plugin-cc`,
-            version: manifestOf.version,
             dependencies: ["huddle"],
           },
         ],

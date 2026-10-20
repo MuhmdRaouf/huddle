@@ -48,6 +48,22 @@ var launcherVersionLine = regexp.MustCompile(`(?m)^bin=\$home/([^/]+)/huddle$`)
 // launcherWantLines reads a launcher's checksum table: one `  <target>) want=<hex> ;;` line per target.
 var launcherWantLines = regexp.MustCompile(`(?m)^  (\S+)\) want=([0-9a-f]{64}) ;;$`)
 
+// manifestBody is one parsed .claude-plugin/plugin.json.
+type manifestBody struct {
+	path string
+	body map[string]any
+}
+
+// pluginDirs lists the repository's six plugin directories relative to the repository root: the
+// huddle plugin and the five providers.
+func pluginDirs() []string {
+	dirs := []string{"plugin"}
+	for _, name := range providers.Names {
+		dirs = append(dirs, "plugins/"+name+"-plugin-cc")
+	}
+	return dirs
+}
+
 // TestTheRepositoryShipsSixPlugins runs the marketplace, launcher and repository scenarios.
 func TestTheRepositoryShipsSixPlugins(t *testing.T) {
 	bdd.Feature(t, "the repository ships six plugins", func(f *bdd.F) {
@@ -128,6 +144,53 @@ func TestTheRepositoryShipsSixPlugins(t *testing.T) {
 					}
 					if len(entry.Dependencies) != 1 || entry.Dependencies[0] != "huddle" {
 						t.Errorf("%s: dependencies %v, want [huddle]", entry.Name, entry.Dependencies)
+					}
+				}
+			})
+		})
+
+		f.Scenario("no plugin or marketplace entry carries a version", func(s *bdd.S) {
+			var (
+				manifests []manifestBody
+				entries   []map[string]any
+			)
+			s.Given("the six plugin manifests and the marketplace file", func(t *testing.T) {
+				for _, dir := range pluginDirs() {
+					path := filepath.Join(repoRoot, dir, ".claude-plugin", "plugin.json")
+					raw, err := os.ReadFile(path)
+					if err != nil {
+						t.Fatalf("read %s: %v", path, err)
+					}
+					var body map[string]any
+					if err := json.Unmarshal(raw, &body); err != nil {
+						t.Fatalf("parse %s: %v", path, err)
+					}
+					manifests = append(manifests, manifestBody{path: path, body: body})
+				}
+				raw, err := os.ReadFile(filepath.Join(repoRoot, ".claude-plugin", "marketplace.json"))
+				if err != nil {
+					t.Fatalf("read the marketplace: %v", err)
+				}
+				var market struct {
+					Plugins []map[string]any `json:"plugins"`
+				}
+				if err := json.Unmarshal(raw, &market); err != nil {
+					t.Fatalf("parse the marketplace: %v", err)
+				}
+				entries = market.Plugins
+			})
+			s.Then("no manifest carries a version, so every commit is an update", func(t *testing.T) {
+				for _, manifest := range manifests {
+					if _, ok := manifest.body["version"]; ok {
+						t.Errorf("%s carries a version: an unchanged version makes Claude Code skip the update", manifest.path)
+					}
+				}
+			})
+			s.And("no marketplace entry carries one either", func(t *testing.T) {
+				for _, entry := range entries {
+					name, _ := entry["name"].(string)
+					if _, ok := entry["version"]; ok {
+						t.Errorf("the marketplace entry %s carries a version: an unchanged version makes Claude Code skip the update", name)
 					}
 				}
 			})
