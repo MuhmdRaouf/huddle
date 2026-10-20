@@ -44,6 +44,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakeclaude"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakes"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	testports "github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // chaosHealthPath is the chaos provider's health path; chaosTokenHeaderName mirrors the router's
@@ -575,10 +576,7 @@ func newChaosRig(t *testing.T, options chaosRigOptions) *chaosRig {
 	if err := os.WriteFile(filepath.Join(dist, "plugin-core"), data, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	port, err := router.FreePort()
-	if err != nil {
-		t.Fatal(err)
-	}
+	port := testports.Free(t)
 	r.port = port
 	tuning := map[string]any{
 		"heartbeatMs":  250,
@@ -1466,10 +1464,7 @@ func TestChaosClaudeRequestsGetAnthropicsExactBytes(t *testing.T) {
 		if timedOut.err != nil || timedOut.answer.status != 504 {
 			t.Fatalf("the hanging provider = %d %v, want 504", timedOut.answer.status, timedOut.err)
 		}
-		gone, err := router.FreePort()
-		if err != nil {
-			t.Fatal(err)
-		}
+		gone := testports.Free(t)
 		down := chaosUpRig(t, chaosRigOptions{
 			env: map[string]string{"CHAOS_ROUTER_URL": fmt.Sprintf("http://127.0.0.1:%d/anthropic", gone)},
 		})
@@ -1483,10 +1478,7 @@ func TestChaosClaudeRequestsGetAnthropicsExactBytes(t *testing.T) {
 	t.Run("k) a dead peer router fails only that peer's models", func(t *testing.T) {
 		t.Parallel()
 		r := chaosUpRig(t, chaosRigOptions{})
-		peerPort, err := router.FreePort()
-		if err != nil {
-			t.Fatal(err)
-		}
+		peerPort := testports.Free(t)
 		if err := router.SaveRegistryEntry(context.Background(), r.env, router.RegisteredRouter{
 			Name:          "deadpeer",
 			Port:          int64(peerPort),
@@ -2456,10 +2448,7 @@ func TestChaosStopSweepsUnrecordedRouters(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		port, err := router.FreePort()
-		if err != nil {
-			t.Fatal(err)
-		}
+		port := testports.Free(t)
 		// The env a start hands a front, with none of the rig's bookkeeping: this is the front a
 		// handover or a setup command starts that no health poll ever names.
 		env := map[string]string{}

@@ -8,9 +8,12 @@ package main
 
 import (
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -38,6 +41,72 @@ func providerLauncherRun(t *testing.T, launcher string, env []string, args ...st
 		return output, exit.ExitCode(), nil
 	}
 	return output, 0, err
+}
+
+// providerHookCleanup watches the hook's detached worker out before the temp dir goes: registered
+// after t.TempDir(), cleanups run last-in first-out, so this lands ahead of the temp dir's own
+// removal. The fetcher's first act on the tree is the version dir, so the wait starts there —
+// a lock check alone can pass while the worker is still forking, and its mkdir would then rebuild
+// the tree after the removal. From there it waits until no lock and no process names the temp
+// home, up to 15 s, and kills whatever is left: a worker writing after the removal only rebuilds
+// the dir it writes into.
+func providerHookCleanup(t *testing.T, home, version string) {
+	t.Helper()
+	t.Cleanup(func() {
+		binHome := filepath.Join(home, "huddle-bin")
+		deadline := time.Now().Add(15 * time.Second)
+		for {
+			_, err := os.Stat(filepath.Join(binHome, version))
+			if err == nil || !time.Now().Before(deadline) {
+				break
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+		for providerLocksLive(binHome) || len(providerWorkerPids(home)) > 0 {
+			if !time.Now().Before(deadline) {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		for _, pid := range providerWorkerPids(home) {
+			_ = exec.Command("kill", pid).Run()
+		}
+	})
+}
+
+// providerWorkerPids names the live processes whose command line names the temp home.
+func providerWorkerPids(home string) []string {
+	out, err := exec.Command("pgrep", "-f", home).Output()
+	if err != nil {
+		return nil // nothing matched, or pgrep is missing: nothing to wait for or kill
+	}
+	pids := []string{}
+	for _, field := range strings.Fields(string(out)) {
+		if _, err := strconv.Atoi(field); err == nil {
+			pids = append(pids, field)
+		}
+	}
+	return pids
+}
+
+// providerLocksLive reports whether a detached fetch or build still holds one of its locks under
+// the binary home.
+func providerLocksLive(binHome string) bool {
+	live := false
+	_ = filepath.WalkDir(binHome, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // gone already, or unreadable: no lock to wait for here
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if entry.Name() == ".huddle.fetch.lock" || entry.Name() == ".huddle.build.lock" {
+			live = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return live
 }
 
 // TestProviderPluginLauncherE2E drives the zai plugin's launcher end to end: the launcher a copy
@@ -87,9 +156,19 @@ func TestProviderPluginLauncherE2E(t *testing.T) {
 
 	t.Run("the ensure bundle as a hook exits 0 at once and prints nothing with no binary", func(t *testing.T) {
 		home := t.TempDir()
+		// Registered after t.TempDir(), so the detached worker is waited out before the temp dir
+		// is removed.
+		providerHookCleanup(t, home, release.version)
 		env := providerLauncherEnv(t, home)
 		// The hook starts one detached download; the dead local base keeps it off the network.
 		env = append(env, "HUDDLE_DOWNLOAD_BASE=http://127.0.0.1:1")
+		// The source step only builds a checkout whose git names a commit; this empty dir is none,
+		// so the hook can never start a build of the working tree.
+		source := filepath.Join(home, "source")
+		if err := os.MkdirAll(source, 0o755); err != nil {
+			t.Fatalf("make the empty source dir: %v", err)
+		}
+		env = append(env, "HUDDLE_SOURCE="+source)
 
 		started := time.Now()
 		output, code, err := providerLauncherRun(t, launcher, env, "zai-ensure.js", "--hook")
@@ -104,13 +183,6 @@ func TestProviderPluginLauncherE2E(t *testing.T) {
 		}
 		if len(output) != 0 {
 			t.Fatalf("the hook printed %q, want nothing", output)
-		}
-		// The detached fetch fails at once against the dead base; wait for its lock so the temp
-		// home's removal never races a fetcher still writing under it.
-		lock := filepath.Join(home, "huddle-bin", release.version, ".huddle.fetch.lock")
-		deadline := time.Now().Add(10 * time.Second)
-		for _, err := os.Stat(lock); err == nil && time.Now().Before(deadline); _, err = os.Stat(lock) {
-			time.Sleep(50 * time.Millisecond)
 		}
 	})
 }

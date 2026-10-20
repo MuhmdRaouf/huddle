@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // runProcessChildFront is a real front process: this binary re-executed by the starter, forking
@@ -134,10 +135,7 @@ func newFrontProcessSetup(t *testing.T, execPath string) *frontProcessSetup {
 	if err := os.WriteFile(filepath.Join(dist, routerBinaryName), data, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	port, err := FreePort()
-	if err != nil {
-		t.Fatal(err)
-	}
+	port := ports.Free(t)
 	state := filepath.Join(root, "state")
 	s := &frontProcessSetup{
 		t:         t,

@@ -29,6 +29,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // processAcme is the suite's stand-in provider (its name matches no real plugin).
@@ -349,10 +350,7 @@ func newProcessSetup(t *testing.T) *processSetup {
 	if err := os.WriteFile(filepath.Join(dist, routerBinaryName), []byte("// router v1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	port, err := FreePort()
-	if err != nil {
-		t.Fatal(err)
-	}
+	port := ports.Free(t)
 	env := domain.EnvLookup{
 		"HOME":                  filepath.Join(root, "home"),
 		"PROVIDER_ROUTERS_HOME": filepath.Join(root, "routers"),
@@ -603,10 +601,7 @@ func TestRouterProcessPieces(t *testing.T) {
 	})
 
 	t.Run("probes: nothing, ours, someone else (any 200 is not enough), and a port that never answers", func(t *testing.T) {
-		port, err := FreePort()
-		if err != nil {
-			t.Fatal(err)
-		}
+		port := ports.Free(t)
 		if probe := ProbeRouter(context.Background(), port, processAcme, 0); probe.State != ProbeNone {
 			t.Fatalf("an empty port probes as %s", probe.State)
 		}
@@ -623,10 +618,7 @@ func TestRouterProcessPieces(t *testing.T) {
 			t.Fatalf("our router probes as %+v", probe)
 		}
 
-		foreign, err := FreePort()
-		if err != nil {
-			t.Fatal(err)
-		}
+		foreign := ports.Free(t)
 		processHold(t, foreign, func(w http.ResponseWriter, req *http.Request) {
 			_, _ = w.Write([]byte("hello"))
 		})
@@ -634,10 +626,7 @@ func TestRouterProcessPieces(t *testing.T) {
 			t.Fatalf("a stranger probes as %+v", probe)
 		}
 
-		silent, err := FreePort()
-		if err != nil {
-			t.Fatal(err)
-		}
+		silent := ports.Free(t)
 		handler, end := hungHandler()
 		defer end()
 		processHold(t, silent, handler)
@@ -645,10 +634,7 @@ func TestRouterProcessPieces(t *testing.T) {
 			t.Fatalf("a silent port probes as %+v", probe)
 		}
 
-		refused, err := FreePort()
-		if err != nil {
-			t.Fatal(err)
-		}
+		refused := ports.Free(t)
 		processHold(t, refused, func(w http.ResponseWriter, req *http.Request) {
 			w.WriteHeader(404)
 			_, _ = w.Write([]byte(`{"ok":true,"name":"acme","provider":"Acme Models"}`))
@@ -1463,10 +1449,7 @@ func TestRouterProcessSettingsGuard(t *testing.T) {
 			t.Fatalf("the dead router's proxy survived: %v", env)
 		}
 
-		live, err := FreePort()
-		if err != nil {
-			t.Fatal(err)
-		}
+		live := ports.Free(t)
 		processHold(t, live, func(w http.ResponseWriter, req *http.Request) {
 			_, _ = w.Write([]byte(`{"ok":true,"name":"kimi"}`))
 		})
@@ -1525,10 +1508,7 @@ func TestRouterProcessSettingsGuard(t *testing.T) {
 			t.Fatalf("the dead router's URL survived: %v", env)
 		}
 
-		live, err := FreePort()
-		if err != nil {
-			t.Fatal(err)
-		}
+		live := ports.Free(t)
 		processHold(t, live, func(w http.ResponseWriter, req *http.Request) {
 			_, _ = w.Write([]byte(`{"ok":true,"name":"kimi"}`))
 		})
@@ -1750,10 +1730,7 @@ func TestRouterProcessStopStatusKey(t *testing.T) {
 func TestRouterProcessFreePort(t *testing.T) {
 	t.Parallel()
 	t.Run("finds a free loopback port", func(t *testing.T) {
-		port, err := FreePort()
-		if err != nil {
-			t.Fatal(err)
-		}
+		port := ports.Free(t)
 		listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 		if err != nil {
 			t.Fatal(err)
