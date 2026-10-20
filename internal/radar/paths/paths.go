@@ -173,13 +173,10 @@ func SavePort(ctx context.Context, env domain.EnvLookup, port int) {
 	_ = os.WriteFile(PortPath(ctx, env), []byte(fmt.Sprintf("%d\n", port)), 0o600)
 }
 
-// WantsAutostart says whether a SessionStart hook names radar's page in the huddle hub: yes
-// unless RADAR_AUTOSTART is set to anything but 1.
+// WantsAutostart says whether a SessionStart hook names radar's page in the huddle hub: only when
+// RADAR_AUTOSTART is 1. A session's own context already names the hub, so the line is opt-in.
 func WantsAutostart(ctx context.Context, env domain.EnvLookup) bool {
-	if value, ok := env["RADAR_AUTOSTART"]; ok {
-		return value == "1"
-	}
-	return true
+	return env["RADAR_AUTOSTART"] == "1"
 }
 
 // EnsureStateDirs creates the state dir (and the spool dir) with 0700, root included; it returns

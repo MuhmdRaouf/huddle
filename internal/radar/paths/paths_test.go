@@ -380,10 +380,10 @@ func TestWantsAutostart(t *testing.T) {
 		}
 	})
 
-	t.Run("unset means yes: the hub line shows by default", func(t *testing.T) {
+	t.Run("unset means no: the hub line is opt-in", func(t *testing.T) {
 		e := makeEnv(t)
-		if !paths.WantsAutostart(t.Context(), e.env) {
-			t.Fatal("WantsAutostart with RADAR_AUTOSTART unset = false, want true")
+		if paths.WantsAutostart(t.Context(), e.env) {
+			t.Fatal("WantsAutostart with RADAR_AUTOSTART unset = true, want false")
 		}
 	})
 }
