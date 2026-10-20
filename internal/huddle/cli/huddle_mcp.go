@@ -132,6 +132,9 @@ type mcpBridge struct {
 	subs        map[string]bool // resource uris this client subscribed to
 	knownTop    map[string]bool // topics a resources/list has shown
 	resListed   bool            // the client listed resources: a new topic is worth list_changed
+	streamUp    bool            // the live stream answered its hello: events now arrive as they happen
+	subBase     int64           // the channel's last seq when the first subscription landed before the stream
+	subBaseSet  bool
 
 	pushGlobs []*regexp.Regexp
 	pushOff   bool
@@ -425,8 +428,24 @@ func (b *mcpBridge) local(ctx context.Context, msg *jsfmt.Value) bool {
 		}
 		return true
 	case "resources/subscribe":
+		uri := mcpTextOf(params, "uri")
 		b.mu.Lock()
-		b.subs[mcpTextOf(params, "uri")] = true
+		early := !b.streamUp && !b.subBaseSet
+		b.mu.Unlock()
+		base := int64(0)
+		if early {
+			// The stream does not replay what came before it connected, so a subscription taken
+			// before the first hello records the channel's seq now and catches the gap up later.
+			if items, err := b.opList(ctx, "events", jsfmt.Object(
+				[]string{"limit"}, []*jsfmt.Value{jsfmt.Number(1)}), b.callMS); err == nil && len(items) > 0 {
+				base = int64(mcpNumberOf(mcpFieldOf(items[len(items)-1], "seq")))
+			}
+		}
+		b.mu.Lock()
+		if early && !b.subBaseSet {
+			b.subBase, b.subBaseSet = base, true
+		}
+		b.subs[uri] = true
 		b.mu.Unlock()
 		return ok(jsfmt.Object(nil, nil))
 	case "resources/unsubscribe":
@@ -652,6 +671,9 @@ func (b *mcpBridge) pushLoop(ctx context.Context) {
 	backoff := time.Second
 	for {
 		err, connected := b.streamOnce(ctx)
+		b.mu.Lock()
+		b.streamUp = false
+		b.mu.Unlock()
 		if ctx.Err() != nil {
 			return
 		}
@@ -731,6 +753,9 @@ func (b *mcpBridge) frame(ctx context.Context, frame string) error {
 	switch mcpTextOf(msg, "type") {
 	case "hello":
 		b.catchUp(ctx, int64(mcpNumberOf(mcpFieldOf(mcpFieldOf(msg, "data"), "last"))))
+		b.mu.Lock()
+		b.streamUp = true
+		b.mu.Unlock()
 		b.ack(ctx)
 		return nil
 	case "event":
@@ -763,11 +788,13 @@ func (b *mcpBridge) ack(ctx context.Context) {
 	_, _ = io.Copy(io.Discard, resp.Body)
 }
 
-// catchUp delivers what the stream cannot replay: on the first connect the asks already waiting,
-// after a reconnect everything since the last pushed seq.
+// catchUp delivers what the stream cannot replay: on the first connect the asks already waiting
+// plus the events a subscription missed while the stream was still down, after a reconnect
+// everything since the last pushed seq.
 func (b *mcpBridge) catchUp(ctx context.Context, last int64) {
 	b.mu.Lock()
 	known := b.lastSeq > 0
+	base, haveBase := b.subBase, b.subBaseSet
 	b.mu.Unlock()
 	if err := func() error {
 		if known {
@@ -778,9 +805,22 @@ func (b *mcpBridge) catchUp(ctx context.Context, last int64) {
 				return err
 			}
 			for _, event := range events {
+				b.resource(event)
 				b.deliver(event, true)
 			}
 			return nil
+		}
+		// a subscription taken before the stream was up misses what was published in between
+		if haveBase && last > base {
+			events, err := b.opList(ctx, "events", jsfmt.Object(
+				[]string{"after", "limit"},
+				[]*jsfmt.Value{jsfmt.Number(float64(base)), jsfmt.Number(500)}), b.callMS)
+			if err != nil {
+				return err
+			}
+			for _, event := range events {
+				b.resource(event)
+			}
 		}
 		events, err := b.opList(ctx, "inbox", jsfmt.Object(nil, nil), b.callMS)
 		if err != nil {

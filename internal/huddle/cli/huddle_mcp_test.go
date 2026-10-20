@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1169,6 +1171,48 @@ func TestUnsubscribeStops(t *testing.T) {
 			t.Fatalf("resources/updated arrived %d times after the unsubscribe, want once", got)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// TestSubscribeBeforeTheStreamStillGetsTheUpdate proves a subscription taken before the live
+// stream is up still hears an event published before the stream's hello: the stream does not
+// replay what came before it connected, so the bridge must catch that gap up from the channel's
+// log. The proxy holds every /live connect for 1.5 s to make the gap deterministic.
+func TestSubscribeBeforeTheStreamStillGetsTheUpdate(t *testing.T) {
+	u := startMcpHuddle(t, mcpRootToken)
+	mcpOp(t, u, "cw", "join", "a", "{}", mcpRootToken)
+	mcpOp(t, u, "cw", "join", "b", "{}", mcpRootToken)
+	target, err := url.Parse(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	// the server answers 421 to a Host it does not serve, so the proxy must present the target's
+	forward := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		forward(req)
+		req.Host = target.Host
+	}
+	proxy.FlushInterval = -1 // frames must reach the bridge as the stream writes them
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/live") {
+			time.Sleep(1500 * time.Millisecond)
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(slow.Close)
+	t.Cleanup(slow.CloseClientConnections)
+	b := runMcpBridge(t, "", map[string]string{
+		"HUDDLE_URL": slow.URL, "HUDDLE_CHANNEL": "cw", "HUDDLE_AS": "b", "HUDDLE_TOKEN": mcpRootToken,
+	})
+	uri := "huddle://cw/topic/note.ready"
+	b.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"resources/subscribe","params":{"uri":%q}}`, uri))
+	if ack := b.until(8000, mcpIDIs("2")); ack == nil {
+		t.Fatal("no answer to the subscribe")
+	}
+	mcpOp(t, u, "cw", "publish", "a", `{"topic":"note.ready","msg":"before the stream was up"}`, mcpRootToken)
+	if updated := b.until(8000, isUpdatedWith(uri)); updated == nil {
+		t.Fatal("no resources/updated for the event published before the stream was up")
 	}
 }
 
