@@ -43,9 +43,12 @@ func TestCheckReportsEveryViolation(t *testing.T) {
 			mp("domain/b"), mp("ports"), mp("adapters/c"), mp("router"),
 		}},
 		// The module's packages outside the engine root count as the layer outside lists them
-		// under: internal/pki is the adapters layer, so the router and adapters may import it.
+		// under: internal/pki is the adapters layer, so the router and adapters may import it,
+		// and internal/routerd is the adapters layer the cli and the entries spawn.
 		{File: "internal/router/connect.go", Layer: LayerRouter, Imports: []string{mr("internal/pki")}},
 		{File: "internal/adapters/claude_settings.go", Layer: LayerAdapters, Imports: []string{mr("internal/pki")}},
+		{File: "internal/cli/wire.go", Layer: LayerCli, Imports: []string{mr("internal/routerd")}},
+		{File: "entry/entries.go", Layer: LayerCmd, Imports: []string{mr("internal/routerd")}},
 		{File: "internal/providers/providers.go", Layer: LayerProviders, Imports: []string{mp("domain/b")}},
 		{File: "internal/cli/cli.go", Layer: LayerCli, Imports: []string{
 			mp("domain/b"), mp("ports"), mp("app"), mp("adapters/c"),

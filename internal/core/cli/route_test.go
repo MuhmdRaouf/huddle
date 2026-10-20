@@ -13,7 +13,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
@@ -27,7 +26,7 @@ import (
 )
 
 // routedEnv is the ANTHROPIC_BASE_URL of a session Claude Code routes through this plugin's router.
-const routedEnv = "http://127.0.0.1:18787"
+const routedEnv = "http://127.0.0.1:18786"
 
 const retiredLine = "retired (pid 4242): keeps Claude working in open sessions, exits when they close"
 
@@ -378,7 +377,7 @@ func TestBaseUrlReport(t *testing.T) {
 		if !ok {
 			t.Fatal("ok = false, want true")
 		}
-		if !strings.Contains(text, "zai router (http://127.0.0.1:18787)") {
+		if !strings.Contains(text, "zai router ("+routedEnv+")") {
 			t.Fatalf("text = %q, want it to name the zai router url", text)
 		}
 	})
@@ -406,7 +405,7 @@ func TestBaseUrlReport(t *testing.T) {
 			t.Fatalf("text = %q, want it to name the setup command", text)
 		}
 		ok, _ := cli.BaseUrlReport(testkit.ReferenceProvider, domain.EnvLookup{
-			"ZAI_ROUTER_PORT":    "19000",
+			"HUDDLE_ROUTER_PORT": "19000",
 			"ANTHROPIC_BASE_URL": "http://127.0.0.1:19000",
 		})
 		if !ok {
@@ -464,7 +463,7 @@ func TestApplyRouting(t *testing.T) {
 					{"model": "glm-5.3-flash", "label": "GLM 5.3 Flash", "behavesAs": "claude-opus-5-5"}
 				]
 			},
-			"env": {"HTTPS_PROXY": "http://127.0.0.1:18787", "NODE_EXTRA_CA_CERTS": %q,
+			"env": {"HTTPS_PROXY": "http://127.0.0.1:18786", "NODE_EXTRA_CA_CERTS": %q,
 				"NO_PROXY": "localhost,127.0.0.1", "ENABLE_TOOL_SEARCH": "true"},
 			"modelSettings": {
 				"glm-5.3": {"effortLevel": "xhigh"},
@@ -704,30 +703,30 @@ func TestRemoveRouting(t *testing.T) {
 		}
 	})
 
-	t.Run("repoints HTTPS_PROXY at the other live registered router when one answers", func(t *testing.T) {
-		port := healthyServer(t, "/kimi-router/health")
+	t.Run("keeps the shared proxy while another provider is enabled, clears it when none is", func(t *testing.T) {
 		h := newHarness(t, map[string]string{"ANTHROPIC_BASE_URL": routedEnv})
 		ctx := context.Background()
-		if err := router.SaveRegistryEntry(ctx, h.fullEnv(), router.RegisteredRouter{
-			Name:          "kimi",
-			Port:          int64(port),
-			ModelPrefixes: []string{"kimi-"},
-			CatalogIds:    []string{"kimi-k3"},
-			UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-		}); err != nil {
-			t.Fatalf("save registry entry: %v", err)
+		if err := router.SetEnabled(h.fullEnv(), "kimi", true); err != nil {
+			t.Fatalf("enable kimi: %v", err)
 		}
 		cli.ApplyRouting(ctx, h.deps())
 
 		cli.RemoveRouting(ctx, h.deps())
 
 		settings := settingsOf(t, h)
-		want := fmt.Sprintf("http://127.0.0.1:%d", port)
-		if got := envOf(t, settings)["HTTPS_PROXY"]; got != want {
-			t.Fatalf("HTTPS_PROXY = %v, want %q", got, want)
+		if got := envOf(t, settings)["HTTPS_PROXY"]; got != routedEnv {
+			t.Fatalf("HTTPS_PROXY = %v, want the shared %q", got, routedEnv)
 		}
 		if _, has := settings["modelPicker"]; has {
 			t.Fatal("modelPicker survives remove, want it gone")
+		}
+
+		if err := router.SetEnabled(h.fullEnv(), "kimi", false); err != nil {
+			t.Fatalf("disable kimi: %v", err)
+		}
+		cli.RemoveRouting(ctx, h.deps())
+		if got := envOf(t, settingsOf(t, h))["HTTPS_PROXY"]; got != nil {
+			t.Fatalf("HTTPS_PROXY = %v, want it cleared once no provider is enabled", got)
 		}
 	})
 
@@ -967,18 +966,11 @@ func TestRoutingHook(t *testing.T) {
 		}
 	})
 
-	t.Run("keeps the proxy keys on another live router when one deserves them", func(t *testing.T) {
-		port := healthyServer(t, "/kimi-router/health")
+	t.Run("keeps the proxy keys while another provider is enabled even with the router down", func(t *testing.T) {
 		h := newHarness(t, nil)
 		ctx := context.Background()
-		if err := router.SaveRegistryEntry(ctx, h.fullEnv(), router.RegisteredRouter{
-			Name:          "kimi",
-			Port:          int64(port),
-			ModelPrefixes: []string{"kimi-"},
-			CatalogIds:    []string{"kimi-k3"},
-			UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-		}); err != nil {
-			t.Fatalf("save registry entry: %v", err)
+		if err := router.SetEnabled(h.fullEnv(), "kimi", true); err != nil {
+			t.Fatalf("enable kimi: %v", err)
 		}
 		cli.ApplyRouting(ctx, h.deps())
 		h.routerErr = errors.New("spawn failed")
@@ -986,9 +978,8 @@ func TestRoutingHook(t *testing.T) {
 
 		cli.RoutingHook(ctx, h.deps())
 
-		want := fmt.Sprintf("http://127.0.0.1:%d", port)
-		if got := envOf(t, settingsOf(t, h))["HTTPS_PROXY"]; got != want {
-			t.Fatalf("HTTPS_PROXY = %v, want %q", got, want)
+		if got := envOf(t, settingsOf(t, h))["HTTPS_PROXY"]; got != routedEnv {
+			t.Fatalf("HTTPS_PROXY = %v, want the shared %q", got, routedEnv)
 		}
 	})
 }
@@ -1173,11 +1164,11 @@ func TestLedgerMarkerAgentsGate(t *testing.T) {
 
 	t.Run("knows its own router's health from any other 200", func(t *testing.T) {
 		own := healthyServer(t, "/zai-router/health")
-		if !cli.RouterUp(context.Background(), testkit.ReferenceProvider, domain.EnvLookup{"ZAI_ROUTER_PORT": fmt.Sprint(own)}) {
+		if !cli.RouterUp(context.Background(), testkit.ReferenceProvider, domain.EnvLookup{"HUDDLE_ROUTER_PORT": fmt.Sprint(own)}) {
 			t.Fatal("routerUp = false on our own health answer, want true")
 		}
 		other := healthyServer(t, "/kimi-router/health")
-		if cli.RouterUp(context.Background(), testkit.ReferenceProvider, domain.EnvLookup{"ZAI_ROUTER_PORT": fmt.Sprint(other)}) {
+		if cli.RouterUp(context.Background(), testkit.ReferenceProvider, domain.EnvLookup{"HUDDLE_ROUTER_PORT": fmt.Sprint(other)}) {
 			t.Fatal("routerUp = true on another plugin's health answer, want false")
 		}
 	})
@@ -1310,7 +1301,7 @@ func TestRouterUpFailures(t *testing.T) {
 	}
 	dead := listener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
-	if cli.RouterUp(ctx, testkit.ReferenceProvider, domain.EnvLookup{"ZAI_ROUTER_PORT": fmt.Sprint(dead)}) {
+	if cli.RouterUp(ctx, testkit.ReferenceProvider, domain.EnvLookup{"HUDDLE_ROUTER_PORT": fmt.Sprint(dead)}) {
 		t.Fatal("routerUp = true on a dead port, want false")
 	}
 
@@ -1467,7 +1458,7 @@ func TestRouterUpTruncatedBody(t *testing.T) {
 	}()
 	t.Cleanup(func() { _ = listener.Close() })
 	port := listener.Addr().(*net.TCPAddr).Port
-	if cli.RouterUp(context.Background(), testkit.ReferenceProvider, domain.EnvLookup{"ZAI_ROUTER_PORT": fmt.Sprint(port)}) {
+	if cli.RouterUp(context.Background(), testkit.ReferenceProvider, domain.EnvLookup{"HUDDLE_ROUTER_PORT": fmt.Sprint(port)}) {
 		t.Fatal("routerUp = true on a truncated body, want false")
 	}
 }

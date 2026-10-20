@@ -1,12 +1,13 @@
-// The setup wiring: plain `setup` starts the plugin's router (a background process its hooks keep
-// alive), adds the provider's two models to `/model` and routes Claude Code through the router —
-// proxy mode where it can (HTTPS_PROXY at the router and its local CA, so Remote Control keeps
-// working), base-URL mode as the fallback beside a proxy or CA of the user's own — so picking one
-// routes through it while every `claude-*` request still reaches Anthropic untouched.
-// Every change it makes outside the plugin goes into the ledger, so the router can undo exactly
-// those when the plugin is uninstalled. `setup --remove` undoes all of it; the SessionStart hook
-// re-applies it after plugin updates (and after a re-enable), never pings the provider, and falls
-// back to Sonnet when the router cannot come back.
+// The setup wiring: plain `setup` records the provider with huddle-router and makes sure the one
+// daemon is running, adds the provider's two models to `/model` and routes Claude Code through
+// it — proxy mode where it can (HTTPS_PROXY at 127.0.0.1:18786 and the router's local CA, so
+// Remote Control keeps working), base-URL mode as the fallback beside a proxy or CA of the
+// user's own — so picking one routes through it while every `claude-*` request still reaches
+// Anthropic untouched. Every change it makes outside the plugin goes into the ledger, so the
+// removal can undo exactly those. `setup --remove` undoes all of it, keeping the shared routing
+// env while another provider is still enabled; the SessionStart hook re-applies it after plugin
+// updates (and after a re-enable), never pings the provider, and falls back to Sonnet when the
+// daemon cannot come back.
 
 package cli
 
@@ -423,6 +424,28 @@ func liveOthers(ctx context.Context, deps SetupDeps) []string {
 	return urls
 }
 
+// othersEnabled is the providers huddle-router still serves, this one left out: the callers of
+// the removal plans name them, so a removal keeps the shared routing env while one is left.
+func othersEnabled(deps SetupDeps) []string {
+	names, err := router.ReadEnabled(deps.Env)
+	if err != nil {
+		return nil
+	}
+	others := make([]string, 0, len(names))
+	for _, name := range names {
+		if name != deps.Provider.Name {
+			others = append(others, name)
+		}
+	}
+	return others
+}
+
+// routerCADir is the CA dir the settings name: the router's own, the sibling of huddle-router's
+// home, where the daemon signs from — one root every provider's setup shares.
+func routerCADir(env domain.EnvLookup) string {
+	return filepath.Join(filepath.Dir(router.HomeOf(env)), "ca")
+}
+
 // routesProvider is where Claude Code's settings point now, and whether that is a router of ours
 // that will route the provider's ids: the proxy keys naming this router (when it is up) or
 // another live plugin router (which forwards them here), or — base-URL mode, beside a proxy of
@@ -538,7 +561,7 @@ func mergeSettings(ctx context.Context, deps SetupDeps, live []string) LinesResu
 	}
 	options := adapters.ApplyProviderOptions{
 		LivePluginURLs: live,
-		CADir:          layout.CA,
+		CADir:          routerCADir(deps.Env),
 		EnvProxy:       ownProxyInEnv(deps.Env),
 		Record: func(recorded adapters.SettingsDelta) {
 			delta = &recorded
@@ -633,7 +656,9 @@ func ApplyRouting(ctx context.Context, deps SetupDeps) RoutingApplied {
 // the router to undo).
 func RemoveRouting(ctx context.Context, deps SetupDeps) RoutingApplied {
 	layout := domain.NewStateLayout(deps.StateRoot)
-	others := liveOthers(ctx, deps)
+	// Read before the router retires this provider: the removal plans keep the shared proxy
+	// while one of these is still enabled.
+	others := othersEnabled(deps)
 	// With a ledger, setup's own record is undone, so settings.json ends as it was before setup
 	// (byte for byte when nothing else changed it); without one (an install set up before setup
 	// kept a ledger), this provider's entries are taken out.
@@ -644,7 +669,7 @@ func RemoveRouting(ctx context.Context, deps SetupDeps) RoutingApplied {
 	var settings LinesResult
 	if hasLedger && ledger.SettingsPath == deps.SettingsPath {
 		settings = linesResult(adapters.UndoProviderSettings(ctx, deps.SettingsPath, deps.Provider.Name,
-			ledger.Settings, ledger.RouterURL, others))
+			ledger.Settings, ledger.RouterURL, nil, others))
 	} else {
 		lines, err := adapters.RemoveProviderSettings(ctx, deps.SettingsPath, deps.Provider,
 			domain.RouterBaseURL(deps.Provider, deps.Env), others)
@@ -761,7 +786,7 @@ func startWatchdog(ctx context.Context, deps SetupDeps) {
 func hookFallback(ctx context.Context, deps SetupDeps, message string, repaired []string, routerDown bool) ExitCode {
 	recordAgentsBefore(ctx, deps, ApplyAgentModels(ctx, deps.BundlePath, deps.Provider, AgentModelsProvider, deps.Env))
 	if routerDown {
-		others := liveOthers(ctx, deps)
+		others := othersEnabled(deps)
 		lines, err := adapters.ClearProxy(ctx, deps.SettingsPath,
 			domain.RouterBaseURL(deps.Provider, deps.Env), others, deps.Provider.Name)
 		if err != nil || len(lines) == 0 {

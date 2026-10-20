@@ -1,19 +1,17 @@
 package plugins
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/providers"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
@@ -194,37 +192,9 @@ type throwawayInstall struct {
 	env  []string
 }
 
-// fakeRouter answers like the running router — its health at the running code's own version, and
-// its key check — so setup's start sees one running and starts nothing real.
-func fakeRouter(t *testing.T, provider domain.Provider, healthPath, version string) *httptest.Server {
-	t.Helper()
-	health := map[string]any{
-		"ok":           true,
-		"name":         provider.Name,
-		"provider":     provider.Display,
-		"mode":         "router",
-		"version":      version,
-		"frontVersion": 3,
-	}
-	key := map[string]any{"ok": true, "source": provider.KeyEnv[0]}
-	healthJSON, _ := json.Marshal(health)
-	keyJSON, _ := json.Marshal(key)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "application/json")
-		switch r.URL.Path {
-		case healthPath:
-			_, _ = w.Write(healthJSON)
-		case healthPath + "/key":
-			_, _ = w.Write(keyJSON)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	t.Cleanup(server.Close)
-	return server
-}
-
-// newThrowawayInstall lays one provider's plugin out as a setup run's throwaway install.
+// newThrowawayInstall lays one provider's plugin out as a setup run's throwaway install. Setup
+// starts the real daemon, on a free port in a home this install owns: the cleanup reads its
+// record and kills it.
 func newThrowawayInstall(t *testing.T, provider domain.Provider, pluginDir, fakeClaude string) throwawayInstall {
 	t.Helper()
 	home := testkit.TempDir(t, provider.Name+"-bundle-")
@@ -235,35 +205,54 @@ func newThrowawayInstall(t *testing.T, provider domain.Provider, pluginDir, fake
 		t.Fatalf("copy agents/: %v", err)
 	}
 	bin := installBinary(t, pluginDir, filepath.Join(home, "huddle-bin"))
-	sum := sha256.Sum256(readFileBytes(t, bin))
-	server := fakeRouter(t, provider, provider.Router.HealthPath, hex.EncodeToString(sum[:])[:12])
-	port := server.Listener.Addr().(*net.TCPAddr).Port
-	state := filepath.Join(home, "state")
-	if err := os.Mkdir(state, 0o755); err != nil {
-		t.Fatalf("make the state dir: %v", err)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("pick the router port: %v", err)
 	}
-	pid, _ := json.Marshal(map[string]any{
-		"pid":          os.Getpid(),
-		"port":         port,
-		"version":      "test",
-		"frontVersion": 3,
-		"mode":         "router",
-		"token":        "t",
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		t.Fatalf("free the router port: %v", err)
+	}
+	routerHome := filepath.Join(home, "router-home")
+	record := filepath.Join(routerHome, "run", "router.json")
+	t.Cleanup(func() {
+		raw, err := os.ReadFile(record)
+		if err != nil {
+			return
+		}
+		var parsed struct {
+			PID int `json:"pid"`
+		}
+		if json.Unmarshal(raw, &parsed) != nil || parsed.PID <= 1 {
+			return
+		}
+		_ = syscall.Kill(parsed.PID, syscall.SIGTERM)
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if !portAnswers(parsed.PID) {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		_ = syscall.Kill(parsed.PID, syscall.SIGKILL)
 	})
-	if err := os.WriteFile(filepath.Join(state, "router.pid"), pid, 0o600); err != nil {
-		t.Fatalf("write the pid file: %v", err)
-	}
 	return throwawayInstall{
 		home: home,
 		port: strconv.Itoa(port),
 		bin:  bin,
 		env: smokeEnv(t, provider, home, map[string]string{
-			"CLAUDE_PLUGIN_ROOT":                home,
-			provider.EnvPrefix + "_CLAUDE_BIN":  fakeClaude,
-			provider.EnvPrefix + "_API_KEY":     provider.Name + "-bundle-fake-key",
-			provider.EnvPrefix + "_ROUTER_PORT": strconv.Itoa(port),
+			"CLAUDE_PLUGIN_ROOT":               home,
+			provider.EnvPrefix + "_CLAUDE_BIN": fakeClaude,
+			provider.EnvPrefix + "_API_KEY":    provider.Name + "-bundle-fake-key",
+			"HUDDLE_ROUTER_PORT":               strconv.Itoa(port),
+			"HUDDLE_ROUTER_HOME":               routerHome,
 		}),
 	}
+}
+
+// portAnswers says whether a pid is still alive.
+func portAnswers(pid int) bool {
+	return syscall.Kill(pid, 0) == nil
 }
 
 // setupReport is the `setup --json` document, the members the ready check pins.
@@ -325,8 +314,9 @@ func checkSetupReady(t *testing.T, provider domain.Provider, pluginDir, fakeClau
 	if !strings.HasSuffix(report.State, "/state") || !strings.HasPrefix(report.State, install.home) {
 		t.Errorf("state = %q, want the throwaway install's state dir", report.State)
 	}
-	if !report.Router.OK || !strings.Contains(report.Router.Value, "already running") {
-		t.Errorf("router = (ok %t, value %q), want the already-running fake", report.Router.OK, report.Router.Value)
+	if !report.Router.OK || !strings.HasPrefix(report.Router.Value, "huddle-router: http://127.0.0.1:") ||
+		!strings.Contains(report.Router.Value, "("+provider.Name+")") {
+		t.Errorf("router = (ok %t, value %q), want the daemon's address naming the provider", report.Router.OK, report.Router.Value)
 	}
 	wantModels := provider.Catalog[domain.ModelTierMain].ID + ", " + provider.Catalog[domain.ModelTierFlash].ID
 	if !report.Models.OK || report.Models.Value != wantModels {
@@ -382,14 +372,4 @@ func checkBoardHookSilent(t *testing.T, provider domain.Provider, launcher strin
 	if code != 0 || stdout != "" || stderr != "" {
 		t.Fatalf("board --hook = (code %d, stdout %q, stderr %q), want silent exit 0", code, stdout, stderr)
 	}
-}
-
-// readFileBytes is one file's bytes.
-func readFileBytes(t *testing.T, path string) []byte {
-	t.Helper()
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	return raw
 }

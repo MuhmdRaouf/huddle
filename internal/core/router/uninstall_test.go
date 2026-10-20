@@ -379,7 +379,7 @@ func TestUninstallSettingsUndo(t *testing.T) {
 			t.Fatalf("the backup = %q %v, want the original", backup, err)
 		}
 		if _, err := adapters.UndoProviderSettings(context.Background(), path, "zai",
-			MergeSettingsUndo(nil, &delta), undoRouterURL, nil); err != nil {
+			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		after, err := os.ReadFile(path)
@@ -422,7 +422,7 @@ func TestUninstallSettingsUndo(t *testing.T) {
 		}
 
 		if _, err := adapters.UndoProviderSettings(context.Background(), path, "zai",
-			MergeSettingsUndo(nil, &delta), undoRouterURL, nil); err != nil {
+			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		after, err := os.ReadFile(path)
@@ -443,7 +443,7 @@ func TestUninstallSettingsUndo(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := adapters.UndoProviderSettings(context.Background(), path, "zai",
-			MergeSettingsUndo(nil, &delta), undoRouterURL, nil); err != nil {
+			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		var after map[string]any
@@ -469,7 +469,7 @@ func TestUninstallSettingsUndo(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := adapters.UndoProviderSettings(context.Background(), path, "zai",
-			MergeSettingsUndo(nil, &delta), undoRouterURL, nil); err != nil {
+			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		var after map[string]any
@@ -486,7 +486,7 @@ func TestUninstallSettingsUndo(t *testing.T) {
 		path := undoSettings(t, "{}\n")
 		delta := undoSetUp(t, path, nil)
 		if _, err := adapters.UndoProviderSettings(context.Background(), path, "zai",
-			MergeSettingsUndo(nil, &delta), undoRouterURL, []string{undoKimiURL}); err != nil {
+			MergeSettingsUndo(nil, &delta), undoRouterURL, []string{undoKimiURL}, nil); err != nil {
 			t.Fatal(err)
 		}
 		var after map[string]any
@@ -506,22 +506,23 @@ func TestUninstallSettingsUndo(t *testing.T) {
 			t.Fatalf("baseUrlBefore = %+v, want "+undoKimiURL, delta.BaseURLBefore)
 		}
 		if _, err := adapters.UndoProviderSettings(context.Background(), proxy, "zai",
-			MergeSettingsUndo(nil, &delta), undoRouterURL, nil); err != nil {
+			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		var after map[string]any
 		if err := json.Unmarshal(mustRead(t, proxy), &after); err != nil {
 			t.Fatal(err)
 		}
-		// The kimi router it replaced is not running: nothing to point at.
-		if want := map[string]any{"env": map[string]any{}}; !reflect.DeepEqual(after, want) {
+		// The kimi router it replaced is not running: nothing to point at, and the env this undo
+		// empties goes with the keys (the last provider is leaving).
+		if want := map[string]any{}; !reflect.DeepEqual(after, want) {
 			t.Fatalf("settings after = %+v, want %+v", after, want)
 		}
 
 		live := undoSettings(t, string(mustMarshal(t, map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": undoKimiURL}}))+"\n")
 		again := undoSetUp(t, live, nil)
 		if _, err := adapters.UndoProviderSettings(context.Background(), live, "zai",
-			MergeSettingsUndo(nil, &again), undoRouterURL, []string{undoKimiURL}); err != nil {
+			MergeSettingsUndo(nil, &again), undoRouterURL, []string{undoKimiURL}, nil); err != nil {
 			t.Fatal(err)
 		}
 		var afterLive map[string]any

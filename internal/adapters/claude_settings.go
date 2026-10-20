@@ -298,9 +298,9 @@ func recordedProxyDelta(plan domain.ProxyPlan, before domain.ProxySettings, befo
 
 // RemoveProviderSettings removes exactly the entries whose model is one of this provider's
 // catalog ids (an emptied list stays an empty array) and clears the routing env per the plans:
-// the proxy keys and the base URL naming this router go (each repointed at another live plugin
-// router when there is any), anything else is not ours to touch.
-func RemoveProviderSettings(ctx context.Context, path string, provider domain.Provider, routerURL string, othersRegistered []string) ([]string, error) {
+// the proxy keys and the base URL naming a router of ours go once no other provider is still
+// enabled (othersEnabled names them), anything else is not ours to touch.
+func RemoveProviderSettings(ctx context.Context, path string, provider domain.Provider, routerURL string, othersEnabled []string) ([]string, error) {
 	return editSettings(ctx, path, provider.Name, func(root *jsonNode) ([]string, error) {
 		ids := catalogIDs(provider)
 		entries, err := removeModelEntries(root, ids, path)
@@ -320,33 +320,34 @@ func RemoveProviderSettings(ctx context.Context, path string, provider domain.Pr
 		lines = append(lines, available...)
 		// The base URL first, so the proxy plan's stale-base-URL removal finds nothing left to
 		// report twice.
-		lines = append(lines, applyBaseUrl(root, domain.PlanBaseUrlRemoval(proxy.BaseURL, routerURL, othersRegistered), path)...)
-		lines = append(lines, applyProxy(root, domain.PlanProxyRemoval(proxy, routerURL, othersRegistered), path)...)
+		lines = append(lines, applyBaseUrl(root, domain.PlanBaseUrlRemoval(proxy.BaseURL, routerURL, othersEnabled), path)...)
+		lines = append(lines, applyProxy(root, domain.PlanProxyRemoval(proxy, routerURL, othersEnabled), path)...)
 		return lines, nil
 	}, false)
 }
 
-// ClearBaseUrl is the hook's half-measure: clear or repoint env.ANTHROPIC_BASE_URL only, leaving
-// every model entry alone. The caller names the router; setups pass "provider-router".
-func ClearBaseUrl(ctx context.Context, path string, routerURL string, othersRegistered []string, name string) ([]string, error) {
+// ClearBaseUrl is the hook's half-measure: clear env.ANTHROPIC_BASE_URL only when no other
+// provider is still enabled (othersEnabled names them), leaving every model entry alone. The
+// caller names the router; setups pass "provider-router".
+func ClearBaseUrl(ctx context.Context, path string, routerURL string, othersEnabled []string, name string) ([]string, error) {
 	return editSettings(ctx, path, name, func(root *jsonNode) ([]string, error) {
 		current, err := currentBaseUrl(root, path)
 		if err != nil {
 			return nil, err
 		}
-		return applyBaseUrl(root, domain.PlanBaseUrlRemoval(current, routerURL, othersRegistered), path), nil
+		return applyBaseUrl(root, domain.PlanBaseUrlRemoval(current, routerURL, othersEnabled), path), nil
 	}, false)
 }
 
-// ClearProxy is ClearBaseUrl for proxy mode: clear or repoint the three proxy keys only, leaving
-// every model entry alone. The caller names the router; setups pass "provider-router".
-func ClearProxy(ctx context.Context, path string, routerURL string, othersRegistered []string, name string) ([]string, error) {
+// ClearProxy is ClearBaseUrl for proxy mode: clear the three proxy keys only when no other
+// provider is still enabled (othersEnabled names them), leaving every model entry alone.
+func ClearProxy(ctx context.Context, path string, routerURL string, othersEnabled []string, name string) ([]string, error) {
 	return editSettings(ctx, path, name, func(root *jsonNode) ([]string, error) {
 		current, err := currentProxySettings(root, path)
 		if err != nil {
 			return nil, err
 		}
-		return applyProxy(root, domain.PlanProxyRemoval(current, routerURL, othersRegistered), path), nil
+		return applyProxy(root, domain.PlanProxyRemoval(current, routerURL, othersEnabled), path), nil
 	}, false)
 }
 
@@ -409,27 +410,32 @@ type SettingsUndo struct {
 // availableModels ids setup added (an entry the user removed or changed meanwhile is theirs),
 // removes the containers setup created when they end up empty, and puts the base URL back only if
 // it still points at this router: the ledger's previous value (unless that is a plugin router
-// that is not running), else another live plugin router, else none. When the result equals the
-// backup taken before the first write ever, the backup's own bytes are restored.
-func UndoProviderSettings(ctx context.Context, path string, name string, undo SettingsUndo, routerURL string, livePluginURLs []string) ([]string, error) {
+// that is not running), else another live plugin router, else none. While another provider is
+// still enabled (othersEnabled names them), the routing env stays: the router is shared and the
+// next removal undoes it. When the result equals the backup taken before the first write ever,
+// the backup's own bytes are restored.
+func UndoProviderSettings(ctx context.Context, path string, name string, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string) ([]string, error) {
 	return editSettings(ctx, path, name, func(root *jsonNode) ([]string, error) {
+		last := len(othersEnabled) == 0
 		var lines []string
-		lines = append(lines, undoPicker(root, undo)...)
+		lines = append(lines, undoPicker(root, undo, last)...)
 		lines = append(lines, undoAvailable(root, undo)...)
-		baseURL, err := undoBaseUrl(root, undo, routerURL, livePluginURLs, path)
+		baseURL, err := undoBaseUrl(root, undo, routerURL, livePluginURLs, othersEnabled, path)
 		if err != nil {
 			return nil, err
 		}
 		lines = append(lines, baseURL...)
-		lines = append(lines, undoProxy(root, undo, routerURL, livePluginURLs)...)
-		lines = append(lines, undoToolSearch(root, undo)...)
+		lines = append(lines, undoProxy(root, undo, routerURL, livePluginURLs, othersEnabled)...)
+		lines = append(lines, undoToolSearch(root, undo, last)...)
 		lines = append(lines, undoEfforts(root, undo)...)
 		return lines, nil
 	}, true)
 }
 
-// undoPicker takes setup's /model entries out, and the containers it created once they are empty.
-func undoPicker(root *jsonNode, undo SettingsUndo) []string {
+// undoPicker takes setup's /model entries out, and the containers setup created once they are
+// empty — or, when the last provider goes (last), any container this undo empties: nothing is
+// left to serve it.
+func undoPicker(root *jsonNode, undo SettingsUndo, last bool) []string {
 	picker := root.get("modelPicker")
 	if !picker.isObject() {
 		return nil
@@ -447,11 +453,11 @@ func undoPicker(root *jsonNode, undo SettingsUndo) []string {
 			lines = append(lines, fmt.Sprintf("took %s out of /model", strings.Join(undo.OptionsAdded, " and ")))
 		}
 		picker.set("options", newArray(kept...))
-		if undo.CreatedOptions && len(kept) == 0 {
+		if (undo.CreatedOptions || last) && len(kept) == 0 {
 			picker.del("options")
 		}
 	}
-	if undo.CreatedModelPicker && picker.size() == 0 {
+	if (undo.CreatedModelPicker || last) && picker.size() == 0 {
 		root.del("modelPicker")
 	}
 	return lines
@@ -478,14 +484,17 @@ func undoAvailable(root *jsonNode, undo SettingsUndo) []string {
 	return nil
 }
 
-// undoBaseUrl puts the base URL back, only while it still points at this router (see
-// UndoProviderSettings).
-func undoBaseUrl(root *jsonNode, undo SettingsUndo, routerURL string, livePluginURLs []string, path string) ([]string, error) {
+// undoBaseUrl puts the base URL back, only while it still points at this router and no other
+// provider is still enabled (see UndoProviderSettings).
+func undoBaseUrl(root *jsonNode, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string, path string) ([]string, error) {
 	current, err := currentBaseUrl(root, path)
 	if err != nil {
 		return nil, err
 	}
 	if current == nil || *current != routerURL {
+		return nil, nil
+	}
+	if len(othersEnabled) > 0 {
 		return nil, nil
 	}
 	restore := ""
@@ -505,23 +514,26 @@ func undoBaseUrl(root *jsonNode, undo SettingsUndo, routerURL string, livePlugin
 		return []string{fmt.Sprintf("set ANTHROPIC_BASE_URL back to %s", restore)}, nil
 	}
 	env.del("ANTHROPIC_BASE_URL")
-	if undo.CreatedEnv && env.size() == 0 {
+	if (undo.CreatedEnv || len(othersEnabled) == 0) && env.size() == 0 {
 		root.del("env")
 	}
 	return []string{fmt.Sprintf("removed ANTHROPIC_BASE_URL (%s)", routerURL)}, nil
 }
 
-// undoProxy puts the proxy keys back while they are still ours: HTTPS_PROXY naming this router is
-// the ownership test, and a proxy the user changed since takes its CA and NO_PROXY with it. The
-// before-values go back; a key with nothing before it goes (see UndoProviderSettings), and an env
-// this undo created and emptied goes with them.
-func undoProxy(root *jsonNode, undo SettingsUndo, routerURL string, livePluginURLs []string) []string {
+// undoProxy puts the proxy keys back while they are still ours and no other provider is still
+// enabled: HTTPS_PROXY naming this router is the ownership test, and a proxy the user changed
+// since takes its CA and NO_PROXY with it. The before-values go back; a key with nothing before
+// it goes (see UndoProviderSettings), and an env this undo created and emptied goes with them.
+func undoProxy(root *jsonNode, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string) []string {
 	env := root.get("env")
 	if !env.isObject() {
 		return nil
 	}
 	current, ok := env.get("HTTPS_PROXY").text()
 	if !ok || !proxyIsOurs(current, routerURL) {
+		return nil
+	}
+	if len(othersEnabled) > 0 {
 		return nil
 	}
 	var lines []string
@@ -564,23 +576,23 @@ func undoProxy(root *jsonNode, undo SettingsUndo, routerURL string, livePluginUR
 		env.del("NO_PROXY")
 		lines = append(lines, "removed NO_PROXY")
 	}
-	if undo.CreatedProxy && env.size() == 0 {
+	if (undo.CreatedProxy || len(othersEnabled) == 0) && env.size() == 0 {
 		root.del("env")
 	}
 	return lines
 }
 
-// proxyIsOurs is whether an HTTPS_PROXY value points at this plugin's router: its loopback host
-// with this router's port, canonical or overridden.
+// proxyIsOurs is whether an HTTPS_PROXY value names a router of ours: this router's loopback
+// host with its port, canonical or overridden, or any of the ports a 0.0.1 install left behind.
 func proxyIsOurs(current, routerURL string) bool {
-	return domain.ProxyIsThisRouter(current, routerURL)
+	return domain.ProxyIsThisRouter(current, routerURL) || domain.IsPluginRouterProxy(current)
 }
 
-// undoToolSearch takes env.ENABLE_TOOL_SEARCH out when setup set it and it still says so: a value
-// the user had before, or changed it to meanwhile, stays. Runs after undoBaseUrl, so an env this
-// undo empties goes with it.
-func undoToolSearch(root *jsonNode, undo SettingsUndo) []string {
-	if !undo.CreatedToolSearch {
+// undoToolSearch takes env.ENABLE_TOOL_SEARCH out when it still says the "true" setup writes and
+// no other provider is still enabled: the flag serves the shared router, so it stays while one
+// does. Runs after undoBaseUrl, so an env this undo empties goes with it.
+func undoToolSearch(root *jsonNode, undo SettingsUndo, last bool) []string {
+	if !last {
 		return nil
 	}
 	env := root.get("env")
@@ -591,7 +603,7 @@ func undoToolSearch(root *jsonNode, undo SettingsUndo) []string {
 		return nil
 	}
 	env.del("ENABLE_TOOL_SEARCH")
-	if undo.CreatedEnv && env.size() == 0 {
+	if env.size() == 0 {
 		root.del("env")
 	}
 	return []string{"removed ENABLE_TOOL_SEARCH"}

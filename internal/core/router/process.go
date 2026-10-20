@@ -403,6 +403,13 @@ func orDefault(value, fallback int64) int64 {
 // nowMs is the wall clock, epoch milliseconds.
 func nowMs() int64 { return time.Now().UnixMilli() }
 
+// legacyBaseURL is this provider's own router address, from its own port: the per-provider
+// router serves the port `${P}_ROUTER_PORT` or its provider's Router.Port names, not the one
+// huddle-router serves. It goes with the rest of this code (HR-MIGRATE-001).
+func legacyBaseURL(provider domain.Provider, env domain.EnvLookup) string {
+	return fmt.Sprintf("http://127.0.0.1:%d", domain.RouterPort(provider, env))
+}
+
 // startNow is one start's context, its spawn and defaults resolved.
 func startNow(o StartOptions) *startCtx {
 	spawn := o.Spawn
@@ -415,10 +422,11 @@ func startNow(o StartOptions) *startCtx {
 			node = self
 		}
 	}
+	port := domain.RouterPort(o.Provider, o.Env)
 	return &startCtx{
 		o:        o,
-		port:     domain.RouterPort(o.Provider, o.Env),
-		url:      domain.RouterBaseURL(o.Provider, o.Env),
+		port:     port,
+		url:      fmt.Sprintf("http://127.0.0.1:%d", port),
 		deadline: nowMs() + orDefault(o.BudgetMs, 8000),
 		spawn:    spawn,
 		node:     node,
@@ -913,7 +921,7 @@ func GuardSettings(ctx context.Context, o StartOptions, up bool) {
 	if !ok {
 		return
 	}
-	ours := domain.RouterBaseURL(o.Provider, o.Env)
+	ours := legacyBaseURL(o.Provider, o.Env)
 	// The proxy keys first: proxy mode is the default. A proxy that is not a plugin router's is
 	// the user's own, and base-URL mode is what they run on — its base URL is guarded below.
 	if settings.HTTPSProxy != nil && domain.IsPluginRouterProxy(*settings.HTTPSProxy) {
@@ -951,11 +959,13 @@ func guardOne(ctx context.Context, o StartOptions, path, value, ours string, up 
 	if !dead {
 		return
 	}
+	// The clear keeps the shared routing env while another provider is still enabled.
 	var others []string
-	for _, entry := range LiveRouters(ctx, o.Env, o.Provider.Name, nil) {
-		url := fmt.Sprintf("http://127.0.0.1:%d", entry.Port)
-		if url != value {
-			others = append(others, url)
+	if enabled, err := ReadEnabled(o.Env); err == nil {
+		for _, name := range enabled {
+			if name != o.Provider.Name {
+				others = append(others, name)
+			}
 		}
 	}
 	lines, err := clear(ctx, path, value, others, o.Provider.Name)
@@ -1148,7 +1158,7 @@ func askKey(ctx context.Context, provider domain.Provider, env domain.EnvLookup,
 	callCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	_, text, err := fetchBody(callCtx, http.MethodGet,
-		domain.RouterBaseURL(provider, env)+provider.Router.HealthPath+"/key", token, nil)
+		legacyBaseURL(provider, env)+provider.Router.HealthPath+"/key", token, nil)
 	if err != nil {
 		return "", errors.New("the router did not answer the key check")
 	}
@@ -1173,7 +1183,7 @@ func askKey(ctx context.Context, provider domain.Provider, env domain.EnvLookup,
 
 // RouterStatus is the status line: what runs on the port, and whether this session uses it.
 func RouterStatus(ctx context.Context, provider domain.Provider, env domain.EnvLookup) (bool, string) {
-	url := domain.RouterBaseURL(provider, env)
+	url := legacyBaseURL(provider, env)
 	probe := ProbeRouter(ctx, domain.RouterPort(provider, env), provider, 0)
 	uses := "does not use"
 	if env["ANTHROPIC_BASE_URL"] == url {

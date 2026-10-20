@@ -1441,7 +1441,7 @@ func TestStartRouter(t *testing.T) {
 
 func TestRouterProcessSettingsGuard(t *testing.T) {
 	t.Parallel()
-	t.Run("takes the proxy keys off another plugin's router that is dead and unregistered, or repoints them at a live one", func(t *testing.T) {
+	t.Run("takes the proxy keys off another plugin's router that is dead and unregistered, and keeps them while another provider is enabled", func(t *testing.T) {
 		s := newProcessSetup(t)
 		processPointProxyAt(t, s, "http://127.0.0.1:18791")
 		GuardSettings(context.Background(), s.options(nil), true)
@@ -1449,22 +1449,16 @@ func TestRouterProcessSettingsGuard(t *testing.T) {
 			t.Fatalf("the dead router's proxy survived: %v", env)
 		}
 
-		live := ports.Free(t)
-		processHold(t, live, func(w http.ResponseWriter, req *http.Request) {
-			_, _ = w.Write([]byte(`{"ok":true,"name":"kimi"}`))
-		})
-		processPointProxyAt(t, s, "http://127.0.0.1:18791")
-		if err := SaveRegistryEntry(context.Background(), s.env, RegisteredRouter{
-			Name: "kimi", Port: int64(live), ModelPrefixes: []string{}, CatalogIds: []string{}, UpdatedAt: "t",
-		}); err != nil {
+		if err := SetEnabled(s.env, "kimi", true); err != nil {
 			t.Fatal(err)
 		}
+		processPointProxyAt(t, s, "http://127.0.0.1:18791")
 		GuardSettings(context.Background(), s.options(nil), true)
 		if env := processBaseUrlIn(t, s); !reflect.DeepEqual(env, map[string]string{
-			"HTTPS_PROXY": fmt.Sprintf("http://127.0.0.1:%d", live),
+			"HTTPS_PROXY": "http://127.0.0.1:18791",
 			"OTHER":       "kept",
 		}) {
-			t.Fatalf("the proxy = %v, want the live peer", env)
+			t.Fatalf("the proxy = %v, want the shared keys kept while kimi is enabled", env)
 		}
 	})
 
@@ -1500,7 +1494,7 @@ func TestRouterProcessSettingsGuard(t *testing.T) {
 		}
 	})
 
-	t.Run("takes the base URL off another plugin's router that is dead and unregistered, or repoints it at a live one", func(t *testing.T) {
+	t.Run("takes the base URL off another plugin's router that is dead and unregistered, and keeps it while another provider is enabled", func(t *testing.T) {
 		s := newProcessSetup(t)
 		processPointSettingsAt(t, s, "http://127.0.0.1:18791")
 		GuardSettings(context.Background(), s.options(nil), true)
@@ -1508,22 +1502,16 @@ func TestRouterProcessSettingsGuard(t *testing.T) {
 			t.Fatalf("the dead router's URL survived: %v", env)
 		}
 
-		live := ports.Free(t)
-		processHold(t, live, func(w http.ResponseWriter, req *http.Request) {
-			_, _ = w.Write([]byte(`{"ok":true,"name":"kimi"}`))
-		})
-		processPointSettingsAt(t, s, "http://127.0.0.1:18791")
-		if err := SaveRegistryEntry(context.Background(), s.env, RegisteredRouter{
-			Name: "kimi", Port: int64(live), ModelPrefixes: []string{}, CatalogIds: []string{}, UpdatedAt: "t",
-		}); err != nil {
+		if err := SetEnabled(s.env, "kimi", true); err != nil {
 			t.Fatal(err)
 		}
+		processPointSettingsAt(t, s, "http://127.0.0.1:18791")
 		GuardSettings(context.Background(), s.options(nil), true)
 		if env := processBaseUrlIn(t, s); !reflect.DeepEqual(env, map[string]string{
-			"ANTHROPIC_BASE_URL": fmt.Sprintf("http://127.0.0.1:%d", live),
+			"ANTHROPIC_BASE_URL": "http://127.0.0.1:18791",
 			"OTHER":              "kept",
 		}) {
-			t.Fatalf("the base URL = %v, want the live peer", env)
+			t.Fatalf("the base URL = %v, want it kept while kimi is enabled", env)
 		}
 	})
 

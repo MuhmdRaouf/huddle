@@ -10,15 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/singleton"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
@@ -79,103 +76,20 @@ func routerServe(ctx context.Context, env domain.EnvLookup, stdout, stderr io.Wr
 	return 0
 }
 
-// routerStart makes sure one daemon serves: a health answer within 300 ms is enough, else one
-// is spawned detached (its output on the router log, its own session) and waited for up to
-// 3 s. No provider set up is the quiet answer, exit 0, and nothing is spawned.
+// routerStart makes sure one daemon serves: the probe, the detached spawn and the report line
+// are the daemon start's own (routerd.Start); this word adds only the usage rule and the exit
+// codes. No provider set up is the quiet answer, exit 0, and nothing is spawned.
 func routerStart(ctx context.Context, env domain.EnvLookup, stdout, stderr io.Writer) int {
-	port, ok := routerPortOf(env, stderr)
-	if !ok {
+	if _, ok := routerPortOf(env, stderr); !ok {
 		return 2
 	}
-	if _, up := routerHealthOf(ctx, port); up {
-		return routerUpLine(port, stdout)
-	}
-	names, err := router.ReadEnabled(env)
+	line, err := routerd.Start(ctx, routerd.StartOptions{Env: env})
 	if err != nil {
-		fmt.Fprintf(stderr, "huddle-router: %v\n", err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	if len(names) == 0 {
-		fmt.Fprintln(stdout, "huddle-router: no provider is set up")
-		return 0
-	}
-	logFile := filepath.Join(router.HomeOf(env), "router.log")
-	if err := os.MkdirAll(filepath.Dir(logFile), 0o700); err != nil {
-		fmt.Fprintf(stderr, "huddle-router: %v\n", err)
-		return 1
-	}
-	self, err := os.Executable()
-	if err != nil {
-		fmt.Fprintf(stderr, "huddle-router: %v\n", err)
-		return 1
-	}
-	log, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		fmt.Fprintf(stderr, "huddle-router: %v\n", err)
-		return 1
-	}
-	defer log.Close()
-	cmd := exec.Command(self, "router", "serve")
-	cmd.Env = os.Environ()
-	cmd.Stdout, cmd.Stderr = log, log
-	// Its own session: the daemon outlives this command and no signal of the caller's ends it
-	// except the one delivered to it.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(stderr, "huddle-router: %v\n", err)
-		return 1
-	}
-	_ = cmd.Process.Release()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, up := routerHealthOf(ctx, port); up {
-			return routerUpLine(port, stdout)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	fmt.Fprintf(stderr, "huddle-router: the daemon never answered at http://127.0.0.1:%d (its log: %s)\n", port, logFile)
-	return 1
-}
-
-// routerUpLine prints the one line a script reads: where the router answers.
-func routerUpLine(port int, stdout io.Writer) int {
-	fmt.Fprintf(stdout, "huddle-router: http://127.0.0.1:%d\n", port)
+	fmt.Fprintln(stdout, line)
 	return 0
-}
-
-// routerHealthAnswer is the router health answer's shape.
-type routerHealthAnswer struct {
-	Name      string   `json:"name"`
-	Providers []string `json:"providers"`
-}
-
-// routerHealthOf is the running router's health answer, ok false while nothing answers it
-// naming huddle-router within 300 ms.
-func routerHealthOf(ctx context.Context, port int) (routerHealthAnswer, bool) {
-	bounded, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
-	defer cancel()
-	request, err := http.NewRequestWithContext(bounded, http.MethodGet,
-		fmt.Sprintf("http://127.0.0.1:%d%s", port, router.MultiHealthPath), nil)
-	if err != nil {
-		return routerHealthAnswer{}, false
-	}
-	resp, err := (&http.Client{}).Do(request)
-	if err != nil {
-		return routerHealthAnswer{}, false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return routerHealthAnswer{}, false
-	}
-	var answer routerHealthAnswer
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if err != nil || json.Unmarshal(body, &answer) != nil {
-		return routerHealthAnswer{}, false
-	}
-	if answer.Name != router.MultiName {
-		return routerHealthAnswer{}, false
-	}
-	return answer, true
 }
 
 // routerStatus says how the daemon is: its address and what it serves, with the record it
@@ -185,7 +99,7 @@ func routerStatus(ctx context.Context, env domain.EnvLookup, args []string, stdo
 	if !ok {
 		return 2
 	}
-	health, up := routerHealthOf(ctx, port)
+	health, up := routerd.Health(ctx, port)
 	if !up {
 		if hasFlag(args, "--json") {
 			fmt.Fprintln(stdout, `{"running":false}`)

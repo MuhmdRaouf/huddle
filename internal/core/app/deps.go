@@ -55,19 +55,19 @@ type HostInfo struct {
 	ExtraChecks   func(ctx context.Context) []SetupCheck
 	// The provider key loader; the setup wiring checks it (only its source is ever printed).
 	LoadKey func(ctx context.Context) (ports.ProviderKey, error)
-	// Starts this plugin's own router when it is down (a detached process the hooks keep alive); ok
-	// says where it runs.
+	// Records the provider with huddle-router and makes sure the one daemon runs; ok says where
+	// it answers.
 	EnsureRouter func(ctx context.Context) (string, error)
-	// Starts the session watchdog for the Claude Code process pid (a detached process that keeps
-	// the router answering for the whole session); nil: none (tests).
+	// Starts the session watchdog for the Claude Code process pid; the daemon is watched by
+	// `huddle mcp` instead, so this is a no-op.
 	StartWatchdog func(ctx context.Context, sessionPid int64)
-	// Retires the router for setup --remove (it keeps serving the sessions already open); ok carries
-	// the one-line outcome.
+	// Takes the provider out of huddle-router's providers.json for setup --remove; the daemon
+	// keeps serving the sessions already open. ok carries the one-line outcome.
 	RetireRouter func(ctx context.Context) (string, error)
 	// Setup's way to get a key in without the chat (the OS store and the one-time page); nil: setup
 	// only reports.
 	KeyEntry ports.KeyEntry
-	// Whether the running router can read the provider key itself (its source, never the key).
+	// Whether the running daemon already serves this provider (its answer, never the key).
 	RouterKey func(ctx context.Context) (string, error)
 }
 

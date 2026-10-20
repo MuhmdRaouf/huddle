@@ -1988,9 +1988,16 @@ func TestChaosClaudeRequestsGetAnthropicsExactBytes(t *testing.T) {
 			t.Fatal(err)
 		}
 		before := r.healthNow()
+		// The remove compares the settings' base URL with the one address setup writes today,
+		// and the retired router here serves on its own port: point the address at it.
+		removeEnv := domain.EnvLookup{}
+		for name, value := range r.env {
+			removeEnv[name] = value
+		}
+		removeEnv["HUDDLE_ROUTER_PORT"] = strconv.Itoa(r.port)
 		deps := cli.SetupDeps{
 			Provider:     chaosProviderSpec(),
-			Env:          r.env,
+			Env:          removeEnv,
 			StateRoot:    r.state,
 			BundlePath:   filepath.Join(r.dist, "chaos.js"),
 			Out:          &fakes.RecordingOutput{},

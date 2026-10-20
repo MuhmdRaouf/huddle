@@ -164,8 +164,18 @@ func serviceUninstallActions(ctx context.Context, options RouterServiceOptions, 
 			for _, entry := range LiveRouters(ctx, env, provider.Name, nil) {
 				live = append(live, fmt.Sprintf("http://127.0.0.1:%d", entry.Port))
 			}
+			// The routing env is shared: while another provider is still enabled, the undo leaves
+			// it for the removal that empties huddle-router.
+			var others []string
+			if enabled, err := ReadEnabled(env); err == nil {
+				for _, name := range enabled {
+					if name != provider.Name {
+						others = append(others, name)
+					}
+				}
+			}
 			lines, err := adapters.UndoProviderSettings(ctx, ledger.SettingsPath, provider.Name,
-				ledger.Settings, ledger.RouterURL, live)
+				ledger.Settings, ledger.RouterURL, live, others)
 			switch {
 			case err != nil:
 				note("plugin removed: " + err.Error())
@@ -400,7 +410,7 @@ func serviceRun(ctx context.Context, options RouterServiceOptions) int {
 		Ts: isoNow(), Event: domain.EventRouter, Plugin: provider.Name,
 		Port: int64(port), State: domain.RouterStateStart, Version: spool.SpoolVersion,
 	})
-	log(fmt.Sprintf("%s-router listening on %s (version %s)", provider.Name, domain.RouterBaseURL(provider, env), version))
+	log(fmt.Sprintf("%s-router listening on %s (version %s)", provider.Name, legacyBaseURL(provider, env), version))
 	// The front owns the process from here: the worker serves until its front retires it.
 	select {}
 }

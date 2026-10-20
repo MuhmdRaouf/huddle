@@ -1300,9 +1300,9 @@ func TestRunCliSetup(t *testing.T) {
 			"  claude:   /usr/local/bin/claude (2.1.289 (Claude Code))",
 			"  key:      present (ZAI_API_KEY)",
 			"  ping:     ok: glm-5.3-flash answered (2 turns, est. $0.0000)",
-			"  router:   running on http://127.0.0.1:18787 (pid 4242)",
+			"  router:   running on http://127.0.0.1:18786 (pid 4242)",
 			"  models:   glm-5.3, glm-5.3-flash",
-			"  settings: " + settings + " (updated: added GLM 5.3 (glm-5.3) to /model; added GLM 5.3 Flash (glm-5.3-flash) to /model; set GLM 5.3 default effort to xhigh; set GLM 5.3 Flash default effort to xhigh; pointed HTTPS_PROXY at http://127.0.0.1:18787; turned on MCP tool search)",
+			"  settings: " + settings + " (updated: added GLM 5.3 (glm-5.3) to /model; added GLM 5.3 Flash (glm-5.3-flash) to /model; set GLM 5.3 default effort to xhigh; set GLM 5.3 Flash default effort to xhigh; pointed HTTPS_PROXY at http://127.0.0.1:18786; turned on MCP tool search)",
 			"Restart Claude Code now. This session keeps talking to Anthropic until it restarts; GLM 5.3 in /model and the zai agents work from the next session.",
 		}
 		if world.Out.Text() != strings.Join(want, "\n") {

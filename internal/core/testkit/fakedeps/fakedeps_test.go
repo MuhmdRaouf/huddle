@@ -226,14 +226,14 @@ func TestFakeDeps(t *testing.T) {
 func TestFakeHost(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("reports the router running on the reference provider's port", func(t *testing.T) {
+	t.Run("reports the router running on the one huddle-router address", func(t *testing.T) {
 		host := NewFakeHost("/tmp/state")
 		line, err := host.HostInfo().EnsureRouter(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if line != "running on http://127.0.0.1:18787 (pid 4242)" {
-			t.Errorf("EnsureRouter() = %q, want the reference provider's port", line)
+		if line != "running on http://127.0.0.1:18786 (pid 4242)" {
+			t.Errorf("EnsureRouter() = %q, want huddle-router's address", line)
 		}
 	})
 
@@ -318,14 +318,14 @@ func TestFakeHost(t *testing.T) {
 		}
 	})
 
-	t.Run("names another provider's port", func(t *testing.T) {
+	t.Run("names the same address for another provider", func(t *testing.T) {
 		host := NewFakeHost("/tmp/state", testkit.AcmeProvider)
 		line, err := host.HostInfo().EnsureRouter(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if line != "running on http://127.0.0.1:18800 (pid 4242)" {
-			t.Errorf("EnsureRouter() = %q, want acme's port", line)
+		if line != "running on http://127.0.0.1:18786 (pid 4242)" {
+			t.Errorf("EnsureRouter() = %q, want huddle-router's address for acme too", line)
 		}
 	})
 }

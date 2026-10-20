@@ -129,7 +129,7 @@ func TestE2EHuddleRouterWords(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("router start = %d, stdout %q, stderr %q", code, out, errOut)
 		}
-		want := fmt.Sprintf("huddle-router: http://127.0.0.1:%d\n", routerPort)
+		want := fmt.Sprintf("huddle-router: http://127.0.0.1:%d (zai)\n", routerPort)
 		if out != want {
 			t.Errorf("stdout = %q, want %q", out, want)
 		}

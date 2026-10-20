@@ -81,6 +81,9 @@ var domainThirdParty = []string{
 var outside = map[string]Layer{
 	"internal/netproxy": LayerAdapters,
 	"internal/pki":      LayerAdapters,
+	// The daemon shell over the router: the cli's wiring and the entries spawn it the way they
+	// spawn any other adapter's process.
+	"internal/routerd": LayerAdapters,
 }
 
 // classify maps a slash package directory, relative to the engine root (internal/core), to its

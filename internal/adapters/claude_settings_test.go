@@ -939,16 +939,16 @@ func TestRemoveProviderSettings(t *testing.T) {
 		assertFile(t, path, "{\n  \"availableModels\": []\n}\n")
 	})
 
-	t.Run("repoints the base URL at the first other registered router", func(t *testing.T) {
+	t.Run("keeps the base URL while another provider is enabled: the router is shared", func(t *testing.T) {
 		path := settingsFilePath(t)
 		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+routerURL+"\"\n  }\n}\n")
 
-		lines, err := RemoveProviderSettings(t.Context(), path, providers.Zai, routerURL, []string{kimiRouter})
+		lines, err := RemoveProviderSettings(t.Context(), path, providers.Zai, routerURL, []string{"kimi"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertLines(t, lines, "pointed ANTHROPIC_BASE_URL at another plugin's router ("+kimiRouter+")")
-		assertFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+kimiRouter+"\"\n  }\n}\n")
+		assertLines(t, lines)
+		assertFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+routerURL+"\"\n  }\n}\n")
 	})
 
 	t.Run("leaves a foreign proxy and a missing file alone", func(t *testing.T) {
@@ -1131,7 +1131,7 @@ func TestUndoProviderSettings(t *testing.T) {
 }
 `)
 
-		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil)
+		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1163,7 +1163,7 @@ func TestUndoProviderSettings(t *testing.T) {
 			t.Fatalf("the apply did not rewrite the file: %v", err)
 		}
 
-		if _, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil); err != nil {
+		if _, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		// The undo equals the backup's JSON, so the backup's own bytes come back — odd spacing
@@ -1176,7 +1176,7 @@ func TestUndoProviderSettings(t *testing.T) {
 		writeSettingsFile(t, path, "{\n  \"availableModels\": [\n    \"sonnet\"\n  ],\n  \"modelPicker\": \"odd\"\n}\n")
 		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo{
 			AvailableAppended: []string{"glm-5.3"},
-		}, routerURL, nil)
+		}, routerURL, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1187,7 +1187,7 @@ func TestUndoProviderSettings(t *testing.T) {
 		lines, err = UndoProviderSettings(t.Context(), path, "zai", SettingsUndo{
 			AvailableAppended:  []string{"glm-5.3"},
 			CreatedModelPicker: true,
-		}, routerURL, nil)
+		}, routerURL, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1209,7 +1209,7 @@ func TestUndoProviderSettings(t *testing.T) {
 			t.Fatalf("delta.baseUrlBefore = %v; want %q", delta.BaseURLBefore, kimiRouter)
 		}
 
-		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, []string{kimiRouter})
+		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, []string{kimiRouter}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1235,7 +1235,7 @@ func TestUndoProviderSettings(t *testing.T) {
 			t.Fatal("delta.createdToolSearch = true; want false")
 		}
 
-		if _, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil); err != nil {
+		if _, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		assertFile(t, path, "{\n  \"env\": {\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  }\n}\n")
@@ -1249,7 +1249,7 @@ func TestUndoProviderSettings(t *testing.T) {
 			OptionsAdded:      []string{},
 			AvailableAppended: []string{},
 			CreatedProxy:      true,
-		}, routerURL, nil)
+		}, routerURL, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1298,7 +1298,7 @@ func TestUndoProviderSettings(t *testing.T) {
 }
 `)
 
-		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil)
+		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1330,7 +1330,7 @@ func TestUndoProviderSettings(t *testing.T) {
 			AvailableAppended: []string{"glm-5.3"},
 			CreatedToolSearch: true,
 			EffortsAdded:      stringEfforts("glm-5.3", "xhigh"),
-		}, routerURL, nil)
+		}, routerURL, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1341,7 +1341,7 @@ func TestUndoProviderSettings(t *testing.T) {
 		writeSettingsFile(t, entries, "{\n  \"modelSettings\": {\n    \"glm-5.3\": \"odd\"\n  }\n}\n")
 		lines, err = UndoProviderSettings(t.Context(), entries, "zai", SettingsUndo{
 			EffortsAdded: stringEfforts("glm-5.3", "xhigh"),
-		}, routerURL, nil)
+		}, routerURL, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1352,7 +1352,7 @@ func TestUndoProviderSettings(t *testing.T) {
 	t.Run("refuses an env that is not an object", func(t *testing.T) {
 		path := settingsFilePath(t)
 		writeSettingsFile(t, path, "{\"env\":\"nope\"}\n")
-		if _, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo{}, routerURL, nil); err == nil || !strings.Contains(err.Error(), "env must be an object") {
+		if _, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo{}, routerURL, nil, nil); err == nil || !strings.Contains(err.Error(), "env must be an object") {
 			t.Fatalf("error = %v; want it to say env must be an object", err)
 		}
 		assertFile(t, path, "{\"env\":\"nope\"}\n")
@@ -1364,7 +1364,7 @@ func TestUndoProviderSettings(t *testing.T) {
 		writeSettingsFile(t, path, content)
 		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo{
 			EffortsAdded: stringEfforts("glm-5.3", "xhigh"),
-		}, routerURL, nil)
+		}, routerURL, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1377,7 +1377,7 @@ func TestUndoProviderSettings(t *testing.T) {
 		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+routerURL+"\"\n  }\n}\n")
 		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo{
 			CreatedEnv: true,
-		}, routerURL, []string{routerURL, kimiRouter})
+		}, routerURL, []string{routerURL, kimiRouter}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1399,7 +1399,7 @@ func TestUndoProviderSettings(t *testing.T) {
 
 func mustUndo(t *testing.T, path string, undo SettingsUndo, routerURL string, live []string) []string {
 	t.Helper()
-	lines, err := UndoProviderSettings(t.Context(), path, "zai", undo, routerURL, live)
+	lines, err := UndoProviderSettings(t.Context(), path, "zai", undo, routerURL, live, nil)
 	if err != nil {
 		t.Fatalf("undoProviderSettings(%s): %v", path, err)
 	}
@@ -1715,7 +1715,7 @@ func TestClaudeSettingsInternals(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertLines(t, undoToolSearch(root, SettingsUndo{CreatedToolSearch: true}))
+		assertLines(t, undoToolSearch(root, SettingsUndo{CreatedToolSearch: true}, true))
 	})
 
 	t.Run("serialized rejects a value that does not survive the round trip", func(t *testing.T) {
@@ -2014,7 +2014,7 @@ func TestUndoProxy(t *testing.T) {
 			ProxyBefore:   strPtr("http://proxy.corp:3128"),
 			CABefore:      strPtr("/old/ca.pem"),
 			NoProxyBefore: strPtr("corp.internal"),
-		}, routerURL, nil)
+		}, routerURL, nil, nil)
 		assertLines(t, lines,
 			"set HTTPS_PROXY back to http://proxy.corp:3128",
 			"set NODE_EXTRA_CA_CERTS back to /old/ca.pem",
@@ -2030,25 +2030,30 @@ func TestUndoProxy(t *testing.T) {
 
 	t.Run("removes our keys and the env this run created", func(t *testing.T) {
 		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
-		lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil)
+		lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil, nil)
 		assertLines(t, lines, "removed HTTPS_PROXY ("+routerURL+")")
 		if root.get("env") != nil {
 			t.Fatal("an emptied env this run created survived")
 		}
 	})
 
-	t.Run("leaves an env this run did not create", func(t *testing.T) {
+	t.Run("an emptied env goes when the last provider goes, stays while another is enabled", func(t *testing.T) {
 		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
-		undoProxy(root, SettingsUndo{}, routerURL, nil)
-		env := root.get("env")
-		if !env.isObject() || env.size() != 0 {
-			t.Fatalf("env = %v; want an emptied object left in place", env)
+		undoProxy(root, SettingsUndo{}, routerURL, nil, nil)
+		if root.get("env") != nil {
+			t.Fatalf("env = %v; want the emptied object taken out", root.get("env"))
+		}
+		kept := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
+		undoProxy(kept, SettingsUndo{}, routerURL, nil, []string{"kimi"})
+		env := kept.get("env")
+		if !env.isObject() || env.size() != 1 {
+			t.Fatalf("env = %v; want the shared proxy left in place", env)
 		}
 	})
 
 	t.Run("leaves everything when the proxy is not ours anymore", func(t *testing.T) {
 		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \"http://proxy.corp:3128\",\n    \"NODE_EXTRA_CA_CERTS\": \""+caPath+"\"\n  }\n}\n")
-		if lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil); lines != nil {
+		if lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil, nil); lines != nil {
 			t.Fatalf("lines = %#v; want none", lines)
 		}
 		if value, _ := envString(t, root, "NODE_EXTRA_CA_CERTS"); value != caPath {
@@ -2058,20 +2063,20 @@ func TestUndoProxy(t *testing.T) {
 
 	t.Run("leaves everything when there is no env", func(t *testing.T) {
 		root := proxyRoot(t, "{}\n")
-		if lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil); lines != nil {
+		if lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil, nil); lines != nil {
 			t.Fatalf("lines = %#v; want none", lines)
 		}
 	})
 
 	t.Run("a dead before router is replaced by a live other", func(t *testing.T) {
 		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
-		lines := undoProxy(root, SettingsUndo{ProxyBefore: strPtr(kimiRouter)}, routerURL, []string{"http://localhost:18790"})
+		lines := undoProxy(root, SettingsUndo{ProxyBefore: strPtr(kimiRouter)}, routerURL, []string{"http://localhost:18790"}, nil)
 		assertLines(t, lines, "set HTTPS_PROXY back to http://localhost:18790")
 	})
 
 	t.Run("a live before router goes back", func(t *testing.T) {
 		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
-		lines := undoProxy(root, SettingsUndo{ProxyBefore: strPtr(kimiRouter)}, routerURL, []string{kimiRouter})
+		lines := undoProxy(root, SettingsUndo{ProxyBefore: strPtr(kimiRouter)}, routerURL, []string{kimiRouter}, nil)
 		assertLines(t, lines, "set HTTPS_PROXY back to "+kimiRouter)
 	})
 }
@@ -2089,16 +2094,17 @@ func TestClearProxy(t *testing.T) {
 		assertFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_AUTH_TOKEN\": \"redacted\",\n    \"NO_PROXY\": \"localhost,127.0.0.1\"\n  }\n}\n")
 	})
 
-	t.Run("repoints at another live router, leaving its CA and NO_PROXY alone", func(t *testing.T) {
+	t.Run("keeps the keys while another provider is enabled: the router is shared", func(t *testing.T) {
 		path := settingsFilePath(t)
-		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\",\n    \"NODE_EXTRA_CA_CERTS\": \""+caPath+"\",\n    \"NO_PROXY\": \"localhost,127.0.0.1\"\n  }\n}\n")
+		content := "{\n  \"env\": {\n    \"HTTPS_PROXY\": \"" + routerURL + "\",\n    \"NODE_EXTRA_CA_CERTS\": \"" + caPath + "\",\n    \"NO_PROXY\": \"localhost,127.0.0.1\"\n  }\n}\n"
+		writeSettingsFile(t, path, content)
 
-		lines, err := ClearProxy(t.Context(), path, routerURL, []string{kimiRouter}, "provider-router")
+		lines, err := ClearProxy(t.Context(), path, routerURL, []string{"kimi"}, "provider-router")
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertLines(t, lines, "pointed HTTPS_PROXY at another plugin's router ("+kimiRouter+")")
-		assertFile(t, path, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+kimiRouter+"\",\n    \"NODE_EXTRA_CA_CERTS\": \""+caPath+"\",\n    \"NO_PROXY\": \"localhost,127.0.0.1\"\n  }\n}\n")
+		assertLines(t, lines)
+		assertFile(t, path, content)
 	})
 
 	t.Run("takes a stale plugin-router base URL out with the keys", func(t *testing.T) {

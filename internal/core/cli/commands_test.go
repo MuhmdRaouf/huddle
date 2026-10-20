@@ -474,9 +474,9 @@ func TestCommandsSetup(t *testing.T) {
 			"  runtime:  bun 1.3.14 (/usr/local/bin/bun)",
 			"  acmebot:  /usr/local/bin/claude (2.1.289 (Claude Code))",
 			"  ping:     ok: big-model-9 answered (2 turns, unpriced)",
-			"  router:   running on http://127.0.0.1:18800 (pid 4242)",
+			"  router:   running on http://127.0.0.1:18786 (pid 4242)",
 			"  models:   big-model-9, small-model-9",
-			"  settings: " + filepath.Join(world.Root, "home", ".claude", "settings.json") + " (updated: added Big Model 9 (big-model-9) to /model; added Small Model 9 (small-model-9) to /model; pointed HTTPS_PROXY at http://127.0.0.1:18800; turned on MCP tool search)",
+			"  settings: " + filepath.Join(world.Root, "home", ".claude", "settings.json") + " (updated: added Big Model 9 (big-model-9) to /model; added Small Model 9 (small-model-9) to /model; pointed HTTPS_PROXY at http://127.0.0.1:18786; turned on MCP tool search)",
 			"Restart Claude Code now. This session keeps talking to Anthropic until it restarts; Big Model 9 in /model and the acme agents work from the next session.",
 		}, "\n")
 		if world.Out.Lines[0] != want {
@@ -514,7 +514,7 @@ func TestCommandsSetupSaysWhatIsTrue(t *testing.T) {
 			t.Fatalf("exit = %d, want 6", code)
 		}
 		first := strings.SplitN(world.Out.Text(), "\n", 2)[0]
-		want := "zai setup: not routed. ANTHROPIC_BASE_URL in settings.json points at your own proxy (http://proxy.local:9000), so Z.ai GLM requests never reach the zai router and its agents run on Sonnet. Point that proxy at http://127.0.0.1:18787, or remove the entry and run /zai:setup again."
+		want := "zai setup: not routed. ANTHROPIC_BASE_URL in settings.json points at your own proxy (http://proxy.local:9000), so Z.ai GLM requests never reach the zai router and its agents run on Sonnet. Point that proxy at http://127.0.0.1:18786, or remove the entry and run /zai:setup again."
 		if first != want {
 			t.Fatalf("first line = %q", first)
 		}

@@ -11,14 +11,17 @@ import (
 	"strings"
 )
 
-// PluginRouters maps every plugin's router TCP port to its plugin name, so one plugin can tell
-// another's router from its own.
+// PluginRouters maps every router of ours — huddle-router and the five 0.0.1 plugins' ports —
+// to its name, so a settings value can be told from the user's own proxy and one plugin can tell
+// another's router from its own. The 0.0.1 ports stay recognised so settings left pointing there
+// are still moved on setup and cleared on remove.
 var PluginRouters = map[int64]string{
-	18787: "zai",
-	18788: "kimi",
-	18789: "deepseek",
-	18790: "minimax",
-	18791: "qwen",
+	HuddleRouterPort: "huddle-router",
+	18787:            "zai",
+	18788:            "kimi",
+	18789:            "deepseek",
+	18790:            "minimax",
+	18791:            "qwen",
 }
 
 // schemeDefaultPort lists the ports a WHATWG URL drops as the scheme's default; new URL("https://x:443/") has none.
@@ -141,19 +144,18 @@ func PlanBaseUrl(current *string, routerURL string, livePluginURLs []string) Bas
 	return BaseUrlPlan{Kind: BaseUrlPlanKeep, Report: &note}
 }
 
-// PlanBaseUrlRemoval clears: take it out when it points at this plugin's router, repointing it at another live one
-// when there is any.
-func PlanBaseUrlRemoval(current *string, routerURL string, others []string) BaseUrlPlan {
-	if current == nil || *current != routerURL {
+// PlanBaseUrlRemoval clears: take it out when it names a router of ours — huddle-router or one
+// of the 0.0.1 ports — and no other provider is still enabled; while one is, the router is
+// shared and the plan keeps silently. A URL that is not one of ours is not ours to touch.
+func PlanBaseUrlRemoval(current *string, routerURL string, othersEnabled []string) BaseUrlPlan {
+	if current == nil || (*current != routerURL && !IsPluginRouterURL(*current)) {
 		return BaseUrlPlan{Kind: BaseUrlPlanKeep}
 	}
-	if len(others) == 0 {
-		report := fmt.Sprintf("removed ANTHROPIC_BASE_URL (%s)", routerURL)
-		return BaseUrlPlan{Kind: BaseUrlPlanRemove, Report: &report}
+	if len(othersEnabled) > 0 {
+		return BaseUrlPlan{Kind: BaseUrlPlanKeep}
 	}
-	first := others[0]
-	return setBaseUrlPlan(first, fmt.Sprintf(
-		"pointed ANTHROPIC_BASE_URL at another plugin's router (%s)", first))
+	report := fmt.Sprintf("removed ANTHROPIC_BASE_URL (%s)", *current)
+	return BaseUrlPlan{Kind: BaseUrlPlanRemove, Report: &report}
 }
 
 func setBaseUrlPlan(routerURL string, report string) BaseUrlPlan {
@@ -293,19 +295,27 @@ func PlanProxy(env ProxySettings, routerURL, caPath string, livePluginURLs []str
 	}
 }
 
-// PlanProxyRemoval clears: take the proxy and CA out when HTTPS_PROXY points at this router,
-// repointing it at another live one when there is any; anything else is not ours to touch.
-func PlanProxyRemoval(env ProxySettings, routerURL string, others []string) ProxyPlan {
-	if env.HTTPSProxy == nil || !ProxyIsThisRouter(*env.HTTPSProxy, routerURL) {
+// PlanProxyRemoval clears: take the proxy and CA out when HTTPS_PROXY names a router of ours —
+// huddle-router, one of the 0.0.1 ports, or this router on its port override — and no other
+// provider is still enabled; while one is, the proxy is shared and the plan keeps silently.
+// Anything else is not ours to touch.
+func PlanProxyRemoval(env ProxySettings, routerURL string, othersEnabled []string) ProxyPlan {
+	if env.HTTPSProxy == nil || !proxyIsOurs(*env.HTTPSProxy, routerURL) {
+		return ProxyPlan{Kind: ProxyPlanKeep}
+	}
+	if len(othersEnabled) > 0 {
 		return ProxyPlan{Kind: ProxyPlanKeep}
 	}
 	staleBaseURL := env.BaseURL != nil && IsPluginRouterURL(*env.BaseURL)
-	if len(others) == 0 {
-		report := fmt.Sprintf("removed HTTPS_PROXY and NODE_EXTRA_CA_CERTS (%s)", routerURL)
-		return ProxyPlan{Kind: ProxyPlanRemove, RemoveBaseURL: staleBaseURL, Report: &report}
-	}
-	report := fmt.Sprintf("pointed HTTPS_PROXY at another plugin's router (%s)", others[0])
-	return ProxyPlan{Kind: ProxyPlanSet, Proxy: others[0], RemoveBaseURL: staleBaseURL, Report: &report}
+	report := fmt.Sprintf("removed HTTPS_PROXY and NODE_EXTRA_CA_CERTS (%s)", *env.HTTPSProxy)
+	return ProxyPlan{Kind: ProxyPlanRemove, RemoveBaseURL: staleBaseURL, Report: &report}
+}
+
+// proxyIsOurs is whether an HTTPS_PROXY value names a router of ours: this router (its loopback
+// host with its port, whatever override moved it), or any of the ports a 0.0.1 install left
+// behind.
+func proxyIsOurs(proxy, routerURL string) bool {
+	return ProxyIsThisRouter(proxy, routerURL) || IsPluginRouterProxy(proxy)
 }
 
 // mergeNoProxy keeps the user's NO_PROXY entries in their order and appends the loopback entries

@@ -15,6 +15,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/routerd"
 )
 
 // wireStopGraceMs is between SIGTERM and SIGKILL when a run is stopped.
@@ -28,7 +29,7 @@ type WireOptions struct {
 	Provider domain.Provider
 	Env      domain.EnvLookup
 	// Executable is this binary (os.Executable() in cmd): the detached driver re-runs it with
-	// BundlePath, and the router start copies it into the state root.
+	// BundlePath, and the router daemon is it, run as `router serve`.
 	Executable string
 	// BundlePath is this plugin's CLI bundle: the detached driver re-runs it as `drive <id>`, and
 	// the agents sit beside it.
@@ -129,30 +130,33 @@ func Wire(ctx context.Context, options WireOptions) app.Deps {
 				if pins.RouterLine != "" {
 					return pins.RouterLine, nil
 				}
-				// The router start copies this binary into the state root: after the release the
-				// plugin's only plugin-core is the running one, never one beside the bundles.
-				return router.StartRouter(ctx, router.StartOptions{
-					Provider:  provider,
-					Env:       env,
-					StateRoot: root,
-					Source:    options.Executable,
-					BudgetMs:  4000,
-					Say:       options.Out.Line,
+				// The daemon is this binary: recording the provider first, so the start either
+				// finds it served or brings it up with the lane in place.
+				if err := router.SetEnabled(env, provider.Name, true); err != nil {
+					return "", err
+				}
+				return routerd.Start(ctx, routerd.StartOptions{
+					Env:        env,
+					Executable: options.Executable,
+					BudgetMs:   4000,
 				})
 			},
 			RetireRouter: func(ctx context.Context) (string, error) {
-				return router.RetireRouter(ctx, router.RetireOptions{StopOptions: router.StopOptions{
-					Provider: provider, Env: env, StateRoot: root,
-				}}), nil
+				if err := router.SetEnabled(env, provider.Name, false); err != nil {
+					return "", err
+				}
+				// The daemon keeps running: open sessions still hold its address, and the other
+				// enabled providers still route through it.
+				return "huddle-router: stopped routing " + provider.Display, nil
 			},
-			StartWatchdog: func(ctx context.Context, sessionPid int64) {
-				router.StartSessionWatchdog(provider, env, sessionPid)
-			},
+			// huddle mcp watches the daemon for the whole session (HR-WATCHDOG-MCP); the
+			// per-session watchdog process is gone.
+			StartWatchdog: func(ctx context.Context, sessionPid int64) {},
 			RouterKey: func(ctx context.Context) (string, error) {
 				if pins.RouterKey != "" {
 					return pins.RouterKey, nil
 				}
-				return router.RouterKeyCheck(ctx, provider, env, root, 0)
+				return routerd.RouterKeyCheck(ctx, provider, env, 0)
 			},
 			ExtraChecks: func(ctx context.Context) []app.SetupCheck {
 				loaded, err := key(ctx)

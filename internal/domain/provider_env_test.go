@@ -81,11 +81,11 @@ func TestProviderDerivedData(t *testing.T) {
 		}
 	})
 
-	t.Run("routerBaseURL points at the loopback router", func(t *testing.T) {
-		if got := RouterBaseURL(referenceProvider, EnvLookup{}); got != "http://127.0.0.1:18787" {
+	t.Run("routerBaseURL points at huddle-router for every provider", func(t *testing.T) {
+		if got := RouterBaseURL(referenceProvider, EnvLookup{}); got != "http://127.0.0.1:18786" {
 			t.Fatalf("baseUrl = %q", got)
 		}
-		if got := RouterBaseURL(acmeProvider, EnvLookup{"ACME_ROUTER_PORT": "19001"}); got != "http://127.0.0.1:19001" {
+		if got := RouterBaseURL(acmeProvider, EnvLookup{"HUDDLE_ROUTER_PORT": "19001"}); got != "http://127.0.0.1:19001" {
 			t.Fatalf("baseUrl = %q", got)
 		}
 	})

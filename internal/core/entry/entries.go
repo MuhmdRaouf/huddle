@@ -13,6 +13,7 @@ import (
 	providerdata "github.com/MuhmdRaouf/huddle/internal/core/providers"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/routerd"
 )
 
 // providers are the five sibling plugins this binary serves.
@@ -205,11 +206,15 @@ func passthroughEntry(name string, args []string) int {
 	return 0
 }
 
-// ensureEntry is the UserPromptSubmit and SubagentStart hook's check that the
-// router is still there. It never prints and always exits 0.
+// ensureEntry is the UserPromptSubmit and SubagentStart hook's check that the daemon is still
+// there: a provider recorded in providers.json gets the probe and the detached start, never
+// waited for. It never prints and always exits 0.
 func ensureEntry(name string, _ []string) int {
 	if provider, ok := providerOf(name); ok {
-		router.EnsureEntry(provider, environLookup())
+		routerd.Wake(context.Background(), routerd.StartOptions{
+			Env:        environLookup(),
+			Executable: executablePath(),
+		}, provider.Name)
 	}
 	return 0
 }

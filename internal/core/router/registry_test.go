@@ -355,8 +355,8 @@ func TestThePortMap(t *testing.T) {
 		if got := domain.PluginRouters[18791]; got != "qwen" {
 			t.Fatalf("PLUGIN_ROUTERS.get(18791) = %q, want qwen", got)
 		}
-		if len(domain.PluginRouters) != 5 {
-			t.Fatalf("PLUGIN_ROUTERS holds %d plugins, want 5", len(domain.PluginRouters))
+		if len(domain.PluginRouters) != 6 {
+			t.Fatalf("PLUGIN_ROUTERS holds %d plugins, want 6", len(domain.PluginRouters))
 		}
 		if got := domain.PortOf("http://127.0.0.1:18788/health"); got != 18788 {
 			t.Fatalf("portOf(health URL) = %d, want 18788", got)

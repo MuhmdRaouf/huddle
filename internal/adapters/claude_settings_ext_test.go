@@ -157,13 +157,13 @@ func TestTheBaseURLPlan(t *testing.T) {
 		}
 	})
 
-	t.Run("clears only what is ours, repointing at another live router when there is one", func(t *testing.T) {
+	t.Run("clears only what is ours, keeping it while another provider is enabled", func(t *testing.T) {
 		if got := domain.PlanBaseUrlRemoval(extStrPtr(extRouter), extRouter, nil); got.Kind != domain.BaseUrlPlanRemove {
 			t.Fatalf("planBaseUrlRemoval(ours, no others) = %+v, want a remove", got)
 		}
-		got := domain.PlanBaseUrlRemoval(extStrPtr(extRouter), extRouter, []string{extKimiRouter})
-		if got.Kind != domain.BaseUrlPlanSet || got.URL != extKimiRouter {
-			t.Fatalf("planBaseUrlRemoval(ours, kimi live) = %+v, want a set at kimi's", got)
+		got := domain.PlanBaseUrlRemoval(extStrPtr(extRouter), extRouter, []string{"kimi"})
+		if got.Kind != domain.BaseUrlPlanKeep || got.Report != nil {
+			t.Fatalf("planBaseUrlRemoval(ours, kimi enabled) = %+v, want a silent keep", got)
 		}
 		if got := domain.PlanBaseUrlRemoval(extStrPtr("https://proxy.example"), extRouter, nil); got.Kind != domain.BaseUrlPlanKeep {
 			t.Fatalf("planBaseUrlRemoval(foreign) = %+v, want a keep", got)
@@ -525,7 +525,7 @@ func TestTheUninstallUndoOfSettings(t *testing.T) {
 			"      {\n        \"model\": \"glm-5.3-flash\",\n        \"label\": \"GLM 5.3 Flash\",\n        \"behavesAs\": \"claude-opus-5-5\"\n      },\n"+
 			"      {\n        \"model\": \"mine\",\n        \"label\": \"Mine\"\n      }\n    ]\n  },\n"+
 			extReferenceEfforts+",\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+extRouter+"\",\n    \"ENABLE_TOOL_SEARCH\": \"true\"\n  }\n}\n")
-		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil)
+		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -543,7 +543,7 @@ func TestTheUninstallUndoOfSettings(t *testing.T) {
 			OptionsAdded:      []string{},
 			AvailableAppended: []string{"glm-5.3"},
 			EffortsAdded:      adapters.NewStringMap(),
-		}, extRouter, nil); err != nil {
+		}, extRouter, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		extAssertFile(t, path, untouched)
@@ -554,7 +554,7 @@ func TestTheUninstallUndoOfSettings(t *testing.T) {
 			AvailableAppended:  []string{"glm-5.3"},
 			CreatedModelPicker: true,
 			EffortsAdded:       adapters.NewStringMap(),
-		}, extRouter, nil); err != nil {
+		}, extRouter, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		extAssertFile(t, path, "{\n  \"availableModels\": [\n    \"sonnet\"\n  ],\n  \"modelPicker\": {\n    \"options\": \"odd\"\n  }\n}\n")
@@ -563,7 +563,7 @@ func TestTheUninstallUndoOfSettings(t *testing.T) {
 	t.Run("takes ENABLE_TOOL_SEARCH and the behaving-as rows back out when setup added them, and keeps a value the user set", func(t *testing.T) {
 		path := extSettingsPath(t)
 		_, delta := extApply(t, path, nil)
-		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil)
+		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -577,7 +577,7 @@ func TestTheUninstallUndoOfSettings(t *testing.T) {
 		_, userDelta := extApply(t, user, nil)
 		extAssertFile(t, user, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+extRouter+"\",\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  },\n"+
 			extReferenceOptions+",\n"+extReferenceEfforts+"\n}\n")
-		if _, err := adapters.UndoProviderSettings(t.Context(), user, "zai", extDeltaAsUndo(userDelta), extRouter, nil); err != nil {
+		if _, err := adapters.UndoProviderSettings(t.Context(), user, "zai", extDeltaAsUndo(userDelta), extRouter, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		extAssertFile(t, user, "{\n  \"env\": {\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  }\n}\n")
@@ -598,7 +598,7 @@ func TestTheModelSettingsEffortLevels(t *testing.T) {
 		if delta.EffortsAdded.Len() != 0 {
 			t.Fatalf("delta efforts = %v, want none", delta.EffortsAdded.Keys())
 		}
-		if _, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil); err != nil {
+		if _, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		extAssertFile(t, path, "{\n  \"modelSettings\": {\n    \"glm-5.3\": {\n      \"effortLevel\": \"low\"\n    },\n    \"glm-5.3-flash\": {\n      \"effortLevel\": \"medium\"\n    }\n  }\n}\n")
@@ -614,7 +614,7 @@ func TestTheModelSettingsEffortLevels(t *testing.T) {
 			"    \"glm-5.3-flash\": {\n      \"effortLevel\": \"xhigh\"\n    },\n    \"mine\": {\n      \"effortLevel\": \"high\"\n    }\n  },\n"+
 			"  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+extRouter+"\",\n    \"ENABLE_TOOL_SEARCH\": \"true\"\n  }\n}\n")
 
-		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil)
+		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -722,7 +722,7 @@ func TestTheUpgradeOfAnOlderSettings(t *testing.T) {
 		previous := extOldUndo()
 		undo := router.MergeSettingsUndo(&previous, &delta)
 
-		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", undo, extRouter, nil)
+		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", undo, extRouter, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
