@@ -131,7 +131,7 @@ func launcherLine(name string) string {
 // Code, not only observe it.
 func TestHooksJSONRunsTheLauncher(t *testing.T) {
 	want := []launcherHook{
-		{Event: "SessionStart", Matcher: "startup|resume|clear|compact", Name: "session-start", Command: launcherLine("session-start"), Timeout: 10},
+		{Event: "SessionStart", Matcher: "startup|resume|clear|compact", Name: "session-start", Command: launcherLine("session-start"), Timeout: 15},
 		{Event: "UserPromptSubmit", Name: "user-prompt-submit", Command: launcherLine("user-prompt-submit"), Timeout: 5},
 		{Event: "PreToolUse", Matcher: "Bash", Name: "approve", Command: launcherLine("approve"), Timeout: 5},
 		{Event: "PreToolUse", Name: "pre-tool-use", Command: launcherLine("pre-tool-use"), Timeout: 5},
@@ -141,7 +141,7 @@ func TestHooksJSONRunsTheLauncher(t *testing.T) {
 		{Event: "PermissionRequest", Name: "permission-request", Command: launcherLine("permission-request"), Timeout: 5},
 		{Event: "Stop", Name: "stop", Command: launcherLine("stop"), Timeout: 15},
 		{Event: "SubagentStart", Name: "subagent-start", Command: launcherLine("subagent-start"), Timeout: 5},
-		{Event: "SubagentStop", Name: "subagent-stop", Command: launcherLine("subagent-stop"), Timeout: 5},
+		{Event: "SubagentStop", Name: "subagent-stop", Command: launcherLine("subagent-stop"), Timeout: 7},
 		{Event: "SessionEnd", Name: "session-end", Command: launcherLine("session-end"), Timeout: 5},
 		{Event: "PreCompact", Name: "pre-compact", Command: launcherLine("pre-compact"), Timeout: 5},
 	}
