@@ -3,69 +3,50 @@ package keystore_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
+	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
-// testKey is the fake key the tests store: long enough for the shape, never a real secret.
-const testKey = "huddle-fake-key-0123456789abcd"
-
-// keyID is the reference secret's identity in a store.
-var keyID = keystore.KeyIdentity{Service: "zai-plugin-cc", Account: "api-key", Display: "Z.ai GLM"}
-
-// runCall is one tool run a store made.
-type runCall struct {
-	Cmd   string
-	Args  []string
-	Stdin *string
-}
-
-// fakeRunner scripts every store's tool run and records the calls.
-type fakeRunner struct {
-	Calls  []runCall
-	Answer func(runCall) keystore.RunResult
-}
-
-func (f *fakeRunner) run(ctx context.Context, cmd string, args []string, stdin *string) keystore.RunResult {
-	call := runCall{Cmd: cmd, Args: args, Stdin: stdin}
-	f.Calls = append(f.Calls, call)
-	if f.Answer != nil {
-		return f.Answer(call)
-	}
-	code := 0
-	return keystore.RunResult{Code: &code}
-}
-
-// asRunner adapts the fake to the keystore Runner: the signatures match, the named types live one
-// per package.
-func (f *fakeRunner) asRunner() keystore.Runner {
-	return f.run
-}
+// keyID is the reference provider's identity in a secret store.
+var keyID = keystore.NewKeyIdentity(testkit.ReferenceProvider)
 
 func strPtr(text string) *string { return &text }
 
 // okRes is a tool run that exited 0 with no output.
-func okRes() keystore.RunResult {
+func okRes() testkit.RunResult {
 	code := 0
-	return keystore.RunResult{Code: &code}
+	return testkit.RunResult{Code: &code}
 }
 
 // res is a tool run that exited code with the given output.
-func res(code int, stdout string, stderr string) keystore.RunResult {
-	return keystore.RunResult{Code: &code, Stdout: stdout, Stderr: stderr}
+func res(code int, stdout string, stderr string) testkit.RunResult {
+	return testkit.RunResult{Code: &code, Stdout: stdout, Stderr: stderr}
 }
 
 // missingRes is a tool that could not be started.
-func missingRes() keystore.RunResult {
-	return keystore.RunResult{Missing: true}
+func missingRes() testkit.RunResult {
+	return testkit.RunResult{Missing: true}
+}
+
+// asRunner adapts a FakeRunner to the keystore Runner: the signatures match, the named result
+// types live one per package (the adapter cannot import the test kit).
+func asRunner(fake *testkit.FakeRunner) keystore.Runner {
+	return func(ctx context.Context, cmd string, args []string, stdin *string) keystore.RunResult {
+		answer := fake.Run(ctx, cmd, args, stdin)
+		return keystore.RunResult{Code: answer.Code, Stdout: answer.Stdout, Stderr: answer.Stderr, Missing: answer.Missing}
+	}
 }
 
 // assertCall checks one recorded run: the command, its argv, and the stdin it was handed (nil:
 // none). The values are never printed: the key travels on some of these stdins.
-func assertCall(t *testing.T, got runCall, cmd string, args []string, stdin *string) {
+func assertCall(t *testing.T, got testkit.RunCall, cmd string, args []string, stdin *string) {
 	t.Helper()
 	if got.Cmd != cmd {
 		t.Errorf("cmd = %q, want %q", got.Cmd, cmd)
@@ -85,26 +66,16 @@ func stdinEqual(got *string, want *string) bool {
 	return *got == *want
 }
 
-// argvOf collects every argument the fake saw.
-func argvOf(fake *fakeRunner) []string {
-	var argv []string
-	for _, call := range fake.Calls {
-		argv = append(argv, call.Cmd)
-		argv = append(argv, call.Args...)
-	}
-	return argv
-}
-
 // expectKeyOnlyOnStdin: the key must be in the stdin of at least one call and in no argv element.
-func expectKeyOnlyOnStdin(t *testing.T, fake *fakeRunner) {
+func expectKeyOnlyOnStdin(t *testing.T, fake *testkit.FakeRunner) {
 	t.Helper()
-	for _, arg := range argvOf(fake) {
-		if strings.Contains(arg, testKey) {
+	for _, arg := range fake.Argv() {
+		if strings.Contains(arg, testkit.TEST_KEY) {
 			t.Fatal("the key reached an argv element")
 		}
 	}
 	for _, call := range fake.Calls {
-		if call.Stdin != nil && strings.Contains(*call.Stdin, testKey) {
+		if call.Stdin != nil && strings.Contains(*call.Stdin, testkit.TEST_KEY) {
 			return
 		}
 	}
@@ -114,7 +85,7 @@ func expectKeyOnlyOnStdin(t *testing.T, fake *fakeRunner) {
 func TestKeyShape(t *testing.T) {
 	t.Run("accepts 16-512 chars of [A-Za-z0-9._-] and nothing else", func(t *testing.T) {
 		for _, key := range []string{
-			testKey,
+			testkit.TEST_KEY,
 			strings.Repeat("a", 16),
 			strings.Repeat("a", 512),
 		} {
@@ -134,65 +105,82 @@ func TestKeyShape(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("names the service <name>-plugin-cc and the account api-key; an odd name is refused", func(t *testing.T) {
+		want := keystore.KeyIdentity{Service: "zai-plugin-cc", Account: "api-key", Display: "Z.ai GLM"}
+		if keyID != want {
+			t.Errorf("identity = %+v, want %+v", keyID, want)
+		}
+		defer func() {
+			recovered := recover()
+			if recovered == nil {
+				t.Fatal("KeyIdentity did not refuse an odd service name")
+			}
+			if message := fmt.Sprint(recovered); !strings.Contains(message, "unsupported key service name") {
+				t.Errorf("panic = %q, want the unsupported-service message", message)
+			}
+		}()
+		keystore.NewKeyIdentity(domain.Provider{Name: `x" -w`, Display: "X"})
+	})
 }
 
 func TestMacOSKeychain(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("stores through `security -i` with the command line on stdin, then reads it back", func(t *testing.T) {
-		fake := &fakeRunner{}
-		fake.Answer = func(call runCall) keystore.RunResult {
+		fake := testkit.NewFakeRunner()
+		fake.Answer = func(call testkit.RunCall) testkit.RunResult {
 			if call.Args[0] == "find-generic-password" {
-				return res(0, testKey+"\n", "")
+				return res(0, testkit.TEST_KEY+"\n", "")
 			}
 			return okRes()
 		}
-		if err := keystore.MacosKeyStore(keyID, fake.asRunner()).Set(ctx, testKey); err != nil {
+		if err := keystore.MacosKeyStore(keyID, asRunner(fake)).Set(ctx, testkit.TEST_KEY); err != nil {
 			t.Fatalf("set: %v", err)
 		}
 		assertCall(t, fake.Calls[0], keystore.Security, []string{"-i"},
-			strPtr(`add-generic-password -U -s "zai-plugin-cc" -a "api-key" -w "`+testKey+`"`+"\n"))
+			strPtr(`add-generic-password -U -s "zai-plugin-cc" -a "api-key" -w "`+testkit.TEST_KEY+`"`+"\n"))
 		assertCall(t, fake.Calls[1], keystore.Security,
 			[]string{"find-generic-password", "-s", "zai-plugin-cc", "-a", "api-key", "-w"}, nil)
 		expectKeyOnlyOnStdin(t, fake)
 	})
 
 	t.Run("a write the read-back does not confirm fails without naming the key", func(t *testing.T) {
-		fake := &fakeRunner{}
-		fake.Answer = func(call runCall) keystore.RunResult {
+		fake := testkit.NewFakeRunner()
+		fake.Answer = func(call testkit.RunCall) testkit.RunResult {
 			if call.Args[0] == "find-generic-password" {
 				return res(44, "", "")
 			}
 			return okRes()
 		}
-		err := keystore.MacosKeyStore(keyID, fake.asRunner()).Set(ctx, testKey)
+		err := keystore.MacosKeyStore(keyID, asRunner(fake)).Set(ctx, testkit.TEST_KEY)
 		if err == nil || err.Error() != "could not store the key in macOS Keychain (exit 44)" {
 			t.Fatalf("set error = %v, want the exit 44 failure", err)
 		}
-		fake.Answer = func(runCall) keystore.RunResult {
-			return res(1, "", "bad "+testKey)
+		fake.Answer = func(testkit.RunCall) testkit.RunResult {
+			return res(1, "", "bad "+testkit.TEST_KEY)
 		}
-		err = keystore.MacosKeyStore(keyID, fake.asRunner()).Set(ctx, testKey)
+		err = keystore.MacosKeyStore(keyID, asRunner(fake)).Set(ctx, testkit.TEST_KEY)
 		if err == nil || err.Error() != "could not store the key in macOS Keychain (exit 1)" {
 			t.Fatalf("set error = %v, want the exit 1 failure", err)
 		}
-		if strings.Contains(err.Error(), testKey) {
+		if strings.Contains(err.Error(), testkit.TEST_KEY) {
 			t.Error("the failure names the key")
 		}
 	})
 
 	t.Run("get trims the newline; not found is undefined; remove deletes through stdin; available probes", func(t *testing.T) {
-		fake := &fakeRunner{}
-		store := keystore.MacosKeyStore(keyID, fake.asRunner())
-		fake.Answer = func(runCall) keystore.RunResult { return res(0, testKey+"\n", "") }
-		if value, found := store.Get(ctx); value != testKey || !found {
+		fake := testkit.NewFakeRunner()
+		store := keystore.MacosKeyStore(keyID, asRunner(fake))
+		fake.Answer = func(testkit.RunCall) testkit.RunResult { return res(0, testkit.TEST_KEY+"\n", "") }
+		if value, found := store.Get(ctx); value != testkit.TEST_KEY || !found {
 			t.Errorf("get = %d chars %v, want the key", len(value), found)
 		}
-		fake.Answer = func(runCall) keystore.RunResult { return res(44, "", "not found") }
+		fake.Answer = func(testkit.RunCall) testkit.RunResult { return res(44, "", "not found") }
 		if _, found := store.Get(ctx); found {
 			t.Error("get found a key the tool did not return")
 		}
-		fake.Answer = func(runCall) keystore.RunResult { return okRes() }
+		fake.Answer = func(testkit.RunCall) testkit.RunResult { return okRes() }
 		if _, found := store.Get(ctx); found {
 			t.Error("get found a key in empty output")
 		}
@@ -207,7 +195,7 @@ func TestMacOSKeychain(t *testing.T) {
 		if want := []string{"default-keychain"}; !slices.Equal(fake.Calls[len(fake.Calls)-1].Args, want) {
 			t.Errorf("available probe args = %v, want %v", fake.Calls[len(fake.Calls)-1].Args, want)
 		}
-		fake.Answer = func(runCall) keystore.RunResult { return missingRes() }
+		fake.Answer = func(testkit.RunCall) testkit.RunResult { return missingRes() }
 		if store.Available(ctx) {
 			t.Error("available = true with the tool missing, want false")
 		}
@@ -225,8 +213,8 @@ func TestSecretService(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("stores with the key on stdin only (no trailing newline), labelled with the provider", func(t *testing.T) {
-		fake := &fakeRunner{}
-		if err := keystore.LinuxKeyStore(keyID, fake.asRunner()).Set(ctx, testKey); err != nil {
+		fake := testkit.NewFakeRunner()
+		if err := keystore.LinuxKeyStore(keyID, asRunner(fake)).Set(ctx, testkit.TEST_KEY); err != nil {
 			t.Fatalf("set: %v", err)
 		}
 		if len(fake.Calls) != 1 {
@@ -234,20 +222,20 @@ func TestSecretService(t *testing.T) {
 		}
 		assertCall(t, fake.Calls[0], "secret-tool",
 			[]string{"store", "--label=Z.ai GLM API key", "service", "zai-plugin-cc", "account", "api-key"},
-			strPtr(testKey))
+			strPtr(testkit.TEST_KEY))
 		expectKeyOnlyOnStdin(t, fake)
-		fake.Answer = func(runCall) keystore.RunResult { return res(1, "", "") }
-		err := keystore.LinuxKeyStore(keyID, fake.asRunner()).Set(ctx, testKey)
+		fake.Answer = func(testkit.RunCall) testkit.RunResult { return res(1, "", "") }
+		err := keystore.LinuxKeyStore(keyID, asRunner(fake)).Set(ctx, testkit.TEST_KEY)
 		if err == nil || err.Error() != "could not store the key in Secret Service (exit 1)" {
 			t.Fatalf("set error = %v, want the exit 1 failure", err)
 		}
 	})
 
 	t.Run("lookup and clear by service and account", func(t *testing.T) {
-		fake := &fakeRunner{}
-		store := keystore.LinuxKeyStore(keyID, fake.asRunner())
-		fake.Answer = func(runCall) keystore.RunResult { return res(0, testKey, "") }
-		if value, found := store.Get(ctx); value != testKey || !found {
+		fake := testkit.NewFakeRunner()
+		store := keystore.LinuxKeyStore(keyID, asRunner(fake))
+		fake.Answer = func(testkit.RunCall) testkit.RunResult { return res(0, testkit.TEST_KEY, "") }
+		if value, found := store.Get(ctx); value != testkit.TEST_KEY || !found {
 			t.Errorf("get = %d chars %v, want the key", len(value), found)
 		}
 		if want := []string{"lookup", "service", "zai-plugin-cc", "account", "api-key"}; !slices.Equal(fake.Calls[0].Args, want) {
@@ -256,7 +244,7 @@ func TestSecretService(t *testing.T) {
 		if store.Label() != "Secret Service" {
 			t.Errorf("label = %q", store.Label())
 		}
-		fake.Answer = func(runCall) keystore.RunResult { return res(1, "", "") }
+		fake.Answer = func(testkit.RunCall) testkit.RunResult { return res(1, "", "") }
 		if _, found := store.Get(ctx); found {
 			t.Error("get found a key the tool did not return")
 		}
@@ -267,27 +255,27 @@ func TestSecretService(t *testing.T) {
 		if !slices.Equal(fake.Calls[len(fake.Calls)-1].Args, want) {
 			t.Errorf("clear args = %v, want %v", fake.Calls[len(fake.Calls)-1].Args, want)
 		}
-		fake.Answer = func(runCall) keystore.RunResult { return missingRes() }
+		fake.Answer = func(testkit.RunCall) testkit.RunResult { return missingRes() }
 		if err := store.Remove(ctx); err == nil || !strings.Contains(err.Error(), "tool not found") {
 			t.Fatalf("remove error = %v, want the tool-not-found failure", err)
 		}
 	})
 
 	t.Run("is unavailable when secret-tool is missing or the bus has no secret service", func(t *testing.T) {
-		fake := &fakeRunner{}
-		store := keystore.LinuxKeyStore(keyID, fake.asRunner())
+		fake := testkit.NewFakeRunner()
+		store := keystore.LinuxKeyStore(keyID, asRunner(fake))
 		cases := []struct {
-			answer    keystore.RunResult
+			answer    testkit.RunResult
 			available bool
 		}{
-			{res(0, testKey, ""), true},
+			{res(0, testkit.TEST_KEY, ""), true},
 			{res(1, "", ""), true},
 			{res(1, "", "Cannot autolaunch D-Bus without X11 $DISPLAY"), false},
 			{res(1, "", "The name org.freedesktop.secrets was not provided"), false},
 			{missingRes(), false},
 		}
 		for _, c := range cases {
-			fake.Answer = func(runCall) keystore.RunResult { return c.answer }
+			fake.Answer = func(testkit.RunCall) testkit.RunResult { return c.answer }
 			if store.Available(ctx) != c.available {
 				t.Errorf("available after code %v stderr %q = %v, want %v",
 					c.answer.Code, c.answer.Stderr, !c.available, c.available)
@@ -300,19 +288,15 @@ func TestEveryPlatformStore(t *testing.T) {
 	ctx := context.Background()
 	stores := []struct {
 		name   string
-		kind   keystore.KeyStoreKind
-		create func(keystore.KeyIdentity, keystore.Runner) keystore.KeyStore
+		create func(keystore.KeyIdentity, keystore.Runner) ports.KeyStore
 	}{
-		{"macos", keystore.KeyStoreMacOS, keystore.MacosKeyStore},
-		{"linux", keystore.KeyStoreLinux, keystore.LinuxKeyStore},
+		{"macos", keystore.MacosKeyStore},
+		{"linux", keystore.LinuxKeyStore},
 	}
 	for _, store := range stores {
 		t.Run(store.name+": an invalid key is rejected before any command runs", func(t *testing.T) {
-			fake := &fakeRunner{}
-			keyStore := store.create(keyID, fake.asRunner())
-			if keyStore.Kind() != store.kind {
-				t.Errorf("kind = %q, want %q", keyStore.Kind(), store.kind)
-			}
+			fake := testkit.NewFakeRunner()
+			keyStore := store.create(keyID, asRunner(fake))
 			for _, bad := range []string{
 				"short",
 				strings.Repeat("a", 20) + `" ; rm -rf ~`,
@@ -332,4 +316,134 @@ func TestEveryPlatformStore(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAnyValueIdentity(t *testing.T) {
+	ctx := context.Background()
+
+	// Huddle's own secrets are not API keys: a store told so takes any value,
+	// labels it as told, and reads back whatever the tool printed.
+	id := keystore.KeyIdentity{
+		Service:  "huddle",
+		Account:  "vapid",
+		Display:  "Huddle push",
+		Label:    "Huddle vapid",
+		AnyValue: true,
+	}
+	secret := "a vapid private key is base64url, not the api-key shape"
+
+	t.Run("the secret service stores it under the given label, the value on stdin", func(t *testing.T) {
+		fake := testkit.NewFakeRunner()
+		if err := keystore.LinuxKeyStore(id, asRunner(fake)).Set(ctx, secret); err != nil {
+			t.Fatalf("set: %v", err)
+		}
+		assertCall(t, fake.Calls[0], "secret-tool",
+			[]string{"store", "--label=Huddle vapid", "service", "huddle", "account", "vapid"},
+			strPtr(secret))
+	})
+
+	t.Run("the keychain stores it without the shape check and reads its own write back", func(t *testing.T) {
+		fake := testkit.NewFakeRunner()
+		fake.Answer = func(call testkit.RunCall) testkit.RunResult {
+			if call.Args[0] == "find-generic-password" {
+				return res(0, secret+"\n", "")
+			}
+			return okRes()
+		}
+		if err := keystore.MacosKeyStore(id, asRunner(fake)).Set(ctx, secret); err != nil {
+			t.Fatalf("set: %v", err)
+		}
+		assertCall(t, fake.Calls[0], keystore.Security, []string{"-i"},
+			strPtr(`add-generic-password -U -s "huddle" -a "vapid" -w "`+secret+`"`+"\n"))
+	})
+
+	t.Run("the keychain refuses a value that could leave its quotes, running nothing", func(t *testing.T) {
+		for _, value := range []string{`a"b`, `a\\b`, "a\nb", "caf\u00e9"} {
+			fake := testkit.NewFakeRunner()
+			if err := keystore.MacosKeyStore(id, asRunner(fake)).Set(ctx, value); err == nil {
+				t.Errorf("set(%q) = nil, want a refusal", value)
+			}
+			if len(fake.Calls) != 0 {
+				t.Errorf("set(%q) ran %d commands, want 0", value, len(fake.Calls))
+			}
+		}
+	})
+
+	t.Run("a get answers the tool's line as it is, an empty line included", func(t *testing.T) {
+		fake := testkit.NewFakeRunner()
+		store := keystore.LinuxKeyStore(id, asRunner(fake))
+		fake.Answer = func(testkit.RunCall) testkit.RunResult { return res(0, "raw secret value\n", "") }
+		if value, found := store.Get(ctx); !found || value != "raw secret value" {
+			t.Errorf("get = (%q, %v), want the raw line", value, found)
+		}
+		fake.Answer = func(testkit.RunCall) testkit.RunResult { return res(0, "", "") }
+		if value, found := store.Get(ctx); !found || value != "" {
+			t.Errorf("get = (%q, %v), want the empty line found", value, found)
+		}
+	})
+
+	t.Run("a provider identity keeps the shape check", func(t *testing.T) {
+		fake := testkit.NewFakeRunner()
+		provider := keystore.KeyIdentity{Service: "huddle", Account: "api-key", Display: "Huddle"}
+		if err := keystore.LinuxKeyStore(provider, asRunner(fake)).Set(ctx, secret); err == nil {
+			t.Fatal("set accepted a non-key value for a provider identity")
+		}
+		if len(fake.Calls) != 0 {
+			t.Fatalf("runs = %d, want 0", len(fake.Calls))
+		}
+		fake.Answer = func(testkit.RunCall) testkit.RunResult { return res(0, "", "") }
+		if _, found := keystore.LinuxKeyStore(provider, asRunner(fake)).Get(ctx); found {
+			t.Error("get found a key in an empty read")
+		}
+	})
+}
+
+func TestPlatformKeyStore(t *testing.T) {
+	home := "/Users/someone"
+
+	t.Run("picks the platform's store, none elsewhere", func(t *testing.T) {
+		fake := testkit.NewFakeRunner()
+		pick := func(options keystore.PlatformOptions) string {
+			store := keystore.PlatformKeyStore(testkit.ReferenceProvider, domain.EnvLookup{"HOME": home}, options)
+			if store == nil {
+				return "none"
+			}
+			return string(store.Kind())
+		}
+		for _, c := range []struct{ platform, want string }{
+			{"darwin", "macos"},
+			{"linux", "linux"},
+			{"freebsd", "none"},
+		} {
+			options := keystore.PlatformOptions{
+				Platform:    strPtr(c.platform),
+				Runner:      asRunner(fake),
+				AccountHome: strPtr(home),
+			}
+			if got := pick(options); got != c.want {
+				t.Errorf("pick(%q) = %q, want %q", c.platform, got, c.want)
+			}
+		}
+		// No account home given: the login account's own, whatever the host resolved it to.
+		defaults := keystore.PlatformOptions{Platform: strPtr("darwin"), Runner: asRunner(fake)}
+		if store := keystore.PlatformKeyStore(testkit.ReferenceProvider, domain.EnvLookup{}, defaults); store == nil || store.Kind() != ports.KeyStoreMacOS {
+			t.Error("an env without HOME gets the OS store without an account home too")
+		}
+		if len(fake.Calls) != 0 {
+			t.Errorf("runs = %d, want 0", len(fake.Calls))
+		}
+	})
+
+	t.Run("a HOME that is not the account's home (a sandbox) gets no OS store", func(t *testing.T) {
+		options := keystore.PlatformOptions{Platform: strPtr("darwin"), AccountHome: strPtr(home)}
+		if store := keystore.PlatformKeyStore(testkit.ReferenceProvider, domain.EnvLookup{"HOME": "/tmp/sandbox"}, options); store != nil {
+			t.Errorf("sandbox store = %q, want none", store.Kind())
+		}
+		if store := keystore.PlatformKeyStore(testkit.ReferenceProvider, domain.EnvLookup{"HOME": home + "/"}, options); store == nil || store.Kind() != ports.KeyStoreMacOS {
+			t.Error("a HOME with a trailing slash is the account's home")
+		}
+		if store := keystore.PlatformKeyStore(testkit.ReferenceProvider, domain.EnvLookup{}, options); store == nil || store.Kind() != ports.KeyStoreMacOS {
+			t.Error("an env without HOME gets the OS store")
+		}
+	})
 }

@@ -7,9 +7,9 @@ import (
 	"os"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/spool"
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/keystore"
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
 	"github.com/MuhmdRaouf/huddle/internal/core/authpage"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"

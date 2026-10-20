@@ -7,7 +7,10 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
+
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // RunResult is what a platform tool returned. A nil Code is a signal; Missing means the tool
@@ -23,34 +26,37 @@ type RunResult struct {
 // fake.
 type Runner func(ctx context.Context, cmd string, args []string, stdin *string) RunResult
 
-// KeyIdentity is a store's names for one secret: the service it lives under and the account it
-// belongs to.
+// KeyIdentity is the store's names for one secret: a provider's key (service
+// `<name>-plugin-cc`, account `api-key`) or another secret told by hand.
 type KeyIdentity struct {
 	Service string
 	Account string
 	// Display is the provider as people know it, for the Secret Service label.
 	Display string
+	// Label is the Secret Service label of a newly stored secret; empty means
+	// `<Display> API key`.
+	Label string
+	// AnyValue marks a secret that is not a provider API key: Set stores the
+	// value without the key-shape check and Get answers the tool's line as it
+	// is, an empty one included.
+	AnyValue bool
 }
 
-// KeyStoreKind is which store a key lives in at rest.
-type KeyStoreKind string
+// keyAccount is the account name every provider's key uses.
+const keyAccount = "api-key"
 
-const (
-	KeyStoreMacOS KeyStoreKind = "macos"
-	KeyStoreLinux KeyStoreKind = "linux"
-)
+// serviceShape keeps the service name quotable into a `security -i` command line.
+var serviceShape = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-// KeyStore is where a secret lives at rest: the OS secret store.
-type KeyStore interface {
-	Kind() KeyStoreKind
-	// How setup and status lines name the store: "macOS Keychain", "Secret Service", or a path.
-	Label() string
-	Available(ctx context.Context) bool
-	Get(ctx context.Context) (string, bool)
-	// Set rejects an invalid key before any tool runs; the error says why the store refused it,
-	// never the key itself.
-	Set(ctx context.Context, key string) error
-	Remove(ctx context.Context) error
+// NewKeyIdentity returns the store's names for the provider: service `<name>-plugin-cc`, account
+// `api-key`. It panics on a service name that is not plain [a-z0-9-]: the name is quoted into a
+// `security -i` command line, so an odd one is a programmer error.
+func NewKeyIdentity(provider domain.Provider) KeyIdentity {
+	service := provider.Name + "-plugin-cc"
+	if !serviceShape.MatchString(service) {
+		panic("unsupported key service name " + strconv.Quote(service))
+	}
+	return KeyIdentity{Service: service, Account: keyAccount, Display: provider.Display}
 }
 
 // keyShape is a provider key as the stores accept it: 16-512 characters of [A-Za-z0-9._-]. This
@@ -96,9 +102,9 @@ func TrimNewline(text string) string {
 	return strings.TrimSuffix(text, "\r")
 }
 
-// exited reports whether the tool ran to the given exit code (a signal or a missing tool did
+// Exited reports whether the tool ran to the given exit code (a signal or a missing tool did
 // not).
-func (r RunResult) exited(code int) bool {
+func (r RunResult) Exited(code int) bool {
 	return r.Code != nil && *r.Code == code
 }
 

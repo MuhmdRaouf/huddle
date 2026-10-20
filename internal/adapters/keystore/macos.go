@@ -5,6 +5,9 @@ package keystore
 
 import (
 	"context"
+	"fmt"
+
+	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 )
 
 // Security is the macOS Keychain's tool.
@@ -18,11 +21,11 @@ type macosStore struct {
 }
 
 // MacosKeyStore is the provider's key in the macOS Keychain, through /usr/bin/security.
-func MacosKeyStore(id KeyIdentity, run Runner) KeyStore {
+func MacosKeyStore(id KeyIdentity, run Runner) ports.KeyStore {
 	return &macosStore{id: id, run: run}
 }
 
-func (s *macosStore) Kind() KeyStoreKind { return KeyStoreMacOS }
+func (s *macosStore) Kind() ports.KeyStoreKind { return ports.KeyStoreMacOS }
 
 func (s *macosStore) Label() string { return macosLabel }
 
@@ -38,30 +41,37 @@ func (s *macosStore) read(ctx context.Context) RunResult {
 
 func (s *macosStore) Available(ctx context.Context) bool {
 	result := s.run(ctx, Security, []string{"default-keychain"}, nil)
-	return !result.Missing && result.exited(0)
+	return !result.Missing && result.Exited(0)
 }
 
 func (s *macosStore) Get(ctx context.Context) (string, bool) {
 	result := s.read(ctx)
-	if !result.exited(0) {
+	if !result.Exited(0) {
 		return "", false
+	}
+	if s.id.AnyValue {
+		return TrimNewline(result.Stdout), true
 	}
 	return trimmedKey(result.Stdout)
 }
 
 func (s *macosStore) Set(ctx context.Context, key string) error {
-	if err := AssertValidKey(key); err != nil {
-		return err
+	if !s.id.AnyValue {
+		if err := AssertValidKey(key); err != nil {
+			return err
+		}
+	} else if !quotable(key) {
+		return fmt.Errorf("%s: a secret holding a double quote, a backslash or a character outside printable ASCII cannot be stored", macosLabel)
 	}
 	// `-U` updates an existing item.
 	command := "add-generic-password -U " + s.where() + ` -w "` + key + `"` + "\n"
 	result := s.run(ctx, Security, []string{"-i"}, &command)
 	// `security -i` may exit 0 after a failed command: only a read-back proves the write.
 	back := s.read(ctx)
-	if !result.exited(0) {
+	if !result.Exited(0) {
 		return StoreFailure(macosLabel, "store", result)
 	}
-	if !back.exited(0) || TrimNewline(back.Stdout) != key {
+	if !back.Exited(0) || TrimNewline(back.Stdout) != key {
 		return StoreFailure(macosLabel, "store", back)
 	}
 	return nil
@@ -74,4 +84,16 @@ func (s *macosStore) Remove(ctx context.Context) error {
 		return StoreFailure(macosLabel, "remove", result)
 	}
 	return nil
+}
+
+// quotable is whether a value can sit inside the double quotes of a `security -i` command line:
+// printable ASCII without `"` or `\`, so it can neither close the quotes nor start an escape.
+func quotable(value string) bool {
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c < 0x20 || c > 0x7e || c == '"' || c == '\\' {
+			return false
+		}
+	}
+	return true
 }

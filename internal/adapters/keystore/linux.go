@@ -5,10 +5,13 @@ package keystore
 import (
 	"context"
 	"strings"
+
+	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 )
 
 const (
-	secretTool = "secret-tool"
+	// SecretTool is the Secret Service's tool.
+	SecretTool = "secret-tool"
 	linuxLabel = "Secret Service"
 )
 
@@ -18,11 +21,11 @@ type linuxStore struct {
 }
 
 // LinuxKeyStore is the provider's key in the freedesktop Secret Service, through secret-tool.
-func LinuxKeyStore(id KeyIdentity, run Runner) KeyStore {
+func LinuxKeyStore(id KeyIdentity, run Runner) ports.KeyStore {
 	return &linuxStore{id: id, run: run}
 }
 
-func (s *linuxStore) Kind() KeyStoreKind { return KeyStoreLinux }
+func (s *linuxStore) Kind() ports.KeyStoreKind { return ports.KeyStoreLinux }
 
 func (s *linuxStore) Label() string { return linuxLabel }
 
@@ -32,7 +35,7 @@ func (s *linuxStore) attributes() []string {
 }
 
 func (s *linuxStore) lookup(ctx context.Context) RunResult {
-	return s.run(ctx, secretTool, append([]string{"lookup"}, s.attributes()...), nil)
+	return s.run(ctx, SecretTool, append([]string{"lookup"}, s.attributes()...), nil)
 }
 
 func (s *linuxStore) Available(ctx context.Context) bool {
@@ -42,32 +45,41 @@ func (s *linuxStore) Available(ctx context.Context) bool {
 	}
 	// Exit 1 with nothing on stderr is "no such secret"; a D-Bus or "no secret service" failure
 	// says why on stderr.
-	return result.exited(0) || (result.exited(1) && strings.TrimSpace(result.Stderr) == "")
+	return result.Exited(0) || (result.Exited(1) && strings.TrimSpace(result.Stderr) == "")
 }
 
 func (s *linuxStore) Get(ctx context.Context) (string, bool) {
 	result := s.lookup(ctx)
-	if !result.exited(0) {
+	if !result.Exited(0) {
 		return "", false
+	}
+	if s.id.AnyValue {
+		return TrimNewline(result.Stdout), true
 	}
 	return trimmedKey(result.Stdout)
 }
 
 func (s *linuxStore) Set(ctx context.Context, key string) error {
-	if err := AssertValidKey(key); err != nil {
-		return err
+	if !s.id.AnyValue {
+		if err := AssertValidKey(key); err != nil {
+			return err
+		}
+	}
+	label := s.id.Display + " API key"
+	if s.id.Label != "" {
+		label = s.id.Label
 	}
 	// No trailing newline: secret-tool stores stdin up to EOF as it is.
-	args := append([]string{"store", "--label=" + s.id.Display + " API key"}, s.attributes()...)
-	result := s.run(ctx, secretTool, args, &key)
-	if !result.exited(0) {
+	args := append([]string{"store", "--label=" + label}, s.attributes()...)
+	result := s.run(ctx, SecretTool, args, &key)
+	if !result.Exited(0) {
 		return StoreFailure(linuxLabel, "store", result)
 	}
 	return nil
 }
 
 func (s *linuxStore) Remove(ctx context.Context) error {
-	result := s.run(ctx, secretTool, append([]string{"clear"}, s.attributes()...), nil)
+	result := s.run(ctx, SecretTool, append([]string{"clear"}, s.attributes()...), nil)
 	if result.Missing {
 		return StoreFailure(linuxLabel, "remove", result)
 	}

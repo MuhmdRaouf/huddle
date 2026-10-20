@@ -5,46 +5,17 @@ package outside
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
 )
 
-func TestTheSpawnRunnerCollectsStdoutExitCodesAndStdin(t *testing.T) {
-	ctx := context.Background()
-	ran := spawnSecretRunner(ctx, "/bin/echo", []string{"hello"}, nil)
-	if !ran.ran || ran.code != 0 || ran.stdout != "hello\n" {
-		t.Fatalf("echo = %+v, want stdout hello, code 0", ran)
-	}
-	// a command that fails keeps its exit code and whatever it printed
-	script := filepath.Join(t.TempDir(), "fail.sh")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho said\nexit 3\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	failed := spawnSecretRunner(ctx, script, nil, nil)
-	if !failed.ran || failed.code != 3 || failed.stdout != "said\n" {
-		t.Fatalf("the failing script = %+v, want code 3 and its words", failed)
-	}
-	// stdin reaches the tool, so a secret travels that way
-	eater := filepath.Join(t.TempDir(), "eat.sh")
-	if err := os.WriteFile(eater, []byte("#!/bin/sh\ncat\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	secret := "the-secret-on-stdin"
-	fed := spawnSecretRunner(ctx, eater, nil, &secret)
-	if !fed.ok() || fed.stdout != secret {
-		t.Fatalf("cat = %+v, want the stdin back", fed)
-	}
-	// a tool that cannot start never ran
-	missing := spawnSecretRunner(ctx, filepath.Join(t.TempDir(), "no-such-tool"), nil, nil)
-	if missing.ran || missing.ok() {
-		t.Fatalf("the missing tool = %+v, want ran false", missing)
-	}
-}
-
 func TestOSSecretsWrapsTheRunnerItIsGiven(t *testing.T) {
-	fake := func(context.Context, string, []string, *string) secretRun { return secretRun{ran: true} }
+	code := 0
+	fake := func(context.Context, string, []string, *string) keystore.RunResult {
+		return keystore.RunResult{Code: &code}
+	}
 	store := OSSecrets(fake)
 	if store == nil || store.run == nil {
 		t.Fatal("OSSecrets answered nothing to run")
@@ -71,10 +42,10 @@ func TestTheLinuxStoreLooksUpAndStoresThroughSecretTool(t *testing.T) {
 	ctx := context.Background()
 	var asked []string
 	var stdin *string
-	fake := func(_ context.Context, name string, args []string, in *string) secretRun {
+	fake := func(_ context.Context, name string, args []string, in *string) keystore.RunResult {
 		asked = append(asked, name+" "+strings.Join(args, " "))
 		stdin = in
-		return secretRun{stdout: "the-secret\n", ran: true}
+		return ranRes(0, "the-secret\n")
 	}
 	store := &osKeyStore{run: fake, platform: "linux"}
 	got, ok := store.Get(ctx, "acct:one")
@@ -95,8 +66,8 @@ func TestTheLinuxStoreLooksUpAndStoresThroughSecretTool(t *testing.T) {
 		t.Errorf("the secret travelled as %v, want it on the tool's stdin", stdin)
 	}
 	// a tool that refuses keeps the secret's account in the error, never the secret
-	refusing := func(context.Context, string, []string, *string) secretRun {
-		return secretRun{code: 1, ran: true}
+	refusing := func(context.Context, string, []string, *string) keystore.RunResult {
+		return ranRes(1, "")
 	}
 	locked := &osKeyStore{run: refusing, platform: "linux"}
 	if err := locked.Set(ctx, "acct:one", "sekret"); err == nil {
@@ -121,8 +92,8 @@ func TestTheLinuxStoreLooksUpAndStoresThroughSecretTool(t *testing.T) {
 // runs through the fake, and a set that the read-back cannot prove is refused.
 func TestTheHostStoreIsAskedItsOwnWay(t *testing.T) {
 	ctx := context.Background()
-	fake := func(_ context.Context, name string, args []string, in *string) secretRun {
-		return secretRun{stdout: "the-secret\n", ran: true}
+	fake := func(_ context.Context, name string, args []string, in *string) keystore.RunResult {
+		return ranRes(0, "the-secret\n")
 	}
 	store := &osKeyStore{run: fake} // platform empty: the host's own way
 	if _, ok := store.Get(ctx, "acct:host"); !ok {
@@ -142,9 +113,9 @@ func TestTheHostStoreIsAskedItsOwnWay(t *testing.T) {
 func TestASecretsAccountMustBeASafeName(t *testing.T) {
 	ctx := context.Background()
 	calls := 0
-	fake := func(context.Context, string, []string, *string) secretRun {
+	fake := func(context.Context, string, []string, *string) keystore.RunResult {
 		calls++
-		return secretRun{ran: true}
+		return ranRes(0, "")
 	}
 	store := &osKeyStore{run: fake}
 	for _, bad := range []string{"", "with space", "quote\"", "slash/path"} {
@@ -165,17 +136,5 @@ func TestASecretsAccountMustBeASafeName(t *testing.T) {
 	}
 	if !accountShapeForSecret("acct:one.sub-2") {
 		t.Error("accountShapeForSecret refused a name huddle spells itself")
-	}
-}
-
-func TestTrimToolLineTakesOneBreakOff(t *testing.T) {
-	if got := trimToolLine("secret\n"); got != "secret" {
-		t.Errorf("trimToolLine = %q", got)
-	}
-	if got := trimToolLine("secret\r\n"); got != "secret" {
-		t.Errorf("trimToolLine = %q, want the carriage return gone too", got)
-	}
-	if got := trimToolLine("secret"); got != "secret" {
-		t.Errorf("trimToolLine = %q, want it unchanged", got)
 	}
 }

@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/keystore"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 )
 

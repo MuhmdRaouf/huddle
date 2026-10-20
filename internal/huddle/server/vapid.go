@@ -208,7 +208,7 @@ func vapidKeystoreStore() vapidStore {
 	if env := os.Getenv("HOME"); env != "" && filepath.Clean(env) != filepath.Clean(home) {
 		return nil
 	}
-	id := keystore.KeyIdentity{Service: "huddle", Account: "vapid", Display: "Huddle push"}
+	id := keystore.KeyIdentity{Service: "huddle", Account: "vapid", Display: "Huddle push", AnyValue: true}
 	switch runtime.GOOS {
 	case "darwin":
 		return keystore.MacosKeyStore(id, keystore.SpawnRunner)

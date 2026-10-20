@@ -9,18 +9,25 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
 )
+
+// ranRes is a tool run that exited code with the given output.
+func ranRes(code int, stdout string) keystore.RunResult {
+	return keystore.RunResult{Code: &code, Stdout: stdout}
+}
 
 // fakeTool answers one platform's tool: it records every command line and stdin, and answers
 // what each command should.
 type fakeTool struct {
 	lines  []string
 	stdins []string
-	answer map[string]secretRun
+	answer map[string]keystore.RunResult
 }
 
 // run records the call and answers the canned outcome for the command's first word.
-func (f *fakeTool) run(_ context.Context, name string, args []string, stdin *string) secretRun {
+func (f *fakeTool) run(_ context.Context, name string, args []string, stdin *string) keystore.RunResult {
 	f.lines = append(f.lines, name+" "+strings.Join(args, " "))
 	if stdin != nil {
 		f.stdins = append(f.stdins, *stdin)
@@ -31,10 +38,10 @@ func (f *fakeTool) run(_ context.Context, name string, args []string, stdin *str
 }
 
 func TestTheMacOSKeychainKeepsItsSecretsOffTheCommandLine(t *testing.T) {
-	tool := &fakeTool{answer: map[string]secretRun{
-		"/usr/bin/security default-keychain":      {ran: true, code: 0},
-		"/usr/bin/security find-generic-password": {ran: true, code: 0, stdout: "the-token\n"},
-		"/usr/bin/security -i":                    {ran: true, code: 0},
+	tool := &fakeTool{answer: map[string]keystore.RunResult{
+		"/usr/bin/security default-keychain":      ranRes(0, ""),
+		"/usr/bin/security find-generic-password": ranRes(0, "the-token\n"),
+		"/usr/bin/security -i":                    ranRes(0, ""),
 	}}
 	store := &osKeyStore{run: tool.run, platform: "darwin"}
 	if !store.Available(context.Background()) {
@@ -66,9 +73,9 @@ func TestTheMacOSKeychainKeepsItsSecretsOffTheCommandLine(t *testing.T) {
 }
 
 func TestTheSecretServiceIsAskedThroughSecretTool(t *testing.T) {
-	tool := &fakeTool{answer: map[string]secretRun{
-		"secret-tool lookup": {ran: true, code: 1}, // no such secret: the service answered
-		"secret-tool store":  {ran: true, code: 0},
+	tool := &fakeTool{answer: map[string]keystore.RunResult{
+		"secret-tool lookup": ranRes(1, ""), // no such secret: the service answered
+		"secret-tool store":  ranRes(0, ""),
 	}}
 	store := &osKeyStore{run: tool.run, platform: "linux"}
 	if !store.Available(context.Background()) {
@@ -86,7 +93,7 @@ func TestTheSecretServiceIsAskedThroughSecretTool(t *testing.T) {
 }
 
 func TestAKeystoreThatDoesNotAnswerIsNotAvailable(t *testing.T) {
-	tool := &fakeTool{answer: map[string]secretRun{
+	tool := &fakeTool{answer: map[string]keystore.RunResult{
 		"/usr/bin/security default-keychain": {}, // the tool never ran
 	}}
 	store := &osKeyStore{run: tool.run, platform: "darwin"}

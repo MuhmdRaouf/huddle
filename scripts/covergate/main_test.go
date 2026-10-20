@@ -140,7 +140,6 @@ func TestThreshold(t *testing.T) {
 		{mp + "/internal/kanban/ticket", 90, true},
 		{mp + "/internal/adapters/spool", 90, true},
 		{mp + "/internal/adapters/fsutil", 90, true},
-		{mp + "/internal/core/adapters/keystore", 90, true},
 		{mp + "/internal/core/app", 90, true},
 		{mp + "/internal/core/cli", 90, true},
 		{mp + "/internal/core/archtest", 0, false},

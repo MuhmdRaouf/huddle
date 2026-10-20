@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/keystore"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
 )
 
 // The real macOS Keychain, end to end: set, read, update, remove a throwaway item through

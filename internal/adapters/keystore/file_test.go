@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/keystore"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
