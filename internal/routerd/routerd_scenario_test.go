@@ -66,7 +66,9 @@ func (u *daemonUpstream) requests() []daemonSeen {
 }
 
 // daemonRig is one daemon Run over a temp home, with a fake upstream per lane and one for
-// Anthropic. The Run itself is a goroutine of the test process; Cleanup stops it.
+// Anthropic. The Run itself is a goroutine of the test process; Cleanup stops it. The cancel and
+// done pair is guarded: a restarted Run (the watchdog scenarios') replaces it from another
+// goroutine.
 type daemonRig struct {
 	t         *testing.T
 	env       domain.EnvLookup
@@ -76,6 +78,7 @@ type daemonRig struct {
 	zai       *daemonUpstream
 	kimi      *daemonUpstream
 	anthropic *daemonUpstream
+	mu        sync.Mutex
 	cancel    context.CancelFunc
 	done      <-chan error
 	// panicOnFirst makes the daemon's own handler panic once, to prove the recovery.
@@ -149,18 +152,23 @@ func (r *daemonRig) start() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
+	r.mu.Lock()
 	r.cancel, r.done = cancel, done
+	r.mu.Unlock()
 	go func() { done <- Run(ctx, options) }()
 }
 
 // stop ends the daemon and waits for it; a daemon that never stops fails the test.
 func (r *daemonRig) stop() {
-	if r.cancel == nil {
+	r.mu.Lock()
+	cancel, done := r.cancel, r.done
+	r.mu.Unlock()
+	if cancel == nil {
 		return
 	}
-	r.cancel()
+	cancel()
 	select {
-	case err := <-r.done:
+	case err := <-done:
 		if err != nil {
 			r.t.Errorf("the daemon stopped with %v", err)
 		}

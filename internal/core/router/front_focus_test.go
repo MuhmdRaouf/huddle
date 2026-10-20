@@ -61,10 +61,6 @@ func TestMain(m *testing.M) {
 		// The service card's real router service: the front the starter spawns and the worker it
 		// forks (uninstall_test.go).
 		runServiceChild()
-	case "hold-port":
-		// The watch card's silent holder (watch_test.go): binds the port it is told and never
-		// answers, the shape of a hung front or a foreign holder.
-		runHoldPortChild()
 	case chaosChildMode:
 		// The chaos suite's router child (chaos_child_test.go).
 		runChaosServiceChild()

@@ -16,7 +16,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -475,8 +474,6 @@ func RouterService(options RouterServiceOptions) int {
 		return serviceWorkerOf(options)
 	case "start":
 		return serviceStart(ctx, options)
-	case "watch":
-		return serviceWatch(ctx, options)
 	case "stop":
 		return serviceStop(ctx, options)
 	case "status":
@@ -514,34 +511,6 @@ func serviceStart(ctx context.Context, options RouterServiceOptions) int {
 		return 1
 	}
 	fmt.Fprintf(out, "%s-router %s\n", options.Provider.Name, line)
-	return 0
-}
-
-// serviceWatch is `watch --session-pid <pid>`: the session watchdog (watch.go), one detached
-// process the SessionStart hook starts after the router is up. Every stop is exit 0; a command
-// line naming no session pid is a usage error.
-func serviceWatch(ctx context.Context, options RouterServiceOptions) int {
-	sessionPid := int64(0)
-	argv := options.Argv[1:]
-	if len(argv) == 2 && argv[0] == "--session-pid" {
-		if pid, err := strconv.ParseInt(argv[1], 10, 64); err == nil {
-			sessionPid = pid
-		}
-	}
-	if sessionPid <= 0 {
-		errOut := options.Err
-		if errOut == nil {
-			errOut = os.Stderr
-		}
-		fmt.Fprintln(errOut, "usage: "+options.Provider.Name+"-router watch --session-pid <pid>")
-		return 2
-	}
-	WatchSession(ctx, WatchOptions{
-		Provider:   options.Provider,
-		Env:        options.Env,
-		StateRoot:  options.StateRoot,
-		SessionPid: sessionPid,
-	})
 	return 0
 }
 

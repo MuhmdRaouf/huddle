@@ -149,9 +149,6 @@ func Wire(ctx context.Context, options WireOptions) app.Deps {
 				// enabled providers still route through it.
 				return "huddle-router: stopped routing " + provider.Display, nil
 			},
-			// huddle mcp watches the daemon for the whole session (HR-WATCHDOG-MCP); the
-			// per-session watchdog process is gone.
-			StartWatchdog: func(ctx context.Context, sessionPid int64) {},
 			RouterKey: func(ctx context.Context) (string, error) {
 				if pins.RouterKey != "" {
 					return pins.RouterKey, nil

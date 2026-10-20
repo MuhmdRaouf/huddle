@@ -235,8 +235,7 @@ var reportShells = map[string]bool{
 }
 
 // claudePid answers the Claude Code process running the session this hook serves: the nearest
-// ancestor that is neither a shell nor the plugin's launcher — the same walk the router's
-// session watchdog uses, mirrored here because the hooks cannot import the router. The whole
+// ancestor that is neither a shell nor the plugin's launcher. The whole
 // walk is bounded at ms; 0 when the chain cannot be read inside it.
 func claudePid(ctx context.Context, ms int) int {
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(ms)*time.Millisecond)

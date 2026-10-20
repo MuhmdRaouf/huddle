@@ -58,9 +58,6 @@ type HostInfo struct {
 	// Records the provider with huddle-router and makes sure the one daemon runs; ok says where
 	// it answers.
 	EnsureRouter func(ctx context.Context) (string, error)
-	// Starts the session watchdog for the Claude Code process pid; the daemon is watched by
-	// `huddle mcp` instead, so this is a no-op.
-	StartWatchdog func(ctx context.Context, sessionPid int64)
 	// Takes the provider out of huddle-router's providers.json for setup --remove; the daemon
 	// keeps serving the sessions already open. ok carries the one-line outcome.
 	RetireRouter func(ctx context.Context) (string, error)

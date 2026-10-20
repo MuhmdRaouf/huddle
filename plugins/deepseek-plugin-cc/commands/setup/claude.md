@@ -29,8 +29,8 @@ Plain `setup` needs no flags. What it does:
 
 - Without a key it opens the key page described above and waits for it; otherwise it asks nothing.
 - It checks the key with one minimal request to DeepSeek.
-- It starts the deepseek router: a small background process the plugin starts and repairs itself. Its hooks bring it back
-  before the next prompt if it ever stops.
+- It starts the deepseek router: a small background process the plugin starts and repairs itself. Each session's huddle
+  MCP server checks huddle-router every 2 s and restarts it after 5 s of silence.
 - It adds DeepSeek V4 Pro and DeepSeek Flash to `/model` next to Sonnet and Opus, and points Claude Code at the router.
 - Picking one of them in `/model` sends those requests through the router to DeepSeek. Every `claude-*` model still goes
   to Anthropic untouched, also while the router restarts or updates itself.

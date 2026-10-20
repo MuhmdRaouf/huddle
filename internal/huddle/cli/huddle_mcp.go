@@ -25,10 +25,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/routerd"
 )
+
+// worldEnv is the world's variables as the lookup the router's words read.
+func worldEnv(w *World) domain.EnvLookup {
+	entries := w.environ()
+	env := make(domain.EnvLookup, len(entries))
+	for _, entry := range entries {
+		key, value, _ := strings.Cut(entry, "=")
+		env[key] = value
+	}
+	return env
+}
 
 // notInYet is what a session that is not in a huddle yet is told, with the two ways in.
 const notInYet = "not in a huddle yet: run /huddle:setup in this project (the first session), or paste the /huddle:join line that /huddle:invite shows in a session that is in one"
@@ -78,6 +91,12 @@ func McpStdio(ctx context.Context, w *World, version string, stdin io.Reader, st
 		b.pushGlobs = append(b.pushGlobs, regexp.MustCompile("^(?:"+mcpGlobExpr(glob)+")$"))
 	}
 	go b.watchList(runCtx)
+	// The session's watchdog: while this bridge serves, a dead or hung huddle-router comes back
+	// on its own (HR-WATCHDOG-MCP). Its own goroutine, so no MCP reply ever waits on it;
+	// HUDDLE_ROUTER_WATCH=0 turns it off for a bridge that does not want it.
+	if w.getenv("HUDDLE_ROUTER_WATCH") != "0" {
+		go routerd.Watch(runCtx, routerd.WatchOptions{Env: worldEnv(w)})
+	}
 	data := []byte{}
 	chunk := make([]byte, 4096)
 	for {

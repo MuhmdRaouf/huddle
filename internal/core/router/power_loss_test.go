@@ -87,10 +87,6 @@ type powerLossWorld struct {
 	port  int
 	env   domain.EnvLookup
 	start process.Detached
-	// watchdogSpawns tells the watchdog spawns apart, so each reads its own pid file.
-	watchdogSpawns int
-	// dataDir is the plugin data dir the hook's environment carries, when the scene sets one.
-	dataDir string
 }
 
 func newPowerLossWorld(t *testing.T) *powerLossWorld {

@@ -378,10 +378,7 @@ type SetupDeps struct {
 	EngineConfig ports.EngineConfigStore
 	LoadKey      func(ctx context.Context) (ports.ProviderKey, error)
 	EnsureRouter func(ctx context.Context) (string, error)
-	// StartWatchdog starts the session watchdog once the router is up (the SessionStart hook's
-	// own); nil: none.
-	StartWatchdog func(ctx context.Context, sessionPid int64)
-	RetireRouter  func(ctx context.Context) (string, error)
+	RetireRouter func(ctx context.Context) (string, error)
 	// RouterKey is the running router's own view of the key: its source, or why it cannot read one.
 	RouterKey func(ctx context.Context) (string, error)
 }
@@ -389,18 +386,17 @@ type SetupDeps struct {
 // NewSetupDeps maps the setup wiring's slice out of Deps.
 func NewSetupDeps(deps app.Deps) SetupDeps {
 	return SetupDeps{
-		Provider:      deps.Provider,
-		Env:           domain.EnvLookup(deps.Env),
-		StateRoot:     deps.Host.StateRoot,
-		BundlePath:    deps.BundlePath,
-		Out:           deps.Out,
-		SettingsPath:  adapters.ClaudeSettingsPath(domain.EnvLookup(deps.Env)),
-		EngineConfig:  deps.EngineConfig,
-		LoadKey:       deps.Host.LoadKey,
-		EnsureRouter:  deps.Host.EnsureRouter,
-		StartWatchdog: deps.Host.StartWatchdog,
-		RetireRouter:  deps.Host.RetireRouter,
-		RouterKey:     deps.Host.RouterKey,
+		Provider:     deps.Provider,
+		Env:          domain.EnvLookup(deps.Env),
+		StateRoot:    deps.Host.StateRoot,
+		BundlePath:   deps.BundlePath,
+		Out:          deps.Out,
+		SettingsPath: adapters.ClaudeSettingsPath(domain.EnvLookup(deps.Env)),
+		EngineConfig: deps.EngineConfig,
+		LoadKey:      deps.Host.LoadKey,
+		EnsureRouter: deps.Host.EnsureRouter,
+		RetireRouter: deps.Host.RetireRouter,
+		RouterKey:    deps.Host.RouterKey,
 	}
 }
 
@@ -715,7 +711,7 @@ func UserMessage(out ports.Output, text string) {
 }
 
 // RoutingHook is the SessionStart hook: brings the router up first (every Claude request depends
-// on it), starts the session watchdog that keeps it answering for the whole session, then
+// on it; each session's huddle MCP server keeps it answering for the whole session), then
 // re-applies the wiring a plugin update undid (agents rewritten, settings reshaped), silently: a
 // repair is nobody's business. It never pings the provider. A plugin re-enabled after the router
 // cleaned up for its disable is set up again. Once set up, the agents always name the provider's
@@ -730,7 +726,6 @@ func RoutingHook(ctx context.Context, deps SetupDeps) ExitCode {
 			"the %s router could not start, so the %s agents cannot reach %s this session. Run %ssetup to see why.",
 			deps.Provider.Name, deps.Provider.Name, deps.Provider.Display, deps.Provider.Slash), nil, true)
 	}
-	startWatchdog(ctx, deps)
 	live := liveOthers(ctx, deps)
 	settings := mergeSettings(ctx, deps, live)
 	var repaired []string
@@ -759,22 +754,11 @@ func reEnable(ctx context.Context, deps SetupDeps) ExitCode {
 	applied := ApplyRouting(ctx, deps)
 	name, slash := deps.Provider.Name, deps.Provider.Slash
 	if applied.Router.OK {
-		startWatchdog(ctx, deps)
 		UserMessage(deps.Out, name+": enabled again and set up again; restart Claude Code to route through the "+name+" router.")
 	} else {
 		UserMessage(deps.Out, name+": enabled again, but the "+name+" router could not start; run "+slash+"setup to see why.")
 	}
 	return ExitOK
-}
-
-// startWatchdog starts the session watchdog for the Claude Code process this hook serves: the
-// nearest ancestor that is not a shell or the launcher (router.SessionPid's walk). A missing
-// watchdog or an unidentifiable session (pid 0) starts nothing; the hooks remain the recovery.
-func startWatchdog(ctx context.Context, deps SetupDeps) {
-	if deps.StartWatchdog == nil {
-		return
-	}
-	deps.StartWatchdog(ctx, router.SessionPid(ctx))
 }
 
 // hookFallback is the router being down or the key missing: the agents keep the provider's models

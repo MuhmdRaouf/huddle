@@ -820,41 +820,6 @@ func TestRoutingHook(t *testing.T) {
 		}
 	})
 
-	t.Run("starts the session watchdog once the router is up", func(t *testing.T) {
-		h := newHarness(t, nil)
-		ctx := context.Background()
-		cli.ApplyRouting(ctx, h.deps())
-		h.out.Lines = nil
-		var watched []int64
-		deps := h.deps()
-		deps.StartWatchdog = func(_ context.Context, sessionPid int64) { watched = append(watched, sessionPid) }
-
-		if got := cli.RoutingHook(ctx, deps); got != cli.ExitOK {
-			t.Fatalf("routingHook = %d, want %d", got, cli.ExitOK)
-		}
-		if len(watched) != 1 {
-			t.Fatalf("watchdog starts = %v, want exactly one (one per session)", watched)
-		}
-	})
-
-	t.Run("starts no watchdog when the router cannot start", func(t *testing.T) {
-		h := newHarness(t, nil)
-		ctx := context.Background()
-		cli.ApplyRouting(ctx, h.deps())
-		h.routerErr = errors.New("spawn failed")
-		h.out.Lines = nil
-		var watched []int64
-		deps := h.deps()
-		deps.StartWatchdog = func(_ context.Context, sessionPid int64) { watched = append(watched, sessionPid) }
-
-		if got := cli.RoutingHook(ctx, deps); got != cli.ExitOK {
-			t.Fatalf("routingHook = %d, want %d", got, cli.ExitOK)
-		}
-		if len(watched) != 0 {
-			t.Fatalf("watchdog starts = %v, want none", watched)
-		}
-	})
-
 	t.Run("repairs agents an update reset to sonnet, silently", func(t *testing.T) {
 		h := newHarness(t, nil)
 		ctx := context.Background()
