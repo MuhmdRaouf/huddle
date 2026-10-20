@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { type BoardRef, optionLabel } from "../io.ts";
+import type { Density } from "../store.ts";
 import { type FilterKind, type Filters, clearPicks, togglePick } from "../store.ts";
 import type { Card } from "../types.ts";
+import { BoardPicker } from "./BoardPicker.tsx";
 import { FilterMenu } from "./FilterMenu.tsx";
+import type { BoardRef } from "../io.ts";
 
 export type ToolbarProps = {
   cards: Card[];
@@ -14,6 +16,19 @@ export type ToolbarProps = {
   boardKey: string | null;
   /** hands a picker choice up, as the address change that reopens the tab */
   onBoard: (key: string) => void;
+  /** the board's epoch, named by the live dot */
+  epoch: number;
+  /** whether the stream is up, read by the live dot's title */
+  connected: boolean;
+  /** live boards carry the dot; a static board has nothing to be live about */
+  live: boolean;
+  /** the board's density and its toggle */
+  density: Density;
+  onDensity: (density: Density) => void;
+  /** tags every visible card carries, named once here instead of on every card */
+  sharedTags?: readonly string[] | undefined;
+  /** the one cluster every visible card shares, named once here */
+  sharedCluster?: string | null | undefined;
 };
 
 /** The row's kinds in their standing order: Domain is the tag kind, Epic the cluster. */
@@ -76,10 +91,30 @@ function KindMenu({
   );
 }
 
-/** The toolbar as one wrapping flex row: the board picker, search, one menu per filter kind, the
- *  hide-done toggle with its label beside it — and the picks as pills below. `/` jumps to the
- *  search box, but never while a menu holds the keyboard. */
-export function Toolbar({ cards, filters, onChange, boards, boardKey, onBoard }: ToolbarProps) {
+/** One `All cards: …` note, for a shared tag or the shared cluster. */
+function SharedNote({ value }: { value: string }) {
+  return <span class="shared-note">All cards: {value}</span>;
+}
+
+/** The header row: the picker as the page title, the live dot, search, one menu per filter kind,
+ *  the shared note, the hide-done toggle and the density toggle at the right. `/` jumps to the
+ *  search box and b opens the picker, but never while a menu holds the keyboard. The picks sit
+ *  as pills below. */
+export function Toolbar({
+  cards,
+  filters,
+  onChange,
+  boards,
+  boardKey,
+  onBoard,
+  epoch,
+  connected,
+  live,
+  density,
+  onDensity,
+  sharedTags = [],
+  sharedCluster = null,
+}: ToolbarProps) {
   const search = useRef<HTMLInputElement>(null);
   const [openKind, setOpenKind] = useState<FilterKind | null>(null);
 
@@ -99,23 +134,16 @@ export function Toolbar({ cards, filters, onChange, boards, boardKey, onBoard }:
   const picks = KINDS.flatMap(({ kind, label }) =>
     filters.picks[kind].map((value) => ({ kind, label, value })),
   );
+  const liveWord = connected ? "live" : "reconnecting";
 
   return (
     <>
       <div class="toolbar">
-        {boards.length > 0 && (
-          <select
-            class="board-select"
-            aria-label="Board"
-            value={boardKey ?? ""}
-            onChange={(event) => onBoard(event.currentTarget.value)}
-          >
-            {boards.map((board) => (
-              <option key={board.key} value={board.key}>
-                {optionLabel(boards, board)}
-              </option>
-            ))}
-          </select>
+        {boards.length > 0 && <BoardPicker boards={boards} boardKey={boardKey} onBoard={onBoard} />}
+        {live && (
+          <span class={`live-dot ${connected ? "on" : "off"}`} title={`epoch ${epoch}, ${liveWord}`}>
+            <span class="sr-only">{liveWord}</span>
+          </span>
         )}
         <input
           ref={search}
@@ -138,6 +166,10 @@ export function Toolbar({ cards, filters, onChange, boards, boardKey, onBoard }:
             onChange={onChange}
           />
         ))}
+        {sharedTags.map((tag) => (
+          <SharedNote key={tag} value={tag} />
+        ))}
+        {sharedCluster !== null && sharedCluster !== "" && <SharedNote value={sharedCluster} />}
         <label class="hide-done">
           <input
             type="checkbox"
@@ -148,6 +180,14 @@ export function Toolbar({ cards, filters, onChange, boards, boardKey, onBoard }:
           />
           <span>Hide done</span>
         </label>
+        <button
+          type="button"
+          class="density"
+          aria-pressed={density === "comfortable"}
+          onClick={() => onDensity(density === "compact" ? "comfortable" : "compact")}
+        >
+          {density === "compact" ? "Compact" : "Comfortable"}
+        </button>
       </div>
       {picks.length > 0 && (
         <div class="pills">

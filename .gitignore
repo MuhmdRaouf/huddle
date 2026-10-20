@@ -642,6 +642,9 @@ $RECYCLE.BIN/
 !CLAUDE.md
 !.claude/skills/
 
+# The e2e run's screenshots: evidence, not sources.
+web/e2e/screenshots/
+
 # End of https://www.toptal.com/developers/gitignore/api/go,vim,node,emacs,linux,macos,python,ansible,windows,terraform,terragrunt,intellij+all,visualstudiocode
 
 ### Project ###

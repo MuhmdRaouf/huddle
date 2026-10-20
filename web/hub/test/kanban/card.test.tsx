@@ -8,36 +8,45 @@ import { stubMatchMedia } from "./match-media.ts";
 
 const TITLE = "kanban: Preact board page, responsive and live, with its Vitest suite";
 
+/** The card as the board shows it at comfortable density, where the summary and tags live. */
+function comfortable(children: Parameters<typeof CardView>[0]) {
+  return render(<CardView {...children} density="comfortable" />);
+}
+
 describe("CardView", () => {
-  it("shows the epic as a small muted label beside the id, the title and the summary", () => {
+  it("shows the epic beside the id and the title, the summary at comfortable density", () => {
     const { container } = render(<CardView card={cardOf("KBN-UI")} flash={0} onOpen={() => undefined} />);
     const card = container.querySelector<HTMLElement>("article.card");
     expect(card?.dataset.id).toBe("KBN-UI");
     expect(card?.querySelector("header .epic")?.textContent).toBe("kanban ui");
     expect(card?.querySelector("header .cid")?.textContent).toBe("KBN-UI");
     expect(card?.querySelector("h3")?.textContent).toBe(TITLE);
-    expect(card?.querySelector("p.summary")?.textContent).toContain("Preact board page");
+    // compact carries no summary
+    expect(card?.querySelector("p.summary")).toBeNull();
+    const wide = comfortable({ card: cardOf("KBN-UI"), flash: 0, onOpen: () => undefined });
+    expect(wide.container.querySelector("p.summary")?.textContent).toContain("Preact board page");
   });
 
-  it("renders the badges in the order the server derived them", () => {
+  it("renders the state badges after est and type in the meta row", () => {
     const { container } = render(<CardView card={cardOf("KBN-UI")} flash={0} onOpen={() => undefined} />);
-    const badges = [...(container.querySelectorAll("ul.badges li") ?? [])].map((li) => li.textContent);
-    expect(badges).toEqual(["EXPEDITE", "P1", "feature", "L", "@glm-KBN-UI", "waits on KBN-API"]);
+    const meta = container.querySelector("ul.meta");
+    expect(meta?.querySelector(".est")?.textContent).toBe("L");
+    expect(meta?.querySelector(".type")?.textContent).toBe("feature");
+    const chips = [...(meta?.querySelectorAll("li.badge") ?? [])].map((li) => li.textContent);
+    expect(chips).toEqual(["waits on KBN-API"]);
   });
 
   it("carries the badge's kind as its colour class", () => {
     const { container } = render(<CardView card={cardOf("KBN-UI")} flash={0} onOpen={() => undefined} />);
-    expect(container.querySelector("ul.badges li")?.classList.contains("b-expedite")).toBe(true);
+    expect(container.querySelector("ul.meta li.badge")?.classList.contains("b-waits")).toBe(true);
   });
 
-  it("lists the tags as chips, the repo tags first", () => {
-    const { container } = render(
-      <CardView
-        card={makeCard({ tags: ["router", "cc-plugins", "huddle"] })}
-        flash={0}
-        onOpen={() => undefined}
-      />,
-    );
+  it("lists the tags as chips at comfortable density, the repo tags first", () => {
+    const { container } = comfortable({
+      card: makeCard({ tags: ["router", "cc-plugins", "huddle"] }),
+      flash: 0,
+      onOpen: () => undefined,
+    });
     const chips = [...container.querySelectorAll("ul.tags button")];
     expect(chips.map((chip) => chip.textContent)).toEqual(["huddle", "cc-plugins", "router"]);
     expect(chips.map((chip) => chip.className)).toEqual(["repo-huddle", "repo-cc-plugins", ""]);
@@ -46,7 +55,7 @@ describe("CardView", () => {
   it("hands a tag up when its chip is clicked, without opening the ticket", async () => {
     const onTag = vi.fn();
     const onOpen = vi.fn();
-    render(<CardView card={cardOf("KBN-UI")} flash={0} onOpen={onOpen} onTag={onTag} />);
+    comfortable({ card: cardOf("KBN-UI"), flash: 0, onOpen, onTag });
     await userEvent.click(screen.getByRole("button", { name: "kanban" }));
     expect(onTag).toHaveBeenCalledWith("kanban");
     expect(onTag).not.toHaveBeenCalledWith("ui");
@@ -122,9 +131,7 @@ describe("CardView", () => {
   });
 
   it("leaves the summary element out when the card has none", () => {
-    const { container } = render(
-      <CardView card={makeCard({ summary: "" })} flash={0} onOpen={() => undefined} />,
-    );
+    const { container } = comfortable({ card: makeCard({ summary: "" }), flash: 0, onOpen: () => undefined });
     expect(container.querySelector("p.summary")).toBeNull();
   });
 });

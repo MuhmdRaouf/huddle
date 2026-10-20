@@ -19,27 +19,38 @@ function renderBoard(snap: Snapshot | null = snapshot, filters = EMPTY_FILTERS) 
 
 const columnsOf = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>("section.col")];
 
+/** Opens a column sitting behind its rail; tests name the column they need open. */
+async function openRail(container: Element, column: string) {
+  const rail = container.querySelector<HTMLButtonElement>(`section[data-column="${column}"] button.rail-btn`);
+  if (rail === null) throw new Error(`no ${column} rail`);
+  await userEvent.click(rail);
+}
+
 describe("Board", () => {
-  it("renders the seven columns in flow order, titled with the count of cards shown", () => {
+  it("renders the six open columns in flow order and done as a rail beside them", () => {
     const { container } = renderBoard();
-    expect(columnsOf(container).map((col) => col.dataset.column)).toEqual([
+    const openCols = columnsOf(container).filter((col) => col.querySelector("h2") !== null);
+    expect(openCols.map((col) => col.dataset.column)).toEqual([
       "backlog",
       "ready",
       "in-progress",
       "review",
       "testing",
       "blocked",
-      "done",
     ]);
-    expect(columnsOf(container).map((col) => col.querySelector("h2")?.textContent)).toEqual([
+    expect(openCols.map((col) => col.querySelector("h2")?.textContent)).toEqual([
       "Backlog 3",
       "Ready 1",
       "In progress 1",
       "Review 1",
       "Testing 1",
       "Blocked 1",
-      "Done 3",
     ]);
+    // done stands beside them as a rail carrying its count
+    expect(container.querySelector('section[data-column="done"] h2')).toBeNull();
+    const rail = container.querySelector<HTMLButtonElement>('section[data-column="done"] .rail-btn');
+    expect(rail?.textContent).toContain("Done");
+    expect(rail?.getAttribute("aria-label")).toBe("Done, 3 cards, show column");
   });
 
   it("lifts open expedite cards into a lane above the columns, out of their own column", () => {
@@ -52,27 +63,30 @@ describe("Board", () => {
     expect(inProgress?.querySelectorAll("article.card")).toHaveLength(1);
   });
 
-  it("keeps an expedite card that is done in the done column, out of the lane", () => {
+  it("keeps an expedite card that is done in the done column, out of the lane", async () => {
     const snap = makeSnapshot([makeCard({ id: "KBN-DONE", column: "done", expedite: true })]);
     const { container } = renderBoard(snap);
     expect(container.querySelector('section[aria-label="Expedite"]')).toBeNull();
+    await openRail(container, "done");
     expect(
       container.querySelector('section[data-column="done"]')?.querySelectorAll("article.card"),
     ).toHaveLength(1);
   });
 
-  it("hides cards the filters remove, including whole columns' worth", () => {
+  it("hides cards the filters remove; the columns they empty become rails", () => {
     const onlyUi = { ...EMPTY_FILTERS, q: "KBN-UI" };
     const { container } = renderBoard(snapshot, onlyUi);
+    // the one visible card is KBN-UI, and the expedite lane holds it, so every column is a rail
     expect(container.querySelectorAll("article.card")).toHaveLength(1);
-    expect(columnsOf(container).map((col) => col.querySelector("h2")?.textContent)).toEqual([
-      "Backlog 0",
-      "Ready 0",
-      "In progress 0",
-      "Review 0",
-      "Testing 0",
-      "Blocked 0",
-      "Done 0",
+    const rails = [...container.querySelectorAll<HTMLButtonElement>("button.rail-btn")];
+    expect(rails.map((rail) => rail.getAttribute("aria-label"))).toEqual([
+      "Backlog, 0 cards, show column",
+      "Ready, 0 cards, show column",
+      "In progress, 0 cards, show column",
+      "Review, 0 cards, show column",
+      "Testing, 0 cards, show column",
+      "Blocked, 0 cards, show column",
+      "Done, 0 cards, show column",
     ]);
   });
 
@@ -86,16 +100,19 @@ describe("Board", () => {
       }),
     );
     const { container } = renderBoard(makeSnapshot(done));
+    await openRail(container, "done");
     const doneCol = () => container.querySelector('section[data-column="done"]');
     const shown = () => [...(doneCol()?.querySelectorAll<HTMLElement>("article.card") ?? [])];
     expect(shown()).toHaveLength(20);
     expect(shown()?.[0]?.dataset.id).toBe("DONE-24");
     expect(shown()?.[19]?.dataset.id).toBe("DONE-05");
-    await userEvent.click(screen.getByRole("button", { name: "show all 25" }));
+    // the heading counts the whole column; the button names what opening it adds up to
+    expect(doneCol()?.querySelector("h2")?.textContent).toBe("Done 25");
+    await userEvent.click(screen.getByRole("button", { name: "Show all 25" }));
     expect(shown()).toHaveLength(25);
   });
 
-  it("orders done by finishedAt when it disagrees with updatedAt, falling back when empty", () => {
+  it("orders done by finishedAt when it disagrees with updatedAt, falling back when empty", async () => {
     const done = [
       makeCard({
         id: "D-OLDISH",
@@ -118,6 +135,7 @@ describe("Board", () => {
       }),
     ];
     const { container } = renderBoard(makeSnapshot(done));
+    await openRail(container, "done");
     const shown = [
       ...(container
         .querySelector('section[data-column="done"]')
@@ -133,17 +151,17 @@ describe("Board", () => {
     expect(loading?.querySelector(".skeleton")).toBeTruthy();
   });
 
-  it("tabs its columns on a phone, the count a badge beside the title", () => {
+  it("tabs its columns on a phone, the tabs the flow bar's own labels", () => {
     stubMatchMedia((query) => query.includes("max-width"));
     const { container } = renderBoard();
     const tab = container.querySelector('[role="tab"]') as HTMLElement;
-    expect(tab.textContent).toBe("Backlog3");
-    expect(tab.querySelector("span")?.textContent).toBe("Backlog");
-    expect(tab.querySelector(".count-badge")?.textContent).toBe("3");
+    expect(tab.textContent).toBe("Backlog 3");
+    expect(tab.getAttribute("aria-selected")).toBe("true");
   });
 
-  it("renders every card the snapshot holds across its columns", () => {
+  it("renders every card the snapshot holds across its columns once done is opened", async () => {
     const { container } = renderBoard();
+    await openRail(container, "done");
     expect(container.querySelectorAll("article.card").length).toBe(snapshot.cards.length);
   });
 

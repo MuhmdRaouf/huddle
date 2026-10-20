@@ -5,13 +5,23 @@
 // an unmount stops it for good.
 
 import type { JSX } from "preact";
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import "./kanban.css";
 import { Board } from "./components/Board.tsx";
+import { BoardPicker } from "./components/BoardPicker.tsx";
 import { Drawer, useDrawerSelection } from "./components/Drawer.tsx";
 import { Toolbar } from "./components/Toolbar.tsx";
-import { boardIo, type BoardRef, fetchBoards, optionLabel } from "./io.ts";
-import { BoardStore, DONE_HIDE_THRESHOLD, EMPTY_FILTERS, type Filters, togglePick } from "./store.ts";
+import { boardIo, type BoardRef, fetchBoards } from "./io.ts";
+import {
+  BoardStore,
+  clearFilters,
+  DONE_HIDE_THRESHOLD,
+  EMPTY_FILTERS,
+  type Filters,
+  filterCards,
+  togglePick,
+  useDensity,
+} from "./store.ts";
 
 const EMPTY_LINE = "No boards yet. A session working in a repo with .agents/kanban adds its board here.";
 const GONE_LINE = "That board is gone. Pick another.";
@@ -56,6 +66,23 @@ function useBoardStore(key: string): BoardStore | null {
   return store;
 }
 
+/** The values every visible card carries, so the cards can drop them for one header note. */
+function sharedValues(visible: ReturnType<typeof filterCards>): {
+  tags: string[];
+  cluster: string | null;
+} {
+  if (visible.length < 2) return { tags: [], cluster: null };
+  const counts = new Map<string, number>();
+  for (const card of visible) {
+    for (const tag of card.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  }
+  const tags = [...counts.entries()].filter(([, n]) => n === visible.length).map(([tag]) => tag);
+  const cluster = visible.every((card) => card.cluster === visible[0]?.cluster)
+    ? (visible[0]?.cluster ?? null)
+    : null;
+  return { tags, cluster };
+}
+
 /** The chosen board's page: the toolbar, the board and the drawer on the key's store. */
 function BoardPane({
   boardKey,
@@ -69,6 +96,7 @@ function BoardPane({
   const store = useBoardStore(boardKey);
   const sel = useDrawerSelection();
   const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
+  const [density, setDensity] = useDensity();
   const touched = useRef(false);
   const setFilters = (next: Filters): void => {
     touched.current = true;
@@ -86,11 +114,13 @@ function BoardPane({
       setFiltersState((current) => ({ ...current, hideDone: true }));
     }
   }, [snapshot]);
+  const cards = useMemo(() => snapshot?.cards ?? [], [snapshot]);
+  const visible = useMemo(() => filterCards(cards, filters), [cards, filters]);
+  const shared = useMemo(() => sharedValues(visible), [visible]);
   if (store === null) {
     return <Board snapshot={null} filters={filters} changeSeq={0} changedIds={new Set()} onOpen={sel.open} />;
   }
   const state = store.getState();
-  const cards = snapshot?.cards ?? [];
   const openCard = sel.openId === null ? null : (cards.find((card) => card.id === sel.openId) ?? null);
   return (
     <>
@@ -101,6 +131,13 @@ function BoardPane({
         boards={boards}
         boardKey={boardKey}
         onBoard={onBoard}
+        epoch={snapshot?.epoch ?? 0}
+        connected={state.connected}
+        live={state.mode === "live"}
+        density={density}
+        onDensity={setDensity}
+        sharedTags={shared.tags}
+        sharedCluster={shared.cluster}
       />
       <div class="board-with-panel">
         <Board
@@ -110,6 +147,11 @@ function BoardPane({
           changedIds={state.changedIds}
           onOpen={sel.open}
           onTag={pickTag}
+          openId={sel.openId}
+          density={density}
+          onClearFilters={() => setFilters(clearFilters(filters))}
+          sharedTags={shared.tags}
+          sharedCluster={shared.cluster}
         />
         {openCard !== null && (
           <Drawer
@@ -155,20 +197,9 @@ export function KanbanTab({ boardKey }: { boardKey: string | null }): JSX.Elemen
       {state.kind === "ok" && boards.length === 0 && <p role="status">{EMPTY_LINE}</p>}
       {gone && (
         <>
-          {/* a gone key leaves the toolbar's picker standing, so another board is one pick away */}
+          {/* a gone key leaves the picker standing, so another board is one pick away */}
           <div class="toolbar">
-            <select
-              class="board-select"
-              aria-label="Board"
-              value=""
-              onChange={(e) => toAddress(e.currentTarget.value)}
-            >
-              {boards.map((board) => (
-                <option key={board.key} value={board.key}>
-                  {optionLabel(boards, board)}
-                </option>
-              ))}
-            </select>
+            <BoardPicker boards={boards} boardKey={boardKey} onBoard={toAddress} />
           </div>
           <p role="status">{GONE_LINE}</p>
         </>

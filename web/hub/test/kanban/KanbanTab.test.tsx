@@ -111,9 +111,11 @@ describe("KanbanTab", () => {
   it("lists the boards and opens the first", async () => {
     stubNet();
     const view = render(<KanbanTab boardKey={null} />);
-    await screen.findByRole("combobox", { name: "Board" });
-    expect(screen.getByRole("option", { name: "alpha" })).toBeDefined();
-    expect(screen.getByRole("option", { name: "beta" })).toBeDefined();
+    await screen.findByRole("button", { name: "Board" });
+    // the picker opens onto the list: name bold, the root's tail beside it
+    await userEvent.click(screen.getByRole("button", { name: "Board" }));
+    expect(screen.getByRole("option", { name: "alpha repo/alpha" })).toBeDefined();
+    expect(screen.getByRole("option", { name: "beta repo/beta" })).toBeDefined();
     // the bare address adopts the first board's; the effect flushes on the timer tick
     await vi.waitFor(() => expect(location.hash).toBe("#/kanban/a1a1"));
     // the shell's hashchange lands the key back in as the prop; the board paints
@@ -128,7 +130,7 @@ describe("KanbanTab", () => {
     await screen.findByText(
       "No boards yet. A session working in a repo with .agents/kanban adds its board here.",
     );
-    expect(screen.queryByRole("combobox", { name: "Board" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
     expect(location.hash).toBe("");
   });
 
@@ -136,10 +138,13 @@ describe("KanbanTab", () => {
     stubNet(TWINS);
     const view = render(<KanbanTab boardKey="a1a1" />);
     await screen.findByText("kanban: Preact board page, responsive and live, with its Vitest suite");
-    // one name across the boards: the picker disambiguates with the root
-    expect(screen.getByRole("option", { name: "dupe (/repo/one)" })).toBeDefined();
-    expect(screen.getByRole("option", { name: "dupe (/repo/two)" })).toBeDefined();
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Board" }), "b2b2");
+    // one name across the boards: the picker disambiguates with the root's tail
+    await userEvent.click(screen.getByRole("button", { name: "Board" }));
+    expect(screen.getByRole("option", { name: "dupe repo/one" })).toBeDefined();
+    expect(screen.getByRole("option", { name: "dupe repo/two" })).toBeDefined();
+    // typing narrows the list, Enter picks
+    await userEvent.type(screen.getByRole("combobox", { name: "Filter boards" }), "two");
+    await userEvent.type(screen.getByRole("combobox", { name: "Filter boards" }), "{Enter}");
     expect(location.hash).toBe("#/kanban/b2b2");
     // the shell follows the address: the old stream closes, the new board paints
     view.rerender(<KanbanTab boardKey="b2b2" />);
@@ -163,18 +168,22 @@ describe("KanbanTab", () => {
     const toggle = screen.getByRole("checkbox", { name: "Hide done" });
     // the default lands one render after the first paint of the board
     await vi.waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
-    expect(screen.getByRole("heading", { name: "Done 0" })).toBeDefined();
+    // done sits behind its rail while the filter hides it
+    expect(screen.getByRole("button", { name: "Done, 0 cards, show column" })).toBeDefined();
     await userEvent.click(toggle);
-    // shown again, capped at twenty with the show-all button beside them
-    expect(screen.getByRole("heading", { name: "Done 20" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "show all 60" })).toBeDefined();
+    // done is counted again, still behind its rail until it is opened
+    const rail = screen.getByRole("button", { name: "Done, 60 cards, show column" });
+    await userEvent.click(rail);
+    // opened, the latest twenty show with the show-all button beside them
+    expect(screen.getByRole("heading", { name: "Done 60" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Show all 60" })).toBeDefined();
   });
 
   it("a gone board says so and keeps the picker", async () => {
     const calls = stubNet();
     render(<KanbanTab boardKey="dead" />);
     await screen.findByText("That board is gone. Pick another.");
-    expect(screen.getByRole("combobox", { name: "Board" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Board" })).toBeDefined();
     expect(calls.some((url) => url.includes("/b/dead/"))).toBe(false);
   });
 

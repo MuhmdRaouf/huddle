@@ -67,6 +67,48 @@ export function clearPicks(filters: Filters): Filters {
   return { ...filters, picks: { ...EMPTY_FILTERS.picks } };
 }
 
+/** The filters with the picks and the search dropped; hide-done stays, being a mode. */
+export function clearFilters(filters: Filters): Filters {
+  return { q: "", picks: { ...EMPTY_FILTERS.picks }, hideDone: filters.hideDone };
+}
+
+/** The board's two densities: compact is the default, comfortable adds the summary and tags. */
+export type Density = "compact" | "comfortable";
+
+/** The localStorage key the density preference lives under. */
+export const DENSITY_KEY = "kanban.density";
+
+/** The stored density, compact for anything else; a storage that throws reads as compact. */
+export function readDensity(storage: { getItem(key: string): string | null } | null | undefined): Density {
+  try {
+    return storage?.getItem(DENSITY_KEY) === "comfortable" ? "comfortable" : "compact";
+  } catch {
+    return "compact";
+  }
+}
+
+/** Remembers the density; a storage that throws is left alone. */
+export function writeDensity(
+  storage: { setItem(key: string, value: string): void } | null | undefined,
+  density: Density,
+): void {
+  try {
+    storage?.setItem(DENSITY_KEY, density);
+  } catch {
+    // the toggle still holds for this visit
+  }
+}
+
+/** The board's density with its toggle: read once, remembered on every change. */
+export function useDensity(): [Density, (density: Density) => void] {
+  const [density, setDensity] = useState<Density>(() => readDensity(window.localStorage));
+  const set = (next: Density): void => {
+    setDensity(next);
+    writeDensity(window.localStorage, next);
+  };
+  return [density, set];
+}
+
 /** Apply one delta: upserts replace in place (order kept, new ids appended), removes drop out. */
 export function applyDelta(snapshot: Snapshot, delta: Delta): Snapshot {
   const upserts = new Map(delta.upsert.map((card) => [card.id, card]));

@@ -25,11 +25,13 @@ function Row({
   initial,
   boardKey = "a1a1",
   onBoard = () => undefined,
+  over = {},
 }: {
   cards: Card[];
   initial: Filters;
   boardKey?: string | null;
   onBoard?: (key: string) => void;
+  over?: Partial<Parameters<typeof Toolbar>[0]>;
 }) {
   const [filters, setFilters] = useState(initial);
   return (
@@ -40,13 +42,21 @@ function Row({
       boards={BOARDS}
       boardKey={boardKey}
       onBoard={onBoard}
+      epoch={3}
+      connected
+      live
+      density="compact"
+      onDensity={() => undefined}
+      {...over}
     />
   );
 }
 
 /** The row's kind buttons, in their standing order. */
 const kindButtons = (container: Element): string[] =>
-  [...container.querySelectorAll<HTMLButtonElement>(".toolbar button")].map((b) => b.textContent ?? "");
+  [...container.querySelectorAll<HTMLButtonElement>(".toolbar button[data-kind]")].map(
+    (b) => b.textContent ?? "",
+  );
 
 /** The kind's own button; tests name the kind they drive. */
 function kindButton(kind: string, container: Element): HTMLButtonElement {
@@ -86,6 +96,11 @@ function Harness({ cards, initial }: { cards: Card[]; initial: Filters }) {
       boards={BOARDS}
       boardKey="a1a1"
       onBoard={() => undefined}
+      epoch={3}
+      connected
+      live
+      density="compact"
+      onDensity={() => undefined}
     />
   );
 }
@@ -96,15 +111,15 @@ describe("the toolbar row", () => {
     expect(container.querySelectorAll(".chips, .chip")).toHaveLength(0);
     expect(kindButtons(container)).toEqual(["Domain", "Epic", "Holder", "Type", "Priority"]);
     expect(screen.getByRole("searchbox", { name: "Search" })).toBeTruthy();
-    const picker = screen.getByRole("combobox", { name: "Board" }) as HTMLSelectElement;
+    const picker = screen.getByRole("button", { name: "Board" });
     expect(picker.textContent).toContain("alpha");
-    expect(picker.textContent).toContain("beta");
   });
 
   it("moves the address when the picker picks another board", async () => {
     const onBoard = vi.fn();
     render(<Row cards={board()} initial={EMPTY_FILTERS} onBoard={onBoard} />);
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Board" }), "b2b2");
+    await userEvent.click(screen.getByRole("button", { name: "Board" }));
+    await userEvent.click(screen.getByRole("option", { name: "beta repo/beta" }));
     expect(onBoard).toHaveBeenCalledWith("b2b2");
   });
 
@@ -132,6 +147,69 @@ describe("the toolbar row", () => {
   });
 });
 
+describe("Feature: the header row", () => {
+  it("Scenario: the live dot carries the epoch and the connection in its title", () => {
+    // Given the toolbar of a live board that is connected
+    const { container, unmount } = render(<Row cards={board()} initial={EMPTY_FILTERS} />);
+    // Then the dot reads live, the epoch named beside it
+    expect(container.querySelector(".live-dot")?.getAttribute("title")).toBe("epoch 3, live");
+    unmount();
+    // Given the same board while the stream is down
+    const down = render(<Row cards={board()} initial={EMPTY_FILTERS} over={{ connected: false }} />);
+    // Then the dot says it is reconnecting
+    expect(down.container.querySelector(".live-dot")?.getAttribute("title")).toBe("epoch 3, reconnecting");
+  });
+
+  it("Scenario: no dot is shown when the board is not live", () => {
+    // Given a static board's toolbar
+    const { container } = render(<Row cards={board()} initial={EMPTY_FILTERS} over={{ live: false }} />);
+    // Then there is no live dot
+    expect(container.querySelector(".live-dot")).toBeNull();
+  });
+
+  it("Scenario: the density toggle flips and names the density it would show", async () => {
+    // Given the toolbar at its default compact density
+    const onDensity = vi.fn();
+    const { container } = render(
+      <Row cards={board()} initial={EMPTY_FILTERS} over={{ density: "compact", onDensity }} />,
+    );
+    const toggle = container.querySelector<HTMLButtonElement>(".density");
+    expect(toggle?.textContent).toContain("Compact");
+    expect(toggle?.getAttribute("aria-pressed")).toBe("false");
+    // When the toggle is pressed
+    await userEvent.click(toggle as HTMLButtonElement);
+    // Then the page is asked for the comfortable density
+    expect(onDensity).toHaveBeenCalledWith("comfortable");
+  });
+
+  it("Scenario: a tag every visible card carries is named once in the header row", () => {
+    // Given a board whose every card carries the kanban tag
+    const cards = board().map((card) => ({ ...card, tags: ["kanban"] }));
+    // When the toolbar renders
+    const { container } = render(
+      <Row cards={cards} initial={EMPTY_FILTERS} over={{ sharedTags: ["kanban"] }} />,
+    );
+    // Then the header names the shared tag once
+    expect(container.querySelector(".shared-note")?.textContent).toBe("All cards: kanban");
+  });
+
+  it("Scenario: a shared cluster is named the same way", () => {
+    // Given a board whose every card sits in one cluster
+    const { container } = render(
+      <Row cards={board()} initial={EMPTY_FILTERS} over={{ sharedCluster: "hr" }} />,
+    );
+    // Then the header names it once
+    expect(container.querySelector(".shared-note")?.textContent).toBe("All cards: hr");
+  });
+
+  it("Scenario: nothing is named when the cards share nothing", () => {
+    // Given a board with no shared tag or cluster
+    const { container } = render(<Row cards={board()} initial={EMPTY_FILTERS} />);
+    // Then there is no shared note
+    expect(container.querySelector(".shared-note")).toBeNull();
+  });
+});
+
 describe("a kind's menu", () => {
   it("opens on click, lists the values with counts sorted by count then value, and reads as expanded", async () => {
     const { container } = render(
@@ -142,6 +220,11 @@ describe("a kind's menu", () => {
         boards={BOARDS}
         boardKey="a1a1"
         onBoard={() => undefined}
+        epoch={3}
+        connected
+        live
+        density="compact"
+        onDensity={() => undefined}
       />,
     );
     expect(kindButton("holder", container).getAttribute("aria-expanded")).toBe("false");
@@ -176,6 +259,11 @@ describe("a kind's menu", () => {
         boards={BOARDS}
         boardKey="a1a1"
         onBoard={() => undefined}
+        epoch={3}
+        connected
+        live
+        density="compact"
+        onDensity={() => undefined}
       />,
     );
     await userEvent.click(kindButton("cluster", container));
@@ -200,6 +288,11 @@ describe("a kind's menu", () => {
           boards={BOARDS}
           boardKey="a1a1"
           onBoard={() => undefined}
+          epoch={3}
+          connected
+          live
+          density="compact"
+          onDensity={() => undefined}
         />
       );
     }
@@ -224,6 +317,11 @@ describe("a kind's menu", () => {
         boards={BOARDS}
         boardKey="a1a1"
         onBoard={() => undefined}
+        epoch={3}
+        connected
+        live
+        density="compact"
+        onDensity={() => undefined}
       />,
     );
     const button = kindButton("holder", container);
@@ -243,6 +341,11 @@ describe("a kind's menu", () => {
         boards={BOARDS}
         boardKey="a1a1"
         onBoard={() => undefined}
+        epoch={3}
+        connected
+        live
+        density="compact"
+        onDensity={() => undefined}
       />,
     );
     await userEvent.click(kindButton("holder", container));
@@ -261,6 +364,11 @@ describe("a kind's menu", () => {
         boards={BOARDS}
         boardKey="a1a1"
         onBoard={() => undefined}
+        epoch={3}
+        connected
+        live
+        density="compact"
+        onDensity={() => undefined}
       />,
     );
     const button = kindButton("holder", container);
@@ -290,6 +398,11 @@ describe("a kind's menu", () => {
         boards={BOARDS}
         boardKey="a1a1"
         onBoard={() => undefined}
+        epoch={3}
+        connected
+        live
+        density="compact"
+        onDensity={() => undefined}
       />,
     );
     await userEvent.click(kindButton("holder", container));
@@ -310,6 +423,11 @@ describe("a kind's menu", () => {
         boards={BOARDS}
         boardKey="a1a1"
         onBoard={() => undefined}
+        epoch={3}
+        connected
+        live
+        density="compact"
+        onDensity={() => undefined}
       />,
     );
     await userEvent.click(kindButton("holder", container));
@@ -330,6 +448,11 @@ describe("a kind's menu", () => {
         boards={BOARDS}
         boardKey="a1a1"
         onBoard={() => undefined}
+        epoch={3}
+        connected
+        live
+        density="compact"
+        onDensity={() => undefined}
       />,
     );
     await userEvent.click(kindButton("holder", container));
@@ -348,6 +471,11 @@ describe("the pills", () => {
         boards={BOARDS}
         boardKey="a1a1"
         onBoard={() => undefined}
+        epoch={3}
+        connected
+        live
+        density="compact"
+        onDensity={() => undefined}
       />,
     );
     const pill = screen.getByRole("button", { name: "Remove Holder glm-A" });

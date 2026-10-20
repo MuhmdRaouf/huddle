@@ -1,55 +1,201 @@
-// kanban.spec.ts — the Kanban tab over the seeded board: the picker lists it, and the three
-// seeded cards sit in the columns the folders put them in.
+// kanban.spec.ts — the redesigned Kanban tab over the fixture hub and board: the picker driven
+// from the keyboard, a rail expanding, the dependency thread lighting up on hover, the phone
+// layout, and the board itself at the three widths the design names. The extra tickets the
+// scenarios need are written into the run's own board folder (gitignored scratch, removed by the
+// teardown) the way `kanban new` would; the fixture folders stay as they are.
 
-import { expect, test } from "@playwright/test";
-import { openTab, signIn, theSetup } from "./helpers.ts";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { expect, test, type Page } from "@playwright/test";
+import { api, openTab, signIn, theSetup } from "./helpers.ts";
+import { repoRoot, runDir } from "./paths.ts";
 
-/** One column: its heading text and the card the fixture put in it. */
-const COLUMNS: readonly (readonly [heading: string, id: string, title: string])[] = [
-  ["Backlog 1", "E2E-1", "First card"],
-  ["Ready 1", "E2E-2", "Second card"],
-  ["In Progress 1", "E2E-3", "Third card"],
-];
+/** The run's board folder: the seeded project's `.agents/kanban`. */
+const boardDir = (): string =>
+  path.join(runDir, "project", theSetup().boardName, ".agents", "kanban");
 
-test("the kanban tab lists the board and its three cards in the right columns", async ({
-  page,
-}) => {
+/** Writes one ticket into a column of the run's board, the way `kanban new` would. */
+function seedTicket(column: string, id: string, title: string, over = ""): void {
+  const dir = path.join(boardDir(), column);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    path.join(dir, `${id}.md`),
+    `---\nid: ${id}\ntitle: "${title}"\ntype: feature\ncluster: e2e\npriority: P2\nsummary: "A card the kanban spec seeded."\n${over}\n---\n\nBody.\n`,
+  );
+}
+
+/** Fills the backlog out to nine and adds the card that waits on E2E-1. The working columns keep
+ *  their single fixture card; review, testing and blocked stay empty, so they read as the rails
+ *  the design draws beside the open columns. */
+function seedBoard(): void {
+  for (let i = 2; i <= 9; i += 1) seedTicket("backlog", `BULK-${i}`, `Bulk card ${i}`);
+  seedTicket("backlog", "E2E-4", "The card that waits", "depends_on: [E2E-1]");
+}
+
+/** Registers a second board under its own project folder and reports a session working in it.
+ *  The project is its own git repository with its own origin: a board's key is its repository's
+ *  identity, and inside this repository both boards would fold into one. */
+async function seedSecondBoard(): Promise<void> {
+  const root = path.join(runDir, "second-project", "e2e-second");
+  mkdirSync(path.join(root, ".agents", "kanban", "backlog"), { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  execFileSync("git", ["remote", "add", "origin", "https://example.test/e2e-second.git"], { cwd: root });
+  writeFileSync(
+    path.join(root, ".agents", "kanban", "backlog", "SECOND-1.md"),
+    '---\nid: SECOND-1\ntitle: "Only on second"\ntype: fix\ncluster: e2e\npriority: P1\nsummary: "The second board\'s one card."\n---\n\nBody.\n',
+  );
+  await api("/api/registry/report", {
+    session_id: "e2e-second-session",
+    machine: "e2e-machine",
+    project: "e2e-second",
+    title: "E2E second board session",
+    model: "glm-5.3",
+    cwd: root,
+    last_event: "UserPromptSubmit",
+    // a day old, so the Now list's Working group keeps counting only the seeded session
+    last_event_at: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
+  });
+}
+
+/** A page on the kanban tab, signed in at the given size and settled on the seeded board. */
+async function kanbanAt(page: Page, width: number, height: number): Promise<void> {
+  await page.setViewportSize({ width, height });
   await signIn(page);
   await openTab(page, "Kanban");
+  await page.locator(".kanban-tab .card").first().waitFor();
+}
 
-  // the picker names the seeded board (the project folder the registry session ran in)
-  const picker = page.getByLabel("Board", { exact: true });
-  await expect(picker).toBeVisible();
-  await expect(picker).toContainText(theSetup().boardName);
+/** The page itself must not scroll sideways, whatever its panels do. */
+const pageOverflow = (page: Page): Promise<number> =>
+  page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
-  // each column holds exactly its own card
-  for (const [heading, id, title] of COLUMNS) {
-    const column = page.locator("section").filter({
-      has: page.getByRole("heading", { name: heading }),
-    });
-    await expect(column).toHaveCount(1);
-    await expect(column.getByRole("button", { name: `${id}: ${title}` })).toBeVisible();
-  }
+/** Screenshots land here; the folder is gitignored. */
+const shotDir = path.join(repoRoot, "web", "e2e", "screenshots");
+const shot = (page: Page, name: string): Promise<void> =>
+  page.screenshot({ path: path.join(shotDir, name) });
+
+test.beforeAll(async () => {
+  mkdirSync(shotDir, { recursive: true });
+  seedBoard();
 });
 
-test("the Holder menu filters the board to a pick, with a pill and a Clear all", async ({ page }) => {
-  await signIn(page);
-  await openTab(page, "Kanban");
-  await expect(page.getByRole("button", { name: "E2E-1: First card" })).toBeVisible();
+test("the board fits its columns, its rails and a dense backlog at 1440×900", async ({ page }) => {
+  await test.step("Given the seeded board open at 1440×900", async () => {
+    await kanbanAt(page, 1440, 900);
+  });
 
-  // open the Holder menu and pick the seeded holder
-  await page.getByRole("button", { name: "Holder", exact: true }).click();
-  await page.getByRole("menuitemcheckbox", { name: "e2e-agent 1" }).click();
+  await test.step("Then the open columns show their counts and the empty ones their rails", async () => {
+    await expect(page.getByRole("heading", { name: "Backlog 10" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Ready 1" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "In progress 1" })).toBeVisible();
+    for (const rail of ["Review", "Testing", "Blocked"]) {
+      await expect(page.getByRole("button", { name: `${rail}, 0 cards, show column` })).toBeVisible();
+    }
+    await expect(page.getByRole("button", { name: "Done, 0 cards, show column" })).toBeVisible();
+  });
 
-  // the pick shows as a pill, and only the held card stays on the board
-  const pill = page.getByRole("button", { name: "Remove Holder e2e-agent" });
-  await expect(pill).toBeVisible();
-  await expect(page.getByRole("button", { name: "E2E-3: Third card" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "E2E-1: First card" })).toHaveCount(0);
+  await test.step("Then the backlog holds its nine compact cards and the page does not scroll sideways", async () => {
+    await expect(page.locator('section[data-column="backlog"] article.card')).toHaveCount(10);
+    expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
+  });
 
-  // Clear all drops the pill and the board comes back whole
-  await page.getByRole("button", { name: "Clear all" }).click();
-  await expect(pill).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "E2E-1: First card" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "E2E-3: Third card" })).toBeVisible();
+  await test.step("Then the flow bar names every column and draws one segment per column with cards", async () => {
+    await expect(page.getByRole("img", { name: /^Backlog 10, Ready 1, In Progress 1, /i })).toBeVisible();
+    await expect(page.locator(".kanban-tab .flow-seg")).toHaveCount(3);
+    await expect(page.locator(".kanban-tab .flow-labels .flow-label")).toHaveCount(7);
+  });
+
+  await test.step("and the desk screenshot is taken", async () => {
+    await shot(page, "kanban-desk-1440x900.png");
+  });
+});
+
+test("a flow label scrolls its column into view", async ({ page }) => {
+  await kanbanAt(page, 1440, 900);
+  await page.getByRole("button", { name: "Done 0" }).click();
+  await expect(page.locator('section[data-column="done"]')).toBeInViewport();
+});
+
+test("a rail opens its column, and the picker drives the boards from the keyboard", async ({ page }) => {
+  await test.step("Given the seeded board open at 1440×900", async () => {
+    await kanbanAt(page, 1440, 900);
+  });
+
+  await test.step("When the done rail is clicked", async () => {
+    await page.getByRole("button", { name: "Done, 0 cards, show column" }).click();
+  });
+
+  await test.step("Then done is a column of its own again, empty but open", async () => {
+    await expect(page.getByRole("heading", { name: "Done 0" })).toBeVisible();
+  });
+
+  await test.step("When a second board is registered and b opens the picker", async () => {
+    await seedSecondBoard();
+    await page.reload();
+    await page.locator(".kanban-tab .card").first().waitFor();
+    await page.keyboard.press("b");
+    await expect(page.getByRole("listbox", { name: "Boards" })).toBeVisible();
+  });
+
+  await test.step("Then typing narrows the list and Enter moves to the second board", async () => {
+    await page.getByRole("combobox", { name: "Filter boards" }).fill("second");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: "Board", exact: true })).toContainText("e2e-second");
+    await expect(page.getByRole("button", { name: "SECOND-1: Only on second" })).toBeVisible();
+  });
+});
+
+test("hovering a card with a dependency marks its dependency and dims the rest", async ({ page }) => {
+  await test.step("Given the board with E2E-4 waiting on E2E-1", async () => {
+    await kanbanAt(page, 1440, 900);
+    await expect(page.getByRole("button", { name: "E2E-4: The card that waits" })).toBeVisible();
+  });
+
+  await test.step("When E2E-4 is hovered", async () => {
+    await page.locator('[data-id="E2E-4"]').hover();
+  });
+
+  await test.step("Then E2E-1 is marked waits-on, E2E-4 itself, and the rest dim", async () => {
+    await expect(page.locator('[data-id="E2E-1"]')).toHaveAttribute("data-thread", "waits-on");
+    await expect(page.locator('[data-id="E2E-4"]')).toHaveAttribute("data-thread", "self");
+    await expect(page.locator('[data-id="E2E-2"]')).toHaveAttribute("data-thread", "dim");
+  });
+});
+
+test("the wide board keeps the columns mode and scrolls its own grid at 1024×768", async ({ page }) => {
+  await kanbanAt(page, 1024, 768);
+  await expect(page.getByRole("heading", { name: "Backlog 10" })).toBeVisible();
+  // the six columns cannot all fit at this width, so the board's own grid scrolls, not the page
+  await expect(page.locator(".kanban-tab section.col")).toHaveCount(7);
+  const boardScrolls = await page
+    .locator(".kanban-tab .columns")
+    .evaluate((el) => el.scrollWidth > el.clientWidth);
+  expect(boardScrolls).toBe(true);
+  await shot(page, "kanban-wide-1024x768.png");
+});
+
+test("the phone keeps one column, the tabs are the flow bar's labels, and the picker is a sheet", async ({
+  page,
+}) => {
+  await test.step("Given the board open at 390×844", async () => {
+    await kanbanAt(page, 390, 844);
+  });
+
+  await test.step("Then one column shows at a time and the tabs carry every column", async () => {
+    await expect(page.locator(".kanban-tab section.col:not(.rail)")).toHaveCount(1);
+    await expect(page.locator(".kanban-tab [role='tab']")).toHaveCount(7);
+    await expect(page.locator(".kanban-tab [role='tab'][aria-selected='true']")).toHaveText("Backlog 10");
+  });
+
+  await test.step("When the picker is opened", async () => {
+    await page.getByRole("button", { name: "Board", exact: true }).click();
+    await expect(page.getByRole("listbox", { name: "Boards" })).toBeVisible();
+  });
+
+  await test.step("Then it opens as a full-width sheet and the phone screenshot is taken", async () => {
+    const box = await page.locator(".kanban-tab .picker-pop").boundingBox();
+    expect(box?.width).toBeGreaterThan(350);
+    await shot(page, "kanban-phone-390x844.png");
+  });
 });
