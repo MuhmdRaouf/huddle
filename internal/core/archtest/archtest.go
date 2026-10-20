@@ -75,7 +75,8 @@ var domainThirdParty = []string{
 // module root, with the layer each counts as. They are never walked, so they appear only as
 // imports.
 var outside = map[string]Layer{
-	"internal/pki": LayerAdapters,
+	"internal/netproxy": LayerAdapters,
+	"internal/pki":      LayerAdapters,
 }
 
 // classify maps a slash package directory, relative to the engine root (internal/core), to its
