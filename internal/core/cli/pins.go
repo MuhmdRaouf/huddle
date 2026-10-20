@@ -4,9 +4,9 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // The parity pins: the environment the golden-transcript suite runs the CLI binary under. The

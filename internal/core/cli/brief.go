@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/render"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // briefSlugMax bounds a new brief's slug.

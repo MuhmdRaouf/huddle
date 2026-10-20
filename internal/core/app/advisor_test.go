@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // The router-health and model-advisor cases, calling the app functions directly; the renderUsage

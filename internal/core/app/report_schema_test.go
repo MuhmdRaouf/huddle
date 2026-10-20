@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // schemaFile writes value as a report schema file and returns its path.

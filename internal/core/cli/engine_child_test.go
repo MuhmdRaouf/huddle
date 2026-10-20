@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 )
 
 // engineChildEnv selects the role a re-executed child of this test binary plays.

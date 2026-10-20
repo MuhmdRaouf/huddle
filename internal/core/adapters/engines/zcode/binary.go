@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // zcodeScript matches the desktop bundle's CLI names: .js, .cjs and .mjs, any case.

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // jsNumber is ECMAScript's Number::toString: exactly what a JS template literal interpolates and

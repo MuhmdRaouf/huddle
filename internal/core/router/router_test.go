@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // routerProvider is the reference provider: zai's names, as the shared suites assert them.

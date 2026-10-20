@@ -17,11 +17,11 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
 	"github.com/MuhmdRaouf/huddle/internal/core/cli"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakedeps"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakes"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // cliBrief is the brief every run of the suite submits.

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // postBetaBody posts one exact body to /v1/messages?beta=true, each given anthropic-beta value

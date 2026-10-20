@@ -17,10 +17,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/keystore"
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // launchTimeoutMs bounds the wait for the page's first stdout line.

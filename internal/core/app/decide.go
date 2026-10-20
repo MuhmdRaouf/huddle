@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // The review decisions — accept (with landing), return with feedback, discard and stop.

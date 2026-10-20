@@ -8,8 +8,8 @@ import (
 	"context"
 	"os"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/fsutil"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // PidMode is whether a record's router is the main router or the emergency passthrough.

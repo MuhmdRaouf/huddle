@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,9 +14,9 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
-// The spool's scenarios: the paths, the writer's appends and retries. The direct tests of the
-// unexported marshalling and logging follow state-migrate: the layers above cover them only
-// indirectly.
+// The spool's scenarios: the paths, the writer's appends and retries, and the reader's
+// skipping. The direct tests of the unexported marshalling and logging follow state-migrate and
+// worker-events: the layers above cover them only indirectly.
 
 // testEnv is a fresh home and Radar home under a temp dir: the real ~/.agents is never touched.
 func testEnv(t *testing.T) domain.EnvLookup {
@@ -70,6 +72,26 @@ func decode(t *testing.T, line string, into any) {
 	if err := json.Unmarshal([]byte(line), into); err != nil {
 		t.Fatalf("decode %q: %v", line, err)
 	}
+}
+
+// spoolWith seeds one file per name with a good route line, a malformed one and an empty one.
+func spoolWith(t *testing.T, names ...string) domain.EnvLookup {
+	t.Helper()
+	e := testEnv(t)
+	line, err := json.Marshal(route("2026-10-07T10:00:00.000Z", "zai"))
+	if err != nil {
+		t.Fatalf("marshal the seed line: %v", err)
+	}
+	for _, name := range names {
+		file := filepath.Join(RadarHome(e), "spool", name)
+		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+			t.Fatalf("mkdir %s: %v", filepath.Dir(file), err)
+		}
+		if err := os.WriteFile(file, append(line, "\nnot json\n\n"...), 0o600); err != nil {
+			t.Fatalf("seed %s: %v", file, err)
+		}
+	}
+	return e
 }
 
 func TestTheSpoolsPaths(t *testing.T) {
@@ -177,6 +199,167 @@ func TestCreateSpoolWriter(t *testing.T) {
 	})
 }
 
+func TestReadingTheSpoolBack(t *testing.T) {
+	noon := pinnedNoon()
+
+	t.Run("lists the last days' files, today included, oldest first, and nothing when there is no spool yet", func(t *testing.T) {
+		e := spoolWith(t, "2026-10-07.jsonl", "2026-10-06.jsonl", "2026-10-05.jsonl", "notes.txt")
+		spoolDir := filepath.Join(RadarHome(e), "spool")
+
+		if got := ListSpoolFiles(e, noon, 2); !slices.Equal(got, []string{
+			filepath.Join(spoolDir, "2026-10-06.jsonl"),
+			filepath.Join(spoolDir, "2026-10-07.jsonl"),
+		}) {
+			t.Fatalf("two days = %q, want the 6th then the 7th", got)
+		}
+		if got := ListSpoolFiles(e, noon, 1); !slices.Equal(got, []string{
+			filepath.Join(spoolDir, "2026-10-07.jsonl"),
+		}) {
+			t.Fatalf("one day = %q, want only the 7th", got)
+		}
+		gone := domain.EnvLookup{"HOME": filepath.Join(t.TempDir(), "gone")}
+		if got := ListSpoolFiles(gone, noon, 30); len(got) != 0 {
+			t.Fatalf("no spool yet = %q, want nothing", got)
+		}
+	})
+
+	t.Run("reads every parseable event and skips malformed lines and unreadable files", func(t *testing.T) {
+		e := spoolWith(t, "2026-10-07.jsonl")
+		events := ReadSpoolEvents(ListSpoolFiles(e, noon, 1))
+		want := []domain.SpoolEvent{route("2026-10-07T10:00:00.000Z", "zai")}
+		if !reflect.DeepEqual(events, want) {
+			t.Fatalf("events = %+v, want %+v", events, want)
+		}
+		if got := ReadSpoolEvents([]string{filepath.Join(RadarHome(e), "spool", "nope.jsonl")}); len(got) != 0 {
+			t.Fatalf("an unreadable file yielded %d events, want none", len(got))
+		}
+	})
+
+	t.Run("reads through the RouteSpool port the board and usage use", func(t *testing.T) {
+		e := spoolWith(t, "2026-10-07.jsonl")
+		events := CreateSpoolReader(e).Events(noon, 1)
+		want := []domain.SpoolEvent{route("2026-10-07T10:00:00.000Z", "zai")}
+		if !reflect.DeepEqual(events, want) {
+			t.Fatalf("events = %+v, want %+v", events, want)
+		}
+	})
+
+	t.Run("leaves a file whose date is not a real calendar date out", func(t *testing.T) {
+		e := spoolWith(t, "2026-10-07.jsonl", "2026-13-45.jsonl", "2026-02-30.jsonl")
+		spoolDir := filepath.Join(RadarHome(e), "spool")
+		if got := ListSpoolFiles(e, noon, 30); !slices.Equal(got, []string{
+			filepath.Join(spoolDir, "2026-10-07.jsonl"),
+		}) {
+			t.Fatalf("thirty days = %q, want only the real date's file", got)
+		}
+	})
+
+	t.Run("reads router health lines beside route events, and skips a health line that is not one", func(t *testing.T) {
+		e := testEnv(t)
+		write := CreateSpoolWriter(e, nil, func() int64 { return noon })
+		health := domain.HealthEvent("zai", domain.HealthRateLimited, "HTTP 429", "glm-5.3", 1_791_000_000_000)
+		write(health)
+		write(domain.HealthEvent("zai", domain.HealthFallback, "no worker was ready", "", 1_791_000_000_001))
+		file := SpoolFile(e, noon)
+
+		broken := []string{
+			healthLine(t, health, func(object map[string]any) { object["event"] = "exploded" }),
+			healthLine(t, health, func(object map[string]any) { object["ts"] = "yesterday" }),
+			healthLine(t, health, func(object map[string]any) { object["reason"] = 7; object["model"] = 8 }),
+		}
+		rewritten := strings.Join(append(fileLines(t, file), broken...), "\n")
+		if err := os.WriteFile(file, []byte(rewritten), 0o600); err != nil {
+			t.Fatalf("rewrite %s: %v", file, err)
+		}
+
+		model := "glm-5.3"
+		want := []domain.SpoolEvent{
+			domain.RouterHealthEvent{
+				Kind: domain.HealthEventKind, Plugin: "zai", Event: domain.HealthRateLimited,
+				Reason: "HTTP 429", Model: &model, Ts: 1_791_000_000_000,
+			},
+			domain.RouterHealthEvent{
+				Kind: domain.HealthEventKind, Plugin: "zai", Event: domain.HealthFallback,
+				Reason: "no worker was ready", Ts: 1_791_000_000_001,
+			},
+			// A string ts with no event name is neither shape; a wrong reason or model type reads as none.
+			domain.RouterHealthEvent{
+				Kind: domain.HealthEventKind, Plugin: "zai", Event: domain.HealthRateLimited,
+				Reason: "", Ts: 1_791_000_000_000,
+			},
+		}
+		if got := ReadSpoolEvents([]string{file}); !reflect.DeepEqual(got, want) {
+			t.Fatalf("events =\n%+v\nwant\n%+v", got, want)
+		}
+	})
+}
+
+// parseEvent's classification, exercised directly: every arm here is a line a router could find
+// beside the route and health lines.
+func TestParseEvent(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		want domain.SpoolEvent
+	}{
+		{
+			name: "a router line",
+			line: `{"ts":"t","event":"router","plugin":"zai","port":1,"state":"start","version":1}`,
+			want: domain.RouterEvent{
+				Ts: "t", Event: domain.EventRouter, Plugin: "zai",
+				Port: 1, State: domain.RouterStateStart, Version: 1,
+			},
+		},
+		{
+			name: "a capture line",
+			line: `{"ts":"t","event":"capture","plugin":"zai","prompt_hash":"h","gz":"Zw=="}`,
+			want: domain.CaptureEvent{
+				Ts: "t", Event: domain.EventCapture, Plugin: "zai", PromptHash: "h", Gz: "Zw==",
+			},
+		},
+		{name: "an event name no event of ours carries", line: `{"ts":"t","event":"bogus"}`},
+		{name: "null is not an object", line: `null`},
+		{name: "a bare number is not an object", line: `5`},
+		{name: "a timestamp that is not a string", line: `{"ts":5,"event":"route"}`},
+		{name: "no event name", line: `{"ts":"t"}`},
+		{name: "a health line without a plugin", line: `{"kind":"router.event","event":"fallback","ts":1}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := parseEvent(c.line)
+			if c.want == nil {
+				if ok {
+					t.Fatalf("parseEvent(%q) = %+v, want no event", c.line, got)
+				}
+				return
+			}
+			if !ok || !reflect.DeepEqual(got, c.want) {
+				t.Fatalf("parseEvent(%q) = %+v (%v), want %+v", c.line, got, ok, c.want)
+			}
+		})
+	}
+}
+
+// healthLine re-encodes a health event with fields swapped; key order does not matter to the
+// reader.
+func healthLine(t *testing.T, base domain.RouterHealthEvent, tweak func(object map[string]any)) string {
+	t.Helper()
+	encoded, err := json.Marshal(base)
+	if err != nil {
+		t.Fatalf("marshal the health event: %v", err)
+	}
+	var object map[string]any
+	if err := json.Unmarshal(encoded, &object); err != nil {
+		t.Fatalf("decode the health event: %v", err)
+	}
+	tweak(object)
+	line, err := json.Marshal(object)
+	if err != nil {
+		t.Fatalf("marshal the broken line: %v", err)
+	}
+	return string(line)
+}
+
 // The direct tests of the writer's line marshalling: the field order and the raw characters are
 // the spool's byte-exactness contract.
 func TestMarshalSpoolLine(t *testing.T) {
@@ -194,13 +377,13 @@ func TestMarshalSpoolLine(t *testing.T) {
 
 	t.Run("leaves angle brackets, the ampersand and the line separators raw", func(t *testing.T) {
 		line, err := marshalSpoolLine(
-			domain.HealthEvent("zai", domain.HealthRefusal, "<a> & b c d", "", 1_791_000_000_002),
+			domain.HealthEvent("zai", domain.HealthRefusal, "<a> & b c d", "", 1_791_000_000_002),
 		)
 		if err != nil {
 			t.Fatalf("marshal: %v", err)
 		}
 		want := `{"kind":"router.event","plugin":"zai","event":"refusal","reason":"<a> & b` +
-			" c d" + `","model":null,"ts":1791000000002}`
+			" c d" + `","model":null,"ts":1791000000002}`
 		if string(line) != want {
 			t.Fatalf("line =\n%s\nwant\n%s", line, want)
 		}

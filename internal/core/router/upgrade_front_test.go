@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // The protocol-2 front child's mode and configuration. The names carry the provider prefix so

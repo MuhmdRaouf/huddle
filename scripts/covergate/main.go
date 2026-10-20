@@ -230,14 +230,12 @@ func threshold(pkg string) (float64, bool) {
 		return 0, false
 	}
 	// The provider engine keeps the floors its own gate used: its testkit, archtest and entry
-	// (the old cmd layer) are exempt, its domain is judged at 95, and the rest at the internal
-	// floor below.
+	// (the old cmd layer) are exempt, and the rest sits at the internal floor below. The domain
+	// and adapters packages it shares with huddle are judged at their surviving paths: the
+	// domain at 95, the adapters at the internal floor.
 	if rel == "internal/core/archtest" || under(rel, "internal/core/testkit") ||
 		under(rel, "internal/core/entry") {
 		return 0, false
-	}
-	if under(rel, "internal/core/domain") {
-		return 95.0, true
 	}
 	if under(rel, "internal/radar") {
 		return 90.0, true

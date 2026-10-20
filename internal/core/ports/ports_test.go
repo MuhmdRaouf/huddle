@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // This file pins the surface: a tiny implementer of every interface, so a signature change

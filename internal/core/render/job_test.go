@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 func TestJobViewGoldens(t *testing.T) {

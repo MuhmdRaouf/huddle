@@ -6,10 +6,10 @@ import (
 	"io"
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/render"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // setupSilent drops every line: the hook's repairs stay out of the session it starts.

@@ -34,9 +34,9 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // engineChildEnv names the role this binary plays when a test re-executes it as a child.

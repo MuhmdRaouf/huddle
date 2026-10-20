@@ -1,4 +1,4 @@
-// A tool run to completion: git, the OS secret store's command. No shell,
+// A tool run to completion: git, the OS secret store's command, `<engine> --version`, ps. No shell,
 // stdin always closed (written first when given), output collected, a timeout, and nothing thrown: a
 // tool that cannot start is a value like any other outcome.
 package process
@@ -110,6 +110,43 @@ func RunTool(ctx context.Context, command string, args []string, options ToolOpt
 		Stdout: collector.stdout.Bytes(),
 		Stderr: collector.stderr.Bytes(),
 	}
+}
+
+// RunToolSync is RunTool for the callers that read like sync calls (the router starter's
+// service commands, ps); a Go run blocks anyway.
+func RunToolSync(ctx context.Context, command string, args []string, options ToolOptions) ToolResult {
+	return RunTool(ctx, command, args, options)
+}
+
+// Succeeded reports whether the tool ran and exited 0.
+func Succeeded(result ToolResult) bool {
+	return result.Kind == ToolExited && result.Code != nil && *result.Code == 0
+}
+
+// versionTimeoutMs bounds a --version that hangs (a tool waiting on a first-run prompt).
+const versionTimeoutMs = 10_000
+
+// ToolVersion is the first line `<bin> --version` prints, or why there is none. env is the tool's
+// whole environment; the caller's own when nil.
+func ToolVersion(ctx context.Context, bin string, prefixArgs []string, env []string) (string, error) {
+	args := append(append([]string{}, prefixArgs...), "--version")
+	timeoutMs := int64(versionTimeoutMs)
+	run := RunTool(ctx, bin, args, ToolOptions{TimeoutMs: &timeoutMs, Env: env})
+	if run.Kind == ToolMissing {
+		return "", errors.New(run.Message)
+	}
+	if run.Code == nil || *run.Code != 0 {
+		return "", fmt.Errorf("command failed: %s --version", bin)
+	}
+	text := strings.TrimSpace(string(run.Stdout))
+	first := text
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		first = text[:i]
+	}
+	if first == "" {
+		return "", errors.New("printed no version")
+	}
+	return first, nil
 }
 
 // spawnError names a start failure the way Node does ("spawn <command> ENOENT"), so callers and

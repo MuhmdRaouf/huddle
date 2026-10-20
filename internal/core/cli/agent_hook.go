@@ -16,8 +16,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/render"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // AgentStopInput is the part of Claude Code's SubagentStop input the hook reads; every field may

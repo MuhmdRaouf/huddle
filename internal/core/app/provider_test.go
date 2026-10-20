@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakes"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // The provider suite: the use cases name branches, trailers, env and the pinged model after the

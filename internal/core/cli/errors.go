@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // DescribeBriefError is one line for one way a brief document failed.

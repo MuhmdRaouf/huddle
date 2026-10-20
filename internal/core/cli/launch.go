@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 )
 
 // OrphanLaunch is the binary's `--orphan-launch <log> <command> [args...]` mode: the short-lived

@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakes"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // The engine-row cases ("board and usage engine rows"), calling the app functions directly; the

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"unicode/utf16"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // keyPartChars is how much of each part goes into a conversation key: enough to tell conversations

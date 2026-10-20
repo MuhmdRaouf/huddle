@@ -6,9 +6,9 @@ import (
 	"os"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/render"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // queriesMaxDiffChars bounds the diff `review --diff` prints.

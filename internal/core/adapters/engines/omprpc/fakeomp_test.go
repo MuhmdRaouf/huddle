@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/engines/shared"
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
 )
 
 const childModeEnv = "ENGINE_TEST_CHILD"

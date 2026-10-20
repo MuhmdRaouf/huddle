@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 func TestEnsureRouter(t *testing.T) {

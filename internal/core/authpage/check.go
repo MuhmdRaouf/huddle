@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // checkTimeoutMs bounds the one request.

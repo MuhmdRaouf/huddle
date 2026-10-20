@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // SubmitInput is one brief to submit: its text and where it came from (for relative

@@ -20,11 +20,11 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/engines/shared"
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // opencodeCaps is what the opencode engine can do. Treat it as read-only: opencode owns the

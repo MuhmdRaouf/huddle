@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // terminalStates is the set a decision ended.

@@ -37,7 +37,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 

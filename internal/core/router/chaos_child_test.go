@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // chaosChildMode is the TestMain mode of a chaos router child; chaosChildName and chaosChildState

@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // modeModes are the modes --mode may name.

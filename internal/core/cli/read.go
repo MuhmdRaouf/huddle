@@ -6,7 +6,7 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/fsutil"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
 )
 

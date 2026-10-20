@@ -2,7 +2,7 @@
 package testkit
 
 import (
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Typed test builders: sensible defaults, shallow overrides.

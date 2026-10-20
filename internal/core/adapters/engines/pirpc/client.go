@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/engines/shared"
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
 )
 
 // DefaultHandshakeTimeoutMs: a healthy pi answers get_state within a second of spawn (probed on

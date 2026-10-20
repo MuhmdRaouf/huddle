@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // BatchItem is one brief file of a batch: its path and its text.

@@ -3,8 +3,8 @@ package testkit
 import (
 	"regexp"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // The shared suites came from zai and assert its output, so they run on a copy of zai's names (the

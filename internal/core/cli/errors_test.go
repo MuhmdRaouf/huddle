@@ -5,9 +5,9 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
 	"github.com/MuhmdRaouf/huddle/internal/core/cli"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // One AppError per case, with its one line and its exit code.

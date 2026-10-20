@@ -3,7 +3,7 @@ package app
 import (
 	"gopkg.in/yaml.v3"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // BriefOverrides is the CLI's overrides of a brief's front matter.

@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 func TestPidFile(t *testing.T) {

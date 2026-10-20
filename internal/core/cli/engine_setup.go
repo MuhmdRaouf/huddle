@@ -18,13 +18,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/engines/zcode"
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/render"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // engineSmokeTimeoutMs covers a cold first start of a tool, plus one short answer from whatever

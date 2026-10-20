@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // TestBudgetStatusFixtureIsRead reads the committed contract fixture

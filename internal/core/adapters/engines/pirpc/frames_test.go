@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 )
 
 // framesEqual compares the decoded frame with wantText as JSON values, the way vitest's toEqual

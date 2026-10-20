@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/keystore"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // keyID is the reference provider's identity in a secret store.

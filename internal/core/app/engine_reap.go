@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // An engine process never outlives its job: the plugin bridges a job to the engine, so it also reaps

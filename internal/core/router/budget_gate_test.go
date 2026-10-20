@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // budgetStatusJSON writes Radar's budget-status.json with the given stopped scopes, updated at

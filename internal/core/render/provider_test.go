@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Every renderer, fed a second provider, takes every name from it — the CLI name, slash prefix,

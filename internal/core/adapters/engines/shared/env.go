@@ -3,8 +3,8 @@ package shared
 import (
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // The environment a delegation tool starts with: the user's own, as if they had run the tool

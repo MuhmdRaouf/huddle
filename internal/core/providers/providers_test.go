@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // The cases are the five plugins' test/provider.ts files: each provider pinned field for field,

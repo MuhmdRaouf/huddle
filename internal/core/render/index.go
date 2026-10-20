@@ -6,7 +6,7 @@ package render
 
 import (
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // RenderBoard is the live board: what runs on the provider right now.

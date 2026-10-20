@@ -13,6 +13,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 const (
@@ -22,12 +24,21 @@ const (
 )
 
 // FileMode resolves the permission bits a write uses, taking the target's path: Perm(n) writes
-// with n, and nil defaults to 0600: state files are private.
+// with n, Preserve keeps the target's own bits (0600 when it does not exist yet), and nil
+// defaults to 0600: state files are private.
 type FileMode func(path string) fs.FileMode
 
 // Perm is an explicit permission bit set, e.g. fsutil.Perm(0o600).
 func Perm(perm fs.FileMode) FileMode {
 	return func(string) fs.FileMode { return perm }
+}
+
+// Preserve keeps the target file's own permission bits.
+func Preserve(path string) fs.FileMode {
+	if info, err := os.Stat(path); err == nil {
+		return info.Mode().Perm()
+	}
+	return privateFile
 }
 
 // WriteOptions are the options of WriteFileAtomic; the zero value writes a private file in an
@@ -93,6 +104,12 @@ func ReadJSONFile[T any](ctx context.Context, path string) (T, bool) {
 		return zero, false
 	}
 	return value, true
+}
+
+// MarshalJSON encodes v the way state files are written: two-space-indented JSON plus a
+// trailing newline, without HTML escaping — the format every state file keeps.
+func MarshalJSON(v any) ([]byte, error) {
+	return domain.MarshalIndentJSON(v)
 }
 
 // tempName is the temp file's name beside the target: per process and per write, so writers of

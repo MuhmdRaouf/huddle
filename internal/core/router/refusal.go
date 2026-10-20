@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Refusal is why a provider answer is rewritten: the key was refused (or there is none), or the

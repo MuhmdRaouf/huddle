@@ -6,15 +6,15 @@ import (
 	"context"
 	"os"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/spool"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/keystore"
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/spool"
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
 	"github.com/MuhmdRaouf/huddle/internal/core/authpage"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // wireStopGraceMs is between SIGTERM and SIGKILL when a run is stopped.

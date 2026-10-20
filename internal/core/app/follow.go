@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // FollowedKind is how a follow ended: landed (in review or decided), stale (no live driver will

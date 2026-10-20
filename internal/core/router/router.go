@@ -27,8 +27,8 @@ import (
 	"unicode"
 	"unicode/utf16"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // RouterOptions is what the router needs to know: whose router this is (the resolved provider:

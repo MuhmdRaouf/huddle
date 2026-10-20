@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Step is one state change of a job, computed from the job as stored.

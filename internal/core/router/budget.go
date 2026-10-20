@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/spool"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/spool"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // BudgetCacheMs is how long one reading of the files holds.

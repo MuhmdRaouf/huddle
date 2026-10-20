@@ -11,7 +11,7 @@ func TestRunTool(t *testing.T) {
 	t.Run("collects stdout, stderr and the exit code", func(t *testing.T) {
 		t.Setenv(childModeEnv, "three-lines")
 		result := RunTool(context.Background(), selfExe(t), nil, ToolOptions{})
-		if result.Kind != ToolExited || result.Code == nil || *result.Code != 0 {
+		if result.Kind != ToolExited || !Succeeded(result) {
 			t.Fatalf("result = %+v, want an exit 0", result)
 		}
 		if string(result.Stdout) != "one\ntwo\nthree" {
@@ -26,6 +26,9 @@ func TestRunTool(t *testing.T) {
 		result := RunTool(context.Background(), "/nonexistent/tool-binary", nil, ToolOptions{})
 		if result.Kind != ToolMissing || !strings.Contains(result.Message, "ENOENT") {
 			t.Fatalf("result = %+v, want missing with ENOENT", result)
+		}
+		if Succeeded(result) {
+			t.Fatal("succeeded(missing) = true, want false")
 		}
 	})
 
@@ -70,6 +73,55 @@ func TestRunTool(t *testing.T) {
 		}
 		if len(result.Stdout) != 0 {
 			t.Fatalf("stdout = %q, want the over-limit chunk dropped", result.Stdout)
+		}
+	})
+}
+
+func TestRunToolSync(t *testing.T) {
+	t.Setenv(childModeEnv, "three-lines")
+	result := RunToolSync(context.Background(), selfExe(t), nil, ToolOptions{})
+	if !Succeeded(result) {
+		t.Fatalf("result = %+v, want an exit 0", result)
+	}
+}
+
+func TestToolVersion(t *testing.T) {
+	t.Run("is the first line of --version", func(t *testing.T) {
+		t.Setenv(childModeEnv, "version-line")
+		version, err := ToolVersion(context.Background(), selfExe(t), nil, nil)
+		if err != nil || version != "v1.2.3" {
+			t.Fatalf("toolVersion = (%q, %v), want (v1.2.3, nil)", version, err)
+		}
+	})
+
+	t.Run("prefix args come before --version", func(t *testing.T) {
+		t.Setenv(childModeEnv, "version-line")
+		version, err := ToolVersion(context.Background(), selfExe(t), []string{"anything"}, nil)
+		if err != nil || version != "v1.2.3" {
+			t.Fatalf("toolVersion = (%q, %v), want (v1.2.3, nil)", version, err)
+		}
+	})
+
+	t.Run("a missing tool is an error", func(t *testing.T) {
+		if _, err := ToolVersion(context.Background(), "/nonexistent/versioned-tool", nil, nil); err == nil ||
+			!strings.Contains(err.Error(), "ENOENT") {
+			t.Fatalf("error = %v, want ENOENT", err)
+		}
+	})
+
+	t.Run("a failing --version is an error", func(t *testing.T) {
+		t.Setenv(childModeEnv, "fail-3")
+		self := selfExe(t)
+		_, err := ToolVersion(context.Background(), self, nil, nil)
+		if err == nil || err.Error() != "command failed: "+self+" --version" {
+			t.Fatalf("error = %v, want command failed", err)
+		}
+	})
+
+	t.Run("a silent --version is an error", func(t *testing.T) {
+		t.Setenv(childModeEnv, "silent-ok")
+		if _, err := ToolVersion(context.Background(), selfExe(t), nil, nil); err == nil || err.Error() != "printed no version" {
+			t.Fatalf("error = %v, want printed no version", err)
 		}
 	})
 }

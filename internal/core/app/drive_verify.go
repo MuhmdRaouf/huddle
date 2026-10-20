@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // noChanges is the change set of a repository left exactly as it was found.

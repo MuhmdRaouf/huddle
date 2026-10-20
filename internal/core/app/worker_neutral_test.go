@@ -11,10 +11,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakes"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // The worker-neutral suite: the drive loop over a worker whose wire and terms share nothing

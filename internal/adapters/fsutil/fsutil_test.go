@@ -77,6 +77,27 @@ func TestWriteFileAtomic(t *testing.T) {
 		noTempLeft(t, path)
 	})
 
+	t.Run("keeps the target's own mode with Preserve", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "settings.json")
+		if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+			t.Fatalf("seed %s: %v", path, err)
+		}
+		committed, err := WriteFileAtomic(t.Context(), path, []byte("new"), WriteOptions{Mode: Preserve})
+		if err != nil || !committed {
+			t.Fatalf("write = (%v, %v), want (true, nil)", committed, err)
+		}
+		assertPerm(t, path, 0o644)
+		noTempLeft(t, path)
+	})
+
+	t.Run("falls back to 0600 with Preserve for a new file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "state.json")
+		if _, err := WriteFileAtomic(t.Context(), path, []byte("x"), WriteOptions{Mode: Preserve}); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		assertPerm(t, path, 0o600)
+	})
+
 	t.Run("writes with an explicit Perm", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "state.json")
 		if _, err := WriteFileAtomic(t.Context(), path, []byte("x"), WriteOptions{Mode: Perm(0o640)}); err != nil {
@@ -235,6 +256,47 @@ func TestReadJSONFile(t *testing.T) {
 	})
 }
 
+func TestMarshalJSON(t *testing.T) {
+	t.Run("equals two-space-indented JSON plus a newline, unescaped", func(t *testing.T) {
+		value := struct {
+			Markup  string `json:"markup"`
+			Unicode string `json:"unicode"`
+			Nested  []any  `json:"nested"`
+		}{
+			Markup:  "<script>&</script>",
+			Unicode: "héllo — 世界 \U0001f680",
+			Nested:  []any{[]any{1, 2, 3}, map[string]any{"four": 4.5}},
+		}
+		got, err := MarshalJSON(value)
+		if err != nil {
+			t.Fatalf("marshalJSON error: %v", err)
+		}
+		want := "{\n" +
+			"  \"markup\": \"<script>&</script>\",\n" +
+			"  \"unicode\": \"héllo — 世界 \U0001f680\",\n" +
+			"  \"nested\": [\n" +
+			"    [\n" +
+			"      1,\n" +
+			"      2,\n" +
+			"      3\n" +
+			"    ],\n" +
+			"    {\n" +
+			"      \"four\": 4.5\n" +
+			"    }\n" +
+			"  ]\n" +
+			"}\n"
+		if string(got) != want {
+			t.Fatalf("marshalJSON =\n%q\nwant\n%q", got, want)
+		}
+	})
+
+	t.Run("reports a value that cannot be encoded", func(t *testing.T) {
+		if _, err := MarshalJSON(struct{ C chan int }{}); err == nil {
+			t.Fatal("marshalJSON of a chan field = nil error, want the encoding error")
+		}
+	})
+}
+
 func TestErrnoCode(t *testing.T) {
 	t.Run("is empty for nil and for errors without an errno", func(t *testing.T) {
 		if code := ErrnoCode(nil); code != "" {
@@ -354,5 +416,56 @@ func TestSyncDirectory(t *testing.T) {
 	})
 	t.Run("syncs an open directory without complaint", func(t *testing.T) {
 		syncDirectory(t.TempDir())
+	})
+}
+
+func TestNodeMessage(t *testing.T) {
+	t.Run("one row per errno, as node's readFile prints it", func(t *testing.T) {
+		// ENOENT, EACCES, EISDIR, ENOTDIR, ELOOP and ENAMETOOLONG were probed against node
+		// 24.21.0's readFile; the rest are libuv's table, unreachable through a read.
+		rows := []struct {
+			errno syscall.Errno
+			want  string
+		}{
+			{syscall.ENOENT, "ENOENT: no such file or directory"},
+			{syscall.EACCES, "EACCES: permission denied"},
+			{syscall.EPERM, "EPERM: operation not permitted"},
+			{syscall.EEXIST, "EEXIST: file already exists"},
+			{syscall.EISDIR, "EISDIR: illegal operation on a directory"},
+			{syscall.ENOTDIR, "ENOTDIR: not a directory"},
+			{syscall.ENOTEMPTY, "ENOTEMPTY: directory not empty"},
+			{syscall.EMFILE, "EMFILE: too many open files"},
+			{syscall.ENFILE, "ENFILE: file table overflow"},
+			{syscall.ENOSPC, "ENOSPC: no space left on device"},
+			{syscall.EROFS, "EROFS: read-only file system"},
+			{syscall.EBUSY, "EBUSY: resource busy or locked"},
+			{syscall.ETXTBSY, "ETXTBSY: text file is busy"},
+			{syscall.EXDEV, "EXDEV: cross-device link not permitted"},
+			{syscall.ELOOP, "ELOOP: too many symbolic links encountered"},
+			{syscall.ENAMETOOLONG, "ENAMETOOLONG: name too long"},
+		}
+		for _, row := range rows {
+			err := &fs.PathError{Op: "open", Path: "/x", Err: row.errno}
+			if got := NodeMessage(err, "open", "/x"); got != row.want+", open '/x'" {
+				t.Fatalf("NodeMessage(%v) = %q, want %q", row.errno, got, row.want+", open '/x'")
+			}
+		}
+	})
+
+	t.Run("a read failure names the syscall and no path", func(t *testing.T) {
+		err := &fs.PathError{Op: "read", Path: "/x", Err: syscall.EISDIR}
+		if got := NodeMessage(err, "read", ""); got != "EISDIR: illegal operation on a directory, read" {
+			t.Fatalf("NodeMessage read form = %q", got)
+		}
+	})
+
+	t.Run("an errno outside the table keeps Go's own text", func(t *testing.T) {
+		err := &fs.PathError{Op: "open", Path: "/bad\x00", Err: syscall.EINVAL}
+		if got := NodeMessage(err, "open", "/bad\x00"); got != err.Error() {
+			t.Fatalf("NodeMessage fallback = %q, want %q", got, err.Error())
+		}
+		if got := NodeMessage(errors.New("disk on fire"), "open", "/x"); got != "disk on fire" {
+			t.Fatalf("NodeMessage of a plain error = %q", got)
+		}
 	})
 }

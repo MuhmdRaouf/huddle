@@ -141,6 +141,42 @@ func TestCheckCleanListHasNoViolations(t *testing.T) {
 	}
 }
 
+// The shared domain and adapters packages live outside the engine root; their paths classify as
+// their layers all the same, both on the files (the walk) and on the imports.
+func TestMovedPackagesKeepTheirLayers(t *testing.T) {
+	t.Run("files under internal/domain are the domain layer", func(t *testing.T) {
+		if layer, ok := classify("../domain"); !ok || layer != LayerDomain {
+			t.Errorf("classify(internal/domain) = (%q, %v), want (%q, true)", layer, ok, LayerDomain)
+		}
+	})
+	t.Run("files under internal/adapters and its subdirs are the adapters layer", func(t *testing.T) {
+		for _, dir := range []string{"../adapters", "../adapters/process", "../adapters/spool"} {
+			if layer, ok := classify(dir); !ok || layer != LayerAdapters {
+				t.Errorf("classify(%s) = (%q, %v), want (%q, true)", dir, layer, ok, LayerAdapters)
+			}
+		}
+	})
+
+	files := []FileImports{
+		// An adapters file may import both shared packages, subpackages included.
+		{File: "adapters/state_root.go", Layer: LayerAdapters, Imports: []string{moduleDomain, moduleAdapters + "/process"}},
+		{File: "ports/ports.go", Layer: LayerPorts, Imports: []string{moduleDomain}},
+		// Nothing may import them from a layer that may not import the engine's own.
+		{File: "bad/archtest_shared_domain.go", Layer: LayerArchtest, Imports: []string{moduleDomain}},
+		{File: "bad/providers_shared_adapters.go", Layer: LayerProviders, Imports: []string{moduleAdapters + "/fsutil"}},
+	}
+	want := []string{
+		"bad/archtest_shared_domain.go: archtest must not import " + moduleDomain,
+		"bad/providers_shared_adapters.go: providers must not import " + moduleAdapters + "/fsutil",
+	}
+	got := Check(files)
+	sort.Strings(got)
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Check() =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
 func TestTreeFollowsTheLayerRule(t *testing.T) {
 	files, err := walkTree()
 	if err != nil {
@@ -154,44 +190,49 @@ func TestTreeFollowsTheLayerRule(t *testing.T) {
 	}
 }
 
-// walkTree collects FileImports for every non-test .go file under the engine root (internal/core).
+// walkTree collects FileImports for every non-test .go file under the engine root (internal/core)
+// and under the shared domain and adapters packages beside it. The rest of the module
+// (internal/huddle, internal/radar, internal/kanban, internal/gateway, cmd/) follows no engine
+// layer rule and stays out of the walk.
 func walkTree() ([]FileImports, error) {
-	const root = ".."
+	roots := []string{"..", "../../domain", "../../adapters"}
 	var files []FileImports
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".go") || strings.HasSuffix(d.Name(), "_test.go") {
-			return nil
-		}
-		rel, err := filepath.Rel(root, p)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		layer, ok := classify(path.Dir(rel))
-		if !ok {
-			return fmt.Errorf("%s: cannot classify package layer", rel)
-		}
-		fset := token.NewFileSet()
-		parsed, err := parser.ParseFile(fset, p, nil, parser.ImportsOnly)
-		if err != nil {
-			return err
-		}
-		imports := make([]string, 0, len(parsed.Imports))
-		for _, imp := range parsed.Imports {
-			value, err := strconv.Unquote(imp.Path.Value)
+	for _, root := range roots {
+		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			imports = append(imports, value)
+			if d.IsDir() || !strings.HasSuffix(d.Name(), ".go") || strings.HasSuffix(d.Name(), "_test.go") {
+				return nil
+			}
+			rel, err := filepath.Rel("..", p)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
+			layer, ok := classify(path.Dir(rel))
+			if !ok {
+				return fmt.Errorf("%s: cannot classify package layer", rel)
+			}
+			fset := token.NewFileSet()
+			parsed, err := parser.ParseFile(fset, p, nil, parser.ImportsOnly)
+			if err != nil {
+				return err
+			}
+			imports := make([]string, 0, len(parsed.Imports))
+			for _, imp := range parsed.Imports {
+				value, err := strconv.Unquote(imp.Path.Value)
+				if err != nil {
+					return err
+				}
+				imports = append(imports, value)
+			}
+			files = append(files, FileImports{File: rel, Layer: layer, Imports: imports})
+			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
-		files = append(files, FileImports{File: rel, Layer: layer, Imports: imports})
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 	return files, nil
 }

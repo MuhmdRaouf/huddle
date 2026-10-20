@@ -20,9 +20,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters"
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // WatchEveryMs is how often the watchdog runs the ensure check.

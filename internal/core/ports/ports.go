@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // ── git ─────────────────────────────────────────────────────────────────────────────────────

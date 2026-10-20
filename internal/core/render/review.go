@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Lines of a failing gate's output quoted inline; the full output is in the gate log.

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // The board and usage queries: read-only views over the store, with the live state folded in from

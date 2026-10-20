@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // stateLabel is the state a row shows: active, idle, or a job's own state — in review, the verdict

@@ -1,6 +1,6 @@
 package providers
 
-import "github.com/MuhmdRaouf/huddle/internal/core/domain"
+import "github.com/MuhmdRaouf/huddle/internal/domain"
 
 // Kimi is kimi-plugin-cc's provider, matching plugins/kimi-plugin-cc/test/provider.ts field for
 // field.

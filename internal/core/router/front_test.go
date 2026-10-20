@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // runProcessChildFront is a real front process: this binary re-executed by the starter, forking

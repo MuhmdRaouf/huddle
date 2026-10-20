@@ -12,7 +12,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // claimOverride is zai's main model overridden to an id no prefix of it covers.

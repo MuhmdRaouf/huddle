@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // LogFs is the file operations the logs use; tests inject failing ones to prove nothing propagates.

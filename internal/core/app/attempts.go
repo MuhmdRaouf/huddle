@@ -3,7 +3,7 @@ package app
 import (
 	"slices"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Fix attempts continue the worker's own session; the others start a fresh one.

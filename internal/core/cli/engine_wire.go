@@ -15,8 +15,8 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/engines/pirpc"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/engines/zcode"
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // engineHandshakeTimeoutMs: omp and pi answer the RPC handshake within seconds; a cold first start

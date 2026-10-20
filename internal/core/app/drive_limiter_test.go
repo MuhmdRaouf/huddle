@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakes"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // The drive-limiter suite: rate limits reach the limiter whatever wire the worker speaks.

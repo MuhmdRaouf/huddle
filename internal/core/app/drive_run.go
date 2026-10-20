@@ -6,8 +6,8 @@ import (
 	"slices"
 	"sync/atomic"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // progressEveryMs is how often progress reaches progress.json while the worker streams.

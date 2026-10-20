@@ -21,12 +21,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/keystore"
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // routeTiers are both model tiers: they always get a `model:` line, the agents being the only thing

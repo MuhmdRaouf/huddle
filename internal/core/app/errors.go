@@ -3,8 +3,8 @@ package app
 import (
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // AppErrorKind is which use-case failure happened; each kind carries the fields its own cases read.

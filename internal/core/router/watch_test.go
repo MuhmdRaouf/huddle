@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // watchHoldPortEnv names the port the hold-port child binds (its TestMain mode).

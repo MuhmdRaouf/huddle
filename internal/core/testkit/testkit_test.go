@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/providers"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Direct tests of the support files: builders return their defaults, MakeRepo makes a commit,

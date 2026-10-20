@@ -1,9 +1,8 @@
-// What a forwarder appends to Radar's spool: the huddle gateway writes one route event per forwarded
-// request, and the line format also carries a router's start or stop and a router health event — the
-// shape the provider plugins' routers write and radar reads back. A route event stays metadata (model,
-// route, status, latency, usage, the three ids Claude Code sends, the hash its prompt capture sits
-// under and the allow-listed response headers); no other header value and no message body ever lands
-// here.
+// What a plugin's router writes to Radar's spool: one event per forwarded request, one per router start or
+// stop, a health event when something went other than plainly, and one capture event per distinct prompt —
+// the request's own system prompt and tool definitions, gzipped. A route event stays metadata (model, route,
+// status, latency, usage, the three ids Claude Code sends, the hash its prompt capture sits under and the
+// allow-listed response headers); no other header value and no message body ever lands here.
 package domain
 
 // RouteUsage is the usage counters an answer carries, as the provider or Anthropic reports them.
@@ -11,8 +10,9 @@ type RouteUsage map[string]any
 
 // The `event` field each spool line carries.
 const (
-	EventRoute  = "route"
-	EventRouter = "router"
+	EventRoute   = "route"
+	EventCapture = "capture"
+	EventRouter  = "router"
 )
 
 // RouteEvent is one forwarded request, appended after it completes.
@@ -43,6 +43,17 @@ type RouteEvent struct {
 	// Via names the forwarder on the line itself; the routers leave it unset and radar reads
 	// their plugin as the via.
 	Via string `json:"via,omitempty"`
+}
+
+// CaptureEvent is one distinct prompt's content, appended once per hash per router process: gzip of the JSON the
+// request carried at its top level — its `system` and `tools` and nothing else — base64. Written off the request's
+// turn of the event loop, so the answer never waits on it.
+type CaptureEvent struct {
+	Ts         string `json:"ts"`
+	Event      string `json:"event"`
+	Plugin     string `json:"plugin"`
+	PromptHash string `json:"prompt_hash"`
+	Gz         string `json:"gz"`
 }
 
 // RouterState is the state a router event reports: coming up, or shutting down cleanly.
@@ -122,6 +133,18 @@ type SpoolEvent interface {
 
 func (RouteEvent) spoolEvent() {}
 
+func (CaptureEvent) spoolEvent() {}
+
 func (RouterEvent) spoolEvent() {}
 
 func (RouterHealthEvent) spoolEvent() {}
+
+// IsHealthEvent reports whether the event is a router health event; route and router events are told apart by their
+// `event` field.
+func IsHealthEvent(event SpoolEvent) bool {
+	switch event.(type) {
+	case RouterHealthEvent, *RouterHealthEvent:
+		return true
+	}
+	return false
+}

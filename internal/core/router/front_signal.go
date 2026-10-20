@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 )
 
 // killProcess sends the signal to a worker process; a process already gone is not an error.

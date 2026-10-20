@@ -19,10 +19,10 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/authpage"
 	"github.com/MuhmdRaouf/huddle/internal/core/cli"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakedeps"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // authSeen is one request the fake provider endpoint saw.

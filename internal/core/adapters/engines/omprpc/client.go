@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/engines/shared"
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
 )
 
 // DefaultHandshakeTimeoutMs: O0 measured a solo ready at 1.6–8 s and 15–18 s under 12–16

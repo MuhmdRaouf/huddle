@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"fmt"
 	"math"
 	"slices"
 )
@@ -93,6 +94,15 @@ func BudgetStopFor(plugin string, status, budgets any, now int64) (BudgetStop, b
 		period = &first
 	}
 	return BudgetStop{Scope: scope, Period: period}, true
+}
+
+// BudgetMessage words the refusal, word for word the same in every router.
+func BudgetMessage(display string, stop BudgetStop) string {
+	period := "period"
+	if stop.Period != nil {
+		period = string(*stop.Period)
+	}
+	return fmt.Sprintf("%s budget reached for this %s: raise or lift it in the Radar dashboard (/huddle:open)", display, period)
 }
 
 // budgetsOf returns the budgets that parse, one bad entry skipped rather than all of them lost.

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Drive one job from `queued` (or a review-returned job) to `awaiting_review`:

@@ -1,6 +1,6 @@
 package providers
 
-import "github.com/MuhmdRaouf/huddle/internal/core/domain"
+import "github.com/MuhmdRaouf/huddle/internal/domain"
 
 // Qwen is qwen-plugin-cc's provider, matching plugins/qwen-plugin-cc/test/provider.ts field for
 // field.

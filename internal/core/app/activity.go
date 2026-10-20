@@ -16,7 +16,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // A request this recent marks its session or subagent active.

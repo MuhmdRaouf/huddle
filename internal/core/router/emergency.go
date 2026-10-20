@@ -20,8 +20,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/spool"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/spool"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // EmergencyOptions is what the emergency passthrough needs to know.

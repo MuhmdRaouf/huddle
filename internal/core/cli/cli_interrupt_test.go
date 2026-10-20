@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/cli"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakedeps"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakes"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 func TestRunCliInterruptedFollower(t *testing.T) {

@@ -9,6 +9,10 @@ import (
 const (
 	modulePath = "github.com/MuhmdRaouf/huddle/internal/core"
 	moduleRoot = "github.com/MuhmdRaouf/huddle"
+	// The domain and adapters packages shared with the rest of huddle live outside the engine
+	// root; an import of either counts as its layer.
+	moduleDomain   = "github.com/MuhmdRaouf/huddle/internal/domain"
+	moduleAdapters = "github.com/MuhmdRaouf/huddle/internal/adapters"
 )
 
 type Layer string
@@ -105,6 +109,9 @@ func classify(dir string) (Layer, bool) {
 		{"entry", LayerCmd},
 		// No scripts ship inside the engine root; the layer stays so Check's fixtures can name it.
 		{"scripts", LayerScripts},
+		// The shared packages beside the engine root (../ from internal/core).
+		{"../domain", LayerDomain},
+		{"../adapters", LayerAdapters},
 	}
 	for _, n := range nested {
 		if under(dir, n.prefix) {
@@ -162,10 +169,18 @@ func allowed(f FileImports, imp string) bool {
 // internalPackage strips the engine prefix, returning the package's directory
 // relative to the engine root.
 func internalPackage(imp string) (string, bool) {
-	if !strings.HasPrefix(imp, modulePath+"/") {
-		return "", false
+	if rel, ok := strings.CutPrefix(imp, modulePath+"/"); ok {
+		return rel, true
 	}
-	return strings.TrimPrefix(imp, modulePath+"/"), true
+	// The shared domain and adapters packages sit at the module's own internal/ directory;
+	// imports of them, subpackages included, classify like their engine-root paths did.
+	if rel, ok := strings.CutPrefix(imp, moduleDomain); ok && (rel == "" || rel[0] == '/') {
+		return "domain" + rel, true
+	}
+	if rel, ok := strings.CutPrefix(imp, moduleAdapters); ok && (rel == "" || rel[0] == '/') {
+		return "adapters" + rel, true
+	}
+	return "", false
 }
 
 // modulePackage strips the module root prefix, returning the package's

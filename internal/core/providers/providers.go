@@ -4,7 +4,7 @@
 // goes through.
 package providers
 
-import "github.com/MuhmdRaouf/huddle/internal/core/domain"
+import "github.com/MuhmdRaouf/huddle/internal/domain"
 
 // Names is every provider a plugin-core invocation may name first, in router-port order.
 var Names = []string{"zai", "kimi", "deepseek", "minimax", "qwen"}

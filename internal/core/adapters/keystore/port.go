@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // RunResult is what a platform tool returned. A nil Code is a signal; Missing means the tool

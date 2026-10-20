@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 const pingTimeoutMs = 120_000

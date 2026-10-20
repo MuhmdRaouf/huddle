@@ -5,8 +5,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Which engine a job runs on and the worker that runs it. The job's engine is `run --engine` > the

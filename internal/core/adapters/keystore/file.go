@@ -13,9 +13,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/fsutil"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // privateFile is the mode every key file is written with.

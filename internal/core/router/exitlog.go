@@ -12,9 +12,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/fsutil"
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters/process"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // writeExitMark records pid as the process whose exit left its line in router.log.

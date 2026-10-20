@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/cli"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	providerdata "github.com/MuhmdRaouf/huddle/internal/core/providers"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // providers are the five sibling plugins this binary serves.

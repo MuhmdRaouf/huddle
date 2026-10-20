@@ -7,7 +7,7 @@
 package app
 
 import (
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // A run this short (model turns, or requests for a subagent) and this quiet (output tokens) looks

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Env is the environment proxy settings are read from.

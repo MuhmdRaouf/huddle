@@ -13,8 +13,8 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/keystore"
 	"github.com/MuhmdRaouf/huddle/internal/core/authpage"
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // authServeVersionShape is the version strings plugin.json may carry.

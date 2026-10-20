@@ -3,7 +3,7 @@ package render
 import (
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // NextStep is the reviewer's next step for one job, chosen from its verdict and mode. It names

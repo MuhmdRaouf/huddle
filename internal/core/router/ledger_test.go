@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
 )
 
 func TestLedgerFile(t *testing.T) {

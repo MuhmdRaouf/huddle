@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/adapters"
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/core/cli"
 )
 

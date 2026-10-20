@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Landing an edit job's change set in its repository.

@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/domain"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Direct tests for the attempt helpers, which the drive and decide paths also exercise.
