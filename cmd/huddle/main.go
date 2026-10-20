@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/gateway"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
+	"github.com/MuhmdRaouf/huddle/internal/netproxy"
 )
 
 // version is the huddle version, set at build time with -ldflags "-X main.version=<VERSION>".
@@ -34,6 +36,12 @@ const (
 
 // run is one invocation; the returned int is the process exit code.
 func run(args []string, stdout, stderr io.Writer) int {
+	// A provider plugin in proxy mode points HTTPS_PROXY at its localhost router, and that
+	// router refuses tunnels to this machine: huddle's own requests to a hub on this machine
+	// go direct, the rest keep the environment's proxy.
+	if transport, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport.Proxy = netproxy.FromEnvironment
+	}
 	if len(args) > 0 && args[0] == "--version" {
 		fmt.Fprintf(stdout, "huddle %s\n", version)
 		return 0

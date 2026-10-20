@@ -1,6 +1,6 @@
 package main
 
-// The full scenario on a local dev name: one TLS hub named hub.example.test serving an imported
+// The full scenario on a local dev name: one TLS hub named hub.example.invalid serving an imported
 // pair, two satellites joining over invitations, their sessions synced through the hooks, the
 // two sessions tied to one channel reading each other's digests once each, and radar answering
 // the seeded fixtures' exact counts, tokens and cost. A second hub home with no import proves
@@ -45,8 +45,9 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
-// fullHubName is the name everything here serves and dials: a reserved name no resolver answers.
-const fullHubName = "hub.example.test"
+// fullHubName is the name everything here serves and dials: a reserved name no resolver answers,
+// so the children reach the hub only through the proxy.
+const fullHubName = "hub.example.invalid"
 
 // fullChannel is the one channel both satellite sessions are tied to.
 const fullChannel = "fulltest"
@@ -569,7 +570,7 @@ func TestFullScenarioOnALocalDevName(t *testing.T) {
 	})
 
 	step("local_ca_hub", func(t *testing.T) {
-		const secondName = "hub2.example.test"
+		const secondName = "hub2.example.invalid"
 		secondPort := freeLoopPort(t)
 		env := machineEnv(hub2Root, hub2User, binHome, pluginCopy, hubProject, release.URL, nil)
 		code, stdout, stderr := runSh(t, 60*time.Second, env, hubProject,

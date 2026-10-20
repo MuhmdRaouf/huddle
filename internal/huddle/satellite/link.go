@@ -25,6 +25,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/kanbantab"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/netproxy"
 )
 
 // The link's own pace: a flush batches this machine's news, a poll holds the handout wait. The
@@ -132,7 +133,7 @@ func readClientOf(given *http.Client) *http.Client {
 		return &reads
 	}
 	return &http.Client{Transport: &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy:                 netproxy.FromEnvironment,
 		DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ResponseHeaderTimeout: 5 * time.Second,

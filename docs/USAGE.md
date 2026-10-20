@@ -311,7 +311,9 @@ the satellite relay — see [Another machine](#another-machine).
 
 Loopback alone needs nothing else. To serve paired devices and satellites on one name — approvals
 from a phone, a second machine — give the hub a name and a certificate
-([README · A local name](../README.md#a-local-name)):
+([README · A local name](../README.md#a-local-name)). Requests to a hub on this machine skip any
+`HTTPS_PROXY` or `HTTP_PROXY`, so the hub works from inside a session whose provider plugin runs
+in proxy mode:
 
 1. Point the name at this machine: dnsmasq, or one line in `/etc/hosts`.
 
