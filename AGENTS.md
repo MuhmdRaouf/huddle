@@ -34,6 +34,7 @@ node scripts/check-attribution.mjs             # no AI attribution in the histor
 
 - `cmd/huddle`: the one binary. `huddle radar …` and `huddle kanban …` run radar's and kanban's commands.
 - `internal/huddle`, `internal/radar`, `internal/kanban`: each part's server, CLI, hooks and store.
+- `internal/core`: the provider engine: router, job engine and provider CLI, run as `huddle provider <p> <entry>`.
 - `internal/contract`: the radar spool line and `budget-status.json` formats shared with the provider plugins in
   `MuhmdRaouf/claude-code-plugins`; `testdata/contract/` holds the golden fixtures both repositories keep identical.
 - `internal/harness`: one adapter per harness (MCP config, hooks, transcript reader).

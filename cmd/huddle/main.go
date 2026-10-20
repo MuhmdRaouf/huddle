@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +19,8 @@ import (
 	kanbanapp "github.com/MuhmdRaouf/huddle/internal/kanban/app"
 	radarapp "github.com/MuhmdRaouf/huddle/internal/radar/app"
 
+	coreentry "github.com/MuhmdRaouf/huddle/internal/core/entry"
+	coreproviders "github.com/MuhmdRaouf/huddle/internal/core/providers"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/gateway"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
@@ -45,6 +48,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "--version" {
 		fmt.Fprintf(stdout, "huddle %s\n", version)
 		return 0
+	}
+	// The provider engine's argv shapes: `provider <p> <entry> ...` for people and plugins, and
+	// the bare `<p> <entry> ...` and `--orphan-launch ...` its own detached children are started
+	// with.
+	if len(args) > 0 {
+		switch {
+		case args[0] == "provider":
+			return coreentry.Run(args[1:], stdout, stderr)
+		case args[0] == "--orphan-launch" || slices.Contains(coreproviders.Names, args[0]):
+			return coreentry.Run(args, stdout, stderr)
+		}
 	}
 	// The satellite words: radar, kanban and the gateway run their own command lines inside this
 	// binary, ahead of every huddle word and the legacy import — a satellite invocation never
@@ -134,5 +148,7 @@ func splitCommand(args []string) (command string, rest []string) {
 }
 
 func main() {
+	// The provider engine's entries report and compare this binary's version.
+	coreentry.SetVersion(version)
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }

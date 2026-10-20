@@ -220,6 +220,16 @@ func threshold(pkg string) (float64, bool) {
 	if under(rel, "internal/testkit") || under(rel, "cmd") || under(rel, "scripts") {
 		return 0, false
 	}
+	// The provider engine keeps the floors its own gate used: its testkit, archtest and entry
+	// (the old cmd layer) are exempt, its domain is judged at 95, and the rest at the internal
+	// floor below.
+	if rel == "internal/core/archtest" || under(rel, "internal/core/testkit") ||
+		under(rel, "internal/core/entry") {
+		return 0, false
+	}
+	if under(rel, "internal/core/domain") {
+		return 95.0, true
+	}
 	if under(rel, "internal/radar") {
 		return 90.0, true
 	}

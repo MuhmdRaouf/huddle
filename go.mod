@@ -7,6 +7,7 @@ toolchain go1.27.2
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/SherClockHolmes/webpush-go v1.4.0
+	github.com/andybalholm/brotli v1.2.6
 	github.com/bmatcuk/doublestar/v4 v4.10.3
 	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/go-acme/lego/v4 v4.35.2
@@ -14,6 +15,7 @@ require (
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/pquerna/otp v1.5.0
 	github.com/smallstep/truststore v0.13.0
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.60.1
 	rsc.io/qr v0.2.0
 )
@@ -238,7 +240,6 @@ require (
 	gopkg.in/ini.v1 v1.67.1 // indirect
 	gopkg.in/ns1/ns1-go.v2 v2.17.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	howett.net/plist v1.0.0 // indirect
 	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
