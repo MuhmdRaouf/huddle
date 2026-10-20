@@ -253,13 +253,16 @@ func (s *server) satNextRoute(w http.ResponseWriter, r *http.Request, machine st
 		s.writeJSON(w, 500, errorAnswer{Error: err.Error()}, nil)
 		return
 	}
+	// Armed before the queue is read: a handout queued between an empty read and a later arm
+	// would wake no one, and the machine would sit out the whole wait.
+	wake := s.satQueue.arm(machine)
 	handouts, err := s.registry.SatOffer(ctx, machine, at)
 	if err != nil {
+		s.satQueue.done(machine, wake)
 		s.writeJSON(w, 500, errorAnswer{Error: err.Error()}, nil)
 		return
 	}
 	if len(handouts) == 0 && seconds > 0 {
-		wake := s.satQueue.arm(machine)
 		timer := time.NewTimer(time.Duration(seconds) * time.Second)
 		select {
 		case <-wake:
@@ -275,6 +278,8 @@ func (s *server) satNextRoute(w http.ResponseWriter, r *http.Request, machine st
 			s.writeJSON(w, 500, errorAnswer{Error: err.Error()}, nil)
 			return
 		}
+	} else {
+		s.satQueue.done(machine, wake)
 	}
 	s.writeJSON(w, 200, struct {
 		Handouts []hub.SatHandout `json:"handouts"`
