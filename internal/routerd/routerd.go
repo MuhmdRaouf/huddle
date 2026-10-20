@@ -180,6 +180,11 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 		Gateway:   gatewayOf(env, log),
 	})
 	server.Handler = guardPanics(server.Handler, log, o.panicOnce)
+	// The handover socket listens before the first health answer: a taker that sees the router
+	// up and dials in between would find nobody to take from.
+	handed := make(chan int, 1)
+	stopHandover := serveHandover(home, port, listener, handed, log)
+	defer stopHandover()
 	served := make(chan error, 1)
 	go func() {
 		defer func() {
@@ -190,9 +195,6 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 		}()
 		served <- server.Serve(listener)
 	}()
-	handed := make(chan int, 1)
-	stopHandover := serveHandover(home, port, listener, handed, log)
-	defer stopHandover()
 	if err := writeRecord(ctx, recordFile, port, o.Version, selfExecutable()); err != nil {
 		// A router without its record still serves; status and start are the ones that miss it.
 		log("huddle-router: " + err.Error())
