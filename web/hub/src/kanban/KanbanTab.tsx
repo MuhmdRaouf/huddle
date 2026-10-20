@@ -102,22 +102,25 @@ function BoardPane({
         boardKey={boardKey}
         onBoard={onBoard}
       />
-      <Board
-        snapshot={snapshot}
-        filters={filters}
-        changeSeq={state.changeSeq}
-        changedIds={state.changedIds}
-        onOpen={sel.open}
-        onTag={pickTag}
-      />
-      {openCard !== null && (
-        <Drawer
-          card={openCard}
-          getTicket={(id) => store.ticket(id)}
-          onClose={sel.close}
-          onOpenDep={sel.openDep}
+      <div class="board-with-panel">
+        <Board
+          snapshot={snapshot}
+          filters={filters}
+          changeSeq={state.changeSeq}
+          changedIds={state.changedIds}
+          onOpen={sel.open}
+          onTag={pickTag}
         />
-      )}
+        {openCard !== null && (
+          <Drawer
+            card={openCard}
+            cards={cards}
+            getTicket={(id) => store.ticket(id)}
+            onClose={sel.close}
+            onOpenDep={sel.openDep}
+          />
+        )}
+      </div>
     </>
   );
 }

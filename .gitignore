@@ -651,3 +651,4 @@ $RECYCLE.BIN/
 !scripts/build/
 # The plugin's MCP entry: a global ignore of .mcp.json must not drop it.
 !plugin/.mcp.json
+web/e2e/screenshots/
