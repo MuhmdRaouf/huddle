@@ -13,7 +13,7 @@ import { useHuddle } from "../../../app/context.tsx";
 import type { RegistrySession } from "../../../registry.ts";
 import { fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { STATUS_COLOR } from "../../palette.ts";
-import { bucketPlan, stampOf } from "../../shared/time-range.ts";
+import { bucketPlan, rangeWords, stampOf } from "../../shared/time-range.ts";
 import {
   type ClientState,
   flowSource,
@@ -42,20 +42,23 @@ const ROUTER_PORTS: Record<string, number> = {
 /** The most models the chart stacks; the rest of the spend joins one "other" band. */
 const CHART_MODELS = 3;
 
-/** One stat card: a quiet title, the figure, and a subline that says what the figure reads. */
+/** One stat card: a quiet title, the figure, and a subline that says what the figure reads. A
+ *  title that carries the window keeps its plain name in `stat`, so the card stays addressable. */
 function Stat({
   title,
   value,
   subline,
   class: cls = "",
+  stat,
 }: {
   title: string;
   value: string;
   subline: ComponentChildren;
   class?: string;
+  stat?: string;
 }): JSX.Element {
   return (
-    <div class={`panel p-4 md:p-5 ${cls}`} data-stat={title.toLowerCase()}>
+    <div class={`panel p-4 md:p-5 ${cls}`} data-stat={(stat ?? title).toLowerCase()}>
       <div class="text-xs text-base-content/60">{title}</div>
       <div class="num mt-0.5 text-2xl font-semibold md:text-[26px]">{value}</div>
       {subline !== null && <div class="mt-1 text-xs text-base-content/60">{subline}</div>}
@@ -357,8 +360,8 @@ function SessionsStat() {
   );
 }
 
-/** The requests card: the range's count (all time, said plainly, when only history can scope it),
- *  the failures in their tone. */
+/** The requests card: the range's count, the window named on the tile — all time, said plainly,
+ *  when only the summary can answer — and the failures in their tone. */
 function RequestsStat({
   state,
   now,
@@ -371,14 +374,13 @@ function RequestsStat({
   const count = requestsInRange(state, now);
   return (
     <Stat
-      title="Requests"
+      title={`Requests · ${count === null ? "all time" : rangeWords(state.range, now)}`}
+      stat="Requests"
       value={count === null ? fmtNum(state.summary?.requests ?? 0) : fmtNum(count)}
       subline={
         numbers.failed > 0 ? (
           <Status tone="err" word={`${fmtNum(numbers.failed)} failed`} />
-        ) : numbers.history ? (
-          <span>all time</span>
-        ) : (
+        ) : numbers.history ? null : (
           <Status tone="ok" word="0 failed" />
         )
       }
@@ -386,16 +388,18 @@ function RequestsStat({
   );
 }
 
-/** The tokens card: the range's total and the share that came from the cache (all time, said
- *  plainly, when only history can scope the range). */
+/** The tokens card: the range's total and the share that came from the cache, the window named on
+ *  the tile — all time, said plainly, when only the summary can answer. */
 function TokensStat({
-  summary,
+  state,
+  now,
   numbers,
 }: {
-  summary: ClientState["summary"];
+  state: ClientState;
+  now: number;
   numbers: ReturnType<typeof rangeNumbers>;
 }) {
-  const all = summary?.tokens;
+  const all = state.summary?.tokens;
   const tokens = numbers.history
     ? all === undefined
       ? null
@@ -404,16 +408,15 @@ function TokensStat({
   const share = tokens !== null && tokens > 0 ? Math.round((numbers.cache / tokens) * 100) : null;
   return (
     <Stat
-      title="Tokens"
+      title={`Tokens · ${numbers.history ? "all time" : rangeWords(state.range, now)}`}
+      stat="Tokens"
       value={fmtTokens(tokens ?? 0)}
       subline={
         tokens === null ? (
           "nothing yet"
-        ) : share === null || numbers.history ? (
-          "all time"
-        ) : (
+        ) : !numbers.history && share !== null ? (
           <span class="num">{`${share}% from cache`}</span>
-        )
+        ) : null
       }
     />
   );
@@ -672,7 +675,7 @@ export function OverviewView(): JSX.Element {
       <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:col-span-2 xl:grid-cols-5" data-stat-cards="">
         <SpendStat />
         <RequestsStat state={state} now={now} numbers={numbers} />
-        <TokensStat summary={state.summary} numbers={numbers} />
+        <TokensStat state={state} now={now} numbers={numbers} />
         <SessionsStat />
         <RoutersStat />
       </div>

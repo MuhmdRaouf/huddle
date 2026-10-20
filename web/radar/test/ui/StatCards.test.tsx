@@ -70,7 +70,7 @@ describe("StatCards", () => {
       "Est. cost today",
       "Sessions",
       "Agents",
-      "Requests",
+      "Requests · last hour",
       "Tool calls",
       "Errors",
       "Latency p95",
@@ -81,7 +81,6 @@ describe("StatCards", () => {
       "Nothing priced yet. A Claude subscription may cover Claude usage; these are API list prices.",
       "2 live now, 1 ended",
       "all time",
-      "in the last 1 hour",
       "in the last 1 hour",
       "in the last 1 hour",
       "in the last 1 hour",
@@ -137,7 +136,6 @@ describe("StatCards", () => {
       "Nothing priced yet. A Claude subscription may cover Claude usage; these are API list prices.",
       "2 live now, 1 ended",
       "all time",
-      "in the last 1 hour",
       "in the last 1 hour1 failed",
       "in the last 1 hourNeeds a look",
       "Median 2sin the last 1 hour",
@@ -201,7 +199,6 @@ describe("StatCards", () => {
     expect(texts(".stat-desc")).toEqual([
       "Nothing priced yet. A Claude subscription may cover Claude usage; these are API list prices.",
       "all time",
-      "in the last 1 hour",
       "in the last 1 hour",
       "in the last 1 hour",
       "in the last 1 hour",
@@ -271,15 +268,48 @@ describe("StatCards", () => {
     );
     // the range-scoped counts cannot follow a picked set onto the history route, so they say all time
     expect(texts(".stat-value")).toEqual(["–", "2", "6", "14", "8", "2", "2m34s"]);
+    expect(texts(".stat-title")).toContain("Requests · all time");
     expect(texts(".stat-desc")).toEqual([
       "$1.25 across 2 picked sessions (estimate)",
       "1 of 2 live now",
       "in the picked sessions, all time",
-      "in 2 picked sessions, all time",
+      "in 2 picked sessions",
       "all time",
       "all time",
       "Median 41s, all time",
     ]);
+  });
+
+  it("names the requests tile's window: the default hour, the Day range, all time on the history route", () => {
+    const hour = renderApp(<StatCards />, { summary: SUMMARY, sessions: SESSIONS }, NOW);
+    expect(texts(".stat-title")).toContain("Requests · last hour");
+    hour.unmount();
+    // a request older than the day keeps the range off the history route, so the window stays named
+    const day = renderApp(
+      <StatCards />,
+      {
+        summary: SUMMARY,
+        sessions: SESSIONS,
+        range: { preset: "24h", from: 0, to: null },
+        requests: [makeRequest({ id: "old", ts: NOW - 25 * 3_600_000 })],
+      },
+      NOW,
+    );
+    expect(texts(".stat-title")).toContain("Requests · last 24 hours");
+    day.unmount();
+    // a fixed end sends the range to the history route, where a pick's stored count is all time
+    const allTime = renderApp(
+      <StatCards />,
+      {
+        summary: SUMMARY,
+        sessions: [sessionItem({ id: "s1", requestCount: 9 })],
+        range: { preset: null, from: 0, to: NOW - 1 },
+        selected: ["s1"],
+      },
+      NOW,
+    );
+    expect(texts(".stat-title")).toContain("Requests · all time");
+    allTime.unmount();
   });
 
   it("says nothing is priced today when only the ledger has a number", () => {

@@ -68,6 +68,22 @@ export function rangeLabel(range: TimeRange, now: number): string {
   return `${from} – ${to}`;
 }
 
+/** The words a preset's window reads in a tile's title, where the label alone would not do: the
+ *  hour says "last hour", not "last 1 hour". Every other preset lowercases its label. */
+const PRESET_WORDS: Partial<Record<Preset, string>> = { "1h": "last hour" };
+
+/** The range as a stat tile's title reads it: the preset's window in words ("last 24 hours"), or
+ *  the custom span's own text. A tile whose number is the all-time total says so itself; this
+ *  names a window the range actually holds. */
+export function rangeWords(range: TimeRange, now: number): string {
+  if (range.preset !== null) {
+    const words = PRESET_WORDS[range.preset];
+    if (words !== undefined) return words;
+    return (PRESETS.find((entry) => entry.key === range.preset)?.label ?? "All time").toLowerCase();
+  }
+  return rangeLabel(range, now);
+}
+
 /** A finite number from a hash value, or null for anything else (missing, empty, "abc"). */
 function numOf(raw: string | null): number | null {
   if (raw === null || raw === "") return null;

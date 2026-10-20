@@ -48,19 +48,26 @@ test("the overview's Day cards show the seeded totals", async ({ page }) => {
   await signIn(page);
   await openTab(page, "Radar");
 
+  // first load sits on the default hour, and the control says so
+  const range = page.getByRole("group", { name: "Range" });
+  await expect(range.getByRole("button", { name: "Hour" })).toHaveAttribute("aria-pressed", "true");
+
   // the owner's Day range: the requests the window holds are the three seeded ones
-  await page.getByRole("group", { name: "Range" }).getByRole("button", { name: "Day" }).click();
+  await range.getByRole("button", { name: "Day" }).click();
+  await expect(range.getByRole("button", { name: "Day" })).toHaveAttribute("aria-pressed", "true");
 
   // tokens: the fixture's four totals summed, and the cache's share of them
   const total = TOTALS.input + TOTALS.output + TOTALS.cacheRead + TOTALS.cacheWrite;
   const share = Math.round((TOTALS.cacheRead / total) * 100);
   const tokens = page.locator("[data-stat='tokens']");
   await expect(tokens).toBeVisible();
+  await expect(tokens).toContainText("Tokens · last 24 hours");
   await expect(tokens).toContainText("10k"); // the 10,000-token total, as the card prints it
   await expect(tokens).toContainText(`${share}% from cache`); // 5,000 of 10,000
 
-  // requests: three in the window, none failed
+  // requests: three in the window, none failed, the window named on the tile
   const requests = page.locator("[data-stat='requests']");
+  await expect(requests).toContainText("Requests · last 24 hours");
   await expect(requests).toContainText("3");
   await expect(requests).toContainText("0 failed");
 });

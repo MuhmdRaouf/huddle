@@ -190,7 +190,9 @@ func UpstreamRows(requests []shared.RequestRecord) []shared.UpstreamRow {
 	return rows
 }
 
-// ToolCounts counts tool calls per tool name, most used first, names breaking ties.
+// ToolCounts counts tool calls per tool name, most used first, names breaking ties. Calls named
+// "unknown" stay out: they are results whose tool_use was never read, not a tool, and older
+// records still carrying the name must not reach the Top tools ranking under it.
 func ToolCounts(tools []shared.ToolCallRecord) []ToolCountRow {
 	type tally struct {
 		count    int64
@@ -199,6 +201,9 @@ func ToolCounts(tools []shared.ToolCallRecord) []ToolCountRow {
 	var order []string
 	byName := make(map[string]*tally)
 	for i := range tools {
+		if tools[i].Name == "unknown" {
+			continue
+		}
 		t, ok := byName[tools[i].Name]
 		if !ok {
 			t = &tally{}

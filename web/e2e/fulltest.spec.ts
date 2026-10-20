@@ -88,7 +88,7 @@ test("one signed-in walk over TLS covers every tab with no console error", async
       await expect(page.locator(".bar-seg").first()).toBeVisible();
       await expect(page.getByText(/30 days: .+, 5 requests, /)).toBeVisible();
     }
-    // the Usage tiles carry the seeded totals exactly, the chart one line per model
+    // the Usage tiles carry the seeded totals exactly, the chart one stacked column per day
     if (view === "usage") {
       const tiles = page.locator("[data-usage-tiles]");
       await expect(tiles).toContainText(USAGE.processed.toLocaleString("en-US"));
@@ -96,6 +96,7 @@ test("one signed-in walk over TLS covers every tab with no console error", async
       await expect(tiles).toContainText(USAGE.uncached.toLocaleString("en-US"));
       await expect(tiles).toContainText(USAGE.output.toLocaleString("en-US"));
       await expect(page.locator("[data-usage-plot] rect").first()).toBeVisible();
+      await expect(page.locator("[data-usage-plot] path.chart-line")).toHaveCount(0);
     }
     await shot(`radar-${view}`);
   }

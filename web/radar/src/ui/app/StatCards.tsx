@@ -11,6 +11,7 @@ import { addCost } from "../../cost/prices.ts";
 import type { Budget, BudgetSpend, SessionListItem } from "../../shared/api.ts";
 import { NOTICE_EVENT, type Summary } from "../../shared/model.ts";
 import { scopeLabel } from "../../shared/provider.ts";
+import { rangeWords } from "../../shared/time-range.ts";
 import { fmtAgo, fmtDuration, fmtNum, fmtUsd, homeShort } from "../fmt.ts";
 import { budgetTone, STATUS_COLOR } from "../palette.ts";
 import {
@@ -100,13 +101,15 @@ function CostStat() {
 }
 
 /** What the strip knows about the selected range: whether the records in memory reach across it, how many
- *  requests ran, and the span in words ("in the last 6 hours"), scope-named when sessions are picked. */
+ *  requests ran, the span in words ("in the last 6 hours"), and the requests tile's window in words —
+ *  scope-named when sessions are picked. */
 type RangeFacts = {
   from: number;
   to: number;
   memory: boolean;
   requests: number | null;
   span: string;
+  window: string;
   scope: string | null;
 };
 
@@ -115,7 +118,6 @@ function rangeFacts(state: ClientState, now: number): RangeFacts {
   const { from, to, history } = flowSource(state, now);
   const picked = pickedSessions(state);
   const noun = rangePhrase(state.range);
-  const scopeNoun = noun.replace(/^the /, "");
   return {
     from,
     to,
@@ -127,12 +129,15 @@ function rangeFacts(state: ClientState, now: number): RangeFacts {
         ? picked.reduce((sum, item) => sum + item.requestCount, 0)
         : requestsInRange(state, now),
     span: `in ${noun}`,
+    // the requests tile's window in words: the range's own, unless a pick's stored counts answer —
+    // those are all time whatever the range says
+    window: history && picked.length > 0 ? "all time" : rangeWords(state.range, now),
     scope:
       picked.length === 0
         ? null
         : picked.length === 1
-          ? `in this session, ${history ? "all time" : scopeNoun}`
-          : `in ${fmtNum(picked.length)} picked sessions${history ? ", all time" : ""}`,
+          ? "in this session"
+          : `in ${fmtNum(picked.length)} picked sessions`,
   };
 }
 
@@ -208,9 +213,9 @@ function RangeStats({
   return (
     <>
       <Stat
-        title="Requests"
+        title={`Requests · ${facts.window}`}
         value={facts.requests === null ? "–" : fmtNum(facts.requests)}
-        subline={facts.scope ?? facts.span}
+        subline={facts.scope}
       />
       <Stat
         title="Tool calls"

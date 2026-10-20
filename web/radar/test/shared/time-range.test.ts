@@ -8,6 +8,7 @@ import {
   parseRangeHash,
   rangeLabel,
   rangeToHash,
+  rangeWords,
   resolveRange,
   type TimeRange,
 } from "../../src/shared/time-range.ts";
@@ -100,6 +101,28 @@ describe("rangeLabel", () => {
 
   it("falls back to All time for an unknown preset", () => {
     expect(rangeLabel({ preset: "nope" as Preset, from: 0, to: null }, NOW)).toBe("All time");
+  });
+});
+
+describe("rangeWords", () => {
+  it("reads every preset as its label in lowercase, all time included", () => {
+    // the hour says it the way words do, without the count
+    expect(rangeWords(preset("1h"), NOW)).toBe("last hour");
+    expect(rangeWords(preset("24h"), NOW)).toBe("last 24 hours");
+    expect(rangeWords(preset("7d"), NOW)).toBe("last 7 days");
+    expect(rangeWords(preset("30d"), NOW)).toBe("last 30 days");
+    expect(rangeWords(preset("all"), NOW)).toBe("all time");
+  });
+
+  it("reads a custom range as its span text", () => {
+    const from = at(2026, 9, 6, 14, 0);
+    const to = at(2026, 9, 6, 18, 30);
+    expect(rangeWords(custom(from, to), to)).toBe("6 Oct 14:00 – 6 Oct 18:30");
+    expect(rangeWords(custom(from, null), at(2026, 9, 6, 18, 30))).toBe("6 Oct 14:00 – now");
+  });
+
+  it("falls back to all time for an unknown preset", () => {
+    expect(rangeWords({ preset: "nope" as Preset, from: 0, to: null }, NOW)).toBe("all time");
   });
 });
 

@@ -421,16 +421,27 @@ func TestFeedTranscriptLineHappyPath(t *testing.T) {
 				},
 			},
 		})
-		if len(failed.ToolCalls) != 1 {
-			t.Fatalf("tool calls = %+v, want 1", failed.ToolCalls)
+		// no tool_use waited under that id, so nothing is emitted: an unmatched result is not a call
+		if len(failed.ToolCalls) != 0 {
+			t.Errorf("tool calls = %+v, want none for a result whose tool_use never showed up", failed.ToolCalls)
 		}
-		miss := failed.ToolCalls[0]
-		if miss.ID != "nope" || miss.SessionID != "s1" || miss.AgentID == nil || *miss.AgentID != "main" ||
-			miss.Name != "unknown" || miss.StartedAt != t2 || miss.DurationMs != nil || miss.Ok {
-			t.Errorf("tool call = %+v, want nope by main, unknown at %d, no duration, failed", miss, t2)
-		}
-		if miss.InputKey != nil {
-			t.Errorf("inputKey = %v, want nil", miss.InputKey)
+	})
+
+	t.Run("emits no tool call when the transcript opens on a tool_result", func(t *testing.T) {
+		// a file read from a later offset, or after a compaction, starts mid-conversation: its
+		// first results have no tool_use behind them and must not surface as a tool named unknown
+		state := NewTranscriptState()
+		emit := feed(state, map[string]any{
+			"type": "user", "timestamp": iso(t2),
+			"message": map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{"type": "tool_result", "tool_use_id": "late", "is_error": true},
+				},
+			},
+		})
+		if len(emit.ToolCalls) != 0 {
+			t.Errorf("tool calls = %+v, want none", emit.ToolCalls)
 		}
 	})
 

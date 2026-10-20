@@ -310,4 +310,27 @@ func TestToolCounts(t *testing.T) {
 			t.Errorf("tie order = %s then %s, want todoWrite then TodoWrite", counts[0].Name, counts[1].Name)
 		}
 	})
+
+	t.Run("keeps the unmatched results out: a call named unknown is not a tool", func(t *testing.T) {
+		// records read from a later offset used to land as "unknown"; whatever still sits in a
+		// store must not reach the Top tools ranking under that name
+		counts := ToolCounts([]shared.ToolCallRecord{
+			makeTool(nil),
+			makeTool(func(tool *shared.ToolCallRecord) { tool.Name = "unknown"; tool.Ok = false }),
+			makeTool(func(tool *shared.ToolCallRecord) { tool.Name = "unknown" }),
+			makeTool(func(tool *shared.ToolCallRecord) { tool.Name = "Read" }),
+		})
+		want := []ToolCountRow{
+			{Name: "Bash", Count: 1, Failures: 0},
+			{Name: "Read", Count: 1, Failures: 0},
+		}
+		if len(counts) != len(want) {
+			t.Fatalf("length: got %d, want %d", len(counts), len(want))
+		}
+		for i := range want {
+			if counts[i] != want[i] {
+				t.Errorf("counts[%d]: got %+v, want %+v", i, counts[i], want[i])
+			}
+		}
+	})
 }

@@ -2,7 +2,7 @@
 // rail, the desktop top bar with the jump field and the machines line), the five tabs' placeholder
 // panes, today's pages reachable under Channels, the routes with their redirects, the shell's
 // keys, the no-channel page, and the first-run checklist the Now list carries.
-import { act, cleanup, screen } from "@testing-library/preact";
+import { act, cleanup, fireEvent, screen } from "@testing-library/preact";
 import type { ComponentType } from "preact";
 import { useEffect } from "preact/hooks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -11,8 +11,10 @@ import { IntroActions } from "../../src/app/intro.tsx";
 import { DESKTOP_QUERY, TABLET_QUERY } from "../../src/app/layout.ts";
 import { parseHash } from "../../src/app/router.ts";
 import type { ComposeOptions } from "../../src/compose/drafts.ts";
+import { ensureRadar, stopRadar } from "../../src/radar/mount.tsx";
 import type { RegistrySession } from "../../src/registry.ts";
 import type { HuddleState } from "../../src/store.ts";
+import { radarIo } from "../radar/ui/io.ts";
 import {
   attention,
   flush,
@@ -41,6 +43,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  stopRadar(); // a test that booted the radar controller leaves no timers behind
 });
 
 /** Mounts the shell over a state. */
@@ -270,6 +273,27 @@ describe("routes and panes", () => {
         .querySelector('[aria-label="Radar views"] a[data-view="overview"]')
         ?.getAttribute("aria-current"),
     ).toBe("page");
+  });
+
+  it("offers Hour, Day, Week and Month on the range, Hour pressed for the default range, then the one picked", () => {
+    stubMedia(DESKTOP);
+    const controller = ensureRadar(radarIo().io);
+    nav("#/radar/overview");
+    mountApp();
+    const pressed = (): string[] =>
+      ([...document.querySelectorAll("[data-radar-range] button")] as HTMLButtonElement[]).map(
+        (button) => button.getAttribute("aria-pressed") ?? "",
+      );
+    const named = (): string[] =>
+      ([...document.querySelectorAll("[data-radar-range] button")] as HTMLButtonElement[]).map(
+        (button) => button.textContent ?? "",
+      );
+    expect(named()).toEqual(["Hour", "Day", "Week", "Month"]);
+    // the default range is the last hour, and the control says so on first load
+    expect(pressed()).toEqual(["true", "false", "false", "false"]);
+    fireEvent.click(screen.getByRole("button", { name: "Day" }));
+    expect(pressed()).toEqual(["false", "true", "false", "false"]);
+    expect(controller.getState().range.preset).toBe("24h");
   });
 
   it("renders Settings' section row with Sign-in current, an unknown address included", () => {

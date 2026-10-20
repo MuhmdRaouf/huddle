@@ -303,12 +303,14 @@ function IconRail({ tab, n }: { tab: Tab; n: number }): JSX.Element {
   );
 }
 
-/** The Day/Week/Month range control the Radar tab carries: right of the sub-tabs on a wide pane,
- *  in the phone header's place. A range outside the three presets leaves none pressed. */
+/** The Hour/Day/Week/Month range control the Radar tab carries: right of the sub-tabs on a wide
+ *  pane, in the phone header's place. Hour is the default range, so it is pressed on first load;
+ *  a custom range leaves none pressed. */
 function RadarRange(): JSX.Element {
   const state = useRadarState();
   const preset = state?.range.preset ?? null;
   const choices: readonly (readonly [string, string])[] = [
+    ["1h", "Hour"],
     ["24h", "Day"],
     ["7d", "Week"],
     ["30d", "Month"],

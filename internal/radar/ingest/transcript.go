@@ -1488,34 +1488,32 @@ func applyResult(state *TranscriptState, entry rawObject, file FileIdentity) Tra
 }
 
 // toolResultOf pairs a tool_result block with the tool_use that asked for it: the call's
-// duration, ok flag and identity, falling back to the result's own agent when no tool_use
-// waited (a crash, a tool another session ran).
-func toolResultOf(state *TranscriptState, block rawObject, toolUseID string, ctx agentContext) shared.ToolCallRecord {
+// duration, ok flag and identity. A result whose tool_use was never read — the file opened on a
+// later offset, or after a compaction — has no pair, so it reports false and the caller emits
+// nothing: an unmatched result is not a tool call.
+func toolResultOf(state *TranscriptState, block rawObject, toolUseID string, ctx agentContext) (shared.ToolCallRecord, bool) {
 	pending, found := state.pendingTools.get(toolUseID)
 	state.pendingTools.delete(toolUseID)
-	startedAt, sessionID, agentID, name := ctx.ts, ctx.sessionID, ctx.agentID, "unknown"
-	var inputKey *string
-	if found {
-		startedAt, sessionID, agentID, name = pending.startedAt, pending.sessionID, pending.agentID, pending.name
-		key := pending.inputKey
-		inputKey = &key
+	if !found {
+		return shared.ToolCallRecord{}, false
 	}
 	var duration *int64
-	if startedAt < ctx.ts {
-		wait := ctx.ts - startedAt
+	if pending.startedAt < ctx.ts {
+		wait := ctx.ts - pending.startedAt
 		duration = &wait
 	}
 	isErr, _ := boolField(block, "is_error")
+	key := pending.inputKey
 	return shared.ToolCallRecord{
 		ID:         toolUseID,
-		SessionID:  sessionID,
-		AgentID:    &agentID,
-		Name:       name,
-		StartedAt:  startedAt,
+		SessionID:  pending.sessionID,
+		AgentID:    &pending.agentID,
+		Name:       pending.name,
+		StartedAt:  pending.startedAt,
 		DurationMs: duration,
 		Ok:         !isErr,
-		InputKey:   inputKey,
-	}
+		InputKey:   &key,
+	}, true
 }
 
 // isInterruption reads "[Request interrupted by user]" (and "… for tool use"), as a string
@@ -1556,7 +1554,9 @@ func applyUser(state *TranscriptState, message rawObject, ctx agentContext, emit
 		if blockType != "tool_result" || !hasID {
 			continue
 		}
-		emit.ToolCalls = append(emit.ToolCalls, toolResultOf(state, block, toolUseID, ctx))
+		if call, ok := toolResultOf(state, block, toolUseID, ctx); ok {
+			emit.ToolCalls = append(emit.ToolCalls, call)
+		}
 	}
 }
 

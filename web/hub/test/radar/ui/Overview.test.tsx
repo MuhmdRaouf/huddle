@@ -91,6 +91,9 @@ describe("the radar Overview", () => {
       "width: 46%",
     );
     expect(container.textContent).toContain("46% of $40.00");
+    // the two range-scoped tiles name the window they read, the default hour included
+    expect(container.querySelector('[data-stat="requests"]')?.textContent).toContain("Requests · last hour");
+    expect(container.querySelector('[data-stat="tokens"]')?.textContent).toContain("Tokens · last hour");
     expect(container.querySelector('[data-stat="requests"] .num')?.textContent).toBe("1");
     expect(container.querySelector('[data-stat="requests"]')?.textContent).toContain("0 failed");
     expect(container.querySelector('[data-stat="tokens"] .num')?.textContent).toBe("8M");
@@ -236,7 +239,23 @@ describe("the radar Overview", () => {
     expect(container.querySelector('[data-stat="requests"]')?.textContent).toContain("1 failed");
   });
 
-  it("reads a history range's counts from the fetched flow, and says all time", () => {
+  it("names the Day window the memory-backed range reads", () => {
+    // a request older than the day keeps the range off the history route, so the tiles read it
+    const { container } = overview({
+      summary: fixtures.summary,
+      range: { preset: "24h", from: 0, to: null },
+      requests: [
+        priced("claude-opus-5-5", NOW - 25 * 3_600_000),
+        priced("glm-5.3", NOW - 60_000, "https://api.z.ai/api/anthropic"),
+      ],
+    });
+    expect(container.querySelector('[data-stat="requests"]')?.textContent).toContain(
+      "Requests · last 24 hours",
+    );
+    expect(container.querySelector('[data-stat="tokens"]')?.textContent).toContain("Tokens · last 24 hours");
+  });
+
+  it("reads a history range's counts from the fetched flow, and names the window it fetched", () => {
     const { container } = overview({
       summary: fixtures.summary,
       range: { preset: "7d", from: 0, to: null },
@@ -253,9 +272,22 @@ describe("the radar Overview", () => {
       requests: [priced("claude-opus-5-5", NOW - 60_000)],
     });
     expect(container.querySelector('[data-stat="requests"] .num')?.textContent).toBe("12");
-    expect(container.querySelector('[data-stat="requests"]')?.textContent).toContain("all time");
+    // the twelve are the week's own requests, so the tile says so; the tokens still come from the
+    // all-time summary, and that tile says all time
+    expect(container.querySelector('[data-stat="requests"]')?.textContent).toContain("last 7 days");
     expect(container.querySelector('[data-stat="tokens"]')?.textContent).toContain("all time");
     expect(container.textContent).toContain("Token flow");
+  });
+
+  it("says all time on the requests tile while a history range has no flow answer yet", () => {
+    // the count falls back to the summary's all-time total, so the tile names all time
+    const { container } = overview({
+      summary: fixtures.summary,
+      range: { preset: "7d", from: 0, to: null },
+      requests: [priced("claude-opus-5-5", NOW - 60_000)],
+    });
+    expect(container.querySelector('[data-stat="requests"] .num')?.textContent).toBe("412");
+    expect(container.querySelector('[data-stat="requests"]')?.textContent).toContain("Requests · all time");
   });
 
   it("says nothing yet when a history range has no summary to read", () => {
