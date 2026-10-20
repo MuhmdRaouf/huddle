@@ -219,3 +219,106 @@ func TestMigrate001SkipsProvidersNeverSetUp(t *testing.T) {
 		}
 	}
 }
+
+func TestGuardPidReadsTheWatchFileNamesOnly(t *testing.T) {
+	t.Parallel()
+	pid, ok := guardPid("/state/watch.4242")
+	if !ok || pid != 4242 {
+		t.Errorf("guardPid = %d, %t, want 4242, true", pid, ok)
+	}
+	for _, name := range []string{"/state/watch.bogus", "/state/watch.0", "/state/watch.-5", "/state/other"} {
+		if pid, ok := guardPid(name); ok || pid != 0 {
+			t.Errorf("guardPid(%s) = %d, %t, want 0, false", name, pid, ok)
+		}
+	}
+}
+
+// TestMigrate001NamesWhatItCannotDo covers the rows where a step cannot act: a providers.json
+// the daemon cannot write, a ledger that was never there, one it cannot rewrite, and a binary
+// copy that will not leave.
+func TestMigrate001NamesWhatItCannotDo(t *testing.T) {
+	t.Run("a providers.json behind a file is named, the rest still runs", func(t *testing.T) {
+		env, _ := migrateEnv(t)
+		blocker := filepath.Join(t.TempDir(), "router-home")
+		if err := os.WriteFile(blocker, []byte("a file"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		env["HUDDLE_ROUTER_HOME"] = blocker
+		layout001(t, env, gonePid)
+		var lines []string
+		moved := Migrate001(context.Background(), env, func(line string) { lines = append(lines, line) })
+		if len(moved) != 1 {
+			t.Fatalf("Migrate001 = %v, want zai moved", moved)
+		}
+		if !strings.Contains(strings.Join(lines, "\n"), "zai: ") {
+			t.Errorf("the log = %q, want the providers.json failure", strings.Join(lines, "\n"))
+		}
+		enabled, err := router.ReadEnabled(env)
+		if err == nil && len(enabled) != 0 {
+			t.Errorf("providers.json = %v, want none behind a file", enabled)
+		}
+	})
+
+	t.Run("a state with no ledger is rewritten nowhere", func(t *testing.T) {
+		env, _ := migrateEnv(t)
+		root := layout001(t, env, gonePid)
+		if err := os.Remove(filepath.Join(root, "ledger.json")); err != nil {
+			t.Fatal(err)
+		}
+		layout := domain.NewStateLayout(root)
+		var acted bool
+		var lines []string
+		rewriteOldLedger001(context.Background(), env, layout, func(line string) { lines = append(lines, line) }, &acted)
+		if acted {
+			t.Error("a migration rewrote a ledger that was never there")
+		}
+		if len(lines) != 0 {
+			t.Errorf("the log = %v, want silence", lines)
+		}
+	})
+
+	t.Run("a ledger that cannot be rewritten keeps the old address and says so", func(t *testing.T) {
+		env, _ := migrateEnv(t)
+		root := layout001(t, env, gonePid)
+		if err := os.Chmod(root, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+		layout := domain.NewStateLayout(root)
+		var acted bool
+		var lines []string
+		rewriteOldLedger001(context.Background(), env, layout, func(line string) { lines = append(lines, line) }, &acted)
+		if acted {
+			t.Error("a migration rewrote a ledger in a read-only state root")
+		}
+		if !strings.Contains(strings.Join(lines, "\n"), "keeps the old router's address") {
+			t.Errorf("the log = %q, want the rewrite's failure", strings.Join(lines, "\n"))
+		}
+	})
+
+	t.Run("a binary copy that cannot leave stays and says so", func(t *testing.T) {
+		env, _ := migrateEnv(t)
+		root := layout001(t, env, gonePid)
+		if err := os.Chmod(filepath.Join(root, "router"), 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(filepath.Join(root, "router"), 0o700) })
+		var acted bool
+		var lines []string
+		zai, ok := providers.ByName("zai")
+		if !ok {
+			t.Fatal("no provider named zai")
+		}
+		removeOldBinary001(context.Background(), zai, root,
+			func(line string) { lines = append(lines, line) }, &acted)
+		if acted {
+			t.Error("a migration removed a binary copy from a read-only router dir")
+		}
+		if !strings.Contains(strings.Join(lines, "\n"), "binary copy stays") {
+			t.Errorf("the log = %q, want the copy's failure", strings.Join(lines, "\n"))
+		}
+		if _, err := os.Stat(filepath.Join(root, "router", oldBinaryName)); err != nil {
+			t.Errorf("the binary copy: %v", err)
+		}
+	})
+}

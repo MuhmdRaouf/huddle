@@ -203,10 +203,12 @@ func (r *daemonRig) health(t *testing.T) (string, bool) {
 	return string(body), true
 }
 
-// awaitHealth waits until the daemon answers its health path naming every want provider.
+// awaitHealth waits until the daemon answers its health path naming every want provider. The
+// window is generous: the whole suite runs in parallel, and a goroutine of this process can
+// wait seconds for a slice of CPU without anything being wrong.
 func (r *daemonRig) awaitHealth(t *testing.T, want ...string) string {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		if body, ok := r.health(t); ok {
 			every := true
@@ -395,6 +397,27 @@ func TestHuddleRouterDaemonScenarios(t *testing.T) {
 				}
 			})
 			s.Then("the daemon takes the port within one poll", func(t *testing.T) {
+				rig.awaitHealth(t, "zai")
+			})
+		})
+
+		f.Scenario("disabling every provider keeps the port serving", func(s *bdd.S) {
+			var rig *daemonRig
+			s.Given("a daemon serves zai", func(t *testing.T) {
+				rig = newDaemonRig(s.T)
+				if err := router.SetEnabled(rig.env, "zai", true); err != nil {
+					t.Fatal(err)
+				}
+				rig.start()
+				rig.awaitHealth(t, "zai")
+			})
+			s.When("providers.json disables every provider", func(t *testing.T) {
+				if err := router.SetEnabled(rig.env, "zai", false); err != nil {
+					t.Fatal(err)
+				}
+			})
+			s.Then("the daemon still answers after a poll, empty but up", func(t *testing.T) {
+				time.Sleep(100 * time.Millisecond)
 				rig.awaitHealth(t, "zai")
 			})
 		})

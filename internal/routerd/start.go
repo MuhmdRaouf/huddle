@@ -129,34 +129,6 @@ func Start(ctx context.Context, o StartOptions) (string, error) {
 	}
 }
 
-// Wake is the ensure hook's start: a provider recorded in providers.json gets the same probe and
-// detached spawn as Start, never waited for — the next hook finds the daemon up. It is silent,
-// never fails, and does nothing for a provider that is not recorded.
-func Wake(ctx context.Context, o StartOptions, name string) {
-	defer func() { _ = recover() }()
-	env := o.Env
-	if env == nil {
-		env = domain.EnvLookup{}
-	}
-	names, err := router.ReadEnabled(env)
-	if err != nil || !slices.Contains(names, name) {
-		return
-	}
-	port, err := router.PortOf(env)
-	if err != nil {
-		return
-	}
-	if _, up := Health(ctx, port); up {
-		return
-	}
-	log, err := startLog(env)
-	if err != nil {
-		return
-	}
-	defer log.Close()
-	_ = spawnServe(o.executable(), env, log)
-}
-
 // RouterKeyCheck is setup's router key line: the daemon's health answers once it serves the
 // provider, waiting up to waitMs (8 s when 0) for a reload that is still catching up. The key
 // itself is setup's own `key` line.

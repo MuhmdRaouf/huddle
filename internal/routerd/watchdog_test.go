@@ -377,3 +377,19 @@ func TestSessionWatchdogRows(t *testing.T) {
 		}
 	})
 }
+
+// TestReplaceHungRouterNeverTouchesWhatIsNotTheDaemon pins the guard rows: no pid at all, and
+// this very process, are never signalled.
+func TestReplaceHungRouterNeverTouchesWhatIsNotTheDaemon(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	if replaceHungRouter(ctx, watchSelf(), 0) {
+		t.Error("replaceHungRouter(0) = true, want false")
+	}
+	if replaceHungRouter(ctx, watchSelf(), 1) {
+		t.Error("replaceHungRouter(1) = true, want false")
+	}
+	if replaceHungRouter(ctx, watchSelf(), os.Getpid()) {
+		t.Error("replaceHungRouter(this process) = true, want false")
+	}
+}

@@ -126,3 +126,46 @@ func TestHolderOfAnUnheldFile(t *testing.T) {
 		t.Errorf("Holder = (%d, %t), want (0, false)", pid, held)
 	}
 }
+
+func TestHeldErrorWords(t *testing.T) {
+	if got := (&HeldError{PID: 42}).Error(); got != "held by pid 42" {
+		t.Errorf("a nameless holder's error = %q, want %q", got, "held by pid 42")
+	}
+	if got := (&HeldError{PID: 42, Holder: "a Huddle server"}).Error(); got != "a Huddle server (pid 42) already serves this home" {
+		t.Errorf("a named holder's error = %q, want the holder named", got)
+	}
+}
+
+func TestLockPidReadsTheFirstLineOnly(t *testing.T) {
+	if pid := lockPid([]byte("4242\nand the rest")); pid != 4242 {
+		t.Errorf("lockPid = %d, want 4242", pid)
+	}
+	for _, raw := range [][]byte{nil, []byte("\n"), []byte("not a pid\n"), []byte("  ")} {
+		if pid := lockPid(raw); pid != 0 {
+			t.Errorf("lockPid(%q) = %d, want 0", raw, pid)
+		}
+	}
+}
+
+func TestLockNamesItsOwnFailures(t *testing.T) {
+	base := t.TempDir()
+	// The lock's directory sits behind a file: creating it fails.
+	blocker := filepath.Join(base, "blocker")
+	if err := os.WriteFile(blocker, []byte("a file, not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if release, err := Lock(filepath.Join(blocker, "run", "router.lock"), ""); err == nil {
+		release()
+		t.Fatal("Lock behind a file = nil error, want one")
+	}
+	// The lock's directory is read-only: opening the file fails.
+	readonly := filepath.Join(base, "readonly")
+	if err := os.MkdirAll(readonly, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(readonly, 0o700) })
+	if release, err := Lock(filepath.Join(readonly, "router.lock"), ""); err == nil {
+		release()
+		t.Fatal("Lock in a read-only directory = nil error, want one")
+	}
+}

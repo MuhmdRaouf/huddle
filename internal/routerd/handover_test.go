@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -139,6 +141,211 @@ func TestTakeoverNamesTheErrors(t *testing.T) {
 	})
 }
 
+// fakeHandover is one handover socket that answers every takeover with the given line and file
+// descriptors, the way a broken daemon would.
+func fakeHandover(t *testing.T, answer func(conn *net.UnixConn)) string {
+	t.Helper()
+	home := shortHome(t)
+	if err := os.MkdirAll(filepath.Join(home, "run"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, "run", handoverName)
+	unix, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = unix.Close(); _ = os.Remove(path) })
+	go func() {
+		for {
+			conn, err := unix.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				unixConn, ok := conn.(*net.UnixConn)
+				if !ok {
+					return
+				}
+				_ = unixConn.SetDeadline(time.Now().Add(5 * time.Second))
+				_, _ = bufio.NewReader(unixConn).ReadString('\n')
+				answer(unixConn)
+			}(conn)
+		}
+	}()
+	return home
+}
+
+// sendRights writes one message with the given file descriptors as SCM_RIGHTS.
+func sendRights(conn *net.UnixConn, text string, fds ...int) error {
+	rights := syscall.UnixRights(fds...)
+	_, _, err := conn.WriteMsgUnix([]byte(text), rights, nil)
+	return err
+}
+
+func TestTakeoverRefusesAnAnswerItCannotUse(t *testing.T) {
+	t.Parallel()
+	pipe := func(t *testing.T) int {
+		t.Helper()
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = r.Close(); _ = w.Close() })
+		return int(w.Fd())
+	}
+
+	t.Run("an answer naming no port", func(t *testing.T) {
+		t.Parallel()
+		fd := pipe(t)
+		home := fakeHandover(t, func(conn *net.UnixConn) {
+			_ = sendRights(conn, "ok not a port\n", fd)
+		})
+		if _, err := Takeover(context.Background(), home); err == nil || !strings.Contains(err.Error(), "answered") {
+			t.Fatalf("Takeover = %v, want the bad-answer error", err)
+		}
+	})
+
+	t.Run("an answer carrying no socket", func(t *testing.T) {
+		t.Parallel()
+		home := fakeHandover(t, func(conn *net.UnixConn) {
+			_, _ = conn.Write([]byte("ok 20000\n"))
+		})
+		if _, err := Takeover(context.Background(), home); err == nil || !strings.Contains(err.Error(), "handed over 0 sockets") {
+			t.Fatalf("Takeover = %v, want the missing-socket error", err)
+		}
+	})
+
+	t.Run("an answer carrying two sockets", func(t *testing.T) {
+		t.Parallel()
+		first, second := pipe(t), pipe(t)
+		home := fakeHandover(t, func(conn *net.UnixConn) {
+			_ = sendRights(conn, "ok 20000\n", first, second)
+		})
+		if _, err := Takeover(context.Background(), home); err == nil || !strings.Contains(err.Error(), "handed over 2 sockets") {
+			t.Fatalf("Takeover = %v, want the two-socket error", err)
+		}
+	})
+}
+
+// freeListener takes one testkit port and listens on it at once, redrawing when another
+// process's test took the port in between the check and the listen.
+func freeListener(t *testing.T) *net.TCPListener {
+	t.Helper()
+	for tries := 0; tries < 3; tries++ {
+		port := ports.Free(t)
+		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			return listener.(*net.TCPListener)
+		}
+	}
+	t.Fatal("no testkit port stayed bindable")
+	return nil
+}
+
+func TestServeHandoverSkipsASocketItCannotServe(t *testing.T) {
+	t.Parallel()
+	var lines []string
+	log := func(line string) { lines = append(lines, line) }
+	handed := make(chan int, 1)
+	tcp := freeListener(t)
+	t.Cleanup(func() { _ = tcp.Close() })
+
+	t.Run("a listener that is no TCP socket", func(t *testing.T) {
+		home := shortHome(t)
+		if err := os.MkdirAll(filepath.Join(home, "run"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(home, "run", "other.sock")
+		unix, err := net.Listen("unix", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = unix.Close(); _ = os.Remove(path) })
+		stop := serveHandover(home, 1, unix, handed, log)
+		stop()
+		if !strings.Contains(strings.Join(lines, "\n"), "not a TCP socket") {
+			t.Errorf("the log = %q, want the refusal", strings.Join(lines, "\n"))
+		}
+	})
+
+	t.Run("a run dir that cannot be made", func(t *testing.T) {
+		base := t.TempDir()
+		blocker := filepath.Join(base, "blocker")
+		if err := os.WriteFile(blocker, []byte("a file"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		stop := serveHandover(filepath.Join(blocker, "home"), 1, tcp, handed, log)
+		stop()
+		if !strings.Contains(strings.Join(lines, "\n"), "handover socket:") {
+			t.Errorf("the log = %q, want the socket's failure", strings.Join(lines, "\n"))
+		}
+	})
+
+	t.Run("a socket path past the OS's limit", func(t *testing.T) {
+		deep := t.TempDir()
+		for i := 0; i < 8; i++ {
+			deep = filepath.Join(deep, "a-very-long-directory-name-beyond-any-socket-path")
+		}
+		stop := serveHandover(deep, 1, tcp, handed, log)
+		stop()
+		if !strings.Contains(strings.Join(lines, "\n"), "handover socket:") {
+			t.Errorf("the log = %q, want the listen's failure", strings.Join(lines, "\n"))
+		}
+	})
+}
+
+// TestAnswerHandoverKeepsServingOnAQuestionItCannotRead dials the daemon's handover socket with
+// questions that lead nowhere: the daemon closes the connection, hands nothing over, and keeps
+// serving.
+func TestAnswerHandoverKeepsServingOnAQuestionItCannotRead(t *testing.T) {
+	t.Parallel()
+	home := shortHome(t)
+	tcp := freeListener(t)
+	port := tcp.Addr().(*net.TCPAddr).Port
+	handed := make(chan int, 1)
+	stop := serveHandover(home, port, tcp, handed, func(string) {})
+	t.Cleanup(stop)
+	path := filepath.Join(home, "run", handoverName)
+
+	t.Run("a question that is no takeover line", func(t *testing.T) {
+		conn, err := net.Dial("unix", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conn.Write([]byte("hello\n")); err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+		one := make([]byte, 16)
+		if _, err := conn.Read(one); err == nil {
+			t.Error("the daemon answered a bad question, want the connection closed")
+		}
+		_ = conn.Close()
+	})
+
+	t.Run("a connection that hangs up mid-question", func(t *testing.T) {
+		conn, err := net.Dial("unix", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.Close()
+		time.Sleep(100 * time.Millisecond)
+	})
+
+	select {
+	case taker := <-handed:
+		t.Errorf("the daemon handed its socket to %d on a question it cannot read", taker)
+	default:
+	}
+	// the handover serves on: a proper question still gets the socket
+	taker, err := Takeover(context.Background(), home)
+	if err != nil {
+		t.Fatalf("the takeover after the bad questions: %v", err)
+	}
+	_ = taker.Close()
+}
+
 func TestParseRSS(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -181,6 +388,9 @@ func TestRSSOfReadsThisProcess(t *testing.T) {
 	}
 	if rss <= 0 {
 		t.Errorf("this process's rss = %d, want more", rss)
+	}
+	if _, err := rssOf(-1); err == nil {
+		t.Error("rssOf(-1) = nil error, want ps's failure")
 	}
 }
 
