@@ -88,6 +88,13 @@ func writeTranscript(t *testing.T) string {
 // pinned to a temp dir.
 func runReportHook(t *testing.T, input, home string, env map[string]string) (string, time.Duration) {
 	t.Helper()
+	return runReportHookIn(context.Background(), t, input, home, env)
+}
+
+// runReportHookIn runs the report hook under ctx, the way the merged event hook runs it under
+// the part's own deadline.
+func runReportHookIn(ctx context.Context, t *testing.T, input, home string, env map[string]string) (string, time.Duration) {
+	t.Helper()
 	vars := map[string]string{
 		"HOME":                   t.TempDir(),
 		"HUDDLE_HOME":            home,
@@ -120,7 +127,7 @@ func runReportHook(t *testing.T, input, home string, env map[string]string) (str
 	}
 	var out strings.Builder
 	t0 := time.Now()
-	Report(context.Background(), w, strings.NewReader(input), &out)
+	Report(ctx, w, strings.NewReader(input), &out)
 	return out.String(), time.Since(t0)
 }
 
@@ -458,6 +465,25 @@ func TestTheReportHookNeverExceedsTwoSecondsAgainstAHungServer(t *testing.T) {
 		home, map[string]string{"HUDDLE_URL": muteURL(t), "HUDDLE_CHANNEL": "hooks"})
 	if elapsed >= 2*time.Second {
 		t.Errorf("the hook took %s against a hung server, want it under 2 s", elapsed)
+	}
+	raw, err := os.ReadFile(filepath.Join(home, "outbox.jsonl"))
+	if err != nil || len(raw) == 0 {
+		t.Errorf("the outbox after a hung server: %v (%d bytes), want the report in it", err, len(raw))
+	}
+}
+
+// The merged event hook drops a part at its own deadline, which can come before the report's
+// 1.9 s budget ends (UserPromptSubmit grants it 1.3 s): the report must give up on a hung server
+// in time to queue itself, or it vanishes with the dropped part.
+func TestTheReportHookQueuesBeforeItsCallersDeadline(t *testing.T) {
+	home := reportHome(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 900*time.Millisecond)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+	runReportHookIn(ctx, t, reportFixture(t, "user-prompt-submit", writeTranscript(t), t.TempDir()),
+		home, map[string]string{"HUDDLE_URL": muteURL(t), "HUDDLE_CHANNEL": "hooks"})
+	if late := time.Since(deadline); late > 0 {
+		t.Errorf("the hook returned %s after its caller's deadline, want before it", late)
 	}
 	raw, err := os.ReadFile(filepath.Join(home, "outbox.jsonl"))
 	if err != nil || len(raw) == 0 {

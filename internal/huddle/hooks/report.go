@@ -39,6 +39,8 @@ const (
 	reportGitMS    = 300
 	reportProcMS   = 300
 	reportBudgetMS = 1900
+	// reportQueueMS is what the report keeps back from its caller's deadline to write the outbox.
+	reportQueueMS = 250
 )
 
 // outboxCap is the most the outbox holds: past it the oldest lines are dropped, so a server
@@ -64,8 +66,14 @@ type reportInput struct {
 func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 	Run(ctx, w, "report", func() error {
 		t0 := nowOf(w)
+		budget := reportBudgetMS
+		if deadline, ok := ctx.Deadline(); ok {
+			// the merged event hook drops a part at its own deadline, which may come first: the
+			// report gives up early enough to queue itself, or it vanishes with the dropped part
+			budget = min(budget, int(time.Until(deadline).Milliseconds())-reportQueueMS)
+		}
 		left := func() int {
-			return max(1, reportBudgetMS-int(nowOf(w).Sub(t0).Milliseconds()))
+			return max(1, budget-int(nowOf(w).Sub(t0).Milliseconds()))
 		}
 		var input reportInput
 		readInput(in, min(reportStdinMS, left()), &input)
