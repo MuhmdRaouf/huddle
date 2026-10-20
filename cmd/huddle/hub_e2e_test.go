@@ -375,8 +375,9 @@ func TestE2EFreshInstallHubSatellitePWA(t *testing.T) {
 			delivered = pollFor(5*time.Second, listed)
 		}
 		if !delivered {
-			dumpChildDiagnostics(t, satRoot, satBin)
+			dumpChildDiagnostics(t, satRoot, satBin, satUser, satProject)
 			t.Logf("=== the satellite's serve log ===\n%s", satLog.String())
+			t.Logf("=== the satellite's registry now === %s", registryNow(t, satURL, "sat-root-token"))
 			t.Logf("=== the hub's registry now === %s", registryNow(t, hubURL, "hub-root-token"))
 			t.Fatal("the hub's registry never listed the satellite's session under e2e-sat")
 		}
@@ -1011,14 +1012,22 @@ func registryHas(t *testing.T, url, token, session, machine string) bool {
 }
 
 // dumpChildDiagnostics prints what a hook child left behind, for a step that timed out.
-func dumpChildDiagnostics(t *testing.T, root, binHome string) {
+func dumpChildDiagnostics(t *testing.T, root, binHome string, more ...string) {
 	t.Helper()
-	for _, path := range []string{
-		filepath.Join(root, "outbox.jsonl"), filepath.Join(root, "hooks.log"),
-	} {
-		if raw, err := os.ReadFile(path); err == nil {
-			t.Logf("=== %s ===\n%s", path, raw)
-		}
+	// a hook logs to the home it resolves, else its temp dir: every outbox and hook log under
+	// the machine's dirs is printed, wherever the child put it
+	for _, dir := range append([]string{root}, more...) {
+		_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				return nil
+			}
+			if name := entry.Name(); name == "outbox.jsonl" || name == "hooks.log" {
+				if raw, err := os.ReadFile(path); err == nil {
+					t.Logf("=== %s ===\n%s", path, raw)
+				}
+			}
+			return nil
+		})
 	}
 	if entries, err := os.ReadDir(binHome); err == nil {
 		names := []string{}

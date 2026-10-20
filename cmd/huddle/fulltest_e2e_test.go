@@ -183,6 +183,7 @@ func TestFullScenarioOnALocalDevName(t *testing.T) {
 	}
 	// satelliteJoin spends one invite line on one machine, starts its server, waits for its
 	// link and reports one session through its hooks; it answers the machine's credential
+	satLogs := map[string]*serveLog{}
 	satelliteJoin := func(t *testing.T, machine satMachine, inviteLine string) string {
 		env := machineEnv(machine.root, machine.user, machine.bin, pluginCopy, machine.project,
 			release.URL, satExtras)
@@ -204,6 +205,7 @@ func TestFullScenarioOnALocalDevName(t *testing.T) {
 			token: machine.name + "-root-token", data: filepath.Join(machine.user, "data"),
 			extra: satExtras,
 		})
+		satLogs[machine.name] = log
 		until(t, 30*time.Second, func() bool {
 			return strings.Contains(log.String(), "satellite link to "+inviteURL+" as "+machine.name)
 		}, machine.name+"'s link to the hub to come up")
@@ -367,10 +369,15 @@ func TestFullScenarioOnALocalDevName(t *testing.T) {
 	})
 
 	step("now_lists_both", func(t *testing.T) {
-		for _, machine := range []string{"sat-a", "sat-b"} {
-			until(t, 40*time.Second, func() bool {
-				return registryLists("s-full-"+machine, machine)
-			}, "the hub's Now list to name s-full-"+machine+" under "+machine)
+		for _, machine := range []satMachine{machineA, machineB} {
+			if pollFor(40*time.Second, func() bool { return registryLists("s-full-"+machine.name, machine.name) }) {
+				continue
+			}
+			dumpChildDiagnostics(t, machine.root, machine.bin, machine.user, machine.project)
+			t.Logf("=== %s's serve log ===\n%s", machine.name, satLogs[machine.name])
+			t.Logf("=== %s's registry now === %s", machine.name, registryNow(t,
+				"http://127.0.0.1:"+strconv.Itoa(savedLoopOf(t, machine.root)), machine.name+"-root-token"))
+			t.Fatalf("timed out waiting for the hub's Now list to name s-full-%s under %s", machine.name, machine.name)
 		}
 	})
 
