@@ -445,10 +445,6 @@ func run(args []string, root string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "build: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}
-	if *wantManifest && *check {
-		fmt.Fprintln(stderr, "build: -manifest and -check are separate modes")
-		return 2
-	}
 	if *wantManifest && len(list.keys) > 0 {
 		fmt.Fprintln(stderr, "build: -target cannot be combined with -manifest")
 		return 2

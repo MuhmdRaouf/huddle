@@ -7,7 +7,7 @@ Run everything from the repo root: `go run ./scripts/tmpguard -count=1 ./...`, `
 
 | Feature | Proof | What it asserts |
 | --- | --- | --- |
-| Install from the launcher | `cmd/huddle/fresh_install_test.go:TestFreshInstall`; `cmd/huddle/hub_e2e_test.go:TestE2EFreshInstallHubSatellitePWA/install` | The launcher downloads the binary from a release server, checks it against the manifest's digest and runs it on a PATH with no JS runtime. |
+| Install from the launcher | `cmd/huddle/fresh_install_test.go:TestFreshInstall`; `cmd/huddle/hub_e2e_test.go:TestE2EFreshInstallHubSatellitePWA/install` | The launcher downloads the binary from a release server, checks it against its pinned digest, refuses a tampered asset, and runs it on a PATH with no JS runtime. |
 | First session starts the server | `cmd/huddle/first_session_e2e_test.go:TestE2EFirstSessionStartsHuddle` | A fresh install's SessionStart hook, with no channel and no `HUDDLE_URL`, starts the server through the launcher and it answers `/health`. |
 | Hub on a local name over TLS | `cmd/huddle/fulltest_e2e_test.go:TestFullScenarioOnALocalDevName` (steps `hub_role_and_import`, `hub_up`) | A hub named `hub.example.invalid` serves its shell over TLS, verified against the CA that signed the pair, with no hosts-file edit. |
 | Local CA and `huddle trust` | `internal/pki/pki_test.go:TestTheRootIsCreatedOnceAndReused`; `internal/huddle/cli/trust_test.go:TestTrustInstallsTheRootAndMarksItAsHuddles`; `web/e2e/fulltest.spec.ts` "a hub home with no import serves a leaf its own root signs" | The root is minted once and kept 0600, installed into the store once and marked as huddle's; a home with no import serves a leaf only its own root vouches for. |

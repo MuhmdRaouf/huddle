@@ -3,10 +3,11 @@ package main
 // The fresh-install e2e: the committed plugin, copied to a temp dir the way Claude Code installs it,
 // on a PATH holding no JavaScript runtime — the plugin's only dependency is the huddle binary its own
 // launcher downloads. An httptest server stands in for the release, serving the four binaries the
-// release build produces and their SHA256SUMS, so the launcher's pinned checksums decide what installs.
-// The kanban word downloads the binary, verifies it against the committed manifest and runs; the radar
-// word answers over the same install. Every home and state dir is the test's own; nothing here touches
-// the network.
+// release build produces and their SHA256SUMS, and the copy's launcher is re-pinned to those builds'
+// digests, so the launcher's checksum table decides what installs on any commit. The kanban word
+// downloads the binary, verifies it against its pinned checksum and runs; the radar word answers over
+// the same install, and a tampered asset is refused. Every home and state dir is the test's own;
+// nothing here touches the network.
 
 import (
 	"crypto/sha256"
@@ -79,8 +80,10 @@ func freshReleaseOf(t *testing.T) freshRelease {
 }
 
 // freshBuild builds the release binary for one target with the release build's exact flags and
-// environment, and proves it hashes to what the committed manifest pins: the digest the launcher
-// verifies its download against, so a Go change that left the manifest stale fails here, at its source.
+// environment: the bytes a release of these sources would ship. The test pins the launcher's
+// checksum table to these builds, so the install flow is exercised on any commit and a stale
+// manifest never fails it; `go run ./scripts/build -manifest -check` is the check that the
+// committed manifest still matches the sources.
 func freshBuild(t *testing.T, release freshRelease, key string) string {
 	t.Helper()
 	asset, ok := release.assets[key]
@@ -97,13 +100,30 @@ func freshBuild(t *testing.T, release freshRelease, key string) string {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build the release binary for %s: %v\n%s", key, err, output)
 	}
-	if got := freshSHA256(t, out); got != asset.SHA256 {
-		t.Fatalf("the %s build hashes to %s, but the committed manifest pins %s; "+
-			"regenerate the manifest and the launcher in the same change "+
-			"(go run ./scripts/build -manifest, then npm run build:launcher)",
-			key, got, asset.SHA256)
-	}
 	return out
+}
+
+// freshPinBuilds replaces every committed target digest in the copied launcher's checksum table
+// with the digest of the test's build for that target, so the launcher verifies what this test
+// serves. Each committed digest must appear in the launcher exactly once.
+func freshPinBuilds(t *testing.T, release freshRelease, plugin string, built map[string]string) {
+	t.Helper()
+	path := filepath.Join(plugin, "dist", "run")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the copied launcher: %v", err)
+	}
+	script := string(data)
+	for _, key := range []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"} {
+		committed := release.assets[key].SHA256
+		if n := strings.Count(script, committed); n != 1 {
+			t.Fatalf("the committed %s digest appears %d times in the launcher, want once", key, n)
+		}
+		script = strings.Replace(script, committed, freshSHA256(t, built[key]), 1)
+	}
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("re-pin the copied launcher: %v", err)
+	}
 }
 
 // freshBuildEnv pins the release build's environment, so the built bytes depend on nothing
@@ -303,13 +323,15 @@ func freshReleaseServer(t *testing.T, tag string, files map[string][]byte) *http
 }
 
 // TestFreshInstall installs the plugin on a machine that has nothing: the launcher downloads the
-// binary from the fake release, verifies it against the committed manifest's digest and runs the
-// word — the kanban word first, the radar word over the same install.
+// binary from the fake release, verifies it against its checksum table — re-pinned above to the
+// test's own builds — and runs the word: the kanban word first, the radar word over the same
+// install. A tampered asset fails its checksum and installs nothing.
 func TestFreshInstall(t *testing.T) {
 	release := freshReleaseOf(t)
 
-	// the four release binaries, built the way release.yml builds them; the digests must match the
-	// committed manifest, or the launcher would refuse what a release serves
+	// the four release binaries, built the way release.yml builds them; the copy's launcher is
+	// re-pinned to their digests, so the checksum the launcher verifies against is always this
+	// commit's build and a stale committed manifest cannot fail the install flow
 	built := map[string]string{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -336,6 +358,7 @@ func TestFreshInstall(t *testing.T) {
 	releases := freshReleaseServer(t, release.tag, files)
 
 	world := newFreshWorld(t, freshCopyPlugin(t))
+	freshPinBuilds(t, release, world.plugin, built)
 	for _, name := range []string{"node", "bun", "python", "python3"} {
 		if code, _, _ := world.run(t, "command -v "+name); code == 0 {
 			t.Fatalf("%s is on the world's PATH; the fresh install must not depend on it", name)
@@ -361,8 +384,9 @@ func TestFreshInstall(t *testing.T) {
 		if info.Mode()&0o111 == 0 {
 			t.Errorf("the installed binary at %s is not executable", binPath)
 		}
-		if got := freshSHA256(t, binPath); got != release.assets[host].SHA256 {
-			t.Errorf("the installed binary hashes to %s, want the pinned %s", got, release.assets[host].SHA256)
+		if got := freshSHA256(t, binPath); got != freshSHA256(t, built[host]) {
+			t.Errorf("the installed binary hashes to %s, want the served build's %s",
+				got, freshSHA256(t, built[host]))
 		}
 	})
 
@@ -371,6 +395,31 @@ func TestFreshInstall(t *testing.T) {
 		if code != 0 || stdout != fmt.Sprintf("radar %s\n", release.version) || stderr != "" {
 			t.Fatalf("radar --version = %d, stdout %q, stderr %q, want 0 and the version line",
 				code, stdout, stderr)
+		}
+	})
+
+	t.Run("a tampered asset fails its checksum and installs nothing", func(t *testing.T) {
+		tampered := make(map[string][]byte, len(files))
+		for name, data := range files {
+			tampered[name] = data
+		}
+		body := append([]byte{}, files[release.assets[host].Name]...)
+		body[len(body)/2] ^= 0xff
+		tampered[release.assets[host].Name] = body
+		bad := freshReleaseServer(t, release.tag, tampered)
+
+		// a fresh world: its binary home starts empty, so any install would show
+		tainted := newFreshWorld(t, world.plugin)
+		code, _, stderr := tainted.run(t,
+			`sh "${CLAUDE_PLUGIN_ROOT}/dist/run" kanban --version`, "HUDDLE_DOWNLOAD_BASE="+bad.URL)
+		if code == 0 {
+			t.Fatal("the launcher ran a word over a tampered asset")
+		}
+		if !strings.Contains(stderr, "checksum") {
+			t.Errorf("stderr = %q, want the checksum failure", stderr)
+		}
+		if _, err := os.Stat(filepath.Join(tainted.binHome, release.version, "huddle")); err == nil {
+			t.Error("the launcher installed a binary that failed its checksum")
 		}
 	})
 

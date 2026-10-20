@@ -146,6 +146,9 @@ check), the web job (`bun run check`), the macOS job (tests and the reproducible
 
 ## Releases
 
+- Before tagging, `go run ./scripts/build -check` (or `-manifest -check`) rebuilds the four targets and exits 1
+  naming every target whose digest differs from the committed `release/v<VERSION>.json`; exit 0 when all match,
+  and it writes nothing.
 - A pushed tag `v<VERSION>` runs `release.yml`: four binaries, `SHA256SUMS`, an attestation, notes from
   `CHANGELOG.md`. The digests must match the committed `release/v<VERSION>.json`.
 - Every version has a `CHANGELOG.md` section: what a user gets, grouped by part, fixes with their symptom, and how to

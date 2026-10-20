@@ -327,7 +327,6 @@ func TestRunUsageErrors(t *testing.T) {
 		{"unknown flag", []string{"-fresh"}},
 		{"stray argument", []string{"extra"}},
 		{"target with manifest", []string{"-target", "linux/amd64", "-manifest"}},
-		{"manifest with check", []string{"-manifest", "-check"}},
 		{"unknown target", []string{"-target", "plan9/amd64"}},
 		{"target without arch", []string{"-target", "linux"}},
 	}
@@ -373,6 +372,26 @@ func TestRunCheckWithoutManifest(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+// TestRunManifestCheckRunsTheCheck pins -manifest -check to the check mode: the pair refuses a
+// missing manifest with the check's exit instead of a usage error, and writes nothing — the
+// release-time gate run before tagging, from the same command that writes the manifest.
+func TestRunManifestCheckRunsTheCheck(t *testing.T) {
+	root := versionRoot(t, "0.1.0\n")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"-manifest", "-check"}, root, &stdout, &stderr); code != 4 {
+		t.Fatalf("exit = %d, want the check's 4", code)
+	}
+	if got, want := stderr.String(), "no manifest for 0.1.0\n"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "release")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the check wrote a release dir: %v", err)
 	}
 }
 

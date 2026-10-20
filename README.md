@@ -236,7 +236,7 @@ Install the pinned tools once, from the repository root: `mise run setup`.
 | The web workspaces (ui, hub, radar, kanban) | `bun install && bun run check` |
 | The headless-browser e2e suite | `bun run e2e` |
 | Rebuild every page and the launcher | `bun run build` |
-| The release binaries, and the manifest the launcher pins | `go run ./scripts/build -out dist` · `go run ./scripts/build -manifest` |
+| The release binaries, the manifest the launcher pins, and the pre-tag digest check | `go run ./scripts/build -out dist` · `go run ./scripts/build -manifest` · `go run ./scripts/build -check` |
 | Load the plugin from the working tree | `claude --plugin-dir ./plugin` |
 | No AI attribution in the history | `node scripts/check-attribution.mjs` |
 
