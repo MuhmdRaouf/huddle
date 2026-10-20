@@ -36,7 +36,7 @@ var entryStderr io.Writer = os.Stderr
 func cliEntry(name string, args []string) (code int) {
 	provider, ok := providerOf(name)
 	if !ok {
-		fmt.Fprintf(entryStderr, "plugin-core: unknown provider %s\n", name)
+		fmt.Fprintf(entryStderr, "huddle: unknown provider %s\n", name)
 		return 2
 	}
 	hook := contains(args, "--hook")
@@ -64,7 +64,7 @@ func cliEntry(name string, args []string) (code int) {
 					code = 0
 					return
 				}
-				fmt.Fprintf(entryStderr, "plugin-core: %v\n", problem)
+				fmt.Fprintf(entryStderr, "huddle: %v\n", problem)
 				code = 1
 			}
 		}()
@@ -103,7 +103,7 @@ func (o *framedDriverOutput) exitLine(code int) {
 }
 
 // processOutput writes the CLI's lines to the process's own stdout and stderr, exiting 0 the
-// moment stdout is a closed pipe (`plugin-core zai cli run --bg | head -1`).
+// moment stdout is a closed pipe (`huddle provider zai cli run --bg | head -1`).
 type processOutput struct{}
 
 func (o *processOutput) Line(text string) {

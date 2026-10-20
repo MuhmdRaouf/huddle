@@ -1,4 +1,4 @@
-// Package entry dispatches the provider engine's entries, plugin-core <provider> <entry>
+// Package entry dispatches the provider engine's entries, huddle provider <provider> <entry>
 // [args...]: the argv shape the provider plugins' dist/run execs and the engine's detached
 // children re-run.
 package entry
@@ -18,12 +18,12 @@ var version = "dev"
 // SetVersion stamps the version the provider entries report and compare.
 func SetVersion(v string) { version = v; adapters.SetVersion(v) }
 
-const usageLine = "usage: plugin-core <zai|kimi|deepseek|minimax|qwen> cli [args...]"
+const usageLine = "usage: huddle provider <zai|kimi|deepseek|minimax|qwen> cli [args...]"
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	noteStart()
 	if len(args) > 0 && args[0] == "--version" {
-		fmt.Fprintf(stdout, "plugin-core %s\n", version)
+		fmt.Fprintf(stdout, "huddle %s\n", version)
 		return 0
 	}
 	// The orphan launcher SpawnOrphan re-runs this binary as: a plumbing mode, before the

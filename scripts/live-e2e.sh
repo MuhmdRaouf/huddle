@@ -203,10 +203,10 @@ echo "huddle live e2e: two real claude sessions on $MODEL through $ROUTER"
 why=''
 claude --version >/dev/null 2>&1 || why='claude is not on PATH'
 if [ -z "$why" ]; then
-	health=$(curl -s --max-time 5 "$ROUTER/zai-router/health" || true)
+	health=$(curl -s --max-time 5 "$ROUTER/huddle-router/health" || true)
 	case $health in
 	*'"ok":true'*) ;;
-	*) why="the router at $ROUTER does not answer zai-router/health with ok:true" ;;
+	*) why="the router at $ROUTER does not answer huddle-router/health with ok:true" ;;
 	esac
 fi
 if [ -z "$why" ]; then

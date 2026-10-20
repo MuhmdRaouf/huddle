@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-const wantUsage = "usage: plugin-core <zai|kimi|deepseek|minimax|qwen> cli [args...]"
+const wantUsage = "usage: huddle provider <zai|kimi|deepseek|minimax|qwen> cli [args...]"
 
 var allProviders = []string{"zai", "kimi", "deepseek", "minimax", "qwen"}
 var allEntries = []string{"cli"}
@@ -20,8 +20,8 @@ func TestRunVersion(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if got := stdout.String(); got != "plugin-core dev\n" {
-		t.Errorf("stdout = %q, want %q", got, "plugin-core dev\n")
+	if got := stdout.String(); got != "huddle dev\n" {
+		t.Errorf("stdout = %q, want %q", got, "huddle dev\n")
 	}
 	if stderr.Len() != 0 {
 		t.Errorf("stderr = %q, want empty", stderr.String())
@@ -48,8 +48,8 @@ func TestNoteStart(t *testing.T) {
 		if code := Run([]string{"--version"}, &stdout, &stderr); code != 0 {
 			t.Fatalf("exit = %d, want 0", code)
 		}
-		if stdout.String() != "plugin-core dev\n" {
-			t.Errorf("stdout = %q, want %q", stdout.String(), "plugin-core dev\n")
+		if stdout.String() != "huddle dev\n" {
+			t.Errorf("stdout = %q, want %q", stdout.String(), "huddle dev\n")
 		}
 	})
 }

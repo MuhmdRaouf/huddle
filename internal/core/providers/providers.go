@@ -1,12 +1,12 @@
 // Package providers holds the five provider plugins' providers as data: one file per plugin, each
 // matching its plugins/<name>-plugin-cc/test/provider.ts field for field (the plugin ships no
-// runtime source of its own), plus the by-name lookup a plugin-core invocation's first argument
-// goes through.
+// runtime source of its own), plus the by-name lookup a huddle provider invocation's first
+// argument goes through.
 package providers
 
 import "github.com/MuhmdRaouf/huddle/internal/domain"
 
-// Names is every provider a plugin-core invocation may name first, in router-port order.
+// Names is every provider a huddle provider invocation may name first, in router-port order.
 var Names = []string{"zai", "kimi", "deepseek", "minimax", "qwen"}
 
 var byName = map[string]domain.Provider{
@@ -17,7 +17,7 @@ var byName = map[string]domain.Provider{
 	Qwen.Name:     Qwen,
 }
 
-// ByName is the provider a plugin-core invocation names, or false when the name is nobody's.
+// ByName is the provider a huddle provider invocation names, or false when the name is nobody's.
 func ByName(name string) (domain.Provider, bool) {
 	provider, ok := byName[name]
 	return provider, ok

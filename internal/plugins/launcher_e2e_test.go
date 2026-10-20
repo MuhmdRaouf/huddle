@@ -290,9 +290,9 @@ func checkSetupReady(t *testing.T, provider domain.Provider, pluginDir, fakeClau
 	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
 		t.Fatalf("setup --json printed %q: %v", stdout, err)
 	}
-	// plugin-core runs on no runtime; its setup line names the binary, its version and its path —
+	// huddle runs on no runtime; its setup line names the binary, its version and its path —
 	// the installed binary the launcher exec'd.
-	if want := "plugin-core dev (" + install.bin + ")"; report.Runtime != want {
+	if want := "huddle dev (" + install.bin + ")"; report.Runtime != want {
 		t.Errorf("runtime = %q, want %q", report.Runtime, want)
 	}
 	if !report.Worker.OK || report.Worker.Bin != fakeClaude {

@@ -289,9 +289,9 @@ func TestWire(t *testing.T) {
 		}
 	})
 
-	// The binary's own interface is `plugin-core <provider> cli <args...>`; the driver is the
-	// same binary re-entered with `<provider> cli drive <id>`, and any other argv shape is a
-	// usage error the driver would die on.
+	// The binary's own interface is `huddle provider <provider> cli <args...>`; the engine's
+	// detached children re-enter it with the bare `<provider> cli drive <id>`, and any other
+	// argv shape is a usage error the driver would die on.
 	t.Run("spawnDriver starts the binary as `<provider> cli drive <id>`", func(t *testing.T) {
 		t.Setenv(engineChildEnv, "driver-argv")
 		deps := wired(t, testkit.ReferenceProvider, wireSandbox(t, nil), &fakes.RecordingOutput{}, "/zai.js")
