@@ -257,7 +257,7 @@ jobs:
     needs: [plan, go]
     if: ${{ !failure() && !cancelled() && needs.plan.outputs.go == 'true' }}
     runs-on: macos-26
-    timeout-minutes: 10
+    timeout-minutes: 16
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -268,13 +268,26 @@ jobs:
         run: |
           echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
           echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - id: restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ steps.gocache.outputs.build }}
             ${{ steps.gocache.outputs.mod }}
           key: go-${{ runner.os }}-${{ hashFiles('go.sum', '**/*.go') }}
           restore-keys: go-${{ runner.os }}-
+      # The compiled packages are saved before the tests run: a failing test never leaves the
+      # next run to compile from nothing on top of the suite.
+      - name: Compile
+        timeout-minutes: 6
+        run: go test -count=1 -run '^$' ./... > /dev/null
+      - if: steps.restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', '**/*.go') }}
       - name: Tests
         timeout-minutes: 8
         run: go test -timeout 7m ./...
