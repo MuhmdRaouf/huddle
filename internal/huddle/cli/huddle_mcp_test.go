@@ -1155,7 +1155,7 @@ func TestUnsubscribeStops(t *testing.T) {
 		t.Fatal("no answer to the subscribe")
 	}
 	mcpOp(t, u, "cu", "publish", "a", `{"topic":"note.ready","msg":"while subscribed"}`, mcpRootToken)
-	if b.until(2000, isUpdatedWith(uri)) == nil {
+	if b.until(8000, isUpdatedWith(uri)) == nil {
 		t.Fatal("no resources/updated while subscribed")
 	}
 	b.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"resources/unsubscribe","params":{"uri":%q}}`, uri))

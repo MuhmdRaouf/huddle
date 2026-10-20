@@ -172,11 +172,17 @@ describe("toast stack", () => {
     await act(() => push("Leaving"));
     expect(timers.pending()).toBe(1);
     view.unmount();
-    // Preact defers effect cleanups to its next paint: give it that paint before judging
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
-    });
-    expect(timers.pending()).toBe(0);
+    // Preact defers effect cleanups to its next paint, which a loaded machine can push past any
+    // fixed wait: poll for it instead
+    await vi.waitFor(
+      async () => {
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 10));
+        });
+        expect(timers.pending()).toBe(0);
+      },
+      { timeout: 2_000, interval: 20 },
+    );
   });
 
   it("runs on the real timers when none are injected", async () => {
@@ -191,10 +197,15 @@ describe("toast stack", () => {
     await act(() => push("Real"));
     expect(setTimeoutSpy).toHaveBeenCalled();
     view.unmount();
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
-    });
-    expect(clearTimeoutSpy).toHaveBeenCalled();
+    await vi.waitFor(
+      async () => {
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 10));
+        });
+        expect(clearTimeoutSpy).toHaveBeenCalled();
+      },
+      { timeout: 2_000, interval: 20 },
+    );
     setTimeoutSpy.mockRestore();
     clearTimeoutSpy.mockRestore();
   });

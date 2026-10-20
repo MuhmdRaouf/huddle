@@ -1123,7 +1123,8 @@ func TestE2EAServeStartedByHandStillSignsTheOwnerIn(t *testing.T) {
 		"HUDDLE_DATA": data,
 		"PORT":        strconv.Itoa(port),
 	}))
-	var out strings.Builder
+	// the server writes while the test reads: a locked buffer, not a strings.Builder
+	var out syncBuffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 	if err := cmd.Start(); err != nil {

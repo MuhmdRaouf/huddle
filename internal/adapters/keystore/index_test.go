@@ -51,7 +51,8 @@ func TestSpawnRunner(t *testing.T) {
 	})
 
 	t.Run("carries stderr", func(t *testing.T) {
-		result := keystore.SpawnRunner(ctx, "ls", []string{"/nonexistent/keystore-path"}, nil)
+		// sh, not ls: a missing path makes BSD ls exit 1 and GNU ls exit 2
+		result := keystore.SpawnRunner(ctx, "sh", []string{"-c", "echo no such path >&2; exit 1"}, nil)
 		if result.Code == nil || *result.Code != 1 {
 			t.Fatalf("run = %+v, want exit 1", result)
 		}
