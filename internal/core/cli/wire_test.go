@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -18,17 +19,20 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakeclaude"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakes"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	freeports "github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // wireSandbox is a sandboxed environment: HOME points at a temp dir, so the key file lookup never
-// reaches the real one.
+// reaches the real one, and the router port is named so no wiring falls back to the canonical
+// default, where the owner's live huddle-router answers. An extra naming the port wins.
 func wireSandbox(t *testing.T, extra map[string]string) map[string]string {
 	t.Helper()
 	home := testkit.TempDir(t, "core-wire-")
 	env := map[string]string{
-		"HOME":          home,
-		"PATH":          os.Getenv("PATH"),
-		"ZAI_STATE_DIR": filepath.Join(home, "state"),
+		"HOME":               home,
+		"PATH":               os.Getenv("PATH"),
+		"ZAI_STATE_DIR":      filepath.Join(home, "state"),
+		"HUDDLE_ROUTER_PORT": strconv.Itoa(freeports.Free(t)),
 	}
 	for name, value := range extra {
 		env[name] = value

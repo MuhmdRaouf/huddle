@@ -7,6 +7,7 @@ package isoenv
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -122,6 +123,26 @@ func namedEntries(entries []string, name string) int {
 		}
 	}
 	return n
+}
+
+func TestEnvironNamesTheChildItsOwnRouterPort(t *testing.T) {
+	t.Run("unset, the port is a free one in the 20000-29999 range, never the canonical 18786", func(t *testing.T) {
+		got := Lookup(Environ(t, t.TempDir()))
+		port, err := strconv.Atoi(got["HUDDLE_ROUTER_PORT"])
+		if err != nil {
+			t.Fatalf("HUDDLE_ROUTER_PORT = %q, want a port number", got["HUDDLE_ROUTER_PORT"])
+		}
+		if port < 20000 || port > 29999 {
+			t.Errorf("HUDDLE_ROUTER_PORT = %d, want a port in 20000-29999", port)
+		}
+	})
+
+	t.Run("an extra naming the port wins", func(t *testing.T) {
+		got := Lookup(Environ(t, t.TempDir(), "HUDDLE_ROUTER_PORT=24500"))
+		if got["HUDDLE_ROUTER_PORT"] != "24500" {
+			t.Errorf("HUDDLE_ROUTER_PORT = %q, want the extra's 24500", got["HUDDLE_ROUTER_PORT"])
+		}
+	})
 }
 
 func TestInheritedIsTheProcessesOwnEnvironment(t *testing.T) {

@@ -9,11 +9,13 @@ package isoenv
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/providers"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // dropPrefixes is every variable family that names the owner's state: the XDG roots huddle and
@@ -56,7 +58,9 @@ func dropped(name string) bool {
 // variable that names the owner's state, then HOME=home, the XDG_CONFIG_HOME, XDG_STATE_HOME,
 // XDG_DATA_HOME and XDG_CACHE_HOME roots under home, TMPDIR=home/tmp (made), and
 // CLAUDE_CONFIG_DIR=home/.claude, HUDDLE_KEYS=files so keys stay in files under the home — and
-// finally extra, which wins over all of it. The machine's own PATH, LANG and Go caches pass
+// finally extra, which wins over all of it. Without an extra naming one, HUDDLE_ROUTER_PORT is
+// a free port: the default 18786 is the owner's live router, whose health answer would make a
+// child's probe report up and skip the start. The machine's own PATH, LANG and Go caches pass
 // through, so the child finds its tools.
 func Environ(t testing.TB, home string, extra ...string) []string {
 	t.Helper()
@@ -95,6 +99,9 @@ func Environ(t testing.TB, home string, extra ...string) []string {
 	for _, entry := range extra {
 		name, value, _ := strings.Cut(entry, "=")
 		set(name, value)
+	}
+	if _, named := at["HUDDLE_ROUTER_PORT"]; !named {
+		set("HUDDLE_ROUTER_PORT", strconv.Itoa(ports.Free(t)))
 	}
 	return env
 }
