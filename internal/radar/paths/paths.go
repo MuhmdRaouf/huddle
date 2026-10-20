@@ -47,6 +47,12 @@ func HistoryPath(ctx context.Context, env domain.EnvLookup) string {
 	return filepath.Join(StateDir(ctx, env), "history.db")
 }
 
+// QuotaPath is the newest plan-limits snapshot the sessions post (Claude Code's rate limits,
+// read off its statusline payload — never any credential).
+func QuotaPath(ctx context.Context, env domain.EnvLookup) string {
+	return filepath.Join(StateDir(ctx, env), "quota.json")
+}
+
 // ClaudeConfigDir is where Claude Code transcripts live, under $CLAUDE_CONFIG_DIR/projects
 // (default ~/.claude/projects).
 func ClaudeConfigDir(env domain.EnvLookup) string {
@@ -112,6 +118,7 @@ var ownEntries = map[string]struct{}{
 	"settings.json":      {},
 	"dismissed.json":     {},
 	"notified.json":      {},
+	"quota.json":         {},
 	"history.db":         {},
 	"history.db-wal":     {},
 	"history.db-shm":     {},

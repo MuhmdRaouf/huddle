@@ -2,9 +2,9 @@
  * The Overview: the tab's front page, composed from the parts every other view reads — five stat
  * cards (spend against its budget, requests and their failures, tokens and their cache share,
  * sessions and who needs the owner, routers and any budget stopped), the spend-by-hour chart
- * stacked by model, the top sessions by spend (a row opens the Session screen), the newest alert,
- * the routers list and the top tools. The phone keeps the first two cards, the chart and the
- * routers; the rest waits for a wider pane.
+ * stacked by model, the top sessions by spend (a row opens the Session screen), the plan limits
+ * the statusline word reported, the newest alert, the routers list and the top tools. The phone
+ * keeps the first two cards, the chart and the routers; the rest waits for a wider pane.
  */
 
 import { modelColor } from "@huddle/ui/model-color.ts";
@@ -14,7 +14,14 @@ import type { RegistrySession } from "../../../registry.ts";
 import { fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { STATUS_COLOR } from "../../palette.ts";
 import { bucketPlan, stampOf } from "../../shared/time-range.ts";
-import { type ClientState, flowSource, requestCost, visibleRequests } from "../../state.ts";
+import {
+  type ClientState,
+  flowSource,
+  liveQuota,
+  requestCost,
+  resetsIn,
+  visibleRequests,
+} from "../../state.ts";
 import { ActiveBlock } from "../ActiveBlock.tsx";
 import { alertWhere } from "../AlertStrip.tsx";
 import { useApp } from "../context.ts";
@@ -588,9 +595,75 @@ function AlertCard() {
   );
 }
 
+/** The window a plan limit's percentage sits in: ok under 70, warn to 90, danger past it. */
+function quotaTone(pct: number): "ok" | "warn" | "err" {
+  if (pct > 90) return "err";
+  if (pct >= 70) return "warn";
+  return "ok";
+}
+
+/** One window's row: its label, the percent against a bar in its tone, and when it resets. */
+function QuotaMeter({
+  label,
+  pct,
+  resetsAt,
+  now,
+}: {
+  label: string;
+  pct: number | null;
+  resetsAt: number | null;
+  now: number;
+}): JSX.Element {
+  const countdown = resetsIn(resetsAt, now);
+  return (
+    <div data-quota-window={label}>
+      <div class="flex items-baseline justify-between text-sm">
+        <span>{label}</span>
+        <span class="num" style={pct === null ? undefined : `color:${STATUS_COLOR[quotaTone(pct)]}`}>
+          {pct === null ? "–" : `${Math.round(pct)}%`}
+        </span>
+      </div>
+      {pct !== null && (
+        <div class="bar-track mt-1">
+          <div
+            class="bar-seg"
+            style={`width:${Math.min(100, Math.round(pct))}%;background:${STATUS_COLOR[quotaTone(pct)]}`}
+            role="meter"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(pct)}
+            aria-label={`${label} plan limit`}
+          />
+        </div>
+      )}
+      {countdown !== null && <div class="mt-0.5 text-xs text-base-content/60">{countdown}</div>}
+    </div>
+  );
+}
+
+/** The plan limits card: the 5-hour and weekly windows Claude Code reported through the
+ *  statusline word, coloured by how close each one is. A report older than six hours (or none)
+ *  leaves the card out: nothing to say about now. */
+function PlanLimits() {
+  const { state, now } = useApp();
+  const quota = liveQuota(state.quota, now);
+  if (quota === null) return null;
+  return (
+    <section class="panel p-4 md:p-5" aria-labelledby="ovw-quota" data-quota="">
+      <h2 id="ovw-quota" class="mb-2 text-[15px] font-semibold">
+        Plan limits
+      </h2>
+      <div class="flex flex-col gap-3">
+        <QuotaMeter label="5-hour" pct={quota.five_hour} resetsAt={quota.five_hour_resets_at} now={now} />
+        <QuotaMeter label="weekly" pct={quota.seven_day} resetsAt={quota.seven_day_resets_at} now={now} />
+      </div>
+    </section>
+  );
+}
+
 /** The Overview: the stat row over the active-block card, the chart and the sessions table, the
- *  alert, routers and tools beside them; the phone keeps the first two cards, the chart and the
- *  routers. */
+ *  plan limits, the alert, routers and tools beside them; the phone keeps the first two cards,
+ *  the chart and the routers. */
 export function OverviewView(): JSX.Element {
   const { state, now } = useApp();
   const numbers = rangeNumbers(state, now);
@@ -613,6 +686,7 @@ export function OverviewView(): JSX.Element {
         </div>
       </div>
       <div class="grid content-start gap-4">
+        <PlanLimits />
         <div class="hidden md:block">
           <AlertCard />
         </div>

@@ -91,6 +91,18 @@ export type BudgetStatus = {
   spend: BudgetSpend[];
 };
 
+/** One session's plan-limits report: the two windows' used percentages and their reset times
+ *  (unix seconds), any of them null when the session did not know. Claude Code hands its
+ *  statusline command this reading; the statusline word posts it here. */
+export type QuotaSnapshot = {
+  session_id: string;
+  five_hour: number | null;
+  five_hour_resets_at: number | null;
+  seven_day: number | null;
+  seven_day_resets_at: number | null;
+  at: number;
+};
+
 export type AdvisorModelRow = {
   model: string;
   flash: string | null;

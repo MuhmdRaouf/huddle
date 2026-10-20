@@ -317,6 +317,17 @@ func jsonInsertMember(data []byte, objStart int, snippet string) ([]byte, error)
 	return out, nil
 }
 
+// jsonReplaceValue answers the document with one member's value swapped for another: the
+// member's key and the whitespace on either side stay byte for byte, so a swap back with the
+// original value is the exact inverse.
+func jsonReplaceValue(data []byte, member jsonMember, value string) []byte {
+	out := make([]byte, 0, len(data)+len(value)-(member.value.end-member.value.start))
+	out = append(out, data[:member.value.start]...)
+	out = append(out, value...)
+	out = append(out, data[member.value.end:]...)
+	return out
+}
+
 // jsonCutMember answers the document with one member gone, its adjoining comma and the
 // whitespace around either with it, so the splice is the exact inverse of an insert.
 func jsonCutMember(data []byte, member jsonMember) []byte {

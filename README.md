@@ -16,7 +16,7 @@
 # huddle
 
 One local hub where your AI coding sessions work as a team, from Claude Code or any agent that speaks MCP. One
-static binary, one plugin, four jobs:
+static binary, one plugin, five jobs:
 
 - **Hub:** every session on every machine in one list, what needs you first, approvals from your phone with a
   passkey, sessions linked so they share context.
@@ -24,6 +24,8 @@ static binary, one plugin, four jobs:
 - **Radar:** requests, input and output tokens, cost and health per session, model, project and agent CLI, with
   graphs. No tokens spent to watch.
 - **Kanban:** a board per repository that sessions claim cards from and move through review and testing.
+- **Status line:** one bar line — channel, who is online, today's spend, the plan limits Claude Code reports;
+  `/huddle:statusline` installs it and keeps the line you had.
 
 ## Find what you need
 

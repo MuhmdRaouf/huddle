@@ -43,7 +43,7 @@ const HOOK_LINES = [
  *  kanban's four open/start/status/stop are gone; open, status and stop cover the hub, radar and
  *  the board server together, and kanban's own words carry the kanban- prefix. */
 const COMMANDS = {
-  huddle: ["invite", "join", "setup"],
+  huddle: ["invite", "join", "setup", "statusline"],
   hub: ["open", "status", "stop"],
   kanban: ["kanban-export", "kanban-init", "kanban-lint", "kanban-refresh"],
 };
@@ -139,6 +139,21 @@ describe("plugin/commands", () => {
       assert.match(text, /^allowed-tools: Bash/m, `${name}: runs Bash`);
       assert.ok(text.includes('"${CLAUDE_PLUGIN_ROOT}/bin/huddle"'), `${name}: runs the plugin's CLI`);
     }
+  });
+
+  it("statusline installs, removes and samples the status bar line", () => {
+    const text = readFileSync(join(plugin, "commands", "statusline.md"), "utf8");
+    assert.ok(text.startsWith("---\n"), "statusline: front matter first");
+    assert.match(text, /^description: \S/m, "statusline: needs a description");
+    assert.match(text, /^allowed-tools: Bash$/m, "statusline: runs Bash only");
+    assert.ok(
+      text.includes('"${CLAUDE_PLUGIN_ROOT}/bin/huddle"'),
+      "statusline: runs the plugin's CLI",
+    );
+    for (const word of ["--install", "--remove"]) {
+      assert.ok(text.includes(`huddle statusline ${word}`), `statusline: runs ${word}`);
+    }
+    assert.ok(text.includes("| huddle statusline"), "statusline: samples a render");
   });
 
   it("each hub command names in one line what it does for the user", () => {

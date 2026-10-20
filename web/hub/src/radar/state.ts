@@ -7,6 +7,7 @@
 import { httpStatusOf } from "./app/inspector/util.ts";
 import { bucketizeRange, bucketizeTokenKindsRange } from "./chart.ts";
 import * as prices from "./cost/prices.ts";
+import type { QuotaSnapshot } from "./shared/api.ts";
 import type { IconName } from "./icons.ts";
 import type {
   AdvisorReport,
@@ -318,6 +319,8 @@ export type ClientState = {
   /** Active, undismissed alerts (polled from /api/alerts). */
   alerts: Alert[];
   budgetStatus: BudgetStatus | null;
+  /** The newest plan-limits report the statusline word posted (null = nothing held). */
+  quota: QuotaSnapshot | null;
   /** Estimated spend since local midnight, from the usage ledger; null = nothing priced today. */
   spendToday: number | null;
   attributionRange: AttributionRange;
@@ -461,6 +464,7 @@ export function initialClientState(): ClientState {
     error: null,
     alerts: [],
     budgetStatus: null,
+    quota: null,
     spendToday: null,
     attributionRange: "day",
     attributionTree: null,
@@ -1129,4 +1133,27 @@ export function resultBlocks(block: ContentBlock): ContentBlock[] | null {
   // the transcript importer flattens a result's text blocks into `text`
   if (typeof block.text === "string" && block.text !== "") return [{ type: "text", text: block.text }];
   return null;
+}
+
+/** How long a plan-limits report says anything about now: Claude Code re-reports on every
+ *  statusline render, so an older one is a closed session, not a reading. */
+export const QUOTA_LIVE_MS = 6 * 3_600_000;
+
+/** The report the Overview's Plan limits card shows, null when there is none or it has gone
+ *  stale (nothing was posted in the last six hours). */
+export function liveQuota(quota: QuotaSnapshot | null, now: number): QuotaSnapshot | null {
+  if (quota === null || quota.at <= 0 || now - quota.at > QUOTA_LIVE_MS) return null;
+  return quota;
+}
+
+/** "resets in 2h 14m" for a window that is still open, null for one that already turned or was
+ *  never reported. */
+export function resetsIn(at: number | null, now: number): string | null {
+  if (at === null || at <= now) return null;
+  const left = at - now;
+  if (left < 60_000) return "resets in under a minute";
+  const hours = Math.floor(left / 3_600_000);
+  const minutes = Math.floor((left % 3_600_000) / 60_000);
+  if (hours === 0) return `resets in ${minutes}m`;
+  return `resets in ${hours}h ${minutes}m`;
 }

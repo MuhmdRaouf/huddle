@@ -37,7 +37,7 @@ func routeQuery(raw string) url.Values {
 // apiGet routes one GET without insights or history, the way a bare server answers.
 func apiGet(t *testing.T, st *store.Store, path, query string) ApiResponse {
 	t.Helper()
-	answer, err := HandleApi(st, routeInfo, ApiRequest{Path: path, Query: routeQuery(query)}, nil, nil, clock)
+	answer, err := HandleApi(st, routeInfo, ApiRequest{Path: path, Query: routeQuery(query)}, nil, nil, nil, clock)
 	if err != nil {
 		t.Fatalf("HandleApi(%s) errored: %v", path, err)
 	}
@@ -127,6 +127,7 @@ func TestHandleApi(t *testing.T) {
 			"/api/history/flow",
 			"/api/history/stats",
 			"/api/history/clear",
+			"/api/quota",
 		}
 		if !slices.Equal(Routes, want) {
 			t.Errorf("Routes = %v, want the original eight first, then the derived and history ones", Routes)
@@ -795,7 +796,7 @@ func historyGet(t *testing.T, h *history.History, path string, insights Insights
 		query = path[at+1:]
 		path = path[:at]
 	}
-	answer, err := HandleApi(st, routeInfo, ApiRequest{Path: path, Query: routeQuery(query)}, insights, h, readClock)
+	answer, err := HandleApi(st, routeInfo, ApiRequest{Path: path, Query: routeQuery(query)}, insights, nil, h, readClock)
 	if err != nil {
 		t.Fatalf("HandleApi(%s) errored: %v", path, err)
 	}
@@ -1980,14 +1981,14 @@ func TestHistoryRoutes(t *testing.T) {
 		if stats.Bytes <= 0 {
 			t.Errorf("bytes = %d, want a positive size", stats.Bytes)
 		}
-		if answer, err := HandleWrite(ctx, insights, "PUT", "/api/settings", mustValue(t, `{"historyRetentionDays":7}`), nil); err != nil || answer.Status != 200 {
+		if answer, err := HandleWrite(ctx, insights, nil, "PUT", "/api/settings", mustValue(t, `{"historyRetentionDays":7}`), nil); err != nil || answer.Status != 200 {
 			t.Errorf("setting 7 days = %d (%v), want 200", answer.Status, err)
 		}
 		decodeBody(t, historyGet(t, h, "/api/history/stats", insights, nil), &stats)
 		if stats.RetentionDays != 7 {
 			t.Errorf("retentionDays after the save = %d, want 7", stats.RetentionDays)
 		}
-		if answer, err := HandleWrite(ctx, insights, "PUT", "/api/settings", mustValue(t, `{"historyRetentionDays":14}`), nil); err != nil || answer.Status != 400 {
+		if answer, err := HandleWrite(ctx, insights, nil, "PUT", "/api/settings", mustValue(t, `{"historyRetentionDays":14}`), nil); err != nil || answer.Status != 400 {
 			t.Errorf("setting 14 days = %d (%v), want 400", answer.Status, err)
 		}
 	})
@@ -1997,7 +1998,7 @@ func TestHistoryRoutes(t *testing.T) {
 		h := openTestHistory(t)
 		seedHistory(t, h, now)
 		insights := routeInsights(t)
-		answer, err := HandleWrite(ctx, insights, "POST", "/api/history/clear", mustValue(t, `{}`), h)
+		answer, err := HandleWrite(ctx, insights, nil, "POST", "/api/history/clear", mustValue(t, `{}`), h)
 		if err != nil {
 			t.Fatalf("clear errored: %v", err)
 		}
@@ -2012,14 +2013,14 @@ func TestHistoryRoutes(t *testing.T) {
 		if stats.Nodes != 0 || stats.Requests != 0 {
 			t.Errorf("stats after the clear = %+v, want nothing left", stats)
 		}
-		denied, err := HandleWrite(ctx, insights, "POST", "/api/history/clear", mustValue(t, `{}`), nil)
+		denied, err := HandleWrite(ctx, insights, nil, "POST", "/api/history/clear", mustValue(t, `{}`), nil)
 		if err != nil {
 			t.Fatalf("clear without a history errored: %v", err)
 		}
 		if denied.Status != 503 || string(marshalBody(t, denied)) != `{"error":"history unavailable"}` {
 			t.Errorf("clear without a history = %d %s, want 503", denied.Status, marshalBody(t, denied))
 		}
-		if wrong, err := HandleWrite(ctx, insights, "DELETE", "/api/history/clear", mustValue(t, `{}`), h); err != nil || wrong.Status != 405 {
+		if wrong, err := HandleWrite(ctx, insights, nil, "DELETE", "/api/history/clear", mustValue(t, `{}`), h); err != nil || wrong.Status != 405 {
 			t.Errorf("DELETE the clear = %d (%v), want 405", wrong.Status, err)
 		}
 	})
@@ -2055,7 +2056,7 @@ func TestRoutesAnswersAndWrites(t *testing.T) {
 	fresh := seededInsights(t)
 	get := func(path, query string) ApiResponse {
 		t.Helper()
-		answer, err := HandleApi(fresh.store, routeInfo, ApiRequest{Path: path, Query: routeQuery(query)}, fresh.insights, nil, clock)
+		answer, err := HandleApi(fresh.store, routeInfo, ApiRequest{Path: path, Query: routeQuery(query)}, fresh.insights, nil, nil, clock)
 		if err != nil {
 			t.Fatalf("HandleApi(%s) errored: %v", path, err)
 		}
@@ -2142,43 +2143,43 @@ func TestRoutesAnswersAndWrites(t *testing.T) {
 	if advisor.RunsChecked != 1 {
 		t.Errorf("/api/advisor checked %d runs, want 1", advisor.RunsChecked)
 	}
-	bare, err := HandleApi(fresh.store, routeInfo, ApiRequest{Path: "/api/alerts"}, nil, nil, clock)
+	bare, err := HandleApi(fresh.store, routeInfo, ApiRequest{Path: "/api/alerts"}, nil, nil, nil, clock)
 	if err != nil {
 		t.Fatalf("HandleApi without insights errored: %v", err)
 	}
 	if bare.Status != 404 {
 		t.Errorf("/api/alerts without insights = %d, want 404", bare.Status)
 	}
-	if answer, err := HandleWrite(ctx, nil, "PUT", "/api/budgets", mustValue(t, `{}`), nil); err != nil || answer.Status != 503 {
+	if answer, err := HandleWrite(ctx, nil, nil, "PUT", "/api/budgets", mustValue(t, `{}`), nil); err != nil || answer.Status != 503 {
 		t.Errorf("a write without insights = %d (%v), want 503", answer.Status, err)
 	}
-	answer, err := HandleWrite(ctx, fresh.insights, "PUT", "/api/budgets", mustValue(t, `{"budgets":[]}`), nil)
+	answer, err := HandleWrite(ctx, fresh.insights, nil, "PUT", "/api/budgets", mustValue(t, `{"budgets":[]}`), nil)
 	if err != nil {
 		t.Fatalf("saving budgets errored: %v", err)
 	}
 	if answer.Status != 200 || string(marshalBody(t, answer)) != `{"budgets":[]}` {
 		t.Errorf("saving budgets = %d %s, want the empty list back", answer.Status, marshalBody(t, answer))
 	}
-	if answer, err := HandleWrite(ctx, fresh.insights, "PUT", "/api/budgets", mustValue(t, `{"budgets":"x"}`), nil); err != nil || answer.Status != 400 {
+	if answer, err := HandleWrite(ctx, fresh.insights, nil, "PUT", "/api/budgets", mustValue(t, `{"budgets":"x"}`), nil); err != nil || answer.Status != 400 {
 		t.Errorf("saving bad budgets = %d (%v), want 400", answer.Status, err)
 	}
-	if answer, err := HandleWrite(ctx, fresh.insights, "PUT", "/api/settings", mustValue(t, `{"notifications":false}`), nil); err != nil || answer.Status != 200 {
+	if answer, err := HandleWrite(ctx, fresh.insights, nil, "PUT", "/api/settings", mustValue(t, `{"notifications":false}`), nil); err != nil || answer.Status != 200 {
 		t.Errorf("saving settings = %d (%v), want 200", answer.Status, err)
 	}
-	answer, err = HandleWrite(ctx, fresh.insights, "POST", "/api/alerts/dismiss", mustValue(t, `{"id":"a"}`), nil)
+	answer, err = HandleWrite(ctx, fresh.insights, nil, "POST", "/api/alerts/dismiss", mustValue(t, `{"id":"a"}`), nil)
 	if err != nil {
 		t.Fatalf("dismissing errored: %v", err)
 	}
 	if string(marshalBody(t, answer)) != `{"dismissed":"a"}` {
 		t.Errorf("dismissing = %s, want the id back", marshalBody(t, answer))
 	}
-	if answer, err := HandleWrite(ctx, fresh.insights, "POST", "/api/alerts/dismiss", mustValue(t, `{"id":3}`), nil); err != nil || answer.Status != 400 {
+	if answer, err := HandleWrite(ctx, fresh.insights, nil, "POST", "/api/alerts/dismiss", mustValue(t, `{"id":3}`), nil); err != nil || answer.Status != 400 {
 		t.Errorf("dismissing a number = %d (%v), want 400", answer.Status, err)
 	}
-	if answer, err := HandleWrite(ctx, fresh.insights, "POST", "/api/alerts/dismiss", nil, nil); err != nil || answer.Status != 400 {
+	if answer, err := HandleWrite(ctx, fresh.insights, nil, "POST", "/api/alerts/dismiss", nil, nil); err != nil || answer.Status != 400 {
 		t.Errorf("dismissing null = %d (%v), want 400", answer.Status, err)
 	}
-	if answer, err := HandleWrite(ctx, fresh.insights, "DELETE", "/api/budgets", mustValue(t, `{}`), nil); err != nil || answer.Status != 405 {
+	if answer, err := HandleWrite(ctx, fresh.insights, nil, "DELETE", "/api/budgets", mustValue(t, `{}`), nil); err != nil || answer.Status != 405 {
 		t.Errorf("DELETE the budgets = %d (%v), want 405", answer.Status, err)
 	}
 }
@@ -2216,7 +2217,7 @@ func TestRoutesContentGolden(t *testing.T) {
 	}, ",") + `]`
 	output := "not json at all, just a very long plain side " + strings.Repeat("y", 1_100_000)
 	mustPutContent(t, h, "rbig", history.ContentSides{Input: &input, Output: &output})
-	content, err := HandleApi(st, AppInfo{}, ApiRequest{Path: "/api/history/content/rbig"}, nil, h, clock)
+	content, err := HandleApi(st, AppInfo{}, ApiRequest{Path: "/api/history/content/rbig"}, nil, nil, h, clock)
 	if err != nil {
 		t.Fatalf("the content route errored: %v", err)
 	}
@@ -2243,7 +2244,7 @@ func TestRoutesContentGolden(t *testing.T) {
 	mustPutContent(t, h, "c1", history.ContentSides{Input: &c1In, Output: &c1Out})
 	c2In := `[{"type":"text","text":"latest"}]`
 	mustPutContent(t, h, "c2", history.ContentSides{Input: &c2In})
-	answer, err := HandleApi(st, AppInfo{}, ApiRequest{Path: "/api/history/context/c2"}, nil, h, clock)
+	answer, err := HandleApi(st, AppInfo{}, ApiRequest{Path: "/api/history/context/c2"}, nil, nil, h, clock)
 	if err != nil {
 		t.Fatalf("the context route errored: %v", err)
 	}

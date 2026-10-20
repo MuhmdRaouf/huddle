@@ -36,6 +36,7 @@ var writePaths = map[string]string{
 	"/api/settings":       "PUT",
 	"/api/alerts/dismiss": "POST",
 	"/api/history/clear":  "POST",
+	"/api/quota":          "POST",
 }
 
 // maxBody bounds one write's payload.
@@ -95,6 +96,8 @@ type HttpOptions struct {
 	HeartbeatMs int64
 	// Insights is the derived views; nil serves an empty /metrics and 503 on writes.
 	Insights ServerInsights
+	// Quotas holds the statusline's plan-limits snapshots; nil answers 503 on /api/quota.
+	Quotas *Quotas
 	// History is the opened SQLite history; nil when it failed to open.
 	History *history.History
 	// Watcher names the ingest backlog word; nil leaves the ingest messages out.
@@ -317,7 +320,7 @@ func (h *HttpServer) writeRoute(w http.ResponseWriter, r *http.Request, path str
 		sendJSON(w, 400, errorBody{Error: "body is not JSON"})
 		return
 	}
-	answer, err := HandleWrite(r.Context(), h.options.Insights, r.Method, path, parsed, h.options.History)
+	answer, err := HandleWrite(r.Context(), h.options.Insights, h.options.Quotas, r.Method, path, parsed, h.options.History)
 	if err != nil {
 		sendJSON(w, 500, errorBody{Error: "could not save: " + err.Error()})
 		return
@@ -346,6 +349,7 @@ func (h *HttpServer) apiRoute(w http.ResponseWriter, r *http.Request, path strin
 		AppInfo{Version: h.options.Version, StartedAt: h.options.StartedAt, Port: int(h.port())},
 		ApiRequest{Path: path, Query: r.URL.Query()},
 		h.options.Insights,
+		h.options.Quotas,
 		h.options.History,
 		time.Now,
 	)

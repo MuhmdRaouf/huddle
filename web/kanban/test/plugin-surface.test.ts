@@ -79,14 +79,14 @@ describe("plugin/hooks/hooks.json, kanban's share", () => {
 });
 
 describe("plugin/commands, kanban's share", () => {
-  it("holds exactly kanban's four commands among the plugin's ten", () => {
+  it("holds exactly kanban's four commands among the plugin's eleven", () => {
     const files = readdirSync(`${plugin}/commands`).sort();
     for (const name of COMMANDS) {
       expect(files).toContain(`${name}.md`);
     }
     expect(files.filter((file) => file.startsWith("kanban-"))).toHaveLength(4);
     expect(new Set(files).size, "command names are unique").toBe(files.length);
-    expect(files).toHaveLength(10);
+    expect(files).toHaveLength(11);
   });
 
   it.each(COMMANDS)("runs %s through the launcher's kanban word and shows its output as is", (name) => {

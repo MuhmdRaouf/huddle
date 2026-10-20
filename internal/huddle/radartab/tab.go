@@ -222,6 +222,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		StartedAt:     startedAt,
 		Port:          options.Port,
 		Insights:      insights,
+		Quotas:        server.CreateQuotas(env),
 		History:       hist,
 		Watcher:       watcher,
 		HostAllowed:   options.HostAllowed,

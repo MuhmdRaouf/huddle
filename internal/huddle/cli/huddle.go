@@ -74,6 +74,10 @@ var helpLines = []string{
 	"  huddle harness list | install <name> | remove <name>   wire huddle's MCP server, and the",
 	"                                           agent's own lifecycle hooks where it has them, into",
 	"                                           another coding agent: codex, gemini, qwen, opencode, crush",
+	"  huddle statusline [--install|--remove] [--color]   one line for Claude Code's status bar:",
+	"                                           channel, who is online, today's spend, the 5h and",
+	"                                           week plan limits off its own snapshot; --install",
+	"                                           wires it in keeping your own, --remove restores it",
 	"  huddle open                             a dashboard link that signs your browser in once (5 min), for any session",
 	"                                           that joined",
 	"  huddle pair [--name n]                  a one-use link (5 min) that pairs a device with a passkey; devices rm",
@@ -353,6 +357,9 @@ func Huddle(ctx context.Context, w *World, argv []string, stdout, stderr io.Writ
 	}
 	if cmd == "harness" {
 		return c.harness(ctx)
+	}
+	if cmd == "statusline" {
+		return c.statusline(ctx)
 	}
 	if c.ch == "" || c.me == "" {
 		return c.die(notInAHuddle, 2)

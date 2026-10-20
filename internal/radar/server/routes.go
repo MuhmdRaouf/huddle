@@ -91,6 +91,7 @@ var Routes = []string{
 	"/api/history/flow",
 	"/api/history/stats",
 	"/api/history/clear",
+	"/api/quota",
 }
 
 // InsightsView is the derived views the API routes read: costs, budgets, alerts, settings,
@@ -528,8 +529,12 @@ func dismissAlert(insights WriteInsights, body *jsfmt.Value) ApiResponse {
 
 // HandleWrite routes the dashboard's own writes: PUT /api/budgets, PUT /api/settings,
 // POST /api/alerts/dismiss and POST /api/history/clear — validated JSON in, the saved value
-// out. A failed save reaches the caller as an error; the HTTP layer answers it 500.
-func HandleWrite(ctx context.Context, insights WriteInsights, method, path string, body *jsfmt.Value, h *history.History) (ApiResponse, error) {
+// out. A failed save reaches the caller as an error; the HTTP layer answers it 500. The
+// statusline's quota POST rides here too: it writes the quota store, not insights.
+func HandleWrite(ctx context.Context, insights WriteInsights, quotas *Quotas, method, path string, body *jsfmt.Value, h *history.History) (ApiResponse, error) {
+	if method == "POST" && path == "/api/quota" {
+		return HandleQuotaWrite(ctx, quotas, body), nil
+	}
 	if insights == nil {
 		return errorOf(503, "not available"), nil
 	}
@@ -1517,11 +1522,14 @@ func sessionRoute(st *store.Store, path string) (ApiResponse, bool) {
 }
 
 // HandleApi routes one request; unknown /api paths get a 404 with the known routes listed.
-func HandleApi(st *store.Store, info AppInfo, request ApiRequest, insights InsightsView, h *history.History, now func() time.Time) (ApiResponse, error) {
+func HandleApi(st *store.Store, info AppInfo, request ApiRequest, insights InsightsView, quotas *Quotas, h *history.History, now func() time.Time) (ApiResponse, error) {
 	if now == nil {
 		now = time.Now
 	}
 	path, query := request.Path, request.Query
+	if path == "/api/quota" {
+		return HandleQuotaRead(quotas), nil
+	}
 	if insights != nil {
 		if derived, ok := insightRoute(insights, path, query); ok {
 			return derived, nil

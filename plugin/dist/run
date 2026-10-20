@@ -98,10 +98,10 @@ base=${HUDDLE_DOWNLOAD_BASE:-https://github.com/MuhmdRaouf/huddle/releases/downl
 url=$base/v0.0.1/huddle-$os-$arch
 want=
 case "$os-$arch" in
-  darwin-amd64) want=c44e40ab040d4cebd44cf55c9a23e6f9b122c120b490ee37daf20c180d90454c ;;
-  darwin-arm64) want=36ccb8150f6d2dacc02c5fdd4058fb684743e9c7379eea6f9eba98cbadd3fa7a ;;
-  linux-amd64) want=d45af59e26207f9593490c417edf9961c6a90b03e11363c8a96e6e375cf7e52e ;;
-  linux-arm64) want=ae5a7728f14cb0a4b837ca5a3aa8361863fa97a91a826d50f50134f0c45f6617 ;;
+  darwin-amd64) want=e7b25eff328561cb9bf2a8a56e75e041f5a465982ab374dc8a96534ad7dac175 ;;
+  darwin-arm64) want=2ff326c987de87102b354364e4867f2ab6f8c5f720dcea6e9a7ad916b09990a7 ;;
+  linux-amd64) want=9554fb29f49e6eb455f705c237f862b6a16f425456cfc3602c9be07506ecd95e ;;
+  linux-arm64) want=dd400e35de737eea5ec82b949deb93d345edcc303433e16df042510e795d37ac ;;
 esac
 
 # download_huddle <timeout>: fetch the release asset, verify its sha256 and install it as $bin. Returns 0 when

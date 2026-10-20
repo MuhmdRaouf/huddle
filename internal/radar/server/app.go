@@ -257,6 +257,7 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		Version:   options.Version,
 		StartedAt: startedAt,
 		Insights:  insights,
+		Quotas:    CreateQuotas(options.Env),
 		History:   hist,
 		Watcher:   watcher,
 	})

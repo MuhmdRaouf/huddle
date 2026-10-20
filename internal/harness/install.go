@@ -348,12 +348,14 @@ type ledgerFile struct {
 }
 
 // ledgerEntry is one harness's record: the file install touched, whether install created it,
-// and the digest of what was there before.
+// and the digest of what was there before. Before is the statusline record's own extra: the
+// member install replaced, as raw JSON, so remove can put it back byte for byte.
 type ledgerEntry struct {
 	Harness      string `json:"harness"`
 	Path         string `json:"path"`
 	Created      bool   `json:"created"`
 	BeforeSHA256 string `json:"before_sha256"`
+	Before       string `json:"before,omitempty"`
 }
 
 // ledgerPath answers the ledger's file in the huddle home.

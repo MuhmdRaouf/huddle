@@ -241,6 +241,20 @@ provider plugins' routers read before serving a provider model: while its scope 
 stopped, the router refuses that provider's models. A missing file, one older than 10 minutes, or
 one that does not parse stops nothing — a broken radar never cuts you off.
 
+## Status bar
+
+`huddle statusline` prints one line for Claude Code's status bar: the project's channel and who is
+online, today's spend, and the 5-hour and weekly plan limits off the snapshot Claude Code hands the
+statusline command. Parts with nothing behind them are left out, the whole render is bounded well
+under a second, and a missing server or an empty snapshot prints nothing — the status line never
+blocks a session.
+
+Run `/huddle:statusline --install` (or `huddle statusline --install`) to put it in your status line:
+the command lands in Claude Code's `settings.json`, the line you had there keeps running ahead of
+huddle's, and `--remove` restores your settings exactly as they were. The Radar tab's Overview shows
+the same two windows as its Plan limits card, with each window's reset countdown, fed only by the
+snapshots sessions post — huddle never reads a credential to know your plan limits.
+
 ## Kanban
 
 One board per repository, in `.agents/kanban/`: each column a subfolder (backlog, ready,

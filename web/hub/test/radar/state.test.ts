@@ -17,12 +17,14 @@ import {
   drawerRequest,
   flowSource,
   initialClientState,
+  liveQuota,
   modelChoices,
   newDraft,
   nextSort,
   pickedSessions,
   rangeEqual,
   requestChartsData,
+  resetsIn,
   requestCost,
   type StreamMessage,
   selectedIds,
@@ -750,5 +752,53 @@ describe("requestChartsData", () => {
     expect(data.ok).toHaveLength(60);
     expect(data.ok.every((count) => count === 0)).toBe(true);
     expect(data.failed.every((count) => count === 0)).toBe(true);
+  });
+});
+
+describe("liveQuota", () => {
+  const quota = {
+    session_id: "s1",
+    five_hour: 42,
+    five_hour_resets_at: 1_800_000_000,
+    seven_day: 18,
+    seven_day_resets_at: 1_900_000_000,
+    at: 1_790_000_000_000,
+  };
+
+  it("answers the snapshot while it is young", () => {
+    expect(liveQuota(quota, quota.at + 1000)).toBe(quota);
+  });
+
+  it("answers null once the snapshot is older than six hours, or empty, or absent", () => {
+    expect(liveQuota(quota, quota.at + 6 * 3_600_000 + 1)).toBeNull();
+    expect(
+      liveQuota(
+        {
+          session_id: "",
+          five_hour: null,
+          five_hour_resets_at: null,
+          seven_day: null,
+          seven_day_resets_at: null,
+          at: 0,
+        },
+        quota.at,
+      ),
+    ).toBeNull();
+    expect(liveQuota(null, quota.at)).toBeNull();
+  });
+});
+
+describe("resetsIn", () => {
+  const now = 1_790_000_000_000;
+
+  it("names hours and minutes", () => {
+    expect(resetsIn(now + (2 * 60 + 14) * 60_000, now)).toBe("resets in 2h 14m");
+    expect(resetsIn(now + 5 * 60_000, now)).toBe("resets in 5m");
+  });
+
+  it("says under a minute, and nothing for a window that already turned", () => {
+    expect(resetsIn(now + 20_000, now)).toBe("resets in under a minute");
+    expect(resetsIn(now - 1000, now)).toBeNull();
+    expect(resetsIn(null, now)).toBeNull();
   });
 });

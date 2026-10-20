@@ -310,3 +310,60 @@ describe("the radar Overview", () => {
     expect(container.textContent).toContain("gone");
   });
 });
+
+describe("the Overview's plan limits card", () => {
+  const quota = {
+    session_id: "s-lead",
+    five_hour: 42,
+    five_hour_resets_at: NOW + (2 * 60 + 14) * 60_000,
+    seven_day: 93,
+    seven_day_resets_at: NOW + 5 * 86_400_000,
+    at: NOW - 60_000,
+  };
+
+  it("shows both windows with their percent, their colour and their reset countdown", () => {
+    const { container } = overview({ quota });
+    const card = container.querySelector('[data-quota=""]');
+    expect(card?.textContent).toContain("Plan limits");
+    const windows = [...container.querySelectorAll("[data-quota-window]")];
+    expect(windows.map((row) => row.getAttribute("data-quota-window"))).toEqual(["5-hour", "weekly"]);
+    const five = windows[0]?.textContent ?? "";
+    expect(five).toContain("42%");
+    expect(five).toContain("resets in 2h 14m");
+    const week = windows[1]?.textContent ?? "";
+    expect(week).toContain("93%");
+    // the colours follow the thresholds: ok under 70, danger past 90
+    expect(windows[0]?.querySelector(".bar-seg")?.getAttribute("style")).toContain("var(--success)");
+    expect(windows[1]?.querySelector(".bar-seg")?.getAttribute("style")).toContain("var(--danger)");
+  });
+
+  it("hides the card when the snapshot is older than six hours", () => {
+    const { container } = overview({ quota: { ...quota, at: NOW - 7 * 3_600_000 } });
+    expect(container.querySelector('[data-quota=""]')).toBeNull();
+  });
+
+  it("hides the card when nothing was reported, or the report is empty", () => {
+    expect(overview({}).container.querySelector('[data-quota=""]')).toBeNull();
+    expect(
+      overview({
+        quota: {
+          session_id: "",
+          five_hour: null,
+          five_hour_resets_at: null,
+          seven_day: null,
+          seven_day_resets_at: null,
+          at: 0,
+        },
+      }).container.querySelector('[data-quota=""]'),
+    ).toBeNull();
+  });
+
+  it("keeps the meter readable when a window carries no number", () => {
+    const { container } = overview({
+      quota: { ...quota, seven_day: null, seven_day_resets_at: null },
+    });
+    const windows = [...container.querySelectorAll("[data-quota-window]")];
+    expect(windows[1]?.textContent).toContain("–");
+    expect(windows[1]?.querySelector(".bar-seg")).toBeNull();
+  });
+});

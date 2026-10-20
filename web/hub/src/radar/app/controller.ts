@@ -16,6 +16,7 @@ import type {
   ContextAnswer,
   ContextMessage,
   FlowSeries,
+  QuotaSnapshot,
   RouterHealth,
   Settings,
   TreeNodeRow,
@@ -1182,21 +1183,24 @@ export class RadarController {
     return parsed as T;
   }
 
-  /** Alerts, budget spend, today's cost and the server's own uptime: small, polled every 10 s whatever
-   *  the tab. */
+  /** Alerts, budget spend, today's cost, the plan limits the statusline word posted and the
+   *  server's own uptime: small, polled every 10 s whatever the tab. */
   private async pollInsights(): Promise<void> {
     try {
-      const [alerts, status, spend, health] = await Promise.all([
+      const [alerts, status, spend, health, quota] = await Promise.all([
         this.fetchJson<{ alerts: Alert[] }>("/api/alerts"),
         this.fetchJson<BudgetStatus>("/api/budget-status"),
         this.fetchJson<{ todayUsd: number | null }>("/api/spend"),
         this.fetchJson<{ startedAt: number; uptimeMs: number }>("/api/health"),
+        // the card reads nothing until a session posts; a server without the route is the same
+        this.fetchJson<QuotaSnapshot>("/api/quota").catch(() => null),
       ]);
       this.setState({
         ...this.state,
         alerts: alerts.alerts,
         budgetStatus: status,
         spendToday: spend.todayUsd,
+        quota: quota !== null && quota.at > 0 ? quota : null,
         health: { startedAt: health.startedAt, uptimeMs: health.uptimeMs },
       });
     } catch {
