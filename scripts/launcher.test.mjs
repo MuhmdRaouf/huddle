@@ -26,7 +26,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { huddleSpec, launcherScript, releaseInfo } from "./launcher.mjs";
+import { PROVIDERS, huddleSpec, launcherScript, providerSpec, releaseInfo } from "./launcher.mjs";
 
 /** The release a build embeds in the launcher (releaseInfo's shape). */
 const RELEASE = {
@@ -77,6 +77,15 @@ const HUDDLE = {
   lock: ".huddle.fetch.lock",
 };
 
+/** A provider plugin's flavour: the same launcher shape rendering one provider's bundle words. */
+const providerFlavour = (provider) => ({
+  render: (release) => launcherScript(providerSpec(release, provider)),
+  homeEnv: "AGENTS_HUDDLE_HOME",
+  baseEnv: "HUDDLE_DOWNLOAD_BASE",
+  binary: "huddle",
+  lock: ".huddle.fetch.lock",
+});
+
 /** The release info for a manifest whose one asset targets this platform; `digest` overrides the asset's
  *  real one. The fake asset matches the binary's name, so its checksum is what lands. */
 function info(digest = createHash("sha256").update(asset(HUDDLE.binary)).digest("hex")) {
@@ -89,7 +98,7 @@ function info(digest = createHash("sha256").update(asset(HUDDLE.binary)).digest(
  * the machine has); /usr/bin itself may hold a node (some CI images), so it stays off PATH. `t` owns the
  * temp dir: everything is removed when the test finishes.
  */
-function rig(t, release, runtimes = [], uname) {
+function rig(t, release, runtimes = [], uname, flavour = HUDDLE) {
   const dir = realpathSync(mktemp("launcher-"));
   const dist = join(dir, "dist");
   const bin = join(dir, "bin");
@@ -101,7 +110,7 @@ function rig(t, release, runtimes = [], uname) {
     const real = spawnSync("/bin/sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).stdout.trim();
     if (real !== "") symlinkSync(real, join(tools, tool));
   }
-  writeFileSync(join(dist, "run"), HUDDLE.render(release));
+  writeFileSync(join(dist, "run"), flavour.render(release));
   for (const name of runtimes) {
     writeFileSync(join(bin, name), `#!/bin/sh\necho ${name} "$@"\n`);
     chmodSync(join(bin, name), 0o755);
@@ -111,13 +120,13 @@ function rig(t, release, runtimes = [], uname) {
     chmodSync(join(bin, "uname"), 0o755);
   }
   const binHome = join(dir, "bin-home");
-  const lock = join(binHome, RELEASE.version, HUDDLE.lock);
+  const lock = join(binHome, RELEASE.version, flavour.lock);
   // Spawned, not spawnSync: a sync spawn would block this process's event loop and with it the asset server a
   // download test serves its fake binary from.
   const run = (args, env = {}) =>
     new Promise((resolve) => {
       const child = spawn("/bin/sh", [join(dist, "run"), ...args], {
-        env: { PATH: `${bin}:${tools}`, HOME: join(dir, "home"), [HUDDLE.homeEnv]: binHome, ...env },
+        env: { PATH: `${bin}:${tools}`, HOME: join(dir, "home"), [flavour.homeEnv]: binHome, ...env },
       });
       let stdout = "";
       let stderr = "";
@@ -162,10 +171,10 @@ async function assetServer(t, body) {
 }
 
 /** An installed binary the launcher execs: the fake asset, executable, under the home/<version>. */
-function install(binHome) {
-  const bin = join(binHome, RELEASE.version, `${HUDDLE.binary}`);
+function install(binHome, flavour = HUDDLE) {
+  const bin = join(binHome, RELEASE.version, `${flavour.binary}`);
   mkdirSync(dirname(bin), { recursive: true });
-  writeFileSync(bin, asset(HUDDLE.binary));
+  writeFileSync(bin, asset(flavour.binary));
   chmodSync(bin, 0o755);
   return bin;
 }
@@ -482,6 +491,129 @@ describe("dist/run", () => {
 
   it("huddleSpec refuses to generate a launcher with no release to pin", () => {
     assert.throws(() => huddleSpec(null), /no huddle release/);
+  });
+});
+
+describe("the provider plugins' dist/run scripts", () => {
+  it("map each provider's four bundles to its provider <p> <entry> words", () => {
+    for (const provider of PROVIDERS) {
+      const script = launcherScript(providerSpec({ ...RELEASE, sha256: {} }, provider));
+      assert.ok(
+        script.includes(`exec "$bin" provider ${provider} "$entry" "$@"`),
+        `${provider}: the bundles exec huddle provider ${provider} <entry>`,
+      );
+      const wanted = [
+        [`${provider}.js`, "cli"],
+        [`${provider}-router.js`, "router"],
+        [`${provider}-passthrough.js`, "passthrough"],
+        [`${provider}-ensure.js`, "ensure"],
+      ];
+      for (const [bundle, entry] of wanted) {
+        assert.ok(script.includes(`  ${bundle}) entry=${entry} ;;`), `${provider}: ${bundle} maps to ${entry}`);
+      }
+      assert.doesNotMatch(script, /entry=provider /, `${provider}: the entry stays one word`);
+    }
+  });
+
+  it("run the installed huddle binary with the provider word and every argument", async (t) => {
+    for (const provider of PROVIDERS) {
+      await t.test(`${provider} runs its bundles`, async (t) => {
+        const { binHome, run } = rig(t, info(), [], undefined, providerFlavour(provider));
+        install(binHome);
+        assert.deepEqual(
+          await run([`${provider}.js`, "board", "--json"]),
+          ran(0, `huddle provider ${provider} cli board --json\n`, ""),
+        );
+        assert.deepEqual(await run([`${provider}-router.js`, "status"]), ran(0, `huddle provider ${provider} router status\n`, ""));
+        assert.deepEqual(
+          await run([`${provider}-passthrough.js`]),
+          ran(0, `huddle provider ${provider} passthrough\n`, ""),
+        );
+        assert.deepEqual(await run([`${provider}-ensure.js`]), ran(0, `huddle provider ${provider} ensure\n`, ""));
+      });
+    }
+  });
+
+  it("exit 2 naming an unknown bundle", async (t) => {
+    const { binHome, run } = rig(t, info(), [], undefined, providerFlavour("zai"));
+    install(binHome);
+    const result = await run(["bogus.js"]);
+    assert.equal(result.status, 2);
+    assert.equal(result.stderr, "zai: unknown bundle bogus.js\n");
+  });
+
+  it("treat any --hook argument as a hook: exit 0 at once, one detached download lands the binary", async (t) => {
+    for (const args of [["zai-ensure.js", "--hook"], ["zai.js", "board", "--hook"]]) {
+      await t.test(args.join(" ") + " returns at once", async (t) => {
+        const { binHome, run, lock } = rig(t, info(), [], undefined, providerFlavour("zai"));
+        const { base, urls } = await assetServer(t, asset("huddle"));
+        const started = Date.now();
+        const first = await run(args, { HUDDLE_DOWNLOAD_BASE: base });
+        assert.ok(Date.now() - started < 1000, `the hook returned in ${Date.now() - started} ms`);
+        assert.deepEqual(first, ran(0, "", ""));
+        const bin = join(binHome, "9.9.9", "huddle");
+        assert.ok(
+          await until(() => existsSync(bin) && !existsSync(lock), 10_000),
+          "the detached download lands the verified binary",
+        );
+        const second = await run(args, { HUDDLE_DOWNLOAD_BASE: base });
+        assert.deepEqual(
+          second,
+          ran(0, `huddle provider zai ${args[0] === "zai.js" ? "cli board" : "ensure"} --hook\n`, ""),
+        );
+        assert.deepEqual(urls, [`/v9.9.9/huddle-${OS}-${ARCH}`]);
+      });
+    }
+  });
+
+  it("default CLAUDE_PLUGIN_ROOT to the plugin dir above the launcher", async (t) => {
+    const { dist, binHome, run } = rig(t, info(), [], undefined, providerFlavour("zai"));
+    const bin = install(binHome);
+    // a binary that echoes the plugin root the launcher exported to it
+    writeFileSync(bin, '#!/bin/sh\necho "$CLAUDE_PLUGIN_ROOT"\n');
+    chmodSync(bin, 0o755);
+    const result = await run(["zai.js", "--help"], { CLAUDE_PLUGIN_ROOT: "" });
+    const named = result.stdout.trim();
+    assert.equal(result.status, 0, `the launcher exited ${result.status}: ${result.stderr}`);
+    assert.ok(
+      named !== "" && existsSync(join(named, "dist", "run")) && realpathSync(named) === realpathSync(join(dist, "..")),
+      `the launcher exported ${named}, want the plugin dir above dist/run`,
+    );
+  });
+
+  it("pin the same sha256 table as the huddle launcher", () => {
+    const release = {
+      ...RELEASE,
+      sha256: {
+        "darwin-amd64": "a".repeat(64),
+        "darwin-arm64": "b".repeat(64),
+        "linux-amd64": "c".repeat(64),
+        "linux-arm64": "d".repeat(64),
+      },
+    };
+    const table = (script) => [...script.matchAll(/^  (\S+)\) want=([0-9a-f]{64}) ;;$/gm)].map((m) => m[0]);
+    const huddleTable = table(launcherScript(huddleSpec(release)));
+    assert.equal(huddleTable.length, 4, "the huddle launcher pins the four targets");
+    for (const provider of PROVIDERS) {
+      assert.deepEqual(table(launcherScript(providerSpec(release, provider))), huddleTable);
+    }
+  });
+
+  it("pin the release the committed manifest names, under the huddle home", () => {
+    const release = releaseInfo(join(import.meta.dirname, "../release"));
+    for (const provider of PROVIDERS) {
+      const script = launcherScript(providerSpec(release, provider));
+      assert.ok(script.includes("home=${AGENTS_HUDDLE_HOME:-$HOME/.agents/huddle-bin}"));
+      assert.ok(script.includes(`bin=$home/${release.version}/huddle`));
+      assert.ok(
+        script.includes("base=${HUDDLE_DOWNLOAD_BASE:-https://github.com/MuhmdRaouf/huddle/releases/download}"),
+        `${provider}: downloads from the huddle repository's releases`,
+      );
+    }
+  });
+
+  it("refuse to generate a launcher with no release to pin", () => {
+    assert.throws(() => providerSpec(null, "zai"), /no huddle release/);
   });
 });
 

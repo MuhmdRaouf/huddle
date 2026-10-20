@@ -1,13 +1,14 @@
 package render
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/MuhmdRaouf/huddle/internal/core/providers"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Every PRICE_TABLE entry names an https pricing page and the day it was read; an unverified
@@ -31,25 +32,18 @@ func TestPriceTableEntriesCiteTheirSource(t *testing.T) {
 	}
 }
 
-// The flat table prices every catalog id the five provider plugins ship: each plugin's
-// test/provider.ts holds its catalog, and the binary carries its own copy of the same data.
+// The flat table prices every catalog id the five provider plugins ship: the compiled provider
+// table (internal/core/providers) is the data each plugin's catalog carries.
 func TestPriceTableCoversEveryPluginCatalog(t *testing.T) {
-	requirePluginDirs(t)
-	id := regexp.MustCompile(`\b(?:main|flash): \{ ?tier: "(?:main|flash)", id: "([^"]+)"`)
-	for _, plugin := range []string{"zai", "kimi", "deepseek", "minimax", "qwen"} {
-		path := filepath.Join(pluginsRoot, plugin+"-plugin-cc", "test", "provider.ts")
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("%s: read provider.ts: %v", plugin, err)
+	for _, name := range providers.Names {
+		provider, ok := providers.ByName(name)
+		if !ok {
+			t.Fatalf("%s: providers has no such provider", name)
 		}
-		matches := id.FindAllStringSubmatch(strings.Join(strings.Fields(string(raw)), " "), -1)
-		if len(matches) != 2 {
-			t.Errorf("%s: found %d catalog ids, want 2", plugin, len(matches))
-			continue
-		}
-		for _, match := range matches {
-			if _, ok := PriceOf(match[1]); !ok {
-				t.Errorf("%s: %s has no price", plugin, match[1])
+		for _, tier := range []domain.ModelTier{domain.ModelTierMain, domain.ModelTierFlash} {
+			id := provider.Catalog[tier].ID
+			if _, ok := PriceOf(id); !ok {
+				t.Errorf("%s: %s has no price", name, id)
 			}
 		}
 	}

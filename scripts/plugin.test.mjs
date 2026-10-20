@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { PROVIDERS } from "./launcher.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const plugin = join(root, "plugin");
@@ -285,18 +286,35 @@ describe("the plugin manifest, the marketplace and the committed launcher", () =
     assert.ok((manifest.keywords ?? []).length > 0, "the manifest carries keywords");
   });
 
-  it("is the one plugin of the huddle marketplace, installed from ./plugin", () => {
+  it("is the huddle plugin of the muhmdraouf marketplace, installed from ./plugin beside the five providers", () => {
     const marketplace = readJSON(join(root, ".claude-plugin", "marketplace.json"));
-    assert.equal(marketplace.name, "huddle");
+    assert.equal(marketplace.name, "muhmdraouf");
     assert.equal(marketplace.owner?.name, "Raouf");
+    const entries = (marketplace.plugins ?? []).map((entry) => ({
+      name: entry.name,
+      source: entry.source,
+      version: entry.version,
+      dependencies: entry.dependencies,
+    }));
+    assert.equal(entries.length, 6, "the marketplace lists huddle and the five providers");
     assert.deepEqual(
-      (marketplace.plugins ?? []).map((entry) => ({
-        name: entry.name,
-        source: entry.source,
-        version: entry.version,
-      })),
-      [{ name: "huddle", source: "./plugin", version: manifest.version }],
+      entries.filter((entry) => entry.name === "huddle"),
+      [{ name: "huddle", source: "./plugin", version: manifest.version, dependencies: undefined }],
     );
+    for (const provider of PROVIDERS) {
+      const manifestOf = readJSON(join(root, "plugins", `${provider}-plugin-cc`, ".claude-plugin", "plugin.json"));
+      assert.deepEqual(
+        entries.filter((entry) => entry.name === `${provider}-plugin-cc`),
+        [
+          {
+            name: `${provider}-plugin-cc`,
+            source: `./plugins/${provider}-plugin-cc`,
+            version: manifestOf.version,
+            dependencies: ["huddle"],
+          },
+        ],
+      );
+    }
   });
 
   it("starts the MCP bridge through the plugin's bin/huddle-mcp", () => {

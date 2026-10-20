@@ -7,12 +7,15 @@
 // exits 127, and a hook never blocks or fails Claude Code — a hook (`hook <name>`, or the word `hook` in
 // radar's and kanban's hook lines) exits 0 at once, starting one detached download of the binary, locked so
 // all hooks share it. scripts/build.mjs renders plugin/dist/run from this spec and the committed manifest.
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /** The GitHub repository every release downloads from. */
 const REPO = "MuhmdRaouf/huddle";
+
+/** The provider plugins this repository ships, each with a dist/run of its own. */
+export const PROVIDERS = ["zai", "kimi", "deepseek", "minimax", "qwen"];
 
 /** The release the launcher pins (the newest `v<semver>.json` in `releaseDir`): its version, the
  *  repository its assets download from, and every target's sha256. Null while no manifest exists: the
@@ -148,6 +151,65 @@ export function huddleSpec(release) {
 /** Each word as its own entry pair: the word is its own subcommand. */
 const selfEntries = (words) => words.map((word) => [word, word]);
 
+/** The launcher spec for one provider plugin: the same huddle binary, version and checksum table
+ *  the huddle launcher pins, exec'd as `huddle provider <p> <entry>` — the bundle names the plugin's
+ *  hooks, commands and agents already run (<p>.js, <p>-router.js, <p>-passthrough.js, <p>-ensure.js)
+ *  map onto the provider engine's entries. Like the huddle launcher there is no setup command: every
+ *  bundle downloads the binary on first use, and a hook — any --hook argument, or the word `hook` —
+ *  exits 0 at once, starting one detached download. `release` is releaseInfo's result over the
+ *  repository's release dir; without one there is no launcher to generate and this throws. */
+export function providerSpec(release, provider) {
+  if (release === null)
+    throw new Error(
+      "no huddle release to pin: run go run ./scripts/build -manifest and commit release/v<VERSION>.json",
+    );
+  return {
+    header: `# ${provider}: runs the ${provider} plugin's bundles on the huddle binary (huddle provider ${provider}
+#   <entry>), downloading and verifying it on first use.
+#   sh "\${CLAUDE_PLUGIN_ROOT}/dist/run" <bundle>.js [args...]
+# huddle lives under \${AGENTS_HUDDLE_HOME:-$HOME/.agents/huddle-bin}/${release.version}; the first
+# command downloads it from ${release.repo}'s GitHub releases and verifies its sha256 there
+# (HUDDLE_DOWNLOAD_BASE overrides the release URL for tests), waiting up to 120 s. Every verified
+# install also points $home/current at the binary — the stable path a harness config names, good
+# across upgrades. A hook never blocks or fails Claude Code: it exits 0 at once, starting one
+# detached download — guarded by a lock in the version dir so every hook shares it — that installs
+# the binary for the next hook.`,
+    name: provider,
+    binary: "huddle",
+    downloadFn: "download_huddle",
+    tagPrefix: "v",
+    version: release.version,
+    repo: release.repo,
+    sha256: release.sha256,
+    argName: "bundle",
+    // The plugin's four bundles (hooks.json and the commands run them) onto the provider engine's
+    // entries; the fixed `provider <p>` words ride binaryArg, so each entry stays one word.
+    entries: [
+      [`${provider}.js`, "cli"],
+      [`${provider}-router.js`, "router"],
+      [`${provider}-passthrough.js`, "passthrough"],
+      [`${provider}-ensure.js`, "ensure"],
+    ],
+    hookFlag: false,
+    hookEntries: [],
+    // A provider hook carries its flag in the arguments, as the plugin's hooks.json lines do
+    // (`<p>-ensure.js --hook`); the word `hook` stays a hook spelling, as in the huddle launcher.
+    hookFlags: ["--hook"],
+    // The CLI reads the plugin root from the environment, and plain shells do not export it:
+    // default it to the plugin dir above this launcher's own.
+    prelude: `: "\${CLAUDE_PLUGIN_ROOT:=$(cd -- "$dir/.." && pwd)}"\nexport CLAUDE_PLUGIN_ROOT`,
+    // The provider engine's fixed words before the entry: `huddle provider <p> <entry>`.
+    binaryArg: `provider ${provider} `,
+    homeEnv: "AGENTS_HUDDLE_HOME",
+    homeDir: "$HOME/.agents/huddle-bin",
+    baseEnv: "HUDDLE_DOWNLOAD_BASE",
+    fetch: "always",
+    timeout: 120,
+    failStatus: 127,
+    missing: `${provider}: no huddle ${release.version} binary for this platform ($os-$arch)`,
+  };
+}
+
 /** The case mapping of the first argument: one line per entry, or one line naming them all when every entry
  *  maps to itself. */
 function caseMapping(spec) {
@@ -214,18 +276,25 @@ ${downloadRun(spec, "  ")}
 ${downloadReport(spec, "  ")}`;
 }
 
-/** The launcher script for the spec (huddleSpec's result): the entry's word on the installed binary, which
- *  the launcher itself downloads and checksum-verifies; a hook whose binary is missing starts one detached,
- *  lock-guarded download so the next hook finds it installed. */
+/** The launcher script for the spec (huddleSpec's or providerSpec's result): the entry's word on the installed
+ *  binary, which the launcher itself downloads and checksum-verifies; a hook whose binary is missing starts one
+ *  detached, lock-guarded download so the next hook finds it installed. */
 export function launcherScript(spec) {
   const hookInit = spec.hookEntries.map((entry) => `[ "$entry" = ${entry} ] && hook=1`);
   const hookLines = ["hook=", ...hookInit, "detached="].join("\n");
   // A hook is huddle's own `hook` entry, or the word `hook` in the arguments — a satellite's hook
   // line (`radar hook`, `kanban hook session-start`) carries it second, where the entry alone cannot
   // see it. A stray `hook` in another command's arguments only moves the missing-binary case from
-  // exit 127 to the silent hook path, never changes a run that finds the binary.
-  const scanBody = `  [ "$arg" = hook ] && hook=1
-  [ "$arg" = "--detached-fetch" ] && detached=1`;
+  // exit 127 to the silent hook path, never changes a run that finds the binary. A spec may name
+  // further argument words that mark a hook (a provider's hooks carry `--hook`).
+  const scanBody = [
+    `  [ "$arg" = hook ] && hook=1`,
+    ...(spec.hookFlags ?? []).map((flag) => `  [ "$arg" = ${flag} ] && hook=1`),
+    `  [ "$arg" = "--detached-fetch" ] && detached=1`,
+  ].join("\n");
+  // Lines between the launcher's own dir and the argument split: a provider launcher defaults and
+  // exports CLAUDE_PLUGIN_ROOT, the plugin dir above it.
+  const prelude = spec.prelude === undefined ? "" : `${spec.prelude}\n`;
   const dispatch = [
     `if [ "$os" != unsupported ] && [ "$arch" != unsupported ]; then
   if [ -x "$bin" ]; then
@@ -252,7 +321,7 @@ export function launcherScript(spec) {
 ${spec.header}
 # Generated by scripts/launcher.mjs; do not edit.
 dir=$(dirname -- "$0")
-${spec.argName}=$1
+${prelude}${spec.argName}=$1
 shift
 case "$${spec.argName}" in
 ${caseMapping(spec)}
@@ -366,27 +435,44 @@ exit ${spec.failStatus}
 `;
 }
 
-// Run directly, scripts/launcher.mjs renders plugin/dist/run from the committed manifest:
-// `node scripts/launcher.mjs` writes it (mode 755), `--check` renders in memory and byte-compares, so a
-// launcher stale against the manifest fails the check instead of shipping.
+// Run directly, scripts/launcher.mjs renders the six launchers from the committed manifest: the huddle
+// plugin's plugin/dist/run and one dist/run per provider plugin. `node scripts/launcher.mjs` writes them
+// (mode 755), `--check` renders in memory and byte-compares, so a launcher stale against the manifest
+// fails the check instead of shipping.
 const invoked = process.argv[1] ? import.meta.url === pathToFileURL(resolve(process.argv[1])).href : false;
 if (invoked) {
   const root = join(import.meta.dirname, "..");
-  const script = launcherScript(huddleSpec(releaseInfo(join(root, "release"))));
-  const target = join(root, "plugin", "dist", "run");
+  const release = releaseInfo(join(root, "release"));
+  const scripts = [
+    ["plugin/dist/run", launcherScript(huddleSpec(release))],
+    ...PROVIDERS.map((provider) => [
+      `plugins/${provider}-plugin-cc/dist/run`,
+      launcherScript(providerSpec(release, provider)),
+    ]),
+  ];
   if (process.argv.includes("--check")) {
-    let committed = null;
-    try {
-      committed = readFileSync(target, "utf8");
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
+    const stale = [];
+    for (const [relative, script] of scripts) {
+      let committed = null;
+      try {
+        committed = readFileSync(join(root, relative), "utf8");
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+      if (committed !== script) stale.push(relative);
     }
-    if (committed !== script) {
-      console.error("plugin/dist/run is stale against release/v<VERSION>.json; run: npm run build:launcher");
+    if (stale.length > 0) {
+      for (const relative of stale) {
+        console.error(`${relative} is stale against release/v<VERSION>.json`);
+      }
+      console.error("run: npm run build:launcher");
       process.exit(1);
     }
   } else {
-    writeFileSync(target, script, { mode: 0o755 });
-    console.error("wrote plugin/dist/run");
+    for (const [relative, script] of scripts) {
+      mkdirSync(join(root, relative, ".."), { recursive: true });
+      writeFileSync(join(root, relative), script, { mode: 0o755 });
+      console.error(`wrote ${relative}`);
+    }
   }
 }

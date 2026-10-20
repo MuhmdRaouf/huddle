@@ -647,6 +647,7 @@ $RECYCLE.BIN/
 ### Project ###
 # Committed build outputs: the plugin's launcher, the pages the binary embeds, and the release build script.
 !plugin/dist/
+!plugins/*/dist/
 !internal/*/web/dist/
 !scripts/build/
 # The plugin's MCP entry: a global ignore of .mcp.json must not drop it.

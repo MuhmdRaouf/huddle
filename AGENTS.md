@@ -36,11 +36,13 @@ node scripts/check-attribution.mjs             # no AI attribution in the histor
 - `internal/huddle`, `internal/radar`, `internal/kanban`: each part's server, CLI, hooks and store.
 - `internal/core`: the provider engine: router, job engine and provider CLI, run as `huddle provider <p> <entry>`.
 - `internal/contract`: the radar spool line and `budget-status.json` formats shared with the provider plugins in
-  `MuhmdRaouf/claude-code-plugins`; `testdata/contract/` holds the golden fixtures both repositories keep identical.
+  `plugins/`; `testdata/contract/` holds the golden fixtures both sides keep identical.
 - `internal/harness`: one adapter per harness (MCP config, hooks, transcript reader).
 - `web/`: one Bun workspace with Vite+: `ui` (shared components), `hub`, `radar`, `kanban` pages.
 - `plugin/`: what Claude Code installs (`.claude-plugin/plugin.json`, hooks, commands, skills, agents, `dist/`).
-- `.claude-plugin/marketplace.json`: the `huddle` marketplace with the one plugin.
+- `plugins/<p>-plugin-cc/`: the five provider plugins (zai, kimi, deepseek, minimax, qwen), each with its agents,
+  commands, hooks and a `dist/run` that runs `huddle provider <p> <entry>` on the one binary.
+- `.claude-plugin/marketplace.json`: the `muhmdraouf` marketplace with the six plugins.
 
 ## Architecture
 
@@ -50,7 +52,7 @@ node scripts/check-attribution.mjs             # no AI attribution in the histor
 - MCP is the interface for every agent: `publish`, `subscribe`, `poll` (long poll after a cursor), channels, tasks,
   claims and needs. Harnesses that support resource subscriptions get `notifications/resources/updated`; Claude Code
   also gets channel pushes.
-- Huddle works alone. The provider plugins in `MuhmdRaouf/claude-code-plugins` depend on it and meet it only through
+- Huddle works alone. The provider plugins in `plugins/` depend on it and meet it only through
   files (the spool, `budget-status.json`) and local HTTP.
 
 ## Code rules

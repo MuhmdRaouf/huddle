@@ -1,11 +1,11 @@
 {
-  "name": "huddle",
+  "name": "muhmdraouf",
   "owner": {
     "name": "Raouf",
     "url": "https://github.com/MuhmdRaouf"
   },
   "metadata": {
-    "description": "Huddle: the hub, radar and kanban for Claude Code, one plugin."
+    "description": "Raouf's Claude Code plugins: huddle and the five provider plugins, from one repository."
   },
   "plugins": [
     {
@@ -18,6 +18,56 @@
       "homepage": "https://github.com/MuhmdRaouf/huddle",
       "license": "GPL-3.0-or-later",
       "source": "./plugin"
+    },
+    {
+      "name": "zai-plugin-cc",
+      "description": "Delegate bulk mechanical work to GLM (Z.ai); Claude orchestrates, verifies and reviews.",
+      "version": "0.0.1",
+      "dependencies": ["huddle"],
+      "author": { "name": "Raouf" },
+      "homepage": "https://github.com/MuhmdRaouf/huddle/tree/main/plugins/zai-plugin-cc",
+      "license": "GPL-3.0-or-later",
+      "source": "./plugins/zai-plugin-cc"
+    },
+    {
+      "name": "kimi-plugin-cc",
+      "description": "Delegate bulk mechanical work to Kimi (Moonshot AI); Claude orchestrates, verifies and reviews.",
+      "version": "0.0.1",
+      "dependencies": ["huddle"],
+      "author": { "name": "Raouf" },
+      "homepage": "https://github.com/MuhmdRaouf/huddle/tree/main/plugins/kimi-plugin-cc",
+      "license": "GPL-3.0-or-later",
+      "source": "./plugins/kimi-plugin-cc"
+    },
+    {
+      "name": "deepseek-plugin-cc",
+      "description": "Delegate bulk mechanical work to DeepSeek; Claude orchestrates, verifies and reviews.",
+      "version": "0.0.1",
+      "dependencies": ["huddle"],
+      "author": { "name": "Raouf" },
+      "homepage": "https://github.com/MuhmdRaouf/huddle/tree/main/plugins/deepseek-plugin-cc",
+      "license": "GPL-3.0-or-later",
+      "source": "./plugins/deepseek-plugin-cc"
+    },
+    {
+      "name": "minimax-plugin-cc",
+      "description": "Delegate bulk mechanical work to MiniMax; Claude orchestrates, verifies and reviews.",
+      "version": "0.0.1",
+      "dependencies": ["huddle"],
+      "author": { "name": "Raouf" },
+      "homepage": "https://github.com/MuhmdRaouf/huddle/tree/main/plugins/minimax-plugin-cc",
+      "license": "GPL-3.0-or-later",
+      "source": "./plugins/minimax-plugin-cc"
+    },
+    {
+      "name": "qwen-plugin-cc",
+      "description": "Delegate bulk mechanical work to Qwen (Alibaba Cloud); Claude orchestrates, verifies and reviews.",
+      "version": "0.0.1",
+      "dependencies": ["huddle"],
+      "author": { "name": "Raouf" },
+      "homepage": "https://github.com/MuhmdRaouf/huddle/tree/main/plugins/qwen-plugin-cc",
+      "license": "GPL-3.0-or-later",
+      "source": "./plugins/qwen-plugin-cc"
     }
   ]
 }

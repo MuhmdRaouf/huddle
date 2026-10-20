@@ -20,6 +20,10 @@ import (
 // ports, env prefixes, agent names, model prefixes that never claim another plugin's models) and
 // the price sheet each one's catalog must be on.
 
+// pluginsRoot is where the provider plugins' own directories sit, relative to this package: the
+// repository's plugins/ folder.
+const pluginsRoot = "../../../plugins"
+
 // pluginProviders is the five providers in alphabetical order, each checked to live in its own
 // <name>-plugin-cc.
 func pluginProviders(t *testing.T) []domain.Provider {
@@ -43,7 +47,6 @@ func pluginProviders(t *testing.T) []domain.Provider {
 
 // They are the five providers, each in its own <name>-plugin-cc.
 func TestProviderPluginsAreTheFive(t *testing.T) {
-	requirePluginDirs(t)
 	list := pluginProviders(t)
 	want := []string{"deepseek", "kimi", "minimax", "qwen", "zai"}
 	if len(list) != len(want) {
@@ -59,7 +62,6 @@ func TestProviderPluginsAreTheFive(t *testing.T) {
 // They never share a name, port, env prefix, key variable, key file, state root, display name or
 // agent.
 func TestProviderPluginsShareNothing(t *testing.T) {
-	requirePluginDirs(t)
 	list := pluginProviders(t)
 	unique := func(what string, pick func(domain.Provider) []string) {
 		var all []string
@@ -96,7 +98,6 @@ func TestProviderPluginsShareNothing(t *testing.T) {
 // They route only their own models: each catalog id is claimed by its own router's prefixes and
 // no other's.
 func TestProviderPluginsRouteOnlyTheirOwnModels(t *testing.T) {
-	requirePluginDirs(t)
 	list := pluginProviders(t)
 	for _, owner := range list {
 		for _, tier := range []domain.ModelTier{domain.ModelTierMain, domain.ModelTierFlash} {
@@ -132,7 +133,6 @@ var noWindowHint = map[string]string{
 
 // Every catalog model gets a behavesAs window hint, unless its window is far smaller.
 func TestProviderModelsGetAWindowHint(t *testing.T) {
-	requirePluginDirs(t)
 	for _, provider := range pluginProviders(t) {
 		for _, tier := range []domain.ModelTier{domain.ModelTierMain, domain.ModelTierFlash} {
 			ref := provider.Catalog[tier]
@@ -161,7 +161,6 @@ var unpublishedOutputCap = map[string]string{
 
 // Every catalog model gets an output cap, or the documented exemption.
 func TestProviderModelsGetAnOutputCap(t *testing.T) {
-	requirePluginDirs(t)
 	for _, provider := range pluginProviders(t) {
 		for _, tier := range []domain.ModelTier{domain.ModelTierMain, domain.ModelTierFlash} {
 			ref := provider.Catalog[tier]
@@ -220,7 +219,6 @@ func providerSheet(t *testing.T, provider domain.Provider) *Offering {
 
 // No plugin calls the flash tier cheaper where the price sheet prices it above the main model.
 func TestProviderPluginsNeverCallFlashCheaperUnpriced(t *testing.T) {
-	requirePluginDirs(t)
 	cheaperWord := regexp.MustCompile(`(?i)\bcheaper\b`)
 	for _, provider := range pluginProviders(t) {
 		offering := providerSheet(t, provider)
