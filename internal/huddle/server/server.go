@@ -481,6 +481,15 @@ func Serve(ctx context.Context, o Options) error {
 	if o.Host == "" {
 		o.Host = "127.0.0.1"
 	}
+	// The full edition: this process hosts huddle-router too, unless a router-only daemon
+	// holds the router lock — one line says so and the hub serves alone. Like the radar tab, a
+	// caller that names no environment (a test with bare Options) hosts none: the router would
+	// not know where its files live.
+	if len(o.Environ) > 0 {
+		routerCtx, stopRouter := context.WithCancel(ctx)
+		defer stopRouter()
+		go hostHuddleRouter(routerCtx, o)
+	}
 	now := o.Now
 	if now == nil {
 		now = time.Now

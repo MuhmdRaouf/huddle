@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
@@ -61,12 +62,19 @@ type MultiOptions struct {
 // Multi is the one router serving every provider. CreateMulti builds it; listen on the server
 // (127.0.0.1) after.
 type Multi struct {
-	lanes     []*routerWorker // provider lanes, in Lanes order
-	anthropic *routerWorker   // the lane for every model no provider claims
+	// o is what the router was built with: Reload builds fresh lanes with the same plugs.
+	o MultiOptions
+	// lanes is the immutable set of provider lanes in force; Reload swaps it, and every
+	// request reads it once.
+	lanes     atomic.Pointer[multiLanes]
+	anthropic *routerWorker // the lane for every model no provider claims
 	proxy     *TLSProxy
 	gateway   http.Handler // serves GatewayPrefix, or nil
 	limit     int64
 }
+
+// multiLanes is one immutable set of provider lanes, in Lanes order.
+type multiLanes struct{ lanes []*routerWorker }
 
 // CreateMulti builds the multi router over the lanes given.
 func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
@@ -82,22 +90,8 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 	if note == nil {
 		note = func(string) {}
 	}
-	m := &Multi{limit: limit, gateway: opts.Gateway}
-	for _, lane := range opts.Lanes {
-		laneOpts := lane
-		laneOpts.Port = 0
-		laneOpts.Token = ""
-		laneOpts.Peers = nil
-		laneOpts.Anthropic = opts.Anthropic
-		laneOpts.Env = opts.Env
-		if laneOpts.Log == nil {
-			laneOpts.Log = opts.Log
-		}
-		if laneOpts.Events == nil {
-			laneOpts.Events = opts.Events
-		}
-		m.lanes = append(m.lanes, newRouterWorker(laneOpts, nil))
-	}
+	m := &Multi{o: opts, limit: limit, gateway: opts.Gateway}
+	m.lanes.Store(&multiLanes{lanes: m.buildLanes(opts.Lanes)})
 	// The Anthropic lane claims nothing, so its requests always take the Anthropic route, and it
 	// never reads a key (there is none to read).
 	m.anthropic = newRouterWorker(RouterOptions{
@@ -158,18 +152,48 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 
 // Providers is the names of the lanes the router serves, in the order they were given.
 func (m *Multi) Providers() []string {
-	names := make([]string, 0, len(m.lanes))
-	for _, lane := range m.lanes {
+	names := make([]string, 0, len(m.lanes.Load().lanes))
+	for _, lane := range m.lanes.Load().lanes {
 		names = append(names, lane.provider.Name)
 	}
 	return names
+}
+
+// Reload swaps in a fresh set of provider lanes, built with the router's own plugs: a request
+// already routed keeps its lane, and the next one picks from the new set.
+func (m *Multi) Reload(lanes []RouterOptions) {
+	m.lanes.Store(&multiLanes{lanes: m.buildLanes(lanes)})
+}
+
+// buildLanes builds the workers over the lanes given, the way CreateMulti first did: the
+// multi-level plugs (Anthropic, environment, log, events) are the router's, and everything the
+// multi router does not serve a lane with is dropped.
+func (m *Multi) buildLanes(lanes []RouterOptions) []*routerWorker {
+	built := make([]*routerWorker, 0, len(lanes))
+	for _, lane := range lanes {
+		laneOpts := lane
+		laneOpts.Port = 0
+		laneOpts.Token = ""
+		laneOpts.Peers = nil
+		laneOpts.Anthropic = m.o.Anthropic
+		laneOpts.Env = m.o.Env
+		if laneOpts.Log == nil {
+			laneOpts.Log = m.o.Log
+		}
+		if laneOpts.Events == nil {
+			laneOpts.Events = m.o.Events
+		}
+		built = append(built, newRouterWorker(laneOpts, nil))
+	}
+	return built
 }
 
 // laneFor is the lane a model goes to: the one claiming the id exactly, else the one with the
 // longest matching prefix, else the Anthropic lane.
 func (m *Multi) laneFor(model string) *routerWorker {
 	if model != "" {
-		for _, lane := range m.lanes {
+		lanes := m.lanes.Load().lanes
+		for _, lane := range lanes {
 			for _, id := range lane.claim.IDs {
 				if model == id {
 					return lane
@@ -177,7 +201,7 @@ func (m *Multi) laneFor(model string) *routerWorker {
 			}
 		}
 		best, bestLength := (*routerWorker)(nil), 0
-		for _, lane := range m.lanes {
+		for _, lane := range lanes {
 			for _, prefix := range lane.claim.Prefixes {
 				if strings.HasPrefix(model, prefix) && len(prefix) > bestLength {
 					best, bestLength = lane, len(prefix)

@@ -1,0 +1,294 @@
+package routerd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/singleton"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/spool"
+	"github.com/MuhmdRaouf/huddle/internal/core/providers"
+	"github.com/MuhmdRaouf/huddle/internal/core/router"
+	"github.com/MuhmdRaouf/huddle/internal/domain"
+)
+
+const (
+	// portDefault is the canonical port the router serves when none is named.
+	portDefault = 18786
+	// pollDefault is how often providers.json is re-read.
+	pollDefault = 2 * time.Second
+	// anthropicDefault is where Claude models go when no override names another Anthropic.
+	anthropicDefault = "https://api.anthropic.com"
+	// stopBudget is how long a shutdown lets the streams in flight finish.
+	stopBudget = 10 * time.Second
+)
+
+// Options shapes one daemon run.
+type Options struct {
+	Env domain.EnvLookup
+	// Port is the port to serve; 0 takes 18786. Tests pass a free port.
+	Port int
+	// Version is recorded in router.json, for status.
+	Version string
+	// Log receives the daemon's lines; nil takes a rotating log at HomeOf/router.log.
+	Log func(line string)
+	// Poll is how often providers.json is re-read; 0 is two seconds.
+	Poll time.Duration
+	// panicOnce is a test-only hook the handler runs before serving, so a scenario can put a
+	// panic in a lane and prove the recovery.
+	panicOnce func(req *http.Request)
+}
+
+// record is what the running router publishes about itself, for status and the start word.
+type record struct {
+	PID     int    `json:"pid"`
+	Port    int    `json:"port"`
+	Version string `json:"version"`
+	Started string `json:"started"`
+}
+
+// PortOf is the port the router serves: $HUDDLE_ROUTER_PORT, else 18786. The words, the daemon
+// and the hub's own router goroutine all take it from here, so one variable moves every
+// edition off the canonical port.
+func PortOf(env domain.EnvLookup) (int, error) {
+	raw := env["HUDDLE_ROUTER_PORT"]
+	if raw == "" {
+		return portDefault, nil
+	}
+	port, err := strconv.Atoi(raw)
+	if err != nil || port < 1 || port > 65535 {
+		return 0, fmt.Errorf("huddle-router: $HUDDLE_ROUTER_PORT (%q) is not a port", raw)
+	}
+	return port, nil
+}
+
+// Run serves huddle-router until ctx ends. It answers a *singleton.HeldError when another
+// process serves it, and nil after a clean stop. While no provider is enabled the port stays
+// free: the daemon polls for one instead of binding an empty router.
+func Run(ctx context.Context, o Options) error {
+	env := o.Env
+	if env == nil {
+		env = domain.EnvLookup{}
+	}
+	poll := o.Poll
+	if poll == 0 {
+		poll = pollDefault
+	}
+	home := router.HomeOf(env)
+	runDir := filepath.Join(home, "run")
+	log := o.Log
+	if log == nil {
+		log = router.RotatingLog(filepath.Join(home, "router.log"), nil, 0)
+	}
+	// One router per user: whoever holds the lock serves the port. A standing holder is named
+	// at once; a dead one never blocks — the kernel has already dropped its lock. The lock file
+	// itself is never deleted, so a starter racing a releaser never locks a fresh inode.
+	release, err := singleton.Lock(filepath.Join(runDir, "router.lock"), router.MultiName)
+	if err != nil {
+		return err
+	}
+	defer release()
+	enabledFile := router.EnabledFile(env)
+	names, err := router.ReadEnabled(env)
+	if err != nil {
+		log("huddle-router: " + err.Error())
+		names = nil
+	}
+	if len(names) == 0 {
+		log("huddle-router: no provider is enabled yet; waiting for " + enabledFile)
+	}
+	for len(names) == 0 {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(poll):
+		}
+		if names, err = router.ReadEnabled(env); err != nil {
+			log("huddle-router: " + err.Error())
+			names = nil
+		}
+	}
+	port := o.Port
+	if port == 0 {
+		if port, err = PortOf(env); err != nil {
+			return err
+		}
+	}
+	anthropic, err := anthropicOf(env)
+	if err != nil {
+		return err
+	}
+	recordFile := filepath.Join(runDir, "router.json")
+	// The CA is the one directory every provider's setup points NODE_EXTRA_CA_CERTS at: the
+	// state roots' parent, where the shared local CA lives.
+	server, multi := router.CreateMulti(router.MultiOptions{
+		Port:      port,
+		Anthropic: anthropic,
+		Lanes:     lanesOf(env, names, log),
+		CADir:     filepath.Join(filepath.Dir(home), "ca"),
+		Env:       router.ProxyEnv(env),
+		Log:       log,
+		Events:    spool.CreateSpoolWriter(env, log, nil),
+	})
+	server.Handler = guardPanics(server.Handler, log, o.panicOnce)
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		return fmt.Errorf("huddle-router: cannot listen on 127.0.0.1:%d (%s)", port, fsutil.ErrorMessage(err))
+	}
+	served := make(chan error, 1)
+	go func() {
+		defer func() {
+			if reason := recover(); reason != nil {
+				log(fmt.Sprintf("huddle-router: recovered: %v", reason))
+				served <- errors.New("huddle-router: panic in the serve loop")
+			}
+		}()
+		served <- server.Serve(listener)
+	}()
+	if err := writeRecord(ctx, recordFile, port, o.Version); err != nil {
+		// A router without its record still serves; status and start are the ones that miss it.
+		log("huddle-router: " + err.Error())
+	}
+	before := statOf(enabledFile)
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return stop(server, recordFile, log)
+		case err := <-served:
+			_ = os.Remove(recordFile)
+			if errors.Is(err, http.ErrServerClosed) {
+				return nil
+			}
+			return err
+		case <-ticker.C:
+			now := statOf(enabledFile)
+			if now == before {
+				continue
+			}
+			before = now
+			names, err := router.ReadEnabled(env)
+			if err != nil {
+				log("huddle-router: " + err.Error())
+				continue
+			}
+			if len(names) == 0 {
+				// Nothing is enabled: keep serving. Sessions still point at the router until
+				// their settings are restored, and an empty answer would cut them off.
+				continue
+			}
+			lanes := lanesOf(env, names, log)
+			if len(lanes) == 0 {
+				continue
+			}
+			multi.Reload(lanes)
+			log("huddle-router: now serving " + strings.Join(multi.Providers(), ", "))
+		}
+	}
+}
+
+// anthropicOf is the Anthropic the Claude models go to: $HUDDLE_ROUTER_ANTHROPIC_URL, else
+// Anthropic itself.
+func anthropicOf(env domain.EnvLookup) (*url.URL, error) {
+	raw := env["HUDDLE_ROUTER_ANTHROPIC_URL"]
+	if raw == "" {
+		raw = anthropicDefault
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("huddle-router: $HUDDLE_ROUTER_ANTHROPIC_URL: %w", err)
+	}
+	return parsed, nil
+}
+
+// lanesOf builds the lane options for every enabled provider; one whose lane cannot be built (a
+// bad endpoint override) is skipped and logged, never allowed to keep the others off the port.
+func lanesOf(env domain.EnvLookup, names []string, log func(line string)) []router.RouterOptions {
+	lanes := make([]router.RouterOptions, 0, len(names))
+	for _, name := range names {
+		provider, ok := providers.ByName(name)
+		if !ok {
+			log("huddle-router: no provider named " + name)
+			continue
+		}
+		lane, err := router.LaneOf(provider, env, log)
+		if err != nil {
+			log("huddle-router: skipping " + name + ": " + err.Error())
+			continue
+		}
+		lanes = append(lanes, lane)
+	}
+	return lanes
+}
+
+// guardPanics wraps the router's handler: a panic in a lane is answered 502 (an answer whose
+// headers are already out is destroyed) and logged, so one lane's bug never ends the process.
+func guardPanics(next http.Handler, log func(line string), hook func(req *http.Request)) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		defer func() {
+			if reason := recover(); reason != nil {
+				log(fmt.Sprintf("huddle-router: recovered: %v", reason))
+				router.AnthropicError(router.NewResponse(rw), 502, "api_error",
+					router.MultiName+" router: internal error")
+			}
+		}()
+		if hook != nil {
+			hook(req)
+		}
+		next.ServeHTTP(rw, req)
+	})
+}
+
+// stop drains the router with a bounded budget, then takes its record with it. The lock's
+// release runs on Run's defer.
+func stop(server *http.Server, recordFile string, log func(line string)) error {
+	budget, cancel := context.WithTimeout(context.Background(), stopBudget)
+	defer cancel()
+	if err := server.Shutdown(budget); err != nil {
+		log("huddle-router: " + err.Error())
+	}
+	_ = os.Remove(recordFile)
+	return nil
+}
+
+// writeRecord publishes what the running router is: the pid to signal, the port to talk to and
+// when it came up.
+func writeRecord(ctx context.Context, path string, port int, version string) error {
+	text, err := fsutil.MarshalJSON(record{
+		PID:     os.Getpid(),
+		Port:    port,
+		Version: version,
+		Started: time.Now().Format(time.RFC3339),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = fsutil.WriteFileAtomic(ctx, path, text, fsutil.WriteOptions{Mkdir: true})
+	return err
+}
+
+// fingerprint is what a watched file must keep for its reader to skip it: size and mtime. A
+// missing file is one fingerprint like any other, so a file that appears is a change too.
+type fingerprint struct {
+	size  int64
+	modAt time.Time
+	there bool
+}
+
+func statOf(path string) fingerprint {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fingerprint{}
+	}
+	return fingerprint{size: info.Size(), modAt: info.ModTime(), there: true}
+}

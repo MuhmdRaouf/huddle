@@ -226,6 +226,8 @@ var aloneHelpLines = []string{
 	"                           --phone instead prints a QR the phone scans for the same root",
 	"                           (10 minutes, installs nothing here)",
 	"  huddle serve             run the server in the foreground (the entry huddle up spawns)",
+	"  huddle router start      make sure one huddle-router serves every enabled provider; prints its address",
+	"  huddle router status     how the huddle-router daemon is (--json for scripts); exit 6 when it is not running",
 	"  huddle mcp               the stdio MCP bridge a Claude session runs",
 	"  huddle hook <name>       one plugin hook entry: session-start, approve, listen, permit, stop",
 	"  huddle help              this list (also -h)",

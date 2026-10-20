@@ -47,6 +47,9 @@ type RouterOptions struct {
 	// `claude-*` path); "" or an error when there is none. Never logged. The router serves it
 	// through its key cache: one shared lookup at a time, kept until the provider refuses the key.
 	Key func(ctx context.Context) (string, error)
+	// KeyLookup reads the provider's key with its outcome typed: a keystore timeout and a
+	// missing key stay distinct (a 503 and a 400). It takes precedence over Key.
+	KeyLookup func(ctx context.Context) (ports.ProviderKey, *ports.WorkerError)
 	// Log receives one line per request: method, path, model, route, status. Never headers or
 	// bodies.
 	Log func(line string)
@@ -744,9 +747,13 @@ func CreateRouter(opts RouterOptions) *http.Server {
 
 // newRouterWorker builds the lane a router server serves with: the key lookup adapter, the key
 // cache and the request state. keyLookup is the worker's own key lookup (the key's source
-// included, which its IPC answers name); nil adapts opts.Key.
+// included, which its IPC answers name); nil takes opts.KeyLookup when it is set, else adapts
+// opts.Key.
 func newRouterWorker(opts RouterOptions, keyLookup func(ctx context.Context) (ports.ProviderKey, *ports.WorkerError)) *routerWorker {
 	lookup := keyLookup
+	if lookup == nil {
+		lookup = opts.KeyLookup
+	}
 	if lookup == nil {
 		lookup = func(ctx context.Context) (ports.ProviderKey, *ports.WorkerError) {
 			// The plug's error and empty key are both "no key": a request is answered by the

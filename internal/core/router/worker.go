@@ -12,10 +12,10 @@ package router
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"runtime"
@@ -27,7 +27,6 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
-	"github.com/MuhmdRaouf/huddle/internal/adapters/spool"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
@@ -73,9 +72,6 @@ func RunWorker(options WorkerOptions, input io.Reader, send func(line string), e
 		exit = os.Exit
 	}
 	env := options.Env
-	// Resolved once: the model ids this worker claims and the endpoint both follow the env
-	// overrides.
-	provider := domain.ResolveProvider(options.Provider, env)
 	crash := InstallCrashHandlers(RoleWorker, options.StateRoot, options.Version, nil, nil)
 	defer func() {
 		if reason := recover(); reason != nil {
@@ -83,45 +79,34 @@ func RunWorker(options WorkerOptions, input io.Reader, send func(line string), e
 		}
 	}()
 	log := RotatingLog(options.LogFile, nil, 0)
-	anthropicURL := envOrDefault(env, domain.RouterEnvName(provider, domain.RouterEnvKnobAnthropicURL), "https://api.anthropic.com")
-	anthropic, err := url.Parse(anthropicURL)
+	lane, err := LaneOf(options.Provider, env, log)
 	if err != nil {
-		log("worker: bad anthropic url: " + err.Error())
-		exit(1)
-		return
-	}
-	// The router follows the same endpoint override as the jobs: `${envPrefix}_BASE_URL`, plus
-	// `${envPrefix}_ROUTER_URL` for the router alone.
-	providerURL, err := url.Parse(envOrDefault(env, domain.RouterEnvName(provider, domain.RouterEnvKnobURL), provider.BaseURL))
-	if err != nil {
-		log("worker: bad provider url: " + err.Error())
+		var bad *BadURL
+		if errors.As(err, &bad) {
+			if bad.Name == domain.RouterEnvName(options.Provider, domain.RouterEnvKnobAnthropicURL) {
+				log("worker: bad anthropic url: " + bad.Err.Error())
+			} else {
+				log("worker: bad provider url: " + bad.Err.Error())
+			}
+		} else {
+			log("worker: " + err.Error())
+		}
 		exit(1)
 		return
 	}
 	heartbeats := &workerSender{send: send}
-	server, core := createRouter(RouterOptions{
-		Provider:    provider,
-		Port:        0,
-		Anthropic:   anthropic,
-		ProviderURL: providerURL,
-		Log:         log,
-		Peers:       CreatePeerLookup(env, provider.Name, nil),
-		Events:      spool.CreateSpoolWriter(env, log, nil),
-		Budget:      CreateBudgetGate(provider.Name, env, nil, 0),
-		Env:         ProxyEnv(env),
-		Token:       options.Token,
-		OnUpstream: func(req *http.Request) {
-			if id := req.Header.Get(RequestID); id != "" {
-				heartbeats.line(struct {
-					T  string `json:"t"`
-					Id string `json:"id"`
-				}{T: "ack", Id: id})
-			}
-		},
-		IdleMs: options.IdleMs,
-	}, func(ctx context.Context) (ports.ProviderKey, *ports.WorkerError) {
-		return workerKey(ctx, provider, env)
-	})
+	lane.Peers = CreatePeerLookup(env, lane.Provider.Name, nil)
+	lane.Token = options.Token
+	lane.OnUpstream = func(req *http.Request) {
+		if id := req.Header.Get(RequestID); id != "" {
+			heartbeats.line(struct {
+				T  string `json:"t"`
+				Id string `json:"id"`
+			}{T: "ack", Id: id})
+		}
+	}
+	lane.IdleMs = options.IdleMs
+	server, core := createRouter(lane, nil)
 	// The first lookup starts while nobody is waiting on it, so the first request normally finds
 	// the key ready.
 	core.keys.warm()

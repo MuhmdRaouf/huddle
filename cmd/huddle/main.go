@@ -74,6 +74,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 				Env:    envOf(os.Environ()),
 				Signal: foregroundSignals(),
 			})
+		case "router":
+			// The huddle-router daemon's words: ahead of the CLI, so a session's identity never
+			// turns a daemon command into a channel operation.
+			return routerWord(context.Background(), args[1:], stdout, stderr)
 		}
 	}
 	command, rest := splitCommand(args)
