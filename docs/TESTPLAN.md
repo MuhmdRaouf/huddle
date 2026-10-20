@@ -7,7 +7,12 @@ Run everything from the repo root: `go run ./scripts/tmpguard -count=1 ./...`, `
 
 | Feature | Proof | What it asserts |
 | --- | --- | --- |
-| Install from the launcher | `cmd/huddle/fresh_install_test.go:TestFreshInstall`; `cmd/huddle/hub_e2e_test.go:TestE2EFreshInstallHubSatellitePWA/install` | The launcher downloads the binary from a release server, checks it against its pinned digest, refuses a tampered asset, and runs it on a PATH with no JS runtime. |
+| Install from the launcher | `cmd/huddle/fresh_install_test.go:TestFreshInstall`; `cmd/huddle/hub_e2e_test.go:TestE2EFreshInstallHubSatellitePWA/install`; `cmd/huddle/dev_channel_e2e_test.go:TestDevChannelE2E` | The launcher downloads the binary from a release server, checks it against its pinned digest, refuses a tampered asset, and runs it on a PATH with no JS runtime; with no release published it builds the checkout's own commit once with Go, keeps three builds, and hooks start the build detached. |
+| A provider plugin from a fresh machine | `internal/plugins/fresh_install_e2e_test.go:TestFreshInstall` | On the committed launcher, `/<p>:setup` is the only step: the key page saves a key the running setup picks up, the provider's models route through huddle-router while `claude-*` reaches Anthropic untouched, a SIGKILLed daemon comes back at the next session start, and `setup --remove` restores `settings.json` byte for byte. |
+| One router, one lane per provider | `cmd/huddle/router_e2e_test.go:TestE2EHuddleRouterWords`; `cmd/huddle/router_settings_e2e_test.go:TestRouterSettingsE2E` | `huddle router serve|start|status` behave as said, the second start steps aside with exit 0, and setup writes the proxy keys, the CA and `/model` so the provider's models route and the user's own proxy is never touched. |
+| The socket handover | `cmd/huddle/handover_e2e_test.go:TestE2EHandoverAStartFromANewBinaryKeepsTheRouterPortOpen`, `TestE2EHandoverTheFullEditionTakesAStandaloneRouterOver` | A start from a new binary takes the listening socket over without the port closing, the old process drains; the full edition takes a standalone router over the same way. |
+| The session watchdog | `cmd/huddle/watchdog_e2e_test.go:TestRouterWatchdogE2E` | A session's `huddle mcp` restarts a daemon that stays silent past 5 s, replaces a hung holder, and stays out of a program of the user's own. |
+| The providers' hook parts | `cmd/huddle/hooks_providers_e2e_test.go:TestHooksProvidersE2E` | One merged hook process runs the providers' session-start work (re-apply, the jobs line, the removed-plugin cleanup) and the subagent-stop usage line. |
 | First session starts the server | `cmd/huddle/first_session_e2e_test.go:TestE2EFirstSessionStartsHuddle` | A fresh install's SessionStart hook, with no channel and no `HUDDLE_URL`, starts the server through the launcher and it answers `/health`. |
 | Hub on a local name over TLS | `cmd/huddle/fulltest_e2e_test.go:TestFullScenarioOnALocalDevName` (steps `hub_role_and_import`, `hub_up`) | A hub named `hub.example.invalid` serves its shell over TLS, verified against the CA that signed the pair, with no hosts-file edit. |
 | Local CA and `huddle trust` | `internal/pki/pki_test.go:TestTheRootIsCreatedOnceAndReused`; `internal/huddle/cli/trust_test.go:TestTrustInstallsTheRootAndMarksItAsHuddles`; `web/e2e/fulltest.spec.ts` "a hub home with no import serves a leaf its own root signs" | The root is minted once and kept 0600, installed into the store once and marked as huddle's; a home with no import serves a leaf only its own root vouches for. |
@@ -49,7 +54,9 @@ messages against the channel's own event list. An opencode leg follows: the scri
 `opencode.json` whose provider points at the router, runs `huddle harness install opencode`, joins the agent as
 session `oc` with a fresh invite from proj-a, has it `ping` the Claude session and read the `pong` back through
 the huddle MCP tools, asserts both events, and checks `huddle harness remove opencode` restores the temp config
-byte for byte. It needs `claude`, `opencode` and the zai router on 127.0.0.1:18787; with `opencode` off the
+byte for byte. It needs `claude`, `opencode` and a router already serving the zai models: the script probes
+`$HUDDLE_LIVE_E2E_ROUTER` (the zai plugin router's loopback address when the variable is unset) for the zai
+router's health line, and stops at that preflight when no router answers; with `opencode` off the
 PATH the leg prints a `skip:` line and the claude steps still run. Every run gets its own temporary `HOME`,
 `CLAUDE_CONFIG_DIR` and `XDG_*` directories, so the real `~/.claude`, `~/.config/huddle` and `~/.agents` are
 never touched. `KEEP=1` keeps the temp dir and its logs. It is not part of CI.

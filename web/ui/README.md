@@ -1,51 +1,43 @@
-![Shared UI: Preact modules for Huddle and Radar](../../assets/ui-banner.svg)
-
 # Shared UI
 
-**Reusable Preact modules and styles for the Huddle and Radar dashboards.** This private package is compiled
-into each dashboard. It is not installed by plugin users.
+**Reusable Preact modules and styles for the huddle dashboards.** This package (`@huddle/ui`) is compiled into
+each dashboard in `web/` — `hub`, `radar` and `kanban`. It is private and never installed by plugin users.
 
-| Area                    | What lives here                                              |
-| ----------------------- | ------------------------------------------------------------ |
-| Navigation and overlays | Tabs, menus, dialogs, slide-overs and toasts.                |
-| Data display            | Charts, counters, code and Markdown rendering.               |
-| Shared behavior         | Time labels, fuzzy matching and model colors.                |
-| Visual styles           | Theme styles and the IBM Plex font dependencies.             |
-| Tests                   | Component behavior, keyboard interaction and shared helpers. |
+| Area | What lives here |
+| --- | --- |
+| Navigation and overlays | Tabs, menus, dialogs, slide-overs and toasts. |
+| Data display | Charts, counters, code and Markdown rendering. |
+| Shared behavior | Time labels, fuzzy matching and model colors. |
+| Visual styles | Theme styles and the IBM Plex font dependencies. |
+| Tests | Component behavior, keyboard interaction and shared helpers. |
 
-## Install before building a dashboard
+## Build the dashboards
 
-From this directory:
+From the repository root:
 
 ```sh
-bun install --frozen-lockfile
-bun run check
+bun install          # once per clone; one lockfile over web/*
+bun run check        # every web package: vp check, tests with coverage, no it.todo left
+bun run build        # rebuild every page into internal/*/web/dist (committed)
 ```
 
-Huddle and Radar import these sources and fonts directly. Install this package before either consumer's build
-or test suite. Each consumer also has its own locked dependencies.
+Consumers import these sources and fonts directly; each also has its own locked dependencies.
 
 ## Make a shared change
 
 1. Change the shared module and its behavior tests.
-2. Run `bun run check` here.
-3. Rebuild both dashboards from the repository root:
-
-   ```sh
-   (cd plugins/huddle && bun run build)
-   (cd plugins/radar && bun run build)
-   ```
-
-4. Run `npm run check:all` from the repository root.
-5. Include both dashboards' changed bundles with the source change.
+2. Run `bun run check` here (or from the root, which runs every web package).
+3. Rebuild every dashboard from the repository root with `bun run build`.
+4. Include the changed bundles with the source change: the built pages are committed.
 
 ## Checks
 
-| Task               | Command from this directory |
-| ------------------ | --------------------------- |
-| Full package check | `bun run check`             |
-| Behavior tests     | `bun run test`              |
-| Coverage           | `bun run coverage`          |
-| Format             | `bun run format`            |
+| Task | Command from this directory |
+| --- | --- |
+| Full package check | `bun run check` |
+| Behavior tests | `bun run test` |
+| Coverage | `bun run coverage` |
+| Format | `bun run format` |
 
-Consumer READMEs: [Huddle](../../plugins/huddle/README.md) · [Radar](../../plugins/radar/README.md).
+The consumers' pages: [hub](../hub) · [radar](../radar) · [kanban](../kanban). The repository README and
+`AGENTS.md` at the repository root have the product and the development rules.

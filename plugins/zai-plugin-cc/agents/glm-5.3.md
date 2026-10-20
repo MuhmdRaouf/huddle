@@ -1,7 +1,7 @@
 ---
 name: glm-5.3
 description: |-
-  Use this agent for work you would give a Sonnet subagent, run on Z.ai GLM: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on glm-5.3 once /zai:setup has pointed Claude Code at the zai router, and on Sonnet before that or while the router is down. Give it one self-contained task with exact paths and proving commands. Not for design, unclear requirements, unknown causes or security code. Faster tier: zai:glm-5.3-flash.
+  Use this agent for work you would give a Sonnet subagent, run on Z.ai GLM: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on glm-5.3 once /zai:setup has pointed Claude Code at huddle-router, and on Sonnet before that. Give it one self-contained task with exact paths and proving commands. Not for design, unclear requirements, unknown causes or security code. Faster tier: zai:glm-5.3-flash.
 
   <example>
   user: "Rename getUserById to findUser everywhere, tests too."

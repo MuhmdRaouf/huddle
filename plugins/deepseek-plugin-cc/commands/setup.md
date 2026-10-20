@@ -23,7 +23,7 @@ each with `binary` (found, or why not) and `watcher` (null unless the tool is en
 
 One question, "What should DeepSeek set up?", header "Setup", single choice, these two options in this order:
 
-1. `Built-in only (Claude Code agents and /model)`: the deepseek router, DeepSeek V4 Pro and DeepSeek Flash in `/model`, and
+1. `Built-in only (Claude Code agents and /model)`: huddle-router, DeepSeek V4 Pro and DeepSeek Flash in `/model`, and
    the `deepseek:deepseek-v4-pro` and `deepseek:deepseek-flash` agents on them.
 2. `Built-in plus other tools (omp, opencode, pi, zcode)`: the same, then DeepSeek jobs also run on the tools picked next.
 
@@ -55,18 +55,19 @@ give the fix for each failing line. Write what you add yourself as a short title
   Claude Code starts from.
 - `claude` binary missing or too old: install or update Claude Code so `claude` is on `PATH`.
 - ping failed: the line says why (an API error such as 401 means the key is wrong or revoked).
-- exit 127 with "needs Bun 1.3 or newer (or Node 22 or newer)": install Bun (the default) or Node so it is on `PATH`.
+- exit 127 with "no huddle release is published; install Go to build it from the marketplace checkout": install
+  Go, so the launcher can build the binary of the checkout's own commit.
 
-The `runtime` line names what the plugin runs on: Bun ≥1.3 (the default, used whenever `bun` is on `PATH` or in
-`~/.bun/bin`) or Node ≥22 (the fallback). The deepseek router and its jobs run on the same one.
+The `runtime` line names the binary the plugin's bundles run on, with its version and path. The router and its
+jobs run on the same one.
 
 Plain `setup` needs no flags. What it does:
 
 - Without a key it opens the key page described above and waits for it; otherwise it asks nothing.
 - It checks the key with one minimal request to DeepSeek.
-- It starts the deepseek router: a small background process the plugin starts and repairs itself. Each session's huddle
-  MCP server checks huddle-router every 2 s and restarts it after 5 s of silence. The huddle plugin's session hook
-  re-applies the setup after a plugin update.
+- It records deepseek with huddle-router and makes sure the daemon is up: the one router for every provider plugin, on
+  127.0.0.1:18786. Each session's huddle MCP server checks huddle-router every 2 s and restarts it after 5 s of
+  silence. The huddle plugin's session hook re-applies the setup after a plugin update.
 - It adds DeepSeek V4 Pro and DeepSeek Flash to `/model` next to Sonnet and Opus, and points Claude Code at the router.
 - Picking one of them in `/model` sends those requests through the router to DeepSeek. Every `claude-*` model still goes
   to Anthropic untouched, also while the router restarts or updates itself.
@@ -76,7 +77,7 @@ The report leads with the outcome:
 - `ready`: when this run changed something it ends with the restart line. Show it, because the current session keeps
   talking to Anthropic until Claude Code restarts, and DeepSeek V4 Pro in `/model` and the deepseek agents work from the next
   session.
-- `not routed`: a proxy or base URL in `settings.json` is the user's own, so nothing reaches the deepseek router. Give
+- `not routed`: a proxy or base URL in `settings.json` is the user's own, so nothing reaches huddle-router. Give
   the fix the line names.
 
 If Claude ever can't connect: when part of the router fails, it passes Claude's requests straight to Anthropic, and
@@ -85,14 +86,14 @@ the huddle plugin's session hook takes the proxy keys (or the base URL) off a ro
 `~/.claude/settings.json.deepseek-backup`) always restores direct Anthropic access.
 
 Uninstalling the plugin: run `/deepseek:remove`, then `/plugin uninstall deepseek-plugin-cc@muhmdraouf`. Uninstalled first, the
-router cleans up after itself: it takes its entries out of `settings.json`, puts the agents' models back, retires
-while the sessions that still use it are open, and removes its own files once they close.
+huddle plugin's session hook notices the plugin is gone: it takes its entries out of `settings.json`, puts the
+agents' models back, and huddle-router stops routing this provider at its next reload.
 
 `/deepseek:remove` (`setup --remove`) undoes all of it: the agents go back to the models they had before setup (as the ledger
 recorded them), the `/model` entries and the proxy keys go away (or the base URL, when a proxy of the user's own
-kept base-URL mode), and the router retires: sessions already open keep
-working through it until they close. The huddle plugin's session hook re-applies the setup after a
-plugin update overwrites it, falling back to Sonnet when the router is down or the key is gone.
+kept base-URL mode), and huddle-router stops routing this provider at once (the daemon keeps
+running for the providers still set up). The huddle plugin's session hook re-applies the setup after a
+plugin update overwrites it.
 
 If it exits 6, give the fixes above and stop here: set up no tool and run nothing else.
 
@@ -121,8 +122,8 @@ and go on with the next tool:
 When it is ready, ask — always, even when a watcher was chosen before — one question, "Who should watch `<tool>` runs?",
 header "Watcher", single choice, these two options in this order:
 
-1. `DeepSeek V4 Pro (DeepSeek)`: the `deepseek:<tool>` agent that hands work to the tool runs on DeepSeek V4 Pro through the deepseek
-   router.
+1. `DeepSeek V4 Pro (DeepSeek)`: the `deepseek:<tool>` agent that hands work to the tool runs on DeepSeek V4 Pro through
+   huddle-router.
 2. `Claude Sonnet`: the `deepseek:<tool>` agent runs on Sonnet.
 
 Mark the current choice by adding `(current)` to its label: the first option when the report's `engine.watcher` is

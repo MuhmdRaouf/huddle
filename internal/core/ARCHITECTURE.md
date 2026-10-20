@@ -1,7 +1,8 @@
 # The job engine: architecture
 
-This is the engine every provider plugin shares: one static Go binary, `plugin-core`, built from this package and
-downloaded by `/<p>:setup`. It is private, never published as a library.
+This is the engine every provider plugin shares. It is one part of the `huddle` binary (built from `cmd/huddle`,
+with `internal/core` at its heart and `internal/domain` beside it); the plugins run it through their launcher as
+`huddle provider <p> <entry>`. The engine is private, never published as a library.
 
 - The examples use the zai plugin (GLM on Z.ai).
 - kimi, deepseek, minimax and qwen are the same engine with their own provider data, key and model ids.
@@ -239,12 +240,12 @@ One Z.ai account budget is shared by every job (and anything else using the key)
 
 ## Budgets and router health (with Radar)
 
-Radar — the observability dashboard, part of [huddle](https://github.com/MuhmdRaouf/huddle) — writes the budget
+Radar — the observability dashboard, part of huddle — writes the budget
 file and drains the spool. Without it nothing changes.
 
-Budgets (`internal/domain/budget.go`, `internal/router/budget.go`):
+Budgets (`internal/domain/budget.go`, `internal/core/router/budget.go`):
 
-- The router reads `<radar home>/budget-status.json` (`$RADAR_HOME`, else `~/.agents/radar`) at
+- huddle-router reads `<radar home>/budget-status.json` (`$RADAR_HOME`, else `~/.agents/radar`) at
   most every 5 s.
 - While it lists `provider:<p>` or `total` as stopped, the router answers the provider's models with the key refusal's
   non-retryable 400 ("`<Display>` budget reached for this `<period>`: …"). The period comes from `budgets.json`.
@@ -253,15 +254,14 @@ Budgets (`internal/domain/budget.go`, `internal/router/budget.go`):
 
 Router health:
 
-- Routers append health lines to the spool (`internal/adapters/spool`):
+- huddle-router appends health lines to the spool (`internal/adapters/spool`):
   `{"kind":"router.event","plugin","event","reason","model","ts"}`, epoch ms.
 - The events:
-  - `fallback`: every request the front or the emergency passthrough served itself;
+  - `fallback`: every request the router served itself, the provider unreachable;
   - `refusal`: no key, a refused key, no balance, a stopped budget;
   - `rate_limited`: a provider 429;
   - `budget_stop`: a scope newly turning the models off;
-  - `restart`: a worker the front replaced, or the router retiring after its plugin was removed (the last line a
-    retired router writes).
+  - `restart`: a worker the router replaced.
 - Metadata only: never the key, a header or a body.
 - `/<p>:usage` counts the last 24 hours of them.
 
@@ -274,12 +274,13 @@ The model advisor (`internal/app/advisor.go`) in `/<p>:usage`:
 
 ## Execution model
 
-No daemon. Every job is driven by a detached `plugin-core <p> cli drive <id>` process: the binary itself, in its own
+The job engine keeps no long-running process of its own (huddle-router is the daemon, and it routes; it drives
+nothing). Every job is driven by a detached `huddle provider <p> cli drive <id>` process: the binary itself, in its own
 process group.
 
 - `<p> run --bg`, `<p> batch` and `<p> run --wait` all spawn one.
 - The start is a launcher dance with no third process: the binary re-runs itself as
-  `plugin-core --orphan-launch <log> <command> …`; that short-lived launcher spawns the driver detached (own session
+  `huddle --orphan-launch <log> <command> …`; that short-lived launcher spawns the driver detached (own session
   and process group, the driver as its leader), prints its pid and exits.
 - The driver is reparented to PID 1, so no tree-kill of the caller reaches it or its worker (Claude Code cleaning up
   a background shell: SIGTERM, then SIGKILL, to every descendant).
@@ -303,42 +304,44 @@ The dispatcher subagent:
 
 ## Code structure (functional core, imperative shell)
 
-One dispatch, `internal/core/entry`, answers `plugin-core <provider> <cli|router|passthrough|ensure>`: `huddle provider
-<p> <entry>` reaches it, and the engine's detached children re-run it as the bare `<p> <entry> ...` and
+One dispatch, `internal/core/entry`, answers `huddle provider <provider> <cli|router|passthrough|ensure>`; the
+engine's detached children re-run it as the bare `<p> <entry> ...` and
 `--orphan-launch ...` argv. The engine needs no runtime.
 
 ```text
-internal/core/
-  entry/                  the entries: provider + entry dispatch, --version, the --orphan-launch plumbing
-  internal/domain/        pure logic: brief schema/defaults/duration, job + lifecycle state machine, verdicts, prompt
+internal/domain/          pure logic: brief schema/defaults/duration, job + lifecycle state machine, verdicts, prompt
                           building (footer, failures, summary, fences), limiter (AIMD), usage, worker events, stream
                           parsing, report schemas, report-capture, state-layout (every state file's name),
                           provider-balance, budget (the Radar budget stop), route-events (the spool's line shapes),
-                          Provider + model catalog, engine ids
-  internal/ports/         interfaces: Worker (spec, run, caps), Git, GateRunner, JobStore, JobFiles, Semaphore,
+                          Provider + model catalog, engine ids, the Claude Code settings plans
+internal/core/
+  entry/                  the entries: provider + entry dispatch, --version, the --orphan-launch plumbing
+  ports/                  interfaces: Worker (spec, run, caps), Git, GateRunner, JobStore, JobFiles, Semaphore,
                           LimiterStore, EngineConfigStore, RouteSpool, Clock, Ids, ProcessControl, Output;
                           keys (ProviderKey, KeyStore, KeyVerdict)
-  internal/adapters/      thin I/O: the claude worker, engines/ (omprpc, opencode, pirpc, zcode, shared), the
+  adapters/               thin I/O: the claude worker, engines/ (omprpc, opencode, pirpc, zcode, shared), the
                           settings.json merge, keystore/ (macos, linux, file), key lookup, env allowlists,
                           git (cli, land, apply, snapshot), shell gates, the file store with locks and slots, fsutil
                           (the one atomic write and JSON read), state-root, process/ (streamed workers, process
                           groups, the orphan launcher, detached starts, port probes), spool/ (route and health
                           events)
-  internal/app/           use cases over ports: submit, drive (run → verify → auto-fix), attempts, decide and
+  app/                    use cases over ports: submit, drive (run → verify → auto-fix), attempts, decide and
                           decide-land (accept/return/discard), batch, queries (board, usage), activity, advisor,
                           follow (wait), cleanup, engine select and reap
-  internal/authpage/      the one-time local page where the key is entered; it saves a key the provider accepts, and
+  authpage/               the one-time local page where the key is entered; it saves a key the provider accepts, and
                           one it knows but holds back (KeyVerdict `limited`: a 429 or 402) with a warning naming the
                           top-up page
-  internal/router/        the model router: front (owns the port), worker (the provider logic), emergency
-                          passthrough, ensure, process (start, update, hand over), supervision, uninstall
-  internal/render/        pure text renderers: board, job, review packet, usage, the price table
-  internal/cli/           argument parsing, one file per command (setup, setup-key, auth-serve, engine-setup, run,
+  router/                 the model router: multi.go is huddle-router (one lane per enabled provider plus the
+                          Anthropic lane, matched by catalog id then the longest prefix), budget.go the gate,
+                          emergency.go the passthrough, process.go the worker environment; internal/routerd holds
+                          the daemon around it (start, watchdog, handover)
+  render/                 pure text renderers: board, job, review packet, usage, the price table
+  cli/                    argument parsing, one file per command (setup, setup-key, auth-serve, engine-setup, run,
                           batch, decide, queries, wait, brief, mode), exit codes, wire.go (the composition root
                           shared by all plugins)
-  internal/providers/     the five providers as data (one file each), from the plugins' test/provider.ts
-  internal/archtest/      the allowed import direction between the layers above
-  internal/testkit/       fakes, builders, a fake claude, the reference provider (what the tests share)
+  providers/              the five providers as data (one file each)
+  archtest/               the allowed import direction between the layers above
+  testkit/                fakes, builders, a fake claude, the reference provider (what the tests share)
   testdata/               fixtures: captured stream events, goldens, the fake claude
 ```
 
@@ -356,24 +359,24 @@ Rules:
   adapters; only cli imports everything; `entry` imports cli, router, providers and adapters (SetVersion).
 - Third-party modules are fixed: `gopkg.in/yaml.v3`, `doublestar/v4`, `x/sys`, `brotli` (upstream `br` answers).
   Tests use the standard `testing` package only.
-- The provider plugins are hand-written copies of one another, kept in step by `npm run check:siblings`.
+- The provider plugins are hand-written copies of one another, kept in step by the sibling guard
+  (`internal/plugins`: `go test ./internal/plugins/ -run TestSiblings`).
 
 ## Quality gates
 
-In `internal/core`:
+From the repository root:
 
 - `gofmt -l .` prints nothing;
 - `go build ./...` and `go vet ./...` (production code never leans on a test-only helper);
-- `go test -race -coverprofile=coverage.out -covermode=atomic ./...`, judged by `go run ./scripts/covergate`
-  (domain packages ≥95% statements, everything else ≥90%).
-
-From the repository root:
-
-- `npm run check` also runs `check:siblings` and every npm workspace's check; the plugins' shared suites build this
-  binary with `scripts/host-build.sh` and drive it.
-- CI runs the suite again on macOS, with a linux/amd64 rebuild whose sha256 must match the ubuntu build's, and a
-  real Keychain round trip (`CORE_KEYCHAIN_ROUNDTRIP=1`, a throwaway item, removed again);
-  see the CI section of `plugins.md`.
+- `go run ./scripts/tmpguard -count=1 ./...` runs the suite (CI adds `-race`, a coverage gate judged by
+  `go run ./scripts/covergate` — domain packages ≥95% statements, everything else ≥90% — and shards it);
+- `go test ./internal/plugins/` runs the plugins' shared suites: the plugin surface every provider plugin
+  offers, the launcher e2e, the fresh-install e2e and the sibling guard, all on the committed `dist/run` and the
+  built binary;
+- `mise run check` is every gate CI runs.
+- CI runs the suite again on macOS in the same two shards, with a linux/amd64 rebuild whose sha256 must match
+  the ubuntu build's. The real Keychain round trip stays opt-in (`CORE_KEYCHAIN_ROUNDTRIP=1`, a throwaway item,
+  removed again); CI never sets it.
 
 ## Exit codes
 

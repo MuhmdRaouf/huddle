@@ -41,8 +41,10 @@
    /plugin install huddle@huddle
    ```
 
-2. **Nothing else to install.** The launcher downloads one static binary (macOS and Linux, amd64 and arm64) from the
-   GitHub release and checks its SHA-256 against the committed manifest. No JS runtime is needed on the PATH.
+2. **Nothing else to install.** The launcher gets one static binary (macOS and Linux, amd64 and arm64) onto the
+   machine: while no release is published it builds the marketplace checkout's own commit once with `go`, and a
+   release download, when one exists, is checked against the committed manifest. No JS runtime is needed on the
+   PATH.
 
 3. **Set it up** from a session in a project that should take part:
 
@@ -64,8 +66,9 @@
 ## Requirements
 
 - Claude Code with plugin support.
-- macOS or Linux, amd64 or arm64. No runtime to install: the launcher downloads the static `huddle` binary and
-  checks its sha256 against the committed manifest.
+- macOS or Linux, amd64 or arm64. No runtime to install: the launcher builds the static `huddle` binary of the
+  checkout's own commit with `go` while no release is published (a release download is checked against the
+  committed manifest when one exists). Without Go it names the install-Go line and stops; a hook never blocks.
 
 ## Commands
 
@@ -95,12 +98,16 @@
   escalation after 5 minutes open; its prompt holds 10 minutes. Answer in the dashboard, or from your phone with
   a passkey.
 - **Radar.** Every request with its model, latency, input, output and cache tokens and its cost, across twelve views,
-  fed by hooks, transcripts and the routers' spool. Watching spends no tokens.
+  fed by hooks, transcripts and the spool the router appends to. Watching spends no tokens.
 - **Kanban.** One board per repository (`.agents/kanban`): sessions claim cards, the first claim wins, and review and
   testing gates sit on the way to done. Two machines share one board when they share the repository.
 - **In the session.** Each Claude Code event runs one hook process — huddle's, radar's and kanban's parts ride inside
   it — so there is nothing to start by hand. The MCP server `huddle` exposes the operations, the `huddle` and `kanban`
   skills teach the protocol, and the `huddle-worker` agent does one bounded task and shares its findings.
+- **The router.** huddle-router is the daemon at 127.0.0.1:18786 that the provider plugins route through: one lane
+  per enabled provider, `claude-*` to Anthropic untouched, the gateway under `/gateway`. With only a provider set
+  up it runs alone; when the hub starts it moves into the hub's process by handover, and each session's
+  `huddle mcp` restarts it after 5 s of silence.
 
 ## Configuration
 
@@ -160,9 +167,10 @@ routing their model requests through the gateway, serving the hub on a local nam
 
 ## Update
 
-- Run `/plugin marketplace update huddle`, then restart Claude Code. The plugin pins one release; its launcher
-  downloads and verifies that release's binary on first use, so an update is the marketplace refresh and a
-  restart.
+- Run `/plugin marketplace update huddle`, then restart Claude Code. The plugin carries no version: an update is
+  the marketplace refresh and a restart, and the launcher builds the refreshed checkout's own commit once (a
+  release binary is verified against its manifest when one is published), so plugins and binary always come from
+  the same commit.
 
 ## Uninstalling
 

@@ -1,7 +1,7 @@
 # pi RPC fixtures
 
-Recordings of `pi --mode rpc` (pi 1.0.4) traffic, one directory per scenario, replayed by
-[`fake-pi.ts`](../fake-pi.ts) in lockstep with the commands the client sends. They are hand-written
+Recordings of `pi --mode rpc` (pi 1.0.4) traffic, one directory per scenario, replayed by a fake client
+(`fake-pi.ts`) in lockstep with the commands the client sends. They are hand-written
 against the wire shapes the real binary was probed with (no live key was ever involved), which is what
 `synthetic: true` in each `meta.json` records.
 

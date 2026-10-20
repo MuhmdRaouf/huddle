@@ -1,9 +1,7 @@
-![kimi: native agents and verified background jobs](../../assets/kimi-banner.svg)
-
 # kimi
 
 [![ci](https://github.com/MuhmdRaouf/huddle/actions/workflows/ci.yml/badge.svg)](https://github.com/MuhmdRaouf/huddle/actions/workflows/ci.yml)
-[![License: GPL v3+](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](../../LICENSE)
+![License: GPL v3+](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)
 
 A [Claude Code](https://claude.com/claude-code) plugin that runs **Kimi** models on [Moonshot AI](https://www.moonshot.ai/). It gives you:
 
@@ -25,7 +23,7 @@ that workflow automatically.
 | Start using the plugin         | [Install](#install) · [Setup](#setup) · [Quick start](#quick-start)                                                              |
 | Choose how work runs           | [Agents](#the-agents) · [Engines](#engines) · [Commands](#commands)                                                              |
 | Submit and review work         | [Job loop](#the-job-loop-cli) · [Briefs](#writing-briefs) · [Review](#reviewing-and-deciding) · [Batch jobs](#running-many-jobs) |
-| Understand settings and limits | [Requirements](#requirements) · [Router](#the-kimi-router) · [Configuration](#configuration) · [Security](#security-and-privacy) |
+| Understand settings and limits | [Requirements](#requirements) · [Router](#the-router) · [Configuration](#configuration) · [Security](#security-and-privacy) |
 | Fix or contribute              | [Troubleshooting](#troubleshooting) · [Development](#development) · [License](#license)                                          |
 
 ## Install
@@ -51,21 +49,21 @@ Other ways to install:
 - User scope is the default. From a terminal the same is
   `claude plugin marketplace add MuhmdRaouf/huddle && claude plugin install kimi-plugin-cc@muhmdraouf --scope user`
   (`--scope project` or `local` enables it for one repository only).
-- From a clone of the monorepo (for development), load the plugin directly:
+- From a clone of this repository (for development), load the plugin directly:
 
   ```sh
-  npm ci && npm run build -w plugins/kimi-plugin-cc
-  claude --plugin-dir ./plugins/kimi-plugin-cc/plugin
+  claude --plugin-dir ./plugins/kimi-plugin-cc
   ```
 
 ## Requirements
 
 - Claude Code, with the `claude` CLI on `PATH`. The plugin's setup ping and job workers run through `claude -p`.
-- No runtime of its own: `/kimi:setup` downloads plugin-core (one static binary) from the plugin's GitHub
-  release, verifies its sha256 and keeps it under `~/.agents/core/<version>/` (`AGENTS_CORE_HOME` moves it). Every
-  hook, command and agent runs it through `plugin/dist/run`, and `/kimi:setup` names it on its `runtime` line.
-  A hook that finds no binary (after an update) starts one locked background download, so the next hook
-  finds it installed.
+- No runtime and no binary of its own: the plugin's bundles run the `huddle` binary through `plugin/dist/run`.
+  On first use the launcher gets that binary onto the machine — it builds the marketplace checkout's own commit
+  once with `go` while no release is published (a hook starts that build detached and exits 0; a command waits
+  up to 5 minutes and names the build log on failure), and verifies a release download against the committed
+  manifest when one exists. Without Go it says so: `no huddle release is published; install Go to build it from
+  the marketplace checkout`. `/kimi:setup` names the binary on its `runtime` line.
 - git, for edit jobs, which run in git worktrees.
 - An API key for Moonshot AI with access to `kimi-k3` and `kimi-k2.6`.
 
@@ -123,10 +121,11 @@ Setup takes the first key it finds, in this order:
 
 1. Checks the `claude` binary and version, the key (never its value), the state directory and the concurrency cap.
 2. Sends one tiny request to `kimi-k2.6` to prove the key works.
-3. When everything answers, starts the kimi router (a small background process the plugin starts and repairs itself).
+3. When everything answers, records kimi with huddle-router and makes sure the daemon is up: the one router for
+   every provider plugin, on 127.0.0.1:18786.
 4. Adds Kimi K3 and Kimi K2.6 to `/model` next to Sonnet and Opus.
-5. Points Claude Code's proxy at the router (`HTTPS_PROXY` in `settings.json`, with a local CA), and moves the kimi
-   agents onto the Kimi models.
+5. Points Claude Code's proxy at the router (`HTTPS_PROXY` at 127.0.0.1:18786 in `settings.json`, the shared
+   local CA in `NODE_EXTRA_CA_CERTS`), and moves the kimi agents onto the Kimi models.
 
 ### The report
 
@@ -135,7 +134,7 @@ The report starts with the outcome, one line:
 - `ready`: the models are in `/model` and the agents run on them. When the run changed something, the last line says
   to restart Claude Code. Do that: the session you ran setup in keeps talking to Anthropic until it restarts, and
   Kimi K3 in `/model` and the kimi agents work from the next session.
-- `not routed`: a proxy or base URL in `settings.json` is yours, so nothing reaches the kimi router and the agents run
+- `not routed`: a proxy or base URL in `settings.json` is yours, so nothing reaches huddle-router and the agents run
   on Sonnet. Point it at the router, or remove the entry and run setup again. Setup never overwrites an entry that is
   yours.
 - `not ready`: a `FAILED` line says which check failed and what to do.
@@ -144,8 +143,9 @@ Once routed:
 
 - Picking a Kimi model sends its requests through the router to Moonshot AI.
 - Every `claude-*` model still goes to Anthropic untouched.
-- The huddle plugin's session hook re-applies all of it after a plugin update, falling back to Sonnet when the router is down or
-  the key is gone.
+- The huddle plugin's session hook re-applies all of it after a plugin update. When the router cannot start or
+  the key is missing, the hook says so at every session start until it is fixed; the agents keep the Kimi models
+  on their `model:` lines.
 
 ### Turning it off and uninstalling
 
@@ -153,8 +153,8 @@ Once routed:
    - the agents go back to the models they had before setup;
    - the Kimi models leave `/model`;
    - the proxy keys are taken out of `settings.json` (or the base URL, when a proxy of your own kept base-URL mode);
-   - the router retires: sessions already open keep working through it, and it exits once they close (after 7 days
-     at most);
+      - huddle-router stops routing this provider at once; the daemon keeps running for the providers still set
+     up, and sessions already open keep their address until they close;
    - the stored key is deleted.
 2. Restart Claude Code.
 3. Run `/plugin uninstall kimi-plugin-cc@muhmdraouf`.
@@ -184,8 +184,7 @@ For changes that must pass gates with automatic fix rounds and a verified landin
 | `kimi:kimi-k3`   | Kimi K3   | implementation to a spec or pattern, refactors, renames, migrations, test backfills, bulk edits — the work you would give a Sonnet subagent, on Kimi instead |
 | `kimi:kimi-k2.6` | Kimi K2.6 | the same work as `kimi:kimi-k3`, faster for simpler tasks, read-only sweeps included                                                                         |
 
-- Both ship on Sonnet and run there until `/kimi:setup` has pointed Claude Code at the kimi router (and whenever the
-  router is down).
+- Both ship on Sonnet and run there until `/kimi:setup` has pointed Claude Code at huddle-router.
 - Give each a self-contained task: what to change or examine, where (exact paths), the pattern to copy, and the
   commands that prove the result.
 - `kimi:kimi-k3` works in the current repository, verifies with the project's own commands, and reports what changed;
@@ -195,18 +194,19 @@ For changes that must pass gates with automatic fix rounds and a verified landin
   `isolation: "worktree"`.
 
 When an agent stops, the huddle plugin's `SubagentStop` hook reads the agent's own transcript and shows you one line: the model that
-answered, its tokens and its estimated cost. If it ran on a Claude model, because the router was down or setup never
-ran, the line says how to fix that.
+answered, its tokens and its estimated cost. If it ran on a Claude model, because setup never ran, the line says
+how to fix that.
 
-## The kimi router
+## The router
 
-Claude Code sends every model request to one address, so the agents can only run on Kimi through a router.
+Claude Code sends every model request to one address, so the agents can only run on Kimi through a router:
+huddle-router, the one daemon every provider plugin shares.
 
 ### What it does
 
-- `/kimi:setup` starts it as one small background process (the same on macOS and Linux, no service to install)
-  and points Claude Code at it.
-- `sh <plugin>/dist/run kimi-router.js status` checks it.
+- `/kimi:setup` makes sure it runs — one process for every provider plugin, the same on macOS and Linux, no
+  service to install — and points Claude Code at it.
+- `huddle router status` says how it is: its address and the providers it serves.
 - A request whose model is served by this plugin goes to Moonshot AI with your kimi key, in place of your Anthropic
   credentials.
 - Every other request goes to Anthropic unchanged, so the session and every Claude subagent behave as before.
@@ -216,8 +216,8 @@ Claude Code sends every model request to one address, so the agents can only run
 - It appends one line of metadata per request (model, route, status, latency, usage — never headers or bodies) to the
   spool under `~/.agents/radar/spool/`, which `board` and `usage` read back. The spool and the home it lives
   under belong to radar, part of [huddle](https://github.com/MuhmdRaouf/huddle).
-- A model another installed provider plugin serves is forwarded to its router unchanged, so several provider plugins
-  can share the one proxy.
+- A model another installed provider plugin serves goes straight to that provider: every enabled provider is a
+  lane of the same daemon, so several provider plugins share the one router and the one proxy.
 
 ### Remote Control and the local CA
 
@@ -235,14 +235,17 @@ Claude Code sends every model request to one address, so the agents can only run
 
 ### It never cuts Claude off
 
-- A front process owns the port and hands each request to a worker.
-- A worker that crashes, hangs or grows too large is replaced at once.
-- While workers keep failing, the front passes Claude's requests straight to Anthropic itself (only the kimi models
-  answer 503, saying what to run).
-- If the router cannot start at all, an emergency passthrough takes the port instead.
-- Updates swap the worker without closing the port.
-- The router daemon restarts a dead worker itself. When no router
-  of this plugin can hold the port, the session hook takes its proxy keys (or the base URL) out of `settings.json`.
+- One process serves every provider and Anthropic; a panic in one lane is answered 502 and logged, and the
+  other lanes keep serving.
+- A lane that cannot reach the provider never takes Claude down with it: only this provider's models answer
+  with the error, and every `claude-*` request still reaches Anthropic.
+- Updates hand the listening socket to the new binary, so the port never closes; the old process drains what it
+  already accepted for up to 10 minutes.
+- When resident memory passes 1 GiB (`HUDDLE_ROUTER_RSS_CEILING_MB` overrides, checked every 30 s), the daemon
+  hands itself over to a fresh copy of its own binary the same way.
+- Each session's `huddle mcp` bridge checks the daemon every 2 s and restarts it after 5 s of silence.
+- When nothing can hold the port, the session hook takes the proxy keys (or the base URL) out of
+  `settings.json`.
 
 ### Key and balance errors
 
@@ -263,22 +266,22 @@ that quotes it is blanked out first.
   `~/.claude/settings.json` (or `env.ANTHROPIC_BASE_URL`, when a proxy of your own kept base-URL mode; or put back
   `~/.claude/settings.json.kimi-backup`, saved before the first change). That always restores direct Anthropic access.
 - **Uninstalling the plugin:** run `/kimi:remove`, then `/plugin uninstall kimi-plugin-cc@muhmdraouf`.
-- If you uninstall without removing first, the router still cleans up on its own: it notices the plugin is gone, takes
-  its entries out of `settings.json`, puts the agents' models back and retires the same way, then removes its files
-  and exits once the sessions from before have closed.
+- If you uninstall without removing first, the huddle plugin's session hook notices the plugin is gone, takes
+  its entries out of `settings.json`, puts the agents' models back, and huddle-router stops routing this
+  provider at its next reload.
 - Disabling the plugin does the same, and enabling it again re-applies the setup at the next session start.
 - When jobs are waiting for review, the huddle plugin's session hook prints one line about them.
 
 ## Commands
 
-The slash commands run the plugin's CLI (the plugin-core binary) and show its output as it is.
+The slash commands run the plugin's CLI (the `huddle` binary behind the launcher) and show its output as it is.
 
 | Command                                                                          | Does                                                                                                                                                                                                                                     |
 | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/kimi:setup`                                                                    | always asks what to set up (built-in only, or also omp, opencode, pi and zcode), then runs it; the built-in part turns the plugin on: checks, router, the Kimi models in `/model`, agents on them                                        |
 | `/kimi:setup:claude`                                                             | the built-in setup alone, no questions                                                                                                                                                                                                   |
 | `/kimi:setup:omp`, `/kimi:setup:opencode`, `/kimi:setup:pi`, `/kimi:setup:zcode` | the built-in setup, then check that tool as you have set it up and enable it as a delegation engine; asks who watches its runs (Kimi K3 or Sonnet). The `kimi:omp`, `kimi:opencode`, `kimi:pi` or `kimi:zcode` agent then hands it tasks |
-| `/kimi:remove`                                                                   | turns the plugin off: agents back on their models before setup, Kimi out of `/model`, router retired (open sessions keep working, it exits when they close), stored key removed. Run it before `/plugin uninstall`                       |
+| `/kimi:remove` | turns the plugin off: agents back on their models before setup, Kimi out of `/model`, huddle-router stops routing this provider (the daemon keeps serving the others), stored key removed. Run it before `/plugin uninstall` |
 | `/kimi:board`                                                                    | what is running on Moonshot Kimi right now: one table of sessions, subagents and jobs, active first                                                                                                                                      |
 | `/kimi:usage`                                                                    | Moonshot Kimi tokens and estimated cost (see below)                                                                                                                                                                                      |
 | `/kimi:review [id]`                                                              | review a job that awaits a decision, then accept, return with feedback or discard it; with no id it picks from the jobs awaiting review                                                                                                  |
@@ -311,11 +314,12 @@ omp, opencode, pi and zcode run as you have set them up, with their own login, p
 
 The CLI behind the commands has more subcommands, the job loop of the next section.
 
-- In this README `kimi <command>` stands for running the plugin's launcher on the plugin-core binary:
+- In this README `kimi <command>` stands for running the plugin's launcher on the `huddle` binary:
   `sh "<plugin>/dist/run" kimi.js <command>`.
 - `<plugin>` is the plugin's install directory (inside Claude Code, `${CLAUDE_PLUGIN_ROOT}`).
-- The launcher runs the downloaded plugin-core binary; `/kimi:setup` installs it, and a hook that finds
-  it missing starts one background download.
+- The launcher gets that binary onto the machine on first use: it builds the checkout's own commit once with
+  `go` while no release is published (a hook starts that build detached), and verifies a release download
+  against its manifest when one exists.
 
 | Exit code | Meaning                                                                                                                                                                                                 |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -455,7 +459,7 @@ opencode uses `--auto` and disables its question tool; pi approves RPC confirmat
 cancels text/selection dialogs so extensions can return control; ZCode uses yolo for every job.
 Readonly and exec retain their tool restrictions. The watcher reviews the result before landing.
 
-### No daemon
+### Detached drivers
 
 - Each job is driven by its own process, double-forked so it is an orphan. Nothing that kills its caller's process
   tree, such as Claude Code cleaning up a background shell, can reach it.
@@ -624,19 +628,20 @@ How to run many jobs:
 | `KIMI_OMP_BIN`, `KIMI_OPENCODE_BIN`, `KIMI_PI_BIN` | the tool on `PATH`       | the binary of a delegation tool that is not on `PATH` |
 | `KIMI_MODEL_MAIN`, `KIMI_MODEL_FLASH`              | the catalog ids          | use another model id for the main or the flash model  |
 | `KIMI_BASE_URL`                                    | the provider's endpoint  | use another Anthropic-compatible endpoint             |
-| `KIMI_ROUTER_PORT`                                 | the plugin's port        | move the router to another port                       |
+| `HUDDLE_ROUTER_PORT` | `18786` | move huddle-router to another port |
 
 The state directory is the first of these that applies, created with mode 0700:
 
 1. `KIMI_STATE_DIR`, when set;
-2. `~/.agents/kimi` — one root for commands, huddle's hooks and the router. `CLAUDE_PLUGIN_DATA` never picks it,
+2. `~/.agents/kimi` — one root for commands and huddle's hooks. `CLAUDE_PLUGIN_DATA` never picks it,
    and state an older build left in `~/.local/state/kimi` or the plugin's own data dir moves over once.
 
 ## Troubleshooting
 
 - **`setup` says no key.** Run `/kimi:setup` again and paste the key on the page it opens.
-- **The agents run on Sonnet.** The router is down or the key is gone, so setup's fallback holds. Run `/kimi:setup`
-  again; its report says which check failed. If the report says `not routed`, `ANTHROPIC_BASE_URL` is your own proxy.
+- **The agents run on Sonnet.** Setup never ran, or its `route` step failed, so the agents keep their shipped
+  model. Run `/kimi:setup` again; its report says which check failed. If the report says `not routed`, a proxy
+  or base URL in `settings.json` is your own.
 - **Kimi K3 is not in `/model`, or the agents still run on Sonnet right after setup.** Restart Claude Code. The session
   that ran setup keeps using Anthropic until it restarts.
 - **A Kimi request fails with "key refused or missing: run /kimi:setup".** Moonshot AI refused the key, or there is none. Run
@@ -661,45 +666,37 @@ The state directory is the first of these that applies, created with mode 0700:
 
 ## Development
 
-1. From the repository root, `npm ci` installs every workspace.
-2. Then, in `plugins/kimi-plugin-cc`:
-
-   ```sh
-   npm run check    # vp check (format, lint, types), tests, no it.todo left, dist/run is fresh
-   npm run build    # rewrite the launcher plugin/dist/run (committed, so installs need no build step)
-   ```
-
 From the repository root:
 
-- `npm run check` runs every workspace's checks, and first `npm run check:siblings`, which fails when one of the five
-  provider plugins drifts from the others (see [Development](../../README.md#development) in the repository README).
-  Development needs Node ≥22 (npm, `vp`) and Go: the shared suites build the plugin-core binary with
-  `packages/core/scripts/host-build.sh` when it is missing. The engine's own suite, the router chaos suite
-  included, runs with `go test ./...` in `packages/core`.
+- `mise run setup` installs the pinned tools once; `mise run check` is every gate CI runs.
+- `go run ./scripts/tmpguard -count=1 ./...` runs the whole Go suite; `go test ./internal/plugins/` runs the
+  plugins' shared suites — the plugin surface every provider plugin shares, the launcher e2e, the fresh-install
+  e2e and the sibling guard, which fails when one of the five provider plugins drifts from the others.
 
 ### Code layout
 
-The job engine is the plugin-core binary (Go, `packages/core`). Its main parts:
+The engine is part of the one `huddle` binary (Go). Its main parts:
 
 - `internal/domain/`: pure logic, with no I/O. Briefs, the lifecycle state machine, verification, prompts, worker
   events, the AIMD limiter and the report schemas.
-- `internal/ports/`: interfaces for the worker, git, gates, store, clock and process control.
-- `internal/adapters/`: git CLI, shell gates, process streaming, the file store with locks and slots, and the engines.
-- `internal/app/`: use cases (submit, drive, accept, return, discard, stop, queries, batch, activity).
-- `internal/router/`: the router and its supervision.
-- `internal/render/` and `internal/cli/`: output and the command line.
+- `internal/core/ports/`: interfaces for the worker, git, gates, store, clock and process control.
+- `internal/core/adapters/`: git CLI, shell gates, process streaming, the file store with locks and slots, and
+  the engines.
+- `internal/core/app/`: use cases (submit, drive, accept, return, discard, stop, queries, batch, activity).
+- `internal/core/router/`: huddle-router's lanes; `internal/routerd/`: the daemon around them.
+- `internal/core/render/` and `internal/core/cli/`: output and the command line.
 
-kimi itself is only its data and assets: the `Provider` value its tests read (`test/provider.ts`) and the
+This plugin is only its data and assets: the `Provider` value in `internal/core/providers/kimi.go` and the
 plugin's commands, agents and launcher.
 
 ### Tests
 
-- Tests run with Vitest and need no network and no key.
-- The engine's own suites live in `packages/core`, including real git repositories, the router chaos suite and a
-  fake `claude` binary.
-- Each plugin's tests check its provider data, the plugin surface every provider plugin shares (commands, agents) and its launcher, with a bundle smoke test and a fresh-install suite, both on the plugin-core binary.
-- See [ARCHITECTURE.md](../../packages/core/ARCHITECTURE.md) for the design in depth.
+- `go test ./internal/plugins/` checks this plugin's surface (commands, agents) and its launcher, runs the
+  fresh-install suite end to end, and keeps the five plugins copies of one another.
+- The engine's own suites run with the rest of the Go module, including real git repositories, the router chaos
+  suite and a fake `claude` binary. No test touches the network or needs a key.
+- See `internal/core/ARCHITECTURE.md` in the repository for the design in depth.
 
 ## License
 
-[GPL-3.0-or-later](../../LICENSE). Copyright (C) 2026 Raouf.
+[GPL-3.0-or-later](LICENSE). Copyright (C) 2026 Raouf.

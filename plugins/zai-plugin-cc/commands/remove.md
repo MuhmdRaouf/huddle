@@ -1,5 +1,5 @@
 ---
-description: Turn zai off — agents back on their models before setup, its models out of /model, router retired (open sessions keep working, it exits when they close), stored key removed. Run it before /plugin uninstall
+description: Turn zai off — agents back on their models before setup, its models out of /model, huddle-router stops routing this provider (the daemon keeps serving the others), stored key removed. Run it before /plugin uninstall
 allowed-tools: Bash(sh:*)
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: deepseek-flash
 description: |-
-  Use this agent for the same work you would give a Sonnet subagent when speed matters more than depth, run on DeepSeek: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on deepseek-flash once /deepseek:setup has pointed Claude Code at the deepseek router, and on Sonnet before that or while the router is down. Faster, cheaper tier of deepseek:deepseek-v4-pro. Not for design, unclear requirements, unknown causes or security code.
+  Use this agent for the same work you would give a Sonnet subagent when speed matters more than depth, run on DeepSeek: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on deepseek-flash once /deepseek:setup has pointed Claude Code at huddle-router, and on Sonnet before that. Faster, cheaper tier of deepseek:deepseek-v4-pro. Not for design, unclear requirements, unknown causes or security code.
 
   <example>
   user: "Rename getUserById to findUser everywhere, tests too."

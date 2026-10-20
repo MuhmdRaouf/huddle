@@ -1,7 +1,7 @@
 ---
 name: kimi-k3
 description: |-
-  Use this agent for work you would give a Sonnet subagent, run on Moonshot Kimi: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on kimi-k3 once /kimi:setup has pointed Claude Code at the kimi router, and on Sonnet before that or while the router is down. Give it one self-contained task with exact paths and proving commands. Not for design, unclear requirements, unknown causes or security code. Faster tier: kimi:kimi-k2.6.
+  Use this agent for work you would give a Sonnet subagent, run on Moonshot Kimi: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on kimi-k3 once /kimi:setup has pointed Claude Code at huddle-router, and on Sonnet before that. Give it one self-contained task with exact paths and proving commands. Not for design, unclear requirements, unknown causes or security code. Faster tier: kimi:kimi-k2.6.
 
   <example>
   user: "Rename getUserById to findUser everywhere, tests too."

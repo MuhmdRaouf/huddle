@@ -451,8 +451,8 @@ func (s *surface) checkModelAgents(provider domain.Provider) {
 		}
 		// Says when it runs on its own model, naming the setup command whole (a broken substitution
 		// once left "once /zai Code at the zai router").
-		runsOn := "It runs on " + name + " once " + provider.Slash + "setup has pointed Claude Code at the " +
-			provider.Name + " router, and on Sonnet before that or while the router is down."
+		runsOn := "It runs on " + name + " once " + provider.Slash + "setup has pointed Claude Code at huddle-router, " +
+			"and on Sonnet before that."
 		if !strings.Contains(fm.Description, runsOn) {
 			s.t.Errorf("%s: description must name the setup sentence whole, want it to hold %q", file, runsOn)
 		}

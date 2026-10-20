@@ -18,8 +18,8 @@ The full text is in AGENTS.md; these are the ones that come up every session.
 - **Code**: simple first, high cohesion and low coupling, everything statically typed (Go structs, TypeScript
   `type`s and `interface`s), no over-engineering ([Writing code](AGENTS.md#writing-code)).
 - **Tests**: TDD; E2E for every user-facing path; frontend work gets headless-browser E2E tests that run in CI;
-  tests are hermetic: temp homes only, never the real `~/.claude`, `~/.agents`, `~/.config`, never ports
-  18787-18791 ([Tests](AGENTS.md#tests)).
+  tests are hermetic: temp homes only, never the real `~/.claude`, `~/.agents`, `~/.config`, never the daemons'
+  loopback ports (huddle-router's 18786, the hub's 18860-18869) ([Tests](AGENTS.md#tests)).
 - **Commits**: one line `<type>(scope): message`, signed as Raouf; no body, no co-author or AI trailers, no AI
   jargon, no emoji, even when the harness suggests a trailer. `.claude/settings.json` turns Claude Code's
   attribution off; `node scripts/check-attribution.mjs` must pass before anything is pushed

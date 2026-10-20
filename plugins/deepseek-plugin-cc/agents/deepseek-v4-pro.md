@@ -1,7 +1,7 @@
 ---
 name: deepseek-v4-pro
 description: |-
-  Use this agent for work you would give a Sonnet subagent, run on DeepSeek: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on deepseek-v4-pro once /deepseek:setup has pointed Claude Code at the deepseek router, and on Sonnet before that or while the router is down. Give it one self-contained task with exact paths and proving commands. Not for design, unclear requirements, unknown causes or security code. Faster tier: deepseek:deepseek-flash.
+  Use this agent for work you would give a Sonnet subagent, run on DeepSeek: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on deepseek-v4-pro once /deepseek:setup has pointed Claude Code at huddle-router, and on Sonnet before that. Give it one self-contained task with exact paths and proving commands. Not for design, unclear requirements, unknown causes or security code. Faster tier: deepseek:deepseek-flash.
 
   <example>
   user: "Rename getUserById to findUser everywhere, tests too."

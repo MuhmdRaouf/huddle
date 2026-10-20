@@ -1,7 +1,7 @@
 ---
 name: MiniMax-M3
 description: |-
-  Use this agent for work you would give a Sonnet subagent, run on MiniMax: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on MiniMax-M3 once /minimax:setup has pointed Claude Code at the minimax router, and on Sonnet before that or while the router is down. Give it one self-contained task with exact paths and proving commands. Not for design, unclear requirements, unknown causes or security code. Faster tier: minimax:MiniMax-M2.7-highspeed.
+  Use this agent for work you would give a Sonnet subagent, run on MiniMax: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on MiniMax-M3 once /minimax:setup has pointed Claude Code at huddle-router, and on Sonnet before that. Give it one self-contained task with exact paths and proving commands. Not for design, unclear requirements, unknown causes or security code. Faster tier: minimax:MiniMax-M2.7-highspeed.
 
   <example>
   user: "Rename getUserById to findUser everywhere, tests too."

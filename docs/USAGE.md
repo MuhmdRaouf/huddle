@@ -13,8 +13,9 @@ runs the `huddle` binary the plugin's launcher downloaded (macOS and Linux, amd6
    /plugin install huddle@huddle
    ```
 
-   The launcher downloads the binary from the GitHub release and checks its SHA-256 against the
-   committed manifest. No JS runtime is needed on the PATH.
+   The launcher builds the binary of the marketplace checkout's own commit with `go` while no release is
+   published (a release download is checked against the committed manifest when one exists). No JS runtime is
+   needed on the PATH.
 
 2. Start any session in any project. The first session's `SessionStart` hook starts the hub
    through the launcher; the next `SessionStart`, prompt or tool call brings it back after a
@@ -44,6 +45,29 @@ runs the `huddle` binary the plugin's launcher downloaded (macOS and Linux, amd6
 `/huddle:status` prints one table — hub, radar, gateway — with running or not and
 the address. `/huddle:stop` stops the hub this user started; the next
 session hook starts them again. The command table lives in [README · The plugin](../README.md#the-plugin).
+
+## Delegate to a provider model
+
+The same marketplace ships five provider plugins — `zai`, `kimi`, `deepseek`, `minimax`, `qwen` — that run GLM,
+Kimi, DeepSeek, MiniMax and Qwen models inside Claude Code. Installing one (`/plugin install
+zai-plugin-cc@muhmdraouf`) installs `huddle` with it; then run its setup:
+
+1. Run `/zai:setup`. It takes the key from the environment, the OS keystore or a one-time key page, records
+   zai with huddle-router, adds GLM to `/model` and moves the zai agents onto it.
+
+2. Setup points Claude Code at the router in proxy mode: `HTTPS_PROXY` at `http://127.0.0.1:18786`, the shared
+   local CA in `NODE_EXTRA_CA_CERTS` (it lives at `~/.agents/ca`, never in a system trust store), loopback
+   entries in `NO_PROXY`. A proxy or CA of your own is never touched; routing falls back to
+   `ANTHROPIC_BASE_URL` beside it. Picking a GLM model in `/model` sends that request through huddle-router to
+   Z.ai with the zai key; every `claude-*` request still reaches Anthropic untouched.
+
+3. Restart Claude Code when the report says so. From then on the router is the one daemon at 18786 for every
+   provider you set up: a second provider's setup adds a lane to it and changes nothing else.
+
+Turning one provider off with its `/<p>:remove` takes its lane, models and agents back out; the proxy keys stay
+while another provider is still set up, and `settings.json` goes back to how it was after the last one. The
+plugin's README ([zai](../plugins/zai-plugin-cc/README.md) and its siblings) has the full walk: verified
+background jobs, delegation to omp, opencode, pi and zcode, and the cost report.
 
 ## Signing in
 
@@ -228,7 +252,7 @@ and the provider routers' spool. Twelve views:
 | Usage | Daily tokens, cost and cache savings by model and project |
 | Blocks | The active 5-hour metering window: tokens, cost, burn rate, projection to its end |
 | Alerts | Alert rules and their history |
-| Router | The provider routers' health |
+| Router | huddle-router's health and the providers it serves |
 | Settings | Budgets and the rest |
 
 Every request line carries its model, latency, input, output, cache-read and cache-write tokens
@@ -236,10 +260,11 @@ and its cost. Usage also splits tokens and cost by agent, copies each agent's re
 counts codex rollouts and opencode sessions, tagged by agent.
 
 Budgets stop and lift from Settings — on a hub, from a paired phone too. A stopped budget lands
-in `budget-status.json` in radar's state dir (`$RADAR_HOME`, else `~/.agents/radar`), which the
-provider plugins' routers read before serving a provider model: while its scope (or `total`) is
+in `budget-status.json` in radar's state dir (`$RADAR_HOME`, else `~/.agents/radar`), which
+huddle-router reads before serving a provider model: while its scope (or `total`) is
 stopped, the router refuses that provider's models. A missing file, one older than 10 minutes, or
-one that does not parse stops nothing — a broken radar never cuts you off.
+one that does not parse stops nothing — a broken radar never cuts you off, and `claude-*`
+requests are never read against it.
 
 ## Status bar
 

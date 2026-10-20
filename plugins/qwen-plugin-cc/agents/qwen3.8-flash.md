@@ -1,7 +1,7 @@
 ---
 name: qwen3.8-flash
 description: |-
-  Use this agent for the same work you would give a Sonnet subagent when speed matters more than depth, run on Alibaba Qwen: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on qwen3.8-flash once /qwen:setup has pointed Claude Code at the qwen router, and on Sonnet before that or while the router is down. Faster, cheaper tier of qwen:qwen3.8-max. Not for design, unclear requirements, unknown causes or security code.
+  Use this agent for the same work you would give a Sonnet subagent when speed matters more than depth, run on Alibaba Qwen: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on qwen3.8-flash once /qwen:setup has pointed Claude Code at huddle-router, and on Sonnet before that. Faster, cheaper tier of qwen:qwen3.8-max. Not for design, unclear requirements, unknown causes or security code.
 
   <example>
   user: "Rename getUserById to findUser everywhere, tests too."

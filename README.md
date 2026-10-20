@@ -16,16 +16,19 @@
 # huddle
 
 One local hub where your AI coding sessions work as a team, from Claude Code or any agent that speaks MCP. One
-static binary, one plugin, five jobs:
+static binary, one plugin, three parts:
 
-- **Hub:** every session on every machine in one list, what needs you first, approvals from your phone with a
-  passkey, sessions linked so they share context.
-- **Channels:** events, tasks with cross-session dependencies, messages and shared knowledge, over MCP pub/sub.
+- **The hub:** channels with shared events, tasks, messages and knowledge; every session on every machine in one
+  list, what needs you first, approvals from your phone with a passkey; `/huddle:statusline` puts channel, spend
+  and plan limits in the status bar.
 - **Radar:** requests, input and output tokens, cost and health per session, model, project and agent CLI, with
   graphs. No tokens spent to watch.
 - **Kanban:** a board per repository that sessions claim cards from and move through review and testing.
-- **Status line:** one bar line — channel, who is online, today's spend, the plan limits Claude Code reports;
-  `/huddle:statusline` installs it and keeps the line you had.
+
+The same repository ships the five provider plugins — `zai`, `kimi`, `deepseek`, `minimax` and `qwen` — thin
+Claude Code plugins that run GLM, Kimi, DeepSeek, MiniMax and Qwen models through the one router this binary
+serves, and delegate verified background jobs to them. Each has its own README under
+[`plugins/`](plugins/zai-plugin-cc/README.md).
 
 ## Find what you need
 
@@ -53,19 +56,49 @@ static binary, one plugin, five jobs:
 3. Run `/huddle:setup` in any project. It names the channel and this session after the project folder, joins the
    project to it, starts the hub and prints the dashboard link — it signs you in once, within 5 minutes.
 
+To delegate work to a provider model, install its plugin the same way (`/plugin install zai-plugin-cc@muhmdraouf`)
+and run its `/zai:setup` — installing the plugin installs `huddle` with it. While no release is published, the
+launcher builds the binary of the marketplace checkout's own commit with `go` (see
+[Requirements](#requirements)).
+
 That is all: the hooks start the hub — the one server, with Radar and the board living inside it — and bring it
-back on the next hook after a crash or a reboot. The provider plugins in
-[claude-code-plugins](https://github.com/MuhmdRaouf/claude-code-plugins) install Huddle for you.
+back on the next hook after a crash or a reboot.
+
+## The two editions
+
+One daemon serves both, so there is never more than one per user: a second start finds the first and exits 0.
+
+- **Router-only:** a provider plugin is set up and the huddle home is not. A standalone `huddle router serve`
+  holds 127.0.0.1:18786 for Claude Code's model requests; nothing else runs.
+- **Full:** `/huddle:setup` ran. `huddle serve` hosts the hub — channels, the Now list, the dashboard with its
+  Radar and Kanban tabs — and huddle-router beside it, taking the router's listening socket over from a
+  standalone daemon without closing the port.
+
+```mermaid
+flowchart LR
+    S[Claude Code session] -->|"HTTPS_PROXY 127.0.0.1:18786"| R[huddle-router daemon]
+    S -->|"one hook process per event"| K["huddle hook"]
+    R -->|"claude-* untouched"| A[api.anthropic.com]
+    R -->|"provider models, the provider's key"| P["Z.ai · Moonshot · DeepSeek · MiniMax · Qwen"]
+    R -->|"request lines, budget-status.json"| SP[radar home]
+    K -->|"starts"| D[huddle serve]
+    D -->|"full edition"| HUB["hub + channels + Radar + Kanban tabs"]
+    K -->|"router-only edition"| RS["huddle router serve"]
+```
+
+Each session's `huddle mcp` bridge watches the daemon: a health check every 2 s, a restart after 5 s of silence.
 
 ## Requirements
 
 - Claude Code with plugin support.
-- macOS or Linux, on amd64 or arm64: one static binary, no JS runtime. The launcher (`plugin/dist/run`) runs the
-  binary of the marketplace checkout's own commit while no release is published: it builds it once per commit with
-  `go` (`$HUDDLE_SOURCE` or the checkout under `CLAUDE_CONFIG_DIR` names the sources; a hook starts that build
-  detached), and falls back to the GitHub release download, checked against the committed manifest
-  (`release/v<VERSION>.json`), where Go is missing. A hook never blocks — it exits 0 and the download or build
-  runs detached.
+- macOS or Linux, on amd64 or arm64: one static binary, no JS runtime. No release is published yet, so the
+  launcher (`plugin/dist/run`, the same script every plugin ships) builds the binary of the marketplace checkout's
+  own commit: once per commit, with `go` (`$HUDDLE_SOURCE`, the checkout the plugin was installed from, or the
+  marketplace copy under `CLAUDE_CONFIG_DIR` names the sources), kept three builds to a home. A command waits up
+  to 5 minutes for that build; a hook starts it detached and exits 0. Without Go the launcher says so: it names
+  the release download it cannot fall back to and the line `no huddle release is published; install Go to build
+  it from the marketplace checkout`. A release download, when one exists, is checked against the committed
+  manifest (`release/v<VERSION>.json`).
 - Developing on Huddle also needs Go and Bun 1.3 or later — see [Development](#development).
 
 ## The plugin
@@ -121,7 +154,8 @@ A device session ends after 7 days unused; removing it from Settings ends it at 
   Timeline, Settings. Blocks follows the active 5-hour metering window; Usage splits tokens and cost by model,
   project and agent.
 - Budgets stop and lift from Settings — on a hub, from a paired phone. A stopped budget lands in
-  `budget-status.json`, which the provider plugins' routers read before serving a provider model.
+  `budget-status.json`, which huddle-router reads before serving a provider model: the provider's models answer
+  with the budget refusal while its scope, or `total`, is stopped, and `claude-*` is never touched.
 
 ## Kanban
 

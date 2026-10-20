@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+One repository, one binary, one daemon: the five provider plugins move in beside huddle, and everything they
+ran separately is now one process set.
+
+### One repository, one marketplace
+
+- zai, kimi, deepseek, minimax and qwen now ship from this repository (marketplace `muhmdraouf`) as thin plugin
+  shells: agents, slash commands and a launcher — no hooks and no binary of their own. Installing a provider
+  plugin installs huddle with it, and the launcher builds the checkout's own commit with Go while no release is
+  published.
+- The five per-provider routers, their peer hops between ports, and the per-session `router watch` processes are
+  gone. One daemon, huddle-router on 127.0.0.1:18786, holds one lane per enabled provider and forwards every
+  `claude-*` request to Anthropic untouched; the plugins meet it only through `providers.json`, the spool and
+  `budget-status.json`.
+- One hook process runs per Claude Code event: huddle's handler and report, radar, kanban's session start and
+  the providers' parts ride inside it, each with its own deadline. The provider plugins ship no hooks.
+
+### The router daemon
+
+- The listening socket is never closed to swap the process: a new binary takes the socket over by handover and
+  the old process drains what it already accepted for up to 10 minutes. The same handover runs when the
+  daemon's resident memory passes 1 GiB (`HUDDLE_ROUTER_RSS_CEILING_MB` overrides; checked every 30 s) and when
+  the full edition's hub takes a standalone router over.
+- Each session's `huddle mcp` bridge checks the daemon every 2 s and restarts it after 5 s of silence, replacing
+  a hung holder first.
+- Setup writes proxy mode: `HTTPS_PROXY` at the router, `NODE_EXTRA_CA_CERTS` at the shared local CA in
+  `~/.agents/ca`, loopback entries in `NO_PROXY`. A proxy or CA of your own is never touched; removing a
+  provider keeps the shared keys while another is set up, and restores `settings.json` after the last.
+
+### Jobs
+
+- The job engine is unchanged: briefs, gates, verdicts, detached drivers, the AIMD concurrency limiter and the
+  omp, opencode, pi and zcode engines behave as before. Each provider's job state stays under `~/.agents/<p>/`,
+  and keys keep their keystore names, so keys and jobs from 0.0.1 keep working.
+
 ## 0.0.1 (2026-10-18)
 
 First release: one local hub where AI coding sessions work as a team, from Claude Code or any agent that speaks
