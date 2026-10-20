@@ -50,6 +50,12 @@ func eventHook(event string) entry {
 	}
 }
 
+// hookWorld is the world the huddle handler parts run in: the process's own. A test swaps it to
+// hand the parts a world whose Bin names the built binary, so a hub the hook's autostart starts
+// is a real huddle the test runs and stops — never this test binary, which a detached `serve`
+// would re-run as its own suite, outliving the run.
+var hookWorld = func() *cli.World { return &cli.World{} }
+
 // hookSpecificOutput is the context half of the merged answer.
 type hookSpecificOutput struct {
 	HookEventName     string `json:"hookEventName"`
@@ -170,15 +176,15 @@ func runPart(ctx context.Context, part hookplan.Part, payload []byte) ([]byte, b
 func runNamedPart(ctx context.Context, name string, in io.Reader, out io.Writer) {
 	switch name {
 	case "session-start":
-		hooks.SessionStart(ctx, &cli.World{}, in, out)
+		hooks.SessionStart(ctx, hookWorld(), in, out)
 	case "listen":
-		hooks.Listen(ctx, &cli.World{}, in, out)
+		hooks.Listen(ctx, hookWorld(), in, out)
 	case "reserve":
-		hooks.Reserve(ctx, &cli.World{}, in, out)
+		hooks.Reserve(ctx, hookWorld(), in, out)
 	case "stop":
-		hooks.Stop(ctx, &cli.World{}, in, out)
+		hooks.Stop(ctx, hookWorld(), in, out)
 	case "report":
-		hooks.Report(ctx, &cli.World{}, in, out)
+		hooks.Report(ctx, hookWorld(), in, out)
 	case "radar":
 		radarhook.Main(ctx, in, out, os.Environ(), time.Now, int64(os.Getpid()), int64(os.Getppid()))
 	case "kanban":

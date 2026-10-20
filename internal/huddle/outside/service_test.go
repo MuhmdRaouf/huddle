@@ -511,3 +511,74 @@ func TestRefreshServiceIfStale(t *testing.T) {
 		}
 	})
 }
+
+// testBinStub writes an executable named x.test whose running would create marker, and answers
+// both paths: the rows below prove the service never starts one.
+func testBinStub(t *testing.T) (stub, marker string) {
+	t.Helper()
+	dir := t.TempDir()
+	marker = filepath.Join(dir, "ran")
+	stub = filepath.Join(dir, "x.test")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return stub, marker
+}
+
+// TestAnInstallRefusesATestBinary pins the install's refusal: the manager starts the unit's
+// binary the moment it loads, and a Go test binary run as `serve --foreground` re-runs its own
+// suite, detached and with the environment of the code that reached here — so an install whose
+// binary is one writes nothing, loads nothing and says so.
+func TestAnInstallRefusesATestBinary(t *testing.T) {
+	o, runner, env := serviceWorld(t)
+	stub, marker := testBinStub(t)
+	o.Bin = stub
+	if _, err := InstallService(context.Background(), o); err == nil ||
+		!strings.Contains(err.Error(), "is a test binary") || !strings.Contains(err.Error(), "the service is not installed") {
+		t.Fatalf("InstallService of %s = %v, want the test-binary refusal", stub, err)
+	}
+	if len(runner.calls) != 0 {
+		t.Errorf("the runner saw %v, want the refusal to stop before the manager", runner.calls)
+	}
+	plist := filepath.Join(env["HOME"], "Library", "LaunchAgents", ServiceLabel+".plist")
+	unit := filepath.Join(env["XDG_CONFIG_HOME"], "systemd", "user", ServiceUnit+".service")
+	if serviceReadFile(plist) != "" || serviceReadFile(unit) != "" {
+		t.Error("a unit file was written for a test binary")
+	}
+	if _, ok := ReadService(context.Background(), o.Home); ok {
+		t.Error("the ledger records a test binary's install")
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the test binary was started")
+	}
+}
+
+// TestARefreshRefusesATestBinary pins the refresh's refusal: a reload starts the unit's binary
+// under the name that just changed, so a refresh that would name a test binary keeps the old
+// unit file and the old record, and stays silent about it, like every side duty.
+func TestARefreshRefusesATestBinary(t *testing.T) {
+	o, runner, env := serviceWorld(t)
+	stub, marker := testBinStub(t)
+	plist := filepath.Join(env["HOME"], "Library", "LaunchAgents", ServiceLabel+".plist")
+	staleLedger(t, o.Home, plist)
+	if err := os.MkdirAll(filepath.Dir(plist), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plist, RenderLaunchdPlist("/opt/old/huddle", filepath.Join(o.Home, "run", "huddle.log")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o.Bin = stub
+	RefreshServiceIfStale(context.Background(), o)
+	if len(runner.calls) != 0 {
+		t.Errorf("the runner saw %v, want the refusal to stop before the manager", runner.calls)
+	}
+	if got := serviceReadFile(plist); !strings.Contains(got, "/opt/old/huddle") {
+		t.Errorf("the plist was re-rendered for a test binary:\n%s", got)
+	}
+	if rec, _ := ReadService(context.Background(), o.Home); rec.Bin != "/opt/old/huddle" {
+		t.Errorf("the ledger names %q, want the old binary kept", rec.Bin)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the test binary was started")
+	}
+}

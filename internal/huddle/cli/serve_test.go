@@ -734,3 +734,33 @@ func TestDownTakesTheOwnerKeyWithIt(t *testing.T) {
 		t.Errorf("owner.key after down: %v, want it gone", err)
 	}
 }
+
+// TestAnUpWhoseBinaryIsATestBinaryStartsNothing pins the hub spawn's refusal: a Go test binary
+// run as `serve` re-runs its own suite, detached and with the environment of the code that
+// reached here, and outlives the run — so an up whose world names one starts nothing and says so.
+func TestAnUpWhoseBinaryIsATestBinaryStartsNothing(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran")
+	stub := filepath.Join(dir, "x.test")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	homeDir := t.TempDir()
+	w := &World{
+		Getenv: func(key string) string {
+			if key == "HUDDLE_HOME" {
+				return homeDir
+			}
+			return ""
+		},
+		Environ: func() []string { return []string{"HUDDLE_HOME=" + homeDir} },
+		Bin:     stub,
+	}
+	result := Up(context.Background(), w, "http://127.0.0.1:1", 500, "")
+	if result.OK || !strings.Contains(result.Msg, "is a test binary") || !strings.Contains(result.Msg, "the hub is not started") {
+		t.Fatalf("up of a test binary = (%v, %q), want the test-binary refusal", result.OK, result.Msg)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the test binary was started")
+	}
+}

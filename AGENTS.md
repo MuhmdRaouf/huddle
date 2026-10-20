@@ -20,7 +20,7 @@ hooks and transcripts allow.
 mise run setup                                 # pinned tools and the pre-commit hook, once per clone
 mise run check                                 # every gate CI runs: lint, static checks, all tests
 go build ./... && go vet ./...                 # the Go module: cmd/huddle, internal/{huddle,radar,kanban,…}
-go run ./scripts/tmpguard -count=1 ./...       # the whole suite under the temp-home guard
+go run ./scripts/tmpguard -count=1 ./...       # the whole suite under the temp-home and leftover-process guard
 go test ./internal/kanban/... -run TestName    # one test
 go test ./internal/plugins/                    # the plugins' suites and the sibling guard (TestSiblingsMatchZai)
 bun install && bun run check                   # the web workspace: web/{ui,hub,radar,kanban}

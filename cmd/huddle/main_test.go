@@ -566,9 +566,10 @@ func TestEveryEntryImportsTheLegacyHomesFirst(t *testing.T) {
 }
 
 // TestServeEntryRefreshesAStaleService pins the entry's side duty: a home whose service names
-// another binary has it re-rendered and reloaded before the server starts — through a PATH shim,
-// so no real service manager is reached — and a reload that fails leaves the old file with the
-// entry none the wiser.
+// another binary would have it re-rendered and reloaded before the server starts — through a
+// PATH shim, so no real service manager is reached — but this process's own executable is a Go
+// test binary, and a reload would start it as `serve --foreground`: the entry keeps the old file
+// and the old record, never says a word, and its own work still succeeds.
 func TestServeEntryRefreshesAStaleService(t *testing.T) {
 	homeDir := filepath.Join(t.TempDir(), "home")
 	userHome := t.TempDir()
@@ -612,7 +613,7 @@ func TestServeEntryRefreshesAStaleService(t *testing.T) {
 		}
 	}
 
-	t.Run("a stale service is re-rendered and reloaded", func(t *testing.T) {
+	t.Run("a stale service is left alone when the running binary is a test binary", func(t *testing.T) {
 		stale(t)
 		t.Setenv("PATH", shim)
 		ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
@@ -628,16 +629,20 @@ func TestServeEntryRefreshesAStaleService(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		own, _ := os.Executable()
-		if !strings.Contains(string(body), own) {
-			t.Errorf("the unit still names the old binary:\n%s", body)
+		// the reload would start this test binary as `serve --foreground`: the entry keeps the
+		// old file and the old record, and the manager never hears of it
+		if !strings.Contains(string(body), "/opt/old/huddle") {
+			t.Errorf("the unit was re-rendered for a test binary:\n%s", body)
 		}
-		if raw, err := os.ReadFile(saw); err != nil || !strings.Contains(string(raw), reloadWord) {
-			t.Errorf("the shim saw %q (%v), want the reload", raw, err)
+		if raw, err := os.ReadFile(filepath.Join(homeDir, "service.json")); err != nil || !strings.Contains(string(raw), "/opt/old/huddle") {
+			t.Errorf("the ledger = (%q, %v), want the old binary kept", raw, err)
+		}
+		if raw, err := os.ReadFile(saw); err == nil && strings.Contains(string(raw), reloadWord) {
+			t.Errorf("the shim saw %q, want no reload for a test binary", raw)
 		}
 	})
 
-	t.Run("a reload that fails stays silent and keeps the old file", func(t *testing.T) {
+	t.Run("the refusal stays silent and keeps the old file", func(t *testing.T) {
 		stale(t)
 		t.Setenv("PATH", failing)
 		ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
@@ -647,7 +652,7 @@ func TestServeEntryRefreshesAStaleService(t *testing.T) {
 			t.Fatalf("serve = %d %q %q, want 0: an entry's side duty never fails it", code, stdout.String(), stderr.String())
 		}
 		if stderr.Len() != 0 {
-			t.Errorf("the failed refresh said %q, want silence", stderr.String())
+			t.Errorf("the refused refresh said %q, want silence", stderr.String())
 		}
 		body, err := os.ReadFile(unit)
 		if err != nil {

@@ -39,6 +39,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
@@ -359,6 +360,13 @@ func up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string, 
 	}
 	deadline := w.now().Add(time.Duration(budgetMS) * time.Millisecond)
 	rest := func() time.Duration { return deadline.Sub(w.now()) }
+	// A Go test binary is never the hub: started as `serve` it re-runs its own suite, detached
+	// and with the environment of the code that reached here — on a developer machine, the
+	// owner's real home.
+	bin := w.bin()
+	if process.IsTestBinary(bin) {
+		return Result{URL: rawURL, Msg: fmt.Sprintf("%s is a test binary, not huddle; the hub is not started", filepath.Base(bin))}
+	}
 	rawURL = trimSlash(rawURL)
 	if Healthy(ctx, rawURL, int(clampMS(rest(), 1500))) {
 		return Result{OK: true, URL: rawURL, Msg: fmt.Sprintf("Huddle is up at %s", rawURL)}
@@ -436,7 +444,7 @@ func up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string, 
 	if removalWatch {
 		env = append(env, "HUDDLE_REMOVAL_WATCH=1")
 	}
-	child := exec.Command(w.bin(), "serve")
+	child := exec.Command(bin, "serve")
 	child.Env = env
 	child.SysProcAttr = detachAttr()
 	stdin, err := child.StdinPipe()

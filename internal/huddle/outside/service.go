@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 )
@@ -203,6 +204,12 @@ func systemdExecStart(bin string) string {
 // InstallService installs this platform's service: a launchd agent on macOS, a systemd user unit
 // on Linux.
 func InstallService(ctx context.Context, o ServiceOptions) (ServiceRecord, error) {
+	// the manager starts the unit's binary the moment it loads, and a Go test binary run as
+	// `serve --foreground` re-runs its own suite, detached and with the environment of the code
+	// that reached here — on a developer machine, the owner's real home
+	if process.IsTestBinary(o.Bin) {
+		return ServiceRecord{}, fmt.Errorf("%s is a test binary, not huddle; the service is not installed", filepath.Base(o.Bin))
+	}
 	if runtime.GOOS == "darwin" {
 		return InstallLaunchdService(ctx, o)
 	}
@@ -284,6 +291,12 @@ func RefreshServiceIfStale(ctx context.Context, o ServiceOptions) {
 		if own, err := os.Executable(); err == nil {
 			current = own
 		}
+	}
+	// the reload starts the unit's binary under the name that just changed, and a Go test binary
+	// must never be the one the manager runs: the refresh keeps the old file and the old record,
+	// silently, like every failure of its own
+	if process.IsTestBinary(current) {
+		return
 	}
 	if record.Bin != "" && samePath(record.Bin, current) {
 		return

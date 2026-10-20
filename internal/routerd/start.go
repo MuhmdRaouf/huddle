@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
@@ -249,7 +250,7 @@ func spawnServeArgs(executable string, env domain.EnvLookup, log *os.File, args 
 	// A Go test binary is never the router: started as `router serve` it re-runs its own suite,
 	// detached and with the environment of the test that reached here — on a developer machine,
 	// the owner's real home.
-	if isTestBinary(executable) {
+	if process.IsTestBinary(executable) {
 		return fmt.Errorf("huddle-router: %s is a test binary, not huddle; the daemon is not started", filepath.Base(executable))
 	}
 	argv := append([]string{"router", "serve"}, args...)
@@ -272,9 +273,4 @@ func environ(env domain.EnvLookup) []string {
 		out = append(out, name+"="+value)
 	}
 	return out
-}
-
-// isTestBinary says whether an executable is one `go test` built: its name ends in .test.
-func isTestBinary(executable string) bool {
-	return strings.HasSuffix(filepath.Base(executable), ".test")
 }

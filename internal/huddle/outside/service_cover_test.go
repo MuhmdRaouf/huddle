@@ -187,7 +187,7 @@ func TestARefreshFollowsTheUnitTheLedgerNames(t *testing.T) {
 	}
 }
 
-func TestARefreshFallsBackToThisExecutableAndKeepsQuietWhenTheUnitCannotGo(t *testing.T) {
+func TestARefreshWithoutABinRefusesThisProcesssTestBinary(t *testing.T) {
 	o, runner, env := serviceWorld(t)
 	plist := filepath.Join(env["HOME"], "Library", "LaunchAgents", ServiceLabel+".plist")
 	staleLedger(t, o.Home, plist)
@@ -197,26 +197,42 @@ func TestARefreshFallsBackToThisExecutableAndKeepsQuietWhenTheUnitCannotGo(t *te
 	if err := os.WriteFile(plist, RenderLaunchdPlist("/opt/old/huddle", filepath.Join(o.Home, "run", "huddle.log")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// no Bin in the options: the refresh compares against this process's own executable
+	// no Bin in the options: the refresh would compare against this process's own executable,
+	// which in a test is a Go test binary — the reload would start it as `serve --foreground`,
+	// so the refresh keeps the old file and the old record instead
 	o.Bin = ""
 	RefreshServiceIfStale(context.Background(), o)
-	if len(runner.calls) == 0 {
-		t.Fatal("the runner saw nothing, want the refresh to have run")
+	if len(runner.calls) != 0 {
+		t.Errorf("the runner saw %v, want the test-binary refusal before any reload", runner.calls)
 	}
-	rec, _ := ReadService(context.Background(), o.Home)
-	if rec.Bin == "" || rec.Bin == "/opt/old/huddle" {
-		t.Errorf("the ledger names %q, want this executable", rec.Bin)
+	if rec, _ := ReadService(context.Background(), o.Home); rec.Bin != "/opt/old/huddle" {
+		t.Errorf("the ledger names %q, want the old binary kept", rec.Bin)
 	}
-	// an unwritable unit file ends the refresh before any reload: silent, nothing changed
+}
+
+// TestARefreshKeepsQuietWhenTheUnitCannotGo keeps the write-failure corner: an unwritable unit
+// file ends the refresh before any reload, silently, with nothing changed.
+func TestARefreshKeepsQuietWhenTheUnitCannotGo(t *testing.T) {
+	o, runner, env := serviceWorld(t)
+	plist := filepath.Join(env["HOME"], "Library", "LaunchAgents", ServiceLabel+".plist")
+	staleLedger(t, o.Home, plist)
+	if err := os.MkdirAll(filepath.Dir(plist), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plist, RenderLaunchdPlist("/opt/old/huddle", filepath.Join(o.Home, "run", "huddle.log")), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	o.Bin = "/opt/new/huddle"
 	if err := os.Chmod(filepath.Dir(plist), 0o500); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(plist), 0o700) })
-	calls := len(runner.calls)
 	RefreshServiceIfStale(context.Background(), o)
-	if len(runner.calls) != calls {
-		t.Errorf("the runner saw %v, want no reload past the write failure", runner.calls[calls:])
+	if len(runner.calls) != 0 {
+		t.Errorf("the runner saw %v, want no reload past the write failure", runner.calls)
+	}
+	if got := serviceReadFile(plist); !strings.Contains(got, "/opt/old/huddle") {
+		t.Errorf("the old file was not kept:\n%s", got)
 	}
 }
 

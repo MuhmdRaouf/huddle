@@ -7,8 +7,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 )
 
 // readHookOutput is the one object the merge writes, as the test reads it.
@@ -124,8 +129,19 @@ func TestMergeHookOutputs(t *testing.T) {
 }
 
 // TestEventHookWritesOneObject drives the wired event hook: two parts that both speak fold into
-// the one object on stdout, and nothing is written when both are silent.
+// the one object on stdout, and nothing is written when both are silent. The hook's autostart
+// starts the hub through the world the parts run in, so the world names the built binary — a
+// `huddle.test serve` would re-run this suite detached and outlive the run — and the test stops
+// the hub it started.
 func TestEventHookWritesOneObject(t *testing.T) {
+	original := hookWorld
+	t.Cleanup(func() { hookWorld = original })
+	homeDir := filepath.Join(t.TempDir(), "home")
+	t.Setenv("HUDDLE_HOME", homeDir)
+	pinFreePort(t, homeDir)
+	t.Setenv("HUDDLE_DATA", filepath.Join(t.TempDir(), "data"))
+	hookWorld = func() *cli.World { return &cli.World{Bin: huddleBin} }
+	t.Cleanup(func() { stopStartedHub(t, homeDir) })
 	hook := eventHook("session-start")
 	var stdout, stderr bytes.Buffer
 	code := hook(t.Context(), nil, &stdout, &stderr)
@@ -135,4 +151,16 @@ func TestEventHookWritesOneObject(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Errorf("silent session wrote %q", stdout.String())
 	}
+}
+
+// stopStartedHub ends the hub the hook's autostart started, the way the alone tests stop one:
+// the pid file the start wrote, TERM then KILL once the wait runs out.
+func stopStartedHub(t *testing.T, homeDir string) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(homeDir, "run", "huddle.pid"))
+	if err != nil {
+		t.Fatalf("no pid file for the hub the hook started: %v", err)
+	}
+	pid, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+	aloneStop(pid)
 }

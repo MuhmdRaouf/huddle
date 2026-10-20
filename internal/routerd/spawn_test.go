@@ -28,21 +28,3 @@ func TestSpawnServeRefusesATestBinary(t *testing.T) {
 		t.Fatal("the test binary was started")
 	}
 }
-
-func TestIsTestBinary(t *testing.T) {
-	rows := []struct {
-		path string
-		want bool
-	}{
-		{"/tmp/go-build1/b001/huddle.test", true},
-		{"cli.test", true},
-		{"/Users/x/.agents/huddle-bin/src/0123456789ab/huddle", false},
-		{"/usr/local/bin/huddle", false},
-		{"/tmp/tests/huddle", false},
-	}
-	for _, row := range rows {
-		if got := isTestBinary(row.path); got != row.want {
-			t.Errorf("isTestBinary(%q) = %v, want %v", row.path, got, row.want)
-		}
-	}
-}
