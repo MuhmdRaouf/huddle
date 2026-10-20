@@ -3,6 +3,7 @@ package ingest_test
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -153,4 +154,31 @@ func TestTailFile(t *testing.T) {
 			t.Errorf("second TailFile = %q", got.Lines)
 		}
 	})
+}
+
+// Without the clone in TailFile this fails: each kept partial line is a substring of its whole
+// read chunk, so 64 tails pin 64 chunks of about a MiB each.
+func TestTailFileKeepsNoChunkAliveThroughItsPartialLine(t *testing.T) {
+	e := makeEnv(t)
+	states := make([]ingest.TailState, 0, 64)
+	for i := range 64 {
+		path := writeText(t, filepath.Join(e.home, fmt.Sprintf("t-%02d.jsonl", i)),
+			strings.Repeat("a", 1<<20)+"\n"+`{"partial":`)
+		state := ingest.TailState{Path: path}
+		ingest.TailFile(&state, ingest.TailChunkBytes)
+		states = append(states, state)
+	}
+	var m runtime.MemStats
+	runtime.GC()
+	runtime.GC()
+	runtime.ReadMemStats(&m)
+	if m.HeapInuse >= 32<<20 {
+		t.Errorf("HeapInuse = %d bytes (%d MiB), want under 32 MiB: a kept partial line still pins its whole read chunk", m.HeapInuse, m.HeapInuse>>20)
+	}
+	for i := range states {
+		if states[i].Partial != `{"partial":` {
+			t.Errorf("states[%d].Partial = %q, want {\"partial\":", i, states[i].Partial)
+		}
+	}
+	runtime.KeepAlive(states)
 }

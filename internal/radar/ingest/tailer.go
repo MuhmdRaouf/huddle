@@ -85,6 +85,11 @@ func TailFile(state *TailState, chunk int64) TailResult {
 	}
 	state.Offset += int64(read)
 	lines, partial := SplitLines(state.Partial, string(buffer[:read]))
-	state.Partial = partial
+	// Each line and the partial are substrings of the whole chunk (up to TailChunkBytes): kept as they are, any one
+	// of them held by a tail or a record pins the entire chunk in memory.
+	for i := range lines {
+		lines[i] = strings.Clone(lines[i])
+	}
+	state.Partial = strings.Clone(partial)
 	return TailResult{Lines: lines, Restarted: restarted}
 }
