@@ -172,12 +172,14 @@ var (
 	mcpPath     = regexp.MustCompile(`^/mcp/([a-z0-9-]{1,40})$`)
 	tokenPath   = regexp.MustCompile(`^/api/tokens/([a-z0-9]{6})$`)
 	memberPath  = regexp.MustCompile(`^/api/members/([a-z][a-z0-9_-]{0,31})$`)
-	opPath      = regexp.MustCompile(`^op/([a-z_]+)$`)
-	kbPath      = regexp.MustCompile(`^kb/(\d+)$`)
-	taskPath    = regexp.MustCompile(`^task/([\w.-]{1,32})$`)
-	repoPath    = regexp.MustCompile(`^repo/([a-z]+)$`)
-	xPath       = regexp.MustCompile(`^x/([a-z/]+)$`)
-	livePath    = regexp.MustCompile(`^/api/c/([a-z0-9-]{1,40})/live$`)
+	// a channel's name the way the hub's own rule admits it (channel.ChannelRe)
+	channelNamePath = regexp.MustCompile(`^/api/channels/([a-z0-9][a-z0-9-]{0,39})$`)
+	opPath          = regexp.MustCompile(`^op/([a-z_]+)$`)
+	kbPath          = regexp.MustCompile(`^kb/(\d+)$`)
+	taskPath        = regexp.MustCompile(`^task/([\w.-]{1,32})$`)
+	repoPath        = regexp.MustCompile(`^repo/([a-z]+)$`)
+	xPath           = regexp.MustCompile(`^x/([a-z/]+)$`)
+	livePath        = regexp.MustCompile(`^/api/c/([a-z0-9-]{1,40})/live$`)
 	// one registry session by id: a Claude Code session id, any shape but never a slash
 	registrySessionPath = regexp.MustCompile(`^/api/registry/sessions/([^/]+)$`)
 	// one needs-you item by its number and one of its two actions
@@ -1363,6 +1365,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return nil
 	case path == "/api/channels" && r.Method == http.MethodPost:
 		return s.createChannel(w, r)
+	case credentialed && channelNamePath.MatchString(path) && r.Method == http.MethodDelete:
+		return s.removeChannel(w, r, channelNamePath.FindStringSubmatch(path)[1], me)
 	case path == "/api/pair/begin" && r.Method == http.MethodPost:
 		return s.pairBeginRoute(w, r)
 	case path == "/api/pair/finish" && r.Method == http.MethodPost:
@@ -1818,6 +1822,43 @@ func (s *server) createChannel(w http.ResponseWriter, r *http.Request) error {
 		Name   string         `json:"name"`
 		Config channel.Config `json:"config"`
 	}{ch.Name, config}, nil)
+	return nil
+}
+
+// removeChannel takes a channel off the hub: the creator only, and never one with a session
+// online. The file stays under channels/.removed/, so a mistake is undone by moving it back.
+func (s *server) removeChannel(w http.ResponseWriter, r *http.Request, name string, me auth.Who) error {
+	if !me.Root {
+		s.writeJSON(w, 403, errorAnswer{Error: "only the session that started Huddle may do this"}, nil)
+		return nil
+	}
+	ch, err := s.hub.GetExisting(r.Context(), name)
+	if err != nil {
+		return err
+	}
+	sessions, err := ch.Sessions(r.Context())
+	if err != nil {
+		return err
+	}
+	online := 0
+	for _, sess := range sessions {
+		// a crashed or kicked session never leaves; past the stale mark it no longer counts
+		if sess.State != "left" && !sess.Stale {
+			online++
+		}
+	}
+	if online > 0 {
+		s.writeJSON(w, 409, errorAnswer{Error: fmt.Sprintf("%s has %d session(s) online", name, online)}, nil)
+		return nil
+	}
+	kept, err := s.hub.Remove(r.Context(), name, time.Now())
+	if err != nil {
+		return err
+	}
+	s.writeJSON(w, 200, struct {
+		Removed string `json:"removed"`
+		Kept    string `json:"kept"`
+	}{name, kept}, nil)
 	return nil
 }
 

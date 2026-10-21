@@ -1150,6 +1150,14 @@ func Open(ctx context.Context, name string, st *store.Store) (*Channel, error) {
 	return c, nil
 }
 
+// checkpoint folds the WAL back into the database file, so the file a remove keeps is whole.
+func (c *Channel) checkpoint(ctx context.Context) error {
+	c.dbMu.Lock()
+	defer c.dbMu.Unlock()
+	_, err := c.Store.All(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
+	return err
+}
+
 // Close cancels every waiter, waits for the running write to end and closes the store.
 func (c *Channel) Close(ctx context.Context) error {
 	c.stateMu.Lock()

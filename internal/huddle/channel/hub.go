@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
@@ -75,6 +76,42 @@ func (h *Hub) Where() string { return h.dir }
 // File answers one channel's database file.
 func (h *Hub) File(name string) string {
 	return filepath.Join(h.dir, "channels", name+".db")
+}
+
+// Remove takes a channel off the hub: the open channel closes with its WAL checkpointed first,
+// the file moves to channels/.removed/<name>-<UTC stamp>.db (a mistake is undone by moving it
+// back), and the name leaves the cache. The hub's lock is held throughout, so no Get reopens
+// the file midway. A channel without a file answers a not-found error.
+func (h *Hub) Remove(ctx context.Context, name string, now time.Time) (string, error) {
+	if !ChannelRe.MatchString(name) {
+		return "", httpErr(400, "channel name must match /"+channelReSrc+"/")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, err := os.Stat(h.File(name)); err != nil {
+		return "", httpErr(404, fmt.Sprintf("no channel %s", name))
+	}
+	if ch, ok := h.open[name]; ok {
+		if err := ch.checkpoint(ctx); err != nil {
+			return "", err
+		}
+		if err := ch.Close(ctx); err != nil {
+			return "", err
+		}
+		delete(h.open, name)
+	}
+	kept := filepath.Join(h.dir, "channels", ".removed",
+		fmt.Sprintf("%s-%s.db", name, now.UTC().Format("20060102T150405Z")))
+	if err := os.MkdirAll(filepath.Dir(kept), 0o700); err != nil {
+		return "", err
+	}
+	if err := os.Rename(h.File(name), kept); err != nil {
+		return "", err
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		_ = os.Remove(h.File(name) + suffix)
+	}
+	return kept, nil
 }
 
 // Exists answers whether the channel is open or has a file.

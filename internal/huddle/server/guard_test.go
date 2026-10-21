@@ -93,6 +93,8 @@ func TestGuardWrites(t *testing.T) {
 			action: "/api/tokens/zzzzzz", want: 404},
 		{name: "members.kick", method: http.MethodDelete, path: "/api/members/nobody",
 			action: "/api/members/nobody", want: 404},
+		{name: "channels.remove", method: http.MethodDelete, path: "/api/channels/guards-made",
+			action: "/api/channels/guards-made", want: 200},
 		{name: "login", method: http.MethodPost, path: "/api/login",
 			body: `{}`, action: "/api/login", want: 200},
 		{name: "op", method: http.MethodPost, path: "/api/c/guards/op/status?as=dev",

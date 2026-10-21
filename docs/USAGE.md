@@ -139,6 +139,20 @@ and knowledge, whatever project each runs in.
 Messages (`huddle send`, `reply`), shared knowledge (`huddle remember`, `recall`) and the whole
 surface live in the huddle skill and `huddle help`.
 
+### Removing a channel
+
+Only the session that started Huddle may remove a channel:
+
+```sh
+huddle channel rm old-channel
+```
+
+The dashboard's Channels page has the same Remove channel action. A channel with a session
+online is refused; let its sessions leave first. The channel's file is not deleted: it moves to
+`channels/.removed/<name>-<timestamp>.db` under the hub's data directory. To undo, stop the hub
+(`huddle down`), move the file back to `channels/<name>.db`, and start the hub again — the
+channel lists with its whole history.
+
 ## Reserve files
 
 Two sessions editing the same file is the usual collision. A session says what it is about to

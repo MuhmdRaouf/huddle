@@ -150,22 +150,105 @@ function LastCell({ st }: { st: ChannelRow["stats"] }): JSX.Element {
 }
 
 /** One channel's card: name and title, description, the needs pill, who is online, the plan's
- *  progress and the last event (app.js paintChannels' card). */
-export function ChannelCard({ c }: { c: ChannelRow }): JSX.Element {
+ *  progress and the last event (app.js paintChannels' card). The creator's browser gets the
+ *  Remove channel action beside the cells; the link's own navigation never fires for it. */
+export function ChannelCard({
+  c,
+  onRemove,
+}: {
+  c: ChannelRow;
+  onRemove?: ((c: ChannelRow) => void) | undefined;
+}): JSX.Element {
   const st = c.stats ?? {};
   return (
-    <a
-      class="panel flex flex-col gap-4 p-5 transition-colors hover:bg-base-content/5"
-      href={`#/channels/${c.name}`}
-      data-ch={c.name}
-    >
-      <ChannelHead c={c} />
-      <div class="mt-auto flex flex-wrap items-center gap-x-5 gap-y-3 border-t hairline pt-4 text-xs muted">
-        <OnlineCell on={c.sessions ?? []} />
-        <TasksCell st={st} />
-        <LastCell st={st} />
+    <div class="relative">
+      <a
+        class="panel flex flex-col gap-4 p-5 transition-colors hover:bg-base-content/5"
+        href={`#/channels/${c.name}`}
+        data-ch={c.name}
+      >
+        <ChannelHead c={c} />
+        <div class="mt-auto flex flex-wrap items-center gap-x-5 gap-y-3 border-t hairline pt-4 text-xs muted">
+          <OnlineCell on={c.sessions ?? []} />
+          <TasksCell st={st} />
+          <LastCell st={st} />
+        </div>
+      </a>
+      {onRemove ? (
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs absolute right-4 bottom-5"
+          data-remove={c.name}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRemove(c);
+          }}
+        >
+          <Icon name="trash" class="size-3.5" /> Remove channel
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** The Remove channel dialog: the channel's name, the kept history on disk, the server's
+ *  refusal (a session online) in the dialog itself. */
+function RemoveChannel({
+  c,
+  onClose,
+  onRemoved,
+}: {
+  c: ChannelRow | null;
+  onClose: () => void;
+  onRemoved: () => void;
+}): JSX.Element {
+  const { api, toast } = useHuddle();
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setErr(""), [c]);
+  const submit = async (): Promise<void> => {
+    if (!c || busy) return;
+    setErr("");
+    setBusy(true);
+    try {
+      await api.api(`/api/channels/${c.name}`, { method: "DELETE" });
+      onClose();
+      toast(`Removed ${c.name}. Its history is kept under channels/.removed/.`);
+      onRemoved();
+    } catch (x) {
+      setErr(errText(x));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open={!!c} onClose={onClose} title="Remove channel">
+      <div class="flex flex-col gap-3 p-4">
+        <p class="text-sm">
+          Remove <strong>{c?.name}</strong>? Sessions can no longer join it. Its history is kept on disk under{" "}
+          <code>channels/.removed/</code>; stop the hub and move the file back to{" "}
+          <code>channels/{c?.name}.db</code> to undo.
+        </p>
+        <p class="text-xs text-error" role="alert">
+          {err}
+        </p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-error"
+            data-confirm-remove
+            disabled={busy}
+            onClick={() => void submit()}
+          >
+            Remove channel
+          </button>
+        </div>
       </div>
-    </a>
+    </Dialog>
   );
 }
 
@@ -273,11 +356,14 @@ function NewChannel({ open, onClose }: { open: boolean; onClose: () => void }): 
 }
 
 /** The channels page. The list loads at once and again every 10 s while the page shows and the
- *  tab is visible (app.js homeView + HOMEPOLL). */
+ *  tab is visible (app.js homeView + HOMEPOLL). The creator's browser (an owner link session)
+ *  gets Remove channel on every card. */
 export function Home({ timers = realTimers }: { timers?: PollTimers }): JSX.Element {
-  const { api } = useHuddle();
+  const { api, who } = useHuddle();
   const [list, setList] = useState<readonly ChannelRow[]>([]);
   const [open, setOpen] = useState(false);
+  const [rm, setRm] = useState<ChannelRow | null>(null);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     let on = true;
     const read = (): void => {
@@ -294,7 +380,7 @@ export function Home({ timers = realTimers }: { timers?: PollTimers }): JSX.Elem
       on = false;
       timers.stop(h);
     };
-  }, [api, timers]);
+  }, [api, timers, tick]);
   const first = list[0]?.name || "my-channel";
   return (
     <div class="flex min-w-0 flex-col gap-6">
@@ -308,7 +394,7 @@ export function Home({ timers = realTimers }: { timers?: PollTimers }): JSX.Elem
         {list.length ? (
           <div class="grid gap-4 md:grid-cols-2">
             {list.map((c) => (
-              <ChannelCard key={c.name} c={c} />
+              <ChannelCard key={c.name} c={c} onRemove={who.kind === "owner" ? setRm : undefined} />
             ))}
           </div>
         ) : (
@@ -321,6 +407,9 @@ export function Home({ timers = realTimers }: { timers?: PollTimers }): JSX.Elem
       </div>
       <ConnectCard ch={first} />
       <NewChannel open={open} onClose={() => setOpen(false)} />
+      {rm ? (
+        <RemoveChannel c={rm} onClose={() => setRm(null)} onRemoved={() => setTick((n) => n + 1)} />
+      ) : null}
     </div>
   );
 }

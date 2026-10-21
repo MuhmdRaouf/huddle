@@ -71,6 +71,8 @@ var helpLines = []string{
 	"  huddle token create [--ttl 24h|0] [--single-use] [--can-invite] [--print-join-command] | token list | token delete <id>",
 	"                                           (--print-join-command prints the join: line to paste into the other session)",
 	"  huddle members | kick <name>            who holds a credential; revoke one (the creator only)",
+	"  huddle channel rm <name>                remove a channel (the creator only); a session online refuses",
+	"                                           it, the history stays under channels/.removed/",
 	"  huddle harness list | install <name> | remove <name>   wire huddle's MCP server, and the",
 	"                                           agent's own lifecycle hooks where it has them, into",
 	"                                           another coding agent: codex, gemini, qwen, opencode, crush",
@@ -326,6 +328,9 @@ func Huddle(ctx context.Context, w *World, argv []string, stdout, stderr io.Writ
 	}
 	if cmd == "kick" {
 		return c.kick(ctx)
+	}
+	if cmd == "channel" {
+		return c.channel(ctx)
 	}
 	if cmd == "open" {
 		return c.open(ctx)
@@ -1088,6 +1093,47 @@ func (c *cli) kick(ctx context.Context) int {
 		return code
 	}
 	c.say(name + " kicked: its credential no longer works")
+	return 0
+}
+
+// channel runs the channel remove branch.
+func (c *cli) channel(ctx context.Context) int {
+	sub, ok := c.shift()
+	if !ok || sub != "rm" {
+		return c.die("channel rm <name>", 2)
+	}
+	return c.channelRemove(ctx)
+}
+
+// channelRemove takes one channel off the hub (the creator only): its history stays on disk.
+// Not found exits 4, any other refusal 1.
+func (c *cli) channelRemove(ctx context.Context) int {
+	name, ok := c.shift()
+	if !ok {
+		return c.die("channel rm <name>", 2)
+	}
+	if c.url == "" {
+		return c.die(noPort, 5)
+	}
+	resp, err := HFetch(ctx, c.w, http.MethodDelete, c.url+"/api/channels/"+queryEscape(name),
+		map[string]string{"content-type": "application/json"}, nil, 0, "")
+	if err != nil {
+		return c.die(fmt.Sprintf("Huddle unreachable at %s (start it: huddle up)", c.url), 5)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	value, decodeErr := jsfmt.DecodeValue(raw)
+	if decodeErr != nil {
+		value = jsfmt.Object(nil, nil)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		code := 1
+		if resp.StatusCode == 404 {
+			code = 4
+		}
+		return c.die(errorMessage(value, resp.StatusCode), code)
+	}
+	c.say(fmt.Sprintf("%s removed; its history is kept at %s", name, textField(value, "kept")))
 	return 0
 }
 
