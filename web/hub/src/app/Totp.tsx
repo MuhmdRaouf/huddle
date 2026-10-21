@@ -151,7 +151,7 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
           ))}
         </ul>
         <div class="flex flex-wrap gap-2">
-          <button type="button" class="btn btn-primary" onClick={() => copy(all, "Recovery codes copied")}>
+          <button type="button" class="btn" onClick={() => copy(all, "Recovery codes copied")}>
             <Icon name="copy" />
             Copy
           </button>
@@ -159,8 +159,8 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
             <Icon name="download" />
             Download .txt
           </button>
-          <button type="button" class="btn btn-ghost ml-auto" onClick={onDone}>
-            I saved them
+          <button type="button" class="btn btn-primary ml-auto w-full sm:w-auto" onClick={onDone}>
+            I saved them, continue
           </button>
         </div>
       </div>

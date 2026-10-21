@@ -147,9 +147,10 @@ function ClaudeSteps({ ch, invite }: { ch: string; invite: boolean }): JSX.Eleme
         ) : (
           <>
             <p class="mt-1 mb-2.5 text-sm muted">
-              The session that starts this huddle prints the join line every later session pastes in.
+              In a session that is already in this huddle, run <code>/huddle:invite</code>. It prints the join
+              line.
             </p>
-            <CxCode t="In a Claude session" c="/huddle:setup" msg="Copied. Paste it where the step says." />
+            <CxCode t="In a Claude session" c="/huddle:invite" msg="Copied. Paste it where the step says." />
           </>
         )}
       </CxStep>

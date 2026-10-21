@@ -366,10 +366,13 @@ describe("the connect card", () => {
     expect(document.body.textContent).toContain("x-huddle-token");
   });
 
-  it("shows the setup-link commands instead of the invite where no credential stands", () => {
+  it("sends the reader to /huddle:invite where no credential stands", () => {
     renderIn(<ConnectCard ch="" invite={false} />);
     expect(screen.queryByText("Invite a session")).toBeNull();
-    expect(screen.getByText(/The session that starts this huddle prints the join line/)).toBeDefined();
+    const step2 = screen.getByText("Invite the session").closest("li");
+    expect(step2?.textContent).toContain("already in this huddle");
+    expect(step2?.textContent).toContain("/huddle:invite");
+    expect(step2?.textContent).not.toContain("/huddle:setup");
   });
 
   it("says where the pasted command goes when the copy landed", async () => {

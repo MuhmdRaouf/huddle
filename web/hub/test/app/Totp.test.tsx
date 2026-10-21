@@ -123,8 +123,11 @@ describe("the authenticator set-up", () => {
     expect(screen.getByText("Save your recovery codes")).toBeDefined();
     expect(screen.getByText("abcd-efgh")).toBeDefined();
     expect(screen.queryByRole("img", { name: "Authenticator QR code" })).toBeNull();
+    const continueBtn = screen.getByRole("button", { name: "I saved them, continue" });
+    expect(continueBtn.className).toContain("btn-primary");
+    expect(screen.getByRole("button", { name: "Copy" }).className).not.toContain("btn-primary");
     await act(async () => {
-      screen.getByRole("button", { name: "I saved them" }).click();
+      continueBtn.click();
     });
     expect(onDone).toHaveBeenCalledTimes(1);
   });
