@@ -552,7 +552,9 @@ func TestUpdatedOrUpNamesALogItCannotOpen(t *testing.T) {
 	}
 }
 
-// spawnBinary builds the real huddle binary once, for the rows that spawn a real daemon.
+// spawnBinary builds the real huddle binary once, for the rows that spawn a real daemon. The
+// sweep is the last cleanup: it stops every process of this binary, including a takeover taker
+// that finished after the record stopped naming it.
 func spawnBinary(t *testing.T) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "huddle")
@@ -562,6 +564,7 @@ func spawnBinary(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
+	t.Cleanup(func() { stopProcessesOf(t, bin) })
 	return bin
 }
 
@@ -616,6 +619,54 @@ func stopRecordedDaemon(t *testing.T, env domain.EnvLookup) {
 	_ = syscall.Kill(dead.PID, syscall.SIGKILL)
 }
 
+// stopProcessesOf stops every process whose command line is the binary or the binary with
+// arguments, whatever pid a record remembered: a takeover taker that finished late is no
+// longer in the record, and nothing else would stop it. pid ≤ 1 and this process are never
+// signaled, and each stop is logged so a leak shows in the test's output.
+func stopProcessesOf(t *testing.T, bin string) {
+	t.Helper()
+	out, err := exec.Command("ps", "-axo", "pid=,command=").Output()
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		pidText, command, ok := strings.Cut(strings.TrimSpace(line), " ")
+		if !ok {
+			continue
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(pidText))
+		if err != nil || pid <= 1 || pid == os.Getpid() {
+			continue
+		}
+		command = strings.TrimSpace(command)
+		if command != bin && !strings.HasPrefix(command, bin+" ") {
+			continue
+		}
+		_ = syscall.Kill(pid, syscall.SIGTERM)
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if gone(pid) {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		if !gone(pid) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+		t.Logf("stopped a leftover daemon pid %d from %s", pid, bin)
+	}
+}
+
+// gone answers whether the process is over, reaping it when it was this process's child: a
+// zombie answers kill with the alive side until someone waits for it.
+func gone(pid int) bool {
+	var status syscall.WaitStatus
+	if reaped, err := syscall.Wait4(pid, &status, syscall.WNOHANG, nil); err == nil {
+		return reaped == pid
+	}
+	return syscall.Kill(pid, 0) == syscall.ESRCH
+}
+
 // TestStartSpawnsTheRealBinaryAndWaitsForItsHealth runs the start's whole happy path against
 // the real binary: the detached spawn, the poll for its health answer, the record it writes —
 // and the takeover a start from another record's binary asks for, waited out to the fresh pid.
@@ -644,8 +695,8 @@ func TestStartSpawnsTheRealBinaryAndWaitsForItsHealth(t *testing.T) {
 		if !strings.Contains(line, "zai") {
 			t.Errorf("Start = %q, want zai served", line)
 		}
-		spawned, ok := readRecord(env)
-		if !ok || spawned.PID <= 1 || spawned.PID == os.Getpid() {
+		spawned := awaitRecord(t, env)
+		if spawned.PID == os.Getpid() {
 			t.Fatalf("the record = %+v, want the daemon's own", spawned)
 		}
 		if spawned.Executable != bin {
@@ -654,10 +705,7 @@ func TestStartSpawnsTheRealBinaryAndWaitsForItsHealth(t *testing.T) {
 	})
 
 	t.Run("a start whose record names another binary takes the socket over", func(t *testing.T) {
-		old, ok := readRecord(env)
-		if !ok {
-			t.Fatal("the daemon left no record")
-		}
+		old := awaitRecord(t, env)
 		stale := old
 		stale.Executable = "/usr/local/bin/huddle-from-another-build"
 		var line string
@@ -682,6 +730,65 @@ func TestStartSpawnsTheRealBinaryAndWaitsForItsHealth(t *testing.T) {
 			t.Errorf("the record still names pid %d, want the taker's own", old.PID)
 		}
 	})
+}
+
+// awaitRecord waits for the daemon's own record: the daemon publishes it after the serve loop
+// is up, and a loaded machine can open that gap past the start's answer, while the daemon
+// serves without it (the record is status's and start's to miss, never the router's).
+func awaitRecord(t *testing.T, env domain.EnvLookup) record {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if spawned, ok := readRecord(env); ok && spawned.PID > 1 {
+			return spawned
+		}
+		if !time.Now().Before(deadline) {
+			t.Fatal("the daemon left no record")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+// TestStopProcessesOfStopsEveryProcessOfTheBinary starts two processes from the test's own
+// binary path beside one from another path, sweeps, and proves the sweep stopped exactly the
+// two. The sleeper is a tiny Go build: a copied Apple platform binary is killed by the kernel
+// at once on macOS.
+func TestStopProcessesOfStopsEveryProcessOfTheBinary(t *testing.T) {
+	t.Parallel()
+	bin := filepath.Join(t.TempDir(), "huddle")
+	src := filepath.Join(t.TempDir(), "sleeper.go")
+	body := "package main\n\nimport \"time\"\n\nfunc main() { time.Sleep(30 * time.Second) }\n"
+	if err := os.WriteFile(src, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("go", "build", "-o", bin, src).CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+	copies := []*exec.Cmd{exec.Command(bin, "30"), exec.Command(bin, "30")}
+	for i, cmd := range copies {
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("copy %d: %v", i, err)
+		}
+	}
+	original := exec.Command("/bin/sleep", "30")
+	if err := original.Start(); err != nil {
+		t.Fatalf("the original sleep: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = original.Process.Signal(syscall.SIGTERM)
+		_ = original.Wait()
+	})
+
+	stopProcessesOf(t, bin)
+
+	for i, cmd := range copies {
+		if err := cmd.Wait(); err == nil {
+			t.Errorf("copy %d from %s outlived the sweep", i, bin)
+		}
+	}
+	if err := syscall.Kill(original.Process.Pid, 0); err != nil {
+		t.Errorf("the original /bin/sleep pid %d did not survive the sweep: %v", original.Process.Pid, err)
+	}
 }
 
 // TestRunAnswersBeforeItServes covers the rows a Run answers before any lane is mounted: the
