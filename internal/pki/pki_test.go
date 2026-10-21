@@ -148,6 +148,32 @@ func TestTheIntermediateIsResignedAtTwoThirdsOfItsLife(t *testing.T) {
 	}
 }
 
+// The intermediate signs leaves only, so its basic constraint must carry an explicit path
+// length of zero: Go reads MaxPathLen 0 without MaxPathLenZero as "no limit at all". The root
+// admits the intermediate and nothing beyond it.
+func TestTheIntermediateSignsLeavesOnly(t *testing.T) {
+	authority, _ := newTestAuthority(t)
+	if _, _, err := authority.Intermediate(); err != nil { // its first need mints the fresh pair
+		t.Fatalf("the first intermediate: %v", err)
+	}
+	root := readPEMCert(t, authority.RootFile())
+	intermediate := readPEMCert(t, authority.IntermediateFile())
+	if root.MaxPathLen != 1 {
+		t.Errorf("the root's MaxPathLen = %d, want 1", root.MaxPathLen)
+	}
+	if intermediate.MaxPathLen != 0 || !intermediate.MaxPathLenZero {
+		t.Errorf("the intermediate's path limit = MaxPathLen %d, MaxPathLenZero %t, want 0 and true", intermediate.MaxPathLen, intermediate.MaxPathLenZero)
+	}
+	for name, cert := range map[string]*x509.Certificate{"the root": root, "the intermediate": intermediate} {
+		if !cert.IsCA {
+			t.Errorf("%s is not a CA", name)
+		}
+		if cert.KeyUsage != x509.KeyUsageCertSign|x509.KeyUsageCRLSign {
+			t.Errorf("%s's key usage = %d, want CertSign|CRLSign", name, cert.KeyUsage)
+		}
+	}
+}
+
 func TestTheLeafNamesExactlyTheFourHubNamesAndChainsToTheRoot(t *testing.T) {
 	authority, _ := newTestAuthority(t)
 	leaf, err := NewLeaf(authority, HubLeafNames("hub.mine.test"))

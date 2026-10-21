@@ -133,40 +133,11 @@ func (a *Authority) ReadRoot() (*x509.Certificate, error) {
 	return parseCertificate(body)
 }
 
-// mintRoot lays the root certificate and its key, each in one move: a crash between the two
-// writes leaves a refusal on the next need, never a silent re-mint of the root.
+// mintRoot lays the root certificate and its key.
 func (a *Authority) mintRoot() (*x509.Certificate, crypto.Signer, error) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), a.o.random())
-	if err != nil {
-		return nil, nil, err
-	}
-	now := a.o.clock()()
-	template := &x509.Certificate{
-		SerialNumber:          randomSerial(a.o.random()),
-		Subject:               pkix.Name{CommonName: fmt.Sprintf("Huddle Local Authority - %d ECC Root", now.Year())},
-		NotBefore:             now,
-		NotAfter:              now.Add(RootLife),
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		MaxPathLen:            1, // the root signs the intermediate and nothing beyond it
-	}
-	der, err := x509.CreateCertificate(a.o.random(), template, template, &key.PublicKey, key)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := writePEM(a.RootFile(), "CERTIFICATE", der); err != nil {
-		return nil, nil, err
-	}
-	keyDER, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := writePEM(a.RootKeyFile(), "EC PRIVATE KEY", keyDER); err != nil {
-		return nil, nil, err
-	}
-	cert, err := parseCertificate(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
-	return cert, key, err
+	return a.mint("Root", RootLife,
+		1, // the root signs the intermediate and nothing beyond it
+		nil, nil, a.RootFile(), a.RootKeyFile())
 }
 
 // Intermediate answers the live intermediate and its key, minting one when none stands and
@@ -198,6 +169,16 @@ func isBrokenPair(err error) bool {
 
 // mintIntermediate lays a fresh intermediate signed by the root.
 func (a *Authority) mintIntermediate(root *x509.Certificate, rootKey crypto.Signer) (*x509.Certificate, crypto.Signer, error) {
+	return a.mint("Intermediate", IntermediateLife,
+		0, // the intermediate signs leaves only
+		root, rootKey, a.IntermediateFile(), a.IntermediateKeyFile())
+}
+
+// mint lays one CA certificate and its key — a P-256 key, a CA template, the certificate
+// written then the key, each in one move: a crash between the two writes leaves a refusal on
+// the next need, never a silent re-mint. A nil parent means self-signed: the template is its
+// own parent and the new key signs it.
+func (a *Authority) mint(name string, life time.Duration, maxPath int, parent *x509.Certificate, parentKey crypto.Signer, certFile, keyFile string) (*x509.Certificate, crypto.Signer, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), a.o.random())
 	if err != nil {
 		return nil, nil, err
@@ -205,26 +186,31 @@ func (a *Authority) mintIntermediate(root *x509.Certificate, rootKey crypto.Sign
 	now := a.o.clock()()
 	template := &x509.Certificate{
 		SerialNumber:          randomSerial(a.o.random()),
-		Subject:               pkix.Name{CommonName: fmt.Sprintf("Huddle Local Authority - %d ECC Intermediate", now.Year())},
+		Subject:               pkix.Name{CommonName: fmt.Sprintf("Huddle Local Authority - %d ECC %s", now.Year(), name)},
 		NotBefore:             now,
-		NotAfter:              now.Add(IntermediateLife),
+		NotAfter:              now.Add(life),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
-		MaxPathLen:            0, // the intermediate signs leaves only
+		MaxPathLen:            maxPath,
+		MaxPathLenZero:        maxPath == 0,
 	}
-	der, err := x509.CreateCertificate(a.o.random(), template, root, &key.PublicKey, rootKey)
+	issuer, signer := parent, parentKey
+	if parent == nil {
+		issuer, signer = template, key
+	}
+	der, err := x509.CreateCertificate(a.o.random(), template, issuer, &key.PublicKey, signer)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := writePEM(a.IntermediateFile(), "CERTIFICATE", der); err != nil {
+	if err := writePEM(certFile, "CERTIFICATE", der); err != nil {
 		return nil, nil, err
 	}
 	keyDER, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := writePEM(a.IntermediateKeyFile(), "EC PRIVATE KEY", keyDER); err != nil {
+	if err := writePEM(keyFile, "EC PRIVATE KEY", keyDER); err != nil {
 		return nil, nil, err
 	}
 	cert, err := parseCertificate(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
