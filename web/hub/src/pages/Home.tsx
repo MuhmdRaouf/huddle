@@ -163,7 +163,7 @@ export function ChannelCard({
   return (
     <div class="relative">
       <a
-        class="panel flex flex-col gap-4 p-5 transition-colors hover:bg-base-content/5"
+        class="panel h-full flex flex-col gap-4 p-5 transition-colors hover:bg-base-content/5"
         href={`#/channels/${c.name}`}
         data-ch={c.name}
       >

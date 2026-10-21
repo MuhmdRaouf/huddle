@@ -169,4 +169,12 @@ describe("the card's remove button", () => {
     expect(bare.classList.contains("pr-10")).toBe(false);
     expect(bare.querySelector("[data-remove]")).toBeNull();
   });
+
+  it("fills its grid row so the absolute button sits inside the panel", () => {
+    // The grid stretches the wrapper div; the panel must stretch with it, or the
+    // bottom-anchored button on a shorter card lands below the panel's border.
+    renderIn(<ChannelCard c={rmRow} onRemove={() => {}} />);
+    const panel = document.querySelector('a[data-ch="old"]');
+    expect(panel?.classList.contains("h-full")).toBe(true);
+  });
 });
