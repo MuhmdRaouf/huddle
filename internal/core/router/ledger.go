@@ -62,8 +62,8 @@ func (l *Ledger) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*l = Ledger(fields)
-	if node := parseBodyNode(data); node != nil && node.kind == jsonObject {
-		l.fileOrder = append([]string(nil), node.keys...)
+	if node := parseBodyNode(data); node != nil && node.IsObject() {
+		l.fileOrder = append([]string(nil), node.Keys()...)
 	}
 	return nil
 }

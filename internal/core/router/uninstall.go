@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
 // Presence is whether the plugin is still installed: present (installed and enabled in some
@@ -35,29 +37,21 @@ func readText(path string) (string, bool) {
 }
 
 // parseObjectOf is the text as a JSON object, nil when there is no text or it is not one.
-func parseObjectOf(text string, present bool) *jsonNode {
+func parseObjectOf(text string, present bool) *jsfmt.Value {
 	if !present {
 		return nil
 	}
 	node := parseBodyNode([]byte(text))
-	if !node.isObject() {
+	if !node.IsObject() {
 		return nil
 	}
 	return node
 }
 
-// nodeText is a node's string value, "" when it is not a string (a nil node included).
-func nodeText(node *jsonNode) string {
-	if node != nil && node.kind == jsonString {
-		return node.str
-	}
-	return ""
-}
-
 // scopeFiles is the settings files that hold a scope's `enabledPlugins`.
-func scopeFiles(configDir string, install *jsonNode) []string {
-	project := nodeText(install.get("projectPath"))
-	scope := nodeText(install.get("scope"))
+func scopeFiles(configDir string, install *jsfmt.Value) []string {
+	project, _ := install.Get("projectPath").TextOf()
+	scope, _ := install.Get("scope").TextOf()
 	switch {
 	case scope == "project" && project != "":
 		return []string{filepath.Join(project, ".claude", "settings.json")}
@@ -75,8 +69,8 @@ func scopeFiles(configDir string, install *jsonNode) []string {
 // Defaults to true"). An unreadable file says nothing, so it counts as the default too.
 func enabledIn(files []string, key string, read ReadText) bool {
 	for _, file := range files {
-		enabled := parseObjectOf(read(file)).get("enabledPlugins")
-		if value := enabled.get(key); value != nil && value.kind == jsonBool && !value.boolean {
+		enabled := parseObjectOf(read(file)).Get("enabledPlugins")
+		if value := enabled.Get(key); value != nil && value.Kind() == jsfmt.KindBool && !value.Boolean() {
 			return false
 		}
 	}
@@ -95,16 +89,16 @@ func PluginPresence(name string, configDir string, marker *string, read ReadText
 		return PresenceUnknown
 	}
 	plugins := installed
-	if value := installed.get("plugins"); value != nil && value.kind != jsonNull {
+	if value := installed.Get("plugins"); value != nil && value.Kind() != jsfmt.KindNull {
 		// The candidate is stringified and parsed back as a record, so anything but an object
 		// lands on the empty object.
-		plugins = parseObjectOf(marshalNode(value), true)
+		plugins = parseObjectOf(value.EncodeLiteral(), true)
 		if plugins == nil {
-			plugins = &jsonNode{kind: jsonObject, fields: map[string]*jsonNode{}}
+			plugins = jsfmt.Object(nil, nil)
 		}
 	}
 	var keys []string
-	for _, key := range plugins.keys {
+	for _, key := range plugins.Keys() {
 		if strings.HasPrefix(key, name+"-plugin-cc@") {
 			keys = append(keys, key)
 		}
@@ -118,7 +112,7 @@ func PluginPresence(name string, configDir string, marker *string, read ReadText
 		}
 	}
 	for _, key := range keys {
-		for _, install := range installsOf(plugins.get(key)) {
+		for _, install := range installsOf(plugins.Get(key)) {
 			if enabledIn(scopeFiles(configDir, install), key, read) {
 				return PresencePresent
 			}
@@ -139,18 +133,18 @@ func PluginInstallPath(name string, configDir string, read ReadText) string {
 		return ""
 	}
 	plugins := installed
-	if value := installed.get("plugins"); value != nil && value.kind != jsonNull {
-		plugins = parseObjectOf(marshalNode(value), true)
+	if value := installed.Get("plugins"); value != nil && value.Kind() != jsfmt.KindNull {
+		plugins = parseObjectOf(value.EncodeLiteral(), true)
 		if plugins == nil {
 			return ""
 		}
 	}
-	for _, key := range plugins.keys {
+	for _, key := range plugins.Keys() {
 		if !strings.HasPrefix(key, name+"-plugin-cc@") {
 			continue
 		}
-		for _, install := range installsOf(plugins.get(key)) {
-			if path := nodeText(install.get("installPath")); path != "" {
+		for _, install := range installsOf(plugins.Get(key)) {
+			if path, _ := install.Get("installPath").TextOf(); path != "" {
 				return path
 			}
 		}
@@ -160,17 +154,17 @@ func PluginInstallPath(name string, configDir string, read ReadText) string {
 
 // installsOf is one plugin key's installs, each as an object (a malformed one counts as a
 // user-scope install).
-func installsOf(value *jsonNode) []*jsonNode {
-	list := []*jsonNode{{kind: jsonObject, fields: map[string]*jsonNode{}}}
-	if value != nil && value.kind == jsonArray {
-		list = value.items
+func installsOf(value *jsfmt.Value) []*jsfmt.Value {
+	list := []*jsfmt.Value{jsfmt.Object(nil, nil)}
+	if value.IsArray() {
+		list = value.Items()
 	}
-	out := make([]*jsonNode, 0, len(list))
+	out := make([]*jsfmt.Value, 0, len(list))
 	for _, install := range list {
-		if install.isObject() {
+		if install.IsObject() {
 			out = append(out, install)
 		} else {
-			out = append(out, &jsonNode{kind: jsonObject, fields: map[string]*jsonNode{}})
+			out = append(out, jsfmt.Object(nil, nil))
 		}
 	}
 	return out

@@ -14,7 +14,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -94,7 +93,7 @@ type ApplyProviderOptions struct {
 // what changed (only when something did).
 func ApplyProviderSettings(ctx context.Context, path string, provider domain.Provider, routerURL string, options ApplyProviderOptions) ([]string, error) {
 	caPath, caNote := proxyCAPath(ctx, options.CADir)
-	return editSettings(ctx, path, provider.Name, func(root *jsonNode) ([]string, error) {
+	return editSettings(ctx, path, provider.Name, func(root *jsfmt.Value) ([]string, error) {
 		return applyProviderEdit(root, path, provider, routerURL, options, caPath, caNote)
 	}, false)
 }
@@ -113,13 +112,13 @@ func proxyCAPath(ctx context.Context, dir string) (string, *string) {
 	return ca.CertPath(), nil
 }
 
-func applyProviderEdit(root *jsonNode, path string, provider domain.Provider, routerURL string, options ApplyProviderOptions, caPath string, caNote *string) ([]string, error) {
-	createdModelPicker := root.get("modelPicker") == nil
+func applyProviderEdit(root *jsfmt.Value, path string, provider domain.Provider, routerURL string, options ApplyProviderOptions, caPath string, caNote *string) ([]string, error) {
+	createdModelPicker := root.Get("modelPicker") == nil
 	picker, err := ensureObject(root, "modelPicker", path)
 	if err != nil {
 		return nil, err
 	}
-	createdOptions := picker.get("options") == nil
+	createdOptions := picker.Get("options") == nil
 	modelOptions, err := ensureArray(picker, "options", path+": modelPicker.options")
 	if err != nil {
 		return nil, err
@@ -129,7 +128,7 @@ func applyProviderEdit(root *jsonNode, path string, provider domain.Provider, ro
 	if err != nil {
 		return nil, err
 	}
-	createdEnv := root.get("env") == nil
+	createdEnv := root.Get("env") == nil
 	baseURLBefore, err := currentBaseUrl(root, path)
 	if err != nil {
 		return nil, err
@@ -313,7 +312,7 @@ func recordedProxyDelta(plan domain.ProxyPlan, before domain.ProxySettings, befo
 // the proxy keys and the base URL naming a router of ours go once no other provider is still
 // enabled (othersEnabled names them), anything else is not ours to touch.
 func RemoveProviderSettings(ctx context.Context, path string, provider domain.Provider, routerURL string, othersEnabled []string) ([]string, error) {
-	return editSettings(ctx, path, provider.Name, func(root *jsonNode) ([]string, error) {
+	return editSettings(ctx, path, provider.Name, func(root *jsfmt.Value) ([]string, error) {
 		ids := catalogIDs(provider)
 		entries, err := removeModelEntries(root, ids, path)
 		if err != nil {
@@ -342,7 +341,7 @@ func RemoveProviderSettings(ctx context.Context, path string, provider domain.Pr
 // provider is still enabled (othersEnabled names them), leaving every model entry alone. The
 // caller names the router; setups pass "provider-router".
 func ClearBaseUrl(ctx context.Context, path string, routerURL string, othersEnabled []string, name string) ([]string, error) {
-	return editSettings(ctx, path, name, func(root *jsonNode) ([]string, error) {
+	return editSettings(ctx, path, name, func(root *jsfmt.Value) ([]string, error) {
 		current, err := currentBaseUrl(root, path)
 		if err != nil {
 			return nil, err
@@ -354,7 +353,7 @@ func ClearBaseUrl(ctx context.Context, path string, routerURL string, othersEnab
 // ClearProxy is ClearBaseUrl for proxy mode: clear the three proxy keys only when no other
 // provider is still enabled (othersEnabled names them), leaving every model entry alone.
 func ClearProxy(ctx context.Context, path string, routerURL string, othersEnabled []string, name string) ([]string, error) {
-	return editSettings(ctx, path, name, func(root *jsonNode) ([]string, error) {
+	return editSettings(ctx, path, name, func(root *jsfmt.Value) ([]string, error) {
 		current, err := currentProxySettings(root, path)
 		if err != nil {
 			return nil, err
@@ -374,11 +373,11 @@ func ReadBaseUrl(path string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	env := root.get("env")
-	if !env.isObject() {
+	env := root.Get("env")
+	if !env.IsObject() {
 		return "", false
 	}
-	url, ok := env.get("ANTHROPIC_BASE_URL").text()
+	url, ok := env.Get("ANTHROPIC_BASE_URL").TextOf()
 	return url, ok
 }
 
@@ -438,7 +437,7 @@ type ProxyOurs struct {
 // (ours) goes rather than coming back. When the result equals the backup taken before the first
 // write ever, the backup's own bytes are restored.
 func UndoProviderSettings(ctx context.Context, path string, name string, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string, ours ProxyOurs) ([]string, error) {
-	return editSettings(ctx, path, name, func(root *jsonNode) ([]string, error) {
+	return editSettings(ctx, path, name, func(root *jsfmt.Value) ([]string, error) {
 		last := len(othersEnabled) == 0
 		var lines []string
 		lines = append(lines, undoPicker(root, undo, last)...)
@@ -458,49 +457,49 @@ func UndoProviderSettings(ctx context.Context, path string, name string, undo Se
 // undoPicker takes setup's /model entries out, and the containers setup created once they are
 // empty — or, when the last provider goes (last), any container this undo empties: nothing is
 // left to serve it.
-func undoPicker(root *jsonNode, undo SettingsUndo, last bool) []string {
-	picker := root.get("modelPicker")
-	if !picker.isObject() {
+func undoPicker(root *jsfmt.Value, undo SettingsUndo, last bool) []string {
+	picker := root.Get("modelPicker")
+	if !picker.IsObject() {
 		return nil
 	}
 	var lines []string
-	if options := picker.get("options"); options.isArray() {
-		kept := make([]*jsonNode, 0, len(options.items))
-		for _, entry := range options.items {
+	if options := picker.Get("options"); options.IsArray() {
+		kept := make([]*jsfmt.Value, 0, len(options.Items()))
+		for _, entry := range options.Items() {
 			if model, ok := entryModel(entry); ok && slices.Contains(undo.OptionsAdded, model) {
 				continue
 			}
 			kept = append(kept, entry)
 		}
-		if len(kept) != len(options.items) {
+		if len(kept) != len(options.Items()) {
 			lines = append(lines, fmt.Sprintf("took %s out of /model", strings.Join(undo.OptionsAdded, " and ")))
 		}
-		picker.set("options", newArray(kept...))
+		picker.Set("options", jsfmt.Array(kept))
 		if (undo.CreatedOptions || last) && len(kept) == 0 {
-			picker.del("options")
+			picker.Del("options")
 		}
 	}
-	if (undo.CreatedModelPicker || last) && picker.size() == 0 {
-		root.del("modelPicker")
+	if (undo.CreatedModelPicker || last) && picker.Len() == 0 {
+		root.Del("modelPicker")
 	}
 	return lines
 }
 
 // undoAvailable takes the ids setup appended out of availableModels.
-func undoAvailable(root *jsonNode, undo SettingsUndo) []string {
-	available := root.get("availableModels")
-	if !available.isArray() || len(undo.AvailableAppended) == 0 {
+func undoAvailable(root *jsfmt.Value, undo SettingsUndo) []string {
+	available := root.Get("availableModels")
+	if !available.IsArray() || len(undo.AvailableAppended) == 0 {
 		return nil
 	}
-	kept := make([]*jsonNode, 0, len(available.items))
-	for _, item := range available.items {
-		if id, ok := item.text(); ok && slices.Contains(undo.AvailableAppended, id) {
+	kept := make([]*jsfmt.Value, 0, len(available.Items()))
+	for _, item := range available.Items() {
+		if id, ok := item.TextOf(); ok && slices.Contains(undo.AvailableAppended, id) {
 			continue
 		}
 		kept = append(kept, item)
 	}
-	changed := len(kept) != len(available.items)
-	root.set("availableModels", newArray(kept...))
+	changed := len(kept) != len(available.Items())
+	root.Set("availableModels", jsfmt.Array(kept))
 	if changed {
 		return []string{"took the appended ids out of availableModels"}
 	}
@@ -509,7 +508,7 @@ func undoAvailable(root *jsonNode, undo SettingsUndo) []string {
 
 // undoBaseUrl puts the base URL back, only while it still points at this router and no other
 // provider is still enabled (see UndoProviderSettings).
-func undoBaseUrl(root *jsonNode, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string, path string) ([]string, error) {
+func undoBaseUrl(root *jsfmt.Value, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string, path string) ([]string, error) {
 	current, err := currentBaseUrl(root, path)
 	if err != nil {
 		return nil, err
@@ -531,14 +530,14 @@ func undoBaseUrl(root *jsonNode, undo SettingsUndo, routerURL string, livePlugin
 			}
 		}
 	}
-	env := root.get("env")
+	env := root.Get("env")
 	if restore != "" {
-		env.set("ANTHROPIC_BASE_URL", newText(restore))
+		env.Set("ANTHROPIC_BASE_URL", jsfmt.String(restore))
 		return []string{fmt.Sprintf("set ANTHROPIC_BASE_URL back to %s", restore)}, nil
 	}
-	env.del("ANTHROPIC_BASE_URL")
-	if (undo.CreatedEnv || len(othersEnabled) == 0) && env.size() == 0 {
-		root.del("env")
+	env.Del("ANTHROPIC_BASE_URL")
+	if (undo.CreatedEnv || len(othersEnabled) == 0) && env.Len() == 0 {
+		root.Del("env")
 	}
 	return []string{fmt.Sprintf("removed ANTHROPIC_BASE_URL (%s)", routerURL)}, nil
 }
@@ -548,12 +547,12 @@ func undoBaseUrl(root *jsonNode, undo SettingsUndo, routerURL string, livePlugin
 // since takes its CA and NO_PROXY with it. The before-values go back; a key with nothing before
 // it goes (see UndoProviderSettings), a before-value that is exactly ours counts as nothing —
 // our own values never come back — and an env this undo created and emptied goes with them.
-func undoProxy(root *jsonNode, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string, ours ProxyOurs) []string {
-	env := root.get("env")
-	if !env.isObject() {
+func undoProxy(root *jsfmt.Value, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string, ours ProxyOurs) []string {
+	env := root.Get("env")
+	if !env.IsObject() {
 		return nil
 	}
-	current, ok := env.get("HTTPS_PROXY").text()
+	current, ok := env.Get("HTTPS_PROXY").TextOf()
 	if !ok || !proxyIsOurs(current, routerURL) {
 		return nil
 	}
@@ -578,10 +577,10 @@ func undoProxy(root *jsonNode, undo SettingsUndo, routerURL string, livePluginUR
 		}
 	}
 	if restore != "" {
-		env.set("HTTPS_PROXY", newText(restore))
+		env.Set("HTTPS_PROXY", jsfmt.String(restore))
 		lines = append(lines, "set HTTPS_PROXY back to "+restore)
 	} else {
-		env.del("HTTPS_PROXY")
+		env.Del("HTTPS_PROXY")
 		lines = append(lines, "removed HTTPS_PROXY ("+routerURL+")")
 	}
 	// A key with a recorded before of the user's own goes back to it; a before equal to what
@@ -589,22 +588,22 @@ func undoProxy(root *jsonNode, undo SettingsUndo, routerURL string, livePluginUR
 	// still there without a before goes; a key the user already took away is not reported.
 	caBefore := dropOurs(undo.CABefore, ours.CAPath)
 	if caBefore != nil {
-		env.set("NODE_EXTRA_CA_CERTS", newText(*caBefore))
+		env.Set("NODE_EXTRA_CA_CERTS", jsfmt.String(*caBefore))
 		lines = append(lines, "set NODE_EXTRA_CA_CERTS back to "+*caBefore)
-	} else if _, there := env.get("NODE_EXTRA_CA_CERTS").text(); there {
-		env.del("NODE_EXTRA_CA_CERTS")
+	} else if _, there := env.Get("NODE_EXTRA_CA_CERTS").TextOf(); there {
+		env.Del("NODE_EXTRA_CA_CERTS")
 		lines = append(lines, "removed NODE_EXTRA_CA_CERTS")
 	}
 	noProxyBefore := dropOurs(undo.NoProxyBefore, ours.NoProxy)
 	if noProxyBefore != nil {
-		env.set("NO_PROXY", newText(*noProxyBefore))
+		env.Set("NO_PROXY", jsfmt.String(*noProxyBefore))
 		lines = append(lines, "set NO_PROXY back to "+*noProxyBefore)
-	} else if _, there := env.get("NO_PROXY").text(); there {
-		env.del("NO_PROXY")
+	} else if _, there := env.Get("NO_PROXY").TextOf(); there {
+		env.Del("NO_PROXY")
 		lines = append(lines, "removed NO_PROXY")
 	}
-	if (undo.CreatedProxy || len(othersEnabled) == 0) && env.size() == 0 {
-		root.del("env")
+	if (undo.CreatedProxy || len(othersEnabled) == 0) && env.Len() == 0 {
+		root.Del("env")
 	}
 	return lines
 }
@@ -618,20 +617,20 @@ func proxyIsOurs(current, routerURL string) bool {
 // undoToolSearch takes env.ENABLE_TOOL_SEARCH out when it still says the "true" setup writes and
 // no other provider is still enabled: the flag serves the shared router, so it stays while one
 // does. Runs after undoBaseUrl, so an env this undo empties goes with it.
-func undoToolSearch(root *jsonNode, undo SettingsUndo, last bool) []string {
+func undoToolSearch(root *jsfmt.Value, undo SettingsUndo, last bool) []string {
 	if !last {
 		return nil
 	}
-	env := root.get("env")
-	if !env.isObject() {
+	env := root.Get("env")
+	if !env.IsObject() {
 		return nil
 	}
-	if value, _ := env.get("ENABLE_TOOL_SEARCH").text(); value != "true" {
+	if value, _ := env.Get("ENABLE_TOOL_SEARCH").TextOf(); value != "true" {
 		return nil
 	}
-	env.del("ENABLE_TOOL_SEARCH")
-	if env.size() == 0 {
-		root.del("env")
+	env.Del("ENABLE_TOOL_SEARCH")
+	if env.Len() == 0 {
+		root.Del("env")
 	}
 	return []string{"removed ENABLE_TOOL_SEARCH"}
 }
@@ -639,13 +638,13 @@ func undoToolSearch(root *jsonNode, undo SettingsUndo, last bool) []string {
 // undoEfforts takes the modelSettings effort levels setup set out when they still say so: a value
 // the user had before, or changed to meanwhile, stays. An entry object this empties goes, and so
 // does modelSettings itself when it ends up empty.
-func undoEfforts(root *jsonNode, undo SettingsUndo) []string {
+func undoEfforts(root *jsfmt.Value, undo SettingsUndo) []string {
 	added := undo.EffortsAdded
 	if added.Len() == 0 {
 		return nil
 	}
-	settings := root.get("modelSettings")
-	if !settings.isObject() {
+	settings := root.Get("modelSettings")
+	if !settings.IsObject() {
 		return nil
 	}
 	var taken []string
@@ -653,8 +652,8 @@ func undoEfforts(root *jsonNode, undo SettingsUndo) []string {
 		value, _ := added.Get(id)
 		taken = append(taken, undoOneEffort(settings, id, value)...)
 	}
-	if settings.size() == 0 {
-		root.del("modelSettings")
+	if settings.Len() == 0 {
+		root.Del("modelSettings")
 	}
 	if len(taken) == 0 {
 		return nil
@@ -664,17 +663,17 @@ func undoEfforts(root *jsonNode, undo SettingsUndo) []string {
 
 // undoOneEffort takes one id's effort level out when it still says what setup wrote, the id's
 // emptied entry with it; returns the id when it was taken.
-func undoOneEffort(settings *jsonNode, id, value string) []string {
-	entry := settings.get(id)
-	if !entry.isObject() {
+func undoOneEffort(settings *jsfmt.Value, id, value string) []string {
+	entry := settings.Get(id)
+	if !entry.IsObject() {
 		return nil
 	}
-	if level, _ := entry.get("effortLevel").text(); level != value {
+	if level, _ := entry.Get("effortLevel").TextOf(); level != value {
 		return nil
 	}
-	entry.del("effortLevel")
-	if entry.size() == 0 {
-		settings.del(id)
+	entry.Del("effortLevel")
+	if entry.Len() == 0 {
+		settings.Del(id)
 	}
 	return []string{id}
 }
@@ -682,40 +681,40 @@ func undoOneEffort(settings *jsonNode, id, value string) []string {
 // ── the merge's moving parts ─────────────────────────────────────────────────────────────────────────────────────────
 
 // The key as a mutable object, an empty one created when missing (objectAt then cannot miss).
-func ensureObject(root *jsonNode, key, path string) (*jsonNode, error) {
-	if root.get(key) == nil {
-		root.set(key, emptyObject())
+func ensureObject(root *jsfmt.Value, key, path string) (*jsfmt.Value, error) {
+	if root.Get(key) == nil {
+		root.Set(key, jsfmt.Object(nil, nil))
 	}
 	return objectAt(root, key, path)
 }
 
 // The key as a mutable array, an empty one created when missing (arrayAt then cannot miss).
-func ensureArray(root *jsonNode, key, path string) (*jsonNode, error) {
-	if root.get(key) == nil {
-		root.set(key, newArray())
+func ensureArray(root *jsfmt.Value, key, path string) (*jsfmt.Value, error) {
+	if root.Get(key) == nil {
+		root.Set(key, jsfmt.Array(nil))
 	}
 	return arrayAt(root, key, path)
 }
 
 // The key as an object when it is one, nil when it is missing; an error, never a write, when it
 // is neither.
-func objectAt(root *jsonNode, key, path string) (*jsonNode, error) {
-	value := root.get(key)
+func objectAt(root *jsfmt.Value, key, path string) (*jsfmt.Value, error) {
+	value := root.Get(key)
 	if value == nil {
 		return nil, nil
 	}
-	if !value.isObject() {
+	if !value.IsObject() {
 		return nil, fmt.Errorf("%s: %s must be an object; nothing changed", path, key)
 	}
 	return value, nil
 }
 
-func arrayAt(root *jsonNode, key, path string) (*jsonNode, error) {
-	value := root.get(key)
+func arrayAt(root *jsfmt.Value, key, path string) (*jsfmt.Value, error) {
+	value := root.Get(key)
 	if value == nil {
 		return nil, nil
 	}
-	if !value.isArray() {
+	if !value.IsArray() {
 		return nil, fmt.Errorf("%s: %s must be an array; nothing changed", path, key)
 	}
 	return value, nil
@@ -726,12 +725,12 @@ type appendedModels struct {
 	appended []string
 }
 
-func appendAvailableModels(root *jsonNode, provider domain.Provider, path string) (appendedModels, error) {
-	available := root.get("availableModels")
+func appendAvailableModels(root *jsfmt.Value, provider domain.Provider, path string) (appendedModels, error) {
+	available := root.Get("availableModels")
 	if available == nil {
 		return appendedModels{}, nil
 	}
-	if !available.isArray() {
+	if !available.IsArray() {
 		return appendedModels{}, fmt.Errorf("%s: availableModels must be an array; nothing changed", path)
 	}
 	var result appendedModels
@@ -739,16 +738,16 @@ func appendAvailableModels(root *jsonNode, provider domain.Provider, path string
 		if availableContains(available, ref.ID) {
 			continue
 		}
-		available.items = append(available.items, newText(ref.ID))
+		available.Append(jsfmt.String(ref.ID))
 		result.appended = append(result.appended, ref.ID)
 		result.lines = append(result.lines, fmt.Sprintf("added %s to availableModels", ref.ID))
 	}
 	return result, nil
 }
 
-func availableContains(available *jsonNode, id string) bool {
-	for _, item := range available.items {
-		if text, ok := item.text(); ok && text == id {
+func availableContains(available *jsfmt.Value, id string) bool {
+	for _, item := range available.Items() {
+		if text, ok := item.TextOf(); ok && text == id {
 			return true
 		}
 	}
@@ -760,7 +759,7 @@ func availableContains(available *jsonNode, id string) bool {
 // keeps whatever else the user put on it — unless it is setup's own (its id is in the ledger, or
 // it is exactly what setup writes minus the behavesAs field, the shape an older setup left
 // behind), in which case an upgrade brings that field up to the catalog.
-func mergeModelOptions(options *jsonNode, provider domain.Provider, own []string) []string {
+func mergeModelOptions(options *jsfmt.Value, provider domain.Provider, own []string) []string {
 	var lines []string
 	for _, ref := range catalogRefs(provider) {
 		lines = append(lines, mergeOneOption(options, ref, own)...)
@@ -770,35 +769,35 @@ func mergeModelOptions(options *jsonNode, provider domain.Provider, own []string
 
 // mergeOneOption adds, or brings up to date, the one entry for ref (see mergeModelOptions);
 // returns what changed.
-func mergeOneOption(options *jsonNode, ref domain.ModelRef, own []string) []string {
-	var existing *jsonNode
-	for _, entry := range options.items {
+func mergeOneOption(options *jsfmt.Value, ref domain.ModelRef, own []string) []string {
+	var existing *jsfmt.Value
+	for _, entry := range options.Items() {
 		if model, ok := entryModel(entry); ok && model == ref.ID {
 			existing = entry
 			break
 		}
 	}
 	if existing == nil {
-		entry := emptyObject()
-		entry.set("model", newText(ref.ID))
-		entry.set("label", newText(ref.Label))
+		entry := jsfmt.Object(nil, nil)
+		entry.Set("model", jsfmt.String(ref.ID))
+		entry.Set("label", jsfmt.String(ref.Label))
 		if ref.BehavesAs != nil {
-			entry.set("behavesAs", newText(*ref.BehavesAs))
+			entry.Set("behavesAs", jsfmt.String(*ref.BehavesAs))
 		}
-		options.items = append(options.items, entry)
+		options.Append(entry)
 		return []string{fmt.Sprintf("added %s (%s) to /model", ref.Label, ref.ID)}
 	}
 	// Own row is judged before the relabel below: a user's row with its own label must not start
 	// looking like setup's.
 	ownRow := slices.Contains(own, ref.ID) || setupShaped(existing, ref)
 	var changes []string
-	if label, _ := existing.get("label").text(); label != ref.Label {
-		existing.set("label", newText(ref.Label))
+	if label, _ := existing.Get("label").TextOf(); label != ref.Label {
+		existing.Set("label", jsfmt.String(ref.Label))
 		changes = append(changes, fmt.Sprintf("updated the %s (%s) label in /model", ref.Label, ref.ID))
 	}
 	if ownRow && ref.BehavesAs != nil {
-		if behavesAs, _ := existing.get("behavesAs").text(); behavesAs != *ref.BehavesAs {
-			existing.set("behavesAs", newText(*ref.BehavesAs))
+		if behavesAs, _ := existing.Get("behavesAs").TextOf(); behavesAs != *ref.BehavesAs {
+			existing.Set("behavesAs", jsfmt.String(*ref.BehavesAs))
 			changes = append(changes, fmt.Sprintf("set behavesAs on the %s (%s) row in /model", ref.Label, ref.ID))
 		}
 	}
@@ -808,11 +807,11 @@ func mergeOneOption(options *jsonNode, ref domain.ModelRef, own []string) []stri
 // setupShaped is true when the row is exactly what setup writes, its behavesAs field aside:
 // {model, label} plus nothing but a behavesAs. Any other key of its own makes it the user's,
 // however similar the rest looks.
-func setupShaped(record *jsonNode, ref domain.ModelRef) bool {
-	if label, _ := record.get("label").text(); label != ref.Label {
+func setupShaped(record *jsfmt.Value, ref domain.ModelRef) bool {
+	if label, _ := record.Get("label").TextOf(); label != ref.Label {
 		return false
 	}
-	for _, key := range record.keys {
+	for _, key := range record.Keys() {
 		if key != "model" && key != "label" && key != "behavesAs" {
 			return false
 		}
@@ -822,7 +821,7 @@ func setupShaped(record *jsonNode, ref domain.ModelRef) bool {
 
 // removeModelEntries takes the ids' entries out of modelPicker.options (an emptied list stays an
 // empty array).
-func removeModelEntries(root *jsonNode, ids []string, path string) ([]string, error) {
+func removeModelEntries(root *jsfmt.Value, ids []string, path string) ([]string, error) {
 	picker, err := objectAt(root, "modelPicker", path)
 	if err != nil {
 		return nil, err
@@ -837,19 +836,19 @@ func removeModelEntries(root *jsonNode, ids []string, path string) ([]string, er
 	if options == nil || !hasModelEntry(options, ids) {
 		return nil, nil
 	}
-	kept := make([]*jsonNode, 0, len(options.items))
-	for _, entry := range options.items {
+	kept := make([]*jsfmt.Value, 0, len(options.Items()))
+	for _, entry := range options.Items() {
 		if model, ok := entryModel(entry); ok && slices.Contains(ids, model) {
 			continue
 		}
 		kept = append(kept, entry)
 	}
-	options.items = kept
+	options.SetItems(kept)
 	return []string{fmt.Sprintf("took %s out of /model", strings.Join(ids, " and "))}, nil
 }
 
-func hasModelEntry(options *jsonNode, ids []string) bool {
-	for _, entry := range options.items {
+func hasModelEntry(options *jsfmt.Value, ids []string) bool {
+	for _, entry := range options.Items() {
 		if model, ok := entryModel(entry); ok && slices.Contains(ids, model) {
 			return true
 		}
@@ -858,51 +857,51 @@ func hasModelEntry(options *jsonNode, ids []string) bool {
 }
 
 // removeAvailableModels takes the ids out of availableModels when that list exists at all.
-func removeAvailableModels(root *jsonNode, ids []string, path string) ([]string, error) {
-	available := root.get("availableModels")
+func removeAvailableModels(root *jsfmt.Value, ids []string, path string) ([]string, error) {
+	available := root.Get("availableModels")
 	if available == nil {
 		return nil, nil
 	}
-	if !available.isArray() {
+	if !available.IsArray() {
 		return nil, fmt.Errorf("%s: availableModels must be an array; nothing changed", path)
 	}
-	kept := make([]*jsonNode, 0, len(available.items))
-	for _, item := range available.items {
-		if id, ok := item.text(); ok && slices.Contains(ids, id) {
+	kept := make([]*jsfmt.Value, 0, len(available.Items()))
+	for _, item := range available.Items() {
+		if id, ok := item.TextOf(); ok && slices.Contains(ids, id) {
 			continue
 		}
 		kept = append(kept, item)
 	}
-	if len(kept) == len(available.items) {
+	if len(kept) == len(available.Items()) {
 		return nil, nil
 	}
-	root.set("availableModels", newArray(kept...))
+	root.Set("availableModels", jsfmt.Array(kept))
 	return []string{fmt.Sprintf("took %s out of availableModels", strings.Join(ids, " and "))}, nil
 }
 
-func currentBaseUrl(root *jsonNode, path string) (*string, error) {
+func currentBaseUrl(root *jsfmt.Value, path string) (*string, error) {
 	return currentEnvString(root, "ANTHROPIC_BASE_URL", path)
 }
 
 // currentToolSearch is the current env.ENABLE_TOOL_SEARCH, or nil when unset; the same wrong-shape
 // errors as the base URL.
-func currentToolSearch(root *jsonNode, path string) (*string, error) {
+func currentToolSearch(root *jsfmt.Value, path string) (*string, error) {
 	return currentEnvString(root, "ENABLE_TOOL_SEARCH", path)
 }
 
-func currentEnvString(root *jsonNode, key, path string) (*string, error) {
-	env := root.get("env")
+func currentEnvString(root *jsfmt.Value, key, path string) (*string, error) {
+	env := root.Get("env")
 	if env == nil {
 		return nil, nil
 	}
-	if !env.isObject() {
+	if !env.IsObject() {
 		return nil, fmt.Errorf("%s: env must be an object; nothing changed", path)
 	}
-	current := env.get(key)
+	current := env.Get(key)
 	if current == nil {
 		return nil, nil
 	}
-	value, ok := current.text()
+	value, ok := current.TextOf()
 	if !ok || value == "" {
 		return nil, fmt.Errorf("%s: env.%s must be a string; nothing changed", path, key)
 	}
@@ -911,7 +910,7 @@ func currentEnvString(root *jsonNode, key, path string) (*string, error) {
 
 // currentProxySettings reads the four env values the proxy plan decides on; the same wrong-shape
 // errors as the base URL.
-func currentProxySettings(root *jsonNode, path string) (domain.ProxySettings, error) {
+func currentProxySettings(root *jsfmt.Value, path string) (domain.ProxySettings, error) {
 	// Claude Code reads https_proxy before HTTPS_PROXY, so the lowercase one, when set, is in force.
 	proxy, err := currentEnvString(root, "https_proxy", path)
 	if err != nil {
@@ -937,14 +936,14 @@ func currentProxySettings(root *jsonNode, path string) (domain.ProxySettings, er
 	return domain.ProxySettings{HTTPSProxy: proxy, CA: ca, NoProxy: noProxy, BaseURL: baseURL}, nil
 }
 
-func applyBaseUrl(root *jsonNode, plan domain.BaseUrlPlan, path string) []string {
+func applyBaseUrl(root *jsfmt.Value, plan domain.BaseUrlPlan, path string) []string {
 	if plan.Kind == domain.BaseUrlPlanKeep {
 		if plan.Report == nil {
 			return nil
 		}
 		return []string{*plan.Report}
 	}
-	var env *jsonNode
+	var env *jsfmt.Value
 	var err error
 	if plan.Kind == domain.BaseUrlPlanSet {
 		env, err = ensureObject(root, "env", path)
@@ -955,12 +954,12 @@ func applyBaseUrl(root *jsonNode, plan domain.BaseUrlPlan, path string) []string
 		return []string{*plan.Report}
 	}
 	if plan.Kind == domain.BaseUrlPlanRemove {
-		env.del("ANTHROPIC_BASE_URL")
-		if env.size() == 0 {
-			root.del("env")
+		env.Del("ANTHROPIC_BASE_URL")
+		if env.Len() == 0 {
+			root.Del("env")
 		}
 	} else {
-		env.set("ANTHROPIC_BASE_URL", newText(plan.URL))
+		env.Set("ANTHROPIC_BASE_URL", jsfmt.String(plan.URL))
 	}
 	return []string{*plan.Report}
 }
@@ -968,7 +967,7 @@ func applyBaseUrl(root *jsonNode, plan domain.BaseUrlPlan, path string) []string
 // applyProxy writes the proxy plan into env, mirroring applyBaseUrl: a set writes its keys, a keep
 // only writes the NO_PROXY it appends and takes a stale plugin-router base URL out, a remove takes
 // the three keys out (an emptied env with them).
-func applyProxy(root *jsonNode, plan domain.ProxyPlan, path string) []string {
+func applyProxy(root *jsfmt.Value, plan domain.ProxyPlan, path string) []string {
 	var lines []string
 	if plan.Report != nil {
 		lines = append(lines, *plan.Report)
@@ -983,22 +982,22 @@ func applyProxy(root *jsonNode, plan domain.ProxyPlan, path string) []string {
 			return lines
 		}
 		for _, key := range []string{"HTTPS_PROXY", "NODE_EXTRA_CA_CERTS"} {
-			env.del(key)
+			env.Del(key)
 		}
-		if env.size() == 0 {
-			root.del("env")
+		if env.Len() == 0 {
+			root.Del("env")
 		}
 	case domain.ProxyPlanSet:
 		env, err := ensureObject(root, "env", path)
 		if err != nil || env == nil {
 			return lines
 		}
-		env.set("HTTPS_PROXY", newText(plan.Proxy))
+		env.Set("HTTPS_PROXY", jsfmt.String(plan.Proxy))
 		if plan.CA != "" {
-			env.set("NODE_EXTRA_CA_CERTS", newText(plan.CA))
+			env.Set("NODE_EXTRA_CA_CERTS", jsfmt.String(plan.CA))
 		}
 		if plan.NoProxy != "" {
-			env.set("NO_PROXY", newText(plan.NoProxy))
+			env.Set("NO_PROXY", jsfmt.String(plan.NoProxy))
 		}
 	case domain.ProxyPlanKeep:
 		if plan.NoProxy == "" {
@@ -1008,22 +1007,22 @@ func applyProxy(root *jsonNode, plan domain.ProxyPlan, path string) []string {
 		if err != nil || env == nil {
 			return lines
 		}
-		env.set("NO_PROXY", newText(plan.NoProxy))
+		env.Set("NO_PROXY", jsfmt.String(plan.NoProxy))
 	}
 	return lines
 }
 
 // takeOutBaseURL removes the base URL the proxy mode replaces and says so.
-func takeOutBaseURL(root *jsonNode) []string {
-	env := root.get("env")
-	if !env.isObject() {
+func takeOutBaseURL(root *jsfmt.Value) []string {
+	env := root.Get("env")
+	if !env.IsObject() {
 		return nil
 	}
-	current, ok := env.get("ANTHROPIC_BASE_URL").text()
+	current, ok := env.Get("ANTHROPIC_BASE_URL").TextOf()
 	if !ok {
 		return nil
 	}
-	env.del("ANTHROPIC_BASE_URL")
+	env.Del("ANTHROPIC_BASE_URL")
 	return []string{"removed ANTHROPIC_BASE_URL (" + current + ")"}
 }
 
@@ -1031,7 +1030,7 @@ func takeOutBaseURL(root *jsonNode) []string {
 // this router (Claude Code turns MCP tool search off for a non-Anthropic base URL, and the router
 // answers it for the provider's models) and there is no value yet — a value the user set, even
 // "false", stays, here and on undo.
-func applyToolSearch(root *jsonNode, routed bool, before *string, path string) []string {
+func applyToolSearch(root *jsfmt.Value, routed bool, before *string, path string) []string {
 	if !routed || before != nil {
 		return nil
 	}
@@ -1039,7 +1038,7 @@ func applyToolSearch(root *jsonNode, routed bool, before *string, path string) [
 	if err != nil || env == nil {
 		return nil
 	}
-	env.set("ENABLE_TOOL_SEARCH", newText("true"))
+	env.Set("ENABLE_TOOL_SEARCH", jsfmt.String("true"))
 	return []string{"turned on MCP tool search"}
 }
 
@@ -1052,7 +1051,7 @@ type appliedEfforts struct {
 // declares one, when that id has no effort level yet — a level the user set (e.g. saved by
 // /effort) is never overwritten, here or on undo. modelSettings and the id's entry are created
 // only on the way to a write.
-func applyEfforts(root *jsonNode, provider domain.Provider, path string) (appliedEfforts, error) {
+func applyEfforts(root *jsfmt.Value, provider domain.Provider, path string) (appliedEfforts, error) {
 	efforts := appliedEfforts{added: NewStringMap()}
 	for _, ref := range catalogRefs(provider) {
 		if ref.DefaultEffort == nil {
@@ -1066,15 +1065,15 @@ func applyEfforts(root *jsonNode, provider domain.Provider, path string) (applie
 		if err != nil {
 			return appliedEfforts{}, err
 		}
-		if entry != nil && entry.get("effortLevel") != nil {
+		if entry != nil && entry.Get("effortLevel") != nil {
 			continue
 		}
 		record := entry
 		if record == nil {
-			record = emptyObject()
-			settings.set(ref.ID, record)
+			record = jsfmt.Object(nil, nil)
+			settings.Set(ref.ID, record)
 		}
-		record.set("effortLevel", newText(string(*ref.DefaultEffort)))
+		record.Set("effortLevel", jsfmt.String(string(*ref.DefaultEffort)))
 		efforts.added.Set(ref.ID, string(*ref.DefaultEffort))
 		efforts.lines = append(efforts.lines, fmt.Sprintf("set %s default effort to %s", ref.Label, *ref.DefaultEffort))
 	}
@@ -1084,21 +1083,21 @@ func applyEfforts(root *jsonNode, provider domain.Provider, path string) (applie
 // effortSettingsAt is the modelSettings object, an empty one created when missing — which happens
 // only on the way to a write, since a missing container has no entry for a level the user set to
 // sit in.
-func effortSettingsAt(root *jsonNode, path string) (*jsonNode, error) {
-	if root.get("modelSettings") == nil {
-		root.set("modelSettings", emptyObject())
+func effortSettingsAt(root *jsfmt.Value, path string) (*jsfmt.Value, error) {
+	if root.Get("modelSettings") == nil {
+		root.Set("modelSettings", jsfmt.Object(nil, nil))
 	}
 	return objectAt(root, "modelSettings", path)
 }
 
 // effortEntryAt is the modelSettings entry of id as a mutable object, nil when missing; an error,
 // never a write, when it is another type.
-func effortEntryAt(settings *jsonNode, id, path string) (*jsonNode, error) {
-	entry := settings.get(id)
+func effortEntryAt(settings *jsfmt.Value, id, path string) (*jsfmt.Value, error) {
+	entry := settings.Get(id)
 	if entry == nil {
 		return nil, nil
 	}
-	if !entry.isObject() {
+	if !entry.IsObject() {
 		return nil, fmt.Errorf("%s: modelSettings.%s must be an object; nothing changed", path, id)
 	}
 	return entry, nil
@@ -1113,9 +1112,9 @@ func catalogIDs(provider domain.Provider) []string {
 }
 
 // knownModels is the set of /model ids the file already carries.
-func knownModels(options *jsonNode) map[string]bool {
-	models := make(map[string]bool, len(options.items))
-	for _, entry := range options.items {
+func knownModels(options *jsfmt.Value) map[string]bool {
+	models := make(map[string]bool, len(options.Items()))
+	for _, entry := range options.Items() {
 		if model, ok := entryModel(entry); ok {
 			models[model] = true
 		}
@@ -1125,276 +1124,24 @@ func knownModels(options *jsonNode) map[string]bool {
 
 // entryModel is the model field of a /model options entry, or !ok for anything not shaped like
 // one.
-func entryModel(entry *jsonNode) (string, bool) {
-	if entry == nil || entry.kind != jsonObject {
+func entryModel(entry *jsfmt.Value) (string, bool) {
+	if entry == nil || entry.Kind() != jsfmt.KindObject {
 		return "", false
 	}
-	return entry.get("model").text()
+	return entry.Get("model").TextOf()
 }
 
-// ── the ordered JSON value ───────────────────────────────────────────────────────────────────────────────────────────
-
-// jsonKind discriminates a jsonNode.
-type jsonKind uint8
-
-const (
-	jsonObject jsonKind = iota
-	jsonArray
-	jsonString
-	jsonNumber
-	jsonBool
-	jsonNull
-)
-
-// jsonNode is one JSON value of a settings file. An object keeps its keys in file order and an
-// array its items, because Go maps lose order and the user's file must survive a rewrite with its
-// keys where they were. A nil node is an absent key; a present JSON null is a node of kind
-// jsonNull.
-type jsonNode struct {
-	kind    jsonKind
-	str     string
-	num     json.Number
-	boolean bool
-	keys    []string
-	fields  map[string]*jsonNode
-	items   []*jsonNode
-}
-
-func newText(value string) *jsonNode {
-	return &jsonNode{kind: jsonString, str: value}
-}
-
-func newArray(items ...*jsonNode) *jsonNode {
-	return &jsonNode{kind: jsonArray, items: items}
-}
-
-func emptyObject() *jsonNode {
-	return &jsonNode{kind: jsonObject, fields: make(map[string]*jsonNode)}
-}
-
-func (n *jsonNode) isObject() bool { return n != nil && n.kind == jsonObject }
-func (n *jsonNode) isArray() bool  { return n != nil && n.kind == jsonArray }
-
-// text is the node as a string, !ok for anything else (a missing key reads as not-a-string too).
-func (n *jsonNode) text() (string, bool) {
-	if n == nil || n.kind != jsonString {
-		return "", false
-	}
-	return n.str, true
-}
-
-// get is the key's value; nil when the object does not carry it.
-func (n *jsonNode) get(key string) *jsonNode {
-	if n == nil || n.kind != jsonObject {
-		return nil
-	}
-	return n.fields[key]
-}
-
-// set assigns the key, appending it when the object does not carry it: a JS assignment, where an
-// existing key keeps its position.
-func (n *jsonNode) set(key string, value *jsonNode) {
-	if n.fields == nil {
-		n.fields = make(map[string]*jsonNode)
-	}
-	if _, exists := n.fields[key]; !exists {
-		n.keys = append(n.keys, key)
-	}
-	n.fields[key] = value
-}
-
-// del removes the key.
-func (n *jsonNode) del(key string) {
-	if _, exists := n.fields[key]; !exists {
-		return
-	}
-	delete(n.fields, key)
-	for i, k := range n.keys {
-		if k == key {
-			n.keys = append(n.keys[:i], n.keys[i+1:]...)
-			return
-		}
-	}
-}
-
-// size is the object's key count.
-func (n *jsonNode) size() int {
-	if n == nil || n.kind != jsonObject {
-		return 0
-	}
-	return len(n.keys)
-}
+// ── the settings file's JSON ─────────────────────────────────────────────────────────────────────────────────────────
 
 // parseJSON is JSON.parse: the whole text as one value, and nothing after it.
-func parseJSON(text string) (*jsonNode, error) {
-	decoder := json.NewDecoder(strings.NewReader(text))
-	decoder.UseNumber()
-	node, err := decodeJSONValue(decoder)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := decoder.Token(); err != io.EOF {
-		return nil, fmt.Errorf("trailing content")
-	}
-	return node, nil
-}
-
-func decodeJSONValue(decoder *json.Decoder) (*jsonNode, error) {
-	token, err := decoder.Token()
-	if err != nil {
-		return nil, err
-	}
-	switch token := token.(type) {
-	case json.Delim:
-		// A closing delimiter never starts a value: Token() rejects one before it gets here.
-		if token == '[' {
-			return decodeJSONArray(decoder)
-		}
-		return decodeJSONObject(decoder)
-	case string:
-		return newText(token), nil
-	case json.Number:
-		return &jsonNode{kind: jsonNumber, num: token}, nil
-	case bool:
-		return &jsonNode{kind: jsonBool, boolean: token}, nil
-	}
-	// The one shape left is nil: JSON's null.
-	return &jsonNode{kind: jsonNull}, nil
-}
-
-func decodeJSONObject(decoder *json.Decoder) (*jsonNode, error) {
-	node := emptyObject()
-	for decoder.More() {
-		keyToken, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		// Token() only ever yields a string for an object member name.
-		key := keyToken.(string)
-		value, err := decodeJSONValue(decoder)
-		if err != nil {
-			return nil, err
-		}
-		// A duplicate key overwrites the earlier value in place, as JSON.parse does.
-		node.set(key, value)
-	}
-	// More() is only false at the closing delimiter (EOF keeps it true), so this consumes it.
-	_, _ = decoder.Token()
-	return node, nil
-}
-
-func decodeJSONArray(decoder *json.Decoder) (*jsonNode, error) {
-	node := newArray()
-	for decoder.More() {
-		item, err := decodeJSONValue(decoder)
-		if err != nil {
-			return nil, err
-		}
-		node.items = append(node.items, item)
-	}
-	// The closing bracket, as above.
-	_, _ = decoder.Token()
-	return node, nil
+func parseJSON(text string) (*jsfmt.Value, error) {
+	return jsfmt.DecodeValue([]byte(text))
 }
 
 // marshalSettings is JSON.stringify(root, null, 2) without the trailing newline: numbers keep the
 // literals the file had, and only ", \ and the C0 controls are escaped.
-func marshalSettings(root *jsonNode) string {
-	var b strings.Builder
-	writeJSONValue(&b, root, "")
-	return b.String()
-}
-
-func writeJSONValue(b *strings.Builder, node *jsonNode, indent string) {
-	inner := indent + "  "
-	switch node.kind {
-	case jsonObject:
-		if len(node.keys) == 0 {
-			b.WriteString("{}")
-			return
-		}
-		b.WriteString("{\n")
-		for i, key := range node.keys {
-			b.WriteString(inner)
-			jsfmt.WriteQuoted(b, key)
-			b.WriteString(": ")
-			writeJSONValue(b, node.fields[key], inner)
-			if i < len(node.keys)-1 {
-				b.WriteString(",")
-			}
-			b.WriteString("\n")
-		}
-		b.WriteString(indent)
-		b.WriteString("}")
-	case jsonArray:
-		if len(node.items) == 0 {
-			b.WriteString("[]")
-			return
-		}
-		b.WriteString("[\n")
-		for i, item := range node.items {
-			b.WriteString(inner)
-			writeJSONValue(b, item, inner)
-			if i < len(node.items)-1 {
-				b.WriteString(",")
-			}
-			b.WriteString("\n")
-		}
-		b.WriteString(indent)
-		b.WriteString("]")
-	case jsonString:
-		jsfmt.WriteQuoted(b, node.str)
-	case jsonNumber:
-		b.WriteString(string(node.num))
-	case jsonBool:
-		if node.boolean {
-			b.WriteString("true")
-		} else {
-			b.WriteString("false")
-		}
-	case jsonNull:
-		b.WriteString("null")
-	}
-}
-
-// nodesEqual compares two values the way comparing their JSON.stringify texts would: key order
-// included.
-func nodesEqual(a, b *jsonNode) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	if a.kind != b.kind {
-		return false
-	}
-	switch a.kind {
-	case jsonObject:
-		if len(a.keys) != len(b.keys) {
-			return false
-		}
-		for i, key := range a.keys {
-			if key != b.keys[i] || !nodesEqual(a.fields[key], b.fields[key]) {
-				return false
-			}
-		}
-		return true
-	case jsonArray:
-		if len(a.items) != len(b.items) {
-			return false
-		}
-		for i, item := range a.items {
-			if !nodesEqual(item, b.items[i]) {
-				return false
-			}
-		}
-		return true
-	case jsonString:
-		return a.str == b.str
-	case jsonNumber:
-		return a.num == b.num
-	case jsonBool:
-		return a.boolean == b.boolean
-	}
-	return true // null
+func marshalSettings(root *jsfmt.Value) string {
+	return root.EncodeIndented("  ")
 }
 
 // StringMap is a string map with its key order kept: Go maps forget order, and both the ledger's
@@ -1568,26 +1315,26 @@ func replaceSettings(ctx context.Context, snap settingsSnapshot, text string) (b
 }
 
 // settingsEdit is one edit over the parsed settings object.
-type settingsEdit func(root *jsonNode) ([]string, error)
+type settingsEdit func(root *jsfmt.Value) ([]string, error)
 
 // parseSettings is the file parsed into a settings object, or why it cannot be edited.
-func parseSettings(path, text string) (*jsonNode, error) {
+func parseSettings(path, text string) (*jsfmt.Value, error) {
 	root, err := parseJSON(text)
 	if err != nil {
 		return nil, fmt.Errorf("%s: not valid JSON; nothing changed", path)
 	}
-	if !root.isObject() {
+	if !root.IsObject() {
 		return nil, fmt.Errorf("%s: not a settings object; nothing changed", path)
 	}
 	return root, nil
 }
 
 // serializedSettings is the text to write, only when it survives a JSON round trip unchanged.
-func serializedSettings(path string, root *jsonNode) (string, error) {
+func serializedSettings(path string, root *jsfmt.Value) (string, error) {
 	text := marshalSettings(root) + "\n"
 	lost := fmt.Errorf("%s: the edited settings did not survive a JSON round trip; nothing changed", path)
 	reparsed, err := parseJSON(text)
-	if err != nil || !nodesEqual(reparsed, root) {
+	if err != nil || !jsfmt.Equal(reparsed, root) {
 		return "", lost
 	}
 	return text, nil
@@ -1610,13 +1357,13 @@ func backupOnce(snap settingsSnapshot, backup string) error {
 
 // backupBytesIfEqual is the backup's own text when its JSON equals the edited settings (an exact
 // undo restores the exact bytes).
-func backupBytesIfEqual(backup string, parsed *jsonNode) (string, bool) {
+func backupBytesIfEqual(backup string, parsed *jsfmt.Value) (string, bool) {
 	data, err := os.ReadFile(backup)
 	if err != nil {
 		return "", false
 	}
 	node, err := parseJSON(string(data))
-	if err != nil || !nodesEqual(node, parsed) {
+	if err != nil || !jsfmt.Equal(node, parsed) {
 		return "", false
 	}
 	return string(data), true

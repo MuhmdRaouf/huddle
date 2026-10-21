@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
 // readAll reads a rewriter's whole answer.
@@ -125,13 +126,13 @@ func TestRewrittenStartLineKeepsTheLinesEnding(t *testing.T) {
 
 func TestZeroInputTokensAndTheEventNode(t *testing.T) {
 	t.Parallel()
-	usageOf := func(usage string) *jsonNode {
+	usageOf := func(usage string) *jsfmt.Value {
 		line := "data: {\"type\":\"message_start\",\"message\":{\"usage\":" + usage + "}}\n"
 		event := sseEventNode(line)
 		if event == nil {
 			t.Fatalf("sseEventNode(%s) = nil", line)
 		}
-		return event.get("message").get("usage")
+		return event.Get("message").Get("usage")
 	}
 	if !zeroInputTokens(usageOf(`{"input_tokens":0}`)) {
 		t.Error("an input_tokens of 0 was not seen as one")

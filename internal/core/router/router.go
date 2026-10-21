@@ -134,223 +134,19 @@ const newlineByte = 0x0a
 
 // ── the request body's JSON ─────────────────────────────────────────────────────────────────────────────────────────
 
-// jsonKind discriminates a jsonNode.
-type jsonKind uint8
-
-const (
-	jsonObject jsonKind = iota
-	jsonArray
-	jsonString
-	jsonNumber
-	jsonBool
-	jsonNull
-)
-
-// jsonNode is one JSON value of a request body. An object keeps its keys in arrival order and an
-// array its items, because Go maps lose order and the bytes a provider or the spool reads keep the
-// order the client wrote. A nil node is an absent value JSON.stringify drops; a present JSON null
-// is a node of kind jsonNull.
-type jsonNode struct {
-	kind    jsonKind
-	str     string
-	num     json.Number
-	boolean bool
-	keys    []string
-	fields  map[string]*jsonNode
-	items   []*jsonNode
-}
-
-// newTextNode is one JSON string.
-func newTextNode(value string) *jsonNode {
-	return &jsonNode{kind: jsonString, str: value}
-}
-
-// newNumberNode is one JSON number.
-func newNumberNode(value int64) *jsonNode {
-	return &jsonNode{kind: jsonNumber, num: json.Number(strconv.FormatInt(value, 10))}
-}
-
-// isObject reports whether the node is an object (false for nil).
-func (n *jsonNode) isObject() bool { return n != nil && n.kind == jsonObject }
-
-// get is the key's value; nil when the object does not carry it.
-func (n *jsonNode) get(key string) *jsonNode {
-	if !n.isObject() {
-		return nil
-	}
-	return n.fields[key]
-}
-
-// has reports whether the object carries the key (a JSON null counts).
-func (n *jsonNode) has(key string) bool {
-	if !n.isObject() {
-		return false
-	}
-	_, present := n.fields[key]
-	return present
-}
-
-// set assigns the key, appending it when the object does not carry it: a JS assignment, where an
-// existing key keeps its position.
-func (n *jsonNode) set(key string, value *jsonNode) {
-	if n.fields == nil {
-		n.fields = map[string]*jsonNode{}
-	}
-	if _, exists := n.fields[key]; !exists {
-		n.keys = append(n.keys, key)
-	}
-	n.fields[key] = value
-}
-
-func (n *jsonNode) del(key string) {
-	if n == nil {
-		return
-	}
-	if _, exists := n.fields[key]; !exists {
-		return
-	}
-	delete(n.fields, key)
-	for i, k := range n.keys {
-		if k == key {
-			n.keys = append(n.keys[:i], n.keys[i+1:]...)
-			return
-		}
-	}
-}
-
 // parseBodyNode is the parsed JSON body, or nil when it is not JSON.
-func parseBodyNode(body []byte) *jsonNode {
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.UseNumber()
-	node, err := decodeJSONNode(decoder)
+func parseBodyNode(body []byte) *jsfmt.Value {
+	node, err := jsfmt.DecodeValue(body)
 	if err != nil {
-		return nil
-	}
-	if _, err := decoder.Token(); err != io.EOF {
 		return nil
 	}
 	return node
 }
 
-func decodeJSONNode(decoder *json.Decoder) (*jsonNode, error) {
-	token, err := decoder.Token()
-	if err != nil {
-		return nil, err
-	}
-	switch token := token.(type) {
-	case json.Delim:
-		if token == '[' {
-			return decodeJSONArray(decoder)
-		}
-		return decodeJSONObject(decoder)
-	case string:
-		return newTextNode(token), nil
-	case json.Number:
-		return &jsonNode{kind: jsonNumber, num: token}, nil
-	case bool:
-		return &jsonNode{kind: jsonBool, boolean: token}, nil
-	}
-	// The one shape left is nil: JSON's null.
-	return &jsonNode{kind: jsonNull}, nil
-}
-
-func decodeJSONObject(decoder *json.Decoder) (*jsonNode, error) {
-	node := &jsonNode{kind: jsonObject, fields: map[string]*jsonNode{}}
-	for decoder.More() {
-		keyToken, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		// Token() only ever yields a string for an object member name.
-		value, err := decodeJSONNode(decoder)
-		if err != nil {
-			return nil, err
-		}
-		// A duplicate key overwrites the earlier value in place, as JSON.parse does.
-		node.set(keyToken.(string), value)
-	}
-	// More() is only false at the closing delimiter, so this consumes it.
-	_, _ = decoder.Token()
-	return node, nil
-}
-
-func decodeJSONArray(decoder *json.Decoder) (*jsonNode, error) {
-	node := &jsonNode{kind: jsonArray}
-	for decoder.More() {
-		item, err := decodeJSONNode(decoder)
-		if err != nil {
-			return nil, err
-		}
-		node.items = append(node.items, item)
-	}
-	_, _ = decoder.Token()
-	return node, nil
-}
-
-// marshalNode is JSON.stringify(node): field order as the client wrote it, no indentation, and
-// only ", \ and the C0 controls escaped (nothing else: <, >, &, U+2028 and U+2029 stay raw).
-func marshalNode(node *jsonNode) string {
-	var b strings.Builder
-	writeJSONNode(&b, node)
-	return b.String()
-}
-
-func writeJSONNode(b *strings.Builder, node *jsonNode) {
-	if node == nil {
-		// An absent value: JSON.stringify drops it wherever it can appear.
-		return
-	}
-	switch node.kind {
-	case jsonObject:
-		b.WriteString("{")
-		first := true
-		for _, key := range node.keys {
-			value := node.fields[key]
-			if value == nil {
-				continue
-			}
-			if !first {
-				b.WriteString(",")
-			}
-			first = false
-			jsfmt.WriteQuoted(b, key)
-			b.WriteString(":")
-			writeJSONNode(b, value)
-		}
-		b.WriteString("}")
-	case jsonArray:
-		b.WriteString("[")
-		for i, item := range node.items {
-			if i > 0 {
-				b.WriteString(",")
-			}
-			if item == nil {
-				// JSON.stringify([undefined]) writes null; a parsed body never holds one.
-				b.WriteString("null")
-				continue
-			}
-			writeJSONNode(b, item)
-		}
-		b.WriteString("]")
-	case jsonString:
-		jsfmt.WriteQuoted(b, node.str)
-	case jsonNumber:
-		b.WriteString(string(node.num))
-	case jsonBool:
-		if node.boolean {
-			b.WriteString("true")
-		} else {
-			b.WriteString("false")
-		}
-	case jsonNull:
-		b.WriteString("null")
-	}
-}
-
 // modelIn is the `model` field of a parsed body, or "".
-func modelIn(json *jsonNode) string {
-	if model := json.get("model"); model != nil && model.kind == jsonString {
-		return model.str
+func modelIn(json *jsfmt.Value) string {
+	if model := json.Get("model"); model != nil && model.Kind() == jsfmt.KindString {
+		return model.Text()
 	}
 	return ""
 }
@@ -384,10 +180,10 @@ func CapturedHeaders(header http.Header) *map[string]string {
 // writeCanonical is the canonical JSON of one value: every object's keys sorted, so the same
 // content hashes the same however it arrived. Only parsed values reach it, so no undefined guard
 // is needed (PromptHashOf drops the absent tops first).
-func writeCanonical(b *strings.Builder, node *jsonNode) {
-	switch node.kind {
-	case jsonObject:
-		keys := append([]string(nil), node.keys...)
+func writeCanonical(b *strings.Builder, node *jsfmt.Value) {
+	switch node.Kind() {
+	case jsfmt.KindObject:
+		keys := append([]string(nil), node.Keys()...)
 		sort.Strings(keys)
 		b.WriteString("{")
 		for i, key := range keys {
@@ -396,40 +192,36 @@ func writeCanonical(b *strings.Builder, node *jsonNode) {
 			}
 			jsfmt.WriteQuoted(b, key)
 			b.WriteString(":")
-			writeCanonical(b, node.fields[key])
+			writeCanonical(b, node.Get(key))
 		}
 		b.WriteString("}")
-	case jsonArray:
+	case jsfmt.KindArray:
 		b.WriteString("[")
-		for i, item := range node.items {
+		for i, item := range node.Items() {
 			if i > 0 {
 				b.WriteString(",")
 			}
 			writeCanonical(b, item)
 		}
 		b.WriteString("]")
-	case jsonString:
-		jsfmt.WriteQuoted(b, node.str)
-	case jsonNumber:
-		b.WriteString(string(node.num))
-	case jsonBool:
-		if node.boolean {
-			b.WriteString("true")
-		} else {
-			b.WriteString("false")
-		}
-	case jsonNull:
+	case jsfmt.KindString:
+		jsfmt.WriteQuoted(b, node.Text())
+	case jsfmt.KindNumber:
+		b.WriteString(string(node.Literal()))
+	case jsfmt.KindBool:
+		b.WriteString(strconv.FormatBool(node.Boolean()))
+	case jsfmt.KindNull:
 		b.WriteString("null")
 	}
 }
 
 // PromptHashOf is the capture hash of a parsed body — sha256 of the canonical JSON of its
 // `system` and `tools` alone — false when the body carried neither (a null counts as carried).
-func PromptHashOf(json *jsonNode) (string, bool) {
-	if !json.isObject() {
+func PromptHashOf(json *jsfmt.Value) (string, bool) {
+	if !json.IsObject() {
 		return "", false
 	}
-	system, tools := json.get("system"), json.get("tools")
+	system, tools := json.Get("system"), json.Get("tools")
 	if system == nil && tools == nil {
 		return "", false
 	}
@@ -437,7 +229,7 @@ func PromptHashOf(json *jsonNode) (string, bool) {
 	b.WriteString("{")
 	first := true
 	for _, key := range []string{"system", "tools"} {
-		value := json.get(key)
+		value := json.Get(key)
 		if value == nil {
 			continue
 		}
@@ -509,26 +301,26 @@ func (p *promptRef) Hash() *string {
 
 // stripFromNode removes the fields in place; true when at least one was present anywhere. Every
 // element is visited: a field found in the first must not end the walk, or the rest keep theirs.
-func stripFromNode(value *jsonNode, rejected map[string]bool) bool {
+func stripFromNode(value *jsfmt.Value, rejected map[string]bool) bool {
 	switch {
 	case value == nil:
 		return false
-	case value.kind == jsonArray:
+	case value.Kind() == jsfmt.KindArray:
 		any := false
-		for _, item := range value.items {
+		for _, item := range value.Items() {
 			if stripFromNode(item, rejected) {
 				any = true
 			}
 		}
 		return any
-	case value.kind == jsonObject:
+	case value.Kind() == jsfmt.KindObject:
 		stripped := false
-		// The keys are snapshotted: del mutates the object's own order.
-		for _, key := range append([]string(nil), value.keys...) {
+		// The keys are snapshotted: Del mutates the object's own order.
+		for _, key := range append([]string(nil), value.Keys()...) {
 			if rejected[key] {
-				value.del(key)
+				value.Del(key)
 				stripped = true
-			} else if stripFromNode(value.fields[key], rejected) {
+			} else if stripFromNode(value.Get(key), rejected) {
 				stripped = true
 			}
 		}
@@ -542,23 +334,23 @@ func stripFromNode(value *jsonNode, rejected map[string]bool) bool {
 // (every message, every block), `max_tokens` clamped to the model's cap, and a web_search tool sent
 // to the catalog model that serves it. The original bytes and model when nothing changed, else the
 // re-serialised body and the model it now names.
-func providerBody(w *routerWorker, original []byte, json *jsonNode, model string, req *http.Request) ([]byte, string) {
-	if !json.isObject() {
+func providerBody(w *routerWorker, original []byte, json *jsfmt.Value, model string, req *http.Request) ([]byte, string) {
+	if !json.IsObject() {
 		return original, model
 	}
 	if !adaptBody(w, json, model, req) {
 		return original, model
 	}
-	if named := json.get("model"); named == nil || named.kind != jsonString {
-		return []byte(marshalNode(json)), model
+	if named := json.Get("model"); named == nil || named.Kind() != jsfmt.KindString {
+		return []byte(json.EncodeLiteral()), model
 	}
-	return []byte(marshalNode(json)), modelIn(json)
+	return []byte(json.EncodeLiteral()), modelIn(json)
 }
 
 // adaptBody is the in-place edits a provider-bound body needs, one truth each: rejected fields
 // stripped, `max_tokens` clamped down to the model's cap, and a web_search tool rerouted to the
 // model that takes it (one line when it happens).
-func adaptBody(w *routerWorker, record *jsonNode, model string, req *http.Request) bool {
+func adaptBody(w *routerWorker, record *jsfmt.Value, model string, req *http.Request) bool {
 	provider := w.opts.Provider
 	changed := false
 	if len(provider.Strip) > 0 {
@@ -576,15 +368,15 @@ func adaptBody(w *routerWorker, record *jsonNode, model string, req *http.Reques
 		}
 	}
 	if cap != nil {
-		if tokens := record.get("max_tokens"); tokens != nil && tokens.kind == jsonNumber {
-			if value, err := tokens.num.Float64(); err == nil && value > float64(*cap) {
-				record.set("max_tokens", newNumberNode(*cap))
+		if tokens := record.Get("max_tokens"); tokens != nil && tokens.Kind() == jsfmt.KindNumber {
+			if value, err := tokens.Literal().Float64(); err == nil && value > float64(*cap) {
+				record.Set("max_tokens", jsfmt.NumberLiteral(json.Number(strconv.FormatInt(*cap, 10))))
 				changed = true
 			}
 		}
 	}
-	if provider.WebSearchModel != nil && model != *provider.WebSearchModel && carriesWebSearch(record.get("tools")) {
-		record.set("model", newTextNode(*provider.WebSearchModel))
+	if provider.WebSearchModel != nil && model != *provider.WebSearchModel && carriesWebSearch(record.Get("tools")) {
+		record.Set("model", jsfmt.String(*provider.WebSearchModel))
 		changed = true
 		w.log(fmt.Sprintf("%s %s model=%s → provider: web_search tool served by %s",
 			req.Method, requestPath(req), model, *provider.WebSearchModel))
@@ -594,12 +386,12 @@ func adaptBody(w *routerWorker, record *jsonNode, model string, req *http.Reques
 
 // carriesWebSearch is true when any tool of the request is a web_search server tool: its `type`
 // starts with `web_search_` (`web_search_20250305`, …). A regular tool carries no `type` at all.
-func carriesWebSearch(tools *jsonNode) bool {
-	if tools == nil || tools.kind != jsonArray {
+func carriesWebSearch(tools *jsfmt.Value) bool {
+	if !tools.IsArray() {
 		return false
 	}
-	for _, tool := range tools.items {
-		if typ := tool.get("type"); typ != nil && typ.kind == jsonString && strings.HasPrefix(typ.str, "web_search_") {
+	for _, tool := range tools.Items() {
+		if typ := tool.Get("type"); typ != nil && typ.Kind() == jsfmt.KindString && strings.HasPrefix(typ.Text(), "web_search_") {
 			return true
 		}
 	}
@@ -815,7 +607,7 @@ func (w *routerWorker) noteOf(req *http.Request, model string, startedAt int64, 
 // capture reads what the request's body carried, once per distinct content, and writes its one
 // capture event off the request's own goroutine; the hash is set synchronously so the route event
 // always names it. A failure costs one log line.
-func (w *routerWorker) capture(prompt *promptRef, json *jsonNode) {
+func (w *routerWorker) capture(prompt *promptRef, json *jsfmt.Value) {
 	if w.opts.Events == nil {
 		return
 	}
@@ -833,8 +625,7 @@ func (w *routerWorker) capture(prompt *promptRef, json *jsonNode) {
 		if !w.captured.first(hash) {
 			return
 		}
-		body := marshalNode(&jsonNode{kind: jsonObject, keys: []string{"system", "tools"},
-			fields: map[string]*jsonNode{"system": json.get("system"), "tools": json.get("tools")}})
+		body := jsfmt.Object([]string{"system", "tools"}, []*jsfmt.Value{json.Get("system"), json.Get("tools")}).EncodeLiteral()
 		var compressed bytes.Buffer
 		writer := gzip.NewWriter(&compressed)
 		_, _ = writer.Write([]byte(body))
@@ -1127,42 +918,43 @@ func rewriteHead(held, chunk []byte, prompt PromptHint, estimator *PromptEstimat
 // real prompt size or the cache fields already — decided false for any other line.
 func rewrittenStartLine(line string, prompt PromptHint, estimator *PromptEstimator) (rewritten string, decided, changed bool) {
 	event := sseEventNode(line)
-	if event == nil || event.get("type") == nil || event.get("type").str != "message_start" {
+	if event == nil || event.Get("type") == nil || event.Get("type").Text() != "message_start" {
 		return "", false, false
 	}
-	usage := event.get("message").get("usage")
+	usage := event.Get("message").Get("usage")
 	// A real prompt size, or the cache fields Claude Code reads beside it, are left exactly as
 	// they came.
-	if usage == nil || !usage.isObject() || !zeroInputTokens(usage) || usage.has("cache_read_input_tokens") {
+	if usage == nil || !usage.IsObject() || !zeroInputTokens(usage) || usage.Has("cache_read_input_tokens") {
 		return line, true, false
 	}
-	usage.set("input_tokens", newNumberNode(estimator.EstimatePrompt(prompt.Key, prompt.BodyChars)))
-	usage.set("cache_creation_input_tokens", newNumberNode(0))
-	usage.set("cache_read_input_tokens", newNumberNode(0))
+	estimate := estimator.EstimatePrompt(prompt.Key, prompt.BodyChars)
+	usage.Set("input_tokens", jsfmt.NumberLiteral(json.Number(strconv.FormatInt(estimate, 10))))
+	usage.Set("cache_creation_input_tokens", jsfmt.NumberLiteral("0"))
+	usage.Set("cache_read_input_tokens", jsfmt.NumberLiteral("0"))
 	ending := "\n"
 	if strings.HasSuffix(line, "\r\n") {
 		ending = "\r\n"
 	}
-	return "data: " + marshalNode(event) + ending, true, true
+	return "data: " + event.EncodeLiteral() + ending, true, true
 }
 
 // zeroInputTokens is the lie the rewriter exists to paper over: an input_tokens of exactly 0.
-func zeroInputTokens(usage *jsonNode) bool {
-	tokens := usage.get("input_tokens")
-	if tokens == nil || tokens.kind != jsonNumber {
+func zeroInputTokens(usage *jsfmt.Value) bool {
+	tokens := usage.Get("input_tokens")
+	if tokens == nil || tokens.Kind() != jsfmt.KindNumber {
 		return false
 	}
-	value, err := tokens.num.Float64()
+	value, err := tokens.Literal().Float64()
 	return err == nil && value == 0
 }
 
-// sseEventNode is the `data:` line's event as an ordered node, when it parses to an object.
-func sseEventNode(line string) *jsonNode {
+// sseEventNode is the `data:` line's event as an ordered value, when it parses to an object.
+func sseEventNode(line string) *jsfmt.Value {
 	if !strings.HasPrefix(line, "data:") {
 		return nil
 	}
 	node := parseBodyNode([]byte(strings.TrimSpace(line[len("data:"):])))
-	if !node.isObject() {
+	if !node.IsObject() {
 		return nil
 	}
 	return node
@@ -1231,7 +1023,7 @@ func keyWithin(ctx context.Context, w *routerWorker) (string, keyOutcome) {
 
 // forwardParsed is forward on a body already parsed once, so a caller that picked the lane by the
 // parsed model never parses twice.
-func (w *routerWorker) forwardParsed(req *http.Request, res *Response, original []byte, body *jsonNode) {
+func (w *routerWorker) forwardParsed(req *http.Request, res *Response, original []byte, body *jsfmt.Value) {
 	provider := w.provider
 	model := modelIn(body)
 	prompt := &promptRef{}

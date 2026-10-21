@@ -48,10 +48,10 @@ func envOf(t *testing.T, path string) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := proxyRoot(t, string(data)).get("env")
-	got := make(map[string]string, env.size())
-	for _, key := range env.keys {
-		value, _ := env.get(key).text()
+	env := proxyRoot(t, string(data)).Get("env")
+	got := make(map[string]string, env.Len())
+	for _, key := range env.Keys() {
+		value, _ := env.Get(key).TextOf()
 		got[key] = value
 	}
 	return got
@@ -64,10 +64,10 @@ func modelsOf(t *testing.T, path string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := proxyRoot(t, string(data)).get("modelPicker").get("options")
-	ids := make([]string, 0, options.size())
-	for _, entry := range options.items {
-		if model, ok := entry.get("model").text(); ok {
+	options := proxyRoot(t, string(data)).Get("modelPicker").Get("options")
+	ids := make([]string, 0, options.Len())
+	for _, entry := range options.Items() {
+		if model, ok := entry.Get("model").TextOf(); ok {
 			ids = append(ids, model)
 		}
 	}

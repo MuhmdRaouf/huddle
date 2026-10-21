@@ -96,8 +96,8 @@ func decodeObject(dec *json.Decoder) (*Value, error) {
 		if err != nil {
 			return nil, err
 		}
-		object.keys = append(object.keys, key)
-		object.fields = append(object.fields, field)
+		// A duplicate key overwrites the earlier value in place, as JSON.parse does.
+		object.Set(key, field)
 	}
 	if _, err := dec.Token(); err != nil { // the closing brace
 		return nil, err
@@ -126,7 +126,7 @@ func decodeArray(dec *json.Decoder) (*Value, error) {
 // JSON.stringify's minimal escaping.
 func (v *Value) EncodeJSON() string {
 	var out strings.Builder
-	v.encode(&out)
+	v.encode(&out, false, "", "")
 	return out.String()
 }
 
@@ -140,39 +140,125 @@ func (v *Value) MarshalJSON() ([]byte, error) {
 	return []byte(v.EncodeJSON()), nil
 }
 
-// encode writes one value's bytes.
-func (v *Value) encode(out *strings.Builder) {
+// encode writes one value's bytes: numbers re-print through float64 when literal is false and
+// keep their decoded literal when true; unit is the indent per level and at the current line's
+// prefix (both "" for compact output). A nil field is an absent value and drops wherever it
+// can; a nil array item writes null, as JSON.stringify writes undefined.
+func (v *Value) encode(out *strings.Builder, literal bool, unit, at string) {
+	if v == nil {
+		out.WriteString("null")
+		return
+	}
 	switch v.kind {
 	case KindNull:
 		out.WriteString("null")
 	case KindBool:
 		out.WriteString(strconv.FormatBool(v.boolean))
 	case KindNumber:
-		number, _ := v.number.Float64()
-		out.WriteString(JSNumber(number))
+		if literal {
+			out.WriteString(string(v.number))
+		} else {
+			number, _ := v.number.Float64()
+			out.WriteString(JSNumber(number))
+		}
 	case KindString:
 		WriteQuoted(out, v.text)
 	case KindObject:
+		v.encodeObject(out, literal, unit, at)
+	case KindArray:
+		v.encodeArray(out, literal, unit, at)
+	}
+}
+
+// encodeObject writes one object: compact when unit is "", indented by unit per level
+// otherwise.
+func (v *Value) encodeObject(out *strings.Builder, literal bool, unit, at string) {
+	live := 0
+	for _, field := range v.fields {
+		if field != nil {
+			live++
+		}
+	}
+	if unit == "" {
 		out.WriteByte('{')
+		wrote := 0
 		for i, key := range v.keys {
-			if i > 0 {
+			if v.fields[i] == nil {
+				continue
+			}
+			if wrote > 0 {
 				out.WriteByte(',')
 			}
+			wrote++
 			WriteQuoted(out, key)
 			out.WriteByte(':')
-			v.fields[i].encode(out)
+			v.fields[i].encode(out, literal, unit, at)
 		}
 		out.WriteByte('}')
-	case KindArray:
+		return
+	}
+	if live == 0 {
+		out.WriteString("{}")
+		return
+	}
+	inner := at + unit
+	out.WriteString("{\n")
+	wrote := 0
+	for i, key := range v.keys {
+		if v.fields[i] == nil {
+			continue
+		}
+		out.WriteString(inner)
+		WriteQuoted(out, key)
+		out.WriteString(": ")
+		v.fields[i].encode(out, literal, unit, inner)
+		wrote++
+		if wrote < live {
+			out.WriteByte(',')
+		}
+		out.WriteByte('\n')
+	}
+	out.WriteString(at)
+	out.WriteByte('}')
+}
+
+// encodeArray writes one array: compact when unit is "", indented by unit per level otherwise.
+func (v *Value) encodeArray(out *strings.Builder, literal bool, unit, at string) {
+	if unit == "" {
 		out.WriteByte('[')
 		for i, item := range v.items {
 			if i > 0 {
 				out.WriteByte(',')
 			}
-			item.encode(out)
+			if item == nil {
+				out.WriteString("null")
+				continue
+			}
+			item.encode(out, literal, unit, at)
 		}
 		out.WriteByte(']')
+		return
 	}
+	if len(v.items) == 0 {
+		out.WriteString("[]")
+		return
+	}
+	inner := at + unit
+	out.WriteString("[\n")
+	for i, item := range v.items {
+		out.WriteString(inner)
+		if item == nil {
+			out.WriteString("null")
+		} else {
+			item.encode(out, literal, unit, inner)
+		}
+		if i < len(v.items)-1 {
+			out.WriteByte(',')
+		}
+		out.WriteByte('\n')
+	}
+	out.WriteString(at)
+	out.WriteByte(']')
 }
 
 // QuoteWriter is the string sink WriteQuoted writes into; a *strings.Builder and a

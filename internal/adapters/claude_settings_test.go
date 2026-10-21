@@ -13,6 +13,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/providers"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
 // The focused tests for the settings adapter's exports: every exported function directly — merges
@@ -1703,9 +1704,9 @@ func TestClaudeSettingsInternals(t *testing.T) {
 	})
 
 	t.Run("applyToolSearch skips a file with no env", func(t *testing.T) {
-		root := emptyObject()
+		root := jsfmt.Object(nil, nil)
 		assertLines(t, applyToolSearch(root, true, nil, "p"))
-		if root.get("env") != nil {
+		if root.Get("env") != nil {
 			t.Fatal("applyToolSearch created an env")
 		}
 	})
@@ -1719,52 +1720,52 @@ func TestClaudeSettingsInternals(t *testing.T) {
 	})
 
 	t.Run("serialized rejects a value that does not survive the round trip", func(t *testing.T) {
-		root := emptyObject()
-		root.set("broken", &jsonNode{kind: jsonNumber, num: "1.2.3"})
+		root := jsfmt.Object(nil, nil)
+		root.Set("broken", jsfmt.NumberLiteral("1.2.3"))
 		if _, err := serializedSettings("p", root); err == nil || !strings.Contains(err.Error(), "did not survive a JSON round trip") {
 			t.Fatalf("error = %v; want the round-trip guard", err)
 		}
 	})
 
 	t.Run("serialized rejects keys a round trip would reorder", func(t *testing.T) {
-		root := &jsonNode{kind: jsonObject, keys: []string{"a", "a"}, fields: map[string]*jsonNode{"a": newText("x")}}
+		root := jsfmt.Object([]string{"a", "a"}, []*jsfmt.Value{jsfmt.String("x"), jsfmt.String("x")})
 		if _, err := serializedSettings("p", root); err == nil || !strings.Contains(err.Error(), "did not survive a JSON round trip") {
 			t.Fatalf("error = %v; want the round-trip guard", err)
 		}
 	})
 
 	t.Run("backupBytesIfEqual is false when the backup is missing", func(t *testing.T) {
-		if _, ok := backupBytesIfEqual(filepath.Join(t.TempDir(), "missing"), emptyObject()); ok {
+		if _, ok := backupBytesIfEqual(filepath.Join(t.TempDir(), "missing"), jsfmt.Object(nil, nil)); ok {
 			t.Fatal("backupBytesIfEqual(missing) says ok")
 		}
 	})
 
 	t.Run("node accessors guard values that are not objects", func(t *testing.T) {
-		if got := newText("x").get("k"); got != nil {
+		if got := jsfmt.String("x").Get("k"); got != nil {
 			t.Fatalf("get on a string = %v; want nil", got)
 		}
-		if size := newText("x").size(); size != 0 {
+		if size := jsfmt.String("x").Len(); size != 0 {
 			t.Fatalf("size of a string = %d; want 0", size)
 		}
-		node := &jsonNode{kind: jsonObject}
-		node.set("a", newText("v"))
+		node := jsfmt.Object(nil, nil)
+		node.Set("a", jsfmt.String("v"))
 		if got := marshalSettings(node); got != "{\n  \"a\": \"v\"\n}" {
 			t.Fatalf("marshal = %q", got)
 		}
-		emptyObject().del("missing") // a missing key is a no-op, not a panic
-		if nodesEqual(newText("a"), newText("b")) || !nodesEqual(newText("a"), newText("a")) {
-			t.Fatal("nodesEqual compares scalars wrongly")
+		jsfmt.Object(nil, nil).Del("missing") // a missing key is a no-op, not a panic
+		if jsfmt.Equal(jsfmt.String("a"), jsfmt.String("b")) || !jsfmt.Equal(jsfmt.String("a"), jsfmt.String("a")) {
+			t.Fatal("jsfmt.Equal compares scalars wrongly")
 		}
-		if nodesEqual(&jsonNode{kind: jsonBool, boolean: true}, &jsonNode{kind: jsonNull}) {
-			t.Fatal("nodesEqual says true and null are equal")
+		if jsfmt.Equal(jsfmt.Bool(true), jsfmt.Null()) {
+			t.Fatal("Equal says true and null are equal")
 		}
-		if nodesEqual(nil, newText("a")) || !nodesEqual(nil, nil) {
-			t.Fatal("nodesEqual compares a missing value wrongly")
+		if jsfmt.Equal(nil, jsfmt.String("a")) || !jsfmt.Equal(nil, nil) {
+			t.Fatal("jsfmt.Equal compares a missing value wrongly")
 		}
-		two := newArray(newText("a"), newText("b"))
-		other := newArray(newText("a"), newText("c"))
-		if nodesEqual(two, other) || !nodesEqual(two, newArray(newText("a"), newText("b"))) {
-			t.Fatal("nodesEqual compares arrays wrongly")
+		two := jsfmt.Array([]*jsfmt.Value{jsfmt.String("a"), jsfmt.String("b")})
+		other := jsfmt.Array([]*jsfmt.Value{jsfmt.String("a"), jsfmt.String("c")})
+		if jsfmt.Equal(two, other) || !jsfmt.Equal(two, jsfmt.Array([]*jsfmt.Value{jsfmt.String("a"), jsfmt.String("b")})) {
+			t.Fatal("jsfmt.Equal compares arrays wrongly")
 		}
 	})
 
@@ -1852,7 +1853,7 @@ func TestClaudeSettingsInternals(t *testing.T) {
 }
 
 // proxyRoot parses settings JSON for the proxy edits' white-box tests.
-func proxyRoot(t *testing.T, text string) *jsonNode {
+func proxyRoot(t *testing.T, text string) *jsfmt.Value {
 	t.Helper()
 	root, err := parseJSON(text)
 	if err != nil {
@@ -1862,13 +1863,13 @@ func proxyRoot(t *testing.T, text string) *jsonNode {
 }
 
 // envString reads one env value back out of a parsed root.
-func envString(t *testing.T, root *jsonNode, key string) (string, bool) {
+func envString(t *testing.T, root *jsfmt.Value, key string) (string, bool) {
 	t.Helper()
-	env := root.get("env")
-	if !env.isObject() {
+	env := root.Get("env")
+	if !env.IsObject() {
 		return "", false
 	}
-	return env.get(key).text()
+	return env.Get(key).TextOf()
 }
 
 const caPath = "/ca/zai/ca.pem"
@@ -1990,7 +1991,7 @@ func TestApplyProxy(t *testing.T) {
 			Report: strPtr("removed HTTPS_PROXY and NODE_EXTRA_CA_CERTS (" + routerURL + ")"),
 		}, "settings.json")
 		assertLines(t, lines, "removed HTTPS_PROXY and NODE_EXTRA_CA_CERTS ("+routerURL+")")
-		if root.get("env") != nil {
+		if root.Get("env") != nil {
 			t.Fatal("an emptied env survived")
 		}
 	})
@@ -2032,7 +2033,7 @@ func TestUndoProxy(t *testing.T) {
 		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
 		lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil, nil, ProxyOurs{})
 		assertLines(t, lines, "removed HTTPS_PROXY ("+routerURL+")")
-		if root.get("env") != nil {
+		if root.Get("env") != nil {
 			t.Fatal("an emptied env this run created survived")
 		}
 	})
@@ -2040,13 +2041,13 @@ func TestUndoProxy(t *testing.T) {
 	t.Run("an emptied env goes when the last provider goes, stays while another is enabled", func(t *testing.T) {
 		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
 		undoProxy(root, SettingsUndo{}, routerURL, nil, nil, ProxyOurs{})
-		if root.get("env") != nil {
-			t.Fatalf("env = %v; want the emptied object taken out", root.get("env"))
+		if root.Get("env") != nil {
+			t.Fatalf("env = %v; want the emptied object taken out", root.Get("env"))
 		}
 		kept := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
 		undoProxy(kept, SettingsUndo{}, routerURL, nil, []string{"kimi"}, ProxyOurs{})
-		env := kept.get("env")
-		if !env.isObject() || env.size() != 1 {
+		env := kept.Get("env")
+		if !env.IsObject() || env.Len() != 1 {
 			t.Fatalf("env = %v; want the shared proxy left in place", env)
 		}
 	})
@@ -2123,7 +2124,7 @@ func TestClearProxy(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if env := proxyRoot(t, string(content)).get("env"); env != nil {
+		if env := proxyRoot(t, string(content)).Get("env"); env != nil {
 			t.Fatal("an emptied env survived")
 		}
 	})
@@ -2190,10 +2191,10 @@ func proxyEnvIn(t *testing.T, path string) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := proxyRoot(t, string(data)).get("env")
-	got := make(map[string]string, env.size())
-	for _, key := range env.keys {
-		value, _ := env.get(key).text()
+	env := proxyRoot(t, string(data)).Get("env")
+	got := make(map[string]string, env.Len())
+	for _, key := range env.Keys() {
+		value, _ := env.Get(key).TextOf()
 		got[key] = value
 	}
 	return got

@@ -20,13 +20,13 @@ func ownEnvOf(t *testing.T, path string) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := proxyRoot(t, string(data)).get("env")
+	env := proxyRoot(t, string(data)).Get("env")
 	got := make(map[string]string)
-	if !env.isObject() {
+	if !env.IsObject() {
 		return got
 	}
-	for _, key := range env.keys {
-		value, _ := env.get(key).text()
+	for _, key := range env.Keys() {
+		value, _ := env.Get(key).TextOf()
 		got[key] = value
 	}
 	return got

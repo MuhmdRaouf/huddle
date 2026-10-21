@@ -18,7 +18,7 @@ func TestParseBodyNodeKeepsEveryShape(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
-		want string // the marshalNode round trip
+		want string // the EncodeLiteral round trip
 	}{
 		{"an object keeps its order", `{"b":1,"a":"x"}`, `{"b":1,"a":"x"}`},
 		{"an array keeps its items", `[1,"two",true,null]`, `[1,"two",true,null]`},
@@ -38,8 +38,8 @@ func TestParseBodyNodeKeepsEveryShape(t *testing.T) {
 			if node == nil {
 				t.Fatalf("parseBodyNode(%s) = nil", tt.body)
 			}
-			if got := marshalNode(node); got != tt.want {
-				t.Errorf("marshalNode = %s, want %s", got, tt.want)
+			if got := node.EncodeLiteral(); got != tt.want {
+				t.Errorf("EncodeLiteral = %s, want %s", got, tt.want)
 			}
 		})
 	}
@@ -78,51 +78,51 @@ func TestWriteJSONStringEscapesLikeJSONStringify(t *testing.T) {
 	}
 }
 
-func TestJSONNodeEdits(t *testing.T) {
+func TestValueEdits(t *testing.T) {
 	t.Parallel()
 	node := parseBodyNode([]byte(`{"model":"glm-5.3","messages":[{"role":"user"}],"n":7}`))
 
-	t.Run("has sees a key a null value holds", func(t *testing.T) {
+	t.Run("Has sees a key a null value holds", func(t *testing.T) {
 		null := parseBodyNode([]byte(`{"gone":null}`))
-		if !null.has("gone") {
-			t.Error("has missed a key whose value is null")
+		if !null.Has("gone") {
+			t.Error("Has missed a key whose value is null")
 		}
-		if node.has("absent") {
-			t.Error("has invented a key")
+		if node.Has("absent") {
+			t.Error("Has invented a key")
 		}
-		var nilNode *jsonNode
-		if nilNode.has("anything") {
-			t.Error("a nil node has anything")
+		var nilValue *jsfmt.Value
+		if nilValue.Has("anything") {
+			t.Error("a nil value has anything")
 		}
 	})
 
-	t.Run("set overwrites in place and appends a new key", func(t *testing.T) {
-		node.set("model", newTextNode("glm-5.3-flash"))
-		node.set("fresh", newNumberNode(1))
-		got := marshalNode(node)
+	t.Run("Set overwrites in place and appends a new key", func(t *testing.T) {
+		node.Set("model", jsfmt.String("glm-5.3-flash"))
+		node.Set("fresh", jsfmt.Number(1))
+		got := node.EncodeLiteral()
 		if !strings.Contains(got, `"model":"glm-5.3-flash"`) || !strings.Contains(got, `"fresh":1`) {
-			t.Errorf("marshalNode = %s, want both edits", got)
+			t.Errorf("EncodeLiteral = %s, want both edits", got)
 		}
 
 	})
 
-	t.Run("del removes the key and its place", func(t *testing.T) {
-		node.del("n")
-		if node.has("n") {
-			t.Error("del left the key")
+	t.Run("Del removes the key and its place", func(t *testing.T) {
+		node.Del("n")
+		if node.Has("n") {
+			t.Error("Del left the key")
 		}
-		if got := marshalNode(node); strings.Contains(got, `"n":7`) {
-			t.Errorf("marshalNode = %s, want n gone", got)
+		if got := node.EncodeLiteral(); strings.Contains(got, `"n":7`) {
+			t.Errorf("EncodeLiteral = %s, want n gone", got)
 		}
-		node.del("n") // a second del is nothing
-		node.del("absent")
-		var nilNode *jsonNode
-		nilNode.del("n")
+		node.Del("n") // a second Del is nothing
+		node.Del("absent")
+		var nilValue *jsfmt.Value
+		nilValue.Del("n")
 	})
 
 	t.Run("numbers round trip as written", func(t *testing.T) {
-		if got := marshalNode(newNumberNode(131072)); got != "131072" {
-			t.Errorf("newNumberNode = %s, want 131072", got)
+		if got := jsfmt.Number(131072).EncodeLiteral(); got != "131072" {
+			t.Errorf("Number(131072) = %s, want 131072", got)
 		}
 	})
 
@@ -131,8 +131,8 @@ func TestJSONNodeEdits(t *testing.T) {
 		if !stripFromNode(body, map[string]bool{"cache_control": true}) {
 			t.Fatal("stripFromNode stripped nothing")
 		}
-		if got := marshalNode(body); strings.Contains(got, "cache_control") {
-			t.Errorf("marshalNode = %s, want every cache_control gone", got)
+		if got := body.EncodeLiteral(); strings.Contains(got, "cache_control") {
+			t.Errorf("EncodeLiteral = %s, want every cache_control gone", got)
 		}
 		if plain := parseBodyNode([]byte(`{"x":1}`)); stripFromNode(plain, map[string]bool{"cache_control": true}) {
 			t.Error("stripFromNode stripped from a body without the field")
@@ -140,8 +140,8 @@ func TestJSONNodeEdits(t *testing.T) {
 		if stripFromNode(parseBodyNode([]byte(`[1,2]`)), map[string]bool{"cache_control": true}) {
 			t.Error("stripFromNode stripped from an array without objects")
 		}
-		var nilNode *jsonNode
-		if stripFromNode(nilNode, map[string]bool{"cache_control": true}) {
+		var nilValue *jsfmt.Value
+		if stripFromNode(nilValue, map[string]bool{"cache_control": true}) {
 			t.Error("stripFromNode stripped from nil")
 		}
 	})
@@ -158,7 +158,7 @@ func TestJSONNodeEdits(t *testing.T) {
 
 func TestPromptHashOfHashesSystemAndToolsAlone(t *testing.T) {
 	t.Parallel()
-	body := func(raw string) *jsonNode { return parseBodyNode([]byte(raw)) }
+	body := func(raw string) *jsfmt.Value { return parseBodyNode([]byte(raw)) }
 
 	t.Run("the same content hashes the same however the keys arrived", func(t *testing.T) {
 		t.Parallel()
