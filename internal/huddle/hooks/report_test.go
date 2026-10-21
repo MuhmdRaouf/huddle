@@ -314,6 +314,47 @@ func TestTheReportHookCutsTheTitleAndTaskToEightyRunes(t *testing.T) {
 	}
 }
 
+// TestTheReportHookLetsNoInjectedPromptNameTheSession pins the wrapper rule: a prompt Claude
+// Code itself submits — a background task's notification, a system reminder, `!` shell input —
+// names no title and no task, and a prompt the person typed still names both.
+func TestTheReportHookLetsNoInjectedPromptNameTheSession(t *testing.T) {
+	cwd := t.TempDir()
+	for _, prompt := range []string{
+		"<task-notification>\n<task-id>x</task-id>\n<task-type>background</task-type>\n<status>completed</status>",
+		"  <system-reminder>hi</system-reminder>",
+		"<bash-input>pwd</bash-input>\n<bash-stdout>/repo</bash-stdout>",
+	} {
+		reg, url := startRegistry(t)
+		input := fmt.Sprintf(`{"session_id":"s-wrap","hook_event_name":"UserPromptSubmit","prompt":%q,"cwd":%q}`,
+			prompt, cwd)
+		runReportHook(t, input, reportHome(t), map[string]string{"HUDDLE_URL": url})
+		took := reg.took()
+		if len(took) != 1 {
+			t.Fatalf("the registry took %d POSTs, want 1", len(took))
+		}
+		if _, has := took[0].Body["title"]; has {
+			t.Errorf("title = %q, want it absent for an injected prompt", took[0].Body["title"])
+		}
+		if _, has := took[0].Body["task"]; has {
+			t.Errorf("task = %q, want it absent for an injected prompt", took[0].Body["task"])
+		}
+	}
+	// the person's own words still name the session
+	reg, url := startRegistry(t)
+	input := fmt.Sprintf(`{"session_id":"s-typed","hook_event_name":"UserPromptSubmit","prompt":"fix the login bug\nmore","cwd":%q}`, cwd)
+	runReportHook(t, input, reportHome(t), map[string]string{"HUDDLE_URL": url})
+	took := reg.took()
+	if len(took) != 1 {
+		t.Fatalf("the registry took %d POSTs, want 1", len(took))
+	}
+	if got := field(took[0].Body, "title"); got != "fix the login bug\nmore" {
+		t.Errorf("title = %q, want the prompt whole", got)
+	}
+	if got := field(took[0].Body, "task"); got != "fix the login bug" {
+		t.Errorf("task = %q, want the prompt's first line", got)
+	}
+}
+
 func TestTheReportHookAppendsToTheOutboxWhenTheServerIsDown(t *testing.T) {
 	home := reportHome(t)
 	stdout, elapsed := runReportHook(t,

@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 17
+const SchemaVersion = 18
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -230,6 +230,35 @@ var migrations = []string{
 	   digest TEXT PRIMARY KEY,
 	   added INTEGER NOT NULL
 	 );`,
+	// 18: older builds took Claude Code's own injected text (a task notification, a system
+	// reminder, `!` shell input, a slash-command wrapper) for a session's title or task, and
+	// the registry kept it; those rows are cleared so a real prompt can fill them.
+	`UPDATE sessions SET title = NULL
+	   WHERE ltrim(title, ' ' || char(10) || char(13) || char(9)) LIKE '<command-name>%'
+	      OR ltrim(title, ' ' || char(10) || char(13) || char(9)) LIKE '<command-message>%'
+	      OR ltrim(title, ' ' || char(10) || char(13) || char(9)) LIKE '<command-args>%'
+	      OR ltrim(title, ' ' || char(10) || char(13) || char(9)) LIKE '<local-command-stdout>%'
+	      OR ltrim(title, ' ' || char(10) || char(13) || char(9)) LIKE '<local-command-stderr>%'
+	      OR ltrim(title, ' ' || char(10) || char(13) || char(9)) LIKE '<system-reminder>%'
+	      OR ltrim(title, ' ' || char(10) || char(13) || char(9)) LIKE '<task-notification>%'
+	      OR ltrim(title, ' ' || char(10) || char(13) || char(9)) LIKE '<bash-input>%'
+	      OR ltrim(title, ' ' || char(10) || char(13) || char(9)) LIKE '<bash-stdout>%'
+	      OR ltrim(title, ' ' || char(10) || char(13) || char(9)) LIKE '<bash-stderr>%'
+	      OR ltrim(title, ' ' || char(10) || char(13) || char(9)) LIKE '<user-prompt-submit-hook>%'
+	      OR ltrim(title, ' ' || char(10) || char(13) || char(9)) LIKE 'Caveat:%';
+	 UPDATE sessions SET task = NULL
+	   WHERE ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<command-name>%'
+	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<command-message>%'
+	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<command-args>%'
+	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<local-command-stdout>%'
+	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<local-command-stderr>%'
+	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<system-reminder>%'
+	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<task-notification>%'
+	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<bash-input>%'
+	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<bash-stdout>%'
+	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<bash-stderr>%'
+	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<user-prompt-submit-hook>%'
+	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE 'Caveat:%';`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/MuhmdRaouf/huddle/internal/huddle/prompttext"
 )
 
 const (
@@ -124,7 +126,7 @@ func buildDigest(lines [][]byte, cwd string) string {
 			if entry.IsMeta {
 				continue
 			}
-			if said := userTextOf(entry.Message.Content); said != "" && !isWrapperText(said) {
+			if said := userTextOf(entry.Message.Content); said != "" && !prompttext.IsHarness(said) {
 				goal = said
 			}
 		case "assistant":
@@ -225,28 +227,6 @@ func userTextOf(content json.RawMessage) string {
 		}
 	}
 	return ""
-}
-
-// wrapperPrefixes open the harness's own user lines: a command's name and message, its
-// stdout, a system reminder and the transcript's caveat.
-var wrapperPrefixes = []string{
-	"<command-name>",
-	"<command-message>",
-	"<local-command-stdout>",
-	"<system-reminder>",
-	"Caveat:",
-}
-
-// isWrapperText answers whether text is a command or tool wrapper the harness put in the
-// transcript, not a prompt the person typed.
-func isWrapperText(text string) bool {
-	trimmed := strings.TrimSpace(text)
-	for _, prefix := range wrapperPrefixes {
-		if strings.HasPrefix(trimmed, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 // digestDecisionsAndOpen splits a session's last words into the decisions it made and the

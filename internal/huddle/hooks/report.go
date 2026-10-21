@@ -29,6 +29,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/prompttext"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
@@ -95,9 +96,11 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 		}
 		rep.Machine = machineOf(ctx, w)
 		rep.Project, rep.Branch = gitOf(ctx, w, input.Cwd, min(reportGitMS, left()))
-		if input.Prompt != "" {
-			// the title is the first prompt cut to 80 runes and the task its first line; the
-			// registry keeps the first title and the newest task
+		// text Claude Code injects — a task notification, a system reminder, `!` shell input,
+		// a slash-command wrapper — names nothing: only a prompt the person typed becomes the
+		// title (the first prompt cut to 80 runes) and the task (its first line), which the
+		// registry keeps as the first title and the newest task
+		if input.Prompt != "" && !prompttext.IsHarness(input.Prompt) {
 			rep.Title = jsfmt.UTF16Slice(input.Prompt, 0, 80)
 			rep.Task = jsfmt.UTF16Slice(firstLineOf(input.Prompt), 0, 80)
 		}

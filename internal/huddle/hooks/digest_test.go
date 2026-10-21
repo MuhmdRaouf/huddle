@@ -80,26 +80,6 @@ func TestTheDigestGoalIsWhatThePersonTyped(t *testing.T) {
 	}
 }
 
-// TestTheGoalSkipsCommandAndToolWrappers pins the wrapper prefixes: a user text that opens with
-// one is harness plumbing, the person's words never are.
-func TestTheGoalSkipsCommandAndToolWrappers(t *testing.T) {
-	for said, want := range map[string]bool{
-		"<command-name>/huddle:join</command-name>":                      true,
-		"  <command-message>huddle:join</command-message>":               true,
-		"<local-command-stdout>joined qa-three-a</local-command-stdout>": true,
-		"<system-reminder>the channel</system-reminder>":                 true,
-		"Caveat: the messages below were generated":                      true,
-		"fix the login bug":    false,
-		"plain words":          false,
-		"<b>not a wrapper</b>": false,
-		"":                     false,
-	} {
-		if got := isWrapperText(said); got != want {
-			t.Errorf("isWrapperText(%q) = %v, want %v", said, got, want)
-		}
-	}
-}
-
 func TestTheDigestBuilderEdges(t *testing.T) {
 	prompt := []byte(`{"type":"user","message":{"role":"user","content":[{"type":"text","text":"An array prompt"},{"type":"text","text":"second block"}]}}`)
 	edits := [][]byte{

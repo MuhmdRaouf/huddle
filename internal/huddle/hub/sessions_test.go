@@ -6,8 +6,11 @@ package hub
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 )
 
 // readNow is the clock the reads compute their states against: after every event in the
@@ -409,5 +412,81 @@ func TestAReportTagsItsSessionWithItsHarnessAndKeepsTheTag(t *testing.T) {
 	}
 	if row.Harness != "" {
 		t.Errorf("harness = %q, want none", row.Harness)
+	}
+}
+
+// TestMigration18ClearsWrapperTitlesAndTasks builds the schema the previous release wrote
+// (sessions still without the title and task clean-up), seeds it with wrapper text Claude Code
+// injected beside the words a person typed, opens it with this build, and proves the wrapper
+// titles and task are cleared, the person's words stay, and a cleared title fills again.
+func TestMigration18ClearsWrapperTitlesAndTasks(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "hub.db")
+	ctx := context.Background()
+	st, err := store.Open(ctx, file)
+	if err != nil {
+		t.Fatalf("open the v17 store: %v", err)
+	}
+	if err := st.Run(ctx, "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"); err != nil {
+		t.Fatalf("meta: %v", err)
+	}
+	for n := 0; n < 17; n++ {
+		if err := st.Run(ctx, migrations[n]); err != nil {
+			t.Fatalf("migration %d: %v", n+1, err)
+		}
+	}
+	if err := st.Run(ctx, "INSERT INTO meta (key, value) VALUES ('schema_version', '17')"); err != nil {
+		t.Fatalf("version: %v", err)
+	}
+	for _, row := range []struct{ id, title, task string }{
+		{"s-remind", "<system-reminder>x", ""},
+		{"s-bash", "<bash-input>pwd</bash-input>", ""},
+		{"s-space", " \n\t<task-notification>y", ""},
+		{"s-real", "fix the bug", ""},
+		{"s-task", "", "<task-notification>z"},
+		{"s-real-task", "", "ship it"},
+	} {
+		if err := st.Run(ctx,
+			"INSERT INTO sessions (session_id, title, task, last_event, last_event_at) VALUES (?, ?, ?, 'UserPromptSubmit', '2026-10-20T09:00:00.000Z')",
+			row.id, row.title, row.task); err != nil {
+			t.Fatalf("seed %s: %v", row.id, err)
+		}
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close the v17 store: %v", err)
+	}
+
+	db, err := Open(ctx, file)
+	if err != nil {
+		t.Fatalf("open with this build: %v", err)
+	}
+	defer db.Close()
+	for id := range map[string]bool{"s-remind": true, "s-bash": true, "s-space": true} {
+		row, err := db.st.Get(ctx, "SELECT title FROM sessions WHERE session_id = ?", id)
+		if err != nil || row == nil {
+			t.Fatalf("read %s: %v %v", id, row, err)
+		}
+		if title, _ := row["title"].(string); title != "" {
+			t.Errorf("%s kept the wrapper title %q, want it cleared", id, title)
+		}
+	}
+	if row, err := db.st.Get(ctx, "SELECT title FROM sessions WHERE session_id = 's-real'"); err != nil || row["title"] != "fix the bug" {
+		t.Errorf("the real title after the migration = %v (%v), want fix the bug", row["title"], err)
+	}
+	if row, err := db.st.Get(ctx, "SELECT task FROM sessions WHERE session_id = 's-task'"); err != nil {
+		t.Fatalf("read s-task: %v", err)
+	} else if task, _ := row["task"].(string); task != "" {
+		t.Errorf("the wrapper task = %q, want it cleared", task)
+	}
+	if row, err := db.st.Get(ctx, "SELECT task FROM sessions WHERE session_id = 's-real-task'"); err != nil || row["task"] != "ship it" {
+		t.Errorf("the real task after the migration = %v (%v), want ship it", row["task"], err)
+	}
+	// a cleared title fills again: the upsert's COALESCE sees no title and takes the new one
+	if err := db.Report(ctx, Report{SessionID: "s-remind", LastEvent: "UserPromptSubmit",
+		LastEventAt: "2026-10-20T09:01:00.000Z", Title: "real title"}); err != nil {
+		t.Fatalf("the filling report: %v", err)
+	}
+	if row, err := db.st.Get(ctx, "SELECT title FROM sessions WHERE session_id = 's-remind'"); err != nil || row["title"] != "real title" {
+		t.Errorf("the title after the report = %v (%v), want real title", row["title"], err)
 	}
 }
