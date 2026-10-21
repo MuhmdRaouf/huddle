@@ -801,3 +801,32 @@ func TestHuddleUnreachableIsFive(t *testing.T) {
 		}
 	}
 }
+
+// channel rm, against the admin API: removed, not found (4), refused (1), and its usage errors (2).
+func TestHuddleChannelRemove(t *testing.T) {
+	fake := startFakeHuddle(t, func(call fakeCall) (int, string) {
+		switch {
+		case call.Method == "DELETE" && call.Path == "/api/channels/old":
+			return 200, `{"removed":"old","kept":"/data/channels/.removed/old-20261021T141516Z.db"}`
+		case call.Method == "DELETE" && call.Path == "/api/channels/busy":
+			return 409, `{"error":"busy has 1 session(s) online"}`
+		}
+		return 404, `{"error":"no channel ghost"}`
+	})
+	w := huddleWorld(t, fake.server.URL, nil)
+	code, out, _ := runH(t, w, "channel", "rm", "old")
+	if code != 0 || out != "old removed; its history is kept at /data/channels/.removed/old-20261021T141516Z.db\n" {
+		t.Errorf("channel rm old = (%d, %q)", code, out)
+	}
+	if code, _, errOut := runH(t, w, "channel", "rm", "busy"); code != 1 || !strings.Contains(errOut, "busy has 1 session(s) online") {
+		t.Errorf("channel rm busy = (%d, %q), want 1 with the server's error", code, errOut)
+	}
+	if code, _, errOut := runH(t, w, "channel", "rm", "ghost"); code != 4 || !strings.Contains(errOut, "no channel ghost") {
+		t.Errorf("channel rm ghost = (%d, %q), want 4", code, errOut)
+	}
+	for _, argv := range [][]string{{"channel"}, {"channel", "list"}, {"channel", "rm"}} {
+		if code, _, errOut := runH(t, w, argv...); code != 2 || !strings.Contains(errOut, "channel rm <name>") {
+			t.Errorf("%v = (%d, %q), want the usage line", argv, code, errOut)
+		}
+	}
+}

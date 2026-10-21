@@ -77,6 +77,44 @@ func TestHubRemove(t *testing.T) {
 		}
 	})
 
+	t.Run("a channel with a file that is not open moves too", func(t *testing.T) {
+		dir := t.TempDir()
+		first := NewHub(dir, true)
+		if _, err := first.Get(bg, "shop"); err != nil {
+			t.Fatal(err)
+		}
+		if err := first.Close(bg); err != nil {
+			t.Fatal(err)
+		}
+		h := NewHub(dir, true)
+		t.Cleanup(func() { _ = h.Close(bg) })
+		kept, err := h.Remove(bg, "shop", rmNow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(kept); err != nil {
+			t.Errorf("the kept file: %v", err)
+		}
+	})
+
+	t.Run("a .removed path that cannot be a directory refuses and keeps the channel", func(t *testing.T) {
+		dir := t.TempDir()
+		h := NewHub(dir, true)
+		t.Cleanup(func() { _ = h.Close(bg) })
+		if _, err := h.Get(bg, "shop"); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "channels", ".removed"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.Remove(bg, "shop", rmNow); err == nil {
+			t.Fatal("remove with a file at .removed succeeded")
+		}
+		if _, err := os.Stat(h.File("shop")); err != nil {
+			t.Errorf("channels/shop.db went away: %v", err)
+		}
+	})
+
 	t.Run("a Get during the remove never reopens the old file", func(t *testing.T) {
 		dir := t.TempDir()
 		h := NewHub(dir, true)
