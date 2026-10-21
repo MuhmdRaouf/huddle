@@ -6,7 +6,9 @@
 .kanban-tab .board-with-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
+  /* the row's full height is the board's: the tone fills the pane, and a docked panel keeps
+     the board beside it down to the bottom */
+  flex: 1;
 }
 
 /* the panel: base rules the three placements share */

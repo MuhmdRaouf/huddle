@@ -735,7 +735,7 @@ export function App({
         </div>
       </div>
     ) : route.tab === "kanban" ? (
-      <div class="min-h-0 flex-1 overflow-y-auto">
+      <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <KanbanTab boardKey={route.sub[0] ?? null} />
       </div>
     ) : route.tab === "settings" ? (

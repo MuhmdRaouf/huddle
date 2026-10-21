@@ -30,6 +30,12 @@
   font-size: 14px;
   line-height: 1.45;
 
+  /* a column of the shell's own tab pane: grows to fill the pane, so the board's tone reaches
+     the bottom of the visible area on a short board, and lets the pane scroll on a tall one */
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+
   /* the tab never widens the shell: the board's own grid is the sideways scroller, and the
      drawer, being fixed, escapes this clip */
   min-width: 0;
@@ -409,7 +415,7 @@
 /* board: the area carries the base tone, the columns only their heading and their cards */
 
 .kanban-tab .board {
-  min-height: 60vh;
+  flex: 1;
   background: var(--board);
 }
 
@@ -1049,5 +1055,10 @@
 
   .kanban-tab .card {
     border-radius: 8px;
+  }
+
+  /* the lanes keep the toolbar's 16 px gutter; the desktop columns carry their own on .columns */
+  .kanban-tab .board[data-layout="tabs"] {
+    padding-inline: 16px;
   }
 }

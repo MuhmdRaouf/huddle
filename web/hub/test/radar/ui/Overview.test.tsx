@@ -164,6 +164,31 @@ describe("the radar Overview", () => {
     expect(rows[1]?.textContent).toContain("kanban-e2e · laptop");
   });
 
+  it("names the model whole: prose type in a column wide enough, with the raw id still hovering", () => {
+    const { container } = overview({
+      summary: fixtures.summary,
+      sessions: [
+        {
+          ...fixtures.sessionListItem,
+          id: "s-lead",
+          name: "lead",
+          costUsd: 9.8,
+          requestCount: 412,
+          model: "glm-5.3-flash",
+          live: true,
+        },
+      ],
+    });
+    const table = container.querySelector('table[aria-label="Top sessions by spend"]') as HTMLTableElement;
+    const header = [...table.querySelectorAll("thead th")].find((th) => th.textContent === "Model");
+    expect(header?.classList.contains("w-40")).toBe(true);
+    const cell = [...table.querySelectorAll("tbody td")].find((td) => td.textContent === "GLM 5.3 Flash");
+    expect(cell).toBeDefined();
+    expect(cell?.classList.contains("truncate")).toBe(true);
+    expect(cell?.classList.contains("font-mono")).toBe(false);
+    expect(cell?.classList.contains("text-[13px]")).toBe(false);
+  });
+
   it("raises the budget from a budget alert, and dismisses any alert", () => {
     const { container } = overview({
       summary: fixtures.summary,

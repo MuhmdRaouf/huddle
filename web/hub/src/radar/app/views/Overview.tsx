@@ -295,7 +295,7 @@ function TopSessions() {
               <th scope="col" class="py-1 text-left font-normal text-base-content/50">
                 Session
               </th>
-              <th scope="col" class="w-28 py-1 text-left font-normal text-base-content/50">
+              <th scope="col" class="w-40 py-1 text-left font-normal text-base-content/50">
                 Model
               </th>
               <th scope="col" class="w-24 py-1 text-right font-normal text-base-content/50">
@@ -326,7 +326,7 @@ function TopSessions() {
                       {row?.machine ? <span class="muted"> · {row.machine}</span> : null}
                     </a>
                   </td>
-                  <td class="truncate py-2 font-mono text-[13px]">
+                  <td class="truncate py-2">
                     {item.model === null ? "–" : <ModelChip model={item.model} />}
                   </td>
                   <td class="num py-2 text-right">{fmtNum(item.requestCount)}</td>
