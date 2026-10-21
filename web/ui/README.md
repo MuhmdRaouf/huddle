@@ -39,5 +39,5 @@ Consumers import these sources and fonts directly; each also has its own locked 
 | Coverage           | `bun run coverage`          |
 | Format             | `bun run format`            |
 
-The consumers' pages: [hub](../hub) · [radar](../radar) · [kanban](../kanban). The repository README and
-`AGENTS.md` at the repository root have the product and the development rules.
+The one consumer: [hub](../hub), which serves the Huddle, Radar and Kanban pages. The repository README
+and `AGENTS.md` at the repository root have the product and the development rules.
