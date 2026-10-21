@@ -85,6 +85,26 @@ func IsPluginRouterProxy(raw string) bool {
 	return IsPluginRouterURL(raw)
 }
 
+// ProxyEnvVars are the variables an outbound proxy is read from, both spellings. A spawn that
+// must not chain through a router drops these when their value names one.
+var ProxyEnvVars = []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"}
+
+// IsRouterProxy reports whether a proxy variable's value names a router of ours: one on the known
+// ports, or this router on its own port — loopback host, whatever port that is (the
+// `HUDDLE_ROUTER_PORT` override moves it). A process sending its own upstream requests through a
+// router chains routers; spawns and the daemon's engine environment use this to go direct.
+func IsRouterProxy(raw string, ownPort int64) bool {
+	if IsPluginRouterProxy(raw) {
+		return true
+	}
+	parsed, err := url.Parse(proxyURL(raw))
+	if err != nil || parsed.Scheme == "" {
+		return false
+	}
+	host := urlHostname(parsed)
+	return IsLoopback(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")) && routerPortOf(parsed) == ownPort
+}
+
 // urlHostname mirrors a WHATWG URL's hostname: the host without its port, lowercased, IPv6 brackets kept (JS reports
 // "[::1]", never "::1").
 func urlHostname(parsed *url.URL) string {

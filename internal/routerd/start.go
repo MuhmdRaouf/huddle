@@ -238,10 +238,19 @@ func spawnServeArgs(executable string, env domain.EnvLookup, log *os.File, args 
 }
 
 // environ is the daemon's environment: the caller's own, so the overrides and keys it resolved
-// reach the lanes.
+// reach the lanes, minus every proxy variable that names a router of ours — a daemon that
+// routes through a router chains. The pure check only; the daemon re-checks each loopback
+// value with a health probe once it serves (CleanProxyEnv).
 func environ(env domain.EnvLookup) []string {
+	ownPort := int64(domain.HuddleRouterPort)
+	if port, err := router.PortOf(env); err == nil {
+		ownPort = int64(port)
+	}
 	out := make([]string, 0, len(env))
 	for name, value := range env {
+		if slices.Contains(domain.ProxyEnvVars, name) && domain.IsRouterProxy(value, ownPort) {
+			continue
+		}
 		out = append(out, name+"="+value)
 	}
 	return out

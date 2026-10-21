@@ -441,6 +441,7 @@ socket over, so the router never stops answering.
 | Code sign-in locked | Wait the 15 minutes, or sign in with a passkey or a recovery code |
 | `huddle is not running` | `huddle status` exits 6; `huddle up` starts it, or just open a session |
 | `kanban: command not found` | First run downloads the binary; `/huddle:status` waits it out |
+| `502 anthropic unreachable (<code>)` | The code in parentheses names the cause: `ECERT` is a certificate check that failed. huddle-router never routes through another router, so restart sessions started before an update |
 | Something looks wrong | The log is `<home>/run/huddle.log`, the pid and port beside it |
 
 The details behind the quick fixes:

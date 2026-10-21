@@ -151,6 +151,9 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	if poll == 0 {
 		poll = pollDefault
 	}
+	// The no-chain rule: the engine environment carries no proxy variable that names a router,
+	// whatever port it serves, so upstream traffic never chains through one.
+	env = CleanProxyEnv(ctx, env, port, log)
 	anthropic, err := anthropicOf(env)
 	if err != nil {
 		_ = listener.Close()

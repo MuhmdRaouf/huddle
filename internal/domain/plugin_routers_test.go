@@ -517,3 +517,34 @@ func TestKeptPrefix(t *testing.T) {
 		t.Fatalf("KeptPrefix = %q, want %q", KeptPrefix, "kept ")
 	}
 }
+
+func TestIsRouterProxy(t *testing.T) {
+	own := int64(20999)
+	cases := []struct {
+		raw     string
+		ownPort int64
+		want    bool
+	}{
+		{"http://127.0.0.1:18786", own, true},
+		{"127.0.0.1:18787", own, true},
+		{"http://localhost:18791", own, true},
+		{"http://127.0.0.1:20999", own, true},
+		{"127.0.0.1:20999", own, true},
+		{"localhost:20999", own, true},
+		{"[::1]:20999", own, true},
+		{"http://[::1]:20999", own, true},
+		{"http://127.0.0.1:3128", own, false},
+		{"127.0.0.1:3128", 18786, false},
+		{"http://127.0.0.1:3128", 18786, false},
+		{"proxy.corp:18786", own, false},
+		{"http://proxy.corp:20999", own, false},
+		{"", own, false},
+		{"not a url", own, false},
+		{"http://[bad", own, false},
+	}
+	for _, tc := range cases {
+		if got := IsRouterProxy(tc.raw, tc.ownPort); got != tc.want {
+			t.Errorf("IsRouterProxy(%q, %d) = %v, want %v", tc.raw, tc.ownPort, got, tc.want)
+		}
+	}
+}

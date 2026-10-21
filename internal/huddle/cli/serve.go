@@ -36,11 +36,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
@@ -568,6 +570,9 @@ func up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string, 
 	if removalWatch {
 		env = append(env, "HUDDLE_REMOVAL_WATCH=1")
 	}
+	// the no-chain rule: a server that hosts huddle-router never inherits a proxy that points
+	// at one; the user's other proxies ride along
+	env = withoutRouterProxies(env)
 	child := exec.Command(bin, "serve")
 	child.Env = env
 	child.SysProcAttr = detachAttr()
@@ -654,6 +659,31 @@ func clampMS(ms time.Duration, max int) int {
 		return max
 	}
 	return whole
+}
+
+// withoutRouterProxies drops the proxy variables whose value names a router of ours — one on
+// the known ports, or the router on its own port (`HUDDLE_ROUTER_PORT`, else 18786). Pure: no
+// probe; the daemon asks its loopback proxies for a health answer itself (routerd.CleanProxyEnv).
+func withoutRouterProxies(env []string) []string {
+	lookup := domain.EnvLookup{}
+	for _, entry := range env {
+		if name, value, ok := strings.Cut(entry, "="); ok {
+			lookup[name] = value
+		}
+	}
+	ownPort := int64(domain.HuddleRouterPort)
+	if port, err := router.PortOf(lookup); err == nil {
+		ownPort = int64(port)
+	}
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		if name, value, ok := strings.Cut(entry, "="); ok &&
+			slices.Contains(domain.ProxyEnvVars, name) && domain.IsRouterProxy(value, ownPort) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 // withoutVar drops one variable from a child's environment.
