@@ -13,6 +13,9 @@ const (
 	AlertRetryStorm AlertKind = "retry_storm"
 	AlertBudget     AlertKind = "budget"
 	AlertContext    AlertKind = "context"
+	// AlertUpstream is the Anthropic path's alert: Claude Code cannot reach Anthropic through
+	// huddle-router.
+	AlertUpstream AlertKind = "upstream"
 )
 
 // AlertSeverity is how loud the dashboard shows an alert.

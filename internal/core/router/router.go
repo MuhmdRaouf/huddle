@@ -59,6 +59,11 @@ type RouterOptions struct {
 	// Events receives one spool event per forwarded request and the health events (refusals, rate
 	// limits, a budget stop), when Radar's spool is reachable.
 	Events func(event domain.SpoolEvent)
+	// AnthropicFail counts one upstream failure of a request the Anthropic route serves (every
+	// `claude-*` request); the multi router owns the streak the count feeds. nil counts nothing.
+	// AnthropicOk counts one request the route served with an answer.
+	AnthropicFail func(code, model string)
+	AnthropicOk   func()
 	// Budget is Radar's budget stop in force for this provider's models (cached by the caller);
 	// false: none.
 	Budget func() (domain.BudgetStop, bool)
@@ -1621,6 +1626,9 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			if prompt != nil {
 				w.estimator.RecordPrompt(prompt.Key, tracker.Usage(), prompt.BodyChars)
 			}
+			if route == "anthropic" && w.opts.AnthropicOk != nil {
+				w.opts.AnthropicOk()
+			}
 			if note != nil {
 				status := int64(answer.StatusCode)
 				if status == 0 {
@@ -1634,6 +1642,9 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 		},
 		Failed: func(failure UpstreamFailure) {
 			w.log(fmt.Sprintf("%s %s model=%s → %s error %s", req.Method, u.Path, modelOrDash(model), route, failure.Code))
+			if route == "anthropic" && w.opts.AnthropicFail != nil {
+				w.opts.AnthropicFail(failure.Code, model)
+			}
 			if !failure.AfterHeaders {
 				status := 502
 				if failure.Code == "ETIMEDOUT" {

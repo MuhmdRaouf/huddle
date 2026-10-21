@@ -220,13 +220,14 @@ func (i *Insights) allAlertsLocked() []shared.Alert {
 		spend = i.statusLocked().Spend
 	}
 	detected := alerts.DetectAlerts(alerts.AlertInput{
-		Now:       at,
-		Sessions:  i.store.SessionList(),
-		Requests:  raw.Requests,
-		Tools:     raw.Tools,
-		Events:    raw.Events,
-		APIErrors: i.store.APIErrors(),
-		Budgets:   spend,
+		Now:          at,
+		Sessions:     i.store.SessionList(),
+		Requests:     raw.Requests,
+		Tools:        raw.Tools,
+		Events:       raw.Events,
+		APIErrors:    i.store.APIErrors(),
+		Budgets:      spend,
+		RouterEvents: i.store.RouterEvents(),
 	}, i.thresholds)
 	i.alertCache = &alertCacheState{at: at, version: version, ledger: i.ledger.Version(), alerts: detected}
 	return detected

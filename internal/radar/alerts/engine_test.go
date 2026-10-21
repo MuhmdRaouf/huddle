@@ -708,3 +708,89 @@ func TestAlertJSONKeepsTheLiteralsOrder(t *testing.T) {
 		})
 	}
 }
+
+func TestUpstreamAlerts(t *testing.T) {
+	failing := func(ts int64, reason string) shared.RouterEventRecord {
+		return shared.RouterEventRecord{Ts: ts, Plugin: "anthropic", Event: shared.EventUpstreamFailing, Reason: reason}
+	}
+	recovered := func(ts int64) shared.RouterEventRecord {
+		return shared.RouterEventRecord{Ts: ts, Plugin: "anthropic", Event: shared.EventUpstreamRecovered}
+	}
+
+	t.Run("a failing path newer than its recovery raises one critical alert with the code and the hint", func(t *testing.T) {
+		got := upstreamAlerts(AlertInput{
+			Now:          now,
+			RouterEvents: []shared.RouterEventRecord{failing(now-minMs, "ECERT"), recovered(now - 3*minMs)},
+		}, DefaultThresholds)
+		if len(got) != 1 {
+			t.Fatalf("alerts = %d (%+v), want 1", len(got), got)
+		}
+		alert := got[0]
+		if alert.Kind != shared.AlertUpstream || alert.Severity != shared.SeverityErr {
+			t.Errorf("kind/severity = %q/%q, want upstream/err", alert.Kind, alert.Severity)
+		}
+		if alert.Since != now-minMs {
+			t.Errorf("since = %d, want the failing event's time", alert.Since)
+		}
+		want := "ECERT: a certificate check failed; huddle-router never routes through another router, so restart sessions started before an update"
+		if alert.Detail != want {
+			t.Errorf("detail = %q, want %q", alert.Detail, want)
+		}
+		if alert.ID == "" {
+			t.Error("the alert has no id")
+		}
+	})
+
+	t.Run("a recovery newer than the failing event raises nothing", func(t *testing.T) {
+		got := upstreamAlerts(AlertInput{
+			Now:          now,
+			RouterEvents: []shared.RouterEventRecord{failing(now-3*minMs, "ECERT"), recovered(now - minMs)},
+		}, DefaultThresholds)
+		if len(got) != 0 {
+			t.Errorf("alerts = %+v, want none", got)
+		}
+	})
+
+	t.Run("a failing event older than ten minutes raises nothing", func(t *testing.T) {
+		got := upstreamAlerts(AlertInput{
+			Now:          now,
+			RouterEvents: []shared.RouterEventRecord{failing(now-11*minMs, "ECERT")},
+		}, DefaultThresholds)
+		if len(got) != 0 {
+			t.Errorf("alerts = %+v, want none", got)
+		}
+	})
+
+	t.Run("a failing event exactly ten minutes old raises nothing", func(t *testing.T) {
+		got := upstreamAlerts(AlertInput{
+			Now:          now,
+			RouterEvents: []shared.RouterEventRecord{failing(now-10*minMs, "ECERT")},
+		}, DefaultThresholds)
+		if len(got) != 0 {
+			t.Errorf("alerts = %+v, want none", got)
+		}
+	})
+
+	t.Run("no upstream events at all raise nothing", func(t *testing.T) {
+		got := upstreamAlerts(AlertInput{Now: now}, DefaultThresholds)
+		if len(got) != 0 {
+			t.Errorf("alerts = %+v, want none", got)
+		}
+	})
+}
+
+func TestDetectAlertsJoinsTheUpstreamAlert(t *testing.T) {
+	event := shared.RouterEventRecord{
+		Ts: now - minMs, Plugin: "anthropic", Event: shared.EventUpstreamFailing, Reason: "ECONNREFUSED",
+	}
+	got := DetectAlerts(AlertInput{Now: now, RouterEvents: []shared.RouterEventRecord{event}}, DefaultThresholds)
+	found := false
+	for _, alert := range got {
+		if alert.Kind == shared.AlertUpstream {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("DetectAlerts = %+v, want an upstream alert among them", got)
+	}
+}

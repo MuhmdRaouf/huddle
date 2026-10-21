@@ -19,6 +19,8 @@ const ROUTER_META: Record<RouterEventKind, { label: string; one: string; tone: S
   rate_limited: { label: "Rate limits", one: "rate limited", tone: "warn" },
   budget_stop: { label: "Budget stops", one: "stopped at a budget", tone: "err" },
   restart: { label: "Restarts", one: "restarted", tone: "info" },
+  upstream_failing: { label: "Path failing", one: "the Anthropic path failed", tone: "err" },
+  upstream_recovered: { label: "Path back", one: "the Anthropic path recovered", tone: "info" },
 };
 
 /** One provider's panel: a badge per event kind, the 24-hour rate chart, and when it last fired. */

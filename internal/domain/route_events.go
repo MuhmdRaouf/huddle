@@ -77,7 +77,7 @@ type RouterEvent struct {
 // RouterHealth is what a router's health event reports: a request the passthrough served instead of the router, a
 // provider request the router refused (no key, a refused key, no balance, a stopped budget), a provider rate limit, a
 // budget turning a route off, or a worker the front had to replace (and the router retiring: the last line a retired
-// router writes).
+// router writes), or the Anthropic path failing and recovering.
 type RouterHealth string
 
 const (
@@ -86,6 +86,11 @@ const (
 	HealthRateLimited RouterHealth = "rate_limited"
 	HealthBudgetStop  RouterHealth = "budget_stop"
 	HealthRestart     RouterHealth = "restart"
+	// HealthUpstreamFailing and HealthUpstreamRecovered mark the Anthropic path (`claude-*`
+	// requests): consecutive upstream failures raise one failing event, the first success after
+	// it raises the recovery. The reason carries the failure code (ECERT, ECONNREFUSED, …).
+	HealthUpstreamFailing   RouterHealth = "upstream_failing"
+	HealthUpstreamRecovered RouterHealth = "upstream_recovered"
 )
 
 // RouterHealthEvents lists the health events a router reports.
@@ -95,6 +100,22 @@ var RouterHealthEvents = []RouterHealth{
 	HealthRateLimited,
 	HealthBudgetStop,
 	HealthRestart,
+	HealthUpstreamFailing,
+	HealthUpstreamRecovered,
+}
+
+// FailHint is the fix a failure code's health event and alert name: what to check first.
+func FailHint(code string) string {
+	switch code {
+	case "ECERT":
+		return "a certificate check failed; huddle-router never routes through another router, so restart sessions started before an update"
+	case "ECONNREFUSED":
+		return "the upstream refused the connection; check HTTPS_PROXY"
+	case "ETIMEDOUT":
+		return "the upstream timed out; check the network"
+	default:
+		return "see the router log"
+	}
 }
 
 // HealthEventKind marks a router health line (Radar's `router.event`).

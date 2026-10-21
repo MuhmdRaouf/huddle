@@ -26,11 +26,13 @@ var kindKeys = []string{"event", "kind", "type", "action", "name"}
 
 // RouterCounts is one provider's health events by kind.
 type RouterCounts struct {
-	Fallback    int64 `json:"fallback"`
-	Refusal     int64 `json:"refusal"`
-	RateLimited int64 `json:"rate_limited"`
-	BudgetStop  int64 `json:"budget_stop"`
-	Restart     int64 `json:"restart"`
+	Fallback          int64 `json:"fallback"`
+	Refusal           int64 `json:"refusal"`
+	RateLimited       int64 `json:"rate_limited"`
+	BudgetStop        int64 `json:"budget_stop"`
+	Restart           int64 `json:"restart"`
+	UpstreamFailing   int64 `json:"upstream_failing"`
+	UpstreamRecovered int64 `json:"upstream_recovered"`
 }
 
 // ProviderHealth is one provider's folded health events.
@@ -150,6 +152,10 @@ func addEvent(entry *ProviderHealth, event shared.RouterEventRecord, bucket int6
 		entry.Counts.BudgetStop++
 	case shared.EventRestart:
 		entry.Counts.Restart++
+	case shared.EventUpstreamFailing:
+		entry.Counts.UpstreamFailing++
+	case shared.EventUpstreamRecovered:
+		entry.Counts.UpstreamRecovered++
 	}
 	entry.Series[bucket]++
 	for i, kind := range shared.RouterEventKinds {

@@ -17,6 +17,8 @@
 //     holding a run's total from a result event is not one call's context: those requests
 //     never fire it.
 //   - budget:      a budget at 80% or more of its limit this period (and again at 100%).
+//   - upstream:     the Anthropic path is failing: the newest upstream_failing router health
+//     event is newer than the newest upstream_recovered and less than 10 minutes old.
 //
 // Ids are stable for one occurrence, so a dismissal holds until the same thing happens again.
 package alerts
@@ -29,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"github.com/MuhmdRaouf/huddle/internal/radar/budget"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -44,47 +47,51 @@ type AlertKind = shared.AlertKind
 // AlertKinds is every kind the engine detects.
 var AlertKinds = []shared.AlertKind{
 	shared.AlertStuck, shared.AlertLoop, shared.AlertRetryStorm, shared.AlertBudget, shared.AlertContext,
+	shared.AlertUpstream,
 }
 
 // Thresholds are the points each detector fires at.
 type Thresholds struct {
-	StuckMs       int64
-	StuckToolMs   int64
-	AbandonedMs   int64
-	LoopRepeats   int
-	LoopFreshMs   int64
-	RetryCount    int
-	RetryWindowMs int64
-	RetryFreshMs  int64
-	ContextRatio  float64
-	BudgetWarnPct float64
+	StuckMs         int64
+	StuckToolMs     int64
+	AbandonedMs     int64
+	LoopRepeats     int
+	LoopFreshMs     int64
+	RetryCount      int
+	RetryWindowMs   int64
+	RetryFreshMs    int64
+	ContextRatio    float64
+	BudgetWarnPct   float64
+	UpstreamFreshMs int64
 }
 
 const minuteMs = 60_000
 
 // DefaultThresholds is where every detector fires by default.
 var DefaultThresholds = Thresholds{
-	StuckMs:       10 * minuteMs,
-	StuckToolMs:   30 * minuteMs,
-	AbandonedMs:   6 * 60 * minuteMs,
-	LoopRepeats:   5,
-	LoopFreshMs:   30 * minuteMs,
-	RetryCount:    5,
-	RetryWindowMs: 2 * minuteMs,
-	RetryFreshMs:  10 * minuteMs,
-	ContextRatio:  0.85,
-	BudgetWarnPct: 80,
+	StuckMs:         10 * minuteMs,
+	StuckToolMs:     30 * minuteMs,
+	AbandonedMs:     6 * 60 * minuteMs,
+	LoopRepeats:     5,
+	LoopFreshMs:     30 * minuteMs,
+	RetryCount:      5,
+	RetryWindowMs:   2 * minuteMs,
+	RetryFreshMs:    10 * minuteMs,
+	ContextRatio:    0.85,
+	BudgetWarnPct:   80,
+	UpstreamFreshMs: 10 * minuteMs,
 }
 
 // AlertInput is everything the detectors look at.
 type AlertInput struct {
-	Now       int64
-	Sessions  []store.SessionListItem
-	Requests  []shared.RequestRecord
-	Tools     []shared.ToolCallRecord
-	Events    []shared.EventRecord
-	APIErrors []shared.APIErrorRecord
-	Budgets   []budget.BudgetSpend
+	Now          int64
+	Sessions     []store.SessionListItem
+	Requests     []shared.RequestRecord
+	Tools        []shared.ToolCallRecord
+	Events       []shared.EventRecord
+	APIErrors    []shared.APIErrorRecord
+	Budgets      []budget.BudgetSpend
+	RouterEvents []shared.RouterEventRecord
 }
 
 // sessionData is one session's records, each list sorted oldest first.
@@ -551,6 +558,39 @@ func budgetAlerts(in AlertInput, t Thresholds) []shared.Alert {
 	return alerts
 }
 
+// upstreamAlerts is the Anthropic path's alert: Claude Code cannot reach Anthropic through
+// huddle-router. One critical alert while the newest upstream_failing router health event is
+// newer than the newest upstream_recovered and less than UpstreamFreshMs old; its detail names
+// the failure code and its fix hint.
+func upstreamAlerts(in AlertInput, t Thresholds) []shared.Alert {
+	var failing, recovered *shared.RouterEventRecord
+	for i := range in.RouterEvents {
+		switch event := in.RouterEvents[i]; event.Event {
+		case shared.EventUpstreamFailing:
+			if failing == nil || event.Ts >= failing.Ts {
+				failing = &in.RouterEvents[i]
+			}
+		case shared.EventUpstreamRecovered:
+			if recovered == nil || event.Ts >= recovered.Ts {
+				recovered = &in.RouterEvents[i]
+			}
+		}
+	}
+	if failing == nil || in.Now-failing.Ts >= t.UpstreamFreshMs {
+		return nil
+	}
+	if recovered != nil && recovered.Ts >= failing.Ts {
+		return nil
+	}
+	return []shared.Alert{{
+		ID:       fmt.Sprintf("upstream:%s:%d", failing.Plugin, failing.Ts),
+		Kind:     shared.AlertUpstream,
+		Since:    failing.Ts,
+		Detail:   failing.Reason + ": " + domain.FailHint(failing.Reason),
+		Severity: shared.SeverityErr,
+	}}
+}
+
 // severityOrder puts err before warn.
 var severityOrder = map[shared.AlertSeverity]int{shared.SeverityErr: 0, shared.SeverityWarn: 1}
 
@@ -575,6 +615,7 @@ func DetectAlerts(in AlertInput, t Thresholds) []shared.Alert {
 	}
 	alerts = append(alerts, retryAlerts(in, t, sessions)...)
 	alerts = append(alerts, budgetAlerts(in, t)...)
+	alerts = append(alerts, upstreamAlerts(in, t)...)
 	slices.SortStableFunc(alerts, func(a, b shared.Alert) int {
 		if bySeverity := cmp.Compare(severityOrder[a.Severity], severityOrder[b.Severity]); bySeverity != 0 {
 			return bySeverity

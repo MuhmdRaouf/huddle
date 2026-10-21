@@ -79,6 +79,11 @@ type multiOpts struct {
 	portSet bool
 	// gateway is the handler mounted under the router's gateway prefix; nil mounts none.
 	gateway http.Handler
+	// anthropic replaces the rig's recording Anthropic upstream (the fail-alert scenarios
+	// point it at one that fails); nil keeps the recording one.
+	anthropic *url.URL
+	// log is the router's own log sink; nil discards the lines.
+	log func(line string)
 }
 
 // newMultiRig builds the router over the lanes given (zai and kimi when none are named) and
@@ -91,6 +96,9 @@ func newMultiRig(t *testing.T, opts multiOpts) *multiRig {
 	}
 	r := &multiRig{t: t, anthropicSeen: &seenList{}, events: &eventLog{}}
 	r.anthropic = recordingUpstream(t, "anthropic", "", r.anthropicSeen)
+	if opts.anthropic != nil {
+		r.anthropic = opts.anthropic
+	}
 	laneOptions := make([]RouterOptions, 0, len(lanes))
 	for _, lane := range lanes {
 		calls := &atomic.Int64{}
@@ -119,6 +127,7 @@ func newMultiRig(t *testing.T, opts multiOpts) *multiRig {
 		Lanes:     laneOptions,
 		Events:    r.events.record,
 		Gateway:   opts.gateway,
+		Log:       opts.log,
 	})
 	serveRouter(t, server, r.port)
 	return r

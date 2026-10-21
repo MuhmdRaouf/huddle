@@ -138,7 +138,15 @@ export type ApiErrorRecord = {
   plugin: string | null;
 };
 
-export const ROUTER_EVENT_KINDS = ["fallback", "refusal", "rate_limited", "budget_stop", "restart"] as const;
+export const ROUTER_EVENT_KINDS = [
+  "fallback",
+  "refusal",
+  "rate_limited",
+  "budget_stop",
+  "restart",
+  "upstream_failing",
+  "upstream_recovered",
+] as const;
 export type RouterEventKind = (typeof ROUTER_EVENT_KINDS)[number];
 
 /** One router health event a provider plugin's router appended to the spool (never a key, never a body). */

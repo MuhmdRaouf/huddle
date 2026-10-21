@@ -104,8 +104,15 @@ describe("modelColor", () => {
 
 describe("alertLabel", () => {
   it("names every alert kind in plain words", () => {
-    const kinds: AlertKind[] = ["stuck", "loop", "retry_storm", "context", "budget"];
-    expect(kinds.map(alertLabel)).toEqual(["Stuck", "Loop", "Retry storm", "Context nearly full", "Budget"]);
+    const kinds: AlertKind[] = ["stuck", "loop", "retry_storm", "context", "budget", "upstream"];
+    expect(kinds.map(alertLabel)).toEqual([
+      "Stuck",
+      "Loop",
+      "Retry storm",
+      "Context nearly full",
+      "Budget",
+      "Claude cannot reach Anthropic through huddle-router",
+    ]);
   });
 });
 

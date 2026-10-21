@@ -113,7 +113,10 @@ func TestModelConstants(t *testing.T) {
 		if MaxSessions != 200 || MaxRecords != 200_000 {
 			t.Errorf("caps = %d/%d, want 200/200000", MaxSessions, MaxRecords)
 		}
-		want := []RouterEventKind{"fallback", "refusal", "rate_limited", "budget_stop", "restart"}
+		want := []RouterEventKind{
+			"fallback", "refusal", "rate_limited", "budget_stop", "restart",
+			"upstream_failing", "upstream_recovered",
+		}
 		if !reflect.DeepEqual(RouterEventKinds, want) {
 			t.Errorf("RouterEventKinds = %v, want %v", RouterEventKinds, want)
 		}

@@ -7,6 +7,7 @@ package router
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -77,6 +78,9 @@ type Multi struct {
 	proxy     *TLSProxy
 	gateway   http.Handler // serves GatewayPrefix, or nil
 	limit     int64
+	// streak is the Anthropic path's failure count, shared by the base-URL mode (the Anthropic
+	// lane) and the proxy mode (the decrypted route and the pass-through).
+	streak *FailStreak
 }
 
 // multiLanes is one immutable set of provider lanes, in Lanes order.
@@ -96,7 +100,7 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 	if note == nil {
 		note = func(string) {}
 	}
-	m := &Multi{o: opts, limit: limit, gateway: opts.Gateway}
+	m := &Multi{o: opts, limit: limit, gateway: opts.Gateway, streak: &FailStreak{}}
 	if opts.Port != 0 {
 		m.hostPorts = append([]int{opts.Port}, opts.ExtraPorts...)
 	}
@@ -104,23 +108,27 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 	// The Anthropic lane claims nothing, so its requests always take the Anthropic route, and it
 	// never reads a key (there is none to read).
 	m.anthropic = newRouterWorker(RouterOptions{
-		Provider:  domain.Provider{Name: MultiName, Display: "Anthropic"},
-		Anthropic: opts.Anthropic,
-		Env:       opts.Env,
-		Log:       opts.Log,
-		Events:    opts.Events,
-		BodyLimit: opts.BodyLimit,
+		Provider:      domain.Provider{Name: MultiName, Display: "Anthropic"},
+		Anthropic:     opts.Anthropic,
+		Env:           opts.Env,
+		Log:           opts.Log,
+		Events:        opts.Events,
+		BodyLimit:     opts.BodyLimit,
+		AnthropicFail: m.noteAnthropicFailure,
+		AnthropicOk:   m.noteAnthropicOk,
 	}, nil)
 	m.proxy = &TLSProxy{
-		Name:      MultiName,
-		CADir:     opts.CADir,
-		Anthropic: opts.Anthropic,
-		Env:       opts.Env,
-		Dial:      opts.Dial,
-		BodyLimit: limit,
-		Now:       now,
-		Note:      note,
-		Route:     m.route,
+		Name:          MultiName,
+		CADir:         opts.CADir,
+		Anthropic:     opts.Anthropic,
+		Env:           opts.Env,
+		Dial:          opts.Dial,
+		BodyLimit:     limit,
+		Now:           now,
+		Note:          note,
+		Route:         m.route,
+		AnthropicFail: func(code string) { m.noteAnthropicFailure(code, "") },
+		AnthropicOk:   m.noteAnthropicOk,
 	}
 	return Harden(&http.Server{Handler: http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		// A CONNECT names the tunnel's target in the authority, so the Host check below (a
@@ -157,6 +165,41 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 			m.route(req, res, body)
 		})
 	})}), m
+}
+
+// noteAnthropicFailure counts one Anthropic-path upstream failure on the router's streak: the
+// third within a minute raises one health event with the code and a fix hint on the log. Never
+// on the request's path past a few integer operations.
+func (m *Multi) noteAnthropicFailure(code, model string) {
+	if !m.streak.Fail(time.Now().UnixMilli(), code) {
+		return
+	}
+	m.noteAnthropicHealth(domain.HealthUpstreamFailing, code, model)
+}
+
+// noteAnthropicOk counts one Anthropic-path answer: the first success after a raise raises the
+// recovery.
+func (m *Multi) noteAnthropicOk() {
+	if !m.streak.Ok(time.Now().UnixMilli()) {
+		return
+	}
+	m.noteAnthropicHealth(domain.HealthUpstreamRecovered, "", "")
+}
+
+// noteAnthropicHealth appends one health event of the Anthropic path's own, plugin "anthropic",
+// and says so on the log.
+func (m *Multi) noteAnthropicHealth(event domain.RouterHealth, code, model string) {
+	if m.o.Events != nil {
+		m.o.Events(domain.HealthEvent("anthropic", event, code, model, time.Now().UnixMilli()))
+	}
+	if m.o.Log == nil {
+		return
+	}
+	if event == domain.HealthUpstreamFailing {
+		m.o.Log(fmt.Sprintf("%s: Anthropic path failing (%s): %s", MultiName, code, domain.FailHint(code)))
+		return
+	}
+	m.o.Log(MultiName + ": Anthropic path recovered")
 }
 
 // Providers is the names of the lanes the router serves, in the order they were given.

@@ -128,8 +128,15 @@ describe("AlertsView", () => {
     expect(container.querySelectorAll("[role='alert']")).toHaveLength(2);
     expect(container.querySelectorAll(".alert-error")).toHaveLength(1);
     const terms = [...container.querySelectorAll("dt")].map((t) => t.textContent);
-    expect(terms).toEqual(["Stuck", "Loop", "Retry storm", "Context nearly full", "Budget"]);
-    expect(container.querySelectorAll("dd")).toHaveLength(5);
+    expect(terms).toEqual([
+      "Stuck",
+      "Loop",
+      "Retry storm",
+      "Context nearly full",
+      "Budget",
+      "Claude cannot reach Anthropic through huddle-router",
+    ]);
+    expect(container.querySelectorAll("dd")).toHaveLength(6);
   });
 
   it("dismisses from the full list too", async () => {

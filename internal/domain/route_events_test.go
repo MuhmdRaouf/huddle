@@ -29,13 +29,36 @@ func TestHealthEvent(t *testing.T) {
 }
 
 func TestRouterHealthEvents(t *testing.T) {
-	want := []RouterHealth{HealthFallback, HealthRefusal, HealthRateLimited, HealthBudgetStop, HealthRestart}
+	want := []RouterHealth{
+		HealthFallback, HealthRefusal, HealthRateLimited, HealthBudgetStop, HealthRestart,
+		HealthUpstreamFailing, HealthUpstreamRecovered,
+	}
 	if len(RouterHealthEvents) != len(want) {
 		t.Fatalf("RouterHealthEvents has %d entries, want %d", len(RouterHealthEvents), len(want))
 	}
 	for i, health := range want {
 		if RouterHealthEvents[i] != health {
 			t.Fatalf("RouterHealthEvents[%d] = %q, want %q", i, RouterHealthEvents[i], health)
+		}
+	}
+}
+
+func TestFailHint(t *testing.T) {
+	cases := []struct {
+		code string
+		want string
+	}{
+		{"ECERT", "a certificate check failed; huddle-router never routes through another router, so restart sessions started before an update"},
+		{"ECONNREFUSED", "the upstream refused the connection; check HTTPS_PROXY"},
+		{"ETIMEDOUT", "the upstream timed out; check the network"},
+		{"ECONNRESET", "see the router log"},
+		{"EPIPE", "see the router log"},
+		{"EUPSTREAM", "see the router log"},
+		{"", "see the router log"},
+	}
+	for _, want := range cases {
+		if got := FailHint(want.code); got != want.want {
+			t.Errorf("FailHint(%q) = %q, want %q", want.code, got, want.want)
 		}
 	}
 }

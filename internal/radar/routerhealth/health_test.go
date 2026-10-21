@@ -372,3 +372,22 @@ func TestHealth(t *testing.T) {
 		}
 	})
 }
+
+func TestHealthCountsTheAnthropicPathsOwnKinds(t *testing.T) {
+	events := []shared.RouterEventRecord{
+		{Ts: 1_000, Plugin: "anthropic", Event: shared.EventUpstreamFailing, Reason: "ECERT"},
+		{Ts: 2_000, Plugin: "anthropic", Event: shared.EventUpstreamFailing, Reason: "ECERT"},
+		{Ts: 3_000, Plugin: "anthropic", Event: shared.EventUpstreamRecovered},
+	}
+	health := routerhealth.Health(events, 60_000, 60_000, 6)
+	if len(health.Providers) != 1 {
+		t.Fatalf("providers = %d, want the anthropic row", len(health.Providers))
+	}
+	counts := health.Providers[0].Counts
+	if counts.UpstreamFailing != 2 {
+		t.Errorf("upstream_failing = %d, want 2", counts.UpstreamFailing)
+	}
+	if counts.UpstreamRecovered != 1 {
+		t.Errorf("upstream_recovered = %d, want 1", counts.UpstreamRecovered)
+	}
+}

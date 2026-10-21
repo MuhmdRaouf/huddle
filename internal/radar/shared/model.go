@@ -505,11 +505,16 @@ const (
 	EventRateLimited RouterEventKind = "rate_limited"
 	EventBudgetStop  RouterEventKind = "budget_stop"
 	EventRestart     RouterEventKind = "restart"
+	// EventUpstreamFailing and EventUpstreamRecovered are the Anthropic path's own kinds: the
+	// path Claude Code's `claude-*` requests take failing and recovering.
+	EventUpstreamFailing   RouterEventKind = "upstream_failing"
+	EventUpstreamRecovered RouterEventKind = "upstream_recovered"
 )
 
 // RouterEventKinds lists every router health event kind.
 var RouterEventKinds = []RouterEventKind{
 	EventFallback, EventRefusal, EventRateLimited, EventBudgetStop, EventRestart,
+	EventUpstreamFailing, EventUpstreamRecovered,
 }
 
 // RouterEventRecord is one router health event a provider plugin's router appended to the

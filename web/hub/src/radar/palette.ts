@@ -76,6 +76,7 @@ const ALERT_LABEL: Record<AlertKind, string> = {
   retry_storm: "Retry storm",
   context: "Context nearly full",
   budget: "Budget",
+  upstream: "Claude cannot reach Anthropic through huddle-router",
 };
 
 export function alertLabel(kind: AlertKind): string {

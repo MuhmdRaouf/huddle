@@ -17,6 +17,7 @@ export const ALERT_ICON: Record<AlertKind, IconName> = {
   retry_storm: "wifiOff",
   context: "gauge",
   budget: "dollar",
+  upstream: "alert",
 };
 
 /** Where an alert happened: the project and agent, the session id when the project is unknown, or the router. */

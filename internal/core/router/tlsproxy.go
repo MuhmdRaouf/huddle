@@ -49,6 +49,11 @@ type TLSProxy struct {
 	Note func(line string)
 	// Route serves a decrypted model request, the way base-URL mode serves one.
 	Route func(req *http.Request, res *Response, body []byte)
+	// AnthropicFail counts a pass-through request that failed to reach Anthropic, on the same
+	// streak the decrypted route's failures feed; nil counts nothing. AnthropicOk counts a
+	// pass-through request the upstream answered.
+	AnthropicFail func(code string)
+	AnthropicOk   func()
 
 	// The certificate state: the local CA, the leaf it signed for api.anthropic.com, and the last
 	// load attempt — its error, when it ran and whether the failure is already in the log.
@@ -211,9 +216,11 @@ func (p *TLSProxy) intercept(w http.ResponseWriter, req *http.Request) {
 
 // anthropicProxy is the pass-through half of proxy mode: the request goes to Anthropic with its
 // host rewritten to the target's and nothing else changed, its stream flushed as it arrives and
-// its upgrade relayed both ways.
+// its upgrade relayed both ways. Every answer that arrives counts as the path's success and
+// every failure as its failure, on the streak the router's health events feed.
 func (p *TLSProxy) anthropicProxy() *httputil.ReverseProxy {
 	target := p.Anthropic
+	inner := AgentFor(target, p.Env, false)
 	return &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.Out.URL.Scheme = target.Scheme
@@ -222,11 +229,32 @@ func (p *TLSProxy) anthropicProxy() *httputil.ReverseProxy {
 			pr.Out.Host = target.Host
 		},
 		FlushInterval: -1,
-		Transport:     AgentFor(target, p.Env, false),
+		Transport: answeredTransport{
+			inner: inner,
+			ok:    p.AnthropicOk,
+		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			if p.AnthropicFail != nil {
+				p.AnthropicFail(failureCode(err))
+			}
 			AnthropicError(NewResponse(w), 502, "api_error", p.Name+" router: anthropic unreachable")
 		},
 	}
+}
+
+// answeredTransport reports each answer that arrived as one success, so the Anthropic path's
+// streak sees the pass-through's successes; the ErrorHandler sees its failures.
+type answeredTransport struct {
+	inner http.RoundTripper
+	ok    func()
+}
+
+func (t answeredTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	answer, err := t.inner.RoundTrip(req)
+	if err == nil && t.ok != nil {
+		t.ok()
+	}
+	return answer, err
 }
 
 // leafFor is the certificate CONNECT api.anthropic.com is answered with: the local CA's leaf,

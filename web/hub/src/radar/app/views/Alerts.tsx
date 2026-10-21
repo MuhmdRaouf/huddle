@@ -29,6 +29,10 @@ const HOW_ALERTS_WORK: [AlertKind, string][] = [
     "An agent's last request used 85% of its context window (200k, or 1M once a session shows it has one), with no compaction since.",
   ],
   ["budget", "A budget reaching 80% of its limit for this period, and again at 100%."],
+  [
+    "upstream",
+    "Claude's requests to Anthropic are failing through huddle-router: three failures within a minute raise it, and the first request that gets through clears it.",
+  ],
 ];
 
 /** The whole alerts tab: the active list (or an all-clear) and the plain-language explanation of each kind. */

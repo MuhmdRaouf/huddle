@@ -100,7 +100,15 @@ const budgetSpend: BudgetSpend = {
 
 const providerHealth: ProviderHealth = {
   plugin: "zai",
-  counts: { fallback: 0, refusal: 0, rate_limited: 0, budget_stop: 0, restart: 0 },
+  counts: {
+    fallback: 0,
+    refusal: 0,
+    rate_limited: 0,
+    budget_stop: 0,
+    restart: 0,
+    upstream_failing: 0,
+    upstream_recovered: 0,
+  },
   series: [],
   kindSeries: [],
   lastAt: null,

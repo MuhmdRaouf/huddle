@@ -44,7 +44,7 @@ export type SessionListItem = {
   context?: { used: number; window: number } | null;
 };
 
-export type AlertKind = "stuck" | "loop" | "retry_storm" | "budget" | "context";
+export type AlertKind = "stuck" | "loop" | "retry_storm" | "budget" | "context" | "upstream";
 
 export type Alert = {
   id: string;

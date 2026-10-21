@@ -10,7 +10,15 @@ const fixtures = uiFixtures();
 
 const PROVIDER: ProviderHealth = {
   ...fixtures.providerHealth,
-  counts: { fallback: 2, refusal: 0, rate_limited: 1, budget_stop: 0, restart: 0 },
+  counts: {
+    fallback: 2,
+    refusal: 0,
+    rate_limited: 1,
+    budget_stop: 0,
+    restart: 0,
+    upstream_failing: 0,
+    upstream_recovered: 0,
+  },
   series: [0, 1, 2],
   lastAt: NOW - 60_000,
   lastReason: "503",
