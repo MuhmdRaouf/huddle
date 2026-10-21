@@ -68,7 +68,7 @@ func isStopError(stopReason *string) bool {
 }
 
 // Summarize is the dashboard's totals row over the records in view.
-func Summarize(sessions []shared.SessionView, requests []shared.RequestRecord, tools []shared.ToolCallRecord, now int64) shared.Summary {
+func Summarize(sessions []shared.SessionView, requests []*shared.RequestRecord, tools []*shared.ToolCallRecord, now int64) shared.Summary {
 	var liveSessions, agents, errors int64
 	for i := range sessions {
 		if sessions[i].Live {
@@ -121,9 +121,9 @@ type ToolCountRow struct {
 }
 
 // ModelRows is one row per model in the models table, biggest token total first.
-func ModelRows(requests []shared.RequestRecord) []shared.ModelRow {
+func ModelRows(requests []*shared.RequestRecord) []shared.ModelRow {
 	type bucket struct {
-		requests []shared.RequestRecord
+		requests []*shared.RequestRecord
 	}
 	var order []string
 	byModel := make(map[string]*bucket)
@@ -157,9 +157,9 @@ func ModelRows(requests []shared.RequestRecord) []shared.ModelRow {
 
 // UpstreamRows is one row per host in the upstreams table, biggest token total first: a
 // router's "api.z.ai" and a session's "https://api.z.ai" are the same endpoint.
-func UpstreamRows(requests []shared.RequestRecord) []shared.UpstreamRow {
+func UpstreamRows(requests []*shared.RequestRecord) []shared.UpstreamRow {
 	type bucket struct {
-		requests []shared.RequestRecord
+		requests []*shared.RequestRecord
 	}
 	var order []string
 	byHost := make(map[string]*bucket)
@@ -193,7 +193,7 @@ func UpstreamRows(requests []shared.RequestRecord) []shared.UpstreamRow {
 // ToolCounts counts tool calls per tool name, most used first, names breaking ties. Calls named
 // "unknown" stay out: they are results whose tool_use was never read, not a tool, and older
 // records still carrying the name must not reach the Top tools ranking under it.
-func ToolCounts(tools []shared.ToolCallRecord) []ToolCountRow {
+func ToolCounts(tools []*shared.ToolCallRecord) []ToolCountRow {
 	type tally struct {
 		count    int64
 		failures int64
@@ -229,7 +229,7 @@ func ToolCounts(tools []shared.ToolCallRecord) []ToolCountRow {
 }
 
 // latenciesOf collects the requests' measured latencies, leaving the unmeasured out.
-func latenciesOf(requests []shared.RequestRecord) []int64 {
+func latenciesOf(requests []*shared.RequestRecord) []int64 {
 	latencies := make([]int64, 0, len(requests))
 	for i := range requests {
 		if requests[i].LatencyMs != nil {
@@ -240,7 +240,7 @@ func latenciesOf(requests []shared.RequestRecord) []int64 {
 }
 
 // countErrors counts the requests whose stop reason is one of the error set's.
-func countErrors(requests []shared.RequestRecord) int64 {
+func countErrors(requests []*shared.RequestRecord) int64 {
 	var errors int64
 	for i := range requests {
 		if isStopError(requests[i].StopReason) {
@@ -251,7 +251,7 @@ func countErrors(requests []shared.RequestRecord) int64 {
 }
 
 // sumTokens adds the requests' token counters together.
-func sumTokens(requests []shared.RequestRecord) shared.Tokens {
+func sumTokens(requests []*shared.RequestRecord) shared.Tokens {
 	tokens := shared.ZeroTokens
 	for i := range requests {
 		tokens = shared.AddTokens(tokens, requests[i].Tokens)
@@ -262,7 +262,7 @@ func sumTokens(requests []shared.RequestRecord) shared.Tokens {
 // pricedRequests carries a record list's pricing fields to the cost reader; a record with
 // no stop reason is one the stream may still be writing, whose opening numbers never
 // price.
-func pricedRequests(records []shared.RequestRecord) []cost.PricedRequest {
+func pricedRequests(records []*shared.RequestRecord) []cost.PricedRequest {
 	priced := make([]cost.PricedRequest, 0, len(records))
 	for i := range records {
 		priced = append(priced, cost.PricedRequest{

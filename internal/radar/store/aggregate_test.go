@@ -72,7 +72,7 @@ func TestSummarize(t *testing.T) {
 					}
 				}),
 			},
-			[]shared.RequestRecord{
+			held([]shared.RequestRecord{
 				makeRequest(func(r *shared.RequestRecord) {
 					r.ID = "r1"
 					r.Ts = 1_200
@@ -92,11 +92,11 @@ func TestSummarize(t *testing.T) {
 					r.LatencyMs = nil
 					r.Tokens = shared.ZeroTokens
 				}),
-			},
-			[]shared.ToolCallRecord{
+			}),
+			heldTools([]shared.ToolCallRecord{
 				makeTool(nil),
 				makeTool(func(tool *shared.ToolCallRecord) { tool.ID = "t2"; tool.Ok = false }),
-			},
+			}),
 			2_000,
 		)
 		if summary.Sessions != 2 {
@@ -158,12 +158,12 @@ func TestSummarize(t *testing.T) {
 			[]shared.SessionView{
 				makeSessionView(func(v *shared.SessionView) { v.ID = "a"; v.StartedAt = nil }),
 			},
-			[]shared.RequestRecord{
+			held([]shared.RequestRecord{
 				makeRequest(func(r *shared.RequestRecord) { r.StopReason = str("end_turn") }),
 				makeRequest(func(r *shared.RequestRecord) { r.StopReason = str("tool_use") }),
 				makeRequest(func(r *shared.RequestRecord) { r.StopReason = str("api_error") }),
 				makeRequest(func(r *shared.RequestRecord) { r.StopReason = nil }),
-			},
+			}),
 			nil,
 			0,
 		)
@@ -178,7 +178,7 @@ func TestSummarize(t *testing.T) {
 
 func TestModelRows(t *testing.T) {
 	t.Run("groups by model with provider, errors, tokens and p50, biggest total first", func(t *testing.T) {
-		rows := ModelRows([]shared.RequestRecord{
+		rows := ModelRows(held([]shared.RequestRecord{
 			makeRequest(func(r *shared.RequestRecord) {
 				r.Model = "claude-sonnet-5-5"
 				r.Tokens = tokens(10, 0, 0, 0)
@@ -195,7 +195,7 @@ func TestModelRows(t *testing.T) {
 				r.LatencyMs = i64(50)
 				r.StopReason = str("overloaded_error")
 			}),
-		})
+		}))
 		if len(rows) != 2 {
 			t.Fatalf("rows length: got %d, want 2", len(rows))
 		}
@@ -240,7 +240,7 @@ func TestModelRows(t *testing.T) {
 
 func TestUpstreamRows(t *testing.T) {
 	t.Run("groups by upstream with a host column, biggest total first", func(t *testing.T) {
-		rows := UpstreamRows([]shared.RequestRecord{
+		rows := UpstreamRows(held([]shared.RequestRecord{
 			makeRequest(func(r *shared.RequestRecord) {
 				r.Upstream = "https://api.anthropic.com"
 				r.Tokens = tokens(5, 0, 0, 0)
@@ -253,7 +253,7 @@ func TestUpstreamRows(t *testing.T) {
 				r.Upstream = "http://localhost:8787/v1"
 				r.Tokens = tokens(0, 50, 0, 0)
 			}),
-		})
+		}))
 		if len(rows) != 2 {
 			t.Fatalf("rows length: got %d, want 2", len(rows))
 		}
@@ -277,13 +277,13 @@ func TestUpstreamRows(t *testing.T) {
 
 func TestToolCounts(t *testing.T) {
 	t.Run("counts per name, most used first, names breaking ties", func(t *testing.T) {
-		counts := ToolCounts([]shared.ToolCallRecord{
+		counts := ToolCounts(heldTools([]shared.ToolCallRecord{
 			makeTool(nil),
 			makeTool(func(tool *shared.ToolCallRecord) { tool.Ok = false }),
 			makeTool(func(tool *shared.ToolCallRecord) { tool.Name = "Read" }),
 			makeTool(func(tool *shared.ToolCallRecord) { tool.Name = "Read" }),
 			makeTool(func(tool *shared.ToolCallRecord) { tool.Name = "Grep" }),
-		})
+		}))
 		want := []ToolCountRow{
 			{Name: "Bash", Count: 2, Failures: 1},
 			{Name: "Read", Count: 2, Failures: 0},
@@ -300,10 +300,10 @@ func TestToolCounts(t *testing.T) {
 	})
 
 	t.Run("breaks count ties the way localeCompare does, not by bytes", func(t *testing.T) {
-		counts := ToolCounts([]shared.ToolCallRecord{
+		counts := ToolCounts(heldTools([]shared.ToolCallRecord{
 			makeTool(func(tool *shared.ToolCallRecord) { tool.Name = "TodoWrite" }),
 			makeTool(func(tool *shared.ToolCallRecord) { tool.Name = "todoWrite" }),
-		})
+		}))
 		// one call each: localeCompare weighs case behind the letters, so the lowercase
 		// name leads where byte order would put the capital first
 		if counts[0].Name != "todoWrite" || counts[1].Name != "TodoWrite" {
@@ -314,12 +314,12 @@ func TestToolCounts(t *testing.T) {
 	t.Run("keeps the unmatched results out: a call named unknown is not a tool", func(t *testing.T) {
 		// records read from a later offset used to land as "unknown"; whatever still sits in a
 		// store must not reach the Top tools ranking under that name
-		counts := ToolCounts([]shared.ToolCallRecord{
+		counts := ToolCounts(heldTools([]shared.ToolCallRecord{
 			makeTool(nil),
 			makeTool(func(tool *shared.ToolCallRecord) { tool.Name = "unknown"; tool.Ok = false }),
 			makeTool(func(tool *shared.ToolCallRecord) { tool.Name = "unknown" }),
 			makeTool(func(tool *shared.ToolCallRecord) { tool.Name = "Read" }),
-		})
+		}))
 		want := []ToolCountRow{
 			{Name: "Bash", Count: 1, Failures: 0},
 			{Name: "Read", Count: 1, Failures: 0},

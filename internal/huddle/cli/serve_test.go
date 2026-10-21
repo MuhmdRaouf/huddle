@@ -788,3 +788,28 @@ func TestMemoryLimitOf(t *testing.T) {
 		})
 	}
 }
+
+// TestGCPercentOf pins the GC percentage the hub starts at: 50 unless GOGC is set, with
+// the runtime left on whatever the user named.
+func TestGCPercentOf(t *testing.T) {
+	rows := []struct {
+		name      string
+		env       map[string]string
+		wantPct   int
+		wantApply bool
+	}{
+		{"unset", nil, 50, true},
+		{"empty", map[string]string{"GOGC": ""}, 50, true},
+		{"200", map[string]string{"GOGC": "200"}, 0, false},
+		{"off", map[string]string{"GOGC": "off"}, 0, false},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			env := func(name string) string { return row.env[name] }
+			pct, apply := GCPercentOf(env)
+			if pct != row.wantPct || apply != row.wantApply {
+				t.Fatalf("GCPercentOf(%q) = (%d, %v), want (%d, %v)", row.name, pct, apply, row.wantPct, row.wantApply)
+			}
+		})
+	}
+}

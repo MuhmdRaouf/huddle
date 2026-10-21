@@ -674,6 +674,17 @@ func MemoryLimitOf(env func(string) string) int64 {
 	return fallback
 }
 
+// GCPercentOf answers the GC percentage the hub starts at and whether to apply it:
+// (50, true) when GOGC is unset or empty — at GOGC=100 the heap grows to twice the live
+// set before a collection, and the hub's live set is mostly long-lived records — and
+// (0, false) otherwise, the runtime already applying the user's value.
+func GCPercentOf(env func(string) string) (int, bool) {
+	if env("GOGC") != "" {
+		return 0, false
+	}
+	return 50, true
+}
+
 // withoutRouterProxies drops the proxy variables whose value names a router of ours — one on
 // the known ports, or the router on its own port (`HUDDLE_ROUTER_PORT`, else 18786). Pure: no
 // probe; the daemon asks its loopback proxies for a health answer itself (routerd.CleanProxyEnv).

@@ -304,10 +304,11 @@ type agentState struct {
 }
 
 // agentSlice is one agent's records within a session, pre-computed so a view never
-// filters the session's records.
+// filters the session's records. The slices hold pointers into the store's own records,
+// so one record lives once however many views read it.
 type agentSlice struct {
-	requests    []shared.RequestRecord
-	tools       []shared.ToolCallRecord
+	requests    []*shared.RequestRecord
+	tools       []*shared.ToolCallRecord
 	failed      int64
 	lastRequest *shared.RequestRecord
 	lastTs      int64
@@ -317,8 +318,8 @@ type agentSlice struct {
 // sessionSlice is one session's records, grouped per agent inside, rebuilt when the
 // version moves.
 type sessionSlice struct {
-	requests []shared.RequestRecord
-	tools    []shared.ToolCallRecord
+	requests []*shared.RequestRecord
+	tools    []*shared.ToolCallRecord
 	failed   int64
 	tokens   shared.Tokens
 	byAgent  map[string]*agentSlice
@@ -351,11 +352,12 @@ type viewsCache struct {
 }
 
 // orderCache is the newest-first record order, one build per version: the list reads
-// slice it, never re-sorting the store per call.
+// slice it, never re-sorting the store per call. The slices hold pointers into the
+// store's own records; a read copies only the page it returns.
 type orderCache struct {
 	version  int64
-	requests []shared.RequestRecord
-	tools    []shared.ToolCallRecord
+	requests []*shared.RequestRecord
+	tools    []*shared.ToolCallRecord
 }
 
 // derived is one cached whole-store answer with the moment it was built.
@@ -809,20 +811,20 @@ func (s *Store) toolsInOrderLocked() []*storedTool {
 	return list
 }
 
-func (s *Store) allRequestsLocked() []shared.RequestRecord {
+func (s *Store) allRequestsLocked() []*shared.RequestRecord {
 	ordered := s.requestsInOrderLocked()
-	out := make([]shared.RequestRecord, 0, len(ordered))
+	out := make([]*shared.RequestRecord, 0, len(ordered))
 	for _, held := range ordered {
-		out = append(out, held.record)
+		out = append(out, &held.record)
 	}
 	return out
 }
 
-func (s *Store) allToolsLocked() []shared.ToolCallRecord {
+func (s *Store) allToolsLocked() []*shared.ToolCallRecord {
 	ordered := s.toolsInOrderLocked()
-	out := make([]shared.ToolCallRecord, 0, len(ordered))
+	out := make([]*shared.ToolCallRecord, 0, len(ordered))
 	for _, held := range ordered {
-		out = append(out, held.record)
+		out = append(out, &held.record)
 	}
 	return out
 }
@@ -841,17 +843,17 @@ func (s *Store) projectionLocked() map[string]*sessionSlice {
 	proj := make(map[string]*sessionSlice)
 	for _, held := range s.requestsInOrderLocked() {
 		slice := sliceOf(proj, held.record.SessionID)
-		slice.requests = append(slice.requests, held.record)
+		slice.requests = append(slice.requests, &held.record)
 	}
 	for _, held := range s.toolsInOrderLocked() {
 		slice := sliceOf(proj, held.record.SessionID)
-		countTool(&slice.tools, &slice.failed, held.record)
+		countTool(&slice.tools, &slice.failed, &held.record)
 		agentID := "main"
 		if held.record.AgentID != nil {
 			agentID = *held.record.AgentID
 		}
 		mine := agentSliceOf(slice, agentID)
-		countTool(&mine.tools, &mine.failed, held.record)
+		countTool(&mine.tools, &mine.failed, &held.record)
 	}
 	for _, slice := range proj {
 		rollUpSlice(slice)
@@ -879,7 +881,7 @@ func agentSliceOf(slice *sessionSlice, agentID string) *agentSlice {
 }
 
 // countTool folds a tool call into a slice's totals.
-func countTool(tools *[]shared.ToolCallRecord, failed *int64, tool shared.ToolCallRecord) {
+func countTool(tools *[]*shared.ToolCallRecord, failed *int64, tool *shared.ToolCallRecord) {
 	*tools = append(*tools, tool)
 	if !tool.Ok {
 		*failed++
@@ -890,20 +892,21 @@ func countTool(tools *[]shared.ToolCallRecord, failed *int64, tool shared.ToolCa
 // tokens and last request.
 func rollUpSlice(slice *sessionSlice) {
 	slice.tokens = shared.ZeroTokens
-	for _, request := range slice.requests {
-		slice.tokens = shared.AddTokens(slice.tokens, request.Tokens)
-		agentSliceOf(slice, request.AgentID).requests = append(agentSliceOf(slice, request.AgentID).requests, request)
+	for _, held := range slice.requests {
+		slice.tokens = shared.AddTokens(slice.tokens, held.Tokens)
+		mine := agentSliceOf(slice, held.AgentID)
+		mine.requests = append(mine.requests, held)
 	}
 	for _, mine := range slice.byAgent {
 		if len(mine.requests) > 0 {
-			mine.lastRequest = &mine.requests[len(mine.requests)-1]
+			mine.lastRequest = mine.requests[len(mine.requests)-1]
 		}
 		mine.tokens = shared.ZeroTokens
-		for _, request := range mine.requests {
-			if request.Ts > mine.lastTs {
-				mine.lastTs = request.Ts
+		for _, held := range mine.requests {
+			if held.Ts > mine.lastTs {
+				mine.lastTs = held.Ts
 			}
-			mine.tokens = shared.AddTokens(mine.tokens, request.Tokens)
+			mine.tokens = shared.AddTokens(mine.tokens, held.Tokens)
 		}
 	}
 }
@@ -915,22 +918,22 @@ func (s *Store) newestFirstLocked() *orderCache {
 		return s.newest
 	}
 	requests := s.allRequestsLocked()
-	slices.SortStableFunc(requests, func(a, b shared.RequestRecord) int { return cmp.Compare(b.Ts, a.Ts) })
+	slices.SortStableFunc(requests, func(a, b *shared.RequestRecord) int { return cmp.Compare(b.Ts, a.Ts) })
 	tools := s.allToolsLocked()
-	slices.SortStableFunc(tools, func(a, b shared.ToolCallRecord) int { return cmp.Compare(b.StartedAt, a.StartedAt) })
+	slices.SortStableFunc(tools, func(a, b *shared.ToolCallRecord) int { return cmp.Compare(b.StartedAt, a.StartedAt) })
 	s.newest = &orderCache{version: s.ver, requests: requests, tools: tools}
 	return s.newest
 }
 
-// newestPage is the first limit of a newest-first source that keep admits — the whole
-// page without a full copy.
-func newestPage[T any](source []T, limit int64, keep func(item *T) bool) []T {
+// newestPage is the first limit of a newest-first source that keep admits, dereferenced
+// into the caller's own values — the whole page without a copy of the source.
+func newestPage[T any](source []*T, limit int64, keep func(item *T) bool) []T {
 	out := make([]T, 0, min(max(int(limit), 0), len(source)))
-	for i := range source {
-		if !keep(&source[i]) {
+	for _, held := range source {
+		if !keep(held) {
 			continue
 		}
-		out = append(out, source[i])
+		out = append(out, *held)
 		if int64(len(out)) >= limit {
 			break
 		}
@@ -1692,7 +1695,7 @@ func (s *Store) buildSessionListLocked() []SessionListItem {
 				break
 			}
 		}
-		var mine []shared.RequestRecord
+		var mine []*shared.RequestRecord
 		if slice := proj[state.id]; slice != nil {
 			mine = slice.requests
 		}
@@ -1767,10 +1770,9 @@ func (s *Store) sessionViewLocked(state *sessionState) *shared.SessionView {
 // total: what the rail card's now line reads and what its context gauge measures. Nil
 // when the session has no such request — a subagent's calls never speak for the session,
 // and a run total is no one call's context.
-func currentCall(requests []shared.RequestRecord) *shared.RequestRecord {
+func currentCall(requests []*shared.RequestRecord) *shared.RequestRecord {
 	var current *shared.RequestRecord
-	for i := range requests {
-		request := &requests[i]
+	for _, request := range requests {
 		if request.AgentID != "main" || request.Totals {
 			continue
 		}
@@ -1784,7 +1786,7 @@ func currentCall(requests []shared.RequestRecord) *shared.RequestRecord {
 // cardPresence is the rail card's now line and context gauge, from the session's own
 // requests: its newest main call, and how full that call's context window is. Both nil
 // once the session is no longer live, or when it has no main-agent call to quote.
-func cardPresence(requests []shared.RequestRecord, live bool) (*SessionNow, *SessionContext) {
+func cardPresence(requests []*shared.RequestRecord, live bool) (*SessionNow, *SessionContext) {
 	if !live {
 		return nil, nil
 	}
@@ -1792,12 +1794,8 @@ func cardPresence(requests []shared.RequestRecord, live bool) (*SessionNow, *Ses
 	if current == nil {
 		return nil, nil
 	}
-	pointers := make([]*shared.RequestRecord, len(requests))
-	for i := range requests {
-		pointers[i] = &requests[i]
-	}
 	return &SessionNow{What: current.What, Ts: current.Ts},
-		&SessionContext{Used: shared.ContextOf(current), Window: shared.ContextWindow(pointers)}
+		&SessionContext{Used: shared.ContextOf(current), Window: shared.ContextWindow(requests)}
 }
 
 // buildAgentView is one agent's row in a session card.
@@ -1879,7 +1877,7 @@ func (s *Store) buildSessionView(state *sessionState, proj map[string]*sessionSl
 	}
 	var lastRequest *shared.RequestRecord
 	if slice != nil && len(slice.requests) > 0 {
-		lastRequest = &slice.requests[len(slice.requests)-1]
+		lastRequest = slice.requests[len(slice.requests)-1]
 	}
 	view := shared.SessionView{
 		ID:              state.id,
@@ -1937,13 +1935,13 @@ func (s *Store) buildSessionView(state *sessionState, proj map[string]*sessionSl
 
 // activityOfLocked is the session's sparkline over its own requests.
 func (s *Store) activityOfLocked(slice *sessionSlice, state *sessionState) shared.Activity {
-	var requests []shared.RequestRecord
+	var requests []*shared.RequestRecord
 	if slice != nil {
 		requests = slice.requests
 	}
 	rows := make([]ActivityRequest, 0, len(requests))
-	for i := range requests {
-		rows = append(rows, ActivityRequest{Ts: requests[i].Ts, Model: requests[i].Model})
+	for _, held := range requests {
+		rows = append(rows, ActivityRequest{Ts: held.Ts, Model: held.Model})
 	}
 	return ActivityOf(rows, ActivityWindow{
 		Live:  state.live,
@@ -2450,13 +2448,13 @@ func (s *Store) Models(scope *ModelsScope) ModelsAnswer {
 	// a scoped answer is bespoke to the ask, so it builds fresh: the requests inside the
 	// window and the sessions named, the tool counts staying the store-wide ones the
 	// tools tab shows
-	requests := make([]shared.RequestRecord, 0, len(s.requests))
+	requests := make([]*shared.RequestRecord, 0, len(s.requests))
 	for _, held := range s.requestsInOrderLocked() {
 		record := held.record
 		if (scope.From == nil || record.Ts >= *scope.From) &&
 			(scope.To == nil || record.Ts <= *scope.To) &&
 			(scope.Sessions == nil || slices.Contains(scope.Sessions, record.SessionID)) {
-			requests = append(requests, record)
+			requests = append(requests, &held.record)
 		}
 	}
 	return ModelsAnswer{
@@ -2508,13 +2506,24 @@ func (s *Store) RouterEvents() []shared.RouterEventRecord {
 	return slices.Clone(s.routerEvents)
 }
 
-// Raw is every request, tool call and event held, unsorted.
+// Raw is every request, tool call and event held, unsorted. The records go out as the
+// caller's own copies: the alert engine reads them without the lock.
 func (s *Store) Raw() RawRecords {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	heldRequests := s.allRequestsLocked()
+	heldTools := s.allToolsLocked()
+	requests := make([]shared.RequestRecord, len(heldRequests))
+	for i, held := range heldRequests {
+		requests[i] = *held
+	}
+	tools := make([]shared.ToolCallRecord, len(heldTools))
+	for i, held := range heldTools {
+		tools[i] = *held
+	}
 	return RawRecords{
-		Requests: s.allRequestsLocked(),
-		Tools:    s.allToolsLocked(),
+		Requests: requests,
+		Tools:    tools,
 		Events:   slices.Clone(s.events),
 	}
 }

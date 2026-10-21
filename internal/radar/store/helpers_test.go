@@ -12,6 +12,24 @@ func str(text string) *string { return &text }
 // i64 is an int64 pointer for a record field a test wants set.
 func i64(value int64) *int64 { return &value }
 
+// held lifts records to the pointers the store's slices carry, so a test builds values.
+func held(records []shared.RequestRecord) []*shared.RequestRecord {
+	out := make([]*shared.RequestRecord, len(records))
+	for i := range records {
+		out[i] = &records[i]
+	}
+	return out
+}
+
+// heldTools lifts tool calls the same way.
+func heldTools(tools []shared.ToolCallRecord) []*shared.ToolCallRecord {
+	out := make([]*shared.ToolCallRecord, len(tools))
+	for i := range tools {
+		out[i] = &tools[i]
+	}
+	return out
+}
+
 // showInt renders an optional number the way a failure message wants to read it.
 func showInt(value *int64) string {
 	if value == nil {

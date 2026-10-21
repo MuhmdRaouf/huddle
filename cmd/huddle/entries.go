@@ -57,6 +57,11 @@ func serveEntry(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	// catching up on transcripts light, and a bigger live heap still runs. The CLI words
 	// never set it — this is the serve path's own process.
 	debug.SetMemoryLimit(cli.MemoryLimitOf(os.Getenv))
+	// at GOGC=100 the heap grows to twice the live set before a collection, and the hub's
+	// live set is mostly long-lived records; a user's own GOGC stands
+	if pct, ok := cli.GCPercentOf(os.Getenv); ok {
+		debug.SetGCPercent(pct)
+	}
 	options := server.OptionsFromEnv(version, os.Getenv, stdout, stderr, os.Stdin)
 	if options.Home != "" {
 		if err := (home.Home{Root: options.Home}).Ensure(ctx); err != nil {
