@@ -367,9 +367,10 @@ func joinRunning(ctx context.Context, w *World, o *flags, say func(string)) (int
 	}
 	channel := firstNonEmpty(strFlagOf(o, "channel"), entry.Channel, Slug(root, "huddle"))
 	// a single-use invite from that project's credential, redeemed at once: an invite and a
-	// join in one step
+	// join in one step. The project is its channel's first session, so it may invite the next
+	// one; the hub grants that only when the minting credential is its root key.
 	minted, ok := postJSON(ctx, entry.URL+"/api/tokens", map[string]string{auth.Header: project.Credential},
-		newBody().number("ttl", 120).bool("single_use", true).text("channel", channel).text("description", "huddle setup in another project"), 5*time.Second)
+		newBody().number("ttl", 120).bool("single_use", true).bool("can_invite", true).text("channel", channel).text("description", "huddle setup in another project"), 5*time.Second)
 	if !ok || textField(minted, "token") == "" {
 		say(fmt.Sprintf("A Huddle already runs for %s at %s, but this machine holds no credential there that may invite. Run /huddle:invite in a session there and paste its join line here, or /huddle:setup --new for a separate one.", where, entry.URL))
 		return 0, true

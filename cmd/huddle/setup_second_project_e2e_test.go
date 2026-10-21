@@ -102,6 +102,15 @@ func TestE2ESetupSecondProjectJoinsARunningHub(t *testing.T) {
 					t.Errorf("status said %q %q, want channel second-proj", out, errOut)
 				}
 			})
+			s.Then("the second project may invite the next session into its channel", func(t *testing.T) {
+				code, out, errOut := runBin(t, huddleBin, env2, p2, "token", "create", "--print-join-command")
+				if code != 0 {
+					t.Fatalf("token create = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+				}
+				if !strings.Contains(out, "/huddle:join ") {
+					t.Errorf("token create said %q, want a join line", out)
+				}
+			})
 			s.Then("a rerun says already in and adds no second member", func(t *testing.T) {
 				code, out, errOut := runBin(t, huddleBin, env2, p2, "setup", "--start")
 				if code != 0 {

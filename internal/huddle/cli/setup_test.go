@@ -605,6 +605,10 @@ func TestSetupAHubWithNoChannelPutsTheProjectInItsOwnChannel(t *testing.T) {
 	if !strings.Contains(minted, `"channel":"web"`) {
 		t.Errorf("the mint body %q, want the project's own channel", minted)
 	}
+	// the project is its channel's first session: it may invite the next one
+	if !strings.Contains(minted, `"can_invite":true`) {
+		t.Errorf("the mint body %q, want can_invite for the project's first session", minted)
+	}
 	if !strings.Contains(joined, `"channel":"web"`) {
 		t.Errorf("the join body %q, want the project's own channel", joined)
 	}
