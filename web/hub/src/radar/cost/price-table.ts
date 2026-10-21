@@ -3,7 +3,7 @@
 // windows, fast mode, geo, service tier) as data, and `priceRequest` the math that uses them. Each offering names
 // its pricing page and the day it was read; a figure that page did not show is marked unverified, or 0 with a note.
 // test/radar/price-table.test.ts fails when this copy and the Go engine's table
-// (internal/radar/cost/price_table.go) drift apart.
+// (internal/pricing/pricing.go) drift apart.
 
 /** A provider offering: one API host and the models it serves, all prices in USD per million tokens. */
 export type OfferingId = "anthropic" | "zai" | "moonshot" | "deepseek" | "minimax" | "qwen";
