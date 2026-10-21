@@ -83,17 +83,19 @@ function threadMarker(threadId: string | null, visible: CardData[]): (id: string
   };
 }
 
-/** A column a hand opened stays open; the rest collapse when the filters emptied them, and done
- *  stays a rail until it is opened. A phone shows one column, so nothing collapses there. */
+/** A hand-set override wins: a collapsed-by-hand column stays a rail and an opened-by-hand column
+ *  stays open, cards or none. Without one, done is a rail until it is opened and so is any column
+ *  the filters emptied. A phone shows one column, so nothing collapses there. */
 function isCollapsed(
   id: ColumnId,
   narrow: boolean,
-  opened: ReadonlySet<ColumnId>,
+  overrides: ReadonlyMap<ColumnId, boolean>,
   infos: ColumnInfo[],
 ): boolean {
   if (narrow) return false;
-  if (id === "done") return !opened.has("done");
-  return (infos.find((col) => col.id === id)?.count ?? 0) === 0 && !opened.has(id);
+  const byHand = overrides.get(id);
+  if (byHand !== undefined) return byHand;
+  return id === "done" || (infos.find((col) => col.id === id)?.count ?? 0) === 0;
 }
 
 /** The two empty lines: a board with no cards yet, and filters that hide everything. */
@@ -141,20 +143,23 @@ export function Board({
   const reduced = useMedia("(prefers-reduced-motion: reduce)");
   const [showAllDone, setShowAllDone] = useState(false);
   const [tab, setTab] = useState<ColumnId | null>(null);
-  const [opened, setOpened] = useState<ReadonlySet<ColumnId>>(new Set());
+  const [overrides, setOverrides] = useState<ReadonlyMap<ColumnId, boolean>>(new Map());
   const [hovered, setHovered] = useState<string | null>(null);
   const columnsRef = useRef<HTMLDivElement>(null);
 
-  // a column opened by hand stays open until the next filter change; resetting in render, on the
+  // a hand-set collapse or open stays until the next filter change; resetting in render, on the
   // changed identity, keeps the reset in the same commit as the filters that caused it
   const [seenFilters, setSeenFilters] = useState(filters);
   if (seenFilters !== filters) {
     setSeenFilters(filters);
-    setOpened(new Set());
+    setOverrides(new Map());
   }
 
   const expand = useCallback((id: ColumnId) => {
-    setOpened((current) => new Set(current).add(id));
+    setOverrides((current) => new Map(current).set(id, false));
+  }, []);
+  const collapse = useCallback((id: ColumnId) => {
+    setOverrides((current) => new Map(current).set(id, true));
   }, []);
   const onThread = useCallback((id: string | null) => setHovered(id), []);
 
@@ -192,7 +197,7 @@ export function Board({
 
   const infos = columnInfos(snap, inColumn, doneAll.length);
   const active: ColumnId = tab ?? infos.find((col) => col.count > 0)?.id ?? "backlog";
-  const collapsedOf = (id: ColumnId) => isCollapsed(id, narrow, opened, infos);
+  const collapsedOf = (id: ColumnId) => isCollapsed(id, narrow, overrides, infos);
   const threadOf = threadMarker(activeThreadId(hovered, openId, visible), visible);
   const cardProps = (card: CardData) => ({
     card,
@@ -217,6 +222,7 @@ export function Board({
     extra: id === "done" ? doneExtra : null,
     collapsed: collapsedOf(id),
     onExpand: () => expand(id),
+    onCollapse: narrow ? undefined : () => collapse(id),
     density,
     onThread,
     threadOf,

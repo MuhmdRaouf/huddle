@@ -180,3 +180,85 @@ describe("Board", () => {
     expect(onOpen).toHaveBeenCalledWith("KBN-PLUGIN", expect.any(HTMLButtonElement));
   });
 });
+
+describe("collapsing a column by hand", () => {
+  /** The heading's collapse button, or a throw: tests name the column they collapse. */
+  function collapseBtn(container: Element, column: string) {
+    const btn = container.querySelector<HTMLButtonElement>(
+      `section[data-column="${column}"] button.col-collapse`,
+    );
+    if (btn === null) throw new Error(`no ${column} collapse button`);
+    return btn;
+  }
+
+  it("shows a collapse button on an open column with cards, and its rail reopens it", async () => {
+    const { container } = renderBoard();
+    const collapse = collapseBtn(container, "ready");
+    expect(collapse.getAttribute("aria-label")).toBe("Collapse Ready");
+    await userEvent.click(collapse);
+    expect(container.querySelector('section[data-column="ready"] h2')).toBeNull();
+    const rail = container.querySelector<HTMLButtonElement>('section[data-column="ready"] button.rail-btn');
+    if (rail === null) throw new Error("no ready rail");
+    expect(rail.getAttribute("aria-label")).toBe("Ready, 1 cards, show column");
+    await userEvent.click(rail);
+    const ready = container.querySelector('section[data-column="ready"]');
+    expect(ready?.querySelector("h2")?.textContent).toBe("Ready 1");
+    expect(ready?.querySelectorAll("article.card")).toHaveLength(1);
+  });
+
+  it("collapses an empty column it had opened from its rail", async () => {
+    const onlyUi = { ...EMPTY_FILTERS, q: "KBN-UI" };
+    const { container } = renderBoard(snapshot, onlyUi);
+    await openRail(container, "backlog");
+    const collapse = collapseBtn(container, "backlog");
+    expect(collapse.getAttribute("aria-label")).toBe("Collapse Backlog");
+    await userEvent.click(collapse);
+    expect(
+      container
+        .querySelector<HTMLButtonElement>('section[data-column="backlog"] button.rail-btn')
+        ?.getAttribute("aria-label"),
+    ).toBe("Backlog, 0 cards, show column");
+  });
+
+  it("collapses done again after opening it from its rail", async () => {
+    const { container } = renderBoard();
+    await openRail(container, "done");
+    const collapse = collapseBtn(container, "done");
+    expect(collapse.getAttribute("aria-label")).toBe("Collapse Done");
+    await userEvent.click(collapse);
+    const rail = container.querySelector<HTMLButtonElement>('section[data-column="done"] button.rail-btn');
+    expect(rail?.getAttribute("aria-label")).toBe("Done, 3 cards, show column");
+  });
+
+  it("renders no collapse button on a phone", () => {
+    stubMatchMedia((query) => query.includes("max-width"));
+    const { container } = renderBoard();
+    expect(container.querySelector("button.col-collapse")).toBeNull();
+  });
+
+  it("clears a hand collapse when the filters change", async () => {
+    const view = render(
+      <Board
+        snapshot={snapshot}
+        filters={EMPTY_FILTERS}
+        changeSeq={0}
+        changedIds={new Set()}
+        onOpen={() => undefined}
+      />,
+    );
+    await userEvent.click(collapseBtn(view.container, "ready"));
+    expect(view.container.querySelector('section[data-column="ready"] h2')).toBeNull();
+    view.rerender(
+      <Board
+        snapshot={snapshot}
+        filters={{ ...EMPTY_FILTERS, q: "KBN-API" }}
+        changeSeq={0}
+        changedIds={new Set()}
+        onOpen={() => undefined}
+      />,
+    );
+    const ready = view.container.querySelector('section[data-column="ready"]');
+    expect(ready?.querySelector("h2")?.textContent).toBe("Ready 1");
+    expect(ready?.querySelectorAll("article.card")).toHaveLength(1);
+  });
+});

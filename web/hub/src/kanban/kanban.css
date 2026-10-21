@@ -468,6 +468,38 @@
   font-size: 12px;
 }
 
+/* the heading row: title and count on the left, the collapse button on the right */
+
+.kanban-tab .col-head {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.kanban-tab .col-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  align-self: center;
+}
+
+.kanban-tab .col-collapse:hover {
+  background: var(--chip);
+  color: var(--color-base-content);
+}
+
+.kanban-tab .col-collapse:focus-visible {
+  outline: 2px solid var(--color-primary);
+}
+
 /* a collapsed column: a 40 px rail with its name written down its side and its count */
 
 .kanban-tab .col.rail {

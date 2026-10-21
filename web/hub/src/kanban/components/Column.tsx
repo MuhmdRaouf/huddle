@@ -21,6 +21,8 @@ export type ColumnProps = {
   collapsed?: boolean | undefined;
   /** opens the rail's column; absent on a phone, where there are no rails */
   onExpand?: (() => void) | undefined;
+  /** collapses the open column back into its rail; absent on a phone, where nothing collapses */
+  onCollapse?: (() => void) | undefined;
   /** the board's density, handed to every card */
   density?: Density | undefined;
   /** hands the thread's lead up when a card is entered, left or focused */
@@ -45,6 +47,7 @@ export function Column({
   count,
   collapsed = false,
   onExpand,
+  onCollapse,
   density = "compact",
   onThread,
   threadOf,
@@ -76,8 +79,34 @@ export function Column({
   return (
     <section class="col" data-column={id}>
       <h2>
-        <span class="col-title">{title} </span>
-        <span class="count">{count ?? cards.length}</span>
+        <span class="col-head">
+          <span class="col-title">{title} </span>
+          <span class="count">{count ?? cards.length}</span>
+        </span>
+        {onCollapse !== undefined && (
+          <button
+            type="button"
+            class="col-collapse"
+            aria-expanded="true"
+            aria-label={`Collapse ${title}`}
+            title="Collapse column"
+            onClick={onCollapse}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M10 3 5 8l5 5" />
+            </svg>
+          </button>
+        )}
       </h2>
       {cards.map((card) => (
         <CardView key={card.id} {...cardProps(card)} />
