@@ -28,7 +28,9 @@ import (
 	"unicode/utf16"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
+
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
 // RouterOptions is what the router needs to know: whose router this is (the resolved provider:
@@ -311,7 +313,7 @@ func writeJSONNode(b *strings.Builder, node *jsonNode) {
 				b.WriteString(",")
 			}
 			first = false
-			writeJSONString(b, key)
+			jsfmt.WriteQuoted(b, key)
 			b.WriteString(":")
 			writeJSONNode(b, value)
 		}
@@ -331,7 +333,7 @@ func writeJSONNode(b *strings.Builder, node *jsonNode) {
 		}
 		b.WriteString("]")
 	case jsonString:
-		writeJSONString(b, node.str)
+		jsfmt.WriteQuoted(b, node.str)
 	case jsonNumber:
 		b.WriteString(string(node.num))
 	case jsonBool:
@@ -343,38 +345,6 @@ func writeJSONNode(b *strings.Builder, node *jsonNode) {
 	case jsonNull:
 		b.WriteString("null")
 	}
-}
-
-// writeJSONString writes s quoted the way JSON.stringify quotes it: only ", \ and the C0 controls
-// are escaped (\b \t \n \f \r as their two-character forms, the rest as lowercase \u00xx); nothing
-// else (<, >, &, U+2028, U+2029) is.
-func writeJSONString(b *strings.Builder, s string) {
-	b.WriteString(`"`)
-	for i := 0; i < len(s); i++ {
-		switch c := s[i]; c {
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		case '\b':
-			b.WriteString(`\b`)
-		case '\f':
-			b.WriteString(`\f`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		default:
-			if c < 0x20 {
-				fmt.Fprintf(b, `\u%04x`, c)
-			} else {
-				b.WriteByte(c)
-			}
-		}
-	}
-	b.WriteString(`"`)
 }
 
 // modelIn is the `model` field of a parsed body, or "".
@@ -424,7 +394,7 @@ func writeCanonical(b *strings.Builder, node *jsonNode) {
 			if i > 0 {
 				b.WriteString(",")
 			}
-			writeJSONString(b, key)
+			jsfmt.WriteQuoted(b, key)
 			b.WriteString(":")
 			writeCanonical(b, node.fields[key])
 		}
@@ -439,7 +409,7 @@ func writeCanonical(b *strings.Builder, node *jsonNode) {
 		}
 		b.WriteString("]")
 	case jsonString:
-		writeJSONString(b, node.str)
+		jsfmt.WriteQuoted(b, node.str)
 	case jsonNumber:
 		b.WriteString(string(node.num))
 	case jsonBool:
@@ -475,7 +445,7 @@ func PromptHashOf(json *jsonNode) (string, bool) {
 			b.WriteString(",")
 		}
 		first = false
-		writeJSONString(&b, key)
+		jsfmt.WriteQuoted(&b, key)
 		b.WriteString(":")
 		writeCanonical(&b, value)
 	}

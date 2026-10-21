@@ -151,14 +151,14 @@ func (v *Value) encode(out *strings.Builder) {
 		number, _ := v.number.Float64()
 		out.WriteString(JSNumber(number))
 	case KindString:
-		jsQuote(out, v.text)
+		WriteQuoted(out, v.text)
 	case KindObject:
 		out.WriteByte('{')
 		for i, key := range v.keys {
 			if i > 0 {
 				out.WriteByte(',')
 			}
-			jsQuote(out, key)
+			WriteQuoted(out, key)
 			out.WriteByte(':')
 			v.fields[i].encode(out)
 		}
@@ -175,21 +175,31 @@ func (v *Value) encode(out *strings.Builder) {
 	}
 }
 
-// jsQuote writes s as a JSON string the way JSON.stringify does: only the quote, the
+// QuoteWriter is the string sink WriteQuoted writes into; a *strings.Builder and a
+// *bytes.Buffer both qualify.
+type QuoteWriter interface {
+	io.ByteWriter
+	io.StringWriter
+}
+
+// hexDigits spells a nibble in lowercase hex.
+const hexDigits = "0123456789abcdef"
+
+// WriteQuoted writes s as a JSON string the way JSON.stringify does: only the quote, the
 // backslash and the C0 controls escape, the five controls with short forms take them,
 // the rest take \u00xx in lowercase hex, and a lone surrogate — a UTF-16 cut can leave
 // one at the end of a truncated string — takes \udXXX.
-func jsQuote(out *strings.Builder, s string) {
+func WriteQuoted(out QuoteWriter, s string) {
 	out.WriteByte('"')
 	for i := 0; i < len(s); {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		if r == utf8.RuneError && size == 1 {
 			if unit, ok := wtf16Unit(s[i:]); ok {
-				fmt.Fprintf(out, "\\u%04x", unit)
+				writeHex4(out, unit)
 				i += 3
 				continue
 			}
-			out.WriteRune(utf8.RuneError)
+			out.WriteString(string(utf8.RuneError))
 			i++
 			continue
 		}
@@ -210,7 +220,7 @@ func jsQuote(out *strings.Builder, s string) {
 			out.WriteString(`\t`)
 		default:
 			if r < 0x20 {
-				fmt.Fprintf(out, "\\u%04x", r)
+				writeHex4(out, uint16(r))
 			} else {
 				out.WriteString(s[i : i+size])
 			}
@@ -218,6 +228,15 @@ func jsQuote(out *strings.Builder, s string) {
 		i += size
 	}
 	out.WriteByte('"')
+}
+
+// writeHex4 writes u as \uHHHH in lowercase hex.
+func writeHex4(out QuoteWriter, u uint16) {
+	out.WriteString(`\u`)
+	out.WriteByte(hexDigits[u>>12&0xf])
+	out.WriteByte(hexDigits[u>>8&0xf])
+	out.WriteByte(hexDigits[u>>4&0xf])
+	out.WriteByte(hexDigits[u&0xf])
 }
 
 // wtf16Unit reads one lone-surrogate unit a UTF-16 cut left behind in its WTF-8 form;

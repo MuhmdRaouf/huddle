@@ -17,6 +17,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
 // LedgerKeystore is whether setup created the provider's keystore item (only then does cleanup
@@ -150,7 +151,7 @@ func (l Ledger) MarshalJSON() ([]byte, error) {
 			b.WriteByte(',')
 		}
 		wrote = true
-		writeJSONString(&b, key)
+		jsfmt.WriteQuoted(&b, key)
 		b.WriteByte(':')
 		encoded, err := domain.MarshalCompactJSON(value)
 		if err != nil {
@@ -218,12 +219,12 @@ func (a *LedgerAgents) MarshalJSON() ([]byte, error) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		writeJSONString(&b, name)
+		jsfmt.WriteQuoted(&b, name)
 		b.WriteByte(':')
 		if value, _ := a.Get(name); value == nil {
 			b.WriteString("null")
 		} else {
-			writeJSONString(&b, *value)
+			jsfmt.WriteQuoted(&b, *value)
 		}
 	}
 	b.WriteByte('}')

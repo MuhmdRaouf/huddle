@@ -41,6 +41,8 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/engines/shared"
@@ -750,10 +752,10 @@ func swapIDMember(raw []byte, key, id string) json.RawMessage {
 		if out.Len() > 1 {
 			out.WriteByte(',')
 		}
-		appendJSONString(&out, name)
+		jsfmt.WriteQuoted(&out, name)
 		out.WriteByte(':')
 		if name == key && !replaced {
-			appendJSONString(&out, id)
+			jsfmt.WriteQuoted(&out, id)
 			replaced = true
 		} else {
 			out.Write(value)

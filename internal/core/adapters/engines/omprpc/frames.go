@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -145,7 +147,7 @@ func EncodeChunks(text, chunkID string) []string {
 		end := min((index+1)*chunkBytes, int64(len(data)))
 		var buf bytes.Buffer
 		buf.WriteString(`{"type":"rpc_chunk","chunkId":`)
-		appendJSONString(&buf, chunkID)
+		jsfmt.WriteQuoted(&buf, chunkID)
 		buf.WriteString(`,"index":`)
 		buf.WriteString(strconv.FormatInt(index, 10))
 		buf.WriteString(`,"count":`)
@@ -153,7 +155,7 @@ func EncodeChunks(text, chunkID string) []string {
 		buf.WriteString(`,"byteLength":`)
 		buf.WriteString(strconv.FormatInt(int64(len(data)), 10))
 		buf.WriteString(`,"data":`)
-		appendJSONString(&buf, base64.StdEncoding.EncodeToString(data[index*chunkBytes:end]))
+		jsfmt.WriteQuoted(&buf, base64.StdEncoding.EncodeToString(data[index*chunkBytes:end]))
 		buf.WriteByte('}')
 		out = append(out, buf.String())
 	}
@@ -357,37 +359,4 @@ func decodeBase64(raw json.RawMessage) ([]byte, bool) {
 		return nil, false
 	}
 	return decoded, true
-}
-
-// appendJSONString writes text as a JSON string the way JSON.stringify does: the short escapes
-// for \b \t \n \f \r, \u00xx for the other control characters.
-func appendJSONString(out *bytes.Buffer, text string) {
-	out.WriteByte('"')
-	for i := 0; i < len(text); i++ {
-		c := text[i]
-		switch {
-		case c == '"':
-			out.WriteString(`\"`)
-		case c == '\\':
-			out.WriteString(`\\`)
-		case c == '\b':
-			out.WriteString(`\b`)
-		case c == '\f':
-			out.WriteString(`\f`)
-		case c == '\n':
-			out.WriteString(`\n`)
-		case c == '\r':
-			out.WriteString(`\r`)
-		case c == '\t':
-			out.WriteString(`\t`)
-		case c < 0x20:
-			out.WriteString(`\u00`)
-			const hex = "0123456789abcdef"
-			out.WriteByte(hex[c>>4])
-			out.WriteByte(hex[c&0xf])
-		default:
-			out.WriteByte(c)
-		}
-	}
-	out.WriteByte('"')
 }

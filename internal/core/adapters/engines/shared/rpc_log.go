@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"sync"
 )
 
@@ -42,7 +44,7 @@ func OutboundLogText(command json.RawMessage, promptRef string) string {
 	if commandType(command) == "prompt" {
 		var ref bytes.Buffer
 		ref.WriteString(`{"$ref":`)
-		jsonStringLiteral(&ref, promptRef)
+		jsfmt.WriteQuoted(&ref, promptRef)
 		ref.WriteByte('}')
 		return replaceField(command, "message", ref.Bytes())
 	}
@@ -120,9 +122,9 @@ func cutValue(value json.RawMessage) (json.RawMessage, bool) {
 	out.WriteString(`{"$truncated":`)
 	out.WriteString(strconv.Itoa(len(b)))
 	out.WriteString(`,"head":`)
-	jsonStringLiteral(&out, cutBytes(b, 0, LogKeep))
+	jsfmt.WriteQuoted(&out, cutBytes(b, 0, LogKeep))
 	out.WriteString(`,"tail":`)
-	jsonStringLiteral(&out, cutBytes(b, len(b)-LogKeep, len(b)))
+	jsfmt.WriteQuoted(&out, cutBytes(b, len(b)-LogKeep, len(b)))
 	out.WriteByte('}')
 	return out.Bytes(), true
 }
@@ -152,7 +154,7 @@ func replaceField(raw json.RawMessage, key string, replacement json.RawMessage) 
 		if out.Len() > 1 {
 			out.WriteByte(',')
 		}
-		jsonStringLiteral(&out, name)
+		jsfmt.WriteQuoted(&out, name)
 		out.WriteByte(':')
 		if name == key {
 			out.Write(replacement)
@@ -166,7 +168,7 @@ func replaceField(raw json.RawMessage, key string, replacement json.RawMessage) 
 		if out.Len() > 1 {
 			out.WriteByte(',')
 		}
-		jsonStringLiteral(&out, key)
+		jsfmt.WriteQuoted(&out, key)
 		out.WriteString(":")
 		out.Write(replacement)
 	}
@@ -259,41 +261,6 @@ func unquoteString(raw json.RawMessage) (string, bool) {
 		return "", false
 	}
 	return text, true
-}
-
-// jsonStringLiteral writes text as a JSON string the way JSON.stringify does: no HTML escaping,
-// the short escapes for \b \t \n \f \r, \u00xx for the other control characters, and every other
-// byte as written (encoding/json would escape U+2028 and U+2029, which JSON.stringify writes
-// raw).
-func jsonStringLiteral(out *bytes.Buffer, text string) {
-	out.WriteByte('"')
-	for i := 0; i < len(text); i++ {
-		c := text[i]
-		switch {
-		case c == '"':
-			out.WriteString(`\"`)
-		case c == '\\':
-			out.WriteString(`\\`)
-		case c == '\b':
-			out.WriteString(`\b`)
-		case c == '\f':
-			out.WriteString(`\f`)
-		case c == '\n':
-			out.WriteString(`\n`)
-		case c == '\r':
-			out.WriteString(`\r`)
-		case c == '\t':
-			out.WriteString(`\t`)
-		case c < 0x20:
-			const hex = "0123456789abcdef"
-			out.WriteString(`\u00`)
-			out.WriteByte(hex[c>>4])
-			out.WriteByte(hex[c&0xf])
-		default:
-			out.WriteByte(c)
-		}
-	}
-	out.WriteByte('"')
 }
 
 // RpcLogPaths says where a worker session's RPC traffic is logged.

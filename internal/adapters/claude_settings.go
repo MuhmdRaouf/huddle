@@ -25,6 +25,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
@@ -1315,7 +1316,7 @@ func writeJSONValue(b *strings.Builder, node *jsonNode, indent string) {
 		b.WriteString("{\n")
 		for i, key := range node.keys {
 			b.WriteString(inner)
-			writeJSONString(b, key)
+			jsfmt.WriteQuoted(b, key)
 			b.WriteString(": ")
 			writeJSONValue(b, node.fields[key], inner)
 			if i < len(node.keys)-1 {
@@ -1342,7 +1343,7 @@ func writeJSONValue(b *strings.Builder, node *jsonNode, indent string) {
 		b.WriteString(indent)
 		b.WriteString("]")
 	case jsonString:
-		writeJSONString(b, node.str)
+		jsfmt.WriteQuoted(b, node.str)
 	case jsonNumber:
 		b.WriteString(string(node.num))
 	case jsonBool:
@@ -1354,38 +1355,6 @@ func writeJSONValue(b *strings.Builder, node *jsonNode, indent string) {
 	case jsonNull:
 		b.WriteString("null")
 	}
-}
-
-// writeJSONString writes s quoted the way JSON.stringify quotes it: only ", \ and the C0 controls
-// are escaped (\b \t \n \f \r as their two-character forms, the rest as lowercase \u00xx); nothing
-// else (<, >, &, U+2028, U+2029) is.
-func writeJSONString(b *strings.Builder, s string) {
-	b.WriteByte('"')
-	for i := 0; i < len(s); i++ {
-		switch c := s[i]; c {
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		case '\b':
-			b.WriteString(`\b`)
-		case '\f':
-			b.WriteString(`\f`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		default:
-			if c < 0x20 {
-				fmt.Fprintf(b, `\u%04x`, c)
-			} else {
-				b.WriteByte(c)
-			}
-		}
-	}
-	b.WriteByte('"')
 }
 
 // nodesEqual compares two values the way comparing their JSON.stringify texts would: key order
@@ -1486,9 +1455,9 @@ func (m *StringMap) MarshalJSON() ([]byte, error) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		writeJSONString(&b, key)
+		jsfmt.WriteQuoted(&b, key)
 		b.WriteByte(':')
-		writeJSONString(&b, m.values[key])
+		jsfmt.WriteQuoted(&b, m.values[key])
 	}
 	b.WriteByte('}')
 	return []byte(b.String()), nil

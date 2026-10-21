@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
 // The omp and pi client tests cover the rpc-log helpers through their own shapes; these direct
@@ -394,9 +396,9 @@ func TestJSONStringLiteral(t *testing.T) {
 	}
 	for _, c := range cases {
 		var out bytes.Buffer
-		jsonStringLiteral(&out, c.text)
+		jsfmt.WriteQuoted(&out, c.text)
 		if out.String() != c.want {
-			t.Errorf("jsonStringLiteral(%q) = %s, want %s", c.text, out.String(), c.want)
+			t.Errorf("jsfmt.WriteQuoted(%q) = %s, want %s", c.text, out.String(), c.want)
 		}
 	}
 }

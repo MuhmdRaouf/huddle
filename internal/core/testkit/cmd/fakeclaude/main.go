@@ -23,7 +23,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,6 +33,8 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
 // grandchildArg re-executes this binary as the FAKE_CLAUDE_PIDFILE grandchild: a process that
@@ -348,11 +349,9 @@ func marshal(v jval) string {
 func appendVal(b *strings.Builder, v jval) {
 	switch v.kind {
 	case 's':
-		b.WriteByte('"')
-		appendJSStr(b, v.str)
-		b.WriteByte('"')
+		jsfmt.WriteQuoted(b, v.str)
 	case 'n':
-		b.WriteString(jsNumber(v.num))
+		b.WriteString(jsfmt.JSNumber(v.num))
 	case 'b':
 		b.WriteString(strconv.FormatBool(v.bol))
 	case 'z':
@@ -372,67 +371,12 @@ func appendVal(b *strings.Builder, v jval) {
 			if i > 0 {
 				b.WriteByte(',')
 			}
-			b.WriteByte('"')
-			appendJSStr(b, f.key)
-			b.WriteString("\":")
+			jsfmt.WriteQuoted(b, f.key)
+			b.WriteString(":")
 			appendVal(b, f.val)
 		}
 		b.WriteByte('}')
 	}
-}
-
-// appendJSStr escapes exactly like JSON.stringify: only ", \ and the C0 controls (with the
-// two-character forms for \b \f \n \r \t); invalid UTF-8 becomes U+FFFD, which is how Node
-// decodes argv and the environment.
-func appendJSStr(b *strings.Builder, s string) {
-	for _, r := range s {
-		switch r {
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		case '\b':
-			b.WriteString(`\b`)
-		case '\f':
-			b.WriteString(`\f`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		default:
-			if r < 0x20 {
-				fmt.Fprintf(b, `\u%04x`, r)
-				continue
-			}
-			b.WriteRune(r)
-		}
-	}
-}
-
-// jsNumber formats a float the way JavaScript's Number::toString (and so JSON.stringify) does:
-// plain decimal notation between 1e-6 and 1e21, exponent notation outside it, and -0 prints
-// as 0. The exponent drops its leading zero (e-07 becomes e-7).
-func jsNumber(f float64) string {
-	if math.IsNaN(f) || math.IsInf(f, 0) {
-		return "null"
-	}
-	if f == 0 {
-		return "0"
-	}
-	format := byte('f')
-	if abs := math.Abs(f); abs < 1e-6 || abs >= 1e21 {
-		format = 'e'
-	}
-	b := strconv.AppendFloat(make([]byte, 0, 32), f, format, -1, 64)
-	if format == 'e' {
-		if n := len(b); n >= 4 && b[n-4] == 'e' && b[n-3] == '-' && b[n-2] == '0' {
-			b[n-2] = b[n-1]
-			b = b[:n-1]
-		}
-	}
-	return string(b)
 }
 
 // parseJSON parses report JSON the way JSON.parse does, keeping object keys in their written

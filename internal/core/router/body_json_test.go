@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"testing"
 )
 
@@ -68,9 +70,9 @@ func TestWriteJSONStringEscapesLikeJSONStringify(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var b strings.Builder
-			writeJSONString(&b, tt.in)
+			jsfmt.WriteQuoted(&b, tt.in)
 			if got := b.String(); got != tt.want {
-				t.Errorf("writeJSONString = %s, want %s", got, tt.want)
+				t.Errorf("jsfmt.WriteQuoted = %s, want %s", got, tt.want)
 			}
 		})
 	}

@@ -20,6 +20,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/engines/shared"
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
 // DefaultHandshakeTimeoutMs: a healthy pi answers get_state within a second of spawn (probed on
@@ -559,11 +560,11 @@ func unattendedReply(frame Frame) json.RawMessage {
 	switch frameString(frame, "method") {
 	case "confirm":
 		out.WriteString(`{"type":"extension_ui_response","id":`)
-		appendJSONString(&out, id)
+		jsfmt.WriteQuoted(&out, id)
 		out.WriteString(`,"confirmed":true}`)
 	case "select", "input", "editor":
 		out.WriteString(`{"type":"extension_ui_response","id":`)
-		appendJSONString(&out, id)
+		jsfmt.WriteQuoted(&out, id)
 		out.WriteString(`,"cancelled":true}`)
 	default:
 		return nil
@@ -578,7 +579,7 @@ func withID(id string, command json.RawMessage) json.RawMessage {
 	}
 	var out bytes.Buffer
 	out.WriteString(`{"id":`)
-	appendJSONString(&out, id)
+	jsfmt.WriteQuoted(&out, id)
 	out.WriteByte(',')
 	out.Write(command[1:])
 	return json.RawMessage(out.Bytes())
@@ -588,41 +589,7 @@ func withID(id string, command json.RawMessage) json.RawMessage {
 func promptCommand(message string) json.RawMessage {
 	var out bytes.Buffer
 	out.WriteString(`{"type":"prompt","message":`)
-	appendJSONString(&out, message)
+	jsfmt.WriteQuoted(&out, message)
 	out.WriteByte('}')
 	return json.RawMessage(out.Bytes())
-}
-
-// appendJSONString writes text as a JSON string the way JSON.stringify does: no HTML escaping,
-// the short escapes for \b \t \n \f \r, \u00xx for the other control characters, and every other
-// byte as written.
-func appendJSONString(out *bytes.Buffer, text string) {
-	out.WriteByte('"')
-	for i := 0; i < len(text); i++ {
-		c := text[i]
-		switch {
-		case c == '"':
-			out.WriteString(`\"`)
-		case c == '\\':
-			out.WriteString(`\\`)
-		case c == '\b':
-			out.WriteString(`\b`)
-		case c == '\f':
-			out.WriteString(`\f`)
-		case c == '\n':
-			out.WriteString(`\n`)
-		case c == '\r':
-			out.WriteString(`\r`)
-		case c == '\t':
-			out.WriteString(`\t`)
-		case c < 0x20:
-			const hex = "0123456789abcdef"
-			out.WriteString(`\u00`)
-			out.WriteByte(hex[c>>4])
-			out.WriteByte(hex[c&0xf])
-		default:
-			out.WriteByte(c)
-		}
-	}
-	out.WriteByte('"')
 }
