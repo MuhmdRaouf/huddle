@@ -765,7 +765,7 @@ func TestAnUpWhoseBinaryIsATestBinaryStartsNothing(t *testing.T) {
 	}
 }
 
-// TestMemoryLimitOf pins the hub's soft memory limit: 512 MiB unless
+// TestMemoryLimitOf pins the hub's soft memory limit: 1 GiB unless
 // HUDDLE_MEMORY_LIMIT_MB names a positive number of MiB, with anything else falling back.
 func TestMemoryLimitOf(t *testing.T) {
 	rows := []struct {
@@ -773,11 +773,11 @@ func TestMemoryLimitOf(t *testing.T) {
 		env  map[string]string
 		want int64
 	}{
-		{"unset", nil, 512 << 20},
+		{"unset", nil, 1024 << 20},
 		{"300", map[string]string{"HUDDLE_MEMORY_LIMIT_MB": "300"}, 300 << 20},
-		{"0", map[string]string{"HUDDLE_MEMORY_LIMIT_MB": "0"}, 512 << 20},
-		{"-1", map[string]string{"HUDDLE_MEMORY_LIMIT_MB": "-1"}, 512 << 20},
-		{"junk", map[string]string{"HUDDLE_MEMORY_LIMIT_MB": "junk"}, 512 << 20},
+		{"0", map[string]string{"HUDDLE_MEMORY_LIMIT_MB": "0"}, 1024 << 20},
+		{"-1", map[string]string{"HUDDLE_MEMORY_LIMIT_MB": "-1"}, 1024 << 20},
+		{"junk", map[string]string{"HUDDLE_MEMORY_LIMIT_MB": "junk"}, 1024 << 20},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
