@@ -225,3 +225,107 @@ func awaitLegacyHealthE2E(t *testing.T, port int) {
 	}
 	t.Fatalf("port %d never answered huddle-router's health", port)
 }
+
+// TestE2ELegacyPortsAStalePidFileStillReplacesTheHolder runs the incident's shape: a 0.0.1
+// router was restarted by hand, so no starter wrote its pid, and the pid file on disk names a
+// pid that is long gone. Within twelve seconds the daemon still stops the holder and answers
+// on the legacy port itself.
+func TestE2ELegacyPortsAStalePidFileStillReplacesTheHolder(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "user")
+	state := filepath.Join(home, ".agents", "zai")
+	routerHome := shortRouterHome(t)
+	routerPort := ports.Free(t)
+	legacy := ports.Free(t)
+	anthropic := newSettingsFake(t, "anthropic")
+	zaiUp := newSettingsFake(t, "zai")
+	fakeBin := buildLegacyFakeBin(t)
+	env := argvEntries(isoenv.Lookup(isoenv.Environ(t, home,
+		"RADAR_HOME="+filepath.Join(root, "radar"),
+		"HUDDLE_HOME="+filepath.Join(root, "huddle-home"),
+		"HUDDLE_NO_PROJECT_CRED=1",
+		"HUDDLE_ROUTER_HOME="+routerHome,
+		"HUDDLE_ROUTER_PORT="+strconv.Itoa(routerPort),
+		"HUDDLE_ROUTER_LEGACY_PORTS=zai="+strconv.Itoa(legacy),
+		"HUDDLE_ROUTER_ANTHROPIC_URL="+anthropic.server.URL,
+		"ZAI_ROUTER_URL="+zaiUp.server.URL,
+		"ZAI_API_KEY=legacy-e2e-key",
+	)))
+	if err := os.MkdirAll(routerHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(routerHome, "providers.json"), []byte(`{"providers":["zai"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(state, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// the 0.0.1 zai router restarted by hand: it holds the legacy port, while the pid file
+	// beside it names a pid that is long gone
+	gone := exec.Command("true")
+	if err := gone.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = gone.Wait()
+	runPid, runDone, runOut := startLegacyChild(t, fakeBin, env, root, "zai", "router", "run", strconv.Itoa(legacy))
+	awaitFakeListening(t, legacy, runDone, runOut, "the 0.0.1 router")
+	record := fmt.Sprintf(`{"pid":%d,"port":%d,"token":"legacy-e2e","mode":"router"}`, gone.Process.Pid, legacy)
+	if err := os.WriteFile(filepath.Join(state, "router.pid"), []byte(record), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// the daemon serves
+	logFile, err := os.OpenFile(filepath.Join(routerHome, "e2e.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serve := exec.Command(huddleBin, "router", "serve")
+	serve.Env = env
+	serve.Dir = root
+	serve.Stdout, serve.Stderr = logFile, logFile
+	if err := serve.Start(); err != nil {
+		t.Fatal(err)
+	}
+	serveDone := make(chan struct{})
+	go func() {
+		_ = serve.Wait()
+		close(serveDone)
+	}()
+	t.Cleanup(func() {
+		_ = serve.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-serveDone:
+		case <-time.After(10 * time.Second):
+			_ = serve.Process.Kill()
+			<-serveDone
+		}
+		_ = logFile.Close()
+	})
+
+	// within twelve seconds the hand-restarted holder is gone and the daemon answers on the port
+	deadline := time.Now().Add(12 * time.Second)
+	select {
+	case <-runDone:
+	case <-time.After(time.Until(deadline)):
+		t.Fatalf("the 0.0.1 router (pid %d) still runs 12 s after the daemon's start; its output:\n%s", runPid, runOut())
+	}
+	awaitLegacyHealthE2E(t, legacy)
+	awaitLegacyLogE2E(t, routerHome,
+		fmt.Sprintf("huddle-router: stopped the 0.0.1 zai router (pid %d, found by its port) and took port %d", runPid, legacy))
+}
+
+// awaitLegacyLogE2E waits until the daemon's own log names the line.
+func awaitLegacyLogE2E(t *testing.T, routerHome string, want string) {
+	t.Helper()
+	deadline := time.Now().Add(12 * time.Second)
+	for time.Now().Before(deadline) {
+		raw, err := os.ReadFile(filepath.Join(routerHome, "router.log"))
+		if err == nil && strings.Contains(string(raw), want) {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	raw, _ := os.ReadFile(filepath.Join(routerHome, "router.log"))
+	t.Fatalf("the daemon's log never said %q; it says:\n%s", want, raw)
+}

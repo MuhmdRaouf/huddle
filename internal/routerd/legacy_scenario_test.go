@@ -150,6 +150,39 @@ func TestLegacyPortScenarios(t *testing.T) {
 			})
 		})
 
+		f.Scenario("a 0.0.1 router restarted by hand, with a stale pid file, is still replaced", func(s *bdd.S) {
+			var rig *daemonRig
+			var legacy int
+			var fake fakeLegacyProcess
+			s.Given("a 0.0.1 zai router holding a legacy port, its pid record naming a pid that is long gone", func(t *testing.T) {
+				rig = newDaemonRig(s.T)
+				legacy = daemonFreePort(t)
+				rig.env["HUDDLE_ROUTER_LEGACY_PORTS"] = "zai=" + strconv.Itoa(legacy)
+				state := filepath.Join(rig.env["HOME"], ".agents", "zai")
+				rig.env["ZAI_STATE_DIR"] = state
+				// the fake lives past this step, so its cleanup rides the scenario
+				fake = startFakeLegacy(s.T, buildFakeLegacy(s.T), "zai", "run", legacy)
+				awaitListening(t, legacy)
+				// the record a hand restart leaves behind: it names nobody running
+				writeLegacyRecord(t, state, "router.pid", deadPid(t), legacy)
+				if err := router.SetEnabled(rig.env, "zai", true); err != nil {
+					t.Fatal(err)
+				}
+			})
+			s.When("huddle-router serves", func(t *testing.T) {
+				rig.start()
+			})
+			s.Then("the 0.0.1 router is gone", func(t *testing.T) {
+				awaitExit(t, fake.done, "the 0.0.1 router")
+			})
+			s.And("the legacy port answers huddle-router's health", func(t *testing.T) {
+				awaitLegacyHealth(t, legacy, rig.logs.joined)
+			})
+			s.And("the log names the stop as one found by its port", func(t *testing.T) {
+				awaitLog(t, rig, fmt.Sprintf("huddle-router: stopped the 0.0.1 zai router (pid %d, found by its port) and took port %d", fake.pid, legacy))
+			})
+		})
+
 		f.Scenario("a foreign holder of a legacy port is left alone", func(s *bdd.S) {
 			var rig *daemonRig
 			var legacy int

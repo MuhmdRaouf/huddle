@@ -81,9 +81,13 @@ func legacyPortNumbers(ports map[string]int) []int {
 // signalled. The watchers first: a guard whose pid runs one of ours named `router watch` gets
 // SIGTERM, and every guard file goes — a dead watch's file is litter, a foreign pid's file is
 // never a reason to signal it. Then the router the pid or retired record names — one of ours,
-// on this very port, never pid ≤ 1 and never this daemon: SIGTERM, up to ten seconds to give
-// the port up, then SIGKILL while it is still ours and still running. A record naming another
-// port, a dead pid or a process of somebody else's is left alone.
+// on this very port, never pid ≤ 1 and never this daemon. A record that is missing, stale or
+// names another port says nothing usable, so the holder is asked for instead: the pid the OS
+// shows listening on the port, verified the same way and by `router run` in its command line —
+// a router restarted by hand, which no starter wrote a record for — and its `<name> router
+// worker` children go with it. Either way: SIGTERM, up to ten seconds to give the port up,
+// then SIGKILL while it is still ours and still running. A process of somebody else's is never
+// signalled.
 func stopLegacy(ctx context.Context, env domain.EnvLookup, name string, port int, log func(string)) bool {
 	root := legacyStateRoot(ctx, env, name, log)
 	signalled := false
@@ -105,22 +109,65 @@ func stopLegacy(ctx context.Context, env domain.EnvLookup, name string, port int
 	if !ok {
 		record, ok = router.ReadRetiredFile(ctx, root)
 	}
-	if !ok || int(record.Port) != port || record.Pid <= 1 || record.Pid == int64(os.Getpid()) ||
-		!router.IsOurProcess(record.Pid, name, nil) {
+	if ok && int(record.Port) == port && record.Pid > 1 && record.Pid != int64(os.Getpid()) &&
+		process.IsAlive(record.Pid) && router.IsOurProcess(record.Pid, name, nil) {
+		stopLegacyPids(name, port, []int64{record.Pid})
+		signalled = true
+		log(fmt.Sprintf("huddle-router: stopped the 0.0.1 %s router (pid %d) and took port %d", name, record.Pid, port))
 		return signalled
 	}
-	pid := record.Pid
-	_ = syscall.Kill(int(pid), syscall.SIGTERM)
+	holder, held := portHolder(ctx, port)
+	if !held || holder <= 1 || holder == int64(os.Getpid()) || !router.IsOurProcess(holder, name, nil) {
+		return signalled
+	}
+	line, hasLine := router.CommandLineOf(ctx, holder)
+	if !hasLine || !strings.Contains(line, "router run") {
+		return signalled
+	}
+	stopLegacyPids(name, port, append([]int64{holder}, workerPids(ctx, name, holder)...))
 	signalled = true
+	log(fmt.Sprintf("huddle-router: stopped the 0.0.1 %s router (pid %d, found by its port) and took port %d", name, holder, port))
+	return signalled
+}
+
+// stopLegacyPids runs the stop over one verified 0.0.1 router and its workers: SIGTERM to all,
+// up to ten seconds for the port to free, then SIGKILL to whichever is still ours and running.
+func stopLegacyPids(name string, port int, pids []int64) {
+	for _, pid := range pids {
+		_ = syscall.Kill(int(pid), syscall.SIGTERM)
+	}
 	deadline := time.Now().Add(legacyWait)
 	for portAccepts(port) && time.Now().Before(deadline) {
 		time.Sleep(adoptRetry / 2)
 	}
-	if process.IsAlive(pid) && router.IsOurProcess(pid, name, nil) {
-		_ = syscall.Kill(int(pid), syscall.SIGKILL)
+	for _, pid := range pids {
+		if process.IsAlive(pid) && router.IsOurProcess(pid, name, nil) {
+			_ = syscall.Kill(int(pid), syscall.SIGKILL)
+		}
 	}
-	log(fmt.Sprintf("huddle-router: stopped the 0.0.1 %s router (pid %d) and took port %d", name, pid, port))
-	return signalled
+}
+
+// workerPids is the router's children whose command line names a `<name> router worker` and
+// that are ours: they go when their holder goes.
+func workerPids(ctx context.Context, name string, pid int64) []int64 {
+	timeoutMs := int64(2000)
+	answer := process.RunToolSync(ctx, "pgrep", []string{"-P", strconv.FormatInt(pid, 10)},
+		process.ToolOptions{TimeoutMs: &timeoutMs})
+	if !process.Succeeded(answer) {
+		return nil
+	}
+	var workers []int64
+	for _, field := range strings.Fields(string(answer.Stdout)) {
+		child, err := strconv.ParseInt(field, 10, 64)
+		if err != nil || child <= 0 {
+			continue
+		}
+		if line, ok := router.CommandLineOf(ctx, child); ok &&
+			strings.Contains(line, name+" router worker") && router.IsOurProcess(child, name, nil) {
+			workers = append(workers, child)
+		}
+	}
+	return workers
 }
 
 // legacyStateRoot is where a 0.0.1 provider kept its state: its $<PREFIX>_STATE_DIR, else
@@ -154,6 +201,24 @@ func portAccepts(port int) bool {
 	}
 	_ = conn.Close()
 	return true
+}
+
+// portHolder asks the OS which pid listens on the loopback port: the first pid `lsof` answers,
+// or false when lsof is missing or finds nothing.
+func portHolder(ctx context.Context, port int) (int64, bool) {
+	timeoutMs := int64(2000)
+	answer := process.RunToolSync(ctx, "lsof",
+		[]string{"-nP", "-iTCP:" + strconv.Itoa(port), "-sTCP:LISTEN", "-t"},
+		process.ToolOptions{TimeoutMs: &timeoutMs})
+	if !process.Succeeded(answer) {
+		return 0, false
+	}
+	for _, field := range strings.Fields(string(answer.Stdout)) {
+		if pid, err := strconv.ParseInt(field, 10, 64); err == nil && pid > 0 {
+			return pid, true
+		}
+	}
+	return 0, false
 }
 
 // adoptLegacyPorts brings every legacy port the map names under this daemon's server: one

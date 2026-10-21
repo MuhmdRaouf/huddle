@@ -6,14 +6,17 @@ package routerd
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
@@ -74,12 +77,13 @@ type fakeLegacyProcess struct {
 	done <-chan struct{}
 }
 
-// startFakeLegacy starts the fake as the test's child: `<bin> <name> router <role> [port]`,
-// holding port when one is given. Its environment is a temp home of its own, so no process of
-// this suite ever carries the real one.
-func startFakeLegacy(tb testing.TB, bin, name, role string, port int) fakeLegacyProcess {
+// startFakeLegacy starts the fake as the test's child: `<bin> <name> router <role> [port]
+// [extra...]`, holding port when one is given. Its environment is a temp home of its own, so no
+// process of this suite ever carries the real one.
+func startFakeLegacy(tb testing.TB, bin, name, role string, port int, extra ...string) fakeLegacyProcess {
 	tb.Helper()
 	args := []string{name, "router", role}
+	args = append(args, extra...)
 	if port != 0 {
 		args = append(args, strconv.Itoa(port))
 	}
@@ -150,6 +154,74 @@ func writeGuard(t *testing.T, state string, pid int64) string {
 	return path
 }
 
+// deadPid is a pid that names no running process.
+func deadPid(t *testing.T) int64 {
+	t.Helper()
+	gone := exec.Command("true")
+	if err := gone.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = gone.Wait()
+	return int64(gone.Process.Pid)
+}
+
+// childrenOf lists the pid's live children, empty when pgrep cannot say.
+func childrenOf(t *testing.T, pid int64) []int64 {
+	t.Helper()
+	out, err := exec.Command("pgrep", "-P", strconv.FormatInt(pid, 10)).Output()
+	if err != nil {
+		return nil
+	}
+	var pids []int64
+	for _, field := range strings.Fields(string(out)) {
+		if child, err := strconv.ParseInt(field, 10, 64); err == nil {
+			pids = append(pids, child)
+		}
+	}
+	return pids
+}
+
+// awaitGone fails once something whose command line carries still runs after ten seconds.
+func awaitGone(t *testing.T, still string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		out, _ := exec.Command("pgrep", "-f", still).Output()
+		if len(strings.Fields(string(out))) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s still runs:\n%s", still, out)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func TestPortHolderRows(t *testing.T) {
+	t.Parallel()
+	t.Run("the port a listener of ours holds names this test's own pid", func(t *testing.T) {
+		t.Parallel()
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = listener.Close() })
+		port := listener.Addr().(*net.TCPAddr).Port
+		pid, ok := portHolder(context.Background(), port)
+		if !ok || pid != int64(os.Getpid()) {
+			t.Errorf("portHolder(%d) = (%d, %v), want (%d, true)", port, pid, ok, os.Getpid())
+		}
+	})
+
+	t.Run("a free port names no holder", func(t *testing.T) {
+		t.Parallel()
+		port := daemonFreePort(t)
+		if pid, ok := portHolder(context.Background(), port); ok {
+			t.Errorf("portHolder(%d) = (%d, true), want false", port, pid)
+		}
+	})
+}
+
 func TestStopLegacyRows(t *testing.T) {
 	t.Parallel()
 	t.Run("a 0.0.1 router named in the pid record is stopped and its port freed", func(t *testing.T) {
@@ -211,7 +283,65 @@ func TestStopLegacyRows(t *testing.T) {
 		}
 	})
 
-	t.Run("a record naming another port stops nothing", func(t *testing.T) {
+	t.Run("a stale pid file still stops the verified holder the port names", func(t *testing.T) {
+		t.Parallel()
+		bin := buildFakeLegacy(t)
+		port := daemonFreePort(t)
+		fake := startFakeLegacy(t, bin, "zai", "run", port)
+		awaitListening(t, port)
+		state := t.TempDir()
+		writeLegacyRecord(t, state, "router.pid", deadPid(t), port)
+		var lines []string
+		stopped := stopLegacy(context.Background(), domain.EnvLookup{"ZAI_STATE_DIR": state}, "zai", port,
+			func(line string) { lines = append(lines, line) })
+		if !stopped {
+			t.Fatal("stopLegacy = false, want true")
+		}
+		awaitExit(t, fake.done, "the fake holder")
+		if portAccepts(port) {
+			t.Error("the port still answers")
+		}
+		want := fmt.Sprintf("huddle-router: stopped the 0.0.1 zai router (pid %d, found by its port) and took port %d", fake.pid, port)
+		if !contains(lines, want) {
+			t.Errorf("the log says %q, want it to name %q", lines, want)
+		}
+	})
+
+	t.Run("a holder's worker children go with it", func(t *testing.T) {
+		t.Parallel()
+		bin := buildFakeLegacy(t)
+		port := daemonFreePort(t)
+		fake := startFakeLegacy(t, bin, "zai", "run", port, "spawn")
+		awaitListening(t, port)
+		var worker int64
+		deadline := time.Now().Add(5 * time.Second)
+		for worker == 0 && time.Now().Before(deadline) {
+			for _, child := range childrenOf(t, fake.pid) {
+				if line, ok := router.CommandLineOf(context.Background(), child); ok &&
+					strings.Contains(line, "zai router worker") {
+					worker = child
+				}
+			}
+			if worker == 0 {
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+		if worker == 0 {
+			t.Fatal("the fake holder never grew a worker child")
+		}
+		// a failure after this point must still leave no worker behind
+		t.Cleanup(func() { _ = syscall.Kill(int(worker), syscall.SIGKILL) })
+		state := t.TempDir()
+		writeLegacyRecord(t, state, "router.pid", deadPid(t), port)
+		stopped := stopLegacy(context.Background(), domain.EnvLookup{"ZAI_STATE_DIR": state}, "zai", port, func(string) {})
+		if !stopped {
+			t.Fatal("stopLegacy = false, want true")
+		}
+		awaitExit(t, fake.done, "the fake holder")
+		awaitGone(t, bin)
+	})
+
+	t.Run("a record naming another port still stops the verified holder of the port", func(t *testing.T) {
 		t.Parallel()
 		bin := buildFakeLegacy(t)
 		port := daemonFreePort(t)
@@ -220,13 +350,32 @@ func TestStopLegacyRows(t *testing.T) {
 		state := t.TempDir()
 		writeLegacyRecord(t, state, "router.pid", fake.pid, port+1)
 		stopped := stopLegacy(context.Background(), domain.EnvLookup{"ZAI_STATE_DIR": state}, "zai", port, func(string) {})
+		if !stopped {
+			t.Fatal("stopLegacy = false, want true")
+		}
+		awaitExit(t, fake.done, "the fake holder")
+	})
+
+	t.Run("a foreign holder with a stale record is not signalled", func(t *testing.T) {
+		t.Parallel()
+		bin := buildFakeLegacy(t)
+		port := daemonFreePort(t)
+		// its argv names no zai router, so the holder verifies as somebody else's
+		foreign := startFakeLegacy(t, bin, "other", "run", port)
+		awaitListening(t, port)
+		state := t.TempDir()
+		writeLegacyRecord(t, state, "router.pid", deadPid(t), port)
+		stopped := stopLegacy(context.Background(), domain.EnvLookup{"ZAI_STATE_DIR": state}, "zai", port, func(string) {})
 		if stopped {
 			t.Error("stopLegacy = true, want false")
 		}
 		select {
-		case <-fake.done:
-			t.Fatalf("the router pid %d was signalled over another port's record", fake.pid)
+		case <-foreign.done:
+			t.Fatalf("the foreign holder %d was signalled", foreign.pid)
 		case <-time.After(500 * time.Millisecond):
+		}
+		if !processIsAlive(foreign.pid) {
+			t.Fatalf("the foreign holder %d did not survive", foreign.pid)
 		}
 	})
 
@@ -234,12 +383,7 @@ func TestStopLegacyRows(t *testing.T) {
 		t.Parallel()
 		port := daemonFreePort(t)
 		state := t.TempDir()
-		gone := exec.Command("true")
-		if err := gone.Start(); err != nil {
-			t.Fatal(err)
-		}
-		_ = gone.Wait()
-		writeLegacyRecord(t, state, "router.pid", int64(gone.Process.Pid), port)
+		writeLegacyRecord(t, state, "router.pid", deadPid(t), port)
 		stopped := stopLegacy(context.Background(), domain.EnvLookup{"ZAI_STATE_DIR": state}, "zai", port, func(string) {})
 		if stopped {
 			t.Error("stopLegacy = true, want false")
