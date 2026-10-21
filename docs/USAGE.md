@@ -427,6 +427,10 @@ the ledger names it, and the old router's binary copy and watch files go. A rout
 serving sessions you have open retires — it keeps answering those sessions and exits once they
 close, so nothing running is cut off.
 
+A hub a 0.0.1 build left running gives way the same way: the next `huddle up` or session start from
+the current build stops it, starts the hub on the same port, and takes a standalone huddle-router's
+socket over, so the router never stops answering.
+
 ## Troubleshooting
 
 | Symptom | What to do |

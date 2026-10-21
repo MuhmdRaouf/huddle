@@ -256,6 +256,9 @@ type server struct {
 	started  string
 	// machine is this machine's own name: the word /health and the landing page call the hub by.
 	machine string
+	// exe is this serving process's executable, symlinks resolved: the health answer names it,
+	// and up from a newer binary reads it to give an older hub way.
+	exe string
 	// hubSrv serves the TLS listener a hub role adds on hub.listen (roles.go); nil in every
 	// other role and whenever it could not start, in which case the loopback listener above
 	// carries the server alone.
@@ -528,6 +531,15 @@ func Serve(ctx context.Context, o Options) error {
 	if host, err := os.Hostname(); err == nil && host != "" {
 		machine = host
 	}
+	// the serving process's executable, symlinks resolved: the health answer names it, so a
+	// start from a newer binary can tell its hub from an older build's
+	exe := ""
+	if bin, err := os.Executable(); err == nil {
+		exe = bin
+		if resolved, err := filepath.EvalSymlinks(bin); err == nil {
+			exe = resolved
+		}
+	}
 	s := &server{
 		o:            o,
 		hub:          channel.NewHub(o.Data, o.AutoCreate),
@@ -540,6 +552,7 @@ func Serve(ctx context.Context, o Options) error {
 		cookie:       fmt.Sprintf("huddle_session_%d", port),
 		started:      jsfmt.ISOTime(now()),
 		machine:      machine,
+		exe:          exe,
 		hosts:        map[string]bool{},
 		flights:      &flightTracker{},
 		streams:      map[*liveStream]struct{}{},
@@ -1298,14 +1311,15 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 			return err
 		}
 		s.writeJSON(w, 200, struct {
-			OK       bool   `json:"ok"`
-			Version  string `json:"version"`
-			Started  string `json:"started"`
-			Channels int    `json:"channels"`
-			Home     string `json:"home"`
-			Machine  string `json:"machine"`
-			Name     string `json:"name,omitempty"`
-		}{true, s.o.Version, s.started, len(names), s.o.Home, s.machine, hubName(s.o.Home)}, nil)
+			OK         bool   `json:"ok"`
+			Version    string `json:"version"`
+			Started    string `json:"started"`
+			Channels   int    `json:"channels"`
+			Home       string `json:"home"`
+			Machine    string `json:"machine"`
+			Name       string `json:"name,omitempty"`
+			Executable string `json:"executable"`
+		}{true, s.o.Version, s.started, len(names), s.o.Home, s.machine, hubName(s.o.Home), s.exe}, nil)
 		return nil
 	case path == "/" || path == "/index.html":
 		return s.staticFile(w, "index.html", "text/html; charset=utf-8", true)

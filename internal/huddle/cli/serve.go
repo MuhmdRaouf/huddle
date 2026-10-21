@@ -1,6 +1,7 @@
 // Running the Huddle server that ships inside this binary:
 //
-//	huddle up       start it in the background, on loopback; does nothing when it already answers
+//	huddle up       start it in the background, on loopback; a hub an older build serves is
+//	                replaced, a hub this binary serves is left answering
 //	huddle down     stop the server `huddle up` started
 //	huddle server   is it up, which process, where its data and log are
 //
@@ -141,6 +142,112 @@ func savedRunPort(root string) int {
 // PidOf answers the pid in the home's run/huddle.pid, when that process is still a Huddle server
 // (a stale pid may belong to anything); 0 when it is not.
 func PidOf(ctx context.Context, w *World) int { return RunningPid(ctx, w, Home(ctx, w)) }
+
+// hubHealth is the part of a hub's health answer the replace decision reads.
+type hubHealth struct {
+	Home       string `json:"home"`
+	Executable string `json:"executable"`
+}
+
+// hubAt fetches the health answer of the hub at url; ok is false when nothing answers within
+// ms, or the answer is not a hub's.
+func hubAt(ctx context.Context, url string, ms int) (hubHealth, bool) {
+	if url == "" {
+		return hubHealth{}, false
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/health", nil)
+	if err != nil {
+		return hubHealth{}, false
+	}
+	resp, err := (&http.Client{Timeout: time.Duration(ms) * time.Millisecond}).Do(req)
+	if err != nil {
+		return hubHealth{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return hubHealth{}, false
+	}
+	var answer hubHealth
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&answer); err != nil {
+		return hubHealth{}, false
+	}
+	return answer, true
+}
+
+// hubNeedsReplace says whether the hub whose health answer this is gives way to this binary's
+// start: only this home's own hub, and only when the pid file vouches for it, and only when
+// another executable serves it — a hub that names no executable is an older build's (0.0.1),
+// so it gives way too. A hub of the same executable, of another home, or an unvouched one is
+// never replaced.
+func hubNeedsReplace(health hubHealth, home, self string, vouched bool) bool {
+	if !vouched || health.Home != home || health.Executable == self {
+		return false
+	}
+	return true
+}
+
+// resolvedPath is bin with its symlinks resolved: the spelling a health answer's executable
+// names.
+func resolvedPath(bin string) string {
+	resolved, err := filepath.EvalSymlinks(bin)
+	if err != nil {
+		return bin
+	}
+	return resolved
+}
+
+// goneWithin answers whether pid has exited within ms, asking every 100 ms.
+func goneWithin(pid int, ms time.Duration) bool {
+	deadline := time.Now().Add(ms)
+	for {
+		if !processAlive(pid) {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// hubDecision is one health probe of the hub at a url, with the replace decision made.
+type hubDecision struct {
+	health   hubHealth
+	answered bool
+	pid      int  // the pid the home's pid file vouches for; 0 when it vouches for none
+	replace  bool // an older build's hub of this home, vouched: this start gives it way
+}
+
+// probeHub asks the hub at url for its health once and decides whether this start replaces it:
+// only this home's own hub, vouched by the pid file and served from another executable, is an
+// older build's (a hub that names no executable is one too).
+func probeHub(ctx context.Context, w *World, url string, rest func() time.Duration) hubDecision {
+	health, ok := hubAt(ctx, url, int(clampMS(rest(), 1500)))
+	if !ok {
+		return hubDecision{}
+	}
+	h := Home(ctx, w)
+	pid := PidOf(ctx, w)
+	replace := hubNeedsReplace(health, h, resolvedPath(w.bin()), pid > 0) &&
+		pid > 1 && pid != os.Getpid()
+	return hubDecision{health: health, answered: true, pid: pid, replace: replace}
+}
+
+// stopOutdatedHub signs an outdated hub out of the way: SIGTERM, a 10 s wait for its exit,
+// SIGKILL past that, each step in the run log.
+func stopOutdatedHub(w *World, root string, decided hubDecision) {
+	old := decided.health.Executable
+	if old == "" {
+		old = "an unnamed build"
+	}
+	noteRun(root, w.now(), fmt.Sprintf("replaced hub pid %d from %s: SIGTERM", decided.pid, old))
+	_ = signalTerm(decided.pid)
+	if !goneWithin(decided.pid, 10*time.Second) {
+		noteRun(root, w.now(), fmt.Sprintf("replaced hub pid %d from %s: SIGKILL", decided.pid, old))
+		_ = signalKill(decided.pid)
+		goneWithin(decided.pid, 2*time.Second)
+	}
+}
 
 // Healthy answers whether a Huddle server answers at url.
 func Healthy(ctx context.Context, url string, ms int) bool {
@@ -350,10 +457,12 @@ func UpAlone(ctx context.Context, w *World, rawURL string, budgetMS int) Result 
 	return up(ctx, w, rawURL, budgetMS, "", false)
 }
 
-// up starts the Huddle server, detached, unless one already answers at url. budgetMS bounds the
-// whole call (the session-start hook passes what is left of its own budget); a server still
-// starting when it runs out keeps starting, detached, for the next session. The answer carries
-// the url the server answers at (a new port when it had to move).
+// up starts the Huddle server, detached, unless one already answers at url: a hub an older
+// build serves is replaced and this binary's comes up on the same port, a hub this binary
+// serves is left answering. budgetMS bounds the whole call (the session-start hook passes what
+// is left of its own budget); a server still starting when it runs out keeps starting,
+// detached, for the next session. The answer carries the url the server answers at (a new port
+// when it had to move).
 func up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string, removalWatch bool) Result {
 	if budgetMS <= 0 {
 		budgetMS = 35_000
@@ -368,8 +477,17 @@ func up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string, 
 		return Result{URL: rawURL, Msg: fmt.Sprintf("%s is a test binary, not huddle; the hub is not started", filepath.Base(bin))}
 	}
 	rawURL = trimSlash(rawURL)
-	if Healthy(ctx, rawURL, int(clampMS(rest(), 1500))) {
+	// a hub of an older binary gives way (D2): the health answer names the executable that
+	// serves it, and when the pid file vouches for it as this home's hub, this start replaces
+	// it and comes up on the same port
+	decided := probeHub(ctx, w, rawURL, rest)
+	if decided.answered && !decided.replace {
 		return Result{OK: true, URL: rawURL, Msg: fmt.Sprintf("Huddle is up at %s", rawURL)}
+	}
+	var replaced int
+	if decided.replace {
+		replaced = decided.pid
+		stopOutdatedHub(w, Home(ctx, w), decided)
 	}
 	at := place(ctx, w, rawURL, sid)
 	if at.err != "" {
@@ -380,11 +498,17 @@ func up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string, 
 	if at.note != "" {
 		said = at.note + "\n"
 	}
-	if at.reuse { // a huddle already answers there: nothing to start
-		if Healthy(ctx, rawURL, int(clampMS(rest(), 1500))) {
+	if at.reuse { // a huddle already answers there: nothing to start — unless it is an older
+		// build's hub, which the start below replaces
+		decided = probeHub(ctx, w, rawURL, rest)
+		if decided.answered && !decided.replace {
 			return Result{OK: true, URL: rawURL, Msg: fmt.Sprintf("%sHuddle is up at %s", said, rawURL)}
 		}
-		return Result{URL: rawURL, Msg: fmt.Sprintf("%sHuddle did not answer at %s; see %s", said, rawURL, logFile(Home(ctx, w)))}
+		if !decided.answered {
+			return Result{URL: rawURL, Msg: fmt.Sprintf("%sHuddle did not answer at %s; see %s", said, rawURL, logFile(Home(ctx, w)))}
+		}
+		replaced = decided.pid
+		stopOutdatedHub(w, Home(ctx, w), decided)
 	}
 	parsed, _ := url.Parse(rawURL)
 	port := "80"
@@ -476,6 +600,10 @@ func up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string, 
 			noteServer(ctx, w, h, ServerEntry{
 				URL: rawURL, Channel: me.Channel, Project: projectOf(ctx, w), PID: child.Process.Pid, At: jsfmt.ISOTime(w.now()),
 			})
+			if replaced > 0 { // an older hub gave way: the answer names the switch
+				return Result{OK: true, Created: true, First: first, URL: rawURL,
+					Msg: fmt.Sprintf("Huddle updated at %s (pid %d → %d)", rawURL, replaced, child.Process.Pid)}
+			}
 			return Result{OK: true, Created: true, First: first, URL: rawURL,
 				Msg: fmt.Sprintf("%sHuddle started at %s, UI %s (pid %d; data: %s/channels; log: %s); this session started it and holds its root credential",
 					said, rawURL, rawURL, child.Process.Pid, data, logFile(h))}

@@ -26,6 +26,12 @@ func TestMain(m *testing.M) {
 		hangServerChild()
 		os.Exit(0)
 	}
+	// a re-execution as the old hub a hub-update scenario runs: answer the 0.0.1 health shape,
+	// no tests
+	if os.Getenv(stubHubEnv) == "1" {
+		stubHubChild()
+		os.Exit(0)
+	}
 	// the binaries these tests build and run inherit this, so none reaches a real trust store
 	_ = os.Setenv(pki.StoreOffEnv, "1")
 	dir, err := os.MkdirTemp("", "huddle-cli-bin-")
