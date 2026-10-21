@@ -7,9 +7,10 @@
 // The key is the session: the hook input's session id, else HUDDLE_SESSION, else
 // CLAUDE_CODE_SESSION_ID (what Claude Code gives its tools), with an alias by the Claude process
 // (CLAUDE_PID) so a /clear, a subagent or the MCP bridge of the same session find it too, and a
-// key for the project (project-<sha1 of its main checkout>), tried last: the next Claude session
-// in the same project (a restart, a second terminal) finds the project's credential instead of
-// needing a new invite. Same OS user, same 0600 directory: no new secret on disk.
+// key for the project (project-<sha1 of its main checkout>), which with no session id comes
+// before the terminal stand-in: the next session in the same project (a restart, a second
+// terminal) finds the project's credential instead of a leftover terminal file of another
+// project. Same OS user, same 0600 directory: no new secret on disk.
 // HUDDLE_TOKEN overrides it all (a root credential for scripts and tests). A credential is only
 // ever sent to the url it was issued by. Reads never fail: no file means no credential.
 package cli
@@ -76,7 +77,7 @@ func cleanKey(key string) string { return keyNoise.ReplaceAllString(key, "") }
 
 // SessionKeys answers the session's keys, most specific first: the given session id, then the
 // environment's, then the Claude process's alias, then the project's. A shell outside Claude
-// Code has none of those, so "terminal" stands in.
+// Code has none of those, so the project's key comes first and "terminal" stands in for both.
 func SessionKeys(w *World, sid string) []string {
 	keys := []string{}
 	for _, key := range []string{sid, w.getenv("HUDDLE_SESSION"), w.getenv("CLAUDE_CODE_SESSION_ID")} {
@@ -87,10 +88,15 @@ func SessionKeys(w *World, sid string) []string {
 	if pid := cleanKey(w.getenv("CLAUDE_PID")); pid != "" {
 		keys = append(keys, "pid-"+pid)
 	}
+	project := ProjectKey(context.Background(), w)
 	if len(keys) == 0 {
+		// the project's own credential outranks the terminal's stand-in: a process in a
+		// project dir must not act as another project's member against a stale server
+		if project != "" {
+			keys = append(keys, project)
+		}
 		keys = append(keys, "terminal")
-	}
-	if project := ProjectKey(context.Background(), w); project != "" {
+	} else if project != "" {
 		keys = append(keys, project)
 	}
 	seen := map[string]bool{}

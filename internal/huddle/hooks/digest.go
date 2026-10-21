@@ -63,9 +63,11 @@ func digestOf(path, cwd string) string {
 }
 
 // digestEntry is one transcript line's shape: the kind of turn and its message content, which
-// is a plain string for a typed prompt and a block array otherwise.
+// is a plain string for a typed prompt and a block array otherwise. IsMeta marks a line the
+// harness injected (a skill's body), never words the person typed.
 type digestEntry struct {
 	Type    string `json:"type"`
+	IsMeta  bool   `json:"isMeta"`
 	Message struct {
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
@@ -116,7 +118,13 @@ func buildDigest(lines [][]byte, cwd string) string {
 		}
 		switch entry.Type {
 		case "user":
-			if said := userTextOf(entry.Message.Content); said != "" {
+			// a skill body Claude Code injects is a meta user line, and a command or tool
+			// wrapper is harness plumbing: the goal is what the person typed, so both are
+			// skipped and an earlier prompt keeps it
+			if entry.IsMeta {
+				continue
+			}
+			if said := userTextOf(entry.Message.Content); said != "" && !isWrapperText(said) {
 				goal = said
 			}
 		case "assistant":
@@ -217,6 +225,28 @@ func userTextOf(content json.RawMessage) string {
 		}
 	}
 	return ""
+}
+
+// wrapperPrefixes open the harness's own user lines: a command's name and message, its
+// stdout, a system reminder and the transcript's caveat.
+var wrapperPrefixes = []string{
+	"<command-name>",
+	"<command-message>",
+	"<local-command-stdout>",
+	"<system-reminder>",
+	"Caveat:",
+}
+
+// isWrapperText answers whether text is a command or tool wrapper the harness put in the
+// transcript, not a prompt the person typed.
+func isWrapperText(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	for _, prefix := range wrapperPrefixes {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // digestDecisionsAndOpen splits a session's last words into the decisions it made and the

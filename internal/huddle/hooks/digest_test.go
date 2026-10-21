@@ -19,7 +19,7 @@ import (
 var updateGolden = flag.Bool("update", false, "rewrite the digest golden files")
 
 func TestTheDigestGolden(t *testing.T) {
-	for _, name := range []string{"plain", "long", "empty"} {
+	for _, name := range []string{"plain", "long", "empty", "injected"} {
 		t.Run(name, func(t *testing.T) {
 			got := digestOf(filepath.Join("testdata", "digest", name+".jsonl"), "/repo")
 			golden := filepath.Join("testdata", "digest", name+".txt")
@@ -64,6 +64,40 @@ func tailOf(s string, n int) string {
 		return s
 	}
 	return s[len(s)-n:]
+}
+
+// TestTheDigestGoalIsWhatThePersonTyped pins the goal's source: a skill body Claude Code
+// injects (a user entry marked isMeta) and a command wrapper never become the goal; the last
+// prompt the person typed does.
+func TestTheDigestGoalIsWhatThePersonTyped(t *testing.T) {
+	lines := [][]byte{
+		[]byte(`{"type":"user","message":{"role":"user","content":"fix the login bug"}}`),
+		[]byte(`{"type":"user","isMeta":true,"message":{"role":"user","content":"Base directory for this skill: /Users/raouf/.claude/plugins/cache/muhmdraouf/huddle/c095e8c180ac/skills/huddle\n\nRead the skill and follow it."}}`),
+		[]byte(`{"type":"user","message":{"role":"user","content":"<command-message>huddle:join</command-message>\n<command-name>/huddle:join</command-name>"}}`),
+	}
+	if got, want := buildDigest(lines, "/repo"), "Goal: fix the login bug"; got != want {
+		t.Errorf("buildDigest of the injected turns =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// TestTheGoalSkipsCommandAndToolWrappers pins the wrapper prefixes: a user text that opens with
+// one is harness plumbing, the person's words never are.
+func TestTheGoalSkipsCommandAndToolWrappers(t *testing.T) {
+	for said, want := range map[string]bool{
+		"<command-name>/huddle:join</command-name>":                      true,
+		"  <command-message>huddle:join</command-message>":               true,
+		"<local-command-stdout>joined qa-three-a</local-command-stdout>": true,
+		"<system-reminder>the channel</system-reminder>":                 true,
+		"Caveat: the messages below were generated":                      true,
+		"fix the login bug":    false,
+		"plain words":          false,
+		"<b>not a wrapper</b>": false,
+		"":                     false,
+	} {
+		if got := isWrapperText(said); got != want {
+			t.Errorf("isWrapperText(%q) = %v, want %v", said, got, want)
+		}
+	}
 }
 
 func TestTheDigestBuilderEdges(t *testing.T) {

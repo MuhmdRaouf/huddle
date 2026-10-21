@@ -38,6 +38,55 @@ func TestSessionKeysAreMostSpecificFirstWithTheProjectLast(t *testing.T) {
 	}
 }
 
+// TestLoadCredPrefersTheProjectsKeyOverTerminal pins the lookup order: a process in a project
+// dir with no session id uses the project's credential, not a leftover terminal.json another
+// project saved against a server that is gone; with a session id the session's own file still
+// wins, and a plain terminal outside any project still finds the terminal file.
+func TestLoadCredPrefersTheProjectsKeyOverTerminal(t *testing.T) {
+	ctx := context.Background()
+	sessions := filepath.Join(t.TempDir(), "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	projectDir := t.TempDir()
+	env := map[string]string{
+		"HUDDLE_SESSIONS_DIR":    sessions,
+		"CLAUDE_PROJECT_DIR":     projectDir,
+		"HUDDLE_NO_PROJECT_CRED": "",
+	}
+	in := world(t, t.TempDir(), env)
+	key := ProjectKey(ctx, in)
+	if key == "" {
+		t.Fatal("no project key in a project dir")
+	}
+	writeFile(t, filepath.Join(sessions, "terminal.json"),
+		`{"url":"http://127.0.0.1:42101","channel":"other","credential":"hcred_other"}`)
+	writeFile(t, filepath.Join(sessions, key+".json"),
+		`{"url":"http://127.0.0.1:42101","channel":"mine","credential":"hcred_mine"}`)
+
+	if got, want := SessionKeys(in, ""), []string{key, "terminal"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("SessionKeys with no session id = %q, want %q", got, want)
+	}
+	if cred := LoadCred(ctx, in, "", ""); cred == nil || cred.Channel != "mine" {
+		t.Errorf("LoadCred with no session id = %+v, want the project's channel mine", cred)
+	}
+	withSession := world(t, in.Dir, map[string]string{
+		"HUDDLE_SESSIONS_DIR":    sessions,
+		"CLAUDE_PROJECT_DIR":     projectDir,
+		"HUDDLE_NO_PROJECT_CRED": "",
+		"CLAUDE_CODE_SESSION_ID": "s1",
+	})
+	writeFile(t, filepath.Join(sessions, "s1.json"),
+		`{"url":"http://127.0.0.1:42101","channel":"sess","credential":"hcred_sess"}`)
+	if cred := LoadCred(ctx, withSession, "", ""); cred == nil || cred.Channel != "sess" {
+		t.Errorf("LoadCred with CLAUDE_CODE_SESSION_ID = %+v, want the session's channel sess", cred)
+	}
+	outside := world(t, t.TempDir(), map[string]string{"HUDDLE_SESSIONS_DIR": sessions, "HUDDLE_NO_PROJECT_CRED": "1"})
+	if cred := LoadCred(ctx, outside, "", ""); cred == nil || cred.Channel != "other" {
+		t.Errorf("LoadCred with no project file = %+v, want terminal's channel other", cred)
+	}
+}
+
 func TestProjectKeyIsTheMainCheckoutHashedNotAPathSpelling(t *testing.T) {
 	real := t.TempDir()
 	linked := filepath.Join(t.TempDir(), "link")

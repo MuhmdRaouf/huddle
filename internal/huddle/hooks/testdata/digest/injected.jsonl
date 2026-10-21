@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":"fix the login bug"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"Base directory for this skill: /Users/raouf/.claude/plugins/cache/muhmdraouf/huddle/c095e8c180ac/skills/huddle\n\nRead the skill and follow it."}}
+{"type":"user","message":{"role":"user","content":"<command-message>huddle:join</command-message>\n<command-name>/huddle:join</command-name>"}}
