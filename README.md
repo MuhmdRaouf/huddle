@@ -268,7 +268,7 @@ Install the pinned tools once, from the repository root: `mise run setup`.
 |---|---|
 | Every gate CI runs | `mise run check` |
 | The Go suite (hermetic, temp homes) | `go run ./scripts/tmpguard -count=1 ./...` |
-| The web workspaces (ui, hub, radar, kanban) | `bun install && bun run check` |
+| The web workspaces (ui, hub, kanban) | `bun install && bun run check` |
 | The headless-browser e2e suite | `bun run e2e` |
 | Rebuild every page and the launcher | `bun run build` |
 | The release binaries, the manifest the launcher pins, and the pre-tag digest check | `go run ./scripts/build -out dist` · `go run ./scripts/build -manifest` · `go run ./scripts/build -check` |

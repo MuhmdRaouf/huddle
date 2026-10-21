@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -211,7 +210,7 @@ func (f *flipWatcher) flip() {
 }
 
 func TestHttpReads(t *testing.T) {
-	t.Run("serves the api, the dashboard and its fonts over loopback", func(t *testing.T) {
+	t.Run("serves the api over loopback, and every page answers the hub's tab", func(t *testing.T) {
 		fresh := seededInsights(t)
 		_, port := serve(t, HttpOptions{Store: fresh.store, Version: "0.0.1", StartedAt: 1})
 		answer := call(t, port, "GET", "/api/summary", "", nil)
@@ -224,24 +223,13 @@ func TestHttpReads(t *testing.T) {
 		if !strings.HasSuffix(answer.body, "\n") {
 			t.Errorf("the api body does not end in a newline: %q", answer.body)
 		}
-		index := call(t, port, "GET", "/", "", nil)
-		if index.status != 200 || index.contentType != "text/html; charset=utf-8" {
-			t.Errorf("GET / = %d %q, want the dashboard page", index.status, index.contentType)
-		}
-		if !strings.Contains(index.body, "<html") {
-			t.Errorf("the served page is not the dashboard: %q", index.body[:min(80, len(index.body))])
-		}
-		font := call(t, port, "GET", "/fonts/ibm-plex-mono-cyrillic-400-normal.woff2", "", nil)
-		if font.status != 200 || font.contentType != "font/woff2" {
-			t.Errorf("the font = %d %q, want the bundled face", font.status, font.contentType)
-		}
 		for _, table := range []struct {
 			path string
 			want string
 		}{
-			{"/nope", "not found: /nope"},
-			{"/fonts/../app.js", "not found: /fonts/../app.js"},
-			{"/fonts/nosuch.txt", "not found: /fonts/nosuch.txt"},
+			{"/nope", "radar's pages are the huddle hub's Radar tab"},
+			{"/fonts/../app.js", "radar's pages are the huddle hub's Radar tab"},
+			{"/fonts/nosuch.txt", "radar's pages are the huddle hub's Radar tab"},
 		} {
 			var body struct {
 				Error string `json:"error"`
@@ -461,31 +449,6 @@ func rawHTTP(t *testing.T, port int, request string) string {
 		t.Fatalf("read the answer: %v", err)
 	}
 	return string(wire)
-}
-
-// writePublic builds one dashboard directory and names it the server's public dir, the way
-// the tests pin the built files the server serves.
-func writePublic(t *testing.T, files map[string]string, binaries map[string][]byte) {
-	t.Helper()
-	dir := t.TempDir()
-	for name, text := range files {
-		writePublicFile(t, dir, name, []byte(text))
-	}
-	for name, bytes := range binaries {
-		writePublicFile(t, dir, name, bytes)
-	}
-	t.Setenv("RADAR_PUBLIC_DIR", dir)
-}
-
-func writePublicFile(t *testing.T, dir, name string, bytes []byte) {
-	t.Helper()
-	path := filepath.Join(dir, filepath.FromSlash(name))
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatalf("mkdir the parent of %s: %v", name, err)
-	}
-	if err := os.WriteFile(path, bytes, 0o600); err != nil {
-		t.Fatalf("write %s: %v", name, err)
-	}
 }
 
 // backlogWatcher is a settable ingest backlog word.
@@ -797,9 +760,9 @@ func TestDnsRebindingGuard(t *testing.T) {
 	t.Run("serves both loopback spellings of this port", func(t *testing.T) {
 		st := store.CreateStore(clock)
 		_, port := serve(t, HttpOptions{Store: st, Version: "test", StartedAt: 1_000})
-		numeric := fetch(t, port, "GET", "/", "", nil)
+		numeric := fetch(t, port, "GET", "/api/health", "", nil)
 		if numeric.status != 200 {
-			t.Errorf("GET / = %d, want 200", numeric.status)
+			t.Errorf("GET /api/health = %d, want 200", numeric.status)
 		}
 		local := rawHTTP(t, port, fmt.Sprintf(
 			"GET /api/health HTTP/1.1\r\nHost: localhost:%d\r\nConnection: close\r\n\r\n", port))
@@ -840,114 +803,24 @@ func TestHttpMethods(t *testing.T) {
 	})
 }
 
-func TestStaticFiles(t *testing.T) {
-	t.Run("serves the three allowlisted paths with their content types", func(t *testing.T) {
-		files := map[string]string{
-			"index.html": "<!doctype html><title>obs</title>radar — ✓", // non-ascii: byte lengths, not chars
-			"app.css":    "body{background:#0b0f14}",
-			"app.js":     "console.log('obs')",
+// TestPagesAnswerTheHubsTab: the server serves its API only, and any page request answers
+// the one 404 that names where the pages live.
+func TestPagesAnswerTheHubsTab(t *testing.T) {
+	st := store.CreateStore(clock)
+	_, port := serve(t, HttpOptions{Store: st, Version: "test", StartedAt: 1_000})
+	for _, path := range []string{"/", "/index.html", "/app.js"} {
+		answer := call(t, port, "GET", path, "", nil)
+		if answer.status != 404 {
+			t.Errorf("GET %s = %d, want 404", path, answer.status)
 		}
-		writePublic(t, files, nil)
-		st := store.CreateStore(clock)
-		_, port := serve(t, HttpOptions{Store: st, Version: "test", StartedAt: 1_000})
-		index := fetch(t, port, "GET", "/", "", nil)
-		if index.status != 200 {
-			t.Fatalf("GET / = %d, want 200", index.status)
+		want := `{"error":"radar's pages are the huddle hub's Radar tab"}` + "\n"
+		if answer.body != want {
+			t.Errorf("GET %s body = %q, want %q", path, answer.body, want)
 		}
-		if got := index.header.Get("Content-Type"); got != "text/html; charset=utf-8" {
-			t.Errorf("GET / content type = %q", got)
-		}
-		if got := index.header.Get("Cache-Control"); got != "no-store" {
-			t.Errorf("GET / cache control = %q", got)
-		}
-		if index.body != files["index.html"] {
-			t.Errorf("GET / body = %q, want the built page", index.body)
-		}
-		if got := index.header.Get("Content-Length"); got != "46" { // 42 chars, the em-dash and the check are 3 bytes each
-			t.Errorf("GET / content length = %q, want the byte length 46", got)
-		}
-		if page := fetch(t, port, "GET", "/index.html", "", nil); page.body != index.body {
-			t.Errorf("GET /index.html body = %q, want the same page", page.body)
-		}
-		if got := fetch(t, port, "GET", "/app.css", "", nil).header.Get("Content-Type"); got != "text/css; charset=utf-8" {
-			t.Errorf("GET /app.css content type = %q", got)
-		}
-		script := fetch(t, port, "GET", "/app.js", "", nil)
-		if got := script.header.Get("Content-Type"); got != "text/javascript; charset=utf-8" {
-			t.Errorf("GET /app.js content type = %q", got)
-		}
-		if script.body != files["app.js"] {
-			t.Errorf("GET /app.js body = %q, want the built script", script.body)
-		}
-	})
-
-	t.Run("404s unknown paths, encoded traversals and missing build artifacts", func(t *testing.T) {
-		writePublic(t, map[string]string{"index.html": "x"}, nil)
-		st := store.CreateStore(clock)
-		_, port := serve(t, HttpOptions{Store: st, Version: "test", StartedAt: 1_000})
-		unknown := fetch(t, port, "GET", "/secret.txt", "", nil)
-		if unknown.status != 404 {
-			t.Errorf("GET /secret.txt = %d, want 404", unknown.status)
-		}
-		if !strings.Contains(unknown.body, `"error":"not found: /secret.txt"`) {
-			t.Errorf("GET /secret.txt body = %q, want the not-found error", unknown.body)
-		}
-		traversal := fetch(t, port, "GET", "/%2e%2e/app.js", "", nil)
-		if traversal.status != 404 { // encoded dots stay off the allowlist; no path is ever resolved
-			t.Errorf("GET /%%2e%%2e/app.js = %d, want 404", traversal.status)
-		}
-		absent := fetch(t, port, "GET", "/app.js", "", nil)
-		if absent.status != 404 {
-			t.Errorf("GET /app.js = %d, want 404", absent.status)
-		}
-		if !strings.Contains(absent.body, `"error":"missing build artifact: app.js"`) {
-			t.Errorf("GET /app.js body = %q, want the missing artifact error", absent.body)
-		}
-	})
-
-	t.Run("serves a bundled font by name as font/woff2, bytes intact, and nothing but woff2 names", func(t *testing.T) {
-		face := []byte{0x77, 0x4f, 0x46, 0x32, 0x00, 0x01, 0xff, 0xfe} // "wOF2" plus binary bytes
-		writePublic(t, map[string]string{"index.html": "x"}, map[string][]byte{
-			"fonts/ibm-plex-sans-latin-wght-normal.woff2": face,
-		})
-		st := store.CreateStore(clock)
-		_, port := serve(t, HttpOptions{Store: st, Version: "test", StartedAt: 1_000})
-		font := fetch(t, port, "GET", "/fonts/ibm-plex-sans-latin-wght-normal.woff2", "", nil)
-		if font.status != 200 {
-			t.Fatalf("the font = %d, want 200", font.status)
-		}
-		if got := font.header.Get("Content-Type"); got != "font/woff2" {
-			t.Errorf("the font content type = %q", got)
-		}
-		if got := font.header.Get("Cache-Control"); got != "no-store" {
-			t.Errorf("the font cache control = %q", got)
-		}
-		if got := font.header.Get("Content-Length"); got != "8" {
-			t.Errorf("the font content length = %q, want 8", got)
-		}
-		if font.body != string(face) {
-			t.Errorf("the font bytes = %v, want %v", []byte(font.body), face)
-		}
-		// an encoded slash survives URL normalization as part of the name, and the name
-		// regex admits no "/" or "%"
-		traversal := fetch(t, port, "GET", "/fonts/latin%2f..%2fapp.woff2", "", nil)
-		if traversal.status != 404 {
-			t.Errorf("the encoded traversal = %d, want 404", traversal.status)
-		}
-		if !strings.Contains(traversal.body, `"error":"not found: /fonts/latin%2f..%2fapp.woff2"`) {
-			t.Errorf("the encoded traversal body = %q, want the not-found error", traversal.body)
-		}
-		if got := fetch(t, port, "GET", "/fonts/evil.js", "", nil).status; got != 404 {
-			t.Errorf("GET /fonts/evil.js = %d, want 404: only .woff2 is a font here", got)
-		}
-		absent := fetch(t, port, "GET", "/fonts/no-such.woff2", "", nil)
-		if absent.status != 404 {
-			t.Errorf("GET /fonts/no-such.woff2 = %d, want 404", absent.status)
-		}
-		if !strings.Contains(absent.body, `"error":"missing build artifact: fonts/no-such.woff2"`) {
-			t.Errorf("GET /fonts/no-such.woff2 body = %q, want the missing artifact error", absent.body)
-		}
-	})
+	}
+	if answer := call(t, port, "GET", "/api/summary", "", nil); answer.status != 200 {
+		t.Errorf("GET /api/summary = %d, want 200: the api stays", answer.status)
+	}
 }
 
 func TestJsonApi(t *testing.T) {
@@ -1502,41 +1375,6 @@ func TestWireGoldens(t *testing.T) {
 		}
 		if normalized := nowZero.ReplaceAllString(string(body), `"now":0`); normalized != string(golden) {
 			t.Errorf("the SSE opening = %q, want the golden %q", normalized, golden)
-		}
-	})
-
-	t.Run("pins one static index response against the recorded answer", func(t *testing.T) {
-		var golden struct {
-			Status        int    `json:"status"`
-			ContentType   string `json:"contentType"`
-			CacheControl  string `json:"cacheControl"`
-			ContentLength string `json:"contentLength"`
-			ByteLength    int    `json:"byteLength"`
-			Body          string `json:"body"`
-		}
-		raw, err := os.ReadFile("testdata/http_static_index_golden.json")
-		if err != nil {
-			t.Fatalf("read the golden: %v", err)
-		}
-		decode(t, string(raw), &golden)
-		writePublic(t, map[string]string{"index.html": golden.Body}, nil)
-		st := store.CreateStore(clock)
-		_, port := serve(t, HttpOptions{Store: st, Version: "test", StartedAt: 1_000})
-		index := fetch(t, port, "GET", "/", "", nil)
-		if index.status != golden.Status {
-			t.Errorf("GET / = %d, want %d", index.status, golden.Status)
-		}
-		if got := index.header.Get("Content-Type"); got != golden.ContentType {
-			t.Errorf("GET / content type = %q, want %q", got, golden.ContentType)
-		}
-		if got := index.header.Get("Cache-Control"); got != golden.CacheControl {
-			t.Errorf("GET / cache control = %q, want %q", got, golden.CacheControl)
-		}
-		if got := index.header.Get("Content-Length"); got != golden.ContentLength {
-			t.Errorf("GET / content length = %q, want %q: bytes, not chars", got, golden.ContentLength)
-		}
-		if index.body != golden.Body {
-			t.Errorf("GET / body = %q, want the recorded page %q", index.body, golden.Body)
 		}
 	})
 }

@@ -61,7 +61,7 @@ regexes = ['''^A234567890BCDEFGHIJKLMNOPQR$''']
 paths = ['''^internal/huddle/server/[a-z_]+_test\.go$''']
 
 [[allowlists]]
-description = "radar: the fake key the page's redaction tests prove gets masked"
+description = "radar: the fake key the old standalone page's redaction tests masked (the file lives only in history)"
 condition = "AND"
 regexes = ['''^sk-abcdefgh123456$''']
 paths = ['''^web/radar/test/redact\.test\.ts$''']

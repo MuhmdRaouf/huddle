@@ -274,7 +274,7 @@ jobs:
         run: go test ./scripts/covergate/...
 
   web:
-    name: "Test: web (hub, radar, kanban pages)"
+    name: "Test: web (hub and kanban pages)"
     needs: plan
     if: needs.plan.outputs.web == 'true'
     runs-on: ubuntu-26.04

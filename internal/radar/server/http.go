@@ -4,8 +4,8 @@
 // settings, dismissing an alert, clearing history) also take PUT/POST, but only as
 // application/json (so another site cannot send one without a preflight we never answer),
 // only from our own origin when the browser names one, and only up to 64 KiB.
-// Static files come from a fixed allowlist (no user-controlled paths anywhere), and
-// /api/stream is SSE: one snapshot, then incremental updates and a heartbeat until the
+// The pages live in the huddle hub's Radar tab; any other path answers a 404 naming that,
+// and /api/stream is SSE: one snapshot, then incremental updates and a heartbeat until the
 // client goes away.
 package server
 
@@ -13,10 +13,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
-	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,7 +24,6 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/history"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 	"github.com/MuhmdRaouf/huddle/internal/radar/store"
-	"github.com/MuhmdRaouf/huddle/internal/radar/web"
 )
 
 // writePaths maps each write route to the one method it takes.
@@ -42,21 +38,9 @@ var writePaths = map[string]string{
 // maxBody bounds one write's payload.
 const maxBody = 64 * 1024
 
-// staticEntry is one allowlisted dashboard file.
-type staticEntry struct {
-	file string
-	typ  string
-}
-
-var staticFiles = map[string]staticEntry{
-	"/":           {file: "index.html", typ: "text/html; charset=utf-8"},
-	"/index.html": {file: "index.html", typ: "text/html; charset=utf-8"},
-	"/app.css":    {file: "app.css", typ: "text/css; charset=utf-8"},
-	"/app.js":     {file: "app.js", typ: "text/javascript; charset=utf-8"},
-}
-
-// fontName admits one bundled font file: an allowlisted name, never a path.
-var fontName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*\.woff2$`)
+// pagesAnswer is the 404 every non-API path gets: radar serves its API only, the pages are
+// the huddle hub's Radar tab.
+const pagesAnswer = "radar's pages are the huddle hub's Radar tab"
 
 // How long a stream may hold a full-state message back to fold in further changes: the
 // record deltas (a request, a tool call, an event) still go out at once, but the sessions
@@ -180,9 +164,6 @@ type HttpServer struct {
 	Server  *http.Server
 	options HttpOptions
 
-	// files is the dashboard's built files, resolved once at creation: RADAR_PUBLIC_DIR
-	// names a directory of them; the embedded build serves otherwise.
-	files    fs.FS
 	port     func() int64
 	hostOK   func(string) bool
 	originOK func(string) bool
@@ -202,14 +183,9 @@ type HttpServer struct {
 // value.
 func CreateHttpServer(options HttpOptions) *HttpServer {
 	port := int64(options.Port)
-	files := fs.FS(web.FS())
-	if dir := os.Getenv("RADAR_PUBLIC_DIR"); dir != "" {
-		files = os.DirFS(dir)
-	}
 	h := &HttpServer{
 		Server:   &http.Server{},
 		options:  options,
-		files:    files,
 		port:     func() int64 { return port },
 		hostOK:   options.HostAllowed,
 		originOK: options.OriginAllowed,
@@ -338,7 +314,7 @@ func (h *HttpServer) route(w http.ResponseWriter, r *http.Request, path string) 
 	case path == "/metrics":
 		h.metricsRoute(w, r)
 	default:
-		h.staticRoute(w, path)
+		sendJSON(w, 404, errorBody{Error: pagesAnswer})
 	}
 }
 
@@ -382,50 +358,6 @@ func (h *HttpServer) metricsRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	send(w, 200, body, headers)
-}
-
-// staticRoute serves the dashboard from the fixed allowlist.
-func (h *HttpServer) staticRoute(w http.ResponseWriter, path string) {
-	entry, ok := staticFiles[path]
-	if !ok {
-		if strings.HasPrefix(path, "/fonts/") {
-			h.fontRoute(w, path)
-			return
-		}
-		sendJSON(w, 404, errorBody{Error: "not found: " + path})
-		return
-	}
-	body, err := h.dashboardFile(entry.file)
-	if err != nil {
-		sendJSON(w, 404, errorBody{Error: "missing build artifact: " + entry.file})
-		return
-	}
-	send(w, 200, body, map[string]string{"Content-Type": entry.typ, "Cache-Control": "no-store"})
-}
-
-// fontRoute serves the bundled IBM Plex faces. The name is one allowlisted file name — the
-// regex admits no "/", so the read can never leave fonts/ — and only .woff2 ships.
-func (h *HttpServer) fontRoute(w http.ResponseWriter, path string) {
-	name := path[len("/fonts/"):]
-	if !fontName.MatchString(name) {
-		sendJSON(w, 404, errorBody{Error: "not found: " + path})
-		return
-	}
-	body, err := h.dashboardFile("fonts/" + name)
-	if err != nil {
-		sendJSON(w, 404, errorBody{Error: "missing build artifact: fonts/" + name})
-		return
-	}
-	send(w, 200, body, map[string]string{"Content-Type": "font/woff2", "Cache-Control": "no-store"})
-}
-
-// dashboardFile reads one dashboard file from the build resolved at creation.
-func (h *HttpServer) dashboardFile(name string) (string, error) {
-	body, err := fs.ReadFile(h.files, name)
-	if err != nil {
-		return "", err
-	}
-	return string(body), nil
 }
 
 // streamRoute answers one SSE request.

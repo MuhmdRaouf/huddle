@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 import { ICONS } from "../../src/radar/icons.ts";
 import { FAVICON_SVG, LOGO_SVG, svgDataUri } from "../../src/radar/logo.ts";
@@ -25,12 +23,8 @@ describe("the logo", () => {
     }
   });
 
-  it("is the page's favicon, inline, in its small drawing", () => {
-    const html = readFileSync(
-      join(import.meta.dirname, "../../../../internal/radar/web/dist/index.html"),
-      "utf8",
-    );
-    expect(html).toContain(`<link rel="icon" type="image/svg+xml" href='${svgDataUri(FAVICON_SVG)}' />`);
+  it("keeps the favicon the small drawing: data-URI safe, no 16 px blur, the logo keeps its glow", () => {
+    expect(decodeURIComponent(svgDataUri(FAVICON_SVG).slice("data:image/svg+xml,".length))).toBe(FAVICON_SVG);
     // the same drawing, less the pulse's soft glow, which blurs at 16 px
     expect(LOGO_SVG).toContain('filter="url(#obs-blur)"');
     expect(FAVICON_SVG).not.toContain("filter");
