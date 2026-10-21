@@ -51,7 +51,15 @@ func hostHuddleRouter(ctx context.Context, o Options) {
 // standaloneRouter says whether the pid runs `huddle router serve`: a standalone daemon, not
 // another hub, so the full edition takes its socket over instead of serving alone.
 func standaloneRouter(pid int) bool {
-	return strings.HasSuffix(routerd.CommandLine(pid), "router serve")
+	return isStandaloneRouterCommand(routerd.CommandLine(pid))
+}
+
+// isStandaloneRouterCommand reads a command line as `<binary> router serve [flags]`: the flags
+// matter because a memory handover or an update starts the daemon with --takeover, and that
+// daemon is as standalone as any other.
+func isStandaloneRouterCommand(command string) bool {
+	fields := strings.Fields(command)
+	return len(fields) >= 3 && fields[1] == "router" && fields[2] == "serve"
 }
 
 // routerEnv is the environment the hub's router goroutine reads: the process environment the
