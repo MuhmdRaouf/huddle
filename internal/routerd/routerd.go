@@ -164,6 +164,9 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	}
 	enabledFile := router.EnabledFile(env)
 	recordFile := filepath.Join(home, "run", "router.json")
+	// The baseline is taken before the first read: a provider enabled while the daemon starts
+	// changes the file after this snapshot, so the first poll reloads it instead of missing it.
+	before := statOf(enabledFile)
 	names, err := router.ReadEnabled(env)
 	if err != nil {
 		log("huddle-router: " + err.Error())
@@ -212,7 +215,6 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 		// A router without its record still serves; status and start are the ones that miss it.
 		log("huddle-router: " + err.Error())
 	}
-	before := statOf(enabledFile)
 	// The 0.0.1 setups move once per start: a machine the per-provider routers served joins
 	// huddle-router on its first serve, old routers retiring as their sessions' lanes come up.
 	go migrateOnce(ctx, env, log)
