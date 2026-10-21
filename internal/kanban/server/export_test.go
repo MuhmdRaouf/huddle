@@ -51,6 +51,12 @@ func payloadOf(t *testing.T, page string) exportedPage {
 	return payload
 }
 
+// referencedRe matches one file reference in a built or exported page: a
+// src/href whose value is path-like. Template pieces inside the app script's
+// own text (the markdown renderer's href="...") carry backticks or dollar
+// braces and never match.
+var referencedRe = regexp.MustCompile(`(?:src|href)="([A-Za-z0-9_@./#&+-]+)"`)
+
 // referencedAssets answers the asset names the built page references.
 func referencedAssets(t *testing.T) []string {
 	t.Helper()
@@ -58,9 +64,8 @@ func referencedAssets(t *testing.T) []string {
 	if err != nil {
 		t.Fatalf("read index.html: %v", err)
 	}
-	referenced := regexp.MustCompile(`(?:src|href)="([^"]+)"`)
 	var names []string
-	for _, match := range referenced.FindAllStringSubmatch(string(page), -1) {
+	for _, match := range referencedRe.FindAllStringSubmatch(string(page), -1) {
 		names = append(names, strings.TrimPrefix(match[1], "./"))
 	}
 	if len(names) == 0 {
@@ -82,10 +87,19 @@ func TestExportPage(t *testing.T) {
 			t.Errorf("count = %d, want 2", count)
 		}
 		html := string(page)
-		for _, banned := range []string{"<script src=", "<link href=", `src="./assets`, `href="./assets`} {
+		for _, banned := range []string{"<script src=", "<link href="} {
 			if strings.Contains(html, banned) {
 				t.Errorf("the page still references %q", banned)
 			}
+		}
+		// no file reference survives the inlining: the page answers every request from
+		// itself. Only path-like values count — the app script's own text carries
+		// href="..." template pieces the markdown renderer builds at run time.
+		if refs := referencedRe.FindAllString(html, -1); len(refs) > 0 {
+			t.Errorf("the page holds %d file references, want none: %q", len(refs), refs)
+		}
+		if got := strings.Count(html, "<style>"); got != 1 {
+			t.Errorf("the page holds %d inline styles, want exactly one", got)
 		}
 		if got := strings.Count(html, "<script"); got != 2 {
 			t.Errorf("the page holds %d scripts, want exactly the data script and the app script", got)
@@ -95,6 +109,10 @@ func TestExportPage(t *testing.T) {
 		}
 		if !strings.Contains(html, "<style>") {
 			t.Error("the stylesheet is not inlined")
+		}
+		// the page is the hub's board: one kanban-tab pane carries it
+		if !strings.Contains(html, "kanban-tab") {
+			t.Error("the page is not the hub's board: no kanban-tab pane")
 		}
 		// the data script runs before the app script reads it
 		data := strings.Index(html, "window.__KANBAN__")

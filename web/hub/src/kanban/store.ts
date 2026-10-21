@@ -259,14 +259,21 @@ export function searchFromFilters(filters: Filters, doneCount = 0): string {
  * refetches; a stream error hands the schedule back to our own backoff ladder.
  */
 export class BoardStore {
-  private state = initialBoardState();
+  private state: BoardState;
   private readonly listeners = new Set<() => void>();
   private stream: Stream | null = null;
   private timer: unknown = null;
   private attempt = 0;
   private readonly bodies = new Map<string, { at: string; ticket: Ticket }>();
 
-  constructor(private readonly io: Io) {}
+  /** A seed past the live initial state puts the store straight into that mode — the static
+   *  state an export carries, which has no stream to open and never schedules a reconnect. */
+  constructor(
+    private readonly io: Io,
+    seed: BoardState | null = null,
+  ) {
+    this.state = seed ?? initialBoardState();
+  }
 
   getState(): BoardState {
     return this.state;

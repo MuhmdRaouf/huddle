@@ -19,6 +19,8 @@ import {
   EMPTY_FILTERS,
   type Filters,
   filterCards,
+  type Io,
+  staticBoardState,
   togglePick,
   useDensity,
 } from "./store.ts";
@@ -49,12 +51,13 @@ function useBoards(): BoardsState {
   return state;
 }
 
-/** The one board's store: built and started per key, stopped on a key change or an unmount. */
-function useBoardStore(key: string): BoardStore | null {
+/** The one board's store: built over the io its caller hands in, seeded static when the page
+ *  carries an export payload, started once, stopped on an io change or an unmount. */
+function useBoardStore(io: Io): BoardStore | null {
   const [, setTick] = useState(0);
   const [store, setStore] = useState<BoardStore | null>(null);
   useEffect(() => {
-    const next = new BoardStore(boardIo(key));
+    const next = new BoardStore(io, staticBoardState(window));
     setStore(next);
     const release = next.subscribe(() => setTick((tick) => tick + 1));
     void next.start();
@@ -62,7 +65,7 @@ function useBoardStore(key: string): BoardStore | null {
       release();
       next.stop();
     };
-  }, [key]);
+  }, [io]);
   return store;
 }
 
@@ -83,17 +86,16 @@ function sharedValues(visible: ReturnType<typeof filterCards>): {
   return { tags, cluster };
 }
 
-/** The chosen board's page: the toolbar, the board and the drawer on the key's store. */
-function BoardPane({
-  boardKey,
-  boards,
-  onBoard,
+/** The chosen board's page: the toolbar, the board and the drawer on the io's store. The picker
+ *  rides along only when the caller hands one in — the standalone page has none. */
+export function BoardPane({
+  io,
+  picker,
 }: {
-  boardKey: string;
-  boards: BoardRef[];
-  onBoard: (key: string) => void;
+  io: Io;
+  picker?: { boards: BoardRef[]; boardKey: string; onBoard: (key: string) => void };
 }): JSX.Element {
-  const store = useBoardStore(boardKey);
+  const store = useBoardStore(io);
   const sel = useDrawerSelection();
   const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
   const [density, setDensity] = useDensity();
@@ -128,9 +130,7 @@ function BoardPane({
         cards={cards}
         filters={filters}
         onChange={setFilters}
-        boards={boards}
-        boardKey={boardKey}
-        onBoard={onBoard}
+        {...picker}
         epoch={snapshot?.epoch ?? 0}
         connected={state.connected}
         live={state.mode === "live"}
@@ -185,6 +185,9 @@ export function KanbanTab({ boardKey }: { boardKey: string | null }): JSX.Elemen
     location.hash = `#/kanban/${key}`;
   };
 
+  // the io changes only with the board, so the pane's store follows the address alone
+  const io = useMemo(() => (effective === null ? null : boardIo(effective)), [effective]);
+
   return (
     <div class="kanban-tab">
       {state.kind === "loading" && (
@@ -204,7 +207,9 @@ export function KanbanTab({ boardKey }: { boardKey: string | null }): JSX.Elemen
           <p role="status">{GONE_LINE}</p>
         </>
       )}
-      {effective !== null && <BoardPane boardKey={effective} boards={boards} onBoard={toAddress} />}
+      {effective !== null && io !== null && (
+        <BoardPane io={io} picker={{ boards, boardKey: effective, onBoard: toAddress }} />
+      )}
     </div>
   );
 }

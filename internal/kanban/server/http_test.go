@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -319,28 +320,31 @@ func TestStaticServesTheEmbeddedPage(t *testing.T) {
 		}
 	})
 
-	t.Run("every asset under assets/ answers 200 with its content type", func(t *testing.T) {
+	t.Run("every file the page references answers 200 with its content type", func(t *testing.T) {
 		wanted := map[string]string{
 			".js":  "text/javascript; charset=utf-8",
 			".css": "text/css; charset=utf-8",
 		}
+		page, err := fs.ReadFile(web.FS(), "index.html")
+		if err != nil {
+			t.Fatalf("read index.html: %v", err)
+		}
+		referenced := regexp.MustCompile(`(?:src|href)="([^"]+)"`)
+		names := referenced.FindAllStringSubmatch(string(page), -1)
+		if len(names) == 0 {
+			t.Fatal("index.html references no asset")
+		}
 		found := map[string]string{} // file extension -> the name to fetch
-		err := fs.WalkDir(web.FS(), ".", func(name string, entry fs.DirEntry, err error) error {
-			if err != nil || entry.IsDir() || !strings.HasPrefix(name, "assets/") {
-				return err
-			}
+		for _, match := range names {
+			name := strings.TrimPrefix(match[1], "./")
 			for ext := range wanted {
 				if strings.HasSuffix(name, ext) {
 					found[ext] = name
 				}
 			}
-			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
 		}
 		if len(found) != len(wanted) {
-			t.Fatalf("assets/ holds %d of %d kinds, want one file per kind", len(found), len(wanted))
+			t.Fatalf("the page references %d of %d kinds, want one file per kind", len(found), len(wanted))
 		}
 		for ext, name := range found {
 			response, err := http.Get(base + "/" + name)
@@ -359,7 +363,7 @@ func TestStaticServesTheEmbeddedPage(t *testing.T) {
 				t.Errorf("GET %s content type = %q, want %q", name, got, wanted[ext])
 			}
 			if len(body) == 0 {
-				t.Errorf("GET %s body is empty", name)
+				t.Errorf("GET %s answered an empty body", name)
 			}
 		}
 	})

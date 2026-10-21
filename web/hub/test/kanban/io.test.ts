@@ -1,7 +1,7 @@
 // io.test.ts — the huddle side of the kanban API: the board list, the per-key prefixes, the
 // non-2xx errors, and the browser event stream's wiring.
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { type BoardRef, boardIo, fetchBoards } from "../../src/kanban/io.ts";
+import { type BoardRef, boardIo, fetchBoards, ioAt, staticIo } from "../../src/kanban/io.ts";
 import type { StreamHandlers } from "../../src/kanban/types.ts";
 import { clone, snapshot, ticketUi } from "./helpers.ts";
 
@@ -47,6 +47,44 @@ describe("fetchBoards", () => {
   it("throws with the status when huddle refuses", async () => {
     stubFetch(() => reply({}, { ok: false, status: 503 }));
     await expect(fetchBoards()).rejects.toThrow("api/kanban/boards: 503");
+  });
+});
+
+describe("ioAt", () => {
+  it("fetches the board server's own paths over its base", async () => {
+    const calls = stubFetch((url) =>
+      url.endsWith("/api/board") ? reply(clone(snapshot)) : reply(clone(ticketUi)),
+    );
+    const io = ioAt("");
+    expect((await io.fetchSnapshot()).rev).toBe(snapshot.rev);
+    expect((await io.fetchTicket("KBN-UI")).card.id).toBe("KBN-UI");
+    expect(calls).toEqual(["/api/board", "/api/tickets/KBN-UI"]);
+  });
+});
+
+describe("staticIo", () => {
+  it("answers the exported snapshot and bodies with no network", async () => {
+    stubFetch(() => {
+      throw new Error("the exported page must not fetch");
+    });
+    const io = staticIo({ snapshot: clone(snapshot), bodies: { "KBN-UI": clone(ticketUi) } });
+    expect((await io.fetchSnapshot()).rev).toBe(snapshot.rev);
+    expect((await io.fetchTicket("KBN-UI")).card.id).toBe("KBN-UI");
+    await expect(io.fetchTicket("GONE")).rejects.toThrow("no exported body for GONE");
+  });
+
+  it("opens no stream: no handler fires and the store never reconnects", () => {
+    const io = staticIo({ snapshot: clone(snapshot), bodies: {} });
+    const fired: string[] = [];
+    const stream = io.connectEvents({
+      onSnapshot: () => fired.push("snapshot"),
+      onDelta: () => fired.push("delta"),
+      onReload: () => fired.push("reload"),
+      onOpen: () => fired.push("open"),
+      onError: () => fired.push("error"),
+    });
+    expect(fired).toEqual([]);
+    stream.close();
   });
 });
 

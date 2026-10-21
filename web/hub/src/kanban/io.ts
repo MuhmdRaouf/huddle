@@ -5,7 +5,7 @@
  */
 
 import type { Io } from "./store.ts";
-import type { Stream, StreamHandlers } from "./types.ts";
+import type { Snapshot, Stream, StreamHandlers, Ticket } from "./types.ts";
 
 /** One board huddle knows: its key (the API's address for it), the repo root it lives under. */
 export type BoardRef = { key: string; root: string; name: string };
@@ -42,9 +42,8 @@ function connectEvents(url: string, handlers: StreamHandlers): Stream {
   return { close: () => source.close() };
 }
 
-/** The browser's fetch and EventSource behind one board's store, every path under its key. */
-export function boardIo(key: string): Io {
-  const base = `/api/kanban/b/${encodeURIComponent(key)}`;
+/** The browser's fetch and EventSource behind one board's store, every path under one base. */
+export function ioAt(base: string): Io {
   return {
     fetchSnapshot: async () => {
       const response = await fetch(`${base}/api/board`);
@@ -57,6 +56,30 @@ export function boardIo(key: string): Io {
       return (await response.json()) as Awaited<ReturnType<Io["fetchTicket"]>>;
     },
     connectEvents: (handlers: StreamHandlers): Stream => connectEvents(`${base}/api/events`, handlers),
+    setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+    clearTimeout: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  };
+}
+
+/** The board's store over the hub, every path under its key. */
+export function boardIo(key: string): Io {
+  return ioAt(`/api/kanban/b/${encodeURIComponent(key)}`);
+}
+
+/**
+ * The exported board's IO: the snapshot and every ticket body come from the payload the page
+ * carries, nothing is fetched and no stream opens. The store the pane builds over it starts from
+ * the static state (mode "static"), so a closed page never shows the live dot or reconnecting.
+ */
+export function staticIo(payload: { snapshot: Snapshot; bodies: Record<string, Ticket> }): Io {
+  return {
+    fetchSnapshot: async () => payload.snapshot,
+    fetchTicket: async (id: string) => {
+      const ticket = payload.bodies[id];
+      if (ticket === undefined) throw new Error(`no exported body for ${id}`);
+      return ticket;
+    },
+    connectEvents: (): Stream => ({ close: () => {} }),
     setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
     clearTimeout: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   };

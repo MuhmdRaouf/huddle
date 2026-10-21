@@ -10,12 +10,13 @@ export type ToolbarProps = {
   cards: Card[];
   filters: Filters;
   onChange: (filters: Filters) => void;
-  /** the boards the picker lists, empty while the list is on its way */
-  boards: BoardRef[];
+  /** the boards the picker lists; the picker stands only when the boards are given (the
+   *  standalone page names its one board and carries no picker) */
+  boards?: BoardRef[];
   /** the open board's key, or none before one is adopted */
-  boardKey: string | null;
+  boardKey?: string | null;
   /** hands a picker choice up, as the address change that reopens the tab */
-  onBoard: (key: string) => void;
+  onBoard?: (key: string) => void;
   /** the board's epoch, named by the live dot */
   epoch: number;
   /** whether the stream is up, read by the live dot's title */
@@ -139,7 +140,9 @@ export function Toolbar({
   return (
     <>
       <div class="toolbar">
-        {boards.length > 0 && <BoardPicker boards={boards} boardKey={boardKey} onBoard={onBoard} />}
+        {boards !== undefined && boards.length > 0 && onBoard !== undefined && (
+          <BoardPicker boards={boards} boardKey={boardKey ?? null} onBoard={onBoard} />
+        )}
         {live && (
           <span class={`live-dot ${connected ? "on" : "off"}`} title={`epoch ${epoch}, ${liveWord}`}>
             <span class="sr-only">{liveWord}</span>
