@@ -174,6 +174,17 @@ type lastRequestEntry struct {
 	anyTokens bool
 }
 
+// The per-file windows: a streamed message's entries land within seconds, one after another,
+// so thousands of quiet files must not hold a wide window each for the watcher's whole life.
+const (
+	// streamOutputCap is the in-flight streams whose output side stays open per file.
+	streamOutputCap = 16
+	// whatInputCap is the remembered `what` inputs, one per stream that can still grow.
+	whatInputCap = 64
+	// pendingInputCap is the logged inputs, one per agent chain between its requests.
+	pendingInputCap = 32
+)
+
 // boundedMap is a string-keyed map in insertion order: re-setting a key makes it the newest,
 // and the oldest entry drops once the map grows past its cap, keeping a long transcript's
 // parser flat. A streamed rewrite lands within seconds, so a window of request ids is plenty.
@@ -256,6 +267,15 @@ func NewTranscriptState() *TranscriptState {
 		prompts:     map[string]struct{}{},
 		lastRequest: map[string]lastRequestEntry{},
 	}
+}
+
+// Compact empties the per-request windows a quiet file keeps — the streamed outputs, the
+// pending inputs and the remembered `what` inputs. Everything the file's next line still
+// needs (pending tools, titles, the last request) stays.
+func (s *TranscriptState) Compact() {
+	s.streamOutput = boundedMap[[]ContentBlock]{}
+	s.pendingInput = boundedMap[[]ContentBlock]{}
+	s.whatInput = boundedMap[string]{}
 }
 
 // rawObject is a transcript object read loosely: every field's raw JSON, because the lines
@@ -1321,7 +1341,7 @@ func captureContent(
 	for _, block := range contentBlocks(message) {
 		output = accumulateBlock(output, outputBlockOf(block))
 	}
-	state.streamOutput.set(requestID, output, 256)
+	state.streamOutput.set(requestID, output, streamOutputCap)
 	input, hasInput := takePendingInput(state, requestID, ctx)
 	capture := ContentCapture{RequestID: requestID}
 	if hasInput && len(input) > 0 {
@@ -1331,6 +1351,11 @@ func captureContent(
 		capture.Output = stringifyBlocks(output)
 	}
 	emit.Content = append(emit.Content, capture)
+	// a non-null stop_reason ends the request: its capture holds the whole output, so the
+	// window need not keep it open for a stream that will never grow
+	if _, ended := stringField(message, "stop_reason"); ended {
+		state.streamOutput.delete(requestID)
+	}
 	// the entry that took the logged input computes the `what`'s input side; a streamed
 	// message's later entries see no input of their own, so the remembered part stands in
 	var inputPart *string
@@ -1340,7 +1365,7 @@ func captureContent(
 	if hasInput {
 		if taken := inputPartOf(input); taken != nil {
 			inputPart = taken
-			state.whatInput.set(requestID, *taken, 256)
+			state.whatInput.set(requestID, *taken, whatInputCap)
 		}
 	}
 	return WhatOf(inputPart, output)
@@ -1586,7 +1611,7 @@ func captureUserInput(state *TranscriptState, message rawObject, ctx agentContex
 	if len(blocks) > 256 {
 		blocks = blocks[len(blocks)-256:]
 	}
-	state.pendingInput.set(ctx.agentTag, blocks, 256)
+	state.pendingInput.set(ctx.agentTag, blocks, pendingInputCap)
 }
 
 // FeedTranscriptLine parses one transcript line into records, updating the cross-line state

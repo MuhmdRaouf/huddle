@@ -1148,6 +1148,80 @@ func tailOf(text string) string {
 	return text
 }
 
+// unfinishedAssistant is one assistant entry whose stream has not ended: no stop_reason, so
+// the parser must keep its output window open.
+func unfinishedAssistant(requestID string, text string, ts int64) map[string]any {
+	line := assistantLine(assistantOverrides{
+		timestamp: strp(iso(ts)), requestID: strp(requestID),
+		content: []any{map[string]any{"type": "text", "text": text}},
+	})
+	line["message"].(map[string]any)["stop_reason"] = nil
+	return line
+}
+
+func TestStreamRetention(t *testing.T) {
+	t.Run("keeps at most 16 streamed outputs however many requests one file saw", func(t *testing.T) {
+		state := NewTranscriptState()
+		text := strings.Repeat("x", 4096)
+		for i := 0; i < 300; i++ {
+			feed(state, unfinishedAssistant(fmt.Sprintf("req-%03d", i), text, t1+int64(i)))
+		}
+		if got := state.streamOutput.len(); got > 16 {
+			t.Errorf("streamOutput holds %d outputs after 300 requests, want at most 16", got)
+		}
+		if !state.streamOutput.has("req-299") {
+			t.Errorf("streamOutput dropped the newest request, want req-299 kept")
+		}
+	})
+
+	t.Run("drops a finished stream's output once its capture holds it", func(t *testing.T) {
+		state := NewTranscriptState()
+		emit := feed(state, assistantLine(assistantOverrides{
+			timestamp: strp(iso(t1)), content: []any{map[string]any{"type": "text", "text": "Done"}},
+		}))
+		capture := firstCapture(t, emit)
+		if capture.Output == nil {
+			t.Fatalf("capture output = nil, want the finished text kept in the capture")
+		}
+		if state.streamOutput.len() != 0 {
+			t.Errorf("streamOutput holds %d outputs after a stop_reason, want none", state.streamOutput.len())
+		}
+		if state.streamOutput.has("req_9") {
+			t.Errorf("streamOutput kept the finished request's window, want it dropped")
+		}
+	})
+
+	t.Run("empties the streamed windows on Compact and keeps the cross-line state", func(t *testing.T) {
+		state := NewTranscriptState()
+		feed(state, map[string]any{
+			"type": "user", "timestamp": iso(t0), "message": map[string]any{"content": "hi"},
+		})
+		feed(state, unfinishedAssistant("req-1", "still streaming", t1))
+		feed(state, assistantLine(assistantOverrides{
+			timestamp: strp(iso(t1 + 1)), requestID: strp("req-2"),
+		})) // the default tool_use parks a pending tool
+		feed(state, map[string]any{
+			"type": "user", "timestamp": iso(t1 + 2), "message": map[string]any{"content": "next prompt"},
+		}) // a pending input waits for the next request
+		state.prompts["w1"] = struct{}{}
+		if state.streamOutput.len() == 0 || state.pendingInput.len() == 0 || state.whatInput.len() == 0 {
+			t.Fatalf("pre-Compact windows = %d/%d/%d outputs/pending/what, want all non-empty",
+				state.streamOutput.len(), state.pendingInput.len(), state.whatInput.len())
+		}
+		if state.pendingTools.len() == 0 || len(state.prompts) == 0 {
+			t.Fatalf("pre-Compact tools/prompts = %d/%d, want both non-empty", state.pendingTools.len(), len(state.prompts))
+		}
+		state.Compact()
+		if state.streamOutput.len() != 0 || state.pendingInput.len() != 0 || state.whatInput.len() != 0 {
+			t.Errorf("post-Compact windows = %d/%d/%d outputs/pending/what, want all empty",
+				state.streamOutput.len(), state.pendingInput.len(), state.whatInput.len())
+		}
+		if state.pendingTools.len() != 1 || len(state.prompts) != 1 {
+			t.Errorf("post-Compact tools/prompts = %d/%d, want both kept", state.pendingTools.len(), len(state.prompts))
+		}
+	})
+}
+
 func TestTheWhatLine(t *testing.T) {
 	defaultUser := func() map[string]any {
 		return map[string]any{

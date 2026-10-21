@@ -44,6 +44,11 @@ const SpoolWindowDays = 7
 // maxWalkDepth is how deep under the projects dir the transcript walk goes.
 const maxWalkDepth = 6
 
+// idleCompact is how long a transcript tail may sit without new bytes before its parser's
+// streamed windows are dropped: the file sits at its end, so no window can grow back, and
+// a new byte re-arms it on the read that brings it.
+const idleCompact = 10 * time.Minute
+
 // WatcherOptions configures the ingest loop. Now is the clock the cadences and windows read
 // (epoch ms); Alive decides who counts as a living pid in the session registry; NewTicker builds
 // the poll clock, so tests drive the interval by hand. Log receives the one line a failing
@@ -69,6 +74,10 @@ type fileTail struct {
 	tail     TailState
 	parser   *TranscriptState
 	identity FileIdentity
+	// lastGrowthMs is when the tail last read new bytes: idle compaction counts from it.
+	lastGrowthMs int64
+	// compacted is that the parser's windows were emptied since the last growth.
+	compacted bool
 }
 
 // upstreamAt is one base URL a session's hooks reported, at the moment they reported it.
@@ -604,7 +613,10 @@ func (w *Watcher) transcriptTail(path string) *fileTail {
 			identity.AgentMeta = meta
 		}
 	}
-	return &fileTail{path: path, tail: OpenTail(path), parser: NewTranscriptState(), identity: identity}
+	return &fileTail{
+		path: path, tail: OpenTail(path), parser: NewTranscriptState(), identity: identity,
+		lastGrowthMs: w.now(), // a fresh tail is not ancient history: the idle mark starts now
+	}
 }
 
 // registryTranscriptOf is a live registry session's transcript under the projects dir, since
@@ -1410,6 +1422,22 @@ func (w *Watcher) scanDir(dir string) ([]string, []walkDir) {
 	return paths, walkDirs
 }
 
+// noteTailRead records a transcript tail read's outcome. New bytes re-arm the parser's
+// windows and move the idle mark; a read that found nothing past idleCompact drops them,
+// once — thousands of quiet files must not hold their last streams for the watcher's life.
+func (w *Watcher) noteTailRead(tail *fileTail, grew bool) {
+	if grew {
+		tail.lastGrowthMs = w.now()
+		tail.compacted = false
+		return
+	}
+	if tail.compacted || w.now()-tail.lastGrowthMs < idleCompact.Milliseconds() {
+		return
+	}
+	tail.parser.Compact()
+	tail.compacted = true
+}
+
 // stepTailing feeds every tailed transcript's new lines, in discovery order, one line a step.
 func (p *passWork) stepTailing() bool {
 	if !p.tailsSnapshotted {
@@ -1427,6 +1455,7 @@ func (p *passWork) stepTailing() bool {
 		tail := p.tailSnapshot[p.tailAt]
 		p.tailAt++
 		result := TailFile(&tail.tail, TailChunkBytes)
+		p.w.noteTailRead(tail, len(result.Lines) > 0)
 		if len(result.Lines) == 0 {
 			continue
 		}
