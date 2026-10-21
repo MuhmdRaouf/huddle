@@ -661,6 +661,18 @@ func clampMS(ms time.Duration, max int) int {
 	return whole
 }
 
+// MemoryLimitOf answers the hub's soft memory limit in bytes: HUDDLE_MEMORY_LIMIT_MB as a
+// positive number of MiB, else 512 MiB. The serve entry hands it to debug.SetMemoryLimit
+// once before the server starts: the GC then returns memory long before the heap doubles,
+// and the limit stays soft — a genuinely bigger live heap still runs.
+func MemoryLimitOf(env func(string) string) int64 {
+	const fallback = 512 << 20
+	if n, err := strconv.Atoi(env("HUDDLE_MEMORY_LIMIT_MB")); err == nil && n > 0 {
+		return int64(n) << 20
+	}
+	return fallback
+}
+
 // withoutRouterProxies drops the proxy variables whose value names a router of ours — one on
 // the known ports, or the router on its own port (`HUDDLE_ROUTER_PORT`, else 18786). Pure: no
 // probe; the daemon asks its loopback proxies for a health answer itself (routerd.CleanProxyEnv).

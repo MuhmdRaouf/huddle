@@ -836,12 +836,18 @@ func headersOf(text *string) *shared.Headers {
 
 // The content table: each side gzipped, with its plain length beside it.
 
+// gzipWriters reuses compressors: a gzip.Writer carries about 1 MB of state, and the history
+// gzips every stored side, so a writer per side was most of the hub's allocation.
+var gzipWriters = sync.Pool{New: func() any { return gzip.NewWriter(io.Discard) }}
+
 // gzipBytes compresses one side the way the store writes it.
 func gzipBytes(text string) []byte {
 	var buf bytes.Buffer
-	writer := gzip.NewWriter(&buf)
+	writer := gzipWriters.Get().(*gzip.Writer)
+	writer.Reset(&buf)
 	_, _ = writer.Write([]byte(text))
 	_ = writer.Close()
+	gzipWriters.Put(writer)
 	return buf.Bytes()
 }
 

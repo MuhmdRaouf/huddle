@@ -449,6 +449,7 @@ applies to a router hosted by the hub, whose memory is the hub's to manage.
 | `kanban: command not found` | First run downloads the binary; `/huddle:status` waits it out |
 | `502 anthropic unreachable (<code>)` | The code in parentheses names the cause: `ECERT` is a certificate check that failed. huddle-router never routes through another router, so restart sessions started before an update |
 | "Claude cannot reach Anthropic through huddle-router" alert | Three `claude-*` failures in a minute raise it and the first request that gets through clears it; the alert names the code and the fix — ECERT means sessions started before an update need a restart, ECONNREFUSED means check `HTTPS_PROXY`, ETIMEDOUT means check the network |
+| The hub's memory grows while radar catches up | The hub keeps its heap under a soft 512 MiB limit; `HUDDLE_MEMORY_LIMIT_MB` sets another size in MiB before the hub starts |
 | Something looks wrong | The log is `<home>/run/huddle.log`, the pid and port beside it |
 
 The details behind the quick fixes:

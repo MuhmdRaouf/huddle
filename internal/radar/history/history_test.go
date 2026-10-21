@@ -1,18 +1,23 @@
 package history
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
+	"github.com/MuhmdRaouf/huddle/internal/testkit"
 )
 
 // The history surface over temp directories: the opener's file rules, the reads a v1
@@ -3235,4 +3240,80 @@ func TestStoredJSONColumnsKeepJSONStringifyBytes(t *testing.T) {
 			t.Errorf("payload = %v, want %s", got, raw)
 		}
 	})
+}
+
+// TestGzipBytesReusesItsCompressor pins what storing a side costs: a gzip.Writer carries
+// about 1 MB of compressor state, so a writer per stored side made radar's catch-up the
+// hub's main allocation. The pooled writer keeps one state across calls, round-trips every
+// size whole, and writes exactly the bytes a fresh writer writes.
+func TestGzipBytesReusesItsCompressor(t *testing.T) {
+	fourKiB := strings.Repeat("huddle ", 585) // 4,095 bytes of plain text
+	oneMiB := strings.Repeat("huddle ", 149_596)
+
+	t.Run("round trips an empty, a 4 KiB and a 1 MiB side", func(t *testing.T) {
+		for _, text := range []string{"", fourKiB, oneMiB} {
+			got, err := gunzipBytes(gzipBytes(text))
+			if err != nil {
+				t.Fatalf("gunzip %d bytes: %v", len(text), err)
+			}
+			if got != text {
+				t.Fatalf("a %d-byte side came back %d bytes", len(text), len(got))
+			}
+		}
+	})
+
+	t.Run("writes what a fresh gzip.Writer writes", func(t *testing.T) {
+		var buf bytes.Buffer
+		writer := gzip.NewWriter(&buf)
+		_, _ = writer.Write([]byte(fourKiB))
+		_ = writer.Close()
+		if !bytes.Equal(gzipBytes(fourKiB), buf.Bytes()) {
+			t.Fatal("the pooled writer's bytes differ from a fresh writer's")
+		}
+	})
+
+	t.Run("2,000 sides of 4 KiB allocate under 64 MiB", func(t *testing.T) {
+		limit := uint64(64 << 20)
+		if testkit.RaceEnabled {
+			// the detector's own allocations ride along (about 530 MiB here against about
+			// 2 GiB with a writer per side), so the bound scales up and still pins the pool
+			limit = 1 << 30
+		}
+		gzipBytes(fourKiB) // the pool warms: the first compressor's build is not the churn
+		var before runtime.MemStats
+		runtime.ReadMemStats(&before)
+		for i := 0; i < 2_000; i++ {
+			gzipBytes(fourKiB)
+		}
+		var after runtime.MemStats
+		runtime.ReadMemStats(&after)
+		if grew := after.TotalAlloc - before.TotalAlloc; grew >= limit {
+			t.Fatalf("2,000 gzipBytes of 4 KiB allocated %d MiB; want under %d MiB", grew>>20, limit>>20)
+		}
+	})
+}
+
+// TestGzipBytesUnderConcurrency shares the pool across writers: sides gzipped from several
+// goroutines at once round-trip whole, under -race.
+func TestGzipBytesUnderConcurrency(t *testing.T) {
+	text := strings.Repeat("huddle ", 585)
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				got, err := gunzipBytes(gzipBytes(text))
+				if err != nil {
+					t.Errorf("gunzip: %v", err)
+					return
+				}
+				if got != text {
+					t.Errorf("a side came back %d bytes, want %d", len(got), len(text))
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }

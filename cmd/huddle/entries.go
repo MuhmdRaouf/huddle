@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
@@ -52,6 +53,10 @@ var entries = map[string]entry{
 // owns the home. The process environment rides along for the radar tab (RADAR_HOME, the
 // transcripts' config dir, the providers' state dirs).
 func serveEntry(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	// The GC returns memory long before the heap doubles: this soft cap keeps a hub that is
+	// catching up on transcripts light, and a bigger live heap still runs. The CLI words
+	// never set it — this is the serve path's own process.
+	debug.SetMemoryLimit(cli.MemoryLimitOf(os.Getenv))
 	options := server.OptionsFromEnv(version, os.Getenv, stdout, stderr, os.Stdin)
 	if options.Home != "" {
 		if err := (home.Home{Root: options.Home}).Ensure(ctx); err != nil {
