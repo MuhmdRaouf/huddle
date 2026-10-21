@@ -80,13 +80,13 @@ func Watch(ctx context.Context, o WatchOptions) {
 	start := o.Start
 	if start == nil {
 		start = func(ctx context.Context) error {
-			_, err := Start(ctx, StartOptions{Env: env, Executable: watchExecutable(), BudgetMs: watchStartBudgetMs})
+			_, err := Start(ctx, StartOptions{Env: env, Executable: watchExecutable(env), BudgetMs: watchStartBudgetMs})
 			return err
 		}
 	}
 	replace := o.Replace
 	if replace == nil {
-		replace = func(ctx context.Context, pid int) bool { return replaceHungRouter(ctx, watchSelf(), pid) }
+		replace = func(ctx context.Context, pid int) bool { return replaceHungRouter(ctx, watchSelf(env), pid) }
 	}
 	log := o.Log
 	if log == nil {
@@ -206,16 +206,14 @@ func replaceHungRouter(ctx context.Context, self string, pid int) bool {
 	return true
 }
 
-// watchExecutable is the binary a start spawns the daemon from: this process's own.
-func watchExecutable() string {
-	if self, err := os.Executable(); err == nil {
-		return self
-	}
-	return os.Args[0]
+// watchExecutable is the binary a start spawns the daemon from: one that exists now, so a
+// session that outlived its own build still starts the launcher's current one.
+func watchExecutable(env domain.EnvLookup) string {
+	return process.LiveExecutable(env)
 }
 
 // watchSelf is the binary's name as a command line names it: the token a hung daemon's argv must
 // carry for the replacement to take it.
-func watchSelf() string {
-	return filepath.Base(watchExecutable())
+func watchSelf(env domain.EnvLookup) string {
+	return filepath.Base(watchExecutable(env))
 }

@@ -383,13 +383,14 @@ func TestSessionWatchdogRows(t *testing.T) {
 func TestReplaceHungRouterNeverTouchesWhatIsNotTheDaemon(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	if replaceHungRouter(ctx, watchSelf(), 0) {
+	self := watchSelf(domain.EnvLookup{})
+	if replaceHungRouter(ctx, self, 0) {
 		t.Error("replaceHungRouter(0) = true, want false")
 	}
-	if replaceHungRouter(ctx, watchSelf(), 1) {
+	if replaceHungRouter(ctx, self, 1) {
 		t.Error("replaceHungRouter(1) = true, want false")
 	}
-	if replaceHungRouter(ctx, watchSelf(), os.Getpid()) {
+	if replaceHungRouter(ctx, self, os.Getpid()) {
 		t.Error("replaceHungRouter(this process) = true, want false")
 	}
 }

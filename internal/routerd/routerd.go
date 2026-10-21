@@ -211,7 +211,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	// update a legacy port may refuse connections for up to a second.
 	stopAdopting := adoptLegacyPorts(ctx, env, server, log)
 	defer stopAdopting()
-	if err := writeRecord(ctx, recordFile, port, o.Version, selfExecutable()); err != nil {
+	if err := writeRecord(ctx, recordFile, port, o.Version, runningExecutable()); err != nil {
 		// A router without its record still serves; status and start are the ones that miss it.
 		log("huddle-router: " + err.Error())
 	}

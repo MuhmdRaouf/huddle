@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/singleton"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
@@ -284,7 +285,7 @@ func checkRSS(ceiling int64, spawned time.Time, env domain.EnvLookup, log func(l
 		return time.Now()
 	}
 	defer logFile.Close()
-	if err := spawnServeArgs(selfExecutable(), env, logFile, "--takeover"); err != nil {
+	if err := spawnServeArgs(selfExecutable(env), env, logFile, "--takeover"); err != nil {
 		log("huddle-router: " + err.Error())
 	}
 	return time.Now()
@@ -343,8 +344,17 @@ func CommandLine(pid int) string {
 	return strings.TrimSpace(string(out))
 }
 
-// selfExecutable is this process's own binary, for a daemon that spawns its own replacement.
-func selfExecutable() string {
+// selfExecutable is a binary that exists now, for a daemon that spawns its own replacement: a
+// build the launcher has since deleted would fail the spawn, so the launcher's `current` link
+// names the binary to hand over to.
+func selfExecutable(env domain.EnvLookup) string {
+	return process.LiveExecutable(env)
+}
+
+// runningExecutable is the binary this process runs from, even when the launcher has deleted it:
+// the record must name it, because a start compares it with its own binary to decide on an update,
+// and a record naming the `current` link would hide an old daemon from the newer build.
+func runningExecutable() string {
 	if self, err := os.Executable(); err == nil {
 		return self
 	}

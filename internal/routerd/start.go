@@ -167,7 +167,7 @@ func (o StartOptions) executable() string {
 	if o.Executable != "" {
 		return o.Executable
 	}
-	return selfExecutable()
+	return selfExecutable(o.Env)
 }
 
 // updatedOrUp is a start's answer when a healthy daemon already serves: when the daemon's

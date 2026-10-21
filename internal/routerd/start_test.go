@@ -105,7 +105,7 @@ func TestStartAnswersWithoutSpawningWhereItCan(t *testing.T) {
 		t.Parallel()
 		env := startEnv(t)
 		healthFake(t, env, http.StatusOK, healthBody("zai"))
-		writeStartRecord(t, env, record{PID: os.Getpid(), Port: 1, Executable: selfExecutable(), Started: "now"})
+		writeStartRecord(t, env, record{PID: os.Getpid(), Port: 1, Executable: selfExecutable(env), Started: "now"})
 		line, err := Start(context.Background(), StartOptions{Env: env})
 		if err != nil || !strings.Contains(line, "zai") {
 			t.Fatalf("Start = %q, %v, want the quiet line", line, err)
@@ -675,6 +675,20 @@ func gone(pid int) bool {
 func TestStartSpawnsTheRealBinaryAndWaitsForItsHealth(t *testing.T) {
 	bin := spawnBinary(t)
 	env, _ := spawnEnv(t)
+	// A launcher home whose `current` names another build: the daemon's record must still name
+	// the binary it runs from, or a start from the newer build would see no update to make.
+	launcher := t.TempDir()
+	newer := filepath.Join(launcher, "src", "newer", "huddle")
+	if err := os.MkdirAll(filepath.Dir(newer), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newer, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("src", "newer", "huddle"), filepath.Join(launcher, "current")); err != nil {
+		t.Fatal(err)
+	}
+	env["AGENTS_HUDDLE_HOME"] = launcher
 
 	t.Run("a start with no daemon spawns one and names what it serves", func(t *testing.T) {
 		var line string

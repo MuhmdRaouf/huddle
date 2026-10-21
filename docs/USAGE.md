@@ -451,6 +451,7 @@ applies to a router hosted by the hub, whose memory is the hub's to manage.
 | "Claude cannot reach Anthropic through huddle-router" alert | Three `claude-*` failures in a minute raise it and the first request that gets through clears it; the alert names the code and the fix — ECERT means sessions started before an update need a restart, ECONNREFUSED means check `HTTPS_PROXY`, ETIMEDOUT means check the network |
 | The hub's memory grows while radar catches up | The hub keeps its heap under a soft 1 GiB limit; `HUDDLE_MEMORY_LIMIT_MB` sets another size in MiB before the hub starts |
 | The hub idles at more memory than its data needs | The hub runs at `GOGC=50`, so its heap stays near the data it holds; a `GOGC` you set before the hub starts takes its place |
+| A session from before a plugin update | Its watchdog starts the router from the launcher's `current` link, so an old session still brings the router back after plugin updates removed its own build |
 | Something looks wrong | The log is `<home>/run/huddle.log`, the pid and port beside it |
 
 The details behind the quick fixes:
