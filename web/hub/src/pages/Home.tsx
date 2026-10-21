@@ -168,7 +168,9 @@ export function ChannelCard({
         data-ch={c.name}
       >
         <ChannelHead c={c} />
-        <div class="mt-auto flex flex-wrap items-center gap-x-5 gap-y-3 border-t hairline pt-4 text-xs muted">
+        <div
+          class={`mt-auto flex flex-wrap items-center gap-x-5 gap-y-3 border-t hairline pt-4 text-xs muted${onRemove ? " pr-10" : ""}`}
+        >
           <OnlineCell on={c.sessions ?? []} />
           <TasksCell st={st} />
           <LastCell st={st} />
@@ -177,15 +179,17 @@ export function ChannelCard({
       {onRemove ? (
         <button
           type="button"
-          class="btn btn-ghost btn-xs absolute right-4 bottom-5"
+          class="btn btn-ghost btn-square btn-xs absolute right-4 bottom-4 text-base-content/60 hover:text-error"
           data-remove={c.name}
+          aria-label={`Remove channel ${c.name}`}
+          title="Remove channel"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
             onRemove(c);
           }}
         >
-          <Icon name="trash" class="size-3.5" /> Remove channel
+          <Icon name="trash" class="size-3.5" />
         </button>
       ) : null}
     </div>

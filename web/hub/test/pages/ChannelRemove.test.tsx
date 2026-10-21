@@ -1,10 +1,10 @@
 // ChannelRemove.test.tsx — the Remove channel action on the channel cards: the creator's browser
 // alone sees it, the confirmation names the channel and its kept history, a success drops the
 // card, a refusal says the server's error in the confirmation.
-import { act } from "@testing-library/preact";
+import { act, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api, ApiOptions } from "../../src/api.ts";
-import { Home, type ChannelRow } from "../../src/pages/Home.tsx";
+import { ChannelCard, Home, type ChannelRow } from "../../src/pages/Home.tsx";
 import { flush, makeCtx, makeState, renderIn } from "../helpers.tsx";
 
 beforeEach(() => {
@@ -141,5 +141,32 @@ describe("the Remove channel action", () => {
     await flush();
     expect(dlg.open).toBe(true);
     expect(dlg.textContent).toContain("old has 1 session(s) online");
+  });
+});
+
+describe("the card's remove button", () => {
+  // Fresh rows: homeData sorts the shared ROWS array in place, so its indexes are not stable.
+  const rmRow: ChannelRow = { name: "old", title: "Old", needs: 0 };
+  const bareRow: ChannelRow = { name: "live", title: "Live", needs: 1 };
+
+  it("is an icon-only button whose accessible name names the channel, with a tooltip", () => {
+    renderIn(<ChannelCard c={rmRow} onRemove={() => {}} />);
+    const btn = screen.getByRole("button", { name: "Remove channel old" });
+    expect(btn.getAttribute("title")).toBe("Remove channel");
+    expect(btn.textContent.trim()).toBe(""); // the trash icon only, no visible text to overlap a cell
+  });
+
+  it("gives the footer room for the button only when the card has one", () => {
+    renderIn(
+      <div>
+        <ChannelCard c={rmRow} onRemove={() => {}} />
+        <ChannelCard c={bareRow} />
+      </div>,
+    );
+    const foot = (screen.getAllByTitle("Last event")[0] as HTMLElement).parentElement as HTMLElement;
+    expect(foot.classList.contains("pr-10")).toBe(true);
+    const bare = (screen.getAllByTitle("Last event")[1] as HTMLElement).parentElement as HTMLElement;
+    expect(bare.classList.contains("pr-10")).toBe(false);
+    expect(bare.querySelector("[data-remove]")).toBeNull();
   });
 });
