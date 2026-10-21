@@ -21,7 +21,7 @@ func TestIsHarness(t *testing.T) {
 	said["Caveat: the messages below were generated"] = true
 	// the person's words, a slash command and a tag that only looks like a wrapper
 	said["fix the login bug"] = false
-	said["/huddle:join 127.0.0.1:18860"] = false
+	said["/huddle:join 127.0.0.1:4100"] = false
 	said["<div> is misaligned"] = false
 	said["plain words"] = false
 	said["<b>not a wrapper</b>"] = false
