@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unique"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
@@ -93,16 +94,44 @@ type packed struct {
 	slots int
 }
 
-// dayFile is one local day's ledger: its rows keyed by request id, and the session and agent
-// names on record.
+// dayFile is one local day's ledger: its rows keyed by request id, the session and agent
+// names on record, and the one *string per distinct optional value its rows share.
 type dayFile struct {
 	rows     orderedMap[packed]
 	sessions orderedMap[SessionNames]
 	agents   orderedMap[AgentNames]
+	// texts holds one pointer per distinct Speed, Geo or ServiceTier text this day's rows
+	// carry — a handful of values, so rows share a pointer instead of holding an allocation
+	// each.
+	texts map[string]*string
 }
 
 // emptyDay is a day nothing has landed in yet.
 func emptyDay() *dayFile { return &dayFile{} }
+
+// canonical is one shared copy of a string: models, session ids and agent ids repeat across
+// hundreds of thousands of rows, and unique hands every equal string the same copy, which the
+// runtime frees when no row references it anymore.
+func canonical(s string) string { return unique.Make(s).Value() }
+
+// canonicalPtr is an optional string's pointer shared by every row of the day carrying the
+// same text, nil staying nil. Rows must never be written through it: every holder assumes the
+// text is fixed.
+func (d *dayFile) canonicalPtr(text *string) *string {
+	if text == nil {
+		return nil
+	}
+	if known, ok := d.texts[*text]; ok {
+		return known
+	}
+	value := canonical(*text)
+	ptr := &value
+	if d.texts == nil {
+		d.texts = make(map[string]*string)
+	}
+	d.texts[*text] = ptr
+	return ptr
+}
 
 // Ledger is the usage ledger: every model request radar has seen, kept for LedgerDays in one
 // small JSON file per local day. A request seen again (a stream update, a restart re-reading
@@ -250,11 +279,12 @@ func (l *Ledger) Record(request shared.RequestRecord) {
 		}
 		l.changed(previous)
 	}
-	row := packRow(request)
-	if current, ok := l.dayOf(key).rows.get(request.ID); ok && equalPacked(current, row) {
+	day := l.dayOf(key)
+	row := day.packRow(request)
+	if current, ok := day.rows.get(request.ID); ok && equalPacked(current, row) {
 		return
 	}
-	l.dayOf(key).rows.set(request.ID, row)
+	day.rows.set(request.ID, row)
 	l.dayOfID[request.ID] = key
 	l.changed(key)
 }
@@ -375,13 +405,13 @@ func writeDay(dir, key string, entry *dayFile) error {
 	return os.Rename(tmp, path)
 }
 
-// packRow is a request as it lands on disk.
-func packRow(request shared.RequestRecord) packed {
+// packRow is a request as it lands on disk, its repeated strings interned on the day.
+func (d *dayFile) packRow(request shared.RequestRecord) packed {
 	row := packed{
 		Ts:         request.Ts,
-		Model:      request.Model,
-		SessionID:  request.SessionID,
-		AgentID:    request.AgentID,
+		Model:      canonical(request.Model),
+		SessionID:  canonical(request.SessionID),
+		AgentID:    canonical(request.AgentID),
 		Input:      request.Tokens.Input,
 		Output:     request.Tokens.Output,
 		CacheRead:  request.Tokens.CacheRead,
@@ -391,9 +421,9 @@ func packRow(request shared.RequestRecord) packed {
 	if request.CacheWrite1h != nil {
 		row.CacheWrite1h = int64Ptr(*request.CacheWrite1h)
 	}
-	row.Speed = textCopy(request.Speed)
-	row.Geo = textCopy(request.Geo)
-	row.ServiceTier = textCopy(request.ServiceTier)
+	row.Speed = d.canonicalPtr(request.Speed)
+	row.Geo = d.canonicalPtr(request.Geo)
+	row.ServiceTier = d.canonicalPtr(request.ServiceTier)
 	return row
 }
 
@@ -436,7 +466,7 @@ func parseDay(text string) *dayFile {
 	agents := lastFieldOf(value, "agents")
 	if rows != nil && rows.Kind() == jsfmt.KindObject {
 		for i, id := range rows.Keys() {
-			if row, ok := parsePacked(rows.Fields()[i]); ok {
+			if row, ok := day.parsePacked(rows.Fields()[i]); ok {
 				day.rows.set(id, row)
 			}
 		}
@@ -469,8 +499,9 @@ func lastFieldOf(object *jsfmt.Value, key string) *jsfmt.Value {
 }
 
 // parsePacked reads a row's slots, ok false when the row is not well-formed. Token counts
-// are counts, so a figure that is not an integer reads as malformed.
-func parsePacked(value *jsfmt.Value) (packed, bool) {
+// are counts, so a figure that is not an integer reads as malformed. The row's repeated
+// strings intern on the day, so rows never carry the decoder's own copy.
+func (d *dayFile) parsePacked(value *jsfmt.Value) (packed, bool) {
 	if value.Kind() != jsfmt.KindArray {
 		return packed{}, false
 	}
@@ -494,7 +525,10 @@ func parsePacked(value *jsfmt.Value) (packed, bool) {
 	if !ok {
 		return packed{}, false
 	}
-	row := packed{Ts: ts, Model: model, SessionID: sessionID, AgentID: agentID, slots: len(items)}
+	row := packed{
+		Ts: ts, Model: canonical(model), SessionID: canonical(sessionID), AgentID: canonical(agentID),
+		slots: len(items),
+	}
 	counts := []*int64{&row.Input, &row.Output, &row.CacheRead, &row.CacheWrite}
 	for i, item := range items[4:8] {
 		count, ok := numberValue(item)
@@ -520,7 +554,7 @@ func parsePacked(value *jsfmt.Value) (packed, bool) {
 			continue
 		}
 		if text, ok := stringValue(item); ok {
-			*texts[i] = textPtr(text)
+			*texts[i] = d.canonicalPtr(&text)
 			continue
 		}
 		return packed{}, false
