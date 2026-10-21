@@ -231,6 +231,23 @@ describe("routes and panes", () => {
     expect(document.querySelector("[data-view-tabs]")).toBeNull();
   });
 
+  it("names the channels list once on the phone and keeps the intro's description", () => {
+    nav("#/channels");
+    mountApp({ home: () => <div>channels page</div> });
+    expect(screen.getAllByRole("heading", { name: "Channels" })).toHaveLength(1);
+    expect(
+      screen.getByText("Each channel is one team of sessions. The ones that need you come first."),
+    ).toBeDefined();
+  });
+
+  it("keeps the channels intro's own heading on desktop", () => {
+    stubMedia(DESKTOP);
+    nav("#/channels");
+    mountApp({ home: () => <div>channels page</div> });
+    expect(screen.getAllByRole("heading", { name: "Channels" })).toHaveLength(1);
+    expect(document.querySelector("[data-page-intro] h1")?.textContent).toBe("Channels");
+  });
+
   it("renders Radar's views as sub-tabs with the named one current", () => {
     nav("#/radar/costs");
     mountApp();

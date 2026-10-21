@@ -13,22 +13,28 @@ export type PageIntroProps = {
   description: ComponentChildren;
   /** Buttons, filters or a range picker that act on the whole page. */
   actions?: ComponentChildren;
+  /** Drops the icon tile and the title when the screen's own header already names the page. */
+  bare?: boolean;
 };
 
 /** The top of a page: icon tile, title and description on the left, the page's actions on the right. */
-export function PageIntro({ icon, title, description, actions }: PageIntroProps): JSX.Element {
+export function PageIntro({ icon, title, description, actions, bare = false }: PageIntroProps): JSX.Element {
   return (
     <header class="mb-5 flex flex-wrap items-start gap-x-6 gap-y-3" data-page-intro>
       <div class="flex min-w-0 flex-1 items-start gap-4">
-        <span
-          class="neon-tile grid size-11 shrink-0 place-items-center rounded-box [&_svg]:size-5.5"
-          aria-hidden="true"
-        >
-          {icon}
-        </span>
+        {bare ? null : (
+          <span
+            class="neon-tile grid size-11 shrink-0 place-items-center rounded-box [&_svg]:size-5.5"
+            aria-hidden="true"
+          >
+            {icon}
+          </span>
+        )}
         <div class="min-w-0">
-          <h1 class="text-2xl font-semibold leading-tight tracking-tight">{title}</h1>
-          <p class="mt-1 max-w-[72ch] text-[0.9375rem] leading-snug text-base-content/65">{description}</p>
+          {bare ? null : <h1 class="text-2xl font-semibold leading-tight tracking-tight">{title}</h1>}
+          <p class={`max-w-[72ch] text-[0.9375rem] leading-snug text-base-content/65${bare ? "" : " mt-1"}`}>
+            {description}
+          </p>
         </div>
       </div>
       {actions ? <div class="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}

@@ -19,6 +19,22 @@ describe("PageIntro", () => {
     expect(screen.getByText("Every API call.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
   });
+
+  it("bare drops the icon tile and the heading, keeping the description and the actions", () => {
+    const { container } = render(
+      <PageIntro
+        bare
+        icon={<svg />}
+        title="Requests"
+        description="Every API call."
+        actions={<button type="button">Export</button>}
+      />,
+    );
+    expect(container.querySelector("h1")).toBeNull();
+    expect(container.querySelector(".neon-tile")).toBeNull();
+    expect(screen.getByText("Every API call.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
+  });
 });
 
 describe("Panel", () => {

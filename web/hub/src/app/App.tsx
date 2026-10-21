@@ -749,6 +749,7 @@ export function App({
               <PageIntro
                 icon={<Icon name={meta.icon} />}
                 title={meta.label}
+                bare={layout === "phone" && meta.label === tabLabel(route.tab)}
                 description={introDescription(route.dest as Dest, state, ch, now)}
                 actions={introActions}
               />

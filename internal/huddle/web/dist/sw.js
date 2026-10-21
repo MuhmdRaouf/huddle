@@ -1,10 +1,10 @@
 /* sw.js — the app-shell service worker (SPEC 7.1). Hand-written, no Workbox. It caches the
  * static shell and nothing else: live answers — the API, the MCP bridge, the SSE stream — are
  * always the network's, and so is every path it does not know. The cache name carries the
- * shell's revision (scripts/build.mjs stamps 2422ea611ece8a99b53e33bd9769115391348bf60589da436860fa63d32df0a9 with a hash of the shell's bytes), so a new
+ * shell's revision (scripts/build.mjs stamps 613a8ea5899fe75e40b25d6dc7c2825d4a45605a3e7270adefb3d6fca1282172 with a hash of the shell's bytes), so a new
  * build installs beside the old cache and activate deletes the old one. */
 (function () {
-  var REV = "2422ea611ece8a99b53e33bd9769115391348bf60589da436860fa63d32df0a9";
+  var REV = "613a8ea5899fe75e40b25d6dc7c2825d4a45605a3e7270adefb3d6fca1282172";
   var CACHE = "huddle-shell-" + REV;
   var SHELL = [
     "/",
