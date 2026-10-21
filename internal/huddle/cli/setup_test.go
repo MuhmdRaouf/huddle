@@ -537,6 +537,214 @@ func TestSetupKnowsItsOwnServerThroughAnySpellingOfOnePath(t *testing.T) {
 	}
 }
 
+// joinEcho answers a join the way the server does: the token's channel and name echoed back.
+func joinEcho(call fakeCall) (int, string) {
+	name := regexp.MustCompile(`"name":"([^"]*)"`).FindStringSubmatch(call.Body)
+	channel := regexp.MustCompile(`"channel":"([^"]*)"`).FindStringSubmatch(call.Body)
+	n, c := "", ""
+	if name != nil {
+		n = name[1]
+	}
+	if channel != nil {
+		c = channel[1]
+	}
+	return 200, `{"name":` + quoteJSON(n) + `,"channel":` + quoteJSON(c) + `,"credential":"hcred_member"}`
+}
+
+// A hub whose registry entry names no channel (a plain `huddle up` started it): setup in
+// another project puts that project in its own channel on that hub, named the way a first setup
+// names one, and saves a credential that names it.
+func TestSetupAHubWithNoChannelPutsTheProjectInItsOwnChannel(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "state")
+	base := t.TempDir()
+	api, web := filepath.Join(base, "api-proj"), filepath.Join(base, "web")
+	for _, proj := range []string{api, web} {
+		if err := os.MkdirAll(proj, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		gitInit(t, proj)
+	}
+	var minted, joined string
+	fake := startFakeHuddle(t, func(call fakeCall) (int, string) {
+		switch {
+		case call.Method == "POST" && call.Path == "/api/tokens":
+			minted = call.Body
+			return 200, `{"token":"abc123.0123456789abcdef","id":"abc123","expires":null}`
+		case call.Method == "POST" && call.Path == "/api/join":
+			joined = call.Body
+			return joinEcho(call)
+		case strings.HasPrefix(call.Path, "/api/c/") && strings.HasSuffix(call.Path, "/op/join"):
+			return okJSON("you are web in web")
+		}
+		return 200, `{}`
+	})
+	if err := os.MkdirAll(filepath.Join(state, "huddle"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(state, "huddle", "servers.json"),
+		`{"`+jsonSpelled(filepath.Join(api, ".agents", "huddle"))+`":{"url":"`+fake.server.URL+`","channel":"","project":"`+jsonSpelled(api)+`"}}`)
+	W := setupWorld(t, web, map[string]string{
+		"XDG_STATE_HOME": state,
+		"HUDDLE_SESSION": "s-web",
+	})
+	// the root key `huddle up` saved its creator, under the api project's key
+	sessions := filepath.Join(userHome(t, W), "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(api)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(sessions, "project-"+hashKey(resolved)+".json"),
+		`{"url":"`+fake.server.URL+`","credential":"hcred_root","root":true}`)
+	code, out, errOut := runSetup(t, W)
+	if code != 0 || errOut != "" {
+		t.Fatalf("web setup: %d %q %q", code, out, errOut)
+	}
+	if !strings.Contains(minted, `"channel":"web"`) {
+		t.Errorf("the mint body %q, want the project's own channel", minted)
+	}
+	if !strings.Contains(joined, `"channel":"web"`) {
+		t.Errorf("the join body %q, want the project's own channel", joined)
+	}
+	joinedOp := false
+	for _, call := range fake.asked() {
+		if call.Path == "/api/c/web/op/join" {
+			joinedOp = true
+		}
+	}
+	if !joinedOp {
+		t.Errorf("no join op on the project's channel: %v", fake.asked())
+	}
+	if !strings.Contains(out, "Joined the Huddle that already runs for "+api+": "+fake.server.URL+", channel web, as web.") {
+		t.Errorf("web setup said %q", out)
+	}
+	cred := readFile(t, filepath.Join(sessions, "s-web.json"))
+	if !strings.Contains(cred, `"channel":"web"`) || !strings.Contains(cred, "hcred_member") {
+		t.Errorf("the saved credential %q", cred)
+	}
+}
+
+// A join that answers no channel saves nothing and claims nothing: no membership, no "Joined".
+func TestSetupAJoinWithNoChannelSavesNothingAndSaysSo(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "state")
+	base := t.TempDir()
+	api, web := filepath.Join(base, "api-proj"), filepath.Join(base, "web")
+	for _, proj := range []string{api, web} {
+		if err := os.MkdirAll(proj, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		gitInit(t, proj)
+	}
+	fake := startFakeHuddle(t, func(call fakeCall) (int, string) {
+		switch {
+		case call.Method == "POST" && call.Path == "/api/tokens":
+			return 200, `{"token":"abc123.0123456789abcdef","id":"abc123","expires":null}`
+		case call.Method == "POST" && call.Path == "/api/join":
+			return 200, `{"name":"web","channel":null,"credential":"hcred_member"}`
+		}
+		return 200, `{}`
+	})
+	if err := os.MkdirAll(filepath.Join(state, "huddle"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(state, "huddle", "servers.json"),
+		`{"`+jsonSpelled(filepath.Join(api, ".agents", "huddle"))+`":{"url":"`+fake.server.URL+`","channel":"","project":"`+jsonSpelled(api)+`"}}`)
+	W := setupWorld(t, web, map[string]string{
+		"XDG_STATE_HOME": state,
+		"HUDDLE_SESSION": "s-web",
+	})
+	sessions := filepath.Join(userHome(t, W), "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(api)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(sessions, "project-"+hashKey(resolved)+".json"),
+		`{"url":"`+fake.server.URL+`","credential":"hcred_root","root":true}`)
+	code, out, errOut := runSetup(t, W)
+	if code != 5 {
+		t.Fatalf("web setup = %d %q %q, want 5", code, out, errOut)
+	}
+	if !strings.Contains(out, "A Huddle already runs for "+api+" at "+fake.server.URL+", but joining it gave no channel. /huddle:setup --new starts a separate one.") {
+		t.Errorf("web setup said %q", out)
+	}
+	if strings.Contains(out, "Joined") {
+		t.Errorf("a join with no channel claimed membership: %q", out)
+	}
+	entries, err := os.ReadDir(sessions)
+	if err != nil || len(entries) != 1 {
+		t.Errorf("the sessions dir holds %v (%v), want only the root key", entries, err)
+	}
+	for _, call := range fake.asked() {
+		if strings.HasPrefix(call.Path, "/api/c/") {
+			t.Errorf("a channel-less join still ran %s", call.Path)
+		}
+	}
+}
+
+// An entry that names a channel keeps it: the mint and the join carry that channel, as today.
+func TestSetupAnEntryWithAChannelKeepsIt(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "state")
+	base := t.TempDir()
+	api, web := filepath.Join(base, "api-proj"), filepath.Join(base, "web")
+	for _, proj := range []string{api, web} {
+		if err := os.MkdirAll(proj, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		gitInit(t, proj)
+	}
+	var minted, joined string
+	fake := startFakeHuddle(t, func(call fakeCall) (int, string) {
+		switch {
+		case call.Method == "POST" && call.Path == "/api/tokens":
+			minted = call.Body
+			return 200, `{"token":"abc123.0123456789abcdef","id":"abc123","expires":null}`
+		case call.Method == "POST" && call.Path == "/api/join":
+			joined = call.Body
+			return joinEcho(call)
+		case strings.HasPrefix(call.Path, "/api/c/") && strings.HasSuffix(call.Path, "/op/join"):
+			return okJSON("you are web in team")
+		}
+		return 200, `{}`
+	})
+	if err := os.MkdirAll(filepath.Join(state, "huddle"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(state, "huddle", "servers.json"),
+		`{"`+jsonSpelled(filepath.Join(api, ".agents", "huddle"))+`":{"url":"`+fake.server.URL+`","channel":"team","project":"`+jsonSpelled(api)+`"}}`)
+	W := setupWorld(t, web, map[string]string{
+		"XDG_STATE_HOME": state,
+		"HUDDLE_SESSION": "s-web",
+	})
+	sessions := filepath.Join(userHome(t, W), "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(api)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(sessions, "project-"+hashKey(resolved)+".json"),
+		`{"url":"`+fake.server.URL+`","credential":"hcred_root","root":true}`)
+	code, out, errOut := runSetup(t, W)
+	if code != 0 || errOut != "" {
+		t.Fatalf("web setup: %d %q %q", code, out, errOut)
+	}
+	if !strings.Contains(minted, `"channel":"team"`) {
+		t.Errorf("the mint body %q, want the entry's channel", minted)
+	}
+	if !strings.Contains(joined, `"channel":"team"`) {
+		t.Errorf("the join body %q, want the entry's channel", joined)
+	}
+	if !strings.Contains(out, "Joined the Huddle that already runs for "+api+": "+fake.server.URL+", channel team, as web.") {
+		t.Errorf("web setup said %q", out)
+	}
+}
+
 // The registry's keys and projects are paths, and a path may carry the backslashes JSON
 // escapes: setup reads the entry whatever it spelled.
 func TestSetupReadsARegistryKeyedInAnyPathsSpelling(t *testing.T) {

@@ -453,6 +453,7 @@ applies to a router hosted by the hub, whose memory is the hub's to manage.
 | The hub idles at more memory than its data needs | The hub runs at `GOGC=50`, so its heap stays near the data it holds; a `GOGC` you set before the hub starts takes its place |
 | A session from before a plugin update | Its watchdog starts the router from the launcher's `current` link, so an old session still brings the router back after plugin updates removed its own build |
 | The router runs as its own process beside the hub | Fixed: a start never takes the router from the hub that hosts it. `huddle up` after a plugin update replaces the hub, and the router moves with it |
+| Setup in a second project says channel is empty / not in a huddle | Fixed: the project gets its own channel on the running hub, named after the project; run `huddle setup` there again |
 | Something looks wrong | The log is `<home>/run/huddle.log`, the pid and port beside it |
 
 The details behind the quick fixes:

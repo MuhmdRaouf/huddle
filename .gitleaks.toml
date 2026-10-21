@@ -49,10 +49,10 @@ regexes = ['''^zzzzzz\.0123456789abcdef$''', '''^abcdef\.0123456789abcdef$''']
 paths = ['''^internal/huddle/cli/huddle_mcp_test\.go$''']
 
 [[allowlists]]
-description = "huddle: the fake invite token the CLI's invite test serves"
+description = "huddle: the fake invite token the CLI's invite and setup tests serve"
 condition = "AND"
 regexes = ['''^abc123\.0123456789abcdef$''']
-paths = ['''^internal/huddle/cli/huddle_test\.go$''']
+paths = ['''^internal/huddle/cli/(huddle|setup)_test\.go$''']
 
 [[allowlists]]
 description = "huddle: the fake one-use pairing token the server tests send to prove a spent or unknown link is refused"
