@@ -433,6 +433,10 @@ A hub a 0.0.1 build left running gives way the same way: the next `huddle up` or
 the current build stops it, starts the hub on the same port, and takes a standalone huddle-router's
 socket over, so the router never stops answering.
 
+A standalone router whose resident size passes its memory ceiling (1 GiB by default,
+`HUDDLE_ROUTER_RSS_CEILING_MB` to move it) hands itself over to a fresh copy; the ceiling never
+applies to a router hosted by the hub, whose memory is the hub's to manage.
+
 ## Troubleshooting
 
 | Symptom | What to do |

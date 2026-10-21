@@ -87,6 +87,10 @@ type daemonRig struct {
 	// takeover starts the Run with Takeover set: a first start with nobody to take from
 	// serves normally.
 	takeover bool
+	// hosted starts the Run as the hub's own: the memory handover is off.
+	hosted bool
+	// rssCeiling is the Run's own ceiling; 0 takes the environment's, else the default.
+	rssCeiling int64
 	// returned says the Run ended by itself (a handover's drain), so stop only cancels.
 	returned bool
 }
@@ -141,7 +145,7 @@ func newDaemonRig(t *testing.T) *daemonRig {
 // start runs the daemon until the test ends, and fails when it stops on its own.
 func (r *daemonRig) start() {
 	r.t.Helper()
-	options := Options{Env: r.env, Port: r.port, Version: "test", Log: r.logs.add, Poll: 30 * time.Millisecond, Takeover: r.takeover}
+	options := Options{Env: r.env, Port: r.port, Version: "test", Log: r.logs.add, Poll: 30 * time.Millisecond, Takeover: r.takeover, Hosted: r.hosted, RSSCeiling: r.rssCeiling}
 	if r.panicOnFirst {
 		var calls atomic.Int64
 		// The test-only hook the handler runs before serving: its first panic on the data path

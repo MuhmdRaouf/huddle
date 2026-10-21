@@ -26,14 +26,14 @@ func hostHuddleRouter(ctx context.Context, o Options) {
 		}
 	}()
 	env := routerEnv(o)
-	err := routerd.Run(ctx, routerd.Options{Env: env, Version: o.Version})
+	err := routerd.Run(ctx, routerd.Options{Env: env, Version: o.Version, Hosted: true})
 	var held *singleton.HeldError
 	if errors.As(err, &held) && standaloneRouter(held.PID) {
 		// The takeover's Run serves until the hub stops, so the line names the handover as it
 		// starts, not at the end of the hub's life. A takeover that finds nobody to take from
 		// falls back to the normal start and its answer follows below.
 		fmt.Fprintf(o.Stderr, "huddle-router: taken over from pid %d\n", held.PID)
-		err = routerd.Run(ctx, routerd.Options{Env: env, Version: o.Version, Takeover: true})
+		err = routerd.Run(ctx, routerd.Options{Env: env, Version: o.Version, Takeover: true, Hosted: true})
 		if err == nil {
 			return
 		}

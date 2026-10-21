@@ -156,6 +156,61 @@ func TestHuddleRouterHandoverScenarios(t *testing.T) {
 			})
 		})
 
+		f.Scenario("a hosted router never hands itself over for memory", func(s *bdd.S) {
+			var rig *daemonRig
+			s.Given("the hub hosts a router whose ceiling is one byte", func(t *testing.T) {
+				rig = newDaemonRig(s.T)
+				if err := router.SetEnabled(rig.env, "zai", true); err != nil {
+					t.Fatal(err)
+				}
+				rig.hosted = true
+				rig.rssCeiling = 1
+				rig.env["HUDDLE_ROUTER_RSS_INTERVAL_MS"] = "50"
+			})
+			s.When("several rss checks pass", func(t *testing.T) {
+				rig.start()
+				rig.awaitHealth(t, "zai")
+				time.Sleep(300 * time.Millisecond)
+			})
+			s.Then("the router still serves, hosted by its hub", func(t *testing.T) {
+				rig.awaitHealth(t, "zai")
+			})
+			s.And("the log names the hosting and never a handover", func(t *testing.T) {
+				joined := rig.logs.joined()
+				if !strings.Contains(joined, "hosted by the hub; the memory handover is off") {
+					t.Errorf("the log = %q, want the hosting line", joined)
+				}
+				if strings.Contains(joined, "handing over") {
+					t.Errorf("the log = %q, want no handover", joined)
+				}
+			})
+		})
+
+		f.Scenario("a standalone router over its ceiling hands over", func(s *bdd.S) {
+			var rig *daemonRig
+			s.Given("a standalone router whose ceiling is one byte", func(t *testing.T) {
+				rig = newDaemonRig(s.T)
+				if err := router.SetEnabled(rig.env, "zai", true); err != nil {
+					t.Fatal(err)
+				}
+				rig.rssCeiling = 1
+				rig.env["HUDDLE_ROUTER_RSS_INTERVAL_MS"] = "50"
+			})
+			s.When("the first rss checks pass", func(t *testing.T) {
+				rig.start()
+				rig.awaitHealth(t, "zai")
+				time.Sleep(150 * time.Millisecond)
+			})
+			s.Then("the log names the handover", func(t *testing.T) {
+				if joined := rig.logs.joined(); !strings.Contains(joined, "over the ceiling; handing over") {
+					t.Errorf("the log = %q, want the handover", joined)
+				}
+			})
+			s.And("the router still serves while the suite refuses its own spawn", func(t *testing.T) {
+				rig.awaitHealth(t, "zai")
+			})
+		})
+
 		f.Scenario("the old process releases the lock after draining and the new one holds it", func(s *bdd.S) {
 			var rig *daemonRig
 			var newDone <-chan error

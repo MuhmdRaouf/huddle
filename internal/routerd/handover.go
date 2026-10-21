@@ -48,6 +48,17 @@ const takeoverLockWait = 11 * time.Minute
 // rssInterval is how often a serving daemon looks at its own resident size.
 const rssInterval = 30 * time.Second
 
+// rssIntervalOf is how often a daemon looks at its own resident size: thirty seconds, or
+// $HUDDLE_ROUTER_RSS_INTERVAL_MS when it names a positive number (tests only).
+func rssIntervalOf(env domain.EnvLookup) time.Duration {
+	if raw := env["HUDDLE_ROUTER_RSS_INTERVAL_MS"]; raw != "" {
+		if ms, err := strconv.Atoi(raw); err == nil && ms > 0 {
+			return time.Duration(ms) * time.Millisecond
+		}
+	}
+	return rssInterval
+}
+
 // rssCeilingDefault is the resident size over which a daemon hands itself over to a fresh
 // copy of its own binary (D9's one GiB).
 const rssCeilingDefault = 1 << 30
@@ -259,11 +270,12 @@ func checkRSS(ceiling int64, spawned time.Time, env domain.EnvLookup, log func(l
 	if rss <= ceiling {
 		return spawned
 	}
+	interval := rssIntervalOf(env)
 	if !spawned.IsZero() {
-		if time.Since(spawned) < rssInterval {
+		if time.Since(spawned) < interval {
 			return spawned
 		}
-		log("huddle-router: no takeover arrived within " + rssInterval.String() + "; trying again at the next check")
+		log("huddle-router: no takeover arrived within " + interval.String() + "; trying again at the next check")
 	}
 	log(fmt.Sprintf("huddle-router: RSS %d MiB over the ceiling; handing over", rss>>20))
 	logFile, err := startLog(env)

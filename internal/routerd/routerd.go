@@ -51,6 +51,9 @@ type Options struct {
 	// RSSCeiling is the resident size over which the daemon hands itself over to a fresh copy
 	// of its own binary; 0 takes $HUDDLE_ROUTER_RSS_CEILING_MB, else one GiB.
 	RSSCeiling int64
+	// Hosted is the router that runs inside the hub's process; its RSS is the hub's, so the
+	// memory handover is off.
+	Hosted bool
 	// panicOnce is a test-only hook the handler runs before serving, so a scenario can put a
 	// panic in a lane and prove the recovery.
 	panicOnce func(req *http.Request)
@@ -216,8 +219,12 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
 	ceiling := rssCeilingOf(env, o)
+	interval := rssIntervalOf(env)
 	spawned := time.Time{}
-	nextRSS := time.Now().Add(rssInterval)
+	nextRSS := time.Now().Add(interval)
+	if o.Hosted {
+		log("huddle-router: hosted by the hub; the memory handover is off")
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -245,8 +252,9 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 					log("huddle-router: now serving " + strings.Join(multi.Providers(), ", "))
 				}
 			}
-			if !nextRSS.After(time.Now()) {
-				nextRSS = time.Now().Add(rssInterval)
+			// A hosted router's RSS is the hub's, so only a standalone daemon watches its own.
+			if !o.Hosted && !nextRSS.After(time.Now()) {
+				nextRSS = time.Now().Add(interval)
 				spawned = checkRSS(ceiling, spawned, env, log)
 			}
 		}

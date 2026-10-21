@@ -421,3 +421,30 @@ func TestRSSCeilingOf(t *testing.T) {
 		})
 	}
 }
+
+func TestRSSIntervalOf(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		raw  string
+		want time.Duration
+	}{
+		{"no variable is thirty seconds", "", rssInterval},
+		{"a millisecond value wins", "250", 250 * time.Millisecond},
+		{"a junk value is the default", "soon", rssInterval},
+		{"zero is the default", "0", rssInterval},
+		{"a negative is the default", "-5", rssInterval},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			env := domain.EnvLookup{}
+			if tt.raw != "" {
+				env["HUDDLE_ROUTER_RSS_INTERVAL_MS"] = tt.raw
+			}
+			if got := rssIntervalOf(env); got != tt.want {
+				t.Errorf("rssIntervalOf(%q) = %s, want %s", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
