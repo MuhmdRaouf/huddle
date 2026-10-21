@@ -100,6 +100,10 @@ func LoadOrCreateRouterCA(ctx context.Context, dir string, now time.Time) (*Rout
 // CertPath is the PEM file NODE_EXTRA_CA_CERTS names.
 func (c *RouterCA) CertPath() string { return c.certPath }
 
+// CACertPath is the PEM file's path in dir, whether or not a CA exists there: the path the
+// proxy keys name, answerable without loading (and so creating) the CA.
+func CACertPath(dir string) string { return filepath.Join(dir, routerCACertFile) }
+
 // CertPEM is the CA certificate in PEM form.
 func (c *RouterCA) CertPEM() []byte { return c.certPEM }
 

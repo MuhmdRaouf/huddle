@@ -34,7 +34,7 @@ func applyProvider(t *testing.T, path string, provider domain.Provider, caDir st
 // undoProvider undoes one provider's recorded delta, naming the providers still enabled.
 func undoProvider(t *testing.T, path string, provider domain.Provider, delta SettingsDelta, othersEnabled []string) []string {
 	t.Helper()
-	lines, err := UndoProviderSettings(t.Context(), path, provider.Name, SettingsUndo(delta), huddleSettingsURL, nil, othersEnabled)
+	lines, err := UndoProviderSettings(t.Context(), path, provider.Name, SettingsUndo(delta), huddleSettingsURL, nil, othersEnabled, ProxyOurs{})
 	if err != nil {
 		t.Fatalf("undo %s: %v", provider.Name, err)
 	}

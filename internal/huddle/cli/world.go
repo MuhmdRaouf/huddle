@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -231,6 +232,23 @@ func (p Proc) listenOf(pid int) (int, bool) {
 // huddleServe matches the command line of this binary running the serve entry: a stale pid file
 // may name any process, so only a huddle server counts. The trailing newline is ps's own.
 var huddleServe = regexp.MustCompile(`(?:^|/)huddle serve(?:[ \n]|$)`)
+
+// isHuddleServe says whether a command line is a huddle binary running the serve entry: by its
+// plain name (`/opt/huddle serve`) or through a symlink that resolves to one — the launcher's
+// `current`, whose hub the pid file is still ours to stop. A link that no longer resolves
+// names no server, and no other entry through a link does.
+func isHuddleServe(command string) bool {
+	command = strings.TrimSpace(command)
+	if huddleServe.MatchString(command) {
+		return true
+	}
+	bin, args, ok := strings.Cut(command, " ")
+	if !ok || args != "serve" && !strings.HasPrefix(args, "serve ") {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(bin)
+	return err == nil && filepath.Base(resolved) == "huddle"
+}
 
 // proc is the world's process lookups.
 func (w *World) proc() Proc {

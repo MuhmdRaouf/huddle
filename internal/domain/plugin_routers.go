@@ -221,8 +221,9 @@ type ProxySettings struct {
 type ProxyPlan struct {
 	Kind ProxyPlanKind
 	// Proxy, CA and NoProxy are the values a set writes; a keep writes only NoProxy, and only
-	// when it carries one; a remove takes HTTPS_PROXY and NODE_EXTRA_CA_CERTS out and leaves NO_PROXY, which
-	// may hold the user's own entries and whose loopback ones are harmless.
+	// when it carries one; a remove takes HTTPS_PROXY and NODE_EXTRA_CA_CERTS out. NO_PROXY goes
+	// only when it is exactly what this huddle writes (OwnNoProxy); one the user had — any list
+	// of their own entries — stays, whose loopback ones are harmless.
 	Proxy   string
 	CA      string
 	NoProxy string
@@ -336,6 +337,13 @@ func PlanProxyRemoval(env ProxySettings, routerURL string, othersEnabled []strin
 // behind.
 func proxyIsOurs(proxy, routerURL string) bool {
 	return ProxyIsThisRouter(proxy, routerURL) || IsPluginRouterProxy(proxy)
+}
+
+// OwnNoProxy is the NO_PROXY a setup writes when the user had none: the loopback entries
+// alone. An undo treats a NO_PROXY equal to it as ours, not the user's before.
+func OwnNoProxy() string {
+	merged, _ := mergeNoProxy(nil)
+	return merged
 }
 
 // mergeNoProxy keeps the user's NO_PROXY entries in their order and appends the loopback entries

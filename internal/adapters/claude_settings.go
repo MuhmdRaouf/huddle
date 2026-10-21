@@ -263,6 +263,15 @@ type createdContainers struct {
 	env         bool
 }
 
+// dropOurs answers nil when the value before the run is exactly the one the plan writes — the
+// key holds ours, not the user's own — and the value otherwise.
+func dropOurs(before *string, ours string) *string {
+	if before != nil && ours != "" && *before == ours {
+		return nil
+	}
+	return before
+}
+
 // recordedProxyDelta is the delta to record for the ledger in proxy mode: what this run set (with
 // what was there before) and the containers it created. A keep that changed something (a NO_PROXY
 // it appended to) records the before-values too: the undo puts the user's entries back.
@@ -284,8 +293,10 @@ func recordedProxyDelta(plan domain.ProxyPlan, before domain.ProxySettings, befo
 	}
 	if plan.Kind == domain.ProxyPlanSet || (plan.Kind == domain.ProxyPlanKeep && plan.Report != nil) {
 		delta.ProxyBefore = before.HTTPSProxy
-		delta.CABefore = before.CA
-		delta.NoProxyBefore = before.NoProxy
+		// A value this plan writes itself is ours, not the user's before: recording it would
+		// make every later undo restore our own CA and NO_PROXY, and they would never leave.
+		delta.CABefore = dropOurs(before.CA, plan.CA)
+		delta.NoProxyBefore = dropOurs(before.NoProxy, plan.NoProxy)
 	}
 	delta.OptionsAdded = make([]string, 0, 2)
 	for _, id := range catalogIDs(provider) {
@@ -406,15 +417,26 @@ type SettingsUndo struct {
 	EffortsAdded       *StringMap `json:"effortsAdded"`
 }
 
+// ProxyOurs are the values this huddle's proxy mode writes, so an undo can tell its own values
+// from the user's: a before-value equal to one of these is ours, however it reached the ledger,
+// and goes instead of coming back.
+type ProxyOurs struct {
+	// CAPath is the CA file the setups name (pki.CACertPath of the shared CA dir); "" names none.
+	CAPath string
+	// NoProxy is the NO_PROXY a fresh setup writes (domain.OwnNoProxy: the loopback entries).
+	NoProxy string
+}
+
 // UndoProviderSettings is the uninstall's settings step: takes out the /model entries and
 // availableModels ids setup added (an entry the user removed or changed meanwhile is theirs),
 // removes the containers setup created when they end up empty, and puts the base URL back only if
 // it still points at this router: the ledger's previous value (unless that is a plugin router
 // that is not running), else another live plugin router, else none. While another provider is
 // still enabled (othersEnabled names them), the routing env stays: the router is shared and the
-// next removal undoes it. When the result equals the backup taken before the first write ever,
-// the backup's own bytes are restored.
-func UndoProviderSettings(ctx context.Context, path string, name string, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string) ([]string, error) {
+// next removal undoes it. A CA or NO_PROXY the ledger names as "before" that is exactly ours
+// (ours) goes rather than coming back. When the result equals the backup taken before the first
+// write ever, the backup's own bytes are restored.
+func UndoProviderSettings(ctx context.Context, path string, name string, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string, ours ProxyOurs) ([]string, error) {
 	return editSettings(ctx, path, name, func(root *jsonNode) ([]string, error) {
 		last := len(othersEnabled) == 0
 		var lines []string
@@ -425,7 +447,7 @@ func UndoProviderSettings(ctx context.Context, path string, name string, undo Se
 			return nil, err
 		}
 		lines = append(lines, baseURL...)
-		lines = append(lines, undoProxy(root, undo, routerURL, livePluginURLs, othersEnabled)...)
+		lines = append(lines, undoProxy(root, undo, routerURL, livePluginURLs, othersEnabled, ours)...)
 		lines = append(lines, undoToolSearch(root, undo, last)...)
 		lines = append(lines, undoEfforts(root, undo)...)
 		return lines, nil
@@ -523,8 +545,9 @@ func undoBaseUrl(root *jsonNode, undo SettingsUndo, routerURL string, livePlugin
 // undoProxy puts the proxy keys back while they are still ours and no other provider is still
 // enabled: HTTPS_PROXY naming this router is the ownership test, and a proxy the user changed
 // since takes its CA and NO_PROXY with it. The before-values go back; a key with nothing before
-// it goes (see UndoProviderSettings), and an env this undo created and emptied goes with them.
-func undoProxy(root *jsonNode, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string) []string {
+// it goes (see UndoProviderSettings), a before-value that is exactly ours counts as nothing —
+// our own values never come back — and an env this undo created and emptied goes with them.
+func undoProxy(root *jsonNode, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string, ours ProxyOurs) []string {
 	env := root.get("env")
 	if !env.isObject() {
 		return nil
@@ -560,18 +583,21 @@ func undoProxy(root *jsonNode, undo SettingsUndo, routerURL string, livePluginUR
 		env.del("HTTPS_PROXY")
 		lines = append(lines, "removed HTTPS_PROXY ("+routerURL+")")
 	}
-	// A key with a recorded before goes back to it; one that is still there without a before goes;
-	// a key the user already took away is not reported.
-	if undo.CABefore != nil {
-		env.set("NODE_EXTRA_CA_CERTS", newText(*undo.CABefore))
-		lines = append(lines, "set NODE_EXTRA_CA_CERTS back to "+*undo.CABefore)
+	// A key with a recorded before of the user's own goes back to it; a before equal to what
+	// this router writes is ours, however it reached the ledger, and counts as none; a key
+	// still there without a before goes; a key the user already took away is not reported.
+	caBefore := dropOurs(undo.CABefore, ours.CAPath)
+	if caBefore != nil {
+		env.set("NODE_EXTRA_CA_CERTS", newText(*caBefore))
+		lines = append(lines, "set NODE_EXTRA_CA_CERTS back to "+*caBefore)
 	} else if _, there := env.get("NODE_EXTRA_CA_CERTS").text(); there {
 		env.del("NODE_EXTRA_CA_CERTS")
 		lines = append(lines, "removed NODE_EXTRA_CA_CERTS")
 	}
-	if undo.NoProxyBefore != nil {
-		env.set("NO_PROXY", newText(*undo.NoProxyBefore))
-		lines = append(lines, "set NO_PROXY back to "+*undo.NoProxyBefore)
+	noProxyBefore := dropOurs(undo.NoProxyBefore, ours.NoProxy)
+	if noProxyBefore != nil {
+		env.set("NO_PROXY", newText(*noProxyBefore))
+		lines = append(lines, "set NO_PROXY back to "+*noProxyBefore)
 	} else if _, there := env.get("NO_PROXY").text(); there {
 		env.del("NO_PROXY")
 		lines = append(lines, "removed NO_PROXY")

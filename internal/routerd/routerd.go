@@ -67,7 +67,10 @@ type record struct {
 	// Executable is the binary the daemon runs, so a start from another binary knows the
 	// running daemon is not this one and takes the socket over.
 	Executable string `json:"executable,omitempty"`
-	Started    string `json:"started"`
+	// Hosted marks the router the hub's own process serves: a start never takes it away from
+	// the hub — the hub's own `huddle up` replaces an older hub, and the router moves with it.
+	Hosted  bool   `json:"hosted,omitempty"`
+	Started string `json:"started"`
 }
 
 // Run serves huddle-router until ctx ends. It answers a *singleton.HeldError when another
@@ -211,7 +214,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	// update a legacy port may refuse connections for up to a second.
 	stopAdopting := adoptLegacyPorts(ctx, env, server, log)
 	defer stopAdopting()
-	if err := writeRecord(ctx, recordFile, port, o.Version, runningExecutable()); err != nil {
+	if err := writeRecord(ctx, recordFile, port, o.Version, runningExecutable(), o.Hosted); err != nil {
 		// A router without its record still serves; status and start are the ones that miss it.
 		log("huddle-router: " + err.Error())
 	}
@@ -341,13 +344,14 @@ func stop(server *http.Server, recordFile string, log func(line string)) error {
 }
 
 // writeRecord publishes what the running router is: the pid to signal, the port to talk to,
-// which binary serves it and when it came up.
-func writeRecord(ctx context.Context, path string, port int, version, executable string) error {
+// which binary serves it, whether the hub hosts it, and when it came up.
+func writeRecord(ctx context.Context, path string, port int, version, executable string, hosted bool) error {
 	text, err := fsutil.MarshalJSON(record{
 		PID:        os.Getpid(),
 		Port:       port,
 		Version:    version,
 		Executable: executable,
+		Hosted:     hosted,
 		Started:    time.Now().Format(time.RFC3339),
 	})
 	if err != nil {

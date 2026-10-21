@@ -25,6 +25,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
 // routeTiers are both model tiers: they always get a `model:` line, the agents being the only thing
@@ -394,6 +395,12 @@ func routerCADir(env domain.EnvLookup) string {
 	return filepath.Join(filepath.Dir(router.HomeOf(env)), "ca")
 }
 
+// adapterOurs are the proxy values this huddle writes, for an undo to tell its own values from
+// the user's: the CA path the setups name and the NO_PROXY a fresh setup writes.
+func adapterOurs(env domain.EnvLookup) adapters.ProxyOurs {
+	return adapters.ProxyOurs{CAPath: pki.CACertPath(routerCADir(env)), NoProxy: domain.OwnNoProxy()}
+}
+
 // routesProvider is where Claude Code's settings point now, and whether that is a router of ours
 // that will route the provider's ids: the proxy keys naming this router (when it is up) or
 // another live plugin router (which forwards them here), or — base-URL mode, beside a proxy of
@@ -617,7 +624,7 @@ func RemoveRouting(ctx context.Context, deps SetupDeps) RoutingApplied {
 	var settings LinesResult
 	if hasLedger && ledger.SettingsPath == deps.SettingsPath {
 		settings = linesResult(adapters.UndoProviderSettings(ctx, deps.SettingsPath, deps.Provider.Name,
-			ledger.Settings, ledger.RouterURL, nil, others))
+			ledger.Settings, ledger.RouterURL, nil, others, adapterOurs(deps.Env)))
 	} else {
 		lines, err := adapters.RemoveProviderSettings(ctx, deps.SettingsPath, deps.Provider,
 			domain.RouterBaseURL(deps.Provider, deps.Env), others)

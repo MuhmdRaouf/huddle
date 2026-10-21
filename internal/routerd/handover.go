@@ -351,12 +351,14 @@ func selfExecutable(env domain.EnvLookup) string {
 	return process.LiveExecutable(env)
 }
 
-// runningExecutable is the binary this process runs from, even when the launcher has deleted it:
-// the record must name it, because a start compares it with its own binary to decide on an update,
-// and a record naming the `current` link would hide an old daemon from the newer build.
+// runningExecutable is the binary this process runs from, named resolved through its symlinks
+// when that still resolves (a deleted build keeps its own name): the record must name the
+// build itself, not a link every newer build shares, because a start compares it with its own
+// binary to decide on an update, and a record naming the `current` link would hide an old
+// daemon from the newer build behind it.
 func runningExecutable() string {
 	if self, err := os.Executable(); err == nil {
-		return self
+		return resolvedExecutable(self)
 	}
 	return os.Args[0]
 }

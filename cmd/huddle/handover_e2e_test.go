@@ -253,8 +253,12 @@ func TestE2EHandoverAStartFromANewBinaryKeepsTheRouterPortOpen(t *testing.T) {
 	}
 	until(t, 15*time.Second, func() bool { return routerHealthy(port) }, "daemon A to answer its health path")
 	recordA := awaitHandoverRecord(t, routerHome)
-	if recordA.Executable != binA {
-		t.Fatalf("daemon A's record names %q, want %q", recordA.Executable, binA)
+	resolvedA, err := filepath.EvalSymlinks(binA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recordA.Executable != resolvedA {
+		t.Fatalf("daemon A's record names %q, want %q", recordA.Executable, resolvedA)
 	}
 	pids.see(recordA.PID)
 
@@ -264,17 +268,21 @@ func TestE2EHandoverAStartFromANewBinaryKeepsTheRouterPortOpen(t *testing.T) {
 		if !strings.Contains(out, "updated") || !strings.Contains(out, fmt.Sprintf("(pid %d → ", recordA.PID)) {
 			t.Errorf("start = %q, want the updated line naming pid %d", out, recordA.PID)
 		}
+		resolvedB, err := filepath.EvalSymlinks(binB)
+		if err != nil {
+			t.Fatal(err)
+		}
 		var record handoverRecord
 		deadline := time.Now().Add(10 * time.Second)
 		for time.Now().Before(deadline) {
 			if raw, err := os.ReadFile(filepath.Join(routerHome, "run", "router.json")); err == nil && json.Unmarshal(raw, &record) == nil {
-				if record.PID != recordA.PID && record.Executable == binB {
+				if record.PID != recordA.PID && record.Executable == resolvedB {
 					break
 				}
 			}
 			time.Sleep(25 * time.Millisecond)
 		}
-		if record.PID == recordA.PID || record.Executable != binB {
+		if record.PID == recordA.PID || record.Executable != resolvedB {
 			t.Fatalf("router.json still names %d by %q, want daemon B's record", record.PID, record.Executable)
 		}
 		pids.see(record.PID)

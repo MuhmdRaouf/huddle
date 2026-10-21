@@ -247,7 +247,7 @@ func RunningPid(ctx context.Context, w *World, root string) int {
 		return 0
 	}
 	command, ok := w.proc().command(int(pid))
-	if !ok || !huddleServe.MatchString(command) {
+	if !ok || !isHuddleServe(command) {
 		return 0
 	}
 	return int(pid)

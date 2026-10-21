@@ -346,7 +346,7 @@ func TestRecordFileRoundTrips(t *testing.T) {
 	})
 	t.Run("the written record reads back", func(t *testing.T) {
 		path := filepath.Join(router.HomeOf(env), "run", "elsewhere.json")
-		if err := writeRecord(context.Background(), path, 20000, "test", "self"); err != nil {
+		if err := writeRecord(context.Background(), path, 20000, "test", "self", false); err != nil {
 			t.Fatalf("writeRecord: %v", err)
 		}
 		raw, err := os.ReadFile(path)
@@ -366,7 +366,7 @@ func TestRecordFileRoundTrips(t *testing.T) {
 		if err := os.WriteFile(blocker, []byte("a file"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := writeRecord(context.Background(), filepath.Join(blocker, "router.json"), 1, "test", "self"); err == nil {
+		if err := writeRecord(context.Background(), filepath.Join(blocker, "router.json"), 1, "test", "self", false); err == nil {
 			t.Fatal("writeRecord behind a file = nil error, want one")
 		}
 	})
@@ -713,8 +713,8 @@ func TestStartSpawnsTheRealBinaryAndWaitsForItsHealth(t *testing.T) {
 		if spawned.PID == os.Getpid() {
 			t.Fatalf("the record = %+v, want the daemon's own", spawned)
 		}
-		if spawned.Executable != bin {
-			t.Errorf("the record names %q, want the spawned binary", spawned.Executable)
+		if spawned.Executable != mustResolved(t, bin) {
+			t.Errorf("the record names %q, want the spawned binary resolved", spawned.Executable)
 		}
 	})
 

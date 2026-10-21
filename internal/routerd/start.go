@@ -171,12 +171,18 @@ func (o StartOptions) executable() string {
 }
 
 // updatedOrUp is a start's answer when a healthy daemon already serves: when the daemon's
-// record names another executable than this one, this binary replaces the running one — a
+// record names another binary than this one, this binary replaces the running one — a
 // takeover serves the same socket at once and the daemon under it drains — and the line names
 // the handover. The same executable is the quiet address line as always.
 func updatedOrUp(ctx context.Context, o StartOptions, env domain.EnvLookup, port int, health HealthAnswer) (string, error) {
 	record, ok := readRecord(env)
-	if !ok || record.Executable == "" || record.Executable == o.executable() {
+	if !ok || record.Executable == "" || sameBinary(record.Executable, o.executable()) {
+		return upLine(port, health), nil
+	}
+	// A start never takes a hosted router away from the hub that runs it, whatever the two
+	// binaries are named: the hub's own `huddle up` replaces a hub from an older build, and
+	// the router moves with it.
+	if record.Hosted && process.IsAlive(int64(record.PID)) {
 		return upLine(port, health), nil
 	}
 	old := record.PID
@@ -199,6 +205,34 @@ func updatedOrUp(ctx context.Context, o StartOptions, env domain.EnvLookup, port
 		}
 		time.Sleep(spawnPoll)
 	}
+}
+
+// resolvedExecutable names path with its symlinks followed; a path that no longer resolves
+// (a build the launcher deleted) keeps its own name.
+func resolvedExecutable(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
+}
+
+// sameBinary says whether two executable paths name one binary: equal strings, or both paths
+// resolving (symlinks followed) to the same file. The same build reached as
+// `<launcher>/current` and as its resolved path is one binary, not an update; a path that no
+// longer resolves names only itself, so a deleted build is never mistaken for one on disk.
+func sameBinary(a, b string) bool {
+	if a == b {
+		return true
+	}
+	resolvedA, err := filepath.EvalSymlinks(a)
+	if err != nil {
+		return false
+	}
+	resolvedB, err := filepath.EvalSymlinks(b)
+	if err != nil {
+		return false
+	}
+	return resolvedA == resolvedB
 }
 
 // startLog opens the router log the spawned daemon's output appends to.
