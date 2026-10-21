@@ -1,6 +1,6 @@
 // Package render holds the text renderers: plain ASCII layout, no colour, no ISO timestamps.
-// Every number prints the way JavaScript prints it, byte for byte: jsNumber, jsToFixed and
-// jsRound are ECMAScript's own number algorithms.
+// Every number prints the way JavaScript prints it, byte for byte: jsToFixed and jsRound are
+// ECMAScript's own number algorithms, and the plain number strings come from jsfmt.JSNumber.
 package render
 
 import (
@@ -13,6 +13,8 @@ import (
 	"unicode/utf16"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
 const minute = 60_000
@@ -69,17 +71,17 @@ func Duration(ms float64) string {
 	}
 	s := jsRound(ms / 1000)
 	if s < 60 {
-		return jsNumber(s) + "s"
+		return jsfmt.JSNumber(s) + "s"
 	}
 	if s < 3600 {
-		return jsNumber(math.Floor(s/60)) + "m" + pad2(math.Mod(s, 60)) + "s"
+		return jsfmt.JSNumber(math.Floor(s/60)) + "m" + pad2(math.Mod(s, 60)) + "s"
 	}
-	return jsNumber(math.Floor(s/3600)) + "h" + pad2(math.Floor(math.Mod(s, 3600)/60)) + "m"
+	return jsfmt.JSNumber(math.Floor(s/3600)) + "h" + pad2(math.Floor(math.Mod(s, 3600)/60)) + "m"
 }
 
 // pad2 is String(n).padStart(2, "0").
 func pad2(n float64) string {
-	text := jsNumber(n)
+	text := jsfmt.JSNumber(n)
 	if len(text) < 2 {
 		return "0" + text
 	}
@@ -89,7 +91,7 @@ func pad2(n float64) string {
 // Count renders 310, 4.2k, 1.2M.
 func Count(n float64) string {
 	if n < 1000 {
-		return jsNumber(n)
+		return jsfmt.JSNumber(n)
 	}
 	if n < 1_000_000 {
 		return jsToFixed(n/1000, 1) + "k"
@@ -112,7 +114,7 @@ func Percent(rate *float64) string {
 	if rate == nil {
 		return "n/a"
 	}
-	return jsNumber(jsRound(float64(*rate*100))) + "%"
+	return jsfmt.JSNumber(jsRound(float64(*rate*100))) + "%"
 }
 
 // Plural renders "1 attempt" / "2 attempts"; nouns overrides the plural form.
@@ -311,72 +313,6 @@ func ProgressText(progress domain.Progress) string {
 	return strings.Join(parts, " · ")
 }
 
-// jsNumber formats a float64 exactly as ECMAScript's Number::toString does — what a JS template
-// literal interpolates: the shortest decimal that round-trips, plain notation for 1e-6 ≤ |x| < 1e21,
-// exponent notation outside, and a "+" with no leading zeros in a positive exponent.
-func jsNumber(f float64) string {
-	if math.IsNaN(f) {
-		return "NaN"
-	}
-	if f == 0 {
-		return "0"
-	}
-	if math.IsInf(f, 1) {
-		return "Infinity"
-	}
-	if math.IsInf(f, -1) {
-		return "-Infinity"
-	}
-	// The shortest round-trip digits and base-10 exponent, read off Go's own shortest e-form.
-	e := strconv.FormatFloat(f, 'e', -1, 64)
-	negative := strings.HasPrefix(e, "-")
-	e = strings.TrimPrefix(e, "-")
-	mantissa, exponent, _ := strings.Cut(e, "e")
-	exp, _ := strconv.Atoi(exponent)
-	digits := strings.Replace(mantissa, ".", "", 1)
-	k := len(digits)
-	n := exp + 1
-
-	var out strings.Builder
-	if negative {
-		out.WriteString("-")
-	}
-	switch {
-	case k <= n && n <= 21:
-		out.WriteString(digits)
-		out.WriteString(strings.Repeat("0", n-k))
-	case 0 < n && n <= 21:
-		out.WriteString(digits[:n])
-		out.WriteString(".")
-		out.WriteString(digits[n:])
-	case -6 < n && n <= 0:
-		out.WriteString("0.")
-		out.WriteString(strings.Repeat("0", -n))
-		out.WriteString(digits)
-	default:
-		out.WriteByte(digits[0])
-		if k > 1 {
-			out.WriteString(".")
-			out.WriteString(digits[1:])
-		}
-		out.WriteString("e")
-		if n-1 >= 0 {
-			out.WriteString("+")
-		} else {
-			out.WriteString("-")
-		}
-		out.WriteString(strconv.Itoa(abs(n - 1)))
-	}
-	return out.String()
-}
-
-func abs(n int) int {
-	if n < 0 {
-		return -n
-	}
-	return n
-}
-
 // jsToFixed formats a float64 exactly as ECMAScript's Number.prototype.toFixed: the exact binary
 // value rounded to digits decimals with ties away from zero (V8 negates first, so -2.5 fixes to
 // -3), the sign kept even on a zero result ("-0.00"), and the plain jsNumber form from 1e21 up,
@@ -392,7 +328,7 @@ func jsToFixed(f float64, digits int) string {
 		return "-Infinity"
 	}
 	if f >= 1e21 || f <= -1e21 {
-		return jsNumber(f)
+		return jsfmt.JSNumber(f)
 	}
 	negative := f < 0
 	rat := new(big.Rat).SetFloat64(f)

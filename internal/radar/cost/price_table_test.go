@@ -171,21 +171,6 @@ func TestOfferingOfHost(t *testing.T) {
 	}
 }
 
-// A canonical id drops what a request's model string carries that the table's key does not:
-// a provider prefix, a context bracket, a dated snapshot suffix and case.
-func TestCanonicalModelID(t *testing.T) {
-	for _, tc := range []struct{ model, want string }{
-		{"zai/glm-5.3[1m]", "glm-5.3"},
-		{" GLM-5.3 ", "glm-5.3"},
-		{"glm-5.3@20261008", "glm-5.3"},
-		{"glm-5.3-20261008", "glm-5.3"},
-	} {
-		if got := canonicalModelID(tc.model); got != tc.want {
-			t.Errorf("canonicalModelID(%q): got %q want %q", tc.model, got, tc.want)
-		}
-	}
-}
-
 // The sheet a request resolves to: the offering must serve the model, and an id only the
 // model names must be unique across offerings to price.
 func TestResolveSheet(t *testing.T) {
@@ -358,49 +343,15 @@ func closeTo(t *testing.T, label string, got, want float64) {
 	}
 }
 
-// TestTableTrimsAreJavaScripts: every trim the table's lookups do is JavaScript's, which drops
-// the BOM and keeps NEL.
+// TestTableTrimsAreJavaScripts: the trims the table's own lookups still do are JavaScript's,
+// which drops the BOM and keeps NEL.
 func TestTableTrimsAreJavaScripts(t *testing.T) {
-	t.Run("a canonical id", func(t *testing.T) {
-		cases := []struct{ model, want string }{
-			{"\ufeffGLM-5.3[1m]", "glm-5.3"},
-			{"\u0085glm-5.3", "\u0085glm-5.3"}, // NEL is not JavaScript whitespace
-		}
-		for _, c := range cases {
-			if got := canonicalModelID(c.model); got != c.want {
-				t.Errorf("canonicalModelID(%q) = %q, want %q", c.model, got, c.want)
-			}
-		}
-	})
-
 	t.Run("a host", func(t *testing.T) {
 		if got, ok := OfferingOfHost("\ufeffapi.z.ai"); !ok || got != OfferingZai {
 			t.Errorf(`offeringOfHost("\ufeffapi.z.ai") = %q, %v, want zai, true`, got, ok)
 		}
 		if got, ok := OfferingOfHost("\u0085api.z.ai"); ok || got != "" {
 			t.Errorf(`offeringOfHost("\u0085api.z.ai") = %q, %v, want "", false`, got, ok)
-		}
-	})
-
-	t.Run("fast mode", func(t *testing.T) {
-		if !isFast(str("\ufefffast")) {
-			t.Error(`isFast("\ufefffast") = false, want true`)
-		}
-		if isFast(str("\u0085fast")) {
-			t.Error(`isFast("\u0085fast") = true, want false`)
-		}
-	})
-
-	t.Run("the priority and geo conditions", func(t *testing.T) {
-		priority, geo := 1.5, 1.1
-		bom := str("\ufeffpriority")
-		got := conditionsOf(ModelSheet{Priority: &priority, GeoUS: &geo}, PriceRequest{ServiceTier: bom})
-		if len(got) != 1 || got[0].label != "priority ×1.5" {
-			t.Errorf("conditionsOf of a BOM'd tier = %v, want the priority condition only", got)
-		}
-		nel := str("\u0085us")
-		if got := conditionsOf(ModelSheet{Priority: &priority, GeoUS: &geo}, PriceRequest{Geo: nel}); len(got) != 0 {
-			t.Errorf("conditionsOf of a NEL'd geo = %v, want none", got)
 		}
 	})
 }

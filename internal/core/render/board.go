@@ -6,6 +6,8 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
 // stateLabel is the state a row shows: active, idle, or a job's own state — in review, the verdict
@@ -47,7 +49,7 @@ func Board(provider domain.Provider, rows []app.ActivityRow, now int64) string {
 		}
 		requests := "-"
 		if row.Requests != nil {
-			requests = jsNumber(float64(*row.Requests))
+			requests = jsfmt.JSNumber(float64(*row.Requests))
 		}
 		input := "-"
 		if row.InputTokens != nil {

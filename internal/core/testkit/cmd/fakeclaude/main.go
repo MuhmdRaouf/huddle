@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -351,7 +352,12 @@ func appendVal(b *strings.Builder, v jval) {
 	case 's':
 		jsfmt.WriteQuoted(b, v.str)
 	case 'n':
-		b.WriteString(jsfmt.JSNumber(v.num))
+		// JSON.stringify writes a non-finite number as null, not as String(n)
+		if math.IsNaN(v.num) || math.IsInf(v.num, 0) {
+			b.WriteString("null")
+		} else {
+			b.WriteString(jsfmt.JSNumber(v.num))
+		}
 	case 'b':
 		b.WriteString(strconv.FormatBool(v.bol))
 	case 'z':

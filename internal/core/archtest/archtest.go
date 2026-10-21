@@ -84,6 +84,10 @@ var outside = map[string]Layer{
 	// The daemon shell over the router: the cli's wiring and the entries spawn it the way they
 	// spawn any other adapter's process.
 	"internal/routerd": LayerAdapters,
+	// The shared pure-logic packages every layer reads: the JavaScript formatting rules and the
+	// one price model.
+	"internal/jsfmt":   LayerDomain,
+	"internal/pricing": LayerDomain,
 }
 
 // classify maps a slash package directory, relative to the engine root (internal/core), to its

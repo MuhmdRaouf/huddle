@@ -4,59 +4,10 @@ import (
 	"math"
 	"reflect"
 	"slices"
-	"strconv"
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
-
-// jsNumber is ECMAScript's Number::toString: exactly what a JS template literal interpolates and
-// what JSON.stringify writes for a number. The table pins every branch: plain notation between
-// 1e-6 and 1e21, exponent notation outside, shortest round-trip digits, no leading zeros in the
-// exponent and a "+" on positive exponents.
-func TestJSNumber(t *testing.T) {
-	// The additions and divisions below run through variables: Go constant-folds untyped
-	// constants exactly and rounds once, where JS rounds every operation.
-	tenth := 0.1
-	cases := []struct {
-		in   float64
-		want string
-	}{
-		{0, "0"},
-		{0.004, "0.004"},
-		{0.005, "0.005"},
-		{1.005, "1.005"},
-		{1234567.891, "1234567.891"},
-		{-1, "-1"},
-		{1e21, "1e+21"},
-		{1e-7, "1e-7"},
-		{1e-6, "0.000001"},
-		{1e-5, "0.00001"},
-		{tenth + 0.2, "0.30000000000000004"},
-		{1e15, "1000000000000000"},
-		{999999, "999999"},
-		{100, "100"},
-		{1200, "1200"},
-		{310, "310"},
-		{2.5, "2.5"},
-		{-1.5, "-1.5"},
-		{100000.0 / 1000, "100"},
-		{512000.0 / 1000, "512"},
-		{100000.0 / 1000000, "0.1"},
-		{1234567.0 / 1000000, "1.234567"},
-		{math.NaN(), "NaN"},
-		{math.Inf(1), "Infinity"},
-		{math.Inf(-1), "-Infinity"},
-	}
-	for _, c := range cases {
-		if got := jsNumber(c.in); got != c.want {
-			t.Errorf("jsNumber(%s): got %q, want %q", strconv.FormatFloat(c.in, 'g', -1, 64), got, c.want)
-		}
-	}
-	if got := jsNumber(math.Copysign(0, -1)); got != "0" {
-		t.Errorf("jsNumber(-0): got %q, want %q", got, "0")
-	}
-}
 
 // jsToFixed is ECMAScript's Number.prototype.toFixed: the exact binary value rounded to the
 // requested decimals, ties away from zero (V8 negates first), the sign kept even on "-0.00", and

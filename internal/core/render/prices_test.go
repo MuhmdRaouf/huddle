@@ -91,41 +91,6 @@ func TestOfferingsCiteTheirSource(t *testing.T) {
 	}
 }
 
-// A canonical id two offerings name is ambiguous and resolves to nothing, offering or not.
-func TestResolveSheetAmbiguousID(t *testing.T) {
-	sheet := ModelSheet{Base: Rates{Input: 1}, Verified: true}
-	byCanonicalID["two-offerings"] = []sheetRef{
-		{Offerings[0], "a", sheet},
-		{Offerings[1], "b", sheet},
-	}
-	defer delete(byCanonicalID, "two-offerings")
-	if ref := resolveSheet(nil, "two-offerings"); ref != nil {
-		t.Errorf("no offering given: resolved to %v", ref)
-	}
-	deepseek := OfferingDeepseek
-	if ref := resolveSheet(&deepseek, "two-offerings"); ref != nil {
-		t.Errorf("offering given: resolved to %v", ref)
-	}
-}
-
-// tierLabel shortens a tier's threshold the way the detail line prints it.
-func TestTierLabel(t *testing.T) {
-	cases := []struct {
-		tokens float64
-		want   string
-	}{
-		{100_000, "100k"},
-		{512_000, "512k"},
-		{1_000_000, "1M"},
-		{2_500_000, "2.5M"},
-	}
-	for _, c := range cases {
-		if got := tierLabel(c.tokens); got != c.want {
-			t.Errorf("tierLabel(%v): got %q, want %q", c.tokens, got, c.want)
-		}
-	}
-}
-
 func TestOfferingOfHostGoldens(t *testing.T) {
 	for i, row := range goldenRows(t, "offeringofhost") {
 		input := inputOf[struct {

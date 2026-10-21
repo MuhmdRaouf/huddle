@@ -5,6 +5,8 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/app"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
 // JobCostUsd is what one job cost at the list price of the job's model: the plugin's own estimate,
@@ -121,7 +123,7 @@ func windowTable(window app.UsageWindow) []string {
 
 func lineOf(line usageLineNumbers) []string {
 	return []string{
-		jsNumber(float64(line.requests)),
+		jsfmt.JSNumber(float64(line.requests)),
 		Count(float64(line.inputTokens)),
 		Count(float64(line.outputTokens)),
 		Count(float64(line.cacheReadTokens)),
@@ -188,8 +190,8 @@ func engineSection(provider domain.Provider, engines []domain.EngineUsage) []str
 		table = append(table, append([]string{
 			string(row.Engine),
 			models,
-			jsNumber(float64(row.Jobs)),
-			jsNumber(float64(row.Accepted)),
+			jsfmt.JSNumber(float64(row.Jobs)),
+			jsfmt.JSNumber(float64(row.Accepted)),
 		}, lineOf(usageLineNumbers{
 			requests:         row.Requests,
 			inputTokens:      row.InputTokens,
@@ -214,14 +216,14 @@ func jobSection(provider domain.Provider, jobs []domain.TierUsage) []string {
 	for _, row := range jobs {
 		table = append(table, []string{
 			provider.Catalog[row.Tier].ID,
-			jsNumber(float64(row.Jobs)),
-			jsNumber(float64(row.Accepted)),
-			jsNumber(float64(row.Discarded)),
+			jsfmt.JSNumber(float64(row.Jobs)),
+			jsfmt.JSNumber(float64(row.Accepted)),
+			jsfmt.JSNumber(float64(row.Discarded)),
 			Percent(row.FirstTryPassRate),
-			jsNumber(float64(row.ReviewReturns)),
+			jsfmt.JSNumber(float64(row.ReviewReturns)),
 			Count(float64(row.InputTokens)),
 			Count(float64(row.OutputTokens)),
-			jsNumber(float64(row.RateLimitRetries)),
+			jsfmt.JSNumber(float64(row.RateLimitRetries)),
 			Duration(float64(row.DurationMs)),
 		})
 	}
@@ -301,7 +303,7 @@ func adviceSection(provider domain.Provider, advice *app.FlashAdvice) []string {
 	return []string{
 		"",
 		"Model advisor (an estimate; nothing was changed)",
-		jsNumber(float64(light)) + " of " + jsNumber(float64(advice.Runs)) + " " + advice.MainModel +
+		jsfmt.JSNumber(float64(light)) + " of " + jsfmt.JSNumber(float64(advice.Runs)) + " " + advice.MainModel +
 			" runs in the last 30 days looked light: read-only or sweep jobs, or few turns and short answers.",
 		"On " + advice.FlashModel + " they could have cost about " + Usd(less) +
 			" less at list prices, if the flash model handles them as well.",
