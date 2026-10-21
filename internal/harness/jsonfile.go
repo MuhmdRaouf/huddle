@@ -296,6 +296,24 @@ func jsonMemberNamed(members []jsonMember, key string) *jsonMember {
 	return nil
 }
 
+// jsonInsertAt answers the document with one more member or item spliced in before the
+// container's trailing whitespace, comma separated when count is past zero, so a later cut of
+// it gives the byte back exactly. The caller's scanner answers start (the container's opening
+// byte), closeOff (its closing byte) and count (what the container already holds).
+func jsonInsertAt(data []byte, start, closeOff, count int, snippet string) []byte {
+	if count > 0 {
+		snippet = "," + snippet
+	}
+	for closeOff > start+1 && isJSONSpace(data[closeOff-1]) {
+		closeOff--
+	}
+	out := make([]byte, 0, len(data)+len(snippet))
+	out = append(out, data[:closeOff]...)
+	out = append(out, snippet...)
+	out = append(out, data[closeOff:]...)
+	return out
+}
+
 // jsonInsertMember answers the document with one more member in the object that opens at
 // start, comma separated from the members already there. The member lands before the object's
 // trailing whitespace, so a later cut of it gives the byte back exactly.
@@ -304,17 +322,7 @@ func jsonInsertMember(data []byte, objStart int, snippet string) ([]byte, error)
 	if err != nil {
 		return nil, err
 	}
-	if len(members) > 0 {
-		snippet = "," + snippet
-	}
-	for closeOff > objStart+1 && isJSONSpace(data[closeOff-1]) {
-		closeOff--
-	}
-	out := make([]byte, 0, len(data)+len(snippet))
-	out = append(out, data[:closeOff]...)
-	out = append(out, snippet...)
-	out = append(out, data[closeOff:]...)
-	return out, nil
+	return jsonInsertAt(data, objStart, closeOff, len(members), snippet), nil
 }
 
 // jsonReplaceValue answers the document with one member's value swapped for another: the

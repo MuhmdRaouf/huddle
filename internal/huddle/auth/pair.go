@@ -288,13 +288,20 @@ func (p *Pairing) FinishPair(ctx context.Context, token string, body []byte) (Pa
 // BeginLogin opens one discoverable sign-in: the resident key names its device, so the request
 // offers no credential list for a thief to count.
 func (p *Pairing) BeginLogin(ctx context.Context) (*protocol.CredentialAssertion, error) {
+	return p.beginAssertion(p.logins)
+}
+
+// beginAssertion opens one discoverable assertion ceremony and stores it in the map the caller
+// names: sign-ins and step-ups run the same ceremony, apart, so neither can spend the other's
+// response. The write lands under p.mu, as every read of these maps does.
+func (p *Pairing) beginAssertion(into map[string]*pendingLogin) (*protocol.CredentialAssertion, error) {
 	assertion, session, err := p.wa.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
 		return nil, &channel.HuddleError{Status: 500, Msg: "the passkey ceremony could not begin"}
 	}
 	p.sweep()
 	p.mu.Lock()
-	p.logins[session.Challenge] = &pendingLogin{session: *session, deadline: p.nowMS() + PairLinkMS}
+	into[session.Challenge] = &pendingLogin{session: *session, deadline: p.nowMS() + PairLinkMS}
 	p.mu.Unlock()
 	return assertion, nil
 }
@@ -571,15 +578,7 @@ const StepUpWindowMS int64 = 5 * 60 * 1000
 // sign-in runs. Its challenges live apart from the sign-ins', so neither ceremony can spend the
 // other's response.
 func (p *Pairing) BeginStepUp(ctx context.Context) (*protocol.CredentialAssertion, error) {
-	assertion, session, err := p.wa.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
-	if err != nil {
-		return nil, &channel.HuddleError{Status: 500, Msg: "the passkey ceremony could not begin"}
-	}
-	p.sweep()
-	p.mu.Lock()
-	p.stepups[session.Challenge] = &pendingLogin{session: *session, deadline: p.nowMS() + PairLinkMS}
-	p.mu.Unlock()
-	return assertion, nil
+	return p.beginAssertion(p.stepups)
 }
 
 // FinishStepUp verifies one assertion against the ceremony that issued its challenge and stamps

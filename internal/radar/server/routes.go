@@ -1305,23 +1305,32 @@ func keepOf(bytes int64) int64 {
 // historyContext answers the conversation a request sat in, rebuilt from the stored sides of
 // its node's requests.
 func historyContext(h *history.History, rawID string, query url.Values) (ApiResponse, error) {
+	return historyLookup(rawID, query, "request", h.Context)
+}
+
+// historyLookup runs one context-shaped route over a lookup of the history: decode the id,
+// refuse an empty one with the noun, parse the page query, call the lookup, and answer the
+// noun's 404 when it holds nothing. The noun is "request" or "agent"; it builds both 404
+// texts.
+func historyLookup(rawID string, query url.Values, noun string,
+	lookup func(string, history.ContextQuery) (*shared.ContextAnswer, error)) (ApiResponse, error) {
 	id := decodeOf(rawID)
 	if id == nil {
 		return errorOf(400, "id is not valid URI encoding"), nil
 	}
 	if *id == "" {
-		return errorOf(404, "missing request id"), nil
+		return errorOf(404, "missing "+noun+" id"), nil
 	}
 	parsed, refusal := contextQuery(query)
 	if refusal != nil {
 		return *refusal, nil
 	}
-	found, err := h.Context(*id, parsed)
+	found, err := lookup(*id, parsed)
 	if err != nil {
 		return ApiResponse{}, err
 	}
 	if found == nil {
-		return errorOf(404, "unknown request: "+*id), nil
+		return errorOf(404, "unknown "+noun+": "+*id), nil
 	}
 	capContextPage(found.Messages)
 	return jsonOf(200, notedContext{ContextAnswer: *found, Note: ContextNote}), nil
@@ -1331,26 +1340,7 @@ func historyContext(h *history.History, rawID string, query url.Values) (ApiResp
 // the context route's shape, with the newest answer included. A node with no stored
 // requests answers an empty page, not a 404.
 func historyAgentTranscript(h *history.History, rawID string, query url.Values) (ApiResponse, error) {
-	id := decodeOf(rawID)
-	if id == nil {
-		return errorOf(400, "id is not valid URI encoding"), nil
-	}
-	if *id == "" {
-		return errorOf(404, "missing agent id"), nil
-	}
-	parsed, refusal := contextQuery(query)
-	if refusal != nil {
-		return *refusal, nil
-	}
-	found, err := h.AgentTranscript(*id, parsed)
-	if err != nil {
-		return ApiResponse{}, err
-	}
-	if found == nil {
-		return errorOf(404, "unknown agent: "+*id), nil
-	}
-	capContextPage(found.Messages)
-	return jsonOf(200, notedContext{ContextAnswer: *found, Note: ContextNote}), nil
+	return historyLookup(rawID, query, "agent", h.AgentTranscript)
 }
 
 // historyCapture answers the request's stored prompt capture, decompressed on read, with

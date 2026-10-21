@@ -523,17 +523,7 @@ func jsonInsertArrayItem(data []byte, arrStart int, snippet string) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	if len(items) > 0 {
-		snippet = "," + snippet
-	}
-	for closeOff > arrStart+1 && isJSONSpace(data[closeOff-1]) {
-		closeOff--
-	}
-	out := make([]byte, 0, len(data)+len(snippet))
-	out = append(out, data[:closeOff]...)
-	out = append(out, snippet...)
-	out = append(out, data[closeOff:]...)
-	return out, nil
+	return jsonInsertAt(data, arrStart, closeOff, len(items), snippet), nil
 }
 
 // — the Codex hook block: the same marker discipline as the MCP tables, a pair of its own.

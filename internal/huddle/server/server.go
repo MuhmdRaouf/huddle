@@ -1742,20 +1742,28 @@ func (s *server) staticFile(w http.ResponseWriter, name, contentType string, noS
 	return nil
 }
 
-// fontRoute serves the bundled IBM Plex faces the dashboard's stylesheet points at.
-func (s *server) fontRoute(w http.ResponseWriter, path string) error {
-	name := path[len("/fonts/"):]
-	if !fontName.MatchString(name) {
+// assetRoute serves one allowlisted artifact from the dashboard build: the part of path past
+// prefix must match name, or the route answers the path's 404; the bytes answer with
+// contentType and no caching. The artifact's directory is the prefix without its leading
+// slash, which is where the build lays it.
+func (s *server) assetRoute(w http.ResponseWriter, path, prefix string, name *regexp.Regexp, contentType string) error {
+	file := path[len(prefix):]
+	if !name.MatchString(file) {
 		s.writeJSON(w, 404, errorAnswer{Error: "not found: " + path}, nil)
 		return nil
 	}
-	body, err := dashboardFile("fonts/" + name)
+	body, err := dashboardFile(prefix[1:] + file)
 	if err != nil {
-		s.writeJSON(w, 404, errorAnswer{Error: "missing build artifact: fonts/" + name}, nil)
+		s.writeJSON(w, 404, errorAnswer{Error: "missing build artifact: " + prefix[1:] + file}, nil)
 		return nil
 	}
-	writeText(w, 200, string(body), map[string]string{"Content-Type": "font/woff2", "Cache-Control": "no-store"})
+	writeText(w, 200, string(body), map[string]string{"Content-Type": contentType, "Cache-Control": "no-store"})
 	return nil
+}
+
+// fontRoute serves the bundled IBM Plex faces the dashboard's stylesheet points at.
+func (s *server) fontRoute(w http.ResponseWriter, path string) error {
+	return s.assetRoute(w, path, "/fonts/", fontName, "font/woff2")
 }
 
 // swRoute serves the app-shell service worker. The browser revalidates it on every load
@@ -1777,18 +1785,7 @@ func (s *server) swRoute(w http.ResponseWriter) error {
 
 // iconRoute serves the PWA's icons the manifest names.
 func (s *server) iconRoute(w http.ResponseWriter, path string) error {
-	name := path[len("/icons/"):]
-	if !iconName.MatchString(name) {
-		s.writeJSON(w, 404, errorAnswer{Error: "not found: " + path}, nil)
-		return nil
-	}
-	body, err := dashboardFile("icons/" + name)
-	if err != nil {
-		s.writeJSON(w, 404, errorAnswer{Error: "missing build artifact: icons/" + name}, nil)
-		return nil
-	}
-	writeText(w, 200, string(body), map[string]string{"Content-Type": "image/png", "Cache-Control": "no-store"})
-	return nil
+	return s.assetRoute(w, path, "/icons/", iconName, "image/png")
 }
 
 // createChannel makes a channel with its first configuration.
