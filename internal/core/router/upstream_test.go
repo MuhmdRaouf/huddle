@@ -766,8 +766,10 @@ func TestOneRequestUpstream(t *testing.T) {
 
 	t.Run("aborts the upstream request when the client goes away", func(t *testing.T) {
 		var closed atomic.Bool
+		arrived := make(chan struct{}, 1)
 		upstream := serve(t, func(w http.ResponseWriter, req *http.Request) {
 			io.Copy(io.Discard, req.Body)
+			arrived <- struct{}{}
 			<-req.Context().Done()
 			closed.Store(true)
 		}, nil)
@@ -781,7 +783,13 @@ func TestOneRequestUpstream(t *testing.T) {
 		if _, err := socket.Write([]byte("POST /x HTTP/1.1\r\nhost: 127.0.0.1\r\ncontent-length: 2\r\n\r\n{}")); err != nil {
 			t.Fatalf("write: %v", err)
 		}
-		time.Sleep(50 * time.Millisecond)
+		// the client goes away only once the relay's request reached the upstream: closing
+		// before that would leave the upstream nothing to abort
+		select {
+		case <-arrived:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the relay never reached the upstream")
+		}
 		socket.Close()
 		if !until(closed.Load) {
 			t.Error("the upstream request must abort when the client goes away")

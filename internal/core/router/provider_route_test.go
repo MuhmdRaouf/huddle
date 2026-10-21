@@ -240,8 +240,17 @@ func TestProviderRouteRecordsTheEventsClaudeCodeReads(t *testing.T) {
 	if got.status != 200 {
 		t.Fatalf("the answer = %d %q, want 200", got.status, got.body)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && len(events.routes()) == 0 {
+	// the route and the capture events are written apart, so the wait covers both
+	hasCapture := func() bool {
+		for _, event := range events.all() {
+			if _, ok := event.(domain.CaptureEvent); ok {
+				return true
+			}
+		}
+		return false
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && (len(events.routes()) == 0 || !hasCapture()) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	routes := events.routes()
@@ -258,13 +267,7 @@ func TestProviderRouteRecordsTheEventsClaudeCodeReads(t *testing.T) {
 	if route.PromptHash == nil || *route.PromptHash == "" {
 		t.Error("the route event carries no prompt hash")
 	}
-	captured := false
-	for _, event := range events.all() {
-		if _, ok := event.(domain.CaptureEvent); ok {
-			captured = true
-		}
-	}
-	if !captured {
+	if !hasCapture() {
 		t.Error("the lane captured nothing for the body's system")
 	}
 }
