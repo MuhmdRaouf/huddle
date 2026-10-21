@@ -408,7 +408,7 @@ func TestPriceRequestOf(t *testing.T) {
 		if got == nil {
 			t.Fatal("glm-5.3: no price")
 		}
-		closeTo(t, "glm-5.3", got.USD, (1e6/1e6)*sheet.Base.Input+(1e5/1e6)*sheet.Base.Output)
+		closeTo(t, "glm-5.3", got.USD, sheet.Base.Input+(1e5/1e6)*sheet.Base.Output)
 		want := []string{"Z.ai list"}
 		if !slices.Equal(got.Detail, want) {
 			t.Errorf("detail: got %v want %v", got.Detail, want)
@@ -455,7 +455,7 @@ func TestPriceRequestOf(t *testing.T) {
 			if got == nil {
 				t.Fatalf("MiniMax-M3 %s: no price", tc.tier)
 			}
-			closeTo(t, tc.tier, got.USD, (1e6/1e6)*tier*tc.multiplier)
+			closeTo(t, tc.tier, got.USD, tier*tc.multiplier)
 			if !slices.Equal(got.Detail, tc.want) {
 				t.Errorf("%s: detail: got %v want %v", tc.tier, got.Detail, tc.want)
 			}
@@ -474,7 +474,7 @@ func TestPriceRequestOf(t *testing.T) {
 		if got == nil {
 			t.Fatal("claude-sonnet-5-5: no price")
 		}
-		closeTo(t, "us geo", got.USD, (1e6/1e6)*sheet.Base.Input*(*sheet.GeoUS))
+		closeTo(t, "us geo", got.USD, sheet.Base.Input*(*sheet.GeoUS))
 		want := []string{"Anthropic list", "US geo ×1.1"}
 		if !slices.Equal(got.Detail, want) {
 			t.Errorf("detail: got %v want %v", got.Detail, want)
@@ -500,7 +500,7 @@ func TestPriceRequestOf(t *testing.T) {
 			if got == nil {
 				t.Fatalf("deepseek-flash at %s: no price", tc.at)
 			}
-			closeTo(t, tc.at, got.USD, (1e6/1e6)*tc.usd)
+			closeTo(t, tc.at, got.USD, tc.usd)
 			if !slices.Equal(got.Detail, tc.want) {
 				t.Errorf("%s: detail: got %v want %v", tc.at, got.Detail, tc.want)
 			}
@@ -519,7 +519,7 @@ func TestPriceRequestOf(t *testing.T) {
 			t.Fatal("claude-opus-5-5 fast: no price")
 		}
 		fast := *sheetOf(t, OfferingAnthropic, "claude-opus-5-5").Fast
-		closeTo(t, "fast", got.USD, (1e6/1e6)*fast.Input+(1e6/1e6)*fast.Output)
+		closeTo(t, "fast", got.USD, fast.Input+fast.Output)
 		want := []string{"Anthropic list", "fast mode"}
 		if !slices.Equal(got.Detail, want) {
 			t.Errorf("detail: got %v want %v", got.Detail, want)
@@ -535,7 +535,7 @@ func TestPriceRequestOf(t *testing.T) {
 		if plain == nil {
 			t.Fatal("glm-5.3 fast: no price")
 		}
-		closeTo(t, "glm-5.3 fast", plain.USD, (1e6/1e6)*sheet.Base.Input)
+		closeTo(t, "glm-5.3 fast", plain.USD, sheet.Base.Input)
 		wantPlain := []string{"Z.ai list"}
 		if !slices.Equal(plain.Detail, wantPlain) {
 			t.Errorf("detail: got %v want %v", plain.Detail, wantPlain)
@@ -555,7 +555,7 @@ func TestPriceRequestOf(t *testing.T) {
 		if got == nil {
 			t.Fatal("claude-opus-5-5: no price")
 		}
-		closeTo(t, "5m and 1h writes", got.USD, (1e6/1e6)*sheet.Base.CacheWrite5m+(1e6/1e6)*(*sheet.Base.CacheWrite1h))
+		closeTo(t, "5m and 1h writes", got.USD, sheet.Base.CacheWrite5m+(*sheet.Base.CacheWrite1h))
 		want := []string{"Anthropic list", "1 h cache writes"}
 		if !slices.Equal(got.Detail, want) {
 			t.Errorf("detail: got %v want %v", got.Detail, want)
@@ -574,7 +574,7 @@ func TestPriceRequestOf(t *testing.T) {
 		if got == nil {
 			t.Fatal("MiniMax-M2.7: no price")
 		}
-		closeTo(t, "1h writes at the 5m rate", got.USD, (1e6/1e6)*sheet.Base.CacheWrite5m)
+		closeTo(t, "1h writes at the 5m rate", got.USD, sheet.Base.CacheWrite5m)
 		want := []string{"MiniMax list", "1 h cache writes"}
 		if !slices.Equal(got.Detail, want) {
 			t.Errorf("detail: got %v want %v", got.Detail, want)
