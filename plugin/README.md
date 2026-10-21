@@ -38,7 +38,7 @@
 
    ```text
    /plugin marketplace add MuhmdRaouf/huddle
-   /plugin install huddle@huddle
+   /plugin install huddle@muhmdraouf
    ```
 
 2. **Nothing else to install.** The launcher gets one static binary (macOS and Linux, amd64 and arm64) onto the
@@ -174,7 +174,7 @@ routing their model requests through the gateway, serving the hub on a local nam
 
 ## Uninstalling
 
-Run `/plugin uninstall huddle@huddle`.
+Run `/plugin uninstall huddle@muhmdraouf`.
 
 - A server the plugin started watches Claude Code's plugin registry: two consecutive checks, 10 s apart, that agree
   the plugin is gone or disabled stop it. A hub started by hand (`huddle serve`) never watches.
