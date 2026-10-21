@@ -5,6 +5,8 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -1561,6 +1563,37 @@ func TestFailureCode(t *testing.T) {
 	}
 }
 
+func TestFailureCodeNamesCertificateErrors(t *testing.T) {
+	t.Parallel()
+	// The shapes a TLS handshake failure arrives in: crypto/tls's own wrapper, the bare x509
+	// errors, and each as net/http or a fmt.Errorf wrap hands it up the chain.
+	bases := []error{
+		&tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}},
+		x509.UnknownAuthorityError{},
+		x509.HostnameError{Certificate: &x509.Certificate{}, Host: "zai.example"},
+		x509.CertificateInvalidError{Reason: x509.Expired, Detail: "x509: certificate has expired"},
+		tls.RecordHeaderError{Msg: "first record does not look like a TLS handshake"},
+	}
+	type codeCase struct {
+		err  error
+		want string
+	}
+	var cases []codeCase
+	for _, base := range bases {
+		cases = append(cases,
+			codeCase{base, "ECERT"},
+			codeCase{&url.Error{Op: "Post", URL: "https://zai.example/v1/messages", Err: base}, "ECERT"},
+			codeCase{fmt.Errorf("dial tcp: %w", base), "ECERT"},
+		)
+	}
+	cases = append(cases, codeCase{errors.New("malformed HTTP response \"<html>\""), "EUPSTREAM"})
+	for _, tc := range cases {
+		if got := failureCode(tc.err); got != tc.want {
+			t.Errorf("failureCode(%v) = %q, want %q", tc.err, got, tc.want)
+		}
+	}
+}
+
 func TestStaleSocket(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -1576,6 +1609,8 @@ func TestStaleSocket(t *testing.T) {
 		{"EUPSTREAM", errors.New("http: server closed idle connection"), true},
 		{"ETIMEDOUT", fmt.Errorf("read tcp: %w", os.ErrDeadlineExceeded), false},
 		{"ECONNREFUSED", fmt.Errorf("dial tcp: %w", syscall.ECONNREFUSED), false},
+		// A certificate failure is never a stale socket: no fresh connection fixes the handshake.
+		{"ECERT", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, false},
 		{"EUPSTREAM", errors.New("malformed HTTP response"), false},
 	}
 	for _, tc := range cases {

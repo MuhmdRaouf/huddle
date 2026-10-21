@@ -190,6 +190,27 @@ func TestProviderRouteRefusesWhatMustNotReachClaude(t *testing.T) {
 		}
 	})
 
+	t.Run("an upstream whose certificate does not check out is a 502 naming ECERT", func(t *testing.T) {
+		t.Parallel()
+		upstream := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		t.Cleanup(upstream.Close)
+		var logLines []string
+		worker := laneWorker(t, mustURL(t, upstream.URL+"/api/anthropic"), keyOfTheLane, func(o *RouterOptions) {
+			o.Log = func(line string) { logLines = append(logLines, line) }
+		})
+		got := postToLane(t, laneServer(t, worker), `{"model":"glm-5.3","messages":[]}`)
+		if got.status != 502 {
+			t.Fatalf("the answer = %d %q, want 502", got.status, got.body)
+		}
+		if !strings.Contains(got.body, "ECERT") {
+			t.Errorf("the answer = %q, want the code ECERT", got.body)
+		}
+		log := strings.Join(logLines, "\n")
+		if !strings.Contains(log, "error ECERT") {
+			t.Errorf("the log = %q, want the code ECERT", log)
+		}
+	})
+
 	t.Run("an upstream that is not https and not loopback is refused", func(t *testing.T) {
 		t.Parallel()
 		worker := laneWorker(t, mustURL(t, "http://provider.example:1/api/anthropic"), keyOfTheLane, nil)

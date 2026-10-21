@@ -13,6 +13,8 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -585,8 +587,24 @@ type UpstreamHooks struct {
 	Oversize func(answer *http.Response)
 }
 
+// certErr reports a certificate or TLS-handshake failure: the upstream's certificate did not
+// verify or the bytes were never a TLS handshake, so no errno applies and no retry can fix it.
+// Matched through the error chain, the way net/http hands the caller the transport's error.
+func certErr(err error) bool {
+	var (
+		verify   *tls.CertificateVerificationError
+		record   tls.RecordHeaderError
+		unknown  x509.UnknownAuthorityError
+		hostname x509.HostnameError
+		invalid  x509.CertificateInvalidError
+	)
+	return errors.As(err, &verify) || errors.As(err, &record) || errors.As(err, &unknown) ||
+		errors.As(err, &hostname) || errors.As(err, &invalid)
+}
+
 // failureCode is the errno-style code a failure reports — Node's errno vocabulary, which the
-// router's logs and health events carry (upstream_errno.go holds the errno tests).
+// router's logs and health events carry, plus ECERT, its own name for a certificate failure
+// (upstream_errno.go holds the errno tests).
 func failureCode(err error) string {
 	switch {
 	case errors.Is(err, os.ErrDeadlineExceeded), errors.Is(err, context.DeadlineExceeded):
@@ -594,6 +612,8 @@ func failureCode(err error) string {
 	case errors.Is(err, context.Canceled):
 		// The request was aborted: the client had gone, and the call was destroyed with it.
 		return "ECONNRESET"
+	case certErr(err):
+		return "ECERT"
 	case resetErrno(err):
 		return "ECONNRESET"
 	case pipeErrno(err):
