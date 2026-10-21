@@ -17,6 +17,7 @@ import {
   ConsoleErrors,
   USAGE,
   mintPairLink,
+  n,
   openTab,
   pairThroughLink,
   theSetup,
@@ -81,12 +82,14 @@ test("one signed-in walk over TLS covers every tab with no console error", async
     await link.click();
     await expect(page.getByRole(role, { name: loaded }).first()).toBeVisible();
 
-    // the Costs series carries the seeded window: five requests drawn, not an empty chart
+    // the Costs series carries the seeded window: the seeded calls plus the load, not an empty chart
     if (view === "costs") {
       await page.getByRole("button", { name: "30 days" }).click();
       await expect(page.locator("[data-key='attribution-table']")).toBeVisible();
       await expect(page.locator(".bar-seg").first()).toBeVisible();
-      await expect(page.getByText(/30 days: .+, 5 requests, /)).toBeVisible();
+      await expect(
+        page.getByText(new RegExp(`30 days: .+, ${n(USAGE.requests)} requests, `)),
+      ).toBeVisible();
     }
     // the Usage tiles carry the seeded totals exactly, the chart one stacked column per day
     if (view === "usage") {

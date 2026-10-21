@@ -6,6 +6,7 @@ import { expect, type CDPSession, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { readSetup, repoRoot, runDir, type E2eSetup } from "./paths.ts";
+import { LOAD_REQUESTS, LOAD_TOKENS } from "./seed.ts";
 
 /** The fixture's token numbers, as the transcript and the spool both carry them: three glm-5.3
  *  requests whose totals the dashboard must show exactly. A fourth call twenty-five hours back
@@ -38,14 +39,17 @@ export const CODEX = {
   cacheRead: 200,
 } as const;
 
-/** The five seeded requests summed, the numbers the Usage view's tiles carry wherever it opens:
- *  three glm-5.3 today, one glm-5.3-flash and one codex turn twenty-five hours back. */
+/** The five seeded requests plus the usage load (seed.ts), the numbers the Usage view's tiles
+ *  and the Costs line carry: three glm-5.3 today, one glm-5.3-flash, one codex turn and twelve
+ *  load requests, all but today's three at the same twenty-five-hours-back instant. That
+ *  instant sits inside the 7-day window too, so both windows answer with these totals. */
 export const USAGE = {
-  processed: 10_015 + CODEX.input + CODEX.output + CODEX.cacheRead,
+  processed: 10_015 + CODEX.input + CODEX.output + CODEX.cacheRead + LOAD_TOKENS.processed,
   cached: 5_000 + CODEX.cacheRead,
-  uncached: 2_410 + CODEX.input,
-  output: 605 + CODEX.output,
+  uncached: 2_410 + CODEX.input + LOAD_TOKENS.uncached,
+  output: 605 + CODEX.output + LOAD_TOKENS.output,
   today: 10_000,
+  requests: 5 + LOAD_REQUESTS,
 } as const;
 
 /** 1,200 — the grouping the dashboard's number cells carry. */

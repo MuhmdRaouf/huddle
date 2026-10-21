@@ -1,15 +1,16 @@
 // layout.spec.ts — the screenshot tour as a permanent gate: the landing page a signed-out
-// browser gets, then every tab and every Radar view, in both colour schemes at the desk and the
-// phone width, opens with no console error, no page-level horizontal scroll, and no two Kanban
-// toolbar controls overlapping. Each view also lands a screenshot under the test's own output
-// dir, so a layout report is one run away.
+// browser gets, then every tab and every Radar view, in both colour schemes at the desk, tablet
+// and phone widths, opens with no console error, no page-level horizontal scroll, no two Kanban
+// toolbar controls overlapping, and no Radar sub-tab sitting under the range picker. Each view
+// also lands a screenshot under the test's own output dir, so a layout report is one run away.
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { ConsoleErrors, openTab, signIn, theSetup } from "./helpers.ts";
 
-/** The two viewports the tour shoots: the desk and the phone. */
+/** The three viewports the tour shoots: the desk, the tablet and the phone. */
 const SIZES: readonly (readonly [kind: string, width: number, height: number])[] = [
   ["desk", 1440, 900],
+  ["tablet", 820, 1180],
   ["phone", 390, 844],
 ];
 
@@ -75,6 +76,51 @@ async function expectToolbarClear(page: Page, name: string): Promise<void> {
   }
 }
 
+/** Asserts no Radar sub-tab sits under the range picker. The sub-tab row scrolls its pills inside
+ *  itself, so a scrolled-out pill keeps a layout box that paints nowhere — each pill's box is
+ *  clamped to the row's own clip box first, and the row must actually clip (overflow-x on), which
+ *  is what makes the comparison about painted pixels. */
+async function expectRadarHeaderClear(page: Page, name: string): Promise<void> {
+  const row = page.locator('nav[aria-label="Radar views"] > div:first-child');
+  const clip = await row.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    return {
+      overflowX: getComputedStyle(el).overflowX,
+      x: box.x,
+      y: box.y,
+      w: box.width,
+      h: box.height,
+    };
+  });
+  expect(
+    ["auto", "scroll", "hidden", "clip"].includes(clip.overflowX),
+    `${name}: the Radar sub-tab row does not clip its pills (overflow-x: ${clip.overflowX})`,
+  ).toBe(true);
+  const tabs = await boxesOf(page.locator('nav[aria-label="Radar views"] a[data-view]'));
+  const range = await boxesOf(page.locator("[data-radar-range]"));
+  expect(tabs.length, `${name}: the Radar views nav holds no sub-tabs`).toBeGreaterThan(0);
+  for (const box of tabs) {
+    const left = Math.max(box.x, clip.x);
+    const top = Math.max(box.y, clip.y);
+    const visible = {
+      x: left,
+      y: top,
+      w: Math.min(box.x + box.w, clip.x + clip.w) - left,
+      h: Math.min(box.y + box.h, clip.y + clip.h) - top,
+    };
+    for (const b of range) {
+      const overlap =
+        visible.w > 0 &&
+        visible.h > 0 &&
+        visible.x < b.x + b.w - 1 &&
+        b.x < visible.x + visible.w - 1 &&
+        visible.y < b.y + b.h - 1 &&
+        b.y < visible.y + visible.h - 1;
+      expect(overlap, `${name}: a Radar sub-tab sits under the range picker`).toBe(false);
+    }
+  }
+}
+
 for (const scheme of SCHEMES) {
   for (const [kind, width, height] of SIZES) {
     test(`every view lays out clean: ${scheme} ${kind}`, async ({ browser }, testInfo) => {
@@ -128,7 +174,11 @@ for (const scheme of SCHEMES) {
       await shot("channel");
 
       // Radar: one screenshot per view, the sub-tab's own currency the wait
-      await openAndShoot("Radar", () => Promise.resolve(), "radar-overview");
+      await openAndShoot(
+        "Radar",
+        () => expectRadarHeaderClear(page, `radar overview ${scheme} ${kind}`),
+        "radar-overview",
+      );
       for (const label of RADAR.slice(1)) {
         const link = page
           .getByRole("navigation", { name: "Radar views" })
@@ -136,6 +186,7 @@ for (const scheme of SCHEMES) {
         await link.click();
         await expect(link).toHaveAttribute("aria-current", "page");
         await settled(page);
+        await expectRadarHeaderClear(page, `radar ${label} ${scheme} ${kind}`);
         await expectNoPageScroll(page, `radar ${label}`);
         await shot(`radar-${label.toLowerCase()}`);
       }

@@ -116,10 +116,13 @@ export function dayRows(
 }
 
 /** The models the window ran without a price: their requests and tokens count, their cost does not.
- *  A priced model never shows a zero sum, so a zero-cost slice with requests names itself. */
+ *  A priced model never shows a zero sum, so a zero-cost slice with requests names itself. A slice
+ *  with an empty key holds the requests whose model is unknown — it counts, it names nothing. */
 export function unpricedModels(report: UsageReport): string[] {
   return report.byModel
-    .filter((slice) => slice.requests > 0 && slice.costUsd === 0 && slice.savingsUsd === 0)
+    .filter(
+      (slice) => slice.key !== "" && slice.requests > 0 && slice.costUsd === 0 && slice.savingsUsd === 0,
+    )
     .map((slice) => slice.key);
 }
 
@@ -307,33 +310,37 @@ function UsagePlot({ data, metric, mark }: { data: UsageSeries; metric: UsageMet
   );
 }
 
-/** The chart's text alternative: one row per day, one column per visible model, for screen readers. */
+/** The chart's text alternative: one row per day, one column per visible model, for screen readers.
+ *  The hiding class rides a wrapper, never the table: a table's automatic layout grows to its
+ *  content's own width even under sr-only's 1px, and the unclipped table pushes the page wider. */
 function UsageTable({ data, metric }: { data: UsageSeries; metric: UsageMetric }) {
   const cell = (value: number): string => (metric === "cost" ? fmtUsd(value) : fmtNum(value));
   return (
-    <table class="sr-only" data-usage-table="">
-      <caption>{`Daily ${metric} by model`}</caption>
-      <thead>
-        <tr>
-          <th scope="col">Day</th>
-          {data.keys.map((key) => (
-            <th key={key} scope="col">
-              {shortModelName(key)}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {data.days.map((day, index) => (
-          <tr key={day.date}>
-            <th scope="row">{day.date}</th>
-            {data.keys.map((key, series) => (
-              <td key={key}>{cell(data.values[series]?.[index] ?? 0)}</td>
+    <div class="sr-only">
+      <table data-usage-table="">
+        <caption>{`Daily ${metric} by model`}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Day</th>
+            {data.keys.map((key) => (
+              <th key={key} scope="col">
+                {shortModelName(key)}
+              </th>
             ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {data.days.map((day, index) => (
+            <tr key={day.date}>
+              <th scope="row">{day.date}</th>
+              {data.keys.map((key, series) => (
+                <td key={key}>{cell(data.values[series]?.[index] ?? 0)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

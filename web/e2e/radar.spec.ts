@@ -5,6 +5,7 @@
 
 import { expect, test } from "@playwright/test";
 import { ConsoleErrors, n, openTab, signIn, SEEDED, theSetup, TOTALS } from "./helpers.ts";
+import { LOAD_REQUESTS } from "./seed.ts";
 
 /** The views in their sub-tab order, each with the one thing only it shows once loaded. */
 const VIEWS: readonly (readonly [
@@ -94,7 +95,8 @@ test("the blocks view counts the seeded block once the scope includes the provid
   const rows = page.locator("[data-blocks-table] tbody tr");
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("3");
-  await expect(rows.nth(1)).toContainText("1"); // the flash call twenty-five hours back
+  // yesterday's window holds the flash call, the codex turn and the twelve load requests
+  await expect(rows.nth(1)).toContainText(`${2 + LOAD_REQUESTS}`);
 
   // the overview's card carries the same widened scope
   await page

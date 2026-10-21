@@ -13,7 +13,7 @@ export default defineConfig({
   globalSetup: path.join(here, "global-setup.ts"),
   globalTeardown: path.join(here, "global-teardown.ts"),
   timeout: 30_000,
-  globalTimeout: 5 * 60_000,
+  globalTimeout: 8 * 60_000,
   workers: 1,
   retries: 0,
   reporter: [["list"]],

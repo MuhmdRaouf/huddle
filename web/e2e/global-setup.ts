@@ -15,6 +15,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import https from "node:https";
 import { here, repoRoot, runDir, setupPath, type E2eSetup } from "./paths.ts";
+import { LOAD_REQUESTS } from "./seed.ts";
 import { HUB_HOST, hubPair } from "./tls.ts";
 
 const SESSION_TITLE = "E2E seed session";
@@ -379,7 +380,8 @@ async function waitIngested(port: number, token: string): Promise<void> {
       });
       if (r.ok) {
         const body = (await r.json()) as { requests?: unknown[] };
-        if ((body.requests?.length ?? 0) >= 5) return;
+        // the seeded five plus the usage load, clamped to the requests list's own 200-row cap
+        if ((body.requests?.length ?? 0) >= Math.min(5 + LOAD_REQUESTS, 200)) return;
       }
     } catch {
       // not ingested yet

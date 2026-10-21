@@ -1,8 +1,8 @@
-// usage.spec.ts — the Usage view over the seeded transcript: the five seeded requests land in the
-// window's tiles as exact token totals, the 7-day window answers, a click on the seeded day shows
-// that day's split (today carries only the three glm calls), a project's drill-down offers the
-// resume command for the seeded session, and the By agent table splits the window over Claude and
-// the seeded Codex session.
+// usage.spec.ts — the Usage view over the seeded data: the five seeded requests plus the usage
+// load land in the window's tiles as exact token totals, the 7-day window answers with the same
+// totals, a click on the seeded day shows that day's split (today carries only the three glm
+// calls), a project's drill-down offers the resume command for the seeded session, and the By
+// agent table splits the window over Claude and the seeded Codex session.
 
 import { expect, test } from "@playwright/test";
 import { CODEX, ConsoleErrors, USAGE, signIn, theSetup } from "./helpers.ts";
@@ -42,7 +42,8 @@ test("the usage view shows the seeded totals and splits the picked day", async (
   await page.mouse.move(0, 0);
   await expect(tip).toHaveCount(0);
 
-  // the 7-day window answers with the same requests as the default 30
+  // the 7-day window answers with the same requests as the default 30: the load shares the
+  // seeded requests' twenty-five-hours-back instant, inside both windows
   await page.getByRole("group", { name: "Window" }).getByRole("button", { name: "7 days" }).click();
   await expect(tiles).toContainText(USAGE.processed.toLocaleString("en-US"));
 
@@ -85,7 +86,7 @@ test("the By agent table splits the window over the agent CLIs, each resuming it
   await signIn(page);
   await page.goto(`${theSetup().rootUrl}/#/radar/usage`);
 
-  // claude's four requests and the seeded codex turn, opencode absent
+  // claude's requests (the seeded calls and the usage load) and the seeded codex turn, opencode absent
   const agents = page.locator("[data-key='usage-harness']");
   await expect(agents).toBeVisible();
   await expect(agents).toContainText("Claude");

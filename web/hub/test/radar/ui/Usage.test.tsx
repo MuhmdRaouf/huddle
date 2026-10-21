@@ -336,6 +336,15 @@ describe("unpricedModels", () => {
     expect(unpricedModels(REPORT)).toEqual(["glm-5.3-flash"]);
     expect(unpricedModels(PRICED)).toEqual([]);
   });
+
+  it("leaves the nameless slice out: requests whose model is unknown name no model", () => {
+    const unknown: UsageReport = {
+      ...REPORT,
+      unpriced: 2,
+      byModel: [GLM, FLASH, { ...FLASH, key: "", days: [] }],
+    };
+    expect(unpricedModels(unknown)).toEqual(["glm-5.3-flash"]);
+  });
 });
 
 describe("resumeCommand", () => {
@@ -698,5 +707,16 @@ describe("UsageView", () => {
       NOW,
     );
     expect(nameless.container.textContent).toContain("Daily usage");
+  });
+
+  it("hides the table through a clipping wrapper, so a wide table never widens the page", () => {
+    // jsdom lays nothing out; this holds the structure the fix rides: sr-only on the wrapper
+    // (width 1px, overflow hidden) keeps the table's automatic width off the document's.
+    const { container } = renderApp(<UsageView />, usageState(), NOW);
+    const table = container.querySelector("table[data-usage-table]");
+    expect(table).toBeTruthy();
+    expect(table?.classList.contains("sr-only")).toBe(false);
+    expect(table?.parentElement?.tagName).toBe("DIV");
+    expect(table?.parentElement?.classList.contains("sr-only")).toBe(true);
   });
 });
