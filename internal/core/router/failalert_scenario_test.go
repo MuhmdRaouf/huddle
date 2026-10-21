@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
@@ -87,6 +88,12 @@ func TestFailAlertScenarios(t *testing.T) {
 				}
 			})
 			s.Then("one failing event and one recovery event are all the health there is", func(t *testing.T) {
+				// The success is counted once the stream has reached the client, so the client can
+				// read its 200 before the recovery event and its log line are written.
+				deadline := time.Now().Add(5 * time.Second)
+				for time.Now().Before(deadline) && !strings.Contains(lines.joined(), "Anthropic path recovered") {
+					time.Sleep(10 * time.Millisecond)
+				}
 				failing := healthEvents(rig.events, domain.HealthUpstreamFailing)
 				recovered := healthEvents(rig.events, domain.HealthUpstreamRecovered)
 				if len(failing) != 1 || len(recovered) != 1 {
