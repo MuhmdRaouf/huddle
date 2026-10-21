@@ -93,6 +93,8 @@ node scripts/check-attribution.mjs             # no AI attribution in the histor
   temp dirs; tests never touch the real `~/.claude`, `~/.agents`, `~/.config`, the loopback ports the daemons
   serve (huddle-router's 18786, the hub's 18860-18869), or processes they
   did not start. ACME, DNS and push services are fakes.
+- Every incident is a case in `docs/INCIDENTS.md`: cause, guard test, rule. A new incident adds its section and
+  its guard in the same change.
 - macOS and Linux only.
 
 ## Writing code
