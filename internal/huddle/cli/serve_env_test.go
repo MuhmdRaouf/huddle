@@ -5,8 +5,11 @@ package cli
 // proxies ride along.
 
 import (
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 func TestWithoutRouterProxies(t *testing.T) {
@@ -33,7 +36,7 @@ func TestWithoutRouterProxies(t *testing.T) {
 }
 
 func TestWithoutRouterProxiesFallsBackToTheCanonicalPort(t *testing.T) {
-	env := []string{"HUDDLE_ROUTER_PORT=not-a-port", "ALL_PROXY=127.0.0.1:18786"}
+	env := []string{"HUDDLE_ROUTER_PORT=not-a-port", "ALL_PROXY=127.0.0.1:" + strconv.Itoa(domain.HuddleRouterPort)}
 	got := strings.Join(withoutRouterProxies(env), "\n")
 	if strings.Contains(got, "ALL_PROXY") {
 		t.Errorf("withoutRouterProxies kept %q, want the canonical port's router proxy dropped", env[1])

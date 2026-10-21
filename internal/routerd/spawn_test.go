@@ -3,6 +3,7 @@ package routerd
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -57,7 +58,7 @@ func TestEnvironDropsRouterProxies(t *testing.T) {
 func TestEnvironWithoutAPortOverrideFallsBackToTheCanonicalPort(t *testing.T) {
 	env := domain.EnvLookup{
 		"HUDDLE_ROUTER_PORT": "not-a-port",
-		"HTTPS_PROXY":        "localhost:18786",
+		"HTTPS_PROXY":        "localhost:" + strconv.Itoa(domain.HuddleRouterPort),
 	}
 	got := strings.Join(environ(env), "\n")
 	if strings.Contains(got, "HTTPS_PROXY") {
