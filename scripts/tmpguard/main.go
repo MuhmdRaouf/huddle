@@ -4,10 +4,10 @@
 // cannot fill the machine's temp volume. The directory is removed after
 // the run, leaks listed or not.
 //
-// It also fails on the run's own test binaries that outlived it: a *.test
-// executable under the run's temp build dirs, started after the run began,
-// is a suite re-running detached. One whose HOME is a temp dir is killed;
-// one whose HOME is not is reported and left alone.
+// It also fails on the run's own processes that outlived it: an executable under the run's
+// temp dir — a *.test binary, or a binary the suite built there — started after the run began,
+// is the suite's work still running detached. One whose HOME is a temp dir is killed; one
+// whose HOME is not is reported and left alone.
 //
 // The directory comes from the system's default temp location, never from
 // inside the module: the suite's "outside a repository" cases run git and
@@ -30,8 +30,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 )
 
 func main() {
@@ -69,7 +67,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	left, listErr := leftovers(guardDir)
-	escaped := escapedTestBinaries(filepath.Join(guardDir, "go-build"), began, stderr)
+	escaped := escapedTestBinaries(guardDir, began, stderr)
 	if rmErr := os.RemoveAll(guardDir); rmErr != nil {
 		fmt.Fprintf(stderr, "tmpguard: remove %s: %v\n", guardDir, rmErr)
 	}
@@ -96,22 +94,23 @@ type leftover struct {
 	command string
 }
 
-// escapedTestBinaries answers whether a test binary of this run outlived it, saying which: only
-// a *.test executable under the run's own temp build dirs (go test links them under
-// TMPDIR/go-build*), started after the run began, is the run's to answer — never another run's,
-// never one that was already running, never a process ps cannot name. Each match's command line
-// and HOME are printed; one whose HOME is a temp dir is killed, one whose HOME is not is
-// reported and left alone — a guard never signals a process it cannot prove is this run's.
-func escapedTestBinaries(buildRoot string, began time.Time, stderr io.Writer) bool {
+// escapedTestBinaries answers whether an executable of this run outlived it, saying which: only
+// an executable under the run's own temp dir (tmpguard sets TMPDIR to it, so a test binary go
+// test links and a binary the suite builds both live there), started after the run began, is
+// the run's to answer — never another run's, never one that was already running, never a
+// process ps cannot name. Each match's command line and HOME are printed; one whose HOME is a
+// temp dir is killed, one whose HOME is not is reported and left alone — a guard never signals
+// a process it cannot prove is this run's.
+func escapedTestBinaries(guardDir string, began time.Time, stderr io.Writer) bool {
 	out, err := exec.Command("ps", "-eo", "pid=,etime=,command=").Output()
 	if err != nil {
 		fmt.Fprintf(stderr, "tmpguard: list processes: %v\n", err)
 		return true
 	}
-	escaped := matchLeftovers(strings.Split(string(out), "\n"), buildRoot, time.Since(began))
+	escaped := matchLeftovers(strings.Split(string(out), "\n"), guardDir, time.Since(began))
 	for _, proc := range escaped {
 		home := processHome(proc.pid)
-		fmt.Fprintf(stderr, "tmpguard: a test binary outlived the run: pid %s HOME %s\n  %s\n", proc.pid, home, proc.command)
+		fmt.Fprintf(stderr, "tmpguard: a process of this run outlived it: pid %s HOME %s\n  %s\n", proc.pid, home, proc.command)
 		if !tempHome(home) {
 			fmt.Fprintf(stderr, "tmpguard: pid %s stays: its HOME is not a temp dir, so it is not proven to be this run's; report it\n", proc.pid)
 			continue
@@ -130,11 +129,11 @@ func escapedTestBinaries(buildRoot string, began time.Time, stderr io.Writer) bo
 	return len(escaped) > 0
 }
 
-// matchLeftovers picks the *.test executables under buildRoot whose ps etime says they started
-// after a run that began maxElapsed ago: started-since means elapsed < maxElapsed. It reads ps's
-// `pid=,etime=,command=` lines and nothing else; a line whose executable it cannot read (a
-// reaped process ps names in parentheses) is never a match.
-func matchLeftovers(lines []string, buildRoot string, maxElapsed time.Duration) []leftover {
+// matchLeftovers picks the executables under the run's guard dir whose ps etime says they
+// started after a run that began maxElapsed ago: started-since means elapsed < maxElapsed. It
+// reads ps's `pid=,etime=,command=` lines and nothing else; a line whose executable it cannot
+// read (a reaped process ps names in parentheses) is never a match.
+func matchLeftovers(lines []string, guardDir string, maxElapsed time.Duration) []leftover {
 	var found []leftover
 	for _, line := range lines {
 		fields := strings.Fields(strings.TrimSpace(line))
@@ -144,8 +143,7 @@ func matchLeftovers(lines []string, buildRoot string, maxElapsed time.Duration) 
 		pid, elapsedText := fields[0], fields[1]
 		command := strings.Join(fields[2:], " ")
 		executable := fields[2]
-		if strings.HasPrefix(executable, "(") || !process.IsTestBinary(executable) ||
-			!strings.HasPrefix(executable, buildRoot) {
+		if strings.HasPrefix(executable, "(") || !underDir(executable, guardDir) {
 			continue
 		}
 		elapsed, ok := parseElapsed(elapsedText)
@@ -155,6 +153,12 @@ func matchLeftovers(lines []string, buildRoot string, maxElapsed time.Duration) 
 		found = append(found, leftover{pid: pid, command: command})
 	}
 	return found
+}
+
+// underDir answers whether path is dir itself or a file inside it: a sibling whose name extends
+// dir's (tmpguard-12 beside tmpguard-1) is not inside it.
+func underDir(path, dir string) bool {
+	return path == dir || strings.HasPrefix(path, dir+string(filepath.Separator))
 }
 
 // parseElapsed reads ps's etime, [[dd-]hh:]mm:ss, into a duration; the days fold into the hours.
