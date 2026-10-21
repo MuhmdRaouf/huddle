@@ -10,6 +10,7 @@ package hooks
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -235,6 +236,25 @@ type huddleServer struct {
 	token string
 }
 
+// syncBuffer is a bytes.Buffer behind a mutex: Serve writes its stderr from its own goroutine,
+// while the test reads it only after Serve has returned.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // startHuddle runs the server until the test ends. The token is its root credential, the one
 // every op of the test's own drives.
 func startHuddle(t *testing.T) *huddleServer {
@@ -250,14 +270,19 @@ func startHuddle(t *testing.T) *huddleServer {
 		// keep draining, or the next line the server says would block it forever
 		_, _ = io.Copy(io.Discard, reader)
 	}()
+	var stderr syncBuffer
+	servedErrs := make(chan error, 1)
 	token := suiteToken
 	ctx, cancel := context.WithCancel(context.Background())
 	served := make(chan struct{})
 	go func() {
-		_ = server.Serve(ctx, server.Options{
-			Version: "test", Host: "127.0.0.1", Port: 0,
+		servedErrs <- server.Serve(ctx, server.Options{
+			// the port is named, so Serve binds this one port and never walks the shared
+			// 18860-18869 range: an unnamed port races every other server start for the first
+			// free port there, and the loser dies before it announces anything
+			Version: "test", Host: "127.0.0.1", Port: ports.Free(t), PortNamed: true,
 			Home: home, Data: data, Token: token, AutoCreate: true,
-			Stdout: pipeWriter, Stderr: io.Discard,
+			Stdout: pipeWriter, Stderr: &stderr,
 		})
 		pipeWriter.Close()
 		close(served)
@@ -273,7 +298,19 @@ func startHuddle(t *testing.T) *huddleServer {
 	line := <-announced
 	match := regexp.MustCompile(`on http://127\.0\.0\.1:(\d+)`).FindStringSubmatch(line)
 	if match == nil {
-		t.Fatalf("the server did not say its port: %q", line)
+		// the pipe only closes when Serve returned, but give a slow start its 5 s before the
+		// failure names its cause: the line, Serve's error and whatever it wrote to stderr.
+		select {
+		case <-served:
+		case <-time.After(5 * time.Second):
+		}
+		var servedErr error
+		select {
+		case servedErr = <-servedErrs:
+		default:
+		}
+		t.Fatalf("the server did not say its port: %q (serve: %v) (stderr: %q)",
+			line, servedErr, stderr.String())
 	}
 	s := &huddleServer{base: "http://127.0.0.1:" + match[1], token: token}
 	for i := 0; i < 200; i++ {
