@@ -49,7 +49,7 @@ serves, and delegate verified background jobs to them. Each has its own README u
 
    ```text
    /plugin marketplace add MuhmdRaouf/huddle
-   /plugin install huddle@huddle
+   /plugin install huddle@muhmdraouf
    ```
 
 2. Restart Claude Code.
@@ -253,7 +253,7 @@ Settings → Devices has an "Add a phone" button that shows the same QR.
 
 ## Uninstall
 
-- Run `/plugin uninstall huddle@huddle`, after `huddle harness remove <name>` for every harness you wired.
+- Run `/plugin uninstall huddle@muhmdraouf`, after `huddle harness remove <name>` for every harness you wired.
 - A server still running stops itself, removes its run files (nothing you wrote: pid, port, log, the owner key)
   and leaves `LEFT-BEHIND.md` in the home naming where the channels are and how to delete them.
 - The channels stay in the Huddle home (`$HUDDLE_HOME`, else `$XDG_CONFIG_HOME/huddle`, else `~/.config/huddle`)

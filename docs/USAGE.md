@@ -10,7 +10,7 @@ runs the `huddle` binary the plugin's launcher downloaded (macOS and Linux, amd6
 
    ```text
    /plugin marketplace add MuhmdRaouf/huddle
-   /plugin install huddle@huddle
+   /plugin install huddle@muhmdraouf
    ```
 
    The launcher builds the binary of the marketplace checkout's own commit with `go` while no release is
