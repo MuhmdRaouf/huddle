@@ -10,12 +10,12 @@ import {
 } from "../../src/radar/cost/price-table.ts";
 
 /**
- * Radar's price table and the Go engine's (internal/radar/cost/price_table.go) are one table in two copies;
+ * Radar's price table and the Go engine's (internal/pricing/pricing.go) are one table in two copies;
  * neither may drift. The Go file is parsed as text — no toolchain needed — by a small reader of its literal shapes
  * (composite literals, f64Ptr/strPtr wrappers, string concatenation, underscored numbers), which throws when the
  * file's shape changes so a reshape never passes silently.
  */
-const GO = join(import.meta.dirname, "../../../../internal/radar/cost/price_table.go");
+const GO = join(import.meta.dirname, "../../../../internal/pricing/pricing.go");
 
 /** The text with its string literals blanked (the file's literals carry no escaped quotes), so brace and paren
  *  matching can run on it directly. */
@@ -40,7 +40,7 @@ function matching(code: string, openAt: number, close: string): number {
       return at;
     }
   }
-  throw new Error(`unbalanced brackets in price_table.go from ${openAt}`);
+  throw new Error(`unbalanced brackets in pricing.go from ${openAt}`);
 }
 
 /** The text inside the brace block that starts at `open` (the index of "{"), string literals respected. */
@@ -75,7 +75,7 @@ function goString(text: string): string {
   return pieces.join("");
 }
 
-/** Every top-level `const`/`var` string of price_table.go, by name (the sources, the notes, the retrieved day). */
+/** Every top-level `const`/`var` string of pricing.go, by name (the sources, the notes, the retrieved day). */
 function goStrings(source: string): Map<string, string> {
   const strings = new Map<string, string>();
   for (const match of source.matchAll(
@@ -100,7 +100,7 @@ function ratesOf(body: string): Record<string, number> {
   return rates;
 }
 
-/** The fields of one `ModelSheet`, in radar's shape; every helper throws when price_table.go's shape changes. */
+/** The fields of one `ModelSheet`, in radar's shape; every helper throws when pricing.go's shape changes. */
 function sheetOf(
   body: string,
   strings: ReadonlyMap<string, string>,
@@ -110,7 +110,7 @@ function sheetOf(
   >,
 ): ModelSheet {
   const base = /Base:\s*Rates\{([^}]*)\}/.exec(body);
-  if (base === null) throw new Error(`price_table.go: a sheet has no Base rates: ${body.slice(0, 80)}`);
+  if (base === null) throw new Error(`pricing.go: a sheet has no Base rates: ${body.slice(0, 80)}`);
   const sheet: Record<string, unknown> = { base: ratesOf(base[1] ?? "") };
   const tiers = tiersOf(body);
   if (tiers !== undefined) sheet.tiers = tiers;
@@ -149,7 +149,7 @@ function offPeakOf(
   >,
 ): { multiplier: number; peak: { days: number[]; start: number; end: number }[] } {
   const value = offPeaks.get(name);
-  if (value === undefined) throw new Error(`price_table.go: unknown OffPeak var ${name}`);
+  if (value === undefined) throw new Error(`pricing.go: unknown OffPeak var ${name}`);
   return value;
 }
 
@@ -164,7 +164,7 @@ function ptrField(body: string, name: "Priority" | "GeoUS"): number | undefined 
 
 function verifiedOf(body: string): boolean {
   const verified = /Verified:\s*(true|false)/.exec(body);
-  if (verified === null) throw new Error(`price_table.go: a sheet has no Verified: ${body.slice(0, 80)}`);
+  if (verified === null) throw new Error(`pricing.go: a sheet has no Verified: ${body.slice(0, 80)}`);
   return verified[1] === "true";
 }
 
@@ -190,9 +190,9 @@ function offeringOf(
   const host = /Host:\s+"([^"]+)",/.exec(body)?.[1];
   const sourceMatch = /Source:\s*([\w"]+)/.exec(body)?.[1];
   if (id === undefined || host === undefined || sourceMatch === undefined)
-    throw new Error(`price_table.go: an offering is missing ID, Host or Source: ${body.slice(0, 80)}`);
+    throw new Error(`pricing.go: an offering is missing ID, Host or Source: ${body.slice(0, 80)}`);
   const modelsStart = body.indexOf("map[string]ModelSheet{");
-  if (modelsStart < 0) throw new Error(`price_table.go: offering ${id} has no Models map`);
+  if (modelsStart < 0) throw new Error(`pricing.go: offering ${id} has no Models map`);
   const models: Record<string, ModelSheet> = {};
   const mapBody = block(body, body.indexOf("{", modelsStart));
   for (const match of mapBody.matchAll(/"((?:[^"\\])*)":\s*\{/g)) {
@@ -215,7 +215,7 @@ function goTable(): { retrieved: string; offerings: Offering[] } {
   const strings = goStrings(source);
 
   const retrieved = strings.get("PricesRetrieved");
-  if (retrieved === undefined) throw new Error("price_table.go: no PricesRetrieved string");
+  if (retrieved === undefined) throw new Error("pricing.go: no PricesRetrieved string");
 
   const offPeakVar = /var\s+(\w+)\s*=\s*OffPeak\{/.exec(source);
   const offPeaks = new Map<
@@ -225,7 +225,7 @@ function goTable(): { retrieved: string; offerings: Offering[] } {
   if (offPeakVar !== null) offPeaks.set(offPeakVar[1] ?? "", offPeakVarOf(source, offPeakVar));
 
   const offeringsStart = source.indexOf("var Offerings = []Offering{");
-  if (offeringsStart < 0) throw new Error("price_table.go: no Offerings table");
+  if (offeringsStart < 0) throw new Error("pricing.go: no Offerings table");
   const offerings = topBlocks(block(source, source.indexOf("{", offeringsStart))).map((body) =>
     offeringOf(body, strings, offPeaks),
   );
