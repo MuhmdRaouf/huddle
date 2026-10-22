@@ -629,10 +629,14 @@ export function App({
   useShellKeys({ go, ch: state.ch, onCompose, onPalette });
 
   // the channel list feeds the switcher and the palette: one read per page load, and again
-  // whenever the open channel changes (a freshly created channel joins the list this way)
+  // whenever the open channel changes (a freshly created channel joins the list this way). The
+  // read is keyed on the channel alone: the caller hands a fresh function on every paint and the
+  // list's answer repaints, so keying on the function would read in a loop
+  const loadChannelsRef = useRef(loadChannels);
+  loadChannelsRef.current = loadChannels;
   useEffect(() => {
-    loadChannels?.();
-  }, [loadChannels, state.ch]);
+    loadChannelsRef.current?.();
+  }, [state.ch]);
 
   // the needs-you count the chrome carries: what the open channel holds, plus the registry's
   // sessions that wait on the owner (the Now tab's own list)

@@ -7,6 +7,7 @@ import type { ComponentType } from "preact";
 import { useEffect } from "preact/hooks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { App, inboxOf, NoChannel } from "../../src/app/App.tsx";
+import { HuddleProvider } from "../../src/app/context.tsx";
 import { IntroActions } from "../../src/app/intro.tsx";
 import { DESKTOP_QUERY, TABLET_QUERY } from "../../src/app/layout.ts";
 import { parseHash } from "../../src/app/router.ts";
@@ -751,5 +752,36 @@ describe("the first-run checklist's passkey row", () => {
     expect(screen.getByText("only the owner may mint a pairing link")).toBeDefined();
     expect(screen.getByRole("button", { name: "Save passkey" })).toBeDefined();
     expect(screen.queryByLabelText("Device name")).toBeNull();
+  });
+});
+
+describe("the channel list read", () => {
+  // main.tsx hands the shell a fresh loadChannels arrow on every paint, and the list's answer
+  // itself repaints: a read keyed on the function's identity fetched /api/channels in a loop
+  // (about 500 a second) until the tab ran out of memory
+  it("reads once per channel however often the shell repaints with a new loadChannels", () => {
+    const load = vi.fn();
+    const state = makeState();
+    const ctx = makeCtx(state);
+    const view = renderIn(<App pages={{}} loadChannels={() => load()} />, ctx);
+    for (let i = 0; i < 5; i++) {
+      view.rerender(
+        <HuddleProvider value={ctx}>
+          <App pages={{}} loadChannels={() => load()} />
+        </HuddleProvider>,
+      );
+    }
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads again when the open channel changes", () => {
+    const load = vi.fn();
+    const view = renderIn(<App pages={{}} loadChannels={() => load()} />, makeCtx(makeState({ ch: "a" })));
+    view.rerender(
+      <HuddleProvider value={makeCtx(makeState({ ch: "b" }))}>
+        <App pages={{}} loadChannels={() => load()} />
+      </HuddleProvider>,
+    );
+    expect(load).toHaveBeenCalledTimes(2);
   });
 });
