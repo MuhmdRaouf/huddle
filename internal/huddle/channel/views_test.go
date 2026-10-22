@@ -299,4 +299,44 @@ func TestChannelViews(t *testing.T) {
 			t.Errorf("ago = %q", got)
 		}
 	})
+
+	t.Run("the task list filters by owner, status and phase", func(t *testing.T) {
+		ch := joinedChannel(t)
+		if _, err := ch.CreateTask(bg, "a", CreateTaskInput{ID: "t1", Title: "a's", Owner: sp("a"), Phase: ip(1)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ch.CreateTask(bg, "b", CreateTaskInput{ID: "t2", Title: "b's", Owner: sp("b"), Phase: ip(2)}); err != nil {
+			t.Fatal(err)
+		}
+		list, err := ch.Tasks(bg, TasksFilter{Owner: sp("a")})
+		if err != nil || len(list) != 1 || list[0].ID != "t1" {
+			t.Fatalf("owner filter: %v (%v)", list, err)
+		}
+		if list, err = ch.Tasks(bg, TasksFilter{Status: "todo", Phase: ip(2)}); err != nil || len(list) != 1 || list[0].ID != "t2" {
+			t.Fatalf("status+phase filter: %v (%v)", list, err)
+		}
+		if list, err = ch.Tasks(bg, TasksFilter{Owner: sp("nobody")}); err != nil || len(list) != 0 {
+			t.Fatalf("empty filter: %v (%v)", list, err)
+		}
+	})
+
+	t.Run("a brief still shows knowledge when nothing matches its text", func(t *testing.T) {
+		ch := openChannel(t, "t")
+		if _, err := ch.Join(bg, "a", JoinOpts{Role: sp("builds")}); err != nil {
+			t.Fatal(err)
+		}
+		for _, k := range []string{"alpha", "beta", "gamma"} {
+			if _, err := ch.Remember(bg, "a", RememberInput{Kind: "fact", Title: k, Body: k}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// no entry matches the text, so the picker backfills with the most-read entries
+		kb, err := ch.relevant(bg, "something else entirely", 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(kb) != 3 {
+			t.Fatalf("the picker answered %d entries, want the 3 backfilled", len(kb))
+		}
+	})
 }

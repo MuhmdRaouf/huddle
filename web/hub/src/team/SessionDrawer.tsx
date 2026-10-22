@@ -264,11 +264,47 @@ function ControlButton({
   );
 }
 
+/** The owner's remove button beside the pause/resume; its click only arms the confirm row. */
+function RemoveButton({ busy, onArm }: { busy: boolean; onArm: () => void }): JSX.Element {
+  return (
+    <button type="button" class="btn btn-error btn-outline" data-sremove disabled={busy} onClick={onArm}>
+      <Icon name="trash" class="size-4.5" />
+      Remove from channel
+    </button>
+  );
+}
+
+/** The in-page confirm row the remove button arms: no window.confirm, one Remove, one Cancel. */
+function RemoveConfirm({
+  name,
+  busy,
+  onRemove,
+  onCancel,
+}: {
+  name: string;
+  busy: boolean;
+  onRemove: () => void;
+  onCancel: () => void;
+}): JSX.Element {
+  return (
+    <div class="flex items-center gap-2" data-sremove-confirm>
+      <span class="text-sm font-medium">Remove {name} from this channel?</span>
+      <button type="button" class="btn btn-error btn-sm" data-sremove-yes disabled={busy} onClick={onRemove}>
+        Remove
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" data-sremove-no disabled={busy} onClick={onCancel}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 /** The session drawer over ?s=<name>; nothing without a name or a channel. */
 export function SessionDrawer(props: SessionDrawerProps): JSX.Element | null {
   const { name, ch, api, now, sessions, board, byId, timeline, replies, costOf, toast } = props;
   const { act } = useHuddle();
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   if (!name || !ch) return null;
   const session = drawerSession(sessions, name);
   const taskById = (id: string) => asTask(byId(id));
@@ -286,6 +322,20 @@ export function SessionDrawer(props: SessionDrawerProps): JSX.Element | null {
       .catch(() => setBusy(false));
   };
 
+  const remove = (): void => {
+    setBusy(true);
+    act("remove", { target: name })
+      .then((r) => {
+        setBusy(false);
+        setConfirming(false);
+        if (r !== null) {
+          toast(`${name} removed`);
+          props.onClose();
+        }
+      })
+      .catch(() => setBusy(false));
+  };
+
   return (
     <SlideOver
       open
@@ -294,7 +344,16 @@ export function SessionDrawer(props: SessionDrawerProps): JSX.Element | null {
       width="w-[min(42rem,94vw)]"
       header={<DrawerHead name={name} session={session} taskById={taskById} now={now} cost={cost} />}
       actions={
-        canControl ? <ControlButton name={name} paused={paused} busy={busy} onControl={control} /> : null
+        confirming ? (
+          <RemoveConfirm name={name} busy={busy} onRemove={remove} onCancel={() => setConfirming(false)} />
+        ) : (
+          <>
+            {canControl ? (
+              <ControlButton name={name} paused={paused} busy={busy} onControl={control} />
+            ) : null}
+            {canControl ? <RemoveButton busy={busy} onArm={() => setConfirming(true)} /> : null}
+          </>
+        )
       }
     >
       <div id="sdrawer" class="flex min-w-0 flex-col gap-5">

@@ -207,7 +207,7 @@ type NextDone struct {
 
 // opsOrder lists the operation table in the order the tool list shows.
 var opsOrder = []string{
-	"join", "status", "leave", "sessions", "state", "publish", "send", "reply", "inbox", "events",
+	"join", "status", "leave", "remove", "sessions", "state", "publish", "send", "reply", "inbox", "events",
 	"wait", "ack", "gate", "pause", "resume", "turn", "pass", "take", "next", "task", "map",
 	"tasks", "task_create", "task_update", "task_status", "wait_task", "note",
 	"start", "finish", "depend", "handoff", "ask_wait",
@@ -254,6 +254,16 @@ var ops = map[string]opDef{
 		props: jsfmt.Object([]string{"summary"}, []*jsfmt.Value{sProp("")}),
 		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
 			return c.ch.Leave(ctx, c.me, argStr(a, "summary"))
+		},
+	},
+	"remove": {
+		desc: "Owner only: remove a session (and its subagents) from the channel; it stays in the history, out of the live views.",
+		props: jsfmt.Object([]string{"target", "why"}, []*jsfmt.Value{
+			sProp(""), sProp(""),
+		}),
+		required: []string{"target"},
+		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
+			return c.ch.Remove(ctx, c.me, argStr(a, "target"), argStr(a, "why"))
 		},
 	},
 	"sessions": {

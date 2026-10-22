@@ -1760,22 +1760,94 @@ func (c *Channel) Leave(ctx context.Context, name string, summary string) (Prese
 		if summary != "" {
 			msg = name + " left: " + summary
 		}
-		if _, err := c.append(ctx, name, evIn{topic: "session.left", msg: sp(msg)}); err != nil {
-			return err
-		}
 		task := summary
 		if task == "" {
 			task = "left"
 		}
-		p, err := c.Presence(ctx, name, PresenceInput{State: sp("left"), Task: sp(task)})
+		var err error
+		out, err = c.depart(ctx, name, name, "session.left", msg, task)
+		return err
+	})
+	return out, err
+}
+
+// depart writes one session's exit: the event, the left presence, the released reservations. It
+// runs inside the caller's serial, so a leave and a removal share one body.
+func (c *Channel) depart(ctx context.Context, by, name, topic, msg, task string) (PresenceView, error) {
+	if _, err := c.append(ctx, by, evIn{topic: topic, msg: sp(msg)}); err != nil {
+		return PresenceView{}, err
+	}
+	p, err := c.Presence(ctx, name, PresenceInput{State: sp("left"), Task: sp(task)})
+	if err != nil {
+		return PresenceView{}, err
+	}
+	c.releaseAll(ctx, name) // the leaver's reservations die with its presence
+	return p, nil
+}
+
+// Remove takes a session, and its subagents with it, out of the live views on the owner's order;
+// they stay in the history. A turn a removed session held lands with the owner.
+func (c *Channel) Remove(ctx context.Context, by, target, why string) ([]PresenceView, error) {
+	var out []PresenceView
+	err := c.serial(ctx, func(ctx context.Context) error {
+		if by != Owner {
+			return httpErr(403, "only the owner removes a session")
+		}
+		if target == Owner {
+			return bad("the owner cannot be removed")
+		}
+		s, err := c.need(ctx, target)
 		if err != nil {
 			return err
 		}
-		c.releaseAll(ctx, name) // the leaver's reservations die with its presence
-		out = p
+		if s.State == "left" {
+			return bad(fmt.Sprintf("%s already left", target))
+		}
+		subs, err := c.subagentsOf(ctx, target)
+		if err != nil {
+			return err
+		}
+		names := []string{target}
+		for _, sub := range subs {
+			names = append(names, sub.Name)
+		}
+		for _, name := range names {
+			msg := name + " removed by the owner"
+			if why != "" {
+				msg = name + " removed by the owner: " + why
+			}
+			p, err := c.depart(ctx, by, name, "session.removed", msg, "removed by the owner")
+			if err != nil {
+				return err
+			}
+			out = append(out, p)
+		}
+		holder := c.metaPtr("turn_holder")
+		if holder == nil {
+			holder = c.Config().Start
+		}
+		if holder != nil && slices.Contains(names, *holder) {
+			take := fmt.Sprintf("owner takes the turn: %s was removed", target)
+			if _, err := c.append(ctx, Owner, evIn{topic: "turn.take", msg: sp(take)}); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	return out, err
+}
+
+// subagentsOf answers the live sessions whose parent is name, by name.
+func (c *Channel) subagentsOf(ctx context.Context, name string) ([]*Session, error) {
+	rows, err := c.dbAll(ctx, "SELECT * FROM sessions WHERE parent=? AND state != 'left' ORDER BY name", name)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*Session, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, toSession(r))
+	}
+	return out, nil
 }
 
 // Presence sets a session's state, task and step.

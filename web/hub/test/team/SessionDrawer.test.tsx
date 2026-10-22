@@ -1,6 +1,7 @@
 // SessionDrawer.test.tsx — the session drawer: it opens with the session the hash's ?s= names
 // (its name, role, status, current task, cost, its events newest first), the composer is fixed
-// to it, pause and resume go through the roster's ops, and closing drops ?s= from the address.
+// to it, pause and resume go through the roster's ops, the owner removes the session through an
+// in-page confirm, and closing drops ?s= from the address.
 import { fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api } from "../../src/api.ts";
@@ -162,6 +163,38 @@ describe("SessionDrawer", () => {
 
     const left = drawer({ name: "gone" });
     expect(document.querySelector("[data-scontrol]")).toBeNull();
+    left.unmount();
+  });
+
+  it("offers a remove through an in-page confirm, and none for a session that left", async () => {
+    const act = vi.fn(async () => true);
+    const toast = vi.fn();
+    const onClose = vi.fn();
+    const confirm = vi.fn();
+    window.confirm = confirm;
+    const view = drawer({ toast, onClose }, act);
+    const arm = must(document.querySelector("[data-sremove]") as HTMLButtonElement);
+    expect(arm.textContent).toContain("Remove from channel");
+    fireEvent.click(arm);
+    // the confirm lives in the page: the browser's own dialog never shows
+    expect(confirm).not.toHaveBeenCalled();
+    expect(must(document.querySelector("[data-sremove-confirm]")).textContent).toContain(
+      "Remove api from this channel?",
+    );
+    fireEvent.click(must(document.querySelector("[data-sremove-no]") as HTMLButtonElement));
+    expect(document.querySelector("[data-sremove-confirm]")).toBeNull();
+    expect(act).not.toHaveBeenCalled();
+    // confirming is what calls the op: once, with a toast, and the drawer closes
+    fireEvent.click(must(document.querySelector("[data-sremove]") as HTMLButtonElement));
+    fireEvent.click(must(document.querySelector("[data-sremove-yes]") as HTMLButtonElement));
+    await waitFor(() => expect(act).toHaveBeenCalledWith("remove", { target: "api" }));
+    expect(act).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("api removed"));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    view.unmount();
+
+    const left = drawer({ name: "gone" });
+    expect(document.querySelector("[data-sremove]")).toBeNull();
     left.unmount();
   });
 
