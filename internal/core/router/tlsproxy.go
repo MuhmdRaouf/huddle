@@ -12,16 +12,19 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/netproxy"
 	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
@@ -54,6 +57,11 @@ type TLSProxy struct {
 	// pass-through request the upstream answered.
 	AnthropicFail func(code string)
 	AnthropicOk   func()
+	// Events receives one route event per pass-through request, metadata only; nil records
+	// nothing.
+	Events func(event domain.SpoolEvent)
+	// Transport carries the pass-through to Anthropic; nil is the shared agent for the target.
+	Transport http.RoundTripper
 
 	// The certificate state: the local CA, the leaf it signed for api.anthropic.com, and the last
 	// load attempt — its error, when it ran and whether the failure is already in the log.
@@ -327,10 +335,15 @@ func (p *TLSProxy) intercept(w http.ResponseWriter, req *http.Request) {
 // anthropicProxy is the pass-through half of proxy mode: the request goes to Anthropic with its
 // host rewritten to the target's and nothing else changed, its stream flushed as it arrives and
 // its upgrade relayed both ways. Every answer that arrives counts as the path's success and
-// every failure as its failure, on the streak the router's health events feed.
+// every failure as its failure, on the streak the router's health events feed. Each request gets
+// its own line and route event (passLog); the reverse proxy's own error lines would go to the
+// process's stderr with a local time and no path, so they are dropped.
 func (p *TLSProxy) anthropicProxy() *httputil.ReverseProxy {
 	target := p.Anthropic
-	inner := AgentFor(target, p.Env, false)
+	inner := p.Transport
+	if inner == nil {
+		inner = AgentFor(target, p.Env, false)
+	}
 	return &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.Out.URL.Scheme = target.Scheme
@@ -339,9 +352,10 @@ func (p *TLSProxy) anthropicProxy() *httputil.ReverseProxy {
 			pr.Out.Host = target.Host
 		},
 		FlushInterval: -1,
-		Transport: answeredTransport{
-			inner: inner,
-			ok:    p.AnthropicOk,
+		ErrorLog:      log.New(io.Discard, "", 0),
+		Transport: passLog{
+			inner: answeredTransport{inner: inner, ok: p.AnthropicOk},
+			proxy: p,
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if p.AnthropicFail != nil {
@@ -365,6 +379,143 @@ func (t answeredTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		t.ok()
 	}
 	return answer, err
+}
+
+// passLog writes one router-log line and one route event per pass-through request: metadata
+// only — method, host, path, status, bytes, duration and why it failed — never a query, a header
+// or a body byte. An answer's line waits for its body to end, so a stream the upstream cuts
+// mid-body is told apart from one that finished.
+type passLog struct {
+	inner http.RoundTripper
+	proxy *TLSProxy
+}
+
+func (t passLog) RoundTrip(req *http.Request) (*http.Response, error) {
+	started := time.Now()
+	answer, err := t.inner.RoundTrip(req)
+	if err != nil {
+		if req.Context().Err() != nil {
+			t.proxy.passed(req, started, passOutcome{word: "cancelled"})
+		} else {
+			t.proxy.passed(req, started, passOutcome{word: "error", code: failureCode(err)})
+		}
+		return nil, err
+	}
+	// An upgrade's body is the connection itself, which the reverse proxy needs unwrapped.
+	if answer.StatusCode == http.StatusSwitchingProtocols {
+		t.proxy.passed(req, started, passOutcome{status: answer.StatusCode})
+		return answer, nil
+	}
+	answer.Body = &passBody{ReadCloser: answer.Body, proxy: t.proxy, req: req, started: started, status: answer.StatusCode}
+	return answer, nil
+}
+
+// passOutcome is how one pass-through request ended: the upstream's status once its head
+// arrived, word "" for an answer read to its end, else "cut", "error" or "cancelled", with the
+// failure's code for a cut or an error, and the body bytes relayed.
+type passOutcome struct {
+	status int
+	word   string
+	code   string
+	bytes  int64
+}
+
+// passBody counts an answer's body as the reverse proxy relays it, and reports the request once:
+// at its end, at a read error (the cut), or at a close before either (the client left).
+type passBody struct {
+	io.ReadCloser
+	proxy   *TLSProxy
+	req     *http.Request
+	started time.Time
+	status  int
+	bytes   int64
+	once    sync.Once
+}
+
+func (b *passBody) Read(buf []byte) (int, error) {
+	n, err := b.ReadCloser.Read(buf)
+	b.bytes += int64(n)
+	switch {
+	case err == nil:
+	case err == io.EOF:
+		b.report(passOutcome{})
+	case b.req.Context().Err() != nil:
+		b.report(passOutcome{word: "cancelled"})
+	default:
+		b.report(passOutcome{word: "cut", code: cutCode(err)})
+	}
+	return n, err
+}
+
+func (b *passBody) Close() error {
+	b.report(passOutcome{word: "cancelled"})
+	return b.ReadCloser.Close()
+}
+
+func (b *passBody) report(outcome passOutcome) {
+	b.once.Do(func() {
+		outcome.status, outcome.bytes = b.status, b.bytes
+		b.proxy.passed(b.req, b.started, outcome)
+	})
+}
+
+// h2ResetRE reads the code of an HTTP/2 stream reset; net/http keeps its stream error type
+// unexported, so its message is the only handle on the code.
+var h2ResetRE = regexp.MustCompile(`stream error: stream ID \d+; ([A-Z_]+)`)
+
+// cutCode is why an answer's body stopped: the HTTP/2 reset's code, else the connection's errno.
+func cutCode(err error) string {
+	if match := h2ResetRE.FindStringSubmatch(err.Error()); match != nil {
+		return match[1]
+	}
+	return failureCode(err)
+}
+
+// passed writes one pass-through request's line and route event. A cut answers the route event
+// 502 like a dropped provider stream, though the client already had its 200 head.
+func (p *TLSProxy) passed(req *http.Request, started time.Time, outcome passOutcome) {
+	elapsed := time.Since(started).Milliseconds()
+	head := fmt.Sprintf("%s %s host=%s → anthropic-pass", req.Method, req.URL.Path, req.URL.Host)
+	status := int64(outcome.status)
+	var line, why string
+	switch outcome.word {
+	case "":
+		line = fmt.Sprintf("%s %d bytes=%d ms=%d", head, outcome.status, outcome.bytes, elapsed)
+	case "cut":
+		line = fmt.Sprintf("%s cut (%s) status=%d bytes=%d ms=%d", head, outcome.code, outcome.status, outcome.bytes, elapsed)
+		status, why = 502, "stream cut ("+outcome.code+")"
+	case "error":
+		line = fmt.Sprintf("%s error %s ms=%d", head, outcome.code, elapsed)
+		status, why = 502, "connection failed ("+outcome.code+")"
+	default:
+		line = fmt.Sprintf("%s cancelled bytes=%d ms=%d", head, outcome.bytes, elapsed)
+		status, why = 499, "client closed"
+	}
+	if p.Note != nil {
+		p.Note(line)
+	}
+	if p.Events == nil {
+		return
+	}
+	event := domain.RouteEvent{
+		Ts:        isoNow(),
+		Event:     domain.EventRoute,
+		Plugin:    p.Name,
+		Upstream:  req.URL.Host,
+		Route:     "anthropic-pass",
+		Status:    status,
+		LatencyMs: elapsed,
+	}
+	if why != "" {
+		event.Error = &why
+	}
+	if session, ok := textHeader(req, "x-claude-code-session-id"); ok {
+		event.SessionID = &session
+	}
+	if agent, ok := textHeader(req, "x-claude-code-agent-id"); ok {
+		event.AgentID = &agent
+	}
+	p.Events(event)
 }
 
 // leafFor is the certificate CONNECT api.anthropic.com is answered with: the local CA's leaf,

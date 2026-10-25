@@ -129,6 +129,7 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 		Route:         m.route,
 		AnthropicFail: func(code string) { m.noteAnthropicFailure(code, "") },
 		AnthropicOk:   m.noteAnthropicOk,
+		Events:        opts.Events,
 	}
 	return Harden(&http.Server{Handler: http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		// A CONNECT names the tunnel's target in the authority, so the Host check below (a

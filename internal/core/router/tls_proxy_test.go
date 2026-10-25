@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/pki"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
@@ -416,4 +417,87 @@ func (r *tlsProxyRig) keepAliveClient(t *testing.T) *http.Client {
 	}
 	t.Cleanup(transport.CloseIdleConnections)
 	return &http.Client{Timeout: 15 * time.Second, Transport: transport}
+}
+
+func TestThePassThroughLogsEachRequestAndACutStream(t *testing.T) {
+	t.Parallel()
+	// The fake Anthropic speaks HTTP/2; /v1/stream sends its head and one event, then a panic
+	// that aborts the handler resets the stream (RST_STREAM, INTERNAL_ERROR).
+	const marker = "body-marker-never-logged"
+	upstream := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/v1/stream" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+			_, _ = w.Write([]byte("data: " + marker + "\n\n"))
+			w.(http.Flusher).Flush()
+			panic(http.ErrAbortHandler)
+		}
+		_, _ = w.Write([]byte(`{"` + marker + `":true}`))
+	}))
+	upstream.EnableHTTP2 = true
+	upstream.StartTLS()
+	t.Cleanup(upstream.Close)
+	events := &eventLog{}
+	rig := newTLSProxyRig(t, func(p *TLSProxy) {
+		p.Anthropic = mustURL(t, upstream.URL)
+		p.Transport = upstream.Client().Transport
+		p.Events = events.record
+	})
+	client := rig.proxiedClient(t)
+	host := mustURL(t, upstream.URL).Host
+
+	resp, err := client.Get("https://api.anthropic.com/v1/me?token=never-logged")
+	if err != nil {
+		t.Fatalf("get through the proxy: %v", err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("the pass-through = %d, want 200", resp.StatusCode)
+	}
+	resp, err = client.Get("https://api.anthropic.com/v1/stream")
+	if err == nil {
+		_, err = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("the cut stream read to its end, want an error")
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for len(events.routes()) < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	lines := rig.log.joined()
+	for _, want := range []string{
+		"GET /v1/me host=" + host + " → anthropic-pass 200 bytes=",
+		"GET /v1/stream host=" + host + " → anthropic-pass cut (INTERNAL_ERROR) status=200 bytes=",
+	} {
+		if !strings.Contains(lines, want) {
+			t.Errorf("the router log =\n%s\nwant a line with %q", lines, want)
+		}
+	}
+	if strings.Contains(lines, marker) || strings.Contains(lines, "never-logged") {
+		t.Errorf("the router log carries a body or a query:\n%s", lines)
+	}
+
+	got := events.routes()
+	if len(got) != 2 {
+		t.Fatalf("the route events = %+v, want two", got)
+	}
+	answered, cut := got[0], got[1]
+	if answered.Route != "anthropic-pass" || answered.Status != 200 || answered.Upstream != host || answered.Error != nil {
+		t.Errorf("the answered request's event = %+v, want anthropic-pass 200 from %s", answered, host)
+	}
+	if cut.Route != "anthropic-pass" || cut.Status != 502 || cut.Error == nil || *cut.Error != "stream cut (INTERNAL_ERROR)" {
+		t.Errorf("the cut stream's event = %+v, want anthropic-pass 502 with the cut's reason", cut)
+	}
+	for _, event := range got {
+		if event.Event != domain.EventRoute || event.Plugin != "test-router" || event.Model != "" {
+			t.Errorf("the event = %+v, want a model-less route line of the router's own", event)
+		}
+		if !strings.HasSuffix(event.Ts, "Z") {
+			t.Errorf("the event's time = %q, want UTC", event.Ts)
+		}
+	}
 }

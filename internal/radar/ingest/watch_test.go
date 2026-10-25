@@ -417,6 +417,45 @@ func TestSpoolIngestion(t *testing.T) {
 		}
 	})
 
+	t.Run("reads the router's pass-through rows: metadata only, a cut stream as a failure", func(t *testing.T) {
+		e := makeEnv(t)
+		cut := "stream cut (INTERNAL_ERROR)"
+		session := "s9"
+		writeText(t, spoolFilePath(t, e.env), jsonl(t,
+			domain.RouteEvent{
+				Ts: iso(watchT0), Event: domain.EventRoute, Plugin: "huddle-router", Upstream: "api.anthropic.com",
+				Route: "anthropic-pass", Status: 200, LatencyMs: 8, SessionID: &session,
+			},
+			domain.RouteEvent{
+				Ts: iso(watchT1), Event: domain.EventRoute, Plugin: "huddle-router", Upstream: "api.anthropic.com",
+				Route: "anthropic-pass", Status: 502, LatencyMs: 30, Error: &cut, SessionID: &session,
+			},
+		))
+		st := newStore()
+		manualWatcher(t, e.env, st)
+		routed := st.Requests(sessionFilter("s9"))
+		if len(routed) != 2 {
+			t.Fatalf("pass-through requests = %+v, want two", routed)
+		}
+		for _, row := range routed {
+			if row.Route == nil || *row.Route != "anthropic-pass" || row.Upstream != "api.anthropic.com" || row.Model != "" {
+				t.Errorf("pass-through row = %+v, want a model-less anthropic-pass row from api.anthropic.com", row)
+			}
+		}
+		failed, answered := routed[0], routed[1]
+		if failed.Status == nil || *failed.Status != "502" || failed.Error == nil || *failed.Error != cut ||
+			failed.LatencyMs == nil || *failed.LatencyMs != 30 {
+			t.Errorf("cut row = %+v, want 502 with the cut's reason after 30 ms", failed)
+		}
+		if answered.Status == nil || *answered.Status != "200" || answered.Error != nil {
+			t.Errorf("answered row = %+v, want 200 and no error", answered)
+		}
+		errors := st.APIErrors()
+		if len(errors) != 1 || errors[0].Status != 502 || errors[0].Source != shared.SourceRoute {
+			t.Errorf("api errors = %+v, want the cut as one route 502", errors)
+		}
+	})
+
 	t.Run("carries the route line's status onto the request, success or failure", func(t *testing.T) {
 		e := makeEnv(t)
 		writeText(t, spoolFilePath(t, e.env), jsonl(t,
