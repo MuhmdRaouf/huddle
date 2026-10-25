@@ -151,6 +151,29 @@ test("the requests table lists the seeded rows and the inspector opens one", asy
   await expect(page.getByRole("row", { name: /^Output/ })).toContainText(n(first.output));
 });
 
+test("the request sheet paints an opaque background over the table", async ({ page }) => {
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/radar/requests`);
+  const first = SEEDED.requests[0];
+  await page
+    .getByRole("row")
+    .filter({ hasText: n(first.input) })
+    .filter({ hasText: n(first.output) })
+    .click();
+
+  // the shared kit's slide-over: its classes come from web/ui/src, so a fill means Tailwind scanned it
+  const sheet = page.locator("dialog[open] [data-slide-over]");
+  await expect(sheet).toBeVisible();
+  const alpha = await sheet.evaluate((el) => {
+    const probe = document.createElement("canvas").getContext("2d");
+    if (!probe) return 0;
+    probe.fillStyle = getComputedStyle(el).backgroundColor;
+    probe.fillRect(0, 0, 1, 1);
+    return probe.getImageData(0, 0, 1, 1).data[3] ?? 0;
+  });
+  expect(alpha).toBe(255);
+});
+
 test("the requests view opens with its two charts and the statuses the spool carried", async ({
   page,
 }) => {

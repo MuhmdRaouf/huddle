@@ -5,11 +5,11 @@
  * What is still hand-written here is the little daisyUI has no component for: the hue carriers the
  * avatars and status marks read (--c the fill, --ci the ink), the segmented progress bar, the
  * activity feed's rows, the two SVG diagrams, and the thin bridge for the class names the shared
- * package's own components (packages/ui, shared with Radar) emit. */
+ * package's own components (web/ui, shared with Radar) emit. */
 
 @import "tailwindcss" source(none);
 @source "./";
-@source "../../../../packages/ui/src";
+@source "../../ui/src";
 @plugin "daisyui" {
   themes: false;
 }
@@ -197,7 +197,7 @@
   background: var(--hue-mauve);
 }
 
-/* ── the shared package's class names (packages/ui, shared with Radar) ───────── */
+/* ── the shared package's class names (web/ui, shared with Radar) ───────── */
 /* The toast, the dialog header, the code block and the markdown block emit these; they read the
    tokens and components above instead of carrying styles of their own. */
 @layer components {
@@ -376,7 +376,7 @@
       0 18px 44px -12px rgb(0 0 0 / 0.5);
   }
 
-  /* The shared area chart (packages/ui/area-chart.tsx): the dashed grid, the quiet axis, the
+  /* The shared area chart (web/ui/src/area-chart.tsx): the dashed grid, the quiet axis, the
      themed fill and line, the crosshair and the tip card. --primary and --panel are the tokens
      the component itself reads; they follow the theme's own colours. */
   :root {
