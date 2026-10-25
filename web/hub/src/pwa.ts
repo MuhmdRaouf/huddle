@@ -1,5 +1,6 @@
 // pwa.ts — the installability glue: the app-shell service worker's registration, the app
-// badge (SPEC 7.1) and the push switch (SPEC 7.6). All are optional browser features a page must
+// badge (SPEC 7.1), the push switch (SPEC 7.6) and the focus report that keeps the other devices
+// quiet while this tab is visible and focused. All are optional browser features a page must
 // live without: registration happens only on a secure context (localhost or https), the badge
 // only where the Badging API exists, push only where the worker and the Push API exist, and a
 // call that fails changes nothing. No DOM here; the browser is injected.
@@ -136,4 +137,47 @@ export function createPushSwitch(
       await sub.unsubscribe();
     },
   };
+}
+
+/** The slice of the page the focus report reads: is it visible and focused, and its changes. */
+export type FocusPage = {
+  /** True while the page is visible and holds the focus. */
+  focused(): boolean;
+  /** Calls fn on every visibility or focus change. */
+  onChange(fn: () => void): void;
+  /** Calls fn when the page goes away. */
+  onLeave(fn: () => void): void;
+};
+
+/** The timer the focus report repeats on. */
+export type FocusTimers = { interval(fn: () => void, ms: number): unknown };
+
+/** How often a focused tab repeats its report; the hub holds each report for 60 s. */
+const FOCUS_REPORT_MS = 30_000;
+
+/** Tells the hub whether this tab is visible and focused: at once, on every change, every 30 s
+ *  while focused, and hidden when a focused page goes away. While a tab is focused the hub keeps
+ *  every other device's pushes quiet. A report the hub refuses changes nothing. */
+export function reportFocus(
+  page: FocusPage,
+  post: (focused: boolean) => Promise<unknown>,
+  timers: FocusTimers,
+): void {
+  let last: boolean | null = null;
+  const report = (focused: boolean): void => {
+    last = focused;
+    post(focused).catch(() => {});
+  };
+  const onChange = (): void => {
+    const focused = page.focused();
+    if (focused !== last) report(focused);
+  };
+  page.onChange(onChange);
+  page.onLeave(() => {
+    if (last) report(false);
+  });
+  timers.interval(() => {
+    if (page.focused()) report(true);
+  }, FOCUS_REPORT_MS);
+  onChange();
 }

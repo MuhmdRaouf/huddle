@@ -15,7 +15,15 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import https from "node:https";
-import { here, outsideProjectPath, repoRoot, runDir, setupPath, type E2eSetup } from "./paths.ts";
+import {
+  DESK_QUIET_MS,
+  here,
+  outsideProjectPath,
+  repoRoot,
+  runDir,
+  setupPath,
+  type E2eSetup,
+} from "./paths.ts";
 import { LOAD_REQUESTS } from "./seed.ts";
 import { HUB_HOST, hubPair } from "./tls.ts";
 
@@ -281,6 +289,9 @@ function envFor(target: TempHome, port: number | null, token: string | null, rou
     // every command of the run reads the router port: one of this run's own, never the
     // installed daemon's 18786, so the run never finds, probes or hands over the user's router
     HUDDLE_ROUTER_PORT: String(routerPort),
+    // a closed page's focus report keeps the phone quiet this long; a page Playwright closes
+    // never reports itself hidden, so the run holds it for 2 s, not 60
+    HUDDLE_DESK_QUIET_MS: String(DESK_QUIET_MS),
     ...(port === null ? {} : { PORT: String(port) }),
     ...(token === null ? {} : { HUDDLE_TOKEN: token }),
   };

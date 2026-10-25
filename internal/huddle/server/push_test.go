@@ -1050,3 +1050,99 @@ func TestAFailingAnthropicPathPushesOncePerFailure(t *testing.T) {
 		t.Fatalf("the pushes after the second failure = %d, want one more", service.count())
 	}
 }
+
+// ── the desk's focus ────────────────────────────────────────────────────────────────────────────────────────────────
+
+// A hub tab that is visible and focused on one device keeps every other device quiet for 60 s
+// after its last report: the items it would push take their marks unsent. With no report, or
+// one 61 s old, the pushes go out; a device's own focus never quiets that device.
+func TestAFocusedDeskTabKeepsTheOtherDevicesQuiet(t *testing.T) {
+	service := newFakePush(t)
+	clock := pushClock
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return clock })
+	subscribeDevice(t, s, "phone", service.srv.URL+"/phone", newBrowserKeys(t), hub.NotifyNeeds)
+	subscribeDevice(t, s, "tablet", service.srv.URL+"/tablet", newBrowserKeys(t), hub.NotifyNeeds)
+	ask := func(session string) {
+		t.Helper()
+		if _, err := s.registry.CreatePermissionItem(context.Background(), session, "Bash",
+			[]byte(`{"command":"npm test"}`), clock); err != nil {
+			t.Fatalf("create the item for %s: %v", session, err)
+		}
+		s.sweepPushes(context.Background())
+	}
+	counts := func() [2]int { return [2]int{service.countAt("/phone"), service.countAt("/tablet")} }
+
+	// no tab ever reported its focus: the item pushes both
+	ask("s-1")
+	if got := counts(); got != [2]int{1, 1} {
+		t.Fatalf("the pushes with no focus reported (phone, tablet) = %v, want one each", got)
+	}
+
+	// the owner's desk tab is focused: nothing pushes, and the item still takes its mark
+	s.noteFocus("", "desk-tab", true, clock)
+	clock = clock.Add(time.Second)
+	ask("s-2")
+	if got := counts(); got != [2]int{1, 1} {
+		t.Fatalf("the pushes with the desk focused (phone, tablet) = %v, want none more", got)
+	}
+
+	// 61 s after the desk's last report the quiet is over; the quiet item never pushes late
+	clock = clock.Add(60 * time.Second)
+	ask("s-3")
+	if got := counts(); got != [2]int{2, 2} {
+		t.Fatalf("the pushes 61 s after the desk's report (phone, tablet) = %v, want one more each", got)
+	}
+
+	// a tab that turns hidden ends its quiet at once
+	s.noteFocus("", "desk-tab", true, clock)
+	s.noteFocus("", "desk-tab", false, clock)
+	ask("s-4")
+	if got := counts(); got != [2]int{3, 3} {
+		t.Fatalf("the pushes after the desk turned hidden (phone, tablet) = %v, want one more each", got)
+	}
+
+	// the phone's own focused tab quiets the tablet, never the phone itself
+	s.noteFocus("phone", "phone-tab", true, clock)
+	ask("s-5")
+	if got := counts(); got != [2]int{4, 3} {
+		t.Fatalf("the pushes with the phone focused (phone, tablet) = %v, want the phone's one alone", got)
+	}
+}
+
+// The focus report is the browser's own: a tab names itself and says whether it is visible and
+// focused; a report that names no tab, or no state, is refused. A focused owner tab keeps the
+// paired phone quiet until it reports itself hidden.
+func TestTheFocusReportOverTheServer(t *testing.T) {
+	srv := startServer(t, map[string]string{"HUDDLE_PUSH_SWEEP_MS": "150"})
+	service := newFakePush(t)
+	keys := newBrowserKeys(t)
+	setCookie, _ := pairDevice(t, srv, webauthntest.NewSoftKey(t), "iPhone")
+	device := pushDeviceHeaders(auth.PairPlainCookie + "=" + cookieValueOf(t, setCookie))
+	body := fmt.Sprintf(`{"endpoint":%q,"keys":{"p256dh":%q,"auth":%q}}`, service.srv.URL, keys.p256dh, keys.auth)
+	if code, out := srv.post(t, "/api/push/subscribe", body, device); code != 200 {
+		t.Fatalf("the device's subscribe = %d %s", code, out)
+	}
+	owner := map[string]string{"x-huddle-token": srv.token}
+
+	if code, out := srv.post(t, "/api/push/focus", `{"focused":true}`, owner); code != 400 {
+		t.Fatalf("a report with no tab = %d %s, want 400", code, out)
+	}
+	if code, out := srv.post(t, "/api/push/focus", `{"tab":"desk"}`, owner); code != 400 {
+		t.Fatalf("a report with no state = %d %s, want 400", code, out)
+	}
+	if code, out := srv.post(t, "/api/push/focus", `{"tab":"desk","focused":true}`, owner); code != 200 {
+		t.Fatalf("the desk's focus = %d %s", code, out)
+	}
+	permitPost(t, srv, "s-1", "Bash", `{"command":"npm test"}`)
+	if until(1500*time.Millisecond, func() bool { return service.count() > 0 }) {
+		t.Fatalf("the push service took %d messages while the desk was focused, want none", service.count())
+	}
+
+	if code, out := srv.post(t, "/api/push/focus", `{"tab":"desk","focused":false}`, owner); code != 200 {
+		t.Fatalf("the desk's hidden report = %d %s", code, out)
+	}
+	permitPost(t, srv, "s-2", "Bash", `{"command":"npm test"}`)
+	if !until(5*time.Second, func() bool { return service.count() >= 1 }) {
+		t.Fatalf("the push service took %d messages after the desk turned hidden, want the item's push", service.count())
+	}
+}

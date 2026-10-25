@@ -5,7 +5,7 @@
 // OS picks; the browser's PushManager hands out a subscription at that endpoint (headless
 // Chromium reaches no real push service), with keys made in the page so the test can decrypt
 // what the hub sent, and CDP delivers the decrypted message to the worker as the push service
-// would.
+// would. A second case keeps the phone quiet while the owner's desk tab is visible and focused.
 
 import { expect, test, type Page } from "@playwright/test";
 import {
@@ -17,12 +17,18 @@ import {
   type JsonWebKey,
 } from "node:crypto";
 import http from "node:http";
-import { api, pairThroughLink, theSetup, useVirtualAuthenticator } from "./helpers.ts";
+import { api, pairThroughLink, signIn, theSetup, useVirtualAuthenticator } from "./helpers.ts";
+import { DESK_QUIET_MS } from "./paths.ts";
 
 // the app-shell worker is the subject here, so this file lets it run; and the full Chromium in
 // its new headless mode, because the headless shell answers every page "denied" for
 // notifications whatever the context granted
 test.use({ serviceWorkers: "allow", channel: "chromium" });
+
+// a page an earlier spec closed never reported itself hidden: its focus report runs out first
+test.beforeEach(async () => {
+  await new Promise((done) => setTimeout(done, DESK_QUIET_MS + 200));
+});
 
 const DEVICE = `E2E Push Phone ${Date.now() % 100000}`;
 const SESSION = "e2e-push-session";
@@ -75,6 +81,20 @@ function fakePushManager(endpoint: string): string {
       return current;
     };
   })();`;
+}
+
+/** Pairs the page as one phone and turns its push switch on: the keys its subscription holds. */
+async function subscribePhone(page: Page, name: string, endpoint: string): Promise<PageKeys> {
+  await page.addInitScript({ content: fakePushManager(endpoint) });
+  await useVirtualAuthenticator(page);
+  await pairThroughLink(page, name);
+  await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
+  await page.goto(`${theSetup().pairOrigin}/#/settings/notifications`);
+  const sw = page.locator("#set-push");
+  await expect(sw).toHaveAttribute("aria-checked", "false");
+  await sw.click();
+  await expect(sw).toHaveAttribute("aria-checked", "true");
+  return page.evaluate(() => (window as unknown as { __pushKeys: PageKeys }).__pushKeys);
 }
 
 /** The subscription's keys as the page made them. */
@@ -194,6 +214,58 @@ test("a needs-you item reaches the installed app as a push with its deep link", 
     await sw.click();
     await expect(sw).toHaveAttribute("aria-checked", "false");
   } finally {
+    await service.close();
+  }
+});
+
+test("the phone stays quiet while the owner's desk tab is visible and focused", async ({ page, context, browser }) => {
+  const service = await startPushService();
+  const desk = await browser.newContext();
+  try {
+    await context.grantPermissions(["notifications"]);
+    const keys = await subscribePhone(page, `${DEVICE} quiet`, service.url);
+    const pushedFor = (id: number): boolean =>
+      service.messages.some((m) => decrypt(m, keys).includes(`"item":${id}`));
+    const ask = async (session: string): Promise<number> =>
+      (
+        await api<{ id: number }>("/api/needs", {
+          session_id: session,
+          tool_name: "Bash",
+          tool_input: { command: "npm test" },
+        })
+      ).id;
+
+    // the owner's tab at the desk is visible and focused: once the hub has its report, the item
+    // asked right then stays off the phone
+    const deskPage = await desk.newPage();
+    const focusReport = (focused: boolean) =>
+      deskPage.waitForResponse(
+        (r) =>
+          r.url().endsWith("/api/push/focus") &&
+          r.ok() &&
+          r.request().postData()?.includes(`"focused":${focused}`) === true,
+      );
+    const focused = focusReport(true);
+    const signedIn = signIn(deskPage);
+    await focused;
+    const quiet = await ask(`${SESSION}-desk`);
+    await signedIn;
+    await page.waitForTimeout(3_000);
+    expect(pushedFor(quiet)).toBe(false);
+
+    // the desk tab turns hidden: it says so, and the next item reaches the phone
+    const hidden = focusReport(false);
+    await deskPage.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+      Object.defineProperty(document, "hidden", { value: true, configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await hidden;
+    const heard = await ask(`${SESSION}-away`);
+    await expect.poll(() => pushedFor(heard), { timeout: 15_000 }).toBe(true);
+    expect(pushedFor(quiet)).toBe(false);
+  } finally {
+    await desk.close();
     await service.close();
   }
 });

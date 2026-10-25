@@ -5,7 +5,8 @@ package server
 // carries who (the session and its machine), what kind, the tool name, the app address the
 // notification opens and, on a needs-you push, the open needs-you count for the Home Screen
 // badge — never the command, path, prompt or answer text, which stay in the registry's rows. An item pushes once at create and once more only on its five-minute
-// escalation; a subscription the push service calls gone is dropped on the spot.
+// escalation; a subscription the push service calls gone is dropped on the spot. While a hub tab
+// on one device is visible and focused, the sweep sends nothing to the other devices.
 
 import (
 	"context"
@@ -31,6 +32,8 @@ const (
 	pushSweepEvery  = 30 * time.Second
 	pushSendTimeout = 10 * time.Second
 	pushTTL         = 300 // seconds, the five minutes an escalation may take to reach its item
+	// how long one focus report keeps the other devices quiet; a focused tab reports every 30 s
+	deskQuietEvery = 60 * time.Second
 	// the contact the VAPID JWT's sub claim names; the library writes it as a mailto: URL
 	pushSubscriber = "huddle-push@localhost"
 )
@@ -207,7 +210,56 @@ func (s *server) sweepPushes(ctx context.Context) {
 		return s.registry.MarkItemEscalated(ctx, item.ID, at)
 	})
 	s.pushSessionEntries(ctx, now, subs, badge)
-	s.pushUpstream(ctx, subs)
+	s.pushUpstream(ctx, now, subs)
+}
+
+// deskTab names one hub tab that reports its focus: the paired device it runs on (empty for the
+// owner's own browser) and the tab's own id.
+type deskTab struct {
+	device string
+	tab    string
+}
+
+// deskQuiet answers how long one focus report keeps the other devices quiet.
+func (s *server) deskQuiet() time.Duration {
+	if s.o.DeskQuietMS > 0 {
+		return time.Duration(s.o.DeskQuietMS) * time.Millisecond
+	}
+	return deskQuietEvery
+}
+
+// noteFocus records one tab's report: focused holds it for 60 s, hidden or blurred drops it at
+// once. Reports older than the quiet are dropped on the way.
+func (s *server) noteFocus(device, tab string, focused bool, at time.Time) {
+	s.focusMu.Lock()
+	defer s.focusMu.Unlock()
+	if s.focus == nil {
+		s.focus = make(map[deskTab]time.Time)
+	}
+	for key, seen := range s.focus {
+		if at.Sub(seen) > s.deskQuiet() {
+			delete(s.focus, key)
+		}
+	}
+	key := deskTab{device: device, tab: tab}
+	if focused {
+		s.focus[key] = at
+		return
+	}
+	delete(s.focus, key)
+}
+
+// quietFor says whether a device stays quiet at now: a tab on another device reported itself
+// visible and focused within the last 60 s. A device's own tab never quiets it.
+func (s *server) quietFor(device string, now time.Time) bool {
+	s.focusMu.Lock()
+	defer s.focusMu.Unlock()
+	for key, seen := range s.focus {
+		if key.device != device && now.Sub(seen) <= s.deskQuiet() {
+			return true
+		}
+	}
+	return false
 }
 
 // radarAnswerer is radar's in-process API as the push sweep reads it: the alerts radar raises.
@@ -226,7 +278,7 @@ type radarAlert struct {
 // device on needs-you only hears the items and nothing else. Radar's upstream alert names one
 // failure by its id, and each id pushes once. A path that fails while no device hears it stays
 // unmarked, so the next device that chooses alerts hears of it.
-func (s *server) pushUpstream(ctx context.Context, subs []hub.PushSubscription) {
+func (s *server) pushUpstream(ctx context.Context, now time.Time, subs []hub.PushSubscription) {
 	s.radarMu.Lock()
 	radar := s.radarAlerts
 	s.radarMu.Unlock()
@@ -255,7 +307,9 @@ func (s *server) pushUpstream(ctx context.Context, subs []hub.PushSubscription) 
 		hearing := 0
 		for _, sub := range subs {
 			if sub.Notify == hub.NotifyAll {
-				s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
+				if !s.quietFor(sub.Device, now) {
+					s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
+				}
 				hearing++
 			}
 		}
@@ -290,7 +344,9 @@ func (s *server) pushSessionEntries(ctx context.Context, now time.Time, subs []h
 			continue
 		}
 		for _, sub := range hearing {
-			s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
+			if !s.quietFor(sub.Device, now) {
+				s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
+			}
 		}
 		if err := s.registry.MarkSessionPushed(ctx, row.SessionID, jsfmt.ISOTime(now)); err != nil {
 			fmt.Fprintf(s.o.Stderr, "push: mark session %s: %v\n", row.SessionID, err)
@@ -319,7 +375,8 @@ func hearsItem(sub hub.PushSubscription, item hub.Item) bool {
 
 // pushItems carries one pass's items to every device that chose to hear them, each with the open
 // needs-you count, then marks each carried item once. A finished turn no awake device chose
-// still takes its mark, so the session pass does not wake those devices for it instead.
+// still takes its mark, so the session pass does not wake those devices for it instead; so does
+// an item a focused desk tab kept quiet, which never pushes late.
 func (s *server) pushItems(ctx context.Context, now time.Time, subs []hub.PushSubscription, badge int,
 	items []hub.Item, mark func(context.Context, hub.Item, string) error) {
 	if len(items) == 0 {
@@ -340,7 +397,7 @@ func (s *server) pushItems(ctx context.Context, now time.Time, subs []hub.PushSu
 			continue
 		}
 		for _, sub := range hearing {
-			if hearsItem(sub, item) {
+			if hearsItem(sub, item) && !s.quietFor(sub.Device, now) {
 				s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
 			}
 		}
@@ -588,6 +645,30 @@ func (s *server) pushSetNotifyRoute(w http.ResponseWriter, r *http.Request, me a
 			return err
 		}
 	}
+	s.writeJSON(w, 200, struct {
+		OK bool `json:"ok"`
+	}{true}, nil)
+	return nil
+}
+
+// pushFocusRoute records one hub tab's report (owner browsers and paired devices): its id, and
+// whether it is visible and focused. A focused tab keeps every other device's pushes quiet.
+func (s *server) pushFocusRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
+	if !me.Root {
+		return &channel.HuddleError{Status: 403, Msg: "only the owner's browsers report their focus"}
+	}
+	body, err := s.body(r)
+	if err != nil {
+		return err
+	}
+	tab, focused := textOf(fieldOf(body, "tab")), fieldOf(body, "focused")
+	if tab == "" || len(tab) > 64 {
+		return &channel.HuddleError{Status: 400, Msg: "tab: the reporting tab's id, 1 to 64 characters"}
+	}
+	if focused == nil || focused.Kind() != jsfmt.KindBool {
+		return &channel.HuddleError{Status: 400, Msg: "focused: true or false"}
+	}
+	s.noteFocus(me.Device, tab, focused.Boolean(), s.now())
 	s.writeJSON(w, 200, struct {
 		OK bool `json:"ok"`
 	}{true}, nil)

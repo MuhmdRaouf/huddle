@@ -32,7 +32,7 @@ import { Settings } from "./pages/Settings.tsx";
 import { Team } from "./pages/Team.tsx";
 import { Today } from "./pages/Today.tsx";
 import { paintGuard } from "./paint.ts";
-import { createPushSwitch, registerServiceWorker, syncAppBadge } from "./pwa.ts";
+import { createPushSwitch, registerServiceWorker, reportFocus, syncAppBadge } from "./pwa.ts";
 import { ensureRadar, stopRadar } from "./radar/mount.tsx";
 import { createRegistry } from "./registry.ts";
 import { readPref, writePref } from "./storage.ts";
@@ -543,6 +543,34 @@ window.addEventListener("hashchange", () => {
 });
 setInterval(paint, 15_000); // relative times stay live (app.js's 15 s tick)
 
+/** This tab's focus report, started once the hub names this browser the owner's or a paired
+ *  device's (a member's or a signed-out page reports nothing): its own random id, sent with
+ *  keepalive so the report a closing page makes still lands. */
+function startFocusReport(): void {
+  const tab = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+  reportFocus(
+    {
+      focused: () => document.visibilityState === "visible" && document.hasFocus(),
+      onChange: (fn) => {
+        document.addEventListener("visibilitychange", fn);
+        window.addEventListener("focus", fn);
+        window.addEventListener("blur", fn);
+      },
+      onLeave: (fn) => window.addEventListener("pagehide", fn),
+    },
+    (focused) =>
+      fetch("/api/push/focus", {
+        method: "POST",
+        keepalive: true,
+        headers: { "content-type": "application/json", "x-huddle-action": "/api/push/focus" },
+        body: JSON.stringify({ tab, focused }),
+      }),
+    { interval: (fn, ms) => setInterval(fn, ms) },
+  );
+}
+
 /** The shell's own reads: the registry's stream, the address's channel, and the one request
  *  that names who this browser is. */
 function startShell(): void {
@@ -555,6 +583,7 @@ function startShell(): void {
     .then((w) => {
       const kind = (w as { kind?: unknown }).kind;
       if (typeof kind === "string" && kind) who.kind = kind;
+      if (who.kind === "owner" || who.kind === "device") startFocusReport();
       const totp = (w as { totp?: unknown }).totp;
       who.totp = totp === true;
       const passkey = (w as { device_passkey?: unknown }).device_passkey;

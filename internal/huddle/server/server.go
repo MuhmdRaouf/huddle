@@ -79,6 +79,9 @@ type Options struct {
 	// PushSweepMS is the push sweep's interval in milliseconds (30 s when zero); each pass
 	// carries the items' first pushes and the due escalations, and a fresh item wakes it.
 	PushSweepMS int
+	// DeskQuietMS is how long one focus report keeps the other devices quiet, in milliseconds
+	// (60 s when zero).
+	DeskQuietMS int
 	// Env is the environment the presence checks read; Projects names the projects to check.
 	Env      map[string]string
 	Projects func() []string
@@ -304,6 +307,11 @@ type server struct {
 	radarMu        sync.Mutex
 	radarAlerts    radarAnswerer
 	upstreamPushed string
+	// focusMu guards focus: the hub tabs that last reported themselves visible and focused, by
+	// device and tab, each at its report's time. It lives in memory: a restart forgets it, and
+	// a focused tab reports again within 30 s.
+	focusMu sync.Mutex
+	focus   map[deskTab]time.Time
 
 	hostsMu sync.Mutex
 	hosts   map[string]bool
@@ -407,6 +415,11 @@ func OptionsFromEnv(version string, env func(string) string, stdout, stderr io.W
 	if ms := jsfmt.Trim(env("HUDDLE_PUSH_SWEEP_MS")); ms != "" {
 		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
 			o.PushSweepMS = n
+		}
+	}
+	if ms := jsfmt.Trim(env("HUDDLE_DESK_QUIET_MS")); ms != "" {
+		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
+			o.DeskQuietMS = n
 		}
 	}
 	o.Env = map[string]string{"HOME": env("HOME"), "CLAUDE_CONFIG_DIR": env("CLAUDE_CONFIG_DIR")}
@@ -1285,8 +1298,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.permitItemRoute(w, r, path, me)
 	case credentialed && needsItemPath.MatchString(path) && r.Method == http.MethodPost:
 		return s.needsItemRoute(w, r, path)
-	// Web Push (SPEC 7.6): the browser's subscription, its notification choice, and the public
-	// key it subscribes with
+	// Web Push (SPEC 7.6): the browser's subscription, its notification choice, the public key
+	// it subscribes with, and the focus report that keeps the other devices quiet
 	case credentialed && path == "/api/push/key" && r.Method == http.MethodGet:
 		return s.pushKeyRoute(w, r)
 	case credentialed && path == "/api/push/subscribe" && r.Method == http.MethodPost:
@@ -1297,6 +1310,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.pushNotifyRoute(w, r, me)
 	case credentialed && path == "/api/push/notify" && r.Method == http.MethodPost:
 		return s.pushSetNotifyRoute(w, r, me)
+	case credentialed && path == "/api/push/focus" && r.Method == http.MethodPost:
+		return s.pushFocusRoute(w, r, me)
 	case credentialed && sessionActPath.MatchString(path) && r.Method == http.MethodPost:
 		return s.sessionActRoute(w, r, path, me)
 	case credentialed && path == "/api/send" && r.Method == http.MethodPost:

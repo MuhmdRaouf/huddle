@@ -1,16 +1,19 @@
 // pwa.test.ts — the installability glue: the service worker registers only on a secure context
 // (localhost or https), the app badge mirrors the open needs-you count where the Badging API
 // exists, and the push switch subscribes this browser with the hub's VAPID key and hands the
-// subscription to the hub. All are optional: a browser without them, or a call that fails,
-// changes nothing the app does.
+// subscription to the hub, and the focus report tells the hub when this tab is visible and
+// focused. All are optional: a browser without them, or a call that fails, changes nothing the
+// app does.
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { ApiOptions } from "../src/api.ts";
 import {
   type BadgeNavigator,
   createPushSwitch,
+  type FocusPage,
   type PushBrowser,
   type PushSubscriptionLike,
   registerServiceWorker,
+  reportFocus,
   type SWWindow,
   syncAppBadge,
 } from "../src/pwa.ts";
@@ -183,5 +186,67 @@ describe("createPushSwitch", () => {
     const api = apiFake();
     await createPushSwitch(b, api).disable();
     expect(api).not.toHaveBeenCalled();
+  });
+});
+
+describe("reportFocus", () => {
+  /** A page whose focus the case flips, with its change, leave and tick hooks in reach. */
+  const focusPage = (focused: boolean) => {
+    const state = { focused, change: () => {}, leave: () => {}, tick: () => {} };
+    const page: FocusPage = {
+      focused: () => state.focused,
+      onChange: (fn) => {
+        state.change = fn;
+      },
+      onLeave: (fn) => {
+        state.leave = fn;
+      },
+    };
+    const timers = {
+      interval: (fn: () => void, ms: number) => {
+        expect(ms).toBe(30_000);
+        state.tick = fn;
+      },
+    };
+    return { state, page, timers };
+  };
+
+  it("reports a focused tab at once and on every change", () => {
+    const { state, page, timers } = focusPage(true);
+    const post = vi.fn(() => Promise.resolve({}));
+    reportFocus(page, post, timers);
+    expect(post.mock.calls).toEqual([[true]]);
+    state.focused = false;
+    state.change();
+    state.change();
+    state.focused = true;
+    state.change();
+    expect(post.mock.calls).toEqual([[true], [false], [true]]);
+  });
+
+  it("repeats the focused report every 30 s, and stays still while hidden", () => {
+    const { state, page, timers } = focusPage(false);
+    const post = vi.fn(() => Promise.resolve({}));
+    reportFocus(page, post, timers);
+    expect(post.mock.calls).toEqual([[false]]);
+    state.tick();
+    expect(post.mock.calls).toEqual([[false]]);
+    state.focused = true;
+    state.tick();
+    state.tick();
+    expect(post.mock.calls).toEqual([[false], [true], [true]]);
+  });
+
+  it("reports hidden when a focused page goes away", () => {
+    const { state, page, timers } = focusPage(true);
+    const post = vi.fn(() => Promise.resolve({}));
+    reportFocus(page, post, timers);
+    state.leave();
+    expect(post.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it("swallows a report the hub refuses", () => {
+    const { page, timers } = focusPage(true);
+    expect(() => reportFocus(page, () => Promise.reject(new Error("401")), timers)).not.toThrow();
   });
 });

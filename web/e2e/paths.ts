@@ -22,6 +22,10 @@ export const outsideProjectPath = path.join(runDir, "project-dir");
 /** The file the global setup writes and every test reads. */
 export const setupPath = path.join(runDir, "setup.json");
 
+/** How long the run's hub holds one focus report, in milliseconds: a spec that counts pushes
+ *  waits this long first, so no page an earlier spec closed still keeps the phone quiet. */
+export const DESK_QUIET_MS = 2_000;
+
 /** What the setup file carries: where the server answers, the root credential the tests mint
  *  sign-in codes with, and the seeded names the specs assert on. */
 export type E2eSetup = {
