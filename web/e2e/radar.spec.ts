@@ -54,7 +54,7 @@ test("every radar view loads with no console error", async ({ page }) => {
   expect(errors.errors()).toEqual([]);
 });
 
-test("the overview's Day cards show the seeded totals", async ({ page }) => {
+test("the overview's Day cards show the seeded totals", async ({ page, isMobile }) => {
   await signIn(page);
   await openTab(page, "Radar");
 
@@ -65,6 +65,14 @@ test("the overview's Day cards show the seeded totals", async ({ page }) => {
   // the owner's Day range: the requests the window holds are the three seeded ones
   await range.getByRole("button", { name: "Day" }).click();
   await expect(range.getByRole("button", { name: "Day" })).toHaveAttribute("aria-pressed", "true");
+
+  if (isMobile) {
+    // the phone's tiles name the window once: three requests in it
+    const tiles = page.locator("[data-phone-tiles]");
+    await expect(tiles.locator("#ovw-window")).toHaveText("Last 24 hours");
+    await expect(tiles.locator("[data-stat='requests'] .num")).toHaveText("3");
+    return;
+  }
 
   // tokens: the fixture's four totals summed, and the cache's share of them
   const total = TOTALS.input + TOTALS.output + TOTALS.cacheRead + TOTALS.cacheWrite;
@@ -84,6 +92,7 @@ test("the overview's Day cards show the seeded totals", async ({ page }) => {
 
 test("the overview's tiles count live sessions, the router's health and HTTP failures only", async ({
   page,
+  isMobile,
 }) => {
   // two calls beside the seeded ones, inside the default hour: a 502 the router answered with no
   // stop reason, and a 499 its client cancelled
@@ -111,7 +120,8 @@ test("the overview's tiles count live sessions, the router's health and HTTP fai
 
   const requests = page.locator("[data-stat='requests']");
   await expect(requests).toContainText("1 failed");
-  await expect(requests).toContainText("1 cancelled");
+  // the phone's requests tile carries the failures alone; the desk's says the cancelled apart
+  if (!isMobile) await expect(requests).toContainText("1 cancelled");
 
   // sessions: the live ones the store holds, not every session it ever saw
   const sessions = await page.evaluate(async () => {
@@ -121,14 +131,62 @@ test("the overview's tiles count live sessions, the router's health and HTTP fai
   const live = sessions.filter((s) => s.live).length;
   expect(sessions.length).toBeGreaterThan(live);
   const tile = page.locator("[data-stat='sessions']");
-  await expect(tile).toContainText("live now");
+  await expect(tile).toContainText(isMobile ? "Sessions live" : "live now");
   await expect(tile.locator(".num").first()).toHaveText(String(live));
 
-  // routers: this run sets zai up and starts no huddle-router, so the tile says down and the
-  // list names the one enabled provider instead of counting plugins
-  await expect(page.locator("[data-stat='routers'] .num")).toHaveText("down");
+  // routers: this run sets zai up and starts no huddle-router, so the list names the one enabled
+  // provider as down instead of counting plugins; the phone leaves the routers tile to that list
   await expect(page.locator("[aria-labelledby='ovw-routers'] [data-router='zai']")).toContainText("down");
   await expect(page.locator("[aria-labelledby='ovw-routers']")).not.toContainText(":1878");
+  if (!isMobile) await expect(page.locator("[data-stat='routers'] .num")).toHaveText("down");
+  await expectAccessible(page);
+});
+
+test("the phone's overview leads with three one-line tiles under one window label; the desk keeps five cards", async ({
+  page,
+  isMobile,
+}) => {
+  // a call inside the default hour on a model no price table knows, so the spend tile has an
+  // unpriced count to show
+  await page.route("**/api/radar/api/requests?*", async (route) => {
+    const answer = await route.fetch();
+    const body = (await answer.json()) as { requests: Record<string, unknown>[] };
+    const seed = body.requests[0];
+    if (seed === undefined) throw new Error("the seeded requests are missing");
+    const call = { ...seed, id: "e2e-unpriced", ts: Date.now() - 30_000, model: "mystery-model" };
+    await route.fulfill({ response: answer, json: { requests: [...body.requests, call] } });
+  });
+  await openView(page, "overview");
+  if (!isMobile) {
+    await expect(page.locator("[data-phone-tiles]")).toHaveCount(0);
+    await expect(page.locator("[data-stat-cards] [data-stat]")).toHaveCount(5);
+    return;
+  }
+  const tiles = page.locator("[data-phone-tiles]");
+  await expect(tiles).toBeVisible();
+  await expect(page.locator("[data-stat-cards]")).toHaveCount(0);
+  await expect(tiles.locator("#ovw-window")).toHaveText("Last hour");
+  await expect(tiles.locator("[data-stat]")).toHaveCount(3);
+  await expect(tiles.locator('[data-stat="spend"]')).toContainText("1 unpriced");
+  // all three in the first screen, each figure on one line inside its tile
+  const viewport = page.viewportSize();
+  const fits = await tiles.evaluate((root) =>
+    [...root.querySelectorAll<HTMLElement>("[data-stat]")].map((tile) => {
+      const value = tile.querySelector<HTMLElement>(".num");
+      const box = tile.getBoundingClientRect();
+      const line = value ? Number.parseFloat(getComputedStyle(value).lineHeight) : 0;
+      return {
+        stat: tile.getAttribute("data-stat"),
+        bottom: Math.round(box.bottom),
+        oneLine: value !== null && value.getBoundingClientRect().height < line * 1.5,
+        inside: value !== null && value.scrollWidth <= value.clientWidth,
+      };
+    }),
+  );
+  for (const fit of fits) {
+    expect(fit.bottom, `${fit.stat} sits in the first screen`).toBeLessThanOrEqual(viewport?.height ?? 0);
+    expect(fit, `${fit.stat} on one line`).toMatchObject({ oneLine: true, inside: true });
+  }
   await expectAccessible(page);
 });
 

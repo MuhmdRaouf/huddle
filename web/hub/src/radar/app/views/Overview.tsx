@@ -6,14 +6,16 @@
  * per day and per session), the spend-by-hour chart stacked by model, the top sessions by spend
  * (a row opens the Session screen), the plan limits the statusline word reported, the newest
  * alert, the routers list and the top tools, under the self-check badge that holds today's totals
- * against the transcripts. The phone keeps the first two cards, the day card, the graphs stacked,
- * the chart and the routers; the rest waits for a wider pane.
+ * against the transcripts. The phone leads with three tiles (spend, requests, sessions live) under
+ * one label that names the window they read, then the day card, the graphs stacked, the chart and
+ * the routers; the rest waits for a wider pane.
  */
 
 import { modelColor } from "@huddle/ui/model-color.ts";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { useHuddle } from "../../../app/context.tsx";
+import { useLayout } from "../../../app/layout.ts";
 import type { RegistrySession } from "../../../registry.ts";
 import { fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { SERIES, STATUS_COLOR } from "../../palette.ts";
@@ -83,17 +85,21 @@ function Stat({
   subline,
   class: cls = "",
   stat,
+  oneLine = false,
 }: {
   title: string;
   value: string;
   subline: ComponentChildren;
   class?: string;
   stat?: string;
+  oneLine?: boolean;
 }): JSX.Element {
   return (
     <div class={`ui-card p-4 md:p-5 ${cls}`} data-stat={(stat ?? title).toLowerCase()}>
       <div class="text-xs text-[var(--ui-muted)]">{title}</div>
-      <div class="num mt-0.5 text-2xl font-semibold md:text-[26px]">{value}</div>
+      <div class={`num mt-0.5 text-2xl font-semibold md:text-[26px] ${oneLine ? "whitespace-nowrap" : ""}`}>
+        {value}
+      </div>
       {subline !== null && <div class="mt-1 text-xs text-[var(--ui-muted)]">{subline}</div>}
     </div>
   );
@@ -795,23 +801,91 @@ function PlanLimits() {
   );
 }
 
+/** The window the phone's tiles read: the range's requests and what they cost at list price, with
+ *  the count nothing priced, while the requests in memory cover the range; the all-time summary
+ *  when only it answers; a history range's own request count with no spend figure otherwise. */
+function phoneWindow(state: ClientState, now: number, numbers: ReturnType<typeof rangeNumbers>) {
+  const count = requestsInRange(state, now);
+  if (count === null)
+    return {
+      words: "All time",
+      requests: state.summary?.requests ?? 0,
+      spend: state.summary?.costUsd ?? null,
+      unpriced: 0,
+    };
+  const costs = numbers.requests.map((request) => requestCost(request)?.usd);
+  const words = rangeWords(state.range, now);
+  return {
+    words: words.charAt(0).toUpperCase() + words.slice(1),
+    requests: count,
+    spend: numbers.history ? null : costs.reduce<number>((sum, usd) => sum + (usd ?? 0), 0),
+    unpriced: costs.filter((usd) => usd === undefined).length,
+  };
+}
+
+/** The phone's first screen: one label naming the window, then spend across the top and requests
+ *  beside the sessions live under it, each figure on one line. */
+function PhoneTiles({ numbers }: { numbers: ReturnType<typeof rangeNumbers> }) {
+  const { state, now } = useApp();
+  const { registry } = useHuddle();
+  const span = phoneWindow(state, now, numbers);
+  const needs = registry.needs();
+  const live = state.sessions.filter((item) => !isJob(item) && item.live).length;
+  return (
+    <section class="grid gap-2" aria-labelledby="ovw-window" data-phone-tiles="">
+      <h2 id="ovw-window" class="text-sm font-semibold">
+        {span.words}
+      </h2>
+      <div class="grid grid-cols-2 gap-3">
+        <Stat
+          title="Spend"
+          value={span.spend === null ? "–" : fmtUsd(span.spend)}
+          subline={span.unpriced > 0 ? <span class="num">{`${fmtNum(span.unpriced)} unpriced`}</span> : null}
+          class="col-span-2"
+          oneLine
+        />
+        <Stat
+          title="Requests"
+          value={fmtNum(span.requests)}
+          subline={
+            numbers.failed > 0 ? <Status tone="err" word={`${fmtNum(numbers.failed)} failed`} /> : null
+          }
+          oneLine
+        />
+        <Stat
+          title="Sessions live"
+          stat="Sessions"
+          value={fmtNum(live)}
+          subline={needs > 0 ? <Status tone="warn" word={`${fmtNum(needs)} need you`} /> : null}
+          oneLine
+        />
+      </div>
+    </section>
+  );
+}
+
 /** The Overview: the stat row over the active-block card, the day card, the graphs, the chart
  *  and the sessions table, the plan limits, the alert, routers and tools beside them; the phone
- *  stacks the cards, the day card, the graphs, the chart, the sessions table without its model
- *  column and the routers. */
+ *  leads with its three tiles, then the day card, the graphs, the chart, the sessions table
+ *  without its model column and the routers. */
 export function OverviewView(): JSX.Element {
   const { state, now } = useApp();
   const numbers = rangeNumbers(state, now);
   const routers = useRouterFacts();
+  const phone = useLayout() === "phone";
   return (
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:col-span-2 xl:grid-cols-5" data-stat-cards="">
-        <SpendStat />
-        <RequestsStat state={state} now={now} numbers={numbers} />
-        <TokensStat state={state} now={now} numbers={numbers} />
-        <SessionsStat />
-        <RoutersStat facts={routers} />
-      </div>
+      {phone ? (
+        <PhoneTiles numbers={numbers} />
+      ) : (
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:col-span-2 xl:grid-cols-5" data-stat-cards="">
+          <SpendStat />
+          <RequestsStat state={state} now={now} numbers={numbers} />
+          <TokensStat state={state} now={now} numbers={numbers} />
+          <SessionsStat />
+          <RoutersStat facts={routers} />
+        </div>
+      )}
       <div class="grid min-w-0 gap-4 xl:col-span-2">
         <ActiveBlock />
       </div>

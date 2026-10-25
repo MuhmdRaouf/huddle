@@ -1,13 +1,15 @@
 // Overview.test.tsx — the Radar tab's front page: the five stat cards over the data the shell and
-// the controller hold, the spend chart and its fallback, the sessions table that opens the Session
-// screen, the alert card, the routers list and the top tools.
+// the controller hold, the phone's three tiles under one window label, the spend chart and its
+// fallback, the sessions table that opens the Session screen, the alert card, the routers list and
+// the top tools.
 
 import { waitFor } from "@testing-library/preact";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { AppContext, type AppValue } from "../../../src/radar/app/context.ts";
 import { OverviewView } from "../../../src/radar/app/views/Overview.tsx";
+import { fmtUsd } from "../../../src/radar/fmt.ts";
 import { type ClientState, initialClientState } from "../../../src/radar/state.ts";
-import { legacyClasses, makeCtx, makeRegistry, makeState, renderIn } from "../../helpers.tsx";
+import { legacyClasses, makeCtx, makeRegistry, makeState, renderIn, stubMedia } from "../../helpers.tsx";
 import { uiFixtures } from "../helpers.ts";
 import { expectTokensOnly } from "./tokens.ts";
 
@@ -549,6 +551,81 @@ describe("the Overview on the tokens", () => {
       expect(style).not.toMatch(/#[0-9a-f]{3,8}\b|var\(--(series|success|danger|warning|muted|primary)/);
     const stopped = page.querySelector('[data-router="kimi"] [aria-label="budget stopped"]');
     expect(stopped?.getAttribute("style")).toContain("var(--ui-fail)");
+  });
+});
+
+describe("the Overview on the phone", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** Today's ledger as the live shot had it, and the hour's calls: one priced, one nothing prices. */
+  const busyDay: Partial<ClientState> = {
+    summary: fixtures.summary,
+    spendToday: 1057.61,
+    spendUnpriced: 9294,
+    sessions: [
+      { ...fixtures.sessionListItem, id: "s-lead", live: true },
+      { ...fixtures.sessionListItem, id: "s-kanban", live: false },
+    ],
+    requests: [
+      oldEdge(),
+      priced("claude-opus-5-5", NOW - 60_000),
+      { ...priced("mystery-model", NOW - 120_000), id: "req-unpriced" },
+    ],
+  };
+
+  it("leads with three tiles under one window label, the spend on one line and its unpriced count below", () => {
+    stubMedia({});
+    const { container } = overview(busyDay);
+    const tiles = container.querySelector("[data-phone-tiles]");
+    expect(tiles).not.toBeNull();
+    expect(container.querySelector("[data-stat-cards]")).toBeNull();
+    // one label names the window every tile reads; no tile names its own
+    expect(tiles?.querySelector("#ovw-window")?.textContent).toBe("Last hour");
+    const stats = [...(tiles?.querySelectorAll("[data-stat]") ?? [])];
+    expect(stats.map((el) => el.getAttribute("data-stat"))).toEqual(["spend", "requests", "sessions"]);
+    for (const stat of stats) expect(stat.firstElementChild?.textContent).not.toContain("·");
+    // the hour's spend is one figure that never wraps; what nothing priced sits on its own line
+    const spend = tiles?.querySelector('[data-stat="spend"]');
+    expect(spend?.querySelector(".num")?.textContent).toBe("$6.01");
+    expect(spend?.querySelector(".num")?.classList.contains("whitespace-nowrap")).toBe(true);
+    expect(spend?.textContent).toContain("1 unpriced");
+    expect(tiles?.querySelector('[data-stat="requests"] .num')?.textContent).toBe("2");
+    expect(tiles?.querySelector('[data-stat="sessions"] .num')?.textContent).toBe("1");
+    // the rest of the page follows under them
+    expect(container.querySelector('section[aria-labelledby="ovw-chart"]')).not.toBeNull();
+    if (tiles !== null) expectTokensOnly(tiles);
+  });
+
+  it("names all time when only the summary answers the range, and every tile reads it", () => {
+    stubMedia({});
+    const { container } = overview({
+      ...busyDay,
+      range: { preset: "7d", from: 0, to: null },
+      requests: [priced("claude-opus-5-5", NOW - 60_000)],
+    });
+    const tiles = container.querySelector("[data-phone-tiles]");
+    expect(tiles?.querySelector("#ovw-window")?.textContent).toBe("All time");
+    expect(tiles?.querySelector('[data-stat="requests"] .num')?.textContent).toBe("412");
+    expect(tiles?.querySelector('[data-stat="spend"] .num')?.textContent).toBe(
+      fmtUsd(fixtures.summary.costUsd),
+    );
+  });
+
+  it("keeps the five cards on a desktop, the spend tile with today's ledger as it reads", () => {
+    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    const { container } = overview(busyDay);
+    expect(container.querySelector("[data-phone-tiles]")).toBeNull();
+    const stats = [...container.querySelectorAll("[data-stat-cards] [data-stat]")];
+    expect(stats.map((el) => el.getAttribute("data-stat"))).toEqual([
+      "spend today",
+      "requests",
+      "tokens",
+      "sessions",
+      "routers",
+    ]);
+    expect(container.querySelector('[data-stat="spend today"] .num')?.textContent).toBe(
+      "$1,057.61 · 9294 unpriced",
+    );
   });
 });
 
