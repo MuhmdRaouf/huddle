@@ -42,17 +42,19 @@ const HOOK_LINES = [
   { event: "TeammateIdle", name: "teammate-idle", timeout: 5 },
 ];
 
-/** The ten command files, by part. Hooks start the servers, so radar's start/stop/status/open and
+/** The twelve command files, by part. Hooks start the servers, so radar's start/stop/status/open and
  *  kanban's four open/start/status/stop are gone; open, status and stop cover the hub, radar and
- *  the board server together, and kanban's own words carry the kanban- prefix. */
+ *  the board server together, domain names the hub behind Caddy, and kanban's own words carry the
+ *  kanban- prefix. */
 const COMMANDS = {
   huddle: ["invite", "join", "setup", "statusline"],
-  hub: ["open", "status", "stop"],
+  hub: ["domain", "open", "status", "stop"],
   kanban: ["kanban-export", "kanban-init", "kanban-lint", "kanban-refresh"],
 };
 
 /** The one-line description each hub command's front matter carries. */
 const HUB_DESCRIPTIONS = {
+  domain: "Name the hub for a Caddy reverse proxy and print the site block; off goes back to localhost only",
   open: "Ensure the hub is running and print its dashboard URL (Hub, Radar and Kanban tabs)",
   status: "One table: hub, radar, gateway; running or not, address",
   stop: "Stop the hub; radar and the boards are served by it",
@@ -60,6 +62,7 @@ const HUB_DESCRIPTIONS = {
 
 /** The launcher lines one hub command runs, in order. */
 const HUB_LINES = {
+  domain: [runLine("domain", "$ARGUMENTS")],
   open: [runLine("up"), runLine("open", "--print")],
   status: [runLine("status"), runLine("radar", "status"), runLine("kanban", "status"), runLine("gateway", "status")],
   stop: [runLine("down"), runLine("radar", "stop"), runLine("kanban", "stop", "$ARGUMENTS")],
@@ -179,6 +182,18 @@ describe("plugin/commands", () => {
     assert.ok(
       text.includes("Show the output above to the user as it is"),
       "open shows its output as is",
+    );
+  });
+
+  it("domain passes its arguments to the domain word and shows the block as is", () => {
+    const text = readFileSync(join(plugin, "commands", "domain.md"), "utf8");
+    for (const line of HUB_LINES.domain) {
+      assert.ok(text.includes(`!\`${line} 2>&1\``), `domain runs ${line}`);
+    }
+    assert.match(text, /^argument-hint: \S/m, "domain: names its arguments");
+    assert.ok(
+      text.includes("Show the output above to the user as it is"),
+      "domain shows its output as is",
     );
   });
 

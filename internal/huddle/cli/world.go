@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/x509"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -58,6 +59,10 @@ type World struct {
 	// filesystem. The owner key check reads the file's owner from it, and tests fake a foreign
 	// owner — no test may chown a file to another user.
 	FileStat func(path string) (os.FileInfo, error)
+	// ProbeClient sends the one request that leaves this machine on purpose, `huddle domain
+	// --check`; nil is a client that ignores HTTPS_PROXY and HTTP_PROXY, so the probe reaches the
+	// name the way the system resolver answers it. Tests point it at a fake proxy.
+	ProbeClient *http.Client
 }
 
 // stdin is the world's input.
@@ -110,6 +115,16 @@ func (w *World) systemPool() *x509.CertPool {
 		return nil
 	}
 	return pool
+}
+
+// probeClient answers the client the domain check sends its request with.
+func (w *World) probeClient() *http.Client {
+	if w != nil && w.ProbeClient != nil {
+		return w.ProbeClient
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	return &http.Client{Transport: transport}
 }
 
 // lanAddress answers the machine's address on the network a phone shares with it.

@@ -256,11 +256,29 @@ Let's Encrypt certificate without a public DNS token, so huddle keeps its own lo
 Already hold a pair (mkcert, a company CA)? `huddle cert --import cert.pem key.pem` installs it and the hub
 serves it instead (`huddle cert` says which). It is never renewed; the log names its expiry from 30 days out.
 
-Behind a TLS reverse proxy (Caddy) on this machine, give the name alone: `huddle role hub --host hub.example.dev`.
-The hub keeps answering loopback only, the proxy serves the certificate and forwards to it, and `huddle open`
-prints `https://hub.example.dev/?code=…`; a sign-in the proxy forwards from https gets a `Secure` cookie.
-The role pins the hub's port (18860, or the one already saved) so the proxy always finds it: when another program
-holds it, `huddle up` exits 2 instead of moving to another port.
+Behind Caddy on this machine, run `/huddle:domain hub.example.dev` (or `huddle domain hub.example.dev` in a
+terminal). It sets the hub's name with no listener of its own and prints the site block to paste into your
+Caddyfile:
+
+```text
+hub.example.dev {
+	reverse_proxy 127.0.0.1:18860 {
+		header_up X-Forwarded-Proto https
+	}
+}
+```
+
+1. Paste the block and reload Caddy. Caddy gets the certificate from Let's Encrypt; a private name
+   (`hub.example.test`) gets `tls internal` in the block, and `caddy trust` once makes browsers accept it.
+2. Restart huddle. The hub keeps answering loopback only, and `huddle open` prints
+   `https://hub.example.dev/?code=…`; a sign-in Caddy forwards from https gets a `Secure` cookie.
+3. Run `/huddle:domain --check`. It asks `https://hub.example.dev/health` (3 s, no proxy) and says whether Caddy
+   reaches this hub. Nothing else in huddle touches the network for the name.
+
+`/huddle:domain` alone shows the name, and `/huddle:domain off` goes back to localhost only, the default of a
+fresh install. The long form of the same role is `huddle role hub --host hub.example.dev`. The role pins the
+hub's port (18860, or the one already saved) so the proxy always finds it: when another program holds it,
+`huddle up` exits 2 instead of moving to another port.
 
 ## Use Huddle on your phone
 

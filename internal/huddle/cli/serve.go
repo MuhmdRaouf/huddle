@@ -146,8 +146,10 @@ func savedRunPort(root string) int {
 // (a stale pid may belong to anything); 0 when it is not.
 func PidOf(ctx context.Context, w *World) int { return RunningPid(ctx, w, Home(ctx, w)) }
 
-// hubHealth is the part of a hub's health answer the replace decision reads.
+// hubHealth is the part of a hub's health answer the replace decision and the domain check read.
 type hubHealth struct {
+	OK         bool   `json:"ok"`
+	Version    string `json:"version"`
 	Home       string `json:"home"`
 	Executable string `json:"executable"`
 }

@@ -13,6 +13,8 @@ Huddle keeps one **channel** per piece of shared work.
 - It runs at `http://127.0.0.1:<port>`: a random five-digit port per project that `huddle up` picks,
   saves and shows.
 - Set it up with `/huddle:setup`, start it with `huddle up`, see the address with `huddle server`.
+- The hub answers localhost only; `/huddle:domain <name>` puts it behind Caddy at that name and prints the
+  site block to paste (`off` goes back, `--check` tests the proxy).
 
 You reach it two ways, with the same operations:
 

@@ -520,12 +520,23 @@ in proxy mode:
    A public name takes its certificate over ACME DNS-01 instead: `huddle cert --provider <p>`,
    renewed 30 days before expiry.
 
-5. Behind a TLS reverse proxy on this machine (Caddy terminates TLS for the name and forwards to
-   the hub's loopback port), give the name alone and skip steps 3 and 4:
+5. Behind Caddy on this machine (Caddy terminates TLS for the name and forwards to the hub's
+   loopback port), skip steps 2 to 4 and pass the name with `/huddle:domain` (`huddle domain` in a
+   terminal):
 
    ```sh
-   huddle role hub --host hub.example.dev
+   huddle domain hub.example.dev    # role hub for the name, and the Caddyfile block to paste
+   huddle domain                    # the name, or "localhost only"
+   huddle domain --check            # asks https://hub.example.dev/health: does Caddy reach this hub?
+   huddle domain off                # back to loopback only, the same as huddle role solo
    ```
+
+   The block forwards to the pinned port with `header_up X-Forwarded-Proto https`. A public name
+   gets its certificate from Caddy's own ACME (a DNS challenge when the name has no public A
+   record); a private name (`hub.example.test`) gets `tls internal`, and `caddy trust` once makes
+   this machine's browsers accept it. huddle never edits the Caddyfile, and only `--check` reaches
+   the network: 3 s, the system resolver, no `HTTPS_PROXY`. The long form of the same role is
+   `huddle role hub --host hub.example.dev`.
 
    The hub opens no listener of its own; printed links name the proxy's origin
    (`https://hub.example.dev/?code=…`), and the sign-in cookie carries `Secure` when the proxy

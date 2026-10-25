@@ -45,13 +45,24 @@ func Role(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 		fmt.Fprintln(stderr, roleUsage)
 		return 2
 	}
+	cfg, code := setRole(w, root, pos[0], opt, stderr)
+	if code != 0 {
+		return code
+	}
+	roleLines(cfg, home.Home{Root: root}, w, stdout)
+	return 0
+}
+
+// setRole writes one role, with the flags it takes, into the home's config.toml and answers the
+// saved config. A refusal is printed to stderr and answered as its exit code.
+func setRole(w *World, root, role string, opt *flags, stderr io.Writer) (home.Config, int) {
 	cfg, err := home.LoadConfig(home.Home{Root: root})
 	if err != nil {
 		fmt.Fprintf(stderr, "huddle: %v\n", err)
-		return 1
+		return cfg, 1
 	}
 	pinned := cfg.Role == "hub" && cfg.Hub.Listen == "" // the proxy's port, which only that hub holds
-	switch pos[0] {
+	switch role {
 	case "solo":
 		cfg.Role = "solo"
 	case "hub":
@@ -59,20 +70,20 @@ func Role(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 		host, hasHost := opt.text("host")
 		if !hasHost {
 			fmt.Fprintln(stderr, roleUsage)
-			return 2
+			return cfg, 2
 		}
 		if hasListen {
 			if _, port, err := net.SplitHostPort(listen); err != nil || port == "0" {
 				fmt.Fprintf(stderr, "huddle: --listen %s: an address and a fixed port, as 127.0.0.2:8443\n", listen)
-				return 2
+				return cfg, 2
 			} else if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 				fmt.Fprintf(stderr, "huddle: --listen %s: a port from 1 to 65535\n", listen)
-				return 2
+				return cfg, 2
 			}
 		}
 		if net.ParseIP(host) != nil || !hubNameRe.MatchString(host) {
 			fmt.Fprintf(stderr, "huddle: --host %s: the hub's name, not an address — the passkey's relying party is a name\n", host)
-			return 2
+			return cfg, 2
 		}
 		cfg.Role = "hub"
 		cfg.Hub.Listen = listen
@@ -90,28 +101,27 @@ func Role(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 		hubURL, hasURL := opt.text("hub")
 		if !hasURL {
 			fmt.Fprintln(stderr, roleUsage)
-			return 2
+			return cfg, 2
 		}
 		parsed, err := url.Parse(hubURL)
 		if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
 			fmt.Fprintf(stderr, "huddle: --hub %s: the hub's https address, as https://hub.mine.test:8443\n", hubURL)
-			return 2
+			return cfg, 2
 		}
 		cfg.Role = "satellite"
 		cfg.Hub.URL = parsed.String()
 	default:
 		fmt.Fprintln(stderr, roleUsage)
-		return 2
+		return cfg, 2
 	}
 	if pinned && cfg.Role != "hub" { // leaving the hub hands the port back to huddle
 		cfg.PortAuto = true
 	}
 	if err := home.SaveConfig(home.Home{Root: root}, cfg); err != nil {
 		fmt.Fprintf(stderr, "huddle: %v\n", err)
-		return 1
+		return cfg, 1
 	}
-	roleLines(cfg, home.Home{Root: root}, w, stdout)
-	return 0
+	return cfg, 0
 }
 
 // localCAServes answers whether the hub listener falls to the local CA: no imported pair stands
@@ -139,9 +149,8 @@ func roleLines(cfg home.Config, h home.Home, w *World, stdout io.Writer) {
 	switch cfg.Role {
 	case "hub":
 		if cfg.Hub.Listen == "" {
-			fmt.Fprintf(stdout, "role hub: this machine answers loopback only, as %s behind a TLS reverse proxy\n",
-				hubBaseURL(cfg.Hub.Host, ""))
-			fmt.Fprintf(stdout, "restart huddle for the role to take effect; the proxy serves the certificate and forwards to %s\n", Local(cfg.Port))
+			fmt.Fprintln(stdout, proxyStateLine(cfg))
+			fmt.Fprintln(stdout, proxyRestartLine(cfg))
 			return
 		}
 		fmt.Fprintf(stdout, "role hub: paired devices and satellites answer on %s, as %s\n",
@@ -162,4 +171,16 @@ func roleLines(cfg home.Config, h home.Home, w *World, stdout io.Writer) {
 		fmt.Fprintln(stdout, "role solo: this machine's huddle answers loopback only")
 		fmt.Fprintln(stdout, "restart huddle for the role to take effect")
 	}
+}
+
+// proxyStateLine is the one line a hub behind a TLS reverse proxy says of itself.
+func proxyStateLine(cfg home.Config) string {
+	return fmt.Sprintf("role hub: this machine answers loopback only, as %s behind a TLS reverse proxy",
+		hubBaseURL(cfg.Hub.Host, ""))
+}
+
+// proxyRestartLine says what a hub behind a proxy still needs: a restart, and the proxy in front.
+func proxyRestartLine(cfg home.Config) string {
+	return fmt.Sprintf("restart huddle for the role to take effect; the proxy serves the certificate and forwards to %s",
+		Local(cfg.Port))
 }

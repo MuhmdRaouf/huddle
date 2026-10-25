@@ -42,6 +42,7 @@ var aloneWords = map[string]aloneEntry{
 	"service": serviceAlone,
 	"devices": devicesAlone,
 	"role":    roleAlone,
+	"domain":  domainAlone,
 	"cert":    certAlone,
 	"trust":   trustAlone,
 	"untrust": untrustAlone,
@@ -179,6 +180,12 @@ func roleAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr 
 	return cli.Role(ctx, w, argv, stdout, stderr)
 }
 
+// domainAlone names the hub for a TLS reverse proxy (Caddy) and prints the site block to paste,
+// shows the name, goes back to loopback with off, or probes the proxy with --check.
+func domainAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr io.Writer) int {
+	return cli.Domain(ctx, w, argv, stdout, stderr)
+}
+
 // certAlone obtains the hub's certificate over DNS-01 (SPEC 7.2): a terminal word, because its
 // token is typed with the echo off — in a session the word stays the channel's own.
 func certAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr io.Writer) int {
@@ -223,6 +230,9 @@ var aloneHelpLines = []string{
 	"  huddle devices [rm n]    list the paired devices; rm revokes one and ends its sessions",
 	"  huddle role <role>       write the machine's role: solo; hub --host <name> [--listen <addr:port>];",
 	"                           satellite --hub https://<host>:<port> (a restart takes it up)",
+	"  huddle domain <name>     the hub behind Caddy at https://<name>: role hub for that name and the",
+	"                           Caddyfile block to paste; domain alone shows it, off is localhost only,",
+	"                           --check asks the proxy whether it reaches this hub",
 	"  huddle cert --provider p obtain the hub's certificate over DNS-01 (asks for the provider's token",
 	"                           with the echo off; the server renews it 30 days before expiry)",
 	"  huddle cert --import c k install a pair you already hold (mkcert, a company CA) for the hub's",
