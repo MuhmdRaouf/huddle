@@ -142,6 +142,12 @@
   padding: 0;
 }
 
+/* The action a thumb reaches first, such as an approve or deny at a card's foot: 48 px. */
+.ui-btn-lg {
+  min-width: var(--ui-tap-lg);
+  min-height: var(--ui-tap-lg);
+}
+
 .ui-btn-primary {
   background: var(--ui-accent);
   color: var(--ui-on-accent);

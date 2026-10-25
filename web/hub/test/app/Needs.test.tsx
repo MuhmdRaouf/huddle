@@ -104,6 +104,8 @@ function apiFake(answer: (path: string, n: number) => unknown = () => ({})): {
 } {
   const calls: { path: string; body: unknown }[] = [];
   const call = (path: string, body?: unknown): Promise<unknown> => {
+    // the list's Radar card reads Radar's own routes; they are no act of the list's
+    if (path.startsWith("/api/radar/")) return Promise.resolve({});
     calls.push({ path, body });
     const r = answer(path, calls.length);
     return r instanceof Error ? Promise.reject(r) : Promise.resolve(r ?? {});
@@ -548,12 +550,26 @@ describe("the Now list's actions", () => {
     expect(h.calls).toEqual([{ path: "/api/needs/7/decide", body: { decision: "deny" } }]);
   });
 
-  it("keeps the card's Deny disabled when the session carries no permission ask", () => {
+  it("posts the allow from the card's Allow once, at the card's foot", async () => {
+    const h = mount(() => <NowPane layout="phone" />);
+    const card = document.querySelector('[data-row="s-1"]');
+    const allow = card?.querySelector<HTMLButtonElement>('[data-needs-actions] [data-act="allow"]');
+    expect(allow?.textContent).toContain("Allow once");
+    expect(allow?.className).toContain("ui-btn-lg");
+    await act(async () => {
+      allow?.click();
+    });
+    await flush();
+    expect(h.calls).toEqual([{ path: "/api/needs/7/decide", body: { decision: "allow" } }]);
+  });
+
+  it("offers Review instead of Deny and Allow when the session carries no permission ask", () => {
     mount(() => <NowPane layout="phone" />, {
       needs: [ask({ kind: "question", tool: "", input: "", summary: "Keep the timeout?" })],
     });
-    const deny = document.querySelector<HTMLButtonElement>('[data-act="deny"]');
-    expect(deny?.disabled).toBe(true);
+    expect(document.querySelector('[data-act="deny"]')).toBeNull();
+    expect(document.querySelector('[data-act="allow"]')).toBeNull();
+    expect(screen.getByRole("link", { name: "Review" }).getAttribute("href")).toBe("#/now/s-1");
   });
 
   it("snoozes from the card's menu, optimistically, and rolls back when the server refuses", async () => {

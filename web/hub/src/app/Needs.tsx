@@ -400,7 +400,8 @@ export function ActComposer({
   );
 }
 
-/** The snooze and dismiss menu of one item's card: the three spans, then the dismissal. */
+/** The snooze and dismiss menu of one item's card: the three spans, then the dismissal. The
+ *  trigger is a 48 px target in the card's footer, so the menu opens upward from it. */
 export function SnoozeMenu({ item }: { item: NeedItem }): JSX.Element {
   const act = useNeedsAct();
   const [open, setOpen] = useState(false);
@@ -415,7 +416,7 @@ export function SnoozeMenu({ item }: { item: NeedItem }): JSX.Element {
         type="button"
         aria-label="More actions"
         aria-expanded={open ? "true" : "false"}
-        class="flex size-9 items-center justify-center rounded-lg text-base-content/60 outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        class="ui-btn ui-btn-secondary ui-btn-icon ui-btn-lg"
         onClick={() => setOpen((v) => !v)}
       >
         <Icon name="more" class="size-4" />
@@ -424,14 +425,14 @@ export function SnoozeMenu({ item }: { item: NeedItem }): JSX.Element {
         <div
           role="menu"
           aria-label="Snooze or dismiss"
-          class="absolute top-full right-0 z-20 mt-1 flex min-w-52 flex-col rounded-[10px] border hairline bg-base-100 p-1 shadow-lg"
+          class="absolute bottom-full left-0 z-20 mb-1 flex min-w-52 flex-col rounded-[10px] border hairline bg-base-100 p-1 shadow-lg"
         >
           {spans.map(([span, label]) => (
             <button
               key={span}
               type="button"
               role="menuitem"
-              class="flex min-h-9 items-center rounded-md px-2.5 text-left text-sm outline-none hover:bg-base-200 focus-visible:bg-base-200"
+              class="flex min-h-[44px] items-center rounded-md px-2.5 text-left text-sm outline-none hover:bg-base-200 focus-visible:bg-base-200"
               onClick={() => {
                 setOpen(false);
                 act.snooze(item, span);
@@ -443,7 +444,7 @@ export function SnoozeMenu({ item }: { item: NeedItem }): JSX.Element {
           <button
             type="button"
             role="menuitem"
-            class="flex min-h-9 items-center rounded-md px-2.5 text-left text-sm text-error outline-none hover:bg-base-200 focus-visible:bg-base-200"
+            class="flex min-h-[44px] items-center rounded-md px-2.5 text-left text-sm text-error outline-none hover:bg-base-200 focus-visible:bg-base-200"
             onClick={() => {
               setOpen(false);
               act.dismiss(item);
@@ -508,7 +509,7 @@ function BarActions({
   wide: boolean;
 }): JSX.Element {
   // the phone's sheet raises its targets to 48 px, the inline bar keeps its 44 px
-  const height = wide ? "min-h-11" : "min-h-12";
+  const height = wide ? "min-h-[44px]" : "min-h-[48px]";
   const fill = wide ? "" : " flex-1";
   return (
     <div class={`flex gap-2.5 ${wide ? "shrink-0" : ""}`}>
@@ -535,7 +536,11 @@ function BarActions({
 
 /** The facts the passkey sheet names when an allow on this item needs one: the act, the command
  *  it would run, and where it runs. A non-permission ask confirms nothing. */
-function confirmWhat(item: NeedItem, session: RegistrySession, permission: boolean): StepUpWhat | undefined {
+export function confirmWhat(
+  item: NeedItem,
+  session: RegistrySession,
+  permission: boolean,
+): StepUpWhat | undefined {
   if (!permission) return undefined;
   return {
     action: `Allow ${item.tool} once`,
@@ -596,7 +601,7 @@ export function NeedsBar({
               type="button"
               data-act="reply"
               onClick={() => setReplying(true)}
-              class="min-h-11 bg-transparent text-left text-sm font-medium text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              class="min-h-[44px] bg-transparent text-left text-sm font-medium text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               {permission ? "Reply instead" : "Answer"}
             </button>

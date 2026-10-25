@@ -264,7 +264,7 @@ describe("the Now list", () => {
     }
   });
 
-  it("draws the needs-you card: name, age, where, the summary, Deny beside Review, and the actions menu", () => {
+  it("draws the needs-you card: name, age, where, the summary, the ask, Deny beside Allow once, and the actions menu", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone", fixture(), [needItem()]);
     const card = screen.getByText("kanban-e2e").closest("article");
@@ -274,19 +274,19 @@ describe("the Now list", () => {
       within(card as HTMLElement).getByText("laptop · claude-code-plugins · port/KBN-E2E"),
     ).toBeDefined();
     expect(within(card as HTMLElement).getByText("Run the board export e2e")).toBeDefined();
-    // Deny answers the session's open permission ask; Review opens the session
-    const deny = within(card as HTMLElement).getByRole("button", { name: "Deny" });
-    expect(deny.hasAttribute("disabled")).toBe(false);
+    // the ask names its tool and the input it would run
+    expect(within(card as HTMLElement).getByText("npm test -- --run e2e")).toBeDefined();
+    // Deny and Allow once answer the session's open permission ask; the name opens the session
+    expect(within(card as HTMLElement).getByRole("button", { name: "Deny" })).toBeDefined();
+    expect(within(card as HTMLElement).getByRole("button", { name: "Allow once" })).toBeDefined();
     expect(within(card as HTMLElement).getByRole("button", { name: "More actions" })).toBeDefined();
     void act(() => {
-      within(card as HTMLElement)
-        .getByRole("link", { name: "Review" })
-        .click();
+      screen.getByText("kanban-e2e").closest("a")?.click();
     });
     expect(location.hash).toBe("#/now/s-need-1");
   });
 
-  it("leaves the card's Deny off when the session has no permission ask to answer", () => {
+  it("offers Review alone when the session has no permission ask to answer", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone", fixture(), [
       {
@@ -298,8 +298,9 @@ describe("the Now list", () => {
         state: "open",
       },
     ]);
-    const deny = document.querySelector<HTMLButtonElement>('[data-act="deny"]');
-    expect(deny?.disabled).toBe(true);
+    expect(document.querySelector('[data-act="deny"]')).toBeNull();
+    const card = document.querySelector('[data-row="s-need-1"]') as HTMLElement;
+    expect(within(card).getByRole("link", { name: "Review" }).getAttribute("href")).toBe("#/now/s-need-1");
   });
 
   it("draws the working row: mark, name, model chip, machine · task, context", () => {
@@ -668,6 +669,8 @@ function apiFake(answer: (path: string, n: number) => unknown = () => ({})): {
   const calls: { path: string; body: unknown }[] = [];
   let n = 0;
   const call = (path: string, body?: unknown): Promise<unknown> => {
+    // the list's Radar card reads Radar's own routes; they are no act of the list's
+    if (path.startsWith("/api/radar/")) return Promise.resolve({});
     n += 1;
     calls.push({ path, body });
     const r = answer(path, n);

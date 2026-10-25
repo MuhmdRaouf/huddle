@@ -5,10 +5,11 @@
 // tree serves the three layouts: the phone paints the list or the session, the tablet and the
 // desktop paint the list beside the session, and the desktop adds the context pane (the linked
 // sessions and the session's facts). Session text is rendered as text, never HTML (SPEC 9).
+import type { Tone } from "@huddle/ui/badge.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
 import { modelColor } from "@huddle/ui/model-color.ts";
 import { stampMs } from "@huddle/ui/time.ts";
-import type { ComponentChildren, JSX } from "preact";
+import { type ComponentChildren, Fragment, type JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Api, ApiError } from "../api.ts";
 import { Icon } from "../icons.tsx";
@@ -35,7 +36,16 @@ import { ConnectCard } from "./ConnectCard.tsx";
 import { errText, useHuddle } from "./context.tsx";
 import { LinkSheet } from "./LinkSheet.tsx";
 import type { Layout } from "./layout.ts";
-import { ActComposer, type NeedsAct, NeedsBar, SnoozeMenu, useNeedsAct, useStepUp } from "./Needs.tsx";
+import {
+  ActComposer,
+  confirmWhat,
+  type NeedsAct,
+  NeedsBar,
+  SnoozeMenu,
+  useNeedsAct,
+  useStepUp,
+} from "./Needs.tsx";
+import { RadarDayCard } from "./RadarDay.tsx";
 import { MachinesLine } from "./TopBar.tsx";
 
 /** One state's mark: its shape and its colour class around the svg it draws. */
@@ -109,20 +119,23 @@ export function StateMark({
   );
 }
 
-/** A session's state as one word in a chip: the text the mark's shape stands for, so the
- *  state never rides on colour or shape alone. */
+/** The status tone each state's badge takes: needs-you asks for a look, working is healthy,
+ *  stuck is broken; idle, ended and an unknown state stay neutral. */
+const STATE_TONES: Record<string, Tone> = { "needs-you": "warn", working: "ok", stuck: "fail" };
+
+/** A session's state as one word in a status badge: the text the mark's shape stands for, so
+ *  the state never rides on colour or shape alone. */
 export function StateChip({ state }: { state: string }): JSX.Element {
   return (
-    <span
-      data-state={state}
-      class="shrink-0 rounded-full border hairline px-1.5 text-[10px] font-medium uppercase tracking-wide muted"
-    >
+    <span data-state={state} class={`ui-badge ui-badge-${STATE_TONES[state] ?? "neutral"} shrink-0`}>
       {stateWord(state)}
     </span>
   );
 }
 
-/** A model as its chip: the family's colour behind the short name, the raw id on hover. */
+/** A model as its chip: the short name in the page's own text colour, the family's colour as
+ *  the chip's leading edge (a fill behind the text fails contrast on the lighter families),
+ *  the raw id on hover. */
 export function ModelChip({
   model,
   pill = false,
@@ -133,10 +146,10 @@ export function ModelChip({
 }): JSX.Element {
   return (
     <span
-      class={`inline-flex items-center whitespace-nowrap font-mono text-[11px] leading-4 text-base-300 ${
+      class={`inline-flex items-center whitespace-nowrap border hairline bg-base-200 font-mono text-[11px] leading-4 text-base-content ${
         pill ? "rounded-full px-2.5 py-[3px] text-xs" : "rounded-md px-1.5 py-px"
       }`}
-      style={`background:${modelColor(model)}`}
+      style={`border-left:4px solid ${modelColor(model)}`}
       title={model}
     >
       {shortModel(model)}
@@ -186,9 +199,10 @@ function HarnessBadge({ harness }: { harness: string }): JSX.Element {
 /** The link that opens one session from the list. */
 const openHref = (s: RegistrySession): string => `#/now/${s.session_id}`;
 
-/** The needs-you card: the session that waits on the owner, what it asks, and the answers the
- *  phone offers — Deny posts the session's open permission ask at once, the menu snoozes or
- *  dismisses the item, and Review opens the session. */
+/** The needs-you card: the session that waits on the owner, what it asks, and the answers at
+ *  the card's foot, 48 px tall for one thumb. A permission ask offers Deny and Allow once, both
+ *  posted at once (an allow may open the passkey sheet first); any other ask offers Review,
+ *  which opens the session to answer it. The menu beside them snoozes or dismisses the item. */
 function NeedsCard({
   s,
   now,
@@ -206,13 +220,11 @@ function NeedsCard({
   const item = openItemOf(needs, s.session_id);
   return (
     <article
-      class={`flex flex-col gap-2.5 rounded-[14px] border bg-base-100 p-3.5 ${
-        sel ? "border-primary" : "hairline"
-      }`}
+      class={`ui-card flex flex-col ${sel ? "ring-2 ring-primary" : ""}`}
       data-row={s.session_id}
       aria-current={sel ? "true" : undefined}
     >
-      <a href={openHref(s)} class="flex min-w-0 flex-col gap-1.5 text-base-content">
+      <a href={openHref(s)} class="flex min-w-0 flex-col gap-1.5 p-4 text-base-content">
         <div class="flex items-baseline justify-between gap-2">
           <span class="flex min-w-0 items-center gap-1.5">
             <span class="truncate text-base font-semibold">{sessionName(s)}</span>
@@ -226,80 +238,110 @@ function NeedsCard({
         <div class="truncate text-xs muted">{whereOf(s)}</div>
         <div class="line-clamp-2 text-sm">{s.task || s.title || stateWord(s.state)}</div>
       </a>
-      <div class="flex gap-2">
+      {ask ? (
+        <div class="flex min-w-0 flex-col gap-1.5 px-4 pb-3" data-ask="">
+          <span class="text-sm font-semibold">
+            Allow <code class="font-mono">{ask.tool}</code>?
+          </span>
+          {ask.input ? (
+            <code class="block overflow-x-auto whitespace-pre rounded-[10px] border hairline bg-base-300 px-3 py-2 font-mono text-[13px]">
+              {ask.input}
+            </code>
+          ) : null}
+        </div>
+      ) : null}
+      <div class="flex gap-2 border-t hairline p-3" data-needs-actions="">
         {item ? <SnoozeMenu item={item} /> : null}
-        <button
-          type="button"
-          data-act="deny"
-          disabled={!ask}
-          title={ask ? undefined : "No permission ask on this session"}
-          onClick={() => ask && act.deny(ask)}
-          class="min-h-11 flex-1 rounded-[10px] border border-error bg-transparent text-[15px] font-medium text-error disabled:opacity-50"
-        >
-          Deny
-        </button>
-        <a
-          href={openHref(s)}
-          class="flex min-h-11 flex-1 items-center justify-center rounded-[10px] bg-primary text-[15px] font-semibold text-base-300"
-        >
-          Review
-        </a>
+        {ask ? (
+          <>
+            <button
+              type="button"
+              data-act="deny"
+              onClick={() => act.deny(ask)}
+              class="ui-btn ui-btn-danger ui-btn-lg flex-1"
+            >
+              Deny
+            </button>
+            <button
+              type="button"
+              data-act="allow"
+              onClick={() => act.allow(ask, confirmWhat(ask, s, true))}
+              class="ui-btn ui-btn-primary ui-btn-lg flex-1"
+            >
+              <Icon name="key" class="size-4" />
+              Allow once
+            </button>
+          </>
+        ) : (
+          <a href={openHref(s)} data-act="review" class="ui-btn ui-btn-primary ui-btn-lg flex-1">
+            Review
+          </a>
+        )}
       </div>
     </article>
   );
 }
 
-/** A working or stuck row: the mark, the name taking the row's free width with the state word and
- *  the model chip after it, then where it works and how full its window is. `sel` is the desktop's
- *  keyboard selection. */
+/** The selected row's ring: the desktop's keyboard selection. */
+const selRing = (sel: boolean): string => (sel ? " ring-2 ring-inset ring-primary" : "");
+
+/** A working or stuck row: the mark, the name taking the row's free width, where it works and
+ *  its task under it, and the state badge, the model chip and how full its window is after. */
 function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element {
   return (
     <a
       href={openHref(s)}
       data-row={s.session_id}
       aria-current={sel ? "true" : undefined}
-      class={`flex flex-col gap-1 px-1.5 py-2.5 ${
-        sel ? "rounded-[10px] bg-base-100 ring-1 ring-primary" : "border-b hairline"
-      }`}
+      class={`ui-list-row${selRing(sel)}`}
     >
-      <span class="flex min-w-0 items-center gap-1.5">
+      <span class="ui-list-leading">
         <StateMark state={s.state} />
-        <span class="min-w-0 flex-1 truncate text-[15px] font-medium">{sessionName(s)}</span>
-        {s.harness ? <HarnessBadge harness={s.harness} /> : null}
-        <StateChip state={s.state} />
-        {s.model ? <ModelChip model={s.model} /> : null}
       </span>
-      <span class="flex items-baseline justify-between gap-2.5">
-        <span class="min-w-0 truncate text-[13px] muted">
-          {[s.machine, s.task].filter(Boolean).join(" · ")}
+      <span class="ui-list-text">
+        <span class="flex min-w-0 items-center gap-1.5">
+          <span class="ui-list-title min-w-0">{sessionName(s)}</span>
+          {s.harness ? <HarnessBadge harness={s.harness} /> : null}
         </span>
-        <span class="shrink-0 text-right text-xs muted tnum">
-          {s.context_percent ? `${Math.round(s.context_percent)}%` : ""}
+        <span class="ui-list-meta truncate">{[s.machine, s.task].filter(Boolean).join(" · ")}</span>
+      </span>
+      <span class="ui-list-trailing flex-col items-end gap-1">
+        <span class="flex items-center gap-1.5">
+          <StateChip state={s.state} />
+          {s.model ? <ModelChip model={s.model} /> : null}
         </span>
+        <span class="text-xs muted tnum">{s.context_percent ? `${Math.round(s.context_percent)}%` : ""}</span>
       </span>
     </a>
   );
 }
 
 /** An idle or ended row: the mark, the name taking the row's free width with its machine, the
- *  state word after it, and how long it has been quiet. */
+ *  state badge after it, and how long it has been quiet. */
 function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolean }): JSX.Element {
   return (
     <a
       href={openHref(s)}
       data-row={s.session_id}
       aria-current={sel ? "true" : undefined}
-      class={`flex items-center gap-1.5 px-1.5 py-2.5 ${
-        sel ? "rounded-[10px] bg-base-100 ring-1 ring-primary" : "border-b hairline"
-      }`}
+      class={`ui-list-row${selRing(sel)}`}
     >
-      <StateMark state={s.state} />
-      <span class="min-w-0 flex-1 truncate text-[15px]">
-        {sessionName(s)} {s.machine ? <span class="text-[13px] muted">· {s.machine}</span> : null}
+      <span class="ui-list-leading">
+        <StateMark state={s.state} />
       </span>
-      {s.harness ? <HarnessBadge harness={s.harness} /> : null}
-      <StateChip state={s.state} />
-      <span class="shrink-0 text-xs muted">{ageText(s.last_event_at, now)}</span>
+      <span class="ui-list-text">
+        <span class="flex min-w-0 items-center gap-1.5">
+          <span class="ui-list-title min-w-0">
+            {sessionName(s)}{" "}
+            {s.machine ? <span class="text-[13px] font-normal muted">· {s.machine}</span> : null}
+          </span>
+          {s.harness ? <HarnessBadge harness={s.harness} /> : null}
+        </span>
+      </span>
+      <span class="ui-list-trailing gap-1.5">
+        <StateChip state={s.state} />
+        <span class="text-xs muted">{ageText(s.last_event_at, now)}</span>
+      </span>
     </a>
   );
 }
@@ -307,7 +349,7 @@ function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolea
 /** A lead's agent-team teammates under its row: each name with its state word. */
 function TeammateList({ teammates }: { teammates: RegistryTeammate[] }): JSX.Element {
   return (
-    <ul class="flex flex-col gap-0.5 px-1.5 pb-2 pl-6" aria-label="Teammates">
+    <ul class="m-0 flex list-none flex-col gap-0.5 px-4 pb-2 pl-10" aria-label="Teammates">
       {teammates.map((m) => (
         <li key={m.name} data-teammate={m.name} class="flex min-w-0 items-center gap-1.5 text-[13px] muted">
           <span class="min-w-0 flex-1 truncate">{m.name}</span>
@@ -356,10 +398,10 @@ function RowShell({
     return (
       // biome-ignore lint/a11y/noStaticElementInteractions: the row's link keeps the keyboard; the click only toggles a pick
       // biome-ignore lint/a11y/useKeyWithClickEvents: the row's link keeps the keyboard; the click only toggles a pick
-      <div class="flex items-start gap-2" data-select-row={s.session_id} onClick={tap}>
+      <div class="flex items-start gap-1 pl-3" data-select-row={s.session_id} onClick={tap}>
         <input
           type="checkbox"
-          class="checkbox checkbox-xs mt-3 shrink-0"
+          class="checkbox checkbox-xs mt-5 shrink-0"
           aria-label={`Select ${sessionName(s)}`}
           checked={picked}
           onClick={(e) => e.stopPropagation()}
@@ -499,11 +541,25 @@ export function NowPane({
     return () => window.removeEventListener("keydown", on);
   });
 
-  /** One section's rows, each under a sub-heading when the toggle groups them. */
-  const sectionRows = (list: RegistrySession[]): JSX.Element => {
+  /** One group's rows: the needs-you cards stacked, every other state's rows in one list. */
+  const rowsOf = (list: RegistrySession[], label: string): JSX.Element =>
+    list[0]?.state === "needs-you" ? (
+      <div class="flex flex-col gap-3">{list.map((s) => rowOf(s))}</div>
+    ) : (
+      <ul class="ui-list" aria-label={label}>
+        {list.map((s) => (
+          <li key={s.session_id} class="ui-list-item">
+            {rowOf(s)}
+          </li>
+        ))}
+      </ul>
+    );
+
+  /** One section's rows, each group under a sub-heading when the toggle groups them. */
+  const sectionRows = (list: RegistrySession[], label: string): JSX.Element => {
     if (group === "machine" && new Set(list.map((s) => s.machine ?? "")).size <= 1) {
       // one machine needs no sub-heading: the rows already carry it
-      return <>{list.map((s) => rowOf(s))}</>;
+      return rowsOf(list, label);
     }
     const byKey = new Map<string, RegistrySession[]>();
     for (const s of list) {
@@ -513,11 +569,11 @@ export function NowPane({
     return (
       <>
         {[...byKey.entries()].map(([key, keyed]) => (
-          <div key={key} class="flex flex-col">
-            <h3 class="px-1.5 pt-1 text-xs font-medium text-base-content/50">
+          <div key={key} class="flex flex-col gap-1.5">
+            <h3 class="m-0 px-1 pt-1 text-xs font-medium muted">
               {key} · {keyed.length}
             </h3>
-            {keyed.map((s) => rowOf(s))}
+            {rowsOf(keyed, `${label}, ${key}`)}
           </div>
         ))}
       </>
@@ -537,6 +593,7 @@ export function NowPane({
       );
     return (
       <RowShell
+        key={s.session_id}
         layout={layout}
         s={s}
         picked={picked.includes(s.session_id)}
@@ -548,6 +605,45 @@ export function NowPane({
         {row}
         {s.teammates?.length ? <TeammateList teammates={s.teammates} /> : null}
       </RowShell>
+    );
+  };
+
+  /** The sections in order, each heading over its rows, with the Radar card after the asks. */
+  const sections = (): JSX.Element => {
+    // the Radar card rides after the needs-you cards, before the first other section; the
+    // needs-you filter holds the asks alone
+    const firstOther = onlyNeeds
+      ? null
+      : (SECTIONS.find(([key]) => key !== "needsYou" && groups[key].length > 0)?.[0] ?? null);
+    const radar = (
+      <div class="px-3 pt-3">
+        <RadarDayCard />
+      </div>
+    );
+    return (
+      <>
+        {SECTIONS.filter(([key]) => (!onlyNeeds || key === "needsYou") && groups[key].length > 0).map(
+          ([key, label, warn]) => (
+            <Fragment key={key}>
+              {/* the Radar card follows what needs the owner, or leads when nothing does */}
+              {key === firstOther ? radar : null}
+              <section aria-labelledby={`now-${key}`} class="flex flex-col gap-2 px-3 pt-3">
+                <h2
+                  id={`now-${key}`}
+                  class={`m-0 flex items-center gap-2 px-1 text-[13px] font-semibold tracking-[0.06em] uppercase ${
+                    warn ? "text-[var(--ui-warn-ink)]" : "muted"
+                  }`}
+                >
+                  {warn ? <StateMark state="needs-you" /> : null}
+                  {label} · {groups[key].length}
+                </h2>
+                {sectionRows(groups[key], label)}
+              </section>
+            </Fragment>
+          ),
+        )}
+        {!onlyNeeds && firstOther === null ? radar : null}
+      </>
     );
   };
 
@@ -568,7 +664,7 @@ export function NowPane({
                 key={k}
                 type="button"
                 aria-pressed={group === k ? "true" : "false"}
-                class={`min-h-8 px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                class={`min-h-[44px] px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                   i > 0 ? "border-l hairline" : ""
                 } ${group === k ? "bg-base-100 font-semibold text-base-content" : "muted"}`}
                 onClick={() => {
@@ -585,8 +681,10 @@ export function NowPane({
           type="button"
           data-needs-filter=""
           aria-pressed={onlyNeeds ? "true" : "false"}
-          class={`min-h-8 rounded-lg border px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-            onlyNeeds ? "border-warning bg-base-100 font-semibold text-warning" : "hairline muted"
+          class={`min-h-[44px] rounded-lg border px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+            onlyNeeds
+              ? "border-warning bg-base-100 font-semibold text-[var(--ui-warn-ink)]"
+              : "hairline muted"
           }`}
           onClick={() => {
             const next = !onlyNeeds;
@@ -617,22 +715,7 @@ export function NowPane({
             </div>
           ) : null
         ) : (
-          SECTIONS.filter(([key]) => (!onlyNeeds || key === "needsYou") && groups[key].length > 0).map(
-            ([key, label, warn]) => (
-              <section key={key} aria-labelledby={`now-${key}`} class="flex flex-col gap-1 px-3 pt-2">
-                <h2
-                  id={`now-${key}`}
-                  class={`flex items-center gap-2 px-1 pb-1 text-[13px] font-semibold tracking-[0.06em] uppercase ${
-                    warn ? "text-warning" : "muted"
-                  }`}
-                >
-                  {warn ? <StateMark state="needs-you" /> : null}
-                  {label} · {groups[key].length}
-                </h2>
-                {sectionRows(groups[key])}
-              </section>
-            ),
-          )
+          sections()
         )}
       </div>
       {picked.length > 0 ? (

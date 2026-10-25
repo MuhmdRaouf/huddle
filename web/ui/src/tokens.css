@@ -69,6 +69,8 @@
 
   /* the smallest tap target a control may have */
   --ui-tap: 44px;
+  /* the target of the action a thumb reaches first, such as an approve at a card's foot */
+  --ui-tap-lg: 48px;
 
   /* the safe areas a pinned bar pads itself by */
   --ui-safe-top: env(safe-area-inset-top, 0px);
