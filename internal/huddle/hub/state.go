@@ -235,6 +235,22 @@ func (d *DB) SessionRow(ctx context.Context, id string, now time.Time) (*Session
 	return &out, nil
 }
 
+// MemberState answers the state of the session registered as member of channel, computed at
+// now, and false when no such session is registered. The newest registration wins when a
+// member name was reused.
+func (d *DB) MemberState(ctx context.Context, channel, member string, now time.Time) (string, bool) {
+	row, err := d.st.Get(ctx,
+		"SELECT "+sessionColumns+" FROM sessions WHERE channel = ? AND member = ? ORDER BY last_event_at DESC LIMIT 1",
+		channel, member)
+	if err != nil || row == nil {
+		return "", false
+	}
+	id := textOfRow(row, "session_id")
+	out := d.rowOfSession(ctx, row, now, d.sessionWaits(ctx, id, now),
+		d.asksOf(ctx, id, textOfRow(row, "last_event")))
+	return out.State, true
+}
+
 // Session answers one session with the events that led to it — the newest 200, oldest of them
 // first — or nil when no such session is registered.
 func (d *DB) Session(ctx context.Context, id string, now time.Time) (*SessionDetail, error) {

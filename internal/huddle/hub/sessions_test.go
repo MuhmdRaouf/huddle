@@ -490,3 +490,37 @@ func TestMigration18ClearsWrapperTitlesAndTasks(t *testing.T) {
 		t.Errorf("the title after the report = %v (%v), want real title", row["title"], err)
 	}
 }
+
+// TestMemberStateAnswersTheRegisteredSessionsState pins the member read the channel's liveness
+// seam asks: the state of the session registered as the channel's member, computed at now, and
+// false for a member no session registered.
+func TestMemberStateAnswersTheRegisteredSessionsState(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	now := time.Date(2026, 10, 16, 9, 0, 30, 0, time.UTC)
+	if err := db.Report(ctx, Report{
+		SessionID: "s-lead", Channel: "huddle", Member: "lead",
+		LastEvent: "UserPromptSubmit", LastEventAt: now.Add(-2 * time.Second).UTC().Format("2006-01-02T15:04:05.000Z"),
+	}); err != nil {
+		t.Fatalf("report lead: %v", err)
+	}
+	if state, ok := db.MemberState(ctx, "huddle", "lead", now); !ok || state != StateWorking {
+		t.Fatalf("MemberState(lead) = %q, %v, want working, true", state, ok)
+	}
+	if state, ok := db.MemberState(ctx, "huddle", "nobody", now); ok || state != "" {
+		t.Fatalf("MemberState(nobody) = %q, %v, want \"\", false", state, ok)
+	}
+	if err := db.Report(ctx, Report{
+		SessionID: "s-lead", Channel: "huddle", Member: "lead",
+		LastEvent: "SessionEnd", LastEventAt: now.UTC().Format("2006-01-02T15:04:05.000Z"),
+	}); err != nil {
+		t.Fatalf("report end: %v", err)
+	}
+	if state, ok := db.MemberState(ctx, "huddle", "lead", now); !ok || state != StateEnded {
+		t.Fatalf("MemberState(lead) after the end = %q, %v, want ended, true", state, ok)
+	}
+}

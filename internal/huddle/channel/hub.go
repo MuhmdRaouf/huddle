@@ -53,6 +53,10 @@ type Hub struct {
 	autoCreate bool
 	Radar      *outside.Radar
 
+	// Liveness answers every channel's who-is-alive question from outside the channel files;
+	// nil leaves each channel its own last_seen age.
+	Liveness Liveness
+
 	onGet func(*Channel)
 
 	mu     sync.Mutex
@@ -210,6 +214,7 @@ func (h *Hub) get(ctx context.Context, name string, create bool) (*Channel, erro
 	if h.Radar != nil {
 		ch.Radar = h.Radar
 	}
+	ch.Liveness = h.Liveness
 	h.open[name] = ch
 	return ch, nil
 }

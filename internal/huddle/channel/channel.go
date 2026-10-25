@@ -85,8 +85,16 @@ var editable = func() map[string]bool {
 	return m
 }()
 
-// PresenceStaleS is how many seconds without a seen write make a session stale.
+// PresenceStaleS is the fallback age for a member no liveness answerer knows: how many seconds
+// without a seen write make a session stale.
 const PresenceStaleS = 900
+
+// Liveness answers whether a channel member is alive from outside the channel file: the hub
+// wires the registry in, so one rule says who is here. known is false for a member the
+// answerer never heard of, and the channel falls back to its own last_seen age.
+type Liveness interface {
+	MemberAlive(ctx context.Context, channel, member string, now time.Time) (alive, known bool)
+}
 
 // stopWords are the words too common to say what a session's role or task is about.
 var stopWords = wordsSet("the and for with from that this into what when then than have has are was were will not but you your our its any all each per via use uses using")
@@ -1078,8 +1086,14 @@ type Channel struct {
 	Store *store.Store
 	FTS   bool
 
-	// Now is the clock every timestamp comes from; Rand feeds the occasional-cleanup roll.
-	Now  func() time.Time
+	// Now is the clock every timestamp comes from.
+	Now func() time.Time
+
+	// Liveness answers whether a member is alive from outside the channel file; nil means no
+	// answerer, and the last_seen age decides.
+	Liveness Liveness
+
+	// Rand feeds the occasional-cleanup roll.
 	Rand func() float64
 
 	// Radar answers the estimated cost per session when the radar plugin runs; nil leaves the
@@ -1888,14 +1902,20 @@ func derefOrNil(p *string) any {
 	return *p
 }
 
-func (c *Channel) shape(s *Session) PresenceView {
+func (c *Channel) shape(ctx context.Context, s *Session) PresenceView {
 	age := float64(0)
 	if t, err := time.Parse("2006-01-02T15:04:05Z", s.LastSeen); err == nil {
 		age = float64(c.nowMs()-t.UnixMilli()) / 1000
 	}
+	stale := age > PresenceStaleS
+	if c.Liveness != nil {
+		if alive, known := c.Liveness.MemberAlive(ctx, c.Name, s.Name, c.Now()); known {
+			stale = !alive
+		}
+	}
 	return PresenceView{
 		Name: s.Name, Parent: s.Parent, Label: s.Label, Role: s.Role, State: s.State, Task: s.Task,
-		Step: s.Step, LastSeen: s.LastSeen, Stale: age > PresenceStaleS, Control: s.Control,
+		Step: s.Step, LastSeen: s.LastSeen, Stale: stale, Control: s.Control,
 		ControlBy: s.ControlBy, ControlAt: s.ControlAt, Cursor: s.Cursor, Context: s.Context,
 		BriefWaiting: s.Brief != nil,
 	}
@@ -2123,7 +2143,7 @@ func (c *Channel) presenceOf(ctx context.Context, name string) PresenceView {
 	if err != nil || s == nil {
 		return PresenceView{}
 	}
-	return c.shape(s)
+	return c.shape(ctx, s)
 }
 
 // PresenceOf answers one session's presence, nil when it has not joined.
@@ -2135,7 +2155,7 @@ func (c *Channel) PresenceOf(ctx context.Context, name string) (*PresenceView, e
 	if s == nil {
 		return nil, nil
 	}
-	p := c.shape(s)
+	p := c.shape(ctx, s)
 	return &p, nil
 }
 
@@ -2156,7 +2176,7 @@ func (c *Channel) Sessions(ctx context.Context) ([]SessionView, error) {
 	out := []SessionView{}
 	for _, r := range rows {
 		s := toSession(r)
-		shape := c.shape(s)
+		shape := c.shape(ctx, s)
 		u, err := c.dbGet(ctx, fmt.Sprintf("SELECT %s n FROM events WHERE seq > ? AND from_name != ?", countInt), s.Cursor, s.Name)
 		if err != nil {
 			return nil, err

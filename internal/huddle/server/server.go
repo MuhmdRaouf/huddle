@@ -617,6 +617,10 @@ func Serve(ctx context.Context, o Options) error {
 			Log: func(line string) { fmt.Fprintf(o.Stdout, "huddle: %s\n", line) },
 		})
 	}
+	// the channels ask the registry who is alive: one rule says who is here, and the last_seen
+	// age stays the fallback for a member the registry has never heard of. A nil registry
+	// answers unknown, so the wiring is unconditional.
+	s.hub.Liveness = registryLiveness{db: s.registry}
 	// the registry's pid checker stops with the server, before the database closes under it
 	pidCtx, stopPidCheck := context.WithCancel(ctx)
 	defer stopPidCheck()
