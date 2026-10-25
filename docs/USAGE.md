@@ -252,7 +252,13 @@ from Claude Code and Codex, and no hooks. It also adds `providers.anthropic` to
 router's `http://127.0.0.1:<router port>/gateway` and the header `X-Huddle-Harness: omp` names
 omp in radar. omp's Anthropic requests then go through the gateway over plain HTTP on loopback
 with your own key or login, and need the router up. A `models.yml` that already configures
-`anthropic` stays as it is: install refuses it and says why. Every change is recorded in
+`anthropic` stays as it is: install refuses it and says why. For opencode, install writes the
+`huddle` server under `mcp` in `~/.config/opencode/opencode.json` and, in the same file,
+`provider.anthropic.options`: `baseURL` is the router's
+`http://127.0.0.1:<router port>/gateway/v1` and the header `X-Huddle-Harness: opencode` names
+opencode in radar. opencode's Anthropic requests then go through the gateway over plain HTTP on
+loopback with your own key, and need the router up. An `opencode.json` that already configures
+`anthropic` stays as it is, the same way. Every change is recorded in
 `~/.config/huddle/harness-ledger.json` (or `$HUDDLE_HOME/harness-ledger.json`) and undone exactly
 by `remove`.
 

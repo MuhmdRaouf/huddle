@@ -81,9 +81,9 @@ func ompBuild(e Entry) ([]byte, error) {
 	})
 }
 
-// ErrProviderTaken is the routing install's answer when the user's models.yml already
-// configures the anthropic provider: theirs stays, and huddle writes nothing into the file.
-var ErrProviderTaken = errors.New("models.yml already configures the anthropic provider; huddle leaves it as it is")
+// ErrProviderTaken is the routing install's answer when the user's config already configures
+// the anthropic provider: theirs stays, and huddle writes nothing of its routing.
+var ErrProviderTaken = errors.New("the anthropic provider is already configured here; huddle leaves it as it is")
 
 // modelsBlock is a models.yml huddle adds its anthropic provider override to, between the
 // same marker lines the Codex block uses (comments to YAML). A file with no top-level
@@ -96,6 +96,8 @@ type modelsBlock struct {
 
 // ConfigPath answers the models.yml file.
 func (m modelsBlock) ConfigPath(env Env) string { return m.path(env) }
+
+func (m modelsBlock) ledgerName() string { return m.ledger }
 
 // providersLine matches the top-level providers key in block style.
 var providersLine = regexp.MustCompile(`^providers:[ \t]*(#.*)?$`)
