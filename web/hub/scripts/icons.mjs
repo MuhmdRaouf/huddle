@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // icons.mjs — the PWA's PNG icons, rasterised from assets/huddle.svg (the logo the dashboard's
-// favicon and the hub's pages share): 192, 512, and a maskable 512 whose background runs to
-// the edges so any launcher mask crops colour, not transparency. Pure Node over the SVG's own
+// favicon and the hub's pages share): 192, 512, a maskable 512 whose background runs to the
+// edges so any launcher mask crops colour, not transparency, and the 180 px Apple Home Screen
+// icon: the logo's tile filling an opaque square, which iOS rounds itself. Pure Node over the SVG's own
 // shapes (rects, circles, two-stop gradients), zlib for the IDAT: no network, no dependencies,
 // and the same input gives the same bytes, so a fresh build never drifts from the committed
 // icons. scripts/build.mjs calls iconFiles() and ships what it returns.
@@ -9,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 
 const SVG = new URL("../assets/huddle.svg", import.meta.url);
-const VIEW = 128; // the logo's viewBox; every icon is the whole logo at its own scale
+const VIEW = 128; // the logo's viewBox
 
 /** One attribute of an element's opening tag, as a string. */
 const attr = (tag, name) => tag.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1];
@@ -72,14 +73,19 @@ function sdRect(u, v, s) {
   return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - s.r;
 }
 
+/**
+ * The square of the logo an icon shows, from `from` to `from + span` on both axes. A `bleed`
+ * frame squares the background off to the frame's edges (a mask or iOS crops colour, not
+ * transparency) and drops the border's rounded outline with the shape it traced.
+ * @typedef {{ from: number, span: number, bleed: boolean }} Frame
+ */
+
 /** One shape as a painter: paints its colour at a sample, with its opacity, or misses it. */
-function painter(shape, grads, maskable) {
+function painter(shape, grads, frame) {
   let s = shape;
-  if (s.kind === "rect" && maskable) {
-    // the maskable background runs to the edges (any mask crops colour, not transparency) and
-    // the border's rounded outline goes with the shape it traced
+  if (s.kind === "rect" && frame.bleed) {
     if (s.fill === "none") return null;
-    s = { ...shape, x: 0, y: 0, w: VIEW, h: VIEW, r: 0 };
+    s = { ...shape, x: frame.from, y: frame.from, w: frame.span, h: frame.span, r: 0 };
   }
 
   // a colour as a painter over the shape's own bounding box (SVG gradients are bbox-relative)
@@ -133,11 +139,11 @@ function painter(shape, grads, maskable) {
   return paint;
 }
 
-/** Rasterises the logo at `size` square, `maskable` for the full-bleed variant. */
-function rasterize(size, maskable, specs, grads) {
+/** Rasterises the logo's `frame` at `size` square. */
+function rasterize(size, frame, specs, grads) {
   const N = 4; // 4x4 supersamples per pixel carry the anti-aliasing
-  const step = VIEW / size;
-  const layer = specs.map((s) => painter(s, grads, maskable)).filter((p) => p !== null);
+  const step = frame.span / size;
+  const layer = specs.map((s) => painter(s, grads, frame)).filter((p) => p !== null);
   const px = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -147,8 +153,8 @@ function rasterize(size, maskable, specs, grads) {
       let alpha = 0; // premultiplied, summed over the samples
       for (let sy = 0; sy < N; sy++) {
         for (let sx = 0; sx < N; sx++) {
-          const u = (x + (sx + 0.5) / N) * step;
-          const v = (y + (sy + 0.5) / N) * step;
+          const u = frame.from + (x + (sx + 0.5) / N) * step;
+          const v = frame.from + (y + (sy + 0.5) / N) * step;
           let r = 0;
           let g = 0;
           let b = 0;
@@ -224,9 +230,17 @@ export function iconFiles() {
   const svg = readFileSync(SVG, "utf8");
   const specs = shapes(svg);
   const grads = gradients(svg);
-  const icon = (name, size, maskable) => ({
+  // the whole viewBox; the Apple icon shows only the logo's tile, its first filled rect
+  const whole = { from: 0, span: VIEW, bleed: false };
+  const tile = specs.find((s) => s.kind === "rect" && s.fill !== "none") ?? { x: 0, w: VIEW };
+  const icon = (name, size, frame) => ({
     fileName: `icons/${name}.png`,
-    contents: png(size, rasterize(size, maskable, specs, grads)),
+    contents: png(size, rasterize(size, frame, specs, grads)),
   });
-  return [icon("icon-192", 192, false), icon("icon-512", 512, false), icon("icon-maskable-512", 512, true)];
+  return [
+    icon("icon-192", 192, whole),
+    icon("icon-512", 512, whole),
+    icon("icon-maskable-512", 512, { ...whole, bleed: true }),
+    icon("icon-apple-180", 180, { from: tile.x, span: tile.w, bleed: true }),
+  ];
 }

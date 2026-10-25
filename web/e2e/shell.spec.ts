@@ -4,7 +4,8 @@
 // scrolls the page sideways, a code block scrolls inside its own box, and every control on every
 // page is a target of at least 44 px. On the desktop the same five items stand in a left sidebar
 // and no bottom bar is drawn. axe checks the shell's chrome on both (the pages' contents are their
-// own specs'), and the page names a theme colour per scheme beside a manifest with a maskable icon.
+// own specs'), and the page names a theme colour per scheme beside a manifest with a maskable icon
+// and links a 180 px Apple Home Screen icon the hub serves as a PNG.
 // A button styled by Tailwind utilities alone keeps its fill and its border over Radar's legacy
 // button reset. A session's needs sheet shows a Bash ask's command, leaves "Runs in" out for a
 // session with no branch, and fits at 390, 820 and 1440 px in both schemes with real 44 px answers.
@@ -212,6 +213,18 @@ test.describe("the installed app", () => {
     };
     expect(manifest.display).toBe("standalone");
     expect(manifest.icons.some((i) => i.purpose === "maskable")).toBe(true);
+  });
+
+  test("links a 180 px Apple Home Screen icon that answers as a PNG", async ({ page }) => {
+    await open(page, "#/now");
+    const href = await page.locator("link[rel='apple-touch-icon']").getAttribute("href");
+    expect(href).toBe("/icons/icon-apple-180.png");
+    const answer = await page.request.get(`${theSetup().rootUrl}${href}`);
+    expect(answer.status()).toBe(200);
+    const png = await answer.body();
+    // the PNG signature, then IHDR's width and height
+    expect(png.subarray(1, 4).toString("ascii")).toBe("PNG");
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([180, 180]);
   });
 });
 
