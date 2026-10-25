@@ -1678,12 +1678,20 @@ type reportHookPayload struct {
 // panic in a background goroutine leaves behind.
 func (s *server) warn(line string) { fmt.Fprintln(s.o.Stderr, line) }
 
-// recordRadarHook hands one reported event to the radar tab, so the registry's sessions appear
-// in the dashboard even where the radar plugin's own hook never ran. A proxying tab records
-// nothing (the owner's own hook does); a record that cannot land is logged once and never fails
-// the report it rode on.
+// claudeReport is the harness name every Claude Code hook's report carries.
+const claudeReport = "claude"
+
+// recordRadarHook records a reported event for Radar only when no hook on this machine did:
+// a Claude Code report whose machine is this one (or names none) rides the hook process the
+// event already ran through, so the hub leaves the spool line to it and keeps its own write
+// for another harness's or another machine's report. A proxying tab records nothing (the
+// owner's own hook does); a record that cannot land is logged once and never fails the report
+// it rode on.
 func (s *server) recordRadarHook(ctx context.Context, rep hub.Report) {
 	if s.radar == nil || !s.radar.Owns {
+		return
+	}
+	if rep.Harness == claudeReport && (rep.Machine == "" || rep.Machine == s.machine) {
 		return
 	}
 	raw, err := domain.MarshalCompactJSON(reportHookPayload{
