@@ -78,6 +78,32 @@ func aloneUpLine(t *testing.T, out string) (string, int) {
 	return match[1], port
 }
 
+// aloneFakeDeploy answers env with a temp Claude config dir whose installed_plugins.json holds
+// huddle at cacheSha, and a temp launcher home whose current link names src/<binary>/huddle.
+func aloneFakeDeploy(t *testing.T, env map[string]string, cacheSha, binary string) map[string]string {
+	t.Helper()
+	config, launcher := t.TempDir(), t.TempDir()
+	plugins := filepath.Join(config, "plugins")
+	if err := os.MkdirAll(plugins, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"version":2,"plugins":{"huddle@muhmdraouf":[{"scope":"user","installPath":"` + plugins +
+		`/cache/muhmdraouf/huddle/` + cacheSha[:12] + `","version":"` + cacheSha[:12] + `","gitCommitSha":"` + cacheSha + `"}]}}`
+	if err := os.WriteFile(filepath.Join(plugins, "installed_plugins.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("src", binary, "huddle"), filepath.Join(launcher, "current")); err != nil {
+		t.Fatal(err)
+	}
+	out := make(map[string]string, len(env)+2)
+	for key, value := range env {
+		out[key] = value
+	}
+	out["CLAUDE_CONFIG_DIR"] = config
+	out["AGENTS_HUDDLE_HOME"] = launcher
+	return out
+}
+
 // aloneStop ends a server this test started: TERM, then KILL once the wait runs out.
 func aloneStop(pid int) {
 	if pid <= 0 || syscall.Kill(pid, 0) != nil {
@@ -143,6 +169,18 @@ func TestAloneUpStatusOpenDown(t *testing.T) {
 		if !strings.Contains(out, fact) {
 			t.Errorf("status said %q, want the fact %q", out, fact)
 		}
+	}
+	if strings.Contains(out, "plugin cache") {
+		t.Errorf("status said %q with no plugin installed, want no cache line", out)
+	}
+
+	withCache := aloneFakeDeploy(t, env, "052c8e49c9ff0123456789abcdef0123456789ab", "38e9e40e321e")
+	code, out, errOut = aloneExec(t, withCache, "status")
+	if code != 0 || errOut != "" {
+		t.Fatalf("status with a plugin cache = %d %q %q, want 0 and silence", code, out, errOut)
+	}
+	if want := "plugin cache 052c8e49c9ff · binary 38e9e40e321e (cache behind)\n"; !strings.HasSuffix(out, want) {
+		t.Errorf("status said %q, want it to end with %q", out, want)
 	}
 
 	code, out, errOut = aloneExec(t, env, "open", "--print")

@@ -123,8 +123,9 @@ func routerUpLine(running routerd.Running, ok bool, startLine string) string {
 }
 
 // statusAlone answers the facts of the running server: its address, the machine's role, the
-// port, the sessions its channels hold and the pid, then huddle-router's address and pid. No hub
-// running is exit 6, one line.
+// port, the sessions its channels hold and the pid, then huddle-router's address and pid, then
+// the commit Claude Code's plugin cache holds beside the binary's when a plugin is installed. No
+// hub running is exit 6, one line.
 func statusAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr io.Writer) int {
 	root := cli.Home(ctx, w)
 	if root == "" {
@@ -148,6 +149,9 @@ func statusAlone(ctx context.Context, w *cli.World, argv []string, stdout, stder
 		url, role, port, aloneSessions(ctx, w, url), pidWord)
 	router, serving := routerd.RunningOf(ctx, envOf(os.Environ()))
 	fmt.Fprintln(stdout, routerUpLine(router, serving, ""))
+	if line := cli.PluginCacheLine(ctx, w); line != "" {
+		fmt.Fprintln(stdout, line)
+	}
 	return 0
 }
 

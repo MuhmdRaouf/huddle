@@ -648,12 +648,19 @@ A router whose resident size passes its memory ceiling (1 GiB by default,
 
 ## Deploy a new build
 
-1. Build or install the new binary (the launcher does it on a plugin update).
-2. Restart the hub only: `huddle down`, then `huddle up` from the new build. The router keeps serving through
-   the restart, so no Claude stream in flight is cut.
-3. `huddle up` from the new build also finds the router serving from the old one and moves it over by handover:
-   the router port never closes, and the old router process drains what it already accepted.
-4. Check both: `huddle status` names the hub's pid and the router's.
+1. Update Claude Code's plugin cache, which runs the plugins' hooks, commands and skills from the commit it
+   installed: `claude plugin update huddle@muhmdraouf`, then the same for each provider plugin you use
+   (`zai-plugin-cc@muhmdraouf`, `kimi-plugin-cc@muhmdraouf`, `deepseek-plugin-cc@muhmdraouf`,
+   `minimax-plugin-cc@muhmdraouf`, `qwen-plugin-cc@muhmdraouf`). Running sessions keep working: their hooks and
+   their MCP server run the launcher's `current` binary, not the plugin directory the update replaces
+   ([ADR 1](adr/0001-hooks-run-the-stable-binary.md)).
+2. Build or install the new binary (the launcher does it on the next session start or command after the update).
+3. Run `huddle up` from the new build. It replaces an older hub and moves the router over by handover
+   ([ADR 4](adr/0004-router-process.md)): the router port never closes, the old router process drains what it
+   already accepted, and no Claude stream in flight is cut.
+4. Check: `huddle status` names the hub's pid and the router's, then the deploy line
+   `plugin cache 052c8e49c9ff · binary 38e9e40e321e (cache behind)`. `(same)` means the cache and the binary
+   come from one commit; `(cache behind)` means step 1 is still to run. No plugin install prints no such line.
 
 ## Troubleshooting
 
