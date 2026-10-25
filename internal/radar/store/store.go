@@ -56,6 +56,11 @@ type SessionListItem struct {
 	CostSplitUsd    *cost.CostSplit       `json:"costSplitUsd"`
 	Now             *SessionNow           `json:"now"`
 	Context         *SessionContext       `json:"context"`
+	// CPUPct and RSSMB are the session's process tree's latest sample: the share of one core it
+	// used over the last 10 s and its resident memory. Only the GET /api/sessions rows carry
+	// them, and only for a session whose pid the hub's registry names.
+	CPUPct *float64 `json:"cpuPct,omitempty"`
+	RSSMB  *float64 `json:"rssMB,omitempty"`
 }
 
 // SessionTreeItem is a session list item with its jobs folded under it: the shape

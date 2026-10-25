@@ -339,6 +339,14 @@ Above the graphs, the day card shows two figures for the UTC day so far, refresh
 The card reads `GET /api/radar/api/day` on the hub, which answers
 `{"peakSessions": 3, "cardsDone": 2}`. A standalone radar holds neither fact and answers 503 there.
 
+Every 10 s the hub samples each open session's CPU and memory: one `ps` call for the whole machine,
+then the session's pid and every process under it, summed. A pid that no longer runs `claude` is
+skipped, and with no session open nothing is read. `GET /api/radar/api/sessions` on the hub carries
+the latest sample on each session's row, `"cpuPct": 12.5` (the share of one core over the last
+10 s, missing until the second sample) and `"rssMB": 412.3`. A session's last sample stays on its
+row until the UTC day turns, after it ends too. A standalone radar knows no pids and leaves both
+fields out.
+
 Radar checks itself once a minute while the Overview is open. It sums today's Claude Code
 transcripts again, counting each message id once (one API call writes one line per content block),
 and compares requests, input, output, cache-read and cache-write tokens with its own totals for

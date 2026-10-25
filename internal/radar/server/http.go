@@ -92,6 +92,9 @@ type HttpOptions struct {
 	Otel *store.OtelRows
 	// Day answers the day card's facts from the embedding hub; nil answers 503 on /api/day.
 	Day DaySource
+	// Procs holds each live session's CPU and memory samples; nil leaves them off the
+	// /api/sessions rows.
+	Procs *ProcSampler
 	// SnapshotSent runs once the snapshot frame is written and before the deltas start; nil
 	// in production. The store is subscribed by then, so a change landed here must still
 	// reach this client.
@@ -348,7 +351,7 @@ func (h *HttpServer) apiRoute(w http.ResponseWriter, r *http.Request, path strin
 }
 
 // answerApi is one /api read's answer: the self-check from its own cache, the day card from
-// the embedding hub, the rest from the pure router.
+// the embedding hub, the sessions with their process samples, the rest from the pure router.
 func (h *HttpServer) answerApi(r *http.Request, path string) (ApiResponse, error) {
 	if path == SelfCheckPath {
 		if h.options.SelfCheck == nil {
@@ -358,6 +361,10 @@ func (h *HttpServer) answerApi(r *http.Request, path string) (ApiResponse, error
 	}
 	if path == DayPath {
 		return dayRoute(r.Context(), h.options.Day, time.Now())
+	}
+	if path == "/api/sessions" && h.options.Procs != nil {
+		tree := store.SessionTree(h.options.Store.SessionList())
+		return jsonOf(200, sessionsAnswer{Sessions: h.options.Procs.withProcStats(tree)}), nil
 	}
 	return HandleApi(
 		h.options.Store,

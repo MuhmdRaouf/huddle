@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
@@ -85,6 +86,9 @@ type MountOptions struct {
 	// Day answers the day card's facts from huddle's registry and boards; nil answers 503 on
 	// radar's /api/day.
 	Day server.DaySource
+	// Procs names the live sessions' pids from huddle's registry, for the CPU and memory
+	// samples on the sessions rows; nil samples nothing.
+	Procs server.SessionPids
 }
 
 // Tab is radar mounted inside huddle. In the owning mode it holds the running app (the store,
@@ -217,6 +221,11 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		Quotas:  quotas,
 		Watcher: watcher,
 	})
+	var procs *server.ProcSampler
+	if options.Procs != nil {
+		procs = server.NewProcSampler(options.Procs, adapters.ProcessTable, now)
+		go procs.Run(appCtx)
+	}
 	startedAt := now().UnixMilli()
 	t.Store = st
 	t.Watcher = watcher
@@ -238,6 +247,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		Watcher:       watcher,
 		Otel:          store.NewOtelRows(),
 		Day:           options.Day,
+		Procs:         procs,
 		HostAllowed:   options.HostAllowed,
 		OriginAllowed: options.OriginAllowed,
 	})
