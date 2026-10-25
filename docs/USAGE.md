@@ -64,6 +64,11 @@ zai-plugin-cc@muhmdraouf`) installs `huddle` with it; then run its setup:
 3. Restart Claude Code when the report says so. From then on the router is the one daemon at 18786 for every
    provider you set up: a second provider's setup adds a lane to it and changes nothing else.
 
+The router stays out of the way of a session: it adds under 5 ms to the first byte of a streamed answer and
+under 1 ms to each chunk, on a provider lane and on the decrypted `api.anthropic.com` path alike, and with no
+request in flight it uses under 0.5% of one core. `TestE2ERouterOverhead` and `TestRouterIdleCPU` hold it to
+both budgets.
+
 Turning one provider off with its `/<p>:remove` takes its lane, models and agents back out; the proxy keys stay
 while another provider is still set up, and `settings.json` goes back to how it was after the last one. The
 plugin's README ([zai](../plugins/zai-plugin-cc/README.md) and its siblings) has the full walk: verified
