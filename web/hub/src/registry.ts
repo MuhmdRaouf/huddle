@@ -2,10 +2,12 @@
 // as the Now list and the Session screen read it: the rows GET /api/registry/sessions answers,
 // the needs-you items GET /api/needs answers, one session's detail with the events that led to
 // it, and the all-channels live stream (/api/registry/live) whose registry.session and
-// needs.item rows move both lists without a reload. No DOM here: the API client and the stream
-// constructor are injected, so tests drive every branch.
+// needs.item rows move both lists without a reload. The API client and the stream constructor
+// are injected, so tests drive every branch; the watchdog around the stream reads the browser's
+// timers and visibility, which the tests fake.
 import type { Api } from "./api.ts";
 import type { EventSourceFactory, EventSourceLike } from "./live.ts";
+import { watchedSource } from "./shared/watchdog.ts";
 import type { LiveStatus } from "./store.ts";
 
 /** One report as the registry stored it (SPEC 5.1): the session's fields as of one event. */
@@ -462,11 +464,14 @@ export function createRegistry(deps: {
     } else if (state.sessions === null) void load();
   }
 
+  /** Opens the stream behind the watchdog: a silent one, or a stale one when the page comes back,
+   *  is replaced, and the fresh stream's hello refills the list. */
   function connect(): void {
     disconnect();
-    if (!deps.EventSource) return;
+    const open = deps.EventSource;
+    if (!open) return;
     state.live = "connecting";
-    es = deps.EventSource("/api/registry/live");
+    es = watchedSource(() => open("/api/registry/live"));
     es.onopen = () => {
       state.live = "live";
       changed();

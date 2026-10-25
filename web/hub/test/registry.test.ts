@@ -2,7 +2,7 @@
 // counts, machines, names, ages, the stream items a session's events become, the needs-you items
 // a session's actions decide) and the store that loads them, applies a registry.session row and
 // a needs.item row, and follows the all-channels live stream.
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { EventSourceLike } from "../src/live.ts";
 import {
   ageText,
@@ -24,7 +24,7 @@ import {
   stateWord,
   streamItems,
 } from "../src/registry.ts";
-import { NOW } from "./helpers.tsx";
+import { NOW, turnDocument } from "./helpers.tsx";
 
 /** One registry row, with the fields the list reads; the test overrides what it looks at. */
 const row = (over: Partial<RegistrySession> & { session_id: string }): RegistrySession => ({
@@ -611,6 +611,79 @@ describe("the registry store", () => {
     // the owner goes back: the held turn leaves too
     reg.setOpenId(null);
     expect(reg.getState().needs).toEqual([]);
+  });
+});
+
+describe("the registry stream's watchdog", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    turnDocument("visible");
+  });
+
+  /** A registry over counted streams, opened and greeted: the boot's load is in. */
+  async function liveRegistry() {
+    vi.useFakeTimers();
+    const api = fakeApi({ "/api/registry/sessions": { sessions: [] }, "/api/needs": { items: [] } });
+    const streams: ReturnType<typeof fakeSource>[] = [];
+    const reg = createRegistry({
+      api,
+      EventSource: (url) => {
+        expect(url).toBe("/api/registry/live");
+        const s = fakeSource();
+        streams.push(s);
+        return s.src;
+      },
+    });
+    reg.connect();
+    streams[0]?.open();
+    streams[0]?.send({ type: "hello" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.calls).toEqual(["/api/registry/sessions", "/api/needs"]);
+    return { api, streams, reg };
+  }
+
+  it("replaces a stream silent for 40 s, shows it offline, and refills on the new hello", async () => {
+    const { api, streams, reg } = await liveRegistry();
+    await vi.advanceTimersByTimeAsync(39_999);
+    expect(streams).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(streams[0]?.closed).toBe(true);
+    expect(streams).toHaveLength(2);
+    expect(reg.getState().live).toBe("offline");
+    streams[1]?.open();
+    streams[1]?.send({ type: "hello" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reg.getState().live).toBe("live");
+    // what went by while the stream was silent is read once: the needs-you list included
+    expect(api.calls).toEqual([
+      "/api/registry/sessions",
+      "/api/needs",
+      "/api/registry/sessions",
+      "/api/needs",
+    ]);
+    reg.disconnect();
+  });
+
+  it("keeps a stream the hub's ping keeps alive", async () => {
+    const { streams, reg } = await liveRegistry();
+    for (let beat = 0; beat < 6; beat += 1) {
+      await vi.advanceTimersByTimeAsync(15_000);
+      streams[0]?.send({ type: "ping" });
+    }
+    expect(streams).toHaveLength(1);
+    reg.disconnect();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(streams).toHaveLength(1);
+  });
+
+  it("replaces a stream at once on a return to visible when its last frame is over 20 s old", async () => {
+    const { streams, reg } = await liveRegistry();
+    turnDocument("hidden");
+    await vi.advanceTimersByTimeAsync(25_000);
+    turnDocument("visible");
+    expect(streams).toHaveLength(2);
+    expect(streams[0]?.closed).toBe(true);
+    reg.disconnect();
   });
 });
 

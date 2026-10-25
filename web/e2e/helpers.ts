@@ -332,3 +332,84 @@ export async function expectTapTargets(page: Page): Promise<void> {
   }, TAP_EXCLUSIONS.map((x) => x.selector));
   expect(misses, "controls under 44 px").toEqual([]);
 }
+
+/** Wraps the page's EventSource before any script runs, so a test can cut the streams open on a
+ *  URL the way a half-open socket does on a resumed phone: the source stays open, never errors,
+ *  and no frame reaches the page. A source opened after the cut flows normally. */
+export async function cuttableStreams(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    type Seen = { url: string; cut: boolean; frames: number };
+    const Real = window.EventSource;
+    const seen: Seen[] = [];
+    (window as unknown as { __streams: Seen[] }).__streams = seen;
+    class Cuttable extends Real {
+      private readonly seen: Seen;
+      constructor(url: string | URL, init?: EventSourceInit) {
+        super(url, init);
+        this.seen = { url: String(url), cut: false, frames: 0 };
+        seen.push(this.seen);
+      }
+      private gate(fn: (event: MessageEvent) => void): (event: MessageEvent) => void {
+        return (event) => {
+          if (this.seen.cut) return;
+          this.seen.frames += 1;
+          fn.call(this, event);
+        };
+      }
+      override set onmessage(fn: ((event: MessageEvent) => void) | null) {
+        super.onmessage = fn === null ? null : this.gate(fn);
+      }
+      override get onmessage(): ((event: MessageEvent) => void) | null {
+        return super.onmessage;
+      }
+      override addEventListener(
+        type: string,
+        fn: EventListenerOrEventListenerObject,
+        opts?: boolean | AddEventListenerOptions,
+      ): void {
+        const call = (event: Event): void => {
+          if (typeof fn === "function") fn.call(this, event);
+          else fn.handleEvent(event);
+        };
+        super.addEventListener(type, type === "open" || type === "error" ? call : this.gate(call), opts);
+      }
+    }
+    window.EventSource = Cuttable as unknown as typeof EventSource;
+  });
+}
+
+/** Cuts every stream now open on a URL holding `part`; answers how many it cut. */
+export async function cutStreams(page: Page, part: string): Promise<number> {
+  return page.evaluate((p) => {
+    const seen = (window as unknown as { __streams: { url: string; cut: boolean }[] }).__streams;
+    let cut = 0;
+    for (const s of seen) {
+      if (s.url.includes(p) && !s.cut) {
+        s.cut = true;
+        cut += 1;
+      }
+    }
+    return cut;
+  }, part);
+}
+
+/** How many uncut streams on a URL holding `part` have delivered a frame. */
+export async function flowingStreams(page: Page, part: string): Promise<number> {
+  return page.evaluate((p) => {
+    const seen = (window as unknown as { __streams: { url: string; cut: boolean; frames: number }[] }).__streams;
+    return seen.filter((s) => s.url.includes(p) && !s.cut && s.frames > 0).length;
+  }, part);
+}
+
+/** Hides the page, moves its clock past `awayMs`, and shows it again, the way a phone resumes a
+ *  page the owner left in the background. */
+export async function returnAfter(page: Page, awayMs: number): Promise<void> {
+  await page.evaluate((ms) => {
+    const realNow = Date.now.bind(Date);
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Date.now = () => realNow() + ms;
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, awayMs);
+}

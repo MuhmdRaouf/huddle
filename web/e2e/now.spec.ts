@@ -16,7 +16,19 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { expectAccessible } from "./axe.ts";
-import { api, openTab, SEEDED, signIn, soloPairHome, theSetup, TOTALS } from "./helpers.ts";
+import {
+  api,
+  cutStreams,
+  cuttableStreams,
+  flowingStreams,
+  openTab,
+  returnAfter,
+  SEEDED,
+  signIn,
+  soloPairHome,
+  theSetup,
+  TOTALS,
+} from "./helpers.ts";
 
 /** Today's three seeded glm-5.3 calls at the price table's 1.40 / 4.40 / 0.26 USD per million. */
 const TODAY_USD = (TOTALS.input * 1.4 + TOTALS.output * 4.4 + TOTALS.cacheRead * 0.26) / 1e6;
@@ -430,4 +442,63 @@ test("the Now page passes axe", async ({ page }) => {
   await openTab(page, "Now");
   await expect(page.getByRole("region", { name: "Today in Radar" })).toBeVisible();
   await expectAccessible(page);
+});
+
+/** Reports one idle session the Now list has not seen, so a row proves the list caught up. */
+async function reportIdle(id: string, title: string): Promise<void> {
+  await api("/api/registry/report", {
+    session_id: id,
+    machine: "e2e-machine",
+    project: "e2e",
+    title,
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+}
+
+test("a registry stream gone silent is replaced within 40 s and the list catches up", async ({ page }, info) => {
+  const id = `e2e-silent-${info.project.name}`;
+  await test.step("Given the Now list on a stream that goes quiet with no error", async () => {
+    await cuttableStreams(page);
+    await page.clock.install();
+    await signIn(page);
+    await openTab(page, "Now");
+    await expect(page.locator("[data-row='e2e-seed']")).toBeVisible();
+    expect(await cutStreams(page, "/api/registry/live")).toBe(1);
+  });
+
+  await test.step("When a session reports while the stream is silent", async () => {
+    await reportIdle(id, "Reported while the stream was silent");
+    await page.waitForTimeout(1_000);
+    await expect(page.locator(`[data-row='${id}']`)).toHaveCount(0);
+  });
+
+  await test.step("Then 40 s of silence replace the stream and the session shows", async () => {
+    await page.clock.fastForward(40_000);
+    await expect.poll(() => flowingStreams(page, "/api/registry/live"), { timeout: 5_000 }).toBe(1);
+    await expect(page.locator(`[data-row='${id}']`)).toBeVisible({ timeout: 5_000 });
+  });
+});
+
+test("a page back from the background re-subscribes the registry stream within 5 s", async ({ page }, info) => {
+  const id = `e2e-return-${info.project.name}`;
+  await test.step("Given the Now list on a stream that goes quiet with no error", async () => {
+    await cuttableStreams(page);
+    await signIn(page);
+    await openTab(page, "Now");
+    await expect(page.locator("[data-row='e2e-seed']")).toBeVisible();
+    expect(await cutStreams(page, "/api/registry/live")).toBe(1);
+    await reportIdle(id, "Reported while the page was away");
+  });
+
+  await test.step("When the page hides, 30 s pass, and it turns visible again", async () => {
+    await page.waitForTimeout(500);
+    await expect(page.locator(`[data-row='${id}']`)).toHaveCount(0);
+    await returnAfter(page, 30_000);
+  });
+
+  await test.step("Then a fresh stream flows and the session shows within 5 s", async () => {
+    await expect.poll(() => flowingStreams(page, "/api/registry/live"), { timeout: 5_000 }).toBe(1);
+    await expect(page.locator(`[data-row='${id}']`)).toBeVisible({ timeout: 5_000 });
+  });
 });

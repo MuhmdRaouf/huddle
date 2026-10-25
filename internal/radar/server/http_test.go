@@ -364,7 +364,8 @@ func TestHttpReads(t *testing.T) {
 				sawIngest = true
 			}
 		}
-		// the heartbeat is a comment, not a data frame; reaching here means the deltas flowed
+		// the pings between them are data frames the switch skips; reaching here means the
+		// deltas flowed
 	})
 
 	t.Run("an idle tracker returns at once, a busy one only once its requests close", func(t *testing.T) {
@@ -528,11 +529,9 @@ func (s *streamTap) endedFlag() bool {
 
 func (s *streamTap) close() { s.cancel() }
 
-// sseFrameList holds the complete SSE frames of one wire: the data payloads and the
-// comment lines.
+// sseFrameList holds the data payloads of one wire's complete SSE frames.
 type sseFrameList struct {
-	data     []map[string]any
-	comments []string
+	data []map[string]any
 }
 
 // sseFrames parses the complete frames only: anything past the last blank line is a
@@ -555,8 +554,6 @@ func sseFrames(wire string) sseFrameList {
 				continue
 			}
 			frames.data = append(frames.data, value)
-		} else if strings.HasPrefix(line, ":") {
-			frames.comments = append(frames.comments, line)
 		}
 	}
 	return frames
@@ -1085,18 +1082,13 @@ func TestStream(t *testing.T) {
 		})
 	})
 
-	t.Run("beats a heartbeat comment between updates", func(t *testing.T) {
+	t.Run("beats a ping data frame between updates, which EventSource hands the page", func(t *testing.T) {
 		st := store.CreateStore(clock)
 		_, port := serve(t, HttpOptions{Store: st, Version: "test", StartedAt: 1_000, HeartbeatMs: 50})
 		stream := openStream(t, port)
 		defer stream.close()
-		waitFor(t, "a heartbeat", 2*time.Second, func() bool {
-			for _, comment := range sseFrames(stream.buffer()).comments {
-				if comment == ":hb" {
-					return true
-				}
-			}
-			return false
+		waitFor(t, "a ping", 2*time.Second, func() bool {
+			return sseFrames(stream.buffer()).countOf("ping") > 0
 		})
 	})
 
@@ -1359,7 +1351,8 @@ func TestWireGoldens(t *testing.T) {
 		}
 		var wire []byte
 		buffer := make([]byte, 4*1024)
-		for !bytes.Contains(wire, []byte(":hb\n\n\r\n")) {
+		ping := []byte("data: {\"type\":\"ping\"}\n\n\r\n")
+		for !bytes.Contains(wire, ping) {
 			n, err := conn.Read(buffer)
 			wire = append(wire, buffer[:n]...)
 			if err != nil {
@@ -1367,7 +1360,7 @@ func TestWireGoldens(t *testing.T) {
 			}
 		}
 		body := wire[bytes.Index(wire, []byte("\r\n\r\n"))+4:]
-		cut := bytes.Index(body, []byte(":hb\n\n\r\n")) + len(":hb\n\n\r\n")
+		cut := bytes.Index(body, ping) + len(ping)
 		body = body[:cut]
 		golden, err := os.ReadFile("testdata/http_sse_open_golden.txt")
 		if err != nil {

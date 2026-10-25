@@ -446,6 +446,10 @@ type eventMessage struct {
 	Event shared.EventRecord `json:"event"`
 }
 
+type pingMessage struct {
+	Type string `json:"type"`
+}
+
 type ingestMessage struct {
 	Type       string `json:"type"`
 	CatchingUp bool   `json:"catchingUp"`
@@ -589,7 +593,9 @@ func (h *HttpServer) streamClient(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-beat.C:
-			if !write(":hb\n\n") {
+			// a data frame, not a comment: EventSource never surfaces a comment, and the
+			// page's watchdog replaces a stream it hears nothing from for 40 s
+			if !write(sseFrame(pingMessage{Type: "ping"})) {
 				return
 			}
 		}

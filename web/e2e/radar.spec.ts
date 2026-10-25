@@ -7,7 +7,20 @@
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
-import { ConsoleErrors, n, openTab, signIn, SEEDED, theSetup, TOTALS, USAGE } from "./helpers.ts";
+import {
+  ConsoleErrors,
+  cutStreams,
+  cuttableStreams,
+  flowingStreams,
+  n,
+  openTab,
+  returnAfter,
+  signIn,
+  SEEDED,
+  theSetup,
+  TOTALS,
+  USAGE,
+} from "./helpers.ts";
 import { LOAD_REQUESTS } from "./seed.ts";
 
 /** The views in their sub-tab order, each with the one thing only it shows once loaded. */
@@ -601,4 +614,39 @@ test("the inspector attaches no history to a call the transcript holds no copy o
   await expect(sheet.getByText("The transcript holds no copy of this call.")).toBeVisible();
   await expect(sheet.locator(".ctx-msg")).toHaveCount(0);
   await expect(sheet.locator("[data-context-totals]")).toHaveCount(0);
+/** Radar's stream as the hub serves it. */
+const RADAR_STREAM = "/api/radar/api/stream";
+
+test("a Radar stream gone silent is replaced within 40 s", async ({ page }) => {
+  await test.step("Given the Radar tab on a stream that goes quiet with no error", async () => {
+    await cuttableStreams(page);
+    await page.clock.install();
+    await signIn(page);
+    await openTab(page, "Radar");
+    await expect.poll(() => flowingStreams(page, RADAR_STREAM)).toBe(1);
+    expect(await cutStreams(page, RADAR_STREAM)).toBe(1);
+  });
+
+  await test.step("Then 40 s of silence replace the stream with one that flows", async () => {
+    await page.clock.fastForward(40_000);
+    await expect.poll(() => flowingStreams(page, RADAR_STREAM), { timeout: 5_000 }).toBe(1);
+  });
+});
+
+test("a Radar page back from the background re-subscribes within 5 s", async ({ page }) => {
+  await test.step("Given the Radar tab on a stream that goes quiet with no error", async () => {
+    await cuttableStreams(page);
+    await signIn(page);
+    await openTab(page, "Radar");
+    await expect.poll(() => flowingStreams(page, RADAR_STREAM)).toBe(1);
+    expect(await cutStreams(page, RADAR_STREAM)).toBe(1);
+  });
+
+  await test.step("When the page hides, 30 s pass, and it turns visible again", async () => {
+    await returnAfter(page, 30_000);
+  });
+
+  await test.step("Then a fresh stream flows within 5 s", async () => {
+    await expect.poll(() => flowingStreams(page, RADAR_STREAM), { timeout: 5_000 }).toBe(1);
+  });
 });

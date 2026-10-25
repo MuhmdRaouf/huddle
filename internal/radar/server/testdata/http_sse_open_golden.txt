@@ -6,7 +6,7 @@ retry: 3000
 data: {"type":"snapshot","summary":{"sessions":0,"liveSessions":0,"agents":0,"requests":0,"tokens":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"errors":0,"toolCalls":0,"latencyP50":null,"latencyP95":null,"startedAt":null,"now":0,"costUsd":null},"sessions":[],"models":{"models":[],"upstreams":[],"tools":[]},"catchingUp":false}
 
 
-5
-:hb
+17
+data: {"type":"ping"}
 
 

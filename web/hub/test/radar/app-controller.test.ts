@@ -13,6 +13,7 @@ import type { Summary } from "../../src/radar/shared/model.ts";
 import { DEFAULT_RANGE } from "../../src/radar/shared/time-range.ts";
 import type { BlocksReport, UsageReport } from "../../src/radar/shared/usage.ts";
 import type { ClientState } from "../../src/radar/state.ts";
+import { turnDocument } from "../helpers.tsx";
 import { makeRequest, makeSessionView, makeTool, uiFixtures } from "./helpers.ts";
 
 type Answer = HttpResponse;
@@ -1168,6 +1169,54 @@ describe("the stream", () => {
     expect(callsTo(harness, "/api/requests?limit=1000")).toBe(first + 1);
     expect(callsTo(harness, "/api/events?limit=500")).toBe(2);
     expect(callsTo(harness, "/api/tools?limit=1000")).toBe(2);
+  });
+
+  it("replaces a stream silent for 40 s and backfills once the fresh one opens", async () => {
+    const harness = makeHarness();
+    await started(harness);
+    harness.streams.at(-1)?.open();
+    await settle();
+    expect(harness.streams).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(39_999);
+    expect(harness.streams).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(harness.streams).toHaveLength(2);
+    expect(harness.streams[0]?.closed).toBe(true);
+    expect(harness.controller.getState().connected).toBe(false);
+    harness.streams.at(-1)?.open();
+    await settle();
+    expect(harness.controller.getState().connected).toBe(true);
+    expect(callsTo(harness, "/api/requests?limit=1000")).toBe(2);
+    harness.controller.stop();
+  });
+
+  it("keeps a stream the hub's ping keeps alive, and never shows the ping to the state", async () => {
+    const harness = makeHarness();
+    await started(harness);
+    harness.streams.at(-1)?.open();
+    await settle();
+    const before = harness.controller.getState();
+    for (let beat = 0; beat < 6; beat += 1) {
+      await vi.advanceTimersByTimeAsync(15_000);
+      harness.streams.at(-1)?.push(JSON.stringify({ type: "ping" }));
+    }
+    expect(harness.streams).toHaveLength(1);
+    expect(harness.controller.getState().sessions).toBe(before.sessions);
+    harness.controller.stop();
+  });
+
+  it("replaces a stream at once on a return to visible when its last frame is over 20 s old", async () => {
+    const harness = makeHarness();
+    await started(harness);
+    harness.streams.at(-1)?.open();
+    await settle();
+    turnDocument("hidden");
+    await vi.advanceTimersByTimeAsync(25_000);
+    turnDocument("visible");
+    expect(harness.streams).toHaveLength(2);
+    expect(harness.streams[0]?.closed).toBe(true);
+    harness.controller.stop();
+    turnDocument("visible");
   });
 
   it("does not re-backfill on the first open, which the boot's own backfill just fed", async () => {

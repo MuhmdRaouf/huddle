@@ -82,6 +82,9 @@ type Options struct {
 	// DeskQuietMS is how long one focus report keeps the other devices quiet, in milliseconds
 	// (60 s when zero).
 	DeskQuietMS int
+	// SSEPingMS is the ping interval of the browser streams, the registry's and radar's, in
+	// milliseconds (15 s when zero): the page's watchdog counts the pings as signs of life.
+	SSEPingMS int
 	// Env is the environment the presence checks read; Projects names the projects to check.
 	Env      map[string]string
 	Projects func() []string
@@ -422,6 +425,11 @@ func OptionsFromEnv(version string, env func(string) string, stdout, stderr io.W
 			o.DeskQuietMS = n
 		}
 	}
+	if ms := jsfmt.Trim(env("HUDDLE_SSE_PING_MS")); ms != "" {
+		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
+			o.SSEPingMS = n
+		}
+	}
 	o.Env = map[string]string{"HOME": env("HOME"), "CLAUDE_CONFIG_DIR": env("CLAUDE_CONFIG_DIR")}
 	wd, err := os.Getwd()
 	if err != nil {
@@ -713,6 +721,8 @@ func Serve(ctx context.Context, o Options) error {
 			Zone: func() *time.Location { return s.zones.Get().Location() },
 			// and the sessions' pids, for each session's CPU and memory, from the registry
 			Procs: radarPids{s: s},
+			// the stream pings as often as the registry's, so one watchdog fits both
+			PingMs: int64(s.o.SSEPingMS),
 		})
 		s.hub.Radar.Source = s.radar
 		s.radarMu.Lock()
@@ -1740,7 +1750,9 @@ func (s *server) registryLiveRoute(w http.ResponseWriter, r *http.Request) error
 	if err != nil || !write("retry: 3000\ndata: "+string(hello)+"\n\n") {
 		return nil
 	}
-	heartbeat := time.NewTicker(15 * time.Second)
+	// a data frame, not a comment: EventSource never surfaces a comment, and the page's
+	// watchdog replaces a stream it hears nothing from for 40 s
+	heartbeat := time.NewTicker(s.ssePingEvery())
 	defer heartbeat.Stop()
 	for {
 		select {
@@ -1751,11 +1763,22 @@ func (s *server) registryLiveRoute(w http.ResponseWriter, r *http.Request) error
 				return nil
 			}
 		case <-heartbeat.C:
-			if !write(": ping\n\n") {
+			if !write(pingFrame) {
 				return nil
 			}
 		}
 	}
+}
+
+// pingFrame is the browser streams' heartbeat, a data frame the page's watchdog can count.
+const pingFrame = "data: {\"type\":\"ping\"}\n\n"
+
+// ssePingEvery is the browser streams' ping interval: SSEPingMS, or 15 s.
+func (s *server) ssePingEvery() time.Duration {
+	if s.o.SSEPingMS > 0 {
+		return time.Duration(s.o.SSEPingMS) * time.Millisecond
+	}
+	return 15 * time.Second
 }
 
 // fanRegistryRow hands one encoded frame to every open registry stream; a client too slow to

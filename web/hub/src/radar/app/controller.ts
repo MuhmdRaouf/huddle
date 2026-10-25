@@ -1,7 +1,8 @@
 /**
  * The dashboard's brain, split out of the browser entry: one ClientState, the reader actions that change it and
  * the server reads that feed it. The entry paints: it subscribes, renders and owns every listener. The
- * controller never touches the DOM — everything outside its state goes through the injected Io.
+ * controller never touches the DOM — everything outside its state goes through the injected Io, save the
+ * page's visibility, which the stream's watchdog reads to replace a stale stream on a return to the page.
  */
 
 import { attributionCsv, exportName, requestsCsv, toolsCsv } from "../export.ts";
@@ -26,6 +27,7 @@ import type { EventRecord, RequestRecord, SessionView, ToolCallRecord } from "..
 import { isInFlight } from "../shared/model.ts";
 import { DEFAULT_RANGE, PRESETS, parseRangeHash, rangeToHash, type TimeRange } from "../shared/time-range.ts";
 import type { BlocksReport, BlocksWindow, UsageReport, UsageWindow } from "../shared/usage.ts";
+import { browserWatch, watchedSource } from "../../shared/watchdog.ts";
 import {
   type AgentTranscriptState,
   type AttributionSortKey,
@@ -1851,8 +1853,17 @@ export class RadarController {
     }
   }
 
+  /** Opens the stream behind the watchdog: a silent one, or a stale one when the page comes back,
+   *  is replaced, and the fresh one's open backfills what went by. */
   private attachStream(): void {
-    const source = new this.io.EventSource(API + "/api/stream");
+    const source = watchedSource(() => new this.io.EventSource(API + "/api/stream"), {
+      timers: {
+        setTimeout: (fn, ms) => this.io.setTimeout(fn, ms),
+        clearTimeout: (handle) => this.io.clearTimeout(handle as ReturnType<typeof setTimeout>),
+      },
+      now: () => this.io.now(),
+      page: browserWatch().page,
+    });
     this.stream = source;
     source.onopen = () => {
       const reopened = this.streamOpened;

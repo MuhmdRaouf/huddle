@@ -199,3 +199,10 @@ export function legacyClasses(root: ParentNode = document.body, skip?: string): 
   }
   return [...found];
 }
+
+/** Turns the test document hidden or visible and fires visibilitychange, the way a phone does
+ *  when the owner leaves the page and comes back. */
+export function turnDocument(state: DocumentVisibilityState): void {
+  Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+  document.dispatchEvent(new Event("visibilitychange"));
+}

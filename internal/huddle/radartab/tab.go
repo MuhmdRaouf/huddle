@@ -93,6 +93,8 @@ type MountOptions struct {
 	// Procs names the live sessions' pids from huddle's registry, for the CPU and memory
 	// samples on the sessions rows; nil samples nothing.
 	Procs server.SessionPids
+	// PingMs is the stream's ping interval; 0 takes radar's 15 s default.
+	PingMs int64
 }
 
 // Tab is radar mounted inside huddle. In the owning mode it holds the running app (the store,
@@ -256,6 +258,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		Procs:         procs,
 		HostAllowed:   options.HostAllowed,
 		OriginAllowed: options.OriginAllowed,
+		HeartbeatMs:   options.PingMs,
 	})
 	mux.HandleFunc(Prefix, t.serveRadar)
 	mux.HandleFunc(Prefix+"/", t.serveRadar)
