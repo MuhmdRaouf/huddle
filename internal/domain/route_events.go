@@ -33,6 +33,11 @@ type RouteEvent struct {
 	// redacted. Never a header value, a request byte, or a success answer's anything.
 	Error     *string `json:"error,omitempty"`
 	LatencyMs int64   `json:"latency_ms"`
+	// TtfbMs and TtftMs are how long the answer's head and its first token took from the moment the
+	// router received the request: nil when the answer never came, and TtftMs nil as well when the
+	// answer streamed no content_block_delta (a JSON answer, an error, an empty stream).
+	TtfbMs *int64 `json:"ttfb_ms,omitempty"`
+	TtftMs *int64 `json:"ttft_ms,omitempty"`
 	// SessionID, AgentID and ParentAgentID are the ids Claude Code sends with the request.
 	SessionID     *string            `json:"session_id,omitempty"`
 	AgentID       *string            `json:"agent_id,omitempty"`

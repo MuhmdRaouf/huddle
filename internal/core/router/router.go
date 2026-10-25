@@ -664,10 +664,14 @@ type routeModel struct {
 // listens.
 type eventNote func(status int64, route, upstream string, usage domain.RouteUsage, reason *string, headers *map[string]string)
 
+// answerTiming is when one answer's head and first token arrived, in ms since the epoch; zero
+// while not seen.
+type answerTiming struct{ headAt, firstTokenAt int64 }
+
 // noteOf builds the request's note: the ids Claude Code stamped the request with, the usage and
 // the allow-listed headers the answer carried, the prompt hash and the billing block's ids — each
 // only when there was one.
-func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt int64, prompt *promptRef) eventNote {
+func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt int64, prompt *promptRef, timing *answerTiming) eventNote {
 	if w.opts.Events == nil {
 		return nil
 	}
@@ -696,6 +700,14 @@ func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt i
 		}
 		if parent, ok := textHeader(req, "x-claude-code-parent-agent-id"); ok {
 			event.ParentAgentID = &parent
+		}
+		if timing.headAt != 0 {
+			ttfb := timing.headAt - startedAt
+			event.TtfbMs = &ttfb
+		}
+		if timing.firstTokenAt != 0 {
+			ttft := timing.firstTokenAt - startedAt
+			event.TtftMs = &ttft
 		}
 		if len(usage) > 0 {
 			carried := usage
@@ -753,9 +765,10 @@ func (w *routerWorker) capture(prompt *promptRef, json *jsfmt.Value) {
 // nothing is buffered and no usage is recorded. A compressed answer is read through its
 // decompressed copy; the client's copy keeps its encoding.
 type UsageTracker struct {
-	push  func(chunk []byte)
-	usage func() domain.RouteUsage
-	close func()
+	push       func(chunk []byte)
+	usage      func() domain.RouteUsage
+	close      func()
+	firstToken func() int64
 }
 
 // NewUsageTracker tracks the usage of one answer of this content type ("" when the answer carried
@@ -783,6 +796,15 @@ func (t *UsageTracker) Usage() domain.RouteUsage {
 		return nil
 	}
 	return t.usage()
+}
+
+// FirstTokenAt is when the stream's first content_block_delta passed through, in ms since the
+// epoch; zero when this answer streamed none (a JSON answer, an error, an empty stream).
+func (t *UsageTracker) FirstTokenAt() int64 {
+	if t == nil || t.firstToken == nil {
+		return 0
+	}
+	return t.firstToken()
 }
 
 // Close ends a tracker whose answer stops before its usage is read (a failed or abandoned call).
@@ -843,19 +865,25 @@ func encodedStreamTracker(encoding string, plain *UsageTracker) *UsageTracker {
 	}()
 	var once sync.Once
 	var usage domain.RouteUsage
+	read := func() {
+		queue.end()
+		<-done
+		if !queue.overflowed() {
+			usage = plain.Usage()
+		}
+	}
 	return &UsageTracker{
 		push: queue.push,
 		usage: func() domain.RouteUsage {
-			once.Do(func() {
-				queue.end()
-				<-done
-				if !queue.overflowed() {
-					usage = plain.Usage()
-				}
-			})
+			once.Do(read)
 			return usage
 		},
 		close: queue.end,
+		// the plain tracker saw the decompressed stream, so its first token is the answer's
+		firstToken: func() int64 {
+			once.Do(read)
+			return plain.FirstTokenAt()
+		},
 	}
 }
 
@@ -973,14 +1001,19 @@ func topLevelUsage(body []byte, encoding string) domain.RouteUsage {
 }
 
 // sseUsageTracker reads an SSE stream's usage line by line: message_start carries it inside
-// `message`, message_delta at its top level; the later event's counters win.
+// `message`, message_delta at its top level; the later event's counters win. The first
+// content_block_delta is the answer's first token, timed as it passes.
 func sseUsageTracker() *UsageTracker {
 	rest := ""
 	var usage domain.RouteUsage
+	firstTokenAt := int64(0)
 	take := func(line string) {
 		event, ok := sseEventAny(line)
 		if !ok {
 			return
+		}
+		if firstTokenAt == 0 && event["type"] == "content_block_delta" {
+			firstTokenAt = time.Now().UnixMilli()
 		}
 		var found domain.RouteUsage
 		switch event["type"] {
@@ -1018,6 +1051,7 @@ func sseUsageTracker() *UsageTracker {
 			}
 			return usage
 		},
+		firstToken: func() int64 { return firstTokenAt },
 	}
 }
 
@@ -1283,7 +1317,9 @@ func (w *routerWorker) forwardParsed(req *http.Request, res *Response, original 
 	model := modelIn(body)
 	prompt := &promptRef{}
 	served := &routeModel{model: model}
-	note := w.noteOf(req, served, time.Now().UnixMilli(), prompt)
+	startedAt := time.Now().UnixMilli()
+	timing := &answerTiming{}
+	note := w.noteOf(req, served, startedAt, prompt, timing)
 	route, peer, hasPeer := routeOf(w.claim, model, w.opts.Peers)
 	// A request another plugin's router forwarded here is served when it is this provider's model;
 	// anything else would be a second hop (a loop, or two routers disagreeing about who serves the
@@ -1301,11 +1337,11 @@ func (w *routerWorker) forwardParsed(req *http.Request, res *Response, original 
 	w.capture(prompt, body)
 	if hasPeer {
 		target := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.FormatInt(peer.Port, 10))}
-		w.dispatch(req, res, original, model, route, target, note, &peer, "", nil)
+		w.dispatch(req, res, original, model, route, target, note, timing, &peer, "", nil)
 		return
 	}
 	if route != "provider" {
-		w.dispatch(req, res, original, model, route, w.opts.Anthropic, note, nil, "", nil)
+		w.dispatch(req, res, original, model, route, w.opts.Anthropic, note, timing, nil, "", nil)
 		return
 	}
 	// The message-threads beta is Anthropic-only: Claude Code sends only the newest messages and
@@ -1349,7 +1385,7 @@ func (w *routerWorker) forwardParsed(req *http.Request, res *Response, original 
 		model = next
 	}
 	adapted, named := providerBody(w, original, body, model, req)
-	w.dispatch(req, res, adapted, named, "provider", w.opts.ProviderURL, note, nil, key, promptHintOf(original, int64(len(adapted))))
+	w.dispatch(req, res, adapted, named, "provider", w.opts.ProviderURL, note, timing, nil, key, promptHintOf(original, int64(len(adapted))))
 }
 
 // budgetStopped answers a provider request while its budget is stopped: the same non-retryable
@@ -1606,7 +1642,7 @@ func failureStatus(failure UpstreamFailure) int64 {
 }
 
 // dispatch sends one request on its route and pipes its answer back, streaming it.
-func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, model, route string, target *url.URL, note eventNote, peer *PeerTarget, key string, prompt *PromptHint) {
+func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, model, route string, target *url.URL, note eventNote, timing *answerTiming, peer *PeerTarget, key string, prompt *PromptHint) {
 	provider := w.provider
 	u, err := UpstreamURL(target, requestPath(req))
 	if err != nil {
@@ -1640,6 +1676,7 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 	}
 	hooks := UpstreamHooks{
 		Answered: func(answer *http.Response) {
+			timing.headAt = time.Now().UnixMilli()
 			// A provider error answer is held back for its judge, so its line waits and carries
 			// the reason; every other answer is logged the moment its headers arrive.
 			if !(key != "" && MayRefuse(answer.StatusCode)) {
@@ -1680,6 +1717,7 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 				if decided.rewritten != nil {
 					status = int64(*decided.rewritten)
 				}
+				timing.firstTokenAt = tracker.FirstTokenAt()
 				note(status, route, u.Host, tracker.Usage(), decided.reason, answerHeaders)
 			}
 		},

@@ -220,3 +220,105 @@ func TestClaudeRouteEventCarriesTheStreamsUsage(t *testing.T) {
 		})
 	}
 }
+
+func TestRouteEventCarriesTimeToFirstByteAndFirstToken(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a stream times its head and its first token", func(t *testing.T) {
+		t.Parallel()
+		// The head goes out after 50 ms and the stream's events after 70 ms more, so both
+		// latencies have floors no clock reads under.
+		upstream := laneUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ string) {
+			time.Sleep(50 * time.Millisecond)
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+			flusher := w.(http.Flusher)
+			flusher.Flush()
+			time.Sleep(70 * time.Millisecond)
+			for _, event := range claudeStream {
+				_, _ = io.WriteString(w, event)
+				flusher.Flush()
+			}
+		})
+		events := &eventLog{}
+		worker := laneWorker(t, upstream, keyOfTheLane, func(o *RouterOptions) {
+			o.Anthropic = upstream
+			o.Events = events.record
+		})
+		port := laneServer(t, worker)
+		got, err := postRawBody(port, "/v1/messages", `{"model":"claude-sonnet-4-5","stream":true,"messages":[]}`, map[string]string{
+			"Content-Type":  "application/json",
+			"Authorization": "Bearer anthropic-oauth",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.status != 200 {
+			t.Fatalf("the answer = %d %q, want 200", got.status, got.body)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) && len(events.routes()) == 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
+		routes := events.routes()
+		if len(routes) != 1 {
+			t.Fatalf("the router wrote %d route events, want 1", len(routes))
+		}
+		route := routes[0]
+		if route.TtfbMs == nil || *route.TtfbMs < 50 {
+			t.Errorf("ttfb_ms = %v, want at least 50", route.TtfbMs)
+		}
+		if route.TtftMs == nil || *route.TtftMs < 120 {
+			t.Errorf("ttft_ms = %v, want at least 120", route.TtftMs)
+		}
+		if route.TtftMs != nil && route.TtfbMs != nil && *route.TtftMs < *route.TtfbMs {
+			t.Errorf("ttft_ms %d came before ttfb_ms %d, want the token after the head", *route.TtftMs, *route.TtfbMs)
+		}
+		if route.TtfbMs != nil && *route.TtfbMs > route.LatencyMs {
+			t.Errorf("ttfb_ms %d is past the request's latency_ms %d", *route.TtfbMs, route.LatencyMs)
+		}
+		if route.TtftMs != nil && *route.TtftMs > route.LatencyMs {
+			t.Errorf("ttft_ms %d is past the request's latency_ms %d", *route.TtftMs, route.LatencyMs)
+		}
+	})
+
+	t.Run("a JSON answer times its head and carries no first token", func(t *testing.T) {
+		t.Parallel()
+		upstream := laneUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ string) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			_, _ = w.Write([]byte(`{"usage":{"input_tokens":1,"output_tokens":1}}`))
+		})
+		events := &eventLog{}
+		worker := laneWorker(t, upstream, keyOfTheLane, func(o *RouterOptions) {
+			o.Anthropic = upstream
+			o.Events = events.record
+		})
+		port := laneServer(t, worker)
+		got, err := postRawBody(port, "/v1/messages", `{"model":"claude-sonnet-4-5","messages":[]}`, map[string]string{
+			"Content-Type":  "application/json",
+			"Authorization": "Bearer anthropic-oauth",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.status != 200 {
+			t.Fatalf("the answer = %d %q, want 200", got.status, got.body)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) && len(events.routes()) == 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
+		routes := events.routes()
+		if len(routes) != 1 {
+			t.Fatalf("the router wrote %d route events, want 1", len(routes))
+		}
+		route := routes[0]
+		if route.TtfbMs == nil {
+			t.Error("ttfb_ms = nil, want the head's time")
+		}
+		if route.TtftMs != nil {
+			t.Errorf("ttft_ms = %d, want none: a JSON answer streams no content_block_delta", *route.TtftMs)
+		}
+	})
+}
