@@ -105,9 +105,7 @@ const KNOWN: Partial<Record<PageId, Known>> = {
   },
   "session-drawer": { card: "HV-TOKENS-CHANNELS", axe: ["color-contrast"], smallTargets: true },
   "task-drawer": { card: "HV-TOKENS-CHANNELS", smallTargets: true },
-  "settings-appearance": { card: "HV-TOKENS-SETTINGS", smallTargets: true },
   "settings-notifications": { card: "HV-TOKENS-SETTINGS", smallTargets: true },
-  "settings-hub": { card: "HV-TOKENS-SETTINGS", smallTargets: true },
   "radar-overview": { card: "HV-TOKENS-RADAR-OVERVIEW", smallTargets: true },
   "radar-costs": { card: "HV-TOKENS-RADAR-TABLES", smallTargets: true },
   "radar-tools": { card: "HV-TOKENS-RADAR-TABLES", smallTargets: true },
@@ -161,15 +159,13 @@ const drawer =
     await expect(page.locator("dialog[open] [data-slide-over]")).toBeVisible();
   };
 
-/** A Settings group, its link in the section row the current one. */
-const settings = (id: PageId, section: string, name: string): Screen => ({
+/** A Settings group's page, open on its own address. */
+const settings = (id: PageId, section: string): Screen => ({
   id,
   signedIn: true,
   open: async (page) => {
     await page.goto(at(`#/settings/${section}`));
-    await expect(
-      page.getByRole("navigation", { name: "Settings sections" }).getByRole("link", { name, exact: true }),
-    ).toHaveAttribute("aria-current", "page");
+    await expect(page.locator(`[data-settings][data-group="${section}"]`)).toBeVisible();
   },
 });
 
@@ -242,10 +238,10 @@ const SCREENS: readonly Screen[] = [
   { id: "channel-work", signedIn: true, open: route(() => "#/channels/e2e/work") },
   { id: "session-drawer", signedIn: true, open: drawer(() => "#/channels/e2e/team?s=alpha") },
   { id: "task-drawer", signedIn: true, open: drawer((s) => `#/channels/e2e/work?t=${s.task}`) },
-  settings("settings-appearance", "appearance", "Appearance"),
-  settings("settings-notifications", "notifications", "Notifications"),
-  settings("settings-devices", "devices", "Devices and sign-in"),
-  settings("settings-hub", "hub", "Hub and Radar"),
+  settings("settings-appearance", "appearance"),
+  settings("settings-notifications", "notifications"),
+  settings("settings-devices", "devices"),
+  settings("settings-hub", "hub"),
   radar("radar-overview", "overview", "Overview"),
   radar("radar-costs", "costs", "Costs"),
   radar("radar-tools", "tools", "Tools"),

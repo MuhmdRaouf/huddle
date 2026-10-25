@@ -1,6 +1,7 @@
 // SettingsTab.test.tsx — the Settings tab's four groups (Appearance, Notifications, Devices and
-// sign-in, Hub and Radar) with the members each group page draws and the member addresses that
-// open their group; the Devices section (SPEC 7.3): the paired devices with
+// sign-in, Hub and Radar): a grouped list of rows on the phone that opens each group's page under a
+// back link, a sidebar beside the page on the tablet and the desktop, the members each group page
+// draws and the member addresses that open their group; the Devices section (SPEC 7.3): the paired devices with
 // their added and last-seen ages, the removal that asks for the passkey when the server says
 // step-up, the refusal said as the server spelled it, the empty list's word, and the copyable
 // `huddle pair` line that pairs the next device; then Appearance's three choices, This hub's facts,
@@ -14,6 +15,7 @@ import {
   Appearance,
   Devices,
   Phone,
+  SettingsHead,
   type SettingsSection,
   SettingsTab,
   SignInMethods,
@@ -267,22 +269,90 @@ describe("the appearance section", () => {
   });
 });
 
-describe("the section row", () => {
-  it("TestTheRowIsOnTheTokensAtTheDeskAndOnThePhone", async () => {
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
-    mountSection(<SettingsTab section="hub" />, [{ status: 200, body: { name: "studio" } }]);
-    await waitFor(() => expect(screen.getByText("studio")).toBeDefined());
-    const desk = document.querySelector('a[data-section="hub"]');
-    expect(desk?.className).toContain("border-[var(--ui-accent)]");
-    expect(legacyClasses()).toEqual([]);
+/** The phone's viewport, then the tablet's and the desktop's. */
+const PHONE = { "(min-width: 640px)": false, "(min-width: 1024px)": false };
+const TABLET = { "(min-width: 640px)": true, "(min-width: 1024px)": false };
+const DESK = { "(min-width: 640px)": true, "(min-width: 1024px)": true };
+
+describe("the phone's grouped list", () => {
+  afterEach(() => {
     document.body.textContent = "";
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
-    mountSection(<SettingsTab section="hub" />, [{ status: 200, body: { name: "studio" } }]);
-    await waitFor(() => expect(screen.getByText("studio")).toBeDefined());
-    const pill = document.querySelector('a[data-section="hub"]');
-    expect(pill?.className).toContain("bg-[var(--ui-accent)]");
-    expect(pill?.className).toContain("min-h-[var(--ui-tap)]");
+  });
+
+  it("TestThePhoneListsTheGroupsAsRowsNamingTheirMembers", () => {
+    stubMedia(PHONE);
+    mountSection(<SettingsTab section={null} />, []);
+    const rows = [...document.querySelectorAll<HTMLAnchorElement>('[aria-label="Settings sections"] li a')];
+    expect(rows.map((a) => a.getAttribute("href"))).toEqual([
+      "#/settings/appearance",
+      "#/settings/notifications",
+      "#/settings/devices",
+      "#/settings/hub",
+    ]);
+    expect(rows.map((a) => a.querySelector(".ui-list-title")?.textContent)).toEqual([
+      "Appearance",
+      "Notifications",
+      "Devices and sign-in",
+      "Hub and Radar",
+    ]);
+    expect(rows.map((a) => a.querySelector(".ui-list-meta")?.textContent)).toEqual([
+      "Scheme and colours",
+      "Push and what wakes a device",
+      "Devices, Phone, Sign-in methods",
+      "This hub, Time zone, Radar",
+    ]);
+    expect(rows.every((a) => a.classList.contains("ui-list-row"))).toBe(true);
+    expect(rows.some((a) => a.className.includes("rounded-full"))).toBe(false);
+    expect(document.querySelectorAll("[data-setting]")).toHaveLength(0);
     expect(legacyClasses()).toEqual([]);
+  });
+
+  it("TestAPhoneGroupPageDrawsItsMembersWithoutTheList", () => {
+    stubMedia(PHONE);
+    mountSection(<SettingsTab section="devices" />, []);
+    expect(document.querySelector('[aria-label="Settings sections"]')).toBeNull();
+    expect(
+      [...document.querySelectorAll<HTMLElement>("[data-setting]")].map((el) => el.dataset.setting),
+    ).toEqual(["devices", "phone", "signin"]);
+  });
+
+  it("TestTheHeaderBacksOutToTheListAndNamesTheGroup", () => {
+    renderHuddle(<SettingsHead section="hub" />);
+    const back = screen.getByRole("link", { name: "Back to Settings" });
+    expect(back.getAttribute("href")).toBe("#/settings");
+    expect(back.className).toContain("min-h-[var(--ui-tap)]");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Hub and Radar");
+    expect(legacyClasses()).toEqual([]);
+  });
+});
+
+describe("the wide layouts' sidebar", () => {
+  afterEach(() => {
+    document.body.textContent = "";
+  });
+
+  it("TestTabletAndDeskKeepTheSidebarBesideThePage", async () => {
+    for (const media of [TABLET, DESK]) {
+      stubMedia(media);
+      mountSection(<SettingsTab section="hub" />, [{ status: 200, body: { name: "studio" } }]);
+      await waitFor(() => expect(screen.getByText("studio")).toBeDefined());
+      const links = [...document.querySelectorAll<HTMLAnchorElement>('[aria-label="Settings sections"] a')];
+      expect(links.map((a) => a.getAttribute("aria-current"))).toEqual([null, null, null, "page"]);
+      expect(links.every((a) => a.className.includes("min-h-[var(--ui-tap)]"))).toBe(true);
+      const nav = document.querySelector('[aria-label="Settings sections"]');
+      expect(nav?.nextElementSibling?.querySelector("[data-settings]")).not.toBeNull();
+      expect(legacyClasses()).toEqual([]);
+      document.body.textContent = "";
+    }
+  });
+
+  it("TestNoAddressOpensAppearanceBesideTheSidebar", () => {
+    stubMedia(DESK);
+    mountSection(<SettingsTab section={null} />, []);
+    expect(document.querySelector('a[data-section="appearance"]')?.getAttribute("aria-current")).toBe("page");
+    expect(
+      [...document.querySelectorAll<HTMLElement>("[data-setting]")].map((el) => el.dataset.setting),
+    ).toEqual(["appearance"]);
   });
 });
 
@@ -292,6 +362,7 @@ describe("the four groups", () => {
     [...document.querySelectorAll<HTMLElement>("[data-setting]")].map((el) => el.dataset.setting ?? "");
 
   it("TestTheRowNamesTheFourGroupsInOrder", () => {
+    stubMedia(DESK);
     mountSection(<SettingsTab section="appearance" />, []);
     const links = [...document.querySelectorAll<HTMLAnchorElement>('[aria-label="Settings sections"] a')];
     expect(links.map((a) => a.textContent)).toEqual([

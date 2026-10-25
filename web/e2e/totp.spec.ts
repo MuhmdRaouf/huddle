@@ -22,9 +22,8 @@ import {
 let secret = "";
 let recovery: string[] = [];
 
-/** Enrols the authenticator from Settings › Sign-in, capturing the secret and the codes. */
+/** Enrols the authenticator from the open Settings › Sign-in, capturing the secret and the codes. */
 async function enrolFromSettings(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Sign-in" }).click();
   await expect(page.getByText("Authenticator app")).toBeVisible();
   await page.getByRole("button", { name: "Set up" }).click();
   await expect(page.locator("[data-qr]")).toBeVisible();
@@ -51,6 +50,7 @@ test("a link sign-in offers the set-up, Settings enrols it, and a code signs the
 
   // Settings › Sign-in enrols, and the recovery codes show this one time
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }).click();
+  await page.getByRole("link", { name: "Sign-in" }).click();
   await enrolFromSettings(page);
 
   // the landing page: cookies gone, the code field is the way in, the shell lands

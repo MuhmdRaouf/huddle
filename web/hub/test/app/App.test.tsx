@@ -383,14 +383,33 @@ describe("routes and panes", () => {
     expect(controller.getState().range.preset).toBe("24h");
   });
 
-  it("renders Settings' section row with Appearance current, an unknown address included", () => {
+  it("renders Settings as the phone's grouped list, and a group's address as its page under a back link", () => {
     nav("#/settings");
     mountApp();
-    const sections = [
-      ...document.querySelectorAll('[aria-label="Settings sections"] a'),
-    ] as HTMLAnchorElement[];
-    expect(sections.map((a) => a.dataset.section)).toEqual(["appearance", "notifications", "devices", "hub"]);
-    expect(sections[0]?.getAttribute("aria-current")).toBe("page");
+    const rows = [...document.querySelectorAll('[aria-label="Settings sections"] a')] as HTMLAnchorElement[];
+    expect(rows.map((a) => a.dataset.section)).toEqual(["appearance", "notifications", "devices", "hub"]);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Settings");
+    nav("#/settings/radar");
+    mountApp();
+    expect(document.querySelector('[aria-label="Settings sections"]')).toBeNull();
+    // both mounts follow the address, so each paints the group page's header
+    const backs = screen.getAllByRole("link", { name: "Back to Settings" });
+    expect(backs.map((a) => a.getAttribute("href"))).toEqual(["#/settings", "#/settings"]);
+    expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual([
+      "Hub and Radar",
+      "Hub and Radar",
+    ]);
+  });
+
+  it("renders Settings' sidebar with Appearance current when the address names no group", () => {
+    stubMedia(DESKTOP);
+    nav("#/settings");
+    mountApp();
+    expect(
+      document
+        .querySelector('[aria-label="Settings sections"] a[data-section="appearance"]')
+        ?.getAttribute("aria-current"),
+    ).toBe("page");
     nav("#/settings/radar");
     mountApp();
     expect(

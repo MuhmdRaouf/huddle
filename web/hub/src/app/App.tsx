@@ -40,7 +40,7 @@ import {
   tabHref,
   tabLabel,
 } from "./router.ts";
-import { SettingsTab, settingsSectionOf } from "./SettingsTab.tsx";
+import { SettingsHead, SettingsTab, settingsSectionOf } from "./SettingsTab.tsx";
 import { PasskeyOffer } from "./Totp.tsx";
 import { DesktopBar, MachinesLine } from "./TopBar.tsx";
 
@@ -704,7 +704,7 @@ export function App({
         <KanbanTab boardKey={route.sub[0] ?? null} />
       </div>
     ) : route.tab === "settings" ? (
-      <SettingsTab section={settingsSectionOf(route.sub[0])} />
+      <SettingsTab section={route.sub[0] ? settingsSectionOf(route.sub[0]) : null} />
     ) : (
       <div class="flex min-h-0 flex-1 flex-col">
         {ch ? <ViewTabs dest={route.dest as Dest} counts={counts} /> : null}
@@ -747,6 +747,8 @@ export function App({
           <header class="flex shrink-0 items-center justify-between gap-3 px-5 pt-[22px] pb-3">
             {route.tab === "channels" && route.ch ? (
               <ChannelHead ch={route.ch} />
+            ) : route.tab === "settings" && route.sub[0] ? (
+              <SettingsHead section={settingsSectionOf(route.sub[0])} />
             ) : (
               <h1 class="text-[28px] font-semibold tracking-tight">{tabLabel(route.tab)}</h1>
             )}

@@ -1,5 +1,6 @@
-// SettingsTab.tsx — the Settings page: four groups in a section row shaped like Radar's view row,
-// one page per group drawing its members in order. Appearance (System, Dark, Light, and the
+// SettingsTab.tsx — the Settings page: four groups, a grouped list of rows on the phone that opens
+// one page per group, a sidebar beside the page on the tablet and the desktop; each page draws its
+// group's members in order. Appearance (System, Dark, Light, and the
 // Catppuccin flavour); Notifications (the two switches and what wakes the device); Devices and
 // sign-in (the paired devices with remove, the phone's trust guide in a sheet, the sign-in
 // methods); Hub and Radar (name, address and version, the hub's time zone, and Radar's budgets,
@@ -537,36 +538,41 @@ export function SignInMethods(): JSX.Element {
 /** One group of the Settings page. */
 export type SettingsSection = "appearance" | "notifications" | "devices" | "hub";
 
-/** One setting a group page draws; its id is an address of its own that opens the group. */
-type SettingsMember = { id: string; Pane: () => JSX.Element };
+/** One setting a group page draws; its id is an address of its own that opens the group, its
+ *  label names it under the group's row on the phone. */
+type SettingsMember = { id: string; label: string; Pane: () => JSX.Element };
 
-/** One group: its address, its link's label and its members in page order. */
+/** One group: its address, its name and its members in page order. */
 type SettingsGroup = { id: SettingsSection; label: string; members: readonly SettingsMember[] };
 
-/** The four groups in row order. The row and the pages both read this table. */
+/** The four groups in order. The phone's list, the sidebar and the pages all read this table. */
 const SETTINGS_GROUPS: readonly SettingsGroup[] = [
-  { id: "appearance", label: "Appearance", members: [{ id: "appearance", Pane: Appearance }] },
+  {
+    id: "appearance",
+    label: "Appearance",
+    members: [{ id: "appearance", label: "Scheme and colours", Pane: Appearance }],
+  },
   {
     id: "notifications",
     label: "Notifications",
-    members: [{ id: "notifications", Pane: NotificationsCard }],
+    members: [{ id: "notifications", label: "Push and what wakes a device", Pane: NotificationsCard }],
   },
   {
     id: "devices",
     label: "Devices and sign-in",
     members: [
-      { id: "devices", Pane: Devices },
-      { id: "phone", Pane: Phone },
-      { id: "signin", Pane: SignInMethods },
+      { id: "devices", label: "Devices", Pane: Devices },
+      { id: "phone", label: "Phone", Pane: Phone },
+      { id: "signin", label: "Sign-in methods", Pane: SignInMethods },
     ],
   },
   {
     id: "hub",
     label: "Hub and Radar",
     members: [
-      { id: "hub", Pane: ThisHub },
-      { id: "zone", Pane: () => <TimeZone /> },
-      { id: "radar", Pane: RadarSettings },
+      { id: "hub", label: "This hub", Pane: ThisHub },
+      { id: "zone", label: "Time zone", Pane: () => <TimeZone /> },
+      { id: "radar", label: "Radar", Pane: RadarSettings },
     ],
   },
 ];
@@ -580,55 +586,104 @@ export function settingsSectionOf(named: string | undefined): SettingsSection {
   return group?.id ?? "appearance";
 }
 
-/** The Settings page: the group row, then the named group's members. The row is the Radar
- *  views' own shape: underlined links at the desk, pills that scroll inside the row on the
- *  narrower layouts, so the groups never push the page sideways. */
-export function SettingsTab({ section }: { section: SettingsSection }): JSX.Element {
-  const layout = useLayout();
+/** The phone's header over a group page: the back link to the list above the group's name. */
+export function SettingsHead({ section }: { section: SettingsSection }): JSX.Element {
   return (
-    <div class="flex min-h-0 flex-1 flex-col">
+    <div class="flex min-w-0 flex-col">
+      <a
+        href="#/settings"
+        aria-label="Back to Settings"
+        class="-ml-2 flex min-h-[var(--ui-tap)] min-w-[var(--ui-tap)] items-center gap-1 self-start rounded-[var(--ui-radius)] pr-2 text-sm font-semibold text-[var(--ui-accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+      >
+        <Icon name="left" class="size-5" />
+        Settings
+      </a>
+      <h1 class="truncate text-[28px] font-semibold tracking-tight">
+        {SETTINGS_GROUPS.find((g) => g.id === section)?.label}
+      </h1>
+    </div>
+  );
+}
+
+/** The phone's Settings page: one row per group with its members named under it, each row
+ *  opening its group's page. */
+function GroupList(): JSX.Element {
+  return (
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      <nav aria-label="Settings sections" class="px-4 py-4" data-settings="">
+        <ul class="ui-list">
+          {SETTINGS_GROUPS.map((group) => (
+            <li key={group.id} class="ui-list-item">
+              <a
+                href={`#/settings/${group.id}`}
+                data-section={group.id}
+                class="ui-list-row hover:bg-[var(--ui-surface-2)]"
+              >
+                <span class="ui-list-text">
+                  <span class="ui-list-title">{group.label}</span>
+                  <span class="ui-list-meta">{group.members.map((m) => m.label).join(", ")}</span>
+                </span>
+                <span class="ui-list-trailing text-[var(--ui-muted)]">
+                  <Icon name="right" />
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </div>
+  );
+}
+
+/** One group's page: its members in order. */
+function GroupPage({ section }: { section: SettingsSection }): JSX.Element {
+  return (
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      <div class="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6" data-settings="" data-group={section}>
+        <div class="flex flex-col gap-8">
+          {SETTINGS_GROUPS.find((g) => g.id === section)?.members.map(({ id, Pane }) => (
+            <div key={id} data-setting={id}>
+              <Pane />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The Settings page. On the phone an address with no group is the grouped list and a group's
+ *  address is its page alone (the shell's header carries the back link); the tablet and the
+ *  desktop keep the groups as a sidebar beside the named group's page, the first when none is
+ *  named. */
+export function SettingsTab({ section }: { section: SettingsSection | null }): JSX.Element {
+  const layout = useLayout();
+  if (layout === "phone") return section === null ? <GroupList /> : <GroupPage section={section} />;
+  const open = section ?? "appearance";
+  return (
+    <div class="flex min-h-0 flex-1">
       <nav
         aria-label="Settings sections"
-        class={
-          layout === "desktop"
-            ? "flex min-h-[52px] shrink-0 items-center gap-0.5 border-b border-[var(--ui-line)] px-5"
-            : "flex shrink-0 items-center gap-1.5 overflow-x-auto px-4 py-2"
-        }
+        class="flex w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-[var(--ui-line)] p-3"
       >
-        {SETTINGS_GROUPS.map((entry) => (
+        {SETTINGS_GROUPS.map((group) => (
           <a
-            key={entry.id}
-            href={`#/settings/${entry.id}`}
-            data-section={entry.id}
-            aria-current={entry.id === section ? "page" : undefined}
-            class={
-              layout === "desktop"
-                ? `flex min-h-[var(--ui-tap)] self-stretch shrink-0 items-center border-b-2 px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
-                    entry.id === section
-                      ? "border-[var(--ui-accent)] font-semibold text-[var(--ui-text)]"
-                      : "border-transparent text-[var(--ui-muted)] hover:text-[var(--ui-text)]"
-                  }`
-                : `flex min-h-[var(--ui-tap)] shrink-0 items-center rounded-full px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
-                    entry.id === section
-                      ? "bg-[var(--ui-accent)] font-semibold text-[var(--ui-on-accent)]"
-                      : "border border-[var(--ui-line-strong)] text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
-                  }`
-            }
+            key={group.id}
+            href={`#/settings/${group.id}`}
+            data-section={group.id}
+            aria-current={group.id === open ? "page" : undefined}
+            class={`flex min-h-[var(--ui-tap)] items-center rounded-[var(--ui-radius)] px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
+              group.id === open
+                ? "bg-[var(--ui-surface-2)] font-semibold text-[var(--ui-text)]"
+                : "text-[var(--ui-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
+            }`}
           >
-            {entry.label}
+            {group.label}
           </a>
         ))}
       </nav>
-      <div class="min-h-0 flex-1 overflow-y-auto">
-        <div class="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6" data-settings="">
-          <div class="flex flex-col gap-8">
-            {SETTINGS_GROUPS.find((g) => g.id === section)?.members.map(({ id, Pane }) => (
-              <div key={id} data-setting={id}>
-                <Pane />
-              </div>
-            ))}
-          </div>
-        </div>
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+        <GroupPage section={open} />
       </div>
     </div>
   );
