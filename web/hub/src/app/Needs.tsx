@@ -3,6 +3,7 @@
 // with its 4000-character counter and its delivery-route line, send to many, and snooze and
 // dismiss with an optimistic update that rolls back. Every call goes through the API client; the
 // item list lives in the registry store, whose needs.item rows keep it in step with the server.
+import { Button } from "@huddle/ui/button.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
 import type { ToastFn } from "@huddle/ui/toast.tsx";
 import type { JSX } from "preact";
@@ -116,13 +117,16 @@ function snoozeUntil(span: SnoozeSpan, now: number): string {
   return d.toISOString();
 }
 
+/** The quiet ink of a hint or a label. */
+const MUTED = "text-[var(--ui-muted)]";
+
 /** One fact row of the confirmation box: its name, and the value the caller knew. */
 function Fact({ term, value }: { term: string; value: string | undefined }): JSX.Element | null {
   if (!value) return null;
   return (
     <>
-      <dt class="muted">{term}</dt>
-      <dd class={`m-0 min-w-0 ${term === "Command" ? "truncate font-mono text-[13px]" : ""}`}>{value}</dd>
+      <dt class={MUTED}>{term}</dt>
+      <dd class={`m-0 min-w-0 ${term === "Command" ? "ui-mono truncate text-[13px]" : ""}`}>{value}</dd>
     </>
   );
 }
@@ -175,10 +179,10 @@ export function StepUpSheet({
   return (
     <Dialog open={open} onClose={onClose} title="Confirm with your passkey">
       <div class="flex flex-col gap-4" data-stepup="">
-        <p class="m-0 text-center text-sm muted">Huddle checks it is you before it allows this.</p>
+        <p class={`m-0 text-center text-sm ${MUTED}`}>Huddle checks it is you before it allows this.</p>
         {what ? (
           <dl
-            class="m-0 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3.5 gap-y-2 rounded-xl border hairline bg-base-300 px-3.5 py-3 text-sm"
+            class="m-0 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3.5 gap-y-2 rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] px-3.5 py-3 text-sm"
             data-stepup-what=""
           >
             <Fact term="Action" value={what.action} />
@@ -188,18 +192,18 @@ export function StepUpSheet({
           </dl>
         ) : null}
         {note ? (
-          <p role="alert" class="m-0 text-sm text-error">
+          <p role="alert" class="m-0 text-sm text-[var(--ui-fail-ink)]">
             {note}
           </p>
         ) : null}
-        <button type="button" class="btn btn-primary min-h-13" disabled={busy} onClick={() => void run()}>
+        <Button size="lg" disabled={busy} onClick={() => void run()}>
           <Icon name="key" class="size-4" />
           Use passkey
-        </button>
-        <button type="button" class="btn btn-ghost" onClick={onClose}>
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
           Cancel
-        </button>
-        <p class="m-0 text-center text-xs muted">
+        </Button>
+        <p class={`m-0 text-center text-xs ${MUTED}`}>
           Confirming keeps you signed in for actions like this for 5 minutes.
         </p>
       </div>
@@ -371,7 +375,7 @@ export function ActComposer({
     <div class="flex flex-col gap-3" data-act-composer="">
       {sheet}
       <textarea
-        class="textarea"
+        class="min-h-[88px] w-full rounded-[var(--ui-radius)] border border-[var(--ui-line-strong)] bg-[var(--ui-surface)] px-3 py-2 text-[length:var(--ui-text-md)] text-[var(--ui-text)] placeholder:text-[var(--ui-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-accent)]"
         rows={3}
         aria-label="Message"
         placeholder={placeholder}
@@ -379,26 +383,30 @@ export function ActComposer({
         onInput={(e) => setText(e.currentTarget.value)}
       />
       <div class="flex items-center gap-3">
-        <span class={`text-xs tnum ${over ? "text-error" : "muted"}`} data-counter="">
+        <span class={`text-xs tabular-nums ${over ? "text-[var(--ui-fail-ink)]" : MUTED}`} data-counter="">
           {text.length}/4000
         </span>
         <span class="flex-1" />
-        <span class="text-xs muted" data-route-line="">
+        <span class={`text-xs ${MUTED}`} data-route-line="">
           {routesLine(routes)}
         </span>
       </div>
       <div class="flex justify-end gap-2">
-        <button type="button" class="btn btn-ghost btn-sm" onClick={onClose}>
+        <Button variant="ghost" onClick={onClose}>
           Cancel
-        </button>
-        <button type="button" class="btn btn-primary btn-sm" disabled={dead} onClick={() => void send()}>
+        </Button>
+        <Button disabled={dead} onClick={() => void send()}>
           <Icon name="send" class="size-4" />
           Send
-        </button>
+        </Button>
       </div>
     </div>
   );
 }
+
+/** One entry of the snooze menu: a full tap target that fills on hover and focus. */
+const MENU_ITEM =
+  "flex min-h-[var(--ui-tap)] items-center rounded-[var(--ui-radius-sm)] px-2.5 text-left text-sm outline-none hover:bg-[var(--ui-surface-2)] focus-visible:bg-[var(--ui-surface-2)]";
 
 /** The snooze and dismiss menu of one item's card: the three spans, then the dismissal. The
  *  trigger is a 48 px target in the card's footer, so the menu opens upward from it. */
@@ -425,14 +433,14 @@ export function SnoozeMenu({ item }: { item: NeedItem }): JSX.Element {
         <div
           role="menu"
           aria-label="Snooze or dismiss"
-          class="absolute bottom-full left-0 z-20 mb-1 flex min-w-52 flex-col rounded-[10px] border hairline bg-base-100 p-1 shadow-lg"
+          class="absolute bottom-full left-0 z-20 mb-1 flex min-w-52 flex-col rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface)] p-1 shadow-lg"
         >
           {spans.map(([span, label]) => (
             <button
               key={span}
               type="button"
               role="menuitem"
-              class="flex min-h-[44px] items-center rounded-md px-2.5 text-left text-sm outline-none hover:bg-base-200 focus-visible:bg-base-200"
+              class={`${MENU_ITEM} text-[var(--ui-text)]`}
               onClick={() => {
                 setOpen(false);
                 act.snooze(item, span);
@@ -444,7 +452,7 @@ export function SnoozeMenu({ item }: { item: NeedItem }): JSX.Element {
           <button
             type="button"
             role="menuitem"
-            class="flex min-h-[44px] items-center rounded-md px-2.5 text-left text-sm text-error outline-none hover:bg-base-200 focus-visible:bg-base-200"
+            class={`${MENU_ITEM} text-[var(--ui-fail-ink)]`}
             onClick={() => {
               setOpen(false);
               act.dismiss(item);
@@ -456,6 +464,29 @@ export function SnoozeMenu({ item }: { item: NeedItem }): JSX.Element {
       ) : null}
     </span>
   );
+}
+
+/** What an ask's code box shows: a Bash ask's command as the terminal runs it, and any other
+ *  input, or a Bash input cut short of whole JSON, as the hook sent it. */
+export function askInput(item: NeedItem): string {
+  const raw = item.input ?? "";
+  if (item.tool !== "Bash") return raw;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const command = (parsed as { command?: unknown } | null)?.command;
+    if (typeof command === "string") return command;
+  } catch {
+    // a cut or plain input is not JSON: it shows as it came
+  }
+  return raw;
+}
+
+/** Where a permission ask runs and how long it has waited, for a session that reports a branch,
+ *  a machine or both; "Runs in" stays out when it reports no branch. */
+function whereLine({ branch, machine }: RegistrySession, waited: string): string {
+  const onMachine = machine ? ` on ${machine}` : "";
+  const where = branch ? `Runs in ${branch}${onMachine}` : `On ${machine}`;
+  return `${where}. Waiting ${waited}.`;
 }
 
 /** The ask's facts: what it asks (the tool for a permission, the summary otherwise), the input
@@ -470,29 +501,40 @@ function AskFacts({
   permission: boolean;
 }): JSX.Element {
   const { now } = useHuddle();
+  const input = askInput(item);
   return (
-    <div class="flex min-w-0 flex-1 flex-col gap-2">
+    <div class="flex min-w-0 flex-[1_1_240px] flex-col gap-2">
       <h2 class="m-0 text-base font-semibold">
         {permission ? (
           <>
-            Allow <code class="font-mono text-[15px]">{item.tool}</code>?
+            Allow <code class="ui-mono">{item.tool}</code>?
           </>
         ) : (
           item.summary
         )}
       </h2>
-      {item.input ? (
-        <code class="block overflow-x-auto rounded-[10px] border hairline bg-base-300 px-3 py-2.5 font-mono text-[13px] text-base-content/80">
-          {item.input}
+      {input ? (
+        // a long command scrolls inside its box, so the box takes the focus a keyboard scrolls it with
+        <code
+          tabIndex={0}
+          class="ui-mono block overflow-x-auto whitespace-pre rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] px-3 py-2.5 text-[13px] text-[var(--ui-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+        >
+          {input}
         </code>
       ) : null}
       {permission && (session.branch || session.machine) ? (
-        <p class="m-0 text-xs muted">
-          Runs in {session.branch || "—"} on {session.machine || "—"}. Waiting {ageText(item.created_at, now)}
-          .
-        </p>
+        <p class={`m-0 text-xs ${MUTED}`}>{whereLine(session, ageText(item.created_at, now))}</p>
       ) : null}
     </div>
+  );
+}
+
+/** The key a wide bar's answer names, in the ink of the button it sits on. */
+function Key({ k }: { k: string }): JSX.Element {
+  return (
+    <kbd class="ui-mono rounded-[var(--ui-radius-sm)] border border-current px-1 text-[11px] leading-4">
+      {k}
+    </kbd>
   );
 }
 
@@ -509,27 +551,17 @@ function BarActions({
   wide: boolean;
 }): JSX.Element {
   // the phone's sheet raises its targets to 48 px, the inline bar keeps its 44 px
-  const height = wide ? "min-h-[44px]" : "min-h-[48px]";
-  const fill = wide ? "" : " flex-1";
+  const size = wide ? "md" : "lg";
+  const fill = wide ? undefined : "flex-1";
   return (
     <div class={`flex gap-2.5 ${wide ? "shrink-0" : ""}`}>
-      <button
-        type="button"
-        data-act="deny"
-        onClick={() => act.deny(item)}
-        class={`${height} rounded-[10px] border border-error bg-transparent px-4 text-[15px] font-medium text-error${fill}`}
-      >
-        Deny {wide ? <kbd class="kbd kbd-xs">d</kbd> : null}
-      </button>
-      <button
-        type="button"
-        data-act="allow"
-        onClick={() => act.allow(item, what)}
-        class={`${height} rounded-[10px] bg-primary px-4 text-[15px] font-semibold text-base-300${fill}`}
-      >
-        <Icon name="key" class="mr-1 inline size-4" />
-        Allow once {wide ? <kbd class="kbd kbd-xs">a</kbd> : null}
-      </button>
+      <Button variant="danger" size={size} data-act="deny" class={fill} onClick={() => act.deny(item)}>
+        Deny {wide ? <Key k="d" /> : null}
+      </Button>
+      <Button size={size} data-act="allow" class={fill} onClick={() => act.allow(item, what)}>
+        <Icon name="key" class="size-4" />
+        Allow once {wide ? <Key k="a" /> : null}
+      </Button>
     </div>
   );
 }
@@ -544,7 +576,7 @@ export function confirmWhat(
   if (!permission) return undefined;
   return {
     action: `Allow ${item.tool} once`,
-    command: item.input || undefined,
+    command: askInput(item) || undefined,
     session: sessionName(session),
     machine: session.machine || undefined,
   };
@@ -571,9 +603,11 @@ export function NeedsBar({
   const ask = permission ? `Permission ask on ${who}` : `Ask from ${who}`;
   const replyWord = permission ? `Reply to ${who}…` : `Answer ${who}…`;
   const sheet = wide
-    ? "mx-4 mb-4 flex shrink-0 flex-col gap-3 rounded-[14px] border border-warning bg-base-100 p-4 sm:mx-6 sm:mb-5"
-    : "flex shrink-0 flex-col gap-3 rounded-t-[18px] border-t-2 border-warning bg-base-100 px-4 pt-4 pb-7";
-  const spread = wide ? "flex items-start gap-4" : "flex flex-col gap-3";
+    ? "mx-4 mb-4 flex shrink-0 flex-col gap-3 rounded-[var(--ui-radius-lg)] border border-[var(--ui-needs-you)] bg-[var(--ui-surface)] p-4 text-[var(--ui-text)] sm:mx-6 sm:mb-5"
+    : "flex shrink-0 flex-col gap-3 rounded-t-[var(--ui-radius-lg)] border-t-2 border-[var(--ui-needs-you)] bg-[var(--ui-surface)] px-4 pt-4 pb-7 text-[var(--ui-text)]";
+  // the wide bar sets the answers beside the facts, and under them once the pane leaves the facts
+  // less than 240 px
+  const spread = wide ? "flex flex-wrap items-start gap-4" : "flex flex-col gap-3";
   return (
     <>
       {act.sheet}
@@ -597,14 +631,9 @@ export function NeedsBar({
               <AskFacts item={item} session={session} permission={permission} />
               {permission ? <BarActions act={act} item={item} what={confirm} wide={wide} /> : null}
             </div>
-            <button
-              type="button"
-              data-act="reply"
-              onClick={() => setReplying(true)}
-              class="min-h-[44px] bg-transparent text-left text-sm font-medium text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
+            <Button variant="ghost" data-act="reply" class="self-start" onClick={() => setReplying(true)}>
               {permission ? "Reply instead" : "Answer"}
-            </button>
+            </Button>
           </>
         )}
       </section>

@@ -137,6 +137,16 @@ describe("Dialog", () => {
     expect(dlg?.getAttribute("aria-labelledby")).toBe("td-title");
   });
 
+  it("paints the close button as a ghost icon button on the tokens", () => {
+    render(
+      <Dialog open onClose={() => {}} title="Rename">
+        <p>body</p>
+      </Dialog>,
+    );
+    const close = screen.getByRole("button", { name: "Close" });
+    expect(close.getAttribute("class")).toBe("ui-btn ui-btn-ghost ui-btn-icon");
+  });
+
   it("unmounts cleanly while open", () => {
     const view = render(
       <Dialog open onClose={() => {}}>

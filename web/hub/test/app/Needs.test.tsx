@@ -13,10 +13,10 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api, ApiError } from "../../src/api.ts";
 import { HuddleProvider } from "../../src/app/context.tsx";
 import type { Layout } from "../../src/app/layout.ts";
-import { NeedsBar, routeLine, routesLine } from "../../src/app/Needs.tsx";
+import { NeedsBar, routeLine, routesLine, SnoozeMenu } from "../../src/app/Needs.tsx";
 import { NowPane } from "../../src/app/Now.tsx";
 import type { NeedItem, RegistrySession, RegistryStore } from "../../src/registry.ts";
-import { flush, makeCtx, makeRegistry, makeState, NOW, stubMedia } from "../helpers.tsx";
+import { flush, legacyClasses, makeCtx, makeRegistry, makeState, NOW, stubMedia } from "../helpers.tsx";
 
 /** A fake browser credential of the assertion shape, as the mocked navigator.credentials.get
  *  resolves with it. */
@@ -800,5 +800,133 @@ describe("the Now list's actions", () => {
     });
     expect(screen.queryByText("1 selected")).toBeNull();
     expect(location.hash).toBe("");
+  });
+});
+
+describe("the needs sheet on the tokens", () => {
+  /** Mounts the session screen's bar for one ask on a session the test shapes. */
+  const mountAsk = (
+    item: NeedItem,
+    over: { layout?: Layout; session?: Partial<RegistrySession> } = {},
+  ): Mount =>
+    mount(
+      (registry) => {
+        const s = registry.getState().sessions?.[0];
+        const it = registry.getState().needs?.[0];
+        return s && it ? <NeedsBar item={it} session={s} layout={over.layout ?? "phone"} /> : null;
+      },
+      {
+        sessions: [sess({ session_id: "s-1", ...over.session }), working()],
+        needs: [item],
+        ...(over.layout ? { layout: over.layout } : {}),
+      },
+    );
+
+  const bash = (command: string): NeedItem =>
+    ask({ input: JSON.stringify({ command, description: "Build the bundle" }) });
+
+  it("shows a Bash ask's command, not its raw JSON", () => {
+    mountAsk(bash("bun run build"));
+    expect(screen.getByText("bun run build").tagName).toBe("CODE");
+    expect(screen.queryByText(/"command"/)).toBeNull();
+  });
+
+  it("names the command in the passkey sheet an allow opens", async () => {
+    const h = mount(
+      (registry) => {
+        const s = registry.getState().sessions?.[0];
+        const it = registry.getState().needs?.[0];
+        return s && it ? <NeedsBar item={it} session={s} layout="phone" /> : null;
+      },
+      {
+        needs: [bash("bun run build")],
+        onWrite: (path) => (path === "/api/needs/7/decide" ? httpError(401, "step-up required") : {}),
+      },
+    );
+    stubGet();
+    await act(async () => {
+      screen.getByRole("button", { name: /Allow once/ }).click();
+    });
+    await flush();
+    expect(h.calls.map((c) => c.path)).toEqual(["/api/needs/7/decide"]);
+    expect(screen.getByText("Command").nextElementSibling?.textContent).toBe("bun run build");
+  });
+
+  it("keeps another tool's input, and a cut Bash input, as they came", () => {
+    const edit = JSON.stringify({ file_path: "/work/a.go" });
+    mountAsk(ask({ tool: "Edit", input: edit }));
+    expect(screen.getByText(edit).tagName).toBe("CODE");
+    const cut = '{"command":"bun run bu';
+    mountAsk(ask({ input: cut, truncated: true }));
+    expect(screen.getByText(cut).tagName).toBe("CODE");
+  });
+
+  it("leaves Runs in out when the session reports no branch", () => {
+    mountAsk(ask(), { session: { branch: "" } });
+    expect(screen.queryByText(/Runs in/)).toBeNull();
+    expect(screen.getByText("On laptop. Waiting 30 s.")).toBeDefined();
+  });
+
+  it("paints the phone sheet with real 48 px buttons and no legacy class", () => {
+    mountAsk(bash("bun run build"));
+    expect(screen.getByRole("button", { name: "Deny" }).getAttribute("class")).toContain(
+      "ui-btn ui-btn-danger ui-btn-lg",
+    );
+    expect(screen.getByRole("button", { name: /Allow once/ }).getAttribute("class")).toContain(
+      "ui-btn ui-btn-primary ui-btn-lg",
+    );
+    expect(screen.getByRole("button", { name: "Reply instead" }).getAttribute("class")).toContain("ui-btn");
+    expect(legacyClasses()).toEqual([]);
+  });
+
+  it("paints the wide bar and its keys with no legacy class", () => {
+    mountAsk(bash("bun run build"), { layout: "desktop" });
+    expect(screen.getByRole("button", { name: /Deny/ }).getAttribute("class")).toContain(
+      "ui-btn ui-btn-danger",
+    );
+    expect(screen.getByRole("button", { name: /Allow once/ }).getAttribute("class")).toContain(
+      "ui-btn ui-btn-primary",
+    );
+    expect(legacyClasses()).toEqual([]);
+  });
+
+  it("paints the reply composer and the passkey sheet with no legacy class", async () => {
+    mount(
+      (registry) => {
+        const s = registry.getState().sessions?.[0];
+        const it = registry.getState().needs?.[0];
+        return s && it ? <NeedsBar item={it} session={s} layout="phone" /> : null;
+      },
+      { onWrite: (path) => (path === "/api/needs/7/decide" ? httpError(401, "step-up required") : {}) },
+    );
+    stubGet();
+    await act(async () => {
+      screen.getByRole("button", { name: /Allow once/ }).click();
+    });
+    await flush();
+    expect(screen.getByRole("button", { name: "Use passkey" }).getAttribute("class")).toContain(
+      "ui-btn ui-btn-primary",
+    );
+    expect(legacyClasses()).toEqual([]);
+    await act(async () => {
+      screen.getByRole("button", { name: "Cancel" }).click();
+    });
+    await flush();
+    await act(async () => {
+      screen.getByRole("button", { name: "Reply instead" }).click();
+    });
+    const box = screen.getByLabelText("Message").getAttribute("class") ?? "";
+    expect(box).toContain("border-[var(--ui-line-strong)]");
+    expect(box.split(/\s+/)).not.toContain("textarea");
+    expect(legacyClasses()).toEqual([]);
+  });
+
+  it("paints the open snooze menu with no legacy class", async () => {
+    mount(() => <SnoozeMenu item={ask()} />);
+    await act(async () => {
+      screen.getByRole("button", { name: "More actions" }).click();
+    });
+    expect(screen.getByRole("menu", { name: "Snooze or dismiss" })).toBeDefined();
+    expect(legacyClasses()).toEqual([]);
   });
 });

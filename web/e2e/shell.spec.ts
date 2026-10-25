@@ -6,10 +6,11 @@
 // and no bottom bar is drawn. axe checks the shell's chrome on both (the pages' contents are their
 // own specs'), and the page names a theme colour per scheme beside a manifest with a maskable icon.
 // A button styled by Tailwind utilities alone keeps its fill and its border over Radar's legacy
-// button reset.
+// button reset. A session's needs sheet shows a Bash ask's command, leaves "Runs in" out for a
+// session with no branch, and fits at 390, 820 and 1440 px in both schemes with real 44 px answers.
 
 import { expect, test, type Page } from "@playwright/test";
-import { expectAccessible } from "./axe.ts";
+import { axeViolations, expectAccessible } from "./axe.ts";
 import { api, expectTapTargets, SEEDED, signIn, theSetup } from "./helpers.ts";
 
 /** The five tabs, in the order the shell draws them; Now may carry its needs-you count after it. */
@@ -225,7 +226,11 @@ test.describe("the utility layer", () => {
       last_event: "Stop",
       last_event_at: new Date().toISOString(),
     });
-    await api("/api/needs", { session_id: session, tool_name: "Bash", tool_input: { command: "bun run build" } });
+    const { id } = await api<{ id: number }>("/api/needs", {
+      session_id: session,
+      tool_name: "Bash",
+      tool_input: { command: "bun run build" },
+    });
     await open(page, `#/now/${session}`);
     // the session screen's ask: the phone's bottom sheet, or the wide layouts' inline box
     const bar = page.locator("[data-needs-sheet], [data-needs-bar]");
@@ -238,5 +243,81 @@ test.describe("the utility layer", () => {
       return `${s.borderTopWidth} ${s.borderTopStyle}`;
     });
     expect(border).toBe("1px solid");
+    // the answer moves the session out of Needs you, so the Now spec's counts stay as seeded
+    await api(`/api/needs/${id}/decide`, { decision: "deny" });
+  });
+});
+
+test.describe("the needs sheet", () => {
+  /** The widths the sheet is drawn at: a phone, a tablet and a desktop. */
+  const WIDTHS = [390, 820, 1440] as const;
+
+  test("shows the command, no Runs in without a branch, and fits every width in both schemes", async ({
+    page,
+  }, info) => {
+    const session = `e2e-needs-${info.project.name}`;
+    await api("/api/registry/report", {
+      session_id: session,
+      machine: "e2e-machine",
+      project: "e2e",
+      title: "Asks to build the bundle",
+      last_event: "Stop",
+      last_event_at: new Date().toISOString(),
+    });
+    const { id } = await api<{ id: number }>("/api/needs", {
+      session_id: session,
+      tool_name: "Bash",
+      tool_input: { command: "bun run build", description: "Build the bundle" },
+    });
+    await open(page, `#/now/${session}`);
+    for (const scheme of ["light", "dark"] as const) {
+      for (const width of WIDTHS) {
+        const at = `${width} px, ${scheme}`;
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(`${theSetup().rootUrl}/#/now/${session}`);
+        await expect(page.locator("html"), at).toHaveAttribute("data-scheme", scheme);
+        const bar = page.locator("[data-needs-sheet], [data-needs-bar]");
+        await expect(bar, at).toBeVisible();
+        await expect(bar.locator("code").filter({ hasText: "bun run build" }), at).toHaveText("bun run build");
+        await expect(bar, at).not.toContainText('"command"');
+        await expect(bar, at).not.toContainText("Runs in");
+        await expect(bar, at).toContainText("On e2e-machine. Waiting");
+        for (const act of ["allow", "deny"]) {
+          const button = bar.locator(`[data-act='${act}']`);
+          expect(await button.evaluate((el) => el.tagName), `${at}: ${act}`).toBe("BUTTON");
+          const box = await button.boundingBox();
+          expect(box?.width ?? 0, `${at}: ${act} width`).toBeGreaterThanOrEqual(44);
+          expect(box?.height ?? 0, `${at}: ${act} height`).toBeGreaterThanOrEqual(44);
+        }
+        const over = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(over, `${at}: the page scrolls sideways by ${over}px`).toBeLessThanOrEqual(0);
+        const spill = await bar.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return r.left < 0 || r.right > window.innerWidth + 0.5 || el.scrollWidth > el.clientWidth;
+        });
+        expect(spill, `${at}: the sheet spills past its box`).toBe(false);
+        // axe runs over the whole page; the sheet answers only for the nodes inside it
+        const found = await axeViolations(page);
+        const inBar = await page.evaluate(
+          (vs) =>
+            vs.filter((v) =>
+              v.nodes.some((sel) => {
+                try {
+                  return document.querySelector(sel)?.closest("[data-needs-sheet], [data-needs-bar]") != null;
+                } catch {
+                  return false;
+                }
+              }),
+            ),
+          found,
+        );
+        expect(inBar, `${at}: axe on the sheet`).toEqual([]);
+      }
+    }
+    // the answer moves the session out of Needs you, so the Now spec's counts stay as seeded
+    await api(`/api/needs/${id}/decide`, { decision: "deny" });
   });
 });

@@ -17,7 +17,7 @@ export type DialogProps = {
   children: ComponentChildren;
 };
 
-/** The close icon the legacy modal button carries. */
+/** The close button's icon. */
 const X = (
   <svg
     class="size-4"
@@ -101,7 +101,7 @@ export function Dialog({
           </h2>
           <button
             type="button"
-            class="btn btn-ghost btn-icon"
+            class="ui-btn ui-btn-ghost ui-btn-icon"
             aria-label="Close"
             onClick={() => closeNow(dlg.current)}
           >
