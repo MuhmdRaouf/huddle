@@ -80,6 +80,9 @@ func Role(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 		if !hasListen { // the proxy forwards to one fixed port: up never walks away from it
 			if cfg.Port == 0 {
 				cfg.Port = server.PortFirst
+				if port := jsNumber(w.getenv("HUDDLE_PORT")); port == float64(int(port)) && port > 0 && port < 65536 {
+					cfg.Port = int(port)
+				}
 			}
 			cfg.PortAuto = false
 		}

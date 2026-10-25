@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 )
 
 // TestRoleHubWithHostAloneKeepsLoopbackAndNamesTheHost pins the proxy shape: --host without
@@ -39,23 +40,33 @@ func TestRoleHubWithHostAloneKeepsLoopbackAndNamesTheHost(t *testing.T) {
 }
 
 // TestRoleHubPinsThePort pins the port a proxy forwards to: role hub behind a proxy records the
-// port as chosen (port_auto false), 18860 on a home with none saved, the saved one otherwise.
+// port as chosen (port_auto false): the saved one, else the one HUDDLE_PORT names, else the
+// first of huddle's own.
 func TestRoleHubPinsThePort(t *testing.T) {
 	root := t.TempDir()
 	if code, _, errOut := runRole(t, roleWorld(t, root), "role", "hub", "--host", "hub.example.invalid"); code != 0 {
 		t.Fatalf("role hub --host = (%d, %q)", code, errOut)
 	}
-	if cfg := savedCfg(t, root); cfg.PortAuto || cfg.Port != 18860 {
-		t.Errorf("a fresh home after role hub = port %d, auto %v; want 18860 pinned", cfg.Port, cfg.PortAuto)
+	if cfg := savedCfg(t, root); cfg.PortAuto || cfg.Port != server.PortFirst {
+		t.Errorf("a fresh home after role hub = port %d, auto %v; want %d pinned", cfg.Port, cfg.PortAuto, server.PortFirst)
+	}
+
+	named := t.TempDir()
+	w := roleWorld(t, named).WithVar("HUDDLE_PORT", "28861")
+	if code, _, errOut := runRole(t, w, "role", "hub", "--host", "hub.example.invalid"); code != 0 {
+		t.Fatalf("role hub --host with HUDDLE_PORT = (%d, %q)", code, errOut)
+	}
+	if cfg := savedCfg(t, named); cfg.PortAuto || cfg.Port != 28861 {
+		t.Errorf("a fresh home with HUDDLE_PORT=28861 after role hub = port %d, auto %v; want 28861 pinned", cfg.Port, cfg.PortAuto)
 	}
 
 	saved := t.TempDir()
-	writeFile(t, filepath.Join(saved, "config.toml"), "port = 18863\nport_auto = true\n")
+	writeFile(t, filepath.Join(saved, "config.toml"), "port = 28863\nport_auto = true\n")
 	if code, _, errOut := runRole(t, roleWorld(t, saved), "role", "hub", "--host", "hub.example.invalid"); code != 0 {
 		t.Fatalf("role hub --host = (%d, %q)", code, errOut)
 	}
-	if cfg := savedCfg(t, saved); cfg.PortAuto || cfg.Port != 18863 {
-		t.Errorf("a home with port 18863 after role hub = port %d, auto %v; want 18863 pinned", cfg.Port, cfg.PortAuto)
+	if cfg := savedCfg(t, saved); cfg.PortAuto || cfg.Port != 28863 {
+		t.Errorf("a home with port 28863 after role hub = port %d, auto %v; want 28863 pinned", cfg.Port, cfg.PortAuto)
 	}
 }
 
@@ -74,17 +85,17 @@ func TestLeavingTheHubRoleUnpinsThePort(t *testing.T) {
 		if code, _, errOut := runRole(t, roleWorld(t, root), leave...); code != 0 {
 			t.Fatalf("%v = (%d, %q)", leave, code, errOut)
 		}
-		if cfg := savedCfg(t, root); !cfg.PortAuto || cfg.Port != 18860 {
-			t.Errorf("after %v = port %d, auto %v; want 18860 handed back to huddle", leave, cfg.Port, cfg.PortAuto)
+		if cfg := savedCfg(t, root); !cfg.PortAuto || cfg.Port != server.PortFirst {
+			t.Errorf("after %v = port %d, auto %v; want %d handed back to huddle", leave, cfg.Port, cfg.PortAuto, server.PortFirst)
 		}
 	}
 
 	chosen := t.TempDir()
-	writeFile(t, filepath.Join(chosen, "config.toml"), "port = 18865\n")
+	writeFile(t, filepath.Join(chosen, "config.toml"), "port = 28865\n")
 	if code, _, errOut := runRole(t, roleWorld(t, chosen), "role", "solo"); code != 0 {
 		t.Fatalf("role solo = (%d, %q)", code, errOut)
 	}
-	if cfg := savedCfg(t, chosen); cfg.PortAuto || cfg.Port != 18865 {
-		t.Errorf("a chosen port after role solo = port %d, auto %v; want 18865 still chosen", cfg.Port, cfg.PortAuto)
+	if cfg := savedCfg(t, chosen); cfg.PortAuto || cfg.Port != 28865 {
+		t.Errorf("a chosen port after role solo = port %d, auto %v; want 28865 still chosen", cfg.Port, cfg.PortAuto)
 	}
 }
