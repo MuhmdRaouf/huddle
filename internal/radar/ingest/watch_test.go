@@ -575,6 +575,10 @@ func TestSpoolIngestion(t *testing.T) {
 		if !reflect.DeepEqual(routed.Headers, wantHeaders) {
 			t.Errorf("headers = %v, want %v", routed.Headers, wantHeaders)
 		}
+		// the request-id header is the key the store pairs the transcript's copy on
+		if routed.RequestID != "req_1" {
+			t.Errorf("request id = %q, want req_1 from the request-id header", routed.RequestID)
+		}
 		// the capture reaches the history writer's feed once per sighting, bytes whole
 		if len(captures) != 1 || captures[0] != (shared.CaptureRecord{Hash: hash, Gz: gz, FirstTs: watchT0}) {
 			t.Errorf("captures = %+v, want the one prompt under its first sighting", captures)

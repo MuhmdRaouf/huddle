@@ -975,6 +975,7 @@ func RouteRequest(line shared.SpoolLine, model string, ts int64) shared.RequestR
 	if headers := headersOf(line); headers != nil {
 		record.Headers = headers
 		record.EarlyKeys = append(record.EarlyKeys, "headers")
+		record.RequestID, _ = headers.Get("request-id")
 	}
 	applySpoolBilling(&record, line.Usage)
 	record.TailKeys = []string{"status", "route", "via"}

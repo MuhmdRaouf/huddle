@@ -432,6 +432,8 @@ type Store struct {
 	lonelyCopies map[string]*waitingSet
 	aliases      *aliasMap
 	routedTotals map[string]struct{}
+	// calls files each held call under its request id: the key the pairing tries first.
+	calls map[string]*callSlot
 }
 
 // CreateStore builds an empty store; now is the clock its derived answers age by.
@@ -450,6 +452,7 @@ func CreateStore(now func() time.Time) *Store {
 		lonelyCopies:  make(map[string]*waitingSet),
 		aliases:       newAliasMap(),
 		routedTotals:  make(map[string]struct{}),
+		calls:         make(map[string]*callSlot),
 	}
 }
 
@@ -1087,6 +1090,9 @@ func (s *Store) applyEvictionsLocked(picks []evictionCandidate) {
 	for _, pick := range picks {
 		switch pick.source {
 		case 0:
+			if held, ok := s.requests[pick.id]; ok {
+				s.forgetCallLocked(held.record)
+			}
 			delete(s.requests, pick.id)
 		case 1:
 			delete(s.tools, pick.id)
@@ -1127,6 +1133,7 @@ func (s *Store) dropSessionLocked(sessionID string) {
 	delete(s.notices, sessionID)
 	for id, held := range s.requests {
 		if held.record.SessionID == sessionID {
+			s.forgetCallLocked(held.record)
 			delete(s.requests, id)
 		}
 	}
@@ -1164,14 +1171,27 @@ func (s *Store) deliver(listeners []*listenerEntry, change Change) {
 // pairKey is the session and model a route line and its transcript copy must share.
 func pairKey(r shared.RequestRecord) string { return r.SessionID + "\x00" + r.Model }
 
+// callSlot is where the call one request id names is stored, and which sources have
+// landed in it.
+type callSlot struct {
+	id     string
+	routed bool
+	copied bool
+}
+
+// holds reports whether a record from the given source already landed in the slot.
+func (c *callSlot) holds(fromRouter bool) bool {
+	if fromRouter {
+		return c.routed
+	}
+	return c.copied
+}
+
 // placeRequestLocked stores one request, folding it into the record of the same call
 // when one is held, and returns what is stored.
 func (s *Store) placeRequestLocked(record shared.RequestRecord) shared.RequestRecord {
-	id := record.ID
-	if held, ok := s.aliases.get(record.ID); ok {
-		id = held
-	}
-	if existing, ok := s.requests[id]; ok {
+	if id, ok := s.ownCopyLocked(record); ok {
+		existing := s.requests[id]
 		stored := Refresh(existing.record, record)
 		if _, finalUsage := s.routedTotals[stored.ID]; finalUsage && !FromRouter(record) &&
 			shared.TotalTokens(existing.record.Tokens) > 0 {
@@ -1180,36 +1200,119 @@ func (s *Store) placeRequestLocked(record shared.RequestRecord) shared.RequestRe
 			stored.Tokens = existing.record.Tokens
 		}
 		existing.record = stored
+		s.noteCallLocked(stored, FromRouter(record), !FromRouter(record))
 		return stored
 	}
-	var stored shared.RequestRecord
-	if FromRouter(record) {
-		stored = s.placeRouteLocked(record)
-	} else {
-		stored = FillUpstream(s.placeTranscriptLocked(record))
-	}
+	stored, paired := s.pairLocked(record)
 	if existing, ok := s.requests[stored.ID]; ok {
 		existing.record = stored // the paired twin's slot, its arrival number kept
-		return stored
+	} else {
+		s.requests[stored.ID] = &storedRequest{record: stored, seq: s.nextArrivalLocked()}
 	}
-	s.requests[stored.ID] = &storedRequest{record: stored, seq: s.nextArrivalLocked()}
+	s.noteCallLocked(stored, paired || FromRouter(record), paired || !FromRouter(record))
 	return stored
 }
 
-// placeRouteLocked stores a spool line: join the closest transcript copy, else stand
-// alone (under the main agent when untagged).
-func (s *Store) placeRouteLocked(route shared.RequestRecord) shared.RequestRecord {
-	key := pairKey(route)
-	if waiting := s.lonelyCopies[key]; waiting != nil {
-		s.pruneWaitingLocked(waiting, route.Ts)
-		if best := s.closestCopyLocked(waiting, route); best != "" {
-			waiting.Delete(best)
-			if shared.TotalTokens(route.Tokens) > 0 {
-				s.routedTotals[best] = struct{}{}
-			}
-			return Combine(s.requests[best].record, route, best)
-		}
+// ownCopyLocked is the held record a later copy from the same source refreshes: the
+// record's own id, the twin a transcript id was folded into, or the call its request id
+// names once that source has landed in it.
+func (s *Store) ownCopyLocked(record shared.RequestRecord) (string, bool) {
+	id := record.ID
+	if held, ok := s.aliases.get(record.ID); ok {
+		id = held
 	}
+	if _, ok := s.requests[id]; ok {
+		return id, true
+	}
+	if slot, ok := s.slotLocked(record.RequestID); ok && slot.holds(FromRouter(record)) {
+		return slot.id, true
+	}
+	return "", false
+}
+
+// pairLocked lands a record with no held copy of its own source: it joins the other
+// source's copy of the same call when one is held, else waits for one. The twin is found
+// in this order: the request id both sources carry, then the closest fit in the match
+// window (same session, model and agent). It reports whether the record joined a twin.
+func (s *Store) pairLocked(record shared.RequestRecord) (shared.RequestRecord, bool) {
+	fromRouter := FromRouter(record)
+	twin := ""
+	if slot, ok := s.slotLocked(record.RequestID); ok && !slot.holds(fromRouter) {
+		twin = slot.id
+	} else if fromRouter {
+		twin = s.closestCopyLocked(record)
+	} else {
+		twin = s.closestRouteLocked(record)
+	}
+	if twin == "" {
+		if fromRouter {
+			return s.waitRouteLocked(record), false
+		}
+		return FillUpstream(s.waitCopyLocked(pairKey(record), record)), false
+	}
+	held := s.requests[twin].record
+	if copies := s.lonelyCopies[pairKey(held)]; copies != nil {
+		copies.Delete(twin)
+	}
+	if routes := s.lonelyRoutes[pairKey(held)]; routes != nil {
+		routes.Delete(twin)
+	}
+	if fromRouter {
+		if shared.TotalTokens(record.Tokens) > 0 {
+			s.routedTotals[twin] = struct{}{}
+		}
+		return Combine(held, record, twin), true
+	}
+	s.aliases.set(record.ID, twin)
+	if shared.TotalTokens(held.Tokens) > 0 {
+		s.routedTotals[twin] = struct{}{}
+	}
+	return Combine(record, held, twin), true
+}
+
+// slotLocked is the held call a request id names; false when the id is empty or its
+// record is no longer held.
+func (s *Store) slotLocked(requestID string) (*callSlot, bool) {
+	if requestID == "" {
+		return nil, false
+	}
+	slot, ok := s.calls[requestID]
+	if !ok {
+		return nil, false
+	}
+	if _, held := s.requests[slot.id]; !held {
+		delete(s.calls, requestID)
+		return nil, false
+	}
+	return slot, true
+}
+
+// noteCallLocked files a stored record under its request id, with the sources now in it.
+func (s *Store) noteCallLocked(stored shared.RequestRecord, routed, copied bool) {
+	if stored.RequestID == "" {
+		return
+	}
+	slot, ok := s.calls[stored.RequestID]
+	if !ok {
+		slot = &callSlot{}
+		s.calls[stored.RequestID] = slot
+	}
+	slot.id = stored.ID
+	slot.routed = slot.routed || routed
+	slot.copied = slot.copied || copied
+}
+
+// forgetCallLocked drops the request id entry of a record leaving the store.
+func (s *Store) forgetCallLocked(record shared.RequestRecord) {
+	if slot, ok := s.calls[record.RequestID]; ok && slot.id == record.ID {
+		delete(s.calls, record.RequestID)
+	}
+}
+
+// waitRouteLocked leaves a spool line with no twin in reach waiting under its key, and
+// stores it alone (under the main agent when untagged).
+func (s *Store) waitRouteLocked(route shared.RequestRecord) shared.RequestRecord {
+	key := pairKey(route)
 	routes := s.lonelyRoutes[key]
 	if routes == nil {
 		routes = newWaitingMap()
@@ -1225,28 +1328,14 @@ func (s *Store) placeRouteLocked(route shared.RequestRecord) shared.RequestRecor
 	return route
 }
 
-// placeTranscriptLocked stores a transcript call: join the closest waiting spool line,
-// else wait for one.
-func (s *Store) placeTranscriptLocked(transcript shared.RequestRecord) shared.RequestRecord {
-	key := pairKey(transcript)
-	if routes := s.lonelyRoutes[key]; routes != nil {
-		s.pruneWaitingLocked(routes, transcript.Ts)
-		if best := s.closestRouteLocked(routes, transcript); best != "" {
-			held := s.requests[best].record
-			routes.Delete(best)
-			s.aliases.set(transcript.ID, best)
-			if shared.TotalTokens(held.Tokens) > 0 {
-				s.routedTotals[best] = struct{}{}
-			}
-			return Combine(transcript, held, best)
-		}
-	}
-	return s.waitCopyLocked(key, transcript)
-}
-
-// closestCopyLocked is the held transcript copy closest to the route under
+// closestCopyLocked is the waiting transcript copy closest to the route under
 // MatchDistance, or "" when none can be the same call.
-func (s *Store) closestCopyLocked(waiting *waitingSet, route shared.RequestRecord) string {
+func (s *Store) closestCopyLocked(route shared.RequestRecord) string {
+	waiting := s.lonelyCopies[pairKey(route)]
+	if waiting == nil {
+		return ""
+	}
+	s.pruneWaitingLocked(waiting, route.Ts)
 	best := ""
 	var bestDistance int64
 	found := false
@@ -1268,9 +1357,14 @@ func (s *Store) closestCopyLocked(waiting *waitingSet, route shared.RequestRecor
 	return best
 }
 
-// closestRouteLocked is the held route closest to the transcript call under
+// closestRouteLocked is the waiting route closest to the transcript call under
 // MatchDistance, or "" when none can be the same call.
-func (s *Store) closestRouteLocked(routes *waitingMap, transcript shared.RequestRecord) string {
+func (s *Store) closestRouteLocked(transcript shared.RequestRecord) string {
+	routes := s.lonelyRoutes[pairKey(transcript)]
+	if routes == nil {
+		return ""
+	}
+	s.pruneWaitingLocked(routes, transcript.Ts)
 	best := ""
 	var bestDistance int64
 	found := false

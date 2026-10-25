@@ -77,6 +77,9 @@ func MatchDistance(transcript, route shared.RequestRecord, routeAgent string) *i
 func Combine(transcript, route shared.RequestRecord, id string) shared.RequestRecord {
 	merged := transcript
 	merged.ID = id
+	if merged.RequestID == "" {
+		merged.RequestID = route.RequestID
+	}
 	if route.Upstream != "" {
 		merged.Upstream = route.Upstream
 	}
@@ -143,6 +146,9 @@ func tailKeysOf(transcript []string, status, route, via, fallback, promptHash, h
 func Refresh(existing, record shared.RequestRecord) shared.RequestRecord {
 	routed := FromRouter(existing)
 	merged := existing
+	if merged.RequestID == "" {
+		merged.RequestID = record.RequestID
+	}
 	if record.Model != "" {
 		merged.Model = record.Model
 	}

@@ -1306,6 +1306,7 @@ func requestOf(state *TranscriptState, entry rawObject, message rawObject, ctx a
 	request.Speed = billing.Speed
 	request.Geo = billing.Geo
 	request.ServiceTier = billing.ServiceTier
+	request.RequestID, _ = stringField(entry, "requestId")
 	request.TailKeys = []string{}
 	return &request
 }

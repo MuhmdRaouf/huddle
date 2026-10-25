@@ -288,6 +288,10 @@ type RequestRecord struct {
 	// wire answered; nil when no router saw the call or the line said none. Kept apart from
 	// StopReason, which names how the model ended its turn — a 200 never was one.
 	Status *string `json:"status,omitempty"`
+	// RequestID is the provider's own id for the call, the key both sources share: the
+	// route line's request-id response header, the transcript entry's requestId. Empty when
+	// the source named none; the store pairs on it and never prints it.
+	RequestID string `json:"-"`
 
 	// EarlyKeys lists the optional keys that ride between agentId and model, in order: a
 	// route line's own error, parentAgentId, fallback, promptHash and headers. Empty for every

@@ -491,3 +491,46 @@ func TestWaitingMapsACatchupFeeds(t *testing.T) {
 		}
 	})
 }
+
+func TestPairingLooksTheRequestIDUpFirst(t *testing.T) {
+	t.Run("the request id wins over a closer fit in the window", func(t *testing.T) {
+		store := newTestStore()
+		store.AddRequest(route(func(r *shared.RequestRecord) { r.ID = "route:a"; r.RequestID = "req_A" }), nil)
+		store.AddRequest(route(func(r *shared.RequestRecord) {
+			r.ID = "route:b"
+			r.RequestID = "req_B"
+			r.Ts = routeT + 30
+		}), nil)
+		store.AddRequest(transcriptCopy(func(r *shared.RequestRecord) { r.RequestID = "req_A"; r.Ts = routeT + 35 }), nil)
+		rows := store.Requests(RequestFilter{})
+		paired, alone := findRequest(rows, "route:a"), findRequest(rows, "route:b")
+		if len(rows) != 2 || paired == nil || alone == nil {
+			t.Fatalf("requests: got %+v, want route:a paired and route:b alone", rows)
+		}
+		if paired.Tokens != tokens(3, 120, 9_000, 400) || shared.TotalTokens(alone.Tokens) != 0 {
+			t.Errorf("tokens: route:a %+v, route:b %+v; want the copy's on route:a only", paired.Tokens, alone.Tokens)
+		}
+	})
+
+	t.Run("a copy that left the window still meets its route line by request id", func(t *testing.T) {
+		store := newTestStore()
+		store.AddRequest(transcriptCopy(func(r *shared.RequestRecord) { r.RequestID = "req_011"; r.Ts = routeT }), nil)
+		for call := 1; call <= 20; call++ {
+			store.AddRequest(transcriptCopy(func(r *shared.RequestRecord) {
+				r.ID = fmt.Sprintf("req_later%02d", call)
+				r.RequestID = r.ID
+				r.Ts = routeT + int64(call)*1_000
+			}), nil)
+		}
+		store.AddRequest(route(func(r *shared.RequestRecord) {
+			r.AgentID = "a31cd3de580148dc3"
+			r.RequestID = "req_011"
+			r.Ts = routeT + 12
+		}), nil)
+		rows := store.Requests(RequestFilter{})
+		merged := findRequest(rows, "req_011")
+		if len(rows) != 21 || merged == nil || merged.Route == nil || merged.Tokens != tokens(3, 120, 9_000, 400) {
+			t.Fatalf("requests: got %d rows, req_011 = %+v; want 21 rows and req_011 carrying the route", len(rows), merged)
+		}
+	})
+}

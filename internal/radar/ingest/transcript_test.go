@@ -240,7 +240,7 @@ func TestFeedTranscriptLineHappyPath(t *testing.T) {
 			Upstream: "", Ts: t1, LatencyMs: i64p(1_000),
 			Tokens:     shared.Tokens{Input: 10, Output: 5, CacheRead: 2, CacheWrite: 1},
 			StopReason: strp("end_turn"), Provider: "Anthropic", What: strp("→ Bash ls"),
-			TailKeys: []string{"what"},
+			RequestID: "req_9", TailKeys: []string{"what"},
 		}}
 		if !reflect.DeepEqual(emit.Requests, want) {
 			t.Errorf("requests = %+v, want %+v", emit.Requests, want)
