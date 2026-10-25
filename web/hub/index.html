@@ -8,7 +8,8 @@
      A drawer opens over any view: ?t=<task> (task drawer), ?s=<session> (session drawer).
      Aliases (needs, live, plan, board, graph, review, kb, repo, t/<id>) redirect.
      Installable: /manifest.webmanifest with the icons under /icons/, and /sw.js caching the shell;
-     the bar colour follows the OS scheme, and the installed app draws edge to edge (the shell pads
+     the bar colour follows the scheme (the theme-color metas sit ahead of theme-boot.js, which
+     repaints them for a Settings override), and the installed app draws edge to edge (the shell pads
      itself by the safe areas).
      Styles: ui/src/app.css (Tailwind 4 + daisyUI 5, the shared twelve-variant themes) → vite build → app.<hash>.css.
      scripts/build.mjs writes this page into dist with every /static/ name below swapped for its hashed one. -->
@@ -18,6 +19,8 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <title>Huddle</title>
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e1014" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f7f9" />
     <script src="/static/theme-boot.js"></script>
     <link
       rel="icon"
@@ -25,8 +28,6 @@
     />
     <link rel="stylesheet" href="/static/app.css" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#11111b" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#dce0e8" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

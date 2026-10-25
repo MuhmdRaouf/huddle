@@ -2,7 +2,9 @@
 // scheme is the OS's choice, unless this browser keeps an override (the switch in Settings) under
 // "huddle:scheme". The resolved scheme lands on <html data-scheme>, which tokens.css reads, and as the
 // matching Catppuccin variant on <html data-theme>, which the daisyUI themes in theme.css read; with
-// the OS choice it follows every flip of prefers-color-scheme while the page is open. The flavour,
+// the OS choice it follows every flip of prefers-color-scheme while the page is open. The installed
+// app's status bar takes its colour from the theme-color metas: an override paints every one in its
+// scheme with no media query, and the OS choice keeps the dark-then-light pair keyed to the OS. The flavour,
 // kept under "huddle:flavour", lands on <html data-flavour>, where tokens.css remaps its colour
 // tokens to Catppuccin latte or mocha; plain leaves the attribute off.
 
@@ -59,11 +61,30 @@ export function resolveScheme(pref: SchemePref, systemDark: boolean): Scheme {
 /** The daisyUI variant each scheme paints the pages not yet on the tokens in. */
 const VARIANT: Record<Scheme, string> = { dark: "mocha", light: "latte" };
 
-/** Puts the resolved scheme and its daisyUI variant on the root element and answers the scheme. */
+/** The status bar colour of each scheme: tokens.css's plain --ui-bg, which .ui-shell paints under
+ *  the bar. theme-boot.js and index.html carry the same two values. */
+const BAR: Record<Scheme, string> = { light: "#f6f7f9", dark: "#0e1014" };
+
+/** The schemes the theme-color metas name in document order when the OS chooses. */
+const BAR_ORDER: readonly Scheme[] = ["dark", "light"];
+
+/** Paints every theme-color meta in the chosen scheme, or keys the pair to the OS for "system". */
+function paintBar(doc: Document, pref: SchemePref): void {
+  doc.head.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((meta, i) => {
+    const scheme = pref === "system" ? (BAR_ORDER[i % 2] ?? "dark") : pref;
+    meta.content = BAR[scheme];
+    if (pref === "system") meta.media = `(prefers-color-scheme: ${scheme})`;
+    else meta.removeAttribute("media");
+  });
+}
+
+/** Puts the resolved scheme and its daisyUI variant on the root element, paints the status bar to
+ *  match, and answers the scheme. */
 export function applyScheme(root: HTMLElement, pref: SchemePref, systemDark: boolean): Scheme {
   const scheme = resolveScheme(pref, systemDark);
   root.dataset.scheme = scheme;
   root.dataset.theme = VARIANT[scheme];
+  paintBar(root.ownerDocument, pref);
   return scheme;
 }
 

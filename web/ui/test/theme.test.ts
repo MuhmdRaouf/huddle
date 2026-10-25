@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
 import {
   FLAVOUR_KEY,
@@ -58,6 +59,27 @@ function query(dark: boolean): SchemeQuery & { flip: (to: boolean) => void; list
   return q;
 }
 
+/** The --ui-bg pair tokens.css paints the shell with, the colour under the status bar. */
+function shellBg(): { light: string; dark: string } {
+  const css = readFileSync("src/tokens.css", "utf8");
+  const m = /--ui-bg: light-dark\((#[0-9a-f]{6}), (#[0-9a-f]{6})\);/.exec(css);
+  if (!m?.[1] || !m[2]) throw new Error("tokens.css names no --ui-bg pair");
+  return { light: m[1], dark: m[2] };
+}
+
+/** Puts the two theme-color metas index.html ships into the document's head. */
+function themeColours(): HTMLMetaElement[] {
+  for (const m of document.head.querySelectorAll('meta[name="theme-color"]')) m.remove();
+  return (["dark", "light"] as const).map((s) => {
+    const m = document.createElement("meta");
+    m.name = "theme-color";
+    m.media = `(prefers-color-scheme: ${s})`;
+    m.content = "#000000";
+    document.head.append(m);
+    return m;
+  });
+}
+
 describe("theme", () => {
   it("follows the OS when nothing is stored", () => {
     expect(readScheme(memory())).toBe("system");
@@ -95,6 +117,27 @@ describe("theme", () => {
     expect(applyScheme(root, "light", true)).toBe("light");
     expect(root.dataset.scheme).toBe("light");
     expect(root.dataset.theme).toBe("latte");
+  });
+
+  it("paints the status bar in the chosen scheme, whatever the OS, and gives System back the OS pair", () => {
+    const bg = shellBg();
+    const metas = themeColours();
+    const root = document.documentElement;
+    applyScheme(root, "dark", false);
+    for (const m of metas) {
+      expect(m.content).toBe(bg.dark);
+      expect(m.hasAttribute("media")).toBe(false);
+    }
+    applyScheme(root, "light", true);
+    for (const m of metas) {
+      expect(m.content).toBe(bg.light);
+      expect(m.hasAttribute("media")).toBe(false);
+    }
+    applyScheme(root, "system", true);
+    expect(metas.map((m) => [m.media, m.content])).toEqual([
+      ["(prefers-color-scheme: dark)", bg.dark],
+      ["(prefers-color-scheme: light)", bg.light],
+    ]);
   });
 
   it("re-applies when the OS flips, until stopped, and an override ignores the flip", () => {
