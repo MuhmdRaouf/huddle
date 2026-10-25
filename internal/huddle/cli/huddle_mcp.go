@@ -49,12 +49,6 @@ const notInYet = "not in a huddle yet: run /huddle:setup in this project (the fi
 // noPortYet is what a session in a channel whose Huddle has no url is told.
 const noPortYet = "huddle: this project's Huddle has no port yet: start it with huddle up (it picks one and saves it). Treat yourself as paused and retry."
 
-// mcpBlockingTools wait for the channel to answer, so they get the long stdio timeout unless
-// the caller chose one.
-var mcpBlockingTools = map[string]bool{
-	"wait": true, "wait_task": true, "gate": true, "depend": true, "handoff": true, "ask_wait": true,
-}
-
 // mcpJoinURL accepts the host:port (or full url) a join line carries: scheme, host, port.
 var mcpJoinURL = regexp.MustCompile(`^https?://[\w.-]+:\d+$`)
 
@@ -298,7 +292,9 @@ func (b *mcpBridge) forward(ctx context.Context, msg *jsfmt.Value) {
 		return
 	}
 	ms := b.callMS
-	if method == "tools/call" && mcpBlockingTools[name] {
+	// The table's blocking ops wait for the channel to answer, so they get the long stdio
+	// timeout unless the caller chose one.
+	if method == "tools/call" && channel.Blocks(name) {
 		params, _ := fieldOf(msg, "params")
 		args, _ := fieldOf(params, "arguments")
 		timeout, hasTimeout := fieldOf(args, "timeout")

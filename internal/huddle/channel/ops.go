@@ -1060,6 +1060,12 @@ var ops = map[string]opDef{
 	},
 }
 
+// Blocks says whether the op waits for the channel by design, so the transports give its tool
+// their long timeout. An unknown name is not blocking.
+func Blocks(name string) bool {
+	return ops[name].blocks
+}
+
 // Identity answers who acts: a connection is one session; it may act for its own subagents
 // ("<me>.<role>") by passing `as`. The owner may act as anyone (the UI speaks for the owner).
 func Identity(conn string, as *string) (string, error) {

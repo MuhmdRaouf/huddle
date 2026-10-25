@@ -216,12 +216,6 @@ func shortLine(name string, result any) string {
 	return ""
 }
 
-// blockingTools wait by design: an agent that passes a short timeout burns a turn per wake-up,
-// so the tool waits at least a minute.
-var blockingTools = map[string]bool{
-	"wait": true, "wait_task": true, "depend": true, "handoff": true, "ask_wait": true,
-}
-
 // stringifyIndent1 renders a result the way JSON.stringify(v, null, 1) does: one space per level.
 func stringifyIndent1(v any) string {
 	compact, err := domain.MarshalCompactJSON(v)
@@ -335,7 +329,9 @@ func (m *Mcp) toolCall(ctx context.Context, h *channel.Hub, channelName, conn st
 	if arguments != nil && arguments.Kind() == jsfmt.KindObject {
 		args = jsfmt.Object(arguments.Keys(), arguments.Fields())
 	}
-	if blockingTools[name] {
+	// The table's blocking ops wait by design: an agent that passes a short timeout burns a turn
+	// per wake-up, so the tool waits at least a minute.
+	if channel.Blocks(name) {
 		if t := fieldOf(args, "timeout"); t != nil && t.Kind() != jsfmt.KindNull {
 			seconds := 0.0
 			switch t.Kind() {

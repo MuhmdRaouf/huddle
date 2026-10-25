@@ -157,3 +157,22 @@ func mustJSONT(t *testing.T, v any) string {
 	}
 	return string(raw)
 }
+
+// TestBlockingOpsAreTheTablesFact pins Blocks to the table: the ops that block wait by design
+// and get the transports' long timeouts, every other op answers at once, and an unknown name is
+// not blocking.
+func TestBlockingOpsAreTheTablesFact(t *testing.T) {
+	for _, name := range []string{"wait", "wait_task", "gate", "depend", "handoff", "ask_wait"} {
+		if !Blocks(name) {
+			t.Errorf("Blocks(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"publish", "status", "join"} {
+		if Blocks(name) {
+			t.Errorf("Blocks(%q) = true, want false", name)
+		}
+	}
+	if Blocks("no_such_op") {
+		t.Error(`Blocks("no_such_op") = true, want false`)
+	}
+}
