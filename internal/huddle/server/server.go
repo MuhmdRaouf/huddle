@@ -297,6 +297,12 @@ type server struct {
 	vapid    *vapidSource
 	pushHTTP *http.Client
 	pushWake chan struct{}
+	// radarAlerts is radar's alerts as the push sweep reads them, nil with no radar tab;
+	// radarMu guards it, because radar mounts after the sweep starts. upstreamPushed is the id
+	// of the failing-path alert the sweep last pushed, the sweep's own.
+	radarMu        sync.Mutex
+	radarAlerts    radarAnswerer
+	upstreamPushed string
 
 	hostsMu sync.Mutex
 	hosts   map[string]bool
@@ -696,6 +702,9 @@ func Serve(ctx context.Context, o Options) error {
 			Log:           func(line string) { fmt.Fprintln(o.Stdout, line) },
 		})
 		s.hub.Radar.Source = s.radar
+		s.radarMu.Lock()
+		s.radarAlerts = s.radar
+		s.radarMu.Unlock()
 		// only radar's own paths reach its mux: the mux cleans paths, and huddle's routes keep
 		// their exact matching (a dotted path stays a 404, never a redirect). Radar's API rides
 		// huddle's credential — the same check every /api route runs — while its health path

@@ -3,6 +3,7 @@
 import { act } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api, ApiOptions } from "../../src/api.ts";
+import type { PushStatus, PushSwitch } from "../../src/pwa.ts";
 import { HuddleProvider } from "../../src/app/context.tsx";
 import { type NotifySwitch, Settings, startOptions } from "../../src/pages/Settings.tsx";
 import type { ChannelInfo, HuddleState, HuddleStore } from "../../src/store.ts";
@@ -64,6 +65,36 @@ const notifyFake = (on = false): NotifySwitch & { toggles: number } => {
   });
 };
 
+/** A push switch fake: the status it answers, and the turns it took. */
+const pushFake = (
+  start: Partial<PushStatus> = {},
+  over: { enable?: () => Promise<void> } = {},
+): PushSwitch & { enables: number; disables: number } => {
+  const status: PushStatus = {
+    supported: true,
+    permission: "default",
+    on: false,
+    standalone: true,
+    ...start,
+  };
+  const sw = {
+    enables: 0,
+    disables: 0,
+    status: async () => ({ ...status }),
+    enable: async () => {
+      sw.enables += 1;
+      if (over.enable) return over.enable();
+      status.on = true;
+      status.permission = "granted";
+    },
+    disable: async () => {
+      sw.disables += 1;
+      status.on = false;
+    },
+  };
+  return sw;
+};
+
 /** A store fake whose channel-row read the test can watch. */
 function storeFake(): { store: HuddleStore; loadInfo: ReturnType<typeof vi.fn> } {
   const loadInfo = vi.fn(async () => {});
@@ -71,9 +102,17 @@ function storeFake(): { store: HuddleStore; loadInfo: ReturnType<typeof vi.fn> }
 }
 
 /** Renders the page over the state's channel row, an api fake and a store fake. */
-function mount(over: { api?: ReturnType<typeof apiFake>; notify?: NotifySwitch; state?: HuddleState } = {}) {
+function mount(
+  over: {
+    api?: ReturnType<typeof apiFake>;
+    notify?: NotifySwitch;
+    push?: PushSwitch;
+    state?: HuddleState;
+  } = {},
+) {
   const api = over.api ?? apiFake();
   const notify = over.notify ?? notifyFake();
+  const push = over.push ?? pushFake();
   const { store, loadInfo } = storeFake();
   const state =
     over.state ??
@@ -81,7 +120,7 @@ function mount(over: { api?: ReturnType<typeof apiFake>; notify?: NotifySwitch; 
       info: INFO as ChannelInfo,
       sessions: { sessions: [sess({ name: "api" }), sess({ name: "sub.api", parent: "api" })] },
     });
-  const view = renderIn(<Settings notify={notify} store={store} />, makeCtx(state, { api }));
+  const view = renderIn(<Settings notify={notify} push={push} store={store} />, makeCtx(state, { api }));
   return { api, notify, view, store, loadInfo };
 }
 
@@ -110,6 +149,7 @@ describe("the page", () => {
       <HuddleProvider value={makeCtx(live)}>
         <Settings
           notify={notifyFake()}
+          push={pushFake()}
           store={{ loadInfo: vi.fn(async () => {}) } as unknown as HuddleStore}
         />
       </HuddleProvider>,
@@ -153,6 +193,7 @@ describe("the page", () => {
     const v2 = renderIn(
       <Settings
         notify={notifyFake()}
+        push={pushFake()}
         store={{ loadInfo: vi.fn(async () => {}) } as unknown as HuddleStore}
       />,
       makeCtx(
@@ -166,6 +207,7 @@ describe("the page", () => {
     const v3 = renderIn(
       <Settings
         notify={notifyFake()}
+        push={pushFake()}
         store={{ loadInfo: vi.fn(async () => {}) } as unknown as HuddleStore}
       />,
       makeCtx(makeState({ info: { ...INFO, views: [], config: { ...INFO.config } } as ChannelInfo })),
@@ -300,7 +342,7 @@ describe("saving", () => {
   it("toasts Saved when a save lands", async () => {
     const toast = vi.fn();
     const api = apiFake();
-    renderIn(<Settings notify={notifyFake()} />, makeCtx(makeState(), { api, toast }));
+    renderIn(<Settings notify={notifyFake()} push={pushFake()} />, makeCtx(makeState(), { api, toast }));
     await flush();
     await act(async () => {
       form("f-ch").requestSubmit();
@@ -342,6 +384,64 @@ describe("this browser", () => {
     expect(sw.getAttribute("aria-checked")).toBe("false"); // the fake still says off
   });
 
+  it("turns push on and off and reads the permission it runs under", async () => {
+    const push = pushFake();
+    mount({ push });
+    await flush();
+    const sw = document.getElementById("set-push") as HTMLInputElement;
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    expect(document.body.textContent).toContain("Push permission: default");
+    await act(async () => {
+      sw.click();
+    });
+    await flush();
+    expect(push.enables).toBe(1);
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    expect(document.body.textContent).toContain("Push permission: granted");
+    await act(async () => {
+      sw.click();
+    });
+    await flush();
+    expect(push.disables).toBe(1);
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("says iOS pushes only to the app added to the home screen", async () => {
+    mount({ push: pushFake({ standalone: false }) });
+    await flush();
+    expect(document.body.textContent).toContain("On iPhone and iPad, add Huddle to the Home Screen");
+    mount({ push: pushFake({ standalone: true }) });
+    await flush();
+    expect(document.getElementById("set-push")).not.toBeNull();
+  });
+
+  it("disables push where the browser cannot receive it", async () => {
+    mount({ push: pushFake({ supported: false }) });
+    await flush();
+    expect((document.getElementById("set-push") as HTMLInputElement).disabled).toBe(true);
+    expect(document.body.textContent).toContain("This browser cannot receive push.");
+  });
+
+  it("says a refused turn-on in a toast and stays off", async () => {
+    const toast = vi.fn();
+    const push = pushFake(
+      {},
+      { enable: () => Promise.reject(new Error("only a paired device holds a push subscription")) },
+    );
+    renderIn(
+      <Settings notify={notifyFake()} push={push} />,
+      makeCtx(makeState({ info: INFO as ChannelInfo }), { toast }),
+    );
+    await flush();
+    const sw = document.getElementById("set-push") as HTMLInputElement;
+    await act(async () => {
+      sw.click();
+    });
+    await flush();
+    expect(toast).toHaveBeenCalledWith("only a paired device holds a push subscription", { bad: true });
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+  });
+
   it("says when this browser cannot show notifications", async () => {
     const saved = (window as { Notification?: unknown }).Notification;
     Reflect.deleteProperty(window, "Notification");
@@ -357,7 +457,7 @@ describe("this browser", () => {
     localStorage.setItem("huddle:theme", '{"family":"nord","mode":"dark"}');
     localStorage.setItem("other:key", "1");
     const toast = vi.fn();
-    renderIn(<Settings notify={notifyFake()} />, makeCtx(makeState(), { toast }));
+    renderIn(<Settings notify={notifyFake()} push={pushFake()} />, makeCtx(makeState(), { toast }));
     await flush();
     await act(async () => {
       (document.getElementById("set-reset") as HTMLButtonElement).click();

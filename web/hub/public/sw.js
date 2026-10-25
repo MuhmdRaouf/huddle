@@ -110,18 +110,33 @@
     );
   });
 
-  /** The app's own address of one needs-you item: the session's screen, scrolled to the item.
-   *  A session's own entry push names no item, and lands on the session's screen alone. */
-  function itemPath(payload) {
-    var path = "/#/now/" + encodeURIComponent(payload.session || "");
-    return payload.item == null ? path : path + "?item=" + payload.item;
+  /** The app address a push opens: the payload's url when it is a path of this app (the
+   *  session's screen at the item, Radar's alerts), the app's root otherwise. */
+  function appPath(payload) {
+    var url = payload.url;
+    if (typeof url === "string" && url.charAt(0) === "/" && url.charAt(1) !== "/") return url;
+    return "/";
   }
 
-  // The push (SPEC 7.6): the payload carries who, what kind and the tool name, so the
-  // notification says no more than that — the command and the prompt text never reach the
-  // browser at all. A permission item carries Allow, Deny and Open; the other kinds carry
-  // Open. A session's own needs-you entry (kind "session") says Needs you and is tagged by
-  // its session, so a re-entry replaces it instead of piling up.
+  /** The title, body and tag one payload shows: a session's entry says Needs you and is tagged
+   *  by its session, a failing path names itself with radar's detail and keeps one
+   *  notification, an item names its tool or kind. */
+  function shownOf(payload) {
+    var on = payload.machine ? " on " + payload.machine : "";
+    if (payload.kind === "session") {
+      return { title: "Needs you", body: payload.session + on, tag: "huddle-session-" + payload.session };
+    }
+    if (payload.kind === "upstream_failing") {
+      return { title: "Anthropic path failing", body: (payload.detail || "") + on, tag: "huddle-upstream" };
+    }
+    return { title: payload.tool || payload.kind, body: payload.session + on, tag: "huddle-item-" + payload.item };
+  }
+
+  // The push (SPEC 7.6): the payload carries who, what kind, the tool name and the app address
+  // it opens, so the notification says no more than that — the command and the prompt text
+  // never reach the browser at all. A permission item carries Allow, Deny and Open; the other
+  // kinds carry Open. A tag keeps one notification per session entry and per failing path, so
+  // a repeat replaces it instead of piling up.
   self.addEventListener("push", function (event) {
     var payload = null;
     try {
@@ -138,13 +153,13 @@
         { action: "open", title: "Open" },
       ];
     }
-    var isSession = payload.kind === "session";
+    var shown = shownOf(payload);
     event.waitUntil(
-      self.registration.showNotification(isSession ? "Needs you" : payload.tool || payload.kind, {
-        body: payload.session + (payload.machine ? " on " + payload.machine : ""),
+      self.registration.showNotification(shown.title, {
+        body: shown.body,
         icon: "/icons/icon-192.png",
         badge: "/icons/icon-192.png",
-        tag: isSession ? "huddle-session-" + payload.session : "huddle-item-" + payload.item,
+        tag: shown.tag,
         data: payload,
         actions: actions,
       }),
@@ -191,6 +206,6 @@
       );
       return;
     }
-    event.waitUntil(openAt(itemPath(payload)));
+    event.waitUntil(openAt(appPath(payload)));
   });
 })();

@@ -1,11 +1,11 @@
 package server
 
-// Web Push (SPEC 7.6): the needs-you items and the owner alerts reach the paired devices'
-// subscriptions, each payload encrypted to that device's own keys. A payload carries who (the
-// session and its machine), what kind and the tool name — never the command, path, prompt or
-// answer text, which stay in the registry's rows. An item pushes once at create and once more
-// only on its five-minute escalation; a subscription the push service calls gone is dropped on
-// the spot.
+// Web Push (SPEC 7.6): the needs-you items, a failing Anthropic path and the owner alerts reach
+// the paired devices' subscriptions, each payload encrypted to that device's own keys. A payload
+// carries who (the session and its machine), what kind, the tool name and the app address the
+// notification opens — never the command, path, prompt or answer text, which stay in the
+// registry's rows. An item pushes once at create and once more only on its five-minute
+// escalation; a subscription the push service calls gone is dropped on the spot.
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
@@ -29,7 +31,8 @@ const (
 	pushSweepEvery  = 30 * time.Second
 	pushSendTimeout = 10 * time.Second
 	pushTTL         = 300 // seconds, the five minutes an escalation may take to reach its item
-	pushSubscriber  = "mailto:huddle-push@localhost"
+	// the contact the VAPID JWT's sub claim names; the library writes it as a mailto: URL
+	pushSubscriber = "huddle-push@localhost"
 )
 
 // pushPayload is one needs-you item's push (SPEC 7.6): who, what kind and the tool name. The
@@ -41,6 +44,7 @@ type pushPayload struct {
 	Machine string `json:"machine"`
 	Kind    string `json:"kind"`
 	Tool    string `json:"tool,omitempty"`
+	URL     string `json:"url"`
 }
 
 // sessionPushPayload is one session's needs-you entry push (SPEC 7.6): who and that it waits.
@@ -50,6 +54,7 @@ type sessionPushPayload struct {
 	Kind    string `json:"kind"` // "session"
 	Session string `json:"session"`
 	Machine string `json:"machine,omitempty"`
+	URL     string `json:"url"`
 }
 
 // alertPayload is one owner alert's push: the alert's own name for the kind, who it names, and
@@ -59,6 +64,29 @@ type alertPayload struct {
 	Session string `json:"session,omitempty"`
 	Machine string `json:"machine"`
 	Tool    string `json:"tool,omitempty"`
+	URL     string `json:"url"`
+}
+
+// upstreamPayload is a failing Anthropic path's push: the kind, the machine whose router saw it,
+// and radar's detail, which is the failure code and its fix hint and nothing of a request.
+type upstreamPayload struct {
+	Kind    string `json:"kind"` // "upstream_failing"
+	Machine string `json:"machine"`
+	Detail  string `json:"detail"`
+	URL     string `json:"url"`
+}
+
+// The app addresses a notification opens: the session's screen (at the item when there is
+// one), Radar's alerts for a failing path, and the Now list for an owner alert.
+const (
+	nowURL          = "/#/now"
+	radarAlertsURL  = "/#/radar/alerts"
+	upstreamFailing = "upstream_failing"
+)
+
+// sessionURL is the app address of one session's screen.
+func sessionURL(sessionID string) string {
+	return nowURL + "/" + url.PathEscape(sessionID)
 }
 
 // needsPushPayload builds one needs-you item's push payload.
@@ -69,17 +97,25 @@ func needsPushPayload(item hub.Item, machine string) pushPayload {
 		Machine: machine,
 		Kind:    item.Kind,
 		Tool:    item.Tool,
+		URL:     sessionURL(item.SessionID) + "?item=" + strconv.FormatInt(item.ID, 10),
 	}
 }
 
 // sessionPushOf builds one session's needs-you entry push payload.
 func sessionPushOf(row hub.SessionRow) sessionPushPayload {
-	return sessionPushPayload{Kind: "session", Session: row.SessionID, Machine: row.Machine}
+	return sessionPushPayload{
+		Kind: "session", Session: row.SessionID, Machine: row.Machine, URL: sessionURL(row.SessionID),
+	}
+}
+
+// upstreamPushOf builds a failing path's push payload from radar's upstream alert.
+func upstreamPushOf(alert radarAlert, machine string) upstreamPayload {
+	return upstreamPayload{Kind: upstreamFailing, Machine: machine, Detail: alert.Detail, URL: radarAlertsURL}
 }
 
 // alertPushPayload builds one alert's push payload from the alert's own body.
 func alertPushPayload(event AlertEvent, machine string) alertPayload {
-	payload := alertPayload{Kind: event.Type, Machine: machine}
+	payload := alertPayload{Kind: event.Type, Machine: machine, URL: nowURL}
 	if session := fieldOf(event.Body, "session"); session != nil {
 		payload.Session = textOf(session)
 	}
@@ -158,6 +194,62 @@ func (s *server) sweepPushes(ctx context.Context) {
 		return s.registry.MarkItemEscalated(ctx, item.ID, at)
 	})
 	s.pushSessionEntries(ctx, now, subs)
+	s.pushUpstream(ctx, subs)
+}
+
+// radarAnswerer is radar's in-process API as the push sweep reads it: the alerts radar raises.
+type radarAnswerer interface {
+	RadarAnswer(ctx context.Context, path string) ([]byte, bool)
+}
+
+// radarAlert is the slice of one radar alert the sweep reads.
+type radarAlert struct {
+	ID     string `json:"id"`
+	Kind   string `json:"kind"`
+	Detail string `json:"detail"`
+}
+
+// pushUpstream carries a failing Anthropic path to the devices that chose needs-and-alerts: a
+// device on needs-you only hears the items and nothing else. Radar's upstream alert names one
+// failure by its id, and each id pushes once. A path that fails while no device hears it stays
+// unmarked, so the next device that chooses alerts hears of it.
+func (s *server) pushUpstream(ctx context.Context, subs []hub.PushSubscription) {
+	s.radarMu.Lock()
+	radar := s.radarAlerts
+	s.radarMu.Unlock()
+	if radar == nil {
+		return
+	}
+	raw, ok := radar.RadarAnswer(ctx, "/api/alerts")
+	if !ok {
+		return
+	}
+	var answer struct {
+		Alerts []radarAlert `json:"alerts"`
+	}
+	if err := json.Unmarshal(raw, &answer); err != nil {
+		fmt.Fprintf(s.o.Stderr, "push: radar alerts: %v\n", err)
+		return
+	}
+	for _, alert := range answer.Alerts {
+		if alert.Kind != "upstream" || alert.ID == s.upstreamPushed {
+			continue
+		}
+		payload, err := json.Marshal(upstreamPushOf(alert, s.thisMachine(ctx)))
+		if err != nil {
+			return
+		}
+		hearing := 0
+		for _, sub := range subs {
+			if sub.Notify == hub.NotifyAll {
+				s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
+				hearing++
+			}
+		}
+		if hearing > 0 {
+			s.upstreamPushed = alert.ID
+		}
+	}
 }
 
 // pushSessionEntries carries the pass's session halves: one push for every session whose state

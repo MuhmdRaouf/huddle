@@ -502,6 +502,17 @@ in proxy mode:
    content and kept by the browser for a year, so a new build is the only thing that fetches
    them again. Slower than that points at the network between the phone and the hub, not the hub.
 
+   Turn on push on the phone: open a channel's Settings and flip "Push to this device", then allow
+   notifications. On iPhone and iPad, add Huddle to the Home Screen first (Share, Add to Home
+   Screen) and flip the switch in the installed app: Safari pushes only there. The phone then
+   gets one notification when a session needs you (tap it to land on that session's item). With
+   Settings → Notifications on "Needs you and alerts", it also gets one when the Anthropic path
+   starts failing (tap it for Radar's alerts). The payload names the
+   session, its machine, the kind and the tool, never the command or the prompt. The hub makes
+   its VAPID keys once, when the first browser subscribes, and keeps them in the OS keystore
+   with a copy in `<home>/keys/vapid` (mode 0600). A subscription the push service reports gone
+   is deleted.
+
 7. Keep it running through logouts and reboots with the machine's own service manager:
 
    ```sh

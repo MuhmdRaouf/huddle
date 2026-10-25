@@ -1,16 +1,17 @@
 // Settings.tsx — the channel's settings: channel (title, description, members, orchestrator),
 // turn (start and hand-over rules), repo (path and profile), this browser (theme, notifications,
-// filters), the exports, and the connect card (app.js settingsView + startOptions; the extras
-// card arrives with the slice that owns it). The notify switch is injected: it is the live
-// stream's, and tests hand a fake in.
+// push, filters), the exports, and the connect card (app.js settingsView + startOptions; the
+// extras card arrives with the slice that owns it). The notify and push switches are injected:
+// the live stream's and pwa.ts's, and tests hand fakes in.
 
 import { Panel } from "@huddle/ui/page.tsx";
 import type { Stamp } from "@huddle/ui/time.ts";
 import type { ComponentChildren, JSX, RefObject } from "preact";
-import { useCallback, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { errText, useHuddle } from "../app/context.tsx";
 import { ThemePicker } from "../app/ThemePicker.tsx";
 import { Icon, type IconName } from "../icons.tsx";
+import type { PushStatus, PushSwitch } from "../pwa.ts";
 import { type ChannelInfo, type HuddleStore, hasOrch } from "../store.ts";
 import { ConnectCard } from "../app/ConnectCard.tsx";
 
@@ -316,9 +317,69 @@ function RepoForm({
   );
 }
 
-/** This browser's card: the theme picker, the notification switch and the filter reset
- *  (app.js settingsView's set-br card). */
-function BrowserCard({ notify }: { notify: NotifySwitch }): JSX.Element {
+/** The help line under the push switch: what the browser allows, and iOS's install rule. */
+function pushHelp(status: PushStatus | null): string {
+  if (!status) return "";
+  if (!status.supported) return "This browser cannot receive push.";
+  const permission = `Push permission: ${status.permission}.`;
+  return status.standalone
+    ? permission
+    : `${permission} On iPhone and iPad, add Huddle to the Home Screen and turn this on there.`;
+}
+
+/** The push row (SPEC 7.6): this device's subscription, woken for what Settings › Notifications
+ *  chose: needs-you items, and the alerts with a failing Anthropic path when it says so. A
+ *  refusal (no permission, an unpaired browser) is a toast. */
+function PushRow({ push }: { push: PushSwitch }): JSX.Element {
+  const { toast } = useHuddle();
+  const [status, setStatus] = useState<PushStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void push.status().then((s) => {
+      if (live) setStatus(s);
+    });
+    return () => {
+      live = false;
+    };
+  }, [push]);
+  const flip = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await (status?.on ? push.disable() : push.enable());
+    } catch (x) {
+      toast(errText(x), { bad: true });
+    }
+    setStatus(await push.status());
+    setBusy(false);
+  };
+  return (
+    <div class="flex items-center gap-3">
+      <span class="flex-1" id="push-l">
+        Push to this device when a session needs me
+        <span class="help block">{pushHelp(status)}</span>
+      </span>
+      <input
+        type="checkbox"
+        class="toggle"
+        role="switch"
+        id="set-push"
+        aria-checked={status?.on ?? false}
+        aria-labelledby="push-l"
+        checked={status?.on ?? false}
+        disabled={busy || !status?.supported}
+        onClick={(e) => {
+          e.preventDefault();
+          void flip();
+        }}
+      />
+    </div>
+  );
+}
+
+/** This browser's card: the theme picker, the notification and push switches and the filter
+ *  reset (app.js settingsView's set-br card). */
+function BrowserCard({ notify, push }: { notify: NotifySwitch; push: PushSwitch }): JSX.Element {
   const { toast } = useHuddle();
   const [notifyOn, setNotifyOn] = useState(notify.on());
   const flip = (): void => {
@@ -356,6 +417,7 @@ function BrowserCard({ notify }: { notify: NotifySwitch }): JSX.Element {
             onClick={flip}
           />
         </div>
+        <PushRow push={push} />
         <div class="flex items-center gap-3">
           <span class="flex-1">Filters, drafts and last views stay in this browser.</span>
           <button type="button" class="btn" id="set-reset" onClick={reset}>
@@ -373,9 +435,12 @@ function BrowserCard({ notify }: { notify: NotifySwitch }): JSX.Element {
  *  refusals are said in the form they came from. */
 export function Settings({
   notify,
+  push,
   store,
 }: {
   notify: NotifySwitch;
+  /** This device's push subscription (pwa.ts createPushSwitch). */
+  push: PushSwitch;
   /** The store, when the shell hands it over: a save reads the channel row through it. */
   store?: HuddleStore | undefined;
 }): JSX.Element | null {
@@ -414,7 +479,7 @@ export function Settings({
       <ChannelForm info={info} sessionNames={sessionNames} err={errCh} save={save} />
       <TurnForm info={info} sessionNames={sessionNames} err={errTurn} save={save} />
       <RepoForm info={info} err={errRepo} save={save} />
-      <BrowserCard notify={notify} />
+      <BrowserCard notify={notify} push={push} />
       <Card title="Export" icon="download">
         <ul class="flex flex-col">
           {EXPORTS.map(([p, t, d]) => (

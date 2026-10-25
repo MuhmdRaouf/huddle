@@ -309,7 +309,14 @@ describe("activate", () => {
 // deciding asks for the passkey — and Deny decides at once with the device cookie the fetch
 // itself carries.
 describe("push", () => {
-  const permission = { item: 7, session: "s-1", machine: "laptop", kind: "permission", tool: "Bash" };
+  const permission = {
+    item: 7,
+    session: "s-1",
+    machine: "laptop",
+    kind: "permission",
+    tool: "Bash",
+    url: "/#/now/s-1?item=7",
+  };
 
   it("shows a permission item's notification with Allow, Deny and Open", async () => {
     const w = worker();
@@ -352,6 +359,23 @@ describe("push", () => {
     expect(shown.options.actions).toEqual([{ action: "open", title: "Open" }]);
   });
 
+  it("shows a failing Anthropic path with radar's detail, one notification at a time", async () => {
+    const w = worker();
+    await w.pushed({
+      kind: "upstream_failing",
+      machine: "laptop",
+      detail: "ECERT: trust the CA",
+      url: "/#/radar/alerts",
+    });
+    expect(w.shown).toHaveLength(1);
+    const shown = w.shown[0];
+    if (!shown) throw new Error("nothing shown");
+    expect(shown.title).toBe("Anthropic path failing");
+    expect(shown.options.body).toBe("ECERT: trust the CA on laptop");
+    expect(shown.options.tag).toBe("huddle-upstream");
+    expect(shown.options.actions).toEqual([{ action: "open", title: "Open" }]);
+  });
+
   it("shows nothing for a message it cannot read", async () => {
     const w = worker();
     await w.pushed(null);
@@ -361,7 +385,14 @@ describe("push", () => {
 });
 
 describe("notificationclick", () => {
-  const permission = { item: 7, session: "s-1", machine: "laptop", kind: "permission", tool: "Bash" };
+  const permission = {
+    item: 7,
+    session: "s-1",
+    machine: "laptop",
+    kind: "permission",
+    tool: "Bash",
+    url: "/#/now/s-1?item=7",
+  };
 
   it("opens the app at the item for Allow and Open", async () => {
     for (const action of ["allow", "open", ""]) {
@@ -375,8 +406,24 @@ describe("notificationclick", () => {
   it("opens a session's entry at the session itself, with no item query", async () => {
     const w = worker();
     await w.install();
-    await w.clicked("open", { kind: "session", session: "s-3", machine: "studio" });
+    await w.clicked("open", { kind: "session", session: "s-3", machine: "studio", url: "/#/now/s-3" });
     expect(w.opened).toEqual(["/#/now/s-3"]);
+  });
+
+  it("opens a failing path at Radar's alerts", async () => {
+    const w = worker();
+    await w.install();
+    await w.clicked("open", { kind: "upstream_failing", machine: "laptop", url: "/#/radar/alerts" });
+    expect(w.opened).toEqual(["/#/radar/alerts"]);
+  });
+
+  it("opens only an address of this app: anything else lands on the app's root", async () => {
+    for (const url of ["//elsewhere.example/x", "https://elsewhere.example/", undefined]) {
+      const w = worker();
+      await w.install();
+      await w.clicked("open", { kind: "question", session: "s-2", url });
+      expect(w.opened).toEqual(["/"]);
+    }
   });
 
   it("brings the window that is already there to the item", async () => {

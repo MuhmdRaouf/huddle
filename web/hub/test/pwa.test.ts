@@ -1,9 +1,19 @@
 // pwa.test.ts — the installability glue: the service worker registers only on a secure context
-// (localhost or https), and the app badge mirrors the open needs-you count where the Badging
-// API exists. Both are optional: a browser without them, or a call that fails, changes nothing
-// the app does.
+// (localhost or https), the app badge mirrors the open needs-you count where the Badging API
+// exists, and the push switch subscribes this browser with the hub's VAPID key and hands the
+// subscription to the hub. All are optional: a browser without them, or a call that fails,
+// changes nothing the app does.
 import { describe, expect, it, vi } from "vite-plus/test";
-import { type BadgeNavigator, registerServiceWorker, type SWWindow, syncAppBadge } from "../src/pwa.ts";
+import type { ApiOptions } from "../src/api.ts";
+import {
+  type BadgeNavigator,
+  createPushSwitch,
+  type PushBrowser,
+  type PushSubscriptionLike,
+  registerServiceWorker,
+  type SWWindow,
+  syncAppBadge,
+} from "../src/pwa.ts";
 
 const swWindow = (secure: boolean, register?: (url: string) => Promise<unknown>): SWWindow => ({
   isSecureContext: secure,
@@ -61,5 +71,117 @@ describe("syncAppBadge", () => {
     const clear = vi.fn(() => Promise.reject(new Error("no badge")));
     expect(() => syncAppBadge(badge(set, clear), 1)).not.toThrow();
     expect(() => syncAppBadge(badge(set, clear), 0)).not.toThrow();
+  });
+});
+
+describe("createPushSwitch", () => {
+  /** A browser whose push service hands out one subscription at a fixed endpoint. */
+  const browser = (
+    over: {
+      permission?: NotificationPermission;
+      granted?: NotificationPermission;
+      standalone?: boolean;
+    } = {},
+  ) => {
+    let current: PushSubscriptionLike | null = null;
+    const unsubscribe = vi.fn(async () => {
+      current = null;
+      return true;
+    });
+    const subscribe = vi.fn(async (_o: { userVisibleOnly: boolean; applicationServerKey: Uint8Array }) => {
+      current = {
+        endpoint: "https://push.example.test/sub/1",
+        toJSON: () => ({ endpoint: "https://push.example.test/sub/1", keys: { p256dh: "pk", auth: "au" } }),
+        unsubscribe,
+      };
+      return current;
+    });
+    const notification = {
+      permission: over.permission ?? "default",
+      requestPermission: vi.fn(async () => {
+        notification.permission = over.granted ?? "granted";
+        return notification.permission;
+      }),
+    };
+    const b: PushBrowser = {
+      serviceWorker: {
+        ready: Promise.resolve({ pushManager: { getSubscription: async () => current, subscribe } }),
+      },
+      notification,
+      standalone: over.standalone ?? false,
+    };
+    return { b, subscribe, unsubscribe, notification };
+  };
+  const apiFake = () =>
+    vi.fn(async (path: string, _o?: ApiOptions): Promise<unknown> =>
+      path === "/api/push/key" ? { public_key: "AQID_-8" } : { ok: true },
+    );
+
+  it("reads a browser with no push support as unsupported", async () => {
+    const sw = createPushSwitch({ standalone: false }, apiFake());
+    expect(await sw.status()).toEqual({
+      supported: false,
+      permission: "default",
+      on: false,
+      standalone: false,
+    });
+  });
+
+  it("subscribes with the hub's key and hands the subscription to the hub", async () => {
+    const { b, subscribe } = browser({ standalone: true });
+    const api = apiFake();
+    const sw = createPushSwitch(b, api);
+    expect(await sw.status()).toEqual({
+      supported: true,
+      permission: "default",
+      on: false,
+      standalone: true,
+    });
+    await sw.enable();
+    const opts = subscribe.mock.calls[0]?.[0];
+    expect(opts?.userVisibleOnly).toBe(true);
+    expect([...(opts?.applicationServerKey ?? [])]).toEqual([1, 2, 3, 255, 239]);
+    expect(api).toHaveBeenCalledWith("/api/push/subscribe", {
+      body: { endpoint: "https://push.example.test/sub/1", keys: { p256dh: "pk", auth: "au" } },
+    });
+    expect(await sw.status()).toEqual({ supported: true, permission: "granted", on: true, standalone: true });
+  });
+
+  it("refuses when the browser blocks notifications, subscribing nothing", async () => {
+    const { b, subscribe } = browser({ granted: "denied" });
+    const sw = createPushSwitch(b, apiFake());
+    await expect(sw.enable()).rejects.toThrow(/blocked notifications/);
+    expect(subscribe).not.toHaveBeenCalled();
+  });
+
+  it("ends the hub's copy, then the browser's own subscription", async () => {
+    const { b, unsubscribe } = browser({ permission: "granted" });
+    const api = apiFake();
+    const sw = createPushSwitch(b, api);
+    await sw.enable();
+    await sw.disable();
+    expect(api).toHaveBeenCalledWith(
+      `/api/push/subscribe?endpoint=${encodeURIComponent("https://push.example.test/sub/1")}`,
+      { method: "DELETE" },
+    );
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect((await sw.status()).on).toBe(false);
+  });
+
+  it("still ends the browser's subscription when the hub has no copy of it", async () => {
+    const { b, unsubscribe } = browser({ permission: "granted" });
+    const api = apiFake();
+    const sw = createPushSwitch(b, api);
+    await sw.enable();
+    api.mockRejectedValueOnce(new Error("no such subscription"));
+    await sw.disable();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing to disable when there is no subscription", async () => {
+    const { b } = browser();
+    const api = apiFake();
+    await createPushSwitch(b, api).disable();
+    expect(api).not.toHaveBeenCalled();
   });
 });

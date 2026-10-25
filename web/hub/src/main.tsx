@@ -31,7 +31,7 @@ import { Settings } from "./pages/Settings.tsx";
 import { Team } from "./pages/Team.tsx";
 import { Today } from "./pages/Today.tsx";
 import { paintGuard } from "./paint.ts";
-import { registerServiceWorker, syncAppBadge } from "./pwa.ts";
+import { createPushSwitch, registerServiceWorker, syncAppBadge } from "./pwa.ts";
 import { ensureRadar, stopRadar } from "./radar/mount.tsx";
 import { createRegistry } from "./registry.ts";
 import { readPref, writePref } from "./storage.ts";
@@ -75,6 +75,21 @@ let failedCh: string | null = null;
 let toastFn: ToastFn = () => {};
 
 const api = createApi(fetch, () => paintSignedOut());
+
+// this device's push subscription: the worker's registration where push exists, and whether the
+// page runs as the installed app (iOS pushes only there)
+const push = createPushSwitch(
+  {
+    ...("serviceWorker" in navigator && "PushManager" in window
+      ? { serviceWorker: navigator.serviceWorker }
+      : {}),
+    ...("Notification" in window ? { notification: Notification } : {}),
+    standalone:
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true,
+  },
+  api.api,
+);
 const store = createStore({
   api,
   timers,
@@ -342,7 +357,11 @@ const pages: Record<string, ComponentType> = {
     return <Knowledge id={id ? Number(id) : undefined} store={store} />;
   },
   settings: () => (
-    <Settings notify={{ on: () => live.notifyOn(), toggle: () => live.toggleNotify() }} store={store} />
+    <Settings
+      notify={{ on: () => live.notifyOn(), toggle: () => live.toggleNotify() }}
+      push={push}
+      store={store}
+    />
   ),
 };
 

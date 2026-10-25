@@ -13,6 +13,8 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdh"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -20,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -73,6 +76,8 @@ type fakePush struct {
 	srv    *httptest.Server
 	mu     sync.Mutex
 	bodies [][]byte
+	auths  []string
+	paths  []string
 	status int
 }
 
@@ -84,6 +89,8 @@ func newFakePush(t *testing.T) *fakePush {
 		body, _ := io.ReadAll(r.Body)
 		service.mu.Lock()
 		service.bodies = append(service.bodies, body)
+		service.auths = append(service.auths, r.Header.Get("Authorization"))
+		service.paths = append(service.paths, r.URL.Path)
 		status := service.status
 		service.mu.Unlock()
 		w.WriteHeader(status)
@@ -107,6 +114,28 @@ func (f *fakePush) body(i int) []byte {
 		return nil
 	}
 	return f.bodies[i]
+}
+
+// auth answers the Authorization header the message at i carried.
+func (f *fakePush) auth(i int) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if i >= len(f.auths) {
+		return ""
+	}
+	return f.auths[i]
+}
+
+// bodyAt answers the first message the service took at one endpoint path.
+func (f *fakePush) bodyAt(path string) []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, p := range f.paths {
+		if p == path {
+			return f.bodies[i]
+		}
+	}
+	return nil
 }
 
 // answer switches the status every later message meets.
@@ -178,13 +207,13 @@ func TestThePushPayloadCarriesOnlyWhoKindAndTool(t *testing.T) {
 	if err := json.Unmarshal(raw, &asMap); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"item", "session", "machine", "kind", "tool"} {
+	for _, key := range []string{"item", "session", "machine", "kind", "tool", "url"} {
 		if _, has := asMap[key]; !has {
 			t.Fatalf("the payload %s misses %q", raw, key)
 		}
 	}
-	if len(asMap) != 5 {
-		t.Fatalf("the payload %s carries more than who, the kind and the tool name", raw)
+	if len(asMap) != 6 {
+		t.Fatalf("the payload %s carries more than who, the kind, the tool name and the link", raw)
 	}
 	if asMap["session"] != "s-1" || asMap["machine"] != "laptop" ||
 		asMap["kind"] != hub.KindPermission || asMap["tool"] != "Bash" || asMap["item"] != float64(7) {
@@ -704,5 +733,174 @@ func TestThePushRoutesOverTheServer(t *testing.T) {
 		"/api/push/subscribe?endpoint="+service.srv.URL, "",
 		map[string]string{"Cookie": cookie, "x-huddle-token": "", "x-huddle-action": "/api/push/subscribe"}); code != 404 {
 		t.Fatalf("the unsubscribe again = %d, want 404", code)
+	}
+}
+
+// ── the deep links, the VAPID signature and the failing path ────────────────────────────────────────────────────────
+
+func TestEveryPushCarriesTheAppAddressItOpens(t *testing.T) {
+	item := hub.Item{ID: 7, SessionID: "s 1", Kind: hub.KindPermission, Tool: "Bash"}
+	if got := needsPushPayload(item, "laptop").URL; got != "/#/now/s%201?item=7" {
+		t.Fatalf("the item's link = %q, want the session's screen at the item", got)
+	}
+	if got := sessionPushOf(hub.SessionRow{SessionID: "s-2", Machine: "laptop"}).URL; got != "/#/now/s-2" {
+		t.Fatalf("the session entry's link = %q, want the session's screen", got)
+	}
+	event := AlertEvent{Type: "alert.device_paired", ID: 1, At: jsfmt.ISOTime(pushClock), Body: vv(t, `{"device":"tablet"}`)}
+	if got := alertPushPayload(event, "laptop").URL; got != "/#/now" {
+		t.Fatalf("an owner alert's link = %q, want the Now list", got)
+	}
+	failing := upstreamPushOf(radarAlert{ID: "upstream:anthropic:1", Kind: "upstream", Detail: "ECERT: fix"}, "laptop")
+	if failing.URL != "/#/radar/alerts" || failing.Kind != "upstream_failing" || failing.Detail != "ECERT: fix" {
+		t.Fatalf("the failing path's payload = %+v, want its kind, detail and Radar's alerts", failing)
+	}
+}
+
+func TestEveryPushIsSignedWithTheHubsVapidKey(t *testing.T) {
+	service := newFakePush(t)
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return pushClock })
+	subscribeDevice(t, s, "phone", service.srv.URL+"/sub/1", newBrowserKeys(t), hub.NotifyNeeds)
+	if _, err := s.registry.CreatePermissionItem(context.Background(), "s-1", "Bash",
+		[]byte(`{"command":"npm test"}`), pushClock); err != nil {
+		t.Fatalf("create the item: %v", err)
+	}
+	s.sweepPushes(context.Background())
+	if service.count() != 1 {
+		t.Fatalf("the pushes = %d, want the one", service.count())
+	}
+	keys, err := s.vapid.Keys(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// RFC 8292: "vapid t=<JWT>, k=<the public key>", the JWT ES256 over the endpoint's origin
+	header := service.auth(0)
+	token, public, found := strings.Cut(strings.TrimPrefix(header, "vapid t="), ", k=")
+	if !strings.HasPrefix(header, "vapid t=") || !found {
+		t.Fatalf("the Authorization header = %q, want the vapid scheme", header)
+	}
+	if public != keys.Public {
+		t.Fatalf("the header's key = %q, want the hub's public key %q", public, keys.Public)
+	}
+	claims := verifyVapidJWT(t, token, public)
+	if claims.Aud != service.srv.URL {
+		t.Fatalf("the JWT's audience = %q, want the push service's origin %q", claims.Aud, service.srv.URL)
+	}
+	if claims.Sub != "mailto:huddle-push@localhost" {
+		t.Fatalf("the JWT's subject = %q, want one mailto address", claims.Sub)
+	}
+	if left := time.Until(time.Unix(claims.Exp, 0)); left <= 0 || left > 24*time.Hour {
+		t.Fatalf("the JWT expires in %s, want within the 24 hours RFC 8292 allows", left)
+	}
+}
+
+// vapidClaims is the JWT body a VAPID signature carries.
+type vapidClaims struct {
+	Aud string `json:"aud"`
+	Exp int64  `json:"exp"`
+	Sub string `json:"sub"`
+}
+
+// verifyVapidJWT checks one ES256 JWT against the uncompressed P-256 point it names and answers
+// its claims: the signature is the raw 32-byte r and s, as JWS writes it.
+func verifyVapidJWT(t *testing.T, token, public string) vapidClaims {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		t.Fatalf("the JWT %q has %d parts, want 3", token, len(parts))
+	}
+	head, _ := base64.RawURLEncoding.DecodeString(parts[0])
+	if !strings.Contains(string(head), `"ES256"`) {
+		t.Fatalf("the JWT header = %s, want ES256", head)
+	}
+	point, err := base64.RawURLEncoding.DecodeString(public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), point)
+	if err != nil {
+		t.Fatalf("the public key is not a P-256 point: %v", err)
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || len(sig) != 64 {
+		t.Fatalf("the JWT signature is %d bytes, want r and s of 32 each", len(sig))
+	}
+	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+	if !ecdsa.Verify(key, digest[:], new(big.Int).SetBytes(sig[:32]), new(big.Int).SetBytes(sig[32:])) {
+		t.Fatal("the JWT signature does not verify against the hub's public key")
+	}
+	body, _ := base64.RawURLEncoding.DecodeString(parts[1])
+	var claims vapidClaims
+	if err := json.Unmarshal(body, &claims); err != nil {
+		t.Fatalf("the JWT claims %s: %v", body, err)
+	}
+	return claims
+}
+
+// fakeRadar answers the alerts radar raises, as its in-process API writes them.
+type fakeRadar struct {
+	mu     sync.Mutex
+	alerts string
+}
+
+func (f *fakeRadar) set(alerts string) {
+	f.mu.Lock()
+	f.alerts = alerts
+	f.mu.Unlock()
+}
+
+func (f *fakeRadar) RadarAnswer(_ context.Context, path string) ([]byte, bool) {
+	if path != "/api/alerts" {
+		return nil, false
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return []byte(f.alerts), true
+}
+
+func TestAFailingAnthropicPathPushesOncePerFailure(t *testing.T) {
+	service := newFakePush(t)
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return pushClock })
+	radar := &fakeRadar{alerts: `{"alerts":[]}`}
+	s.radarAlerts = radar
+	all := newBrowserKeys(t)
+	subscribeDevice(t, s, "needs", service.srv.URL+"/needs", newBrowserKeys(t), hub.NotifyNeeds)
+	subscribeDevice(t, s, "all", service.srv.URL+"/all", all, hub.NotifyAll)
+	subscribeDevice(t, s, "dark", service.srv.URL+"/dark", newBrowserKeys(t), hub.NotifyOff)
+
+	s.sweepPushes(context.Background())
+	if service.count() != 0 {
+		t.Fatalf("the pushes with a healthy path = %d, want none", service.count())
+	}
+
+	// radar raises the upstream alert: only the device that chose needs-and-alerts hears of it,
+	// once; the needs-only device and the dark one hear nothing
+	radar.set(`{"alerts":[{"kind":"stuck","sessionId":"s-1","id":"stuck:s-1","detail":"quiet"},` +
+		`{"kind":"upstream","sessionId":"","id":"upstream:anthropic:1000","since":1000,"detail":"ECERT: trust the CA","severity":"err"}]}`)
+	s.sweepPushes(context.Background())
+	if service.count() != 1 || service.bodyAt("/all") == nil {
+		t.Fatalf("the failing path's pushes = %d, want the one for the alerts device", service.count())
+	}
+	if service.bodyAt("/needs") != nil || service.bodyAt("/dark") != nil {
+		t.Fatal("a device that chose needs-you only, or off, heard the failing path")
+	}
+	plaintext := string(decryptPush(t, service.bodyAt("/all"), all))
+	for _, want := range []string{`"kind":"upstream_failing"`, `"detail":"ECERT: trust the CA"`, `"url":"/#/radar/alerts"`} {
+		if !strings.Contains(plaintext, want) {
+			t.Fatalf("the failing path's plaintext = %s, want %s", plaintext, want)
+		}
+	}
+	s.sweepPushes(context.Background())
+	if service.count() != 1 {
+		t.Fatalf("the pushes after a second sweep = %d, want no repeat", service.count())
+	}
+
+	// the path recovers and fails again: the new failure is a new alert and pushes once more
+	radar.set(`{"alerts":[]}`)
+	s.sweepPushes(context.Background())
+	radar.set(`{"alerts":[{"kind":"upstream","id":"upstream:anthropic:5000","since":5000,"detail":"E401: sign in"}]}`)
+	s.sweepPushes(context.Background())
+	if service.count() != 2 {
+		t.Fatalf("the pushes after the second failure = %d, want one more", service.count())
 	}
 }

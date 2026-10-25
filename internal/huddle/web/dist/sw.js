@@ -1,17 +1,17 @@
 /* sw.js — the app-shell service worker (SPEC 7.1). Hand-written, no Workbox. It caches the
  * static shell and nothing else: live answers — the API, the MCP bridge, the SSE stream — are
  * always the network's, and so is every path it does not know. The cache name carries the
- * shell's revision (scripts/build.mjs stamps 25e065dcaeeb0a1eb43c8b4e7028f84ed364ad18c28992145d4401f4c6478d5b with a hash of the shell's bytes), so a new
+ * shell's revision (scripts/build.mjs stamps 71571fc03203dc43e1589d8757105124900393ed9f4bf1a90121b0abbfa9573e with a hash of the shell's bytes), so a new
  * build installs beside the old cache and activate deletes the old one. The build also swaps the
  * assets placeholder in SHELL for the hashed /static/ names index.html loads, so the precache
  * list is the page's. */
 (function () {
-  var REV = "25e065dcaeeb0a1eb43c8b4e7028f84ed364ad18c28992145d4401f4c6478d5b";
+  var REV = "71571fc03203dc43e1589d8757105124900393ed9f4bf1a90121b0abbfa9573e";
   var CACHE = "huddle-shell-" + REV;
   var SHELL = [
     "/",
     "/index.html",
-    "/static/theme-boot.QHQAZ5q1.js", "/static/app.4CT2qKna.css", "/static/app.BpXVDK1m.js",
+    "/static/theme-boot.QHQAZ5q1.js", "/static/app.4CT2qKna.css", "/static/app.DGgarHSh.js",
     "/manifest.webmanifest",
     "/icons/icon-192.png",
     "/icons/icon-512.png",
@@ -110,18 +110,33 @@
     );
   });
 
-  /** The app's own address of one needs-you item: the session's screen, scrolled to the item.
-   *  A session's own entry push names no item, and lands on the session's screen alone. */
-  function itemPath(payload) {
-    var path = "/#/now/" + encodeURIComponent(payload.session || "");
-    return payload.item == null ? path : path + "?item=" + payload.item;
+  /** The app address a push opens: the payload's url when it is a path of this app (the
+   *  session's screen at the item, Radar's alerts), the app's root otherwise. */
+  function appPath(payload) {
+    var url = payload.url;
+    if (typeof url === "string" && url.charAt(0) === "/" && url.charAt(1) !== "/") return url;
+    return "/";
   }
 
-  // The push (SPEC 7.6): the payload carries who, what kind and the tool name, so the
-  // notification says no more than that — the command and the prompt text never reach the
-  // browser at all. A permission item carries Allow, Deny and Open; the other kinds carry
-  // Open. A session's own needs-you entry (kind "session") says Needs you and is tagged by
-  // its session, so a re-entry replaces it instead of piling up.
+  /** The title, body and tag one payload shows: a session's entry says Needs you and is tagged
+   *  by its session, a failing path names itself with radar's detail and keeps one
+   *  notification, an item names its tool or kind. */
+  function shownOf(payload) {
+    var on = payload.machine ? " on " + payload.machine : "";
+    if (payload.kind === "session") {
+      return { title: "Needs you", body: payload.session + on, tag: "huddle-session-" + payload.session };
+    }
+    if (payload.kind === "upstream_failing") {
+      return { title: "Anthropic path failing", body: (payload.detail || "") + on, tag: "huddle-upstream" };
+    }
+    return { title: payload.tool || payload.kind, body: payload.session + on, tag: "huddle-item-" + payload.item };
+  }
+
+  // The push (SPEC 7.6): the payload carries who, what kind, the tool name and the app address
+  // it opens, so the notification says no more than that — the command and the prompt text
+  // never reach the browser at all. A permission item carries Allow, Deny and Open; the other
+  // kinds carry Open. A tag keeps one notification per session entry and per failing path, so
+  // a repeat replaces it instead of piling up.
   self.addEventListener("push", function (event) {
     var payload = null;
     try {
@@ -138,13 +153,13 @@
         { action: "open", title: "Open" },
       ];
     }
-    var isSession = payload.kind === "session";
+    var shown = shownOf(payload);
     event.waitUntil(
-      self.registration.showNotification(isSession ? "Needs you" : payload.tool || payload.kind, {
-        body: payload.session + (payload.machine ? " on " + payload.machine : ""),
+      self.registration.showNotification(shown.title, {
+        body: shown.body,
         icon: "/icons/icon-192.png",
         badge: "/icons/icon-192.png",
-        tag: isSession ? "huddle-session-" + payload.session : "huddle-item-" + payload.item,
+        tag: shown.tag,
         data: payload,
         actions: actions,
       }),
@@ -191,6 +206,6 @@
       );
       return;
     }
-    event.waitUntil(openAt(itemPath(payload)));
+    event.waitUntil(openAt(appPath(payload)));
   });
 })();
