@@ -1,6 +1,6 @@
-// SettingsTab.test.tsx — the Settings tab's section row and the Radar section it serves: the
-// address's section is current, an unknown one reads as the first, and the section loads radar's
-// settings the first time it shows.
+// SettingsTab.test.tsx — the Settings tab's section row and the Radar settings its Hub and Radar
+// group serves: the address's group is current, Radar's own address opens that group, an unknown
+// one reads as the first, and the group loads radar's settings the first time it shows.
 
 import { fireEvent } from "@testing-library/preact";
 import { afterEach, describe, expect, it } from "vite-plus/test";
@@ -15,21 +15,21 @@ afterEach(() => {
 });
 
 describe("the Settings tab", () => {
-  it("serves Appearance as the first section and reads any other address as it", () => {
+  it("serves Appearance as the first group, Radar under Hub and Radar, and reads any other address as the first", () => {
     expect(settingsSectionOf(undefined)).toBe("appearance");
-    expect(settingsSectionOf("radar")).toBe("radar");
+    expect(settingsSectionOf("radar")).toBe("hub");
     expect(settingsSectionOf("somewhere-else")).toBe("appearance");
   });
 
-  it("renders the section row with Radar current, and the link moves between sections", () => {
-    const { container } = renderIn(<SettingsTab section="radar" />);
+  it("renders the section row with Hub and Radar current, and the link moves between groups", () => {
+    const { container } = renderIn(<SettingsTab section="hub" />);
     const row = container.querySelector('[aria-label="Settings sections"]');
-    expect(row?.querySelector('a[data-section="radar"]')?.getAttribute("aria-current")).toBe("page");
-    fireEvent.click(row?.querySelector('a[data-section="radar"]') as HTMLElement);
-    expect(location.hash).toBe("#/settings/radar");
+    expect(row?.querySelector('a[data-section="hub"]')?.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(row?.querySelector('a[data-section="devices"]') as HTMLElement);
+    expect(location.hash).toBe("#/settings/devices");
   });
 
-  it("loads radar's settings the first time the section shows, and draws its panes", async () => {
+  it("loads radar's settings the first time the group shows, and draws its panes", async () => {
     const world = radarIo({
       "/api/settings": ok({
         settings: { notifications: true, historyRetentionDays: 21, budgetDefaults: null },
@@ -40,7 +40,7 @@ describe("the Settings tab", () => {
       }),
     });
     ensureRadar(world.io);
-    const { container } = renderIn(<SettingsTab section="radar" />, makeCtx(makeState()));
+    const { container } = renderIn(<SettingsTab section="hub" />, makeCtx(makeState()));
     await settleRadar();
     const requested = world.calls.filter((path) => path === "/api/settings").length;
     expect(requested).toBeGreaterThan(0);

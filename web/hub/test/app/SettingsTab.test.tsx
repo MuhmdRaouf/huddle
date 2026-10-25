@@ -1,4 +1,6 @@
-// SettingsTab.test.tsx — the Devices section of Settings (SPEC 7.3): the paired devices with
+// SettingsTab.test.tsx — the Settings tab's four groups (Appearance, Notifications, Devices and
+// sign-in, Hub and Radar) with the members each group page draws and the member addresses that
+// open their group; the Devices section (SPEC 7.3): the paired devices with
 // their added and last-seen ages, the removal that asks for the passkey when the server says
 // step-up, the refusal said as the server spelled it, the empty list's word, and the copyable
 // `huddle pair` line that pairs the next device; then Appearance's three choices, This hub's facts,
@@ -12,8 +14,10 @@ import {
   Appearance,
   Devices,
   Phone,
+  type SettingsSection,
   SettingsTab,
   SignInMethods,
+  settingsSectionOf,
   ThisHub,
   TimeZone,
 } from "../../src/app/SettingsTab.tsx";
@@ -279,6 +283,56 @@ describe("the section row", () => {
     expect(pill?.className).toContain("bg-[var(--ui-accent)]");
     expect(pill?.className).toContain("min-h-[var(--ui-tap)]");
     expect(legacyClasses()).toEqual([]);
+  });
+});
+
+describe("the four groups", () => {
+  /** Every member a group page draws, in page order. */
+  const members = (): string[] =>
+    [...document.querySelectorAll<HTMLElement>("[data-setting]")].map((el) => el.dataset.setting ?? "");
+
+  it("TestTheRowNamesTheFourGroupsInOrder", () => {
+    mountSection(<SettingsTab section="appearance" />, []);
+    const links = [...document.querySelectorAll<HTMLAnchorElement>('[aria-label="Settings sections"] a')];
+    expect(links.map((a) => a.textContent)).toEqual([
+      "Appearance",
+      "Notifications",
+      "Devices and sign-in",
+      "Hub and Radar",
+    ]);
+    expect(links.map((a) => a.dataset.section)).toEqual(["appearance", "notifications", "devices", "hub"]);
+    expect(links.map((a) => a.getAttribute("href"))).toEqual([
+      "#/settings/appearance",
+      "#/settings/notifications",
+      "#/settings/devices",
+      "#/settings/hub",
+    ]);
+  });
+
+  it("TestEachGroupPageDrawsItsMembersInOrder", () => {
+    const groups: Array<[SettingsSection, string[]]> = [
+      ["appearance", ["appearance"]],
+      ["notifications", ["notifications"]],
+      ["devices", ["devices", "phone", "signin"]],
+      ["hub", ["hub", "zone", "radar"]],
+    ];
+    for (const [group, want] of groups) {
+      mountSection(<SettingsTab section={group} />, []);
+      expect(members(), group).toEqual(want);
+      document.body.textContent = "";
+    }
+  });
+
+  it("TestAMemberAddressOpensTheGroupThatHoldsIt", () => {
+    expect(settingsSectionOf(undefined)).toBe("appearance");
+    expect(settingsSectionOf("hub")).toBe("hub");
+    expect(settingsSectionOf("zone")).toBe("hub");
+    expect(settingsSectionOf("radar")).toBe("hub");
+    expect(settingsSectionOf("phone")).toBe("devices");
+    expect(settingsSectionOf("signin")).toBe("devices");
+    // Linked channels live under each channel's own Settings view
+    expect(settingsSectionOf("channels")).toBe("appearance");
+    expect(settingsSectionOf("somewhere-else")).toBe("appearance");
   });
 });
 

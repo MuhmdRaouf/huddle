@@ -416,7 +416,7 @@ test("the first-run checklist ticks from server state and stands down when all f
   // the enrolment and the budget leave with the test, so the later specs meet the seeded hub
   await openTab(page, "Settings");
   await page.getByRole("link", { name: "Sign-in" }).click();
-  await page.getByRole("button", { name: "Remove" }).click();
+  await page.locator("[data-signin]").getByRole("button", { name: "Remove" }).click();
   await expect(page.getByText(/Not set up/)).toBeVisible();
   const cleared = await fetch(`${theSetup().rootUrl}/api/radar/api/budgets`, {
     method: "PUT",

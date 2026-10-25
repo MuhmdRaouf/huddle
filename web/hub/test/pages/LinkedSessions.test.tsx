@@ -1,13 +1,13 @@
-// Channels.test.tsx — Settings › Linked channels (SPEC 8): every link grouped under its
-// channel with the session's mark and title (the id when the registry does not know it), the
-// level's own select that moves it, the digest age beside a session that has digested, the
-// unlink that asks for the passkey when the server says step-up, the refusals said as the
+// LinkedSessions.test.tsx — a channel's Settings › Linked sessions (SPEC 8): the channel's own
+// links alone, each with the session's mark and title (the id when the registry does not know
+// it), the level's own select that moves it, the digest age beside a session that has digested,
+// the unlink that asks for the passkey when the server says step-up, the refusals said as the
 // server spelled them, the empty word, and the link-another sheet that starts on the channel.
 
 import { act, cleanup, screen, waitFor } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { FetchFn } from "../../src/api.ts";
-import { Channels } from "../../src/app/Channels.tsx";
+import { LinkedSessions } from "../../src/pages/LinkedSessions.tsx";
 import type { RegistrySession, RegistryStore } from "../../src/registry.ts";
 import { flush, legacyClasses, makeRegistry, NOW, stubMedia } from "../helpers.tsx";
 import { renderHuddle } from "../render.tsx";
@@ -58,8 +58,9 @@ type Mount = {
   answerWith(status: number, body: unknown): void;
 };
 
-/** Renders the section over one fetch answer per call, with the registry knowing two of the
- *  linked sessions by title; the third link's session is one it has never seen. */
+/** Renders kanban-release's card over one fetch answer per call; the links read also carries
+ *  billing's, which the card leaves out. The registry knows two of the linked sessions by title;
+ *  the third link's session is one it has never seen. */
 function mount(answers: Array<{ status: number; body: unknown }>, registry?: RegistryStore): Mount {
   stubMedia();
   const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -72,11 +73,14 @@ function mount(answers: Array<{ status: number; body: unknown }>, registry?: Reg
         channels: [
           {
             channel: "kanban-release",
-            links: [link({ session_id: "s-1" }), link({ session_id: "s-unknown", level: "overhear" })],
+            links: [
+              link({ session_id: "s-1", digest_at: "2026-10-08T11:59:30Z" }),
+              link({ session_id: "s-unknown", level: "overhear" }),
+            ],
           },
           {
             channel: "billing",
-            links: [link({ channel: "billing", session_id: "s-2", digest_at: "2026-10-08T11:59:30Z" })],
+            links: [link({ channel: "billing", session_id: "s-2" })],
           },
         ],
       },
@@ -88,7 +92,7 @@ function mount(answers: Array<{ status: number; body: unknown }>, registry?: Reg
       }),
     );
   };
-  const r = renderHuddle(<Channels />, {}, NOW, fetchFn, registry);
+  const r = renderHuddle(<LinkedSessions channel="kanban-release" />, {}, NOW, fetchFn, registry);
   return {
     calls,
     toast: r.toast,
@@ -113,28 +117,30 @@ const seededRegistry = (): RegistryStore =>
     ],
   });
 
-describe("the linked channels section", () => {
-  it("TestTheListGroupsByChannelWithMarksTitlesAndDigestAges", async () => {
+describe("a channel's linked sessions", () => {
+  it("TestTheCardListsTheChannelsOwnLinksWithMarksTitlesAndDigestAges", async () => {
     mount([], seededRegistry());
-    await waitFor(() => expect(screen.getByText("#kanban-release")).toBeDefined());
-    const group = screen.getByText("#kanban-release").closest("[data-channel]") as HTMLElement;
+    await waitFor(() => expect(document.querySelector("[data-link='s-1']")).not.toBeNull());
+    expect(screen.getByRole("heading", { name: "Linked sessions" })).toBeDefined();
     // the session the registry knows carries its mark and its title, the other falls back to its id
-    const first = group.querySelector("[data-link='s-1']") as HTMLElement;
+    const first = document.querySelector("[data-link='s-1']") as HTMLElement;
     expect(first.textContent).toContain("kanban-e2e");
     expect(first.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("working");
-    const second = group.querySelector("[data-link='s-unknown']") as HTMLElement;
+    const second = document.querySelector("[data-link='s-unknown']") as HTMLElement;
     expect(second.textContent).toContain("s-unknown");
     expect(second.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("idle");
     // a session that has digested says when, the other says nothing
-    const billing = screen.getByText("#billing").closest("[data-channel]") as HTMLElement;
-    expect(billing.textContent).toContain("digest 30 s");
-    expect((billing.querySelector("select") as HTMLSelectElement).value).toBe("digest");
-    expect(screen.getAllByRole("button", { name: "Unlink" }).length).toBe(3);
+    expect(first.textContent).toContain("digest 30 s");
+    expect(second.textContent).not.toContain("digest");
+    expect((second.querySelector("select") as HTMLSelectElement).value).toBe("overhear");
+    // another channel's links stay on that channel's own page
+    expect(document.querySelector("[data-link='s-2']")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Unlink" }).length).toBe(2);
   });
 
   it("TestTheSectionPaintsFromTheTokensAlone", async () => {
     mount([], seededRegistry());
-    await waitFor(() => expect(screen.getByText("#kanban-release")).toBeDefined());
+    await waitFor(() => expect(document.querySelector("[data-link='s-1']")).not.toBeNull());
     for (const b of screen.getAllByRole("button", { name: "Unlink" }))
       expect(b.className).toContain("ui-btn-ghost");
     expect(screen.getAllByRole("button", { name: "Link another session" })[0]?.className).toContain(
@@ -150,7 +156,7 @@ describe("the linked channels section", () => {
 
   it("TestALevelMovePatchesAndUpdatesTheSelect", async () => {
     const h = mount([], seededRegistry());
-    await waitFor(() => expect(screen.getByText("#kanban-release")).toBeDefined());
+    await waitFor(() => expect(document.querySelector("[data-link='s-1']")).not.toBeNull());
     h.answerWith(200, { channel: "kanban-release", session_id: "s-1", level: "overhear" });
     const select = screen.getByLabelText("Level for kanban-e2e") as HTMLSelectElement;
     await act(async () => {
@@ -166,7 +172,7 @@ describe("the linked channels section", () => {
 
   it("TestAnUnlinkAsksThePasskeyWhenTheServerSaysSo", async () => {
     const h = mount([], seededRegistry());
-    await waitFor(() => expect(screen.getByText("#kanban-release")).toBeDefined());
+    await waitFor(() => expect(document.querySelector("[data-link='s-1']")).not.toBeNull());
     h.answerWith(401, { error: "step-up required" });
     h.answerWith(200, { options: { publicKey: { challenge: "aGk" } } });
     h.answerWith(200, { valid_for: 300 });
@@ -192,7 +198,7 @@ describe("the linked channels section", () => {
 
   it("TestAnUnlinkRefusalIsToasted", async () => {
     const h = mount([], seededRegistry());
-    await waitFor(() => expect(screen.getByText("#kanban-release")).toBeDefined());
+    await waitFor(() => expect(document.querySelector("[data-link='s-1']")).not.toBeNull());
     h.answerWith(403, { error: "only the owner unlinks" });
     await act(async () => {
       screen.getAllByRole("button", { name: "Unlink" })[0]?.click();
@@ -206,21 +212,23 @@ describe("the linked channels section", () => {
     mount([{ status: 403, body: { error: "sign in first" } }], seededRegistry());
     await waitFor(() => expect(screen.getByText("sign in first")).toBeDefined());
     cleanup();
-    mount([{ status: 200, body: { channels: [] } }]);
+    mount([
+      { status: 200, body: { channels: [{ channel: "billing", links: [link({ channel: "billing" })] }] } },
+    ]);
     await waitFor(() =>
       expect(
-        screen.getByText("No linked sessions yet. Pick two or more on Now and choose Link."),
+        screen.getByText("No sessions linked into this channel. Pick two or more on Now and choose Link."),
       ).toBeDefined(),
     );
+    expect(screen.queryByRole("button", { name: "Link another session" })).toBeNull();
   });
 
   it("TestTheLinkAnotherButtonOpensTheSheetOnTheChannel", async () => {
     const h = mount([], seededRegistry());
-    await waitFor(() => expect(screen.getByText("#kanban-release")).toBeDefined());
+    await waitFor(() => expect(document.querySelector("[data-link='s-1']")).not.toBeNull());
     h.answerWith(200, { channel: "kanban-release" });
-    const group = screen.getByText("#kanban-release").closest("[data-channel]") as HTMLElement;
     await act(async () => {
-      group.querySelector<HTMLButtonElement>("[data-link-another]")?.click();
+      document.querySelector<HTMLButtonElement>("[data-link-another]")?.click();
     });
     // the sheet starts with the channel's own sessions picked and the channel chosen
     expect(screen.getByRole("heading", { name: "Link 2 sessions" })).toBeDefined();

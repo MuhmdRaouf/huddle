@@ -1,9 +1,10 @@
-// SettingsTab.tsx — the Settings page: one section per settings group, in a section row shaped like
-// Radar's view row. This browser's groups come first — Appearance (System, Dark, Light, and the
-// Catppuccin flavour), Notifications (the two switches and what wakes the device), Devices (the
-// paired ones, with remove), This hub (name, address, version, and the hub's time zone) and Phone (the trust guide in a
-// sheet) — then Sign-in, Radar's own settings (budgets, notifications, history retention) and
-// Linked channels. Every class comes from the ui components or the tokens.
+// SettingsTab.tsx — the Settings page: four groups in a section row shaped like Radar's view row,
+// one page per group drawing its members in order. Appearance (System, Dark, Light, and the
+// Catppuccin flavour); Notifications (the two switches and what wakes the device); Devices and
+// sign-in (the paired devices with remove, the phone's trust guide in a sheet, the sign-in
+// methods); Hub and Radar (name, address and version, the hub's time zone, and Radar's budgets,
+// notifications and history retention). A channel's linked sessions live in that channel's own
+// Settings view. Every class comes from the ui components or the tokens.
 
 import { Button } from "@huddle/ui/button.tsx";
 import { Field } from "@huddle/ui/field.tsx";
@@ -26,25 +27,12 @@ import { creationFromJSON, credentialToJSON } from "../passkey.ts";
 import { SettingsView } from "../radar/app/views/Settings.tsx";
 import { RadarProvider, radarController } from "../radar/mount.tsx";
 import { ageText } from "../registry.ts";
-import { Channels } from "./Channels.tsx";
 import { errText, useHuddle } from "./context.tsx";
 import { useLayout } from "./layout.ts";
 import { useStepUp } from "./Needs.tsx";
 import { NotificationsCard } from "./Notifications.tsx";
 import { pickScheme, SCHEMES } from "./scheme.ts";
 import { AuthenticatorCard } from "./Totp.tsx";
-
-/** The sections the Settings page serves, in row order; each later surface adds its entry. */
-const SECTIONS = [
-  { id: "appearance", label: "Appearance" },
-  { id: "notifications", label: "Notifications" },
-  { id: "devices", label: "Devices" },
-  { id: "hub", label: "This hub" },
-  { id: "phone", label: "Phone" },
-  { id: "signin", label: "Sign-in" },
-  { id: "radar", label: "Radar" },
-  { id: "channels", label: "Linked channels" },
-] as const;
 
 /** A section's heading, the same small caps on every section. */
 const HEAD = "mb-1.5 text-xs font-semibold tracking-[0.06em] uppercase text-[var(--ui-muted)]";
@@ -55,20 +43,12 @@ const NOTE = "m-0 text-sm text-[var(--ui-muted)]";
 /** An error said inline. */
 const ERR = "m-0 text-sm text-[var(--ui-fail-ink)]";
 
-/** One section of the Settings page. */
-export type SettingsSection = (typeof SECTIONS)[number]["id"];
-
-/** The section the address names; a missing or unknown one reads as the first. */
-export function settingsSectionOf(named: string | undefined): SettingsSection {
-  return SECTIONS.some((entry) => entry.id === named) ? (named as SettingsSection) : "appearance";
-}
-
-/** The section's own settings: radar's budgets, notifications and history retention, loaded the
- *  first time the section shows (the controller runs already — main starts it on this address). */
+/** Settings › Hub and Radar › Radar: radar's budgets, notifications and history retention, loaded
+ *  the first time the group shows (the controller runs already — main starts it on this group). */
 function RadarSettings(): JSX.Element {
   useEffect(() => {
     // the settings data loads here rather than on the controller's boot: Radar's own views
-    // never ask for it, and this section may be the first radar address the reader opens
+    // never ask for it, and this group may be the first radar address the reader opens
     void radarController()?.loadTab("settings");
   }, []);
   return (
@@ -136,7 +116,7 @@ export function Appearance(): JSX.Element {
 /** What /health says about the hub this page talks to. */
 type HubFacts = { name: string; version: string };
 
-/** Settings › This hub: its name (the hub's own, else the machine's), the address this page
+/** Settings › Hub and Radar › This hub: its name (the hub's own, else the machine's), the address this page
  *  reached it at, and the version it runs. */
 export function ThisHub(): JSX.Element {
   const { api } = useHuddle();
@@ -191,7 +171,7 @@ export function browserZones(): string[] {
   return ["UTC", ...list("timeZone").filter((z) => z !== "UTC")];
 }
 
-/** Settings › This hub › Time zone: the one zone the hub names the owner's day in, seeded from
+/** Settings › Hub and Radar › Time zone: the one zone the hub names the owner's day in, seeded from
  *  the first signed-in browser and said so until the owner picks one. The picker lists the zones
  *  this browser knows; a browser that lists none gets a typed field with UTC filled in. */
 export function TimeZone({ zones = browserZones() }: { zones?: string[] }): JSX.Element {
@@ -285,7 +265,7 @@ export function TimeZone({ zones = browserZones() }: { zones?: string[] }): JSX.
   );
 }
 
-/** Settings › Phone: "Add a phone" opens a sheet that starts the guide the server serves
+/** Settings › Devices and sign-in › Phone: "Add a phone" opens a sheet that starts the guide the server serves
  *  (10 minutes, loopback-bound QR) and shows its QR and the fingerprint to compare with the
  *  phone's page. */
 export function Phone(): JSX.Element {
@@ -342,7 +322,7 @@ export function Phone(): JSX.Element {
   );
 }
 
-/** Settings › Devices (SPEC 7.3): every paired device with its ages, the removal that asks for
+/** Settings › Devices and sign-in › Devices (SPEC 7.3): every paired device with its ages, the removal that asks for
  *  the passkey when the server says step-up, and the `huddle pair` line that pairs the next
  *  device. A removed device's browser is signed out server-side by the removal itself. */
 export function Devices(): JSX.Element {
@@ -449,7 +429,7 @@ export function Devices(): JSX.Element {
   );
 }
 
-/** Settings › Sign-in: the two ways a browser signs itself in — the authenticator code (the
+/** Settings › Devices and sign-in › Sign-in: the two ways a browser signs itself in — the authenticator code (the
  *  primary, one enrolment per hub) and this browser's own passkey — with the enrolment's
  *  set-up, its removal, and the passkey a code session can save without a link. */
 export function SignInMethods(): JSX.Element {
@@ -554,9 +534,55 @@ export function SignInMethods(): JSX.Element {
   );
 }
 
-/** The Settings page: the section row, then the named section's panes. The row is the Radar
+/** One group of the Settings page. */
+export type SettingsSection = "appearance" | "notifications" | "devices" | "hub";
+
+/** One setting a group page draws; its id is an address of its own that opens the group. */
+type SettingsMember = { id: string; Pane: () => JSX.Element };
+
+/** One group: its address, its link's label and its members in page order. */
+type SettingsGroup = { id: SettingsSection; label: string; members: readonly SettingsMember[] };
+
+/** The four groups in row order. The row and the pages both read this table. */
+const SETTINGS_GROUPS: readonly SettingsGroup[] = [
+  { id: "appearance", label: "Appearance", members: [{ id: "appearance", Pane: Appearance }] },
+  {
+    id: "notifications",
+    label: "Notifications",
+    members: [{ id: "notifications", Pane: NotificationsCard }],
+  },
+  {
+    id: "devices",
+    label: "Devices and sign-in",
+    members: [
+      { id: "devices", Pane: Devices },
+      { id: "phone", Pane: Phone },
+      { id: "signin", Pane: SignInMethods },
+    ],
+  },
+  {
+    id: "hub",
+    label: "Hub and Radar",
+    members: [
+      { id: "hub", Pane: ThisHub },
+      { id: "zone", Pane: () => <TimeZone /> },
+      { id: "radar", Pane: RadarSettings },
+    ],
+  },
+];
+
+/** The group the address names, or the group holding the member it names; a missing or unknown
+ *  one reads as the first. */
+export function settingsSectionOf(named: string | undefined): SettingsSection {
+  const group = SETTINGS_GROUPS.find(
+    (g) => g.id === named || g.members.some((member) => member.id === named),
+  );
+  return group?.id ?? "appearance";
+}
+
+/** The Settings page: the group row, then the named group's members. The row is the Radar
  *  views' own shape: underlined links at the desk, pills that scroll inside the row on the
- *  narrower layouts, so the eight sections never push the page sideways. */
+ *  narrower layouts, so the groups never push the page sideways. */
 export function SettingsTab({ section }: { section: SettingsSection }): JSX.Element {
   const layout = useLayout();
   return (
@@ -569,7 +595,7 @@ export function SettingsTab({ section }: { section: SettingsSection }): JSX.Elem
             : "flex shrink-0 items-center gap-1.5 overflow-x-auto px-4 py-2"
         }
       >
-        {SECTIONS.map((entry) => (
+        {SETTINGS_GROUPS.map((entry) => (
           <a
             key={entry.id}
             href={`#/settings/${entry.id}`}
@@ -595,26 +621,13 @@ export function SettingsTab({ section }: { section: SettingsSection }): JSX.Elem
       </nav>
       <div class="min-h-0 flex-1 overflow-y-auto">
         <div class="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6" data-settings="">
-          {section === "appearance" ? (
-            <Appearance />
-          ) : section === "hub" ? (
-            <div class="flex flex-col gap-8">
-              <ThisHub />
-              <TimeZone />
-            </div>
-          ) : section === "phone" ? (
-            <Phone />
-          ) : section === "signin" ? (
-            <SignInMethods />
-          ) : section === "devices" ? (
-            <Devices />
-          ) : section === "channels" ? (
-            <Channels />
-          ) : section === "notifications" ? (
-            <NotificationsCard />
-          ) : (
-            <RadarSettings />
-          )}
+          <div class="flex flex-col gap-8">
+            {SETTINGS_GROUPS.find((g) => g.id === section)?.members.map(({ id, Pane }) => (
+              <div key={id} data-setting={id}>
+                <Pane />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

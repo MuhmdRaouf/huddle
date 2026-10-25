@@ -3,8 +3,10 @@
 // and the age. The composer posts a message into the chat, and on the phone it stays above the
 // keyboard: the keyboard is played by a visual viewport that shrinks the way iOS's does, while
 // the layout viewport keeps its height. The members sheet lists each session with the files it
-// claimed and the owner's remove action. The two posting specs run on channels of their own, removed
-// after each test, so the seeded channel keeps exactly its ping and pong and stays the only one.
+// claimed and the owner's remove action. The channel's Settings view lists the sessions linked into
+// it, each with its level and its unlink. The specs that post or link run on channels of their own,
+// removed after each test, so the seeded channel keeps exactly its ping and pong and stays the only
+// one.
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
@@ -277,4 +279,43 @@ test("the members sheet lists the sessions with their claims and removes one", a
   await expect(sheet.locator('[data-member="gamma"]')).toHaveCount(0);
   await expect(delta).toBeVisible();
   await expectNoSideScroll(page);
+});
+
+test("the channel's Settings view lists the sessions linked into it", async ({ page }, info) => {
+  const ch = await freshChannel(info.project.name, []);
+  // two ended sessions: linkable, and out of the Now list's Working and Needs you counts
+  const sessions = ["a", "b"].map((x) => `link-${info.project.name}-${x}`);
+  for (const id of sessions) {
+    await api("/api/registry/report", {
+      session_id: id,
+      machine: "e2e-machine",
+      project: "e2e",
+      title: `Linked ${id}`,
+      last_event: "SessionEnd",
+      last_event_at: new Date().toISOString(),
+    });
+  }
+  await api("/api/links", { sessions, channel: ch, level: "digest" });
+  try {
+    await openChannel(page, ch);
+    await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/settings`);
+    const linked = page.locator("[data-linked-sessions]");
+    await expect(linked.getByRole("heading", { name: "Linked sessions" })).toBeVisible();
+    for (const id of sessions) {
+      const row = linked.locator(`[data-link="${id}"]`);
+      await expect(row).toContainText(`Linked ${id}`);
+      await expect(row.getByRole("combobox", { name: `Level for Linked ${id}` })).toHaveValue("digest");
+      await expectTapTargets([row.getByRole("button", { name: "Unlink" })]);
+    }
+    await expect(linked.getByRole("button", { name: "Link another session" })).toBeVisible();
+    await expectNoSideScroll(page);
+  } finally {
+    for (const id of sessions) {
+      const path = `/api/links/${ch}/${id}`;
+      await fetch(`${theSetup().rootUrl}${path}`, {
+        method: "DELETE",
+        headers: { "x-huddle-action": path, "x-huddle-token": theSetup().token },
+      });
+    }
+  }
 });

@@ -389,22 +389,13 @@ describe("routes and panes", () => {
     const sections = [
       ...document.querySelectorAll('[aria-label="Settings sections"] a'),
     ] as HTMLAnchorElement[];
-    expect(sections.map((a) => a.dataset.section)).toEqual([
-      "appearance",
-      "notifications",
-      "devices",
-      "hub",
-      "phone",
-      "signin",
-      "radar",
-      "channels",
-    ]);
+    expect(sections.map((a) => a.dataset.section)).toEqual(["appearance", "notifications", "devices", "hub"]);
     expect(sections[0]?.getAttribute("aria-current")).toBe("page");
     nav("#/settings/radar");
     mountApp();
     expect(
       document
-        .querySelector('[aria-label="Settings sections"] a[data-section="radar"]')
+        .querySelector('[aria-label="Settings sections"] a[data-section="hub"]')
         ?.getAttribute("aria-current"),
     ).toBe("page");
   });

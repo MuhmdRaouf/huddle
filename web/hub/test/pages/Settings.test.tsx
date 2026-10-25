@@ -1,5 +1,6 @@
 // Settings.test.tsx — the channel's settings: the saved values, the save calls with their args,
-// the refusals said in the form, the turn options, the filter reset and the exports.
+// the refusals said in the form, the turn options, the filter reset, the exports and the Linked
+// sessions card.
 import { act } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api, ApiOptions } from "../../src/api.ts";
@@ -89,7 +90,15 @@ describe("the page", () => {
     await flush();
     expect(document.querySelector("#f-ch")).not.toBeNull();
     expect(field("cf-title").value).toBe("Checkout");
-    expect(api.api).not.toHaveBeenCalled();
+    // the one read is the Linked sessions card's: the channel row is never read again on open
+    expect(vi.mocked(api.api).mock.calls.map(([path]) => path)).toEqual(["/api/links"]);
+  });
+
+  it("holds the channel's Linked sessions card", async () => {
+    mount();
+    await flush();
+    const card = document.querySelector("[data-linked-sessions]") as HTMLElement;
+    expect(card.querySelector(".ui-card-title")?.textContent).toBe("Linked sessions");
   });
 
   it("follows the live channel row: a store refresh shows in the forms", async () => {

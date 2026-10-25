@@ -86,7 +86,7 @@ test("a phone browser is offered its lock as a passkey after a code sign-in", as
   await signIn(page, pairOrigin);
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }).click();
   await page.getByRole("link", { name: "Sign-in" }).click();
-  await page.getByRole("button", { name: "Remove" }).click();
+  await page.locator("[data-signin]").getByRole("button", { name: "Remove" }).click();
   await expect(page.getByText(/Not set up/)).toBeVisible();
   await enrolFromSettings(page);
 

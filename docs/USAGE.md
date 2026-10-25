@@ -337,7 +337,7 @@ and the provider routers' spool. Eleven views:
 | Alerts | Alert rules and their history |
 | Routers | huddle-router's health and the providers it serves |
 
-Budgets and the rest of Radar's settings live in Settings › Radar.
+Budgets and the rest of Radar's settings live in Settings › Hub and Radar.
 
 Every request line carries its model, latency, input, output, cache-read and cache-write tokens
 and its cost. Usage also splits tokens and cost by agent, copies each agent's resume command, and

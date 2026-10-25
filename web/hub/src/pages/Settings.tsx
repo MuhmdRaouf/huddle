@@ -1,7 +1,8 @@
 // Settings.tsx — the channel's settings: channel (title, description, members, orchestrator),
-// turn (start and hand-over rules), repo (path and profile), this browser's filters, the exports,
-// and the connect card (app.js settingsView + startOptions; the extras card arrives with the
-// slice that owns it). The browser-wide settings live on the Settings tab (SettingsTab.tsx).
+// turn (start and hand-over rules), repo (path and profile), the sessions linked into the channel,
+// this browser's filters, the exports, and the connect card (app.js settingsView + startOptions;
+// the extras card arrives with the slice that owns it). The browser-wide settings live on the
+// Settings tab (SettingsTab.tsx).
 
 import { Panel } from "@huddle/ui/page.tsx";
 import type { Stamp } from "@huddle/ui/time.ts";
@@ -11,6 +12,7 @@ import { errText, useHuddle } from "../app/context.tsx";
 import { Icon, type IconName } from "../icons.tsx";
 import { type ChannelInfo, type HuddleStore, hasOrch } from "../store.ts";
 import { ConnectCard } from "../app/ConnectCard.tsx";
+import { LinkedSessions } from "./LinkedSessions.tsx";
 
 /** The config fields the settings read (channel row config; everything else passes through). */
 export type SettingsConfig = {
@@ -380,6 +382,7 @@ export function Settings({
       <ChannelForm info={info} sessionNames={sessionNames} err={errCh} save={save} />
       <TurnForm info={info} sessionNames={sessionNames} err={errTurn} save={save} />
       <RepoForm info={info} err={errRepo} save={save} />
+      <LinkedSessions channel={ch} />
       <FiltersCard />
       <Card title="Export" icon="download">
         <ul class="flex flex-col">

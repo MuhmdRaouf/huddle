@@ -31,10 +31,6 @@ type PageId =
   | "settings-notifications"
   | "settings-devices"
   | "settings-hub"
-  | "settings-phone"
-  | "settings-signin"
-  | "settings-radar"
-  | "settings-channels"
   | "radar-overview"
   | "radar-costs"
   | "radar-tools"
@@ -63,10 +59,6 @@ const LEGACY_PAGES: readonly (PageId | "shell")[] = [
   "settings-notifications",
   "settings-devices",
   "settings-hub",
-  "settings-phone",
-  "settings-signin",
-  "settings-radar",
-  "settings-channels",
   "radar-overview",
   "radar-costs",
   "radar-tools",
@@ -115,7 +107,7 @@ const KNOWN: Partial<Record<PageId, Known>> = {
   "task-drawer": { card: "HV-TOKENS-CHANNELS", smallTargets: true },
   "settings-appearance": { card: "HV-TOKENS-SETTINGS", smallTargets: true },
   "settings-notifications": { card: "HV-TOKENS-SETTINGS", smallTargets: true },
-  "settings-radar": { card: "HV-TOKENS-SETTINGS", smallTargets: true },
+  "settings-hub": { card: "HV-TOKENS-SETTINGS", smallTargets: true },
   "radar-overview": { card: "HV-TOKENS-RADAR-OVERVIEW", smallTargets: true },
   "radar-costs": { card: "HV-TOKENS-RADAR-TABLES", smallTargets: true },
   "radar-tools": { card: "HV-TOKENS-RADAR-TABLES", smallTargets: true },
@@ -252,12 +244,8 @@ const SCREENS: readonly Screen[] = [
   { id: "task-drawer", signedIn: true, open: drawer((s) => `#/channels/e2e/work?t=${s.task}`) },
   settings("settings-appearance", "appearance", "Appearance"),
   settings("settings-notifications", "notifications", "Notifications"),
-  settings("settings-devices", "devices", "Devices"),
-  settings("settings-hub", "hub", "This hub"),
-  settings("settings-phone", "phone", "Phone"),
-  settings("settings-signin", "signin", "Sign-in"),
-  settings("settings-radar", "radar", "Radar"),
-  settings("settings-channels", "channels", "Linked channels"),
+  settings("settings-devices", "devices", "Devices and sign-in"),
+  settings("settings-hub", "hub", "Hub and Radar"),
   radar("radar-overview", "overview", "Overview"),
   radar("radar-costs", "costs", "Costs"),
   radar("radar-tools", "tools", "Tools"),
