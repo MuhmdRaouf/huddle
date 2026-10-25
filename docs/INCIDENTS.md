@@ -151,3 +151,14 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   `TestE2EAHubRestartKeepsAStreamingTurn` (cmd/huddle/hub_restart_stream_e2e_test.go)
 - **Rule:** huddle-router is its own process and the hub never hosts it
   ([ADR-4](adr/0004-router-process.md)); a hub restart never touches the router.
+
+## 2026-10-25, a healthy router had no pid to show
+
+- **What happened:** the gate's `TestE2ERouterOverhead` saw the daemon answer its health path, read
+  `run/router.json` once and found no file: "the daemon published no pid". It passed on every rerun alone.
+- **Cause:** the daemon served its listener first and wrote its record after adopting the legacy ports, so
+  under load a caller could see it healthy before the record landed. `huddle router start` and `huddle status`
+  read the pid the same way the test did.
+- **Guard:** `TestTheRecordLandsBeforeTheFirstHealthAnswer` (internal/routerd/record_test.go)
+- **Rule:** the daemon publishes its record before the serve goroutine starts, so a router seen healthy always
+  has a pid to show.

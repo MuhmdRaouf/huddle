@@ -193,6 +193,12 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	handed := make(chan int, 1)
 	stopHandover := serveHandover(home, port, listener, handed, log)
 	defer stopHandover()
+	// The record lands before the first health answer too: `huddle router start` and `huddle
+	// status` read the pid of a router they saw healthy, so an empty run dir there is a miss.
+	if err := writeRecord(ctx, recordFile, port, o.Version, runningExecutable()); err != nil {
+		// A router without its record still serves; status and start are the ones that miss it.
+		log("huddle-router: " + err.Error())
+	}
 	served := make(chan error, 1)
 	go func() {
 		defer func() {
@@ -209,10 +215,6 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	// update a legacy port may refuse connections for up to a second.
 	stopAdopting := adoptLegacyPorts(ctx, env, server, log)
 	defer stopAdopting()
-	if err := writeRecord(ctx, recordFile, port, o.Version, runningExecutable()); err != nil {
-		// A router without its record still serves; status and start are the ones that miss it.
-		log("huddle-router: " + err.Error())
-	}
 	// The 0.0.1 setups move once per start: a machine the per-provider routers served joins
 	// huddle-router on its first serve, old routers retiring as their sessions' lanes come up.
 	go migrateOnce(ctx, env, log)
