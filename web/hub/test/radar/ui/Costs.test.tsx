@@ -1,12 +1,16 @@
 import { screen } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { CostsView, providerSpend, totalText } from "../../../src/radar/app/views/Costs.tsx";
 import { costText } from "../../../src/radar/fmt.ts";
 import type { AttributionNode } from "../../../src/radar/shared/api.ts";
 import { ZERO_TOKENS } from "../../../src/radar/shared/model.ts";
 import { uiFixtures } from "../helpers.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 const NOW = 1_800_000_000_000;
 
@@ -178,10 +182,10 @@ describe("CostsView", () => {
     expect(container.querySelectorAll("[data-action='attribution-range']")).toHaveLength(3);
     expect(container.querySelectorAll("[data-value='attribution']")).toHaveLength(1);
     // deeper rows indent one step per level
-    const depths = [...container.querySelectorAll("td.attr-label")].map(
-      (td) => ((td as HTMLElement).getAttribute("style")?.match(/padding-left:\s*(\d+)px/) ?? [])[1] ?? "",
+    const depths = [...container.querySelectorAll("td[data-cell='title']")].map(
+      (td) => ((td as HTMLElement).getAttribute("style")?.match(/--depth:\s*(\d+)/) ?? [])[1] ?? "",
     );
-    expect(depths).toEqual(["4", "26", "48", "70", "26", "48", "70", "48", "70"]);
+    expect(depths).toEqual(["0", "1", "2", "3", "1", "2", "3", "2", "3"]);
   });
 
   it("sorts every level by the chosen column, labels ascending here", () => {

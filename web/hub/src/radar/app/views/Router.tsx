@@ -11,7 +11,7 @@ import { pluginLabel } from "../../shared/provider.ts";
 import { AreaChart } from "../Chart.tsx";
 import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
-import { EmptyState, ModelChip, Panel } from "../kit.tsx";
+import { BADGE_TONE, EmptyState, ModelChip, Panel } from "../kit.tsx";
 
 const ROUTER_META: Record<RouterEventKind, { label: string; one: string; tone: StatusTone }> = {
   fallback: { label: "Fallbacks", one: "fell back to Anthropic", tone: "warn" },
@@ -41,7 +41,8 @@ function ProviderCard({ provider }: { provider: ProviderHealth }) {
             return (
               <span
                 key={kind}
-                class={`badge ${count > 0 ? (tone === "err" ? "badge-error badge-soft" : tone === "warn" ? "badge-warning badge-soft" : "badge-info badge-soft") : "badge-ghost"}`}
+                class={`ui-badge ui-badge-${BADGE_TONE[tone]}`}
+                data-tone={tone}
                 title={ROUTER_META[kind].one}
               >
                 {`${ROUTER_META[kind].label} ${fmtNum(count)}`}
@@ -49,12 +50,12 @@ function ProviderCard({ provider }: { provider: ProviderHealth }) {
             );
           })}
         </div>
-        <div class="rate-chart">
+        <div class="relative min-w-0">
           <AreaChart
             values={provider.series}
             width={520}
             height={90}
-            color="var(--series-4)"
+            color="var(--radar-series-4)"
             gradientId={`router-${provider.plugin.replace(/[^a-z0-9]/gi, "")}`}
             xLabels={[
               { text: "24 h ago", at: 0 },
@@ -63,7 +64,7 @@ function ProviderCard({ provider }: { provider: ProviderHealth }) {
             yLabel={`${fmtNum(Math.max(...provider.series, 0))} per hour max`}
           />
         </div>
-        <p class="text-meta text-base-content/60">{last}</p>
+        <p class="m-0 text-xs text-[var(--ui-muted)]">{last}</p>
       </div>
     </Panel>
   );
@@ -85,13 +86,13 @@ function AdvisorCard({ report }: { report: AdvisorReport }) {
         />
       ) : (
         <>
-          <p class="flex flex-wrap items-baseline gap-x-3">
+          <p class="m-0 flex flex-wrap items-baseline gap-x-3">
             <span class="num text-3xl leading-none font-semibold">{fmtNum(report.candidates)}</span>
-            <span class="text-sm text-base-content/60">
+            <span class="text-sm text-[var(--ui-muted)]">
               {`of ${fmtCount(report.runsChecked, "run")} look flash-sized${report.savingUsd === null ? "" : `, est. saving ${fmtUsd(report.savingUsd)}`}`}
             </span>
           </p>
-          <div class="mt-4 divide-y divide-base-content/8">
+          <div class="mt-4 divide-y divide-[var(--ui-line)]">
             {report.byModel.map((row) => (
               <div
                 class="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 py-3.5 first:pt-0 last:pb-0"
@@ -101,7 +102,7 @@ function AdvisorCard({ report }: { report: AdvisorReport }) {
                 <span class="text-sm font-medium">
                   <ModelChip model={row.model} />
                 </span>
-                <span class="text-sm text-base-content/70">
+                <span class="text-sm text-[var(--ui-muted)]">
                   {fmtCount(row.runs, "run")}
                   {row.flash !== null && (
                     <>
@@ -118,7 +119,7 @@ function AdvisorCard({ report }: { report: AdvisorReport }) {
               </div>
             ))}
           </div>
-          <p class="mt-4 text-meta text-base-content/60">
+          <p class="mt-4 mb-0 text-xs text-[var(--ui-muted)]">
             A hint, not a verdict: few requests, little output and only read-only tools suggest the smaller
             model would have done. Claude models are counted without a figure.
           </p>
@@ -138,24 +139,27 @@ function RouterEventRow({
 }) {
   const tone = ROUTER_META[event.event].tone;
   return (
-    <li class="list-row">
+    <li
+      class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 py-3 first:pt-0 last:pb-0"
+      data-router-event=""
+    >
       <span
-        class="inline-grid size-8 shrink-0 place-items-center rounded-field"
+        class="inline-grid size-8 shrink-0 place-items-center rounded-[var(--ui-radius-sm)]"
         style={`color:${STATUS_COLOR[tone]};background:color-mix(in srgb, ${STATUS_COLOR[tone]} 15%, transparent)`}
         aria-hidden="true"
       >
-        <Icon name="route" class="icon" />
+        <Icon name="route" class="size-4" />
       </span>
       <div class="min-w-0">
         <p class="m-0 text-sm font-medium">{`${pluginLabel(event.plugin)} ${ROUTER_META[event.event].one}`}</p>
-        {event.reason !== "" && <p class="m-0 text-sm text-base-content/70">{event.reason}</p>}
+        {event.reason !== "" && <p class="m-0 text-sm text-[var(--ui-muted)]">{event.reason}</p>}
         {event.model !== null && (
           <p class="m-0 mt-0.5">
             <ModelChip model={event.model} />
           </p>
         )}
       </div>
-      <span class="text-meta text-base-content/60 whitespace-nowrap">{at}</span>
+      <span class="text-xs whitespace-nowrap text-[var(--ui-muted)]">{at}</span>
     </li>
   );
 }
@@ -168,7 +172,7 @@ export function RouterView() {
   const top =
     health === null ? (
       <Panel icon="route" title="Router health">
-        <p class="text-sm text-base-content/60">Loading router events…</p>
+        <p class="m-0 text-sm text-[var(--ui-muted)]">Loading router events…</p>
       </Panel>
     ) : providers.length === 0 ? (
       <Panel icon="route" title="Router health" subtitle="Last 24 hours">
@@ -191,7 +195,7 @@ export function RouterView() {
       {top}
       {recent.length > 0 && (
         <Panel icon="clock" title="Recent router events" subtitle="Newest first">
-          <ul class="list">
+          <ul class="m-0 list-none divide-y divide-[var(--ui-line)] p-0">
             {recent.map((event, i) => (
               <RouterEventRow
                 key={`${event.ts}/${event.plugin}/${event.event}/${i}`}
@@ -204,7 +208,7 @@ export function RouterView() {
       )}
       {state.advisor === null ? (
         <Panel icon="sparkle" title="Model advisor" subtitle="Main-model subagent runs that look flash-sized">
-          <p class="text-sm text-base-content/60">Looking at recent runs…</p>
+          <p class="m-0 text-sm text-[var(--ui-muted)]">Looking at recent runs…</p>
         </Panel>
       ) : (
         <AdvisorCard report={state.advisor} />

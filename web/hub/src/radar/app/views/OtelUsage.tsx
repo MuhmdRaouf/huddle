@@ -7,7 +7,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { Icon } from "../Icon.tsx";
-import { EmptyState, ModelChip, Panel } from "../kit.tsx";
+import { EmptyState, ModelChip, Notice, Panel, SEGMENT, SEGMENT_GROUP } from "../kit.tsx";
 import { Table, TableHeadStatic } from "../table.tsx";
 
 /** The read the hub answers with the rows Claude Code's export left. */
@@ -66,16 +66,12 @@ export function SourceToggle({ source, pick }: { source: UsageSource; pick: (sou
   ];
   return (
     // biome-ignore lint/a11y/useSemanticElements: a toolbar of toggles, not a form; a fieldset would bring its own border and legend
-    <div class="segmented join justify-self-start" role="group" aria-label="Source">
+    <div class={`${SEGMENT_GROUP} justify-self-start`} role="group" aria-label="Source">
       {segments.map((segment) => (
         <button
           key={segment.value}
           type="button"
-          class={
-            segment.value === source
-              ? "segment segment-on btn btn-sm btn-soft btn-primary join-item"
-              : "segment btn btn-sm btn-ghost join-item"
-          }
+          class={SEGMENT}
           aria-pressed={segment.value === source ? "true" : "false"}
           onClick={() => pick(segment.value)}
         >
@@ -109,10 +105,10 @@ export function OtelUsage() {
     return <div class="skeleton h-64" role="status" aria-label="Loading OpenTelemetry" />;
   if (load.status === "error") {
     return (
-      <div role="alert" class="alert alert-error">
-        <Icon name="alert" class="icon" />
+      <Notice tone="err">
+        <Icon name="alert" class="ui-icon" />
         <span>Claude Code's OpenTelemetry rows did not load ({load.error}).</span>
-      </div>
+      </Notice>
     );
   }
   const { answer } = load;
@@ -132,7 +128,7 @@ export function OtelUsage() {
       subtitle={`${fmtNum(answer.points)} points from Claude Code's export`}
       flush
     >
-      <p class="px-5 py-3 text-sm opacity-70">
+      <p class="m-0 px-4 py-3 text-sm text-[var(--ui-muted)]">
         Claude Code's own counts, kept apart from the transcripts: these numbers are never added to the other
         views.
       </p>
@@ -141,15 +137,27 @@ export function OtelUsage() {
         <tbody>
           {answer.byModel.map((totals) => (
             <tr key={totals.model}>
-              <td class="min-w-0">
+              <td class="min-w-0" data-label="Model" data-cell="title">
                 <ModelChip model={totals.model} />
               </td>
-              <td class="num text-right">{fmtNum(totals.sessions)}</td>
-              <td class="num text-right">{fmtTokens(totals.input)}</td>
-              <td class="num text-right">{fmtTokens(totals.output)}</td>
-              <td class="num text-right">{fmtTokens(totals.cacheRead)}</td>
-              <td class="num text-right">{fmtTokens(totals.cacheCreation)}</td>
-              <td class="num text-right">{fmtUsd(totals.costUsd)}</td>
+              <td class="num text-right" data-label="Sessions">
+                {fmtNum(totals.sessions)}
+              </td>
+              <td class="num text-right" data-label="Input">
+                {fmtTokens(totals.input)}
+              </td>
+              <td class="num text-right" data-label="Output">
+                {fmtTokens(totals.output)}
+              </td>
+              <td class="num text-right" data-label="Cache read">
+                {fmtTokens(totals.cacheRead)}
+              </td>
+              <td class="num text-right" data-label="Cache write">
+                {fmtTokens(totals.cacheCreation)}
+              </td>
+              <td class="num text-right" data-label="Cost">
+                {fmtUsd(totals.costUsd)}
+              </td>
             </tr>
           ))}
         </tbody>

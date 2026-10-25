@@ -1,9 +1,13 @@
 import { screen } from "@testing-library/preact";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { RouterView } from "../../../src/radar/app/views/Router.tsx";
 import type { ProviderHealth, RouterHealth } from "../../../src/radar/shared/api.ts";
 import { uiFixtures } from "../helpers.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 const NOW = 1_790_000_000_000;
 const fixtures = uiFixtures();
@@ -61,17 +65,17 @@ describe("RouterView", () => {
     expect(container.textContent).toContain("Z.ai");
     expect(container.textContent).toContain("3 events in 24 h");
     for (const text of ["Fallbacks 2", "Rate limits 1"]) {
-      expect(screen.getAllByText(text).map((b) => b.closest(".badge")?.className)).toEqual([
-        "badge badge-warning badge-soft",
-        "badge badge-warning badge-soft",
-        "badge badge-warning badge-soft",
+      expect(screen.getAllByText(text).map((b) => b.closest(".ui-badge")?.className)).toEqual([
+        "ui-badge ui-badge-warn",
+        "ui-badge ui-badge-warn",
+        "ui-badge ui-badge-warn",
       ]);
     }
     for (const text of ["Refusals 0", "Budget stops 0", "Restarts 0"]) {
-      expect(screen.getAllByText(text).map((b) => b.closest(".badge")?.className)).toEqual([
-        "badge badge-ghost",
-        "badge badge-ghost",
-        "badge badge-ghost",
+      expect(screen.getAllByText(text).map((b) => b.closest(".ui-badge")?.className)).toEqual([
+        "ui-badge ui-badge-neutral",
+        "ui-badge ui-badge-neutral",
+        "ui-badge ui-badge-neutral",
       ]);
     }
     expect(screen.getByText("Last 1m ago: 503")).toBeTruthy();
@@ -86,7 +90,7 @@ describe("RouterView", () => {
     renderApp(<RouterView />, { router: BUSY_HEALTH }, NOW);
     expect(screen.getByText("Recent router events")).toBeTruthy();
     expect(screen.getByText("Newest first")).toBeTruthy();
-    const rows = document.querySelectorAll("ul.list > li.list-row");
+    const rows = document.querySelectorAll("ul > li[data-router-event]");
     expect(rows).toHaveLength(2);
     expect(screen.getByText("Z.ai fell back to Anthropic")).toBeTruthy();
     expect(screen.getByText("503")).toBeTruthy();
@@ -94,7 +98,7 @@ describe("RouterView", () => {
     const model = screen.getByText("GLM 5.3").closest(".model-chip");
     expect(model?.getAttribute("title")).toBe("glm-5.3");
     expect(screen.getByText("Z.ai restarted")).toBeTruthy();
-    const restart = screen.getByText("Z.ai restarted").closest("li.list-row") as HTMLElement;
+    const restart = screen.getByText("Z.ai restarted").closest("li[data-router-event]") as HTMLElement;
     expect(restart.querySelectorAll("p")).toHaveLength(1); // no reason line, no model line
   });
 
@@ -114,7 +118,7 @@ describe("RouterView", () => {
       NOW,
     );
     expect(screen.getByText("No subagent runs on a main model yet")).toBeTruthy();
-    expect(document.querySelector(".empty-hint")?.textContent).toContain("0 runs checked");
+    expect(document.querySelector("[data-empty-hint]")?.textContent).toContain("0 runs checked");
     unmount();
     renderApp(
       <RouterView />,
@@ -122,7 +126,7 @@ describe("RouterView", () => {
       NOW,
     );
     expect(screen.getByText("Every run looked like it needed its model")).toBeTruthy();
-    expect(document.querySelector(".empty-hint")?.textContent).toContain("3 runs checked");
+    expect(document.querySelector("[data-empty-hint]")?.textContent).toContain("3 runs checked");
   });
 
   it("shows the advisor's count, saving and per-model rows when runs look flash-sized", () => {
@@ -142,7 +146,7 @@ describe("RouterView", () => {
       },
       NOW,
     );
-    expect(document.querySelector(".empty") === null).toBe(true);
+    expect(document.querySelector("[data-empty]") === null).toBe(true);
     expect(screen.getByText("2")).toBeTruthy();
     expect(screen.getByText("of 4 runs look flash-sized, est. saving $0.09")).toBeTruthy();
     // model ids read through the chip: short name, raw id as its title

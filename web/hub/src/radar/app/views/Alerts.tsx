@@ -50,7 +50,7 @@ export function AlertsView() {
         icon="check"
       />
     ) : (
-      <ul class="grid gap-2">
+      <ul class="m-0 grid list-none gap-2 p-0">
         {state.alerts.map((alert) => (
           <AlertRow key={alert.id} alert={alert} />
         ))}
@@ -69,15 +69,15 @@ export function AlertsView() {
         <dl class="grid gap-x-5 gap-y-3 max-sm:grid-cols-1 sm:grid-cols-[max-content_1fr]">
           {HOW_ALERTS_WORK.flatMap(([kind, text]) => [
             <dt class="flex items-center gap-2 text-sm font-semibold" key={`${kind}-term`}>
-              <Icon name={ALERT_ICON[kind]} class="icon text-base-content/60" />
+              <Icon name={ALERT_ICON[kind]} class="size-4 shrink-0 text-[var(--ui-muted)]" />
               <span>{alertLabel(kind)}</span>
             </dt>,
-            <dd class="m-0 text-sm text-base-content/70" key={`${kind}-text`}>
+            <dd class="m-0 text-sm text-[var(--ui-muted)]" key={`${kind}-text`}>
               {text}
             </dd>,
           ])}
         </dl>
-        <p class="mt-4 mb-0 text-meta text-base-content/60">
+        <p class="mt-4 mb-0 text-xs text-[var(--ui-muted)]">
           Dismissing hides that one occurrence; the same thing happening again raises a new alert. Desktop
           notifications go out for budgets, Claude's 5-hour window, stuck sessions and loops (turn them off in
           Settings).

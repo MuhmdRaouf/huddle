@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { ModelsView } from "../../../src/radar/app/views/Models.tsx";
 import { ZERO_TOKENS } from "../../../src/radar/shared/model.ts";
 import type { ClientState } from "../../../src/radar/state.ts";
 import { makeRequest } from "../helpers.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 const NOW = 1_790_000_000_000;
 
@@ -70,7 +74,7 @@ describe("ModelsView", () => {
       "5 requests, unpriced",
     ]);
     expect(texts(container, "[data-rank-total]")).toEqual(["400", "900", "0"]);
-    expect(texts(container, ".badge")).toEqual(["1 failed"]);
+    expect(texts(container, ".ui-badge")).toEqual(["1 failed"]);
     expect(container.querySelector('section [aria-label="Token kinds"]')).not.toBeNull();
     expect(texts(container, '[aria-label="Token kinds"] li')).toEqual([
       "Input",
@@ -86,7 +90,7 @@ describe("ModelsView", () => {
     const waiting = renderApp(<ModelsView />, { models: MODELS });
     // the snapshot's fleet-wide copy is not the tab's scope: without the scoped answer it waits
     expect(waiting.container.querySelectorAll("section h2")).toHaveLength(1);
-    expect(texts(waiting.container, ".empty-title")).toEqual(["Waiting for model totals"]);
+    expect(texts(waiting.container, "[data-empty-title]")).toEqual(["Waiting for model totals"]);
     waiting.unmount();
     const failed = renderApp(<ModelsView />, {
       modelsError: "GET /api/models → 503",
@@ -250,6 +254,9 @@ describe("ModelsView", () => {
     const bare = renderApp(<ModelsView />, {
       modelsScoped: { key: "range=1h|", data: { models: [], upstreams: [], tools: [] } },
     });
-    expect(texts(bare.container, ".empty-title")).toEqual(["No model requests yet", "No upstreams recorded"]);
+    expect(texts(bare.container, "[data-empty-title]")).toEqual([
+      "No model requests yet",
+      "No upstreams recorded",
+    ]);
   });
 });

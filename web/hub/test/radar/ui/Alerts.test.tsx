@@ -1,12 +1,16 @@
 import { screen } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { AlertStrip, alertClasses } from "../../../src/radar/app/AlertStrip.tsx";
 import { AlertsView } from "../../../src/radar/app/views/Alerts.tsx";
 import { alertLabel } from "../../../src/radar/palette.ts";
 import type { Alert } from "../../../src/radar/shared/api.ts";
 import { uiFixtures } from "../helpers.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 const NOW = 1_800_000_000_000;
 
@@ -48,14 +52,14 @@ describe("AlertStrip", () => {
     expect(row).toContain("est. $0.50");
   });
 
-  it("reads the rows as daisyUI alerts, warning by default and error by severity", () => {
-    expect(alertClasses("warn")).toBe("alert alert-soft alert-warning");
-    expect(alertClasses("err")).toBe("alert alert-soft alert-error");
+  it("paints the rows on the warn tone by default and the fail tone by severity", () => {
+    expect(alertClasses("warn")).toBe("border-[var(--ui-warn)] bg-[var(--ui-warn-soft)]");
+    expect(alertClasses("err")).toBe("border-[var(--ui-fail)] bg-[var(--ui-fail-soft)]");
     const { container } = renderApp(<AlertStrip />, { alerts: [makeAlert()] }, NOW);
     const row = container.querySelector("[role='alert']");
-    expect(row?.className).toContain("alert");
-    expect(row?.className).toContain("alert-warning");
-    expect(row?.className).not.toContain("alert-error");
+    expect(row?.getAttribute("data-alert")).toBe("warn");
+    expect(row?.className).toContain("bg-[var(--ui-warn-soft)]");
+    expect(row?.className).not.toContain("--ui-fail-soft");
   });
 
   it("runs the dismiss action with the alert's id on click", async () => {
@@ -124,8 +128,9 @@ describe("AlertStrip", () => {
   it("paints an error-severity alert with the error tone", () => {
     const { container } = renderApp(<AlertStrip />, { alerts: [makeAlert({ severity: "err" })] }, NOW);
     const row = container.querySelector("[role='alert']");
-    expect(row?.className).toContain("alert-error");
-    expect(row?.className).not.toContain("alert-warning");
+    expect(row?.getAttribute("data-alert")).toBe("err");
+    expect(row?.className).toContain("bg-[var(--ui-fail-soft)]");
+    expect(row?.className).not.toContain("--ui-warn-soft");
   });
 });
 
@@ -145,7 +150,7 @@ describe("AlertsView", () => {
       NOW,
     );
     expect(container.querySelectorAll("[role='alert']")).toHaveLength(2);
-    expect(container.querySelectorAll(".alert-error")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-alert='err']")).toHaveLength(1);
     const terms = [...container.querySelectorAll("dt")].map((t) => t.textContent);
     expect(terms).toEqual([
       "Stuck",

@@ -188,8 +188,8 @@ test("the requests view opens with its two charts and the statuses the spool car
 
   // every seeded call came back 200, and the status cell says so; nothing failed
   const table = page.locator("[data-key='requests-table']");
-  await expect(table.locator(".badge[title='HTTP 200']").first()).toBeVisible();
-  await expect(table.locator(".badge-error")).toHaveCount(0);
+  await expect(table.locator("[data-http='200']").first()).toBeVisible();
+  await expect(table.locator(".ui-badge-fail")).toHaveCount(0);
 });
 
 test("the self-check badge is green when Radar matches the transcripts", async ({ page }) => {

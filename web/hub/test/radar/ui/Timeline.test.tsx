@@ -1,5 +1,5 @@
 import { fireEvent, screen } from "@testing-library/preact";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { TimelineView } from "../../../src/radar/app/views/Timeline.tsx";
 import type { AuditRow } from "../../../src/radar/audit.ts";
 import type { SessionListItem } from "../../../src/radar/shared/api.ts";
@@ -7,6 +7,10 @@ import type { EventRecord } from "../../../src/radar/shared/model.ts";
 import type { ClientState } from "../../../src/radar/state.ts";
 import { uiFixtures } from "../helpers.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 const NOW = 1_790_000_000_000;
 
@@ -65,7 +69,7 @@ describe("Timeline view", () => {
       ],
       { sessions: [item("sess-12345678", { project: "app" })] },
     );
-    const items = [...container.querySelectorAll("ol.timeline > li")];
+    const items = [...container.querySelectorAll("ol[data-timeline] > li")];
     expect(items).toHaveLength(3);
     const kinds = [...container.querySelectorAll("[data-kind-label]")].map((el) => el.textContent);
     expect(kinds).toEqual(["Tool failed", "Odd", "Turn ended"]); // newest first
@@ -84,8 +88,8 @@ describe("Timeline view", () => {
 
   it("shows the empty state when no events are in view", () => {
     const { container } = timeline([]);
-    expect(container.querySelector(".empty-title")?.textContent).toBe("Nothing has happened yet");
-    expect(container.querySelector(".empty-hint")?.textContent).toBe(
+    expect(container.querySelector("[data-empty-title]")?.textContent).toBe("Nothing has happened yet");
+    expect(container.querySelector("[data-empty-hint]")?.textContent).toBe(
       "Sessions starting, agents spawning, compactions and errors, beside every allow, answer, send and pairing, land here in order.",
     );
   });
@@ -137,7 +141,7 @@ describe("Timeline view", () => {
   it("caps the feed at the newest 200 events", () => {
     const events = Array.from({ length: 205 }, (_, i) => makeEvent({ seq: i + 1, ts: NOW - i * 1000 }));
     const { container } = timeline(events);
-    expect(container.querySelectorAll("ol.timeline > li")).toHaveLength(200);
+    expect(container.querySelectorAll("ol[data-timeline] > li")).toHaveLength(200);
     expect(panelMetaOf(container)).toBe("205 events, newest first");
   });
 

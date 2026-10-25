@@ -1,9 +1,10 @@
 /**
- * The tools view: the most-used ranking with success/failure bars, and the recent-calls table on the shared
- * daisyUI table, with an all/failed filter.
+ * The tools view: the most-used ranking with success/failure bars, and the recent-calls table (dense rows on
+ * a desk, a card per call on the phone) with an all/failed filter.
  */
 
 import { fmtCount, fmtDuration, fmtNum, sessionName } from "../../fmt.ts";
+import { STATUS_COLOR } from "../../palette.ts";
 import type { ToolCallRecord } from "../../shared/model.ts";
 import { type ClientState, type ToolSortKey, tableTools } from "../../state.ts";
 import { StackedBar } from "../Chart.tsx";
@@ -33,22 +34,24 @@ function ToolRow({ tool }: { tool: ToolCallRecord }) {
   const session = nameOfSession(state, tool.sessionId);
   return (
     <TableRow failed={!tool.ok}>
-      <td class="time" title={when.title}>
+      <td class="time" data-label="Time" title={when.title}>
         {when.text}
       </td>
-      <td class="min-w-0" title={tool.name}>
+      <td class="min-w-0" data-label="Tool" data-cell="title" title={tool.name}>
         <span class="block truncate">
-          <Code text={tool.name} class="strong" />
+          <Code text={tool.name} class="font-semibold text-[var(--ui-text)]" />
         </span>
       </td>
-      <td class="min-w-0" title={session}>
+      <td class="min-w-0" data-label="Session" title={session}>
         <span class="block truncate">{session}</span>
       </td>
-      <td>
-        <Code text={(tool.agentId ?? "main").slice(0, 12)} class="text-base-content/60" />
+      <td data-label="Agent">
+        <Code text={(tool.agentId ?? "main").slice(0, 12)} class="text-[var(--ui-muted)]" />
       </td>
-      <td class="num text-right">{fmtDuration(tool.durationMs)}</td>
-      <td>
+      <td class="num text-right" data-label="Duration">
+        {fmtDuration(tool.durationMs)}
+      </td>
+      <td data-label="Result">
         {tool.ok ? (
           <Badge text="Succeeded" tone="ok" icon="check" />
         ) : (
@@ -65,19 +68,19 @@ function RankRow({ row, max }: { row: { name: string; count: number; failures: n
     <div class="grid gap-2 py-3.5 first:pt-0 last:pb-0">
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <Code text={row.name} class="font-medium" data-rank-name />
-        <span class="text-sm text-base-content/70" data-rank-meta>
+        <span class="text-sm text-[var(--ui-muted)]" data-rank-meta>
           {fmtCount(row.count, "call")}
         </span>
         {row.failures > 0 ? (
-          <span class="badge badge-error badge-soft">{fmtNum(row.failures)} failed</span>
+          <Badge text={`${fmtNum(row.failures)} failed`} tone="err" />
         ) : (
-          <span class="badge badge-success badge-soft">No failures</span>
+          <Badge text="No failures" tone="ok" />
         )}
       </div>
       <StackedBar
         segments={[
-          { value: row.count - row.failures, color: "var(--series-5)" },
-          { value: row.failures, color: "var(--danger)" },
+          { value: row.count - row.failures, color: "var(--radar-series-5)" },
+          { value: row.failures, color: STATUS_COLOR.err },
         ]}
         max={max}
       />
@@ -104,7 +107,7 @@ export function ToolsView() {
             icon="wrench"
           />
         ) : (
-          <div class="divide-y divide-base-content/8">
+          <div class="divide-y divide-[var(--ui-line)]">
             {ranking.map((row) => (
               <RankRow key={row.name} row={row} max={maxTool} />
             ))}

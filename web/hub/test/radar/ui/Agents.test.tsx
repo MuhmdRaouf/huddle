@@ -1,12 +1,16 @@
 import { screen } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { AgentsView, compareAgents } from "../../../src/radar/app/views/Agents.tsx";
 import type { SessionListItem } from "../../../src/radar/shared/api.ts";
 import { ZERO_TOKENS } from "../../../src/radar/shared/model.ts";
 import type { ClientState } from "../../../src/radar/state.ts";
 import { makeAgentView, makeSessionView, uiFixtures } from "../helpers.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 const fixtures = uiFixtures();
 
@@ -80,7 +84,7 @@ describe("AgentsView", () => {
     expect(container.querySelectorAll("section.tree-block")).toHaveLength(1);
     expect(texts(block, ".tree-head-name")).toEqual(["s1"]);
     expect(texts(block, ".tree-head-facts")).toEqual(["4 agents6 requests1.2k"]);
-    expect(texts(block, ".badge-success")).toEqual(["Live", "Live"]); // the session head and the live row
+    expect(texts(block, ".ui-badge-ok")).toEqual(["Live", "Live"]); // the session head and the live row
     expect(texts(block, "thead th")).toEqual([
       "Status",
       "Agent",
@@ -93,11 +97,11 @@ describe("AgentsView", () => {
     ]);
     expect(texts(block, ".tree-name")).toEqual(["Main", "abcdefghij", "researcher", "Fix tests"]);
     expect([...block.querySelectorAll("tbody tr")].map((row) => row.getAttribute("class") ?? "")).toEqual([
-      "row cursor-pointer transition-colors hover:bg-base-200/50",
-      "row muted cursor-pointer transition-colors hover:bg-base-200/50",
-      "row muted cursor-pointer transition-colors hover:bg-base-200/50",
+      "row cursor-pointer transition-colors hover:bg-[var(--ui-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ui-accent)]",
+      "row text-[var(--ui-muted)] cursor-pointer transition-colors hover:bg-[var(--ui-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ui-accent)]",
+      "row text-[var(--ui-muted)] cursor-pointer transition-colors hover:bg-[var(--ui-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ui-accent)]",
       "",
-      "row muted cursor-pointer transition-colors hover:bg-base-200/50",
+      "row text-[var(--ui-muted)] cursor-pointer transition-colors hover:bg-[var(--ui-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ui-accent)]",
     ]);
     expect(
       [...block.querySelectorAll(".tree-name")].map((name) =>
@@ -124,14 +128,16 @@ describe("AgentsView", () => {
       "–",
       "–",
     ]);
-    expect(texts(block, ".badge-error")).toEqual(["2 failed"]);
+    expect(texts(block, ".ui-badge-fail")).toEqual(["2 failed"]);
     expect(texts(block, ".tree-section")).toEqual(["Jobs (1)"]);
-    expect(texts(block, ".tree-toggle.tree-leaf")).toHaveLength(3);
+    expect(texts(block, "[data-leaf]")).toHaveLength(3);
     expect(
-      [...block.querySelectorAll("tbody .icon-xs[data-icon]")].map((icon) => icon.getAttribute("data-icon")),
+      [...block.querySelectorAll("tbody .agent-kind[data-icon]")].map((icon) =>
+        icon.getAttribute("data-icon"),
+      ),
     ).toEqual(["bot", "branch", "branch", "plug"]);
-    expect(texts(block, ".badge-ghost")).toEqual(["Ended", "Ended", "Ended"]);
-    expect(block.querySelector(".status-success")).not.toBeNull(); // the live row's neon dot
+    expect(texts(block, ".ui-badge-neutral")).toEqual(["Ended", "Ended", "Ended"]);
+    expect(block.querySelector(".ui-badge-ok .motion-safe\\:animate-pulse")).not.toBeNull(); // the live row's dot
 
     const ended = renderApp(
       <AgentsView />,
@@ -139,7 +145,7 @@ describe("AgentsView", () => {
         sessions: [item("s1", { live: false, lastAt: 99, agentCount: 4, requestCount: 6, tokens: 1_200 })],
       }),
     );
-    expect(texts(ended.container, ".badge-ghost")).toEqual(["Ended", "Ended", "Ended", "Ended"]); // head + rows
+    expect(texts(ended.container, ".ui-badge-neutral")).toEqual(["Ended", "Ended", "Ended", "Ended"]); // head + rows
   });
 
   it("orders agents main, subagent, external and by recency inside a kind", () => {
@@ -170,7 +176,7 @@ describe("AgentsView", () => {
 
     const collapsedSession = renderApp(<AgentsView />, treeState({ collapsed: new Set(["s1/"]) }));
     expect(collapsedSession.container.querySelectorAll(".tree-name")).toHaveLength(0); // body skipped entirely
-    expect(collapsedSession.container.querySelectorAll(".tree-note")).toHaveLength(0);
+    expect(collapsedSession.container.querySelectorAll("[data-note]")).toHaveLength(0);
     const head = first(collapsedSession.container, '[data-action="collapse"][data-value="s1/"]');
     expect(head.getAttribute("aria-expanded")).toBe("false");
     expect(iconsOf(head)).toEqual(["chevronRight"]);
@@ -189,14 +195,14 @@ describe("AgentsView", () => {
 
   it("waits for missing details, notes empty sessions and empty views", () => {
     const loading = renderApp(<AgentsView />, { sessions: [item("s1")] });
-    expect(texts(loading.container, ".tree-note")).toEqual(["Loading this session's agents…"]);
+    expect(texts(loading.container, "[data-note]")).toEqual(["Loading this session's agents…"]);
     loading.unmount();
 
     const bare = renderApp(<AgentsView />, {
       sessions: [item("s1")],
       details: { s1: makeSessionView({ agents: [] }) },
     });
-    expect(texts(bare.container, ".tree-note")).toEqual(["No agents recorded for this session yet."]);
+    expect(texts(bare.container, "[data-note]")).toEqual(["No agents recorded for this session yet."]);
     bare.unmount();
 
     const none = renderApp(<AgentsView />);
@@ -249,7 +255,7 @@ describe("AgentsView", () => {
     expect(first(container, 'td[title="Estimate at list price"]')).toBeTruthy();
     expect(texts(container, ".tree-head-cost")).toEqual(["$2.00"]); // the header says Est. cost, so the cell does not
     expect(texts(container, "td.num")).toContain("500");
-    expect(texts(container, ".badge-error")).toEqual(["1 failed"]);
+    expect(texts(container, ".ui-badge-fail")).toEqual(["1 failed"]);
     expect(container.querySelectorAll(".tree-section")).toHaveLength(0); // no externals, no section
     expect(first(container, '[data-value="s1/u"]').getAttribute("aria-label")).toBe("Collapse u"); // no name, so the id
 

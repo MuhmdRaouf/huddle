@@ -19,7 +19,7 @@ import { StackedBar } from "../Chart.tsx";
 import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
 import { EmptyState, Panel, Segmented, shortModelName } from "../kit.tsx";
-import { type Column, ExportButton, Table, TableHead } from "../table.tsx";
+import { type Column, ExportButton, Table, TableHead, TREE_TOGGLE } from "../table.tsx";
 
 const RANGE_LABEL: Record<AttributionRange, string> = { day: "Today", week: "7 days", month: "30 days" };
 
@@ -100,7 +100,7 @@ function ModelMix({ mix }: { mix: AttributionNode["mix"] }) {
   const total = mix.reduce((acc, part) => acc + part.tokens, 0);
   return (
     <span
-      class="attr-mix w-24 shrink-0"
+      class="attr-mix m-0 w-24 shrink-0"
       title={mix.map((part) => `${part.model} ${Math.round((part.tokens / total) * 100)}%`).join(" · ")}
     >
       <StackedBar
@@ -115,19 +115,29 @@ function ModelMix({ mix }: { mix: AttributionNode["mix"] }) {
 function ValueCells({ node }: { node: AttributionNode }): ComponentChildren {
   return (
     <>
-      <td class="num text-right">{fmtNum(node.requests)}</td>
-      <td class="num text-right">{fmtNum(node.tokens.input)}</td>
-      <td class="num text-right">{fmtNum(node.tokens.output)}</td>
-      <td class="num text-right">{fmtNum(node.tokens.cacheRead)}</td>
-      <td class="num text-right">{fmtNum(node.tokens.cacheWrite)}</td>
-      <td class="num text-right">
+      <td class="num text-right" data-label="Requests">
+        {fmtNum(node.requests)}
+      </td>
+      <td class="num text-right" data-label="Input">
+        {fmtNum(node.tokens.input)}
+      </td>
+      <td class="num text-right" data-label="Output">
+        {fmtNum(node.tokens.output)}
+      </td>
+      <td class="num text-right" data-label="Cache read">
+        {fmtNum(node.tokens.cacheRead)}
+      </td>
+      <td class="num text-right" data-label="Cache write">
+        {fmtNum(node.tokens.cacheWrite)}
+      </td>
+      <td class="num text-right" data-label="Est. cost">
         {node.costUsd === null ? (
-          <span class="text-base-content/60" title="No price for these models">
+          <span class="text-[var(--ui-muted)]" title="No price for these models">
             tokens only
           </span>
         ) : (
           <span
-            class="strong"
+            class="font-semibold text-[var(--ui-text)]"
             title={
               node.unpriced > 0 ? `${fmtCount(node.unpriced, "request")} unpriced, not included` : "Estimate"
             }
@@ -157,28 +167,33 @@ function NodeRows({ node, depth }: { node: AttributionNode; depth: number }): Co
   return (
     <Fragment key={key}>
       <tr class="attr-row">
-        <td class="attr-label min-w-0" style={`padding-left:${depth * 22 + 4}px`}>
-          <div class="flex items-center gap-2">
+        <td
+          class="min-w-0 sm:min-w-[220px]"
+          data-label="Breakdown"
+          data-cell="title"
+          style={`--depth:${depth}`}
+        >
+          <div class="flex items-center gap-2 pl-[calc(var(--depth)*14px)] sm:pl-[calc(var(--depth)*22px)]">
             {node.children.length > 0 ? (
               <button
                 type="button"
-                class="tree-toggle"
+                class={TREE_TOGGLE}
                 data-action="costs-collapse"
                 data-value={key}
                 aria-expanded={collapsed ? "false" : "true"}
                 aria-label={`${collapsed ? "Expand" : "Collapse"} ${node.label}`}
                 onClick={() => act("costs-collapse", key)}
               >
-                <Icon name={collapsed ? "chevronRight" : "chevronDown"} class="icon" />
+                <Icon name={collapsed ? "chevronRight" : "chevronDown"} class="size-4" />
               </button>
             ) : (
-              <span class="tree-toggle tree-leaf" aria-hidden="true" />
+              <span class={`${TREE_TOGGLE} invisible`} data-leaf="" aria-hidden="true" />
             )}
-            <span class="attr-name min-w-0 truncate font-medium" title={node.key}>
+            <span class="attr-name min-w-0 truncate font-medium sm:max-w-[360px]" title={node.key}>
               {node.kind === "model" ? shortModelName(node.label) : node.label}
             </span>
             {node.note !== null && (
-              <span class="attr-note badge badge-ghost badge-sm shrink-0">{node.note}</span>
+              <span class="attr-note ui-badge ui-badge-neutral shrink-0">{node.note}</span>
             )}
             <ModelMix mix={node.mix} />
           </div>
@@ -229,7 +244,7 @@ export function CostsView() {
         }
       >
         {tree === null ? (
-          <p class="px-5 py-4 text-sm text-base-content/60">Adding up the usage ledger…</p>
+          <p class="m-0 px-4 py-4 text-sm text-[var(--ui-muted)]">Adding up the usage ledger…</p>
         ) : tree.length === 0 ? (
           <EmptyState
             title="Nothing spent in this period"
@@ -246,7 +261,9 @@ export function CostsView() {
             </tbody>
           </Table>
         )}
-        <p class="border-t border-base-content/8 px-5 py-3 text-meta text-base-content/60">{ESTIMATE_NOTE}</p>
+        <p class="m-0 border-t border-[var(--ui-line)] px-4 py-3 text-xs text-[var(--ui-muted)]">
+          {ESTIMATE_NOTE}
+        </p>
       </Panel>
     </div>
   );

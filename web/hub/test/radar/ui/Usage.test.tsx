@@ -1,6 +1,6 @@
 import { fireEvent, screen, within } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import type {
   UsageDay,
   UsageHarness,
@@ -21,6 +21,10 @@ import {
 import { modelColor } from "../../../src/radar/palette.ts";
 import type { ClientState } from "../../../src/radar/state.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 const NOW = 1_793_000_000_000;
 

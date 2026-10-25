@@ -1,10 +1,14 @@
 import { screen } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { SessionAgentsView } from "../../../src/radar/app/views/SessionAgents.tsx";
 import type { SessionView } from "../../../src/radar/shared/model.ts";
 import { ZERO_TOKENS } from "../../../src/radar/shared/model.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 function detail(agents: SessionView["agents"]): SessionView {
   return {
@@ -91,7 +95,7 @@ describe("SessionAgentsView", () => {
     const rows = [...container.querySelectorAll("tbody tr")];
     expect(rows[0]?.textContent).toContain("Main");
     expect(rows[1]?.textContent).toContain("dig");
-    expect(rows[1]?.className).toContain("muted"); // ended, dimmed in the muted ink
+    expect(rows[1]?.className).toContain("text-[var(--ui-muted)]"); // ended, dimmed in the muted ink
     expect(rows[2]?.textContent).toContain("Jobs (1)"); // the section between the locals and the jobs
     expect(rows[3]?.textContent).toContain("One");
     expect(container.textContent).toContain("3 agents");
@@ -131,8 +135,8 @@ describe("SessionAgentsView", () => {
       },
       NOW,
     );
-    expect(picked.container.querySelector('tr[class*="bg-primary"]')).toBeTruthy();
-    await userEvent.click(picked.container.querySelector('tr[class*="bg-primary"]') as HTMLElement);
+    expect(picked.container.querySelector('tr[class*="--ui-accent)_10%"]')).toBeTruthy();
+    await userEvent.click(picked.container.querySelector('tr[class*="--ui-accent)_10%"]') as HTMLElement);
     expect(picked.act).toHaveBeenCalledWith("agent-transcript", "s1/a1");
     // the fold chevron folds without opening the transcript
     act.mockClear();

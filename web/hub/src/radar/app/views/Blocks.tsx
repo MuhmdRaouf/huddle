@@ -10,7 +10,7 @@ import { ESTIMATE_NOTE, fmtHour, fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts"
 import { BLOCKS_WINDOWS, type BlocksReport, type UsageBlock } from "../../shared/usage.ts";
 import { ActiveBlock, blockTokens } from "../ActiveBlock.tsx";
 import { useApp } from "../context.ts";
-import { EmptyState, Panel, Segmented } from "../kit.tsx";
+import { EmptyState, Notice, Panel, Segmented } from "../kit.tsx";
 import { Table, TableHeadStatic, TableRow } from "../table.tsx";
 
 /** One window's span in words: its clock ends, and the local date when it did not start today. */
@@ -27,28 +27,32 @@ function BlockRow({ block, approximate }: { block: UsageBlock; approximate: bool
   const marks = approximate ? "~" : "";
   return (
     <TableRow key={block.start} active={block.active} label={`The block of ${blockWhen(block, Date.now())}`}>
-      <td class="min-w-0">
+      <td class="min-w-0" data-label="Window" data-cell="title">
         <span class="flex items-center gap-2">
           <span
-            class={`inline-block size-2.5 shrink-0 ${block.active ? "rounded-full bg-success" : "rounded-full bg-base-content/25"}`}
+            class={`inline-block size-2.5 shrink-0 rounded-full ${block.active ? "bg-[var(--ui-ok)]" : "border border-[var(--ui-idle)]"}`}
             role="img"
             aria-label={block.active ? "active" : "ended"}
           />
           <span class="num whitespace-nowrap font-medium">{blockWhen(block, Date.now())}</span>
         </span>
       </td>
-      <td class="num text-right">{fmtNum(block.requests)}</td>
-      <td class="num text-right">{fmtTokens(blockTokens(block))}</td>
-      <td class="num text-right">
+      <td class="num text-right" data-label="Requests">
+        {fmtNum(block.requests)}
+      </td>
+      <td class="num text-right" data-label="Tokens">
+        {fmtTokens(blockTokens(block))}
+      </td>
+      <td class="num text-right" data-label="Est. cost">
         {marks}
         {fmtUsd(block.costUsd)}
       </td>
-      <td class="num whitespace-nowrap text-right text-base-content/80">
+      <td class="num whitespace-nowrap text-right text-[var(--ui-muted)]" data-label="Burn rate">
         {block.active
           ? `${fmtTokens(block.burnTokensPerHour)}/h · ${marks}${fmtUsd(block.burnCostPerHour)}/h`
           : "–"}
       </td>
-      <td class="num whitespace-nowrap text-right text-base-content/80">
+      <td class="num whitespace-nowrap text-right text-[var(--ui-muted)]" data-label="Projected to end">
         {block.active
           ? `${fmtTokens(block.projectedTokens)} · ${marks}${fmtUsd(block.projectedCostUsd)}`
           : "–"}
@@ -87,12 +91,12 @@ export function BlocksView() {
   if (held === null) {
     if (state.blocksError !== null) {
       return (
-        <div role="alert" class="alert alert-error">
+        <Notice tone="err">
           <span>
             The blocks did not load ({state.blocksError}). The next refresh tries again; the windows come back
             with it.
           </span>
-        </div>
+        </Notice>
       );
     }
     return (
@@ -139,7 +143,7 @@ export function BlocksView() {
           </div>
         )}
       </Panel>
-      <p class="text-meta text-base-content/60">{ESTIMATE_NOTE}</p>
+      <p class="m-0 text-xs text-[var(--ui-muted)]">{ESTIMATE_NOTE}</p>
     </div>
   );
 }

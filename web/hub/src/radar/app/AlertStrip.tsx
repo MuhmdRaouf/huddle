@@ -35,25 +35,31 @@ export function alertWhere(alert: Alert): string {
   return alert.agentId === null ? project : `${project}, ${alert.agentId.slice(0, 12)}`;
 }
 
-/** The daisyUI alert classes the row's severity reads as: errors in error colour, the rest in warning. */
+/** The classes an alert row's severity reads as: errors on the fail tone's soft fill, the rest on the
+ *  warn tone's. */
 export function alertClasses(tone: StatusTone): string {
-  return `alert alert-soft ${tone === "err" ? "alert-error" : "alert-warning"}`;
+  return tone === "err"
+    ? "border-[var(--ui-fail)] bg-[var(--ui-fail-soft)]"
+    : "border-[var(--ui-warn)] bg-[var(--ui-warn-soft)]";
 }
 
-/** One alert: a daisyUI alert row — the kind badge and detail, the where/since/cost facts, and a dismiss
- *  button. */
+/** One alert: the kind badge and detail, the where/since/cost facts, and a dismiss button. */
 export function AlertRow({ alert }: { alert: Alert }) {
   const { now, act } = useApp();
   const tone: StatusTone = alert.severity === "err" ? "err" : "warn";
   return (
-    <li role="alert" class={`${alertClasses(tone)} items-start`}>
+    <li
+      role="alert"
+      data-alert={tone}
+      class={`grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-[var(--ui-radius)] border p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] ${alertClasses(tone)}`}
+    >
       <IconTile name={ALERT_ICON[alert.kind]} color={STATUS_COLOR[tone]} sm />
       <div class="min-w-0">
         <div class="flex flex-wrap items-center gap-2">
           <Badge text={alertLabel(alert.kind)} tone={tone} />
           <span class="min-w-0 truncate text-sm">{alert.detail}</span>
         </div>
-        <div class="flex flex-wrap gap-x-3.5 text-meta text-base-content/70">
+        <div class="flex flex-wrap gap-x-3.5 text-xs text-[var(--ui-muted)]">
           <span>{alertWhere(alert)}</span>
           <span>{`since ${fmtAgo(alert.since, now)}`}</span>
           {alert.costUsd !== null && <span>{costText(alert.costUsd)}</span>}
@@ -61,13 +67,13 @@ export function AlertRow({ alert }: { alert: Alert }) {
       </div>
       <button
         type="button"
-        class="btn btn-ghost btn-sm shrink-0"
+        class="ui-btn ui-btn-ghost col-span-2 justify-self-end sm:col-span-1"
         data-action="dismiss-alert"
         data-value={alert.id}
         aria-label={`Dismiss: ${alert.detail}`}
         onClick={() => act("dismiss-alert", alert.id)}
       >
-        <Icon name="close" />
+        <Icon name="close" class="ui-icon" />
         <span>Dismiss</span>
       </button>
     </li>
@@ -88,7 +94,7 @@ export function AlertStrip() {
       actions={
         <button
           type="button"
-          class="btn btn-sm"
+          class="ui-btn ui-btn-secondary"
           data-action="tab"
           data-value="alerts"
           onClick={() => act("tab", "alerts")}
@@ -97,7 +103,7 @@ export function AlertStrip() {
         </button>
       }
     >
-      <ul class="grid gap-2">
+      <ul class="m-0 grid list-none gap-2 p-0">
         {shown.map((alert) => (
           <AlertRow key={alert.id} alert={alert} />
         ))}

@@ -1,10 +1,11 @@
 import { screen } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
 import { createRef } from "preact";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   type Column,
   ExportButton,
+  HEAD_CELL,
   Table,
   TableHead,
   TableRow,
@@ -13,6 +14,10 @@ import {
 import { fmtTime } from "../../../src/radar/fmt.ts";
 import { initialClientState } from "../../../src/radar/state.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 /** The indexed item; throws instead of letting `noUncheckedIndexedAccess` turn into an undefined deref. */
 function at<T>(items: T[], index: number): T {
@@ -27,35 +32,41 @@ const COLUMNS: Column<"alpha" | "count">[] = [
 ];
 
 describe("TableHead", () => {
-  it("renders one sortable header per column, numeric columns right-aligned", () => {
+  it("renders one sortable header per column on the token well, numeric columns right-aligned", () => {
     const { container } = renderApp(
       <TableHead columns={COLUMNS} sort={{ key: "alpha", dir: "desc" }} action="sort-things" />,
     );
     const heads = [...container.querySelectorAll("th")];
     expect(heads.map((th) => th.textContent)).toEqual(["Alpha", "Count"]);
     expect(heads.map((th) => th.className)).toEqual([
-      "bg-base-200/60 text-sm font-medium text-base-content/70",
-      "bg-base-200/60 text-sm font-medium text-base-content/70 num text-right",
+      `${HEAD_CELL} text-left`,
+      `${HEAD_CELL} num text-right`,
     ]);
+    expect(HEAD_CELL).toContain("bg-[var(--ui-surface-2)]");
+    expect(HEAD_CELL).toContain("text-[var(--ui-muted)]");
+    expect(HEAD_CELL).toContain("sticky top-0");
     expect(heads.map((th) => th.getAttribute("scope"))).toEqual(["col", "col"]);
     // numeric sort buttons run the arrow before the label
     expect(at(heads, 1).querySelector("button")?.className).toContain("flex-row-reverse");
     expect(at(heads, 0).querySelector("button")?.className).not.toContain("flex-row-reverse");
   });
 
-  it("marks the sorted column with aria-sort, its arrow and the sort-on class", () => {
+  it("marks the sorted column with aria-sort, its arrow in the accent and a touch-sized button", () => {
     const descending = renderApp(
       <TableHead columns={COLUMNS} sort={{ key: "alpha", dir: "desc" }} action="sort-things" />,
     );
     const heads = [...descending.container.querySelectorAll("th")];
     expect(heads.map((th) => th.getAttribute("aria-sort"))).toEqual(["descending", "none"]);
-    expect(at(heads, 0).querySelector('svg[data-icon="chevronDown"]')).toBeTruthy();
+    expect(at(heads, 0).querySelector('svg[data-icon="chevronDown"]')?.getAttribute("class")).toContain(
+      "text-[var(--ui-accent)]",
+    );
     expect(at(heads, 1).querySelector('svg[data-icon="chevronsUpDown"]')).toBeTruthy();
     const buttons = [...descending.container.querySelectorAll("button")];
-    expect(buttons.map((button) => button.className)).toEqual([
-      "sort-btn -mx-1.5 inline-flex items-center gap-1 rounded-field px-1.5 py-1 hover:text-base-content sort-on text-base-content",
-      "sort-btn -mx-1.5 inline-flex items-center gap-1 rounded-field px-1.5 py-1 hover:text-base-content flex-row-reverse",
+    expect(buttons.map((button) => button.className.split(" ").includes("text-[var(--ui-text)]"))).toEqual([
+      true,
+      false,
     ]);
+    for (const button of buttons) expect(button.className).toContain("pointer-coarse:min-h-[var(--ui-tap)]");
     expect(buttons.map((button) => button.getAttribute("title"))).toEqual(["Sort by alpha", "Sort by count"]);
 
     const ascending = renderApp(
@@ -64,8 +75,6 @@ describe("TableHead", () => {
     const upHead = at([...ascending.container.querySelectorAll("th")], 1);
     expect(upHead.getAttribute("aria-sort")).toBe("ascending");
     expect(upHead.querySelector('svg[data-icon="chevronUp"]')).toBeTruthy();
-    expect(upHead.className).toBe("bg-base-200/60 text-sm font-medium text-base-content/70 num text-right");
-    expect(upHead.querySelector("button")?.className).toContain("sort-on");
   });
 
   it("runs the header's sort action with the column key on click", async () => {
@@ -92,7 +101,7 @@ describe("ExportButton", () => {
   it("offers the CSV download of the shown rows and runs the export on click", async () => {
     const { act } = renderApp(<ExportButton kind="things" count={1} />);
     const button = screen.getByRole("button");
-    expect(button.className).toBe("btn btn-sm btn-ghost");
+    expect(button.className).toBe("ui-btn ui-btn-ghost");
     expect(button.getAttribute("data-action")).toBe("export");
     expect(button.getAttribute("data-value")).toBe("things");
     expect(button.textContent).toBe("Export CSV");
@@ -108,35 +117,44 @@ describe("ExportButton", () => {
 });
 
 describe("Table", () => {
-  it("wraps the daisyUI table in its scrollable, marked wrap", () => {
+  it("draws dense rows on a desk and a card per row on the phone, in a wrap that scrolls only on a desk", () => {
     const { container } = renderApp(
       <Table dataKey="things-table">
         <tbody>
           <tr>
-            <td>cell</td>
+            <td data-label="Cell">cell</td>
           </tr>
         </tbody>
       </Table>,
     );
-    const wrap = container.querySelector(".table-wrap");
-    expect(wrap?.getAttribute("data-key")).toBe("things-table");
-    expect(wrap?.className).toBe("table-wrap max-h-[calc(100dvh-17rem)] min-h-64 overflow-auto");
-    expect(wrap?.querySelector("table")?.className).toBe("table table-pin-rows text-row");
+    const wrap = container.querySelector("[data-key='things-table']");
+    expect(wrap?.className).toBe("sm:max-h-[calc(100dvh-17rem)] sm:min-h-64 sm:overflow-auto");
+    const table = wrap?.querySelector("table");
+    expect(table?.hasAttribute("data-radar-table")).toBe(true);
+    const cls = table?.className ?? "";
+    // the desk: dense rows on the line token
+    expect(cls).toContain("[&_td]:border-t [&_td]:border-[var(--ui-line)] [&_td]:px-3 [&_td]:py-2");
+    // the phone: no head, each row a bordered card of labelled cells, the title cell across it
+    expect(cls).toContain("max-sm:block max-sm:[&_thead]:hidden");
+    expect(cls).toContain("max-sm:[&_tr]:grid");
+    expect(cls).toContain("max-sm:[&_tr]:rounded-[var(--ui-radius)] max-sm:[&_tr]:border");
+    expect(cls).toContain("max-sm:[&_td[data-label]]:before:content-[attr(data-label)]");
+    expect(cls).toContain("max-sm:[&_td[data-cell=title]]:col-span-2");
     expect(container.textContent).toContain("cell");
   });
 
   it("omits the data-key when none is given and carries extra classes through", () => {
     const { container } = renderApp(
-      <Table class="table-zebra">
+      <Table class="extra">
         <tbody>
           <tr>
-            <td>cell</td>
+            <td data-label="Cell">cell</td>
           </tr>
         </tbody>
       </Table>,
     );
-    expect(container.querySelector(".table-wrap")?.hasAttribute("data-key")).toBe(false);
-    expect(container.querySelector("table")?.className).toBe("table table-pin-rows text-row table-zebra");
+    expect(container.querySelector("div")?.hasAttribute("data-key")).toBe(false);
+    expect(container.querySelector("table")?.className.endsWith(" extra")).toBe(true);
   });
 
   it("lays out fixed widths from its columns and leaves the rest to share what is left", () => {
@@ -147,14 +165,14 @@ describe("Table", () => {
       >
         <tbody>
           <tr>
-            <td>one</td>
-            <td>two</td>
-            <td>three</td>
+            <td data-label="A">one</td>
+            <td data-label="B">two</td>
+            <td data-label="C">three</td>
           </tr>
         </tbody>
       </Table>,
     );
-    expect(container.querySelector("table")?.className).toBe("table table-pin-rows text-row table-fixed");
+    expect(container.querySelector("table")?.className).toContain(" table-fixed");
     const cols = [...container.querySelectorAll("col")];
     expect(cols.map((col) => col.className)).toEqual(["w-24", "", "w-32"]);
   });
@@ -165,31 +183,34 @@ describe("Table", () => {
       <Table wrapRef={ref}>
         <tbody>
           <tr>
-            <td>cell</td>
+            <td data-label="Cell">cell</td>
           </tr>
         </tbody>
       </Table>,
     );
-    expect(ref.current?.className).toBe("table-wrap max-h-[calc(100dvh-17rem)] min-h-64 overflow-auto");
+    expect(ref.current?.querySelector("table")).toBeTruthy();
   });
 });
 
 describe("TableRow", () => {
-  it("renders a plain row carrying its state classes", () => {
+  it("renders a plain row carrying its state in token classes", () => {
     const { container } = renderApp(
       <table>
         <tbody>
           <TableRow>
             <td>plain</td>
           </TableRow>
-          <TableRow failed active fresh>
+          <TableRow failed active fresh dimmed>
             <td>marked</td>
           </TableRow>
         </tbody>
       </table>,
     );
     const rows = [...container.querySelectorAll("tr")];
-    expect(rows.map((row) => row.className)).toEqual(["row", "row bg-error/5 bg-primary/8 row-new"]);
+    expect(rows[0]?.className).toBe("row");
+    expect(rows[1]?.className).toBe(
+      "row bg-[var(--ui-fail-soft)] bg-[color-mix(in_oklab,var(--ui-accent)_10%,transparent)] row-new text-[var(--ui-muted)]",
+    );
     expect(rows[0]?.hasAttribute("tabindex")).toBe(false);
     expect(screen.getByText("plain")).toBeTruthy();
   });
@@ -207,6 +228,7 @@ describe("TableRow", () => {
     );
     const row = container.querySelector("tr");
     expect(row?.getAttribute("tabindex")).toBe("0");
+    expect(row?.className).toContain("hover:bg-[var(--ui-surface-2)]");
     await userEvent.click(row as HTMLElement);
     expect(onOpen).toHaveBeenCalledTimes(1);
     await userEvent.keyboard("{Enter}");

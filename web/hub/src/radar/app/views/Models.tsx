@@ -15,7 +15,7 @@ import { AreaChart, StackedBar } from "../Chart.tsx";
 import { ChartTipBox, useChartTip } from "../ChartTip.tsx";
 import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
-import { Code, EmptyState, ModelChip, Panel } from "../kit.tsx";
+import { Badge, Code, EmptyState, ModelChip, Notice, Panel } from "../kit.tsx";
 
 /** The model's token bar: one segment per token kind, coloured by kind, against the view's biggest total. */
 export function tokenBar(tokens: Tokens, max: number): VNode {
@@ -30,9 +30,9 @@ export function tokenBar(tokens: Tokens, max: number): VNode {
 /** The legend for the token bars: one swatch + label per token kind, in TOKEN_KINDS order. */
 function TokenLegend() {
   return (
-    <ul class="flex flex-wrap items-center gap-x-4 gap-y-1.5" aria-label="Token kinds">
+    <ul class="m-0 flex list-none flex-wrap items-center gap-x-4 gap-y-1.5 p-0" aria-label="Token kinds">
       {TOKEN_KINDS.map((kind) => (
-        <li class="flex items-center gap-1.5 text-meta" key={kind.key}>
+        <li class="flex items-center gap-1.5 text-xs" key={kind.key}>
           <span
             class="inline-block size-2.5 rounded-full"
             style={`background:${kind.color}`}
@@ -61,7 +61,7 @@ function ModelRankRow({
         <span class="text-sm font-medium" data-rank-name>
           <ModelChip model={row.model} />
         </span>
-        <span class="flex items-center gap-1.5 text-meta text-base-content/70" data-rank-provider>
+        <span class="flex items-center gap-1.5 text-xs text-[var(--ui-muted)]" data-rank-provider>
           <span
             class="inline-block size-2 rounded-full"
             style={`background:${providerColor(row.provider)}`}
@@ -69,23 +69,23 @@ function ModelRankRow({
           />
           <span>{row.provider}</span>
         </span>
-        <span class="text-sm text-base-content/70" data-rank-meta>
+        <span class="text-sm text-[var(--ui-muted)]" data-rank-meta>
           {`${fmtCount(row.requests, "request")}, median ${fmtDuration(row.latencyP50)}, ${costText(row.costUsd)}`}
         </span>
         <span class="num ml-auto text-sm font-semibold" data-rank-total>
           {fmtTokens(totalTokens(row.tokens))}
         </span>
-        {row.errors > 0 && <span class="badge badge-error badge-soft">{fmtNum(row.errors)} failed</span>}
+        {row.errors > 0 && <Badge text={`${fmtNum(row.errors)} failed`} tone="err" />}
       </div>
       <div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5" data-bar-pair>
-        <span class="text-meta text-base-content/60" data-bar-label>
+        <span class="text-xs text-[var(--ui-muted)]" data-bar-label>
           Requests
         </span>
         <StackedBar
           segments={[{ value: row.requests, color: providerColor(row.provider) }]}
           max={maxRequests}
         />
-        <span class="text-meta text-base-content/60" data-bar-label>
+        <span class="text-xs text-[var(--ui-muted)]" data-bar-label>
           Tokens
         </span>
         {tokenBar(row.tokens, maxTokens)}
@@ -101,14 +101,14 @@ function UpstreamRankRow({ row, maxUpstream }: { row: UpstreamRow; maxUpstream: 
     <div class="grid gap-2 py-4 first:pt-0 last:pb-0">
       <div class="flex flex-wrap items-center gap-x-3.5 gap-y-1.5">
         <Code text={row.host} class="font-medium" data-rank-name />
-        <span class="text-sm text-base-content/70" data-rank-meta>
+        <span class="text-sm text-[var(--ui-muted)]" data-rank-meta>
           {`${fmtCount(row.requests, "request")}, ${costText(row.costUsd)}`}
         </span>
         <span class="num ml-auto text-sm font-semibold" data-rank-total>
           {fmtTokens(totalTokens(row.tokens))}
         </span>
       </div>
-      <StackedBar segments={[{ value: row.requests, color: "var(--series-8)" }]} max={maxUpstream} />
+      <StackedBar segments={[{ value: row.requests, color: "var(--radar-series-8)" }]} max={maxUpstream} />
     </div>
   );
 }
@@ -119,10 +119,10 @@ function WaitingPanel() {
   return (
     <Panel icon="cpu" title="Models">
       {state.modelsError !== null ? (
-        <div role="alert" class="alert alert-error">
-          <Icon name="alert" class="icon" />
+        <Notice tone="err">
+          <Icon name="alert" class="ui-icon" />
           <span>{`The model tables did not answer (${state.modelsError}). Refresh to try again.`}</span>
-        </div>
+        </Notice>
       ) : (
         <EmptyState
           title="Waiting for model totals"
@@ -159,16 +159,16 @@ function RateCard() {
       title="Request rate"
       subtitle={`Requests per bucket, ${bucketWord(bucketMs)} per bar${everySession ? ", every session" : ""}`}
     >
-      <div class="rate-chart" onPointerMove={tipper.move} onPointerLeave={tipper.leave}>
+      <div class="relative min-w-0" onPointerMove={tipper.move} onPointerLeave={tipper.leave}>
         {counts === null ? (
           state.flowError !== null ? (
-            <div role="alert" class="alert alert-error">
-              <Icon name="alert" class="icon" />
+            <Notice tone="err">
+              <Icon name="alert" class="ui-icon" />
               <span>
                 History did not answer for this range ({state.flowError}). Narrow the range or check the
                 history store.
               </span>
-            </div>
+            </Notice>
           ) : (
             <div class="skeleton h-[7.5rem] w-full" role="status" aria-label="Loading request rate" />
           )
@@ -177,7 +177,7 @@ function RateCard() {
             values={counts}
             width={720}
             height={120}
-            color="var(--series-2)"
+            color="var(--radar-series-2)"
             gradientId="rate-gradient"
             xLabels={windowLabels(from, to, now)}
             yLabel={`${fmtNum(Math.max(...counts, 0))} max`}
@@ -188,7 +188,11 @@ function RateCard() {
             tip={tipper.tip}
             head={fmtClock(from + tipper.tip.index * bucketMs)}
             lines={[
-              { color: "var(--series-2)", label: "Requests", value: fmtNum(counts[tipper.tip.index] ?? 0) },
+              {
+                color: "var(--radar-series-2)",
+                label: "Requests",
+                value: fmtNum(counts[tipper.tip.index] ?? 0),
+              },
             ]}
           />
         )}
@@ -222,7 +226,7 @@ export function ModelsView() {
           icon="cpu"
         />
       ) : (
-        <div class="divide-y divide-base-content/8">
+        <div class="divide-y divide-[var(--ui-line)]">
           {ranked.map((row) => (
             <ModelRankRow key={row.model} row={row} maxRequests={maxRequests} maxTokens={maxTokens} />
           ))}
@@ -242,7 +246,7 @@ export function ModelsView() {
           icon="arrows"
         />
       ) : (
-        <div class="divide-y divide-base-content/8">
+        <div class="divide-y divide-[var(--ui-line)]">
           {upstreams.map((row) => (
             <UpstreamRankRow key={row.upstream} row={row} maxUpstream={maxUpstream} />
           ))}

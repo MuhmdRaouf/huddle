@@ -1,42 +1,44 @@
 /**
- * The shared vocabulary every panel is built from: the shared `panel` surface with its titled head,
- * badges, status dots, model chips, segmented controls and empty states. Colour arrives only as semantic
- * tokens; the pieces other views style from legacy.css keep their class hooks.
+ * The shared vocabulary every Radar panel is built from, on the web/ui tokens: the card surface with its
+ * titled head, badges, status dots, model chips, segmented controls, notices and empty states. Colour
+ * arrives only as token roles.
  */
 
 import type { Tone } from "@huddle/ui/badge.tsx";
 import { modelColor } from "@huddle/ui/model-color.ts";
-import { type PanelProps, Panel as SharedPanel } from "@huddle/ui/page.tsx";
 import type { ComponentChildren, HTMLAttributes } from "preact";
+import { useId } from "preact/hooks";
 import type { IconName } from "../icons.ts";
 import { STATUS_COLOR, type StatusTone } from "../palette.ts";
 import { useApp } from "./context.ts";
 import { Icon } from "./Icon.tsx";
 
-/** The chrome every panel shares: the shared panel surface, clipped content and room to breathe. */
-export const PANEL = "panel min-w-0";
-
-/** A status dot; `pulse` marks something live. Always sits next to a word, never alone. */
-export function Dot({ tone, pulse = false }: { tone: StatusTone; pulse?: boolean }) {
+/** A status dot in a colour; `pulse` marks something live. Always sits next to a word, never alone. */
+function Dot({ color, pulse = false }: { color: string; pulse?: boolean }) {
   return (
-    <span class={pulse ? "dot dot-pulse" : "dot"} style={`--tone:${STATUS_COLOR[tone]}`} aria-hidden="true" />
+    <span
+      class={`inline-block size-2 shrink-0 rounded-full${pulse ? " motion-safe:animate-pulse" : ""}`}
+      style={`background:${color}`}
+      data-dot=""
+      aria-hidden="true"
+    />
   );
 }
 
-/** Dot + word, coloured by tone (the word carries the meaning for anyone who cannot see the colour).
- *  The class is `presence`, not daisyUI's `status`: that name is a fixed-size dot component here, and
- *  reusing it squeezed the dot and its word into 0.5rem until the word clipped mid-letter. */
+/** Dot + word, coloured by tone (the word carries the meaning for anyone who cannot see the colour). */
 export function Status({ tone, word, pulse = false }: { tone: StatusTone; word: string; pulse?: boolean }) {
   return (
-    <span class={`presence presence-${tone}`}>
-      <Dot tone={tone} pulse={pulse} />
-      <span class="presence-word">{word}</span>
+    <span class="inline-flex items-center gap-[7px] whitespace-nowrap" data-status={tone}>
+      <Dot color={STATUS_COLOR[tone]} pulse={pulse} />
+      <span class="text-[13px]" data-word="">
+        {word}
+      </span>
     </span>
   );
 }
 
 /** The design system's status colour each radar tone reads as. */
-const BADGE_TONE: Record<StatusTone, Tone> = {
+export const BADGE_TONE: Record<StatusTone, Tone> = {
   ok: "ok",
   warn: "warn",
   err: "fail",
@@ -44,12 +46,11 @@ const BADGE_TONE: Record<StatusTone, Tone> = {
   info: "info",
 };
 
-/** The design system's badge in the tone's status colour; `badge badge-<tone>` stay as the hooks
- *  views and tests find it by. */
+/** The design system's badge in the tone's status colour, with an optional icon before the word. */
 export function Badge({ text, tone, icon }: { text: string; tone: StatusTone; icon?: IconName }) {
   return (
-    <span class={`badge badge-${tone} ui-badge ui-badge-${BADGE_TONE[tone]}`}>
-      {icon !== undefined && <Icon name={icon} class="icon icon-xs" />}
+    <span class={`ui-badge ui-badge-${BADGE_TONE[tone]} gap-1`}>
+      {icon !== undefined && <Icon name={icon} class="size-3 shrink-0" />}
       <span>{text}</span>
     </span>
   );
@@ -75,7 +76,7 @@ export function shortModelName(model: string): string {
 export function ModelChip({ model }: { model: string }) {
   return (
     <span class="model-chip inline-flex items-center gap-1.5 whitespace-nowrap" title={model}>
-      <span class="dot" style={`--tone:${modelColor(model)}`} aria-hidden="true" />
+      <Dot color={modelColor(model)} />
       <span>{shortModelName(model)}</span>
     </span>
   );
@@ -87,8 +88,8 @@ export function IconTile({ name, color, sm = false }: { name: IconName; color: s
     <span
       class={
         sm
-          ? "inline-grid size-[26px] shrink-0 place-items-center rounded-[7px]"
-          : "inline-grid size-8 shrink-0 place-items-center rounded-field"
+          ? "inline-grid size-[26px] shrink-0 place-items-center rounded-[var(--ui-radius-sm)]"
+          : "inline-grid size-8 shrink-0 place-items-center rounded-[var(--ui-radius-sm)]"
       }
       style={`--tone:${color};color:var(--tone);background:color-mix(in srgb, var(--tone) 16%, transparent)`}
     >
@@ -97,39 +98,8 @@ export function IconTile({ name, color, sm = false }: { name: IconName; color: s
   );
 }
 
-/** The head row of a panel: icon, title, an optional quiet subtitle, and right-aligned controls — the
- *  same head the shared PageIntro Panel draws, for the panels that compose their own body. */
-export function CardHead({
-  icon,
-  title,
-  subtitle = null,
-  children,
-}: {
-  icon?: IconName | undefined;
-  title: string;
-  subtitle?: string | null;
-  /** the controls on the right */
-  children?: ComponentChildren;
-}) {
-  return (
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-base-content/8 px-5 py-3.5">
-      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1">
-        {icon !== undefined && (
-          <span class="text-primary [&_svg]:size-4.5" aria-hidden="true">
-            <Icon name={icon} />
-          </span>
-        )}
-        <h2 class="truncate text-base font-semibold">{title}</h2>
-        {subtitle !== null && <span class="text-sm text-base-content/60">{subtitle}</span>}
-      </div>
-      {children != null && children !== false && (
-        <div class="flex flex-wrap items-center gap-2">{children}</div>
-      )}
-    </div>
-  );
-}
-
-/** A panel: the shared panel surface with its titled head; pass no title for a headless panel. */
+/** A panel: the token card with its titled head (icon, title, a quiet subtitle, the controls on the
+ *  right) over a padded body, or a flush one for tables and lists; pass no title for a headless panel. */
 export function Panel({
   icon,
   title,
@@ -149,21 +119,50 @@ export function Panel({
   class?: string;
   children?: ComponentChildren;
 }) {
-  const props: PanelProps = {
-    title: title === undefined ? undefined : title,
-    meta: subtitle === null ? undefined : subtitle,
-    icon: icon === undefined ? undefined : <Icon name={icon} />,
-    actions: actions === null ? undefined : actions,
-    flush,
-    class: cls,
-    children,
-  };
-  return <SharedPanel {...props} />;
+  const id = useId();
+  const titled = title !== undefined;
+  const classes = ["ui-card min-w-0", flush ? "overflow-hidden" : "", cls].filter(Boolean).join(" ");
+  return (
+    <section class={classes} aria-labelledby={titled ? id : undefined}>
+      {titled && (
+        <div class="ui-card-head">
+          {icon !== undefined && <Icon name={icon} class="size-[18px] shrink-0 text-[var(--ui-accent)]" />}
+          <h2 id={id} class="ui-card-title min-w-0 truncate">
+            {title}
+          </h2>
+          {subtitle !== null && <span class="ui-card-meta">{subtitle}</span>}
+          {actions !== null && actions !== undefined && actions !== false && (
+            <div class="ui-card-actions flex-wrap items-center">{actions}</div>
+          )}
+        </div>
+      )}
+      {flush ? children : <div class="ui-card-body">{children}</div>}
+    </section>
+  );
 }
 
-export type Segment = { label: string; value: string; on: boolean; count?: string };
+export type Segment = {
+  label: string;
+  value: string;
+  on: boolean;
+  count?: string;
+  /** a colour dot before the label, such as a model's */
+  dot?: string;
+  /** the hover text, such as a model's raw id */
+  title?: string;
+};
 
-/** A segmented control: one daisyUI join of toggle buttons that all run the same action with their own value. */
+/** The well a segmented control's buttons sit in. */
+export const SEGMENT_GROUP =
+  "inline-flex max-w-full flex-wrap gap-1 rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] p-1";
+
+/** One segment: a ghost token button, a full tap target, that paints the accent while it is pressed. */
+export const SEGMENT = "segment ui-btn ui-btn-ghost";
+
+/** A segment's count beside its label. */
+const SEGMENT_COUNT = "segment-count ui-badge ui-badge-neutral num";
+
+/** A segmented control: toggle buttons in one well that all run the same action with their own value. */
 export function Segmented({
   action,
   label,
@@ -176,27 +175,55 @@ export function Segmented({
   const { act } = useApp();
   return (
     // biome-ignore lint/a11y/useSemanticElements: a toolbar of toggles, not a form; a fieldset would bring its own border and legend
-    <div class="segmented join" role="group" aria-label={label}>
+    <div class={SEGMENT_GROUP} role="group" aria-label={label}>
       {segments.map((segment) => (
         <button
           key={segment.value}
           type="button"
-          class={
-            segment.on
-              ? "segment segment-on btn btn-sm btn-soft btn-primary join-item"
-              : "segment btn btn-sm btn-ghost join-item"
-          }
+          class={SEGMENT}
           data-action={action}
           data-value={segment.value}
           aria-pressed={segment.on ? "true" : "false"}
+          title={segment.title}
           onClick={() => act(action, segment.value)}
         >
+          {segment.dot !== undefined && <Dot color={segment.dot} />}
           <span>{segment.label}</span>
-          {segment.count !== undefined && (
-            <span class="segment-count badge badge-sm badge-ghost num">{segment.count}</span>
-          )}
+          {segment.count !== undefined && <span class={SEGMENT_COUNT}>{segment.count}</span>}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** The tones a notice reads in: a failure, a caution, or news that went well. */
+type NoticeTone = "err" | "warn" | "ok";
+
+const NOTICE_CLASS: Record<NoticeTone, string> = {
+  err: "border-[var(--ui-fail)] bg-[var(--ui-fail-soft)] text-[var(--ui-fail-ink)]",
+  warn: "border-[var(--ui-warn)] bg-[var(--ui-warn-soft)] text-[var(--ui-warn-ink)]",
+  ok: "border-[var(--ui-ok)] bg-[var(--ui-ok-soft)] text-[var(--ui-ok-ink)]",
+};
+
+/** A line that says something went wrong, needs a look, or went well, on its tone's soft fill. */
+export function Notice({
+  tone,
+  role = "alert",
+  class: cls = "",
+  children,
+}: {
+  tone: NoticeTone;
+  role?: "alert" | "status";
+  class?: string;
+  children?: ComponentChildren;
+}) {
+  return (
+    <div
+      role={role}
+      data-notice={tone}
+      class={`flex flex-wrap items-center gap-2 rounded-[var(--ui-radius)] border px-3 py-2.5 text-sm ${NOTICE_CLASS[tone]} ${cls}`.trim()}
+    >
+      {children}
     </div>
   );
 }
@@ -215,27 +242,21 @@ export function EmptyState({
   action?: { label: string; run: () => void };
 }) {
   return (
-    <div class="empty flex flex-col items-center gap-1.5 px-6 py-12 text-center">
-      <span class="empty-icon">
-        <Icon name={icon} />
+    <div class="flex flex-col items-center gap-1 px-5 pt-10 pb-11 text-center" data-empty="">
+      <span class="mb-2 inline-grid size-11 place-items-center rounded-full border border-[var(--ui-line)] bg-[var(--ui-surface-2)] text-[var(--ui-muted)]">
+        <Icon name={icon} class="size-5" />
       </span>
-      <p class="empty-title">{title}</p>
-      <p class="empty-hint">{hint}</p>
+      <p class="m-0 font-semibold" data-empty-title="">
+        {title}
+      </p>
+      <p class="m-0 max-w-[46ch] text-[13px] text-[var(--ui-muted)]" data-empty-hint="">
+        {hint}
+      </p>
       {action !== undefined && (
-        <button type="button" class="btn btn-sm mt-2" onClick={action.run}>
+        <button type="button" class="ui-btn ui-btn-secondary mt-2" onClick={action.run}>
           {action.label}
         </button>
       )}
-    </div>
-  );
-}
-
-/** A labelled value inside a panel or drawer. */
-export function Field({ label, value, code = false }: { label: string; value: string; code?: boolean }) {
-  return (
-    <div class="field">
-      <span class="field-label">{label}</span>
-      <span class={code ? "field-value code" : "field-value"}>{value}</span>
     </div>
   );
 }
@@ -247,7 +268,7 @@ export function Code({
   ...rest
 }: { text: string; class?: string } & HTMLAttributes<HTMLSpanElement>) {
   return (
-    <span class={cls === "" ? "code font-mono" : `code font-mono ${cls}`} {...rest}>
+    <span class={cls === "" ? "ui-mono text-[0.86em]" : `ui-mono text-[0.86em] ${cls}`} {...rest}>
       {text}
     </span>
   );

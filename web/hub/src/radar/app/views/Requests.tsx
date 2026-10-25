@@ -24,24 +24,33 @@ import { StackedColumnChart } from "../Chart.tsx";
 import { ChartTipBox, useChartTip } from "../ChartTip.tsx";
 import { useApp } from "../context.ts";
 import { httpStatusOf } from "../inspector/util.ts";
-import { EmptyState, ModelChip, Panel, shortModelName } from "../kit.tsx";
+import { EmptyState, ModelChip, Panel, Segmented, shortModelName } from "../kit.tsx";
 import { stackedPeak } from "./Usage.tsx";
 import { STATUS_COLOR, TOKEN_KINDS } from "../../palette.ts";
 import { nowAction } from "../SessionCard.tsx";
-import { type Column, ExportButton, HEAD_CELL, Table, TableHead, TableRow, timeText } from "../table.tsx";
+import {
+  type Column,
+  ExportButton,
+  Table,
+  TableHead,
+  TableHeadStatic,
+  TableRow,
+  timeText,
+} from "../table.tsx";
 
+// the fixed columns leave the flexible "what" column about a quarter of a 1440 px desk
 const REQUEST_COLUMNS: Column<RequestSortKey>[] = [
-  { key: "time", label: "Time", width: "w-24" },
-  { key: "agent", label: "Agent", width: "w-44" },
+  { key: "time", label: "Time", width: "w-20" },
+  { key: "agent", label: "Agent", width: "w-32" },
   { key: "what", label: "What" },
-  { key: "model", label: "Model", width: "w-48" },
-  { key: "status", label: "Status", numeric: true, width: "w-24" },
+  { key: "model", label: "Model", width: "w-44" },
+  { key: "status", label: "Status", numeric: true, width: "w-20" },
   { key: "latency", label: "Latency", numeric: true, width: "w-24" },
-  { key: "input", label: "Input", numeric: true, width: "w-28" },
-  { key: "output", label: "Output", numeric: true, width: "w-28" },
-  { key: "cacheRead", label: "Cache read", numeric: true, width: "w-28" },
-  { key: "cacheWrite", label: "Cache write", numeric: true, width: "w-28" },
-  { key: "cost", label: "Est. cost", numeric: true, width: "w-28" },
+  { key: "input", label: "Input", numeric: true, width: "w-20" },
+  { key: "output", label: "Output", numeric: true, width: "w-24" },
+  { key: "cacheRead", label: "Cache read", numeric: true, width: "w-24" },
+  { key: "cacheWrite", label: "Cache write", numeric: true, width: "w-24" },
+  { key: "cost", label: "Est. cost", numeric: true, width: "w-24" },
 ];
 
 /** How a request reached its upstream: "via zai router" (a router's own line), or the router's address
@@ -76,8 +85,8 @@ export function isPromptWhat(what: string): boolean {
   return /^\s*↳?\s*prompt\b/.test(what);
 }
 
-/** One request as a table row: fresh rows flash, the open row sits on primary at 8% with a primary bar on
- *  its left edge, activating it opens the drawer. */
+/** One request as a table row (a card on the phone, led by what it did): fresh rows flash, the open row
+ *  sits on the accent at 10% with an accent bar on its left edge, activating it opens the drawer. */
 export function RequestRow({ request, now }: { request: RequestRecord; now: number }) {
   const { state, act } = useApp();
   const fresh = now - request.ts <= 1500;
@@ -99,33 +108,37 @@ export function RequestRow({ request, now }: { request: RequestRecord; now: numb
       active={open}
       dimmed={cancelled}
     >
-      <td class={`time${open ? " shadow-[inset_3px_0_0_0_var(--color-primary)]" : ""}`} title={time.title}>
+      <td
+        class={`time${open ? " shadow-[inset_3px_0_0_0_var(--ui-accent)]" : ""}`}
+        data-label="Time"
+        title={time.title}
+      >
         {time.text}
       </td>
-      <td class="min-w-0" title={request.agentId}>
+      <td class="min-w-0" data-label="Agent" title={request.agentId}>
         <span class="block truncate">{agent}</span>
       </td>
-      <td class="min-w-0" title={what}>
+      <td class="min-w-0" data-label="What" data-cell="title" title={what}>
         {what === undefined ? (
-          <span class="text-base-content/60">–</span>
+          <span class="text-[var(--ui-muted)]">–</span>
         ) : (
           <span class="block truncate">
-            {isPromptWhat(what) && <span class="font-medium text-primary">Prompt: </span>}
+            {isPromptWhat(what) && <span class="font-medium text-[var(--ui-accent)]">Prompt: </span>}
             {action}
           </span>
         )}
       </td>
-      <td class="min-w-0">
+      <td class="min-w-0" data-label="Model">
         <span class="block truncate">
           <ModelChip model={request.model} />
           {isProviderModel(request.provider) && (
-            <span class="model-provider badge badge-ghost badge-sm ml-1.5 align-middle">
+            <span class="model-provider ui-badge ui-badge-neutral ml-1.5 align-middle">
               {request.provider}
             </span>
           )}
           {request.fallback !== undefined && (
             <span
-              class="model-fallback badge badge-warning badge-soft badge-sm ml-1.5 align-middle"
+              class="model-fallback ui-badge ui-badge-warn ml-1.5 align-middle"
               title={`${request.fallback} failed 3 times in a row; the router sent this to ${request.model}`}
             >
               from {request.fallback}
@@ -133,33 +146,44 @@ export function RequestRow({ request, now }: { request: RequestRecord; now: numb
           )}
         </span>
       </td>
-      <td class="num text-right">
+      <td class="num text-right" data-label="Status">
         {status === null ? (
-          <span class="text-base-content/60">–</span>
+          <span class="text-[var(--ui-muted)]">–</span>
         ) : cancelled ? (
           <span
-            class="badge badge-ghost badge-sm"
+            class="ui-badge ui-badge-neutral"
             title={`HTTP ${status}: ${request.error ?? "client closed"}`}
           >
             cancelled
           </span>
         ) : (
           <span
-            class={`badge badge-soft badge-sm${status >= 400 ? " badge-error" : ""}`}
+            class={`ui-badge ${status >= 400 ? "ui-badge-fail" : "ui-badge-neutral"}`}
+            data-http={String(status)}
             title={request.error ?? `HTTP ${status}`}
           >
             {status}
           </span>
         )}
       </td>
-      <td class="num text-right">{fmtDuration(request.latencyMs)}</td>
-      <td class="num text-right">{fmtNum(request.tokens.input)}</td>
-      <td class="num text-right">{fmtNum(request.tokens.output)}</td>
-      <td class="num text-right">{fmtNum(request.tokens.cacheRead)}</td>
-      <td class="num text-right">{fmtNum(request.tokens.cacheWrite)}</td>
-      <td class="num text-right">
+      <td class="num text-right" data-label="Latency">
+        {fmtDuration(request.latencyMs)}
+      </td>
+      <td class="num text-right" data-label="Input">
+        {fmtNum(request.tokens.input)}
+      </td>
+      <td class="num text-right" data-label="Output">
+        {fmtNum(request.tokens.output)}
+      </td>
+      <td class="num text-right" data-label="Cache read">
+        {fmtNum(request.tokens.cacheRead)}
+      </td>
+      <td class="num text-right" data-label="Cache write">
+        {fmtNum(request.tokens.cacheWrite)}
+      </td>
+      <td class="num text-right" data-label="Est. cost">
         {streaming ? (
-          <span class="text-base-content/60">pending</span>
+          <span class="text-[var(--ui-muted)]">pending</span>
         ) : (
           fmtUsd(requestCost(request)?.usd ?? null)
         )}
@@ -173,7 +197,12 @@ export function HistoryRequestsPanel() {
   const { state, now, act } = useApp();
   const requests = state.historyRequests;
   const loadMore = state.historyRequestsNext !== null && (
-    <button type="button" class="btn btn-sm" data-action="more-requests" onClick={() => act("more-requests")}>
+    <button
+      type="button"
+      class="ui-btn ui-btn-secondary"
+      data-action="more-requests"
+      onClick={() => act("more-requests")}
+    >
       {state.historyRequestsLoading ? "Loading…" : "Load more"}
     </button>
   );
@@ -202,21 +231,7 @@ export function HistoryRequestsPanel() {
         />
       ) : (
         <Table dataKey="history-requests" columns={REQUEST_COLUMNS}>
-          <thead>
-            <tr>
-              {REQUEST_COLUMNS.map((column) => (
-                <th
-                  key={column.key}
-                  class={[HEAD_CELL, column.numeric === true ? "num text-right" : ""]
-                    .filter(Boolean)
-                    .join(" ")}
-                  scope="col"
-                >
-                  {column.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
+          <TableHeadStatic columns={REQUEST_COLUMNS} />
           <tbody>
             {requests.map((request) => (
               <RequestRow key={request.id} request={request} now={now} />
@@ -236,54 +251,28 @@ export function RequestsView() {
   return <LiveRequestsPanel />;
 }
 
-/** The model filter: a daisyUI join of buttons, one per model in view plus "All models", each with the
- *  model's colour dot and its request count. */
+/** The model filter: one segment per model in view plus "All models", each with the model's colour dot
+ *  and its request count. */
 function ModelFilter() {
-  const { state, act } = useApp();
+  const { state } = useApp();
   const choices = modelChoices(state);
   if (choices.length <= 1) return null;
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a toolbar of filter pills, not a form; a fieldset would bring its own border and legend
-    <div class="join" role="group" aria-label="Filter by model">
-      <button
-        type="button"
-        class={
-          state.model === null
-            ? "btn btn-sm btn-soft btn-primary join-item"
-            : "btn btn-sm btn-ghost join-item"
-        }
-        data-action="model"
-        data-value=""
-        aria-pressed={state.model === null ? "true" : "false"}
-        onClick={() => act("model", "")}
-      >
-        <span>All models</span>
-      </button>
-      {choices.map((choice) => (
-        <button
-          key={choice.model}
-          type="button"
-          class={
-            state.model === choice.model
-              ? "btn btn-sm btn-soft btn-primary join-item"
-              : "btn btn-sm btn-ghost join-item"
-          }
-          data-action="model"
-          data-value={choice.model}
-          aria-pressed={state.model === choice.model ? "true" : "false"}
-          title={choice.model}
-          onClick={() => act("model", choice.model)}
-        >
-          <span
-            class="inline-block size-2 shrink-0 rounded-full"
-            style={`background:${modelColor(choice.model)}`}
-            aria-hidden="true"
-          />
-          <span>{shortModelName(choice.model)}</span>
-          <span class="badge badge-sm badge-ghost num">{fmtNum(choice.count)}</span>
-        </button>
-      ))}
-    </div>
+    <Segmented
+      action="model"
+      label="Filter by model"
+      segments={[
+        { label: "All models", value: "", on: state.model === null },
+        ...choices.map((choice) => ({
+          label: shortModelName(choice.model),
+          value: choice.model,
+          on: state.model === choice.model,
+          count: fmtNum(choice.count),
+          dot: modelColor(choice.model),
+          title: choice.model,
+        })),
+      ]}
+    />
   );
 }
 
@@ -434,7 +423,7 @@ function RequestsCharts({ requests }: { requests: RequestRecord[] }) {
   if (requests.length === 0) {
     return (
       <Panel icon="activity" title="Requests and tokens" subtitle={label}>
-        <p class="text-sm text-base-content/60">No requests in this range.</p>
+        <p class="m-0 text-sm text-[var(--ui-muted)]">No requests in this range.</p>
       </Panel>
     );
   }
@@ -515,18 +504,20 @@ function LiveRequestsPanel() {
         ) : (
           <div class="relative">
             {held > 0 && (
-              <button
-                type="button"
-                class="btn btn-soft btn-primary btn-block rounded-none border-0 border-b border-base-content/8"
-                aria-label={`${held} new ${held === 1 ? "request" : "requests"}, jump to newest`}
-                onClick={() => {
-                  setHeldTs(null);
-                  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-                  wrapRef.current?.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
-                }}
-              >
-                {fmtNum(held)} new {held === 1 ? "request" : "requests"}
-              </button>
+              <div class="border-b border-[var(--ui-line)] p-2">
+                <button
+                  type="button"
+                  class="ui-btn ui-btn-secondary w-full"
+                  aria-label={`${held} new ${held === 1 ? "request" : "requests"}, jump to newest`}
+                  onClick={() => {
+                    setHeldTs(null);
+                    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+                    wrapRef.current?.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
+                  }}
+                >
+                  {fmtNum(held)} new {held === 1 ? "request" : "requests"}
+                </button>
+              </div>
             )}
             <Table dataKey="requests-table" columns={REQUEST_COLUMNS} wrapRef={wrapRef}>
               <TableHead columns={REQUEST_COLUMNS} sort={state.requestSort} action="sort-requests" />

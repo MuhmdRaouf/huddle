@@ -1,8 +1,8 @@
 /**
- * The agents tab: one daisyUI table per session — Main first, then subagents nested by spawn depth, ended
- * rows dimmed, jobs at the bottom with their own subagents under them. Columns: status, agent, model,
- * requests, tokens, est. cost, latency p95, last activity. Clicking a row opens the agent's live
- * transcript in a slide-over; the tree chevron only folds.
+ * The agents tab: one table per session (dense rows on a desk, a card per agent on the phone) — Main
+ * first, then subagents nested by spawn depth, ended rows dimmed, jobs at the bottom with their own
+ * subagents under them. Columns: status, agent, model, requests, tokens, est. cost, latency p95, last
+ * activity. Clicking a row opens the agent's live transcript in a slide-over; the tree chevron only folds.
  */
 
 import type { ComponentChildren } from "preact";
@@ -13,8 +13,8 @@ import { type AgentView, type SessionView, totalTokens } from "../../shared/mode
 import { agentNodeId, detailTargets } from "../../state.ts";
 import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
-import { EmptyState, ModelChip, Panel } from "../kit.tsx";
-import { type Column, Table, TableHeadStatic, TableRow, timeText } from "../table.tsx";
+import { Badge, EmptyState, ModelChip, Panel } from "../kit.tsx";
+import { type Column, Table, TableHeadStatic, TableRow, TREE_TOGGLE, timeText } from "../table.tsx";
 
 const AGENT_ICON: Record<AgentView["kind"], IconName> = { main: "bot", subagent: "branch", external: "plug" };
 
@@ -48,12 +48,13 @@ function AgentToggle({
   collapsed: boolean;
 }) {
   const { act } = useApp();
-  if (!hasChildren) return <span class="tree-toggle tree-leaf" aria-hidden="true" />;
+  if (!hasChildren) return <span class={`${TREE_TOGGLE} invisible`} data-leaf="" aria-hidden="true" />;
   const value = `${sessionId}/${agent.id}`;
   return (
     <button
       type="button"
-      class="tree-toggle"
+      class={TREE_TOGGLE}
+      data-tree-toggle=""
       data-action="collapse"
       data-value={value}
       aria-expanded={collapsed ? "false" : "true"}
@@ -63,8 +64,23 @@ function AgentToggle({
         act("collapse", value);
       }}
     >
-      <Icon name={collapsed ? "chevronRight" : "chevronDown"} class="icon" />
+      <Icon name={collapsed ? "chevronRight" : "chevronDown"} class="size-4" />
     </button>
+  );
+}
+
+/** The live badge with its pulsing dot, or the quiet ended one. */
+function LiveBadge({ live }: { live: boolean }) {
+  return live ? (
+    <span class="ui-badge ui-badge-ok gap-1.5">
+      <span
+        class="inline-block size-1.5 rounded-full bg-[var(--ui-ok)] motion-safe:animate-pulse"
+        aria-hidden="true"
+      />
+      Live
+    </span>
+  ) : (
+    <span class="ui-badge ui-badge-neutral">Ended</span>
   );
 }
 
@@ -72,15 +88,8 @@ function AgentToggle({
 function AgentStatusCell({ agent }: { agent: AgentView }) {
   return (
     <div class="flex flex-wrap items-center gap-1.5">
-      {agent.live ? (
-        <span class="badge badge-success badge-soft">
-          <span class="status status-success neon-dot motion-safe:animate-ping" aria-hidden="true" />
-          Live
-        </span>
-      ) : (
-        <span class="badge badge-ghost">Ended</span>
-      )}
-      {agent.errors > 0 && <span class="badge badge-error badge-soft">{fmtNum(agent.errors)} failed</span>}
+      <LiveBadge live={agent.live} />
+      {agent.errors > 0 && <Badge text={`${fmtNum(agent.errors)} failed`} tone="err" />}
     </div>
   );
 }
@@ -91,12 +100,13 @@ function AgentCostCell({ cost }: { cost: AgentView["costUsd"] }) {
   return (
     <td
       class="num text-right"
+      data-label="Est. cost"
       {...(cost !== undefined && cost !== null ? { title: "Estimate at list price" } : {})}
     >
       {cost !== undefined && cost !== null ? (
-        <span class="tree-cost font-medium text-success">{fmtUsd(cost)}</span>
+        <span class="tree-cost font-medium text-[var(--ui-ok-ink)]">{fmtUsd(cost)}</span>
       ) : (
-        <span class="text-base-content/60">–</span>
+        <span class="text-[var(--ui-muted)]">–</span>
       )}
     </td>
   );
@@ -107,8 +117,8 @@ function AgentLastCell({ at }: { at: number | null }) {
   const { state, now } = useApp();
   const when = at === null ? null : timeText(state, at, now);
   return (
-    <td class="time" {...(when === null ? {} : { title: when.title })}>
-      {when === null ? <span class="text-base-content/60">–</span> : when.text}
+    <td class="time" data-label="Last activity" {...(when === null ? {} : { title: when.title })}>
+      {when === null ? <span class="text-[var(--ui-muted)]">–</span> : when.text}
     </td>
   );
 }
@@ -116,8 +126,8 @@ function AgentLastCell({ at }: { at: number | null }) {
 /** The latency cell: the agent's requests at their 95th percentile, a dash under five timed ones. */
 function AgentP95Cell({ p95 }: { p95: AgentView["latencyP95"] }) {
   return (
-    <td class="num text-right" title="95th percentile request latency">
-      {p95 == null ? <span class="text-base-content/60">–</span> : fmtDuration(p95)}
+    <td class="num text-right" data-label="Latency p95" title="95th percentile request latency">
+      {p95 == null ? <span class="text-[var(--ui-muted)]">–</span> : fmtDuration(p95)}
     </td>
   );
 }
@@ -148,31 +158,35 @@ function AgentRow({
       {...(onPick === undefined ? { active } : { onOpen: () => onPick(agent), active })}
       dimmed={!agent.live}
     >
-      <td class={active ? "shadow-[inset_3px_0_0_0_var(--color-primary)]" : undefined}>
+      <td class={active ? "shadow-[inset_3px_0_0_0_var(--ui-accent)]" : undefined} data-label="Status">
         <AgentStatusCell agent={agent} />
       </td>
-      <td>
+      <td class="min-w-0" data-label="Agent" data-cell="title">
         <div class="flex items-center gap-2" style={`padding-left:${depth * 22}px`}>
           <AgentToggle sessionId={sessionId} agent={agent} hasChildren={hasChildren} collapsed={collapsed} />
-          {depth > 0 && <span class="h-4 w-px bg-base-content/20" aria-hidden="true" />}
-          <Icon name={AGENT_ICON[agent.kind]} class="icon icon-xs text-base-content/60" />
+          {depth > 0 && <span class="h-4 w-px bg-[var(--ui-line-strong)]" aria-hidden="true" />}
+          <Icon name={AGENT_ICON[agent.kind]} class="agent-kind size-3 shrink-0 text-[var(--ui-muted)]" />
           <span class="tree-name truncate font-medium" title={label}>
             {label}
           </span>
           {agent.agentType !== null && (
-            <span class="tree-type badge badge-ghost badge-sm font-mono">{agent.agentType}</span>
+            <span class="tree-type ui-badge ui-badge-neutral ui-mono">{agent.agentType}</span>
           )}
         </div>
       </td>
-      <td class="min-w-0">
+      <td class="min-w-0" data-label="Model">
         {agent.model !== null ? (
           <ModelChip model={agent.model} />
         ) : (
-          <span class="text-base-content/60">–</span>
+          <span class="text-[var(--ui-muted)]">–</span>
         )}
       </td>
-      <td class="num text-right">{fmtNum(agent.requests)}</td>
-      <td class="num text-right">{fmtTokens(totalTokens(agent.tokens))}</td>
+      <td class="num text-right" data-label="Requests">
+        {fmtNum(agent.requests)}
+      </td>
+      <td class="num text-right" data-label="Tokens">
+        {fmtTokens(totalTokens(agent.tokens))}
+      </td>
       <AgentCostCell cost={agent.costUsd} />
       <AgentP95Cell p95={agent.latencyP95} />
       <AgentLastCell at={agent.lastAt} />
@@ -191,7 +205,7 @@ function EmptyToggle({ sessionId, count, shown }: { sessionId: string; count: nu
   return (
     <button
       type="button"
-      class="tree-empty btn btn-ghost btn-sm"
+      class="tree-empty ui-btn ui-btn-ghost"
       data-action="empty-agents"
       data-value={sessionId}
       aria-expanded={shown ? "true" : "false"}
@@ -246,7 +260,7 @@ export function agentRows(
       <tr key="external">
         <th
           colSpan={AGENT_COLUMNS.length}
-          class="tree-section bg-base-200/60 px-4 py-2.5 text-left text-sm font-medium text-base-content/70"
+          class="tree-section bg-[var(--ui-surface-2)] px-3 py-2 text-left text-sm font-medium text-[var(--ui-muted)]"
           scope="colgroup"
         >
           {`Jobs (${fmtNum(external.length)})`}
@@ -277,7 +291,7 @@ export function agentRows(
   if (empty.length > 0) {
     rows.push(
       <tr key="empty">
-        <td colSpan={AGENT_COLUMNS.length} class="px-4 py-2">
+        <td colSpan={AGENT_COLUMNS.length}>
           <EmptyToggle sessionId={sessionId} count={empty.length} shown={showEmpty} />
         </td>
       </tr>,
@@ -294,28 +308,24 @@ function SessionHead({ target, collapsed }: { target: SessionListItem; collapsed
   return (
     <button
       type="button"
-      class="flex w-full flex-wrap items-center gap-3 border-b border-base-content/8 px-5 py-3.5 text-left hover:bg-base-200/60"
+      class="flex min-h-[var(--ui-tap)] w-full flex-wrap items-center gap-3 border-0 border-b border-[var(--ui-line)] bg-transparent px-4 py-3 text-left text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
       data-action="collapse"
       data-value={value}
       aria-expanded={collapsed ? "false" : "true"}
       onClick={() => act("collapse", value)}
     >
-      <Icon name={collapsed ? "chevronRight" : "chevronDown"} class="icon text-base-content/60" />
+      <Icon
+        name={collapsed ? "chevronRight" : "chevronDown"}
+        class="size-4 shrink-0 text-[var(--ui-muted)]"
+      />
       <span class="tree-head-name truncate font-semibold">{sessionName(target)}</span>
-      {target.live ? (
-        <span class="badge badge-success badge-soft">
-          <span class="status status-success neon-dot motion-safe:animate-ping" aria-hidden="true" />
-          Live
-        </span>
-      ) : (
-        <span class="badge badge-ghost">Ended</span>
-      )}
-      <span class="tree-head-facts ml-auto flex gap-4 text-right whitespace-nowrap text-meta text-base-content/60">
+      <LiveBadge live={target.live} />
+      <span class="tree-head-facts ml-auto flex flex-wrap gap-x-4 text-right text-xs whitespace-nowrap text-[var(--ui-muted)]">
         <span>{fmtCount(target.agentCount, "agent")}</span>
         <span>{fmtCount(target.requestCount, "request")}</span>
-        <span class="num font-semibold text-base-content">{fmtTokens(target.tokens)}</span>
+        <span class="num font-semibold text-[var(--ui-text)]">{fmtTokens(target.tokens)}</span>
         {cost !== undefined && cost !== null && (
-          <span class="tree-head-cost num text-base-content">{fmtUsd(cost)}</span>
+          <span class="tree-head-cost num text-[var(--ui-text)]">{fmtUsd(cost)}</span>
         )}
       </span>
     </button>
@@ -347,11 +357,13 @@ export function AgentsView() {
         if (!collapsed) {
           if (detail === undefined)
             body = (
-              <p class="tree-note px-5 py-4 text-sm text-base-content/60">Loading this session's agents…</p>
+              <p class="m-0 px-4 py-4 text-sm text-[var(--ui-muted)]" data-note="">
+                Loading this session's agents…
+              </p>
             );
           else if (detail.agents.length === 0) {
             body = (
-              <p class="tree-note px-5 py-4 text-sm text-base-content/60">
+              <p class="m-0 px-4 py-4 text-sm text-[var(--ui-muted)]" data-note="">
                 No agents recorded for this session yet.
               </p>
             );

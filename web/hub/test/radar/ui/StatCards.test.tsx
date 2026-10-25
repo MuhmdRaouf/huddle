@@ -91,8 +91,8 @@ describe("StatCards", () => {
       "in the last 1 hour",
       "in the last 1 hour",
     ]);
-    expect(texts(".stat-desc .presence-word")).toEqual(["2 live now, 1 ended"]);
-    expect(document.querySelector(".dot-pulse")).not.toBeNull();
+    expect(texts(".stat-desc [data-word]")).toEqual(["2 live now, 1 ended"]);
+    expect(document.querySelector("[data-dot][class*='animate-pulse']")).not.toBeNull();
   });
 
   it("counts the live main sessions: the summary's live views, never jobs", () => {
@@ -100,7 +100,7 @@ describe("StatCards", () => {
     const rail = SESSIONS.filter((item) => item.live && !isJob(item)).length;
     const rendered = renderApp(<StatCards />, { summary: SUMMARY, sessions: SESSIONS }, NOW);
     expect(rail).toBe(2);
-    expect(texts(".stat-desc .presence-word")).toEqual(["2 live now, 1 ended"]);
+    expect(texts(".stat-desc [data-word]")).toEqual(["2 live now, 1 ended"]);
     rendered.unmount();
     // a fleet of live jobs over five open sessions says 5, as the rail does
     const fleet = [
@@ -115,7 +115,7 @@ describe("StatCards", () => {
       NOW,
     );
     expect(texts(".stat-value")[1]).toBe("5");
-    expect(texts(".stat-desc .presence-word")).toEqual(["5 live now"]);
+    expect(texts(".stat-desc [data-word]")).toEqual(["5 live now"]);
   });
 
   it("counts the selected range: requests, tools, errors and latency from its own window", () => {
@@ -193,7 +193,7 @@ describe("StatCards", () => {
       { summary: SUMMARY, sessions: SESSIONS, tools: [makeTool({ ok: false, startedAt: NOW - 60_000 })] },
       NOW,
     );
-    expect(texts(".stat-desc .presence-word")).toContain("1 failed");
+    expect(texts(".stat-desc [data-word]")).toContain("1 failed");
     failing.unmount();
     renderApp(
       <StatCards />,

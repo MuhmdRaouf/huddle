@@ -20,7 +20,7 @@ import { ChartTipBox, useChartTip } from "../ChartTip.tsx";
 import { CopyButton } from "../Content.tsx";
 import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
-import { EmptyState, ModelChip, Panel, Segmented, shortModelName } from "../kit.tsx";
+import { EmptyState, ModelChip, Notice, Panel, Segmented, shortModelName } from "../kit.tsx";
 import { Table, TableHeadStatic, TableRow } from "../table.tsx";
 import { OtelUsage, SourceToggle, type UsageSource } from "./OtelUsage.tsx";
 
@@ -160,7 +160,7 @@ function Money({ usd, approximate }: { usd: number; approximate: boolean }) {
     <span title="Estimated at API list price; models without a price are not included">
       {approximate ? "~" : ""}
       {fmtUsd(usd)}
-      <span class="text-base-content/60" title="At API list price">
+      <span class="text-[var(--ui-muted)]" title="At API list price">
         *
       </span>
     </span>
@@ -171,7 +171,7 @@ function Money({ usd, approximate }: { usd: number; approximate: boolean }) {
 function SliceCost({ slice }: { slice: UsageSlice }) {
   if (slice.requests > 0 && slice.costUsd === 0 && slice.savingsUsd === 0) {
     return (
-      <span class="text-base-content/60" title="No price for this model in the table">
+      <span class="text-[var(--ui-muted)]" title="No price for this model in the table">
         tokens only
       </span>
     );
@@ -190,12 +190,10 @@ function Stat({
   subline: ComponentChildren;
 }) {
   return (
-    <div class="stats panel w-full">
-      <div class="stat w-full p-5">
-        <div class="stat-title text-sm font-normal text-base-content/65">{title}</div>
-        <div class="stat-value num text-2xl font-semibold">{value}</div>
-        <div class="stat-desc text-xs whitespace-normal">{subline}</div>
-      </div>
+    <div class="ui-card w-full p-4 md:p-5">
+      <div class="text-sm text-[var(--ui-muted)]">{title}</div>
+      <div class="num mt-0.5 text-2xl font-semibold">{value}</div>
+      <div class="mt-1 text-xs text-[var(--ui-muted)]">{subline}</div>
     </div>
   );
 }
@@ -245,7 +243,7 @@ function HonestNote({ report }: { report: UsageReport }) {
         ? "Some requests ran on models without a price"
         : "Some requests ran without a price";
   return (
-    <p class="text-sm text-base-content/60" data-usage-note="">
+    <p class="m-0 text-sm text-[var(--ui-muted)]" data-usage-note="">
       {ran}
       {names.length > 0 ? `: ${names.join(", ")}` : ""}. Estimates at API list price; the true total is higher
       until every model is priced.
@@ -361,7 +359,7 @@ function SeriesList({
   const visible = report.byModel.filter((slice) => !hidden.includes(slice.key));
   const total = visible.reduce((acc, slice) => acc + metricValue(slice, metric), 0);
   return (
-    <ul class="grid grid-cols-1 gap-1" aria-label="Visible series" data-usage-series="">
+    <ul class="m-0 grid list-none grid-cols-1 gap-1 p-0" aria-label="Visible series" data-usage-series="">
       {report.byModel.map((slice) => {
         const isHidden = hidden.includes(slice.key);
         const value = metricValue(slice, metric);
@@ -370,7 +368,7 @@ function SeriesList({
           <li key={slice.key}>
             <button
               type="button"
-              class="flex w-full items-center gap-2 rounded-field px-1.5 py-1 text-sm hover:bg-base-200/50"
+              class="flex min-h-8 w-full items-center gap-2 rounded-[var(--ui-radius-sm)] border-0 bg-transparent px-1.5 py-1 text-sm text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:opacity-55 pointer-coarse:min-h-[var(--ui-tap)]"
               aria-pressed={isHidden ? "true" : "false"}
               title={
                 isHidden ? `Show ${name}'s line` : `Hide ${name}'s line; the last visible series always stays`
@@ -385,10 +383,10 @@ function SeriesList({
               />
               <span class="sr-only">{isHidden ? "Show " : "Hide "}</span>
               <span class="min-w-0 flex-1 truncate text-left">{name}</span>
-              <span class="num text-base-content/80">
+              <span class="num text-[var(--ui-muted)]">
                 {metric === "cost" ? fmtUsd(value) : fmtNum(value)}
               </span>
-              <span class="num w-10 text-right text-base-content/60">
+              <span class="num w-10 text-right text-[var(--ui-muted)]">
                 {total > 0 ? `${Math.round((value / total) * 100)}%` : "–"}
               </span>
             </button>
@@ -416,12 +414,12 @@ function DayCard({
   const total = rows.reduce((acc, row) => acc + row.value, 0);
   const text = (value: number): string => (metric === "cost" ? fmtUsd(value) : fmtNum(value));
   return (
-    <div class="panel px-4 py-3" data-usage-day="">
+    <div class="ui-card px-4 py-3" data-usage-day="">
       <div class="flex items-center gap-2">
         <h3 class="min-w-0 flex-1 text-sm font-semibold">{dayWords(date)} UTC</h3>
         <button
           type="button"
-          class="btn btn-ghost btn-square btn-sm"
+          class="ui-btn ui-btn-ghost ui-btn-icon"
           aria-label="Clear the selected day"
           title="Clear the selected day"
           onClick={() => act("usage-day", "")}
@@ -429,7 +427,7 @@ function DayCard({
           <Icon name="close" class="size-4" />
         </button>
       </div>
-      <ul class="grid gap-1 text-sm">
+      <ul class="m-0 grid list-none gap-1 p-0 text-sm">
         {rows.map((row) => (
           <li key={row.key} class="flex items-center gap-2">
             <span
@@ -439,13 +437,13 @@ function DayCard({
             />
             <span class="min-w-0 flex-1 truncate">{shortModelName(row.key)}</span>
             <span class="num">{text(row.value)}</span>
-            <span class="num w-10 text-right text-base-content/60">{row.share}%</span>
+            <span class="num w-10 text-right text-[var(--ui-muted)]">{row.share}%</span>
           </li>
         ))}
-        {rows.length === 0 && <li class="text-base-content/60">Nothing ran that day</li>}
+        {rows.length === 0 && <li class="text-[var(--ui-muted)]">Nothing ran that day</li>}
       </ul>
-      <p class="mt-1 border-t border-base-content/8 pt-1 text-sm">
-        <span class="text-base-content/60">Total</span>
+      <p class="mt-1 mb-0 border-t border-[var(--ui-line)] pt-1 text-sm">
+        <span class="text-[var(--ui-muted)]">Total</span>
         <span class="num float-right">{text(total)}</span>
       </p>
     </div>
@@ -499,7 +497,7 @@ function SliceTable({
                 onOpen={() => act("usage-drill", JSON.stringify({ kind: drillKind, key: slice.key }))}
                 label={`Open ${name}'s daily series`}
               >
-                <td class="min-w-0">
+                <td class="min-w-0" data-label={keyLabel} data-cell="title">
                   {drillKind === "model" ? (
                     <ModelChip model={slice.key} />
                   ) : (
@@ -508,18 +506,22 @@ function SliceTable({
                     </span>
                   )}
                 </td>
-                <td class="num text-right">{fmtNum(slice.requests)}</td>
-                <td class="num text-right">{fmtNum(processedTokens(slice))}</td>
-                <td class="num text-right">
+                <td class="num text-right" data-label="Requests">
+                  {fmtNum(slice.requests)}
+                </td>
+                <td class="num text-right" data-label="Tokens">
+                  {fmtNum(processedTokens(slice))}
+                </td>
+                <td class="num text-right" data-label="Est. cost">
                   <SliceCost slice={slice} />
                 </td>
-                <td class="w-32">
+                <td class="w-32" data-label="Share">
                   <span class="flex items-center gap-2">
                     <StackedBar
                       max={total > 0 ? total : 1}
                       segments={[{ value, color: modelColor(slice.key) }]}
                     />
-                    <span class="num text-xs text-base-content/60">
+                    <span class="num text-xs text-[var(--ui-muted)]">
                       {total > 0 ? `${Math.round((value / total) * 100)}%` : "–"}
                     </span>
                   </span>
@@ -554,27 +556,33 @@ function SessionTable({ sessions, now }: { sessions: UsageSession[]; now: number
           const command = resumeCommand(session);
           return (
             <TableRow key={session.sessionId}>
-              <td class="min-w-0">
+              <td class="min-w-0" data-label="Session" data-cell="title">
                 <span class="block truncate font-medium" title={session.sessionId}>
                   {name(session)}
                 </span>
               </td>
-              <td class="num text-right">{fmtAgo(session.lastTs, now)}</td>
-              <td class="num text-right">{fmtNum(session.requests)}</td>
-              <td class="num text-right">{fmtNum(processedTokens(session))}</td>
-              <td class="num text-right">
+              <td class="num text-right" data-label="Last activity">
+                {fmtAgo(session.lastTs, now)}
+              </td>
+              <td class="num text-right" data-label="Requests">
+                {fmtNum(session.requests)}
+              </td>
+              <td class="num text-right" data-label="Tokens">
+                {fmtNum(processedTokens(session))}
+              </td>
+              <td class="num text-right" data-label="Est. cost">
                 <SliceCost slice={{ ...session, key: session.sessionId, days: [] }} />
               </td>
-              <td class="text-right">
+              <td class="text-right" data-label="Resume">
                 {command === null ? (
-                  <span class="text-base-content/60" title="This agent CLI has no resume command">
+                  <span class="text-[var(--ui-muted)]" title="This agent CLI has no resume command">
                     –
                   </span>
                 ) : (
                   <CopyButton
                     text={command}
                     label={`Copy the resume command for ${name(session)}`}
-                    class="btn btn-ghost btn-sm"
+                    class="ui-btn ui-btn-ghost"
                   />
                 )}
               </td>
@@ -624,7 +632,7 @@ function Drill({ report, drill, metric }: { report: UsageReport; drill: UsageDri
       actions={
         <button
           type="button"
-          class="btn btn-sm btn-ghost"
+          class="ui-btn ui-btn-ghost"
           aria-label="Close the drill-down"
           title="Close the drill-down"
           onClick={() => act("usage-drill-close")}
@@ -635,7 +643,7 @@ function Drill({ report, drill, metric }: { report: UsageReport; drill: UsageDri
       }
       flush
     >
-      <div class="grid gap-4 px-5 py-4" data-usage-drill="">
+      <div class="grid gap-4 px-4 py-4" data-usage-drill="">
         <div
           class="relative"
           role="img"
@@ -688,13 +696,13 @@ function TranscriptUsage() {
   if (held === null) {
     if (state.usageError !== null) {
       return (
-        <div role="alert" class="alert alert-error">
-          <Icon name="alert" class="icon" />
+        <Notice tone="err">
+          <Icon name="alert" class="ui-icon" />
           <span>
             The usage report did not load ({state.usageError}). The next refresh tries again; the ranges and
             tables come back with it.
           </span>
-        </div>
+        </Notice>
       );
     }
     return (
@@ -752,7 +760,7 @@ function TranscriptUsage() {
           </>
         }
       >
-        <div class="grid grid-cols-1 items-start gap-6 px-5 py-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <div class="grid grid-cols-1 items-start gap-6 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <UsagePlot data={data} metric={metric} mark={mark} />
           <aside class="grid min-w-0 grid-cols-1 content-start gap-4">
             <SeriesList report={report} metric={metric} hidden={state.usageHidden} />
@@ -780,7 +788,7 @@ function TranscriptUsage() {
         />
       )}
       {state.usageDrill !== null && <Drill report={report} drill={state.usageDrill} metric={metric} />}
-      <p class="text-meta text-base-content/60">{ESTIMATE_NOTE}</p>
+      <p class="m-0 text-xs text-[var(--ui-muted)]">{ESTIMATE_NOTE}</p>
     </div>
   );
 }

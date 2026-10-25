@@ -1,6 +1,6 @@
 import { fireEvent, screen, within } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { AppContext } from "../../../src/radar/app/context.ts";
 import {
   isProviderModel,
@@ -12,6 +12,10 @@ import {
 import { type ClientState, initialClientState } from "../../../src/radar/state.ts";
 import { makeAgentView, makeRequest, makeSessionView } from "../helpers.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 const NOW = 1_790_000_000_000;
 
@@ -63,13 +67,25 @@ describe("requests view", () => {
     expect(heads.filter((th) => th.className.endsWith("num text-right"))).toHaveLength(7);
     const rows = drawerRows(container);
     expect(rows.map((row) => row.className)).toEqual([
-      "row row-new cursor-pointer transition-colors hover:bg-base-200/50",
-      "row bg-primary/8 cursor-pointer transition-colors hover:bg-base-200/50",
+      "row row-new cursor-pointer transition-colors hover:bg-[var(--ui-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ui-accent)]",
+      "row bg-[color-mix(in_oklab,var(--ui-accent)_10%,transparent)] cursor-pointer transition-colors hover:bg-[var(--ui-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ui-accent)]",
     ]);
-    expect(at(rows, 1).className).toContain("bg-primary/8"); // the open row
-    expect(at(rows, 1).querySelector("td")?.className).toContain(
-      "shadow-[inset_3px_0_0_0_var(--color-primary)]",
-    );
+    expect(at(rows, 1).querySelector("td")?.className).toContain("shadow-[inset_3px_0_0_0_var(--ui-accent)]");
+    // the phone's card: every cell names its column, the what line runs across the card
+    expect([...at(rows, 1).querySelectorAll("td")].map((td) => td.getAttribute("data-label"))).toEqual([
+      "Time",
+      "Agent",
+      "What",
+      "Model",
+      "Status",
+      "Latency",
+      "Input",
+      "Output",
+      "Cache read",
+      "Cache write",
+      "Est. cost",
+    ]);
+    expect(at(rows, 1).querySelector('td[data-cell="title"]')?.getAttribute("data-label")).toBe("What");
     expect(rows.map((row) => row.getAttribute("tabindex"))).toEqual(["0", "0"]);
     expect(at(rows, 1).getAttribute("aria-label")).toMatch(
       /^claude-sonnet-5-5 at \d{2}:\d{2}:\d{2}, open details$/,
@@ -88,7 +104,7 @@ describe("requests view", () => {
     expect(at(cells, 5).className).toBe("num text-right");
     expect(at(cells, 6).textContent).toBe("10");
     expect(at(cells, 10).textContent).toMatch(/^[$<–]/); // priced from the record, or a dash when not
-    expect(container.querySelector(".table-wrap")?.getAttribute("data-key")).toBe("requests-table");
+    expect(container.querySelector("[data-key='requests-table'] table[data-radar-table]")).toBeTruthy();
     expect(panelMetaOf(container)).toBe("2 in this view");
 
     await userEvent.click(at(rows, 1));
@@ -105,8 +121,8 @@ describe("requests view", () => {
     );
     const cell = at(within(at(drawerRows(container), 0)).getAllByRole("cell"), 4);
     expect(cell.textContent).toBe("200");
-    expect(cell.querySelector(".badge-error")).toBeNull();
-    expect(cell.querySelector(".badge")?.getAttribute("title")).toBe("HTTP 200");
+    expect(cell.querySelector(".ui-badge-fail")).toBeNull();
+    expect(cell.querySelector(".ui-badge")?.getAttribute("title")).toBe("HTTP 200");
   });
 
   it("shows a failed request's HTTP status as a red badge, its reason on hover", () => {
@@ -126,8 +142,8 @@ describe("requests view", () => {
     );
     const cell = at(within(at(drawerRows(container), 0)).getAllByRole("cell"), 4);
     expect(cell.textContent).toBe("429");
-    expect(cell.querySelector(".badge-error")).toBeTruthy();
-    expect(cell.querySelector(".badge")?.getAttribute("title")).toBe("rate limited, retry in 12s");
+    expect(cell.querySelector(".ui-badge-fail")).toBeTruthy();
+    expect(cell.querySelector(".ui-badge")?.getAttribute("title")).toBe("rate limited, retry in 12s");
   });
 
   it("shows a call its client cancelled as a grey row with a grey cancelled badge, its reason on hover", () => {
@@ -139,12 +155,12 @@ describe("requests view", () => {
       NOW,
     );
     const row = at(drawerRows(container), 0);
-    expect(row.className).toContain("muted");
-    expect(row.className).not.toContain("bg-error");
+    expect(row.className).toContain("text-[var(--ui-muted)]");
+    expect(row.className).not.toContain("--ui-fail-soft");
     const cell = at(within(row).getAllByRole("cell"), 4);
     expect(cell.textContent).toBe("cancelled");
-    expect(cell.querySelector(".badge-error")).toBeNull();
-    expect(cell.querySelector(".badge")?.getAttribute("title")).toBe("HTTP 499: client closed");
+    expect(cell.querySelector(".ui-badge-fail")).toBeNull();
+    expect(cell.querySelector(".ui-badge")?.getAttribute("title")).toBe("HTTP 499: client closed");
     expect(
       container.querySelector("[data-chart='requests'] [role='img']")?.getAttribute("aria-label"),
     ).toMatch(/0 failed$/);
@@ -167,8 +183,8 @@ describe("requests view", () => {
     );
     const cell = at(within(at(drawerRows(container), 0)).getAllByRole("cell"), 4);
     expect(cell.textContent).toBe("502");
-    expect(cell.querySelector(".badge-error")).toBeTruthy();
-    expect(cell.querySelector(".badge")?.getAttribute("title")).toBe("connection failed (ECONNREFUSED)");
+    expect(cell.querySelector(".ui-badge-fail")).toBeTruthy();
+    expect(cell.querySelector(".ui-badge")?.getAttribute("title")).toBe("connection failed (ECONNREFUSED)");
   });
 
   it("shows a request's what line with its full text on hover, and the unknowns as dashes", () => {
@@ -188,7 +204,7 @@ describe("requests view", () => {
     );
     const what = at(within(at(drawerRows(container), 0)).getAllByRole("cell"), 2);
     expect(what.textContent).toBe("Prompt: Edit store.ts, Bash git status");
-    expect(what.querySelector(".text-primary")?.textContent).toBe("Prompt: ");
+    expect(what.querySelector('[class*="text-[var(--ui-accent)]"]')?.textContent).toBe("Prompt: ");
     expect(what.getAttribute("title")).toBe("↳ prompt: fix the limiter  → Edit store.ts, Bash git status");
     const bare = at(within(at(drawerRows(container), 1)).getAllByRole("cell"), 2);
     expect(bare.textContent).toBe("–");
@@ -267,8 +283,8 @@ describe("requests view", () => {
       NOW,
     );
     expect(drawerRows(container).map((row) => row.className)).toEqual([
-      "row row-new cursor-pointer transition-colors hover:bg-base-200/50",
-      "row cursor-pointer transition-colors hover:bg-base-200/50",
+      "row row-new cursor-pointer transition-colors hover:bg-[var(--ui-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ui-accent)]",
+      "row cursor-pointer transition-colors hover:bg-[var(--ui-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ui-accent)]",
     ]);
   });
 
@@ -496,7 +512,7 @@ describe("new requests pill", () => {
     expect(screen.queryByRole("button", { name: /new request/ })).toBeNull();
 
     // the reader scrolls the table wrap down
-    const wrap = first.container.querySelector(".table-wrap");
+    const wrap = first.container.querySelector("[data-key='requests-table']");
     expect(wrap).toBeTruthy();
     (wrap as HTMLElement).scrollTop = 40;
     (wrap as HTMLElement).dispatchEvent(new Event("scroll"));
@@ -509,8 +525,7 @@ describe("new requests pill", () => {
     ];
     rerenderWith(first, { request: null, requests: arrived });
     const pill = screen.getByRole("button", { name: "1 new request, jump to newest" });
-    expect(pill.className).toContain("btn-primary");
-    expect(pill.className).toContain("btn-block");
+    expect(pill.className).toBe("ui-btn ui-btn-secondary w-full");
 
     // jumping back clears the count
     await userEvent.click(pill);
@@ -572,7 +587,7 @@ describe("requests sorting and export", () => {
     expect(at(heads, 0).querySelector('svg[data-icon="chevronDown"]')).toBeTruthy();
     expect(at(heads, 1).querySelector('svg[data-icon="chevronsUpDown"]')).toBeTruthy();
     expect(at(sorts, 0).className).toContain("sort-on");
-    expect(at(sorts, 0).querySelector("svg.text-primary")).toBeTruthy(); // the sorted column's arrow
+    expect(at(sorts, 0).querySelector('svg[class*="text-[var(--ui-accent)]"]')).toBeTruthy(); // the sorted column's arrow
     expect(at(sorts, 1).className).not.toContain("sort-on");
     expect(at(sorts, 5).getAttribute("title")).toBe("Sort by latency");
     await userEvent.click(at(sorts, 3));

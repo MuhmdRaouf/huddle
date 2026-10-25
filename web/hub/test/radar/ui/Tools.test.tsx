@@ -1,12 +1,16 @@
 import { screen } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { ToolsView } from "../../../src/radar/app/views/Tools.tsx";
 import type { SessionListItem } from "../../../src/radar/shared/api.ts";
 import type { ToolCallRecord } from "../../../src/radar/shared/model.ts";
 import type { ClientState } from "../../../src/radar/state.ts";
 import { makeTool, uiFixtures } from "../helpers.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 const NOW = 1_790_000_000_000;
 
@@ -43,7 +47,9 @@ describe("Tools view", () => {
     expect(names).toEqual(["Bash", "Read"]);
     const metas = [...container.querySelectorAll("[data-rank-meta]")].map((el) => el.textContent);
     expect(metas).toEqual(["10 calls", "4 calls"]);
-    const badges = [...container.querySelectorAll(".badge:not(.segment-count)")].map((el) => el.textContent);
+    const badges = [...container.querySelectorAll(".ui-badge:not(.segment-count)")].map(
+      (el) => el.textContent,
+    );
     expect(badges).toEqual(["1 failed", "No failures"]);
     const track = container.querySelector(".bar-track");
     // happy-dom serialises the inline style with spaces; compare its tokens, not its spacing
@@ -54,10 +60,10 @@ describe("Tools view", () => {
         .replace(/;\s*/g, ";"),
     );
     expect(segs).toEqual([
-      "width:90.00%;background:var(--series-5)",
-      "width:10.00%;background:var(--danger)",
+      "width:90.00%;background:var(--radar-series-5)",
+      "width:10.00%;background:var(--ui-fail)",
     ]);
-    expect(container.querySelector(".empty-title")?.textContent).toBe("No tool calls in this view");
+    expect(container.querySelector("[data-empty-title]")?.textContent).toBe("No tool calls in this view");
   });
 
   it("writes a singular rank meta for one call", () => {
@@ -67,7 +73,7 @@ describe("Tools view", () => {
       NOW,
     );
     expect(container.querySelector("[data-rank-meta]")?.textContent).toBe("1 call");
-    expect(container.querySelector(".badge")?.textContent).toBe("No failures");
+    expect(container.querySelector(".ui-badge")?.textContent).toBe("No failures");
   });
 
   it("lists recent calls with a result badge and an all/failed filter", async () => {
@@ -88,7 +94,7 @@ describe("Tools view", () => {
     const heads = [...container.querySelectorAll("th")].map((th) => th.textContent);
     expect(heads).toEqual(["Time", "Tool", "Session", "Agent", "Duration", "Result"]);
     const rows = [...container.querySelectorAll("tr")].filter((tr) => tr.className.startsWith("row"));
-    expect(rows.map((tr) => tr.className)).toEqual(["row bg-error/5", "row", "row", "row"]);
+    expect(rows.map((tr) => tr.className)).toEqual(["row bg-[var(--ui-fail-soft)]", "row", "row", "row"]);
     const session = rows.map((tr) => tr.children[2]?.textContent);
     expect(session).toEqual(["app", "app", "unknown-", "No session"]);
     expect(rows[0]?.children[3]?.textContent).toBe("main");
@@ -97,7 +103,7 @@ describe("Tools view", () => {
     expect(results).toEqual(["Failed", "Succeeded", "Succeeded", "Succeeded"]);
     const filter = [...container.querySelectorAll('[data-action="tool-filter"]')];
     expect(filter.map((button) => button.textContent)).toEqual(["All4", "Failed1"]);
-    expect(container.querySelector(".table-wrap")?.getAttribute("data-key")).toBe("tools-table");
+    expect(container.querySelector("[data-key='tools-table'] table[data-radar-table]")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Failed 1" }));
     expect(act).toHaveBeenCalledWith("tool-filter", "failed");
     await userEvent.click(screen.getByRole("button", { name: "All 4" }));
@@ -115,15 +121,17 @@ describe("Tools view", () => {
     expect(panelMetaOf(failed, 1)).toBe("Only the calls that failed");
     expect(failed.querySelectorAll("tr.row")).toHaveLength(1);
     const allGood = toolsView([tools[0] as ToolCallRecord], { toolFilter: "failed" }).container;
-    expect(allGood.querySelector(".empty-title")?.textContent).toBe("No failed tool calls");
-    expect(allGood.querySelector(".empty-hint")?.textContent).toBe("Every tool call in this view succeeded.");
+    expect(allGood.querySelector("[data-empty-title]")?.textContent).toBe("No failed tool calls");
+    expect(allGood.querySelector("[data-empty-hint]")?.textContent).toBe(
+      "Every tool call in this view succeeded.",
+    );
   });
 
   it("explains an empty ranking", () => {
     const { container } = renderApp(<ToolsView />, {}, NOW);
-    const titles = [...container.querySelectorAll(".empty-title")].map((el) => el.textContent);
+    const titles = [...container.querySelectorAll("[data-empty-title]")].map((el) => el.textContent);
     expect(titles).toEqual(["No tool calls yet", "No tool calls in this view"]);
-    expect(container.querySelector(".empty-hint")?.textContent).toBe(
+    expect(container.querySelector("[data-empty-hint]")?.textContent).toBe(
       "Tool calls appear once an agent reads, edits or runs something.",
     );
   });

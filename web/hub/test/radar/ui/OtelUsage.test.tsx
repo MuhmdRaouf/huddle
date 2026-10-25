@@ -5,6 +5,10 @@ import { OTEL_PATH, type OtelAnswer } from "../../../src/radar/app/views/OtelUsa
 import { UsageView } from "../../../src/radar/app/views/Usage.tsx";
 import { fmtTokens, fmtUsd } from "../../../src/radar/fmt.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 const ANSWER: OtelAnswer = {
   source: "otel",

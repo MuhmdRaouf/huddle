@@ -48,7 +48,7 @@ export function SessionAgentsView() {
       subtitle={live === null ? "Loading…" : fmtCount(detail?.agents.length ?? 0, "agent")}
     >
       {detail === undefined ? (
-        <p class="px-5 py-4 text-sm text-base-content/60">Loading this session's agents…</p>
+        <p class="m-0 px-4 py-4 text-sm text-[var(--ui-muted)]">Loading this session's agents…</p>
       ) : detail.agents.length === 0 ? (
         <EmptyState
           title="No agents yet"

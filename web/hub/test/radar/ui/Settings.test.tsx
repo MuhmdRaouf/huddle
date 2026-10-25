@@ -1,11 +1,15 @@
 import { screen, within } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { SettingsView } from "../../../src/radar/app/views/Settings.tsx";
 import type { Budget, BudgetSpend } from "../../../src/radar/shared/api.ts";
 import { draftOf, newDraft } from "../../../src/radar/state.ts";
 import { uiFixtures } from "../helpers.ts";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 const NOW = 1_790_000_000_000;
 const fixtures = uiFixtures();
@@ -49,12 +53,10 @@ describe("SettingsView budgets", () => {
     expect(screen.getByText("Stops at 100%")).toBeTruthy();
     expect(screen.getByText("Warns")).toBeTruthy();
     expect(screen.getByText("–")).toBeTruthy();
-    expect(screen.getByText("Stops at 100%").closest(".badge")?.className).toBe(
-      "badge badge-err ui-badge ui-badge-fail",
+    expect(screen.getByText("Stops at 100%").closest(".ui-badge")?.className).toBe(
+      "ui-badge ui-badge-fail gap-1",
     );
-    expect(screen.getByText("Warns").closest(".badge")?.className).toBe(
-      "badge badge-info ui-badge ui-badge-info",
-    );
+    expect(screen.getByText("Warns").closest(".ui-badge")?.className).toBe("ui-badge ui-badge-info gap-1");
     expect(buttonsWithAction("edit-budget")).toHaveLength(2);
     expect(buttonsWithAction("remove-budget")).toHaveLength(2);
   });
@@ -175,9 +177,9 @@ describe("SettingsView budgets", () => {
 describe("SettingsView notifications", () => {
   it("starts on and runs the toggle action when clicked", async () => {
     const { act } = renderApp(<SettingsView />, { budgets: [] }, NOW);
-    const switchEl = screen.getByRole("checkbox", { name: "Desktop notifications" });
+    const switchEl = screen.getByRole("switch", { name: "Desktop notifications" });
     expect(switchEl.getAttribute("aria-checked")).toBe("true");
-    expect(switchEl.className).toBe("toggle toggle-primary");
+    expect(switchEl.className).toBe("ui-switch");
     expect(screen.getByText("On")).toBeTruthy();
     await userEvent.click(switchEl);
     expect(act).toHaveBeenCalledWith("toggle-notifications");
@@ -189,9 +191,8 @@ describe("SettingsView notifications", () => {
       { budgets: [], settings: { notifications: false, historyRetentionDays: 30 } },
       NOW,
     );
-    const switchEl = screen.getByRole("checkbox", { name: "Desktop notifications" });
+    const switchEl = screen.getByRole("switch", { name: "Desktop notifications" });
     expect(switchEl.getAttribute("aria-checked")).toBe("false");
-    expect((switchEl as HTMLInputElement).checked).toBe(false);
     expect(screen.getByText("Off")).toBeTruthy();
   });
 });
@@ -214,7 +215,7 @@ describe("SettingsView history", () => {
     expect(container.textContent).toContain("49.2 kB");
     expect(container.textContent).toContain("3 sessions");
     expect(container.textContent).toContain("421 requests");
-    const on = buttonsWithAction("retention").find((b) => b.className.includes("segment-on"));
+    const on = buttonsWithAction("retention").find((b) => b.getAttribute("aria-pressed") === "true");
     expect(on?.textContent).toBe("30d");
   });
 

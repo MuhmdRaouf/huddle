@@ -1,6 +1,6 @@
 import { screen } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import type { BlocksReport, UsageBlock } from "../../../src/radar/shared/usage.ts";
 import {
   activeBlockOf,
@@ -13,6 +13,10 @@ import { blockWhen, BlocksView } from "../../../src/radar/app/views/Blocks.tsx";
 import type { ClientState } from "../../../src/radar/state.ts";
 import { legacyClasses } from "../../helpers.tsx";
 import { renderApp } from "./render.tsx";
+import { expectTokensOnly } from "./tokens.ts";
+
+// every render in this file paints only token classes and labels its table cells for the phone
+afterEach(() => expectTokensOnly());
 
 const NOW = 1_793_000_000_000;
 const HOUR = 3_600_000;
@@ -198,7 +202,9 @@ describe("BlocksView", () => {
     const { container } = renderApp(<BlocksView />, blocksState(), NOW);
     const rows = container.querySelectorAll("[data-blocks-table] tbody tr");
     expect(rows).toHaveLength(2);
-    expect(rows[0]?.getAttribute("class")).toContain("bg-primary/8");
+    expect(rows[0]?.getAttribute("class")).toContain(
+      "bg-[color-mix(in_oklab,var(--ui-accent)_10%,transparent)]",
+    );
     const first = rows[0]?.textContent ?? "";
     expect(first).toContain("3");
     expect(first).toContain("8.5M");
