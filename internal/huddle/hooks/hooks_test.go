@@ -488,6 +488,50 @@ func TestTheListenHookAnswersUserPromptSubmitTheSameWay(t *testing.T) {
 	neverBlocks(t, stdout)
 }
 
+// TestTheListenHookTakesOwnerMessagesWithoutAChannel holds the channel-free take: a session in
+// no channel still gets what the owner queued as its next prompt, and only a prompt takes —
+// the touch report and the feed stay channel things.
+func TestTheListenHookTakesOwnerMessagesWithoutAChannel(t *testing.T) {
+	var takesMu sync.Mutex
+	takes := 0
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/sessions/s-nochan/messages" {
+			takesMu.Lock()
+			takes++
+			takesMu.Unlock()
+			fmt.Fprint(w, `{"messages":["Pick the second option"]}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(hub.Close)
+	home := t.TempDir() // no huddle.json anywhere: Identify names no channel and no as
+	env := map[string]string{"HUDDLE_URL": hub.URL, "HUDDLE_HOME": home}
+	stdout, _, _ := runHook(t, "listen",
+		fmt.Sprintf(`{"session_id":"s-nochan","hook_event_name":"UserPromptSubmit","cwd":%q}`,
+			filepath.Join(home, "repo")), env)
+	if ctx := hookContext(t, stdout); !strings.Contains(ctx, "Pick the second option") {
+		t.Errorf("context = %q, want the owner's message in it", ctx)
+	}
+	takesMu.Lock()
+	if takes != 1 {
+		t.Errorf("the fake saw %d take calls, want exactly one", takes)
+	}
+	takesMu.Unlock()
+
+	// only a prompt takes messages: the same session on PostToolUse stays silent
+	stdout, _, _ = runHook(t, "listen",
+		`{"session_id":"s-nochan","hook_event_name":"PostToolUse"}`, env)
+	if stdout != "" {
+		t.Errorf("PostToolUse printed %q, want silence", stdout)
+	}
+	takesMu.Lock()
+	defer takesMu.Unlock()
+	if takes != 1 {
+		t.Errorf("the fake saw %d take calls after PostToolUse, want still one", takes)
+	}
+}
+
 func TestTheListenHookSurvivesOddEnv(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	if err := os.WriteFile(home, []byte("a file, not a dir"), 0o600); err != nil {

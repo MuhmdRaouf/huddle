@@ -1,8 +1,10 @@
 // The PostToolUse and UserPromptSubmit hook: bring the new messages of this session's channels
 // into its context (the cli package's feed), so every session knows what the others said, also
 // to each other, without the channels preview. On a prompt it also takes what the owner sent the
-// session while it worked (the cli package's messages take, SPEC 6.4's next-prompt route).
-// Silent when nothing is new, no channel is set, the session holds no credential for the server
+// session while it worked (the cli package's messages take, SPEC 6.4's next-prompt route),
+// whatever the channel: the take needs only the server's URL, while the touch report and the
+// feed are channel things.
+// Silent when nothing is new, the session holds no credential for the server
 // (it has not joined), Huddle does not answer, or anything fails (quiet.go). A subagent's tool
 // calls (agent_id set) are skipped: the feed's cursor is the session's, and a subagent reading
 // it would take the messages away from its parent (subagents read the channel through recall and
@@ -31,10 +33,23 @@ func Listen(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 		touchInput.Cwd = input.Cwd
 		touch := cli.TouchOf(touchInput)
 		if input.AgentID != "" && touch == nil {
-			return nil // a subagent's tool call: the parent's feed is not its to take
+			return nil // a subagent's tool call: the parent's feed and inbox are not its to take
 		}
 		id := cli.Identify(ctx, w, input.SessionID)
+
+		// The owner's messages ride this prompt whatever the channel: the composer queues them
+		// as the session's next prompt, and this hook is where they are delivered.
+		var parts []string
+		if input.HookEventName == "UserPromptSubmit" && id.URL != "" {
+			parts = cli.TakeMessages(ctx, w, id, input.SessionID, listenFeedMS)
+		}
+
+		// The channel things stay behind the gate: the touch report and the feed belong to a
+		// session in a channel, and without one the owner's messages above are the whole context.
 		if id.Channel == "" || id.As == "" {
+			if len(parts) > 0 {
+				writeContext(out, input.HookEventName, strings.Join(parts, "\n\n"))
+			}
 			return nil
 		}
 		warn := ""
@@ -48,11 +63,6 @@ func Listen(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			return nil
 		}
 		feedText := cli.Feed(ctx, w, id, cli.Home(ctx, w), input.SessionID, cli.FeedOptions{})
-		parts := make([]string, 0, 3)
-		if input.HookEventName == "UserPromptSubmit" {
-			// the owner's answer rides this prompt (SPEC 6.4): it goes first, ahead of the feed
-			parts = append(parts, cli.TakeMessages(ctx, w, id, input.SessionID, listenFeedMS)...)
-		}
 		for _, part := range []string{warn, feedText} {
 			if part != "" {
 				parts = append(parts, part)
