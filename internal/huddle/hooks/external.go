@@ -58,7 +58,7 @@ func External(ctx context.Context, w *cli.World, name, event string, in io.Reade
 			LastEventAt: jsfmt.ISOTime(nowOf(w)),
 		}
 		rep.Machine = machineOf(ctx, w)
-		rep.Project, rep.Branch = gitOf(ctx, w, payload.Cwd, reportGitMS)
+		rep.Project, rep.Branch = checkoutOf(payload.Cwd)
 		switch {
 		case payload.Prompt != "":
 			// the title is the first prompt cut to 80 runes and the task its first line, the

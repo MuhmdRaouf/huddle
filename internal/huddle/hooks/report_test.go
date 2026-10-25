@@ -281,13 +281,8 @@ func TestTheReportHookTakesItsProjectAndBranchFromGit(t *testing.T) {
 		t.Fatalf("the registry took %d POSTs, want 1", len(took))
 	}
 	body := took[0].Body
-	// git answers the physical path, and t.TempDir may sit behind a symlink
-	real, err := filepath.EvalSymlinks(repo)
-	if err != nil {
-		t.Fatalf("resolve the repo: %v", err)
-	}
-	if field(body, "project") != real {
-		t.Errorf("project = %q, want git's toplevel %q", field(body, "project"), real)
+	if field(body, "project") != repo {
+		t.Errorf("project = %q, want the checkout %q", field(body, "project"), repo)
 	}
 	if field(body, "branch") != "report-suite" {
 		t.Errorf("branch = %q, want report-suite", field(body, "branch"))

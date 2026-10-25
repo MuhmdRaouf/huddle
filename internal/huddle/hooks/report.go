@@ -38,7 +38,6 @@ import (
 // SPEC 5.1 grants a report, well inside the timeout hooks.json gives each event.
 const (
 	reportStdinMS  = 500
-	reportGitMS    = 300
 	reportProcMS   = 300
 	reportBudgetMS = 1900
 	// reportQueueMS is what the report keeps back from its caller's deadline to write the outbox.
@@ -119,7 +118,7 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			rep.ToolTarget = toolTargetOf(input)
 		}
 		rep.Machine = machineOf(ctx, w)
-		rep.Project, rep.Branch = gitOf(ctx, w, input.Cwd, min(reportGitMS, left()))
+		rep.Project, rep.Branch = checkoutOf(input.Cwd)
 		// text Claude Code injects — a task notification, a system reminder, `!` shell input,
 		// a slash-command wrapper — names nothing: only a prompt the person typed becomes the
 		// title (the first prompt cut to 80 runes) and the task (its first line), which the
@@ -205,37 +204,6 @@ func machineOf(ctx context.Context, w *cli.World) string {
 		return ""
 	}
 	return cfg.Machine
-}
-
-// gitOf answers the project (git's toplevel over dir, else dir itself) and the branch, from two
-// rev-parse calls bounded at ms together: a hook never waits on a slow git. The branch is empty
-// on an unborn HEAD (a repo with no commit yet); the project falls back to dir outside a repo.
-// The children run in the world's environment, so a test's git reads nothing outside its home.
-func gitOf(ctx context.Context, w *cli.World, dir string, ms int) (project, branch string) {
-	if dir == "" {
-		if wd, err := os.Getwd(); err == nil {
-			dir = wd
-		} else {
-			return "", ""
-		}
-	}
-	callCtx, cancel := context.WithTimeout(ctx, time.Duration(ms)*time.Millisecond)
-	defer cancel()
-	run := func(args ...string) string {
-		cmd := exec.CommandContext(callCtx, "git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = environOf(w)
-		out, err := cmd.Output()
-		if err != nil {
-			return ""
-		}
-		return strings.TrimSpace(string(out))
-	}
-	project = run("rev-parse", "--show-toplevel")
-	branch = run("rev-parse", "--abbrev-ref", "HEAD")
-	if project == "" {
-		return dir, ""
-	}
-	return project, branch
 }
 
 // environOf lists the world's variables for a child process.
