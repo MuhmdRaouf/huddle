@@ -21,6 +21,65 @@
   }
 }
 
+/* The app shell: a frame exactly as tall as the viewport (100vh where dvh is missing) that never
+ * scrolls itself, so no rubber band drags its chrome; its panes scroll inside it. The frame pads
+ * itself by the top inset, and on the phone by the tab bar's height, so the panes end where the
+ * pinned bar starts and nothing sits under it. */
+.ui-shell {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  padding-top: var(--ui-safe-top);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.ui-shell-phone {
+  padding-bottom: var(--ui-tabbar-h);
+}
+
+/* The pane a page draws into: it takes the room the chrome leaves, and scrolls a page that does
+ * not scroll its own parts. */
+.ui-shell-main {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The phone's tab bar, pinned to the viewport's bottom edge: five equal columns over the inset. */
+.ui-tabbar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+  height: var(--ui-tabbar-h);
+  padding: 0 var(--ui-space-1) var(--ui-safe-bottom);
+}
+
+/* The desktop's sidebar: the same five items in a column, as tall as the frame. */
+.ui-sidebar {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+  width: 220px;
+  min-height: 0;
+  padding: var(--ui-space-4) var(--ui-space-3);
+  overflow-y: auto;
+}
+
 .ui-page *,
 .ui-sheet * {
   box-sizing: border-box;

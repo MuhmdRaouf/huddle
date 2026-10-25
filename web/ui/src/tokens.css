@@ -73,6 +73,9 @@
   /* the safe areas a pinned bar pads itself by */
   --ui-safe-top: env(safe-area-inset-top, 0px);
   --ui-safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* the phone's pinned tab bar: 56 px of targets above the bottom inset */
+  --ui-tabbar-h: calc(56px + var(--ui-safe-bottom));
 }
 
 :root[data-scheme="light"] {

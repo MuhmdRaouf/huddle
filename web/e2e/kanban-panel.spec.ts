@@ -43,9 +43,12 @@ test.describe("the card detail panel on a desktop", () => {
       const columns = page.locator(".kanban-tab .columns");
       await expect(columns).toBeVisible();
       const board = (await columns.boundingBox()) ?? expect.fail("the board has no box");
-      // 1440 minus the default 440 panel: the board gave the panel its column
+      // 1440 minus the default 440 panel: the board gave the panel its column, and it starts
+      // right of the shell's sidebar
+      const sidebar = (await page.locator("[data-sidebar]").boundingBox()) ?? expect.fail("no sidebar");
       expect(board.width).toBeLessThanOrEqual(1001);
-      expect(board.x).toBeLessThan(100);
+      expect(board.x).toBeGreaterThanOrEqual(sidebar.x + sidebar.width - 1);
+      expect(board.x).toBeLessThan(sidebar.x + sidebar.width + 100);
       const panel = page.getByRole("dialog", { name: "E2E-1: First card" });
       const side = (await panel.boundingBox()) ?? expect.fail("the panel has no box");
       expect(side.x).toBeGreaterThanOrEqual(board.x + board.width - 1);

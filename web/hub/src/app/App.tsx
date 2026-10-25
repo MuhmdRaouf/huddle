@@ -1,11 +1,10 @@
 // App.tsx — the shell: one component tree that draws its chrome per viewport (a header, the pane
-// and a five-link bottom nav under 640 px; a 72 px icon rail with a list and a detail pane to
-// 1023 px; a 52 px top bar with list, detail and context panes from 1024 px) over the tab the
-// address names — Now, Channels, Radar, Kanban or Settings. Every later tab fills its own panes; today's
+// and the five tabs in a bar pinned to the bottom edge under 640 px; a 72 px icon rail with a list
+// and a detail pane to 1023 px; a left sidebar beside a 52 px top bar over list, detail and
+// context panes from 1024 px) inside a frame as tall as the viewport, over the tab the address names — Now, Channels, Radar, Kanban or Settings. Every later tab fills its own panes; today's
 // channel pages stay reachable under Channels, with their destination tabs, their intro and the
 // session rail beside them. The landing and no-channel pages stand alone.
 
-import { Icon as SharedIcon } from "@huddle/ui/icons.tsx";
 import { PageIntro } from "@huddle/ui/page.tsx";
 import type { Stamp } from "@huddle/ui/time.ts";
 import type { ComponentChildren, ComponentType, JSX } from "preact";
@@ -25,6 +24,7 @@ import { useHuddle } from "./context.tsx";
 import { FirstRunChecklist } from "./FirstRun.tsx";
 import { IntroCtx } from "./intro.tsx";
 import { type Layout, useLayout } from "./layout.ts";
+import { BottomNav, IconRail, SideNav } from "./Nav.tsx";
 import { NoSessionsWelcome, NowContext, NowPane, SessionScreen } from "./Now.tsx";
 import { Pair } from "./Pair.tsx";
 import { Rail } from "./Rail.tsx";
@@ -35,7 +35,6 @@ import {
   RADAR_VIEWS,
   type RadarView,
   radarLabel,
-  TABS,
   type Tab,
   tabHref,
   tabLabel,
@@ -216,90 +215,6 @@ export function ComingSoon({ label }: { label: string }): JSX.Element {
         <p>Coming soon.</p>
       </div>
     </div>
-  );
-}
-
-/** One tab's mark: the shared glyphs for the three the design draws, the settings sunburst and
- *  the kanban columns from the owner UI's own set. */
-function TabGlyph({ id, class: c }: { id: Tab; class?: string | undefined }): JSX.Element {
-  return id === "settings" ? (
-    <Icon name="sparkle" class={c} />
-  ) : id === "kanban" ? (
-    <Icon name="columns" class={c} />
-  ) : (
-    <SharedIcon name={id} class={c} />
-  );
-}
-
-/** The needs-you count a tab's mark carries; nothing when nobody needs the owner. */
-function TabBadge({ n }: { n: number }): JSX.Element | null {
-  return n > 0 ? <span class="badge badge-warning badge-sm tnum">{n}</span> : null;
-}
-
-/** The phone chrome's bottom nav: five links of 52 px targets under the safe-area inset. */
-function BottomNav({ tab, n }: { tab: Tab; n: number }): JSX.Element {
-  return (
-    <nav
-      data-nav="bottom"
-      aria-label="Main"
-      class="grid shrink-0 grid-cols-5 border-t hairline bg-base-200 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)]"
-    >
-      {TABS.map(([id, label, href]) => (
-        <a
-          key={id}
-          href={href}
-          data-tab={id}
-          aria-current={tab === id ? "page" : undefined}
-          class={`relative flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-lg text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-            tab === id ? "font-semibold text-primary" : "text-base-content/70"
-          }`}
-        >
-          <TabGlyph id={id} class="size-[22px]" />
-          <span>{label}</span>
-          {id === "now" ? (
-            <span class="absolute top-1 left-[54%]">
-              <TabBadge n={n} />
-            </span>
-          ) : null}
-        </a>
-      ))}
-    </nav>
-  );
-}
-
-/** The tablet chrome's icon rail: the five tabs as 52 px labelled icons, Settings at the bottom. */
-function IconRail({ tab, n }: { tab: Tab; n: number }): JSX.Element {
-  return (
-    <nav
-      data-nav="rail"
-      aria-label="Main"
-      class="flex w-[72px] shrink-0 flex-col items-center gap-2 border-r hairline bg-base-200 py-[18px]"
-    >
-      {TABS.map(([id, label, href]) => (
-        <a
-          key={id}
-          href={href}
-          data-tab={id}
-          aria-label={label}
-          title={label}
-          aria-current={tab === id ? "page" : undefined}
-          class={`relative flex size-[52px] items-center justify-center rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-            id === "settings" ? "mt-auto" : ""
-          } ${
-            tab === id
-              ? "bg-base-100 text-primary"
-              : "text-base-content/70 hover:bg-base-100/60 hover:text-base-content"
-          }`}
-        >
-          <TabGlyph id={id} class="size-6" />
-          {id === "now" ? (
-            <span class="absolute top-1 right-1">
-              <TabBadge n={n} />
-            </span>
-          ) : null}
-        </a>
-      ))}
-    </nav>
   );
 }
 
@@ -717,7 +632,7 @@ export function App({
       nowId ? (
         <SessionScreen id={nowId} layout={layout} />
       ) : layout === "phone" ? (
-        <div class="min-h-0 flex-1">
+        <div class="flex min-h-0 flex-1 flex-col">
           <NowPane layout="phone" above={firstRun} />
         </div>
       ) : noSessions ? (
@@ -765,7 +680,7 @@ export function App({
     );
 
   const main = (
-    <main id="main" tabindex={-1} class="flex min-h-0 min-w-0 flex-1 flex-col outline-none">
+    <main id="main" tabindex={-1} class="ui-shell-main outline-none">
       {detail}
     </main>
   );
@@ -775,12 +690,12 @@ export function App({
   const mline = machinesLine(layout, machinesOf(reg.sessions));
   const liveOf = route.tab === "now" ? reg.live : state.live;
 
-  // the phone: a header over the pane, the bottom nav under it. A session's screen paints its
+  // the phone: a header over the pane, the tab bar pinned under it. A session's screen paints its
   // own header (the back link and the name), so the shell's steps aside there.
   const passkeyAsk = <PasskeyAsk />;
   if (layout === "phone") {
     return (
-      <div class="flex h-dvh flex-col bg-base-300">
+      <div class="ui-shell ui-shell-phone bg-base-300">
         {passkeyAsk}
         {nowId ? null : (
           <header class="flex shrink-0 items-center justify-between gap-3 px-5 pt-[22px] pb-3">
@@ -797,7 +712,7 @@ export function App({
   // the tablet: the icon rail, then the list beside the detail when the tab has a list
   if (layout === "tablet") {
     return (
-      <div class="flex h-dvh flex-col bg-base-300">
+      <div class="ui-shell bg-base-300">
         {passkeyAsk}
         <div class="grid min-h-0 min-w-0 flex-1 grid-cols-[72px_minmax(0,1fr)]">
           <IconRail tab={route.tab} n={n} />
@@ -810,31 +725,27 @@ export function App({
     );
   }
 
-  // the desktop: the top bar over the list, the detail and the context pane
+  // the desktop: the sidebar, then the top bar over the list, the detail and the context pane
   return (
-    <div class="flex h-dvh flex-col bg-base-300">
+    <div class="ui-shell bg-base-300">
       {passkeyAsk}
-      <div class="grid min-h-0 min-w-0 flex-1 grid-rows-[52px_minmax(0,1fr)]">
-        <DesktopBar
-          tab={route.tab}
-          n={n}
-          live={liveOf}
-          machines={mline}
-          onPalette={onPalette}
-          onHelp={onHelp}
-        />
-        <div
-          class={`grid min-h-0 min-w-0 ${
-            list && context
-              ? "grid-cols-[320px_minmax(0,1fr)_340px]"
-              : list
-                ? "grid-cols-[320px_minmax(0,1fr)]"
-                : "grid-cols-1"
-          }`}
-        >
-          {list}
-          {main}
-          {context}
+      <div class="flex min-h-0 min-w-0 flex-1">
+        <SideNav tab={route.tab} n={n} />
+        <div class="grid min-h-0 min-w-0 flex-1 grid-rows-[52px_minmax(0,1fr)]">
+          <DesktopBar live={liveOf} machines={mline} onPalette={onPalette} onHelp={onHelp} />
+          <div
+            class={`grid min-h-0 min-w-0 ${
+              list && context
+                ? "grid-cols-[320px_minmax(0,1fr)_340px]"
+                : list
+                  ? "grid-cols-[320px_minmax(0,1fr)]"
+                  : "grid-cols-1"
+            }`}
+          >
+            {list}
+            {main}
+            {context}
+          </div>
         </div>
       </div>
     </div>

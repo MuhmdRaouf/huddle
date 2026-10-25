@@ -11,7 +11,7 @@ import { here, repoRoot } from "./paths.ts";
 import { chromiumTlsArgs } from "./tls.ts";
 
 /** The specs that also run on the phone: the pages built on the web/ui design system. */
-const PHONE_SPECS = ["tokens.spec.ts", "phone-perf.spec.ts"];
+const PHONE_SPECS = ["tokens.spec.ts", "phone-perf.spec.ts", "shell.spec.ts"];
 /** The specs that run on the phone only: the phone's load budget under throttled CDP. */
 const PHONE_ONLY = ["phone-perf.spec.ts"];
 

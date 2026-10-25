@@ -1,9 +1,7 @@
-// TopBar.test.tsx — the desktop top bar: the brand with its version, the five text tabs with the
-// needs-you count, the jump field with its ⌘K hint, the machines line with its live dot, the theme
-// menu, and the shortcuts key.
+// TopBar.test.tsx — the desktop top bar: the jump field with its ⌘K hint, the machines line with
+// its live dot, the theme menu, the shortcuts key, and the server's version the sidebar's brand reads.
 import { act, render, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { Tab } from "../../src/app/router.ts";
 import { DesktopBar, MachinesLine, ThemeMenu, useVersion } from "../../src/app/TopBar.tsx";
 import { flush, stubMatchMedia } from "../helpers.tsx";
 
@@ -20,13 +18,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("the brand and its version", () => {
-  it("links the channels page, names the word and keeps a version badge", () => {
-    render(<DesktopBar tab="now" n={0} live="live" />);
-    expect(screen.getByLabelText("Huddle").getAttribute("href")).toBe("#/channels");
-    expect(screen.getByText("v0.0.1")).toBeDefined();
-  });
-
+describe("the server's version", () => {
   it("shows the server's version once /health answers, and the placeholder when it fails", async () => {
     const probe = render(<VersionProbe />);
     await flush();
@@ -46,30 +38,11 @@ function VersionProbe() {
   return <span>{useVersion()}</span>;
 }
 
-describe("the five text tabs", () => {
-  it("lays the tabs out with the active one current", () => {
-    render(<DesktopBar tab="radar" n={0} live="live" />);
-    const tabs = [...document.querySelectorAll("[data-nav='top'] a")] as HTMLAnchorElement[];
-    expect(tabs.map((a) => a.dataset.tab)).toEqual(["now", "channels", "radar", "kanban", "settings"]);
-    expect(tabs.map((a) => a.getAttribute("aria-current"))).toEqual([null, null, "page", null, null]);
-    expect(tabs[1]?.getAttribute("href")).toBe("#/channels");
-    expect(tabs[2]?.getAttribute("href")).toBe("#/radar/overview");
-    expect(tabs[3]?.getAttribute("href")).toBe("#/kanban");
-  });
-
-  it("carries the needs-you count beside Now, and nothing when none needs the owner", () => {
-    const { rerender } = render(<DesktopBar tab="now" n={3} live="live" />);
-    expect(document.querySelector("[data-nav='top'] .badge-warning")?.textContent).toBe("3");
-    rerender(<DesktopBar tab="now" n={0} live="live" />);
-    expect(document.querySelector("[data-nav='top'] .badge-warning")).toBeNull();
-  });
-});
-
 describe("the jump field", () => {
   it("names what it does, spells the shortcut and opens the palette", () => {
     const onPalette = vi.fn();
-    render(<DesktopBar tab="now" n={0} live="live" onPalette={onPalette} />);
-    const jump = screen.getByLabelText("Jump to a session");
+    render(<DesktopBar live="live" onPalette={onPalette} />);
+    const jump = screen.getByRole("button", { name: "Jump to a session" });
     expect(jump.getAttribute("aria-keyshortcuts")).toBe("Meta+K Control+K /");
     expect(jump.querySelector("kbd")?.textContent).toMatch(/⌘K|Ctrl K/);
     void act(() => {
@@ -159,23 +132,10 @@ describe("the theme menu", () => {
 describe("the bar's keys", () => {
   it("runs the shortcuts key", () => {
     const onHelp = vi.fn();
-    render(<DesktopBar tab="now" n={0} live="live" onHelp={onHelp} />);
+    render(<DesktopBar live="live" onHelp={onHelp} />);
     void act(() => {
       screen.getByLabelText("Keyboard shortcuts").click();
     });
     expect(onHelp).toHaveBeenCalledTimes(1);
-  });
-});
-
-/** One bar over every tab, so the type is used the way the shell uses it. */
-describe("every tab paints the bar", () => {
-  it("renders the same bar over each of the five tabs", () => {
-    for (const tab of ["now", "channels", "radar", "kanban", "settings"] as const) {
-      const { unmount } = render(<DesktopBar tab={tab satisfies Tab} n={0} live="connecting" />);
-      expect(
-        (document.querySelector("[data-nav='top'] a[aria-current='page']") as HTMLElement).dataset.tab,
-      ).toBe(tab);
-      unmount();
-    }
   });
 });

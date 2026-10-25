@@ -16,18 +16,26 @@ const BLOCKING: readonly ImpactValue[] = ["serious", "critical"];
 /** One blocking violation: the rule, its impact, and the selectors of the nodes it found. */
 export type Violation = { id: string; impact: ImpactValue | undefined; nodes: string[] };
 
-/** Runs axe over the page as it stands and answers the serious and critical violations. */
-export async function axeViolations(page: Page): Promise<Violation[]> {
+/** Runs axe over the page as it stands, less the parts `exclude` names (CSS selectors), and
+ *  answers the serious and critical violations. */
+export async function axeViolations(page: Page, exclude: readonly string[] = []): Promise<Violation[]> {
   await page.evaluate(source);
   const results = await page.evaluate(
-    () => (window as unknown as { axe: { run: () => Promise<AxeResults> } }).axe.run(),
+    (ex) =>
+      (
+        window as unknown as {
+          axe: { run: (context: { exclude: string[][] } | Document) => Promise<AxeResults> };
+        }
+      ).axe.run(ex.length > 0 ? { exclude: ex.map((s) => [s]) } : document),
+    [...exclude],
   );
   return results.violations
     .filter((v) => v.impact != null && BLOCKING.includes(v.impact))
     .map((v) => ({ id: v.id, impact: v.impact ?? undefined, nodes: v.nodes.map((n) => n.target.join(" ")) }));
 }
 
-/** Fails the test when axe finds any serious or critical violation on the page. */
-export async function expectAccessible(page: Page): Promise<void> {
-  expect(await axeViolations(page)).toEqual([]);
+/** Fails the test when axe finds any serious or critical violation on the page, less the parts
+ *  `exclude` names. */
+export async function expectAccessible(page: Page, exclude: readonly string[] = []): Promise<void> {
+  expect(await axeViolations(page, exclude)).toEqual([]);
 }

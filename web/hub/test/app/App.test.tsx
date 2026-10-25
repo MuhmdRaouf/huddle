@@ -71,12 +71,12 @@ const press = (key: string, init: KeyboardEventInit = {}): void => {
   });
 };
 
-/** The tab links of one chrome piece: the bottom nav, the icon rail or the top bar. */
+/** The tab links of one chrome piece: the bottom bar, the icon rail or the sidebar. */
 const linksOf = (nav: string): HTMLAnchorElement[] =>
   [...document.querySelectorAll(`[data-nav="${nav}"] a`)] as HTMLAnchorElement[];
 
 describe("the three layouts", () => {
-  it("under 640 px: a header with the tab's title, the pane, and a five-link bottom nav", () => {
+  it("under 640 px: a header with the tab's title, the pane, and the five tabs in a pinned bar", () => {
     stubMedia(PHONE);
     nav("#/now");
     mountApp();
@@ -103,20 +103,19 @@ describe("the three layouts", () => {
       null,
       null,
     ]);
-    // 52 px targets, above the safe-area inset
+    // 52 px targets in the bar pinned over the safe-area inset, the frame padded by its height
     for (const a of linksOf("bottom")) expect(a.className).toContain("min-h-[52px]");
-    expect((document.querySelector("[data-nav='bottom']") as HTMLElement).className).toContain(
-      "env(safe-area-inset-bottom)",
-    );
+    expect((document.querySelector("[data-nav='bottom']") as HTMLElement).className).toContain("ui-tabbar");
+    expect(document.querySelector(".ui-shell.ui-shell-phone main.ui-shell-main")).not.toBeNull();
     expect(linksOf("rail")).toEqual([]);
-    expect(linksOf("top")).toEqual([]);
+    expect(linksOf("side")).toEqual([]);
   });
 
   it("from 640 px: an icon rail with the five tabs as labelled icons, the pane beside it", () => {
     stubMedia(TABLET);
     nav("#/radar/costs");
     mountApp();
-    expect(linksOf("top")).toEqual([]);
+    expect(linksOf("side")).toEqual([]);
     expect(linksOf("bottom")).toEqual([]);
     const rail = linksOf("rail");
     expect(rail.map((a) => a.getAttribute("aria-label"))).toEqual([
@@ -130,17 +129,17 @@ describe("the three layouts", () => {
     for (const a of rail) expect(a.className).toContain("size-[52px]");
   });
 
-  it("from 1024 px: a top bar with the five text tabs, the jump field and the machines line", () => {
+  it("from 1024 px: a sidebar with the five tabs, a top bar with the jump field and the machines line", () => {
     stubMedia(DESKTOP);
     nav("#/now");
     mountApp();
     expect(linksOf("bottom")).toEqual([]);
     expect(linksOf("rail")).toEqual([]);
-    const top = linksOf("top");
-    expect(top.map((a) => a.dataset.tab)).toEqual(["now", "channels", "radar", "kanban", "settings"]);
-    expect(top.map((a) => a.textContent)).toEqual(["Now", "Channels", "Radar", "Kanban", "Settings"]);
-    expect(top.map((a) => a.getAttribute("aria-current"))).toEqual(["page", null, null, null, null]);
-    expect(screen.getByLabelText("Jump to a session")).toBeDefined();
+    const side = linksOf("side");
+    expect(side.map((a) => a.dataset.tab)).toEqual(["now", "channels", "radar", "kanban", "settings"]);
+    expect(side.map((a) => a.textContent)).toEqual(["Now", "Channels", "Radar", "Kanban", "Settings"]);
+    expect(side.map((a) => a.getAttribute("aria-current"))).toEqual(["page", null, null, null, null]);
+    expect(screen.getByRole("button", { name: "Jump to a session" })).toBeDefined();
     expect(document.querySelector("#jump kbd")).not.toBeNull();
     expect(screen.getByLabelText("Machines")).toBeDefined();
   });
@@ -159,7 +158,7 @@ describe("the three layouts", () => {
       media.fire(DESKTOP_QUERY);
     });
     expect(linksOf("rail")).toEqual([]);
-    expect(linksOf("top")).toHaveLength(5);
+    expect(linksOf("side")).toHaveLength(5);
   });
 
   it("carries the needs-you count on the Now tab in every layout", () => {
@@ -174,7 +173,7 @@ describe("the three layouts", () => {
     for (const [layout, name] of [
       [PHONE, "bottom"],
       [TABLET, "rail"],
-      [DESKTOP, "top"],
+      [DESKTOP, "side"],
     ] as const) {
       stubMedia(layout);
       nav("#/now");
@@ -188,7 +187,7 @@ describe("the three layouts", () => {
     stubMedia(DESKTOP);
     nav("#/now");
     mountApp();
-    expect(document.querySelector("[data-nav='top'] .badge-warning")).toBeNull();
+    expect(document.querySelector("[data-nav='side'] .badge-warning")).toBeNull();
   });
 });
 
