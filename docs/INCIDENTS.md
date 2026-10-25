@@ -127,3 +127,14 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Rule:** a test process and every child it starts get `CLAUDE_PROJECT_DIR` set to an empty folder outside
   the repository: `isoenv.Sandbox` for the process, `isoenv.Environ` for a child, the e2e global setup for the
   web run.
+
+## 2026-10-25, the web e2e run carried the daemon's router port
+
+- **What happened:** the e2e global setup started its two hubs with temp homes and free hub ports, but no
+  `HUDDLE_ROUTER_PORT`. Every child of those homes (the hubs' hosted router, `huddle hook`, `huddle mcp`) read
+  the default, 18786: the port the installed daemon's router serves on this machine.
+- **Cause:** the setup pinned the hub's port and nothing else; the router port is its own setting, read from the
+  environment, and the Go test kit (`isoenv`) pins it while the web setup did not.
+- **Guard:** `hermetic.spec.ts` (web/e2e), which reads the run's two router ports from the setup record.
+- **Rule:** every environment the e2e setup builds names `HUDDLE_ROUTER_PORT`, one free port per hub, and the
+  setup record carries both, the way `isoenv.Environ` does for every Go test child.

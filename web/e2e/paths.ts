@@ -38,6 +38,10 @@ export type E2eSetup = {
   sessionTitle: string;
   /** The seeded board's name: the project folder the board sits in. */
   boardName: string;
+  /** The port the solo hub's huddle-router listens on: the run's own, never the daemon's 18786. */
+  routerPort: number;
+  /** The port the TLS hub's huddle-router listens on, its own as well. */
+  hubRouterPort: number;
   /** The TLS hub's address: https://hub.example.test:<port>, the run's own CA behind it. */
   hubUrl: string;
   /** The TLS hub's loopback API port: where its own machine's CLI mints and joins. */

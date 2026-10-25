@@ -83,18 +83,20 @@ export default async function globalSetup(): Promise<void> {
 
   buildBinary();
   const port = await freePort();
+  const routerPort = await freePort();
 
   writeFixtures(port);
-  startServer(port);
+  startServer(port, routerPort);
   await waitHealthy(port);
   await seedRegistry(port, TOKEN, projectDir);
   await waitIngested(port, TOKEN);
 
   const tlsPort = await freePort();
   const hubPort = await freePort();
+  const hubRouterPort = await freePort();
   writeHubFixtures(hubPort, tlsPort);
-  importCertificate();
-  startHubServer(hubPort, tlsPort);
+  importCertificate(hubRouterPort);
+  startHubServer(hubPort, hubRouterPort, tlsPort);
   await waitHealthy(hubPort);
   await seedRegistry(hubPort, HUB_TOKEN, hubProjectDir);
   await waitIngested(hubPort, HUB_TOKEN);
@@ -110,6 +112,8 @@ export default async function globalSetup(): Promise<void> {
     hubUrl: `https://${HUB_HOST}:${tlsPort}`,
     hubRootUrl: `http://127.0.0.1:${hubPort}`,
     hubToken: HUB_TOKEN,
+    routerPort,
+    hubRouterPort,
   };
   fs.writeFileSync(setupPath, `${JSON.stringify(setup, null, 2)}\n`);
 }
@@ -193,12 +197,12 @@ function writeHubFixtures(port: number, tlsPort: number): void {
 
 /** Imports the run's certificate into the TLS hub's home, before its server starts, with the
  *  same temp homes the server itself gets so nothing of the user's is read. */
-function importCertificate(): void {
+function importCertificate(routerPort: number): void {
   const pair = hubPair();
   execFileSync(bin, ["cert", "--import", pair.chain, pair.key], {
     cwd: repoRoot,
     stdio: "inherit",
-    env: envFor(tlsHubHomeDirs, null, null),
+    env: envFor(tlsHubHomeDirs, null, null, routerPort),
   });
 }
 
@@ -256,7 +260,7 @@ const tlsHubHomeDirs: TempHome = {
 /** The process environment one temp home's commands run with: every dir the binary honours
  *  points into the run folder, and the project dir outside the repository, so nothing of the
  *  user's is read or written. */
-function envFor(target: TempHome, port: number | null, token: string | null) {
+function envFor(target: TempHome, port: number | null, token: string | null, routerPort: number) {
   return {
     ...process.env,
     HOME: target.home,
@@ -269,6 +273,9 @@ function envFor(target: TempHome, port: number | null, token: string | null) {
     XDG_DATA_HOME: `${target.xdg}-data`,
     XDG_STATE_HOME: `${target.xdg}-state`,
     HOST: "127.0.0.1",
+    // the hub hosts huddle-router beside itself: on a port of this run's own, never the
+    // installed daemon's 18786, so the run never finds, probes or hands over the user's router
+    HUDDLE_ROUTER_PORT: String(routerPort),
     ...(port === null ? {} : { PORT: String(port) }),
     ...(token === null ? {} : { HUDDLE_TOKEN: token }),
   };
@@ -279,6 +286,7 @@ function envFor(target: TempHome, port: number | null, token: string | null) {
 function serve(
   target: TempHome,
   port: number,
+  routerPort: number,
   token: string,
   logName: string,
   stateName: string,
@@ -288,7 +296,7 @@ function serve(
   const child = spawn(bin, ["serve"], {
     cwd: repoRoot,
     stdio: ["ignore", log, log],
-    env: envFor(target, port, token),
+    env: envFor(target, port, token, routerPort),
   });
   fs.writeFileSync(
     path.join(runDir, stateName),
@@ -304,13 +312,13 @@ function serve(
 }
 
 /** Starts the solo hub, plain loopback HTTP. */
-function startServer(port: number): void {
-  server = serve(soloHome, port, TOKEN, "serve.log", "server.json", null);
+function startServer(port: number, routerPort: number): void {
+  server = serve(soloHome, port, routerPort, TOKEN, "serve.log", "server.json", null);
 }
 
 /** Starts the TLS hub: its loopback API port plus the listener the reserved name serves on. */
-function startHubServer(port: number, tlsPort: number): void {
-  serverHub = serve(tlsHubHomeDirs, port, HUB_TOKEN, "serve-hub.log", "server-hub.json", tlsPort);
+function startHubServer(port: number, routerPort: number, tlsPort: number): void {
+  serverHub = serve(tlsHubHomeDirs, port, routerPort, HUB_TOKEN, "serve-hub.log", "server-hub.json", tlsPort);
 }
 
 let shuttingDown = false;
