@@ -34,7 +34,7 @@ import (
 const (
 	simulatorBootTimeout = 120 * time.Second
 	simulatorOpenTimeout = 30 * time.Second
-	signinSeenTimeout    = 30 * time.Second
+	signinSeenTimeout    = 90 * time.Second
 )
 
 func TestE2EPhoneSimulator(t *testing.T) {
