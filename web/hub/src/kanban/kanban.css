@@ -451,6 +451,9 @@
 
 .kanban-tab .col {
   min-width: 0;
+  /* the column is the containing block of its hidden labels (the rail's .sr-only text), so an
+     absolutely positioned label stays inside the board's scroller instead of widening the page */
+  position: relative;
 }
 
 .kanban-tab .col h2 {
