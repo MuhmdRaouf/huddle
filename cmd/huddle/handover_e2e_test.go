@@ -2,10 +2,9 @@ package main
 
 // The handover end to end on the real binary: a start from another binary takes the running
 // daemon's listening socket over while requests keep landing on the port, the old daemon
-// drains and exits, a daemon over its RSS ceiling hands itself over to a fresh copy, and the
-// full edition's hub takes a standalone daemon's socket over. Every process here is this
-// test's child, every home a temp one, and the router home a short one: the handover socket is
-// a unix socket, and macOS caps a socket path at 104 bytes.
+// drains and exits, and a daemon over its RSS ceiling hands itself over to a fresh copy. Every
+// process here is this test's child, every home a temp one, and the router home a short one:
+// the handover socket is a unix socket, and macOS caps a socket path at 104 bytes.
 
 import (
 	"bytes"
@@ -358,113 +357,4 @@ func TestE2EHandoverAStartFromANewBinaryKeepsTheRouterPortOpen(t *testing.T) {
 			t.Error("the ceiling chain kept a daemon on the port")
 		}
 	})
-}
-
-func TestE2EHandoverTheFullEditionTakesAStandaloneRouterOver(t *testing.T) {
-	root := t.TempDir()
-	routerHome := shortRouterHome(t)
-	routerPort := ports.Free(t)
-	anthropic := newSettingsFake(t, "anthropic")
-	zaiUp := newSettingsFake(t, "zai")
-	if err := os.MkdirAll(routerHome, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(routerHome, "providers.json"), []byte(`{"providers":["zai"]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	env := isoenv.Lookup(isoenv.Environ(t, filepath.Join(root, "user"),
-		"RADAR_HOME="+filepath.Join(root, "radar"),
-		"HUDDLE_HOME="+filepath.Join(root, "huddle-home"),
-		"HUDDLE_DATA="+filepath.Join(root, "huddle-data"),
-		"HUDDLE_TOKEN=handover-e2e-root",
-		"HUDDLE_NO_PROJECT_CRED=1",
-		"HUDDLE_ROUTER_HOME="+routerHome,
-		"HUDDLE_ROUTER_PORT="+strconv.Itoa(routerPort),
-		"HUDDLE_ROUTER_ANTHROPIC_URL="+anthropic.server.URL,
-		"ZAI_ROUTER_URL="+zaiUp.server.URL,
-		"ZAI_API_KEY=handover-e2e-key",
-	))
-	// both processes' output lands on the router log: the takeover line arrives on the hub's
-	// stderr, which this file carries
-	if err := os.MkdirAll(routerHome, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	logFile, err := os.OpenFile(filepath.Join(routerHome, "e2e.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = logFile.Close() })
-	logText := func() string {
-		raw, err := os.ReadFile(filepath.Join(routerHome, "e2e.log"))
-		if err != nil {
-			return ""
-		}
-		return string(raw)
-	}
-	// startChild starts the binary once and answers its exit channel, its pid and a stop that
-	// kills it and waits. The body may consume the exit itself (the takeover's proof), so the
-	// stop checks a flag the reaper sets before it waits on the channel again: a channel a
-	// receive already drained never answers a second one.
-	startChild := func(t *testing.T, args ...string) (<-chan error, int, func()) {
-		t.Helper()
-		cmd := exec.Command(huddleBin, args...)
-		cmd.Env = argvEntries(env)
-		cmd.Dir = root
-		cmd.Stdout, cmd.Stderr = logFile, logFile
-		if err := cmd.Start(); err != nil {
-			t.Fatalf("start %v: %v", args, err)
-		}
-		exited := make(chan error, 1)
-		var mu sync.Mutex
-		reaped := false
-		go func() {
-			err := cmd.Wait()
-			mu.Lock()
-			reaped = true
-			mu.Unlock()
-			exited <- err
-		}()
-		var once sync.Once
-		stop := func() {
-			once.Do(func() {
-				mu.Lock()
-				gone := reaped
-				mu.Unlock()
-				if gone {
-					return
-				}
-				_ = syscall.Kill(cmd.Process.Pid, syscall.SIGTERM)
-				select {
-				case <-exited:
-				case <-time.After(10 * time.Second):
-					_ = syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
-					<-exited
-				}
-			})
-		}
-		t.Cleanup(stop)
-		return exited, cmd.Process.Pid, stop
-	}
-
-	exited, standalonePID, stopStandalone := startChild(t, "router", "serve")
-	until(t, 15*time.Second, func() bool { return routerHealthy(routerPort) }, "the standalone daemon to answer its health path")
-
-	hammered := startHammer(routerPort)
-	_, _, _ = startChild(t, "serve")
-	until(t, 15*time.Second, func() bool {
-		return strings.Contains(logText(), fmt.Sprintf("huddle-router: taken over from pid %d", standalonePID))
-	}, "the hub to take the router over")
-	select {
-	case <-exited:
-		stopStandalone()
-	case <-time.After(15 * time.Second):
-		_ = syscall.Kill(standalonePID, syscall.SIGKILL)
-		t.Fatalf("the standalone daemon (pid %d) still runs 15 s after the takeover", standalonePID)
-	}
-	if status := postModel(t, routerPort); status != 200 {
-		t.Errorf("a glm request after the takeover = %d, want 200", status)
-	}
-	if failures := hammered.halt(); failures != 0 {
-		t.Errorf("%d connections were refused across the full edition's takeover", failures)
-	}
 }

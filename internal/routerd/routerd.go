@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/singleton"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/spool"
 	"github.com/MuhmdRaouf/huddle/internal/core/providers"
@@ -51,9 +52,6 @@ type Options struct {
 	// RSSCeiling is the resident size over which the daemon hands itself over to a fresh copy
 	// of its own binary; 0 takes $HUDDLE_ROUTER_RSS_CEILING_MB, else one GiB.
 	RSSCeiling int64
-	// Hosted is the router that runs inside the hub's process; its RSS is the hub's, so the
-	// memory handover is off.
-	Hosted bool
 	// panicOnce is a test-only hook the handler runs before serving, so a scenario can put a
 	// panic in a lane and prove the recovery.
 	panicOnce func(req *http.Request)
@@ -67,10 +65,7 @@ type record struct {
 	// Executable is the binary the daemon runs, so a start from another binary knows the
 	// running daemon is not this one and takes the socket over.
 	Executable string `json:"executable,omitempty"`
-	// Hosted marks the router the hub's own process serves: a start never takes it away from
-	// the hub — the hub's own `huddle up` replaces an older hub, and the router moves with it.
-	Hosted  bool   `json:"hosted,omitempty"`
-	Started string `json:"started"`
+	Started    string `json:"started"`
 }
 
 // Run serves huddle-router until ctx ends. It answers a *singleton.HeldError when another
@@ -214,7 +209,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	// update a legacy port may refuse connections for up to a second.
 	stopAdopting := adoptLegacyPorts(ctx, env, server, log)
 	defer stopAdopting()
-	if err := writeRecord(ctx, recordFile, port, o.Version, runningExecutable(), o.Hosted); err != nil {
+	if err := writeRecord(ctx, recordFile, port, o.Version, runningExecutable()); err != nil {
 		// A router without its record still serves; status and start are the ones that miss it.
 		log("huddle-router: " + err.Error())
 	}
@@ -227,9 +222,6 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	interval := rssIntervalOf(env)
 	spawned := time.Time{}
 	nextRSS := time.Now().Add(interval)
-	if o.Hosted {
-		log("huddle-router: hosted by the hub; the memory handover is off")
-	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -257,8 +249,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 					log("huddle-router: now serving " + strings.Join(multi.Providers(), ", "))
 				}
 			}
-			// A hosted router's RSS is the hub's, so only a standalone daemon watches its own.
-			if !o.Hosted && !nextRSS.After(time.Now()) {
+			if !nextRSS.After(time.Now()) {
 				nextRSS = time.Now().Add(interval)
 				spawned = checkRSS(ceiling, spawned, env, log)
 			}
@@ -344,14 +335,13 @@ func stop(server *http.Server, recordFile string, log func(line string)) error {
 }
 
 // writeRecord publishes what the running router is: the pid to signal, the port to talk to,
-// which binary serves it, whether the hub hosts it, and when it came up.
-func writeRecord(ctx context.Context, path string, port int, version, executable string, hosted bool) error {
+// which binary serves it, and when it came up.
+func writeRecord(ctx context.Context, path string, port int, version, executable string) error {
 	text, err := fsutil.MarshalJSON(record{
 		PID:        os.Getpid(),
 		Port:       port,
 		Version:    version,
 		Executable: executable,
-		Hosted:     hosted,
 		Started:    time.Now().Format(time.RFC3339),
 	})
 	if err != nil {
@@ -373,6 +363,28 @@ func readRecord(env domain.EnvLookup) (record, bool) {
 		return record{}, false
 	}
 	return parsed, true
+}
+
+// Running is the router a home's record names while it serves: what status and the hub's
+// health answer show beside the hub's own pid.
+type Running struct {
+	PID     int
+	Port    int
+	Version string
+}
+
+// RunningOf reads the router the home's record names, and false unless that pid lives and its
+// port answers huddle-router's health path: a record a killed daemon left behind, or a pid the
+// system has since given to another program, never reads as a live router.
+func RunningOf(ctx context.Context, env domain.EnvLookup) (Running, bool) {
+	r, ok := readRecord(env)
+	if !ok || r.PID <= 0 || r.Port <= 0 || !process.IsAlive(int64(r.PID)) {
+		return Running{}, false
+	}
+	if _, up := Health(ctx, r.Port); !up {
+		return Running{}, false
+	}
+	return Running{PID: r.PID, Port: r.Port, Version: r.Version}, true
 }
 
 // fingerprint is what a watched file must keep for its reader to skip it: size and mtime. A

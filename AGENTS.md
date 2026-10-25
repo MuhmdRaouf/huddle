@@ -58,16 +58,17 @@ node scripts/check-attribution.mjs             # no AI attribution in the histor
 
 ## Architecture
 
-- **One daemon per user.** `huddle serve` hosts the hub (channels, registry, needs-you, the dashboard with its
-  Radar and Kanban tabs) and huddle-router beside it; the hub takes the router's listening socket over by
-  handover, so the port never closes. Without a set-up huddle home, a provider's session start brings up a
-  standalone `huddle router serve` instead — the router-only edition. A second start finds the first and exits 0.
+- **One router and one hub per user** ([ADR-4](docs/adr/0004-router-process.md)). `huddle router serve` is
+  huddle-router, its own process, running once a provider is set up; `huddle serve` is the hub (channels,
+  registry, needs-you, the dashboard with its Radar and Kanban tabs), running once the huddle home is set up.
+  `huddle up` starts the router, then the hub; a hub restart never touches the router. A second start of either
+  finds the first and exits 0.
 - **One router.** huddle-router listens on `127.0.0.1:18786` (`HUDDLE_ROUTER_PORT` moves it), health at
   `/huddle-router/health`, state under `~/.agents/huddle-router/` (`providers.json` lists the enabled
   providers, re-read every 2 s; one lane per provider, matched by catalog id, then the longest model prefix).
   `claude-*` goes to Anthropic untouched; a model no lane claims goes to Anthropic; the gateway's OpenAI and
   Anthropic routes are mounted under `/gateway`; Radar's `budget-status.json` can stop a provider. A handover
-  also serves a binary update and an RSS ceiling of 1 GiB (`HUDDLE_ROUTER_RSS_CEILING_MB`, checked every 30 s).
+  serves a binary update and an RSS ceiling of 1 GiB (`HUDDLE_ROUTER_RSS_CEILING_MB`, checked every 30 s).
 - **One hook process.** Each Claude Code event runs one `huddle hook <event>` process whose parts run in order
   (`internal/hookplan`): huddle's handler, its report, radar, kanban's session start, and the providers' parts
   (session-start re-applies every set-up provider's wiring; subagent-stop adds the usage line). A part owns a

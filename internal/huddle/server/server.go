@@ -492,15 +492,6 @@ func Serve(ctx context.Context, o Options) error {
 	if o.Host == "" {
 		o.Host = "127.0.0.1"
 	}
-	// The full edition: this process hosts huddle-router too, unless a router-only daemon
-	// holds the router lock — one line says so and the hub serves alone. Like the radar tab, a
-	// caller that names no environment (a test with bare Options) hosts none: the router would
-	// not know where its files live.
-	if len(o.Environ) > 0 {
-		routerCtx, stopRouter := context.WithCancel(ctx)
-		defer stopRouter()
-		go hostHuddleRouter(routerCtx, o)
-	}
 	now := o.Now
 	if now == nil {
 		now = time.Now
@@ -1330,16 +1321,20 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		if err != nil {
 			return err
 		}
+		// the answer names both processes: the hub's own pid and the router's beside it
 		s.writeJSON(w, 200, struct {
-			OK         bool   `json:"ok"`
-			Version    string `json:"version"`
-			Started    string `json:"started"`
-			Channels   int    `json:"channels"`
-			Home       string `json:"home"`
-			Machine    string `json:"machine"`
-			Name       string `json:"name,omitempty"`
-			Executable string `json:"executable"`
-		}{true, s.o.Version, s.started, len(names), s.o.Home, s.machine, hubName(s.o.Home), s.exe}, nil)
+			OK         bool         `json:"ok"`
+			Version    string       `json:"version"`
+			Started    string       `json:"started"`
+			Channels   int          `json:"channels"`
+			Home       string       `json:"home"`
+			Machine    string       `json:"machine"`
+			Name       string       `json:"name,omitempty"`
+			Executable string       `json:"executable"`
+			PID        int          `json:"pid"`
+			Router     routerHealth `json:"router"`
+		}{true, s.o.Version, s.started, len(names), s.o.Home, s.machine, hubName(s.o.Home), s.exe,
+			os.Getpid(), routerOf(r.Context(), s.o.Environ)}, nil)
 		return nil
 	case path == "/" || path == "/index.html":
 		return s.staticFile(w, "index.html", "text/html; charset=utf-8", "no-store")

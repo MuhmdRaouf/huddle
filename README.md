@@ -61,32 +61,35 @@ and run its `/zai:setup` — installing the plugin installs `huddle` with it. Wh
 launcher builds the binary of the marketplace checkout's own commit with `go` (see
 [Requirements](#requirements)).
 
-That is all: the hooks start the hub — the one server, with Radar and the board living inside it — and bring it
-back on the next hook after a crash or a reboot.
+That is all: the hooks start the hub — with Radar and the board living inside it — and, once a provider is set
+up, huddle-router beside it as a second process, and bring each back on the next hook after a crash or a reboot.
 
-## The two editions
+## Two processes: the router and the hub
 
-One daemon serves both, so there is never more than one per user: a second start finds the first and exits 0.
+Each user runs at most one router and one hub, each its own process, and a second start of either finds the first
+and exits 0 ([ADR-4](docs/adr/0004-router-process.md)).
 
-- **Router-only:** a provider plugin is set up and the huddle home is not. A standalone `huddle router serve`
-  holds 127.0.0.1:18786 for Claude Code's model requests; nothing else runs.
-- **Full:** `/huddle:setup` ran. `huddle serve` hosts the hub — channels, the Now list, the dashboard with its
-  Radar and Kanban tabs — and huddle-router beside it, taking the router's listening socket over from a
-  standalone daemon without closing the port.
+- **huddle-router:** `huddle router serve` holds 127.0.0.1:18786 for Claude Code's model requests. It runs as soon
+  as a provider plugin is set up, with or without a huddle home.
+- **The hub:** `/huddle:setup` ran. `huddle serve` serves channels, the Now list and the dashboard with its Radar
+  and Kanban tabs. A hub restart, update or crash never touches the router, so the Claude streams in flight keep
+  going.
+
+`huddle up` starts the router, then the hub, and prints both pids; `huddle status` and the hub's `/health` name
+both.
 
 ```mermaid
 flowchart LR
-    S[Claude Code session] -->|"HTTPS_PROXY 127.0.0.1:18786"| R[huddle-router daemon]
+    S[Claude Code session] -->|"HTTPS_PROXY 127.0.0.1:18786"| R["huddle router serve"]
     S -->|"one hook process per event"| K["huddle hook"]
     R -->|"claude-* untouched"| A[api.anthropic.com]
     R -->|"provider models, the provider's key"| P["Z.ai · Moonshot · DeepSeek · MiniMax · Qwen"]
     R -->|"request lines, budget-status.json"| SP[radar home]
-    K -->|"starts"| D[huddle serve]
-    D -->|"full edition"| HUB["hub + channels + Radar + Kanban tabs"]
-    K -->|"router-only edition"| RS["huddle router serve"]
+    K -->|"starts, once a provider is set up"| R
+    K -->|"starts, once the huddle home is set up"| D["huddle serve: hub + channels + Radar + Kanban tabs"]
 ```
 
-Each session's `huddle mcp` bridge watches the daemon: a health check every 2 s, a restart after 5 s of silence.
+Each session's `huddle mcp` bridge watches the router: a health check every 2 s, a restart after 5 s of silence.
 
 A provider lane can name fallback models in `providers.json`
 (`"lanes": {"zai": {"fallback": ["glm-5.3-flash"]}}`): after three 5xx, 429 or dropped answers in a row for one

@@ -199,7 +199,7 @@ func replaceHungRouter(ctx context.Context, self string, pid int) bool {
 	// from an older build is still ours to replace
 	fields := strings.Fields(line)
 	if !ok || len(fields) == 0 || filepath.Base(fields[0]) != filepath.Base(self) ||
-		!(strings.Contains(line, "router serve") || strings.Contains(line, " serve")) {
+		!strings.Contains(line, "router serve") {
 		return false
 	}
 	process.TerminateGroup(ctx, int64(pid), watchReplaceGraceMs)

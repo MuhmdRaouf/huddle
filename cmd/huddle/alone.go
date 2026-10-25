@@ -24,6 +24,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
+	"github.com/MuhmdRaouf/huddle/internal/routerd"
 )
 
 // aloneEntry runs one of the binary's own words: argv is the whole command line (a flag keeps
@@ -74,8 +75,9 @@ func aloneRun(ctx context.Context, command string, argv []string, stdout, stderr
 	return word(ctx, w, argv, stdout, stderr), true
 }
 
-// upAlone starts the server detached and prints the one line a script can read: where it
-// answers. --port names a port of the caller's choosing, saved and never moved.
+// upAlone starts huddle-router and then the hub, detached, and prints one line for each: the
+// hub's address and pid, then the router's (ADR-4: two processes, one of each per user). --port
+// names a port of the caller's choosing, saved and never moved.
 func upAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr io.Writer) int {
 	url := cli.Identify(ctx, w, "").URL
 	if port, ok := flagValue(argv, "--port"); ok {
@@ -93,12 +95,36 @@ func upAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr io
 		fmt.Fprintf(stderr, "huddle: %s\n", result.Msg)
 		return 5
 	}
-	fmt.Fprintf(stdout, "huddle is up at %s\n", result.URL)
+	fmt.Fprintln(stdout, hubUpLine(result.URL, cli.PidOf(ctx, w)))
+	running, ok := routerd.RunningOf(ctx, envOf(os.Environ()))
+	fmt.Fprintln(stdout, routerUpLine(running, ok, result.Router))
 	return 0
 }
 
-// statusAlone answers the four facts of the running server: its address, the machine's role, the
-// port, the sessions its channels hold and the pid. Nothing running is exit 6, one line.
+// hubUpLine is the line a script reads about the hub: where it answers, and its pid when the
+// home's pid file names one.
+func hubUpLine(url string, pid int) string {
+	if pid <= 0 {
+		return "huddle is up at " + url
+	}
+	return fmt.Sprintf("huddle is up at %s · pid %d", url, pid)
+}
+
+// routerUpLine is the line up and status print about huddle-router, the process beside the hub:
+// its address and pid while it serves, else why not, from the start's own line.
+func routerUpLine(running routerd.Running, ok bool, startLine string) string {
+	if ok {
+		return fmt.Sprintf("huddle-router is up at http://127.0.0.1:%d · pid %d", running.Port, running.PID)
+	}
+	if reason := strings.TrimPrefix(startLine, "huddle-router: "); reason != "" {
+		return "huddle-router is not running (" + reason + ")"
+	}
+	return "huddle-router is not running"
+}
+
+// statusAlone answers the facts of the running server: its address, the machine's role, the
+// port, the sessions its channels hold and the pid, then huddle-router's address and pid. No hub
+// running is exit 6, one line.
 func statusAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr io.Writer) int {
 	root := cli.Home(ctx, w)
 	if root == "" {
@@ -120,6 +146,8 @@ func statusAlone(ctx context.Context, w *cli.World, argv []string, stdout, stder
 	}
 	fmt.Fprintf(stdout, "huddle is up at %s\nrole %s · port %d · sessions %s · pid %s\n",
 		url, role, port, aloneSessions(ctx, w, url), pidWord)
+	router, serving := routerd.RunningOf(ctx, envOf(os.Environ()))
+	fmt.Fprintln(stdout, routerUpLine(router, serving, ""))
 	return 0
 }
 

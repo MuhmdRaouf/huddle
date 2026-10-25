@@ -67,6 +67,18 @@ zai-plugin-cc@muhmdraouf`) installs `huddle` with it; then run its setup:
 3. Restart Claude Code when the report says so. From then on the router is the one daemon at 18786 for every
    provider you set up: a second provider's setup adds a lane to it and changes nothing else.
 
+The router is its own process, `huddle router serve`, beside the hub's `huddle serve`: one of each per user. A hub
+restart, update or crash never touches it, so a Claude answer streaming through it keeps going. `huddle up`
+starts the router and then the hub, and prints one line for each:
+
+```text
+huddle is up at http://127.0.0.1:18860 · pid 41210
+huddle-router is up at http://127.0.0.1:18786 · pid 41188
+```
+
+`huddle status` ends with the same router line, and the hub's `/health` answer carries `pid` and
+`router: {running, pid, port}`.
+
 The router stays out of the way of a session: it adds under 5 ms to the first byte of a streamed answer and
 under 1 ms to each chunk, on a provider lane and on the decrypted `api.anthropic.com` path alike, and with no
 request in flight it uses under 0.5% of one core. `TestE2ERouterOverhead` and `TestRouterIdleCPU` hold it to
@@ -624,12 +636,20 @@ itself, so a session started before the move keeps working, and the old generati
 left to bring back.
 
 A hub a 0.0.1 build left running gives way the same way: the next `huddle up` or session start from
-the current build stops it, starts the hub on the same port, and takes a standalone huddle-router's
-socket over, so the router never stops answering.
+the current build stops it and starts the hub on the same port. The router beside it moves to the
+current build by its own handover, so it never stops answering.
 
-A standalone router whose resident size passes its memory ceiling (1 GiB by default,
-`HUDDLE_ROUTER_RSS_CEILING_MB` to move it) hands itself over to a fresh copy; the ceiling never
-applies to a router hosted by the hub, whose memory is the hub's to manage.
+A router whose resident size passes its memory ceiling (1 GiB by default,
+`HUDDLE_ROUTER_RSS_CEILING_MB` to move it) hands itself over to a fresh copy.
+
+## Deploy a new build
+
+1. Build or install the new binary (the launcher does it on a plugin update).
+2. Restart the hub only: `huddle down`, then `huddle up` from the new build. The router keeps serving through
+   the restart, so no Claude stream in flight is cut.
+3. `huddle up` from the new build also finds the router serving from the old one and moves it over by handover:
+   the router port never closes, and the old router process drains what it already accepted.
+4. Check both: `huddle status` names the hub's pid and the router's.
 
 ## Troubleshooting
 
@@ -646,7 +666,6 @@ applies to a router hosted by the hub, whose memory is the hub's to manage.
 | The hub's memory grows while radar catches up | The hub keeps its heap under a soft 1 GiB limit; `HUDDLE_MEMORY_LIMIT_MB` sets another size in MiB before the hub starts |
 | The hub idles at more memory than its data needs | The hub runs at `GOGC=50`, so its heap stays near the data it holds; a `GOGC` you set before the hub starts takes its place |
 | A session from before a plugin update | Its watchdog starts the router from the launcher's `current` link, so an old session still brings the router back after plugin updates removed its own build |
-| The router runs as its own process beside the hub | Fixed: a start never takes the router from the hub that hosts it. `huddle up` after a plugin update replaces the hub, and the router moves with it |
 | Setup in a second project says channel is empty / not in a huddle | Fixed: the project gets its own channel on the running hub, named after the project; run `huddle setup` there again |
 | Something looks wrong | The log is `<home>/run/huddle.log`, the pid and port beside it |
 

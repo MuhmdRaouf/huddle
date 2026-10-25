@@ -22,8 +22,11 @@ ran separately is now one process set.
 
 - The listening socket is never closed to swap the process: a new binary takes the socket over by handover and
   the old process drains what it already accepted for up to 10 minutes. The same handover runs when the
-  daemon's resident memory passes 1 GiB (`HUDDLE_ROUTER_RSS_CEILING_MB` overrides; checked every 30 s) and when
-  the full edition's hub takes a standalone router over.
+  daemon's resident memory passes 1 GiB (`HUDDLE_ROUTER_RSS_CEILING_MB` overrides; checked every 30 s).
+- huddle-router runs as its own process beside the hub, and the hub never hosts it: a hub restart, update or
+  crash no longer cuts the Claude answers streaming through the router (`API Error: Connection lost
+  mid-response`). `huddle up` starts the router, then the hub; `huddle up`, `huddle status` and the hub's
+  `/health` name both pids.
 - Each session's `huddle mcp` bridge checks the daemon every 2 s and restarts it after 5 s of silence, replacing
   a hung holder first.
 - Setup writes proxy mode: `HTTPS_PROXY` at the router, `NODE_EXTRA_CA_CERTS` at the shared local CA in

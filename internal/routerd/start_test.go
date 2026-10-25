@@ -346,7 +346,7 @@ func TestRecordFileRoundTrips(t *testing.T) {
 	})
 	t.Run("the written record reads back", func(t *testing.T) {
 		path := filepath.Join(router.HomeOf(env), "run", "elsewhere.json")
-		if err := writeRecord(context.Background(), path, 20000, "test", "self", false); err != nil {
+		if err := writeRecord(context.Background(), path, 20000, "test", "self"); err != nil {
 			t.Fatalf("writeRecord: %v", err)
 		}
 		raw, err := os.ReadFile(path)
@@ -366,7 +366,7 @@ func TestRecordFileRoundTrips(t *testing.T) {
 		if err := os.WriteFile(blocker, []byte("a file"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := writeRecord(context.Background(), filepath.Join(blocker, "router.json"), 1, "test", "self", false); err == nil {
+		if err := writeRecord(context.Background(), filepath.Join(blocker, "router.json"), 1, "test", "self"); err == nil {
 			t.Fatal("writeRecord behind a file = nil error, want one")
 		}
 	})
@@ -482,23 +482,6 @@ func TestCheckRSSHandsOverOnlyOverTheCeiling(t *testing.T) {
 			t.Errorf("the log = %q, want the handover line before the failure", strings.Join(lines, "\n"))
 		}
 	})
-}
-
-func TestCommandLineReadsWhatPsSays(t *testing.T) {
-	t.Parallel()
-	self := CommandLine(os.Getpid())
-	if self == "" {
-		t.Fatal("CommandLine of this process = empty, want the ps line")
-	}
-	if !strings.Contains(self, filepath.Base(os.Args[0])) {
-		t.Errorf("CommandLine = %q, want this binary named", self)
-	}
-	if got := CommandLine(-3); got != "" {
-		t.Errorf("CommandLine(-3) = %q, want empty", got)
-	}
-	if got := CommandLine(999999999); got != "" {
-		t.Errorf("CommandLine of a gone pid = %q, want empty", got)
-	}
 }
 
 // TestStartNamesItsOwnStartFailures covers the failure rows a start answers before any spawn:

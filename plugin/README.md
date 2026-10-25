@@ -106,9 +106,9 @@
   first build exists, so a session's hooks keep running after a plugin update replaces the plugin's directory. The MCP server `huddle` exposes the operations, the `huddle` and `kanban`
   skills teach the protocol, and the `huddle-worker` agent does one bounded task and shares its findings.
 - **The router.** huddle-router is the daemon at 127.0.0.1:18786 that the provider plugins route through: one lane
-  per enabled provider, `claude-*` to Anthropic untouched, the gateway under `/gateway`. With only a provider set
-  up it runs alone; when the hub starts it moves into the hub's process by handover, and each session's
-  `huddle mcp` restarts it after 5 s of silence.
+  per enabled provider, `claude-*` to Anthropic untouched, the gateway under `/gateway`. It is its own process
+  beside the hub, so a hub restart never cuts a Claude answer, and each session's `huddle mcp` restarts it after
+  5 s of silence.
 
 ## Configuration
 

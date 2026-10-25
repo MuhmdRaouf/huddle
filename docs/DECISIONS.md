@@ -10,12 +10,12 @@ The provider engine lives in the huddle module as `internal/core/...`, beside hu
 part ships as the one `huddle` binary. The five provider plugins live in this repository too (D19). huddle is the
 only repository maintained.
 
-## D2: One daemon per user
+## D2: One router and one hub per user
 
-`huddle serve` hosts huddle-router whenever at least one provider is set up, and the hub with its Radar and Kanban
-tabs when the huddle home is set up: the full edition. Without a set-up huddle home, a provider's session start runs
-a standalone `huddle router serve`: the router-only edition. There is exactly one daemon per user: a second start
-finds the first and exits 0.
+huddle-router and the hub are two processes, each a singleton ([ADR-4](adr/0004-router-process.md)). `huddle
+router serve` runs whenever at least one provider is set up; `huddle serve` runs the hub with its Radar and Kanban
+tabs when the huddle home is set up. `huddle up` starts the router, then the hub. A hub restart never touches the
+router. A second start of either finds the first and exits 0.
 
 ## D3: Port
 
@@ -46,7 +46,7 @@ cleared only when the last provider goes.
 ## D7: Hooks
 
 Provider plugins ship no hooks. huddle's merged event hook (`internal/hookplan`) runs a `providers` part at
-SessionStart, which ensures the daemon and the router, re-applies each enabled provider's settings after a plugin
+SessionStart, which ensures the router, re-applies each enabled provider's settings after a plugin
 update, detects removed plugins and prints the jobs-awaiting-review line, and a `usage` part at SubagentStop, which
 says what a finished agent ran on.
 
@@ -55,13 +55,12 @@ says what a finished agent ran on.
 `huddle mcp`, one per session, checks the daemon's health every 2 s while it runs and restarts it after 5 s of
 silence; the daemon's start lock keeps the restart to one daemon. No other process watches the router.
 
-## D9: Never cut Claude off, in one process
+## D9: Never cut Claude off
 
-The router has its own listener and `http.Server`, takes no lock the hub takes, and every goroutine and handler
-recovers its panics. A graceful handover serves updates: the listening socket passes to the new process and the
-old one drains its streams for up to 10 minutes, so the port never closes. A standalone router whose resident size
-passes 1 GiB (`HUDDLE_ROUTER_RSS_CEILING_MB` moves it, checked every 30 s) hands itself over to a fresh copy; a
-router the hub hosts leaves its memory to the hub.
+The router runs in its own process (D2), takes no lock the hub takes, and every goroutine and handler recovers its
+panics. A graceful handover serves updates: the listening socket passes to the new process and the old one drains
+its streams for up to 10 minutes, so the port never closes. A router whose resident size passes 1 GiB
+(`HUDDLE_ROUTER_RSS_CEILING_MB` moves it, checked every 30 s) hands itself over to a fresh copy.
 
 ## D10: Gateway merged
 
@@ -96,13 +95,13 @@ its binary copy goes once nothing runs from it. Job state and keys are never tou
 
 ## D15: No leaks
 
-One huddle home has one `huddle serve`, and the router's memory has a ceiling (D9). A start that finds a daemon
-already serving answers with it instead of starting another.
+One huddle home has one `huddle serve`, one user has one `huddle router serve`, and the router's memory has a
+ceiling (D9). A start that finds either already serving answers with it instead of starting another.
 
 ## D16: No standalone servers
 
 Hooks never start `huddle radar start` or `huddle kanban serve`: the hub serves Radar and every board in process, and
-those words reach the daemon. `huddle kanban serve` remains a foreground server for tests and debugging.
+those words reach the hub. `huddle kanban serve` remains a foreground server for tests and debugging.
 
 ## D17: Provider data once
 
@@ -123,7 +122,7 @@ ready.
 `zai-plugin-cc`, `kimi-plugin-cc`, `deepseek-plugin-cc`, `minimax-plugin-cc` and `qwen-plugin-cc`, so `/zai:setup`
 and its siblings keep their names. huddle's plugin is `plugin/`, the path the git-subdir source of existing installs
 names, and each provider plugin is `plugins/<p>-plugin-cc/`. Installing a provider plugin installs `huddle` as its
-dependency. A machine runs the router-only edition until `/huddle:setup`, and the full edition after it.
+dependency. A machine runs the router alone until `/huddle:setup`, and the hub beside it after.
 
 ## D20: Tests describe behaviour
 

@@ -179,12 +179,6 @@ func updatedOrUp(ctx context.Context, o StartOptions, env domain.EnvLookup, port
 	if !ok || record.Executable == "" || sameBinary(record.Executable, o.executable()) {
 		return upLine(port, health), nil
 	}
-	// A start never takes a hosted router away from the hub that runs it, whatever the two
-	// binaries are named: the hub's own `huddle up` replaces a hub from an older build, and
-	// the router moves with it.
-	if record.Hosted && process.IsAlive(int64(record.PID)) {
-		return upLine(port, health), nil
-	}
 	old := record.PID
 	log, err := startLog(env)
 	if err != nil {

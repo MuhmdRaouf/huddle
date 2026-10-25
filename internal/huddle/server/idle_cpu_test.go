@@ -1,14 +1,15 @@
 package server
 
 // The hub's idle cost: `huddle serve` runs all day, so with no client and no request its
-// timers must cost next to nothing. The whole daemon runs in this process the way serve starts
-// it (the hub, the registry's watchers, the radar tab and huddle-router beside it) over a temp
-// home that holds days of transcripts, and the process's own CPU time is sampled while
+// timers must cost next to nothing. The whole hub runs in this process the way serve starts
+// it (the hub, the registry's watchers and the radar tab) over a temp home that holds days of
+// transcripts, and the process's own CPU time is sampled while
 // nothing talks to it.
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -76,13 +77,6 @@ func TestHubIdleCPU(t *testing.T) {
 		t.Skip("the race detector multiplies every instruction's cost; the plain build gates the idle share")
 	}
 	root := t.TempDir()
-	// The router's handover socket lives under its home, so that home stays short enough for a
-	// socket path.
-	routerHome, err := os.MkdirTemp(os.TempDir(), "hub-idle-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(routerHome) })
 	huddleHome := filepath.Join(root, "huddle-home")
 	if err := os.MkdirAll(huddleHome, 0o700); err != nil {
 		t.Fatal(err)
@@ -100,14 +94,11 @@ func TestHubIdleCPU(t *testing.T) {
 		"XDG_DATA_HOME=" + filepath.Join(root, "xdg-data"),
 		"XDG_STATE_HOME=" + filepath.Join(root, "xdg-state"),
 		"XDG_CACHE_HOME=" + filepath.Join(root, "xdg-cache"),
-		"HUDDLE_ROUTER_HOME=" + routerHome,
-		"HUDDLE_ROUTER_PORT=" + strconv.Itoa(ports.Free(t)),
-		"HUDDLE_ROUTER_ANTHROPIC_URL=http://127.0.0.1:1",
 	}
 	port := ports.Free(t)
 	o := Options{
 		Version: "0.0.0", Home: huddleHome, Data: huddleHome, Token: "idle-root",
-		Port: port, PortNamed: true, Stdout: &hubLog{}, Stderr: &hubLog{},
+		Port: port, PortNamed: true, Stdout: io.Discard, Stderr: io.Discard,
 		Environ: environ, AutoCreate: true,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -132,8 +123,8 @@ func TestHubIdleCPU(t *testing.T) {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	// The start's own work (the registry, the radar tab's first ingest of today's transcripts,
-	// the router's start) settles before the sample.
+	// The start's own work (the registry, the radar tab's first ingest of today's transcripts)
+	// settles before the sample.
 	time.Sleep(3 * time.Second)
 
 	cpuBefore, wallBefore := cpuTime(t), time.Now()

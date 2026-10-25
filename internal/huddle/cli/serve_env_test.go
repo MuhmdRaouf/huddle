@@ -1,8 +1,8 @@
 package cli
 
-// The hub's child server never inherits a proxy variable that names a router of ours: a server
-// that hosts huddle-router must not chain into one (the 2026-10-21 incident). The user's other
-// proxies ride along.
+// The hub's child server never inherits a proxy variable that names a router of ours: the hub's
+// own requests must not chain into one (the 2026-10-21 incident). The user's other proxies ride
+// along.
 
 import (
 	"strconv"

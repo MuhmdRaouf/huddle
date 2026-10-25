@@ -330,20 +330,6 @@ func parseRSS(out string) (int64, error) {
 	return 0, errors.New("ps printed no rss")
 }
 
-// CommandLine is a process's command line as ps reports it, empty when ps cannot answer (the
-// process is gone or is not ours to inspect). The full edition reads a lock holder's command
-// line to tell a standalone `huddle router serve` from a hub.
-func CommandLine(pid int) string {
-	if pid <= 0 {
-		return ""
-	}
-	out, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
 // selfExecutable is a binary that exists now, for a daemon that spawns its own replacement: a
 // build the launcher has since deleted would fail the spawn, so the launcher's `current` link
 // names the binary to hand over to.

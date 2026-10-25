@@ -138,3 +138,15 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** `hermetic.spec.ts` (web/e2e), which reads the run's two router ports from the setup record.
 - **Rule:** every environment the e2e setup builds names `HUDDLE_ROUTER_PORT`, one free port per hub, and the
   setup record carries both, the way `isoenv.Environ` does for every Go test child.
+
+## 2026-10-25, a hub restart cut every Claude stream in flight
+
+- **What happened:** at 01:28:15Z a `huddle down` during a deploy stopped the hub, pid 54041. The session's
+  transcript says `API Error: Connection lost mid-response` at 01:28:15.079Z, and Claude Code does not retry that
+  error. Six hub restarts ran that night, each one a cut.
+- **Cause:** huddle-router ran inside `huddle serve`, so stopping the hub closed the CONNECT tunnel of every Claude
+  request in flight. The socket handover protected only a router running on its own.
+- **Guard:** `TestE2EUpStartsARouterAndAHub` (cmd/huddle/up_two_processes_e2e_test.go),
+  `TestE2EDownStopsAHubTheLauncherStarted` (cmd/huddle/router_ownership_e2e_test.go)
+- **Rule:** huddle-router is its own process and the hub never hosts it
+  ([ADR-4](adr/0004-router-process.md)); a hub restart never touches the router.

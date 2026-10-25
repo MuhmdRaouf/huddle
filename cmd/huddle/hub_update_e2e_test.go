@@ -1,11 +1,11 @@
 package main
 
-// The hub update end to end on the real binary (D2): an older binary's hub stands beside a
-// standalone huddle-router — the 0.0.1 machine's shape — and up from a newer binary replaces
-// the hub, says so, and the new hub takes the router's socket over, so the router port never
-// stops answering and one huddle serve is left. Every process here is this test's child, every
-// home a temp one, and the router home a short one: the handover socket is a unix socket, and
-// macOS caps a socket path at 104 bytes.
+// The hub update end to end on the real binary (D2, ADR-4): an older binary's hub stands
+// beside huddle-router, its own process, and up from a newer binary replaces the hub and says
+// so, while the router moves to the newer binary by its own handover: the router port never
+// stops answering, and one huddle serve is left. Every process here is this test's child or a
+// daemon it started, every home a temp one, and the router home a short one: the handover
+// socket is a unix socket, and macOS caps a socket path at 104 bytes.
 
 import (
 	"encoding/json"
@@ -163,7 +163,7 @@ func servesOf(t *testing.T, binA, binB string) int {
 	return serves
 }
 
-func TestE2EHubUpdateUpFromANewBinaryReplacesTheHubAndKeepsTheRouter(t *testing.T) {
+func TestE2EHubUpdateUpFromANewBinaryReplacesTheHubAndKeepsTheRouterUp(t *testing.T) {
 	root := t.TempDir()
 	routerHome := shortRouterHome(t)
 	hubPort := ports.Free(t)
@@ -195,25 +195,14 @@ func TestE2EHubUpdateUpFromANewBinaryReplacesTheHubAndKeepsTheRouter(t *testing.
 		"ZAI_ROUTER_URL="+zaiUp.server.URL,
 		"ZAI_API_KEY=hub-update-e2e-key",
 	))
-	// the old build's hub hosts no router (the 0.0.1 machine's shape): its process names a
-	// router home with no providers in it, so its serve waits for providers that never come
-	// and the standalone keeps the router
-	envA := argvLayer(base, map[string]string{"HUDDLE_ROUTER_HOME": filepath.Join(root, "router-home-a")})
 	pids := newPidWatch(t)
 	routerLog, err := os.OpenFile(filepath.Join(routerHome, "e2e.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = routerLog.Close() })
-	hubLog := func() string {
-		raw, err := os.ReadFile(filepath.Join(hubHome, "run", "huddle.log"))
-		if err != nil {
-			return ""
-		}
-		return string(raw)
-	}
 
-	// the standalone router beside the hub, the way the owner's machine runs it
+	// the router beside the hub, the way the owner's machine runs it
 	standalone, standaloneExited := startChild(t, binA, base, root, routerLog, "router", "serve")
 	pids.see(standalone)
 	until(t, 15*time.Second, func() bool { return routerHealthy(routerPort) },
@@ -221,7 +210,7 @@ func TestE2EHubUpdateUpFromANewBinaryReplacesTheHubAndKeepsTheRouter(t *testing.
 
 	// the old binary's hub; the hub's answer names its executable resolved, so the comparison
 	// resolves the copies too
-	code, out, errOut := runBin(t, binA, envA, root, "up", "--port", strconv.Itoa(hubPort))
+	code, out, errOut := runBin(t, binA, base, root, "up", "--port", strconv.Itoa(hubPort))
 	if code != 0 {
 		t.Fatalf("up from the old binary = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
@@ -265,15 +254,25 @@ func TestE2EHubUpdateUpFromANewBinaryReplacesTheHubAndKeepsTheRouter(t *testing.
 		t.Errorf("the hub names executable %q, want the new binary %q", got, exeB)
 	}
 
-	// the new hub takes the standalone's socket over: one line in the hub's log, then the
-	// standalone drains and exits
-	until(t, 15*time.Second, func() bool {
-		return strings.Contains(hubLog(), fmt.Sprintf("huddle-router: taken over from pid %d", standalone))
-	}, "the new hub to take the router over")
+	// the newer binary's up updates the router too, by the router's own handover: the record
+	// names a new pid, and the old router drains and exits
+	record := awaitHandoverRecord(t, routerHome)
+	deadline := time.Now().Add(15 * time.Second)
+	for record.PID == standalone && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+		record = awaitHandoverRecord(t, routerHome)
+	}
+	pids.see(record.PID)
+	if record.PID == standalone {
+		t.Errorf("the router's record still names pid %d after up from the new binary", standalone)
+	}
+	if record.PID == newPID {
+		t.Errorf("the router serves from the hub's pid %d, want its own process", newPID)
+	}
 	select {
 	case <-standaloneExited:
 	case <-time.After(15 * time.Second):
-		t.Errorf("the standalone router (pid %d) still runs 15 s after the takeover", standalone)
+		t.Errorf("the old router (pid %d) still runs 15 s after the handover", standalone)
 		_ = syscall.Kill(standalone, syscall.SIGKILL)
 		<-standaloneExited
 	}

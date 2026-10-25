@@ -1,9 +1,9 @@
 package routerd
 
 // The start's ownership decisions on their own: when two executable paths name one binary, and
-// a start that leaves a hub-hosted router alone instead of taking its socket over. The spawns
-// here are refused — the suite's binary is never the router — so a row proves the refusal or
-// the quiet line, never a daemon.
+// a start from another build taking the running router's socket over. The spawns here are
+// refused — the suite's binary is never the router — so a row proves the refusal, never a
+// daemon.
 
 import (
 	"context"
@@ -85,42 +85,23 @@ func mustResolved(t *testing.T, path string) string {
 	return resolved
 }
 
-// TestUpdatedOrUpLeavesAHostedRouterAlone covers the ownership row: the record says the hub
-// hosts the router, its pid is alive, and the start's own binary is another one — the start
-// answers the quiet line and spawns nothing. A dead hosted pid is no hub any more, and a
-// standalone daemon is still updated: both fall through to the takeover.
-func TestUpdatedOrUpLeavesAHostedRouterAlone(t *testing.T) {
+// TestUpdatedOrUpTakesAnotherBuildsRouterOver covers the ownership row: the record names
+// another binary than the start's own, so the start spawns a takeover, live record pid or not.
+// The suite's binary is never the router, so the spawn is refused and the error proves it ran.
+func TestUpdatedOrUpTakesAnotherBuildsRouterOver(t *testing.T) {
 	another := "/usr/local/bin/huddle-from-another-build"
-
-	t.Run("a hosted record of a live daemon is the quiet line and no spawn", func(t *testing.T) {
-		t.Parallel()
-		env := startEnv(t)
-		healthFake(t, env, http.StatusOK, healthBody("zai"))
-		writeStartRecord(t, env, record{PID: os.Getpid(), Port: 1, Executable: another, Hosted: true, Started: "now"})
-		line, err := Start(context.Background(), StartOptions{Env: env})
-		if err != nil {
-			t.Fatalf("Start over a hosted router = %v, want the quiet line", err)
-		}
-		if line == "" || line[:len("huddle-router: http://127.0.0.1:")] != "huddle-router: http://127.0.0.1:" {
-			t.Errorf("Start = %q, want the address line", line)
-		}
-	})
-	t.Run("a hosted record of a dead daemon is a takeover this suite refuses", func(t *testing.T) {
-		t.Parallel()
-		env := startEnv(t)
-		healthFake(t, env, http.StatusOK, healthBody("zai"))
-		writeStartRecord(t, env, record{PID: int(deadPid(t)), Port: 1, Executable: another, Hosted: true, Started: "now"})
-		if _, err := Start(context.Background(), StartOptions{Env: env}); err == nil {
-			t.Fatal("Start over a dead hub's record = nil error, want the refused takeover")
-		}
-	})
-	t.Run("a standalone record is a takeover as today", func(t *testing.T) {
-		t.Parallel()
-		env := startEnv(t)
-		healthFake(t, env, http.StatusOK, healthBody("zai"))
-		writeStartRecord(t, env, record{PID: 1, Port: 1, Executable: another, Started: "now"})
-		if _, err := Start(context.Background(), StartOptions{Env: env}); err == nil {
-			t.Fatal("Start over a standalone record = nil error, want the refused takeover")
-		}
-	})
+	for name, pid := range map[string]int{
+		"a record of a live daemon": os.Getpid(),
+		"a record of a dead daemon": int(deadPid(t)),
+	} {
+		t.Run(name+" is a takeover", func(t *testing.T) {
+			t.Parallel()
+			env := startEnv(t)
+			healthFake(t, env, http.StatusOK, healthBody("zai"))
+			writeStartRecord(t, env, record{PID: pid, Port: 1, Executable: another, Started: "now"})
+			if _, err := Start(context.Background(), StartOptions{Env: env}); err == nil {
+				t.Fatal("Start over another build's record = nil error, want the refused takeover")
+			}
+		})
+	}
 }

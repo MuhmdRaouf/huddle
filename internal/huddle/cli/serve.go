@@ -102,6 +102,9 @@ type Result struct {
 	First   bool // this home's Huddle never ran before (no members yet)
 	URL     string
 	Exit    int // a failure's own exit code; 0 leaves the command's default
+	// Router is the router start's line: huddle-router runs as its own process beside the hub,
+	// and up brings it up first. Empty when up started nothing (a test binary).
+	Router string
 }
 
 // pidFile is the home's pid file, in its run directory.
@@ -468,25 +471,38 @@ func UpAlone(ctx context.Context, w *World, rawURL string, budgetMS int) Result 
 	return up(ctx, w, rawURL, budgetMS, "", false)
 }
 
-// up starts the Huddle server, detached, unless one already answers at url: a hub an older
+// up starts huddle-router and then the Huddle server, two processes (ADR-4): a hub restart
+// never touches the router, so the Claude streams in flight keep going. The router start is
+// routerd.Start's own, its line in the answer's Router; a router that cannot start never keeps
+// the hub down. See upHub for the hub and the parameters.
+func up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string, removalWatch bool) Result {
+	if budgetMS <= 0 {
+		budgetMS = 35_000
+	}
+	// A Go test binary is never the hub nor the router: started as `serve` it re-runs its own
+	// suite, detached and with the environment of the code that reached here — on a developer
+	// machine, the owner's real home.
+	bin := w.bin()
+	if process.IsTestBinary(bin) {
+		return Result{URL: rawURL, Msg: fmt.Sprintf("%s is a test binary, not huddle; the hub is not started", filepath.Base(bin))}
+	}
+	began := w.now()
+	line := startRouter(ctx, w, min(routerStartBudget, time.Duration(budgetMS)*time.Millisecond))
+	left := budgetMS - int(w.now().Sub(began)/time.Millisecond)
+	result := upHub(ctx, w, bin, rawURL, max(left, 1), sid, removalWatch)
+	result.Router = line
+	return result
+}
+
+// upHub starts the Huddle server, detached, unless one already answers at url: a hub an older
 // build serves is replaced and this binary's comes up on the same port, a hub this binary
 // serves is left answering. budgetMS bounds the whole call (the session-start hook passes what
 // is left of its own budget); a server still starting when it runs out keeps starting,
 // detached, for the next session. The answer carries the url the server answers at (a new port
 // when it had to move).
-func up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string, removalWatch bool) Result {
-	if budgetMS <= 0 {
-		budgetMS = 35_000
-	}
+func upHub(ctx context.Context, w *World, bin, rawURL string, budgetMS int, sid string, removalWatch bool) Result {
 	deadline := w.now().Add(time.Duration(budgetMS) * time.Millisecond)
 	rest := func() time.Duration { return deadline.Sub(w.now()) }
-	// A Go test binary is never the hub: started as `serve` it re-runs its own suite, detached
-	// and with the environment of the code that reached here — on a developer machine, the
-	// owner's real home.
-	bin := w.bin()
-	if process.IsTestBinary(bin) {
-		return Result{URL: rawURL, Msg: fmt.Sprintf("%s is a test binary, not huddle; the hub is not started", filepath.Base(bin))}
-	}
 	rawURL = trimSlash(rawURL)
 	// a hub of an older binary gives way (D2): the health answer names the executable that
 	// serves it, and when the pid file vouches for it as this home's hub, this start replaces
@@ -579,8 +595,8 @@ func up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string, 
 	if removalWatch {
 		env = append(env, "HUDDLE_REMOVAL_WATCH=1")
 	}
-	// the no-chain rule: a server that hosts huddle-router never inherits a proxy that points
-	// at one; the user's other proxies ride along
+	// the no-chain rule: the hub's own requests never ride a router of ours; the user's other
+	// proxies ride along
 	env = withoutRouterProxies(env)
 	child := exec.Command(bin, "serve")
 	child.Env = env
@@ -1109,6 +1125,9 @@ func ServerCommand(ctx context.Context, w *World, command, rawURL string, args [
 		fmt.Fprintln(stdout, result.Msg)
 	} else {
 		fmt.Fprintln(stderr, result.Msg)
+	}
+	if result.Router != "" {
+		fmt.Fprintln(stdout, result.Router)
 	}
 	if result.Created { // the creator: the line another session pastes in, and the dashboard link
 		if line := JoinLine(ctx, w, rawURL, InviteOptions{Channel: identityChannel(ctx, w), Description: "made by huddle up"}, ""); line.OK {

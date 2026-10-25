@@ -273,7 +273,7 @@ function envFor(target: TempHome, port: number | null, token: string | null, rou
     XDG_DATA_HOME: `${target.xdg}-data`,
     XDG_STATE_HOME: `${target.xdg}-state`,
     HOST: "127.0.0.1",
-    // the hub hosts huddle-router beside itself: on a port of this run's own, never the
+    // every command of the run reads the router port: one of this run's own, never the
     // installed daemon's 18786, so the run never finds, probes or hands over the user's router
     HUDDLE_ROUTER_PORT: String(routerPort),
     ...(port === null ? {} : { PORT: String(port) }),
