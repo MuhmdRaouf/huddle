@@ -342,7 +342,10 @@ test.describe("the Mac wording", () => {
 
 test("the first-run checklist ticks from server state and stands down when all four hold", async ({
   page,
-}) => {
+}, testInfo) => {
+  // a state story on the shared hub: it enrols the authenticator and saves a budget, so it runs
+  // once, on the desktop; the phone project proves the landing's layout and keeps the hub as it was
+  test.skip(testInfo.project.name !== "desktop", "the checklist flow runs on the desktop project only");
   await useVirtualAuthenticator(page);
   // localhost, not 127.0.0.1: the checklist's passkey ceremony follows, and the relying party is
   // the name
