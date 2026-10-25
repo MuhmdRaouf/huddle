@@ -75,3 +75,27 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Cause:** presence had no staleness, so a dead session held its seat.
 - **Guard:** `TestChannelsRemove` (internal/huddle/server/channels_remove_test.go)
 - **Rule:** a session silent past 900 s is stale and counts as gone.
+
+## 2026-10-21, a router routed claude traffic through another router
+
+- **What happened:** every `claude-*` request through huddle-router failed for six hours, answered with 502s, and
+  nothing said why.
+- **Cause:** the daemon's `HTTPS_PROXY` and `HTTP_PROXY` named another router, one of another generation on a port
+  that was not the known one, so the daemon tunnelled its claude traffic through it; a failing Anthropic path
+  raised no event.
+- **Guard:** `TestNoChainScenarios` (internal/routerd/nochain_scenario_test.go), `TestLegacyPortScenarios`
+  (internal/routerd/legacy_scenario_test.go), `TestFailAlertScenarios`
+  (internal/core/router/failalert_scenario_test.go), `TestE2ENoChainARouterNeverRoutesThroughAnotherRouter`
+  (cmd/huddle/nochain_e2e_test.go)
+- **Rule:** a daemon never routes through a proxy that answers a router health path.
+
+## 2026-10-22, the hub tab crashed in a repaint loop
+
+- **What happened:** the hub's tab fetched `/api/channels` about 500 times a second until it ran out of memory.
+- **Cause:** the shell's channel-list effect was keyed on the `loadChannels` function, which `main.tsx` hands over
+  fresh on every paint, and the list's answer repaints; fixed in `0e6d9c5` by keying the read on the open channel
+  alone.
+- **Guard:** `"reads once per channel however often the shell repaints with a new loadChannels"`
+  (web/hub/test/app/App.test.tsx), `"no hub page asks one URL more than twice a second"`
+  (web/e2e/fetchrate.spec.ts) — every hub page, watched for 5 s, fails above 2 requests a second to one URL
+- **Rule:** an effect that fetches lists its inputs, and the hub e2e counts requests per URL.
