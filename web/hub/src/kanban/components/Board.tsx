@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { type Density, type Filters, filterCards, useMedia } from "../store.ts";
 import {
   type Card as CardData,
@@ -85,7 +85,7 @@ function threadMarker(threadId: string | null, visible: CardData[]): (id: string
 
 /** A hand-set override wins: a collapsed-by-hand column stays a rail and an opened-by-hand column
  *  stays open, cards or none. Without one, done is a rail until it is opened and so is any column
- *  the filters emptied. A phone shows one column, so nothing collapses there. */
+ *  the filters emptied. A phone shows one column per screen, so nothing collapses there. */
 function isCollapsed(
   id: ColumnId,
   narrow: boolean,
@@ -146,6 +146,16 @@ export function Board({
   const [overrides, setOverrides] = useState<ReadonlyMap<ColumnId, boolean>>(new Map());
   const [hovered, setHovered] = useState<string | null>(null);
   const columnsRef = useRef<HTMLDivElement>(null);
+  const lanesRef = useRef<HTMLDivElement>(null);
+  // the phone's strip opens on the first column with cards, once per mount of the strip
+  const opening = useRef<ColumnId | null>(null);
+  const placed = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const lanes = lanesRef.current;
+    if (lanes === null || placed.current === lanes || opening.current === null) return;
+    placed.current = lanes;
+    lanes.scrollLeft = COLUMN_IDS.indexOf(opening.current) * lanes.clientWidth;
+  });
 
   // a hand-set collapse or open stays until the next filter change; resetting in render, on the
   // changed identity, keeps the reset in the same commit as the filters that caused it
@@ -230,19 +240,32 @@ export function Board({
     sharedCluster,
   });
 
-  // a flow label hands its column up: on a phone it switches the one shown, here it scrolls to it
+  opening.current = active;
+  const behavior = reduced ? "auto" : "smooth";
+
+  // a flow label hands its column up: on a phone it moves the strip to it, here it scrolls the grid
   const pickColumn = (id: ColumnId): void => {
     if (narrow) {
       setTab(id);
+      const lanes = lanesRef.current;
+      lanes?.scrollTo({ left: COLUMN_IDS.indexOf(id) * lanes.clientWidth, behavior });
       return;
     }
     columnsRef.current
       ?.querySelector(`section[data-column="${id}"]`)
-      ?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest", inline: "start" });
+      ?.scrollIntoView({ behavior, block: "nearest", inline: "start" });
+  };
+
+  // a swipe settles the strip on one screen: the column under it is the selected tab
+  const onLanesScroll = (event: Event): void => {
+    const lanes = event.currentTarget as HTMLElement;
+    if (lanes.clientWidth === 0) return;
+    const shown = COLUMN_IDS[Math.round(lanes.scrollLeft / lanes.clientWidth)];
+    if (shown !== undefined && shown !== active) setTab(shown);
   };
 
   return (
-    <div class="board" data-layout={narrow ? "tabs" : "columns"}>
+    <div class="board" data-layout={narrow ? "lanes" : "columns"}>
       <FlowBar columns={infos} onPick={pickColumn} activeId={narrow ? active : undefined} />
       {expedite.length > 0 && (
         <section class="expedite" aria-label="Expedite">
@@ -255,7 +278,11 @@ export function Board({
         </section>
       )}
       {narrow ? (
-        <Column {...columnProps(active)} />
+        <div ref={lanesRef} class="lanes" onScroll={onLanesScroll}>
+          {COLUMN_IDS.map((id) => (
+            <Column key={id} {...columnProps(id)} />
+          ))}
+        </div>
       ) : (
         <div
           ref={columnsRef}

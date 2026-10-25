@@ -3,7 +3,7 @@ import type { ColumnId, ColumnInfo } from "../types.ts";
 export type FlowBarProps = {
   /** Every column of the board in flow order, done included; it has a label but no segment */
   columns: ColumnInfo[];
-  /** hands the column a label stands for up: the board scrolls to it, or switches on a phone */
+  /** hands the column a label stands for up: the board scrolls to it, on a phone the strip moves */
   onPick: (id: ColumnId) => void;
   /** on a phone the labels are the column tabs: the active one carries aria-selected */
   activeId?: ColumnId | undefined;
@@ -28,7 +28,11 @@ export function FlowBar({ columns, onPick, activeId }: FlowBarProps) {
           <span key={col.id} class="flow-seg" data-column={col.id} style={{ flexGrow: col.count }} />
         ))}
       </div>
-      <div class={tabMode ? "flow-labels tabs" : "flow-labels"}>
+      <div
+        class={tabMode ? "flow-labels tabs" : "flow-labels"}
+        role={tabMode ? "tablist" : undefined}
+        aria-label={tabMode ? "Columns" : undefined}
+      >
         {columns.map((col) =>
           tabMode ? (
             <button

@@ -1,13 +1,17 @@
-// kanban.spec.ts — the redesigned Kanban tab over the fixture hub and board: the picker driven
-// from the keyboard, a rail expanding, the dependency thread lighting up on hover, the phone
-// layout, and the board itself at the three widths the design names. The extra tickets the
-// scenarios need are written into the run's own board folder (gitignored scratch, removed by the
-// teardown) the way `kanban new` would; the fixture folders stay as they are.
+// kanban.spec.ts — the Kanban tab over the fixture hub and board. On the desktop: the picker
+// driven from the keyboard, a column collapsing to its rail and a rail opening, the dependency
+// thread lighting up on hover, and the board at 1440 and 1024 px. On the phone: one column per
+// screen in a snap strip a swipe moves along, read-only cards whose tap opens the design system's
+// sheet, the picker as a full-width sheet listing every board, 44 px tap targets and axe. The
+// extra tickets the scenarios need are written into the run's own board folder (gitignored
+// scratch, removed by the teardown) the way `kanban new` would; the fixture folders stay as they
+// are.
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { expectAccessible } from "./axe.ts";
 import { api, openTab, signIn, theSetup } from "./helpers.ts";
 import { repoRoot, runDir } from "./paths.ts";
 
@@ -35,12 +39,15 @@ function seedBoard(): void {
 
 /** Registers a second board under its own project folder and reports a session working in it.
  *  The project is its own git repository with its own origin: a board's key is its repository's
- *  identity, and inside this repository both boards would fold into one. */
+ *  identity, and inside this repository both boards would fold into one. Both projects run it, so
+ *  the repository is made once. */
 async function seedSecondBoard(): Promise<void> {
   const root = path.join(runDir, "second-project", "e2e-second");
-  mkdirSync(path.join(root, ".agents", "kanban", "backlog"), { recursive: true });
-  execFileSync("git", ["init", "-q"], { cwd: root });
-  execFileSync("git", ["remote", "add", "origin", "https://example.test/e2e-second.git"], { cwd: root });
+  if (!existsSync(path.join(root, ".git"))) {
+    mkdirSync(path.join(root, ".agents", "kanban", "backlog"), { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    execFileSync("git", ["remote", "add", "origin", "https://example.test/e2e-second.git"], { cwd: root });
+  }
   writeFileSync(
     path.join(root, ".agents", "kanban", "backlog", "SECOND-1.md"),
     '---\nid: SECOND-1\ntitle: "Only on second"\ntype: fix\ncluster: e2e\npriority: P1\nsummary: "The second board\'s one card."\n---\n\nBody.\n',
@@ -70,6 +77,12 @@ async function kanbanAt(page: Page, width: number, height: number): Promise<void
 const pageOverflow = (page: Page): Promise<number> =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
+/** Waits for every running animation on the page to finish. */
+const settle = (page: Page): Promise<unknown> =>
+  page.evaluate(() =>
+    Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined))),
+  );
+
 /** Screenshots land here; the folder is gitignored. */
 const shotDir = path.join(repoRoot, "web", "e2e", "screenshots");
 const shot = (page: Page, name: string): Promise<void> =>
@@ -80,122 +93,296 @@ test.beforeAll(async () => {
   seedBoard();
 });
 
-test("the board fits its columns, its rails and a dense backlog at 1440×900", async ({ page }) => {
-  await test.step("Given the seeded board open at 1440×900", async () => {
-    await kanbanAt(page, 1440, 900);
+/** The board picker's button keeps "Board" as its name while it shows the board's own name, the
+ *  name every spec finds it by; axe's label-content-name-mismatch rule reads that as a mismatch,
+ *  so the button is left out of the axe pass. */
+const AXE_EXCLUDE = [".kanban-tab .picker-btn"] as const;
+
+test.describe("the board on a desktop", () => {
+  test.skip(({ isMobile }) => isMobile, "the columns, rails and hover are the desktop's");
+
+  test("the board fits its columns, its rails and a dense backlog at 1440×900", async ({ page }) => {
+    await test.step("Given the seeded board open at 1440×900", async () => {
+      await kanbanAt(page, 1440, 900);
+    });
+
+    await test.step("Then the open columns show their counts and the empty ones their rails", async () => {
+      await expect(page.getByRole("heading", { name: "Backlog 10" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Ready 1" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "In progress 1" })).toBeVisible();
+      for (const rail of ["Review", "Testing", "Blocked"]) {
+        await expect(page.getByRole("button", { name: `${rail}, 0 cards, show column` })).toBeVisible();
+      }
+      await expect(page.getByRole("button", { name: "Done, 0 cards, show column" })).toBeVisible();
+    });
+
+    await test.step("Then the backlog holds its nine compact cards and the page does not scroll sideways", async () => {
+      await expect(page.locator('section[data-column="backlog"] article.card')).toHaveCount(10);
+      expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
+    });
+
+    await test.step("Then the flow bar names every column and draws one segment per column with cards", async () => {
+      await expect(page.getByRole("img", { name: /^Backlog 10, Ready 1, In Progress 1, /i })).toBeVisible();
+      await expect(page.locator(".kanban-tab .flow-seg")).toHaveCount(3);
+      await expect(page.locator(".kanban-tab .flow-labels .flow-label")).toHaveCount(7);
+    });
+
+    await test.step("And axe finds nothing serious on the board or with a card's panel open", async () => {
+      await expectAccessible(page, AXE_EXCLUDE);
+      await page.getByRole("button", { name: "E2E-1: First card" }).click();
+      await expect(page.getByRole("dialog", { name: "E2E-1: First card" }).getByText("Body text.")).toBeVisible();
+      // the panel slides in from transparent: axe reads its colours once the slide is done
+      await settle(page);
+      await expectAccessible(page, AXE_EXCLUDE);
+      await page.keyboard.press("Escape");
+    });
+
+    await test.step("and the desk screenshot is taken", async () => {
+      await shot(page, "kanban-desk-1440x900.png");
+    });
   });
 
-  await test.step("Then the open columns show their counts and the empty ones their rails", async () => {
+  test("a flow label scrolls its column into view", async ({ page }) => {
+    await kanbanAt(page, 1440, 900);
+    await page.getByRole("button", { name: "Done 0" }).click();
+    await expect(page.locator('section[data-column="done"]')).toBeInViewport();
+  });
+
+  test("a rail opens its column, and the picker drives the boards from the keyboard", async ({ page }) => {
+    await test.step("Given the seeded board open at 1440×900", async () => {
+      await kanbanAt(page, 1440, 900);
+    });
+
+    await test.step("When the done rail is clicked", async () => {
+      await page.getByRole("button", { name: "Done, 0 cards, show column" }).click();
+    });
+
+    await test.step("Then done is a column of its own again, empty but open", async () => {
+      await expect(page.getByRole("heading", { name: "Done 0" })).toBeVisible();
+    });
+
+    await test.step("When a second board is registered and b opens the picker", async () => {
+      await seedSecondBoard();
+      await page.reload();
+      await page.locator(".kanban-tab .card").first().waitFor();
+      await page.keyboard.press("b");
+      await expect(page.getByRole("listbox", { name: "Boards" })).toBeVisible();
+    });
+
+    await test.step("Then typing narrows the list and Enter moves to the second board", async () => {
+      await page.getByRole("combobox", { name: "Filter boards" }).fill("second");
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("button", { name: "Board", exact: true })).toContainText("e2e-second");
+      await expect(page.getByRole("button", { name: "SECOND-1: Only on second" })).toBeVisible();
+    });
+  });
+
+  test("hovering a card with a dependency marks its dependency and dims the rest", async ({ page }) => {
+    await test.step("Given the board with E2E-4 waiting on E2E-1", async () => {
+      await kanbanAt(page, 1440, 900);
+      await expect(page.getByRole("button", { name: "E2E-4: The card that waits" })).toBeVisible();
+    });
+
+    await test.step("When E2E-4 is hovered", async () => {
+      await page.locator('[data-id="E2E-4"]').hover();
+    });
+
+    await test.step("Then E2E-1 is marked waits-on, E2E-4 itself, and the rest dim", async () => {
+      await expect(page.locator('[data-id="E2E-1"]')).toHaveAttribute("data-thread", "waits-on");
+      await expect(page.locator('[data-id="E2E-4"]')).toHaveAttribute("data-thread", "self");
+      await expect(page.locator('[data-id="E2E-2"]')).toHaveAttribute("data-thread", "dim");
+    });
+  });
+
+  test("the wide board keeps the columns mode and scrolls its own grid at 1024×768", async ({ page }) => {
+    await kanbanAt(page, 1024, 768);
     await expect(page.getByRole("heading", { name: "Backlog 10" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Ready 1" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "In progress 1" })).toBeVisible();
-    for (const rail of ["Review", "Testing", "Blocked"]) {
-      await expect(page.getByRole("button", { name: `${rail}, 0 cards, show column` })).toBeVisible();
-    }
-    await expect(page.getByRole("button", { name: "Done, 0 cards, show column" })).toBeVisible();
+    // the six columns cannot all fit at this width, so the board's own grid scrolls, not the page
+    await expect(page.locator(".kanban-tab section.col")).toHaveCount(7);
+    const boardScrolls = await page
+      .locator(".kanban-tab .columns")
+      .evaluate((el) => el.scrollWidth > el.clientWidth);
+    expect(boardScrolls).toBe(true);
+    await shot(page, "kanban-wide-1024x768.png");
   });
 
-  await test.step("Then the backlog holds its nine compact cards and the page does not scroll sideways", async () => {
-    await expect(page.locator('section[data-column="backlog"] article.card')).toHaveCount(10);
-    expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
-  });
+  test("a column collapses into its rail and the rail opens it again", async ({ page }) => {
+    await test.step("Given the seeded board open at 1440×900", async () => {
+      await kanbanAt(page, 1440, 900);
+    });
 
-  await test.step("Then the flow bar names every column and draws one segment per column with cards", async () => {
-    await expect(page.getByRole("img", { name: /^Backlog 10, Ready 1, In Progress 1, /i })).toBeVisible();
-    await expect(page.locator(".kanban-tab .flow-seg")).toHaveCount(3);
-    await expect(page.locator(".kanban-tab .flow-labels .flow-label")).toHaveCount(7);
-  });
+    await test.step("When the backlog's collapse button is clicked", async () => {
+      await page.getByRole("button", { name: "Collapse Backlog" }).click();
+    });
 
-  await test.step("and the desk screenshot is taken", async () => {
-    await shot(page, "kanban-desk-1440x900.png");
-  });
-});
+    await test.step("Then the backlog is a rail naming its count, and its cards are gone", async () => {
+      await expect(page.getByRole("button", { name: "Backlog, 10 cards, show column" })).toBeVisible();
+      await expect(page.locator('section[data-column="backlog"] article.card')).toHaveCount(0);
+    });
 
-test("a flow label scrolls its column into view", async ({ page }) => {
-  await kanbanAt(page, 1440, 900);
-  await page.getByRole("button", { name: "Done 0" }).click();
-  await expect(page.locator('section[data-column="done"]')).toBeInViewport();
-});
-
-test("a rail opens its column, and the picker drives the boards from the keyboard", async ({ page }) => {
-  await test.step("Given the seeded board open at 1440×900", async () => {
-    await kanbanAt(page, 1440, 900);
-  });
-
-  await test.step("When the done rail is clicked", async () => {
-    await page.getByRole("button", { name: "Done, 0 cards, show column" }).click();
-  });
-
-  await test.step("Then done is a column of its own again, empty but open", async () => {
-    await expect(page.getByRole("heading", { name: "Done 0" })).toBeVisible();
-  });
-
-  await test.step("When a second board is registered and b opens the picker", async () => {
-    await seedSecondBoard();
-    await page.reload();
-    await page.locator(".kanban-tab .card").first().waitFor();
-    await page.keyboard.press("b");
-    await expect(page.getByRole("listbox", { name: "Boards" })).toBeVisible();
-  });
-
-  await test.step("Then typing narrows the list and Enter moves to the second board", async () => {
-    await page.getByRole("combobox", { name: "Filter boards" }).fill("second");
-    await page.keyboard.press("Enter");
-    await expect(page.getByRole("button", { name: "Board", exact: true })).toContainText("e2e-second");
-    await expect(page.getByRole("button", { name: "SECOND-1: Only on second" })).toBeVisible();
+    await test.step("When the rail is clicked, the column and its cards come back", async () => {
+      await page.getByRole("button", { name: "Backlog, 10 cards, show column" }).click();
+      await expect(page.getByRole("heading", { name: "Backlog 10" })).toBeVisible();
+      await expect(page.locator('section[data-column="backlog"] article.card')).toHaveCount(10);
+    });
   });
 });
 
-test("hovering a card with a dependency marks its dependency and dims the rest", async ({ page }) => {
-  await test.step("Given the board with E2E-4 waiting on E2E-1", async () => {
-    await kanbanAt(page, 1440, 900);
-    await expect(page.getByRole("button", { name: "E2E-4: The card that waits" })).toBeVisible();
+/** Swipes the snap strip one thumb's stroke to the left, the way a finger moves to the next
+ *  column: a touch scroll gesture Chromium synthesizes, so the snap settles as it would on the
+ *  phone. */
+async function swipeLeft(page: Page): Promise<void> {
+  const box = (await page.locator(".kanban-tab .lanes").boundingBox()) ?? expect.fail("no lanes");
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.synthesizeScrollGesture", {
+    x: Math.round(box.x + box.width * 0.8),
+    y: Math.round(box.y + 40),
+    xDistance: -Math.round(box.width * 0.6),
+    yDistance: 0,
+    gestureSourceType: "touch",
+    speed: 1200,
+  });
+  await cdp.detach();
+}
+
+/** Every visible control of the tab and of an open sheet narrower or shorter than a 44 px tap
+ *  target, named by its text or label. A control inside a label is tapped through the label, so
+ *  the label is the target measured. */
+function smallTargets(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>(
+      ".kanban-tab button, .kanban-tab [role='tab'], .kanban-tab a, .kanban-tab input, dialog[open] button",
+    )]
+      .map((el) => el.closest<HTMLElement>("label") ?? el)
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+      })
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width < 44 - 0.5 || r.height < 44 - 0.5;
+      })
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        const name = el.getAttribute("aria-label") ?? (el.textContent ?? "").trim().slice(0, 30);
+        return `${el.tagName.toLowerCase()} "${name}" ${Math.round(r.width)}x${Math.round(r.height)}`;
+      }),
+  );
+}
+
+test.describe("the board on a phone", () => {
+  test.skip(({ isMobile }) => !isMobile, "the swipe strip and the card sheet are the phone's");
+
+  test("one column fills the screen and a swipe moves to the next one", async ({ page }) => {
+    await test.step("Given the board open at 390×844", async () => {
+      await kanbanAt(page, 390, 844);
+    });
+
+    await test.step("Then the columns stand in one snap strip, each as wide as the screen", async () => {
+      const lanes = page.locator(".kanban-tab .lanes");
+      await expect(lanes).toHaveCSS("scroll-snap-type", "x mandatory");
+      const widths = await lanes.evaluate((el) => ({
+        lane: el.clientWidth,
+        cols: [...el.querySelectorAll<HTMLElement>("section.col")].map((col) => col.getBoundingClientRect().width),
+      }));
+      expect(widths.cols).toHaveLength(7);
+      for (const width of widths.cols) expect(Math.abs(width - widths.lane)).toBeLessThanOrEqual(1);
+      await expect(page.getByRole("tablist", { name: "Columns" }).getByRole("tab")).toHaveCount(7);
+      await expect(page.getByRole("tab", { selected: true })).toHaveText("Backlog 10");
+      expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
+    });
+
+    await test.step("When the thumb swipes left", async () => {
+      await swipeLeft(page);
+    });
+
+    await test.step("Then Ready fills the screen and its tab is the selected one", async () => {
+      await expect(page.getByRole("tab", { selected: true })).toHaveText("Ready 1");
+      await expect(page.locator('.lanes section[data-column="ready"]')).toBeInViewport({ ratio: 0.9 });
+      await expect(page.locator('.lanes section[data-column="backlog"]')).not.toBeInViewport();
+    });
+
+    await test.step("When the Done tab is tapped, the strip moves to Done", async () => {
+      await page.getByRole("tab", { name: "Done 0" }).tap();
+      await expect(page.locator('.lanes section[data-column="done"]')).toBeInViewport({ ratio: 0.9 });
+      await expect(page.getByRole("tab", { selected: true })).toHaveText("Done 0");
+      expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
+    });
   });
 
-  await test.step("When E2E-4 is hovered", async () => {
-    await page.locator('[data-id="E2E-4"]').hover();
+  test("a tap opens the card's detail sheet, read only, with the ticket body as markdown", async ({ page }) => {
+    await test.step("Given the board open at 390×844", async () => {
+      await kanbanAt(page, 390, 844);
+    });
+
+    await test.step("When E2E-1 is tapped", async () => {
+      await page.getByRole("button", { name: "E2E-1: First card" }).tap();
+    });
+
+    await test.step("Then the design system's sheet rises from the bottom with the ticket", async () => {
+      const sheet = page.getByRole("dialog", { name: "E2E-1: First card" });
+      await expect(sheet).toBeVisible();
+      await expect(sheet).toHaveClass(/ui-sheet/);
+      await expect(sheet.getByRole("heading", { name: "E2E-1", exact: true })).toBeVisible();
+      await expect(sheet.getByText("Body text.")).toBeVisible();
+      await expect(sheet.getByText("Waits on", { exact: true })).toBeVisible();
+      const panel = (await sheet.locator(".ui-sheet-panel").boundingBox()) ?? expect.fail("no panel");
+      const view = page.viewportSize() ?? expect.fail("no viewport");
+      expect(Math.abs(panel.y + panel.height - view.height)).toBeLessThanOrEqual(1);
+      expect(panel.width).toBeGreaterThan(380);
+    });
+
+    await test.step("And it offers no way to move the card", async () => {
+      const sheet = page.getByRole("dialog", { name: "E2E-1: First card" });
+      await expect(sheet.getByRole("button", { name: /move|claim|column/i })).toHaveCount(0);
+      await shot(page, "kanban-phone-sheet-390x844.png");
+    });
+
+    await test.step("When Close is tapped, the board is back", async () => {
+      await page.getByRole("dialog", { name: "E2E-1: First card" }).getByRole("button", { name: "Close" }).tap();
+      await expect(page.getByRole("dialog", { name: "E2E-1: First card" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "E2E-1: First card" })).toBeVisible();
+    });
   });
 
-  await test.step("Then E2E-1 is marked waits-on, E2E-4 itself, and the rest dim", async () => {
-    await expect(page.locator('[data-id="E2E-1"]')).toHaveAttribute("data-thread", "waits-on");
-    await expect(page.locator('[data-id="E2E-4"]')).toHaveAttribute("data-thread", "self");
-    await expect(page.locator('[data-id="E2E-2"]')).toHaveAttribute("data-thread", "dim");
-  });
-});
+  test("every tap target is 44 px and axe finds nothing serious, with and without the sheet", async ({ page }) => {
+    await test.step("Given the board open at 390×844", async () => {
+      await kanbanAt(page, 390, 844);
+    });
 
-test("the wide board keeps the columns mode and scrolls its own grid at 1024×768", async ({ page }) => {
-  await kanbanAt(page, 1024, 768);
-  await expect(page.getByRole("heading", { name: "Backlog 10" })).toBeVisible();
-  // the six columns cannot all fit at this width, so the board's own grid scrolls, not the page
-  await expect(page.locator(".kanban-tab section.col")).toHaveCount(7);
-  const boardScrolls = await page
-    .locator(".kanban-tab .columns")
-    .evaluate((el) => el.scrollWidth > el.clientWidth);
-  expect(boardScrolls).toBe(true);
-  await shot(page, "kanban-wide-1024x768.png");
-});
+    await test.step("Then the board's controls are tap sized and accessible", async () => {
+      expect(await smallTargets(page)).toEqual([]);
+      await expectAccessible(page, AXE_EXCLUDE);
+    });
 
-test("the phone keeps one column, the tabs are the flow bar's labels, and the picker is a sheet", async ({
-  page,
-}) => {
-  await test.step("Given the board open at 390×844", async () => {
-    await kanbanAt(page, 390, 844);
+    await test.step("And the open sheet's controls are too", async () => {
+      await page.getByRole("button", { name: "E2E-1: First card" }).tap();
+      const sheet = page.getByRole("dialog", { name: "E2E-1: First card" });
+      await expect(sheet.getByText("Body text.")).toBeVisible();
+      await settle(page);
+      expect(await smallTargets(page)).toEqual([]);
+      await expectAccessible(page, AXE_EXCLUDE);
+    });
   });
 
-  await test.step("Then one column shows at a time and the tabs carry every column", async () => {
-    await expect(page.locator(".kanban-tab section.col:not(.rail)")).toHaveCount(1);
-    await expect(page.locator(".kanban-tab [role='tab']")).toHaveCount(7);
-    await expect(page.locator(".kanban-tab [role='tab'][aria-selected='true']")).toHaveText("Backlog 10");
-  });
+  test("the picker opens as a full-width sheet and lists every board the hub knows", async ({ page }) => {
+    await test.step("Given a second board and the board open at 390×844", async () => {
+      await seedSecondBoard();
+      await kanbanAt(page, 390, 844);
+    });
 
-  await test.step("When the picker is opened", async () => {
-    await page.getByRole("button", { name: "Board", exact: true }).click();
-    await expect(page.getByRole("listbox", { name: "Boards" })).toBeVisible();
-  });
+    await test.step("When the picker is tapped", async () => {
+      await page.getByRole("button", { name: "Board", exact: true }).tap();
+      await expect(page.getByRole("listbox", { name: "Boards" })).toBeVisible();
+    });
 
-  await test.step("Then it opens as a full-width sheet and the phone screenshot is taken", async () => {
-    const box = await page.locator(".kanban-tab .picker-pop").boundingBox();
-    expect(box?.width).toBeGreaterThan(350);
-    await shot(page, "kanban-phone-390x844.png");
+    await test.step("Then it spans the screen and names both boards", async () => {
+      const box = await page.locator(".kanban-tab .picker-pop").boundingBox();
+      expect(box?.width).toBeGreaterThan(350);
+      const options = page.getByRole("listbox", { name: "Boards" }).getByRole("option");
+      await expect(options.filter({ hasText: theSetup().boardName })).toHaveCount(1);
+      await expect(options.filter({ hasText: "e2e-second" })).toHaveCount(1);
+      await shot(page, "kanban-phone-390x844.png");
+    });
   });
 });

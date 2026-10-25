@@ -544,16 +544,20 @@ describe("Feature: the placements follow the window", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("Scenario: on a phone the panel is full screen with a Back button", async () => {
+  it("Scenario: on a phone the panel is the design system's sheet, read only", async () => {
     // Given a PWA window under 640
     // When the panel opens
-    // Then the header holds Back and it closes back to the board
+    // Then it stands in the ui sheet, titled with the id and title, and Close ends in onClose
     stubMatchMedia((query) => query.includes("max-width: 639"));
     const { container, onClose } = renderDrawer();
-    const back = container.querySelector(".back") as HTMLElement;
-    expect(back).not.toBeNull();
-    expect(container.querySelector("[data-drawer]")?.classList.contains("full")).toBe(true);
-    await userEvent.click(back);
+    const sheet = container.querySelector("dialog.ui-sheet") as HTMLDialogElement;
+    expect(sheet).not.toBeNull();
+    expect(container.querySelector("[data-drawer]")).toBeNull();
+    expect(sheet.querySelector(".ui-sheet-title")?.textContent).toBe(
+      "KBN-UI: kanban: Preact board page, responsive and live, with its Vitest suite",
+    );
+    expect(sheet.querySelector(".panel.in-sheet .chips")).not.toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Close", hidden: true }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

@@ -1,24 +1,24 @@
-/* The kanban page inside huddle's Kanban tab. Everything is scoped under .kanban-tab, and every
-   colour reads a theme token (daisyUI's --color-*, or the --hue-* carriers app.css defines), so
-   the board follows the theme the shell picked. The shell owns the page's own background, fonts
-   and header; only the picker, the flow bar, the board, its cards, the toolbar and the drawer
-   are styled here. */
+/* The kanban page inside huddle's Kanban tab. Everything is scoped under .kanban-tab. The
+   surfaces, ink, lines and accent read the design system's --ui-* tokens, which keep WCAG AA in
+   both schemes; the status and tag hues read daisyUI's --color-* or the --hue-* carriers app.css
+   defines. The shell owns the page's own background, fonts and header; only the picker, the flow
+   bar, the board, its cards, the toolbar and the drawer are styled here. */
 
 .kanban-tab {
-  --board: var(--color-base-200);
-  --card: var(--color-base-100);
-  --chip: color-mix(in oklab, var(--color-base-content) 8%, var(--color-base-100));
-  --line: color-mix(in oklab, var(--color-base-content) 12%, transparent);
-  --muted: color-mix(in oklab, var(--color-base-content) 60%, transparent);
-  --accent: var(--color-primary);
-  --flash: color-mix(in oklab, var(--color-primary) 20%, transparent);
+  --board: var(--ui-bg);
+  --card: var(--ui-surface);
+  --chip: var(--ui-surface-2);
+  --line: var(--ui-line);
+  --muted: var(--ui-muted);
+  --accent: var(--ui-accent);
+  --flash: color-mix(in oklab, var(--ui-accent) 20%, transparent);
   --stop: var(--color-error);
-  --stop-bg: color-mix(in oklab, var(--color-error) 8%, var(--color-base-100));
+  --stop-bg: color-mix(in oklab, var(--color-error) 8%, var(--ui-surface));
   --b-expedite: var(--color-error);
   --b-p0: var(--color-error);
   --b-p1: var(--hue-peach, var(--color-warning));
   --b-p2: var(--hue-sapphire, var(--color-info));
-  --b-p3: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  --b-p3: color-mix(in oklab, var(--ui-text) 55%, transparent);
   --b-blocked: var(--color-error);
   --b-holder: var(--hue-lavender, var(--color-secondary));
   --b-waits: var(--hue-yellow, var(--color-warning));
@@ -91,7 +91,7 @@
 
 .kanban-tab .toolbar input[type="search"] {
   background: var(--card);
-  color: var(--color-base-content);
+  color: var(--ui-text);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 7px 11px;
@@ -112,7 +112,7 @@
   gap: 7px;
   background: none;
   border: 0;
-  color: var(--color-base-content);
+  color: var(--ui-text);
   font-size: 16px;
   font-weight: 600;
   padding: 2px 4px;
@@ -144,7 +144,7 @@
 
 .kanban-tab .picker-pop input {
   background: var(--board);
-  color: var(--color-base-content);
+  color: var(--ui-text);
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 5px 9px;
@@ -210,7 +210,7 @@
 }
 
 .kanban-tab .live-dot.off {
-  background: color-mix(in oklab, var(--color-base-content) 35%, transparent);
+  background: color-mix(in oklab, var(--ui-text) 35%, transparent);
 }
 
 /* the note naming what every visible card carries, once */
@@ -274,7 +274,7 @@
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
-  color: var(--color-base-content);
+  color: var(--ui-text);
 }
 
 .kanban-tab .toolbar .hide-done input {
@@ -293,7 +293,7 @@
   max-height: min(60vh, 420px);
   overflow-y: auto;
   background: var(--card);
-  color: var(--color-base-content);
+  color: var(--ui-text);
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
@@ -304,7 +304,7 @@
   width: 100%;
   margin-bottom: 6px;
   background: var(--board);
-  color: var(--color-base-content);
+  color: var(--ui-text);
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 5px 9px;
@@ -432,7 +432,7 @@
   border-radius: 999px;
   padding: 4px 11px;
   font-size: 12.5px;
-  color: var(--color-base-content);
+  color: var(--ui-text);
   cursor: pointer;
 }
 
@@ -460,7 +460,7 @@
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-base-content);
+  color: var(--ui-text);
   margin: 2px 2px 8px;
 }
 
@@ -493,11 +493,11 @@
 
 .kanban-tab .col-collapse:hover {
   background: var(--chip);
-  color: var(--color-base-content);
+  color: var(--ui-text);
 }
 
 .kanban-tab .col-collapse:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--ui-accent);
 }
 
 /* a collapsed column: a 40 px rail with its name written down its side and its count */
@@ -558,7 +558,7 @@
 
 .kanban-tab .card {
   position: relative;
-  background: var(--color-base-100);
+  background: var(--ui-surface);
   border: 1px solid var(--line);
   border-left-width: 3px;
   border-radius: 8px;
@@ -985,7 +985,7 @@
 }
 
 .kanban-tab .flow-seg[data-column="backlog"] {
-  background: color-mix(in oklab, var(--color-base-content) 25%, transparent);
+  background: color-mix(in oklab, var(--ui-text) 25%, transparent);
 }
 
 .kanban-tab .flow-seg[data-column="ready"] {
@@ -1027,7 +1027,7 @@
 }
 
 .kanban-tab .flow-label:hover {
-  color: var(--color-base-content);
+  color: var(--ui-text);
 }
 
 .kanban-tab .flow-label .more {
@@ -1059,8 +1059,27 @@
   font-weight: 600;
 }
 
+/* the phone's strip: every column one screen wide, side by side, and a swipe snaps to the next */
+
+.kanban-tab .lanes {
+  display: flex;
+  align-items: flex-start;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.kanban-tab .lanes > .col {
+  flex: 0 0 100%;
+  box-sizing: border-box;
+  padding: 4px 16px 24px;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
 /* the three breakpoints: the grid scrolls sideways when the open columns cannot fit, the phone
-   shows one column at a time and the picker opens as a full-width sheet */
+   shows one column per screen with 44 px tap targets, and the picker opens as a full-width sheet */
 
 @media (max-width: 639px) {
   .kanban-tab .drawer {
@@ -1089,8 +1108,22 @@
     border-radius: 8px;
   }
 
-  /* the lanes keep the toolbar's 16 px gutter; the desktop columns carry their own on .columns */
-  .kanban-tab .board[data-layout="tabs"] {
-    padding-inline: 16px;
+  .kanban-tab .picker-btn,
+  .kanban-tab .menu-btn,
+  .kanban-tab .density,
+  .kanban-tab .show-all,
+  .kanban-tab .clear-filters,
+  .kanban-tab .pill,
+  .kanban-tab .toolbar .hide-done,
+  .kanban-tab .flow-labels.tabs .flow-label {
+    min-width: 44px;
+    height: auto;
+    min-height: 44px;
+  }
+
+  .kanban-tab .toolbar input[type="search"] {
+    flex: 1 1 100%;
+    width: auto;
+    min-height: 44px;
   }
 }

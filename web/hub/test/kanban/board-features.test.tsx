@@ -35,7 +35,7 @@ describe("Feature: columns that earn their width", () => {
     // Then review is a rail naming its count, closed
     const rail = railOf(container, "review");
     expect(rail?.getAttribute("aria-expanded")).toBe("false");
-    expect(rail?.getAttribute("aria-label")).toBe("Review, 0 cards, show column");
+    expect(rail?.querySelector(".sr-only")?.textContent).toBe("Review, 0 cards, show column");
     // When the rail is clicked
     await userEvent.click(rail as HTMLButtonElement);
     // Then review is a column of its own again, empty but open
@@ -48,7 +48,7 @@ describe("Feature: columns that earn their width", () => {
     const { container } = renderBoard();
     // Then done is a rail carrying its count
     const rail = railOf(container, "done");
-    expect(rail?.getAttribute("aria-label")).toBe("Done, 3 cards, show column");
+    expect(rail?.querySelector(".sr-only")?.textContent).toBe("Done, 3 cards, show column");
     expect(container.querySelector('section[data-column="done"] h2')).toBeNull();
     // When the rail is clicked
     await userEvent.click(rail as HTMLButtonElement);
@@ -184,14 +184,37 @@ describe("Feature: the board's words", () => {
 });
 
 describe("Feature: the phone board", () => {
-  it("Scenario: the tab bar is the labelled flow bar, one column at a time", () => {
+  it("Scenario: the tab bar is the labelled flow bar over a strip of every column, none a rail", () => {
     // Given a phone-width window
     stubMatchMedia((query) => query.includes("max-width"));
     const { container } = renderBoard();
-    // Then the flow bar's labels read as the column tabs and one column shows
+    // Then the flow bar's labels read as the column tabs in one tablist
+    const tablist = container.querySelector('[role="tablist"]');
+    expect(tablist?.getAttribute("aria-label")).toBe("Columns");
     const tabs = [...container.querySelectorAll('[role="tab"]')];
     expect(tabs.map((t) => t.textContent)).toContain("Backlog 3");
     expect(tabs.map((t) => t.textContent)).toContain("Done 3");
-    expect(container.querySelectorAll("section.col:not(.rail)")).toHaveLength(1);
+    // And the snap strip holds every column open, one screen each
+    expect(container.querySelectorAll(".lanes > section.col:not(.rail)")).toHaveLength(7);
+  });
+
+  it("Scenario: a tab moves the strip to its column and selects it", async () => {
+    // Given a phone-width window
+    stubMatchMedia((query) => query.includes("max-width"));
+    const { container } = renderBoard();
+    const lanes = container.querySelector<HTMLElement>(".lanes");
+    if (lanes === null) throw new Error("no lanes");
+    Object.defineProperty(lanes, "clientWidth", { value: 390 });
+    const scrollTo = vi.fn();
+    lanes.scrollTo = scrollTo as unknown as HTMLElement["scrollTo"];
+    // When the Done tab is tapped
+    const done = [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+      (t) => t.textContent === "Done 3",
+    );
+    if (done === undefined) throw new Error("no Done tab");
+    await userEvent.click(done);
+    // Then the strip is asked to scroll to the seventh screen and Done is selected
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ left: 6 * 390 }));
+    expect(done.getAttribute("aria-selected")).toBe("true");
   });
 });

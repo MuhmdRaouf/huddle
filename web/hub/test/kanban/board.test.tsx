@@ -50,7 +50,7 @@ describe("Board", () => {
     expect(container.querySelector('section[data-column="done"] h2')).toBeNull();
     const rail = container.querySelector<HTMLButtonElement>('section[data-column="done"] .rail-btn');
     expect(rail?.textContent).toContain("Done");
-    expect(rail?.getAttribute("aria-label")).toBe("Done, 3 cards, show column");
+    expect(rail?.querySelector(".sr-only")?.textContent).toBe("Done, 3 cards, show column");
   });
 
   it("lifts open expedite cards into a lane above the columns, out of their own column", () => {
@@ -79,7 +79,7 @@ describe("Board", () => {
     // the one visible card is KBN-UI, and the expedite lane holds it, so every column is a rail
     expect(container.querySelectorAll("article.card")).toHaveLength(1);
     const rails = [...container.querySelectorAll<HTMLButtonElement>("button.rail-btn")];
-    expect(rails.map((rail) => rail.getAttribute("aria-label"))).toEqual([
+    expect(rails.map((rail) => rail.querySelector(".sr-only")?.textContent)).toEqual([
       "Backlog, 0 cards, show column",
       "Ready, 0 cards, show column",
       "In progress, 0 cards, show column",
@@ -199,7 +199,7 @@ describe("collapsing a column by hand", () => {
     expect(container.querySelector('section[data-column="ready"] h2')).toBeNull();
     const rail = container.querySelector<HTMLButtonElement>('section[data-column="ready"] button.rail-btn');
     if (rail === null) throw new Error("no ready rail");
-    expect(rail.getAttribute("aria-label")).toBe("Ready, 1 cards, show column");
+    expect(rail.querySelector(".sr-only")?.textContent).toBe("Ready, 1 cards, show column");
     await userEvent.click(rail);
     const ready = container.querySelector('section[data-column="ready"]');
     expect(ready?.querySelector("h2")?.textContent).toBe("Ready 1");
@@ -214,9 +214,8 @@ describe("collapsing a column by hand", () => {
     expect(collapse.getAttribute("aria-label")).toBe("Collapse Backlog");
     await userEvent.click(collapse);
     expect(
-      container
-        .querySelector<HTMLButtonElement>('section[data-column="backlog"] button.rail-btn')
-        ?.getAttribute("aria-label"),
+      container.querySelector<HTMLButtonElement>('section[data-column="backlog"] button.rail-btn .sr-only')
+        ?.textContent,
     ).toBe("Backlog, 0 cards, show column");
   });
 
@@ -227,7 +226,7 @@ describe("collapsing a column by hand", () => {
     expect(collapse.getAttribute("aria-label")).toBe("Collapse Done");
     await userEvent.click(collapse);
     const rail = container.querySelector<HTMLButtonElement>('section[data-column="done"] button.rail-btn');
-    expect(rail?.getAttribute("aria-label")).toBe("Done, 3 cards, show column");
+    expect(rail?.querySelector(".sr-only")?.textContent).toBe("Done, 3 cards, show column");
   });
 
   it("renders no collapse button on a phone", () => {

@@ -1,3 +1,5 @@
+import { Button } from "@huddle/ui/button.tsx";
+import { Sheet } from "@huddle/ui/sheet.tsx";
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useMedia } from "../store.ts";
@@ -464,16 +466,14 @@ function nextOnTab(list: HTMLElement[], shift: boolean): HTMLElement | null {
   return list[index === -1 || index === list.length - 1 ? 0 : index + 1] ?? null;
 }
 
-/** The header: Back on a phone, the id with its copy button, the title, the summary, the chips. */
+/** The header: the id with its copy button, the title, the summary, the chips. */
 function PanelHeader({
   card,
-  phone,
   copied,
   onCopy,
   onClose,
 }: {
   card: Card;
-  phone: boolean;
   copied: boolean;
   onCopy: () => void;
   onClose: () => void;
@@ -481,11 +481,6 @@ function PanelHeader({
   return (
     <header class="panel-head">
       <div class="panel-top">
-        {phone && (
-          <button type="button" class="back" onClick={onClose}>
-            Back
-          </button>
-        )}
         <p class="cid">{card.id}</p>
         <button type="button" class="copy" aria-label={`Copy ${card.id}`} onClick={onCopy}>
           {copied ? "Copied" : <span aria-hidden="true">⧉</span>}
@@ -561,7 +556,7 @@ function PanelContent({
 
 /** The ticket panel: the card's header, its dependencies, every other field, the body as
  *  markdown and the log collapsed — docked beside the board on a wide window, a sheet over a
- *  scrim on a tablet, full screen with a Back button on a phone. */
+ *  scrim on a tablet, and on a phone the design system's sheet rising from the bottom, read only. */
 export function Drawer({ card, cards, getTicket, onClose, onOpenDep }: DrawerProps) {
   const docked = useMedia("(min-width: 1200px)");
   const phone = useMedia("(max-width: 639px)");
@@ -640,12 +635,42 @@ export function Drawer({ card, cards, getTicket, onClose, onOpenDep }: DrawerPro
   };
 
   const deps = dependencyRows(card, cards);
-  const placement = docked ? "panel docked" : phone ? "panel sheet full" : "panel sheet";
+  const depGroups = (deps.waits.length > 0 || deps.unblocks.length > 0) && (
+    <div class="panel-deps">
+      {deps.waits.length > 0 && <DepGroup label="Waits on" rows={deps.waits} onOpenDep={onOpenDep} />}
+      {deps.unblocks.length > 0 && <DepGroup label="Unblocks" rows={deps.unblocks} onOpenDep={onOpenDep} />}
+    </div>
+  );
+  if (phone) {
+    return (
+      <Sheet
+        open
+        onClose={onClose}
+        title={
+          <>
+            <span class="ui-mono">{card.id}:</span> {card.title}
+          </>
+        }
+        actions={
+          <Button variant="ghost" label={`Copy ${card.id}`} onClick={copy}>
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        }
+      >
+        <div class="panel in-sheet">
+          {card.summary !== "" && <p class="panel-summary">{card.summary}</p>}
+          <HeaderChips card={card} />
+          {depGroups}
+          <PanelContent loading={loading} failed={failed} retry={retry} ticket={ticket} />
+        </div>
+      </Sheet>
+    );
+  }
   return (
     <>
       {!docked && <div class="panel-scrim" aria-hidden="true" onClick={onClose} />}
       <div
-        class={placement}
+        class={docked ? "panel docked" : "panel sheet"}
         role="dialog"
         aria-modal="true"
         aria-label={`${card.id}: ${card.title}`}
@@ -653,15 +678,8 @@ export function Drawer({ card, cards, getTicket, onClose, onOpenDep }: DrawerPro
         ref={panel}
         style={docked ? { width: `${width}px` } : undefined}
       >
-        <PanelHeader card={card} phone={phone} copied={copied} onCopy={copy} onClose={onClose} />
-        {(deps.waits.length > 0 || deps.unblocks.length > 0) && (
-          <div class="panel-deps">
-            {deps.waits.length > 0 && <DepGroup label="Waits on" rows={deps.waits} onOpenDep={onOpenDep} />}
-            {deps.unblocks.length > 0 && (
-              <DepGroup label="Unblocks" rows={deps.unblocks} onOpenDep={onOpenDep} />
-            )}
-          </div>
-        )}
+        <PanelHeader card={card} copied={copied} onCopy={copy} onClose={onClose} />
+        {depGroups}
         <PanelContent loading={loading} failed={failed} retry={retry} ticket={ticket} />
         {docked && (
           <div

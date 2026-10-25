@@ -66,12 +66,19 @@ export function Column({
     sharedCluster,
   });
   if (collapsed) {
-    const label = `${title}, ${count ?? cards.length} cards, show column`;
+    const total = count ?? cards.length;
+    // the name comes from the button's own text, not an aria-label, so the visible name and
+    // count stay part of what a screen reader and a voice command hear
     return (
       <section class="col rail" data-column={id}>
-        <button type="button" class="rail-btn" aria-expanded="false" aria-label={label} onClick={onExpand}>
-          <span class="rail-name">{title}</span>
-          <span class="count">{count ?? cards.length}</span>
+        <button type="button" class="rail-btn" aria-expanded="false" onClick={onExpand}>
+          <span class="rail-name" aria-hidden="true">
+            {title}
+          </span>
+          <span class="count" aria-hidden="true">
+            {total}
+          </span>
+          <span class="sr-only">{`${title}, ${total} cards, show column`}</span>
         </button>
       </section>
     );
