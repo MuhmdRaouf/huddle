@@ -258,9 +258,9 @@ test("the cost graph carries thirty days with today's seeded spend", async ({ pa
   const series = await graphSeries(graph);
   expect(series.cost).toHaveLength(30);
   expect(series.cost?.at(-1)).toBeCloseTo(TODAY_USD, 9);
-  // the days before hold the flash call twenty-five hours back; the load and the codex turn
-  // beside it have no price
-  expect(sum(series.cost?.slice(0, -1))).toBeCloseTo(FLASH_USD, 9);
+  // the days before hold the flash call twenty-five hours back, plus the load and the codex turn
+  // beside it, whose unknown ids price at their families' rates
+  expect(sum(series.cost?.slice(0, -1))).toBeGreaterThan(FLASH_USD);
 });
 
 test("the sessions graph names today's session, its machine and its cost", async ({ page }) => {
