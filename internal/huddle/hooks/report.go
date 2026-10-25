@@ -7,8 +7,9 @@
 // budget, so a server that never answers costs exactly that and no more. A report that cannot
 // land — the server is down, never started, or refuses the session's credential — is appended to
 // the home's outbox.jsonl (0600, capped at 5 MiB) and replayed in order before the next one that
-// lands, so the registry sees every event in the order it happened. Whatever fails, the hook
-// answers 0 in silence (quiet.go).
+// lands, so the registry sees every event in the order it happened. Hooks that fire together take
+// turns on the outbox's lock (outbox.jsonl.lock), so each of them queues its report. Whatever
+// fails, the hook answers 0 in silence (quiet.go).
 package hooks
 
 import (
@@ -24,6 +25,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
@@ -47,6 +49,10 @@ const (
 // outboxCap is the most the outbox holds: past it the oldest lines are dropped, so a server
 // that stays dead cannot grow it without end.
 const outboxCap = 5 * 1024 * 1024
+
+// outboxLockWait is the most a report waits for the outbox's lock. The wait is part of queueing,
+// so it fits in what the report keeps back from its caller's deadline.
+const outboxLockWait = reportQueueMS * time.Millisecond
 
 // registryPath is the one endpoint the report hook calls.
 const registryPath = "/api/registry/report"
@@ -178,13 +184,12 @@ func deliverReport(ctx context.Context, w *cli.World, id cli.Identity, rep hub.R
 		for i, line := range lines {
 			if !post([]byte(line), left()) {
 				// the rest stays queued, and this report queues behind it
-				writeOutbox(outbox, append(append([]string{}, lines[i:]...), string(raw)))
-				capOutbox(ctx, w, outbox)
+				requeueOutbox(ctx, w, outbox, lines[:i], string(raw))
 				return nil
 			}
 		}
 		// drop only what was replayed: another session's hook may have appended meanwhile
-		writeOutbox(outbox, dropPrefix(readOutbox(outbox), lines))
+		dropReplayed(outbox, lines)
 	}
 	if post(raw, left()) {
 		return nil
@@ -391,6 +396,10 @@ func contextPercentOf(model string, used int64) float64 {
 
 // ── the outbox ───────────────────────────────────────────────────────────────
 
+// Every change to the outbox holds its lock, so hooks that fire together never overwrite one
+// another's lines. A read takes no lock: a hook with nothing queued posts without touching it,
+// and a hook that rewrites reads again under the lock.
+
 // readOutbox answers the outbox's lines, oldest first; a missing or unreadable outbox is empty.
 func readOutbox(path string) []string {
 	if path == "" {
@@ -409,6 +418,36 @@ func readOutbox(path string) []string {
 	return lines
 }
 
+// lockOutbox takes the outbox's lock and answers the func that gives it back. The lock is a flock
+// on a file beside the outbox: writeOutbox replaces the outbox's inode, which a flock on the
+// outbox itself would not survive. The kernel drops the lock when its holder dies, so a stale
+// lock file never blocks a report. A lock that is not taken inside outboxLockWait, or cannot be
+// taken at all, is no error: the report queues without it, because a failing lock must not cost
+// a report.
+func lockOutbox(path string) (release func()) {
+	none := func() {}
+	file, err := os.OpenFile(path+".lock", os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return none
+	}
+	fd := int(file.Fd())
+	deadline := time.Now().Add(outboxLockWait)
+	for {
+		err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			return func() {
+				_ = syscall.Flock(fd, syscall.LOCK_UN)
+				_ = file.Close()
+			}
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) || !time.Now().Before(deadline) {
+			_ = file.Close()
+			return none
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // appendOutbox adds one report line to the outbox, then caps it.
 func appendOutbox(ctx context.Context, w *cli.World, path, line string) {
 	if path == "" {
@@ -417,6 +456,8 @@ func appendOutbox(ctx context.Context, w *cli.World, path, line string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return
 	}
+	release := lockOutbox(path)
+	defer release()
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
@@ -424,6 +465,24 @@ func appendOutbox(ctx context.Context, w *cli.World, path, line string) {
 	_, _ = file.WriteString(line + "\n")
 	_ = file.Close()
 	capOutbox(ctx, w, path)
+}
+
+// requeueOutbox keeps the lines the outbox holds past the replayed ones, which have landed,
+// queues line behind them and caps the outbox. It reads the outbox again under the lock, so the
+// lines other hooks appended since the replay began stay.
+func requeueOutbox(ctx context.Context, w *cli.World, path string, replayed []string, line string) {
+	release := lockOutbox(path)
+	defer release()
+	writeOutbox(path, append(dropPrefix(readOutbox(path), replayed), line))
+	capOutbox(ctx, w, path)
+}
+
+// dropReplayed removes the replayed lines from the head of the outbox and keeps the lines other
+// hooks appended since the replay began.
+func dropReplayed(path string, replayed []string) {
+	release := lockOutbox(path)
+	defer release()
+	writeOutbox(path, dropPrefix(readOutbox(path), replayed))
 }
 
 // capOutbox holds the outbox at outboxCap: past it the oldest lines are dropped (the newest

@@ -15,12 +15,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
@@ -567,6 +569,148 @@ func TestAReplayThatFailsKeepsTheRestAndAddsTheNewReport(t *testing.T) {
 	if field(last, "last_event") != "Stop" {
 		t.Errorf("the last outbox line = %v, want the new report", last)
 	}
+}
+
+// queueTogether queues the report s-00, then n more at the same moment, the way parallel tool
+// calls fire a hook each, in one throwaway home whose server is down: each of the n replays
+// s-00, fails and rewrites the outbox. It answers the outbox's lines. deliverReport is the one
+// function the report hook and the external word land a report with.
+func queueTogether(t *testing.T, n int) []string {
+	t.Helper()
+	root := reportHome(t)
+	w := coverWorld(map[string]string{"HUDDLE_HOME": root, "HUDDLE_TOKEN": suiteToken})
+	id := cli.Identity{URL: downURL(t)}
+	land := func(i int) {
+		rep := hub.Report{SessionID: fmt.Sprintf("s-%02d", i), LastEvent: "PostToolUse"}
+		if err := deliverReport(context.Background(), w, id, rep, func() int { return reportBudgetMS }); err != nil {
+			t.Errorf("report s-%02d: %v", i, err)
+		}
+	}
+	land(0)
+	start := make(chan struct{})
+	var landing sync.WaitGroup
+	for i := 1; i <= n; i++ {
+		landing.Add(1)
+		go func() {
+			defer landing.Done()
+			<-start
+			land(i)
+		}()
+	}
+	close(start)
+	landing.Wait()
+	raw, err := os.ReadFile(filepath.Join(root, "outbox.jsonl"))
+	if err != nil {
+		t.Fatalf("the outbox: %v", err)
+	}
+	return strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+}
+
+// wantEachQueuedOnce checks that lines are the reports s-00 to s-<n>, each a whole JSON line and
+// each once.
+func wantEachQueuedOnce(t *testing.T, lines []string, n int) {
+	t.Helper()
+	queued := map[string]int{}
+	for _, line := range lines {
+		var rep hub.Report
+		if err := json.Unmarshal([]byte(line), &rep); err != nil {
+			t.Errorf("the outbox holds a line that is not a report: %.80q", line)
+			continue
+		}
+		queued[rep.SessionID]++
+	}
+	var notOnce []string
+	for i := 0; i <= n; i++ {
+		if id := fmt.Sprintf("s-%02d", i); queued[id] != 1 {
+			notOnce = append(notOnce, fmt.Sprintf("%s x%d", id, queued[id]))
+		}
+	}
+	if len(notOnce) > 0 {
+		t.Errorf("%d of %d reports are not in the outbox exactly once: %v", len(notOnce), n+1, notOnce)
+	}
+	if len(lines) != n+1 {
+		t.Errorf("the outbox holds %d lines, want %d", len(lines), n+1)
+	}
+}
+
+func TestTwoReportsWhileTheHubIsDownBothQueue(t *testing.T) {
+	wantEachQueuedOnce(t, queueTogether(t, 2), 2)
+}
+
+// Eight hooks fire at once; every one takes its turn on the lock inside outboxLockWait.
+func TestManyReportsWhileTheHubIsDownAllQueue(t *testing.T) {
+	const many = 8
+	wantEachQueuedOnce(t, queueTogether(t, many), many)
+}
+
+// Every change to the outbox waits for its lock: while another hook holds it the outbox stays
+// as it was, and the change lands once the lock is let go.
+func TestEveryChangeToTheOutboxWaitsForItsLock(t *testing.T) {
+	ctx := context.Background()
+	changes := []struct {
+		name string
+		do   func(outbox string)
+		want []string
+	}{
+		{"an append", func(outbox string) { appendOutbox(ctx, nil, outbox, "new") }, []string{"old", "new"}},
+		{"a requeue", func(outbox string) { requeueOutbox(ctx, nil, outbox, []string{"old"}, "new") }, []string{"new"}},
+		{"a drop of what was replayed", func(outbox string) { dropReplayed(outbox, []string{"old"}) }, nil},
+	}
+	for _, change := range changes {
+		t.Run(change.name, func(t *testing.T) {
+			outbox := filepath.Join(t.TempDir(), "outbox.jsonl")
+			writeOutbox(outbox, []string{"old"})
+			release := lockOutbox(outbox)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				change.do(outbox)
+			}()
+			select {
+			case <-done:
+				t.Error("the change finished while another hook held the lock")
+			case <-time.After(20 * time.Millisecond):
+			}
+			if held := readOutbox(outbox); !slices.Equal(held, []string{"old"}) {
+				t.Errorf("the outbox changed to %q while another hook held the lock", held)
+			}
+			release()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("the change did not land once the lock was let go")
+			}
+			if got := readOutbox(outbox); !slices.Equal(got, change.want) {
+				t.Errorf("the outbox = %q, want %q", got, change.want)
+			}
+		})
+	}
+}
+
+// A lock that cannot be taken costs no report: the line is queued without it.
+func TestAReportQueuesWhenItsLockCannotBeTaken(t *testing.T) {
+	t.Run("another hook holds it past the wait", func(t *testing.T) {
+		outbox := filepath.Join(t.TempDir(), "outbox.jsonl")
+		defer lockOutbox(outbox)()
+		t0 := time.Now()
+		appendOutbox(context.Background(), nil, outbox, "queued")
+		if waited := time.Since(t0); waited < outboxLockWait {
+			t.Errorf("the report waited %s for the lock, want all of %s", waited, outboxLockWait)
+		}
+		if got := readOutbox(outbox); !slices.Equal(got, []string{"queued"}) {
+			t.Errorf("the outbox = %q, want the one report", got)
+		}
+	})
+	t.Run("its file cannot be opened", func(t *testing.T) {
+		outbox := filepath.Join(t.TempDir(), "outbox.jsonl")
+		if err := os.Mkdir(outbox+".lock", 0o700); err != nil {
+			t.Fatalf("take the lock file's name: %v", err)
+		}
+		appendOutbox(context.Background(), nil, outbox, "queued")
+		if got := readOutbox(outbox); !slices.Equal(got, []string{"queued"}) {
+			t.Errorf("the outbox = %q, want the one report", got)
+		}
+	})
 }
 
 func TestTheOutboxDropsItsOldestLinesAtFiveMiBAndLogsOneLine(t *testing.T) {
