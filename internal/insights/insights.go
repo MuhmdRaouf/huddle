@@ -1,6 +1,6 @@
 // Package insights turns what huddle already counts into one-sentence tips: pure rules over
-// tool runs and permission asks, no model. A tip's id is stable for one occurrence, so a
-// dismissal holds until the same thing happens again.
+// tool runs, permission asks, lane requests and needs-you items, no model. A tip's id is stable
+// for one occurrence, so a dismissal holds until the same thing happens again.
 package insights
 
 import (
@@ -32,6 +32,14 @@ type PermissionAsk struct {
 	DecidedAt time.Time // zero while unanswered
 }
 
+// Item is one needs-you item the hub raised: a permission ask, a question, a finished turn.
+type Item struct {
+	Session   string
+	Kind      string // "permission", "question", "turn", as the hub names them
+	CreatedAt time.Time
+	DecidedAt time.Time // zero while unanswered
+}
+
 // Request is one model request a lane served, as Radar's history holds it.
 type Request struct {
 	Provider string // the lane: "anthropic", "zai", "kimi", …
@@ -45,16 +53,17 @@ type Input struct {
 	Tools    []ToolRun
 	Asks     []PermissionAsk
 	Requests []Request
+	Items    []Item
 }
 
 // Tip is one sentence the owner can act on, with the numbers behind it.
 type Tip struct {
 	ID       string // stable for one occurrence: "<rule>:<what it is about>"
-	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing or RuleLaneFailing
+	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing or RuleLongestWait
 	Session  string // the session a tip is about; "" for a tip about the whole huddle
 	Sentence string
 	Count    int           // the runs or asks behind the tip
-	Wait     time.Duration // always_allowed: the median wait between the ask and its answer
+	Wait     time.Duration // always_allowed: the median wait; longest_wait: the wait on one item
 }
 
 const (
@@ -62,6 +71,7 @@ const (
 	RuleAlwaysAllowed = "always_allowed"
 	RuleToolFailing   = "tool_failing"
 	RuleLaneFailing   = "lane_failing"
+	RuleLongestWait   = "longest_wait"
 )
 
 // The points each rule fires at.
@@ -77,6 +87,7 @@ func Detect(in Input) []Tip {
 	tips := append(sameCommandTips(in.Tools), alwaysAllowedTips(in)...)
 	tips = append(tips, toolFailingTips(in.Tools)...)
 	tips = append(tips, laneFailingTips(in)...)
+	tips = append(tips, longestWaitTips(in)...)
 	slices.SortFunc(tips, func(a, b Tip) int {
 		if byRule := cmp.Compare(a.Rule, b.Rule); byRule != 0 {
 			return byRule
