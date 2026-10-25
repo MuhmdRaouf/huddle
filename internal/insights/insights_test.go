@@ -13,7 +13,7 @@ func fixedNow() time.Time {
 
 // toolRun is one Bash call in session s1.
 func toolRun(key, command string, at time.Time) ToolRun {
-	return ToolRun{Session: "s1", Tool: "Bash", InputKey: key, Command: command, At: at}
+	return ToolRun{Session: "s1", Tool: "Bash", InputKey: key, Command: command, OK: true, At: at}
 }
 
 // bashAsk is one permission prompt, decided wait after it was created.

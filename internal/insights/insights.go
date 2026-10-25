@@ -17,6 +17,8 @@ type ToolRun struct {
 	Tool     string // the tool's name, "Bash"
 	InputKey string // Radar's hash of the tool and its input: the same key is the same call
 	Command  string // the Bash command; "" for other tools
+	OK       bool   // the tool answered without an error
+	Error    string // the first line of the tool's error when it failed; "" when it did not
 	At       time.Time
 }
 
@@ -40,7 +42,7 @@ type Input struct {
 // Tip is one sentence the owner can act on, with the numbers behind it.
 type Tip struct {
 	ID       string // stable for one occurrence: "<rule>:<what it is about>"
-	Rule     string // RuleSameCommand or RuleAlwaysAllowed
+	Rule     string // RuleSameCommand, RuleAlwaysAllowed or RuleToolFailing
 	Session  string // the session a tip is about; "" for a tip about the whole huddle
 	Sentence string
 	Count    int           // the runs or asks behind the tip
@@ -50,6 +52,7 @@ type Tip struct {
 const (
 	RuleSameCommand   = "same_command"
 	RuleAlwaysAllowed = "always_allowed"
+	RuleToolFailing   = "tool_failing"
 )
 
 // The points each rule fires at.
@@ -63,6 +66,7 @@ const (
 // Detect answers every tip the input supports, ordered by rule then id.
 func Detect(in Input) []Tip {
 	tips := append(sameCommandTips(in.Tools), alwaysAllowedTips(in)...)
+	tips = append(tips, toolFailingTips(in.Tools)...)
 	slices.SortFunc(tips, func(a, b Tip) int {
 		if byRule := cmp.Compare(a.Rule, b.Rule); byRule != 0 {
 			return byRule
