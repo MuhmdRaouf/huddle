@@ -2,7 +2,9 @@ package board
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -96,5 +98,71 @@ func TestOpenRefusesACorruptDatabase(t *testing.T) {
 	}
 	if _, _, err := Open(context.Background(), Board{Root: root}); err == nil {
 		t.Fatal("open over a file that is no database passed")
+	}
+}
+
+// gitWorktree builds a repository at <root>/main with one commit and adds a
+// worktree of it at <root>/wt, its git runs hermetic. It answers both paths,
+// symlinks resolved.
+func gitWorktree(t *testing.T) (main, wt string) {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	main, wt = filepath.Join(root, "main"), filepath.Join(root, "wt")
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Env = []string{
+			"HOME=" + root,
+			"GIT_CONFIG_GLOBAL=/dev/null",
+			"GIT_CONFIG_NOSYSTEM=1",
+			"PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+		}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	git("init", "-q", main)
+	git("-C", main, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init")
+	git("-C", main, "worktree", "add", "-q", wt)
+	return main, wt
+}
+
+func TestResolveFollowsAWorktreeToItsRepositorysBoard(t *testing.T) {
+	main, wt := gitWorktree(t)
+	want := filepath.Join(main, ".agents", "kanban")
+	newFixtureAt(t, want)
+	deep := filepath.Join(wt, "a", "b")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, cwd := range []string{wt, deep} {
+		b, err := Resolve("", envNone, cwd)
+		if err != nil || b.Root != want {
+			t.Fatalf("Resolve(%s) = %q, %v, want %q", cwd, b.Root, err, want)
+		}
+	}
+}
+
+func TestAWorktreesOwnBoardWins(t *testing.T) {
+	main, wt := gitWorktree(t)
+	newFixtureAt(t, filepath.Join(main, ".agents", "kanban"))
+	own := filepath.Join(wt, ".agents", "kanban")
+	newFixtureAt(t, own)
+	b, err := Resolve("", envNone, wt)
+	if err != nil || b.Root != own {
+		t.Fatalf("Resolve(worktree) = %q, %v, want its own board %q", b.Root, err, own)
+	}
+}
+
+func TestResolveTreatsADanglingGitFileAsNoRepository(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: "+filepath.Join(dir, "gone")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Resolve("", envNone, dir); !errors.Is(err, ErrNoBoard) {
+		t.Fatalf("Resolve(dangling .git) = %v, want ErrNoBoard", err)
 	}
 }

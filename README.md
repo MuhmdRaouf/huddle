@@ -163,6 +163,8 @@ A device session ends after 7 days unused; removing it from Settings ends it at 
 - One board per repository (`.agents/kanban/kanban.db`): sessions claim cards, and the first claim wins — every
   other pull, from either machine, gets the board's refusal. `new` stays local: a ticket is written to the clone
   the session sits in, never through the hub.
+- A session in a git worktree works its main checkout's board, unless the worktree holds an `.agents/kanban` of
+  its own.
 - A board's key is its repository's origin, so every clone of one repository names one board. Join a second
   machine with `huddle pair --satellite` on the hub and `huddle join-hub` on the other machine: its claims and
   moves relay to the hub, which holds the one database and the audit.

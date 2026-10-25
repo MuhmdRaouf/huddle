@@ -133,7 +133,9 @@ func (b Board) atomic(ctx context.Context, fn func(b Board) ([]string, error)) (
 // Resolve answers the board the command runs on: the explicit path, else
 // $KANBAN_BOARD, else the first directory from cwd upwards holding
 // .agents/kanban, stopping after a directory that holds .git or at the
-// filesystem root.
+// filesystem root. A worktree's .git file sends the walk on to its
+// repository's main checkout, so every worktree without a board of its own
+// works the repository's board.
 func Resolve(explicit string, env func(string) (string, bool), cwd string) (Board, error) {
 	pick := func(dir string) (Board, bool) {
 		root := filepath.Join(dir, ".agents", "kanban")
@@ -153,8 +155,16 @@ func Resolve(explicit string, env func(string) (string, bool), cwd string) (Boar
 		if b, ok := pick(dir); ok {
 			return b, nil
 		}
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			return Board{}, ErrNoBoard // the board never sits above the repo root
+		if info, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			main, ok := "", false
+			if !info.IsDir() {
+				main, ok = commonRepo(filepath.Join(dir, ".git"))
+			}
+			if !ok {
+				return Board{}, ErrNoBoard // the board never sits above the repo root
+			}
+			dir = main
+			continue
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -162,6 +172,45 @@ func Resolve(explicit string, env func(string) (string, bool), cwd string) (Boar
 		}
 		dir = parent
 	}
+}
+
+// gitdirOf reads the "gitdir: <path>" line of a .git file.
+var gitdirOf = regexp.MustCompile(`(?m)^gitdir:\s*(.+)$`)
+
+// commonRepo answers the main checkout a worktree's .git file stands for: the
+// file names the worktree's gitdir (<repo>/.git/worktrees/<name>), whose
+// commondir names <repo>/.git. ok is false for any other .git file — a
+// submodule's, a bare repository's, one whose gitdir is gone.
+func commonRepo(gitFile string) (string, bool) {
+	raw, err := os.ReadFile(gitFile)
+	if err != nil {
+		return "", false
+	}
+	match := gitdirOf.FindStringSubmatch(string(raw))
+	if match == nil {
+		return "", false
+	}
+	gitdir := resolveIn(filepath.Dir(gitFile), strings.TrimSpace(match[1]))
+	common, err := os.ReadFile(filepath.Join(gitdir, "commondir"))
+	if err != nil {
+		return "", false
+	}
+	shared := resolveIn(gitdir, strings.TrimSpace(string(common)))
+	if filepath.Base(shared) != ".git" {
+		return "", false
+	}
+	if info, err := os.Stat(shared); err != nil || !info.IsDir() {
+		return "", false
+	}
+	return filepath.Dir(shared), true
+}
+
+// resolveIn answers p against dir when p is relative, cleaned either way.
+func resolveIn(dir, p string) string {
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+	return filepath.Clean(filepath.Join(dir, p))
 }
 
 // Find answers the ticket's path and column wherever it sits.
