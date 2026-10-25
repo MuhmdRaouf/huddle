@@ -18,6 +18,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 func TestLegacyPortsRows(t *testing.T) {
@@ -215,7 +216,7 @@ func TestPortHolderRows(t *testing.T) {
 
 	t.Run("a free port names no holder", func(t *testing.T) {
 		t.Parallel()
-		port := daemonFreePort(t)
+		port := ports.Free(t)
 		if pid, ok := portHolder(context.Background(), port); ok {
 			t.Errorf("portHolder(%d) = (%d, true), want false", port, pid)
 		}
@@ -227,7 +228,7 @@ func TestStopLegacyRows(t *testing.T) {
 	t.Run("a 0.0.1 router named in the pid record is stopped and its port freed", func(t *testing.T) {
 		t.Parallel()
 		bin := buildFakeLegacy(t)
-		port := daemonFreePort(t)
+		port := ports.Free(t)
 		fake := startFakeLegacy(t, bin, "zai", "run", port)
 		awaitListening(t, port)
 		state := t.TempDir()
@@ -251,7 +252,7 @@ func TestStopLegacyRows(t *testing.T) {
 	t.Run("a retired record stops the router it names", func(t *testing.T) {
 		t.Parallel()
 		bin := buildFakeLegacy(t)
-		port := daemonFreePort(t)
+		port := ports.Free(t)
 		fake := startFakeLegacy(t, bin, "zai", "run", port)
 		awaitListening(t, port)
 		state := t.TempDir()
@@ -265,7 +266,7 @@ func TestStopLegacyRows(t *testing.T) {
 
 	t.Run("a pid record naming an unrelated process stops nothing", func(t *testing.T) {
 		t.Parallel()
-		port := daemonFreePort(t)
+		port := ports.Free(t)
 		state := t.TempDir()
 		foreign, foreignDone := sleeperWith(t, "sleep", "30")
 		writeLegacyRecord(t, state, "router.pid", foreign, port)
@@ -286,7 +287,7 @@ func TestStopLegacyRows(t *testing.T) {
 	t.Run("a stale pid file still stops the verified holder the port names", func(t *testing.T) {
 		t.Parallel()
 		bin := buildFakeLegacy(t)
-		port := daemonFreePort(t)
+		port := ports.Free(t)
 		fake := startFakeLegacy(t, bin, "zai", "run", port)
 		awaitListening(t, port)
 		state := t.TempDir()
@@ -310,7 +311,7 @@ func TestStopLegacyRows(t *testing.T) {
 	t.Run("a holder's worker children go with it", func(t *testing.T) {
 		t.Parallel()
 		bin := buildFakeLegacy(t)
-		port := daemonFreePort(t)
+		port := ports.Free(t)
 		fake := startFakeLegacy(t, bin, "zai", "run", port, "spawn")
 		awaitListening(t, port)
 		var worker int64
@@ -344,7 +345,7 @@ func TestStopLegacyRows(t *testing.T) {
 	t.Run("a record naming another port still stops the verified holder of the port", func(t *testing.T) {
 		t.Parallel()
 		bin := buildFakeLegacy(t)
-		port := daemonFreePort(t)
+		port := ports.Free(t)
 		fake := startFakeLegacy(t, bin, "zai", "run", port)
 		awaitListening(t, port)
 		state := t.TempDir()
@@ -359,7 +360,7 @@ func TestStopLegacyRows(t *testing.T) {
 	t.Run("a foreign holder with a stale record is not signalled", func(t *testing.T) {
 		t.Parallel()
 		bin := buildFakeLegacy(t)
-		port := daemonFreePort(t)
+		port := ports.Free(t)
 		// its argv names no zai router, so the holder verifies as somebody else's
 		foreign := startFakeLegacy(t, bin, "other", "run", port)
 		awaitListening(t, port)
@@ -381,7 +382,7 @@ func TestStopLegacyRows(t *testing.T) {
 
 	t.Run("a stale pid record stops nothing", func(t *testing.T) {
 		t.Parallel()
-		port := daemonFreePort(t)
+		port := ports.Free(t)
 		state := t.TempDir()
 		writeLegacyRecord(t, state, "router.pid", deadPid(t), port)
 		stopped := stopLegacy(context.Background(), domain.EnvLookup{"ZAI_STATE_DIR": state}, "zai", port, func(string) {})
@@ -397,7 +398,7 @@ func TestStopLegacyRows(t *testing.T) {
 		state := t.TempDir()
 		guard := writeGuard(t, state, fake.pid)
 		var lines []string
-		stopped := stopLegacy(context.Background(), domain.EnvLookup{"ZAI_STATE_DIR": state}, "zai", daemonFreePort(t),
+		stopped := stopLegacy(context.Background(), domain.EnvLookup{"ZAI_STATE_DIR": state}, "zai", ports.Free(t),
 			func(line string) { lines = append(lines, line) })
 		if !stopped {
 			t.Fatal("stopLegacy = false, want true")
@@ -417,7 +418,7 @@ func TestStopLegacyRows(t *testing.T) {
 		state := t.TempDir()
 		foreign, foreignDone := sleeperWith(t, "sleep", "30")
 		guard := writeGuard(t, state, foreign)
-		stopped := stopLegacy(context.Background(), domain.EnvLookup{"ZAI_STATE_DIR": state}, "zai", daemonFreePort(t), func(string) {})
+		stopped := stopLegacy(context.Background(), domain.EnvLookup{"ZAI_STATE_DIR": state}, "zai", ports.Free(t), func(string) {})
 		if stopped {
 			t.Error("stopLegacy = true, want false")
 		}

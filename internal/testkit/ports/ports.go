@@ -9,7 +9,22 @@ import (
 	"testing"
 )
 
-// Free answers a port nothing listens on, from 20000-29999: outside the kernel's ephemeral
+// Listen answers a listener bound to 127.0.0.1 on a port the kernel picks, for a test that
+// serves in its own process: the port is held from the moment the test learns it, so no other
+// test can take it in between. The test's cleanup closes it; closing it earlier, or handing it
+// over, is fine.
+func Listen(t testing.TB) net.Listener {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen on 127.0.0.1:0: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	return listener
+}
+
+// Free answers a port nothing listens on, for a child process to bind; a test that serves in
+// its own process takes Listen. The port comes from 20000-29999: outside the kernel's ephemeral
 // ranges (macOS 49152-65535, Linux 32768-60999), so no :0 listener or outgoing connection of a
 // parallel test takes it after it is answered. A random start and a bind check skip the ports
 // already in use.

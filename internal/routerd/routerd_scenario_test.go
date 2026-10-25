@@ -25,6 +25,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // daemonSeen is one request a fake upstream saw.
@@ -126,7 +127,7 @@ func newDaemonRig(t *testing.T) *daemonRig {
 		anthropic: newDaemonUpstream(t, "anthropic"),
 	}
 	rig.home = shortHome(t)
-	rig.port = daemonFreePort(t)
+	rig.port = ports.Free(t)
 	rig.env = domain.EnvLookup{
 		"HOME":                        root,
 		"HUDDLE_ROUTER_HOME":          rig.home,
@@ -265,19 +266,6 @@ func (r *daemonRig) portFree(t *testing.T) bool {
 	}
 	_ = conn.Close()
 	return false
-}
-
-func daemonFreePort(t *testing.T) int {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := listener.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return port
 }
 
 func TestHuddleRouterDaemonScenarios(t *testing.T) {

@@ -16,6 +16,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // awaitLegacyHealth waits until the port answers huddle-router's health, and returns the body.
@@ -94,7 +95,7 @@ func TestLegacyPortScenarios(t *testing.T) {
 			var legacy int
 			s.Given("huddle-router with zai's legacy port free and zai enabled", func(t *testing.T) {
 				rig = newDaemonRig(s.T)
-				legacy = daemonFreePort(t)
+				legacy = ports.Free(t)
 				rig.env["HUDDLE_ROUTER_LEGACY_PORTS"] = "zai=" + strconv.Itoa(legacy)
 				if err := router.SetEnabled(rig.env, "zai", true); err != nil {
 					t.Fatal(err)
@@ -115,7 +116,7 @@ func TestLegacyPortScenarios(t *testing.T) {
 			var fake fakeLegacyProcess
 			s.Given("a 0.0.1 zai router holding a legacy port, its pid record beside it", func(t *testing.T) {
 				rig = newDaemonRig(s.T)
-				legacy = daemonFreePort(t)
+				legacy = ports.Free(t)
 				rig.env["HUDDLE_ROUTER_LEGACY_PORTS"] = "zai=" + strconv.Itoa(legacy)
 				state := filepath.Join(rig.env["HOME"], ".agents", "zai")
 				rig.env["ZAI_STATE_DIR"] = state
@@ -156,7 +157,7 @@ func TestLegacyPortScenarios(t *testing.T) {
 			var fake fakeLegacyProcess
 			s.Given("a 0.0.1 zai router holding a legacy port, its pid record naming a pid that is long gone", func(t *testing.T) {
 				rig = newDaemonRig(s.T)
-				legacy = daemonFreePort(t)
+				legacy = ports.Free(t)
 				rig.env["HUDDLE_ROUTER_LEGACY_PORTS"] = "zai=" + strconv.Itoa(legacy)
 				state := filepath.Join(rig.env["HOME"], ".agents", "zai")
 				rig.env["ZAI_STATE_DIR"] = state
@@ -189,14 +190,9 @@ func TestLegacyPortScenarios(t *testing.T) {
 			var held net.Listener
 			s.Given("something that is not ours holding a legacy port", func(t *testing.T) {
 				rig = newDaemonRig(s.T)
-				legacy = daemonFreePort(t)
-				var err error
-				held, err = net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(legacy))
-				if err != nil {
-					t.Fatal(err)
-				}
 				// the holder lives past this step, so its close rides the scenario
-				s.T.Cleanup(func() { _ = held.Close() })
+				held = ports.Listen(s.T)
+				legacy = held.Addr().(*net.TCPAddr).Port
 				rig.env["HUDDLE_ROUTER_LEGACY_PORTS"] = "zai=" + strconv.Itoa(legacy)
 				if err := router.SetEnabled(rig.env, "zai", true); err != nil {
 					t.Fatal(err)

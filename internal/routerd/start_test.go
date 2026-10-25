@@ -860,8 +860,7 @@ func TestRunAnswersBeforeItServes(t *testing.T) {
 		if err := router.SetEnabled(env, "zai", true); err != nil {
 			t.Fatal(err)
 		}
-		held := freeListener(t)
-		t.Cleanup(func() { _ = held.Close() })
+		held := ports.Listen(t)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		if err := Run(ctx, Options{Env: env, Port: held.Addr().(*net.TCPAddr).Port, Log: func(string) {}}); err == nil {

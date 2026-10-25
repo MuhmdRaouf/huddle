@@ -38,12 +38,8 @@ func shortHome(t *testing.T) string {
 func TestTakeoverPassesAWorkingListener(t *testing.T) {
 	t.Parallel()
 	home := shortHome(t)
-	port := ports.Free(t)
-	tcp, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = tcp.Close() })
+	tcp := ports.Listen(t)
+	port := tcp.Addr().(*net.TCPAddr).Port
 	handed := make(chan int, 1)
 	stop := serveHandover(home, port, tcp, handed, func(string) {})
 	t.Cleanup(stop)
@@ -228,28 +224,12 @@ func TestTakeoverRefusesAnAnswerItCannotUse(t *testing.T) {
 	})
 }
 
-// freeListener takes one testkit port and listens on it at once, redrawing when another
-// process's test took the port in between the check and the listen.
-func freeListener(t *testing.T) *net.TCPListener {
-	t.Helper()
-	for tries := 0; tries < 3; tries++ {
-		port := ports.Free(t)
-		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-		if err == nil {
-			return listener.(*net.TCPListener)
-		}
-	}
-	t.Fatal("no testkit port stayed bindable")
-	return nil
-}
-
 func TestServeHandoverSkipsASocketItCannotServe(t *testing.T) {
 	t.Parallel()
 	var lines []string
 	log := func(line string) { lines = append(lines, line) }
 	handed := make(chan int, 1)
-	tcp := freeListener(t)
-	t.Cleanup(func() { _ = tcp.Close() })
+	tcp := ports.Listen(t)
 
 	t.Run("a listener that is no TCP socket", func(t *testing.T) {
 		home := shortHome(t)
@@ -301,7 +281,7 @@ func TestServeHandoverSkipsASocketItCannotServe(t *testing.T) {
 func TestAnswerHandoverKeepsServingOnAQuestionItCannotRead(t *testing.T) {
 	t.Parallel()
 	home := shortHome(t)
-	tcp := freeListener(t)
+	tcp := ports.Listen(t)
 	port := tcp.Addr().(*net.TCPAddr).Port
 	handed := make(chan int, 1)
 	stop := serveHandover(home, port, tcp, handed, func(string) {})
