@@ -341,6 +341,39 @@ Radar raises a "Quota nearly used" alert when the newest status line snapshot sh
 `Claude 5-hour window 80% used, resets 14:00 UTC`. It comes once per window, as a desktop notification
 too, and the next window raises a new one.
 
+### Claude Code's OpenTelemetry export
+
+Radar also takes Claude Code's own token and cost metrics as a second source. Usage › Source ›
+OpenTelemetry shows them per model, beside the transcripts and never added to them, so the two
+counts can be checked against each other.
+
+1. Find the hub's port: `run/huddle.port` in the huddle home (`$HUDDLE_HOME`, else
+   `~/.config/huddle`).
+
+2. Add this to Claude Code's `settings.json`, with that port:
+
+   ```json
+   {
+     "env": {
+       "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+       "OTEL_METRICS_EXPORTER": "otlp",
+       "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+       "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:<port>/api/radar/otlp"
+     },
+     "otelHeadersHelper": "printf '{\"x-huddle-token\":\"%s\"}' \"$(cat ~/.config/huddle/run/owner.key)\""
+   }
+   ```
+
+3. Start a new session. Claude Code exports once a minute; the rows show on the next export.
+
+The intake is `POST /api/radar/otlp/v1/metrics`. It takes `application/x-protobuf` or
+`application/json` (`http/json`), gzipped or not, up to 4 MiB, and only with huddle's credential:
+the helper reads the owner's key on this machine, and the hub listener never takes that key. It keeps
+`claude_code.token.usage` and `claude_code.cost.usage`, one row per point, source `otel`; delta
+points add up, a cumulative series counts its newest point. `GET /api/radar/api/otel` answers the
+totals and the newest 200 rows. The rows live in the hub's memory, the newest 100,000 kept, and a
+restart starts them empty.
+
 ## Status bar
 
 `huddle statusline` prints one line for Claude Code's status bar: the project's channel and who is

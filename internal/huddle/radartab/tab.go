@@ -41,6 +41,11 @@ import (
 // Prefix is the huddle path radar's routes live under: /api/radar + radar's own path.
 const Prefix = "/api/radar"
 
+// OTLPMetricsPath is where Claude Code's OpenTelemetry export posts its metrics on huddle's
+// port: radar's intake under the prefix, so OTEL_EXPORTER_OTLP_ENDPOINT names
+// http://127.0.0.1:<port>/api/radar/otlp.
+const OTLPMetricsPath = Prefix + server.OTLPMetricsPath
+
 // healthPath is radar's health path. Huddle answers it on its own port while it owns the lock,
 // because that is the path radar's command line probes to tell an owner from a stale record.
 const healthPath = "/api/health"
@@ -228,6 +233,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		History:       hist,
 		SelfCheck:     server.NewSelfCheck(hist, ingest.TranscriptRoots(appCtx, env), now),
 		Watcher:       watcher,
+		Otel:          store.NewOtelRows(),
 		HostAllowed:   options.HostAllowed,
 		OriginAllowed: options.OriginAllowed,
 	})

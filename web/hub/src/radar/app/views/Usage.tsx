@@ -8,6 +8,7 @@
  */
 
 import type { ComponentChildren } from "preact";
+import { useState } from "preact/hooks";
 import { cacheHitRate, dayLabels, dayWords, nearestIndex } from "../../chart.ts";
 import { ESTIMATE_NOTE, fmtAgo, fmtCount, fmtNum, fmtPercent, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { modelColor } from "../../palette.ts";
@@ -21,6 +22,7 @@ import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
 import { EmptyState, ModelChip, Panel, Segmented, shortModelName } from "../kit.tsx";
 import { Table, TableHeadStatic, TableRow } from "../table.tsx";
+import { OtelUsage, SourceToggle, type UsageSource } from "./OtelUsage.tsx";
 
 /** Every token kind the report counts, summed: what a window, a model or a day processed. */
 export function processedTokens(
@@ -668,7 +670,19 @@ function Drill({ report, drill, metric }: { report: UsageReport; drill: UsageDri
 
 /** The whole view: the tiles, the honesty line, the daily chart with its series and day controls,
  *  the breakdown tables and the open drill-down — all from the one held report. */
+/** The usage view: the transcripts' report, or Claude Code's OpenTelemetry export beside it. */
 export function UsageView() {
+  const [source, setSource] = useState<UsageSource>("transcripts");
+  return (
+    <div class="grid gap-5">
+      <SourceToggle source={source} pick={setSource} />
+      {source === "otel" ? <OtelUsage /> : <TranscriptUsage />}
+    </div>
+  );
+}
+
+/** The transcripts' report for the picked window. */
+function TranscriptUsage() {
   const { state } = useApp();
   const held = state.usage;
   if (held === null) {

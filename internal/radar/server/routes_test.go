@@ -130,6 +130,7 @@ func TestHandleApi(t *testing.T) {
 			"/api/history/clear",
 			"/api/quota",
 			"/api/selfcheck",
+			"/api/otel",
 		}
 		if !slices.Equal(Routes, want) {
 			t.Errorf("Routes = %v, want the original eight first, then the derived and history ones", Routes)

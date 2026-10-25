@@ -4,6 +4,9 @@ import (
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/MuhmdRaouf/huddle/internal/huddle/radartab"
+	"github.com/MuhmdRaouf/huddle/internal/radar/ingest"
 )
 
 // ActionHeader names the action a write performs. Its value is the route's own path, chosen by
@@ -40,6 +43,17 @@ func mcpHTTPPath(path string) bool {
 	return path == "/mcp" || strings.HasPrefix(path, "/mcp/")
 }
 
+// otlpIntake says the request is Claude Code's OpenTelemetry export to the Radar tab. Its client
+// is an OTLP exporter, not a browser: it posts protobuf or JSON and names no action. Another
+// site cannot send either encoding without a preflight, which nothing here answers.
+func otlpIntake(r *http.Request) bool {
+	if r.URL.Path != radartab.OTLPMetricsPath {
+		return false
+	}
+	_, err := ingest.OTLPMediaType(r.Header.Get("Content-Type"))
+	return err == nil
+}
+
 // originHost strips the scheme an Origin header carries; a malformed one stays as it came and is
 // refused by the host check that follows.
 func originHost(origin string) string {
@@ -48,7 +62,7 @@ func originHost(origin string) string {
 }
 
 // guard wraps the router in the request guards of SPEC 7.5: the Host must be ours, a write
-// carries JSON and names its action, a foreign Origin never writes, and every answer carries the
+// carries JSON and names its action (the OTLP intake carries OTLP's own encodings instead), a foreign Origin never writes, and every answer carries the
 // security headers — a strict Content-Security-Policy first of all, so the dashboard runs no
 // inline or third-party script. A refusal answers and returns; otherwise the security headers
 // are already set and the route answers.
@@ -65,6 +79,10 @@ func (s *server) guard(next http.HandlerFunc) http.HandlerFunc {
 		}
 		if origin := r.Header.Get("Origin"); origin != "" && !s.hostAllowed(originHost(origin)) {
 			writeText(w, 403, "cross-origin write refused", nil)
+			return
+		}
+		if otlpIntake(r) {
+			next(w, r)
 			return
 		}
 		// a delete carries no body, so it carries no content-type either

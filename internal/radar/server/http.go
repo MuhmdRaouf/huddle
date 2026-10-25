@@ -88,6 +88,8 @@ type HttpOptions struct {
 	SelfCheck *SelfCheck
 	// Watcher names the ingest backlog word; nil leaves the ingest messages out.
 	Watcher Watcher
+	// Otel holds Claude Code's OpenTelemetry export; nil answers 503 on its intake and read.
+	Otel *store.OtelRows
 	// SnapshotSent runs once the snapshot frame is written and before the deltas start; nil
 	// in production. The store is subscribed by then, so a change landed here must still
 	// reach this client.
@@ -264,6 +266,10 @@ func (h *HttpServer) handle(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, 403, errorBody{Error: "forbidden host"})
 		return
 	}
+	if path == OTLPMetricsPath {
+		h.otlpRoute(w, r)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		h.writeRoute(w, r, path)
 		return
@@ -311,6 +317,8 @@ func (h *HttpServer) route(w http.ResponseWriter, r *http.Request, path string) 
 	switch {
 	case path == "/api/stream":
 		h.streamRoute(w, r)
+	case path == OtelPath:
+		h.otelRead(w)
 	case strings.HasPrefix(path, "/api/"):
 		h.apiRoute(w, r, path)
 	case path == "/metrics":

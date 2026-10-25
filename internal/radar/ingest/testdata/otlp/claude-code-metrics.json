@@ -1,0 +1,142 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "claude-code" } },
+          { "key": "service.version", "value": { "stringValue": "2.1.30" } }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": { "name": "com.anthropic.claude_code", "version": "2.1.30" },
+          "metrics": [
+            {
+              "name": "claude_code.token.usage",
+              "description": "Number of tokens used",
+              "unit": "tokens",
+              "sum": {
+                "aggregationTemporality": 1,
+                "isMonotonic": true,
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      { "key": "session.id", "value": { "stringValue": "5b0c7f1e-2d4a-4c11-9e3b-7a6f00c0ffee" } },
+                      { "key": "model", "value": { "stringValue": "claude-sonnet-4-5" } },
+                      { "key": "type", "value": { "stringValue": "input" } }
+                    ],
+                    "startTimeUnixNano": "1792922400000000000",
+                    "timeUnixNano": "1792922460000000000",
+                    "asDouble": 1200
+                  },
+                  {
+                    "attributes": [
+                      { "key": "session.id", "value": { "stringValue": "5b0c7f1e-2d4a-4c11-9e3b-7a6f00c0ffee" } },
+                      { "key": "model", "value": { "stringValue": "claude-sonnet-4-5" } },
+                      { "key": "type", "value": { "stringValue": "output" } }
+                    ],
+                    "startTimeUnixNano": "1792922400000000000",
+                    "timeUnixNano": "1792922460000000000",
+                    "asDouble": 340
+                  },
+                  {
+                    "attributes": [
+                      { "key": "session.id", "value": { "stringValue": "5b0c7f1e-2d4a-4c11-9e3b-7a6f00c0ffee" } },
+                      { "key": "model", "value": { "stringValue": "claude-sonnet-4-5" } },
+                      { "key": "type", "value": { "stringValue": "cacheRead" } }
+                    ],
+                    "startTimeUnixNano": "1792922400000000000",
+                    "timeUnixNano": "1792922460000000000",
+                    "asInt": "56000"
+                  },
+                  {
+                    "attributes": [
+                      { "key": "session.id", "value": { "stringValue": "5b0c7f1e-2d4a-4c11-9e3b-7a6f00c0ffee" } },
+                      { "key": "model", "value": { "stringValue": "claude-sonnet-4-5" } },
+                      { "key": "type", "value": { "stringValue": "cacheCreation" } }
+                    ],
+                    "startTimeUnixNano": "1792922400000000000",
+                    "timeUnixNano": "1792922460000000000",
+                    "asDouble": 2048
+                  }
+                ]
+              }
+            },
+            {
+              "name": "claude_code.cost.usage",
+              "description": "Cost of the Claude Code session",
+              "unit": "USD",
+              "sum": {
+                "aggregationTemporality": 1,
+                "isMonotonic": true,
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      { "key": "session.id", "value": { "stringValue": "5b0c7f1e-2d4a-4c11-9e3b-7a6f00c0ffee" } },
+                      { "key": "model", "value": { "stringValue": "claude-sonnet-4-5" } }
+                    ],
+                    "startTimeUnixNano": "1792922400000000000",
+                    "timeUnixNano": "1792922460000000000",
+                    "asDouble": 0.0315
+                  }
+                ]
+              }
+            },
+            {
+              "name": "claude_code.session.count",
+              "description": "Count of CLI sessions started",
+              "unit": "count",
+              "sum": {
+                "aggregationTemporality": 1,
+                "isMonotonic": true,
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      { "key": "session.id", "value": { "stringValue": "5b0c7f1e-2d4a-4c11-9e3b-7a6f00c0ffee" } }
+                    ],
+                    "startTimeUnixNano": "1792922400000000000",
+                    "timeUnixNano": "1792922460000000000",
+                    "asDouble": 1
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "claude-code" } }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": { "name": "com.anthropic.claude_code" },
+          "metrics": [
+            {
+              "name": "claude_code.cost.usage",
+              "unit": "USD",
+              "sum": {
+                "aggregationTemporality": 2,
+                "isMonotonic": true,
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      { "key": "session.id", "value": { "stringValue": "9e1d2c3b-0000-4a5b-8c7d-112233445566" } },
+                      { "key": "model", "value": { "stringValue": "claude-haiku-4-5" } }
+                    ],
+                    "startTimeUnixNano": "1792922000000000000",
+                    "timeUnixNano": "1792922520000000000",
+                    "asDouble": 0.0042
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
