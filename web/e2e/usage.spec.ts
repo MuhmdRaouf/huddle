@@ -1,4 +1,4 @@
-// usage.spec.ts — the Usage view over the seeded data: the five seeded requests plus the usage
+// usage.spec.ts — the Usage view over the seeded data: the six seeded requests plus the usage
 // load land in the window's tiles as exact token totals, the 7-day window answers with the same
 // totals, a click on the seeded day shows that day's split (today carries only the three glm
 // calls), a project's drill-down offers the resume command for the seeded session, and the By

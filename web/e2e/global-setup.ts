@@ -408,7 +408,7 @@ async function channelOp(
   await rootCall(`/api/c/${CHANNEL}/op/${op}?as=${as}`, body, port, token);
 }
 
-/** Waits until radar's ingest has landed the five seeded requests (four Claude, one Codex), so
+/** Waits until radar's ingest has landed the six seeded requests (five Claude, one Codex), so
  *  the first view a test opens already carries them. */
 async function waitIngested(port: number, token: string): Promise<void> {
   const deadline = Date.now() + 30_000;
@@ -419,8 +419,8 @@ async function waitIngested(port: number, token: string): Promise<void> {
       });
       if (r.ok) {
         const body = (await r.json()) as { requests?: unknown[] };
-        // the seeded five plus the usage load, clamped to the requests list's own 200-row cap
-        if ((body.requests?.length ?? 0) >= Math.min(5 + LOAD_REQUESTS, 200)) return;
+        // the seeded six plus the usage load, clamped to the requests list's own 200-row cap
+        if ((body.requests?.length ?? 0) >= Math.min(6 + LOAD_REQUESTS, 200)) return;
       }
     } catch {
       // not ingested yet

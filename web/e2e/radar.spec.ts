@@ -20,6 +20,7 @@ import {
   signIn,
   SEEDED,
   theSetup,
+  TIMED,
   TOTALS,
   USAGE,
 } from "./helpers.ts";
@@ -536,9 +537,6 @@ const TODAY_USD = (TOTALS.input * 1.4 + TOTALS.output * 4.4 + TOTALS.cacheRead *
 /** The flash call twenty-five hours back, 10 in and 5 out at glm-5.3-flash's 0.15 / 0.50. */
 const FLASH_USD = (10 * 0.15 + 5 * 0.5) / 1e6;
 
-/** The timed call beside it: a router-only glm-5.3 line whose route line measured its streams. */
-const TIMED = { input: 777, output: 111 } as const;
-
 /** One overview graph's series, as its root's data-series attribute carries them. */
 async function graphSeries(graph: Locator): Promise<Record<string, number[]>> {
   await expect(graph).toHaveAttribute("data-series", /\S/);
@@ -572,9 +570,8 @@ test("the tokens graph sums each kind over the seven days", async ({ page }) => 
   await expect(graph).toContainText("Tokens by kind");
   const series = await graphSeries(graph);
   for (const kind of ["input", "output", "cacheRead", "cacheWrite"]) expect(series[kind]).toHaveLength(7);
-  // the timed call of yesterday sits inside the seven days with its own 777 in and 111 out
-  expect(sum(series.input)).toBe(USAGE.uncached + TIMED.input);
-  expect(sum(series.output)).toBe(USAGE.output + TIMED.output);
+  expect(sum(series.input)).toBe(USAGE.uncached);
+  expect(sum(series.output)).toBe(USAGE.output);
   expect(sum(series.cacheRead)).toBe(USAGE.cached);
   expect(sum(series.cacheWrite)).toBe(TOTALS.cacheWrite);
 });

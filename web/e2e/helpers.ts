@@ -39,17 +39,21 @@ export const CODEX = {
   cacheRead: 200,
 } as const;
 
-/** The five seeded requests plus the usage load (seed.ts), the numbers the Usage view's tiles
- *  and the Costs line carry: three glm-5.3 today, one glm-5.3-flash, one codex turn and twelve
- *  load requests, all but today's three at the same twenty-five-hours-back instant. That
- *  instant sits inside the 7-day window too, so both windows answer with these totals. */
+/** The timed call twenty-five hours back: a router-only glm-5.3 line whose route line measured
+ *  its streams (180 ms to the first byte, 420 ms to the first token), 777 in and 111 out. */
+export const TIMED = { input: 777, output: 111 } as const;
+
+/** The six seeded requests plus the usage load (seed.ts), the numbers the Usage view's tiles
+ *  and the Costs line carry: three glm-5.3 today, one glm-5.3-flash, the timed call, one codex
+ *  turn and twelve load requests, all but today's three twenty-five hours back. That instant
+ *  sits inside the 7-day window too, so both windows answer with these totals. */
 export const USAGE = {
-  processed: 10_015 + CODEX.input + CODEX.output + CODEX.cacheRead + LOAD_TOKENS.processed,
+  processed: 10_015 + TIMED.input + TIMED.output + CODEX.input + CODEX.output + CODEX.cacheRead + LOAD_TOKENS.processed,
   cached: 5_000 + CODEX.cacheRead,
-  uncached: 2_410 + CODEX.input + LOAD_TOKENS.uncached,
-  output: 605 + CODEX.output + LOAD_TOKENS.output,
+  uncached: 2_410 + TIMED.input + CODEX.input + LOAD_TOKENS.uncached,
+  output: 605 + TIMED.output + CODEX.output + LOAD_TOKENS.output,
   today: 10_000,
-  requests: 5 + LOAD_REQUESTS,
+  requests: 6 + LOAD_REQUESTS,
 } as const;
 
 /** 1,200 — the grouping the dashboard's number cells carry. */
