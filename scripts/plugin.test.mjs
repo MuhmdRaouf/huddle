@@ -19,6 +19,11 @@ const readJSON = (path) => JSON.parse(readFileSync(path, "utf8"));
 /** The launcher line one hook runs, with the words after dist/run. */
 const runLine = (...words) => `sh "\${CLAUDE_PLUGIN_ROOT}/dist/run" ${words.join(" ")}`;
 
+/** One hook's line: the stable `current` binary when the first build exists, else the launcher
+ *  (ADR 1), so a session's hooks outlive a plugin update that replaces the plugin directory. */
+const hookLine = (name) =>
+  `h="\${AGENTS_HUDDLE_HOME:-$HOME/.agents/huddle-bin}/current"; [ -x "$h" ] && exec "$h" hook ${name}; exec ${runLine("hook", name)}`;
+
 /** One hooks.json line: the event it serves, its matcher, the hook word and the timeout. One line
  *  per event — the launcher's hook word names the event and one process runs every part of it.
  *  PreToolUse keeps `hook approve` for Bash and PermissionRequest keeps `hook permit` as their
@@ -99,7 +104,7 @@ describe("plugin/hooks/hooks.json", () => {
     }
   });
 
-  it("runs one launcher line per event, with the old matchers and the largest old timeout", () => {
+  it("runs one stable-binary line per event, with the old matchers and the largest old timeout", () => {
     const lines = allEntries().map(({ event, group, entry }) => ({
       event,
       matcher: group.matcher,
@@ -111,7 +116,7 @@ describe("plugin/hooks/hooks.json", () => {
       HOOK_LINES.map(({ event, matcher, name, timeout }) => ({
         event,
         matcher,
-        command: runLine("hook", name),
+        command: hookLine(name),
         timeout,
       })),
     );
