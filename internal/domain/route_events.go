@@ -37,6 +37,12 @@ type RouteEvent struct {
 	Usage         *RouteUsage        `json:"usage,omitempty"`
 	Headers       *map[string]string `json:"headers,omitempty"`
 	PromptHash    *string            `json:"prompt_hash,omitempty"`
+	// PromptID, PrevRequest and TurnIndex are the billing block's cc_prompt_id, cc_prev_req and
+	// cc_turn_index: the block opens Claude Code's system prompt, changes on every request, and so
+	// stays out of the prompt hash.
+	PromptID    *string `json:"prompt_id,omitempty"`
+	PrevRequest *string `json:"prev_request,omitempty"`
+	TurnIndex   *int64  `json:"turn_index,omitempty"`
 	// Harness names the harness that sent the request as its own header said; only the huddle
 	// gateway writes it, a router has no way to know.
 	Harness string `json:"harness,omitempty"`

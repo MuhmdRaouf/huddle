@@ -218,35 +218,109 @@ func writeCanonical(b *strings.Builder, node *jsfmt.Value) {
 	}
 }
 
-// PromptHashOf is the capture hash of a parsed body — sha256 of the canonical JSON of its
-// `system` and `tools` alone — false when the body carried neither (a null counts as carried).
-func PromptHashOf(json *jsfmt.Value) (string, bool) {
+// billingPrefix opens the text block Claude Code puts in `system` on every request; its ids
+// change each time, so the block stays out of the capture and its hash.
+const billingPrefix = "x-anthropic-billing-header:"
+
+// billingLine is what a billing block carries that the route event keeps: cc_prompt_id,
+// cc_prev_req and cc_turn_index, each nil when the block did not carry it.
+type billingLine struct {
+	promptID    *string
+	prevRequest *string
+	turnIndex   *int64
+}
+
+// capturedPrompt is the part of a body a capture keeps: its `system` without the billing block,
+// its `tools`, and the billing block's ids. A nil top is one the body did not carry.
+type capturedPrompt struct {
+	system  *jsfmt.Value
+	tools   *jsfmt.Value
+	billing billingLine
+}
+
+// promptOf is the body's captured prompt; false when the body carried neither `system` nor
+// `tools` (a null counts as carried).
+func promptOf(json *jsfmt.Value) (capturedPrompt, bool) {
 	if !json.IsObject() {
-		return "", false
+		return capturedPrompt{}, false
 	}
 	system, tools := json.Get("system"), json.Get("tools")
 	if system == nil && tools == nil {
-		return "", false
+		return capturedPrompt{}, false
 	}
+	prompt := capturedPrompt{system: system, tools: tools}
+	if system.IsArray() {
+		kept := make([]*jsfmt.Value, 0, len(system.Items()))
+		for _, block := range system.Items() {
+			if text, ok := block.Get("text").TextOf(); ok && strings.HasPrefix(text, billingPrefix) {
+				prompt.billing = billingOf(strings.TrimPrefix(text, billingPrefix))
+				continue
+			}
+			kept = append(kept, block)
+		}
+		if len(kept) < len(system.Items()) {
+			prompt.system = jsfmt.Array(kept)
+		}
+	}
+	return prompt, true
+}
+
+// billingOf reads the `key=value;` pairs of a billing block's text.
+func billingOf(text string) billingLine {
+	var billing billingLine
+	for _, pair := range strings.Split(text, ";") {
+		key, value, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		if !ok || value == "" {
+			continue
+		}
+		switch key {
+		case "cc_prompt_id":
+			billing.promptID = &value
+		case "cc_prev_req":
+			billing.prevRequest = &value
+		case "cc_turn_index":
+			if turn, err := strconv.ParseInt(value, 10, 64); err == nil {
+				billing.turnIndex = &turn
+			}
+		}
+	}
+	return billing
+}
+
+// hash is sha256 of the canonical JSON of the prompt's `system` and `tools`.
+func (p capturedPrompt) hash() string {
 	var b strings.Builder
 	b.WriteString("{")
 	first := true
-	for _, key := range []string{"system", "tools"} {
-		value := json.Get(key)
-		if value == nil {
+	for _, top := range []struct {
+		key   string
+		value *jsfmt.Value
+	}{{"system", p.system}, {"tools", p.tools}} {
+		if top.value == nil {
 			continue
 		}
 		if !first {
 			b.WriteString(",")
 		}
 		first = false
-		jsfmt.WriteQuoted(&b, key)
+		jsfmt.WriteQuoted(&b, top.key)
 		b.WriteString(":")
-		writeCanonical(&b, value)
+		writeCanonical(&b, top.value)
 	}
 	b.WriteString("}")
 	sum := sha256.Sum256([]byte(b.String()))
-	return hex.EncodeToString(sum[:]), true
+	return hex.EncodeToString(sum[:])
+}
+
+// PromptHashOf is the capture hash of a parsed body — sha256 of the canonical JSON of its
+// `system` (without the billing block) and `tools` alone — false when the body carried neither
+// (a null counts as carried).
+func PromptHashOf(json *jsfmt.Value) (string, bool) {
+	prompt, ok := promptOf(json)
+	if !ok {
+		return "", false
+	}
+	return prompt.hash(), true
 }
 
 // captureMemo marks the hashes this process has already written; the oldest drops past the memo.
@@ -277,18 +351,19 @@ func (m *captureMemo) first(hash string) bool {
 	return true
 }
 
-// promptRef is one request's prompt hash, filled in as the request is dispatched; the route event
-// reads it when the request completes.
+// promptRef is one request's prompt hash and billing ids, filled in as the request is
+// dispatched; the route event reads them when the request completes.
 type promptRef struct {
-	mu   sync.Mutex
-	hash string
-	has  bool
+	mu      sync.Mutex
+	hash    string
+	has     bool
+	billing billingLine
 }
 
-func (p *promptRef) setHash(hash string) {
+func (p *promptRef) set(hash string, billing billingLine) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.hash, p.has = hash, true
+	p.hash, p.has, p.billing = hash, true, billing
 }
 
 func (p *promptRef) Hash() *string {
@@ -298,6 +373,12 @@ func (p *promptRef) Hash() *string {
 		return nil
 	}
 	return &p.hash
+}
+
+func (p *promptRef) Billing() billingLine {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.billing
 }
 
 // ── the provider-bound body ────────────────────────────────────────────────────────────────────────────────────────
@@ -581,7 +662,8 @@ type routeModel struct {
 type eventNote func(status int64, route, upstream string, usage domain.RouteUsage, reason *string, headers *map[string]string)
 
 // noteOf builds the request's note: the ids Claude Code stamped the request with, the usage and
-// the allow-listed headers the answer carried, and the prompt hash — each only when there was one.
+// the allow-listed headers the answer carried, the prompt hash and the billing block's ids — each
+// only when there was one.
 func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt int64, prompt *promptRef) eventNote {
 	if w.opts.Events == nil {
 		return nil
@@ -601,6 +683,8 @@ func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt i
 			Headers:    headers,
 			PromptHash: prompt.Hash(),
 		}
+		billing := prompt.Billing()
+		event.PromptID, event.PrevRequest, event.TurnIndex = billing.promptID, billing.prevRequest, billing.turnIndex
 		if session, ok := textHeader(req, "x-claude-code-session-id"); ok {
 			event.SessionID = &session
 		}
@@ -625,11 +709,12 @@ func (w *routerWorker) capture(prompt *promptRef, json *jsfmt.Value) {
 	if w.opts.Events == nil {
 		return
 	}
-	hash, ok := PromptHashOf(json)
+	captured, ok := promptOf(json)
 	if !ok {
 		return
 	}
-	prompt.setHash(hash)
+	hash := captured.hash()
+	prompt.set(hash, captured.billing)
 	go func() {
 		defer func() {
 			if reason := recover(); reason != nil {
@@ -639,7 +724,7 @@ func (w *routerWorker) capture(prompt *promptRef, json *jsfmt.Value) {
 		if !w.captured.first(hash) {
 			return
 		}
-		body := jsfmt.Object([]string{"system", "tools"}, []*jsfmt.Value{json.Get("system"), json.Get("tools")}).EncodeLiteral()
+		body := jsfmt.Object([]string{"system", "tools"}, []*jsfmt.Value{captured.system, captured.tools}).EncodeLiteral()
 		var compressed bytes.Buffer
 		writer := gzip.NewWriter(&compressed)
 		_, _ = writer.Write([]byte(body))
