@@ -2,7 +2,8 @@
 // board, the kanban page's toolbar, board and drawer on a store of its own. The address owns the
 // choice (#/kanban/<key>): a bare #/kanban adopts the first board's, a key the list does not know
 // reads as a gone board. A key change stops the old store's stream before the new one starts, and
-// an unmount stops it for good.
+// an unmount stops it for good. The board list asks again on its own after a failure, and again
+// whenever the page turns visible.
 
 import type { JSX } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -13,6 +14,7 @@ import { Drawer, useDrawerSelection } from "./components/Drawer.tsx";
 import { Toolbar } from "./components/Toolbar.tsx";
 import { boardIo, type BoardRef, fetchBoards } from "./io.ts";
 import {
+  backoffMs,
   BoardStore,
   clearFilters,
   DONE_HIDE_THRESHOLD,
@@ -29,26 +31,88 @@ const EMPTY_LINE = "No boards yet. A session working in a repo with .agents/kanb
 const GONE_LINE = "That board is gone. Pick another.";
 const FAILED_LINE = "The board list is unreachable.";
 
-/** The board list's read: loading until it answers, failed when it throws. */
+/** The board list's read: loading until it answers, failed when it throws or runs past its deadline. */
 type BoardsState = { kind: "loading" } | { kind: "failed" } | { kind: "ok"; boards: BoardRef[] };
 
-function useBoards(): BoardsState {
+/** How long one board-list request may run before it counts as failed. */
+const LIST_DEADLINE_MS = 10_000;
+
+/**
+ * The board list's loader. Each load aborts the one before it and gets its own deadline. Until a
+ * list arrives, a failure reports failed and asks again on the backoff ladder; once one has
+ * arrived, a failed refetch keeps it. `load` asks now, from the ladder's foot.
+ */
+function boardListLoader(report: (state: BoardsState) => void): { load: () => void; stop: () => void } {
+  let attempt = 0;
+  let listed = false;
+  let current: AbortController | null = null;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let rung: ReturnType<typeof setTimeout> | undefined;
+
+  const settle = (controller: AbortController): boolean => {
+    if (current !== controller) return false;
+    current = null;
+    clearTimeout(deadline);
+    return true;
+  };
+  const ask = (): void => {
+    current?.abort();
+    clearTimeout(deadline);
+    clearTimeout(rung);
+    const controller = new AbortController();
+    current = controller;
+    const failed = (): void => {
+      if (!settle(controller)) return;
+      controller.abort();
+      if (listed) return;
+      report({ kind: "failed" });
+      rung = setTimeout(ask, backoffMs(attempt));
+      attempt += 1;
+    };
+    deadline = setTimeout(failed, LIST_DEADLINE_MS);
+    fetchBoards(controller.signal).then((boards) => {
+      if (!settle(controller)) return;
+      listed = true;
+      attempt = 0;
+      report({ kind: "ok", boards });
+    }, failed);
+  };
+  return {
+    load: () => {
+      attempt = 0;
+      ask();
+    },
+    stop: () => {
+      const controller = current;
+      current = null;
+      controller?.abort();
+      clearTimeout(deadline);
+      clearTimeout(rung);
+    },
+  };
+}
+
+/** The board list, loaded on mount, again whenever the page turns visible, and on `retry`. */
+function useBoards(): { state: BoardsState; retry: () => void } {
   const [state, setState] = useState<BoardsState>({ kind: "loading" });
+  const loader = useRef<ReturnType<typeof boardListLoader> | null>(null);
   useEffect(() => {
-    let live = true;
-    fetchBoards().then(
-      (boards) => {
-        if (live) setState({ kind: "ok", boards });
-      },
-      () => {
-        if (live) setState({ kind: "failed" });
-      },
-    );
+    const own = boardListLoader(setState);
+    loader.current = own;
+    // a phone resuming the page may hold a request that never answers; a fresh ask replaces it
+    const onVisibility = (): void => {
+      if (document.visibilityState === "visible") own.load();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    own.load();
     return () => {
-      live = false;
+      document.removeEventListener("visibilitychange", onVisibility);
+      own.stop();
+      loader.current = null;
     };
   }, []);
-  return state;
+  const retry = useCallback((): void => loader.current?.load(), []);
+  return { state, retry };
 }
 
 /** The one board's store: built over the io its caller hands in, seeded static when the page
@@ -170,7 +234,7 @@ export function BoardPane({
 
 /** The tab: the board picker, its status lines, and the chosen board's own page. */
 export function KanbanTab({ boardKey }: { boardKey: string | null }): JSX.Element {
-  const state = useBoards();
+  const { state, retry } = useBoards();
   const boards = state.kind === "ok" ? state.boards : [];
   const first = boards[0] ?? null;
   const known = boardKey !== null && boards.some((board) => board.key === boardKey);
@@ -197,7 +261,14 @@ export function KanbanTab({ boardKey }: { boardKey: string | null }): JSX.Elemen
           <div class="skeleton board-skeleton" aria-hidden="true" />
         </div>
       )}
-      {state.kind === "failed" && <p role="status">{FAILED_LINE}</p>}
+      {state.kind === "failed" && (
+        <>
+          <p role="status">{FAILED_LINE}</p>
+          <button type="button" class="btn btn-sm" onClick={retry}>
+            Retry
+          </button>
+        </>
+      )}
       {state.kind === "ok" && boards.length === 0 && <p role="status">{EMPTY_LINE}</p>}
       {gone && (
         <>

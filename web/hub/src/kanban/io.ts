@@ -17,9 +17,10 @@ export function optionLabel(boards: BoardRef[], board: BoardRef): string {
     : board.name;
 }
 
-/** The boards every known session works with, sorted by name as the API sends them. */
-export async function fetchBoards(): Promise<BoardRef[]> {
-  const response = await fetch("/api/kanban/boards");
+/** The boards every known session works with, sorted by name as the API sends them; the signal
+ *  ends the request when its caller gives up on it. */
+export async function fetchBoards(signal?: AbortSignal): Promise<BoardRef[]> {
+  const response = await fetch("/api/kanban/boards", { signal: signal ?? null });
   if (!response.ok) throw new Error(`api/kanban/boards: ${response.status}`);
   return ((await response.json()) as { boards: BoardRef[] }).boards;
 }

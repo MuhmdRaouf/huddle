@@ -48,6 +48,20 @@ describe("fetchBoards", () => {
     stubFetch(() => reply({}, { ok: false, status: 503 }));
     await expect(fetchBoards()).rejects.toThrow("api/kanban/boards: 503");
   });
+
+  it("hands the caller's signal to the request, so an abort ends it", async () => {
+    const seen: (AbortSignal | null | undefined)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: URL | string, init?: RequestInit) => {
+        seen.push(init?.signal);
+        return reply({ boards: [] });
+      }),
+    );
+    const controller = new AbortController();
+    await fetchBoards(controller.signal);
+    expect(seen).toEqual([controller.signal]);
+  });
 });
 
 describe("ioAt", () => {

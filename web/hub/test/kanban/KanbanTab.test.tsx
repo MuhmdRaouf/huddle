@@ -1,6 +1,7 @@
 // KanbanTab.test.tsx — the tab over faked huddle endpoints: the board list and its states, the
-// picker moving the address and the board, a gone board, a live delta, and the stream's lifetime.
-import { act, render, screen } from "@testing-library/preact";
+// picker moving the address and the board, a gone board, a live delta, the stream's lifetime, and
+// the list's retry ladder, deadline and refetch on a return to the page.
+import { act, fireEvent, render, screen } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { KanbanTab } from "../../src/kanban/KanbanTab.tsx";
@@ -91,13 +92,59 @@ function stubNet(
   return calls;
 }
 
+/** How one board-list request answers: a network failure, no answer until it is aborted, or the list. */
+type ListStep = "fail" | "hang" | "ok";
+
+/** stubNet, with the board list answering each request by the next step (then "ok"); returns
+ *  every URL seen and the signal each board-list request carried. */
+function stubListSteps(steps: ListStep[]): { calls: string[]; signals: (AbortSignal | undefined)[] } {
+  const calls = stubNet();
+  const net = globalThis.fetch;
+  const signals: (AbortSignal | undefined)[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: URL | string, init?: RequestInit): Promise<unknown> => {
+      if (String(input) !== "/api/kanban/boards") return net(input, init);
+      signals.push(init?.signal ?? undefined);
+      const step = steps.shift() ?? "ok";
+      if (step === "ok") return net(input, init);
+      calls.push(String(input));
+      if (step === "fail") throw new TypeError("Failed to fetch");
+      return new Promise((_, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      });
+    }),
+  );
+  return { calls, signals };
+}
+
+/** The board-list requests among the URLs seen. */
+function listCalls(calls: string[]): number {
+  return calls.filter((url) => url === "/api/kanban/boards").length;
+}
+
+/** Runs the faked clock forward and lets the answers it frees settle into the render. */
+async function advance(ms: number): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+
+/** Sets the page's visibility and tells the document, as a return from the background does. */
+function setVisibility(state: DocumentVisibilityState): void {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+  fireEvent(document, new Event("visibilitychange"));
+}
+
 beforeEach(() => {
   location.hash = "";
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   FakeSource.made = [];
+  Reflect.deleteProperty(document, "visibilityState");
 });
 
 describe("KanbanTab", () => {
@@ -255,5 +302,79 @@ describe("KanbanTab", () => {
     render(<KanbanTab boardKey={null} />);
     await screen.findByText("The board list is unreachable.");
     expect(screen.queryByRole("combobox", { name: "Board" })).toBeNull();
+  });
+
+  describe("the board list over a flaky network", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    });
+
+    it("retries a failed list and shows the board in the same tab", async () => {
+      const { calls } = stubListSteps(["fail"]);
+      const view = render(<KanbanTab boardKey={null} />);
+      const tab = view.container.querySelector(".kanban-tab");
+      await advance(0);
+      expect(screen.getByText("The board list is unreachable.")).toBeDefined();
+      await advance(999);
+      expect(listCalls(calls)).toBe(1);
+      await advance(1);
+      expect(listCalls(calls)).toBe(2);
+      expect(screen.getByRole("button", { name: "Board" })).toBeDefined();
+      expect(screen.queryByText("The board list is unreachable.")).toBeNull();
+      expect(view.container.querySelector(".kanban-tab")).toBe(tab);
+    });
+
+    it("climbs the ladder while the list keeps failing", async () => {
+      const { calls } = stubListSteps(["fail", "fail", "fail", "fail"]);
+      render(<KanbanTab boardKey={null} />);
+      await advance(0);
+      for (const [wait, total] of [
+        [1000, 2],
+        [2000, 3],
+        [4000, 4],
+        [8000, 5],
+      ] as const) {
+        await advance(wait - 1);
+        expect(listCalls(calls)).toBe(total - 1);
+        await advance(1);
+        expect(listCalls(calls)).toBe(total);
+      }
+      expect(screen.getByRole("button", { name: "Board" })).toBeDefined();
+    });
+
+    it("a list that never answers turns into the failed line with Retry after 10 s", async () => {
+      const { calls, signals } = stubListSteps(["hang", "hang"]);
+      render(<KanbanTab boardKey={null} />);
+      await advance(9999);
+      expect(screen.getByRole("status", { name: "Loading the boards" })).toBeDefined();
+      expect(screen.queryByText("The board list is unreachable.")).toBeNull();
+      await advance(1);
+      expect(signals[0]?.aborted).toBe(true);
+      expect(screen.getByText("The board list is unreachable.")).toBeDefined();
+      // the Retry button asks again now, ahead of the ladder
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      await advance(0);
+      expect(listCalls(calls)).toBe(2);
+      // the second ask hangs too; its own deadline aborts it and the ladder's next rung answers
+      await advance(10_000);
+      expect(signals[1]?.aborted).toBe(true);
+      await advance(1000);
+      expect(screen.getByRole("button", { name: "Board" })).toBeDefined();
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    });
+
+    it("refetches the list when the page becomes visible again", async () => {
+      const { calls } = stubListSteps([]);
+      render(<KanbanTab boardKey="a1a1" />);
+      await advance(0);
+      expect(listCalls(calls)).toBe(1);
+      setVisibility("hidden");
+      await advance(0);
+      expect(listCalls(calls)).toBe(1);
+      setVisibility("visible");
+      await advance(0);
+      expect(listCalls(calls)).toBe(2);
+      expect(screen.getByRole("button", { name: "Board" })).toBeDefined();
+    });
   });
 });
