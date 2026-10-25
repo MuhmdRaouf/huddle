@@ -46,4 +46,28 @@ describe("Button", () => {
     fireEvent.click(b);
     expect(onClick).not.toHaveBeenCalled();
   });
+
+  it("takes the thumb's 48 px size and the data attributes a page finds it by", () => {
+    render(
+      <Button variant="danger" size="lg" data-act="deny">
+        Deny
+      </Button>,
+    );
+    const b = screen.getByRole("button", { name: "Deny" });
+    expect(b.className).toBe("ui-btn ui-btn-danger ui-btn-lg");
+    expect(b.dataset.act).toBe("deny");
+  });
+
+  it("is a link that looks like a button when it has an href", () => {
+    render(
+      <Button href="#/now/s-1" size="lg" data-act="review" class="wide">
+        Review
+      </Button>,
+    );
+    const a = screen.getByRole("link", { name: "Review" });
+    expect(a.getAttribute("href")).toBe("#/now/s-1");
+    expect(a.className).toBe("ui-btn ui-btn-primary ui-btn-lg wide");
+    expect(a.dataset.act).toBe("review");
+    expect(a.hasAttribute("type")).toBe(false);
+  });
 });

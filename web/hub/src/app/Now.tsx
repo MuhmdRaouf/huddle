@@ -5,7 +5,7 @@
 // tree serves the three layouts: the phone paints the list or the session, the tablet and the
 // desktop paint the list beside the session, and the desktop adds the context pane (the linked
 // sessions and the session's facts). Session text is rendered as text, never HTML (SPEC 9).
-import type { Tone } from "@huddle/ui/badge.tsx";
+import { Button } from "@huddle/ui/button.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
 import { modelColor } from "@huddle/ui/model-color.ts";
 import { stampMs } from "@huddle/ui/time.ts";
@@ -20,6 +20,7 @@ import {
   groupSessions,
   machinesLine,
   machinesOf,
+  type NeedItem,
   openItemOf,
   permissionOf,
   projectName,
@@ -28,6 +29,9 @@ import {
   type StreamItem,
   sessionName,
   shortModel,
+  type StateRole,
+  shownState,
+  stateRole,
   stateWord,
   streamItems,
 } from "../registry.ts";
@@ -48,35 +52,30 @@ import {
 import { RadarDayCard } from "./RadarDay.tsx";
 import { MachinesLine } from "./TopBar.tsx";
 
-/** One state's mark: its shape and its colour class around the svg it draws. */
-type Mark = { shape: string; cls: string; draw: JSX.Element };
+/** One state's mark: its shape and the svg it draws; its colour comes from the state's role. */
+type Mark = { shape: string; draw: JSX.Element };
 
 /** The marks, keyed by the registry's state name. The word the aria-label carries is part of
  *  the signal, so colour is never the only difference. */
 const MARKS: Record<string, Mark> = {
   "needs-you": {
     shape: "ring",
-    cls: "text-warning",
     draw: <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="5" />,
   },
   working: {
     shape: "dot",
-    cls: "text-success",
     draw: <circle cx="12" cy="12" r="9" fill="currentColor" />,
   },
   idle: {
     shape: "hollow",
-    cls: "text-base-content/50",
     draw: <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.5" />,
   },
   stuck: {
     shape: "dash",
-    cls: "text-base-content/50",
     draw: <path d="M6 12h12" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />,
   },
   ended: {
     shape: "cross",
-    cls: "text-base-content/40",
     draw: (
       <path
         d="M7 7l10 10M17 7L7 17"
@@ -92,24 +91,46 @@ const MARKS: Record<string, Mark> = {
 /** The mark an unknown state falls back to: the idle hollow circle. */
 const HOLLOW: Mark = {
   shape: "hollow",
-  cls: "text-base-content/50",
   draw: <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.5" />,
 };
 
+/** Each role's mark colour, a literal per role so the styles scan finds it. */
+const ROLE_MARK: Record<StateRole, string> = {
+  "needs-you": "text-[var(--ui-needs-you)]",
+  "turn-done": "text-[var(--ui-turn-done)]",
+  working: "text-[var(--ui-working)]",
+  idle: "text-[var(--ui-idle)]",
+  failed: "text-[var(--ui-failed)]",
+  cancelled: "text-[var(--ui-cancelled)]",
+};
+
+/** Each role's chip: its soft fill behind its ink. */
+const ROLE_CHIP: Record<StateRole, string> = {
+  "needs-you": "bg-[var(--ui-needs-you-soft)] text-[var(--ui-needs-you-ink)]",
+  "turn-done": "bg-[var(--ui-turn-done-soft)] text-[var(--ui-turn-done-ink)]",
+  working: "bg-[var(--ui-working-soft)] text-[var(--ui-working-ink)]",
+  idle: "bg-[var(--ui-idle-soft)] text-[var(--ui-idle-ink)]",
+  failed: "bg-[var(--ui-failed-soft)] text-[var(--ui-failed-ink)]",
+  cancelled: "bg-[var(--ui-cancelled-soft)] text-[var(--ui-cancelled-ink)]",
+};
+
 /** A session's state as one 10 px mark: shape plus word, so the state never rides on colour
- *  alone. An unknown state draws the hollow mark and says its own name. */
+ *  alone, in its role's colour (the state's own unless a finished turn makes it turn-done). An
+ *  unknown state draws the hollow mark and says its own name. */
 export function StateMark({
   state,
+  role = stateRole(state),
   class: c = "",
 }: {
   state: string;
+  role?: StateRole | undefined;
   class?: string | undefined;
 }): JSX.Element {
   const m = MARKS[state] ?? HOLLOW;
   return (
     <svg
       data-shape={m.shape}
-      class={`size-2.5 shrink-0 ${m.cls} ${c}`.trim()}
+      class={`size-2.5 shrink-0 ${ROLE_MARK[role]} ${c}`.trim()}
       viewBox="0 0 24 24"
       role="img"
       aria-label={stateWord(state)}
@@ -119,23 +140,30 @@ export function StateMark({
   );
 }
 
-/** The status tone each state's badge takes: needs-you asks for a look, working is healthy,
- *  stuck is broken; idle, ended and an unknown state stay neutral. */
-const STATE_TONES: Record<string, Tone> = { "needs-you": "warn", working: "ok", stuck: "fail" };
-
-/** A session's state as one word in a status badge: the text the mark's shape stands for, so
- *  the state never rides on colour or shape alone. */
-export function StateChip({ state }: { state: string }): JSX.Element {
+/** A session's state as one word on its role's tint: the text the mark's shape stands for, so
+ *  the state never rides on colour or shape alone. The item is the session's open ask, which
+ *  tells a finished turn from a blocking one; `mark` leads the word with the state's mark. */
+export function StateChip({
+  state,
+  item,
+  mark = false,
+}: {
+  state: string;
+  item?: NeedItem | undefined;
+  mark?: boolean | undefined;
+}): JSX.Element {
+  const role = stateRole(state, item);
   return (
-    <span data-state={state} class={`ui-badge ui-badge-${STATE_TONES[state] ?? "neutral"} shrink-0`}>
+    <span data-state={state} data-role={role} class={`ui-badge ${ROLE_CHIP[role]} shrink-0 gap-1.5`}>
+      {mark ? <StateMark state={state} role={role} /> : null}
       {stateWord(state)}
     </span>
   );
 }
 
 /** A model as its chip: the short name in the page's own text colour, the family's colour as
- *  the chip's leading edge (a fill behind the text fails contrast on the lighter families),
- *  the raw id on hover. */
+ *  the chip's leading edge (a fill behind the text fails contrast on the lighter families), a
+ *  leading dot on the header's round pill, the raw id on hover. */
 export function ModelChip({
   model,
   pill = false,
@@ -144,11 +172,24 @@ export function ModelChip({
   /** The session header's round pill; the list's rows carry the small square chip. */
   pill?: boolean | undefined;
 }): JSX.Element {
+  const look =
+    "inline-flex items-center whitespace-nowrap border border-[var(--ui-line)] bg-[var(--ui-surface-2)] ui-mono text-[var(--ui-text)]";
+  if (pill) {
+    return (
+      <span class={`${look} gap-1.5 rounded-full px-2.5 py-[3px] text-xs`} title={model}>
+        <span
+          data-model-dot=""
+          class="size-2 shrink-0 rounded-full"
+          style={`background:${modelColor(model)}`}
+          aria-hidden="true"
+        />
+        {shortModel(model)}
+      </span>
+    );
+  }
   return (
     <span
-      class={`inline-flex items-center whitespace-nowrap border hairline bg-base-200 font-mono text-[11px] leading-4 text-base-content ${
-        pill ? "rounded-full px-2.5 py-[3px] text-xs" : "rounded-md px-1.5 py-px"
-      }`}
+      class={`${look} rounded-md px-1.5 py-px text-[11px] leading-4`}
       style={`border-left:4px solid ${modelColor(model)}`}
       title={model}
     >
@@ -157,7 +198,7 @@ export function ModelChip({
   );
 }
 
-/** The context bar: how full the session's window is, one primary fill over a quiet track.
+/** The context bar: how full the session's window is, one accent fill over a quiet track.
  *  Nothing at zero — a session that never said reads as unknown, not empty. */
 export function ContextBar({
   pct,
@@ -170,11 +211,11 @@ export function ContextBar({
   const n = Math.round(pct);
   return (
     <div
-      class={`h-1.5 w-full overflow-hidden rounded-full bg-base-content/15 ${c}`.trim()}
+      class={`h-1.5 w-full overflow-hidden rounded-full bg-[var(--ui-surface-2)] ${c}`.trim()}
       role="img"
       aria-label={`Context ${n} percent used`}
     >
-      <div class="h-full rounded-full bg-primary" style={`width:${n}%`} />
+      <div class="h-full rounded-full bg-[var(--ui-accent)]" style={`width:${n}%`} />
     </div>
   );
 }
@@ -189,25 +230,29 @@ function HarnessBadge({ harness }: { harness: string }): JSX.Element {
     <span
       data-harness={harness}
       title={`This session runs in ${harness}`}
-      class="shrink-0 rounded-md border hairline px-1 py-px font-mono text-[11px] leading-4 text-base-content/70"
+      class="shrink-0 rounded-md border border-[var(--ui-line)] px-1 py-px ui-mono text-[11px] leading-4 text-[var(--ui-muted)]"
     >
       {harness}
     </span>
   );
 }
 
-/** The link that opens one session from the list. */
 /** The chip a session whose hooks stopped reporting carries beside its state: a warning to
  *  look, report only, with nothing to press. */
 function HooksStaleChip({ s }: { s: RegistrySession }): JSX.Element | null {
   if (!s.hooks_stale) return null;
   return (
-    <span data-hooks-stale="" class="ui-badge ui-badge-warn shrink-0">
+    <span data-hooks-stale="" class="ui-badge shrink-0 bg-[var(--ui-warn-soft)] text-[var(--ui-warn-ink)]">
       hooks stale
     </span>
   );
 }
 
+/** The quiet ink of a secondary line, and the hairline a divider draws. */
+const MUTED = "text-[var(--ui-muted)]";
+const LINE = "border-[var(--ui-line)]";
+
+/** The link that opens one session from the list. */
 const openHref = (s: RegistrySession): string => `#/now/${s.session_id}`;
 
 /** The needs-you card: the session that waits on the owner, what it asks, and the answers at
@@ -231,11 +276,11 @@ function NeedsCard({
   const item = openItemOf(needs, s.session_id);
   return (
     <article
-      class={`ui-card flex flex-col ${sel ? "ring-2 ring-primary" : ""}`}
+      class={`ui-card flex flex-col ${sel ? "ring-2 ring-[var(--ui-accent)]" : ""}`}
       data-row={s.session_id}
       aria-current={sel ? "true" : undefined}
     >
-      <a href={openHref(s)} class="flex min-w-0 flex-col gap-1.5 p-4 text-base-content">
+      <a href={openHref(s)} class="flex min-w-0 flex-col gap-1.5 p-4 text-[var(--ui-text)]">
         <div class="flex items-baseline justify-between gap-2">
           <span class="flex min-w-0 items-center gap-1.5">
             <span class="truncate text-base font-semibold">{sessionName(s)}</span>
@@ -243,51 +288,46 @@ function NeedsCard({
           </span>
           <span class="flex shrink-0 items-center gap-1.5">
             <HooksStaleChip s={s} />
-            <StateChip state={s.state} />
-            <span class="text-xs muted">{ageText(s.last_event_at, now)}</span>
+            <StateChip state={s.state} item={item} />
+            <span class={`text-xs ${MUTED}`}>{ageText(s.last_event_at, now)}</span>
           </span>
         </div>
-        <div class="truncate text-xs muted">{whereOf(s)}</div>
+        <div class={`truncate text-xs ${MUTED}`}>{whereOf(s)}</div>
         <div class="line-clamp-2 text-sm">{s.task || s.title || stateWord(s.state)}</div>
       </a>
       {ask ? (
         <div class="flex min-w-0 flex-col gap-1.5 px-4 pb-3" data-ask="">
           <span class="text-sm font-semibold">
-            Allow <code class="font-mono">{ask.tool}</code>?
+            Allow <code class="ui-mono">{ask.tool}</code>?
           </span>
           {ask.input ? (
-            <code class="block overflow-x-auto whitespace-pre rounded-[10px] border hairline bg-base-300 px-3 py-2 font-mono text-[13px]">
+            <code class="ui-mono block overflow-x-auto whitespace-pre rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] px-3 py-2 text-[13px]">
               {ask.input}
             </code>
           ) : null}
         </div>
       ) : null}
-      <div class="flex gap-2 border-t hairline p-3" data-needs-actions="">
+      <div class={`flex gap-2 border-t ${LINE} p-3`} data-needs-actions="">
         {item ? <SnoozeMenu item={item} /> : null}
         {ask ? (
           <>
-            <button
-              type="button"
-              data-act="deny"
-              onClick={() => act.deny(ask)}
-              class="ui-btn ui-btn-danger ui-btn-lg flex-1"
-            >
+            <Button variant="danger" size="lg" data-act="deny" class="flex-1" onClick={() => act.deny(ask)}>
               Deny
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              size="lg"
               data-act="allow"
+              class="flex-1"
               onClick={() => act.allow(ask, confirmWhat(ask, s, true))}
-              class="ui-btn ui-btn-primary ui-btn-lg flex-1"
             >
               <Icon name="key" class="size-4" />
               Allow once
-            </button>
+            </Button>
           </>
         ) : (
-          <a href={openHref(s)} data-act="review" class="ui-btn ui-btn-primary ui-btn-lg flex-1">
+          <Button href={openHref(s)} size="lg" data-act="review" class="flex-1">
             Review
-          </a>
+          </Button>
         )}
       </div>
     </article>
@@ -295,7 +335,7 @@ function NeedsCard({
 }
 
 /** The selected row's ring: the desktop's keyboard selection. */
-const selRing = (sel: boolean): string => (sel ? " ring-2 ring-inset ring-primary" : "");
+const selRing = (sel: boolean): string => (sel ? " ring-2 ring-inset ring-[var(--ui-accent)]" : "");
 
 /** A working or stuck row: the mark, the name taking the row's free width, where it works and
  *  its task under it, and the state badge, the model chip and how full its window is after. */
@@ -323,7 +363,9 @@ function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element 
           <StateChip state={s.state} />
           {s.model ? <ModelChip model={s.model} /> : null}
         </span>
-        <span class="text-xs muted tnum">{s.context_percent ? `${Math.round(s.context_percent)}%` : ""}</span>
+        <span class={`text-xs ${MUTED} tabular-nums`}>
+          {s.context_percent ? `${Math.round(s.context_percent)}%` : ""}
+        </span>
       </span>
     </a>
   );
@@ -346,7 +388,7 @@ function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolea
         <span class="flex min-w-0 items-center gap-1.5">
           <span class="ui-list-title min-w-0">
             {sessionName(s)}{" "}
-            {s.machine ? <span class="text-[13px] font-normal muted">· {s.machine}</span> : null}
+            {s.machine ? <span class={`text-[13px] font-normal ${MUTED}`}>· {s.machine}</span> : null}
           </span>
           {s.harness ? <HarnessBadge harness={s.harness} /> : null}
         </span>
@@ -354,7 +396,7 @@ function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolea
       <span class="ui-list-trailing gap-1.5">
         <HooksStaleChip s={s} />
         <StateChip state={s.state} />
-        <span class="text-xs muted">{ageText(s.last_event_at, now)}</span>
+        <span class={`text-xs ${MUTED}`}>{ageText(s.last_event_at, now)}</span>
       </span>
     </a>
   );
@@ -365,7 +407,11 @@ function TeammateList({ teammates }: { teammates: RegistryTeammate[] }): JSX.Ele
   return (
     <ul class="m-0 flex list-none flex-col gap-0.5 px-4 pb-2 pl-10" aria-label="Teammates">
       {teammates.map((m) => (
-        <li key={m.name} data-teammate={m.name} class="flex min-w-0 items-center gap-1.5 text-[13px] muted">
+        <li
+          key={m.name}
+          data-teammate={m.name}
+          class={`flex min-w-0 items-center gap-1.5 text-[13px] ${MUTED}`}
+        >
           <span class="min-w-0 flex-1 truncate">{m.name}</span>
           <StateChip state={m.state} />
         </li>
@@ -374,7 +420,7 @@ function TeammateList({ teammates }: { teammates: RegistryTeammate[] }): JSX.Ele
   );
 }
 
-/** The list's five sections, in the order the Now tab shows them; empty ones draw nothing. */
+/** The list's five sections, in the order the Now list shows them; empty ones draw nothing. */
 const SECTIONS: readonly (readonly [
   key: "needsYou" | "working" | "idle" | "stuck" | "ended",
   label: string,
@@ -415,7 +461,7 @@ function RowShell({
       <div class="flex items-start gap-1 pl-3" data-select-row={s.session_id} onClick={tap}>
         <input
           type="checkbox"
-          class="checkbox checkbox-xs mt-5 shrink-0"
+          class="mt-5 size-4 shrink-0 accent-[var(--ui-accent)]"
           aria-label={`Select ${sessionName(s)}`}
           checked={picked}
           onClick={(e) => e.stopPropagation()}
@@ -456,7 +502,8 @@ export function NowPane({
   const { registry, now } = useHuddle();
   const act = useNeedsAct();
   const st = registry.getState();
-  const groups = groupSessions(st.sessions);
+  // an open item holds a session in Needs you even when its last live row reads idle
+  const groups = groupSessions(st.sessions?.map((s) => ({ ...s, state: shownState(s, st.needs) })) ?? null);
   const [group, setGroup] = useState<GroupMode>(() =>
     readPref(localStorage, "nowgroup", "machine" as GroupMode),
   );
@@ -584,7 +631,7 @@ export function NowPane({
       <>
         {[...byKey.entries()].map(([key, keyed]) => (
           <div key={key} class="flex flex-col gap-1.5">
-            <h3 class="m-0 px-1 pt-1 text-xs font-medium muted">
+            <h3 class={`m-0 px-1 pt-1 text-xs font-medium ${MUTED}`}>
               {key} · {keyed.length}
             </h3>
             {rowsOf(keyed, `${label}, ${key}`)}
@@ -645,7 +692,7 @@ export function NowPane({
                 <h2
                   id={`now-${key}`}
                   class={`m-0 flex items-center gap-2 px-1 text-[13px] font-semibold tracking-[0.06em] uppercase ${
-                    warn ? "text-[var(--ui-warn-ink)]" : "muted"
+                    warn ? "text-[var(--ui-needs-you-ink)]" : MUTED
                   }`}
                 >
                   {warn ? <StateMark state="needs-you" /> : null}
@@ -669,37 +716,29 @@ export function NowPane({
           <MachinesLine live={st.live} text={machinesLine(layout, machinesOf(st.sessions))} />
         </header>
       ) : null}
-      <div class="flex shrink-0 items-center justify-between gap-2 border-b hairline px-4 py-2">
+      <div class={`flex shrink-0 flex-wrap items-center justify-between gap-2 border-b ${LINE} px-4 py-2`}>
         <div class="flex items-center gap-2">
-          <span class="text-xs muted">Group by</span>
-          <div class="flex overflow-hidden rounded-lg border hairline">
-            {(["machine", "project"] as const).map((k, i) => (
-              <button
+          <span class={`text-xs ${MUTED}`}>Group by</span>
+          <div class="flex gap-1">
+            {(["machine", "project"] as const).map((k) => (
+              <Button
                 key={k}
-                type="button"
-                aria-pressed={group === k ? "true" : "false"}
-                class={`min-h-[44px] px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                  i > 0 ? "border-l hairline" : ""
-                } ${group === k ? "bg-base-100 font-semibold text-base-content" : "muted"}`}
+                variant="ghost"
+                pressed={group === k}
                 onClick={() => {
                   setGroup(k);
                   writePref(localStorage, "nowgroup", k);
                 }}
               >
                 {k === "machine" ? "Machine" : "Project"}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           data-needs-filter=""
-          aria-pressed={onlyNeeds ? "true" : "false"}
-          class={`min-h-[44px] rounded-lg border px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-            onlyNeeds
-              ? "border-warning bg-base-100 font-semibold text-[var(--ui-warn-ink)]"
-              : "hairline muted"
-          }`}
+          pressed={onlyNeeds}
           onClick={() => {
             const next = !onlyNeeds;
             setOnlyNeeds(next);
@@ -707,20 +746,26 @@ export function NowPane({
           }}
         >
           Needs you
-        </button>
+        </Button>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto pb-4" data-now-sections="">
         {above}
         {st.sessions === null ? (
           <div class="grid gap-2 px-3 pt-3" role="status" aria-label="Reading the registry">
             {[0, 1, 2, 3].map((row) => (
-              <div key={row} class="skeleton h-12" aria-hidden="true" />
+              <div
+                key={row}
+                class="h-12 animate-pulse rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)]"
+                aria-hidden="true"
+              />
             ))}
           </div>
         ) : rows.length === 0 ? (
           onlyNeeds ? (
-            <div class="mx-auto m-4 flex max-w-lg flex-col items-center gap-2 rounded-box border border-dashed border-base-content/20 px-6 py-16 text-center text-sm muted">
-              <b class="text-base font-semibold text-base-content">Nothing needs you</b>
+            <div
+              class={`mx-auto m-4 flex max-w-lg flex-col items-center gap-2 rounded-[var(--ui-radius-lg)] border border-dashed border-[var(--ui-line-strong)] px-6 py-16 text-center text-sm ${MUTED}`}
+            >
+              <b class="text-base font-semibold text-[var(--ui-text)]">Nothing needs you</b>
               <p>When a session needs you, it shows up here first.</p>
             </div>
           ) : layout === "phone" ? (
@@ -741,13 +786,12 @@ export function NowPane({
         />
       ) : null}
       {layout === "desktop" ? (
-        <div class="flex shrink-0 gap-3.5 border-t hairline p-2.5 text-xs text-base-content/50">
+        <div class={`flex shrink-0 gap-3.5 border-t ${LINE} p-2.5 text-xs ${MUTED}`}>
           <span>
-            <kbd class="kbd kbd-xs">j</kbd> <kbd class="kbd kbd-xs">k</kbd> move
+            <Key k="j" /> <Key k="k" /> move
           </span>
           <span>
-            <kbd class="kbd kbd-xs">a</kbd> allow <kbd class="kbd kbd-xs">d</kbd> deny{" "}
-            <kbd class="kbd kbd-xs">r</kbd> reply
+            <Key k="a" /> allow <Key k="d" /> deny <Key k="r" /> reply
           </span>
         </div>
       ) : null}
@@ -771,6 +815,15 @@ export function NowPane({
   );
 }
 
+/** One key of the desktop's key hints, drawn as a small keycap. */
+function Key({ k }: { k: string }): JSX.Element {
+  return (
+    <kbd class="ui-mono rounded-[var(--ui-radius-sm)] border border-[var(--ui-line-strong)] px-1 text-[11px] text-[var(--ui-text)]">
+      {k}
+    </kbd>
+  );
+}
+
 /** The welcome an empty registry shows: one heading, one sentence, and the start-a-session
  *  card. The phone paints it in the list (the list is the whole screen); the tablet and the
  *  desktop paint it in the main pane, where a picked session's screen stands. */
@@ -779,7 +832,7 @@ export function NoSessionsWelcome(): JSX.Element {
     <div class="flex flex-col gap-4" data-no-sessions="">
       <div>
         <h2 class="text-lg font-semibold tracking-tight">No sessions yet</h2>
-        <p class="m-0 text-sm muted">
+        <p class={`m-0 text-sm ${MUTED}`}>
           Bring a coding agent in: install, join, and it reports here with everything it does.
         </p>
       </div>
@@ -802,20 +855,20 @@ function PickBar({
   onLink: () => void;
 }): JSX.Element {
   return (
-    <div class="flex shrink-0 items-center gap-2 border-t hairline px-3 py-2" data-select-bar="">
-      <span class="text-sm muted">{n} selected</span>
+    <div class={`flex shrink-0 flex-wrap items-center gap-2 border-t ${LINE} px-3 py-2`} data-select-bar="">
+      <span class={`text-sm ${MUTED}`}>{n} selected</span>
       <span class="flex-1" />
-      <button type="button" class="btn btn-ghost btn-sm" onClick={onClear}>
+      <Button variant="ghost" onClick={onClear}>
         Clear
-      </button>
+      </Button>
       {n >= 2 ? (
-        <button type="button" class="btn btn-ghost btn-sm" onClick={onLink}>
+        <Button variant="ghost" onClick={onLink}>
           Link {n} sessions
-        </button>
+        </Button>
       ) : null}
-      <button type="button" class="btn btn-primary btn-sm" onClick={onSend}>
+      <Button onClick={onSend}>
         Send to {n} {n === 1 ? "session" : "sessions"}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -871,24 +924,22 @@ function NowDialogs({
   );
 }
 
-/** The session's chips: its state (mark and word), the hooks-stale chip when its hooks stopped
- *  reporting, its model, and its channel when it is in one. */
-function Chips({ s }: { s: RegistrySession }): JSX.Element {
+/** The session's chips: its state (mark and word) in its role's tone, the hooks-stale chip when
+ *  its hooks stopped reporting, its model, and its channel when it is in one. The state is the one
+ *  the session shows, and its open item tells a finished turn from a blocking ask. */
+function Chips({ s, needs }: { s: RegistrySession; needs: NeedItem[] | null }): JSX.Element {
   return (
     <span class="flex min-w-0 flex-wrap items-center gap-1.5">
-      <span class="inline-flex items-center gap-1.5 rounded-full border border-warning px-2.5 py-0.5 text-xs text-warning">
-        <StateMark state={s.state} />
-        {stateWord(s.state)}
-      </span>
+      <StateChip state={shownState(s, needs)} item={openItemOf(needs, s.session_id)} mark />
       <HooksStaleChip s={s} />
       {s.model ? <ModelChip model={s.model} pill /> : null}
       {s.channel ? (
-        <span class="rounded-full border hairline px-2.5 py-0.5 text-xs muted">#{s.channel}</span>
+        <span class={`rounded-full border ${LINE} px-2.5 py-0.5 text-xs ${MUTED}`}>#{s.channel}</span>
       ) : null}
       {s.harness ? (
         <span
           data-harness={s.harness}
-          class="rounded-full border hairline px-2.5 py-0.5 font-mono text-xs text-base-content/70"
+          class={`rounded-full border ${LINE} ui-mono px-2.5 py-0.5 text-xs ${MUTED}`}
         >
           {s.harness}
         </span>
@@ -920,12 +971,12 @@ function dayLabel(at: string, now: number): string {
 }
 
 /** One item of the session's stream: a prompt as a right bubble, a tool call as one line with
- *  its mark (a check once done, an hourglass and the word while running), its tool and its
+ *  its mark (a check once done, a clock and the word while running), its tool and its
  *  target, anything else that carries text as a plain paragraph. */
 function StreamPart({ item }: { item: StreamItem }): JSX.Element {
   if (item.kind === "prompt") {
     return (
-      <div class="max-w-[85%] self-end rounded-[14px_14px_4px_14px] bg-base-content/15 px-3 py-2.5 break-words">
+      <div class="max-w-[85%] self-end rounded-[14px_14px_4px_14px] bg-[var(--ui-surface-2)] px-3 py-2.5 break-words">
         {item.text}
       </div>
     );
@@ -933,23 +984,27 @@ function StreamPart({ item }: { item: StreamItem }): JSX.Element {
   if (item.kind === "tool") {
     return (
       <div
-        class="flex items-center gap-2 text-[13px] muted"
+        class={`flex items-center gap-2 text-[13px] ${MUTED}`}
         data-tool=""
         data-running={item.running ? "" : undefined}
       >
         {item.running ? (
-          <Icon name="hourglass" class="size-4 shrink-0" />
+          <Icon name="clock" class="size-4 shrink-0" />
         ) : (
-          <Icon name="check" class="size-4 shrink-0 text-success" />
+          <Icon name="check" class="size-4 shrink-0 text-[var(--ui-ok)]" />
         )}
         <span>{item.tool}</span>
-        {item.target ? <code class="min-w-0 truncate font-mono text-xs">{item.target}</code> : null}
+        {item.target ? <code class="ui-mono min-w-0 truncate text-xs">{item.target}</code> : null}
         {item.running ? <span class="shrink-0 text-xs">running</span> : null}
       </div>
     );
   }
   return <div class="break-words whitespace-pre-wrap">{item.text}</div>;
 }
+
+/** One item of the session's link menu: a full tap target tall. */
+const MENU_ITEM =
+  "flex min-h-[var(--ui-tap)] items-center rounded-[var(--ui-radius-sm)] px-2.5 text-left text-sm text-[var(--ui-text)] outline-none hover:bg-[var(--ui-surface-2)] focus-visible:bg-[var(--ui-surface-2)]";
 
 /** One act the session's menu can run on a linked peer: a brief carries this session's newest
  *  digest into the peer, a hand over also moves its open tasks and leaves the channel (SPEC 8). */
@@ -1006,9 +1061,9 @@ function LinkActDialog({
       onClose={onClose}
       title={act === "handover" ? "Hand over to another session" : "Brief another session"}
     >
-      <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-3" data-link-act="">
         <select
-          class="select"
+          class="ui-input"
           aria-label="Target session"
           value={to}
           onChange={(e) => onTo(e.currentTarget.value)}
@@ -1019,18 +1074,18 @@ function LinkActDialog({
             </option>
           ))}
         </select>
-        <p class="m-0 text-xs muted">
+        <p class={`m-0 text-xs ${MUTED}`}>
           {act === "handover"
             ? "Briefs the session you pick, moves this session's open tasks to it and leaves this session out of the channel."
             : "Sends this session's newest digest to the session you pick, on its next prompt."}
         </p>
         <div class="flex justify-end gap-2">
-          <button type="button" class="btn btn-ghost btn-sm" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
-          </button>
-          <button type="button" class="btn btn-primary btn-sm" disabled={busy || to === ""} onClick={onRun}>
+          </Button>
+          <Button disabled={busy || to === ""} onClick={onRun}>
             {act === "handover" ? "Hand over" : "Brief"}
-          </button>
+          </Button>
         </div>
       </div>
     </Dialog>
@@ -1121,7 +1176,7 @@ function SessionActions({ session }: { session: RegistrySession }): JSX.Element 
           type="button"
           aria-label="More actions"
           aria-expanded={menuOpen ? "true" : "false"}
-          class="flex size-9 items-center justify-center rounded-lg text-base-content/60 outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          class={`flex size-[var(--ui-tap)] items-center justify-center rounded-[var(--ui-radius)] ${MUTED} outline-none hover:bg-[var(--ui-surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]`}
           onClick={() => setMenuOpen((v) => !v)}
         >
           <Icon name="more" class="size-4" />
@@ -1130,22 +1185,12 @@ function SessionActions({ session }: { session: RegistrySession }): JSX.Element 
           <div
             role="menu"
             aria-label="Link actions"
-            class="absolute top-full right-0 z-20 mt-1 flex min-w-52 flex-col rounded-[10px] border hairline bg-base-100 p-1 shadow-lg"
+            class={`absolute top-full right-0 z-20 mt-1 flex min-w-52 flex-col rounded-[var(--ui-radius)] border ${LINE} bg-[var(--ui-surface)] p-1 shadow-lg`}
           >
-            <button
-              type="button"
-              role="menuitem"
-              class="flex min-h-9 items-center rounded-md px-2.5 text-left text-sm outline-none hover:bg-base-200 focus-visible:bg-base-200"
-              onClick={() => open("brief")}
-            >
+            <button type="button" role="menuitem" class={MENU_ITEM} onClick={() => open("brief")}>
               Brief another session…
             </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="flex min-h-9 items-center rounded-md px-2.5 text-left text-sm outline-none hover:bg-base-200 focus-visible:bg-base-200"
-              onClick={() => open("handover")}
-            >
+            <button type="button" role="menuitem" class={MENU_ITEM} onClick={() => open("handover")}>
               Hand over to…
             </button>
           </div>
@@ -1180,7 +1225,7 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
     const line = st.openMissing ? `There is no session ${id}.` : "Reading the session…";
     return (
       <div class="grid min-h-0 flex-1 place-items-center px-6">
-        <p class="text-sm muted">{line}</p>
+        <p class={`text-sm ${MUTED}`}>{line}</p>
       </div>
     );
   }
@@ -1193,51 +1238,53 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
   return (
     <div class="flex min-h-0 min-w-0 flex-1 flex-col" data-session="">
       {layout === "phone" ? (
-        <header class="flex shrink-0 flex-col gap-2.5 border-b hairline bg-base-200 px-3 pt-3.5 pb-3">
+        <header
+          class={`flex shrink-0 flex-col gap-2.5 border-b ${LINE} bg-[var(--ui-surface)] px-3 pt-3.5 pb-3`}
+        >
           <div class="flex items-center gap-1">
             <a
               href="#/now"
               aria-label="Back to Now"
-              class="flex size-[var(--ui-tap)] shrink-0 items-center justify-center rounded-lg text-base-content outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              class="flex size-[var(--ui-tap)] shrink-0 items-center justify-center rounded-[var(--ui-radius)] text-[var(--ui-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
             >
               <Icon name="left" class="size-[22px]" />
             </a>
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">
               <div class="truncate text-lg font-semibold">{sessionName(d)}</div>
-              <div class="truncate text-xs muted">{whereOf(d)}</div>
+              <div class={`truncate text-xs ${MUTED}`}>{whereOf(d)}</div>
             </div>
             <SessionActions session={d} />
           </div>
           <div class="px-2">
-            <Chips s={d} />
+            <Chips s={d} needs={st.needs} />
           </div>
           {pct ? (
             <div class="flex items-center gap-2.5 px-2">
               <ContextBar pct={pct} class="min-w-0 flex-1" />
-              <span class="shrink-0 text-xs muted">{pct}% context</span>
+              <span class={`shrink-0 text-xs ${MUTED}`}>{pct}% context</span>
             </div>
           ) : null}
         </header>
       ) : (
-        <header class="flex shrink-0 flex-wrap items-center gap-3.5 border-b hairline px-6 pt-4 pb-3.5">
+        <header class={`flex shrink-0 flex-wrap items-center gap-3.5 border-b ${LINE} px-6 pt-4 pb-3.5`}>
           <div class="flex min-w-0 flex-1 flex-col gap-0.5">
             <div class="truncate text-xl font-semibold">{sessionName(d)}</div>
-            <div class="truncate text-[13px] muted">{whereOf(d)}</div>
+            <div class={`truncate text-[13px] ${MUTED}`}>{whereOf(d)}</div>
           </div>
-          <Chips s={d} />
+          <Chips s={d} needs={st.needs} />
           <SessionActions session={d} />
           {pct ? (
             <span class="flex w-[140px] shrink-0 items-center gap-2">
               <ContextBar pct={pct} />
-              <span class="shrink-0 text-xs muted">{pct}%</span>
+              <span class={`shrink-0 text-xs ${MUTED}`}>{pct}%</span>
             </span>
           ) : null}
         </header>
       )}
       {d.hooks_stale ? (
-        <p data-resume="" class="shrink-0 border-b hairline px-4 py-2.5 text-sm sm:px-6">
+        <p data-resume="" class={`shrink-0 border-b ${LINE} px-4 py-2.5 text-sm sm:px-6`}>
           Hooks stopped reporting: restart this session with{" "}
-          <code class="font-mono">claude --resume {d.session_id}</code>
+          <code class="ui-mono">claude --resume {d.session_id}</code>
         </p>
       ) : null}
       <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 sm:px-6" data-stream="">
@@ -1249,7 +1296,7 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
             if (day && dayKey !== lastDay) {
               lastDay = dayKey;
               parts.push(
-                <div key={`d${i}`} class="py-1 text-center text-xs text-base-content/50">
+                <div key={`d${i}`} class={`py-1 text-center text-xs ${MUTED}`}>
                   {day}
                 </div>,
               );
@@ -1257,7 +1304,7 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
             parts.push(<StreamPart key={i} item={item} />);
             return <>{parts}</>;
           })}
-          {items.length === 0 ? <p class="py-6 text-center text-sm muted">No events yet.</p> : null}
+          {items.length === 0 ? <p class={`py-6 text-center text-sm ${MUTED}`}>No events yet.</p> : null}
         </div>
       </div>
       {ask ? <NeedsBar item={ask} session={d} layout={layout} /> : null}
@@ -1280,37 +1327,37 @@ export function NowContext(): JSX.Element | null {
   const started = startedMs === null ? "—" : `${hhmm(startedMs)} · ${ageText(startedAt, now)}`;
   return (
     <aside
-      class="flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto border-l hairline bg-base-200 p-4"
+      class={`flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto border-l ${LINE} bg-[var(--ui-surface)] p-4`}
       data-now-context=""
     >
       {d.channel ? (
         <section class="flex flex-col gap-2.5">
-          <h2 class="text-xs font-semibold tracking-[0.06em] uppercase muted">Linked in #{d.channel}</h2>
+          <h2 class={`text-xs font-semibold tracking-[0.06em] uppercase ${MUTED}`}>Linked in #{d.channel}</h2>
           {linked.length === 0 ? (
-            <p class="text-[13px] muted">No other session is linked here yet.</p>
+            <p class={`text-[13px] ${MUTED}`}>No other session is linked here yet.</p>
           ) : (
             linked.map((s) => (
               <a
                 key={s.session_id}
                 href={openHref(s)}
-                class="flex min-w-0 items-center gap-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                class="flex min-h-[var(--ui-tap)] min-w-0 items-center gap-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
               >
-                <StateMark state={s.state} />
+                <StateMark state={shownState(s, st.needs)} />
                 <span class="truncate">{sessionName(s)}</span>
-                <span class="shrink-0 text-xs text-base-content/50">{s.machine}</span>
+                <span class={`shrink-0 text-xs ${MUTED}`}>{s.machine}</span>
               </a>
             ))
           )}
         </section>
       ) : null}
       <section class="flex flex-col gap-2">
-        <h2 class="text-xs font-semibold tracking-[0.06em] uppercase muted">Session</h2>
+        <h2 class={`text-xs font-semibold tracking-[0.06em] uppercase ${MUTED}`}>Session</h2>
         <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
-          <dt class="text-base-content/50">Model</dt>
-          <dd class="m-0 truncate font-mono">{d.model || "—"}</dd>
-          <dt class="text-base-content/50">Context</dt>
+          <dt class={MUTED}>Model</dt>
+          <dd class="ui-mono m-0 truncate">{d.model || "—"}</dd>
+          <dt class={MUTED}>Context</dt>
           <dd class="m-0">{d.context_percent ? `${Math.round(d.context_percent)}% used` : "—"}</dd>
-          <dt class="text-base-content/50">Started</dt>
+          <dt class={MUTED}>Started</dt>
           <dd class="m-0">{started}</dd>
         </dl>
       </section>

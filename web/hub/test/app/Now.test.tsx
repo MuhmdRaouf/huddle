@@ -13,7 +13,7 @@ import type { Api } from "../../src/api.ts";
 import type { Layout } from "../../src/app/layout.ts";
 import { ContextBar, ModelChip, NowContext, NowPane, SessionScreen, StateMark } from "../../src/app/Now.tsx";
 import type { NeedItem, RegistryDetail, RegistrySession, RegistryStore } from "../../src/registry.ts";
-import { flush, makeCtx, makeRegistry, makeState, renderIn, stubMedia } from "../helpers.tsx";
+import { flush, legacyClasses, makeCtx, makeRegistry, makeState, renderIn, stubMedia } from "../helpers.tsx";
 
 /** One registry row, with the fields the list reads; the test overrides what it looks at. */
 const row = (over: Partial<RegistrySession> & { session_id: string }): RegistrySession => ({
@@ -413,10 +413,98 @@ describe("the Now list", () => {
       const r = screen.getByText(name).closest("[data-row]") as HTMLElement;
       const chip = r.querySelector("[data-hooks-stale]") as HTMLElement;
       expect(chip?.textContent, name).toBe("hooks stale");
-      expect(chip.className, name).toContain("ui-badge-warn");
+      expect(chip.className, name).toContain("text-[var(--ui-warn-ink)]");
     }
     const fine = screen.getByText("reporting").closest("[data-row]") as HTMLElement;
     expect(fine.querySelector("[data-hooks-stale]")).toBeNull();
+  });
+
+  it("paints the list on the tokens, with no daisyUI or legacy class", async () => {
+    // the parts other pages lend the list (the machines line, the snooze menu, the dialogs' frame)
+    // answer to their own cards
+    const lent = "[data-machines], [data-needs-actions] > span, dialog";
+    for (const layout of ["phone", "tablet", "desktop"] as const) {
+      stubMedia({
+        "(min-width: 640px)": layout !== "phone",
+        "(min-width: 1024px)": layout === "desktop",
+      });
+      mountNow(layout, fixture(), [needItem()]);
+      expect(legacyClasses(document.body, lent), layout).toEqual([]);
+    }
+    // the desktop's picks open the pick bar, the filter its pressed state
+    await act(async () => {
+      screen.getByRole("checkbox", { name: "Select kanban-e2e" }).click();
+    });
+    await act(async () => {
+      screen.getByRole("checkbox", { name: "Select lead" }).click();
+    });
+    expect(document.querySelector("[data-select-bar]")).not.toBeNull();
+    expect(legacyClasses(document.body, lent)).toEqual([]);
+    const filter = document.querySelector("[data-needs-filter]") as HTMLElement;
+    await act(async () => {
+      filter.click();
+    });
+    expect(filter.getAttribute("aria-pressed")).toBe("true");
+    expect(legacyClasses(document.body, lent)).toEqual([]);
+    // the filter keeps its choice: give the other cases their whole list back
+    await act(async () => {
+      filter.click();
+    });
+  });
+
+  it("colours each row's mark and chip with its state's role token", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    mountNow("phone", fixture(), [
+      needItem(),
+      {
+        id: 9,
+        session: "s-need-2",
+        kind: "turn",
+        summary: "The retry budget is in",
+        created_at: "2026-10-08T11:59:30Z",
+        state: "open",
+      },
+    ]);
+    for (const [title, role] of [
+      ["kanban-e2e", "needs-you"],
+      ["api-gateway", "turn-done"],
+      ["lead", "working"],
+      ["docs-sweep", "idle"],
+      ["quiet-one", "failed"],
+      ["finished", "cancelled"],
+    ] as const) {
+      const rowEl = screen.getByText(title).closest("[data-row]") as HTMLElement;
+      const chip = rowEl.querySelector("[data-state]") as HTMLElement;
+      expect(chip.dataset.role, title).toBe(role);
+      expect(chip.className, title).toContain(`text-[var(--ui-${role}-ink)]`);
+      expect(chip.className, title).toContain(`bg-[var(--ui-${role}-soft)]`);
+      // the needs-you card carries its chip alone; every other row leads with its mark
+      const mark = rowEl.querySelector("svg[data-shape]");
+      if (rowEl.tagName !== "ARTICLE") {
+        expect(mark?.getAttribute("class"), title).toContain(`text-[var(--ui-${role})]`);
+      }
+    }
+  });
+
+  it("reads a session with an open item as Needs you, not idle", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    mountNow("phone", fixture(), [
+      {
+        id: 10,
+        session: "s-idle-1",
+        kind: "question",
+        summary: "Ship the docs?",
+        created_at: "2026-10-08T11:59:30Z",
+        state: "open",
+      },
+    ]);
+    expect(headings()).toContain("Needs you · 3");
+    expect(headings()).toContain("Idle · 1");
+    const card = document.querySelector('article[data-row="s-idle-1"]') as HTMLElement;
+    expect(card).not.toBeNull();
+    const chip = card.querySelector("[data-state]") as HTMLElement;
+    expect(chip.textContent).toBe("needs you");
+    expect(chip.dataset.role).toBe("needs-you");
   });
 
   it("moves a row between groups the moment its registry.session row lands", () => {
@@ -501,12 +589,16 @@ describe("the Now list", () => {
 });
 
 describe("the Session screen", () => {
-  const mountSession = (layout: Layout = "phone", over: Partial<RegistryDetail> = {}): RegistryStore => {
+  const mountSession = (
+    layout: Layout = "phone",
+    over: Partial<RegistryDetail> = {},
+    needs: NeedItem[] | null = null,
+  ): RegistryStore => {
     stubMedia({
       "(min-width: 640px)": layout !== "phone",
       "(min-width: 1024px)": layout === "desktop",
     });
-    const registry = makeRegistry({ sessions: fixture(), open: detail(over), openId: "s-need-1" });
+    const registry = makeRegistry({ sessions: fixture(), open: detail(over), openId: "s-need-1", needs });
     followRender(() => <SessionScreen id="s-need-1" layout={layout} />, registry);
     return registry;
   };
@@ -521,6 +613,48 @@ describe("the Session screen", () => {
     expect(screen.getByText("#kanban-release")).toBeDefined();
     expect(screen.getByLabelText("Context 58 percent used")).toBeDefined();
     expect(screen.getByText("58% context")).toBeDefined();
+  });
+
+  it("paints the header, the stream and the resume line on the tokens, with no daisyUI or legacy class", () => {
+    for (const layout of ["phone", "tablet", "desktop"] as const) {
+      cleanup();
+      mountSession(layout, { hooks_stale: true });
+      // the needs bar is the Needs page's own part
+      expect(legacyClasses(document.body, "[data-needs-bar], [data-needs-sheet]"), layout).toEqual([]);
+    }
+  });
+
+  it("gives the header's state pill its own state's tone, never orange for everything", () => {
+    const turn: NeedItem = {
+      id: 11,
+      session: "s-need-1",
+      kind: "turn",
+      summary: "The export inlines every ticket",
+      created_at: "2026-10-08T11:59:30Z",
+      state: "open",
+    };
+    for (const [state, needs, role] of [
+      ["idle", null, "idle"],
+      ["working", null, "working"],
+      ["stuck", null, "failed"],
+      ["ended", null, "cancelled"],
+      ["needs-you", [needItem()], "needs-you"],
+      ["needs-you", [turn], "turn-done"],
+    ] as const) {
+      cleanup();
+      mountSession("phone", { state }, needs === null ? null : [...needs]);
+      const pill = document.querySelector("[data-session] header [data-state]") as HTMLElement;
+      expect(pill.dataset.role, state).toBe(role);
+      expect(pill.className, state).toContain(`text-[var(--ui-${role}-ink)]`);
+      expect(pill.className, state).not.toContain("warning");
+    }
+  });
+
+  it("reads a session with an open item as Needs you in its header, not idle", () => {
+    mountSession("phone", { state: "idle" }, [needItem()]);
+    const pill = document.querySelector("[data-session] header [data-state]") as HTMLElement;
+    expect(pill.textContent).toBe("needs you");
+    expect(pill.dataset.role).toBe("needs-you");
   });
 
   it("streams the events: prompts as bubbles, tool events as one line, notes as paragraphs", () => {
@@ -706,7 +840,14 @@ describe("the small pieces", () => {
     expect(mark.getByRole("img").dataset.shape).toBe("hollow");
     mark.unmount();
     const chip = renderIn(<ModelChip model="glm-5.3" pill />);
-    expect(chip.getByText("glm-5.3").className).toContain("rounded-full");
+    const pill = chip.getByText("glm-5.3");
+    expect(pill.className).toContain("rounded-full");
+    // the pill carries the family's colour as a leading dot, never a border on a round chip
+    expect(pill.getAttribute("style") ?? "").not.toContain("border-left");
+    expect((pill.querySelector("[data-model-dot]") as HTMLElement).getAttribute("style")).toContain(
+      "background",
+    );
+    expect(legacyClasses(chip.container)).toEqual([]);
     chip.unmount();
   });
 
@@ -907,6 +1048,15 @@ describe("the session screen's link actions", () => {
     });
     expect(screen.getByRole("menuitem", { name: "Brief another session…" })).toBeDefined();
     expect(screen.getByRole("menuitem", { name: "Hand over to…" })).toBeDefined();
+    const actions = document.querySelector("[data-session-actions]") as HTMLElement;
+    expect(legacyClasses(actions)).toEqual([]);
+    for (const item of actions.querySelectorAll("[role=menuitem]")) {
+      expect(item.className).toContain("min-h-[var(--ui-tap)]");
+    }
+    await act(async () => {
+      screen.getByRole("menuitem", { name: "Hand over to…" }).click();
+    });
+    expect(legacyClasses(document.querySelector("[data-link-act]") as HTMLElement)).toEqual([]);
   });
 
   it("TestAnUnlinkedSessionCarriesNoLinkMenu", async () => {

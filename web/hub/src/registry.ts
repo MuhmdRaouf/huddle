@@ -88,6 +88,34 @@ export function stateWord(state: string): string {
   return state === "needs-you" ? "needs you" : state;
 }
 
+/** The state roles tokens.css names: a state paints its mark with --ui-<role>, its chip with
+ *  --ui-<role>-soft behind --ui-<role>-ink. */
+export type StateRole = "needs-you" | "turn-done" | "working" | "idle" | "failed" | "cancelled";
+
+/** The role each state takes; stuck reads failed and ended stays quiet. */
+const STATE_ROLES: Record<string, StateRole> = {
+  "needs-you": "needs-you",
+  working: "working",
+  idle: "idle",
+  stuck: "failed",
+  ended: "cancelled",
+};
+
+/** The role a state paints with. A session that needs the owner for a finished turn reads
+ *  turn-done (orange); any other ask, or none known, reads needs-you (red). An unknown state
+ *  reads idle, the way its hollow mark does. */
+export function stateRole(state: string, item?: NeedItem): StateRole {
+  if (state === "needs-you" && item?.kind === "turn") return "turn-done";
+  return STATE_ROLES[state] ?? "idle";
+}
+
+/** The state a session shows: an open item holds it in needs-you whatever its last report said,
+ *  since a live report row does not know the item; an ended session stays ended. */
+export function shownState(s: RegistrySession, needs: NeedItem[] | null): string {
+  if (s.state === "ended") return s.state;
+  return openItemsOf(needs, s.session_id).length > 0 ? "needs-you" : s.state;
+}
+
 /** Splits the rows into the Now list's groups, keeping the read's newest-activity order. */
 export function groupSessions(sessions: RegistrySession[] | null): RegistryGroups {
   const g: RegistryGroups = { needsYou: [], working: [], idle: [], stuck: [], ended: [] };

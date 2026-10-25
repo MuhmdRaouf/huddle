@@ -26,7 +26,7 @@ looks the same on a phone and a desktop, in light and dark, with nothing loaded 
 
 | Component                  | File              | Use it for                                            |
 | -------------------------- | ----------------- | ----------------------------------------------------- |
-| `Button`                   | `button.tsx`      | Actions: primary, secondary, ghost, danger; switches  |
+| `Button`                   | `button.tsx`      | Actions: four variants, switches, lg 48 px, links     |
 | `Card`                     | `card.tsx`        | One block of content with a title and actions         |
 | `List`, `ListItem`         | `list.tsx`        | Rows: sessions, channels, needs-you items             |
 | `Sheet`                    | `sheet.tsx`       | Detail over the page: bottom on a phone, side on wide |

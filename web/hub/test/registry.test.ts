@@ -19,6 +19,8 @@ import {
   type RegistrySession,
   sessionName,
   shortModel,
+  shownState,
+  stateRole,
   stateWord,
   streamItems,
 } from "../src/registry.ts";
@@ -539,5 +541,40 @@ describe("the needs-you items' pure reads", () => {
     ).toBe(1);
     expect(openItemOf(null, "s-1")).toBeUndefined();
     expect(permissionOf(null, "s-1")).toBeUndefined();
+  });
+});
+
+describe("the state a session shows and the role it paints with", () => {
+  it("maps each state onto its role token: a blocking ask red, a finished turn orange, stuck failed, ended quiet", () => {
+    const turn = need({ id: 1, session: "s-1", kind: "turn", summary: "Done" });
+    for (const [state, item, role] of [
+      ["needs-you", need({ id: 2, session: "s-1" }), "needs-you"],
+      ["needs-you", need({ id: 3, session: "s-1", kind: "question", summary: "Keep it?" }), "needs-you"],
+      ["needs-you", undefined, "needs-you"],
+      ["needs-you", turn, "turn-done"],
+      ["working", undefined, "working"],
+      ["idle", undefined, "idle"],
+      ["stuck", undefined, "failed"],
+      ["ended", undefined, "cancelled"],
+      ["confused", undefined, "idle"],
+      // a turn item only colours a session that needs the owner
+      ["working", turn, "working"],
+    ] as const) {
+      expect(stateRole(state, item), `${state} ${item?.kind ?? "-"}`).toBe(role);
+    }
+  });
+
+  it("reads a session with an open item as needs-you whatever its last report says, until it ends", () => {
+    const needs = [
+      need({ id: 1, session: "s-ask", kind: "question", summary: "Keep it?" }),
+      need({ id: 2, session: "s-snoozed", state: "snoozed", snoozed_until: "2026-10-16T13:00:00Z" }),
+      need({ id: 3, session: "s-over" }),
+    ];
+    expect(shownState(row({ session_id: "s-ask", state: "idle" }), needs)).toBe("needs-you");
+    expect(shownState(row({ session_id: "s-ask", state: "working" }), needs)).toBe("needs-you");
+    expect(shownState(row({ session_id: "s-snoozed", state: "idle" }), needs)).toBe("idle");
+    expect(shownState(row({ session_id: "s-over", state: "ended" }), needs)).toBe("ended");
+    expect(shownState(row({ session_id: "s-none", state: "stuck" }), needs)).toBe("stuck");
+    expect(shownState(row({ session_id: "s-ask", state: "idle" }), null)).toBe("idle");
   });
 });
