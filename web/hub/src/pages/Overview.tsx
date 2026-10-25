@@ -1,6 +1,7 @@
-// Overview.tsx — the channel at a glance: what needs the owner, the plan's progress ring and its
+// Overview.tsx — the channel at a glance: what needs the owner, the chat (messages, composer and
+// members), the plan's progress ring and its
 // per-state breakdown, the stat cards (sessions, questions, knowledge, events), Radar's estimated
-// cost, the files two sessions are both editing, the file reservations, and the activity chart
+// cost, the files two sessions are both editing, the file reservations, the activity chart
 // over the timeline the channel already loaded, binned per minute in one of three windows. Port
 // of app.js ovVals/ovSub/ovTexts/ovRows/ovNeeds/ovTopHTML/ovSeries/overviewView and conflicts.js.
 
@@ -10,13 +11,13 @@ import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "../api.ts";
 import { useHuddle } from "../app/context.tsx";
+import { Chat } from "../chat/Chat.tsx";
 import { IntroActions } from "../app/intro.tsx";
 import { Icon } from "../icons.tsx";
 import { Avatar, Empty, ProgressBar, Stat, Time } from "../kit.tsx";
 import { Ring } from "../progress.tsx";
-import { FIN, type Task, type TaskState, taskState, who } from "../status.ts";
+import { FIN, type Task, type TaskState, taskState } from "../status.ts";
 import { readPref, type Storage, writePref } from "../storage.ts";
-import { familyOf } from "../timeline.tsx";
 import {
   type FeedEvent,
   type HuddleState,
@@ -500,38 +501,6 @@ function WindowSegment({ win, onWin }: { win: Win; onWin: (w: Win) => void }): J
   );
 }
 
-/** The channel's message events, newest last: who told whom, the body, the age. A message to
- *  nobody in particular reads as to everyone, and the owner reads as You. No messages, no card
- *  — the plan, the stats and the chart already say what an empty channel holds. */
-function MessagesCard({ events, now }: { events: readonly FeedEvent[]; now: number }): JSX.Element | null {
-  const msgs = events.filter((e) => familyOf(e.topic) === "msg");
-  if (!msgs.length) return null;
-  return (
-    <div data-messages="">
-      <Panel icon={<Icon name="msg" />} title="Messages" label="Messages" meta={String(msgs.length)}>
-        <ul class="m-0 flex list-none flex-col p-0" aria-label="Messages">
-          {msgs.map((e) => (
-            <li
-              key={e.seq}
-              data-seq={e.seq}
-              class="flex items-baseline gap-3 border-b hairline py-2.5 text-sm first:pt-0 last:border-b-0 last:pb-0"
-            >
-              <span class="shrink-0 whitespace-nowrap">
-                <b class="font-semibold">{who(e.from ?? "")}</b>
-                <span class="muted"> → {who(e.to ?? "everyone")}</span>
-              </span>
-              <span class="min-w-0 flex-1 break-words">{e.msg}</span>
-              <span class="shrink-0 text-xs text-base-content/50 tnum">
-                <Time ts={e.ts} now={now} />
-              </span>
-            </li>
-          ))}
-        </ul>
-      </Panel>
-    </div>
-  );
-}
-
 /** The Overview page's props: the composer's hand-off, the storage the window keeps to, and the
  *  store whose live conflict pushes refetch the conflicts card. */
 export type OverviewProps = {
@@ -620,6 +589,7 @@ export function Overview({ onCompose, prefs = localStorage, store }: OverviewPro
         ) : null}
       </IntroActions>
       <NeedsBanner state={state} ch={ch} inboxHref={api.channelHref(ch, "/inbox")} />
+      <Chat events={state.timeline ?? []} now={now} reservations={reservations} />
       <PlanProgress v={v} steps={state.board?.steps ?? []} />
       <section
         class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4"
@@ -642,7 +612,6 @@ export function Overview({ onCompose, prefs = localStorage, store }: OverviewPro
       {conflicts.length > 0 ? <ConflictsCard conf={conf} now={now} /> : null}
       {reservations.length > 0 ? <ReservationsCard reservations={reservations} now={now} /> : null}
       <ActivityCard state={state} win={win} now={now} onWin={pick} />
-      <MessagesCard events={state.timeline ?? []} now={now} />
     </div>
   );
 }
