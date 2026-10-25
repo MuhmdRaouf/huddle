@@ -1,8 +1,9 @@
-// ConnectCard.tsx — the start-a-session card every entry shows: the Channels page, the landing
-// page and Now's empty state all hand it the same tabs, one per harness (Claude Code first, then
-// Codex and Gemini, then any MCP client over HTTP), each with the two or three commands to
-// install and join and a Copy button beside every one. A signed-in caller gets the Invite button
-// that mints a join line; the landing (no credential yet) shows the commands instead.
+// ConnectCard.tsx — the start-a-session guide every entry shows: the Channels page and Now's empty
+// state as a card, the landing page inside a sheet. All hand it the same tabs, one per harness
+// (Claude Code first, then Codex and Gemini, then any MCP client over HTTP), each with the two or
+// three commands to install and join and a Copy button beside every one; a long command scrolls
+// inside its own box. A signed-in caller gets the Invite button that mints a join line; the
+// landing (no credential yet) shows the commands instead.
 
 import { CodeBlock } from "@huddle/ui/code.tsx";
 import { Panel } from "@huddle/ui/page.tsx";
@@ -29,13 +30,13 @@ function CxCode({ t, c, msg }: { t: string; c: string; msg: string }): JSX.Eleme
     <div class="overflow-hidden rounded-lg border hairline">
       <div class="flex items-center gap-2 border-b hairline bg-base-200 px-3 py-1 text-xs">
         <span class="min-w-0 flex-1 truncate font-medium muted">{t}</span>
-        <button type="button" class="btn btn-ghost btn-sm" onClick={() => void copyText(c, msg, toast)}>
+        <button type="button" class="ui-btn ui-btn-ghost" onClick={() => void copyText(c, msg, toast)}>
           <Icon name="copy" class="size-3.5" />
           Copy
           <span class="sr-only"> {t}</span>
         </button>
       </div>
-      <CodeBlock code={c} lang="sh" />
+      <CodeBlock code={c} lang="sh" label={t} />
     </div>
   );
 }
@@ -207,51 +208,66 @@ function McpSteps({ ch }: { ch: string }): JSX.Element {
   );
 }
 
-/** The start-a-session card: one tab per harness, the commands each one needs. `ch` names the
- *  channel a signed-in invite mints for; an empty one (the landing page) shows the commands the
- *  first session runs instead of the Invite button. */
-export function ConnectCard({ ch, invite = true }: { ch: string; invite?: boolean }): JSX.Element {
+/** The link to the whole guide, opened in a new tab. */
+export function FullGuideLink({
+  class: c = "btn btn-ghost btn-sm shrink-0",
+}: {
+  class?: string;
+}): JSX.Element {
+  return (
+    <a class={c} href="/connect.md" target="_blank" rel="noopener">
+      Full guide
+      <Icon name="ext" class="size-3.5" />
+      <span class="sr-only">(opens in a new tab)</span>
+    </a>
+  );
+}
+
+/** The guide itself: one tab per harness, the commands each one needs. `ch` names the channel a
+ *  signed-in invite mints for; an empty one (the landing page) shows the commands the first
+ *  session runs instead of the Invite button. */
+export function ConnectGuide({ ch, invite = true }: { ch: string; invite?: boolean }): JSX.Element {
   const [tab, setTab] = useState("claude");
+  return (
+    <div class="flex min-w-0 flex-col gap-4" data-connect-card="">
+      <div role="tablist" aria-label="Harnesses" class="ui-tabs flex-wrap">
+        {HARNESS_TABS.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            data-harness={key}
+            aria-selected={tab === key ? "true" : "false"}
+            onClick={() => setTab(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" data-panel={tab}>
+        {tab === "claude" ? (
+          <ClaudeSteps ch={ch} invite={invite} />
+        ) : tab === "mcp" ? (
+          <McpSteps ch={ch} />
+        ) : (
+          <HarnessSteps word={tab} name={tab === "codex" ? "Codex" : "Gemini"} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The start-a-session card: the guide in a panel with the full guide one link away. */
+export function ConnectCard({ ch, invite = true }: { ch: string; invite?: boolean }): JSX.Element {
   return (
     <Panel
       title="Start a session"
       label="Start a session"
       icon={<Icon name="plug" />}
       meta={<span class="text-xs">Bring a coding agent into this huddle.</span>}
-      actions={
-        <a class="btn btn-ghost btn-sm shrink-0" href="/connect.md" target="_blank" rel="noopener">
-          Full guide
-          <Icon name="ext" class="size-3.5" />
-          <span class="sr-only">(opens in a new tab)</span>
-        </a>
-      }
+      actions={<FullGuideLink />}
     >
-      <div class="flex flex-col gap-4" data-connect-card="">
-        <div role="tablist" aria-label="Harnesses" class="tabs tabs-box flex-wrap">
-          {HARNESS_TABS.map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              data-harness={key}
-              aria-selected={tab === key ? "true" : "false"}
-              class={tab === key ? "tab tab-active h-10 px-4 text-sm" : "tab h-10 px-4 text-sm"}
-              onClick={() => setTab(key)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div role="tabpanel" data-panel={tab}>
-          {tab === "claude" ? (
-            <ClaudeSteps ch={ch} invite={invite} />
-          ) : tab === "mcp" ? (
-            <McpSteps ch={ch} />
-          ) : (
-            <HarnessSteps word={tab} name={tab === "codex" ? "Codex" : "Gemini"} />
-          )}
-        </div>
-      </div>
+      <ConnectGuide ch={ch} invite={invite} />
     </Panel>
   );
 }

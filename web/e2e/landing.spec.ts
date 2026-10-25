@@ -5,7 +5,10 @@
 // paired here lands on the biometric button Touch ID names; the first-run checklist on Now ticks
 // its items from server state and stands down when all four hold; and `huddle open` on a
 // hub-role home prints the hub's own https link, which a browser opens over TLS and lands
-// signed in.
+// signed in. On both projects the landing is one sign-in card that fits 390 px with every
+// control a 44 px target and no axe issue, the start-a-session guide opens in a sheet whose code
+// blocks scroll inside their own box and pass axe in both schemes, and the authenticator set-up a fresh hub's first sign-in
+// lands on fits 390 px with its Later button a full tap target.
 
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync, spawn } from "node:child_process";
@@ -13,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import { expectAccessible } from "./axe.ts";
 import {
   ConsoleErrors,
   MAC_UA,
@@ -85,9 +89,8 @@ async function emptyHub(): Promise<{ base: string; token: string; stop: () => vo
   return { base, token, stop: () => child.kill("SIGTERM") };
 }
 
-/** Signs a browser in on a hub the shared helpers do not know: the root token mints the
- *  one-time code, and the first-run authenticator gate takes its skip when it stands. */
-async function signInAt(page: Page, base: string, token: string): Promise<void> {
+/** One one-time sign-in link on a hub the shared helpers do not know, minted with its root token. */
+async function codeLink(base: string, token: string): Promise<string> {
   const r = await fetch(`${base}/api/login`, {
     method: "POST",
     headers: {
@@ -99,8 +102,15 @@ async function signInAt(page: Page, base: string, token: string): Promise<void> 
   });
   if (!r.ok) throw new Error(`minting a code on the empty hub answered ${r.status}`);
   const { code } = (await r.json()) as { code: string };
+  return `${base}/?code=${code}`;
+}
+
+/** Signs a browser in on a hub the shared helpers do not know: the one-time link, and the
+ *  first-run authenticator gate takes its skip when it stands. */
+async function signInAt(page: Page, base: string, token: string): Promise<void> {
+  const link = await codeLink(base, token);
   const settled = page.waitForURL((url) => !url.searchParams.has("code"));
-  await page.goto(`${base}/?code=${code}`);
+  await page.goto(link);
   await settled;
   const later = page.getByRole("button", { name: /Later/ });
   try {
@@ -112,42 +122,161 @@ async function signInAt(page: Page, base: string, token: string): Promise<void> 
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 }
 
+/** How far the page scrolls sideways: above zero is a page the thumb drags left and right. */
+function sideways(page: Page): Promise<number> {
+  return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+}
+
+/** Every visible control inside `scope` smaller than a 44 px tap target on either side, named
+ *  for the failure message. */
+function smallTargets(page: Page, scope: string): Promise<string[]> {
+  return page.evaluate(
+    (sel) =>
+      [...document.querySelectorAll<HTMLElement>(`${sel} :is(button, a, input, summary, [role=tab])`)]
+        .map((el) => ({ el, r: el.getBoundingClientRect() }))
+        .filter(({ el, r }) => r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden")
+        .filter(({ r }) => r.width < 44 || r.height < 44)
+        .map(({ el, r }) => {
+          const name = el.getAttribute("aria-label") || el.textContent?.trim() || el.tagName;
+          const size = `${Math.round(r.width)}x${Math.round(r.height)}`;
+          return `${el.tagName.toLowerCase()} "${name.slice(0, 40)}" ${size}`;
+        }),
+    scope,
+  );
+}
+
+test("the landing is one sign-in card that fits 390 px, every control a tap target, axe clean", async ({
+  page,
+  isMobile,
+}) => {
+  if (isMobile) await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${theSetup().rootUrl}/`);
+  await expect(page.locator("[data-landing]")).toBeVisible();
+  // the card's method landed: the first-time steps, the code field or a passkey button
+  const method = "[data-first-time], [data-signin-code], [data-passkey-signin], [data-bio-signin]";
+  await expect(page.locator(`[data-landing-signin] :is(${method})`).first()).toBeVisible();
+  await expect(page.locator("[data-landing-signin]")).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "Sign in" })).toBeVisible();
+  // the guide waits behind one button, not as a second card beside sign-in
+  await expect(page.locator("[data-landing] [data-connect-card]")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Start a session" })).toBeVisible();
+
+  expect(await sideways(page), "the landing scrolls sideways").toBeLessThanOrEqual(0);
+  expect(await smallTargets(page, "[data-landing]"), "controls under 44 px").toEqual([]);
+  await expectAccessible(page);
+});
+
+test("the start-a-session guide opens in a sheet whose code blocks scroll inside their box", async ({
+  page,
+  isMobile,
+}) => {
+  if (isMobile) await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${theSetup().rootUrl}/`);
+  await page.getByRole("button", { name: "Start a session" }).click();
+  const sheet = page.getByRole("dialog", { name: "Start a session" });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.locator("[data-connect-card]")).toBeVisible();
+
+  // the MCP line is the longest command the guide carries: on a phone it runs past its box
+  await sheet.getByRole("tab", { name: "Other MCP" }).click();
+  const pre = sheet.locator("pre").first();
+  await expect(pre).toContainText("claude mcp add");
+  const box = await pre.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return {
+      over: el.scrollWidth > el.clientWidth,
+      scrolls: ["auto", "scroll"].includes(getComputedStyle(el).overflowX),
+      right: r.right,
+      view: window.innerWidth,
+    };
+  });
+  if (isMobile) expect(box.over, "the MCP line overflows its box on the phone").toBe(true);
+  if (box.over) expect(box.scrolls, "an overflowing code block scrolls inside its box").toBe(true);
+  expect(box.right, "the code block ends inside the screen").toBeLessThanOrEqual(box.view);
+  expect(await sideways(page), "the sheet scrolls the page sideways").toBeLessThanOrEqual(0);
+  expect(await smallTargets(page, ".ui-sheet[open]"), "the sheet's controls under 44 px").toEqual([]);
+  await expectAccessible(page);
+  // the code tokens keep their contrast in the dark scheme too
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.reload();
+  await page.getByRole("button", { name: "Start a session" }).click();
+  await sheet.getByRole("tab", { name: "Other MCP" }).click();
+  await expect(pre).toContainText("claude mcp add");
+  await expectAccessible(page);
+
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+});
+
+test("the authenticator set-up a fresh hub's first sign-in lands on fits 390 px", async ({ page }) => {
+  const hub = await emptyHub();
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(await codeLink(hub.base, hub.token));
+    await expect(page.locator("[data-totp-first-run]")).toBeVisible();
+    await expect(page.locator("[data-qr]")).toBeVisible();
+    await expect(page.locator("[data-secret]")).toBeVisible();
+
+    expect(await sideways(page), "the set-up scrolls sideways").toBeLessThanOrEqual(0);
+    const secret = await page.locator("[data-secret]").boundingBox();
+    const secretEnd = (secret?.x ?? 0) + (secret?.width ?? 0);
+    expect(secretEnd, "the secret row ends inside the screen").toBeLessThanOrEqual(390);
+    const later = await page.getByRole("button", { name: /Later/ }).boundingBox();
+    expect(later?.height ?? 0, "the Later button's height").toBeGreaterThanOrEqual(44);
+    expect(await smallTargets(page, "main"), "controls under 44 px").toEqual([]);
+    await expectAccessible(page);
+
+    await page.getByRole("button", { name: /Later/ }).click();
+    await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  } finally {
+    hub.stop();
+  }
+});
+
 test("a fresh hub shows the first-time landing, its tour and its copyable commands", async ({
   page,
 }) => {
-  const { rootUrl } = theSetup();
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.goto(`${rootUrl}/`);
+  // a hub of its own: the shared hub holds the passkeys the other project paired, and a fresh hub
+  // is the one state the first-time card shows in
+  const hub = await emptyHub();
+  try {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.goto(`${hub.base}/`);
 
-  // the first-time card: the setup-link commands, and no warning on a first visit (the connect
-  // card carries the same words in its own steps, so the match takes the first)
-  await expect(page.getByText(/First time here\?/)).toBeVisible();
-  await expect(page.getByText("In a Claude session").first()).toBeVisible();
-  await expect(page.getByText("Or in a terminal").first()).toBeVisible();
-  await expect(page.locator("[data-reason]")).toHaveCount(0);
+    // the first-time card: the setup-link commands, and no warning on a first visit (the connect
+    // card carries the same words in its own steps, so the match takes the first)
+    await expect(page.getByText(/First time here\?/)).toBeVisible();
+    await expect(page.getByText("In a Claude session").first()).toBeVisible();
+    await expect(page.getByText("Or in a terminal").first()).toBeVisible();
+    await expect(page.locator("[data-reason]")).toHaveCount(0);
 
-  // the tour: four thumbnails, and the lightbox steps through them
-  await expect(page.locator("[data-tour] img")).toHaveCount(4);
-  await page.getByRole("button", { name: "Now: open the tour step" }).click();
-  await expect(page.getByText("Now (1 of 4)")).toBeVisible();
-  await page.getByRole("button", { name: "Next" }).click();
-  await expect(page.getByText("Channels (2 of 4)")).toBeVisible();
-  await page.getByRole("button", { name: "Previous" }).click();
-  await expect(page.getByText("Now (1 of 4)")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.getByText("Now (1 of 4)")).toHaveCount(0);
+    // the tour: four thumbnails, and the lightbox steps through them
+    await expect(page.locator("[data-tour] img")).toHaveCount(4);
+    await page.getByRole("button", { name: "Now: open the tour step" }).click();
+    await expect(page.getByText("Now (1 of 4)")).toBeVisible();
+    await page.getByRole("button", { name: "Next" }).click();
+    await expect(page.getByText("Channels (2 of 4)")).toBeVisible();
+    await page.getByRole("button", { name: "Previous" }).click();
+    await expect(page.getByText("Now (1 of 4)")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByText("Now (1 of 4)")).toHaveCount(0);
 
-  // the start-a-session tabs: each harness carries its own commands, and they copy (a command
-  // shows in its label, its code block and a button's hidden name: the first stands for all)
-  await page.getByRole("tab", { name: "Codex" }).click();
-  await expect(page.getByText("huddle harness install codex").first()).toBeVisible();
-  await page.getByRole("tab", { name: "Other MCP" }).click();
-  await expect(page.getByText(/x-huddle-token/).first()).toBeVisible();
-  await page.getByRole("tab", { name: "Claude Code" }).click();
-  await page.getByRole("button", { name: "Copy Claude Code" }).click();
-  await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toContain("/plugin marketplace add MuhmdRaouf/huddle");
+    // the start-a-session tabs, in their sheet: each harness carries its own commands, and they
+    // copy (a command shows in its label, its code block and a button's hidden name: the first
+    // stands for all)
+    await page.getByRole("button", { name: "Start a session" }).click();
+    await page.getByRole("tab", { name: "Codex" }).click();
+    await expect(page.getByText("huddle harness install codex").first()).toBeVisible();
+    await page.getByRole("tab", { name: "Other MCP" }).click();
+    await expect(page.getByText(/x-huddle-token/).first()).toBeVisible();
+    await page.getByRole("tab", { name: "Claude Code" }).click();
+    await page.getByRole("button", { name: "Copy Claude Code" }).click();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toContain("/plugin marketplace add MuhmdRaouf/huddle");
+  } finally {
+    hub.stop();
+  }
 });
 
 test("a signed-out visit to the landing logs no console error", async ({ page }) => {
@@ -201,7 +330,7 @@ test.describe("the Mac wording", () => {
   }) => {
     const { pairOrigin } = theSetup();
     await useVirtualAuthenticator(page);
-    await pairThroughLink(page, "E2E Landing Pad");
+    await pairThroughLink(page, `E2E Landing Pad ${test.info().project.name}`);
 
     await page.context().clearCookies();
     await page.goto(`${pairOrigin}/`);
@@ -229,7 +358,7 @@ test("the first-run checklist ticks from server state and stands down when all f
   await expect(checklist.locator("[data-item='budget']")).toHaveAttribute("data-done", "false");
 
   // the passkey row stands down once this browser saved its own passkey
-  await pairThroughBanner(page, "E2E Landing Mac");
+  await pairThroughBanner(page, `E2E Landing Mac ${test.info().project.name}`);
   await expect(page.getByRole("button", { name: "Save passkey" })).toHaveCount(0);
 
   // an authenticator enrolment ticks item one (the boot's whoami reads it after a reload)

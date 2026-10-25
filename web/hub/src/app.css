@@ -66,6 +66,9 @@
   --hue-yellow: #df8e1d;
   --hue-peach: #fe640b;
   --hue-red: #d20f39;
+  /* how much hue a code token keeps: the rest is black, so every token holds 4.5:1 on the
+   * light code block */
+  --code-hue: 70%;
 }
 
 /* The hue carriers: --c is the fill (dots, tints, bars), --ci the ink (text, icons). */
@@ -345,19 +348,19 @@
     font-style: italic;
   }
   .code .hs {
-    color: var(--hue-green);
+    color: color-mix(in oklab, var(--hue-green) var(--code-hue, 100%), black);
   }
   .code .hk {
-    color: var(--hue-mauve);
+    color: color-mix(in oklab, var(--hue-mauve) var(--code-hue, 100%), black);
   }
   .code .hv {
-    color: var(--hue-blue);
+    color: color-mix(in oklab, var(--hue-blue) var(--code-hue, 100%), black);
   }
   .code .hn {
-    color: var(--hue-peach);
+    color: color-mix(in oklab, var(--hue-peach) var(--code-hue, 100%), black);
   }
   .code .hp {
-    color: var(--hue-teal);
+    color: color-mix(in oklab, var(--hue-teal) var(--code-hue, 100%), black);
   }
 
   /* The shared menu popup: daisyUI paints the items, this is the card around them. */

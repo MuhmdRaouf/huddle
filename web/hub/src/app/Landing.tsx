@@ -1,23 +1,26 @@
-// Landing.tsx — the page a browser with no session lands on: three clear paths beside each
-// other, sign-in the default. The sign-in card leads with what this home and this browser can
-// do — the biometric button when this browser holds a passkey, the authenticator code field
-// otherwise, the first-time card when nothing is enrolled yet — with the one-time-link commands
-// one disclosure away and the server's reason line only when a cookie was sent and refused. The
-// start-a-session card and the four-step tour fill the rest of the width, and a theme toggle
-// rides the head.
+// Landing.tsx — the page a browser with no session lands on, phone first: one sign-in card that
+// leads with what this home and this browser can do (the biometric button when this browser holds
+// a passkey, the authenticator code field while an enrolment stands, the passkey button while a
+// passkey exists, the first-time steps when nothing is enrolled yet), the one-time-link commands
+// one disclosure away and the server's reason line only when a cookie was sent and refused. Under
+// it, one button opens the start-a-session guide in a sheet, and the four-step tour closes the
+// page; a scheme toggle rides the head. Every control is a 44 px tap target.
 
+import { Card } from "@huddle/ui/card.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
-import { Panel } from "@huddle/ui/page.tsx";
-import { readScheme, resolveScheme, type SchemePref } from "@huddle/ui/theme.ts";
+import { Sheet } from "@huddle/ui/sheet.tsx";
+import { applyScheme, readScheme, resolveScheme, type SchemePref, writeScheme } from "@huddle/ui/theme.ts";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { ConnectCard } from "./ConnectCard.tsx";
+import { ConnectGuide, FullGuideLink } from "./ConnectCard.tsx";
 import { CodeField } from "./CodeField.tsx";
 import { errText, useHuddle } from "./context.tsx";
 import { Icon, Logo } from "../icons.tsx";
 import { assertionFromJSON, credentialToJSON, markPasskeyHere, passkeyHere } from "../passkey.ts";
-import { pickScheme, systemDark } from "./scheme.ts";
 import { bioName } from "./Totp.tsx";
+
+/** The muted ink the landing's second lines wear. */
+const MUTED = "text-[var(--ui-muted)]";
 
 /** The tour's four steps: the tab it shows, the picture it carries, the one sentence it says. */
 const TOUR: readonly (readonly [key: string, label: string, sentence: string])[] = [
@@ -30,20 +33,22 @@ const TOUR: readonly (readonly [key: string, label: string, sentence: string])[]
 /** A read-only command with a copy button at the end. */
 function CmdField({ id, label, cmd }: { id: string; label: string; cmd: string }): JSX.Element {
   return (
-    <div class="flex flex-col gap-1.5">
-      <span class="text-sm font-medium" id={`${id}-l`}>
+    <div class="flex min-w-0 flex-col gap-1">
+      <span class="text-sm font-semibold" id={`${id}-l`}>
         {label}
       </span>
       {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: the cmd field's labelled box */}
       <div
-        class="flex h-10 items-center gap-2.5 rounded-lg border border-base-content/15 bg-base-200 pr-1 pl-3"
+        class="flex min-h-[var(--ui-tap)] items-center gap-2.5 rounded-[var(--ui-radius)] border border-[var(--ui-line-strong)] bg-[var(--ui-surface-2)] pl-3"
         aria-labelledby={`${id}-l`}
       >
-        <span class="muted">
+        <span class={MUTED}>
           <Icon name="terminal" />
         </span>
-        <code class="min-w-0 flex-1 truncate text-sm">{cmd}</code>
-        <CopyButton text={cmd} done="" ariaLabel={`Copy ${cmd}`} />
+        <code class="ui-mono min-w-0 flex-1 truncate text-sm">{cmd}</code>
+        <CopyButton text={cmd} done="" ariaLabel={`Copy ${cmd}`}>
+          <Icon name="copy" />
+        </CopyButton>
       </div>
     </div>
   );
@@ -54,7 +59,7 @@ function CopyButton({
   text,
   done,
   ariaLabel,
-  class: c = "btn btn-ghost btn-square btn-sm muted",
+  class: c = "ui-btn ui-btn-ghost ui-btn-icon",
   children,
 }: {
   text: string;
@@ -89,6 +94,9 @@ function CopyButton({
   );
 }
 
+/** Does the OS prefer dark right now? */
+const systemDark = (): boolean => window.matchMedia("(prefers-color-scheme: dark)").matches;
+
 /** The light/dark switch the landing's head carries: one click flips the resolved scheme. */
 function ThemeToggle(): JSX.Element {
   const [pref, setPref] = useState<SchemePref>(() => readScheme(localStorage));
@@ -96,16 +104,17 @@ function ThemeToggle(): JSX.Element {
   return (
     <button
       type="button"
-      class="btn btn-ghost btn-square btn-sm"
+      class="ui-btn ui-btn-ghost ui-btn-icon"
       data-theme-toggle=""
       aria-label={dark ? "Switch to the light theme" : "Switch to the dark theme"}
       onClick={() => {
         const next: SchemePref = dark ? "light" : "dark";
-        pickScheme(localStorage, next);
+        writeScheme(localStorage, next);
+        applyScheme(document.documentElement, next, systemDark());
         setPref(next);
       }}
     >
-      <Icon name={dark ? "sun" : "moon"} class="size-4.5" />
+      <Icon name={dark ? "sun" : "moon"} class="size-5" />
     </button>
   );
 }
@@ -114,7 +123,7 @@ function ThemeToggle(): JSX.Element {
 function TourStrip({ onOpen }: { onOpen: (at: number) => void }): JSX.Element {
   return (
     <section aria-labelledby="tour-h" data-tour="" class="flex flex-col gap-4">
-      <h2 id="tour-h" class="text-lg font-semibold tracking-tight">
+      <h2 id="tour-h" class="m-0 text-[length:var(--ui-text-lg)] font-semibold tracking-tight">
         See how it works
       </h2>
       <ol class="m-0 grid list-none grid-cols-2 gap-4 p-0 lg:grid-cols-4">
@@ -122,7 +131,7 @@ function TourStrip({ onOpen }: { onOpen: (at: number) => void }): JSX.Element {
           <li key={key} class="flex flex-col gap-2">
             <button
               type="button"
-              class="overflow-hidden rounded-xl border hairline bg-base-100 outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              class="overflow-hidden rounded-[var(--ui-radius-lg)] border border-[var(--ui-line)] bg-[var(--ui-surface)] p-0 outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
               aria-label={`${label}: open the tour step`}
               onClick={() => onOpen(i)}
             >
@@ -136,7 +145,7 @@ function TourStrip({ onOpen }: { onOpen: (at: number) => void }): JSX.Element {
               />
             </button>
             <p class="m-0 text-[13px] font-semibold">{label}</p>
-            <p class="m-0 text-[13px] muted">{sentence}</p>
+            <p class={`m-0 text-[13px] ${MUTED}`}>{sentence}</p>
           </li>
         ))}
       </ol>
@@ -167,17 +176,17 @@ function TourLightbox({
           height="750"
           class="block w-full rounded-lg border hairline"
         />
-        <p class="m-0 text-sm muted">{sentence}</p>
+        <p class={`m-0 text-sm ${MUTED}`}>{sentence}</p>
         <div class="flex items-center justify-between">
           <button
             type="button"
-            class="btn btn-ghost btn-sm"
+            class="ui-btn ui-btn-ghost"
             onClick={() => onStep((at - 1 + TOUR.length) % TOUR.length)}
           >
             <Icon name="left" class="size-4" />
             Previous
           </button>
-          <button type="button" class="btn btn-primary btn-sm" onClick={() => onStep((at + 1) % TOUR.length)}>
+          <button type="button" class="ui-btn ui-btn-primary" onClick={() => onStep((at + 1) % TOUR.length)}>
             Next
             <Icon name="right" class="size-4" />
           </button>
@@ -201,12 +210,12 @@ function RecoveryField({
 }): JSX.Element {
   return (
     <>
-      <label class="text-sm font-medium" htmlFor="so-recovery">
+      <label class="text-sm font-semibold" htmlFor="so-recovery">
         Recovery code
       </label>
       <input
         id="so-recovery"
-        class="input h-12 w-full font-mono"
+        class="ui-input ui-mono h-12"
         placeholder="xxxx-xxxx"
         autocomplete="off"
         spellcheck={false}
@@ -219,7 +228,7 @@ function RecoveryField({
       />
       <button
         type="button"
-        class="btn btn-primary h-12 w-full text-sm"
+        class="ui-btn ui-btn-primary h-12 w-full"
         disabled={busy || code.trim() === ""}
         onClick={() => onCode(code.trim())}
       >
@@ -229,25 +238,61 @@ function RecoveryField({
   );
 }
 
-/** The card a hub with nothing enrolled yet shows: the setup-link commands as the way in. */
-function FirstTimeCard(): JSX.Element {
+/** The two commands that print a sign-in link, each with its copy button, and the one big copy. */
+function LinkCommands({ primary }: { primary: boolean }): JSX.Element {
   return (
-    <div class="flex flex-col gap-3" data-first-time="">
-      <p class="m-0 text-sm">
-        First time here? Run <code>/huddle:setup</code> or <code>huddle open</code> for your setup link, then
-        open the link it prints.
-      </p>
-      <CmdField id="so-c" label="In a Claude session" cmd="/huddle:setup" />
-      <CmdField id="so-t" label="Or in a terminal" cmd="huddle open" />
+    <>
+      <ol class="m-0 flex list-none flex-col gap-3 p-0">
+        <li>
+          <CmdField id="so-c" label="In a Claude session" cmd="/huddle:setup" />
+        </li>
+        <li>
+          <CmdField id="so-t" label="Or in a terminal" cmd="huddle open" />
+        </li>
+      </ol>
       <CopyButton
         text="/huddle:setup"
         done="Copied: paste it into a Claude session"
-        class="btn btn-primary h-10 w-full text-sm"
+        class={`ui-btn ${primary ? "ui-btn-primary" : "ui-btn-secondary"} w-full`}
       >
         <Icon name="copy" />
         Copy /huddle:setup
       </CopyButton>
+    </>
+  );
+}
+
+/** The steps a hub with nothing enrolled yet shows: the setup-link commands as the way in. */
+function FirstTimeSteps(): JSX.Element {
+  return (
+    <div class="flex flex-col gap-3" data-first-time="">
+      <p class="m-0 text-sm">
+        First time here? Run <code class="ui-mono">/huddle:setup</code> or{" "}
+        <code class="ui-mono">huddle open</code> for your setup link, then open the link it prints.
+      </p>
+      <LinkCommands primary />
     </div>
+  );
+}
+
+/** The one-time-link commands for a hub that already has a sign-in method, one disclosure away. */
+function OtherWays(): JSX.Element {
+  return (
+    <details
+      class="rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] text-sm"
+      data-other-ways=""
+    >
+      <summary class={`flex min-h-[var(--ui-tap)] cursor-pointer items-center px-3 font-semibold ${MUTED}`}>
+        Other ways to sign in
+      </summary>
+      <div class="flex flex-col gap-3 px-3 pb-3">
+        <p class={`m-0 ${MUTED}`}>
+          Run <code class="ui-mono">/huddle:setup</code> in any session of this huddle — or{" "}
+          <code class="ui-mono">huddle open</code> in a terminal — for a new sign-in link, then open it here.
+        </p>
+        <LinkCommands primary={false} />
+      </div>
+    </details>
   );
 }
 
@@ -385,10 +430,14 @@ function SignInCard(): JSX.Element {
 
   return (
     <div data-landing-signin="" onKeyDown={onKey}>
-      <Panel title="Sign in" label="Sign in">
-        <div class="flex flex-col gap-5">
+      <Card title="Sign in">
+        <div class="flex flex-col gap-4">
           {reason ? (
-            <div class="alert alert-warning alert-soft text-sm" role="status" data-reason="">
+            <div
+              class="flex items-start gap-2 rounded-[var(--ui-radius)] bg-[var(--ui-warn-soft)] p-3 text-sm text-[var(--ui-warn-ink)]"
+              role="status"
+              data-reason=""
+            >
               <span class="shrink-0">
                 <Icon name="logout" />
               </span>
@@ -398,7 +447,7 @@ function SignInCard(): JSX.Element {
           {bio ? (
             <button
               type="button"
-              class="btn btn-primary h-12 w-full text-sm"
+              class="ui-btn ui-btn-primary h-12 w-full"
               disabled={busy}
               data-bio-signin=""
               onClick={() => void signInWithPasskey()}
@@ -408,7 +457,7 @@ function SignInCard(): JSX.Element {
             </button>
           ) : null}
           {totp ? (
-            <div class="flex flex-col gap-2.5" data-signin-code="" onFocusIn={armConditional}>
+            <div class="flex flex-col gap-2" data-signin-code="" onFocusIn={armConditional}>
               {recovery ? (
                 <>
                   <RecoveryField
@@ -419,7 +468,7 @@ function SignInCard(): JSX.Element {
                   />
                   <button
                     type="button"
-                    class="btn btn-ghost btn-sm self-start"
+                    class="ui-btn ui-btn-ghost self-start"
                     onClick={() => {
                       setRecovery(false);
                       setError("");
@@ -430,7 +479,7 @@ function SignInCard(): JSX.Element {
                 </>
               ) : (
                 <>
-                  <span class="text-sm font-medium">
+                  <span class="text-sm font-semibold">
                     {bio ? "Or enter your authenticator code" : "Enter the code from your authenticator app"}
                   </span>
                   <CodeField
@@ -442,7 +491,7 @@ function SignInCard(): JSX.Element {
                   />
                   <button
                     type="button"
-                    class="btn btn-ghost btn-sm self-start"
+                    class="ui-btn ui-btn-ghost self-start"
                     onClick={() => {
                       setRecovery(true);
                       setError("");
@@ -457,8 +506,9 @@ function SignInCard(): JSX.Element {
           {!bio && passkeys ? (
             <button
               type="button"
-              class={`${totp ? "btn" : "btn btn-primary"} h-12 w-full text-sm`}
+              class={`ui-btn ${totp ? "ui-btn-secondary" : "ui-btn-primary"} h-12 w-full`}
               disabled={busy}
+              data-passkey-signin=""
               onClick={() => void signInWithPasskey()}
             >
               <Icon name="key" />
@@ -466,45 +516,48 @@ function SignInCard(): JSX.Element {
             </button>
           ) : null}
           {passkeys && !totp && error ? (
-            <p role="alert" class="m-0 text-sm text-error">
+            <p role="alert" class="m-0 text-sm text-[var(--ui-fail-ink)]">
               {error}
             </p>
           ) : null}
-          {firstTime ? (
-            <FirstTimeCard />
-          ) : (
-            <details class="collapse collapse-arrow bg-base-200 text-sm" data-other-ways="">
-              <summary class="collapse-title font-medium muted">Other ways to sign in</summary>
-              <div class="collapse-content flex flex-col gap-3">
-                <p class="m-0 muted">
-                  Run <code>/huddle:setup</code> in any session of this huddle — or <code>huddle open</code>{" "}
-                  in a terminal — for a new sign-in link, then open it here.
-                </p>
-                <CmdField id="so-c" label="In a Claude session" cmd="/huddle:setup" />
-                <CmdField id="so-t" label="Or in a terminal" cmd="huddle open" />
-                <CopyButton
-                  text="/huddle:setup"
-                  done="Copied: paste it into a Claude session"
-                  class="btn h-10 w-full text-sm"
-                >
-                  <Icon name="copy" />
-                  Copy /huddle:setup
-                </CopyButton>
-              </div>
-            </details>
-          )}
+          {firstTime ? <FirstTimeSteps /> : <OtherWays />}
         </div>
-      </Panel>
+      </Card>
     </div>
   );
 }
 
-/** The landing page: sign-in (the default focus), start a session, and the tour — one screen,
- *  light and dark, stacking sign-in first on a phone. */
+/** The way into the start-a-session guide: one sentence and the button that opens its sheet. */
+function StartSession({ onOpen }: { onOpen: () => void }): JSX.Element {
+  return (
+    <section
+      aria-labelledby="start-h"
+      class="ui-card flex flex-wrap items-center gap-3 p-4"
+      data-landing-start=""
+    >
+      <span class={`shrink-0 ${MUTED}`}>
+        <Icon name="plug" />
+      </span>
+      <div class="min-w-0 flex-1 basis-48">
+        <h2 id="start-h" class="m-0 text-[length:var(--ui-text-md)] font-semibold">
+          Bring a coding agent in
+        </h2>
+        <p class={`m-0 text-sm ${MUTED}`}>Install Huddle, join, and the session reports here.</p>
+      </div>
+      <button type="button" class="ui-btn ui-btn-secondary w-full sm:w-auto" onClick={onOpen}>
+        Start a session
+      </button>
+    </section>
+  );
+}
+
+/** The landing page, one column from the phone up: the head, sign-in, the way into the guide,
+ *  the tour, the version. */
 export function Landing(): JSX.Element {
   const [ver, setVer] = useState("");
   const [place, setPlace] = useState("");
   const [shot, setShot] = useState(-1);
+  const [guide, setGuide] = useState(false);
 
   useEffect(() => {
     document.title = "Huddle";
@@ -519,28 +572,40 @@ export function Landing(): JSX.Element {
   }, []);
 
   return (
-    <main class="min-h-dvh bg-base-200 px-4 py-6 sm:px-6 sm:py-10" data-landing="">
-      <div class="mx-auto flex w-full max-w-[960px] flex-col gap-8">
-        <header class="flex items-start justify-between gap-4" data-landing-head="">
-          <div class="flex min-w-0 items-center gap-4">
-            <Logo class="size-12 shrink-0" />
+    <main class="ui-page" data-landing="">
+      <div class="mx-auto flex w-full max-w-[960px] flex-col gap-6">
+        <header class="flex items-center justify-between gap-3" data-landing-head="">
+          <div class="flex min-w-0 items-center gap-3">
+            <Logo class="size-11 shrink-0" />
             <div class="min-w-0">
-              <h1 class="text-2xl font-bold tracking-tight">Huddle</h1>
-              <p class="m-0 truncate text-sm muted">{place || "Sign in to see your channels and sessions"}</p>
+              <h1 class="m-0 text-[length:var(--ui-text-xl)] leading-tight font-bold tracking-tight">
+                Huddle
+              </h1>
+              <p class={`m-0 truncate text-sm ${MUTED}`}>
+                {place || "Sign in to see your channels and sessions"}
+              </p>
             </div>
           </div>
           <ThemeToggle />
         </header>
 
-        <div class="grid items-start gap-6 lg:grid-cols-2">
+        <div class="mx-auto flex w-full max-w-[480px] flex-col gap-4">
           <SignInCard />
-          <ConnectCard ch="" invite={false} />
+          <StartSession onOpen={() => setGuide(true)} />
         </div>
 
         <TourStrip onOpen={setShot} />
         {shot >= 0 ? <TourLightbox at={shot} onClose={() => setShot(-1)} onStep={setShot} /> : null}
-        <p class="muted text-center text-xs">{ver || "Huddle"}</p>
+        <p class={`m-0 text-center text-xs ${MUTED}`}>{ver || "Huddle"}</p>
       </div>
+      <Sheet
+        open={guide}
+        onClose={() => setGuide(false)}
+        title="Start a session"
+        actions={<FullGuideLink class="ui-btn ui-btn-ghost" />}
+      >
+        {guide ? <ConnectGuide ch="" invite={false} /> : null}
+      </Sheet>
     </main>
   );
 }

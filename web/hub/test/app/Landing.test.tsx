@@ -2,7 +2,8 @@
 // a passkey, an enrolment, both; the biometric button this browser's own passkey earns; the
 // reason line only when the server sent one), the two ceremonies (a code posted, a passkey's
 // begin-credential-finish with the reload), the inline errors in plain words, the command fields
-// the first-time card and the disclosure carry, the tour's lightbox, and the theme toggle.
+// the first-time steps and the disclosure carry, the tour's lightbox, the scheme toggle, and the
+// start-a-session guide one button away in its sheet.
 
 import { act, cleanup, fireEvent, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -337,7 +338,7 @@ describe("the landing page's copy fields", () => {
     vi.useFakeTimers();
     const { writes } = stubClipboardLanding();
     mount();
-    const big = document.querySelector("main .btn-primary") as HTMLButtonElement;
+    const big = screen.getByText("Copy /huddle:setup").closest("button") as HTMLButtonElement;
     await act(async () => {
       big.click();
       await vi.advanceTimersByTimeAsync(0);
@@ -384,18 +385,33 @@ describe("the landing page's tour and theme", () => {
     expect(screen.getByText("Channels (2 of 4)")).toBeDefined();
   });
 
-  it("flips the resolved theme from the head's toggle", async () => {
+  it("flips the resolved scheme from the head's toggle and keeps it", async () => {
     stubMedia({ "(prefers-color-scheme: dark)": false });
+    delete document.documentElement.dataset.scheme;
     mount();
-    expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(document.documentElement.dataset.scheme).toBeUndefined();
     await act(async () => {
       screen.getByRole("button", { name: "Switch to the dark theme" }).click();
     });
-    expect(document.documentElement.dataset.theme).toBe("mocha");
+    expect(document.documentElement.dataset.scheme).toBe("dark");
+    expect(localStorage.getItem("huddle:scheme")).toBe("dark");
     await act(async () => {
       screen.getByRole("button", { name: "Switch to the light theme" }).click();
     });
-    expect(document.documentElement.dataset.theme).toBe("latte");
+    expect(document.documentElement.dataset.scheme).toBe("light");
+    expect(localStorage.getItem("huddle:scheme")).toBe("light");
+  });
+});
+
+describe("the landing page's start-a-session sheet", () => {
+  it("keeps the guide behind one button and opens it in a sheet", async () => {
+    mount();
+    expect(document.querySelector("[data-connect-card]")).toBeNull();
+    await act(async () => {
+      screen.getByRole("button", { name: "Start a session" }).click();
+    });
+    expect(document.querySelector("dialog.ui-sheet [data-connect-card]")).not.toBeNull();
+    expect(screen.getByRole("tab", { name: "Other MCP" })).toBeDefined();
   });
 });
 

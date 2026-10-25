@@ -104,7 +104,7 @@ export function CodeField({
             ref={(el) => {
               boxes.current[i] = el;
             }}
-            class="input w-12 min-w-0 text-center font-mono text-lg tracking-widest disabled:opacity-60"
+            class="input h-12 w-12 min-w-0 text-center font-mono text-lg tracking-widest disabled:opacity-60"
             type="text"
             inputmode="numeric"
             autocomplete={i === 0 ? autocomplete : "off"}

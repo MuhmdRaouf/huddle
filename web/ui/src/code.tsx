@@ -207,21 +207,32 @@ export function langOf(path: string): string {
   return "";
 }
 
-/** A fenced code block: line numbers down the left, highlighted text, the same `.code` markup as the legacy. */
+/**
+ * A fenced code block: line numbers down the left, highlighted text, the same `.code` markup as the legacy.
+ * A `label` makes the block a named region a keyboard can focus, so a long line that scrolls inside the
+ * box scrolls from the keyboard too.
+ */
 export function CodeBlock({
   code,
   lang,
   start = 1,
   class: cls = "",
+  label,
 }: {
   code: string;
   lang: string;
   start?: number;
   class?: string;
+  label?: string | undefined;
 }) {
   const lines = highlight(code, lang);
   return (
-    <pre class={`code${cls ? ` ${cls}` : ""}`}>
+    <pre
+      class={`code${cls ? ` ${cls}` : ""}`}
+      role={label === undefined ? undefined : "region"}
+      aria-label={label}
+      tabIndex={label === undefined ? undefined : 0}
+    >
       {lines.flatMap((line, i) => {
         const el = (
           <span key={i}>

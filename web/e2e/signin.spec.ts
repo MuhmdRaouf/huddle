@@ -34,8 +34,8 @@ async function signInWithPasskey(page: Page): Promise<void> {
 test("a paired browser signs back in with one passkey touch", async ({ page }) => {
   const { pairOrigin } = theSetup();
   await useVirtualAuthenticator(page);
-  // every spec pairs under its own name: the home keeps each device this run paired
-  await pairThroughLink(page, "E2E Pad");
+  // every spec and project pairs under its own name: the home keeps each device this run paired
+  await pairThroughLink(page, `E2E Pad ${test.info().project.name}`);
 
   // the session cookie gone: the next visit is the landing page, and with a passkey saved in
   // this browser its first control is the biometric button
@@ -61,7 +61,7 @@ test("a link sign-in offers a passkey, and the saved one signs in after cookies 
   await expect(page.getByText("Save a passkey")).toBeVisible();
 
   // the banner mints its own link and runs the ceremony: no terminal, no pasted code
-  await pairThroughBanner(page, "E2E Mac");
+  await pairThroughBanner(page, `E2E Mac ${test.info().project.name}`);
   await expect(page.getByRole("button", { name: "Save passkey" })).toHaveCount(0);
 
   // cookies gone: the saved passkey is the way back in

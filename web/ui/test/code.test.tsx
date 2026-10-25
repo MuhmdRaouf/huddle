@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/preact";
+import { cleanup, render, screen } from "@testing-library/preact";
 import { describe, expect, it } from "vite-plus/test";
 import { CodeBlock, highlight, langOf } from "../src/code.tsx";
 
@@ -236,5 +236,17 @@ describe("CodeBlock", () => {
     expect(pre?.querySelector(".ln")?.textContent).toBe("41");
     expect(pre?.querySelector(".hv")?.textContent).toBe("x");
     expect(pre?.querySelector(".hn")?.textContent).toBe("1");
+  });
+
+  it("is a named region the keyboard can focus when it carries a label, and a plain block otherwise", () => {
+    render(<CodeBlock code={"huddle open"} lang="sh" label="In a terminal" />);
+    const region = screen.getByRole("region", { name: "In a terminal" });
+    expect(region.tagName).toBe("PRE");
+    expect(region.getAttribute("tabindex")).toBe("0");
+    cleanup();
+    render(<CodeBlock code={"huddle open"} lang="sh" />);
+    const pre = document.querySelector("pre.code");
+    expect(pre?.hasAttribute("tabindex")).toBe(false);
+    expect(pre?.hasAttribute("role")).toBe(false);
   });
 });

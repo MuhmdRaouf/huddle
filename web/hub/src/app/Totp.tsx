@@ -151,15 +151,23 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
           ))}
         </ul>
         <div class="flex flex-wrap gap-2">
-          <button type="button" class="btn" onClick={() => copy(all, "Recovery codes copied")}>
+          <button
+            type="button"
+            class="btn h-[var(--ui-tap)]"
+            onClick={() => copy(all, "Recovery codes copied")}
+          >
             <Icon name="copy" />
             Copy
           </button>
-          <button type="button" class="btn" onClick={download}>
+          <button type="button" class="btn h-[var(--ui-tap)]" onClick={download}>
             <Icon name="download" />
             Download .txt
           </button>
-          <button type="button" class="btn btn-primary ml-auto w-full sm:w-auto" onClick={onDone}>
+          <button
+            type="button"
+            class="btn btn-primary ml-auto h-[var(--ui-tap)] w-full sm:w-auto"
+            onClick={onDone}
+          >
             I saved them, continue
           </button>
         </div>
@@ -173,7 +181,7 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
       {sheet}
       <div class="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
         {begin ? <QRCode rows={qrRows(begin.qr)} label="Authenticator QR code" /> : null}
-        <div class="flex min-w-0 flex-col gap-2">
+        <div class="flex w-full min-w-0 flex-col gap-2 sm:flex-1">
           <p class="m-0 text-sm muted">
             Scan the code with your authenticator app (Google Authenticator, 1Password, Authy), or type the
             secret by hand.
@@ -188,7 +196,7 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
               </code>
               <button
                 type="button"
-                class="btn btn-ghost btn-square btn-sm muted"
+                class="ui-btn ui-btn-ghost ui-btn-icon muted"
                 aria-label="Copy the secret"
                 onClick={() => copy(secret, "Secret copied")}
               >
@@ -210,20 +218,22 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
  * before the shell, with the one skip the card allows. */
 export function TotpFirstRun({ onDone, onLater }: { onDone: () => void; onLater: () => void }): JSX.Element {
   return (
-    <main class="grid min-h-dvh place-items-center bg-base-200 p-4">
-      <div class="flex w-full max-w-lg flex-col gap-8" data-totp-first-run="">
+    <main class="ui-page grid place-items-center">
+      <div class="flex w-full min-w-0 max-w-lg flex-col gap-6" data-totp-first-run="">
         <div class="flex flex-col items-center gap-3 text-center">
           <Logo />
-          <h1 class="text-3xl font-bold tracking-tight">Set up your authenticator app</h1>
-          <p class="text-[15px] muted">
+          <h1 class="m-0 text-[length:var(--ui-text-xl)] leading-tight font-bold tracking-tight">
+            Set up your authenticator app
+          </h1>
+          <p class="m-0 text-[15px] muted">
             This is how you sign in to Huddle from any browser: a code from your app, no terminal and no link.
             It takes a minute.
           </p>
         </div>
-        <div class="rounded-box bg-base-100 p-6">
+        <div class="ui-card min-w-0 p-4 sm:p-6">
           <TotpSetup onDone={onDone} />
         </div>
-        <button type="button" class="btn btn-ghost btn-sm mx-auto" data-totp-later="" onClick={onLater}>
+        <button type="button" class="ui-btn ui-btn-ghost mx-auto" data-totp-later="" onClick={onLater}>
           Later — sign in with a link instead
         </button>
       </div>

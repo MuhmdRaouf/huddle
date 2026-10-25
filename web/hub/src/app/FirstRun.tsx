@@ -1,8 +1,8 @@
-// FirstRun.tsx — the checklist a freshly signed-in browser carries on Now: four items that tick
-// themselves from server state, each with its button going straight to the place that does it,
-// and the passkey row an owner's link session is offered (the banner the sign-in card used to
-// carry, minted and dismissed the same way). Dismissal holds per browser; the panel hides once
-// every item stands ticked.
+// FirstRun.tsx — the checklist a freshly signed-in browser carries on Now, as one compact list:
+// four rows that tick themselves from server state, each open row one 44 px link straight to the
+// place that does it, and the passkey row an owner's link session is offered (minted and
+// dismissed the same way). Dismissal holds per browser; the panel hides once every item stands
+// ticked.
 
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -27,8 +27,8 @@ function PasskeyRow({
   onClose: () => void;
 }): JSX.Element {
   return (
-    <div class="flex flex-col gap-1 border-b hairline pb-3" data-banner="passkey">
-      <div class="flex min-h-8 items-center gap-2.5">
+    <div class="flex flex-col gap-1 border-b hairline pb-2" data-banner="passkey">
+      <div class="flex min-h-[var(--ui-tap)] items-center gap-2.5">
         <span class="shrink-0 text-primary">
           <Icon name="key" />
         </span>
@@ -38,7 +38,7 @@ function PasskeyRow({
         </div>
         <button
           type="button"
-          class="btn btn-primary btn-sm shrink-0"
+          class="ui-btn ui-btn-primary shrink-0"
           aria-label="Save passkey"
           disabled={busy}
           onClick={onSave}
@@ -47,7 +47,7 @@ function PasskeyRow({
         </button>
         <button
           type="button"
-          class="btn btn-ghost btn-square btn-sm muted shrink-0"
+          class="ui-btn ui-btn-ghost ui-btn-icon muted shrink-0"
           aria-label="Dismiss"
           onClick={onClose}
         >
@@ -60,6 +60,20 @@ function PasskeyRow({
         </p>
       ) : null}
     </div>
+  );
+}
+
+/** An item's mark: a green tick when it stands done, an empty ring while it waits. */
+function ItemMark({ done }: { done: boolean }): JSX.Element {
+  return (
+    <span
+      class={`inline-flex size-5 shrink-0 items-center justify-center rounded-full border ${
+        done ? "border-success bg-success/15 text-success" : "hairline text-base-content/40"
+      }`}
+      aria-hidden="true"
+    >
+      {done ? <Icon name="check" class="size-3.5" /> : null}
+    </span>
   );
 }
 
@@ -144,7 +158,7 @@ export function FirstRunChecklist({
     <section
       aria-labelledby="firstrun-h"
       data-first-run=""
-      class="mx-3 mt-3 flex flex-col gap-3 rounded-[14px] border hairline bg-base-100 p-3.5"
+      class="mx-3 mt-3 flex flex-col gap-1 rounded-[14px] border hairline bg-base-100 px-3.5 py-2"
     >
       <div class="flex items-center justify-between gap-3">
         <h2 id="firstrun-h" class="m-0 text-[13px] font-semibold tracking-[0.06em] uppercase muted">
@@ -152,7 +166,7 @@ export function FirstRunChecklist({
         </h2>
         <button
           type="button"
-          class="btn btn-ghost btn-sm muted"
+          class="ui-btn ui-btn-ghost muted -mr-2"
           onClick={() => {
             writePref(localStorage, "first-run", true);
             setDismissed(true);
@@ -162,30 +176,24 @@ export function FirstRunChecklist({
         </button>
       </div>
       {passkeyRow}
-      <ul class="m-0 flex list-none flex-col gap-1 p-0">
+      <ul class="m-0 flex list-none flex-col p-0">
         {items.map((item) => (
-          <li
-            key={item.key}
-            class="flex min-h-10 items-center gap-2.5"
-            data-item={item.key}
-            data-done={item.done ? "true" : "false"}
-          >
-            <span
-              class={`inline-flex size-5 shrink-0 items-center justify-center rounded-full border ${
-                item.done ? "border-success bg-success/15 text-success" : "hairline text-base-content/40"
-              }`}
-              aria-hidden="true"
-            >
-              {item.done ? <Icon name="check" class="size-3.5" /> : null}
-            </span>
-            <span class={`min-w-0 flex-1 truncate text-sm ${item.done ? "muted line-through" : ""}`}>
-              {item.label}
-            </span>
-            <span class="sr-only">{item.done ? "done" : "to do"}</span>
-            {item.done ? null : (
-              <a class="btn btn-ghost btn-sm shrink-0" href={item.href}>
-                Go
-                <span class="sr-only"> to {item.label}</span>
+          <li key={item.key} data-item={item.key} data-done={item.done ? "true" : "false"}>
+            {item.done ? (
+              <div class="flex min-h-[var(--ui-tap)] items-center gap-2.5">
+                <ItemMark done />
+                <span class="min-w-0 flex-1 truncate text-sm muted line-through">{item.label}</span>
+                <span class="sr-only">done</span>
+              </div>
+            ) : (
+              <a
+                class="-mx-2 flex min-h-[var(--ui-tap)] items-center gap-2.5 rounded-lg px-2 text-sm hover:bg-base-200"
+                href={item.href}
+              >
+                <ItemMark done={false} />
+                <span class="min-w-0 flex-1 truncate">{item.label}</span>
+                <span class="sr-only">to do</span>
+                <Icon name="right" class="size-4 shrink-0 muted" />
               </a>
             )}
           </li>
