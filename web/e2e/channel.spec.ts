@@ -117,6 +117,19 @@ test("the channel page lists the seeded ping and pong with who told whom", async
   await expect(pong.locator("time")).toBeVisible();
 });
 
+test("the phone heads the channel page with #channel and a Channels back link", async ({ page }, info) => {
+  test.skip(info.project.name !== "iphone", "the channel header is the phone's");
+  await openChannel(page, "e2e");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("#e2e");
+  // the tab row names the page: the intro paints no second title
+  await expect(page.locator("[data-page-intro] h1")).toHaveCount(0);
+  const back = page.getByRole("link", { name: "Back to Channels" });
+  await expectTapTargets([back]);
+  await back.click();
+  await expect(page).toHaveURL(/#\/channels$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Channels");
+});
+
 test("the channel tabs fit one row on the phone", async ({ page }, info) => {
   test.skip(info.project.name !== "iphone", "the one scrolling row is the phone's");
   await openChannel(page, "e2e");

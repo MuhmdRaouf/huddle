@@ -3,7 +3,8 @@
 // and the Members button that opens the members sheet. A message to nobody in particular reads
 // as to everyone, and the owner reads as You.
 
-import { Panel } from "@huddle/ui/page.tsx";
+import { Button } from "@huddle/ui/button.tsx";
+import { Card } from "@huddle/ui/card.tsx";
 import type { JSX } from "preact";
 import { useState } from "preact/hooks";
 import { useHuddle } from "../app/context.tsx";
@@ -28,13 +29,15 @@ function Bubble({ e, now }: { e: FeedEvent; now: number }): JSX.Element {
   const mine = e.from === "owner";
   return (
     <li data-seq={e.seq} class={`flex min-w-0 flex-col gap-1 ${mine ? "items-end" : "items-start"}`}>
-      <span class="max-w-full truncate text-xs muted">
-        <b class="font-semibold text-base-content">{who(e.from ?? "")}</b> → {who(e.to ?? "everyone")} ·{" "}
+      <span class="max-w-full truncate text-xs text-[var(--ui-muted)]">
+        <b class="font-semibold text-[var(--ui-text)]">{who(e.from ?? "")}</b> → {who(e.to ?? "everyone")} ·{" "}
         <Time ts={e.ts} now={now} />
       </span>
       <p
         class={`m-0 max-w-[85%] rounded-2xl px-3.5 py-2 text-[15px] break-words whitespace-pre-wrap ${
-          mine ? "rounded-br-md bg-primary text-primary-content" : "rounded-bl-md bg-base-200"
+          mine
+            ? "rounded-br-md bg-[var(--ui-accent)] text-[var(--ui-on-accent)]"
+            : "rounded-bl-md bg-[var(--ui-surface-2)] text-[var(--ui-text)]"
         }`}
       >
         {e.msg}
@@ -67,16 +70,14 @@ export function Chat({ events, now, reservations }: ChatProps): JSX.Element {
   return (
     <div data-chat="" class="min-w-0">
       <div data-messages="">
-        <Panel
-          icon={<Icon name="msg" />}
+        <Card
           title="Messages"
-          label="Messages"
           meta={msgs.length > 0 ? String(msgs.length) : undefined}
           actions={
-            <button type="button" class="btn btn-ghost min-h-[44px]" onClick={() => setMembersOpen(true)}>
+            <Button variant="ghost" onClick={() => setMembersOpen(true)}>
               <Icon name="users" class="size-4" />
               Members · {members.length}
-            </button>
+            </Button>
           }
         >
           {msgs.length > 0 ? (
@@ -86,10 +87,12 @@ export function Chat({ events, now, reservations }: ChatProps): JSX.Element {
               ))}
             </ul>
           ) : (
-            <p class="m-0 mb-4 text-sm muted">No messages yet. Say something to the channel below.</p>
+            <p class="m-0 mb-4 text-sm text-[var(--ui-muted)]">
+              No messages yet. Say something to the channel below.
+            </p>
           )}
           <ChatComposer members={members.map((m) => m.name)} onSend={send} />
-        </Panel>
+        </Card>
       </div>
       <MembersSheet
         open={membersOpen}

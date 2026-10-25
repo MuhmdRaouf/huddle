@@ -6,8 +6,8 @@ import { fireEvent, screen, waitFor } from "@testing-library/preact";
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { HuddleContextValue } from "../../src/app/context.tsx";
 import { Chat } from "../../src/chat/Chat.tsx";
-import type { RosterSession } from "../../src/store.ts";
-import { makeCtx, makeState, NOW, renderIn } from "../helpers";
+import type { FeedEvent, RosterSession } from "../../src/store.ts";
+import { legacyClasses, makeCtx, makeState, NOW, renderIn } from "../helpers";
 
 const roster = [
   { name: "gamma", state: "working" },
@@ -17,9 +17,24 @@ const roster = [
 
 const claims = [{ path: "/work/app/src/chat.ts", holder: "gamma", expires: "2026-10-08T13:00:00Z" }];
 
-function chat(act: HuddleContextValue["act"] = vi.fn(async () => true)) {
+/** daisyUI's form classes, which the shared legacy check does not name. */
+const DAISY_FORM = /^(select|textarea|input)(-.+)?$/;
+
+/** The daisyUI form classes painted under the document. */
+const daisyForms = (): string[] =>
+  [...document.querySelectorAll("[class]")].flatMap((el) =>
+    (el.getAttribute("class") ?? "").split(/\s+/).filter((c) => DAISY_FORM.test(c)),
+  );
+
+/** The owner's message and a session's answer. */
+const talk: FeedEvent[] = [
+  { seq: 1, topic: "msg", from: "owner", to: "gamma", msg: "status?", ts: "2026-10-08T11:58:00Z" },
+  { seq: 2, topic: "reply", from: "gamma", to: "owner", msg: "green", ts: "2026-10-08T11:59:00Z" },
+];
+
+function chat(act: HuddleContextValue["act"] = vi.fn(async () => true), events: FeedEvent[] = []) {
   renderIn(
-    <Chat events={[]} now={NOW} reservations={claims} />,
+    <Chat events={events} now={NOW} reservations={claims} />,
     makeCtx(makeState({ sessions: { sessions: roster } }), { act }),
   );
   return act;
@@ -79,5 +94,38 @@ describe("the members sheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(act).toHaveBeenCalledWith("remove", { target: "gamma" }));
     await waitFor(() => expect(document.querySelector('[data-member="gamma"]')).toBeNull());
+  });
+});
+
+describe("the chat on the tokens", () => {
+  it("paints the messages card, the bubbles and the composer from the tokens alone", () => {
+    chat(undefined, talk);
+    const card = document.querySelector("[data-messages] section") as HTMLElement;
+    expect(card.className).toContain("ui-card");
+    expect(screen.getByRole("region", { name: "Messages" })).toBe(card);
+    expect(screen.getByRole("button", { name: /^Members/ }).className).toContain("ui-btn-ghost");
+    expect(screen.getByRole("button", { name: "Send" }).className).toContain("ui-btn-primary");
+    expect((screen.getByRole("combobox", { name: "To" }) as HTMLElement).className).toContain("ui-input");
+    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLElement).className).toContain("ui-input");
+    // the owner's bubble in the accent, the session's on the raised surface
+    const mine = document.querySelector("[data-seq='1'] p") as HTMLElement;
+    const theirs = document.querySelector("[data-seq='2'] p") as HTMLElement;
+    expect(mine.className).toContain("bg-[var(--ui-accent)]");
+    expect(theirs.className).toContain("bg-[var(--ui-surface-2)]");
+    expect(legacyClasses()).toEqual([]);
+    expect(daisyForms()).toEqual([]);
+  });
+
+  it("paints the members sheet and its confirm row from the tokens alone", () => {
+    chat();
+    fireEvent.click(screen.getByRole("button", { name: /^Members/ }));
+    const remove = screen.getByRole("button", { name: "Remove gamma" });
+    expect(remove.className).toContain("ui-btn-ghost");
+    fireEvent.click(remove);
+    const confirm = document.querySelector("[data-member-confirm]") as HTMLElement;
+    const [yes, no] = [...confirm.querySelectorAll("button")];
+    expect(yes?.className).toContain("ui-btn-danger");
+    expect(no?.className).toContain("ui-btn-ghost");
+    expect(legacyClasses()).toEqual([]);
   });
 });

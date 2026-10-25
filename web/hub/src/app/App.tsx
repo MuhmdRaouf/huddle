@@ -150,7 +150,8 @@ function tabBadge(dest: Dest, c: NavCounts): JSX.Element | null {
   return n > 0 ? <Badge>{n}</Badge> : null;
 }
 
-/** One channel tab: its icon, its label, the counts that follow it, and the active tab's glow. */
+/** One channel tab: its icon, its label and the counts that follow it; its tablist's ui-tabs
+ *  paints it and marks the selected one. */
 function ViewTab({
   dest,
   counts,
@@ -174,11 +175,6 @@ function ViewTab({
       type="button"
       role="tab"
       data-dest={dest}
-      class={
-        active
-          ? "tab tab-active min-h-[var(--ui-tap)] gap-2 px-4 text-[0.9375rem]"
-          : "tab min-h-[var(--ui-tap)] gap-2 px-4 text-[0.9375rem]"
-      }
       aria-selected={active ? "true" : "false"}
       aria-current={active ? "page" : undefined}
       onClick={() => go(channelHref(ch, `/${dest}`))}
@@ -190,9 +186,9 @@ function ViewTab({
   );
 }
 
-/** The tab groups over a channel's pages: three daisyUI tabs boxes with a gap, the active tab
- *  glowing. Under 640 px they sit in one row that scrolls sideways with no scrollbar; wider, they
- *  wrap into rows. The ids are the pages, the address moves by hash. */
+/** The tab groups over a channel's pages: three ui-tabs strips with a gap. Under 640 px they sit
+ *  in one row that scrolls sideways with no scrollbar; wider, they wrap into rows. The ids are the
+ *  pages, the address moves by hash. */
 function ViewTabs({ dest, counts }: { dest: Dest; counts: NavCounts }): JSX.Element {
   return (
     <div
@@ -200,12 +196,29 @@ function ViewTabs({ dest, counts }: { dest: Dest; counts: NavCounts }): JSX.Elem
       data-view-tabs=""
     >
       {NAV_GROUPS.map((group) => (
-        <div key={group.label} role="tablist" aria-label={group.label} class="tabs tabs-box max-sm:shrink-0">
+        <div key={group.label} role="tablist" aria-label={group.label} class="ui-tabs max-sm:shrink-0">
           {group.tabs.map((k) => (
             <ViewTab key={k} dest={k} counts={counts} active={dest === k} />
           ))}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** The phone's header over a channel: the back link to the channels list above #channel. */
+function ChannelHead({ ch }: { ch: string }): JSX.Element {
+  return (
+    <div class="flex min-w-0 flex-col">
+      <a
+        href="#/channels"
+        aria-label="Back to Channels"
+        class="-ml-2 flex min-h-[var(--ui-tap)] min-w-[var(--ui-tap)] items-center gap-1 self-start rounded-[var(--ui-radius)] pr-2 text-sm font-semibold text-[var(--ui-accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+      >
+        <Icon name="left" class="size-5" />
+        Channels
+      </a>
+      <h1 class="truncate text-[28px] font-semibold tracking-tight">#{ch}</h1>
     </div>
   );
 }
@@ -534,7 +547,10 @@ export function App({
   const layout = useLayout();
   const [hash, setHash] = useState(location.hash);
   // the page-wide controls the open page handed up, kept with the page that named them
-  const [introActs, setIntroActs] = useState<{ dest: Dest; render: () => ComponentChildren } | null>(null);
+  const [introActs, setIntroActs] = useState<{
+    dest: Dest;
+    render: () => ComponentChildren;
+  } | null>(null);
 
   // the shell follows the address bar. A remount (the first-run gate closing) re-attaches the
   // listener in an effect, and a move landing inside that window would be missed for good, so
@@ -698,7 +714,7 @@ export function App({
               <PageIntro
                 icon={<Icon name={meta.icon} />}
                 title={meta.label}
-                bare={layout === "phone" && meta.label === tabLabel(route.tab)}
+                bare={layout === "phone"}
                 description={introDescription(route.dest as Dest, state, ch, now)}
                 actions={introActions}
               />
@@ -729,7 +745,11 @@ export function App({
         {passkeyAsk}
         {nowId ? null : (
           <header class="flex shrink-0 items-center justify-between gap-3 px-5 pt-[22px] pb-3">
-            <h1 class="text-[28px] font-semibold tracking-tight">{tabLabel(route.tab)}</h1>
+            {route.tab === "channels" && route.ch ? (
+              <ChannelHead ch={route.ch} />
+            ) : (
+              <h1 class="text-[28px] font-semibold tracking-tight">{tabLabel(route.tab)}</h1>
+            )}
             {route.tab === "radar" ? <RadarRange /> : <MachinesLine live={liveOf} text={mline} />}
           </header>
         )}

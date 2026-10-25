@@ -599,6 +599,38 @@ describe("under Channels", () => {
     );
   });
 
+  it("paints the destination tabs on the tokens", () => {
+    stubMedia(DESKTOP);
+    nav("#/channels/ch/inbox");
+    mountApp();
+    const row = document.querySelector("[data-view-tabs]") as HTMLElement;
+    expect(paints(row)).toEqual([]);
+    const groups = [...row.querySelectorAll("[role='tablist']")];
+    for (const g of groups) expect(g.className).toContain("ui-tabs");
+  });
+
+  it("heads a channel page on the phone with #channel and a back link, the page title not repeated", () => {
+    stubMedia(PHONE);
+    nav("#/channels/e2e/overview");
+    mountApp({ overview: () => <div>overview page</div> }, makeState({ ch: "e2e" }));
+    expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual(["#e2e"]);
+    const back = screen.getByRole("link", { name: "Back to Channels" });
+    expect(back.getAttribute("href")).toBe("#/channels");
+    expect(back.textContent).toBe("Channels");
+    expect(paints(back)).toEqual([]);
+    // the tab row names the page: the intro keeps its sentence and drops its title
+    expect(document.querySelector("[data-page-intro] h1")).toBeNull();
+    expect(screen.getByText("The channel at a glance: the plan, the team and what needs you.")).toBeDefined();
+  });
+
+  it("keeps the page title in the intro beside the tabs on desktop", () => {
+    stubMedia(DESKTOP);
+    nav("#/channels/e2e/overview");
+    mountApp({ overview: () => <div>overview page</div> }, makeState({ ch: "e2e" }));
+    expect(document.querySelector("[data-page-intro] h1")?.textContent).toBe("Overview");
+    expect(screen.queryByRole("link", { name: "Back to Channels" })).toBeNull();
+  });
+
   it("navigates the destination tabs by hash", () => {
     stubMedia(DESKTOP);
     nav("#/channels/ch/inbox");

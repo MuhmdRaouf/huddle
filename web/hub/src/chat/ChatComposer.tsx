@@ -3,6 +3,7 @@
 // keyboard's top edge, so the box being typed in never hides under it. Enter sends, Shift+Enter
 // breaks the line; a failed send keeps the words.
 
+import { Button } from "@huddle/ui/button.tsx";
 import type { JSX } from "preact";
 import { useState } from "preact/hooks";
 import { Icon } from "../icons.tsx";
@@ -36,8 +37,8 @@ export function ChatComposer({ members, onSend }: ChatComposerProps): JSX.Elemen
     <form
       data-chat-composer=""
       aria-label="Send a message"
-      class={`z-40 flex flex-col gap-2 border-t hairline bg-base-100 p-3 ${
-        pinned ? "fixed inset-x-0" : "sticky bottom-0 -mx-5 -mb-5 rounded-b-box"
+      class={`z-40 flex flex-col gap-2 border-t border-[var(--ui-line)] bg-[var(--ui-surface)] p-3 ${
+        pinned ? "fixed inset-x-0" : "sticky bottom-0 -mx-4 -mb-4 rounded-b-[var(--ui-radius-lg)]"
       }`}
       style={pinned ? { bottom: `${inset}px` } : undefined}
       onSubmit={(e) => {
@@ -46,9 +47,9 @@ export function ChatComposer({ members, onSend }: ChatComposerProps): JSX.Elemen
       }}
     >
       <label class="flex min-w-0 items-center gap-2 text-sm">
-        <span class="muted">To</span>
+        <span class="text-[var(--ui-muted)]">To</span>
         <select
-          class="select min-h-[44px] min-w-0 flex-1 sm:max-w-60"
+          class="ui-input min-w-0 flex-1 sm:max-w-60"
           aria-label="To"
           value={to}
           onChange={(e) => setTo(e.currentTarget.value)}
@@ -63,7 +64,9 @@ export function ChatComposer({ members, onSend }: ChatComposerProps): JSX.Elemen
       </label>
       <div class="flex min-w-0 items-end gap-2">
         <textarea
-          class="textarea min-h-[44px] min-w-0 flex-1 resize-none text-base"
+          class="ui-input min-w-0 flex-1 resize-none"
+          // the field's padding is a line's, so one row of words sits in the middle of the 44 px box
+          style={{ paddingBlock: "var(--ui-space-2)" }}
           aria-label="Message"
           rows={1}
           placeholder={to ? `Message ${to}` : "Message everyone"}
@@ -76,10 +79,10 @@ export function ChatComposer({ members, onSend }: ChatComposerProps): JSX.Elemen
             }
           }}
         />
-        <button type="submit" class="btn btn-primary min-h-[44px] min-w-[44px]" disabled={busy}>
+        <Button type="submit" disabled={busy}>
           <Icon name="send" class="size-4" />
           Send
-        </button>
+        </Button>
       </div>
     </form>
   );

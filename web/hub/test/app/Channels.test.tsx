@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { FetchFn } from "../../src/api.ts";
 import { Channels } from "../../src/app/Channels.tsx";
 import type { RegistrySession, RegistryStore } from "../../src/registry.ts";
-import { flush, makeRegistry, NOW, stubMedia } from "../helpers.tsx";
+import { flush, legacyClasses, makeRegistry, NOW, stubMedia } from "../helpers.tsx";
 import { renderHuddle } from "../render.tsx";
 
 /** One registry row, as the Now list's fixture spells them. */
@@ -130,6 +130,22 @@ describe("the linked channels section", () => {
     expect(billing.textContent).toContain("digest 30 s");
     expect((billing.querySelector("select") as HTMLSelectElement).value).toBe("digest");
     expect(screen.getAllByRole("button", { name: "Unlink" }).length).toBe(3);
+  });
+
+  it("TestTheSectionPaintsFromTheTokensAlone", async () => {
+    mount([], seededRegistry());
+    await waitFor(() => expect(screen.getByText("#kanban-release")).toBeDefined());
+    for (const b of screen.getAllByRole("button", { name: "Unlink" }))
+      expect(b.className).toContain("ui-btn-ghost");
+    expect(screen.getAllByRole("button", { name: "Link another session" })[0]?.className).toContain(
+      "ui-btn-secondary",
+    );
+    for (const s of screen.getAllByRole("combobox")) {
+      expect(s.className).toContain("ui-input");
+      expect(s.className.split(/\s+/)).not.toContain("select");
+    }
+    // the passkey and link-another dialogs are lent by their own pages
+    expect(legacyClasses(document.body, "dialog")).toEqual([]);
   });
 
   it("TestALevelMovePatchesAndUpdatesTheSelect", async () => {

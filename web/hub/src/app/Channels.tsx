@@ -3,6 +3,7 @@
 // newest digest, and the unlink that ends the tie (the passkey a 401 asks for first). The
 // channel's own link-another sheet starts with its sessions picked and the channel chosen.
 
+import { Button } from "@huddle/ui/button.tsx";
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { ApiError } from "../api.ts";
@@ -107,18 +108,23 @@ export function Channels(): JSX.Element {
           onLinked={reload}
         />
       ) : null}
-      <h2 id="linked-channels-h" class="mb-1.5 text-xs font-semibold tracking-[0.06em] uppercase muted">
+      <h2
+        id="linked-channels-h"
+        class="mb-1.5 text-xs font-semibold tracking-[0.06em] uppercase text-[var(--ui-muted)]"
+      >
         Linked channels{channels && channels.length > 0 ? ` · ${channels.length}` : ""}
       </h2>
       {error ? (
-        <p role="alert" class="m-0 text-sm text-error">
+        <p role="alert" class="m-0 text-sm text-[var(--ui-fail-ink)]">
           {error}
         </p>
       ) : null}
       {channels === null ? (
-        <p class="m-0 text-sm muted">Loading…</p>
+        <p class="m-0 text-sm text-[var(--ui-muted)]">Loading…</p>
       ) : channels.length === 0 ? (
-        <p class="m-0 text-sm muted">No linked sessions yet. Pick two or more on Now and choose Link.</p>
+        <p class="m-0 text-sm text-[var(--ui-muted)]">
+          No linked sessions yet. Pick two or more on Now and choose Link.
+        </p>
       ) : (
         <div class="flex flex-col gap-4">
           {channels.map((ch) => (
@@ -131,7 +137,7 @@ export function Channels(): JSX.Element {
                     <li
                       key={l.session_id}
                       data-link={l.session_id}
-                      class="flex min-h-12 items-center justify-between gap-3 border-b hairline py-1"
+                      class="flex min-h-12 items-center justify-between gap-3 border-b border-[var(--ui-line)] py-1"
                     >
                       <div class="flex min-w-0 items-center gap-2.5">
                         <StateMark state={stateOf(l.session_id)} />
@@ -139,10 +145,12 @@ export function Channels(): JSX.Element {
                       </div>
                       <div class="flex shrink-0 items-center gap-2">
                         {l.digest_at ? (
-                          <span class="text-xs muted tnum">digest {ageText(l.digest_at, now)}</span>
+                          <span class="text-xs text-[var(--ui-muted)] tabular-nums">
+                            digest {ageText(l.digest_at, now)}
+                          </span>
                         ) : null}
                         <select
-                          class="select max-w-36"
+                          class="ui-input max-w-36"
                           aria-label={`Level for ${title}`}
                           value={l.level}
                           onChange={(e) =>
@@ -155,27 +163,18 @@ export function Channels(): JSX.Element {
                             </option>
                           ))}
                         </select>
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-sm text-error"
-                          onClick={() => void unlink(ch.channel, l.session_id)}
-                        >
+                        <Button variant="ghost" onClick={() => void unlink(ch.channel, l.session_id)}>
                           Unlink
-                        </button>
+                        </Button>
                       </div>
                     </li>
                   );
                 })}
               </ul>
               <div>
-                <button
-                  type="button"
-                  data-link-another=""
-                  class="btn btn-ghost btn-sm"
-                  onClick={() => setLinking(ch)}
-                >
+                <Button variant="secondary" data-link-another="" onClick={() => setLinking(ch)}>
                   Link another session
-                </button>
+                </Button>
               </div>
             </div>
           ))}
