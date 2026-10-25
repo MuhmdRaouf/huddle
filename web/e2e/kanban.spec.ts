@@ -311,6 +311,38 @@ function smallTargets(page: Page): Promise<string[]> {
   );
 }
 
+test("while the board list loads, its skeleton paints at full width", async ({ page }) => {
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  await test.step("Given the board list held unanswered", async () => {
+    await page.route("**/api/kanban/boards", async (route) => {
+      await held;
+      await route.continue().catch(() => undefined);
+    });
+    await signIn(page);
+    await openTab(page, "Kanban");
+  });
+
+  await test.step("Then the loading box spans the page and wears no spinner mask", async () => {
+    const box = page.getByRole("status", { name: "Loading the boards" });
+    await expect(box).toBeVisible();
+    const looks = await box.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        width: el.getBoundingClientRect().width,
+        mask: style.maskImage || style.getPropertyValue("-webkit-mask-image") || "none",
+      };
+    });
+    expect(looks.width).toBeGreaterThan(300);
+    expect(looks.mask).toBe("none");
+  });
+
+  release();
+});
+
 test.describe("the board on a phone", () => {
   test.skip(({ isMobile }) => !isMobile, "the swipe strip and the card sheet are the phone's");
 

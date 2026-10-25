@@ -195,7 +195,7 @@ export function Board({
   if (snapshot === null) {
     return (
       <div class="board" data-layout="loading">
-        <div class="loading" role="status" aria-label="Loading the board">
+        <div class="kanban-loading" role="status" aria-label="Loading the board">
           <div class="skeleton board-skeleton" aria-hidden="true" />
         </div>
       </div>

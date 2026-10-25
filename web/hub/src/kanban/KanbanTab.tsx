@@ -192,7 +192,7 @@ export function KanbanTab({ boardKey }: { boardKey: string | null }): JSX.Elemen
   return (
     <div class="kanban-tab">
       {state.kind === "loading" && (
-        <div class="loading" role="status" aria-label="Loading the boards">
+        <div class="kanban-loading" role="status" aria-label="Loading the boards">
           <div class="skeleton toolbar-skeleton" aria-hidden="true" />
           <div class="skeleton board-skeleton" aria-hidden="true" />
         </div>
