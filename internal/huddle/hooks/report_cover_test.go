@@ -1,8 +1,8 @@
 package hooks
 
-// The report hook's own pieces, unit-proven: the ps readers the session walk uses, the machine
-// name the config holds, the environment a child inherits, the outbox writers' quiet failures
-// and the one JSON answer a hook prints.
+// The report hook's own pieces, unit-proven: the kernel readers the session walk uses, the
+// machine name the config holds, the environment a child inherits, the outbox writers' quiet
+// failures and the one JSON answer a hook prints.
 
 import (
 	"bytes"
@@ -35,24 +35,20 @@ func sameEnv(a, b []string) bool {
 	return slices.Equal(left, right)
 }
 
-// TestPsParentOfAnswersThisProcesssParent: the ps reader answers this process's own parent.
-func TestPsParentOfAnswersThisProcesssParent(t *testing.T) {
-	parent, ok := psParentOf(context.Background())(os.Getpid())
+// TestProcParentOfAnswersThisProcesssParent: the kernel reader answers this process's own
+// parent.
+func TestProcParentOfAnswersThisProcesssParent(t *testing.T) {
+	parent, ok := procParentOf(os.Getpid())
 	if !ok || parent != os.Getppid() {
-		t.Fatalf("psParentOf(%d) = (%d, %v), want (%d, true)", os.Getpid(), parent, ok, os.Getppid())
+		t.Fatalf("procParentOf(%d) = (%d, %v), want (%d, true)", os.Getpid(), parent, ok, os.Getppid())
 	}
 }
 
-// TestPsParentOfAnswersNoneForAPidPsRejects: a pid ps cannot answer, and a walk whose budget is
-// already spent, both read as no parent — never a guess.
-func TestPsParentOfAnswersNoneForAPidPsRejects(t *testing.T) {
-	if parent, ok := psParentOf(context.Background())(-1); ok || parent != 0 {
-		t.Errorf("psParentOf(-1) = (%d, %v), want (0, false)", parent, ok)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if parent, ok := psParentOf(ctx)(os.Getpid()); ok || parent != 0 {
-		t.Errorf("psParentOf on a cancelled context = (%d, %v), want (0, false)", parent, ok)
+// TestProcParentOfAnswersNoneForAPidTheKernelRefuses: a pid the kernel does not answer reads as
+// no parent — never a guess.
+func TestProcParentOfAnswersNoneForAPidTheKernelRefuses(t *testing.T) {
+	if parent, ok := procParentOf(-1); ok || parent != 0 {
+		t.Errorf("procParentOf(-1) = (%d, %v), want (0, false)", parent, ok)
 	}
 }
 

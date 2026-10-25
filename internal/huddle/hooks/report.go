@@ -20,7 +20,6 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -40,7 +39,6 @@ import (
 // SPEC 5.1 grants a report, well inside the timeout hooks.json gives each event.
 const (
 	reportStdinMS  = 500
-	reportProcMS   = 300
 	reportBudgetMS = 1900
 	// reportQueueMS is what the report keeps back from its caller's deadline to write the outbox.
 	reportQueueMS = 250
@@ -147,7 +145,7 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 		if input.HookEventName == "Stop" {
 			rep.Digest = digestOf(input.TranscriptPath, input.Cwd)
 		}
-		rep.Pid = claudePid(ctx, min(reportProcMS, left()))
+		rep.Pid = claudePid()
 
 		return deliverReport(ctx, w, id, rep, left)
 	})
@@ -261,12 +259,11 @@ var reportShells = map[string]bool{
 }
 
 // claudePid answers the Claude Code process running the session this hook serves: the nearest
-// ancestor that is neither a shell nor the plugin's launcher. The whole
-// walk is bounded at ms; 0 when the chain cannot be read inside it.
-func claudePid(ctx context.Context, ms int) int {
-	callCtx, cancel := context.WithTimeout(ctx, time.Duration(ms)*time.Millisecond)
-	defer cancel()
-	return sessionPid(os.Getppid(), psParentOf(callCtx), psCommandOf(callCtx))
+// ancestor that is neither a shell nor the plugin's launcher. The walk starts at this hook's
+// parent, is bounded at sessionPid's twelve steps and starts no process; a chain it cannot
+// read answers 0.
+func claudePid() int {
+	return sessionPid(os.Getppid(), procParentOf, procCommandOf)
 }
 
 // sessionPid walks the ancestor chain from start and answers the first process that is neither
@@ -303,32 +300,6 @@ func hookChainLine(line string) bool {
 	}
 	name := strings.TrimPrefix(filepath.Base(words[0]), "-")
 	return reportShells[name]
-}
-
-// psCommandOf answers a pid's command line as `ps -o command=` prints it.
-func psCommandOf(ctx context.Context) func(int) (string, bool) {
-	return func(pid int) (string, bool) {
-		out, err := exec.CommandContext(ctx, "ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
-		if err != nil {
-			return "", false
-		}
-		return string(out), true
-	}
-}
-
-// psParentOf answers a pid's parent as `ps -o ppid=` prints it.
-func psParentOf(ctx context.Context) func(int) (int, bool) {
-	return func(pid int) (int, bool) {
-		out, err := exec.CommandContext(ctx, "ps", "-o", "ppid=", "-p", strconv.Itoa(pid)).Output()
-		if err != nil {
-			return 0, false
-		}
-		parent, err := strconv.Atoi(strings.TrimSpace(string(out)))
-		if err != nil || parent <= 0 {
-			return 0, false
-		}
-		return parent, true
-	}
 }
 
 // ── the transcript's last model call ─────────────────────────────────────────

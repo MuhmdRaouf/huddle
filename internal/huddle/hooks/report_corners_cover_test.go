@@ -2,7 +2,8 @@ package hooks
 
 // The report hook's corners: an event without its session, a world with no home and no outbox,
 // a machine name the config cannot give, a project that falls back to the working directory,
-// and the outbox's own refusals. The process walk runs against real ps on pids this test owns.
+// and the outbox's own refusals. The process walk reads the kernel's own answers for pids this
+// test owns.
 
 import (
 	"context"
@@ -109,24 +110,23 @@ func TestSessionPidEndsAtAnUnreadableParentAndAtTwelveShells(t *testing.T) {
 }
 
 func TestTheRealProcessWalkNamesTheParentAndRefusesTheUnknown(t *testing.T) {
-	ctx := context.Background()
-	command, ok := psCommandOf(ctx)(os.Getpid())
+	command, ok := procCommandOf(os.Getpid())
 	if !ok || !strings.Contains(command, os.Args[0]) {
-		t.Errorf("psCommandOf(this process) = (%q, %v), want this test binary", command, ok)
+		t.Errorf("procCommandOf(this process) = (%q, %v), want this test binary", command, ok)
 	}
-	if _, ok := psCommandOf(ctx)(1 << 30); ok {
-		t.Error("psCommandOf of a pid nothing owns answered ok")
+	if _, ok := procCommandOf(1 << 30); ok {
+		t.Error("procCommandOf of a pid nothing owns answered ok")
 	}
-	parent, ok := psParentOf(ctx)(os.Getppid())
+	parent, ok := procParentOf(os.Getppid())
 	if !ok || parent <= 0 {
-		t.Errorf("psParentOf(this process's parent) = (%d, %v), want a parent", parent, ok)
+		t.Errorf("procParentOf(this process's parent) = (%d, %v), want a parent", parent, ok)
 	}
 	// the first process has no parent: the walk answers not ok rather than a number
-	if got, ok := psParentOf(ctx)(1); ok || got != 0 {
-		t.Errorf("psParentOf(1) = (%d, %v), want 0 not ok", got, ok)
+	if got, ok := procParentOf(1); ok || got != 0 {
+		t.Errorf("procParentOf(1) = (%d, %v), want 0 not ok", got, ok)
 	}
-	if _, ok := psParentOf(ctx)(1 << 30); ok {
-		t.Error("psParentOf of a pid nothing owns answered ok")
+	if _, ok := procParentOf(1 << 30); ok {
+		t.Error("procParentOf of a pid nothing owns answered ok")
 	}
 }
 

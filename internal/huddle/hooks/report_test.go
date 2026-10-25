@@ -872,6 +872,35 @@ func TestSessionPidWalksPastShellsAndTheLauncher(t *testing.T) {
 	}
 }
 
+// TestTheReportHookStartsNoPs: a PATH whose only command is a script that marks every run, and
+// the report still carries its pid — the walk reads the kernel and starts nothing.
+func TestTheReportHookStartsNoPs(t *testing.T) {
+	fake := t.TempDir()
+	marker := filepath.Join(fake, "marker")
+	script := "#!/bin/sh\ntouch " + marker + "\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(fake, "ps"), []byte(script), 0o700); err != nil {
+		t.Fatalf("write the marker script: %v", err)
+	}
+	t.Setenv("PATH", fake)
+	reg, url := startRegistry(t)
+	stdout, _ := runReportHook(t, reportFixture(t, "stop", writeTranscript(t), t.TempDir()), reportHome(t),
+		map[string]string{"HUDDLE_URL": url})
+	if stdout != "" {
+		t.Errorf("the hook printed %q, want silence", stdout)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("the marker landed (%v), want the hook to start nothing", err)
+	}
+	took := reg.took()
+	if len(took) != 1 {
+		t.Fatalf("the registry took %d POSTs, want the one report", len(took))
+	}
+	pid, ok := took[0].Body["pid"].(float64)
+	if !ok || pid <= 0 {
+		t.Errorf("the report's pid = %v, want this process's pid", took[0].Body["pid"])
+	}
+}
+
 func TestLastModelOfReadsOnlyTheTail(t *testing.T) {
 	dir := t.TempDir()
 	small := filepath.Join(dir, "small.jsonl")
