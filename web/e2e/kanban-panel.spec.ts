@@ -133,6 +133,10 @@ test.describe("the card detail panel on a phone", () => {
     await test.step("Given the board at 390x844 with the backlog card tapped", async () => {
       await signIn(page);
       await openTab(page, "Kanban");
+      // the phone's backlog groups by priority with P1 closed, so the card's group opens first
+      const group = page.locator('.lanes section[data-column="backlog"]').getByRole("button", { name: /^P1 / });
+      await group.tap();
+      await expect(group).toHaveAttribute("aria-expanded", "true");
       await page.getByRole("button", { name: "E2E-1: First card" }).tap();
       const sheet = page.getByRole("dialog", { name: "E2E-1: First card" });
       await expect(sheet).toBeVisible();
