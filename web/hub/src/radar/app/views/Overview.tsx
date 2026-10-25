@@ -5,8 +5,7 @@
  * at once and cards done today), the four usage graphs (requests per hour, tokens by kind, cost
  * per day and per session), the spend-by-hour chart stacked by model, the top sessions by spend
  * (a row opens the Session screen), the plan limits the statusline word reported, the newest
- * alert, the routers list and the top tools, under the self-check badge that holds today's totals
- * against the transcripts. The phone leads with three tiles (spend, requests, sessions live) under
+ * alert, the routers list and the top tools. The phone leads with three tiles (spend, requests, sessions live) under
  * one label that names the window they read, then the day card, the graphs stacked, the chart and
  * the routers; the rest waits for a wider pane.
  */

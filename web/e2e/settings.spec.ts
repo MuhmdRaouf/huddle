@@ -10,7 +10,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
-import { pairThroughLink, signIn, theSetup, useVirtualAuthenticator } from "./helpers.ts";
+import { n, pairThroughLink, signIn, theSetup, TOTALS, useVirtualAuthenticator } from "./helpers.ts";
 
 /** The four groups, in order, each with its address, the members its page draws and the line
  *  that names them under its row on the phone. */
@@ -18,7 +18,7 @@ const GROUPS: readonly (readonly [name: string, hash: string, members: readonly 
   ["Appearance", "#/settings/appearance", ["appearance"], "Scheme and colours"],
   ["Notifications", "#/settings/notifications", ["notifications"], "Push and what wakes a device"],
   ["Devices and sign-in", "#/settings/devices", ["devices", "phone", "signin"], "Devices, Phone, Sign-in methods"],
-  ["Hub and Radar", "#/settings/hub", ["hub", "zone", "radar"], "This hub, Time zone, Radar"],
+  ["Hub and Radar", "#/settings/hub", ["hub", "zone", "radar", "selfcheck"], "This hub, Time zone, Radar, Self-check"],
 ];
 
 /** Opens one Settings address in a signed-in browser. The authenticator set-up the first sign-in
@@ -226,6 +226,18 @@ test.describe("the Settings tab", () => {
     const facts = page.locator("[data-hub-facts]");
     await expect(facts).toContainText(theSetup().rootUrl.replace(/\/$/, ""));
     await expect(facts).toContainText(/\d+\.\d+\.\d+/);
+  });
+
+  test("the self-check says Radar matches the transcripts, both sides' numbers as text", async ({ page }) => {
+    await openSettings(page, "#/settings/hub");
+    // today's three seeded calls, as Radar's history holds them and as the transcript wrote them
+    const check = page.locator('[data-setting="selfcheck"] [data-selfcheck]');
+    await expect(check).toBeVisible();
+    await expect(check).toHaveAttribute("data-tone", "ok");
+    await expect(check).toContainText("Matches transcripts");
+    const seeded = `3 requests, ${n(TOTALS.input)} in, ${n(TOTALS.output)} out, ${n(TOTALS.cacheRead)} cache read, ${n(TOTALS.cacheWrite)} cache write`;
+    await expect(check.locator("p")).toHaveText(new RegExp(`Radar: ${seeded}\\.\\s+Transcripts: ${seeded}\\.`));
+    await expect(check.locator("[title]")).toHaveCount(0);
   });
 
   test("the hub's time zone is seeded by a signed-in browser and a pick survives a reload", async ({ page }) => {

@@ -299,7 +299,7 @@ describe("the phone's grouped list", () => {
       "Scheme and colours",
       "Push and what wakes a device",
       "Devices, Phone, Sign-in methods",
-      "This hub, Time zone, Radar",
+      "This hub, Time zone, Radar, Self-check",
     ]);
     expect(rows.every((a) => a.classList.contains("ui-list-row"))).toBe(true);
     expect(rows.some((a) => a.className.includes("rounded-full"))).toBe(false);
@@ -385,7 +385,7 @@ describe("the four groups", () => {
       ["appearance", ["appearance"]],
       ["notifications", ["notifications"]],
       ["devices", ["devices", "phone", "signin"]],
-      ["hub", ["hub", "zone", "radar"]],
+      ["hub", ["hub", "zone", "radar", "selfcheck"]],
     ];
     for (const [group, want] of groups) {
       mountSection(<SettingsTab section={group} />, []);
@@ -399,6 +399,7 @@ describe("the four groups", () => {
     expect(settingsSectionOf("hub")).toBe("hub");
     expect(settingsSectionOf("zone")).toBe("hub");
     expect(settingsSectionOf("radar")).toBe("hub");
+    expect(settingsSectionOf("selfcheck")).toBe("hub");
     expect(settingsSectionOf("phone")).toBe("devices");
     expect(settingsSectionOf("signin")).toBe("devices");
     // Linked channels live under each channel's own Settings view
@@ -421,6 +422,47 @@ describe("the hub section", () => {
     expect(screen.getByText("Unknown")).toBeDefined();
     mountSection(<ThisHub />, [{ status: 500, body: {} }]);
     await waitFor(() => expect(screen.getAllByText("Unknown").length).toBeGreaterThan(1));
+  });
+});
+
+describe("the self-check", () => {
+  afterEach(() => {
+    document.body.textContent = "";
+  });
+
+  it("TestHubAndRadarSaysTheSelfCheckAndBothSidesAsText", async () => {
+    const counts = { requests: 3, input: 2400, output: 600, cacheRead: 5000, cacheWrite: 2000 };
+    const answer = {
+      day: "2026-10-25",
+      radar: { ...counts, requests: 4 },
+      transcripts: counts,
+      driftPct: 12.5,
+    };
+    const fetchFn: FetchFn = (url) =>
+      Promise.resolve(
+        new Response(url === "/api/radar/api/selfcheck" ? JSON.stringify(answer) : "{}", {
+          status: url === "/api/radar/api/selfcheck" ? 200 : 404,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    for (const media of [PHONE, DESK]) {
+      stubMedia(media);
+      renderHuddle(<SettingsTab section="hub" />, {}, NOW, fetchFn);
+      const pane = document.querySelector('[data-setting="selfcheck"]') as HTMLElement;
+      await waitFor(() => expect(pane.querySelector("[data-selfcheck]")).not.toBeNull());
+      const check = pane.querySelector("[data-selfcheck]") as HTMLElement;
+      expect(check.dataset.tone).toBe("warn");
+      expect(check.textContent).toContain("12.5% off the transcripts");
+      expect(check.textContent).toContain(
+        "Self-check for 2026-10-25 (UTC). " +
+          "Radar: 4 requests, 2,400 in, 600 out, 5,000 cache read, 2,000 cache write. " +
+          "Transcripts: 3 requests, 2,400 in, 600 out, 5,000 cache read, 2,000 cache write.",
+      );
+      // the sentence is on the page, not behind a hover
+      expect(pane.querySelector("[title]")).toBeNull();
+      expect(legacyClasses()).toEqual([]);
+      document.body.textContent = "";
+    }
   });
 });
 

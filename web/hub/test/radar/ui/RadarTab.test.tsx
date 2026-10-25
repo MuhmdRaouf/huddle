@@ -25,6 +25,7 @@ async function deliver(streams: ReturnType<typeof radarIo>["streams"]): Promise<
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   stopRadar();
   document.body.textContent = "";
 });
@@ -104,6 +105,25 @@ describe("the Radar tab pane", () => {
     const one = ensureRadar(world.io);
     expect(ensureRadar(world.io)).toBe(one);
     expect(radarController()).toBe(one);
+  });
+
+  it("draws no self-check badge over the Overview: the self-check lives in Settings", async () => {
+    // the self-check route answers, so a mounted badge would paint
+    const today = { requests: 3, input: 1, output: 1, cacheRead: 0, cacheWrite: 0 };
+    const answer = { day: "2026-10-25", radar: today, transcripts: today, driftPct: 0 };
+    vi.stubGlobal("fetch", (url: string) =>
+      Promise.resolve(
+        url === "/api/radar/api/selfcheck"
+          ? new Response(JSON.stringify(answer))
+          : new Response("{}", { status: 404 }),
+      ),
+    );
+    const world = radarIo();
+    const { page } = await booted(world.io);
+    await deliver(world.streams);
+    await settleRadar();
+    expect(page.container.textContent).toContain("Spend today");
+    expect(page.container.querySelector("[data-selfcheck]")).toBeNull();
   });
 
   it("paints under the shell's own context", () => {

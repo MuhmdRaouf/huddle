@@ -3,9 +3,10 @@
 // group's members in order. Appearance (System, Dark, Light, and the
 // Catppuccin flavour); Notifications (the two switches and what wakes the device); Devices and
 // sign-in (the paired devices with remove, the phone's trust guide in a sheet, the sign-in
-// methods); Hub and Radar (name, address and version, the hub's time zone, and Radar's budgets,
-// notifications and history retention). A channel's linked sessions live in that channel's own
-// Settings view. Every class comes from the ui components or the tokens.
+// methods); Hub and Radar (name, address and version, the hub's time zone, Radar's budgets,
+// notifications and history retention, and Radar's self-check against the transcripts). A
+// channel's linked sessions live in that channel's own Settings view. Every class comes from the
+// ui components or the tokens.
 
 import { Button } from "@huddle/ui/button.tsx";
 import { Field } from "@huddle/ui/field.tsx";
@@ -21,10 +22,11 @@ import {
   writeFlavour,
 } from "@huddle/ui/theme.ts";
 import type { JSX } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { ApiError } from "../api.ts";
 import { Icon } from "../icons.tsx";
 import { creationFromJSON, credentialToJSON } from "../passkey.ts";
+import { SELFCHECK_PATH, SelfCheckBadge, selfCheckOf } from "../radar/app/SelfCheckBadge.tsx";
 import { SettingsView } from "../radar/app/views/Settings.tsx";
 import { RadarProvider, radarController } from "../radar/mount.tsx";
 import { ageText } from "../registry.ts";
@@ -56,6 +58,24 @@ function RadarSettings(): JSX.Element {
     <RadarProvider>
       <SettingsView />
     </RadarProvider>
+  );
+}
+
+/** Settings › Hub and Radar › Self-check: whether Radar's totals for today match the transcripts,
+ *  said as a badge and a sentence, read through the hub's own client. */
+function SelfCheck(): JSX.Element {
+  const { api } = useHuddle();
+  const read = useCallback(() => api.api(SELFCHECK_PATH).then(selfCheckOf, () => null), [api]);
+  return (
+    <section aria-labelledby="selfcheck-h" class="flex flex-col gap-3">
+      <h2 id="selfcheck-h" class={HEAD}>
+        Self-check
+      </h2>
+      <p class={NOTE}>
+        Radar's totals for today against the same day re-summed from the Claude Code transcripts.
+      </p>
+      <SelfCheckBadge read={read} />
+    </section>
   );
 }
 
@@ -573,6 +593,7 @@ const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       { id: "hub", label: "This hub", Pane: ThisHub },
       { id: "zone", label: "Time zone", Pane: () => <TimeZone /> },
       { id: "radar", label: "Radar", Pane: RadarSettings },
+      { id: "selfcheck", label: "Self-check", Pane: SelfCheck },
     ],
   },
 ];
