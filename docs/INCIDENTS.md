@@ -147,6 +147,7 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Cause:** huddle-router ran inside `huddle serve`, so stopping the hub closed the CONNECT tunnel of every Claude
   request in flight. The socket handover protected only a router running on its own.
 - **Guard:** `TestE2EUpStartsARouterAndAHub` (cmd/huddle/up_two_processes_e2e_test.go),
-  `TestE2EDownStopsAHubTheLauncherStarted` (cmd/huddle/router_ownership_e2e_test.go)
+  `TestE2EDownStopsAHubTheLauncherStarted` (cmd/huddle/router_ownership_e2e_test.go),
+  `TestE2EAHubRestartKeepsAStreamingTurn` (cmd/huddle/hub_restart_stream_e2e_test.go)
 - **Rule:** huddle-router is its own process and the hub never hosts it
   ([ADR-4](adr/0004-router-process.md)); a hub restart never touches the router.
