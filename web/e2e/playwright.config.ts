@@ -22,6 +22,7 @@ const PHONE_SPECS = [
   "settings.spec.ts",
   "landing.spec.ts",
   "signin.spec.ts",
+  "radar.spec.ts",
 ];
 /** The specs that run on the phone only: the phone's load budget under throttled CDP. */
 const PHONE_ONLY = ["phone-perf.spec.ts"];

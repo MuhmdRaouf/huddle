@@ -307,7 +307,7 @@ function RadarViews({ view, layout }: { view: RadarView; layout: Layout }): JSX.
                   }`
                 : `flex min-h-11 shrink-0 items-center rounded-full px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                     v === view
-                      ? "bg-primary font-semibold text-base-300"
+                      ? "bg-primary font-semibold text-primary-content"
                       : "border hairline text-base-content/80 hover:bg-base-100"
                   }`
             }
@@ -649,7 +649,9 @@ export function App({
     ) : route.tab === "radar" ? (
       <div class="flex min-h-0 flex-1 flex-col">
         <RadarViews view={route.view} layout={layout} />
-        <div class="min-h-0 flex-1 overflow-y-auto">
+        {/* a view with no control of its own still scrolls by keyboard */}
+        {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+        <div class="min-h-0 flex-1 overflow-y-auto" tabIndex={0}>
           <RadarTab view={route.view} />
         </div>
       </div>

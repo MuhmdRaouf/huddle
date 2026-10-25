@@ -2,9 +2,11 @@
 // the overview's Day cards carry the fixture's exact totals, and the requests table lists the
 // three seeded calls with the inspector showing one request's numbers, and the overview's four graphs
 // carry the fixture's series. The views are walked through the sub-tab row in one document, the way
-// owners switch views.
+// owners switch views. Every view passes axe on both projects; on the phone none scrolls sideways
+// and each of its targets is at least 44 px.
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expectAccessible } from "./axe.ts";
 import { ConsoleErrors, n, openTab, signIn, SEEDED, theSetup, TOTALS, USAGE } from "./helpers.ts";
 import { LOAD_REQUESTS } from "./seed.ts";
 
@@ -27,6 +29,12 @@ const VIEWS: readonly (readonly [
   ["alerts", "Alerts", "heading", /All clear|^Alerts$/],
   ["timeline", "Timeline", "heading", /^Timeline$/],
 ];
+
+// the authenticator set-up the first sign-in offers is not radar's subject, so every browser
+// starts with its "Later" already kept
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
+});
 
 test("every radar view loads with no console error", async ({ page }) => {
   const errors = new ConsoleErrors(page);
@@ -293,4 +301,74 @@ test("the four graphs stack in one column on a phone", async ({ page }) => {
   }
   expect(new Set(lefts).size).toBe(1);
   expect(sum((await graphSeries(page.locator("[data-graph='requests']"))).requests)).toBe(SEEDED.requests.length);
+});
+
+/** Opens one radar view by its address in a signed-in browser, once its panels settled: the
+ *  skeletons are gone, or three seconds passed. */
+async function openView(page: Page, view: string): Promise<void> {
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/radar/${view}`);
+  await expect(page.locator("[data-radar-view]")).toBeVisible();
+  await page
+    .waitForFunction(() => document.querySelectorAll(".skeleton").length === 0, undefined, { timeout: 3000 })
+    .catch(() => {});
+}
+
+for (const [view, label] of VIEWS) {
+  test(`the ${label} view passes axe`, async ({ page }) => {
+    await openView(page, view);
+    await expectAccessible(page);
+  });
+}
+
+test.describe("radar on the phone", () => {
+  test.skip(({ isMobile }) => !isMobile, "the phone's width and touch");
+
+  for (const [view, label] of VIEWS) {
+    test(`the ${label} view scrolls nothing sideways and its targets are 44 px`, async ({ page }) => {
+      await openView(page, view);
+      // the page and the pane that scrolls the view: neither is wider than the phone; a wide
+      // table scrolls inside its own frame
+      const over = await page.evaluate(() => {
+        const pane = document.querySelector("[data-radar-view]")?.parentElement;
+        const edge = pane ? pane.getBoundingClientRect().left + pane.clientWidth : 0;
+        // the parts that reach past the pane's edge, less those a scroll box of their own holds
+        const past = pane
+          ? [...pane.querySelectorAll<HTMLElement>("*")]
+              .filter((el) => el.getBoundingClientRect().right > edge + 0.5)
+              .filter((el) => {
+                for (let p = el.parentElement; p && p !== pane; p = p.parentElement) {
+                  if (getComputedStyle(p).overflowX !== "visible") return false;
+                }
+                return true;
+              })
+              .map((el) => `${el.tagName.toLowerCase()}.${[...el.classList].slice(0, 3).join(".")}`)
+          : [];
+        return {
+          page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          pane: pane ? pane.scrollWidth - pane.clientWidth : 0,
+          past,
+        };
+      });
+      expect(over, `${label} scrolls sideways`).toEqual({ page: 0, pane: 0, past: [] });
+      // every button, link and tab the view draws is a thumb's target
+      const small = await page.locator("[data-radar-view]").evaluate((root) =>
+        [...root.querySelectorAll<HTMLElement>("button, a[href], [role='tab'], select, input")]
+          .filter((el) => {
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+          })
+          .filter((el) => {
+            const r = el.getBoundingClientRect();
+            return r.width < 44 || r.height < 44;
+          })
+          .map((el) => {
+            const r = el.getBoundingClientRect();
+            const name = (el.getAttribute("aria-label") ?? el.textContent ?? "").trim().slice(0, 30);
+            return `${el.tagName.toLowerCase()} "${name}" ${Math.round(r.width)}x${Math.round(r.height)}`;
+          }),
+      );
+      expect(small, `${label}: targets under 44 px`).toEqual([]);
+    });
+  }
 });

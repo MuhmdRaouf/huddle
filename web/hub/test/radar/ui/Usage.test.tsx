@@ -555,14 +555,19 @@ describe("UsageView", () => {
     await userEvent.click(rows[0] as HTMLElement);
     expect(view.act).toHaveBeenCalledWith("usage-hide", "glm-5.3");
 
+    // the row's name is its visible text after the hidden verb, so no label differs from what a
+    // voice-control user reads
+    const glm = (container: Element, verb: string): HTMLButtonElement | undefined =>
+      [...container.querySelectorAll<HTMLButtonElement>("[data-usage-series] button")].find((button) =>
+        new RegExp(`^${verb} GLM 5\\.3(?! Flash)`).test(button.textContent ?? ""),
+      );
     const single = renderApp(<UsageView />, usageState({ usage: { key: 7, report: PRICED } }), NOW);
-    const only = single.container.querySelector<HTMLButtonElement>("button[aria-label='Hide GLM 5.3']");
-    expect(only?.disabled).toBe(true);
+    expect(glm(single.container, "Hide")?.disabled).toBe(true);
 
     const hidden = renderApp(<UsageView />, usageState({ usageHidden: ["glm-5.3"] }), NOW);
-    const shown = hidden.container.querySelector<HTMLButtonElement>("button[aria-label='Show GLM 5.3']");
+    const shown = glm(hidden.container, "Show");
     expect(shown?.getAttribute("aria-pressed")).toBe("true");
-    expect(shown?.getAttribute("aria-label")).toBe("Show GLM 5.3");
+    expect(shown?.hasAttribute("aria-label")).toBe(false);
   });
 
   it("opens a model's drill-down from its table row, and closes it again", async () => {

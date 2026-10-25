@@ -361,7 +361,7 @@ function SeriesList({
   const visible = report.byModel.filter((slice) => !hidden.includes(slice.key));
   const total = visible.reduce((acc, slice) => acc + metricValue(slice, metric), 0);
   return (
-    <ul class="grid gap-1" aria-label="Visible series" data-usage-series="">
+    <ul class="grid grid-cols-1 gap-1" aria-label="Visible series" data-usage-series="">
       {report.byModel.map((slice) => {
         const isHidden = hidden.includes(slice.key);
         const value = metricValue(slice, metric);
@@ -372,7 +372,6 @@ function SeriesList({
               type="button"
               class="flex w-full items-center gap-2 rounded-field px-1.5 py-1 text-sm hover:bg-base-200/50"
               aria-pressed={isHidden ? "true" : "false"}
-              aria-label={`${isHidden ? "Show" : "Hide"} ${name}`}
               title={
                 isHidden ? `Show ${name}'s line` : `Hide ${name}'s line; the last visible series always stays`
               }
@@ -384,6 +383,7 @@ function SeriesList({
                 style={`background:${modelColor(slice.key)}`}
                 aria-hidden="true"
               />
+              <span class="sr-only">{isHidden ? "Show " : "Hide "}</span>
               <span class="min-w-0 flex-1 truncate text-left">{name}</span>
               <span class="num text-base-content/80">
                 {metric === "cost" ? fmtUsd(value) : fmtNum(value)}
@@ -752,9 +752,9 @@ function TranscriptUsage() {
           </>
         }
       >
-        <div class="grid items-start gap-6 px-5 py-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <div class="grid grid-cols-1 items-start gap-6 px-5 py-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <UsagePlot data={data} metric={metric} mark={mark} />
-          <aside class="grid content-start gap-4">
+          <aside class="grid min-w-0 grid-cols-1 content-start gap-4">
             <SeriesList report={report} metric={metric} hidden={state.usageHidden} />
             {state.usageDay !== null && (
               <DayCard report={report} date={state.usageDay} metric={metric} hidden={state.usageHidden} />

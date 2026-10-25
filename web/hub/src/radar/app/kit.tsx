@@ -4,6 +4,7 @@
  * tokens; the pieces other views style from legacy.css keep their class hooks.
  */
 
+import type { Tone } from "@huddle/ui/badge.tsx";
 import { modelColor } from "@huddle/ui/model-color.ts";
 import { type PanelProps, Panel as SharedPanel } from "@huddle/ui/page.tsx";
 import type { ComponentChildren, HTMLAttributes } from "preact";
@@ -34,10 +35,20 @@ export function Status({ tone, word, pulse = false }: { tone: StatusTone; word: 
   );
 }
 
-/** A tinted pill: tone colours its text, border and a faint fill. */
+/** The design system's status colour each radar tone reads as. */
+const BADGE_TONE: Record<StatusTone, Tone> = {
+  ok: "ok",
+  warn: "warn",
+  err: "fail",
+  idle: "neutral",
+  info: "info",
+};
+
+/** The design system's badge in the tone's status colour; `badge badge-<tone>` stay as the hooks
+ *  views and tests find it by. */
 export function Badge({ text, tone, icon }: { text: string; tone: StatusTone; icon?: IconName }) {
   return (
-    <span class={`badge badge-${tone}`}>
+    <span class={`badge badge-${tone} ui-badge ui-badge-${BADGE_TONE[tone]}`}>
       {icon !== undefined && <Icon name={icon} class="icon icon-xs" />}
       <span>{text}</span>
     </span>

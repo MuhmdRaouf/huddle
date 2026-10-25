@@ -1,4 +1,4 @@
-// SelfCheckBadge.test.tsx — the Overview's self-check badge: its tone by drift, its hover with both
+// SelfCheckBadge.test.tsx — the Radar header's self-check badge: its tone by drift, its hover with both
 // sides' numbers, and its silence when the route cannot answer.
 
 import { render, waitFor } from "@testing-library/preact";

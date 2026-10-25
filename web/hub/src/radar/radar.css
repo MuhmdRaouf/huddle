@@ -1,0 +1,16 @@
+/* radar.css — the Radar tab's place on the web/ui design system, unlayered so it wins over the
+ * daisyUI components and the Tailwind utilities the views were drawn with: numbers read in the
+ * system's mono face, and on the phone every control is a thumb's target of the system's 44 px. */
+
+[data-radar-view] .num {
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the phone layout (layout.ts: under 640 px) */
+@media (max-width: 639px) {
+  [data-radar-view] :is(button, a[href], [role="tab"], select) {
+    min-width: var(--ui-tap);
+    min-height: var(--ui-tap);
+  }
+}

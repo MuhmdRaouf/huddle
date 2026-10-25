@@ -130,7 +130,7 @@ describe("Segmented", () => {
 });
 
 describe("Badge", () => {
-  it("keeps the daisyUI badge class with the tone hook and its optional icon", () => {
+  it("draws the design system's badge in the tone's status colour, keeping the tone hook and its optional icon", () => {
     const { container } = renderApp(
       <>
         <Badge text="Live" tone="ok" />
@@ -138,8 +138,8 @@ describe("Badge", () => {
       </>,
     );
     const [plain, withIcon] = [...container.querySelectorAll(".badge")];
-    expect(plain?.className).toBe("badge badge-ok");
-    expect(withIcon?.className).toBe("badge badge-err");
+    expect(plain?.className).toBe("badge badge-ok ui-badge ui-badge-ok");
+    expect(withIcon?.className).toBe("badge badge-err ui-badge ui-badge-fail");
     expect(withIcon?.querySelector("svg[data-icon='close']")).toBeTruthy();
   });
 });

@@ -91,7 +91,7 @@ describe("SessionAgentsView", () => {
     const rows = [...container.querySelectorAll("tbody tr")];
     expect(rows[0]?.textContent).toContain("Main");
     expect(rows[1]?.textContent).toContain("dig");
-    expect(rows[1]?.className).toContain("opacity-60"); // ended, dimmed
+    expect(rows[1]?.className).toContain("muted"); // ended, dimmed in the muted ink
     expect(rows[2]?.textContent).toContain("Jobs (1)"); // the section between the locals and the jobs
     expect(rows[3]?.textContent).toContain("One");
     expect(container.textContent).toContain("3 agents");

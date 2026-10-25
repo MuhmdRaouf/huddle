@@ -69,7 +69,7 @@ export function Table({
  * One table row. Clickable rows focus (tabIndex 0), open on Enter or Space, and carry the pointer
  * affordance; the rest stay plain. The classes carry the row's state: failed (a faint error tint), the
  * open row (primary at 8%, with the view drawing the 3px primary bar on its first cell), a row that just
- * arrived, an ended one dimmed. `class` carries extras a view needs on top.
+ * arrived, an ended one in the muted ink. `class` carries extras a view needs on top.
  */
 export function TableRow({
   onOpen,
@@ -103,7 +103,8 @@ export function TableRow({
     failed ? "bg-error/5" : "",
     active ? "bg-primary/8" : "",
     fresh ? "row-new" : "",
-    dimmed ? "opacity-60" : "",
+    // the theme's muted ink, not an opacity: a faded row's quieter cells would drop under AA
+    dimmed ? "muted" : "",
     cls,
   ]
     .filter(Boolean)

@@ -32,7 +32,6 @@ import { DayCard } from "../DayCard.tsx";
 import { Flow, requestsInRange } from "../Flow.tsx";
 import { Icon } from "../Icon.tsx";
 import { EmptyState, ModelChip, Panel, Status, shortModelName } from "../kit.tsx";
-import { SelfCheckBadge } from "../SelfCheckBadge.tsx";
 import { OverviewGraphs } from "../OverviewGraphs.tsx";
 import { isJob } from "../sessions.ts";
 
@@ -84,7 +83,7 @@ function SpendStat() {
       value={fmtUsd(state.spendToday)}
       subline={
         spend === undefined ? (
-          <a class="link link-primary" href="#/settings/radar">
+          <a class="inline-flex min-h-11 items-center underline" href="#/settings/radar">
             No budget set
           </a>
         ) : (
@@ -301,7 +300,10 @@ function TopSessions() {
               <th scope="col" class="py-1 text-left font-normal text-base-content/50">
                 Session
               </th>
-              <th scope="col" class="w-40 py-1 text-left font-normal text-base-content/50">
+              <th
+                scope="col"
+                class="hidden w-40 py-1 text-left font-normal text-base-content/50 sm:table-cell"
+              >
                 Model
               </th>
               <th scope="col" class="w-24 py-1 text-right font-normal text-base-content/50">
@@ -332,7 +334,7 @@ function TopSessions() {
                       {row?.machine ? <span class="muted"> · {row.machine}</span> : null}
                     </a>
                   </td>
-                  <td class="truncate py-2">
+                  <td class="hidden truncate py-2 sm:table-cell">
                     {item.model === null ? "–" : <ModelChip model={item.model} />}
                   </td>
                   <td class="num py-2 text-right">{fmtNum(item.requestCount)}</td>
@@ -672,15 +674,13 @@ function PlanLimits() {
 
 /** The Overview: the stat row over the active-block card, the day card, the graphs, the chart
  *  and the sessions table, the plan limits, the alert, routers and tools beside them; the phone
- *  keeps the first two cards, the day card, the graphs, the chart and the routers. */
+ *  stacks the cards, the day card, the graphs, the chart, the sessions table without its model
+ *  column and the routers. */
 export function OverviewView(): JSX.Element {
   const { state, now } = useApp();
   const numbers = rangeNumbers(state, now);
   return (
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div class="flex justify-end xl:col-span-2">
-        <SelfCheckBadge />
-      </div>
       <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:col-span-2 xl:grid-cols-5" data-stat-cards="">
         <SpendStat />
         <RequestsStat state={state} now={now} numbers={numbers} />
@@ -699,9 +699,7 @@ export function OverviewView(): JSX.Element {
       </div>
       <div class="grid min-w-0 gap-4">
         <SpendChart />
-        <div class="hidden md:block">
-          <TopSessions />
-        </div>
+        <TopSessions />
       </div>
       <div class="grid content-start gap-4">
         <PlanLimits />

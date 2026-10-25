@@ -94,10 +94,10 @@ describe("AgentsView", () => {
     expect(texts(block, ".tree-name")).toEqual(["Main", "abcdefghij", "researcher", "Fix tests"]);
     expect([...block.querySelectorAll("tbody tr")].map((row) => row.getAttribute("class") ?? "")).toEqual([
       "row cursor-pointer transition-colors hover:bg-base-200/50",
-      "row opacity-60 cursor-pointer transition-colors hover:bg-base-200/50",
-      "row opacity-60 cursor-pointer transition-colors hover:bg-base-200/50",
+      "row muted cursor-pointer transition-colors hover:bg-base-200/50",
+      "row muted cursor-pointer transition-colors hover:bg-base-200/50",
       "",
-      "row opacity-60 cursor-pointer transition-colors hover:bg-base-200/50",
+      "row muted cursor-pointer transition-colors hover:bg-base-200/50",
     ]);
     expect(
       [...block.querySelectorAll(".tree-name")].map((name) =>

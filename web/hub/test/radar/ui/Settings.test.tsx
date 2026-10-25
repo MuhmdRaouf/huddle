@@ -49,8 +49,12 @@ describe("SettingsView budgets", () => {
     expect(screen.getByText("Stops at 100%")).toBeTruthy();
     expect(screen.getByText("Warns")).toBeTruthy();
     expect(screen.getByText("–")).toBeTruthy();
-    expect(screen.getByText("Stops at 100%").closest(".badge")?.className).toBe("badge badge-err");
-    expect(screen.getByText("Warns").closest(".badge")?.className).toBe("badge badge-info");
+    expect(screen.getByText("Stops at 100%").closest(".badge")?.className).toBe(
+      "badge badge-err ui-badge ui-badge-fail",
+    );
+    expect(screen.getByText("Warns").closest(".badge")?.className).toBe(
+      "badge badge-info ui-badge ui-badge-info",
+    );
     expect(buttonsWithAction("edit-budget")).toHaveLength(2);
     expect(buttonsWithAction("remove-budget")).toHaveLength(2);
   });

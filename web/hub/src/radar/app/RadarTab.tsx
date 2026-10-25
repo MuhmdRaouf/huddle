@@ -1,18 +1,20 @@
-// RadarTab.tsx — the Radar tab's pane inside huddle's shell: the active view, nothing more. The
-// shell draws the chrome around it (the sub-tab row, the range, the export); radar's own frame
-// (its scope header, its tab row, its sessions rail) is gone — a session row in a view opens the
-// Session screen. The drawer and the agent transcript ride along, and the keys they answer (J/K
-// step, Escape closes) live only while this pane is on screen.
+// RadarTab.tsx — the Radar tab's pane inside huddle's shell: a header with the self-check badge
+// over the active view. The shell draws the chrome around it (the sub-tab row, the range, the
+// export); a session row in a view opens the Session screen. The drawer and the agent transcript
+// ride along, and the keys they answer (J/K step, Escape closes) live only while this pane is on
+// screen.
 
 import type { ComponentType, JSX } from "preact";
 import { useEffect } from "preact/hooks";
 import type { RadarView } from "../../app/router.ts";
 import { RadarProvider, radarAct, useRadarState } from "../mount.tsx";
+import "../radar.css";
 import type { Tab } from "../state.ts";
 import { AgentTranscript } from "./AgentTranscript.tsx";
 import { Banner } from "./Banner.tsx";
 import { useApp } from "./context.ts";
 import { Drawer } from "./Drawer.tsx";
+import { SelfCheckBadge } from "./SelfCheckBadge.tsx";
 import { AgentsView } from "./views/Agents.tsx";
 import { AlertsView } from "./views/Alerts.tsx";
 import { BlocksView } from "./views/Blocks.tsx";
@@ -129,6 +131,9 @@ export function RadarTab({ view }: { view: RadarView }): JSX.Element | null {
       data-radar-view=""
       aria-label={VIEW_LABEL[view]}
     >
+      <header class="mb-4 flex justify-end empty:hidden">
+        <SelfCheckBadge />
+      </header>
       <RadarProvider>
         <RadarBody view={view} />
         <Drawer />
