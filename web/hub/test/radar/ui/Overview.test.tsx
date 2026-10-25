@@ -2,12 +2,14 @@
 // the controller hold, the spend chart and its fallback, the sessions table that opens the Session
 // screen, the alert card, the routers list and the top tools.
 
+import { waitFor } from "@testing-library/preact";
 import { describe, expect, it } from "vite-plus/test";
 import { AppContext, type AppValue } from "../../../src/radar/app/context.ts";
 import { OverviewView } from "../../../src/radar/app/views/Overview.tsx";
 import { type ClientState, initialClientState } from "../../../src/radar/state.ts";
 import { legacyClasses, makeCtx, makeRegistry, makeState, renderIn } from "../../helpers.tsx";
 import { uiFixtures } from "../helpers.ts";
+import { expectTokensOnly } from "./tokens.ts";
 
 const NOW = 1_790_000_000_000;
 const fixtures = uiFixtures();
@@ -18,8 +20,9 @@ const registrySessions = [
   { session_id: "s-kanban", machine: "laptop", state: "needs-you", last_event: "Stop", last_event_at: "" },
 ];
 
-/** Renders the Overview under both contexts it reads: radar's own and the huddle shell's. */
-function overview(state: Partial<ClientState>, sessions = registrySessions) {
+/** Renders the Overview under both contexts it reads: radar's own and the huddle shell's. The
+ *  shell's api answers the hub's /health with `health`, the router part the routers tile reads. */
+function overview(state: Partial<ClientState>, sessions = registrySessions, health: unknown = {}) {
   const value: AppValue = {
     state: { ...initialClientState(), ...state },
     now: NOW,
@@ -30,7 +33,15 @@ function overview(state: Partial<ClientState>, sessions = registrySessions) {
     <AppContext.Provider value={value}>
       <OverviewView />
     </AppContext.Provider>,
-    makeCtx(makeState(), { registry: makeRegistry({ sessions }) }),
+    makeCtx(makeState(), {
+      registry: makeRegistry({ sessions }),
+      api: {
+        api: (path) => (path === "/health" ? Promise.resolve(health) : Promise.resolve({})),
+        op: () => Promise.resolve({}),
+        channelPath: (ch, p) => `/api/c/${ch}${p}`,
+        channelHref: (ch, p) => `#/channels/${ch}${p}`,
+      },
+    }),
   );
 }
 
@@ -58,34 +69,38 @@ function priced(model: string, ts: number, upstream = "https://api.anthropic.com
 }
 
 describe("the radar Overview", () => {
-  it("shows the five cards: spend against its budget, requests with their failures, tokens with the cache share, sessions with who needs the owner, routers with the stopped one named", () => {
-    const { container } = overview({
-      summary: fixtures.summary,
-      sessions: [
-        { ...fixtures.sessionListItem, id: "s-lead", live: true },
-        { ...fixtures.sessionListItem, id: "s-kanban", live: false },
-      ],
-      spendToday: 18.4,
-      budgetStatus: {
-        version: 1,
-        updatedAt: NOW,
-        stopped: ["provider:kimi"],
-        spend: [
-          {
-            id: "b1",
-            spentUsd: 18.4,
-            limitUsd: 40,
-            pct: 46,
-            scope: "total",
-            period: "day",
-            action: "warn",
-            periodStart: NOW - 3600_000,
-          },
+  it("shows the five cards: spend against its budget, requests with their failures, tokens with the cache share, sessions live with who needs the owner, routers with the stopped one named", async () => {
+    const { container } = overview(
+      {
+        summary: fixtures.summary,
+        sessions: [
+          { ...fixtures.sessionListItem, id: "s-lead", live: true },
+          { ...fixtures.sessionListItem, id: "s-kanban", live: false },
         ],
+        spendToday: 18.4,
+        budgetStatus: {
+          version: 1,
+          updatedAt: NOW,
+          stopped: ["provider:kimi"],
+          spend: [
+            {
+              id: "b1",
+              spentUsd: 18.4,
+              limitUsd: 40,
+              pct: 46,
+              scope: "total",
+              period: "day",
+              action: "warn",
+              periodStart: NOW - 3600_000,
+            },
+          ],
+        },
+        providers: ["zai", "kimi", "deepseek", "minimax", "qwen"],
+        requests: [oldEdge(), priced("claude-opus-5-5", NOW - 60_000)],
       },
-      providers: ["zai", "kimi", "deepseek"],
-      requests: [oldEdge(), priced("claude-opus-5-5", NOW - 60_000)],
-    });
+      registrySessions,
+      { ok: true, router: { running: true, providers: ["zai", "kimi", "deepseek"] } },
+    );
     expect(container.querySelector('[data-stat="spend today"] .num')?.textContent).toBe("$18.40");
     expect(container.querySelector('[data-stat="spend today"] .bar-seg')?.getAttribute("style")).toContain(
       "width: 46%",
@@ -98,17 +113,21 @@ describe("the radar Overview", () => {
     expect(container.querySelector('[data-stat="requests"]')?.textContent).toContain("0 failed");
     expect(container.querySelector('[data-stat="tokens"] .num')?.textContent).toBe("8M");
     expect(container.querySelector('[data-stat="tokens"]')?.textContent).toContain("88% from cache");
-    expect(container.querySelector('[data-stat="sessions"] .num')?.textContent).toBe("2");
+    expect(container.querySelector('[data-stat="sessions"] .num')?.textContent).toBe("1");
     expect(container.querySelector('[data-stat="sessions"]')?.textContent).toContain("1 need you");
-    expect(container.querySelector('[data-stat="routers"] .num')?.textContent).toBe("2 of 3");
+    await waitFor(() =>
+      expect(container.querySelector('[data-stat="routers"] .num')?.textContent).toBe("2 of 3"),
+    );
     expect(container.querySelector('[data-stat="routers"]')?.textContent).toContain("kimi budget stopped");
   });
 
   it("says how many of today's calls the spend tile could not price, and nothing when it priced them all", () => {
     const tile = (spendUnpriced: number) =>
-      overview({ summary: fixtures.summary, spendToday: 12.5, spendUnpriced }).container.querySelector(
-        '[data-stat="spend today"] .num',
-      )?.textContent;
+      overview({
+        summary: fixtures.summary,
+        spendToday: 12.5,
+        spendUnpriced,
+      }).container.querySelector('[data-stat="spend today"] .num')?.textContent;
     expect(tile(3)).toBe("$12.50 · 3 unpriced");
     expect(tile(0)).toBe("$12.50");
   });
@@ -217,18 +236,21 @@ describe("the radar Overview", () => {
     expect(other.container.querySelector('[data-action="tab"][data-value="alerts"]')).not.toBeNull();
   });
 
-  it("names the routers with their ports, the stopped one last with its word", () => {
-    const { container } = overview({
-      summary: fixtures.summary,
-      providers: ["zai", "kimi"],
-      budgetStatus: { version: 1, updatedAt: NOW, stopped: ["provider:kimi"], spend: [] },
-    });
+  it("names the enabled routers, the stopped one first with its word", async () => {
+    const { container } = overview(
+      {
+        summary: fixtures.summary,
+        providers: ["zai", "kimi", "qwen"],
+        budgetStatus: { version: 1, updatedAt: NOW, stopped: ["provider:kimi"], spend: [] },
+      },
+      registrySessions,
+      { ok: true, router: { running: true, providers: ["zai", "kimi"] } },
+    );
+    await waitFor(() => expect(container.querySelector('[data-router="zai"]')?.textContent).toContain("up"));
     const rows = [...container.querySelectorAll("[data-router]")];
     expect(rows.map((row) => row.getAttribute("data-router"))).toEqual(["kimi", "zai"]);
-    expect(rows[0]?.textContent).toContain("kimi · :18788");
-    expect(rows[0]?.textContent).toContain("budget stopped");
-    expect(rows[1]?.textContent).toContain("zai · :18787");
-    expect(rows[1]?.textContent).toContain("up");
+    expect(rows[0]?.textContent).toBe("kimibudget stopped");
+    expect(rows[1]?.textContent).toBe("zaiup");
   });
 
   it("bars the tools the agents used most", () => {
@@ -256,7 +278,7 @@ describe("the radar Overview", () => {
     expect(link?.textContent).toContain("No budget set");
   });
 
-  it("counts the range's failures in the requests card's tone", () => {
+  it("counts the range's HTTP failures in the requests card's tone", () => {
     const { container } = overview({
       summary: fixtures.summary,
       requests: [
@@ -265,7 +287,9 @@ describe("the radar Overview", () => {
         {
           ...priced("claude-opus-5-5", NOW - 60_000),
           id: "req-failed",
-          stopReason: "error" as const,
+          stopReason: null,
+          status: "529",
+          error: "overloaded",
         },
       ],
     });
@@ -374,6 +398,80 @@ describe("the radar Overview", () => {
     const dot = container.querySelector('[role="img"][aria-label="ended"]');
     expect(dot).not.toBeNull();
     expect(container.textContent).toContain("gone");
+  });
+});
+
+/** The tokens guard over the stat row and the routers card, the parts these tiles paint. */
+function expectTiles(container: ParentNode): void {
+  for (const part of ["[data-stat-cards]", "[aria-labelledby='ovw-routers']"]) {
+    const root = container.querySelector(part);
+    expect(root, part).not.toBeNull();
+    if (root !== null) expectTokensOnly(root);
+  }
+}
+
+describe("the Overview tiles measure what they claim", () => {
+  it("counts the live sessions only: three live beside sixty-three ended read 3", () => {
+    const live = Array.from({ length: 3 }, (_, i) => ({
+      ...fixtures.sessionListItem,
+      id: `s-live-${i}`,
+      live: true,
+    }));
+    const ended = Array.from({ length: 63 }, (_, i) => ({
+      ...fixtures.sessionListItem,
+      id: `s-ended-${i}`,
+      live: false,
+    }));
+    const { container } = overview({ summary: fixtures.summary, sessions: [...live, ...ended] });
+    const tile = container.querySelector('[data-stat="sessions"]');
+    expect(tile?.querySelector(".num")?.textContent).toBe("3");
+    expect(tile?.textContent).toContain("live now");
+    expectTiles(container);
+  });
+
+  it("reads the enabled providers from the router: providers.json {zai} reads 1 of 1", async () => {
+    const { container } = overview(
+      { summary: fixtures.summary, providers: ["zai", "kimi", "deepseek", "minimax", "qwen"] },
+      registrySessions,
+      { ok: true, router: { running: true, pid: 4242, port: 18786, providers: ["zai"] } },
+    );
+    await waitFor(() =>
+      expect(container.querySelector('[data-stat="routers"] .num')?.textContent).toBe("1 of 1"),
+    );
+    expect(container.querySelector('[data-stat="routers"]')?.textContent).toContain("all up");
+    expect(
+      [...container.querySelectorAll("[data-router]")].map((row) => row.getAttribute("data-router")),
+    ).toEqual(["zai"]);
+    expectTiles(container);
+  });
+
+  it("reads down when huddle-router is not running", async () => {
+    const { container } = overview({ summary: fixtures.summary, providers: ["zai"] }, registrySessions, {
+      ok: true,
+      router: { running: false, providers: ["zai"] },
+    });
+    await waitFor(() =>
+      expect(container.querySelector('[data-stat="routers"] .num')?.textContent).toBe("down"),
+    );
+    expect(container.querySelector('[data-router="zai"]')?.textContent).toContain("down");
+    expectTiles(container);
+  });
+
+  it("counts a 502 with no stop reason as failed and leaves a cancelled 499 out", () => {
+    const failed = { ...priced("claude-opus-5-5", NOW - 120_000), stopReason: null, status: "502" };
+    const cancelled = {
+      ...priced("claude-opus-5-5", NOW - 90_000),
+      stopReason: null,
+      status: "499",
+    };
+    const { container } = overview({
+      summary: fixtures.summary,
+      requests: [oldEdge(), priced("claude-opus-5-5", NOW - 60_000), failed, cancelled],
+    });
+    const tile = container.querySelector('[data-stat="requests"]');
+    expect(tile?.textContent).toContain("1 failed");
+    expect(tile?.textContent).toContain("1 cancelled");
+    expectTiles(container);
   });
 });
 

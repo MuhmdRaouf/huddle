@@ -82,6 +82,54 @@ test("the overview's Day cards show the seeded totals", async ({ page }) => {
   await expect(requests).toContainText("0 failed");
 });
 
+test("the overview's tiles count live sessions, the router's health and HTTP failures only", async ({
+  page,
+}) => {
+  // two calls beside the seeded ones, inside the default hour: a 502 the router answered with no
+  // stop reason, and a 499 its client cancelled
+  await page.route("**/api/radar/api/requests?*", async (route) => {
+    const answer = await route.fetch();
+    const body = (await answer.json()) as { requests: Record<string, unknown>[] };
+    const seed = body.requests[0];
+    if (seed === undefined) throw new Error("the seeded requests are missing");
+    const at = Date.now() - 30_000;
+    const call = (status: string) => ({
+      ...seed,
+      id: `e2e-${status}`,
+      ts: at,
+      status,
+      stopReason: null,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    });
+    await route.fulfill({
+      response: answer,
+      json: { requests: [...body.requests, call("502"), call("499")] },
+    });
+  });
+  await signIn(page);
+  await openTab(page, "Radar");
+
+  const requests = page.locator("[data-stat='requests']");
+  await expect(requests).toContainText("1 failed");
+  await expect(requests).toContainText("1 cancelled");
+
+  // sessions: the live ones the store holds, not every session it ever saw
+  const sessions = await page.evaluate(async () => {
+    const r = await fetch("/api/radar/api/sessions");
+    return ((await r.json()) as { sessions: { live: boolean }[] }).sessions;
+  });
+  const live = sessions.filter((s) => s.live).length;
+  expect(sessions.length).toBeGreaterThan(live);
+  const tile = page.locator("[data-stat='sessions']");
+  await expect(tile).toContainText("live now");
+  await expect(tile.locator(".num").first()).toHaveText(String(live));
+
+  // routers: this run starts no huddle-router, so the tile says so instead of counting plugins
+  await expect(page.locator("[data-stat='routers'] .num")).toHaveText("down");
+  await expect(page.locator("[aria-labelledby='ovw-routers']")).not.toContainText(":1878");
+  await expectAccessible(page);
+});
+
 test("the blocks view counts the seeded block once the scope includes the provider models", async ({
   page,
 }) => {

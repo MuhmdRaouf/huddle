@@ -12,16 +12,20 @@
 
 import { modelColor } from "@huddle/ui/model-color.ts";
 import type { ComponentChildren, JSX } from "preact";
+import { useEffect, useState } from "preact/hooks";
 import { useHuddle } from "../../../app/context.tsx";
 import type { RegistrySession } from "../../../registry.ts";
 import { fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { SERIES, STATUS_COLOR } from "../../palette.ts";
+import type { RouterFacts } from "../../shared/api.ts";
 import { bucketPlan, rangeWords, stampOf } from "../../shared/time-range.ts";
 import {
   type ClientState,
   flowSource,
   liveQuota,
+  requestCancelled,
   requestCost,
+  requestFailed,
   resetsIn,
   visibleRequests,
 } from "../../state.ts";
@@ -35,14 +39,8 @@ import { EmptyState, ModelChip, Status, shortModelName } from "../kit.tsx";
 import { OverviewGraphs } from "../OverviewGraphs.tsx";
 import { isJob } from "../sessions.ts";
 
-/** The loopback port each provider plugin's router serves on, for the routers list. */
-const ROUTER_PORTS: Record<string, number> = {
-  zai: 18787,
-  kimi: 18788,
-  deepseek: 18789,
-  minimax: 18790,
-  qwen: 18791,
-};
+/** How often the routers card asks the hub whether huddle-router serves. */
+const ROUTER_POLL_MS = 10_000;
 
 /** The most models the chart stacks; the rest of the spend joins one "other" band. */
 const CHART_MODELS = 3;
@@ -135,22 +133,20 @@ function SpendStat() {
   );
 }
 
-/** The range's numbers the cards read: requests, failed ones, tokens and the cache's share. */
+/** The range's numbers the cards read: requests, the HTTP and connection failures among them, the
+ *  calls their client cancelled, tokens and the cache's share. */
 function rangeNumbers(state: ClientState, now: number) {
   const { from, to, history } = flowSource(state, now);
   const inRange = (ts: number): boolean => ts >= from && ts <= to;
   const requests = history ? [] : visibleRequests(state).filter((r) => inRange(r.ts));
-  const failed = requests.filter(
-    (r) =>
-      r.stopReason !== null &&
-      ["error", "overloaded_error", "api_error", "request_error"].includes(r.stopReason),
-  ).length;
+  const failed = requests.filter(requestFailed).length;
+  const cancelled = requests.filter(requestCancelled).length;
   const tokens = requests.reduce(
     (sum, r) => sum + r.tokens.input + r.tokens.output + r.tokens.cacheRead + r.tokens.cacheWrite,
     0,
   );
   const cache = requests.reduce((sum, r) => sum + r.tokens.cacheRead, 0);
-  return { from, to, history, requests, failed, tokens, cache };
+  return { from, to, history, requests, failed, cancelled, tokens, cache };
 }
 
 /** The chart's bands: the range's spend bucketed by hour, one band per top model plus "other". */
@@ -396,25 +392,39 @@ function TopSessions() {
   );
 }
 
-/** The sessions card's count and its needs-you word, read from the registry the Now list shares. */
+/** The local midnight that starts the day `now` falls in. */
+function startOfDay(now: number): number {
+  const day = new Date(now);
+  day.setHours(0, 0, 0, 0);
+  return day.getTime();
+}
+
+/** The sessions card: the sessions live now, the needs-you word from the registry the Now list
+ *  shares, and how many sessions saw a request today. */
 function SessionsStat() {
-  const { state } = useApp();
+  const { state, now } = useApp();
   const { registry } = useHuddle();
   const needs = registry.needs();
   const main = state.sessions.filter((item) => !isJob(item));
+  const live = main.filter((item) => item.live).length;
+  const today = main.filter((item) => item.lastAt >= startOfDay(now)).length;
   return (
     <Stat
-      title="Sessions"
-      value={fmtNum(main.length)}
+      title="Sessions · live now"
+      stat="Sessions"
+      value={fmtNum(live)}
       subline={
-        needs > 0 ? <Status tone="warn" word={`${fmtNum(needs)} need you`} /> : <span>none need you</span>
+        <>
+          {needs > 0 ? <Status tone="warn" word={`${fmtNum(needs)} need you`} /> : <span>none need you</span>}
+          <span class="num">{` · ${fmtNum(today)} today`}</span>
+        </>
       }
     />
   );
 }
 
 /** The requests card: the range's count, the window named on the tile — all time, said plainly,
- *  when only the summary can answer — and the failures in their tone. */
+ *  when only the summary can answer — the failures in their tone and the cancelled calls apart. */
 function RequestsStat({
   state,
   now,
@@ -431,10 +441,11 @@ function RequestsStat({
       stat="Requests"
       value={count === null ? fmtNum(state.summary?.requests ?? 0) : fmtNum(count)}
       subline={
-        numbers.failed > 0 ? (
-          <Status tone="err" word={`${fmtNum(numbers.failed)} failed`} />
-        ) : numbers.history ? null : (
-          <Status tone="ok" word="0 failed" />
+        numbers.history && numbers.failed === 0 ? null : (
+          <>
+            <Status tone={numbers.failed > 0 ? "err" : "ok"} word={`${fmtNum(numbers.failed)} failed`} />
+            {numbers.cancelled > 0 && <span class="num">{` · ${fmtNum(numbers.cancelled)} cancelled`}</span>}
+          </>
         )
       }
     />
@@ -475,23 +486,73 @@ function TokensStat({
   );
 }
 
-/** The routers card: how many are up, the one a stopped budget names. */
-function RoutersStat() {
+/** The router part of a /health answer, checked at the edge; null when it names no router. */
+function routerFactsOf(answer: unknown): RouterFacts | null {
+  if (typeof answer !== "object" || answer === null) return null;
+  const router: unknown = (answer as { router?: unknown }).router;
+  if (typeof router !== "object" || router === null) return null;
+  const { running, providers } = router as { running?: unknown; providers?: unknown };
+  return {
+    running: running === true,
+    providers: Array.isArray(providers)
+      ? providers.filter((name): name is string => typeof name === "string")
+      : null,
+  };
+}
+
+/** What the hub says about huddle-router, asked once on mount and every ROUTER_POLL_MS after;
+ *  null until the first answer names the router. */
+function useRouterFacts(): RouterFacts | null {
+  const { api } = useHuddle();
+  const [facts, setFacts] = useState<RouterFacts | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const ask = (): void => {
+      api
+        .api("/health")
+        .then((answer) => {
+          if (alive) setFacts(routerFactsOf(answer));
+        })
+        .catch(() => {
+          if (alive) setFacts(null);
+        });
+    };
+    ask();
+    const timer = setInterval(ask, ROUTER_POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [api]);
+  return facts;
+}
+
+/** The routers card: huddle-router down, or how many of the enabled providers it serves with the
+ *  ones a stopped budget names; an enabled list the hub does not send leaves the plain "up". */
+function RoutersStat({ facts }: { facts: RouterFacts | null }) {
   const { state } = useApp();
   const stopped = stoppedScopes(state);
-  const up = Math.max(0, state.providers.length - stopped.size);
-  const named = [...stopped].map((scope) => scope.replace(/^provider:/, ""));
+  const enabled = facts?.providers ?? null;
+  const named = (enabled ?? state.providers).filter((name) => stopped.has(`provider:${name}`));
+  const stoppedWord =
+    named.length > 0 ? (
+      <Status tone="err" word={`${named.join(", ")} budget stopped`} />
+    ) : (
+      <span>all up</span>
+    );
+  if (facts === null) return <Stat title="Routers" value="–" subline={null} />;
+  if (enabled !== null && enabled.length === 0)
+    return <Stat title="Routers" value="–" subline={<span>no provider set up</span>} />;
+  if (!facts.running)
+    return (
+      <Stat title="Routers" value="down" subline={<Status tone="err" word="huddle-router not running" />} />
+    );
+  if (enabled === null) return <Stat title="Routers" value="up" subline={stoppedWord} />;
   return (
     <Stat
       title="Routers"
-      value={state.providers.length === 0 ? "–" : `${up} of ${state.providers.length}`}
-      subline={
-        named.length > 0 ? (
-          <Status tone="err" word={`${named.join(", ")} budget stopped`} />
-        ) : (
-          <span>all up</span>
-        )
-      }
+      value={`${enabled.length - named.length} of ${enabled.length}`}
+      subline={stoppedWord}
     />
   );
 }
@@ -501,9 +562,17 @@ function stoppedScopes(state: ClientState): Set<string> {
   return new Set((state.budgetStatus?.stopped ?? []).filter((scope) => scope !== "total"));
 }
 
-/** One router row: the up dot or the stopped diamond, the name and its port, the word on the right. */
-function RouterRow({ plugin, stopped }: { plugin: string; stopped: boolean }) {
-  const port = ROUTER_PORTS[plugin];
+/** One router row: the stopped diamond, the down ring or the up dot, the provider's name, the word on
+ *  the right; nothing on the right while the hub has not said whether huddle-router serves. */
+function RouterRow({
+  plugin,
+  stopped,
+  running,
+}: {
+  plugin: string;
+  stopped: boolean;
+  running: boolean | null;
+}) {
   return (
     <div class="grid grid-cols-[14px_1fr_auto] items-center gap-x-2.5 py-1.5 text-sm" data-router={plugin}>
       {stopped ? (
@@ -513,49 +582,68 @@ function RouterRow({ plugin, stopped }: { plugin: string; stopped: boolean }) {
           role="img"
           aria-label="budget stopped"
         />
-      ) : (
+      ) : running === false ? (
+        <span
+          class="size-2.5 rounded-full border-2"
+          style={`border-color:${STATUS_COLOR.err}`}
+          role="img"
+          aria-label="down"
+        />
+      ) : running === true ? (
         <span class="size-2.5 rounded-full bg-[var(--ui-ok)]" role="img" aria-label="up" />
+      ) : (
+        <span class="size-2.5 rounded-full border border-[var(--ui-idle)]" aria-hidden="true" />
       )}
-      <span class="min-w-0 truncate">
-        {plugin}
-        {port !== undefined && <span class="text-[var(--ui-muted)]"> · :{port}</span>}
-      </span>
+      <span class="min-w-0 truncate">{plugin}</span>
       {stopped ? (
         <span class="text-xs" style={`color:${STATUS_COLOR.err}`}>
           budget stopped
         </span>
-      ) : (
+      ) : running === false ? (
+        <span class="text-xs" style={`color:${STATUS_COLOR.err}`}>
+          down
+        </span>
+      ) : running === true ? (
         <span class="text-xs text-[var(--ui-muted)]">up</span>
+      ) : (
+        <span />
       )}
     </div>
   );
 }
 
-/** The routers list: every provider plugin the budgets route knows, stopped ones named. */
-function RoutersList() {
+/** The routers list: the providers huddle-router enables, or every provider plugin the budgets
+ *  route knows while the hub does not name them, stopped ones first. */
+function RoutersList({ facts }: { facts: RouterFacts | null }) {
   const { state } = useApp();
   const stopped = stoppedScopes(state);
+  const providers = facts?.providers ?? state.providers;
   return (
     <section class="ui-card p-4 md:p-5" aria-labelledby="ovw-routers">
       <h2 id="ovw-routers" class="mb-1 text-[15px] font-semibold">
         Routers
       </h2>
-      {state.providers.length === 0 ? (
+      {providers.length === 0 ? (
         <EmptyState
           title="No provider plugins yet"
-          hint="A provider plugin's router shows up here once it reports: zai, kimi, deepseek, minimax, qwen."
+          hint="A provider shows up here once it is set up: zai, kimi, deepseek, minimax, qwen."
           icon="route"
         />
       ) : (
         <div class="flex flex-col">
-          {[...state.providers]
+          {[...providers]
             .sort(
               (a, b) =>
                 Number(stopped.has(`provider:${b}`)) - Number(stopped.has(`provider:${a}`)) ||
                 a.localeCompare(b),
             )
             .map((plugin) => (
-              <RouterRow key={plugin} plugin={plugin} stopped={stopped.has(`provider:${plugin}`)} />
+              <RouterRow
+                key={plugin}
+                plugin={plugin}
+                stopped={stopped.has(`provider:${plugin}`)}
+                running={facts?.running ?? null}
+              />
             ))}
         </div>
       )}
@@ -714,6 +802,7 @@ function PlanLimits() {
 export function OverviewView(): JSX.Element {
   const { state, now } = useApp();
   const numbers = rangeNumbers(state, now);
+  const routers = useRouterFacts();
   return (
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:col-span-2 xl:grid-cols-5" data-stat-cards="">
@@ -721,7 +810,7 @@ export function OverviewView(): JSX.Element {
         <RequestsStat state={state} now={now} numbers={numbers} />
         <TokensStat state={state} now={now} numbers={numbers} />
         <SessionsStat />
-        <RoutersStat />
+        <RoutersStat facts={routers} />
       </div>
       <div class="grid min-w-0 gap-4 xl:col-span-2">
         <ActiveBlock />
@@ -741,7 +830,7 @@ export function OverviewView(): JSX.Element {
         <div class="hidden md:block">
           <AlertCard />
         </div>
-        <RoutersList />
+        <RoutersList facts={routers} />
         <div class="hidden md:block">
           <TopTools />
         </div>

@@ -272,6 +272,11 @@ export type ProviderHealth = {
   lastReason: string | null;
 };
 
+/** The router part of the hub's GET /health, as the Overview's routers card reads it: whether
+ *  huddle-router serves, and the providers its providers.json enables; `providers` is null when
+ *  the answer does not name them. */
+export type RouterFacts = { running: boolean; providers: string[] | null };
+
 export type RouterHealth = {
   windowMs: number;
   buckets: number;
