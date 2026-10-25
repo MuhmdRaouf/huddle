@@ -101,6 +101,7 @@ type Result struct {
 	Created bool // this call started the server
 	First   bool // this home's Huddle never ran before (no members yet)
 	URL     string
+	Exit    int // a failure's own exit code; 0 leaves the command's default
 }
 
 // pidFile is the home's pid file, in its run directory.
@@ -290,6 +291,7 @@ type placement struct {
 	note  string // a line said before the start's own words
 	reuse bool   // a huddle already answers there: start nothing
 	err   string
+	exit  int // the exit code err asks for; 0 leaves up's default
 }
 
 // oursAnswers says whether the huddle answering on port runs from this home: the health path
@@ -322,7 +324,8 @@ func oursAnswers(ctx context.Context, port int, root string) bool {
 // url yet means ChoosePort picks one (18860 first, then 18861 to 18869, then the OS's pick) and
 // saves it; a saved port huddle picked that another program now holds means a new one, saved,
 // with a line that says so; a port someone chose (HUDDLE_URL, huddle.json's url, HUDDLE_PORT,
-// --port) is never moved, only saved when it came from HUDDLE_PORT.
+// --port) is never moved, only saved when it came from HUDDLE_PORT; a hub behind its proxy holds
+// its pinned port, and another program on it ends up with exit 2.
 func place(ctx context.Context, w *World, rawURL, sid string) placement {
 	h := Home(ctx, w)
 	probe := func(ctx context.Context, port int) bool { return oursAnswers(ctx, port, h) }
@@ -377,6 +380,10 @@ func place(ctx context.Context, w *World, rawURL, sid string) placement {
 		}
 		file := SavePort(ctx, w, chosen.Port, chosen.Auto, h)
 		return placement{url: Local(chosen.Port), note: fmt.Sprintf("port %d is taken by another program: Huddle moved to port %d (saved in %s)", port, chosen.Port, file)}
+	}
+	if cfg, err := home.LoadConfig(home.Home{Root: h}); err == nil && cfg.Role == "hub" && cfg.Hub.Listen == "" &&
+		saved != nil && !saved.Auto && saved.Port == port {
+		return placement{exit: 2, err: fmt.Sprintf("port %d is pinned for the hub behind its proxy: free it, or choose another port with huddle setup --port <n> and update the proxy", port)}
 	}
 	return placement{err: fmt.Sprintf("port %d is taken by another program, not Huddle: free it, or choose another port with huddle setup --port <n>", port)}
 }
@@ -493,7 +500,7 @@ func up(ctx context.Context, w *World, rawURL string, budgetMS int, sid string, 
 	}
 	at := place(ctx, w, rawURL, sid)
 	if at.err != "" {
-		return Result{URL: rawURL, Msg: at.err}
+		return Result{URL: rawURL, Msg: at.err, Exit: at.exit}
 	}
 	rawURL = at.url
 	said := ""
@@ -1061,7 +1068,8 @@ func noteServer(ctx context.Context, w *World, home string, entry ServerEntry) {
 // bundled server. rawURL is the identity's address (empty when this project has none yet), args
 // the command line (up reads its --port wherever it stands in it). The answer's words go to
 // stdout when it is good news and stderr when it is not; the returned int is the exit code:
-// 0 ok, 2 down failed, 5 up or server unreachable, 2 again for a bad --port.
+// 0 ok, 2 down failed, 5 up or server unreachable, 2 again for a bad --port or a hub's pinned
+// port another program holds.
 func ServerCommand(ctx context.Context, w *World, command, rawURL string, args []string, stdout, stderr io.Writer) int {
 	var port string
 	for i := 0; i < len(args); i++ {
@@ -1114,6 +1122,9 @@ func ServerCommand(ctx context.Context, w *World, command, rawURL string, args [
 	}
 	if result.OK {
 		return 0
+	}
+	if result.Exit != 0 {
+		return result.Exit
 	}
 	if command == "down" {
 		return 2

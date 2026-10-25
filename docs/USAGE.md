@@ -403,12 +403,15 @@ in proxy mode:
    The hub opens no listener of its own; printed links name the proxy's origin
    (`https://hub.example.dev/?code=…`), and the sign-in cookie carries `Secure` when the proxy
    forwards `X-Forwarded-Proto: https` from loopback. The header from any other peer is ignored.
+   The role pins the hub's port (18860, or the one already saved) so the proxy always finds it:
+   when another program holds it, `huddle up` exits 2 instead of moving to another port. Leaving
+   the hub role (`huddle role solo` or `satellite`) unpins it.
 
 6. Bring the phone in: `huddle trust --phone` prints a QR (the page it opens serves for 10
    minutes and installs nothing on the computer); then `huddle pair --name phone`, scan, and save
    the passkey. The dashboard's Settings → Devices carries the same "Add a phone" QR.
 
-6. Keep it running through logouts and reboots with the machine's own service manager:
+7. Keep it running through logouts and reboots with the machine's own service manager:
 
    ```sh
    huddle service install      # a launchd agent on macOS, a systemd user unit on Linux

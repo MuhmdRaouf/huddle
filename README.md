@@ -240,6 +240,8 @@ serves it instead (`huddle cert` says which). It is never renewed; the log names
 Behind a TLS reverse proxy (Caddy) on this machine, give the name alone: `huddle role hub --host hub.example.dev`.
 The hub keeps answering loopback only, the proxy serves the certificate and forwards to it, and `huddle open`
 prints `https://hub.example.dev/?code=…`; a sign-in the proxy forwards from https gets a `Secure` cookie.
+The role pins the hub's port (18860, or the one already saved) so the proxy always finds it: when another program
+holds it, `huddle up` exits 2 instead of moving to another port.
 
 ## Use Huddle on your phone
 

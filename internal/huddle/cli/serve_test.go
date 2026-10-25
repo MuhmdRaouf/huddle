@@ -836,3 +836,29 @@ func TestDashboardBaseIsTheHostOriginWithoutAListener(t *testing.T) {
 		})
 	}
 }
+
+// TestAPinnedPortIsNeverWalked pins the hub behind its proxy to its port: another program on it
+// stops up with exit 2 and the pinned line, and no other port is tried or saved.
+func TestAPinnedPortIsNeverWalked(t *testing.T) {
+	home, w := oneHome(t)
+	other, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	taken := other.Addr().(*net.TCPAddr).Port
+	writeFile(t, filepath.Join(home, "config.toml"),
+		fmt.Sprintf("role = \"hub\"\nport = %d\n\n[hub]\nhost = \"hub.example.invalid\"\n", taken))
+	before := savedText(t, home)
+	code, out := runServerCommand(t, w, "up")
+	want := fmt.Sprintf("port %d is pinned for the hub behind its proxy: free it, or choose another port with huddle setup --port <n> and update the proxy", taken)
+	if code != 2 || !strings.Contains(out, want) {
+		t.Fatalf("up on a pinned port = (%d, %q), want 2 and %q", code, out, want)
+	}
+	if after := savedText(t, home); after != before {
+		t.Errorf("the config was rewritten to %s, want %s", after, before)
+	}
+	if strings.Contains(out, "started at") || strings.Contains(out, "moved to port") {
+		t.Errorf("up tried another port: %q", out)
+	}
+}

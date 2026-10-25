@@ -3,10 +3,11 @@ package cli
 // The role words (SPEC 3): `huddle role` writes the machine's role into the home's config.toml.
 // Solo, the default, is one machine on loopback. Hub names the machine hub.host for the owner's
 // paired devices and satellites: with hub.listen it adds its own TLS listener there, without it a
-// TLS reverse proxy on this machine (Caddy) serves the name and forwards to loopback. Satellite serves its own
-// sessions on loopback and reaches the hub at hub.url. The words run on the machine itself, in a
-// terminal the owner holds, so no passkey step-up guards them: whoever owns the terminal owns the
-// config. A restart (huddle up, or the service) takes the role up.
+// TLS reverse proxy on this machine (Caddy) serves the name and forwards to the loopback port the
+// role pins until the machine leaves the hub role. Satellite serves its own sessions on loopback
+// and reaches the hub at hub.url. The words run on the machine itself, in a terminal the owner
+// holds, so no passkey step-up guards them: whoever owns the terminal owns the config. A restart
+// (huddle up, or the service) takes the role up.
 
 import (
 	"context"
@@ -18,6 +19,7 @@ import (
 	"strconv"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
@@ -48,6 +50,7 @@ func Role(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 		fmt.Fprintf(stderr, "huddle: %v\n", err)
 		return 1
 	}
+	pinned := cfg.Role == "hub" && cfg.Hub.Listen == "" // the proxy's port, which only that hub holds
 	switch pos[0] {
 	case "solo":
 		cfg.Role = "solo"
@@ -74,6 +77,12 @@ func Role(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 		cfg.Role = "hub"
 		cfg.Hub.Listen = listen
 		cfg.Hub.Host = host
+		if !hasListen { // the proxy forwards to one fixed port: up never walks away from it
+			if cfg.Port == 0 {
+				cfg.Port = server.PortFirst
+			}
+			cfg.PortAuto = false
+		}
 	case "satellite":
 		hubURL, hasURL := opt.text("hub")
 		if !hasURL {
@@ -90,6 +99,9 @@ func Role(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 	default:
 		fmt.Fprintln(stderr, roleUsage)
 		return 2
+	}
+	if pinned && cfg.Role != "hub" { // leaving the hub hands the port back to huddle
+		cfg.PortAuto = true
 	}
 	if err := home.SaveConfig(home.Home{Root: root}, cfg); err != nil {
 		fmt.Fprintf(stderr, "huddle: %v\n", err)
@@ -126,7 +138,7 @@ func roleLines(cfg home.Config, h home.Home, w *World, stdout io.Writer) {
 		if cfg.Hub.Listen == "" {
 			fmt.Fprintf(stdout, "role hub: this machine answers loopback only, as %s behind a TLS reverse proxy\n",
 				hubBaseURL(cfg.Hub.Host, ""))
-			fmt.Fprintln(stdout, "restart huddle for the role to take effect; the proxy serves the certificate and forwards to loopback")
+			fmt.Fprintf(stdout, "restart huddle for the role to take effect; the proxy serves the certificate and forwards to %s\n", Local(cfg.Port))
 			return
 		}
 		fmt.Fprintf(stdout, "role hub: paired devices and satellites answer on %s, as %s\n",
