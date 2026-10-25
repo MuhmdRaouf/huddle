@@ -355,6 +355,96 @@ func TestTheReportHookLetsNoInjectedPromptNameTheSession(t *testing.T) {
 	}
 }
 
+// TestTheReportCarriesTheToolName pins the tool half of a PreToolUse or PostToolUse report: the
+// tool's name and its short target (the Bash command, the edited file, the MCP tool), cut to
+// 120 runes, and nothing else of the tool's input.
+func TestTheReportCarriesTheToolName(t *testing.T) {
+	cwd := t.TempDir()
+	long := strings.Repeat("ü", 150)
+	cases := []struct {
+		name, event, toolName, toolInput, wantTarget string
+	}{
+		{"bash", "PostToolUse", "Bash", `{"command":"git status","description":"show the tree"}`, "git status"},
+		{"bash first line", "PreToolUse", "Bash", `{"command":"cat <<EOF > notes\nAPI_KEY=abc\nEOF"}`, "cat <<EOF > notes"},
+		{"long command", "PreToolUse", "Bash", fmt.Sprintf(`{"command":%q}`, "echo "+long), "echo " + long[:len("ü")*115]},
+		{"edit", "PostToolUse", "Edit", `{"file_path":"/repo/src/cart.ts","old_string":"a","new_string":"SECRET"}`, "/repo/src/cart.ts"},
+		{"write", "PreToolUse", "Write", `{"file_path":"/repo/.env","content":"TOKEN=hunter2"}`, "/repo/.env"},
+		{"notebook", "PostToolUse", "NotebookEdit", `{"notebook_path":"/repo/a.ipynb","new_source":"x"}`, "/repo/a.ipynb"},
+		{"mcp", "PreToolUse", "mcp__huddle__publish", `{"channel":"c","text":"private words"}`, "publish"},
+		{"other", "PostToolUse", "Glob", `{"pattern":"**/*.go"}`, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			reg, url := startRegistry(t)
+			input := fmt.Sprintf(`{"session_id":"s-tool","hook_event_name":%q,"tool_name":%q,"tool_input":%s,"cwd":%q}`,
+				c.event, c.toolName, c.toolInput, cwd)
+			runReportHook(t, input, reportHome(t), map[string]string{"HUDDLE_URL": url})
+			took := reg.took()
+			if len(took) != 1 {
+				t.Fatalf("the registry took %d POSTs, want 1", len(took))
+			}
+			body := took[0].Body
+			if got := field(body, "tool"); got != c.toolName {
+				t.Errorf("tool = %q, want %q", got, c.toolName)
+			}
+			got, has := body["tool_target"]
+			if c.wantTarget == "" && has {
+				t.Errorf("tool_target = %q, want it absent", got)
+			}
+			if c.wantTarget != "" && got != c.wantTarget {
+				t.Errorf("tool_target = %q, want %q", got, c.wantTarget)
+			}
+			for _, secret := range []string{"API_KEY", "SECRET", "hunter2", "private words", "show the tree"} {
+				if strings.Contains(took[0].Raw, secret) {
+					t.Errorf("the report carries %q from the tool's input: %s", secret, took[0].Raw)
+				}
+			}
+		})
+	}
+	// an event that runs no tool names none
+	reg, url := startRegistry(t)
+	input := fmt.Sprintf(`{"session_id":"s-tool","hook_event_name":"Stop","tool_name":"Bash","tool_input":{"command":"ls"},"cwd":%q}`, cwd)
+	runReportHook(t, input, reportHome(t), map[string]string{"HUDDLE_URL": url})
+	for _, key := range []string{"tool", "tool_target"} {
+		if got, has := reg.took()[0].Body[key]; has {
+			t.Errorf("%s = %q on a Stop, want it absent", key, got)
+		}
+	}
+}
+
+// TestTheReportCarriesThePromptLine pins the prompt half: a UserPromptSubmit report carries the
+// typed prompt's first line, cut to 120 runes, and an injected prompt carries none.
+func TestTheReportCarriesThePromptLine(t *testing.T) {
+	cwd := t.TempDir()
+	long := strings.Repeat("é", 150)
+	cases := []struct {
+		name, prompt, want string
+	}{
+		{"first line", "  fix the login bug  \nand then the tests", "fix the login bug"},
+		{"long", long + "\nmore", long[:len("é")*120]},
+		{"injected", "<system-reminder>hi</system-reminder>", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			reg, url := startRegistry(t)
+			input := fmt.Sprintf(`{"session_id":"s-line","hook_event_name":"UserPromptSubmit","prompt":%q,"cwd":%q}`,
+				c.prompt, cwd)
+			runReportHook(t, input, reportHome(t), map[string]string{"HUDDLE_URL": url})
+			took := reg.took()
+			if len(took) != 1 {
+				t.Fatalf("the registry took %d POSTs, want 1", len(took))
+			}
+			got, has := took[0].Body["prompt_line"]
+			if c.want == "" && has {
+				t.Errorf("prompt_line = %q, want it absent", got)
+			}
+			if c.want != "" && got != c.want {
+				t.Errorf("prompt_line = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 func TestTheReportHookAppendsToTheOutboxWhenTheServerIsDown(t *testing.T) {
 	home := reportHome(t)
 	stdout, elapsed := runReportHook(t,

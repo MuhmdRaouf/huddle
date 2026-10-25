@@ -62,7 +62,16 @@ type reportInput struct {
 	Message          string `json:"message"`
 	NotificationType string `json:"notification_type"`
 	TeammateName     string `json:"teammate_name"`
+	ToolName         string `json:"tool_name"`
+	ToolInput        struct {
+		Command      string `json:"command"`
+		FilePath     string `json:"file_path"`
+		NotebookPath string `json:"notebook_path"`
+	} `json:"tool_input"`
 }
+
+// toolTargetRunes is the most runes a report's tool target and prompt line carry.
+const toolTargetRunes = 120
 
 // Report posts one session event to the local huddle's registry, through the outbox when the
 // server cannot take it.
@@ -100,6 +109,10 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			// an agent-team teammate is about to go idle: the registry lists it under this session
 			rep.Teammate = &hub.Teammate{Name: input.TeammateName, State: "idle"}
 		}
+		if (input.HookEventName == "PreToolUse" || input.HookEventName == "PostToolUse") && input.ToolName != "" {
+			rep.Tool = input.ToolName
+			rep.ToolTarget = toolTargetOf(input)
+		}
 		rep.Machine = machineOf(ctx, w)
 		rep.Project, rep.Branch = gitOf(ctx, w, input.Cwd, min(reportGitMS, left()))
 		// text Claude Code injects — a task notification, a system reminder, `!` shell input,
@@ -109,6 +122,9 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 		if input.Prompt != "" && !prompttext.IsHarness(input.Prompt) {
 			rep.Title = jsfmt.UTF16Slice(input.Prompt, 0, 80)
 			rep.Task = jsfmt.UTF16Slice(firstLineOf(input.Prompt), 0, 80)
+			if input.HookEventName == "UserPromptSubmit" {
+				rep.PromptLine = cutRunes(firstLineOf(input.Prompt), toolTargetRunes)
+			}
 		}
 		model, used := lastModelOf(input.TranscriptPath)
 		if model != "" {
@@ -223,6 +239,28 @@ func environOf(w *cli.World) []string {
 		return w.Environ()
 	}
 	return os.Environ()
+}
+
+// toolTargetOf answers the short target of the tool a hook input runs, cut to toolTargetRunes:
+// a Bash command's first line, the file an edit or a read names, or an MCP tool's own name. It
+// reads nothing else of the tool's input, so file contents and the rest of a command stay home.
+func toolTargetOf(input reportInput) string {
+	target := ""
+	switch {
+	case input.ToolName == "Bash":
+		target = firstLineOf(input.ToolInput.Command)
+	case strings.HasPrefix(input.ToolName, "mcp__"):
+		// mcp__<server>__<tool>: the tool's name follows the server's
+		name := strings.TrimPrefix(input.ToolName, "mcp__")
+		if at := strings.Index(name, "__"); at >= 0 {
+			target = name[at+2:]
+		}
+	case input.ToolInput.FilePath != "":
+		target = input.ToolInput.FilePath
+	default:
+		target = input.ToolInput.NotebookPath
+	}
+	return cutRunes(target, toolTargetRunes)
 }
 
 // firstLineOf answers s up to its first newline, trimmed.

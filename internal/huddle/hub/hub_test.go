@@ -5,6 +5,7 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strconv"
@@ -155,6 +156,46 @@ func TestReportKeepsEachSessionToItself(t *testing.T) {
 	}
 	if len(rows) != 2 || rows[0]["task"] != "a's task" || rows[1]["task"] != "b's task" {
 		t.Errorf("sessions = %v, want one row per session with its own task", rows)
+	}
+}
+
+// TestReportKeepsTheToolAndPromptLineOnTheEventRow pins that the event row holds a report's
+// tool, its target and the prompt's first line, and leaves them out of a report without them.
+func TestReportKeepsTheToolAndPromptLineOnTheEventRow(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	for _, rep := range []Report{
+		{SessionID: "s-t", PromptLine: "fix the login bug", LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:00.000Z"},
+		{SessionID: "s-t", Tool: "Bash", ToolTarget: "git status", LastEvent: "PreToolUse", LastEventAt: "2026-10-16T09:00:01.000Z"},
+		{SessionID: "s-t", LastEvent: "Stop", LastEventAt: "2026-10-16T09:00:02.000Z"},
+	} {
+		if err := db.Report(ctx, rep); err != nil {
+			t.Fatalf("report %s: %v", rep.LastEvent, err)
+		}
+	}
+	rows, err := db.st.All(ctx, "SELECT json FROM events ORDER BY seq")
+	if err != nil {
+		t.Fatalf("read events: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("events = %d rows, want 3", len(rows))
+	}
+	var got []Report
+	for _, row := range rows {
+		var rep Report
+		if err := json.Unmarshal([]byte(row["json"].(string)), &rep); err != nil {
+			t.Fatalf("decode %v: %v", row["json"], err)
+		}
+		got = append(got, rep)
+	}
+	if got[0].PromptLine != "fix the login bug" {
+		t.Errorf("prompt line = %q, want the stored one", got[0].PromptLine)
+	}
+	if got[1].Tool != "Bash" || got[1].ToolTarget != "git status" {
+		t.Errorf("tool/target = %q/%q, want Bash/git status", got[1].Tool, got[1].ToolTarget)
+	}
+	if stop := rows[2]["json"].(string); strings.Contains(stop, "tool") || strings.Contains(stop, "prompt_line") {
+		t.Errorf("the Stop row = %s, want no tool and no prompt line", stop)
 	}
 }
 

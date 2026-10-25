@@ -21,7 +21,10 @@ runs the `huddle` binary the plugin's launcher downloaded (macOS and Linux, amd6
    through the launcher; the next `SessionStart`, prompt or tool call brings it back after a
    crash or a reboot, so there is nothing to start or baby-sit by hand. One hook process runs per
    Claude Code event, and huddle's, radar's and kanban's parts ride inside it, each with its own
-   deadline.
+   deadline. Huddle's part reports the event to the hub: a tool call carries the tool's name and
+   its short target (a Bash command's first line, the file path, or the MCP tool's name), cut to
+   120 characters, and nothing else of the tool's input; a typed prompt carries its first line,
+   cut the same way.
 
 3. Ask for the dashboard:
 

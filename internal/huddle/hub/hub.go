@@ -37,9 +37,16 @@ type Report struct {
 	// Notification is what a Notification event told the user, kept whole for the item it grows.
 	Notification *Notification `json:"notification,omitempty"`
 	// Teammate is the agent-team teammate a TeammateIdle event names, with the state it reports.
-	Teammate    *Teammate `json:"teammate,omitempty"`
-	LastEvent   string    `json:"last_event"`
-	LastEventAt string    `json:"last_event_at"`
+	Teammate *Teammate `json:"teammate,omitempty"`
+	// Tool is the tool a PreToolUse or PostToolUse event runs; ToolTarget is its short target
+	// (the Bash command's first line, the file path, the MCP tool), never the rest of its input.
+	Tool       string `json:"tool,omitempty"`
+	ToolTarget string `json:"tool_target,omitempty"`
+	// PromptLine is the first line of the prompt a UserPromptSubmit event carries, when the
+	// person typed it.
+	PromptLine  string `json:"prompt_line,omitempty"`
+	LastEvent   string `json:"last_event"`
+	LastEventAt string `json:"last_event_at"`
 }
 
 // Teammate is one Claude Code agent-team teammate under a session: its name and its state.
