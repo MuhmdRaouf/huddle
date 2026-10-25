@@ -168,3 +168,37 @@ func openForTest(t *testing.T) *DB {
 	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
+
+// TestMigrateRecordsEachStepAsItLands pins that a start stopped between two migrations leaves a
+// database the next start resumes: each migration and its version mark land in one transaction,
+// so a migration that fails leaves the version at the last one that held, and nothing of its own.
+func TestMigrateRecordsEachStepAsItLands(t *testing.T) {
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "hub.db")
+	st, err := store.Open(ctx, file)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	// a stray table under the second migration's name makes that migration fail
+	if err := st.Run(ctx, "CREATE TABLE sessions (stray TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(ctx, st); err == nil || !strings.Contains(err.Error(), "migration 2") {
+		t.Fatalf("migrate over a stray sessions table = %v, want migration 2 to fail", err)
+	}
+	row, err := st.Get(ctx, "SELECT value FROM meta WHERE key = 'schema_version'")
+	if err != nil || row == nil || row["value"] != "1" {
+		t.Fatalf("schema_version after the failed step = %v (%v), want 1: the first migration held", row, err)
+	}
+	if err := st.Run(ctx, "DROP TABLE sessions"); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(ctx, st); err != nil {
+		t.Fatalf("migrate resumed from version 1 = %v, want every later migration to land", err)
+	}
+	row, err = st.Get(ctx, "SELECT value FROM meta WHERE key = 'schema_version'")
+	if err != nil || row == nil || row["value"] != strconv.Itoa(SchemaVersion) {
+		t.Errorf("schema_version after the resume = %v (%v), want %d", row, err, SchemaVersion)
+	}
+}

@@ -100,6 +100,17 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   (web/e2e/fetchrate.spec.ts) — every hub page, watched for 5 s, fails above 2 requests a second to one URL
 - **Rule:** an effect that fetches lists its inputs, and the hub e2e counts requests per URL.
 ||||||| parent of a1d3859 (test(repo): keep tests off the repository's own huddle.json with a project dir of their own)
+## 2026-10-25, a hub start stopped mid-migration left hub.db unopenable
+
+- **What happened:** under a load of 70, `TestServeEntryRefreshesAStaleService` cut a `serve` entry off at its
+  600 ms budget while the registry was still migrating. The next start on the same home said
+  `registry: migration 1: SQL logic error: table events already exists` and every start after it would have too.
+- **Cause:** the migrations ran as plain statements, and the schema version was written once, after the last one.
+  A start stopped between a migration and that write left tables without the version that says they exist.
+- **Guard:** `TestMigrateRecordsEachStepAsItLands` (internal/huddle/hub/hub_test.go)
+- **Rule:** each migration lands with its own version mark in one transaction, so a stopped start leaves a database
+  the next start resumes.
+
 ## 2026-10-25, a test joined the live hub
 
 - **What happened:** `TestHooksJsonCommand` failed on an untouched checkout: its hook said `You are in Huddle

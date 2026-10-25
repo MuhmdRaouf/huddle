@@ -302,14 +302,23 @@ func migrate(ctx context.Context, st *store.Store) error {
 	if version == SchemaVersion {
 		return nil // an up-to-date database is left byte for byte as it lays
 	}
+	// each migration lands with its own version mark in one transaction: a start stopped
+	// between two statements leaves a database the next start resumes, never one that says
+	// a table already exists
 	for n := version; n < SchemaVersion; n++ {
-		if err := st.Run(ctx, migrations[n]); err != nil {
-			return fmt.Errorf("migration %d: %w", n+1, err)
+		err := st.Tx(ctx, func(ctx context.Context, q store.Q) error {
+			if err := q.Run(ctx, migrations[n]); err != nil {
+				return fmt.Errorf("migration %d: %w", n+1, err)
+			}
+			if err := q.Run(ctx, "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
+				strconv.Itoa(n+1)); err != nil {
+				return fmt.Errorf("record schema version %d: %w", n+1, err)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
-	}
-	if err := st.Run(ctx, "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
-		strconv.Itoa(SchemaVersion)); err != nil {
-		return fmt.Errorf("record the schema version: %w", err)
 	}
 	return nil
 }
