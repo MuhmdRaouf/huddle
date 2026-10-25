@@ -210,6 +210,37 @@ func TestMultiRouterScenarios(t *testing.T) {
 			})
 		})
 
+		f.Scenario("a GET for another router's health path answers 404 locally and no upstream hears of it", func(s *bdd.S) {
+			var rig *multiRig
+			var got answer
+			s.Given("zai and kimi lanes", func(t *testing.T) {
+				rig = newMultiRig(s.T, multiOpts{})
+			})
+			s.When("GET /zai-router/health is read", func(t *testing.T) {
+				answer, err := getBody(rig.port, "/zai-router/health")
+				if err != nil {
+					t.Fatal(err)
+				}
+				got = answer
+			})
+			s.Then("it is answered 404 with the not-found error naming no such path", func(t *testing.T) {
+				if got.status != http.StatusNotFound {
+					t.Fatalf("status = %d, want 404", got.status)
+				}
+				if !strings.Contains(got.body, `"type":"not_found_error"`) || !strings.Contains(got.body, "no such path") {
+					t.Errorf("body = %q, want the Anthropic error shape naming no such path", got.body)
+				}
+			})
+			s.Then("nothing went upstream and no event was raised", func(t *testing.T) {
+				if rig.laneOf("zai").seen.len() != 0 || rig.laneOf("kimi").seen.len() != 0 || rig.anthropicSeen.len() != 0 {
+					t.Error("a probe for another router's path reached an upstream")
+				}
+				if events := rig.events.all(); len(events) != 0 {
+					t.Errorf("events = %+v, want none", events)
+				}
+			})
+		})
+
 		f.Scenario("every spool event carries the plugin of the lane that served the request", func(s *bdd.S) {
 			var rig *multiRig
 			s.Given("zai and kimi lanes with their own keys", func(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -24,6 +25,9 @@ const MultiName = "huddle-router"
 
 // MultiHealthPath answers GET with the router's name and the providers it serves.
 const MultiHealthPath = "/huddle-router/health"
+
+// routerPath matches a path whose first segment names a per-provider router (`/zai-router/health`).
+var routerPath = regexp.MustCompile(`^/[a-z0-9-]+-router(/|$)`)
 
 // GatewayPrefix is the path under which the mounted gateway serves: a harness points its base
 // URL at the router plus this prefix.
@@ -160,6 +164,12 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 				Name      string   `json:"name"`
 				Providers []string `json:"providers"`
 			}{OK: true, Name: MultiName, Providers: m.Providers()})
+			return
+		}
+		// A probe for a per-provider router's path is not a model call: it is answered 404 here
+		// and nothing goes upstream.
+		if req.URL.Path != MultiHealthPath && routerPath.MatchString(req.URL.Path) {
+			AnthropicError(res, http.StatusNotFound, "not_found_error", "huddle-router: no such path")
 			return
 		}
 		Receive(req, res, MultiName, m.limit, func(body []byte) {
