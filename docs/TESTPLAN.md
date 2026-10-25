@@ -106,6 +106,10 @@ The gates behind the flows:
   password prompt needs the owner.
 - Face ID / Touch ID on real hardware: the suites use a virtual authenticator and a soft key.
 - TOTP sign-in with a real authenticator app on a phone: the suites compute codes from the secret.
+- Whether Claude Code retries a router 502 sent before the answer's head:
+  `TestE2ERouterEarly502IsWholeAndTheNextRequestFinishes` proves the router hands the 502 over whole and
+  the next request streams to its end; a real `claude` turn against an upstream that fails once is the
+  owner's check.
 
 ## Live check
 
