@@ -24,7 +24,7 @@ import { Blocks, CopyButton } from "../Content.tsx";
 import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
 import { ModelChip } from "../kit.tsx";
-import { ContextTab, ErrorAlert } from "./ContextTab.tsx";
+import { ContextTab, ErrorAlert, holdsCall } from "./ContextTab.tsx";
 import { OverviewTab } from "./Overview.tsx";
 import { RawTab } from "./RawTab.tsx";
 import { httpStatusOf, prettyJson, rawDocument } from "./util.ts";
@@ -38,7 +38,8 @@ const TAB_ICONS: Record<DrawerTab, IconName> = {
   raw: "cpu",
 };
 
-/** The count a tab wears when the stored answer is in hand: its blocks, or its turns; null hides it. */
+/** The count a tab wears when the stored answer is in hand: its blocks, or its messages when the transcript
+ *  holds the call; null hides it. */
 function tabCount(
   state: ReturnType<typeof useApp>["state"],
   id: DrawerTab,
@@ -51,7 +52,8 @@ function tabCount(
   }
   if (id === "context") {
     const held = state.context[requestId];
-    return held?.status === "ready" ? held.totals.messages : null;
+    if (held?.status !== "ready") return null;
+    return held.messages.length === 0 || holdsCall(held.messages, requestId) ? held.totals.messages : null;
   }
   return null;
 }

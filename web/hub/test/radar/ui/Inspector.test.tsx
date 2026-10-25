@@ -182,6 +182,29 @@ describe("the Context tab", () => {
     expect(view.container.textContent).toContain("No usage reported for this request");
   });
 
+  it("attaches no history to a call the transcript holds no copy of, however near in time", () => {
+    // the agent's earlier turn sits one second before the call, but no message carries the call's id
+    const near = {
+      ...READY,
+      messages: READY.messages.slice(0, 2).map((m) => ({ ...m, ts: NOW - 6_000 })),
+      totals: { ...READY.totals, messages: 1904 },
+    };
+    const { container } = openOn("context", near);
+    expect(container.textContent).toContain("The transcript holds no copy of this call");
+    expect(container.querySelectorAll(".ctx-msg")).toHaveLength(0);
+    expect(container.querySelector("[data-context-totals]")).toBeNull();
+    expect(container.textContent).not.toContain("1,904");
+    expect(container.textContent).not.toContain("1904"); // the tab wears no count either
+  });
+
+  it("lists the history of a call whose request id the transcript carries, under Messages", () => {
+    const { container } = openOn("context", READY);
+    expect(container.textContent).not.toContain("The transcript holds no copy of this call");
+    expect(container.querySelectorAll(".ctx-msg")).toHaveLength(3);
+    expect(container.querySelector("[data-stat='Messages']")).toBeTruthy();
+    expect(container.querySelector("[data-stat='Turns']")).toBeNull();
+  });
+
   it("folds the captured prompt above the messages, its size and tool count on the row", () => {
     const { container } = openOn("context", READY, { capture: { a: CAPTURED } });
     const section = container.querySelector("details.ui-card:not(.ctx-msg)");

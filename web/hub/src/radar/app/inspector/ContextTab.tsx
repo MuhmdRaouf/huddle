@@ -4,7 +4,8 @@
  * first line — that opens into its blocks; the totals are a row of three stat cards and earlier pages load on
  * demand. Above the messages sits the prompt the request itself carried — its system prompt and tool
  * definitions, as the router captured them — collapsed by default, with the response headers it answered
- * under.
+ * under. A call is matched to the transcript by its request id only: when no turn carries it, the transcript
+ * holds no copy of the call, so none of the agent's history is attached to it.
  */
 
 import { Badge } from "@huddle/ui/badge.tsx";
@@ -97,7 +98,7 @@ function Totals({ totals }: { totals: ContextTotals }) {
   const contextTokens = usage === null ? null : usage.input + usage.cacheRead + usage.cacheWrite;
   return (
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-3" data-context-totals>
-      <Total title="Turns" value={fmtCount(totals.messages, "message")} />
+      <Total title="Messages" value={fmtCount(totals.messages, "message")} />
       <Total
         title="From stored text"
         value={`≈ ${fmtNum(totals.approxTokens)}`}
@@ -228,6 +229,11 @@ function PromptCapture({ capture }: { capture: CaptureState | undefined }) {
   );
 }
 
+/** Whether the rebuilt conversation holds the call itself: some turn carries the call's request id. */
+export function holdsCall(messages: readonly ContextMessage[], requestId: string): boolean {
+  return messages.some((message) => message.requestId === requestId);
+}
+
 /** The states the rebuilt conversation can arrive in, then its turns — with the prompt the request
  *  carried above them whenever the router captured one. */
 export function ContextTab({ request }: { request: RequestRecord }) {
@@ -259,6 +265,14 @@ export function ContextTab({ request }: { request: RequestRecord }) {
           words="The stored conversation could not be read; opening the tab again retries"
           cause={held.cause}
         />
+      </div>
+    );
+  }
+  if (held.messages.length > 0 && !holdsCall(held.messages, request.id)) {
+    return (
+      <div class="flex flex-col gap-5">
+        <p class={QUIET}>The transcript holds no copy of this call.</p>
+        <PromptCapture capture={capture} />
       </div>
     );
   }

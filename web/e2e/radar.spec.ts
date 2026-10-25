@@ -502,3 +502,45 @@ test("the inspector's header is solid, and on the phone the sheet covers the vie
   await expect(sheet).toBeHidden();
   await expect(page.getByRole("row").filter({ hasText: n(first.input) }).first()).toBeVisible();
 });
+
+test("the inspector attaches no history to a call the transcript holds no copy of", async ({ page }) => {
+  // a router-only call beside the first seeded one: the same session and agent, 12 ms later, with no
+  // transcript copy; the context route answers it with the agent's history up to that instant
+  const routerOnly = "route:e2e-router-only";
+  let seedId = "";
+  await page.route("**/api/radar/api/requests?*", async (route) => {
+    const answer = await route.fetch();
+    const body = (await answer.json()) as { requests: Record<string, unknown>[] };
+    const first = SEEDED.requests[0];
+    const seed = body.requests.find((r) => (r.tokens as { input?: number } | undefined)?.input === first.input);
+    if (seed === undefined) throw new Error("the first seeded request is missing");
+    seedId = String(seed.id);
+    const call = {
+      ...seed,
+      id: routerOnly,
+      ts: Number(seed.ts) + 12,
+      stopReason: null,
+      status: "200",
+      tokens: { input: 7, output: 3, cacheRead: 0, cacheWrite: 0 },
+    };
+    await route.fulfill({ response: answer, json: { requests: [...body.requests, call] } });
+  });
+  await page.route(`**/api/radar/api/history/context/${encodeURIComponent(routerOnly)}?*`, async (route) => {
+    const url = route.request().url().replace(encodeURIComponent(routerOnly), encodeURIComponent(seedId));
+    await route.fulfill({ response: await route.fetch({ url }) });
+  });
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/radar/requests`);
+  await page
+    .getByRole("row")
+    .filter({ has: page.locator("td", { hasText: /^7$/ }) })
+    .filter({ has: page.locator("td", { hasText: /^3$/ }) })
+    .first()
+    .click();
+  const sheet = page.locator("dialog[open] [data-slide-over]");
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("tab", { name: /Context/ }).click();
+  await expect(sheet.getByText("The transcript holds no copy of this call.")).toBeVisible();
+  await expect(sheet.locator(".ctx-msg")).toHaveCount(0);
+  await expect(sheet.locator("[data-context-totals]")).toHaveCount(0);
+});
