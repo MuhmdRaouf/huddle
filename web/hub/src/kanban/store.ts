@@ -114,6 +114,83 @@ export function useDensity(): [Density, (density: Density) => void] {
   return [density, set];
 }
 
+/** How the phone's backlog groups its cards. */
+export type Grouping = "priority" | "cluster";
+
+/** The phone backlog's grouping and the keys of its open groups. */
+export type BacklogView = { grouping: Grouping; open: string[] };
+
+/** The localStorage key prefix the backlog view lives under, one entry per board. */
+export const GROUPS_KEY = "kanban.groups";
+
+/** A grouping's view before the reader opens anything: P0 open by priority, every cluster closed. */
+export function defaultView(grouping: Grouping): BacklogView {
+  return { grouping, open: grouping === "priority" ? ["P0"] : [] };
+}
+
+/** The board's stored backlog view; nothing stored, junk or a storage that throws reads as the
+ *  priority default. */
+export function readGroups(
+  storage: { getItem(key: string): string | null } | null | undefined,
+  board: string,
+): BacklogView {
+  try {
+    const raw = storage?.getItem(`${GROUPS_KEY}.${board}`);
+    if (raw === null || raw === undefined) return defaultView("priority");
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return defaultView("priority");
+    const { grouping, open } = parsed as { grouping?: unknown; open?: unknown };
+    if (grouping !== "priority" && grouping !== "cluster") return defaultView("priority");
+    if (!Array.isArray(open) || !open.every((key) => typeof key === "string")) return defaultView("priority");
+    return { grouping, open: open as string[] };
+  } catch {
+    return defaultView("priority");
+  }
+}
+
+/** Remembers the board's backlog view; a storage that throws is left alone. */
+export function writeGroups(
+  storage: { setItem(key: string, value: string): void } | null | undefined,
+  board: string,
+  view: BacklogView,
+): void {
+  try {
+    storage?.setItem(`${GROUPS_KEY}.${board}`, JSON.stringify(view));
+  } catch {
+    // the view still holds for this visit
+  }
+}
+
+/** The board's backlog view with its setter: read again whenever the board changes, remembered
+ *  on every change. */
+export function useBacklogView(board: string): [BacklogView, (view: BacklogView) => void] {
+  const [held, setHeld] = useState(() => ({ board, view: readGroups(window.localStorage, board) }));
+  const current = held.board === board ? held : { board, view: readGroups(window.localStorage, board) };
+  if (current !== held) setHeld(current);
+  const set = (view: BacklogView): void => {
+    setHeld({ board, view });
+    writeGroups(window.localStorage, board, view);
+  };
+  return [current.view, set];
+}
+
+/** One group of the phone's backlog: its key, the name its header shows, and its cards. */
+export type CardGroup = { key: string; label: string; cards: Card[] };
+
+/** The cards grouped by priority or cluster, the groups in key order and each keeping the cards'
+ *  order; a card with no value groups under "No priority" or "No cluster". */
+export function groupCards(cards: Card[], grouping: Grouping): CardGroup[] {
+  const byKey = new Map<string, Card[]>();
+  for (const card of cards) {
+    const key = grouping === "priority" ? card.priority : card.cluster;
+    byKey.set(key, [...(byKey.get(key) ?? []), card]);
+  }
+  const none = grouping === "priority" ? "No priority" : "No cluster";
+  return [...byKey.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, members]) => ({ key, label: key === "" ? none : key, cards: members }));
+}
+
 /** Apply one delta: upserts replace in place (order kept, new ids appended), removes drop out. */
 export function applyDelta(snapshot: Snapshot, delta: Delta): Snapshot {
   const upserts = new Map(delta.upsert.map((card) => [card.id, card]));

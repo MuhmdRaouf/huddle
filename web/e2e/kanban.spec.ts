@@ -73,6 +73,13 @@ async function kanbanAt(page: Page, width: number, height: number): Promise<void
   await page.locator(".kanban-tab .card").first().waitFor();
 }
 
+/** Opens one of the phone backlog's groups, closed unless it holds P0 cards. */
+async function openGroup(page: Page, name: RegExp): Promise<void> {
+  const head = page.locator('.lanes section[data-column="backlog"]').getByRole("button", { name });
+  await head.tap();
+  await expect(head).toHaveAttribute("aria-expanded", "true");
+}
+
 /** The page itself must not scroll sideways, whatever its panels do. */
 const pageOverflow = (page: Page): Promise<number> =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -497,7 +504,8 @@ test.describe("the board on a phone", () => {
       await kanbanAt(page, 390, 844);
     });
 
-    await test.step("When E2E-1 is tapped", async () => {
+    await test.step("When E2E-1 is tapped in its opened P1 group", async () => {
+      await openGroup(page, /^P1 /);
       await page.getByRole("button", { name: "E2E-1: First card" }).tap();
     });
 
@@ -548,6 +556,7 @@ test.describe("the board on a phone", () => {
     });
 
     await test.step("And the open sheet's controls are too", async () => {
+      await openGroup(page, /^P1 /);
       await page.getByRole("button", { name: "E2E-1: First card" }).tap();
       const sheet = page.getByRole("dialog", { name: "E2E-1: First card" });
       await expect(sheet.getByText("Body text.")).toBeVisible();
@@ -575,6 +584,7 @@ test.describe("the board on a phone", () => {
         for (const id of backlogIds) seedTicket("backlog", id, `Deep card ${id}`);
         for (const id of workingIds) seedTicket("in-progress", id, `Working card ${id}`);
         await kanbanAt(page, 390, 844);
+        await openGroup(page, /^P2 /);
         await expect(page.locator(".kanban-tab article.card[data-id^='DEEP-']")).toHaveCount(152);
       });
 
@@ -607,7 +617,7 @@ test.describe("the board on a phone", () => {
         expect(Math.abs(head.said - head.seen)).toBeLessThanOrEqual(1);
       });
     });
-    test("the header above the first card is at most 160 px and the tabs stay in view 4,000 px down", async ({
+    test("the header above the first group is at most 160 px and the tabs stay in view 4,000 px down", async ({
       page,
     }) => {
       const backlog = page.locator('.lanes section[data-column="backlog"]');
@@ -616,14 +626,15 @@ test.describe("the board on a phone", () => {
         for (const id of backlogIds) seedTicket("backlog", id, `Deep card ${id}`);
         for (const id of workingIds) seedTicket("in-progress", id, `Working card ${id}`);
         await kanbanAt(page, 390, 844);
+        await openGroup(page, /^P2 /);
         await expect(page.locator(".kanban-tab article.card[data-id^='DEEP-']")).toHaveCount(152);
       });
 
-      await test.step("Then the header from the Kanban tab's top to the first card is at most 160 px", async () => {
+      await test.step("Then the header from the Kanban tab's top to the first group is at most 160 px", async () => {
         const head = await backlog.evaluate((lane) => {
           const tab = lane.closest(".kanban-tab") ?? lane;
-          const card = lane.querySelector("article.card") ?? lane;
-          return card.getBoundingClientRect().top - tab.getBoundingClientRect().top;
+          const first = lane.querySelector(".group-head, article.card") ?? lane;
+          return first.getBoundingClientRect().top - tab.getBoundingClientRect().top;
         });
         expect(head).toBeLessThanOrEqual(160);
       });
@@ -637,6 +648,55 @@ test.describe("the board on a phone", () => {
         await expect(page.getByRole("tablist", { name: "Columns" })).toBeInViewport({ ratio: 1 });
         await expect(page.getByRole("button", { name: "Board", exact: true })).toBeInViewport({ ratio: 1 });
       });
+    });
+  });
+
+  test("the backlog groups by priority or cluster, and a reload keeps the grouping and the open groups", async ({
+    page,
+  }) => {
+    const backlog = page.locator('.lanes section[data-column="backlog"]');
+    const backlogCards = backlog.locator("article.card");
+
+    await test.step("Given the board open at 390×844", async () => {
+      await kanbanAt(page, 390, 844);
+    });
+
+    await test.step("Then the backlog groups by priority, every group with no P0 card closed", async () => {
+      await expect(backlog.getByRole("button", { name: "P1 1" })).toHaveAttribute("aria-expanded", "false");
+      await expect(backlog.getByRole("button", { name: "P2 9" })).toHaveAttribute("aria-expanded", "false");
+      await expect(backlogCards).toHaveCount(0);
+    });
+
+    await test.step("When P1 is tapped, its card shows, and a reload keeps it open", async () => {
+      await backlog.getByRole("button", { name: "P1 1" }).tap();
+      await expect(backlog.getByRole("button", { name: "E2E-1: First card" })).toBeVisible();
+      await page.reload();
+      await expect(backlog.getByRole("button", { name: "P1 1" })).toHaveAttribute("aria-expanded", "true");
+      await expect(backlogCards).toHaveCount(1);
+    });
+
+    await test.step("When the folded row's toggle picks cluster, the clusters head closed groups", async () => {
+      await page.getByRole("button", { name: /^Filters/ }).tap();
+      const toggle = page.getByRole("button", { name: "Group: Priority" });
+      const box = (await toggle.boundingBox()) ?? expect.fail("no toggle");
+      expect(box.height).toBeGreaterThanOrEqual(43.5);
+      await toggle.tap();
+      await expect(page.getByRole("button", { name: "Group: Cluster" })).toBeVisible();
+      await expect(backlog.getByRole("button", { name: "e2e 10" })).toHaveAttribute("aria-expanded", "false");
+      await expect(backlogCards).toHaveCount(0);
+    });
+
+    await test.step("And the search cuts across the groups", async () => {
+      await page.getByRole("searchbox", { name: "Search" }).fill("waits");
+      await expect(backlog.getByRole("button", { name: "e2e 1" })).toBeVisible();
+      await page.getByRole("searchbox", { name: "Search" }).fill("");
+    });
+
+    await test.step("And a reload keeps the cluster grouping", async () => {
+      await page.reload();
+      await expect(backlog.getByRole("button", { name: "e2e 10" })).toHaveAttribute("aria-expanded", "false");
+      await page.getByRole("button", { name: /^Filters/ }).tap();
+      await expect(page.getByRole("button", { name: "Group: Cluster" })).toBeVisible();
     });
   });
 

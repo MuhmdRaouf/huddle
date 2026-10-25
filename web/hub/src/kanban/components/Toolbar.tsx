@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Density } from "../store.ts";
+import type { Density, Grouping } from "../store.ts";
 import { type FilterKind, type Filters, clearPicks, hiddenDone, togglePick, useMedia } from "../store.ts";
 import type { Card } from "../types.ts";
 import { BoardPicker } from "./BoardPicker.tsx";
@@ -32,6 +32,9 @@ export type ToolbarProps = {
   sharedTags?: readonly string[] | undefined;
   /** the one cluster every visible card shares, named once here */
   sharedCluster?: string | null | undefined;
+  /** the phone backlog's grouping and its toggle, shown in the phone's folded row only */
+  grouping?: Grouping | undefined;
+  onGrouping?: ((grouping: Grouping) => void) | undefined;
 };
 
 /** The row's kinds in their standing order: Domain is the tag kind, Epic the cluster. */
@@ -120,13 +123,38 @@ function StaleLine({ connected, lastFrameAt }: { connected: boolean; lastFrameAt
   );
 }
 
+/** The live dot, its title naming the epoch and the connection, and the status line beside it. */
+function LiveDot({
+  epoch,
+  connected,
+  lastFrameAt,
+}: {
+  epoch: number;
+  connected: boolean;
+  lastFrameAt: number | null;
+}) {
+  const liveWord = connected ? "live" : "reconnecting";
+  return (
+    <>
+      <span class={`live-dot ${connected ? "on" : "off"}`} title={`epoch ${epoch}, ${liveWord}`}>
+        <span class="sr-only">{liveWord}</span>
+      </span>
+      <StaleLine connected={connected} lastFrameAt={lastFrameAt} />
+    </>
+  );
+}
+
 /** One `All cards: …` note, for a shared tag or the shared cluster. */
 function SharedNote({ value }: { value: string }) {
   return <span class="shared-note">All cards: {value}</span>;
 }
 
-/** The filter controls: one menu per kind, the shared notes, the hide-done toggle and the
- *  density toggle. The desktop shows them in the header row, the phone in its folded row. */
+/** The grouping toggle's word for each grouping. */
+const GROUPING_WORD: Record<Grouping, string> = { priority: "Priority", cluster: "Cluster" };
+
+/** The filter controls: one menu per kind, the shared notes, the hide-done toggle, the density
+ *  toggle and, when handed one, the backlog's grouping toggle. The desktop shows them in the
+ *  header row, the phone in its folded row. */
 function FilterControls({
   cards,
   filters,
@@ -137,6 +165,8 @@ function FilterControls({
   onDensity,
   sharedTags,
   sharedCluster,
+  grouping,
+  onGrouping,
 }: {
   cards: Card[];
   filters: Filters;
@@ -147,6 +177,8 @@ function FilterControls({
   onDensity: (density: Density) => void;
   sharedTags: readonly string[];
   sharedCluster: string | null;
+  grouping?: Grouping | undefined;
+  onGrouping?: ((grouping: Grouping) => void) | undefined;
 }) {
   const kinds = KINDS.filter(({ kind }) => kind !== "tag" || cards.some((card) => card.tags.length > 0));
   const hidden = hiddenDone(cards, filters);
@@ -187,7 +219,50 @@ function FilterControls({
       >
         {density === "compact" ? "Compact" : "Comfortable"}
       </button>
+      {grouping !== undefined && onGrouping !== undefined && (
+        <button
+          type="button"
+          class="grouping"
+          onClick={() => onGrouping(grouping === "priority" ? "cluster" : "priority")}
+        >
+          Group: {GROUPING_WORD[grouping]}
+        </button>
+      )}
     </>
+  );
+}
+
+/** One picked value, as its pill names it. */
+type Pick = { kind: FilterKind; label: string; value: string };
+
+/** The picks as removable pills, with a Clear all beside them; nothing while nothing is picked. */
+function Pills({
+  picks,
+  filters,
+  onChange,
+}: {
+  picks: Pick[];
+  filters: Filters;
+  onChange: (filters: Filters) => void;
+}) {
+  if (picks.length === 0) return null;
+  return (
+    <div class="pills">
+      {picks.map((pick) => (
+        <button
+          key={`${pick.kind}:${pick.value}`}
+          type="button"
+          class="pill"
+          aria-label={`Remove ${pick.label} ${pick.value}`}
+          onClick={() => onChange(togglePick(filters, pick.kind, pick.value))}
+        >
+          {pick.label}: {pick.value} <span aria-hidden="true">×</span>
+        </button>
+      ))}
+      <button type="button" class="pill clear" onClick={() => onChange(clearPicks(filters))}>
+        Clear all
+      </button>
+    </div>
   );
 }
 
@@ -198,7 +273,8 @@ const FILTERS_ID = "kanban-filters";
  *  the shared note, the hide-done toggle and the density toggle at the right. `/` jumps to the
  *  search box and b opens the picker, but never while a menu holds the keyboard. The picks sit
  *  as pills below. On a phone the menus, the toggles and the pills fold behind one Filters
- *  button that counts the picks and Hide done, so the header stays one row high. */
+ *  button that counts the picks and Hide done, so the header stays one row high; the folded row
+ *  also carries the backlog's grouping toggle, which the desktop's flat columns have no use for. */
 export function Toolbar({
   cards,
   filters,
@@ -214,6 +290,8 @@ export function Toolbar({
   onDensity,
   sharedTags = [],
   sharedCluster = null,
+  grouping,
+  onGrouping,
 }: ToolbarProps) {
   const search = useRef<HTMLInputElement>(null);
   const [openKind, setOpenKind] = useState<FilterKind | null>(null);
@@ -232,15 +310,16 @@ export function Toolbar({
     return () => document.removeEventListener("keydown", onKey);
   }, [openKind]);
 
-  const picks = KINDS.flatMap(({ kind, label }) =>
+  const picks: Pick[] = KINDS.flatMap(({ kind, label }) =>
     filters.picks[kind].map((value) => ({ kind, label, value })),
   );
-  const liveWord = connected ? "live" : "reconnecting";
   const active = picks.length + (filters.hideDone ? 1 : 0);
   const showFilters = !narrow || unfolded;
 
   const controls = (
     <FilterControls
+      grouping={narrow ? grouping : undefined}
+      onGrouping={onGrouping}
       cards={cards}
       filters={filters}
       onChange={onChange}
@@ -259,12 +338,7 @@ export function Toolbar({
         {boards !== undefined && boards.length > 0 && onBoard !== undefined && (
           <BoardPicker boards={boards} boardKey={boardKey ?? null} onBoard={onBoard} />
         )}
-        {live && (
-          <span class={`live-dot ${connected ? "on" : "off"}`} title={`epoch ${epoch}, ${liveWord}`}>
-            <span class="sr-only">{liveWord}</span>
-          </span>
-        )}
-        {live && <StaleLine connected={connected} lastFrameAt={lastFrameAt} />}
+        {live && <LiveDot epoch={epoch} connected={connected} lastFrameAt={lastFrameAt} />}
         <input
           ref={search}
           type="search"
@@ -291,24 +365,7 @@ export function Toolbar({
           </div>
         )}
       </div>
-      {showFilters && picks.length > 0 && (
-        <div class="pills">
-          {picks.map((pick) => (
-            <button
-              key={`${pick.kind}:${pick.value}`}
-              type="button"
-              class="pill"
-              aria-label={`Remove ${pick.label} ${pick.value}`}
-              onClick={() => onChange(togglePick(filters, pick.kind, pick.value))}
-            >
-              {pick.label}: {pick.value} <span aria-hidden="true">×</span>
-            </button>
-          ))}
-          <button type="button" class="pill clear" onClick={() => onChange(clearPicks(filters))}>
-            Clear all
-          </button>
-        </div>
-      )}
+      {showFilters && <Pills picks={picks} filters={filters} onChange={onChange} />}
     </>
   );
 }

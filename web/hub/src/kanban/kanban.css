@@ -248,6 +248,18 @@
   color: var(--accent);
 }
 
+/* the phone backlog's grouping toggle, beside the density toggle in the folded row */
+
+.kanban-tab .grouping {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .kanban-tab .menu-wrap {
   position: relative;
   display: inline-flex;
@@ -498,6 +510,30 @@
 
 .kanban-tab .col h2 .count {
   font-size: 12px;
+}
+
+/* a grouped column's group header: the group's name and count across the column, a tap opens
+   or closes its cards */
+
+.kanban-tab .group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0 0 8px;
+  padding: 0 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.kanban-tab .group-head[aria-expanded="true"] {
+  border-color: var(--accent);
 }
 
 /* the heading row: title and count on the left, the collapse button on the right */
@@ -853,7 +889,9 @@
 .kanban-tab .picker-btn:focus-visible,
 .kanban-tab .clear-filters:focus-visible,
 .kanban-tab .show-done:focus-visible,
-.kanban-tab .density:focus-visible {
+.kanban-tab .density:focus-visible,
+.kanban-tab .grouping:focus-visible,
+.kanban-tab .group-head:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -1152,6 +1190,7 @@
   .kanban-tab .filters-btn,
   .kanban-tab > .btn,
   .kanban-tab .density,
+  .kanban-tab .grouping,
   .kanban-tab .show-all,
   .kanban-tab .clear-filters,
   .kanban-tab .show-done,

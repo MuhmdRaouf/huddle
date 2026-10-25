@@ -8,7 +8,7 @@ import {
   type Snapshot,
 } from "../types.ts";
 import type { CardProps } from "./Card.tsx";
-import { Column } from "./Column.tsx";
+import { Column, type ColumnGroups } from "./Column.tsx";
 import { FlowBar } from "./FlowBar.tsx";
 
 export type BoardProps = {
@@ -31,6 +31,8 @@ export type BoardProps = {
   sharedTags?: readonly string[] | undefined;
   /** the one cluster every visible card shares, named once in the header row */
   sharedCluster?: string | null | undefined;
+  /** the backlog's groups, applied on a phone only: the desktop's columns stay flat */
+  backlogGroups?: ColumnGroups | undefined;
 };
 
 /** Done shows its latest cards first, capped until the reader asks for the rest. */
@@ -161,6 +163,7 @@ export function Board({
   density = "compact",
   sharedTags = [],
   sharedCluster = null,
+  backlogGroups,
 }: BoardProps) {
   const narrow = useMedia("(max-width: 639px)");
   const reduced = useMedia("(prefers-reduced-motion: reduce)");
@@ -272,6 +275,7 @@ export function Board({
     threadOf,
     sharedTags,
     sharedCluster,
+    groups: narrow && id === "backlog" ? backlogGroups : undefined,
   });
 
   opening.current = active;

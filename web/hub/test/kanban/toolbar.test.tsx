@@ -601,5 +601,16 @@ describe("Feature: the filters fold behind one button on a phone", () => {
     const { container } = render(<Row cards={board()} initial={EMPTY_FILTERS} />);
     expect(screen.queryByRole("button", { name: /^Filters/ })).toBeNull();
     expect(kindButtons(container)).toEqual(["Domain", "Epic", "Holder", "Type", "Priority"]);
+    expect(screen.queryByRole("button", { name: /^Group:/ })).toBeNull();
+  });
+
+  it("Scenario: the folded row carries the backlog's grouping toggle beside the density toggle", async () => {
+    stubMatchMedia((query) => query.includes("max-width"));
+    const onGrouping = vi.fn();
+    render(<Row cards={board()} initial={EMPTY_FILTERS} over={{ grouping: "priority", onGrouping }} />);
+    expect(screen.queryByRole("button", { name: /^Group:/ })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await userEvent.click(screen.getByRole("button", { name: "Group: Priority" }));
+    expect(onGrouping).toHaveBeenCalledWith("cluster");
   });
 });

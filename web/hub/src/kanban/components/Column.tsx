@@ -1,8 +1,15 @@
 import type { ComponentChildren } from "preact";
-import type { Density } from "../store.ts";
+import { type Density, type Grouping, groupCards } from "../store.ts";
 import type { Card as CardData, ColumnId } from "../types.ts";
 import type { CardProps } from "./Card.tsx";
 import { CardView } from "./Card.tsx";
+
+/** The phone backlog's groups: how the cards group, which groups are open, and a header's tap. */
+export type ColumnGroups = {
+  grouping: Grouping;
+  open: ReadonlySet<string>;
+  onToggle: (key: string) => void;
+};
 
 export type ColumnProps = {
   id: ColumnId;
@@ -32,6 +39,8 @@ export type ColumnProps = {
   /** what every visible card carries, hidden on the cards themselves */
   sharedTags?: readonly string[] | undefined;
   sharedCluster?: string | null | undefined;
+  /** groups the cards under tappable headers (the phone's backlog); absent, the column is flat */
+  groups?: ColumnGroups | undefined;
 };
 
 /** One column: its heading and its cards — or, collapsed, a 40 px rail. */
@@ -53,6 +62,7 @@ export function Column({
   threadOf,
   sharedTags = [],
   sharedCluster = null,
+  groups,
 }: ColumnProps) {
   const cardProps = (card: CardData) => ({
     card,
@@ -115,10 +125,54 @@ export function Column({
           </button>
         )}
       </h2>
-      {cards.map((card) => (
-        <CardView key={card.id} {...cardProps(card)} />
-      ))}
+      {groups === undefined ? (
+        cards.map((card) => <CardView key={card.id} {...cardProps(card)} />)
+      ) : (
+        <Groups
+          cards={cards}
+          groups={groups}
+          render={(card) => <CardView key={card.id} {...cardProps(card)} />}
+        />
+      )}
       {extra}
     </section>
+  );
+}
+
+/** The grouped cards: expedite cards first and always shown, then one header per group with its
+ *  count, the open groups' cards under their headers. */
+function Groups({
+  cards,
+  groups,
+  render,
+}: {
+  cards: CardData[];
+  groups: ColumnGroups;
+  render: (card: CardData) => ComponentChildren;
+}) {
+  const grouped = groupCards(
+    cards.filter((card) => !card.expedite),
+    groups.grouping,
+  );
+  return (
+    <>
+      {cards.filter((card) => card.expedite).map(render)}
+      {grouped.map(({ key, label, cards: members }) => {
+        const open = groups.open.has(key);
+        return (
+          <div key={key} class="group">
+            <button
+              type="button"
+              class="group-head"
+              aria-expanded={open ? "true" : "false"}
+              onClick={() => groups.onToggle(key)}
+            >
+              <span class="group-name">{label}</span> <span class="count">{members.length}</span>
+            </button>
+            {open && members.map(render)}
+          </div>
+        );
+      })}
+    </>
   );
 }

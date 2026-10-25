@@ -19,6 +19,7 @@ import {
   backoffMs,
   BoardStore,
   clearFilters,
+  defaultView,
   DONE_HIDE_THRESHOLD,
   EMPTY_FILTERS,
   type Filters,
@@ -26,6 +27,7 @@ import {
   type Io,
   staticBoardState,
   togglePick,
+  useBacklogView,
   useDensity,
 } from "./store.ts";
 
@@ -193,6 +195,7 @@ export function BoardPane({
       setFiltersState((current) => ({ ...current, hideDone: true }));
     }
   }, [snapshot]);
+  const [view, setView] = useBacklogView(picker?.boardKey ?? snapshot?.board ?? "");
   const cards = useMemo(() => snapshot?.cards ?? [], [snapshot]);
   const visible = useMemo(() => filterCards(cards, filters), [cards, filters]);
   const shared = useMemo(() => sharedValues(visible), [visible]);
@@ -200,6 +203,15 @@ export function BoardPane({
     return <Board snapshot={null} filters={filters} changeSeq={0} changedIds={new Set()} onOpen={sel.open} />;
   }
   const state = store.getState();
+  const backlogGroups = {
+    grouping: view.grouping,
+    open: new Set(view.open),
+    onToggle: (key: string): void =>
+      setView({
+        ...view,
+        open: view.open.includes(key) ? view.open.filter((open) => open !== key) : [...view.open, key],
+      }),
+  };
   const openCard = sel.openId === null ? null : (cards.find((card) => card.id === sel.openId) ?? null);
   return (
     <>
@@ -216,6 +228,8 @@ export function BoardPane({
         onDensity={setDensity}
         sharedTags={shared.tags}
         sharedCluster={shared.cluster}
+        grouping={view.grouping}
+        onGrouping={(grouping) => setView(defaultView(grouping))}
       />
       <div class="board-with-panel">
         <Board
@@ -231,6 +245,7 @@ export function BoardPane({
           onShowDone={() => setFilters({ ...filters, hideDone: false })}
           sharedTags={shared.tags}
           sharedCluster={shared.cluster}
+          backlogGroups={backlogGroups}
         />
         {openCard !== null && (
           <Drawer
