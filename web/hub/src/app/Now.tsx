@@ -1333,8 +1333,9 @@ function SessionActions({ session }: { session: RegistrySession }): JSX.Element 
 /** The Session screen: the header (name, where, chips, context bar), the line that says how to
  *  restart a session whose hooks stopped reporting, the stream of the session's events, and the
  *  action bar its open needs-you ask carries (the phone's sheet, the wide layouts' inline box).
- *  The phone paints its own header with the back link; the tablet and the desktop carry theirs
- *  in a bar. */
+ *  The phone and the tablet paint the two-row header, so the name keeps its own row (the phone's
+ *  carries the back link; the tablet's list stands beside it); the desktop carries its header in
+ *  one bar. */
 export function SessionScreen({ id, layout }: { id: string; layout: Layout }): JSX.Element {
   const { registry, now } = useHuddle();
   const st = registry.getState();
@@ -1355,18 +1356,20 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
 
   return (
     <div class="flex min-h-0 min-w-0 flex-1 flex-col" data-session="">
-      {layout === "phone" ? (
+      {layout !== "desktop" ? (
         <header
           class={`flex shrink-0 flex-col gap-2.5 border-b ${LINE} bg-[var(--ui-surface)] px-3 pt-3.5 pb-3`}
         >
           <div class="flex items-center gap-1">
-            <a
-              href="#/now"
-              aria-label="Back to Now"
-              class="flex size-[var(--ui-tap)] shrink-0 items-center justify-center rounded-[var(--ui-radius)] text-[var(--ui-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
-            >
-              <Icon name="left" class="size-[22px]" />
-            </a>
+            {layout === "phone" ? (
+              <a
+                href="#/now"
+                aria-label="Back to Now"
+                class="flex size-[var(--ui-tap)] shrink-0 items-center justify-center rounded-[var(--ui-radius)] text-[var(--ui-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+              >
+                <Icon name="left" class="size-[22px]" />
+              </a>
+            ) : null}
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">
               <div class="truncate text-lg font-semibold">{sessionName(d)}</div>
               <div class={`truncate text-xs ${MUTED}`}>{whereOf(d)}</div>

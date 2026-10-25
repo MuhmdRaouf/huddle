@@ -414,6 +414,19 @@ test("the desktop sets the list and the open pane side by side", async ({ page, 
   await expect(page.getByRole("region", { name: "Today in Radar" })).toBeVisible();
 });
 
+test("at tablet width the open session's header keeps its full name", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop", "the tablet width is set on the desktop project");
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await signIn(page);
+  await openTab(page, "Now");
+  await page.locator("[data-row='e2e-seed']").click();
+
+  const name = page.locator("[data-session] header").getByText(theSetup().sessionTitle, { exact: true });
+  await expect(name).toBeVisible();
+  const { scroll, client } = await name.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(scroll).toBeLessThanOrEqual(client);
+});
+
 test("the phone's Now scrolls nothing sideways and every target is at least 44 px", async ({
   page,
   isMobile,
