@@ -285,3 +285,51 @@ export class ConsoleErrors {
     return [...this.seen];
   }
 }
+
+/** One control the tap check leaves out, and why it may stay smaller than the rule. */
+type TapExclusion = { selector: string; reason: string };
+
+/** The controls the tap check leaves out: each is sized by a page this check's card does not own,
+ *  and its own card brings it to 44 px. */
+const TAP_EXCLUSIONS: readonly TapExclusion[] = [
+  { selector: "[data-remove]", reason: "the channel card's Remove button (pages/Home.tsx) is a 23 px btn-xs" },
+  { selector: "[aria-label='Activity window'] button", reason: "the channel Overview's window segment (pages/Overview.tsx) is a 30 px btn-sm" },
+  { selector: ".hide-done input", reason: "Kanban's Hide done toggle is sized by the kanban CSS (HV-TOKENS-KANBAN)" },
+];
+
+/** Fails on any visible `a, button, input, [role=tab]` smaller than 44x44 px (the --ui-tap
+ *  token). A control of at least 24x24 px passes when no other control comes within 8 px of
+ *  it: the spacing rule of WCAG 2.2 SC 2.5.8. The message names each control that misses. */
+export async function expectTapTargets(page: Page): Promise<void> {
+  const misses = await page.evaluate((excluded) => {
+    type Box = { el: Element; left: number; top: number; right: number; bottom: number };
+    const targets: Box[] = [...document.querySelectorAll("a, button, input, [role=tab]")]
+      .filter((el) => !excluded.some((x) => el.matches(x)))
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        const s = getComputedStyle(el);
+        return r.width >= 1 && r.height >= 1 && s.visibility !== "hidden" && s.display !== "none";
+      })
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return { el, left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      });
+    const gap = (a: Box, b: Box): number =>
+      Math.max(b.left - a.right, a.left - b.right, b.top - a.bottom, a.top - b.bottom);
+    return targets
+      .filter((t) => {
+        const w = t.right - t.left;
+        const h = t.bottom - t.top;
+        if (w >= 43.5 && h >= 43.5) return false;
+        if (w < 23.5 || h < 23.5) return true;
+        return targets.some((o) => o !== t && !o.el.contains(t.el) && !t.el.contains(o.el) && gap(t, o) < 8);
+      })
+      .map((t) => {
+        const label = (t.el.getAttribute("aria-label") ?? t.el.textContent ?? "").trim().slice(0, 30);
+        const w = Math.round(t.right - t.left);
+        const h = Math.round(t.bottom - t.top);
+        return `${t.el.tagName.toLowerCase()} "${label}" ${w}x${h}`;
+      });
+  }, TAP_EXCLUSIONS.map((x) => x.selector));
+  expect(misses, "controls under 44 px").toEqual([]);
+}

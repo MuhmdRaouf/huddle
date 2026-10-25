@@ -1171,7 +1171,7 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
             <a
               href="#/now"
               aria-label="Back to Now"
-              class="flex size-11 shrink-0 items-center justify-center rounded-lg text-base-content outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              class="flex size-[var(--ui-tap)] shrink-0 items-center justify-center rounded-lg text-base-content outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <Icon name="left" class="size-[22px]" />
             </a>

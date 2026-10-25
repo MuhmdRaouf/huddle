@@ -167,7 +167,9 @@ function ViewTab({
       role="tab"
       data-dest={dest}
       class={
-        active ? "tab tab-active h-10 gap-2 px-4 text-[0.9375rem]" : "tab h-10 gap-2 px-4 text-[0.9375rem]"
+        active
+          ? "tab tab-active min-h-[var(--ui-tap)] gap-2 px-4 text-[0.9375rem]"
+          : "tab min-h-[var(--ui-tap)] gap-2 px-4 text-[0.9375rem]"
       }
       aria-selected={active ? "true" : "false"}
       aria-current={active ? "page" : undefined}
@@ -242,7 +244,7 @@ function RadarRange(): JSX.Element {
           type="button"
           aria-pressed={preset === key ? "true" : "false"}
           data-range={key}
-          class={`min-h-8 min-w-13 rounded-[7px] px-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+          class={`min-h-8 min-w-13 rounded-[7px] max-sm:min-h-[var(--ui-tap)] px-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary ${
             preset === key ? "bg-base-300 font-semibold text-base-content" : "text-base-content/70"
           }`}
           onClick={() => radarAct("range", key)}
@@ -305,7 +307,7 @@ function RadarViews({ view, layout }: { view: RadarView; layout: Layout }): JSX.
                       ? "border-primary font-semibold text-base-content"
                       : "border-transparent text-base-content/70 hover:text-base-content"
                   }`
-                : `flex min-h-11 shrink-0 items-center rounded-full px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                : `flex min-h-[var(--ui-tap)] shrink-0 items-center rounded-full px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                     v === view
                       ? "bg-primary font-semibold text-primary-content"
                       : "border hairline text-base-content/80 hover:bg-base-100"

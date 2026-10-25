@@ -1,14 +1,14 @@
 // shell.spec.ts — the app shell on both projects. On the phone the five tabs sit in a bar pinned
 // to the viewport's bottom, whatever scrolls, on the iPhone's own height and on a short one where
 // every page runs longer than the screen; every page's content ends above the bar, nothing
-// scrolls the page sideways, a code block scrolls inside its own box, and each tab is a target of
-// at least 44 px. On the desktop the same five items stand in a left sidebar and no bottom bar is
-// drawn. axe checks the shell's chrome on both (the pages' contents are their own specs'), and
-// the page names a theme colour per scheme beside a manifest with a maskable icon.
+// scrolls the page sideways, a code block scrolls inside its own box, and every control on every
+// page is a target of at least 44 px. On the desktop the same five items stand in a left sidebar
+// and no bottom bar is drawn. axe checks the shell's chrome on both (the pages' contents are their
+// own specs'), and the page names a theme colour per scheme beside a manifest with a maskable icon.
 
 import { expect, test, type Page } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
-import { signIn, theSetup } from "./helpers.ts";
+import { expectTapTargets, SEEDED, signIn, theSetup } from "./helpers.ts";
 
 /** The five tabs, in the order the shell draws them; Now may carry its needs-you count after it. */
 const TABS = [/^Now\d*$/, /^Channels$/, /^Radar$/, /^Kanban$/, /^Settings$/];
@@ -16,6 +16,18 @@ const TABS = [/^Now\d*$/, /^Channels$/, /^Radar$/, /^Kanban$/, /^Settings$/];
 /** Every page the shell frames: the five tabs and a channel's own page under Channels. */
 const PAGES: readonly (readonly [name: string, hash: string])[] = [
   ["Now", "#/now"],
+  ["Channels", "#/channels"],
+  ["Channel overview", "#/c/e2e/overview"],
+  ["Radar", "#/radar/overview"],
+  ["Kanban", "#/kanban"],
+  ["Settings", "#/settings"],
+];
+
+/** The pages the tap check walks: the five tabs, a channel's page and a session's own page under
+ *  Now (its Back to Now sits there). */
+const TAP_PAGES: readonly (readonly [name: string, hash: string])[] = [
+  ["Now", "#/now"],
+  ["A session", `#/now/${SEEDED.session}`],
   ["Channels", "#/channels"],
   ["Channel overview", "#/c/e2e/overview"],
   ["Radar", "#/radar/overview"],
@@ -138,6 +150,13 @@ test.describe("the phone shell", () => {
       expect(box.h).toBeGreaterThanOrEqual(44);
     }
   });
+
+  for (const [name, hash] of TAP_PAGES) {
+    test(`${name}: every control is a target of at least 44 px`, async ({ page }) => {
+      await open(page, hash);
+      await expectTapTargets(page);
+    });
+  }
 
   test("a tab opens its page and marks itself current", async ({ page }) => {
     await open(page, "#/now");

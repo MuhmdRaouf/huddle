@@ -437,7 +437,7 @@ export function SettingsTab({ section }: { section: SettingsSection }): JSX.Elem
                       ? "border-primary font-semibold text-base-content"
                       : "border-transparent text-base-content/70 hover:text-base-content"
                   }`
-                : `flex min-h-11 shrink-0 items-center rounded-full px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                : `flex min-h-[var(--ui-tap)] shrink-0 items-center rounded-full px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                     entry.id === section
                       ? "bg-primary font-semibold text-primary-content"
                       : "border hairline text-base-content/80 hover:bg-base-100"
