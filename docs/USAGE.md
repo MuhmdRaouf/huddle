@@ -230,17 +230,17 @@ the hub's answer and is never queued.
 
 ## Other agents
 
-Huddle's MCP server works with any harness that speaks MCP. For six of them the binary wires
+Huddle's MCP server works with any harness that speaks MCP. For seven of them the binary wires
 itself in ([README · Other agents](../README.md#other-agents) has what each install edits):
 
 ```sh
 huddle harness list             # installed, available or absent, per harness
-huddle harness install codex    # or gemini, qwen, opencode, crush, omp, pi
+huddle harness install codex    # or gemini, qwen, opencode, crush, omp, pi, zcode
 huddle harness remove codex     # config back to its previous bytes
 ```
 
-The names are exactly `codex`, `gemini`, `qwen`, `opencode`, `crush`, `omp` and `pi` (exit 4 names nothing
-else). Install adds the MCP entry plus the harness's own lifecycle hooks, so its sessions sit in
+The names are exactly `codex`, `gemini`, `qwen`, `opencode`, `crush`, `omp`, `pi` and `zcode` (exit 4
+names nothing else). Install adds the MCP entry plus the harness's own lifecycle hooks, so its sessions sit in
 the Now list beside Claude Code's, badged by agent; a hook posts to the local hub inside a 3
 second deadline and never blocks its agent. For codex, install also adds an opt-in model
 provider, `huddle`, that sends the Responses API through the router's `/gateway/v1` over plain
@@ -264,7 +264,17 @@ loopback with your own key, and need the router up. An `opencode.json` that alre
 `http://127.0.0.1:<router port>/gateway` and the header `X-Huddle-Harness: pi` names pi in
 radar. pi keeps its own anthropic models, and their requests go through the gateway over plain
 HTTP on loopback with your own key, and need the router up. A `models.json` that
-already configures `anthropic` stays as it is, the same way. Every change is recorded in
+already configures `anthropic` stays as it is, the same way.
+For zcode, install writes the `huddle` server under
+`mcp.servers` in `~/.zcode/cli/config.json`, and no hooks. It also adds two rules to
+`~/.zcode/v2/provider_config.json`, for the Z.ai Coding Plan providers (individual and team):
+`baseUrl` is the router's `http://127.0.0.1:<router port>/gateway` and the header
+`X-Huddle-Harness: zcode` names zcode in radar. zcode's GLM requests on those plans then go
+through the gateway over plain HTTP on loopback with your own login, and the gateway's built-in
+GLM route forwards them to `https://api.z.ai/api/anthropic`; they need the router up. The start,
+off-peak, highspeed and BigModel plans speak other upstreams, so they stay direct and radar does
+not see them. A rule of your own for either coding plan stays as it is: install refuses it and
+says why. Every change is recorded in
 `~/.config/huddle/harness-ledger.json` (or `$HUDDLE_HOME/harness-ledger.json`) and undone exactly
 by `remove`.
 

@@ -92,7 +92,7 @@ type routing interface {
 }
 
 // routings is the routing edit per harness whose model provider names a base URL in a file.
-var routings = map[string]routing{"omp": ompRouting, "opencode": openCodeRouting, "pi": piRouting}
+var routings = map[string]routing{"omp": ompRouting, "opencode": openCodeRouting, "pi": piRouting, "zcode": zcodeRouting}
 
 // installRouting writes the routing edit into the harness's routing file and records the
 // change under the file's own ledger name, so remove can tell a file it created.

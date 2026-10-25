@@ -56,6 +56,7 @@ func TestLoadConfig(t *testing.T) {
 			},
 			Anthropic: "https://api.anthropic.com",
 			OpenAI:    "https://api.openai.com",
+			builtin:   builtinAnthropicRoutes(),
 		}
 		if !reflect.DeepEqual(config, want) {
 			t.Errorf("config = %+v, want %+v", config, want)
@@ -67,7 +68,7 @@ func TestLoadConfig(t *testing.T) {
 		if err != nil {
 			t.Fatalf("LoadConfig: %v", err)
 		}
-		want := Config{Anthropic: "https://api.anthropic.com", OpenAI: "https://api.openai.com"}
+		want := Config{Anthropic: "https://api.anthropic.com", OpenAI: "https://api.openai.com", builtin: builtinAnthropicRoutes()}
 		if !reflect.DeepEqual(config, want) {
 			t.Errorf("config = %+v, want %+v", config, want)
 		}
@@ -220,5 +221,43 @@ func TestLoadConfigFillsTheFamilyDefaults(t *testing.T) {
 	}
 	if named.OpenAI != "https://openai.example" || named.Anthropic != "https://api.anthropic.com" {
 		t.Errorf("config = %+v, want the named openai default kept and anthropic filled", named)
+	}
+}
+
+// A GLM model on the Anthropic route goes to Z.ai's Anthropic endpoint when gateway.json names
+// no route for it, so a harness pointed at the gateway with a GLM model reaches Z.ai with no
+// file at all. A route the file names still wins, the OpenAI routes keep their default, and
+// every other model keeps the Anthropic default.
+func TestUpstreamForSendsGLMToZaiWhenNoRouteNamesIt(t *testing.T) {
+	const zai = "https://api.z.ai/api/anthropic"
+	bare, err := loadFrom(t, envWithConfig(t, ""))
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	named, err := loadFrom(t, envWithConfig(t, `{"routes":[{"match":"glm-5*","upstream":"https://mine.example"}],"anthropic":"https://anthropic.example"}`))
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cases := []struct {
+		name   string
+		config Config
+		kind   apiKind
+		model  string
+		want   string
+	}{
+		{"zcode's uppercase GLM", bare, kindAnthropic, "GLM-5.3", zai},
+		{"a lowercase glm", bare, kindAnthropic, "glm-4.7", zai},
+		{"a claude model keeps the anthropic default", bare, kindAnthropic, "claude-sonnet-4-5", "https://api.anthropic.com"},
+		{"a glm on chat completions keeps the openai default", bare, kindChat, "glm-4.7", "https://api.openai.com"},
+		{"a route the file names wins", named, kindAnthropic, "glm-5.3", "https://mine.example"},
+		{"a glm the file's route misses still reaches z.ai", named, kindAnthropic, "GLM-5.3", zai},
+		{"the file's anthropic default does not take glm", named, kindAnthropic, "glm-4.7", zai},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.config.UpstreamFor(tc.kind, tc.model); got != tc.want {
+				t.Errorf("UpstreamFor(%s, %q) = %q, want %q", tc.kind, tc.model, got, tc.want)
+			}
+		})
 	}
 }

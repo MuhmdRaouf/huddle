@@ -13,10 +13,12 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
-// jsonAdapter is one harness whose MCP servers sit in a JSON object under one parent key.
+// jsonAdapter is one harness whose MCP servers sit in a JSON object under one parent key, or
+// under one child key inside it.
 type jsonAdapter struct {
 	name   string
 	parent string // the object the entry lives under: "mcpServers" or "mcp"
+	child  string // the object inside parent the entry lives under ("servers"), "" for none
 	path   func(Env) string
 	detect func(Env) bool
 	build  func(Entry) ([]byte, error)
@@ -39,29 +41,28 @@ func (a jsonAdapter) Install(cfg []byte, entry Entry) ([]byte, error) {
 	if err := jsonCheck(cfg); err != nil {
 		return nil, err
 	}
-	parent, err := jsonFind(cfg, 0, a.parent)
+	table, missing, err := jsonFindTable(cfg, a.tablePath())
 	if err != nil {
 		return nil, err
 	}
-	if parent == nil {
-		// no table yet: the whole "parent":{"huddle":{...}} member lands in the top object
-		full := fmt.Sprintf("%q:{%q:%s}", a.parent, entry.Name, snippet)
-		return jsonInsertMember(cfg, 0, full)
+	if len(missing) > 0 {
+		// no table yet: the missing levels land around the entry, "parent":{"huddle":{...}}
+		return jsonInsertMember(cfg, table, jsonNested(missing, fmt.Sprintf("%q:%s", entry.Name, snippet)))
 	}
-	members, _, err := jsonMembers(cfg, parent.value.start)
+	members, _, err := jsonMembers(cfg, table)
 	if err != nil {
-		return nil, fmt.Errorf("the %s member is not a JSON object", a.parent)
+		return nil, err
 	}
 	mine := jsonMemberNamed(members, entry.Name)
 	if mine == nil {
-		return jsonInsertMember(cfg, parent.value.start, fmt.Sprintf("%q:%s", entry.Name, snippet))
+		return jsonInsertMember(cfg, table, fmt.Sprintf("%q:%s", entry.Name, snippet))
 	}
 	if jsonEqual(cfg[mine.value.start:mine.value.end], snippet) {
 		return cfg, nil
 	}
 	// a huddle entry that is no longer ours: take it out, then write ours in
 	next := jsonCutMember(cfg, *mine)
-	return jsonInsertMember(next, parent.value.start, fmt.Sprintf("%q:%s", entry.Name, snippet))
+	return jsonInsertMember(next, table, fmt.Sprintf("%q:%s", entry.Name, snippet))
 }
 
 // Remove answers the config with the entry gone. An entry that no longer matches ours is the
@@ -70,16 +71,16 @@ func (a jsonAdapter) Remove(cfg []byte, entry Entry) ([]byte, error) {
 	if err := jsonCheck(cfg); err != nil {
 		return nil, err
 	}
-	parent, err := jsonFind(cfg, 0, a.parent)
+	table, missing, err := jsonFindTable(cfg, a.tablePath())
 	if err != nil {
 		return nil, err
 	}
-	if parent == nil {
+	if len(missing) > 0 {
 		return cfg, ErrEntryChanged
 	}
-	members, _, err := jsonMembers(cfg, parent.value.start)
+	members, _, err := jsonMembers(cfg, table)
 	if err != nil {
-		return nil, fmt.Errorf("the %s member is not a JSON object", a.parent)
+		return nil, err
 	}
 	mine := jsonMemberNamed(members, entry.Name)
 	if mine == nil {
@@ -92,25 +93,26 @@ func (a jsonAdapter) Remove(cfg []byte, entry Entry) ([]byte, error) {
 	if !jsonEqual(cfg[mine.value.start:mine.value.end], snippet) {
 		return cfg, ErrEntryChanged
 	}
-	next := jsonCutMember(cfg, *mine)
-	// the entry was the table's only member: the table goes with it, so a file install added
-	// the table to comes back as it was. The table's own span moved with the cut: find it
-	// again in the edited bytes.
-	if inner, _, err := jsonMembers(next, parent.value.start); err == nil && len(inner) == 0 {
-		if table, err := jsonFind(next, 0, a.parent); err == nil && table != nil {
-			next = jsonCutMember(next, *table)
-		}
-	}
-	return next, nil
+	// the entry was the table's only member: the table goes with it, and each level above it
+	// the cut leaves empty, so a file install added the table to comes back as it was
+	return jsonCutEmptied(jsonCutMember(cfg, *mine), a.tablePath()), nil
 }
 
-// contains answers whether the config holds a huddle entry under the parent.
+// tablePath answers the keys from the top object down to the table the entries sit in.
+func (a jsonAdapter) tablePath() []string {
+	if a.child == "" {
+		return []string{a.parent}
+	}
+	return []string{a.parent, a.child}
+}
+
+// contains answers whether the config holds a huddle entry in the table.
 func (a jsonAdapter) contains(cfg []byte) bool {
-	parent, err := jsonFind(cfg, 0, a.parent)
-	if err != nil || parent == nil {
+	table, missing, err := jsonFindTable(cfg, a.tablePath())
+	if err != nil || len(missing) > 0 {
 		return false
 	}
-	members, _, err := jsonMembers(cfg, parent.value.start)
+	members, _, err := jsonMembers(cfg, table)
 	if err != nil {
 		return false
 	}
@@ -149,14 +151,12 @@ func (a jsonAdapter) snippet(entry Entry) ([]byte, error) {
 // fresh answers the document install creates when the file is not there yet: the table with
 // the one entry in it, indented the way a human would read it.
 func (a jsonAdapter) fresh(snippet []byte) []byte {
-	doc := map[string]json.RawMessage{
-		a.parent: json.RawMessage(fmt.Sprintf("{%q:%s}", "huddle", snippet)),
+	compact := "{" + jsonNested(a.tablePath(), fmt.Sprintf("%q:%s", "huddle", snippet)) + "}"
+	var out bytes.Buffer
+	if err := json.Indent(&out, []byte(compact), "", "  "); err != nil {
+		return []byte(compact + "\n")
 	}
-	out, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return fmt.Appendf(nil, "{%q:{%q:%s}}\n", a.parent, "huddle", snippet)
-	}
-	return append(out, '\n')
+	return append(out.Bytes(), '\n')
 }
 
 // stdioEntry is the {command, args, env} record Gemini CLI and Qwen Code read.
@@ -294,6 +294,59 @@ func jsonMemberNamed(members []jsonMember, key string) *jsonMember {
 		}
 	}
 	return nil
+}
+
+// jsonFindTable walks the keys down from the top object: the start of the deepest object it
+// reaches and the keys still missing below it. A key that names no object is an error.
+func jsonFindTable(data []byte, path []string) (int, []string, error) {
+	start := 0
+	for i, key := range path {
+		member, err := jsonFind(data, start, key)
+		if err != nil {
+			return 0, nil, err
+		}
+		if member == nil {
+			return start, path[i:], nil
+		}
+		if _, _, err := jsonMembers(data, member.value.start); err != nil {
+			return 0, nil, fmt.Errorf("the %s member is not a JSON object", key)
+		}
+		start = member.value.start
+	}
+	return start, nil, nil
+}
+
+// jsonNested answers one member wrapped in an object per key, outermost first:
+// ["mcp","servers"] around "huddle":{...} is "mcp":{"servers":{"huddle":{...}}}.
+func jsonNested(keys []string, member string) string {
+	for i := len(keys) - 1; i >= 0; i-- {
+		member = fmt.Sprintf("%q:{%s}", keys[i], member)
+	}
+	return member
+}
+
+// jsonCutEmptied answers the document with every object along the path that holds nothing
+// cut out, deepest first; an object that still holds a member stops the cut.
+func jsonCutEmptied(data []byte, path []string) []byte {
+	for depth := len(path); depth > 0; depth-- {
+		table, missing, err := jsonFindTable(data, path[:depth])
+		if err != nil || len(missing) > 0 {
+			return data
+		}
+		if inner, _, err := jsonMembers(data, table); err != nil || len(inner) > 0 {
+			return data
+		}
+		holder, _, err := jsonFindTable(data, path[:depth-1])
+		if err != nil {
+			return data
+		}
+		member, err := jsonFind(data, holder, path[depth-1])
+		if err != nil || member == nil {
+			return data
+		}
+		data = jsonCutMember(data, *member)
+	}
+	return data
 }
 
 // jsonInsertAt answers the document with one more member or item spliced in before the

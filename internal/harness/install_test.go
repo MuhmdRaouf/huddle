@@ -109,15 +109,41 @@ type fixture struct {
 	created bool // install answers created
 }
 
-// jsonFixtures are the three starting states one JSON harness is tested from; parent is the
-// adapter's parent key and other a server entry that is not huddle's.
-func jsonFixtures(parent, other string) []fixture {
+// jsonFixtures are the three starting states one JSON harness is tested from; path is the
+// keys down to the adapter's server table and other a server entry that is not huddle's.
+func jsonFixtures(path []string, other string) []fixture {
+	table := fmt.Sprintf("{\n    %q: {\"command\": \"other-cmd\"}\n  }", other)
+	for i := len(path) - 1; i > 0; i-- {
+		table = fmt.Sprintf("{%q: %s}", path[i], table)
+	}
 	return []fixture{
 		{label: "absent", exists: false, created: true},
 		{label: "without huddle", exists: true, body: fmt.Sprintf("{\n  %q: \"dark\"\n}\n", "theme")},
 		{label: "with another server", exists: true, hasHud: false,
-			body: fmt.Sprintf("{\n  \"theme\": \"dark\",\n  %q: {\n    %q: {\"command\": \"other-cmd\"}\n  }\n}\n", parent, other)},
+			body: fmt.Sprintf("{\n  \"theme\": \"dark\",\n  %q: %s\n}\n", path[0], table)},
 	}
+}
+
+// tablePathOf answers the keys down to a JSON adapter's server table.
+func tablePathOf(t *testing.T, a Adapter) []string {
+	t.Helper()
+	ja, ok := a.(jsonAdapter)
+	if !ok {
+		t.Fatalf("%s is not a JSON adapter", a.Name())
+	}
+	return ja.tablePath()
+}
+
+// tableIn answers the server table a decoded config holds at path, or nil.
+func tableIn(value *jsfmt.Value, path []string) *jsfmt.Value {
+	for _, key := range path {
+		next, ok := field(value, key)
+		if !ok || next.Kind() != jsfmt.KindObject {
+			return nil
+		}
+		value = next
+	}
+	return value
 }
 
 // codexFixtures are the three starting states the Codex config is tested from.
@@ -136,11 +162,7 @@ func fixturesFor(t *testing.T, a Adapter) []fixture {
 	if _, ok := a.(tomlAdapter); ok {
 		return codexFixtures()
 	}
-	parent := "mcpServers"
-	if a.Name() == "opencode" || a.Name() == "crush" {
-		parent = "mcp"
-	}
-	return jsonFixtures(parent, "other")
+	return jsonFixtures(tablePathOf(t, a), "other")
 }
 
 // assertEntry parses cfg and wants exactly one huddle entry whose command, args and env are the
@@ -155,13 +177,10 @@ func assertEntry(t *testing.T, a Adapter, cfg []byte, entry Entry, otherThere bo
 	if err != nil {
 		t.Fatalf("the config does not parse: %v\n%s", err, cfg)
 	}
-	parent := "mcpServers"
-	if a.Name() == "opencode" || a.Name() == "crush" {
-		parent = "mcp"
-	}
-	servers, ok := field(value, parent)
-	if !ok || servers.Kind() != jsfmt.KindObject {
-		t.Fatalf("the config holds no %q object: %s", parent, cfg)
+	path := tablePathOf(t, a)
+	servers := tableIn(value, path)
+	if servers == nil {
+		t.Fatalf("the config holds no %q object: %s", strings.Join(path, "."), cfg)
 	}
 	count, others := 0, 0
 	huddle := ""
@@ -414,15 +433,11 @@ func userEditedConfig(t *testing.T, a Adapter, cfg []byte, bin string) string {
 	if _, ok := a.(tomlAdapter); ok {
 		return strings.Replace(string(cfg), "bin/huddle", bin, 1)
 	}
-	parent := "mcpServers"
-	if a.Name() == "opencode" || a.Name() == "crush" {
-		parent = "mcp"
-	}
 	value, err := jsfmt.DecodeValue(cfg)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	servers, _ := field(value, parent)
+	servers := tableIn(value, tablePathOf(t, a))
 	for i, key := range servers.Keys() {
 		if key != "huddle" {
 			continue

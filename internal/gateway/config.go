@@ -1,7 +1,7 @@
 // The gateway's config: $HUDDLE_HOME/gateway.json names routes — a model glob to an upstream —
 // and the two family defaults a model no route names falls back to. A missing file, or a default
-// it leaves out, is the API's own host; anything unreadable or ill-shaped is a startup error
-// naming the file.
+// it leaves out, is the API's own host, and a GLM model on the Anthropic route no route names
+// goes to Z.ai; anything unreadable or ill-shaped is a startup error naming the file.
 package gateway
 
 import (
@@ -32,6 +32,16 @@ const (
 	defaultOpenAI    = "https://api.openai.com"
 )
 
+// zaiAnthropic is Z.ai's Anthropic Messages root, the one its coding plans speak.
+const zaiAnthropic = "https://api.z.ai/api/anthropic"
+
+// builtinAnthropicRoutes are the routes a model on the Anthropic route falls to when no route
+// the file names matches it, ahead of the family default: GLM models go to Z.ai, so a harness
+// that speaks GLM on its own Z.ai key (zcode) reaches Z.ai through the gateway with no file.
+func builtinAnthropicRoutes() []Route {
+	return []Route{{Match: "GLM-*", Upstream: zaiAnthropic}, {Match: "glm-*", Upstream: zaiAnthropic}}
+}
+
 // Config is the gateway's whole configuration.
 type Config struct {
 	Routes []Route `json:"routes"`
@@ -39,6 +49,8 @@ type Config struct {
 	// names its model.
 	Anthropic string `json:"anthropic"`
 	OpenAI    string `json:"openai"`
+	// builtin is the Anthropic routes the file cannot name, filled with the defaults.
+	builtin []Route
 }
 
 // ConfigError is why a gateway refuses to start: the file and what is wrong with it.
@@ -114,6 +126,7 @@ func (c Config) withDefaults() Config {
 	if c.OpenAI == "" {
 		c.OpenAI = defaultOpenAI
 	}
+	c.builtin = builtinAnthropicRoutes()
 	return c
 }
 
@@ -124,21 +137,31 @@ func validUpstream(raw string) bool {
 }
 
 // UpstreamFor answers where a model on one API kind goes: the longest route glob that matches
-// wins (a tie goes to the one the file named first), else the family default, else nothing.
+// wins (a tie goes to the one the file named first), else on the Anthropic route the built-in
+// route that matches, else the family default, else nothing.
 func (c Config) UpstreamFor(kind apiKind, model string) string {
+	if best := longestMatch(c.Routes, model); best != "" {
+		return best
+	}
+	if kind.family() == "anthropic" {
+		if builtin := longestMatch(c.builtin, model); builtin != "" {
+			return builtin
+		}
+		return c.Anthropic
+	}
+	return c.OpenAI
+}
+
+// longestMatch answers the upstream of the longest glob that matches the model, the first
+// named on a tie; "" when none does.
+func longestMatch(routes []Route, model string) string {
 	best, bestLen := "", 0
-	for _, route := range c.Routes {
+	for _, route := range routes {
 		ok, _ := doublestar.Match(route.Match, model)
 		if !ok || len(route.Match) <= bestLen {
 			continue
 		}
 		best, bestLen = route.Upstream, len(route.Match)
 	}
-	if best != "" {
-		return best
-	}
-	if kind.family() == "anthropic" {
-		return c.Anthropic
-	}
-	return c.OpenAI
+	return best
 }

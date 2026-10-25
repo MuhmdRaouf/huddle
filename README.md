@@ -181,7 +181,7 @@ A device session ends after 7 days unused; removing it from Settings ends it at 
 
 ## Other agents
 
-Huddle's MCP server works with any harness that speaks MCP. For six of them the binary wires itself in:
+Huddle's MCP server works with any harness that speaks MCP. For seven of them the binary wires itself in:
 
 ```sh
 huddle harness list              # what is on this machine: installed, available or absent
@@ -191,9 +191,9 @@ huddle harness remove <name>     # take both out again, the config back to its p
 ```
 
 The names: `codex` (Codex CLI), `gemini` (Gemini CLI), `qwen` (Qwen Code), `opencode`, `crush`, `omp`
-(oh-my-pi) and `pi`. Every change
+(oh-my-pi), `pi` and `zcode` (the ZCode CLI). Every change
 is recorded in `$HUDDLE_HOME/harness-ledger.json` and undone exactly by `remove`; an entry you edited by hand
-stays, and remove says so. Install also wires each harness's own hooks (omp and pi get none), so its sessions sit in the hub's Now
+stays, and remove says so. Install also wires each harness's own hooks (omp, pi and zcode get none), so its sessions sit in the hub's Now
 list next to Claude Code's, badged by agent. A hook never blocks: it posts to the local hub and answers in
 silence, inside a short deadline.
 
@@ -203,6 +203,7 @@ silence, inside a short deadline.
 | `opencode` | `mcp.huddle` in `~/.config/opencode/opencode.json` (`$XDG_CONFIG_HOME` moves it), with a 120 s request timeout so a `wait` outlasts its long poll | `provider.anthropic.options` in the same file: `baseURL` `http://127.0.0.1:18786/gateway/v1` and the header `X-Huddle-Harness: opencode`, so opencode's Anthropic requests go through the router with your own key, named `opencode` in radar. Plain HTTP on loopback, so no proxy and no CA. An `opencode.json` that already configures `anthropic` is left as it is, and install says so |
 | `omp` | `mcpServers.huddle` in `~/.omp/agent/mcp.json` (`$PI_CODING_AGENT_DIR` or `$PI_CONFIG_DIR` moves it), which omp reads before the servers it imports from Claude Code or Codex | `providers.anthropic` in `~/.omp/agent/models.yml`, between `# huddle:begin` and `# huddle:end`: `baseUrl` `http://127.0.0.1:18786/gateway` and the header `X-Huddle-Harness: omp`, so omp's Anthropic requests go through the router with your own key or login, named `omp` in radar. Plain HTTP on loopback, so no proxy and no CA. A `models.yml` that already configures `anthropic` is left as it is, and install says so |
 | `pi` | `mcpServers.huddle` in `~/.pi/agent/mcp.json` (`$PI_CODING_AGENT_DIR` moves it), with a 120 s request timeout so a `wait` outlasts its long poll; pi runs it ahead of any extension's server of the same name | `providers.anthropic` in `~/.pi/agent/models.json`: `baseUrl` `http://127.0.0.1:18786/gateway` and the header `X-Huddle-Harness: pi`, so pi's Anthropic requests go through the router with your own key, named `pi` in radar; pi's own anthropic models stay listed. Plain HTTP on loopback, so no proxy and no CA. A `models.json` that already configures `anthropic` is left as it is, and install says so |
+| `zcode` | `mcp.servers.huddle` in `~/.zcode/cli/config.json`, with a 120 s request timeout so a `wait` outlasts its long poll | Two rules in `~/.zcode/v2/provider_config.json` (`$ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` moves it) for the Z.ai Coding Plan providers, individual and team: `baseUrl` `http://127.0.0.1:18786/gateway` and the header `X-Huddle-Harness: zcode`, so zcode's GLM requests go through the router to Z.ai with your own login, named `zcode` in radar. Plain HTTP on loopback, so no proxy and no CA. The start, off-peak, highspeed and BigModel plans speak other upstreams and stay direct. A rule you already keep for either plan is left as it is, and install says so |
 
 ### The MCP surface
 
@@ -223,7 +224,8 @@ OpenAI Chat Completions and Responses APIs. Point a harness's base URL at it and
 upstream its model's route names, unchanged, while radar records the model, latency and tokens. Name your
 upstreams in `$HUDDLE_HOME/gateway.json`; a model goes to the longest glob that matches it, anything else to
 its API family's default, which is the API's own host (`https://api.anthropic.com`, `https://api.openai.com`)
-when the file names none:
+when the file names none. A GLM model (`GLM-*` or `glm-*`) on the Anthropic route that no route names goes to
+Z.ai's `https://api.z.ai/api/anthropic`:
 
 ```json
 {

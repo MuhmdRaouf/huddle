@@ -79,6 +79,7 @@ var hookEdits = map[string]hookEdit{
 	"opencode": pluginHooks{},
 	"omp":      noHooks{},
 	"pi":       noHooks{},
+	"zcode":    noHooks{},
 }
 
 // hookFor answers the named harness's hook edit.
