@@ -99,7 +99,7 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   (web/hub/test/app/App.test.tsx), `"no hub page asks one URL more than twice a second"`
   (web/e2e/fetchrate.spec.ts) — every hub page, watched for 5 s, fails above 2 requests a second to one URL
 - **Rule:** an effect that fetches lists its inputs, and the hub e2e counts requests per URL.
-||||||| parent of a1d3859 (test(repo): keep tests off the repository's own huddle.json with a project dir of their own)
+
 ## 2026-10-25, a hub start stopped mid-migration left hub.db unopenable
 
 - **What happened:** under a load of 70, `TestServeEntryRefreshesAStaleService` cut a `serve` entry off at its
