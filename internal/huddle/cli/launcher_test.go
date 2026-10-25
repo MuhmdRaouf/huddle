@@ -181,7 +181,8 @@ func launcherEventNames(hooks []launcherHook) []string {
 }
 
 // TestTheMcpJsonStartsTheBridge pins .mcp.json: Claude Code spawns the plugin's bridge through
-// sh, and the bridge is the launcher's mcp entry on the huddle binary.
+// sh, and the bridge is the launcher's mcp entry on the huddle binary while the plugin dir is
+// there, and the stable current binary's mcp once an update has deleted it.
 func TestTheMcpJsonStartsTheBridge(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(launcherPluginRoot(t), ".mcp.json"))
 	if err != nil {
@@ -199,8 +200,10 @@ func TestTheMcpJsonStartsTheBridge(t *testing.T) {
 		t.Fatalf("parse .mcp.json: %v", err)
 	}
 	server := file.McpServers.Huddle
-	if server.Command != "sh" || len(server.Args) != 1 || server.Args[0] != "${CLAUDE_PLUGIN_ROOT}/bin/huddle-mcp" {
-		t.Errorf(".mcp.json starts %q %q, want sh with the plugin's bin/huddle-mcp", server.Command, server.Args)
+	line := `r="${CLAUDE_PLUGIN_ROOT}"; [ -f "$r/bin/huddle-mcp" ] && exec sh "$r/bin/huddle-mcp"; ` +
+		`h=$AGENTS_HUDDLE_HOME; [ -n "$h" ] || h=$HOME/.agents/huddle-bin; exec "$h/current" mcp`
+	if server.Command != "sh" || len(server.Args) != 2 || server.Args[0] != "-c" || server.Args[1] != line {
+		t.Errorf(".mcp.json starts %q %q, want sh -c %q", server.Command, server.Args, line)
 	}
 }
 

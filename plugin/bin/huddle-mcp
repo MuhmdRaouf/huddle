@@ -1,5 +1,7 @@
 #!/bin/sh
 # huddle-mcp — the plugin's stdio MCP server on the huddle binary, which dist/run downloads and verifies on
-# first use. The loop resolves a symlinked call back inside this plugin.
+# first use. .mcp.json runs it at each session start while this plugin dir exists, so dist/run builds a new
+# plugin commit once and repoints current; once an update deletes the dir, .mcp.json runs current itself.
+# The loop resolves a symlinked call back inside this plugin.
 f=$0; while [ -L "$f" ]; do l=$(readlink "$f"); case $l in /*) f=$l ;; *) f=$(dirname "$f")/$l ;; esac; done; d=$(cd "$(dirname "$f")/.." && pwd)
 exec sh "$d/dist/run" mcp "$@"

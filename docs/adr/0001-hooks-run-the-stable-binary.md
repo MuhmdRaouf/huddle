@@ -38,5 +38,6 @@ builds through `dist/run`, and a hook still reports to the hub after its plugin 
   run.
 - Once `current` exists a hook skips the launcher, so a hook never starts the build of a new plugin commit. That build comes from the next launcher run that is not a hook: the MCP server `.mcp.json` starts at
   each session start, or a command. Until it lands, hooks run the previous build.
-- The MCP shim (`plugin/bin/huddle-mcp`) still runs `dist/run` from the plugin directory; this decision covers the
-  hooks only.
+- The MCP shim (`plugin/bin/huddle-mcp`) is the rebuild path: `.mcp.json` runs it, and through it `dist/run`, at each
+  session start while the plugin directory exists, and runs `current mcp` directly once an update has deleted it
+  (`TestTheMCPShimSurvivesAPluginUpdate`).

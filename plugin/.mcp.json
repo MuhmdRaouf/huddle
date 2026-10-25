@@ -2,7 +2,7 @@
   "mcpServers": {
     "huddle": {
       "command": "sh",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/huddle-mcp"]
+      "args": ["-c", "r=\"${CLAUDE_PLUGIN_ROOT}\"; [ -f \"$r/bin/huddle-mcp\" ] && exec sh \"$r/bin/huddle-mcp\"; h=$AGENTS_HUDDLE_HOME; [ -n \"$h\" ] || h=$HOME/.agents/huddle-bin; exec \"$h/current\" mcp"]
     }
   }
 }

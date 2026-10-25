@@ -336,10 +336,13 @@ describe("the plugin manifest, the marketplace and the committed launcher", () =
     }
   });
 
-  it("starts the MCP bridge through the plugin's bin/huddle-mcp", () => {
+  it("starts the MCP bridge through the plugin's bin/huddle-mcp, and through current once the plugin dir is gone", () => {
     const server = readJSON(join(plugin, ".mcp.json"))?.mcpServers?.huddle;
     assert.equal(server?.command, "sh");
-    assert.deepEqual(server?.args, ["${CLAUDE_PLUGIN_ROOT}/bin/huddle-mcp"]);
+    assert.deepEqual(server?.args, [
+      "-c",
+      'r="${CLAUDE_PLUGIN_ROOT}"; [ -f "$r/bin/huddle-mcp" ] && exec sh "$r/bin/huddle-mcp"; h=$AGENTS_HUDDLE_HOME; [ -n "$h" ] || h=$HOME/.agents/huddle-bin; exec "$h/current" mcp',
+    ]);
   });
 
   it("commits the launcher every hook and command runs, and the licence", () => {
