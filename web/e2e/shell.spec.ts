@@ -5,10 +5,12 @@
 // page is a target of at least 44 px. On the desktop the same five items stand in a left sidebar
 // and no bottom bar is drawn. axe checks the shell's chrome on both (the pages' contents are their
 // own specs'), and the page names a theme colour per scheme beside a manifest with a maskable icon.
+// A button styled by Tailwind utilities alone keeps its fill and its border over Radar's legacy
+// button reset.
 
 import { expect, test, type Page } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
-import { expectTapTargets, SEEDED, signIn, theSetup } from "./helpers.ts";
+import { api, expectTapTargets, SEEDED, signIn, theSetup } from "./helpers.ts";
 
 /** The five tabs, in the order the shell draws them; Now may carry its needs-you count after it. */
 const TABS = [/^Now\d*$/, /^Channels$/, /^Radar$/, /^Kanban$/, /^Settings$/];
@@ -209,5 +211,32 @@ test.describe("the installed app", () => {
     };
     expect(manifest.display).toBe("standalone");
     expect(manifest.icons.some((i) => i.purpose === "maskable")).toBe(true);
+  });
+});
+
+test.describe("the utility layer", () => {
+  test("a permission ask's Allow once keeps its fill and Deny its border", async ({ page }, info) => {
+    const session = `e2e-layer-${info.project.name}`;
+    await api("/api/registry/report", {
+      session_id: session,
+      machine: "e2e-machine",
+      project: "e2e",
+      title: "Asks to build the bundle",
+      last_event: "Stop",
+      last_event_at: new Date().toISOString(),
+    });
+    await api("/api/needs", { session_id: session, tool_name: "Bash", tool_input: { command: "bun run build" } });
+    await open(page, `#/now/${session}`);
+    // the session screen's ask: the phone's bottom sheet, or the wide layouts' inline box
+    const bar = page.locator("[data-needs-sheet], [data-needs-bar]");
+    const allow = bar.locator("[data-act='allow']");
+    const deny = bar.locator("[data-act='deny']");
+    await expect(allow).toBeVisible();
+    expect(await allow.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
+    const border = await deny.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return `${s.borderTopWidth} ${s.borderTopStyle}`;
+    });
+    expect(border).toBe("1px solid");
   });
 });

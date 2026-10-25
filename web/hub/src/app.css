@@ -5,7 +5,13 @@
  * What is still hand-written here is the little daisyUI has no component for: the hue carriers the
  * avatars and status marks read (--c the fill, --ci the ink), the segmented progress bar, the
  * activity feed's rows, the two SVG diagrams, and the thin bridge for the class names the shared
- * package's own components (web/ui, shared with Radar) emit. */
+ * package's own components (web/ui, shared with Radar) emit.
+ *
+ * The layer order comes before the Tailwind import, because the first statement that names a layer
+ * fixes its place: Radar's pre-daisyUI visual system (legacy, the panels' inner parts, the charts,
+ * the timeline) sits below daisyUI components and Tailwind utilities, so a component or utility
+ * always wins over a legacy rule that touches the same element. */
+@layer theme, base, legacy, components, utilities;
 
 @import "tailwindcss" source(none);
 @source "./";
@@ -20,10 +26,7 @@
 @import "@huddle/ui/tokens.css";
 @import "@huddle/ui/components.css";
 
-/* Radar's pre-daisyUI visual system (the panels' inner parts, the charts, the timeline), in its own
- * layer below daisyUI components and Tailwind utilities, so a component or utility always wins over
- * a rule that shares its class name. */
-@layer theme, base, legacy, components, utilities;
+/* Radar's pre-daisyUI visual system, in the legacy layer the order at the top places. */
 @import "./radar/legacy.css" layer(legacy);
 
 /* One hue per name the way the models have theirs: the avatar ring, the doing tick, the paused
