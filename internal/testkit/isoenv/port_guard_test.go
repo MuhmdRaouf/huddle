@@ -35,6 +35,7 @@ var literalAllowed = map[string]string{
 	"internal/domain/plugin_routers_test.go":          "the plugin-router port table and the URL parsing data are the default itself",
 	"internal/domain/provider_env_test.go":            "the default base URL is the subject of the test",
 	"internal/domain/router_address_test.go":          "the default port is the subject of the test",
+	"internal/harness/codex_test.go":                  "the literal is the gateway base URL the golden config.toml block writes and compares as text, never dialled",
 }
 
 // hubLiteralAllowed lists the *_test.go files outside this package that may hold a hub range
