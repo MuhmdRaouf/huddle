@@ -9,7 +9,7 @@ import { act, cleanup, fireEvent, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api } from "../../src/api.ts";
 import { Landing } from "../../src/app/Landing.tsx";
-import { flush, makeCtx, makeState, renderIn, stubMedia } from "../helpers.tsx";
+import { flush, legacyClasses, makeCtx, makeState, renderIn, stubMedia } from "../helpers.tsx";
 
 /** The assertion options a login begin answers, buffers already base64url. */
 const OPTIONS = {
@@ -235,6 +235,19 @@ describe("the landing page's states", () => {
     await flush();
     expect(h.calls.map((c) => c.path)).toEqual(["/api/login/available"]);
     expect(h.get).not.toHaveBeenCalled();
+  });
+});
+
+describe("the landing page's frame", () => {
+  it("paints its frame, header and version line from the tokens", async () => {
+    mount({ available: { passkeys: false, totp: false }, health: { version: "1.2.3" } });
+    await flush();
+    const frame = document.querySelector("[data-landing]") as HTMLElement;
+    expect(frame.className).toBe("ui-page");
+    expect(legacyClasses(document.querySelector("[data-landing-head]") as HTMLElement)).toEqual([]);
+    expect(screen.getByText("Huddle v1.2.3").className).toBe(
+      "m-0 text-center text-xs text-[var(--ui-muted)]",
+    );
   });
 });
 

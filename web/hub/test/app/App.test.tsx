@@ -19,6 +19,7 @@ import { radarIo } from "../radar/ui/io.ts";
 import {
   attention,
   flush,
+  legacyClasses,
   makeCtx,
   makeRegistry,
   makeState,
@@ -69,6 +70,14 @@ const press = (key: string, init: KeyboardEventInit = {}): void => {
   void act(() => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key, ...init }));
   });
+};
+
+/** The legacy classes one element and everything under it paint with: the element's own, read
+ *  from a childless copy, and its descendants'. Pane bodies another page owns are out of scope. */
+const paints = (el: Element, skip?: string): string[] => {
+  const one = document.createElement("div");
+  one.append(el.cloneNode(false));
+  return [...legacyClasses(one), ...legacyClasses(el, skip)];
 };
 
 /** The tab links of one chrome piece: the bottom bar, the icon rail or the sidebar. */
@@ -179,15 +188,76 @@ describe("the three layouts", () => {
       nav("#/now");
       mountApp({}, needsYou);
       const now = document.querySelector(`[data-nav="${name}"] a[data-tab="now"]`) as HTMLElement;
-      expect(now.querySelector(".badge-warning")?.textContent, name).toBe("2");
+      expect(now.querySelector(".ui-badge-needs-you")?.textContent, name).toBe("2");
     }
+  });
+
+  it("paints the Now count orange when every session waits on a finished turn", () => {
+    stubMedia(DESKTOP);
+    nav("#/now");
+    const row: RegistrySession = {
+      session_id: "s-1",
+      state: "needs-you",
+      last_event: "Stop",
+      last_event_at: "2026-10-08T11:00:00Z",
+    };
+    const turn = {
+      id: 1,
+      session: "s-1",
+      kind: "turn",
+      summary: "a finished turn",
+      created_at: "2026-10-08T11:00:00Z",
+      state: "open",
+    };
+    renderIn(
+      <App pages={{}} />,
+      makeCtx(makeState(), { registry: makeRegistry({ sessions: [row], needs: [turn] }) }),
+    );
+    const now = document.querySelector("[data-nav='side'] a[data-tab='now']") as HTMLElement;
+    expect(now.querySelector(".ui-badge-turn-done")?.textContent).toBe("1");
+    expect(now.querySelector(".ui-badge-needs-you")).toBeNull();
   });
 
   it("draws no needs-you badge when nothing needs the owner", () => {
     stubMedia(DESKTOP);
     nav("#/now");
     mountApp();
-    expect(document.querySelector("[data-nav='side'] .badge-warning")).toBeNull();
+    expect(document.querySelector("[data-nav='side'] .ui-badge")).toBeNull();
+  });
+
+  it("paints the chrome of every layout with no daisyUI or legacy class", () => {
+    const chrome = "[data-nav], [data-sidebar], [data-desktop-bar], .ui-shell > header, [data-radar-views]";
+    for (const [layout, hash] of [
+      [PHONE, "#/now"],
+      [PHONE, "#/radar/overview"],
+      [TABLET, "#/radar/costs"],
+      [DESKTOP, "#/radar/overview"],
+      [DESKTOP, "#/now"],
+    ] as const) {
+      stubMedia(layout);
+      nav(hash);
+      const { unmount } = mountApp(
+        {},
+        makeState({ attention: attention({ asks: [{ seq: 1, from: "api" }] }) }),
+      );
+      expect(paints(document.querySelector(".ui-shell") as HTMLElement, ".ui-shell *"), hash).toEqual([]);
+      expect(document.querySelectorAll(chrome).length, hash).toBeGreaterThan(1);
+      for (const el of document.querySelectorAll(chrome)) expect(paints(el), hash).toEqual([]);
+      unmount();
+    }
+  });
+
+  it("paints the placeholder pane from the tokens", () => {
+    stubMedia(DESKTOP);
+    nav("#/now");
+    const row: RegistrySession = {
+      session_id: "s-1",
+      state: "working",
+      last_event: "UserPromptSubmit",
+      last_event_at: "2026-10-08T11:00:00Z",
+    };
+    renderIn(<App pages={{}} />, makeCtx(makeState(), { registry: makeRegistry({ sessions: [row] }) }));
+    expect(paints(screen.getByText("No session open").parentElement as HTMLElement)).toEqual([]);
   });
 });
 
@@ -570,9 +640,9 @@ describe("under Channels", () => {
         },
       }),
     );
-    expect(document.querySelector("[data-dest='inbox'] .badge-error")?.textContent).toBe("3");
-    expect(document.querySelector("[data-dest='team'] .badge")?.textContent).toBe("3");
-    expect(document.querySelector("[data-dest='work'] .badge")?.textContent).toBe("2");
+    expect(document.querySelector("[data-dest='inbox'] .ui-badge-needs-you")?.textContent).toBe("3");
+    expect(document.querySelector("[data-dest='team'] .ui-badge-neutral")?.textContent).toBe("3");
+    expect(document.querySelector("[data-dest='work'] .ui-badge-neutral")?.textContent).toBe("2");
     expect(document.title).toBe("(3) Checkout · Huddle");
   });
 
@@ -677,6 +747,8 @@ describe("NoChannel", () => {
     renderIn(<NoChannel ch="ghost" />);
     expect(screen.getByText(/No channel “ghost”/)).toBeDefined();
     expect(screen.getByText("channels page").getAttribute("href")).toBe("#/channels");
+    expect(legacyClasses()).toEqual([]);
+    expect(screen.getByText("channels page").className).not.toMatch(/\blink\b/);
   });
 });
 

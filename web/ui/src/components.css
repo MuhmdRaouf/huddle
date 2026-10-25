@@ -24,7 +24,7 @@
 /* The app shell: a frame exactly as tall as the viewport (100vh where dvh is missing) that never
  * scrolls itself, so no rubber band drags its chrome; its panes scroll inside it. The frame pads
  * itself by the top inset, and on the phone by the tab bar's height, so the panes end where the
- * pinned bar starts and nothing sits under it. */
+ * pinned bar starts and nothing sits under it. It paints the page's background and ink. */
 .ui-shell {
   box-sizing: border-box;
   display: flex;
@@ -34,6 +34,8 @@
   padding-top: var(--ui-safe-top);
   overflow: hidden;
   overscroll-behavior: none;
+  background: var(--ui-bg);
+  color: var(--ui-text);
 }
 
 .ui-shell-phone {
@@ -198,6 +200,7 @@
   border-radius: var(--ui-radius-full);
   font-size: var(--ui-text-xs);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   line-height: 1.5;
   white-space: nowrap;
 }
@@ -225,6 +228,19 @@
 .ui-badge-info {
   background: var(--ui-info-soft);
   color: var(--ui-info-ink);
+}
+
+/* A count that waits on the owner: ringed in its state's mark so it reads over any surface */
+.ui-badge-needs-you {
+  background: var(--ui-needs-you-soft);
+  box-shadow: inset 0 0 0 1px var(--ui-needs-you);
+  color: var(--ui-needs-you-ink);
+}
+
+.ui-badge-turn-done {
+  background: var(--ui-turn-done-soft);
+  box-shadow: inset 0 0 0 1px var(--ui-turn-done);
+  color: var(--ui-turn-done-ink);
 }
 
 /* Card */

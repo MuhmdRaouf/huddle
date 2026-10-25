@@ -19,4 +19,15 @@ describe("Badge", () => {
     expect(screen.getByText("down").className).toBe("ui-badge ui-badge-fail");
     expect(screen.getByText("new").className).toBe("ui-badge ui-badge-info");
   });
+
+  it("paints a count in the needs-you and turn-done state roles", () => {
+    render(
+      <>
+        <Badge tone="needs-you">3</Badge>
+        <Badge tone="turn-done">1</Badge>
+      </>,
+    );
+    expect(screen.getByText("3").className).toBe("ui-badge ui-badge-needs-you");
+    expect(screen.getByText("1").className).toBe("ui-badge ui-badge-turn-done");
+  });
 });

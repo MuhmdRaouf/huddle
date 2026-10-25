@@ -5,6 +5,7 @@
 // channel pages stay reachable under Channels, with their destination tabs, their intro and the
 // session rail beside them. The landing and no-channel pages stand alone.
 
+import { Badge } from "@huddle/ui/badge.tsx";
 import { PageIntro } from "@huddle/ui/page.tsx";
 import type { Stamp } from "@huddle/ui/time.ts";
 import type { ComponentChildren, ComponentType, JSX } from "preact";
@@ -24,7 +25,7 @@ import { useHuddle } from "./context.tsx";
 import { FirstRunChecklist } from "./FirstRun.tsx";
 import { IntroCtx } from "./intro.tsx";
 import { type Layout, useLayout } from "./layout.ts";
-import { BottomNav, IconRail, SideNav } from "./Nav.tsx";
+import { BottomNav, IconRail, type NeedsBadge, needsBadge, SideNav, TabBadge } from "./Nav.tsx";
 import { NoSessionsWelcome, NowContext, NowPane, SessionScreen } from "./Now.tsx";
 import { Pair } from "./Pair.tsx";
 import { Rail } from "./Rail.tsx";
@@ -137,15 +138,16 @@ export function inboxOf(state: HuddleState): number {
   return att + needs;
 }
 
-/** The counts the channel tabs read: the Inbox needs-you badge, the online sessions, the open tasks. */
-export type NavCounts = { n: number; sessions: number; open: number };
+/** The counts the channel tabs read: the needs-you badge, the online sessions, the open tasks. */
+export type NavCounts = { needs: NeedsBadge; sessions: number; open: number };
 
-/** The count a channel tab carries: the Inbox's needs-you in error red, the Team's online sessions
- *  and Work's open tasks in quiet grey; the pages without a count and a zero draw nothing. */
+/** The count a channel tab carries: the Inbox's needs-you by the one badge rule the Now tab
+ *  follows, the Team's online sessions and Work's open tasks in neutral; the pages without a
+ *  count and a zero draw nothing. */
 function tabBadge(dest: Dest, c: NavCounts): JSX.Element | null {
-  if (dest === "inbox") return c.n > 0 ? <span class="badge badge-error badge-sm tnum">{c.n}</span> : null;
+  if (dest === "inbox") return <TabBadge needs={c.needs} />;
   const n = dest === "team" ? c.sessions : dest === "work" ? c.open : 0;
-  return n > 0 ? <span class="num badge badge-ghost badge-sm">{n}</span> : null;
+  return n > 0 ? <Badge>{n}</Badge> : null;
 }
 
 /** One channel tab: its icon, its label, the counts that follow it, and the active tab's glow. */
@@ -208,11 +210,15 @@ function ViewTabs({ dest, counts }: { dest: Dest; counts: NavCounts }): JSX.Elem
   );
 }
 
+/** The dashed frame a placeholder stands in, on the tokens. */
+const PLACEHOLDER =
+  "mx-auto flex flex-col items-center gap-2 rounded-[var(--ui-radius-lg)] border border-dashed border-[var(--ui-line-strong)] px-6 text-center text-sm text-[var(--ui-muted)]";
+
 /** A placeholder pane: what a tab shows until its own screen lands. */
 export function EmptyPane({ title, line }: { title: string; line?: string | undefined }): JSX.Element {
   return (
-    <div class="mx-auto flex max-w-lg flex-col items-center gap-2 rounded-box border border-dashed border-base-content/20 px-6 py-16 text-center text-sm muted">
-      <b class="text-base font-semibold text-base-content">{title}</b>
+    <div class={`${PLACEHOLDER} max-w-lg py-16`}>
+      <b class="text-base font-semibold text-[var(--ui-text)]">{title}</b>
       <p>{line ?? "Coming soon."}</p>
     </div>
   );
@@ -222,8 +228,8 @@ export function EmptyPane({ title, line }: { title: string; line?: string | unde
 export function ComingSoon({ label }: { label: string }): JSX.Element {
   return (
     <div class="mx-auto max-w-3xl py-6">
-      <div class="flex flex-col items-center gap-2 rounded-box border border-dashed border-base-content/20 px-6 py-10 text-center text-sm muted">
-        <b class="text-base font-semibold text-base-content">{label}</b>
+      <div class={`${PLACEHOLDER} py-10`}>
+        <b class="text-base font-semibold text-[var(--ui-text)]">{label}</b>
         <p>Coming soon.</p>
       </div>
     </div>
@@ -245,7 +251,7 @@ function RadarRange(): JSX.Element {
   return (
     <fieldset
       aria-label="Range"
-      class="flex shrink-0 gap-0.5 rounded-[10px] border border-base-content/15 bg-base-200 p-[3px]"
+      class="flex shrink-0 gap-0.5 rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface)] p-[3px]"
       data-radar-range=""
     >
       {choices.map(([key, label]) => (
@@ -254,8 +260,10 @@ function RadarRange(): JSX.Element {
           type="button"
           aria-pressed={preset === key ? "true" : "false"}
           data-range={key}
-          class={`min-h-8 min-w-13 rounded-[7px] max-sm:min-h-[var(--ui-tap)] px-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-            preset === key ? "bg-base-300 font-semibold text-base-content" : "text-base-content/70"
+          class={`min-h-8 min-w-13 rounded-[7px] max-sm:min-h-[var(--ui-tap)] px-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
+            preset === key
+              ? "bg-[var(--ui-surface-2)] font-semibold text-[var(--ui-text)]"
+              : "text-[var(--ui-muted)]"
           }`}
           onClick={() => radarAct("range", key)}
         >
@@ -291,9 +299,10 @@ function RadarViews({ view, layout }: { view: RadarView; layout: Layout }): JSX.
   return (
     <nav
       aria-label="Radar views"
+      data-radar-views=""
       class={
         layout === "desktop"
-          ? "flex min-h-[52px] shrink-0 items-center gap-0.5 border-b hairline pr-5 pl-5"
+          ? "flex min-h-[52px] shrink-0 items-center gap-0.5 border-b border-[var(--ui-line)] pr-5 pl-5"
           : "flex shrink-0 items-center gap-1.5 overflow-x-auto px-4 py-2"
       }
     >
@@ -312,21 +321,23 @@ function RadarViews({ view, layout }: { view: RadarView; layout: Layout }): JSX.
             aria-current={v === view ? "page" : undefined}
             class={
               layout === "desktop"
-                ? `flex h-full shrink-0 items-center border-b-2 px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                ? `flex h-full shrink-0 items-center border-b-2 px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
                     v === view
-                      ? "border-primary font-semibold text-base-content"
-                      : "border-transparent text-base-content/70 hover:text-base-content"
+                      ? "border-[var(--ui-accent)] font-semibold text-[var(--ui-text)]"
+                      : "border-transparent text-[var(--ui-muted)] hover:text-[var(--ui-text)]"
                   }`
-                : `flex min-h-[var(--ui-tap)] shrink-0 items-center rounded-full px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                : `flex min-h-[var(--ui-tap)] shrink-0 items-center rounded-[var(--ui-radius-full)] px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
                     v === view
-                      ? "bg-primary font-semibold text-primary-content"
-                      : "border hairline text-base-content/80 hover:bg-base-100"
+                      ? "bg-[var(--ui-accent)] font-semibold text-[var(--ui-on-accent)]"
+                      : "border border-[var(--ui-line)] text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
                   }`
             }
           >
             {radarLabel(v)}
             {v === "alerts" && alerts > 0 && (
-              <span class="badge badge-error badge-sm ml-1.5 tnum">{alerts}</span>
+              <span class="ml-1.5">
+                <Badge tone="fail">{alerts}</Badge>
+              </span>
             )}
           </a>
         ))}
@@ -336,7 +347,7 @@ function RadarViews({ view, layout }: { view: RadarView; layout: Layout }): JSX.
         {layout === "desktop" && (
           <button
             type="button"
-            class="btn btn-ghost btn-sm h-[34px] border border-base-content/20"
+            class="ui-btn ui-btn-secondary"
             data-radar-export=""
             onClick={() => radarAct("export", RADAR_EXPORT[view])}
           >
@@ -352,12 +363,12 @@ function RadarViews({ view, layout }: { view: RadarView; layout: Layout }): JSX.
 /** The channel the address names does not exist. */
 export function NoChannel({ ch }: { ch: string }): JSX.Element {
   return (
-    <div class="mx-auto flex max-w-lg flex-col items-center gap-2 rounded-box border border-dashed border-base-content/20 px-6 py-20 text-center text-sm muted">
+    <div class={`${PLACEHOLDER} max-w-lg py-20`}>
       <Icon name="hash" class="size-8" />
-      <h1 class="text-xl font-semibold tracking-tight text-base-content">No channel “{ch}”</h1>
+      <h1 class="text-xl font-semibold tracking-tight text-[var(--ui-text)]">No channel “{ch}”</h1>
       <p>
         A session's first <code>join</code> creates a channel, or you can create one on the{" "}
-        <a class="link link-primary" href="#/channels">
+        <a class="text-[var(--ui-accent)] underline" href="#/channels">
           channels page
         </a>
         .
@@ -567,7 +578,12 @@ export function App({
 
   // the needs-you count the chrome carries: what the open channel holds, plus the registry's
   // sessions that wait on the owner (the Now tab's own list)
-  const n = inboxOf(state) + registry.needs();
+  const needs = needsBadge({
+    inbox: inboxOf(state),
+    sessions: registry.needs(),
+    items: registry.getState().needs,
+  });
+  const n = needs.n;
   const chname = state.info?.config?.title || state.ch;
   useEffect(() => {
     document.title = `${n ? `(${n}) ` : ""}${
@@ -593,7 +609,7 @@ export function App({
   const roster = state.sessions?.sessions ?? [];
   const online = roster.filter((s) => s.state !== "left").length;
   const open = steps.filter((s) => !FIN.has(s.status ?? "todo")).length;
-  const counts: NavCounts = { n, sessions: online, open };
+  const counts: NavCounts = { needs, sessions: online, open };
   const ch = state.ch;
 
   // the pages the pages registry holds sit under Channels alone
@@ -709,7 +725,7 @@ export function App({
   const passkeyAsk = <PasskeyAsk />;
   if (layout === "phone") {
     return (
-      <div class="ui-shell ui-shell-phone bg-base-300">
+      <div class="ui-shell ui-shell-phone">
         {passkeyAsk}
         {nowId ? null : (
           <header class="flex shrink-0 items-center justify-between gap-3 px-5 pt-[22px] pb-3">
@@ -718,7 +734,7 @@ export function App({
           </header>
         )}
         {main}
-        <BottomNav tab={route.tab} n={n} />
+        <BottomNav tab={route.tab} needs={needs} />
       </div>
     );
   }
@@ -726,10 +742,10 @@ export function App({
   // the tablet: the icon rail, then the list beside the detail when the tab has a list
   if (layout === "tablet") {
     return (
-      <div class="ui-shell bg-base-300">
+      <div class="ui-shell">
         {passkeyAsk}
         <div class="grid min-h-0 min-w-0 flex-1 grid-cols-[72px_minmax(0,1fr)]">
-          <IconRail tab={route.tab} n={n} />
+          <IconRail tab={route.tab} needs={needs} />
           <div class={`grid min-h-0 min-w-0 ${list ? "grid-cols-[360px_minmax(0,1fr)]" : "grid-cols-1"}`}>
             {list}
             {main}
@@ -741,10 +757,10 @@ export function App({
 
   // the desktop: the sidebar, then the top bar over the list, the detail and the context pane
   return (
-    <div class="ui-shell bg-base-300">
+    <div class="ui-shell">
       {passkeyAsk}
       <div class="flex min-h-0 min-w-0 flex-1">
-        <SideNav tab={route.tab} n={n} />
+        <SideNav tab={route.tab} needs={needs} />
         <div class="grid min-h-0 min-w-0 flex-1 grid-rows-[52px_minmax(0,1fr)]">
           <DesktopBar live={liveOf} machines={mline} onPalette={onPalette} onHelp={onHelp} />
           <div

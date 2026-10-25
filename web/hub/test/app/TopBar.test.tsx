@@ -3,7 +3,7 @@
 import { act, render, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { DesktopBar, MachinesLine, ThemeMenu, useVersion } from "../../src/app/TopBar.tsx";
-import { flush, stubMatchMedia } from "../helpers.tsx";
+import { flush, legacyClasses, stubMatchMedia } from "../helpers.tsx";
 
 beforeEach(() => {
   localStorage.clear();
@@ -56,12 +56,13 @@ describe("the machines line", () => {
   it("answers its label and carries the live dot's state", () => {
     const { rerender } = render(<MachinesLine live="live" />);
     const line = screen.getByLabelText("Machines");
-    expect(line.querySelector(".status-success")).not.toBeNull();
+    const dot = (): string => line.querySelector("[data-live]")?.className ?? "";
+    expect(dot()).toContain("bg-[var(--ui-ok)]");
     expect(line.textContent).toContain("This machine");
     rerender(<MachinesLine live="offline" />);
-    expect(line.querySelector(".status-warning")).not.toBeNull();
+    expect(dot()).toContain("bg-[var(--ui-warn)]");
     rerender(<MachinesLine live="connecting" />);
-    expect(line.querySelector(".status-neutral")).not.toBeNull();
+    expect(dot()).toContain("bg-[var(--ui-idle)]");
   });
 });
 
@@ -123,5 +124,19 @@ describe("the bar's keys", () => {
       screen.getByLabelText("Keyboard shortcuts").click();
     });
     expect(onHelp).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the tokens", () => {
+  it("paints the bar with the ui buttons and no daisyUI or legacy class", () => {
+    render(<DesktopBar live="live" />);
+    const daisy = /^(status(-.+)?|kbd(-.+)?)$/;
+    const all = [...document.querySelectorAll("[class]")].flatMap((el) =>
+      (el.getAttribute("class") ?? "").split(/\s+/),
+    );
+    expect(legacyClasses()).toEqual([]);
+    expect(all.filter((c) => daisy.test(c))).toEqual([]);
+    for (const name of [/^Theme:/, "Keyboard shortcuts"])
+      expect(screen.getByRole("button", { name }).className).toContain("ui-btn ui-btn-ghost ui-btn-icon");
   });
 });

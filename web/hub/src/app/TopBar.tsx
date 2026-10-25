@@ -1,6 +1,7 @@
 // TopBar.tsx — the desktop top bar (52 px) beside the sidebar: the jump field with its ⌘K hint,
 // the machines line with its live dot, the theme menu and the shortcuts key. The five tabs live in
-// Nav.tsx, the phone header in App.tsx, with the shell that draws them.
+// Nav.tsx, the phone header in App.tsx, with the shell that draws them. Every colour comes from
+// the tokens.
 
 import { type MenuItem, PopMenu } from "@huddle/ui/menu.tsx";
 import { readScheme, type SchemePref } from "@huddle/ui/theme.ts";
@@ -38,16 +39,25 @@ export function MachinesLine({ live, text }: { live: LiveStatus; text?: string |
       : live === "offline"
         ? "Live updates: reconnecting"
         : "Live updates: connecting";
-  const dot = live === "live" ? "status-success" : live === "offline" ? "status-warning" : "status-neutral";
+  const dot =
+    live === "live"
+      ? "bg-[var(--ui-ok)]"
+      : live === "offline"
+        ? "bg-[var(--ui-warn)]"
+        : "bg-[var(--ui-idle)]";
   return (
     <span
-      class="flex min-w-0 items-center gap-1.5 text-[13px] text-base-content/60"
+      class="flex min-w-0 items-center gap-1.5 text-[13px] text-[var(--ui-muted)]"
       data-machines=""
       role="img"
       aria-label="Machines"
       title={t}
     >
-      <span class={`status ${dot} shrink-0`} aria-hidden="true" />
+      <span
+        class={`size-2 shrink-0 rounded-[var(--ui-radius-full)] ${dot}`}
+        data-live={live}
+        aria-hidden="true"
+      />
       <span class="truncate">{text ?? "This machine"}</span>
     </span>
   );
@@ -77,7 +87,7 @@ export function ThemeMenu(): JSX.Element {
         type="button"
         ref={setBtn}
         id="theme"
-        class="btn btn-ghost btn-square btn-sm shrink-0"
+        class="ui-btn ui-btn-ghost ui-btn-icon shrink-0"
         aria-haspopup="menu"
         aria-expanded="false"
         aria-label={`Theme: ${row?.[1] ?? "System"}`}
@@ -111,18 +121,24 @@ export function DesktopBar({
 }): JSX.Element {
   const mac = isMac(navigator.platform || navigator.userAgent);
   return (
-    <header class="flex h-[52px] min-h-[52px] items-center gap-5 border-b hairline bg-base-200 px-5">
+    <header
+      class="flex h-[52px] min-h-[52px] items-center gap-5 border-b border-[var(--ui-line)] bg-[var(--ui-surface)] px-5"
+      data-desktop-bar=""
+    >
       <button
         type="button"
         id="jump"
-        class="ml-auto flex h-[34px] w-[300px] min-w-0 items-center gap-2 rounded-lg border hairline bg-base-300 px-3 text-[13px] text-base-content/50 outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        class="ml-auto flex h-[var(--ui-tap)] w-[300px] min-w-0 items-center gap-2 rounded-[var(--ui-radius)] border border-[var(--ui-line-strong)] bg-[var(--ui-surface-2)] px-3 text-[13px] text-[var(--ui-muted)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
         aria-keyshortcuts="Meta+K Control+K /"
         title="Jump to a session (⌘K)"
         onClick={() => onPalette?.()}
       >
         <Icon name="search" class="size-4 shrink-0" />
         <span class="min-w-0 truncate">Jump to a session</span>
-        <kbd class="kbd kbd-sm ml-auto shrink-0" aria-hidden="true">
+        <kbd
+          class="ui-mono ml-auto shrink-0 rounded-[var(--ui-radius-sm)] border border-[var(--ui-line)] bg-[var(--ui-surface)] px-1.5 text-[length:var(--ui-text-xs)]"
+          aria-hidden="true"
+        >
           {mac ? "⌘K" : "Ctrl K"}
         </kbd>
       </button>
@@ -130,7 +146,7 @@ export function DesktopBar({
       <ThemeMenu />
       <button
         type="button"
-        class="btn btn-ghost btn-square btn-sm shrink-0"
+        class="ui-btn ui-btn-ghost ui-btn-icon shrink-0"
         aria-label="Keyboard shortcuts"
         aria-keyshortcuts="?"
         title="Keyboard shortcuts (?)"

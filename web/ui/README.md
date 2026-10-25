@@ -32,7 +32,7 @@ looks the same on a phone and a desktop, in light and dark, with nothing loaded 
 | `Sheet`                    | `sheet.tsx`       | Detail over the page: bottom on a phone, side on wide |
 | `Tabs` (`class="ui-tabs"`) | `tabs.tsx`        | Switching views inside a page                         |
 | `Table`                    | `table.tsx`       | Data that scrolls inside itself, never the page       |
-| `Badge`                    | `badge.tsx`       | A short status word                                   |
+| `Badge`                    | `badge.tsx`       | A short status word, or a count in its state's colour |
 | `ChartFrame`               | `chart-frame.tsx` | The title, value and frame around a chart             |
 | `Field`                    | `field.tsx`       | A labelled input with a hint or an error              |
 | `Switch`                   | `switch.tsx`      | One setting turned on or off                          |
