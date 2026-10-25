@@ -1,0 +1,84 @@
+/* tokens.css — the design system's tokens: one neutral scale, one accent, four status colours
+ * (ok, warn, fail, info), spacing on a 4-8-12-16-24-32 ladder, radii, a type scale and the
+ * system font stack with a mono face for commands and numbers. Nothing loads from the network.
+ *
+ * Every colour is one light-dark(light, dark) pair, so one declaration covers both schemes.
+ * theme.ts puts data-scheme="light|dark" on <html> (the OS's choice, or the Settings override),
+ * and that attribute sets the color-scheme light-dark() reads. A page on the tokens runs
+ * followScheme; a page without it keeps the color-scheme its own theme sets.
+ *
+ * Both schemes keep WCAG AA (test/tokens-contrast.test.ts): text and muted text on every surface,
+ * each ink on its tint, and the solid status colours and the strong line at 3:1.
+ *
+ * Colour use, the same everywhere:
+ *   ok    a healthy, done or approved state       warn  needs a look soon, nothing broken yet
+ *   fail  broken, denied or over budget           info  new or neutral news worth a glance
+ *   <tone> marks (dots, bars, borders); <tone>-soft fills; <tone>-ink text on the fill or a surface */
+
+:root {
+  /* the neutral scale, page to ink */
+  --ui-bg: light-dark(#f6f7f9, #0e1014);
+  --ui-surface: light-dark(#ffffff, #171a20);
+  --ui-surface-2: light-dark(#eceef2, #20242c);
+  --ui-line: light-dark(#dde1e7, #2c313b);
+  --ui-line-strong: light-dark(#7c8391, #6e7686);
+  --ui-muted: light-dark(#545b69, #a4abb8);
+  --ui-text: light-dark(#14161a, #e8eaee);
+
+  /* the one accent: links, the primary action, focus and the selected tab */
+  --ui-accent: light-dark(#1f5fd1, #7aaeff);
+  --ui-on-accent: light-dark(#ffffff, #0e1014);
+
+  /* the four status colours */
+  --ui-ok: light-dark(#1f883d, #3fb950);
+  --ui-ok-soft: light-dark(#e3f4e7, #12301c);
+  --ui-ok-ink: light-dark(#146c2e, #6fdd8b);
+  --ui-warn: light-dark(#b07a00, #d29922);
+  --ui-warn-soft: light-dark(#fbf0d5, #33270a);
+  --ui-warn-ink: light-dark(#7d5200, #e8b84e);
+  --ui-fail: light-dark(#d1242f, #f85149);
+  --ui-fail-soft: light-dark(#fde8e9, #3b1416);
+  --ui-fail-ink: light-dark(#a40e26, #ff8a82);
+  --ui-info: light-dark(#0a72c7, #4ea1ff);
+  --ui-info-soft: light-dark(#e1effb, #0f2a47);
+  --ui-info-ink: light-dark(#0b5a9c, #8cc3ff);
+
+  /* spacing: 4 8 12 16 24 32 */
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 24px;
+  --ui-space-6: 32px;
+
+  /* radii: small parts, controls, panels, and a full pill */
+  --ui-radius-sm: 6px;
+  --ui-radius: 10px;
+  --ui-radius-lg: 16px;
+  --ui-radius-full: 999px;
+
+  /* type: the system faces, a mono for commands and numbers, and a five-step scale */
+  --ui-font: -apple-system, system-ui, "Segoe UI", Inter, sans-serif;
+  --ui-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --ui-text-xs: 0.75rem;
+  --ui-text-sm: 0.875rem;
+  --ui-text-md: 1rem;
+  --ui-text-lg: 1.25rem;
+  --ui-text-xl: 1.75rem;
+  --ui-leading: 1.45;
+
+  /* the smallest tap target a control may have */
+  --ui-tap: 44px;
+
+  /* the safe areas a pinned bar pads itself by */
+  --ui-safe-top: env(safe-area-inset-top, 0px);
+  --ui-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+:root[data-scheme="light"] {
+  color-scheme: light;
+}
+
+:root[data-scheme="dark"] {
+  color-scheme: dark;
+}

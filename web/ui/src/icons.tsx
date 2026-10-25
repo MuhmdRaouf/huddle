@@ -1,11 +1,22 @@
-// icons.tsx — the handful of stroke icons the overlays draw themselves: toast alert/check/dismiss/undo
-// and the menu's check mark, plus the three marks the huddle shell's tabs carry. The shapes match the
-// huddle icon set, kept here so the shared package stays self-contained; radar can adopt the same
-// shapes for its own overlays.
+// icons.tsx — the Lucide icons the shared package draws, bundled as their SVG paths so nothing loads
+// from the network and only the shapes in use ship: toast alert/check/dismiss/undo and the menu's check
+// mark, the three marks the huddle shell's tabs carry, the scheme switch's sun, moon and monitor, and
+// the plus of an add action.
 import type { JSX } from "preact";
 
 /** The icons the shared overlays and the huddle shell's tabs need. */
-export type IconName = "alert" | "check" | "x" | "undo" | "now" | "channels" | "radar";
+export type IconName =
+  | "alert"
+  | "check"
+  | "x"
+  | "undo"
+  | "now"
+  | "channels"
+  | "radar"
+  | "sun"
+  | "moon"
+  | "monitor"
+  | "plus";
 
 /** Icon name → the svg shapes inside a 24×24 stroke box. */
 const P: Record<IconName, readonly JSX.Element[]> = {
@@ -24,6 +35,13 @@ const P: Record<IconName, readonly JSX.Element[]> = {
     <path d="M9 11l6-4M9 13l6 4" />,
   ],
   radar: [<circle cx="12" cy="12" r="9" />, <circle cx="12" cy="12" r="5" />, <path d="M12 12l6-6" />],
+  sun: [
+    <circle cx="12" cy="12" r="4" />,
+    <path d="M12 2v2M12 20v2m-7.07-17.07 1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />,
+  ],
+  moon: [<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />],
+  monitor: [<rect width="20" height="14" x="2" y="3" rx="2" />, <path d="M8 21h8M12 17v4" />],
+  plus: [<path d="M5 12h14M12 5v14" />],
 };
 
 /** One stroke icon at `class` size, hidden from screen readers (the text around it carries the meaning). */

@@ -1,5 +1,7 @@
 // playwright.config.ts — the e2e run's shape: chromium only, headless, one worker, no retries,
-// thirty seconds a test. The global setup builds the binary and starts the hub on a temp home;
+// thirty seconds a test, in two projects: `desktop` (1440x900) runs every spec, `iphone` (the
+// iPhone 15's viewport, touch and user agent over chromium) runs the specs of the pages built
+// phone first. The global setup builds the binary and starts the hub on a temp home;
 // the teardown stops it and removes the temp homes. Everything the run writes — test results
 // included — stays under the repo's gitignored .agents/scratch.
 
@@ -7,6 +9,9 @@ import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 import { here, repoRoot } from "./paths.ts";
 import { chromiumTlsArgs } from "./tls.ts";
+
+/** The specs that also run on the phone: the pages built on the web/ui design system. */
+const PHONE_SPECS = ["tokens.spec.ts"];
 
 export default defineConfig({
   testDir: here,
@@ -30,5 +35,12 @@ export default defineConfig({
     serviceWorkers: "block",
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
+    {
+      name: "iphone",
+      use: { ...devices["iPhone 15"], browserName: "chromium" },
+      testMatch: PHONE_SPECS,
+    },
+  ],
 });

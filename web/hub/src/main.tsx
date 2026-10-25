@@ -21,6 +21,7 @@ import { TotpFirstRun } from "./app/Totp.tsx";
 import { ComposeDialog } from "./compose/ComposeDialog.tsx";
 import type { ComposeSent } from "./compose/Composer.tsx";
 import type { ComposeOptions } from "./compose/drafts.ts";
+import { DEV_TOKENS_HASH, Tokens } from "./dev/Tokens.tsx";
 import { createLive, type Notifications } from "./live.ts";
 import { Home } from "./pages/Home.tsx";
 import { Inbox } from "./pages/Inbox.tsx";
@@ -65,6 +66,9 @@ const announcer = (): HTMLElement => {
   }
   return el;
 };
+
+/** The OS's dark preference, the one query the tokens page follows across repaints. */
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
 let signedOutPainted = false;
 let failedCh: string | null = null;
@@ -369,6 +373,8 @@ function page(): ComponentChildren {
         }}
       />
     );
+  if (location.hash === DEV_TOKENS_HASH)
+    return <Tokens store={localStorage} query={darkQuery} root={document.documentElement} />;
   if (failedCh && parseHash(location.hash, (k, fb) => readPref(localStorage, k, fb)).ch === failedCh)
     return <NoChannel ch={failedCh} />;
   const s = store.getState();

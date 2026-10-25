@@ -15,6 +15,11 @@
 }
 @import "@huddle/ui/theme.css";
 
+/* The design system web/ui ships (tokens and its components' look), unlayered: only .ui-* classes
+ * and --ui-* tokens, so the pages not yet built on it keep their look. */
+@import "@huddle/ui/tokens.css";
+@import "@huddle/ui/components.css";
+
 /* Radar's pre-daisyUI visual system (the panels' inner parts, the charts, the timeline), in its own
  * layer below daisyUI components and Tailwind utilities, so a component or utility always wins over
  * a rule that shares its class name. */
