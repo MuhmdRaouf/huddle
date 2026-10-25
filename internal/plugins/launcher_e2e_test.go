@@ -18,6 +18,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakeclaude"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // The provider plugin as the plugin runs it: the huddle binary loads and prints its help, the
@@ -396,5 +397,81 @@ func checkBoardHookSilent(t *testing.T, provider domain.Provider, launcher strin
 	stdout, stderr, code := runOne(t, "sh", []string{launcher, provider.Name + ".js", "board", "--hook"}, env, home)
 	if code != 0 || stdout != "" || stderr != "" {
 		t.Fatalf("board --hook = (code %d, stdout %q, stderr %q), want silent exit 0", code, stdout, stderr)
+	}
+}
+
+// TestLauncherWarmHookStartsNoProgram is the warm hook path of a marketplace checkout: with the
+// checkout's commit already built, `dist/run hook post-tool-use` reaches the binary with PATH set to
+// an empty directory, so the launcher starts no program of its own on the way (no git, uname,
+// dirname or ln): Claude Code runs two or three hooks per tool call, and every fork there is paid
+// each time. The checkout is a one-commit repository holding the shipped launcher and a cmd/huddle
+// that prints one word, so the output proves the binary ran; the ten runs' wall times are logged.
+func TestLauncherWarmHookStartsNoProgram(t *testing.T) {
+	home := testkit.TempDir(t, "huddle-hook-fast-")
+	source := filepath.Join(home, "source")
+	launcher := filepath.Join(source, "plugin", "dist", "run")
+	emptyPath := filepath.Join(home, "empty-path")
+	if err := os.MkdirAll(emptyPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"go.mod":             "module github.com/MuhmdRaouf/huddle\n\ngo 1.22\n",
+		"cmd/huddle/main.go": "package main\n\nimport \"os\"\n\nfunc main() { os.Stdout.WriteString(\"ran\\n\") }\n",
+		"plugin/dist/run":    readFile(t, filepath.Join(repoRoot, "plugin", "dist", "run")),
+	}
+	for name, body := range files {
+		path := filepath.Join(source, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := isoenv.Environ(t, home,
+		"CLAUDE_CONFIG_DIR="+filepath.Join(home, "claude-config"),
+		"AGENTS_HUDDLE_HOME="+filepath.Join(home, "huddle-bin"),
+		"HUDDLE_SOURCE=",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
+	)
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"add", "go.mod", "cmd/huddle/main.go", "plugin/dist/run"},
+		{"-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"},
+	} {
+		if _, stderr, code := runOne(t, "git", args, env, source); code != 0 {
+			t.Fatalf("git %s exited %d: %s", strings.Join(args, " "), code, stderr)
+		}
+	}
+	// a word waits for the build, so this run leaves the commit's binary in place
+	if _, stderr, code := runOne(t, "sh", []string{launcher, "help"}, env, home); code != 0 {
+		t.Fatalf("the building run exited %d: %s", code, stderr)
+	}
+	stdout, _, code := runOne(t, "git", []string{"rev-parse", "--short=12", "HEAD"}, env, source)
+	if code != 0 {
+		t.Fatalf("git rev-parse exited %d", code)
+	}
+	built := filepath.Join(home, "huddle-bin", "src", strings.TrimSpace(stdout), "huddle")
+	if _, err := os.Stat(built); err != nil {
+		t.Fatalf("the launcher left no build of the commit: %v", err)
+	}
+
+	var noProgram []string
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "PATH=") {
+			noProgram = append(noProgram, kv)
+		}
+	}
+	noProgram = append(noProgram, "PATH="+emptyPath)
+	for run := 1; run <= 10; run++ {
+		start := time.Now()
+		stdout, stderr, code := runOne(t, "/bin/sh", []string{launcher, "hook", "post-tool-use"}, noProgram, home)
+		took := time.Since(start)
+		if code != 0 || stdout != "ran\n" || stderr != "" {
+			t.Fatalf("hook run %d with an empty PATH = (code %d, stdout %q, stderr %q), want the binary's word alone: the launcher started a program on the warm path", run, code, stdout, stderr)
+		}
+		t.Logf("hook run %d: %v", run, took.Round(100*time.Microsecond))
 	}
 }
