@@ -1,35 +1,17 @@
-/* theme-boot.js — the theme before first paint: the saved choice (a family plus a mode, kept as
- * JSON under "huddle:theme"; a legacy "mocha"/"latte"/"system"/"dark"/"light" reads as its new
- * pref and is written back), else Catppuccin following the system's colour scheme, the default. A
- * file of its own because the page's CSP allows no inline script (SPEC 7.5). Mirrors
- * ui/src/app/theme.ts; keep the two in step. */
+/* theme-boot.js — the scheme before first paint: the override this browser keeps under
+ * "huddle:scheme" ("light" or "dark"), else the OS's choice. It sets <html data-scheme>, which the
+ * tokens read, and the matching Catppuccin variant on <html data-theme>, which the daisyUI themes
+ * read. A file of its own because the page's CSP allows no inline script (SPEC 7.5). Mirrors
+ * ui/src/theme.ts; keep the two in step. */
 (function () {
-  const ids = {
-    catppuccin: ["mocha", "latte"],
-    gruvbox: ["gruvbox-dark", "gruvbox-light"],
-    tokyo: ["tokyo-night", "tokyo-day"],
-    "rose-pine": ["rose-pine", "rose-pine-dawn"],
-    nord: ["nord", "nord-light"],
-    solarized: ["solarized-dark", "solarized-light"],
-  };
-  let pref = { family: "catppuccin", mode: "system" };
+  let pref = "system";
   try {
-    const raw = JSON.parse(localStorage.getItem("huddle:theme") || "null");
-    if (raw === "mocha" || raw === "dark") pref = { family: "catppuccin", mode: "dark" };
-    else if (raw === "latte" || raw === "light") pref = { family: "catppuccin", mode: "light" };
-    else if (raw === "system") pref = { family: "catppuccin", mode: "system" };
-    else if (
-      raw !== null &&
-      typeof raw === "object" &&
-      ids[raw.family] !== undefined &&
-      (raw.mode === "system" || raw.mode === "dark" || raw.mode === "light")
-    )
-      pref = { family: raw.family, mode: raw.mode };
-    if (typeof raw === "string") localStorage.setItem("huddle:theme", JSON.stringify(pref));
+    const raw = localStorage.getItem("huddle:scheme");
+    if (raw === "light" || raw === "dark") pref = raw;
   } catch {
-    /* site data is blocked: the default stands until the app can ask again */
+    /* site data is blocked: the OS's choice stands */
   }
-  const dark =
-    pref.mode === "dark" || (pref.mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.dataset.theme = ids[pref.family][dark ? 0 : 1];
+  const dark = pref === "dark" || (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.dataset.scheme = dark ? "dark" : "light";
+  document.documentElement.dataset.theme = dark ? "mocha" : "latte";
 })();

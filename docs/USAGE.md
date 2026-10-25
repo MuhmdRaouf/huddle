@@ -515,7 +515,7 @@ in proxy mode:
 
 6. Bring the phone in: `huddle trust --phone` prints a QR (the page it opens serves for 10
    minutes and installs nothing on the computer); then `huddle pair --name phone`, scan, and save
-   the passkey. The dashboard's Settings → Devices carries the same "Add a phone" QR.
+   the passkey. The dashboard's Settings → Phone carries the same "Add a phone" QR.
 
    What to expect on the phone: the first open moves about 260 KB (the app as brotli, its
    stylesheet and two fonts) and shows the Now page in about 2 s on a slow 4G link. Every later

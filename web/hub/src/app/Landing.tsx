@@ -8,6 +8,7 @@
 
 import { Dialog } from "@huddle/ui/dialog.tsx";
 import { Panel } from "@huddle/ui/page.tsx";
+import { readScheme, resolveScheme, type SchemePref } from "@huddle/ui/theme.ts";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { ConnectCard } from "./ConnectCard.tsx";
@@ -15,8 +16,8 @@ import { CodeField } from "./CodeField.tsx";
 import { errText, useHuddle } from "./context.tsx";
 import { Icon, Logo } from "../icons.tsx";
 import { assertionFromJSON, credentialToJSON, markPasskeyHere, passkeyHere } from "../passkey.ts";
+import { pickScheme, systemDark } from "./scheme.ts";
 import { bioName } from "./Totp.tsx";
-import { currentTheme, setTheme, type ThemePref } from "./theme.ts";
 
 /** The tour's four steps: the tab it shows, the picture it carries, the one sentence it says. */
 const TOUR: readonly (readonly [key: string, label: string, sentence: string])[] = [
@@ -88,12 +89,10 @@ function CopyButton({
   );
 }
 
-/** The light/dark switch the landing's head carries: one click flips the resolved variant. */
+/** The light/dark switch the landing's head carries: one click flips the resolved scheme. */
 function ThemeToggle(): JSX.Element {
-  const [pref, setPref] = useState<ThemePref>(() => currentTheme(localStorage));
-  const dark =
-    pref.mode === "dark" ||
-    (pref.mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [pref, setPref] = useState<SchemePref>(() => readScheme(localStorage));
+  const dark = resolveScheme(pref, systemDark()) === "dark";
   return (
     <button
       type="button"
@@ -101,8 +100,8 @@ function ThemeToggle(): JSX.Element {
       data-theme-toggle=""
       aria-label={dark ? "Switch to the light theme" : "Switch to the dark theme"}
       onClick={() => {
-        const next: ThemePref = { family: pref.family, mode: dark ? "light" : "dark" };
-        setTheme(localStorage, next, window.matchMedia("(prefers-color-scheme: dark)").matches);
+        const next: SchemePref = dark ? "light" : "dark";
+        pickScheme(localStorage, next);
         setPref(next);
       }}
     >

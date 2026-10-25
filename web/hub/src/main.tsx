@@ -5,6 +5,7 @@
 // glue on purpose: everything testable lives in the modules it wires together (same call as
 // radar's main).
 
+import { followScheme } from "@huddle/ui/theme.ts";
 import { type ToastFn, ToastProvider, useToast } from "@huddle/ui/toast.tsx";
 import type { ComponentChildren, ComponentType } from "preact";
 import { render } from "preact";
@@ -67,8 +68,9 @@ const announcer = (): HTMLElement => {
   return el;
 };
 
-/** The OS's dark preference, the one query the tokens page follows across repaints. */
+/** The OS's dark preference: the page's scheme follows it while the choice is System. */
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+followScheme(document.documentElement, localStorage, darkQuery);
 
 let signedOutPainted = false;
 let failedCh: string | null = null;
@@ -356,13 +358,7 @@ const pages: Record<string, ComponentType> = {
     const id = routeOf().sub[0];
     return <Knowledge id={id ? Number(id) : undefined} store={store} />;
   },
-  settings: () => (
-    <Settings
-      notify={{ on: () => live.notifyOn(), toggle: () => live.toggleNotify() }}
-      push={push}
-      store={store}
-    />
-  ),
+  settings: () => <Settings store={store} />,
 };
 
 function paintSignedOut(): void {
@@ -503,6 +499,8 @@ function paintBody(): void {
     act,
     toast: (text, o) => toastFn(text, o),
     copy: createCopy((text, o) => toastFn(text, o)),
+    notify: { on: () => live.notifyOn(), toggle: () => live.toggleNotify() },
+    push,
   };
   render(
     <ToastProvider>

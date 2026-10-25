@@ -1,7 +1,8 @@
 // theme.ts — the light or dark scheme the tokens paint in: the OS's choice, unless this browser keeps
 // an override (the switch in Settings) under "huddle:scheme". The resolved scheme lands on
-// <html data-scheme>, which tokens.css reads; with the OS choice it follows every flip of
-// prefers-color-scheme while the page is open.
+// <html data-scheme>, which tokens.css reads, and as the matching Catppuccin variant on
+// <html data-theme>, which the daisyUI themes in theme.css read; with the OS choice it follows
+// every flip of prefers-color-scheme while the page is open.
 
 /** The two schemes tokens.css paints. */
 export type Scheme = "light" | "dark";
@@ -47,10 +48,14 @@ export function resolveScheme(pref: SchemePref, systemDark: boolean): Scheme {
   return systemDark ? "dark" : "light";
 }
 
-/** Puts the resolved scheme on the root element and answers it. */
+/** The daisyUI variant each scheme paints the pages not yet on the tokens in. */
+const VARIANT: Record<Scheme, string> = { dark: "mocha", light: "latte" };
+
+/** Puts the resolved scheme and its daisyUI variant on the root element and answers the scheme. */
 export function applyScheme(root: HTMLElement, pref: SchemePref, systemDark: boolean): Scheme {
   const scheme = resolveScheme(pref, systemDark);
   root.dataset.scheme = scheme;
+  root.dataset.theme = VARIANT[scheme];
   return scheme;
 }
 

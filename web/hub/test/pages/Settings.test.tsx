@@ -1,11 +1,10 @@
 // Settings.test.tsx — the channel's settings: the saved values, the save calls with their args,
-// the refusals said in the form, the turn options, this browser's switches and the exports.
+// the refusals said in the form, the turn options, the filter reset and the exports.
 import { act } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api, ApiOptions } from "../../src/api.ts";
-import type { PushStatus, PushSwitch } from "../../src/pwa.ts";
 import { HuddleProvider } from "../../src/app/context.tsx";
-import { type NotifySwitch, Settings, startOptions } from "../../src/pages/Settings.tsx";
+import { Settings, startOptions } from "../../src/pages/Settings.tsx";
 import type { ChannelInfo, HuddleState, HuddleStore } from "../../src/store.ts";
 import { flush, makeCtx, makeState, renderIn, sess } from "../helpers.tsx";
 
@@ -55,46 +54,6 @@ function apiFake(
   };
 }
 
-const notifyFake = (on = false): NotifySwitch & { toggles: number } => {
-  const sw = { on: () => on, toggles: 0, toggle: async () => {} };
-  return Object.assign(sw, {
-    toggle: () => {
-      sw.toggles += 1;
-      return Promise.resolve();
-    },
-  });
-};
-
-/** A push switch fake: the status it answers, and the turns it took. */
-const pushFake = (
-  start: Partial<PushStatus> = {},
-  over: { enable?: () => Promise<void> } = {},
-): PushSwitch & { enables: number; disables: number } => {
-  const status: PushStatus = {
-    supported: true,
-    permission: "default",
-    on: false,
-    standalone: true,
-    ...start,
-  };
-  const sw = {
-    enables: 0,
-    disables: 0,
-    status: async () => ({ ...status }),
-    enable: async () => {
-      sw.enables += 1;
-      if (over.enable) return over.enable();
-      status.on = true;
-      status.permission = "granted";
-    },
-    disable: async () => {
-      sw.disables += 1;
-      status.on = false;
-    },
-  };
-  return sw;
-};
-
 /** A store fake whose channel-row read the test can watch. */
 function storeFake(): { store: HuddleStore; loadInfo: ReturnType<typeof vi.fn> } {
   const loadInfo = vi.fn(async () => {});
@@ -105,14 +64,10 @@ function storeFake(): { store: HuddleStore; loadInfo: ReturnType<typeof vi.fn> }
 function mount(
   over: {
     api?: ReturnType<typeof apiFake>;
-    notify?: NotifySwitch;
-    push?: PushSwitch;
     state?: HuddleState;
   } = {},
 ) {
   const api = over.api ?? apiFake();
-  const notify = over.notify ?? notifyFake();
-  const push = over.push ?? pushFake();
   const { store, loadInfo } = storeFake();
   const state =
     over.state ??
@@ -120,8 +75,8 @@ function mount(
       info: INFO as ChannelInfo,
       sessions: { sessions: [sess({ name: "api" }), sess({ name: "sub.api", parent: "api" })] },
     });
-  const view = renderIn(<Settings notify={notify} push={push} store={store} />, makeCtx(state, { api }));
-  return { api, notify, view, store, loadInfo };
+  const view = renderIn(<Settings store={store} />, makeCtx(state, { api }));
+  return { api, view, store, loadInfo };
 }
 
 /** The form of a card, found by its id. */
@@ -147,11 +102,7 @@ describe("the page", () => {
     });
     view.rerender(
       <HuddleProvider value={makeCtx(live)}>
-        <Settings
-          notify={notifyFake()}
-          push={pushFake()}
-          store={{ loadInfo: vi.fn(async () => {}) } as unknown as HuddleStore}
-        />
+        <Settings store={{ loadInfo: vi.fn(async () => {}) } as unknown as HuddleStore} />
       </HuddleProvider>,
     );
     expect(field("cf-title").value).toBe("Renamed by another session");
@@ -191,11 +142,7 @@ describe("the page", () => {
     await flush();
     expect(document.body.textContent).toContain("Available now: code.");
     const v2 = renderIn(
-      <Settings
-        notify={notifyFake()}
-        push={pushFake()}
-        store={{ loadInfo: vi.fn(async () => {}) } as unknown as HuddleStore}
-      />,
+      <Settings store={{ loadInfo: vi.fn(async () => {}) } as unknown as HuddleStore} />,
       makeCtx(
         makeState({
           info: { ...INFO, views: [], config: { ...INFO.config, repo: "/nowhere" } } as ChannelInfo,
@@ -205,11 +152,7 @@ describe("the page", () => {
     await flush();
     expect(v2.container.textContent).toContain("Huddle cannot read this path.");
     const v3 = renderIn(
-      <Settings
-        notify={notifyFake()}
-        push={pushFake()}
-        store={{ loadInfo: vi.fn(async () => {}) } as unknown as HuddleStore}
-      />,
+      <Settings store={{ loadInfo: vi.fn(async () => {}) } as unknown as HuddleStore} />,
       makeCtx(makeState({ info: { ...INFO, views: [], config: { ...INFO.config } } as ChannelInfo })),
     );
     await flush();
@@ -342,7 +285,7 @@ describe("saving", () => {
   it("toasts Saved when a save lands", async () => {
     const toast = vi.fn();
     const api = apiFake();
-    renderIn(<Settings notify={notifyFake()} push={pushFake()} />, makeCtx(makeState(), { api, toast }));
+    renderIn(<Settings />, makeCtx(makeState(), { api, toast }));
     await flush();
     await act(async () => {
       form("f-ch").requestSubmit();
@@ -352,112 +295,14 @@ describe("saving", () => {
   });
 });
 
-describe("this browser", () => {
-  it("keeps a theme pick and checks the family card", async () => {
-    localStorage.setItem("huddle:theme", '{"family":"catppuccin","mode":"dark"}');
-    mount();
-    await flush();
-    const nord = document.querySelector('[data-family="nord"]') as HTMLButtonElement;
-    expect(nord.getAttribute("aria-checked")).toBe("false");
-    await act(async () => {
-      nord.click();
-    });
-    await flush();
-    expect(localStorage.getItem("huddle:theme")).toBe('{"family":"nord","mode":"dark"}');
-    expect(document.documentElement.dataset.theme).toBe("nord");
-    expect(nord.getAttribute("aria-checked")).toBe("true");
-  });
-
-  it("flips the notify switch and reads the browser's permission", async () => {
-    const notify = notifyFake(false);
-    vi.stubGlobal("Notification", { permission: "granted" });
-    mount({ notify });
-    await flush();
-    const sw = document.getElementById("set-notif") as HTMLButtonElement;
-    expect(sw.getAttribute("aria-checked")).toBe("false");
-    expect(document.body.textContent).toContain("Browser permission: granted");
-    await act(async () => {
-      sw.click();
-    });
-    await flush();
-    expect(notify.toggles).toBe(1);
-    expect(sw.getAttribute("aria-checked")).toBe("false"); // the fake still says off
-  });
-
-  it("turns push on and off and reads the permission it runs under", async () => {
-    const push = pushFake();
-    mount({ push });
-    await flush();
-    const sw = document.getElementById("set-push") as HTMLInputElement;
-    expect(sw.getAttribute("aria-checked")).toBe("false");
-    expect(document.body.textContent).toContain("Push permission: default");
-    await act(async () => {
-      sw.click();
-    });
-    await flush();
-    expect(push.enables).toBe(1);
-    expect(sw.getAttribute("aria-checked")).toBe("true");
-    expect(document.body.textContent).toContain("Push permission: granted");
-    await act(async () => {
-      sw.click();
-    });
-    await flush();
-    expect(push.disables).toBe(1);
-    expect(sw.getAttribute("aria-checked")).toBe("false");
-  });
-
-  it("says iOS pushes only to the app added to the home screen", async () => {
-    mount({ push: pushFake({ standalone: false }) });
-    await flush();
-    expect(document.body.textContent).toContain("On iPhone and iPad, add Huddle to the Home Screen");
-    mount({ push: pushFake({ standalone: true }) });
-    await flush();
-    expect(document.getElementById("set-push")).not.toBeNull();
-  });
-
-  it("disables push where the browser cannot receive it", async () => {
-    mount({ push: pushFake({ supported: false }) });
-    await flush();
-    expect((document.getElementById("set-push") as HTMLInputElement).disabled).toBe(true);
-    expect(document.body.textContent).toContain("This browser cannot receive push.");
-  });
-
-  it("says a refused turn-on in a toast and stays off", async () => {
-    const toast = vi.fn();
-    const push = pushFake(
-      {},
-      { enable: () => Promise.reject(new Error("only a paired device holds a push subscription")) },
-    );
-    renderIn(
-      <Settings notify={notifyFake()} push={push} />,
-      makeCtx(makeState({ info: INFO as ChannelInfo }), { toast }),
-    );
-    await flush();
-    const sw = document.getElementById("set-push") as HTMLInputElement;
-    await act(async () => {
-      sw.click();
-    });
-    await flush();
-    expect(toast).toHaveBeenCalledWith("only a paired device holds a push subscription", { bad: true });
-    expect(sw.getAttribute("aria-checked")).toBe("false");
-  });
-
-  it("says when this browser cannot show notifications", async () => {
-    const saved = (window as { Notification?: unknown }).Notification;
-    Reflect.deleteProperty(window, "Notification");
-    mount();
-    await flush();
-    expect(document.body.textContent).toContain("This browser cannot show notifications.");
-    if (saved !== undefined) (window as { Notification?: unknown }).Notification = saved;
-  });
-
+describe("this browser's filters", () => {
   it("resets the per-viewer filters and toasts", async () => {
     localStorage.setItem("huddle:wfilter:ch", '"notes"');
     localStorage.setItem("huddle:wview:ch", '"board"');
-    localStorage.setItem("huddle:theme", '{"family":"nord","mode":"dark"}');
+    localStorage.setItem("huddle:scheme", "dark");
     localStorage.setItem("other:key", "1");
     const toast = vi.fn();
-    renderIn(<Settings notify={notifyFake()} push={pushFake()} />, makeCtx(makeState(), { toast }));
+    renderIn(<Settings />, makeCtx(makeState(), { toast }));
     await flush();
     await act(async () => {
       (document.getElementById("set-reset") as HTMLButtonElement).click();
@@ -465,7 +310,7 @@ describe("this browser", () => {
     await flush();
     expect(localStorage.getItem("huddle:wfilter:ch")).toBeNull();
     expect(localStorage.getItem("huddle:wview:ch")).toBeNull();
-    expect(localStorage.getItem("huddle:theme")).toBe('{"family":"nord","mode":"dark"}');
+    expect(localStorage.getItem("huddle:scheme")).toBe("dark");
     expect(localStorage.getItem("other:key")).toBe("1");
     expect(toast).toHaveBeenCalledWith("Filters reset");
   });

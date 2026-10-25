@@ -271,7 +271,7 @@ The dashboard is a PWA that signs in with a passkey, so a phone works as the nee
 3. Run `huddle pair --name phone` on the computer, scan that QR, check the code matches and create the passkey.
 4. Turn on Face ID (or the Android equivalent) when the browser offers it: one glance answers an approval.
 
-Settings → Devices has an "Add a phone" button that shows the same QR.
+Settings → Phone has an "Add a phone" button that shows the same QR in a sheet.
 
 ## Update
 

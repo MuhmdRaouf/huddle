@@ -114,14 +114,14 @@ test.describe("the phone guide an iPhone opens", () => {
   });
 });
 
-test("Settings › Devices offers Add a phone with the QR the hub serves", async ({ page }) => {
+test("Settings › Phone offers Add a phone with the QR the hub serves", async ({ page }) => {
   await signIn(page);
   await openTab(page, "Settings");
   await page
     .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("link", { name: "Devices" })
+    .getByRole("link", { name: "Phone" })
     .click();
-  await expect(page.getByRole("heading", { name: "Devices" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Phone" })).toBeVisible();
 
   await page.getByRole("button", { name: "Add a phone" }).click();
   const qr = page.getByRole("img", { name: "QR code: the phone's trust guide" });

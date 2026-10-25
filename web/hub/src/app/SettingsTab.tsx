@@ -1,8 +1,13 @@
-// SettingsTab.tsx — the Settings tab: one section per settings surface, as underline tabs like
-// the Radar tab's sub-tabs. Radar's own settings (budgets, notifications, history retention)
-// live here; the surfaces later cards add (theme, machines, allow lists, the hub address) join
-// as their own sections.
+// SettingsTab.tsx — the Settings tab: one section per settings group, as underline tabs like the
+// Radar tab's sub-tabs. This browser's groups come first — Appearance (System, Dark, Light),
+// Notifications (the two switches and what wakes the device), Devices (the paired ones, with
+// remove), This hub (name, address, version) and Phone (the trust guide in a sheet) — then
+// Sign-in, Radar's own settings (budgets, notifications, history retention) and Linked channels.
 
+import { Button } from "@huddle/ui/button.tsx";
+import { List, ListItem } from "@huddle/ui/list.tsx";
+import { Sheet } from "@huddle/ui/sheet.tsx";
+import { readScheme, type SchemePref } from "@huddle/ui/theme.ts";
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ApiError } from "../api.ts";
@@ -16,23 +21,30 @@ import { errText, useHuddle } from "./context.tsx";
 import { useLayout } from "./layout.ts";
 import { useStepUp } from "./Needs.tsx";
 import { NotificationsCard } from "./Notifications.tsx";
+import { pickScheme, SCHEMES } from "./scheme.ts";
 import { AuthenticatorCard } from "./Totp.tsx";
 
 /** The sections the Settings tab serves, in row order; each later surface adds its entry. */
 const SECTIONS = [
+  { id: "appearance", label: "Appearance" },
+  { id: "notifications", label: "Notifications" },
+  { id: "devices", label: "Devices" },
+  { id: "hub", label: "This hub" },
+  { id: "phone", label: "Phone" },
   { id: "signin", label: "Sign-in" },
   { id: "radar", label: "Radar" },
-  { id: "devices", label: "Devices" },
   { id: "channels", label: "Linked channels" },
-  { id: "notifications", label: "Notifications" },
 ] as const;
+
+/** A section's heading, the same small caps on every section. */
+const HEAD = "mb-1.5 text-xs font-semibold tracking-[0.06em] uppercase muted";
 
 /** One section of the Settings tab. */
 export type SettingsSection = (typeof SECTIONS)[number]["id"];
 
 /** The section the address names; a missing or unknown one reads as the first. */
 export function settingsSectionOf(named: string | undefined): SettingsSection {
-  return SECTIONS.some((entry) => entry.id === named) ? (named as SettingsSection) : "signin";
+  return SECTIONS.some((entry) => entry.id === named) ? (named as SettingsSection) : "appearance";
 }
 
 /** The section's own settings: radar's budgets, notifications and history retention, loaded the
@@ -57,61 +69,131 @@ type DeviceRow = { name: string; added: string; seen: string };
  *  fingerprint, which the phone's page shows too. */
 type PhoneGuide = { url: string; fingerprint: string; expires_in: number };
 
-/** The "Add a phone" card: starts the guide the server serves (10 minutes, loopback-bound QR)
- *  and shows its QR and the fingerprint to compare with the phone's page. */
-function AddAPhone(): JSX.Element {
+/** Settings › Appearance: System follows this device's own setting; Dark and Light hold one
+ *  scheme in this browser whatever the device says. */
+export function Appearance(): JSX.Element {
+  const [pref, setPref] = useState<SchemePref>(() => readScheme(localStorage));
+  return (
+    <section aria-labelledby="appearance-h" class="flex flex-col gap-3">
+      <h2 id="appearance-h" class={HEAD}>
+        Appearance
+      </h2>
+      <p class="m-0 text-sm muted">
+        Dark and light follow this device until you pick one here. The choice stays in this browser.
+      </p>
+      <div role="group" aria-label="Scheme" class="flex flex-wrap gap-2">
+        {SCHEMES.map(([id, label, icon]) => (
+          <Button
+            key={id}
+            variant="secondary"
+            icon={icon}
+            pressed={pref === id}
+            onClick={() => {
+              pickScheme(localStorage, id);
+              setPref(id);
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** What /health says about the hub this page talks to. */
+type HubFacts = { name: string; version: string };
+
+/** Settings › This hub: its name (the hub's own, else the machine's), the address this page
+ *  reached it at, and the version it runs. */
+export function ThisHub(): JSX.Element {
+  const { api } = useHuddle();
+  const [facts, setFacts] = useState<HubFacts | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api
+      .api("/health")
+      .then((r) => {
+        const h = r as { name?: unknown; machine?: unknown; version?: unknown };
+        const text = (v: unknown): string => (typeof v === "string" ? v : "");
+        if (alive) setFacts({ name: text(h.name) || text(h.machine), version: text(h.version) });
+      })
+      .catch(() => {
+        if (alive) setFacts({ name: "", version: "" });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [api]);
+  const unknown = facts === null ? "Loading…" : "Unknown";
+  return (
+    <section aria-labelledby="hub-h" data-hub-facts="" class="flex flex-col gap-1">
+      <h2 id="hub-h" class={HEAD}>
+        This hub
+      </h2>
+      <List label="This hub">
+        <ListItem title="Name" meta={facts?.name || unknown} />
+        <ListItem title="Address" meta={<span class="ui-mono break-all">{location.origin}</span>} />
+        <ListItem title="Version" meta={<span class="ui-mono">{facts?.version || unknown}</span>} />
+      </List>
+    </section>
+  );
+}
+
+/** Settings › Phone: "Add a phone" opens a sheet that starts the guide the server serves
+ *  (10 minutes, loopback-bound QR) and shows its QR and the fingerprint to compare with the
+ *  phone's page. */
+export function Phone(): JSX.Element {
   const { api, toast } = useHuddle();
+  const [open, setOpen] = useState(false);
   const [guide, setGuide] = useState<PhoneGuide | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const start = async (): Promise<void> => {
-    setBusy(true);
+    setOpen(true);
+    if (guide) return;
     try {
       const r = await api.api("/api/phone", { body: { action: "start" } });
       setGuide(r as PhoneGuide);
     } catch (e) {
+      setOpen(false);
       toast(errText(e), { bad: true });
-    } finally {
-      setBusy(false);
     }
   };
 
   return (
-    <div class="mt-6 flex flex-col gap-1.5">
-      <h3 class="m-0 text-[15px] font-semibold">Add a phone</h3>
+    <section aria-labelledby="phone-h" class="flex flex-col gap-3">
+      <h2 id="phone-h" class={HEAD}>
+        Phone
+      </h2>
       <p class="m-0 text-sm muted">
         A phone trusts the hub's root once: it scans a QR this computer serves for 10 minutes, and the page it
         opens walks the taps.
       </p>
-      {guide ? (
-        <div class="flex flex-wrap items-start gap-4">
-          <img
-            data-phone-qr=""
-            src="/api/phone/qr.svg"
-            alt="QR code: the phone's trust guide"
-            width={160}
-            height={160}
-            class="size-40 shrink-0 rounded-lg bg-white p-2"
-          />
-          <div class="flex min-w-0 flex-col gap-1.5">
+      <Button class="w-fit" onClick={() => void start()}>
+        Add a phone
+      </Button>
+      <Sheet open={open} onClose={() => setOpen(false)} title="Add a phone">
+        {guide ? (
+          <div class="flex flex-col items-start gap-4">
+            <img
+              data-phone-qr=""
+              src="/api/phone/qr.svg"
+              alt="QR code: the phone's trust guide"
+              width={160}
+              height={160}
+              class="size-40 shrink-0 rounded-lg bg-white p-2"
+            />
             <code class="break-all font-mono text-xs">{guide.fingerprint}</code>
-            <span class="text-xs muted">
+            <p class="m-0 text-sm muted">
               Scan with the phone's camera. The page it opens shows the same fingerprint — compare before
               installing. The guide stops itself after 10 minutes.
-            </span>
+            </p>
           </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          class="btn btn-sm btn-primary w-fit"
-          disabled={busy}
-          onClick={() => void start()}
-        >
-          {busy ? "Starting…" : "Add a phone"}
-        </button>
-      )}
-    </div>
+        ) : (
+          <p class="m-0 text-sm muted">Starting…</p>
+        )}
+      </Sheet>
+    </section>
   );
 }
 
@@ -167,7 +249,7 @@ export function Devices(): JSX.Element {
   return (
     <section aria-labelledby="devices-h" data-devices="" class="flex flex-col gap-1">
       {sheet}
-      <h2 id="devices-h" class="mb-1.5 text-xs font-semibold tracking-[0.06em] uppercase muted">
+      <h2 id="devices-h" class={HEAD}>
         Devices{devices && devices.length > 0 ? ` · ${devices.length}` : ""}
       </h2>
       {error ? (
@@ -180,51 +262,42 @@ export function Devices(): JSX.Element {
       ) : devices.length === 0 ? (
         <p class="m-0 text-sm muted">No devices paired yet.</p>
       ) : (
-        <ul class="m-0 flex list-none flex-col p-0">
+        <List label="Paired devices">
           {devices.map((d) => (
-            <li
+            <ListItem
               key={d.name}
-              data-device={d.name}
-              class="flex min-h-12 items-center justify-between gap-3 border-b hairline py-1"
-            >
-              <div class="flex min-w-0 flex-col">
-                <span class="truncate text-[15px]">{d.name}</span>
-                <span class="text-xs muted tnum">
+              title={d.name}
+              meta={
+                <span class="tnum">
                   added {ageText(d.added, now)} · last seen {ageText(d.seen, now)}
                 </span>
-              </div>
-              <button
-                type="button"
-                class="btn btn-ghost btn-sm text-error"
-                onClick={() => void remove(d.name)}
-              >
-                Remove
-              </button>
-            </li>
+              }
+              trailing={
+                <span data-device={d.name}>
+                  <Button variant="ghost" class="text-error" onClick={() => void remove(d.name)}>
+                    Remove
+                  </Button>
+                </span>
+              }
+            />
           ))}
-        </ul>
+        </List>
       )}
       <div class="mt-4 flex flex-col gap-1.5">
         <h3 class="m-0 text-[15px] font-semibold">Pair a new device</h3>
         <p class="m-0 text-sm muted">
           Run this on the computer running huddle, then open the link on the device:
         </p>
-        <div class="flex h-10 items-center gap-2.5 rounded-lg border border-base-content/15 bg-base-200 pr-1 pl-3">
+        <div class="flex min-h-11 items-center gap-2.5 rounded-lg border border-base-content/15 bg-base-200 pl-3">
           <span class="muted">
             <Icon name="terminal" />
           </span>
           <code class="min-w-0 flex-1 truncate text-sm">huddle pair</code>
-          <button
-            type="button"
-            class="btn btn-ghost btn-square btn-sm muted"
-            aria-label="Copy huddle pair"
-            onClick={() => copy("huddle pair")}
-          >
+          <Button variant="ghost" label="Copy huddle pair" onClick={() => copy("huddle pair")}>
             <Icon name="copy" />
-          </button>
+          </Button>
         </div>
       </div>
-      <AddAPhone />
     </section>
   );
 }
@@ -291,7 +364,7 @@ export function SignInMethods(): JSX.Element {
 
   return (
     <section aria-labelledby="signin-h" data-signin="" class="flex flex-col gap-1">
-      <h2 id="signin-h" class="mb-1.5 text-xs font-semibold tracking-[0.06em] uppercase muted">
+      <h2 id="signin-h" class={HEAD}>
         Sign-in methods
       </h2>
       {error ? (
@@ -338,7 +411,7 @@ export function SignInMethods(): JSX.Element {
 
 /** The Settings tab: the section row, then the named section's panes. The row is the Radar
  *  views' own shape: underlined tabs at the desk, pills that scroll inside the row on the
- *  narrower layouts, so the five sections never push the page sideways. */
+ *  narrower layouts, so the eight sections never push the page sideways. */
 export function SettingsTab({ section }: { section: SettingsSection }): JSX.Element {
   const layout = useLayout();
   return (
@@ -366,7 +439,7 @@ export function SettingsTab({ section }: { section: SettingsSection }): JSX.Elem
                   }`
                 : `flex min-h-11 shrink-0 items-center rounded-full px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                     entry.id === section
-                      ? "bg-primary font-semibold text-base-300"
+                      ? "bg-primary font-semibold text-primary-content"
                       : "border hairline text-base-content/80 hover:bg-base-100"
                   }`
             }
@@ -376,8 +449,14 @@ export function SettingsTab({ section }: { section: SettingsSection }): JSX.Elem
         ))}
       </nav>
       <div class="min-h-0 flex-1 overflow-y-auto">
-        <div class="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
-          {section === "signin" ? (
+        <div class="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6" data-settings="">
+          {section === "appearance" ? (
+            <Appearance />
+          ) : section === "hub" ? (
+            <ThisHub />
+          ) : section === "phone" ? (
+            <Phone />
+          ) : section === "signin" ? (
             <SignInMethods />
           ) : section === "devices" ? (
             <Devices />

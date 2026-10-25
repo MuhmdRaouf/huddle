@@ -52,6 +52,12 @@ export function renderHuddle(
     act,
     toast,
     copy,
+    notify: { on: () => false, toggle: async () => {} },
+    push: {
+      status: async () => ({ supported: false, permission: "default", on: false, standalone: false }),
+      enable: async () => {},
+      disable: async () => {},
+    },
   };
   const result = render(<HuddleContext.Provider value={value}>{ui}</HuddleContext.Provider>);
   return { ...result, api, go, act, toast, copy, value };

@@ -1,11 +1,12 @@
 // context.tsx — what every page and every chrome piece read: the store's state, the API client,
-// the paint's time, navigation, owner actions and toasts. One provider at the boot; useHuddle
+// the paint's time, navigation, owner actions, toasts and this browser's two notification switches. One provider at the boot; useHuddle
 // reads it. The provider is rebuilt on every change by main.tsx, so pages stay pure props-in.
 import type { ToastFn } from "@huddle/ui/toast.tsx";
 import type { ComponentChildren, JSX } from "preact";
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import type { Api, ApiError } from "../api.ts";
+import type { PushSwitch } from "../pwa.ts";
 import type { RegistryStore } from "../registry.ts";
 import type { HuddleState } from "../store.ts";
 
@@ -18,6 +19,9 @@ export type { ToastFn };
  *  that credential carries: whether the hub holds an authenticator enrolment, and whether this
  *  session's device row holds a passkey. */
 export type WhoAmI = { kind: string; totp?: boolean; devicePasskey?: boolean };
+
+/** The notification switch: is it on, and what turning it does (live.ts notifyOn/toggleNotify). */
+export type NotifySwitch = { on(): boolean; toggle(): Promise<void> };
 
 /** The value under HuddleProvider, rebuilt on every change. */
 export type HuddleContextValue = {
@@ -40,6 +44,10 @@ export type HuddleContextValue = {
   toast: ToastFn;
   /** Writes text to the clipboard and says so; a refused write is toasted too (core.js copy). */
   copy: (text: string, message?: string) => void;
+  /** This browser's notifications while the page is open (live.ts). */
+  notify: NotifySwitch;
+  /** This device's push subscription (pwa.ts createPushSwitch). */
+  push: PushSwitch;
 };
 
 export const HuddleContext = createContext<HuddleContextValue | null>(null);

@@ -87,8 +87,10 @@ describe("theme", () => {
     const root = document.createElement("html");
     expect(applyScheme(root, "system", true)).toBe("dark");
     expect(root.dataset.scheme).toBe("dark");
+    expect(root.dataset.theme).toBe("mocha");
     expect(applyScheme(root, "light", true)).toBe("light");
     expect(root.dataset.scheme).toBe("light");
+    expect(root.dataset.theme).toBe("latte");
   });
 
   it("re-applies when the OS flips, until stopped, and an override ignores the flip", () => {

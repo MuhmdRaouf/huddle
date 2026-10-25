@@ -66,8 +66,8 @@ describe("the machines line", () => {
 });
 
 describe("the theme menu", () => {
-  it("opens with the three modes, checks the current one, and keeps a pick", () => {
-    localStorage.setItem("huddle:theme", '{"family":"catppuccin","mode":"dark"}');
+  it("opens with the three choices, checks the kept one, and keeps a pick", () => {
+    localStorage.setItem("huddle:scheme", "dark");
     render(<ThemeMenu />);
     void act(() => {
       (screen.getByLabelText("Theme: Dark") as HTMLButtonElement).click();
@@ -80,51 +80,37 @@ describe("the theme menu", () => {
     void act(() => {
       [...menu.querySelectorAll("button")].find((b) => b.textContent?.includes("Light"))?.click();
     });
-    expect(localStorage.getItem("huddle:theme")).toBe('{"family":"catppuccin","mode":"light"}');
+    expect(localStorage.getItem("huddle:scheme")).toBe("light");
+    expect(document.documentElement.dataset.scheme).toBe("light");
     expect(document.documentElement.dataset.theme).toBe("latte");
     expect(screen.getByLabelText("Theme: Light")).toBeDefined();
     expect(document.querySelector('[role="menu"]')).toBeNull();
   });
 
-  it("reopens on the kept choice after a reload and migrates a legacy pick", () => {
-    localStorage.setItem("huddle:theme", '"light"');
+  it("shows System when nothing is kept, and a choice Settings made since on the next open", () => {
     render(<ThemeMenu />);
-    expect(document.documentElement.dataset.theme).toBe("latte");
-    expect(localStorage.getItem("huddle:theme")).toBe('{"family":"catppuccin","mode":"light"}');
-    expect(screen.getByLabelText("Theme: Light")).toBeDefined();
-  });
-
-  it("applies the system's variant, the default, when nothing is kept", () => {
-    stubMatchMedia(false);
-    render(<ThemeMenu />);
-    expect(document.documentElement.dataset.theme).toBe("latte");
-    localStorage.clear();
-    stubMatchMedia(true);
-    render(<ThemeMenu />);
-    expect(document.documentElement.dataset.theme).toBe("mocha");
-  });
-
-  it("follows the system while System is the mode", () => {
-    localStorage.setItem("huddle:theme", '{"family":"catppuccin","mode":"system"}');
-    stubMatchMedia(true);
-    render(<ThemeMenu />);
-    expect(document.documentElement.dataset.theme).toBe("mocha");
-  });
-
-  it("does not follow the system once a mode is picked", () => {
-    const mq = stubMatchMedia(false);
-    render(<ThemeMenu />);
-    expect(document.documentElement.dataset.theme).toBe("latte"); // the default follows the light system
+    expect(screen.getByLabelText("Theme: System")).toBeDefined();
+    localStorage.setItem("huddle:scheme", "light");
     void act(() => {
       (screen.getByLabelText("Theme: System") as HTMLButtonElement).click();
     });
-    [...(document.querySelector('[role="menu"]')?.querySelectorAll("button") ?? [])]
-      .find((b) => b.textContent?.includes("Dark"))
-      ?.click();
-    expect(document.documentElement.dataset.theme).toBe("mocha");
+    expect(screen.getByLabelText("Theme: Light")).toBeDefined();
+  });
+
+  it("paints System as the scheme the OS prefers", () => {
+    localStorage.setItem("huddle:scheme", "light");
+    stubMatchMedia(true);
+    render(<ThemeMenu />);
     void act(() => {
-      mq.fire();
+      (screen.getByLabelText("Theme: Light") as HTMLButtonElement).click();
     });
+    void act(() => {
+      [...(document.querySelector('[role="menu"]')?.querySelectorAll("button") ?? [])]
+        .find((b) => b.textContent?.includes("System"))
+        ?.click();
+    });
+    expect(localStorage.getItem("huddle:scheme")).toBe("system");
+    expect(document.documentElement.dataset.scheme).toBe("dark");
     expect(document.documentElement.dataset.theme).toBe("mocha");
   });
 });

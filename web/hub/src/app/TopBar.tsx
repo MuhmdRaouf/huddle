@@ -3,12 +3,13 @@
 // Nav.tsx, the phone header in App.tsx, with the shell that draws them.
 
 import { type MenuItem, PopMenu } from "@huddle/ui/menu.tsx";
+import { readScheme, type SchemePref } from "@huddle/ui/theme.ts";
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { Icon } from "../icons.tsx";
 import type { LiveStatus } from "../store.ts";
 import { isMac } from "./Palette.tsx";
-import { applyTheme, currentTheme, MODES, setTheme, type ThemePref } from "./theme.ts";
+import { pickScheme, SCHEMES } from "./scheme.ts";
 
 /** Reads the server's version once for the brand's badge; "0.0.1" stands in until /health answers. */
 export function useVersion(): string {
@@ -52,40 +53,22 @@ export function MachinesLine({ live, text }: { live: LiveStatus; text?: string |
   );
 }
 
-/** The theme menu: the current mode's icon on the button, the three modes under it. The modes
- *  re-pick between the kept family's two variants; the family itself is Settings' picker's. */
+/** The scheme menu: the kept choice's icon on the button, System, Dark and Light under it. */
 export function ThemeMenu(): JSX.Element {
   const [open, setOpen] = useState(false);
   const [btn, setBtn] = useState<HTMLButtonElement | null>(null);
-  const [theme, setThemeState] = useState<ThemePref>(() => currentTheme(localStorage));
+  const [pref, setPref] = useState<SchemePref>(() => readScheme(localStorage));
 
-  // the theme choice goes on <html> right away, the way the boot script did before the app loaded
-  useEffect(() => {
-    applyTheme(currentTheme(localStorage), window.matchMedia("(prefers-color-scheme: dark)").matches);
-  }, []);
-
-  // the variant follows the system while "System" is the mode
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const on = (): void => {
-      const pref = currentTheme(localStorage);
-      if (pref.mode === "system") applyTheme(pref, mq.matches);
-    };
-    mq.addEventListener?.("change", on);
-    return () => mq.removeEventListener?.("change", on);
-  }, []);
-
-  const pick = (mode: ThemePref["mode"]): void => {
-    const pref = { ...currentTheme(localStorage), mode };
-    setTheme(localStorage, pref, window.matchMedia("(prefers-color-scheme: dark)").matches);
-    setThemeState(pref);
+  const pick = (next: SchemePref): void => {
+    pickScheme(localStorage, next);
+    setPref(next);
   };
 
-  const row = MODES.find((x) => x[0] === theme.mode) ?? MODES[0];
-  const items: MenuItem[] = MODES.map(([k, l, ic]) => ({
+  const row = SCHEMES.find((x) => x[0] === pref) ?? SCHEMES[0];
+  const items: MenuItem[] = SCHEMES.map(([k, l, ic]) => ({
     label: l,
     icon: <Icon name={ic} />,
-    checked: theme.mode === k,
+    checked: pref === k,
     run: () => pick(k),
   }));
   return (
@@ -99,7 +82,11 @@ export function ThemeMenu(): JSX.Element {
         aria-expanded="false"
         aria-label={`Theme: ${row?.[1] ?? "System"}`}
         title={`Theme: ${row?.[1] ?? "System"}`}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          // Settings may have changed the choice since this menu last drew
+          setPref(readScheme(localStorage));
+          setOpen(true);
+        }}
       >
         <Icon name={row?.[2] ?? "monitor"} />
       </button>

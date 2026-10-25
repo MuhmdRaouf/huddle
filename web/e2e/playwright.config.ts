@@ -19,6 +19,7 @@ const PHONE_SPECS = [
   "now.spec.ts",
   "kanban.spec.ts",
   "kanban-panel.spec.ts",
+  "settings.spec.ts",
 ];
 /** The specs that run on the phone only: the phone's load budget under throttled CDP. */
 const PHONE_ONLY = ["phone-perf.spec.ts"];

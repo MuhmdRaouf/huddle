@@ -313,18 +313,21 @@ describe("routes and panes", () => {
     expect(controller.getState().range.preset).toBe("24h");
   });
 
-  it("renders Settings' section row with Sign-in current, an unknown address included", () => {
+  it("renders Settings' section row with Appearance current, an unknown address included", () => {
     nav("#/settings");
     mountApp();
     const sections = [
       ...document.querySelectorAll('[aria-label="Settings sections"] a'),
     ] as HTMLAnchorElement[];
     expect(sections.map((a) => a.dataset.section)).toEqual([
+      "appearance",
+      "notifications",
+      "devices",
+      "hub",
+      "phone",
       "signin",
       "radar",
-      "devices",
       "channels",
-      "notifications",
     ]);
     expect(sections[0]?.getAttribute("aria-current")).toBe("page");
     nav("#/settings/radar");

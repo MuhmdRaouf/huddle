@@ -134,7 +134,7 @@ test("a needs-you item reaches the installed app as a push with its deep link", 
 
     // the worker is up before the switch asks for its registration
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
-    await page.goto(`${origin}/#/channels/e2e/settings`);
+    await page.goto(`${origin}/#/settings/notifications`);
     const sw = page.locator("#set-push");
     await expect(sw).toHaveAttribute("aria-checked", "false");
     await expect(page.getByText("Push permission: granted")).toBeVisible();

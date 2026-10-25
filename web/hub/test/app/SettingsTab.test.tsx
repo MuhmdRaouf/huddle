@@ -1,12 +1,14 @@
 // SettingsTab.test.tsx — the Devices section of Settings (SPEC 7.3): the paired devices with
 // their added and last-seen ages, the removal that asks for the passkey when the server says
 // step-up, the refusal said as the server spelled it, the empty list's word, and the copyable
-// `huddle pair` line that pairs the next device.
+// `huddle pair` line that pairs the next device; then Appearance's three choices, This hub's facts
+// and the phone guide in its sheet.
 
 import { act, screen, waitFor } from "@testing-library/preact";
+import type { JSX } from "preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { FetchFn } from "../../src/api.ts";
-import { Devices, SignInMethods } from "../../src/app/SettingsTab.tsx";
+import { Appearance, Devices, Phone, SignInMethods, ThisHub } from "../../src/app/SettingsTab.tsx";
 import { flush, NOW, stubMedia } from "../helpers.tsx";
 import { renderHuddle } from "../render.tsx";
 
@@ -161,16 +163,78 @@ describe("the devices section", () => {
     });
     expect(h.copy).toHaveBeenCalledWith("huddle pair");
   });
+});
 
+/** Renders one section over one fetch answer per call, the calls kept for asserting. */
+function mountSection(
+  ui: JSX.Element,
+  answers: Array<{ status: number; body: unknown }>,
+): { calls: Array<{ url: string; init?: RequestInit }>; toast: ReturnType<typeof renderHuddle>["toast"] } {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const queue = [...answers];
+  const fetchFn: FetchFn = (url, init) => {
+    calls.push(init ? { url, init } : { url });
+    const a = queue.shift() ?? { status: 500, body: {} };
+    return Promise.resolve(
+      new Response(JSON.stringify(a.body), {
+        status: a.status,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  };
+  const r = renderHuddle(ui, {}, NOW, fetchFn);
+  return { calls, toast: r.toast };
+}
+
+describe("the appearance section", () => {
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it("TestPressesTheKeptChoiceAndPaintsAPick", async () => {
+    stubMedia({ "(prefers-color-scheme: dark)": false });
+    localStorage.setItem("huddle:scheme", "dark");
+    renderHuddle(<Appearance />);
+    const pressed = (): string[] =>
+      ["System", "Dark", "Light"].map(
+        (name) => screen.getByRole("button", { name }).getAttribute("aria-pressed") ?? "",
+      );
+    expect(pressed()).toEqual(["false", "true", "false"]);
+    await act(async () => {
+      screen.getByRole("button", { name: "System" }).click();
+    });
+    expect(pressed()).toEqual(["true", "false", "false"]);
+    expect(localStorage.getItem("huddle:scheme")).toBe("system");
+    expect(document.documentElement.dataset.scheme).toBe("light");
+    expect(document.documentElement.dataset.theme).toBe("latte");
+  });
+});
+
+describe("the hub section", () => {
+  it("TestNamesTheHubItsAddressAndVersion", async () => {
+    mountSection(<ThisHub />, [{ status: 200, body: { name: "studio", machine: "mac", version: "0.0.2" } }]);
+    await waitFor(() => expect(screen.getByText("studio")).toBeDefined());
+    expect(screen.getByText("0.0.2")).toBeDefined();
+    expect(screen.getByText(location.origin)).toBeDefined();
+  });
+
+  it("TestFallsBackToTheMachineAndSaysWhatItCannotRead", async () => {
+    mountSection(<ThisHub />, [{ status: 200, body: { machine: "mac" } }]);
+    await waitFor(() => expect(screen.getByText("mac")).toBeDefined());
+    expect(screen.getByText("Unknown")).toBeDefined();
+    mountSection(<ThisHub />, [{ status: 500, body: {} }]);
+    await waitFor(() => expect(screen.getAllByText("Unknown").length).toBeGreaterThan(1));
+  });
+});
+
+describe("the phone section", () => {
   it("TestAddAPhoneStartsTheGuideAndShowsItsQR", async () => {
-    const h = mount([
-      { status: 200, body: { devices: [] } },
+    const h = mountSection(<Phone />, [
       {
         status: 200,
         body: { url: "http://127.0.0.1:51111/", fingerprint: "AA:BB:CC", expires_in: 600 },
       },
     ]);
-    await waitFor(() => expect(screen.getByText("No devices paired yet.")).toBeDefined());
     await act(async () => {
       screen.getByRole("button", { name: "Add a phone" }).click();
     });
@@ -179,7 +243,8 @@ describe("the devices section", () => {
     const post = h.calls.find((c) => c.url === "/api/phone");
     expect(post?.init?.method).toBe("POST");
     expect(JSON.parse(post?.init?.body as string)).toEqual({ action: "start" });
-    // the QR the hub serves sits beside the fingerprint to compare
+    // the guide stands in an open sheet: the QR the hub serves beside the fingerprint to compare
+    expect(document.querySelector("dialog[open]")).not.toBeNull();
     const qr = document.querySelector("img[data-phone-qr]");
     expect(qr?.getAttribute("src")).toBe("/api/phone/qr.svg");
     expect(qr?.getAttribute("alt")).toBe("QR code: the phone's trust guide");
@@ -188,11 +253,9 @@ describe("the devices section", () => {
   });
 
   it("TestAddAPhoneSaysARefusedStart", async () => {
-    const h = mount([
-      { status: 200, body: { devices: [] } },
+    const h = mountSection(<Phone />, [
       { status: 500, body: { error: "could not start the phone guide: no address" } },
     ]);
-    await waitFor(() => expect(screen.getByText("No devices paired yet.")).toBeDefined());
     await act(async () => {
       screen.getByRole("button", { name: "Add a phone" }).click();
     });
@@ -201,6 +264,7 @@ describe("the devices section", () => {
       bad: true,
     });
     expect(document.querySelector("img[data-phone-qr]")).toBeNull();
+    expect(document.querySelector("dialog[open]")).toBeNull();
   });
 });
 

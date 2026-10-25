@@ -960,10 +960,11 @@ describe("palette actions through the dialog", () => {
       await flush();
     });
     expect(toggle).toHaveBeenCalled();
-    expect(prefs.getItem("huddle:theme")).toBeNull(); // the theme items write on their own pick
+    expect(prefs.getItem("huddle:scheme")).toBeNull(); // the scheme items write on their own pick
     fireEvent.click(screen.getByText("Theme: Dark"));
     await flush();
+    expect(document.documentElement.getAttribute("data-scheme")).toBe("dark");
     expect(document.documentElement.getAttribute("data-theme")).toBe("mocha");
-    expect(prefs.getItem("huddle:theme")).toBe('{"family":"catppuccin","mode":"dark"}');
+    expect(prefs.getItem("huddle:scheme")).toBe("dark");
   });
 });

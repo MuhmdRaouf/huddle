@@ -8,6 +8,7 @@
 
 import { Dialog } from "@huddle/ui/dialog.tsx";
 import { fuzzy } from "@huddle/ui/fuzzy.ts";
+import type { SchemePref } from "@huddle/ui/theme.ts";
 import type { ToastFn } from "@huddle/ui/toast.tsx";
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -22,7 +23,7 @@ import { type Filters, readFilters, scope, sessHref, stepState, visible } from "
 import { setTaskStatus } from "../work/Work.tsx";
 import { errText, useHuddle } from "./context.tsx";
 import { DESTS, parseHash, type Route } from "./router.ts";
-import { currentTheme, setTheme, type ThemeMode } from "./theme.ts";
+import { pickScheme } from "./scheme.ts";
 
 // ── the items ────────────────────────────────────────────────────────────────
 
@@ -71,7 +72,7 @@ export type PaletteDeps = {
   notifyOn: () => boolean;
   toggleNotify: () => void;
   openHelp: () => void;
-  setTheme: (mode: ThemeMode) => void;
+  setTheme: (pref: SchemePref) => void;
   exportPlan: () => void;
   /** Refills the Inbox (data.js's attChanged). */
   touchAttention: () => void;
@@ -261,7 +262,7 @@ function channelItems(d: PaletteDeps, ch: string | null): CmdItem[] {
   return out;
 }
 
-/** Settings: the theme modes (over the kept family), the notifications, the shortcuts. */
+/** Settings: the scheme choices, the notifications, the shortcuts. */
 function settingItems(d: PaletteDeps): CmdItem[] {
   return [
     { g: "Settings", t: "Theme: follow the system", i: "monitor", run: () => d.setTheme("system") },
@@ -387,7 +388,7 @@ export type PaletteProps = {
   notify: { on(): boolean; toggle(): void };
   /** The store, for the reloads an action asks for. */
   store?: HuddleStore | undefined;
-  /** Site storage for the theme pick; tests pass a fake. */
+  /** Site storage for the scheme pick; tests pass a fake. */
   prefs?: Storage | undefined;
 };
 
@@ -431,12 +432,7 @@ export function CmdPalette(props: PaletteProps): JSX.Element {
     notifyOn: () => props.notify.on(),
     toggleNotify: () => props.notify.toggle(),
     openHelp: props.onHelp,
-    setTheme: (mode) =>
-      setTheme(
-        prefs,
-        { ...currentTheme(prefs), mode },
-        window.matchMedia("(prefers-color-scheme: dark)").matches,
-      ),
+    setTheme: (pref) => pickScheme(prefs, pref),
     exportPlan: () => {
       if (ch) window.open(api.channelPath(ch, "/export.md"), "_blank");
     },

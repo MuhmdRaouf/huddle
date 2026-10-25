@@ -69,6 +69,12 @@ export function makeCtx(state: HuddleState, over: Partial<HuddleContextValue> = 
     act: async () => true,
     toast: vi.fn(),
     copy: vi.fn(),
+    notify: { on: () => false, toggle: async () => {} },
+    push: {
+      status: async () => ({ supported: false, permission: "default", on: false, standalone: false }),
+      enable: async () => {},
+      disable: async () => {},
+    },
     ...over,
   };
 }
