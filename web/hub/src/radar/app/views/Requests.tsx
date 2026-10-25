@@ -16,6 +16,7 @@ import {
   oldestRequest,
   requestChartsData,
   type RequestSortKey,
+  requestCancelled,
   requestCost,
   tableRequests,
 } from "../../state.ts";
@@ -87,6 +88,7 @@ export function RequestRow({ request, now }: { request: RequestRecord; now: numb
   const what = request.what;
   const action = what === undefined ? null : nowAction(what);
   const status = httpStatusOf(request);
+  const cancelled = requestCancelled(request);
   return (
     <TableRow
       onOpen={() => act("drawer", request.id)}
@@ -95,6 +97,7 @@ export function RequestRow({ request, now }: { request: RequestRecord; now: numb
       label={`${request.model} at ${fmtClock(request.ts)}, open details`}
       fresh={fresh}
       active={open}
+      dimmed={cancelled}
     >
       <td class={`time${open ? " shadow-[inset_3px_0_0_0_var(--color-primary)]" : ""}`} title={time.title}>
         {time.text}
@@ -133,6 +136,13 @@ export function RequestRow({ request, now }: { request: RequestRecord; now: numb
       <td class="num text-right">
         {status === null ? (
           <span class="text-base-content/60">–</span>
+        ) : cancelled ? (
+          <span
+            class="badge badge-ghost badge-sm"
+            title={`HTTP ${status}: ${request.error ?? "client closed"}`}
+          >
+            cancelled
+          </span>
         ) : (
           <span
             class={`badge badge-soft badge-sm${status >= 400 ? " badge-error" : ""}`}

@@ -1559,7 +1559,7 @@ func TestFailureCode(t *testing.T) {
 		{fmt.Errorf("write tcp: %w", os.ErrDeadlineExceeded), "ETIMEDOUT"},
 		{fmt.Errorf("read tcp: %w", syscall.ECONNRESET), "ECONNRESET"},
 		{fmt.Errorf("await: %w", context.DeadlineExceeded), "ETIMEDOUT"},
-		{fmt.Errorf("aborted: %w", context.Canceled), "ECONNRESET"},
+		{fmt.Errorf("aborted: %w", context.Canceled), "ECANCELED"},
 		{fmt.Errorf("write tcp: %w", syscall.EPIPE), "EPIPE"},
 		{fmt.Errorf("dial tcp: %w", syscall.ECONNREFUSED), "ECONNREFUSED"},
 		{fmt.Errorf("proxy CONNECT x answered 403"), "EUPSTREAM"},

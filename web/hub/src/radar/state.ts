@@ -866,8 +866,18 @@ export function requestCost(request: RequestRecord): { usd: number; detail: stri
   return prices.requestCost(request);
 }
 
-/** A request that came back 400 or worse, or died with an error before one arrived. */
+/** The status a router records for a call whose client left (Esc, a dropped call). */
+const CANCELLED_STATUS = 499;
+
+/** A call its client cancelled: neither an answer nor a failure, so it sits out of both counts. */
+export function requestCancelled(request: RequestRecord): boolean {
+  return httpStatusOf(request) === CANCELLED_STATUS;
+}
+
+/** A request that came back 400 or worse, or died with an error before one arrived; never a cancelled
+ *  call. */
 export function requestFailed(request: RequestRecord): boolean {
+  if (requestCancelled(request)) return false;
   return (httpStatusOf(request) ?? 0) >= 400 || request.error !== undefined;
 }
 
@@ -882,7 +892,9 @@ export function requestChartsData(
   const inRange = requests.filter((request) => request.ts >= from && request.ts <= to);
   return {
     bucketMs: plan.bucketMs,
-    ok: bucketizeRange(inRange, from, to, plan.buckets, (request) => (requestFailed(request) ? 0 : 1)),
+    ok: bucketizeRange(inRange, from, to, plan.buckets, (request) =>
+      requestFailed(request) || requestCancelled(request) ? 0 : 1,
+    ),
     failed: bucketizeRange(inRange, from, to, plan.buckets, (request) => (requestFailed(request) ? 1 : 0)),
     tokens: bucketizeTokenKindsRange(inRange, from, to, plan.buckets),
   };

@@ -1351,6 +1351,19 @@ func (w *routerWorker) providerInspection(req *http.Request, u *url.URL, route, 
 	return inspect, oversize
 }
 
+// failureStatus is the status one failed request records and answers: 499 when its client left,
+// 504 when the upstream stayed silent before the head, 502 for every other failure.
+func failureStatus(failure UpstreamFailure) int64 {
+	switch {
+	case failure.ClientClosed:
+		return 499
+	case failure.Code == "ETIMEDOUT" && !failure.AfterHeaders:
+		return 504
+	default:
+		return 502
+	}
+}
+
 // dispatch sends one request on its route and pipes its answer back, streaming it.
 func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, model, route string, target *url.URL, note eventNote, peer *PeerTarget, key string, prompt *PromptHint) {
 	provider := w.provider
@@ -1430,31 +1443,33 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			}
 		},
 		Failed: func(failure UpstreamFailure) {
+			status := failureStatus(failure)
+			if failure.ClientClosed {
+				// A client that left ends its own call: that says nothing about the upstream or the
+				// model, and nobody reads an answer.
+				w.log(fmt.Sprintf("%s %s model=%s → %s cancelled", req.Method, u.Path, modelOrDash(model), route))
+				if note != nil {
+					reason := "client closed"
+					note(status, route, u.Host, nil, &reason, nil)
+				}
+				return
+			}
 			w.log(fmt.Sprintf("%s %s model=%s → %s error %s", req.Method, u.Path, modelOrDash(model), route, failure.Code))
 			if route == "anthropic" && w.opts.AnthropicFail != nil {
 				w.opts.AnthropicFail(failure.Code, model)
 			}
-			// A client that left aborts its own call; that says nothing about the model.
-			if route == "provider" && req.Context().Err() == nil {
+			if route == "provider" {
 				w.fellBack(w.fallback.dropped(model, failure.Code))
 			}
 			if !failure.AfterHeaders {
-				status := 502
-				if failure.Code == "ETIMEDOUT" {
-					status = 504
-				}
 				message := fmt.Sprintf("%s router: %s unreachable (%s)", provider.Name, route, failure.Code)
 				if peer != nil {
 					message = fmt.Sprintf("%s router: the %s plugin's router is down; run /%s:setup to restart it",
 						provider.Name, peer.Name, peer.Name)
 				}
-				AnthropicError(res, status, "api_error", message)
+				AnthropicError(res, int(status), "api_error", message)
 			}
 			if note != nil {
-				status := int64(502)
-				if failure.Code == "ETIMEDOUT" && !failure.AfterHeaders {
-					status = 504
-				}
 				// the errno is the whole reason a dropped connection has; never a header or a
 				// body byte
 				reason := "connection failed (" + failure.Code + ")"

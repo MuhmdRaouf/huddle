@@ -1627,6 +1627,25 @@ func TestWatcherSideLines(t *testing.T) {
 		}
 	})
 
+	t.Run("keeps a cancelled call as a 499 request and out of the API errors", func(t *testing.T) {
+		e := makeEnv(t)
+		writeText(t, spoolFilePath(t, e.env), jsonl(t, map[string]any{
+			"ts": iso(watchT0), "event": "route", "session_id": "s9", "model": "claude-fable-5-1",
+			"plugin": "huddle-router", "route": "anthropic", "status": 499, "error": "client closed",
+			"latency_ms": 12,
+		}))
+		st := newStore()
+		manualWatcher(t, e.env, st)
+		routed := st.Requests(sessionFilter("s9"))
+		if len(routed) != 1 || routed[0].Status == nil || *routed[0].Status != "499" ||
+			routed[0].Error == nil || *routed[0].Error != "client closed" {
+			t.Fatalf("requests = %+v, want one 499 client closed", routed)
+		}
+		if errors := st.APIErrors(); len(errors) != 0 {
+			t.Errorf("api errors = %+v, want none: a client that left is no failure", errors)
+		}
+	})
+
 	t.Run("shows a turn the user interrupted on the timeline as Interrupted", func(t *testing.T) {
 		e := makeEnv(t)
 		writeText(t, filepath.Join(e.config, "projects", "-w-app", "sess-a.jsonl"), jsonl(t,

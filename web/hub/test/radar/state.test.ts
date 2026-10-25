@@ -722,6 +722,16 @@ describe("requestChartsData", () => {
     expect(data.ok).toHaveLength(60);
   });
 
+  it("keeps a call its client cancelled out of the ok and the failed counts", () => {
+    const data = requestChartsData(
+      [makeRequest({ id: "cancelled", ts: FROM + 10_000, status: "499", error: "client closed" })],
+      FROM,
+      TO,
+    );
+    expect(data.ok.reduce((sum, count) => sum + count, 0)).toBe(0);
+    expect(data.failed.reduce((sum, count) => sum + count, 0)).toBe(0);
+  });
+
   it("splits every token kind per bucket", () => {
     const data = requestChartsData(
       [

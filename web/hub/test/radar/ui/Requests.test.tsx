@@ -130,6 +130,26 @@ describe("requests view", () => {
     expect(cell.querySelector(".badge")?.getAttribute("title")).toBe("rate limited, retry in 12s");
   });
 
+  it("shows a call its client cancelled as a grey row with a grey cancelled badge, its reason on hover", () => {
+    const { container } = renderApp(
+      <RequestsView />,
+      {
+        requests: [makeRequest({ id: "r-cancel", ts: NOW - 1_000, status: "499", error: "client closed" })],
+      },
+      NOW,
+    );
+    const row = at(drawerRows(container), 0);
+    expect(row.className).toContain("muted");
+    expect(row.className).not.toContain("bg-error");
+    const cell = at(within(row).getAllByRole("cell"), 4);
+    expect(cell.textContent).toBe("cancelled");
+    expect(cell.querySelector(".badge-error")).toBeNull();
+    expect(cell.querySelector(".badge")?.getAttribute("title")).toBe("HTTP 499: client closed");
+    expect(
+      container.querySelector("[data-chart='requests'] [role='img']")?.getAttribute("aria-label"),
+    ).toMatch(/0 failed$/);
+  });
+
   it("still reads a bare three-digit stop reason as the status, for rows a router recorded before the field existed", () => {
     const { container } = renderApp(
       <RequestsView />,

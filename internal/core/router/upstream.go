@@ -551,11 +551,13 @@ type UpstreamCall struct {
 	IdleMs int64
 }
 
-// UpstreamFailure is how one upstream request failed: the errno-style code, and whether the
-// failure came after the answer's head had already gone out.
+// UpstreamFailure is how one upstream request failed: the errno-style code, whether the failure
+// came after the answer's head had already gone out, and whether its cause is the client leaving
+// (Esc, a dropped call) rather than the upstream or the network.
 type UpstreamFailure struct {
 	Code         string
 	AfterHeaders bool
+	ClientClosed bool
 }
 
 // Replacement is what the client gets instead of an upstream answer the caller chose to rewrite.
@@ -611,7 +613,7 @@ func failureCode(err error) string {
 		return "ETIMEDOUT"
 	case errors.Is(err, context.Canceled):
 		// The request was aborted: the client had gone, and the call was destroyed with it.
-		return "ECONNRESET"
+		return "ECANCELED"
 	case certErr(err):
 		return "ECERT"
 	case resetErrno(err):
@@ -673,7 +675,8 @@ func concatChunks(chunks [][]byte) []byte {
 // considers replayable (GETs and the like); a POST /v1/messages is not one, so the retry lives
 // here. Every other failure is reported once through Failed; after the headers went out an
 // event-stream answer ends with Anthropic's terminal error event and any other client stream is
-// destroyed, so it ends instead of hanging. The client going away aborts the upstream call.
+// destroyed, so it ends instead of hanging. The client going away aborts the upstream call and
+// reports it once through Failed as ClientClosed, before or after the head.
 func SendUpstream(ctx context.Context, call UpstreamCall, res *Response, hooks UpstreamHooks) {
 	settled := false
 	// Whether the answer's bytes so far end between two events, so a terminal event never joins a
@@ -682,18 +685,30 @@ func SendUpstream(ctx context.Context, call UpstreamCall, res *Response, hooks U
 	// The answer's own content-type, kept for the failed ending below (a written head is not
 	// readable back).
 	contentType := ""
-	fail := func(code string, afterHeaders bool) {
+	settle := func(failure UpstreamFailure) {
 		if settled {
 			return
 		}
 		settled = true
-		if afterHeaders {
-			endFailed(res, contentType, atBoundary, "upstream connection failed ("+code+")")
+		// Nobody reads the ending of an answer whose client left.
+		if failure.AfterHeaders && !failure.ClientClosed {
+			endFailed(res, contentType, atBoundary, "upstream connection failed ("+failure.Code+")")
 		}
 		if hooks.Failed != nil {
-			hooks.Failed(UpstreamFailure{Code: code, AfterHeaders: afterHeaders})
+			hooks.Failed(failure)
 		}
 		res.Cut()
+	}
+	// left settles a call its client ended, whatever error the upstream side then saw.
+	left := func() {
+		settle(UpstreamFailure{Code: failureCode(context.Canceled), AfterHeaders: res.HeadersSent(), ClientClosed: true})
+	}
+	fail := func(code string, afterHeaders bool) {
+		if ctx.Err() != nil {
+			left()
+			return
+		}
+		settle(UpstreamFailure{Code: code, AfterHeaders: afterHeaders})
 	}
 
 	idle := idleTimeout
@@ -817,6 +832,7 @@ func SendUpstream(ctx context.Context, call UpstreamCall, res *Response, hooks U
 			for _, chunk := range chunks {
 				if _, err := res.Write(chunk); err != nil {
 					// The client is gone: nothing more is worth sending.
+					left()
 					return
 				}
 			}
@@ -843,8 +859,9 @@ func SendUpstream(ctx context.Context, call UpstreamCall, res *Response, hooks U
 				atBoundary = n >= 2 && chunk[n-2] == '\n' && chunk[n-1] == '\n'
 				if _, writeErr := res.Write(chunk); writeErr != nil {
 					// The client went away mid-answer (Esc in Claude Code): stop the upstream
-					// request too, and say nothing — nobody waits for this answer.
+					// request too; nobody waits for this answer.
 					cancel()
+					left()
 					return
 				}
 			}
