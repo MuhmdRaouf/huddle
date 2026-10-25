@@ -4,8 +4,10 @@
 // items and alerts, or nothing. That choice is the device's own: the routes answer a browser that
 // holds no paired device with the refusal to read or write one.
 
+import { Card } from "@huddle/ui/card.tsx";
 import { List, ListItem } from "@huddle/ui/list.tsx";
-import { Panel } from "@huddle/ui/page.tsx";
+import { RadioGroup, type RadioOption } from "@huddle/ui/radio-group.tsx";
+import { Switch } from "@huddle/ui/switch.tsx";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { Icon } from "../icons.tsx";
@@ -13,14 +15,18 @@ import type { PushStatus } from "../pwa.ts";
 import { errText, useHuddle } from "./context.tsx";
 
 /** The choices the server knows, and what each one wakes the device for. */
-const CHOICES: readonly (readonly [value: NotifyChoice, label: string, help: string])[] = [
-  ["needs", "Needs you only", "A permission, a question, a finished turn, a blocked task."],
-  [
-    "all",
-    "Needs you and alerts",
-    "The items, plus a paired device, a satellite, a rule change, a remote allow.",
-  ],
-  ["off", "Off", "This device is never woken."],
+const CHOICES: readonly RadioOption<NotifyChoice>[] = [
+  {
+    value: "needs",
+    label: "Needs you only",
+    help: "A permission, a question, a finished turn, a blocked task.",
+  },
+  {
+    value: "all",
+    label: "Needs you and alerts",
+    help: "The items, plus a paired device, a satellite, a rule change, a remote allow.",
+  },
+  { value: "off", label: "Off", help: "This device is never woken." },
 ];
 
 export type NotifyChoice = "needs" | "all" | "off";
@@ -31,8 +37,8 @@ export function readNotifyChoice(v: unknown): NotifyChoice {
   return raw === "all" || raw === "off" ? raw : "needs";
 }
 
-/** One switch row: its title and help line name and describe the switch, whose label box is a
- *  full tap target. A click asks onFlip; the row's state comes back through `on`. */
+/** One switch row: its title and help line name and describe the switch, a full tap target.
+ *  A click asks onFlip; the row's state comes back through `on`. */
 function SwitchRow({
   id,
   title,
@@ -57,23 +63,14 @@ function SwitchRow({
       }
       meta={<span id={`${id}-h`}>{help}</span>}
       trailing={
-        <label class="flex size-[44px] items-center justify-center">
-          <input
-            type="checkbox"
-            class="toggle"
-            role="switch"
-            id={`set-${id}`}
-            aria-checked={on}
-            aria-labelledby={`${id}-l`}
-            aria-describedby={`${id}-h`}
-            checked={on}
-            disabled={disabled}
-            onClick={(e) => {
-              e.preventDefault();
-              onFlip();
-            }}
-          />
-        </label>
+        <Switch
+          id={`set-${id}`}
+          labelledBy={`${id}-l`}
+          describedBy={`${id}-h`}
+          checked={on}
+          disabled={disabled}
+          onChange={onFlip}
+        />
       }
     />
   );
@@ -179,39 +176,34 @@ export function NotificationsCard(): JSX.Element {
       });
   };
   return (
-    <Panel title="Notifications" label="Notifications" icon={<Icon name="bell" />}>
+    <Card
+      title={
+        <span class="flex items-center gap-2.5">
+          <span class="text-[var(--ui-accent)]" aria-hidden="true">
+            <Icon name="bell" />
+          </span>
+          Notifications
+        </span>
+      }
+    >
       <List label="This browser">
         <NotifyRow />
         <PushRow />
       </List>
       <p class="mt-4 mb-1 text-sm font-semibold">What wakes this device</p>
-      <div role="radiogroup" aria-label="Notifications" class="flex flex-col gap-1">
-        {CHOICES.map(([value, label, help]) => (
-          <label
-            key={value}
-            class="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm hover:bg-base-content/5"
-          >
-            <input
-              type="radio"
-              class="radio radio-sm"
-              name="notify"
-              value={value}
-              checked={choice === value}
-              disabled={choice === null}
-              onChange={() => pick(value)}
-            />
-            <span class="flex-1">
-              <span class="block">{label}</span>
-              <span class="help block">{help}</span>
-            </span>
-          </label>
-        ))}
-      </div>
+      <RadioGroup
+        label="Notifications"
+        name="notify"
+        value={choice}
+        options={CHOICES}
+        disabled={choice === null}
+        onChange={pick}
+      />
       {err !== "" ? (
-        <p class="err text-xs" role="alert">
+        <p class="ui-field-error mt-2" role="alert">
           {err}
         </p>
       ) : null}
-    </Panel>
+    </Card>
   );
 }

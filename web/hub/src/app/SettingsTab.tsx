@@ -1,13 +1,14 @@
-// SettingsTab.tsx — the Settings tab: one section per settings group, as underline tabs like the
-// Radar tab's sub-tabs. This browser's groups come first — Appearance (System, Dark, Light, and
-// the Catppuccin flavour),
-// Notifications (the two switches and what wakes the device), Devices (the paired ones, with
-// remove), This hub (name, address, version) and Phone (the trust guide in a sheet) — then
-// Sign-in, Radar's own settings (budgets, notifications, history retention) and Linked channels.
+// SettingsTab.tsx — the Settings page: one section per settings group, in a section row shaped like
+// Radar's view row. This browser's groups come first — Appearance (System, Dark, Light, and the
+// Catppuccin flavour), Notifications (the two switches and what wakes the device), Devices (the
+// paired ones, with remove), This hub (name, address, version) and Phone (the trust guide in a
+// sheet) — then Sign-in, Radar's own settings (budgets, notifications, history retention) and
+// Linked channels. Every class comes from the ui components or the tokens.
 
 import { Button } from "@huddle/ui/button.tsx";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
+import { Switch } from "@huddle/ui/switch.tsx";
 import {
   applyFlavour,
   type Flavour,
@@ -32,7 +33,7 @@ import { NotificationsCard } from "./Notifications.tsx";
 import { pickScheme, SCHEMES } from "./scheme.ts";
 import { AuthenticatorCard } from "./Totp.tsx";
 
-/** The sections the Settings tab serves, in row order; each later surface adds its entry. */
+/** The sections the Settings page serves, in row order; each later surface adds its entry. */
 const SECTIONS = [
   { id: "appearance", label: "Appearance" },
   { id: "notifications", label: "Notifications" },
@@ -45,9 +46,15 @@ const SECTIONS = [
 ] as const;
 
 /** A section's heading, the same small caps on every section. */
-const HEAD = "mb-1.5 text-xs font-semibold tracking-[0.06em] uppercase muted";
+const HEAD = "mb-1.5 text-xs font-semibold tracking-[0.06em] uppercase text-[var(--ui-muted)]";
 
-/** One section of the Settings tab. */
+/** Muted body copy under a heading. */
+const NOTE = "m-0 text-sm text-[var(--ui-muted)]";
+
+/** An error said inline. */
+const ERR = "m-0 text-sm text-[var(--ui-fail-ink)]";
+
+/** One section of the Settings page. */
 export type SettingsSection = (typeof SECTIONS)[number]["id"];
 
 /** The section the address names; a missing or unknown one reads as the first. */
@@ -59,7 +66,7 @@ export function settingsSectionOf(named: string | undefined): SettingsSection {
  *  first time the section shows (the controller runs already — main starts it on this address). */
 function RadarSettings(): JSX.Element {
   useEffect(() => {
-    // the settings data loads here rather than on the controller's boot: the Radar tab's views
+    // the settings data loads here rather than on the controller's boot: Radar's own views
     // never ask for it, and this section may be the first radar address the reader opens
     void radarController()?.loadTab("settings");
   }, []);
@@ -89,7 +96,7 @@ export function Appearance(): JSX.Element {
       <h2 id="appearance-h" class={HEAD}>
         Appearance
       </h2>
-      <p class="m-0 text-sm muted">
+      <p class={NOTE}>
         Dark and light follow this device until you pick one here. The choice stays in this browser.
       </p>
       <div role="group" aria-label="Scheme" class="flex flex-wrap gap-2">
@@ -109,21 +116,17 @@ export function Appearance(): JSX.Element {
         ))}
       </div>
       <label class="flex min-h-[var(--ui-tap)] items-center gap-3 text-sm">
-        <input
-          type="checkbox"
-          class="toggle"
-          role="switch"
-          aria-checked={catppuccin}
+        <Switch
+          labelledBy="flavour-l"
           checked={catppuccin}
-          onClick={(e) => {
-            e.preventDefault();
-            const next: Flavour = catppuccin ? "plain" : "catppuccin";
+          onChange={(on) => {
+            const next: Flavour = on ? "catppuccin" : "plain";
             writeFlavour(localStorage, next);
             applyFlavour(document.documentElement, next);
             setFlavour(next);
           }}
         />
-        <span>Catppuccin colours</span>
+        <span id="flavour-l">Catppuccin colours</span>
       </label>
     </section>
   );
@@ -193,7 +196,7 @@ export function Phone(): JSX.Element {
       <h2 id="phone-h" class={HEAD}>
         Phone
       </h2>
-      <p class="m-0 text-sm muted">
+      <p class={NOTE}>
         A phone trusts the hub's root once: it scans a QR this computer serves for 10 minutes, and the page it
         opens walks the taps.
       </p>
@@ -211,14 +214,14 @@ export function Phone(): JSX.Element {
               height={160}
               class="size-40 shrink-0 rounded-lg bg-white p-2"
             />
-            <code class="break-all font-mono text-xs">{guide.fingerprint}</code>
-            <p class="m-0 text-sm muted">
+            <code class="ui-mono break-all text-xs">{guide.fingerprint}</code>
+            <p class={NOTE}>
               Scan with the phone's camera. The page it opens shows the same fingerprint — compare before
               installing. The guide stops itself after 10 minutes.
             </p>
           </div>
         ) : (
-          <p class="m-0 text-sm muted">Starting…</p>
+          <p class={NOTE}>Starting…</p>
         )}
       </Sheet>
     </section>
@@ -281,14 +284,14 @@ export function Devices(): JSX.Element {
         Devices{devices && devices.length > 0 ? ` · ${devices.length}` : ""}
       </h2>
       {error ? (
-        <p role="alert" class="m-0 text-sm text-error">
+        <p role="alert" class={ERR}>
           {error}
         </p>
       ) : null}
       {devices === null ? (
-        <p class="m-0 text-sm muted">Loading…</p>
+        <p class={NOTE}>Loading…</p>
       ) : devices.length === 0 ? (
-        <p class="m-0 text-sm muted">No devices paired yet.</p>
+        <p class={NOTE}>No devices paired yet.</p>
       ) : (
         <List label="Paired devices">
           {devices.map((d) => (
@@ -296,13 +299,17 @@ export function Devices(): JSX.Element {
               key={d.name}
               title={d.name}
               meta={
-                <span class="tnum">
+                <span class="tabular-nums">
                   added {ageText(d.added, now)} · last seen {ageText(d.seen, now)}
                 </span>
               }
               trailing={
                 <span data-device={d.name}>
-                  <Button variant="ghost" class="text-error" onClick={() => void remove(d.name)}>
+                  <Button
+                    variant="ghost"
+                    class="text-[var(--ui-fail-ink)]"
+                    onClick={() => void remove(d.name)}
+                  >
                     Remove
                   </Button>
                 </span>
@@ -313,11 +320,9 @@ export function Devices(): JSX.Element {
       )}
       <div class="mt-4 flex flex-col gap-1.5">
         <h3 class="m-0 text-[15px] font-semibold">Pair a new device</h3>
-        <p class="m-0 text-sm muted">
-          Run this on the computer running huddle, then open the link on the device:
-        </p>
-        <div class="flex min-h-11 items-center gap-2.5 rounded-lg border border-base-content/15 bg-base-200 pl-3">
-          <span class="muted">
+        <p class={NOTE}>Run this on the computer running huddle, then open the link on the device:</p>
+        <div class="flex min-h-[var(--ui-tap)] items-center gap-2.5 rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] pl-3">
+          <span class="text-[var(--ui-muted)]">
             <Icon name="terminal" />
           </span>
           <code class="min-w-0 flex-1 truncate text-sm">huddle pair</code>
@@ -396,19 +401,22 @@ export function SignInMethods(): JSX.Element {
         Sign-in methods
       </h2>
       {error ? (
-        <p role="alert" class="m-0 text-sm text-error">
+        <p role="alert" class={ERR}>
           {error}
         </p>
       ) : null}
       {facts === null ? (
-        <p class="m-0 text-sm muted">Loading…</p>
+        <p class={NOTE}>Loading…</p>
       ) : (
         <>
           <AuthenticatorCard enrolled={facts.enrolled} onChanged={load} />
-          <div class="flex items-center justify-between gap-3 border-b hairline py-3" data-passkey-row="">
+          <div
+            class="flex items-center justify-between gap-3 border-b border-[var(--ui-line)] py-3"
+            data-passkey-row=""
+          >
             <div class="flex min-w-0 flex-col">
               <span class="text-[15px]">Passkey for this browser</span>
-              <span class="text-xs muted">
+              <span class="text-xs text-[var(--ui-muted)]">
                 {facts.kind === "device"
                   ? facts.passkey
                     ? "This browser signs in with its passkey."
@@ -417,17 +425,12 @@ export function SignInMethods(): JSX.Element {
               </span>
             </div>
             {facts.kind === "device" && !facts.passkey ? (
-              <button
-                type="button"
-                class="btn btn-primary btn-sm"
-                disabled={busy}
-                onClick={() => void savePasskey()}
-              >
+              <Button disabled={busy} onClick={() => void savePasskey()}>
                 Save passkey
-              </button>
+              </Button>
             ) : null}
           </div>
-          <p class="m-0 pt-2 text-xs muted">
+          <p class="m-0 pt-2 text-xs text-[var(--ui-muted)]">
             Every device session ends after 7 days unused; one code or touch starts a fresh one. Manage the
             devices themselves under Devices.
           </p>
@@ -437,8 +440,8 @@ export function SignInMethods(): JSX.Element {
   );
 }
 
-/** The Settings tab: the section row, then the named section's panes. The row is the Radar
- *  views' own shape: underlined tabs at the desk, pills that scroll inside the row on the
+/** The Settings page: the section row, then the named section's panes. The row is the Radar
+ *  views' own shape: underlined links at the desk, pills that scroll inside the row on the
  *  narrower layouts, so the eight sections never push the page sideways. */
 export function SettingsTab({ section }: { section: SettingsSection }): JSX.Element {
   const layout = useLayout();
@@ -448,7 +451,7 @@ export function SettingsTab({ section }: { section: SettingsSection }): JSX.Elem
         aria-label="Settings sections"
         class={
           layout === "desktop"
-            ? "flex min-h-[52px] shrink-0 items-center gap-0.5 border-b hairline px-5"
+            ? "flex min-h-[52px] shrink-0 items-center gap-0.5 border-b border-[var(--ui-line)] px-5"
             : "flex shrink-0 items-center gap-1.5 overflow-x-auto px-4 py-2"
         }
       >
@@ -460,15 +463,15 @@ export function SettingsTab({ section }: { section: SettingsSection }): JSX.Elem
             aria-current={entry.id === section ? "page" : undefined}
             class={
               layout === "desktop"
-                ? `flex h-full shrink-0 items-center border-b-2 px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                ? `flex min-h-[var(--ui-tap)] self-stretch shrink-0 items-center border-b-2 px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
                     entry.id === section
-                      ? "border-primary font-semibold text-base-content"
-                      : "border-transparent text-base-content/70 hover:text-base-content"
+                      ? "border-[var(--ui-accent)] font-semibold text-[var(--ui-text)]"
+                      : "border-transparent text-[var(--ui-muted)] hover:text-[var(--ui-text)]"
                   }`
-                : `flex min-h-[var(--ui-tap)] shrink-0 items-center rounded-full px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                : `flex min-h-[var(--ui-tap)] shrink-0 items-center rounded-full px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
                     entry.id === section
-                      ? "bg-primary font-semibold text-primary-content"
-                      : "border hairline text-base-content/80 hover:bg-base-100"
+                      ? "bg-[var(--ui-accent)] font-semibold text-[var(--ui-on-accent)]"
+                      : "border border-[var(--ui-line-strong)] text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
                   }`
             }
           >

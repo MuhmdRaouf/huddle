@@ -5,6 +5,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/preact";
 import { describe, expect, it } from "vite-plus/test";
 import { NotificationsCard, readNotifyChoice } from "../../src/app/Notifications.tsx";
+import { legacyClasses } from "../helpers.tsx";
 import { renderHuddle } from "../render.tsx";
 
 /** Renders the card over one fetch answer per call, with the calls kept for asserting. */
@@ -71,6 +72,17 @@ describe("the notifications card", () => {
     card([{ status: 403, body: { error: "only a paired device holds a push subscription" } }]);
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("only a paired device"));
     expect(radios().every((x) => x.disabled)).toBe(true);
+  });
+
+  it("paints the card, its two switches and its three radios on the tokens", async () => {
+    card([{ status: 200, body: { notify: "needs" } }]);
+    await waitFor(() => expect(radio(0).checked).toBe(true));
+    expect(screen.getByRole("region", { name: "Notifications" }).className).toBe("ui-card");
+    const switches = screen.getAllByRole("switch");
+    expect(switches.map((x) => x.className)).toEqual(["ui-switch", "ui-switch"]);
+    expect(screen.getByRole("radiogroup", { name: "Notifications" }).className).toBe("ui-radios");
+    expect(radios().every((x) => x.className === "ui-radio-input")).toBe(true);
+    expect(legacyClasses()).toEqual([]);
   });
 
   it("reads a choice of any shape as the default", () => {

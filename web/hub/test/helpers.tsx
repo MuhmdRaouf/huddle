@@ -184,3 +184,18 @@ export function settle(): Promise<void> {
     await new Promise((r) => setTimeout(r, 10));
   });
 }
+
+/** A daisyUI component or theme-colour class, or a legacy.css name: what a page on the tokens never paints with. */
+const LEGACY =
+  /^(btn(-.+)?|tab|tabs|glass|badge-.+|toggle(-.+)?|radio(-.+)?|min-h-11|muted|hairline|help|err|tnum|panel|rounded-box|((.+:)?(text|bg|border|ring|outline)-(base-\d+|base-content|primary|secondary|accent|neutral|info|success|warning|error)(-content)?(\/\d+)?))$/;
+
+/** Every legacy class painted under root, so a test can expect none; `skip` leaves out the parts another
+ *  page owns, such as a sheet it lends. */
+export function legacyClasses(root: ParentNode = document.body, skip?: string): string[] {
+  const found = new Set<string>();
+  for (const el of root.querySelectorAll("[class]")) {
+    if (skip !== undefined && el.closest(skip) !== null) continue;
+    for (const c of (el.getAttribute("class") ?? "").split(/\s+/)) if (LEGACY.test(c)) found.add(c);
+  }
+  return [...found];
+}

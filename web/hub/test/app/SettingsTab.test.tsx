@@ -8,8 +8,15 @@ import { act, screen, waitFor } from "@testing-library/preact";
 import type { JSX } from "preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { FetchFn } from "../../src/api.ts";
-import { Appearance, Devices, Phone, SignInMethods, ThisHub } from "../../src/app/SettingsTab.tsx";
-import { flush, NOW, stubMedia } from "../helpers.tsx";
+import {
+  Appearance,
+  Devices,
+  Phone,
+  SettingsTab,
+  SignInMethods,
+  ThisHub,
+} from "../../src/app/SettingsTab.tsx";
+import { flush, legacyClasses, NOW, stubMedia } from "../helpers.tsx";
 import { renderHuddle } from "../render.tsx";
 
 /** One device row as the server lists it: added an hour ago, seen half a minute ago. */
@@ -145,6 +152,17 @@ describe("the devices section", () => {
     expect(screen.getByText("iPhone")).toBeDefined();
   });
 
+  it("TestTheSectionIsOnTheTokens", async () => {
+    mount([{ status: 200, body: { devices: [device()] } }]);
+    await waitFor(() => expect(screen.getByText("iPhone")).toBeDefined());
+    expect(screen.getByRole("button", { name: "Remove" }).className).toContain("ui-btn");
+    const line = screen.getByText("huddle pair").parentElement;
+    expect(line?.className).toContain("min-h-[var(--ui-tap)]");
+    expect(line?.className).toContain("bg-[var(--ui-surface-2)]");
+    // the passkey sheet a removal opens is the Needs page's own
+    expect(legacyClasses(document.body, "dialog")).toEqual([]);
+  });
+
   it("TestAnEmptyListSaysSo", async () => {
     mount([{ status: 200, body: { devices: [] } }]);
     await waitFor(() => expect(screen.getByText("No devices paired yet.")).toBeDefined());
@@ -232,6 +250,34 @@ describe("the appearance section", () => {
     expect(flavour.getAttribute("aria-checked")).toBe("false");
     expect(localStorage.getItem("huddle:flavour")).toBe("plain");
     expect(document.documentElement.hasAttribute("data-flavour")).toBe(false);
+  });
+
+  it("TestTheFlavourIsATokenSwitchInATapTallRow", () => {
+    stubMedia({ "(prefers-color-scheme: dark)": false });
+    renderHuddle(<Appearance />);
+    const flavour = screen.getByRole("switch", { name: "Catppuccin colours" });
+    expect(flavour.className).toBe("ui-switch");
+    expect(flavour.closest("label")?.className).toContain("min-h-[var(--ui-tap)]");
+    expect(legacyClasses()).toEqual([]);
+  });
+});
+
+describe("the section row", () => {
+  it("TestTheRowIsOnTheTokensAtTheDeskAndOnThePhone", async () => {
+    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    mountSection(<SettingsTab section="hub" />, [{ status: 200, body: { name: "studio" } }]);
+    await waitFor(() => expect(screen.getByText("studio")).toBeDefined());
+    const desk = document.querySelector('a[data-section="hub"]');
+    expect(desk?.className).toContain("border-[var(--ui-accent)]");
+    expect(legacyClasses()).toEqual([]);
+    document.body.textContent = "";
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    mountSection(<SettingsTab section="hub" />, [{ status: 200, body: { name: "studio" } }]);
+    await waitFor(() => expect(screen.getByText("studio")).toBeDefined());
+    const pill = document.querySelector('a[data-section="hub"]');
+    expect(pill?.className).toContain("bg-[var(--ui-accent)]");
+    expect(pill?.className).toContain("min-h-[var(--ui-tap)]");
+    expect(legacyClasses()).toEqual([]);
   });
 });
 
@@ -363,6 +409,15 @@ describe("the sign-in section", () => {
     expect(h.toast).toHaveBeenCalledWith("Passkey saved for this browser");
     expect(screen.getByText("This browser signs in with its passkey.")).toBeDefined();
     expect(h.calls.filter((u) => u.endsWith("/api/whoami"))).toHaveLength(2);
+  });
+
+  it("TestThePasskeyRowIsOnTheTokens", async () => {
+    mountSignin({ status: 200, body: { kind: "device", totp: true, device_passkey: false } });
+    await flush();
+    expect(screen.getByRole("button", { name: "Save passkey" }).className).toBe("ui-btn ui-btn-primary");
+    const row = document.querySelector("[data-passkey-row]") as HTMLElement;
+    expect(row.className).toContain("border-[var(--ui-line)]");
+    expect(legacyClasses(row)).toEqual([]);
   });
 
   it("TestACreationTheBrowserRefusedIsSaidInline", async () => {

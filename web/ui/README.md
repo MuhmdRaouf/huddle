@@ -35,6 +35,8 @@ looks the same on a phone and a desktop, in light and dark, with nothing loaded 
 | `Badge`                    | `badge.tsx`       | A short status word                                   |
 | `ChartFrame`               | `chart-frame.tsx` | The title, value and frame around a chart             |
 | `Field`                    | `field.tsx`       | A labelled input with a hint or an error              |
+| `Switch`                   | `switch.tsx`      | One setting turned on or off                          |
+| `RadioGroup`               | `radio-group.tsx` | One choice of a few, each with an optional help line  |
 
 For anything the components do not cover, use the tokens directly, never a raw colour or size:
 
