@@ -508,14 +508,14 @@ func TestExtrasNotifications(t *testing.T) {
 			t.Errorf("the notifications carry the message body: %s", raw)
 		}
 		// the switch: off in the dashboard (the owner only), nothing shows; on again
-		state, err := Settings("POST", notifier, channel.Owner, vv(t, `{"notify": false}`))
+		state, err := Settings("POST", notifier, outside.NewZones(t.TempDir()), channel.Owner, vv(t, `{"notify": false}`))
 		if err != nil {
 			t.Fatal(err)
 		}
 		if state.Notify {
 			t.Errorf("state after switching off = %+v", state)
 		}
-		if state, err := Settings("GET", notifier, "", nil); err != nil || state.Notify {
+		if state, err := Settings("GET", notifier, outside.NewZones(t.TempDir()), "", nil); err != nil || state.Notify {
 			t.Errorf("GET settings = %+v (%v), want off", state, err)
 		}
 		before := len(readNotes(t, log))
@@ -528,21 +528,41 @@ func TestExtrasNotifications(t *testing.T) {
 		if got := len(readNotes(t, log)); got != before {
 			t.Errorf("notes while off = %d, want %d", got, before)
 		}
-		if state, err = Settings("POST", notifier, channel.Owner, vv(t, `{"notify": true}`)); err != nil || !state.Notify {
+		if state, err = Settings("POST", notifier, outside.NewZones(t.TempDir()), channel.Owner, vv(t, `{"notify": true}`)); err != nil || !state.Notify {
 			t.Errorf("state after switching on = %+v (%v)", state, err)
 		}
 	})
 
 	t.Run("the settings switch is the owner's to change", func(t *testing.T) {
 		notifier, _ := notifyLog(t)
-		if _, err := Settings("POST", notifier, "api", vv(t, `{"notify": false}`)); errStatus(err) != 403 {
+		if _, err := Settings("POST", notifier, outside.NewZones(t.TempDir()), "api", vv(t, `{"notify": false}`)); errStatus(err) != 403 {
 			t.Errorf("a session changing settings = status %d, want 403", errStatus(err))
 		}
-		if _, err := Settings("POST", notifier, channel.Owner, vv(t, `{"notify": "no"}`)); errStatus(err) != 400 {
+		if _, err := Settings("POST", notifier, outside.NewZones(t.TempDir()), channel.Owner, vv(t, `{"notify": "no"}`)); errStatus(err) != 400 {
 			t.Errorf("a non-boolean switch = status %d, want 400", errStatus(err))
 		}
-		if _, err := Settings("POST", notifier, channel.Owner, vv(t, `{}`)); errStatus(err) != 400 {
+		if _, err := Settings("POST", notifier, outside.NewZones(t.TempDir()), channel.Owner, vv(t, `{}`)); errStatus(err) != 400 {
 			t.Errorf("a body without notify = status %d, want 400", errStatus(err))
+		}
+	})
+
+	t.Run("the time zone is the owner's to change, to a name that loads", func(t *testing.T) {
+		notifier, _ := notifyLog(t)
+		zones := outside.NewZones(t.TempDir())
+		if state, err := Settings("GET", notifier, zones, channel.Owner, nil); err != nil || state.Zone != "" || state.ZoneOrigin != "" {
+			t.Errorf("a fresh home's settings = %+v (%v), want no zone", state, err)
+		}
+		if _, err := Settings("PUT", notifier, zones, "api", vv(t, `{"zone": "UTC"}`)); errStatus(err) != 403 {
+			t.Errorf("a session changing the zone = status %d, want 403", errStatus(err))
+		}
+		for _, body := range []string{`{"zone": "Mars/Olympus_Mons"}`, `{"zone": 3}`, `{}`} {
+			if _, err := Settings("PUT", notifier, zones, channel.Owner, vv(t, body)); errStatus(err) != 400 {
+				t.Errorf("PUT %s = status %d, want 400", body, errStatus(err))
+			}
+		}
+		state, err := Settings("PUT", notifier, zones, channel.Owner, vv(t, `{"zone": "Asia/Tokyo"}`))
+		if err != nil || state.Zone != "Asia/Tokyo" || state.ZoneOrigin != outside.ZoneFromOwner || !state.Notify {
+			t.Errorf("PUT Asia/Tokyo = %+v (%v), want the owner's zone beside the switch", state, err)
 		}
 	})
 }

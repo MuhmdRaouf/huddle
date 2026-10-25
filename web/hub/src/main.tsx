@@ -76,7 +76,7 @@ let signedOutPainted = false;
 let failedCh: string | null = null;
 let toastFn: ToastFn = () => {};
 
-const api = createApi(fetch, () => paintSignedOut());
+const api = createApi(fetch, () => paintSignedOut(), Intl.DateTimeFormat().resolvedOptions().timeZone);
 
 // this device's push subscription: the worker's registration where push exists, and whether the
 // page runs as the installed app (iOS pushes only there)

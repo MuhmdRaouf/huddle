@@ -246,6 +246,7 @@ type server struct {
 	hub      *channel.Hub
 	auth     *auth.Auth
 	notify   *outside.Notifier
+	zones    *outside.Zones
 	watcher  *extras.Watcher
 	views    *Views
 	mcp      *Mcp
@@ -544,6 +545,7 @@ func Serve(ctx context.Context, o Options) error {
 		hub:          channel.NewHub(o.Data, o.AutoCreate),
 		auth:         auth.New(root, now, func(line string) { fmt.Fprintf(o.Stdout, "huddle: %s\n", line) }, filepath.Join(o.Data, "auth.json")),
 		notify:       outside.NewNotifier(o.Data),
+		zones:        outside.NewZones(o.Data),
 		views:        NewViews(),
 		mcp:          NewMcp(o.Version),
 		listener:     listener,
@@ -995,7 +997,7 @@ type signinAnswer struct {
 // body reads one request's JSON body the way the channel keeps it: no credential, code or invite
 // of this run in it.
 func (s *server) body(r *http.Request) (*jsfmt.Value, error) {
-	if r.Method != http.MethodPost && r.Method != http.MethodPatch {
+	if r.Method != http.MethodPost && r.Method != http.MethodPatch && r.Method != http.MethodPut {
 		return jsfmt.Object(nil, nil), nil
 	}
 	raw, err := io.ReadAll(r.Body)
@@ -1125,6 +1127,7 @@ func (s *server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		me = who
+		s.seedZone(w, r, me)
 		as := actingAs(r)
 		if as != "" && !auth.MayAct(me, as) {
 			s.writeJSON(w, 403, errorAnswer{Error: fmt.Sprintf(
@@ -1248,7 +1251,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		if err != nil {
 			return err
 		}
-		state, err := extras.Settings(r.Method, s.notify, me.Name, body)
+		state, err := extras.Settings(r.Method, s.notify, s.zones, me.Name, body)
 		if err != nil {
 			return err
 		}

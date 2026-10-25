@@ -1,8 +1,8 @@
 // SettingsTab.test.tsx — the Devices section of Settings (SPEC 7.3): the paired devices with
 // their added and last-seen ages, the removal that asks for the passkey when the server says
 // step-up, the refusal said as the server spelled it, the empty list's word, and the copyable
-// `huddle pair` line that pairs the next device; then Appearance's three choices, This hub's facts
-// and the phone guide in its sheet.
+// `huddle pair` line that pairs the next device; then Appearance's three choices, This hub's facts,
+// the hub's time zone with its picker, and the phone guide in its sheet.
 
 import { act, screen, waitFor } from "@testing-library/preact";
 import type { JSX } from "preact";
@@ -15,6 +15,7 @@ import {
   SettingsTab,
   SignInMethods,
   ThisHub,
+  TimeZone,
 } from "../../src/app/SettingsTab.tsx";
 import { flush, legacyClasses, NOW, stubMedia } from "../helpers.tsx";
 import { renderHuddle } from "../render.tsx";
@@ -295,6 +296,76 @@ describe("the hub section", () => {
     expect(screen.getByText("Unknown")).toBeDefined();
     mountSection(<ThisHub />, [{ status: 500, body: {} }]);
     await waitFor(() => expect(screen.getAllByText("Unknown").length).toBeGreaterThan(1));
+  });
+});
+
+describe("the hub's time zone", () => {
+  const ZONES = ["UTC", "Asia/Tokyo", "Europe/Istanbul"];
+
+  it("TestNamesTheZoneAndThatItCameFromTheFirstSignIn", async () => {
+    mountSection(<TimeZone zones={ZONES} />, [
+      { status: 200, body: { notify: true, zone: "Europe/Istanbul", zone_origin: "first-sign-in" } },
+    ]);
+    await waitFor(() =>
+      expect(screen.getByText("Time zone: Europe/Istanbul (from your first sign-in)")).toBeDefined(),
+    );
+    const picker = screen.getByRole("combobox", { name: "Time zone" }) as HTMLSelectElement;
+    expect(picker.value).toBe("Europe/Istanbul");
+    expect([...picker.options].map((o) => o.value)).toEqual(ZONES);
+    expect(picker.className).toContain("ui-input");
+    expect(legacyClasses()).toEqual([]);
+  });
+
+  it("TestAPickIsPutAndTheNoteGoes", async () => {
+    const h = mountSection(<TimeZone zones={ZONES} />, [
+      { status: 200, body: { zone: "Europe/Istanbul", zone_origin: "first-sign-in" } },
+      { status: 200, body: { zone: "Asia/Tokyo", zone_origin: "owner" } },
+    ]);
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Time zone" })).toBeDefined());
+    const picker = screen.getByRole("combobox", { name: "Time zone" }) as HTMLSelectElement;
+    await act(async () => {
+      picker.value = "Asia/Tokyo";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flush();
+    const put = h.calls.find((c) => c.init?.method === "PUT");
+    expect(put?.url).toBe("/api/settings");
+    expect(JSON.parse(put?.init?.body as string)).toEqual({ zone: "Asia/Tokyo" });
+    expect(screen.getByText("Time zone: Asia/Tokyo")).toBeDefined();
+    expect(screen.queryByText(/from your first sign-in/)).toBeNull();
+  });
+
+  it("TestARefusedPickIsToastedAndTheZoneStays", async () => {
+    const h = mountSection(<TimeZone zones={ZONES} />, [
+      { status: 200, body: { zone: "UTC", zone_origin: "owner" } },
+      { status: 400, body: { error: "time zone is not known" } },
+    ]);
+    await waitFor(() => expect(screen.getByText("Time zone: UTC")).toBeDefined());
+    const picker = screen.getByRole("combobox", { name: "Time zone" }) as HTMLSelectElement;
+    await act(async () => {
+      picker.value = "Asia/Tokyo";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flush();
+    expect(h.toast).toHaveBeenCalledWith("time zone is not known", { bad: true });
+    expect(screen.getByText("Time zone: UTC")).toBeDefined();
+  });
+
+  it("TestAHubWithoutAZoneSaysSoAndABrowserWithoutAListTypesIt", async () => {
+    const h = mountSection(<TimeZone zones={[]} />, [
+      { status: 200, body: { zone: "", zone_origin: "" } },
+      { status: 200, body: { zone: "UTC", zone_origin: "owner" } },
+    ]);
+    await waitFor(() => expect(screen.getByText("Time zone: not set yet")).toBeDefined());
+    const field = screen.getByRole("textbox", { name: "Time zone" }) as HTMLInputElement;
+    expect(field.value).toBe("UTC");
+    await act(async () => {
+      screen.getByRole("button", { name: "Save" }).click();
+    });
+    await flush();
+    const put = h.calls.find((c) => c.init?.method === "PUT");
+    expect(JSON.parse(put?.init?.body as string)).toEqual({ zone: "UTC" });
+    expect(screen.getByText("Time zone: UTC")).toBeDefined();
   });
 });
 

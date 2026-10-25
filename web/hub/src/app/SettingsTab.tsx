@@ -1,11 +1,12 @@
 // SettingsTab.tsx — the Settings page: one section per settings group, in a section row shaped like
 // Radar's view row. This browser's groups come first — Appearance (System, Dark, Light, and the
 // Catppuccin flavour), Notifications (the two switches and what wakes the device), Devices (the
-// paired ones, with remove), This hub (name, address, version) and Phone (the trust guide in a
+// paired ones, with remove), This hub (name, address, version, and the hub's time zone) and Phone (the trust guide in a
 // sheet) — then Sign-in, Radar's own settings (budgets, notifications, history retention) and
 // Linked channels. Every class comes from the ui components or the tokens.
 
 import { Button } from "@huddle/ui/button.tsx";
+import { Field } from "@huddle/ui/field.tsx";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
 import { Switch } from "@huddle/ui/switch.tsx";
@@ -167,6 +168,119 @@ export function ThisHub(): JSX.Element {
         <ListItem title="Address" meta={<span class="ui-mono break-all">{location.origin}</span>} />
         <ListItem title="Version" meta={<span class="ui-mono">{facts?.version || unknown}</span>} />
       </List>
+    </section>
+  );
+}
+
+/** The hub's display time zone as /api/settings answers it: "" when no browser has seeded it. */
+type HubZone = { zone: string; origin: string };
+
+/** The zone fields of a settings answer, checked at the edge. */
+function zoneOf(r: unknown): HubZone {
+  const o = (r ?? {}) as { zone?: unknown; zone_origin?: unknown };
+  return {
+    zone: typeof o.zone === "string" ? o.zone : "",
+    origin: typeof o.zone_origin === "string" ? o.zone_origin : "",
+  };
+}
+
+/** The IANA zones this browser knows, UTC first; empty where the browser cannot list them. */
+export function browserZones(): string[] {
+  const list = (Intl as { supportedValuesOf?: (key: "timeZone") => string[] }).supportedValuesOf;
+  if (typeof list !== "function") return [];
+  return ["UTC", ...list("timeZone").filter((z) => z !== "UTC")];
+}
+
+/** Settings › This hub › Time zone: the one zone the hub names the owner's day in, seeded from
+ *  the first signed-in browser and said so until the owner picks one. The picker lists the zones
+ *  this browser knows; a browser that lists none gets a typed field with UTC filled in. */
+export function TimeZone({ zones = browserZones() }: { zones?: string[] }): JSX.Element {
+  const { api, toast } = useHuddle();
+  const [held, setHeld] = useState<HubZone | null>(null);
+  const [typed, setTyped] = useState("UTC");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .api("/api/settings")
+      .then((r) => {
+        if (!alive) return;
+        const zone = zoneOf(r);
+        setHeld(zone);
+        if (zone.zone) setTyped(zone.zone);
+      })
+      .catch((e: unknown) => {
+        if (alive) toast(errText(e), { bad: true });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [api]);
+
+  const pick = async (zone: string): Promise<void> => {
+    setBusy(true);
+    try {
+      setHeld(zoneOf(await api.api("/api/settings", { method: "PUT", body: { zone } })));
+    } catch (e) {
+      toast(errText(e), { bad: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const said =
+    held === null
+      ? "Time zone: Loading…"
+      : !held.zone
+        ? "Time zone: not set yet"
+        : held.origin === "first-sign-in"
+          ? `Time zone: ${held.zone} (from your first sign-in)`
+          : `Time zone: ${held.zone}`;
+  // a held zone the browser does not list still shows as the picked option
+  const options = held?.zone && !zones.includes(held.zone) ? [held.zone, ...zones] : zones;
+
+  return (
+    <section aria-labelledby="zone-h" data-hub-zone="" class="flex flex-col gap-3">
+      <h2 id="zone-h" class={HEAD}>
+        {said}
+      </h2>
+      <p class={NOTE}>The hub names the day in this zone. Times are stored in UTC either way.</p>
+      {zones.length > 0 ? (
+        <label class="flex flex-col gap-1.5 text-sm font-semibold">
+          Time zone
+          <select
+            class="ui-input"
+            disabled={held === null || busy}
+            value={held?.zone ?? ""}
+            onChange={(e) => void pick(e.currentTarget.value)}
+          >
+            {held !== null && !held.zone ? <option value="">Pick a zone</option> : null}
+            {options.map((z) => (
+              <option key={z} value={z}>
+                {z}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <div class="flex flex-col gap-2">
+          <Field
+            label="Time zone"
+            value={typed}
+            onInput={setTyped}
+            mono
+            hint="An IANA name such as Europe/Istanbul, or UTC."
+          />
+          <Button
+            class="w-fit"
+            disabled={busy || typed.trim() === ""}
+            onClick={() => void pick(typed.trim())}
+          >
+            Save
+          </Button>
+        </div>
+      )}
     </section>
   );
 }
@@ -484,7 +598,10 @@ export function SettingsTab({ section }: { section: SettingsSection }): JSX.Elem
           {section === "appearance" ? (
             <Appearance />
           ) : section === "hub" ? (
-            <ThisHub />
+            <div class="flex flex-col gap-8">
+              <ThisHub />
+              <TimeZone />
+            </div>
           ) : section === "phone" ? (
             <Phone />
           ) : section === "signin" ? (

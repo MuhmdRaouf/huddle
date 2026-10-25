@@ -125,6 +125,10 @@ walkthrough for the first one:
 A device session rolls forward while you use it and ends after 7 days unused; one code or touch
 starts a fresh one. Removing the device in Settings ends it at once.
 
+The hub keeps one time zone, taken from the first browser that signs in. Settings → This hub shows it
+as "Time zone: Europe/Istanbul (from your first sign-in)"; pick another zone or UTC there. Every
+database stores UTC whatever the zone says.
+
 ## Bring sessions together
 
 A channel is one piece of shared work: every session in it sees the same events, tasks, messages

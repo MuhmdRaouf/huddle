@@ -1,7 +1,8 @@
 // api.ts — the dashboard's HTTP client: JSON in and out, one Error whose message comes from the
 // body's error field, the raw text or the HTTP status, and the signed-out hook when this
-// browser's sign-in has ended. fetch is injected, so tests answer with fakes and a host can
-// wrap credentials around it.
+// browser's sign-in has ended. The browser's time zone rides on every call until an answer names
+// the hub's zone back, so the hub's first signed-in browser seeds its display zone. fetch is
+// injected, so tests answer with fakes and a host can wrap credentials around it.
 
 /** The slice of `fetch` the client needs: a URL, an init, one Response. */
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
@@ -56,10 +57,17 @@ function requestInit(path: string, o: ApiOptions): RequestInit {
   return init;
 }
 
-/** Builds the client over one injected fetch; `onSignedOut` replaces core.js's signed-out page. */
-export function createApi(fetchFn: FetchFn, onSignedOut: () => void): Api {
+/** Builds the client over one injected fetch; `onSignedOut` replaces core.js's signed-out page,
+ *  and `zone` is this browser's IANA time zone, sent as x-huddle-zone until an answer carries
+ *  that header back. */
+export function createApi(fetchFn: FetchFn, onSignedOut: () => void, zone = ""): Api {
+  let unsentZone = zone;
   async function api(path: string, o: ApiOptions = {}): Promise<unknown> {
-    const r = await fetchFn(path, requestInit(path, o));
+    const init = requestInit(path, o);
+    if (unsentZone) (init.headers as Record<string, string>)["x-huddle-zone"] = unsentZone;
+    const r = await fetchFn(path, init);
+    // the server names the hub's zone back once a signed-in request carried this one
+    if (r.headers.has("x-huddle-zone")) unsentZone = "";
     const ct = r.headers.get("content-type") ?? "";
     const j: unknown = ct.includes("json") ? await r.json().catch(() => null) : await r.text();
     if (r.status === 401 && saysSignIn(j)) onSignedOut();

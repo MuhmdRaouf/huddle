@@ -700,19 +700,37 @@ func Route(ctx context.Context, ch *channel.Channel, rest, method, since, as str
 	return nil, false, nil
 }
 
-// Settings answers the server-wide switches: the notifications on or off, the owner's to change.
-func Settings(method string, n *outside.Notifier, me string, body *jsfmt.Value) (outside.State, error) {
-	if method != http.MethodPost {
-		return n.State(), nil
+// SettingsAnswer is the hub's settings: the notify switch and the display time zone.
+type SettingsAnswer struct {
+	outside.State
+	outside.HubZone
+}
+
+// Settings answers the server-wide settings, the owner's to change: a POST turns the
+// notifications on or off, a PUT picks the display time zone.
+func Settings(method string, n *outside.Notifier, z *outside.Zones, me string, body *jsfmt.Value) (SettingsAnswer, error) {
+	if method != http.MethodPost && method != http.MethodPut {
+		return SettingsAnswer{State: n.State(), HubZone: z.Get()}, nil
 	}
 	if me != channel.Owner {
-		return outside.State{}, &channel.HuddleError{
+		return SettingsAnswer{}, &channel.HuddleError{
 			Status: 403, Msg: "only the owner (the dashboard, or the session that started Huddle) changes settings",
 		}
 	}
+	if method == http.MethodPut {
+		zone := objField(body, "zone")
+		if zone == nil || zone.Kind() != jsfmt.KindString {
+			return SettingsAnswer{}, bad("settings: {zone: \"<IANA zone name>\"}")
+		}
+		picked, err := z.Set(strOf(zone))
+		if err != nil {
+			return SettingsAnswer{}, bad(err.Error())
+		}
+		return SettingsAnswer{State: n.State(), HubZone: picked}, nil
+	}
 	notify := objField(body, "notify")
 	if notify == nil || notify.Kind() != jsfmt.KindBool {
-		return outside.State{}, bad("settings: {notify: true|false}")
+		return SettingsAnswer{}, bad("settings: {notify: true|false}")
 	}
-	return n.Set(notify.EncodeJSON() == "true"), nil
+	return SettingsAnswer{State: n.Set(notify.EncodeJSON() == "true"), HubZone: z.Get()}, nil
 }

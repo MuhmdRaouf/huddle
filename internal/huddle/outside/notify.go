@@ -169,24 +169,7 @@ func (n *Notifier) Set(on bool) State {
 	if on {
 		value = "true"
 	}
-	members := readSettings(n.file())
-	replaced := false
-	for i := range members {
-		if members[i].key == notifySetting {
-			members[i].raw = value
-			replaced = true
-		}
-	}
-	if !replaced {
-		members = append(members, settingMember{key: notifySetting, raw: value})
-	}
-	// the write is best effort, like everything here: a read-only data dir stops nothing
-	if err := os.MkdirAll(n.dir, 0o700); err == nil {
-		tmp := fmt.Sprintf("%s.%d.tmp", n.file(), os.Getpid())
-		if err := os.WriteFile(tmp, []byte(renderSettings(members)), 0o600); err == nil {
-			_ = os.Rename(tmp, n.file())
-		}
-	}
+	writeSettings(n.dir, n.file(), putMember(readSettings(n.file()), notifySetting, value))
 	n.mu.Lock()
 	n.cache = &enabledCache{at: n.now(), on: on}
 	n.mu.Unlock()
@@ -332,6 +315,29 @@ func readSettings(path string) []settingMember {
 		return nil
 	}
 	return scanMembers(string(data))
+}
+
+// putMember sets one member's value where it stands, or adds it last.
+func putMember(members []settingMember, key, raw string) []settingMember {
+	for i := range members {
+		if members[i].key == key {
+			members[i].raw = raw
+			return members
+		}
+	}
+	return append(members, settingMember{key: key, raw: raw})
+}
+
+// writeSettings replaces the settings file with members through a temp file in dir. The write
+// is best effort, like everything here: a read-only data dir stops nothing.
+func writeSettings(dir, path string, members []settingMember) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
+	if err := os.WriteFile(tmp, []byte(renderSettings(members)), 0o600); err == nil {
+		_ = os.Rename(tmp, path)
+	}
 }
 
 // renderSettings is the whole file: every member on its own line, two spaces deep, notify last

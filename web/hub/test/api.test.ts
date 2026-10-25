@@ -44,6 +44,36 @@ describe("api", () => {
     expect(onSignedOut).not.toHaveBeenCalled();
   });
 
+  it("sends the browser's zone until an answer names the hub's zone back", async () => {
+    let heard = false;
+    const { calls, fetchFn } = fakeFetch(
+      () =>
+        new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json", ...(heard ? { "x-huddle-zone": "" } : {}) },
+        }),
+    );
+    const { api } = createApi(fetchFn, () => {}, "Europe/Istanbul");
+    const zoneOf = (i: number): string | undefined =>
+      (calls[i]?.init?.headers as Record<string, string> | undefined)?.["x-huddle-zone"];
+    // the sign-in page's own calls answer without a credential: nothing heard the zone
+    await api("/api/login/available");
+    heard = true;
+    await api("/api/whoami");
+    await api("/api/settings");
+    expect(zoneOf(0)).toBe("Europe/Istanbul");
+    expect(zoneOf(1)).toBe("Europe/Istanbul");
+    expect(zoneOf(2)).toBeUndefined();
+  });
+
+  it("sends no zone when the browser names none", async () => {
+    const { calls, fetchFn } = fakeFetch(() => jsonOf({}));
+    const { api } = createApi(fetchFn, () => {});
+    await api("/x");
+    const headers = calls[0]?.init?.headers as Record<string, string> | undefined;
+    expect(headers?.["x-huddle-zone"]).toBeUndefined();
+  });
+
   it("posts a JSON body by default and keeps an explicit method", async () => {
     const { calls, fetchFn } = fakeFetch(() => jsonOf({ done: true }));
     const { api } = createApi(fetchFn, () => {});

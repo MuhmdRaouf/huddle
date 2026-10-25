@@ -7,5 +7,5 @@
   "auth": "root",
   "status": 200,
   "contentType": "application/json",
-  "body": "{\"notify\":true,\"notifier\":\"log\",\"forced_off\":false}"
+  "body": "{\"notify\":true,\"notifier\":\"log\",\"forced_off\":false,\"zone\":\"\",\"zone_origin\":\"\"}"
 }

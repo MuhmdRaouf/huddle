@@ -1,7 +1,8 @@
 // settings.spec.ts — the Settings tab on the phone and the desktop project: its groups in order
 // (Appearance, Notifications, Devices, This hub, Phone, then Sign-in, Radar and Linked channels),
 // the appearance switch that overrides the OS scheme and keeps the choice across a reload, the
-// push switch that says what the browser allows, the hub's own facts, and the phone guide in a
+// push switch that says what the browser allows, the hub's own facts, the hub's time zone (seeded by
+// the first signed-in browser, picked again and kept across a reload), and the phone guide in a
 // sheet. Every group fits the viewport with no horizontal scroll, keeps its tap targets at least
 // 44 px and passes axe.
 
@@ -93,6 +94,23 @@ test.describe("the Settings tab", () => {
     const facts = page.locator("[data-hub-facts]");
     await expect(facts).toContainText(theSetup().rootUrl.replace(/\/$/, ""));
     await expect(facts).toContainText(/\d+\.\d+\.\d+/);
+  });
+
+  test("the hub's time zone is seeded by a signed-in browser and a pick survives a reload", async ({ page }) => {
+    await openSettings(page, "#/settings/hub");
+    const heading = page.locator("#zone-h");
+    const picker = page.getByRole("combobox", { name: "Time zone" });
+    // this browser's first signed-in load sent its zone, so the hub holds one
+    await expect(heading).toHaveText(/^Time zone: [A-Za-z_]+(\/[A-Za-z_+-]+)*( \(from your first sign-in\))?$/);
+    await expect(picker).toBeEnabled();
+    const next = (await picker.inputValue()) === "Asia/Tokyo" ? "Europe/Istanbul" : "Asia/Tokyo";
+    await picker.selectOption(next);
+    await expect(heading).toHaveText(`Time zone: ${next}`);
+    await page.reload();
+    await expect(heading).toHaveText(`Time zone: ${next}`);
+    await expect(page.getByRole("combobox", { name: "Time zone" })).toHaveValue(next);
+    await page.getByRole("combobox", { name: "Time zone" }).selectOption("UTC");
+    await expect(heading).toHaveText("Time zone: UTC");
   });
 
   test("the phone guide opens in a sheet", async ({ page }) => {
