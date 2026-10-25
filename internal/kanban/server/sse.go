@@ -101,8 +101,10 @@ func (h *hub) closeAll() {
 }
 
 // serveEvents answers one /api/events request: the snapshot first, then one
-// delta per change, a reload after each refresh, and a ping comment to keep
-// intermediaries honest.
+// delta per change, a reload after each refresh, and a ping event on the
+// keepalive period. The ping is a named event with data rather than a comment,
+// because EventSource never surfaces a comment: the page counts pings to tell a
+// quiet board from a dead socket.
 func (a *App) serveEvents(w http.ResponseWriter, r *http.Request) {
 	controller := http.NewResponseController(w)
 	header := w.Header()
@@ -148,7 +150,7 @@ func (a *App) serveEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-ping.C:
-			if !write(": ping\n\n") {
+			if !write(frame("ping", "{}")) {
 				return
 			}
 		}

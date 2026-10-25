@@ -40,7 +40,7 @@ const (
 	LastPort  = 18849
 	// defaultEveryMs is the watcher cadence the serve run takes.
 	defaultEveryMs = 300
-	// defaultPingMs is the event stream's comment cadence.
+	// defaultPingMs is the event stream's ping cadence.
 	defaultPingMs = 15_000
 	// defaultGoneMs is how long the board folder may be gone.
 	defaultGoneMs = 10_000

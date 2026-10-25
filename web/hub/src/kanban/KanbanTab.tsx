@@ -3,7 +3,8 @@
 // choice (#/kanban/<key>): a bare #/kanban adopts the first board's, a key the list does not know
 // reads as a gone board. A key change stops the old store's stream before the new one starts, and
 // an unmount stops it for good. The board list asks again on its own after a failure, and again
-// whenever the page turns visible.
+// whenever the page turns visible; the board's stream is replaced when the page turns visible after
+// more than 30 s away, since a phone may resume it on a socket that never delivers again.
 
 import type { JSX } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -12,6 +13,7 @@ import { Board } from "./components/Board.tsx";
 import { BoardPicker } from "./components/BoardPicker.tsx";
 import { Drawer, useDrawerSelection } from "./components/Drawer.tsx";
 import { Toolbar } from "./components/Toolbar.tsx";
+import { resumeOnReturn } from "../shared/watchdog.ts";
 import { boardIo, type BoardRef, fetchBoards } from "./io.ts";
 import {
   backoffMs,
@@ -36,6 +38,9 @@ type BoardsState = { kind: "loading" } | { kind: "failed" } | { kind: "ok"; boar
 
 /** How long one board-list request may run before it counts as failed. */
 const LIST_DEADLINE_MS = 10_000;
+
+/** How long the page may stay hidden before its return replaces the board's stream. */
+const AWAY_MS = 30_000;
 
 /**
  * The board list's loader. Each load aborts the one before it and gets its own deadline. Until a
@@ -116,7 +121,8 @@ function useBoards(): { state: BoardsState; retry: () => void } {
 }
 
 /** The one board's store: built over the io its caller hands in, seeded static when the page
- *  carries an export payload, started once, stopped on an io change or an unmount. */
+ *  carries an export payload, started once, resumed on a return after AWAY_MS hidden, stopped on
+ *  an io change or an unmount. */
 function useBoardStore(io: Io): BoardStore | null {
   const [, setTick] = useState(0);
   const [store, setStore] = useState<BoardStore | null>(null);
@@ -124,9 +130,16 @@ function useBoardStore(io: Io): BoardStore | null {
     const next = new BoardStore(io, staticBoardState(window));
     setStore(next);
     const release = next.subscribe(() => setTick((tick) => tick + 1));
+    const releaseReturn = resumeOnReturn(
+      document,
+      AWAY_MS,
+      () => Date.now(),
+      () => void next.resume(),
+    );
     void next.start();
     return () => {
       release();
+      releaseReturn();
       next.stop();
     };
   }, [io]);

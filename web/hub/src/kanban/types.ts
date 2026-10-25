@@ -90,6 +90,8 @@ export type StreamHandlers = {
   onSnapshot: (snapshot: Snapshot) => void;
   onDelta: (delta: Delta) => void;
   onReload: () => void;
+  /** the server's keepalive frame: no board change, only a sign the socket still delivers */
+  onPing: () => void;
   onOpen: () => void;
   onError: () => void;
 };

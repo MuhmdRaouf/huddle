@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
+import { silenceWatchdog, type Watchdog } from "../shared/watchdog.ts";
 import type {
   Card,
   ColumnId,
@@ -150,6 +151,10 @@ export function backoffMs(attempt: number): number {
   return Math.min(1000 * 2 ** attempt, 8000);
 }
 
+/** How long a live stream may go without a frame before the store replaces it: the server pings
+ *  every 15 s, so this is two missed pings and a margin. */
+export const SILENCE_MS = 40_000;
+
 /** Static mode: the export payload on the window decides it; there is nothing to connect to. */
 export function staticBoardState(win: { __KANBAN__?: StaticBoard } | null | undefined): BoardState | null {
   const board = win?.__KANBAN__;
@@ -265,7 +270,8 @@ export function searchFromFilters(filters: Filters, doneCount = 0): string {
 
 /**
  * The live board: one snapshot fetched, one stream followed. Deltas apply in place; a gap or a reload
- * refetches; a stream error hands the schedule back to our own backoff ladder.
+ * refetches; a stream error hands the schedule back to our own backoff ladder; a stream silent for
+ * SILENCE_MS is replaced, since a half-open socket never errors.
  */
 export class BoardStore {
   private state: BoardState;
@@ -273,6 +279,8 @@ export class BoardStore {
   private stream: Stream | null = null;
   private timer: unknown = null;
   private attempt = 0;
+  private watchdog: Watchdog | null = null;
+  private stopped = false;
   private readonly bodies = new Map<string, { at: string; ticket: Ticket }>();
 
   /** A seed past the live initial state puts the store straight into that mode — the static
@@ -299,34 +307,64 @@ export class BoardStore {
     for (const fn of this.listeners) fn();
   }
 
+  /** Reads the board, then opens the stream; a failed read leaves the opening to the ladder. */
   async start(): Promise<void> {
-    await this.loadSnapshot();
-    this.openStream();
+    if ((await this.loadSnapshot()) && !this.stopped) this.openStream();
   }
 
-  private async loadSnapshot(): Promise<void> {
+  /** Replaces the stream: the dot goes off, the board is read afresh and a new stream opens. The
+   *  watchdog calls it on a silent stream, the tab on a page back from a long time away. */
+  async resume(): Promise<void> {
+    if (this.state.mode !== "live" || this.stopped) return;
+    this.closeStream();
+    if (this.timer !== null) {
+      this.io.clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.attempt = 0;
+    this.state = { ...this.state, connected: false };
+    this.emit();
+    await this.start();
+  }
+
+  /** True once the board is read; a failed read schedules a reconnect and answers false. */
+  private async loadSnapshot(): Promise<boolean> {
     try {
       const snapshot = await this.io.fetchSnapshot();
       this.state = { ...this.state, snapshot };
       this.emit();
+      return true;
     } catch {
       this.scheduleReconnect();
+      return false;
     }
   }
 
   private openStream(): void {
     this.closeStream();
+    if (this.state.mode === "live") {
+      this.watchdog = silenceWatchdog(this.io, SILENCE_MS, () => void this.resume());
+    }
+    // every frame is a sign of life, the ping that carries nothing included
+    const alive = (): void => this.watchdog?.feed();
     this.stream = this.io.connectEvents({
       onSnapshot: (snapshot) => {
+        alive();
         this.attempt = 0;
         this.state = { ...this.state, snapshot, connected: true };
         this.emit();
       },
-      onDelta: (delta) => this.receive(delta),
+      onDelta: (delta) => {
+        alive();
+        this.receive(delta);
+      },
       onReload: () => {
+        alive();
         void this.loadSnapshot();
       },
+      onPing: alive,
       onOpen: () => {
+        alive();
         this.attempt = 0;
         this.state = { ...this.state, connected: true };
         this.emit();
@@ -336,6 +374,8 @@ export class BoardStore {
   }
 
   private closeStream(): void {
+    this.watchdog?.stop();
+    this.watchdog = null;
     this.stream?.close();
     this.stream = null;
   }
@@ -357,6 +397,7 @@ export class BoardStore {
 
   private scheduleReconnect(): void {
     this.closeStream();
+    if (this.stopped) return;
     if (this.timer !== null) this.io.clearTimeout(this.timer);
     const ms = backoffMs(this.attempt);
     this.attempt += 1;
@@ -381,6 +422,7 @@ export class BoardStore {
   /** Stops following: the stream closes and a pending reconnect never fires (a board switch or
    *  a tab unmount, where the store has no owner left to hand the schedule to). */
   stop(): void {
+    this.stopped = true;
     this.closeStream();
     if (this.timer !== null) {
       this.io.clearTimeout(this.timer);

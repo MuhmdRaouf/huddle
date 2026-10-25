@@ -10,7 +10,7 @@ import (
 )
 
 // The event stream: the snapshot first, one delta per change, a reload after a
-// refresh and the ping comment.
+// refresh and the ping event.
 
 // events is one open /api/events connection: its lines arrive on a channel.
 type events struct {
@@ -178,7 +178,7 @@ func TestEvents(t *testing.T) {
 		}
 	})
 
-	t.Run("a ping comment keeps the line warm", func(t *testing.T) {
+	t.Run("a ping event reaches the page within the keepalive period", func(t *testing.T) {
 		b := newBoard(t)
 		app := NewApp(Options{Board: b, Home: t.TempDir(), Version: "test", EveryMs: 25, PingMs: 100})
 		ts := listenApp(t, app)
@@ -186,9 +186,10 @@ func TestEvents(t *testing.T) {
 		if name, _ := e.event(t, 3*time.Second); name != "snapshot" {
 			t.Fatal("the snapshot did not come first")
 		}
-		line := e.next(t, 3*time.Second)
-		if !strings.HasPrefix(line, ":") {
-			t.Fatalf("line = %q, want a comment ping", line)
+		// a named event with data, since EventSource drops comments and data-less events unseen
+		name, data := e.event(t, time.Second)
+		if name != "ping" || data == "" {
+			t.Fatalf("event = %q %q, want a ping with data", name, data)
 		}
 	})
 }

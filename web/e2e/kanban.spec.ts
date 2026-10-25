@@ -8,7 +8,7 @@
 // are.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
@@ -383,6 +383,71 @@ test("while the board list loads, its skeleton paints at full width", async ({ p
   });
 
   release();
+});
+
+/** Moves one ticket between columns of the run's board, the way `kanban move` would. */
+function moveTicket(id: string, from: string, to: string): void {
+  mkdirSync(path.join(boardDir(), to), { recursive: true });
+  renameSync(path.join(boardDir(), from, `${id}.md`), path.join(boardDir(), to, `${id}.md`));
+}
+
+test("a silent stream is replaced when the page returns after more than 30 s away", async ({ page, isMobile }) => {
+  await test.step("Given a board whose stream goes quiet with no error, as a half-open socket does", async () => {
+    // every listener the page adds is wrapped, so the test can swallow the stream's frames while
+    // the source itself stays open and never errors
+    await page.addInitScript(() => {
+      const Real = window.EventSource;
+      const flags = window as unknown as { __silent: boolean };
+      flags.__silent = false;
+      class Silenceable extends Real {
+        override addEventListener(
+          type: string,
+          fn: EventListenerOrEventListenerObject,
+          opts?: boolean | AddEventListenerOptions,
+        ): void {
+          super.addEventListener(
+            type,
+            (event: Event) => {
+              if (flags.__silent) return;
+              if (typeof fn === "function") fn.call(this, event);
+              else fn.handleEvent(event);
+            },
+            opts,
+          );
+        }
+      }
+      window.EventSource = Silenceable as unknown as typeof EventSource;
+    });
+    if (isMobile) await kanbanAt(page, 390, 844);
+    else await kanbanAt(page, 1440, 900);
+    await expect(page.locator('section[data-column="review"] .count').first()).toHaveText("0");
+    await page.evaluate(() => {
+      (window as unknown as { __silent: boolean }).__silent = true;
+    });
+  });
+
+  moveTicket("E2E-2", "ready", "review");
+  try {
+    await test.step("When the page hides, 31 s pass, and it turns visible again", async () => {
+      await page.waitForTimeout(1_000);
+      await page.evaluate(() => {
+        const realNow = Date.now.bind(Date);
+        Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+        Date.now = () => realNow() + 31_000;
+        Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    });
+
+    await test.step("Then the moved card shows within 5 s", async () => {
+      await expect(page.locator('section[data-column="review"] .count').first()).toHaveText("1", {
+        timeout: 5_000,
+      });
+    });
+  } finally {
+    moveTicket("E2E-2", "review", "ready");
+  }
 });
 
 test.describe("the board on a phone", () => {

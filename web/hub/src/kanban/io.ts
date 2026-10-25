@@ -33,11 +33,12 @@ function connectEvents(url: string, handlers: StreamHandlers): Stream {
     source.close();
     handlers.onError();
   };
-  for (const name of ["snapshot", "delta", "reload"] as const) {
+  for (const name of ["snapshot", "delta", "reload", "ping"] as const) {
     source.addEventListener(name, (event: MessageEvent<string>) => {
       if (name === "snapshot") handlers.onSnapshot(JSON.parse(event.data));
       else if (name === "delta") handlers.onDelta(JSON.parse(event.data));
-      else handlers.onReload();
+      else if (name === "reload") handlers.onReload();
+      else handlers.onPing();
     });
   }
   return { close: () => source.close() };

@@ -94,6 +94,7 @@ describe("staticIo", () => {
       onSnapshot: () => fired.push("snapshot"),
       onDelta: () => fired.push("delta"),
       onReload: () => fired.push("reload"),
+      onPing: () => fired.push("ping"),
       onOpen: () => fired.push("open"),
       onError: () => fired.push("error"),
     });
@@ -120,7 +121,7 @@ describe("boardIo", () => {
     await expect(io.fetchTicket("KBN-UI")).rejects.toThrow("api/tickets/KBN-UI: 404");
   });
 
-  it("wires the events stream: open, snapshot, delta, reload, and an error closing the source", () => {
+  it("wires the events stream: open, snapshot, delta, reload, ping, and an error closing the source", () => {
     const seen: string[] = [];
     const listeners = new Map<string, (event: { data: string }) => void>();
     const made: { onopen: (() => void) | null; onerror: (() => void) | null }[] = [];
@@ -143,17 +144,19 @@ describe("boardIo", () => {
       onSnapshot: () => seen.push("snapshot"),
       onDelta: () => seen.push("delta"),
       onReload: () => seen.push("reload"),
+      onPing: () => seen.push("ping"),
       onOpen: () => seen.push("open"),
       onError: () => seen.push("error"),
     };
     const stream = boardIo("k1").connectEvents(handlers);
     expect(seen).toEqual(["/api/kanban/b/k1/api/events"]);
-    // the source's own callbacks and its three named events reach the store's handlers
+    // the source's own callbacks and its four named events reach the store's handlers
     made[0]?.onopen?.();
     made[0]?.onerror?.();
     listeners.get("snapshot")?.({ data: "{}" });
     listeners.get("delta")?.({ data: "{}" });
     listeners.get("reload")?.({ data: "" });
+    listeners.get("ping")?.({ data: "{}" });
     // the error handler closes the source at once, then hands the decision to the store
     expect(seen).toEqual([
       "/api/kanban/b/k1/api/events",
@@ -163,6 +166,7 @@ describe("boardIo", () => {
       "snapshot",
       "delta",
       "reload",
+      "ping",
     ]);
     stream.close();
     expect(seen[seen.length - 1]).toBe("closed");
