@@ -614,6 +614,8 @@ test("the inspector attaches no history to a call the transcript holds no copy o
   await expect(sheet.getByText("The transcript holds no copy of this call.")).toBeVisible();
   await expect(sheet.locator(".ctx-msg")).toHaveCount(0);
   await expect(sheet.locator("[data-context-totals]")).toHaveCount(0);
+});
+
 /** Radar's stream as the hub serves it. */
 const RADAR_STREAM = "/api/radar/api/stream";
 
