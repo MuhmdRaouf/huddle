@@ -70,7 +70,7 @@ type hookEdit interface {
 }
 
 // hookEdits is the hook edit per harness. Every harness this package wires has one, so a
-// name ByName answers always finds its edit here; omp's is noHooks.
+// name ByName answers always finds its edit here; omp's and pi's are noHooks.
 var hookEdits = map[string]hookEdit{
 	"codex":    tomlHooks{},
 	"gemini":   jsonHooks{name: "gemini", parent: "hooks", timeout: 3000, hookEvents: geminiHookEvents, grouped: true},
@@ -78,6 +78,7 @@ var hookEdits = map[string]hookEdit{
 	"crush":    jsonHooks{name: "crush", parent: "hooks", timeout: 3, hookEvents: crushHookEvents},
 	"opencode": pluginHooks{},
 	"omp":      noHooks{},
+	"pi":       noHooks{},
 }
 
 // hookFor answers the named harness's hook edit.
@@ -381,8 +382,8 @@ func (j jsonHooks) fresh(bin string) []byte {
 	return append(out, '\n')
 }
 
-// noHooks is the edit of a harness huddle wires no hooks into: omp runs its hooks as
-// TypeScript extensions, and huddle ships none for it.
+// noHooks is the edit of a harness huddle wires no hooks into: omp and pi run their hooks as
+// TypeScript extensions, and huddle ships none for them.
 type noHooks struct{}
 
 func (noHooks) events() []HookEvent                                { return nil }

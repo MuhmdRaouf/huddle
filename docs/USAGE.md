@@ -235,11 +235,11 @@ itself in ([README · Other agents](../README.md#other-agents) has what each ins
 
 ```sh
 huddle harness list             # installed, available or absent, per harness
-huddle harness install codex    # or gemini, qwen, opencode, crush, omp
+huddle harness install codex    # or gemini, qwen, opencode, crush, omp, pi
 huddle harness remove codex     # config back to its previous bytes
 ```
 
-The names are exactly `codex`, `gemini`, `qwen`, `opencode`, `crush` and `omp` (exit 4 names nothing
+The names are exactly `codex`, `gemini`, `qwen`, `opencode`, `crush`, `omp` and `pi` (exit 4 names nothing
 else). Install adds the MCP entry plus the harness's own lifecycle hooks, so its sessions sit in
 the Now list beside Claude Code's, badged by agent; a hook posts to the local hub inside a 3
 second deadline and never blocks its agent. For codex, install also adds an opt-in model
@@ -258,7 +258,13 @@ with your own key or login, and need the router up. A `models.yml` that already 
 `http://127.0.0.1:<router port>/gateway/v1` and the header `X-Huddle-Harness: opencode` names
 opencode in radar. opencode's Anthropic requests then go through the gateway over plain HTTP on
 loopback with your own key, and need the router up. An `opencode.json` that already configures
-`anthropic` stays as it is, the same way. Every change is recorded in
+`anthropic` stays as it is, the same way. For pi, install writes the `huddle` server into
+`~/.pi/agent/mcp.json` with a 120 second request timeout, and no hooks. It also adds
+`providers.anthropic` to `~/.pi/agent/models.json`: `baseUrl` is the router's
+`http://127.0.0.1:<router port>/gateway` and the header `X-Huddle-Harness: pi` names pi in
+radar. pi keeps its own anthropic models, and their requests go through the gateway over plain
+HTTP on loopback with your own key, and need the router up. A `models.json` that
+already configures `anthropic` stays as it is, the same way. Every change is recorded in
 `~/.config/huddle/harness-ledger.json` (or `$HUDDLE_HOME/harness-ledger.json`) and undone exactly
 by `remove`.
 

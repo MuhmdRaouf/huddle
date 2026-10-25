@@ -1,5 +1,5 @@
 // Package harness wires huddle's MCP server into the other coding agents on this machine:
-// Codex CLI, Gemini CLI, Qwen Code, opencode, Crush and omp. Every adapter is a pure edit over the
+// Codex CLI, Gemini CLI, Qwen Code, opencode, Crush, omp and pi. Every adapter is a pure edit over the
 // harness's config bytes, so install and remove round-trip a config byte for byte, and the one
 // file-touching path (Install, Remove) records every change in the huddle home's ledger so
 // remove undoes exactly what install did. Install also wires each agent's own lifecycle hooks
@@ -90,7 +90,7 @@ type Adapter interface {
 }
 
 // adapters is every harness this package wires, in list order.
-var adapters = []Adapter{codex, gemini, qwen, opencode, crush, omp}
+var adapters = []Adapter{codex, gemini, qwen, opencode, crush, omp, pi}
 
 // Names answers the harness names in list order.
 func Names() []string {

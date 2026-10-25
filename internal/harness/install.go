@@ -37,7 +37,8 @@ type RemoveResult struct {
 // Install wires the entries into the named harness's config file — the MCP server, and the
 // lifecycle hooks where the harness has a mechanism for them — plus the gateway routing where
 // the harness reads a provider base URL from a file (omp's models.yml, opencode's
-// opencode.json) and the entry names a gateway, and records each change in the ledger. A malformed config is refused before anything is written.
+// opencode.json, pi's models.json) and the entry names a gateway, and records each change in
+// the ledger. A malformed config is refused before anything is written.
 func Install(ctx context.Context, hudHome string, env Env, name string, entry Entry) (InstallResult, error) {
 	a, err := ByName(name)
 	if err != nil {
@@ -81,8 +82,8 @@ func Install(ctx context.Context, hudHome string, env Env, name string, entry En
 }
 
 // routing is one harness's model-provider edit that points it at the router's gateway: a file
-// of its own beside the MCP config (omp's models.yml) or a second edit of the same file
-// (opencode's provider). The ledger keeps its record under ledgerName.
+// of its own beside the MCP config (omp's models.yml, pi's models.json) or a second edit of
+// the same file (opencode's provider). The ledger keeps its record under ledgerName.
 type routing interface {
 	ConfigPath(env Env) string
 	Install(cfg []byte, entry Entry) ([]byte, error)
@@ -91,7 +92,7 @@ type routing interface {
 }
 
 // routings is the routing edit per harness whose model provider names a base URL in a file.
-var routings = map[string]routing{"omp": ompRouting, "opencode": openCodeRouting}
+var routings = map[string]routing{"omp": ompRouting, "opencode": openCodeRouting, "pi": piRouting}
 
 // installRouting writes the routing edit into the harness's routing file and records the
 // change under the file's own ledger name, so remove can tell a file it created.
@@ -136,7 +137,7 @@ func removeRouting(hudHome string, env Env, routing routing, entry Entry) error 
 		case errors.Is(err, ErrEntryChanged):
 		case err != nil:
 			return &MalformedError{Path: path, Err: err}
-		case hasRecord && record.Created && len(bytes.TrimSpace(out)) == 0:
+		case hasRecord && record.Created && (len(bytes.TrimSpace(out)) == 0 || jsonEmptyObject(out)):
 			if err := os.Remove(path); err != nil {
 				return err
 			}

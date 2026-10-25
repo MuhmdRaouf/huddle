@@ -39,7 +39,7 @@ serves, and delegate verified background jobs to them. Each has its own README u
 | Sign in, with a code, a passkey or a phone | [Signing in](#signing-in) |
 | Read costs and requests | [Radar](#radar) |
 | Work a kanban board from sessions | [Kanban](#kanban) |
-| Connect Codex, Gemini, Qwen, opencode, crush or omp | [Other agents](#other-agents) |
+| Connect Codex, Gemini, Qwen, opencode, crush, omp or pi | [Other agents](#other-agents) |
 | Run a hub on a local name | [A local name](#a-local-name) |
 | Develop on Huddle | [Development](#development) · [Test plan](docs/TESTPLAN.md) · [Decisions](docs/DECISIONS.md) |
 
@@ -190,10 +190,10 @@ huddle harness install <name>    # add huddle's MCP server, and the harness's ow
 huddle harness remove <name>     # take both out again, the config back to its previous bytes
 ```
 
-The names: `codex` (Codex CLI), `gemini` (Gemini CLI), `qwen` (Qwen Code), `opencode`, `crush` and `omp`
-(oh-my-pi). Every change
+The names: `codex` (Codex CLI), `gemini` (Gemini CLI), `qwen` (Qwen Code), `opencode`, `crush`, `omp`
+(oh-my-pi) and `pi`. Every change
 is recorded in `$HUDDLE_HOME/harness-ledger.json` and undone exactly by `remove`; an entry you edited by hand
-stays, and remove says so. Install also wires each harness's own hooks (omp gets none), so its sessions sit in the hub's Now
+stays, and remove says so. Install also wires each harness's own hooks (omp and pi get none), so its sessions sit in the hub's Now
 list next to Claude Code's, badged by agent. A hook never blocks: it posts to the local hub and answers in
 silence, inside a short deadline.
 
@@ -202,6 +202,7 @@ silence, inside a short deadline.
 | `codex` | `[mcp_servers.huddle]` in `~/.codex/config.toml` (`$CODEX_HOME` moves it) | An opt-in `[model_providers.huddle]`: `codex -c model_provider=huddle` sends the Responses API to `http://127.0.0.1:18786/gateway/v1` with your `OPENAI_API_KEY`, named `codex` in radar. Plain HTTP on loopback, so no CA; your default provider and `openai_base_url` stay as they are |
 | `opencode` | `mcp.huddle` in `~/.config/opencode/opencode.json` (`$XDG_CONFIG_HOME` moves it), with a 120 s request timeout so a `wait` outlasts its long poll | `provider.anthropic.options` in the same file: `baseURL` `http://127.0.0.1:18786/gateway/v1` and the header `X-Huddle-Harness: opencode`, so opencode's Anthropic requests go through the router with your own key, named `opencode` in radar. Plain HTTP on loopback, so no proxy and no CA. An `opencode.json` that already configures `anthropic` is left as it is, and install says so |
 | `omp` | `mcpServers.huddle` in `~/.omp/agent/mcp.json` (`$PI_CODING_AGENT_DIR` or `$PI_CONFIG_DIR` moves it), which omp reads before the servers it imports from Claude Code or Codex | `providers.anthropic` in `~/.omp/agent/models.yml`, between `# huddle:begin` and `# huddle:end`: `baseUrl` `http://127.0.0.1:18786/gateway` and the header `X-Huddle-Harness: omp`, so omp's Anthropic requests go through the router with your own key or login, named `omp` in radar. Plain HTTP on loopback, so no proxy and no CA. A `models.yml` that already configures `anthropic` is left as it is, and install says so |
+| `pi` | `mcpServers.huddle` in `~/.pi/agent/mcp.json` (`$PI_CODING_AGENT_DIR` moves it), with a 120 s request timeout so a `wait` outlasts its long poll; pi runs it ahead of any extension's server of the same name | `providers.anthropic` in `~/.pi/agent/models.json`: `baseUrl` `http://127.0.0.1:18786/gateway` and the header `X-Huddle-Harness: pi`, so pi's Anthropic requests go through the router with your own key, named `pi` in radar; pi's own anthropic models stay listed. Plain HTTP on loopback, so no proxy and no CA. A `models.json` that already configures `anthropic` is left as it is, and install says so |
 
 ### The MCP surface
 

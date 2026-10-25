@@ -392,3 +392,111 @@ func jsonEqual(a, b []byte) bool {
 	}
 	return left.EncodeJSON() == right.EncodeJSON()
 }
+
+// — the provider edit: opencode's and pi's route to the router's gateway.
+
+// providerEdit splices huddle's anthropic provider record into one parent object of a JSON
+// config (opencode's provider, pi's providers) and back out, every other byte where it was.
+// The record names the gateway as the provider's base URL and the harness in a header.
+type providerEdit struct {
+	ledger string // the ledger record's name
+	parent string // the object the record lives under
+	path   func(Env) string
+	build  func(Entry) ([]byte, error)
+	ours   func(raw []byte, entry Entry) bool // the record is one huddle wrote, whatever gateway it names
+}
+
+// ConfigPath answers the file the record goes into.
+func (p providerEdit) ConfigPath(env Env) string { return p.path(env) }
+
+func (p providerEdit) ledgerName() string { return p.ledger }
+
+// Install answers the config with huddle's anthropic provider in it: added when there is none,
+// rewritten when it is ours on another gateway. An anthropic provider of the user's own is
+// ErrProviderTaken, and nothing is written. A file that is not there yet gets the record alone,
+// indented the way a human would read it.
+func (p providerEdit) Install(cfg []byte, entry Entry) ([]byte, error) {
+	want, err := p.build(entry)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return p.fresh(want)
+	}
+	if err := jsonCheck(cfg); err != nil {
+		return nil, err
+	}
+	parent, err := jsonFind(cfg, 0, p.parent)
+	if err != nil {
+		return nil, err
+	}
+	if parent == nil {
+		return jsonInsertMember(cfg, 0, fmt.Sprintf(`%q:{"anthropic":%s}`, p.parent, want))
+	}
+	members, _, err := jsonMembers(cfg, parent.value.start)
+	if err != nil {
+		return nil, fmt.Errorf("the %s member is not a JSON object", p.parent)
+	}
+	mine := jsonMemberNamed(members, "anthropic")
+	switch {
+	case mine == nil:
+		return jsonInsertMember(cfg, parent.value.start, `"anthropic":`+string(want))
+	case jsonEqual(cfg[mine.value.start:mine.value.end], want):
+		return cfg, nil
+	case p.ours(cfg[mine.value.start:mine.value.end], entry):
+		return jsonReplaceValue(cfg, *mine, string(want)), nil
+	}
+	return nil, ErrProviderTaken
+}
+
+// Remove answers the config with huddle's anthropic provider gone, and the parent object with
+// it when nothing else is left in it. A provider that is not ours is ErrEntryChanged, and the
+// bytes come back untouched.
+func (p providerEdit) Remove(cfg []byte, entry Entry) ([]byte, error) {
+	if err := jsonCheck(cfg); err != nil {
+		return nil, err
+	}
+	parent, err := jsonFind(cfg, 0, p.parent)
+	if err != nil {
+		return nil, err
+	}
+	if parent == nil {
+		return cfg, ErrEntryChanged
+	}
+	members, _, err := jsonMembers(cfg, parent.value.start)
+	if err != nil {
+		return nil, fmt.Errorf("the %s member is not a JSON object", p.parent)
+	}
+	want, err := p.build(entry)
+	if err != nil {
+		return nil, err
+	}
+	mine := jsonMemberNamed(members, "anthropic")
+	if mine == nil || !jsonEqual(cfg[mine.value.start:mine.value.end], want) {
+		return cfg, ErrEntryChanged
+	}
+	next := jsonCutMember(cfg, *mine)
+	if inner, _, err := jsonMembers(next, parent.value.start); err == nil && len(inner) == 0 {
+		if table, err := jsonFind(next, 0, p.parent); err == nil && table != nil {
+			next = jsonCutMember(next, *table)
+		}
+	}
+	return next, nil
+}
+
+// fresh answers the document install creates: the parent with the one record in it.
+func (p providerEdit) fresh(record []byte) ([]byte, error) {
+	doc := map[string]map[string]json.RawMessage{p.parent: {"anthropic": record}}
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(out, '\n'), nil
+}
+
+// jsonEmptyObject answers whether a document is an object with no members: what a file the
+// provider edit created looks like once the record is cut out.
+func jsonEmptyObject(cfg []byte) bool {
+	members, _, err := jsonMembers(cfg, 0)
+	return err == nil && len(members) == 0
+}
