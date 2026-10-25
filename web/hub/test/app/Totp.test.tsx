@@ -8,7 +8,7 @@ import type { JSX } from "preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api, ApiError } from "../../src/api.ts";
 import { AuthenticatorCard, bioLabel, PasskeyOffer, TotpFirstRun, TotpSetup } from "../../src/app/Totp.tsx";
-import { flush, makeCtx, makeState, renderIn } from "../helpers.tsx";
+import { flush, legacyClasses, makeCtx, makeState, renderIn } from "../helpers.tsx";
 
 /** The begin answer a hub sends: the URI, the secret, and a small QR (a finder pattern in one
  *  corner, dark modules spelled as 1). */
@@ -124,8 +124,8 @@ describe("the authenticator set-up", () => {
     expect(screen.getByText("abcd-efgh")).toBeDefined();
     expect(screen.queryByRole("img", { name: "Authenticator QR code" })).toBeNull();
     const continueBtn = screen.getByRole("button", { name: "I saved them, continue" });
-    expect(continueBtn.className).toContain("btn-primary");
-    expect(screen.getByRole("button", { name: "Copy" }).className).not.toContain("btn-primary");
+    expect(continueBtn.className).toContain("ui-btn-primary");
+    expect(screen.getByRole("button", { name: "Copy" }).className).toContain("ui-btn-secondary");
     await act(async () => {
       continueBtn.click();
     });
@@ -349,5 +349,71 @@ describe("the passkey offer's failures", () => {
     await flush();
     expect(screen.getByText(/the hub refused/)).toBeDefined();
     expect(onDone).not.toHaveBeenCalled();
+  });
+});
+
+describe("the authenticator's tokens", () => {
+  /** Every daisyUI or legacy class under root, past the parts other files paint: the shared Dialog's
+   *  head and the step-up sheet Needs.tsx lends. */
+  const lent = ".dlg-h, [data-stepup]";
+  const leftovers = (root: ParentNode = document.body): string[] => {
+    const daisy = [...root.querySelectorAll("[class]")]
+      .filter((el) => el.closest(lent) === null)
+      .flatMap((el) => (el.getAttribute("class") ?? "").split(/\s+/))
+      .filter((c) => /^(input(-.+)?|font-mono)$/.test(c));
+    return [...legacyClasses(root, lent), ...daisy];
+  };
+
+  it("paints the set-up's code stage and its recovery stage from the tokens", async () => {
+    const h = mount(() => <TotpSetup onDone={() => {}} />, { "/api/totp/begin": BEGUN });
+    await flush();
+    expect(leftovers()).toEqual([]);
+    expect((document.querySelector("[data-secret]") as HTMLElement).className).toContain(
+      "bg-[var(--ui-surface-2)]",
+    );
+    h.answer("/api/totp/finish", { recovery: ["abcd-efgh", "ijkl-mnop"] });
+    typeCode("498123");
+    await flush();
+    expect(leftovers()).toEqual([]);
+    expect((document.querySelector("[data-recovery]") as HTMLElement).className).toContain(
+      "bg-[var(--ui-surface-2)]",
+    );
+    for (const name of ["Copy", "Download .txt", "I saved them, continue"])
+      expect(screen.getByRole("button", { name }).className).toContain("ui-btn");
+  });
+
+  it("paints the first-run page from the tokens", async () => {
+    mount(() => <TotpFirstRun onDone={() => {}} onLater={() => {}} />, { "/api/totp/begin": BEGUN });
+    await flush();
+    expect(leftovers()).toEqual([]);
+  });
+
+  it("paints the settings row in both states from the tokens", async () => {
+    mount(() => <AuthenticatorCard enrolled onChanged={() => {}} />);
+    await flush();
+    expect(leftovers()).toEqual([]);
+    expect(screen.getByRole("button", { name: "Remove" }).className).toContain("ui-btn ui-btn-danger");
+    expect((document.querySelector("[data-totp-row]") as HTMLElement).className).toContain(
+      "border-[var(--ui-line)]",
+    );
+    mount(() => <AuthenticatorCard enrolled={false} onChanged={() => {}} />);
+    await flush();
+    expect(leftovers()).toEqual([]);
+    expect(screen.getByRole("button", { name: "Set up" }).className).toContain("ui-btn ui-btn-primary");
+  });
+
+  it("paints the passkey offer and its error from the tokens", async () => {
+    mount(() => <PasskeyOffer open onDone={() => {}} onClose={() => {}} />, {
+      "/api/passkey/begin": new Error("refused"),
+    });
+    await flush();
+    await act(async () => {
+      screen.getByRole("button", { name: "Turn on" }).click();
+    });
+    await flush();
+    expect(screen.getByRole("alert").className).toContain("text-[var(--ui-fail-ink)]");
+    expect(leftovers()).toEqual([]);
+    for (const name of ["Not now", "Turn on"])
+      expect(screen.getByRole("button", { name }).className).toContain("ui-btn");
   });
 });

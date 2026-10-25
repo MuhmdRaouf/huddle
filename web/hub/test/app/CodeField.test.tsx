@@ -122,3 +122,14 @@ describe("the code field's edges", () => {
     expect(word(boxes)).toEqual(["9", "", "", "", "", ""]);
   });
 });
+
+describe("the code field's tokens", () => {
+  it("paints the six boxes as ui fields and the refusal in the fail ink", () => {
+    const boxes = mount({ error: "That code did not work." });
+    for (const box of boxes) {
+      expect(box.className.split(/\s+/)).toContain("ui-input");
+      expect(box.className.split(/\s+/)).not.toContain("input");
+    }
+    expect(screen.getByRole("alert").className).toBe("m-0 text-sm text-[var(--ui-fail-ink)]");
+  });
+});

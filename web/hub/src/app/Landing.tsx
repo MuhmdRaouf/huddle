@@ -174,7 +174,7 @@ function TourLightbox({
           alt={`${label} tab`}
           width="1440"
           height="750"
-          class="block w-full rounded-lg border hairline"
+          class="block w-full rounded-[var(--ui-radius)] border border-[var(--ui-line)]"
         />
         <p class={`m-0 text-sm ${MUTED}`}>{sentence}</p>
         <div class="flex items-center justify-between">

@@ -97,14 +97,14 @@ export function CodeField({
 
   return (
     <div class="flex flex-col gap-1.5" data-code-field="">
-      <div class="flex gap-2" role="group" aria-label={label}>
+      <div class="flex max-w-[22rem] gap-2" role="group" aria-label={label}>
         {digits.map((d, i) => (
           <input
             key={i}
             ref={(el) => {
               boxes.current[i] = el;
             }}
-            class="input h-12 w-12 min-w-0 text-center font-mono text-lg tracking-widest disabled:opacity-60"
+            class="ui-input ui-mono h-12 min-w-0 text-center disabled:opacity-60"
             type="text"
             inputmode="numeric"
             autocomplete={i === 0 ? autocomplete : "off"}
@@ -126,7 +126,7 @@ export function CodeField({
         ))}
       </div>
       {error ? (
-        <p role="alert" class="m-0 text-sm text-error">
+        <p role="alert" class="m-0 text-sm text-[var(--ui-fail-ink)]">
           {error}
         </p>
       ) : null}

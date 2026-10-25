@@ -251,6 +251,46 @@ describe("the landing page's frame", () => {
   });
 });
 
+describe("the landing page's tokens", () => {
+  /** The daisyUI classes legacyClasses leaves to each page: the form field, the key cap, the dot. */
+  const DAISY = /^(input(-.+)?|kbd(-.+)?|status(-.+)?|bg-line)$/;
+  const daisy = (root: ParentNode): string[] =>
+    [...root.querySelectorAll("[class]")]
+      .flatMap((el) => (el.getAttribute("class") ?? "").split(/\s+/))
+      .filter((c) => DAISY.test(c));
+
+  it("paints the sign-in card, its code field and its disclosure from the tokens", async () => {
+    mount({ available: { passkeys: true, totp: true } });
+    await flush();
+    const card = document.querySelector("[data-landing-signin]") as HTMLElement;
+    expect(legacyClasses(card)).toEqual([]);
+    expect(daisy(card)).toEqual([]);
+    for (const box of screen.getAllByRole("textbox")) expect(box.className).toContain("ui-input");
+  });
+
+  it("paints the tour's lightbox picture with the line token", async () => {
+    mount();
+    await act(async () => {
+      screen.getByRole("button", { name: "Kanban: open the tour step" }).click();
+    });
+    await flush();
+    const box = document.querySelector("[data-tour-box]") as HTMLElement;
+    expect(legacyClasses(box)).toEqual([]);
+    expect(box.querySelector("img")?.className).toContain("border-[var(--ui-line)]");
+  });
+
+  it("paints the start-a-session guide in its sheet from the tokens", async () => {
+    mount();
+    await act(async () => {
+      screen.getByRole("button", { name: "Start a session" }).click();
+    });
+    const sheet = document.querySelector("dialog.ui-sheet") as HTMLElement;
+    expect(legacyClasses(sheet)).toEqual([]);
+    expect(daisy(sheet)).toEqual([]);
+    expect(screen.getByRole("link", { name: /Full guide/ }).className).toBe("ui-btn ui-btn-ghost");
+  });
+});
+
 describe("the landing page's sign-in", () => {
   it("posts a code and marks the shell for the passkey offer", async () => {
     const h = mount({ available: { totp: true } });

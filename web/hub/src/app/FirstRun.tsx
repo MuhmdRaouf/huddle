@@ -27,14 +27,14 @@ function PasskeyRow({
   onClose: () => void;
 }): JSX.Element {
   return (
-    <div class="flex flex-col gap-1 border-b hairline pb-2" data-banner="passkey">
+    <div class="flex flex-col gap-1 border-b border-[var(--ui-line)] pb-2" data-banner="passkey">
       <div class="flex min-h-[var(--ui-tap)] items-center gap-2.5">
-        <span class="shrink-0 text-primary">
+        <span class="shrink-0 text-[var(--ui-accent)]">
           <Icon name="key" />
         </span>
         <div class="min-w-0 flex-1">
           <p class="m-0 text-sm">Save a passkey</p>
-          <p class="m-0 text-xs muted">Touch ID signs you in next time.</p>
+          <p class="m-0 text-xs text-[var(--ui-muted)]">Touch ID signs you in next time.</p>
         </div>
         <button
           type="button"
@@ -47,7 +47,7 @@ function PasskeyRow({
         </button>
         <button
           type="button"
-          class="ui-btn ui-btn-ghost ui-btn-icon muted shrink-0"
+          class="ui-btn ui-btn-ghost ui-btn-icon shrink-0"
           aria-label="Dismiss"
           onClick={onClose}
         >
@@ -55,7 +55,7 @@ function PasskeyRow({
         </button>
       </div>
       {error ? (
-        <p role="alert" class="m-0 pl-7 text-sm text-error">
+        <p role="alert" class="m-0 pl-7 text-sm text-[var(--ui-fail-ink)]">
           {error}
         </p>
       ) : null}
@@ -68,7 +68,9 @@ function ItemMark({ done }: { done: boolean }): JSX.Element {
   return (
     <span
       class={`inline-flex size-5 shrink-0 items-center justify-center rounded-full border ${
-        done ? "border-success bg-success/15 text-success" : "hairline text-base-content/40"
+        done
+          ? "border-[var(--ui-ok)] bg-[var(--ui-ok-soft)] text-[var(--ui-ok-ink)]"
+          : "border-[var(--ui-line-strong)] text-[var(--ui-muted)]"
       }`}
       aria-hidden="true"
     >
@@ -158,15 +160,18 @@ export function FirstRunChecklist({
     <section
       aria-labelledby="firstrun-h"
       data-first-run=""
-      class="mx-3 mt-3 flex flex-col gap-1 rounded-[14px] border hairline bg-base-100 px-3.5 py-2"
+      class="mx-3 mt-3 flex flex-col gap-1 rounded-[var(--ui-radius-lg)] border border-[var(--ui-line)] bg-[var(--ui-surface)] px-3.5 py-2"
     >
       <div class="flex items-center justify-between gap-3">
-        <h2 id="firstrun-h" class="m-0 text-[13px] font-semibold tracking-[0.06em] uppercase muted">
+        <h2
+          id="firstrun-h"
+          class="m-0 text-[13px] font-semibold tracking-[0.06em] uppercase text-[var(--ui-muted)]"
+        >
           Get set up
         </h2>
         <button
           type="button"
-          class="ui-btn ui-btn-ghost muted -mr-2"
+          class="ui-btn ui-btn-ghost -mr-2"
           onClick={() => {
             writePref(localStorage, "first-run", true);
             setDismissed(true);
@@ -182,18 +187,20 @@ export function FirstRunChecklist({
             {item.done ? (
               <div class="flex min-h-[var(--ui-tap)] items-center gap-2.5">
                 <ItemMark done />
-                <span class="min-w-0 flex-1 truncate text-sm muted line-through">{item.label}</span>
+                <span class="min-w-0 flex-1 truncate text-sm text-[var(--ui-muted)] line-through">
+                  {item.label}
+                </span>
                 <span class="sr-only">done</span>
               </div>
             ) : (
               <a
-                class="-mx-2 flex min-h-[var(--ui-tap)] items-center gap-2.5 rounded-lg px-2 text-sm hover:bg-base-200"
+                class="-mx-2 flex min-h-[var(--ui-tap)] items-center gap-2.5 rounded-[var(--ui-radius)] px-2 text-sm hover:bg-[var(--ui-surface-2)]"
                 href={item.href}
               >
                 <ItemMark done={false} />
                 <span class="min-w-0 flex-1 truncate">{item.label}</span>
                 <span class="sr-only">to do</span>
-                <Icon name="right" class="size-4 shrink-0 muted" />
+                <Icon name="right" class="size-4 shrink-0 text-[var(--ui-muted)]" />
               </a>
             )}
           </li>

@@ -15,6 +15,9 @@ type Stage = "name" | "code" | "cancelled";
 /** What a begin answers: the creation options, the code both sides compare and the link's life. */
 type BeginAnswer = { options?: unknown; code?: string; expires_in?: number };
 
+/** The one column every stage stands in: a phone's width, its actions pinned to its foot. */
+const COLUMN = "mx-auto flex w-full max-w-md flex-1 flex-col gap-6 pt-10";
+
 /** A link's remaining life as the design shows it: minutes and seconds. */
 function expiresLabel(expiresIn: number): string {
   const m = Math.max(0, Math.floor(expiresIn / 60));
@@ -25,9 +28,21 @@ function expiresLabel(expiresIn: number): string {
 /** The one check icon the design puts before every promise the pairing makes. */
 function Tick(): JSX.Element {
   return (
-    <span class="mt-0.5 shrink-0 text-success" aria-hidden="true">
+    <span class="mt-0.5 shrink-0 text-[var(--ui-ok-ink)]" aria-hidden="true">
       <Icon name="check" />
     </span>
+  );
+}
+
+/** A stage the ceremony cannot go on from: the logo and the one line that says what to run. */
+function DeadEnd({ text }: { text: string }): JSX.Element {
+  return (
+    <main data-pair="" class="ui-page flex flex-col">
+      <div class="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-4 text-center">
+        <Logo />
+        <h1 class="m-0 text-[length:var(--ui-text-xl)] leading-tight font-semibold">{text}</h1>
+      </div>
+    </main>
   );
 }
 
@@ -100,134 +115,112 @@ export function Pair({
   };
 
   if (!token) {
-    return (
-      <main
-        data-pair=""
-        class="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center"
-      >
-        <Logo />
-        <h1 class="text-2xl font-semibold">This link is incomplete. Run `huddle pair` again.</h1>
-      </main>
-    );
+    return <DeadEnd text="This link is incomplete. Run `huddle pair` again." />;
   }
 
   if (stage === "cancelled") {
-    return (
-      <main
-        data-pair=""
-        class="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center"
-      >
-        <Logo />
-        <h1 class="text-2xl font-semibold">Pairing cancelled. Run `huddle pair` again on your computer.</h1>
-      </main>
-    );
+    return <DeadEnd text="Pairing cancelled. Run `huddle pair` again on your computer." />;
   }
 
   const head = (
     <>
       <div class="flex items-center gap-2.5">
-        <span class="flex size-10 items-center justify-center rounded-xl bg-base-200 text-primary">
+        <span class="flex size-10 items-center justify-center rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] text-[var(--ui-accent)]">
           <Logo class="size-6" />
         </span>
-        <span class="text-lg font-semibold">Huddle</span>
+        <span class="text-[length:var(--ui-text-lg)] font-semibold">Huddle</span>
       </div>
-      <h1 class="text-[28px] leading-tight font-semibold">Pair this device as “{name}”?</h1>
+      <h1 class="m-0 text-[length:var(--ui-text-xl)] leading-tight font-semibold">
+        Pair this device as “{name}”?
+      </h1>
     </>
   );
 
   if (stage === "code") {
     return (
-      <main
-        data-pair=""
-        data-pair-stage="code"
-        class="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-6 pt-14 pb-10"
-      >
-        {head}
-        <div class="flex flex-col items-center gap-2 rounded-2xl border hairline bg-base-100 px-5 py-5">
-          <span class="text-xs tracking-widest uppercase muted">Pairing code</span>
-          <span class="font-mono text-[34px] font-medium tracking-[0.12em]">{code}</span>
-          <span class="text-xs muted tnum">{expiresLabel(expiresIn)}</span>
-        </div>
-        <p class="m-0 text-sm muted">Check this matches the code in your terminal</p>
-        <div class="mt-auto flex flex-col gap-2">
-          {error ? (
-            <p role="alert" class="m-0 text-sm text-error">
-              {error}
-            </p>
-          ) : null}
-          {retryable ? (
+      <main data-pair="" data-pair-stage="code" class="ui-page flex flex-col">
+        <div class={COLUMN}>
+          {head}
+          <div class="ui-card flex flex-col items-center gap-2 p-5">
+            <span class="text-xs tracking-widest uppercase text-[var(--ui-muted)]">Pairing code</span>
+            <span class="ui-mono text-[34px] font-medium tracking-[0.12em]">{code}</span>
+            <span class="ui-mono text-xs text-[var(--ui-muted)]">{expiresLabel(expiresIn)}</span>
+          </div>
+          <p class="m-0 text-sm text-[var(--ui-muted)]">Check this matches the code in your terminal</p>
+          <div class="mt-auto flex flex-col gap-2">
+            {error ? (
+              <p role="alert" class="m-0 text-sm text-[var(--ui-fail-ink)]">
+                {error}
+              </p>
+            ) : null}
+            {retryable ? (
+              <button
+                type="button"
+                class="ui-btn ui-btn-secondary w-full"
+                disabled={busy}
+                onClick={() => void createAndFinish()}
+              >
+                Retry
+              </button>
+            ) : null}
             <button
               type="button"
-              class="btn btn-ghost"
+              class="ui-btn ui-btn-primary ui-btn-lg w-full"
               disabled={busy}
               onClick={() => void createAndFinish()}
             >
-              Retry
+              It matches
             </button>
-          ) : null}
-          <button
-            type="button"
-            class="btn btn-primary min-h-13"
-            disabled={busy}
-            onClick={() => void createAndFinish()}
-          >
-            It matches
-          </button>
-          <button
-            type="button"
-            class="min-h-11 bg-transparent text-[15px] font-medium muted outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            onClick={() => setStage("cancelled")}
-          >
-            The code does not match
-          </button>
+            <button type="button" class="ui-btn ui-btn-ghost w-full" onClick={() => setStage("cancelled")}>
+              The code does not match
+            </button>
+          </div>
         </div>
       </main>
     );
   }
 
   return (
-    <main
-      data-pair=""
-      data-pair-stage="name"
-      class="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-6 pt-14 pb-10"
-    >
-      {head}
-      <p class="m-0 text-[15px] muted">
-        You ran <code class="font-mono text-base-content">huddle pair</code> on your computer. Check the code
-        matches what your terminal shows.
-      </p>
-      <ul class="m-0 flex list-none flex-col gap-3 p-0 text-sm">
-        <li class="flex gap-2.5">
-          <Tick />
-          This device gets a passkey. No password, nothing to type.
-        </li>
-        <li class="flex gap-2.5">
-          <Tick />
-          It can watch, reply and allow commands with a passkey check.
-        </li>
-        <li class="flex gap-2.5">
-          <Tick />
-          Remove it any time from Settings on any paired device.
-        </li>
-      </ul>
-      <div class="mt-auto flex flex-col gap-2">
-        <label class="flex flex-col gap-1 text-xs muted">
-          Device name
-          <input class="input min-h-11 w-full" value={name} onInput={(e) => setName(e.currentTarget.value)} />
-        </label>
-        {error ? (
-          <p role="alert" class="m-0 text-sm text-error">
-            {error}
-          </p>
-        ) : null}
-        <button
-          type="button"
-          class="btn btn-primary min-h-13"
-          disabled={busy || name.trim().length === 0}
-          onClick={() => void begin()}
-        >
-          Continue
-        </button>
+    <main data-pair="" data-pair-stage="name" class="ui-page flex flex-col">
+      <div class={COLUMN}>
+        {head}
+        <p class="m-0 text-[15px] text-[var(--ui-muted)]">
+          You ran <code class="ui-mono text-[var(--ui-text)]">huddle pair</code> on your computer. Check the
+          code matches what your terminal shows.
+        </p>
+        <ul class="m-0 flex list-none flex-col gap-3 p-0 text-sm">
+          <li class="flex gap-2.5">
+            <Tick />
+            This device gets a passkey. No password, nothing to type.
+          </li>
+          <li class="flex gap-2.5">
+            <Tick />
+            It can watch, reply and allow commands with a passkey check.
+          </li>
+          <li class="flex gap-2.5">
+            <Tick />
+            Remove it any time from Settings on any paired device.
+          </li>
+        </ul>
+        <div class="mt-auto flex flex-col gap-2">
+          <label class="ui-field">
+            <span class="ui-field-label">Device name</span>
+            <input class="ui-input" value={name} onInput={(e) => setName(e.currentTarget.value)} />
+          </label>
+          {error ? (
+            <p role="alert" class="m-0 text-sm text-[var(--ui-fail-ink)]">
+              {error}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            class="ui-btn ui-btn-primary ui-btn-lg w-full"
+            disabled={busy || name.trim().length === 0}
+            onClick={() => void begin()}
+          >
+            Continue
+          </button>
+        </div>
       </div>
     </main>
   );

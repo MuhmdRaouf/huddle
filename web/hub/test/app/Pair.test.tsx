@@ -8,7 +8,7 @@ import { act, cleanup, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api } from "../../src/api.ts";
 import { App } from "../../src/app/App.tsx";
-import { flush, makeCtx, makeState, renderIn } from "../helpers.tsx";
+import { flush, legacyClasses, makeCtx, makeState, renderIn } from "../helpers.tsx";
 
 /** The link token the tests pair with. */
 const TOKEN = "tok-123";
@@ -223,5 +223,53 @@ describe("the pair screen", () => {
     mount({ token: "" });
     expect(screen.getByText("This link is incomplete. Run `huddle pair` again.")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+  });
+});
+
+describe("the pair screen's tokens", () => {
+  /** Every daisyUI or legacy class the pair screen paints right now. */
+  const leftovers = (): string[] => {
+    const root = document.querySelector("[data-pair]") as HTMLElement;
+    const daisy = [...root.querySelectorAll("[class]")]
+      .flatMap((el) => (el.getAttribute("class") ?? "").split(/\s+/))
+      .filter((c) => /^(input(-.+)?|font-mono)$/.test(c));
+    return [...legacyClasses(root), ...daisy];
+  };
+
+  it("paints the name stage with the ui field and the 48 px primary button", () => {
+    mount();
+    expect(leftovers()).toEqual([]);
+    expect(screen.getByLabelText("Device name").className).toContain("ui-input");
+    expect(screen.getByRole("button", { name: "Continue" }).className).toContain(
+      "ui-btn ui-btn-primary ui-btn-lg",
+    );
+  });
+
+  it("paints the code stage, its Retry and its way out from the tokens", async () => {
+    const m = mount({ createAnswer: Object.assign(new Error("no"), { name: "NotAllowedError" }) });
+    await begin();
+    await act(async () => {
+      screen.getByRole("button", { name: "It matches" }).click();
+    });
+    await flush();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeDefined();
+    expect(m.create).toHaveBeenCalledTimes(1);
+    expect(leftovers()).toEqual([]);
+    expect(screen.getByRole("alert").className).toContain("text-[var(--ui-fail-ink)]");
+    expect(screen.getByRole("button", { name: "The code does not match" }).className).toContain(
+      "ui-btn ui-btn-ghost",
+    );
+  });
+
+  it("paints the dead ends from the tokens", async () => {
+    mount();
+    await begin();
+    await act(async () => {
+      screen.getByRole("button", { name: "The code does not match" }).click();
+    });
+    expect(leftovers()).toEqual([]);
+    mount({ token: "" });
+    expect(screen.getByText(/This link is incomplete/)).toBeDefined();
+    expect(leftovers()).toEqual([]);
   });
 });

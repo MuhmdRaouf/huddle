@@ -6,7 +6,7 @@
 // landing (no credential yet) shows the commands instead.
 
 import { CodeBlock } from "@huddle/ui/code.tsx";
-import { Panel } from "@huddle/ui/page.tsx";
+import { Card } from "@huddle/ui/card.tsx";
 import type { ComponentChildren, JSX } from "preact";
 import { useState } from "preact/hooks";
 import type { ApiError } from "../api.ts";
@@ -27,9 +27,9 @@ async function copyText(text: string, msg: string, toast: ToastFn): Promise<void
 function CxCode({ t, c, msg }: { t: string; c: string; msg: string }): JSX.Element {
   const { toast } = useHuddle();
   return (
-    <div class="overflow-hidden rounded-lg border hairline">
-      <div class="flex items-center gap-2 border-b hairline bg-base-200 px-3 py-1 text-xs">
-        <span class="min-w-0 flex-1 truncate font-medium muted">{t}</span>
+    <div class="overflow-hidden rounded-[var(--ui-radius)] border border-[var(--ui-line)]">
+      <div class="flex items-center gap-2 border-b border-[var(--ui-line)] bg-[var(--ui-surface-2)] px-3 py-1 text-xs">
+        <span class="min-w-0 flex-1 truncate font-medium text-[var(--ui-muted)]">{t}</span>
         <button type="button" class="ui-btn ui-btn-ghost" onClick={() => void copyText(c, msg, toast)}>
           <Icon name="copy" class="size-3.5" />
           Copy
@@ -54,7 +54,7 @@ function CxStep({
   return (
     <li class="relative flex gap-4 pb-6 last:pb-0">
       <span
-        class="relative z-10 inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-base-content/15 bg-base-100 text-xs font-semibold tabular-nums muted"
+        class="relative z-10 inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-[var(--ui-line-strong)] bg-[var(--ui-surface)] text-xs font-semibold tabular-nums text-[var(--ui-muted)]"
         aria-hidden="true"
       >
         {n}
@@ -103,9 +103,9 @@ function ClaudeSteps({ ch, invite }: { ch: string; invite: boolean }): JSX.Eleme
     }
   };
   return (
-    <ol class="relative before:absolute before:top-3 before:bottom-3 before:left-3.5 before:w-px before:bg-line">
+    <ol class="relative before:absolute before:top-3 before:bottom-3 before:left-3.5 before:w-px before:bg-[var(--ui-line)]">
       <CxStep n={1} title="Install Huddle once per machine">
-        <p class="mt-1 mb-2.5 text-sm muted">In Claude Code:</p>
+        <p class="mt-1 mb-2.5 text-sm text-[var(--ui-muted)]">In Claude Code:</p>
         <CxCode
           t="Claude Code"
           c={"/plugin marketplace add MuhmdRaouf/huddle\n/plugin install huddle@muhmdraouf"}
@@ -115,14 +115,14 @@ function ClaudeSteps({ ch, invite }: { ch: string; invite: boolean }): JSX.Eleme
       <CxStep n={2} title="Invite the session">
         {invite ? (
           <>
-            <p class="mt-1 mb-2.5 text-sm muted">
+            <p class="mt-1 mb-2.5 text-sm text-[var(--ui-muted)]">
               A join line for <code>{ch}</code>, valid 24 h, good for one project (its later sessions are in
               on their own).
             </p>
             <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
               <button
                 type="button"
-                class="btn"
+                class="ui-btn ui-btn-secondary"
                 id="cx-invite"
                 disabled={busy}
                 onClick={() => void inviteSession()}
@@ -130,7 +130,7 @@ function ClaudeSteps({ ch, invite }: { ch: string; invite: boolean }): JSX.Eleme
                 <Icon name="plus" class="size-4" />
                 Invite a session
               </button>
-              <span class="text-xs muted" id="cx-inv-note">
+              <span class="text-xs text-[var(--ui-muted)]" id="cx-inv-note">
                 or run <code>/huddle:invite</code> in a Claude session in this huddle
               </span>
             </div>
@@ -142,12 +142,12 @@ function ClaudeSteps({ ch, invite }: { ch: string; invite: boolean }): JSX.Eleme
                   msg="Copied. Paste it into the other Claude session."
                 />
               ) : null}
-              {invErr ? <p class="text-sm text-error">{invErr}</p> : null}
+              {invErr ? <p class="m-0 text-sm text-[var(--ui-fail-ink)]">{invErr}</p> : null}
             </div>
           </>
         ) : (
           <>
-            <p class="mt-1 mb-2.5 text-sm muted">
+            <p class="mt-1 mb-2.5 text-sm text-[var(--ui-muted)]">
               In a session that is already in this huddle, run <code>/huddle:invite</code>. It prints the join
               line.
             </p>
@@ -156,7 +156,7 @@ function ClaudeSteps({ ch, invite }: { ch: string; invite: boolean }): JSX.Eleme
         )}
       </CxStep>
       <CxStep n={3} title="Paste it into the other session">
-        <p class="mt-1 text-sm muted">
+        <p class="mt-1 text-sm text-[var(--ui-muted)]">
           It joins this channel and shows its own dashboard link. Do not run <code>/huddle:setup</code> there:
           setup is for the first project.
         </p>
@@ -169,9 +169,9 @@ function ClaudeSteps({ ch, invite }: { ch: string; invite: boolean }): JSX.Eleme
  *  names the harness as the install command spells it; the name is the word the prose says. */
 function HarnessSteps({ name, word }: { name: string; word: string }): JSX.Element {
   return (
-    <ol class="relative before:absolute before:top-3 before:bottom-3 before:left-3.5 before:w-px before:bg-line">
+    <ol class="relative before:absolute before:top-3 before:bottom-3 before:left-3.5 before:w-px before:bg-[var(--ui-line)]">
       <CxStep n={1} title={`Wire ${name} to this huddle once per machine`}>
-        <p class="mt-1 mb-2.5 text-sm muted">
+        <p class="mt-1 mb-2.5 text-sm text-[var(--ui-muted)]">
           In a terminal of this machine (the huddle CLI ships with the plugin):
         </p>
         <CxCode
@@ -181,7 +181,7 @@ function HarnessSteps({ name, word }: { name: string; word: string }): JSX.Eleme
         />
       </CxStep>
       <CxStep n={2} title={`Open ${name} in a project of this huddle`}>
-        <p class="mt-1 text-sm muted">
+        <p class="mt-1 text-sm text-[var(--ui-muted)]">
           It joins the project's channel on its own, reports its sessions in and answers the same tools.
         </p>
       </CxStep>
@@ -194,7 +194,7 @@ function McpSteps({ ch }: { ch: string }): JSX.Element {
   const channel = ch || "<channel>";
   return (
     <div class="flex flex-col gap-3">
-      <p class="m-0 text-sm muted">
+      <p class="m-0 text-sm text-[var(--ui-muted)]">
         Any MCP client can call the channel's tools at <code>/mcp/&lt;channel&gt;?as=&lt;session&gt;</code>{" "}
         with a credential in the <code>x-huddle-token</code> header (the one <code>huddle join</code> keeps
         for a session).
@@ -210,7 +210,7 @@ function McpSteps({ ch }: { ch: string }): JSX.Element {
 
 /** The link to the whole guide, opened in a new tab. */
 export function FullGuideLink({
-  class: c = "btn btn-ghost btn-sm shrink-0",
+  class: c = "ui-btn ui-btn-ghost shrink-0",
 }: {
   class?: string;
 }): JSX.Element {
@@ -257,17 +257,11 @@ export function ConnectGuide({ ch, invite = true }: { ch: string; invite?: boole
   );
 }
 
-/** The start-a-session card: the guide in a panel with the full guide one link away. */
+/** The start-a-session card: the guide in a card with the full guide one link away. */
 export function ConnectCard({ ch, invite = true }: { ch: string; invite?: boolean }): JSX.Element {
   return (
-    <Panel
-      title="Start a session"
-      label="Start a session"
-      icon={<Icon name="plug" />}
-      meta={<span class="text-xs">Bring a coding agent into this huddle.</span>}
-      actions={<FullGuideLink />}
-    >
+    <Card title="Start a session" meta="Bring a coding agent into this huddle." actions={<FullGuideLink />}>
       <ConnectGuide ch={ch} invite={invite} />
-    </Panel>
+    </Card>
   );
 }

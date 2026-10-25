@@ -6,7 +6,7 @@ import { act, cleanup, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api } from "../../src/api.ts";
 import { FirstRunChecklist } from "../../src/app/FirstRun.tsx";
-import { flush, makeCtx, makeState, makeRegistry, renderIn } from "../helpers.tsx";
+import { flush, legacyClasses, makeCtx, makeState, makeRegistry, renderIn } from "../helpers.tsx";
 import type { HuddleState } from "../../src/store.ts";
 import type { WhoAmI } from "../../src/app/context.tsx";
 import type { RegistrySession } from "../../src/registry.ts";
@@ -136,5 +136,24 @@ describe("the first-run checklist", () => {
     await flush();
     expect(h.calls).toEqual(["/api/radar/api/budgets"]);
     expect(document.querySelector("[data-item='budget']")?.getAttribute("data-done")).toBe("false");
+  });
+});
+
+describe("the first-run checklist's tokens", () => {
+  it("paints the panel, the passkey row, both marks and the mint error from the tokens", async () => {
+    mount({ who: { totp: true } });
+    await flush();
+    await act(async () => {
+      screen.getByRole("button", { name: "Save passkey" }).click();
+    });
+    await flush();
+    expect(screen.getByRole("alert").textContent).toBe("the server sent no pairing link");
+    expect(legacyClasses()).toEqual([]);
+    const panel = document.querySelector("[data-first-run]") as HTMLElement;
+    expect(panel.className).toContain("border-[var(--ui-line)]");
+    expect(panel.className).toContain("bg-[var(--ui-surface)]");
+    expect(screen.getByRole("alert").className).toContain("text-[var(--ui-fail-ink)]");
+    const done = document.querySelector("[data-item='totp'] [aria-hidden]") as HTMLElement;
+    expect(done.className).toContain("text-[var(--ui-ok-ink)]");
   });
 });

@@ -46,7 +46,7 @@ function QRCode({ rows, label }: { rows: string[]; label: string }): JSX.Element
     }
   });
   return (
-    <div class="inline-flex rounded-xl bg-white p-3" data-qr="">
+    <div class="inline-flex rounded-[var(--ui-radius)] bg-white p-3" data-qr="">
       <svg
         viewBox={`0 0 ${n} ${n}`}
         shapeRendering="crispEdges"
@@ -136,38 +136,32 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
       <div class="flex flex-col gap-4" data-totp-stage="recovery">
         <div>
           <h2 class="text-lg font-semibold">Save your recovery codes</h2>
-          <p class="m-0 mt-1 text-sm muted">
+          <p class="m-0 mt-1 text-sm text-[var(--ui-muted)]">
             Each code works once when your authenticator is not at hand. They show this one time.
           </p>
         </div>
         <ul
           data-recovery=""
-          class="m-0 grid list-none grid-cols-2 gap-1.5 rounded-box bg-base-200 p-4 font-mono text-sm sm:grid-cols-2"
+          class="ui-mono m-0 grid list-none grid-cols-2 gap-1.5 rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] p-4 text-sm"
         >
           {recovery.map((code) => (
-            <li key={code} class="tnum">
-              {code}
-            </li>
+            <li key={code}>{code}</li>
           ))}
         </ul>
         <div class="flex flex-wrap gap-2">
           <button
             type="button"
-            class="btn h-[var(--ui-tap)]"
+            class="ui-btn ui-btn-secondary"
             onClick={() => copy(all, "Recovery codes copied")}
           >
             <Icon name="copy" />
             Copy
           </button>
-          <button type="button" class="btn h-[var(--ui-tap)]" onClick={download}>
+          <button type="button" class="ui-btn ui-btn-secondary" onClick={download}>
             <Icon name="download" />
             Download .txt
           </button>
-          <button
-            type="button"
-            class="btn btn-primary ml-auto h-[var(--ui-tap)] w-full sm:w-auto"
-            onClick={onDone}
-          >
+          <button type="button" class="ui-btn ui-btn-primary ml-auto w-full sm:w-auto" onClick={onDone}>
             I saved them, continue
           </button>
         </div>
@@ -182,7 +176,7 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
       <div class="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
         {begin ? <QRCode rows={qrRows(begin.qr)} label="Authenticator QR code" /> : null}
         <div class="flex w-full min-w-0 flex-col gap-2 sm:flex-1">
-          <p class="m-0 text-sm muted">
+          <p class="m-0 text-sm text-[var(--ui-muted)]">
             Scan the code with your authenticator app (Google Authenticator, 1Password, Authy), or type the
             secret by hand.
           </p>
@@ -190,13 +184,13 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
             <div class="flex items-center gap-2">
               <code
                 data-secret=""
-                class="min-w-0 flex-1 truncate rounded-lg bg-base-200 px-3 py-2 font-mono text-sm"
+                class="ui-mono min-w-0 flex-1 truncate rounded-[var(--ui-radius-sm)] bg-[var(--ui-surface-2)] px-3 py-2 text-sm"
               >
                 {grouped(secret)}
               </code>
               <button
                 type="button"
-                class="ui-btn ui-btn-ghost ui-btn-icon muted"
+                class="ui-btn ui-btn-ghost ui-btn-icon"
                 aria-label="Copy the secret"
                 onClick={() => copy(secret, "Secret copied")}
               >
@@ -225,7 +219,7 @@ export function TotpFirstRun({ onDone, onLater }: { onDone: () => void; onLater:
           <h1 class="m-0 text-[length:var(--ui-text-xl)] leading-tight font-bold tracking-tight">
             Set up your authenticator app
           </h1>
-          <p class="m-0 text-[15px] muted">
+          <p class="m-0 text-[15px] text-[var(--ui-muted)]">
             This is how you sign in to Huddle from any browser: a code from your app, no terminal and no link.
             It takes a minute.
           </p>
@@ -298,27 +292,25 @@ export function AuthenticatorCard({
     );
   }
   return (
-    <div class="flex items-center justify-between gap-3 border-b hairline py-3" data-totp-row="">
+    <div
+      class="flex items-center justify-between gap-3 border-b border-[var(--ui-line)] py-3"
+      data-totp-row=""
+    >
       {sheet}
       <div class="flex min-w-0 flex-col">
         <span class="text-[15px]">Authenticator app</span>
-        <span class="text-xs muted">
+        <span class="text-xs text-[var(--ui-muted)]">
           {enrolled
             ? "A code from your app signs any browser in."
             : "Not set up. A code from your app would sign any browser in."}
         </span>
       </div>
       {enrolled ? (
-        <button
-          type="button"
-          class="btn btn-ghost btn-sm text-error"
-          disabled={busy}
-          onClick={() => void remove()}
-        >
+        <button type="button" class="ui-btn ui-btn-danger" disabled={busy} onClick={() => void remove()}>
           Remove
         </button>
       ) : (
-        <button type="button" class="btn btn-primary btn-sm" disabled={busy} onClick={() => setSetting(true)}>
+        <button type="button" class="ui-btn ui-btn-primary" disabled={busy} onClick={() => setSetting(true)}>
           Set up
         </button>
       )}
@@ -384,19 +376,19 @@ export function PasskeyOffer({
   return (
     <Dialog open={open} onClose={onClose} title={word.title} labeledBy="passkey-offer-h">
       <div class="flex flex-col gap-4" data-passkey-offer="">
-        <p class="m-0 text-sm muted">
+        <p class="m-0 text-sm text-[var(--ui-muted)]">
           Sign in next time with this device's lock instead of a code. The code keeps working as the fallback.
         </p>
         {error ? (
-          <p role="alert" class="m-0 text-sm text-error">
+          <p role="alert" class="m-0 text-sm text-[var(--ui-fail-ink)]">
             {error}
           </p>
         ) : null}
         <div class="flex justify-end gap-2">
-          <button type="button" class="btn btn-ghost" disabled={busy} onClick={onClose}>
+          <button type="button" class="ui-btn ui-btn-ghost" disabled={busy} onClick={onClose}>
             Not now
           </button>
-          <button type="button" class="btn btn-primary" disabled={busy} onClick={() => void turnOn()}>
+          <button type="button" class="ui-btn ui-btn-primary" disabled={busy} onClick={() => void turnOn()}>
             Turn on
           </button>
         </div>
