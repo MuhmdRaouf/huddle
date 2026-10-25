@@ -91,7 +91,7 @@ func (s *server) pairFinishRoute(w http.ResponseWriter, r *http.Request) error {
 	// the finish stored the pairing's alert inside its own transaction; the push sender hears
 	// it from here
 	s.emitNewestAlert(r.Context())
-	w.Header().Set("Set-Cookie", auth.PairCookieSet(r.TLS != nil, session.Cookie))
+	w.Header().Set("Set-Cookie", auth.PairCookieSet(servedOverHTTPS(r), session.Cookie))
 	s.writeJSON(w, 200, struct {
 		Device    string `json:"device"`
 		ExpiresIn int64  `json:"expires_in"`
@@ -154,7 +154,7 @@ func (s *server) loginFinishRoute(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	w.Header().Set("Set-Cookie", auth.PairCookieSet(r.TLS != nil, session.Cookie))
+	w.Header().Set("Set-Cookie", auth.PairCookieSet(servedOverHTTPS(r), session.Cookie))
 	s.writeJSON(w, 200, struct {
 		Device    string `json:"device"`
 		ExpiresIn int64  `json:"expires_in"`

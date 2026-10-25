@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net"
 	"net/http"
 	"strings"
 )
@@ -77,4 +78,20 @@ func (s *server) guard(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// servedOverHTTPS answers whether the browser reached this request over https: the hub
+// listener's own TLS, or a TLS reverse proxy on this machine that forwards to loopback and names
+// the scheme in X-Forwarded-Proto. The header is trusted from a loopback peer only, the proxy
+// being local; anyone else could write it.
+func servedOverHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback() && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }

@@ -1083,8 +1083,12 @@ func (s *server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			writeText(w, 503, "the audit log is unavailable, so this sign-in is refused: open a fresh link once this machine's hub.db is healthy", map[string]string{"Cache-Control": "no-store"})
 			return
 		}
+		secure := ""
+		if servedOverHTTPS(r) {
+			secure = "; Secure"
+		}
 		w.Header().Set("Set-Cookie",
-			fmt.Sprintf("%s=%s; Path=/; HttpOnly; SameSite=Strict", s.cookie, urlEscape(cred)))
+			fmt.Sprintf("%s=%s; Path=/; HttpOnly; SameSite=Strict%s", s.cookie, urlEscape(cred), secure))
 		w.Header().Set("Location", location)
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(303)
@@ -1126,7 +1130,7 @@ func (s *server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		// renewal buys seven more days, and the answer carries the cookie's fresh life. The
 		// stream's own heartbeats never run here, so an open stream alone renews nothing.
 		if s.pairs != nil && me.Device != "" && s.pairs.Renew(r.Context(), auth.PairCookie(r)) {
-			w.Header().Set("Set-Cookie", auth.PairCookieSet(r.TLS != nil, auth.PairCookie(r)))
+			w.Header().Set("Set-Cookie", auth.PairCookieSet(servedOverHTTPS(r), auth.PairCookie(r)))
 		}
 	}
 

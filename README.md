@@ -237,6 +237,10 @@ Let's Encrypt certificate without a public DNS token, so huddle keeps its own lo
 Already hold a pair (mkcert, a company CA)? `huddle cert --import cert.pem key.pem` installs it and the hub
 serves it instead (`huddle cert` says which). It is never renewed; the log names its expiry from 30 days out.
 
+Behind a TLS reverse proxy (Caddy) on this machine, give the name alone: `huddle role hub --host hub.example.dev`.
+The hub keeps answering loopback only, the proxy serves the certificate and forwards to it, and `huddle open`
+prints `https://hub.example.dev/?code=…`; a sign-in the proxy forwards from https gets a `Secure` cookie.
+
 ## Use Huddle on your phone
 
 The dashboard is a PWA that signs in with a passkey, so a phone works as the needs-you screen:

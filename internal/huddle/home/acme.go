@@ -94,7 +94,7 @@ func ImportCertificate(h Home, cert, key []byte) error {
 		return err
 	}
 	if cfg.Hub.Host == "" {
-		return errors.New("no hub name to import for — huddle role hub --listen <addr:port> --host <name> writes it first")
+		return errors.New("no hub name to import for — huddle role hub --host <name> [--listen <addr:port>] writes it first")
 	}
 	if err := SaveCertificate(h, cert, key); err != nil {
 		return err

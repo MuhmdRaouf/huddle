@@ -1,8 +1,9 @@
 package cli
 
 // The role words (SPEC 3): `huddle role` writes the machine's role into the home's config.toml.
-// Solo, the default, is one machine on loopback. Hub adds the TLS listener on hub.listen for the
-// owner's paired devices and satellites, under the name hub.host. Satellite serves its own
+// Solo, the default, is one machine on loopback. Hub names the machine hub.host for the owner's
+// paired devices and satellites: with hub.listen it adds its own TLS listener there, without it a
+// TLS reverse proxy on this machine (Caddy) serves the name and forwards to loopback. Satellite serves its own
 // sessions on loopback and reaches the hub at hub.url. The words run on the machine itself, in a
 // terminal the owner holds, so no passkey step-up guards them: whoever owns the terminal owns the
 // config. A restart (huddle up, or the service) takes the role up.
@@ -25,7 +26,7 @@ import (
 var hubNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$`)
 
 // roleUsage is the one line every wrong shape answers.
-const roleUsage = "usage: huddle role solo | hub --listen <addr:port> --host <name> | satellite --hub https://<host>:<port>"
+const roleUsage = "usage: huddle role solo | hub --host <name> [--listen <addr:port>] | satellite --hub https://<host>:<port>"
 
 // Role writes the machine's role into config.toml, keeping every other key the file holds.
 func Role(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer) int {
@@ -53,16 +54,18 @@ func Role(ctx context.Context, w *World, argv []string, stdout, stderr io.Writer
 	case "hub":
 		listen, hasListen := opt.text("listen")
 		host, hasHost := opt.text("host")
-		if !hasListen || !hasHost {
+		if !hasHost {
 			fmt.Fprintln(stderr, roleUsage)
 			return 2
 		}
-		if _, port, err := net.SplitHostPort(listen); err != nil || port == "0" {
-			fmt.Fprintf(stderr, "huddle: --listen %s: an address and a fixed port, as 127.0.0.2:8443\n", listen)
-			return 2
-		} else if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
-			fmt.Fprintf(stderr, "huddle: --listen %s: a port from 1 to 65535\n", listen)
-			return 2
+		if hasListen {
+			if _, port, err := net.SplitHostPort(listen); err != nil || port == "0" {
+				fmt.Fprintf(stderr, "huddle: --listen %s: an address and a fixed port, as 127.0.0.2:8443\n", listen)
+				return 2
+			} else if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+				fmt.Fprintf(stderr, "huddle: --listen %s: a port from 1 to 65535\n", listen)
+				return 2
+			}
 		}
 		if net.ParseIP(host) != nil || !hubNameRe.MatchString(host) {
 			fmt.Fprintf(stderr, "huddle: --host %s: the hub's name, not an address — the passkey's relying party is a name\n", host)
@@ -120,6 +123,12 @@ func listenPort(listen string) string {
 func roleLines(cfg home.Config, h home.Home, w *World, stdout io.Writer) {
 	switch cfg.Role {
 	case "hub":
+		if cfg.Hub.Listen == "" {
+			fmt.Fprintf(stdout, "role hub: this machine answers loopback only, as %s behind a TLS reverse proxy\n",
+				hubBaseURL(cfg.Hub.Host, ""))
+			fmt.Fprintln(stdout, "restart huddle for the role to take effect; the proxy serves the certificate and forwards to loopback")
+			return
+		}
 		fmt.Fprintf(stdout, "role hub: paired devices and satellites answer on %s, as %s\n",
 			cfg.Hub.Listen, cfg.Hub.Host)
 		fmt.Fprintf(stdout, "restart huddle for the role to take effect; the listener serves the certificate in %s\n", h.TLS())

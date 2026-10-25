@@ -813,3 +813,26 @@ func TestGCPercentOf(t *testing.T) {
 		})
 	}
 }
+
+// TestDashboardBaseIsTheHostOriginWithoutAListener pins the printed link's base on a hub home:
+// behind a proxy (no listen) it is the hub's bare https origin, with its own listener it carries
+// the listener's port.
+func TestDashboardBaseIsTheHostOriginWithoutAListener(t *testing.T) {
+	for _, tc := range []struct {
+		name, config, want string
+	}{
+		{"behind a proxy", "role = \"hub\"\n\n[hub]\nhost = \"hub.example.invalid\"\n", "https://hub.example.invalid"},
+		{"its own listener", "role = \"hub\"\n\n[hub]\nlisten = \"127.0.0.1:9443\"\nhost = \"hub.example.invalid\"\n", "https://hub.example.invalid:9443"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(tc.config), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			w := world(t, t.TempDir(), map[string]string{"HUDDLE_HOME": root})
+			if got := dashboardBase(context.Background(), w, "http://127.0.0.1:1"); got != tc.want {
+				t.Errorf("dashboardBase = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

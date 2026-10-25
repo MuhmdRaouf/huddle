@@ -140,16 +140,25 @@ func TestApplyRoleKeepsLoopbackWhenTheConfigCannotBeRead(t *testing.T) {
 }
 
 func TestApplyRoleOfAHubWithoutAListenSaysSo(t *testing.T) {
-	home := t.TempDir()
-	config := "role = \"hub\"\n"
-	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(config), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	s := &server{o: Options{Home: home, Stdout: &out}}
-	s.applyRole(bg, func(http.ResponseWriter, *http.Request) {})
-	if !strings.Contains(out.String(), "role hub without hub.listen") {
-		t.Errorf("applyRole printed %q, want the hub-without-listen line", out.String())
+	for _, tc := range []struct {
+		name, config, want string
+	}{
+		{"no name", "role = \"hub\"\n", "role hub without hub.host"},
+		{"behind a proxy", "role = \"hub\"\n\n[hub]\nhost = \"hub.example.invalid\"\n",
+			"role hub as https://hub.example.invalid: loopback only, for a TLS reverse proxy on this machine to forward to"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(tc.config), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			s := &server{o: Options{Home: home, Stdout: &out}}
+			s.applyRole(bg, func(http.ResponseWriter, *http.Request) {})
+			if !strings.Contains(out.String(), tc.want) {
+				t.Errorf("applyRole printed %q, want %q", out.String(), tc.want)
+			}
+		})
 	}
 }
 

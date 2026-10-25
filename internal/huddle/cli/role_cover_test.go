@@ -77,7 +77,7 @@ func TestRoleHubNeedsAListenAddressAndAName(t *testing.T) {
 	}
 }
 
-// TestRoleHubRefusesEveryIncompleteShape pins the hub refusals: a missing flag, a bare address,
+// TestRoleHubRefusesEveryIncompleteShape pins the hub refusals: a missing name, a bare address,
 // port 0, an out-of-range or non-numeric port, an address where a name belongs, and a name that
 // starts with a dash.
 func TestRoleHubRefusesEveryIncompleteShape(t *testing.T) {
@@ -86,7 +86,7 @@ func TestRoleHubRefusesEveryIncompleteShape(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"no listen", []string{"role", "hub", "--host", "hub.mine.test"}, "usage: huddle role"},
+		{"no host and no listen", []string{"role", "hub"}, "usage: huddle role"},
 		{"no host", []string{"role", "hub", "--listen", "127.0.0.2:8443"}, "usage: huddle role"},
 		{"bare address", []string{"role", "hub", "--listen", "127.0.0.2", "--host", "hub.mine.test"}, "an address and a fixed port"},
 		{"port zero", []string{"role", "hub", "--listen", "127.0.0.2:0", "--host", "hub.mine.test"}, "an address and a fixed port"},

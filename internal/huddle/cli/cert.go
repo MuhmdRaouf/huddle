@@ -37,7 +37,7 @@ const certUsage = "usage: huddle cert   (the certificate in use: where from, for
 	"       huddle cert --import <cert.pem> <key.pem>   (a pair you already hold, as mkcert's or a company CA's)"
 
 // certNoHost is the one line both paths answer on a machine whose config names no hub host.
-const certNoHost = "huddle: no hub name to certify — huddle role hub --listen <addr:port> --host <name> writes it first"
+const certNoHost = "huddle: no hub name to certify — huddle role hub --host <name> [--listen <addr:port>] writes it first"
 
 // Cert obtains the hub's certificate over DNS-01 and stores the provider's token, installs a
 // pair the owner already holds, or — with no flag at all — says which certificate the hub serves:

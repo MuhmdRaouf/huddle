@@ -390,7 +390,18 @@ in proxy mode:
    A public name takes its certificate over ACME DNS-01 instead: `huddle cert --provider <p>`,
    renewed 30 days before expiry.
 
-5. Bring the phone in: `huddle trust --phone` prints a QR (the page it opens serves for 10
+5. Behind a TLS reverse proxy on this machine (Caddy terminates TLS for the name and forwards to
+   the hub's loopback port), give the name alone and skip steps 3 and 4:
+
+   ```sh
+   huddle role hub --host hub.example.dev
+   ```
+
+   The hub opens no listener of its own; printed links name the proxy's origin
+   (`https://hub.example.dev/?code=…`), and the sign-in cookie carries `Secure` when the proxy
+   forwards `X-Forwarded-Proto: https` from loopback. The header from any other peer is ignored.
+
+6. Bring the phone in: `huddle trust --phone` prints a QR (the page it opens serves for 10
    minutes and installs nothing on the computer); then `huddle pair --name phone`, scan, and save
    the passkey. The dashboard's Settings → Devices carries the same "Add a phone" QR.
 

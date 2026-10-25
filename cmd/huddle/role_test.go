@@ -54,7 +54,6 @@ func TestRoleRefusesEveryWrongShape(t *testing.T) {
 		{"role", "bogus"},
 		{"role", "hub"},
 		{"role", "hub", "--listen", "127.0.0.2:8443"},
-		{"role", "hub", "--host", "hub.mine.test"},
 		{"role", "hub", "--listen", "127.0.0.2", "--host", "hub.mine.test"},
 		{"role", "hub", "--listen", "127.0.0.2:0", "--host", "hub.mine.test"},
 		{"role", "hub", "--listen", "127.0.0.2:99999", "--host", "hub.mine.test"},

@@ -213,7 +213,7 @@ var aloneHelpLines = []string{
 	"  huddle pair --satellite  print a one-use invite (10 min) that joins another machine as this hub's satellite",
 	"  huddle join-hub <url> <invite> [--name n]   run on the satellite: stores its credential and sets its role",
 	"  huddle devices [rm n]    list the paired devices; rm revokes one and ends its sessions",
-	"  huddle role <role>       write the machine's role: solo; hub --listen <addr:port> --host <name>;",
+	"  huddle role <role>       write the machine's role: solo; hub --host <name> [--listen <addr:port>];",
 	"                           satellite --hub https://<host>:<port> (a restart takes it up)",
 	"  huddle cert --provider p obtain the hub's certificate over DNS-01 (asks for the provider's token",
 	"                           with the echo off; the server renews it 30 days before expiry)",

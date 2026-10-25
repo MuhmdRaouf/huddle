@@ -1,8 +1,9 @@
 package server
 
 // The machine's role (SPEC 3) decides which listeners exist. Solo, the default, answers loopback
-// only. Hub adds a second listener on hub.listen, the NetBird address, served with the
-// certificate in tls/: a paired device's cookie or a satellite's credential is the only way past
+// only. Hub without hub.listen answers loopback only, behind a TLS reverse proxy on this machine
+// that serves hub.host. Hub with hub.listen adds a second listener there, the NetBird address,
+// served with the certificate in tls/: a paired device's cookie or a satellite's credential is the only way past
 // its gate — beside the shell and the sign-in ways every brand-new browser needs, the one-time
 // link `huddle open` prints on a hub included. A satellite serves its own sessions exactly as
 // solo does and never listens beyond loopback, whatever an older role left in the config. Every
@@ -91,9 +92,15 @@ func (s *server) applyRole(ctx context.Context, handler http.HandlerFunc) {
 	switch cfg.Role {
 	case "hub":
 		s.startRenewal(ctx, cfg)
+		if cfg.Hub.Host == "" {
+			fmt.Fprintf(s.o.Stdout,
+				"huddle: role hub without hub.host — the hub answers loopback only (huddle role hub --host <name> [--listen <addr:port>])\n")
+			return
+		}
 		if cfg.Hub.Listen == "" {
 			fmt.Fprintf(s.o.Stdout,
-				"huddle: role hub without hub.listen — the hub answers loopback only (huddle role hub --listen <addr:port> --host <name>)\n")
+				"huddle: role hub as %s: loopback only, for a TLS reverse proxy on this machine to forward to (--listen <addr:port> adds the hub's own listener)\n",
+				phone.HubURL(cfg.Hub.Host, ""))
 			return
 		}
 		s.startHubListener(ctx, cfg, handler)
