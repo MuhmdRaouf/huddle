@@ -34,6 +34,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/history"
 	"github.com/MuhmdRaouf/huddle/internal/radar/hook"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ingest"
+	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/server"
 	"github.com/MuhmdRaouf/huddle/internal/radar/settings"
@@ -110,11 +111,13 @@ type Tab struct {
 	// Owns says this mount took radar's lock and runs the one ingester.
 	Owns bool
 
-	port       int
-	env        domain.EnvLookup
-	log        func(line string)
-	cancel     func()
-	prunes     *history.PruneSchedule
+	port   int
+	env    domain.EnvLookup
+	log    func(line string)
+	cancel func()
+	prunes *history.PruneSchedule
+	// ledger is the request ledger the watcher files into; nil when its file would not open
+	ledger     *ledger.Store
 	httpServer *server.HttpServer
 
 	// proxying mode: the recorded owner's address and whether its radar routes sit under the
@@ -202,9 +205,16 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		}
 		t.prunes = history.SchedulePrunes(appCtx, hist, retention, history.PruneOptions{})
 	}
+	var led *ledger.Store
+	if opened, err := ledger.Open(paths.LedgerPath(appCtx, env)); err != nil {
+		log(fmt.Sprintf("radar: ledger unavailable, running without it (%v)", err))
+	} else {
+		led = opened
+	}
 	watcher := ingest.StartWatcher(appCtx, ingest.WatcherOptions{
 		Env:        env,
 		Store:      st,
+		Ledger:     led,
 		SinceMs:    since,
 		IntervalMs: options.IntervalMs,
 		Now:        func() int64 { return now().UnixMilli() },
@@ -239,6 +249,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 	t.Watcher = watcher
 	t.Insights = insights
 	t.Writer = writer
+	t.ledger = led
 	t.Owns = true
 	// the token a proxying huddle presents on this mount's guarded routes: huddle's own members
 	// live only in their owner's memory, so the lock record is the one ground two huddles share
@@ -647,8 +658,8 @@ func (t *Tab) TranscriptTimes(ids []string) map[string]time.Time {
 }
 
 // Stop ends the mount. The watcher, the insights, the retention and the history writer stop, the
-// streams radar holds close, and the lock goes — but only while the record on disk is still this
-// mount's own: a successor that already took the lock keeps it. Idempotent.
+// ledger closes, the streams radar holds close, and the lock goes — but only while the record on
+// disk is still this mount's own: a successor that already took the lock keeps it. Idempotent.
 func (t *Tab) Stop() {
 	t.stopOnce.Do(func() {
 		defer close(t.stopped)
@@ -656,6 +667,9 @@ func (t *Tab) Stop() {
 			return
 		}
 		t.Watcher.Stop()
+		if t.ledger != nil {
+			_ = t.ledger.Close()
+		}
 		t.Insights.Stop()
 		t.prunes.Stop()
 		if t.Writer != nil {
