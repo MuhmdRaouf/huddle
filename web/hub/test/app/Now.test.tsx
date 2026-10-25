@@ -402,6 +402,23 @@ describe("the Now list", () => {
     expect(within(idle as HTMLElement).getByText("12 min")).toBeDefined();
   });
 
+  it("chips a session whose hooks stopped reporting on its working and its idle row, and no other", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    mountNow("phone", [
+      row({ session_id: "s-quiet", title: "quiet-hooks", hooks_stale: true }),
+      row({ session_id: "s-rest", title: "resting", state: "idle", last_event: "Stop", hooks_stale: true }),
+      row({ session_id: "s-fine", title: "reporting" }),
+    ]);
+    for (const name of ["quiet-hooks", "resting"]) {
+      const r = screen.getByText(name).closest("[data-row]") as HTMLElement;
+      const chip = r.querySelector("[data-hooks-stale]") as HTMLElement;
+      expect(chip?.textContent, name).toBe("hooks stale");
+      expect(chip.className, name).toContain("ui-badge-warn");
+    }
+    const fine = screen.getByText("reporting").closest("[data-row]") as HTMLElement;
+    expect(fine.querySelector("[data-hooks-stale]")).toBeNull();
+  });
+
   it("moves a row between groups the moment its registry.session row lands", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     const { registry } = mountNow("phone");
@@ -610,6 +627,25 @@ describe("the Session screen", () => {
     const missing = makeRegistry({ sessions: [], open: null, openId: "s-x", openMissing: true });
     followRender(() => <SessionScreen id="s-x" layout="phone" />, missing);
     expect(screen.getByText(/no session s-x/)).toBeDefined();
+  });
+
+  it("says how to restart a session whose hooks stopped reporting, and offers nothing to press", () => {
+    for (const layout of ["phone", "desktop"] as const) {
+      cleanup();
+      mountSession(layout, { hooks_stale: true });
+      const header = document.querySelector("[data-session] header") as HTMLElement;
+      expect(header.querySelector("[data-hooks-stale]")?.textContent, layout).toBe("hooks stale");
+      const line = document.querySelector("[data-resume]") as HTMLElement;
+      expect(line.textContent, layout).toBe(
+        "Hooks stopped reporting: restart this session with claude --resume s-need-1",
+      );
+      expect(line.querySelector("code")?.textContent, layout).toBe("claude --resume s-need-1");
+      expect(line.querySelectorAll("a, button").length, layout).toBe(0);
+    }
+    cleanup();
+    mountSession("phone");
+    expect(document.querySelector("[data-hooks-stale]")).toBeNull();
+    expect(document.querySelector("[data-resume]")).toBeNull();
   });
 
   it("lays the same facts out for the tablet and the desktop widths", () => {

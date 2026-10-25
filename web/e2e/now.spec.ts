@@ -8,8 +8,11 @@
 // every target on it is at least 44 px; axe finds nothing serious on either.
 
 import { expect, test } from "@playwright/test";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { expectAccessible } from "./axe.ts";
-import { api, openTab, SEEDED, signIn, theSetup, TOTALS } from "./helpers.ts";
+import { api, openTab, SEEDED, signIn, soloPairHome, theSetup, TOTALS } from "./helpers.ts";
 
 /** Today's three seeded glm-5.3 calls at the price table's 1.40 / 4.40 / 0.26 USD per million. */
 const TODAY_USD = (TOTALS.input * 1.4 + TOTALS.output * 4.4 + TOTALS.cacheRead * 0.26) / 1e6;
@@ -87,6 +90,56 @@ test("a teammate that went idle shows under its lead's row", async ({ page }) =>
   await expect(mate).toContainText("researcher");
   // the teammate's state rides as a word
   await expect(mate.locator("[data-state='idle']")).toHaveText("idle");
+});
+
+test("a session with stale hooks shows its chip and the resume line, never stuck", async ({ page }, info) => {
+  // the hub reads hooks stale when a session's transcript runs ahead of its last report while
+  // its pid lives: the session reports once, twenty minutes back (stuck, on its reports alone),
+  // with the pid of a stand-in process this test starts and stops (its command names claude, so
+  // the hub's pid sweep keeps it), and its transcript under the run's Claude config moved twelve
+  // minutes back, eight minutes after that report and quiet past the ten-minute limit since
+  const session = `e2e-stale-${info.project.name}`;
+  const standIn = spawn(process.execPath, ["-e", "setInterval(() => {}, 1 << 30)", "claude"], {
+    stdio: "ignore",
+  });
+  try {
+    const minutesAgo = (m: number): Date => new Date(Date.now() - m * 60_000);
+    await api("/api/registry/report", {
+      session_id: session,
+      machine: "e2e-machine",
+      project: "e2e",
+      title: "Hooks went quiet",
+      pid: standIn.pid,
+      last_event: "UserPromptSubmit",
+      last_event_at: minutesAgo(20).toISOString(),
+    });
+    const transcripts = path.join(soloPairHome.claudeConfig, "projects", "e2e-stale");
+    fs.mkdirSync(transcripts, { recursive: true });
+    const transcript = path.join(transcripts, `${session}.jsonl`);
+    fs.writeFileSync(transcript, "");
+    fs.utimesSync(transcript, minutesAgo(12), minutesAgo(12));
+
+    await signIn(page);
+    await openTab(page, "Now");
+    const row = page.locator(`a[data-row='${session}']`);
+    await expect(row.locator("[data-hooks-stale]")).toHaveText("hooks stale");
+    // the transcript, not the twenty-minute-old report, settles the state: idle, never stuck
+    await expect(row.locator("[data-state]")).toHaveText("idle");
+    await expect(page.locator(`[data-row='${session}'] [data-state='stuck']`)).toHaveCount(0);
+    await expectAccessible(page);
+
+    await row.click();
+    const view = page.locator("[data-session]");
+    await expect(view.locator("header [data-hooks-stale]")).toHaveText("hooks stale");
+    await expect(view.getByText(/^Hooks stopped reporting: restart this session with/)).toBeVisible();
+    await expect(view.locator("[data-resume] code")).toHaveText(`claude --resume ${session}`);
+    await expect(view.locator("[data-state='stuck']")).toHaveCount(0);
+    // the chip and the line are report only: they offer nothing to press
+    await expect(view.locator("[data-resume] :is(a, button)")).toHaveCount(0);
+    await expectAccessible(page);
+  } finally {
+    standIn.kill();
+  }
 });
 
 test("a seeded permission ask is allowed with one tap at its card's foot", async ({ page, isMobile }, info) => {

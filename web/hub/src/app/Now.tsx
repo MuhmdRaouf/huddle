@@ -197,6 +197,17 @@ function HarnessBadge({ harness }: { harness: string }): JSX.Element {
 }
 
 /** The link that opens one session from the list. */
+/** The chip a session whose hooks stopped reporting carries beside its state: a warning to
+ *  look, report only, with nothing to press. */
+function HooksStaleChip({ s }: { s: RegistrySession }): JSX.Element | null {
+  if (!s.hooks_stale) return null;
+  return (
+    <span data-hooks-stale="" class="ui-badge ui-badge-warn shrink-0">
+      hooks stale
+    </span>
+  );
+}
+
 const openHref = (s: RegistrySession): string => `#/now/${s.session_id}`;
 
 /** The needs-you card: the session that waits on the owner, what it asks, and the answers at
@@ -231,6 +242,7 @@ function NeedsCard({
             {s.harness ? <HarnessBadge harness={s.harness} /> : null}
           </span>
           <span class="flex shrink-0 items-center gap-1.5">
+            <HooksStaleChip s={s} />
             <StateChip state={s.state} />
             <span class="text-xs muted">{ageText(s.last_event_at, now)}</span>
           </span>
@@ -307,6 +319,7 @@ function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element 
       </span>
       <span class="ui-list-trailing flex-col items-end gap-1">
         <span class="flex items-center gap-1.5">
+          <HooksStaleChip s={s} />
           <StateChip state={s.state} />
           {s.model ? <ModelChip model={s.model} /> : null}
         </span>
@@ -339,6 +352,7 @@ function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolea
         </span>
       </span>
       <span class="ui-list-trailing gap-1.5">
+        <HooksStaleChip s={s} />
         <StateChip state={s.state} />
         <span class="text-xs muted">{ageText(s.last_event_at, now)}</span>
       </span>
@@ -857,7 +871,8 @@ function NowDialogs({
   );
 }
 
-/** The session's chips: its state (mark and word), its model, and its channel when it is in one. */
+/** The session's chips: its state (mark and word), the hooks-stale chip when its hooks stopped
+ *  reporting, its model, and its channel when it is in one. */
 function Chips({ s }: { s: RegistrySession }): JSX.Element {
   return (
     <span class="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -865,6 +880,7 @@ function Chips({ s }: { s: RegistrySession }): JSX.Element {
         <StateMark state={s.state} />
         {stateWord(s.state)}
       </span>
+      <HooksStaleChip s={s} />
       {s.model ? <ModelChip model={s.model} pill /> : null}
       {s.channel ? (
         <span class="rounded-full border hairline px-2.5 py-0.5 text-xs muted">#{s.channel}</span>
@@ -1150,10 +1166,11 @@ function SessionActions({ session }: { session: RegistrySession }): JSX.Element 
   );
 }
 
-/** The Session screen: the header (name, where, chips, context bar), the stream of the session's
- *  events, and the action bar its open needs-you ask carries (the phone's sheet, the wide
- *  layouts' inline box). The phone paints its own header with the back link; the tablet and the
- *  desktop carry theirs in a bar. */
+/** The Session screen: the header (name, where, chips, context bar), the line that says how to
+ *  restart a session whose hooks stopped reporting, the stream of the session's events, and the
+ *  action bar its open needs-you ask carries (the phone's sheet, the wide layouts' inline box).
+ *  The phone paints its own header with the back link; the tablet and the desktop carry theirs
+ *  in a bar. */
 export function SessionScreen({ id, layout }: { id: string; layout: Layout }): JSX.Element {
   const { registry, now } = useHuddle();
   const st = registry.getState();
@@ -1217,6 +1234,12 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
           ) : null}
         </header>
       )}
+      {d.hooks_stale ? (
+        <p data-resume="" class="shrink-0 border-b hairline px-4 py-2.5 text-sm sm:px-6">
+          Hooks stopped reporting: restart this session with{" "}
+          <code class="font-mono">claude --resume {d.session_id}</code>
+        </p>
+      ) : null}
       <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 sm:px-6" data-stream="">
         <div class="mx-auto flex max-w-[720px] flex-col gap-3 text-sm leading-relaxed sm:text-[15px]">
           {items.map((item, i) => {

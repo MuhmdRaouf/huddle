@@ -37,12 +37,16 @@ export type RegistryReport = {
 export type RegistryTeammate = { name: string; state: string };
 
 /** One registry row: the report's fields with the state computed when it was read (SPEC 5.2),
- *  the route a message to this session would take (SPEC 6.4), and its teammates, sorted by
- *  name, when it leads an agent team. */
+ *  the route a message to this session would take (SPEC 6.4), its teammates, sorted by name,
+ *  when it leads an agent team, and whether its hooks stopped reporting. */
 export type RegistrySession = RegistryReport & {
   state: string;
   delivery_route?: string;
   teammates?: RegistryTeammate[];
+  /** The session's transcript runs ahead of its reports while its process lives: its hooks no
+   *  longer reach the registry. The list and detail reads carry it; a live row comes from a
+   *  report, so it reads false. */
+  hooks_stale?: boolean;
 };
 
 /** One stored event of a session's list: its number and the report as it came. */
