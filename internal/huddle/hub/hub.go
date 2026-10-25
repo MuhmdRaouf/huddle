@@ -31,6 +31,9 @@ type Report struct {
 	// Harness is the coding agent the session runs in — codex, gemini, qwen, opencode, crush —
 	// as the harness hook reported it; empty is Claude Code itself.
 	Harness string `json:"harness,omitempty"`
+	// TranscriptPath is the session's transcript JSONL on its machine, as the hook's stdin names
+	// it. It is the hub's to read and never leaves the hub: no row the web reads carries it.
+	TranscriptPath string `json:"transcript_path,omitempty"`
 	// Digest is the session's digest, built by its Stop hook (SPEC 8); empty on every other
 	// event.
 	Digest string `json:"digest,omitempty"`
@@ -87,8 +90,8 @@ func (d *DB) Close() error { return d.st.Close() }
 // its end, and a resumed one comes back.
 const sessionUpsert = `
 INSERT INTO sessions (session_id, machine, project, branch, title, task, model, context_percent,
-                      cwd, pid, channel, member, harness, last_event, last_event_at, ended_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      cwd, pid, channel, member, harness, transcript_path, last_event, last_event_at, ended_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(session_id) DO UPDATE SET
   machine = COALESCE(NULLIF(excluded.machine, ''), sessions.machine),
   project = COALESCE(NULLIF(excluded.project, ''), sessions.project),
@@ -102,6 +105,7 @@ ON CONFLICT(session_id) DO UPDATE SET
   channel = COALESCE(NULLIF(excluded.channel, ''), sessions.channel),
   member = COALESCE(NULLIF(excluded.member, ''), sessions.member),
   harness = COALESCE(NULLIF(excluded.harness, ''), sessions.harness),
+  transcript_path = COALESCE(NULLIF(excluded.transcript_path, ''), sessions.transcript_path),
   last_event = excluded.last_event,
   last_event_at = excluded.last_event_at,
   ended_at = CASE
@@ -134,7 +138,7 @@ func (d *DB) Report(ctx context.Context, r Report) error {
 		}
 		if err := q.Run(ctx, sessionUpsert, r.SessionID, r.Machine, r.Project, r.Branch, r.Title,
 			r.Task, r.Model, r.ContextPercent, r.Cwd, r.Pid, r.Channel, r.Member, r.Harness,
-			r.LastEvent, r.LastEventAt, endedAt); err != nil {
+			r.TranscriptPath, r.LastEvent, r.LastEventAt, endedAt); err != nil {
 			return err
 		}
 		if r.Teammate != nil && r.Teammate.Name != "" {

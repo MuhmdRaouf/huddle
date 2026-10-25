@@ -199,6 +199,57 @@ func TestReportKeepsTheToolAndPromptLineOnTheEventRow(t *testing.T) {
 	}
 }
 
+// TestTheRegistryKeepsTheNewestTranscriptPath pins the transcript path's keep rule: the newest
+// report that carries one wins, a report without one leaves the stored path alone, a session
+// without any answers none, and the path never reaches a row the web reads.
+func TestTheRegistryKeepsTheNewestTranscriptPath(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	first := filepath.Join(t.TempDir(), "s-first.jsonl")
+	second := filepath.Join(t.TempDir(), "s-second.jsonl")
+	report := func(rep Report) {
+		t.Helper()
+		if err := db.Report(ctx, rep); err != nil {
+			t.Fatalf("report %s: %v", rep.LastEvent, err)
+		}
+	}
+	report(Report{SessionID: "s-t", TranscriptPath: first, LastEvent: "SessionStart", LastEventAt: "2026-10-16T09:00:00.000Z"})
+	if got, err := db.TranscriptPath(ctx, "s-t"); err != nil || got != first {
+		t.Errorf("transcript path after the first report = %q (%v), want %q", got, err, first)
+	}
+	// a later report that carries no path leaves the stored one alone
+	report(Report{SessionID: "s-t", LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:01.000Z"})
+	if got, err := db.TranscriptPath(ctx, "s-t"); err != nil || got != first {
+		t.Errorf("transcript path after a report without one = %q (%v), want %q kept", got, err, first)
+	}
+	// the newest path wins
+	report(Report{SessionID: "s-t", TranscriptPath: second, LastEvent: "Stop", LastEventAt: "2026-10-16T09:00:02.000Z"})
+	if got, err := db.TranscriptPath(ctx, "s-t"); err != nil || got != second {
+		t.Errorf("transcript path after the newest = %q (%v), want %q", got, err, second)
+	}
+	// no such session answers none, with no error
+	if got, err := db.TranscriptPath(ctx, "s-none"); err != nil || got != "" {
+		t.Errorf("transcript path of an unknown session = %q (%v), want none", got, err)
+	}
+	// a session whose reports never carried one answers none too
+	report(Report{SessionID: "s-bare", LastEvent: "SessionStart", LastEventAt: "2026-10-16T09:00:03.000Z"})
+	if got, err := db.TranscriptPath(ctx, "s-bare"); err != nil || got != "" {
+		t.Errorf("transcript path of a session without one = %q (%v), want none", got, err)
+	}
+	// the row the web reads carries no path
+	row, err := db.SessionRow(ctx, "s-t", readNow)
+	if err != nil || row == nil {
+		t.Fatalf("the session's row: %v (%v)", row, err)
+	}
+	marshalled, err := json.Marshal(row)
+	if err != nil {
+		t.Fatalf("marshal the row: %v", err)
+	}
+	if strings.Contains(string(marshalled), "transcript_path") {
+		t.Errorf("the web's row carries the transcript path: %s", marshalled)
+	}
+}
+
 // openForTest answers an open registry database closed with the test.
 func openForTest(t *testing.T) *DB {
 	t.Helper()

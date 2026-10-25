@@ -251,6 +251,17 @@ func (d *DB) MemberState(ctx context.Context, channel, member string, now time.T
 	return out.State, true
 }
 
+// TranscriptPath answers the session's transcript JSONL on its machine, as its hooks named it:
+// the hub reads the conversation from it. A session the registry holds without one, and no
+// session at all, answer none. The path never leaves the hub — no row the web reads carries it.
+func (d *DB) TranscriptPath(ctx context.Context, id string) (string, error) {
+	row, err := d.st.Get(ctx, "SELECT transcript_path FROM sessions WHERE session_id = ?", id)
+	if err != nil || row == nil {
+		return "", err
+	}
+	return textOfRow(row, "transcript_path"), nil
+}
+
 // Session answers one session with the events that led to it — the newest 200, oldest of them
 // first — or nil when no such session is registered.
 func (d *DB) Session(ctx context.Context, id string, now time.Time) (*SessionDetail, error) {

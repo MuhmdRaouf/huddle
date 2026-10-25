@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 21
+const SchemaVersion = 22
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -275,6 +275,9 @@ var migrations = []string{
 	// channel push the session did not load huddle's server for, so an ack without it routes
 	// nothing now.
 	`ALTER TABLE push_acks ADD COLUMN listens INTEGER NOT NULL DEFAULT 0;`,
+	// 22: the session's transcript JSONL on its own machine, as the hook's stdin names it, for
+	// the hub to read the conversation from; no row the web reads carries it.
+	`ALTER TABLE sessions ADD COLUMN transcript_path TEXT NOT NULL DEFAULT '';`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

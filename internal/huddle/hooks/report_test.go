@@ -429,6 +429,28 @@ func TestTheReportNamesClaudeCodeAsItsHarness(t *testing.T) {
 	}
 }
 
+// TestTheReportCarriesTheTranscriptPath pins the path half: every report carries the session's
+// transcript path exactly as the hook's stdin names it, on the event that starts the session and
+// on the ones that follow it.
+func TestTheReportCarriesTheTranscriptPath(t *testing.T) {
+	cwd := t.TempDir()
+	transcript := writeTranscript(t)
+	for _, event := range []string{"session-start", "post-tool-use"} {
+		t.Run(event, func(t *testing.T) {
+			reg, url := startRegistry(t)
+			runReportHook(t, reportFixture(t, event, transcript, cwd), reportHome(t),
+				map[string]string{"HUDDLE_URL": url})
+			took := reg.took()
+			if len(took) != 1 {
+				t.Fatalf("the registry took %d POSTs, want 1", len(took))
+			}
+			if got := field(took[0].Body, "transcript_path"); got != transcript {
+				t.Errorf("transcript_path = %q, want %q", got, transcript)
+			}
+		})
+	}
+}
+
 // TestTheReportCarriesThePromptLine pins the prompt half: a UserPromptSubmit report carries the
 // typed prompt's first line, cut to 120 runes, and an injected prompt carries none.
 func TestTheReportCarriesThePromptLine(t *testing.T) {
