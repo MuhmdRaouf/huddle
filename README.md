@@ -41,7 +41,7 @@ serves, and delegate verified background jobs to them. Each has its own README u
 | Work a kanban board from sessions | [Kanban](#kanban) |
 | Connect Codex, Gemini, Qwen, opencode or crush | [Other agents](#other-agents) |
 | Run a hub on a local name | [A local name](#a-local-name) |
-| Develop on Huddle | [Development](#development) · [Test plan](docs/TESTPLAN.md) |
+| Develop on Huddle | [Development](#development) · [Test plan](docs/TESTPLAN.md) · [Decisions](docs/DECISIONS.md) |
 
 ## Quick start
 
