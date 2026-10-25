@@ -14,7 +14,7 @@ import { LOAD_REQUESTS } from "./seed.ts";
 const VIEWS: readonly (readonly [
   view: string,
   label: string,
-  role: "heading" | "row",
+  role: "heading" | "row" | "region",
   loaded: RegExp,
 ])[] = [
   ["overview", "Overview", "heading", /Top sessions by spend/],
@@ -24,7 +24,7 @@ const VIEWS: readonly (readonly [
   ["models", "Models", "heading", /^Models$/],
   ["requests", "Requests", "row", /open details/],
   ["tools", "Tools", "heading", /Most used tools/],
-  ["agents", "Agents", "row", /Status Agent Model/],
+  ["agents", "Agents", "region", /^Agents$/],
   ["routers", "Routers", "heading", /Router health/],
   ["alerts", "Alerts", "heading", /All clear|^Alerts$/],
   ["timeline", "Timeline", "heading", /^Timeline$/],
