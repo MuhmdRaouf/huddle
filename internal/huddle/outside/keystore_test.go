@@ -118,3 +118,63 @@ func TestARefusingAccountNameIsRefusedBeforeAnyToolRuns(t *testing.T) {
 		t.Errorf("a refused account still ran a tool: %v", tool.lines)
 	}
 }
+
+// TestTheKeystoreDeleteRunsThePlatformsRemove pins delete on both platforms: the platform's own
+// remove names the service and the account, which are no secret; the tool's stdin carries none;
+// a dead tool answers an error; and a bad account name runs no tool at all.
+func TestTheKeystoreDeleteRunsThePlatformsRemove(t *testing.T) {
+	t.Run("darwin", func(t *testing.T) {
+		tool := &fakeTool{answer: map[string]keystore.RunResult{
+			"/usr/bin/security -i": ranRes(0, ""),
+		}}
+		store := &osKeyStore{run: tool.run, platform: "darwin"}
+		if err := store.Delete(context.Background(), "cc-messaging:s-rep"); err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+		if len(tool.lines) != 1 || tool.lines[0] != "/usr/bin/security -i" {
+			t.Fatalf("commands = %v, want the one `security -i`", tool.lines)
+		}
+		for _, want := range []string{"delete-generic-password", `-s "huddle"`, `-a "cc-messaging:s-rep"`} {
+			if !strings.Contains(tool.stdins[0], want) {
+				t.Errorf("the stdin command %q does not name %s", tool.stdins[0], want)
+			}
+		}
+	})
+	t.Run("linux", func(t *testing.T) {
+		tool := &fakeTool{answer: map[string]keystore.RunResult{
+			"secret-tool clear": ranRes(0, ""),
+		}}
+		store := &osKeyStore{run: tool.run, platform: "linux"}
+		if err := store.Delete(context.Background(), "cc-messaging:s-rep"); err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+		if len(tool.lines) != 1 || !strings.Contains(tool.lines[0], "clear service huddle account cc-messaging:s-rep") {
+			t.Fatalf("commands = %v, want secret-tool clear by service and account", tool.lines)
+		}
+		if tool.stdins[0] != "" {
+			t.Errorf("stdin = %q, want it empty", tool.stdins[0])
+		}
+	})
+	t.Run("a dead tool is an error", func(t *testing.T) {
+		tool := &fakeTool{answer: map[string]keystore.RunResult{
+			"/usr/bin/security -i": {Missing: true}, // what SpawnRunner answers when no tool starts
+		}}
+		store := &osKeyStore{run: tool.run, platform: "darwin"}
+		if err := store.Delete(context.Background(), "cc-messaging:s-rep"); err == nil {
+			t.Error("a keystore whose tool could not start answered no error")
+		}
+		if len(tool.lines) != 1 {
+			t.Fatalf("commands = %v, want the one `security -i`", tool.lines)
+		}
+	})
+	t.Run("a bad account runs no tool", func(t *testing.T) {
+		tool := &fakeTool{}
+		store := &osKeyStore{run: tool.run, platform: "darwin"}
+		if err := store.Delete(context.Background(), "bad account"); err == nil {
+			t.Error("an account with a space was accepted")
+		}
+		if len(tool.lines) != 0 {
+			t.Errorf("a refused account still ran a tool: %v", tool.lines)
+		}
+	})
+}

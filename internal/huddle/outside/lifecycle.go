@@ -82,7 +82,7 @@ func enabledPlugins(value any) map[string]any {
 // disabled when the user scope says false and no known project's settings say true, present
 // otherwise, and unknown while a file is missing or half-written.
 func PluginPresence(_ context.Context, env map[string]string, plugin string, projects []string) Presence {
-	config := configDir(env)
+	config := ClaudeConfigDir(env)
 	registry := readJSONFile(filepath.Join(config, "plugins", "installed_plugins.json"))
 	top, ok := jsonObject(registry.value)
 	if registry.missing || registry.unreadable || !ok {
@@ -143,9 +143,9 @@ func PluginPresence(_ context.Context, env map[string]string, plugin string, pro
 	return PresenceDisabled
 }
 
-// configDir is the Claude config dir: $CLAUDE_CONFIG_DIR passes through exactly as given,
+// ClaudeConfigDir is the Claude config dir: $CLAUDE_CONFIG_DIR passes through exactly as given,
 // else ~/.claude.
-func configDir(env map[string]string) string {
+func ClaudeConfigDir(env map[string]string) string {
 	if dir, present := env["CLAUDE_CONFIG_DIR"]; present {
 		return dir
 	}

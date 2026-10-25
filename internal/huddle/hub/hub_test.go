@@ -250,6 +250,56 @@ func TestTheRegistryKeepsTheNewestTranscriptPath(t *testing.T) {
 	}
 }
 
+// TestTheRegistryKeepsTheNewestInboxSocket pins the inbox socket's keep rule, the transcript
+// path's own: the newest report that carries one wins, a report without one leaves the stored
+// socket alone, a session without any answers none, and the socket never reaches a row the web
+// reads.
+func TestTheRegistryKeepsTheNewestInboxSocket(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	report := func(rep Report) {
+		t.Helper()
+		if err := db.Report(ctx, rep); err != nil {
+			t.Fatalf("report %s: %v", rep.LastEvent, err)
+		}
+	}
+	report(Report{SessionID: "s-t", InboxSocket: "/tmp/one.sock", LastEvent: "SessionStart", LastEventAt: "2026-10-16T09:00:00.000Z"})
+	if got, err := db.InboxSocket(ctx, "s-t"); err != nil || got != "/tmp/one.sock" {
+		t.Errorf("inbox socket after the first report = %q (%v), want /tmp/one.sock", got, err)
+	}
+	// a later report that carries no socket leaves the stored one alone
+	report(Report{SessionID: "s-t", LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:01.000Z"})
+	if got, err := db.InboxSocket(ctx, "s-t"); err != nil || got != "/tmp/one.sock" {
+		t.Errorf("inbox socket after a report without one = %q (%v), want /tmp/one.sock kept", got, err)
+	}
+	// the newest socket wins
+	report(Report{SessionID: "s-t", InboxSocket: "/tmp/two.sock", LastEvent: "Stop", LastEventAt: "2026-10-16T09:00:02.000Z"})
+	if got, err := db.InboxSocket(ctx, "s-t"); err != nil || got != "/tmp/two.sock" {
+		t.Errorf("inbox socket after the newest = %q (%v), want /tmp/two.sock", got, err)
+	}
+	// no such session answers none, with no error
+	if got, err := db.InboxSocket(ctx, "s-none"); err != nil || got != "" {
+		t.Errorf("inbox socket of an unknown session = %q (%v), want none", got, err)
+	}
+	// a session whose reports never carried one answers none too
+	report(Report{SessionID: "s-bare", LastEvent: "SessionStart", LastEventAt: "2026-10-16T09:00:03.000Z"})
+	if got, err := db.InboxSocket(ctx, "s-bare"); err != nil || got != "" {
+		t.Errorf("inbox socket of a session without one = %q (%v), want none", got, err)
+	}
+	// the row the web reads carries no socket
+	row, err := db.SessionRow(ctx, "s-t", readNow)
+	if err != nil || row == nil {
+		t.Fatalf("the session's row: %v (%v)", row, err)
+	}
+	marshalled, err := json.Marshal(row)
+	if err != nil {
+		t.Fatalf("marshal the row: %v", err)
+	}
+	if strings.Contains(string(marshalled), "inbox_socket") {
+		t.Errorf("the web's row carries the inbox socket: %s", marshalled)
+	}
+}
+
 // openForTest answers an open registry database closed with the test.
 func openForTest(t *testing.T) *DB {
 	t.Helper()

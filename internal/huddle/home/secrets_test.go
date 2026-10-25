@@ -57,5 +57,34 @@ func TestKeyFilesRefuseAnAccountThatIsNotAName(t *testing.T) {
 	}
 }
 
+// TestKeyFilesDeleteTakesTheAccountFileBackOut pins Delete's half of the store: the account's
+// file is gone and answers nothing after, deleting an account no file holds is no error, and a
+// neighbour's secret is untouched.
+func TestKeyFilesDeleteTakesTheAccountFileBackOut(t *testing.T) {
+	dir := t.TempDir()
+	secrets := KeyFiles{Dir: dir}
+	if err := secrets.Set(bg(), "cc-messaging:s-1", "tok-123"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := secrets.Delete(bg(), "cc-messaging:s-1"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, ok := secrets.Get(bg(), "cc-messaging:s-1"); ok {
+		t.Error("Get after Delete answers ok")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cc-messaging-s-1")); !os.IsNotExist(err) {
+		t.Errorf("the account's file after Delete: %v, want it gone", err)
+	}
+	if err := secrets.Set(bg(), "cc-messaging:s-2", "other"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := secrets.Delete(bg(), "cc-messaging:s-3"); err != nil {
+		t.Errorf("Delete of a missing account: %v, want no error", err)
+	}
+	if got, ok := secrets.Get(bg(), "cc-messaging:s-2"); !ok || got != "other" {
+		t.Errorf("Get = %q, %v; want the neighbour kept", got, ok)
+	}
+}
+
 // bg is one background context for the store's calls.
 func bg() context.Context { return context.Background() }

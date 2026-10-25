@@ -133,6 +133,28 @@ func (s *osKeyStore) Set(ctx context.Context, account, value string) error {
 	return nil
 }
 
+// Delete takes the account's secret back out of the platform's keystore; the account on the
+// tool's command line is no secret. A store that says no answers an error that names the store,
+// never the secret.
+func (s *osKeyStore) Delete(ctx context.Context, account string) error {
+	if s.run == nil {
+		return fmt.Errorf("huddle: no keystore to hold %q", account)
+	}
+	if !accountShapeForSecret(account) {
+		return fmt.Errorf("huddle: %q is not a secret's account name", account)
+	}
+	store := s.storeFor(account)
+	if store == nil {
+		return fmt.Errorf("huddle: no keystore on %s", s.platformOf())
+	}
+	bounded, cancel := context.WithTimeout(ctx, toolBudget)
+	defer cancel()
+	if err := store.Remove(bounded); err != nil {
+		return fmt.Errorf("huddle: the %s did not drop %q", store.Label(), account)
+	}
+	return nil
+}
+
 // platformOf answers the keystore's platform: the one picked, else the host's.
 func (s *osKeyStore) platformOf() string {
 	if s.platform != "" {

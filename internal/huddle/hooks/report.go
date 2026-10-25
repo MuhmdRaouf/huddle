@@ -146,6 +146,11 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			rep.Digest = digestOf(input.TranscriptPath, input.Cwd)
 		}
 		rep.Pid = claudePid()
+		// where the session's inbox is, and where its messaging token lives: the hub keeps the
+		// socket on the session's row, the store keeps the token until the session's end
+		env := envOf(w)
+		rep.InboxSocket = inboxSocketOf(env, inboxConfigDir(env), rep.Pid, input.SessionID)
+		keepInboxToken(ctx, w, env, input.HookEventName, input.SessionID, left)
 
 		return deliverReport(ctx, w, id, rep, left)
 	})

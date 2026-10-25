@@ -451,6 +451,79 @@ func TestTheReportCarriesTheTranscriptPath(t *testing.T) {
 	}
 }
 
+// TestTheSessionStartReportCarriesTheInboxSocket pins the inbox half: the session's messaging
+// socket rides the report for the hub to keep on the session's row, and a session whose env
+// names none (and whose config dir holds no sessions file) carries none.
+func TestTheSessionStartReportCarriesTheInboxSocket(t *testing.T) {
+	cwd := t.TempDir()
+	reg, url := startRegistry(t)
+	runReportHook(t, reportFixture(t, "session-start", writeTranscript(t), cwd), reportHome(t),
+		map[string]string{"HUDDLE_URL": url, "CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/inbox.sock"})
+	took := reg.took()
+	if len(took) != 1 {
+		t.Fatalf("the registry took %d POSTs, want 1", len(took))
+	}
+	if got := field(took[0].Body, "inbox_socket"); got != "/tmp/inbox.sock" {
+		t.Errorf("inbox_socket = %q, want the env's socket", got)
+	}
+	reg2, url2 := startRegistry(t)
+	runReportHook(t, reportFixture(t, "session-start", writeTranscript(t), cwd), reportHome(t),
+		map[string]string{"HUDDLE_URL": url2})
+	took = reg2.took()
+	if len(took) != 1 {
+		t.Fatalf("the registry took %d POSTs, want 1", len(took))
+	}
+	if got, has := took[0].Body["inbox_socket"]; has {
+		t.Errorf("inbox_socket = %q, want it absent without a socket", got)
+	}
+}
+
+// TestTheMessagingTokenGoesToTheKeystoreBySession pins the token's first rule: the messaging
+// token a SessionStart carries goes to the secret store under the session's own account, and
+// into no report, no log line and no outbox line.
+func TestTheMessagingTokenGoesToTheKeystoreBySession(t *testing.T) {
+	t.Setenv("HUDDLE_KEYS", "files") // the store a hermetic run answers: the home's keys/ files
+	reg, url := startRegistry(t)
+	home := reportHome(t)
+	stdout, _ := runReportHook(t, reportFixture(t, "session-start", writeTranscript(t), t.TempDir()), home,
+		map[string]string{"HUDDLE_URL": url, "HUDDLE_KEYS": "files", "CLAUDE_CODE_MESSAGING_TOKEN": "tok-123"})
+	if stdout != "" {
+		t.Errorf("the hook printed %q, want silence", stdout)
+	}
+	took := reg.took()
+	if len(took) != 1 {
+		t.Fatalf("the registry took %d POSTs, want 1", len(took))
+	}
+	raw, err := os.ReadFile(filepath.Join(home, "keys", "cc-messaging-s-rep"))
+	if err != nil {
+		t.Fatalf("the session's token in the store: %v", err)
+	}
+	if string(raw) != "tok-123" {
+		t.Errorf("the store holds %q, want the session's messaging token", raw)
+	}
+	if strings.Contains(took[0].Raw, "tok-123") {
+		t.Error("the token reached the report the registry took")
+	}
+}
+
+// TestSessionEndDeletesTheMessagingToken pins the token's second rule: the session's end takes
+// its token back out of the store, so only a live session holds one.
+func TestSessionEndDeletesTheMessagingToken(t *testing.T) {
+	t.Setenv("HUDDLE_KEYS", "files")
+	home := reportHome(t)
+	token := filepath.Join(home, "keys", "cc-messaging-s-rep")
+	runReportHook(t, reportFixture(t, "session-start", writeTranscript(t), t.TempDir()), home,
+		map[string]string{"HUDDLE_KEYS": "files", "CLAUDE_CODE_MESSAGING_TOKEN": "tok-123"})
+	if raw, err := os.ReadFile(token); err != nil || string(raw) != "tok-123" {
+		t.Fatalf("the token after the start: %q (%v), want it in the store", raw, err)
+	}
+	runReportHook(t, reportFixture(t, "session-end", writeTranscript(t), t.TempDir()), home,
+		map[string]string{"HUDDLE_KEYS": "files"})
+	if _, err := os.Stat(token); !os.IsNotExist(err) {
+		t.Errorf("the token outlived the session's end: %v", err)
+	}
+}
+
 // TestTheReportCarriesThePromptLine pins the prompt half: a UserPromptSubmit report carries the
 // typed prompt's first line, cut to 120 runes, and an injected prompt carries none.
 func TestTheReportCarriesThePromptLine(t *testing.T) {

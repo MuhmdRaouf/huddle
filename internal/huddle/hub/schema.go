@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 22
+const SchemaVersion = 23
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -278,6 +278,9 @@ var migrations = []string{
 	// 22: the session's transcript JSONL on its own machine, as the hook's stdin names it, for
 	// the hub to read the conversation from; no row the web reads carries it.
 	`ALTER TABLE sessions ADD COLUMN transcript_path TEXT NOT NULL DEFAULT '';`,
+	// 23: the session's messaging inbox, the Unix socket Claude Code hands its hooks, for the hub
+	// to deliver owner messages to; no row the web reads carries it.
+	`ALTER TABLE sessions ADD COLUMN inbox_socket TEXT NOT NULL DEFAULT '';`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

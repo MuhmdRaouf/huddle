@@ -168,7 +168,7 @@ func TestAPluginPresentWhenTheUserSettingsAreMissing(t *testing.T) {
 		t.Errorf("PluginPresence with no user settings = %v, want present", presence)
 	}
 	// a config dir with neither a CLAUDE_CONFIG_DIR nor a HOME still lands somewhere
-	home := configDir(map[string]string{})
+	home := ClaudeConfigDir(map[string]string{})
 	if home == "" {
 		t.Error("configDir with no environment answered empty")
 	}

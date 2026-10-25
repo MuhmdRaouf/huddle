@@ -73,12 +73,18 @@ func (w *World) stdin() io.Reader {
 	return os.Stdin
 }
 
-// secrets resolves the home's secret store.
-func (w *World) secrets(ctx context.Context, h home.Home) home.SecretStore {
+// SecretsOf answers the home's secret store: the world's own when it was given one, else the OS
+// keystore with the home's keys/ files behind it (SPEC 4.1).
+func (w *World) SecretsOf(ctx context.Context, h home.Home) home.SecretStore {
 	if w != nil && w.Secrets != nil {
 		return w.Secrets(ctx, h)
 	}
 	return outside.SecretsFor(ctx, h)
+}
+
+// secrets resolves the home's secret store.
+func (w *World) secrets(ctx context.Context, h home.Home) home.SecretStore {
+	return w.SecretsOf(ctx, h)
 }
 
 // dnsKnown answers whether the issuer knows the DNS provider name.

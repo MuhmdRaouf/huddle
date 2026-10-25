@@ -24,8 +24,10 @@ runs the `huddle` binary the plugin's launcher downloaded (macOS and Linux, amd6
    deadline. Huddle's part reports the event to the hub: a tool call carries the tool's name and
    its short target (a Bash command's first line, the file path, or the MCP tool's name), cut to
    120 characters, and nothing else of the tool's input; a typed prompt carries its first line,
-   cut the same way; and every report carries the session's transcript path, kept on the hub,
-   never sent to the web.
+   cut the same way; and every report carries the session's transcript path and its messaging
+   inbox (the Unix socket Claude Code hands its hooks), both kept on the hub, never sent to the
+   web. The session's messaging token stays in the OS keystore under the session's own account
+   until the session ends, when it is deleted.
 
 3. Ask for the dashboard:
 

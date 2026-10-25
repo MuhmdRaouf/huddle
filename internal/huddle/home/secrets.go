@@ -7,7 +7,9 @@ package home
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -55,4 +57,17 @@ func (k KeyFiles) Set(_ context.Context, account, value string) error {
 		return fmt.Errorf("huddle: %q is not a secret's account name", account)
 	}
 	return writeFile0600(secretFile(k.Dir, account), []byte(value))
+}
+
+// Delete takes the account's secret back out; an account no file holds is no error. An account
+// that is not huddle's name shape is refused before anything is named, as Set refuses it.
+func (k KeyFiles) Delete(_ context.Context, account string) error {
+	if !accountShape.MatchString(account) {
+		return fmt.Errorf("huddle: %q is not a secret's account name", account)
+	}
+	err := os.Remove(secretFile(k.Dir, account))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
 }

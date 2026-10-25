@@ -296,8 +296,8 @@ func TestPresenceShapes(t *testing.T) {
 			{map[string]string{"CLAUDE_CONFIG_DIR": "/c"}, "/c"},
 			{map[string]string{"HOME": "/h"}, "/h/.claude"},
 		} {
-			if got := configDir(c.env); got != c.want {
-				t.Errorf("configDir(%v) = %q, want %q", c.env, got, c.want)
+			if got := ClaudeConfigDir(c.env); got != c.want {
+				t.Errorf("ClaudeConfigDir(%v) = %q, want %q", c.env, got, c.want)
 			}
 		}
 	})
