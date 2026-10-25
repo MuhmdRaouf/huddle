@@ -1,11 +1,13 @@
 /**
  * The Overview: the tab's front page, composed from the parts every other view reads — five stat
  * cards (spend against its budget, requests and their failures, tokens and their cache share,
- * sessions and who needs the owner, routers and any budget stopped), the spend-by-hour chart
+ * sessions and who needs the owner, routers and any budget stopped), the four usage graphs
+ * (requests per hour, tokens by kind, cost per day and per session), the spend-by-hour chart
  * stacked by model, the top sessions by spend (a row opens the Session screen), the plan limits
  * the statusline word reported, the newest alert, the routers list and the top tools, under the
  * self-check badge that holds today's totals against the transcripts. The phone
- * keeps the first two cards, the chart and the routers; the rest waits for a wider pane.
+ * keeps the first two cards, the graphs stacked, the chart and the routers; the rest waits
+ * for a wider pane.
  */
 
 import { modelColor } from "@huddle/ui/model-color.ts";
@@ -30,6 +32,7 @@ import { Flow, requestsInRange } from "../Flow.tsx";
 import { Icon } from "../Icon.tsx";
 import { EmptyState, ModelChip, Panel, Status, shortModelName } from "../kit.tsx";
 import { SelfCheckBadge } from "../SelfCheckBadge.tsx";
+import { OverviewGraphs } from "../OverviewGraphs.tsx";
 import { isJob } from "../sessions.ts";
 
 /** The loopback port each provider plugin's router serves on, for the routers list. */
@@ -686,6 +689,9 @@ export function OverviewView(): JSX.Element {
       </div>
       <div class="grid min-w-0 gap-4 xl:col-span-2">
         <ActiveBlock />
+      </div>
+      <div class="min-w-0 xl:col-span-2">
+        <OverviewGraphs />
       </div>
       <div class="grid min-w-0 gap-4">
         <SpendChart />

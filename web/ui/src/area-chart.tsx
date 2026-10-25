@@ -156,12 +156,15 @@ export function AreaChart(props: AreaChartProps): JSX.Element {
   }, []);
 
   const W = width;
-  const { left: L, top: T } = MARGIN;
+  const ymax = nice(Math.max(0, ...series.flatMap((s) => s.values.map(Number))));
+  const gridText = QUARTERS.map((f) => (yfmt ?? String)(+(ymax * f).toPrecision(12)));
+  // the grid values print in the 10 px mono face, about 6.2 px a character, right-aligned 6 px off the plot
+  const L = Math.max(MARGIN.left, Math.ceil(Math.max(...gridText.map((t) => t.length)) * 6.2 + 8));
+  const T = MARGIN.top;
   const iw = Math.max(10, W - L - MARGIN.right);
   const ih = Math.max(10, h - T - MARGIN.bottom);
   const n = Math.max(1, ...series.map((s) => s.values.length));
   const xAt = (i: number): number => L + (n > 1 ? (i * iw) / (n - 1) : iw / 2);
-  const ymax = nice(Math.max(1, ...series.flatMap((s) => s.values.map(Number))));
   const yOf = (v: number): number => T + ih * (1 - Math.min(Number(v) || 0, ymax) / ymax);
   const total = series.reduce((a, s) => a + s.values.reduce((x2, y2) => x2 + Number(y2), 0), 0);
   const empty = total <= 0;
@@ -198,15 +201,8 @@ export function AreaChart(props: AreaChartProps): JSX.Element {
         onPointerMove={onMove}
         onPointerLeave={() => setHover(null)}
       >
-        {QUARTERS.map((f) => (
-          <GridRow
-            key={f}
-            f={f}
-            y={T + ih * (1 - f)}
-            left={L}
-            width={iw}
-            text={(yfmt ?? String)(+(ymax * f).toFixed(2))}
-          />
+        {QUARTERS.map((f, i) => (
+          <GridRow key={f} f={f} y={T + ih * (1 - f)} left={L} width={iw} text={gridText[i] ?? ""} />
         ))}
         {(axis ?? []).map((s, i) => (
           <text

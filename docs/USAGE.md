@@ -284,7 +284,7 @@ and the provider routers' spool. Eleven views:
 
 | View | What it shows |
 |---|---|
-| Overview | Day cards: the last 24 hours' requests, token sums and cost |
+| Overview | Day cards: the last 24 hours' requests, token sums and cost; the four graphs below |
 | Agents | Sessions and agents, live transcripts included |
 | Requests | Every request, with a per-request inspector |
 | Tools | Tool calls per session and agent |
@@ -307,6 +307,16 @@ opus), and the Costs view marks that cost with `≈`.
 
 Radar's days are UTC dates, the way Anthropic's and the providers' usage pages count them, so a
 day's totals in Radar and on those pages turn over at the same moment.
+
+The Overview draws four graphs, each a UTC series refreshed once a minute:
+
+1. Requests per hour, today.
+2. Tokens by kind (input, output, cache read, cache write) per day, the last 7 days.
+3. Cost per day, the last 30 days.
+4. Cost per session, today's 10 costliest, each named by its title and machine.
+
+The first and the fourth read `GET /api/radar/api/usage/today` on the hub (`/api/usage/today`
+on radar's own port); the other two read `/api/usage?days=30`. A phone stacks them in one column.
 
 Radar checks itself once a minute while the Overview is open. It sums today's Claude Code
 transcripts again, counting each message id once (one API call writes one line per content block),

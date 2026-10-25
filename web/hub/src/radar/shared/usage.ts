@@ -58,6 +58,20 @@ export type UsageReport = {
   pricesRetrieved: string;
 };
 
+/** The current UTC day as /api/usage/today serves it, mirrored from internal/radar/usage: the
+ *  requests in each of its 24 hours, its ten costliest sessions, and the honest flags about
+ *  prices. */
+export type TodayReport = {
+  /** The UTC date, YYYY-MM-DD. */
+  date: string;
+  /** Requests per UTC hour, index 0 the hour from midnight. */
+  hourlyRequests: number[];
+  /** The day's costliest sessions, costliest first, ten at most. */
+  sessions: UsageSession[];
+  approximate: boolean;
+  unpriced: number;
+};
+
 /** The windows the view offers, as the route's days query takes them. */
 export type UsageWindow = 7 | 30 | 90;
 

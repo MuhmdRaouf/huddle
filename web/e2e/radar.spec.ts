@@ -1,10 +1,11 @@
 // radar.spec.ts — the Radar tab over seeded data: every view loads without a console error,
 // the overview's Day cards carry the fixture's exact totals, and the requests table lists the
-// three seeded calls with the inspector showing one request's numbers. The views are walked
-// through the sub-tab row in one document, the way owners switch views.
+// three seeded calls with the inspector showing one request's numbers, and the overview's four graphs
+// carry the fixture's series. The views are walked through the sub-tab row in one document, the way
+// owners switch views.
 
-import { expect, test } from "@playwright/test";
-import { ConsoleErrors, n, openTab, signIn, SEEDED, theSetup, TOTALS } from "./helpers.ts";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { ConsoleErrors, n, openTab, signIn, SEEDED, theSetup, TOTALS, USAGE } from "./helpers.ts";
 import { LOAD_REQUESTS } from "./seed.ts";
 
 /** The views in their sub-tab order, each with the one thing only it shows once loaded. */
@@ -202,4 +203,94 @@ test("the costs table marks a cost priced at its family's rate", async ({ page }
   const exact = page.locator("tr.attr-row").filter({ has: page.locator("[title='glm-5.3']") });
   await expect(exact.first()).toBeVisible();
   await expect(exact.first().locator("[data-approximate]")).toHaveCount(0);
+});
+
+/** Today's three glm-5.3 calls at the price table's 1.40 / 4.40 / 0.26 USD per million tokens. */
+const TODAY_USD = (TOTALS.input * 1.4 + TOTALS.output * 4.4 + TOTALS.cacheRead * 0.26) / 1e6;
+
+/** The flash call twenty-five hours back, 10 in and 5 out at glm-5.3-flash's 0.15 / 0.50. */
+const FLASH_USD = (10 * 0.15 + 5 * 0.5) / 1e6;
+
+/** One overview graph's series, as its root's data-series attribute carries them. */
+async function graphSeries(graph: Locator): Promise<Record<string, number[]>> {
+  await expect(graph).toHaveAttribute("data-series", /\S/);
+  return JSON.parse((await graph.getAttribute("data-series")) ?? "{}") as Record<string, number[]>;
+}
+
+const sum = (values: readonly number[] | undefined): number =>
+  (values ?? []).reduce((total, value) => total + value, 0);
+
+/** The overview's graph by its data-graph name, once its chart has drawn. */
+async function overviewGraph(page: Page, name: string): Promise<Locator> {
+  const graph = page.locator(`[data-graph='${name}']`);
+  await expect(graph.locator("svg").first()).toBeVisible();
+  return graph;
+}
+
+test("the requests graph counts today's seeded calls by the hour", async ({ page }) => {
+  await signIn(page);
+  await openTab(page, "Radar");
+  const graph = await overviewGraph(page, "requests");
+  await expect(graph).toContainText("Requests per hour");
+  const series = await graphSeries(graph);
+  expect(series.requests).toHaveLength(24);
+  expect(sum(series.requests)).toBe(SEEDED.requests.length);
+});
+
+test("the tokens graph sums each kind over the seven days", async ({ page }) => {
+  await signIn(page);
+  await openTab(page, "Radar");
+  const graph = await overviewGraph(page, "tokens");
+  await expect(graph).toContainText("Tokens by kind");
+  const series = await graphSeries(graph);
+  for (const kind of ["input", "output", "cacheRead", "cacheWrite"]) expect(series[kind]).toHaveLength(7);
+  expect(sum(series.input)).toBe(USAGE.uncached);
+  expect(sum(series.output)).toBe(USAGE.output);
+  expect(sum(series.cacheRead)).toBe(USAGE.cached);
+  expect(sum(series.cacheWrite)).toBe(TOTALS.cacheWrite);
+});
+
+test("the cost graph carries thirty days with today's seeded spend", async ({ page }) => {
+  await signIn(page);
+  await openTab(page, "Radar");
+  const graph = await overviewGraph(page, "cost");
+  await expect(graph).toContainText("Cost per day");
+  const series = await graphSeries(graph);
+  expect(series.cost).toHaveLength(30);
+  expect(series.cost?.at(-1)).toBeCloseTo(TODAY_USD, 9);
+  // the days before hold the flash call twenty-five hours back; the load and the codex turn
+  // beside it have no price
+  expect(sum(series.cost?.slice(0, -1))).toBeCloseTo(FLASH_USD, 9);
+});
+
+test("the sessions graph names today's session, its machine and its cost", async ({ page }) => {
+  await signIn(page);
+  await openTab(page, "Radar");
+  const graph = page.locator("[data-graph='sessions']");
+  await expect(graph).toContainText("Cost per session");
+  await expect(graph).toContainText(theSetup().sessionTitle);
+  await expect(graph).toContainText("e2e-machine");
+  const series = await graphSeries(graph);
+  expect(series.cost).toHaveLength(1);
+  expect(series.cost?.[0]).toBeCloseTo(TODAY_USD, 9);
+});
+
+test("the four graphs stack in one column on a phone", async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await signIn(page);
+  await openTab(page, "Radar");
+  const lefts: number[] = [];
+  for (const name of ["requests", "tokens", "cost", "sessions"]) {
+    const graph = page.locator(`[data-graph='${name}']`);
+    await graph.scrollIntoViewIfNeeded();
+    await expect(graph).toBeVisible();
+    const box = await graph.boundingBox();
+    expect(box?.width ?? 0).toBeLessThanOrEqual(393);
+    lefts.push(Math.round(box?.x ?? -1));
+    // the chart itself fits its card: nothing drawn past the phone's edge
+    const chart = await graph.locator("svg, ol").first().boundingBox();
+    expect((chart?.x ?? 0) + (chart?.width ?? 0)).toBeLessThanOrEqual(393);
+  }
+  expect(new Set(lefts).size).toBe(1);
+  expect(sum((await graphSeries(page.locator("[data-graph='requests']"))).requests)).toBe(SEEDED.requests.length);
 });

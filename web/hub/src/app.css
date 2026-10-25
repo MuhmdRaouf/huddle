@@ -401,6 +401,25 @@
     stroke-linecap: round;
     stroke-width: 2;
   }
+  /* the second to fourth series of a shared chart: the radar's series tokens, a faint fill */
+  .hr-chart-line.series-2 {
+    stroke: var(--series-2);
+  }
+  .hr-chart-line.series-3 {
+    stroke: var(--series-3);
+  }
+  .hr-chart-line.series-4 {
+    stroke: var(--series-4);
+  }
+  .hr-chart-fill.series-2 {
+    fill: color-mix(in oklab, var(--series-2) 8%, transparent);
+  }
+  .hr-chart-fill.series-3 {
+    fill: color-mix(in oklab, var(--series-3) 8%, transparent);
+  }
+  .hr-chart-fill.series-4 {
+    fill: color-mix(in oklab, var(--series-4) 8%, transparent);
+  }
   .hr-chart-cross {
     stroke: color-mix(in oklab, var(--color-base-content) 30%, transparent);
     stroke-width: 1;

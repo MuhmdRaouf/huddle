@@ -91,6 +91,21 @@ describe("AreaChart", () => {
     expect(texts).toContain("1m");
   });
 
+  it("scales a series under one to its own 1/2/5 maximum", () => {
+    render(<AreaChart series={[{ values: [0.0012, 0.0073] }]} w={600} />);
+    const texts = [...(document.querySelector("svg") as SVGSVGElement).querySelectorAll("text")].map(
+      (t) => t.textContent,
+    );
+    expect(texts).toEqual(["0.0025", "0.005", "0.0075", "0.01"]);
+  });
+
+  it("widens the left margin to fit the longest grid value", () => {
+    render(<AreaChart series={[{ values: [0.0012, 0.0073] }]} w={600} yfmt={(v) => `$${v}`} />);
+    const grid = document.querySelector("line.hr-chart-grid") as SVGLineElement;
+    // "$0.0075" is seven mono characters, wider than the 38 px the short labels get
+    expect(Number(grid.getAttribute("x1"))).toBeGreaterThan(50);
+  });
+
   it("notes an empty window instead of drawing lines", () => {
     render(<AreaChart series={[{ values: [0, 0] }]} w={600} />);
     expect(screen.getByText("No data yet")).toBeTruthy();

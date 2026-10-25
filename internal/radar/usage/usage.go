@@ -323,20 +323,25 @@ func topSessions(into map[string][]Session, sessions map[string]*sessionAcc) {
 		into[project] = append(into[project], acc.session)
 	}
 	for project, list := range into {
-		slices.SortFunc(list, func(a, b Session) int {
-			if c := cmp.Compare(b.Totals.CostUSD, a.Totals.CostUSD); c != 0 {
-				return c
-			}
-			if c := cmp.Compare(b.LastTS, a.LastTS); c != 0 {
-				return c
-			}
-			return strings.Compare(a.SessionID, b.SessionID)
-		})
+		sortSessions(list)
 		if len(list) > topSessionsPerProject {
 			list = list[:topSessionsPerProject]
 		}
 		into[project] = list
 	}
+}
+
+// sortSessions orders sessions costliest first, then by the last activity, then by id.
+func sortSessions(list []Session) {
+	slices.SortFunc(list, func(a, b Session) int {
+		if c := cmp.Compare(b.Totals.CostUSD, a.Totals.CostUSD); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(b.LastTS, a.LastTS); c != 0 {
+			return c
+		}
+		return strings.Compare(a.SessionID, b.SessionID)
+	})
 }
 
 // truncateLabel keeps a label's first 80 runes.

@@ -79,6 +79,7 @@ var Routes = []string{
 	"/api/router",
 	"/api/advisor",
 	"/api/usage",
+	"/api/usage/today",
 	"/api/blocks",
 	"/api/history/roots",
 	"/api/history/tree/:rootId",
@@ -1543,6 +1544,11 @@ func HandleApi(st *store.Store, info AppInfo, request ApiRequest, insights Insig
 			return errorOf(503, "history unavailable"), nil
 		}
 		return usageRoute(h, query, now)
+	case path == "/api/usage/today":
+		if h == nil {
+			return errorOf(503, "history unavailable"), nil
+		}
+		return todayRoute(h, now)
 	case path == "/api/blocks":
 		if h == nil {
 			return errorOf(503, "history unavailable"), nil
