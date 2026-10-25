@@ -1,6 +1,6 @@
 /**
- * What a request costs, from the price table radar keeps its own copy of (src/cost/price-table.ts, the same table
- * the plugin-core binary prices from; a test fails when the two drift apart). Every figure is an estimate at list
+ * What a request costs, from the price table radar keeps its own copy of (price-table.ts, the same table
+ * the huddle binary prices from; a test fails when the two drift apart). Every figure is an estimate at list
  * price: the offering that served the request — read off its upstream host — picks the sheet, and the conditions the
  * request names (1-hour cache writes, fast mode, geo, service tier, the time of day) shape the sum. A request
  * neither an offering nor a unique model id prices (an env-overridden id, a made-up one) has no price at all —

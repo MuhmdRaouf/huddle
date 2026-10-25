@@ -14,8 +14,8 @@ import (
 
 // The contract with the routers that write radar's spool: the lines a router appends and
 // the records radar's parser must read out of each one. The fixtures live in
-// testdata/contract and the cc-plugins repository keeps an identical copy, so every byte
-// of a change is reviewed twice.
+// testdata/contract, and internal/core/testdata/contract holds an identical copy, so every
+// byte of a change is reviewed twice.
 
 // contractFixtureDir is the fixtures' directory, relative to this package.
 const contractFixtureDir = "../../../testdata/contract"

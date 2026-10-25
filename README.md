@@ -39,7 +39,7 @@ serves, and delegate verified background jobs to them. Each has its own README u
 | Sign in, with a code, a passkey or a phone | [Signing in](#signing-in) |
 | Read costs and requests | [Radar](#radar) |
 | Work a kanban board from sessions | [Kanban](#kanban) |
-| Connect Codex, Gemini, Qwen, opencode, crush, omp or pi | [Other agents](#other-agents) |
+| Connect Codex, Gemini, Qwen, opencode, crush, omp, pi or ZCode | [Other agents](#other-agents) |
 | Run a hub on a local name | [A local name](#a-local-name) |
 | Develop on Huddle | [Development](#development) · [Test plan](docs/TESTPLAN.md) · [Decisions](docs/DECISIONS.md) |
 
@@ -189,7 +189,7 @@ A device session ends after 7 days unused; removing it from Settings ends it at 
 
 ## Other agents
 
-Huddle's MCP server works with any harness that speaks MCP. For seven of them the binary wires itself in:
+Huddle's MCP server works with any harness that speaks MCP. For eight of them the binary wires itself in:
 
 ```sh
 huddle harness list              # what is on this machine: installed, available or absent
@@ -322,7 +322,7 @@ Install the pinned tools once, from the repository root: `mise run setup`.
 |---|---|
 | Every gate CI runs | `mise run check` |
 | The Go suite (hermetic, temp homes) | `go run ./scripts/tmpguard -count=1 ./...` |
-| The web workspaces (ui, hub, kanban) | `bun install && bun run check` |
+| The web workspaces (ui, hub) | `bun install && bun run check` |
 | The headless-browser e2e suite | `bun run e2e` |
 | Rebuild every page and the launcher | `bun run build` |
 | The release binaries, the manifest the launcher pins, and the pre-tag digest check | `go run ./scripts/build -out dist` · `go run ./scripts/build -manifest` · `go run ./scripts/build -check` |
@@ -343,7 +343,7 @@ feature to the test that proves it.
 
 - This is an independent project, not affiliated with or endorsed by Anthropic or any other company named here.
 - Claude and Claude Code are trademarks of Anthropic, PBC.
-- Codex, Gemini, Qwen, opencode and crush belong to their owners, named only to say what Huddle works with.
+- Codex, Gemini, Qwen, opencode, crush, omp, pi and ZCode belong to their owners, named only to say what Huddle works with.
 
 ## Support
 

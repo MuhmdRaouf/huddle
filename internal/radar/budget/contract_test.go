@@ -16,8 +16,8 @@ import (
 
 // The contract with the provider plugins' routers that read budget-status.json: the
 // document radar publishes and the shape their gate reads. The fixtures live in
-// testdata/contract and the cc-plugins repository keeps an identical copy, so every byte
-// of a change is reviewed twice.
+// testdata/contract, and internal/core/testdata/contract holds an identical copy, so every
+// byte of a change is reviewed twice.
 
 // contractFixtureDir is the fixtures' directory, relative to this package.
 const contractFixtureDir = "../../../testdata/contract"
@@ -98,9 +98,9 @@ func TestContractBudgetStatusShape(t *testing.T) {
 	}
 }
 
-// TestContractFixturesAreTheSharedCopy pins each fixture's SHA-256. The cc-plugins
-// repository holds the same table over its own copy of testdata/contract, so a format
-// change lands in both repositories' fixtures in one reviewed change or fails here.
+// TestContractFixturesAreTheSharedCopy pins each fixture's SHA-256. internal/core/testdata/contract
+// holds an identical copy, which the spool writer's and the router's contract tests read, so a
+// format change updates both copies and these digests in one reviewed change, or fails here.
 func TestContractFixturesAreTheSharedCopy(t *testing.T) {
 	fixtures := []struct {
 		name string
@@ -117,7 +117,7 @@ func TestContractFixturesAreTheSharedCopy(t *testing.T) {
 		}
 		sum := sha256.Sum256(data)
 		if got := hex.EncodeToString(sum[:]); got != fixture.sum {
-			t.Errorf("testdata/contract/%s = sha256:%s, want %s; the two repositories' copies must change together",
+			t.Errorf("testdata/contract/%s = sha256:%s, want %s; the copy in internal/core/testdata/contract must change with it",
 				fixture.name, got, fixture.sum)
 		}
 	}

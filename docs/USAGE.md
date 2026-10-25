@@ -264,7 +264,7 @@ the hub's answer and is never queued.
 
 ## Other agents
 
-Huddle's MCP server works with any harness that speaks MCP. For seven of them the binary wires
+Huddle's MCP server works with any harness that speaks MCP. For eight of them the binary wires
 itself in ([README · Other agents](../README.md#other-agents) has what each install edits):
 
 ```sh

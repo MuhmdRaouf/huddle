@@ -23,7 +23,7 @@ go build ./... && go vet ./...                 # the Go module: cmd/huddle, inte
 go run ./scripts/tmpguard -count=1 ./...       # the whole suite under the temp-home and leftover-process guard
 go test ./internal/kanban/... -run TestName    # one test
 go test ./internal/plugins/                    # the plugins' suites and the sibling guard (TestSiblingsMatchZai)
-bun install && bun run check                   # the web workspace: web/{ui,hub,kanban}
+bun install && bun run check                   # the web workspaces: web/{ui,hub}
 bun run build                                  # rebuild every page into internal/*/web/dist (committed)
 go run ./scripts/build -out dist               # the release binaries, darwin and linux on amd64 and arm64
 go run ./scripts/build -manifest -check        # release-time check: the digests match release/v<VERSION>.json
@@ -47,8 +47,10 @@ node scripts/check-attribution.mjs             # no AI attribution in the histor
   CAs, the proxy environment, the merged hook plan, the harness configs, the plugin suites and the test kit.
 - `internal/plugins`: the plugins' shared suites — the plugin surface, the launcher e2e, the fresh-install e2e
   and `TestSiblingsMatchZai`, which keeps the five provider plugins copies of one another.
-- `web/`: one Bun workspace with Vite+: `ui` (shared components), `hub` and `kanban` pages. The hub's
-  Radar tab (`web/hub/src/radar/`) is the one copy of Radar's pages; the radar server serves its API only.
+- `web/`: one Bun workspace with Vite+: `ui` (shared components) and `hub` (the dashboard, with its Radar and
+  Kanban tabs). The hub's Radar tab (`web/hub/src/radar/`) is the one copy of Radar's pages; the radar server
+  serves its API only. The Kanban tab (`web/hub/src/kanban/`) also builds as the board server's own page, into
+  `internal/kanban/web/dist/`.
 - `plugin/`: what Claude Code installs for huddle (`.claude-plugin/plugin.json`, hooks, commands, skills,
   agents, `dist/`).
 - `plugins/<p>-plugin-cc/`: the five provider plugins (zai, kimi, deepseek, minimax, qwen), each with its
@@ -162,7 +164,7 @@ attribution off; `node scripts/check-attribution.mjs` runs in CI on every push.
 
 - One line, Conventional Commits: `<type>(<scope>): <message>`. No body, no co-author, no AI jargon, no emojis. Types:
   `init`, `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`. Scopes: `huddle`, `radar`, `kanban`,
-  `web`, `plugin`, `repo`. Imperative, lowercase start, no trailing period, no body.
+  `core`, `web`, `plugin`, `repo`. Imperative, lowercase start, no trailing period, no body.
 - Signed (`git commit -S`), as Raouf. Stage files by name; never `git commit -a` or `git add .`.
 - Never commit secrets: the gitleaks pre-commit hook guards each commit and CI scans the whole history.
 

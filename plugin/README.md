@@ -165,8 +165,9 @@ The `huddle` binary the launcher runs is the whole product: `up` starts the hub,
 binary, the same home.
 
 [The main README](../README.md) covers what this page does not: the four ways to sign in (an authenticator code,
-recovery codes, a passkey, a sign-in link), wiring other agents in (`codex`, `gemini`, `qwen`, `opencode`, `crush`),
-routing their model requests through the gateway, serving the hub on a local name, and the dashboard from your phone.
+recovery codes, a passkey, a sign-in link), wiring other agents in (`codex`, `gemini`, `qwen`, `opencode`, `crush`,
+`omp`, `pi`, `zcode`), routing their model requests through the gateway, serving the hub on a local name, and the
+dashboard from your phone.
 
 ## Update
 

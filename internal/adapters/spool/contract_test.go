@@ -14,8 +14,8 @@ import (
 
 // The contract with the dashboards that read a router's spool: the lines the writer appends and
 // the shape Radar's budget-status.json takes. The fixtures live in internal/core/testdata/contract
-// and the claude-code-plugins repository keeps an identical copy, so every byte of a change is
-// reviewed twice.
+// and testdata/contract at the repository root holds an identical copy for Radar's contract tests,
+// so every byte of a change is reviewed twice.
 
 // contractFixtureDir is the fixtures' directory, relative to this package.
 const contractFixtureDir = "../../core/testdata/contract"
