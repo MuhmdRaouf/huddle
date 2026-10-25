@@ -38,7 +38,7 @@ func TestMetrics(t *testing.T) {
 			Version: "1.2.3",
 			Ledger: []cost.LedgerRow{
 				{ID: "a", Ts: 1, Model: "glm-5.3", SessionID: "s1", AgentID: "main", Tokens: inTokens},
-				{ID: "b", Ts: 2, Model: "claude-x", SessionID: "s2", AgentID: "main", Tokens: inTokens},
+				{ID: "b", Ts: 2, Model: "mystery-x", SessionID: "s2", AgentID: "main", Tokens: inTokens},
 			},
 			Names: cost.LedgerNames{
 				Sessions: map[string]cost.SessionNames{
@@ -100,7 +100,7 @@ func TestMetrics(t *testing.T) {
 				t.Errorf("the exposition is missing %q\ntext:\n%s", want, text)
 			}
 		}
-		if strings.Contains(text, `radar_cost_usd_total{model="claude-x"`) {
+		if strings.Contains(text, `radar_cost_usd_total{model="mystery-x"`) {
 			t.Error("an unpriced model has a cost line")
 		}
 	})

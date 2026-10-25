@@ -295,6 +295,9 @@ Every request line carries its model, latency, input, output, cache-read and cac
 and its cost. Usage also splits tokens and cost by agent, copies each agent's resume command, and
 counts codex rollouts and opencode sessions, tagged by agent.
 
+A model the price list does not know costs its family's rate (`claude-opus-9-9` prices as the newest
+opus), and the Costs view marks that cost with `≈`.
+
 Radar's days are UTC dates, the way Anthropic's and the providers' usage pages count them, so a
 day's totals in Radar and on those pages turn over at the same moment.
 

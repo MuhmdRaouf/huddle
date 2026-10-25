@@ -124,9 +124,6 @@ func TestPrices(t *testing.T) {
 		if got := RequestCost(priced(func(r *PricedRequest) { r.Model = "not-a-model" })); got != nil {
 			t.Errorf("not-a-model: got %v want nil", got)
 		}
-		if got := RequestCost(priced(func(r *PricedRequest) { r.Model = "claude-x" })); got != nil {
-			t.Errorf("claude-x: got %v want nil", got)
-		}
 	})
 
 	t.Run("never prices a request still streaming: no stop reason and no output yet", func(t *testing.T) {
@@ -169,10 +166,10 @@ func TestPrices(t *testing.T) {
 		}
 		total := CostOfAll([]PricedRequest{
 			{Model: "glm-5.3", Upstream: zai, Tokens: millionInput},
-			{Model: "claude-x", Tokens: millionInput},
+			{Model: "mystery-x", Tokens: millionInput},
 		})
 		if total == nil {
-			t.Fatal("costOfAll([glm, claude-x]): no price")
+			t.Fatal("costOfAll([glm, mystery-x]): no price")
 		}
 		closeTo(t, "costOfAll mixed", float64(*total), 1.4)
 	})

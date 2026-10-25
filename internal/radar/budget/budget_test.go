@@ -256,7 +256,7 @@ func TestSpend(t *testing.T) {
 			row("a", nowMs-1000, "glm-5.3"),
 			row("b", nowMs-2*msPerDay, "glm-5.3"),
 			row("c", nowMs-1000, "kimi-k3"),
-			row("d", nowMs-1000, "claude-x"),
+			row("d", nowMs-1000, "mystery-x"),
 			row("e", nowMs+1000, "glm-5.3"),
 		}
 		midnight := time.Date(2026, time.October, 8, 0, 0, 0, 0, time.UTC).UnixMilli()

@@ -149,6 +149,8 @@ export type AttributionNode = AttributionRow & {
   kind: "repo" | "session" | "agent" | "model";
   /** A second word when there is one: the agent type for an agent row. */
   note: string | null;
+  /** True when a request behind the node priced at its family's rate: the catalog does not know its model. */
+  approximate: boolean;
   /** Tokens per model behind this node, heaviest first: the stacked model-mix bar. */
   mix: { model: string; tokens: number }[];
   children: AttributionNode[];

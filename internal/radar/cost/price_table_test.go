@@ -171,15 +171,15 @@ func TestOfferingOfHost(t *testing.T) {
 	}
 }
 
-// The sheet a request resolves to: the offering must serve the model, and an id only the
-// model names must be unique across offerings to price.
+// The sheet a request resolves to: the offering must serve the model to price it exactly, and
+// an id only the model names must be unique across offerings to price.
 func TestResolveSheet(t *testing.T) {
 	if got := PriceRequestOf(PriceRequest{
 		Offering: offering(OfferingZai),
 		Model:    "claude-sonnet-5-5",
 		Tokens:   TokenUse{Input: 1_000_000},
-	}); got != nil {
-		t.Errorf("an offering that does not serve the model: got %v want nil", got)
+	}); got == nil || !got.Approximate || !slices.Contains(got.Detail, "≈ glm-5.3 rate") {
+		t.Errorf("an offering that does not serve the model: got %v want its main model's rate, approximate", got)
 	}
 	if got := PriceRequestOf(PriceRequest{
 		Model:  "minimax-m3",

@@ -186,3 +186,20 @@ test("the requests table marks the call a router sent to its fallback model", as
     "glm-5.3 failed 3 times in a row; the router sent this to glm-5.3-flash",
   );
 });
+
+test("the costs table marks a cost priced at its family's rate", async ({ page }) => {
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/radar/costs`);
+  // yesterday's usage load carries qwen3.8-max-0115-preview, an id the catalog does not know:
+  // it prices at qwen3.8-max's rate, and its cost cell says the figure is approximate
+  await page.getByRole("group", { name: "Period" }).getByRole("button", { name: "7 days" }).click();
+  const row = page
+    .locator("tr.attr-row")
+    .filter({ has: page.locator("[title='qwen3.8-max-0115-preview']") });
+  await expect(row).toHaveCount(1);
+  await expect(row.locator("[data-approximate]")).toHaveText("≈");
+  // a catalog model's cost stays exact
+  const exact = page.locator("tr.attr-row").filter({ has: page.locator("[title='glm-5.3']") });
+  await expect(exact.first()).toBeVisible();
+  await expect(exact.first().locator("[data-approximate]")).toHaveCount(0);
+});

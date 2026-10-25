@@ -49,14 +49,27 @@ func RatesOf(model, upstream string) (Rates, bool) { return pricing.RatesOf(mode
 type PriceResult struct {
 	USD    shared.USD `json:"usd"`
 	Detail []string   `json:"detail"`
+	// Approximate is true when the catalog does not know the model and the price is its
+	// family's rate (see familyOf).
+	Approximate bool `json:"approximate,omitempty"`
 }
 
 // PriceRequestOf is what one request cost at the sheet's rates, with each applied condition
-// named in Detail; nil when the table does not know the model.
+// named in Detail. A model the table does not know prices at its family's rate, marked
+// Approximate, so a renamed model never reads as free; nil when no family claims it either.
 func PriceRequestOf(request PriceRequest) *PriceResult {
+	if result := pricing.PriceRequestOf(request); result != nil {
+		return &PriceResult{USD: shared.USD(result.USD), Detail: result.Detail}
+	}
+	family, offering, ok := familyOf(request.Offering, request.Model)
+	if !ok {
+		return nil
+	}
+	request.Model, request.Offering = family, &offering
 	result := pricing.PriceRequestOf(request)
 	if result == nil {
 		return nil
 	}
-	return &PriceResult{USD: shared.USD(result.USD), Detail: result.Detail}
+	detail := append(result.Detail, "≈ "+family+" rate")
+	return &PriceResult{USD: shared.USD(result.USD), Detail: detail, Approximate: true}
 }

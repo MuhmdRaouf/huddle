@@ -24,6 +24,7 @@
     },
     "costUsd": null,
     "unpriced": 0,
+    "approximate": false,
     "mix": [],
     "children": []
   },

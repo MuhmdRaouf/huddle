@@ -1,7 +1,8 @@
 /**
  * The costs tab: the period's spend as one drill-down — repos expand to sessions, sessions to their agents
  * and the jobs they submitted, agents to models — every row with its tokens, estimated cost and a
- * model-mix bar, sortable at every level, exportable as one flat CSV. The total never mixes providers
+ * model-mix bar, sortable at every level, exportable as one flat CSV. A cost with a part priced at its
+ * model family's rate (a model the price list does not know) carries a "≈". The total never mixes providers
  * silently: when more than one is priced, the subtitle splits it ("est. $41.20 (Claude $33.29 list price,
  * GLM $7.91)").
  */
@@ -131,6 +132,15 @@ function ValueCells({ node }: { node: AttributionNode }): ComponentChildren {
               node.unpriced > 0 ? `${fmtCount(node.unpriced, "request")} unpriced, not included` : "Estimate"
             }
           >
+            {node.approximate && (
+              <span
+                data-approximate
+                title="Part of this priced at its model family's rate: the price list does not know the model"
+              >
+                ≈
+              </span>
+            )}
+            {node.approximate && " "}
             {fmtUsd(node.costUsd)}
           </span>
         )}

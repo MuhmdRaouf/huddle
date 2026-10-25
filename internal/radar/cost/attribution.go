@@ -80,6 +80,8 @@ type AttributionNode struct {
 	Tokens   shared.Tokens `json:"tokens"`
 	CostUsd  *shared.USD   `json:"costUsd"`
 	Unpriced int64         `json:"unpriced"`
+	// Approximate is true when a request behind the node priced at its family's rate.
+	Approximate bool `json:"approximate"`
 	// Mix is the tokens per model behind this node, heaviest first: the stacked model-mix
 	// bar.
 	Mix      []MixEntry        `json:"mix"`
@@ -247,6 +249,8 @@ type tally struct {
 	Tokens   shared.Tokens
 	CostUsd  *shared.USD
 	Unpriced int64
+	// Approximate is true once a request in the sums priced at its family's rate.
+	Approximate bool
 }
 
 // tallyRow folds one row into the sums.
@@ -257,6 +261,8 @@ func tallyRow(sums *tally, row LedgerRow) {
 	sums.CostUsd = AddCost(sums.CostUsd, usdOf(cost))
 	if cost == nil {
 		sums.Unpriced++
+	} else if cost.Approximate {
+		sums.Approximate = true
 	}
 }
 
@@ -266,6 +272,7 @@ func addTally(into *tally, from tally) {
 	into.Tokens = shared.AddTokens(into.Tokens, from.Tokens)
 	into.CostUsd = AddCost(into.CostUsd, from.CostUsd)
 	into.Unpriced += from.Unpriced
+	into.Approximate = into.Approximate || from.Approximate
 }
 
 // mixOf is the models behind a bucket, heaviest first, then by name: one bar segment per
@@ -342,16 +349,17 @@ func emptyNames() SessionNames { return SessionNames{} }
 // modelNode is the tree node for one model.
 func modelNode(bucket modelBucket) AttributionNode {
 	return AttributionNode{
-		Kind:     KindModel,
-		Key:      bucket.model,
-		Label:    bucket.model,
-		Note:     nil,
-		Requests: bucket.tally.Requests,
-		Tokens:   bucket.tally.Tokens,
-		CostUsd:  bucket.tally.CostUsd,
-		Unpriced: bucket.tally.Unpriced,
-		Mix:      []MixEntry{{Model: bucket.model, Tokens: shared.TotalTokens(bucket.tally.Tokens)}},
-		Children: []AttributionNode{},
+		Kind:        KindModel,
+		Key:         bucket.model,
+		Label:       bucket.model,
+		Note:        nil,
+		Requests:    bucket.tally.Requests,
+		Tokens:      bucket.tally.Tokens,
+		CostUsd:     bucket.tally.CostUsd,
+		Unpriced:    bucket.tally.Unpriced,
+		Approximate: bucket.tally.Approximate,
+		Mix:         []MixEntry{{Model: bucket.model, Tokens: shared.TotalTokens(bucket.tally.Tokens)}},
+		Children:    []AttributionNode{},
 	}
 }
 
@@ -367,16 +375,17 @@ func agentNode(bucket agentBucket) AttributionNode {
 	}
 	slices.SortStableFunc(children, bySpendNode)
 	return AttributionNode{
-		Kind:     KindAgent,
-		Key:      bucket.key,
-		Label:    bucket.label,
-		Note:     bucket.note,
-		Requests: sums.Requests,
-		Tokens:   sums.Tokens,
-		CostUsd:  sums.CostUsd,
-		Unpriced: sums.Unpriced,
-		Mix:      mixOf(bucket.models),
-		Children: children,
+		Kind:        KindAgent,
+		Key:         bucket.key,
+		Label:       bucket.label,
+		Note:        bucket.note,
+		Requests:    sums.Requests,
+		Tokens:      sums.Tokens,
+		CostUsd:     sums.CostUsd,
+		Unpriced:    sums.Unpriced,
+		Approximate: sums.Approximate,
+		Mix:         mixOf(bucket.models),
+		Children:    children,
 	}
 }
 
@@ -446,16 +455,17 @@ func sessionNode(bucket *sessionBucket) AttributionNode {
 	slices.SortStableFunc(jobs, bySpendNode)
 	children = append(children, jobs...)
 	return AttributionNode{
-		Kind:     KindSession,
-		Key:      bucket.key,
-		Label:    sessionLabelOf(bucket),
-		Note:     nil,
-		Requests: sums.Requests,
-		Tokens:   sums.Tokens,
-		CostUsd:  sums.CostUsd,
-		Unpriced: sums.Unpriced,
-		Mix:      mixOf(folded),
-		Children: children,
+		Kind:        KindSession,
+		Key:         bucket.key,
+		Label:       sessionLabelOf(bucket),
+		Note:        nil,
+		Requests:    sums.Requests,
+		Tokens:      sums.Tokens,
+		CostUsd:     sums.CostUsd,
+		Unpriced:    sums.Unpriced,
+		Approximate: sums.Approximate,
+		Mix:         mixOf(folded),
+		Children:    children,
 	}
 }
 
@@ -513,6 +523,7 @@ func repoNode(key string, label string, group []*sessionBucket) AttributionNode 
 		sums.Tokens = shared.AddTokens(sums.Tokens, node.Tokens)
 		sums.CostUsd = AddCost(sums.CostUsd, node.CostUsd)
 		sums.Unpriced += node.Unpriced
+		sums.Approximate = sums.Approximate || node.Approximate
 	}
 	children := make([]AttributionNode, 0, len(top))
 	for _, session := range top {
@@ -520,16 +531,17 @@ func repoNode(key string, label string, group []*sessionBucket) AttributionNode 
 	}
 	slices.SortStableFunc(children, bySpendNode)
 	return AttributionNode{
-		Kind:     KindRepo,
-		Key:      key,
-		Label:    label,
-		Note:     nil,
-		Requests: sums.Requests,
-		Tokens:   sums.Tokens,
-		CostUsd:  sums.CostUsd,
-		Unpriced: sums.Unpriced,
-		Mix:      mergeMix(mixes),
-		Children: children,
+		Kind:        KindRepo,
+		Key:         key,
+		Label:       label,
+		Note:        nil,
+		Requests:    sums.Requests,
+		Tokens:      sums.Tokens,
+		CostUsd:     sums.CostUsd,
+		Unpriced:    sums.Unpriced,
+		Approximate: sums.Approximate,
+		Mix:         mergeMix(mixes),
+		Children:    children,
 	}
 }
 

@@ -53,7 +53,7 @@ func TestAttribution(t *testing.T) {
 	rows := []LedgerRow{
 		{ID: "1", Ts: now - 1000, Model: "glm-5.3", SessionID: "s1", AgentID: "main", Tokens: millionInput},
 		{ID: "2", Ts: now - 2000, Model: "glm-5.3", SessionID: "s1", AgentID: "w1", Tokens: millionInput},
-		{ID: "3", Ts: now - 3000, Model: "claude-x", SessionID: "s2", AgentID: "main", Tokens: millionInput},
+		{ID: "3", Ts: now - 3000, Model: "mystery-x", SessionID: "s2", AgentID: "main", Tokens: millionInput},
 		{ID: "4", Ts: now - 3*dayMs, Model: "deepseek-flash", SessionID: "s3", AgentID: "w9", Tokens: millionInput},
 	}
 	names := LedgerNames{
@@ -128,7 +128,7 @@ func TestAttribution(t *testing.T) {
 		}
 
 		byModel := Attribute(rows, ByModel, names, 0)
-		wantModels := []string{"glm-5.3", "deepseek-flash", "claude-x"}
+		wantModels := []string{"glm-5.3", "deepseek-flash", "mystery-x"}
 		for i, want := range wantModels {
 			if byModel[i].Key != want {
 				t.Errorf("by model %d: got %s want %s", i, byModel[i].Key, want)
@@ -175,7 +175,7 @@ func TestAttribution(t *testing.T) {
 			{ID: "2", Ts: at, Model: "glm-5.3-flash", SessionID: "parent", AgentID: "w1", Tokens: millionInput},
 			{ID: "3", Ts: at, Model: "kimi-k3", SessionID: "job", AgentID: "main", Tokens: millionInput},
 			{ID: "4", Ts: at, Model: "deepseek-flash", SessionID: "loose", AgentID: "main", Tokens: millionInput},
-			{ID: "5", Ts: at, Model: "claude-x", SessionID: "away", AgentID: "main", Tokens: millionInput},
+			{ID: "5", Ts: at, Model: "mystery-x", SessionID: "away", AgentID: "main", Tokens: millionInput},
 		}
 		tree := AttributionTree(treeRows, treeNames, 0)
 		if len(tree) != 2 {
@@ -249,8 +249,8 @@ func TestAttribution(t *testing.T) {
 		if got := nodeLabels(loose.Children[0].Children); !slices.Equal(got, []string{"deepseek-flash"}) {
 			t.Errorf("loose models: got %v want [deepseek-flash]", got)
 		}
-		if got := nodeLabels(tree[1].Children[0].Children[0].Children); !slices.Equal(got, []string{"claude-x"}) {
-			t.Errorf("away models: got %v want [claude-x]", got)
+		if got := nodeLabels(tree[1].Children[0].Children[0].Children); !slices.Equal(got, []string{"mystery-x"}) {
+			t.Errorf("away models: got %v want [mystery-x]", got)
 		}
 	})
 
