@@ -346,16 +346,19 @@ build_under_lock() {
     return 0
   fi
   tmp=$src_dir/.huddle.$$.build
-  if (cd -- "$src_root" && CGO_ENABLED=0 go build -trimpath -o "$tmp" ./cmd/huddle) >>"$src_dir/build.log" 2>&1; then
-    chmod 755 "$tmp"
-    mv -f "$tmp" "$src_bin"
+  rm -rf "$tmp"
+  if mkdir "$tmp" && (cd -- "$src_root" && CGO_ENABLED=0 go build -trimpath -o "$tmp/huddle" ./cmd/huddle) >>"$src_dir/build.log" 2>&1; then
+    chmod 755 "$tmp/huddle"
+    # macOS names the signing identifier in its firewall prompt, and Go's linker signs as a.out
+    [ "$os" != darwin ] || codesign -s - -f -i huddle "$tmp/huddle" >>"$src_dir/build.log" 2>&1 || :
+    mv -f "$tmp/huddle" "$src_bin"
     ${repoint}
     prune_src_builds
-    rm -f "$tmp"
+    rm -rf "$tmp"
     rm -f "$lock"
     return 0
   fi
-  rm -f "$tmp"
+  rm -rf "$tmp"
   rm -f "$lock"
   return 1
 }

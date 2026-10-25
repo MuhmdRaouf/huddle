@@ -95,7 +95,8 @@ Each session's `huddle mcp` bridge watches the daemon: a health check every 2 s,
   launcher (`plugin/dist/run`, the same script every plugin ships) builds the binary of the marketplace checkout's
   own commit: once per commit, with `go` (`$HUDDLE_SOURCE`, the checkout the plugin was installed from, or the
   marketplace copy under `CLAUDE_CONFIG_DIR` names the sources), kept three builds to a home. A command waits up
-  to 5 minutes for that build; a hook starts it detached and exits 0. Without Go the launcher says so: it names
+  to 5 minutes for that build; a hook starts it detached and exits 0. On macOS the build is signed ad hoc as
+  `huddle`, so the firewall prompt names huddle. Without Go the launcher says so: it names
   the release download it cannot fall back to and the line `no huddle release is published; install Go to build
   it from the marketplace checkout`. A release download, when one exists, is checked against the committed
   manifest (`release/v<VERSION>.json`).

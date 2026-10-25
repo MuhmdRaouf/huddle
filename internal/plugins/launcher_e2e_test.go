@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -53,6 +54,40 @@ func TestLauncherSmoke(t *testing.T) {
 				checkBoardHookSilent(t, provider, launcher)
 			})
 		})
+	}
+}
+
+// TestALauncherBuildIsSignedAsHuddle builds the checkout's own commit through a launcher and reads
+// the ad-hoc signature: macOS names the code signing identifier in the firewall prompt.
+func TestALauncherBuildIsSignedAsHuddle(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("code signing identifiers are macOS only")
+	}
+	provider, pluginDir := providerOf(t, "zai")
+	launcher, err := filepath.Abs(filepath.Join(pluginDir, "dist", "run"))
+	if err != nil {
+		t.Fatalf("resolve the launcher: %v", err)
+	}
+	source, err := filepath.Abs(repoRoot)
+	if err != nil {
+		t.Fatalf("resolve the repository root: %v", err)
+	}
+	home := testkit.TempDir(t, provider.Name+"-signed-")
+	env := smokeEnv(t, provider, home, map[string]string{"HUDDLE_SOURCE": source})
+
+	if _, stderr, code := runOne(t, "sh", []string{launcher, provider.Name + ".js", "--help"}, env, home); code != 0 {
+		t.Fatalf("the launcher exited %d: %s", code, stderr)
+	}
+	built, err := filepath.Glob(filepath.Join(home, "huddle-bin", "src", "*", "huddle"))
+	if err != nil || len(built) != 1 {
+		t.Fatalf("the launcher built %v (%v), want one src/<commit>/huddle", built, err)
+	}
+	_, signature, code := runOne(t, "codesign", []string{"-dv", built[0]}, env, home)
+	if code != 0 {
+		t.Fatalf("codesign -dv exited %d: %s", code, signature)
+	}
+	if !strings.Contains(signature, "\nIdentifier=huddle\n") {
+		t.Errorf("codesign -dv %s:\n%s\nwant Identifier=huddle", built[0], signature)
 	}
 }
 
