@@ -42,9 +42,10 @@ func listenPid(t *testing.T, port int) int {
 type hubHealthPids struct {
 	PID    int `json:"pid"`
 	Router struct {
-		Running bool `json:"running"`
-		PID     int  `json:"pid"`
-		Port    int  `json:"port"`
+		Running   bool     `json:"running"`
+		PID       int      `json:"pid"`
+		Port      int      `json:"port"`
+		Providers []string `json:"providers"`
 	} `json:"router"`
 }
 
@@ -163,6 +164,9 @@ func TestE2EUpStartsARouterAndAHub(t *testing.T) {
 		}
 		if !answer.Router.Running || answer.Router.PID != routerPID || answer.Router.Port != routerPort {
 			t.Errorf("health names the router %+v, want running, pid %d, port %d", answer.Router, routerPID, routerPort)
+		}
+		if got := strings.Join(answer.Router.Providers, ","); got != "zai" {
+			t.Errorf("health names the router's providers %q, want the enabled zai", got)
 		}
 	})
 
