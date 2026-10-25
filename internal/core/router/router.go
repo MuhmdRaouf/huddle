@@ -86,6 +86,9 @@ type RouterOptions struct {
 	IdleMs int64
 	// BodyLimit is the body limit; 0 is the default 64 MiB.
 	BodyLimit int64
+	// Fallback is the lane's fallback list: the models a model's requests go to, in order,
+	// after it answers three 5xx, 429 or dropped answers in a row. nil never falls back.
+	Fallback []string
 }
 
 // PeerHop is the hop header a router stamps on a request it forwards to a peer, so no request is
@@ -442,6 +445,8 @@ type routerWorker struct {
 	estimator *PromptEstimator
 	// keys is the provider key every request shares, kept until the provider refuses it.
 	keys *keyCache
+	// fallback is the lane's model fallback; nil when the lane has no fallback list.
+	fallback *laneFallback
 	// budgetStop dedups the budget_stop health events: the scope last seen.
 	budgetMu    sync.Mutex
 	budgetKnown bool
@@ -518,6 +523,7 @@ func newRouterWorker(opts RouterOptions, keyLookup func(ctx context.Context) (po
 		captured:  newCaptureMemo(),
 		estimator: NewPromptEstimator(),
 		keys:      newKeyCache(lookup, keyStoreBudget(timeout)),
+		fallback:  newLaneFallback(opts.Fallback),
 	}
 }
 
@@ -563,13 +569,20 @@ func textHeader(req *http.Request, name string) (string, bool) {
 	return value, true
 }
 
+// routeModel is the model a route event names, and the model the request asked for when the lane
+// fell back from it; set before the request goes upstream.
+type routeModel struct {
+	model    string
+	fallback *string
+}
+
 // eventNote is the route event for one request, emitted when it completes; nil when nobody
 // listens.
 type eventNote func(status int64, route, upstream string, usage domain.RouteUsage, reason *string, headers *map[string]string)
 
 // noteOf builds the request's note: the ids Claude Code stamped the request with, the usage and
 // the allow-listed headers the answer carried, and the prompt hash — each only when there was one.
-func (w *routerWorker) noteOf(req *http.Request, model string, startedAt int64, prompt *promptRef) eventNote {
+func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt int64, prompt *promptRef) eventNote {
 	if w.opts.Events == nil {
 		return nil
 	}
@@ -578,7 +591,8 @@ func (w *routerWorker) noteOf(req *http.Request, model string, startedAt int64, 
 			Ts:         isoNow(),
 			Event:      domain.EventRoute,
 			Plugin:     w.provider.Name,
-			Model:      model,
+			Model:      served.model,
+			Fallback:   served.fallback,
 			Upstream:   upstream,
 			Route:      route,
 			Status:     status,
@@ -1027,7 +1041,8 @@ func (w *routerWorker) forwardParsed(req *http.Request, res *Response, original 
 	provider := w.provider
 	model := modelIn(body)
 	prompt := &promptRef{}
-	note := w.noteOf(req, model, time.Now().UnixMilli(), prompt)
+	served := &routeModel{model: model}
+	note := w.noteOf(req, served, time.Now().UnixMilli(), prompt)
 	route, peer, hasPeer := routeOf(w.claim, model, w.opts.Peers)
 	// A request another plugin's router forwarded here is served when it is this provider's model;
 	// anything else would be a second hop (a loop, or two routers disagreeing about who serves the
@@ -1082,6 +1097,15 @@ func (w *routerWorker) forwardParsed(req *http.Request, res *Response, original 
 	if outcome != keyValue {
 		w.noKey(req, res, model, outcome, note)
 		return
+	}
+	// A model out after three failures in a row goes to the lane's next model, its body
+	// naming that model from here on.
+	if next := w.fallback.pick(model); next != model {
+		body.Set("model", jsfmt.String(next))
+		original = []byte(body.EncodeLiteral())
+		asked := model
+		served.model, served.fallback = next, &asked
+		model = next
 	}
 	adapted, named := providerBody(w, original, body, model, req)
 	w.dispatch(req, res, adapted, named, "provider", w.opts.ProviderURL, note, nil, key, promptHintOf(original, int64(len(adapted))))
@@ -1391,6 +1415,9 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			if route == "anthropic" && w.opts.AnthropicOk != nil {
 				w.opts.AnthropicOk()
 			}
+			if route == "provider" {
+				w.fellBack(w.fallback.answered(model, answer.StatusCode))
+			}
 			if note != nil {
 				status := int64(answer.StatusCode)
 				if status == 0 {
@@ -1406,6 +1433,10 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			w.log(fmt.Sprintf("%s %s model=%s → %s error %s", req.Method, u.Path, modelOrDash(model), route, failure.Code))
 			if route == "anthropic" && w.opts.AnthropicFail != nil {
 				w.opts.AnthropicFail(failure.Code, model)
+			}
+			// A client that left aborts its own call; that says nothing about the model.
+			if route == "provider" && req.Context().Err() == nil {
+				w.fellBack(w.fallback.dropped(model, failure.Code))
 			}
 			if !failure.AfterHeaders {
 				status := 502

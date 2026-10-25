@@ -88,6 +88,9 @@ export type RequestRecord = {
   /** The agent chain this call's agent hangs under, from a route line's parent_agent_id; absent when
    *  the line did not say. */
   parentAgentId?: string;
+  /** The model the call asked for when its router's lane sent it to `model` instead, after the model
+   *  asked for failed three times in a row; absent for a call served as it asked. */
+  fallback?: string;
   /** The part of tokens.cacheWrite the request wrote to the 1-hour cache; absent when the usage block said nothing. */
   cacheWrite1h?: number;
   /** How fast the provider ran it ("fast" bills fast-mode rates); absent when the usage block said nothing. */

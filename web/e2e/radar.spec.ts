@@ -87,7 +87,10 @@ test("the blocks view counts the seeded block once the scope includes the provid
 
   // widening the scope to every model brings the seeded block in: the three glm calls of this
   // morning, one window, ten thousand tokens, and the flash call of yesterday in its own
-  await page.getByRole("group", { name: "Model scope" }).getByRole("button", { name: "All models" }).click();
+  await page
+    .getByRole("group", { name: "Model scope" })
+    .getByRole("button", { name: "All models" })
+    .click();
   await expect(card).toContainText("left");
   await expect(card).toContainText("3");
   await expect(card).toContainText("10k"); // the fixture's three glm calls summed
@@ -106,9 +109,7 @@ test("the blocks view counts the seeded block once the scope includes the provid
   await expect(page.locator("[data-block-card]")).toContainText("10k");
 });
 
-test("the requests table lists the seeded rows and the inspector opens one", async ({
-  page,
-}) => {
+test("the requests table lists the seeded rows and the inspector opens one", async ({ page }) => {
   await signIn(page);
   // the Requests view by its own address: the model chip narrows it to the three seeded calls
   await page.goto(`${theSetup().rootUrl}/#/radar/requests`);
@@ -169,4 +170,19 @@ test("the self-check badge is green when Radar matches the transcripts", async (
   await expect(badge).toContainText("Matches transcripts");
   const seeded = `3 requests, ${n(TOTALS.input)} in, ${n(TOTALS.output)} out, ${n(TOTALS.cacheRead)} cache read, ${n(TOTALS.cacheWrite)} cache write`;
   await expect(badge).toHaveAttribute("title", new RegExp(`Radar: ${seeded}\\.\\s+Transcripts: ${seeded}\\.`));
+});
+
+test("the requests table marks the call a router sent to its fallback model", async ({ page }) => {
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/radar/requests`);
+  // yesterday's flash call is the one the seeded spool line says fell back from glm-5.3
+  await page.getByRole("group", { name: "Range" }).getByRole("button", { name: "Week" }).click();
+  const table = page.locator("[data-key='requests-table']");
+  const marks = table.locator(".model-fallback");
+  await expect(marks).toHaveCount(1);
+  await expect(marks).toHaveText("from glm-5.3");
+  await expect(marks).toHaveAttribute(
+    "title",
+    "glm-5.3 failed 3 times in a row; the router sent this to glm-5.3-flash",
+  );
 });

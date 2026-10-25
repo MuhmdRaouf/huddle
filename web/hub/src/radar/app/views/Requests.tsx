@@ -120,6 +120,14 @@ export function RequestRow({ request, now }: { request: RequestRecord; now: numb
               {request.provider}
             </span>
           )}
+          {request.fallback !== undefined && (
+            <span
+              class="model-fallback badge badge-warning badge-soft badge-sm ml-1.5 align-middle"
+              title={`${request.fallback} failed 3 times in a row; the router sent this to ${request.model}`}
+            >
+              from {request.fallback}
+            </span>
+          )}
         </span>
       </td>
       <td class="num text-right">

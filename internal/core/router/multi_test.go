@@ -70,6 +70,10 @@ type multiLaneOpts struct {
 	provider domain.Provider
 	key      string
 	budget   func() (domain.BudgetStop, bool)
+	// upstream replaces the lane's recording upstream (seen stays empty); nil keeps it.
+	upstream *url.URL
+	// fallback is the lane's fallback list.
+	fallback []string
 }
 
 // multiOpts is what a scenario changes about the rig.
@@ -103,7 +107,10 @@ func newMultiRig(t *testing.T, opts multiOpts) *multiRig {
 	for _, lane := range lanes {
 		calls := &atomic.Int64{}
 		seen := &seenList{}
-		upstream := recordingUpstream(t, lane.provider.Name, "/api/anthropic", seen)
+		upstream := lane.upstream
+		if upstream == nil {
+			upstream = recordingUpstream(t, lane.provider.Name, "/api/anthropic", seen)
+		}
 		key := lane.key
 		r.lanes = append(r.lanes, &multiLane{provider: lane.provider, seen: seen, upstream: upstream, keyCalls: calls})
 		laneOptions = append(laneOptions, RouterOptions{
@@ -113,7 +120,8 @@ func newMultiRig(t *testing.T, opts multiOpts) *multiRig {
 				calls.Add(1)
 				return key, nil
 			},
-			Budget: lane.budget,
+			Budget:   lane.budget,
+			Fallback: lane.fallback,
 		})
 	}
 	r.port = reservePort(t)

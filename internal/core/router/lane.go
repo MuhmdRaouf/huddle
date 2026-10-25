@@ -41,8 +41,9 @@ func (e *BadURL) Error() string { return e.Name + ": " + e.Err.Error() }
 func (e *BadURL) Unwrap() error { return e.Err }
 
 // LaneOf is one provider's lane options as the router process builds them: endpoint overrides,
-// spool, budget gate, proxy environment and the keystore lookup. The multi-level plugs (Port,
-// Token, Peers, the Anthropic URL every lane shares) are the caller's to set.
+// spool, budget gate, proxy environment, the keystore lookup and providers.json's fallback list.
+// The multi-level plugs (Port, Token, Peers, the Anthropic URL every lane shares) are the
+// caller's to set.
 func LaneOf(provider domain.Provider, env domain.EnvLookup, log func(string)) (RouterOptions, error) {
 	resolved := domain.ResolveProvider(provider, env)
 	anthropicKnob := domain.RouterEnvName(resolved, domain.RouterEnvKnobAnthropicURL)
@@ -66,5 +67,6 @@ func LaneOf(provider domain.Provider, env domain.EnvLookup, log func(string)) (R
 		KeyLookup: func(ctx context.Context) (ports.ProviderKey, *ports.WorkerError) {
 			return workerKey(ctx, resolved, env)
 		},
+		Fallback: ReadFallback(env, resolved.Name),
 	}, nil
 }

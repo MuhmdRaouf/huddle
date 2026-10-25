@@ -69,6 +69,19 @@ under 1 ms to each chunk, on a provider lane and on the decrypted `api.anthropic
 request in flight it uses under 0.5% of one core. `TestE2ERouterOverhead` and `TestRouterIdleCPU` hold it to
 both budgets.
 
+A lane can fall back to another of its provider's models when one keeps failing. List them under the
+provider in `~/.agents/huddle-router/providers.json`:
+
+```json
+{"providers": ["zai"], "lanes": {"zai": {"fallback": ["glm-5.3-flash"]}}}
+```
+
+After three 5xx, 429 or dropped answers in a row for one model, the lane sends that model's requests to the
+next model on the list for 60 s, then tries the model again. A 2xx starts the count over. The router logs
+`fallback glm-5.3 -> glm-5.3-flash (3 x 503)`, and Radar's Requests table marks each such request
+`from glm-5.3`. The router re-reads the file within 2 s; a lane with no list never falls back, and `claude-*`
+never does.
+
 Turning one provider off with its `/<p>:remove` takes its lane, models and agents back out; the proxy keys stay
 while another provider is still set up, and `settings.json` goes back to how it was after the last one. The
 plugin's README ([zai](../plugins/zai-plugin-cc/README.md) and its siblings) has the full walk: verified

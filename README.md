@@ -88,6 +88,11 @@ flowchart LR
 
 Each session's `huddle mcp` bridge watches the daemon: a health check every 2 s, a restart after 5 s of silence.
 
+A provider lane can name fallback models in `providers.json`
+(`"lanes": {"zai": {"fallback": ["glm-5.3-flash"]}}`): after three 5xx, 429 or dropped answers in a row for one
+model, its requests go to the next model on the list for 60 s, the router logs the switch, and Radar's Requests
+table marks the request ([USAGE · Delegate to a provider model](docs/USAGE.md#delegate-to-a-provider-model)).
+
 ## Requirements
 
 - Claude Code with plugin support.

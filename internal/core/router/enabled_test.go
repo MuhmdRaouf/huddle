@@ -175,3 +175,38 @@ func TestSetEnabled(t *testing.T) {
 func concurrencyName(n int) string {
 	return "writer" + string(rune('a'+n))
 }
+
+func TestReadFallback(t *testing.T) {
+	t.Run("a lane's fallback list comes back as written", func(t *testing.T) {
+		env := domain.EnvLookup{"HUDDLE_ROUTER_HOME": t.TempDir()}
+		writeEnabled(t, env, `{"providers":["zai"],"lanes":{"zai":{"fallback":["glm-5.3-flash"]}}}`)
+		if got := ReadFallback(env, "zai"); !slices.Equal(got, []string{"glm-5.3-flash"}) {
+			t.Errorf("ReadFallback(zai) = %v", got)
+		}
+		if got := ReadFallback(env, "kimi"); got != nil {
+			t.Errorf("ReadFallback(kimi) = %v, want none", got)
+		}
+	})
+
+	t.Run("a missing or malformed file is no fallback", func(t *testing.T) {
+		env := domain.EnvLookup{"HUDDLE_ROUTER_HOME": t.TempDir()}
+		if got := ReadFallback(env, "zai"); got != nil {
+			t.Errorf("missing: %v", got)
+		}
+		writeEnabled(t, env, `{"providers":["zai"],"lanes":{"zai":{"fallback":"glm-5.3-flash"}}}`)
+		if got := ReadFallback(env, "zai"); got != nil {
+			t.Errorf("malformed: %v", got)
+		}
+	})
+
+	t.Run("enabling a provider keeps every lane's fallback list", func(t *testing.T) {
+		env := domain.EnvLookup{"HUDDLE_ROUTER_HOME": t.TempDir()}
+		writeEnabled(t, env, `{"providers":["zai"],"lanes":{"zai":{"fallback":["glm-5.3-flash"]}}}`)
+		if err := SetEnabled(env, "kimi", true); err != nil {
+			t.Fatal(err)
+		}
+		if got := ReadFallback(env, "zai"); !slices.Equal(got, []string{"glm-5.3-flash"}) {
+			t.Errorf("after SetEnabled: ReadFallback(zai) = %v", got)
+		}
+	})
+}

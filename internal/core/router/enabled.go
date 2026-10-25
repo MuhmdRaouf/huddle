@@ -42,7 +42,8 @@ func PortOf(env domain.EnvLookup) (int, error) {
 	return port, nil
 }
 
-// EnabledFile is HomeOf/providers.json: {"providers":["zai","kimi"]}.
+// EnabledFile is HomeOf/providers.json:
+// {"providers":["zai","kimi"],"lanes":{"zai":{"fallback":["glm-5.3-flash"]}}}.
 func EnabledFile(env domain.EnvLookup) string {
 	return filepath.Join(HomeOf(env), "providers.json")
 }
@@ -50,6 +51,28 @@ func EnabledFile(env domain.EnvLookup) string {
 // enabled is the file's shape.
 type enabled struct {
 	Providers []string `json:"providers"`
+	// Lanes is each provider lane's own settings, by provider name.
+	Lanes map[string]laneSettings `json:"lanes,omitempty"`
+}
+
+// laneSettings is one lane's settings in providers.json.
+type laneSettings struct {
+	// Fallback is the models a failing model's requests go to, in order.
+	Fallback []string `json:"fallback,omitempty"`
+}
+
+// ReadFallback is the provider lane's fallback list in providers.json; nil when the file, the
+// lane or the list is missing or does not parse (ReadEnabled reports a bad file).
+func ReadFallback(env domain.EnvLookup, name string) []string {
+	raw, err := os.ReadFile(EnabledFile(env))
+	if err != nil {
+		return nil
+	}
+	var parsed enabled
+	if json.Unmarshal(raw, &parsed) != nil {
+		return nil
+	}
+	return parsed.Lanes[name].Fallback
 }
 
 // ReadEnabled answers the enabled providers in the compiled providers' order. A missing file is

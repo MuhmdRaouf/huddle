@@ -6,10 +6,13 @@ package router
 import (
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -570,4 +573,146 @@ func (g *gatewayFake) pathsSeen() []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return append([]string(nil), g.paths...)
+}
+
+// modelUpstream is a fake provider that answers 503 for the models in failing and streams 200
+// for every other, recording the model each request named, in order.
+type modelUpstream struct {
+	mu      sync.Mutex
+	failing map[string]bool
+	models  []string
+}
+
+func (u *modelUpstream) serve(t *testing.T) *url.URL {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		var named struct {
+			Model string `json:"model"`
+		}
+		_ = json.Unmarshal(body, &named)
+		u.mu.Lock()
+		u.models = append(u.models, named.Model)
+		failing := u.failing[named.Model]
+		u.mu.Unlock()
+		if failing {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(503)
+			_, _ = w.Write([]byte(`{"type":"error","error":{"type":"overloaded_error","message":"busy"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: " + named.Model + "\n\n"))
+	}))
+	t.Cleanup(server.Close)
+	return mustURL(t, server.URL+"/api/anthropic")
+}
+
+func (u *modelUpstream) seen() []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return slices.Clone(u.models)
+}
+
+func TestLaneFallbackScenarios(t *testing.T) {
+	t.Parallel()
+	bdd.Feature(t, "a lane falls back after three failures", func(f *bdd.F) {
+		f.Scenario("three 503s for glm-5.3 send the next request to glm-5.3-flash, and Radar hears of it", func(s *bdd.S) {
+			var rig *multiRig
+			var lines *lineLog
+			upstream := &modelUpstream{failing: map[string]bool{"glm-5.3": true}}
+			s.Given("a zai lane whose glm-5.3 answers 503 and whose fallback list is glm-5.3-flash", func(t *testing.T) {
+				lines = &lineLog{}
+				rig = newMultiRig(s.T, multiOpts{log: lines.add, lanes: []multiLaneOpts{
+					{provider: routerProvider, key: "zai-secret", upstream: upstream.serve(s.T), fallback: []string{"glm-5.3-flash"}},
+				}})
+			})
+			s.When("three glm-5.3 requests are answered 503", func(t *testing.T) {
+				for i := range 3 {
+					if got := rig.postModel(t, "/v1/messages", "glm-5.3"); got.status != 503 {
+						t.Fatalf("request %d = %d %q, want 503", i+1, got.status, got.body)
+					}
+				}
+			})
+			var fourth answer
+			s.And("a fourth glm-5.3 request arrives", func(t *testing.T) {
+				fourth = rig.postModel(t, "/v1/messages", "glm-5.3")
+			})
+			s.Then("it reaches the upstream as glm-5.3-flash and is answered 200", func(t *testing.T) {
+				if fourth.status != 200 || fourth.body != "data: glm-5.3-flash\n\n" {
+					t.Fatalf("fourth = %d %q", fourth.status, fourth.body)
+				}
+				want := []string{"glm-5.3", "glm-5.3", "glm-5.3", "glm-5.3-flash"}
+				if got := upstream.seen(); !slices.Equal(got, want) {
+					t.Errorf("upstream saw %v, want %v", got, want)
+				}
+			})
+			s.And("the router log names the switch once", func(t *testing.T) {
+				want := "fallback glm-5.3 -> glm-5.3-flash (3 x 503)"
+				if got := strings.Count(lines.joined(), want); got != 1 {
+					t.Errorf("log = %q, want %q once", lines.joined(), want)
+				}
+			})
+			s.And("the fourth route event names the model served and the one it fell back from", func(t *testing.T) {
+				if !until(func() bool { return len(rig.events.routes()) >= 4 }) {
+					t.Fatalf("route events = %+v", rig.events.routes())
+				}
+				routes := rig.events.routes()
+				for _, route := range routes[:3] {
+					if route.Model != "glm-5.3" || route.Fallback != nil {
+						t.Errorf("failed request event = model %q fallback %v", route.Model, route.Fallback)
+					}
+				}
+				last := routes[3]
+				if last.Model != "glm-5.3-flash" || last.Fallback == nil || *last.Fallback != "glm-5.3" {
+					t.Errorf("fourth event = model %q fallback %v, want glm-5.3-flash from glm-5.3", last.Model, last.Fallback)
+				}
+			})
+		})
+
+		f.Scenario("a lane without a fallback list keeps sending the model asked for", func(s *bdd.S) {
+			var rig *multiRig
+			upstream := &modelUpstream{failing: map[string]bool{"glm-5.3": true}}
+			s.Given("a zai lane whose glm-5.3 answers 503 and no fallback list", func(t *testing.T) {
+				rig = newMultiRig(s.T, multiOpts{lanes: []multiLaneOpts{
+					{provider: routerProvider, key: "zai-secret", upstream: upstream.serve(s.T)},
+				}})
+			})
+			s.When("four glm-5.3 requests arrive", func(t *testing.T) {
+				for range 4 {
+					rig.postModel(t, "/v1/messages", "glm-5.3")
+				}
+			})
+			s.Then("every one reaches the upstream as glm-5.3", func(t *testing.T) {
+				want := []string{"glm-5.3", "glm-5.3", "glm-5.3", "glm-5.3"}
+				if got := upstream.seen(); !slices.Equal(got, want) {
+					t.Errorf("upstream saw %v, want %v", got, want)
+				}
+			})
+		})
+
+		f.Scenario("a 200 between the failures starts the count over", func(s *bdd.S) {
+			var rig *multiRig
+			upstream := &modelUpstream{failing: map[string]bool{"glm-5.3": true}}
+			s.Given("a zai lane whose glm-5.3 answers 503 and whose fallback list is glm-5.3-flash", func(t *testing.T) {
+				rig = newMultiRig(s.T, multiOpts{lanes: []multiLaneOpts{
+					{provider: routerProvider, key: "zai-secret", upstream: upstream.serve(s.T), fallback: []string{"glm-5.3-flash"}},
+				}})
+			})
+			s.When("two glm-5.3 requests fail, one succeeds, and two more fail", func(t *testing.T) {
+				for _, ok := range []bool{false, false, true, false, false} {
+					upstream.mu.Lock()
+					upstream.failing["glm-5.3"] = !ok
+					upstream.mu.Unlock()
+					rig.postModel(t, "/v1/messages", "glm-5.3")
+				}
+			})
+			s.Then("the next glm-5.3 request still reaches glm-5.3", func(t *testing.T) {
+				rig.postModel(t, "/v1/messages", "glm-5.3")
+				if got := upstream.seen(); got[len(got)-1] != "glm-5.3" {
+					t.Errorf("upstream saw %v, want glm-5.3 last", got)
+				}
+			})
+		})
+	})
 }

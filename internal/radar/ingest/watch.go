@@ -964,6 +964,10 @@ func RouteRequest(line shared.SpoolLine, model string, ts int64) shared.RequestR
 		record.ParentAgentID = line.ParentAgentID
 		record.EarlyKeys = append(record.EarlyKeys, "parentAgentId")
 	}
+	if line.Fallback != nil && *line.Fallback != "" {
+		record.Fallback = line.Fallback
+		record.EarlyKeys = append(record.EarlyKeys, "fallback")
+	}
 	if line.PromptHash != nil && *line.PromptHash != "" {
 		record.PromptHash = line.PromptHash
 		record.EarlyKeys = append(record.EarlyKeys, "promptHash")

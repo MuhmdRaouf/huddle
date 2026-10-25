@@ -257,6 +257,9 @@ type RequestRecord struct {
 	// ParentAgentID is the agent chain this call's agent hangs under, from a route line's
 	// parent_agent_id; nil when the line did not say.
 	ParentAgentID *string `json:"parentAgentId,omitempty"`
+	// Fallback is the model the call asked for when its router's lane sent it to Model
+	// instead, from the route line; nil for a call served as it asked.
+	Fallback *string `json:"fallback,omitempty"`
 	// CacheWrite1h is the part of CacheWrite the request wrote to the 1-hour cache; nil
 	// when the usage block said nothing.
 	CacheWrite1h *int64 `json:"cacheWrite1h,omitempty"`
@@ -287,7 +290,7 @@ type RequestRecord struct {
 	Status *string `json:"status,omitempty"`
 
 	// EarlyKeys lists the optional keys that ride between agentId and model, in order: a
-	// route line's own error, parentAgentId, promptHash and headers. Empty for every
+	// route line's own error, parentAgentId, fallback, promptHash and headers. Empty for every
 	// record not born from a route line.
 	EarlyKeys []string `json:"-"`
 
@@ -308,6 +311,7 @@ const (
 	keyTotals       = "totals"
 	keyError        = "error"
 	keyParentAgent  = "parentAgentId"
+	keyFallback     = "fallback"
 	keyCacheWrite1h = "cacheWrite1h"
 	keySpeed        = "speed"
 	keyGeo          = "geo"
@@ -323,7 +327,7 @@ var billingKeys = []string{keyCacheWrite1h, keySpeed, keyGeo, keyServiceTier}
 // historyKeys is the order a record read back out of the history answers its optionals in.
 var historyKeys = []string{
 	keyRoute, keyVia, keyStatus, keyHarness, keyCostUsd, keyWhat, keyError, keyParentAgent,
-	keyPromptHash, keyHeaders, keyTotals, keyCacheWrite1h, keySpeed, keyGeo, keyServiceTier,
+	keyFallback, keyPromptHash, keyHeaders, keyTotals, keyCacheWrite1h, keySpeed, keyGeo, keyServiceTier,
 }
 
 // MarshalJSON prints the record's keys in the wire's fixed order: the base fields first, and
@@ -379,6 +383,10 @@ func (r RequestRecord) MarshalJSON() ([]byte, error) {
 		case keyParentAgent:
 			if r.ParentAgentID != nil {
 				add(keyParentAgent, *r.ParentAgentID)
+			}
+		case keyFallback:
+			if r.Fallback != nil {
+				add(keyFallback, *r.Fallback)
 			}
 		case keyCacheWrite1h:
 			if r.CacheWrite1h != nil {
@@ -704,6 +712,9 @@ type SpoolLine struct {
 	// ParentAgentID is the agent chain the calling agent hangs under, as Claude Code
 	// stamped the forwarded request.
 	ParentAgentID *string `json:"parent_agent_id,omitempty"`
+	// Fallback is the model the request asked for when the router's lane sent it to Model
+	// instead.
+	Fallback *string `json:"fallback,omitempty"`
 	// PromptHash is the hash a route line names (its capture sits under it); a capture
 	// line carries the hash again with the gzipped content.
 	PromptHash *string                    `json:"prompt_hash,omitempty"`

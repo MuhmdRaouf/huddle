@@ -43,6 +43,10 @@ type RouteEvent struct {
 	// Via names the forwarder on the line itself; the routers leave it unset and radar reads
 	// their plugin as the via.
 	Via string `json:"via,omitempty"`
+	// Fallback is the model the request asked for when the lane sent it to Model instead,
+	// because the model asked for answered three failures in a row; nil for a request served
+	// as it asked.
+	Fallback *string `json:"fallback,omitempty"`
 }
 
 // CaptureEvent is one distinct prompt's content, appended once per hash per router process: gzip of the JSON the

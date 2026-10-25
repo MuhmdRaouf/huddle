@@ -97,3 +97,16 @@ func TestWorkerKeyReadsTheEnvironmentBeforeAnythingElse(t *testing.T) {
 		t.Fatalf("workerKey = %q (%v), want the environment's key", key.Value, workerErr)
 	}
 }
+
+func TestLaneOfCarriesTheLaneFallbackList(t *testing.T) {
+	t.Parallel()
+	env := domain.EnvLookup{"HUDDLE_ROUTER_HOME": t.TempDir(), "HOME": t.TempDir()}
+	writeEnabled(t, env, `{"providers":["zai"],"lanes":{"zai":{"fallback":["glm-5.3-flash"]}}}`)
+	lane, err := LaneOf(routerProvider, env, func(string) {})
+	if err != nil {
+		t.Fatalf("LaneOf: %v", err)
+	}
+	if len(lane.Fallback) != 1 || lane.Fallback[0] != "glm-5.3-flash" {
+		t.Errorf("Fallback = %v, want providers.json's list", lane.Fallback)
+	}
+}

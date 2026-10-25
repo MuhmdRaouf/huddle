@@ -484,6 +484,31 @@ func TestSpoolIngestion(t *testing.T) {
 		}
 	})
 
+	t.Run("keeps the model a route line fell back from, and prints it before the model", func(t *testing.T) {
+		e := makeEnv(t)
+		writeText(t, spoolFilePath(t, e.env), jsonl(t, map[string]any{
+			"ts": iso(watchT1), "event": "route", "plugin": "zai", "session_id": "s9", "agent_id": "a1",
+			"model": "glm-5.3-flash", "fallback": "glm-5.3", "upstream": "api.z.ai",
+			"route": "provider", "status": 200, "latency_ms": 900,
+		}))
+		st := newStore()
+		manualWatcher(t, e.env, st)
+		routed := st.Requests(sessionFilter("s9"))
+		if len(routed) != 1 {
+			t.Fatalf("routed requests = %+v, want one", routed)
+		}
+		if routed[0].Fallback == nil || *routed[0].Fallback != "glm-5.3" || routed[0].Model != "glm-5.3-flash" {
+			t.Fatalf("request = model %q fallback %v, want glm-5.3-flash from glm-5.3", routed[0].Model, routed[0].Fallback)
+		}
+		printed, err := json.Marshal(routed[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(printed), `"agentId":"a1","fallback":"glm-5.3","model":"glm-5.3-flash"`) {
+			t.Errorf("printed = %s, want fallback between agentId and model", printed)
+		}
+	})
+
 	t.Run("reads a success status as no stop reason and names an unknown model after its plugin", func(t *testing.T) {
 		e := makeEnv(t)
 		writeText(t, spoolFilePath(t, e.env), jsonl(t, map[string]any{

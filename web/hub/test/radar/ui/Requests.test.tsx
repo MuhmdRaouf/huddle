@@ -252,6 +252,31 @@ describe("requests view", () => {
     ]);
   });
 
+  it("marks a request its router sent to a fallback model with the model it asked for", () => {
+    const { container } = renderApp(
+      <RequestsView />,
+      {
+        requests: [
+          makeRequest({
+            id: "fell",
+            ts: NOW - 5_000,
+            model: "glm-5.3-flash",
+            provider: "Z.ai",
+            fallback: "glm-5.3",
+          }),
+          makeRequest({ id: "plain", ts: NOW - 6_000, model: "glm-5.3", provider: "Z.ai" }),
+        ],
+      },
+      NOW,
+    );
+    const marks = [...container.querySelectorAll<HTMLElement>(".model-fallback")];
+    expect(marks.map((mark) => mark.textContent)).toEqual(["from glm-5.3"]);
+    expect(marks[0]?.getAttribute("title")).toBe(
+      "glm-5.3 failed 3 times in a row; the router sent this to glm-5.3-flash",
+    );
+    expect(marks[0]?.closest("tr")?.getAttribute("data-value")).toBe("fell");
+  });
+
   it("offers a model filter once more than one model is in view, and narrows the table by it", async () => {
     const mixed = {
       requests: [
