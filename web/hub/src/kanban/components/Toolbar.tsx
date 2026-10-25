@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Density } from "../store.ts";
-import { type FilterKind, type Filters, clearPicks, hiddenDone, togglePick } from "../store.ts";
+import { type FilterKind, type Filters, clearPicks, hiddenDone, togglePick, useMedia } from "../store.ts";
 import type { Card } from "../types.ts";
 import { BoardPicker } from "./BoardPicker.tsx";
 import { FilterMenu } from "./FilterMenu.tsx";
@@ -125,10 +125,80 @@ function SharedNote({ value }: { value: string }) {
   return <span class="shared-note">All cards: {value}</span>;
 }
 
+/** The filter controls: one menu per kind, the shared notes, the hide-done toggle and the
+ *  density toggle. The desktop shows them in the header row, the phone in its folded row. */
+function FilterControls({
+  cards,
+  filters,
+  onChange,
+  openKind,
+  onOpenKind,
+  density,
+  onDensity,
+  sharedTags,
+  sharedCluster,
+}: {
+  cards: Card[];
+  filters: Filters;
+  onChange: (filters: Filters) => void;
+  openKind: FilterKind | null;
+  onOpenKind: (kind: FilterKind | null) => void;
+  density: Density;
+  onDensity: (density: Density) => void;
+  sharedTags: readonly string[];
+  sharedCluster: string | null;
+}) {
+  const kinds = KINDS.filter(({ kind }) => kind !== "tag" || cards.some((card) => card.tags.length > 0));
+  const hidden = hiddenDone(cards, filters);
+  return (
+    <>
+      {kinds.map((entry) => (
+        <KindMenu
+          key={entry.kind}
+          kind={entry.kind}
+          label={entry.label}
+          cards={cards}
+          filters={filters}
+          open={openKind === entry.kind}
+          onOpen={() => onOpenKind(entry.kind)}
+          onClose={() => onOpenKind(null)}
+          onChange={onChange}
+        />
+      ))}
+      {sharedTags.map((tag) => (
+        <SharedNote key={tag} value={tag} />
+      ))}
+      {sharedCluster !== null && sharedCluster !== "" && <SharedNote value={sharedCluster} />}
+      <label class="hide-done">
+        <input
+          type="checkbox"
+          class="toggle"
+          checked={filters.hideDone}
+          aria-checked={filters.hideDone ? "true" : "false"}
+          onChange={() => onChange({ ...filters, hideDone: !filters.hideDone })}
+        />
+        <span>{hidden > 0 ? `Hide done (${hidden})` : "Hide done"}</span>
+      </label>
+      <button
+        type="button"
+        class="density"
+        aria-pressed={density === "comfortable"}
+        onClick={() => onDensity(density === "compact" ? "comfortable" : "compact")}
+      >
+        {density === "compact" ? "Compact" : "Comfortable"}
+      </button>
+    </>
+  );
+}
+
+/** The id of the phone's folded filters row, named by the Filters button's aria-controls. */
+const FILTERS_ID = "kanban-filters";
+
 /** The header row: the picker as the page title, the live dot, search, one menu per filter kind,
  *  the shared note, the hide-done toggle and the density toggle at the right. `/` jumps to the
  *  search box and b opens the picker, but never while a menu holds the keyboard. The picks sit
- *  as pills below. */
+ *  as pills below. On a phone the menus, the toggles and the pills fold behind one Filters
+ *  button that counts the picks and Hide done, so the header stays one row high. */
 export function Toolbar({
   cards,
   filters,
@@ -147,6 +217,8 @@ export function Toolbar({
 }: ToolbarProps) {
   const search = useRef<HTMLInputElement>(null);
   const [openKind, setOpenKind] = useState<FilterKind | null>(null);
+  const narrow = useMedia("(max-width: 639px)");
+  const [unfolded, setUnfolded] = useState(false);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -160,12 +232,26 @@ export function Toolbar({
     return () => document.removeEventListener("keydown", onKey);
   }, [openKind]);
 
-  const kinds = KINDS.filter(({ kind }) => kind !== "tag" || cards.some((card) => card.tags.length > 0));
   const picks = KINDS.flatMap(({ kind, label }) =>
     filters.picks[kind].map((value) => ({ kind, label, value })),
   );
   const liveWord = connected ? "live" : "reconnecting";
-  const hidden = hiddenDone(cards, filters);
+  const active = picks.length + (filters.hideDone ? 1 : 0);
+  const showFilters = !narrow || unfolded;
+
+  const controls = (
+    <FilterControls
+      cards={cards}
+      filters={filters}
+      onChange={onChange}
+      openKind={openKind}
+      onOpenKind={setOpenKind}
+      density={density}
+      onDensity={onDensity}
+      sharedTags={sharedTags}
+      sharedCluster={sharedCluster}
+    />
+  );
 
   return (
     <>
@@ -187,43 +273,25 @@ export function Toolbar({
           value={filters.q}
           onInput={(event) => onChange({ ...filters, q: event.currentTarget.value })}
         />
-        {kinds.map((entry) => (
-          <KindMenu
-            key={entry.kind}
-            kind={entry.kind}
-            label={entry.label}
-            cards={cards}
-            filters={filters}
-            open={openKind === entry.kind}
-            onOpen={() => setOpenKind(entry.kind)}
-            onClose={() => setOpenKind(null)}
-            onChange={onChange}
-          />
-        ))}
-        {sharedTags.map((tag) => (
-          <SharedNote key={tag} value={tag} />
-        ))}
-        {sharedCluster !== null && sharedCluster !== "" && <SharedNote value={sharedCluster} />}
-        <label class="hide-done">
-          <input
-            type="checkbox"
-            class="toggle"
-            checked={filters.hideDone}
-            aria-checked={filters.hideDone ? "true" : "false"}
-            onChange={() => onChange({ ...filters, hideDone: !filters.hideDone })}
-          />
-          <span>{hidden > 0 ? `Hide done (${hidden})` : "Hide done"}</span>
-        </label>
-        <button
-          type="button"
-          class="density"
-          aria-pressed={density === "comfortable"}
-          onClick={() => onDensity(density === "compact" ? "comfortable" : "compact")}
-        >
-          {density === "compact" ? "Compact" : "Comfortable"}
-        </button>
+        {narrow && (
+          <button
+            type="button"
+            class="filters-btn"
+            aria-expanded={unfolded}
+            aria-controls={unfolded ? FILTERS_ID : undefined}
+            onClick={() => setUnfolded(!unfolded)}
+          >
+            Filters{active > 0 ? `: ${active}` : ""}
+          </button>
+        )}
+        {!narrow && controls}
+        {narrow && unfolded && (
+          <div class="filters-row" id={FILTERS_ID}>
+            {controls}
+          </div>
+        )}
       </div>
-      {picks.length > 0 && (
+      {showFilters && picks.length > 0 && (
         <div class="pills">
           {picks.map((pick) => (
             <button

@@ -254,6 +254,7 @@
 }
 
 .kanban-tab .menu-btn,
+.kanban-tab .filters-btn,
 .kanban-tab .show-all {
   height: 28px;
   background: var(--card);
@@ -265,10 +266,22 @@
   white-space: nowrap;
 }
 
-.kanban-tab .menu-btn[aria-expanded="true"] {
+.kanban-tab .menu-btn[aria-expanded="true"],
+.kanban-tab .filters-btn[aria-expanded="true"] {
   border-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
+}
+
+/* the phone's folded filters: the menus, the toggles and the density on their own row under the
+   Filters button, shown while it is open */
+
+.kanban-tab .filters-row {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 /* the hide-done switch with its label beside it */
@@ -1136,6 +1149,8 @@
 
   .kanban-tab .picker-btn,
   .kanban-tab .menu-btn,
+  .kanban-tab .filters-btn,
+  .kanban-tab > .btn,
   .kanban-tab .density,
   .kanban-tab .show-all,
   .kanban-tab .clear-filters,
@@ -1148,8 +1163,29 @@
     min-height: 44px;
   }
 
+  /* one row: the picker, the dot, the search taking what is left, and the Filters button */
+  .kanban-tab .toolbar {
+    padding-bottom: 4px;
+  }
+
+  .kanban-tab .flow-labels.tabs {
+    margin-top: 4px;
+  }
+
+  .kanban-tab .picker {
+    min-width: 0;
+    max-width: 40%;
+  }
+
+  .kanban-tab .picker-btn {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .kanban-tab .toolbar input[type="search"] {
-    flex: 1 1 100%;
+    flex: 1 1 0;
+    min-width: 0;
     width: auto;
     min-height: 44px;
   }

@@ -1,11 +1,12 @@
 import { act, render, screen } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "preact/hooks";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { Toolbar } from "../../src/kanban/components/Toolbar.tsx";
 import { EMPTY_FILTERS, type Filters } from "../../src/kanban/store.ts";
 import type { Card } from "../../src/kanban/types.ts";
 import { makeCard } from "./helpers.ts";
+import { stubMatchMedia } from "./match-media.ts";
 
 const withPicks = (picks: Partial<Filters["picks"]>, over: Partial<Filters> = {}): Filters => ({
   ...EMPTY_FILTERS,
@@ -556,5 +557,49 @@ describe("the pills", () => {
     await userEvent.click(screen.getByRole("button", { name: "Clear all" }));
     expect(screen.queryByRole("button", { name: "Remove Holder glm-A" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Clear all" })).toBeNull();
+  });
+});
+
+describe("Feature: the filters fold behind one button on a phone", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("Scenario: one Filters button with the active count stands in for the menus until it is tapped", async () => {
+    stubMatchMedia((query) => query.includes("max-width"));
+    const { container } = render(
+      <Row cards={board()} initial={withPicks({ holder: ["glm-A", "glm-B"] }, { hideDone: true })} />,
+    );
+    const filters = screen.getByRole("button", { name: "Filters: 3" });
+    expect(filters.getAttribute("aria-expanded")).toBe("false");
+    expect(kindButtons(container)).toEqual([]);
+    expect(screen.queryByRole("checkbox", { name: /Hide done/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Compact" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove Holder glm-A" })).toBeNull();
+    expect(screen.getByRole("searchbox", { name: "Search" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Board" })).toBeTruthy();
+
+    await userEvent.click(filters);
+    expect(filters.getAttribute("aria-expanded")).toBe("true");
+    expect(kindButtons(container)).toEqual(["Domain", "Epic", "Holder: 2", "Type", "Priority"]);
+    expect(screen.getByRole("checkbox", { name: /Hide done/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Compact" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove Holder glm-A" })).toBeTruthy();
+
+    await userEvent.click(filters);
+    expect(kindButtons(container)).toEqual([]);
+  });
+
+  it("Scenario: the button reads plain Filters while nothing is picked", () => {
+    stubMatchMedia((query) => query.includes("max-width"));
+    render(<Row cards={board()} initial={EMPTY_FILTERS} />);
+    expect(screen.getByRole("button", { name: "Filters" })).toBeTruthy();
+  });
+
+  it("Scenario: the desktop keeps every menu in the row and has no Filters button", () => {
+    stubMatchMedia(() => false);
+    const { container } = render(<Row cards={board()} initial={EMPTY_FILTERS} />);
+    expect(screen.queryByRole("button", { name: /^Filters/ })).toBeNull();
+    expect(kindButtons(container)).toEqual(["Domain", "Epic", "Holder", "Type", "Priority"]);
   });
 });

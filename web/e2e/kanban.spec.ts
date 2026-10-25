@@ -245,6 +245,8 @@ test.describe("a done-heavy board", () => {
 
     await test.step("Then done is hidden, its count kept, and the board says how many it hides", async () => {
       await expect(page.locator(".kanban-tab .flow-label", { hasText: "Done 56" })).toBeVisible();
+      // the phone folds Hide done behind the Filters button, which counts it as one active filter
+      if (isMobile) await page.getByRole("button", { name: "Filters: 1" }).tap();
       await expect(page.getByRole("checkbox", { name: "Hide done (56)" })).toBeChecked();
       await expect(page.locator(".kanban-tab .done-hidden")).toContainText("56 done hidden");
       await expect(page.locator(".kanban-tab article.card[data-id^='HEAVY-']")).toHaveCount(0);
@@ -535,6 +537,16 @@ test.describe("the board on a phone", () => {
       await expectAccessible(page, AXE_EXCLUDE);
     });
 
+    await test.step("And the filters the Filters button unfolds are too", async () => {
+      const filters = page.getByRole("button", { name: /^Filters/ });
+      await filters.tap();
+      await expect(page.getByRole("button", { name: "Holder" })).toBeVisible();
+      expect(await smallTargets(page)).toEqual([]);
+      await expectAccessible(page, AXE_EXCLUDE);
+      await filters.tap();
+      await expect(page.getByRole("button", { name: "Holder" })).toHaveCount(0);
+    });
+
     await test.step("And the open sheet's controls are too", async () => {
       await page.getByRole("button", { name: "E2E-1: First card" }).tap();
       const sheet = page.getByRole("dialog", { name: "E2E-1: First card" });
@@ -593,6 +605,37 @@ test.describe("the board on a phone", () => {
           };
         });
         expect(Math.abs(head.said - head.seen)).toBeLessThanOrEqual(1);
+      });
+    });
+    test("the header above the first card is at most 160 px and the tabs stay in view 4,000 px down", async ({
+      page,
+    }) => {
+      const backlog = page.locator('.lanes section[data-column="backlog"]');
+
+      await test.step("Given 150 backlog cards and two in progress at 390×844", async () => {
+        for (const id of backlogIds) seedTicket("backlog", id, `Deep card ${id}`);
+        for (const id of workingIds) seedTicket("in-progress", id, `Working card ${id}`);
+        await kanbanAt(page, 390, 844);
+        await expect(page.locator(".kanban-tab article.card[data-id^='DEEP-']")).toHaveCount(152);
+      });
+
+      await test.step("Then the header from the Kanban tab's top to the first card is at most 160 px", async () => {
+        const head = await backlog.evaluate((lane) => {
+          const tab = lane.closest(".kanban-tab") ?? lane;
+          const card = lane.querySelector("article.card") ?? lane;
+          return card.getBoundingClientRect().top - tab.getBoundingClientRect().top;
+        });
+        expect(head).toBeLessThanOrEqual(160);
+      });
+
+      await test.step("When the backlog lane is scrolled 4,000 px", async () => {
+        await backlog.evaluate((el) => el.scrollTo({ top: 4000 }));
+        await expect.poll(() => backlog.evaluate((el) => el.scrollTop)).toBeGreaterThan(3990);
+      });
+
+      await test.step("Then the picker and the column tabs are still on screen", async () => {
+        await expect(page.getByRole("tablist", { name: "Columns" })).toBeInViewport({ ratio: 1 });
+        await expect(page.getByRole("button", { name: "Board", exact: true })).toBeInViewport({ ratio: 1 });
       });
     });
   });
