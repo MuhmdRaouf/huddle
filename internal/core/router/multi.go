@@ -282,10 +282,11 @@ func (m *Multi) laneFor(model string) *routerWorker {
 	return m.anthropic
 }
 
-// route serves one request on the lane its model picks.
+// route serves one request on the lane its model picks. The body is read only up to the model:
+// the parse a route edits happens on the provider lane alone.
 func (m *Multi) route(req *http.Request, res *Response, body []byte) {
-	node := parseBodyNode(body)
-	m.laneFor(modelIn(node)).forwardParsed(req, res, body, node)
+	model := modelOf(body)
+	m.laneFor(model).forward(req, res, body, model)
 }
 
 // jsonAnswer writes one JSON answer.

@@ -160,9 +160,9 @@ func modelIn(json *jsfmt.Value) string {
 
 // ── the prompt capture ─────────────────────────────────────────────────────────────────────────────────────────────
 // What a request carried at its top level — its `system` and `tools`, never a header, a key or a
-// message — stored once per distinct content. Reading it costs nothing the request pays for: it
-// reads the body the router already holds, and the gzip and spool write happen off the request's
-// own goroutine.
+// message — stored once per distinct content. The capture runs on its own goroutine, on its own
+// parse of the body's bytes, and the gzip and spool write with it; a request only waits for the
+// hash when it writes its route event.
 
 // capturedHeaderRE is the response headers a route event may carry, case-insensitively; nothing
 // else ever leaves.
@@ -355,10 +355,12 @@ func (m *captureMemo) first(hash string) bool {
 	return true
 }
 
-// promptRef is one request's prompt hash and billing ids, filled in as the request is
-// dispatched; the route event reads them when the request completes.
+// promptRef is one request's prompt hash and billing ids, filled in by its capture on its own
+// goroutine; the route event reads them when the request completes, waiting for a capture that
+// has started.
 type promptRef struct {
 	mu      sync.Mutex
+	done    chan struct{}
 	hash    string
 	has     bool
 	billing billingLine
@@ -370,7 +372,19 @@ func (p *promptRef) set(hash string, billing billingLine) {
 	p.hash, p.has, p.billing = hash, true, billing
 }
 
+// wait blocks until a started capture has filled the ref in; a ref no capture started answers at
+// once. The capture closes done after set, so a wait that returns reads what set wrote.
+func (p *promptRef) wait() {
+	p.mu.Lock()
+	done := p.done
+	p.mu.Unlock()
+	if done != nil {
+		<-done
+	}
+}
+
 func (p *promptRef) Hash() *string {
+	p.wait()
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.has {
@@ -380,6 +394,7 @@ func (p *promptRef) Hash() *string {
 }
 
 func (p *promptRef) Billing() billingLine {
+	p.wait()
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.billing
@@ -722,19 +737,26 @@ func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt i
 }
 
 // capture reads what the request's body carried, once per distinct content, and writes its one
-// capture event off the request's own goroutine; the hash is set synchronously so the route event
-// always names it. A failure costs one log line.
-func (w *routerWorker) capture(prompt *promptRef, json *jsfmt.Value) {
+// capture event off the request's own goroutine, on its own parse of the body's bytes: a
+// provider-bound rewrite of the request never reaches the captured prompt. The ref is marked
+// started under the lock at once, and the hash lands before the capture ends, so the route event,
+// which waits for that end, always names it. A failure costs one log line.
+func (w *routerWorker) capture(prompt *promptRef, original []byte) {
 	if w.opts.Events == nil {
 		return
 	}
-	captured, ok := promptOf(json)
-	if !ok {
-		return
-	}
-	hash := captured.hash()
-	prompt.set(hash, captured.billing)
+	prompt.mu.Lock()
+	prompt.done = make(chan struct{})
+	prompt.mu.Unlock()
+	done := prompt.done
 	safego.Go(w.log, func() {
+		defer close(done)
+		captured, ok := promptOf(parseBodyNode(original))
+		if !ok {
+			return
+		}
+		hash := captured.hash()
+		prompt.set(hash, captured.billing)
 		if !w.captured.first(hash) {
 			return
 		}
@@ -1245,20 +1267,29 @@ func sseEventNode(line string) *jsfmt.Value {
 	return node
 }
 
-// promptHintOf is the conversation a provider request belongs to, as its stream's first
-// `message_start` may need it: the key and the request body's length, the measure the estimate
-// grows by. The parts are the body's own bytes, so the key stays byte-stable.
-func promptHintOf(body []byte, bodyChars int64) *PromptHint {
-	var raw map[string]json.RawMessage
-	_ = json.Unmarshal(body, &raw)
-	var first json.RawMessage
-	if messages, ok := raw["messages"]; ok {
-		var list []json.RawMessage
-		if json.Unmarshal(messages, &list) == nil && len(list) > 0 {
-			first = list[0]
+// promptPartsOf is the two top-level parts a conversation's key comes from, as the parsed body
+// carries them: the `system` and the first message, each as its own JSON text so the key stays
+// byte-stable. A body that is no object carries neither.
+func promptPartsOf(body *jsfmt.Value) (system, first json.RawMessage) {
+	if !body.IsObject() {
+		return nil, nil
+	}
+	if node := body.Get("system"); node != nil {
+		system = json.RawMessage(node.EncodeLiteral())
+	}
+	if messages := body.Get("messages"); messages.IsArray() {
+		if items := messages.Items(); len(items) > 0 && items[0] != nil {
+			first = json.RawMessage(items[0].EncodeLiteral())
 		}
 	}
-	return &PromptHint{Key: PromptKey(raw["system"], first), BodyChars: bodyChars}
+	return system, first
+}
+
+// promptHintOf is the conversation a provider request belongs to, as its stream's first
+// `message_start` may need it: the key its parts build and the request body's length, the measure
+// the estimate grows by.
+func promptHintOf(system, first json.RawMessage, bodyChars int64) *PromptHint {
+	return &PromptHint{Key: PromptKey(system, first), BodyChars: bodyChars}
 }
 
 // ── the provider key ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -1306,11 +1337,12 @@ func keyWithin(ctx context.Context, w *routerWorker) (string, keyOutcome) {
 
 // ── the forward ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-// forwardParsed is forward on a body already parsed once, so a caller that picked the lane by the
-// parsed model never parses twice.
-func (w *routerWorker) forwardParsed(req *http.Request, res *Response, original []byte, body *jsfmt.Value) {
+// forward serves one request on its original bytes: the body is parsed only on the provider
+// route, where its fields are edited; every other route forwards the bytes as they came. A
+// refused request — a second hop, the message-threads beta, a stopped budget, no key — parses
+// nothing.
+func (w *routerWorker) forward(req *http.Request, res *Response, original []byte, model string) {
 	provider := w.provider
-	model := modelIn(body)
 	prompt := &promptRef{}
 	served := &routeModel{model: model}
 	startedAt := time.Now().UnixMilli()
@@ -1330,7 +1362,7 @@ func (w *routerWorker) forwardParsed(req *http.Request, res *Response, original 
 		return
 	}
 	// The request is on its way: read what its body carried, once per content.
-	w.capture(prompt, body)
+	w.capture(prompt, original)
 	if hasPeer {
 		target := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.FormatInt(peer.Port, 10))}
 		w.dispatch(req, res, original, model, route, target, note, timing, &peer, "", nil)
@@ -1371,17 +1403,23 @@ func (w *routerWorker) forwardParsed(req *http.Request, res *Response, original 
 		w.noKey(req, res, model, outcome, note)
 		return
 	}
+	// The provider route's one parse: the fallback's model rename and the hint's parts both read
+	// this tree; a body that is no whole JSON parses to nil and goes upstream as it came.
+	body := parseBodyNode(original)
 	// A model out after three failures in a row goes to the lane's next model, its body
 	// naming that model from here on.
 	if next := w.fallback.pick(model); next != model {
-		body.Set("model", jsfmt.String(next))
-		original = []byte(body.EncodeLiteral())
+		if body != nil {
+			body.Set("model", jsfmt.String(next))
+			original = []byte(body.EncodeLiteral())
+		}
 		asked := model
 		served.model, served.fallback = next, &asked
 		model = next
 	}
+	system, first := promptPartsOf(body)
 	adapted, named := providerBody(w, original, body, model, req)
-	w.dispatch(req, res, adapted, named, "provider", w.opts.ProviderURL, note, timing, nil, key, promptHintOf(original, int64(len(adapted))))
+	w.dispatch(req, res, adapted, named, "provider", w.opts.ProviderURL, note, timing, nil, key, promptHintOf(system, first, int64(len(adapted))))
 }
 
 // budgetStopped answers a provider request while its budget is stopped: the same non-retryable

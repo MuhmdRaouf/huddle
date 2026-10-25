@@ -157,16 +157,51 @@ func TestZeroInputTokensAndTheEventNode(t *testing.T) {
 
 func TestPromptHintOfCarriesTheKeyAndTheLength(t *testing.T) {
 	t.Parallel()
-	hint := promptHintOf([]byte(`{"system":"sys","messages":[{"role":"user","content":"hi"},{"role":"assistant"}]}`), 42)
-	if hint == nil || hint.BodyChars != 42 {
-		t.Fatalf("promptHintOf = %+v, want 42 chars", hint)
-	}
-	if hint.Key == "" {
-		t.Error("promptHintOf built no key from the system and the first message")
-	}
-	// a body that is no object still answers a hint of the body's length
-	bare := promptHintOf([]byte("not json"), 7)
-	if bare == nil || bare.BodyChars != 7 {
-		t.Errorf("promptHintOf = %+v, want 7 chars", bare)
-	}
+
+	t.Run("the key and the length come from the tree", func(t *testing.T) {
+		t.Parallel()
+		system, first := promptPartsOf(parseBodyNode([]byte(
+			`{"system":"sys","messages":[{"role":"user","content":"hi"},{"role":"assistant"}]}`)))
+		hint := promptHintOf(system, first, 42)
+		if hint == nil || hint.BodyChars != 42 {
+			t.Fatalf("promptHintOf = %+v, want 42 chars", hint)
+		}
+		if hint.Key == "" {
+			t.Error("promptHintOf built no key from the system and the first message")
+		}
+	})
+
+	t.Run("a body that is no object still answers a hint of the body's length", func(t *testing.T) {
+		t.Parallel()
+		system, first := promptPartsOf(parseBodyNode([]byte("not json")))
+		if bare := promptHintOf(system, first, 7); bare == nil || bare.BodyChars != 7 {
+			t.Errorf("promptHintOf = %+v, want 7 chars", bare)
+		}
+	})
+
+	t.Run("later messages do not move the key", func(t *testing.T) {
+		t.Parallel()
+		oneSystem, oneFirst := promptPartsOf(parseBodyNode([]byte(
+			`{"system":"sys","messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"first turn"}]}`)))
+		twoSystem, twoFirst := promptPartsOf(parseBodyNode([]byte(
+			`{"system":"sys","messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"another second turn"}]}`)))
+		one := promptHintOf(oneSystem, oneFirst, 1)
+		two := promptHintOf(twoSystem, twoFirst, 2)
+		if one.Key != two.Key {
+			t.Errorf("keys = %q and %q, want one conversation", one.Key, two.Key)
+		}
+	})
+
+	t.Run("a different system is another conversation", func(t *testing.T) {
+		t.Parallel()
+		oneSystem, oneFirst := promptPartsOf(parseBodyNode([]byte(
+			`{"system":"sys","messages":[{"role":"user","content":"hi"}]}`)))
+		twoSystem, twoFirst := promptPartsOf(parseBodyNode([]byte(
+			`{"system":"another sys","messages":[{"role":"user","content":"hi"}]}`)))
+		one := promptHintOf(oneSystem, oneFirst, 1)
+		two := promptHintOf(twoSystem, twoFirst, 1)
+		if one.Key == two.Key {
+			t.Errorf("both keys = %q, want them apart", one.Key)
+		}
+	})
 }

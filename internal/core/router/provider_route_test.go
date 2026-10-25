@@ -34,7 +34,7 @@ func laneServer(t *testing.T, worker *routerWorker) int {
 	return serve(t, func(w http.ResponseWriter, req *http.Request) {
 		res := NewResponse(w)
 		Receive(req, res, "test", BodyLimitBytes, func(body []byte) {
-			worker.forwardParsed(req, res, body, parseBodyNode(body))
+			worker.forward(req, res, body, modelOf(body))
 		})
 	}, nil)
 }

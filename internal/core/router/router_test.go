@@ -322,3 +322,74 @@ func TestRouteEventCarriesTimeToFirstByteAndFirstToken(t *testing.T) {
 		}
 	})
 }
+
+func TestPromptRefWaitsForItsCapture(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a ref with no capture answers at once", func(t *testing.T) {
+		t.Parallel()
+		prompt := &promptRef{}
+		if hash := hashWithin(t, prompt); hash != nil {
+			t.Errorf("Hash() = %v, want nil", hash)
+		}
+		if billing := prompt.Billing(); billing.promptID != nil {
+			t.Errorf("Billing() = %+v, want the zero line", billing)
+		}
+	})
+
+	t.Run("a Hash read right after capture waits for the goroutine's hash", func(t *testing.T) {
+		t.Parallel()
+		upstream := laneUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ string) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			_, _ = w.Write([]byte(`{"usage":{"input_tokens":1,"output_tokens":1}}`))
+		})
+		events := &eventLog{}
+		worker := laneWorker(t, upstream, keyOfTheLane, func(o *RouterOptions) {
+			o.Events = events.record
+		})
+		body := []byte(`{"system":"the system prompt","messages":[{"role":"user"}]}`)
+		prompt := &promptRef{}
+		worker.capture(prompt, body)
+		want, ok := PromptHashOf(parseBodyNode(body))
+		if !ok {
+			t.Fatal("the body hashed to nothing")
+		}
+		if hash := hashWithin(t, prompt); hash == nil || *hash != want {
+			t.Errorf("Hash() = %v, want %q", hash, want)
+		}
+	})
+
+	t.Run("a body with neither system nor tools answers nil once the capture ends", func(t *testing.T) {
+		t.Parallel()
+		upstream := laneUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ string) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			_, _ = w.Write([]byte(`{}`))
+		})
+		events := &eventLog{}
+		worker := laneWorker(t, upstream, keyOfTheLane, func(o *RouterOptions) {
+			o.Events = events.record
+		})
+		prompt := &promptRef{}
+		worker.capture(prompt, []byte(`{"model":"glm-5.3","messages":[]}`))
+		if hash := hashWithin(t, prompt); hash != nil {
+			t.Errorf("Hash() = %v, want nil", hash)
+		}
+	})
+}
+
+// hashWithin reads the hash under a timer, so a wait that never ends fails the test instead of
+// hanging it.
+func hashWithin(t *testing.T, prompt *promptRef) *string {
+	t.Helper()
+	done := make(chan *string, 1)
+	go func() { done <- prompt.Hash() }()
+	select {
+	case hash := <-done:
+		return hash
+	case <-time.After(2 * time.Second):
+		t.Fatal("Hash() never answered")
+		return nil
+	}
+}
