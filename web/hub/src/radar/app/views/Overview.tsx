@@ -71,8 +71,9 @@ function Stat({
   );
 }
 
-/** The day's spend against the first budget that names one: the figure from the ledger, the bar
- *  and its percent from the budget's own status; no budget set says where to make one. */
+/** The day's spend against the first budget that names one: the figure from the ledger with the
+ *  count of calls it could not price, the bar and its percent from the budget's own status; no
+ *  budget set says where to make one. */
 function SpendStat() {
   const { state } = useApp();
   const spend = state.budgetStatus?.spend.find((entry) => entry.pct > 0) ?? state.budgetStatus?.spend[0];
@@ -80,7 +81,11 @@ function SpendStat() {
   return (
     <Stat
       title="Spend today"
-      value={fmtUsd(state.spendToday)}
+      value={
+        state.spendUnpriced > 0
+          ? `${fmtUsd(state.spendToday)} · ${state.spendUnpriced} unpriced`
+          : fmtUsd(state.spendToday)
+      }
       subline={
         spend === undefined ? (
           <a class="inline-flex min-h-11 items-center underline" href="#/settings/radar">

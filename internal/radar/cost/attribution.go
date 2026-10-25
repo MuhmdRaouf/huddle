@@ -199,14 +199,27 @@ func Attribute(rows []LedgerRow, by AttributionBy, names LedgerNames, since int6
 	return out
 }
 
-// SpendSince is the estimated spend across every row at or after since (nil when nothing in
-// it is priced).
-func SpendSince(rows []LedgerRow, since int64) *shared.USD {
-	var total *shared.USD
+// Spend is the estimated spend over a window and how many of its calls carry no price.
+type Spend struct {
+	// USD is nil when nothing in the window is priced.
+	USD *shared.USD
+	// Unpriced counts the calls left out of USD: a model the price table does not know, or a
+	// call the router saw that no usage ever reached.
+	Unpriced int64
+}
+
+// SpendSince is the estimated spend across every row at or after since.
+func SpendSince(rows []LedgerRow, since int64) Spend {
+	var total Spend
 	for _, row := range rows {
-		if row.Ts >= since {
-			total = AddCost(total, usdOf(RequestCost(pricedOfRow(row))))
+		if row.Ts < since {
+			continue
 		}
+		cost := RequestCost(pricedOfRow(row))
+		if cost == nil || shared.TotalTokens(row.Tokens) == 0 {
+			total.Unpriced++
+		}
+		total.USD = AddCost(total.USD, usdOf(cost))
 	}
 	return total
 }

@@ -106,7 +106,7 @@ type InsightsView interface {
 	Tree(cost.AttributionRange) []cost.AttributionNode
 	Budgets() []budget.Budget
 	BudgetStatus() budget.BudgetStatus
-	SpendToday() *shared.USD
+	SpendToday() cost.Spend
 	Providers() []string
 	Settings() settings.Settings
 	RouterHealth() routerhealth.RouterHealth
@@ -160,8 +160,10 @@ type budgetsAnswer struct {
 }
 
 type spendAnswer struct {
-	TodayUsd        *shared.USD `json:"todayUsd"`
-	PricesRetrieved string      `json:"pricesRetrieved"`
+	TodayUsd *shared.USD `json:"todayUsd"`
+	// Unpriced is today's calls left out of TodayUsd.
+	Unpriced        int64  `json:"unpriced"`
+	PricesRetrieved string `json:"pricesRetrieved"`
 }
 
 type settingsAnswer struct {
@@ -464,7 +466,8 @@ func insightRoute(insights InsightsView, path string, query url.Values) (ApiResp
 	case "/api/budget-status":
 		return jsonOf(200, insights.BudgetStatus()), true
 	case "/api/spend":
-		return jsonOf(200, spendAnswer{TodayUsd: insights.SpendToday(), PricesRetrieved: cost.PricesRetrieved}), true
+		spend := insights.SpendToday()
+		return jsonOf(200, spendAnswer{TodayUsd: spend.USD, Unpriced: spend.Unpriced, PricesRetrieved: cost.PricesRetrieved}), true
 	case "/api/settings":
 		return jsonOf(200, settingsAnswer{Settings: insights.Settings()}), true
 	case "/api/router":

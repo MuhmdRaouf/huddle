@@ -104,6 +104,15 @@ describe("the radar Overview", () => {
     expect(container.querySelector('[data-stat="routers"]')?.textContent).toContain("kimi budget stopped");
   });
 
+  it("says how many of today's calls the spend tile could not price, and nothing when it priced them all", () => {
+    const tile = (spendUnpriced: number) =>
+      overview({ summary: fixtures.summary, spendToday: 12.5, spendUnpriced }).container.querySelector(
+        '[data-stat="spend today"] .num',
+      )?.textContent;
+    expect(tile(3)).toBe("$12.50 · 3 unpriced");
+    expect(tile(0)).toBe("$12.50");
+  });
+
   it("stacks the range's spend by hour and model, with a legend that prices each band", () => {
     const { container } = overview({
       summary: fixtures.summary,

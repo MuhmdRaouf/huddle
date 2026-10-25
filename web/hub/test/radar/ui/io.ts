@@ -58,7 +58,7 @@ export function radarIo(over: Partial<Record<string, HttpResponse>> = {}): Radar
   const answers = new Map<string, HttpResponse>([
     ["/api/alerts", ok({ alerts: [] })],
     ["/api/budget-status", ok({ version: 1, updatedAt: 0, stopped: [], spend: [] })],
-    ["/api/spend", ok({ todayUsd: 1.25 })],
+    ["/api/spend", ok({ todayUsd: 1.25, unpriced: 0 })],
     ["/api/health", ok({ ok: true, version: "0.0.1", startedAt: 5, port: 4000, sessions: 2, uptimeMs: 100 })],
     ["/api/budgets", ok({ budgets: [], providers: ["zai", "kimi"] })],
     ["/api/settings", ok({ settings: { notifications: true } })],

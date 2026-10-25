@@ -194,7 +194,7 @@ func TestInsights(t *testing.T) {
 		if !slices.Equal(ids, []string{"r1", "r2", "r3"}) {
 			t.Errorf("ledger rows = %v, want r1 r2 r3", ids)
 		}
-		spend := fresh.insights.SpendToday()
+		spend := fresh.insights.SpendToday().USD
 		if spend == nil {
 			t.Fatal("spendToday = nil, want a figure")
 		}
@@ -215,6 +215,30 @@ func TestInsights(t *testing.T) {
 		want := []string{"main · app · s1", "explorer · app · s1"}
 		if !slices.Equal(labels, want) {
 			t.Errorf("agent attribution labels = %v, want %v", labels, want)
+		}
+	})
+
+	t.Run("counts today's calls it could not price beside the spend", func(t *testing.T) {
+		fresh := seededInsights(t)
+		priced := fresh.insights.SpendToday()
+		if priced.USD == nil || priced.Unpriced != 0 {
+			t.Fatalf("seeded spend = %+v, want the two priced calls and nothing unpriced", priced)
+		}
+		// two router-only calls the router saw with no usage, and one on a model no table knows
+		for _, id := range []string{"route-1", "route-2"} {
+			fresh.store.AddRequest(makeRequest(func(r *shared.RequestRecord) {
+				r.ID, r.Ts, r.Model, r.Tokens = id, nowAt.UnixMilli()-500, "claude-opus-5-5", shared.Tokens{}
+			}), nil)
+		}
+		fresh.store.AddRequest(makeRequest(func(r *shared.RequestRecord) {
+			r.ID, r.Ts, r.Model, r.Tokens = "mystery", nowAt.UnixMilli()-500, "mystery-model", outTokens
+		}), nil)
+		spend := fresh.insights.SpendToday()
+		if spend.USD == nil || *spend.USD != *priced.USD {
+			t.Errorf("spend = %v, want the two priced calls' %v", spend.USD, *priced.USD)
+		}
+		if spend.Unpriced != 3 {
+			t.Errorf("unpriced = %d, want 3", spend.Unpriced)
 		}
 	})
 

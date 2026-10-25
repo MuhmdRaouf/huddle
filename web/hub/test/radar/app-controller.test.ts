@@ -100,7 +100,7 @@ function defaultAnswers(): Map<string, Answer> {
   return new Map<string, Answer>([
     ["/api/alerts", ok({ alerts: [{ id: "a1" }, { id: "a2" }] })],
     ["/api/budget-status", ok({ version: 1, updatedAt: 0, stopped: [], spend: [] })],
-    ["/api/spend", ok({ todayUsd: 1.25 })],
+    ["/api/spend", ok({ todayUsd: 1.25, unpriced: 2 })],
     ["/api/attribution?by=tree&range=day", ok({ tree: [ATTRIBUTION_NODE] })],
     ["/api/router", ok({ windowMs: 60_000, buckets: 12, providers: [], recent: [] })],
     ["/api/advisor", ok({ runsChecked: 0, candidates: 0, savingUsd: null, byModel: [], examples: [] })],
@@ -1069,6 +1069,7 @@ describe("polled data", () => {
     expect(state.alerts.map((alert) => alert.id)).toEqual(["a1", "a2"]);
     expect(state.budgetStatus).toEqual({ version: 1, updatedAt: 0, stopped: [], spend: [] });
     expect(state.spendToday).toBe(1.25);
+    expect(state.spendUnpriced).toBe(2);
   });
 
   it("keeps what is shown when the poll fails", async () => {

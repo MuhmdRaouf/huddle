@@ -7,7 +7,7 @@
       "query": "",
       "status": 200,
       "contentType": "application/json; charset=utf-8",
-      "body": "{\"todayUsd\":null,\"pricesRetrieved\":\"2026-10-08\"}\n"
+      "body": "{\"todayUsd\":null,\"unpriced\":0,\"pricesRetrieved\":\"2026-10-08\"}\n"
     }
   ]
 }

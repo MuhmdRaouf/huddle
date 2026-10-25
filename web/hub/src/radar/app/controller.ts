@@ -1190,7 +1190,7 @@ export class RadarController {
       const [alerts, status, spend, health, quota] = await Promise.all([
         this.fetchJson<{ alerts: Alert[] }>("/api/alerts"),
         this.fetchJson<BudgetStatus>("/api/budget-status"),
-        this.fetchJson<{ todayUsd: number | null }>("/api/spend"),
+        this.fetchJson<{ todayUsd: number | null; unpriced: number }>("/api/spend"),
         this.fetchJson<{ startedAt: number; uptimeMs: number }>("/api/health"),
         // the card reads nothing until a session posts; a server without the route is the same
         this.fetchJson<QuotaSnapshot>("/api/quota").catch(() => null),
@@ -1200,6 +1200,7 @@ export class RadarController {
         alerts: alerts.alerts,
         budgetStatus: status,
         spendToday: spend.todayUsd,
+        spendUnpriced: spend.unpriced,
         quota: quota !== null && quota.at > 0 ? quota : null,
         health: { startedAt: health.startedAt, uptimeMs: health.uptimeMs },
       });

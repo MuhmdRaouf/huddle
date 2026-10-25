@@ -334,12 +334,12 @@ func TestAttribution(t *testing.T) {
 
 	t.Run("totals what was spent since a moment", func(t *testing.T) {
 		total := SpendSince(rows, RangeStart(RangeDay, now))
-		if total == nil {
+		if total.USD == nil {
 			t.Fatal("spendSince: no price")
 		}
-		closeTo(t, "spendSince", float64(*total), 2.8)
-		if got := SpendSince(nil, 0); got != nil {
-			t.Errorf("spendSince([]): got %v want null", *got)
+		closeTo(t, "spendSince", float64(*total.USD), 2.8)
+		if got := SpendSince(nil, 0); got.USD != nil || got.Unpriced != 0 {
+			t.Errorf("spendSince([]): got %+v want null and nothing unpriced", got)
 		}
 	})
 

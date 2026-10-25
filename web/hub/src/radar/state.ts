@@ -323,6 +323,8 @@ export type ClientState = {
   quota: QuotaSnapshot | null;
   /** Estimated spend since local midnight, from the usage ledger; null = nothing priced today. */
   spendToday: number | null;
+  /** Today's calls left out of spendToday: no price for the model, or no usage reached them. */
+  spendUnpriced: number;
   attributionRange: AttributionRange;
   /** The costs drill-down (repos → sessions → agents → models); null until the first fetch lands. */
   attributionTree: AttributionNode[] | null;
@@ -466,6 +468,7 @@ export function initialClientState(): ClientState {
     budgetStatus: null,
     quota: null,
     spendToday: null,
+    spendUnpriced: 0,
     attributionRange: "day",
     attributionTree: null,
     attributionSort: { key: "cost", dir: "desc" },
