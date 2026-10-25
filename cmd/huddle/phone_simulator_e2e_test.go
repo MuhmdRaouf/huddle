@@ -3,11 +3,14 @@ package main
 // The phone path, end to end on an iOS Simulator: a temp hub behind a TLS proxy whose leaf a test
 // root signs, the root trusted in the simulator's keychain, the one-time sign-in link opened in
 // the Safari of a simulator the test creates and deletes, and the hub's audit log showing the
-// code redeemed. The simulator shares this Mac's loopback, so the link names 127.0.0.1. It runs
-// on a Mac with Xcode's simulators and skips anywhere else, and on CI, where a cold simulator
-// boot does not fit the macOS job.
+// code redeemed. On the way it saves a screenshot of the landing and of each of the hub's five
+// tabs under .agents/scratch/sim-shots/<timestamp>/ for a look at the phone layout. The
+// simulator shares this Mac's loopback, so the link names 127.0.0.1. It runs on a Mac with
+// Xcode's simulators and skips anywhere else, and on CI, where a cold simulator boot does not
+// fit the macOS job.
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -35,6 +38,9 @@ const (
 	simulatorBootTimeout = 120 * time.Second
 	simulatorOpenTimeout = 30 * time.Second
 	signinSeenTimeout    = 90 * time.Second
+	shotMinWait          = 3 * time.Second
+	shotSettleTimeout    = 20 * time.Second
+	shotStableCaptures   = 3
 )
 
 func TestE2EPhoneSimulator(t *testing.T) {
@@ -113,11 +119,19 @@ func TestE2EPhoneSimulator(t *testing.T) {
 		t.Fatalf("the audit log holds %d sign-ins before the simulator opened the link, want 0", n)
 	}
 
+	shots := shotsDir(t)
 	udid := throwawayIPhone(t)
 	simctl(t, simulatorOpenTimeout, "keychain", udid, "add-root-cert", proxy.RootFile)
+	simctl(t, simulatorOpenTimeout, "openurl", udid, proxy.URL+"/")
+	screenshotSettled(t, udid, filepath.Join(shots, "landing.png"))
 	simctl(t, simulatorOpenTimeout, "openurl", udid, link)
 	until(t, signinSeenTimeout, func() bool { return signins(t, hubURL, rootToken) > 0 },
 		"the hub's audit log to show the simulator's sign-in")
+	for _, page := range hubPages {
+		// a query of its own makes each page a fresh load, not a hash change in the open tab
+		simctl(t, simulatorOpenTimeout, "openurl", udid, proxy.URL+"/?shot="+page.Name+page.Hash)
+		screenshotSettled(t, udid, filepath.Join(shots, page.Name+".png"))
+	}
 
 	response, err := proxy.Client.Get(proxy.URL + "/manifest.webmanifest")
 	if err != nil {
@@ -132,6 +146,105 @@ func TestE2EPhoneSimulator(t *testing.T) {
 	}
 	if manifest.Display != "standalone" {
 		t.Fatalf("the manifest's display = %q, want standalone", manifest.Display)
+	}
+
+	checkShots(t, shots, append([]string{"landing"}, pageNames(hubPages)...))
+}
+
+// hubPage is one page of the hub the test screenshots after sign-in.
+type hubPage struct {
+	Name string
+	Hash string
+}
+
+// hubPages are the shell's five tabs, in nav order; the test opens each through the proxy and
+// saves one screenshot per page for a look at the phone layout without a phone.
+var hubPages = []hubPage{
+	{"now", "#/now"},
+	{"channels", "#/channels"},
+	{"radar", "#/radar"},
+	{"kanban", "#/kanban"},
+	{"settings", "#/settings"},
+}
+
+func pageNames(pages []hubPage) []string {
+	names := make([]string, 0, len(pages))
+	for _, page := range pages {
+		names = append(names, page.Name)
+	}
+	return names
+}
+
+// shotsDir makes .agents/scratch/sim-shots/<timestamp>/ under the main checkout (the parent of
+// git's common directory, so a run from a worktree lands there too); .agents/scratch is
+// gitignored.
+func shotsDir(t *testing.T) string {
+	t.Helper()
+	out, err := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err != nil {
+		t.Fatalf("find the repository: %v", err)
+	}
+	dir := filepath.Join(filepath.Dir(strings.TrimSpace(string(out))), ".agents", "scratch", "sim-shots",
+		time.Now().Format("20060102-150405"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// pngMagic opens every PNG file.
+var pngMagic = []byte("\x89PNG\r\n\x1a\n")
+
+// minShotBytes rules out a blank or cut-off capture: a rendered hub page is well above it.
+const minShotBytes = 10 << 10
+
+// screenshotSettled saves the simulator's screen to file once the page has settled: after
+// shotMinWait, shotStableCaptures captures a second apart that match byte for byte, or the last
+// capture after shotSettleTimeout when a live page keeps moving. simctl openurl reports no page
+// load, so the screen is the signal; the wait keeps Safari's start page out of the first shot.
+func screenshotSettled(t *testing.T, udid, file string) {
+	t.Helper()
+	time.Sleep(shotMinWait)
+	var last []byte
+	same := 0
+	deadline := time.Now().Add(shotSettleTimeout)
+	for time.Now().Before(deadline) {
+		simctl(t, simulatorOpenTimeout, "io", udid, "screenshot", "--type=png", file)
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read the screenshot %s: %v", file, err)
+		}
+		if len(raw) > minShotBytes && bytes.Equal(raw, last) {
+			same++
+		} else {
+			same = 1
+		}
+		if same >= shotStableCaptures {
+			return
+		}
+		last = raw
+		time.Sleep(time.Second)
+	}
+	t.Logf("%s: the screen still changed after %s, kept the last capture", filepath.Base(file), shotSettleTimeout)
+}
+
+// checkShots fails unless every page left <dir>/<page>.png, a PNG above minShotBytes, and logs
+// the directory and the file list for the morning walk.
+func checkShots(t *testing.T, dir string, names []string) {
+	t.Helper()
+	t.Logf("simulator screenshots in %s", dir)
+	for _, name := range names {
+		file := filepath.Join(dir, name+".png")
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Errorf("the %s page's screenshot: %v", name, err)
+			continue
+		}
+		if !bytes.HasPrefix(raw, pngMagic) || len(raw) <= minShotBytes {
+			t.Errorf("%s: %d bytes, want a PNG above %d", file, len(raw), minShotBytes)
+			continue
+		}
+		t.Logf("  %s (%d bytes)", file, len(raw))
 	}
 }
 
