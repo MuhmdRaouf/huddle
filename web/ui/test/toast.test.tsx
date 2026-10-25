@@ -141,6 +141,25 @@ describe("toast stack", () => {
     expect(screen.queryByText("Deleted")).toBeNull();
   });
 
+  it("keeps an action toast until the owner dismisses it or runs the action", async () => {
+    const timers = fakeTimers();
+    let push: ReturnType<typeof useToast> = () => {};
+    const run = vi.fn();
+    render(
+      <ToastProvider timers={timers}>
+        <Grab onReady={(t) => (push = t)} />
+      </ToastProvider>,
+    );
+    await act(() => push("Huddle updated", { action: { label: "Reload", run } }));
+    expect(timers.pending()).toBe(0);
+    await act(() => timers.run(60_000));
+    expect(screen.getByText("Huddle updated")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    expect(run).toHaveBeenCalledTimes(1);
+    await act(() => timers.run(180));
+    expect(screen.queryByText("Huddle updated")).toBeNull();
+  });
+
   it("keeps four toasts at most, dropping the oldest", async () => {
     const timers = fakeTimers();
     let push: ReturnType<typeof useToast> = () => {};

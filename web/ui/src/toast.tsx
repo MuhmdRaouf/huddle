@@ -1,5 +1,6 @@
 // toast.tsx — the toast stack: short confirmations and errors at the bottom of the screen, each with a
-// dismiss button, an optional Undo action and its own lifetime (8s with Undo, 6s for an error, 3s else).
+// dismiss button, an optional Undo or named action and its own lifetime (8s with Undo, 6s for an error,
+// 3s else; a named action stays until it runs or the owner dismisses it).
 // A good toast is a polite live region, a bad one an assertive alert. Port of core.js toast; the timers are
 // injectable so tests can step time instead of waiting.
 
@@ -19,10 +20,15 @@ const realTimers: Timers = {
   clear: (id) => clearTimeout(id as number),
 };
 
-/** How a toast behaves: `bad` turns it into an alert, `undo` adds the Undo button and a longer life. */
+/** A toast's own button: its label and what it runs. */
+export type ToastAction = { label: string; run: () => void };
+
+/** How a toast behaves: `bad` turns it into an alert, `undo` adds the Undo button and a longer life,
+ *  `action` adds a named button and keeps the toast until it runs or is dismissed. */
 export type ToastOptions = {
   bad?: boolean | undefined;
   undo?: (() => void) | undefined;
+  action?: ToastAction | undefined;
 };
 
 /** One toast in the stack while it is on screen (or leaving). */
@@ -31,6 +37,7 @@ type Toast = {
   text: string;
   bad: boolean;
   undo: (() => void) | undefined;
+  action: ToastAction | undefined;
   out: boolean;
 };
 
@@ -90,13 +97,21 @@ export function ToastProvider({
 
   const push: ToastFn = (text, opts = {}) => {
     seq.current += 1;
-    const t: Toast = { id: seq.current, text, bad: opts.bad === true, undo: opts.undo, out: false };
+    const t: Toast = {
+      id: seq.current,
+      text,
+      bad: opts.bad === true,
+      undo: opts.undo,
+      action: opts.action,
+      out: false,
+    };
     setToasts((all) => {
       const next = [...all, t];
       const over = next.length - MAX_TOASTS;
       for (const gone of over > 0 ? next.slice(0, over) : []) stop(gone.id);
       return over > 0 ? next.slice(over) : next;
     });
+    if (t.action) return;
     live.current.set(
       t.id,
       timers.set(() => kill(t), t.undo ? LIFETIME.undo : t.bad ? LIFETIME.bad : LIFETIME.good),
@@ -127,7 +142,7 @@ export function ToastProvider({
   );
 }
 
-/** One toast row: its kind icon, the text, the optional Undo and the dismiss button. */
+/** One toast row: its kind icon, the text, the optional Undo or named action and the dismiss button. */
 function ToastRow({ t, onKill }: { t: Toast; onKill: () => void }): JSX.Element {
   const icon: IconName = t.bad ? "alert" : "check";
   return (
@@ -150,6 +165,18 @@ function ToastRow({ t, onKill }: { t: Toast; onKill: () => void }): JSX.Element 
         >
           <Icon name="undo" class="size-3.5" />
           Undo
+        </button>
+      ) : null}
+      {t.action ? (
+        <button
+          type="button"
+          class="btn btn-sm min-h-[var(--ui-tap)]"
+          onClick={() => {
+            onKill();
+            t.action?.run();
+          }}
+        >
+          {t.action.label}
         </button>
       ) : null}
       <button type="button" class="btn btn-ghost btn-icon" aria-label="Dismiss" onClick={onKill}>

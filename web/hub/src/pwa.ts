@@ -181,3 +181,54 @@ export function reportFocus(
   }, FOCUS_REPORT_MS);
   onChange();
 }
+
+/** The slice of the page the update watch reads. */
+export type UpdatePage = {
+  /** True when a worker controlled the page at load; a first install starts with none. */
+  controlled: boolean;
+  /** Calls fn when another worker takes control of the page. */
+  onControllerChange(fn: () => void): void;
+  /** Calls fn when the page comes back into view. */
+  onVisible(fn: () => void): void;
+};
+
+/** The part of the hub's /health answer that names the build it serves. */
+export type HealthBuild = { version?: unknown; executable?: unknown };
+
+/** How often an open page asks the hub which build it serves. */
+const UPDATE_CHECK_MS = 60_000;
+
+/** Offers a reload, once, when the page runs an old build: a new worker takes over a page a
+ *  worker already controlled, or /health names another build than the first answer did. The
+ *  build is the version and the executable path, which moves with every launcher build. A first
+ *  install, or a check that fails, offers nothing. */
+export function watchForUpdate(
+  page: UpdatePage,
+  health: () => Promise<HealthBuild>,
+  timers: FocusTimers,
+  offer: () => void,
+): void {
+  let offered = false;
+  let loaded: string | null = null;
+  const once = (): void => {
+    if (offered) return;
+    offered = true;
+    offer();
+  };
+  const check = (): void => {
+    health()
+      .then((h) => {
+        if (typeof h.version !== "string" || typeof h.executable !== "string") return;
+        const build = `${h.version} ${h.executable}`;
+        if (loaded === null) loaded = build;
+        else if (build !== loaded) once();
+      })
+      .catch(() => {});
+  };
+  page.onControllerChange(() => {
+    if (page.controlled) once();
+  });
+  page.onVisible(check);
+  timers.interval(check, UPDATE_CHECK_MS);
+  check();
+}

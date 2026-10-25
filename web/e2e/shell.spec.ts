@@ -9,6 +9,7 @@
 // A button styled by Tailwind utilities alone keeps its fill and its border over Radar's legacy
 // button reset. A session's needs sheet shows a Bash ask's command, leaves "Runs in" out for a
 // session with no branch, and fits at 390, 820 and 1440 px in both schemes with real 44 px answers.
+// An open app offers "Huddle updated" with one Reload once the hub's /health names another build.
 
 import { expect, test, type Page } from "@playwright/test";
 import { axeViolations, expectAccessible } from "./axe.ts";
@@ -225,6 +226,33 @@ test.describe("the installed app", () => {
     // the PNG signature, then IHDR's width and height
     expect(png.subarray(1, 4).toString("ascii")).toBe("PNG");
     expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([180, 180]);
+  });
+});
+
+test.describe("the update offer", () => {
+  test("an open app offers the reload after the hub serves a new build", async ({ page }) => {
+    // the hub binary cannot change mid-run: the page's first /health answers the build it loaded
+    // with, and every later one names another launcher build of the same version
+    let answered = 0;
+    await page.route("**/health", async (route) => {
+      const real = await route.fetch();
+      const body = (await real.json()) as { executable: string };
+      answered += 1;
+      const executable = answered === 1 ? body.executable : `${body.executable}.next`;
+      await route.fulfill({ response: real, json: { ...body, executable } });
+    });
+    await open(page, "#/now");
+    await expect(page.getByRole("button", { name: "Reload" })).toHaveCount(0);
+    // the owner comes back to the tab: the page asks the hub which build it serves
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    const offer = page.getByRole("status").filter({ hasText: "Huddle updated" });
+    await expect(offer).toBeVisible();
+    const reload = offer.getByRole("button", { name: "Reload" });
+    await expect(reload).toBeVisible();
+    // the toast grows in from a smaller scale: its button reaches its full size once that ends
+    await expect.poll(async () => (await reload.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    await Promise.all([page.waitForEvent("load"), reload.click()]);
+    await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   });
 });
 

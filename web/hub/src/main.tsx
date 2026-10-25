@@ -32,7 +32,14 @@ import { Settings } from "./pages/Settings.tsx";
 import { Team } from "./pages/Team.tsx";
 import { Today } from "./pages/Today.tsx";
 import { paintGuard } from "./paint.ts";
-import { createPushSwitch, registerServiceWorker, reportFocus, syncAppBadge } from "./pwa.ts";
+import {
+  createPushSwitch,
+  type HealthBuild,
+  registerServiceWorker,
+  reportFocus,
+  syncAppBadge,
+  watchForUpdate,
+} from "./pwa.ts";
 import { ensureRadar, stopRadar } from "./radar/mount.tsx";
 import { createRegistry } from "./registry.ts";
 import { readPref, writePref } from "./storage.ts";
@@ -522,6 +529,21 @@ let updatedAt = Date.now();
 // open needs-you count — the same count the Inbox carries, cleared on sign-out; both optional
 // browsers features that fail quietly
 registerServiceWorker(window);
+// the update watch starts before any other /health read, so its first answer is the build this
+// page loaded with; an old page offers one Reload and never reloads on its own
+watchForUpdate(
+  {
+    controlled: navigator.serviceWorker?.controller != null,
+    onControllerChange: (fn) => navigator.serviceWorker?.addEventListener("controllerchange", fn),
+    onVisible: (fn) =>
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") fn();
+      }),
+  },
+  () => fetch("/health", { cache: "no-store" }).then((r) => r.json() as Promise<HealthBuild>),
+  { interval: (fn, ms) => setInterval(fn, ms) },
+  () => toastFn("Huddle updated", { action: { label: "Reload", run: () => location.reload() } }),
+);
 let badgeCount = -1;
 function syncBadgeCount(): void {
   const count = signedOutPainted ? 0 : store.inboxCount() + registry.needs();
