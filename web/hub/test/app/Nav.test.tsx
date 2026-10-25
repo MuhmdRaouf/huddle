@@ -121,6 +121,19 @@ describe("the needs-you count on Now", () => {
       unmount();
     }
   });
+
+  it("names the rail's Now tab with its count, so the name holds the number the tab shows", () => {
+    const { rerender } = render(<IconRail tab="now" needs={{ n: 3, tone: "needs-you" }} />);
+    const now = () => document.querySelector("[data-nav='rail'] a[data-tab='now']");
+    expect(now()?.getAttribute("aria-label")).toBe("Now, 3 need you");
+    rerender(<IconRail tab="now" needs={{ n: 1, tone: "turn-done" }} />);
+    expect(now()?.getAttribute("aria-label")).toBe("Now, 1 turn done");
+    rerender(<IconRail tab="now" needs={NONE} />);
+    expect(now()?.getAttribute("aria-label")).toBe("Now");
+    expect(document.querySelector("[data-nav='rail'] a[data-tab='channels']")?.getAttribute("aria-label")).toBe(
+      "Channels",
+    );
+  });
 });
 
 describe("the tokens", () => {

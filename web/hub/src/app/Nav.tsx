@@ -85,6 +85,14 @@ export function BottomNav({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.
   );
 }
 
+/** The rail's Now tab names its count too, so its accessible name holds the number it shows. */
+function nowName(label: string, needs: NeedsBadge): string {
+  if (needs.n === 0) return label;
+  const one = needs.n === 1;
+  const what = needs.tone === "turn-done" ? (one ? "turn done" : "turns done") : one ? "needs you" : "need you";
+  return `${label}, ${needs.n} ${what}`;
+}
+
 /** The tablet's icon rail: the five tabs as 52 px labelled icons, Settings at the bottom. */
 export function IconRail({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.Element {
   return (
@@ -98,7 +106,7 @@ export function IconRail({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.E
           key={id}
           href={href}
           data-tab={id}
-          aria-label={label}
+          aria-label={id === "now" ? nowName(label, needs) : label}
           title={label}
           aria-current={tab === id ? "page" : undefined}
           class={`relative flex size-[52px] items-center justify-center rounded-[14px] ${RING} ${
