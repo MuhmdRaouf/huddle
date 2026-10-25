@@ -1,12 +1,15 @@
 package server
 
 import (
+	"context"
 	"math"
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/history"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
+	"github.com/MuhmdRaouf/huddle/internal/radar/usage"
 )
 
 // The usage route: a 3-day fixture set read back to the token and the cent.
@@ -317,4 +320,64 @@ func TestUsageRoute(t *testing.T) {
 			t.Errorf("u9 harness = %q, want %q", got, shared.HarnessCodex)
 		}
 	})
+}
+
+// TestUsagePricerMatchesTheLedgerForCacheWritesAndMultipliers prices one request two ways:
+// through the cost ledger the Costs view and the metrics read, and through usagePricer the
+// Usage and Blocks views read. A 1-hour cache write, fast mode, the US geo and the priority
+// tier each bill the same to the cent.
+func TestUsagePricerMatchesTheLedgerForCacheWritesAndMultipliers(t *testing.T) {
+	at := time.Date(2026, time.October, 20, 12, 0, 0, 0, time.Local)
+	cases := []struct {
+		name         string
+		model        string
+		upstream     string
+		cacheWrite1h *int64
+		speed        *string
+		geo          *string
+		tier         *string
+	}{
+		{name: "1-hour cache write", model: "claude-opus-5-5", upstream: "https://api.anthropic.com", cacheWrite1h: int64Ptr(300_000)},
+		{name: "fast speed", model: "claude-opus-5-5", upstream: "https://api.anthropic.com", speed: strPtr("fast")},
+		{name: "US geo", model: "claude-opus-5-5", upstream: "https://api.anthropic.com", geo: strPtr("us")},
+		{name: "priority tier", model: "MiniMax-M3", upstream: "https://api.minimax.io", tier: strPtr("priority")},
+		{
+			name: "all at once", model: "claude-opus-5-5", upstream: "https://api.anthropic.com",
+			cacheWrite1h: int64Ptr(300_000), speed: strPtr("fast"), geo: strPtr("us"),
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			tokens := shared.Tokens{Input: 1_000_000, Output: 200_000, CacheRead: 500_000, CacheWrite: 400_000}
+			ledger := cost.NewLedger(context.Background(), makeEnv(t).env, func() time.Time { return at })
+			ledger.Record(shared.RequestRecord{
+				ID: "req-1", SessionID: "s1", AgentID: "main", Model: c.model, Upstream: c.upstream,
+				Ts: at.UnixMilli(), Tokens: tokens,
+				CacheWrite1h: c.cacheWrite1h, Speed: c.speed, Geo: c.geo, ServiceTier: c.tier,
+			})
+			rows := ledger.Rows(0)
+			if len(rows) != 1 {
+				t.Fatalf("ledger rows = %d, want 1", len(rows))
+			}
+			want := cost.RequestCost(pricedRow(rows[0]))
+			if want == nil {
+				t.Fatal("the ledger row has no price")
+			}
+			row := usage.Row{
+				TS: at.UnixMilli(), Model: c.model, Upstream: c.upstream,
+				Input: tokens.Input, Output: tokens.Output, CacheRead: tokens.CacheRead, CacheWrite: tokens.CacheWrite,
+				Speed: c.speed, Geo: c.geo, ServiceTier: c.tier,
+			}
+			if c.cacheWrite1h != nil {
+				row.CacheWrite1h = *c.cacheWrite1h
+			}
+			got, ok := usagePricer{}.PriceOf(row)
+			if !ok {
+				t.Fatal("usagePricer found no price")
+			}
+			if math.Round(got.CostUSD*100) != math.Round(float64(want.USD)*100) {
+				t.Errorf("usagePricer = $%.4f, ledger = $%.4f", got.CostUSD, float64(want.USD))
+			}
+		})
+	}
 }

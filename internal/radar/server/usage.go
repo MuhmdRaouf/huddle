@@ -53,6 +53,10 @@ func (usagePricer) PriceOf(row usage.Row) (usage.RowPrice, bool) {
 			CacheRead:  row.CacheRead,
 			CacheWrite: row.CacheWrite,
 		},
+		CacheWrite1h: &row.CacheWrite1h,
+		Speed:        row.Speed,
+		Geo:          row.Geo,
+		ServiceTier:  row.ServiceTier,
 	})
 	if price == nil {
 		return usage.RowPrice{}, false

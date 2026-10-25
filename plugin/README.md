@@ -97,7 +97,7 @@
 - **Needs you.** A session waiting on a permission sits in needs you with one push when it appears and one
   escalation after 5 minutes open; its prompt holds 10 minutes. Answer in the dashboard, or from your phone with
   a passkey.
-- **Radar.** Every request with its model, latency, input, output and cache tokens and its cost, across twelve views,
+- **Radar.** Every request with its model, latency, input, output and cache tokens and its cost, across eleven views,
   fed by hooks, transcripts and the spool the router appends to. Watching spends no tokens.
 - **Kanban.** One board per repository (`.agents/kanban`): sessions claim cards, the first claim wins, and review and
   testing gates sit on the way to done. Two machines share one board when they share the repository.

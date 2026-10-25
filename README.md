@@ -150,9 +150,9 @@ A device session ends after 7 days unused; removing it from Settings ends it at 
 
 - Every request with its model, latency, input, output, cache-read and cache-write tokens and its cost, fed by
   hooks, transcripts and the routers' spool. Watching spends no tokens.
-- Twelve views in the Radar tab: Overview, Costs, Models, Usage, Blocks, Requests, Tools, Agents, Routers, Alerts,
-  Timeline, Settings. Blocks follows the active 5-hour metering window; Usage splits tokens and cost by model,
-  project and agent.
+- Eleven views in the Radar tab: Overview, Costs, Models, Usage, Blocks, Requests, Tools, Agents, Routers, Alerts,
+  Timeline. Blocks follows the active 5-hour metering window; Usage splits tokens and cost by model, project and
+  agent. Radar's settings live in Settings › Radar.
 - Budgets stop and lift from Settings — on a hub, from a paired phone. A stopped budget lands in
   `budget-status.json`, which huddle-router reads before serving a provider model: the provider's models answer
   with the budget refusal while its scope, or `total`, is stopped, and `claude-*` is never touched.

@@ -18,6 +18,7 @@ func TestUsageRows(t *testing.T) {
 	base := time.Date(2026, time.October, 15, 12, 0, 0, 0, time.UTC).UnixMilli()
 	project, label := "app", "Fix the login flow"
 	write1h := int64(5)
+	fast, us, priority := "fast", "us", "priority"
 	harnessCost := 0.0123
 	if err := h.UpsertNode(NodeUpsert{
 		ID: "s1/main", Kind: shared.NodeMain, SessionID: "s1", AgentID: "main",
@@ -39,7 +40,7 @@ func TestUsageRows(t *testing.T) {
 		ID: "r1", SessionID: "s1", AgentID: "main", Model: "glm-5.3",
 		Upstream: "https://api.z.ai", Provider: "zai", Ts: base,
 		Tokens:       shared.Tokens{Input: 1000, Output: 100, CacheRead: 50, CacheWrite: 20},
-		CacheWrite1h: &write1h,
+		CacheWrite1h: &write1h, Speed: &fast, Geo: &us, ServiceTier: &priority,
 	})
 	put("s1/a1", shared.RequestRecord{
 		ID: "r2", SessionID: "s1", AgentID: "a1", Model: "glm-5.3-flash",
@@ -71,7 +72,7 @@ func TestUsageRows(t *testing.T) {
 			TS: base, Model: "glm-5.3", Upstream: "https://api.z.ai", Provider: "zai",
 			Project: "app", SessionID: "s1", Kind: "main", Label: "Fix the login flow",
 			Input: 1000, Output: 100, CacheRead: 50, CacheWrite: 20, CacheWrite1h: 5,
-			Harness: shared.HarnessClaude,
+			Speed: &fast, Geo: &us, ServiceTier: &priority, Harness: shared.HarnessClaude,
 		},
 		{
 			TS: base + 60_000, Model: "glm-5.3-flash", Upstream: "https://api.z.ai", Provider: "zai",

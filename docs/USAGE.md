@@ -252,7 +252,7 @@ needed.
 ## Read what happened
 
 The Radar tab spends no tokens: it is fed by hooks, the transcripts Claude Code already writes,
-and the provider routers' spool. Twelve views:
+and the provider routers' spool. Eleven views:
 
 | View | What it shows |
 |---|---|
@@ -266,8 +266,9 @@ and the provider routers' spool. Twelve views:
 | Usage | Daily tokens, cost and cache savings by model and project |
 | Blocks | The active 5-hour metering window: tokens, cost, burn rate, projection to its end |
 | Alerts | Alert rules and their history |
-| Router | huddle-router's health and the providers it serves |
-| Settings | Budgets and the rest |
+| Routers | huddle-router's health and the providers it serves |
+
+Budgets and the rest of Radar's settings live in Settings › Radar.
 
 Every request line carries its model, latency, input, output, cache-read and cache-write tokens
 and its cost. Usage also splits tokens and cost by agent, copies each agent's resume command, and

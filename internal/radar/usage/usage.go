@@ -34,8 +34,9 @@ const labelLimit = 80
 
 // Row is one request's usage facts, already joined with the node it ran on: its project,
 // kind and label. Upstream rides along so pricing picks the same offering the Costs view
-// does. Harness groups the row in ByHarness (empty reads as claude); CostUSD, when the
-// harness itself reported one, wins over the pricer's estimate.
+// does, and CacheWrite1h, Speed, Geo and ServiceTier are the rest of what pricing reads (the
+// three texts nil when the request named none). Harness groups the row in ByHarness (empty reads as claude);
+// CostUSD, when the harness itself reported one, wins over the pricer's estimate.
 type Row struct {
 	TS           int64
 	Model        string
@@ -50,6 +51,9 @@ type Row struct {
 	CacheRead    int64
 	CacheWrite   int64
 	CacheWrite1h int64
+	Speed        *string
+	Geo          *string
+	ServiceTier  *string
 	Harness      string
 	CostUSD      *float64
 }
