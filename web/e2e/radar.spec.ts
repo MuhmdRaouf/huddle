@@ -124,8 +124,10 @@ test("the overview's tiles count live sessions, the router's health and HTTP fai
   await expect(tile).toContainText("live now");
   await expect(tile.locator(".num").first()).toHaveText(String(live));
 
-  // routers: this run starts no huddle-router, so the tile says so instead of counting plugins
+  // routers: this run sets zai up and starts no huddle-router, so the tile says down and the
+  // list names the one enabled provider instead of counting plugins
   await expect(page.locator("[data-stat='routers'] .num")).toHaveText("down");
+  await expect(page.locator("[aria-labelledby='ovw-routers'] [data-router='zai']")).toContainText("down");
   await expect(page.locator("[aria-labelledby='ovw-routers']")).not.toContainText(":1878");
   await expectAccessible(page);
 });

@@ -178,6 +178,11 @@ function writeFixtureData(target: {
 function writeFixtures(port: number): void {
   fs.writeFileSync(path.join(huddleHome, "config.toml"), `role = "solo"\nport = ${port}\n`);
   writeFixtureData({ home, claudeConfig, radarHome, projectDir });
+  // one provider set up and no huddle-router started: the server's health names zai and says
+  // the router is down, which is what the Radar overview's routers tile and list show
+  const routerHome = path.join(home, ".agents", "huddle-router");
+  fs.mkdirSync(routerHome, { recursive: true });
+  fs.writeFileSync(path.join(routerHome, "providers.json"), '{"providers":["zai"]}\n');
 }
 
 /** The TLS hub's config: its own loopback port for the API, and the listener the reserved name
