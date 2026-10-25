@@ -395,3 +395,60 @@ test.describe("radar on the phone", () => {
     });
   }
 });
+
+test("the inspector's header is solid, and on the phone the sheet covers the viewport with a Back control", async ({
+  page,
+  isMobile,
+}) => {
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/radar/requests`);
+  const first = SEEDED.requests[0];
+  await page
+    .getByRole("row")
+    .filter({ hasText: n(first.input) })
+    .filter({ hasText: n(first.output) })
+    .click();
+  const sheet = page.locator("dialog[open] [data-slide-over]");
+  await expect(sheet).toBeVisible();
+
+  // the sticky header paints its own opaque fill, so the body never shows through it
+  const alpha = await sheet.evaluate((el) => {
+    const head = el.firstElementChild;
+    const probe = document.createElement("canvas").getContext("2d");
+    if (!(head instanceof HTMLElement) || !probe) return 0;
+    probe.fillStyle = getComputedStyle(head).backgroundColor;
+    probe.fillRect(0, 0, 1, 1);
+    return probe.getImageData(0, 0, 1, 1).data[3] ?? 0;
+  });
+  expect(alpha).toBe(255);
+
+  const back = page.getByRole("button", { name: "Back to requests" });
+  const viewport = page.viewportSize();
+  // where the sheet's edges sit once the slide-in has landed
+  const landed = async () => {
+    const box = await sheet.boundingBox();
+    return box === null ? null : { left: Math.round(box.x), right: Math.round(box.x + box.width) };
+  };
+  await expect.poll(async () => (await landed())?.right).toBe(viewport?.width);
+  if (!isMobile) {
+    // the desk keeps the slide-over beside the page it floats over
+    await expect(back).toBeHidden();
+    expect((await landed())?.left ?? 0).toBeGreaterThan(0);
+    return;
+  }
+  // the phone's sheet is the whole viewport: no strip of the page, no tab bar under it
+  expect(await landed()).toEqual({ left: 0, right: viewport?.width });
+  expect((await sheet.boundingBox())?.height).toBe(viewport?.height);
+  const atTabBar = await page.evaluate(
+    ([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest("[data-slide-over]") !== null,
+    [(viewport?.width ?? 0) / 2, (viewport?.height ?? 0) - 10],
+  );
+  expect(atTabBar).toBe(true);
+  // the Back control is a full tap target and closes the sheet back onto the table
+  const target = await back.boundingBox();
+  expect(target?.width ?? 0).toBeGreaterThanOrEqual(44);
+  expect(target?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await back.click();
+  await expect(sheet).toBeHidden();
+  await expect(page.getByRole("row").filter({ hasText: n(first.input) }).first()).toBeVisible();
+});

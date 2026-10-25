@@ -1,21 +1,23 @@
 /**
  * The inspector's Overview tab, read top-down: the four numbers that size the call up (latency against the
- * view's p95, total tokens, estimated cost, retries — a stat each, on the panel surface), the token mix as
+ * view's p95, total tokens, estimated cost, retries — a stat card each), the token mix as
  * one stacked bar with its legend and its kind-by-kind table, where the call ran (session, agent, project,
  * router, upstream, provider), and the identifiers with their copy buttons. A burst of retries wears its
  * own warning alert, because a number alone never says what to do about it.
  */
 
-import { Panel } from "@huddle/ui/page.tsx";
+import { Button } from "@huddle/ui/button.tsx";
 import type { ComponentChildren } from "preact";
 import { Fragment } from "preact";
 import { costDetailText, fmtDuration, fmtNum, fmtPercent, hostOf, sessionName } from "../../fmt.ts";
+import { SERIES } from "../../palette.ts";
 import { isInFlight, type RequestRecord, totalTokens } from "../../shared/model.ts";
 import { agentDisplayName, requestCost, stepScope } from "../../state.ts";
 import { StackedBar } from "../Chart.tsx";
 import { CopyButton } from "../Content.tsx";
 import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
+import type { IconName } from "../../icons.ts";
 import { cardName } from "../SessionCard.tsx";
 import { viaText } from "../views/Requests.tsx";
 import { nearbyRetries, RETRY_LOOKBACK_MS, retriesText } from "./util.ts";
@@ -35,19 +37,71 @@ const LATENCY_WORDS: Record<LatencyTone, string> = {
   err: "Among the slowest",
 };
 const LATENCY_TEXT: Record<LatencyTone, string> = {
-  ok: "text-success",
-  warn: "text-warning",
-  err: "text-error",
+  ok: "text-[var(--ui-ok-ink)]",
+  warn: "text-[var(--ui-warn-ink)]",
+  err: "text-[var(--ui-fail-ink)]",
 };
 
-/** One token kind's fill: semantic theme colours, so both Catppuccin themes keep their contrast. */
+/** One token kind's fill: the chart series the token-flow chart paints the same kinds in. */
 const TOKEN_FILL = {
-  input: "var(--color-info)",
-  output: "var(--color-secondary)",
-  cacheRead: "var(--color-success)",
-  cacheWrite5m: "var(--color-warning)",
-  cacheWrite1h: "var(--color-accent)",
+  input: SERIES[0],
+  output: SERIES[1],
+  cacheRead: SERIES[4],
+  cacheWrite5m: SERIES[3],
+  cacheWrite1h: SERIES[5],
 } as const;
+
+/** The quiet ink of a label, a hint or a share. */
+const MUTED = "text-[var(--ui-muted)]";
+
+/** One panel on the card surface: its icon and title in the head, the content in the body. */
+function Card({
+  title,
+  meta,
+  icon,
+  children,
+}: {
+  title: string;
+  meta?: string;
+  icon: IconName;
+  children: ComponentChildren;
+}) {
+  return (
+    <section class="ui-card">
+      <div class="ui-card-head">
+        <Icon name={icon} class="size-4.5 text-[var(--ui-accent)]" />
+        <h2 class="ui-card-title">{title}</h2>
+        {meta !== undefined && <span class="ui-card-meta">{meta}</span>}
+      </div>
+      <div class="ui-card-body">{children}</div>
+    </section>
+  );
+}
+
+/** One stat card: its title, its figure and the line under it that says what the figure reads. */
+function Stat({
+  title,
+  value,
+  desc,
+  valueClass = "",
+}: {
+  title: string;
+  value: ComponentChildren;
+  desc: ComponentChildren;
+  valueClass?: string;
+}) {
+  return (
+    <div class="ui-card flex min-w-0 flex-col gap-1 p-4" data-stat={title}>
+      <span class={`text-xs ${MUTED}`}>{title}</span>
+      <span class={`ui-mono text-2xl font-semibold ${valueClass}`} data-stat-value>
+        {value}
+      </span>
+      <span class={`text-xs ${MUTED}`} data-stat-desc>
+        {desc}
+      </span>
+    </div>
+  );
+}
 
 /** One row of the tokens table: a colour dot when the kind has one, its tokens and its share. */
 function TokenRow({
@@ -71,10 +125,10 @@ function TokenRow({
           {label}
         </span>
       </td>
-      <td class="num text-right">
+      <td class="ui-mono ui-end">
         {value === 0 ? <span title="Not reported for this request">–</span> : fmtNum(value)}
       </td>
-      <td class="num text-right text-base-content/60">
+      <td class={`ui-mono ui-end ${MUTED}`}>
         {value === 0 || total === 0 ? "–" : fmtPercent(value / total)}
       </td>
     </tr>
@@ -86,55 +140,53 @@ function TokenRow({
 function CostStat({ request }: { request: RequestRecord }) {
   if (isInFlight(request)) {
     return (
-      <>
-        <span class="stat-value num flex items-center gap-1.5 text-2xl">
-          <span class="loading loading-dots loading-sm" aria-hidden="true" />
-          <span>pending</span>
-        </span>
-        <span class="stat-desc whitespace-normal">Still streaming; the bill lands when it ends.</span>
-      </>
+      <Stat
+        title="Est. cost"
+        value={
+          <span class="flex items-center gap-1.5">
+            <span class="size-2 animate-pulse rounded-full bg-[var(--ui-info)]" aria-hidden="true" />
+            <span>pending</span>
+          </span>
+        }
+        desc="Still streaming; the bill lands when it ends."
+      />
     );
   }
   const cost = requestCost(request);
   if (cost === null) {
     return (
-      <Fragment>
-        <span class="stat-value text-xl">tokens only</span>
-        <span class="stat-desc whitespace-normal">No list price for this model.</span>
-      </Fragment>
+      <Stat title="Est. cost" value="tokens only" valueClass="text-xl" desc="No list price for this model." />
     );
   }
   const [sum, ...detail] = costDetailText(cost).split(" · ");
-  return (
-    <Fragment>
-      <span class="stat-value num text-2xl font-semibold">{sum}</span>
-      {detail.length > 0 && <span class="stat-desc whitespace-normal">{detail.join(" · ")}</span>}
-    </Fragment>
-  );
+  return <Stat title="Est. cost" value={sum} desc={detail.join(" · ")} />;
 }
 
-/** The retries stat: quiet when there are none, red when there are. */
+/** The retries stat: quiet when there are none, in the fail ink when there are. */
 function Retries({ retries }: { retries: RequestRecord[] }) {
   return (
-    <div class="stat">
-      <span class="stat-title">Retries</span>
-      <span class={retries.length === 0 ? "stat-value num text-2xl" : "stat-value num text-error text-2xl"}>
-        {fmtNum(retries.length)}
-      </span>
-      <span class="stat-desc whitespace-normal">{retriesText(retries)}</span>
-    </div>
+    <Stat
+      title="Retries"
+      value={fmtNum(retries.length)}
+      valueClass={retries.length === 0 ? "" : "text-[var(--ui-fail-ink)]"}
+      desc={retriesText(retries)}
+    />
   );
 }
 
-/** The burst of retries as the design's alert under the stat row — a number alone never says what to do. */
+/** The burst of retries as a warning under the stat row — a number alone never says what to do. */
 function RetryBurst({ retries }: { retries: RequestRecord[] }) {
   if (retries.length === 0) return null;
   return (
-    <div role="alert" class="alert alert-warning">
-      <Icon name="alert" class="size-4.5 shrink-0" />
+    <div
+      role="alert"
+      class="flex items-start gap-3 rounded-[var(--ui-radius)] border border-[var(--ui-warn)] bg-[var(--ui-warn-soft)] p-3 text-[var(--ui-warn-ink)]"
+      data-retry-burst
+    >
+      <Icon name="alert" class="mt-0.5 size-4.5 shrink-0" />
       <div class="min-w-0">
         <p class="m-0 font-medium">{retriesText(retries)}</p>
-        <p class="m-0 text-meta">
+        <p class="m-0 text-xs">
           Failed attempts the view holds for this agent in the {Math.round(RETRY_LOOKBACK_MS / 60_000)}{" "}
           minutes before the request.
         </p>
@@ -158,7 +210,7 @@ function TokensPanel({ request }: { request: RequestRecord }) {
   ];
   const shown = kinds.filter((kind) => kind.value > 0);
   return (
-    <Panel title="Tokens" meta={`${fmtNum(total)} total`} icon={<Icon name="coins" />}>
+    <Card title="Tokens" meta={`${fmtNum(total)} total`} icon="coins">
       <div class="flex flex-col gap-4">
         <div class="flex flex-col gap-2">
           <StackedBar segments={shown.map((kind) => ({ value: kind.value, color: kind.fill }))} max={total} />
@@ -167,20 +219,20 @@ function TokensPanel({ request }: { request: RequestRecord }) {
               <span class="flex items-center gap-1.5 text-sm">
                 <span class="size-2.5 rounded-full" style={`background:${kind.fill}`} aria-hidden="true" />
                 {kind.label}
-                <span class="num muted">{fmtNum(kind.value)}</span>
+                <span class={`ui-mono ${MUTED}`}>{fmtNum(kind.value)}</span>
               </span>
             ))}
           </div>
         </div>
         <div class="overflow-x-auto">
-          <table class="table">
+          <table class="ui-table">
             <thead>
               <tr>
                 <th scope="col">Kind</th>
-                <th scope="col" class="text-right">
+                <th scope="col" class="ui-end">
                   Tokens
                 </th>
-                <th scope="col" class="text-right">
+                <th scope="col" class="ui-end">
                   Share
                 </th>
               </tr>
@@ -200,17 +252,17 @@ function TokensPanel({ request }: { request: RequestRecord }) {
               )}
               <tr class="font-semibold">
                 <td>Total</td>
-                <td class="num text-right">{fmtNum(total)}</td>
-                <td class="num text-right">{total === 0 ? "–" : "100%"}</td>
+                <td class="ui-mono ui-end">{fmtNum(total)}</td>
+                <td class="ui-mono ui-end">{total === 0 ? "–" : "100%"}</td>
               </tr>
             </tbody>
           </table>
         </div>
         {total === 0 && (
-          <p class="muted m-0 text-sm">The provider reported no token usage for this request.</p>
+          <p class={`m-0 text-sm ${MUTED}`}>The provider reported no token usage for this request.</p>
         )}
       </div>
-    </Panel>
+    </Card>
   );
 }
 
@@ -218,8 +270,8 @@ function TokensPanel({ request }: { request: RequestRecord }) {
 function Fact({ label, children }: { label: string; children: ComponentChildren }) {
   return (
     <div class="min-w-0">
-      <dt class="muted text-meta">{label}</dt>
-      <dd class="m-0 mt-0.5 text-row">{children}</dd>
+      <dt class={`text-xs ${MUTED}`}>{label}</dt>
+      <dd class="m-0 mt-0.5 text-sm">{children}</dd>
     </div>
   );
 }
@@ -228,11 +280,15 @@ function Fact({ label, children }: { label: string; children: ComponentChildren 
 function Identifier({ label, value }: { label: string; value: string }) {
   return (
     <div class="flex items-center gap-3">
-      <span class="muted w-24 shrink-0 text-meta">{label}</span>
-      <code class="min-w-0 flex-1 truncate font-mono text-sm" title={value}>
+      <span class={`w-24 shrink-0 text-xs ${MUTED}`}>{label}</span>
+      <code class="ui-mono min-w-0 flex-1 truncate text-sm" title={value}>
         {value}
       </code>
-      <CopyButton text={value} label={`Copy ${label.toLowerCase()}`} />
+      <CopyButton
+        text={value}
+        label={`Copy ${label.toLowerCase()}`}
+        class="ui-btn ui-btn-ghost ui-btn-icon"
+      />
     </div>
   );
 }
@@ -251,38 +307,33 @@ export function OverviewTab({ request }: { request: RequestRecord }) {
   return (
     <div class="flex flex-col gap-5">
       <div class="flex flex-col gap-3">
-        <div class="stats stats-vertical w-full panel sm:stats-horizontal">
-          <div class="stat">
-            <span class="stat-title">Latency</span>
-            <span class="stat-value num text-2xl">{fmtDuration(request.latencyMs)}</span>
-            <span class="stat-desc whitespace-normal">
-              {tone === null ? (
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Stat
+            title="Latency"
+            value={fmtDuration(request.latencyMs)}
+            desc={
+              tone === null ? (
                 "No view p95 to compare with yet."
               ) : (
                 <Fragment>
                   <span class={`font-medium ${LATENCY_TEXT[tone]}`}>{LATENCY_WORDS[tone]}</span>
                   <span class="block">Measured against the view's p95 of {fmtDuration(p95)}.</span>
                 </Fragment>
-              )}
-            </span>
-          </div>
-          <div class="stat">
-            <span class="stat-title">Total tokens</span>
-            <span class="stat-value num text-2xl">{fmtNum(total)}</span>
-            <span class="stat-desc whitespace-normal">
-              {fmtNum(t.input)} in, {fmtNum(t.output)} out
-            </span>
-          </div>
-          <div class="stat">
-            <span class="stat-title">Est. cost</span>
-            <CostStat request={request} />
-          </div>
+              )
+            }
+          />
+          <Stat
+            title="Total tokens"
+            value={fmtNum(total)}
+            desc={`${fmtNum(t.input)} in, ${fmtNum(t.output)} out`}
+          />
+          <CostStat request={request} />
           <Retries retries={retries} />
         </div>
         <RetryBurst retries={retries} />
       </div>
       <TokensPanel request={request} />
-      <Panel title="Where it ran" icon={<Icon name="route" />}>
+      <Card title="Where it ran" icon="route">
         <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
           <Fact label="Session">{session === undefined ? request.sessionId : cardName(session)}</Fact>
           <Fact label="Agent">
@@ -290,26 +341,25 @@ export function OverviewTab({ request }: { request: RequestRecord }) {
               <span title={request.agentId}>
                 {agentDisplayName(state, request.sessionId, request.agentId)}
               </span>
-              <button
-                type="button"
-                class="btn btn-soft btn-sm"
+              <Button
+                variant="secondary"
                 data-action="scope-agent"
                 data-value={agentScope}
                 onClick={() => act("scope-agent", agentScope)}
               >
                 Show this agent's requests
-              </button>
+              </Button>
             </span>
           </Fact>
           <Fact label="Project">{session === undefined ? "–" : sessionName(session)}</Fact>
           <Fact label="Through">{viaText(request.via) ?? "Direct"}</Fact>
           <Fact label="Upstream">
-            <span class="break-all font-mono text-sm">{hostOf(request.upstream)}</span>
+            <span class="ui-mono break-all text-sm">{hostOf(request.upstream)}</span>
           </Fact>
           <Fact label="Provider">{request.provider}</Fact>
         </dl>
-      </Panel>
-      <Panel title="Identifiers" icon={<Icon name="dot" />}>
+      </Card>
+      <Card title="Identifiers" icon="dot">
         <div class="flex flex-col gap-3">
           <Identifier label="Session id" value={request.sessionId} />
           <Identifier label="Request id" value={request.id} />
@@ -317,7 +367,7 @@ export function OverviewTab({ request }: { request: RequestRecord }) {
             <Identifier label="Parent agent" value={request.parentAgentId} />
           )}
         </div>
-      </Panel>
+      </Card>
     </div>
   );
 }

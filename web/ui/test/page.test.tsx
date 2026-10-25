@@ -103,6 +103,28 @@ describe("SlideOver", () => {
   });
 });
 
+describe("SlideOver on the tokens", () => {
+  it("paints a solid header and the kit's close button, with no daisyUI glass or theme colour", () => {
+    render(
+      <SlideOver open onClose={() => {}} label="R" header="h" tabs={<div>tabs</div>}>
+        b
+      </SlideOver>,
+    );
+    const panel = document.querySelector("[data-slide-over]") as HTMLElement;
+    expect(panel.className).toContain("bg-[var(--ui-surface)]");
+    const head = panel.firstElementChild as HTMLElement;
+    expect(head.classList.contains("glass")).toBe(false);
+    expect(head.className).toContain("bg-[var(--ui-surface)]");
+    expect(head.className).toContain("border-[var(--ui-line)]");
+    const close = screen.getByTitle("Close (Esc)");
+    expect(close.className).toBe("ui-btn ui-btn-ghost ui-btn-icon");
+    const legacy = [...panel.querySelectorAll("[class]"), panel].flatMap((el) =>
+      [...el.classList].filter((c) => /^(btn|glass|neon-ring|rounded-l-box)|base-content/.test(c)),
+    );
+    expect(legacy).toEqual([]);
+  });
+});
+
 describe("frames, every optional part", () => {
   it("paints a panel's icon and actions, and an intro without actions", () => {
     render(

@@ -94,7 +94,7 @@ describe("the drawer header", () => {
       NOW,
     );
     expect(container.querySelector("#drawer-title")?.textContent).toContain("HTTP 502");
-    const reason = container.querySelector("#drawer-title .text-error");
+    const reason = container.querySelector("#drawer-title .text-\\[var\\(--ui-fail-ink\\)\\]");
     expect(reason?.textContent).toBe("connection failed (ECONNREFUSED)");
     expect(reason?.getAttribute("title")).toBe("connection failed (ECONNREFUSED)");
   });
@@ -123,9 +123,9 @@ describe("the Context tab", () => {
     expect(rows[0]).toContain("fix the limiter");
     expect(rows[1]).toContain("assistant");
     expect(rows[2]).toContain("and add a test"); // this request's input is the last turn
-    expect(container.querySelector(".stats")?.textContent).toContain("3 messages");
-    expect(container.querySelector(".stats")?.textContent).toContain("≈ 42");
-    expect(container.querySelector(".stats")?.textContent).toContain("440");
+    expect(container.querySelector("[data-context-totals]")?.textContent).toContain("3 messages");
+    expect(container.querySelector("[data-context-totals]")?.textContent).toContain("≈ 42");
+    expect(container.querySelector("[data-context-totals]")?.textContent).toContain("440");
     expect(container.textContent).toContain("System prompt and tool definitions are not in the transcript.");
   });
 
@@ -151,7 +151,9 @@ describe("the Context tab", () => {
 
   it("shows the skeleton while the server rebuilds, and the words for missing, off and error", () => {
     const loading = openOn("context", { status: "loading" });
-    expect(loading.container.querySelectorAll(".skeleton").length).toBeGreaterThan(3);
+    expect(
+      loading.container.querySelectorAll("[data-context-loading] .animate-pulse").length,
+    ).toBeGreaterThan(3);
     expect(loading.container.textContent).toContain("Rebuilding the conversation");
     loading.unmount();
     const cases: [Record<string, unknown>, string][] = [
@@ -182,7 +184,7 @@ describe("the Context tab", () => {
 
   it("folds the captured prompt above the messages, its size and tool count on the row", () => {
     const { container } = openOn("context", READY, { capture: { a: CAPTURED } });
-    const section = container.querySelector("details.collapse:not(.ctx-msg)");
+    const section = container.querySelector("details.ui-card:not(.ctx-msg)");
     expect(section).toBeTruthy();
     expect(section?.getAttribute("open")).toBeNull(); // folded until the reader asks
     expect(section?.querySelector("summary")?.textContent).toContain("System prompt and tools");
@@ -196,7 +198,7 @@ describe("the Context tab", () => {
     expect(section?.textContent).toContain("request-id");
     expect(section?.textContent).toContain("req_1");
     // it sits above the conversation's turns
-    const rows = [...container.querySelectorAll("details.collapse")];
+    const rows = [...container.querySelectorAll("details.ui-card")];
     expect(rows[0]).toBe(section);
   });
 
@@ -223,7 +225,7 @@ describe("the Raw tab", () => {
     const code = container.querySelector(".raw-code code")?.textContent ?? "";
     expect(code).toContain('"model": "glm-5.3"');
     expect(code).toContain('"input"');
-    expect(container.querySelector(".mockup-code")).toBeTruthy();
+    expect(container.querySelector(".raw-code")?.getAttribute("tabindex")).toBe("0");
     expect(screen.getByRole("button", { name: "Copy as JSON" })).toBeTruthy();
     expect(container.textContent).toContain("The request record and both stored sides.");
   });
@@ -235,5 +237,102 @@ describe("the Raw tab", () => {
     empty.unmount();
     const missing = openOn("raw", { status: "missing" });
     expect(missing.container.textContent).toContain("the stored sides are unavailable");
+  });
+});
+
+/** The class names of daisyUI and the legacy kit: the screenshot suite's list (buttons, tabs, glass,
+ *  badges and the theme's colour roles), and the daisyUI parts and legacy utilities the inspector
+ *  painted before the tokens. */
+const LEGACY_CLASS: readonly RegExp[] = [
+  /^btn(-[\w-]+)?$/,
+  /^tabs?(-[\w-]+)?$/,
+  /^glass$/,
+  /^badge(-[\w-]+)?$/,
+  /^hairline$/,
+  /^(bg|text|border|ring|outline|fill|stroke|divide|from|via|to)-(base-(100|200|300|content)|(primary|secondary|accent|neutral|info|success|warning|error)(-content)?)(\/\d+)?$/,
+  /^(stats?|stat-[\w-]+|alert(-[\w-]+)?|collapse(-[\w-]+)?|mockup-code|loading(-[\w-]+)?|skeleton|table|panel)$/,
+  /^(muted|num|text-meta|text-row|neon-[\w-]+|rounded-l-box)$/,
+];
+
+/** Every legacy class under `root`, as `tag.class`, each pair once. */
+function legacyClasses(root: ParentNode): string[] {
+  const found = new Set<string>();
+  for (const el of root.querySelectorAll("[class]")) {
+    for (const name of el.classList) {
+      const bare = name.split(":").pop() ?? name;
+      if (LEGACY_CLASS.some((p) => p.test(bare))) found.add(`${el.tagName.toLowerCase()}.${name}`);
+    }
+  }
+  return [...found].sort();
+}
+
+describe("the inspector on the tokens", () => {
+  const retry = makeRequest({ id: "f1", model: "glm-5.3", ts: NOW - 15_000, stopReason: "429" });
+
+  it("paints the Overview tab with the ui-* tokens only: badges, buttons, tabs, stats and panels", () => {
+    const failed = makeRequest({
+      id: "a",
+      model: "glm-5.3",
+      ts: NOW - 5_000,
+      stopReason: "502",
+      error: "connection failed",
+    });
+    const { container } = renderApp(<Drawer />, { request: "a", requests: [failed, retry] }, NOW);
+    const dlg = container.querySelector("dialog") as HTMLDialogElement;
+    expect(legacyClasses(dlg)).toEqual([]);
+    // the header's status is a token badge that never wraps, the reason in the fail ink
+    const status = [...dlg.querySelectorAll("#drawer-title .ui-badge")].map((b) => b.className);
+    expect(status).toEqual(["ui-badge ui-badge-fail"]);
+    expect(dlg.querySelector("#drawer-title .text-\\[var\\(--ui-fail-ink\\)\\]")?.textContent).toBe(
+      "connection failed",
+    );
+    // the tabs are the kit's tablist, the selected one marked by aria-selected alone
+    const tablist = dlg.querySelector("[role='tablist']");
+    expect(tablist?.classList.contains("ui-tabs")).toBe(true);
+    // every header control is a 44 px kit button
+    for (const name of ["Newer request (K)", "Older request (J)", "Copy as JSON"]) {
+      expect(screen.getByRole("button", { name }).classList.contains("ui-btn")).toBe(true);
+    }
+    // the four stats and the panels sit on the card surface
+    expect(dlg.querySelectorAll("[data-stat].ui-card")).toHaveLength(4);
+    expect(dlg.querySelector("[data-retry-burst]")?.getAttribute("role")).toBe("alert");
+    expect(dlg.querySelectorAll("section.ui-card").length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("covers a phone's whole viewport with a 44 px back control, and keeps the desktop width", async () => {
+    const { container, act } = renderApp(<Drawer />, { request: "a", requests: [REQUEST] }, NOW);
+    const panel = container.querySelector("[data-slide-over]");
+    expect(panel?.classList.contains("w-full")).toBe(true);
+    expect(panel?.classList.contains("sm:w-[min(68rem,94vw)]")).toBe(true);
+    const back = screen.getByRole("button", { name: "Back to requests" });
+    expect(back.classList.contains("ui-btn")).toBe(true);
+    expect(back.parentElement?.classList.contains("sm:hidden")).toBe(true);
+    await userEvent.click(back);
+    expect(act).toHaveBeenCalledWith("close-drawer");
+  });
+
+  it("paints the Context tab's totals, turns and captured prompt with the tokens only", () => {
+    // the turns' stored blocks are the shared Content renderer's; the tab's own markup is what is checked
+    const bare = { ...READY, messages: READY.messages.map((m) => ({ ...m, blocks: [] })) };
+    const { container } = openOn("context", bare, { capture: { a: CAPTURED } });
+    const dlg = container.querySelector("dialog") as HTMLDialogElement;
+    expect(legacyClasses(dlg)).toEqual([]);
+    const roles = [...dlg.querySelectorAll(".ctx-msg .ui-badge")].map((b) => b.className);
+    expect(roles).toContain("ui-badge ui-badge-info");
+    expect(roles).toContain("ui-badge ui-badge-ok");
+    expect(dlg.querySelectorAll("details.ui-card").length).toBe(5);
+  });
+
+  it("paints the Raw tab and a broken read with the tokens only", () => {
+    const raw = openOn("raw", { status: "ready", input: "in", output: "out", bytes: 4 });
+    expect(legacyClasses(raw.container.querySelector("dialog") as HTMLDialogElement)).toEqual([]);
+    raw.unmount();
+    const broken = openOn("context", { status: "error", cause: "→ 500" });
+    const dlg = broken.container.querySelector("dialog") as HTMLDialogElement;
+    expect(legacyClasses(dlg)).toEqual([]);
+    expect(dlg.querySelector("[role='alert']")?.className).toContain("text-[var(--ui-fail-ink)]");
+    broken.unmount();
+    const loading = openOn("context", { status: "loading" });
+    expect(legacyClasses(loading.container.querySelector("dialog") as HTMLDialogElement)).toEqual([]);
   });
 });

@@ -1,6 +1,7 @@
 // slide-over.tsx — a large panel that slides in from the right over the whole dashboard (daisyUI modal-end on a
 // native <dialog>): Escape, a click on the dimmed page or the close button closes it, focus stays inside while it
-// is open and returns to whatever opened it. The header is sticky glass, the body scrolls on its own.
+// is open and returns to whatever opened it. The panel and its sticky header are solid on the tokens' surface,
+// the body scrolls on its own, and both pad themselves by the safe areas.
 
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useRef } from "preact/hooks";
@@ -90,17 +91,18 @@ export function SlideOver({
       }}
     >
       <div
-        class={`modal-box flex h-dvh max-h-none ${width} max-w-none flex-col rounded-none rounded-l-box p-0 neon-ring`}
+        class={`modal-box flex h-dvh max-h-none ${width} max-w-none flex-col rounded-none border-l border-[var(--ui-line)] bg-[var(--ui-surface)] p-0 text-[var(--ui-text)] sm:rounded-l-[var(--ui-radius-lg)]`}
         data-slide-over
       >
-        <div class="glass sticky top-0 z-10 border-b border-base-content/8">
-          <div class="flex items-start gap-4 px-6 pt-5 pb-4">
-            <div class="min-w-0 flex-1">{header}</div>
-            <div class="flex shrink-0 items-center gap-1">
+        <div class="sticky top-0 z-10 border-b border-[var(--ui-line)] bg-[var(--ui-surface)] pt-[var(--ui-safe-top)]">
+          {/* the header gives way to its actions once a phone leaves it under 16rem */}
+          <div class="flex flex-wrap items-start gap-x-4 gap-y-3 px-4 pt-4 pb-3 sm:px-6 sm:pt-5 sm:pb-4">
+            <div class="min-w-0 flex-[1_1_16rem]">{header}</div>
+            <div class="ml-auto flex shrink-0 items-center gap-1">
               {actions}
               <button
                 type="button"
-                class="btn btn-ghost btn-square"
+                class="ui-btn ui-btn-ghost ui-btn-icon"
                 aria-label="Close"
                 title="Close (Esc)"
                 onClick={close}
@@ -109,9 +111,12 @@ export function SlideOver({
               </button>
             </div>
           </div>
-          {tabs ? <div class="px-6 pb-3">{tabs}</div> : null}
+          {tabs ? <div class="px-4 pb-3 sm:px-6">{tabs}</div> : null}
         </div>
-        <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5" data-slide-over-body>
+        <div
+          class="min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-[calc(20px+var(--ui-safe-bottom))] sm:px-6"
+          data-slide-over-body
+        >
           {children}
         </div>
       </div>

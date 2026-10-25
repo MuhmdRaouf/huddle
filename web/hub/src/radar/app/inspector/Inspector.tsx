@@ -1,11 +1,13 @@
 /**
- * The request inspector: a big slide-over from the right (daisyUI `modal modal-end` on a native dialog,
- * via the shared SlideOver) that floats over the whole dashboard — Escape, a click outside or the X close
- * it, focus returns to the row that opened it. Tabs — Overview, Input, Output, Context, Raw, each with its
- * count where one exists — sit under a sticky glass header; previous/next step through the current scope's
- * requests and "Copy as JSON" copies the whole record. Nothing renders without a picked request.
+ * The request inspector: a big slide-over from the right (the shared SlideOver on a native dialog) that
+ * floats over the whole dashboard — Escape, a click outside or the X close it, focus returns to the row
+ * that opened it. On a phone it covers the whole viewport, tab bar included, and a 44 px Back control
+ * leads the header. Tabs — Overview, Input, Output, Context, Raw, each with its count where one exists —
+ * sit under the sticky header; previous/next step through the current scope's requests and "Copy as JSON"
+ * copies the whole record. Nothing renders without a picked request.
  */
 
+import { Badge } from "@huddle/ui/badge.tsx";
 import { SlideOver } from "@huddle/ui/slide-over.tsx";
 import { fmtAgo, fmtClock, sessionName } from "../../fmt.ts";
 import type { IconName } from "../../icons.ts";
@@ -54,65 +56,91 @@ function tabCount(
   return null;
 }
 
+/** The quiet line a tab shows in place of content it does not hold. */
+const QUIET = "m-0 text-sm text-[var(--ui-muted)]";
+
 /** The words for a side the history store cannot give back, and the alert when it broke. */
 function ContentSide({ side }: { side: "input" | "output" }) {
   const { state } = useApp();
   if (state.request === null) return null;
   const answer = state.content[state.request];
   if (answer === undefined || answer.status === "loading") {
-    return <p class="m-0 text-row muted">Reading the stored side…</p>;
+    return <p class={QUIET}>Reading the stored side…</p>;
   }
   if (answer.status === "missing") {
-    return (
-      <p class="m-0 text-row muted">Not recorded: older than history or captured before history existed.</p>
-    );
+    return <p class={QUIET}>Not recorded: older than history or captured before history existed.</p>;
   }
-  if (answer.status === "off") return <p class="m-0 text-row muted">History is off.</p>;
+  if (answer.status === "off") return <p class={QUIET}>History is off.</p>;
   if (answer.status === "error") {
     return <ErrorAlert words="The stored side could not be read" cause={answer.cause} />;
   }
   return <Blocks side={answer[side]} />;
 }
 
-/** The header's two lines: model, agent and stop reason over the time and the session it belongs to. */
+/** The header's two lines: model, agent and stop reason over the time and the session it belongs to;
+ *  on a phone the Back control stands before them and closes the dialog the way the X does. */
 function DrawerHeader({ request }: { request: RequestRecord }) {
   const { state, now } = useApp();
   const session = state.sessions.find((s) => s.id === request.sessionId);
   const status = httpStatusOf(request);
   const streaming = isInFlight(request);
   return (
-    <div class="min-w-0" id="drawer-title">
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span class="text-lg font-semibold">
-          <ModelChip model={request.model} />
-        </span>
-        <span class="text-sm font-medium text-base-content/80" title={request.agentId}>
-          {agentDisplayName(state, request.sessionId, request.agentId)}
-        </span>
-        {status !== null ? (
-          <span class={`badge badge-soft${status >= 400 ? " badge-error" : ""}`}>HTTP {status}</span>
-        ) : streaming ? (
-          <span class="badge badge-soft badge-info">
-            <span class="loading loading-dots loading-sm" aria-hidden="true" />
-            <span>Streaming</span>
+    <div class="flex min-w-0 items-start gap-2">
+      {/* the kit's button sets its own display, so the wrapper is what hides it from 640 px */}
+      <span class="-ml-2 shrink-0 sm:hidden">
+        <button
+          type="button"
+          class="ui-btn ui-btn-ghost ui-btn-icon"
+          aria-label="Back to requests"
+          onClick={(e) => e.currentTarget.closest("dialog")?.close()}
+        >
+          <svg
+            class="size-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+        </button>
+      </span>
+      <div class="min-w-0 flex-1" id="drawer-title">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span class="text-lg font-semibold">
+            <ModelChip model={request.model} />
           </span>
-        ) : request.stopReason === null ? (
-          <span class="badge badge-ghost">No stop reason</span>
-        ) : (
-          <span class="badge badge-soft badge-info">{request.stopReason}</span>
-        )}
-        {request.error !== undefined && (
-          <span class="min-w-0 max-w-96 truncate text-sm text-error" title={request.error}>
-            {request.error}
+          <span class="text-sm font-medium text-[var(--ui-text)]" title={request.agentId}>
+            {agentDisplayName(state, request.sessionId, request.agentId)}
           </span>
-        )}
+          {status !== null ? (
+            <Badge tone={status >= 400 ? "fail" : "neutral"}>HTTP {status}</Badge>
+          ) : streaming ? (
+            <Badge tone="info">
+              <span class="mr-1.5 size-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />
+              Streaming
+            </Badge>
+          ) : request.stopReason === null ? (
+            <Badge>No stop reason</Badge>
+          ) : (
+            <Badge tone="info">{request.stopReason}</Badge>
+          )}
+          {request.error !== undefined && (
+            <span class="min-w-0 max-w-96 truncate text-sm text-[var(--ui-fail-ink)]" title={request.error}>
+              {request.error}
+            </span>
+          )}
+        </div>
+        <p class="m-0 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-[var(--ui-muted)]">
+          <span>
+            {fmtClock(request.ts)}, {fmtAgo(request.ts, now)}
+          </span>
+          {session !== undefined && <span>{sessionName(session)}</span>}
+        </p>
       </div>
-      <p class="muted m-0 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-meta">
-        <span>
-          {fmtClock(request.ts)}, {fmtAgo(request.ts, now)}
-        </span>
-        {session !== undefined && <span>{sessionName(session)}</span>}
-      </p>
     </div>
   );
 }
@@ -136,12 +164,12 @@ export function Inspector() {
       onClose={() => act("close-drawer")}
       label="Request details"
       header={<DrawerHeader request={request} />}
-      width="w-[min(68rem,94vw)]"
+      width="w-full sm:w-[min(68rem,94vw)]"
       actions={
         <>
           <button
             type="button"
-            class="btn btn-ghost btn-square"
+            class="ui-btn ui-btn-ghost ui-btn-icon"
             data-action="prev-request"
             aria-label="Newer request (K)"
             title="Newer request (K)"
@@ -152,7 +180,7 @@ export function Inspector() {
           </button>
           <button
             type="button"
-            class="btn btn-ghost btn-square"
+            class="ui-btn ui-btn-ghost ui-btn-icon"
             data-action="next-request"
             aria-label="Older request (J)"
             title="Older request (J)"
@@ -161,13 +189,13 @@ export function Inspector() {
           >
             <Icon name="chevronDown" class="size-4.5" />
           </button>
-          <CopyButton text={rawText} label="Copy as JSON" class="btn btn-ghost btn-sm">
+          <CopyButton text={rawText} label="Copy as JSON" class="ui-btn ui-btn-ghost">
             Copy as JSON
           </CopyButton>
         </>
       }
       tabs={
-        <div role="tablist" class="tabs tabs-box tabs-md" aria-label="Request detail">
+        <div role="tablist" class="ui-tabs" aria-label="Request detail">
           {DRAWER_TABS.map((tab) => {
             const active = state.drawerTab === tab.id;
             const count = tabCount(state, tab.id, request.id);
@@ -176,7 +204,6 @@ export function Inspector() {
                 key={tab.id}
                 type="button"
                 role="tab"
-                class={active ? "tab gap-2 tab-active" : "tab gap-2"}
                 data-action="drawer-tab"
                 data-value={tab.id}
                 aria-selected={active ? "true" : "false"}
@@ -185,7 +212,7 @@ export function Inspector() {
               >
                 <Icon name={TAB_ICONS[tab.id]} class="size-4.5" />
                 <span>{tab.label}</span>
-                {count !== null && <span class="badge badge-ghost badge-sm num">{count}</span>}
+                {count !== null && <Badge>{count}</Badge>}
               </button>
             );
           })}

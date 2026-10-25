@@ -69,11 +69,11 @@ function dialog(container: ParentNode): HTMLDialogElement {
 
 /** Value of the stat titled `title` (its number and its description line). */
 function stat(root: ParentNode, title: string): { value: string; desc: string } {
-  for (const el of root.querySelectorAll<HTMLElement>(".stat")) {
-    if (el.querySelector(".stat-title")?.textContent === title) {
+  for (const el of root.querySelectorAll<HTMLElement>("[data-stat]")) {
+    if (el.dataset.stat === title) {
       return {
-        value: el.querySelector(".stat-value")?.textContent ?? "",
-        desc: el.querySelector(".stat-desc")?.textContent ?? "",
+        value: el.querySelector("[data-stat-value]")?.textContent ?? "",
+        desc: el.querySelector("[data-stat-desc]")?.textContent ?? "",
       };
     }
   }
@@ -120,7 +120,7 @@ describe("Drawer", () => {
     expect(header?.textContent).toContain("30s ago");
     expect(header?.textContent).toContain("app");
     // the width is the brief's: most of a wide screen, all of a narrow one
-    expect(dlg.querySelector("[data-slide-over]")?.className).toContain("w-[min(68rem,94vw)]");
+    expect(dlg.querySelector("[data-slide-over]")?.className).toContain("sm:w-[min(68rem,94vw)]");
   });
 
   it("sizes the call up with four stats, the latency one judged against the view's p95", () => {
@@ -132,8 +132,8 @@ describe("Drawer", () => {
     expect(latency.desc).toContain("Measured against the view's p95 of 1s.");
     expect(stat(dlg, "Total tokens").value).toBe("22,026");
     expect(stat(dlg, "Total tokens").desc).toBe("12,345 in, 678 out");
-    // the whole stats strip sits on the shared panel surface
-    expect(dlg.querySelector(".stats")?.classList.contains("panel")).toBe(true);
+    // every stat is a card of its own
+    expect(dlg.querySelectorAll("[data-stat].ui-card")).toHaveLength(4);
   });
 
   it("shows the cost with the conditions that shaped it, or the words for no price", () => {
@@ -156,7 +156,7 @@ describe("Drawer", () => {
       }),
     );
     const dlg = dialog(document.body);
-    const badges = [...dlg.querySelectorAll(".badge")].map((badge) => badge.textContent);
+    const badges = [...dlg.querySelectorAll(".ui-badge")].map((badge) => badge.textContent);
     expect(badges).toContain("Streaming");
     expect(stat(dlg, "Est. cost").value).toContain("pending");
     // not the idle "No stop reason": the request is still running
@@ -186,7 +186,7 @@ describe("Drawer", () => {
     const dlg = dialog(container);
     expect(dlg.querySelectorAll(".bar-seg")).toHaveLength(4); // every reported kind carries a segment
     const first = dlg.querySelector<HTMLElement>(".bar-seg");
-    expect(first?.getAttribute("style")?.replace(/\s+/g, "")).toContain("background:var(--color-info)");
+    expect(first?.getAttribute("style")?.replace(/\s+/g, "")).toContain("background:var(--radar-series-1)");
     expect(tokenRows(dlg)).toEqual([
       "Input12,34556%",
       "Output6783.08%",
@@ -222,7 +222,7 @@ describe("Drawer", () => {
     );
     expect(name?.getAttribute("title")).toBe("w1");
     const scope = screen.getByRole("button", { name: "Show this agent's requests" });
-    expect(scope.className).toContain("btn-soft");
+    expect(scope.className).toContain("ui-btn-secondary");
     expect(scope.getAttribute("data-action")).toBe("scope-agent");
     await userEvent.click(scope);
     expect(act).toHaveBeenCalledWith("scope-agent", JSON.stringify({ sessionId: "s1", agentId: "w1" }));
@@ -255,7 +255,7 @@ describe("Drawer", () => {
     expect(stat(fastDlg, "Latency").desc).toContain("Fast for this view");
     expect(fact(fastDlg, "Session")).toBe("s1");
     expect(fact(fastDlg, "Project")).toBe("–");
-    expect([...fastDlg.querySelectorAll(".badge")].map((b) => b.textContent)).toContain("end_turn");
+    expect([...fastDlg.querySelectorAll(".ui-badge")].map((b) => b.textContent)).toContain("end_turn");
     fast.unmount();
 
     const slow = at(900);
@@ -264,7 +264,7 @@ describe("Drawer", () => {
 
   it("shows an HTTP status the router recorded instead of a stop reason badge", () => {
     openDrawer(pickedRequest({ stopReason: "429" }));
-    const badges = [...dialog(document.body).querySelectorAll(".badge")].map((badge) => badge.textContent);
+    const badges = [...dialog(document.body).querySelectorAll(".ui-badge")].map((badge) => badge.textContent);
     expect(badges).toContain("HTTP 429");
     expect(badges).not.toContain("No stop reason");
   });
@@ -282,12 +282,12 @@ describe("Drawer", () => {
     const dlg = dialog(fresh.container);
     expect(stat(dlg, "Retries").value).toBe("2");
     expect(stat(dlg, "Retries").desc).toBe("2 within 2 min (429)");
-    expect(dlg.querySelector(".alert-warning")?.textContent).toContain("2 within 2 min (429)");
-    expect(dlg.querySelector(".alert-warning")?.getAttribute("role")).toBe("alert");
+    expect(dlg.querySelector("[data-retry-burst]")?.textContent).toContain("2 within 2 min (429)");
+    expect(dlg.querySelector("[data-retry-burst]")?.getAttribute("role")).toBe("alert");
     fresh.unmount();
     const quiet = openDrawer(pickedRequest());
     expect(stat(dialog(quiet.container), "Retries")).toEqual({ value: "0", desc: "None recorded" });
-    expect(quiet.container.querySelector(".alert-warning")).toBeNull();
+    expect(quiet.container.querySelector("[data-retry-burst]")).toBeNull();
   });
 
   it("keeps the identifiers on hand with one copy button each", () => {
@@ -309,7 +309,6 @@ describe("Drawer", () => {
     const plain = openDrawer(pickedRequest());
     const tabs = [...dialog(plain.container).querySelectorAll("[data-action='drawer-tab']")];
     expect(tabs.map((tab) => tab.textContent)).toEqual(["Overview", "Input", "Output", "Context", "Raw"]);
-    expect(tabs[0]?.className).toContain("tab-active");
     expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
     expect(tabs[1]?.getAttribute("data-value")).toBe("input");
     // each tab wears its icon

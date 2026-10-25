@@ -178,7 +178,6 @@ describe("the drawer's Input and Output tabs", () => {
     const { container } = renderApp(<Drawer />, { request: "a", requests: [REQUEST] }, NOW);
     const tabs = [...container.querySelectorAll("[data-action='drawer-tab']")];
     expect(tabs.map((tab) => tab.textContent)).toEqual(["Overview", "Input", "Output", "Context", "Raw"]);
-    expect(tabs[0]?.className).toContain("tab-active");
     expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
     expect(container.textContent).toContain("Est. cost");
     expect(container.textContent).not.toContain("Reading the stored side");
