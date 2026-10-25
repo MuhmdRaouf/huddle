@@ -23,6 +23,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/alerts"
 	"github.com/MuhmdRaouf/huddle/internal/radar/history"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ingest"
+	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 	"github.com/MuhmdRaouf/huddle/internal/radar/lifecycle"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/settings"
@@ -187,6 +188,7 @@ type App struct {
 	ctx     context.Context
 	cancel  func()
 	prunes  *history.PruneSchedule
+	ledger  *ledger.Store
 	removal *lifecycle.RemovalWatch
 
 	signals   chan os.Signal
@@ -228,9 +230,16 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		}
 		prunes = history.SchedulePrunes(appCtx, hist, retention, history.PruneOptions{})
 	}
+	var led *ledger.Store
+	if opened, err := ledger.Open(paths.LedgerPath(appCtx, options.Env)); err != nil {
+		log(fmt.Sprintf("radar: ledger unavailable, running without it (%v)", err))
+	} else {
+		led = opened
+	}
 	watcher := ingest.StartWatcher(appCtx, ingest.WatcherOptions{
 		Env:        options.Env,
 		Store:      st,
+		Ledger:     led,
 		SinceMs:    options.SinceMs,
 		IntervalMs: options.IntervalMs,
 		Now:        func() int64 { return now().UnixMilli() },
@@ -273,6 +282,9 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		if writer != nil {
 			writer.Stop()
 		}
+		if led != nil {
+			_ = led.Close()
+		}
 		httpServer.CloseStreams()
 		cancel()
 		return nil, err
@@ -292,6 +304,7 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		ctx:       ctx,
 		cancel:    cancel,
 		prunes:    prunes,
+		ledger:    led,
 		signals:   make(chan os.Signal, 1),
 		sigDone:   make(chan struct{}),
 		serveDone: make(chan struct{}),
@@ -397,10 +410,11 @@ func projectDirsOf(st *store.Store) []string {
 	return out
 }
 
-// Stop ends the app: the watcher, the removal watch, insights, retention and the history
-// writer stop first, then the server stops taking connections and the requests it already
-// took finish (at most DrainMs), the streams and the idle keep-alives are cut after that, and
-// server.json goes. Idempotent: a self-removal and the caller's stop may both arrive.
+// Stop ends the app: the watcher, the removal watch, insights, retention, the history writer
+// and the ledger stop first, then the server stops taking connections and the requests it
+// already took finish (at most DrainMs), the streams and the idle keep-alives are cut after
+// that, and server.json goes. Idempotent: a self-removal and the caller's stop may both
+// arrive.
 func (a *App) Stop() {
 	a.stopOnce.Do(a.shutdown)
 	<-a.stopped
@@ -417,6 +431,9 @@ func (a *App) shutdown() {
 	a.prunes.Stop()
 	if a.Writer != nil {
 		a.Writer.Stop()
+	}
+	if a.ledger != nil {
+		_ = a.ledger.Close()
 	}
 	a.cancel()
 	closed := make(chan struct{})

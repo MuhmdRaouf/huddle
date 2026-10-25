@@ -42,17 +42,17 @@ type Row struct {
 
 // RouteFacts is what the router's route event says about the request.
 type RouteFacts struct {
-	Event   domain.RouteEvent // as the spool line decodes
-	CostUSD float64           // Radar's price for the event's usage, 0 when the caller has none
+	Event   domain.RouteEvent `json:"event"`    // as the spool line decodes
+	CostUSD float64           `json:"cost_usd"` // Radar's price for the event's usage, 0 when the caller has none
 }
 
 // TranscriptFacts is what Claude Code's transcript says about the same request.
 type TranscriptFacts struct {
-	RequestID   string // requestId, joins on Row.AnthropicID
-	PromptID    string
-	QuerySource string
-	StopReason  string
-	Usage       domain.RouteUsage // the assistant line's final usage
+	RequestID   string            `json:"request_id"` // requestId, joins on Row.AnthropicID
+	PromptID    string            `json:"prompt_id"`
+	QuerySource string            `json:"query_source"`
+	StopReason  string            `json:"stop_reason"`
+	Usage       domain.RouteUsage `json:"usage"` // the assistant line's final usage
 }
 
 // OTelFacts is what an OTel api_request or api_error event says about it.

@@ -101,6 +101,16 @@ func TestPathResolution(t *testing.T) {
 		}
 	})
 
+	t.Run("puts the ledger database in the state dir's ledger directory", func(t *testing.T) {
+		e := makeEnv(t)
+		if got := paths.LedgerPath(t.Context(), e.env); got != filepath.Join(e.state, "ledger", "ledger.db") {
+			t.Fatalf("LedgerPath = %q, want %q", got, filepath.Join(e.state, "ledger", "ledger.db"))
+		}
+		if filepath.Dir(filepath.Dir(paths.LedgerPath(t.Context(), e.env))) != filepath.Dir(paths.HistoryPath(t.Context(), e.env)) {
+			t.Fatal("the ledger directory does not sit in the state dir beside the history file")
+		}
+	})
+
 	t.Run("falls back to ~/.agents paths under HOME", func(t *testing.T) {
 		e := makeEnv(t)
 		bare := domain.EnvLookup{"HOME": e.home}

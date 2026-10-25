@@ -47,6 +47,13 @@ func HistoryPath(ctx context.Context, env domain.EnvLookup) string {
 	return filepath.Join(StateDir(ctx, env), "history.db")
 }
 
+// LedgerPath is the request ledger: one row per model request, joined across the router's
+// route lines and the sessions' transcripts. It sits in the state dir's ledger directory,
+// which the ownership marker already counts as radar's own.
+func LedgerPath(ctx context.Context, env domain.EnvLookup) string {
+	return filepath.Join(StateDir(ctx, env), "ledger", "ledger.db")
+}
+
 // QuotaPath is the newest plan-limits snapshot the sessions post (Claude Code's rate limits,
 // read off its statusline payload — never any credential).
 func QuotaPath(ctx context.Context, env domain.EnvLookup) string {

@@ -2,8 +2,6 @@ package ledger
 
 import (
 	"fmt"
-
-	"github.com/MuhmdRaouf/huddle/internal/radar/history"
 )
 
 // The ledger's schema: created in place with IF NOT EXISTS and versioned through the
@@ -52,9 +50,18 @@ const ledgerRequestsIndex = `
 CREATE UNIQUE INDEX IF NOT EXISTS ledger_requests_anthropic_id
 ON ledger_requests(anthropic_id) WHERE anthropic_id <> ''`
 
-// applySchema creates the table and its index on a newly opened file.
-func applySchema(db history.DB) error {
-	if err := db.Exec(ledgerRequestsDDL + ";" + ledgerRequestsIndex + ";PRAGMA user_version = 1"); err != nil {
+// What each source filed for one request, as JSON blobs, empty when that source has not spoken
+// yet. A later source of the same kind replaces the earlier one; a different kind joins it.
+const ledgerFactsDDL = `
+CREATE TABLE IF NOT EXISTS ledger_facts (
+  id TEXT PRIMARY KEY,
+  route TEXT NOT NULL DEFAULT '',
+  transcript TEXT NOT NULL DEFAULT ''
+)`
+
+// applySchema creates the tables and their index on a newly opened file.
+func applySchema(db DB) error {
+	if err := db.Exec(ledgerRequestsDDL + ";" + ledgerRequestsIndex + ";" + ledgerFactsDDL + ";PRAGMA user_version = 2"); err != nil {
 		return fmt.Errorf("create the ledger schema: %w", err)
 	}
 	return nil

@@ -25,6 +25,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
+	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/routerhealth"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -70,7 +71,10 @@ type WatcherOptions struct {
 	// HarnessCollectors are the other agents' transcript collectors (Codex, opencode) one
 	// rescanning pass runs after the jobs; nil keeps radar on Claude transcripts alone.
 	HarnessCollectors []HarnessCollector
-	Log               func(line string)
+	// Ledger is the request ledger the route lines and the transcript requests file
+	// themselves into; nil keeps the watcher without a ledger.
+	Ledger *ledger.Store
+	Log    func(line string)
 }
 
 // fileTail is one transcript file's read position and its parser.
@@ -177,6 +181,7 @@ type Watcher struct {
 	ctx       context.Context
 	env       domain.EnvLookup
 	store     *store.Store
+	ledger    *ledger.Store
 	nowFn     func() int64
 	alive     PidAlive
 	sinceMs   int64
@@ -250,6 +255,7 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 		ctx:                 ctx,
 		env:                 options.Env,
 		store:               options.Store,
+		ledger:              options.Ledger,
 		nowFn:               now,
 		alive:               options.Alive,
 		sinceMs:             options.SinceMs,
@@ -419,6 +425,7 @@ func (w *Watcher) applyEmit(emit TranscriptEmit) {
 	}
 	for _, request := range emit.Requests {
 		w.store.AddRequest(w.defaultUpstream(w.enrichUpstream(request)), contentOf(captured, request.ID))
+		w.fileTranscriptFacts(request)
 	}
 }
 
@@ -517,13 +524,15 @@ func (w *Watcher) rememberUpstream(sessionID string, ts int64, url string) {
 // ingestSpoolText parses one spool line and lands it; an unparseable one is skipped.
 func (w *Watcher) ingestSpoolText(text string) {
 	if line, ok := ParseSpoolLine(text); ok {
-		w.ingestSpoolLine(line)
+		w.ingestSpoolLine(text, line)
 	}
 }
 
 // ingestSpoolLine lands one spool line: the base URL and transcript a hook named, then the line
 // itself by its kind — a route, a capture or a router health event never reaches the timeline.
-func (w *Watcher) ingestSpoolLine(line shared.SpoolLine) {
+// The line's own text rides along, so the route branch can hand the ledger the event as it
+// was written.
+func (w *Watcher) ingestSpoolLine(text string, line shared.SpoolLine) {
 	if line.SessionID != nil && line.BaseURL != nil {
 		if ts, ok := jsfmt.ParseISO(line.Ts); ok {
 			w.rememberUpstream(*line.SessionID, ts.UnixMilli(), *line.BaseURL)
@@ -534,7 +543,7 @@ func (w *Watcher) ingestSpoolLine(line shared.SpoolLine) {
 	}
 	switch {
 	case line.Event == "route":
-		w.ingestRouteEvent(line)
+		w.ingestRouteEvent(text, line)
 	case line.Event == "capture":
 		w.ingestCaptureEvent(line)
 	case routerhealth.IsRouterEventLine(line):
@@ -572,7 +581,7 @@ func (w *Watcher) ingestRouterEvent(line shared.SpoolLine) {
 // ingestRouteEvent lands a route line: its retryable failure first, the unified limits it read
 // from Anthropic's headers, then the request it stands for and whatever it taught about where a
 // plugin's models go.
-func (w *Watcher) ingestRouteEvent(line shared.SpoolLine) {
+func (w *Watcher) ingestRouteEvent(text string, line shared.SpoolLine) {
 	ts, ok := jsfmt.ParseISO(line.Ts)
 	if !ok {
 		return
@@ -588,6 +597,39 @@ func (w *Watcher) ingestRouteEvent(line shared.SpoolLine) {
 	}
 	w.rememberRouterUpstream(line, *line.Model)
 	w.store.AddRequest(RouteRequest(line, *line.Model, ts.UnixMilli()), nil)
+	w.fileRouteFacts(text, line, *line.Model, ts.UnixMilli())
+}
+
+// fileRouteFacts hands one route line's facts to the ledger, so its row joins what the
+// transcript says about the same request; a ledger miss is one log line, never a stop —
+// ingest goes on.
+func (w *Watcher) fileRouteFacts(text string, line shared.SpoolLine, model string, ts int64) {
+	if w.ledger == nil {
+		return
+	}
+	facts, ok := routeFactsOf(text, line, model, ts)
+	if !ok {
+		return
+	}
+	if err := w.ledger.AddRoute(w.ctx, facts); err != nil {
+		w.log(fmt.Sprintf("radar: the ledger missed a route line (%v)", err))
+	}
+}
+
+// fileTranscriptFacts hands one transcript request's facts to the ledger, so its row joins
+// what the route line says about the same request; a ledger miss is one log line, never a
+// stop — ingest goes on.
+func (w *Watcher) fileTranscriptFacts(request shared.RequestRecord) {
+	if w.ledger == nil {
+		return
+	}
+	facts, ok := transcriptFactsOf(request)
+	if !ok {
+		return
+	}
+	if err := w.ledger.AddTranscript(w.ctx, facts); err != nil {
+		w.log(fmt.Sprintf("radar: the ledger missed a transcript request (%v)", err))
+	}
 }
 
 // rememberRouterUpstream learns a plugin's real base URL from a route line that sent one of the
