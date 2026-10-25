@@ -397,7 +397,7 @@ function SeriesList({
   );
 }
 
-/** The picked day's card: the date, each model that ran with its share, and the day's total. */
+/** The picked day's card: the UTC date, each model that ran with its share, and the day's total. */
 function DayCard({
   report,
   date,
@@ -416,7 +416,7 @@ function DayCard({
   return (
     <div class="panel px-4 py-3" data-usage-day="">
       <div class="flex items-center gap-2">
-        <h3 class="min-w-0 flex-1 text-sm font-semibold">{dayWords(date)}</h3>
+        <h3 class="min-w-0 flex-1 text-sm font-semibold">{dayWords(date)} UTC</h3>
         <button
           type="button"
           class="btn btn-ghost btn-square btn-sm"
@@ -715,7 +715,7 @@ export function UsageView() {
       <Panel
         icon="history"
         title="Daily usage"
-        subtitle={report.from === "" ? null : `${dayWords(report.from)} – ${dayWords(report.to)}`}
+        subtitle={report.from === "" ? null : `${dayWords(report.from)} – ${dayWords(report.to)} UTC`}
         actions={
           <>
             <Segmented

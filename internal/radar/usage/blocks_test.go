@@ -5,14 +5,14 @@ import (
 	"time"
 )
 
-// blockAt is one moment of 2026-10-15 in the test zone, as epoch ms.
+// blockAt is one moment of 2026-10-15 in UTC, as epoch ms.
 func blockAt(hour, minute, second int) int64 {
-	return time.Date(2026, time.October, 15, hour, minute, second, 0, zone).UnixMilli()
+	return time.Date(2026, time.October, 15, hour, minute, second, 0, time.UTC).UnixMilli()
 }
 
-// blockNextDay is one moment one local day later, hour and minute only, as epoch ms.
+// blockNextDay is one moment one UTC day later, hour and minute only, as epoch ms.
 func blockNextDay(hour, minute int) int64 {
-	return time.Date(2026, time.October, 16, hour, minute, 0, 0, zone).UnixMilli()
+	return time.Date(2026, time.October, 16, hour, minute, 0, 0, time.UTC).UnixMilli()
 }
 
 // blockRow is one request row of the block tests, edited in place by edit when there is one.
@@ -39,7 +39,7 @@ var claudeRates = priceTable{"claude-sonnet-5-5": {in: 1, out: 2, cacheRead: 0.1
 
 // blockClock is the moment the block tests read the clock at.
 func blockClock(hour, minute int) time.Time {
-	return time.Date(2026, time.October, 15, hour, minute, 0, 0, zone)
+	return time.Date(2026, time.October, 15, hour, minute, 0, 0, time.UTC)
 }
 
 // wantBlock fails the test when a block misses its window, its activity or its rates.
@@ -91,7 +91,7 @@ func TestBlocksGapBoundaries(t *testing.T) {
 			blockRow(blockAt(10, 30, 0), nil),
 			blockRow(blockAt(15, 29, 59)+999, nil),
 		}
-		report := Blocks(rows, blockClock(16, 0), ClaudeModels, claudeRates, zone)
+		report := Blocks(rows, blockClock(16, 0), ClaudeModels, claudeRates)
 		if len(report.Blocks) != 2 {
 			t.Fatalf("blocks = %d, want 2", len(report.Blocks))
 		}
@@ -110,7 +110,7 @@ func TestBlocksGapBoundaries(t *testing.T) {
 			blockRow(blockAt(10, 0, 0), nil),
 			blockRow(blockAt(15, 0, 0), nil),
 		}
-		report := Blocks(rows, blockClock(16, 0), ClaudeModels, claudeRates, zone)
+		report := Blocks(rows, blockClock(16, 0), ClaudeModels, claudeRates)
 		if len(report.Blocks) != 2 {
 			t.Fatalf("blocks = %d, want 2", len(report.Blocks))
 		}
@@ -125,7 +125,7 @@ func TestBlocksGapBoundaries(t *testing.T) {
 			blockRow(blockAt(10, 0, 0), nil),
 			blockRow(blockAt(15, 0, 0)-1, nil),
 		}
-		report := Blocks(rows, blockClock(16, 0), ClaudeModels, claudeRates, zone)
+		report := Blocks(rows, blockClock(16, 0), ClaudeModels, claudeRates)
 		if len(report.Blocks) != 1 {
 			t.Fatalf("blocks = %d, want one", len(report.Blocks))
 		}
@@ -136,7 +136,7 @@ func TestBlocksGapBoundaries(t *testing.T) {
 }
 
 func TestBlocksEmpty(t *testing.T) {
-	report := Blocks(nil, blockClock(12, 0), ClaudeModels, claudeRates, zone)
+	report := Blocks(nil, blockClock(12, 0), ClaudeModels, claudeRates)
 	if len(report.Blocks) != 0 {
 		t.Errorf("blocks = %d, want none", len(report.Blocks))
 	}
@@ -153,7 +153,7 @@ func TestBlocksOneRequest(t *testing.T) {
 		r.Input, r.Output, r.CacheRead, r.CacheWrite = 40_000_000, 10_000_000, 5_000_000, 5_000_000
 		r.CostUSD = dollars(5)
 	})}
-	report := Blocks(rows, blockClock(14, 0), ClaudeModels, claudeRates, zone)
+	report := Blocks(rows, blockClock(14, 0), ClaudeModels, claudeRates)
 	if len(report.Blocks) != 1 {
 		t.Fatalf("blocks = %d, want 1", len(report.Blocks))
 	}
@@ -174,8 +174,8 @@ func TestBlocksNowPastTheEnd(t *testing.T) {
 	rows := []Row{blockRow(blockAt(10, 30, 0), func(r *Row) {
 		r.Input, r.Output = 10_000_000, 1_000_000
 	})}
-	at := time.Date(2026, time.October, 16, 9, 0, 0, 0, zone)
-	report := Blocks(rows, at, ClaudeModels, claudeRates, zone)
+	at := time.Date(2026, time.October, 16, 9, 0, 0, 0, time.UTC)
+	report := Blocks(rows, at, ClaudeModels, claudeRates)
 	if len(report.Blocks) != 1 {
 		t.Fatalf("blocks = %d, want the ended one", len(report.Blocks))
 	}
@@ -189,8 +189,8 @@ func TestBlocksBurnFloorsAtOneMinute(t *testing.T) {
 	// the request ran seconds ago: the block floors to the hour, and the burn never divides by
 	// a shorter span than a minute
 	rows := []Row{blockRow(blockAt(12, 0, 30), func(r *Row) { r.Input, r.Output = 6_000, 0 })}
-	at := time.Date(2026, time.October, 15, 12, 0, 45, 0, zone)
-	report := Blocks(rows, at, ClaudeModels, claudeRates, zone)
+	at := time.Date(2026, time.October, 15, 12, 0, 45, 0, time.UTC)
+	report := Blocks(rows, at, ClaudeModels, claudeRates)
 	if len(report.Blocks) != 1 {
 		t.Fatalf("blocks = %d, want 1", len(report.Blocks))
 	}
@@ -212,14 +212,14 @@ func TestBlocksCountsClaudeModelsByDefault(t *testing.T) {
 		"claude-sonnet-5-5": {in: 1, out: 2, cacheRead: 0.1},
 		"glm-5.3":           {in: 1.4, out: 4.4, cacheRead: 0.26},
 	}
-	claude := Blocks(rows, blockClock(11, 0), ClaudeModels, prices, zone)
+	claude := Blocks(rows, blockClock(11, 0), ClaudeModels, prices)
 	if len(claude.Blocks) != 1 || claude.Blocks[0].Requests != 1 {
 		t.Fatalf("claude blocks = %+v, want the one Claude request alone", claude.Blocks)
 	}
 	if claude.Unpriced != 0 || claude.Approximate {
 		t.Error("a provider row the scope skips must not read as unpriced")
 	}
-	all := Blocks(rows, blockClock(11, 0), AllModels, prices, zone)
+	all := Blocks(rows, blockClock(11, 0), AllModels, prices)
 	if len(all.Blocks) != 1 || all.Blocks[0].Requests != 2 {
 		t.Fatalf("all blocks = %+v, want both requests in one", all.Blocks)
 	}
@@ -235,8 +235,8 @@ func TestBlocksSumsRowsAndOrdersNewestFirst(t *testing.T) {
 		blockRow(blockNextDay(9, 5), nil),
 		blockRow(blockNextDay(9, 55), func(r *Row) { r.Input = 2_000 }),
 	}
-	at := time.Date(2026, time.October, 16, 11, 0, 0, 0, zone)
-	report := Blocks(rows, at, ClaudeModels, claudeRates, zone)
+	at := time.Date(2026, time.October, 16, 11, 0, 0, 0, time.UTC)
+	report := Blocks(rows, at, ClaudeModels, claudeRates)
 	if len(report.Blocks) != 2 {
 		t.Fatalf("blocks = %d, want 2", len(report.Blocks))
 	}
@@ -262,7 +262,7 @@ func TestBlocksSortsRowsByTime(t *testing.T) {
 		blockRow(blockAt(15, 0, 0), nil),
 		blockRow(blockAt(10, 0, 0), nil),
 	}
-	report := Blocks(rows, blockClock(16, 0), ClaudeModels, claudeRates, zone)
+	report := Blocks(rows, blockClock(16, 0), ClaudeModels, claudeRates)
 	if len(report.Blocks) != 2 || report.Blocks[0].FirstTS != blockAt(15, 0, 0) {
 		t.Errorf("blocks = %+v, want two, newest first, whatever order the rows came in", report.Blocks)
 	}
@@ -273,7 +273,7 @@ func TestBlocksUnpricedFlags(t *testing.T) {
 		blockRow(blockAt(10, 0, 0), nil),
 		blockRow(blockAt(10, 30, 0), func(r *Row) { r.Model = "claude-future-9" }),
 	}
-	report := Blocks(rows, blockClock(11, 0), ClaudeModels, claudeRates, zone)
+	report := Blocks(rows, blockClock(11, 0), ClaudeModels, claudeRates)
 	if !report.Approximate || report.Unpriced != 1 {
 		t.Errorf("flags = approximate %v unpriced %d, want true and 1", report.Approximate, report.Unpriced)
 	}

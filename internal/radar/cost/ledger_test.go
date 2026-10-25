@@ -388,3 +388,18 @@ func TestLedgerFiles(t *testing.T) {
 		closeTo(t, "the old row", float64(cost.USD), 4)
 	})
 }
+
+// TestLedgerDaysAreUTC files each request under its UTC date: half an hour either side of a
+// UTC midnight lands on two different files whatever the machine's own zone is.
+func TestLedgerDaysAreUTC(t *testing.T) {
+	e := makeLedgerEnv(t)
+	midnight := time.Date(2026, time.October, 16, 0, 0, 0, 0, time.UTC).UnixMilli()
+	ledger := NewLedger(t.Context(), e.env, atMs(midnight+dayMs/2))
+	ledger.Record(makeRequest(func(r *shared.RequestRecord) { r.ID, r.Ts = "before", midnight-30*60_000 }))
+	ledger.Record(makeRequest(func(r *shared.RequestRecord) { r.ID, r.Ts = "after", midnight+30*60_000 }))
+	ledger.Flush(t.Context())
+	want := []string{"2026-10-15.json", "2026-10-16.json"}
+	if got := ledgerJSONNames(t, LedgerDir(t.Context(), e.env)); !slices.Equal(got, want) {
+		t.Errorf("day files: got %v want %v", got, want)
+	}
+}

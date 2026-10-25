@@ -19,8 +19,8 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
-// nowMs is the suite's clock: a Thursday, 15:00 local.
-var nowMs = time.Date(2026, time.October, 8, 15, 0, 0, 0, time.Local).UnixMilli()
+// nowMs is the suite's clock: a Thursday, 15:00 UTC.
+var nowMs = time.Date(2026, time.October, 8, 15, 0, 0, 0, time.UTC).UnixMilli()
 
 const msPerDay = 86_400_000
 
@@ -217,20 +217,20 @@ func TestBudgetsFile(t *testing.T) {
 }
 
 func TestSpend(t *testing.T) {
-	t.Run("starts periods at local midnight, Monday and the 1st", func(t *testing.T) {
-		midnight := time.Date(2026, time.October, 8, 0, 0, 0, 0, time.Local).UnixMilli()
+	t.Run("starts periods at UTC midnight, Monday and the 1st", func(t *testing.T) {
+		midnight := time.Date(2026, time.October, 8, 0, 0, 0, 0, time.UTC).UnixMilli()
 		if got := PeriodStart(PeriodDay, nowMs); got != midnight {
 			t.Fatalf("periodStart(day) = %d, want %d", got, midnight)
 		}
-		monday := time.Date(2026, time.October, 5, 0, 0, 0, 0, time.Local).UnixMilli()
+		monday := time.Date(2026, time.October, 5, 0, 0, 0, 0, time.UTC).UnixMilli()
 		if got := PeriodStart(PeriodWeek, nowMs); got != monday {
 			t.Fatalf("periodStart(week) = %d, want %d", got, monday)
 		}
-		sunday := time.Date(2026, time.October, 11, 9, 0, 0, 0, time.Local).UnixMilli()
+		sunday := time.Date(2026, time.October, 11, 9, 0, 0, 0, time.UTC).UnixMilli()
 		if got := PeriodStart(PeriodWeek, sunday); got != monday {
 			t.Fatalf("periodStart(week, sunday) = %d, want %d", got, monday)
 		}
-		first := time.Date(2026, time.October, 1, 0, 0, 0, 0, time.Local).UnixMilli()
+		first := time.Date(2026, time.October, 1, 0, 0, 0, 0, time.UTC).UnixMilli()
 		if got := PeriodStart(PeriodMonth, nowMs); got != first {
 			t.Fatalf("periodStart(month) = %d, want %d", got, first)
 		}
@@ -259,7 +259,7 @@ func TestSpend(t *testing.T) {
 			row("d", nowMs-1000, "claude-x"),
 			row("e", nowMs+1000, "glm-5.3"),
 		}
-		midnight := time.Date(2026, time.October, 8, 0, 0, 0, 0, time.Local).UnixMilli()
+		midnight := time.Date(2026, time.October, 8, 0, 0, 0, 0, time.UTC).UnixMilli()
 		zai := SpendFor(Budget{ID: "z", Scope: "provider:zai", Period: PeriodDay, LimitUsd: 2, Action: ActionStop}, rows, nowMs)
 		if zai.SpentUsd != 1.4 || zai.Pct != 70 || zai.PeriodStart != midnight {
 			t.Fatalf("spendFor(zai day) = %+v, want spent 1.4, pct 70, start %d", zai, midnight)
@@ -452,4 +452,32 @@ func TestStatusFileFeedsTheRoutersBudgetGate(t *testing.T) {
 			t.Fatal("BudgetStopFor(zai) stopped the plugin under its budget, want nothing")
 		}
 	})
+}
+
+// TestBudgetPeriodsAreUTC reads each period at 23:30 in UTC-05:00, which is 04:30 UTC on the
+// next date: the day, the week and the month all start on the UTC side of that midnight.
+func TestBudgetPeriodsAreUTC(t *testing.T) {
+	eastern := time.FixedZone("UTC-5", -5*3600)
+	cases := []struct {
+		name   string
+		period Period
+		at     time.Time
+		want   time.Time
+	}{
+		{"day", PeriodDay, time.Date(2026, time.October, 15, 23, 30, 0, 0, eastern),
+			time.Date(2026, time.October, 16, 0, 0, 0, 0, time.UTC)},
+		{"week from a Sunday evening", PeriodWeek, time.Date(2026, time.October, 18, 23, 30, 0, 0, eastern),
+			time.Date(2026, time.October, 19, 0, 0, 0, 0, time.UTC)},
+		{"month from its last evening", PeriodMonth, time.Date(2026, time.October, 31, 23, 30, 0, 0, eastern),
+			time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := PeriodStart(c.period, c.at.UnixMilli())
+			if got != c.want.UnixMilli() {
+				t.Errorf("PeriodStart(%s, %s) = %s, want %s", c.period, c.at,
+					time.UnixMilli(got).UTC(), c.want)
+			}
+		})
+	}
 }

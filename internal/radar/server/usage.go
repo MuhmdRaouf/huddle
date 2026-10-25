@@ -1,4 +1,4 @@
-// The usage route: the long-range usage report over 7, 30 or 90 local days.
+// The usage route: the long-range usage report over 7, 30 or 90 UTC days.
 package server
 
 import (
@@ -6,15 +6,16 @@ import (
 	"net/url"
 	"time"
 
+	dayclock "github.com/MuhmdRaouf/huddle/internal/radar/clock"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/history"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 	"github.com/MuhmdRaouf/huddle/internal/radar/usage"
 )
 
-// usageRoute answers one usage report: the window runs from the midnight `days-1` days
-// back to now, in the clock's own location, and the rows price the way the Costs view
-// does. A read error is the caller's to answer for.
+// usageRoute answers one usage report: the window runs from the UTC midnight `days-1` days
+// back to now, and the rows price the way the Costs view does. A read error is the caller's
+// to answer for.
 func usageRoute(h *history.History, query url.Values, now func() time.Time) (ApiResponse, error) {
 	days := int64(30)
 	if query.Has("days") {
@@ -25,15 +26,13 @@ func usageRoute(h *history.History, query url.Values, now func() time.Time) (Api
 		days = asked
 	}
 	at := now()
-	loc := at.Location()
-	midnight := time.Date(at.Year(), at.Month(), at.Day(), 0, 0, 0, 0, loc)
-	from := midnight.AddDate(0, 0, -int(days-1)).UnixMilli()
+	from := dayclock.Midnight(at).AddDate(0, 0, -int(days-1)).UnixMilli()
 	to := at.UnixMilli()
 	rows, err := h.UsageRows(context.Background(), from, to)
 	if err != nil {
 		return ApiResponse{}, err
 	}
-	report := usage.Aggregate(rows, usage.Window{From: from, To: to}, usagePricer{}, loc)
+	report := usage.Aggregate(rows, usage.Window{From: from, To: to}, usagePricer{})
 	return jsonOf(200, report), nil
 }
 

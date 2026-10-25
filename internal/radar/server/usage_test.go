@@ -14,19 +14,18 @@ import (
 
 // The usage route: a 3-day fixture set read back to the token and the cent.
 
-// usageMoment is one moment dayOffset local days from the test clock's today, as epoch ms.
+// usageMoment is one UTC moment dayOffset days from the test clock's today, as epoch ms.
 func usageMoment(dayOffset, hour, minute int) int64 {
-	day := time.Date(nowAt.Year(), nowAt.Month(), nowAt.Day(), 0, 0, 0, 0, nowAt.Location()).
-		AddDate(0, 0, dayOffset)
-	return time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, day.Location()).UnixMilli()
+	day := time.Date(nowAt.Year(), nowAt.Month(), nowAt.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, dayOffset)
+	return time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, time.UTC).UnixMilli()
 }
 
-// usageDayDate spells the local date dayOffset days from the test clock's today.
+// usageDayDate spells the UTC date dayOffset days from the test clock's today.
 func usageDayDate(dayOffset int) string {
-	return time.UnixMilli(usageMoment(dayOffset, 0, 0)).Format("2006-01-02")
+	return time.UnixMilli(usageMoment(dayOffset, 0, 0)).UTC().Format("2006-01-02")
 }
 
-// seedUsage writes three local days of requests across two projects and three sessions:
+// seedUsage writes three UTC days of requests across two projects and three sessions:
 // glm-5.3 and its flash on app, a Claude request on web, and a model no price covers.
 func seedUsage(t *testing.T, h *history.History) {
 	t.Helper()
@@ -379,5 +378,38 @@ func TestUsagePricerMatchesTheLedgerForCacheWritesAndMultipliers(t *testing.T) {
 				t.Errorf("usagePricer = $%.4f, ledger = $%.4f", got.CostUSD, float64(want.USD))
 			}
 		})
+	}
+}
+
+// TestUsageDaysAreUTC reads a clock at 23:30 on the 15th in UTC-05:00, which is 04:30 UTC on
+// the 16th: the window ends on the UTC date and the request just made sits on it.
+func TestUsageDaysAreUTC(t *testing.T) {
+	h := openTestHistory(t)
+	late := time.Date(2026, time.October, 15, 23, 30, 0, 0, time.FixedZone("UTC-5", -5*3600))
+	if err := h.UpsertNode(history.NodeUpsert{ID: "z1/main", Kind: shared.NodeMain, SessionID: "z1", AgentID: "main"}); err != nil {
+		t.Fatalf("upsert the node: %v", err)
+	}
+	record := shared.RequestRecord{
+		ID: "zr1", SessionID: "z1", AgentID: "main", Model: "glm-5.3",
+		Upstream: "https://api.z.ai", Provider: "zai", Ts: late.Add(-time.Minute).UnixMilli(),
+		Tokens: shared.Tokens{Input: 1_000, Output: 100},
+	}
+	if err := h.PutRequest("z1/main", record); err != nil {
+		t.Fatalf("put the request: %v", err)
+	}
+	answer, err := usageRoute(h, routeQuery("days=7"), func() time.Time { return late })
+	if err != nil {
+		t.Fatalf("usageRoute: %v", err)
+	}
+	var report usageReport
+	decodeBody(t, answer, &report)
+	if report.From != "2026-10-10" || report.To != "2026-10-16" {
+		t.Errorf("window = %s..%s, want the UTC dates 2026-10-10..2026-10-16", report.From, report.To)
+	}
+	if len(report.Days) != 7 {
+		t.Fatalf("days = %d, want 7", len(report.Days))
+	}
+	if last := report.Days[6]; last.Date != "2026-10-16" || last.Requests != 1 {
+		t.Errorf("last day = %s with %d requests, want 2026-10-16 with the one request", last.Date, last.Requests)
 	}
 }

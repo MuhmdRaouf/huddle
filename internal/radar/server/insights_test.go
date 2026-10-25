@@ -21,9 +21,9 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/store"
 )
 
-// nowAt is the suite's clock: a fixed mid-October noon, so day windows, ledger days and
+// nowAt is the suite's clock: a fixed mid-October UTC noon, so day windows, ledger days and
 // budget periods all hold one date.
-var nowAt = time.Date(2026, time.October, 15, 12, 0, 0, 0, time.Local)
+var nowAt = time.Date(2026, time.October, 15, 12, 0, 0, 0, time.UTC)
 
 // clock is the injected now every insights here runs on.
 func clock() time.Time { return nowAt }

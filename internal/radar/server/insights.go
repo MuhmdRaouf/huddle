@@ -411,7 +411,7 @@ func (i *Insights) Tree(span cost.AttributionRange) []cost.AttributionNode {
 	return cost.AttributionTree(i.ledgerRowsLocked(), i.namesLocked(), cost.RangeStart(span, i.nowMs()))
 }
 
-// SpendToday is the estimated spend since local midnight; nil when nothing today is priced.
+// SpendToday is the estimated spend since UTC midnight; nil when nothing today is priced.
 func (i *Insights) SpendToday() *shared.USD {
 	i.mu.Lock()
 	defer i.mu.Unlock()

@@ -261,7 +261,7 @@ and the provider routers' spool. Eleven views:
 
 | View | What it shows |
 |---|---|
-| Overview | Day cards: the day's requests, token sums and cost |
+| Overview | Day cards: the last 24 hours' requests, token sums and cost |
 | Agents | Sessions and agents, live transcripts included |
 | Requests | Every request, with a per-request inspector |
 | Tools | Tool calls per session and agent |
@@ -278,6 +278,9 @@ Budgets and the rest of Radar's settings live in Settings › Radar.
 Every request line carries its model, latency, input, output, cache-read and cache-write tokens
 and its cost. Usage also splits tokens and cost by agent, copies each agent's resume command, and
 counts codex rollouts and opencode sessions, tagged by agent.
+
+Radar's days are UTC dates, the way Anthropic's and the providers' usage pages count them, so a
+day's totals in Radar and on those pages turn over at the same moment.
 
 Budgets stop and lift from Settings — on a hub, from a paired phone too. A stopped budget lands
 in `budget-status.json` in radar's state dir (`$RADAR_HOME`, else `~/.agents/radar`), which

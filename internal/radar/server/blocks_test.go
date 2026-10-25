@@ -12,12 +12,11 @@ import (
 // The blocks route: the 5-hour metering windows over a seeded history, Claude models by
 // default and the routed provider ones behind the toggle.
 
-// blockMoment is one moment the fixture's requests ran at: dayOffset local days from the test
-// clock's today at the local hour and minute, as epoch ms.
+// blockMoment is one moment the fixture's requests ran at: dayOffset UTC days from the test
+// clock's today at the UTC hour and minute, as epoch ms.
 func blockMoment(dayOffset, hour, minute int) int64 {
-	day := time.Date(nowAt.Year(), nowAt.Month(), nowAt.Day(), 0, 0, 0, 0, nowAt.Location()).
-		AddDate(0, 0, dayOffset)
-	return time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, day.Location()).UnixMilli()
+	day := time.Date(nowAt.Year(), nowAt.Month(), nowAt.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, dayOffset)
+	return time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, time.UTC).UnixMilli()
 }
 
 // seedBlocks writes the blocks fixture: a Claude pair this morning two hours and one hour
@@ -185,7 +184,7 @@ func TestBlocksRoute(t *testing.T) {
 		}
 	})
 
-	t.Run("windows the blocks at 7 or 30 local days, 7 the default", func(t *testing.T) {
+	t.Run("windows the blocks at 7 or 30 UTC days, 7 the default", func(t *testing.T) {
 		h := openTestHistory(t)
 		seedBlocks(t, h)
 		var week blocksAnswer
@@ -202,4 +201,49 @@ func TestBlocksRoute(t *testing.T) {
 			t.Errorf("oldest block starts %d, want the call eight days back", month.Blocks[2].Start)
 		}
 	})
+}
+
+// TestBlocksAreUTC reads a clock in UTC+05:30, whose midnight and whole hours sit half an hour
+// off UTC's: the window starts at the UTC midnight six days back, and a block starts on its
+// first request's UTC hour.
+func TestBlocksAreUTC(t *testing.T) {
+	h := openTestHistory(t)
+	india := time.FixedZone("UTC+5:30", 5*3600+1800)
+	now := time.Date(2026, time.October, 16, 1, 0, 0, 0, india) // 19:30 UTC on the 15th
+	if err := h.UpsertNode(history.NodeUpsert{ID: "bz/main", Kind: shared.NodeMain, SessionID: "bz", AgentID: "main"}); err != nil {
+		t.Fatalf("upsert the node: %v", err)
+	}
+	put := func(id string, ts time.Time) {
+		record := shared.RequestRecord{
+			ID: id, SessionID: "bz", AgentID: "main", Model: "claude-sonnet-5-5",
+			Upstream: "https://api.anthropic.com", Provider: "anthropic", Ts: ts.UnixMilli(),
+			Tokens: shared.Tokens{Input: 1_000, Output: 100},
+		}
+		if err := h.PutRequest("bz/main", record); err != nil {
+			t.Fatalf("put the request %s: %v", id, err)
+		}
+	}
+	// 12:00 UTC on the 9th: inside the UTC window, before the UTC+05:30 one
+	put("edge", time.Date(2026, time.October, 9, 12, 0, 0, 0, time.UTC))
+	// 19:15 UTC on the 15th: its block starts at 19:00 UTC, not at the zone's 18:30 UTC
+	put("late", time.Date(2026, time.October, 15, 19, 15, 0, 0, time.UTC))
+	answer, err := blocksRoute(h, routeQuery("days=7"), func() time.Time { return now })
+	if err != nil {
+		t.Fatalf("blocksRoute: %v", err)
+	}
+	var report blocksAnswer
+	decodeBody(t, answer, &report)
+	if len(report.Blocks) != 2 {
+		t.Errorf("blocks = %d, want 2: the request on the 9th sits inside the UTC window", len(report.Blocks))
+	}
+	if len(report.Blocks) == 0 {
+		t.Fatal("no blocks")
+	}
+	start := time.UnixMilli(report.Blocks[0].Start).UTC()
+	if want := time.Date(2026, time.October, 15, 19, 0, 0, 0, time.UTC); !start.Equal(want) {
+		t.Errorf("the newest block starts at %s, want the UTC hour %s", start, want)
+	}
+	if !report.Blocks[0].Active {
+		t.Error("the newest block is not active at 19:30 UTC")
+	}
 }

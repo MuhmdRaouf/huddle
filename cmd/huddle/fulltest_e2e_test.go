@@ -456,8 +456,9 @@ func TestFullScenarioOnALocalDevName(t *testing.T) {
 		if wantRadar.requests != 3 {
 			t.Fatalf("the fixture's today lines are %d, want the three the scenario promises", wantRadar.requests)
 		}
-		now := time.Now()
-		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		// Radar's days are UTC dates: today starts at the UTC midnight
+		now := time.Now().UTC()
+		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 		path := "/api/radar/api/requests?session=s-full-sat-a&since=" +
 			strconv.FormatInt(midnight.UnixMilli(), 10)
 		code, body := tlsFetch(t, hubTLS, hubBase(), path, "Bearer "+credA)
@@ -979,7 +980,8 @@ func seedRadarFixtures(t *testing.T, claudeConfig, radarHome, session, project s
 		t.Fatalf("write the spool: %v", err)
 	}
 
-	midnight := time.Date(t0.Year(), t0.Month(), t0.Day(), 0, 0, 0, 0, t0.Location())
+	utc := t0.UTC()
+	midnight := time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
 	var want fixtureTotals
 	for _, line := range strings.Split(stamped, "\n") {
 		if !strings.Contains(line, `"event":"route"`) {

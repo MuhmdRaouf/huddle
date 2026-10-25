@@ -49,7 +49,7 @@ func mixModels(mix []MixEntry) []string {
 }
 
 func TestAttribution(t *testing.T) {
-	now := time.Date(2026, time.October, 8, 15, 0, 0, 0, time.Local).UnixMilli()
+	now := time.Date(2026, time.October, 8, 15, 0, 0, 0, time.UTC).UnixMilli()
 	rows := []LedgerRow{
 		{ID: "1", Ts: now - 1000, Model: "glm-5.3", SessionID: "s1", AgentID: "main", Tokens: millionInput},
 		{ID: "2", Ts: now - 2000, Model: "glm-5.3", SessionID: "s1", AgentID: "w1", Tokens: millionInput},
@@ -61,8 +61,8 @@ func TestAttribution(t *testing.T) {
 		Agents:   map[string]AgentNames{"s1:w1": {Name: "explorer"}},
 	}
 
-	t.Run("starts today at local midnight and the longer ranges 7 and 30 days back", func(t *testing.T) {
-		wantDay := time.Date(2026, time.October, 8, 0, 0, 0, 0, time.Local).UnixMilli()
+	t.Run("starts today at UTC midnight and the longer ranges 7 and 30 days back", func(t *testing.T) {
+		wantDay := time.Date(2026, time.October, 8, 0, 0, 0, 0, time.UTC).UnixMilli()
 		if got := RangeStart(RangeDay, now); got != wantDay {
 			t.Errorf("rangeStart(day): got %d want %d", got, wantDay)
 		}

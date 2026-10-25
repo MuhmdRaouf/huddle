@@ -19,6 +19,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/radar/clock"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/settings"
@@ -208,13 +209,12 @@ type budgetsFile struct {
 	Budgets []Budget `json:"budgets"`
 }
 
-// PeriodStart is the local start of the current day, week (Monday) or month.
+// PeriodStart is the UTC start of the current day, week (Monday) or month.
 func PeriodStart(period Period, now int64) int64 {
-	date := time.UnixMilli(now)
+	midnight := clock.Midnight(time.UnixMilli(now))
 	if period == PeriodMonth {
-		return time.Date(date.Year(), date.Month(), 1, 0, 0, 0, 0, date.Location()).UnixMilli()
+		return midnight.AddDate(0, 0, 1-midnight.Day()).UnixMilli()
 	}
-	midnight := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
 	if period == PeriodDay {
 		return midnight.UnixMilli()
 	}

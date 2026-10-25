@@ -14,6 +14,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/radar/clock"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
@@ -94,7 +95,7 @@ type packed struct {
 	slots int
 }
 
-// dayFile is one local day's ledger: its rows keyed by request id, the session and agent
+// dayFile is one UTC day's ledger: its rows keyed by request id, the session and agent
 // names on record, and the one *string per distinct optional value its rows share.
 type dayFile struct {
 	rows     orderedMap[packed]
@@ -134,7 +135,7 @@ func (d *dayFile) canonicalPtr(text *string) *string {
 }
 
 // Ledger is the usage ledger: every model request radar has seen, kept for LedgerDays in one
-// small JSON file per local day. A request seen again (a stream update, a restart re-reading
+// small JSON file per UTC day. A request seen again (a stream update, a restart re-reading
 // the transcript) replaces itself, never counts twice. Only numbers and ids are written:
 // never a prompt, a tool input or a body.
 type Ledger struct {
@@ -158,9 +159,9 @@ func LedgerDir(ctx context.Context, env domain.EnvLookup) string {
 	return filepath.Join(paths.StateDir(ctx, env), "ledger")
 }
 
-// DayKey is the local calendar day of a timestamp, as the file name stem.
+// DayKey is the UTC date of a timestamp, as the file name stem.
 func DayKey(ts int64) string {
-	return time.UnixMilli(ts).Format("2006-01-02")
+	return clock.DayKey(time.UnixMilli(ts))
 }
 
 // NewLedger loads the days inside the window and returns a ledger on them; now is the clock
@@ -178,7 +179,7 @@ func NewLedger(ctx context.Context, env domain.EnvLookup, now func() time.Time) 
 	return ledger
 }
 
-// cutoffKey is the oldest local day still inside the window.
+// cutoffKey is the oldest UTC day still inside the window.
 func (l *Ledger) cutoffKey() string {
 	return DayKey(l.now().UnixMilli() - LedgerDays*dayMs)
 }

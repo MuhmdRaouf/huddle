@@ -1,7 +1,7 @@
 // The subscription metering blocks: Claude plans meter use in 5-hour windows, and this file
 // reads a usage row list as those windows — ccusage's live-block view. A block starts at the
 // first request past the previous block's end or after a gap of 5 hours or more, and runs
-// 5 hours from that request's own hour, so the burn rate and the projection to the window's
+// 5 hours from that request's own UTC hour, so the burn rate and the projection to the window's
 // end come straight from the rows. Pure core, like Aggregate: it prices through the Pricer
 // it is handed and imports nothing new.
 package usage
@@ -35,7 +35,7 @@ const (
 	AllModels
 )
 
-// Block is one metering window: its ends (the first request's hour, floored, plus five
+// Block is one metering window: its ends (the first request's UTC hour, floored, plus five
 // hours), the first and last request it holds, the usage that landed in it, the burn rate
 // over the minutes it has been active, and the linear projection to its end.
 type Block struct {
@@ -61,11 +61,11 @@ type BlocksReport struct {
 // Blocks folds the rows into metering windows at the clock's own moment: Claude-model
 // requests alone unless models says otherwise, a new window at the first request past the
 // previous window's end or after a gap of five hours or more, each window five hours from its
-// first request's floored hour. The burn rate divides the window's usage by the minutes it
+// first request's floored UTC hour. The burn rate divides the window's usage by the minutes it
 // has been active (capped at its end, floored at a minute) and the projection carries that
 // rate to the window's end. A row no price covers counts its tokens at no cost and turns
 // Approximate on; a row whose harness reported its cost is priced by that.
-func Blocks(rows []Row, now time.Time, models BlockModels, prices Pricer, loc *time.Location) BlocksReport {
+func Blocks(rows []Row, now time.Time, models BlockModels, prices Pricer) BlocksReport {
 	report := BlocksReport{Blocks: []Block{}}
 	kept := make([]Row, 0, len(rows))
 	for _, entry := range rows {
@@ -82,8 +82,7 @@ func Blocks(rows []Row, now time.Time, models BlockModels, prices Pricer, loc *t
 			block = nil // the window ran out or a gap ended it; this request opens the next one
 		}
 		if block == nil {
-			started := time.UnixMilli(entry.TS).In(loc)
-			hour := time.Date(started.Year(), started.Month(), started.Day(), started.Hour(), 0, 0, 0, loc)
+			hour := time.UnixMilli(entry.TS).UTC().Truncate(time.Hour)
 			ends := hour.Add(BlockHours * time.Hour)
 			report.Blocks = append(report.Blocks, Block{
 				Start:   hour.UnixMilli(),

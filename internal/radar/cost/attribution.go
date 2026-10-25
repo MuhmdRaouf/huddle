@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/radar/clock"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
@@ -85,7 +86,7 @@ type AttributionNode struct {
 	Children []AttributionNode `json:"children"`
 }
 
-// RangeStart is the start of the range: local midnight today, or 7 / 30 days back from now.
+// RangeStart is the start of the range: today's UTC midnight, or 7 / 30 days back from now.
 func RangeStart(span AttributionRange, now int64) int64 {
 	switch span {
 	case RangeWeek:
@@ -93,8 +94,7 @@ func RangeStart(span AttributionRange, now int64) int64 {
 	case RangeMonth:
 		return now - 30*dayMs
 	}
-	at := time.UnixMilli(now)
-	return time.Date(at.Year(), at.Month(), at.Day(), 0, 0, 0, 0, at.Location()).UnixMilli()
+	return clock.Midnight(time.UnixMilli(now)).UnixMilli()
 }
 
 // pricedOfRow is the parts of a stored row the price reads: no stop reason (it is not a

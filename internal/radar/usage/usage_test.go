@@ -9,15 +9,12 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
-// zone is a fixed UTC+5 offset the day edges prove the aggregate buckets local days in.
-var zone = time.FixedZone("test", 5*3600)
-
-// dayMoment is one moment of the test's week, day 0 naming 2026-10-10, as epoch ms.
+// dayMoment is one UTC moment of the test's week, day 0 naming 2026-10-10, as epoch ms.
 func dayMoment(day, hour, minute int) int64 {
-	return time.Date(2026, time.October, 10+day, hour, minute, 0, 0, zone).UnixMilli()
+	return time.Date(2026, time.October, 10+day, hour, minute, 0, 0, time.UTC).UnixMilli()
 }
 
-// weekWindow is the seven local days 2026-10-10 through 2026-10-16.
+// weekWindow is the seven UTC days 2026-10-10 through 2026-10-16.
 func weekWindow() Window {
 	return Window{From: dayMoment(0, 0, 0), To: dayMoment(6, 23, 59)}
 }
@@ -116,7 +113,7 @@ func TestAggregateZeroFillsDays(t *testing.T) {
 		row(func(r *Row) { r.TS = dayMoment(1, 10, 0) }),
 		row(func(r *Row) { r.TS = dayMoment(5, 12, 0) }),
 	}
-	report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2, cacheRead: 0.1}}, zone)
+	report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2, cacheRead: 0.1}})
 	if report.From != "2026-10-10" || report.To != "2026-10-16" {
 		t.Errorf("window = %s..%s, want 2026-10-10..2026-10-16", report.From, report.To)
 	}
@@ -124,7 +121,7 @@ func TestAggregateZeroFillsDays(t *testing.T) {
 		t.Fatalf("days = %d, want 7", len(report.Days))
 	}
 	for i, day := range report.Days {
-		want := time.UnixMilli(dayMoment(i, 0, 0)).In(zone).Format("2006-01-02")
+		want := time.UnixMilli(dayMoment(i, 0, 0)).UTC().Format("2006-01-02")
 		if day.Date != want {
 			t.Errorf("day %d = %s, want %s", i, day.Date, want)
 		}
@@ -151,16 +148,17 @@ func TestAggregateZeroFillsDays(t *testing.T) {
 	}
 }
 
-func TestAggregateBucketsByLocalDay(t *testing.T) {
-	// 02:00 local (UTC+5) on the 11th is 21:00 UTC on the 10th: only the local reading puts
-	// the row on the 11th
-	rows := []Row{row(func(r *Row) { r.TS = dayMoment(1, 2, 0) })}
-	report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2}}, zone)
-	if report.Days[1].Requests != 1 {
-		t.Errorf("day 1 requests = %d, want the row's local day", report.Days[1].Requests)
+func TestAggregateBucketsByUTCDay(t *testing.T) {
+	// 02:00 at UTC+5 on the 11th is 21:00 UTC on the 10th: the row sits on the 10th
+	east := time.FixedZone("UTC+5", 5*3600)
+	at := time.Date(2026, time.October, 11, 2, 0, 0, 0, east).UnixMilli()
+	rows := []Row{row(func(r *Row) { r.TS = at })}
+	report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2}})
+	if report.Days[0].Requests != 1 {
+		t.Errorf("day 0 requests = %d, want the row's UTC day", report.Days[0].Requests)
 	}
-	if report.Days[0].Requests != 0 {
-		t.Errorf("day 0 requests = %d, want 0: the row is the 11th in zone, not UTC", report.Days[0].Requests)
+	if report.Days[1].Requests != 0 {
+		t.Errorf("day 1 requests = %d, want 0: the row is the 10th in UTC, not the 11th", report.Days[1].Requests)
 	}
 }
 
@@ -181,7 +179,7 @@ func TestAggregateSlicesSumToTotals(t *testing.T) {
 			r.Input, r.Output, r.CacheRead = 3_000_000, 1_000_000, 1_000_000
 		}),
 	}
-	report := Aggregate(rows, weekWindow(), prices, zone)
+	report := Aggregate(rows, weekWindow(), prices)
 	// r1: 1*1 + 0.5*2 = 2.0; r2: 1*3 + 2*0.2 = 3.4; r3: 3*1 + 1*2 + 1*0.1 = 5.1
 	wantTotals(t, "grand", report.Totals, 3, 5_000_000, 1_500_000, 3_000_000, 0, 10.5, 6.5)
 	for _, axis := range []struct {
@@ -218,7 +216,7 @@ func TestAggregateSlicesSumToTotals(t *testing.T) {
 func TestAggregateCacheSavings(t *testing.T) {
 	// savings = cache_read/1e6 * (input rate - cache read rate): 2.5M * (1 - 0.28) = 1.8
 	rows := []Row{row(func(r *Row) { r.CacheRead = 2_500_000 })}
-	report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2, cacheRead: 0.28}}, zone)
+	report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2, cacheRead: 0.28}})
 	if !close(report.Totals.SavingsUSD, 1.8) {
 		t.Errorf("savings = %.6f, want 1.8", report.Totals.SavingsUSD)
 	}
@@ -233,7 +231,7 @@ func TestAggregateUnpricedModel(t *testing.T) {
 		row(nil),
 		row(func(r *Row) { r.Model, r.Input = "mystery-model", 4_000 }),
 	}
-	report := Aggregate(rows, weekWindow(), prices, zone)
+	report := Aggregate(rows, weekWindow(), prices)
 	if !report.Approximate {
 		t.Error("approximate = false, want true: a model was unpriced")
 	}
@@ -245,7 +243,7 @@ func TestAggregateUnpricedModel(t *testing.T) {
 	mystery := sliceOf(t, report.ByModel, "mystery-model")
 	wantTotals(t, "mystery-model", mystery.Totals, 1, 4_000, 100, 0, 0, 0, 0)
 	// all priced: the flags stay off
-	clean := Aggregate(rows[:1], weekWindow(), prices, zone)
+	clean := Aggregate(rows[:1], weekWindow(), prices)
 	if clean.Approximate || clean.Unpriced != 0 {
 		t.Errorf("priced-only report says approximate=%v unpriced=%d, want false 0",
 			clean.Approximate, clean.Unpriced)
@@ -275,7 +273,7 @@ func TestAggregateTopSessions(t *testing.T) {
 			r.TS, r.Input = dayMoment(0, 11, 0), 5_000_000
 		}),
 	)
-	report := Aggregate(rows, weekWindow(), prices, zone)
+	report := Aggregate(rows, weekWindow(), prices)
 	app := report.TopSessions["app"]
 	if len(app) != 20 {
 		t.Fatalf("app sessions = %d, want at most 20", len(app))
@@ -308,7 +306,7 @@ func TestAggregateSessionLabel(t *testing.T) {
 			row(func(r *Row) { r.Kind, r.Label = KindSubagent, "scout: dig" }),
 			row(func(r *Row) { r.Kind, r.Label = KindMain, "Fix the login flow" }),
 		}
-		report := Aggregate(rows, weekWindow(), prices, zone)
+		report := Aggregate(rows, weekWindow(), prices)
 		if got := report.TopSessions["app"][0].Label; got != "Fix the login flow" {
 			t.Errorf("label = %q, want the main node's", got)
 		}
@@ -318,7 +316,7 @@ func TestAggregateSessionLabel(t *testing.T) {
 			row(func(r *Row) { r.SessionID, r.Kind, r.Label = "s9", KindSubagent, "scout: dig" }),
 			row(func(r *Row) { r.SessionID, r.Kind, r.Label = "s9", KindSubagent, "later one" }),
 		}
-		report := Aggregate(rows, weekWindow(), prices, zone)
+		report := Aggregate(rows, weekWindow(), prices)
 		if got := report.TopSessions["app"][0].Label; got != "scout: dig" {
 			t.Errorf("label = %q, want the first one", got)
 		}
@@ -329,7 +327,7 @@ func TestAggregateSessionLabel(t *testing.T) {
 			long += "x"
 		}
 		rows := []Row{row(func(r *Row) { r.Label = long })}
-		report := Aggregate(rows, weekWindow(), prices, zone)
+		report := Aggregate(rows, weekWindow(), prices)
 		if got := report.TopSessions["app"][0].Label; len(got) != 80 {
 			t.Errorf("label length = %d, want 80", len(got))
 		}
@@ -337,7 +335,7 @@ func TestAggregateSessionLabel(t *testing.T) {
 }
 
 func TestAggregatePricesRetrieved(t *testing.T) {
-	report := Aggregate(nil, weekWindow(), priceTable{}, zone)
+	report := Aggregate(nil, weekWindow(), priceTable{})
 	if report.PricesRetrieved == "" {
 		t.Error("pricesRetrieved is empty, want the price table's day")
 	}
@@ -353,7 +351,7 @@ func TestAggregateByHarness(t *testing.T) {
 			row(func(r *Row) { r.Harness = shared.HarnessCodex; r.Model = "gpt-5-codex" }),
 			row(func(r *Row) { r.Harness = shared.HarnessOpencode }),
 		}
-		report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2, cacheRead: 0.1}}, zone)
+		report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2, cacheRead: 0.1}})
 		if len(report.ByHarness) != 3 {
 			t.Fatalf("byHarness rows = %d, want 3", len(report.ByHarness))
 		}
@@ -373,7 +371,7 @@ func TestAggregateByHarness(t *testing.T) {
 			row(func(r *Row) { r.SessionID = "s-claude" }),
 			row(func(r *Row) { r.SessionID = "s-codex"; r.Harness = shared.HarnessCodex }),
 		}
-		report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2}}, zone)
+		report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2}})
 		sessions := report.TopSessions["app"]
 		harnessFor := func(id string) string {
 			for _, session := range sessions {
@@ -396,7 +394,7 @@ func TestAggregateByHarness(t *testing.T) {
 		rows := []Row{
 			row(func(r *Row) { r.Harness = shared.HarnessOpencode; r.CostUSD = dollars(0.25) }),
 		}
-		report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2, cacheRead: 0.1}}, zone)
+		report := Aggregate(rows, weekWindow(), priceTable{"glm-5.3": {in: 1, out: 2, cacheRead: 0.1}})
 		slice := sliceOf(t, report.ByHarness, shared.HarnessOpencode)
 		if !close(slice.Totals.CostUSD, 0.25) {
 			t.Errorf("cost = %.6f, want the harness's 0.25", slice.Totals.CostUSD)

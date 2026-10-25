@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/radar/clock"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
@@ -22,9 +23,6 @@ const (
 	KindSubagent = "subagent"
 	KindJob      = "job"
 )
-
-// dayLayout is the local-day shape every date in a report spells.
-const dayLayout = "2006-01-02"
 
 // topSessionsPerProject caps each project's list of costliest sessions.
 const topSessionsPerProject = 20
@@ -83,14 +81,14 @@ type Totals struct {
 	SavingsUSD shared.USD `json:"savingsUsd"`
 }
 
-// Window is the report's range in epoch milliseconds; the local days the two ends land on
+// Window is the report's range in epoch milliseconds; the UTC days the two ends land on
 // are the days the report carries.
 type Window struct {
 	From int64
 	To   int64
 }
 
-// Day is one local day's totals; its date spells YYYY-MM-DD in the report's location.
+// Day is one UTC day's totals; its date spells YYYY-MM-DD.
 type Day struct {
 	Date string `json:"date"`
 	Totals
@@ -134,17 +132,17 @@ type Report struct {
 	PricesRetrieved string               `json:"pricesRetrieved"`
 }
 
-// Aggregate sums the window's rows into one report: a zero-filled day per local date the
-// window spans in loc, the grand totals, the breakdowns by model, project, kind and
+// Aggregate sums the window's rows into one report: a zero-filled day per UTC date the
+// window spans, the grand totals, the breakdowns by model, project, kind and
 // harness, each project's top sessions, and the price honesty flags. Slices order by cost,
 // ties by key; sessions by cost, then last activity, then id. A row no price covers still
 // counts its requests and tokens at no cost, sits in Unpriced, and turns Approximate on;
 // a row whose harness reported its cost is priced by that.
-func Aggregate(rows []Row, window Window, prices Pricer, loc *time.Location) Report {
+func Aggregate(rows []Row, window Window, prices Pricer) Report {
 	report := Report{
-		From:            midnightOf(time.UnixMilli(window.From).In(loc)).Format(dayLayout),
-		To:              midnightOf(time.UnixMilli(window.To).In(loc)).Format(dayLayout),
-		Days:            daysOf(window, loc),
+		From:            clock.DayKey(time.UnixMilli(window.From)),
+		To:              clock.DayKey(time.UnixMilli(window.To)),
+		Days:            daysOf(window),
 		ByModel:         []Slice{},
 		ByProject:       []Slice{},
 		ByKind:          []Slice{},
@@ -162,7 +160,7 @@ func Aggregate(rows []Row, window Window, prices Pricer, loc *time.Location) Rep
 	harnesses := map[string]*group{}
 	sessions := map[string]*sessionAcc{}
 	for _, row := range rows {
-		date := time.UnixMilli(row.TS).In(loc).Format(dayLayout)
+		date := clock.DayKey(time.UnixMilli(row.TS))
 		price, priced := priceRow(row, prices)
 		if !priced {
 			report.Unpriced++
@@ -208,20 +206,15 @@ func priceRow(row Row, prices Pricer) (RowPrice, bool) {
 	return prices.PriceOf(row)
 }
 
-// daysOf answers one zeroed day per local date the window spans, first to last.
-func daysOf(window Window, loc *time.Location) []Day {
-	first := midnightOf(time.UnixMilli(window.From).In(loc))
-	last := midnightOf(time.UnixMilli(window.To).In(loc))
+// daysOf answers one zeroed day per UTC date the window spans, first to last.
+func daysOf(window Window) []Day {
+	first := clock.Midnight(time.UnixMilli(window.From))
+	last := clock.Midnight(time.UnixMilli(window.To))
 	days := []Day{}
 	for day := first; !day.After(last); day = day.AddDate(0, 0, 1) {
-		days = append(days, Day{Date: day.Format(dayLayout)})
+		days = append(days, Day{Date: clock.DayKey(day)})
 	}
 	return days
-}
-
-// midnightOf is the moment's own day's midnight.
-func midnightOf(at time.Time) time.Time {
-	return time.Date(at.Year(), at.Month(), at.Day(), 0, 0, 0, 0, at.Location())
 }
 
 // group is one breakdown axis's key: its totals and its per-day ones.
