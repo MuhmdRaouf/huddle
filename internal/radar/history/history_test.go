@@ -1716,6 +1716,38 @@ func TestRequestsOf(t *testing.T) {
 	})
 }
 
+// TestRequestRowKeepsItsFirstByteAndFirstToken proves the requests row keeps the two streaming
+// latencies the route line carries: time to the answer's head and to its first token. A row the
+// line gave no numbers reads nil, never zero.
+func TestRequestRowKeepsItsFirstByteAndFirstToken(t *testing.T) {
+	h := openHistoryAt(t)
+	if err := h.UpsertNode(nodeUpsert()); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	full := requestRecord()
+	full.ID = "full"
+	ttfb := int64(180)
+	ttft := int64(420)
+	full.TtfbMs = &ttfb
+	full.TtftMs = &ttft
+	if err := h.PutRequest("s1/main", full); err != nil {
+		t.Fatalf("put the timed request: %v", err)
+	}
+	plain := requestRecord()
+	plain.ID = "plain"
+	if err := h.PutRequest("s1/main", plain); err != nil {
+		t.Fatalf("put the plain request: %v", err)
+	}
+	rows, err := h.RequestsOf(RequestsQuery{NodeID: sp("s1/main"), Limit: 10})
+	if err != nil {
+		t.Fatalf("read requests: %v", err)
+	}
+	want := []shared.RequestRecord{plain, full}
+	if !reflect.DeepEqual(rows, want) {
+		t.Errorf("rows = %+v, want %+v", rows, want)
+	}
+}
+
 // turns is how many turns the conversation fixture holds.
 const turns = 120
 

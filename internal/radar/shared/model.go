@@ -221,13 +221,17 @@ const (
 // RequestRecord is one model request = one assistant message (streaming duplicates merged
 // by requestId before this point).
 type RequestRecord struct {
-	ID         string  `json:"id"`
-	SessionID  string  `json:"sessionId"`
-	AgentID    string  `json:"agentId"`
-	Model      string  `json:"model"`
-	Upstream   string  `json:"upstream"`
-	Ts         int64   `json:"ts"`
-	LatencyMs  *int64  `json:"latencyMs"`
+	ID        string `json:"id"`
+	SessionID string `json:"sessionId"`
+	AgentID   string `json:"agentId"`
+	Model     string `json:"model"`
+	Upstream  string `json:"upstream"`
+	Ts        int64  `json:"ts"`
+	LatencyMs *int64 `json:"latencyMs"`
+	// TtfbMs is time to the answer's head (first response byte) and TtftMs time to its
+	// first token, from the route line; nil when no router saw the call or it said none.
+	TtfbMs     *int64  `json:"ttfbMs"`
+	TtftMs     *int64  `json:"ttftMs"`
 	Tokens     Tokens  `json:"tokens"`
 	StopReason *string `json:"stopReason"`
 	Provider   string  `json:"provider"`
@@ -436,6 +440,12 @@ func (r RequestRecord) MarshalJSON() ([]byte, error) {
 	add("upstream", r.Upstream)
 	add("ts", r.Ts)
 	add("latencyMs", r.LatencyMs)
+	if r.TtfbMs != nil {
+		add("ttfbMs", r.TtfbMs)
+	}
+	if r.TtftMs != nil {
+		add("ttftMs", r.TtftMs)
+	}
 	add("tokens", r.Tokens)
 	if r.TailKeys != nil {
 		for _, key := range billingKeys {
@@ -724,11 +734,15 @@ type SpoolLine struct {
 	Fallback *string `json:"fallback,omitempty"`
 	// PromptHash is the hash a route line names (its capture sits under it); a capture
 	// line carries the hash again with the gzipped content.
-	PromptHash *string     `json:"prompt_hash,omitempty"`
-	Headers    *Headers    `json:"headers,omitempty"`
-	Gz         *string     `json:"gz,omitempty"`
-	LatencyMs  *int64      `json:"latency_ms,omitempty"`
-	Usage      *SpoolUsage `json:"usage,omitempty"`
+	PromptHash *string  `json:"prompt_hash,omitempty"`
+	Headers    *Headers `json:"headers,omitempty"`
+	Gz         *string  `json:"gz,omitempty"`
+	LatencyMs  *int64   `json:"latency_ms,omitempty"`
+	// TtfbMs is time to the answer's head and TtftMs time to its first token, both as the
+	// route line carried them.
+	TtfbMs *int64      `json:"ttfb_ms,omitempty"`
+	TtftMs *int64      `json:"ttft_ms,omitempty"`
+	Usage  *SpoolUsage `json:"usage,omitempty"`
 	// Utilization is the unified limits a route line read from Anthropic's answer headers.
 	Utilization *domain.UnifiedUtilization `json:"utilization,omitempty"`
 	Extra       map[string]json.RawMessage `json:"-"`

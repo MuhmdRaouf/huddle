@@ -592,12 +592,14 @@ func (h *History) reRoot(id, root string) error {
 // upsertRequest is ON CONFLICT DO UPDATE, not REPLACE: re-putting a request must not
 // cascade-delete its content row.
 const upsertRequest = "INSERT INTO requests (id, node_id, session_id, agent_id, model, upstream, ts, latency_ms, " +
+	"ttfb_ms, ttft_ms, " +
 	"input, output, cache_read, cache_write, cache_write_1h, speed, geo, service_tier, stop_reason, " +
 	"error, parent_agent_id, fallback, provider, route, via, status, harness, cost_usd, what, thinking, prompt_hash, headers, totals) " +
-	"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+	"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
 	"ON CONFLICT(id) DO UPDATE SET node_id = excluded.node_id, session_id = excluded.session_id, " +
 	"agent_id = excluded.agent_id, model = excluded.model, upstream = excluded.upstream, ts = excluded.ts, " +
-	"latency_ms = excluded.latency_ms, input = excluded.input, output = excluded.output, " +
+	"latency_ms = excluded.latency_ms, ttfb_ms = excluded.ttfb_ms, ttft_ms = excluded.ttft_ms, " +
+	"input = excluded.input, output = excluded.output, " +
 	"cache_read = excluded.cache_read, cache_write = excluded.cache_write, " +
 	"cache_write_1h = excluded.cache_write_1h, speed = excluded.speed, geo = excluded.geo, " +
 	"service_tier = excluded.service_tier, stop_reason = excluded.stop_reason, error = excluded.error, " +
@@ -607,7 +609,7 @@ const upsertRequest = "INSERT INTO requests (id, node_id, session_id, agent_id, 
 	"thinking = excluded.thinking, prompt_hash = excluded.prompt_hash, headers = excluded.headers, " +
 	"totals = excluded.totals"
 
-const requestColumns = "id, node_id, session_id, agent_id, model, upstream, ts, latency_ms, input, output, " +
+const requestColumns = "id, node_id, session_id, agent_id, model, upstream, ts, latency_ms, ttfb_ms, ttft_ms, input, output, " +
 	"cache_read, cache_write, cache_write_1h, speed, geo, service_tier, stop_reason, error, " +
 	"parent_agent_id, fallback, provider, route, via, status, harness, cost_usd, what, thinking, prompt_hash, headers, totals"
 
@@ -620,6 +622,8 @@ type requestRow struct {
 	upstream      *string
 	ts            int64
 	latencyMs     *int64
+	ttfbMs        *int64
+	ttftMs        *int64
 	input         *int64
 	output        *int64
 	cacheRead     *int64
@@ -654,6 +658,8 @@ func requestRowOf(row map[string]SqlValue) requestRow {
 		upstream:      rowText(row, "upstream"),
 		ts:            derep(rowInt64(row, "ts"), 0),
 		latencyMs:     rowInt64(row, "latency_ms"),
+		ttfbMs:        rowInt64(row, "ttfb_ms"),
+		ttftMs:        rowInt64(row, "ttft_ms"),
 		input:         rowInt64(row, "input"),
 		output:        rowInt64(row, "output"),
 		cacheRead:     rowInt64(row, "cache_read"),
@@ -700,6 +706,8 @@ func (h *History) PutRequest(nodeID string, r shared.RequestRecord) error {
 		r.Upstream,
 		r.Ts,
 		sqlInt64(r.LatencyMs),
+		sqlInt64(r.TtfbMs),
+		sqlInt64(r.TtftMs),
 		r.Tokens.Input,
 		r.Tokens.Output,
 		r.Tokens.CacheRead,
@@ -764,6 +772,8 @@ func toRequest(row requestRow) shared.RequestRecord {
 		Upstream:  derep(row.upstream, ""),
 		Ts:        row.ts,
 		LatencyMs: row.latencyMs,
+		TtfbMs:    row.ttfbMs,
+		TtftMs:    row.ttftMs,
 		Tokens: shared.Tokens{
 			Input:      derep(row.input, 0),
 			Output:     derep(row.output, 0),

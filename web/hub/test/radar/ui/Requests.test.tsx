@@ -58,13 +58,15 @@ describe("requests view", () => {
       "Model",
       "Status",
       "Latency",
+      "First byte",
+      "First token",
       "Input",
       "Output",
       "Cache read",
       "Cache write",
       "Est. cost",
     ]);
-    expect(heads.filter((th) => th.className.endsWith("num text-right"))).toHaveLength(7);
+    expect(heads.filter((th) => th.className.endsWith("num text-right"))).toHaveLength(9);
     const rows = drawerRows(container);
     expect(rows.map((row) => row.className)).toEqual([
       "row row-new cursor-pointer transition-colors hover:bg-[var(--ui-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ui-accent)]",
@@ -79,6 +81,8 @@ describe("requests view", () => {
       "Model",
       "Status",
       "Latency",
+      "First byte",
+      "First token",
       "Input",
       "Output",
       "Cache read",
@@ -102,13 +106,36 @@ describe("requests view", () => {
     expect(at(cells, 4).textContent).toBe("–"); // no HTTP status recorded: the call succeeded
     expect(at(cells, 5).textContent).toBe("100ms");
     expect(at(cells, 5).className).toBe("num text-right");
-    expect(at(cells, 6).textContent).toBe("10");
-    expect(at(cells, 10).textContent).toMatch(/^[$<–]/); // priced from the record, or a dash when not
+    expect(at(cells, 6).textContent).toBe("–"); // the plain record says no first byte
+    expect(at(cells, 7).textContent).toBe("–");
+    expect(at(cells, 8).textContent).toBe("10");
+    expect(at(cells, 12).textContent).toMatch(/^[$<–]/); // priced from the record, or a dash when not
     expect(container.querySelector("[data-key='requests-table'] table[data-radar-table]")).toBeTruthy();
     expect(panelMetaOf(container)).toBe("2 in this view");
 
     await userEvent.click(at(rows, 1));
     expect(act).toHaveBeenCalledWith("drawer", "r-old");
+  });
+
+  it("paints the two streaming latencies, a dash when the line said none", () => {
+    const { container } = renderApp(
+      <RequestsView />,
+      {
+        requests: [
+          makeRequest({ id: "r-ttfb", ts: NOW - 1_000, ttfbMs: 180, ttftMs: 420 }),
+          makeRequest({ id: "r-plain", ts: NOW - 2_000 }),
+        ],
+      },
+      NOW,
+    );
+    const cells = within(at(drawerRows(container), 0)).getAllByRole("cell");
+    expect(at(cells, 6).textContent).toBe("180ms");
+    expect(at(cells, 6).getAttribute("data-label")).toBe("First byte");
+    expect(at(cells, 7).textContent).toBe("420ms");
+    expect(at(cells, 7).getAttribute("data-label")).toBe("First token");
+    const plain = within(at(drawerRows(container), 1)).getAllByRole("cell");
+    expect(at(plain, 6).textContent).toBe("–");
+    expect(at(plain, 7).textContent).toBe("–");
   });
 
   it("shows the recorded status of a success as a plain badge", () => {
@@ -246,7 +273,7 @@ describe("requests view", () => {
       NOW,
     );
     const cells = within(at(drawerRows(container), 0)).getAllByRole("cell");
-    expect(at(cells, 10).textContent).toBe("pending");
+    expect(at(cells, 12).textContent).toBe("pending");
     expect(container.querySelector(".loading")).toBeNull(); // no fake streaming chrome in the row
   });
 
@@ -573,6 +600,8 @@ describe("requests sorting and export", () => {
       "model",
       "status",
       "latency",
+      "ttfb",
+      "ttft",
       "input",
       "output",
       "cacheRead",
@@ -582,7 +611,7 @@ describe("requests sorting and export", () => {
     const heads = [...container.querySelectorAll("th")];
     expect(heads.map((th) => th.getAttribute("aria-sort"))).toEqual([
       "descending",
-      ...Array.from({ length: 10 }, () => "none"),
+      ...Array.from({ length: 12 }, () => "none"),
     ]);
     expect(at(heads, 0).querySelector('svg[data-icon="chevronDown"]')).toBeTruthy();
     expect(at(heads, 1).querySelector('svg[data-icon="chevronsUpDown"]')).toBeTruthy();

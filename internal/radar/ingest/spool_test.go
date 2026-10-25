@@ -212,9 +212,12 @@ func TestRouterSpoolRoundTrip(t *testing.T) {
 	e := makeEnv(t)
 	at := time.Date(2026, 1, 15, 9, 30, 0, 0, time.UTC).UnixMilli()
 	writer := spool.CreateSpoolWriter(e.env, nil, func() int64 { return at })
+	ttfb := int64(180)
+	ttft := int64(420)
 	writer(domain.RouteEvent{
 		Ts: "2026-01-15T09:30:00.000Z", Event: domain.EventRoute, Plugin: "zai", Model: "glm-4.7",
 		Upstream: "https://api.z.ai/api/anthropic", Route: "provider", Status: 200, LatencyMs: 150,
+		TtfbMs: &ttfb, TtftMs: &ttft,
 	})
 	writer(domain.HealthEvent("zai", domain.HealthRefusal, "no key set", "", at))
 
@@ -233,6 +236,13 @@ func TestRouterSpoolRoundTrip(t *testing.T) {
 	}
 	if route.LatencyMs == nil || *route.LatencyMs != 150 {
 		t.Errorf("route latency_ms = %v, want 150", route.LatencyMs)
+	}
+	if route.TtfbMs == nil || *route.TtfbMs != 180 || route.TtftMs == nil || *route.TtftMs != 420 {
+		t.Errorf("route ttfb_ms/ttft_ms = %v/%v, want 180/420", route.TtfbMs, route.TtftMs)
+	}
+	record := ingest.RouteRequest(route, "glm-4.7", at)
+	if record.TtfbMs == nil || *record.TtfbMs != 180 || record.TtftMs == nil || *record.TtftMs != 420 {
+		t.Errorf("route record ttfb/ttft = %v/%v, want 180/420", record.TtfbMs, record.TtftMs)
 	}
 	if got := string(route.Extra["plugin"]); got != `"zai"` {
 		t.Errorf("route plugin = %s, want zai", got)

@@ -81,6 +81,8 @@ export function makeRequest(overrides: Partial<RequestRecord> = {}): RequestReco
     upstream: "https://api.anthropic.com",
     ts: 1_000,
     latencyMs: 100,
+    ttfbMs: null,
+    ttftMs: null,
     tokens: { ...ZERO_TOKENS, input: 10, output: 5 },
     stopReason: null,
     provider: "Anthropic",

@@ -12,7 +12,7 @@ import (
 // every open, WAL included, since the file is read while the server writes it.
 
 // SchemaVersion is the history schema's version, recorded in the meta table.
-const SchemaVersion = 10
+const SchemaVersion = 11
 
 // One row per main session, subagent or job; every node of a tree carries its root's id.
 const nodesDDL = `
@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS requests (
   upstream TEXT,
   ts INTEGER NOT NULL,
   latency_ms INTEGER,
+  ttfb_ms INTEGER,
+  ttft_ms INTEGER,
   input INTEGER,
   output INTEGER,
   cache_read INTEGER,
@@ -186,6 +188,9 @@ var versionColumns = []columnBatch{
 	{version: 9, tables: []tableColumns{{"requests", []string{"status TEXT"}}}},
 	// fallback is the model a request asked for when its lane sent it to another model.
 	{version: 10, tables: []tableColumns{{"requests", []string{"fallback TEXT"}}}},
+	// ttfb_ms and ttft_ms are the streaming latencies the route line carried: time to the
+	// answer's head and to its first token.
+	{version: 11, tables: []tableColumns{{"requests", []string{"ttfb_ms INTEGER", "ttft_ms INTEGER"}}}},
 }
 
 // NewerSchemaError names a database written by a newer radar: an older one refuses it.

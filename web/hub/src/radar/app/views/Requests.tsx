@@ -38,14 +38,17 @@ import {
   timeText,
 } from "../table.tsx";
 
-// the fixed columns leave the flexible "what" column about a quarter of a 1440 px desk
-const REQUEST_COLUMNS: Column<RequestSortKey>[] = [
+// the fixed columns leave the flexible "what" column about a quarter of a 1440 px desk;
+// "ttfb"/"ttft" sort nowhere (state.ts's sort keys), so their headers read as plain columns
+const REQUEST_COLUMNS: (Column<RequestSortKey> | Column<"ttfb"> | Column<"ttft">)[] = [
   { key: "time", label: "Time", width: "w-20" },
   { key: "agent", label: "Agent", width: "w-32" },
   { key: "what", label: "What" },
   { key: "model", label: "Model", width: "w-44" },
   { key: "status", label: "Status", numeric: true, width: "w-20" },
   { key: "latency", label: "Latency", numeric: true, width: "w-24" },
+  { key: "ttfb", label: "First byte", numeric: true, width: "w-24" },
+  { key: "ttft", label: "First token", numeric: true, width: "w-24" },
   { key: "input", label: "Input", numeric: true, width: "w-20" },
   { key: "output", label: "Output", numeric: true, width: "w-24" },
   { key: "cacheRead", label: "Cache read", numeric: true, width: "w-24" },
@@ -168,6 +171,12 @@ export function RequestRow({ request, now }: { request: RequestRecord; now: numb
       </td>
       <td class="num text-right" data-label="Latency">
         {fmtDuration(request.latencyMs)}
+      </td>
+      <td class="num text-right" data-label="First byte">
+        {fmtDuration(request.ttfbMs)}
+      </td>
+      <td class="num text-right" data-label="First token">
+        {fmtDuration(request.ttftMs)}
       </td>
       <td class="num text-right" data-label="Input">
         {fmtNum(request.tokens.input)}

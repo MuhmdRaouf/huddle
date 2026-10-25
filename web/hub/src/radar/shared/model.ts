@@ -68,6 +68,10 @@ export type RequestRecord = {
   upstream: string;
   ts: number;
   latencyMs: number | null;
+  /** Time to the answer's head (first response byte) and time to its first token, from the route
+   *  line; absent when no router saw the call or the line said none. */
+  ttfbMs?: number | null;
+  ttftMs?: number | null;
   tokens: Tokens;
   stopReason: string | null;
   /** The HTTP status the router recorded for the call ("200", "429"), from the route line's own
@@ -329,6 +333,10 @@ export type RouteEvent = {
   upstream: string;
   status: string | null;
   latencyMs: number | null;
+  /** Time to the answer's head and time to its first token, as the route line carried them;
+   *  absent when it said none. */
+  ttfbMs?: number | null;
+  ttftMs?: number | null;
   tokens: Tokens;
 };
 

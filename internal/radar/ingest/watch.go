@@ -949,6 +949,8 @@ func RouteRequest(line shared.SpoolLine, model string, ts int64) shared.RequestR
 		Upstream:   upstream,
 		Ts:         ts,
 		LatencyMs:  line.LatencyMs,
+		TtfbMs:     line.TtfbMs,
+		TtftMs:     line.TtftMs,
 		Tokens:     usageOfSpool(line.Usage),
 		StopReason: routeStatus(status, statusPresent),
 		Provider:   routedProvider(model, line),

@@ -134,8 +134,27 @@ func TestRequestRecordJSON(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := `{"id":"r1","sessionId":"s1","agentId":"a1","model":"glm-5.3","upstream":"https://x",` +
-			`"ts":5,"latencyMs":null,"tokens":{"input":1,"output":2,"cacheRead":3,"cacheWrite":4},` +
+			`"ts":5,"latencyMs":null,` +
+			`"tokens":{"input":1,"output":2,"cacheRead":3,"cacheWrite":4},` +
 			`"stopReason":null,"provider":"Z.ai"}`
+		if string(b) != want {
+			t.Errorf("json = %s, want %s", b, want)
+		}
+	})
+
+	t.Run("carries the streaming latencies only when a route line measured them", func(t *testing.T) {
+		b, err := json.Marshal(RequestRecord{
+			ID: "r1", SessionID: "s1", AgentID: "a1", Model: "glm-5.3", Upstream: "u",
+			Ts: 1, LatencyMs: ptr(int64(1_200)), TtfbMs: ptr(int64(180)), TtftMs: ptr(int64(420)),
+			Tokens: Tokens{Input: 1}, Provider: "p",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `{"id":"r1","sessionId":"s1","agentId":"a1","model":"glm-5.3","upstream":"u",` +
+			`"ts":1,"latencyMs":1200,"ttfbMs":180,"ttftMs":420,` +
+			`"tokens":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0},` +
+			`"stopReason":null,"provider":"p"}`
 		if string(b) != want {
 			t.Errorf("json = %s, want %s", b, want)
 		}
@@ -156,7 +175,8 @@ func TestRequestRecordJSON(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := `{"id":"r1","sessionId":"s1","agentId":"a1","model":"m","upstream":"u","ts":1,` +
-			`"latencyMs":9,"tokens":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0,"thinking":7},` +
+			`"latencyMs":9,` +
+			`"tokens":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0,"thinking":7},` +
 			`"stopReason":"end_turn","provider":"p","route":"provider","via":"zai","what":"→ text",` +
 			`"error":"boom","parentAgentId":"parent","promptHash":"h","headers":{"y":"2","x":"1"},` +
 			`"totals":true,"cacheWrite1h":2,"speed":"fast","geo":"us","serviceTier":"priority"}`
@@ -176,7 +196,8 @@ func TestRequestRecordJSON(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := `{"id":"r1","sessionId":"s1","agentId":"main","model":"gpt-5-codex","upstream":"",` +
-			`"ts":1,"latencyMs":null,"tokens":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0},` +
+			`"ts":1,"latencyMs":null,` +
+			`"tokens":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0},` +
 			`"stopReason":null,"provider":"other","harness":"codex","costUsd":0.0123}`
 		if string(tagged) != want {
 			t.Errorf("json = %s, want %s", tagged, want)
@@ -226,7 +247,8 @@ func TestRequestRecordJSON(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := `{"id":"r1","sessionId":"s1","agentId":"a1","model":"m","upstream":"u","ts":1,` +
-			`"latencyMs":null,"tokens":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0},` +
+			`"latencyMs":null,` +
+			`"tokens":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0},` +
 			`"cacheWrite1h":2,"stopReason":"end_turn","provider":"p",` +
 			`"what":"→ text","via":"127.0.0.1:18787","route":"direct","promptHash":"h"}`
 		if string(b) != want {

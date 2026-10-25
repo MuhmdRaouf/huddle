@@ -1,6 +1,7 @@
 // radar.spec.ts — the Radar tab over seeded data: every view loads without a console error,
 // the overview's Day cards carry the fixture's exact totals, and the requests table lists the
-// three seeded calls with the inspector showing one request's numbers, and the overview's four graphs
+// three seeded calls and yesterday's router-only call with its streaming latencies, the inspector
+// showing one request's numbers, and the overview's four graphs
 // carry the fixture's series. The views are walked through the views nav in one document, the way
 // owners switch views: the phone's nav holds four views and the Overview's More list the rest, the
 // tablet and the desktop list every view in a sidebar. Every view passes axe on both projects; on
@@ -399,8 +400,8 @@ test("the blocks view counts the seeded block once the scope includes the provid
   const rows = page.locator("[data-blocks-table] tbody tr");
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("3");
-  // yesterday's window holds the flash call, the codex turn and the twelve load requests
-  await expect(rows.nth(1)).toContainText(`${2 + LOAD_REQUESTS}`);
+  // yesterday's window holds the flash call, the timed call, the codex turn and the twelve load requests
+  await expect(rows.nth(1)).toContainText(`${3 + LOAD_REQUESTS}`);
 
   // the overview's card carries the same widened scope
   await pickView(page, "Overview");
@@ -409,8 +410,10 @@ test("the blocks view counts the seeded block once the scope includes the provid
 
 test("the requests table lists the seeded rows and the inspector opens one", async ({ page }) => {
   await signIn(page);
-  // the Requests view by its own address: the model chip narrows it to the three seeded calls
+  // the Requests view by its own address: the Week range brings yesterday's timed call in, and
+  // the model chip narrows it to the three seeded calls and that call
   await page.goto(`${theSetup().rootUrl}/#/radar/requests`);
+  await page.getByRole("group", { name: "Range" }).getByRole("button", { name: "Week" }).click();
   await page
     .getByRole("group", { name: "Filter by model" })
     .getByRole("button", { name: /^GLM 5\.3 \d+$/ })
@@ -426,6 +429,20 @@ test("the requests table lists the seeded rows and the inspector opens one", asy
     await expect(tr).toContainText(n(r.cacheRead));
     await expect(tr).toContainText(n(r.cacheWrite));
   }
+
+  // yesterday's router-only call is the row that measured its streaming latencies; the second
+  // seeded call's route line said none
+  const timed = page
+    .getByRole("row")
+    .filter({ hasText: n(TIMED.input) })
+    .filter({ hasText: n(TIMED.output) });
+  await expect(timed.locator("td[data-label='First byte']")).toHaveText("180ms");
+  await expect(timed.locator("td[data-label='First token']")).toHaveText("420ms");
+  const plain = page
+    .getByRole("row")
+    .filter({ hasText: n(SEEDED.requests[1]!.input) })
+    .filter({ hasText: n(SEEDED.requests[1]!.output) });
+  await expect(plain.locator("td[data-label='First byte']")).toHaveText("–");
 
   // the inspector: the first call's own numbers, input and output exact
   const first = SEEDED.requests[0];
@@ -519,6 +536,9 @@ const TODAY_USD = (TOTALS.input * 1.4 + TOTALS.output * 4.4 + TOTALS.cacheRead *
 /** The flash call twenty-five hours back, 10 in and 5 out at glm-5.3-flash's 0.15 / 0.50. */
 const FLASH_USD = (10 * 0.15 + 5 * 0.5) / 1e6;
 
+/** The timed call beside it: a router-only glm-5.3 line whose route line measured its streams. */
+const TIMED = { input: 777, output: 111 } as const;
+
 /** One overview graph's series, as its root's data-series attribute carries them. */
 async function graphSeries(graph: Locator): Promise<Record<string, number[]>> {
   await expect(graph).toHaveAttribute("data-series", /\S/);
@@ -552,8 +572,9 @@ test("the tokens graph sums each kind over the seven days", async ({ page }) => 
   await expect(graph).toContainText("Tokens by kind");
   const series = await graphSeries(graph);
   for (const kind of ["input", "output", "cacheRead", "cacheWrite"]) expect(series[kind]).toHaveLength(7);
-  expect(sum(series.input)).toBe(USAGE.uncached);
-  expect(sum(series.output)).toBe(USAGE.output);
+  // the timed call of yesterday sits inside the seven days with its own 777 in and 111 out
+  expect(sum(series.input)).toBe(USAGE.uncached + TIMED.input);
+  expect(sum(series.output)).toBe(USAGE.output + TIMED.output);
   expect(sum(series.cacheRead)).toBe(USAGE.cached);
   expect(sum(series.cacheWrite)).toBe(TOTALS.cacheWrite);
 });

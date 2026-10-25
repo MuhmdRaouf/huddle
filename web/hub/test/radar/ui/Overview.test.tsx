@@ -64,6 +64,8 @@ function priced(model: string, ts: number, upstream = "https://api.anthropic.com
     upstream,
     ts,
     latencyMs: 100,
+    ttfbMs: null,
+    ttftMs: null,
     tokens: { input: 900_000, output: 50_000, cacheRead: 7_050_000, cacheWrite: 0 },
     stopReason: "end_turn" as const,
     provider: "Anthropic",
