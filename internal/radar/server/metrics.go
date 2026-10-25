@@ -296,6 +296,7 @@ func alertFamilies(input MetricsInput) []metricFamily {
 	alerts := family("radar_alerts", "gauge", "Active alerts by kind.")
 	for _, kind := range []shared.AlertKind{
 		shared.AlertStuck, shared.AlertLoop, shared.AlertRetryStorm, shared.AlertContext, shared.AlertBudget,
+		shared.AlertQuotaNearlyUsed,
 	} {
 		count := 0
 		for _, alert := range input.Alerts {

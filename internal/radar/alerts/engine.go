@@ -19,6 +19,9 @@
 //   - budget:      a budget at 80% or more of its limit this period (and again at 100%).
 //   - upstream:     the Anthropic path is failing: the newest upstream_failing router health
 //     event is newer than the newest upstream_recovered and less than 10 minutes old.
+//   - quota_nearly_used: Claude's 5-hour plan window, off the newest statusline snapshot, at
+//     80% or more. One alert per window: its id is the window's reset, so the dismissal and
+//     the notification it gets hold until the next window.
 //
 // Ids are stable for one occurrence, so a dismissal holds until the same thing happens again.
 package alerts
@@ -30,6 +33,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
@@ -47,7 +51,7 @@ type AlertKind = shared.AlertKind
 // AlertKinds is every kind the engine detects.
 var AlertKinds = []shared.AlertKind{
 	shared.AlertStuck, shared.AlertLoop, shared.AlertRetryStorm, shared.AlertBudget, shared.AlertContext,
-	shared.AlertUpstream,
+	shared.AlertUpstream, shared.AlertQuotaNearlyUsed,
 }
 
 // Thresholds are the points each detector fires at.
@@ -92,6 +96,16 @@ type AlertInput struct {
 	APIErrors    []shared.APIErrorRecord
 	Budgets      []budget.BudgetSpend
 	RouterEvents []shared.RouterEventRecord
+	// ClaudeWindow is Claude's 5-hour plan window off the newest statusline snapshot; nil
+	// when no session has posted one.
+	ClaudeWindow *ClaudeWindow
+}
+
+// ClaudeWindow is Claude's 5-hour plan window as Claude Code reports it: the used percentage
+// (0 to 100) and the moment it resets, unix milliseconds.
+type ClaudeWindow struct {
+	UsedPct  float64
+	ResetsAt int64
 }
 
 // sessionData is one session's records, each list sorted oldest first.
@@ -591,6 +605,29 @@ func upstreamAlerts(in AlertInput, t Thresholds) []shared.Alert {
 	}}
 }
 
+// quotaNearlyUsedRatio is the share of a quota that raises quota_nearly_used.
+const quotaNearlyUsedRatio = 0.8
+
+// claudeWindowMs is the span of Claude's plan window.
+const claudeWindowMs = 5 * 60 * minuteMs
+
+// quotaAlerts raises quota_nearly_used while Claude's 5-hour window is at 80% or more, the id
+// keyed by the window's reset. Provider budgets have their own budget alert.
+func quotaAlerts(in AlertInput) []shared.Alert {
+	window := in.ClaudeWindow
+	if window == nil || window.ResetsAt <= in.Now || window.UsedPct < quotaNearlyUsedRatio*100 {
+		return nil
+	}
+	return []shared.Alert{{
+		ID:    fmt.Sprintf("%s:claude-5h:%d", shared.AlertQuotaNearlyUsed, window.ResetsAt),
+		Kind:  shared.AlertQuotaNearlyUsed,
+		Since: window.ResetsAt - claudeWindowMs,
+		Detail: fmt.Sprintf("Claude 5-hour window %d%% used, resets %s UTC",
+			int64(math.Round(window.UsedPct)), time.UnixMilli(window.ResetsAt).UTC().Format("15:04")),
+		Severity: shared.SeverityWarn,
+	}}
+}
+
 // severityOrder puts err before warn.
 var severityOrder = map[shared.AlertSeverity]int{shared.SeverityErr: 0, shared.SeverityWarn: 1}
 
@@ -616,6 +653,7 @@ func DetectAlerts(in AlertInput, t Thresholds) []shared.Alert {
 	alerts = append(alerts, retryAlerts(in, t, sessions)...)
 	alerts = append(alerts, budgetAlerts(in, t)...)
 	alerts = append(alerts, upstreamAlerts(in, t)...)
+	alerts = append(alerts, quotaAlerts(in)...)
 	slices.SortStableFunc(alerts, func(a, b shared.Alert) int {
 		if bySeverity := cmp.Compare(severityOrder[a.Severity], severityOrder[b.Severity]); bySeverity != 0 {
 			return bySeverity

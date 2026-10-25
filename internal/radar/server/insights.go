@@ -56,6 +56,9 @@ type InsightsOptions struct {
 	Notifier   *alerts.Notifier
 	Runner     alerts.Runner
 	Thresholds *alerts.Thresholds
+	// Quotas holds the statusline's plan-limits snapshots, the source of Claude's 5-hour
+	// window alert; nil raises none.
+	Quotas *Quotas
 	// Watcher is the ingest backlog word; while the first pass is still draining, its
 	// half-filled store can read as an alert worth a notification, so desktop notifications
 	// are held until it says the backlog is gone. Nil never holds.
@@ -67,6 +70,7 @@ type alertCacheState struct {
 	at      int64
 	version int64
 	ledger  int64
+	quota   int64
 	alerts  []shared.Alert
 }
 
@@ -109,6 +113,7 @@ type Insights struct {
 	namedAgents map[string]struct{}
 
 	notifier    *alerts.Notifier
+	quotas      *Quotas
 	watcher     Watcher
 	unsubscribe func()
 	stop        chan struct{}
@@ -141,6 +146,7 @@ func CreateInsights(ctx context.Context, options InsightsOptions) *Insights {
 		settings:    settings.ReadSettings(ctx, env),
 		dismissed:   settings.ReadDismissed(ctx, env, now().UnixMilli()),
 		namedAgents: map[string]struct{}{},
+		quotas:      options.Quotas,
 		watcher:     options.Watcher,
 		stop:        make(chan struct{}),
 	}
@@ -210,8 +216,9 @@ func (i *Insights) statusLocked() budget.BudgetStatus {
 func (i *Insights) allAlertsLocked() []shared.Alert {
 	at := i.nowMs()
 	version := i.store.Version()
+	window, quotaAt := i.claudeWindow()
 	if held := i.alertCache; held != nil && at-held.at < alertCacheMs &&
-		held.version == version && held.ledger == i.ledger.Version() {
+		held.version == version && held.ledger == i.ledger.Version() && held.quota == quotaAt {
 		return held.alerts
 	}
 	raw := i.store.Raw()
@@ -228,9 +235,28 @@ func (i *Insights) allAlertsLocked() []shared.Alert {
 		APIErrors:    i.store.APIErrors(),
 		Budgets:      spend,
 		RouterEvents: i.store.RouterEvents(),
+		ClaudeWindow: window,
 	}, i.thresholds)
-	i.alertCache = &alertCacheState{at: at, version: version, ledger: i.ledger.Version(), alerts: detected}
+	i.alertCache = &alertCacheState{
+		at: at, version: version, ledger: i.ledger.Version(), quota: quotaAt, alerts: detected,
+	}
 	return detected
+}
+
+// claudeWindow is Claude's 5-hour window off the newest plan-limits snapshot, and that
+// snapshot's time; nil when no snapshot names both the used share and the reset.
+func (i *Insights) claudeWindow() (*alerts.ClaudeWindow, int64) {
+	if i.quotas == nil {
+		return nil, 0
+	}
+	snapshot, ok := i.quotas.Newest()
+	if !ok || snapshot.FiveHour == nil || snapshot.FiveHourResetsAt == nil {
+		return nil, snapshot.At
+	}
+	return &alerts.ClaudeWindow{
+		UsedPct:  *snapshot.FiveHour,
+		ResetsAt: *snapshot.FiveHourResetsAt * 1000,
+	}, snapshot.At
 }
 
 // nameThingsLocked remembers what the store's sessions and agents are called, so old ledger

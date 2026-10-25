@@ -465,3 +465,35 @@ func TestInsightsHoldsNotificationsAcrossAPass(t *testing.T) {
 		}
 	})
 }
+
+func TestInsightsRaisesQuotaNearlyUsedOffTheNewestSnapshot(t *testing.T) {
+	world := makeEnv(t)
+	st := store.CreateStore(clock)
+	quotas := CreateQuotas(world.env)
+	created := CreateInsights(context.Background(), InsightsOptions{
+		Env: world.env, Store: st, Now: clock, TickMs: 0, Quotas: quotas,
+	})
+	t.Cleanup(created.Stop)
+	quotaKinds := func() []shared.Alert {
+		var out []shared.Alert
+		for _, alert := range created.Alerts() {
+			if alert.Kind == shared.AlertQuotaNearlyUsed {
+				out = append(out, alert)
+			}
+		}
+		return out
+	}
+	if got := quotaKinds(); len(got) != 0 {
+		t.Fatalf("no snapshot: alerts = %+v, want none", got)
+	}
+	used, resets := 85.0, nowAt.Add(2*time.Hour).Unix()
+	if _, err := quotas.Record(context.Background(), QuotaSnapshot{
+		SessionID: "s1", FiveHour: &used, FiveHourResetsAt: &resets, At: nowAt.Unix(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := quotaKinds()
+	if len(got) != 1 || got[0].Detail != "Claude 5-hour window 85% used, resets 14:00 UTC" {
+		t.Fatalf("alerts = %+v, want one for the 5-hour window", got)
+	}
+}

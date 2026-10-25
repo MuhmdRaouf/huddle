@@ -243,12 +243,14 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 	if tickMs == 0 {
 		tickMs = DefaultTickMs
 	}
+	quotas := CreateQuotas(options.Env)
 	insights := CreateInsights(appCtx, InsightsOptions{
 		Env:     options.Env,
 		Store:   st,
 		Now:     now,
 		TickMs:  tickMs,
 		Runner:  options.NotifyRunner,
+		Quotas:  quotas,
 		Watcher: watcher,
 	})
 	startedAt := now().UnixMilli()
@@ -257,7 +259,7 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		Version:   options.Version,
 		StartedAt: startedAt,
 		Insights:  insights,
-		Quotas:    CreateQuotas(options.Env),
+		Quotas:    quotas,
 		History:   hist,
 		SelfCheck: NewSelfCheck(hist, ingest.TranscriptRoots(appCtx, options.Env), now),
 		Watcher:   watcher,

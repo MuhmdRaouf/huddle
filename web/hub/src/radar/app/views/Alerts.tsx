@@ -33,6 +33,10 @@ const HOW_ALERTS_WORK: [AlertKind, string][] = [
     "upstream",
     "Claude's requests to Anthropic are failing through huddle-router: three failures within a minute raise it, and the first request that gets through clears it.",
   ],
+  [
+    "quota_nearly_used",
+    "Claude's 5-hour plan window at 80% or more, as the newest status line snapshot reports it. Raised once per window, with the reset time in UTC.",
+  ],
 ];
 
 /** The whole alerts tab: the active list (or an all-clear) and the plain-language explanation of each kind. */
@@ -75,7 +79,8 @@ export function AlertsView() {
         </dl>
         <p class="mt-4 mb-0 text-meta text-base-content/60">
           Dismissing hides that one occurrence; the same thing happening again raises a new alert. Desktop
-          notifications go out for budgets, stuck sessions and loops (turn them off in Settings).
+          notifications go out for budgets, Claude's 5-hour window, stuck sessions and loops (turn them off in
+          Settings).
         </p>
       </Panel>
     </div>

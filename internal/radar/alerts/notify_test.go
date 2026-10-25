@@ -157,6 +157,33 @@ func TestDesktopNotifications(t *testing.T) {
 		}
 	})
 
+	t.Run("notifies Claude's 5-hour window once, under its own title", func(t *testing.T) {
+		env := makeEnv(t)
+		ctx := context.Background()
+		var calls [][]string
+		notifier := NewNotifier(ctx, NotifierOptions{
+			Env:      env.env,
+			Enabled:  func() bool { return true },
+			Runner:   func(command string, args []string) { calls = append(calls, append([]string{command}, args...)) },
+			Platform: "darwin",
+			Now:      func() time.Time { return time.UnixMilli(1_000) },
+		})
+		window := shared.Alert{
+			ID:       "quota_nearly_used:claude-5h:50400000",
+			Kind:     shared.AlertQuotaNearlyUsed,
+			Since:    32_400_000,
+			Detail:   "Claude 5-hour window 80% used, resets 14:00 UTC",
+			Severity: shared.SeverityWarn,
+		}
+		if got := notifier.Consider(ctx, []shared.Alert{window, window}); got != 1 {
+			t.Fatalf("consider = %d, want 1", got)
+		}
+		want := `display notification "Claude 5-hour window 80% used, resets 14:00 UTC" with title "Radar: Claude 5-hour window"`
+		if len(calls) != 1 || calls[0][2] != want {
+			t.Errorf("calls = %v, want one %q", calls, want)
+		}
+	})
+
 	t.Run("does nothing when turned off, by the toggle or the environment", func(t *testing.T) {
 		env := makeEnv(t)
 		ctx := context.Background()

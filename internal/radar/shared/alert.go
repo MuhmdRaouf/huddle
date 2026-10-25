@@ -16,6 +16,8 @@ const (
 	// AlertUpstream is the Anthropic path's alert: Claude Code cannot reach Anthropic through
 	// huddle-router.
 	AlertUpstream AlertKind = "upstream"
+	// AlertQuotaNearlyUsed is Claude's 5-hour plan window at 80% or more.
+	AlertQuotaNearlyUsed AlertKind = "quota_nearly_used"
 )
 
 // AlertSeverity is how loud the dashboard shows an alert.

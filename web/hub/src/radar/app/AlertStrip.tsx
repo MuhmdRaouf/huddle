@@ -18,11 +18,19 @@ export const ALERT_ICON: Record<AlertKind, IconName> = {
   context: "gauge",
   budget: "dollar",
   upstream: "alert",
+  quota_nearly_used: "clock",
 };
 
-/** Where an alert happened: the project and agent, the session id when the project is unknown, or the router. */
+/** Where the alerts that belong to no session happened, by kind; any other reads as the router. */
+const SESSIONLESS_WHERE: Partial<Record<AlertKind, string>> = {
+  budget: "All sessions",
+  quota_nearly_used: "Claude",
+};
+
+/** Where an alert happened: the project and agent, the session id when the project is unknown, Claude's plan
+ *  window, or the router. */
 export function alertWhere(alert: Alert): string {
-  if (alert.sessionId === "") return alert.kind === "budget" ? "All sessions" : "Router";
+  if (alert.sessionId === "") return SESSIONLESS_WHERE[alert.kind] ?? "Router";
   const project = alert.project === "" ? alert.sessionId.slice(0, 8) : alert.project;
   return alert.agentId === null ? project : `${project}, ${alert.agentId.slice(0, 12)}`;
 }

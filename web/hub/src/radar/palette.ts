@@ -77,6 +77,7 @@ const ALERT_LABEL: Record<AlertKind, string> = {
   context: "Context nearly full",
   budget: "Budget",
   upstream: "Claude cannot reach Anthropic through huddle-router",
+  quota_nearly_used: "Quota nearly used",
 };
 
 export function alertLabel(kind: AlertKind): string {

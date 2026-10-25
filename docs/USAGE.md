@@ -316,6 +316,11 @@ An idle hub costs next to nothing: with no request and no page open, `huddle ser
 core over a home holding 500 days-old sessions, because Radar's 5 s transcript rescan re-reads only the
 folders that changed. `TestHubIdleCPU` holds it to that budget.
 
+A budget warns at 80% of its limit and again at 100%. Claude's 5-hour plan window has no budget, so
+Radar raises a "Quota nearly used" alert when the newest status line snapshot shows it at 80% or more:
+`Claude 5-hour window 80% used, resets 14:00 UTC`. It comes once per window, as a desktop notification
+too, and the next window raises a new one.
+
 ## Status bar
 
 `huddle statusline` prints one line for Claude Code's status bar: the project's channel and who is

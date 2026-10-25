@@ -199,12 +199,14 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 	if tickMs == 0 {
 		tickMs = server.DefaultTickMs
 	}
+	quotas := server.CreateQuotas(env)
 	insights := server.CreateInsights(appCtx, server.InsightsOptions{
 		Env:     env,
 		Store:   st,
 		Now:     now,
 		TickMs:  tickMs,
 		Runner:  options.NotifyRunner,
+		Quotas:  quotas,
 		Watcher: watcher,
 	})
 	startedAt := now().UnixMilli()
@@ -222,7 +224,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		StartedAt:     startedAt,
 		Port:          options.Port,
 		Insights:      insights,
-		Quotas:        server.CreateQuotas(env),
+		Quotas:        quotas,
 		History:       hist,
 		SelfCheck:     server.NewSelfCheck(hist, ingest.TranscriptRoots(appCtx, env), now),
 		Watcher:       watcher,

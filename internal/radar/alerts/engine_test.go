@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/radar/budget"
@@ -792,5 +793,67 @@ func TestDetectAlertsJoinsTheUpstreamAlert(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("DetectAlerts = %+v, want an upstream alert among them", got)
+	}
+}
+
+// onlyQuota keeps the quota_nearly_used alerts alone.
+func onlyQuota(alerts []shared.Alert) []shared.Alert {
+	var out []shared.Alert
+	for _, alert := range alerts {
+		if alert.Kind == shared.AlertQuotaNearlyUsed {
+			out = append(out, alert)
+		}
+	}
+	return out
+}
+
+func TestQuotaNearlyUsedLeavesProviderBudgetsToTheBudgetAlert(t *testing.T) {
+	// a provider budget at 90% keeps its own budget alert and raises no quota_nearly_used
+	in := input()
+	in.Budgets = []budget.BudgetSpend{{
+		ID: "b1", SpentUsd: shared.USD(9), LimitUsd: shared.USD(10), Pct: budget.Percent(90),
+		Scope: "provider:zai", Period: budget.PeriodMonth, Action: budget.ActionStop, PeriodStart: 5,
+	}}
+	alerts := detect(in)
+	wantKinds(t, alerts, "budget")
+}
+
+func TestQuotaNearlyUsedRaisesOnceAt80PercentForTheFiveHourWindow(t *testing.T) {
+	// 14:00 UTC on 2027-01-15, after now
+	resets := time.Date(2027, 1, 15, 14, 0, 0, 0, time.UTC).UnixMilli()
+	at := resets - 2*60*minMs
+	detectWindow := func(usedPct float64, resetsAt int64) []shared.Alert {
+		in := input()
+		in.Now = at
+		in.ClaudeWindow = &ClaudeWindow{UsedPct: usedPct, ResetsAt: resetsAt}
+		return onlyQuota(detect(in))
+	}
+
+	if got := detectWindow(79.4, resets); len(got) != 0 {
+		t.Fatalf("at 79%%: alerts = %+v, want none", got)
+	}
+	at80 := detectWindow(80, resets)
+	if len(at80) != 1 {
+		t.Fatalf("at 80%%: alerts = %+v, want one", at80)
+	}
+	alert := at80[0]
+	if alert.ID != fmt.Sprintf("quota_nearly_used:claude-5h:%d", resets) ||
+		alert.Since != resets-5*60*minMs || alert.Severity != shared.SeverityWarn || alert.CostUsd != nil {
+		t.Errorf("alert = %+v", alert)
+	}
+	if alert.Detail != "Claude 5-hour window 80% used, resets 14:00 UTC" {
+		t.Errorf("detail = %q", alert.Detail)
+	}
+	if again := detectWindow(91, resets); len(again) != 1 || again[0].ID != alert.ID {
+		t.Fatalf("at 91%%: alerts = %+v, want the one with id %q", again, alert.ID)
+	}
+	if next := detectWindow(85, resets+5*60*minMs); len(next) != 1 || next[0].ID == alert.ID {
+		t.Fatalf("next window: alerts = %+v, want a new id", next)
+	}
+	if got := detectWindow(95, at-minMs); len(got) != 0 {
+		t.Errorf("a window already reset: alerts = %+v, want none", got)
+	}
+	if got := onlyQuota(detect(input())); len(got) != 0 {
+		t.Errorf("no snapshot: alerts = %+v, want none", got)
 	}
 }

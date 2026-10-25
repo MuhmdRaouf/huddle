@@ -93,6 +93,25 @@ describe("AlertStrip", () => {
       NOW,
     );
     expect(rowTextOf(router)).toContain("Router");
+    const { container: claude } = renderApp(
+      <AlertStrip />,
+      {
+        alerts: [
+          makeAlert({
+            kind: "quota_nearly_used",
+            sessionId: "",
+            project: "",
+            agentId: null,
+            costUsd: null,
+            detail: "Claude 5-hour window 80% used, resets 14:00 UTC",
+          }),
+        ],
+      },
+      NOW,
+    );
+    expect(rowTextOf(claude)).toContain("Quota nearly used");
+    expect(rowTextOf(claude)).toContain("Claude");
+    expect(rowTextOf(claude)).not.toContain("Router");
     const { container: idOnly } = renderApp(
       <AlertStrip />,
       { alerts: [makeAlert({ project: "", agentId: null })] },
@@ -135,8 +154,9 @@ describe("AlertsView", () => {
       "Context nearly full",
       "Budget",
       "Claude cannot reach Anthropic through huddle-router",
+      "Quota nearly used",
     ]);
-    expect(container.querySelectorAll("dd")).toHaveLength(6);
+    expect(container.querySelectorAll("dd")).toHaveLength(7);
   });
 
   it("dismisses from the full list too", async () => {

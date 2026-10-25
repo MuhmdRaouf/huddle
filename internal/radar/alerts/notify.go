@@ -31,7 +31,7 @@ type Runner func(command string, args []string)
 
 // notifyKinds are the kinds worth a desktop notification.
 var notifyKinds = map[shared.AlertKind]bool{
-	shared.AlertBudget: true, shared.AlertStuck: true, shared.AlertLoop: true,
+	shared.AlertBudget: true, shared.AlertStuck: true, shared.AlertLoop: true, shared.AlertQuotaNearlyUsed: true,
 }
 
 const (
@@ -112,11 +112,12 @@ func NotifyCommand(platform string, env domain.EnvLookup, title, body string) *C
 
 // titles is each kind's notification title.
 var titles = map[shared.AlertKind]string{
-	shared.AlertBudget:     "Radar: budget",
-	shared.AlertStuck:      "Radar: session looks stuck",
-	shared.AlertLoop:       "Radar: agent is looping",
-	shared.AlertRetryStorm: "Radar: retry storm",
-	shared.AlertContext:    "Radar: context nearly full",
+	shared.AlertBudget:          "Radar: budget",
+	shared.AlertStuck:           "Radar: session looks stuck",
+	shared.AlertLoop:            "Radar: agent is looping",
+	shared.AlertRetryStorm:      "Radar: retry storm",
+	shared.AlertContext:         "Radar: context nearly full",
+	shared.AlertQuotaNearlyUsed: "Radar: Claude 5-hour window",
 }
 
 // NotifierOptions shapes a Notifier: the environment, the switch read on every call (the

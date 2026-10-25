@@ -92,6 +92,7 @@ func TestMetrics(t *testing.T) {
 			`radar_router_events_total{provider="zai",event="fallback"} 1`,
 			`radar_sessions{state="ended"} 1`,
 			`radar_alerts{kind="stuck"} 0`,
+			`radar_alerts{kind="quota_nearly_used"} 0`,
 			`radar_budget_spent_usd{budget="b1",scope="total",period="day"} 1.5`,
 			`# TYPE radar_request_latency_seconds histogram`,
 		} {
