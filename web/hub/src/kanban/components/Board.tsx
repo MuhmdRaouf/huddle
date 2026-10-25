@@ -169,7 +169,26 @@ export function Board({
   const [overrides, setOverrides] = useState<ReadonlyMap<ColumnId, boolean>>(new Map());
   const [hovered, setHovered] = useState<string | null>(null);
   const columnsRef = useRef<HTMLDivElement>(null);
-  const lanesRef = useRef<HTMLDivElement>(null);
+  const lanesRef = useRef<HTMLDivElement | null>(null);
+  // the Kanban header's height above the phone's strip, kept on the tab as --kanban-head: the
+  // strip's height changes with the header's, so watching the strip catches every change
+  const unwatchHead = useRef<(() => void) | null>(null);
+  const mountLanes = useCallback((lanes: HTMLDivElement | null) => {
+    lanesRef.current = lanes;
+    unwatchHead.current?.();
+    unwatchHead.current = null;
+    const tab = lanes?.closest<HTMLElement>(".kanban-tab");
+    if (lanes == null || tab == null) return;
+    const watch = new ResizeObserver(() => {
+      const head = lanes.getBoundingClientRect().top - tab.getBoundingClientRect().top;
+      tab.style.setProperty("--kanban-head", `${Math.round(head)}px`);
+    });
+    watch.observe(lanes);
+    unwatchHead.current = () => {
+      watch.disconnect();
+      tab.style.removeProperty("--kanban-head");
+    };
+  }, []);
   // the phone's strip opens on the first column with cards, once per mount of the strip
   const opening = useRef<ColumnId | null>(null);
   const placed = useRef<HTMLDivElement | null>(null);
@@ -284,7 +303,7 @@ export function Board({
       <FlowBar columns={infos} onPick={pickColumn} activeId={narrow ? active : undefined} />
       {hiddenLine}
       {narrow ? (
-        <div ref={lanesRef} class="lanes" onScroll={onLanesScroll}>
+        <div ref={mountLanes} class="lanes" onScroll={onLanesScroll}>
           {COLUMN_IDS.map((id) => (
             <Column key={id} {...columnProps(id)} />
           ))}

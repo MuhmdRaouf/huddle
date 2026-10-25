@@ -545,6 +545,58 @@ test.describe("the board on a phone", () => {
     });
   });
 
+  test.describe("a deep backlog", () => {
+    /** 150 backlog cards and two in progress, removed again so every other scenario keeps its
+     *  board. */
+    const backlogIds = Array.from({ length: 150 }, (_, i) => `DEEP-${i + 1}`);
+    const workingIds = ["DEEP-W1", "DEEP-W2"];
+
+    test.afterEach(() => {
+      for (const id of backlogIds) rmSync(path.join(boardDir(), "backlog", `${id}.md`), { force: true });
+      for (const id of workingIds) rmSync(path.join(boardDir(), "in-progress", `${id}.md`), { force: true });
+    });
+
+    test("each column scrolls on its own and keeps its place across a tab switch", async ({ page }) => {
+      const backlog = page.locator('.lanes section[data-column="backlog"]');
+
+      await test.step("Given 150 backlog cards and two in progress at 390×844", async () => {
+        for (const id of backlogIds) seedTicket("backlog", id, `Deep card ${id}`);
+        for (const id of workingIds) seedTicket("in-progress", id, `Working card ${id}`);
+        await kanbanAt(page, 390, 844);
+        await expect(page.locator(".kanban-tab article.card[data-id^='DEEP-']")).toHaveCount(152);
+      });
+
+      await test.step("When the backlog lane is scrolled 4,000 px", async () => {
+        await backlog.evaluate((el) => el.scrollTo({ top: 4000 }));
+        await expect.poll(() => backlog.evaluate((el) => el.scrollTop)).toBeGreaterThan(3990);
+      });
+
+      await test.step("Then a tap on In Progress shows an In Progress card on screen", async () => {
+        await page.getByRole("tab", { name: /^In Progress/ }).tap();
+        await expect(page.getByRole("tab", { selected: true })).toHaveText(/^In Progress/);
+        await expect(page.locator('.lanes section[data-column="in-progress"] article.card').first()).toBeInViewport();
+      });
+
+      await test.step("And a tap back on Backlog finds the lane where it was left", async () => {
+        await page.getByRole("tab", { name: /^Backlog/ }).tap();
+        await expect(page.getByRole("tab", { selected: true })).toHaveText(/^Backlog/);
+        const top = await backlog.evaluate((el) => el.scrollTop);
+        expect(Math.abs(top - 4000)).toBeLessThanOrEqual(10);
+      });
+
+      await test.step("And the tab carries the Kanban header's height as --kanban-head", async () => {
+        const head = await page.locator(".kanban-tab").evaluate((tab) => {
+          const lanes = tab.querySelector(".lanes") ?? tab;
+          return {
+            said: parseFloat(getComputedStyle(tab).getPropertyValue("--kanban-head")),
+            seen: lanes.getBoundingClientRect().top - tab.getBoundingClientRect().top,
+          };
+        });
+        expect(Math.abs(head.said - head.seen)).toBeLessThanOrEqual(1);
+      });
+    });
+  });
+
   test("the picker opens as a full-width sheet and lists every board the hub knows", async ({ page }) => {
     await test.step("Given a second board and the board open at 390×844", async () => {
       await seedSecondBoard();

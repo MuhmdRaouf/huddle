@@ -1055,11 +1055,31 @@
   font-weight: 600;
 }
 
-/* the phone's strip: every column one screen wide, side by side, and a swipe snaps to the next */
+/* the phone's strip: every column one screen wide, side by side, and a swipe snaps to the next.
+   The tab, its board and the strip fill the shell's pane, so the strip takes the height the
+   shell header, the Kanban header (--kanban-head, which Board.tsx measures) and the tab bar
+   leave, and the pane itself never scrolls. Each column is its own vertical scroller and stays
+   mounted, so a tab switch shows a column's first card and a column keeps its place. */
+
+.kanban-tab:has(> .board-with-panel > .board[data-layout="lanes"]) {
+  min-height: 0;
+}
+
+.kanban-tab .board-with-panel:has(> .board[data-layout="lanes"]) {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.kanban-tab .board[data-layout="lanes"] {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 
 .kanban-tab .lanes {
   display: flex;
-  align-items: flex-start;
+  flex: 1;
+  min-height: 0;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   overscroll-behavior-x: contain;
@@ -1070,6 +1090,8 @@
   flex: 0 0 100%;
   box-sizing: border-box;
   padding: 4px 16px 24px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   scroll-snap-align: start;
   scroll-snap-stop: always;
 }
