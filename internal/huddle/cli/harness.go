@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/harness"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 )
@@ -56,7 +57,7 @@ func (c *cli) harness(ctx context.Context) int {
 // harnessInstall wires the harness and says what changed. The hooks ride the same install
 // where the agent has a lifecycle mechanism; the note names them.
 func (c *cli) harnessInstall(ctx context.Context, hudHome, name string) int {
-	got, err := harness.Install(ctx, hudHome, harnessEnv(c.w), name, harness.NewEntry(name, harnessBin(c.w)))
+	got, err := harness.Install(ctx, hudHome, harnessEnv(c.w), name, harnessEntry(c.w, name))
 	if err != nil {
 		return c.die(err.Error(), 1)
 	}
@@ -77,7 +78,7 @@ func (c *cli) harnessInstall(ctx context.Context, hudHome, name string) int {
 
 // harnessRemove takes the harness back out and says what happened.
 func (c *cli) harnessRemove(ctx context.Context, hudHome, name string) int {
-	got, err := harness.Remove(ctx, hudHome, harnessEnv(c.w), name, harness.NewEntry(name, harnessBin(c.w)))
+	got, err := harness.Remove(ctx, hudHome, harnessEnv(c.w), name, harnessEntry(c.w, name))
 	if err != nil {
 		return c.die(err.Error(), 1)
 	}
@@ -94,6 +95,17 @@ func (c *cli) harnessRemove(ctx context.Context, hudHome, name string) int {
 		c.say(fmt.Sprintf("%s: removed from %s (the file keeps other changes)", name, got.Path))
 	}
 	return 0
+}
+
+// harnessEntry answers the entry one harness's config gets: this binary's mcp word, and the
+// router's /gateway on the port the router serves ($HUDDLE_ROUTER_PORT, else 18786). A port
+// variable that does not parse names no gateway, the way the router refuses it.
+func harnessEntry(w *World, name string) harness.Entry {
+	entry := harness.NewEntry(name, harnessBin(w))
+	if port, err := router.PortOf(worldEnv(w)); err == nil {
+		entry.Gateway = fmt.Sprintf("http://127.0.0.1:%d%s", port, router.GatewayPrefix)
+	}
+	return entry
 }
 
 // harnessEnv answers the harness package's view of this world: its variables and its PATH,

@@ -62,13 +62,14 @@ func TestLoadConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("a missing file is an empty config, not an error", func(t *testing.T) {
+	t.Run("a missing file is the built-in defaults, not an error", func(t *testing.T) {
 		config, err := loadFrom(t, envWithConfig(t, ""))
 		if err != nil {
 			t.Fatalf("LoadConfig: %v", err)
 		}
-		if len(config.Routes) != 0 || config.Anthropic != "" || config.OpenAI != "" {
-			t.Errorf("config = %+v, want the zero config", config)
+		want := Config{Anthropic: "https://api.anthropic.com", OpenAI: "https://api.openai.com"}
+		if !reflect.DeepEqual(config, want) {
+			t.Errorf("config = %+v, want %+v", config, want)
 		}
 	})
 
@@ -200,5 +201,24 @@ func TestResolveHomeFollowsTheEnvironment(t *testing.T) {
 	user := t.TempDir()
 	if got, err := resolveHome(domain.EnvLookup{"HOME": user}); err != nil || got != filepath.Join(user, ".config", "huddle") {
 		t.Errorf("resolveHome = %q, %v; want the huddle dir under the user's config", got, err)
+	}
+}
+
+// A file that names no family default gets the API's own host for it, so a harness pointed at
+// the gateway reaches its provider with no gateway.json at all; a default the file names wins.
+func TestLoadConfigFillsTheFamilyDefaults(t *testing.T) {
+	config, err := loadFrom(t, envWithConfig(t, `{"routes":[{"match":"glm-*","upstream":"https://glm.example"}]}`))
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if config.Anthropic != "https://api.anthropic.com" || config.OpenAI != "https://api.openai.com" {
+		t.Errorf("defaults = %q, %q; want the API hosts", config.Anthropic, config.OpenAI)
+	}
+	named, err := loadFrom(t, envWithConfig(t, `{"openai":"https://openai.example"}`))
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if named.OpenAI != "https://openai.example" || named.Anthropic != "https://api.anthropic.com" {
+		t.Errorf("config = %+v, want the named openai default kept and anthropic filled", named)
 	}
 }

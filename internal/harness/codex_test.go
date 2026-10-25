@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -147,5 +148,63 @@ func TestSortedKeysSortsWhateverOrderTheMapGave(t *testing.T) {
 		if got := strings.Join(sortedKeys(m), ""); got != "abc" {
 			t.Fatalf("sortedKeys = %q, want abc in order", got)
 		}
+	}
+}
+
+// Setup writes codex's whole wiring in one block: the MCP server, and an opt-in model provider
+// that sends the Responses API to the router's gateway over plain HTTP on loopback, naming
+// itself on every request. The user's own provider and openai_base_url stay as they were.
+func TestCodexSetupWritesItsWiring(t *testing.T) {
+	env, _ := testEnv(t, map[string]bool{"codex": true})
+	hudHome := t.TempDir()
+	entry := NewEntry("codex", "/users/home/bin/huddle")
+	entry.Gateway = "http://127.0.0.1:18786/gateway"
+	got, err := Install(context.Background(), hudHome, env, "codex", entry)
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	raw, err := os.ReadFile(got.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `# huddle:begin
+[mcp_servers.huddle]
+command = "/users/home/bin/huddle"
+args = ["mcp"]
+
+[mcp_servers.huddle.env]
+HUDDLE_HARNESS = "codex"
+
+[model_providers.huddle]
+name = "huddle"
+base_url = "http://127.0.0.1:18786/gateway/v1"
+wire_api = "responses"
+env_key = "OPENAI_API_KEY"
+supports_websockets = false
+
+[model_providers.huddle.http_headers]
+X-Huddle-Harness = "codex"
+# huddle:end
+`
+	hooks := string(tomlHookBlock(entry.Command, "codex", "\n"))
+	if string(raw) != want+hooks {
+		t.Errorf("config =\n%s\nwant\n%s", raw, want+hooks)
+	}
+	for _, never := range []string{"openai_base_url", "model_provider =", "[profiles", "CODEX_CA_CERTIFICATE"} {
+		if strings.Contains(string(raw), never) {
+			t.Errorf("config holds %q; setup never writes it", never)
+		}
+	}
+	var doc struct {
+		Providers map[string]struct {
+			BaseURL string `toml:"base_url"`
+		} `toml:"model_providers"`
+	}
+	if _, err := toml.Decode(string(raw), &doc); err != nil {
+		t.Fatalf("the config does not parse: %v", err)
+	}
+	removed, err := Remove(context.Background(), hudHome, env, "codex", entry)
+	if err != nil || !removed.FileGone {
+		t.Errorf("remove = %+v, %v; want the created file gone", removed, err)
 	}
 }

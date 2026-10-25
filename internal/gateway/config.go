@@ -1,6 +1,7 @@
 // The gateway's config: $HUDDLE_HOME/gateway.json names routes — a model glob to an upstream —
-// and the two family defaults a model no route names falls back to. A missing file is an empty
-// config; anything unreadable or ill-shaped is a startup error naming the file.
+// and the two family defaults a model no route names falls back to. A missing file, or a default
+// it leaves out, is the API's own host; anything unreadable or ill-shaped is a startup error
+// naming the file.
 package gateway
 
 import (
@@ -23,6 +24,13 @@ type Route struct {
 	Match    string `json:"match"`
 	Upstream string `json:"upstream"`
 }
+
+// The family defaults a config that names none falls back to: each API's own host, so a
+// harness pointed at the gateway reaches its provider with no gateway.json at all.
+const (
+	defaultAnthropic = "https://api.anthropic.com"
+	defaultOpenAI    = "https://api.openai.com"
+)
 
 // Config is the gateway's whole configuration.
 type Config struct {
@@ -59,7 +67,8 @@ func resolveHome(env domain.EnvLookup) (string, error) {
 }
 
 // LoadConfig reads the config the environment's huddle home names. A file that is not there is
-// an empty config; one that does not hold up is a *ConfigError naming the file.
+// a config of the built-in family defaults, and a family default the file leaves out is the
+// built-in one; a file that does not hold up is a *ConfigError naming the file.
 func LoadConfig(env domain.EnvLookup) (Config, error) {
 	root, err := resolveHome(env)
 	if err != nil {
@@ -69,7 +78,7 @@ func LoadConfig(env domain.EnvLookup) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return Config{}, nil
+			return Config{}.withDefaults(), nil
 		}
 		return Config{}, &ConfigError{Path: path, Reason: err.Error()}
 	}
@@ -94,7 +103,18 @@ func LoadConfig(env domain.EnvLookup) (Config, error) {
 	if config.OpenAI != "" && !validUpstream(config.OpenAI) {
 		return Config{}, &ConfigError{Path: path, Reason: fmt.Sprintf("openai must be an http(s) URL, got %q", config.OpenAI)}
 	}
-	return config, nil
+	return config.withDefaults(), nil
+}
+
+// withDefaults answers the config with the built-in family default wherever it names none.
+func (c Config) withDefaults() Config {
+	if c.Anthropic == "" {
+		c.Anthropic = defaultAnthropic
+	}
+	if c.OpenAI == "" {
+		c.OpenAI = defaultOpenAI
+	}
+	return c
 }
 
 // validUpstream answers whether raw is an absolute http or https URL.

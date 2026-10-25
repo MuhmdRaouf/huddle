@@ -188,6 +188,10 @@ stays, and remove says so. Install also wires each harness's own hooks, so its s
 list next to Claude Code's, badged by agent. A hook never blocks: it posts to the local hub and answers in
 silence, inside a short deadline.
 
+| Harness | MCP | Model traffic |
+|---|---|---|
+| `codex` | `[mcp_servers.huddle]` in `~/.codex/config.toml` (`$CODEX_HOME` moves it) | An opt-in `[model_providers.huddle]`: `codex -c model_provider=huddle` sends the Responses API to `http://127.0.0.1:18786/gateway/v1` with your `OPENAI_API_KEY`, named `codex` in radar. Plain HTTP on loopback, so no CA; your default provider and `openai_base_url` stay as they are |
+
 ### The MCP surface
 
 A channel is a standard MCP pub/sub surface, so an agent can watch it without polling in a loop. The server
@@ -206,7 +210,8 @@ The huddle-router daemon serves a gateway under `/gateway` that speaks the Anthr
 OpenAI Chat Completions and Responses APIs. Point a harness's base URL at it and every request goes to the
 upstream its model's route names, unchanged, while radar records the model, latency and tokens. Name your
 upstreams in `$HUDDLE_HOME/gateway.json`; a model goes to the longest glob that matches it, anything else to
-its API family's default:
+its API family's default, which is the API's own host (`https://api.anthropic.com`, `https://api.openai.com`)
+when the file names none:
 
 ```json
 {

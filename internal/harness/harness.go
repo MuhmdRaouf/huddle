@@ -47,6 +47,7 @@ type Entry struct {
 	Command string
 	Args    []string
 	Env     map[string]string
+	Gateway string // the router's /gateway base URL a harness's model provider names; "" names none
 }
 
 // NewEntry answers the entry the named harness runs: this binary, its mcp word, and the env

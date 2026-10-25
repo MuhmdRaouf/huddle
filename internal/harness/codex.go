@@ -185,8 +185,33 @@ func (tomlAdapter) block(entry Entry, lead string) []byte {
 	for _, key := range keys {
 		lines = append(lines, key+" = "+tomlString(entry.Env[key]))
 	}
+	if entry.Gateway != "" {
+		lines = append(lines, providerLines(entry)...)
+	}
 	lines = append(lines, tomlEnd)
 	return []byte(lead + strings.Join(lines, "\n") + "\n")
+}
+
+// providerLines answers the opt-in model provider that routes codex through the router's
+// gateway: `codex -c model_provider=huddle` picks it, and the user's own default provider and
+// openai_base_url stay untouched, so a ChatGPT login keeps working. The gateway's Responses
+// route is plain HTTP on loopback, so no CA rides along; codex appends /responses to the
+// base, and the gateway forwards it with the client's own key. Websockets stay off because the
+// gateway speaks HTTP only, and the harness header names codex on radar's route line.
+func providerLines(entry Entry) []string {
+	name := "model_providers." + entry.Name
+	return []string{
+		"",
+		"[" + name + "]",
+		"name = " + tomlString(entry.Name),
+		"base_url = " + tomlString(entry.Gateway+"/v1"),
+		"wire_api = \"responses\"",
+		"env_key = \"OPENAI_API_KEY\"",
+		"supports_websockets = false",
+		"",
+		"[" + name + ".http_headers]",
+		"X-Huddle-Harness = " + tomlString(entry.Env["HUDDLE_HARNESS"]),
+	}
 }
 
 // inner answers the lines install writes between the two markers.

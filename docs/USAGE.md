@@ -229,7 +229,10 @@ huddle harness remove codex     # config back to its previous bytes
 The names are exactly `codex`, `gemini`, `qwen`, `opencode` and `crush` (exit 4 names nothing
 else). Install adds the MCP entry plus the harness's own lifecycle hooks, so its sessions sit in
 the Now list beside Claude Code's, badged by agent; a hook posts to the local hub inside a 3
-second deadline and never blocks its agent. Every change is recorded in
+second deadline and never blocks its agent. For codex, install also adds an opt-in model
+provider, `huddle`, that sends the Responses API through the router's `/gateway/v1` over plain
+HTTP on loopback with your own `OPENAI_API_KEY`: run `codex -c model_provider=huddle` to use it.
+Your default provider and `openai_base_url` stay as they are. Every change is recorded in
 `~/.config/huddle/harness-ledger.json` (or `$HUDDLE_HOME/harness-ledger.json`) and undone exactly
 by `remove`.
 
@@ -439,8 +442,9 @@ shows up in radar ([README · The gateway](../README.md#the-gateway)).
    ```
 
    A model goes to the longest glob that matches it; anything else goes to its API family's
-   default. Requests are forwarded byte for byte with their headers — the gateway adds nothing and
-   keeps nothing but the route line's metadata.
+   default, which is the API's own host (`https://api.anthropic.com`, `https://api.openai.com`)
+   when the file names none, so the file is optional. Requests are forwarded byte for byte with
+   their headers — the gateway adds nothing and keeps nothing but the route line's metadata.
 
 2. Run the router and read the address:
 
@@ -449,8 +453,9 @@ shows up in radar ([README · The gateway](../README.md#the-gateway)).
    huddle gateway status    # the /gateway address, or the way to start the router
    ```
 
-3. Give your harness the base URL `http://127.0.0.1:<router port>/gateway` —
-   `model_providers.<x>.base_url` in `~/.codex/config.toml` for Codex CLI, the provider's
+3. Give your harness the base URL `http://127.0.0.1:<router port>/gateway/v1` —
+   `model_providers.<x>.base_url` in `~/.codex/config.toml` for Codex CLI (`huddle harness
+   install codex` writes one named `huddle`; `codex -c model_provider=huddle` uses it), the provider's
    `baseURL` for opencode, `providers.<x>.base_url` for Crush. A client can name itself with an
    `X-Huddle-Harness` header, which lands on the route line next to `via: gateway`, so radar
    tells the harnesses apart.
