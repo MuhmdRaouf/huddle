@@ -161,8 +161,14 @@ function ViewTab({
   const { state, go } = useHuddle();
   const ch = state.ch ?? "";
   const meta = DEST_INTRO[dest];
+  const ref = useRef<HTMLButtonElement>(null);
+  // the phone's one row scrolls sideways: the open page's tab comes into view
+  useEffect(() => {
+    if (active) ref.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [active]);
   return (
     <button
+      ref={ref}
       type="button"
       role="tab"
       data-dest={dest}
@@ -182,13 +188,17 @@ function ViewTab({
   );
 }
 
-/** The rows of tab groups over a channel's pages: three daisyUI tabs boxes with a gap, the active
- *  tab glowing. The ids are the pages, the address moves by hash. */
+/** The tab groups over a channel's pages: three daisyUI tabs boxes with a gap, the active tab
+ *  glowing. Under 640 px they sit in one row that scrolls sideways with no scrollbar; wider, they
+ *  wrap into rows. The ids are the pages, the address moves by hash. */
 function ViewTabs({ dest, counts }: { dest: Dest; counts: NavCounts }): JSX.Element {
   return (
-    <div class="flex w-full flex-wrap gap-3 px-4 pt-4 sm:px-6" data-view-tabs="">
+    <div
+      class="flex w-full flex-wrap gap-3 px-4 pt-4 max-sm:flex-nowrap max-sm:pt-2 max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden sm:px-6"
+      data-view-tabs=""
+    >
       {NAV_GROUPS.map((group) => (
-        <div key={group.label} role="tablist" aria-label={group.label} class="tabs tabs-box">
+        <div key={group.label} role="tablist" aria-label={group.label} class="tabs tabs-box max-sm:shrink-0">
           {group.tabs.map((k) => (
             <ViewTab key={k} dest={k} counts={counts} active={dest === k} />
           ))}

@@ -117,6 +117,33 @@ test("the channel page lists the seeded ping and pong with who told whom", async
   await expect(pong.locator("time")).toBeVisible();
 });
 
+test("the channel tabs fit one row on the phone", async ({ page }, info) => {
+  test.skip(info.project.name !== "iphone", "the one scrolling row is the phone's");
+  await openChannel(page, "e2e");
+  const row = page.locator("[data-view-tabs]");
+  const width = page.viewportSize()?.width ?? 0;
+  for (const dest of ["overview", "today", "inbox", "team", "work", "knowledge", "settings"]) {
+    await page.goto(`${theSetup().rootUrl}/#/channels/e2e/${dest}`);
+    const active = row.locator(`[data-dest="${dest}"][aria-selected="true"]`);
+    await expect(active).toBeVisible();
+
+    // one line of 44 px tabs that scrolls sideways inside itself
+    const box = await row.boundingBox();
+    expect(box?.height ?? Number.POSITIVE_INFINITY, `${dest}: the row's height`).toBeLessThanOrEqual(60);
+    const sizes = await row.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+    expect(sizes.scroll, `${dest}: the row scrolls sideways`).toBeGreaterThan(sizes.client);
+    await expectNoSideScroll(page);
+
+    // the open page's tab is scrolled into view
+    await expect
+      .poll(async () => {
+        const b = await active.boundingBox();
+        return b !== null && b.x >= 0 && b.x + b.width <= width + 1;
+      }, { message: `${dest}: the active tab lies inside the viewport` })
+      .toBe(true);
+  }
+});
+
 test("the composer posts into the chat and stays above the keyboard", async ({ page }, info) => {
   const ch = await freshChannel(info.project.name, ["gamma", "delta"]);
   await playKeyboard(page);
