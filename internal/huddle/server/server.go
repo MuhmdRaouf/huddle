@@ -1313,6 +1313,9 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.needsRoute(w, r)
 	case credentialed && path == "/api/needs" && r.Method == http.MethodPost:
 		return s.permitCreateRoute(w, r)
+	// today's insights tips, read-only over the registry's own history
+	case credentialed && path == "/api/insights" && r.Method == http.MethodGet:
+		return s.insightsRoute(w, r)
 	case credentialed && permitItemPath.MatchString(path):
 		return s.permitItemRoute(w, r, path, me)
 	case credentialed && needsItemPath.MatchString(path) && r.Method == http.MethodPost:
