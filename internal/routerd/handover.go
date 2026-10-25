@@ -230,16 +230,26 @@ func parseRights(ooo []byte) ([]int, error) {
 	return fds, nil
 }
 
+// tunnels is the router's CONNECT tunnels, which a server's Shutdown never waits on: the
+// connections are hijacked.
+type tunnels interface {
+	Drain(ctx context.Context) error
+}
+
 // handOver is the daemon's answer to a taker: the listening socket is the taker's now, so
-// Shutdown closes the daemon's own copy of it (the taker's dup keeps the port open), lets the
-// streams in flight finish for up to ten minutes, and the run returns nil. The lock's release
-// is Run's defer, and the record stays for the taker to overwrite.
-func handOver(server *http.Server, taker int, log func(line string)) error {
+// Shutdown closes the daemon's own copy of it (the taker's dup keeps the port open) and lets the
+// requests in flight finish, the tunnels drain after them, all within ten minutes, and the run
+// returns nil. The lock's release is Run's defer, and the record stays for the taker to
+// overwrite.
+func handOver(server *http.Server, open tunnels, taker int, log func(line string)) error {
 	log(fmt.Sprintf("huddle-router: handed over to pid %d; draining", taker))
 	budget, cancel := context.WithTimeout(context.Background(), drainBudget)
 	defer cancel()
 	if err := server.Shutdown(budget); err != nil {
 		log("huddle-router: " + err.Error())
+	}
+	if err := open.Drain(budget); err != nil {
+		log("huddle-router: tunnels: " + err.Error())
 	}
 	return nil
 }

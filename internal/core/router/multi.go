@@ -202,6 +202,10 @@ func (m *Multi) noteAnthropicHealth(event domain.RouterHealth, code, model strin
 	m.o.Log(MultiName + ": Anthropic path recovered")
 }
 
+// Drain waits for the CONNECT tunnels the router carries to end, up to ctx: a server's Shutdown
+// never waits on a hijacked connection.
+func (m *Multi) Drain(ctx context.Context) error { return m.proxy.Drain(ctx) }
+
 // Providers is the names of the lanes the router serves, in the order they were given.
 func (m *Multi) Providers() []string {
 	names := make([]string, 0, len(m.lanes.Load().lanes))

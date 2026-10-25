@@ -295,3 +295,125 @@ func TestOneConnListenerAnswersItsOwnAddress(t *testing.T) {
 		t.Errorf("the listener's close: %v", err)
 	}
 }
+
+func TestTLSProxyDrainWaitsForTheTunnelsItCarries(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a decrypted answer in flight finishes, then its tunnel closes", func(t *testing.T) {
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		var proxy *TLSProxy
+		rig := newTLSProxyRig(t, func(p *TLSProxy) {
+			proxy = p
+			p.Route = func(req *http.Request, res *Response, body []byte) {
+				res.Header().Set("Content-Type", "text/event-stream")
+				res.WriteHeader(200)
+				_, _ = res.Write([]byte("data: first\n\n"))
+				res.Flush()
+				close(entered)
+				<-release
+				res.End([]byte("data: last\n\n"))
+			}
+		})
+		client := rig.keepAliveClient(t)
+		answered := make(chan string, 1)
+		go func() {
+			resp, err := client.Post("https://api.anthropic.com/v1/messages", "application/json",
+				strings.NewReader(`{"model":"claude-opus-5-5","messages":[]}`))
+			if err != nil {
+				answered <- "error: " + err.Error()
+				return
+			}
+			defer resp.Body.Close()
+			text, err := io.ReadAll(resp.Body)
+			if err != nil {
+				answered <- "error: " + err.Error()
+				return
+			}
+			answered <- string(text)
+		}()
+		<-entered
+		drained := make(chan error, 1)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			drained <- proxy.Drain(ctx)
+		}()
+		select {
+		case err := <-drained:
+			t.Fatalf("the drain returned %v while an answer streamed", err)
+		case <-time.After(200 * time.Millisecond):
+		}
+		close(release)
+		if text := <-answered; text != "data: first\n\ndata: last\n\n" {
+			t.Fatalf("the answer across the drain = %q, want both events", text)
+		}
+		select {
+		case err := <-drained:
+			if err != nil {
+				t.Fatalf("the drain = %v, want nil", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the drain still waits five seconds after the answer ended")
+		}
+	})
+
+	t.Run("an idle decrypted tunnel closes at once", func(t *testing.T) {
+		var proxy *TLSProxy
+		rig := newTLSProxyRig(t, func(p *TLSProxy) { proxy = p })
+		client := rig.keepAliveClient(t)
+		resp, err := client.Get("https://api.anthropic.com/v1/me")
+		if err != nil {
+			t.Fatalf("get through the proxy: %v", err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := proxy.Drain(ctx); err != nil {
+			t.Fatalf("the drain of an idle tunnel = %v, want nil", err)
+		}
+	})
+
+	t.Run("a blind tunnel still open when the budget ends is closed", func(t *testing.T) {
+		upstreamEnd, proxyEnd := net.Pipe()
+		t.Cleanup(func() { _ = upstreamEnd.Close() })
+		var proxy *TLSProxy
+		rig := newTLSProxyRig(t, func(p *TLSProxy) {
+			proxy = p
+			p.Dial = func(context.Context, string, string) (net.Conn, error) { return proxyEnd, nil }
+		})
+		conn, answer := connectThrough(t, rig.port, "someone-else.example:443")
+		defer conn.Close()
+		if answer.StatusCode != 200 {
+			t.Fatalf("the CONNECT = %d, want 200 established", answer.StatusCode)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		if err := proxy.Drain(ctx); err != context.DeadlineExceeded {
+			t.Fatalf("the drain of a tunnel that never ends = %v, want the deadline", err)
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if _, err := conn.Read(make([]byte, 1)); err != io.EOF {
+			t.Fatalf("the client's read after the drain = %v, want EOF", err)
+		}
+	})
+}
+
+// keepAliveClient is Claude Code in proxy mode with its connection pool: a tunnel stays open
+// between requests.
+func (r *tlsProxyRig) keepAliveClient(t *testing.T) *http.Client {
+	t.Helper()
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(r.caPEM) {
+		t.Fatal("the CA's PEM did not parse")
+	}
+	transport := &http.Transport{
+		Proxy: func(*http.Request) (*url.URL, error) {
+			return &url.URL{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%d", r.port)}, nil
+		},
+		TLSClientConfig: &tls.Config{RootCAs: pool},
+	}
+	t.Cleanup(transport.CloseIdleConnections)
+	return &http.Client{Timeout: 15 * time.Second, Transport: transport}
+}

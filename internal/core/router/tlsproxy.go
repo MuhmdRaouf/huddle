@@ -64,6 +64,36 @@ type TLSProxy struct {
 	caLogged     bool
 	leaf         *tls.Certificate
 	leafNotAfter time.Time
+
+	// tunnels is every CONNECT the proxy carries, from the handler's start until its client side
+	// closes; a hijacked connection is the server's no longer, so a drain waits on these instead.
+	tunnelsMu sync.Mutex
+	tunnels   map[*openTunnel]struct{}
+	draining  bool
+}
+
+// openTunnel is one CONNECT the proxy carries.
+type openTunnel struct {
+	// conn is the client's side once hijacked, nil before.
+	conn net.Conn
+	// server serves a decrypted conversation; nil for a blind tunnel.
+	server *http.Server
+	// done closes when the client's side closes.
+	done chan struct{}
+	once sync.Once
+}
+
+// tunnelConn is a tunnel's client side: its close ends the tunnel for the drain.
+type tunnelConn struct {
+	net.Conn
+	proxy  *TLSProxy
+	tunnel *openTunnel
+}
+
+func (c *tunnelConn) Close() error {
+	err := c.Conn.Close()
+	c.proxy.endTunnel(c.tunnel)
+	return err
 }
 
 // Connect serves one CONNECT. Browsers cannot send CONNECT, so the router's Host check (a
@@ -93,20 +123,28 @@ func (p *TLSProxy) Connect(w http.ResponseWriter, req *http.Request) {
 		p.connectRefused(w, "the connection cannot be tunnelled")
 		return
 	}
+	// The tunnel is counted before the hijack, while the server still waits on this handler: a
+	// drain that starts once the server's shutdown returns finds it.
+	tunnel := p.trackTunnel()
 	conn, rw, err := hijacker.Hijack()
 	if err != nil {
+		p.endTunnel(tunnel)
 		return
 	}
 	if _, err := conn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n")); err != nil {
 		conn.Close()
+		p.endTunnel(tunnel)
 		return
 	}
-	client := &bufferedConn{Conn: conn, front: rw.Reader}
+	client := &tunnelConn{Conn: &bufferedConn{Conn: conn, front: rw.Reader}, proxy: p, tunnel: tunnel}
+	p.tunnelsMu.Lock()
+	tunnel.conn = client
+	p.tunnelsMu.Unlock()
 	// Only api.anthropic.com on its real port is decrypted; the same name on any other port is a
 	// blind tunnel like every other host.
 	if p.CADir != "" && number == 443 && strings.EqualFold(host, pki.RouterHost) {
 		if _, err := p.leafFor(); err == nil {
-			p.serveDecrypted(client)
+			p.serveDecrypted(tunnel, client)
 			return
 		}
 		// The CA is unusable; the reason is in the log. Passing through blind keeps Claude Code
@@ -171,15 +209,87 @@ func refuseLocalDial(_, address string, _ syscall.RawConn) error {
 }
 
 // serveDecrypted answers the client's TLS handshake with the local CA's leaf and serves the
-// requests it carries.
-func (p *TLSProxy) serveDecrypted(client net.Conn) {
+// requests it carries. A tunnel that starts while the proxy drains serves without keep-alive, so
+// it closes after its first answer.
+func (p *TLSProxy) serveDecrypted(tunnel *openTunnel, client net.Conn) {
 	config := &tls.Config{
 		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return p.leafFor() },
 		NextProtos:     []string{"http/1.1"},
 		MinVersion:     tls.VersionTLS12,
 	}
 	server := Harden(&http.Server{Handler: http.HandlerFunc(p.intercept)})
+	p.tunnelsMu.Lock()
+	tunnel.server = server
+	draining := p.draining
+	p.tunnelsMu.Unlock()
+	if draining {
+		server.SetKeepAlivesEnabled(false)
+	}
 	_ = server.Serve(&oneConnListener{conn: tls.Server(client, config)})
+}
+
+// trackTunnel counts one CONNECT the proxy carries until endTunnel.
+func (p *TLSProxy) trackTunnel() *openTunnel {
+	tunnel := &openTunnel{done: make(chan struct{})}
+	p.tunnelsMu.Lock()
+	defer p.tunnelsMu.Unlock()
+	if p.tunnels == nil {
+		p.tunnels = make(map[*openTunnel]struct{})
+	}
+	p.tunnels[tunnel] = struct{}{}
+	return tunnel
+}
+
+// endTunnel drops a tunnel from the count once its client side is closed; a second call is a no-op.
+func (p *TLSProxy) endTunnel(tunnel *openTunnel) {
+	tunnel.once.Do(func() {
+		p.tunnelsMu.Lock()
+		delete(p.tunnels, tunnel)
+		p.tunnelsMu.Unlock()
+		close(tunnel.done)
+	})
+}
+
+// Drain waits for every tunnel the proxy carries to end, for a daemon whose server has stopped
+// accepting: a decrypted conversation finishes the answer it is streaming and closes instead of
+// waiting for another request, and a blind tunnel runs until either side closes it. The tunnels
+// still open when ctx ends are closed, and Drain answers ctx's error.
+func (p *TLSProxy) Drain(ctx context.Context) error {
+	p.tunnelsMu.Lock()
+	p.draining = true
+	open := make([]*openTunnel, 0, len(p.tunnels))
+	servers := make([]*http.Server, 0, len(p.tunnels))
+	for tunnel := range p.tunnels {
+		open = append(open, tunnel)
+		if tunnel.server != nil {
+			servers = append(servers, tunnel.server)
+		}
+	}
+	p.tunnelsMu.Unlock()
+	// No keep-alive: an idle conversation closes now, a busy one after its answer. Closing a
+	// tunnel takes the lock (endTunnel), so every close here runs outside it.
+	for _, server := range servers {
+		server.SetKeepAlivesEnabled(false)
+	}
+	for i, tunnel := range open {
+		select {
+		case <-tunnel.done:
+		case <-ctx.Done():
+			p.tunnelsMu.Lock()
+			conns := make([]net.Conn, 0, len(open)-i)
+			for _, left := range open[i:] {
+				if left.conn != nil {
+					conns = append(conns, left.conn)
+				}
+			}
+			p.tunnelsMu.Unlock()
+			for _, conn := range conns {
+				_ = conn.Close()
+			}
+			return ctx.Err()
+		}
+	}
+	return nil
 }
 
 // oneConnListener serves exactly the connection it was built with, then ends the server: a

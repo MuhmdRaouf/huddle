@@ -233,7 +233,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 			}
 			return err
 		case taker := <-handed:
-			return handOver(server, taker, log)
+			return handOver(server, multi, taker, log)
 		case <-ticker.C:
 			now := statOf(enabledFile)
 			if now != before {
