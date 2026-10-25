@@ -1,13 +1,13 @@
 /**
  * The Overview: the tab's front page, composed from the parts every other view reads — five stat
  * cards (spend against its budget, requests and their failures, tokens and their cache share,
- * sessions and who needs the owner, routers and any budget stopped), the four usage graphs
- * (requests per hour, tokens by kind, cost per day and per session), the spend-by-hour chart
- * stacked by model, the top sessions by spend (a row opens the Session screen), the plan limits
- * the statusline word reported, the newest alert, the routers list and the top tools, under the
- * self-check badge that holds today's totals against the transcripts. The phone
- * keeps the first two cards, the graphs stacked, the chart and the routers; the rest waits
- * for a wider pane.
+ * sessions and who needs the owner, routers and any budget stopped), the day card (peak sessions
+ * at once and cards done today), the four usage graphs (requests per hour, tokens by kind, cost
+ * per day and per session), the spend-by-hour chart stacked by model, the top sessions by spend
+ * (a row opens the Session screen), the plan limits the statusline word reported, the newest
+ * alert, the routers list and the top tools, under the self-check badge that holds today's totals
+ * against the transcripts. The phone keeps the first two cards, the day card, the graphs stacked,
+ * the chart and the routers; the rest waits for a wider pane.
  */
 
 import { modelColor } from "@huddle/ui/model-color.ts";
@@ -28,6 +28,7 @@ import {
 import { ActiveBlock } from "../ActiveBlock.tsx";
 import { alertWhere } from "../AlertStrip.tsx";
 import { useApp } from "../context.ts";
+import { DayCard } from "../DayCard.tsx";
 import { Flow, requestsInRange } from "../Flow.tsx";
 import { Icon } from "../Icon.tsx";
 import { EmptyState, ModelChip, Panel, Status, shortModelName } from "../kit.tsx";
@@ -669,9 +670,9 @@ function PlanLimits() {
   );
 }
 
-/** The Overview: the stat row over the active-block card, the chart and the sessions table, the
- *  plan limits, the alert, routers and tools beside them; the phone keeps the first two cards,
- *  the chart and the routers. */
+/** The Overview: the stat row over the active-block card, the day card, the graphs, the chart
+ *  and the sessions table, the plan limits, the alert, routers and tools beside them; the phone
+ *  keeps the first two cards, the day card, the graphs, the chart and the routers. */
 export function OverviewView(): JSX.Element {
   const { state, now } = useApp();
   const numbers = rangeNumbers(state, now);
@@ -689,6 +690,9 @@ export function OverviewView(): JSX.Element {
       </div>
       <div class="grid min-w-0 gap-4 xl:col-span-2">
         <ActiveBlock />
+      </div>
+      <div class="min-w-0 xl:col-span-2">
+        <DayCard />
       </div>
       <div class="min-w-0 xl:col-span-2">
         <OverviewGraphs />

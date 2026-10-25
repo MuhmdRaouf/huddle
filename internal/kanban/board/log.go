@@ -206,33 +206,65 @@ var flowEvents = map[string]bool{
 	"move": true, "log": true,
 }
 
-// LastFlowEvent answers the newest LOG flow event naming the ticket.
-func (b Board) LastFlowEvent(id string) (time.Time, bool) {
+// logEntry is one LOG line as the readers below need it; At is zero when the stamp does
+// not parse.
+type logEntry struct {
+	At     time.Time
+	Event  string
+	Ticket string
+}
+
+// logEntries answers the LOG's lines in file order, skipping blank and unreadable ones.
+func (b Board) logEntries() []logEntry {
 	data, err := b.fs().readFile(b.logPath())
 	if err != nil {
-		return time.Time{}, false
+		return nil
 	}
-	lines := strings.Split(string(data), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.TrimSpace(lines[i]) == "" {
+	var out []logEntry
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		var entry struct {
+		var raw struct {
 			Ts     string `json:"ts"`
 			Event  string `json:"event"`
 			Ticket string `json:"ticket"`
 		}
-		if err := json.Unmarshal([]byte(lines[i]), &entry); err != nil {
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
-		if !flowEvents[entry.Event] || entry.Ticket != id {
-			continue
-		}
+		entry := logEntry{Event: raw.Event, Ticket: raw.Ticket}
 		for _, layout := range []string{stampLayout, time.RFC3339} {
-			if when, err := time.Parse(layout, entry.Ts); err == nil {
-				return when, true
+			if when, err := time.Parse(layout, raw.Ts); err == nil {
+				entry.At = when
+				break
 			}
 		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+// LastFlowEvent answers the newest LOG flow event naming the ticket.
+func (b Board) LastFlowEvent(id string) (time.Time, bool) {
+	entries := b.logEntries()
+	for i := len(entries) - 1; i >= 0; i-- {
+		entry := entries[i]
+		if !flowEvents[entry.Event] || entry.Ticket != id || entry.At.IsZero() {
+			continue
+		}
+		return entry.At, true
 	}
 	return time.Time{}, false
+}
+
+// DoneBetween counts the LOG's done lines stamped from <= ts < to.
+func (b Board) DoneBetween(from, to time.Time) int {
+	count := 0
+	for _, entry := range b.logEntries() {
+		if entry.Event == "done" && !entry.At.Before(from) && entry.At.Before(to) {
+			count++
+		}
+	}
+	return count
 }

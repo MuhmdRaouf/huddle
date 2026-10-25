@@ -700,6 +700,9 @@ func Serve(ctx context.Context, o Options) error {
 			// read the way the guard reads an Origin
 			OriginAllowed: func(origin string) bool { return s.hostAllowed(originHost(origin)) },
 			Log:           func(line string) { fmt.Fprintln(o.Stdout, line) },
+			// the day card's peak sessions and cards done come from this server's registry
+			// and boards, which radar does not hold
+			Day: radarDay{s: s},
 		})
 		s.hub.Radar.Source = s.radar
 		s.radarMu.Lock()

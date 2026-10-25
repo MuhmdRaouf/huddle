@@ -90,6 +90,8 @@ type HttpOptions struct {
 	Watcher Watcher
 	// Otel holds Claude Code's OpenTelemetry export; nil answers 503 on its intake and read.
 	Otel *store.OtelRows
+	// Day answers the day card's facts from the embedding hub; nil answers 503 on /api/day.
+	Day DaySource
 	// SnapshotSent runs once the snapshot frame is written and before the deltas start; nil
 	// in production. The store is subscribed by then, so a change landed here must still
 	// reach this client.
@@ -345,14 +347,17 @@ func (h *HttpServer) apiRoute(w http.ResponseWriter, r *http.Request, path strin
 	sendJSON(w, answer.Status, answer.Body)
 }
 
-// answerApi is one /api read's answer: the self-check from its own cache, the rest from the
-// pure router.
+// answerApi is one /api read's answer: the self-check from its own cache, the day card from
+// the embedding hub, the rest from the pure router.
 func (h *HttpServer) answerApi(r *http.Request, path string) (ApiResponse, error) {
 	if path == SelfCheckPath {
 		if h.options.SelfCheck == nil {
 			return errorOf(503, "self-check unavailable"), nil
 		}
 		return h.options.SelfCheck.Answer(r.Context())
+	}
+	if path == DayPath {
+		return dayRoute(r.Context(), h.options.Day, time.Now())
 	}
 	return HandleApi(
 		h.options.Store,

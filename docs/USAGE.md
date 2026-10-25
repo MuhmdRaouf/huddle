@@ -324,6 +324,15 @@ The Overview draws four graphs, each a UTC series refreshed once a minute:
 The first and the fourth read `GET /api/radar/api/usage/today` on the hub (`/api/usage/today`
 on radar's own port); the other two read `/api/usage?days=30`. A phone stacks them in one column.
 
+Above the graphs, the day card shows two figures for the UTC day so far, refreshed once a minute:
+
+- Peak sessions at once: the most sessions the hub's registry held alive at the same moment. A
+  session is alive from its first reported event until it ends.
+- Cards done: the `done` lines the boards the hub knows wrote to their LOG.
+
+The card reads `GET /api/radar/api/day` on the hub, which answers
+`{"peakSessions": 3, "cardsDone": 2}`. A standalone radar holds neither fact and answers 503 there.
+
 Radar checks itself once a minute while the Overview is open. It sums today's Claude Code
 transcripts again, counting each message id once (one API call writes one line per content block),
 and compares requests, input, output, cache-read and cache-write tokens with its own totals for

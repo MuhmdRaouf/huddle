@@ -210,3 +210,21 @@ func TestLogAppendsToTheLogSection(t *testing.T) {
 	mustLines(t, f.review(Args{Actor: "w1", ID: "LOG-1", Note: "look at the diff"}))
 	contains(t, f.fm("review", "LOG-1"), "- "+fixedNow.Format(time.RFC3339)+" w1: look at the diff\n", "fm")
 }
+
+func TestDoneBetweenCountsTheDoneLinesInTheWindow(t *testing.T) {
+	f := newFixture(t)
+	f.writeFile("LOG", strings.Join([]string{
+		`{"ts":"2026-10-24T23:59:59+0000","event":"done","ticket":"D-0","actor":"w1"}`,
+		`{"ts":"2026-10-25T03:00:00+0300","event":"done","ticket":"D-1","actor":"w1"}`,
+		`{"ts":"2026-10-25T09:00:00+0000","event":"review","ticket":"D-2","actor":"w1"}`,
+		`not a line`,
+		`{"ts":"2026-10-25T09:30:00+0000","event":"done","ticket":"D-2","actor":"w1"}`,
+		`{"ts":"2026-10-25T12:00:00+0000","event":"done","ticket":"D-3","actor":"w1"}`,
+	}, "\n")+"\n")
+	from := time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	// D-1 lands on the UTC midnight itself; D-3 at the window's end stays out
+	if got := f.b.DoneBetween(from, to); got != 2 {
+		t.Errorf("DoneBetween = %d, want D-1 and D-2", got)
+	}
+}

@@ -80,6 +80,7 @@ var Routes = []string{
 	"/api/advisor",
 	"/api/usage",
 	"/api/usage/today",
+	DayPath,
 	"/api/blocks",
 	"/api/history/roots",
 	"/api/history/tree/:rootId",

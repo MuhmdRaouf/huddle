@@ -82,6 +82,9 @@ type MountOptions struct {
 	Log func(line string)
 	// Client fetches a recorded owner; nil takes one with the probe timeout.
 	Client *http.Client
+	// Day answers the day card's facts from huddle's registry and boards; nil answers 503 on
+	// radar's /api/day.
+	Day server.DaySource
 }
 
 // Tab is radar mounted inside huddle. In the owning mode it holds the running app (the store,
@@ -234,6 +237,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		SelfCheck:     server.NewSelfCheck(hist, ingest.TranscriptRoots(appCtx, env), now),
 		Watcher:       watcher,
 		Otel:          store.NewOtelRows(),
+		Day:           options.Day,
 		HostAllowed:   options.HostAllowed,
 		OriginAllowed: options.OriginAllowed,
 	})
