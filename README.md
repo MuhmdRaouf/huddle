@@ -262,9 +262,9 @@ Caddyfile:
 
 ```text
 hub.example.dev {
-	reverse_proxy 127.0.0.1:18860 {
-		header_up X-Forwarded-Proto https
-	}
+    reverse_proxy 127.0.0.1:18860 {
+        header_up X-Forwarded-Proto https
+    }
 }
 ```
 
