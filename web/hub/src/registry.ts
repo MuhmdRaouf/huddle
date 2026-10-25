@@ -23,6 +23,12 @@ export type RegistryReport = {
   channel?: string;
   /** The coding agent the session runs in, when it is not Claude Code. */
   harness?: string;
+  /** The tool a PreToolUse or PostToolUse event runs, and its short target (a Bash command's
+   *  first line, a file path, an MCP tool's name); an older hook sends neither. */
+  tool?: string;
+  tool_target?: string;
+  /** The first line of the prompt a UserPromptSubmit event carries. */
+  prompt_line?: string;
   last_event: string;
   last_event_at: string;
 };
@@ -155,33 +161,50 @@ export function openItemOf(needs: NeedItem[] | null, sessionId: string): NeedIte
   return open.find((n) => n.kind === "permission") ?? open[0];
 }
 
-/** One item of a session's stream: a user prompt, a tool event's one line, or a plain note. */
+/** One item of a session's stream: a user prompt, one tool call (running until its PostToolUse
+ *  lands), or a plain note. */
 export type StreamItem =
   | { kind: "prompt"; text: string; at: string }
-  | { kind: "tool"; target: string; at: string }
+  | { kind: "tool"; tool: string; target: string; running: boolean; at: string }
   | { kind: "note"; text: string; at: string };
 
-/** The session's events as its stream shows them: prompts as bubbles, tool events as one line
- *  with their target, and any other text the report carries as a plain note. Kinds that carry
- *  no text (a session starting, a quiet notification) draw nothing. */
+/** The session's events as its stream shows them: prompts as bubbles, each tool call as one
+ *  line named by its tool and target, and any other text the report carries as a plain note.
+ *  A PreToolUse opens a running row that its PostToolUse (the same tool and target) finishes;
+ *  a PostToolUse with no open row stands alone. Kinds that carry no text (a session starting,
+ *  a quiet notification) draw nothing. */
 export function streamItems(events: RegistryEvent[]): StreamItem[] {
-  return events.map(eventItem).filter((x): x is StreamItem => x !== null);
+  const items: StreamItem[] = [];
+  for (const { report } of events) {
+    const at = report.last_event_at;
+    const text = report.task || report.title || "";
+    switch (report.last_event) {
+      case "UserPromptSubmit":
+        items.push({ kind: "prompt", text: report.prompt_line || text || "You sent a prompt", at });
+        break;
+      case "PreToolUse":
+      case "PostToolUse": {
+        const tool = report.tool || "Tool";
+        const target = shortTarget(report.tool_target ?? "", report.cwd);
+        const open = items.find(
+          (x) => x.kind === "tool" && x.running && x.tool === tool && x.target === target,
+        );
+        if (report.last_event === "PostToolUse" && open?.kind === "tool") open.running = false;
+        else items.push({ kind: "tool", tool, target, running: report.last_event === "PreToolUse", at });
+        break;
+      }
+      default:
+        if (text) items.push({ kind: "note", text, at });
+    }
+  }
+  return items;
 }
 
-/** One event as its stream item: a prompt, a tool event's line, a note — or nothing, for the
- *  kinds that carry no text (a session starting, a quiet notification). */
-function eventItem({ report }: RegistryEvent): StreamItem | null {
-  const text = report.task || report.title || "";
-  const at = report.last_event_at;
-  switch (report.last_event) {
-    case "UserPromptSubmit":
-      return { kind: "prompt", text: text || "New prompt", at };
-    case "PreToolUse":
-    case "PostToolUse":
-      return report.cwd ? { kind: "tool", target: report.cwd, at } : null;
-    default:
-      return text ? { kind: "note", text, at } : null;
-  }
+/** A tool's target as its row shows it: a path inside the session's directory by its path
+ *  from there, anything else as it came. */
+function shortTarget(target: string, cwd: string | undefined): string {
+  const root = cwd ? `${cwd.replace(/\/+$/, "")}/` : "";
+  return root && target.startsWith(root) ? target.slice(root.length) : target;
 }
 
 /** One message of the registry's stream, before its type is known. */

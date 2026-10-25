@@ -160,24 +160,108 @@ describe("the session's stream items", () => {
     report: { session_id: "s-1", last_event_at: "2026-10-16T11:00:00Z", ...over },
   });
 
-  it("renders prompts as bubbles, tool events as one-line targets, other text as notes", () => {
+  it("renders prompts as bubbles, tool calls as one named line, other text as notes", () => {
     const items = streamItems([
       ev(1, { last_event: "SessionStart" }),
       ev(2, { last_event: "UserPromptSubmit", task: "Add the e2e test" }),
-      ev(3, { last_event: "PostToolUse", cwd: "/repo" }),
+      ev(3, { last_event: "PostToolUse", cwd: "/repo", tool: "Bash", tool_target: "git status" }),
       ev(4, { last_event: "Stop", task: "The test exports every ticket" }),
       ev(5, { last_event: "Notification" }),
     ]);
     expect(items).toEqual([
       { kind: "prompt", text: "Add the e2e test", at: "2026-10-16T11:00:00Z" },
-      { kind: "tool", target: "/repo", at: "2026-10-16T11:00:00Z" },
+      { kind: "tool", tool: "Bash", target: "git status", running: false, at: "2026-10-16T11:00:00Z" },
       { kind: "note", text: "The test exports every ticket", at: "2026-10-16T11:00:00Z" },
     ]);
   });
 
-  it("falls back to the title when a prompt carries no task", () => {
-    const items = streamItems([ev(1, { last_event: "UserPromptSubmit", title: "First prompt" })]);
-    expect(items[0]).toMatchObject({ kind: "prompt", text: "First prompt" });
+  it("folds a PreToolUse into its PostToolUse: one row per call, at the call's start", () => {
+    const items = streamItems([
+      ev(1, {
+        last_event: "PreToolUse",
+        cwd: "/repo",
+        tool: "Bash",
+        tool_target: "git status",
+        last_event_at: "2026-10-16T11:00:01Z",
+      }),
+      ev(2, {
+        last_event: "PostToolUse",
+        cwd: "/repo",
+        tool: "Bash",
+        tool_target: "git status",
+        last_event_at: "2026-10-16T11:00:02Z",
+      }),
+    ]);
+    expect(items).toEqual([
+      { kind: "tool", tool: "Bash", target: "git status", running: false, at: "2026-10-16T11:00:01Z" },
+    ]);
+  });
+
+  it("pairs calls that overlap by tool and target", () => {
+    const items = streamItems([
+      ev(1, { last_event: "PreToolUse", tool: "Read", tool_target: "/repo/a.ts", cwd: "/repo" }),
+      ev(2, { last_event: "PreToolUse", tool: "Read", tool_target: "/repo/b.ts", cwd: "/repo" }),
+      ev(3, { last_event: "PostToolUse", tool: "Read", tool_target: "/repo/b.ts", cwd: "/repo" }),
+    ]);
+    expect(items.map((i) => (i.kind === "tool" ? [i.target, i.running] : null))).toEqual([
+      ["a.ts", true],
+      ["b.ts", false],
+    ]);
+  });
+
+  it("marks a PreToolUse without its PostToolUse as running", () => {
+    const items = streamItems([ev(1, { last_event: "PreToolUse", tool: "Bash", tool_target: "bun test" })]);
+    expect(items).toEqual([
+      { kind: "tool", tool: "Bash", target: "bun test", running: true, at: "2026-10-16T11:00:00Z" },
+    ]);
+  });
+
+  it("shows a file under the session's directory by its path inside it", () => {
+    const items = streamItems([
+      ev(1, {
+        last_event: "PostToolUse",
+        cwd: "/Users/raouf/Playground/huddle",
+        tool: "Edit",
+        tool_target: "/Users/raouf/Playground/huddle/web/hub/src/app/Now.tsx",
+      }),
+      ev(2, {
+        last_event: "PostToolUse",
+        cwd: "/Users/raouf/Playground/huddle",
+        tool: "Read",
+        tool_target: "/etc/hosts",
+      }),
+    ]);
+    expect(items.map((i) => (i.kind === "tool" ? i.target : ""))).toEqual([
+      "web/hub/src/app/Now.tsx",
+      "/etc/hosts",
+    ]);
+  });
+
+  it("reads a report from an older hook as a plain Tool row, and never shows the cwd", () => {
+    const items = streamItems([
+      ev(1, { last_event: "PreToolUse", cwd: "/repo" }),
+      ev(2, { last_event: "PostToolUse", cwd: "/repo" }),
+    ]);
+    expect(items).toEqual([
+      { kind: "tool", tool: "Tool", target: "", running: false, at: "2026-10-16T11:00:00Z" },
+    ]);
+    expect(JSON.stringify(items)).not.toContain("/repo");
+  });
+
+  it("shows the prompt's first line, else the task, else the title", () => {
+    const items = streamItems([
+      ev(1, { last_event: "UserPromptSubmit", prompt_line: "Fix the stream rows", task: "Fix the" }),
+      ev(2, { last_event: "UserPromptSubmit", title: "First prompt" }),
+    ]);
+    expect(items.map((i) => (i.kind === "prompt" ? i.text : ""))).toEqual([
+      "Fix the stream rows",
+      "First prompt",
+    ]);
+  });
+
+  it("says the owner sent a prompt when the prompt carries no text", () => {
+    const items = streamItems([ev(1, { last_event: "UserPromptSubmit" })]);
+    expect(items).toEqual([{ kind: "prompt", text: "You sent a prompt", at: "2026-10-16T11:00:00Z" }]);
   });
 });
 

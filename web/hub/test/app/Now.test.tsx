@@ -141,6 +141,8 @@ const detail = (over: Partial<RegistryDetail> = {}): RegistryDetail => ({
         session_id: "s-need-1",
         last_event: "PostToolUse",
         cwd: "/work/claude-code-plugins",
+        tool: "Bash",
+        tool_target: "npm test -- --run e2e",
         last_event_at: "2026-10-08T11:55:00Z",
       },
     },
@@ -510,13 +512,38 @@ describe("the Session screen", () => {
     expect(stream).not.toBeNull();
     const bubble = screen.getByText("Add the e2e test");
     expect(bubble.className).toContain("self-end");
-    const tool = screen.getByText("/work/claude-code-plugins");
+    const tool = screen.getByText("npm test -- --run e2e");
     expect(tool.tagName).toBe("CODE");
-    expect(tool.closest("[data-tool]")?.querySelector("svg")).not.toBeNull();
+    const row = tool.closest("[data-tool]") as HTMLElement;
+    expect(row.textContent).toContain("Bash");
+    expect(row.querySelector("svg")).not.toBeNull();
+    expect(row.hasAttribute("data-running")).toBe(false);
+    expect(stream.textContent).not.toContain("/work/claude-code-plugins");
     expect(screen.getByText("The export inlines every ticket").tagName).toBe("DIV");
     expect(stream.querySelector("img")).toBeNull();
     // a day change puts a divider between the items, spelled Today, Yesterday, then the date
     expect(screen.getByText(/^Today /)).toBeDefined();
+  });
+
+  it("marks a tool call that has not finished as running", () => {
+    mountSession("phone", {
+      events: [
+        {
+          seq: 1,
+          report: {
+            session_id: "s-need-1",
+            last_event: "PreToolUse",
+            cwd: "/work/claude-code-plugins",
+            tool: "Bash",
+            tool_target: "bun test",
+            last_event_at: "2026-10-08T11:55:00Z",
+          },
+        },
+      ],
+    });
+    const row = screen.getByText("bun test").closest("[data-tool]") as HTMLElement;
+    expect(row.hasAttribute("data-running")).toBe(true);
+    expect(row.textContent).toContain("running");
   });
 
   it("divides the stream by day: Yesterday, then the plain date", () => {

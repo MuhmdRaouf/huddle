@@ -903,8 +903,9 @@ function dayLabel(at: string, now: number): string {
   return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${hhmm(ms)}`;
 }
 
-/** One item of the session's stream: a prompt as a right bubble, a tool event as one line with
- *  its check and target, anything else that carries text as a plain paragraph. */
+/** One item of the session's stream: a prompt as a right bubble, a tool call as one line with
+ *  its mark (a check once done, an hourglass and the word while running), its tool and its
+ *  target, anything else that carries text as a plain paragraph. */
 function StreamPart({ item }: { item: StreamItem }): JSX.Element {
   if (item.kind === "prompt") {
     return (
@@ -915,10 +916,19 @@ function StreamPart({ item }: { item: StreamItem }): JSX.Element {
   }
   if (item.kind === "tool") {
     return (
-      <div class="flex items-center gap-2 text-[13px] muted" data-tool="">
-        <Icon name="check" class="size-4 shrink-0 text-success" />
-        <span>Tool</span>
-        <code class="min-w-0 truncate font-mono text-xs">{item.target}</code>
+      <div
+        class="flex items-center gap-2 text-[13px] muted"
+        data-tool=""
+        data-running={item.running ? "" : undefined}
+      >
+        {item.running ? (
+          <Icon name="hourglass" class="size-4 shrink-0" />
+        ) : (
+          <Icon name="check" class="size-4 shrink-0 text-success" />
+        )}
+        <span>{item.tool}</span>
+        {item.target ? <code class="min-w-0 truncate font-mono text-xs">{item.target}</code> : null}
+        {item.running ? <span class="shrink-0 text-xs">running</span> : null}
       </div>
     );
   }
