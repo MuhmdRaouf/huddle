@@ -475,6 +475,49 @@ func TestWriterNodeMapping(t *testing.T) {
 		}
 	})
 
+	t.Run("lands a subagent spelled bare and with the agent- prefix on one node", func(t *testing.T) {
+		world := newWriterWorld(t)
+		h := world.attach(t)
+		world.store.UpsertSession(store.SessionUpsert{ID: "s1", Cwd: sp("/work/app")})
+		// the hook names the subagent bare, its transcript file names it agent-<id>
+		world.store.UpsertAgent(store.AgentUpsert{
+			SessionID: "s1", ID: "ae2990ce36222aba5", Kind: kindPtrOf(shared.KindSubagent),
+			ParentID: strPtrPtr(sp("main")), Name: sp("scout"),
+		})
+		world.store.UpsertAgent(store.AgentUpsert{
+			SessionID: "s1", ID: "agent-ae2990ce36222aba5", Kind: kindPtrOf(shared.KindSubagent),
+			ParentID: strPtrPtr(sp("main")),
+		})
+		world.store.AddRequest(writerRequest(func(r *shared.RequestRecord) {
+			r.ID, r.AgentID, r.Ts = "route-1", "ae2990ce36222aba5", writerT0
+		}), nil)
+		world.store.AddRequest(writerRequest(func(r *shared.RequestRecord) {
+			r.ID, r.AgentID, r.Ts = "req_1", "agent-ae2990ce36222aba5", writerT0+60_000
+		}), nil)
+		world.writer.Flush()
+		got := treeTriples(t, h, "s1/main")
+		slices.SortStableFunc(got, func(a, b nodeTriple) int { return strings.Compare(a.id, b.id) })
+		want := []nodeTriple{
+			{"s1/ae2990ce36222aba5", "subagent", sp("s1/main")},
+			{"s1/main", "main", nil},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("the tree: got %v, want %v", got, want)
+		}
+		requests, err := h.RequestsOf(RequestsQuery{NodeID: sp("s1/ae2990ce36222aba5"), Limit: 10})
+		if err != nil {
+			t.Fatalf("read the requests: %v", err)
+		}
+		ids := make([]string, 0, len(requests))
+		for _, request := range requests {
+			ids = append(ids, request.ID)
+		}
+		slices.Sort(ids)
+		if !reflect.DeepEqual(ids, []string{"req_1", "route-1"}) {
+			t.Errorf("the subagent's requests: got %v, want [req_1 route-1]", ids)
+		}
+	})
+
 	t.Run("ends a session's node when the store ends it, and a later request revives it", func(t *testing.T) {
 		world := newWriterWorld(t)
 		h := world.attach(t)

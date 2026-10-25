@@ -325,7 +325,8 @@ func touchedOf(change store.Change) []string {
 
 // nodeIdOf is a record's node id: the session's lead agent (main, or a job's own agent)
 // sits on the session node, every other agent on its own /agent node. A job's phantom main
-// agent collapses onto the job node.
+// agent collapses onto the job node. A subagent's node takes its bare id: the router and the
+// hooks spell it bare, its transcript file agent-<id>, and both name one agent.
 func nodeIdOf(sessionID, agentID string, external bool, lead string) string {
 	if agentID == "main" || agentID == "" || (external && agentID == lead) {
 		if external {
@@ -333,7 +334,7 @@ func nodeIdOf(sessionID, agentID string, external bool, lead string) string {
 		}
 		return sessionID + "/main"
 	}
-	return sessionID + "/" + agentID
+	return sessionID + "/" + store.BareAgent(agentID)
 }
 
 // rootUpsertOf is the session node's id, kind and parent: a job hangs under the session
