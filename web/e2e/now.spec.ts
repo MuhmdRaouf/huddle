@@ -4,8 +4,10 @@
 // last event asks for permission waits in Needs you with its state word, behind the filter too,
 // an agent-team teammate that went idle shows under its lead's row with the word idle, a seeded
 // permission ask is allowed with one tap on the 48 px button at its card's foot, and the Radar
-// card carries today's seeded cost and requests. The phone's page scrolls nothing sideways and
-// every target on it is at least 44 px; axe finds nothing serious on either.
+// card carries today's seeded cost and requests. A session's stream on the phone opens at its
+// latest event and folds repeated calls of one tool into one row a tap opens. The phone's page
+// scrolls nothing sideways and every target on it is at least 44 px; axe finds nothing serious on
+// either.
 
 import { expect, test } from "@playwright/test";
 import { spawn } from "node:child_process";
@@ -184,6 +186,53 @@ test("a seeded permission ask is allowed with one tap at its card's foot", async
   // the ask left the list: the card is gone and the session reads idle
   await expect(card).toHaveCount(0);
   await expect(page.locator(`[data-row='${session}'] [data-state='idle']`)).toHaveText("idle");
+});
+
+test("the phone's stream folds repeated calls into one row a tap opens, and opens at the end", async ({
+  page,
+  isMobile,
+}, info) => {
+  test.skip(!isMobile, "the thumb's targets are the phone's");
+  // three Read calls in a row, then a Bash call whose PostToolUse never lands before the turn
+  // stops: the Stop keeps the session out of Working (the count the other cases read stays) and
+  // closes the lone call as ended
+  const session = `e2e-stream-${info.project.name}`;
+  const base = {
+    session_id: session,
+    machine: "e2e-machine",
+    project: "e2e",
+    title: "Reads three files",
+    cwd: "/w",
+  };
+  const report = (over: Record<string, string>) =>
+    api("/api/registry/report", { ...base, last_event_at: new Date().toISOString(), ...over });
+  await report({ last_event: "UserPromptSubmit", prompt_line: "Read the three files" });
+  await report({ last_event: "PreToolUse", tool: "Read", tool_target: "/w/a.ts" });
+  await report({ last_event: "PostToolUse", tool: "Read", tool_target: "/w/a.ts" });
+  await report({ last_event: "PostToolUse", tool: "Read", tool_target: "/w/b.ts" });
+  await report({ last_event: "PostToolUse", tool: "Read", tool_target: "/w/c.ts" });
+  await report({ last_event: "PreToolUse", tool: "Bash", tool_target: "git status" });
+  await report({ last_event: "Stop" });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page);
+  await openTab(page, "Now");
+  // the finished turn holds the session in Needs you: its card's link opens it
+  await page.locator(`a[href='#/now/${session}']`).first().click();
+  const stream = page.locator("[data-stream]");
+  const group = stream.getByRole("button", { name: /Read.*3 calls/ });
+  await expect(group).toContainText("×3");
+  await expect(stream.locator("[data-tool]")).toHaveCount(2);
+  await expect(stream.locator("[data-tool][data-ended]")).toContainText("git status");
+  // the stream opens at its latest event
+  expect(await stream.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThanOrEqual(8);
+  const box = await group.boundingBox();
+  expect(box?.height).toBeGreaterThanOrEqual(44);
+
+  await group.tap();
+  await expect(group).toHaveAttribute("aria-expanded", "true");
+  await expect(stream.locator("[data-tool-calls] code")).toHaveText(["a.ts", "b.ts", "c.ts"]);
+  await expectAccessible(page);
 });
 
 test("the Radar card shows today's seeded cost and requests", async ({ page }) => {

@@ -10,7 +10,7 @@ import { Dialog } from "@huddle/ui/dialog.tsx";
 import { modelColor } from "@huddle/ui/model-color.ts";
 import { stampMs } from "@huddle/ui/time.ts";
 import { type ComponentChildren, Fragment, type JSX } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Api, ApiError } from "../api.ts";
 import { Icon } from "../icons.tsx";
 import type { ChannelLinks } from "../links.ts";
@@ -27,6 +27,7 @@ import {
   type RegistrySession,
   type RegistryTeammate,
   type StreamItem,
+  type ToolCall,
   sessionName,
   shortModel,
   type StateRole,
@@ -970,9 +971,86 @@ function dayLabel(at: string, now: number): string {
   return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${hhmm(ms)}`;
 }
 
-/** One item of the session's stream: a prompt as a right bubble, a tool call as one line with
- *  its mark (a check once done, a clock and the word while running), its tool and its
- *  target, anything else that carries text as a plain paragraph. */
+/** One stream line's look: a tool row, a group's header and each call a group opens to. */
+const STREAM_LINE = `flex items-center gap-2 text-[13px] ${MUTED}`;
+
+/** A tool call's mark: a check once done, a clock while running, a circled dash once ended
+ *  without its PostToolUse. */
+function CallMark({ state }: { state: ToolCall["state"] }): JSX.Element {
+  if (state === "running") return <Icon name="clock" class="size-4 shrink-0" />;
+  if (state === "ended") return <Icon name="minusc" class="size-4 shrink-0" />;
+  return <Icon name="check" class="size-4 shrink-0 text-[var(--ui-ok)]" />;
+}
+
+/** The data attributes a call's line carries for its state. */
+function callData(state: ToolCall["state"]): { "data-running"?: ""; "data-ended"?: "" } {
+  if (state === "running") return { "data-running": "" };
+  if (state === "ended") return { "data-ended": "" };
+  return {};
+}
+
+/** The word after a call that has not finished: running, or ended. */
+function CallWord({ state }: { state: ToolCall["state"] }): JSX.Element | null {
+  return state === "done" ? null : <span class="shrink-0 text-xs">{state}</span>;
+}
+
+/** One call's target, in the stream's mono face. */
+function Target({ target }: { target: string }): JSX.Element | null {
+  return target ? <code class="ui-mono min-w-0 truncate text-xs">{target}</code> : null;
+}
+
+/** A row of the stream's tool calls: one call as one line with its mark, tool, target and word;
+ *  repeated calls of one tool as one button with the latest target and a count, which a tap
+ *  opens to one line per call. */
+function ToolRow({ item }: { item: Extract<StreamItem, { kind: "tool" }> }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const latest = item.calls[item.calls.length - 1] as ToolCall;
+  const state = item.calls.some((c) => c.state === "running") ? "running" : latest.state;
+  if (item.calls.length === 1) {
+    return (
+      <div class={STREAM_LINE} data-tool="" {...callData(state)}>
+        <CallMark state={state} />
+        <span>{item.tool}</span>
+        <Target target={latest.target} />
+        <CallWord state={state} />
+      </div>
+    );
+  }
+  return (
+    <div class="flex flex-col" data-tool="" {...callData(state)}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        class={`${STREAM_LINE} -my-2.5 min-h-[var(--ui-tap)] w-full rounded-[var(--ui-radius-sm)] text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]`}
+      >
+        <CallMark state={state} />
+        <span>{item.tool}</span>
+        <Target target={latest.target} />
+        <span class="ui-mono shrink-0 text-xs" aria-hidden="true">
+          ×{item.calls.length}
+        </span>
+        <span class="sr-only">{item.calls.length} calls</span>
+        <CallWord state={state} />
+        <Icon name={open ? "up" : "down"} class="ml-auto size-4 shrink-0" />
+      </button>
+      {open ? (
+        <div class="flex flex-col gap-1.5 pt-3 pl-6" data-tool-calls="">
+          {item.calls.map((call, i) => (
+            <div key={i} class={STREAM_LINE} {...callData(call.state)}>
+              <CallMark state={call.state} />
+              <Target target={call.target} />
+              <CallWord state={call.state} />
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** One item of the session's stream: a prompt as a right bubble, a tool row, anything else that
+ *  carries text as a plain paragraph. */
 function StreamPart({ item }: { item: StreamItem }): JSX.Element {
   if (item.kind === "prompt") {
     return (
@@ -981,25 +1059,56 @@ function StreamPart({ item }: { item: StreamItem }): JSX.Element {
       </div>
     );
   }
-  if (item.kind === "tool") {
-    return (
-      <div
-        class={`flex items-center gap-2 text-[13px] ${MUTED}`}
-        data-tool=""
-        data-running={item.running ? "" : undefined}
-      >
-        {item.running ? (
-          <Icon name="clock" class="size-4 shrink-0" />
-        ) : (
-          <Icon name="check" class="size-4 shrink-0 text-[var(--ui-ok)]" />
-        )}
-        <span>{item.tool}</span>
-        {item.target ? <code class="ui-mono min-w-0 truncate text-xs">{item.target}</code> : null}
-        {item.running ? <span class="shrink-0 text-xs">running</span> : null}
-      </div>
-    );
-  }
+  if (item.kind === "tool") return <ToolRow item={item} />;
   return <div class="break-words whitespace-pre-wrap">{item.text}</div>;
+}
+
+/** How close to the end, in px, still counts as reading the latest event. */
+const BOTTOM_SLACK = 8;
+
+/** The session's stream with its day dividers. It opens at the latest event and follows new
+ *  ones while the reader is at the bottom; a reader who scrolled up stays where they are. */
+function StreamPane({ items, now }: { items: StreamItem[]; now: number }): JSX.Element {
+  const pane = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
+  // one count per call, so a call that joins a group follows as a new item does
+  const size = items.reduce((n, item) => n + (item.kind === "tool" ? item.calls.length : 1), 0);
+  useLayoutEffect(() => {
+    const el = pane.current;
+    if (el && atBottom.current) el.scrollTop = el.scrollHeight;
+  }, [size]);
+  const onScroll = (): void => {
+    const el = pane.current;
+    if (el) atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_SLACK;
+  };
+  let lastDay = "";
+  return (
+    <div
+      ref={pane}
+      onScroll={onScroll}
+      class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 sm:px-6"
+      data-stream=""
+    >
+      <div class="mx-auto flex max-w-[720px] flex-col gap-3 text-sm leading-relaxed sm:text-[15px]">
+        {items.map((item, i) => {
+          const parts: JSX.Element[] = [];
+          const day = dayLabel(item.at, now);
+          const dayKey = day.split(" ").slice(0, -1).join(" ");
+          if (day && dayKey !== lastDay) {
+            lastDay = dayKey;
+            parts.push(
+              <div key={`d${i}`} class={`py-1 text-center text-xs ${MUTED}`}>
+                {day}
+              </div>,
+            );
+          }
+          parts.push(<StreamPart key={i} item={item} />);
+          return <>{parts}</>;
+        })}
+        {items.length === 0 ? <p class={`py-6 text-center text-sm ${MUTED}`}>No events yet.</p> : null}
+      </div>
+    </div>
+  );
 }
 
 /** One item of the session's link menu: a full tap target tall. */
@@ -1232,7 +1341,6 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
   const ask = openItemOf(st.needs, id);
 
   const items = streamItems(d.events ?? []);
-  let lastDay = "";
   const pct = d.context_percent ? Math.round(d.context_percent) : 0;
 
   return (
@@ -1287,26 +1395,7 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
           <code class="ui-mono">claude --resume {d.session_id}</code>
         </p>
       ) : null}
-      <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 sm:px-6" data-stream="">
-        <div class="mx-auto flex max-w-[720px] flex-col gap-3 text-sm leading-relaxed sm:text-[15px]">
-          {items.map((item, i) => {
-            const parts: JSX.Element[] = [];
-            const day = dayLabel(item.at, now);
-            const dayKey = day.split(" ").slice(0, -1).join(" ");
-            if (day && dayKey !== lastDay) {
-              lastDay = dayKey;
-              parts.push(
-                <div key={`d${i}`} class={`py-1 text-center text-xs ${MUTED}`}>
-                  {day}
-                </div>,
-              );
-            }
-            parts.push(<StreamPart key={i} item={item} />);
-            return <>{parts}</>;
-          })}
-          {items.length === 0 ? <p class={`py-6 text-center text-sm ${MUTED}`}>No events yet.</p> : null}
-        </div>
-      </div>
+      <StreamPane key={d.session_id} items={items} now={now} />
       {ask ? <NeedsBar item={ask} session={d} layout={layout} /> : null}
     </div>
   );

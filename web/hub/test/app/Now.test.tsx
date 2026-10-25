@@ -12,7 +12,13 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import type { Api } from "../../src/api.ts";
 import type { Layout } from "../../src/app/layout.ts";
 import { ContextBar, ModelChip, NowContext, NowPane, SessionScreen, StateMark } from "../../src/app/Now.tsx";
-import type { NeedItem, RegistryDetail, RegistrySession, RegistryStore } from "../../src/registry.ts";
+import type {
+  NeedItem,
+  RegistryDetail,
+  RegistryEvent,
+  RegistrySession,
+  RegistryStore,
+} from "../../src/registry.ts";
 import { flush, legacyClasses, makeCtx, makeRegistry, makeState, renderIn, stubMedia } from "../helpers.tsx";
 
 /** One registry row, with the fields the list reads; the test overrides what it looks at. */
@@ -695,6 +701,148 @@ describe("the Session screen", () => {
     const row = screen.getByText("bun test").closest("[data-tool]") as HTMLElement;
     expect(row.hasAttribute("data-running")).toBe(true);
     expect(row.textContent).toContain("running");
+  });
+
+  /** One event on s-need-1, at a fixed time on the fixture's day. */
+  const evt = (
+    seq: number,
+    over: Partial<RegistryEvent["report"]> & { last_event: string },
+  ): RegistryEvent => ({
+    seq,
+    report: { session_id: "s-need-1", last_event_at: "2026-10-08T11:50:00Z", cwd: "/work/p", ...over },
+  });
+
+  /** happy-dom lays nothing out: the stream pane gets 40 px per child of its column and a 300 px
+   *  window, and its scrollTop clamps to the range a browser allows. */
+  const stubStreamLayout = (): (() => void) => {
+    const proto = HTMLElement.prototype;
+    const tops = new WeakMap<HTMLElement, number>();
+    const isStream = (el: HTMLElement): boolean => el.hasAttribute("data-stream");
+    const height = (el: HTMLElement): number => (el.firstElementChild?.children.length ?? 0) * 40;
+    const saved = ["scrollHeight", "clientHeight", "scrollTop"].map(
+      (k) => [k, Object.getOwnPropertyDescriptor(proto, k)] as const,
+    );
+    Object.defineProperty(proto, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return isStream(this) ? height(this) : 0;
+      },
+    });
+    Object.defineProperty(proto, "clientHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return isStream(this) ? 300 : 0;
+      },
+    });
+    Object.defineProperty(proto, "scrollTop", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return tops.get(this) ?? 0;
+      },
+      set(this: HTMLElement, v: number) {
+        tops.set(this, Math.max(0, Math.min(v, this.scrollHeight - this.clientHeight)));
+      },
+    });
+    return () => {
+      for (const [k, d] of saved) {
+        if (d) Object.defineProperty(proto, k, d);
+        else delete (proto as unknown as Record<string, unknown>)[k];
+      }
+    };
+  };
+
+  /** Fifty prompts: fifty stream items, far taller than the pane. */
+  const fifty = (): RegistryEvent[] =>
+    Array.from({ length: 50 }, (_, i) =>
+      evt(i + 1, { last_event: "UserPromptSubmit", task: `Prompt ${i + 1}` }),
+    );
+
+  it("opens the stream at its latest event", () => {
+    const restore = stubStreamLayout();
+    try {
+      mountSession("phone", { events: fifty() });
+      const stream = document.querySelector("[data-stream]") as HTMLElement;
+      expect(stream.scrollHeight).toBeGreaterThan(stream.clientHeight);
+      expect(stream.scrollTop).toBe(stream.scrollHeight - stream.clientHeight);
+    } finally {
+      restore();
+    }
+  });
+
+  it("follows new events while the reader is at the bottom, and leaves a reader who scrolled up", () => {
+    const restore = stubStreamLayout();
+    try {
+      const registry = mountSession("phone", { events: fifty() });
+      const stream = document.querySelector("[data-stream]") as HTMLElement;
+      const more = (from: number): void => {
+        const open = registry.getState().open as RegistryDetail;
+        open.events = [
+          ...open.events,
+          ...Array.from({ length: 5 }, (_, i) =>
+            evt(from + i, { last_event: "UserPromptSubmit", task: `Prompt ${from + i}` }),
+          ),
+        ];
+        void act(() => registry.setNeeds(registry.getState().needs));
+      };
+      more(51);
+      expect(stream.scrollTop).toBe(stream.scrollHeight - stream.clientHeight);
+
+      stream.scrollTop = 100;
+      void act(() => {
+        stream.dispatchEvent(new Event("scroll"));
+      });
+      more(56);
+      expect(stream.scrollTop).toBe(100);
+    } finally {
+      restore();
+    }
+  });
+
+  it("folds repeated calls of one tool into one row with a count that a tap opens to each call", () => {
+    mountSession("phone", {
+      events: [
+        evt(1, { last_event: "PostToolUse", tool: "Read", tool_target: "/work/p/a.ts" }),
+        evt(2, { last_event: "PostToolUse", tool: "Read", tool_target: "/work/p/b.ts" }),
+        evt(3, { last_event: "PreToolUse", tool: "Read", tool_target: "/work/p/c.ts" }),
+        evt(4, { last_event: "PostToolUse", tool: "Bash", tool_target: "git status" }),
+      ],
+    });
+    const rows = [...document.querySelectorAll<HTMLElement>("[data-stream] [data-tool]")];
+    expect(rows).toHaveLength(2);
+    const group = screen.getByRole("button", { name: /Read.*3 calls/ });
+    expect(group.getAttribute("aria-expanded")).toBe("false");
+    expect(group.closest("[data-tool]")?.hasAttribute("data-running")).toBe(true);
+    expect(group.textContent).toContain("×3");
+    expect(document.querySelector("[data-tool-calls]")).toBeNull();
+
+    void act(() => {
+      group.click();
+    });
+    expect(group.getAttribute("aria-expanded")).toBe("true");
+    const calls = [...document.querySelectorAll<HTMLElement>("[data-tool-calls] > *")];
+    expect(calls.map((c) => c.querySelector("code")?.textContent)).toEqual(["a.ts", "b.ts", "c.ts"]);
+    for (const c of calls) expect(c.querySelector("code")?.className).toContain("ui-mono");
+    expect(calls[2]?.hasAttribute("data-running")).toBe(true);
+    expect(calls[2]?.textContent).toContain("running");
+    expect(legacyClasses(document.body, "[data-needs-bar], [data-needs-sheet]")).toEqual([]);
+
+    void act(() => {
+      group.click();
+    });
+    expect(document.querySelector("[data-tool-calls]")).toBeNull();
+  });
+
+  it("marks a call whose PostToolUse never landed as ended once the turn stopped", () => {
+    mountSession("phone", {
+      events: [
+        evt(1, { last_event: "PreToolUse", tool: "Bash", tool_target: "rm -rf build" }),
+        evt(2, { last_event: "Stop" }),
+      ],
+    });
+    const row = screen.getByText("rm -rf build").closest("[data-tool]") as HTMLElement;
+    expect(row.hasAttribute("data-running")).toBe(false);
+    expect(row.hasAttribute("data-ended")).toBe(true);
+    expect(row.textContent).toContain("ended");
   });
 
   it("divides the stream by day: Yesterday, then the plain date", () => {

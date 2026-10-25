@@ -162,6 +162,8 @@ describe("the session's stream items", () => {
     report: { session_id: "s-1", last_event_at: "2026-10-16T11:00:00Z", ...over },
   });
 
+  const T = "2026-10-16T11:00:00Z";
+
   it("renders prompts as bubbles, tool calls as one named line, other text as notes", () => {
     const items = streamItems([
       ev(1, { last_event: "SessionStart" }),
@@ -171,13 +173,13 @@ describe("the session's stream items", () => {
       ev(5, { last_event: "Notification" }),
     ]);
     expect(items).toEqual([
-      { kind: "prompt", text: "Add the e2e test", at: "2026-10-16T11:00:00Z" },
-      { kind: "tool", tool: "Bash", target: "git status", running: false, at: "2026-10-16T11:00:00Z" },
-      { kind: "note", text: "The test exports every ticket", at: "2026-10-16T11:00:00Z" },
+      { kind: "prompt", text: "Add the e2e test", at: T },
+      { kind: "tool", tool: "Bash", calls: [{ target: "git status", state: "done", at: T }], at: T },
+      { kind: "note", text: "The test exports every ticket", at: T },
     ]);
   });
 
-  it("folds a PreToolUse into its PostToolUse: one row per call, at the call's start", () => {
+  it("folds a PreToolUse into its PostToolUse: one call, at the call's start", () => {
     const items = streamItems([
       ev(1, {
         last_event: "PreToolUse",
@@ -195,26 +197,85 @@ describe("the session's stream items", () => {
       }),
     ]);
     expect(items).toEqual([
-      { kind: "tool", tool: "Bash", target: "git status", running: false, at: "2026-10-16T11:00:01Z" },
+      {
+        kind: "tool",
+        tool: "Bash",
+        calls: [{ target: "git status", state: "done", at: "2026-10-16T11:00:01Z" }],
+        at: "2026-10-16T11:00:01Z",
+      },
     ]);
   });
 
-  it("pairs calls that overlap by tool and target", () => {
+  it("groups three consecutive Bash calls into one item that counts 3", () => {
+    const items = streamItems([
+      ev(1, { last_event: "PreToolUse", tool: "Bash", tool_target: "git status" }),
+      ev(2, { last_event: "PostToolUse", tool: "Bash", tool_target: "git status" }),
+      ev(3, { last_event: "PostToolUse", tool: "Bash", tool_target: "git diff" }),
+      ev(4, { last_event: "PreToolUse", tool: "Bash", tool_target: "bun test" }),
+      ev(5, { last_event: "PostToolUse", tool: "Bash", tool_target: "bun test" }),
+    ]);
+    expect(items).toHaveLength(1);
+    const group = items[0];
+    expect(group?.kind === "tool" ? group.calls.map((c) => [c.target, c.state]) : null).toEqual([
+      ["git status", "done"],
+      ["git diff", "done"],
+      ["bun test", "done"],
+    ]);
+  });
+
+  it("starts a new group when the tool changes or a prompt or note comes between", () => {
+    const items = streamItems([
+      ev(1, { last_event: "PostToolUse", tool: "Bash", tool_target: "git status" }),
+      ev(2, { last_event: "PostToolUse", tool: "Read", tool_target: "a.ts" }),
+      ev(3, { last_event: "PostToolUse", tool: "Bash", tool_target: "git status" }),
+      ev(4, { last_event: "UserPromptSubmit", task: "Go on" }),
+      ev(5, { last_event: "PostToolUse", tool: "Bash", tool_target: "git status" }),
+      ev(6, { last_event: "Notification", task: "Waiting" }),
+      ev(7, { last_event: "PostToolUse", tool: "Bash", tool_target: "git status" }),
+    ]);
+    expect(items.map((i) => (i.kind === "tool" ? `${i.tool}×${i.calls.length}` : i.kind))).toEqual([
+      "Bash×1",
+      "Read×1",
+      "Bash×1",
+      "prompt",
+      "Bash×1",
+      "note",
+      "Bash×1",
+    ]);
+  });
+
+  it("pairs calls that overlap by tool and target, inside one group", () => {
     const items = streamItems([
       ev(1, { last_event: "PreToolUse", tool: "Read", tool_target: "/repo/a.ts", cwd: "/repo" }),
       ev(2, { last_event: "PreToolUse", tool: "Read", tool_target: "/repo/b.ts", cwd: "/repo" }),
       ev(3, { last_event: "PostToolUse", tool: "Read", tool_target: "/repo/b.ts", cwd: "/repo" }),
     ]);
-    expect(items.map((i) => (i.kind === "tool" ? [i.target, i.running] : null))).toEqual([
-      ["a.ts", true],
-      ["b.ts", false],
+    expect(items.flatMap((i) => (i.kind === "tool" ? i.calls.map((c) => [c.target, c.state]) : []))).toEqual([
+      ["a.ts", "running"],
+      ["b.ts", "done"],
     ]);
+    expect(items).toHaveLength(1);
   });
 
   it("marks a PreToolUse without its PostToolUse as running", () => {
     const items = streamItems([ev(1, { last_event: "PreToolUse", tool: "Bash", tool_target: "bun test" })]);
     expect(items).toEqual([
-      { kind: "tool", tool: "Bash", target: "bun test", running: true, at: "2026-10-16T11:00:00Z" },
+      { kind: "tool", tool: "Bash", calls: [{ target: "bun test", state: "running", at: T }], at: T },
+    ]);
+  });
+
+  it("closes a call whose PostToolUse never lands as ended at the session's next Stop or prompt", () => {
+    const items = streamItems([
+      ev(1, { last_event: "PreToolUse", tool: "Bash", tool_target: "rm -rf build" }),
+      ev(2, { last_event: "Stop" }),
+      ev(3, { last_event: "PreToolUse", tool: "Edit", tool_target: "a.ts" }),
+      ev(4, { last_event: "UserPromptSubmit", task: "Try again" }),
+      ev(5, { last_event: "PreToolUse", tool: "Read", tool_target: "b.ts" }),
+    ]);
+    expect(items.flatMap((i) => (i.kind === "tool" ? i.calls.map((c) => [c.target, c.state]) : []))).toEqual([
+      ["rm -rf build", "ended"],
+      ["a.ts", "ended"],
+      ["b.ts", "running"],
     ]);
   });
 
@@ -233,7 +294,7 @@ describe("the session's stream items", () => {
         tool_target: "/etc/hosts",
       }),
     ]);
-    expect(items.map((i) => (i.kind === "tool" ? i.target : ""))).toEqual([
+    expect(items.flatMap((i) => (i.kind === "tool" ? i.calls.map((c) => c.target) : []))).toEqual([
       "web/hub/src/app/Now.tsx",
       "/etc/hosts",
     ]);
@@ -245,7 +306,7 @@ describe("the session's stream items", () => {
       ev(2, { last_event: "PostToolUse", cwd: "/repo" }),
     ]);
     expect(items).toEqual([
-      { kind: "tool", tool: "Tool", target: "", running: false, at: "2026-10-16T11:00:00Z" },
+      { kind: "tool", tool: "Tool", calls: [{ target: "", state: "done", at: T }], at: T },
     ]);
     expect(JSON.stringify(items)).not.toContain("/repo");
   });

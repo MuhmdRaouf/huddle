@@ -193,43 +193,70 @@ export function openItemOf(needs: NeedItem[] | null, sessionId: string): NeedIte
   return open.find((n) => n.kind === "permission") ?? open[0];
 }
 
-/** One item of a session's stream: a user prompt, one tool call (running until its PostToolUse
- *  lands), or a plain note. */
+/** One tool call inside a stream row: running from its PreToolUse until its PostToolUse makes it
+ *  done. A call whose PostToolUse never lands (a denied permission, a failed tool, an ended
+ *  session) stays running until the session's next Stop or prompt, which closes it as ended. */
+export type ToolCall = { target: string; state: "running" | "done" | "ended"; at: string };
+
+/** One item of a session's stream: a user prompt, a run of consecutive calls of one tool, or a
+ *  plain note. */
 export type StreamItem =
   | { kind: "prompt"; text: string; at: string }
-  | { kind: "tool"; tool: string; target: string; running: boolean; at: string }
+  | { kind: "tool"; tool: string; calls: ToolCall[]; at: string }
   | { kind: "note"; text: string; at: string };
 
-/** The session's events as its stream shows them: prompts as bubbles, each tool call as one
- *  line named by its tool and target, and any other text the report carries as a plain note.
- *  A PreToolUse opens a running row that its PostToolUse (the same tool and target) finishes;
- *  a PostToolUse with no open row stands alone. Kinds that carry no text (a session starting,
- *  a quiet notification) draw nothing. */
+/** The session's events as its stream shows them: prompts as bubbles, consecutive calls of one
+ *  tool as one row named by the tool (a different tool, a prompt or a note starts the next row),
+ *  and any other text the report carries as a plain note. A PreToolUse opens a running call that
+ *  its PostToolUse (the same tool and target) finishes; a PostToolUse with no open call stands
+ *  alone. A Stop or a prompt closes every call still running as ended, since no PostToolUse
+ *  follows the end of a turn. Kinds that carry no text (a session starting, a quiet
+ *  notification) draw nothing. */
 export function streamItems(events: RegistryEvent[]): StreamItem[] {
   const items: StreamItem[] = [];
+  const open: OpenCall[] = [];
   for (const { report } of events) {
     const at = report.last_event_at;
     const text = report.task || report.title || "";
+    if (report.last_event === "UserPromptSubmit" || report.last_event === "Stop") {
+      for (const { call } of open.splice(0)) call.state = "ended";
+    }
     switch (report.last_event) {
       case "UserPromptSubmit":
         items.push({ kind: "prompt", text: report.prompt_line || text || "You sent a prompt", at });
         break;
       case "PreToolUse":
-      case "PostToolUse": {
-        const tool = report.tool || "Tool";
-        const target = shortTarget(report.tool_target ?? "", report.cwd);
-        const open = items.find(
-          (x) => x.kind === "tool" && x.running && x.tool === tool && x.target === target,
-        );
-        if (report.last_event === "PostToolUse" && open?.kind === "tool") open.running = false;
-        else items.push({ kind: "tool", tool, target, running: report.last_event === "PreToolUse", at });
+      case "PostToolUse":
+        addToolEvent(items, open, report);
         break;
-      }
       default:
         if (text) items.push({ kind: "note", text, at });
     }
   }
   return items;
+}
+
+/** A call still waiting for its PostToolUse, with the tool it runs. */
+type OpenCall = { tool: string; call: ToolCall };
+
+/** One PreToolUse or PostToolUse into the stream: a PostToolUse finishes the open call of its
+ *  tool and target; any other joins the last row when that row runs the same tool, else starts
+ *  a new row. */
+function addToolEvent(items: StreamItem[], open: OpenCall[], report: RegistryReport): void {
+  const tool = report.tool || "Tool";
+  const target = shortTarget(report.tool_target ?? "", report.cwd);
+  const running = report.last_event === "PreToolUse";
+  const started = running ? -1 : open.findIndex((o) => o.tool === tool && o.call.target === target);
+  const finished = started >= 0 ? open.splice(started, 1)[0] : undefined;
+  if (finished) {
+    finished.call.state = "done";
+    return;
+  }
+  const call: ToolCall = { target, state: running ? "running" : "done", at: report.last_event_at };
+  if (running) open.push({ tool, call });
+  const last = items[items.length - 1];
+  if (last?.kind === "tool" && last.tool === tool) last.calls.push(call);
+  else items.push({ kind: "tool", tool, calls: [call], at: call.at });
 }
 
 /** A tool's target as its row shows it: a path inside the session's directory by its path
