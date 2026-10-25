@@ -70,6 +70,28 @@
   padding: 0 var(--ui-space-1) var(--ui-safe-bottom);
 }
 
+/* The installed app on iOS can lay out against a viewport that keeps room for Safari's toolbar,
+ * which the app does not have: a bar pinned by bottom: 0 then floats a toolbar's height above the
+ * screen's edge until a swipe makes iOS measure again. The large viewport never counts that
+ * toolbar, so the installed app sizes the frame by it, pins the bar by its top edge, and keeps
+ * the document itself from scrolling into the difference. */
+:root[data-standalone],
+:root[data-standalone] body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+:root[data-standalone] .ui-shell {
+  height: 100vh;
+  height: 100lvh;
+}
+
+:root[data-standalone] .ui-tabbar {
+  top: calc(100vh - var(--ui-tabbar-h));
+  top: calc(100lvh - var(--ui-tabbar-h));
+  bottom: auto;
+}
+
 /* The desktop's sidebar: the same five items in a column, as tall as the frame. */
 .ui-sidebar {
   box-sizing: border-box;

@@ -141,6 +141,60 @@ test.describe("the phone shell", () => {
     }
   }
 
+  test("the installed app pins the bar to the screen's bottom edge by the large viewport", async ({ page }) => {
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, "standalone", { value: true, configurable: true }),
+    );
+    await open(page, "#/");
+    expect(await page.evaluate(() => document.documentElement.dataset.standalone)).toBe("true");
+    const before = await barBox(page);
+    expect(before.bottom).toBeCloseTo(before.view, 0);
+    await scrollToEnd(page);
+    const after = await barBox(page);
+    expect(after.bottom).toBeCloseTo(after.view, 0);
+    // a fixed box's computed insets read back as used lengths, never "auto": the pin by its top
+    // edge shows in the rule the page ships, and in where the bar lands
+    const pin = await page.evaluate(() => {
+      let rule: CSSStyleRule | undefined;
+      for (const sheet of document.styleSheets) {
+        for (const r of sheet.cssRules) {
+          if (r instanceof CSSStyleRule && r.selectorText.includes("[data-standalone] .ui-tabbar")) rule = r;
+        }
+      }
+      const bar = document.querySelector("[data-nav='bottom']");
+      if (!(bar instanceof HTMLElement)) throw new Error("no bottom bar");
+      return {
+        height: bar.getBoundingClientRect().height,
+        ruleBottom: rule?.style.bottom ?? null,
+        ruleTop: rule?.style.top ?? null,
+        top: getComputedStyle(bar).top,
+        view: window.innerHeight,
+      };
+    });
+    expect(pin.ruleBottom).toBe("auto");
+    expect(pin.ruleTop).toBe("calc(100lvh - var(--ui-tabbar-h))");
+    expect(Math.abs(Number.parseFloat(pin.top) - (pin.view - pin.height))).toBeLessThanOrEqual(1);
+    const shell = await page.evaluate(() => {
+      const el = document.querySelector(".ui-shell");
+      if (!(el instanceof HTMLElement)) throw new Error("no .ui-shell");
+      return { height: el.getBoundingClientRect().height, view: window.innerHeight };
+    });
+    expect(shell.height).toBeCloseTo(shell.view, 0);
+    const scroll = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+    expect(scroll).toBeLessThanOrEqual(0);
+  });
+
+  test("a page in Safari keeps the bar pinned by bottom: 0", async ({ page }) => {
+    await open(page, "#/");
+    expect(await page.evaluate(() => document.documentElement.dataset.standalone)).toBeUndefined();
+    const bottom = await page.evaluate(() => {
+      const bar = document.querySelector("[data-nav='bottom']");
+      if (!(bar instanceof HTMLElement)) throw new Error("no bottom bar");
+      return getComputedStyle(bar).bottom;
+    });
+    expect(bottom).toBe("0px");
+  });
+
   test("the five tabs are targets of at least 44 px", async ({ page }) => {
     await open(page, "#/now");
     const links = page.getByRole("navigation", { name: "Main" }).getByRole("link");
