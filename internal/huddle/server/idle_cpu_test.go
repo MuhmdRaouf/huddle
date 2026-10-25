@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
@@ -71,6 +72,9 @@ func cpuTime(t *testing.T) time.Duration {
 }
 
 func TestHubIdleCPU(t *testing.T) {
+	if testkit.RaceEnabled {
+		t.Skip("the race detector multiplies every instruction's cost; the plain build gates the idle share")
+	}
 	root := t.TempDir()
 	// The router's handover socket lives under its home, so that home stays short enough for a
 	// socket path.
