@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -297,6 +298,35 @@ func TestTheRegistryKeepsTheNewestInboxSocket(t *testing.T) {
 	}
 	if strings.Contains(string(marshalled), "inbox_socket") {
 		t.Errorf("the web's row carries the inbox socket: %s", marshalled)
+	}
+}
+
+// TestLiveTranscriptsListsTheLiveSessionsPaths pins what the transcript watch reads: every
+// session still live whose reports named a transcript, its id to its path, and nothing else —
+// an ended session's path and a live session without one stay out.
+func TestLiveTranscriptsListsTheLiveSessionsPaths(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	live := filepath.Join(t.TempDir(), "s-live.jsonl")
+	ended := filepath.Join(t.TempDir(), "s-ended.jsonl")
+	report := func(rep Report) {
+		t.Helper()
+		if err := db.Report(ctx, rep); err != nil {
+			t.Fatalf("report %s: %v", rep.LastEvent, err)
+		}
+	}
+	report(Report{SessionID: "s-live", TranscriptPath: live, LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:00.000Z"})
+	report(Report{SessionID: "s-ended", TranscriptPath: ended, LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:01.000Z"})
+	report(Report{SessionID: "s-ended", LastEvent: "SessionEnd", LastEventAt: "2026-10-16T09:00:02.000Z"})
+	report(Report{SessionID: "s-bare", LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:03.000Z"})
+
+	got, err := db.LiveTranscripts(ctx)
+	if err != nil {
+		t.Fatalf("live transcripts: %v", err)
+	}
+	want := map[string]string{"s-live": live}
+	if !maps.Equal(got, want) {
+		t.Errorf("live transcripts = %v, want %v", got, want)
 	}
 }
 

@@ -262,6 +262,22 @@ func (d *DB) TranscriptPath(ctx context.Context, id string) (string, error) {
 	return textOfRow(row, "transcript_path"), nil
 }
 
+// LiveTranscripts answers every still-live session's transcript path, id to path: what the
+// transcript watch stats for growth. A session that ended, and one whose reports never named
+// a path, is not listed.
+func (d *DB) LiveTranscripts(ctx context.Context) (map[string]string, error) {
+	rows, err := d.st.All(ctx,
+		"SELECT session_id, transcript_path FROM sessions WHERE ended_at IS NULL AND transcript_path != ''")
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(rows))
+	for _, row := range rows {
+		out[textOfRow(row, "session_id")] = textOfRow(row, "transcript_path")
+	}
+	return out, nil
+}
+
 // InboxSocket answers the session's messaging inbox, the Unix socket its hooks were handed: the
 // hub delivers owner messages to it. A session the registry holds without one, and no session at
 // all, answer none. The socket never leaves the hub — no row the web reads carries it.

@@ -75,8 +75,11 @@ type Options struct {
 	RemovalMS    int
 	// PidCheckMS is the registry's pid check interval in milliseconds (30 s when zero): each
 	// pass ends the sessions whose process is gone.
-	PidCheckMS    int
-	PermitSweepMS int
+	PidCheckMS int
+	// TranscriptCheckMS is the transcript watch's interval in milliseconds (1 s when zero): each
+	// pass tells the open registry streams which live transcripts grew.
+	TranscriptCheckMS int
+	PermitSweepMS     int
 	// PushSweepMS is the push sweep's interval in milliseconds (30 s when zero); each pass
 	// carries the items' first pushes and the due escalations, and a fresh item wakes it.
 	PushSweepMS int
@@ -411,6 +414,11 @@ func OptionsFromEnv(version string, env func(string) string, stdout, stderr io.W
 			o.PidCheckMS = n
 		}
 	}
+	if ms := jsfmt.Trim(env("HUDDLE_TRANSCRIPT_CHECK_MS")); ms != "" {
+		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
+			o.TranscriptCheckMS = n
+		}
+	}
 	if ms := jsfmt.Trim(env("HUDDLE_PERMIT_SWEEP_MS")); ms != "" {
 		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
 			o.PermitSweepMS = n
@@ -626,6 +634,7 @@ func Serve(ctx context.Context, o Options) error {
 	defer stopPidCheck()
 	if s.registry != nil {
 		safego.Go(s.warn, func() { s.watchPids(pidCtx) })
+		safego.Go(s.warn, func() { s.watchTranscripts(pidCtx) })
 		safego.Go(s.warn, func() { s.watchPermissions(pidCtx) })
 		// the push sender rides the same database: its keys, the subscriptions and the items'
 		// bookkeeping all live in hub.db, so a home without one pushes nothing
@@ -1336,6 +1345,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.pushFocusRoute(w, r, me)
 	case credentialed && sessionActPath.MatchString(path) && r.Method == http.MethodPost:
 		return s.sessionActRoute(w, r, path, me)
+	case credentialed && conversationPath.MatchString(path) && r.Method == http.MethodGet:
+		return s.conversationRoute(w, r, path)
 	case credentialed && path == "/api/send" && r.Method == http.MethodPost:
 		return s.sendRoute(w, r, me)
 	// links (SPEC 8): the tie itself owes the step-up like a send, its level move and its read do
