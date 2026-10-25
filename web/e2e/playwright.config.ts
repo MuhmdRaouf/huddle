@@ -1,8 +1,9 @@
 // playwright.config.ts — the e2e run's shape: chromium only, headless, one worker, no retries,
-// thirty seconds a test, in three projects: `desktop` (1440x900) runs every spec, `iphone` (the
+// thirty seconds a test, in five projects: `desktop` (1440x900) runs every spec, `iphone` (the
 // iPhone 15's viewport, touch and user agent over chromium) runs the specs of the pages built
-// phone first, and `tablet` (an iPad at 820x1180, touch, over chromium) runs the screenshot
-// suite. The global setup builds the binary and starts the hub on a temp home;
+// phone first, and the screenshot suite runs on its own in `screens-desktop`, `screens-iphone`
+// and `tablet` (an iPad at 820x1180, touch, over chromium), one CI job each under the 10-minute
+// cap. The global setup builds the binary and starts the hub on a temp home;
 // the teardown stops it and removes the temp homes. Everything the run writes — test results
 // included — stays under the repo's gitignored .agents/scratch.
 
@@ -24,12 +25,11 @@ const PHONE_SPECS = [
   "landing.spec.ts",
   "signin.spec.ts",
   "radar.spec.ts",
-  "screens.spec.ts",
 ];
 /** The specs that run on the phone only: the phone's load budget under throttled CDP. */
 const PHONE_ONLY = ["phone-perf.spec.ts"];
-/** The specs that run on the tablet: the screenshot suite's middle width. */
-const TABLET_SPECS = ["screens.spec.ts"];
+/** The screenshot suite: its own project on each width, so no CI job passes its cap. */
+const SCREENS = ["screens.spec.ts"];
 
 export default defineConfig({
   testDir: here,
@@ -37,7 +37,7 @@ export default defineConfig({
   globalTeardown: path.join(here, "global-teardown.ts"),
   timeout: 30_000,
   // every project in one local run; CI runs one project per job, each well inside its own cap
-  globalTimeout: 18 * 60_000,
+  globalTimeout: 20 * 60_000,
   workers: 1,
   retries: 0,
   reporter: [["list"]],
@@ -58,12 +58,22 @@ export default defineConfig({
     {
       name: "desktop",
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
-      testIgnore: PHONE_ONLY,
+      testIgnore: [...PHONE_ONLY, ...SCREENS],
     },
     {
       name: "iphone",
       use: { ...devices["iPhone 15"], browserName: "chromium" },
       testMatch: PHONE_SPECS,
+    },
+    {
+      name: "screens-desktop",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
+      testMatch: SCREENS,
+    },
+    {
+      name: "screens-iphone",
+      use: { ...devices["iPhone 15"], browserName: "chromium" },
+      testMatch: SCREENS,
     },
     {
       name: "tablet",
@@ -73,7 +83,7 @@ export default defineConfig({
         screen: { width: 820, height: 1180 },
         browserName: "chromium",
       },
-      testMatch: TABLET_SPECS,
+      testMatch: SCREENS,
     },
   ],
 });

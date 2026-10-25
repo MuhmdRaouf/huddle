@@ -282,9 +282,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # one Playwright project per job, each with its own hub: the desk at 1440x900, the iPhone, and
-        # the tablet at 820x1180, which runs the screenshot suite
-        project: [desktop, iphone, tablet]
+        # one Playwright project per job, each with its own hub: the desk at 1440x900 and the iPhone, then
+        # the screenshot suite on its own at each width (the tablet is 820x1180), so no job passes its cap
+        project: [desktop, iphone, screens-desktop, screens-iphone, tablet]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
