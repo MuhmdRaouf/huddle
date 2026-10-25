@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 )
 
 // Life is how long one helper serves: the window the QR code stays honest for.
@@ -74,8 +76,13 @@ func Start(ctx context.Context, o HelperOptions) (*Helper, error) {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       5 * time.Second,
 	}
-	go func() { _ = h.server.Serve(listener) }()
-	go h.watch(ctx)
+	warn := func(line string) {
+		if h.options.Log != nil {
+			h.options.Log(line)
+		}
+	}
+	safego.Go(warn, func() { _ = h.server.Serve(listener) })
+	safego.Go(warn, func() { h.watch(ctx) })
 	return h, nil
 }
 

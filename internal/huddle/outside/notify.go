@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
@@ -288,10 +289,10 @@ func spawnDetached(program string, args []string) error {
 		return err
 	}
 	kill := time.AfterFunc(spawnBudget, func() { _ = cmd.Process.Kill() })
-	go func() {
+	safego.Go(nil, func() {
 		_ = cmd.Wait()
 		kill.Stop()
-	}()
+	})
 	return nil
 }
 

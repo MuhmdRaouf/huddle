@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/kanbantab"
@@ -147,7 +148,7 @@ func readClientOf(given *http.Client) *http.Client {
 func (l *Link) Run(ctx context.Context) {
 	flushCtx, stopFlush := context.WithCancel(ctx)
 	defer stopFlush()
-	go l.flushLoop(flushCtx)
+	safego.Go(l.log, func() { l.flushLoop(flushCtx) })
 	l.pollLoop(ctx)
 	stopFlush()
 }

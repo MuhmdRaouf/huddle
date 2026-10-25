@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
@@ -485,7 +486,7 @@ func (s *server) startSatelliteLink(ctx context.Context) {
 	s.satMu.Lock()
 	s.satLink, s.satHubURL = link, cfg.Hub.URL
 	s.satMu.Unlock()
-	go link.Run(ctx)
+	safego.Go(s.warn, func() { link.Run(ctx) })
 	fmt.Fprintf(s.o.Stdout, "satellite link to %s as %s\n", cfg.Hub.URL, cfg.Machine)
 }
 

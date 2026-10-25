@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
@@ -135,9 +136,11 @@ func (s *server) startRenewal(ctx context.Context, cfg home.Config) {
 			return outside.NewACME(cfg.Cert.DNSProvider, token, filepath.Join(h.TLS(), "acme-account.key"))
 		}
 	}
-	go home.RenewCertificates(ctx, home.Home{Root: s.o.Home}, issue, cfg.Hub.Host, home.RenewalOptions{
-		Now: s.now,
-		Log: func(line string) { fmt.Fprintln(s.o.Stdout, line) },
+	safego.Go(s.warn, func() {
+		home.RenewCertificates(ctx, home.Home{Root: s.o.Home}, issue, cfg.Hub.Host, home.RenewalOptions{
+			Now: s.now,
+			Log: func(line string) { fmt.Fprintln(s.o.Stdout, line) },
+		})
 	})
 }
 
@@ -172,8 +175,10 @@ func (s *server) startHubListener(ctx context.Context, cfg home.Config, handler 
 			return
 		}
 		tlsConfig.GetCertificate = leaf.GetCertificate
-		go leaf.KeepFresh(ctx, pki.KeepFreshOptions{
-			Log: func(line string) { fmt.Fprintln(s.o.Stdout, line) },
+		safego.Go(s.warn, func() {
+			leaf.KeepFresh(ctx, pki.KeepFreshOptions{
+				Log: func(line string) { fmt.Fprintln(s.o.Stdout, line) },
+			})
 		})
 	}
 	listener, err := net.Listen("tcp", cfg.Hub.Listen)
@@ -195,11 +200,11 @@ func (s *server) startHubListener(ctx context.Context, cfg home.Config, handler 
 	}
 	address := listener.Addr().String()
 	fmt.Fprintf(s.o.Stdout, "hub listener on https://%s · paired devices and satellites only\n", address)
-	go func() {
+	safego.Go(s.warn, func() {
 		if err := s.hubSrv.ServeTLS(listener, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintf(s.o.Stdout, "huddle: the hub listener ended: %v\n", err)
 		}
-	}()
+	})
 }
 
 // importedStands answers whether the home's tls/ holds the import marker: a pair the owner laid

@@ -21,6 +21,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/SherClockHolmes/webpush-go"
 )
 
@@ -87,10 +88,10 @@ func (v *vapidSource) read(ctx context.Context) (vapidKeys, error) {
 	box := make(chan stored, 1)
 	wait, cancel := context.WithTimeout(ctx, vapidStoreWait)
 	defer cancel()
-	go func() {
+	safego.Go(func(line string) { v.log("%s", line) }, func() {
 		key, found := v.store.Get(wait)
 		box <- stored{key, found}
-	}()
+	})
 	var unanswered bool
 	select {
 	case a := <-box:
@@ -117,7 +118,7 @@ func (v *vapidSource) read(ctx context.Context) (vapidKeys, error) {
 		// the keystore answered but held no key: this fresh one belongs there too, so the file
 		// stays the fallback it is meant to be. Off to the side — a slow store never holds the
 		// push that asked for the keys.
-		go v.keepStore(keys.Private)
+		safego.Go(func(line string) { v.log("%s", line) }, func() { v.keepStore(keys.Private) })
 	}
 	return keys, nil
 }

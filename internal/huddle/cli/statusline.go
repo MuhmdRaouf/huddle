@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/harness"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
@@ -156,10 +157,10 @@ func (c *cli) statusline(ctx context.Context) int {
 func (c *cli) readStatuslineSnapshot() ([]byte, statuslineSnapshot) {
 	type read struct{ raw []byte }
 	done := make(chan read, 1)
-	go func() {
+	safego.Go(func(line string) { fmt.Fprintln(c.stderr, line) }, func() {
 		raw, _ := io.ReadAll(io.LimitReader(c.w.stdin(), statuslineMaxBytes+1))
 		done <- read{raw}
-	}()
+	})
 	timer := time.NewTimer(statuslineReadBudget)
 	defer timer.Stop()
 	select {

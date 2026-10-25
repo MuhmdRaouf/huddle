@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
@@ -611,7 +612,8 @@ func upHub(ctx context.Context, w *World, bin, rawURL string, budgetMS int, sid 
 		return Result{URL: rawURL, Msg: said + err.Error()}
 	}
 	exited := make(chan struct{})
-	go func() { _ = child.Wait(); close(exited) }()             // reaps it, so its pid reads as gone once dead
+	// reaps it, so its pid reads as gone once dead
+	safego.Go(func(line string) { fmt.Fprintln(log, line) }, func() { _ = child.Wait(); close(exited) })
 	if _, err := io.WriteString(stdin, root+"\n"); err != nil { // a server that exits at once closes it first
 		_ = err
 	}

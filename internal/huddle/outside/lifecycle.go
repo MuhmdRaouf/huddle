@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 )
 
 // Presence is what the plugin registry says about the huddle plugin. Unknown never acts: a
@@ -187,7 +189,7 @@ func WatchRemoval(options RemovalOptions) *Watch {
 		interval = 10 * time.Second
 	}
 	w := &Watch{options: options, stop: make(chan struct{})}
-	go func() {
+	safego.Go(nil, func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -198,7 +200,7 @@ func WatchRemoval(options RemovalOptions) *Watch {
 				w.Tick(context.Background())
 			}
 		}
-	}()
+	})
 	return w
 }
 

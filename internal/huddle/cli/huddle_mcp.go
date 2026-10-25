@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
@@ -84,12 +85,14 @@ func McpStdio(ctx context.Context, w *World, version string, stdin io.Reader, st
 	for _, glob := range id.Push {
 		b.pushGlobs = append(b.pushGlobs, regexp.MustCompile("^(?:"+mcpGlobExpr(glob)+")$"))
 	}
-	go b.watchList(runCtx)
+	safego.Go(func(line string) { b.logf("%s", line) }, func() { b.watchList(runCtx) })
 	// The session's watchdog: while this bridge serves, a dead or hung huddle-router comes back
 	// on its own (HR-WATCHDOG-MCP). Its own goroutine, so no MCP reply ever waits on it;
 	// HUDDLE_ROUTER_WATCH=0 turns it off for a bridge that does not want it.
 	if w.getenv("HUDDLE_ROUTER_WATCH") != "0" {
-		go routerd.Watch(runCtx, routerd.WatchOptions{Env: worldEnv(w)})
+		safego.Go(func(line string) { b.logf("%s", line) }, func() {
+			routerd.Watch(runCtx, routerd.WatchOptions{Env: worldEnv(w)})
+		})
 	}
 	data := []byte{}
 	chunk := make([]byte, 4096)
@@ -287,7 +290,7 @@ func (b *mcpBridge) forward(ctx context.Context, msg *jsfmt.Value) {
 		params, _ := fieldOf(msg, "params")
 		args, _ := fieldOf(params, "arguments")
 		if id, hasID := mcpID(msg); hasID {
-			go b.pollTool(ctx, id, mcpObjectOf(args))
+			safego.Go(func(line string) { b.logf("%s", line) }, func() { b.pollTool(ctx, id, mcpObjectOf(args)) })
 		}
 		return
 	}
@@ -318,7 +321,7 @@ func (b *mcpBridge) forward(ctx context.Context, msg *jsfmt.Value) {
 		ms = int((secs + 30) * 1000)
 	}
 	id, hasID := mcpID(msg)
-	go b.exchange(ctx, s, sent, ms, id, hasID)
+	safego.Go(func(line string) { b.logf("%s", line) }, func() { b.exchange(ctx, s, sent, ms, id, hasID) })
 }
 
 // isInitialized says whether the client finished initializing.
@@ -435,11 +438,11 @@ func (b *mcpBridge) local(ctx context.Context, msg *jsfmt.Value) bool {
 		if !b.isIn(ctx) {
 			return ok(jsfmt.Object([]string{"resources"}, []*jsfmt.Value{jsfmt.Array(nil)}))
 		}
-		go b.resourceList(ctx, id)
+		safego.Go(func(line string) { b.logf("%s", line) }, func() { b.resourceList(ctx, id) })
 		return true
 	case "resources/read":
 		if hasID {
-			go b.resourceRead(ctx, id, mcpTextOf(params, "uri"))
+			safego.Go(func(line string) { b.logf("%s", line) }, func() { b.resourceRead(ctx, id, mcpTextOf(params, "uri")) })
 		}
 		return true
 	case "resources/subscribe":
@@ -547,7 +550,7 @@ func (b *mcpBridge) outside(ctx context.Context, msg *jsfmt.Value) bool {
 		b.replyText(msg, "huddle: "+notInYet, name != "status")
 		return true
 	}
-	go b.join(ctx, msg, mcpObjectOf(args))
+	safego.Go(func(line string) { b.logf("%s", line) }, func() { b.join(ctx, msg, mcpObjectOf(args)) })
 	return true
 }
 
@@ -678,7 +681,7 @@ func (b *mcpBridge) startPush(ctx context.Context) {
 		return
 	}
 	b.pushing = true
-	go b.pushLoop(ctx)
+	safego.Go(func(line string) { b.logf("%s", line) }, func() { b.pushLoop(ctx) })
 }
 
 // pushLoop follows the channel's live stream, reconnecting with backoff, until the session ends.

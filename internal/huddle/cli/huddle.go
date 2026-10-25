@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
@@ -1512,15 +1513,15 @@ func (c *cli) listen(ctx context.Context) int {
 	defer stop()
 	for _, channel := range channels {
 		wg.Add(1)
-		go func(channel string) {
+		safego.Go(func(line string) { fmt.Fprintln(c.stderr, line) }, func() {
 			defer wg.Done()
 			if code := followers.follow(ctx, channel, channels, after, state, all); code != 0 {
 				fatal <- code
 			}
-		}(channel)
+		})
 	}
 	done := make(chan struct{})
-	go func() { wg.Wait(); close(done) }()
+	safego.Go(func(line string) { fmt.Fprintln(c.stderr, line) }, func() { wg.Wait(); close(done) })
 	select {
 	case code := <-fatal:
 		return code
@@ -1589,7 +1590,7 @@ func (c *cli) follow(ctx context.Context, channel string, channels []string, aft
 	}
 	resync := time.NewTicker(time.Duration(c.listenMS("HUDDLE_LISTEN_RESYNC_MS", 30_000)) * time.Millisecond)
 	defer resync.Stop()
-	go func() {
+	safego.Go(func(line string) { fmt.Fprintln(c.stderr, line) }, func() {
 		for {
 			select {
 			case <-resync.C:
@@ -1600,7 +1601,7 @@ func (c *cli) follow(ctx context.Context, channel string, channels []string, aft
 				return
 			}
 		}
-	}()
+	})
 	quiet := time.Duration(c.listenMS("HUDDLE_LISTEN_QUIET_MS", 45_000)) * time.Millisecond
 	for {
 		attemptCtx, cancel := context.WithCancel(ctx)

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
@@ -118,10 +119,10 @@ type hookInput struct {
 // was (encoding/json keeps every field it could decode before the failure).
 func readInput(in io.Reader, ms int, dst any) {
 	text := make(chan string, 1)
-	go func() {
+	safego.Go(nil, func() {
 		raw, _ := io.ReadAll(in)
 		text <- string(raw)
-	}()
+	})
 	select {
 	case got := <-text:
 		if got == "" {

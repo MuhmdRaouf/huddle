@@ -26,6 +26,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
 	"github.com/MuhmdRaouf/huddle/internal/radar/alerts"
@@ -231,7 +232,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 	var procs *server.ProcSampler
 	if options.Procs != nil {
 		procs = server.NewProcSampler(options.Procs, adapters.ProcessTable, now)
-		go procs.Run(appCtx)
+		safego.Go(log, func() { procs.Run(appCtx) })
 	}
 	startedAt := now().UnixMilli()
 	t.Store = st

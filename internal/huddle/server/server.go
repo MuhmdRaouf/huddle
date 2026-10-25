@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
@@ -620,17 +621,19 @@ func Serve(ctx context.Context, o Options) error {
 	pidCtx, stopPidCheck := context.WithCancel(ctx)
 	defer stopPidCheck()
 	if s.registry != nil {
-		go s.watchPids(pidCtx)
-		go s.watchPermissions(pidCtx)
+		safego.Go(s.warn, func() { s.watchPids(pidCtx) })
+		safego.Go(s.warn, func() { s.watchPermissions(pidCtx) })
 		// the push sender rides the same database: its keys, the subscriptions and the items'
 		// bookkeeping all live in hub.db, so a home without one pushes nothing
 		s.vapid = newVapidSource(vapidKeystoreStore(), filepath.Join(o.Home, "keys", "vapid"),
 			func(line string, args ...any) { fmt.Fprintf(o.Stdout, "huddle: "+line+"\n", args...) })
 		s.pushHTTP = &http.Client{Timeout: pushSendTimeout}
-		go s.watchPushes(pidCtx)
+		safego.Go(s.warn, func() { s.watchPushes(pidCtx) })
 		// every raised alert reaches the sender as it is raised; the sends run on their own, so
 		// a slow push service never holds the request that raised the alert
-		unsubscribeAlerts := s.alerts.subscribe(func(e AlertEvent) { go s.pushAlertEvent(pidCtx, e) })
+		unsubscribeAlerts := s.alerts.subscribe(func(e AlertEvent) {
+			safego.Go(s.warn, func() { s.pushAlertEvent(pidCtx, e) })
+		})
 		defer unsubscribeAlerts()
 		// a satellite keeps its outbound link for the lives of this server (SPEC 3): it is
 		// started from the same config the role's listeners read
@@ -828,7 +831,7 @@ func Serve(ctx context.Context, o Options) error {
 	}
 
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- s.httpSrv.Serve(listener) }()
+	safego.Go(s.warn, func() { serveErr <- s.httpSrv.Serve(listener) })
 
 	shutdown := func() {
 		stopPidCheck()
@@ -937,10 +940,10 @@ func (s *server) closeHTTP() {
 	s.closeHub()
 	s.httpSrv.SetKeepAlivesEnabled(false)
 	closed := make(chan struct{})
-	go func() {
+	safego.Go(s.warn, func() {
 		_ = s.httpSrv.Close()
 		close(closed)
-	}()
+	})
 	select {
 	case <-closed:
 	case <-time.After(2 * time.Second):
@@ -1666,6 +1669,10 @@ type reportHookPayload struct {
 	SessionID     string `json:"session_id"`
 	Cwd           string `json:"cwd,omitempty"`
 }
+
+// warn writes one line of the server's own warnings to its stderr: the line a recovered
+// panic in a background goroutine leaves behind.
+func (s *server) warn(line string) { fmt.Fprintln(s.o.Stderr, line) }
 
 // recordRadarHook hands one reported event to the radar tab, so the registry's sessions appear
 // in the dashboard even where the radar plugin's own hook never ran. A proxying tab records
