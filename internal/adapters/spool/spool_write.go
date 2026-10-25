@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
@@ -50,13 +51,23 @@ func CreateSpoolWriter(env domain.EnvLookup, warn func(line string), now func() 
 	if now == nil {
 		now = func() int64 { return time.Now().UnixMilli() }
 	}
+	var mu sync.Mutex
 	ensured := false
+	ensure := func() error {
+		mu.Lock()
+		defer mu.Unlock()
+		if ensured {
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Join(RadarHome(env), "spool"), 0o700); err != nil {
+			return err
+		}
+		ensured = true
+		return nil
+	}
 	appendLine := func(event domain.SpoolEvent) error {
-		if !ensured {
-			if err := os.MkdirAll(filepath.Join(RadarHome(env), "spool"), 0o700); err != nil {
-				return err
-			}
-			ensured = true
+		if err := ensure(); err != nil {
+			return err
 		}
 		line, err := marshalSpoolLine(event)
 		if err != nil {
@@ -79,7 +90,9 @@ func CreateSpoolWriter(env domain.EnvLookup, warn func(line string), now func() 
 			return
 		}
 		// Radar removed its tree under a running router: make the directory again, once.
+		mu.Lock()
 		ensured = false
+		mu.Unlock()
 		if err := appendLine(event); err != nil {
 			warn("route spool: " + err.Error())
 		}
