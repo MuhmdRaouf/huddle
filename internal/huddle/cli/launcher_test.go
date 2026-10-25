@@ -88,7 +88,7 @@ func launcherHooks(t *testing.T) []launcherHook {
 	order := map[string]int{
 		"SessionStart": 0, "UserPromptSubmit": 1, "PreToolUse": 2, "PostToolUse": 3, "Notification": 4,
 		"PermissionRequest": 5, "Stop": 6, "SubagentStart": 7, "SubagentStop": 8, "SessionEnd": 9,
-		"PreCompact": 10,
+		"PreCompact": 10, "TaskCreated": 11, "TeammateIdle": 12,
 	}
 	for i := 0; i < len(events); i++ {
 		for j := i + 1; j < len(events); j++ {
@@ -144,6 +144,8 @@ func TestHooksJSONRunsTheLauncher(t *testing.T) {
 		{Event: "SubagentStop", Name: "subagent-stop", Command: launcherLine("subagent-stop"), Timeout: 7},
 		{Event: "SessionEnd", Name: "session-end", Command: launcherLine("session-end"), Timeout: 5},
 		{Event: "PreCompact", Name: "pre-compact", Command: launcherLine("pre-compact"), Timeout: 5},
+		{Event: "TaskCreated", Name: "task-created", Command: launcherLine("task-created"), Timeout: 5},
+		{Event: "TeammateIdle", Name: "teammate-idle", Command: launcherLine("teammate-idle"), Timeout: 5},
 	}
 	got := launcherHooks(t)
 	if len(got) != len(want) {
