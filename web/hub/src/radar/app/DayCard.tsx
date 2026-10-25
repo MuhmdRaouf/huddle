@@ -1,13 +1,13 @@
 /**
  * The Overview's day card: the most sessions alive at once today and the cards the boards moved
- * to done, both over the UTC day. The hub counts them from its session registry and the boards'
- * LOG; the card reads /api/radar/api/day on mount and once a minute, and shows nothing while the
- * route cannot answer.
+ * to done, both over the day of the hub's zone, which the title names. The hub counts them from
+ * its session registry and the boards' LOG; the card reads /api/radar/api/day on mount and once
+ * a minute, and shows nothing while the route cannot answer.
  */
 
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { fmtNum } from "../fmt.ts";
+import { displayZone, fmtNum } from "../fmt.ts";
 
 const DAY_PATH = "/api/radar/api/day";
 const REFRESH_MS = 60_000;
@@ -63,7 +63,7 @@ export function DayCard({
   return (
     <section class="ui-card p-4 md:p-5" aria-labelledby="ovw-day" data-day-card="">
       <h2 id="ovw-day" class="mb-2 text-[15px] font-semibold">
-        Today, UTC
+        Today, {displayZone()}
       </h2>
       <div class="grid grid-cols-2 gap-3">
         <Figure name="peak-sessions" word="Peak sessions at once" value={day.peakSessions} />

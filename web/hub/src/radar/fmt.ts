@@ -1,6 +1,9 @@
 /**
- * Formatting helpers, all pure and locale-stable so tests (and the mono tabular-nums typography) see exact
- * strings. Dashes — never blanks — for "no data", so columns stay aligned.
+ * Formatting helpers, locale-stable so tests (and the mono tabular-nums typography) see exact strings.
+ * Dashes — never blanks — for "no data", so columns stay aligned. Clock times read in the hub's display
+ * zone: the one zone the hub names the owner's day in, which the Radar controller reads from
+ * /api/settings and hands to setDisplayZone. Until then they read in this browser's own zone, the one
+ * that seeded the hub's.
  */
 
 import { OUTSIDE_SESSION } from "./shared/model.ts";
@@ -75,26 +78,80 @@ export function fmtDuration(ms: number | null | undefined): string {
   return minutes === 60 ? `${hours + 1}h00m` : `${hours}h${String(minutes).padStart(2, "0")}m`;
 }
 
-const pad2 = (value: number): string => String(value).padStart(2, "0");
+/** The hub's display zone once the controller has read it; undefined formats in this browser's zone. */
+let hubZone: string | undefined;
+/** One formatter per zone in use: building an Intl formatter costs far more than formatting with it. */
+const formatters = new Map<string, Intl.DateTimeFormat>();
 
-/** Local HH:MM:SS. */
-export function fmtClock(ts: number): string {
-  const date = new Date(ts);
-  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+/** Names the zone clock times read in. A name this browser's Intl cannot load, or no name (a hub no
+ *  browser has seeded), reads in UTC: the days the hub counts then are UTC days too. */
+export function setDisplayZone(name: string): void {
+  hubZone = loadableZone(name) ? name : "UTC";
 }
 
-/** Local HH:MM — a metering window's ends. */
-export function fmtHour(ts: number): string {
-  const date = new Date(ts);
-  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+/** The zone clock times read in, as an IANA name. */
+export function displayZone(): string {
+  return hubZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
-/** Local HH:MM for a day-old timestamp; HH:MM:SS for today. */
-export function fmtTime(ts: number): string {
-  const date = new Date(ts);
-  const now = new Date();
-  const sameDay = date.toDateString() === now.toDateString();
-  return sameDay ? fmtClock(ts) : `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+function loadableZone(name: string): boolean {
+  if (name === "") return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A moment's wall clock and date in zone. */
+type WallClock = { date: string; hour: string; minute: string; second: string };
+
+function wallClock(ts: number, zone: string): WallClock {
+  let format = formatters.get(zone);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    formatters.set(zone, format);
+  }
+  const parts: Record<string, string> = {};
+  for (const part of format.formatToParts(ts)) parts[part.type] = part.value;
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    hour: parts.hour ?? "00",
+    minute: parts.minute ?? "00",
+    second: parts.second ?? "00",
+  };
+}
+
+/** A moment's date in zone (the hub's by default), YYYY-MM-DD: the calendar "today" means there. */
+export function dayKeyOf(ts: number, zone: string = displayZone()): string {
+  return wallClock(ts, zone).date;
+}
+
+/** HH:MM:SS in zone, the hub's by default. */
+export function fmtClock(ts: number, zone: string = displayZone()): string {
+  const at = wallClock(ts, zone);
+  return `${at.hour}:${at.minute}:${at.second}`;
+}
+
+/** HH:MM in zone, the hub's by default — a metering window's ends. */
+export function fmtHour(ts: number, zone: string = displayZone()): string {
+  const at = wallClock(ts, zone);
+  return `${at.hour}:${at.minute}`;
+}
+
+/** HH:MM:SS for a moment of today, HH:MM for an older one, both by the zone's calendar (the hub's by default). */
+export function fmtTime(ts: number, zone: string = displayZone()): string {
+  return dayKeyOf(ts, zone) === dayKeyOf(Date.now(), zone) ? fmtClock(ts, zone) : fmtHour(ts, zone);
 }
 
 /** "7s ago", "3m ago", "2h ago", "4d ago". */

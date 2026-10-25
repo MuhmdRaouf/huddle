@@ -9,8 +9,8 @@ import (
 // todaySessions caps the Overview's list of today's costliest sessions.
 const todaySessions = 10
 
-// TodayReport is the current UTC day as the Overview graphs it: the requests in each of its
-// 24 hours, its costliest sessions, and the honest flags about prices.
+// TodayReport is the current day in the hub's zone as the Overview graphs it: the requests in
+// each of its 24 clock hours, its costliest sessions, and the honest flags about prices.
 type TodayReport struct {
 	Date           string    `json:"date"`
 	HourlyRequests []int64   `json:"hourlyRequests"`
@@ -19,15 +19,16 @@ type TodayReport struct {
 	Unpriced       int       `json:"unpriced"`
 }
 
-// Today sums the rows of the UTC day `at` falls on: a request count per UTC hour and the ten
-// costliest sessions, ordered like each project's top sessions. Rows outside the day are
-// left out; a row no price covers counts at no cost and turns Approximate on.
-func Today(rows []Row, at time.Time, prices Pricer) TodayReport {
-	midnight := clock.Midnight(at)
+// Today sums the rows of the day `at` falls on in zone (nil is UTC): a request count per
+// clock hour of that zone and the ten costliest sessions, ordered like each project's top
+// sessions. A day the clocks go back on folds its repeated hour into one; rows outside the
+// day are left out; a row no price covers counts at no cost and turns Approximate on.
+func Today(rows []Row, at time.Time, zone *time.Location, prices Pricer) TodayReport {
+	midnight := clock.DayOf(at, zone)
 	from := midnight.UnixMilli()
 	to := midnight.AddDate(0, 0, 1).UnixMilli()
 	report := TodayReport{
-		Date:           clock.DayKey(midnight),
+		Date:           midnight.Format(clock.DayLayout),
 		HourlyRequests: make([]int64, 24),
 	}
 	sessions := map[string]*sessionAcc{}
@@ -41,7 +42,7 @@ func Today(rows []Row, at time.Time, prices Pricer) TodayReport {
 			report.Approximate = true
 			price = RowPrice{}
 		}
-		report.HourlyRequests[(row.TS-from)/time.Hour.Milliseconds()]++
+		report.HourlyRequests[time.UnixMilli(row.TS).In(midnight.Location()).Hour()]++
 		sessionAt(sessions, row).add(row, price)
 	}
 	report.Sessions = make([]Session, 0, len(sessions))

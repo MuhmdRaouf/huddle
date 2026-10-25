@@ -63,13 +63,13 @@ func TestAttribution(t *testing.T) {
 
 	t.Run("starts today at UTC midnight and the longer ranges 7 and 30 days back", func(t *testing.T) {
 		wantDay := time.Date(2026, time.October, 8, 0, 0, 0, 0, time.UTC).UnixMilli()
-		if got := RangeStart(RangeDay, now); got != wantDay {
+		if got := RangeStart(RangeDay, now, nil); got != wantDay {
 			t.Errorf("rangeStart(day): got %d want %d", got, wantDay)
 		}
-		if got := RangeStart(RangeWeek, now); got != now-7*dayMs {
+		if got := RangeStart(RangeWeek, now, nil); got != now-7*dayMs {
 			t.Errorf("rangeStart(week): got %d want %d", got, now-7*dayMs)
 		}
-		if got := RangeStart(RangeMonth, now); got != now-30*dayMs {
+		if got := RangeStart(RangeMonth, now, nil); got != now-30*dayMs {
 			t.Errorf("rangeStart(month): got %d want %d", got, now-30*dayMs)
 		}
 	})
@@ -79,7 +79,7 @@ func TestAttribution(t *testing.T) {
 		repoNames.Sessions = map[string]SessionNames{
 			"s1": {Project: str("app"), Repo: str("/Users/raouf/proxbeam")},
 		}
-		byRepo := Attribute(rows, ByRepo, repoNames, RangeStart(RangeWeek, now))
+		byRepo := Attribute(rows, ByRepo, repoNames, RangeStart(RangeWeek, now, nil))
 		if got := keyLabels(byRepo); !slices.Equal(got, []pair{
 			{"/Users/raouf/proxbeam", "~/proxbeam"},
 			{"(no project)", "(no project)"},
@@ -87,7 +87,7 @@ func TestAttribution(t *testing.T) {
 			t.Errorf("by repo: got %v", got)
 		}
 
-		byProject := Attribute(rows, ByProject, names, RangeStart(RangeWeek, now))
+		byProject := Attribute(rows, ByProject, names, RangeStart(RangeWeek, now, nil))
 		if len(byProject) != 2 {
 			t.Fatalf("by project: got %d groups want 2", len(byProject))
 		}
@@ -108,7 +108,7 @@ func TestAttribution(t *testing.T) {
 		}
 		closeTo(t, "by project app", float64(*byProject[0].CostUsd), 2.8)
 
-		bySession := Attribute(rows, BySession, names, RangeStart(RangeDay, now))
+		bySession := Attribute(rows, BySession, names, RangeStart(RangeDay, now, nil))
 		if got := keyLabels(bySession); !slices.Equal(got, []pair{{"s1", "app · s1"}, {"s2", "s2"}}) {
 			t.Errorf("by session: got %v", got)
 		}
@@ -263,7 +263,7 @@ func TestAttribution(t *testing.T) {
 			{ID: "2", Ts: now - 2000, Model: "glm-5.3", SessionID: "s1", AgentID: "w1", Tokens: millionInput},
 			{ID: "3", Ts: now - 3*dayMs, Model: "glm-5.3", SessionID: "s1", AgentID: "main", Tokens: millionInput},
 		}
-		tree := AttributionTree(treeRows, treeNames, RangeStart(RangeDay, now))
+		tree := AttributionTree(treeRows, treeNames, RangeStart(RangeDay, now, nil))
 		if len(tree) != 1 || len(tree[0].Children) != 1 {
 			t.Fatalf("day tree: got %d repos want 1 with one session", len(tree))
 		}
@@ -272,7 +272,7 @@ func TestAttribution(t *testing.T) {
 		if got := nodeLabels(session.Children); !slices.Equal(got, []string{"w2", "w1"}) {
 			t.Errorf("day agents: got %v want [w2 w1]", got)
 		}
-		month := AttributionTree(treeRows, treeNames, RangeStart(RangeMonth, now))
+		month := AttributionTree(treeRows, treeNames, RangeStart(RangeMonth, now, nil))
 		if len(month) != 1 || len(month[0].Children) != 1 {
 			t.Fatalf("month tree: got %d repos want 1 with one session", len(month))
 		}
@@ -333,7 +333,7 @@ func TestAttribution(t *testing.T) {
 	})
 
 	t.Run("totals what was spent since a moment", func(t *testing.T) {
-		total := SpendSince(rows, RangeStart(RangeDay, now))
+		total := SpendSince(rows, RangeStart(RangeDay, now, nil))
 		if total.USD == nil {
 			t.Fatal("spendSince: no price")
 		}
@@ -389,4 +389,20 @@ func TestAttribution(t *testing.T) {
 			t.Errorf("repo mix: got %v, want [minimax-m2 MiniMax-M2]", got)
 		}
 	})
+}
+
+func TestRangeStartFollowsTheZone(t *testing.T) {
+	athens, err := time.LoadLocation("Europe/Athens")
+	if err != nil {
+		t.Fatalf("load Europe/Athens: %v", err)
+	}
+	// 01:00 UTC on the 26th is 03:00 on the 26th in Athens, whose day began at 22:00 UTC on the 25th
+	now := time.Date(2026, time.October, 26, 1, 0, 0, 0, time.UTC).UnixMilli()
+	want := time.Date(2026, time.October, 26, 0, 0, 0, 0, athens).UnixMilli()
+	if got := RangeStart(RangeDay, now, athens); got != want {
+		t.Errorf("RangeStart(day, Athens) = %s, want %s", time.UnixMilli(got).UTC(), time.UnixMilli(want).UTC())
+	}
+	if got := RangeStart(RangeWeek, now, athens); got != now-7*dayMs {
+		t.Errorf("RangeStart(week, Athens) = %d, want 7 days back", got)
+	}
 }

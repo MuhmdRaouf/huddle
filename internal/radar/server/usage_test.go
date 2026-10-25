@@ -397,7 +397,7 @@ func TestUsageDaysAreUTC(t *testing.T) {
 	if err := h.PutRequest("z1/main", record); err != nil {
 		t.Fatalf("put the request: %v", err)
 	}
-	answer, err := usageRoute(h, routeQuery("days=7"), func() time.Time { return late })
+	answer, err := usageRoute(h, routeQuery("days=7"), func() time.Time { return late }, nil)
 	if err != nil {
 		t.Fatalf("usageRoute: %v", err)
 	}

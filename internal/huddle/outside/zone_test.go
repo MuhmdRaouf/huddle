@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestZones(t *testing.T) {
@@ -67,4 +68,16 @@ func TestZones(t *testing.T) {
 			t.Errorf("the notify switch dropped the zone: %+v", got)
 		}
 	})
+}
+
+func TestHubZoneLocation(t *testing.T) {
+	if got := (HubZone{Zone: "Europe/Athens"}).Location(); got.String() != "Europe/Athens" {
+		t.Errorf("Europe/Athens loads as %s", got)
+	}
+	// no zone yet, and a name this host cannot load, both name the day in UTC
+	for _, name := range []string{"", "Local", "Mars/Olympus_Mons"} {
+		if got := (HubZone{Zone: name}).Location(); got != time.UTC {
+			t.Errorf("zone %q loads as %s, want UTC", name, got)
+		}
+	}
 }

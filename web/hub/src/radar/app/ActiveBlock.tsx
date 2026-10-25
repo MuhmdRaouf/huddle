@@ -3,7 +3,7 @@
  * time left, the tokens and cost so far, the burn rate over the window's active minutes, and
  * the linear projection to its end over a bar that fills as the window runs. Claude's models
  * count by default; the toggle widens the scope to the routed provider models. The overview
- * carries the card and the Blocks view leads with it.
+ * carries the card and the Blocks view leads with it. Its times read in UTC, like the Blocks view.
  */
 
 import { Button } from "@huddle/ui/button.tsx";
@@ -81,7 +81,7 @@ function LiveBlock({ block, approximate, now }: { block: UsageBlock; approximate
           <span class="ml-1 text-sm font-normal text-[var(--ui-muted)]">left</span>
         </div>
         <p class="text-sm text-[var(--ui-muted)]">
-          ends {fmtHour(block.end)} local · started {fmtHour(block.firstTs)} ·{" "}
+          ends {fmtHour(block.end, "UTC")} UTC · started {fmtHour(block.firstTs, "UTC")} ·{" "}
           {block.requests === 1 ? "1 request" : `${fmtNum(block.requests)} requests`} so far
         </p>
       </div>
@@ -94,15 +94,15 @@ function LiveBlock({ block, approximate, now }: { block: UsageBlock; approximate
           <div class="bar-seg h-full rounded-full" style={`width:${share * 100}%;background:${SERIES[0]}`} />
         </div>
         <div class="num mt-1 flex justify-between text-xs text-[var(--ui-muted)]">
-          <span>{fmtHour(block.start)}</span>
-          <span>{fmtHour(block.end)}</span>
+          <span>{fmtHour(block.start, "UTC")}</span>
+          <span>{fmtHour(block.end, "UTC")}</span>
         </div>
       </div>
       <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
         <Figure
           label="Tokens so far"
           value={fmtTokens(blockTokens(block))}
-          sub={`since ${fmtHour(block.firstTs)}`}
+          sub={`since ${fmtHour(block.firstTs, "UTC")}`}
         />
         <Figure label="Est. cost" value={`${marks}${fmtUsd(block.costUsd)}`} sub="at API list price" />
         <Figure
@@ -134,7 +134,7 @@ function WaitingLine({ error }: { error: string | null }) {
 /** What an empty report says: nothing ran, or nothing the scope counts. */
 export function noBlockHint(report: BlocksReport, models: "claude" | "all"): string {
   if (report.blocks.length > 0) {
-    return `The last block ended ${fmtHour(report.blocks[0]?.end ?? 0)}. The next request starts a new one.`;
+    return `The last block ended ${fmtHour(report.blocks[0]?.end ?? 0, "UTC")} UTC. The next request starts a new one.`;
   }
   if (models === "claude") {
     return "No Claude-model requests in the window. The next one starts a block; “All models” counts the routed provider models too.";

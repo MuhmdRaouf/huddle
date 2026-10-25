@@ -81,14 +81,15 @@ type Totals struct {
 	SavingsUSD shared.USD `json:"savingsUsd"`
 }
 
-// Window is the report's range in epoch milliseconds; the UTC days the two ends land on
-// are the days the report carries.
+// Window is the report's range in epoch milliseconds and the zone that names its days; the
+// days the two ends land on in that zone are the days the report carries. A nil Zone is UTC.
 type Window struct {
 	From int64
 	To   int64
+	Zone *time.Location
 }
 
-// Day is one UTC day's totals; its date spells YYYY-MM-DD.
+// Day is one day's totals in the window's zone; its date spells YYYY-MM-DD.
 type Day struct {
 	Date string `json:"date"`
 	Totals
@@ -132,16 +133,16 @@ type Report struct {
 	PricesRetrieved string               `json:"pricesRetrieved"`
 }
 
-// Aggregate sums the window's rows into one report: a zero-filled day per UTC date the
-// window spans, the grand totals, the breakdowns by model, project, kind and
+// Aggregate sums the window's rows into one report: a zero-filled day per date the window
+// spans in its zone, the grand totals, the breakdowns by model, project, kind and
 // harness, each project's top sessions, and the price honesty flags. Slices order by cost,
 // ties by key; sessions by cost, then last activity, then id. A row no price covers still
 // counts its requests and tokens at no cost, sits in Unpriced, and turns Approximate on;
 // a row whose harness reported its cost is priced by that.
 func Aggregate(rows []Row, window Window, prices Pricer) Report {
 	report := Report{
-		From:            clock.DayKey(time.UnixMilli(window.From)),
-		To:              clock.DayKey(time.UnixMilli(window.To)),
+		From:            clock.DayKeyIn(time.UnixMilli(window.From), window.Zone),
+		To:              clock.DayKeyIn(time.UnixMilli(window.To), window.Zone),
 		Days:            daysOf(window),
 		ByModel:         []Slice{},
 		ByProject:       []Slice{},
@@ -160,7 +161,7 @@ func Aggregate(rows []Row, window Window, prices Pricer) Report {
 	harnesses := map[string]*group{}
 	sessions := map[string]*sessionAcc{}
 	for _, row := range rows {
-		date := clock.DayKey(time.UnixMilli(row.TS))
+		date := clock.DayKeyIn(time.UnixMilli(row.TS), window.Zone)
 		price, priced := priceRow(row, prices)
 		if !priced {
 			report.Unpriced++
@@ -206,13 +207,13 @@ func priceRow(row Row, prices Pricer) (RowPrice, bool) {
 	return prices.PriceOf(row)
 }
 
-// daysOf answers one zeroed day per UTC date the window spans, first to last.
+// daysOf answers one zeroed day per date the window spans in its zone, first to last.
 func daysOf(window Window) []Day {
-	first := clock.Midnight(time.UnixMilli(window.From))
-	last := clock.Midnight(time.UnixMilli(window.To))
+	first := clock.DayOf(time.UnixMilli(window.From), window.Zone)
+	last := clock.DayOf(time.UnixMilli(window.To), window.Zone)
 	days := []Day{}
 	for day := first; !day.After(last); day = day.AddDate(0, 0, 1) {
-		days = append(days, Day{Date: clock.DayKey(day)})
+		days = append(days, Day{Date: day.Format(clock.DayLayout)})
 	}
 	return days
 }

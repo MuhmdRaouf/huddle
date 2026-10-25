@@ -1,9 +1,9 @@
 /**
- * The Overview's four graphs: requests per UTC hour today, tokens by kind per day over seven
+ * The Overview's four graphs: requests per hour today, tokens by kind per day over seven
  * days, cost per day over thirty, and today's ten costliest sessions by name and machine. Each
  * sits in the shared chart frame and carries its series as `data-series` JSON on its root, the
  * numbers the e2e suite reads back. Read on mount and once a minute from /api/usage?days=30 and
- * /api/usage/today; the days are UTC, like the providers' own usage pages. A phone stacks the
+ * /api/usage/today; the days and hours are the hub zone's, which the labels name. A phone stacks the
  * four in one column, a wide pane sets them two by two.
  */
 
@@ -13,7 +13,7 @@ import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { useHuddle } from "../../app/context.tsx";
 import { dayWords } from "../chart.ts";
-import { fmtNum, fmtTokens, fmtUsd } from "../fmt.ts";
+import { displayZone, fmtNum, fmtTokens, fmtUsd } from "../fmt.ts";
 import { SERIES, TOKEN_KINDS } from "../palette.ts";
 import type { TodayReport, UsageDay, UsageReport } from "../shared/usage.ts";
 
@@ -67,14 +67,15 @@ function Graph({
 function RequestsGraph({ today }: { today: TodayReport }): JSX.Element {
   const hours = today.hourlyRequests;
   const hh = (i: number): string => `${String(i).padStart(2, "0")}:00`;
+  const zone = displayZone();
   const axis = Array.from({ length: hours.length }, (_, i) => (i % 6 === 0 || i === 23 ? hh(i) : ""));
   return (
     <Graph name="requests" series={{ requests: hours }}>
       <ChartFrame
         title="Requests per hour"
         value={fmtNum(sum(hours))}
-        meta="today, UTC"
-        label={`Requests per UTC hour today, ${fmtNum(sum(hours))} in all`}
+        meta={`today, ${zone}`}
+        label={`Requests per hour today in ${zone}, ${fmtNum(sum(hours))} in all`}
       >
         <AreaChart
           series={[{ values: hours }]}
@@ -83,7 +84,7 @@ function RequestsGraph({ today }: { today: TodayReport }): JSX.Element {
           axis={axis}
           yfmt={(v) => fmtNum(v)}
           note="No requests today"
-          tip={(i) => [`${hh(i)} UTC`, `${fmtNum(hours[i] ?? 0)} requests`]}
+          tip={(i) => [`${hh(i)} ${zone}`, `${fmtNum(hours[i] ?? 0)} requests`]}
         />
       </ChartFrame>
     </Graph>
@@ -103,7 +104,7 @@ function TokensGraph({ days }: { days: readonly UsageDay[] }): JSX.Element {
         title="Tokens by kind"
         value={fmtTokens(total)}
         meta="7 days"
-        label={`Tokens per UTC day over seven days, by kind: ${TOKEN_KINDS.map(
+        label={`Tokens per day in ${displayZone()} over seven days, by kind: ${TOKEN_KINDS.map(
           (kind) => `${kind.label.toLowerCase()} ${fmtTokens(sum(series[kind.key] ?? []))}`,
         ).join(", ")}`}
       >
@@ -140,7 +141,7 @@ function CostGraph({ days }: { days: readonly UsageDay[] }): JSX.Element {
         title="Cost per day"
         value={fmtUsd(sum(cost))}
         meta="30 days"
-        label={`Estimated cost per UTC day over thirty days, ${fmtUsd(sum(cost))} in all`}
+        label={`Estimated cost per day in ${displayZone()} over thirty days, ${fmtUsd(sum(cost))} in all`}
       >
         <AreaChart
           series={[{ values: cost }]}

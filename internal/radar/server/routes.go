@@ -39,11 +39,13 @@ type ApiResponse struct {
 	Body   any
 }
 
-// AppInfo is the build facts the health route serves.
+// AppInfo is the build facts the health route serves and the zone the views name days in.
 type AppInfo struct {
 	Version   string
 	StartedAt int64
 	Port      int
+	// Zone names the days of the usage report and today's graph; nil is UTC.
+	Zone *time.Location
 }
 
 // HistoryLiveMs: a tree any node of which moved within this window is live; older ones read
@@ -1548,12 +1550,12 @@ func HandleApi(st *store.Store, info AppInfo, request ApiRequest, insights Insig
 		if h == nil {
 			return errorOf(503, "history unavailable"), nil
 		}
-		return usageRoute(h, query, now)
+		return usageRoute(h, query, now, info.Zone)
 	case path == "/api/usage/today":
 		if h == nil {
 			return errorOf(503, "history unavailable"), nil
 		}
-		return todayRoute(h, now)
+		return todayRoute(h, now, info.Zone)
 	case path == "/api/blocks":
 		if h == nil {
 			return errorOf(503, "history unavailable"), nil

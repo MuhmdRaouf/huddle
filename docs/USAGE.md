@@ -346,10 +346,14 @@ counts codex rollouts and opencode sessions, tagged by agent.
 A model the price list does not know costs its family's rate (`claude-opus-9-9` prices as the newest
 opus), and the Costs view marks that cost with `≈`.
 
-Radar's days are UTC dates, the way Anthropic's and the providers' usage pages count them, so a
-day's totals in Radar and on those pages turn over at the same moment.
+Radar's days follow the hub's time zone: the day card, the usage report, the Overview's graphs and
+"Spend today" start at midnight there, and every time on the Radar pages reads in that zone. With
+the zone at Europe/Athens, a request at 00:30 UTC on the 25th counts for the 25th. Storage stays
+UTC. A zone this machine cannot load counts UTC days. The Blocks view keeps UTC, the calendar
+Anthropic's and the providers' usage pages count in, and says so on the view; so does the
+self-check.
 
-The Overview draws four graphs, each a UTC series refreshed once a minute:
+The Overview draws four graphs, each a series in the hub's zone refreshed once a minute:
 
 1. Requests per hour, today.
 2. Tokens by kind (input, output, cache read, cache write) per day, the last 7 days.
@@ -359,7 +363,8 @@ The Overview draws four graphs, each a UTC series refreshed once a minute:
 The first and the fourth read `GET /api/radar/api/usage/today` on the hub (`/api/usage/today`
 on radar's own port); the other two read `/api/usage?days=30`. A phone stacks them in one column.
 
-Above the graphs, the day card shows two figures for the UTC day so far, refreshed once a minute:
+Above the graphs, the day card shows two figures for the day so far in the hub's zone, refreshed
+once a minute; its title names the zone, "Today, Europe/Athens":
 
 - Peak sessions at once: the most sessions the hub's registry held alive at the same moment. A
   session is alive from its first reported event until it ends.

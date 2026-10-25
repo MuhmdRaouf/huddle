@@ -407,3 +407,64 @@ func TestAggregateByHarness(t *testing.T) {
 		}
 	})
 }
+
+// athens loads Europe/Athens, the zone the zone tests name the owner's day in.
+func athens(t *testing.T) *time.Location {
+	t.Helper()
+	zone, err := time.LoadLocation("Europe/Athens")
+	if err != nil {
+		t.Fatalf("load Europe/Athens: %v", err)
+	}
+	return zone
+}
+
+func TestAggregateBucketsByTheWindowsZone(t *testing.T) {
+	// 00:30 UTC on the 25th is 03:30 on the 25th in Athens, and 22:30 UTC on the 24th is 01:30
+	// on the 25th there: both rows sit on the Athens 25th
+	zone := athens(t)
+	early := time.Date(2026, time.October, 25, 0, 30, 0, 0, time.UTC).UnixMilli()
+	late := time.Date(2026, time.October, 24, 22, 30, 0, 0, time.UTC).UnixMilli()
+	window := Window{
+		From: time.Date(2026, time.October, 24, 0, 0, 0, 0, zone).UnixMilli(),
+		To:   time.Date(2026, time.October, 25, 12, 0, 0, 0, zone).UnixMilli(),
+		Zone: zone,
+	}
+	rows := []Row{row(func(r *Row) { r.TS = early }), row(func(r *Row) { r.TS = late })}
+	report := Aggregate(rows, window, priceTable{"glm-5.3": {in: 1, out: 2}})
+	if report.From != "2026-10-24" || report.To != "2026-10-25" || len(report.Days) != 2 {
+		t.Fatalf("window = %s..%s over %d days, want the Athens dates 2026-10-24..2026-10-25", report.From, report.To, len(report.Days))
+	}
+	if report.Days[0].Requests != 0 || report.Days[1].Requests != 2 {
+		t.Errorf("requests per day = %d, %d, want 0 and 2: both rows are the 25th in Athens",
+			report.Days[0].Requests, report.Days[1].Requests)
+	}
+}
+
+func TestTodayCountsTheZonesLocalHours(t *testing.T) {
+	// the 25th in Athens runs 25 hours (the clocks go back at 04:00): a row at 23:30 local
+	// still lands in the day's last hour, and one at 00:30 UTC sits at 03:00 local
+	zone := athens(t)
+	at := time.Date(2026, time.October, 25, 23, 45, 0, 0, zone)
+	rows := []Row{
+		row(func(r *Row) { r.TS = time.Date(2026, time.October, 25, 0, 30, 0, 0, time.UTC).UnixMilli() }),
+		row(func(r *Row) { r.TS = time.Date(2026, time.October, 25, 23, 30, 0, 0, zone).UnixMilli() }),
+		// the 24th in Athens, the 24th's last UTC hour: outside the day
+		row(func(r *Row) { r.TS = time.Date(2026, time.October, 24, 20, 30, 0, 0, time.UTC).UnixMilli() }),
+	}
+	report := Today(rows, at, zone, priceTable{"glm-5.3": {in: 1, out: 2}})
+	if report.Date != "2026-10-25" {
+		t.Errorf("date = %s, want the Athens date 2026-10-25", report.Date)
+	}
+	if len(report.HourlyRequests) != 24 {
+		t.Fatalf("hours = %d, want 24", len(report.HourlyRequests))
+	}
+	for hour, got := range report.HourlyRequests {
+		want := int64(0)
+		if hour == 3 || hour == 23 {
+			want = 1
+		}
+		if got != want {
+			t.Errorf("hour %02d = %d requests, want %d", hour, got, want)
+		}
+	}
+}

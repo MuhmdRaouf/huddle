@@ -88,15 +88,16 @@ type AttributionNode struct {
 	Children []AttributionNode `json:"children"`
 }
 
-// RangeStart is the start of the range: today's UTC midnight, or 7 / 30 days back from now.
-func RangeStart(span AttributionRange, now int64) int64 {
+// RangeStart is the start of the range: today's midnight in zone (nil is UTC), or 7 / 30 days
+// back from now.
+func RangeStart(span AttributionRange, now int64, zone *time.Location) int64 {
 	switch span {
 	case RangeWeek:
 		return now - 7*dayMs
 	case RangeMonth:
 		return now - 30*dayMs
 	}
-	return clock.Midnight(time.UnixMilli(now)).UnixMilli()
+	return clock.DayOf(time.UnixMilli(now), zone).UnixMilli()
 }
 
 // pricedOfRow is the parts of a stored row the price reads: no stop reason (it is not a

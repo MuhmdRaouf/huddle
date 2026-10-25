@@ -2,8 +2,9 @@
 // answers, nothing while it cannot answer, and the one path it reads.
 
 import { waitFor } from "@testing-library/preact";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { DayCard, type DayReport, fetchDay } from "../../../src/radar/app/DayCard.tsx";
+import { setDisplayZone } from "../../../src/radar/fmt.ts";
 import { legacyClasses, makeCtx, makeState, renderIn } from "../../helpers.tsx";
 
 async function card(answer: DayReport | null) {
@@ -14,11 +15,20 @@ async function card(answer: DayReport | null) {
 }
 
 describe("DayCard", () => {
+  afterEach(() => setDisplayZone(Intl.DateTimeFormat().resolvedOptions().timeZone));
+
   it("shows the peak sessions and the cards done", async () => {
+    setDisplayZone("UTC");
     const root = await card({ peakSessions: 3, cardsDone: 2 });
     expect(root.querySelector("[data-day='peak-sessions']")?.textContent).toBe("3");
     expect(root.querySelector("[data-day='cards-done']")?.textContent).toBe("2");
     expect(root.querySelector("[data-day-card]")?.textContent).toContain("Today, UTC");
+  });
+
+  it("names the hub's zone its day follows", async () => {
+    setDisplayZone("Europe/Athens");
+    const root = await card({ peakSessions: 3, cardsDone: 2 });
+    expect(root.querySelector("[data-day-card]")?.textContent).toContain("Today, Europe/Athens");
   });
 
   it("paints on the token card surface", async () => {

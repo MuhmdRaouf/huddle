@@ -1,9 +1,26 @@
 // daycard.spec.ts — the Radar Overview's day card: the peak number of sessions alive at once
-// today and the cards moved to done, read from /api/radar/api/day. The fixture answer pins the
-// figures the card draws; the live answer proves the card shows what the hub counts.
+// today and the cards moved to done, read from /api/radar/api/day, over the day of the hub's
+// zone. The fixture answer pins the figures the card draws; the live answer proves the card
+// shows what the hub counts; a zone the owner picks names the card's day.
 
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { openTab, signIn, theSetup } from "./helpers.ts";
+
+/** The hub's zone, as GET /api/settings answers it. */
+async function hubZone(page: Page): Promise<string> {
+  const answer = await page.request.get(`${theSetup().rootUrl}/api/settings`);
+  expect(answer.status()).toBe(200);
+  return ((await answer.json()) as { zone: string }).zone;
+}
+
+/** Sets the hub's zone the way the owner's Settings pick does: PUT /api/settings {zone}. */
+async function putZone(page: Page, zone: string): Promise<void> {
+  const answer = await page.request.put(`${theSetup().rootUrl}/api/settings`, {
+    data: { zone },
+    headers: { "x-huddle-action": "/api/settings", "x-huddle-token": theSetup().token },
+  });
+  expect(answer.status()).toBe(200);
+}
 
 const DAY_ROUTE = "**/api/radar/api/day";
 
@@ -13,9 +30,10 @@ const FIXTURE = { peakSessions: 3, cardsDone: 2 };
 test("the day card shows the fixture's peak sessions and cards done", async ({ page }) => {
   await page.route(DAY_ROUTE, (route) => route.fulfill({ json: FIXTURE }));
   await signIn(page);
+  const zone = await hubZone(page);
   await openTab(page, "Radar");
   const card = page.locator("[data-day-card]");
-  await expect(card).toContainText("Today, UTC");
+  await expect(card).toContainText(`Today, ${zone === "" ? "UTC" : zone}`);
   await expect(card.locator("[data-day='peak-sessions']")).toHaveText("3");
   await expect(card.locator("[data-day='cards-done']")).toHaveText("2");
 });
@@ -31,6 +49,21 @@ test("the day card shows what the hub counts", async ({ page }) => {
   const card = page.locator("[data-day-card]");
   await expect(card.locator("[data-day='peak-sessions']")).toHaveText(String(day.peakSessions));
   await expect(card.locator("[data-day='cards-done']")).toHaveText(String(day.cardsDone));
+});
+
+test("the day card follows the zone the owner picks", async ({ page }) => {
+  await page.route(DAY_ROUTE, (route) => route.fulfill({ json: FIXTURE }));
+  await signIn(page);
+  const seeded = await hubZone(page);
+  // UTC+14: its day is never the UTC one, nor the browser's
+  await putZone(page, "Pacific/Kiritimati");
+  try {
+    await openTab(page, "Radar");
+    const card = page.locator("[data-day-card]");
+    await expect(card).toContainText("Today, Pacific/Kiritimati");
+  } finally {
+    await putZone(page, seeded === "" ? "UTC" : seeded);
+  }
 });
 
 test("the day card fits a phone", async ({ page }) => {

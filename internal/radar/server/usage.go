@@ -1,4 +1,4 @@
-// The usage route: the long-range usage report over 7, 30 or 90 UTC days.
+// The usage route: the long-range usage report over 7, 30 or 90 days of the hub's zone.
 package server
 
 import (
@@ -13,10 +13,10 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/usage"
 )
 
-// usageRoute answers one usage report: the window runs from the UTC midnight `days-1` days
-// back to now, and the rows price the way the Costs view does. A read error is the caller's
+// usageRoute answers one usage report: the window runs from zone's midnight (nil is UTC)
+// `days-1` days back to now, and the rows price the way the Costs view does. A read error is the caller's
 // to answer for.
-func usageRoute(h *history.History, query url.Values, now func() time.Time) (ApiResponse, error) {
+func usageRoute(h *history.History, query url.Values, now func() time.Time, zone *time.Location) (ApiResponse, error) {
 	days := int64(30)
 	if query.Has("days") {
 		asked, ok := parseInt10(query.Get("days"))
@@ -26,13 +26,13 @@ func usageRoute(h *history.History, query url.Values, now func() time.Time) (Api
 		days = asked
 	}
 	at := now()
-	from := dayclock.Midnight(at).AddDate(0, 0, -int(days-1)).UnixMilli()
+	from := dayclock.DayOf(at, zone).AddDate(0, 0, -int(days-1)).UnixMilli()
 	to := at.UnixMilli()
 	rows, err := h.UsageRows(context.Background(), from, to)
 	if err != nil {
 		return ApiResponse{}, err
 	}
-	report := usage.Aggregate(rows, usage.Window{From: from, To: to}, usagePricer{})
+	report := usage.Aggregate(rows, usage.Window{From: from, To: to, Zone: zone}, usagePricer{})
 	return jsonOf(200, report), nil
 }
 

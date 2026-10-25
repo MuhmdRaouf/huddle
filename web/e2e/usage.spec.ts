@@ -53,8 +53,8 @@ test("the usage view shows the seeded totals and splits the picked day", async (
   await page.mouse.click(box.x + (box.width * 6.5) / 7, box.y + box.height / 2);
   const card = page.locator("[data-usage-day]");
   await expect(card).toBeVisible();
-  // the day is a UTC date, the way the providers' usage pages count it, and the card says so
-  await expect(card.getByRole("heading")).toHaveText(/^\d{1,2} [A-Z][a-z]{2} UTC$/);
+  // the day is a date in the hub's zone, and the card names the zone
+  await expect(card.getByRole("heading")).toHaveText(/^\d{1,2} [A-Z][a-z]{2} [A-Za-z_]+(\/[A-Za-z_+-]+)*$/);
   await expect(card).toContainText(USAGE.today.toLocaleString("en-US"));
   await expect(card).toContainText("GLM 5.3");
   expect(await card.textContent()).not.toContain("Flash");

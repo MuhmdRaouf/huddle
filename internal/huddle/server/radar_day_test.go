@@ -79,3 +79,54 @@ func TestTheRadarDayCountsPeakSessionsAndCardsDone(t *testing.T) {
 		t.Fatalf("the day = %s, want peakSessions 3 and cardsDone 2", body)
 	}
 }
+
+// TestTheRadarDayCountsCardsDoneOnTheHubZonesDay: with the hub's zone at UTC+14, a card done at
+// the zone's midnight counts and one a second before it does not, wherever UTC's midnight falls.
+func TestTheRadarDayCountsCardsDoneOnTheHubZonesDay(t *testing.T) {
+	zone, err := time.LoadLocation("Pacific/Kiritimati")
+	if err != nil {
+		t.Fatalf("load Pacific/Kiritimati: %v", err)
+	}
+	local := time.Now().In(zone)
+	midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, zone)
+
+	home := t.TempDir()
+	repo := filepath.Join(home, "alpha")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(repo, ".agents", "kanban")
+	if _, err := board.Init(context.Background(), root, "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	log := strings.Join([]string{
+		`{"ts":"` + midnight.Add(-time.Second).Format("2006-01-02T15:04:05-0700") + `","event":"done","ticket":"Y-1","actor":"a","note":""}`,
+		`{"ts":"` + midnight.Format("2006-01-02T15:04:05-0700") + `","event":"done","ticket":"T-1","actor":"a","note":""}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(root, "LOG"), []byte(log), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := startServer(t, nil)
+	if code, out := putZone(t, srv, `{"zone": "Pacific/Kiritimati"}`); code != 200 {
+		t.Fatalf("PUT the zone = %d %s", code, out)
+	}
+	body := `{"session_id":"s-zone","cwd":"` + repo + `","last_event":"SessionStart","last_event_at":"` +
+		time.Now().UTC().Format("2006-01-02T15:04:05.000Z") + `"}`
+	if code, out := srv.post(t, "/api/registry/report", body, nil); code != 200 {
+		t.Fatalf("report the session: %d %s", code, out)
+	}
+	code, _, out := srv.get(t, "/api/radar/api/day", nil)
+	if code != 200 {
+		t.Fatalf("the day = %d %s, want 200", code, out)
+	}
+	var day struct {
+		CardsDone *int `json:"cardsDone"`
+	}
+	if err := json.Unmarshal([]byte(out), &day); err != nil {
+		t.Fatalf("decode %s: %v", out, err)
+	}
+	if day.CardsDone == nil || *day.CardsDone != 1 {
+		t.Fatalf("the day = %s, want cardsDone 1: the card done at the Kiritimati midnight", out)
+	}
+}

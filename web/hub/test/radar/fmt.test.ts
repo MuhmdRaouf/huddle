@@ -1,11 +1,13 @@
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import {
   costDetailText,
   costText,
+  displayZone,
   fmtAgo,
   fmtClock,
   fmtCount,
   fmtDuration,
+  fmtHour,
   fmtNum,
   fmtPercent,
   fmtTime,
@@ -14,6 +16,7 @@ import {
   fmtUsd,
   hostOf,
   sessionName,
+  setDisplayZone,
 } from "../../src/radar/fmt.ts";
 import { OUTSIDE_SESSION } from "../../src/radar/shared/model.ts";
 
@@ -86,6 +89,39 @@ describe("fmtClock / fmtTime", () => {
     expect(fmtTime(today.getTime())).toBe("12:05:03");
     // a fixed past date can never be "today", so this branch is deterministic
     expect(fmtTime(new Date(2020, 0, 2, 14, 5, 0).getTime())).toBe("14:05");
+  });
+});
+
+describe("the hub zone", () => {
+  // 00:30 UTC on 2026-10-26 is 02:30 in Athens (winter time, two hours ahead)
+  const instant = Date.UTC(2026, 9, 26, 0, 30, 0);
+  afterEach(() => setDisplayZone(Intl.DateTimeFormat().resolvedOptions().timeZone));
+
+  it("formats a timestamp in the hub's zone", () => {
+    setDisplayZone("Europe/Athens");
+    expect(displayZone()).toBe("Europe/Athens");
+    expect(fmtClock(instant)).toBe("02:30:00");
+    expect(fmtHour(instant)).toBe("02:30");
+  });
+
+  it("formats in UTC when the zone is unknown or the hub has none", () => {
+    for (const name of ["Mars/Olympus_Mons", ""]) {
+      setDisplayZone(name);
+      expect(displayZone()).toBe("UTC");
+      expect(fmtClock(instant)).toBe("00:30:00");
+    }
+  });
+
+  it("formats in the zone a caller names over the hub's", () => {
+    setDisplayZone("Europe/Athens");
+    expect(fmtHour(instant, "UTC")).toBe("00:30");
+  });
+
+  it("tells today from an older day by the hub zone's calendar", () => {
+    setDisplayZone("Pacific/Kiritimati");
+    // now is today in any zone, and two days back never is
+    expect(fmtTime(Date.now())).toMatch(/^\d\d:\d\d:\d\d$/);
+    expect(fmtTime(Date.now() - 2 * 86_400_000)).toMatch(/^\d\d:\d\d$/);
   });
 });
 

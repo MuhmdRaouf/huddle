@@ -8,7 +8,7 @@ import (
 )
 
 // The day route: the Overview's day card reads the peak number of sessions alive at once and
-// the cards moved to done, over the UTC day up to now.
+// the cards moved to done, over the day up to now: the UTC day without a zone.
 
 // fakeDay answers fixed facts and records the window it was asked for.
 type fakeDay struct {
@@ -30,7 +30,7 @@ func TestDayRoute(t *testing.T) {
 	}
 
 	t.Run("503s without a day source", func(t *testing.T) {
-		answer, err := dayRoute(context.Background(), nil, now)
+		answer, err := dayRoute(context.Background(), nil, now, nil)
 		if err != nil || answer.Status != 503 {
 			t.Fatalf("answer = %+v (%v), want 503", answer, err)
 		}
@@ -46,7 +46,7 @@ func TestDayRoute(t *testing.T) {
 			},
 			CardsDone: 2,
 		}}
-		answer, err := dayRoute(context.Background(), source, now)
+		answer, err := dayRoute(context.Background(), source, now, nil)
 		if err != nil || answer.Status != 200 {
 			t.Fatalf("answer = %+v (%v), want 200", answer, err)
 		}
@@ -62,7 +62,7 @@ func TestDayRoute(t *testing.T) {
 
 	t.Run("passes a source failure on", func(t *testing.T) {
 		boom := errors.New("registry closed")
-		if _, err := dayRoute(context.Background(), &fakeDay{err: boom}, now); !errors.Is(err, boom) {
+		if _, err := dayRoute(context.Background(), &fakeDay{err: boom}, now, nil); !errors.Is(err, boom) {
 			t.Fatalf("err = %v, want the source's", err)
 		}
 	})

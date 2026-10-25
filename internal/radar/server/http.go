@@ -92,6 +92,9 @@ type HttpOptions struct {
 	Otel *store.OtelRows
 	// Day answers the day card's facts from the embedding hub; nil answers 503 on /api/day.
 	Day DaySource
+	// Zone names the hub's zone, read on every request, for the days the day card, the usage
+	// report and today's graph count; nil (a standalone radar) counts UTC days.
+	Zone func() *time.Location
 	// Procs holds each live session's CPU and memory samples; nil leaves them off the
 	// /api/sessions rows.
 	Procs *ProcSampler
@@ -212,6 +215,14 @@ func CreateHttpServer(options HttpOptions) *HttpServer {
 // SetPort names the port the caller bound.
 func (h *HttpServer) SetPort(port int) {
 	h.port = func() int64 { return int64(port) }
+}
+
+// zone is the hub's zone for this request; nil is UTC.
+func (h *HttpServer) zone() *time.Location {
+	if h.options.Zone == nil {
+		return nil
+	}
+	return h.options.Zone()
 }
 
 // WhenIdle returns once no counted request is in flight, or after timeoutMs.
@@ -360,7 +371,7 @@ func (h *HttpServer) answerApi(r *http.Request, path string) (ApiResponse, error
 		return h.options.SelfCheck.Answer(r.Context())
 	}
 	if path == DayPath {
-		return dayRoute(r.Context(), h.options.Day, time.Now())
+		return dayRoute(r.Context(), h.options.Day, time.Now(), h.zone())
 	}
 	if path == "/api/sessions" && h.options.Procs != nil {
 		tree := store.SessionTree(h.options.Store.SessionList())
@@ -368,7 +379,7 @@ func (h *HttpServer) answerApi(r *http.Request, path string) (ApiResponse, error
 	}
 	return HandleApi(
 		h.options.Store,
-		AppInfo{Version: h.options.Version, StartedAt: h.options.StartedAt, Port: int(h.port())},
+		AppInfo{Version: h.options.Version, StartedAt: h.options.StartedAt, Port: int(h.port()), Zone: h.zone()},
 		ApiRequest{Path: path, Query: r.URL.Query()},
 		h.options.Insights,
 		h.options.Quotas,

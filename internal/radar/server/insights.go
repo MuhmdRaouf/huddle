@@ -51,6 +51,9 @@ type InsightsOptions struct {
 	Env   domain.EnvLookup
 	Store InsightsStore
 	Now   func() time.Time
+	// Zone names the hub's zone, read on every call, for the day spend and attribution start
+	// at; nil counts UTC days.
+	Zone func() *time.Location
 	// TickMs is the flush cadence; zero leaves the timer off (tests tick themselves).
 	TickMs     int64
 	Notifier   *alerts.Notifier
@@ -100,6 +103,7 @@ type Insights struct {
 	env        domain.EnvLookup
 	store      InsightsStore
 	nowFn      func() time.Time
+	zoneFn     func() *time.Location
 	thresholds alerts.Thresholds
 
 	mu          sync.Mutex
@@ -141,6 +145,7 @@ func CreateInsights(ctx context.Context, options InsightsOptions) *Insights {
 		env:         env,
 		store:       options.Store,
 		nowFn:       now,
+		zoneFn:      options.Zone,
 		thresholds:  thresholds,
 		budgets:     budget.ReadBudgets(ctx, env),
 		settings:    settings.ReadSettings(ctx, env),
@@ -200,6 +205,14 @@ func (i *Insights) notificationsOn() bool {
 
 // nowMs is the clock every window reads.
 func (i *Insights) nowMs() int64 { return i.nowFn().UnixMilli() }
+
+// zone is the hub's zone; nil is UTC.
+func (i *Insights) zone() *time.Location {
+	if i.zoneFn == nil {
+		return nil
+	}
+	return i.zoneFn()
+}
 
 // ledgerRowsLocked is every ledger row inside its keep window.
 func (i *Insights) ledgerRowsLocked() []cost.LedgerRow {
@@ -428,21 +441,22 @@ func (i *Insights) SetSettings(ctx context.Context, input *jsfmt.Value) (setting
 func (i *Insights) Attribution(by cost.AttributionBy, span cost.AttributionRange) []cost.AttributionRow {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	return cost.Attribute(i.ledgerRowsLocked(), by, i.namesLocked(), cost.RangeStart(span, i.nowMs()))
+	return cost.Attribute(i.ledgerRowsLocked(), by, i.namesLocked(), cost.RangeStart(span, i.nowMs(), i.zone()))
 }
 
 // Tree is the costs drill-down over the same rows: repos → sessions → agents → models.
 func (i *Insights) Tree(span cost.AttributionRange) []cost.AttributionNode {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	return cost.AttributionTree(i.ledgerRowsLocked(), i.namesLocked(), cost.RangeStart(span, i.nowMs()))
+	return cost.AttributionTree(i.ledgerRowsLocked(), i.namesLocked(), cost.RangeStart(span, i.nowMs(), i.zone()))
 }
 
-// SpendToday is the estimated spend since UTC midnight and the calls it could not price.
+// SpendToday is the estimated spend since midnight in the hub's zone and the calls it could
+// not price.
 func (i *Insights) SpendToday() cost.Spend {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	return cost.SpendSince(i.ledgerRowsLocked(), cost.RangeStart(cost.RangeDay, i.nowMs()))
+	return cost.SpendSince(i.ledgerRowsLocked(), cost.RangeStart(cost.RangeDay, i.nowMs(), i.zone()))
 }
 
 // Providers lists the provider plugins with requests in the ledger, plus the known ones.

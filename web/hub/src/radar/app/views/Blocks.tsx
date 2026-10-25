@@ -3,23 +3,24 @@
  * top (time left, tokens, cost, burn rate, the projection bar), then every window in the
  * chosen span as one row: when it ran, what it holds, what it cost, and — for the live one —
  * the burn rate and the projection to its end. Claude's models count by default; the card's
- * toggle widens the scope to the routed provider models.
+ * toggle widens the scope to the routed provider models. The view keeps UTC whatever the hub's
+ * zone, the calendar the subscription's limits count in, and says so in its subtitle.
  */
 
-import { ESTIMATE_NOTE, fmtHour, fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
+import { dayKeyOf, ESTIMATE_NOTE, fmtHour, fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { BLOCKS_WINDOWS, type BlocksReport, type UsageBlock } from "../../shared/usage.ts";
 import { ActiveBlock, blockTokens } from "../ActiveBlock.tsx";
 import { useApp } from "../context.ts";
 import { EmptyState, Notice, Panel, Segmented } from "../kit.tsx";
 import { Table, TableHeadStatic, TableRow } from "../table.tsx";
 
-/** One window's span in words: its clock ends, and the local date when it did not start today. */
+/** One window's span in words: its UTC clock ends, and its UTC date when it did not start on today's. */
 export function blockWhen(block: UsageBlock, now: number): string {
-  const sameDay = new Date(block.start).toDateString() === new Date(now).toDateString();
+  const sameDay = dayKeyOf(block.start, "UTC") === dayKeyOf(now, "UTC");
   const day = sameDay
     ? ""
-    : `${new Date(block.start).toLocaleDateString("en-US", { month: "short", day: "numeric" })} `;
-  return `${day}${fmtHour(block.start)} – ${fmtHour(block.end)}`;
+    : `${new Date(block.start).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} `;
+  return `${day}${fmtHour(block.start, "UTC")} – ${fmtHour(block.end, "UTC")}`;
 }
 
 /** One row of the table: a metering window with its usage, its burn when it is the live one. */
@@ -113,7 +114,7 @@ export function BlocksView() {
       <Panel
         icon="history"
         title="Metering blocks"
-        subtitle={`${report.blocks.length} in the last ${state.blocksDays} days`}
+        subtitle={`${report.blocks.length} in the last ${state.blocksDays} days, in UTC`}
         actions={
           <Segmented
             action="blocks-days"

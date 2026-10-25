@@ -87,6 +87,9 @@ type MountOptions struct {
 	// Day answers the day card's facts from huddle's registry and boards; nil answers 503 on
 	// radar's /api/day.
 	Day server.DaySource
+	// Zone names the hub's zone, read on every request, for the days radar's day card, usage,
+	// today's graph and spend count; nil counts UTC days. The Blocks view keeps UTC either way.
+	Zone func() *time.Location
 	// Procs names the live sessions' pids from huddle's registry, for the CPU and memory
 	// samples on the sessions rows; nil samples nothing.
 	Procs server.SessionPids
@@ -217,6 +220,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		Env:     env,
 		Store:   st,
 		Now:     now,
+		Zone:    options.Zone,
 		TickMs:  tickMs,
 		Runner:  options.NotifyRunner,
 		Quotas:  quotas,
@@ -248,6 +252,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		Watcher:       watcher,
 		Otel:          store.NewOtelRows(),
 		Day:           options.Day,
+		Zone:          options.Zone,
 		Procs:         procs,
 		HostAllowed:   options.HostAllowed,
 		OriginAllowed: options.OriginAllowed,

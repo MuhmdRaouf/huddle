@@ -7,6 +7,7 @@ import {
   RadarController,
 } from "../../src/radar/app/controller.ts";
 import { exportName } from "../../src/radar/export.ts";
+import { displayZone, setDisplayZone } from "../../src/radar/fmt.ts";
 import type { SessionListItem } from "../../src/radar/shared/api.ts";
 import type { Summary } from "../../src/radar/shared/model.ts";
 import { DEFAULT_RANGE } from "../../src/radar/shared/time-range.ts";
@@ -1070,6 +1071,22 @@ describe("polled data", () => {
     expect(state.budgetStatus).toEqual({ version: 1, updatedAt: 0, stopped: [], spend: [] });
     expect(state.spendToday).toBe(1.25);
     expect(state.spendUnpriced).toBe(2);
+  });
+
+  it("formats clock times in the zone the hub's settings name, UTC for one it cannot load", async () => {
+    try {
+      for (const [named, want] of [
+        ["Europe/Athens", "Europe/Athens"],
+        ["Mars/Olympus_Mons", "UTC"],
+      ]) {
+        const harness = makeHarness();
+        harness.answers.set("/api/settings", ok({ zone: named, zone_origin: "owner" }));
+        await started(harness);
+        expect(displayZone()).toBe(want);
+      }
+    } finally {
+      setDisplayZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    }
   });
 
   it("keeps what is shown when the poll fails", async () => {

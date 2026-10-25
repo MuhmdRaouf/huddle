@@ -11,6 +11,7 @@ import {
 } from "../../../src/radar/app/ActiveBlock.tsx";
 import { blockWhen, BlocksView } from "../../../src/radar/app/views/Blocks.tsx";
 import type { ClientState } from "../../../src/radar/state.ts";
+import { setDisplayZone } from "../../../src/radar/fmt.ts";
 import { legacyClasses } from "../../helpers.tsx";
 import { renderApp } from "./render.tsx";
 import { expectTokensOnly } from "./tokens.ts";
@@ -93,9 +94,9 @@ describe("blockElapsed", () => {
 
 describe("noBlockHint", () => {
   it("names the last end when a window ran, and says what the scope counted when none did", () => {
-    const hour = new Date(PAST.end).toTimeString().slice(0, 5);
+    const hour = new Date(PAST.end).toISOString().slice(11, 16);
     expect(noBlockHint(REPORT, "claude")).toBe(
-      `The last block ended ${hour}. The next request starts a new one.`,
+      `The last block ended ${hour} UTC. The next request starts a new one.`,
     );
     const empty: BlocksReport = { blocks: [], approximate: false, unpriced: 0 };
     expect(noBlockHint(empty, "claude")).toContain("No Claude-model requests");
@@ -114,6 +115,8 @@ describe("ActiveBlock", () => {
     expect(card).toContain("$2.70/h");
     expect(card).toContain("12.8M");
     expect(card).toContain("$8.10");
+    const utc = (ts: number): string => new Date(ts).toISOString().slice(11, 16);
+    expect(card).toContain(`ends ${utc(end)} UTC`);
     const bar = container.querySelector("[data-active-block] [role='img']");
     expect(bar?.getAttribute("aria-label")).toBe("The window is 40% through");
   });
@@ -186,14 +189,17 @@ describe("ActiveBlock", () => {
 });
 
 describe("blockWhen", () => {
-  it("spells a window's clock ends, the date only when it did not start today", () => {
-    const day = new Date(PAST.start).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    expect(blockWhen(block(), NOW)).toBe(
-      `${new Date(start).toTimeString().slice(0, 5)} – ${new Date(end).toTimeString().slice(0, 5)}`,
-    );
-    expect(blockWhen(PAST, NOW)).toBe(
-      `${day} ${new Date(PAST.start).toTimeString().slice(0, 5)} – ${new Date(PAST.end).toTimeString().slice(0, 5)}`,
-    );
+  it("spells a window's UTC clock ends, the UTC date only when it did not start on today's UTC date", () => {
+    setDisplayZone("Pacific/Kiritimati");
+    const utc = (ts: number): string => new Date(ts).toISOString().slice(11, 16);
+    const day = new Date(PAST.start).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+    expect(blockWhen(block(), NOW)).toBe(`${utc(start)} – ${utc(end)}`);
+    expect(blockWhen(PAST, NOW)).toBe(`${day} ${utc(PAST.start)} – ${utc(PAST.end)}`);
+    setDisplayZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
   });
 });
 
@@ -213,7 +219,7 @@ describe("BlocksView", () => {
     expect(first).toContain("12.8M");
     const second = rows[1]?.textContent ?? "";
     expect(second).toContain("–"); // an ended window has no burn and no projection
-    expect(container.textContent).toContain("2 in the last 7 days");
+    expect(container.textContent).toContain("2 in the last 7 days, in UTC");
   });
 
   it("offers the 7 and 30-day windows and asks the controller for the other one", async () => {

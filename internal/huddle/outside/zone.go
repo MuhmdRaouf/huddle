@@ -29,6 +29,19 @@ type HubZone struct {
 	ZoneOrigin ZoneOrigin `json:"zone_origin"`
 }
 
+// Location is the zone the hub names its days in: the held zone, or UTC when the hub has none
+// or this host cannot load it (Go reads the host's zoneinfo; the binary carries no copy).
+func (z HubZone) Location() *time.Location {
+	if z.Zone == "" || z.Zone == "Local" {
+		return time.UTC
+	}
+	zone, err := time.LoadLocation(z.Zone)
+	if err != nil {
+		return time.UTC
+	}
+	return zone
+}
+
 // ZoneError is a zone name Go's time.LoadLocation cannot load.
 type ZoneError struct {
 	Name string

@@ -1,5 +1,5 @@
 // The day route: the Overview's day card, the peak number of sessions alive at once and the
-// cards moved to done over the current UTC day. Radar holds neither fact; the embedding hub
+// cards moved to done over the current day of the hub's zone. Radar holds neither fact; the embedding hub
 // answers them from its session registry and the boards it knows.
 package server
 
@@ -39,13 +39,13 @@ type dayAnswer struct {
 	CardsDone    int `json:"cardsDone"`
 }
 
-// dayRoute answers the day from the UTC midnight to now; without a source (a standalone radar)
-// it is a 503. A source failure is the caller's to answer for.
-func dayRoute(ctx context.Context, source DaySource, now time.Time) (ApiResponse, error) {
+// dayRoute answers the day from zone's midnight (nil is UTC) to now; without a source (a
+// standalone radar) it is a 503. A source failure is the caller's to answer for.
+func dayRoute(ctx context.Context, source DaySource, now time.Time, zone *time.Location) (ApiResponse, error) {
 	if source == nil {
 		return errorOf(503, "day facts unavailable"), nil
 	}
-	from := dayclock.Midnight(now)
+	from := dayclock.DayOf(now, zone)
 	facts, err := source.DayFacts(ctx, from, now)
 	if err != nil {
 		return ApiResponse{}, err

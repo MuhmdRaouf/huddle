@@ -1,4 +1,5 @@
-// The blocks route: the 5-hour metering windows over 7 or 30 UTC days.
+// The blocks route: the 5-hour metering windows over 7 or 30 UTC days. Blocks keep UTC
+// whatever the hub's zone, the calendar the subscription's own limits count in.
 package server
 
 import (

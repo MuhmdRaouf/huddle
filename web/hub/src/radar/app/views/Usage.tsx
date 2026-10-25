@@ -10,7 +10,16 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import { cacheHitRate, dayLabels, dayWords, nearestIndex } from "../../chart.ts";
-import { ESTIMATE_NOTE, fmtAgo, fmtCount, fmtNum, fmtPercent, fmtTokens, fmtUsd } from "../../fmt.ts";
+import {
+  displayZone,
+  ESTIMATE_NOTE,
+  fmtAgo,
+  fmtCount,
+  fmtNum,
+  fmtPercent,
+  fmtTokens,
+  fmtUsd,
+} from "../../fmt.ts";
 import { modelColor } from "../../palette.ts";
 import type { UsageDay, UsageReport, UsageSession, UsageSlice, UsageTotals } from "../../shared/usage.ts";
 import { USAGE_WINDOWS } from "../../shared/usage.ts";
@@ -397,7 +406,7 @@ function SeriesList({
   );
 }
 
-/** The picked day's card: the UTC date, each model that ran with its share, and the day's total. */
+/** The picked day's card: the date in the hub's zone, each model that ran with its share, and the day's total. */
 function DayCard({
   report,
   date,
@@ -416,7 +425,9 @@ function DayCard({
   return (
     <div class="ui-card px-4 py-3" data-usage-day="">
       <div class="flex items-center gap-2">
-        <h3 class="min-w-0 flex-1 text-sm font-semibold">{dayWords(date)} UTC</h3>
+        <h3 class="min-w-0 flex-1 text-sm font-semibold">
+          {dayWords(date)} {displayZone()}
+        </h3>
         <button
           type="button"
           class="ui-btn ui-btn-ghost ui-btn-icon"
@@ -737,7 +748,9 @@ function TranscriptUsage() {
       <Panel
         icon="history"
         title="Daily usage"
-        subtitle={report.from === "" ? null : `${dayWords(report.from)} – ${dayWords(report.to)} UTC`}
+        subtitle={
+          report.from === "" ? null : `${dayWords(report.from)} – ${dayWords(report.to)} ${displayZone()}`
+        }
         actions={
           <>
             <Segmented

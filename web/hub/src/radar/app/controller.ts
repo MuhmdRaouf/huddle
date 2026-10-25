@@ -5,6 +5,7 @@
  */
 
 import { attributionCsv, exportName, requestsCsv, toolsCsv } from "../export.ts";
+import { setDisplayZone } from "../fmt.ts";
 import type {
   AdvisorReport,
   Alert,
@@ -1183,18 +1184,34 @@ export class RadarController {
     return parsed as T;
   }
 
-  /** Alerts, budget spend, today's cost, the plan limits the statusline word posted and the
-   *  server's own uptime: small, polled every 10 s whatever the tab. */
+  /** The hub's display zone from huddle's own /api/settings (outside radar's prefix); null when it
+   *  cannot answer, which keeps the zone the formatters hold. */
+  private async readHubZone(): Promise<string | null> {
+    try {
+      const response = await this.io.fetch("/api/settings");
+      if (!response.ok) return null;
+      const answer = (await response.json()) as { zone?: unknown };
+      return typeof answer.zone === "string" ? answer.zone : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Alerts, budget spend, today's cost, the plan limits the statusline word posted, the
+   *  server's own uptime and the hub's zone: small, polled every 10 s whatever the tab, so a zone
+   *  the owner picks reaches the clock times within one poll. */
   private async pollInsights(): Promise<void> {
     try {
-      const [alerts, status, spend, health, quota] = await Promise.all([
+      const [alerts, status, spend, health, quota, zone] = await Promise.all([
         this.fetchJson<{ alerts: Alert[] }>("/api/alerts"),
         this.fetchJson<BudgetStatus>("/api/budget-status"),
         this.fetchJson<{ todayUsd: number | null; unpriced: number }>("/api/spend"),
         this.fetchJson<{ startedAt: number; uptimeMs: number }>("/api/health"),
         // the card reads nothing until a session posts; a server without the route is the same
         this.fetchJson<QuotaSnapshot>("/api/quota").catch(() => null),
+        this.readHubZone(),
       ]);
+      if (zone !== null) setDisplayZone(zone);
       this.setState({
         ...this.state,
         alerts: alerts.alerts,

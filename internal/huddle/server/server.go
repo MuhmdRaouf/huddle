@@ -709,6 +709,8 @@ func Serve(ctx context.Context, o Options) error {
 			// the day card's peak sessions and cards done come from this server's registry
 			// and boards, which radar does not hold
 			Day: radarDay{s: s},
+			// and the hub's zone, read per request, so radar's days are the owner's days
+			Zone: func() *time.Location { return s.zones.Get().Location() },
 			// and the sessions' pids, for each session's CPU and memory, from the registry
 			Procs: radarPids{s: s},
 		})
