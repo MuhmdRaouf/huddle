@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/pki"
+	"github.com/MuhmdRaouf/huddle/internal/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
@@ -288,6 +289,11 @@ func TestE2ERouterOverhead(t *testing.T) {
 				t.Logf("%s, %s: first byte %v (direct %v, overhead %v, budget %v); chunk overhead median %v (budget %v)",
 					path.name, size.name, slices.Min(firstBytes), slices.Min(directFirst), firstOverhead, firstByteBudget,
 					chunkOverhead, chunkBudget)
+				// the race detector slows the router's own work 5-20x and not the fake's, so a race
+				// build logs the numbers and holds the budgets to the plain build
+				if testkit.RaceEnabled {
+					return
+				}
 				if firstOverhead >= firstByteBudget {
 					t.Errorf("%s, %s: the router adds %v to the first byte, budget %v", path.name, size.name, firstOverhead, firstByteBudget)
 				}
