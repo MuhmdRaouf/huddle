@@ -8,6 +8,7 @@ package router
 import (
 	"bytes"
 	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -26,6 +27,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf16"
+
+	"github.com/andybalholm/brotli"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 
@@ -745,17 +748,18 @@ func (w *routerWorker) capture(prompt *promptRef, json *jsfmt.Value) {
 // stream is parsed line by line as it goes (only a partial line is ever held), a JSON body carries
 // it at the top level and is buffered up to a cap before it is read once it ends — past the cap
 // nothing is buffered and no usage is recorded. A compressed answer is read through its
-// decompressed copy.
+// decompressed copy; the client's copy keeps its encoding.
 type UsageTracker struct {
 	push  func(chunk []byte)
 	usage func() domain.RouteUsage
+	close func()
 }
 
 // NewUsageTracker tracks the usage of one answer of this content type ("" when the answer carried
-// none).
+// none) and content encoding ("" when it is plain).
 func NewUsageTracker(contentType, encoding string) *UsageTracker {
 	if strings.Contains(contentType, "text/event-stream") {
-		return sseUsageTracker()
+		return encodedStreamTracker(encoding, sseUsageTracker())
 	}
 	if strings.Contains(contentType, "application/json") {
 		return jsonUsageTracker(encoding)
@@ -776,6 +780,155 @@ func (t *UsageTracker) Usage() domain.RouteUsage {
 		return nil
 	}
 	return t.usage()
+}
+
+// Close ends a tracker whose answer stops before its usage is read (a failed or abandoned call).
+func (t *UsageTracker) Close() {
+	if t != nil && t.close != nil {
+		t.close()
+	}
+}
+
+// streamDecoder opens the reader that decompresses one content encoding; nil for an encoding the
+// router cannot read.
+func streamDecoder(encoding string) func(io.Reader) (io.ReadCloser, error) {
+	switch strings.ToLower(strings.TrimSpace(encoding)) {
+	case "gzip":
+		return func(reader io.Reader) (io.ReadCloser, error) { return gzip.NewReader(reader) }
+	case "deflate":
+		return func(reader io.Reader) (io.ReadCloser, error) { return zlib.NewReader(reader) }
+	case "br":
+		return func(reader io.Reader) (io.ReadCloser, error) { return io.NopCloser(brotli.NewReader(reader)), nil }
+	default:
+		return nil
+	}
+}
+
+// encodedStreamTracker reads a compressed stream through its decoder. The passing chunks are
+// queued, never waited on: one goroutine decompresses them into the plain tracker, and the usage
+// is read once the queue is closed and drained. A decoder more than the cap behind, or an encoding
+// the router cannot read, records no usage.
+func encodedStreamTracker(encoding string, plain *UsageTracker) *UsageTracker {
+	switch strings.ToLower(strings.TrimSpace(encoding)) {
+	case "", "identity":
+		return plain
+	}
+	open := streamDecoder(encoding)
+	if open == nil {
+		return &UsageTracker{}
+	}
+	queue := newChunkQueue(usageLimitBytes)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer queue.stop()
+		reader, err := open(queue)
+		if err != nil {
+			return
+		}
+		defer reader.Close()
+		buffer := make([]byte, 32*1024)
+		for {
+			n, readErr := reader.Read(buffer)
+			if n > 0 {
+				plain.Push(buffer[:n])
+			}
+			if readErr != nil {
+				return
+			}
+		}
+	}()
+	var once sync.Once
+	var usage domain.RouteUsage
+	return &UsageTracker{
+		push: queue.push,
+		usage: func() domain.RouteUsage {
+			once.Do(func() {
+				queue.end()
+				<-done
+				if !queue.overflowed() {
+					usage = plain.Usage()
+				}
+			})
+			return usage
+		},
+		close: queue.end,
+	}
+}
+
+// chunkQueue hands the passing chunks to one reader in order: push never blocks, Read waits for
+// the next chunk or the end.
+type chunkQueue struct {
+	mu      sync.Mutex
+	ready   *sync.Cond
+	chunks  [][]byte
+	queued  int
+	limit   int
+	ended   bool
+	stopped bool
+	over    bool
+}
+
+func newChunkQueue(limit int) *chunkQueue {
+	queue := &chunkQueue{limit: limit}
+	queue.ready = sync.NewCond(&queue.mu)
+	return queue
+}
+
+// push queues one chunk; past the limit the queue drops everything and ends.
+func (q *chunkQueue) push(chunk []byte) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.ended || q.stopped {
+		return
+	}
+	q.queued += len(chunk)
+	if q.queued > q.limit {
+		q.over, q.ended, q.chunks, q.queued = true, true, nil, 0
+	} else {
+		q.chunks = append(q.chunks, chunk)
+	}
+	q.ready.Broadcast()
+}
+
+// end says no more chunks come; the reader drains what is queued, then reads io.EOF.
+func (q *chunkQueue) end() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.ended = true
+	q.ready.Broadcast()
+}
+
+// stop drops what is queued and every later chunk: the reader is gone.
+func (q *chunkQueue) stop() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.stopped, q.chunks, q.queued = true, nil, 0
+}
+
+func (q *chunkQueue) overflowed() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.over
+}
+
+func (q *chunkQueue) Read(p []byte) (int, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for len(q.chunks) == 0 && !q.ended {
+		q.ready.Wait()
+	}
+	if len(q.chunks) == 0 {
+		return 0, io.EOF
+	}
+	n := copy(p, q.chunks[0])
+	if n == len(q.chunks[0]) {
+		q.chunks = q.chunks[1:]
+	} else {
+		q.chunks[0] = q.chunks[0][n:]
+	}
+	q.queued -= n
+	return n, nil
 }
 
 // jsonUsageTracker buffers a JSON answer up to the cap, then reads its top-level usage once.
@@ -1528,6 +1681,7 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			}
 		},
 		Failed: func(failure UpstreamFailure) {
+			tracker.Close()
 			status := failureStatus(failure)
 			if failure.ClientClosed {
 				// A client that left ends its own call: that says nothing about the upstream or the

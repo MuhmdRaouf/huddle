@@ -57,7 +57,7 @@ func TestJSONUsageTrackerDropsAnAnswerPastItsCap(t *testing.T) {
 	tracker := NewUsageTracker("application/json", "")
 	tracker.Push(bytes.Repeat([]byte("x"), usageLimitBytes+1))
 	if usage := tracker.Usage(); usage != nil {
-		t.Errorf("usage past the cap = %v, want none", usage)
+		t.Errorf("a broken stream's usage = %v, want none", usage)
 	}
 }
 
@@ -149,4 +149,31 @@ func ofAll(chunks [][]byte) []string {
 		out = append(out, string(chunk))
 	}
 	return out
+}
+
+func TestSSEUsageTrackerOnACompressedStreamItCannotReadRecordsNone(t *testing.T) {
+	t.Parallel()
+	stream := []byte("data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":4}}\n\n")
+	if usage := NewUsageTracker("text/event-stream", "zstd").Usage(); usage != nil {
+		t.Errorf("an unreadable encoding's usage = %v, want none", usage)
+	}
+	// bytes that are no gzip, past the cap or not, record none
+	tracker := NewUsageTracker("text/event-stream", "gzip")
+	gzipped, err := gzipOf(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracker.Push(bytes.Repeat([]byte("x"), usageLimitBytes+1))
+	tracker.Push(gzipped)
+	if usage := tracker.Usage(); usage != nil {
+		t.Errorf("a broken stream's usage = %v, want none", usage)
+	}
+	// a call that fails before its usage is read ends its decoder
+	closed := NewUsageTracker("text/event-stream", "gzip")
+	closed.Push(gzipped[:5])
+	closed.Close()
+	closed.Push(gzipped[5:])
+	if usage := closed.Usage(); usage != nil {
+		t.Errorf("a closed tracker's usage = %v, want none", usage)
+	}
 }

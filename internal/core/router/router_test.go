@@ -117,3 +117,106 @@ func TestCaptureHashLeavesOutTheBillingBlock(t *testing.T) {
 		}
 	})
 }
+
+// claudeStream is one Anthropic answer as an event stream: message_start carries the input and
+// cache counters, message_delta the output.
+var claudeStream = []string{
+	"event: message_start\n" +
+		`data: {"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-5",` +
+		`"usage":{"input_tokens":12,"cache_read_input_tokens":3400,"cache_creation_input_tokens":560,"output_tokens":1}}}` + "\n\n",
+	"event: content_block_delta\n" +
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}` + "\n\n",
+	"event: message_delta\n" +
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":78}}` + "\n\n",
+	"event: message_stop\n" + `data: {"type":"message_stop"}` + "\n\n",
+}
+
+func TestClaudeRouteEventCarriesTheStreamsUsage(t *testing.T) {
+	t.Parallel()
+	for _, encoding := range []string{"gzip", ""} {
+		name := encoding
+		if name == "" {
+			name = "plain"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			// The upstream's bytes, flushed event by event the way Anthropic streams them.
+			var sent bytes.Buffer
+			upstream := laneUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ string) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.Header().Set("Request-Id", "req_stream")
+				if encoding != "" {
+					w.Header().Set("Content-Encoding", encoding)
+				}
+				w.WriteHeader(200)
+				flusher := w.(http.Flusher)
+				var out io.Writer = io.MultiWriter(w, &sent)
+				var zipped *gzip.Writer
+				if encoding == "gzip" {
+					zipped = gzip.NewWriter(out)
+					out = zipped
+				}
+				for _, event := range claudeStream {
+					_, _ = io.WriteString(out, event)
+					if zipped != nil {
+						_ = zipped.Flush()
+					}
+					flusher.Flush()
+				}
+				if zipped != nil {
+					_ = zipped.Close()
+				}
+			})
+			events := &eventLog{}
+			worker := laneWorker(t, upstream, keyOfTheLane, func(o *RouterOptions) {
+				o.Anthropic = upstream
+				o.Events = events.record
+			})
+			port := laneServer(t, worker)
+			got, err := postRawBody(port, "/v1/messages", `{"model":"claude-sonnet-4-5","stream":true,"messages":[]}`, map[string]string{
+				"Content-Type":    "application/json",
+				"Authorization":   "Bearer anthropic-oauth",
+				"Accept-Encoding": "gzip, br",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.status != 200 {
+				t.Fatalf("the answer = %d %q, want 200", got.status, got.body)
+			}
+			if got.body != sent.String() {
+				t.Errorf("the client got %d bytes, want the upstream's %d bytes as sent", len(got.body), sent.Len())
+			}
+			if got.header.Get("Content-Encoding") != encoding || got.header.Get("Content-Type") != "text/event-stream" ||
+				got.header.Get("Request-Id") != "req_stream" {
+				t.Errorf("the client's headers = %v, want the upstream's", got.header)
+			}
+			deadline := time.Now().Add(5 * time.Second)
+			for time.Now().Before(deadline) && len(events.routes()) == 0 {
+				time.Sleep(10 * time.Millisecond)
+			}
+			routes := events.routes()
+			if len(routes) != 1 {
+				t.Fatalf("the router wrote %d route events, want 1", len(routes))
+			}
+			if routes[0].Route != "anthropic" {
+				t.Errorf("the route = %q, want anthropic", routes[0].Route)
+			}
+			want := domain.RouteUsage{
+				"input_tokens":                float64(12),
+				"cache_read_input_tokens":     float64(3400),
+				"cache_creation_input_tokens": float64(560),
+				"output_tokens":               float64(78),
+			}
+			if routes[0].Usage == nil {
+				t.Fatalf("the route event carries no usage, want %v", want)
+			}
+			usage := *routes[0].Usage
+			for key, value := range want {
+				if usage[key] != value {
+					t.Errorf("usage[%s] = %v, want %v (usage %v)", key, usage[key], value, usage)
+				}
+			}
+		})
+	}
+}
