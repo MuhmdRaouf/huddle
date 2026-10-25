@@ -87,7 +87,11 @@ describe("the one badge rule", () => {
 
   it("is orange when every open item is a finished turn, a snoozed ask aside", () => {
     expect(
-      needsBadge({ inbox: 0, sessions: 2, items: [item("turn"), item("turn"), item("question", "snoozed")] }),
+      needsBadge({
+        inbox: 0,
+        sessions: 2,
+        items: [item("turn"), item("turn"), item("question", "snoozed")],
+      }),
     ).toEqual({ n: 2, tone: "turn-done" });
   });
 
@@ -130,9 +134,9 @@ describe("the needs-you count on Now", () => {
     expect(now()?.getAttribute("aria-label")).toBe("Now, 1 turn done");
     rerender(<IconRail tab="now" needs={NONE} />);
     expect(now()?.getAttribute("aria-label")).toBe("Now");
-    expect(document.querySelector("[data-nav='rail'] a[data-tab='channels']")?.getAttribute("aria-label")).toBe(
-      "Channels",
-    );
+    expect(
+      document.querySelector("[data-nav='rail'] a[data-tab='channels']")?.getAttribute("aria-label"),
+    ).toBe("Channels");
   });
 });
 

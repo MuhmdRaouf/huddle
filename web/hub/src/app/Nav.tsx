@@ -89,7 +89,8 @@ export function BottomNav({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.
 function nowName(label: string, needs: NeedsBadge): string {
   if (needs.n === 0) return label;
   const one = needs.n === 1;
-  const what = needs.tone === "turn-done" ? (one ? "turn done" : "turns done") : one ? "needs you" : "need you";
+  const what =
+    needs.tone === "turn-done" ? (one ? "turn done" : "turns done") : one ? "needs you" : "need you";
   return `${label}, ${needs.n} ${what}`;
 }
 
