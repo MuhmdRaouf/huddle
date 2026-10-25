@@ -105,6 +105,8 @@ type WorkerRun = {
   activate(): Promise<void>;
   /** Delivers one push message's payload to the worker. */
   pushed(payload: unknown, torn?: boolean): Promise<void>;
+  /** Delivers one push message with no payload at all. */
+  pushedEmpty(): Promise<void>;
   /** Delivers one notification click: the action's name and the notification's data. */
   clicked(action: string, data: unknown): Promise<void>;
   fetchHandled(request: FakeRequest): { answered: boolean; response(): Promise<FakeResponse> };
@@ -175,6 +177,7 @@ const worker = (
           },
         },
       }),
+    pushedEmpty: () => fired("push", { data: null }),
     clicked: (action, data) =>
       fired("notificationclick", { action, notification: { close: () => {}, data } }),
     fetchHandled: (request: FakeRequest) => {
@@ -424,11 +427,37 @@ describe("push", () => {
     expect(refusing.shown).toHaveLength(1);
   });
 
-  it("shows nothing for a message it cannot read", async () => {
-    const w = worker();
-    await w.pushed(null);
-    await w.pushed({}, true);
-    expect(w.shown).toHaveLength(0);
+  /** The one notification a push the worker cannot name shows: Huddle, opening the Now page. */
+  const fallback = {
+    title: "Huddle",
+    options: {
+      body: "Open Huddle",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: "huddle-fallback",
+      data: { url: "/#/now" },
+      actions: [{ action: "open", title: "Open" }],
+    },
+  };
+
+  it("shows the plain Huddle notification for a payload without a kind", async () => {
+    for (const payload of [{}, { session: "s-1", tool: "Bash" }]) {
+      const w = worker();
+      await w.pushed(payload);
+      expect(w.shown).toEqual([fallback]);
+    }
+  });
+
+  it("shows the plain Huddle notification for a payload that is empty or not JSON", async () => {
+    const empty = worker();
+    await empty.pushedEmpty();
+    expect(empty.shown).toEqual([fallback]);
+    const torn = worker();
+    await torn.pushed({}, true);
+    expect(torn.shown).toEqual([fallback]);
+    const nothing = worker();
+    await nothing.pushed(null);
+    expect(nothing.shown).toEqual([fallback]);
   });
 });
 

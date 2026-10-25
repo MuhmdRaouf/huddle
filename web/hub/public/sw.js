@@ -151,7 +151,9 @@
   // opens and, for a needs-you push, the open count the badge shows, so the notification says no
   // more than that — the command and the prompt text
   // never reach the browser at all. A permission item carries Allow, Deny and Open; the other
-  // kinds carry Open. A tag keeps one notification per session entry and per failing path, so
+  // kinds carry Open. A push the worker cannot name — empty, not JSON, or without a kind — still
+  // shows the plain Huddle notification that opens Now, since iOS revokes push for a worker that
+  // shows nothing. A tag keeps one notification per session entry and per failing path, so
   // a repeat replaces it instead of piling up.
   self.addEventListener("push", function (event) {
     var payload = null;
@@ -160,7 +162,8 @@
     } catch (err) {
       payload = null;
     }
-    if (!payload || !payload.kind) return;
+    var named = Boolean(payload && payload.kind);
+    if (!named) payload = { url: "/#/now" };
     var actions = [{ action: "open", title: "Open" }];
     if (payload.kind === "permission") {
       actions = [
@@ -169,7 +172,7 @@
         { action: "open", title: "Open" },
       ];
     }
-    var shown = shownOf(payload);
+    var shown = named ? shownOf(payload) : { title: "Huddle", body: "Open Huddle", tag: "huddle-fallback" };
     event.waitUntil(
       Promise.all([
         self.registration.showNotification(shown.title, {
