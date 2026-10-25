@@ -213,6 +213,14 @@
   background: color-mix(in oklab, var(--ui-text) 35%, transparent);
 }
 
+/* the status line beside the dot: the last frame's age, or Reconnecting */
+
+.kanban-tab .stale-line {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* the note naming what every visible card carries, once */
 
 .kanban-tab .shared-note {

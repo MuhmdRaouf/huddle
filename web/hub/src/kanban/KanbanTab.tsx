@@ -211,6 +211,7 @@ export function BoardPane({
         epoch={snapshot?.epoch ?? 0}
         connected={state.connected}
         live={state.mode === "live"}
+        lastFrameAt={state.lastFrameAt}
         density={density}
         onDensity={setDensity}
         sharedTags={shared.tags}

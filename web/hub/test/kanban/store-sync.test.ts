@@ -194,3 +194,23 @@ describe("resume on return", () => {
     expect(onReturn).not.toHaveBeenCalled();
   });
 });
+
+describe("the last frame's time", () => {
+  it("moves on a delta and on a ping, so the board can say how fresh it is", async () => {
+    const { io, stream } = fakeIo();
+    const store = new BoardStore(io);
+    await store.start();
+    expect(store.getState().lastFrameAt).toBeNull();
+    await vi.advanceTimersByTimeAsync(5_000);
+    const rev = store.getState().snapshot?.rev ?? 0;
+    stream().onDelta({ rev: rev + 1, upsert: [], remove: [] });
+    expect(store.getState().lastFrameAt).toBe(Date.now());
+    const seen = vi.fn();
+    store.subscribe(seen);
+    await vi.advanceTimersByTimeAsync(7_000);
+    stream().onPing();
+    expect(store.getState().lastFrameAt).toBe(Date.now());
+    expect(seen).toHaveBeenCalled();
+    store.stop();
+  });
+});

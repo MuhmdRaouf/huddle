@@ -23,6 +23,8 @@ export type ToolbarProps = {
   connected: boolean;
   /** live boards carry the dot; a static board has nothing to be live about */
   live: boolean;
+  /** when the stream's last frame came (epoch ms), read by the status line beside the dot */
+  lastFrameAt?: number | null;
   /** the board's density and its toggle */
   density: Density;
   onDensity: (density: Density) => void;
@@ -92,6 +94,32 @@ function KindMenu({
   );
 }
 
+/** How long the stream may be down before the status line says so; a shorter blip stays quiet. */
+const DOWN_MS = 10_000;
+
+/** The status line beside the live dot: the last frame's age, ticking each second, or
+ *  Reconnecting once the stream has been down for DOWN_MS. */
+function StaleLine({ connected, lastFrameAt }: { connected: boolean; lastFrameAt: number | null }) {
+  const [now, setNow] = useState(() => Date.now());
+  const [downSince, setDownSince] = useState<number | null>(() => (connected ? null : Date.now()));
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, []);
+  useEffect(() => {
+    setDownSince(connected ? null : Date.now());
+  }, [connected]);
+  let text = "";
+  if (downSince !== null && now - downSince >= DOWN_MS) text = "Reconnecting";
+  else if (lastFrameAt !== null)
+    text = `Updated ${Math.max(0, Math.floor((now - lastFrameAt) / 1000))} s ago`;
+  return (
+    <span class="stale-line" role="status">
+      {text}
+    </span>
+  );
+}
+
 /** One `All cards: …` note, for a shared tag or the shared cluster. */
 function SharedNote({ value }: { value: string }) {
   return <span class="shared-note">All cards: {value}</span>;
@@ -111,6 +139,7 @@ export function Toolbar({
   epoch,
   connected,
   live,
+  lastFrameAt = null,
   density,
   onDensity,
   sharedTags = [],
@@ -149,6 +178,7 @@ export function Toolbar({
             <span class="sr-only">{liveWord}</span>
           </span>
         )}
+        {live && <StaleLine connected={connected} lastFrameAt={lastFrameAt} />}
         <input
           ref={search}
           type="search"

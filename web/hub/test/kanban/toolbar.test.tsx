@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/preact";
+import { act, render, screen } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "preact/hooks";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -50,6 +50,13 @@ function Row({
       {...over}
     />
   );
+}
+
+/** Moves the fake clock on, the renders it causes flushed. */
+async function pass(ms: number): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
 }
 
 /** The row's kind buttons, in their standing order. */
@@ -169,6 +176,50 @@ describe("Feature: the header row", () => {
     const down = render(<Row cards={board()} initial={EMPTY_FILTERS} over={{ connected: false }} />);
     // Then the dot says it is reconnecting
     expect(down.container.querySelector(".live-dot")?.getAttribute("title")).toBe("epoch 3, reconnecting");
+  });
+
+  it("Scenario: the status line says how long ago the last frame came, and ticks", async () => {
+    vi.useFakeTimers();
+    try {
+      // Given a live board whose last frame came just now
+      const { container } = render(
+        <Row cards={board()} initial={EMPTY_FILTERS} over={{ lastFrameAt: Date.now() }} />,
+      );
+      // When 12 s pass without another frame
+      await pass(12_000);
+      // Then the status line beside the dot reads the age
+      const line = screen.getByRole("status");
+      expect(line.textContent).toBe("Updated 12 s ago");
+      expect(container.querySelector(".toolbar .stale-line")).toBe(line);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("Scenario: the status line reads Reconnecting once the stream has been down for 10 s", async () => {
+    vi.useFakeTimers();
+    try {
+      // Given a connected live board with a recent frame
+      const at = Date.now();
+      const view = render(<Row cards={board()} initial={EMPTY_FILTERS} over={{ lastFrameAt: at }} />);
+      // When the stream drops, a short blip stays quiet
+      view.rerender(
+        <Row cards={board()} initial={EMPTY_FILTERS} over={{ lastFrameAt: at, connected: false }} />,
+      );
+      await pass(9_000);
+      expect(screen.getByRole("status").textContent).toBe("Updated 9 s ago");
+      // Then 10 s after the drop it says it is reconnecting
+      await pass(1_000);
+      expect(screen.getByRole("status").textContent).toBe("Reconnecting");
+      // And back up it reads the age again
+      view.rerender(
+        <Row cards={board()} initial={EMPTY_FILTERS} over={{ lastFrameAt: Date.now(), connected: true }} />,
+      );
+      await pass(1_000);
+      expect(screen.getByRole("status").textContent).toBe("Updated 1 s ago");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("Scenario: no dot is shown when the board is not live", () => {

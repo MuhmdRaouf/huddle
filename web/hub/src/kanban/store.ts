@@ -20,6 +20,8 @@ export type BoardState = {
   mode: "live" | "static";
   snapshot: Snapshot | null;
   connected: boolean;
+  /** when the stream's last frame came (epoch ms), the ping included; null before the first */
+  lastFrameAt: number | null;
   /** bumped once per applied delta, so a card changed twice re-triggers its flash */
   changeSeq: number;
   changedIds: ReadonlySet<string>;
@@ -29,6 +31,7 @@ export const initialBoardState = (): BoardState => ({
   mode: "live",
   snapshot: null,
   connected: false,
+  lastFrameAt: null,
   changeSeq: 0,
   changedIds: new Set(),
 });
@@ -346,7 +349,10 @@ export class BoardStore {
       this.watchdog = silenceWatchdog(this.io, SILENCE_MS, () => void this.resume());
     }
     // every frame is a sign of life, the ping that carries nothing included
-    const alive = (): void => this.watchdog?.feed();
+    const alive = (): void => {
+      this.watchdog?.feed();
+      this.state = { ...this.state, lastFrameAt: Date.now() };
+    };
     this.stream = this.io.connectEvents({
       onSnapshot: (snapshot) => {
         alive();
@@ -362,7 +368,10 @@ export class BoardStore {
         alive();
         void this.loadSnapshot();
       },
-      onPing: alive,
+      onPing: () => {
+        alive();
+        this.emit();
+      },
       onOpen: () => {
         alive();
         this.attempt = 0;
