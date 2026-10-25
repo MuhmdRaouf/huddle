@@ -2,8 +2,8 @@ package hooks
 
 // The PermissionRequest hook: one tool call becomes a needs-you item the owner's app may
 // allow or deny while the hook holds a long poll. The cases run the hook against the real
-// server (in process, and once as the child process Claude Code runs), against dead, mute and
-// garbage Huddles, and past the hook's own budget — silent whenever nothing arrives, so the
+// server (in process, and once as the child process Claude Code runs), against dead, mute,
+// garbage and restarting Huddles, and past the hook's own budget — silent whenever nothing arrives, so the
 // terminal's own prompt is the fallback.
 
 import (
@@ -11,12 +11,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // permitInputJSON is the stdin Claude Code sends a PermissionRequest hook.
@@ -178,6 +183,7 @@ func TestThePermitHookIsSilentOnEveryFailure(t *testing.T) {
 		"mute":        muteURL,
 		"garbage":     garbageURL,
 		"wrong shape": wrongShapeURL,
+		"starting":    startingURL,
 	} {
 		t.Run(name, func(t *testing.T) {
 			url := url(t)
@@ -267,5 +273,105 @@ func TestThePermitHookRunsAsTheProcessClaudeCodeRuns(t *testing.T) {
 	want := `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"not from here"}}}` + "\n"
 	if stdout.String() != want {
 		t.Fatalf("the hook process printed %q, want the documented deny decision", stdout.String())
+	}
+}
+
+// startingURL takes the POST and answers every poll 503: a hub that never finishes starting,
+// polled again and again until the budget runs out.
+func startingURL(t *testing.T) string {
+	t.Helper()
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			fmt.Fprint(w, `{"id":7}`)
+			return
+		}
+		http.Error(w, "starting", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(s.Close)
+	return s.URL
+}
+
+// restartingHub is a fake Huddle that restarts while the permit hook polls: its first life takes
+// the POST and cuts the first wait mid-poll, it stays down for a while (the polls in between are
+// refused), and its second life answers the first wait 503 and the next one allow.
+type restartingHub struct {
+	addr  string
+	mu    sync.Mutex
+	life  int
+	waits int
+}
+
+func startRestartingHub(t *testing.T) *restartingHub {
+	t.Helper()
+	h := &restartingHub{addr: fmt.Sprintf("127.0.0.1:%d", ports.Free(t)), life: 1}
+	h.serve(t)
+	return h
+}
+
+// serve runs one life of the hub on its fixed address.
+func (h *restartingHub) serve(t *testing.T) {
+	t.Helper()
+	listener, err := net.Listen("tcp", h.addr)
+	if err != nil {
+		t.Errorf("listen on %s: %v", h.addr, err)
+		return
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.answer(t, listener, w, r)
+	})}
+	t.Cleanup(func() { _ = srv.Close() })
+	go func() { _ = srv.Serve(listener) }()
+}
+
+func (h *restartingHub) answer(t *testing.T, listener net.Listener, w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	life := h.life
+	if strings.HasSuffix(r.URL.Path, "/wait") {
+		h.waits++
+	}
+	waits := h.waits
+	h.mu.Unlock()
+	switch {
+	case r.Method == http.MethodPost && r.URL.Path == "/api/needs":
+		fmt.Fprint(w, `{"id":7}`)
+	case r.URL.Path != "/api/needs/7/wait":
+		http.NotFound(w, r)
+	case life == 1:
+		// the restart: the open poll is cut and the port closes until the second life
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err == nil {
+			_ = conn.Close()
+		}
+		_ = listener.Close()
+		h.mu.Lock()
+		h.life = 2
+		h.mu.Unlock()
+		go func() {
+			time.Sleep(1500 * time.Millisecond)
+			h.serve(t)
+		}()
+	case waits == 2:
+		http.Error(w, "starting", http.StatusServiceUnavailable)
+	default:
+		fmt.Fprint(w, `{"id":7,"kind":"permission","state":"answered","decision":"allow"}`)
+	}
+}
+
+func TestThePermitHookKeepsPollingAcrossAHubRestart(t *testing.T) {
+	h := startRestartingHub(t)
+	out := make(chan string, 1)
+	go func() {
+		stdout, _, _ := runHook(t, "permit", permitInputJSON, map[string]string{
+			"HUDDLE_URL": "http://" + h.addr, "HUDDLE_PERMIT_BUDGET_MS": "15000"})
+		out <- stdout
+	}()
+	select {
+	case stdout := <-out:
+		want := `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}` + "\n"
+		if stdout != want {
+			t.Fatalf("the hook printed %q, want the allow the hub gave after its restart", stdout)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the hook never came back from its poll")
 	}
 }

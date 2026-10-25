@@ -29,6 +29,7 @@ const (
 	permitPostMS   = 4000
 	permitWaitMS   = 30000
 	permitSlackMS  = 5000
+	permitRetryMS  = 1000
 	permitBudgetMS = 375000
 )
 
@@ -118,18 +119,23 @@ func Permit(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			resp, err := cli.HFetch(ctx, w, http.MethodGet, callURL, nil, nil,
 				time.Duration(secs*1000+permitSlackMS)*time.Millisecond, input.SessionID)
 			if err != nil {
-				return err
+				// a refused or cut poll is a hub restarting: wait and poll again
+				if err := permitPause(ctx, w, deadline); err != nil {
+					return err
+				}
+				continue
 			}
 			raw, err := io.ReadAll(resp.Body)
 			closeErr := resp.Body.Close()
-			if err != nil {
-				return err
-			}
-			if closeErr != nil {
-				return closeErr
+			if err != nil || closeErr != nil || resp.StatusCode >= 500 {
+				// a body cut short or a hub still starting: wait and poll again
+				if err := permitPause(ctx, w, deadline); err != nil {
+					return err
+				}
+				continue
 			}
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				return nil // the item is gone (a restarted server): the terminal stands
+				return nil // the item is gone (404), not ours (401), anything: the terminal stands
 			}
 			var row hub.PermissionItem
 			if err := json.Unmarshal(raw, &row); err != nil {
@@ -162,6 +168,28 @@ func Permit(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			}
 		}
 	})
+}
+
+// permitPause holds the hook between a failed poll and the next. The retry shape is a fixed
+// 1 s pause after every refused, cut or 5xx poll, cut short by the budget's deadline, so a hub
+// that restarts mid-ask is polled again within a second of coming back and a hub that never
+// returns costs the budget and no more. It answers the context's error when that ends first.
+func permitPause(ctx context.Context, w *cli.World, deadline time.Time) error {
+	pause := time.Duration(permitRetryMS) * time.Millisecond
+	if left := deadline.Sub(nowOf(w)); left < pause {
+		pause = left
+	}
+	if pause <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(pause)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // permitBudget answers the hook's whole budget: HUDDLE_PERMIT_BUDGET_MS over the default, a
