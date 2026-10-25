@@ -277,7 +277,7 @@ func hubPublicPath(path string) bool {
 		}
 	}
 	switch path {
-	case "/", "/index.html", "/pair", "/app.js", "/app.css", "/health",
+	case "/", "/index.html", "/pair", "/health",
 		"/manifest.webmanifest", "/sw.js", "/signed-out.css", satJoinPath:
 		return true
 	}

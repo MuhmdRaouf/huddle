@@ -1,5 +1,6 @@
 // sw.test.ts — the service worker's own work, run against the exact bytes that ship
-// (public/sw.js, a classic worker script served after the build stamps its cache revision): the
+// (public/sw.js, a classic worker script served after the build stamps its cache revision and the
+// hashed names index.html loads, stamped here the same way): the
 // app shell is cached under the revision's name and live answers — the API, the MCP bridge, the
 // SSE stream — stay the network's; navigations prefer the network and fall back to the cached
 // shell offline; activate deletes every cache an older revision left; a push shows the
@@ -8,8 +9,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+/** The hashed names the build stamps over "@@ASSETS@@", in the order index.html loads them. */
+const APP_JS = "/static/app.Ef5_z-7X.js";
+const ASSETS = ["/static/theme-boot.Ab3_x-9Z.js", "/static/app.Cd4_y-8Y.css", APP_JS];
+
 // import.meta.url is an http URL under happy-dom, so the worker's bytes come by directory name
-const source = readFileSync(join(import.meta.dirname, "../public/sw.js"), "utf8");
+const source = readFileSync(join(import.meta.dirname, "../public/sw.js"), "utf8").replace(
+  '"@@ASSETS@@"',
+  ASSETS.map((path) => JSON.stringify(path)).join(", "),
+);
 
 const ORIGIN = "http://127.0.0.1:18860";
 
@@ -196,9 +204,7 @@ describe("install", () => {
     expect([...cache.entries.keys()]).toEqual([
       href("/"),
       href("/index.html"),
-      href("/static/theme-boot.js"),
-      href("/static/app.css"),
-      href("/static/app.js"),
+      ...ASSETS.map((path) => href(path)),
       href("/manifest.webmanifest"),
       href("/icons/icon-192.png"),
       href("/icons/icon-512.png"),
@@ -222,7 +228,7 @@ describe("fetch routing", () => {
     const w = worker();
     await w.install();
     w.fetch.mockClear();
-    expect(w.fetchHandled({ url: `${ORIGIN}/static/app.js`, method: "POST" }).answered).toBe(false);
+    expect(w.fetchHandled({ url: `${ORIGIN}${APP_JS}`, method: "POST" }).answered).toBe(false);
     expect(w.fetchHandled({ url: "https://cdn.example/framework.js", method: "GET" }).answered).toBe(false);
     expect(w.fetch).not.toHaveBeenCalled();
   });
@@ -231,9 +237,9 @@ describe("fetch routing", () => {
     const w = worker();
     await w.install();
     w.fetch.mockClear();
-    const handled = w.fetchHandled(get("/static/app.js"));
+    const handled = w.fetchHandled(get(APP_JS));
     expect(handled.answered).toBe(true);
-    await expect(handled.response()).resolves.toHaveProperty("body", `net:${href("/static/app.js")}`);
+    await expect(handled.response()).resolves.toHaveProperty("body", `net:${href(APP_JS)}`);
     expect(w.fetch).not.toHaveBeenCalled();
   });
 

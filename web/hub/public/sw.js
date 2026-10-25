@@ -2,16 +2,16 @@
  * static shell and nothing else: live answers — the API, the MCP bridge, the SSE stream — are
  * always the network's, and so is every path it does not know. The cache name carries the
  * shell's revision (scripts/build.mjs stamps @@REV@@ with a hash of the shell's bytes), so a new
- * build installs beside the old cache and activate deletes the old one. */
+ * build installs beside the old cache and activate deletes the old one. The build also swaps the
+ * assets placeholder in SHELL for the hashed /static/ names index.html loads, so the precache
+ * list is the page's. */
 (function () {
   var REV = "@@REV@@";
   var CACHE = "huddle-shell-" + REV;
   var SHELL = [
     "/",
     "/index.html",
-    "/static/theme-boot.js",
-    "/static/app.css",
-    "/static/app.js",
+    "@@ASSETS@@",
     "/manifest.webmanifest",
     "/icons/icon-192.png",
     "/icons/icon-512.png",

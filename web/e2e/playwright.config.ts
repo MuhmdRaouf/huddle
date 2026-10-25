@@ -11,7 +11,9 @@ import { here, repoRoot } from "./paths.ts";
 import { chromiumTlsArgs } from "./tls.ts";
 
 /** The specs that also run on the phone: the pages built on the web/ui design system. */
-const PHONE_SPECS = ["tokens.spec.ts"];
+const PHONE_SPECS = ["tokens.spec.ts", "phone-perf.spec.ts"];
+/** The specs that run on the phone only: the phone's load budget under throttled CDP. */
+const PHONE_ONLY = ["phone-perf.spec.ts"];
 
 export default defineConfig({
   testDir: here,
@@ -36,7 +38,11 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
+    {
+      name: "desktop",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
+      testIgnore: PHONE_ONLY,
+    },
     {
       name: "iphone",
       use: { ...devices["iPhone 15"], browserName: "chromium" },

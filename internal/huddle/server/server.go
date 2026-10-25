@@ -1328,7 +1328,9 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		}{true, s.o.Version, s.started, len(names), s.o.Home, s.machine, hubName(s.o.Home), s.exe}, nil)
 		return nil
 	case path == "/" || path == "/index.html":
-		return s.staticFile(w, "index.html", "text/html; charset=utf-8", true)
+		return s.staticFile(w, "index.html", "text/html; charset=utf-8", "no-store")
+	case strings.HasPrefix(path, "/static/") && hashedName.MatchString(path[len("/static/"):]):
+		return s.hashedRoute(w, r, path[len("/static/"):])
 	case strings.HasPrefix(path, "/static/") && !strings.Contains(path, ".."):
 		name := path[len("/static/"):]
 		info, err := fs.Stat(web.FS(), name)
@@ -1336,21 +1338,14 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 			writeText(w, 404, "not found", nil)
 			return nil
 		}
-		return s.staticFile(w, name, staticTypes[name[strings.LastIndex(name, "."):]], true)
-	case path == "/app.js" || path == "/app.css":
-		info, err := fs.Stat(web.FS(), path[1:])
-		if err != nil || info.IsDir() {
-			writeText(w, 404, "not found", nil)
-			return nil
-		}
-		return s.staticFile(w, path[1:], staticTypes[path[strings.LastIndex(path, "."):]], true)
+		return s.staticFile(w, name, staticTypes[name[strings.LastIndex(name, "."):]], "no-store")
 	case strings.HasPrefix(path, "/fonts/"):
 		return s.fontRoute(w, path)
 	case path == "/signed-out.css":
 		writeText(w, 200, signedOutCSS, map[string]string{"Content-Type": staticTypes[".css"]})
 		return nil
 	case path == "/manifest.webmanifest":
-		return s.staticFile(w, "manifest.webmanifest", staticTypes[".webmanifest"], true)
+		return s.staticFile(w, "manifest.webmanifest", staticTypes[".webmanifest"], shortCache)
 	case path == "/ca.crt" || path == "/ca.mobileconfig":
 		return s.caRoute(w, r, path == "/ca.mobileconfig")
 	case path == "/sw.js":
@@ -1412,7 +1407,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 	case path == "/pair":
 		// the link `huddle pair` prints opens the app, which reads the token from the fragment
 		// the browser never sends; the pair screen itself is the UI's to build
-		return s.staticFile(w, "index.html", "text/html; charset=utf-8", true)
+		return s.staticFile(w, "index.html", "text/html; charset=utf-8", "no-store")
 	}
 	if m := channelPath.FindStringSubmatch(path); m != nil {
 		// a session's first op may create the channel (join); everything else needs it to exist
@@ -1731,26 +1726,22 @@ func pidCommandOf(ctx context.Context, pid int) (string, bool) {
 	return string(out), true
 }
 
-// staticFile serves one embedded file.
-func (s *server) staticFile(w http.ResponseWriter, name, contentType string, noStore bool) error {
+// staticFile serves one embedded file under the Cache-Control it is given.
+func (s *server) staticFile(w http.ResponseWriter, name, contentType, cache string) error {
 	body, err := dashboardFile(name)
 	if err != nil {
 		s.writeJSON(w, 404, errorAnswer{Error: "not found: " + name}, nil)
 		return nil
 	}
-	extra := map[string]string{"Content-Type": contentType}
-	if noStore {
-		extra["Cache-Control"] = "no-store"
-	}
-	writeText(w, 200, string(body), extra)
+	writeText(w, 200, string(body), map[string]string{"Content-Type": contentType, "Cache-Control": cache})
 	return nil
 }
 
 // assetRoute serves one allowlisted artifact from the dashboard build: the part of path past
 // prefix must match name, or the route answers the path's 404; the bytes answer with
-// contentType and no caching. The artifact's directory is the prefix without its leading
-// slash, which is where the build lays it.
-func (s *server) assetRoute(w http.ResponseWriter, path, prefix string, name *regexp.Regexp, contentType string) error {
+// contentType under the Cache-Control it is given. The artifact's directory is the prefix
+// without its leading slash, which is where the build lays it.
+func (s *server) assetRoute(w http.ResponseWriter, path, prefix string, name *regexp.Regexp, contentType, cache string) error {
 	file := path[len(prefix):]
 	if !name.MatchString(file) {
 		s.writeJSON(w, 404, errorAnswer{Error: "not found: " + path}, nil)
@@ -1761,13 +1752,14 @@ func (s *server) assetRoute(w http.ResponseWriter, path, prefix string, name *re
 		s.writeJSON(w, 404, errorAnswer{Error: "missing build artifact: " + prefix[1:] + file}, nil)
 		return nil
 	}
-	writeText(w, 200, string(body), map[string]string{"Content-Type": contentType, "Cache-Control": "no-store"})
+	writeText(w, 200, string(body), map[string]string{"Content-Type": contentType, "Cache-Control": cache})
 	return nil
 }
 
-// fontRoute serves the bundled IBM Plex faces the dashboard's stylesheet points at.
+// fontRoute serves the bundled IBM Plex faces the dashboard's stylesheet points at. The build
+// names each face by its content hash, so a face never changes under its name.
 func (s *server) fontRoute(w http.ResponseWriter, path string) error {
-	return s.assetRoute(w, path, "/fonts/", fontName, "font/woff2")
+	return s.assetRoute(w, path, "/fonts/", fontName, "font/woff2", immutable)
 }
 
 // swRoute serves the app-shell service worker. The browser revalidates it on every load
@@ -1789,7 +1781,7 @@ func (s *server) swRoute(w http.ResponseWriter) error {
 
 // iconRoute serves the PWA's icons the manifest names.
 func (s *server) iconRoute(w http.ResponseWriter, path string) error {
-	return s.assetRoute(w, path, "/icons/", iconName, "image/png")
+	return s.assetRoute(w, path, "/icons/", iconName, "image/png", shortCache)
 }
 
 // createChannel makes a channel with its first configuration.

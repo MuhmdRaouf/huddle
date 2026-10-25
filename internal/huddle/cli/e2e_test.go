@@ -649,10 +649,11 @@ func TestE2ETheDashboardAOneTimeSignInCodeBecomesACookie(t *testing.T) {
 	if !strings.Contains(string(body), "<html") {
 		t.Error("the page is not HTML")
 	}
-	css, _ := http.Get(srv.url + "/static/app.css")
+	sheet := regexp.MustCompile(`/static/app\.[A-Za-z0-9_-]{8}\.css`).FindString(string(body))
+	css, _ := http.Get(srv.url + sheet)
 	css.Body.Close()
-	if css.StatusCode != 200 {
-		t.Errorf("app.css got %d", css.StatusCode)
+	if sheet == "" || css.StatusCode != 200 {
+		t.Errorf("the page's stylesheet %q got %d", sheet, css.StatusCode)
 	}
 	missing, _ := http.Get(srv.url + "/static/nope.css")
 	missing.Body.Close()

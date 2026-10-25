@@ -62,7 +62,9 @@ func TestPWARoutes(t *testing.T) {
 func TestUI(t *testing.T) {
 	srv := startServer(t, nil)
 
-	t.Run("(a) / is HTML that loads /static/app.css and /static/app.js", func(t *testing.T) {
+	css, js := shellAsset(t, srv, "app", ".css"), shellAsset(t, srv, "app", ".js")
+
+	t.Run("(a) / is HTML that loads the hashed stylesheet and app module", func(t *testing.T) {
 		code, header, body := srv.get(t, "/", nil)
 		if code != 200 {
 			t.Fatalf("/ = %d, want 200", code)
@@ -70,39 +72,29 @@ func TestUI(t *testing.T) {
 		if !strings.Contains(header.Get("Content-Type"), "text/html") {
 			t.Fatalf("content-type = %q", header.Get("Content-Type"))
 		}
-		for _, want := range []string{"/static/app.css", "/static/app.js", `<div id="app"></div>`} {
+		for _, want := range []string{css, js, `<div id="app"></div>`} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("/ does not contain %q", want)
 			}
 		}
 	})
 
-	t.Run("(b) the stylesheet and the app module answer 200 with the right type, on both path shapes", func(t *testing.T) {
-		cssCode, cssHeader, _ := srv.get(t, "/static/app.css", nil)
+	t.Run("(b) the stylesheet and the app module answer 200 with the right type", func(t *testing.T) {
+		cssCode, cssHeader, _ := srv.get(t, css, nil)
 		if cssCode != 200 || !strings.Contains(cssHeader.Get("Content-Type"), "text/css") {
-			t.Fatalf("/static/app.css = %d %q", cssCode, cssHeader.Get("Content-Type"))
+			t.Fatalf("%s = %d %q", css, cssCode, cssHeader.Get("Content-Type"))
 		}
-		jsCode, jsHeader, _ := srv.get(t, "/static/app.js", nil)
+		jsCode, jsHeader, _ := srv.get(t, js, nil)
 		if jsCode != 200 || !strings.Contains(jsHeader.Get("Content-Type"), "text/javascript") {
-			t.Fatalf("/static/app.js = %d %q", jsCode, jsHeader.Get("Content-Type"))
-		}
-		for _, p := range []string{"/app.js", "/app.css"} {
-			code, header, _ := srv.get(t, p, nil)
-			want := "text/javascript"
-			if strings.HasSuffix(p, ".css") {
-				want = "text/css"
-			}
-			if code != 200 || !strings.Contains(header.Get("Content-Type"), want) {
-				t.Fatalf("%s = %d %q, want 200 %s", p, code, header.Get("Content-Type"), want)
-			}
+			t.Fatalf("%s = %d %q", js, jsCode, jsHeader.Get("Content-Type"))
 		}
 	})
 
 	t.Run("(c) the served HTML and JS point nowhere off-box: no http(s) URL beyond the w3.org namespace", func(t *testing.T) {
 		_, _, html := srv.get(t, "/", nil)
-		_, _, js := srv.get(t, "/static/app.js", nil)
+		_, _, script := srv.get(t, js, nil)
 		urlRe := regexp.MustCompile(`https?://[^\s"'` + "`" + `)<]+`)
-		for _, u := range urlRe.FindAllString(html+js, -1) {
+		for _, u := range urlRe.FindAllString(html+script, -1) {
 			if !strings.HasPrefix(u, "http://www.w3.org/") {
 				t.Fatalf("an off-box URL in the shell: %s", u)
 			}
@@ -110,7 +102,7 @@ func TestUI(t *testing.T) {
 	})
 
 	t.Run("(d) the compiled CSS is Catppuccin through the shared theme, with daisyUI's components", func(t *testing.T) {
-		_, _, body := srv.get(t, "/static/app.css", nil)
+		_, _, body := srv.get(t, css, nil)
 		css := strings.ToLower(body)
 		for _, want := range []string{"#1e1e2e", "#cba6f7", "#89b4fa", "#11111b", "#eff1f5", "#8839ef", "#1e66f5", "#4c4f69"} {
 			if !strings.Contains(css, want) {
@@ -139,9 +131,9 @@ func TestUI(t *testing.T) {
 	})
 
 	t.Run("(e) every font the stylesheet names answers 200 as font/woff2; anything else is a 404", func(t *testing.T) {
-		_, _, css := srv.get(t, "/static/app.css", nil)
+		_, _, sheet := srv.get(t, css, nil)
 		names := map[string]bool{}
-		for _, m := range regexp.MustCompile(`url\((/fonts/[^)]+)\)`).FindAllStringSubmatch(css, -1) {
+		for _, m := range regexp.MustCompile(`url\((/fonts/[^)]+)\)`).FindAllStringSubmatch(sheet, -1) {
 			names[strings.TrimPrefix(m[1], "/fonts/")] = true
 		}
 		if len(names) == 0 {

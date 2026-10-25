@@ -421,6 +421,12 @@ in proxy mode:
    minutes and installs nothing on the computer); then `huddle pair --name phone`, scan, and save
    the passkey. The dashboard's Settings → Devices carries the same "Add a phone" QR.
 
+   What to expect on the phone: the first open moves about 260 KB (the app as brotli, its
+   stylesheet and two fonts) and shows the Now page in about 2 s on a slow 4G link. Every later
+   open moves only the small shell page and the live data: the app's files are named by their
+   content and kept by the browser for a year, so a new build is the only thing that fetches
+   them again. Slower than that points at the network between the phone and the hub, not the hub.
+
 7. Keep it running through logouts and reboots with the machine's own service manager:
 
    ```sh

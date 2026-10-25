@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"io/fs"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -16,16 +17,16 @@ func TestIndexHTMLBootsTheThemeFromAFile(t *testing.T) {
 		t.Fatalf("read index.html: %v", err)
 	}
 	page := string(html)
-	boot := strings.Index(page, `src="/static/theme-boot.js"`)
-	app := strings.Index(page, `src="/static/app.js"`)
-	if boot < 0 || app < 0 || boot > app {
-		t.Fatal("index.html must load /static/theme-boot.js before /static/app.js")
+	boot := regexp.MustCompile(`src="/static/(theme-boot\.[A-Za-z0-9_-]{8}\.js)"`).FindStringSubmatchIndex(page)
+	app := regexp.MustCompile(`src="/static/app\.[A-Za-z0-9_-]{8}\.js"`).FindStringIndex(page)
+	if boot == nil || app == nil || boot[0] > app[0] {
+		t.Fatal("index.html must load /static/theme-boot.<hash>.js before /static/app.<hash>.js")
 	}
 	if strings.Contains(page, "<script>") {
 		t.Fatal("index.html holds an inline script; the CSP allows none")
 	}
-	if _, err := fs.ReadFile(FS(), "theme-boot.js"); err != nil {
-		t.Fatalf("read theme-boot.js: %v", err)
+	if _, err := fs.ReadFile(FS(), page[boot[2]:boot[3]]); err != nil {
+		t.Fatalf("read %s: %v", page[boot[2]:boot[3]], err)
 	}
 }
 

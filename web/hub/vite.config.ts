@@ -8,10 +8,12 @@ import { type PluginOption, defineConfig } from "vite-plus";
 const shared = fileURLToPath(new URL("../ui/src", import.meta.url));
 const repo = fileURLToPath(new URL("../..", import.meta.url));
 
-// The dashboard is one ES module, app.js, and one stylesheet, app.css, built into
-// internal/huddle/web/dist, where the huddle binary embeds them next to the index.html it
-// serves as it is: no html entry, no hashed names, no public dir to copy. The CSS entry is src/app.css,
-// imported by main.tsx; @tailwindcss/vite compiles it and the fonts it references land in dist/fonts/.
+// The dashboard is one ES module, app.<hash>.js, and one stylesheet, app.<hash>.css, built into
+// internal/huddle/web/dist, where the huddle binary embeds them next to the index.html that
+// scripts/build.mjs writes with those names: no html entry, no public dir to copy. A name changes
+// whenever its bytes do, so the hub serves every hashed file as immutable. The CSS entry is
+// src/app.css, imported by main.tsx; @tailwindcss/vite compiles it and the fonts it references land
+// in dist/fonts/, hashed the same way.
 export default defineConfig({
   oxc: { jsx: { runtime: "automatic", importSource: "preact" } },
   // The plugin is typed against this package's own vite (the one scripts/build.mjs runs); the config type
@@ -38,10 +40,12 @@ export default defineConfig({
       input: "src/main.tsx",
       output: {
         format: "es",
-        entryFileNames: "app.js",
-        // app.css keeps its exact name (index.html links it); the bundled fonts collect under fonts/.
+        entryFileNames: "app.[hash].js",
+        // the one stylesheet is app.<hash>.css; the bundled fonts collect under fonts/.
         assetFileNames: (asset) =>
-          asset.names.some((name) => name.endsWith(".css")) ? "app.css" : "fonts/[name][extname]",
+          asset.names.some((name) => name.endsWith(".css"))
+            ? "app.[hash].css"
+            : "fonts/[name].[hash][extname]",
         codeSplitting: false,
       },
     },

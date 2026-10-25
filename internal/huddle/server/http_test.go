@@ -758,7 +758,7 @@ func TestAuthBoundary(t *testing.T) {
 		})
 	}
 	// the open surface: health, the page, the assets
-	for _, path := range []string{"/health", "/", "/static/app.css", "/connect.md"} {
+	for _, path := range []string{"/health", "/", shellAsset(t, srv, "app", ".css"), "/connect.md"} {
 		if code, _, _ := srv.get(t, path, nil); code != 200 {
 			t.Fatalf("%s = %d, want 200 without a credential", path, code)
 		}
@@ -1075,7 +1075,7 @@ func TestInvites(t *testing.T) {
 				t.Fatalf("the signed-out page misses %q", want)
 			}
 		}
-		_, _, app := srv.get(t, "/app.js", nil)
+		_, _, app := srv.get(t, shellAsset(t, srv, "app", ".js"), nil)
 		if !strings.Contains(app, "Other ways to sign in") {
 			t.Fatal("the app bundle misses its landing page")
 		}
