@@ -1,27 +1,40 @@
 // Notifications.test.tsx — the settings card of this device's push notifications: the choice
 // read from the server, a pick saved at once, the default when the server names none, the
-// finished-turn switch off by default and saved at once, and the refusal of a browser that holds no paired device said in the card.
+// finished-turn switch off by default and saved at once, the refusal of a browser that holds no paired device said in the card,
+// and the Home Screen hint an iPhone or iPad gets in a Safari tab instead of the two browser switches.
 
 import { fireEvent, screen, waitFor } from "@testing-library/preact";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { NotificationsCard, readNotifyChoice, readTurnChoice } from "../../src/app/Notifications.tsx";
+import type { PushStatus } from "../../src/pwa.ts";
 import { legacyClasses } from "../helpers.tsx";
 import { renderHuddle } from "../render.tsx";
 
-/** Renders the card over one fetch answer per call, with the calls kept for asserting. */
-function card(answers: Array<{ status: number; body: unknown }>): {
+/** Renders the card over one fetch answer per call, with the calls kept for asserting, and the
+ *  push status this browser answers. */
+function card(
+  answers: Array<{ status: number; body: unknown }>,
+  pushStatus: PushStatus = { supported: false, permission: "default", on: false, standalone: false },
+): {
   r: ReturnType<typeof renderHuddle>;
   calls: Array<{ url: string; init?: RequestInit }>;
 } {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   let n = 0;
-  const r = renderHuddle(<NotificationsCard />, {}, 1, (url, init) => {
-    calls.push(init ? { url, init } : { url });
-    const a = answers[n] ?? { status: 500, body: {} };
-    n++;
-    const headers = { "content-type": "application/json" };
-    return Promise.resolve(new Response(JSON.stringify(a.body), { status: a.status, headers }));
-  });
+  const r = renderHuddle(
+    <NotificationsCard />,
+    {},
+    1,
+    (url, init) => {
+      calls.push(init ? { url, init } : { url });
+      const a = answers[n] ?? { status: 500, body: {} };
+      n++;
+      const headers = { "content-type": "application/json" };
+      return Promise.resolve(new Response(JSON.stringify(a.body), { status: a.status, headers }));
+    },
+    undefined,
+    { status: async () => pushStatus, enable: async () => {}, disable: async () => {} },
+  );
   return { r, calls };
 }
 
@@ -32,6 +45,65 @@ const radios = (): HTMLInputElement[] => [
 
 /** One radio by its place in the card, the way the cases click them. */
 const radio = (at: number): HTMLInputElement => radios()[at] as HTMLInputElement;
+
+const IPHONE =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1";
+const DESKTOP =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+const HINT =
+  "Web push on iPhone and iPad works only from the Home Screen app. In Safari, tap Share, then Add to Home Screen, open Huddle from there and turn notifications on.";
+
+/** Sets this browser's user agent for one case. */
+const userAgent = (ua: string): void => {
+  vi.spyOn(navigator, "userAgent", "get").mockReturnValue(ua);
+};
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe("the notifications card on an iPhone or iPad", () => {
+  it("points a Safari tab at the Home Screen instead of the two browser switches", async () => {
+    userAgent(IPHONE);
+    card([{ status: 200, body: { notify: "needs" } }]);
+    await waitFor(() => expect(screen.getByText(HINT)).toBeDefined());
+    expect(screen.queryByRole("switch", { name: "Notify me when a session asks me something" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Push to this device when a session needs me" })).toBeNull();
+    expect(screen.getByRole("switch", { name: "Push when a turn finishes" })).toBeDefined();
+    expect(legacyClasses()).toEqual([]);
+  });
+
+  it("points an iPad's Safari tab, which names itself a Mac, at the Home Screen", async () => {
+    userAgent(DESKTOP.replace("Chrome/141.0.0.0 Safari/537.36", "Version/18.5 Safari/605.1.15"));
+    vi.spyOn(navigator, "maxTouchPoints", "get").mockReturnValue(5);
+    card([{ status: 200, body: { notify: "needs" } }]);
+    await waitFor(() => expect(screen.getByText(HINT)).toBeDefined());
+  });
+
+  it("keeps the two switches in the installed app", async () => {
+    userAgent(IPHONE);
+    vi.stubGlobal("Notification", { permission: "default" });
+    card([{ status: 200, body: { notify: "needs" } }], {
+      supported: true,
+      permission: "default",
+      on: false,
+      standalone: true,
+    });
+    await waitFor(() => expect(screen.getByText("Push permission: default.")).toBeDefined());
+    expect(screen.getByRole("switch", { name: "Notify me when a session asks me something" })).toBeDefined();
+    expect(screen.getByRole("switch", { name: "Push to this device when a session needs me" })).toBeDefined();
+    expect(screen.queryByText(HINT)).toBeNull();
+  });
+
+  it("keeps today's text on a desktop browser", async () => {
+    userAgent(DESKTOP);
+    card([{ status: 200, body: { notify: "needs" } }]);
+    await waitFor(() => expect(screen.getByText("This browser cannot receive push.")).toBeDefined());
+    expect(screen.getByText("This browser cannot show notifications.")).toBeDefined();
+    expect(screen.queryByText(HINT)).toBeNull();
+  });
+});
 
 describe("the notifications card", () => {
   it("reads the device's choice and marks it", async () => {

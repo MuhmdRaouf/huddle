@@ -1,10 +1,12 @@
 // render.tsx — render a page inside the huddle context: `state` overrides the initial client state,
 // `now` fixes the render clock, and `go`, `act`, `toast` and `copy` come back as spies the test
-// asserts on. `fetchFn` answers the API; the default answers `{}` for everything.
+// asserts on. `fetchFn` answers the API; the default answers `{}` for everything. `push` stands in for
+// this browser's push switch; the default is a browser without push, in a tab.
 import { render } from "@testing-library/preact";
 import type { ComponentChildren } from "preact";
 import { vi } from "vite-plus/test";
 import { createApi, type FetchFn } from "../src/api.ts";
+import type { PushSwitch } from "../src/pwa.ts";
 import { HuddleContext, type HuddleContextValue } from "../src/app/context.tsx";
 import { createRegistry, type RegistryStore } from "../src/registry.ts";
 import type { HuddleState } from "../src/store.ts";
@@ -35,6 +37,11 @@ export function renderHuddle(
   fetchFn: FetchFn = () =>
     Promise.resolve(new Response("{}", { headers: { "content-type": "application/json" } })),
   registry?: RegistryStore,
+  push: PushSwitch = {
+    status: async () => ({ supported: false, permission: "default", on: false, standalone: false }),
+    enable: async () => {},
+    disable: async () => {},
+  },
 ) {
   const api = createApi(fetchFn, () => {});
   const go = vi.fn<(href: string) => void>();
@@ -53,11 +60,7 @@ export function renderHuddle(
     toast,
     copy,
     notify: { on: () => false, toggle: async () => {} },
-    push: {
-      status: async () => ({ supported: false, permission: "default", on: false, standalone: false }),
-      enable: async () => {},
-      disable: async () => {},
-    },
+    push,
   };
   const result = render(<HuddleContext.Provider value={value}>{ui}</HuddleContext.Provider>);
   return { ...result, api, go, act, toast, copy, value };

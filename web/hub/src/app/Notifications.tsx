@@ -111,21 +111,24 @@ function pushHelp(status: PushStatus | null): string {
     : `${permission} On iPhone and iPad, add Huddle to the Home Screen and turn this on there.`;
 }
 
+/** True on an iPhone or iPad, iPadOS's desktop user agent included (a Mac with a touch screen). */
+function isIOS(nav: Pick<Navigator, "userAgent" | "maxTouchPoints">): boolean {
+  return (
+    /iPhone|iPad|iPod/.test(nav.userAgent) || (/Macintosh/.test(nav.userAgent) && nav.maxTouchPoints > 1)
+  );
+}
+
 /** The push switch (SPEC 7.6): this device's subscription, woken for what the choice below says.
  *  A refusal (no permission, an unpaired browser) is a toast. */
-function PushRow(): JSX.Element {
+function PushRow({
+  status,
+  onStatus,
+}: {
+  status: PushStatus | null;
+  onStatus: (s: PushStatus) => void;
+}): JSX.Element {
   const { push, toast } = useHuddle();
-  const [status, setStatus] = useState<PushStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let live = true;
-    void push.status().then((s) => {
-      if (live) setStatus(s);
-    });
-    return () => {
-      live = false;
-    };
-  }, [push]);
   const flip = async (): Promise<void> => {
     setBusy(true);
     try {
@@ -133,7 +136,7 @@ function PushRow(): JSX.Element {
     } catch (x) {
       toast(errText(x), { bad: true });
     }
-    setStatus(await push.status());
+    onStatus(await push.status());
     setBusy(false);
   };
   return (
@@ -148,8 +151,38 @@ function PushRow(): JSX.Element {
   );
 }
 
-/** The notifications card: the two switches, then the choice as three radios and the
- *  finished-turn switch, each saved the moment it changes. */
+/** This browser's two switches; an iPhone or iPad in a Safari tab, which can neither show
+ *  notifications nor take push, gets the Home Screen step instead. */
+function BrowserRows(): JSX.Element {
+  const { push } = useHuddle();
+  const [status, setStatus] = useState<PushStatus | null>(null);
+  useEffect(() => {
+    let live = true;
+    void push.status().then((s) => {
+      if (live) setStatus(s);
+    });
+    return () => {
+      live = false;
+    };
+  }, [push]);
+  if (status && !status.standalone && !("Notification" in window) && isIOS(navigator)) {
+    return (
+      <p class="text-sm text-[var(--ui-muted)]">
+        Web push on iPhone and iPad works only from the Home Screen app. In Safari, tap Share, then Add to
+        Home Screen, open Huddle from there and turn notifications on.
+      </p>
+    );
+  }
+  return (
+    <List label="This browser">
+      <NotifyRow />
+      <PushRow status={status} onStatus={setStatus} />
+    </List>
+  );
+}
+
+/** The notifications card: this browser's two switches (or the Home Screen step), then the
+ *  choice as three radios and the finished-turn switch, each saved the moment it changes. */
 export function NotificationsCard(): JSX.Element {
   const { api, toast } = useHuddle();
   const [choice, setChoice] = useState<NotifyChoice | null>(null);
@@ -207,10 +240,7 @@ export function NotificationsCard(): JSX.Element {
         </span>
       }
     >
-      <List label="This browser">
-        <NotifyRow />
-        <PushRow />
-      </List>
+      <BrowserRows />
       <p class="mt-4 mb-1 text-sm font-semibold">What wakes this device</p>
       <RadioGroup
         label="Notifications"
