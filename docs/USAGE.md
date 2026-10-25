@@ -230,22 +230,29 @@ the hub's answer and is never queued.
 
 ## Other agents
 
-Huddle's MCP server works with any harness that speaks MCP. For five of them the binary wires
+Huddle's MCP server works with any harness that speaks MCP. For six of them the binary wires
 itself in ([README · Other agents](../README.md#other-agents) has what each install edits):
 
 ```sh
 huddle harness list             # installed, available or absent, per harness
-huddle harness install codex    # or gemini, qwen, opencode, crush
+huddle harness install codex    # or gemini, qwen, opencode, crush, omp
 huddle harness remove codex     # config back to its previous bytes
 ```
 
-The names are exactly `codex`, `gemini`, `qwen`, `opencode` and `crush` (exit 4 names nothing
+The names are exactly `codex`, `gemini`, `qwen`, `opencode`, `crush` and `omp` (exit 4 names nothing
 else). Install adds the MCP entry plus the harness's own lifecycle hooks, so its sessions sit in
 the Now list beside Claude Code's, badged by agent; a hook posts to the local hub inside a 3
 second deadline and never blocks its agent. For codex, install also adds an opt-in model
 provider, `huddle`, that sends the Responses API through the router's `/gateway/v1` over plain
 HTTP on loopback with your own `OPENAI_API_KEY`: run `codex -c model_provider=huddle` to use it.
-Your default provider and `openai_base_url` stay as they are. Every change is recorded in
+Your default provider and `openai_base_url` stay as they are. For omp, install writes the
+`huddle` server into `~/.omp/agent/mcp.json`, which omp reads ahead of the servers it imports
+from Claude Code and Codex, and no hooks. It also adds `providers.anthropic` to
+`~/.omp/agent/models.yml`, between `# huddle:begin` and `# huddle:end`: `baseUrl` is the
+router's `http://127.0.0.1:<router port>/gateway` and the header `X-Huddle-Harness: omp` names
+omp in radar. omp's Anthropic requests then go through the gateway over plain HTTP on loopback
+with your own key or login, and need the router up. A `models.yml` that already configures
+`anthropic` stays as it is: install refuses it and says why. Every change is recorded in
 `~/.config/huddle/harness-ledger.json` (or `$HUDDLE_HOME/harness-ledger.json`) and undone exactly
 by `remove`.
 

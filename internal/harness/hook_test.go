@@ -163,7 +163,7 @@ func numberText(value *jsfmt.Value, key string) float64 {
 }
 
 func TestInstallWritesTheHookEntriesBesideTheServer(t *testing.T) {
-	for _, name := range Names() {
+	for _, name := range hookedNames() {
 		t.Run(name, func(t *testing.T) {
 			env, home := testEnv(t, nil)
 			a, err := ByName(name)
@@ -195,7 +195,7 @@ func TestInstallWritesTheHookEntriesBesideTheServer(t *testing.T) {
 }
 
 func TestRemoveTakesTheHookEntriesBackByteForByte(t *testing.T) {
-	for _, name := range Names() {
+	for _, name := range hookedNames() {
 		t.Run(name, func(t *testing.T) {
 			env, home := testEnv(t, nil)
 			a, err := ByName(name)
@@ -224,7 +224,7 @@ func TestRemoveTakesTheHookEntriesBackByteForByte(t *testing.T) {
 }
 
 func TestInstallOfTheHooksTwiceChangesNothing(t *testing.T) {
-	for _, name := range Names() {
+	for _, name := range hookedNames() {
 		t.Run(name, func(t *testing.T) {
 			env, home := testEnv(t, nil)
 			a, err := ByName(name)
@@ -248,7 +248,7 @@ func TestInstallOfTheHooksTwiceChangesNothing(t *testing.T) {
 }
 
 func TestRemoveLeavesAUserEditedHookEntryAlone(t *testing.T) {
-	for _, name := range Names() {
+	for _, name := range hookedNames() {
 		t.Run(name, func(t *testing.T) {
 			env, home := testEnv(t, nil)
 			a, err := ByName(name)
@@ -382,6 +382,18 @@ func TestTheOpencodeShimRidesTheInstallAndTheRemove(t *testing.T) {
 	}
 }
 
+// hookedNames answers the harnesses huddle wires hooks into: every one but those whose edit is
+// noHooks.
+func hookedNames() []string {
+	var names []string
+	for _, name := range Names() {
+		if _, none := hookFor(name).(noHooks); !none {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // — the edits' own edges, the way codex_test.go pins the TOML adapter's: each edit is a pure
 // function over the bytes, and every branch it answers is exercised here directly.
 
@@ -392,9 +404,12 @@ func TestEveryHarnessHasAHookEdit(t *testing.T) {
 			t.Errorf("%s has no hook edit", name)
 			continue
 		}
-		if len(h.events()) == 0 {
+		if _, none := h.(noHooks); !none && len(h.events()) == 0 {
 			t.Errorf("%s installs no hook events", name)
 		}
+	}
+	if events, err := HookEvents("omp"); err != nil || len(events) != 0 {
+		t.Errorf("HookEvents(omp) = %v, %v; want none: huddle wires no omp hooks", events, err)
 	}
 	_, err := HookEvents("nosuch")
 	var unknown UnknownHarnessError

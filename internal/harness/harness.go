@@ -1,5 +1,5 @@
 // Package harness wires huddle's MCP server into the other coding agents on this machine:
-// Codex CLI, Gemini CLI, Qwen Code, opencode and Crush. Every adapter is a pure edit over the
+// Codex CLI, Gemini CLI, Qwen Code, opencode, Crush and omp. Every adapter is a pure edit over the
 // harness's config bytes, so install and remove round-trip a config byte for byte, and the one
 // file-touching path (Install, Remove) records every change in the huddle home's ledger so
 // remove undoes exactly what install did. Install also wires each agent's own lifecycle hooks
@@ -50,6 +50,10 @@ type Entry struct {
 	Gateway string // the router's /gateway base URL a harness's model provider names; "" names none
 }
 
+// bridgeRequestTimeoutMS bounds one bridge call in a harness whose entry names a timeout: a
+// wait holds its request this long, then answers timeout and the agent calls wait again.
+const bridgeRequestTimeoutMS = 120000
+
 // NewEntry answers the entry the named harness runs: this binary, its mcp word, and the env
 // var naming the harness, so the bridge knows who spawned it.
 func NewEntry(name, bin string) Entry {
@@ -86,7 +90,7 @@ type Adapter interface {
 }
 
 // adapters is every harness this package wires, in list order.
-var adapters = []Adapter{codex, gemini, qwen, opencode, crush}
+var adapters = []Adapter{codex, gemini, qwen, opencode, crush, omp}
 
 // Names answers the harness names in list order.
 func Names() []string {

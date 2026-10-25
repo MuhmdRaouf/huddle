@@ -21,6 +21,7 @@ type InstallResult struct {
 	Changed bool   // the entry is in the file now and was not before
 	Created bool   // the file was not there; install wrote it
 	Already bool   // the file already held exactly this entry
+	Routing string // the file the routing variables went into; "" when the harness got none
 }
 
 // RemoveResult is what one remove did.
@@ -34,8 +35,9 @@ type RemoveResult struct {
 }
 
 // Install wires the entries into the named harness's config file — the MCP server, and the
-// lifecycle hooks where the harness has a mechanism for them — and records the change in the
-// ledger. A malformed config is refused before anything is written.
+// lifecycle hooks where the harness has a mechanism for them — plus the gateway routing where
+// the harness reads it from a file of its own (omp's models.yml) and the entry names a
+// gateway, and records each change in the ledger. A malformed config is refused before anything is written.
 func Install(ctx context.Context, hudHome string, env Env, name string, entry Entry) (InstallResult, error) {
 	a, err := ByName(name)
 	if err != nil {
@@ -69,14 +71,97 @@ func Install(ctx context.Context, hudHome string, env Env, name string, entry En
 			return InstallResult{}, err
 		}
 	}
-	return InstallResult{Path: path, Changed: changed, Created: !existed, Already: !changed}, nil
+	result := InstallResult{Path: path, Changed: changed, Created: !existed, Already: !changed}
+	if routing, ok := routings[name]; ok && entry.Gateway != "" {
+		if result.Routing, err = installRouting(hudHome, env, routing, entry); err != nil {
+			return InstallResult{}, err
+		}
+	}
+	return result, nil
+}
+
+// routings is the routing file per harness whose model provider points at the router's
+// gateway from a file of its own beside the MCP config.
+var routings = map[string]modelsBlock{"omp": ompRouting}
+
+// installRouting writes the routing block into the harness's routing file and records the
+// change under the file's own ledger name, so remove can tell a file it created.
+func installRouting(hudHome string, env Env, routing modelsBlock, entry Entry) (string, error) {
+	path := routing.ConfigPath(env)
+	before, existed, err := readIfExists(path)
+	if err != nil {
+		return "", err
+	}
+	out, err := routing.Install(before, entry)
+	if err != nil {
+		return "", &MalformedError{Path: path, Err: err}
+	}
+	if existed && bytes.Equal(out, before) {
+		return path, nil
+	}
+	if err := writeAtomic0600(path, out); err != nil {
+		return "", err
+	}
+	return path, recordLedger(hudHome, ledgerEntry{
+		Harness: routing.ledger, Path: path, Created: !existed, BeforeSHA256: sha256hex(before),
+	})
+}
+
+// removeRouting takes the routing block back out: a file install created and nothing else
+// holds is gone, a block the user changed stays. The MCP config's own result says what the
+// remove did; the routing file follows it.
+func removeRouting(hudHome string, env Env, routing modelsBlock, entry Entry) error {
+	ledger := readLedger(ledgerPath(hudHome))
+	record, hasRecord := ledger.named(routing.ledger)
+	path := routing.ConfigPath(env)
+	if hasRecord && record.Path != "" {
+		path = record.Path
+	}
+	before, existed, err := readIfExists(path)
+	if err != nil {
+		return err
+	}
+	if existed {
+		out, err := routing.Remove(before, entry)
+		switch {
+		case errors.Is(err, ErrEntryChanged):
+		case err != nil:
+			return &MalformedError{Path: path, Err: err}
+		case hasRecord && record.Created && len(bytes.TrimSpace(out)) == 0:
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+		default:
+			if err := writeAtomic0600(path, out); err != nil {
+				return err
+			}
+		}
+	}
+	if !hasRecord {
+		return nil
+	}
+	return dropLedger(hudHome, routing.ledger)
 }
 
 // Remove takes every entry of ours back out of the named harness's config file — the MCP
-// server and the hook entries with it — and drops the ledger's record. A file install created
+// server and the hook entries with it — and its routing file, and drops the ledger's records. A file install created
 // and nothing else holds is gone entirely; a file that is back to its previous bytes is said
 // to be; an entry the user changed is left alone, hooks and server with it.
 func Remove(ctx context.Context, hudHome string, env Env, name string, entry Entry) (RemoveResult, error) {
+	result, err := removeConfig(hudHome, env, name, entry)
+	if err != nil {
+		return RemoveResult{}, err
+	}
+	if routing, ok := routings[name]; ok {
+		if err := removeRouting(hudHome, env, routing, entry); err != nil {
+			return RemoveResult{}, err
+		}
+	}
+	return result, nil
+}
+
+// removeConfig takes every entry of ours out of the harness's MCP config file.
+func removeConfig(hudHome string, env Env, name string, entry Entry) (RemoveResult, error) {
 	a, err := ByName(name)
 	if err != nil {
 		return RemoveResult{}, err

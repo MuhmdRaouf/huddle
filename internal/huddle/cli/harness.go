@@ -65,6 +65,9 @@ func (c *cli) harnessInstall(ctx context.Context, hudHome, name string) int {
 	if events, err := harness.HookEvents(name); err == nil && len(events) > 0 {
 		note = fmt.Sprintf(", hooks for %d events", len(events))
 	}
+	if got.Routing != "" {
+		note += ", routing through huddle-router in " + got.Routing
+	}
 	switch {
 	case got.Already:
 		c.say(fmt.Sprintf("%s: already wired into %s%s", name, got.Path, note))

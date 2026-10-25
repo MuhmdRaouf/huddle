@@ -22,17 +22,13 @@ var opencode = jsonAdapter{
 
 // openCodeEntry is the record opencode reads: a local server runs one argv. The timeout is
 // opencode's per-request ms, 5000 when the entry names none — shorter than a wait's long
-// poll, so the entry always names one that outlasts it.
+// poll, so the entry always names bridgeRequestTimeoutMS.
 type openCodeEntry struct {
 	Type        string            `json:"type"`
 	Command     []string          `json:"command"`
 	Environment map[string]string `json:"environment"`
 	Timeout     int64             `json:"timeout"`
 }
-
-// openCodeRequestTimeoutMS bounds one bridge call: a wait holds its request this long, then
-// answers timeout and the agent calls wait again.
-const openCodeRequestTimeoutMS = 120000
 
 // openCodeBuild marshals the opencode shape.
 func openCodeBuild(e Entry) ([]byte, error) {
@@ -44,6 +40,6 @@ func openCodeBuild(e Entry) ([]byte, error) {
 		Type:        "local",
 		Command:     append([]string{e.Command}, e.Args...),
 		Environment: env,
-		Timeout:     openCodeRequestTimeoutMS,
+		Timeout:     bridgeRequestTimeoutMS,
 	})
 }

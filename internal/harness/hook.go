@@ -70,13 +70,14 @@ type hookEdit interface {
 }
 
 // hookEdits is the hook edit per harness. Every harness this package wires has one, so a
-// name ByName answers always finds its edit here.
+// name ByName answers always finds its edit here; omp's is noHooks.
 var hookEdits = map[string]hookEdit{
 	"codex":    tomlHooks{},
 	"gemini":   jsonHooks{name: "gemini", parent: "hooks", timeout: 3000, hookEvents: geminiHookEvents, grouped: true},
 	"qwen":     jsonHooks{name: "qwen", parent: "hooks", timeout: 3, hookEvents: qwenHookEvents, grouped: true},
 	"crush":    jsonHooks{name: "crush", parent: "hooks", timeout: 3, hookEvents: crushHookEvents},
 	"opencode": pluginHooks{},
+	"omp":      noHooks{},
 }
 
 // hookFor answers the named harness's hook edit.
@@ -379,6 +380,15 @@ func (j jsonHooks) fresh(bin string) []byte {
 	}
 	return append(out, '\n')
 }
+
+// noHooks is the edit of a harness huddle wires no hooks into: omp runs its hooks as
+// TypeScript extensions, and huddle ships none for it.
+type noHooks struct{}
+
+func (noHooks) events() []HookEvent                                { return nil }
+func (noHooks) install(cfg []byte, _, _, _ string) ([]byte, error) { return cfg, nil }
+func (noHooks) remove(cfg []byte, _, _, _ string) ([]byte, error)  { return cfg, nil }
+func (noHooks) contains([]byte, string, string, string) bool       { return false }
 
 // pluginHooks is opencode's hook config: a JS plugin module the config's plugin array names
 // by file:// URL. The module itself is huddle's own file in the huddle home, rewritten by
