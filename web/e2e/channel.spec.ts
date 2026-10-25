@@ -2,7 +2,9 @@
 // the run's seeded ping and its pong newest last, each with its sender, its recipient, the body
 // and the age. The composer posts a message into the chat, and on the phone it stays above the
 // keyboard: the keyboard is played by a visual viewport that shrinks the way iOS's does, while
-// the layout viewport keeps its height. The members sheet lists each session with the files it
+// the layout viewport keeps its height. Picking one member, the composer says how the message
+// travels: a session whose claude runs without the development-channels flag gets it on its next
+// prompt, whatever its bridge acks. The members sheet lists each session with the files it
 // claimed and the owner's remove action. The channel's Settings view lists the sessions linked into
 // it, each with its level and its unlink. The specs that post or link run on channels of their own,
 // removed after each test, so the seeded channel keeps exactly its ping and pong and stays the only
@@ -233,6 +235,35 @@ test("the composer posts into the chat and stays above the keyboard", async ({ p
       })
       .toBeLessThanOrEqual((bar?.y ?? 0) + 1);
   }
+  await expectNoSideScroll(page);
+  await expectAccessible(page, SHELL);
+});
+
+test("the composer says a message to a session without the channels flag waits for its next prompt", async ({
+  page,
+}, info) => {
+  const ch = await freshChannel(info.project.name, ["eps"]);
+  // the run seeds eps's session with no claude command line naming the flag, and its bridge
+  // acks: the ack alone proves the bridge, not Claude Code's channel listener. Ended, so the
+  // Now list's counts stay the run's own.
+  const id = `waits-${info.project.name}`;
+  await api("/api/registry/report", {
+    session_id: id,
+    machine: "e2e-machine",
+    project: "e2e",
+    channel: ch,
+    member: "eps",
+    last_event: "SessionEnd",
+    last_event_at: new Date().toISOString(),
+  });
+  await api("/api/registry/push-ack", { channel: ch, as: "eps" });
+  const row = await api<{ delivery_route: string }>(`/api/registry/sessions/${id}`);
+  expect(row.delivery_route).toBe("next_prompt");
+
+  await openChannel(page, ch);
+  const composer = page.locator("[data-chat-composer]");
+  await composer.getByRole("combobox", { name: "To" }).selectOption("eps");
+  await expect(composer.locator("[data-route-line]")).toHaveText("Delivers on the next prompt");
   await expectNoSideScroll(page);
   await expectAccessible(page, SHELL);
 });

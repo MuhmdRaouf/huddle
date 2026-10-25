@@ -1,7 +1,8 @@
 // Chat.tsx — the channel as a chat: the message events newest last as bubbles (the owner's on the
 // right, each session's on the left) with who told whom and the age, the composer under them,
 // and the Members button that opens the members sheet. A message to nobody in particular reads
-// as to everyone, and the owner reads as You.
+// as to everyone, and the owner reads as You. The composer reads each member's route from the
+// registry row of its newest session in this channel.
 
 import { Button } from "@huddle/ui/button.tsx";
 import { Card } from "@huddle/ui/card.tsx";
@@ -48,7 +49,7 @@ function Bubble({ e, now }: { e: FeedEvent; now: number }): JSX.Element {
 
 /** The chat. */
 export function Chat({ events, now, reservations }: ChatProps): JSX.Element {
-  const { state, act, toast } = useHuddle();
+  const { state, act, toast, registry } = useHuddle();
   const [membersOpen, setMembersOpen] = useState(false);
   // removed here and not yet gone from the roster the stream sends
   const [removed, setRemoved] = useState<readonly string[]>([]);
@@ -56,6 +57,10 @@ export function Chat({ events, now, reservations }: ChatProps): JSX.Element {
   const members = (state.sessions?.sessions ?? []).filter(
     (s) => s.state !== "left" && !removed.includes(s.name),
   );
+
+  // the registry lists the newest activity first: the first row is the member's newest session
+  const routeOf = (member: string): string | undefined =>
+    registry.getState().sessions?.find((s) => s.channel === state.ch && s.member === member)?.delivery_route;
 
   const send = async (to: string, msg: string): Promise<boolean> =>
     (await act("send", to ? { to, msg } : { msg })) !== null;
@@ -91,7 +96,7 @@ export function Chat({ events, now, reservations }: ChatProps): JSX.Element {
               No messages yet. Say something to the channel below.
             </p>
           )}
-          <ChatComposer members={members.map((m) => m.name)} onSend={send} />
+          <ChatComposer members={members.map((m) => m.name)} onSend={send} routeOf={routeOf} />
         </Card>
       </div>
       <MembersSheet

@@ -1,5 +1,6 @@
 // Chat.test.tsx — the channel's chat: the composer sends to everyone or one member through the
-// channel's send op and clears on success, keeps the words on a failure; the members sheet lists
+// channel's send op and clears on success, keeps the words on a failure, and says each member's
+// route from the registry; the members sheet lists
 // the live sessions with their claims, and its remove asks once before it removes.
 
 import { fireEvent, screen, waitFor } from "@testing-library/preact";
@@ -7,7 +8,8 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import type { HuddleContextValue } from "../../src/app/context.tsx";
 import { Chat } from "../../src/chat/Chat.tsx";
 import type { FeedEvent, RosterSession } from "../../src/store.ts";
-import { legacyClasses, makeCtx, makeState, NOW, renderIn } from "../helpers";
+import type { RegistrySession } from "../../src/registry.ts";
+import { legacyClasses, makeCtx, makeRegistry, makeState, NOW, renderIn } from "../helpers";
 
 const roster = [
   { name: "gamma", state: "working" },
@@ -41,6 +43,25 @@ function chat(act: HuddleContextValue["act"] = vi.fn(async () => true), events: 
 }
 
 describe("the chat composer", () => {
+  it("says a member waits for its next prompt unless its session's claude shows pushes", () => {
+    const rows = [
+      { session_id: "s-g", channel: "ch", member: "gamma", delivery_route: "now" },
+      { session_id: "s-d", channel: "ch", member: "delta", delivery_route: "next_prompt" },
+      { session_id: "s-x", channel: "other", member: "delta", delivery_route: "now" },
+    ] as RegistrySession[];
+    renderIn(
+      <Chat events={[]} now={NOW} reservations={claims} />,
+      makeCtx(makeState({ sessions: { sessions: roster } }), { registry: makeRegistry({ sessions: rows }) }),
+    );
+    const to = screen.getByRole("combobox", { name: "To" });
+    const line = (): string => document.querySelector("[data-route-line]")?.textContent ?? "";
+    expect(line()).toBe("Delivers on the next prompt"); // everyone: delta waits
+    fireEvent.change(to, { target: { value: "gamma" } });
+    expect(line()).toBe("Delivers now");
+    fireEvent.change(to, { target: { value: "delta" } });
+    expect(line()).toBe("Delivers on the next prompt");
+  });
+
   it("sends the words to everyone and clears the box", async () => {
     const act = chat();
     const box = screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;

@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 20
+const SchemaVersion = 21
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -271,6 +271,10 @@ var migrations = []string{
 	// 20: the finished-turn push (Settings › Notifications): its own wake choice per device, off
 	// until the device turns it on.
 	`ALTER TABLE devices ADD COLUMN notify_turn INTEGER NOT NULL DEFAULT 0;`,
+	// 21: whether the acking session's claude runs with the channels flag: Claude Code drops a
+	// channel push the session did not load huddle's server for, so an ack without it routes
+	// nothing now.
+	`ALTER TABLE push_acks ADD COLUMN listens INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

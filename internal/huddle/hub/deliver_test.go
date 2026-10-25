@@ -1,9 +1,9 @@
 package hub
 
 // The owner's messages to sessions (SPEC 6.3, 6.4): one row per session with the exact header,
-// delivered through a channel push when the session's bridge acked one lately (route now) or
-// taken by the listen hook on the next prompt (route next_prompt). The registry row says which
-// route a message to the session would take.
+// delivered through a channel push when the session's bridge acked one lately and its claude runs
+// with the channels flag (route now), or taken by the listen hook on the next prompt (route
+// next_prompt). The registry row says which route a message to the session would take.
 
 import (
 	"context"
@@ -134,8 +134,9 @@ func TestTheRouteFollowsTheBridgeAcks(t *testing.T) {
 	if route("s-live") != RouteNextPrompt || route("s-quiet") != RouteNextPrompt || route("s-lonely") != RouteNextPrompt {
 		t.Fatalf("before any ack every route = %s/%s/%s, want next_prompt", route("s-live"), route("s-quiet"), route("s-lonely"))
 	}
-	// the api bridge acks a channel push: its session's route turns now, the others stay
-	if err := db.RecordPushAck(ctx, "shop", "api", "2026-10-16T09:00:20.000Z"); err != nil {
+	// the api bridge acks a channel push from a claude that listens: its session's route turns
+	// now, the others stay
+	if err := db.RecordPushAck(ctx, "shop", "api", listening, "2026-10-16T09:00:20.000Z"); err != nil {
 		t.Fatalf("ack: %v", err)
 	}
 	if route("s-live") != RouteNow {
@@ -150,11 +151,49 @@ func TestTheRouteFollowsTheBridgeAcks(t *testing.T) {
 		t.Errorf("a stale ack still routes %s", got)
 	}
 	// a newer ack from the same member replaces the older one
-	if err := db.RecordPushAck(ctx, "shop", "api", "2026-10-16T09:05:00.000Z"); err != nil {
+	if err := db.RecordPushAck(ctx, "shop", "api", listening, "2026-10-16T09:05:00.000Z"); err != nil {
 		t.Fatalf("ack: %v", err)
 	}
 	if got := db.routeOfMember(ctx, "shop", "api", readNow.Add(6*time.Minute)); got != RouteNow {
 		t.Errorf("the newest ack routes %s, want now", got)
+	}
+}
+
+// listening is a session's command line with Claude Code's development-channels flag naming
+// huddle's server: the one start whose channel pushes Claude Code shows.
+const listening = "claude --dangerously-load-development-channels server:plugin:huddle:huddle"
+
+func TestTheRouteNeedsTheChannelsFlagOnTheSessionsCommand(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	if err := db.Report(ctx, Report{SessionID: "s-1", Channel: "shop", Member: "api",
+		LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:00.000Z"}); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	at := "2026-10-16T09:00:20.000Z"
+	for _, tc := range []struct {
+		command string
+		want    string
+	}{
+		{"", RouteNextPrompt},       // no command line read: nothing says Claude Code listens
+		{"claude", RouteNextPrompt}, // a plain start drops every channel push
+		{"claude --channels plugin:telegram@claude-plugins-official", RouteNextPrompt},
+		{"claude --dangerously-load-development-channels server:other", RouteNextPrompt},
+		{"claude --resume --dangerously-load-development-channels", RouteNextPrompt},
+		{listening, RouteNow},
+		{"claude --dangerously-load-development-channels=server:plugin:huddle:huddle", RouteNow},
+		{"claude --channels server:plugin:huddle:huddle --model opus", RouteNow},
+	} {
+		if err := db.RecordPushAck(ctx, "shop", "api", tc.command, at); err != nil {
+			t.Fatalf("ack: %v", err)
+		}
+		if got := db.routeOfMember(ctx, "shop", "api", readNow); got != tc.want {
+			t.Errorf("a fresh ack from %q routes %s, want %s", tc.command, got, tc.want)
+		}
+	}
+	// the flag alone is not enough: a stale ack leaves the next prompt
+	if got := db.routeOfMember(ctx, "shop", "api", readNow.Add(11*time.Minute)); got != RouteNextPrompt {
+		t.Errorf("a stale ack from a listening claude routes %s", got)
 	}
 }
 

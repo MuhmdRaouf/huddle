@@ -136,6 +136,11 @@ A service manager (launchd, systemd) or a terminal can also run
 `huddle serve`: the server leaves its owner credential in the home's `run/owner.key`, and `huddle open` on the
 same machine still signs the owner in.
 
+Idle sessions: Claude Code shows the hub's channel pushes only when it was started with
+`claude --dangerously-load-development-channels server:plugin:huddle:huddle`. Without the flag a message waits
+for the session's next prompt, and the composer says so ("Delivers on the next prompt"). See
+[Reach an idle session](docs/USAGE.md#reach-an-idle-session).
+
 Invites: a session's join line from `/huddle:invite` lives 24 h (`--ttl` changes it, `--single-use` spends it
 once), a satellite invite from `huddle pair --satellite` is one use and lives 10 minutes, and a spent or made-up
 token is refused.

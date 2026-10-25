@@ -23,6 +23,8 @@ export type RegistryReport = {
   cwd?: string;
   pid?: number;
   channel?: string;
+  /** The session's name in its channel: the member its bridge acts. */
+  member?: string;
   /** The coding agent the session runs in, by its harness id; a report without one is Claude Code. */
   harness?: string;
   /** The tool a PreToolUse or PostToolUse event runs, and its short target (a Bash command's

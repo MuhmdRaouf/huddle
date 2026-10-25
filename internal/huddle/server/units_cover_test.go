@@ -172,6 +172,19 @@ func TestAPidThePsCanNameIsAliveAndOneItCannotIsGone(t *testing.T) {
 	}
 }
 
+func TestThePidProbeReadsAChildsWholeCommandLine(t *testing.T) {
+	pid := startClaudeLike(t, append([]string{"--marker-7f3a"}, listeningArgs...)...)
+	command, alive := pidCommandOf(bg, pid)
+	if !alive {
+		t.Fatalf("pidCommandOf(the child) answered gone")
+	}
+	for _, want := range append([]string{"claude", "--marker-7f3a"}, listeningArgs...) {
+		if !strings.Contains(command, want) {
+			t.Errorf("pidCommandOf(the child) = %q, want it to name %q", command, want)
+		}
+	}
+}
+
 func TestTheSoloStepUpAsksNothing(t *testing.T) {
 	request, _ := http.NewRequestWithContext(bg, http.MethodGet, "/", nil)
 	if (soloStepUp{}).Required(request, auth.Who{}) {

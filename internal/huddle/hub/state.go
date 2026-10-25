@@ -129,7 +129,8 @@ type SessionRow struct {
 	Provider    *string  `json:"provider"`
 	State       string   `json:"state"`
 	// DeliveryRoute says how a message to this session arrives (SPEC 6.4): pushed now while its
-	// bridge proves its channel pushes flow, else on its next prompt.
+	// bridge proves its channel pushes flow and its claude runs with the channels flag, else on
+	// its next prompt.
 	DeliveryRoute string `json:"delivery_route"`
 	// Teammates are the session's agent-team teammates, sorted by name; absent without a team.
 	Teammates []Teammate `json:"teammates,omitempty"`

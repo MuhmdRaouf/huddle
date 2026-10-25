@@ -256,9 +256,10 @@ type sentRoute struct {
 	Route   string `json:"route"`
 }
 
-// pushAckRoute records a bridge's proof that its channel pushes flow (SPEC 6.4) and promotes
-// what waited on that member to the now route: a session answered while its bridge was gone is
-// pushed the moment the bridge returns.
+// pushAckRoute records a bridge's proof that its channel pushes flow (SPEC 6.4), with the command
+// line of the member's claude, and promotes what waited on that member to the now route: a
+// session answered while its bridge was gone is pushed the moment the bridge returns, when its
+// claude shows channel pushes.
 func (s *server) pushAckRoute(w http.ResponseWriter, r *http.Request) error {
 	if s.registry == nil {
 		return s.needsUnavailable()
@@ -272,7 +273,8 @@ func (s *server) pushAckRoute(w http.ResponseWriter, r *http.Request) error {
 		return &channel.HuddleError{Status: 400, Msg: "a push ack needs channel and as"}
 	}
 	ctx := r.Context()
-	if err := s.registry.RecordPushAck(ctx, name, member, jsfmt.ISOTime(s.now())); err != nil {
+	if err := s.registry.RecordPushAck(ctx, name, member, s.commandOfMember(ctx, name, member),
+		jsfmt.ISOTime(s.now())); err != nil {
 		return err
 	}
 	pushed := 0
@@ -292,10 +294,30 @@ func (s *server) pushAckRoute(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// commandOfMember answers the command line of the claude process behind a channel member's
+// newest open session, or "" when no session or no live pid on this machine names one: a
+// session another machine reported carries that machine's pid, which says nothing here. The
+// probe only looks.
+func (s *server) commandOfMember(ctx context.Context, channelName, member string) string {
+	id, err := s.registry.SessionOfMember(ctx, channelName, member)
+	if err != nil || id == "" {
+		return ""
+	}
+	row, err := s.registry.SessionRow(ctx, id, s.now())
+	if err != nil || row == nil || row.Pid <= 0 {
+		return ""
+	}
+	if row.Machine != "" && row.Machine != s.machine {
+		return ""
+	}
+	command, _ := pidCommandOf(ctx, row.Pid)
+	return command
+}
+
 // pushMessage delivers one queued message: pushed into the session's channel when its bridge's
-// proof is fresh (the push route the bridge turns into a claude/channel notification), else left
-// for the listen hook on the session's next prompt. The route used is answered and marked on
-// the row.
+// proof is fresh and its claude shows channel pushes (the push route the bridge turns into a
+// claude/channel notification), else left for the listen hook on the session's next prompt. The
+// route used is answered and marked on the row.
 func (s *server) pushMessage(ctx context.Context, id int64, in hub.MessageIn) string {
 	row, err := s.registry.SessionRow(ctx, in.SessionID, s.now())
 	if err != nil || row == nil || row.DeliveryRoute != hub.RouteNow || row.Channel == "" || row.Member == "" {

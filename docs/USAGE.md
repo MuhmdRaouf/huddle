@@ -176,6 +176,21 @@ and knowledge, whatever project each runs in.
 Messages (`huddle send`, `reply`), shared knowledge (`huddle remember`, `recall`) and the whole
 surface live in the huddle skill and `huddle help`.
 
+### Reach an idle session
+
+A message from the dashboard, a phone or the channel chat reaches an idle session at once only
+when its Claude Code was started with the development-channels flag:
+
+```sh
+claude --dangerously-load-development-channels server:plugin:huddle:huddle
+```
+
+Without the flag Claude Code drops channel pushes silently, so the hub holds the message and the
+session gets it on its next prompt. The hub reads each session's command line to tell: the
+composer says "Delivers now" for a session started with the flag, and "Delivers on the next
+prompt" for any other. Huddle never restarts a session or wraps `claude`; add the flag yourself
+when you want idle sessions to wake.
+
 ### Removing a channel
 
 Only the session that started Huddle may remove a channel:

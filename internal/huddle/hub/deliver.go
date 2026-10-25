@@ -1,7 +1,8 @@
 // The owner's words carried into a session (SPEC 6.3, 6.4): one queued row per session, headed
 // by who sent it, delivered through a channel push while the session's bridge proves its pushes
-// flow (route now) and otherwise taken by the listen hook on the session's next prompt (route
-// next_prompt). The registry row says which route a message to the session would take.
+// flow and its claude runs with the channels flag (route now), and otherwise taken by the listen
+// hook on the session's next prompt (route next_prompt). The registry row says which route a
+// message to the session would take.
 package hub
 
 import (
@@ -152,21 +153,56 @@ func (d *DB) PendingOf(ctx context.Context, channel, member string) ([]Message, 
 }
 
 // RecordPushAck records a bridge's proof that its channel pushes flow (SPEC 6.4: the bridge
-// reports whether pushes are acknowledged). One row per channel member holds the newest proof.
-func (d *DB) RecordPushAck(ctx context.Context, channel, member, at string) error {
+// reports whether pushes are acknowledged), with whether the member's claude, started as command,
+// shows them. One row per channel member holds the newest proof.
+func (d *DB) RecordPushAck(ctx context.Context, channel, member, command, at string) error {
+	listens := 0
+	if ListensForChannels(command) {
+		listens = 1
+	}
 	return d.st.Run(ctx,
-		"INSERT INTO push_acks (channel, member, at) VALUES (?, ?, ?) "+
-			"ON CONFLICT(channel, member) DO UPDATE SET at = excluded.at",
-		channel, member, at)
+		"INSERT INTO push_acks (channel, member, at, listens) VALUES (?, ?, ?, ?) "+
+			"ON CONFLICT(channel, member) DO UPDATE SET at = excluded.at, listens = excluded.listens",
+		channel, member, at, listens)
 }
 
-// routeOfMember answers the route a message to one channel member takes at now.
+// ListensForChannels answers whether a claude command line loads huddle's channel server:
+// --dangerously-load-development-channels or --channels with a value (after "=", or the words up
+// to the next flag) naming huddle. Claude Code shows a channel push only from a server one of
+// them loads; any other push it drops and tells the sender nothing.
+func ListensForChannels(command string) bool {
+	words := strings.Fields(command)
+	for i, word := range words {
+		name, value, inline := strings.Cut(word, "=")
+		if name != "--dangerously-load-development-channels" && name != "--channels" {
+			continue
+		}
+		if inline && strings.Contains(value, "huddle") {
+			return true
+		}
+		for _, next := range words[i+1:] {
+			if strings.HasPrefix(next, "-") {
+				break
+			}
+			if strings.Contains(next, "huddle") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// routeOfMember answers the route a message to one channel member takes at now: a push only
+// while the member's bridge acked lately from a claude that shows channel pushes.
 func (d *DB) routeOfMember(ctx context.Context, channel, member string, now time.Time) string {
 	if channel == "" || member == "" {
 		return RouteNextPrompt // no channel, no bridge: the next prompt is the only way in
 	}
-	row, err := d.st.Get(ctx, "SELECT at FROM push_acks WHERE channel = ? AND member = ?", channel, member)
+	row, err := d.st.Get(ctx, "SELECT at, listens FROM push_acks WHERE channel = ? AND member = ?", channel, member)
 	if err != nil || row == nil {
+		return RouteNextPrompt
+	}
+	if listens, _ := row["listens"].(int64); listens != 1 {
 		return RouteNextPrompt
 	}
 	if at := parseEventTime(textOfRow(row, "at")); !at.IsZero() && now.Sub(at) < ackFreshFor {

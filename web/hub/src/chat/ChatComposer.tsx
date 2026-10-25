@@ -1,22 +1,26 @@
 // ChatComposer.tsx — the chat's composer: who it goes to (everyone or one member), the words, and
 // Send. It rests at the bottom of the chat; while the phone's keyboard is up it is pinned to the
 // keyboard's top edge, so the box being typed in never hides under it. Enter sends, Shift+Enter
-// breaks the line; a failed send keeps the words.
+// breaks the line; a failed send keeps the words. The route line says how the message travels:
+// now only when every session it goes to shows channel pushes, else on the next prompt.
 
 import { Button } from "@huddle/ui/button.tsx";
 import type { JSX } from "preact";
 import { useState } from "preact/hooks";
+import { routesLine } from "../app/Needs.tsx";
 import { Icon } from "../icons.tsx";
 import { useKeyboardInset } from "./keyboard.ts";
 
-/** What the composer offers and where a send goes: the answer says whether it landed. */
+/** What the composer offers and where a send goes: the answer says whether it landed, and
+ *  routeOf names the route a message to one member takes (undefined when no session says). */
 export type ChatComposerProps = {
   members: readonly string[];
   onSend: (to: string, msg: string) => Promise<boolean>;
+  routeOf: (member: string) => string | undefined;
 };
 
 /** The composer. */
-export function ChatComposer({ members, onSend }: ChatComposerProps): JSX.Element {
+export function ChatComposer({ members, onSend, routeOf }: ChatComposerProps): JSX.Element {
   const [to, setTo] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -61,6 +65,9 @@ export function ChatComposer({ members, onSend }: ChatComposerProps): JSX.Elemen
             </option>
           ))}
         </select>
+        <span class="ml-auto shrink-0 text-xs text-[var(--ui-muted)]" data-route-line="">
+          {routesLine(to ? [routeOf(to)] : members.map(routeOf))}
+        </span>
       </label>
       <div class="flex min-w-0 items-end gap-2">
         <textarea

@@ -2,8 +2,8 @@ package server
 
 // The answer, send and needs-you routes (SPEC 6.1, 6.3, 6.4): items grow from reports, the owner
 // answers and sends through them, a message reaches its session by channel push while the
-// session's bridge acks one (route now) and by the next prompt otherwise, and pause, resume,
-// snooze and dismiss reach the channels' own controls.
+// session's bridge acks one and its claude runs with the channels flag (route now) and by the
+// next prompt otherwise, and pause, resume, snooze and dismiss reach the channels' own controls.
 
 import (
 	"bufio"
@@ -11,12 +11,48 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
+
+// listeningArgs are the arguments that make Claude Code show huddle's channel pushes.
+var listeningArgs = []string{"--dangerously-load-development-channels", "server:plugin:huddle:huddle"}
+
+// startClaudeLike starts a child whose command line reads like a claude start with args, and
+// answers its pid: sh waits on its stdin with $0 set to claude, so ps names claude and the args,
+// and the child ends when the test closes that stdin.
+func startClaudeLike(t *testing.T, args ...string) int {
+	t.Helper()
+	cmd := exec.Command("sh", append([]string{"-c", "read _", "claude"}, args...)...)
+	cmd.Env = isoenv.Environ(t, t.TempDir())
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start the claude-like child: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+	})
+	return cmd.Process.Pid
+}
+
+// reportSessionPid lands one report for a session in a channel that names the session's pid.
+func reportSessionPid(t *testing.T, srv *childServer, id, channel, member, event string, pid int) {
+	t.Helper()
+	body := fmt.Sprintf(`{"session_id":%q,"channel":%q,"member":%q,"pid":%d,"last_event":%q,"last_event_at":%q}`,
+		id, channel, member, pid, event, isoAgo(2*time.Second))
+	if code, out := srv.post(t, "/api/registry/report", body, nil); code != 200 {
+		t.Fatalf("report %s %s: %d %s", id, event, code, out)
+	}
+}
 
 // reportSession lands one report for a session in a channel, as the hooks would.
 func reportSession(t *testing.T, srv *childServer, id, channel, member, event string) {
@@ -519,7 +555,7 @@ func TestAMessageIsPushedToTheBridgeThatAcked(t *testing.T) {
 	if code, out := srv.op(t, "reg", "join", "api", "{}"); code != 200 {
 		t.Fatalf("join: %d %v", code, out)
 	}
-	reportSession(t, srv, "s-live", "reg", "api", "UserPromptSubmit")
+	reportSessionPid(t, srv, "s-live", "reg", "api", "UserPromptSubmit", startClaudeLike(t, listeningArgs...))
 	// the bridge: one live stream as the member, and its ack
 	frames := openLive(t, srv, "reg", "api")
 	ackPush(t, srv, "reg", "api")
@@ -565,7 +601,7 @@ func TestAPendingMessageIsPushedWhenTheBridgeAcks(t *testing.T) {
 	if code, out := srv.op(t, "reg", "join", "api", "{}"); code != 200 {
 		t.Fatalf("join: %d %v", code, out)
 	}
-	reportSession(t, srv, "s-later", "reg", "api", "Stop")
+	reportSessionPid(t, srv, "s-later", "reg", "api", "Stop", startClaudeLike(t, listeningArgs...))
 	// answered while no bridge is there: the message waits for the next prompt
 	if code, out := srv.post(t, "/api/sessions/s-later/answer", `{"text":"whenever"}`, nil); code != 200 ||
 		bodyMap(t, out)["route"] != "next_prompt" {
@@ -581,6 +617,55 @@ func TestAPendingMessageIsPushedWhenTheBridgeAcks(t *testing.T) {
 	rows := messageRows(t, srv)
 	if len(rows) != 1 || rows[0]["state"] != "delivered" || rows[0]["route"] != "now" {
 		t.Errorf("the promoted row = %v", rows)
+	}
+}
+
+func TestAnAckFromAClaudeWithoutTheChannelsFlagLeavesTheNextPrompt(t *testing.T) {
+	srv := startServer(t, nil)
+	if code, out := srv.post(t, "/api/channels", `{"name":"reg"}`, nil); code != 200 {
+		t.Fatalf("create the channel: %d %s", code, out)
+	}
+	if code, out := srv.op(t, "reg", "join", "api", "{}"); code != 200 {
+		t.Fatalf("join: %d %v", code, out)
+	}
+	// a plain claude start: its bridge acks, yet Claude Code drops every channel push
+	reportSessionPid(t, srv, "s-plain", "reg", "api", "Stop", startClaudeLike(t, "--model", "opus"))
+	openLive(t, srv, "reg", "api")
+	ackPush(t, srv, "reg", "api")
+	code, _, out := srv.get(t, "/api/registry/sessions/s-plain", nil)
+	if code != 200 || bodyMap(t, out)["delivery_route"] != "next_prompt" {
+		t.Fatalf("the row = %d %s, want delivery_route next_prompt", code, out)
+	}
+	code, out = srv.post(t, "/api/sessions/s-plain/answer", `{"text":"ship it"}`, nil)
+	if code != 200 || bodyMap(t, out)["route"] != "next_prompt" {
+		t.Fatalf("answer = %d %s, want route next_prompt", code, out)
+	}
+	if rows := messageRows(t, srv); len(rows) != 1 || rows[0]["state"] != "pending" {
+		t.Errorf("the message rows = %v, want one pending for the next prompt", rows)
+	}
+}
+
+func TestAnAckForASessionOnAnotherMachineLeavesTheNextPrompt(t *testing.T) {
+	srv := startServer(t, nil)
+	if code, out := srv.post(t, "/api/channels", `{"name":"reg"}`, nil); code != 200 {
+		t.Fatalf("create the channel: %d %s", code, out)
+	}
+	if code, out := srv.op(t, "reg", "join", "api", "{}"); code != 200 {
+		t.Fatalf("join: %d %v", code, out)
+	}
+	// a session reported from another machine carries that machine's pid: the local process with
+	// the same number, flagged or not, says nothing about it
+	pid := startClaudeLike(t, "--dangerously-load-development-channels", "server:plugin:huddle:huddle")
+	body := fmt.Sprintf(`{"session_id":"s-away","channel":"reg","member":"api","machine":"elsewhere","pid":%d,"last_event":"Stop","last_event_at":%q}`,
+		pid, isoAgo(2*time.Second))
+	if code, out := srv.post(t, "/api/registry/report", body, nil); code != 200 {
+		t.Fatalf("report: %d %s", code, out)
+	}
+	openLive(t, srv, "reg", "api")
+	ackPush(t, srv, "reg", "api")
+	code, _, out := srv.get(t, "/api/registry/sessions/s-away", nil)
+	if code != 200 || bodyMap(t, out)["delivery_route"] != "next_prompt" {
+		t.Fatalf("the row = %d %s, want delivery_route next_prompt", code, out)
 	}
 }
 

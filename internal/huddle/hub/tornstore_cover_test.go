@@ -48,7 +48,7 @@ func TestQueueMessageNamesAFailedWrite(t *testing.T) {
 		t.Fatal("a member read from a broken sessions table succeeded")
 	}
 	acks := dbWithout(t, "push_acks")
-	if err := acks.RecordPushAck(ctx, "shop", "api", "2026-10-16T09:00:00.000Z"); err == nil {
+	if err := acks.RecordPushAck(ctx, "shop", "api", listening, "2026-10-16T09:00:00.000Z"); err == nil {
 		t.Fatal("an ack write to a broken push_acks table succeeded")
 	}
 	if got := acks.routeOfMember(ctx, "shop", "api", readNow); got != RouteNextPrompt {
