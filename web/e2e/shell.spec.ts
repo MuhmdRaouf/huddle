@@ -223,7 +223,9 @@ test.describe("the utility layer", () => {
       project: "e2e",
       title: "Asks to build the bundle",
       last_event: "Stop",
-      last_event_at: new Date().toISOString(),
+      // dated years back: Radar's Agents view lists the six most recent sessions, and the seeded
+      // session with agents must stay among them for radar.spec.ts on either project
+      last_event_at: "2020-01-01T00:00:00.000Z",
     });
     await api("/api/needs", { session_id: session, tool_name: "Bash", tool_input: { command: "bun run build" } });
     await open(page, `#/now/${session}`);
