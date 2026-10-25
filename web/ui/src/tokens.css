@@ -1,19 +1,34 @@
-/* tokens.css — the design system's tokens: one neutral scale, one accent, four status colours
- * (ok, warn, fail, info), spacing on a 4-8-12-16-24-32 ladder, radii, a type scale and the
- * system font stack with a mono face for commands and numbers. Nothing loads from the network.
+/* tokens.css — the design system's tokens, and the one source of colour for every page: surfaces,
+ * inks, marks, four status tones and the state roles built on them; spacing on a 4-8-12-16-24-32
+ * ladder, radii, a type scale and the system font stack with a mono face for commands and numbers.
+ * Nothing loads from the network.
  *
  * Every colour is one light-dark(light, dark) pair, so one declaration covers both schemes.
  * theme.ts puts data-scheme="light|dark" on <html> (the OS's choice, or the Settings override),
  * and that attribute sets the color-scheme light-dark() reads. A page on the tokens runs
  * followScheme; a page without it keeps the color-scheme its own theme sets.
  *
- * Both schemes keep WCAG AA (test/tokens-contrast.test.ts): text and muted text on every surface,
- * each ink on its tint, and the solid status colours and the strong line at 3:1.
+ * The roles:
+ *   surfaces  bg (the page), surface (panels and rows), surface-2 (wells, hovers, chips)
+ *   inks      text, muted and accent, and each <role>-ink: 4.5:1 on every surface and on its own soft
+ *   marks     line-strong and each <role> or <tone>: dots, bars, borders and control rings, 3:1 on
+ *             every surface; line is a quiet divider with no minimum
+ *   tones     ok healthy or done; warn needs a look soon; fail broken, denied or over budget;
+ *             info new or neutral news. <tone> marks, <tone>-soft fills, <tone>-ink text
+ *   states    needs-you   a blocking ask (a permission, a question): red, the one red badge
+ *             turn-done   a finished turn waiting to be read: orange
+ *             working     a session at work: info
+ *             idle        a session with nothing to do: muted, hollow mark
+ *             failed      broken or stuck: fail
+ *             cancelled   stopped on purpose, out of counts: grey
+ *             Each state is <state>, <state>-soft and <state>-ink, aliased to a tone or a neutral.
  *
- * Colour use, the same everywhere:
- *   ok    a healthy, done or approved state       warn  needs a look soon, nothing broken yet
- *   fail  broken, denied or over budget           info  new or neutral news worth a glance
- *   <tone> marks (dots, bars, borders); <tone>-soft fills; <tone>-ink text on the fill or a surface */
+ * The Catppuccin flavour: theme.ts puts data-flavour="catppuccin" on <html> when Settings turns it on,
+ * and the rule at the foot remaps the plain colour tokens to latte (light) and mocha (dark). It adds
+ * no names; the states follow through their aliases. Inks and marks are darkened in latte where the
+ * pastel hue misses its minimum.
+ *
+ * test/theme-contrast.test.ts holds every ink and mark pair to its minimum in all four schemes. */
 
 :root {
   /* the neutral scale, page to ink */
@@ -42,6 +57,26 @@
   --ui-info: light-dark(#0a72c7, #4ea1ff);
   --ui-info-soft: light-dark(#e1effb, #0f2a47);
   --ui-info-ink: light-dark(#0b5a9c, #8cc3ff);
+
+  /* the states a page shows, each from a tone or a neutral */
+  --ui-needs-you: var(--ui-fail);
+  --ui-needs-you-soft: var(--ui-fail-soft);
+  --ui-needs-you-ink: var(--ui-fail-ink);
+  --ui-turn-done: var(--ui-warn);
+  --ui-turn-done-soft: var(--ui-warn-soft);
+  --ui-turn-done-ink: var(--ui-warn-ink);
+  --ui-working: var(--ui-info);
+  --ui-working-soft: var(--ui-info-soft);
+  --ui-working-ink: var(--ui-info-ink);
+  --ui-idle: var(--ui-muted);
+  --ui-idle-soft: var(--ui-surface-2);
+  --ui-idle-ink: var(--ui-muted);
+  --ui-failed: var(--ui-fail);
+  --ui-failed-soft: var(--ui-fail-soft);
+  --ui-failed-ink: var(--ui-fail-ink);
+  --ui-cancelled: var(--ui-line-strong);
+  --ui-cancelled-soft: var(--ui-surface-2);
+  --ui-cancelled-ink: var(--ui-muted);
 
   /* spacing: 4 8 12 16 24 32 */
   --ui-space-1: 4px;
@@ -86,4 +121,31 @@
 
 :root[data-scheme="dark"] {
   color-scheme: dark;
+}
+
+/* Catppuccin: latte in the light scheme, mocha in the dark one */
+:root[data-flavour="catppuccin"] {
+  --ui-bg: light-dark(#e6e9ef, #11111b);
+  --ui-surface: light-dark(#eff1f5, #1e1e2e);
+  --ui-surface-2: light-dark(#dce0e8, #313244);
+  --ui-line: light-dark(#bcc0cc, #45475a);
+  --ui-line-strong: light-dark(#7a7c90, #7f849c);
+  --ui-muted: light-dark(#5c5f77, #a6adc8);
+  --ui-text: light-dark(#4c4f69, #cdd6f4);
+
+  --ui-accent: light-dark(#1a57d0, #89b4fa);
+  --ui-on-accent: light-dark(#eff1f5, #11111b);
+
+  --ui-ok: light-dark(#3a9027, #a6e3a1);
+  --ui-ok-soft: light-dark(#d5e5d7, #364143);
+  --ui-ok-ink: light-dark(#2d701e, #a6e3a1);
+  --ui-warn: light-dark(#d55409, #fab387);
+  --ui-warn-soft: light-dark(#f1dcd2, #46393e);
+  --ui-warn-ink: light-dark(#a84207, #fab387);
+  --ui-fail: light-dark(#d20f39, #f38ba8);
+  --ui-fail-soft: light-dark(#ebcfd9, #443244);
+  --ui-fail-ink: light-dark(#b90d32, #f38ba8);
+  --ui-info: light-dark(#1c8a9d, #74c7ec);
+  --ui-info-soft: light-dark(#d0e5eb, #2d3c50);
+  --ui-info-ink: light-dark(#166c7b, #74c7ec);
 }

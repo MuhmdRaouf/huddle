@@ -96,7 +96,7 @@ export function SideNav({ tab, n }: { tab: Tab; n: number }): JSX.Element {
     <aside data-sidebar="" class="ui-sidebar shrink-0 border-r hairline bg-base-200">
       <a
         href="#/channels"
-        class="mb-3 flex min-h-11 shrink-0 items-center gap-2.5 rounded-lg px-3 text-base font-semibold outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        class="mb-3 flex min-h-[var(--ui-tap)] shrink-0 items-center gap-2.5 rounded-lg px-3 text-base font-semibold outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         <SharedIcon name="channels" class="size-5 text-primary" />
         <span>Huddle</span>
@@ -109,7 +109,7 @@ export function SideNav({ tab, n }: { tab: Tab; n: number }): JSX.Element {
             href={href}
             data-tab={id}
             aria-current={tab === id ? "page" : undefined}
-            class={`flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+            class={`flex min-h-[var(--ui-tap)] items-center gap-3 rounded-lg px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary ${
               id === "settings" ? "mt-auto" : ""
             } ${
               tab === id

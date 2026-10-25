@@ -42,6 +42,12 @@ For anything the components do not cover, use the tokens directly, never a raw c
   `--ui-text`; the accent `--ui-accent` with `--ui-on-accent` for text on it.
 - **Status:** `ok` healthy or done, `warn` needs a look, `fail` broken or denied, `info` news. Each has
   `--ui-<tone>` for marks, `--ui-<tone>-soft` for fills and `--ui-<tone>-ink` for text.
+- **States:** `needs-you` (a blocking ask, red), `turn-done` (a finished turn, orange), `working`,
+  `idle`, `failed` and `cancelled`, each with the same mark, `-soft` and `-ink` trio, taken from a tone
+  or a neutral.
+- **Flavour:** `writeFlavour` keeps `catppuccin` or `plain` under `huddle:flavour`; `followScheme` and
+  `applyFlavour` put `data-flavour="catppuccin"` on `<html>`, which remaps the colour tokens to
+  Catppuccin latte (light) and mocha (dark).
 - **Spacing:** `--ui-space-1` to `--ui-space-6` are 4, 8, 12, 16, 24 and 32 px.
 - **Shape:** `--ui-radius-sm`, `--ui-radius`, `--ui-radius-lg` and `--ui-radius-full`.
 - **Type:** `--ui-text-xs` to `--ui-text-xl`, `--ui-font`, and `--ui-font-mono` (or the `ui-mono`
@@ -51,8 +57,8 @@ For anything the components do not cover, use the tokens directly, never a raw c
 
 Icons are Lucide shapes bundled in `icons.tsx`: add the paths of a new icon there, never a package.
 The hub's `#/dev/tokens` page shows every token and component; `web/e2e/tokens.spec.ts` checks it on
-the `iphone` and `desktop` Playwright projects, with axe, and `test/tokens-contrast.test.ts` keeps
-every colour pair at WCAG AA.
+the `iphone` and `desktop` Playwright projects, with axe, and `test/theme-contrast.test.ts` keeps
+every ink at 4.5:1 and every mark at 3:1 in light, dark, latte and mocha.
 
 ## Build the dashboards
 

@@ -1,5 +1,6 @@
 // SettingsTab.tsx — the Settings tab: one section per settings group, as underline tabs like the
-// Radar tab's sub-tabs. This browser's groups come first — Appearance (System, Dark, Light),
+// Radar tab's sub-tabs. This browser's groups come first — Appearance (System, Dark, Light, and
+// the Catppuccin flavour),
 // Notifications (the two switches and what wakes the device), Devices (the paired ones, with
 // remove), This hub (name, address, version) and Phone (the trust guide in a sheet) — then
 // Sign-in, Radar's own settings (budgets, notifications, history retention) and Linked channels.
@@ -7,7 +8,14 @@
 import { Button } from "@huddle/ui/button.tsx";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
-import { readScheme, type SchemePref } from "@huddle/ui/theme.ts";
+import {
+  applyFlavour,
+  type Flavour,
+  readFlavour,
+  readScheme,
+  type SchemePref,
+  writeFlavour,
+} from "@huddle/ui/theme.ts";
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ApiError } from "../api.ts";
@@ -70,9 +78,12 @@ type DeviceRow = { name: string; added: string; seen: string };
 type PhoneGuide = { url: string; fingerprint: string; expires_in: number };
 
 /** Settings › Appearance: System follows this device's own setting; Dark and Light hold one
- *  scheme in this browser whatever the device says. */
+ *  scheme in this browser whatever the device says. The Catppuccin switch paints either scheme in
+ *  Catppuccin's colours (latte when light, mocha when dark), also kept in this browser. */
 export function Appearance(): JSX.Element {
   const [pref, setPref] = useState<SchemePref>(() => readScheme(localStorage));
+  const [flavour, setFlavour] = useState<Flavour>(() => readFlavour(localStorage));
+  const catppuccin = flavour === "catppuccin";
   return (
     <section aria-labelledby="appearance-h" class="flex flex-col gap-3">
       <h2 id="appearance-h" class={HEAD}>
@@ -97,6 +108,23 @@ export function Appearance(): JSX.Element {
           </Button>
         ))}
       </div>
+      <label class="flex min-h-[var(--ui-tap)] items-center gap-3 text-sm">
+        <input
+          type="checkbox"
+          class="toggle"
+          role="switch"
+          aria-checked={catppuccin}
+          checked={catppuccin}
+          onClick={(e) => {
+            e.preventDefault();
+            const next: Flavour = catppuccin ? "plain" : "catppuccin";
+            writeFlavour(localStorage, next);
+            applyFlavour(document.documentElement, next);
+            setFlavour(next);
+          }}
+        />
+        <span>Catppuccin colours</span>
+      </label>
     </section>
   );
 }

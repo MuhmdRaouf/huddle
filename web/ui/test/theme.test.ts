@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  FLAVOUR_KEY,
   SCHEME_KEY,
+  applyFlavour,
   applyScheme,
   followScheme,
+  readFlavour,
   readScheme,
   resolveScheme,
   type SchemeQuery,
   type SchemeStore,
+  writeFlavour,
   writeScheme,
 } from "../src/theme.ts";
 
@@ -107,5 +111,36 @@ describe("theme", () => {
     expect(root.dataset.scheme).toBe("light");
     stop();
     expect(q.listeners).toBe(0);
+  });
+
+  it("keeps the flavour: plain unless Catppuccin is stored, and plain on blocked storage", () => {
+    const store = memory();
+    expect(readFlavour(store)).toBe("plain");
+    writeFlavour(store, "catppuccin");
+    expect(store.data.get(FLAVOUR_KEY)).toBe("catppuccin");
+    expect(readFlavour(store)).toBe("catppuccin");
+    expect(readFlavour(memory({ [FLAVOUR_KEY]: "frappe" }))).toBe("plain");
+    expect(readFlavour(blocked)).toBe("plain");
+    expect(() => writeFlavour(blocked, "catppuccin")).not.toThrow();
+  });
+
+  it("puts the flavour on the root element as data-flavour, and plain takes it off", () => {
+    const root = document.createElement("html");
+    applyFlavour(root, "catppuccin");
+    expect(root.dataset.flavour).toBe("catppuccin");
+    applyFlavour(root, "plain");
+    expect(root.hasAttribute("data-flavour")).toBe(false);
+  });
+
+  it("applies the kept flavour with the scheme, whatever the scheme", () => {
+    const root = document.createElement("html");
+    const stop = followScheme(
+      root,
+      memory({ [FLAVOUR_KEY]: "catppuccin", [SCHEME_KEY]: "light" }),
+      query(true),
+    );
+    expect(root.dataset.flavour).toBe("catppuccin");
+    expect(root.dataset.scheme).toBe("light");
+    stop();
   });
 });

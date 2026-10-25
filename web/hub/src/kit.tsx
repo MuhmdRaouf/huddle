@@ -147,8 +147,7 @@ export function ProgressBar({
   );
 }
 
-// The legacy value carried data-count for hrCountUp's 300 ms tick (core.js hrStat); the shared
-// count-up has not moved to packages/ui yet, so the value shows directly.
+// The value shows as given: web/ui's count-up (useCountUp) animates a number, and Stat does not run it.
 /** A Radar-style stat: a daisyUI `stats panel` card, its title quiet, its figure big and lined
  *  up, the tinted icon beside it, an optional delta badge in the title row and a subline under
  *  the value. */

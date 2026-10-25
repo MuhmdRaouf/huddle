@@ -43,8 +43,8 @@ describe("the sidebar", () => {
       "#/kanban",
       "#/settings",
     ]);
-    // 44 px rows
-    for (const a of tabs) expect(a.className).toContain("min-h-11");
+    // rows at the tap token, 44 px whatever the root font size
+    for (const a of tabs) expect(a.className).toContain("min-h-[var(--ui-tap)]");
   });
 
   it("marks the tab the shell names, for each of the five", () => {
