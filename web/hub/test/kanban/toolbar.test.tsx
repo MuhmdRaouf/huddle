@@ -140,6 +140,17 @@ describe("the toolbar row", () => {
     expect(toggle.checked).toBe(true);
   });
 
+  it("names how many done cards the switch hides while it is on", async () => {
+    const cards = [
+      makeCard({ id: "OPEN-1", column: "backlog" }),
+      ...Array.from({ length: 59 }, (_, i) => makeCard({ id: `DONE-${i}`, column: "done" })),
+    ];
+    render(<Row cards={cards} initial={{ ...EMPTY_FILTERS, hideDone: true }} />);
+    const toggle = screen.getByRole("checkbox", { name: "Hide done (59)" });
+    await userEvent.click(toggle);
+    expect(screen.getByRole("checkbox", { name: "Hide done" })).toBeTruthy();
+  });
+
   it("counts the picked values on its kind's button", () => {
     const { container } = render(<Row cards={board()} initial={withPicks({ holder: ["glm-A", "glm-B"] })} />);
     expect(kindButton("holder", container).textContent).toBe("Holder: 2");

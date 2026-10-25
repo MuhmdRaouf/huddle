@@ -8,7 +8,7 @@
 // are.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
@@ -224,6 +224,47 @@ test.describe("the board on a desktop", () => {
       await page.getByRole("button", { name: "Backlog, 10 cards, show column" }).click();
       await expect(page.getByRole("heading", { name: "Backlog 10" })).toBeVisible();
       await expect(page.locator('section[data-column="backlog"] article.card')).toHaveCount(10);
+    });
+  });
+});
+
+test.describe("a done-heavy board", () => {
+  /** The 56 done cards the scenario adds and removes again, so every other scenario keeps its
+   *  empty done column. */
+  const heavyIds = Array.from({ length: 56 }, (_, i) => `HEAVY-${i + 10}`);
+
+  test.afterEach(() => {
+    for (const id of heavyIds) rmSync(path.join(boardDir(), "done", `${id}.md`), { force: true });
+  });
+
+  test("a done-heavy board hides its done cards and says how many", async ({ page, isMobile }) => {
+    await test.step("Given a board with 56 done cards", async () => {
+      for (const id of heavyIds) seedTicket("done", id, `Done card ${id}`);
+      await kanbanAt(page, isMobile ? 390 : 1440, isMobile ? 844 : 900);
+    });
+
+    await test.step("Then done is hidden, its count kept, and the board says how many it hides", async () => {
+      await expect(page.locator(".kanban-tab .flow-label", { hasText: "Done 56" })).toBeVisible();
+      await expect(page.getByRole("checkbox", { name: "Hide done (56)" })).toBeChecked();
+      await expect(page.locator(".kanban-tab .done-hidden")).toContainText("56 done hidden");
+      await expect(page.locator(".kanban-tab article.card[data-id^='HEAVY-']")).toHaveCount(0);
+    });
+
+    await test.step("When Show done is tapped, the done cards come back and the line goes", async () => {
+      const show = page.getByRole("button", { name: "Show done" });
+      if (isMobile) {
+        const box = (await show.boundingBox()) ?? expect.fail("no Show done button");
+        expect(box.height).toBeGreaterThanOrEqual(44 - 0.5);
+        await show.tap();
+      } else {
+        await show.click();
+      }
+      await expect(page.getByRole("checkbox", { name: "Hide done" })).not.toBeChecked();
+      await expect(page.locator(".kanban-tab .done-hidden")).toHaveCount(0);
+      await expect(page.locator(".kanban-tab .flow-label", { hasText: "Done 56" })).toBeVisible();
+      // the desktop keeps done behind its rail until it is opened; the phone's strip holds it
+      if (!isMobile) await page.getByRole("button", { name: "Done, 56 cards, show column" }).click();
+      await expect(page.locator(".kanban-tab article.card[data-id^='HEAVY-']").first()).toBeAttached();
     });
   });
 });

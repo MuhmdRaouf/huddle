@@ -149,7 +149,8 @@ export function BoardPane({
           onTag={pickTag}
           openId={sel.openId}
           density={density}
-          onClearFilters={() => setFilters(clearFilters(filters))}
+          onClearFilters={() => setFilters(clearFilters())}
+          onShowDone={() => setFilters({ ...filters, hideDone: false })}
           sharedTags={shared.tags}
           sharedCluster={shared.cluster}
         />

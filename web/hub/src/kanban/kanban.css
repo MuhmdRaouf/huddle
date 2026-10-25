@@ -426,7 +426,15 @@
   font-size: 13.5px;
 }
 
-.kanban-tab .clear-filters {
+.kanban-tab .done-hidden {
+  margin: 0;
+  padding: 4px 16px 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.kanban-tab .clear-filters,
+.kanban-tab .show-done {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -839,6 +847,7 @@
 .kanban-tab .flow-label:focus-visible,
 .kanban-tab .picker-btn:focus-visible,
 .kanban-tab .clear-filters:focus-visible,
+.kanban-tab .show-done:focus-visible,
 .kanban-tab .density:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -1116,6 +1125,7 @@
   .kanban-tab .density,
   .kanban-tab .show-all,
   .kanban-tab .clear-filters,
+  .kanban-tab .show-done,
   .kanban-tab .pill,
   .kanban-tab .toolbar .hide-done,
   .kanban-tab .flow-labels.tabs .flow-label {

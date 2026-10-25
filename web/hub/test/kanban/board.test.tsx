@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { Board } from "../../src/kanban/components/Board.tsx";
-import { EMPTY_FILTERS } from "../../src/kanban/store.ts";
+import { clearFilters, EMPTY_FILTERS } from "../../src/kanban/store.ts";
 import type { Snapshot } from "../../src/kanban/types.ts";
 import { makeCard, makeSnapshot, snapshot } from "./helpers.ts";
 import { stubMatchMedia } from "./match-media.ts";
@@ -259,5 +259,58 @@ describe("collapsing a column by hand", () => {
     const ready = view.container.querySelector('section[data-column="ready"]');
     expect(ready?.querySelector("h2")?.textContent).toBe("Ready 1");
     expect(ready?.querySelectorAll("article.card")).toHaveLength(1);
+  });
+});
+
+describe("a board hiding its done cards", () => {
+  const openCard = makeCard({ id: "OPEN-1", column: "in-progress", expedite: false });
+  const doneCards = Array.from({ length: 59 }, (_, i) =>
+    makeCard({ id: `DONE-${i}`, column: "done", expedite: false }),
+  );
+  const heavy = makeSnapshot([openCard, ...doneCards]);
+  const hiding = { ...EMPTY_FILTERS, hideDone: true };
+
+  it("keeps Done's whole count, says how many are hidden and shows them in one tap", async () => {
+    const onShowDone = vi.fn();
+    const { container } = render(
+      <Board
+        snapshot={heavy}
+        filters={hiding}
+        changeSeq={0}
+        changedIds={new Set()}
+        onOpen={() => undefined}
+        onShowDone={onShowDone}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Done 59" })).toBeTruthy();
+    expect(container.querySelector('section[data-column="done"] .rail-btn .sr-only')?.textContent).toBe(
+      "Done, 59 cards, show column",
+    );
+    expect(screen.getByRole("status").textContent).toContain("59 done hidden");
+    expect(container.querySelectorAll("article.card")).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "Show done" }));
+    expect(onShowDone).toHaveBeenCalledTimes(1);
+  });
+
+  it("says nothing about hidden cards while done is shown", () => {
+    renderBoard(heavy, EMPTY_FILTERS);
+    expect(screen.queryByText(/done hidden/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show done" })).toBeNull();
+  });
+
+  it("counts only the hidden done cards the other filters let through", () => {
+    const narrowed = makeSnapshot([
+      openCard,
+      makeCard({ id: "DONE-A", column: "done", title: "Alpha", summary: "", tags: [] }),
+      makeCard({ id: "DONE-B", column: "done", title: "Beta", summary: "", tags: [] }),
+    ]);
+    // the search leaves no card on the board, and the line still says what it hides
+    renderBoard(narrowed, { ...hiding, q: "DONE-A" });
+    expect(screen.getByText(/1 done hidden/)).toBeTruthy();
+  });
+
+  it("turns hide-done off when the filters are cleared", () => {
+    expect(clearFilters()).toEqual(EMPTY_FILTERS);
+    expect(clearFilters().hideDone).toBe(false);
   });
 });

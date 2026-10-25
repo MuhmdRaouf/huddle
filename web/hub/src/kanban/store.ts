@@ -67,9 +67,10 @@ export function clearPicks(filters: Filters): Filters {
   return { ...filters, picks: { ...EMPTY_FILTERS.picks } };
 }
 
-/** The filters with the picks and the search dropped; hide-done stays, being a mode. */
-export function clearFilters(filters: Filters): Filters {
-  return { q: "", picks: { ...EMPTY_FILTERS.picks }, hideDone: filters.hideDone };
+/** The empty filters: the picks and the search dropped and done shown, so a cleared board shows
+ *  every card it holds. */
+export function clearFilters(): Filters {
+  return { ...EMPTY_FILTERS, picks: { ...EMPTY_FILTERS.picks } };
 }
 
 /** The board's two densities: compact is the default, comfortable adds the summary and tags. */
@@ -190,6 +191,14 @@ export function matchesFilters(card: Card, filters: Filters): boolean {
 
 export function filterCards(cards: Card[], filters: Filters): Card[] {
   return cards.filter((card) => matchesFilters(card, filters));
+}
+
+/** How many done cards hide-done keeps off the board: the done cards every other filter lets
+ *  through, and 0 while done is shown. */
+export function hiddenDone(cards: Card[], filters: Filters): number {
+  if (!filters.hideDone) return 0;
+  const shown = { ...filters, hideDone: false };
+  return cards.filter((card) => card.column === "done" && matchesFilters(card, shown)).length;
 }
 
 /** The cards a facet menu counts: they pass every filter except this kind's own picks. */

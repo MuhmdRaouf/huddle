@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Density } from "../store.ts";
-import { type FilterKind, type Filters, clearPicks, togglePick } from "../store.ts";
+import { type FilterKind, type Filters, clearPicks, hiddenDone, togglePick } from "../store.ts";
 import type { Card } from "../types.ts";
 import { BoardPicker } from "./BoardPicker.tsx";
 import { FilterMenu } from "./FilterMenu.tsx";
@@ -136,6 +136,7 @@ export function Toolbar({
     filters.picks[kind].map((value) => ({ kind, label, value })),
   );
   const liveWord = connected ? "live" : "reconnecting";
+  const hidden = hiddenDone(cards, filters);
 
   return (
     <>
@@ -181,7 +182,7 @@ export function Toolbar({
             aria-checked={filters.hideDone ? "true" : "false"}
             onChange={() => onChange({ ...filters, hideDone: !filters.hideDone })}
           />
-          <span>Hide done</span>
+          <span>{hidden > 0 ? `Hide done (${hidden})` : "Hide done"}</span>
         </label>
         <button
           type="button"

@@ -165,18 +165,40 @@ describe("KanbanTab", () => {
     stubNet(BOARDS.slice(0, 1), false, heavy);
     render(<KanbanTab boardKey="a1a1" />);
     await screen.findByRole("button", { name: /R-1:/ });
-    const toggle = screen.getByRole("checkbox", { name: "Hide done" });
+    const toggle = screen.getByRole("checkbox", { name: /^Hide done/ });
     // the default lands one render after the first paint of the board
     await vi.waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
-    // done sits behind its rail while the filter hides it
-    expect(screen.getByRole("button", { name: "Done, 0 cards, show column" })).toBeDefined();
-    await userEvent.click(toggle);
+    // done keeps its count behind its rail, and the board says how many it hides
+    expect(screen.getByRole("checkbox", { name: "Hide done (60)" })).toBe(toggle);
+    expect(screen.getByRole("button", { name: "Done, 60 cards, show column" })).toBeDefined();
+    expect(screen.getByText(/60 done hidden/)).toBeDefined();
+    await userEvent.click(screen.getByRole("button", { name: "Show done" }));
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByText(/done hidden/)).toBeNull();
     // done is counted again, still behind its rail until it is opened
     const rail = screen.getByRole("button", { name: "Done, 60 cards, show column" });
     await userEvent.click(rail);
     // opened, the latest twenty show with the show-all button beside them
     expect(screen.getByRole("heading", { name: "Done 60" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Show all 60" })).toBeDefined();
+  });
+
+  it("Clear filters shows the done cards hide-done kept off the board", async () => {
+    const shown = [makeCard({ id: "R-1", column: "ready", holder: "", tags: [] })];
+    for (let i = 0; i < 60; i += 1)
+      shown.push(makeCard({ id: `D-${i}`, column: "done", holder: "", tags: [] }));
+    const heavy: Snapshot = { ...clone(snapshot), cards: shown, columns: countColumns(shown) };
+    stubNet(BOARDS.slice(0, 1), false, heavy);
+    render(<KanbanTab boardKey="a1a1" />);
+    await screen.findByRole("button", { name: /R-1:/ });
+    const toggle = screen.getByRole("checkbox", { name: /^Hide done/ });
+    await vi.waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
+    // a search that matches only done cards empties the board
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search" }), "D-1");
+    await userEvent.click(await screen.findByRole("button", { name: "Clear filters" }));
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByRole("searchbox", { name: "Search" })).toHaveProperty("value", "");
+    expect(screen.getByRole("button", { name: "Done, 60 cards, show column" })).toBeDefined();
   });
 
   it("a gone board says so and keeps the picker", async () => {

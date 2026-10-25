@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import { type Density, type Filters, filterCards, useMedia } from "../store.ts";
+import { type Density, type Filters, filterCards, hiddenDone, useMedia } from "../store.ts";
 import {
   type Card as CardData,
   COLUMN_IDS,
@@ -24,6 +24,8 @@ export type BoardProps = {
   openId?: string | null | undefined;
   /** drops the filters from the "No cards match these filters" line */
   onClearFilters?: (() => void) | undefined;
+  /** turns hide-done off from the "N done hidden" line */
+  onShowDone?: (() => void) | undefined;
   /** the board's density, handed to every card */
   density?: Density | undefined;
   /** tags every visible card carries; the header names them once, the cards never */
@@ -98,6 +100,22 @@ function isCollapsed(
   return id === "done" || (infos.find((col) => col.id === id)?.count ?? 0) === 0;
 }
 
+/** The line a board hiding its done cards carries: how many it hides, and the way to show them.
+ *  A board hiding nothing carries no line. */
+function DoneHidden({ count, onShow }: { count: number; onShow?: (() => void) | undefined }) {
+  if (count === 0) return null;
+  return (
+    <p class="done-hidden" role="status">
+      {count} done hidden{" "}
+      {onShow !== undefined && (
+        <button type="button" class="show-done" onClick={onShow}>
+          Show done
+        </button>
+      )}
+    </p>
+  );
+}
+
 /** The two empty lines: a board with no cards yet, and filters that hide everything. */
 function BoardEmpty({
   empty,
@@ -135,6 +153,7 @@ export function Board({
   onTag,
   openId = null,
   onClearFilters,
+  onShowDone,
   density = "compact",
   sharedTags = [],
   sharedCluster = null,
@@ -184,10 +203,13 @@ export function Board({
   }
   const snap = snapshot;
   const visible = filterCards(snap.cards, filters);
+  const hidden = hiddenDone(snap.cards, filters);
+  const hiddenLine = <DoneHidden count={hidden} onShow={onShowDone} />;
   if (snap.cards.length === 0 || visible.length === 0) {
     return (
       <div class="board" data-layout="columns">
-        <FlowBar columns={columnInfos(snap, () => [], 0)} onPick={() => undefined} />
+        <FlowBar columns={columnInfos(snap, () => [], hidden)} onPick={() => undefined} />
+        {hiddenLine}
         <BoardEmpty empty={snap.cards.length === 0} onClearFilters={onClearFilters} />
       </div>
     );
@@ -205,7 +227,9 @@ export function Board({
       </button>
     ) : null;
 
-  const infos = columnInfos(snap, inColumn, doneAll.length);
+  // done counts its hidden cards too, so a hiding board never reads as finished-and-empty
+  const doneTotal = doneAll.length + hidden;
+  const infos = columnInfos(snap, inColumn, doneTotal);
   const active: ColumnId = tab ?? infos.find((col) => col.count > 0)?.id ?? "backlog";
   const collapsedOf = (id: ColumnId) => isCollapsed(id, narrow, overrides, infos);
   const threadOf = threadMarker(activeThreadId(hovered, openId, visible), visible);
@@ -224,7 +248,7 @@ export function Board({
     id,
     title: snap.columns.find((col) => col.id === id)?.title ?? id,
     cards: id === "done" ? doneShown : inColumn(id),
-    count: id === "done" ? doneAll.length : inColumn(id).length,
+    count: id === "done" ? doneTotal : inColumn(id).length,
     changeSeq,
     changedIds,
     onOpen,
@@ -267,6 +291,7 @@ export function Board({
   return (
     <div class="board" data-layout={narrow ? "lanes" : "columns"}>
       <FlowBar columns={infos} onPick={pickColumn} activeId={narrow ? active : undefined} />
+      {hiddenLine}
       {expedite.length > 0 && (
         <section class="expedite" aria-label="Expedite">
           <h2>
