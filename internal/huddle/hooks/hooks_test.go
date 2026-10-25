@@ -79,6 +79,8 @@ var hookByName = map[string]func(context.Context, *cli.World, io.Reader, io.Writ
 	"reserve":       Reserve,
 	"session-start": SessionStart,
 	"stop":          Stop,
+	"report":        Report,
+	"task-created":  TaskCreated,
 }
 
 // runHook runs one hook in a throwaway world: cwd and HUDDLE_HOME in a temp dir, so no real
@@ -381,6 +383,7 @@ func TestDeadlinesSitInsideThePlanBudgets(t *testing.T) {
 		"session-start": startBudgetMS * time.Millisecond,
 		"stop":          (stopStdinMS + stopInboxMS) * time.Millisecond,
 		"report":        reportBudgetMS * time.Millisecond,
+		"task":          (taskStdinMS + taskSendMS) * time.Millisecond,
 	}
 	for hook, ms := range worst {
 		largest, found := largestBudget(hook)

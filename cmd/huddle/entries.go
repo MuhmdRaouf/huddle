@@ -46,6 +46,8 @@ var entries = map[string]entry{
 	"hook subagent-stop":      eventHook("subagent-stop"),
 	"hook session-end":        eventHook("session-end"),
 	"hook pre-compact":        eventHook("pre-compact"),
+	"hook task-created":       eventHook("task-created"),
+	"hook teammate-idle":      eventHook("teammate-idle"),
 }
 
 // serveEntry runs the HTTP server in the foreground, as the detached server `huddle up` starts

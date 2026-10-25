@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 18
+const SchemaVersion = 19
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -259,6 +259,15 @@ var migrations = []string{
 	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<bash-stderr>%'
 	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE '<user-prompt-submit-hook>%'
 	      OR ltrim(task, ' ' || char(10) || char(13) || char(9)) LIKE 'Caveat:%';`,
+	// 19: the agent-team teammates under a session, one row per teammate holding the newest
+	// state it reported.
+	`CREATE TABLE teammates (
+	   session_id TEXT NOT NULL,
+	   name TEXT NOT NULL,
+	   state TEXT NOT NULL,
+	   at TEXT NOT NULL,
+	   PRIMARY KEY (session_id, name)
+	 );`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

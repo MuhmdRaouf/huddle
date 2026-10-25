@@ -102,6 +102,8 @@ type SessionRow struct {
 	// DeliveryRoute says how a message to this session arrives (SPEC 6.4): pushed now while its
 	// bridge proves its channel pushes flow, else on its next prompt.
 	DeliveryRoute string `json:"delivery_route"`
+	// Teammates are the session's agent-team teammates, sorted by name; absent without a team.
+	Teammates []Teammate `json:"teammates,omitempty"`
 }
 
 // SessionEvent is one stored report in a session's event list: the row's number and the report
@@ -247,6 +249,21 @@ func (d *DB) rowOfSession(ctx context.Context, row store.Row, now time.Time, wai
 		Ended:       textOfRow(row, "ended_at") != "",
 	}, now)
 	out.DeliveryRoute = d.routeOfMember(ctx, out.Channel, out.Member, now)
+	out.Teammates = d.teammatesOf(ctx, out.SessionID)
+	return out
+}
+
+// teammatesOf answers one session's teammates, sorted by name; a read that fails answers none,
+// so a torn table never costs the session its row.
+func (d *DB) teammatesOf(ctx context.Context, id string) []Teammate {
+	rows, err := d.st.All(ctx, "SELECT name, state FROM teammates WHERE session_id = ? ORDER BY name", id)
+	if err != nil {
+		return nil
+	}
+	var out []Teammate
+	for _, row := range rows {
+		out = append(out, Teammate{Name: textOfRow(row, "name"), State: textOfRow(row, "state")})
+	}
 	return out
 }
 

@@ -27,9 +27,17 @@ export type RegistryReport = {
   last_event_at: string;
 };
 
+/** One Claude Code agent-team teammate under a session: its name and the state it reported. */
+export type RegistryTeammate = { name: string; state: string };
+
 /** One registry row: the report's fields with the state computed when it was read (SPEC 5.2),
- *  and the route a message to this session would take (SPEC 6.4). */
-export type RegistrySession = RegistryReport & { state: string; delivery_route?: string };
+ *  the route a message to this session would take (SPEC 6.4), and its teammates, sorted by
+ *  name, when it leads an agent team. */
+export type RegistrySession = RegistryReport & {
+  state: string;
+  delivery_route?: string;
+  teammates?: RegistryTeammate[];
+};
 
 /** One stored event of a session's list: its number and the report as it came. */
 export type RegistryEvent = { seq: number; report: RegistryReport };

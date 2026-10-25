@@ -59,6 +59,8 @@ var wantParts = map[string][]string{
 	"subagent-stop":      {"report", "radar", "usage"},
 	"session-end":        {"report", "radar"},
 	"pre-compact":        {"radar"},
+	"task-created":       {"task", "kanban-task"},
+	"teammate-idle":      {"report"},
 }
 
 // TestThePlanCoversTheHooksJsonLines holds the plan against the plugin's hooks.json: the events

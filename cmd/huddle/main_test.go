@@ -165,7 +165,8 @@ func TestEntriesAreThePluginEntryPoints(t *testing.T) {
 		// One entry per event, one process per event.
 		"hook session-start", "hook user-prompt-submit", "hook pre-tool-use", "hook post-tool-use",
 		"hook notification", "hook permission-request", "hook stop", "hook subagent-start",
-		"hook subagent-stop", "hook session-end", "hook pre-compact",
+		"hook subagent-stop", "hook session-end", "hook pre-compact", "hook task-created",
+		"hook teammate-idle",
 	}
 	if len(entries) != len(want) {
 		t.Fatalf("entries has %d keys (%v), want %d", len(entries), keysOf(entries), len(want))

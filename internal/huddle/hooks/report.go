@@ -1,5 +1,6 @@
 // The report hook: every Claude Code event this session fires — SessionStart, UserPromptSubmit,
-// PreToolUse, PostToolUse, Notification, PermissionRequest, Stop, SubagentStop, SessionEnd —
+// PreToolUse, PostToolUse, Notification, PermissionRequest, Stop, SubagentStop, SessionEnd,
+// TeammateIdle —
 // becomes one POST to the local huddle's /api/registry/report (SPEC 5.1), so the registry knows
 // every session on the machine, in a channel or not. The whole hook runs inside a 2 s budget
 // (the deadline constants' sum sits under it): the POST waits only for what is left of the
@@ -60,6 +61,7 @@ type reportInput struct {
 	Prompt           string `json:"prompt"`
 	Message          string `json:"message"`
 	NotificationType string `json:"notification_type"`
+	TeammateName     string `json:"teammate_name"`
 }
 
 // Report posts one session event to the local huddle's registry, through the outbox when the
@@ -93,6 +95,10 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 		if input.HookEventName == "Notification" && (input.Message != "" || input.NotificationType != "") {
 			// the notification's own words ride the report: the item a question grows needs them
 			rep.Notification = &hub.Notification{Type: input.NotificationType, Message: input.Message}
+		}
+		if input.HookEventName == "TeammateIdle" && input.TeammateName != "" {
+			// an agent-team teammate is about to go idle: the registry lists it under this session
+			rep.Teammate = &hub.Teammate{Name: input.TeammateName, State: "idle"}
 		}
 		rep.Machine = machineOf(ctx, w)
 		rep.Project, rep.Branch = gitOf(ctx, w, input.Cwd, min(reportGitMS, left()))

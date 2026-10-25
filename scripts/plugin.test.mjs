@@ -38,6 +38,8 @@ const HOOK_LINES = [
   { event: "SubagentStop", name: "subagent-stop", timeout: 7 },
   { event: "SessionEnd", name: "session-end", timeout: 5 },
   { event: "PreCompact", name: "pre-compact", timeout: 5 },
+  { event: "TaskCreated", name: "task-created", timeout: 5 },
+  { event: "TeammateIdle", name: "teammate-idle", timeout: 5 },
 ];
 
 /** The ten command files, by part. Hooks start the servers, so radar's start/stop/status/open and

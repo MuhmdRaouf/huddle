@@ -1,7 +1,8 @@
 // Package hookplan holds the plan of the plugin's merged hook process: one process per Claude
 // Code event runs, in order, the parts the plugin's three parts used to register as separate
 // hook lines — huddle's own handler for the event, huddle's report, then radar's hook, then
-// kanban's session start (SessionStart only). Each part owns a deadline; the parts' deadlines of
+// kanban's session start (SessionStart only) — and the parts of the agent-team events:
+// huddle's task line and kanban's task card (TaskCreated), huddle's report (TeammateIdle). Each part owns a deadline; the parts' deadlines of
 // one event sum inside the timeout hooks.json grants the event, so the merged process never
 // holds a session longer than the separate processes could. approve and permit keep their own
 // hook lines (they answer Claude Code, they do not only observe) and are no events here.
@@ -70,6 +71,15 @@ func Events() map[string][]Part {
 		},
 		"pre-compact": {
 			{"radar", 4500 * time.Millisecond},
+		},
+		// Claude Code's agent-team events: a created task goes to the channel, then to the
+		// project's board; a teammate about to go idle is reported under its session.
+		"task-created": {
+			{"task", 2000 * time.Millisecond},
+			{"kanban-task", 1500 * time.Millisecond},
+		},
+		"teammate-idle": {
+			{"report", 1900 * time.Millisecond},
 		},
 	}
 }

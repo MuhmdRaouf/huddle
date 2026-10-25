@@ -36,6 +36,12 @@
     ],
     "PreCompact": [
       { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook pre-compact", "timeout": 5 }] }
+    ],
+    "TaskCreated": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook task-created", "timeout": 5 }] }
+    ],
+    "TeammateIdle": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook teammate-idle", "timeout": 5 }] }
     ]
   }
 }

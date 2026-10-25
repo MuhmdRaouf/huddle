@@ -23,6 +23,7 @@ import {
   permissionOf,
   projectName,
   type RegistrySession,
+  type RegistryTeammate,
   type StreamItem,
   sessionName,
   shortModel,
@@ -303,6 +304,20 @@ function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolea
   );
 }
 
+/** A lead's agent-team teammates under its row: each name with its state word. */
+function TeammateList({ teammates }: { teammates: RegistryTeammate[] }): JSX.Element {
+  return (
+    <ul class="flex flex-col gap-0.5 px-1.5 pb-2 pl-6" aria-label="Teammates">
+      {teammates.map((m) => (
+        <li key={m.name} data-teammate={m.name} class="flex min-w-0 items-center gap-1.5 text-[13px] muted">
+          <span class="min-w-0 flex-1 truncate">{m.name}</span>
+          <StateChip state={m.state} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** The list's five sections, in the order the Now tab shows them; empty ones draw nothing. */
 const SECTIONS: readonly (readonly [
   key: "needsYou" | "working" | "idle" | "stuck" | "ended",
@@ -531,6 +546,7 @@ export function NowPane({
         onHoldStop={stopHold}
       >
         {row}
+        {s.teammates?.length ? <TeammateList teammates={s.teammates} /> : null}
       </RowShell>
     );
   };

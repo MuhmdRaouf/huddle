@@ -126,6 +126,9 @@ Ten slash commands, one product:
 
 The hooks start the servers, so there is nothing to start by hand: each event runs one hook process, and huddle's,
 radar's, kanban's and the providers' parts ride inside it — the five provider plugins ship no hooks of their own.
+Claude Code's agent teams show too: the `TaskCreated` hook says a new task on the session's channel as
+`task: <subject>` and adds it to the project's board as one card `CC-<id>` in cluster `cc tasks`, and the
+`TeammateIdle` hook lists the teammate under its lead in the hub's Now list with the word idle.
 A service manager (launchd, systemd) or a terminal can also run
 `huddle serve`: the server leaves its owner credential in the home's `run/owner.key`, and `huddle open` on the
 same machine still signs the owner in.

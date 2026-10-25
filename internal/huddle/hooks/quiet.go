@@ -36,6 +36,8 @@ const (
 	startBudgetMS  = 3000
 	stopStdinMS    = 500
 	stopInboxMS    = 5000
+	taskStdinMS    = 500
+	taskSendMS     = 1000
 )
 
 // hookLogCap caps hooks.log: a hook that fails on every event must not grow it without end.

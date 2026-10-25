@@ -146,3 +146,9 @@ func world(version string) cli.World {
 	}
 	return w
 }
+
+// TaskCreated runs the TaskCreated hook's board half in the real world: the task the payload
+// names becomes a card on the project's board, and any failure is silence.
+func TaskCreated(ctx context.Context, payload []byte, version string) {
+	cli.TaskCreated(ctx, world(version), payload)
+}

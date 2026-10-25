@@ -36,8 +36,16 @@ type Report struct {
 	Digest string `json:"digest,omitempty"`
 	// Notification is what a Notification event told the user, kept whole for the item it grows.
 	Notification *Notification `json:"notification,omitempty"`
-	LastEvent    string        `json:"last_event"`
-	LastEventAt  string        `json:"last_event_at"`
+	// Teammate is the agent-team teammate a TeammateIdle event names, with the state it reports.
+	Teammate    *Teammate `json:"teammate,omitempty"`
+	LastEvent   string    `json:"last_event"`
+	LastEventAt string    `json:"last_event_at"`
+}
+
+// Teammate is one Claude Code agent-team teammate under a session: its name and its state.
+type Teammate struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
 }
 
 // Notification is one Claude Code notification as the hook read it: its type and its message.
@@ -95,6 +103,11 @@ ON CONFLICT(session_id) DO UPDATE SET
     ELSE sessions.ended_at
   END`
 
+// teammateUpsert records the newest state one teammate reported under its session.
+const teammateUpsert = `
+INSERT INTO teammates (session_id, name, state, at) VALUES (?, ?, ?, ?)
+ON CONFLICT(session_id, name) DO UPDATE SET state = excluded.state, at = excluded.at`
+
 // Report records one report: a row in events holding it whole, the session's row upserted, and
 // the needs-you items the event grows (SPEC 6.1): a notification that asks the owner a question,
 // a finished turn nobody opened, and a prompt or a resume that ends the waiting turn items.
@@ -116,6 +129,12 @@ func (d *DB) Report(ctx context.Context, r Report) error {
 			r.Task, r.Model, r.ContextPercent, r.Cwd, r.Pid, r.Channel, r.Member, r.Harness,
 			r.LastEvent, r.LastEventAt, endedAt); err != nil {
 			return err
+		}
+		if r.Teammate != nil && r.Teammate.Name != "" {
+			if err := q.Run(ctx, teammateUpsert, r.SessionID, r.Teammate.Name, r.Teammate.State,
+				r.LastEventAt); err != nil {
+				return err
+			}
 		}
 		if r.Digest != "" {
 			return saveDigestInTx(ctx, q, r.SessionID, r.Digest, r.LastEventAt)

@@ -3,7 +3,7 @@ package main
 // The merged event hooks: one process per Claude Code event runs, in order, the parts
 // internal/hookplan lists for it — huddle's own handler for the event, huddle's report, radar's
 // hook, kanban's session start and the providers' work (SessionStart), the providers' usage line
-// (SubagentStop). Every part runs under its own deadline and the deadlines of one event sum
+// (SubagentStop), the task's channel line and board card (TaskCreated). Every part runs under its own deadline and the deadlines of one event sum
 // inside the timeout hooks.json grants it. The parts' outputs fold into one JSON object, so
 // their messages never collide. A part that fails or overruns is dropped with its output; the
 // next part still runs, and the exit code is 0 whatever happened: a hook never fails the session
@@ -189,6 +189,11 @@ func runNamedPart(ctx context.Context, name string, in io.Reader, out io.Writer)
 		radarhook.Main(ctx, in, out, os.Environ(), time.Now, int64(os.Getpid()), int64(os.Getppid()))
 	case "kanban":
 		kanbanapp.Run([]string{"hook", "session-start"}, out, io.Discard, version)
+	case "task":
+		hooks.TaskCreated(ctx, hookWorld(), in, out)
+	case "kanban-task":
+		payload, _ := io.ReadAll(in)
+		kanbanapp.TaskCreated(ctx, payload, version)
 	case "providers":
 		// The five provider plugins' session-start work, one process for them all: each
 		// provider's output lands as its own line, and the merge above folds them into the one
