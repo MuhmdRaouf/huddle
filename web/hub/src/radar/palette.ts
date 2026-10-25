@@ -1,48 +1,50 @@
 /**
- * Colours and icons by meaning. Components reach colour only through the semantic tokens defined in app.css
- * (success, warning, danger, info, muted, series-1…8), which map onto Catppuccin Mocha in dark mode and Latte
- * in light mode. Status is never colour-alone: every tone travels with an icon or a word.
+ * Colours and icons by meaning. Every colour here comes from the tokens.css roles, so it follows the light
+ * and dark schemes and the Catppuccin flavour: the status tones are the tokens' ok, warn, fail, info and
+ * muted marks, and the eight chart series are radar.css's --radar-series-*, the accent and the tones and
+ * mixes of them. Status is never colour-alone: every tone travels with an icon or a word.
  */
 
 import type { IconName } from "./icons.ts";
 import type { AlertKind } from "./shared/api.ts";
 
-/** Chart series in order: blue, mauve, green, peach, teal, pink, yellow, lavender. */
+/** Chart series in order: blue, violet, green, orange, teal, rose, amber, slate. radar.css builds
+ *  each one from the token roles. */
 export const SERIES = [
-  "var(--series-1)",
-  "var(--series-2)",
-  "var(--series-3)",
-  "var(--series-4)",
-  "var(--series-5)",
-  "var(--series-6)",
-  "var(--series-7)",
-  "var(--series-8)",
+  "var(--radar-series-1)",
+  "var(--radar-series-2)",
+  "var(--radar-series-3)",
+  "var(--radar-series-4)",
+  "var(--radar-series-5)",
+  "var(--radar-series-6)",
+  "var(--radar-series-7)",
+  "var(--radar-series-8)",
 ] as const;
 
 /** One colour per token kind, used by the token-flow chart, the drawer and every stacked bar. */
 export const TOKEN_KINDS = [
-  { key: "input", label: "Input", color: "var(--series-1)" },
-  { key: "output", label: "Output", color: "var(--series-2)" },
-  { key: "cacheRead", label: "Cache read", color: "var(--series-5)" },
-  { key: "cacheWrite", label: "Cache write", color: "var(--series-4)" },
+  { key: "input", label: "Input", color: SERIES[0] },
+  { key: "output", label: "Output", color: SERIES[1] },
+  { key: "cacheRead", label: "Cache read", color: SERIES[4] },
+  { key: "cacheWrite", label: "Cache write", color: SERIES[3] },
 ] as const;
 
 /** Latency against the view's p95: under 60% is fine, under 80% is a warning, the rest is slow. */
 export function latencyClass(ratio: number): string {
-  if (ratio < 0.6) return "var(--success)";
-  if (ratio < 0.8) return "var(--warning)";
-  return "var(--danger)";
+  if (ratio < 0.6) return "var(--ui-ok)";
+  if (ratio < 0.8) return "var(--ui-warn)";
+  return "var(--ui-fail)";
 }
 
 export type StatusTone = "ok" | "warn" | "err" | "idle" | "info";
 
 /** Fill colour of a tone (dots, bars, tinted icon backgrounds). */
 export const STATUS_COLOR: Record<StatusTone, string> = {
-  ok: "var(--success)",
-  warn: "var(--warning)",
-  err: "var(--danger)",
-  idle: "var(--muted)",
-  info: "var(--info)",
+  ok: "var(--ui-ok)",
+  warn: "var(--ui-warn)",
+  err: "var(--ui-fail)",
+  idle: "var(--ui-muted)",
+  info: "var(--ui-info)",
 };
 
 type EventMeta = { icon: IconName; tone: StatusTone; label: string };
@@ -93,18 +95,18 @@ export function budgetTone(pct: number): StatusTone {
 
 /** Provider → series colour, used consistently in charts, badges and the agents tree. */
 const PROVIDER_COLOR: Record<string, string> = {
-  Anthropic: "var(--series-4)",
-  "Z.ai": "var(--series-1)",
-  Moonshot: "var(--series-5)",
-  DeepSeek: "var(--series-2)",
-  MiniMax: "var(--series-6)",
-  Qwen: "var(--series-8)",
-  other: "var(--muted)",
-  route: "var(--series-1)",
+  Anthropic: SERIES[3],
+  "Z.ai": SERIES[0],
+  Moonshot: SERIES[4],
+  DeepSeek: SERIES[1],
+  MiniMax: SERIES[5],
+  Qwen: SERIES[7],
+  other: STATUS_COLOR.idle,
+  route: SERIES[0],
 };
 
 export function providerColor(provider: string | null | undefined): string {
-  return PROVIDER_COLOR[provider ?? "other"] ?? "var(--muted)";
+  return PROVIDER_COLOR[provider ?? "other"] ?? STATUS_COLOR.idle;
 }
 
 /** One series colour per model, hashed from its id: the same model paints the same segment everywhere. */

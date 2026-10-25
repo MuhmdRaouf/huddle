@@ -15,7 +15,7 @@ import type { ComponentChildren, JSX } from "preact";
 import { useHuddle } from "../../../app/context.tsx";
 import type { RegistrySession } from "../../../registry.ts";
 import { fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
-import { STATUS_COLOR } from "../../palette.ts";
+import { SERIES, STATUS_COLOR } from "../../palette.ts";
 import { bucketPlan, rangeWords, stampOf } from "../../shared/time-range.ts";
 import {
   type ClientState,
@@ -31,7 +31,7 @@ import { useApp } from "../context.ts";
 import { DayCard } from "../DayCard.tsx";
 import { Flow, requestsInRange } from "../Flow.tsx";
 import { Icon } from "../Icon.tsx";
-import { EmptyState, ModelChip, Panel, Status, shortModelName } from "../kit.tsx";
+import { EmptyState, ModelChip, Status, shortModelName } from "../kit.tsx";
 import { OverviewGraphs } from "../OverviewGraphs.tsx";
 import { isJob } from "../sessions.ts";
 
@@ -46,6 +46,36 @@ const ROUTER_PORTS: Record<string, number> = {
 
 /** The most models the chart stacks; the rest of the spend joins one "other" band. */
 const CHART_MODELS = 3;
+
+/** The colour a chart band paints in: its model's, or the quiet mark for the "other" band. */
+const bandColor = (model: string | null): string => (model === null ? STATUS_COLOR.idle : modelColor(model));
+
+/** A horizontal bar on the token well: the filled share in its colour, a meter when it reads one. */
+function Bar({
+  pct,
+  color,
+  class: cls = "",
+  meter,
+}: {
+  pct: number;
+  color: string;
+  class?: string;
+  meter?: { value: number; label: string };
+}): JSX.Element {
+  return (
+    <div class={`flex h-2 overflow-hidden rounded-full bg-[var(--ui-surface-2)] ${cls}`}>
+      <div
+        class="bar-seg h-full rounded-full"
+        style={`width:${pct}%;background:${color}`}
+        role={meter === undefined ? undefined : "meter"}
+        aria-valuemin={meter === undefined ? undefined : 0}
+        aria-valuemax={meter === undefined ? undefined : 100}
+        aria-valuenow={meter?.value}
+        aria-label={meter?.label}
+      />
+    </div>
+  );
+}
 
 /** One stat card: a quiet title, the figure, and a subline that says what the figure reads. A
  *  title that carries the window keeps its plain name in `stat`, so the card stays addressable. */
@@ -63,10 +93,10 @@ function Stat({
   stat?: string;
 }): JSX.Element {
   return (
-    <div class={`panel p-4 md:p-5 ${cls}`} data-stat={(stat ?? title).toLowerCase()}>
-      <div class="text-xs text-base-content/60">{title}</div>
+    <div class={`ui-card p-4 md:p-5 ${cls}`} data-stat={(stat ?? title).toLowerCase()}>
+      <div class="text-xs text-[var(--ui-muted)]">{title}</div>
       <div class="num mt-0.5 text-2xl font-semibold md:text-[26px]">{value}</div>
-      {subline !== null && <div class="mt-1 text-xs text-base-content/60">{subline}</div>}
+      {subline !== null && <div class="mt-1 text-xs text-[var(--ui-muted)]">{subline}</div>}
     </div>
   );
 }
@@ -88,14 +118,15 @@ function SpendStat() {
       }
       subline={
         spend === undefined ? (
-          <a class="inline-flex min-h-11 items-center underline" href="#/settings/radar">
+          <a
+            class="inline-flex min-h-[var(--ui-tap)] items-center text-[var(--ui-accent)] underline"
+            href="#/settings/radar"
+          >
             No budget set
           </a>
         ) : (
           <>
-            <div class="bar-track mt-1.5">
-              <div class="bar-seg" style={`width:${pct}%;background:var(--series-1)`} />
-            </div>
+            <Bar pct={pct ?? 0} color={SERIES[0]} class="mt-1.5" />
             <span class="num">{`${pct}% of ${fmtUsd(spend.limitUsd)}`}</span>
           </>
         )
@@ -169,13 +200,16 @@ function SpendChart() {
   if (spent === null) {
     // the range runs on the history route, whose flow counts tokens: the token flow chart stands in
     return (
-      <Panel
-        icon="arrows"
-        title="Token flow"
-        subtitle="Spend by the hour needs the range the requests in memory cover"
-      >
+      <section class="ui-card min-w-0 p-4 md:p-5" aria-labelledby="ovw-flow">
+        <h2 id="ovw-flow" class="flex items-center gap-2 text-[15px] font-semibold">
+          <Icon name="arrows" class="size-4 text-[var(--ui-accent)]" />
+          Token flow
+        </h2>
+        <p class="mb-3 text-sm text-[var(--ui-muted)]">
+          Spend by the hour needs the range the requests in memory cover
+        </p>
         <Flow />
-      </Panel>
+      </section>
     );
   }
   const width = 700;
@@ -194,17 +228,17 @@ function SpendChart() {
     return { at, text: stampOf(ts, year).split(" ").slice(1).join(" ") };
   });
   return (
-    <section class="panel flex min-h-0 flex-col gap-3 p-4 md:p-5" aria-labelledby="ovw-chart">
+    <section class="ui-card flex min-h-0 flex-col gap-3 p-4 md:p-5" aria-labelledby="ovw-chart">
       <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 id="ovw-chart" class="text-[15px] font-semibold">
           Spend by hour, by model
         </h2>
-        <div class="flex flex-wrap gap-x-4 gap-2 text-xs text-base-content/60">
+        <div class="flex flex-wrap gap-x-4 gap-2 text-xs text-[var(--ui-muted)]">
           {bands.map((band) => (
             <span key={band.model ?? "other"} class="flex items-center gap-1.5">
               <span
                 class="size-2.5 rounded-[3px]"
-                style={`background:${band.model === null ? "var(--muted)" : modelColor(band.model)}`}
+                style={`background:${bandColor(band.model)}`}
                 aria-hidden="true"
               />
               {band.model === null ? "other" : shortModelName(band.model)} {fmtUsd(band.total)}
@@ -228,10 +262,16 @@ function SpendChart() {
             x2={String(width)}
             y1={String(height * fraction)}
             y2={String(height * fraction)}
-            class="chart-grid"
+            class="stroke-[var(--ui-line)] [vector-effect:non-scaling-stroke]"
           />
         ))}
-        <line x1="0" x2={String(width)} y1={String(height - 4)} y2={String(height - 4)} class="chart-axis" />
+        <line
+          x1="0"
+          x2={String(width)}
+          y1={String(height - 4)}
+          y2={String(height - 4)}
+          class="stroke-[var(--ui-line-strong)] [vector-effect:non-scaling-stroke]"
+        />
         {totals.map((total, index) => {
           if (total <= 0) return null;
           let running = 0;
@@ -249,7 +289,7 @@ function SpendChart() {
                 width={Number(bar.toFixed(1))}
                 height={Number(Math.max(1, size).toFixed(1))}
                 rx="3"
-                fill={band.model === null ? "var(--muted)" : modelColor(band.model)}
+                fill={bandColor(band.model)}
                 opacity={index === plan.buckets - 1 ? 0.6 : 1}
               />
             );
@@ -257,7 +297,7 @@ function SpendChart() {
           return <g key={index}>{rects}</g>;
         })}
       </svg>
-      <div class="flex justify-between text-[11px] text-base-content/50">
+      <div class="flex justify-between text-[11px] text-[var(--ui-muted)]">
         {marks.map((mark) => (
           <span key={mark.at}>{mark.text}</span>
         ))}
@@ -269,11 +309,11 @@ function SpendChart() {
 /** The dot a session row wears: the registry's state word, shape plus colour (SPEC 9). */
 function sessionDot(row: RegistrySession | undefined, live: boolean): { cls: string; word: string } {
   if (row !== undefined && row.state === "needs-you")
-    return { cls: "ring-2 ring-warning rounded-full", word: "needs you" };
+    return { cls: "ring-2 ring-[var(--ui-needs-you)] rounded-full", word: "needs you" };
   if (row !== undefined && row.state === "working")
-    return { cls: "bg-success rounded-full", word: "working" };
-  if (live) return { cls: "bg-success/70 rounded-full", word: "live" };
-  return { cls: "border border-base-content/40 rounded-full", word: "ended" };
+    return { cls: "bg-[var(--ui-working)] rounded-full", word: "working" };
+  if (live) return { cls: "bg-[var(--ui-ok)] rounded-full", word: "live" };
+  return { cls: "border border-[var(--ui-idle)] rounded-full", word: "ended" };
 }
 
 /** The sessions that spent the most, each row opening the Session screen (SPEC 9.1: radar's
@@ -287,7 +327,7 @@ function TopSessions() {
     .sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0))
     .slice(0, 5);
   return (
-    <section class="panel p-4 md:p-5" aria-labelledby="ovw-sessions">
+    <section class="ui-card p-4 md:p-5" aria-labelledby="ovw-sessions">
       <h2 id="ovw-sessions" class="mb-2 text-[15px] font-semibold">
         Top sessions by spend
       </h2>
@@ -301,20 +341,20 @@ function TopSessions() {
         <table class="w-full table-fixed text-sm" aria-label="Top sessions by spend">
           <thead>
             <tr>
-              <th scope="col" class="w-6 py-1 text-left font-normal text-base-content/50" />
-              <th scope="col" class="py-1 text-left font-normal text-base-content/50">
+              <th scope="col" class="w-6 py-1 text-left font-normal text-[var(--ui-muted)]" />
+              <th scope="col" class="py-1 text-left font-normal text-[var(--ui-muted)]">
                 Session
               </th>
               <th
                 scope="col"
-                class="hidden w-40 py-1 text-left font-normal text-base-content/50 sm:table-cell"
+                class="hidden w-40 py-1 text-left font-normal text-[var(--ui-muted)] sm:table-cell"
               >
                 Model
               </th>
-              <th scope="col" class="w-24 py-1 text-right font-normal text-base-content/50">
+              <th scope="col" class="w-24 py-1 text-right font-normal text-[var(--ui-muted)]">
                 Requests
               </th>
-              <th scope="col" class="w-24 py-1 text-right font-normal text-base-content/50">
+              <th scope="col" class="w-24 py-1 text-right font-normal text-[var(--ui-muted)]">
                 Cost
               </th>
             </tr>
@@ -325,18 +365,18 @@ function TopSessions() {
               const dot = sessionDot(row, item.live);
               const name = item.name ?? item.project ?? item.id.slice(0, 8);
               return (
-                <tr key={item.id} class="border-t border-base-content/10">
+                <tr key={item.id} class="border-t border-[var(--ui-line)]">
                   <td class="py-2 align-middle">
                     <span class={`size-2.5 ${dot.cls}`} role="img" aria-label={dot.word} title={dot.word} />
                   </td>
                   <td class="min-w-0 py-2">
                     <a
                       href={`#/now/${encodeURIComponent(item.id)}`}
-                      class="block truncate py-2 hover:text-primary"
+                      class="block truncate py-2 hover:text-[var(--ui-accent)]"
                       title={item.id}
                     >
                       {name}
-                      {row?.machine ? <span class="muted"> · {row.machine}</span> : null}
+                      {row?.machine ? <span class="text-[var(--ui-muted)]"> · {row.machine}</span> : null}
                     </a>
                   </td>
                   <td class="hidden truncate py-2 sm:table-cell">
@@ -474,18 +514,18 @@ function RouterRow({ plugin, stopped }: { plugin: string; stopped: boolean }) {
           aria-label="budget stopped"
         />
       ) : (
-        <span class="size-2.5 rounded-full bg-success" role="img" aria-label="up" />
+        <span class="size-2.5 rounded-full bg-[var(--ui-ok)]" role="img" aria-label="up" />
       )}
       <span class="min-w-0 truncate">
         {plugin}
-        {port !== undefined && <span class="muted"> · :{port}</span>}
+        {port !== undefined && <span class="text-[var(--ui-muted)]"> · :{port}</span>}
       </span>
       {stopped ? (
         <span class="text-xs" style={`color:${STATUS_COLOR.err}`}>
           budget stopped
         </span>
       ) : (
-        <span class="muted text-xs">up</span>
+        <span class="text-xs text-[var(--ui-muted)]">up</span>
       )}
     </div>
   );
@@ -496,7 +536,7 @@ function RoutersList() {
   const { state } = useApp();
   const stopped = stoppedScopes(state);
   return (
-    <section class="panel p-4 md:p-5" aria-labelledby="ovw-routers">
+    <section class="ui-card p-4 md:p-5" aria-labelledby="ovw-routers">
       <h2 id="ovw-routers" class="mb-1 text-[15px] font-semibold">
         Routers
       </h2>
@@ -529,7 +569,7 @@ function TopTools() {
   const tools = [...(state.models?.tools ?? [])].sort((a, b) => b.count - a.count).slice(0, 3);
   const max = Math.max(...tools.map((tool) => tool.count), 1);
   return (
-    <section class="panel p-4 md:p-5" aria-labelledby="ovw-tools">
+    <section class="ui-card p-4 md:p-5" aria-labelledby="ovw-tools">
       <h2 id="ovw-tools" class="mb-2 text-[15px] font-semibold">
         Top tools
       </h2>
@@ -540,13 +580,8 @@ function TopTools() {
           {tools.map((tool) => (
             <div key={tool.name} class="grid grid-cols-[60px_1fr_40px] items-center gap-2 text-sm">
               <span class="min-w-0 truncate">{tool.name}</span>
-              <div class="bar-track">
-                <div
-                  class="bar-seg"
-                  style={`width:${(tool.count / max) * 100}%;background:var(--series-1)`}
-                />
-              </div>
-              <span class="num text-right text-base-content/60">{fmtNum(tool.count)}</span>
+              <Bar pct={(tool.count / max) * 100} color={SERIES[0]} />
+              <span class="num text-right text-[var(--ui-muted)]">{fmtNum(tool.count)}</span>
             </div>
           ))}
         </div>
@@ -564,8 +599,8 @@ function AlertCard() {
   const tone = alert.severity === "err" ? "err" : "warn";
   return (
     <section
-      class="panel flex flex-col gap-2 border-warning/60 p-4 md:p-5"
-      style={`border-color:${STATUS_COLOR[tone]}66`}
+      class="ui-card flex flex-col gap-2 p-4 md:p-5"
+      style={`border-color:color-mix(in oklab, ${STATUS_COLOR[tone]} 40%, transparent)`}
       aria-labelledby="ovw-alert"
       role="alert"
     >
@@ -578,18 +613,18 @@ function AlertCard() {
         Alert
       </h2>
       <p class="m-0 text-sm leading-relaxed">
-        {alert.detail} <span class="muted">({alertWhere(alert)})</span>
+        {alert.detail} <span class="text-[var(--ui-muted)]">({alertWhere(alert)})</span>
       </p>
       <div class="mt-1 flex flex-wrap gap-2">
         {alert.kind === "budget" ? (
-          <a href="#/settings/radar" class="btn btn-sm" data-alert-action="">
-            <Icon name="dollar" class="size-4" />
+          <a href="#/settings/radar" class="ui-btn ui-btn-secondary" data-alert-action="">
+            <Icon name="dollar" class="ui-icon" />
             Raise budget
           </a>
         ) : (
           <button
             type="button"
-            class="btn btn-sm"
+            class="ui-btn ui-btn-secondary"
             data-action="tab"
             data-value="alerts"
             onClick={() => act("tab", "alerts")}
@@ -599,7 +634,7 @@ function AlertCard() {
         )}
         <button
           type="button"
-          class="btn btn-ghost btn-sm"
+          class="ui-btn ui-btn-ghost"
           data-action="dismiss-alert"
           data-value={alert.id}
           onClick={() => act("dismiss-alert", alert.id)}
@@ -640,19 +675,14 @@ function QuotaMeter({
         </span>
       </div>
       {pct !== null && (
-        <div class="bar-track mt-1">
-          <div
-            class="bar-seg"
-            style={`width:${Math.min(100, Math.round(pct))}%;background:${STATUS_COLOR[quotaTone(pct)]}`}
-            role="meter"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(pct)}
-            aria-label={`${label} plan limit`}
-          />
-        </div>
+        <Bar
+          pct={Math.min(100, Math.round(pct))}
+          color={STATUS_COLOR[quotaTone(pct)]}
+          class="mt-1"
+          meter={{ value: Math.round(pct), label: `${label} plan limit` }}
+        />
       )}
-      {countdown !== null && <div class="mt-0.5 text-xs text-base-content/60">{countdown}</div>}
+      {countdown !== null && <div class="mt-0.5 text-xs text-[var(--ui-muted)]">{countdown}</div>}
     </div>
   );
 }
@@ -665,7 +695,7 @@ function PlanLimits() {
   const quota = liveQuota(state.quota, now);
   if (quota === null) return null;
   return (
-    <section class="panel p-4 md:p-5" aria-labelledby="ovw-quota" data-quota="">
+    <section class="ui-card p-4 md:p-5" aria-labelledby="ovw-quota" data-quota="">
       <h2 id="ovw-quota" class="mb-2 text-[15px] font-semibold">
         Plan limits
       </h2>

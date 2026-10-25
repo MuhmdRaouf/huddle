@@ -4,7 +4,7 @@
 import { waitFor } from "@testing-library/preact";
 import { describe, expect, it } from "vite-plus/test";
 import { DayCard, type DayReport, fetchDay } from "../../../src/radar/app/DayCard.tsx";
-import { makeCtx, makeState, renderIn } from "../../helpers.tsx";
+import { legacyClasses, makeCtx, makeState, renderIn } from "../../helpers.tsx";
 
 async function card(answer: DayReport | null) {
   const view = renderIn(<DayCard read={() => Promise.resolve(answer)} />, makeCtx(makeState()));
@@ -19,6 +19,12 @@ describe("DayCard", () => {
     expect(root.querySelector("[data-day='peak-sessions']")?.textContent).toBe("3");
     expect(root.querySelector("[data-day='cards-done']")?.textContent).toBe("2");
     expect(root.querySelector("[data-day-card]")?.textContent).toContain("Today, UTC");
+  });
+
+  it("paints on the token card surface", async () => {
+    const root = await card({ peakSessions: 3, cardsDone: 2 });
+    expect(root.querySelector("[data-day-card]")?.classList.contains("ui-card")).toBe(true);
+    expect(legacyClasses(root)).toEqual([]);
   });
 
   it("shows nothing while the route cannot answer", async () => {

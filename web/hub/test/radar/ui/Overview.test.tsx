@@ -6,7 +6,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { AppContext, type AppValue } from "../../../src/radar/app/context.ts";
 import { OverviewView } from "../../../src/radar/app/views/Overview.tsx";
 import { type ClientState, initialClientState } from "../../../src/radar/state.ts";
-import { makeCtx, makeRegistry, makeState, renderIn } from "../../helpers.tsx";
+import { legacyClasses, makeCtx, makeRegistry, makeState, renderIn } from "../../helpers.tsx";
 import { uiFixtures } from "../helpers.ts";
 
 const NOW = 1_790_000_000_000;
@@ -377,6 +377,83 @@ describe("the radar Overview", () => {
   });
 });
 
+describe("the Overview on the tokens", () => {
+  /** Every card the Overview can show at once: tiles with a budget, the chart, sessions of each
+   *  state, an alert, the plan limits, routers with a stopped one and the tools. */
+  function everything(alertKind: "budget" | "stuck") {
+    return overview({
+      summary: fixtures.summary,
+      sessions: [
+        { ...fixtures.sessionListItem, id: "s-lead", name: "lead", costUsd: 9.8, live: true },
+        { ...fixtures.sessionListItem, id: "s-kanban", name: "kanban", costUsd: 2.1, live: false },
+        { ...fixtures.sessionListItem, id: "s-live", name: "live", costUsd: 1.1, live: true },
+        { ...fixtures.sessionListItem, id: "s-gone", name: "gone", costUsd: 0.5, live: false },
+      ],
+      spendToday: 18.4,
+      spendUnpriced: 2,
+      budgetStatus: {
+        version: 1,
+        updatedAt: NOW,
+        stopped: ["provider:kimi"],
+        spend: [
+          {
+            id: "b1",
+            spentUsd: 18.4,
+            limitUsd: 40,
+            pct: 46,
+            scope: "total",
+            period: "day",
+            action: "warn",
+            periodStart: NOW - 3600_000,
+          },
+        ],
+      },
+      providers: ["zai", "kimi"],
+      alerts: [{ ...fixtures.alert, kind: alertKind }],
+      quota: {
+        session_id: "s-lead",
+        five_hour: 42,
+        five_hour_resets_at: NOW + 60_000,
+        seven_day: 93,
+        seven_day_resets_at: NOW + 86_400_000,
+        at: NOW - 60_000,
+      },
+      models: { models: [], upstreams: [], tools: [{ name: "Bash", count: 3, failures: 0 }] },
+      requests: [oldEdge(), priced("claude-opus-5-5", NOW - 60_000)],
+    }).container;
+  }
+
+  it("paints no daisyUI or legacy class on any card", () => {
+    expect(legacyClasses(everything("budget"))).toEqual([]);
+    expect(legacyClasses(everything("stuck"))).toEqual([]);
+  });
+
+  it("sets every card on the token surface and its actions on the token buttons", () => {
+    const page = everything("budget");
+    for (const name of ["spend today", "requests", "tokens", "sessions", "routers"])
+      expect(page.querySelector(`[data-stat="${name}"]`)?.classList.contains("ui-card")).toBe(true);
+    for (const id of ["ovw-chart", "ovw-sessions", "ovw-alert", "ovw-quota", "ovw-routers", "ovw-tools"])
+      expect(page.querySelector(`section[aria-labelledby="${id}"]`)?.classList.contains("ui-card")).toBe(
+        true,
+      );
+    const actions = [...page.querySelectorAll('[aria-labelledby="ovw-alert"] :is(a, button)')];
+    expect(actions.map((el) => el.classList.contains("ui-btn"))).toEqual([true, true]);
+    // the spend tile still says how much it could not price
+    expect(page.querySelector('[data-stat="spend today"] .num')?.textContent).toBe("$18.40 · 2 unpriced");
+  });
+
+  it("colours the marks from the token roles, never a raw colour", () => {
+    const page = everything("budget");
+    const styled = [...page.querySelectorAll<HTMLElement>("[style]")].map(
+      (el) => el.getAttribute("style") ?? "",
+    );
+    for (const style of styled)
+      expect(style).not.toMatch(/#[0-9a-f]{3,8}\b|var\(--(series|success|danger|warning|muted|primary)/);
+    const stopped = page.querySelector('[data-router="kimi"] [aria-label="budget stopped"]');
+    expect(stopped?.getAttribute("style")).toContain("var(--ui-fail)");
+  });
+});
+
 describe("the Overview's plan limits card", () => {
   const quota = {
     session_id: "s-lead",
@@ -399,8 +476,8 @@ describe("the Overview's plan limits card", () => {
     const week = windows[1]?.textContent ?? "";
     expect(week).toContain("93%");
     // the colours follow the thresholds: ok under 70, danger past 90
-    expect(windows[0]?.querySelector(".bar-seg")?.getAttribute("style")).toContain("var(--success)");
-    expect(windows[1]?.querySelector(".bar-seg")?.getAttribute("style")).toContain("var(--danger)");
+    expect(windows[0]?.querySelector(".bar-seg")?.getAttribute("style")).toContain("var(--ui-ok)");
+    expect(windows[1]?.querySelector(".bar-seg")?.getAttribute("style")).toContain("var(--ui-fail)");
   });
 
   it("hides the card when the snapshot is older than six hours", () => {

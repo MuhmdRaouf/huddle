@@ -6,11 +6,13 @@
  * carries the card and the Blocks view leads with it.
  */
 
+import { Button } from "@huddle/ui/button.tsx";
+import { Card } from "@huddle/ui/card.tsx";
 import { fmtDuration, fmtHour, fmtNum, fmtTokens, fmtUsd } from "../fmt.ts";
+import { SERIES } from "../palette.ts";
 import type { BlocksReport, UsageBlock } from "../shared/usage.ts";
 import { useApp } from "./context.ts";
 import { Icon } from "./Icon.tsx";
-import { Panel, Segmented } from "./kit.tsx";
 
 /** The report's active window, when it holds one. */
 export function activeBlockOf(report: BlocksReport): UsageBlock | null {
@@ -30,18 +32,27 @@ export function blockElapsed(block: UsageBlock, now: number): number {
 }
 
 /** The scope toggle both cards read: Claude's models alone (what a subscription meters), or
- *  every model — the routed provider ones included. */
+ *  every model — the routed provider ones included. One pressed button per scope. */
 function ScopeToggle() {
-  const { state } = useApp();
+  const { state, act } = useApp();
+  const scopes = [
+    { label: "Claude", value: "claude" },
+    { label: "All models", value: "all" },
+  ] as const;
   return (
-    <Segmented
-      action="blocks-models"
-      label="Model scope"
-      segments={[
-        { label: "Claude", value: "claude", on: state.blocksModels === "claude" },
-        { label: "All models", value: "all", on: state.blocksModels === "all" },
-      ]}
-    />
+    // biome-ignore lint/a11y/useSemanticElements: a toolbar of toggles, not a form; a fieldset would bring its own border and legend
+    <div class="flex gap-1" role="group" aria-label="Model scope">
+      {scopes.map((scope) => (
+        <Button
+          key={scope.value}
+          variant="secondary"
+          pressed={state.blocksModels === scope.value}
+          onClick={() => act("blocks-models", scope.value)}
+        >
+          {scope.label}
+        </Button>
+      ))}
+    </div>
   );
 }
 
@@ -49,9 +60,9 @@ function ScopeToggle() {
 function Figure({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
     <div class="min-w-0">
-      <div class="text-xs text-base-content/60">{label}</div>
+      <div class="text-xs text-[var(--ui-muted)]">{label}</div>
       <div class="num mt-0.5 text-xl font-semibold md:text-2xl">{value}</div>
-      <div class="num mt-0.5 text-xs text-base-content/60">{sub}</div>
+      <div class="num mt-0.5 text-xs text-[var(--ui-muted)]">{sub}</div>
     </div>
   );
 }
@@ -63,22 +74,26 @@ function LiveBlock({ block, approximate, now }: { block: UsageBlock; approximate
   const share = blockElapsed(block, now);
   const marks = approximate ? "~" : "";
   return (
-    <div class="grid gap-4 px-5 py-4" data-active-block="">
+    <div class="grid gap-4" data-active-block="">
       <div class="grid items-baseline gap-x-4 sm:grid-cols-[auto_1fr]">
         <div class="num text-3xl font-semibold" data-block-left="">
           {fmtDuration(left)}
-          <span class="ml-1 text-sm font-normal text-base-content/60">left</span>
+          <span class="ml-1 text-sm font-normal text-[var(--ui-muted)]">left</span>
         </div>
-        <p class="text-sm text-base-content/60">
+        <p class="text-sm text-[var(--ui-muted)]">
           ends {fmtHour(block.end)} local · started {fmtHour(block.firstTs)} ·{" "}
           {block.requests === 1 ? "1 request" : `${fmtNum(block.requests)} requests`} so far
         </p>
       </div>
       <div>
-        <div class="bar-track" role="img" aria-label={`The window is ${Math.round(share * 100)}% through`}>
-          <div class="bar-seg" style={`width:${share * 100}%;background:var(--series-1)`} />
+        <div
+          class="flex h-2 overflow-hidden rounded-full bg-[var(--ui-surface-2)]"
+          role="img"
+          aria-label={`The window is ${Math.round(share * 100)}% through`}
+        >
+          <div class="bar-seg h-full rounded-full" style={`width:${share * 100}%;background:${SERIES[0]}`} />
         </div>
-        <div class="num mt-1 flex justify-between text-xs text-base-content/60">
+        <div class="num mt-1 flex justify-between text-xs text-[var(--ui-muted)]">
           <span>{fmtHour(block.start)}</span>
           <span>{fmtHour(block.end)}</span>
         </div>
@@ -108,7 +123,7 @@ function LiveBlock({ block, approximate, now }: { block: UsageBlock; approximate
 /** What the card says while the report is on its way, or why it did not come. */
 function WaitingLine({ error }: { error: string | null }) {
   return (
-    <div class="px-5 py-4 text-sm text-base-content/60" role="status" data-block-loading="">
+    <div class="text-sm text-[var(--ui-muted)]" role="status" data-block-loading="">
       {error === null
         ? "Reading the metering blocks…"
         : `The blocks did not load (${error}). The next refresh tries again.`}
@@ -135,28 +150,31 @@ export function ActiveBlock() {
   const report = held?.report ?? null;
   const active = report === null ? null : activeBlockOf(report);
   return (
-    <Panel
-      icon="timer"
-      title="Active block"
-      subtitle={report === null || report.blocks.length === 0 ? null : `${report.blocks.length} in window`}
+    <Card
+      title={
+        <span class="flex items-center gap-2">
+          <Icon name="timer" class="size-4 text-[var(--ui-accent)]" />
+          Active block
+        </span>
+      }
+      meta={report === null || report.blocks.length === 0 ? undefined : `${report.blocks.length} in window`}
       actions={<ScopeToggle />}
-      flush
     >
       <div data-block-card="">
         {report === null ? (
           <WaitingLine error={state.blocksError} />
         ) : active === null ? (
-          <div class="px-5 py-4" data-block-none="">
+          <div data-block-none="">
             <p class="flex items-center gap-2 text-sm font-medium">
               <Icon name="timer" class="size-4" />
               No active block
             </p>
-            <p class="mt-1 text-sm text-base-content/60">{noBlockHint(report, state.blocksModels)}</p>
+            <p class="mt-1 text-sm text-[var(--ui-muted)]">{noBlockHint(report, state.blocksModels)}</p>
           </div>
         ) : (
           <LiveBlock block={active} approximate={report.approximate} now={now} />
         )}
       </div>
-    </Panel>
+    </Card>
   );
 }

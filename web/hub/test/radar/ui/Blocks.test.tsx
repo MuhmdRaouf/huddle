@@ -11,6 +11,7 @@ import {
 } from "../../../src/radar/app/ActiveBlock.tsx";
 import { blockWhen, BlocksView } from "../../../src/radar/app/views/Blocks.tsx";
 import type { ClientState } from "../../../src/radar/state.ts";
+import { legacyClasses } from "../../helpers.tsx";
 import { renderApp } from "./render.tsx";
 
 const NOW = 1_793_000_000_000;
@@ -109,7 +110,7 @@ describe("ActiveBlock", () => {
     expect(card).toContain("$2.70/h");
     expect(card).toContain("12.8M");
     expect(card).toContain("$8.10");
-    const bar = container.querySelector(".bar-track");
+    const bar = container.querySelector("[data-active-block] [role='img']");
     expect(bar?.getAttribute("aria-label")).toBe("The window is 40% through");
   });
 
@@ -148,6 +149,29 @@ describe("ActiveBlock", () => {
     );
     const failed = renderApp(<ActiveBlock />, { blocksError: "GET /api/blocks?days=7 → 503" }, NOW);
     expect(failed.container.querySelector("[data-block-loading]")?.textContent).toContain("503");
+  });
+
+  it("paints the card and its scope toggle on the tokens, in every state", () => {
+    const live = renderApp(<ActiveBlock />, blocksState(), NOW);
+    expect(legacyClasses(live.container)).toEqual([]);
+    const buttons = [...live.container.querySelectorAll('[role="group"][aria-label="Model scope"] button')];
+    expect(buttons.map((b) => [b.classList.contains("ui-btn"), b.getAttribute("aria-pressed")])).toEqual([
+      [true, "true"],
+      [true, "false"],
+    ]);
+    expect(
+      live.container.querySelector("[data-active-block] [role='img'] > div")?.getAttribute("style"),
+    ).toContain("var(--radar-series-1)");
+    live.unmount();
+    const loading = renderApp(<ActiveBlock />, {}, NOW);
+    expect(legacyClasses(loading.container)).toEqual([]);
+    loading.unmount();
+    const ended = renderApp(
+      <ActiveBlock />,
+      blocksState({ blocks: { key: "7|claude", report: { ...REPORT, blocks: [PAST] } } }),
+      NOW,
+    );
+    expect(legacyClasses(ended.container)).toEqual([]);
   });
 
   it("offers the model-scope toggle and asks the controller for the wider one", async () => {

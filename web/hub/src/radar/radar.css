@@ -2,6 +2,19 @@
  * daisyUI components and the Tailwind utilities the views were drawn with: numbers read in the
  * system's mono face, and on the phone every control is a thumb's target of the system's 44 px. */
 
+/* the eight chart series palette.ts names, from the token roles so they follow the scheme and the
+ * flavour: the accent and the tones, and mixes of two of them for the hues the roles lack */
+:root {
+  --radar-series-1: var(--ui-accent);
+  --radar-series-2: color-mix(in oklab, var(--ui-accent) 50%, var(--ui-fail));
+  --radar-series-3: var(--ui-ok);
+  --radar-series-4: color-mix(in oklab, var(--ui-warn) 50%, var(--ui-fail));
+  --radar-series-5: color-mix(in oklab, var(--ui-info) 50%, var(--ui-ok));
+  --radar-series-6: color-mix(in oklab, var(--ui-fail) 75%, var(--ui-accent));
+  --radar-series-7: var(--ui-warn);
+  --radar-series-8: color-mix(in oklab, var(--ui-accent) 50%, var(--ui-line-strong));
+}
+
 [data-radar-view] .num {
   font-family: var(--ui-font-mono);
   font-variant-numeric: tabular-nums;

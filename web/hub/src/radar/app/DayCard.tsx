@@ -28,7 +28,7 @@ export async function fetchDay(outer: typeof fetch = fetch): Promise<DayReport |
 function Figure({ name, word, value }: { name: string; word: string; value: number }): JSX.Element {
   return (
     <div class="min-w-0">
-      <div class="text-xs text-base-content/60">{word}</div>
+      <div class="text-xs text-[var(--ui-muted)]">{word}</div>
       <div class="num mt-0.5 text-2xl font-semibold md:text-[26px]" data-day={name}>
         {fmtNum(value)}
       </div>
@@ -61,7 +61,7 @@ export function DayCard({
 
   if (day === null) return null;
   return (
-    <section class="panel p-4 md:p-5" aria-labelledby="ovw-day" data-day-card="">
+    <section class="ui-card p-4 md:p-5" aria-labelledby="ovw-day" data-day-card="">
       <h2 id="ovw-day" class="mb-2 text-[15px] font-semibold">
         Today, UTC
       </h2>

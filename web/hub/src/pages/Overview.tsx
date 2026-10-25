@@ -6,6 +6,7 @@
 // of app.js ovVals/ovSub/ovTexts/ovRows/ovNeeds/ovTopHTML/ovSeries/overviewView and conflicts.js.
 
 import { AreaChart } from "@huddle/ui/area-chart.tsx";
+import { Card } from "@huddle/ui/card.tsx";
 import { Panel } from "@huddle/ui/page.tsx";
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -257,42 +258,54 @@ function NeedsBanner({ state, ch, inboxHref }: { state: HuddleState; ch: string;
   );
 }
 
-/** The plan progress: the ring, the done count and the per-state breakdown, on the shared panel
- *  surface with the plan's segmented bar across the top (ovTopHTML's hero). */
+/** The plan progress: the ring, the done count and the per-state breakdown, on the token card with
+ *  the plan's segmented bar across the top (ovTopHTML's hero). The breakdown stands in one column
+ *  under 900 px, where two would crowd the ring beside them, and in two from there. */
 function PlanProgress({ v, steps }: { v: OverviewValues; steps: readonly PlanStep[] }) {
   return (
-    <Panel icon={<Icon name="flag" />} title="Plan progress" meta={ovSub(v)} label="Plan progress">
+    <Card
+      title={
+        <span class="flex items-center gap-2">
+          <Icon name="flag" class="size-4 text-[var(--ui-accent)]" />
+          Plan progress
+        </span>
+      }
+      meta={ovSub(v)}
+    >
       <div class="flex flex-col gap-5">
         {steps.length > 0 && <ProgressBar steps={steps} label={false} />}
         <div class="flex flex-col gap-6 md:flex-row md:items-center md:gap-8">
           <div class="flex items-center gap-5">
             <Ring pct={v.pct} />
             <p class="flex items-baseline gap-1.5">
-              <span class="text-[28px] font-semibold text-base-content tnum" data-ov="done">
+              <span class="text-[28px] font-semibold text-[var(--ui-text)] tabular-nums" data-ov="done">
                 {v.done}
               </span>
-              <span class="text-lg muted tnum">
+              <span class="text-lg text-[var(--ui-muted)] tabular-nums">
                 of <span data-ov="total">{v.total}</span> tasks done
               </span>
             </p>
           </div>
-          <div class="grid min-w-0 flex-1 gap-3 sm:grid-cols-2 md:border-l hairline md:pl-8" data-ovrows>
+          <div
+            class="grid min-w-0 flex-1 gap-3 min-[900px]:grid-cols-2 md:border-l md:border-[var(--ui-line)] md:pl-8"
+            data-ovrows
+          >
             {ovRows(v).map((r) => (
-              <div key={r.k} class={r.tint}>
+              <div key={r.k} class={`min-w-0 ${r.tint}`}>
                 <div class="flex items-center justify-between gap-3 text-sm">
-                  <span class="muted">{r.l}</span>
-                  <span class="font-medium tnum">{r.n}</span>
+                  <span class="text-[var(--ui-muted)]">{r.l}</span>
+                  <span class="font-medium tabular-nums">{r.n}</span>
                 </div>
                 <div class="segbar mt-1.5" role="img" aria-label={`${r.l}: ${r.n} of ${v.total}`}>
                   <i class={`segbar-seg ${r.tint}`} style={`width:${r.pct}%`} />
                 </div>
-                <p class="mt-1 text-xs muted">{r.cap}</p>
+                <p class="mt-1 text-xs text-[var(--ui-muted)]">{r.cap}</p>
               </div>
             ))}
           </div>
         </div>
       </div>
-    </Panel>
+    </Card>
   );
 }
 

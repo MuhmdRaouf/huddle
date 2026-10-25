@@ -17,6 +17,7 @@ import {
 } from "../src/pages/Overview.tsx";
 import { readPref, type Storage } from "../src/storage.ts";
 import { createStore, type FeedEvent, type HuddleState, type Timers } from "../src/store.ts";
+import { legacyClasses } from "./helpers.tsx";
 import { renderHuddle } from "./render";
 
 const NOW = Date.parse("2026-10-08T12:00:00Z");
@@ -118,7 +119,7 @@ describe("Overview plan progress", () => {
     expect(screen.getByRole("img", { name: "25% of the tasks done" })).not.toBeNull();
     expect(document.querySelector('[data-ov="done"]')?.textContent).toBe("1");
     expect(document.querySelector('[data-ov="total"]')?.textContent).toBe("4");
-    const panel = document.querySelector("#ovwrap section[aria-label='Plan progress']") as HTMLElement;
+    const panel = screen.getByRole("region", { name: "Plan progress" });
     expect(panel?.textContent).toContain("25% of the plan across 1 phase");
     // the plan's segmented bar across the top: done · doing · waiting · blocked draw, to do is zero
     const bar = panel.querySelector(".segbar") as HTMLElement;
@@ -130,6 +131,16 @@ describe("Overview plan progress", () => {
     expect(screen.getByText("Blocked")).not.toBeNull();
     expect(screen.getByText("To do")).not.toBeNull();
     expect(screen.getByRole("img", { name: "Blocked: 1 of 4" })).not.toBeNull();
+  });
+
+  it("paints on the tokens, the breakdown in one column under 900 px", () => {
+    renderHuddle(<Overview />, state(), NOW, fetchF());
+    const panel = screen.getByRole("region", { name: "Plan progress" });
+    expect(panel.classList.contains("ui-card")).toBe(true);
+    expect(legacyClasses(panel)).toEqual([]);
+    const rows = panel.querySelector("[data-ovrows]") as HTMLElement;
+    expect(rows.classList.contains("min-[900px]:grid-cols-2")).toBe(true);
+    expect([...rows.classList].filter((c) => /^(sm|md):grid-cols-/.test(c))).toEqual([]);
   });
 
   it("says nothing is planned on an empty board", () => {

@@ -103,12 +103,12 @@ describe("ModelsView", () => {
     const [first, second] = pairs;
     expect(texts(first ?? container, "[data-bar-label]")).toEqual(["Requests", "Tokens"]);
     expect(styles(first ?? container, ".bar-seg")).toEqual([
-      "width: 100.00%; background: var(--series-4);",
-      "width: 44.44%; background: var(--series-1);",
+      "width: 100.00%; background: var(--radar-series-4);",
+      "width: 44.44%; background: var(--radar-series-1);",
     ]);
     expect(styles(second ?? container, ".bar-seg")).toEqual([
-      "width: 60.00%; background: var(--series-1);",
-      "width: 100.00%; background: var(--series-2);",
+      "width: 60.00%; background: var(--radar-series-1);",
+      "width: 100.00%; background: var(--radar-series-2);",
     ]);
   });
 

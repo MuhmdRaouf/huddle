@@ -14,6 +14,7 @@ import { useEffect, useState } from "preact/hooks";
 import { useHuddle } from "../../app/context.tsx";
 import { dayWords } from "../chart.ts";
 import { fmtNum, fmtTokens, fmtUsd } from "../fmt.ts";
+import { SERIES, TOKEN_KINDS } from "../palette.ts";
 import type { TodayReport, UsageDay, UsageReport } from "../shared/usage.ts";
 
 const USAGE_PATH = "/api/radar/api/usage?days=30";
@@ -37,14 +38,6 @@ export async function fetchGraphs(outer: typeof fetch = fetch): Promise<GraphsDa
   const [usage, today] = await Promise.all([read<UsageReport>(USAGE_PATH), read<TodayReport>(TODAY_PATH)]);
   return usage === null || today === null ? null : { usage, today };
 }
-
-/** The token kinds the tokens graph draws, each with its series tint and its word. */
-const KINDS = [
-  { key: "input", word: "Input", tint: undefined, swatch: "var(--primary)" },
-  { key: "output", word: "Output", tint: "series-2", swatch: "var(--series-2)" },
-  { key: "cacheRead", word: "Cache read", tint: "series-3", swatch: "var(--series-3)" },
-  { key: "cacheWrite", word: "Cache write", tint: "series-4", swatch: "var(--series-4)" },
-] as const;
 
 const sum = (values: readonly number[]): number => values.reduce((total, value) => total + value, 0);
 
@@ -98,24 +91,27 @@ function RequestsGraph({ today }: { today: TodayReport }): JSX.Element {
 }
 
 function TokensGraph({ days }: { days: readonly UsageDay[] }): JSX.Element {
-  const series = Object.fromEntries(KINDS.map((kind) => [kind.key, days.map((day) => day[kind.key])]));
-  const total = sum(KINDS.map((kind) => sum(series[kind.key] ?? [])));
-  const drawn: ChartSeries[] = KINDS.map((kind) => ({ values: series[kind.key] ?? [], tint: kind.tint }));
+  const series = Object.fromEntries(TOKEN_KINDS.map((kind) => [kind.key, days.map((day) => day[kind.key])]));
+  const total = sum(TOKEN_KINDS.map((kind) => sum(series[kind.key] ?? [])));
+  const drawn: ChartSeries[] = TOKEN_KINDS.map((kind) => ({
+    values: series[kind.key] ?? [],
+    color: kind.color,
+  }));
   return (
     <Graph name="tokens" series={series}>
       <ChartFrame
         title="Tokens by kind"
         value={fmtTokens(total)}
         meta="7 days"
-        label={`Tokens per UTC day over seven days, by kind: ${KINDS.map(
-          (kind) => `${kind.word.toLowerCase()} ${fmtTokens(sum(series[kind.key] ?? []))}`,
+        label={`Tokens per UTC day over seven days, by kind: ${TOKEN_KINDS.map(
+          (kind) => `${kind.label.toLowerCase()} ${fmtTokens(sum(series[kind.key] ?? []))}`,
         ).join(", ")}`}
       >
-        <ul class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-base-content/60" aria-hidden="true">
-          {KINDS.map((kind) => (
+        <ul class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--ui-muted)]" aria-hidden="true">
+          {TOKEN_KINDS.map((kind) => (
             <li key={kind.key} class="flex items-center gap-1.5">
-              <span class="size-2.5 rounded-[3px]" style={`background:${kind.swatch}`} />
-              {kind.word} <span class="num">{fmtTokens(sum(series[kind.key] ?? []))}</span>
+              <span class="size-2.5 rounded-[3px]" style={`background:${kind.color}`} />
+              {kind.label} <span class="num">{fmtTokens(sum(series[kind.key] ?? []))}</span>
             </li>
           ))}
         </ul>
@@ -128,7 +124,7 @@ function TokensGraph({ days }: { days: readonly UsageDay[] }): JSX.Element {
           note="No tokens in seven days"
           tip={(i) => [
             dayWords(days[i]?.date),
-            ...KINDS.map((kind) => `${kind.word} ${fmtTokens(days[i]?.[kind.key] ?? 0)}`),
+            ...TOKEN_KINDS.map((kind) => `${kind.label} ${fmtTokens(days[i]?.[kind.key] ?? 0)}`),
           ]}
         />
       </ChartFrame>
@@ -191,20 +187,20 @@ function SessionsGraph({ today }: { today: TodayReport }): JSX.Element {
         }
       >
         {sessions.length === 0 ? (
-          <p class="py-6 text-center text-sm text-base-content/60">No sessions today</p>
+          <p class="py-6 text-center text-sm text-[var(--ui-muted)]">No sessions today</p>
         ) : (
           <ol class="grid gap-2">
             {sessions.map((session) => (
               <li key={session.id} class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-sm">
                 <span class="min-w-0 truncate" title={session.id}>
                   {session.title}
-                  {session.machine ? <span class="muted"> · {session.machine}</span> : null}
+                  {session.machine ? <span class="text-[var(--ui-muted)]"> · {session.machine}</span> : null}
                 </span>
                 <span class="num text-right">{fmtUsd(session.cost)}</span>
-                <div class="bar-track col-span-2">
+                <div class="col-span-2 flex h-2 overflow-hidden rounded-full bg-[var(--ui-surface-2)]">
                   <div
-                    class="bar-seg"
-                    style={`width:${max > 0 ? (session.cost / max) * 100 : 0}%;background:var(--series-1)`}
+                    class="bar-seg h-full rounded-full"
+                    style={`width:${max > 0 ? (session.cost / max) * 100 : 0}%;background:${SERIES[0]}`}
                   />
                 </div>
               </li>

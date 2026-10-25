@@ -6,7 +6,8 @@ import { waitFor } from "@testing-library/preact";
 import { describe, expect, it } from "vite-plus/test";
 import { fetchGraphs, type GraphsData, OverviewGraphs } from "../../../src/radar/app/OverviewGraphs.tsx";
 import type { UsageDay, UsageSession } from "../../../src/radar/shared/usage.ts";
-import { makeCtx, makeRegistry, makeState, renderIn } from "../../helpers.tsx";
+import { TOKEN_KINDS } from "../../../src/radar/palette.ts";
+import { legacyClasses, makeCtx, makeRegistry, makeState, renderIn } from "../../helpers.tsx";
 
 const zero = { requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0, savingsUsd: 0 };
 
@@ -107,6 +108,23 @@ describe("OverviewGraphs", () => {
     expect(rows[0]).toContain("Lead session · studio");
     expect(rows[0]).toContain("$0.50");
     expect(rows[1]).toContain("s-old");
+  });
+
+  it("paints on the tokens, each token kind in its palette colour", async () => {
+    const root = await graphs(data());
+    expect(legacyClasses(root)).toEqual([]);
+    const swatches = [...root.querySelectorAll<HTMLElement>("[data-graph='tokens'] li > span:first-child")];
+    expect(swatches.map((el) => el.style.background)).toEqual(TOKEN_KINDS.map((kind) => kind.color));
+    const lines = [...root.querySelectorAll("[data-graph='tokens'] path.hr-chart-line")];
+    expect(lines.map((el) => el.getAttribute("style"))).toEqual(
+      TOKEN_KINDS.map((kind) => expect.stringContaining(kind.color)),
+    );
+    for (const el of root.querySelectorAll("[style]"))
+      expect(el.getAttribute("style")).not.toMatch(/var\(--(series|primary|panel|muted)/);
+  });
+
+  it("paints the empty sessions graph on the tokens too", async () => {
+    expect(legacyClasses(await graphs(data([])))).toEqual([]);
   });
 
   it("says so when no session spent today", async () => {

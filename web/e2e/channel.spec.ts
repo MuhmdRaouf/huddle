@@ -130,6 +130,28 @@ test("the phone heads the channel page with #channel and a Channels back link", 
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Channels");
 });
 
+test("the plan progress breakdown stands in one column at 820 px, no row over another", async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await openChannel(page, "e2e");
+  const rows = page.locator("[data-ovrows] > div");
+  await expect(rows).toHaveCount(4);
+  const boxes = await rows.evaluateAll((els) =>
+    els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    }),
+  );
+  const overlaps = boxes.flatMap((a, i) =>
+    boxes
+      .slice(i + 1)
+      .filter((b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)
+      .map(() => i),
+  );
+  expect(overlaps, "rows that overlap another").toEqual([]);
+  // one column: every row starts at the same left edge
+  expect(new Set(boxes.map((b) => Math.round(b.left))).size).toBe(1);
+});
+
 test("the channel tabs fit one row on the phone", async ({ page }, info) => {
   test.skip(info.project.name !== "iphone", "the one scrolling row is the phone's");
   await openChannel(page, "e2e");

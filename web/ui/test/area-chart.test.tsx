@@ -118,19 +118,32 @@ describe("AreaChart", () => {
     expect(document.querySelectorAll("line.hr-chart-grid").length).toBe(4);
   });
 
-  it("draws a lone dot for a single-bin series and tints a second series", () => {
-    render(<AreaChart series={[{ values: [3] }, { values: [4], tint: "c-peach" }]} w={600} />);
+  it("draws a lone dot for a single-bin series in the colour the series names", () => {
+    render(<AreaChart series={[{ values: [3] }, { values: [4], color: "var(--ui-ok)" }]} w={600} />);
     const svg = document.querySelector("svg") as SVGSVGElement;
-    expect(svg.querySelectorAll("circle").length).toBe(2);
+    const dots = [...svg.querySelectorAll("circle")].map((c) => c.getAttribute("style") ?? "");
+    expect(dots).toHaveLength(2);
     expect(svg.querySelector("path")).toBeNull();
-    const peach = svg.querySelectorAll(".c-peach").length;
-    expect(peach).toBe(0); // a single-bin series has no line to tint
+    expect(dots[0]).toMatch(/fill: ?var\(--ui-accent\)/);
+    expect(dots[1]).toMatch(/fill: ?var\(--ui-ok\)/);
   });
 
-  it("carries the tint class on the fill and line of a multi-bin series", () => {
-    render(<AreaChart series={[{ values: [1, 2, 3], tint: "c-peach" }]} w={600} />);
+  it("carries the series colour on the fill and line of a multi-bin series", () => {
+    render(<AreaChart series={[{ values: [1, 2, 3], color: "var(--ui-warn)" }]} w={600} />);
     const svg = document.querySelector("svg") as SVGSVGElement;
-    expect(svg.querySelectorAll("path.c-peach").length).toBe(2);
+    const paths = [...svg.querySelectorAll("path")].map((p) => p.getAttribute("style") ?? "");
+    expect(paths).toHaveLength(2);
+    for (const style of paths) expect(style).toMatch(/--chart-c: ?var\(--ui-warn\)/);
+  });
+
+  it("paints from the tokens alone: the accent by default, the surface around the dots", () => {
+    render(<AreaChart series={[{ values: [1, 2, 3] }, { values: [3, 2, 1] }]} w={600} />);
+    const svg = document.querySelector("svg") as SVGSVGElement;
+    fireEvent(svg, new MouseEvent("pointermove", { clientX: 300, bubbles: true }));
+    const styles = [...svg.querySelectorAll("[style]")].map((el) => el.getAttribute("style") ?? "");
+    expect(styles.length).toBeGreaterThan(0);
+    for (const style of styles) expect(style).not.toMatch(/--(primary|panel)\b|#[0-9a-f]{3,8}/);
+    expect(svg.querySelector("stop")?.getAttribute("style")).toMatch(/stop-color: ?var\(--ui-accent\)/);
   });
 
   it("shows the crosshair, a dot per series and the tooltip's rows on hover", () => {
@@ -148,7 +161,7 @@ describe("AreaChart", () => {
     expect(svg.querySelectorAll("circle[r='3.5']").length).toBe(2);
     expect(screen.getByText("bin 2")).toBeTruthy();
     expect(screen.getByText("2 events")).toBeTruthy();
-    expect((screen.getByText("bin 2") as HTMLElement).getAttribute("class")).toBe("text-faint");
+    expect((screen.getByText("bin 2") as HTMLElement).getAttribute("class")).toBe("hr-chart-tip-head");
   });
 
   it("falls back to the bin index as the tooltip's only row", () => {

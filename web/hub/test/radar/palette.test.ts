@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
 import { ICONS } from "../../src/radar/icons.ts";
 import {
@@ -7,39 +8,50 @@ import {
   latencyClass,
   modelColor,
   providerColor,
+  SERIES,
   STATUS_COLOR,
   TOKEN_KINDS,
 } from "../../src/radar/palette.ts";
 import type { AlertKind } from "../../src/radar/shared/api.ts";
+
+/** A colour a scheme and a flavour follow: one --ui-* token, or one of radar.css's series. */
+const TOKEN_COLOUR = /^var\(--(ui-[a-z-]+|radar-series-[1-8])\)$/;
+
+/** radar.css's series declarations, name to value. */
+const SERIES_CSS = new Map(
+  [...readFileSync("src/radar/radar.css", "utf8").matchAll(/(--radar-series-\d+):\s*([^;]+);/g)].map(
+    (m) => [m[1] ?? "", m[2] ?? ""] as const,
+  ),
+);
 
 describe("TOKEN_KINDS", () => {
   it("gives each token kind its own series colour and a readable label", () => {
     expect(TOKEN_KINDS.map((kind) => kind.key)).toEqual(["input", "output", "cacheRead", "cacheWrite"]);
     expect(TOKEN_KINDS.map((kind) => kind.label)).toEqual(["Input", "Output", "Cache read", "Cache write"]);
     expect(new Set(TOKEN_KINDS.map((kind) => kind.color)).size).toBe(4);
-    for (const kind of TOKEN_KINDS) expect(kind.color).toMatch(/^var\(--series-\d\)$/);
+    for (const kind of TOKEN_KINDS) expect(kind.color).toMatch(TOKEN_COLOUR);
   });
 });
 
 describe("latencyClass", () => {
   it("is success under 60% of budget, warning under 80%, danger at or beyond", () => {
-    expect(latencyClass(0)).toBe("var(--success)");
-    expect(latencyClass(0.59)).toBe("var(--success)");
-    expect(latencyClass(0.6)).toBe("var(--warning)");
-    expect(latencyClass(0.79)).toBe("var(--warning)");
-    expect(latencyClass(0.8)).toBe("var(--danger)");
-    expect(latencyClass(1.4)).toBe("var(--danger)");
+    expect(latencyClass(0)).toBe("var(--ui-ok)");
+    expect(latencyClass(0.59)).toBe("var(--ui-ok)");
+    expect(latencyClass(0.6)).toBe("var(--ui-warn)");
+    expect(latencyClass(0.79)).toBe("var(--ui-warn)");
+    expect(latencyClass(0.8)).toBe("var(--ui-fail)");
+    expect(latencyClass(1.4)).toBe("var(--ui-fail)");
   });
 });
 
 describe("STATUS_COLOR", () => {
-  it("maps every tone to a semantic token", () => {
+  it("maps every tone to its tokens.css mark", () => {
     expect(Object.keys(STATUS_COLOR).sort()).toEqual(["err", "idle", "info", "ok", "warn"]);
-    expect(STATUS_COLOR.ok).toBe("var(--success)");
-    expect(STATUS_COLOR.err).toBe("var(--danger)");
-    expect(STATUS_COLOR.warn).toBe("var(--warning)");
-    expect(STATUS_COLOR.info).toBe("var(--info)");
-    expect(STATUS_COLOR.idle).toBe("var(--muted)");
+    expect(STATUS_COLOR.ok).toBe("var(--ui-ok)");
+    expect(STATUS_COLOR.err).toBe("var(--ui-fail)");
+    expect(STATUS_COLOR.warn).toBe("var(--ui-warn)");
+    expect(STATUS_COLOR.info).toBe("var(--ui-info)");
+    expect(STATUS_COLOR.idle).toBe("var(--ui-muted)");
   });
 });
 
@@ -72,22 +84,38 @@ describe("eventMeta", () => {
   });
 });
 
+describe("SERIES", () => {
+  it("draws eight distinct series, each from the tokens", () => {
+    expect(SERIES).toHaveLength(8);
+    expect(new Set(SERIES).size).toBe(8);
+    for (const colour of SERIES) expect(colour).toMatch(TOKEN_COLOUR);
+    // radar.css builds every series from the token roles alone: one role, or a mix of two
+    expect(new Set(SERIES_CSS.values()).size).toBe(8);
+    for (const colour of SERIES) {
+      const value = SERIES_CSS.get(colour.slice(4, -1));
+      expect(value).toMatch(
+        /^(var\(--ui-[a-z-]+\)|color-mix\(in oklab, var\(--ui-[a-z-]+\) \d+%, var\(--ui-[a-z-]+\)\))$/,
+      );
+    }
+  });
+});
+
 describe("providerColor", () => {
   it("colours every known provider from the series and falls back for the rest", () => {
-    expect(providerColor("Anthropic")).toBe("var(--series-4)");
-    expect(providerColor("Z.ai")).toBe("var(--series-1)");
-    expect(providerColor("Moonshot")).toBe("var(--series-5)");
-    expect(providerColor("DeepSeek")).toBe("var(--series-2)");
-    expect(providerColor("MiniMax")).toBe("var(--series-6)");
-    expect(providerColor("Qwen")).toBe("var(--series-8)");
-    expect(providerColor("route")).toBe("var(--series-1)");
-    expect(providerColor("other")).toBe("var(--muted)");
+    expect(providerColor("Anthropic")).toBe(SERIES[3]);
+    expect(providerColor("Z.ai")).toBe(SERIES[0]);
+    expect(providerColor("Moonshot")).toBe(SERIES[4]);
+    expect(providerColor("DeepSeek")).toBe(SERIES[1]);
+    expect(providerColor("MiniMax")).toBe(SERIES[5]);
+    expect(providerColor("Qwen")).toBe(SERIES[7]);
+    expect(providerColor("route")).toBe(SERIES[0]);
+    expect(providerColor("other")).toBe("var(--ui-muted)");
   });
 
   it("treats missing as other", () => {
-    expect(providerColor(null)).toBe("var(--muted)");
-    expect(providerColor(undefined)).toBe("var(--muted)");
-    expect(providerColor("made-up")).toBe("var(--muted)");
+    expect(providerColor(null)).toBe("var(--ui-muted)");
+    expect(providerColor(undefined)).toBe("var(--ui-muted)");
+    expect(providerColor("made-up")).toBe("var(--ui-muted)");
   });
 });
 
@@ -95,7 +123,7 @@ describe("modelColor", () => {
   it("stays loyal to a model and spreads several across the series", () => {
     expect(modelColor("glm-5.3")).toBe(modelColor("glm-5.3"));
     for (const color of ["glm-5.3", "claude-opus-5", "kimi-k3", "deepseek-v4-pro", ""].map(modelColor))
-      expect(color).toMatch(/^var\(--series-\d\)$/);
+      expect(SERIES).toContain(color);
     expect(
       new Set(["glm-5.3", "claude-opus-5", "kimi-k3", "deepseek-v4-pro"].map(modelColor)).size,
     ).toBeGreaterThan(1);

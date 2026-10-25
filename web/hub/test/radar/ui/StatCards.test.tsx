@@ -406,7 +406,7 @@ describe("BudgetCard", () => {
     ]);
     expect(
       [...document.querySelectorAll<HTMLElement>(".bar-seg")].map((seg) => seg.style.background),
-    ).toEqual(["var(--success)", "var(--warning)", "var(--danger)", "var(--danger)"]);
+    ).toEqual(["var(--ui-ok)", "var(--ui-warn)", "var(--ui-fail)", "var(--ui-fail)"]);
   });
 
   it("opens the settings tab from the Edit button", async () => {

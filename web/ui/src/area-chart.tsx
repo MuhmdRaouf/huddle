@@ -7,11 +7,27 @@
 import type { JSX, TargetedPointerEvent, VNode } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
-/** One drawn line over the window: its values and an optional tint class for a second line. */
+/** One drawn line over the window: its values and its colour, a CSS colour from the tokens (the
+ *  accent when left out). */
 export type ChartSeries = {
   values: readonly number[];
-  tint?: string | undefined;
+  color?: string | undefined;
 };
+
+/** The colour a series draws in: its own, or the accent when it names none. */
+const colorOf = (sr: ChartSeries | undefined): string => sr?.color ?? "var(--ui-accent)";
+
+/** The fill under the first series: its colour fading to nothing at the baseline. */
+function Gradient({ color }: { color: string }): VNode {
+  return (
+    <defs>
+      <linearGradient id="hr-chart-grad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" style={`stop-color:${color};stop-opacity:0.25`} />
+        <stop offset="1" style={`stop-color:${color};stop-opacity:0`} />
+      </linearGradient>
+    </defs>
+  );
+}
 
 /** An x/y pair in svg units. */
 export type Point = { x: number; y: number };
@@ -99,14 +115,14 @@ function GridRow({
   );
 }
 
-/** One series: the gradient or tinted fill under its line and the line itself — or a lone dot for a single bin. */
+/** One series: the gradient or faint fill under its line and the line itself — or a lone dot for a single bin. */
 function SeriesShape({
-  tint,
+  color,
   first,
   pts,
   baseline,
 }: {
-  tint: string | undefined;
+  color: string;
   first: boolean;
   pts: readonly Point[];
   baseline: number;
@@ -122,17 +138,18 @@ function SeriesShape({
         cx={from.x}
         cy={from.y}
         r={3}
-        style="fill:var(--primary);stroke:var(--panel);stroke-width:1.5"
+        style={`fill:${color};stroke:var(--ui-surface);stroke-width:1.5`}
       />
     );
   }
   return (
     <g>
       <path
-        class={`hr-chart-fill${first ? " grad" : ""}${tint ? ` ${tint}` : ""}`}
+        class={`hr-chart-fill${first ? " grad" : ""}`}
+        style={`--chart-c:${color}`}
         d={`${line}L${last.x.toFixed(1)} ${baseline}L${from.x.toFixed(1)} ${baseline}Z`}
       />
-      <path class={`hr-chart-line${tint ? ` ${tint}` : ""}`} d={line} />
+      <path class="hr-chart-line" style={`--chart-c:${color}`} d={line} />
     </g>
   );
 }
@@ -221,16 +238,11 @@ export function AreaChart(props: AreaChartProps): JSX.Element {
           </text>
         ) : (
           <g>
-            <defs>
-              <linearGradient id="hr-chart-grad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" style="stop-color:var(--primary);stop-opacity:0.25" />
-                <stop offset="1" style="stop-color:var(--primary);stop-opacity:0" />
-              </linearGradient>
-            </defs>
+            <Gradient color={colorOf(series[0])} />
             {series.map((sr, si) => (
               <SeriesShape
                 key={si}
-                tint={sr.tint}
+                color={colorOf(sr)}
                 first={si === 0}
                 pts={sr.values.map((v, i) => ({ x: xAt(i), y: yOf(v) }))}
                 baseline={T + ih}
@@ -245,7 +257,7 @@ export function AreaChart(props: AreaChartProps): JSX.Element {
                     r={3.5}
                     cx={xAt(hover).toFixed(1)}
                     cy={yOf(sr.values[hover] ?? 0).toFixed(1)}
-                    style="stroke:var(--panel);stroke-width:1.5"
+                    style={`fill:${colorOf(sr)};stroke:var(--ui-surface);stroke-width:1.5`}
                   />
                 ))}
               </g>
@@ -256,7 +268,7 @@ export function AreaChart(props: AreaChartProps): JSX.Element {
       {hover !== null && !empty ? (
         <div ref={tipEl} class="hr-chart-tip absolute z-10">
           {(tip ? tip(hover) : [String(hover)]).map((row, ri) => (
-            <p key={`${ri} ${row}`} class={ri === 0 ? "text-faint" : undefined}>
+            <p key={`${ri} ${row}`} class={ri === 0 ? "hr-chart-tip-head" : undefined}>
               {row}
             </p>
           ))}
