@@ -357,6 +357,32 @@ describe("the Now list", () => {
     expect(localStorage.getItem("huddle:nowneeds")).toBe("false");
   });
 
+  it("leads with Needs you and sets the checklist after it when asks exist, and leads with the checklist when none do", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    localStorage.clear();
+    /** The list's top-level blocks in order: the checklist stand-in, then each section's heading. */
+    const order = (): string[] =>
+      [...document.querySelectorAll("[data-checklist], [data-now-sections] h2")].map((el) =>
+        el.hasAttribute("data-checklist") ? "checklist" : (el.textContent ?? ""),
+      );
+    const checklist = <div data-checklist="">Get set up</div>;
+    const mountWith = (sessions: RegistrySession[]): void => {
+      cleanup();
+      followRender(() => <NowPane layout="phone" above={checklist} />, makeRegistry({ sessions }));
+    };
+    mountWith(fixture());
+    expect(order()).toEqual([
+      "Needs you · 2",
+      "checklist",
+      "Working · 3",
+      "Idle · 2",
+      "Stuck · 1",
+      "Ended · 1",
+    ]);
+    mountWith(fixture().filter((s) => s.state !== "needs-you"));
+    expect(order()).toEqual(["checklist", "Working · 3", "Idle · 2", "Stuck · 1", "Ended · 1"]);
+  });
+
   it("names every session's harness on its row and its card, Claude Code included", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone", [

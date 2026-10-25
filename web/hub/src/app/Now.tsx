@@ -506,7 +506,8 @@ function RowShell({
  *  own header (the phone's shell and the desktop's bar draw theirs); the group-by toggle rides
  *  under it; the desktop's j and k move a selection Enter opens and a, d and r answer, the
  *  checkboxes pick sessions to send new work to, and the phone's long-press picks the same.
- *  `above` rides at the top of the list (the first-run checklist the shell hands down). */
+ *  `above` (the first-run checklist the shell hands down) rides at the top of the list, or right
+ *  after the Needs you section when asks wait, so the first ask sits above a phone's fold. */
 export function NowPane({
   layout,
   above = null,
@@ -715,6 +716,7 @@ export function NowPane({
                 </h2>
                 {sectionRows(groups[key], label)}
               </section>
+              {key === "needsYou" ? above : null}
             </Fragment>
           ),
         )}
@@ -764,7 +766,7 @@ export function NowPane({
         </Button>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto pb-4" data-now-sections="">
-        {above}
+        {groups.needsYou.length > 0 ? null : above}
         {st.sessions === null ? (
           <div class="grid gap-2 px-3 pt-3" role="status" aria-label="Reading the registry">
             {[0, 1, 2, 3].map((row) => (

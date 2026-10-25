@@ -1,6 +1,7 @@
 // now.spec.ts — the owner's first screen, on the phone and the desktop: the sign-in link lands
 // the browser on the hub, and the Now list shows the session the run seeded into the registry
-// (with the desktop's main pane keeping its pointer beside it while none is picked), every session
+// (with the desktop's main pane keeping its pointer beside it while none is picked), on the phone a
+// seeded ask's card sits above the fold with the first-run checklist after Needs you, every session
 // names its harness on its row and in its header (the seeded Claude Code one and a Codex one), one whose
 // last event asks for permission waits in Needs you with its state word, behind the filter too,
 // an agent-team teammate that went idle shows under its lead's row with the word idle, a seeded
@@ -39,6 +40,44 @@ test("the sign-in link opens the hub and the Now list shows the seeded session",
   // sessions stand and none is picked: the desktop's main pane keeps its pointer at the list
   // (the phone paints the list alone)
   if (!isMobile) await expect(page.getByText("No session open")).toBeVisible();
+});
+
+test("on the phone a seeded ask's card sits above the fold, before the first-run checklist", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "iphone", "the fold is the phone's");
+  // the session stopped, then its hook asked: the open item holds it in Needs you, and the
+  // denial at the end moves it to Idle so the other cases' counts stay as they were
+  const session = `e2e-fold-${info.project.name}`;
+  await api("/api/registry/report", {
+    session_id: session,
+    machine: "e2e-machine",
+    project: "e2e",
+    title: "Asks above the fold",
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+  const { id } = await api<{ id: number }>("/api/needs", {
+    session_id: session,
+    tool_name: "Bash",
+    tool_input: { command: "bun run lint" },
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page);
+  await openTab(page, "Now");
+
+  const checklist = page.locator("[data-first-run]");
+  await expect(checklist).toBeVisible();
+  const card = page.locator(`article[data-row='${session}']`);
+  await expect(card.getByText("bun run lint")).toBeVisible();
+  const cardBox = await card.boundingBox();
+  expect(cardBox?.y).toBeLessThan(844);
+  const needsBox = await page.locator("section[aria-labelledby='now-needsYou']").boundingBox();
+  const checklistBox = await checklist.boundingBox();
+  expect(needsBox && checklistBox && checklistBox.y).toBeGreaterThanOrEqual((needsBox?.y ?? 0) + (needsBox?.height ?? 0));
+
+  await api(`/api/needs/${id}/decide`, { decision: "deny" });
+  await expect(card).toHaveCount(0);
 });
 
 test("every session names its harness: the seeded Claude Code one and a Codex one", async ({ page }, info) => {
