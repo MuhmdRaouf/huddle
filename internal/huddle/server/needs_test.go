@@ -130,6 +130,99 @@ func TestQuestionAndTurnItemsGrowFromReports(t *testing.T) {
 	}
 }
 
+func TestOpeningASessionStreamsItsAnsweredTurnItems(t *testing.T) {
+	srv := startServer(t, nil)
+	reportSession(t, srv, "s-t", "", "", "UserPromptSubmit")
+	reportSession(t, srv, "s-t", "", "", "Stop")
+	reportSession(t, srv, "s-q", "", "", "Notification")
+	turns := map[string]bool{}
+	for id, pair := range needsItems(t, srv) {
+		if pair[0] == "turn" {
+			turns[id] = true
+		}
+	}
+	if len(turns) != 1 {
+		t.Fatalf("the open turn items = %v, want one", turns)
+	}
+	frames := openRegistryLive(t, srv)
+	nextRegistryEvent(t, frames, "hello")
+	// the owner opens the session twice: the first read answers the turn item, the second has
+	// nothing left to answer; a report of another session after both marks the stream's end
+	for range 2 {
+		if code, _, out := srv.get(t, "/api/registry/sessions/s-t", nil); code != 200 {
+			t.Fatalf("the detail = %d %s", code, out)
+		}
+	}
+	reportSession(t, srv, "s-mark", "", "", "UserPromptSubmit")
+	answered := map[string]int{}
+	var restated []string
+	for {
+		var m struct {
+			Type string `json:"type"`
+			Data struct {
+				ID        json.Number `json:"id"`
+				SessionID string      `json:"session"`
+				Kind      string      `json:"kind"`
+				State     string      `json:"state"`
+				Mark      string      `json:"session_id"`
+			} `json:"data"`
+		}
+		var row struct {
+			Data struct {
+				SessionID string `json:"session_id"`
+				State     string `json:"state"`
+			} `json:"data"`
+		}
+		frame := waitForAny(t, frames)
+		if err := json.Unmarshal([]byte(frame), &m); err != nil {
+			t.Fatalf("a frame = %s: %v", frame, err)
+		}
+		if m.Type == "registry.session" && m.Data.Mark == "s-mark" {
+			break
+		}
+		if m.Type == "registry.session" && m.Data.Mark == "s-t" {
+			if err := json.Unmarshal([]byte(frame), &row); err != nil {
+				t.Fatalf("a row frame = %s: %v", frame, err)
+			}
+			restated = append(restated, row.Data.State)
+		}
+		if m.Type != "needs.item" {
+			continue
+		}
+		if m.Data.SessionID != "s-t" || m.Data.Kind != "turn" || m.Data.State != "answered" {
+			t.Fatalf("the needs event = %s, want s-t's turn item answered", frame)
+		}
+		answered[m.Data.ID.String()]++
+	}
+	for id := range turns {
+		if answered[id] != 1 {
+			t.Errorf("the turn item %s streamed %d times, want once", id, answered[id])
+		}
+	}
+	if len(answered) != len(turns) {
+		t.Errorf("the answered events = %v, want the turn items %v alone", answered, turns)
+	}
+	// the session's row follows once, out of needs-you: its turn no longer waits
+	if len(restated) != 1 || restated[0] == "needs-you" {
+		t.Errorf("s-t's restated rows = %v, want one that no longer reads needs-you", restated)
+	}
+}
+
+// waitForAny answers the stream's next frame, failing the test when none arrives within 5 s.
+func waitForAny(t *testing.T, frames <-chan string) string {
+	t.Helper()
+	select {
+	case line, open := <-frames:
+		if !open {
+			t.Fatal("the stream closed early")
+		}
+		return line
+	case <-time.After(5 * time.Second):
+		t.Fatal("no frame within 5 s")
+	}
+	return ""
+}
+
 func TestTheAnswerRouteQueuesAClosesTheQuestionAndNamesItsRoute(t *testing.T) {
 	srv := startServer(t, nil)
 	reportSession(t, srv, "s-1", "", "", "Notification")

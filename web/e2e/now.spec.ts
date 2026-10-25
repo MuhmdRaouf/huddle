@@ -275,6 +275,42 @@ test("a finished turn's sheet shows its digest line with Snooze and Dismiss, and
   await expect(sheet).toHaveCount(0);
 });
 
+test("opening a session clears its finished turn from Needs you in every open browser", async ({
+  page,
+  context,
+}, info) => {
+  // a prompt, then a Stop nobody opened: the turn item holds the session in Needs you, and
+  // opening it answers the item, so the other cases' counts stay as they were
+  const session = `e2e-open-${info.project.name}`;
+  const base = { session_id: session, machine: "e2e-machine", project: "e2e", title: "Opens to clear" };
+  await api("/api/registry/report", { ...base, last_event: "UserPromptSubmit", last_event_at: new Date().toISOString() });
+  await api("/api/registry/report", { ...base, last_event: "Stop", last_event_at: new Date().toISOString() });
+  const other = await context.newPage();
+  for (const p of [page, other]) {
+    await signIn(p);
+    await openTab(p, "Now");
+    await expect(p.locator(`a[href='#/now/${session}']`).first()).toBeVisible();
+  }
+  const heading = page.getByRole("heading", { name: /Needs you · \d+$/ });
+  const before = Number(/· (\d+)/.exec((await heading.textContent()) ?? "")?.[1]);
+  expect(before).toBeGreaterThanOrEqual(1);
+  const count = (n: number): RegExp => (n > 0 ? new RegExp(`Needs you · ${n}$`) : /Needs you · /);
+
+  // one browser opens the session in-app and comes back; neither page reloads
+  const opened = page.waitForResponse((r) => r.url().endsWith(`/api/registry/sessions/${session}`));
+  await page.locator(`a[href='#/now/${session}']`).first().click();
+  expect((await opened).status()).toBe(200);
+  await page.goBack();
+  await expect(page.locator("[data-now-pane]")).toBeVisible();
+
+  for (const p of [page, other]) {
+    if (before > 1) await expect(p.getByRole("heading", { name: count(before - 1) })).toBeVisible();
+    else await expect(p.getByRole("heading", { name: count(0) })).toHaveCount(0);
+    await expect(p.locator(`[data-row='${session}'] [data-state='needs-you']`)).toHaveCount(0);
+  }
+  await other.close();
+});
+
 test("the Radar card shows today's seeded cost and requests", async ({ page }) => {
   await signIn(page);
   await openTab(page, "Now");

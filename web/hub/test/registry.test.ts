@@ -577,6 +577,41 @@ describe("the registry store", () => {
     streams[0]?.send({ type: "registry.session", data: { nope: true } });
     expect(reg.getState().needs).toEqual([]);
   });
+
+  it("keeps the open session's answered turn item until the address moves on", async () => {
+    const turn = need({ id: 9, session: "s-turn", kind: "turn", summary: "Goal: fix the login" });
+    const api = fakeApi({
+      "/api/registry/sessions": { sessions: [] },
+      "/api/needs": { items: [turn, need({ id: 8, session: "s-other", kind: "turn" })] },
+      "/api/registry/sessions/s-turn": { ...row({ session_id: "s-turn" }), events: [] },
+    });
+    const streams: ReturnType<typeof fakeSource>[] = [];
+    const reg = createRegistry({
+      api,
+      EventSource: () => {
+        const s = fakeSource();
+        streams.push(s);
+        return s.src;
+      },
+    });
+    reg.connect();
+    streams[0]?.open();
+    streams[0]?.send({ type: "hello" });
+    await new Promise((r) => setTimeout(r, 0));
+    reg.setOpenId("s-turn");
+    // the read of the open session answered its turn: its sheet stays while the owner reads it
+    streams[0]?.send({ type: "needs.item", data: { ...turn, state: "answered" } });
+    expect(reg.getState().needs?.map((n) => n.id)).toEqual([9, 8]);
+    // another session's answered turn leaves at once
+    streams[0]?.send({
+      type: "needs.item",
+      data: need({ id: 8, session: "s-other", kind: "turn", state: "answered" }),
+    });
+    expect(reg.getState().needs?.map((n) => n.id)).toEqual([9]);
+    // the owner goes back: the held turn leaves too
+    reg.setOpenId(null);
+    expect(reg.getState().needs).toEqual([]);
+  });
 });
 
 describe("the needs-you items' pure reads", () => {

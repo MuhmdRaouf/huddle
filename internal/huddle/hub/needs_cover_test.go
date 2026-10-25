@@ -103,13 +103,13 @@ func TestOpenedAtAndTheOpenReadFollowWhatIsStored(t *testing.T) {
 		t.Errorf("openedAt = (%v, %v), want the zero time", at, err)
 	}
 	// the owner opens the session: opened_at moves forward, and a late read never moves it back
-	if err := db.OpenTheSession(ctx, "s-o", "2026-10-16T09:05:00.000Z"); err != nil {
+	if _, err := db.OpenTheSession(ctx, "s-o", "2026-10-16T09:05:00.000Z"); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	if at, err := db.openedAt(ctx, "s-o"); err != nil || at.IsZero() {
 		t.Errorf("openedAt after a read = (%v, %v), want the read's moment", at, err)
 	}
-	if err := db.OpenTheSession(ctx, "s-o", "2026-10-16T09:01:00.000Z"); err != nil {
+	if _, err := db.OpenTheSession(ctx, "s-o", "2026-10-16T09:01:00.000Z"); err != nil {
 		t.Fatalf("open again: %v", err)
 	}
 	if at, _ := db.openedAt(ctx, "s-o"); !at.Equal(time.Date(2026, 10, 16, 9, 5, 0, 0, time.UTC)) {

@@ -118,7 +118,7 @@ func TestTheRegistryWritesNameAFailedStatement(t *testing.T) {
 	if _, err := db.MarkEndedPids(context.Background(), "2026-10-16T09:00:00.000Z", func(context.Context, int) (string, bool) { return "", false }); err == nil {
 		t.Fatal("the pid check on a broken sessions table succeeded")
 	}
-	if err := db.OpenTheSession(context.Background(), "s-1", "2026-10-16T09:00:00.000Z"); err == nil {
+	if _, err := db.OpenTheSession(context.Background(), "s-1", "2026-10-16T09:00:00.000Z"); err == nil {
 		t.Fatal("an open of a broken sessions table succeeded")
 	}
 	dropTable(t, db, "items")

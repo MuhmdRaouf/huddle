@@ -378,11 +378,29 @@ export function createRegistry(deps: {
     changed();
   }
 
+  /** The answered turn items of the open session, kept on the list while the owner reads it. */
+  let held = new Set<number>();
+
   function applyNeed(item: NeedItem): void {
     if (!item || typeof item.id !== "number") return;
+    const shown = (state.needs ?? []).some((n) => n.id === item.id);
+    // reading a session answers its finished turn; the turn's sheet stays until the owner leaves
+    if (item.state === "answered" && item.kind === "turn" && item.session === state.openId && shown) {
+      held.add(item.id);
+      return;
+    }
     const rest = (state.needs ?? []).filter((n) => n.id !== item.id);
     // open and snoozed items wait; a decided, withdrawn or expired one no longer does
     state.needs = item.state === "open" || item.state === "snoozed" ? [item, ...rest] : rest;
+    changed();
+  }
+
+  /** Drops the turn items held while their session was open. */
+  function dropHeld(): void {
+    if (held.size === 0) return;
+    const gone = held;
+    held = new Set();
+    if (state.needs) state.needs = state.needs.filter((n) => !gone.has(n.id));
     changed();
   }
 
@@ -471,6 +489,7 @@ export function createRegistry(deps: {
     loadSession,
     setOpenId(id) {
       if (state.openId === id) return;
+      dropHeld();
       state.openId = id;
       state.open = null;
       state.openMissing = false;

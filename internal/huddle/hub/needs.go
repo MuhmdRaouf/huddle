@@ -190,16 +190,36 @@ func (d *DB) openedAt(ctx context.Context, session string) (time.Time, error) {
 
 // OpenTheSession records the owner reading one session (its detail screen): its open turn items
 // are answered — a turn the owner opened waits no longer — and opened_at moves forward only, so
-// a read the storage serves late never un-opens the session.
-func (d *DB) OpenTheSession(ctx context.Context, session, at string) error {
-	return d.st.Tx(ctx, func(ctx context.Context, q store.Q) error {
+// a read the storage serves late never un-opens the session. It answers the items it answered,
+// each in its answered state, so the caller can tell every open list.
+func (d *DB) OpenTheSession(ctx context.Context, session, at string) ([]Item, error) {
+	var answered []Item
+	err := d.st.Tx(ctx, func(ctx context.Context, q store.Q) error {
+		answered = nil
 		if err := q.Run(ctx,
 			"UPDATE sessions SET opened_at = MAX(COALESCE(opened_at, ''), ?) WHERE session_id = ?", at, session); err != nil {
 			return err
 		}
-		return q.Run(ctx, "UPDATE items SET state = 'answered' WHERE session_id = ? AND kind = ? AND state = 'open'",
-			session, KindTurn)
+		rows, err := q.All(ctx,
+			"SELECT id, session_id, kind, summary, created_at, snoozed_until, tool, input, truncated, decision, message "+
+				"FROM items WHERE session_id = ? AND kind = ? AND state = 'open' ORDER BY id", session, KindTurn)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			item := itemOfRow(row)
+			if err := q.Run(ctx, "UPDATE items SET state = 'answered' WHERE id = ?", item.ID); err != nil {
+				return err
+			}
+			item.State = StateAnswered
+			answered = append(answered, item)
+		}
+		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return answered, nil
 }
 
 // CloseQuestions answers every open question item of one session: the owner's answer is on its

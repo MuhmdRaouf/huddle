@@ -1586,14 +1586,23 @@ func (s *server) seeTranscript(ctx context.Context, times map[string]time.Time, 
 
 // registrySessionRoute answers one session with its last events (SPEC 5.3). The read is the
 // owner opening the session's screen: it marks the session opened, which is what a later Stop
-// checks before growing a turn item (SPEC 6.1: a finished turn the owner has not opened).
+// checks before growing a turn item (SPEC 6.1: a finished turn the owner has not opened). Each
+// turn item the read answers streams as a needs.item, and the session's row after them, so every
+// open list drops it at once.
 func (s *server) registrySessionRoute(w http.ResponseWriter, r *http.Request, path string) error {
 	if s.registry == nil {
 		return &channel.HuddleError{Status: 500, Msg: "the registry's database is unavailable"}
 	}
 	id := registrySessionPath.FindStringSubmatch(path)[1]
-	if err := s.registry.OpenTheSession(r.Context(), id, jsfmt.ISOTime(s.now())); err != nil {
+	answered, err := s.registry.OpenTheSession(r.Context(), id, jsfmt.ISOTime(s.now()))
+	if err != nil {
 		return err
+	}
+	for _, item := range answered {
+		s.emitItem(item)
+	}
+	if len(answered) > 0 {
+		s.emitRegistrySession(r.Context(), id)
 	}
 	now := s.now()
 	detail, err := s.registry.Session(r.Context(), id, now)
@@ -1743,6 +1752,19 @@ func (s *server) fanRegistryRow(frame string) {
 		default:
 		}
 	}
+}
+
+// emitItem fans one item's row out as a needs.item event to every open registry stream. Best
+// effort, like every emit.
+func (s *server) emitItem(item hub.Item) {
+	encoded, err := domain.MarshalCompactJSON(struct {
+		Type string   `json:"type"`
+		Data hub.Item `json:"data"`
+	}{"needs.item", item})
+	if err != nil {
+		return
+	}
+	s.fanRegistryRow("data: " + string(encoded) + "\n\n")
 }
 
 // emitRegistrySession fans one session's computed row out live: to every open registry stream

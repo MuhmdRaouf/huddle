@@ -129,8 +129,13 @@ func TestAStopGrowsATurnItemWhenNobodyOpenedTheSession(t *testing.T) {
 		t.Fatalf("a finished turn the owner never opened grew no item: %+v", kinds())
 	}
 	// the owner opens the session: the turn item is answered, and a stop after that grows none
-	if err := db.OpenTheSession(ctx, "s-t", "2026-10-16T09:03:00.000Z"); err != nil {
+	answered, err := db.OpenTheSession(ctx, "s-t", "2026-10-16T09:03:00.000Z")
+	if err != nil {
 		t.Fatalf("open: %v", err)
+	}
+	if len(answered) != 1 || answered[0].Kind != KindTurn || answered[0].SessionID != "s-t" ||
+		answered[0].State != StateAnswered || answered[0].ID == 0 {
+		t.Fatalf("the open answered %+v, want the one turn item answered", answered)
 	}
 	if kinds()[KindTurn] != 0 {
 		t.Fatalf("the opened session's turn item stayed: %+v", kinds())
