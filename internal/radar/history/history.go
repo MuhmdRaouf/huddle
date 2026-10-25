@@ -593,15 +593,15 @@ func (h *History) reRoot(id, root string) error {
 // cascade-delete its content row.
 const upsertRequest = "INSERT INTO requests (id, node_id, session_id, agent_id, model, upstream, ts, latency_ms, " +
 	"input, output, cache_read, cache_write, cache_write_1h, speed, geo, service_tier, stop_reason, " +
-	"error, parent_agent_id, provider, route, via, status, harness, cost_usd, what, thinking, prompt_hash, headers, totals) " +
-	"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+	"error, parent_agent_id, fallback, provider, route, via, status, harness, cost_usd, what, thinking, prompt_hash, headers, totals) " +
+	"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
 	"ON CONFLICT(id) DO UPDATE SET node_id = excluded.node_id, session_id = excluded.session_id, " +
 	"agent_id = excluded.agent_id, model = excluded.model, upstream = excluded.upstream, ts = excluded.ts, " +
 	"latency_ms = excluded.latency_ms, input = excluded.input, output = excluded.output, " +
 	"cache_read = excluded.cache_read, cache_write = excluded.cache_write, " +
 	"cache_write_1h = excluded.cache_write_1h, speed = excluded.speed, geo = excluded.geo, " +
 	"service_tier = excluded.service_tier, stop_reason = excluded.stop_reason, error = excluded.error, " +
-	"parent_agent_id = excluded.parent_agent_id, provider = excluded.provider, " +
+	"parent_agent_id = excluded.parent_agent_id, fallback = excluded.fallback, provider = excluded.provider, " +
 	"route = excluded.route, via = excluded.via, status = excluded.status, harness = excluded.harness, " +
 	"cost_usd = excluded.cost_usd, what = excluded.what, " +
 	"thinking = excluded.thinking, prompt_hash = excluded.prompt_hash, headers = excluded.headers, " +
@@ -609,7 +609,7 @@ const upsertRequest = "INSERT INTO requests (id, node_id, session_id, agent_id, 
 
 const requestColumns = "id, node_id, session_id, agent_id, model, upstream, ts, latency_ms, input, output, " +
 	"cache_read, cache_write, cache_write_1h, speed, geo, service_tier, stop_reason, error, " +
-	"parent_agent_id, provider, route, via, status, harness, cost_usd, what, thinking, prompt_hash, headers, totals"
+	"parent_agent_id, fallback, provider, route, via, status, harness, cost_usd, what, thinking, prompt_hash, headers, totals"
 
 // requestRow is one requests row, column names and all.
 type requestRow struct {
@@ -631,6 +631,7 @@ type requestRow struct {
 	stopReason    *string
 	errorText     *string
 	parentAgentID *string
+	fallback      *string
 	provider      *string
 	route         *string
 	via           *string
@@ -664,6 +665,7 @@ func requestRowOf(row map[string]SqlValue) requestRow {
 		stopReason:    rowText(row, "stop_reason"),
 		errorText:     rowText(row, "error"),
 		parentAgentID: rowText(row, "parent_agent_id"),
+		fallback:      rowText(row, "fallback"),
 		provider:      rowText(row, "provider"),
 		route:         rowText(row, "route"),
 		via:           rowText(row, "via"),
@@ -709,6 +711,7 @@ func (h *History) PutRequest(nodeID string, r shared.RequestRecord) error {
 		sqlText(r.StopReason),
 		sqlText(r.Error),
 		sqlText(r.ParentAgentID),
+		sqlText(r.Fallback),
 		r.Provider,
 		sqlText(r.Route),
 		sqlText(r.Via),
@@ -795,6 +798,9 @@ func toRequest(row requestRow) shared.RequestRecord {
 	}
 	if row.parentAgentID != nil {
 		r.ParentAgentID = row.parentAgentID
+	}
+	if row.fallback != nil {
+		r.Fallback = row.fallback
 	}
 	if row.promptHash != nil {
 		r.PromptHash = row.promptHash

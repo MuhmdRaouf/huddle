@@ -12,7 +12,7 @@ import (
 // every open, WAL included, since the file is read while the server writes it.
 
 // SchemaVersion is the history schema's version, recorded in the meta table.
-const SchemaVersion = 9
+const SchemaVersion = 10
 
 // One row per main session, subagent or job; every node of a tree carries its root's id.
 const nodesDDL = `
@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS requests (
   stop_reason TEXT,
   error TEXT,
   parent_agent_id TEXT,
+  fallback TEXT,
   provider TEXT,
   route TEXT,
   via TEXT,
@@ -183,6 +184,8 @@ var versionColumns = []columnBatch{
 	}}}},
 	// status is the HTTP status a request's route line recorded, kept apart from stop_reason.
 	{version: 9, tables: []tableColumns{{"requests", []string{"status TEXT"}}}},
+	// fallback is the model a request asked for when its lane sent it to another model.
+	{version: 10, tables: []tableColumns{{"requests", []string{"fallback TEXT"}}}},
 }
 
 // NewerSchemaError names a database written by a newer radar: an older one refuses it.

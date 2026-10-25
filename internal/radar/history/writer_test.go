@@ -592,6 +592,24 @@ func TestWriterRecords(t *testing.T) {
 		}
 	})
 
+	t.Run("keeps the model a route line fell back from on the record and reads it back", func(t *testing.T) {
+		world := newWriterWorld(t)
+		h := world.attach(t)
+		world.store.UpsertSession(store.SessionUpsert{ID: "s1"})
+		want := writerRequest(func(r *shared.RequestRecord) {
+			r.ID, r.Ts, r.Fallback = "r1", writerT0, sp("glm-5.3")
+		})
+		world.store.AddRequest(want, nil)
+		world.writer.Flush()
+		got, err := h.RequestsOf(RequestsQuery{NodeID: sp("s1/main"), Limit: 10})
+		if err != nil {
+			t.Fatalf("read the requests: %v", err)
+		}
+		if len(got) != 1 || !reflect.DeepEqual(got[0], want) {
+			t.Errorf("the stored request: got %+v, want %+v", got, want)
+		}
+	})
+
 	t.Run("carries the request's captured input and output, merging a longer later chunk", func(t *testing.T) {
 		world := newWriterWorld(t)
 		h := world.attach(t)
