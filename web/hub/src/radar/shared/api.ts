@@ -275,3 +275,22 @@ export type CostFamily = "claude" | "glm" | "other";
 /** Per-family estimated cost; a family nothing priced stays null. The non-null parts of a split over
  *  some requests always add up to `costOfAll` over the same requests. */
 export type CostSplit = Record<CostFamily, number | null>;
+
+/** One side of the self-check: a UTC day's model calls and their four token counters. */
+export type SelfCheckCounts = {
+  requests: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+};
+
+/** GET /api/selfcheck: today's (UTC) totals as Radar holds them and as the transcripts re-sum them.
+ *  `driftPct` is the worst counter's gap as a percent of the transcripts' figure; null when the
+ *  transcripts hold no call that day. */
+export type SelfCheck = {
+  day: string;
+  radar: SelfCheckCounts;
+  transcripts: SelfCheckCounts;
+  driftPct: number | null;
+};

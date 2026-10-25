@@ -285,6 +285,13 @@ counts codex rollouts and opencode sessions, tagged by agent.
 Radar's days are UTC dates, the way Anthropic's and the providers' usage pages count them, so a
 day's totals in Radar and on those pages turn over at the same moment.
 
+Radar checks itself once a minute while the Overview is open. It sums today's Claude Code
+transcripts again, counting each message id once (one API call writes one line per content block),
+and compares requests, input, output, cache-read and cache-write tokens with its own totals for
+the same UTC day. The Overview's badge is green at 1% drift or less, yellow above, and grey when
+no transcript has a call today; hover it for both sets of numbers. The same answer is
+`GET /api/radar/api/selfcheck` on the hub (`/api/selfcheck` on radar's own port).
+
 Budgets stop and lift from Settings — on a hub, from a paired phone too. A stopped budget lands
 in `budget-status.json` in radar's state dir (`$RADAR_HOME`, else `~/.agents/radar`), which
 huddle-router reads before serving a provider model: while its scope (or `total`) is

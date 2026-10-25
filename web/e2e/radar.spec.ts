@@ -158,3 +158,15 @@ test("the requests view opens with its two charts and the statuses the spool car
   await expect(table.locator(".badge[title='HTTP 200']").first()).toBeVisible();
   await expect(table.locator(".badge-error")).toHaveCount(0);
 });
+
+test("the self-check badge is green when Radar matches the transcripts", async ({ page }) => {
+  await signIn(page);
+  await openTab(page, "Radar");
+
+  // today's three seeded calls, as Radar's history holds them and as the transcript wrote them
+  const badge = page.locator("[data-selfcheck]");
+  await expect(badge).toHaveAttribute("data-tone", "ok");
+  await expect(badge).toContainText("Matches transcripts");
+  const seeded = `3 requests, ${n(TOTALS.input)} in, ${n(TOTALS.output)} out, ${n(TOTALS.cacheRead)} cache read, ${n(TOTALS.cacheWrite)} cache write`;
+  await expect(badge).toHaveAttribute("title", new RegExp(`Radar: ${seeded}\\.\\s+Transcripts: ${seeded}\\.`));
+});

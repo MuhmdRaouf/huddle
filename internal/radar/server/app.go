@@ -259,6 +259,7 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		Insights:  insights,
 		Quotas:    CreateQuotas(options.Env),
 		History:   hist,
+		SelfCheck: NewSelfCheck(hist, ingest.TranscriptRoots(appCtx, options.Env), now),
 		Watcher:   watcher,
 	})
 	listener, bound, movedFrom, err := bindSticky(ctx, options)

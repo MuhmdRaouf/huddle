@@ -84,6 +84,8 @@ type HttpOptions struct {
 	Quotas *Quotas
 	// History is the opened SQLite history; nil when it failed to open.
 	History *history.History
+	// SelfCheck answers /api/selfcheck; nil answers 503 there.
+	SelfCheck *SelfCheck
 	// Watcher names the ingest backlog word; nil leaves the ingest messages out.
 	Watcher Watcher
 	// SnapshotSent runs once the snapshot frame is written and before the deltas start; nil
@@ -320,15 +322,7 @@ func (h *HttpServer) route(w http.ResponseWriter, r *http.Request, path string) 
 
 // apiRoute answers one /api read through the pure router.
 func (h *HttpServer) apiRoute(w http.ResponseWriter, r *http.Request, path string) {
-	answer, err := HandleApi(
-		h.options.Store,
-		AppInfo{Version: h.options.Version, StartedAt: h.options.StartedAt, Port: int(h.port())},
-		ApiRequest{Path: path, Query: r.URL.Query()},
-		h.options.Insights,
-		h.options.Quotas,
-		h.options.History,
-		time.Now,
-	)
+	answer, err := h.answerApi(r, path)
 	if err != nil {
 		sendJSON(w, 500, errorBody{Error: "could not answer: " + err.Error()})
 		return
@@ -341,6 +335,26 @@ func (h *HttpServer) apiRoute(w http.ResponseWriter, r *http.Request, path strin
 		return
 	}
 	sendJSON(w, answer.Status, answer.Body)
+}
+
+// answerApi is one /api read's answer: the self-check from its own cache, the rest from the
+// pure router.
+func (h *HttpServer) answerApi(r *http.Request, path string) (ApiResponse, error) {
+	if path == SelfCheckPath {
+		if h.options.SelfCheck == nil {
+			return errorOf(503, "self-check unavailable"), nil
+		}
+		return h.options.SelfCheck.Answer(r.Context())
+	}
+	return HandleApi(
+		h.options.Store,
+		AppInfo{Version: h.options.Version, StartedAt: h.options.StartedAt, Port: int(h.port())},
+		ApiRequest{Path: path, Query: r.URL.Query()},
+		h.options.Insights,
+		h.options.Quotas,
+		h.options.History,
+		time.Now,
+	)
 }
 
 // metricsRoute answers the Prometheus exposition.

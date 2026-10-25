@@ -224,6 +224,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		Insights:      insights,
 		Quotas:        server.CreateQuotas(env),
 		History:       hist,
+		SelfCheck:     server.NewSelfCheck(hist, ingest.TranscriptRoots(appCtx, env), now),
 		Watcher:       watcher,
 		HostAllowed:   options.HostAllowed,
 		OriginAllowed: options.OriginAllowed,

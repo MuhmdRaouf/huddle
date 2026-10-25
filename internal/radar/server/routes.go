@@ -92,6 +92,7 @@ var Routes = []string{
 	"/api/history/stats",
 	"/api/history/clear",
 	"/api/quota",
+	SelfCheckPath,
 }
 
 // InsightsView is the derived views the API routes read: costs, budgets, alerts, settings,
