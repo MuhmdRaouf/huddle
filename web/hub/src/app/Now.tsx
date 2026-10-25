@@ -40,6 +40,7 @@ import {
 import { readPref, writePref } from "../storage.ts";
 import { ConnectCard } from "./ConnectCard.tsx";
 import { errText, useHuddle } from "./context.tsx";
+import { InsightsCard } from "./Insights.tsx";
 import { LinkSheet } from "./LinkSheet.tsx";
 import type { Layout } from "./layout.ts";
 import {
@@ -687,14 +688,15 @@ export function NowPane({
 
   /** The sections in order, each heading over its rows, with the Radar card after the asks. */
   const sections = (): JSX.Element => {
-    // the Radar card rides after the needs-you cards, before the first other section; the
-    // needs-you filter holds the asks alone
+    // the Radar card and the Insights card ride after the needs-you cards, before the first
+    // other section; the needs-you filter holds the asks alone
     const firstOther = onlyNeeds
       ? null
       : (SECTIONS.find(([key]) => key !== "needsYou" && groups[key].length > 0)?.[0] ?? null);
     const radar = (
-      <div class="px-3 pt-3">
+      <div class="flex flex-col gap-3 px-3 pt-3">
         <RadarDayCard />
+        <InsightsCard />
       </div>
     );
     return (
