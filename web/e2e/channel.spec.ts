@@ -4,7 +4,8 @@
 // keyboard: the keyboard is played by a visual viewport that shrinks the way iOS's does, while
 // the layout viewport keeps its height. Picking one member, the composer says how the message
 // travels: a session whose claude runs without the development-channels flag gets it on its next
-// prompt, whatever its bridge acks. The members sheet lists each session with the files it
+// prompt, whatever its bridge acks. The To picker opens on the channel's main session, and
+// Everyone stays its first option. The members sheet lists each session with the files it
 // claimed and the owner's remove action. The channel's Settings view lists the sessions linked into
 // it, each with its level and its unlink. The specs that post or link run on channels of their own,
 // removed after each test, so the seeded channel keeps exactly its ping and pong and stays the only
@@ -266,6 +267,18 @@ test("the composer says a message to a session without the channels flag waits f
   await expect(composer.locator("[data-route-line]")).toHaveText("Delivers on the next prompt");
   await expectNoSideScroll(page);
   await expectAccessible(page, SHELL);
+});
+
+test("the To picker opens on the seeded channel's main session and still offers Everyone", async ({
+  page,
+}) => {
+  await openChannel(page, "e2e");
+  const to = page.locator("[data-chat-composer]").getByRole("combobox", { name: "To" });
+  // the seed joins alpha before beta: the roster's first top-level session is the main one
+  await expect(to).toHaveValue("alpha");
+  const first = to.locator("option").first();
+  await expect(first).toHaveAttribute("value", "");
+  await expect(first).toHaveText("Everyone");
 });
 
 test("the members sheet lists the sessions with their claims and removes one", async ({

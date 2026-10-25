@@ -1,8 +1,9 @@
-// ChatComposer.tsx — the chat's composer: who it goes to (everyone or one member), the words, and
-// Send. It rests at the bottom of the chat; while the phone's keyboard is up it is pinned to the
-// keyboard's top edge, so the box being typed in never hides under it. Enter sends, Shift+Enter
-// breaks the line; a failed send keeps the words. The route line says how the message travels:
-// now only when every session it goes to shows channel pushes, else on the next prompt.
+// ChatComposer.tsx — the chat's composer: who it goes to (everyone or one member, opening on the
+// member the chat hands it), the words, and Send. It rests at the bottom of the chat; while the
+// phone's keyboard is up it is pinned to the keyboard's top edge, so the box being typed in never
+// hides under it. Enter sends, Shift+Enter breaks the line; a failed send keeps the words. The
+// route line says how the message travels: now only when every session it goes to shows channel
+// pushes, else on the next prompt.
 
 import { Button } from "@huddle/ui/button.tsx";
 import type { JSX } from "preact";
@@ -15,13 +16,18 @@ import { useKeyboardInset } from "./keyboard.ts";
  *  routeOf names the route a message to one member takes (undefined when no session says). */
 export type ChatComposerProps = {
   members: readonly string[];
+  /** The member the To picker opens on; "" is everyone. */
+  initialTo: string;
   onSend: (to: string, msg: string) => Promise<boolean>;
   routeOf: (member: string) => string | undefined;
 };
 
 /** The composer. */
-export function ChatComposer({ members, onSend, routeOf }: ChatComposerProps): JSX.Element {
-  const [to, setTo] = useState("");
+export function ChatComposer({ members, initialTo, onSend, routeOf }: ChatComposerProps): JSX.Element {
+  // the picker follows the chat's opening member until the owner picks: the roster can land
+  // after the mount, and once the owner picks, a roster update never overrides that choice
+  const [picked, setPicked] = useState<string | null>(null);
+  const to = picked ?? initialTo;
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const inset = useKeyboardInset();
@@ -56,7 +62,7 @@ export function ChatComposer({ members, onSend, routeOf }: ChatComposerProps): J
           class="ui-input min-w-0 flex-1 sm:max-w-60"
           aria-label="To"
           value={to}
-          onChange={(e) => setTo(e.currentTarget.value)}
+          onChange={(e) => setPicked(e.currentTarget.value)}
         >
           <option value="">Everyone</option>
           {members.map((m) => (

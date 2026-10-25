@@ -6,10 +6,10 @@
 import { fireEvent, screen, waitFor } from "@testing-library/preact";
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { HuddleContextValue } from "../../src/app/context.tsx";
-import { Chat } from "../../src/chat/Chat.tsx";
+import { Chat, mainMemberOf } from "../../src/chat/Chat.tsx";
 import type { FeedEvent, RosterSession } from "../../src/store.ts";
 import type { RegistrySession } from "../../src/registry.ts";
-import { legacyClasses, makeCtx, makeRegistry, makeState, NOW, renderIn } from "../helpers";
+import { legacyClasses, makeCtx, makeRegistry, makeState, NOW, renderIn, sess } from "../helpers";
 
 const roster = [
   { name: "gamma", state: "working" },
@@ -53,17 +53,19 @@ describe("the chat composer", () => {
       <Chat events={[]} now={NOW} reservations={claims} />,
       makeCtx(makeState({ sessions: { sessions: roster } }), { registry: makeRegistry({ sessions: rows }) }),
     );
-    const to = screen.getByRole("combobox", { name: "To" });
+    const to = screen.getByRole("combobox", { name: "To" }) as HTMLSelectElement;
     const line = (): string => document.querySelector("[data-route-line]")?.textContent ?? "";
-    expect(line()).toBe("Delivers on the next prompt"); // everyone: delta waits
-    fireEvent.change(to, { target: { value: "gamma" } });
-    expect(line()).toBe("Delivers now");
+    expect(to.value).toBe("gamma"); // opens on the roster's main session
+    expect(line()).toBe("Delivers now"); // gamma's session shows pushes
     fireEvent.change(to, { target: { value: "delta" } });
     expect(line()).toBe("Delivers on the next prompt");
+    fireEvent.change(to, { target: { value: "" } });
+    expect(line()).toBe("Delivers on the next prompt"); // everyone: delta waits
   });
 
   it("sends the words to everyone and clears the box", async () => {
     const act = chat();
+    fireEvent.change(screen.getByRole("combobox", { name: "To" }), { target: { value: "" } });
     const box = screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
     fireEvent.input(box, { target: { value: "  stand by  " } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -83,6 +85,7 @@ describe("the chat composer", () => {
 
   it("keeps the words when the send fails, and sends nothing blank", async () => {
     const act = chat(vi.fn(async () => null));
+    fireEvent.change(screen.getByRole("combobox", { name: "To" }), { target: { value: "" } });
     const box = screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(act).not.toHaveBeenCalled();
@@ -90,6 +93,32 @@ describe("the chat composer", () => {
     fireEvent.keyDown(box, { key: "Enter" });
     await waitFor(() => expect(act).toHaveBeenCalledWith("send", { msg: "hello" }));
     expect(box.value).toBe("hello");
+  });
+});
+
+describe("the To picker's opening member", () => {
+  it("answers the roster's first top-level session, everyone when it holds none", () => {
+    const lead = sess({ name: "lead" });
+    const dotfiles = sess({ name: "dotfiles" });
+    expect(mainMemberOf([sess({ name: "lead.builder", parent: "lead" }), lead, dotfiles])).toBe("lead");
+    expect(mainMemberOf([dotfiles, lead])).toBe("dotfiles"); // the roster's order wins
+    expect(mainMemberOf([sess({ name: "lead.builder", parent: "lead" })])).toBe("");
+    expect(mainMemberOf([])).toBe("");
+  });
+
+  it("opens the composer on the channel's main session and keeps Everyone first", () => {
+    renderIn(
+      <Chat events={[]} now={NOW} reservations={claims} />,
+      makeCtx(
+        makeState({
+          sessions: { sessions: [sess({ name: "lead.builder", parent: "lead" }), sess({ name: "lead" })] },
+        }),
+      ),
+    );
+    const to = screen.getByRole("combobox", { name: "To" }) as HTMLSelectElement;
+    expect(to.value).toBe("lead");
+    expect(to.options[0]?.value).toBe("");
+    expect(to.options[0]?.textContent).toBe("Everyone");
   });
 });
 

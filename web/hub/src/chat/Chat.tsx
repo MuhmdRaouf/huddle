@@ -2,7 +2,8 @@
 // right, each session's on the left) with who told whom and the age, the composer under them,
 // and the Members button that opens the members sheet. A message to nobody in particular reads
 // as to everyone, and the owner reads as You. The composer reads each member's route from the
-// registry row of its newest session in this channel.
+// registry row of its newest session in this channel, and its To picker opens on the channel's
+// main session.
 
 import { Button } from "@huddle/ui/button.tsx";
 import { Card } from "@huddle/ui/card.tsx";
@@ -13,7 +14,7 @@ import { Icon } from "../icons.tsx";
 import { Time } from "../kit.tsx";
 import type { ReservationItem } from "../pages/Overview.tsx";
 import { who } from "../status.ts";
-import type { FeedEvent } from "../store.ts";
+import type { FeedEvent, RosterSession } from "../store.ts";
 import { familyOf } from "../timeline.tsx";
 import { ChatComposer } from "./ChatComposer.tsx";
 import { MembersSheet } from "./MembersSheet.tsx";
@@ -45,6 +46,12 @@ function Bubble({ e, now }: { e: FeedEvent; now: number }): JSX.Element {
       </p>
     </li>
   );
+}
+
+/** The member the To picker opens on: the roster's first top-level session (its parent is unset,
+ *  so never a subagent), everyone when the roster holds none. */
+export function mainMemberOf(members: readonly RosterSession[]): string {
+  return members.find((m) => m.parent == null || m.parent === "")?.name ?? "";
 }
 
 /** The chat. */
@@ -96,7 +103,12 @@ export function Chat({ events, now, reservations }: ChatProps): JSX.Element {
               No messages yet. Say something to the channel below.
             </p>
           )}
-          <ChatComposer members={members.map((m) => m.name)} onSend={send} routeOf={routeOf} />
+          <ChatComposer
+            members={members.map((m) => m.name)}
+            initialTo={mainMemberOf(members)}
+            onSend={send}
+            routeOf={routeOf}
+          />
         </Card>
       </div>
       <MembersSheet
