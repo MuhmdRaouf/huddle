@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"github.com/MuhmdRaouf/huddle/internal/radar/alerts"
@@ -296,10 +297,10 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		serveDone: make(chan struct{}),
 		stopped:   make(chan struct{}),
 	}
-	go func() {
+	safego.Go(options.Log, func() {
 		defer close(a.serveDone)
 		_ = httpServer.Server.Serve(listener)
-	}()
+	})
 	WriteServerInfo(ctx, options.Env, ServerInfo{
 		Pid:       int64(os.Getpid()),
 		Port:      bound,
@@ -330,14 +331,14 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		},
 	})
 	signal.Notify(a.signals, syscall.SIGTERM)
-	go func() {
+	safego.Go(options.Log, func() {
 		select {
 		case <-a.signals:
 			a.Stop()
 			os.Exit(0)
 		case <-a.sigDone:
 		}
-	}()
+	})
 	return a, nil
 }
 
@@ -419,10 +420,10 @@ func (a *App) shutdown() {
 	}
 	a.cancel()
 	closed := make(chan struct{})
-	go func() {
+	safego.Go(nil, func() {
 		defer close(closed)
 		_ = a.Server.Server.Close() // no new connections from here on
-	}()
+	})
 	a.Server.WhenIdle(context.Background(), DrainMs)
 	a.Server.CloseStreams() // streams first; the idle keep-alives Close already took
 	<-closed

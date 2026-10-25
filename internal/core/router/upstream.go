@@ -31,6 +31,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/netproxy"
 	"github.com/andybalholm/brotli"
 )
@@ -404,13 +405,13 @@ func tunnel(proxy *url.URL) func(ctx context.Context, network, addr string) (net
 		}
 		watch := make(chan struct{})
 		defer close(watch)
-		go func() {
+		safego.Go(nil, func() {
 			select {
 			case <-signal.Done():
 				conn.Close()
 			case <-watch:
 			}
-		}()
+		})
 		authority := addr
 		if host, port, splitErr := net.SplitHostPort(addr); splitErr == nil && strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
 			authority = "[" + host + "]:" + port

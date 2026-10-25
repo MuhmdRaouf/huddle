@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"github.com/MuhmdRaouf/huddle/internal/radar/history"
@@ -206,7 +207,7 @@ func CreateHttpServer(options HttpOptions) *HttpServer {
 		closed:   make(chan struct{}),
 	}
 	if options.Watcher != nil {
-		go h.watchIngest()
+		safego.Go(nil, h.watchIngest)
 	}
 	h.Server.Handler = http.HandlerFunc(h.handle)
 	return h

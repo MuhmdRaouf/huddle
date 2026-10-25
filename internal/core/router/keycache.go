@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 )
 
@@ -58,7 +59,7 @@ func (c *keyCache) get(ctx context.Context) keyAnswer {
 	}
 	if c.pending == nil {
 		c.pending = &keyRun{done: make(chan struct{})}
-		go c.run(c.pending)
+		safego.Go(nil, func() { c.run(c.pending) })
 	}
 	pending := c.pending
 	c.mu.Unlock()

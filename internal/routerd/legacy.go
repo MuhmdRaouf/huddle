@@ -21,6 +21,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/core/providers"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
@@ -252,7 +253,7 @@ func adoptLegacyPorts(ctx context.Context, env domain.EnvLookup, server *http.Se
 			return false
 		}
 		held[port] = listener
-		go server.Serve(listener)
+		safego.Go(log, func() { server.Serve(listener) })
 		log(fmt.Sprintf("huddle-router: adopted the 0.0.1 %s port %d", name, port))
 		return true
 	}
@@ -298,7 +299,7 @@ func adoptLegacyPorts(ctx context.Context, env domain.EnvLookup, server *http.Se
 			}
 		}
 	}
-	go func() {
+	safego.Go(log, func() {
 		defer close(finished)
 		tick()
 		ticker := time.NewTicker(adoptInterval)
@@ -313,7 +314,7 @@ func adoptLegacyPorts(ctx context.Context, env domain.EnvLookup, server *http.Se
 				tick()
 			}
 		}
-	}()
+	})
 	return func() {
 		once.Do(func() {
 			close(halt)

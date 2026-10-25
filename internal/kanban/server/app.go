@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/kanban/board"
 	"github.com/MuhmdRaouf/huddle/internal/kanban/watch"
 	"github.com/MuhmdRaouf/huddle/internal/kanban/web"
@@ -164,6 +165,7 @@ func Serve(ctx context.Context, opts Options) (string, error) {
 		return "", errors.New("no state dir: set KANBAN_HOME or a home directory")
 	}
 	a := NewApp(opts)
+	warn := func(line string) { AppendLog(a.home, a.key, line) }
 
 	// a server that already answers for this board is the server; this one
 	// bows out without touching anything of its predecessor's
@@ -183,10 +185,10 @@ func Serve(ctx context.Context, opts Options) (string, error) {
 
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
-	go a.watcher.Run(runCtx, a.publish)
+	safego.Go(warn, func() { a.watcher.Run(runCtx, a.publish) })
 
 	serveDone := make(chan error, 1)
-	go func() { serveDone <- a.httpServer.Serve(listener) }()
+	safego.Go(warn, func() { serveDone <- a.httpServer.Serve(listener) })
 
 	// the state names a listening server only: the file appears once the port
 	// answers, so a start that reads it never races a bind that failed
@@ -210,8 +212,8 @@ func Serve(ctx context.Context, opts Options) (string, error) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signals)
-	go a.watchBoardGone(runCtx)
-	go a.watchDuplicate(runCtx)
+	safego.Go(warn, func() { a.watchBoardGone(runCtx) })
+	safego.Go(warn, func() { a.watchDuplicate(runCtx) })
 
 	var reason string
 	select {
@@ -407,12 +409,13 @@ func (a *App) route(w http.ResponseWriter, r *http.Request, mounted bool) {
 func (a *App) Run(ctx context.Context) {
 	_, _ = a.watcher.Scan(ctx)
 	watchCtx, cancelWatch := context.WithCancel(ctx)
-	go a.watcher.Run(watchCtx, a.publish)
-	go func() {
+	warn := func(line string) { AppendLog(a.home, a.key, line) }
+	safego.Go(warn, func() { a.watcher.Run(watchCtx, a.publish) })
+	safego.Go(warn, func() {
 		<-ctx.Done()
 		cancelWatch()
 		a.hub.closeAll()
-	}()
+	})
 }
 
 // oneMethod answers one route for its one method, 405 for the others.

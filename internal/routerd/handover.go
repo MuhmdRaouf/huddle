@@ -24,6 +24,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/singleton"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
@@ -96,27 +97,22 @@ func serveHandover(home string, port int, listener net.Listener, handed chan<- i
 		_ = os.Remove(path)
 	}
 	var once sync.Once
-	go func() {
-		defer func() {
-			if reason := recover(); reason != nil {
-				log(fmt.Sprintf("huddle-router: recovered: %v", reason))
-			}
-		}()
+	safego.Go(log, func() {
 		for {
 			conn, err := unix.Accept()
 			if err != nil {
 				return
 			}
-			go func(conn net.Conn) {
+			safego.Go(log, func() {
 				if taker, ok := answerHandover(conn, tcp, port, log); ok {
 					once.Do(func() {
 						retire()
 						handed <- taker
 					})
 				}
-			}(conn)
+			})
 		}
-	}()
+	})
 	return func() {
 		_ = unix.Close()
 		_ = os.Remove(path)

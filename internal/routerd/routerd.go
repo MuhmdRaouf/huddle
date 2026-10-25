@@ -16,6 +16,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/singleton"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/spool"
 	"github.com/MuhmdRaouf/huddle/internal/core/providers"
@@ -93,7 +94,7 @@ func Run(ctx context.Context, o Options) error {
 			// The previous daemon holds the router lock while it drains, up to ten minutes:
 			// this one picks the lock up in the background when it lets go.
 			done := make(chan struct{})
-			go holdRouterLock(filepath.Join(runDir, "router.lock"), done, log)
+			safego.Go(log, func() { holdRouterLock(filepath.Join(runDir, "router.lock"), done, log) })
 			port := listener.Addr().(*net.TCPAddr).Port
 			return serve(ctx, o, env, home, log, listener, port, done)
 		}
@@ -200,7 +201,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 		log("huddle-router: " + err.Error())
 	}
 	served := make(chan error, 1)
-	go func() {
+	safego.Go(log, func() {
 		defer func() {
 			if reason := recover(); reason != nil {
 				log(fmt.Sprintf("huddle-router: recovered: %v", reason))
@@ -208,7 +209,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 			}
 		}()
 		served <- server.Serve(listener)
-	}()
+	})
 	// The 0.0.1 ports are this server's too: one generation serves them, so a session started
 	// before a migration keeps working and the old generation has nothing left to respawn.
 	// They ride no handover — the next daemon adopts them on its own first tick, so during an
@@ -217,7 +218,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	defer stopAdopting()
 	// The 0.0.1 setups move once per start: a machine the per-provider routers served joins
 	// huddle-router on its first serve, old routers retiring as their sessions' lanes come up.
-	go migrateOnce(ctx, env, log)
+	safego.Go(log, func() { migrateOnce(ctx, env, log) })
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
 	ceiling := rssCeilingOf(env, o)

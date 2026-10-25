@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"github.com/MuhmdRaouf/huddle/internal/radar/alerts"
@@ -179,7 +180,7 @@ func CreateInsights(ctx context.Context, options InsightsOptions) *Insights {
 	i.Tick(ctx)
 	if options.TickMs > 0 {
 		ticker := time.NewTicker(time.Duration(options.TickMs) * time.Millisecond)
-		go func() {
+		safego.Go(nil, func() {
 			defer ticker.Stop()
 			for {
 				select {
@@ -191,7 +192,7 @@ func CreateInsights(ctx context.Context, options InsightsOptions) *Insights {
 					i.Tick(i.ctx)
 				}
 			}
-		}()
+		})
 	}
 	return i
 }

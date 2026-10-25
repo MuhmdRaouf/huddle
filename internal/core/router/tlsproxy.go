@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/netproxy"
 	"github.com/MuhmdRaouf/huddle/internal/pki"
@@ -175,10 +176,10 @@ func (p *TLSProxy) blindTunnel(ctx context.Context, client net.Conn, addr string
 		client.Close()
 		return
 	}
-	go func() {
+	safego.Go(p.Note, func() {
 		_, _ = io.Copy(target, client)
 		target.Close()
-	}()
+	})
 	_, _ = io.Copy(client, target)
 	client.Close()
 }

@@ -30,6 +30,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
@@ -733,12 +734,7 @@ func (w *routerWorker) capture(prompt *promptRef, json *jsfmt.Value) {
 	}
 	hash := captured.hash()
 	prompt.set(hash, captured.billing)
-	go func() {
-		defer func() {
-			if reason := recover(); reason != nil {
-				w.log(fmt.Sprintf("route capture: %v", reason))
-			}
-		}()
+	safego.Go(w.log, func() {
 		if !w.captured.first(hash) {
 			return
 		}
@@ -754,7 +750,7 @@ func (w *routerWorker) capture(prompt *promptRef, json *jsfmt.Value) {
 			PromptHash: hash,
 			Gz:         base64.StdEncoding.EncodeToString(compressed.Bytes()),
 		})
-	}()
+	})
 }
 
 // ── usage tracking ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -844,7 +840,7 @@ func encodedStreamTracker(encoding string, plain *UsageTracker) *UsageTracker {
 	}
 	queue := newChunkQueue(usageLimitBytes)
 	done := make(chan struct{})
-	go func() {
+	safego.Go(nil, func() {
 		defer close(done)
 		defer queue.stop()
 		reader, err := open(queue)
@@ -862,7 +858,7 @@ func encodedStreamTracker(encoding string, plain *UsageTracker) *UsageTracker {
 				return
 			}
 		}
-	}()
+	})
 	var once sync.Once
 	var usage domain.RouteUsage
 	read := func() {
@@ -1289,7 +1285,7 @@ func keyWithin(ctx context.Context, w *routerWorker) (string, keyOutcome) {
 		outcome keyOutcome
 	}
 	found := make(chan lookup, 1)
-	go func() {
+	safego.Go(w.log, func() {
 		answer := w.keys.get(ctx)
 		switch {
 		case answer.key.Value != "":
@@ -1299,7 +1295,7 @@ func keyWithin(ctx context.Context, w *routerWorker) (string, keyOutcome) {
 		default:
 			found <- lookup{outcome: keyNone}
 		}
-	}()
+	})
 	select {
 	case result := <-found:
 		return result.key, result.outcome
