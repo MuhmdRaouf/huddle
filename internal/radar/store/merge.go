@@ -105,17 +105,22 @@ func Combine(transcript, route shared.RequestRecord, id string) shared.RequestRe
 	if route.Headers != nil {
 		merged.Headers = route.Headers
 	}
+	// only the route line knows the lane sent the call to another model
+	if route.Fallback != nil {
+		merged.Fallback = route.Fallback
+	}
 	// the transcript's own tail keeps its places; what the route line added lands after it
 	merged.EarlyKeys = nil
-	merged.TailKeys = tailKeysOf(transcript.TailKeys,
-		route.Status != nil, route.Route != nil, route.Via != nil, route.PromptHash != nil, route.Headers != nil)
+	merged.TailKeys = tailKeysOf(transcript.TailKeys, route.Status != nil, route.Route != nil, route.Via != nil,
+		route.Fallback != nil, route.PromptHash != nil, route.Headers != nil)
 	return FillUpstream(merged)
 }
 
 // tailKeysOf lays the merged record's tail: the transcript's keys as they stand, then the
-// route line's status, route, via, prompt hash and headers, each only when it is new to the tail.
-func tailKeysOf(transcript []string, status, route, via, promptHash, headers bool) []string {
-	tail := make([]string, len(transcript), len(transcript)+5)
+// route line's status, route, via, fallback, prompt hash and headers, each only when it is new
+// to the tail.
+func tailKeysOf(transcript []string, status, route, via, fallback, promptHash, headers bool) []string {
+	tail := make([]string, len(transcript), len(transcript)+6)
 	copy(tail, transcript)
 	add := func(key string, present bool) {
 		if !present || slices.Contains(tail, key) {
@@ -126,6 +131,7 @@ func tailKeysOf(transcript []string, status, route, via, promptHash, headers boo
 	add("status", status)
 	add("route", route)
 	add("via", via)
+	add("fallback", fallback)
 	add("promptHash", promptHash)
 	add("headers", headers)
 	return tail

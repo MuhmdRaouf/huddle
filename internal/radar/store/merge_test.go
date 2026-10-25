@@ -2,6 +2,7 @@ package store
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -221,6 +222,17 @@ func TestCombine(t *testing.T) {
 		}
 		if value, ok := merged.Headers.Get("x-foo"); !ok || value != "bar" {
 			t.Errorf("headers: got %v, want x-foo=bar", merged.Headers)
+		}
+	})
+
+	t.Run("keeps the model the route line fell back from, after the transcript's own tail", func(t *testing.T) {
+		route := routeLine(func(r *shared.RequestRecord) { r.Fallback = str("glm-5.3") })
+		merged := Combine(transcriptCall(nil), route, "req_011")
+		if merged.Fallback == nil || *merged.Fallback != "glm-5.3" {
+			t.Errorf("fallback: got %v, want glm-5.3", merged.Fallback)
+		}
+		if !slices.Contains(merged.TailKeys, "fallback") {
+			t.Errorf("tail keys: got %v, want fallback among them", merged.TailKeys)
 		}
 	})
 
