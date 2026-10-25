@@ -236,6 +236,7 @@ func (i *Insights) allAlertsLocked() []shared.Alert {
 		Budgets:      spend,
 		RouterEvents: i.store.RouterEvents(),
 		ClaudeWindow: window,
+		PluginSkew:   alerts.ReadPluginSkew(i.ctx, i.env),
 	}, i.thresholds)
 	i.alertCache = &alertCacheState{
 		at: at, version: version, ledger: i.ledger.Version(), quota: quotaAt, alerts: detected,

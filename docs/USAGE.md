@@ -662,6 +662,8 @@ A router whose resident size passes its memory ceiling (1 GiB by default,
 4. Check: `huddle status` names the hub's pid and the router's, then the deploy line
    `plugin cache 052c8e49c9ff · binary 38e9e40e321e (cache behind)`. `(same)` means the cache and the binary
    come from one commit; `(cache behind)` means step 1 is still to run. No plugin install prints no such line.
+   Radar's Alerts view shows the same skew: each session start that finds the two commits apart keeps one
+   `plugin_behind` alert naming both and the update line, and the first start that finds them equal clears it.
 
 ## Troubleshooting
 

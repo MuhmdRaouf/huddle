@@ -22,6 +22,9 @@
 //   - quota_nearly_used: Claude's 5-hour plan window, off the newest statusline snapshot, at
 //     80% or more. One alert per window: its id is the window's reset, so the dismissal and
 //     the notification it gets hold until the next window.
+//   - plugin_behind: the newest session start found Claude Code's plugin cache on another huddle
+//     commit than the launcher's binary. Its id is the two commits; the next start that finds
+//     them equal clears it. Report only: nothing writes into the plugin cache.
 //
 // Ids are stable for one occurrence, so a dismissal holds until the same thing happens again.
 package alerts
@@ -51,7 +54,7 @@ type AlertKind = shared.AlertKind
 // AlertKinds is every kind the engine detects.
 var AlertKinds = []shared.AlertKind{
 	shared.AlertStuck, shared.AlertLoop, shared.AlertRetryStorm, shared.AlertBudget, shared.AlertContext,
-	shared.AlertUpstream, shared.AlertQuotaNearlyUsed,
+	shared.AlertUpstream, shared.AlertQuotaNearlyUsed, shared.AlertPluginBehind,
 }
 
 // Thresholds are the points each detector fires at.
@@ -99,6 +102,9 @@ type AlertInput struct {
 	// ClaudeWindow is Claude's 5-hour plan window off the newest statusline snapshot; nil
 	// when no session has posted one.
 	ClaudeWindow *ClaudeWindow
+	// PluginSkew is the plugin cache and binary commits the newest session start found apart;
+	// nil when they matched or either was unknown.
+	PluginSkew *PluginSkew
 }
 
 // ClaudeWindow is Claude's 5-hour plan window as Claude Code reports it: the used percentage
@@ -654,6 +660,7 @@ func DetectAlerts(in AlertInput, t Thresholds) []shared.Alert {
 	alerts = append(alerts, budgetAlerts(in, t)...)
 	alerts = append(alerts, upstreamAlerts(in, t)...)
 	alerts = append(alerts, quotaAlerts(in)...)
+	alerts = append(alerts, pluginBehindAlerts(in)...)
 	slices.SortStableFunc(alerts, func(a, b shared.Alert) int {
 		if bySeverity := cmp.Compare(severityOrder[a.Severity], severityOrder[b.Severity]); bySeverity != 0 {
 			return bySeverity

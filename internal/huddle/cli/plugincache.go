@@ -1,7 +1,8 @@
 // The deploy check `huddle status` prints: the commit Claude Code's plugin cache holds for huddle
 // beside the commit the launcher's current binary was built from. Claude Code runs hooks, commands
 // and skills from its cache until `claude plugin update`, while the launcher builds the
-// marketplace checkout's commit, so the two drift apart after every push.
+// marketplace checkout's commit, so the two drift apart after every push. Each session start
+// hands the same two commits to radar, behind its plugin_behind alert.
 package cli
 
 import (
@@ -10,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+
+	"github.com/MuhmdRaouf/huddle/internal/radar/alerts"
 )
 
 // huddlePluginKey names huddle's entry in Claude Code's installed_plugins.json.
@@ -47,6 +50,12 @@ func PluginCacheLine(ctx context.Context, w *World) string {
 	default:
 		return "plugin cache " + cache + " · binary " + binary + " (cache behind)"
 	}
+}
+
+// RecordPluginSkew hands radar the two commits this session start finds, so its plugin_behind
+// alert follows them. It only reads the plugin cache.
+func RecordPluginSkew(ctx context.Context, w *World) error {
+	return alerts.RecordPluginCommits(ctx, worldEnv(w), cacheCommit(w), binaryCommit(w), w.now().UnixMilli())
 }
 
 // cacheCommit reads the 12-character commit of huddle's user-scope install (or its first one)

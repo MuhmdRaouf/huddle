@@ -13,7 +13,9 @@
 // (the cli package's credentials), so the next session in a project that joined is in too. A
 // session that holds no credential gets one line with the way back in, and stays out. Every
 // start also puts the plugin's bin/ on the PATH of the session's Bash commands
-// (CLAUDE_ENV_FILE), so `huddle …` works there and in subagents. The whole hook runs on a 3 s
+// (CLAUDE_ENV_FILE), so `huddle …` works there and in subagents, and hands radar the huddle commit
+// Claude Code's plugin cache holds beside the binary's (radar's plugin_behind alert; two local
+// file reads, and the plugin cache is never written). The whole hook runs on a 3 s
 // budget (each network wait takes what is left of it), so a slow or mute Huddle costs the
 // session start at most that; anything that fails ends in silence (quiet.go).
 package hooks
@@ -59,6 +61,7 @@ func SessionStart(ctx context.Context, w *cli.World, in io.Reader, out io.Writer
 			writeContext(out, "SessionStart", strings.Join(notices, "\n"))
 		}
 		onPath(w)
+		_ = cli.RecordPluginSkew(ctx, w) // report only: a failure costs the alert, never the start
 		id := cli.Identify(ctx, w, input.SessionID)
 		if id.Channel == "" || id.As == "" {
 			// no channel to join: the server still comes up, because the hub, the Now list and

@@ -18,6 +18,9 @@ const (
 	AlertUpstream AlertKind = "upstream"
 	// AlertQuotaNearlyUsed is Claude's 5-hour plan window at 80% or more.
 	AlertQuotaNearlyUsed AlertKind = "quota_nearly_used"
+	// AlertPluginBehind is Claude Code's plugin cache holding another huddle commit than the
+	// binary its hooks run.
+	AlertPluginBehind AlertKind = "plugin_behind"
 )
 
 // AlertSeverity is how loud the dashboard shows an alert.
