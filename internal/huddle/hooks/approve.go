@@ -1,7 +1,9 @@
 // The PreToolUse hook for Bash calls: the channel's approval rules (the channel package; the
 // owner switches them in the dashboard's Settings). A command that matches no rule ends here,
-// before any network or file read: silent, the normal permission flow goes on. One that could
-// match asks the server, which knows which rules this channel has on; on a match it records an
+// before any network or file read: silent, the normal permission flow goes on. So does a
+// deletion that stays inside the session's project, and a session in a mode where Claude Code
+// asks nothing itself (bypass, auto): the owner has already decided. One that could match asks
+// the server, which knows which rules this channel has on; on a match it records an
 // approval.request event (the owner's Inbox and a desktop notification) and this hook answers
 // Claude Code's native permissionDecision "ask" with a short reason: Claude Code shows its own
 // permission prompt, and the user decides there. It never denies and never waits. Silent when
@@ -25,6 +27,17 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
+// asksItself reports whether Claude Code shows permission prompts in this mode. The default,
+// accept-edits and plan modes do, as does a caller that names no mode; bypass, auto and every
+// other mode leave the decision to the owner's standing choice, so the hook adds no prompt.
+func asksItself(mode string) bool {
+	switch mode {
+	case "", "default", "acceptEdits", "plan":
+		return true
+	}
+	return false
+}
+
 // defaultReason is what the permission prompt says when the server gave none.
 const defaultReason = "Huddle: the owner asked to approve this command"
 
@@ -46,9 +59,12 @@ func Approve(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 		if input.ToolName != "" && input.ToolName != "Bash" {
 			return nil
 		}
+		if !asksItself(input.PermissionMode) {
+			return nil // the owner already decided every command: no prompt of ours
+		}
 		command := input.ToolInput.Command
-		if len(channel.Matching(command)) == 0 {
-			return nil // no rule could apply: nothing to ask anyone
+		if len(channel.Matching(command, input.Cwd)) == 0 {
+			return nil // no rule could apply here: nothing to ask anyone
 		}
 		id := cli.Identify(ctx, w, input.SessionID)
 		if id.Channel == "" || id.As == "" || id.URL == "" {
@@ -56,8 +72,9 @@ func Approve(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 		}
 		body, err := domain.MarshalCompactJSON(struct {
 			Command       string `json:"command"`
+			Cwd           string `json:"cwd"`
 			ClaudeSession string `json:"claude_session"`
-		}{command, input.SessionID})
+		}{command, input.Cwd, input.SessionID})
 		if err != nil {
 			return err
 		}

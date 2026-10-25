@@ -15,6 +15,16 @@ func bashInput(command, session string) string {
 	return fmt.Sprintf(`{"session_id":%q,"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":%q}}`, session, command)
 }
 
+// bashInputIn is bashInput with the session's working directory.
+func bashInputIn(command, session, cwd string) string {
+	return fmt.Sprintf(`{"session_id":%q,"hook_event_name":"PreToolUse","cwd":%q,"tool_name":"Bash","tool_input":{"command":%q}}`, session, cwd, command)
+}
+
+// bashInputMode is bashInput with the session's permission mode.
+func bashInputMode(command, session, mode string) string {
+	return fmt.Sprintf(`{"session_id":%q,"hook_event_name":"PreToolUse","permission_mode":%q,"tool_name":"Bash","tool_input":{"command":%q}}`, session, mode, command)
+}
+
 // answeringHuddle is a fake Huddle that answers every approval request with one fixed body.
 func answeringHuddle(t *testing.T, body string) string {
 	t.Helper()
@@ -61,6 +71,25 @@ func TestTheApprovalHookAsksUnderASecond(t *testing.T) {
 	}
 }
 
+// TestTheApprovalHookIsSilentInBypassMode: a session the owner runs with permissions bypassed
+// has already decided every command; the hook adds no prompt of its own, whatever the rules say.
+func TestTheApprovalHookIsSilentInBypassMode(t *testing.T) {
+	s := startHuddle(t)
+	for _, name := range []string{"api", "web"} {
+		if code, body := op(t, s, "shop", "join", name, fmt.Sprintf(`{"role":%q,"claude_session":"claude-%s"}`, name, name)); code != 200 {
+			t.Fatalf("join %s: %d %s", name, code, body)
+		}
+	}
+	stdout, elapsed, _ := runHook(t, "approve", bashInputMode("git push --force origin main", "claude-api", "bypassPermissions"),
+		map[string]string{"HUDDLE_URL": s.base, "HUDDLE_CHANNEL": "shop", "HUDDLE_AS": "api"})
+	if strings.TrimSpace(stdout) != "" {
+		t.Errorf("approve output %q, want silence in bypass mode", stdout)
+	}
+	if elapsed > time.Second {
+		t.Errorf("approve took %s, want it under a second", elapsed)
+	}
+}
+
 // TestTheApprovalHookIsSilent: rule off, no rule matches, not in a huddle, not joined, Huddle
 // down or mute, garbage on stdin — all under a second, all silent.
 func TestTheApprovalHookIsSilent(t *testing.T) {
@@ -84,6 +113,8 @@ func TestTheApprovalHookIsSilent(t *testing.T) {
 		{"Huddle is down", bashInput("rm -rf build", "claude-api"), map[string]string{"HUDDLE_URL": "http://127.0.0.1:1", "HUDDLE_CHANNEL": "shop", "HUDDLE_AS": "api"}},
 		{"Huddle is mute", bashInput("rm -rf build", "claude-api"), map[string]string{"HUDDLE_URL": muteURL(t), "HUDDLE_CHANNEL": "shop", "HUDDLE_AS": "api"}},
 		{"garbage on stdin", "not json", map[string]string{"HUDDLE_URL": s.base, "HUDDLE_CHANNEL": "shop", "HUDDLE_AS": "api"}},
+		{"a delete inside the project", bashInputIn("rm -rf build && git branch -D old", "claude-api", "/home/dev/shop"), map[string]string{"HUDDLE_URL": s.base, "HUDDLE_CHANNEL": "shop", "HUDDLE_AS": "api"}},
+		{"auto mode", bashInputMode("git push --force origin main", "claude-api", "auto"), map[string]string{"HUDDLE_URL": s.base, "HUDDLE_CHANNEL": "shop", "HUDDLE_AS": "api"}},
 	}
 	for _, c := range cases {
 		t.Run(c.what, func(t *testing.T) {

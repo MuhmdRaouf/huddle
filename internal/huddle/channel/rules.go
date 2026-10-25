@@ -8,6 +8,7 @@
 package channel
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -41,16 +42,20 @@ const gitOpts = `git(?:` + jsS + `+(?:-[Cc]` + jsS + `+` + jsNotS + `+|--?[\w-]+
 // pattern is one rule's shape. The regex stops where the command word ends; endWord applies the
 // end-of-word check there ("push" but not "push-helper"). The two flags carry the checks a plain
 // expression cannot: notAssign (the word must not begin an assignment) and notTagList (git tag's
-// listing flags read a tag, they do not make one).
+// listing flags read a tag, they do not make one). local marks a command that acts on the
+// working tree, so a project directory can clear it (Matching).
 type pattern struct {
 	re         *regexp.Regexp
 	endWord    bool
 	rest       *regexp.Regexp
 	notAssign  bool
 	notTagList bool
+	local      bool
 }
 
-func (p pattern) matches(c string) bool {
+// hits answers where in c the pattern's command word starts, once per qualifying match.
+func (p pattern) hits(c string) []int {
+	var out []int
 	for _, loc := range p.re.FindAllStringIndex(c, -1) {
 		end := loc[1]
 		if p.endWord && end < len(c) && isWordDash(c[end]) {
@@ -67,10 +72,78 @@ func (p pattern) matches(c string) bool {
 			continue
 		}
 		if p.rest == nil || p.rest.MatchString(after) {
+			out = append(out, loc[0])
+		}
+	}
+	return out
+}
+
+// matchesIn reports whether the pattern matches c for a session working in project: every hit
+// counts when project is empty or the command is not local; a local hit counts only when its
+// shell segment names something outside the project.
+func (p pattern) matchesIn(c, project string) bool {
+	for _, at := range p.hits(c) {
+		if project == "" || !p.local || leavesProject(segmentAround(c, at), project) {
 			return true
 		}
 	}
 	return false
+}
+
+// segmentAround answers the shell segment of c holding position at: the text between the
+// separators (; & | newline) on either side of it.
+func segmentAround(c string, at int) string {
+	start := strings.LastIndexAny(c[:at], ";&|\n") + 1
+	end := strings.IndexAny(c[at:], ";&|\n")
+	if end < 0 {
+		return c[start:]
+	}
+	return c[start : at+end]
+}
+
+// leavesProject reports whether a shell segment names anything outside project: an absolute
+// path elsewhere, a home-relative path, a path climbing out with .., or a word the shell decides
+// at run time ($VAR, $(…), `…`), which may point anywhere. Options take their value after "=";
+// an assignment's value counts as a path too.
+func leavesProject(segment, project string) bool {
+	project = filepath.Clean(project)
+	for _, word := range strings.FieldsFunc(segment, jsfmt.IsSpace) {
+		word = strings.Trim(word, "'\"")
+		if eq := strings.IndexByte(word, '='); eq >= 0 && (strings.HasPrefix(word, "-") || isAssignment(word[:eq])) {
+			word = word[eq+1:]
+		}
+		if word == "" || strings.HasPrefix(word, "-") {
+			continue
+		}
+		if strings.ContainsAny(word, "$\x60") || strings.HasPrefix(word, "~") {
+			return true
+		}
+		if !strings.Contains(word, "/") && word != ".." {
+			continue
+		}
+		path := word
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(project, path)
+		}
+		path = filepath.Clean(path)
+		if path != project && !strings.HasPrefix(path, project+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isAssignment reports whether name is a shell variable name, the left side of name=value.
+func isAssignment(name string) bool {
+	if name == "" || !isWord(name[0]) || name[0] >= '0' && name[0] <= '9' {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		if !isWord(name[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func isWordDash(b byte) bool {
@@ -145,13 +218,13 @@ var Rules = []Rule{
 		}},
 	},
 	{
-		ID: "delete", Label: "Delete files or branches", Help: "rm, git rm, git clean, git branch -d/-D, git push --delete, find -delete, rmdir, unlink", On: true,
+		ID: "delete", Label: "Delete files or branches", Help: "rm, git rm, git clean, git branch -d/-D, find -delete, rmdir, unlink when they reach outside the project; git push --delete", On: true,
 		pats: []pattern{
-			{re: mustCompile(wRe + `(?:rmdir|unlink|shred|trash|rm)`), endWord: true, notAssign: true},
-			{re: mustCompile(wRe + gitOpts + `(?:rm|clean)`), endWord: true},
-			{re: mustCompile(wRe + gitOpts + `branch`), endWord: true, rest: mustCompile(`^[^;&|\n]*` + jsS + `(?:-[a-zA-Z]*[dD]\b|--delete\b)`)},
+			{re: mustCompile(wRe + `(?:rmdir|unlink|shred|trash|rm)`), endWord: true, notAssign: true, local: true},
+			{re: mustCompile(wRe + gitOpts + `(?:rm|clean)`), endWord: true, local: true},
+			{re: mustCompile(wRe + gitOpts + `branch`), endWord: true, rest: mustCompile(`^[^;&|\n]*` + jsS + `(?:-[a-zA-Z]*[dD]\b|--delete\b)`), local: true},
 			{re: mustCompile(wRe + gitOpts + `push`), endWord: true, rest: mustCompile(`^[^;&|\n]*(?:` + jsS + `--delete\b|` + jsS + `-d\b|` + jsS + `:` + jsNotS + `)`)},
-			{re: mustCompile(wRe + `find\b[^;&|\n]*` + jsS + `-delete\b`)},
+			{re: mustCompile(wRe + `find\b[^;&|\n]*` + jsS + `-delete\b`), local: true},
 		},
 	},
 	{
@@ -181,8 +254,10 @@ type Switch struct {
 }
 
 // Matching answers the rules a command matches, in their order (it may match several: a force
-// push is a push).
-func Matching(command string) []Rule {
+// push is a push). project is the directory the session works in: a deletion that stays under it
+// is the project's own business and matches nothing, while one that reaches outside it, deletes a
+// remote branch, or names a path the shell decides still matches. An empty project clears nothing.
+func Matching(command, project string) []Rule {
 	c := command
 	if jsfmt.Trim(c) == "" || jsfmt.UTF16Len(c) > 100000 {
 		return nil
@@ -190,7 +265,7 @@ func Matching(command string) []Rule {
 	var out []Rule
 	for _, r := range Rules {
 		for _, p := range r.pats {
-			if p.matches(c) {
+			if p.matchesIn(c, project) {
 				out = append(out, r)
 				break
 			}

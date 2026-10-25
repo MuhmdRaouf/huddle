@@ -321,7 +321,7 @@ func Approval(ctx context.Context, ch *channel.Channel, as string, b *jsfmt.Valu
 		on[sw.ID] = sw.On
 	}
 	var hit []channel.Rule
-	for _, r := range channel.Matching(strAnyOf(objField(b, "command"))) {
+	for _, r := range channel.Matching(strAnyOf(objField(b, "command")), strOf(objField(b, "cwd"))) {
 		if on[r.ID] {
 			hit = append(hit, r)
 		}

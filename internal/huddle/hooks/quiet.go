@@ -101,6 +101,9 @@ type hookInput struct {
 	HookEventName  string `json:"hook_event_name"`
 	AgentID        string `json:"agent_id"`
 	StopHookActive bool   `json:"stop_hook_active"`
+	// PermissionMode is how the session runs its tools: "bypassPermissions" when the owner
+	// has already decided every command.
+	PermissionMode string `json:"permission_mode"`
 	ToolName       string `json:"tool_name"`
 	Cwd            string `json:"cwd"`
 	ToolInput      struct {

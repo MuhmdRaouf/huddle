@@ -286,7 +286,7 @@ const (
 // a typo refuses rather than allows.
 func RemoteAllow(patterns []string, tool, input string) (string, bool) {
 	if tool == "Bash" {
-		for _, rule := range channel.Matching(JoinedInput(tool, input)) {
+		for _, rule := range channel.Matching(JoinedInput(tool, input), "") {
 			switch rule.ID {
 			case "delete":
 				return floorDeleting, false

@@ -13,7 +13,7 @@ func TestRules(t *testing.T) {
 	t.Run("approval rules: what each matches, and what it leaves alone", func(t *testing.T) {
 		ids := func(c string) []string {
 			out := []string{}
-			for _, r := range Matching(c) {
+			for _, r := range Matching(c, "") {
 				out = append(out, r.ID)
 			}
 			slices.Sort(out)
@@ -52,7 +52,7 @@ func TestRules(t *testing.T) {
 			"git status", "git log --oneline", "git tag", "git tag -l", "git tag --list 'v*'", "npm run build",
 			"echo pushing", "git branch -a", "npm run rm-dist", "ls -la", "bun test", "cat README.md", "", "git push-helper",
 		} {
-			if got := Matching(c); len(got) != 0 {
+			if got := Matching(c, ""); len(got) != 0 {
 				t.Errorf("matching(%q) = %v, want none", c, got)
 			}
 		}
@@ -99,7 +99,7 @@ func TestRules(t *testing.T) {
 			{"mygit push", nil},
 		} {
 			var got []string
-			for _, r := range Matching(c.cmd) {
+			for _, r := range Matching(c.cmd, "") {
 				got = append(got, r.ID)
 			}
 			slices.Sort(got)
@@ -112,6 +112,52 @@ func TestRules(t *testing.T) {
 
 // matchingVectors is the matcher's verdict table: 210 commands with the rule ids matching
 // answers for each, the padded vectors' padding applied.
+// TestADeleteInsideTheProjectMatchesNoRule: with the project directory known, a deletion whose
+// paths all stay under it is the project's own business; one that reaches outside it, a remote
+// branch, or a path the shell decides still matches.
+func TestADeleteInsideTheProjectMatchesNoRule(t *testing.T) {
+	const project = "/home/dev/shop"
+	ids := func(c, project string) []string {
+		out := []string{}
+		for _, r := range Matching(c, project) {
+			out = append(out, r.ID)
+		}
+		slices.Sort(out)
+		return out
+	}
+	for _, c := range []struct {
+		cmd     string
+		project string
+		want    []string
+	}{
+		{"rm -rf build", project, []string{}},
+		{"rm -rf .agents/worktrees/x && git branch -D wt/x", project, []string{}},
+		{"git worktree remove --force .agents/worktrees/x && git branch -D -q wt/x", project, []string{}},
+		{"rm -rf /home/dev/shop/dist", project, []string{}},
+		{"rm -rf '/home/dev/shop/dist'", project, []string{}},
+		{"git rm -r old/ && git clean -fdx", project, []string{}},
+		{"find . -name '*.o' -delete", project, []string{}},
+		{"K=/usr/local/bin/kanban && $K done X && rm -rf out", project, []string{}},
+		{"rm -rf /tmp/x", project, []string{"delete"}},
+		{"rm -rf ../sibling", project, []string{"delete"}},
+		{"rm -rf a/../../sibling", project, []string{"delete"}},
+		{"rm -rf ~/x", project, []string{"delete"}},
+		{"rm -rf $DIR", project, []string{"delete"}},
+		{"rm -rf $(cat where)", project, []string{"delete"}},
+		{"rm -rf /home/dev/shopping", project, []string{"delete"}},
+		{"git -C /home/dev/other rm -r x", project, []string{"delete"}},
+		{"find /var/log -name '*.log' -delete", project, []string{"delete"}},
+		{"git push origin --delete old", project, []string{"delete", "git_push"}},
+		{"git push origin :old", project, []string{"delete", "git_push"}},
+		{"rm -rf build", "", []string{"delete"}},
+		{"git branch -D feature", "", []string{"delete"}},
+	} {
+		if got := ids(c.cmd, c.project); fmt.Sprint(got) != fmt.Sprint(c.want) {
+			t.Errorf("Matching(%q, %q) = %v, want %v", c.cmd, c.project, got, c.want)
+		}
+	}
+}
+
 func TestMatchingVectors(t *testing.T) {
 	for _, v := range []struct {
 		id             string
@@ -332,7 +378,7 @@ func TestMatchingVectors(t *testing.T) {
 	} {
 		cmd := v.cmd + strings.Repeat("a", v.padA) + strings.Repeat("\U0001F680", v.padEmoji)
 		var got []string
-		for _, r := range Matching(cmd) {
+		for _, r := range Matching(cmd, "") {
 			got = append(got, r.ID)
 		}
 		if strings.Join(got, ",") != strings.Join(v.want, ",") {
