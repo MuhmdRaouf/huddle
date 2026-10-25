@@ -33,12 +33,15 @@ describe("CardView", () => {
     expect(meta?.querySelector(".est")?.textContent).toBe("L");
     expect(meta?.querySelector(".type")?.textContent).toBe("feature");
     const chips = [...(meta?.querySelectorAll("li.badge") ?? [])].map((li) => li.textContent);
-    expect(chips).toEqual(["waits on KBN-API"]);
+    // the expedite mark leads the state badges
+    expect(chips).toEqual(["Expedite", "waits on KBN-API"]);
   });
 
   it("carries the badge's kind as its colour class", () => {
     const { container } = render(<CardView card={cardOf("KBN-UI")} flash={0} onOpen={() => undefined} />);
-    expect(container.querySelector("ul.meta li.badge")?.classList.contains("b-waits")).toBe(true);
+    const chips = [...container.querySelectorAll("ul.meta li.badge")];
+    expect(chips.map((li) => li.classList.contains("b-expedite"))).toEqual([true, false]);
+    expect(chips.map((li) => li.classList.contains("b-waits"))).toEqual([false, true]);
   });
 
   it("lists the tags as chips at comfortable density, the repo tags first", () => {

@@ -113,6 +113,7 @@ function CardViewBase({
       <ul class="meta">
         <li class="est">{card.est}</li>
         <li class="type">{card.type}</li>
+        {card.expedite && <li class="badge b-expedite">Expedite</li>}
         {card.badges
           .filter((badge) => STATE_BADGES.includes(badge.kind))
           .map((badge) => (

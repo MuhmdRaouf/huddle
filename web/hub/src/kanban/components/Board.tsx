@@ -8,7 +8,6 @@ import {
   type Snapshot,
 } from "../types.ts";
 import type { CardProps } from "./Card.tsx";
-import { CardView } from "./Card.tsx";
 import { Column } from "./Column.tsx";
 import { FlowBar } from "./FlowBar.tsx";
 
@@ -45,6 +44,11 @@ const RAIL_TRACK = "40px";
 function doneFirst(cards: CardData[]): CardData[] {
   const key = (card: CardData): string => (card.finishedAt !== "" ? card.finishedAt : card.updatedAt);
   return [...cards].sort((a, b) => (key(a) < key(b) ? 1 : -1));
+}
+
+/** A column's cards with its expedite cards first, each group keeping the snapshot's order. */
+function expediteFirst(cards: CardData[]): CardData[] {
+  return [...cards.filter((card) => card.expedite), ...cards.filter((card) => !card.expedite)];
 }
 
 /** Every column in flow order, counting its cards; done counts the whole column. */
@@ -215,9 +219,7 @@ export function Board({
     );
   }
 
-  const expedite = visible.filter((card) => card.expedite && card.column !== "done");
-  const lifted = new Set(expedite.map((card) => card.id));
-  const inColumn = (id: ColumnId) => visible.filter((c) => c.column === id && !lifted.has(c.id));
+  const inColumn = (id: ColumnId) => expediteFirst(visible.filter((c) => c.column === id));
   const doneAll = doneFirst(inColumn("done"));
   const doneShown = showAllDone ? doneAll : doneAll.slice(0, DONE_CAP);
   const doneExtra =
@@ -233,17 +235,6 @@ export function Board({
   const active: ColumnId = tab ?? infos.find((col) => col.count > 0)?.id ?? "backlog";
   const collapsedOf = (id: ColumnId) => isCollapsed(id, narrow, overrides, infos);
   const threadOf = threadMarker(activeThreadId(hovered, openId, visible), visible);
-  const cardProps = (card: CardData) => ({
-    card,
-    flash: changedIds.has(card.id) ? changeSeq : 0,
-    onOpen,
-    onTag,
-    density,
-    onThread,
-    thread: threadOf(card.id),
-    sharedTags,
-    sharedCluster,
-  });
   const columnProps = (id: ColumnId) => ({
     id,
     title: snap.columns.find((col) => col.id === id)?.title ?? id,
@@ -292,16 +283,6 @@ export function Board({
     <div class="board" data-layout={narrow ? "lanes" : "columns"}>
       <FlowBar columns={infos} onPick={pickColumn} activeId={narrow ? active : undefined} />
       {hiddenLine}
-      {expedite.length > 0 && (
-        <section class="expedite" aria-label="Expedite">
-          <h2>
-            Expedite <span class="count">{expedite.length}</span>
-          </h2>
-          {expedite.map((card) => (
-            <CardView key={card.id} {...cardProps(card)} />
-          ))}
-        </section>
-      )}
       {narrow ? (
         <div ref={lanesRef} class="lanes" onScroll={onLanesScroll}>
           {COLUMN_IDS.map((id) => (

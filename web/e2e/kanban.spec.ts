@@ -269,6 +269,48 @@ test.describe("a done-heavy board", () => {
   });
 });
 
+test.describe("expedite cards", () => {
+  /** Four expedite cards and one plain card in testing, removed again so every other scenario
+   *  keeps its empty testing column. */
+  const expediteIds = ["EXP-1", "EXP-2", "EXP-3", "EXP-4"];
+  const testingIds = [...expediteIds, "PLAIN-T"];
+
+  test.afterEach(() => {
+    for (const id of testingIds) rmSync(path.join(boardDir(), "testing", `${id}.md`), { force: true });
+  });
+
+  test("expedite cards sit first in their own column and its count includes them", async ({ page, isMobile }) => {
+    await test.step("Given four expedite cards and one plain card in testing", async () => {
+      seedTicket("testing", "PLAIN-T", "A plain testing card");
+      for (const id of expediteIds) seedTicket("testing", id, `Expedite card ${id}`, "expedite: true");
+      await kanbanAt(page, isMobile ? 390 : 1440, isMobile ? 844 : 900);
+    });
+
+    await test.step("Then the Testing count includes the expedite cards", async () => {
+      await expect(page.locator(".kanban-tab .flow-label", { hasText: "Testing 5" })).toBeVisible();
+      if (isMobile) await page.getByRole("tab", { name: "Testing 5" }).tap();
+      else await expect(page.getByRole("heading", { name: "Testing 5" })).toBeVisible();
+    });
+
+    await test.step("And the Testing column lists the expedite cards first, each with its mark", async () => {
+      const cards = page.locator('section[data-column="testing"] article.card');
+      await expect(cards).toHaveCount(5);
+      const ids = await cards.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.id));
+      expect(ids.slice(0, 4).sort()).toEqual(expediteIds);
+      expect(ids[4]).toBe("PLAIN-T");
+      for (const id of expediteIds) {
+        await expect(page.locator(`article.card[data-id="${id}"] .b-expedite`)).toBeVisible();
+      }
+      await expect(page.locator('article.card[data-id="PLAIN-T"] .b-expedite')).toHaveCount(0);
+    });
+
+    await test.step("And no Expedite strip is drawn above the columns", async () => {
+      const strip = page.locator('.kanban-tab section[aria-label="Expedite"], .kanban-tab section.expedite');
+      await expect(strip).toHaveCount(0);
+    });
+  });
+});
+
 /** Swipes the snap strip one thumb's stroke to the left, the way a finger moves to the next
  *  column: a touch scroll gesture Chromium synthesizes, so the snap settles as it would on the
  *  phone. */

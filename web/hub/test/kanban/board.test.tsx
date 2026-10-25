@@ -41,7 +41,7 @@ describe("Board", () => {
     expect(openCols.map((col) => col.querySelector("h2")?.textContent)).toEqual([
       "Backlog 3",
       "Ready 1",
-      "In progress 1",
+      "In progress 2",
       "Review 1",
       "Testing 1",
       "Blocked 1",
@@ -53,20 +53,45 @@ describe("Board", () => {
     expect(rail?.querySelector(".sr-only")?.textContent).toBe("Done, 3 cards, show column");
   });
 
-  it("lifts open expedite cards into a lane above the columns, out of their own column", () => {
-    const { container } = renderBoard();
-    const lane = container.querySelector('section[aria-label="Expedite"]');
-    expect(lane?.querySelectorAll("article.card")).toHaveLength(1);
-    expect(lane?.querySelector<HTMLElement>("article.card")?.dataset.id).toBe("KBN-UI");
-    const inProgress = container.querySelector('section[data-column="in-progress"]');
-    expect(inProgress?.querySelector('[data-id="KBN-UI"]')).toBeNull();
-    expect(inProgress?.querySelectorAll("article.card")).toHaveLength(1);
+  it("keeps expedite cards inside their own column, first, with the mark, and counts them", () => {
+    // four expedite cards and one plain card in testing; the plain one comes first in the snapshot
+    const snap = makeSnapshot([
+      makeCard({ id: "PLAIN-1", column: "testing", expedite: false }),
+      ...[1, 2, 3, 4].map((i) => makeCard({ id: `EXP-${i}`, column: "testing", expedite: true })),
+    ]);
+    const { container } = renderBoard(snap);
+    const testing = () => container.querySelector('section[data-column="testing"]');
+    expect(testing()?.querySelector("h2")?.textContent).toBe("Testing 5");
+    expect(screen.getByRole("button", { name: "Testing 5" })).toBeDefined();
+    const shown = [...(testing()?.querySelectorAll<HTMLElement>("article.card") ?? [])];
+    expect(shown.map((card) => card.dataset.id)).toEqual(["EXP-1", "EXP-2", "EXP-3", "EXP-4", "PLAIN-1"]);
+    expect(shown.map((card) => card.querySelector(".b-expedite") !== null)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      false,
+    ]);
+    // no strip above the columns holds them
+    expect(container.querySelector('section[aria-label="Expedite"], section.expedite')).toBeNull();
   });
 
-  it("keeps an expedite card that is done in the done column, out of the lane", async () => {
+  it("counts expedite cards in their own column's tab on a phone", () => {
+    stubMatchMedia((query) => query.includes("max-width"));
+    const snap = makeSnapshot([
+      makeCard({ id: "PLAIN-1", column: "testing", expedite: false }),
+      ...[1, 2, 3, 4].map((i) => makeCard({ id: `EXP-${i}`, column: "testing", expedite: true })),
+    ]);
+    const { container } = renderBoard(snap);
+    expect(screen.getByRole("tab", { name: "Testing 5" }).getAttribute("aria-selected")).toBe("true");
+    const shown = [...container.querySelectorAll<HTMLElement>('section[data-column="testing"] article.card')];
+    expect(shown.map((card) => card.dataset.id)).toEqual(["EXP-1", "EXP-2", "EXP-3", "EXP-4", "PLAIN-1"]);
+    expect(container.querySelector('section[aria-label="Expedite"], section.expedite')).toBeNull();
+  });
+
+  it("keeps an expedite card that is done in the done column", async () => {
     const snap = makeSnapshot([makeCard({ id: "KBN-DONE", column: "done", expedite: true })]);
     const { container } = renderBoard(snap);
-    expect(container.querySelector('section[aria-label="Expedite"]')).toBeNull();
     await openRail(container, "done");
     expect(
       container.querySelector('section[data-column="done"]')?.querySelectorAll("article.card"),
@@ -76,13 +101,15 @@ describe("Board", () => {
   it("hides cards the filters remove; the columns they empty become rails", () => {
     const onlyUi = { ...EMPTY_FILTERS, q: "KBN-UI" };
     const { container } = renderBoard(snapshot, onlyUi);
-    // the one visible card is KBN-UI, and the expedite lane holds it, so every column is a rail
+    // the one visible card is KBN-UI in in progress, so every other column is a rail
     expect(container.querySelectorAll("article.card")).toHaveLength(1);
+    expect(container.querySelector('section[data-column="in-progress"] h2')?.textContent).toBe(
+      "In progress 1",
+    );
     const rails = [...container.querySelectorAll<HTMLButtonElement>("button.rail-btn")];
     expect(rails.map((rail) => rail.querySelector(".sr-only")?.textContent)).toEqual([
       "Backlog, 0 cards, show column",
       "Ready, 0 cards, show column",
-      "In progress, 0 cards, show column",
       "Review, 0 cards, show column",
       "Testing, 0 cards, show column",
       "Blocked, 0 cards, show column",
