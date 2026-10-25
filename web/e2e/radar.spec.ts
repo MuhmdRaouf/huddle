@@ -262,7 +262,71 @@ test("the overview's tiles count live sessions, the router's health and HTTP fai
   await expectAccessible(page);
 });
 
-test("the phone's overview leads with three one-line tiles under one window label; the desk keeps five cards", async ({
+test("the overview leads with a dash for Anthropic's limits while no claude-* answer carried them, and spend reads list price", async ({
+  page,
+  isMobile,
+}) => {
+  // the seeded spool holds provider calls only, so no answer has reported the unified windows
+  await openView(page, "overview");
+  const limits = page.locator('[data-stat="limits"]');
+  await expect(limits).toBeVisible();
+  await expect(limits.locator(".num").first()).toHaveText("–");
+  await expect(limits).toContainText("no Anthropic answer yet");
+  // the first tile on the desk's row and the first on the phone's screen
+  await expect(page.locator("[data-stat]").first()).toHaveAttribute("data-stat", "limits");
+  await expect(page.locator(isMobile ? '[data-stat="spend"]' : '[data-stat="spend today"]')).toContainText(
+    "list price",
+  );
+  await expectAccessible(page);
+});
+
+test("the overview's first tile shows 5 h and 7 d used with their resets once an answer reported them", async ({
+  page,
+}) => {
+  // the radar stream's summary as it reads once a claude-* answer carried the unified headers:
+  // the page's own stream, with the newest windows set on every summary it delivers
+  await page.addInitScript(() => {
+    const now = Date.now() / 1000;
+    const utilization = {
+      five_hour: { used: 0.42, resets_at: Math.floor(now + 2 * 3600 + 30 * 60) },
+      seven_day: { used: 0.61, resets_at: Math.floor(now + 3 * 86_400 + 5 * 3600 + 30 * 60) },
+    };
+    const Native = window.EventSource;
+    class Seeded extends Native {
+      get onmessage(): ((this: EventSource, event: MessageEvent) => unknown) | null {
+        return super.onmessage;
+      }
+      set onmessage(handler: ((this: EventSource, event: MessageEvent) => unknown) | null) {
+        if (handler === null || !this.url.includes("/api/radar/api/stream")) {
+          super.onmessage = handler;
+          return;
+        }
+        super.onmessage = function (event: MessageEvent) {
+          const data: unknown = typeof event.data === "string" ? JSON.parse(event.data) : null;
+          if (typeof data !== "object" || data === null) return handler.call(this, event);
+          const message = data as { type?: string; summary?: Record<string, unknown> };
+          if ((message.type !== "snapshot" && message.type !== "sessions") || message.summary === undefined)
+            return handler.call(this, event);
+          message.summary.utilization = utilization;
+          return handler.call(this, new MessageEvent("message", { data: JSON.stringify(message) }));
+        };
+      }
+    }
+    window.EventSource = Seeded;
+  });
+  await openView(page, "overview");
+  const limits = page.locator('[data-stat="limits"]');
+  const fiveHour = limits.locator('[data-limit-window="5 h"]');
+  const sevenDay = limits.locator('[data-limit-window="7 d"]');
+  await expect(fiveHour.locator(".num")).toHaveText("42%");
+  await expect(fiveHour).toContainText("resets in 2h");
+  await expect(sevenDay.locator(".num")).toHaveText("61%");
+  await expect(sevenDay).toContainText("resets in 3d 5h");
+  await expect(limits).not.toContainText("no Anthropic answer yet");
+  await expectAccessible(page);
+});
+
+test("the phone's overview leads with three one-line tiles under one window label; the desk keeps six cards", async ({
   page,
   isMobile,
 }) => {
@@ -279,7 +343,7 @@ test("the phone's overview leads with three one-line tiles under one window labe
   await openView(page, "overview");
   if (!isMobile) {
     await expect(page.locator("[data-phone-tiles]")).toHaveCount(0);
-    await expect(page.locator("[data-stat-cards] [data-stat]")).toHaveCount(5);
+    await expect(page.locator("[data-stat-cards] [data-stat]")).toHaveCount(6);
     return;
   }
   const tiles = page.locator("[data-phone-tiles]");

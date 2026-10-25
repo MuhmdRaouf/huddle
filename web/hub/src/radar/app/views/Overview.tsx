@@ -1,13 +1,14 @@
 /**
- * The Overview: the tab's front page, composed from the parts every other view reads — five stat
- * cards (spend against its budget, requests and their failures, tokens and their cache share,
- * sessions and who needs the owner, routers and any budget stopped), the day card (peak sessions
- * at once and cards done today), the four usage graphs (requests per hour, tokens by kind, cost
- * per day and per session), the spend-by-hour chart stacked by model, the top sessions by spend
- * (a row opens the Session screen), the plan limits the statusline word reported, the newest
- * alert, the routers list and the top tools. The phone leads with three tiles (spend, requests, sessions live) under
- * one label that names the window they read, then the day card, the graphs stacked, the chart and
- * the routers; the rest waits for a wider pane.
+ * The Overview: the tab's front page, composed from the parts every other view reads — six stat
+ * cards (Anthropic's 5-hour and 7-day limits used, spend at list price against its budget,
+ * requests and their failures, tokens and their cache share, sessions and who needs the owner,
+ * routers and any budget stopped), the day card (peak sessions at once and cards done today), the
+ * four usage graphs (requests per hour, tokens by kind, cost per day and per session), the
+ * spend-by-hour chart stacked by model, the top sessions by spend (a row opens the Session
+ * screen), the plan limits the statusline word reported, the newest alert, the routers list and
+ * the top tools. The phone leads with the limits tile, then three tiles (spend, requests, sessions
+ * live) under one label that names the window they read, then the day card, the graphs stacked,
+ * the chart and the routers; the rest waits for a wider pane.
  */
 
 import { modelColor } from "@huddle/ui/model-color.ts";
@@ -19,6 +20,7 @@ import type { RegistrySession } from "../../../registry.ts";
 import { fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { SERIES, STATUS_COLOR } from "../../palette.ts";
 import type { RouterFacts } from "../../shared/api.ts";
+import type { UnifiedWindow } from "../../shared/model.ts";
 import { bucketPlan, rangeWords, stampOf } from "../../shared/time-range.ts";
 import {
   type ClientState,
@@ -114,7 +116,8 @@ function SpendStat() {
   const pct = spend === undefined ? null : Math.min(100, Math.round(spend.pct));
   return (
     <Stat
-      title="Spend today"
+      title="Spend today · list price"
+      stat="Spend today"
       value={
         state.spendUnpriced > 0
           ? `${fmtUsd(state.spendToday)} · ${state.spendUnpriced} unpriced`
@@ -136,6 +139,61 @@ function SpendStat() {
         )
       }
     />
+  );
+}
+
+/** When a limit's window resets: the countdown inside a day, days and hours past it. */
+function resetWords(resetsAtSec: number | undefined, now: number): string | null {
+  if (resetsAtSec === undefined) return null;
+  const at = resetsAtSec * 1000;
+  if (at - now < 86_400_000) return resetsIn(at, now);
+  const hours = Math.floor((at - now) / 3_600_000);
+  return `resets in ${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
+/** One window of the limits tile: its label, the share used as a percent, its reset. */
+function LimitWindow({ label, window, now }: { label: string; window: UnifiedWindow; now: number }) {
+  const pct = Math.round(window.used * 100);
+  const reset = resetWords(window.resets_at, now);
+  return (
+    <div class="min-w-0" data-limit-window={label}>
+      <div class="num text-2xl font-semibold whitespace-nowrap md:text-[26px]">{`${pct}%`}</div>
+      <Bar
+        pct={Math.min(100, pct)}
+        color={STATUS_COLOR[quotaTone(pct)]}
+        class="mt-1"
+        meter={{ value: pct, label: `${label} used` }}
+      />
+      <div class="mt-1 text-xs text-[var(--ui-muted)]">
+        {label}
+        {reset === null ? "" : ` · ${reset}`}
+      </div>
+    </div>
+  );
+}
+
+/** The limits tile: what a subscription can run out of — Anthropic's unified 5-hour and 7-day
+ *  windows as the newest claude-* answer reported them; a dash until one did. */
+function LimitsStat({ class: cls = "" }: { class?: string }) {
+  const { state, now } = useApp();
+  const limits = state.summary?.utilization;
+  const windows = [
+    { label: "5 h", window: limits?.five_hour },
+    { label: "7 d", window: limits?.seven_day },
+  ].filter((entry): entry is { label: string; window: UnifiedWindow } => entry.window !== undefined);
+  if (windows.length === 0)
+    return (
+      <Stat title="Anthropic limits" stat="limits" value="–" subline="no Anthropic answer yet" class={cls} />
+    );
+  return (
+    <div class={`ui-card p-4 md:p-5 ${cls}`} data-stat="limits">
+      <div class="text-xs text-[var(--ui-muted)]">Anthropic limits</div>
+      <div class="mt-0.5 grid grid-cols-2 gap-3">
+        {windows.map((entry) => (
+          <LimitWindow key={entry.label} label={entry.label} window={entry.window} now={now} />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -823,8 +881,8 @@ function phoneWindow(state: ClientState, now: number, numbers: ReturnType<typeof
   };
 }
 
-/** The phone's first screen: one label naming the window, then spend across the top and requests
- *  beside the sessions live under it, each figure on one line. */
+/** The phone's first screen: the limits tile, then one label naming the window, spend across the
+ *  top and requests beside the sessions live under it, each figure on one line. */
 function PhoneTiles({ numbers }: { numbers: ReturnType<typeof rangeNumbers> }) {
   const { state, now } = useApp();
   const { registry } = useHuddle();
@@ -832,41 +890,49 @@ function PhoneTiles({ numbers }: { numbers: ReturnType<typeof rangeNumbers> }) {
   const needs = registry.needs();
   const live = state.sessions.filter((item) => !isJob(item) && item.live).length;
   return (
-    <section class="grid gap-2" aria-labelledby="ovw-window" data-phone-tiles="">
-      <h2 id="ovw-window" class="text-sm font-semibold">
-        {span.words}
-      </h2>
-      <div class="grid grid-cols-2 gap-3">
-        <Stat
-          title="Spend"
-          value={span.spend === null ? "–" : fmtUsd(span.spend)}
-          subline={span.unpriced > 0 ? <span class="num">{`${fmtNum(span.unpriced)} unpriced`}</span> : null}
-          class="col-span-2"
-          oneLine
-        />
-        <Stat
-          title="Requests"
-          value={fmtNum(span.requests)}
-          subline={
-            numbers.failed > 0 ? <Status tone="err" word={`${fmtNum(numbers.failed)} failed`} /> : null
-          }
-          oneLine
-        />
-        <Stat
-          title="Sessions live"
-          stat="Sessions"
-          value={fmtNum(live)}
-          subline={needs > 0 ? <Status tone="warn" word={`${fmtNum(needs)} need you`} /> : null}
-          oneLine
-        />
-      </div>
-    </section>
+    <>
+      <LimitsStat />
+      <section class="grid gap-2" aria-labelledby="ovw-window" data-phone-tiles="">
+        <h2 id="ovw-window" class="text-sm font-semibold">
+          {span.words}
+        </h2>
+        <div class="grid grid-cols-2 gap-3">
+          <Stat
+            title="Spend"
+            value={span.spend === null ? "–" : fmtUsd(span.spend)}
+            subline={
+              <>
+                list price
+                {span.unpriced > 0 && <span class="num">{` · ${fmtNum(span.unpriced)} unpriced`}</span>}
+              </>
+            }
+            class="col-span-2"
+            oneLine
+          />
+          <Stat
+            title="Requests"
+            value={fmtNum(span.requests)}
+            subline={
+              numbers.failed > 0 ? <Status tone="err" word={`${fmtNum(numbers.failed)} failed`} /> : null
+            }
+            oneLine
+          />
+          <Stat
+            title="Sessions live"
+            stat="Sessions"
+            value={fmtNum(live)}
+            subline={needs > 0 ? <Status tone="warn" word={`${fmtNum(needs)} need you`} /> : null}
+            oneLine
+          />
+        </div>
+      </section>
+    </>
   );
 }
 
 /** The Overview: the stat row over the active-block card, the day card, the graphs, the chart
  *  and the sessions table, the plan limits, the alert, routers and tools beside them; the phone
- *  leads with its three tiles, then the day card, the graphs, the chart, the sessions table
+ *  leads with the limits tile and its three tiles, then the day card, the graphs, the chart, the sessions table
  *  without its model column and the routers. */
 export function OverviewView(): JSX.Element {
   const { state, now } = useApp();
@@ -878,7 +944,8 @@ export function OverviewView(): JSX.Element {
       {phone ? (
         <PhoneTiles numbers={numbers} />
       ) : (
-        <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:col-span-2 xl:grid-cols-5" data-stat-cards="">
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:col-span-2" data-stat-cards="">
+          <LimitsStat />
           <SpendStat />
           <RequestsStat state={state} now={now} numbers={numbers} />
           <TokensStat state={state} now={now} numbers={numbers} />

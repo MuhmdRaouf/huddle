@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -434,6 +435,9 @@ type Store struct {
 	routedTotals map[string]struct{}
 	// calls files each held call under its request id: the key the pairing tries first.
 	calls map[string]*callSlot
+	// utilization is the newest unified limits a route line carried, and the line's ts.
+	utilization   *domain.UnifiedUtilization
+	utilizationAt int64
 }
 
 // CreateStore builds an empty store; now is the clock its derived answers age by.
@@ -1772,7 +1776,20 @@ func (s *Store) buildSummaryLocked() shared.Summary {
 	for _, state := range states {
 		summary.Errors += s.noticesOfLocked(state.id, nil)
 	}
+	summary.Utilization = s.utilization
 	return summary
+}
+
+// NoteUtilization keeps the unified limits a route line carried at ts (epoch ms) when no newer
+// line's are held.
+func (s *Store) NoteUtilization(ts int64, utilization domain.UnifiedUtilization) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.utilization != nil && ts < s.utilizationAt {
+		return
+	}
+	s.utilization, s.utilizationAt = &utilization, ts
+	s.ver++
 }
 
 // SessionList is the session list, newest activity first.

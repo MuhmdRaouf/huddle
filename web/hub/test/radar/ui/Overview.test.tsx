@@ -1,5 +1,5 @@
-// Overview.test.tsx — the Radar tab's front page: the five stat cards over the data the shell and
-// the controller hold, the phone's three tiles under one window label, the spend chart and its
+// Overview.test.tsx — the Radar tab's front page: the stat cards over the data the shell and
+// the controller hold, Anthropic's limits tile first, the phone's three tiles under one window label, the spend chart and its
 // fallback, the sessions table that opens the Session screen, the alert card, the routers list and
 // the top tools.
 
@@ -611,12 +611,13 @@ describe("the Overview on the phone", () => {
     );
   });
 
-  it("keeps the five cards on a desktop, the spend tile with today's ledger as it reads", () => {
+  it("keeps the cards on a desktop, Anthropic's limits first, the spend tile with today's ledger as it reads", () => {
     stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
     const { container } = overview(busyDay);
     expect(container.querySelector("[data-phone-tiles]")).toBeNull();
     const stats = [...container.querySelectorAll("[data-stat-cards] [data-stat]")];
     expect(stats.map((el) => el.getAttribute("data-stat"))).toEqual([
+      "limits",
       "spend today",
       "requests",
       "tokens",
@@ -626,6 +627,70 @@ describe("the Overview on the phone", () => {
     expect(container.querySelector('[data-stat="spend today"] .num')?.textContent).toBe(
       "$1,057.61 · 9294 unpriced",
     );
+    // a subscription pays no dollars: the figure is what the calls cost at list price
+    expect(container.querySelector('[data-stat="spend today"]')?.firstElementChild?.textContent).toBe(
+      "Spend today · list price",
+    );
+  });
+
+  /** Anthropic's unified windows as the newest claude-* answer's headers reported them: the share
+   *  used 0 to 1 and the reset in unix seconds. */
+  const limits = {
+    five_hour: { used: 0.42, resets_at: (NOW + (2 * 60 + 14) * 60_000) / 1000 },
+    seven_day: { used: 0.613, resets_at: (NOW + (3 * 24 + 5) * 3_600_000) / 1000 },
+  };
+
+  /** The limits tile's two windows as they read: label, percent, reset words. */
+  function windowsOf(container: Element) {
+    return [...container.querySelectorAll('[data-stat="limits"] [data-limit-window]')].map((el) => ({
+      label: el.getAttribute("data-limit-window"),
+      pct: el.querySelector(".num")?.textContent,
+      text: el.textContent,
+    }));
+  }
+
+  it("leads the desktop with 5 h and 7 d used as percentages and when each resets", () => {
+    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    const { container } = overview({ ...busyDay, summary: { ...fixtures.summary, utilization: limits } });
+    const first = container.querySelector("[data-stat-cards] [data-stat]");
+    expect(first?.getAttribute("data-stat")).toBe("limits");
+    const windows = windowsOf(container);
+    expect(windows.map((w) => [w.label, w.pct])).toEqual([
+      ["5 h", "42%"],
+      ["7 d", "61%"],
+    ]);
+    expect(windows[0]?.text).toContain("resets in 2h 14m");
+    expect(windows[1]?.text).toContain("resets in 3d 5h");
+    expect(container.querySelector('[data-stat="limits"]')?.textContent).not.toContain(
+      "no Anthropic answer yet",
+    );
+  });
+
+  it("puts the limits tile at the top of the phone, above the window's three tiles, and says list price on spend", () => {
+    stubMedia({});
+    const { container } = overview({ ...busyDay, summary: { ...fixtures.summary, utilization: limits } });
+    const limitsTile = container.querySelector('[data-stat="limits"]');
+    const tiles = container.querySelector("[data-phone-tiles]");
+    expect(limitsTile).not.toBeNull();
+    expect(tiles?.contains(limitsTile ?? null)).toBe(false);
+    expect(container.querySelector("[data-stat]")).toBe(limitsTile);
+    expect(windowsOf(container).map((w) => [w.label, w.pct])).toEqual([
+      ["5 h", "42%"],
+      ["7 d", "61%"],
+    ]);
+    expect(tiles?.querySelector('[data-stat="spend"]')?.textContent).toContain("list price");
+  });
+
+  it("shows a dash and says no Anthropic answer yet while no claude-* answer carried the headers", () => {
+    for (const media of [{}, { "(min-width: 640px)": true, "(min-width: 1024px)": true }]) {
+      stubMedia(media);
+      const { container } = overview(busyDay);
+      const tile = container.querySelector('[data-stat="limits"]');
+      expect(tile?.querySelector(".num")?.textContent).toBe("–");
+      expect(tile?.textContent).toContain("no Anthropic answer yet");
+      expect(windowsOf(container)).toEqual([]);
+      container.remove();
+    }
   });
 });
 

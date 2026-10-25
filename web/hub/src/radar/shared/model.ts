@@ -244,7 +244,16 @@ export type Summary = {
   now: number;
   /** Estimated USD at list price for everything in view; null when nothing in it is priced. */
   costUsd?: number | null;
+  /** Anthropic's unified limits as the newest claude-* answer reported them; absent until one did. */
+  utilization?: UnifiedUtilization;
 };
+
+/** One window of Anthropic's unified limits: the share used, 0 to 1, and its reset in unix
+ *  seconds, absent when the answer named none. */
+export type UnifiedWindow = { used: number; resets_at?: number };
+
+/** The 5-hour and 7-day windows, each absent when the answer did not report it. */
+export type UnifiedUtilization = { five_hour?: UnifiedWindow; seven_day?: UnifiedWindow };
 
 export type ModelRow = {
   model: string;

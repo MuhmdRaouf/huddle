@@ -647,6 +647,9 @@ type Summary struct {
 	// CostUsd is estimated USD at list price for everything in view; null when nothing in
 	// it is priced.
 	CostUsd *USD `json:"costUsd"`
+	// Utilization is Anthropic's unified 5-hour and 7-day limits as the newest route line
+	// that carried them reported; nil until one did.
+	Utilization *domain.UnifiedUtilization `json:"utilization,omitempty"`
 }
 
 // ModelRow is one model's row in the models table.
@@ -721,12 +724,14 @@ type SpoolLine struct {
 	Fallback *string `json:"fallback,omitempty"`
 	// PromptHash is the hash a route line names (its capture sits under it); a capture
 	// line carries the hash again with the gzipped content.
-	PromptHash *string                    `json:"prompt_hash,omitempty"`
-	Headers    *Headers                   `json:"headers,omitempty"`
-	Gz         *string                    `json:"gz,omitempty"`
-	LatencyMs  *int64                     `json:"latency_ms,omitempty"`
-	Usage      *SpoolUsage                `json:"usage,omitempty"`
-	Extra      map[string]json.RawMessage `json:"-"`
+	PromptHash *string     `json:"prompt_hash,omitempty"`
+	Headers    *Headers    `json:"headers,omitempty"`
+	Gz         *string     `json:"gz,omitempty"`
+	LatencyMs  *int64      `json:"latency_ms,omitempty"`
+	Usage      *SpoolUsage `json:"usage,omitempty"`
+	// Utilization is the unified limits a route line read from Anthropic's answer headers.
+	Utilization *domain.UnifiedUtilization `json:"utilization,omitempty"`
+	Extra       map[string]json.RawMessage `json:"-"`
 	// source is the line as decoded: every key it arrived with, in arrival order. A line
 	// built in code carries none and marshals its declared fields instead.
 	source *jsfmt.Value

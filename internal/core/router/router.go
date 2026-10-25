@@ -701,6 +701,9 @@ func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt i
 			carried := usage
 			event.Usage = &carried
 		}
+		if headers != nil {
+			event.Utilization = domain.UnifiedUtilizationOf(*headers)
+		}
 		w.opts.Events(event)
 	}
 }

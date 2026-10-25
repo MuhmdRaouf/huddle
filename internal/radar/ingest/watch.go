@@ -569,8 +569,9 @@ func (w *Watcher) ingestRouterEvent(line shared.SpoolLine) {
 	}
 }
 
-// ingestRouteEvent lands a route line: its retryable failure first, then the request it stands
-// for and whatever it taught about where a plugin's models go.
+// ingestRouteEvent lands a route line: its retryable failure first, the unified limits it read
+// from Anthropic's headers, then the request it stands for and whatever it taught about where a
+// plugin's models go.
 func (w *Watcher) ingestRouteEvent(line shared.SpoolLine) {
 	ts, ok := jsfmt.ParseISO(line.Ts)
 	if !ok {
@@ -578,6 +579,9 @@ func (w *Watcher) ingestRouteEvent(line shared.SpoolLine) {
 	}
 	if failure, failed := RouteFailure(line, ts.UnixMilli()); failed {
 		w.store.AddAPIError(failure)
+	}
+	if line.Utilization != nil {
+		w.store.NoteUtilization(ts.UnixMilli(), *line.Utilization)
 	}
 	if line.Model == nil {
 		return

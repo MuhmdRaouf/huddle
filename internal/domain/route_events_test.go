@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -166,4 +167,42 @@ func TestIsHealthEvent(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUnifiedUtilizationOf(t *testing.T) {
+	t.Run("reads both windows' share used and reset, and the route event spells them as typed fields", func(t *testing.T) {
+		got := UnifiedUtilizationOf(map[string]string{
+			"anthropic-ratelimit-unified-5h-utilization": "0.42",
+			"anthropic-ratelimit-unified-5h-reset":       "1792951800",
+			"anthropic-ratelimit-unified-7d-utilization": "0.61",
+			"anthropic-ratelimit-unified-7d-reset":       "1793030400",
+			"anthropic-ratelimit-unified-status":         "allowed",
+		})
+		data, err := json.Marshal(RouteEvent{Utilization: got})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `"utilization":{"five_hour":{"used":0.42,"resets_at":1792951800},"seven_day":{"used":0.61,"resets_at":1793030400}}`
+		if !strings.Contains(string(data), want) {
+			t.Errorf("the route event = %s, want it to carry %s", data, want)
+		}
+	})
+	t.Run("keeps a window with no reset, drops one whose share is not a number", func(t *testing.T) {
+		got := UnifiedUtilizationOf(map[string]string{
+			"anthropic-ratelimit-unified-5h-utilization": "0.1",
+			"anthropic-ratelimit-unified-7d-utilization": "lots",
+			"anthropic-ratelimit-unified-7d-reset":       "1793030400",
+		})
+		if got == nil || got.FiveHour == nil || got.FiveHour.Used != 0.1 || got.FiveHour.ResetsAt != nil || got.SevenDay != nil {
+			t.Errorf("UnifiedUtilizationOf() = %+v, want the 5h window alone with no reset", got)
+		}
+	})
+	t.Run("is nil for an answer without the unified headers", func(t *testing.T) {
+		if got := UnifiedUtilizationOf(map[string]string{"request-id": "r-1"}); got != nil {
+			t.Errorf("UnifiedUtilizationOf() = %+v, want nil", got)
+		}
+		if got := UnifiedUtilizationOf(nil); got != nil {
+			t.Errorf("UnifiedUtilizationOf(nil) = %+v, want nil", got)
+		}
+	})
 }
