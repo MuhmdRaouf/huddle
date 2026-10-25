@@ -1,7 +1,7 @@
 package hub
 
 // The Web Push storage (SPEC 7.6): one subscription per paired device's endpoint, the device's
-// own notification choice beside it, and the items' push bookkeeping — one push at create, one
+// own notification choices beside it, and the items' push bookkeeping — one push at create, one
 // escalation at five minutes, nothing once decided. A device's subscriptions and its choice die
 // with the device (the foreign keys cascade), and a dead subscription is dropped the moment the
 // push service calls it gone.
@@ -27,14 +27,16 @@ const (
 )
 
 // PushSubscription is one device's Web Push subscription as the sender holds it: the endpoint
-// the push service POSTs to, the keys the payload is encrypted to, and the device's choice
-// riding beside it. AddedMS names the moment it was stored.
+// the push service POSTs to, the keys the payload is encrypted to, and the device's choices
+// riding beside it: Notify for the asks and alerts, Turn for the finished turns. AddedMS names
+// the moment it was stored.
 type PushSubscription struct {
 	Device   string
 	Endpoint string
 	P256dh   string
 	Auth     string
 	Notify   string
+	Turn     bool
 	AddedMS  int64
 }
 
@@ -63,10 +65,10 @@ func (d *DB) SavePushSubscription(ctx context.Context, sub PushSubscription, add
 }
 
 // PushSubscriptions answers every stored subscription, oldest first, each with its device's
-// notification choice riding on it.
+// notification choices riding on it.
 func (d *DB) PushSubscriptions(ctx context.Context) ([]PushSubscription, error) {
 	rows, err := d.st.All(ctx,
-		"SELECT s.endpoint, s.device, s.p256dh, s.auth, s.added, d.notify "+
+		"SELECT s.endpoint, s.device, s.p256dh, s.auth, s.added, d.notify, d.notify_turn "+
 			"FROM push_subscriptions s JOIN devices d ON d.name = s.device "+
 			"ORDER BY s.added, s.endpoint")
 	if err != nil {
@@ -81,6 +83,7 @@ func (d *DB) PushSubscriptions(ctx context.Context) ([]PushSubscription, error) 
 			P256dh:   textOfRow(row, "p256dh"),
 			Auth:     textOfRow(row, "auth"),
 			Notify:   textOfRow(row, "notify"),
+			Turn:     row["notify_turn"] == int64(1),
 			AddedMS:  added,
 		})
 	}
@@ -103,6 +106,26 @@ func (d *DB) DeviceNotify(ctx context.Context, device string) (string, bool, err
 		return "", false, err
 	}
 	return textOfRow(row, "notify"), true, nil
+}
+
+// SetDeviceTurn records whether one device is woken for a finished turn (Settings ›
+// Notifications).
+func (d *DB) SetDeviceTurn(ctx context.Context, device string, on bool) error {
+	flag := 0
+	if on {
+		flag = 1
+	}
+	return d.st.Run(ctx, "UPDATE devices SET notify_turn = ? WHERE name = ?", flag, device)
+}
+
+// DeviceTurn answers whether one device is woken for a finished turn; a device that is no longer
+// there answers off.
+func (d *DB) DeviceTurn(ctx context.Context, device string) (bool, error) {
+	row, err := d.st.Get(ctx, "SELECT notify_turn FROM devices WHERE name = ?", device)
+	if err != nil || row == nil {
+		return false, err
+	}
+	return row["notify_turn"] == int64(1), nil
 }
 
 // RemovePushSubscription drops one endpoint's row and answers whether this call held it: the

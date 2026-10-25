@@ -576,7 +576,8 @@ in proxy mode:
    Screen) and flip the switch in the installed app: Safari pushes only there. The phone then
    gets one notification when a session needs you (tap it to land on that session's item). With
    Settings → Notifications on "Needs you and alerts", it also gets one when the Anthropic path
-   starts failing (tap it for Radar's alerts). The payload names the
+   starts failing (tap it for Radar's alerts). A finished turn pushes only a device that turned
+   on "Push when a turn finishes" under the same heading; it is off by default. The payload names the
    session, its machine, the kind and the tool, never the command or the prompt. The hub makes
    its VAPID keys once, when the first browser subscribes, and keeps them in the OS keystore
    with a copy in `<home>/keys/vapid` (mode 0600). A subscription the push service reports gone

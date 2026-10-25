@@ -308,8 +308,18 @@ func (s *server) pushSessionEntries(ctx context.Context, now time.Time, subs []h
 	}
 }
 
+// hearsItem says whether one subscription is woken for one item: a device on off hears nothing,
+// and a finished turn reaches only a device that turned its own finished-turn choice on.
+func hearsItem(sub hub.PushSubscription, item hub.Item) bool {
+	if sub.Notify == hub.NotifyOff {
+		return false
+	}
+	return item.Kind != hub.KindTurn || sub.Turn
+}
+
 // pushItems carries one pass's items to every device that chose to hear them, each with the open
-// needs-you count, then marks each carried item once.
+// needs-you count, then marks each carried item once. A finished turn no awake device chose
+// still takes its mark, so the session pass does not wake those devices for it instead.
 func (s *server) pushItems(ctx context.Context, now time.Time, subs []hub.PushSubscription, badge int,
 	items []hub.Item, mark func(context.Context, hub.Item, string) error) {
 	if len(items) == 0 {
@@ -330,7 +340,9 @@ func (s *server) pushItems(ctx context.Context, now time.Time, subs []hub.PushSu
 			continue
 		}
 		for _, sub := range hearing {
-			s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
+			if hearsItem(sub, item) {
+				s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
+			}
 		}
 		if err := mark(ctx, item, jsfmt.ISOTime(now)); err != nil {
 			fmt.Fprintf(s.o.Stderr, "push: mark item %d: %v\n", item.ID, err)
@@ -515,7 +527,8 @@ func (s *server) pushUnsubscribeRoute(w http.ResponseWriter, r *http.Request, me
 	return nil
 }
 
-// pushNotifyRoute answers the device's own notification choice.
+// pushNotifyRoute answers the device's own notification choices: what wakes it, and whether a
+// finished turn does.
 func (s *server) pushNotifyRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
 	if err := deviceOnly(me); err != nil {
 		return err
@@ -530,14 +543,19 @@ func (s *server) pushNotifyRoute(w http.ResponseWriter, r *http.Request, me auth
 	if notify == "" {
 		notify = hub.NotifyNeeds
 	}
+	turn, err := s.registry.DeviceTurn(r.Context(), me.Device)
+	if err != nil {
+		return err
+	}
 	s.writeJSON(w, 200, struct {
 		Notify string `json:"notify"`
-	}{notify}, nil)
+		Turn   bool   `json:"turn"`
+	}{notify, turn}, nil)
 	return nil
 }
 
-// pushSetNotifyRoute records the device's own notification choice: needs-you only, needs-you
-// and alerts, or off.
+// pushSetNotifyRoute records the device's own notification choices, either or both: notify is
+// needs-you only, needs-you and alerts, or off; turn is true or false.
 func (s *server) pushSetNotifyRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
 	if err := deviceOnly(me); err != nil {
 		return err
@@ -549,13 +567,26 @@ func (s *server) pushSetNotifyRoute(w http.ResponseWriter, r *http.Request, me a
 	if err != nil {
 		return err
 	}
-	notify := textOf(fieldOf(body, "notify"))
-	if err := s.registry.SetDeviceNotify(r.Context(), me.Device, notify); err != nil {
-		var unknown *hub.UnknownNotifyError
-		if errors.As(err, &unknown) {
-			return &channel.HuddleError{Status: 400, Msg: unknown.Error()}
+	notifyField, turnField := fieldOf(body, "notify"), fieldOf(body, "turn")
+	if notifyField == nil && turnField == nil {
+		return &channel.HuddleError{Status: 400, Msg: "notify or turn: the choice to record"}
+	}
+	if turnField != nil && turnField.Kind() != jsfmt.KindBool {
+		return &channel.HuddleError{Status: 400, Msg: "turn: true or false"}
+	}
+	if notifyField != nil {
+		if err := s.registry.SetDeviceNotify(r.Context(), me.Device, textOf(notifyField)); err != nil {
+			var unknown *hub.UnknownNotifyError
+			if errors.As(err, &unknown) {
+				return &channel.HuddleError{Status: 400, Msg: unknown.Error()}
+			}
+			return err
 		}
-		return err
+	}
+	if turnField != nil {
+		if err := s.registry.SetDeviceTurn(r.Context(), me.Device, turnField.Boolean()); err != nil {
+			return err
+		}
 	}
 	s.writeJSON(w, 200, struct {
 		OK bool `json:"ok"`

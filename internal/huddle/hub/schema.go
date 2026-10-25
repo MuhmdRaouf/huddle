@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 19
+const SchemaVersion = 20
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -268,6 +268,9 @@ var migrations = []string{
 	   at TEXT NOT NULL,
 	   PRIMARY KEY (session_id, name)
 	 );`,
+	// 20: the finished-turn push (Settings › Notifications): its own wake choice per device, off
+	// until the device turns it on.
+	`ALTER TABLE devices ADD COLUMN notify_turn INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

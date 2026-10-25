@@ -1,10 +1,10 @@
 // Notifications.test.tsx — the settings card of this device's push notifications: the choice
-// read from the server, a pick saved at once, the default when the server names none, and the
-// refusal of a browser that holds no paired device said in the card.
+// read from the server, a pick saved at once, the default when the server names none, the
+// finished-turn switch off by default and saved at once, and the refusal of a browser that holds no paired device said in the card.
 
 import { fireEvent, screen, waitFor } from "@testing-library/preact";
 import { describe, expect, it } from "vite-plus/test";
-import { NotificationsCard, readNotifyChoice } from "../../src/app/Notifications.tsx";
+import { NotificationsCard, readNotifyChoice, readTurnChoice } from "../../src/app/Notifications.tsx";
 import { legacyClasses } from "../helpers.tsx";
 import { renderHuddle } from "../render.tsx";
 
@@ -72,14 +72,44 @@ describe("the notifications card", () => {
     card([{ status: 403, body: { error: "only a paired device holds a push subscription" } }]);
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("only a paired device"));
     expect(radios().every((x) => x.disabled)).toBe(true);
+    expect(
+      (screen.getByRole("switch", { name: "Push when a turn finishes" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
-  it("paints the card, its two switches and its three radios on the tokens", async () => {
+  it("reads the finished-turn switch off by default and saves a flip at once", async () => {
+    const { r, calls } = card([
+      { status: 200, body: { notify: "needs" } },
+      { status: 200, body: { ok: true } },
+    ]);
+    const turn = (): HTMLElement => screen.getByRole("switch", { name: "Push when a turn finishes" });
+    await waitFor(() => expect((turn() as HTMLButtonElement).disabled).toBe(false));
+    expect(turn().getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(turn());
+    await waitFor(() => expect(turn().getAttribute("aria-checked")).toBe("true"));
+    await waitFor(() => expect(r.toast).toHaveBeenCalledWith("Notifications saved"));
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ turn: true });
+    expect(radio(0).checked).toBe(true);
+  });
+
+  it("turns the finished-turn switch back when the save is refused", async () => {
+    card([
+      { status: 200, body: { notify: "needs", turn: true } },
+      { status: 400, body: { error: "turn: true or false" } },
+    ]);
+    const turn = (): HTMLElement => screen.getByRole("switch", { name: "Push when a turn finishes" });
+    await waitFor(() => expect(turn().getAttribute("aria-checked")).toBe("true"));
+    fireEvent.click(turn());
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("turn"));
+    expect(turn().getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("paints the card, its three switches and its three radios on the tokens", async () => {
     card([{ status: 200, body: { notify: "needs" } }]);
     await waitFor(() => expect(radio(0).checked).toBe(true));
     expect(screen.getByRole("region", { name: "Notifications" }).className).toBe("ui-card");
     const switches = screen.getAllByRole("switch");
-    expect(switches.map((x) => x.className)).toEqual(["ui-switch", "ui-switch"]);
+    expect(switches.map((x) => x.className)).toEqual(["ui-switch", "ui-switch", "ui-switch"]);
     expect(screen.getByRole("radiogroup", { name: "Notifications" }).className).toBe("ui-radios");
     expect(radios().every((x) => x.className === "ui-radio-input")).toBe(true);
     expect(legacyClasses()).toEqual([]);
@@ -91,5 +121,13 @@ describe("the notifications card", () => {
     expect(readNotifyChoice({ notify: "sometimes" })).toBe("needs");
     expect(readNotifyChoice({})).toBe("needs");
     expect(readNotifyChoice(null)).toBe("needs");
+  });
+
+  it("reads a finished-turn choice of any shape as off", () => {
+    expect(readTurnChoice({ turn: true })).toBe(true);
+    expect(readTurnChoice({ turn: false })).toBe(false);
+    expect(readTurnChoice({ turn: "yes" })).toBe(false);
+    expect(readTurnChoice({})).toBe(false);
+    expect(readTurnChoice(null)).toBe(false);
   });
 });

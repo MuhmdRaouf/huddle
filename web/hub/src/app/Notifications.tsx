@@ -1,7 +1,8 @@
 // Notifications.tsx — Settings › Notifications: this browser's two switches (notifications while
 // the page is open, and the Web Push subscription that wakes the installed app, with iOS's
 // install rule), and what this device is woken for (SPEC 7.6) — needs-you items only, needs-you
-// items and alerts, or nothing. That choice is the device's own: the routes answer a browser that
+// items and alerts, or nothing — with a finished turn as its own switch, off until turned on.
+// Those choices are the device's own: the routes answer a browser that
 // holds no paired device with the refusal to read or write one.
 
 import { Card } from "@huddle/ui/card.tsx";
@@ -19,7 +20,7 @@ const CHOICES: readonly RadioOption<NotifyChoice>[] = [
   {
     value: "needs",
     label: "Needs you only",
-    help: "A permission, a question, a finished turn, a blocked task.",
+    help: "A permission, a question, a blocked task.",
   },
   {
     value: "all",
@@ -35,6 +36,11 @@ export type NotifyChoice = "needs" | "all" | "off";
 export function readNotifyChoice(v: unknown): NotifyChoice {
   const raw = (v as { notify?: unknown } | null)?.notify;
   return raw === "all" || raw === "off" ? raw : "needs";
+}
+
+/** Reads one answer's finished-turn choice; anything but true reads as off. */
+export function readTurnChoice(v: unknown): boolean {
+  return (v as { turn?: unknown } | null)?.turn === true;
 }
 
 /** One switch row: its title and help line name and describe the switch, a full tap target.
@@ -142,18 +148,21 @@ function PushRow(): JSX.Element {
   );
 }
 
-/** The notifications card: the two switches, then the choice as three radios, saved the moment
- *  one is picked. */
+/** The notifications card: the two switches, then the choice as three radios and the
+ *  finished-turn switch, each saved the moment it changes. */
 export function NotificationsCard(): JSX.Element {
   const { api, toast } = useHuddle();
   const [choice, setChoice] = useState<NotifyChoice | null>(null);
+  const [turn, setTurn] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => {
     let live = true;
     api
       .api("/api/push/notify")
       .then((v) => {
-        if (live) setChoice(readNotifyChoice(v));
+        if (!live) return;
+        setChoice(readNotifyChoice(v));
+        setTurn(readTurnChoice(v));
       })
       .catch((x) => {
         if (live) setErr(errText(x));
@@ -172,6 +181,18 @@ export function NotificationsCard(): JSX.Element {
       .then(() => toast("Notifications saved"))
       .catch((x) => {
         setChoice(before);
+        setErr(errText(x));
+      });
+  };
+  const flipTurn = (): void => {
+    const next = !turn;
+    setTurn(next);
+    setErr("");
+    api
+      .api("/api/push/notify", { body: { turn: next } })
+      .then(() => toast("Notifications saved"))
+      .catch((x) => {
+        setTurn(!next);
         setErr(errText(x));
       });
   };
@@ -199,6 +220,18 @@ export function NotificationsCard(): JSX.Element {
         disabled={choice === null}
         onChange={pick}
       />
+      <div class="mt-3">
+        <List label="Finished turns">
+          <SwitchRow
+            id="turn"
+            title="Push when a turn finishes"
+            help="A session finished its turn and waits for your next prompt."
+            on={turn}
+            disabled={choice === null}
+            onFlip={flipTurn}
+          />
+        </List>
+      </div>
       {err !== "" ? (
         <p class="ui-field-error mt-2" role="alert">
           {err}

@@ -602,6 +602,99 @@ func TestAlertsReachOnlyTheDevicesThatAskedForThem(t *testing.T) {
 	}
 }
 
+// countAt answers how many messages the service took at one endpoint path.
+func (f *fakePush) countAt(path string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, p := range f.paths {
+		if p == path {
+			n++
+		}
+	}
+	return n
+}
+
+// A finished turn is its own wake choice, off by default: only the device that turned it on
+// hears the turn item, at create and at its escalation, and no session entry push speaks for
+// the turn to the others; a permission ask still reaches every device its choice lets hear it.
+func TestAFinishedTurnPushesOnlyTheDevicesThatChoseIt(t *testing.T) {
+	service := newFakePush(t)
+	clock := pushClock
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return clock })
+	subscribeDevice(t, s, "phone", service.srv.URL+"/phone", newBrowserKeys(t), hub.NotifyNeeds)
+	tabletKeys := newBrowserKeys(t)
+	subscribeDevice(t, s, "tablet", service.srv.URL+"/tablet", tabletKeys, hub.NotifyNeeds)
+	subscribeDevice(t, s, "dark", service.srv.URL+"/dark", newBrowserKeys(t), hub.NotifyOff)
+	for _, name := range []string{"tablet", "dark"} {
+		if err := s.registry.SetDeviceTurn(context.Background(), name, true); err != nil {
+			t.Fatalf("turn the finished-turn push on for %s: %v", name, err)
+		}
+	}
+	report := func(event string, at time.Time) {
+		if err := s.registry.Report(context.Background(), hub.Report{
+			SessionID: "s-1", Machine: "laptop", LastEvent: event, LastEventAt: jsfmt.ISOTime(at),
+			Digest: "ran the tests",
+		}); err != nil {
+			t.Fatalf("report %s: %v", event, err)
+		}
+	}
+	report("UserPromptSubmit", clock)
+	report("Stop", clock.Add(time.Second))
+	clock = clock.Add(2 * time.Second)
+
+	s.sweepPushes(context.Background())
+	s.sweepPushes(context.Background())
+	if got := [3]int{service.countAt("/phone"), service.countAt("/tablet"), service.countAt("/dark")}; got != [3]int{0, 1, 0} {
+		t.Fatalf("the turn's pushes (phone, tablet, dark) = %v, want the tablet's one alone", got)
+	}
+	plaintext := decryptPush(t, service.bodyAt("/tablet"), tabletKeys)
+	if !strings.Contains(string(plaintext), `"kind":"turn"`) {
+		t.Fatalf("the tablet's push %s is not the turn item's", plaintext)
+	}
+
+	// the escalation keeps the same rule
+	clock = clock.Add(hub.PushEscalatesAfter)
+	s.sweepPushes(context.Background())
+	if got := [3]int{service.countAt("/phone"), service.countAt("/tablet"), service.countAt("/dark")}; got != [3]int{0, 2, 0} {
+		t.Fatalf("the turn's pushes after the escalation (phone, tablet, dark) = %v, want the tablet's two", got)
+	}
+
+	// a permission ask keeps each device's own choice: the phone and the tablet hear it
+	if _, err := s.registry.CreatePermissionItem(context.Background(), "s-2", "Bash",
+		[]byte(`{"command":"npm test"}`), clock); err != nil {
+		t.Fatalf("create the permission item: %v", err)
+	}
+	s.sweepPushes(context.Background())
+	if got := [3]int{service.countAt("/phone"), service.countAt("/tablet"), service.countAt("/dark")}; got != [3]int{1, 3, 0} {
+		t.Fatalf("the pushes after the permission ask (phone, tablet, dark) = %v, want one more each but dark", got)
+	}
+}
+
+// The finished-turn choice is the device's own, off until it turns it on, and kept.
+func TestTheFinishedTurnChoiceOverTheServer(t *testing.T) {
+	srv := startServer(t, nil)
+	setCookie, _ := pairDevice(t, srv, webauthntest.NewSoftKey(t), "iPhone")
+	device := pushDeviceHeaders(auth.PairPlainCookie + "=" + cookieValueOf(t, setCookie))
+
+	if code, _, out := srv.get(t, "/api/push/notify", device); code != 200 || bodyMap(t, out)["turn"] != false {
+		t.Fatalf("the default turn choice = %d %s, want off", code, out)
+	}
+	if code, out := srv.post(t, "/api/push/notify", `{"turn":true}`, device); code != 200 {
+		t.Fatalf("turn it on = %d %s", code, out)
+	}
+	code, _, out := srv.get(t, "/api/push/notify", device)
+	if code != 200 || bodyMap(t, out)["turn"] != true || bodyMap(t, out)["notify"] != hub.NotifyNeeds {
+		t.Fatalf("the choice after turning it on = %d %s, want turn on and needs you only kept", code, out)
+	}
+	if code, out := srv.post(t, "/api/push/notify", `{"turn":"yes"}`, device); code != 400 {
+		t.Fatalf("a torn turn choice = %d %s, want 400", code, out)
+	}
+	if code, out := srv.post(t, "/api/push/notify", `{}`, device); code != 400 {
+		t.Fatalf("an empty choice = %d %s, want 400", code, out)
+	}
+}
+
 func TestAGoneSubscriptionIsDropped(t *testing.T) {
 	service := newFakePush(t)
 	clock := pushClock

@@ -2,13 +2,13 @@
 // (Appearance, Notifications, Devices and sign-in, Hub and Radar), each group page with its members,
 // a member's own address opening the group that holds it, the appearance switch that overrides the
 // OS scheme and keeps the choice across a reload, the push switch that says what the browser
-// allows, the hub's own facts, the hub's time zone (seeded by the first signed-in browser, picked
+// allows, the finished-turn push a paired device turns on and keeps across a reload, the hub's own facts, the hub's time zone (seeded by the first signed-in browser, picked
 // again and kept across a reload), and the phone guide in a sheet. Every group fits the viewport
 // with no horizontal scroll, keeps its tap targets at least 44 px and passes axe.
 
 import { expect, test, type Page } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
-import { signIn, theSetup } from "./helpers.ts";
+import { pairThroughLink, signIn, theSetup, useVirtualAuthenticator } from "./helpers.ts";
 
 /** The four groups, in row order, each with its address and the members its page draws. */
 const GROUPS: readonly (readonly [name: string, hash: string, members: readonly string[]])[] = [
@@ -96,6 +96,30 @@ test.describe("the Settings tab", () => {
       // the hub's own choice of what wakes a device stands beside the switches
       await expect(page.getByRole("radiogroup", { name: "Notifications" })).toBeVisible();
     });
+  });
+
+  test("a paired device's finished-turn push is off by default and its choice survives a reload", async ({
+    page,
+  }) => {
+    // the choice is a paired device's own: this browser pairs under its own name first
+    await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
+    await useVirtualAuthenticator(page);
+    await pairThroughLink(page, `E2E Turn ${test.info().project.name}`);
+    await page.goto(`${theSetup().pairOrigin}/#/settings/notifications`);
+    const turn = page.getByRole("switch", { name: "Push when a turn finishes" });
+    await expect(turn).toBeEnabled();
+    await expect(turn).toHaveAttribute("aria-checked", "false");
+    await turn.click();
+    await expect(turn).toHaveAttribute("aria-checked", "true");
+    await page.reload();
+    await expect(turn).toBeEnabled();
+    await expect(turn).toHaveAttribute("aria-checked", "true");
+    // the asks keep their own choice beside it
+    await expect(page.getByRole("radio", { name: /Needs you only/ })).toBeChecked();
+    await turn.click();
+    await expect(turn).toHaveAttribute("aria-checked", "false");
+    await page.reload();
+    await expect(turn).toHaveAttribute("aria-checked", "false");
   });
 
   test("This hub names the hub, its address and its version", async ({ page }) => {
