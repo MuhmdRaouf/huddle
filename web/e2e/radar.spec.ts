@@ -1,9 +1,10 @@
 // radar.spec.ts — the Radar tab over seeded data: every view loads without a console error,
 // the overview's Day cards carry the fixture's exact totals, and the requests table lists the
 // three seeded calls with the inspector showing one request's numbers, and the overview's four graphs
-// carry the fixture's series. The views are walked through the sub-tab row in one document, the way
-// owners switch views. Every view passes axe on both projects; on the phone none scrolls sideways
-// and each of its targets is at least 44 px.
+// carry the fixture's series. The views are walked through the views nav in one document, the way
+// owners switch views: the phone's nav holds four views and the Overview's More list the rest, the
+// tablet and the desktop list every view in a sidebar. Every view passes axe on both projects; on
+// the phone none scrolls sideways and each of its targets is at least 44 px.
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
@@ -49,22 +50,128 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
 });
 
+/** Opens one view the way an owner does: its entry in the views nav, or — for a view the phone's
+ *  nav leaves out — the Overview first (its entry or the back link), then the More list's row.
+ *  Each is a hash link, so the same document repaints onto the view, no reload. */
+async function pickView(page: Page, label: string): Promise<void> {
+  const nav = page.getByRole("navigation", { name: "Radar views" });
+  const back = page.getByRole("link", { name: "Back to Overview" });
+  // the nav or the back link paints first: the counts below read what the pane shows
+  await page.locator("[data-radar-views]").waitFor();
+  if ((await back.count()) > 0) {
+    await back.click();
+    await expect(nav.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
+  }
+  const entry = nav.getByRole("link", { name: label });
+  if ((await entry.count()) > 0) {
+    await entry.click();
+    await expect(entry).toHaveAttribute("aria-current", "page");
+    return;
+  }
+  await nav.getByRole("link", { name: "Overview" }).click();
+  await page.getByRole("navigation", { name: "More views" }).getByRole("link", { name: label }).click();
+  await expect(page.locator("[data-radar-view]")).toHaveAttribute("aria-label", label);
+}
+
 test("every radar view loads with no console error", async ({ page }) => {
   const errors = new ConsoleErrors(page);
   await signIn(page); // a first signed-in load proves the cookie works before the loop
   await openTab(page, "Radar");
   for (const [, label, role, loaded] of VIEWS) {
-    // the sub-tab row's hash link repaints onto the view, no reload
-    await page
-      .getByRole("navigation", { name: "Radar views" })
-      .getByRole("link", { name: label })
-      .click();
+    await pickView(page, label);
     await expect(page.getByRole(role, { name: loaded }).first()).toBeVisible();
-    await expect(
-      page.getByRole("navigation", { name: "Radar views" }).getByRole("link", { name: label }),
-    ).toHaveAttribute("aria-current", "page");
   }
   expect(errors.errors()).toEqual([]);
+});
+
+/** The views the phone's nav holds; every other view opens from the Overview's More list. */
+const PHONE_NAV: readonly string[] = ["Overview", "Requests", "Costs", "Alerts"];
+
+/** The Overview's More list on the phone, in sub-tab order. */
+const MORE: readonly string[] = ["Models", "Usage", "Blocks", "Tools", "Agents", "Routers", "Timeline"];
+
+/** Every view in the sidebar's sub-tab order. */
+const SIDEBAR: readonly string[] = [
+  "Overview",
+  "Costs",
+  "Models",
+  "Usage",
+  "Blocks",
+  "Requests",
+  "Tools",
+  "Agents",
+  "Routers",
+  "Alerts",
+  "Timeline",
+];
+
+test.describe("radar's view navigation", () => {
+  test("on a 390 px phone the nav holds four views that fit, and no chip row", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signIn(page);
+    await page.goto(`${theSetup().rootUrl}/#/radar/overview`);
+    const nav = page.getByRole("navigation", { name: "Radar views" });
+    await expect(nav.getByRole("link")).toHaveText(PHONE_NAV.map((label) => new RegExp(`^${label}`)));
+    // nothing scrolls inside the nav, and every entry sits inside the phone's width
+    expect(await nav.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+    for (const box of await nav.getByRole("link").evaluateAll((links) =>
+      links.map((link) => link.getBoundingClientRect().right),
+    )) {
+      expect(box).toBeLessThanOrEqual(390);
+    }
+  });
+
+  test("on the phone Models opens from the Overview's More list, and its back control lands on the Overview", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signIn(page);
+    await page.goto(`${theSetup().rootUrl}/#/radar/overview`);
+    const more = page.getByRole("navigation", { name: "More views" });
+    await expect(more.getByRole("link")).toHaveText(MORE);
+    await more.getByRole("link", { name: "Models" }).click();
+    await expect(page).toHaveURL(/#\/radar\/models$/);
+    await expect(page.getByRole("heading", { name: /^Models$/ }).first()).toBeVisible();
+    await page.getByRole("link", { name: "Back to Overview" }).click();
+    await expect(page).toHaveURL(/#\/radar\/overview$/);
+    await expect(
+      page.getByRole("navigation", { name: "Radar views" }).getByRole("link", { name: "Overview" }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
+  test("on the phone a deep link to Models shows the view and its back control", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signIn(page);
+    await page.goto(`${theSetup().rootUrl}/#/radar/models`);
+    await expect(page.getByRole("heading", { name: /^Models$/ }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "Back to Overview" })).toHaveAttribute(
+      "href",
+      "#/radar/overview",
+    );
+  });
+
+  test("at 1024 px a sidebar lists every view beside the pane", async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await signIn(page);
+    await page.goto(`${theSetup().rootUrl}/#/radar/models`);
+    const nav = page.getByRole("navigation", { name: "Radar views" });
+    await expect(nav.getByRole("link")).toHaveText(SIDEBAR.map((label) => new RegExp(`^${label}`)));
+    await expect(nav.getByRole("link", { name: "Models" })).toHaveAttribute("aria-current", "page");
+    // a column: every entry starts at one left edge, one under the other, left of the view
+    const boxes = await nav.getByRole("link").evaluateAll((links) =>
+      links.map((link) => {
+        const r = link.getBoundingClientRect();
+        return { x: Math.round(r.x), top: r.top };
+      }),
+    );
+    expect(new Set(boxes.map((b) => b.x)).size).toBe(1);
+    for (let i = 1; i < boxes.length; i += 1) {
+      expect(boxes[i]?.top ?? 0).toBeGreaterThan(boxes[i - 1]?.top ?? 0);
+    }
+    const navBox = await nav.boundingBox();
+    const paneBox = await page.locator("[data-radar-view]").boundingBox();
+    expect((navBox?.x ?? 0) + (navBox?.width ?? 0)).toBeLessThanOrEqual(paneBox?.x ?? 0);
+  });
 });
 
 test("the overview's Day cards show the seeded totals", async ({ page, isMobile }) => {
@@ -232,10 +339,7 @@ test("the blocks view counts the seeded block once the scope includes the provid
   await expect(rows.nth(1)).toContainText(`${2 + LOAD_REQUESTS}`);
 
   // the overview's card carries the same widened scope
-  await page
-    .getByRole("navigation", { name: "Radar views" })
-    .getByRole("link", { name: "Overview" })
-    .click();
+  await pickView(page, "Overview");
   await expect(page.locator("[data-block-card]")).toContainText("10k");
 });
 

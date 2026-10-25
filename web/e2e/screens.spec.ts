@@ -169,15 +169,14 @@ const settings = (id: PageId, section: string): Screen => ({
   },
 });
 
-/** A Radar view, its sub-tab the current one. */
+/** A Radar view, open on its own address: the pane names the view (the phone's nav holds four
+ *  views, so the pane, not a nav entry, is the wait). */
 const radar = (id: PageId, view: string, label: string): Screen => ({
   id,
   signedIn: true,
   open: async (page) => {
     await page.goto(at(`#/radar/${view}`));
-    await expect(
-      page.getByRole("navigation", { name: "Radar views" }).getByRole("link", { name: label, exact: true }),
-    ).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("[data-radar-view]")).toHaveAttribute("aria-label", label);
   },
 });
 

@@ -1,7 +1,7 @@
 // layout.spec.ts — the screenshot tour as a permanent gate: the landing page a signed-out
 // browser gets, then every tab and every Radar view, in both colour schemes at the desk, tablet
 // and phone widths, opens with no console error, no page-level horizontal scroll, no two Kanban
-// toolbar controls overlapping, and no Radar sub-tab sitting under the range picker. Each view
+// toolbar controls overlapping, and no Radar views entry sitting under the range picker. Each view
 // also lands a screenshot under the test's own output dir, so a layout report is one run away.
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
@@ -17,7 +17,7 @@ const SIZES: readonly (readonly [kind: string, width: number, height: number])[]
 /** The colour schemes a fresh browser can carry; the default theme follows the system. */
 const SCHEMES: readonly ("dark" | "light")[] = ["dark", "light"];
 
-/** Radar's sub-tabs, in sub-tab order; the current one and its settled panels are the wait. */
+/** Radar's views, in sub-tab order; the open view and its settled panels are the wait. */
 const RADAR: readonly string[] = [
   "Overview",
   "Costs",
@@ -76,49 +76,49 @@ async function expectToolbarClear(page: Page, name: string): Promise<void> {
   }
 }
 
-/** Asserts no Radar sub-tab sits under the range picker. The sub-tab row scrolls its pills inside
- *  itself, so a scrolled-out pill keeps a layout box that paints nowhere — each pill's box is
- *  clamped to the row's own clip box first, and the row must actually clip (overflow-x on), which
- *  is what makes the comparison about painted pixels. */
+/** Asserts no entry of Radar's views nav (or the phone's back link in its place) sits under the
+ *  range picker, and none reaches past the viewport's edge: the nav holds every entry in view,
+ *  with no row that scrolls. */
 async function expectRadarHeaderClear(page: Page, name: string): Promise<void> {
-  const row = page.locator('nav[aria-label="Radar views"] > div:first-child');
-  const clip = await row.evaluate((el) => {
-    const box = el.getBoundingClientRect();
-    return {
-      overflowX: getComputedStyle(el).overflowX,
-      x: box.x,
-      y: box.y,
-      w: box.width,
-      h: box.height,
-    };
-  });
-  expect(
-    ["auto", "scroll", "hidden", "clip"].includes(clip.overflowX),
-    `${name}: the Radar sub-tab row does not clip its pills (overflow-x: ${clip.overflowX})`,
-  ).toBe(true);
-  const tabs = await boxesOf(page.locator('nav[aria-label="Radar views"] a[data-view]'));
+  const tabs = await boxesOf(page.locator("[data-radar-views] a"));
   const range = await boxesOf(page.locator("[data-radar-range]"));
-  expect(tabs.length, `${name}: the Radar views nav holds no sub-tabs`).toBeGreaterThan(0);
+  const width = page.viewportSize()?.width ?? 0;
+  expect(tabs.length, `${name}: the Radar views nav holds no entries`).toBeGreaterThan(0);
   for (const box of tabs) {
-    const left = Math.max(box.x, clip.x);
-    const top = Math.max(box.y, clip.y);
-    const visible = {
-      x: left,
-      y: top,
-      w: Math.min(box.x + box.w, clip.x + clip.w) - left,
-      h: Math.min(box.y + box.h, clip.y + clip.h) - top,
-    };
+    expect(box.x + box.w, `${name}: a Radar views entry runs past the edge`).toBeLessThanOrEqual(width);
     for (const b of range) {
       const overlap =
-        visible.w > 0 &&
-        visible.h > 0 &&
-        visible.x < b.x + b.w - 1 &&
-        b.x < visible.x + visible.w - 1 &&
-        visible.y < b.y + b.h - 1 &&
-        b.y < visible.y + visible.h - 1;
-      expect(overlap, `${name}: a Radar sub-tab sits under the range picker`).toBe(false);
+        box.x < b.x + b.w - 1 && b.x < box.x + box.w - 1 && box.y < b.y + b.h - 1 && b.y < box.y + box.h - 1;
+      expect(overlap, `${name}: a Radar views entry sits under the range picker`).toBe(false);
     }
   }
+}
+
+/** Opens one Radar view from the views nav, or — for a view the phone's nav leaves out — from
+ *  the Overview's More list, the back link first when a More view is open. */
+async function pickRadarView(page: Page, label: string): Promise<void> {
+  const nav = page.getByRole("navigation", { name: "Radar views" });
+  const back = page.getByRole("link", { name: "Back to Overview" });
+  await page.locator("[data-radar-views]").waitFor();
+  if ((await back.count()) > 0) {
+    await back.click();
+    await expect(nav.getByRole("link", { name: "Overview", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  }
+  const entry = nav.getByRole("link", { name: label, exact: true });
+  if ((await entry.count()) > 0) {
+    await entry.click();
+    await expect(entry).toHaveAttribute("aria-current", "page");
+    return;
+  }
+  await nav.getByRole("link", { name: "Overview", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "More views" })
+    .getByRole("link", { name: label, exact: true })
+    .click();
+  await expect(page.locator("[data-radar-view]")).toHaveAttribute("aria-label", label);
 }
 
 for (const scheme of SCHEMES) {
@@ -173,18 +173,14 @@ for (const scheme of SCHEMES) {
       await expectNoPageScroll(page, "channel");
       await shot("channel");
 
-      // Radar: one screenshot per view, the sub-tab's own currency the wait
+      // Radar: one screenshot per view, opened from the views nav or the More list
       await openAndShoot(
         "Radar",
         () => expectRadarHeaderClear(page, `radar overview ${scheme} ${kind}`),
         "radar-overview",
       );
       for (const label of RADAR.slice(1)) {
-        const link = page
-          .getByRole("navigation", { name: "Radar views" })
-          .getByRole("link", { name: label, exact: true });
-        await link.click();
-        await expect(link).toHaveAttribute("aria-current", "page");
+        await pickRadarView(page, label);
         await settled(page);
         await expectRadarHeaderClear(page, `radar ${label} ${scheme} ${kind}`);
         await expectNoPageScroll(page, `radar ${label}`);

@@ -318,7 +318,8 @@ describe("routes and panes", () => {
     expect(document.querySelector("[data-page-intro] h1")?.textContent).toBe("Channels");
   });
 
-  it("renders Radar's views as sub-tabs with the named one current", () => {
+  it("lists every Radar view in the desktop's sidebar with the named one current", () => {
+    stubMedia(DESKTOP);
     nav("#/radar/costs");
     mountApp();
     const views = [...document.querySelectorAll('[aria-label="Radar views"] a')] as HTMLAnchorElement[];
@@ -349,11 +350,26 @@ describe("routes and panes", () => {
       null,
     ]);
     expect(views[0]?.getAttribute("href")).toBe("#/radar/overview");
+    expect(document.querySelector("[data-radar-export]")).not.toBeNull();
+  });
+
+  it("gives the phone's Radar nav its four views, and a back link on a view the More list opens", () => {
+    nav("#/radar/costs");
+    mountApp();
+    const views = (): HTMLAnchorElement[] =>
+      [...document.querySelectorAll('[aria-label="Radar views"] a')] as HTMLAnchorElement[];
+    expect(views().map((a) => a.dataset.view)).toEqual(["overview", "requests", "costs", "alerts"]);
+    expect(views().map((a) => a.getAttribute("aria-current"))).toEqual([null, null, "page", null]);
     // the phone carries the range in its header; the export button is the desktop's alone
     expect(document.querySelector('[data-radar-range] [data-range="7d"]')).not.toBeNull();
     expect(document.querySelector("[data-radar-export]")).toBeNull();
     // no controller runs in tests, so the pane itself stays empty until the entry starts one
     expect(document.querySelector("[data-radar-view]")).toBeNull();
+    nav("#/radar/models");
+    expect(views()).toEqual([]);
+    expect(document.querySelector('a[aria-label="Back to Overview"]')?.getAttribute("href")).toBe(
+      "#/radar/overview",
+    );
     nav("#/radar/overview");
     expect(
       document

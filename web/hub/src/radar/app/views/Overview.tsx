@@ -37,6 +37,7 @@ import { DayCard } from "../DayCard.tsx";
 import { Flow, requestsInRange } from "../Flow.tsx";
 import { Icon } from "../Icon.tsx";
 import { EmptyState, ModelChip, Status, shortModelName } from "../kit.tsx";
+import { MoreViews } from "../MoreViews.tsx";
 import { OverviewGraphs } from "../OverviewGraphs.tsx";
 import { isJob } from "../sessions.ts";
 
@@ -908,6 +909,7 @@ export function OverviewView(): JSX.Element {
           <TopTools />
         </div>
       </div>
+      {phone && <MoreViews />}
     </div>
   );
 }

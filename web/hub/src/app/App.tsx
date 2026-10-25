@@ -15,6 +15,7 @@ import { Icon, type IconName } from "../icons.tsx";
 import { Time } from "../kit.tsx";
 import { KanbanTab } from "../kanban/KanbanTab.tsx";
 import { markPasskeyHere } from "../passkey.ts";
+import { PHONE_VIEWS } from "../radar/app/nav.ts";
 import { RadarTab } from "../radar/app/RadarTab.tsx";
 import { radarAct, useRadarState } from "../radar/mount.tsx";
 import { machinesLine, machinesOf } from "../registry.ts";
@@ -249,8 +250,8 @@ export function ComingSoon({ label }: { label: string }): JSX.Element {
   );
 }
 
-/** The Hour/Day/Week/Month range control the Radar tab carries: right of the sub-tabs on a wide
- *  pane, in the phone header's place. Hour is the default range, so it is pressed on first load;
+/** The Hour/Day/Week/Month range control the Radar tab carries: in the bar over the view beside
+ *  the sidebar, in the phone header's place. Hour is the default range, so it is pressed on first load;
  *  a custom range leaves none pressed. */
 function RadarRange(): JSX.Element {
   const state = useRadarState();
@@ -303,73 +304,105 @@ const RADAR_EXPORT: Record<RadarView, string> = {
   timeline: "requests",
 };
 
-/** Radar's sub-tab row: an underline row on the desktop bar's second line, pills elsewhere, the
- *  range right-aligned and — on the desktop — the Export CSV button beside it. The Alerts pill
- *  carries the active alert count. */
+/** One view's entry in Radar's nav: its label, and the active alert count on Alerts. */
+function RadarEntry({ view, alerts }: { view: RadarView; alerts: number }): JSX.Element {
+  return (
+    <>
+      {radarLabel(view)}
+      {view === "alerts" && alerts > 0 && (
+        <span class="ml-1.5">
+          <Badge tone="fail">{alerts}</Badge>
+        </span>
+      )}
+    </>
+  );
+}
+
+/** Radar's view navigation. The phone's nav is one row of its four views; a view the Overview's
+ *  More list opens shows a back link to the Overview in that row's place. The tablet and the
+ *  desktop list every view in a sidebar. */
 function RadarViews({ view, layout }: { view: RadarView; layout: Layout }): JSX.Element {
   const state = useRadarState();
   const alerts = state?.alerts.length ?? 0;
-  return (
-    <nav
-      aria-label="Radar views"
-      data-radar-views=""
-      class={
-        layout === "desktop"
-          ? "flex min-h-[52px] shrink-0 items-center gap-0.5 border-b border-[var(--ui-line)] pr-5 pl-5"
-          : "flex shrink-0 items-center gap-1.5 overflow-x-auto px-4 py-2"
-      }
-    >
-      <div
-        class={
-          layout === "desktop"
-            ? "flex h-full min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
-            : "flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto"
-        }
-      >
-        {RADAR_VIEWS.map((v) => (
+  const focus = "outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]";
+  if (layout === "phone" && !PHONE_VIEWS.includes(view)) {
+    return (
+      <div data-radar-views="" class="flex shrink-0 items-center px-4 py-2">
+        <a
+          href="#/radar/overview"
+          aria-label="Back to Overview"
+          class={`-ml-2 flex min-h-[var(--ui-tap)] min-w-[var(--ui-tap)] items-center gap-1 rounded-[var(--ui-radius)] pr-2 text-sm font-semibold text-[var(--ui-accent)] ${focus}`}
+        >
+          <Icon name="left" class="size-5" />
+          Overview
+        </a>
+      </div>
+    );
+  }
+  if (layout === "phone") {
+    return (
+      <nav aria-label="Radar views" data-radar-views="" class="grid shrink-0 grid-cols-4 gap-1.5 px-4 py-2">
+        {PHONE_VIEWS.map((v) => (
           <a
             key={v}
             href={`#/radar/${v}`}
             data-view={v}
             aria-current={v === view ? "page" : undefined}
-            class={
-              layout === "desktop"
-                ? `flex h-full shrink-0 items-center border-b-2 px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
-                    v === view
-                      ? "border-[var(--ui-accent)] font-semibold text-[var(--ui-text)]"
-                      : "border-transparent text-[var(--ui-muted)] hover:text-[var(--ui-text)]"
-                  }`
-                : `flex min-h-[var(--ui-tap)] shrink-0 items-center rounded-[var(--ui-radius-full)] px-3.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
-                    v === view
-                      ? "bg-[var(--ui-accent)] font-semibold text-[var(--ui-on-accent)]"
-                      : "border border-[var(--ui-line)] text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
-                  }`
-            }
+            class={`flex min-h-[var(--ui-tap)] min-w-0 items-center justify-center rounded-[var(--ui-radius-full)] px-2 text-sm ${focus} ${
+              v === view
+                ? "bg-[var(--ui-accent)] font-semibold text-[var(--ui-on-accent)]"
+                : "border border-[var(--ui-line)] text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
+            }`}
           >
-            {radarLabel(v)}
-            {v === "alerts" && alerts > 0 && (
-              <span class="ml-1.5">
-                <Badge tone="fail">{alerts}</Badge>
-              </span>
-            )}
+            <RadarEntry view={v} alerts={alerts} />
           </a>
         ))}
-      </div>
-      <div class="ml-auto flex shrink-0 items-center gap-2.5 pl-3">
-        {layout === "phone" ? null : <RadarRange />}
-        {layout === "desktop" && (
-          <button
-            type="button"
-            class="ui-btn ui-btn-secondary"
-            data-radar-export=""
-            onClick={() => radarAct("export", RADAR_EXPORT[view])}
-          >
-            <Icon name="download" class="size-4" />
-            Export CSV
-          </button>
-        )}
-      </div>
+      </nav>
+    );
+  }
+  return (
+    <nav
+      aria-label="Radar views"
+      data-radar-views=""
+      class="flex w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-[var(--ui-line)] p-3"
+    >
+      {RADAR_VIEWS.map((v) => (
+        <a
+          key={v}
+          href={`#/radar/${v}`}
+          data-view={v}
+          aria-current={v === view ? "page" : undefined}
+          class={`flex min-h-[var(--ui-tap)] shrink-0 items-center rounded-[var(--ui-radius)] px-3 text-sm ${focus} ${
+            v === view
+              ? "bg-[var(--ui-surface-2)] font-semibold text-[var(--ui-text)]"
+              : "text-[var(--ui-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
+          }`}
+        >
+          <RadarEntry view={v} alerts={alerts} />
+        </a>
+      ))}
     </nav>
+  );
+}
+
+/** The bar over a Radar view beside the sidebar: the range, and on the desktop the Export CSV
+ *  button beside it. The phone carries the range in its header. */
+function RadarBar({ view, layout }: { view: RadarView; layout: Layout }): JSX.Element {
+  return (
+    <div class="flex min-h-[52px] shrink-0 items-center justify-end gap-2.5 border-b border-[var(--ui-line)] px-5">
+      <RadarRange />
+      {layout === "desktop" && (
+        <button
+          type="button"
+          class="ui-btn ui-btn-secondary"
+          data-radar-export=""
+          onClick={() => radarAct("export", RADAR_EXPORT[view])}
+        >
+          <Icon name="download" class="size-4" />
+          Export CSV
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -691,12 +724,15 @@ export function App({
         </div>
       )
     ) : route.tab === "radar" ? (
-      <div class="flex min-h-0 flex-1 flex-col">
+      <div class={`flex min-h-0 flex-1 ${layout === "phone" ? "flex-col" : ""}`}>
         <RadarViews view={route.view} layout={layout} />
-        {/* a view with no control of its own still scrolls by keyboard */}
-        {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
-        <div class="min-h-0 flex-1 overflow-y-auto" tabIndex={0}>
-          <RadarTab view={route.view} />
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+          {layout === "phone" ? null : <RadarBar view={route.view} layout={layout} />}
+          {/* a view with no control of its own still scrolls by keyboard */}
+          {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+          <div class="min-h-0 flex-1 overflow-y-auto" tabIndex={0}>
+            <RadarTab view={route.view} />
+          </div>
         </div>
       </div>
     ) : route.tab === "kanban" ? (
