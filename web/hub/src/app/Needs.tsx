@@ -254,7 +254,7 @@ export type NeedsAct = {
 
 /** Wires the actions to the API client and the registry store. A snooze and a dismiss push no
  *  event of their own, so they move the item first and reread both lists when the server took
- *  the move — or put it back and say so when it did not. */
+ *  the move — or put it back and say so when it did not, unless the item no longer waits. */
 export function useNeedsAct(): NeedsAct {
   const { api, registry, toast, now } = useHuddle();
   const { ask, sheet } = useStepUp();
@@ -263,9 +263,15 @@ export function useNeedsAct(): NeedsAct {
     void decideItem({ api, registry, toast, id: item.id, decision, what, stepUp: ask });
   };
 
+  // a 404 says the item waits no longer (opening its session answers a finished turn): the
+  // server's own list is the truth, so it is read again instead of putting the item back
   const rollBack =
     (before: NeedItem[] | null) =>
     (e: unknown): void => {
+      if ((e as ApiError).status === 404) {
+        void registry.load();
+        return;
+      }
       registry.setNeeds(before);
       toast(errText(e), { bad: true });
     };
@@ -582,9 +588,43 @@ export function confirmWhat(
   };
 }
 
-/** The session screen's action bar (SPEC 9): a permission ask as the phone's bottom sheet and
- *  the wide layouts' inline box — the tool, its input, where it runs, Deny and Allow once with
- *  the keys named, and the composer a Reply instead (or an Answer) opens under it. */
+/** Every other item's actions: the snooze menu, Dismiss, and the Answer that opens the composer
+ *  for an item that asks something. A finished turn asks nothing, so it carries no Answer. */
+function ItemActions({
+  act,
+  item,
+  wide,
+  onAnswer,
+}: {
+  act: NeedsAct;
+  item: NeedItem;
+  wide: boolean;
+  onAnswer: () => void;
+}): JSX.Element {
+  return (
+    <div class="flex flex-wrap items-center gap-2">
+      <SnoozeMenu item={item} />
+      <Button
+        variant="secondary"
+        size={wide ? "md" : "lg"}
+        data-act="dismiss"
+        onClick={() => act.dismiss(item)}
+      >
+        Dismiss
+      </Button>
+      {item.kind === "turn" ? null : (
+        <Button variant="ghost" data-act="reply" onClick={onAnswer}>
+          Answer
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** The session screen's action bar (SPEC 9): an item as the phone's bottom sheet and the wide
+ *  layouts' inline box. A permission ask shows the tool, its input, where it runs, Deny and Allow
+ *  once with the keys named, and Reply instead; every other item shows its summary with Snooze
+ *  and Dismiss (and Answer when it asks something). The composer opens under it. */
 export function NeedsBar({
   item,
   session,
@@ -600,7 +640,11 @@ export function NeedsBar({
   const wide = layout !== "phone";
   const who = sessionName(session);
   const confirm = confirmWhat(item, session, permission);
-  const ask = permission ? `Permission ask on ${who}` : `Ask from ${who}`;
+  const ask = permission
+    ? `Permission ask on ${who}`
+    : item.kind === "turn"
+      ? `Finished turn on ${who}`
+      : `Ask from ${who}`;
   const replyWord = permission ? `Reply to ${who}…` : `Answer ${who}…`;
   const sheet = wide
     ? "mx-4 mb-4 flex shrink-0 flex-col gap-3 rounded-[var(--ui-radius-lg)] border border-[var(--ui-needs-you)] bg-[var(--ui-surface)] p-4 text-[var(--ui-text)] sm:mx-6 sm:mb-5"
@@ -631,9 +675,13 @@ export function NeedsBar({
               <AskFacts item={item} session={session} permission={permission} />
               {permission ? <BarActions act={act} item={item} what={confirm} wide={wide} /> : null}
             </div>
-            <Button variant="ghost" data-act="reply" class="self-start" onClick={() => setReplying(true)}>
-              {permission ? "Reply instead" : "Answer"}
-            </Button>
+            {permission ? (
+              <Button variant="ghost" data-act="reply" class="self-start" onClick={() => setReplying(true)}>
+                Reply instead
+              </Button>
+            ) : (
+              <ItemActions act={act} item={item} wide={wide} onAnswer={() => setReplying(true)} />
+            )}
           </>
         )}
       </section>

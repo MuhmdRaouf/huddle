@@ -158,6 +158,29 @@ func TestAStopGrowsATurnItemWhenNobodyOpenedTheSession(t *testing.T) {
 	}
 }
 
+func TestAStopCarryingADigestSummarisesTheTurnByItsFirstLine(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	if err := db.Report(ctx, Report{SessionID: "s-d", LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:01:00.000Z"}); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	// the digest wins over the task: it says what the turn did
+	if err := db.Report(ctx, Report{SessionID: "s-d", LastEvent: "Stop", LastEventAt: "2026-10-16T09:02:00.000Z",
+		Task: "the login work", Digest: "Goal: fix the login bug\nEdited: internal/auth/login.go"}); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	items, err := db.Items(ctx, readNow)
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	if len(items) != 1 || items[0].Kind != KindTurn {
+		t.Fatalf("items = %+v, want the one turn item", items)
+	}
+	if items[0].Summary != "Goal: fix the login bug" {
+		t.Errorf("summary = %q, want the digest's first line", items[0].Summary)
+	}
+}
+
 func TestSnoozeAndDismissMoveAnItem(t *testing.T) {
 	db := openForTest(t)
 	ctx := context.Background()

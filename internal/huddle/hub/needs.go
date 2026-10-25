@@ -133,7 +133,13 @@ func (d *DB) growItems(ctx context.Context, r Report) error {
 		if opened.After(prompt) {
 			return nil // the owner read the session since its last prompt
 		}
-		summary := cleanSummary(r.Task)
+		// the digest's first line says what the turn did; the task and the title say what the
+		// session is about
+		first, _, _ := strings.Cut(r.Digest, "\n")
+		summary := cleanSummary(first)
+		if summary == "" {
+			summary = cleanSummary(r.Task)
+		}
 		if summary == "" {
 			summary = cleanSummary(r.Title)
 		}

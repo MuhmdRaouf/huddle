@@ -528,6 +528,31 @@ describe("the permission bar", () => {
     });
     expect(screen.getByLabelText("Message")).toBeDefined();
   });
+
+  it("offers a finished turn Snooze and Dismiss under its digest line, and no Answer", async () => {
+    const h = mountBar({
+      item: ask({ kind: "turn", summary: "Goal: fix the login bug", tool: "", input: "" }),
+    });
+    expect(screen.getByRole("heading", { name: "Goal: fix the login bug" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Answer" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Deny" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Dismiss" }).getAttribute("class")).toContain("ui-btn-lg");
+    await act(async () => {
+      screen.getByRole("button", { name: "More actions" }).click();
+    });
+    await act(async () => {
+      screen.getByRole("menuitem", { name: "Snooze 1 hour" }).click();
+    });
+    await flush();
+    expect(h.writes()).toEqual([{ path: "/api/needs/7/snooze", body: { until: "1h" } }]);
+    h.canned.needs = [];
+    await act(async () => {
+      screen.getByRole("button", { name: "Dismiss" }).click();
+    });
+    await flush();
+    expect(h.writes()[1]).toEqual({ path: "/api/needs/7/dismiss", body: {} });
+    expect(legacyClasses()).toEqual([]);
+  });
 });
 
 describe("the Now list's actions", () => {
@@ -655,6 +680,29 @@ describe("the Now list's actions", () => {
     // the refusal put the item back and said so
     expect(h.registry.getState().needs?.[0]?.id).toBe(7);
     expect(h.toast).toHaveBeenCalledWith("the registry's database is unavailable", { bad: true });
+  });
+
+  it("keeps an item gone, with no alarm, when the server says it no longer waits", async () => {
+    for (const [name, path] of [
+      ["Dismiss", "/api/needs/7/dismiss"],
+      ["Snooze 1 hour", "/api/needs/7/snooze"],
+    ] as const) {
+      const h = mount(() => <NowPane layout="phone" />, {
+        onWrite: (p) => (p === path ? httpError(404, "no open item 7") : {}),
+      });
+      // the server's own list: opening the session already answered the item
+      h.canned.needs = [];
+      await act(async () => {
+        screen.getByRole("button", { name: "More actions" }).click();
+      });
+      await act(async () => {
+        screen.getByRole("menuitem", { name }).click();
+      });
+      await flush();
+      expect(h.writes()).toEqual([{ path, body: expect.anything() }]);
+      expect(h.registry.getState().needs).toEqual([]);
+      expect(h.toast).not.toHaveBeenCalled();
+    }
   });
 
   it("denies the selected row's ask with d", async () => {

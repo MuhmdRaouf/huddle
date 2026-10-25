@@ -235,6 +235,46 @@ test("the phone's stream folds repeated calls into one row a tap opens, and open
   await expectAccessible(page);
 });
 
+test("a finished turn's sheet shows its digest line with Snooze and Dismiss, and no Answer", async ({
+  page,
+  isMobile,
+}, info) => {
+  // a prompt, then a Stop whose hook built a digest: nobody opened the session, so the turn waits
+  // in Needs you; the dismissal at the end keeps the other cases' counts as they were
+  const session = `e2e-digest-${info.project.name}`;
+  const base = { session_id: session, machine: "e2e-machine", project: "e2e", title: "Fixes the login" };
+  await api("/api/registry/report", { ...base, last_event: "UserPromptSubmit", last_event_at: new Date().toISOString() });
+  await api("/api/registry/report", {
+    ...base,
+    digest: "Goal: fix the login bug\nEdited: internal/auth/login.go",
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+  await signIn(page);
+  await openTab(page, "Now");
+  await page.locator(`a[href='#/now/${session}']`).first().click();
+
+  const sheet = page.locator(isMobile ? "[data-needs-sheet]" : "[data-needs-bar]");
+  await expect(sheet.getByRole("heading", { name: "Goal: fix the login bug" })).toBeVisible();
+  await expect(sheet.getByText("Edited: internal/auth/login.go")).toHaveCount(0);
+  await expect(sheet.getByRole("button", { name: "Answer" })).toHaveCount(0);
+  const dismiss = sheet.getByRole("button", { name: "Dismiss" });
+  const more = sheet.getByRole("button", { name: "More actions" });
+  for (const button of [dismiss, more]) {
+    const box = await button.boundingBox();
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+    expect(box?.width).toBeGreaterThanOrEqual(44);
+  }
+  await more.click();
+  await expect(sheet.getByRole("menuitem", { name: "Snooze 1 hour" })).toBeVisible();
+  await more.click();
+  await expectAccessible(page);
+
+  if (isMobile) await dismiss.tap();
+  else await dismiss.click();
+  await expect(sheet).toHaveCount(0);
+});
+
 test("the Radar card shows today's seeded cost and requests", async ({ page }) => {
   await signIn(page);
   await openTab(page, "Now");
