@@ -132,8 +132,24 @@
     return { title: payload.tool || payload.kind, body: payload.session + on, tag: "huddle-item-" + payload.item };
   }
 
-  // The push (SPEC 7.6): the payload carries who, what kind, the tool name and the app address
-  // it opens, so the notification says no more than that — the command and the prompt text
+  /** Sets the Home Screen badge from a needs-you push's open count while the app is closed: the
+   *  count, or no badge at zero. A payload without a count, or a browser without the Badging
+   *  API, leaves the badge as it is; a refusal passes quietly. */
+  function syncBadge(payload) {
+    var nav = self.navigator;
+    var set = null;
+    if (typeof payload.badge !== "number" || !nav) return Promise.resolve();
+    if (payload.badge > 0) {
+      if (nav.setAppBadge) set = nav.setAppBadge(payload.badge);
+    } else if (nav.clearAppBadge) {
+      set = nav.clearAppBadge();
+    }
+    return Promise.resolve(set).catch(function () {});
+  }
+
+  // The push (SPEC 7.6): the payload carries who, what kind, the tool name, the app address it
+  // opens and, for a needs-you push, the open count the badge shows, so the notification says no
+  // more than that — the command and the prompt text
   // never reach the browser at all. A permission item carries Allow, Deny and Open; the other
   // kinds carry Open. A tag keeps one notification per session entry and per failing path, so
   // a repeat replaces it instead of piling up.
@@ -155,14 +171,17 @@
     }
     var shown = shownOf(payload);
     event.waitUntil(
-      self.registration.showNotification(shown.title, {
-        body: shown.body,
-        icon: "/icons/icon-192.png",
-        badge: "/icons/icon-192.png",
-        tag: shown.tag,
-        data: payload,
-        actions: actions,
-      }),
+      Promise.all([
+        self.registration.showNotification(shown.title, {
+          body: shown.body,
+          icon: "/icons/icon-192.png",
+          badge: "/icons/icon-192.png",
+          tag: shown.tag,
+          data: payload,
+          actions: actions,
+        }),
+        syncBadge(payload),
+      ]),
     );
   });
 

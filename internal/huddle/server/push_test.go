@@ -199,7 +199,7 @@ func TestThePushPayloadCarriesOnlyWhoKindAndTool(t *testing.T) {
 		ID: 7, SessionID: "s-1", Kind: hub.KindPermission, Summary: "Bash: echo secret-token",
 		Tool: "Bash", Input: `{"command":"echo secret-token"}`,
 	}
-	raw, err := json.Marshal(needsPushPayload(item, "laptop"))
+	raw, err := json.Marshal(needsPushPayload(item, "laptop", 3))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,15 +207,15 @@ func TestThePushPayloadCarriesOnlyWhoKindAndTool(t *testing.T) {
 	if err := json.Unmarshal(raw, &asMap); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"item", "session", "machine", "kind", "tool", "url"} {
+	for _, key := range []string{"item", "session", "machine", "kind", "tool", "url", "badge"} {
 		if _, has := asMap[key]; !has {
 			t.Fatalf("the payload %s misses %q", raw, key)
 		}
 	}
-	if len(asMap) != 6 {
-		t.Fatalf("the payload %s carries more than who, the kind, the tool name and the link", raw)
+	if len(asMap) != 7 {
+		t.Fatalf("the payload %s carries more than who, the kind, the tool name, the link and the badge", raw)
 	}
-	if asMap["session"] != "s-1" || asMap["machine"] != "laptop" ||
+	if asMap["session"] != "s-1" || asMap["machine"] != "laptop" || asMap["badge"] != float64(3) ||
 		asMap["kind"] != hub.KindPermission || asMap["tool"] != "Bash" || asMap["item"] != float64(7) {
 		t.Fatalf("the payload = %s, want who and the kind the item carries", raw)
 	}
@@ -225,7 +225,7 @@ func TestThePushPayloadCarriesOnlyWhoKindAndTool(t *testing.T) {
 
 	// a question names no tool: the field stays off the answer
 	question := hub.Item{ID: 8, SessionID: "s-2", Kind: hub.KindQuestion, Summary: "Pick a database?"}
-	raw, _ = json.Marshal(needsPushPayload(question, ""))
+	raw, _ = json.Marshal(needsPushPayload(question, "", 1))
 	if strings.Contains(string(raw), `"tool"`) {
 		t.Fatalf("a question's payload %s carries a tool", raw)
 	}
@@ -461,6 +461,59 @@ func TestAPushGoesOncePerNeedsYouEntry(t *testing.T) {
 	s.sweepPushes(context.Background())
 	if service.count() != 2 {
 		t.Fatalf("the pushes after the re-entry's second sweep = %d, want no repeat", service.count())
+	}
+}
+
+// A needs-you push carries the open needs-you count, the sessions the Now tab lists as waiting,
+// so the service worker can set the Home Screen badge while the app is closed.
+func TestANeedsYouPushCarriesTheOpenNeedsYouCount(t *testing.T) {
+	service := newFakePush(t)
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return pushClock })
+	keys := newBrowserKeys(t)
+	subscribeDevice(t, s, "phone", service.srv.URL, keys, hub.NotifyNeeds)
+	for _, id := range []string{"s-1", "s-2", "s-3"} {
+		if err := s.registry.Report(context.Background(), hub.Report{
+			SessionID: id, Machine: "laptop", LastEvent: "UserPromptSubmit",
+			LastEventAt: jsfmt.ISOTime(pushClock),
+		}); err != nil {
+			t.Fatalf("report %s: %v", id, err)
+		}
+	}
+	// two sessions wait on an item each, the third works: the count is two
+	for _, id := range []string{"s-1", "s-2"} {
+		if _, err := s.registry.CreatePermissionItem(context.Background(), id, "Bash",
+			[]byte(`{"command":"npm test"}`), pushClock); err != nil {
+			t.Fatalf("create the item for %s: %v", id, err)
+		}
+	}
+	s.sweepPushes(context.Background())
+	if service.count() != 2 {
+		t.Fatalf("the pushes = %d, want one per item", service.count())
+	}
+	for i := 0; i < service.count(); i++ {
+		var payload map[string]any
+		plaintext := decryptPush(t, service.body(i), keys)
+		if err := json.Unmarshal(plaintext, &payload); err != nil {
+			t.Fatalf("the plaintext %q is not JSON: %v", plaintext, err)
+		}
+		if payload["badge"] != float64(2) {
+			t.Fatalf("the push %s carries badge %v, want the 2 sessions that wait", plaintext, payload["badge"])
+		}
+	}
+
+	// a session's own entry push carries the same count
+	if err := s.registry.Report(context.Background(), hub.Report{
+		SessionID: "s-3", Machine: "laptop", LastEvent: "PermissionRequest",
+		LastEventAt: jsfmt.ISOTime(pushClock),
+	}); err != nil {
+		t.Fatalf("report the entry: %v", err)
+	}
+	s.sweepPushes(context.Background())
+	if service.count() != 3 {
+		t.Fatalf("the pushes after the entry = %d, want one more", service.count())
+	}
+	if plaintext := string(decryptPush(t, service.body(2), keys)); !strings.Contains(plaintext, `"badge":3`) {
+		t.Fatalf("the entry's push %s does not carry badge 3", plaintext)
 	}
 }
 
@@ -740,10 +793,10 @@ func TestThePushRoutesOverTheServer(t *testing.T) {
 
 func TestEveryPushCarriesTheAppAddressItOpens(t *testing.T) {
 	item := hub.Item{ID: 7, SessionID: "s 1", Kind: hub.KindPermission, Tool: "Bash"}
-	if got := needsPushPayload(item, "laptop").URL; got != "/#/now/s%201?item=7" {
+	if got := needsPushPayload(item, "laptop", 1).URL; got != "/#/now/s%201?item=7" {
 		t.Fatalf("the item's link = %q, want the session's screen at the item", got)
 	}
-	if got := sessionPushOf(hub.SessionRow{SessionID: "s-2", Machine: "laptop"}).URL; got != "/#/now/s-2" {
+	if got := sessionPushOf(hub.SessionRow{SessionID: "s-2", Machine: "laptop"}, 1).URL; got != "/#/now/s-2" {
 		t.Fatalf("the session entry's link = %q, want the session's screen", got)
 	}
 	event := AlertEvent{Type: "alert.device_paired", ID: 1, At: jsfmt.ISOTime(pushClock), Body: vv(t, `{"device":"tablet"}`)}

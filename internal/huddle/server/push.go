@@ -2,9 +2,9 @@ package server
 
 // Web Push (SPEC 7.6): the needs-you items, a failing Anthropic path and the owner alerts reach
 // the paired devices' subscriptions, each payload encrypted to that device's own keys. A payload
-// carries who (the session and its machine), what kind, the tool name and the app address the
-// notification opens — never the command, path, prompt or answer text, which stay in the
-// registry's rows. An item pushes once at create and once more only on its five-minute
+// carries who (the session and its machine), what kind, the tool name, the app address the
+// notification opens and, on a needs-you push, the open needs-you count for the Home Screen
+// badge — never the command, path, prompt or answer text, which stay in the registry's rows. An item pushes once at create and once more only on its five-minute
 // escalation; a subscription the push service calls gone is dropped on the spot.
 
 import (
@@ -35,9 +35,10 @@ const (
 	pushSubscriber = "huddle-push@localhost"
 )
 
-// pushPayload is one needs-you item's push (SPEC 7.6): who, what kind and the tool name. The
-// summary, the input and every other field of the item's row stay off it — the payload crosses
-// a push service outside this machine, and its plaintext is decrypted only by the devices.
+// pushPayload is one needs-you item's push (SPEC 7.6): who, what kind, the tool name and the
+// open needs-you count the Home Screen badge shows. The summary, the input and every other
+// field of the item's row stay off it — the payload crosses a push service outside this
+// machine, and its plaintext is decrypted only by the devices.
 type pushPayload struct {
 	Item    int64  `json:"item"`
 	Session string `json:"session"`
@@ -45,16 +46,18 @@ type pushPayload struct {
 	Kind    string `json:"kind"`
 	Tool    string `json:"tool,omitempty"`
 	URL     string `json:"url"`
+	Badge   int    `json:"badge"`
 }
 
-// sessionPushPayload is one session's needs-you entry push (SPEC 7.6): who and that it waits.
-// No item rides it — an entry with an open item has the item's own push — and nothing of the
-// session's words does.
+// sessionPushPayload is one session's needs-you entry push (SPEC 7.6): who, that it waits, and
+// the open needs-you count. No item rides it — an entry with an open item has the item's own
+// push — and nothing of the session's words does.
 type sessionPushPayload struct {
 	Kind    string `json:"kind"` // "session"
 	Session string `json:"session"`
 	Machine string `json:"machine,omitempty"`
 	URL     string `json:"url"`
+	Badge   int    `json:"badge"`
 }
 
 // alertPayload is one owner alert's push: the alert's own name for the kind, who it names, and
@@ -89,8 +92,8 @@ func sessionURL(sessionID string) string {
 	return nowURL + "/" + url.PathEscape(sessionID)
 }
 
-// needsPushPayload builds one needs-you item's push payload.
-func needsPushPayload(item hub.Item, machine string) pushPayload {
+// needsPushPayload builds one needs-you item's push payload; badge is the open needs-you count.
+func needsPushPayload(item hub.Item, machine string, badge int) pushPayload {
 	return pushPayload{
 		Item:    item.ID,
 		Session: item.SessionID,
@@ -98,13 +101,16 @@ func needsPushPayload(item hub.Item, machine string) pushPayload {
 		Kind:    item.Kind,
 		Tool:    item.Tool,
 		URL:     sessionURL(item.SessionID) + "?item=" + strconv.FormatInt(item.ID, 10),
+		Badge:   badge,
 	}
 }
 
-// sessionPushOf builds one session's needs-you entry push payload.
-func sessionPushOf(row hub.SessionRow) sessionPushPayload {
+// sessionPushOf builds one session's needs-you entry push payload; badge is the open needs-you
+// count.
+func sessionPushOf(row hub.SessionRow, badge int) sessionPushPayload {
 	return sessionPushPayload{
 		Kind: "session", Session: row.SessionID, Machine: row.Machine, URL: sessionURL(row.SessionID),
+		Badge: badge,
 	}
 }
 
@@ -172,6 +178,13 @@ func (s *server) sweepPushes(ctx context.Context) {
 		fmt.Fprintf(s.o.Stderr, "push: subscriptions: %v\n", err)
 		return
 	}
+	// the badge every needs-you push carries: the sessions waiting on the owner, the Now tab's count
+	waiting, err := s.registry.Sessions(ctx, hub.SessionsFilter{State: hub.StateNeedsYou}, now)
+	if err != nil {
+		fmt.Fprintf(s.o.Stderr, "push: needs-you count: %v\n", err)
+		return
+	}
+	badge := len(waiting)
 	fresh, err := s.registry.FreshPushItems(ctx, now)
 	if err != nil {
 		fmt.Fprintf(s.o.Stderr, "push: fresh items: %v\n", err)
@@ -179,7 +192,7 @@ func (s *server) sweepPushes(ctx context.Context) {
 	}
 	// the item's first push is its session's entry push: the session pass sends no second one
 	// for the same entry
-	s.pushItems(ctx, now, subs, fresh, func(ctx context.Context, item hub.Item, at string) error {
+	s.pushItems(ctx, now, subs, badge, fresh, func(ctx context.Context, item hub.Item, at string) error {
 		if err := s.registry.MarkItemPushed(ctx, item.ID, at); err != nil {
 			return err
 		}
@@ -190,10 +203,10 @@ func (s *server) sweepPushes(ctx context.Context) {
 		fmt.Fprintf(s.o.Stderr, "push: escalations: %v\n", err)
 		return
 	}
-	s.pushItems(ctx, now, subs, due, func(ctx context.Context, item hub.Item, at string) error {
+	s.pushItems(ctx, now, subs, badge, due, func(ctx context.Context, item hub.Item, at string) error {
 		return s.registry.MarkItemEscalated(ctx, item.ID, at)
 	})
-	s.pushSessionEntries(ctx, now, subs)
+	s.pushSessionEntries(ctx, now, subs, badge)
 	s.pushUpstream(ctx, subs)
 }
 
@@ -256,7 +269,7 @@ func (s *server) pushUpstream(ctx context.Context, subs []hub.PushSubscription) 
 // at now is needs-you with no push sent for this entry, then the marks of the sessions that
 // left the state, so a later entry pushes again. A session with no device to hear it waits
 // unmarked, the same rule the items keep.
-func (s *server) pushSessionEntries(ctx context.Context, now time.Time, subs []hub.PushSubscription) {
+func (s *server) pushSessionEntries(ctx context.Context, now time.Time, subs []hub.PushSubscription, badge int) {
 	hearing := make([]hub.PushSubscription, 0, len(subs))
 	for _, sub := range subs {
 		if sub.Notify != hub.NotifyOff {
@@ -272,7 +285,7 @@ func (s *server) pushSessionEntries(ctx context.Context, now time.Time, subs []h
 		return
 	}
 	for _, row := range entries {
-		payload, err := json.Marshal(sessionPushOf(row))
+		payload, err := json.Marshal(sessionPushOf(row, badge))
 		if err != nil {
 			continue
 		}
@@ -295,9 +308,9 @@ func (s *server) pushSessionEntries(ctx context.Context, now time.Time, subs []h
 	}
 }
 
-// pushItems carries one pass's items to every device that chose to hear them, then marks each
-// carried item once.
-func (s *server) pushItems(ctx context.Context, now time.Time, subs []hub.PushSubscription,
+// pushItems carries one pass's items to every device that chose to hear them, each with the open
+// needs-you count, then marks each carried item once.
+func (s *server) pushItems(ctx context.Context, now time.Time, subs []hub.PushSubscription, badge int,
 	items []hub.Item, mark func(context.Context, hub.Item, string) error) {
 	if len(items) == 0 {
 		return
@@ -312,7 +325,7 @@ func (s *server) pushItems(ctx context.Context, now time.Time, subs []hub.PushSu
 		return
 	}
 	for _, item := range items {
-		payload, err := json.Marshal(needsPushPayload(item, s.machineOf(ctx, item.SessionID, now)))
+		payload, err := json.Marshal(needsPushPayload(item, s.machineOf(ctx, item.SessionID, now), badge))
 		if err != nil {
 			continue
 		}

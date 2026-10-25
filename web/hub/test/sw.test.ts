@@ -110,14 +110,24 @@ type WorkerRun = {
   fetchHandled(request: FakeRequest): { answered: boolean; response(): Promise<FakeResponse> };
 };
 
+/** The slice of the worker's navigator the Badging API adds; a browser without it has neither. */
+type BadgeNavigator = {
+  setAppBadge?: (count?: number) => Promise<void>;
+  clearAppBadge?: () => Promise<void>;
+};
+
 /** Runs public/sw.js against a fake worker scope; network answers every URL with its own href. */
-const worker = (network: (input: string | FakeRequest) => Promise<FakeResponse> = net): WorkerRun => {
+const worker = (
+  network: (input: string | FakeRequest) => Promise<FakeResponse> = net,
+  navigator: BadgeNavigator = {},
+): WorkerRun => {
   const listeners = new Map<string, Array<(event: unknown) => void>>();
   const shown: WorkerRun["shown"] = [];
   const opened: string[] = [];
   const windowClients: WorkerRun["windowClients"] = [];
   const scope = {
     location: { origin: ORIGIN },
+    navigator,
     skipWaiting: () => Promise.resolve(),
     registration: {
       showNotification: (title: string, options: Record<string, unknown>) => {
@@ -374,6 +384,44 @@ describe("push", () => {
     expect(shown.options.body).toBe("ECERT: trust the CA on laptop");
     expect(shown.options.tag).toBe("huddle-upstream");
     expect(shown.options.actions).toEqual([{ action: "open", title: "Open" }]);
+  });
+
+  it("sets the Home Screen badge to the payload's open needs-you count", async () => {
+    const setAppBadge = vi.fn((_count?: number) => Promise.resolve());
+    const clearAppBadge = vi.fn(() => Promise.resolve());
+    const w = worker(net, { setAppBadge, clearAppBadge });
+    await w.pushed({ ...permission, badge: 3 });
+    expect(setAppBadge).toHaveBeenCalledWith(3);
+    expect(clearAppBadge).not.toHaveBeenCalled();
+    expect(w.shown).toHaveLength(1);
+  });
+
+  it("clears the badge when nothing needs the owner", async () => {
+    const setAppBadge = vi.fn((_count?: number) => Promise.resolve());
+    const clearAppBadge = vi.fn(() => Promise.resolve());
+    const w = worker(net, { setAppBadge, clearAppBadge });
+    await w.pushed({ kind: "session", session: "s-3", badge: 0 });
+    expect(clearAppBadge).toHaveBeenCalledTimes(1);
+    expect(setAppBadge).not.toHaveBeenCalled();
+  });
+
+  it("leaves the badge alone for a payload without a count", async () => {
+    const setAppBadge = vi.fn((_count?: number) => Promise.resolve());
+    const clearAppBadge = vi.fn(() => Promise.resolve());
+    const w = worker(net, { setAppBadge, clearAppBadge });
+    await w.pushed({ kind: "upstream_failing", machine: "laptop", detail: "ECERT", url: "/#/radar/alerts" });
+    expect(setAppBadge).not.toHaveBeenCalled();
+    expect(clearAppBadge).not.toHaveBeenCalled();
+    expect(w.shown).toHaveLength(1);
+  });
+
+  it("still shows the notification in a browser without the Badging API or when it refuses", async () => {
+    const bare = worker();
+    await bare.pushed({ ...permission, badge: 3 });
+    expect(bare.shown).toHaveLength(1);
+    const refusing = worker(net, { setAppBadge: () => Promise.reject(new Error("no badge")) });
+    await refusing.pushed({ ...permission, badge: 2 });
+    expect(refusing.shown).toHaveLength(1);
   });
 
   it("shows nothing for a message it cannot read", async () => {
