@@ -45,10 +45,11 @@ func TestE2ESetupSecondProjectJoinsARunningHub(t *testing.T) {
 				}
 			}
 			hubURL := fmt.Sprintf("http://127.0.0.1:%d", hubPort)
-			// each side is its own session: the creator's root credential stays the hub-listing
-			// one, the joiner's member credential never overwrites it
-			env1 := argvLayer(env, map[string]string{"HUDDLE_SESSION": "owner"})
-			env2 := argvLayer(env, map[string]string{"HUDDLE_SESSION": "joiner"})
+			// each side is its own session in its own project, as Claude Code names it: the
+			// creator's root credential stays the hub-listing one, the joiner's member credential
+			// never overwrites it
+			env1 := argvLayer(env, map[string]string{"HUDDLE_SESSION": "owner", "CLAUDE_PROJECT_DIR": p1})
+			env2 := argvLayer(env, map[string]string{"HUDDLE_SESSION": "joiner", "CLAUDE_PROJECT_DIR": p2})
 			stopHub := func() {
 				_, _, _ = runBin(t, huddleBin, env1, p1, "down")
 				if pollFor(5*time.Second, func() bool { return !argvHealthy(hubURL) }) {

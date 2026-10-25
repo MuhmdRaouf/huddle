@@ -57,8 +57,11 @@ func dropped(name string) bool {
 // Environ answers a child environment rooted at home: the parent's environment without any
 // variable that names the owner's state, then HOME=home, the XDG_CONFIG_HOME, XDG_STATE_HOME,
 // XDG_DATA_HOME and XDG_CACHE_HOME roots under home, TMPDIR=home/tmp (made), and
-// CLAUDE_CONFIG_DIR=home/.claude, HUDDLE_KEYS=files so keys stay in files under the home — and
-// finally extra, which wins over all of it. Without an extra naming one, HUDDLE_ROUTER_PORT is
+// CLAUDE_CONFIG_DIR=home/.claude, HUDDLE_KEYS=files so keys stay in files under the home,
+// CLAUDE_PROJECT_DIR=home/project (made) — and finally extra, which wins over all of it. The
+// project dir is the child's own because huddle's identity lookup walks up from it, else from the
+// cwd, to the nearest .agents/huddle/huddle.json: a test's cwd is its package directory inside
+// this repository, whose huddle.json is the owner's channel. Without an extra naming one, HUDDLE_ROUTER_PORT is
 // a free port: the default 18786 is the owner's live router, whose health answer would make a
 // child's probe report up and skip the start. The machine's own PATH, LANG and Go caches pass
 // through, so the child finds its tools.
@@ -74,8 +77,10 @@ func Environ(t testing.TB, home string, extra ...string) []string {
 		at[name] = len(env)
 		env = append(env, entry)
 	}
-	if err := os.MkdirAll(filepath.Join(home, "tmp"), 0o700); err != nil {
-		t.Fatalf("isoenv: make the child's temp dir under %s: %v", home, err)
+	for _, dir := range []string{"tmp", "project"} {
+		if err := os.MkdirAll(filepath.Join(home, dir), 0o700); err != nil {
+			t.Fatalf("isoenv: make the child's %s dir under %s: %v", dir, home, err)
+		}
 	}
 	set := func(name, value string) {
 		// A repeat names the same slot, so extra wins and no child ever reads a value hidden
@@ -96,6 +101,7 @@ func Environ(t testing.TB, home string, extra ...string) []string {
 	set("TMPDIR", filepath.Join(home, "tmp"))
 	set("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
 	set("HUDDLE_KEYS", "files")
+	set("CLAUDE_PROJECT_DIR", filepath.Join(home, "project"))
 	for _, entry := range extra {
 		name, value, _ := strings.Cut(entry, "=")
 		set(name, value)

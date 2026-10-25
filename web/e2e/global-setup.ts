@@ -11,10 +11,11 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import https from "node:https";
-import { here, repoRoot, runDir, setupPath, type E2eSetup } from "./paths.ts";
+import { here, outsideProjectPath, repoRoot, runDir, setupPath, type E2eSetup } from "./paths.ts";
 import { LOAD_REQUESTS } from "./seed.ts";
 import { HUB_HOST, hubPair } from "./tls.ts";
 
@@ -50,8 +51,20 @@ const HUB_TOKEN = `huddle-e2e-${randomUUID().replace(/-/g, "")}`;
 let server: ChildProcess | null = null;
 let serverHub: ChildProcess | null = null;
 
+/** The project dir every command of the run gets as CLAUDE_PROJECT_DIR. huddle's identity lookup
+ *  walks up from it, else from the cwd, to the nearest .agents/huddle/huddle.json; the run folder
+ *  and the cwd both sit inside this repository, whose huddle.json is the owner's channel, so the
+ *  project dir lives in the OS temp dir, outside it. The setup also puts it in its own
+ *  process.env, which the test workers inherit, so a spec's child built from process.env gets it
+ *  too. The teardown removes it. */
+let outsideProject = "";
+
 export default async function globalSetup(): Promise<void> {
   fs.rmSync(runDir, { recursive: true, force: true });
+  fs.mkdirSync(runDir, { recursive: true });
+  outsideProject = fs.mkdtempSync(path.join(os.tmpdir(), "huddle-e2e-project-"));
+  fs.writeFileSync(outsideProjectPath, outsideProject);
+  process.env.CLAUDE_PROJECT_DIR = outsideProject;
   for (const dir of [
     home,
     huddleHome,
@@ -241,7 +254,8 @@ const tlsHubHomeDirs: TempHome = {
 };
 
 /** The process environment one temp home's commands run with: every dir the binary honours
- *  points into the run folder, so nothing of the user's is read or written. */
+ *  points into the run folder, and the project dir outside the repository, so nothing of the
+ *  user's is read or written. */
 function envFor(target: TempHome, port: number | null, token: string | null) {
   return {
     ...process.env,
@@ -249,6 +263,7 @@ function envFor(target: TempHome, port: number | null, token: string | null) {
     HUDDLE_HOME: target.huddleHome,
     RADAR_HOME: target.radarHome,
     CLAUDE_CONFIG_DIR: target.claudeConfig,
+    CLAUDE_PROJECT_DIR: outsideProject,
     XDG_CONFIG_HOME: `${target.xdg}-config`,
     XDG_CACHE_HOME: `${target.xdg}-cache`,
     XDG_DATA_HOME: `${target.xdg}-data`,

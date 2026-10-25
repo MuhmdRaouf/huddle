@@ -13,9 +13,10 @@ import (
 // Sandbox roots this whole test process at a temp home, for a package's TestMain: code a test
 // runs in process (a hook, a CLI word, a wired provider) reads os.Environ, and on a developer
 // machine that is the owner's real home, settings and live routers. It drops every variable
-// Environ drops, sets HOME, the XDG roots, CLAUDE_CONFIG_DIR, HUDDLE_KEYS=files and a
-// HUDDLE_ROUTER_PORT nothing listens on, and pins the Go caches where they were, so a build
-// under the new HOME reuses them. Tests that need more set it with t.Setenv as before. The
+// Environ drops, sets HOME, the XDG roots, CLAUDE_CONFIG_DIR, HUDDLE_KEYS=files, a
+// HUDDLE_ROUTER_PORT nothing listens on and CLAUDE_PROJECT_DIR=home/project (made: the identity
+// lookup walks up from it instead of from the test's cwd, a package directory inside this
+// repository), and pins the Go caches where they were, so a build under the new HOME reuses them. Tests that need more set it with t.Setenv as before. The
 // answer removes the temp home; call it after m.Run.
 func Sandbox() (cleanup func(), err error) {
 	keepGo, err := goCaches()
@@ -27,6 +28,11 @@ func Sandbox() (cleanup func(), err error) {
 		return nil, err
 	}
 	cleanup = func() { _ = os.RemoveAll(home) }
+	project := filepath.Join(home, "project")
+	if err := os.Mkdir(project, 0o700); err != nil {
+		cleanup()
+		return nil, err
+	}
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		if dropped(name) {
@@ -47,6 +53,7 @@ func Sandbox() (cleanup func(), err error) {
 		"CLAUDE_CONFIG_DIR":  filepath.Join(home, ".claude"),
 		"HUDDLE_KEYS":        "files",
 		"HUDDLE_ROUTER_PORT": strconv.Itoa(port),
+		"CLAUDE_PROJECT_DIR": project,
 		sandboxMarker:        home,
 	}
 	for name, value := range keepGo {

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // repoRoot is the repository root, three levels above this package's directory.
@@ -129,7 +130,7 @@ type launcherWorld struct {
 	binHome string
 	state   string
 	home    string
-	path    string
+	base    []string
 }
 
 // newLauncherWorld builds a world whose PATH holds the base tools plus any extras (a tool the
@@ -156,7 +157,16 @@ func newLauncherWorld(t *testing.T, extras ...string) *launcherWorld {
 			t.Fatalf("link %s: %v", name, err)
 		}
 	}
-	world.path = bin
+	world.base = isoenv.Environ(t, home,
+		"PATH="+bin,
+		"RADAR_HOME="+world.state,
+		"CLAUDE_CONFIG_DIR="+filepath.Join(home, "claude"),
+		"ZAI_STATE_DIR="+filepath.Join(home, "zai"),
+		"AGENTS_HUDDLE_HOME="+world.binHome,
+		// never the real release URL: a closed port answers nothing, and a test that wants the
+		// download path overrides it with its own server
+		"HUDDLE_DOWNLOAD_BASE=http://127.0.0.1:1",
+	)
 	// Registered after both TempDir calls so it runs before either removal: the fetch the wait
 	// is for still needs this PATH's mkdir, date and rm while it finishes.
 	t.Cleanup(func() { world.waitForDetachedDownloads(t) })
@@ -292,20 +302,11 @@ func (w *launcherWorld) installBin(t *testing.T) {
 	}
 }
 
-// env is the child's whole environment, built from scratch so nothing from the surrounding
-// shell — no PATH, no real home — leaks into the run.
+// env is the child's whole environment: isoenv's, rooted at this world's home with its own
+// project dir and router port, on a PATH of the world's tools only, so no real home, no
+// JavaScript runtime and no huddle.json above the test's cwd reach the run. A later entry wins.
 func (w *launcherWorld) env(extra ...string) []string {
-	return append([]string{
-		"HOME=" + w.home,
-		"PATH=" + w.path,
-		"RADAR_HOME=" + w.state,
-		"CLAUDE_CONFIG_DIR=" + filepath.Join(w.home, "claude"),
-		"ZAI_STATE_DIR=" + filepath.Join(w.home, "zai"),
-		"AGENTS_HUDDLE_HOME=" + w.binHome,
-		// never the real release URL: a closed port answers nothing, and a test that wants the
-		// download path overrides it with its own server
-		"HUDDLE_DOWNLOAD_BASE=http://127.0.0.1:1",
-	}, extra...)
+	return append(append([]string{}, w.base...), extra...)
 }
 
 // run runs one command line through /bin/sh the way Claude Code runs a hook's command, with

@@ -16,6 +16,9 @@ export const repoRoot = path.resolve(here, "..", "..");
  *  the setup file. Every run starts by emptying it. */
 export const runDir = path.join(repoRoot, ".agents", "scratch", "e2e", "run");
 
+/** The file naming the project dir the global setup made in the OS temp dir, for the teardown. */
+export const outsideProjectPath = path.join(runDir, "project-dir");
+
 /** The file the global setup writes and every test reads. */
 export const setupPath = path.join(runDir, "setup.json");
 

@@ -1,9 +1,10 @@
 // global-teardown.ts — stops the two processes the global setup started (SIGTERM, then SIGKILL
-// after five seconds each) and removes the run folder with the temp homes in it.
+// after five seconds each) and removes the run folder with the temp homes in it, and the project
+// dir the setup made outside the repository.
 
 import fs from "node:fs";
 import path from "node:path";
-import { runDir } from "./paths.ts";
+import { outsideProjectPath, runDir } from "./paths.ts";
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -51,6 +52,14 @@ export default async function globalTeardown(): Promise<void> {
   for (const stateName of ["server.json", "server-hub.json"]) {
     const pid = serverPid(stateName);
     if (pid !== null) await stop(pid);
+  }
+  try {
+    const project = fs.readFileSync(outsideProjectPath, "utf8").trim();
+    if (path.basename(project).startsWith("huddle-e2e-project-")) {
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  } catch {
+    // the setup never got that far
   }
   fs.rmSync(runDir, { recursive: true, force: true });
 }

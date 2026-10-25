@@ -69,14 +69,15 @@ func TestEnvironRootsTheChildUnderHomeAndKeepsTheMachinesPath(t *testing.T) {
 	t.Setenv("LANG", "en_US.UTF-8")
 	got := Lookup(Environ(t, home))
 	want := map[string]string{
-		"HOME":              home,
-		"XDG_CONFIG_HOME":   filepath.Join(home, ".config"),
-		"XDG_STATE_HOME":    filepath.Join(home, ".local", "state"),
-		"XDG_DATA_HOME":     filepath.Join(home, ".local", "share"),
-		"XDG_CACHE_HOME":    filepath.Join(home, ".cache"),
-		"TMPDIR":            filepath.Join(home, "tmp"),
-		"CLAUDE_CONFIG_DIR": filepath.Join(home, ".claude"),
-		"HUDDLE_KEYS":       "files",
+		"HOME":               home,
+		"XDG_CONFIG_HOME":    filepath.Join(home, ".config"),
+		"XDG_STATE_HOME":     filepath.Join(home, ".local", "state"),
+		"XDG_DATA_HOME":      filepath.Join(home, ".local", "share"),
+		"XDG_CACHE_HOME":     filepath.Join(home, ".cache"),
+		"TMPDIR":             filepath.Join(home, "tmp"),
+		"CLAUDE_CONFIG_DIR":  filepath.Join(home, ".claude"),
+		"HUDDLE_KEYS":        "files",
+		"CLAUDE_PROJECT_DIR": filepath.Join(home, "project"),
 	}
 	for name, expected := range want {
 		if got[name] != expected {

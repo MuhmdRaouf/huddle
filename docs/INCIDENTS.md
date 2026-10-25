@@ -99,3 +99,20 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   (web/hub/test/app/App.test.tsx), `"no hub page asks one URL more than twice a second"`
   (web/e2e/fetchrate.spec.ts) — every hub page, watched for 5 s, fails above 2 requests a second to one URL
 - **Rule:** an effect that fetches lists its inputs, and the hub e2e counts requests per URL.
+||||||| parent of a1d3859 (test(repo): keep tests off the repository's own huddle.json with a project dir of their own)
+## 2026-10-25, a test joined the live hub
+
+- **What happened:** `TestHooksJsonCommand` failed on an untouched checkout: its hook said `You are in Huddle
+  channel "huddle" as "lead"` and started a hub on 18861. `TestAloneEntryRunsFromRun` failed with `run = 6`, and
+  `bun run e2e` died in its setup with `Huddle unreachable` in every worktree.
+- **Cause:** huddle reads its identity from `CLAUDE_PROJECT_DIR`, else from the cwd, walking up to the nearest
+  `.agents/huddle/huddle.json`. A test's cwd is a folder inside this repository, and the repository keeps the
+  owner's own huddle.json (`{"channel":"huddle","as":"lead","autostart":true}`); every worktree under
+  `.agents/worktrees/` walks up to the same file.
+- **Guard:** `TestAHookRunFromInsideARepositoryWithAHuddleJsonReadsNoIdentity`
+  (internal/testkit/isoenv/project_test.go), `TestHooksJsonCommand` (internal/radar/cli/launcher_test.go),
+  `TestAloneEntryRunsFromRun` (cmd/huddle/alone_test.go), and the web e2e suite itself (`bun run e2e`, with
+  web/e2e/global-setup.ts)
+- **Rule:** a test process and every child it starts get `CLAUDE_PROJECT_DIR` set to an empty folder outside
+  the repository: `isoenv.Sandbox` for the process, `isoenv.Environ` for a child, the e2e global setup for the
+  web run.
