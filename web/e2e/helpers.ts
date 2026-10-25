@@ -294,7 +294,6 @@ type TapExclusion = { selector: string; reason: string };
 const TAP_EXCLUSIONS: readonly TapExclusion[] = [
   { selector: "[data-remove]", reason: "the channel card's Remove button (pages/Home.tsx) is a 23 px btn-xs" },
   { selector: "[aria-label='Activity window'] button", reason: "the channel Overview's window segment (pages/Overview.tsx) is a 30 px btn-sm" },
-  { selector: ".hide-done input", reason: "Kanban's Hide done toggle is sized by the kanban CSS (HV-TOKENS-KANBAN)" },
 ];
 
 /** Fails on any visible `a, button, input, [role=tab]` smaller than 44x44 px (the --ui-tap

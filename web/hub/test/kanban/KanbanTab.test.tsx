@@ -6,7 +6,7 @@ import { userEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { KanbanTab } from "../../src/kanban/KanbanTab.tsx";
 import type { Snapshot } from "../../src/kanban/types.ts";
-import { cardOf, clone, countColumns, makeCard, snapshot, ticketUi } from "./helpers.ts";
+import { cardOf, clone, countColumns, legacyClasses, makeCard, snapshot, ticketUi } from "./helpers.ts";
 
 /** Two distinct repos, as /api/kanban/boards sends them. */
 const BOARDS = [
@@ -152,7 +152,7 @@ describe("KanbanTab", () => {
     stubNet();
     render(<KanbanTab boardKey={null} />);
     const loading = document.querySelector('[role="status"][aria-label="Loading the boards"]');
-    expect(loading?.querySelector(".skeleton")).toBeTruthy();
+    expect(loading?.querySelector(".kanban-skeleton")).toBeTruthy();
   });
 
   it("lists the boards and opens the first", async () => {
@@ -299,9 +299,12 @@ describe("KanbanTab", () => {
 
   it("says when the board list cannot be read", async () => {
     stubNet(BOARDS, true);
-    render(<KanbanTab boardKey={null} />);
+    const view = render(<KanbanTab boardKey={null} />);
     await screen.findByText("The board list is unreachable.");
     expect(screen.queryByRole("combobox", { name: "Board" })).toBeNull();
+    // the way back is a design-system button, and nothing on the tab wears a daisyUI class
+    expect(screen.getByRole("button", { name: "Retry" }).classList.contains("ui-btn")).toBe(true);
+    expect(legacyClasses(view.container)).toEqual([]);
   });
 
   describe("the board list over a flaky network", () => {

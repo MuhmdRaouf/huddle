@@ -103,7 +103,30 @@ test.beforeAll(async () => {
 /** The board picker's button keeps "Board" as its name while it shows the board's own name, the
  *  name every spec finds it by; axe's label-content-name-mismatch rule reads that as a mismatch,
  *  so the button is left out of the axe pass. */
-const AXE_EXCLUDE = [".kanban-tab .picker-btn"] as const;
+const AXE_EXCLUDE = [".kanban-tab .picker-button"] as const;
+
+test("the header names / only where a keyboard is, and its stale line ticks out of the live region", async ({
+  page,
+  isMobile,
+}) => {
+  await test.step("Given the board open", async () => {
+    await kanbanAt(page, isMobile ? 390 : 1440, isMobile ? 844 : 900);
+  });
+
+  await test.step("Then the search hint fits the device", async () => {
+    await expect(page.getByRole("searchbox", { name: "Search" })).toHaveAttribute(
+      "placeholder",
+      isMobile ? "Search" : "Search (press /)",
+    );
+  });
+
+  await test.step("Then the age ticks in a part no live region holds, and the polite region stays empty", async () => {
+    const line = page.locator(".kanban-tab .stale-line");
+    await expect(line.locator('[aria-live="off"]')).toHaveText(/^Updated \d+ s ago$/);
+    await expect(line.getByRole("status")).toHaveText("");
+    await expect(page.locator(".kanban-tab .stale-line[role], .kanban-tab .stale-line[aria-live]")).toHaveCount(0);
+  });
+});
 
 test.describe("the board on a desktop", () => {
   test.skip(({ isMobile }) => isMobile, "the columns, rails and hover are the desktop's");

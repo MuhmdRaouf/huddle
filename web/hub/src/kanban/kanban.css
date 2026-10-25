@@ -1,34 +1,21 @@
-/* The kanban page inside huddle's Kanban tab. Everything is scoped under .kanban-tab. The
-   surfaces, ink, lines and accent read the design system's --ui-* tokens, which keep WCAG AA in
-   both schemes; the status and tag hues read daisyUI's --color-* or the --hue-* carriers app.css
-   defines. The shell owns the page's own background, fonts and header; only the picker, the flow
-   bar, the board, its cards, the toolbar and the drawer are styled here. */
+/* The kanban page inside huddle's Kanban tab. Everything is scoped under .kanban-tab, and every
+   colour, space, radius and type size reads the design system's --ui-* tokens (tokens.css), which
+   keep WCAG AA in light, dark, latte and mocha. Plain actions are the design system's Button and
+   the phone's column tabs its .ui-tabs strip; the filter chips, the hide-done switch and the board
+   itself are drawn here. Every control is at least --ui-tap (44 px) on each side, except the
+   desktop's rails and collapse buttons, which only a pointer reaches. The shell owns the page's background,
+   fonts and header; the card panel's look is panel.css. */
 
 .kanban-tab {
-  --board: var(--ui-bg);
+  /* the four names panel.css reads */
   --card: var(--ui-surface);
   --chip: var(--ui-surface-2);
   --line: var(--ui-line);
   --muted: var(--ui-muted);
-  --accent: var(--ui-accent);
-  --flash: color-mix(in oklab, var(--ui-accent) 20%, transparent);
-  --stop: var(--color-error);
-  --stop-bg: color-mix(in oklab, var(--color-error) 8%, var(--ui-surface));
-  --b-expedite: var(--color-error);
-  --b-p0: var(--color-error);
-  --b-p1: var(--hue-peach, var(--color-warning));
-  --b-p2: var(--hue-sapphire, var(--color-info));
-  --b-p3: color-mix(in oklab, var(--ui-text) 55%, transparent);
-  --b-blocked: var(--color-error);
-  --b-holder: var(--hue-lavender, var(--color-secondary));
-  --b-waits: var(--hue-yellow, var(--color-warning));
-  --b-hand: var(--hue-yellow, var(--color-warning));
-  --t-huddle: var(--hue-teal, var(--color-secondary));
-  --t-cc-plugins: var(--hue-mauve, var(--color-secondary));
-  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
-  font-size: 14px;
-  line-height: 1.45;
+  color: var(--ui-text);
+  font-size: var(--ui-text-sm);
+  line-height: var(--ui-leading);
 
   /* a column of the shell's own tab pane: grows to fill the pane, so the board's tone reaches
      the bottom of the visible area on a short board, and lets the pane scroll on a tall one */
@@ -37,66 +24,96 @@
   flex: 1;
 
   /* the tab never widens the shell: the board's own grid is the sideways scroller, and the
-     drawer, being fixed, escapes this clip */
+     panel, being fixed, escapes this clip */
   min-width: 0;
   overflow-x: clip;
 }
 
-.kanban-tab button {
-  font: inherit;
-  color: inherit;
-}
-
 .kanban-tab .count {
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.kanban-tab .sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+  color: var(--ui-muted);
 }
 
 /* status lines and loading skeletons */
 
 .kanban-tab > p[role="status"] {
-  margin: 12px 16px;
-  color: var(--muted);
+  margin: var(--ui-space-3) var(--ui-space-4);
+  color: var(--ui-muted);
+}
+
+.kanban-tab > .retry {
+  align-self: flex-start;
+  margin: 0 var(--ui-space-4);
+}
+
+.kanban-tab .kanban-skeleton {
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface-2);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .kanban-tab .kanban-skeleton {
+    animation: kanban-skeleton-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes kanban-skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
 }
 
 .kanban-tab .kanban-loading .toolbar-skeleton {
-  height: 36px;
-  margin: 12px 16px;
+  height: var(--ui-tap);
+  margin: var(--ui-space-3) var(--ui-space-4);
 }
 
 .kanban-tab .kanban-loading .board-skeleton {
   height: 60vh;
-  margin: 4px 16px 24px;
+  margin: var(--ui-space-1) var(--ui-space-4) var(--ui-space-5);
 }
 
 /* toolbar: the picker is the page title, the dot says the stream, then search and the filters;
-   the density toggle sits at the right */
+   the density button sits at the right */
 
 .kanban-tab .toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
   align-items: center;
-  padding: 12px 16px 8px;
+  padding: var(--ui-space-3) var(--ui-space-4) var(--ui-space-2);
 }
 
 .kanban-tab .toolbar input[type="search"] {
-  background: var(--card);
-  color: var(--ui-text);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 7px 11px;
-  font-size: 13px;
-  width: min(220px, 100%);
+  width: min(240px, 100%);
+}
+
+/* the filter chips: one per kind, the phone's Filters button and the picks below the row */
+
+.kanban-tab :is(.toolbar, .pills) .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-1);
+  min-width: var(--ui-tap);
+  min-height: var(--ui-tap);
+  padding: 0 var(--ui-space-3);
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-surface);
+  font-size: var(--ui-text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.kanban-tab :is(.toolbar, .pills) .chip:hover {
+  background: var(--ui-surface-2);
+}
+
+.kanban-tab .toolbar .chip[aria-expanded="true"] {
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+  font-weight: 600;
 }
 
 /* the board picker: the page title as a button, its popover the board list */
@@ -106,49 +123,41 @@
   display: inline-flex;
 }
 
-.kanban-tab .picker-btn {
+.kanban-tab .picker-button {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  background: none;
+  gap: var(--ui-space-2);
+  min-height: var(--ui-tap);
+  padding: 0 var(--ui-space-1);
   border: 0;
-  color: var(--ui-text);
-  font-size: 16px;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  font-size: var(--ui-text-md);
   font-weight: 600;
-  padding: 2px 4px;
-  cursor: pointer;
   white-space: nowrap;
+  cursor: pointer;
 }
 
-.kanban-tab .picker-btn .chev {
-  color: var(--muted);
-  font-size: 11px;
+.kanban-tab .picker-button .chev {
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
 }
 
 .kanban-tab .picker-pop {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + var(--ui-space-1));
   left: 0;
   z-index: 40;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--ui-space-1);
   min-width: 300px;
   max-width: min(360px, 92vw);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  padding: var(--ui-space-2);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface);
   box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
-  padding: 6px;
-}
-
-.kanban-tab .picker-pop input {
-  background: var(--board);
-  color: var(--ui-text);
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 5px 9px;
-  font-size: 12.5px;
 }
 
 .kanban-tab .picker-list {
@@ -159,22 +168,21 @@
 }
 
 .kanban-tab .picker-none {
-  color: var(--muted);
-  font-size: 12.5px;
-  padding: 6px 8px;
+  padding: var(--ui-space-2);
+  color: var(--ui-muted);
 }
 
 .kanban-tab .picker-opt {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: var(--ui-space-2);
   width: 100%;
-  text-align: left;
-  background: none;
+  min-height: var(--ui-tap);
+  padding: 0 var(--ui-space-2);
   border: 0;
-  border-radius: 7px;
-  padding: 6px 8px;
-  font-size: 13.5px;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  text-align: left;
   cursor: pointer;
 }
 
@@ -183,81 +191,49 @@
 }
 
 .kanban-tab .picker-opt .root {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--muted);
   overflow: hidden;
+  color: var(--ui-muted);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .kanban-tab .picker-opt:hover,
 .kanban-tab .picker-opt.active {
-  background: var(--chip);
+  background: var(--ui-surface-2);
 }
 
 /* the live dot: a quiet mark whose title carries the epoch and the stream's state */
 
 .kanban-tab .live-dot {
+  flex: 0 0 auto;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  flex: 0 0 auto;
 }
 
 .kanban-tab .live-dot.on {
-  background: var(--color-success);
+  background: var(--ui-ok);
 }
 
 .kanban-tab .live-dot.off {
-  background: color-mix(in oklab, var(--ui-text) 35%, transparent);
+  background: var(--ui-line-strong);
 }
 
-/* the status line beside the dot: the last frame's age, or Reconnecting */
+/* the status line beside the dot and the note naming what every visible card carries */
 
-.kanban-tab .stale-line {
-  font-size: 12px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-/* the note naming what every visible card carries, once */
-
+.kanban-tab .stale-line,
 .kanban-tab .shared-note {
-  font-size: 12px;
-  color: var(--muted);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
   white-space: nowrap;
 }
 
-/* the density toggle, at the row's right */
+/* the density button, at the row's right */
 
 .kanban-tab .density {
   margin-left: auto;
-  height: 28px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 11px;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.kanban-tab .density[aria-pressed="true"] {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* the phone backlog's grouping toggle, beside the density toggle in the folded row */
-
-.kanban-tab .grouping {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 11px;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
 }
 
 .kanban-tab .menu-wrap {
@@ -265,156 +241,173 @@
   display: inline-flex;
 }
 
-.kanban-tab .menu-btn,
-.kanban-tab .filters-btn,
-.kanban-tab .show-all {
-  height: 28px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 11px;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.kanban-tab .menu-btn[aria-expanded="true"],
-.kanban-tab .filters-btn[aria-expanded="true"] {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-/* the phone's folded filters: the menus, the toggles and the density on their own row under the
+/* the phone's folded filters: the menus, the switch and the buttons on their own row under the
    Filters button, shown while it is open */
 
 .kanban-tab .filters-row {
-  flex: 1 1 100%;
   display: flex;
+  flex: 1 1 100%;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
   align-items: center;
 }
 
-/* the hide-done switch with its label beside it */
+/* the hide-done switch: the checkbox lies invisible over its whole label, so the label's 44 px
+   is the control's own target, and the drawn switch follows the checkbox's state */
 
 .kanban-tab .toolbar .hide-done {
+  position: relative;
   display: inline-flex;
+  gap: var(--ui-space-2);
   align-items: center;
-  gap: 7px;
-  height: 28px;
-  padding: 0 4px;
-  font-size: 12px;
-  cursor: pointer;
+  min-height: var(--ui-tap);
+  padding: 0 var(--ui-space-2);
+  border-radius: var(--ui-radius);
   white-space: nowrap;
-  color: var(--ui-text);
+  cursor: pointer;
 }
 
 .kanban-tab .toolbar .hide-done input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.kanban-tab .hide-done .switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 20px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-surface-2);
+}
+
+.kanban-tab .hide-done .switch::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ui-muted);
+  content: "";
+}
+
+.kanban-tab .hide-done input:checked + .switch {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
+}
+
+.kanban-tab .hide-done input:checked + .switch::after {
+  background: var(--ui-on-accent);
+  transform: translateX(16px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .kanban-tab .hide-done .switch::after {
+    transition: transform 120ms ease;
+  }
+}
+
+.kanban-tab .hide-done:has(input:focus-visible) {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
 }
 
 /* a kind's menu, anchored under its button */
 
 .kanban-tab .fmenu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + var(--ui-space-1));
   left: 0;
   z-index: 25;
   min-width: 230px;
   max-width: min(320px, 90vw);
   max-height: min(60vh, 420px);
   overflow-y: auto;
-  background: var(--card);
+  padding: var(--ui-space-2);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface);
   color: var(--ui-text);
-  border: 1px solid var(--line);
-  border-radius: 10px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
-  padding: 6px;
 }
 
 .kanban-tab .fmenu input[type="search"] {
-  width: 100%;
-  margin-bottom: 6px;
-  background: var(--board);
-  color: var(--ui-text);
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 5px 9px;
-  font-size: 12.5px;
+  margin-bottom: var(--ui-space-2);
+}
+
+.kanban-tab .fmenu .group,
+.kanban-tab .fmenu .fold {
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .kanban-tab .fmenu .group {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  margin: 8px 6px 2px;
+  margin: var(--ui-space-2) var(--ui-space-2) var(--ui-space-1);
+}
+
+.kanban-tab .fmenu .fold,
+.kanban-tab .fmenu .opt {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--ui-tap);
+  padding: 0 var(--ui-space-2);
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
 }
 
 .kanban-tab .fmenu .fold {
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: 0;
-  color: var(--muted);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  padding: 6px;
-}
-
-.kanban-tab .fmenu .opt {
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: 0;
-  border-radius: 7px;
-  padding: 6px 8px;
-  font-size: 13px;
-  cursor: pointer;
+  color: var(--ui-muted);
+  gap: var(--ui-space-1);
 }
 
 .kanban-tab .fmenu .opt::before {
-  content: "";
-  display: inline-block;
-  width: 13px;
-  height: 13px;
-  border: 1px solid var(--muted);
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-right: var(--ui-space-2);
+  border: 1px solid var(--ui-line-strong);
   border-radius: 4px;
-  margin-right: 8px;
-  vertical-align: -2px;
+  content: "";
 }
 
 .kanban-tab .fmenu .opt[aria-checked="true"]::before {
-  background: var(--accent);
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 2.5px var(--card);
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
+  box-shadow: inset 0 0 0 2.5px var(--ui-surface);
 }
 
 .kanban-tab .fmenu .opt:hover,
 .kanban-tab .fmenu .opt:focus-visible,
 .kanban-tab .fmenu .fold:hover,
 .kanban-tab .fmenu .fold:focus-visible {
-  background: var(--chip);
+  background: var(--ui-surface-2);
   outline: none;
 }
 
 .kanban-tab .fmenu .c {
-  float: right;
-  color: var(--muted);
+  margin-left: auto;
+  padding-left: var(--ui-space-3);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
   font-variant-numeric: tabular-nums;
-  font-size: 11.5px;
-  padding-left: 12px;
 }
 
 .kanban-tab .fmenu .empty {
-  color: var(--muted);
-  font-size: 12.5px;
-  margin: 4px 6px;
+  margin: var(--ui-space-1) var(--ui-space-2);
+  color: var(--ui-muted);
 }
 
 /* the picks: one pill per picked value, all of them gone at once with Clear all */
@@ -422,68 +415,47 @@
 .kanban-tab .pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--ui-space-2);
   align-items: center;
-  padding: 0 16px 10px;
+  padding: 0 var(--ui-space-4) var(--ui-space-2);
 }
 
-.kanban-tab .pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: var(--card);
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  color: var(--accent);
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 12px;
-  cursor: pointer;
+.kanban-tab .pills .pill {
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
 }
 
-.kanban-tab .pill.clear {
-  border-color: var(--line);
-  color: var(--muted);
+.kanban-tab .pills .pill.clear {
+  border-color: var(--ui-line-strong);
+  color: var(--ui-muted);
 }
 
 /* board: the area carries the base tone, the columns only their heading and their cards */
 
 .kanban-tab .board {
   flex: 1;
-  background: var(--board);
+  background: var(--ui-bg);
 }
 
 .kanban-tab .board-empty {
   margin: 0;
-  padding: 48px 16px;
-  color: var(--muted);
-  font-size: 13.5px;
+  padding: var(--ui-space-6) var(--ui-space-4);
+  color: var(--ui-muted);
 }
 
 .kanban-tab .done-hidden {
   margin: 0;
-  padding: 4px 16px 8px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.kanban-tab .clear-filters,
-.kanban-tab .show-done {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 11px;
-  font-size: 12.5px;
-  color: var(--ui-text);
-  cursor: pointer;
+  padding: var(--ui-space-1) var(--ui-space-4) var(--ui-space-2);
+  color: var(--ui-muted);
 }
 
 .kanban-tab .columns {
   display: grid;
-  gap: 14px;
+  gap: var(--ui-space-3);
   align-items: start;
   justify-content: start;
   overflow-x: auto;
-  padding: 4px 16px 24px;
+  padding: var(--ui-space-1) var(--ui-space-4) var(--ui-space-5);
   /* the tracks never size the tab: the board is the one sideways scroller, and this keeps its
      tracks' intrinsic width out of the shell's own layout */
   width: 0;
@@ -492,8 +464,9 @@
 
 .kanban-tab .col {
   min-width: 0;
-  /* the column is the containing block of its hidden labels (the rail's .sr-only text), so an
-     absolutely positioned label stays inside the board's scroller instead of widening the page */
+  /* the column is the containing block of its hidden labels (the rail's and the lane's ui-sr
+     text), so an absolutely positioned label stays inside the board's scroller instead of
+     widening the page */
   position: relative;
 }
 
@@ -501,15 +474,15 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
+  gap: var(--ui-space-2);
+  margin: 2px 2px var(--ui-space-2);
   color: var(--ui-text);
-  margin: 2px 2px 8px;
+  font-size: var(--ui-text-sm);
+  font-weight: 600;
 }
 
 .kanban-tab .col h2 .count {
-  font-size: 12px;
+  font-size: var(--ui-text-xs);
 }
 
 /* a grouped column's group header: the group's name and count across the column, a tap opens
@@ -519,21 +492,20 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--ui-space-2);
   width: 100%;
-  min-height: 44px;
-  margin: 0 0 8px;
-  padding: 0 10px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  font-size: 13px;
+  min-height: var(--ui-tap);
+  margin: 0 0 var(--ui-space-2);
+  padding: 0 var(--ui-space-3);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface);
   font-weight: 600;
   cursor: pointer;
 }
 
 .kanban-tab .group-head[aria-expanded="true"] {
-  border-color: var(--accent);
+  border-color: var(--ui-accent);
 }
 
 /* the heading row: title and count on the left, the collapse button on the right */
@@ -541,31 +513,27 @@
 .kanban-tab .col-head {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--ui-space-1);
 }
 
 .kanban-tab .col-collapse {
   display: inline-flex;
+  align-self: center;
   align-items: center;
   justify-content: center;
   width: 24px;
   height: 24px;
   padding: 0;
   border: none;
+  border-radius: var(--ui-radius-sm);
   background: transparent;
-  color: var(--muted);
-  border-radius: 6px;
+  color: var(--ui-muted);
   cursor: pointer;
-  align-self: center;
 }
 
 .kanban-tab .col-collapse:hover {
-  background: var(--chip);
+  background: var(--ui-surface-2);
   color: var(--ui-text);
-}
-
-.kanban-tab .col-collapse:focus-visible {
-  outline: 2px solid var(--ui-accent);
 }
 
 /* a collapsed column: a 40 px rail with its name written down its side and its count */
@@ -576,139 +544,130 @@
   min-height: 160px;
 }
 
-.kanban-tab .rail-btn {
+.kanban-tab .rail-button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: var(--ui-space-2);
   width: 40px;
   height: 100%;
   min-height: inherit;
+  padding: var(--ui-space-2) 0;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-sm);
   background: none;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px 0;
   cursor: pointer;
 }
 
-.kanban-tab .rail-btn:hover {
-  background: var(--chip);
+.kanban-tab .rail-button:hover {
+  background: var(--ui-surface-2);
 }
 
 .kanban-tab .rail-name {
-  writing-mode: vertical-rl;
-  font-size: 12.5px;
-  color: var(--muted);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
   letter-spacing: 0.02em;
+  writing-mode: vertical-rl;
 }
 
-.kanban-tab .rail-btn .count {
-  font-size: 11.5px;
+.kanban-tab .rail-button .count {
+  font-size: var(--ui-text-xs);
 }
 
 /* the card: the priority is its 3 px left edge, the rows are id, title and the meta line */
 
 .kanban-tab .card {
   position: relative;
-  background: var(--ui-surface);
-  border: 1px solid var(--line);
-  border-left-width: 3px;
-  border-radius: 8px;
-  padding: 7px 10px 7px 8px;
-  margin-bottom: 6px;
+  margin-bottom: var(--ui-space-2);
+  padding: var(--ui-space-2) var(--ui-space-3) var(--ui-space-2) var(--ui-space-2);
   overflow: hidden;
+  border: 1px solid var(--ui-line);
+  border-left-width: 3px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface);
 }
 
 .kanban-tab .card[data-priority="P0"] {
-  border-left-color: var(--b-p0);
+  border-left-color: var(--ui-fail);
 }
 
 .kanban-tab .card[data-priority="P1"] {
-  border-left-color: var(--b-p1);
+  border-left-color: var(--ui-warn);
 }
 
 .kanban-tab .card[data-priority="P2"] {
-  border-left-color: var(--b-p2);
+  border-left-color: var(--ui-info);
 }
 
 .kanban-tab .card-open {
   position: absolute;
   inset: 0;
+  z-index: 1;
+  padding: 0;
   border: 0;
   background: none;
-  padding: 0;
   cursor: pointer;
-  z-index: 1;
 }
 
 .kanban-tab .card-head {
   display: flex;
-  gap: 6px;
+  gap: var(--ui-space-1);
   align-items: center;
   margin-bottom: 2px;
   padding-right: 2px;
 }
 
 .kanban-tab .epic {
-  font-size: 11px;
-  color: var(--muted);
   overflow: hidden;
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .kanban-tab .cid {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--muted);
   overflow: hidden;
+  color: var(--ui-muted);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.kanban-tab .card .holder {
-  margin-left: auto;
-  position: static;
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  font-size: 10px;
-}
-
 .kanban-tab .card .title {
-  font-size: 13.5px;
-  line-height: 18px;
-  font-weight: 600;
-  margin: 0 0 3px;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  margin: 0 0 var(--ui-space-1);
   overflow: hidden;
+  font-size: var(--ui-text-sm);
+  font-weight: 600;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .kanban-tab .card .summary {
-  margin: 0 0 6px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  margin: 0 0 var(--ui-space-2);
   overflow: hidden;
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 /* row 3: est and type as plain words, then only the badges that carry state */
 
 .kanban-tab .card .meta {
-  list-style: none;
   display: flex;
   flex-wrap: wrap;
+  gap: var(--ui-space-1) var(--ui-space-2);
   align-items: center;
-  gap: 4px 8px;
   margin: 0;
   padding: 0;
-  font-size: 12px;
-  color: var(--muted);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+  list-style: none;
 }
 
 .kanban-tab .card .meta .est,
@@ -716,121 +675,51 @@
   font-variant-numeric: tabular-nums;
 }
 
-.kanban-tab .card .meta .badge {
-  font-size: 11px;
-}
-
-.kanban-tab .card .badges,
-.kanban-tab .drawer .badges {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 0 0 6px;
-  padding: 0;
-}
-
-.kanban-tab .badge {
-  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
-  border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 11px;
-  line-height: 1.5;
-  background: none;
-}
-
-.kanban-tab .b-expedite,
-.kanban-tab .b-p0 {
-  color: var(--b-expedite);
-}
-
-.kanban-tab .b-priority {
-  color: var(--b-p3);
-}
-
-.kanban-tab .b-priority.p0 {
-  color: var(--b-p0);
-}
-
-.kanban-tab .b-priority.p1 {
-  color: var(--b-p1);
-}
-
-.kanban-tab .b-priority.p2 {
-  color: var(--b-p2);
-}
-
-.kanban-tab .b-type,
-.kanban-tab .b-est {
-  color: var(--muted);
-}
-
-.kanban-tab .b-blocked {
-  color: var(--b-blocked);
-}
-
-.kanban-tab .b-holder {
-  color: var(--b-holder);
-}
-
-.kanban-tab .b-waits {
-  color: var(--b-waits);
-}
-
-.kanban-tab .b-hand {
-  color: var(--b-hand);
-}
-
-.kanban-tab .b-incomplete {
-  color: var(--b-hand);
-  border-style: dashed;
-}
-
 .kanban-tab .card .tags {
-  list-style: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin: 0;
+  gap: var(--ui-space-1);
+  margin: var(--ui-space-1) 0 0;
   padding: 0;
+  list-style: none;
 }
 
+/* the tag chips sit above the card's own open button, so a tap on one picks its tag */
 .kanban-tab .card .tags button {
   position: relative;
   z-index: 2;
   display: inline-block;
-  background: var(--chip);
+  padding: 1px var(--ui-space-2);
   border: 0;
-  border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 11px;
-  color: var(--muted);
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-surface-2);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
   cursor: pointer;
 }
 
 .kanban-tab .card .tags button.repo-huddle {
-  color: var(--t-huddle);
-  background: color-mix(in srgb, var(--t-huddle) 12%, var(--card));
+  background: var(--ui-info-soft);
+  color: var(--ui-info-ink);
 }
 
 .kanban-tab .card .tags button.repo-cc-plugins {
-  color: var(--t-cc-plugins);
-  background: color-mix(in srgb, var(--t-cc-plugins) 12%, var(--card));
+  background: var(--ui-ok-soft);
+  color: var(--ui-ok-ink);
 }
 
-.kanban-tab .holder {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-  background: color-mix(in srgb, var(--b-holder) 14%, var(--card));
-  color: var(--b-holder);
-  border-radius: 50%;
-  width: 26px;
-  height: 26px;
+.kanban-tab .card .holder {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--ui-info-soft);
+  color: var(--ui-info-ink);
+  font-size: 10px;
   font-weight: 600;
 }
 
@@ -842,11 +731,11 @@
 
 @keyframes kanban-card-flash {
   from {
-    background-color: var(--flash);
+    background-color: color-mix(in oklab, var(--ui-accent) 20%, var(--ui-surface));
   }
 
   to {
-    background-color: var(--card);
+    background-color: var(--ui-surface);
   }
 }
 
@@ -868,11 +757,11 @@
 }
 
 .kanban-tab .card[data-thread="waits-on"] {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ui-accent);
 }
 
 .kanban-tab .card[data-thread="waited-by"] {
-  outline: 2px dashed var(--accent);
+  outline: 2px dashed var(--ui-accent);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -881,157 +770,32 @@
   }
 }
 
-/* the one focus ring: 2 px in the primary, 2 px off the edge */
+/* the one focus ring: 2 px in the accent, 2 px off the edge */
 
 .kanban-tab .card-open:focus-visible,
-.kanban-tab .rail-btn:focus-visible,
+.kanban-tab .rail-button:focus-visible,
+.kanban-tab .col-collapse:focus-visible,
 .kanban-tab .flow-label:focus-visible,
-.kanban-tab .picker-btn:focus-visible,
-.kanban-tab .clear-filters:focus-visible,
-.kanban-tab .show-done:focus-visible,
-.kanban-tab .density:focus-visible,
-.kanban-tab .grouping:focus-visible,
+.kanban-tab .picker-button:focus-visible,
+.kanban-tab .chip:focus-visible,
 .kanban-tab .group-head:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ui-accent);
   outline-offset: 2px;
-}
-
-/* the drawer: 560 px on the right, the whole screen on a phone */
-
-.kanban-tab .drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(560px, 100%);
-  background: var(--card);
-  border-left: 1px solid var(--line);
-  box-shadow: -8px 0 24px rgb(0 0 0 / 12%);
-  overflow-y: auto;
-  padding: 14px 18px 24px;
-  z-index: 30;
-}
-
-.kanban-tab .drawer-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.kanban-tab .drawer-head .cid {
-  font-size: 13px;
-}
-
-.kanban-tab .drawer .close {
-  background: var(--chip);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 5px 12px;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-
-.kanban-tab .fields {
-  margin: 10px 0;
-  display: grid;
-  grid-template-columns: minmax(110px, auto) 1fr;
-  gap: 4px 12px;
-}
-
-.kanban-tab .fields dt {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.kanban-tab .fields dd {
-  margin: 0;
-  font-size: 12.5px;
-  overflow-wrap: anywhere;
-}
-
-.kanban-tab .deps-block h3 {
-  font-size: 12.5px;
-  color: var(--muted);
-  margin: 12px 0 4px;
-}
-
-.kanban-tab .deps {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-}
-
-.kanban-tab .dep {
-  background: var(--chip);
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 2px 8px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.kanban-tab .dep-state {
-  color: var(--muted);
-}
-
-.kanban-tab .body {
-  margin-top: 14px;
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
-  overflow-wrap: anywhere;
-}
-
-.kanban-tab .body h2 {
-  font-size: 14px;
-  margin: 16px 0 6px;
-}
-
-.kanban-tab .body h3 {
-  font-size: 13px;
-  margin: 12px 0 4px;
-}
-
-.kanban-tab .body code {
-  font-family: var(--mono);
-  font-size: 12px;
-  background: var(--chip);
-  border-radius: 4px;
-  padding: 0 4px;
-}
-
-.kanban-tab .body pre {
-  background: var(--chip);
-  border-radius: 8px;
-  padding: 10px;
-  overflow-x: auto;
-}
-
-.kanban-tab .body pre code {
-  background: none;
-  padding: 0;
-}
-
-.kanban-tab .body a {
-  color: var(--accent);
 }
 
 /* the flow bar: one 6 px segment per non-done column with cards, the counts as labels under it;
    on a phone the labels are the column tabs */
 
 .kanban-tab .flow {
-  padding: 0 16px 6px;
+  padding: 0 var(--ui-space-4) var(--ui-space-2);
 }
 
 .kanban-tab .flow-bar {
   display: flex;
   gap: 2px;
   height: 6px;
-  border-radius: 3px;
   overflow: hidden;
+  border-radius: var(--ui-radius-full);
 }
 
 .kanban-tab .flow-seg {
@@ -1040,85 +804,75 @@
 }
 
 .kanban-tab .flow-seg[data-column="backlog"] {
-  background: color-mix(in oklab, var(--ui-text) 25%, transparent);
+  background: var(--ui-line-strong);
 }
 
 .kanban-tab .flow-seg[data-column="ready"] {
-  background: var(--b-p2);
+  background: var(--ui-info);
 }
 
 .kanban-tab .flow-seg[data-column="in-progress"] {
-  background: var(--t-huddle);
+  background: var(--ui-accent);
 }
 
 .kanban-tab .flow-seg[data-column="review"] {
-  background: var(--t-cc-plugins);
+  background: var(--ui-ok);
 }
 
 .kanban-tab .flow-seg[data-column="testing"] {
-  background: var(--b-waits);
+  background: var(--ui-warn);
 }
 
 .kanban-tab .flow-seg[data-column="blocked"] {
-  background: var(--b-blocked);
+  background: var(--ui-fail);
 }
 
 .kanban-tab .flow-labels {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 14px;
-  margin-top: 6px;
+  gap: 2px var(--ui-space-3);
+  margin-top: var(--ui-space-1);
 }
 
-.kanban-tab .flow-label {
-  background: none;
-  border: 0;
+.kanban-tab .flow-labels:not(.ui-tabs) .flow-label {
   padding: 2px 0;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
-  white-space: nowrap;
+  border: 0;
+  background: none;
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.kanban-tab .flow-label:hover {
+.kanban-tab .flow-labels:not(.ui-tabs) .flow-label:hover {
   color: var(--ui-text);
 }
 
 .kanban-tab .flow-label .more {
-  margin-left: 4px;
+  margin-left: var(--ui-space-1);
   font-size: 10px;
 }
 
-/* the labels as the phone's tab bar: one column shown, the active one lit */
+/* the labels as the phone's tab bar: the design system's strip, one column shown, the selected
+   one lit; it scrolls sideways inside itself when the seven do not fit */
 
-.kanban-tab .flow-labels.tabs {
+.kanban-tab .flow-labels.ui-tabs {
   flex-wrap: nowrap;
-  overflow-x: auto;
-  gap: 6px;
-  padding-bottom: 2px;
   scrollbar-width: thin;
 }
 
-.kanban-tab .flow-labels.tabs .flow-label {
-  flex: 0 0 auto;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 5px 11px;
-}
-
-.kanban-tab .flow-labels.tabs .flow-label.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
+.kanban-tab .flow-labels.ui-tabs .flow-label {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* the phone's strip: every column one screen wide, side by side, and a swipe snaps to the next.
    The tab, its board and the strip fill the shell's pane, so the strip takes the height the
    shell header, the Kanban header (--kanban-head, which Board.tsx measures) and the tab bar
    leave, and the pane itself never scrolls. Each column is its own vertical scroller and stays
-   mounted, so a tab switch shows a column's first card and a column keeps its place. */
+   mounted, so a tab switch shows a column's first card and a column keeps its place. The column
+   tab above names the lane, so the lane's own heading is for screen readers only. */
 
 .kanban-tab:has(> .board-with-panel > .board[data-layout="lanes"]) {
   min-height: 0;
@@ -1140,75 +894,27 @@
   flex: 1;
   min-height: 0;
   overflow-x: auto;
-  scroll-snap-type: x mandatory;
   overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
   scrollbar-width: none;
 }
 
 .kanban-tab .lanes > .col {
-  flex: 0 0 100%;
   box-sizing: border-box;
-  padding: 4px 16px 24px;
+  flex: 0 0 100%;
+  padding: var(--ui-space-2) var(--ui-space-4) var(--ui-space-5);
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scroll-snap-align: start;
   scroll-snap-stop: always;
 }
 
-/* the three breakpoints: the grid scrolls sideways when the open columns cannot fit, the phone
-   shows one column per screen with 44 px tap targets, and the picker opens as a full-width sheet */
+/* the phone: one row of picker, dot, search and the Filters button, the picker opening as a
+   full-width sheet */
 
 @media (max-width: 639px) {
-  .kanban-tab .drawer {
-    width: 100%;
-    border-left: none;
-  }
-
-  .kanban-tab .fields {
-    grid-template-columns: 1fr;
-  }
-
-  .kanban-tab .fields dd {
-    margin-bottom: 6px;
-  }
-
-  .kanban-tab .picker-pop {
-    position: fixed;
-    top: auto;
-    left: 10px;
-    right: 10px;
-    min-width: 0;
-    max-width: none;
-  }
-
-  .kanban-tab .card {
-    border-radius: 8px;
-  }
-
-  .kanban-tab .picker-btn,
-  .kanban-tab .menu-btn,
-  .kanban-tab .filters-btn,
-  .kanban-tab > .btn,
-  .kanban-tab .density,
-  .kanban-tab .grouping,
-  .kanban-tab .show-all,
-  .kanban-tab .clear-filters,
-  .kanban-tab .show-done,
-  .kanban-tab .pill,
-  .kanban-tab .toolbar .hide-done,
-  .kanban-tab .flow-labels.tabs .flow-label {
-    min-width: 44px;
-    height: auto;
-    min-height: 44px;
-  }
-
-  /* one row: the picker, the dot, the search taking what is left, and the Filters button */
   .kanban-tab .toolbar {
-    padding-bottom: 4px;
-  }
-
-  .kanban-tab .flow-labels.tabs {
-    margin-top: 4px;
+    padding-bottom: var(--ui-space-1);
   }
 
   .kanban-tab .picker {
@@ -1216,16 +922,25 @@
     max-width: 40%;
   }
 
-  .kanban-tab .picker-btn {
-    min-width: 0;
+  .kanban-tab .picker-button {
+    min-width: var(--ui-tap);
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .kanban-tab .picker-pop {
+    position: fixed;
+    top: auto;
+    right: var(--ui-space-3);
+    left: var(--ui-space-3);
+    min-width: 0;
+    max-width: none;
   }
 
   .kanban-tab .toolbar input[type="search"] {
     flex: 1 1 0;
     min-width: 0;
     width: auto;
-    min-height: 44px;
   }
 }

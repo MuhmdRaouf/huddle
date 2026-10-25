@@ -1,3 +1,4 @@
+import { Button } from "@huddle/ui/button.tsx";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { type Density, type Filters, filterCards, hiddenDone, useMedia } from "../store.ts";
 import {
@@ -114,9 +115,9 @@ function DoneHidden({ count, onShow }: { count: number; onShow?: (() => void) | 
     <p class="done-hidden" role="status">
       {count} done hidden{" "}
       {onShow !== undefined && (
-        <button type="button" class="show-done" onClick={onShow}>
+        <Button variant="secondary" class="show-done" onClick={onShow}>
           Show done
-        </button>
+        </Button>
       )}
     </p>
   );
@@ -140,9 +141,9 @@ function BoardEmpty({
         <>
           No cards match these filters.{" "}
           {onClearFilters !== undefined && (
-            <button type="button" class="clear-filters" onClick={onClearFilters}>
+            <Button variant="secondary" class="clear-filters" onClick={onClearFilters}>
               Clear filters
-            </button>
+            </Button>
           )}
         </>
       )}
@@ -222,7 +223,7 @@ export function Board({
     return (
       <div class="board" data-layout="loading">
         <div class="kanban-loading" role="status" aria-label="Loading the board">
-          <div class="skeleton board-skeleton" aria-hidden="true" />
+          <div class="kanban-skeleton board-skeleton" aria-hidden="true" />
         </div>
       </div>
     );
@@ -246,9 +247,9 @@ export function Board({
   const doneShown = showAllDone ? doneAll : doneAll.slice(0, DONE_CAP);
   const doneExtra =
     !showAllDone && doneAll.length > DONE_CAP ? (
-      <button type="button" class="show-all" onClick={() => setShowAllDone(true)}>
+      <Button variant="secondary" class="show-all" onClick={() => setShowAllDone(true)}>
         Show all {doneAll.length}
-      </button>
+      </Button>
     ) : null;
 
   // done counts its hidden cards too, so a hiding board never reads as finished-and-empty
@@ -276,6 +277,7 @@ export function Board({
     sharedTags,
     sharedCluster,
     groups: narrow && id === "backlog" ? backlogGroups : undefined,
+    lane: narrow,
   });
 
   opening.current = active;

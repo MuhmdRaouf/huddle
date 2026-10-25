@@ -116,7 +116,7 @@ function Harness({ cards, initial }: { cards: Card[]; initial: Filters }) {
 describe("the toolbar row", () => {
   it("is one compact row: the board picker, search, one menu button per kind, the hide-done toggle", () => {
     const { container } = render(<Row cards={board()} initial={EMPTY_FILTERS} />);
-    expect(container.querySelectorAll(".chips, .chip")).toHaveLength(0);
+    expect(container.querySelectorAll(".chips")).toHaveLength(0);
     expect(kindButtons(container)).toEqual(["Domain", "Epic", "Holder", "Type", "Priority"]);
     expect(screen.getByRole("searchbox", { name: "Search" })).toBeTruthy();
     const picker = screen.getByRole("button", { name: "Board" });
@@ -189,9 +189,8 @@ describe("Feature: the header row", () => {
       // When 12 s pass without another frame
       await pass(12_000);
       // Then the status line beside the dot reads the age
-      const line = screen.getByRole("status");
-      expect(line.textContent).toBe("Updated 12 s ago");
-      expect(container.querySelector(".toolbar .stale-line")).toBe(line);
+      const line = container.querySelector(".toolbar .stale-line");
+      expect(line?.textContent).toBe("Updated 12 s ago");
     } finally {
       vi.useRealTimers();
     }
@@ -207,8 +206,9 @@ describe("Feature: the header row", () => {
       view.rerender(
         <Row cards={board()} initial={EMPTY_FILTERS} over={{ lastFrameAt: at, connected: false }} />,
       );
+      const line = view.container.querySelector(".toolbar .stale-line");
       await pass(9_000);
-      expect(screen.getByRole("status").textContent).toBe("Updated 9 s ago");
+      expect(line?.textContent).toBe("Updated 9 s ago");
       // Then 10 s after the drop it says it is reconnecting
       await pass(1_000);
       expect(screen.getByRole("status").textContent).toBe("Reconnecting");
@@ -217,7 +217,7 @@ describe("Feature: the header row", () => {
         <Row cards={board()} initial={EMPTY_FILTERS} over={{ lastFrameAt: Date.now(), connected: true }} />,
       );
       await pass(1_000);
-      expect(screen.getByRole("status").textContent).toBe("Updated 1 s ago");
+      expect(line?.textContent).toBe("Updated 1 s ago");
     } finally {
       vi.useRealTimers();
     }
@@ -230,16 +230,15 @@ describe("Feature: the header row", () => {
     expect(container.querySelector(".live-dot")).toBeNull();
   });
 
-  it("Scenario: the density toggle flips and names the density it would show", async () => {
+  it("Scenario: the density button names the change it makes", async () => {
     // Given the toolbar at its default compact density
     const onDensity = vi.fn();
     const { container } = render(
       <Row cards={board()} initial={EMPTY_FILTERS} over={{ density: "compact", onDensity }} />,
     );
     const toggle = container.querySelector<HTMLButtonElement>(".density");
-    expect(toggle?.textContent).toContain("Compact");
-    expect(toggle?.getAttribute("aria-pressed")).toBe("false");
-    // When the toggle is pressed
+    expect(toggle?.textContent).toBe("Expand cards");
+    // When the button is pressed
     await userEvent.click(toggle as HTMLButtonElement);
     // Then the page is asked for the comfortable density
     expect(onDensity).toHaveBeenCalledWith("comfortable");
@@ -574,7 +573,7 @@ describe("Feature: the filters fold behind one button on a phone", () => {
     expect(filters.getAttribute("aria-expanded")).toBe("false");
     expect(kindButtons(container)).toEqual([]);
     expect(screen.queryByRole("checkbox", { name: /Hide done/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Compact" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Expand cards" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Remove Holder glm-A" })).toBeNull();
     expect(screen.getByRole("searchbox", { name: "Search" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Board" })).toBeTruthy();
@@ -583,7 +582,7 @@ describe("Feature: the filters fold behind one button on a phone", () => {
     expect(filters.getAttribute("aria-expanded")).toBe("true");
     expect(kindButtons(container)).toEqual(["Domain", "Epic", "Holder: 2", "Type", "Priority"]);
     expect(screen.getByRole("checkbox", { name: /Hide done/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Compact" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Expand cards" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Remove Holder glm-A" })).toBeTruthy();
 
     await userEvent.click(filters);

@@ -104,12 +104,22 @@ export function writeDensity(
   }
 }
 
+/** The window's localStorage, or none: the getter itself throws in a private window or a blocked
+ *  partition, before any read or write could. */
+function localStore(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 /** The board's density with its toggle: read once, remembered on every change. */
 export function useDensity(): [Density, (density: Density) => void] {
-  const [density, setDensity] = useState<Density>(() => readDensity(window.localStorage));
+  const [density, setDensity] = useState<Density>(() => readDensity(localStore()));
   const set = (next: Density): void => {
     setDensity(next);
-    writeDensity(window.localStorage, next);
+    writeDensity(localStore(), next);
   };
   return [density, set];
 }
@@ -164,12 +174,12 @@ export function writeGroups(
 /** The board's backlog view with its setter: read again whenever the board changes, remembered
  *  on every change. */
 export function useBacklogView(board: string): [BacklogView, (view: BacklogView) => void] {
-  const [held, setHeld] = useState(() => ({ board, view: readGroups(window.localStorage, board) }));
-  const current = held.board === board ? held : { board, view: readGroups(window.localStorage, board) };
+  const [held, setHeld] = useState(() => ({ board, view: readGroups(localStore(), board) }));
+  const current = held.board === board ? held : { board, view: readGroups(localStore(), board) };
   if (current !== held) setHeld(current);
   const set = (view: BacklogView): void => {
     setHeld({ board, view });
-    writeGroups(window.localStorage, board, view);
+    writeGroups(localStore(), board, view);
   };
   return [current.view, set];
 }

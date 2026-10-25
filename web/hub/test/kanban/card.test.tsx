@@ -32,14 +32,14 @@ describe("CardView", () => {
     const meta = container.querySelector("ul.meta");
     expect(meta?.querySelector(".est")?.textContent).toBe("L");
     expect(meta?.querySelector(".type")?.textContent).toBe("feature");
-    const chips = [...(meta?.querySelectorAll("li.badge") ?? [])].map((li) => li.textContent);
+    const chips = [...(meta?.querySelectorAll("li.card-badge") ?? [])].map((li) => li.textContent);
     // the expedite mark leads the state badges
     expect(chips).toEqual(["Expedite", "waits on KBN-API"]);
   });
 
   it("carries the badge's kind as its colour class", () => {
     const { container } = render(<CardView card={cardOf("KBN-UI")} flash={0} onOpen={() => undefined} />);
-    const chips = [...container.querySelectorAll("ul.meta li.badge")];
+    const chips = [...container.querySelectorAll("ul.meta li.card-badge")];
     expect(chips.map((li) => li.classList.contains("b-expedite"))).toEqual([true, false]);
     expect(chips.map((li) => li.classList.contains("b-waits"))).toEqual([false, true]);
   });

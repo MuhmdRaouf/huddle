@@ -102,6 +102,7 @@ export function FilterMenu({ kind, label, cards, filters, buttonRef, onToggle, o
       {facets.length > 8 && (
         <input
           type="search"
+          class="ui-input"
           aria-label={`Filter ${label} values`}
           placeholder="Filter…"
           value={query}

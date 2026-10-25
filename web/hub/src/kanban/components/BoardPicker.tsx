@@ -139,7 +139,7 @@ export function BoardPicker({ boards, boardKey, onBoard }: BoardPickerProps): JS
       <button
         ref={button}
         type="button"
-        class="picker-btn"
+        class="picker-button"
         aria-label="Board"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -156,6 +156,7 @@ export function BoardPicker({ boards, boardKey, onBoard }: BoardPickerProps): JS
           <input
             ref={box}
             type="text"
+            class="ui-input"
             role="combobox"
             aria-label="Filter boards"
             aria-autocomplete="list"

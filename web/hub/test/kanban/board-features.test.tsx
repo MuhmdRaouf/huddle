@@ -22,7 +22,7 @@ function renderBoard(snap: BoardProps["snapshot"] = snapshot, props: Partial<Boa
 }
 
 const railOf = (container: Element, column: string) =>
-  container.querySelector<HTMLButtonElement>(`section[data-column="${column}"] button.rail-btn`);
+  container.querySelector<HTMLButtonElement>(`section[data-column="${column}"] button.rail-button`);
 
 const cardById = (container: Element, id: string) =>
   container.querySelector<HTMLElement>(`[data-id="${id}"]`);
@@ -35,7 +35,7 @@ describe("Feature: columns that earn their width", () => {
     // Then review is a rail naming its count, closed
     const rail = railOf(container, "review");
     expect(rail?.getAttribute("aria-expanded")).toBe("false");
-    expect(rail?.querySelector(".sr-only")?.textContent).toBe("Review, 0 cards, show column");
+    expect(rail?.querySelector(".ui-sr")?.textContent).toBe("Review, 0 cards, show column");
     // When the rail is clicked
     await userEvent.click(rail as HTMLButtonElement);
     // Then review is a column of its own again, empty but open
@@ -48,7 +48,7 @@ describe("Feature: columns that earn their width", () => {
     const { container } = renderBoard();
     // Then done is a rail carrying its count
     const rail = railOf(container, "done");
-    expect(rail?.querySelector(".sr-only")?.textContent).toBe("Done, 3 cards, show column");
+    expect(rail?.querySelector(".ui-sr")?.textContent).toBe("Done, 3 cards, show column");
     expect(container.querySelector('section[data-column="done"] h2')).toBeNull();
     // When the rail is clicked
     await userEvent.click(rail as HTMLButtonElement);

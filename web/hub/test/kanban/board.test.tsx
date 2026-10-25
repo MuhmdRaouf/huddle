@@ -21,7 +21,9 @@ const columnsOf = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>("
 
 /** Opens a column sitting behind its rail; tests name the column they need open. */
 async function openRail(container: Element, column: string) {
-  const rail = container.querySelector<HTMLButtonElement>(`section[data-column="${column}"] button.rail-btn`);
+  const rail = container.querySelector<HTMLButtonElement>(
+    `section[data-column="${column}"] button.rail-button`,
+  );
   if (rail === null) throw new Error(`no ${column} rail`);
   await userEvent.click(rail);
 }
@@ -48,9 +50,9 @@ describe("Board", () => {
     ]);
     // done stands beside them as a rail carrying its count
     expect(container.querySelector('section[data-column="done"] h2')).toBeNull();
-    const rail = container.querySelector<HTMLButtonElement>('section[data-column="done"] .rail-btn');
+    const rail = container.querySelector<HTMLButtonElement>('section[data-column="done"] .rail-button');
     expect(rail?.textContent).toContain("Done");
-    expect(rail?.querySelector(".sr-only")?.textContent).toBe("Done, 3 cards, show column");
+    expect(rail?.querySelector(".ui-sr")?.textContent).toBe("Done, 3 cards, show column");
   });
 
   it("keeps expedite cards inside their own column, first, with the mark, and counts them", () => {
@@ -106,8 +108,8 @@ describe("Board", () => {
     expect(container.querySelector('section[data-column="in-progress"] h2')?.textContent).toBe(
       "In progress 1",
     );
-    const rails = [...container.querySelectorAll<HTMLButtonElement>("button.rail-btn")];
-    expect(rails.map((rail) => rail.querySelector(".sr-only")?.textContent)).toEqual([
+    const rails = [...container.querySelectorAll<HTMLButtonElement>("button.rail-button")];
+    expect(rails.map((rail) => rail.querySelector(".ui-sr")?.textContent)).toEqual([
       "Backlog, 0 cards, show column",
       "Ready, 0 cards, show column",
       "Review, 0 cards, show column",
@@ -175,7 +177,7 @@ describe("Board", () => {
     const { container } = renderBoard(null);
     const loading = container.querySelector('[data-layout="loading"] [role="status"]');
     expect(loading?.getAttribute("aria-label")).toBe("Loading the board");
-    expect(loading?.querySelector(".skeleton")).toBeTruthy();
+    expect(loading?.querySelector(".kanban-skeleton")).toBeTruthy();
   });
 
   it("tabs its columns on a phone, the tabs the flow bar's own labels", () => {
@@ -224,9 +226,11 @@ describe("collapsing a column by hand", () => {
     expect(collapse.getAttribute("aria-label")).toBe("Collapse Ready");
     await userEvent.click(collapse);
     expect(container.querySelector('section[data-column="ready"] h2')).toBeNull();
-    const rail = container.querySelector<HTMLButtonElement>('section[data-column="ready"] button.rail-btn');
+    const rail = container.querySelector<HTMLButtonElement>(
+      'section[data-column="ready"] button.rail-button',
+    );
     if (rail === null) throw new Error("no ready rail");
-    expect(rail.querySelector(".sr-only")?.textContent).toBe("Ready, 1 cards, show column");
+    expect(rail.querySelector(".ui-sr")?.textContent).toBe("Ready, 1 cards, show column");
     await userEvent.click(rail);
     const ready = container.querySelector('section[data-column="ready"]');
     expect(ready?.querySelector("h2")?.textContent).toBe("Ready 1");
@@ -241,7 +245,7 @@ describe("collapsing a column by hand", () => {
     expect(collapse.getAttribute("aria-label")).toBe("Collapse Backlog");
     await userEvent.click(collapse);
     expect(
-      container.querySelector<HTMLButtonElement>('section[data-column="backlog"] button.rail-btn .sr-only')
+      container.querySelector<HTMLButtonElement>('section[data-column="backlog"] button.rail-button .ui-sr')
         ?.textContent,
     ).toBe("Backlog, 0 cards, show column");
   });
@@ -252,8 +256,8 @@ describe("collapsing a column by hand", () => {
     const collapse = collapseBtn(container, "done");
     expect(collapse.getAttribute("aria-label")).toBe("Collapse Done");
     await userEvent.click(collapse);
-    const rail = container.querySelector<HTMLButtonElement>('section[data-column="done"] button.rail-btn');
-    expect(rail?.querySelector(".sr-only")?.textContent).toBe("Done, 3 cards, show column");
+    const rail = container.querySelector<HTMLButtonElement>('section[data-column="done"] button.rail-button');
+    expect(rail?.querySelector(".ui-sr")?.textContent).toBe("Done, 3 cards, show column");
   });
 
   it("renders no collapse button on a phone", () => {
@@ -310,7 +314,7 @@ describe("a board hiding its done cards", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Done 59" })).toBeTruthy();
-    expect(container.querySelector('section[data-column="done"] .rail-btn .sr-only')?.textContent).toBe(
+    expect(container.querySelector('section[data-column="done"] .rail-button .ui-sr')?.textContent).toBe(
       "Done, 59 cards, show column",
     );
     expect(screen.getByRole("status").textContent).toContain("59 done hidden");

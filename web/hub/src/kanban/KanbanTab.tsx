@@ -6,6 +6,7 @@
 // whenever the page turns visible; the board's stream is replaced when the page turns visible after
 // more than 30 s away, since a phone may resume it on a socket that never delivers again.
 
+import { Button } from "@huddle/ui/button.tsx";
 import type { JSX } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import "./kanban.css";
@@ -286,16 +287,16 @@ export function KanbanTab({ boardKey }: { boardKey: string | null }): JSX.Elemen
     <div class="kanban-tab">
       {state.kind === "loading" && (
         <div class="kanban-loading" role="status" aria-label="Loading the boards">
-          <div class="skeleton toolbar-skeleton" aria-hidden="true" />
-          <div class="skeleton board-skeleton" aria-hidden="true" />
+          <div class="kanban-skeleton toolbar-skeleton" aria-hidden="true" />
+          <div class="kanban-skeleton board-skeleton" aria-hidden="true" />
         </div>
       )}
       {state.kind === "failed" && (
         <>
           <p role="status">{FAILED_LINE}</p>
-          <button type="button" class="btn btn-sm" onClick={retry}>
+          <Button variant="secondary" class="retry" onClick={retry}>
             Retry
-          </button>
+          </Button>
         </>
       )}
       {state.kind === "ok" && boards.length === 0 && <p role="status">{EMPTY_LINE}</p>}

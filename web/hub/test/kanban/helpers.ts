@@ -37,3 +37,15 @@ export function countColumns(cards: Card[]): ColumnInfo[] {
 export function makeSnapshot(cards: Card[], over: Partial<Snapshot> = {}): Snapshot {
   return { ...clone(snapshot), cards, columns: countColumns(cards), ...over };
 }
+
+/** The daisyUI classes the page never wears: buttons, toggles, tabs, glass, badges, skeletons and the
+ *  theme colours. A ui-* class from the design system never counts. */
+const LEGACY_CLASS =
+  /^(btn(-[a-z]+)?|toggle(-[a-z]+)?|tabs?(-[a-z]+)?|glass|badge(-[a-z]+)?|skeleton|(bg|text|border)-(base-\d+|base-content|primary|secondary|accent|neutral|info|success|warning|error)(-content)?)$/;
+
+/** Every daisyUI class worn under `root`, root included, in document order. */
+export function legacyClasses(root: Element): string[] {
+  return [root, ...root.querySelectorAll("[class]")]
+    .flatMap((el) => [...el.classList])
+    .filter((name) => !name.startsWith("ui-") && LEGACY_CLASS.test(name));
+}

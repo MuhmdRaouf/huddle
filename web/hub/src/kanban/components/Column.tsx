@@ -41,6 +41,8 @@ export type ColumnProps = {
   sharedCluster?: string | null | undefined;
   /** groups the cards under tappable headers (the phone's backlog); absent, the column is flat */
   groups?: ColumnGroups | undefined;
+  /** a phone lane: the column tab above names it, so its heading is for screen readers only */
+  lane?: boolean | undefined;
 };
 
 /** One column: its heading and its cards — or, collapsed, a 40 px rail. */
@@ -63,6 +65,7 @@ export function Column({
   sharedTags = [],
   sharedCluster = null,
   groups,
+  lane = false,
 }: ColumnProps) {
   const cardProps = (card: CardData) => ({
     card,
@@ -81,21 +84,21 @@ export function Column({
     // count stay part of what a screen reader and a voice command hear
     return (
       <section class="col rail" data-column={id}>
-        <button type="button" class="rail-btn" aria-expanded="false" onClick={onExpand}>
+        <button type="button" class="rail-button" aria-expanded="false" onClick={onExpand}>
           <span class="rail-name" aria-hidden="true">
             {title}
           </span>
           <span class="count" aria-hidden="true">
             {total}
           </span>
-          <span class="sr-only">{`${title}, ${total} cards, show column`}</span>
+          <span class="ui-sr">{`${title}, ${total} cards, show column`}</span>
         </button>
       </section>
     );
   }
   return (
     <section class="col" data-column={id}>
-      <h2>
+      <h2 class={lane ? "ui-sr" : undefined}>
         <span class="col-head">
           <span class="col-title">{title} </span>
           <span class="count">{count ?? cards.length}</span>

@@ -16,7 +16,7 @@ const SEGMENTED = (columns: ColumnInfo[]): ColumnInfo[] =>
 /**
  * The flow bar: one 6 px segment per non-done column with cards, each as wide as its share of
  * the board, and the counts as plain labels under it. On a phone the labels are the column
- * tabs — the one place the two rows meet.
+ * tabs, on the design system's tab strip — the one place the two rows meet.
  */
 export function FlowBar({ columns, onPick, activeId }: FlowBarProps) {
   const tabMode = activeId !== undefined;
@@ -29,7 +29,7 @@ export function FlowBar({ columns, onPick, activeId }: FlowBarProps) {
         ))}
       </div>
       <div
-        class={tabMode ? "flow-labels tabs" : "flow-labels"}
+        class={tabMode ? "flow-labels ui-tabs" : "flow-labels"}
         role={tabMode ? "tablist" : undefined}
         aria-label={tabMode ? "Columns" : undefined}
       >
@@ -39,7 +39,7 @@ export function FlowBar({ columns, onPick, activeId }: FlowBarProps) {
               key={col.id}
               type="button"
               role="tab"
-              class={col.id === activeId ? "flow-label active" : "flow-label"}
+              class="flow-label"
               aria-selected={col.id === activeId}
               onClick={() => onPick(col.id)}
             >

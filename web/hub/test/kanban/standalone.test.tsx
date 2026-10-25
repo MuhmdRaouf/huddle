@@ -40,8 +40,8 @@ describe("the standalone board page", () => {
     });
     expect(document.querySelector(".kanban-tab")).not.toBeNull();
     // done stands as a rail carrying its count, exactly as the hub's tab draws this board
-    const rail = document.querySelector<HTMLButtonElement>('section[data-column="done"] .rail-btn');
-    expect(rail?.querySelector(".sr-only")?.textContent).toBe(
+    const rail = document.querySelector<HTMLButtonElement>('section[data-column="done"] .rail-button');
+    expect(rail?.querySelector(".ui-sr")?.textContent).toBe(
       `Done, ${snapshot.cards.length - open} cards, show column`,
     );
     // a static board has nothing to be live about: no dot, no reconnecting word anywhere

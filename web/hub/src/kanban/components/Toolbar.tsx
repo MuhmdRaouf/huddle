@@ -1,3 +1,4 @@
+import { Button } from "@huddle/ui/button.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Density, Grouping } from "../store.ts";
 import { type FilterKind, type Filters, clearPicks, hiddenDone, togglePick, useMedia } from "../store.ts";
@@ -25,7 +26,7 @@ export type ToolbarProps = {
   live: boolean;
   /** when the stream's last frame came (epoch ms), read by the status line beside the dot */
   lastFrameAt?: number | null;
-  /** the board's density and its toggle */
+  /** the board's density and its button */
   density: Density;
   onDensity: (density: Density) => void;
   /** tags every visible card carries, named once here instead of on every card */
@@ -73,7 +74,7 @@ function KindMenu({
       <button
         ref={button}
         type="button"
-        class="menu-btn"
+        class="chip"
         data-kind={kind}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -101,7 +102,8 @@ function KindMenu({
 const DOWN_MS = 10_000;
 
 /** The status line beside the live dot: the last frame's age, ticking each second, or
- *  Reconnecting once the stream has been down for DOWN_MS. */
+ *  Reconnecting once the stream has been down for DOWN_MS. The age sits outside any live region,
+ *  so a screen reader is not told every second; the polite region speaks only Reconnecting. */
 function StaleLine({ connected, lastFrameAt }: { connected: boolean; lastFrameAt: number | null }) {
   const [now, setNow] = useState(() => Date.now());
   const [downSince, setDownSince] = useState<number | null>(() => (connected ? null : Date.now()));
@@ -112,13 +114,15 @@ function StaleLine({ connected, lastFrameAt }: { connected: boolean; lastFrameAt
   useEffect(() => {
     setDownSince(connected ? null : Date.now());
   }, [connected]);
-  let text = "";
-  if (downSince !== null && now - downSince >= DOWN_MS) text = "Reconnecting";
-  else if (lastFrameAt !== null)
-    text = `Updated ${Math.max(0, Math.floor((now - lastFrameAt) / 1000))} s ago`;
+  const reconnecting = downSince !== null && now - downSince >= DOWN_MS;
+  const age =
+    reconnecting || lastFrameAt === null
+      ? ""
+      : `Updated ${Math.max(0, Math.floor((now - lastFrameAt) / 1000))} s ago`;
   return (
-    <span class="stale-line" role="status">
-      {text}
+    <span class="stale-line">
+      <span aria-live="off">{age}</span>
+      <span role="status">{reconnecting ? "Reconnecting" : ""}</span>
     </span>
   );
 }
@@ -137,7 +141,7 @@ function LiveDot({
   return (
     <>
       <span class={`live-dot ${connected ? "on" : "off"}`} title={`epoch ${epoch}, ${liveWord}`}>
-        <span class="sr-only">{liveWord}</span>
+        <span class="ui-sr">{liveWord}</span>
       </span>
       <StaleLine connected={connected} lastFrameAt={lastFrameAt} />
     </>
@@ -149,11 +153,14 @@ function SharedNote({ value }: { value: string }) {
   return <span class="shared-note">All cards: {value}</span>;
 }
 
+/** The density button names what a press does: compact cards expand, expanded ones compact. */
+const DENSITY_ACTION: Record<Density, string> = { compact: "Expand cards", comfortable: "Compact cards" };
+
 /** The grouping toggle's word for each grouping. */
 const GROUPING_WORD: Record<Grouping, string> = { priority: "Priority", cluster: "Cluster" };
 
-/** The filter controls: one menu per kind, the shared notes, the hide-done toggle, the density
- *  toggle and, when handed one, the backlog's grouping toggle. The desktop shows them in the
+/** The filter controls: one menu per kind, the shared notes, the hide-done switch, the density
+ *  button and, when handed one, the backlog's grouping toggle. The desktop shows them in the
  *  header row, the phone in its folded row. */
 function FilterControls({
   cards,
@@ -201,32 +208,32 @@ function FilterControls({
         <SharedNote key={tag} value={tag} />
       ))}
       {sharedCluster !== null && sharedCluster !== "" && <SharedNote value={sharedCluster} />}
+      {/* the checkbox covers its whole label, so the label's tap target is the control's own */}
       <label class="hide-done">
         <input
           type="checkbox"
-          class="toggle"
           checked={filters.hideDone}
           aria-checked={filters.hideDone ? "true" : "false"}
           onChange={() => onChange({ ...filters, hideDone: !filters.hideDone })}
         />
+        <span class="switch" aria-hidden="true" />
         <span>{hidden > 0 ? `Hide done (${hidden})` : "Hide done"}</span>
       </label>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
         class="density"
-        aria-pressed={density === "comfortable"}
         onClick={() => onDensity(density === "compact" ? "comfortable" : "compact")}
       >
-        {density === "compact" ? "Compact" : "Comfortable"}
-      </button>
+        {DENSITY_ACTION[density]}
+      </Button>
       {grouping !== undefined && onGrouping !== undefined && (
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           class="grouping"
           onClick={() => onGrouping(grouping === "priority" ? "cluster" : "priority")}
         >
           Group: {GROUPING_WORD[grouping]}
-        </button>
+        </Button>
       )}
     </>
   );
@@ -252,14 +259,14 @@ function Pills({
         <button
           key={`${pick.kind}:${pick.value}`}
           type="button"
-          class="pill"
+          class="chip pill"
           aria-label={`Remove ${pick.label} ${pick.value}`}
           onClick={() => onChange(togglePick(filters, pick.kind, pick.value))}
         >
           {pick.label}: {pick.value} <span aria-hidden="true">×</span>
         </button>
       ))}
-      <button type="button" class="pill clear" onClick={() => onChange(clearPicks(filters))}>
+      <button type="button" class="chip pill clear" onClick={() => onChange(clearPicks(filters))}>
         Clear all
       </button>
     </div>
@@ -270,9 +277,9 @@ function Pills({
 const FILTERS_ID = "kanban-filters";
 
 /** The header row: the picker as the page title, the live dot, search, one menu per filter kind,
- *  the shared note, the hide-done toggle and the density toggle at the right. `/` jumps to the
+ *  the shared note, the hide-done switch and the density button at the right. `/` jumps to the
  *  search box and b opens the picker, but never while a menu holds the keyboard. The picks sit
- *  as pills below. On a phone the menus, the toggles and the pills fold behind one Filters
+ *  as pills below. On a phone the menus, the switch, the buttons and the pills fold behind one Filters
  *  button that counts the picks and Hide done, so the header stays one row high; the folded row
  *  also carries the backlog's grouping toggle, which the desktop's flat columns have no use for. */
 export function Toolbar({
@@ -296,6 +303,8 @@ export function Toolbar({
   const search = useRef<HTMLInputElement>(null);
   const [openKind, setOpenKind] = useState<FilterKind | null>(null);
   const narrow = useMedia("(max-width: 639px)");
+  // a touch screen has no / key to press, so its hint is the plain word
+  const touch = useMedia("(pointer: coarse)");
   const [unfolded, setUnfolded] = useState(false);
 
   useEffect(() => {
@@ -342,15 +351,16 @@ export function Toolbar({
         <input
           ref={search}
           type="search"
+          class="ui-input"
           aria-label="Search"
-          placeholder="Search (press /)"
+          placeholder={touch ? "Search" : "Search (press /)"}
           value={filters.q}
           onInput={(event) => onChange({ ...filters, q: event.currentTarget.value })}
         />
         {narrow && (
           <button
             type="button"
-            class="filters-btn"
+            class="chip filters"
             aria-expanded={unfolded}
             aria-controls={unfolded ? FILTERS_ID : undefined}
             onClick={() => setUnfolded(!unfolded)}
