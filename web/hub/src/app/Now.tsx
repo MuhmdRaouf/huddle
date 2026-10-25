@@ -18,6 +18,7 @@ import {
   ageText,
   type GroupMode,
   groupSessions,
+  harnessOf,
   machinesLine,
   machinesOf,
   type NeedItem,
@@ -225,15 +226,30 @@ export function ContextBar({
 const whereOf = (s: RegistrySession): string =>
   [s.machine, projectName(s.project), s.branch].filter(Boolean).join(" · ");
 
-/** A session's harness as its small badge: the coding agent a non-Claude session runs in. */
-function HarnessBadge({ harness }: { harness: string }): JSX.Element {
+/** The quiet ink of a secondary line, and the hairline a divider draws. */
+const MUTED = "text-[var(--ui-muted)]";
+const LINE = "border-[var(--ui-line)]";
+
+/** A session's harness as its chip: the mark and the name of the coding agent it runs in, from
+ *  the one HARNESSES table. The list's rows and cards draw it small on the line under the name,
+ *  so the name keeps the row's width; the header draws it as a pill beside the other chips. */
+function HarnessBadge({ s, pill = false }: { s: RegistrySession; pill?: boolean }): JSX.Element {
+  const h = harnessOf(s);
+  const shape = pill ? "rounded-full px-2.5 py-0.5 text-xs" : "rounded-md px-1 py-px text-[11px] leading-4";
   return (
     <span
-      data-harness={harness}
-      title={`This session runs in ${harness}`}
-      class="shrink-0 rounded-md border border-[var(--ui-line)] px-1 py-px ui-mono text-[11px] leading-4 text-[var(--ui-muted)]"
+      data-harness={h.id}
+      title={`This session runs in ${h.name}`}
+      class={`inline-flex shrink-0 items-center gap-1 border ${LINE} ${shape} ${MUTED}`}
     >
-      {harness}
+      <span
+        data-harness-mark=""
+        aria-hidden="true"
+        class="ui-mono rounded-sm bg-[var(--ui-surface-2)] px-0.5 text-[9px] font-semibold leading-3 text-[var(--ui-text)]"
+      >
+        {h.mark}
+      </span>
+      {h.name}
     </span>
   );
 }
@@ -249,17 +265,14 @@ function HooksStaleChip({ s }: { s: RegistrySession }): JSX.Element | null {
   );
 }
 
-/** The quiet ink of a secondary line, and the hairline a divider draws. */
-const MUTED = "text-[var(--ui-muted)]";
-const LINE = "border-[var(--ui-line)]";
-
 /** The link that opens one session from the list. */
 const openHref = (s: RegistrySession): string => `#/now/${s.session_id}`;
 
-/** The needs-you card: the session that waits on the owner, what it asks, and the answers at
- *  the card's foot, 48 px tall for one thumb. A permission ask offers Deny and Allow once, both
- *  posted at once (an allow may open the passkey sheet first); any other ask offers Review,
- *  which opens the session to answer it. The menu beside them snoozes or dismisses the item. */
+/** The needs-you card: the session that waits on the owner (its name, then its harness chip and
+ *  where it works), what it asks, and the answers at the card's foot, 48 px tall for one thumb. A
+ *  permission ask offers Deny and Allow once, both posted at once (an allow may open the passkey
+ *  sheet first); any other ask offers Review, which opens the session to answer it. The menu
+ *  beside them snoozes or dismisses the item. */
 function NeedsCard({
   s,
   now,
@@ -283,17 +296,17 @@ function NeedsCard({
     >
       <a href={openHref(s)} class="flex min-w-0 flex-col gap-1.5 p-4 text-[var(--ui-text)]">
         <div class="flex items-baseline justify-between gap-2">
-          <span class="flex min-w-0 items-center gap-1.5">
-            <span class="truncate text-base font-semibold">{sessionName(s)}</span>
-            {s.harness ? <HarnessBadge harness={s.harness} /> : null}
-          </span>
+          <span class="truncate text-base font-semibold">{sessionName(s)}</span>
           <span class="flex shrink-0 items-center gap-1.5">
             <HooksStaleChip s={s} />
             <StateChip state={s.state} item={item} />
             <span class={`text-xs ${MUTED}`}>{ageText(s.last_event_at, now)}</span>
           </span>
         </div>
-        <div class={`truncate text-xs ${MUTED}`}>{whereOf(s)}</div>
+        <div class="flex min-w-0 items-center gap-1.5">
+          <HarnessBadge s={s} />
+          <span class={`truncate text-xs ${MUTED}`}>{whereOf(s)}</span>
+        </div>
         <div class="line-clamp-2 text-sm">{s.task || s.title || stateWord(s.state)}</div>
       </a>
       {ask ? (
@@ -338,8 +351,9 @@ function NeedsCard({
 /** The selected row's ring: the desktop's keyboard selection. */
 const selRing = (sel: boolean): string => (sel ? " ring-2 ring-inset ring-[var(--ui-accent)]" : "");
 
-/** A working or stuck row: the mark, the name taking the row's free width, where it works and
- *  its task under it, and the state badge, the model chip and how full its window is after. */
+/** A working or stuck row: the mark, the name taking the row's free width, its harness chip with
+ *  where it works and its task under it, and the state badge, the model chip and how full its
+ *  window is after. */
 function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element {
   return (
     <a
@@ -352,11 +366,11 @@ function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element 
         <StateMark state={s.state} />
       </span>
       <span class="ui-list-text">
+        <span class="ui-list-title min-w-0">{sessionName(s)}</span>
         <span class="flex min-w-0 items-center gap-1.5">
-          <span class="ui-list-title min-w-0">{sessionName(s)}</span>
-          {s.harness ? <HarnessBadge harness={s.harness} /> : null}
+          <HarnessBadge s={s} />
+          <span class="ui-list-meta truncate">{[s.machine, s.task].filter(Boolean).join(" · ")}</span>
         </span>
-        <span class="ui-list-meta truncate">{[s.machine, s.task].filter(Boolean).join(" · ")}</span>
       </span>
       <span class="ui-list-trailing flex-col items-end gap-1">
         <span class="flex items-center gap-1.5">
@@ -372,8 +386,8 @@ function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element 
   );
 }
 
-/** An idle or ended row: the mark, the name taking the row's free width with its machine, the
- *  state badge after it, and how long it has been quiet. */
+/** An idle or ended row: the mark, the name taking the row's free width with its machine and its
+ *  harness chip under it, the state badge after it, and how long it has been quiet. */
 function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolean }): JSX.Element {
   return (
     <a
@@ -386,12 +400,12 @@ function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolea
         <StateMark state={s.state} />
       </span>
       <span class="ui-list-text">
-        <span class="flex min-w-0 items-center gap-1.5">
-          <span class="ui-list-title min-w-0">
-            {sessionName(s)}{" "}
-            {s.machine ? <span class={`text-[13px] font-normal ${MUTED}`}>· {s.machine}</span> : null}
-          </span>
-          {s.harness ? <HarnessBadge harness={s.harness} /> : null}
+        <span class="ui-list-title min-w-0">
+          {sessionName(s)}{" "}
+          {s.machine ? <span class={`text-[13px] font-normal ${MUTED}`}>· {s.machine}</span> : null}
+        </span>
+        <span class="flex min-w-0 items-center">
+          <HarnessBadge s={s} />
         </span>
       </span>
       <span class="ui-list-trailing gap-1.5">
@@ -926,8 +940,9 @@ function NowDialogs({
 }
 
 /** The session's chips: its state (mark and word) in its role's tone, the hooks-stale chip when
- *  its hooks stopped reporting, its model, and its channel when it is in one. The state is the one
- *  the session shows, and its open item tells a finished turn from a blocking ask. */
+ *  its hooks stopped reporting, its model, its channel when it is in one, and the harness it runs
+ *  in. The state is the one the session shows, and its open item tells a finished turn from a
+ *  blocking ask. */
 function Chips({ s, needs }: { s: RegistrySession; needs: NeedItem[] | null }): JSX.Element {
   return (
     <span class="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -937,14 +952,7 @@ function Chips({ s, needs }: { s: RegistrySession; needs: NeedItem[] | null }): 
       {s.channel ? (
         <span class={`rounded-full border ${LINE} px-2.5 py-0.5 text-xs ${MUTED}`}>#{s.channel}</span>
       ) : null}
-      {s.harness ? (
-        <span
-          data-harness={s.harness}
-          class={`rounded-full border ${LINE} ui-mono px-2.5 py-0.5 text-xs ${MUTED}`}
-        >
-          {s.harness}
-        </span>
-      ) : null}
+      <HarnessBadge s={s} pill />
     </span>
   );
 }

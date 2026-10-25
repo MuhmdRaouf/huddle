@@ -412,6 +412,26 @@ func TestTheReportCarriesTheToolName(t *testing.T) {
 	}
 }
 
+// TestTheReportNamesClaudeCodeAsItsHarness pins the harness half: every report the Claude Code
+// hook sends names its harness claude, so the Now list names it the way it names every other.
+func TestTheReportNamesClaudeCodeAsItsHarness(t *testing.T) {
+	cwd := t.TempDir()
+	for _, event := range []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "Stop"} {
+		t.Run(event, func(t *testing.T) {
+			reg, url := startRegistry(t)
+			input := fmt.Sprintf(`{"session_id":"s-cc","hook_event_name":%q,"cwd":%q}`, event, cwd)
+			runReportHook(t, input, reportHome(t), map[string]string{"HUDDLE_URL": url})
+			took := reg.took()
+			if len(took) != 1 {
+				t.Fatalf("the registry took %d POSTs, want 1", len(took))
+			}
+			if got := field(took[0].Body, "harness"); got != "claude" {
+				t.Errorf("harness = %q, want %q", got, "claude")
+			}
+		})
+	}
+}
+
 // TestTheReportCarriesThePromptLine pins the prompt half: a UserPromptSubmit report carries the
 // typed prompt's first line, cut to 120 runes, and an injected prompt carries none.
 func TestTheReportCarriesThePromptLine(t *testing.T) {

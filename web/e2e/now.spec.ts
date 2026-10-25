@@ -1,6 +1,7 @@
 // now.spec.ts — the owner's first screen, on the phone and the desktop: the sign-in link lands
 // the browser on the hub, and the Now list shows the session the run seeded into the registry
-// (with the desktop's main pane keeping its pointer beside it while none is picked), one whose
+// (with the desktop's main pane keeping its pointer beside it while none is picked), every session
+// names its harness on its row and in its header (the seeded Claude Code one and a Codex one), one whose
 // last event asks for permission waits in Needs you with its state word, behind the filter too,
 // an agent-team teammate that went idle shows under its lead's row with the word idle, a seeded
 // permission ask is allowed with one tap on the 48 px button at its card's foot, and the Radar
@@ -38,6 +39,36 @@ test("the sign-in link opens the hub and the Now list shows the seeded session",
   // sessions stand and none is picked: the desktop's main pane keeps its pointer at the list
   // (the phone paints the list alone)
   if (!isMobile) await expect(page.getByText("No session open")).toBeVisible();
+});
+
+test("every session names its harness: the seeded Claude Code one and a Codex one", async ({ page }, info) => {
+  await signIn(page);
+  await openTab(page, "Now");
+
+  // a Codex session reports its turn done, so it sits with the idle ones and the Working count
+  // the other cases read stays as it was
+  const codex = `e2e-codex-${info.project.name}`;
+  await api("/api/registry/report", {
+    session_id: codex,
+    machine: "e2e-machine",
+    project: "e2e",
+    title: "Runs in Codex",
+    harness: "codex",
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+  const seeded = page.locator("[data-row='e2e-seed'] [data-harness]");
+  await expect(seeded).toHaveAttribute("data-harness", "claude");
+  await expect(seeded).toContainText("Claude Code");
+  const other = page.locator(`[data-row='${codex}'] [data-harness]`);
+  await expect(other).toHaveAttribute("data-harness", "codex");
+  await expect(other).toContainText("Codex");
+
+  // the open session's header names it too
+  await page.locator("[data-row='e2e-seed']").click();
+  const header = page.locator("[data-session] header [data-harness]");
+  await expect(header).toHaveAttribute("data-harness", "claude");
+  await expect(header).toContainText("Claude Code");
 });
 
 test("a session whose last event asks for permission waits in Needs you first", async ({

@@ -21,7 +21,7 @@ export type RegistryReport = {
   cwd?: string;
   pid?: number;
   channel?: string;
-  /** The coding agent the session runs in, when it is not Claude Code. */
+  /** The coding agent the session runs in, by its harness id; a report without one is Claude Code. */
   harness?: string;
   /** The tool a PreToolUse or PostToolUse event runs, and its short target (a Bash command's
    *  first line, a file path, an MCP tool's name); an older hook sends neither. */
@@ -158,6 +158,31 @@ export function projectName(project: string | undefined): string {
 /** A session's display name: its title (the first prompt), else the head of its id. */
 export function sessionName(row: RegistrySession): string {
   return row.title || row.session_id.slice(0, 8);
+}
+
+/** One coding agent a session runs in, as the chips draw it: its id, its name in words and its
+ *  two-letter mark. */
+export type Harness = { id: string; name: string; mark: string };
+
+/** Every harness huddle reports from: Claude Code's own hook, and the agents the harness word
+ *  wires (internal/harness), keyed by the id their reports carry. */
+export const HARNESSES: Readonly<Record<string, Harness>> = {
+  claude: { id: "claude", name: "Claude Code", mark: "CC" },
+  codex: { id: "codex", name: "Codex", mark: "CX" },
+  gemini: { id: "gemini", name: "Gemini", mark: "GE" },
+  qwen: { id: "qwen", name: "Qwen Code", mark: "QW" },
+  opencode: { id: "opencode", name: "opencode", mark: "OC" },
+  crush: { id: "crush", name: "Crush", mark: "CR" },
+  omp: { id: "omp", name: "omp", mark: "OM" },
+  pi: { id: "pi", name: "pi", mark: "PI" },
+  zcode: { id: "zcode", name: "zcode", mark: "ZC" },
+};
+
+/** The harness a session runs in: a report without one comes from Claude Code's hook, and an id
+ *  the table does not know is named by the id itself. */
+export function harnessOf(row: Pick<RegistryReport, "harness">): Harness {
+  const id = row.harness || "claude";
+  return HARNESSES[id] ?? { id, name: id, mark: id.slice(0, 2).toUpperCase() };
 }
 
 /** An event's age the way the rows carry it: seconds to days, "" when unknown. */

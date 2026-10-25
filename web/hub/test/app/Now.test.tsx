@@ -357,45 +357,35 @@ describe("the Now list", () => {
     expect(localStorage.getItem("huddle:nowneeds")).toBe("false");
   });
 
-  it("badges the harness a non-Claude session runs in, and none on a Claude one", () => {
+  it("names every session's harness on its row and its card, Claude Code included", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone", [
-      row({
-        session_id: "s-oc",
-        title: "board-fix",
-        machine: "studio",
-        harness: "opencode",
-        task: "Fix the board",
-      }),
-      row({ session_id: "s-cc", title: "lead", machine: "studio", task: "Release kanban 0.0.1" }),
-      row({
-        session_id: "s-idle-oc",
-        state: "idle",
-        title: "notes",
-        machine: "studio",
-        harness: "crush",
-        last_event: "Stop",
-      }),
-      row({
-        session_id: "s-need-oc",
-        state: "needs-you",
-        title: "gateway",
-        machine: "studio",
-        harness: "codex",
-        task: "Asks: keep the timeout?",
-      }),
+      row({ session_id: "s-cc", title: "lead", machine: "studio", harness: "claude", task: "Release" }),
+      row({ session_id: "s-cx", title: "board-fix", machine: "studio", harness: "codex", task: "Fix" }),
+      row({ session_id: "s-idle-cc", state: "idle", title: "notes", harness: "claude", last_event: "Stop" }),
+      row({ session_id: "s-idle-cx", state: "idle", title: "docs", harness: "codex", last_event: "Stop" }),
+      row({ session_id: "s-need-cc", state: "needs-you", title: "gateway", harness: "claude", task: "Asks" }),
+      row({ session_id: "s-need-cx", state: "needs-you", title: "api", harness: "codex", task: "Asks" }),
+      // a report from before the hook named its harness is a Claude Code one
+      row({ session_id: "s-old", title: "older", machine: "studio", task: "Older report" }),
     ]);
-    for (const id of ["s-oc", "s-idle-oc", "s-need-oc"]) {
-      const rowEl = document.querySelector(`[data-row="${id}"]`);
-      expect(rowEl).not.toBeNull();
-      expect(rowEl?.querySelector("[data-harness]")).not.toBeNull();
+    for (const [id, harness, name] of [
+      ["s-cc", "claude", "Claude Code"],
+      ["s-cx", "codex", "Codex"],
+      ["s-idle-cc", "claude", "Claude Code"],
+      ["s-idle-cx", "codex", "Codex"],
+      ["s-need-cc", "claude", "Claude Code"],
+      ["s-need-cx", "codex", "Codex"],
+      ["s-old", "claude", "Claude Code"],
+    ] as const) {
+      const chip = document.querySelector(`[data-row="${id}"] [data-harness]`) as HTMLElement | null;
+      expect(chip, id).not.toBeNull();
+      expect(chip?.dataset.harness, id).toBe(harness);
+      // the chip names the agent in words beside its mark, so the mark never carries it alone
+      expect(chip?.textContent, id).toContain(name);
+      expect(chip?.querySelector("[data-harness-mark]"), id).not.toBeNull();
     }
-    const claude = document.querySelector('[data-row="s-cc"]');
-    expect(claude?.querySelector("[data-harness]")).toBeNull();
-    // the badge names the agent in words, so colour never carries it alone
-    expect(screen.getByText("opencode")).toBeDefined();
-    expect(screen.getByText("crush")).toBeDefined();
-    expect(screen.getByText("codex")).toBeDefined();
+    expect(legacyClasses(document.body, "[data-needs-bar], [data-needs-sheet]")).toEqual([]);
   });
 
   it("draws the idle row: hollow mark, name, machine, age", () => {
@@ -619,6 +609,24 @@ describe("the Session screen", () => {
     expect(screen.getByText("#kanban-release")).toBeDefined();
     expect(screen.getByLabelText("Context 58 percent used")).toBeDefined();
     expect(screen.getByText("58% context")).toBeDefined();
+  });
+
+  it("names the session's harness among the header's chips, Claude Code included", () => {
+    for (const layout of ["phone", "desktop"] as const) {
+      for (const [harness, id, name] of [
+        ["claude", "claude", "Claude Code"],
+        ["codex", "codex", "Codex"],
+        [undefined, "claude", "Claude Code"],
+      ] as const) {
+        cleanup();
+        mountSession(layout, harness ? { harness } : {});
+        const chip = document.querySelector("[data-session] header [data-harness]") as HTMLElement | null;
+        expect(chip, `${layout} ${harness}`).not.toBeNull();
+        expect(chip?.dataset.harness).toBe(id);
+        expect(chip?.textContent).toContain(name);
+        expect(chip?.querySelector("[data-harness-mark]")).not.toBeNull();
+      }
+    }
   });
 
   it("paints the header, the stream and the resume line on the tokens, with no daisyUI or legacy class", () => {

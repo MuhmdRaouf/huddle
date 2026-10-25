@@ -52,6 +52,10 @@ const outboxCap = 5 * 1024 * 1024
 // registryPath is the one endpoint the report hook calls.
 const registryPath = "/api/registry/report"
 
+// claudeHarness is the harness every report of this hook names: the hook runs in Claude Code.
+// Other agents report through the external word under their own harness names.
+const claudeHarness = "claude"
+
 // reportInput is what Claude Code sends the report hook on stdin; every field is optional.
 type reportInput struct {
 	SessionID        string `json:"session_id"`
@@ -98,6 +102,7 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			Channel:     id.Channel,
 			Member:      id.As,
 			Cwd:         input.Cwd,
+			Harness:     claudeHarness,
 			LastEvent:   input.HookEventName,
 			LastEventAt: jsfmt.ISOTime(nowOf(w)),
 		}
