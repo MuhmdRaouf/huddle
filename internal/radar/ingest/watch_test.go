@@ -718,6 +718,60 @@ func TestWatcherTranscripts(t *testing.T) {
 			t.Errorf("requests after the rescan = %v, want req-a and req-b", ids)
 		}
 	})
+
+	// A folder whose modified time stands keeps the listing an earlier walk read: these pin
+	// what a kept listing still finds.
+	settled := func(t *testing.T, dir string) {
+		t.Helper()
+		hourAgo := time.Now().Add(-time.Hour)
+		if err := os.Chtimes(dir, hourAgo, hourAgo); err != nil {
+			t.Fatalf("chtimes %s: %v", dir, err)
+		}
+	}
+
+	t.Run("finds a transcript added to a folder an earlier rescan listed", func(t *testing.T) {
+		e := makeEnv(t)
+		projects := filepath.Join(e.config, "projects", "p")
+		writeText(t, filepath.Join(projects, "a.jsonl"), jsonl(t, assistantLine(watchT1, "req-a")))
+		settled(t, projects)
+		st := newStore()
+		w := manualWatcher(t, e.env, st)
+		w.tick(5_000) // this rescan walks the folder from its kept listing
+		writeText(t, filepath.Join(projects, "b.jsonl"), jsonl(t, assistantLine(watchT1, "req-b")))
+		w.tick(5_000)
+		ids := requestIDs(t, st, store.RequestFilter{})
+		if len(ids) != 2 || !slices.Contains(ids, "req-b") {
+			t.Errorf("requests after the rescan = %v, want req-a and req-b", ids)
+		}
+	})
+
+	t.Run("finds a stale transcript that grows again in a folder an earlier rescan listed", func(t *testing.T) {
+		e := makeEnv(t)
+		projects := filepath.Join(e.config, "projects", "p")
+		stale := writeText(t, filepath.Join(projects, "old.jsonl"), jsonl(t, assistantLine(watchT1, "req-old")))
+		setMtime(t, stale, watchT0-10*watchDay)
+		settled(t, projects)
+		st := newStore()
+		w := manualWatcher(t, e.env, st)
+		w.tick(5_000)
+		if got := requestIDs(t, st, store.RequestFilter{}); len(got) != 0 {
+			t.Fatalf("requests = %v, want none: the stale transcript is outside the window", got)
+		}
+		// an append moves the file's modified time, never its folder's
+		file, err := os.OpenFile(stale, os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := file.WriteString(jsonl(t, assistantLine(watchT1+1_000, "req-new"))); err != nil {
+			t.Fatal(err)
+		}
+		_ = file.Close()
+		settled(t, projects)
+		w.tick(5_000)
+		if ids := requestIDs(t, st, store.RequestFilter{}); !slices.Contains(ids, "req-new") {
+			t.Errorf("requests after the rescan = %v, want req-new", ids)
+		}
+	})
 }
 
 func TestClaudeUpstreamEnrichment(t *testing.T) {

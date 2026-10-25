@@ -299,6 +299,10 @@ stopped, the router refuses that provider's models. A missing file, one older th
 one that does not parse stops nothing — a broken radar never cuts you off, and `claude-*`
 requests are never read against it.
 
+An idle hub costs next to nothing: with no request and no page open, `huddle serve` uses under 0.5% of one
+core over a home holding 500 days-old sessions, because Radar's 5 s transcript rescan re-reads only the
+folders that changed. `TestHubIdleCPU` holds it to that budget.
+
 ## Status bar
 
 `huddle statusline` prints one line for Claude Code's status bar: the project's channel and who is

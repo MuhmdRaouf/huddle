@@ -44,6 +44,11 @@ const SpoolWindowDays = 7
 // maxWalkDepth is how deep under the projects dir the transcript walk goes.
 const maxWalkDepth = 6
 
+// listingSettle is how long after a directory's last change its listing must have been read
+// before the next walk trusts it: a filesystem with coarse timestamps can stamp a change made
+// just after the read with the same modified time.
+const listingSettle = 2 * time.Second
+
 // idleCompact is how long a transcript tail may sit without new bytes before its parser's
 // streamed windows are dropped: the file sits at its end, so no window can grow back, and
 // a new byte re-arms it on the read that brings it.
@@ -206,6 +211,10 @@ type Watcher struct {
 	livePaths             map[string]struct{}
 	registryTranscripts   map[string]string
 	lastRescan            int64
+	// listings are the projects walk's directory listings from its last full walk: a
+	// directory whose modified time stands is not read again, so a quiet history of
+	// thousands of session folders costs one stat each per rescan.
+	listings map[string]dirListing
 
 	cancel func()
 	done   chan struct{}
@@ -1165,6 +1174,7 @@ type passWork struct {
 	discoverAt     int
 	walkStarted    bool
 	walk           []walkFrame
+	walked         map[string]dirListing
 
 	tailsSnapshotted bool
 	tailSnapshot     []*fileTail
@@ -1207,6 +1217,16 @@ type walkFrame struct {
 type walkDir struct {
 	path    string
 	mtimeMs int64
+}
+
+// dirListing is one directory's entries as a walk read them: its .jsonl files and its
+// subdirectories, and the directory's modified time and the wall time of that read. Adding,
+// removing or renaming an entry moves the modified time, so a listing stands while it holds.
+type dirListing struct {
+	mtimeMs int64
+	readMs  int64
+	files   []string
+	dirs    []string
 }
 
 // newPassWork opens a pass, deciding whether this one rescans.
@@ -1344,10 +1364,17 @@ func (p *passWork) stepDiscovery() bool {
 	for {
 		if len(p.walk) == 0 {
 			if p.walkStarted {
+				// the walk is whole: its listings replace the last ones, so a directory that
+				// went away takes its listing with it
+				p.w.listings = p.walked
 				return false
 			}
 			p.walkStarted = true
-			p.pushWalk(filepath.Join(paths.ClaudeConfigDir(p.w.env), "projects"), 0)
+			p.walked = make(map[string]dirListing)
+			root := filepath.Join(paths.ClaudeConfigDir(p.w.env), "projects")
+			if mtime, ok := mtimeOf(root); ok {
+				p.pushWalk(root, mtime, 0)
+			}
 			continue
 		}
 		frame := &p.walk[len(p.walk)-1]
@@ -1365,43 +1392,63 @@ func (p *passWork) stepDiscovery() bool {
 			if frame.depth+1 > maxWalkDepth {
 				continue
 			}
-			p.pushWalk(sub.path, frame.depth+1)
+			p.pushWalk(sub.path, sub.mtimeMs, frame.depth+1)
 			continue
 		}
 		p.walk = p.walk[:len(p.walk)-1]
 	}
 }
 
-// pushWalk scans one directory into a new frame.
-func (p *passWork) pushWalk(dir string, depth int) {
-	files, dirs := p.w.scanDir(dir)
+// pushWalk scans one directory, modified at mtimeMs, into a new frame.
+func (p *passWork) pushWalk(dir string, mtimeMs int64, depth int) {
+	listing, ok := p.w.listings[dir]
+	if !ok || listing.mtimeMs != mtimeMs || listing.readMs < mtimeMs+listingSettle.Milliseconds() {
+		listing, ok = readListing(dir, mtimeMs)
+		if !ok {
+			return
+		}
+	}
+	p.walked[dir] = listing
+	files, dirs := p.w.scanDir(listing)
 	p.walk = append(p.walk, walkFrame{depth: depth, files: files, dirs: dirs})
 }
 
-// scanDir is one directory's fresh transcript paths and subdirectories, each newest-mtime first.
-func (w *Watcher) scanDir(dir string) ([]string, []walkDir) {
+// readListing reads dir's entries: its .jsonl files and its subdirectories; false when it
+// cannot be read.
+func readListing(dir string, mtimeMs int64) (dirListing, bool) {
+	listing := dirListing{mtimeMs: mtimeMs, readMs: time.Now().UnixMilli()}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, nil
+		return dirListing{}, false
 	}
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		switch {
+		case entry.IsDir():
+			listing.dirs = append(listing.dirs, path)
+		case strings.HasSuffix(entry.Name(), ".jsonl"):
+			listing.files = append(listing.files, path)
+		}
+	}
+	return listing, true
+}
+
+// scanDir is one directory listing's fresh transcript paths and subdirectories, each
+// newest-mtime first.
+func (w *Watcher) scanDir(listing dirListing) ([]string, []walkDir) {
 	type scanned struct {
 		path    string
 		mtimeMs int64
 	}
 	var files, dirs []scanned
-	for _, entry := range entries {
-		path := filepath.Join(dir, entry.Name())
-		if entry.IsDir() {
-			mtime, ok := mtimeOf(path)
-			if !ok {
-				continue
-			}
-			dirs = append(dirs, scanned{path: path, mtimeMs: mtime})
+	for _, path := range listing.dirs {
+		mtime, ok := mtimeOf(path)
+		if !ok {
 			continue
 		}
-		if !strings.HasSuffix(entry.Name(), ".jsonl") {
-			continue
-		}
+		dirs = append(dirs, scanned{path: path, mtimeMs: mtime})
+	}
+	for _, path := range listing.files {
 		mtime, ok := mtimeOf(path)
 		if !ok || mtime < w.sinceCutoff() {
 			continue
