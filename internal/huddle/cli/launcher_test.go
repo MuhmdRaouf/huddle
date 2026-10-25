@@ -119,10 +119,12 @@ func launcherHooks(t *testing.T) []launcherHook {
 	return out
 }
 
-// launcherLine is the command one hook name owes: the committed launcher, which starts the
-// huddle binary (downloading it on first use) and never blocks or fails Claude Code.
+// launcherLine is the command one hook name owes: the launcher's stable current binary, which
+// outlives a plugin update, else the committed launcher, which builds or downloads that binary on
+// first use and never blocks or fails Claude Code.
 func launcherLine(name string) string {
-	return fmt.Sprintf(`sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook %s`, name)
+	return fmt.Sprintf(`h="${AGENTS_HUDDLE_HOME:-$HOME/.agents/huddle-bin}/current"; [ -x "$h" ] && exec "$h" hook %[1]s; `+
+		`exec sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook %[1]s`, name)
 }
 
 // TestHooksJSONRunsTheLauncher pins hooks.json whole: one launcher line per event, naming the

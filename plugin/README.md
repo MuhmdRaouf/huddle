@@ -102,7 +102,8 @@
 - **Kanban.** One board per repository (`.agents/kanban`): sessions claim cards, the first claim wins, and review and
   testing gates sit on the way to done. Two machines share one board when they share the repository.
 - **In the session.** Each Claude Code event runs one hook process — huddle's, radar's and kanban's parts ride inside
-  it — so there is nothing to start by hand. The MCP server `huddle` exposes the operations, the `huddle` and `kanban`
+  it — so there is nothing to start by hand. The hook runs the stable `~/.agents/huddle-bin/current` binary once the
+  first build exists, so a session's hooks keep running after a plugin update replaces the plugin's directory. The MCP server `huddle` exposes the operations, the `huddle` and `kanban`
   skills teach the protocol, and the `huddle-worker` agent does one bounded task and shares its findings.
 - **The router.** huddle-router is the daemon at 127.0.0.1:18786 that the provider plugins route through: one lane
   per enabled provider, `claude-*` to Anthropic untouched, the gateway under `/gateway`. With only a provider set

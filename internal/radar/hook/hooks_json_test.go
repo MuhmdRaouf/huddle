@@ -44,10 +44,13 @@ func loadHooksJSON(t *testing.T) hooksFile {
 	return file
 }
 
-// launcherPrefix begins every hook line: the committed launcher's hook word, which starts the
-// huddle binary (downloading it on first use) and never blocks or fails Claude Code. The word
-// after it names the event, and radar's hook is one part of that event's process.
-const launcherPrefix = `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook `
+// launcherLine is one event's hook line: the launcher's stable current binary, else the committed
+// launcher, which builds or downloads that binary on first use and never blocks or fails Claude
+// Code. The word names the event, and radar's hook is one part of that event's process.
+func launcherLine(word string) string {
+	return `h="${AGENTS_HUDDLE_HOME:-$HOME/.agents/huddle-bin}/current"; [ -x "$h" ] && exec "$h" hook ` + word +
+		`; exec sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook ` + word
+}
 
 // eventWord is the Claude Code event's word in the launcher line: SessionStart -> session-start.
 func eventWord(event string) string {
@@ -84,7 +87,7 @@ func eventGroups(t *testing.T) map[string]hooksGroup {
 		word := eventWord(event)
 		for _, group := range groups {
 			for _, entry := range group.Hooks {
-				if entry.Command == launcherPrefix+word {
+				if entry.Command == launcherLine(word) {
 					if _, again := out[event]; again {
 						t.Fatalf("%s runs the event line twice", event)
 					}
@@ -154,7 +157,7 @@ func TestHooksJSON(t *testing.T) {
 	t.Run("runs the launcher's hook word naming the event", func(t *testing.T) {
 		for event, group := range eventGroups(t) {
 			for _, entry := range group.Hooks {
-				if entry.Command != launcherPrefix+eventWord(event) {
+				if entry.Command != launcherLine(eventWord(event)) {
 					t.Errorf("%s: command = %q, want the launcher's %s line", event, entry.Command, eventWord(event))
 				}
 			}

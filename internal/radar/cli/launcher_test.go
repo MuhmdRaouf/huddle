@@ -111,7 +111,8 @@ func hooksCommand(t *testing.T) string {
 	if !ok || len(groups) == 0 {
 		t.Fatal("hooks.json gives SessionStart no command")
 	}
-	const eventLine = `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook session-start`
+	const eventLine = `h="${AGENTS_HUDDLE_HOME:-$HOME/.agents/huddle-bin}/current"; [ -x "$h" ] && exec "$h" hook session-start; ` +
+		`exec sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook session-start`
 	for _, group := range groups {
 		for _, hook := range group.Hooks {
 			if hook.Command == eventLine {

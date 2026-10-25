@@ -34,14 +34,15 @@ func readHooksJSON(t *testing.T) hooksFile {
 	return file
 }
 
-// eventWord is the word after `hook ` in a launcher line; ok is false for the two decision lines
-// (approve, permit), which keep their own hooks and are no events.
+// eventWord is the word after the last `hook ` in a launcher line; ok is false for the two
+// decision lines (approve, permit), which keep their own hooks and are no events.
 func eventWord(command string) (word string, ok bool) {
-	const prefix = `sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook `
-	if !strings.HasPrefix(command, prefix) {
+	const fallback = `; exec sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook `
+	at := strings.LastIndex(command, fallback)
+	if at < 0 {
 		return "", false
 	}
-	word = strings.TrimPrefix(command, prefix)
+	word = command[at+len(fallback):]
 	return word, word != "approve" && word != "permit"
 }
 
