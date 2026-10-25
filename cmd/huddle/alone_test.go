@@ -458,3 +458,21 @@ func TestAloneServiceInstallsAndUninstalls(t *testing.T) {
 		t.Errorf("the second uninstall = (%d, %q), want a success", code, errOut)
 	}
 }
+
+// TestAnIdentityKeepsOnlyTheWordsTheCLIOwns pins the other side of the split: a channel identity
+// takes the CLI's up, down, status, open, pair and devices, and nothing else. The owner's own
+// machine holds a joined credential, so a word the CLI has no meaning for (role, cert, service,
+// trust) is still the binary's own there.
+func TestAnIdentityKeepsOnlyTheWordsTheCLIOwns(t *testing.T) {
+	env := aloneEnv(t)
+	env["HUDDLE_CHANNEL"] = "team"
+	env["HUDDLE_AS"] = "me"
+	code, out, errOut := aloneExec(t, env, "role", "hub", "--host", "hub.example.invalid")
+	if code != 0 || errOut != "" {
+		t.Fatalf("role hub --host with an identity = (%d, %q, %q), want 0 and silence on stderr", code, out, errOut)
+	}
+	raw, err := os.ReadFile(filepath.Join(env["HUDDLE_HOME"], "config.toml"))
+	if err != nil || !strings.Contains(string(raw), `role = "hub"`) {
+		t.Errorf("config.toml after role hub = (%q, %v), want role = \"hub\"", raw, err)
+	}
+}

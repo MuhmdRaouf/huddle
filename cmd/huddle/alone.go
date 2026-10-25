@@ -49,6 +49,13 @@ var aloneWords = map[string]aloneEntry{
 	"-h":      helpAlone,
 }
 
+// cliWords are the alone words the channel CLI also owns, with a meaning of its own: a session's
+// up mints the join line, its status is the channel's. Every other alone word is the binary's
+// wherever it runs: the owner's own machine holds a joined credential, and still sets its role.
+var cliWords = map[string]bool{
+	"up": true, "down": true, "status": true, "open": true, "pair": true, "devices": true,
+}
+
 // aloneRun takes the line when its command word is one of the binary's own. A session (a channel
 // identity in the environment, the project's settings or a joined credential) keeps the CLI's
 // words; the second answer says whether the word was ours to take.
@@ -58,9 +65,10 @@ func aloneRun(ctx context.Context, command string, argv []string, stdout, stderr
 		return 0, false
 	}
 	w := &cli.World{}
-	id := cli.Identify(ctx, w, "")
-	if id.Channel != "" || id.As != "" {
-		return cli.Huddle(ctx, w, argv, stdout, stderr), true
+	if cliWords[command] {
+		if id := cli.Identify(ctx, w, ""); id.Channel != "" || id.As != "" {
+			return cli.Huddle(ctx, w, argv, stdout, stderr), true
+		}
 	}
 	return word(ctx, w, argv, stdout, stderr), true
 }
