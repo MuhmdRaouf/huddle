@@ -1509,17 +1509,81 @@ func (s *server) registryListRoute(w http.ResponseWriter, r *http.Request) error
 			Status: 400, Msg: "state must be one of " + hub.StateNames(),
 		}
 	}
-	sessions, err := s.registry.Sessions(r.Context(), filter, s.now())
+	// the transcripts can settle a row's state, so the state filter reads the rows they settled
+	state := filter.State
+	filter.State = ""
+	now := s.now()
+	stored, err := s.registry.Sessions(r.Context(), filter, now)
 	if err != nil {
 		return err
 	}
-	for i := range sessions {
-		s.fillRadarFacts(r.Context(), &sessions[i])
+	listed := make(map[string]bool, len(stored))
+	ids := make([]string, 0, len(stored))
+	for _, row := range stored {
+		listed[row.SessionID] = true
+		if row.State != hub.StateEnded {
+			ids = append(ids, row.SessionID)
+		}
+	}
+	var unreported []radartab.RunningSession
+	if s.radar != nil {
+		for _, running := range s.radar.RunningSessions(r.Context()) {
+			if !listed[running.ID] {
+				unreported = append(unreported, running)
+				ids = append(ids, running.ID)
+			}
+		}
+	}
+	times := s.transcriptTimes(ids)
+	for i := range stored {
+		s.seeTranscript(r.Context(), times, now, &stored[i])
+	}
+	// a running session that never reported gets a row of its own once its transcript is on disk
+	for _, running := range unreported {
+		if at, ok := times[running.ID]; ok {
+			stored = append(stored, hub.TranscriptRow(running.ID, running.Cwd, at, now))
+		}
+	}
+	sessions := make([]hub.SessionRow, 0, len(stored))
+	for _, row := range stored {
+		if (filter.Machine != "" && row.Machine != filter.Machine) ||
+			(filter.Project != "" && row.Project != filter.Project) || (state != "" && row.State != state) {
+			continue
+		}
+		s.fillRadarFacts(r.Context(), &row)
+		sessions = append(sessions, row)
 	}
 	s.writeJSON(w, 200, struct {
 		Sessions []hub.SessionRow `json:"sessions"`
 	}{sessions}, nil)
 	return nil
+}
+
+// transcriptTimes reads when the sessions' transcripts last changed, by id; no tab mounted reads
+// none.
+func (s *server) transcriptTimes(ids []string) map[string]time.Time {
+	if s.radar == nil {
+		return nil
+	}
+	return s.radar.TranscriptTimes(ids)
+}
+
+// seeTranscript joins a row's transcript to it: a row whose transcript runs ahead of its reports
+// while its pid lives reads hooks stale. The pid is probed only when the transcript runs ahead,
+// and the probe only looks.
+func (s *server) seeTranscript(ctx context.Context, times map[string]time.Time, now time.Time, row *hub.SessionRow) {
+	at, ok := times[row.SessionID]
+	if !ok {
+		return
+	}
+	pid := row.Pid
+	row.SeeTranscript(at, func() bool {
+		if pid <= 0 {
+			return false
+		}
+		_, alive := pidCommandOf(ctx, pid)
+		return alive
+	}, now)
 }
 
 // registrySessionRoute answers one session with its last events (SPEC 5.3). The read is the
@@ -1533,9 +1597,25 @@ func (s *server) registrySessionRoute(w http.ResponseWriter, r *http.Request, pa
 	if err := s.registry.OpenTheSession(r.Context(), id, jsfmt.ISOTime(s.now())); err != nil {
 		return err
 	}
-	detail, err := s.registry.Session(r.Context(), id, s.now())
+	now := s.now()
+	detail, err := s.registry.Session(r.Context(), id, now)
 	if err != nil {
 		return err
+	}
+	times := s.transcriptTimes([]string{id})
+	if detail != nil {
+		s.seeTranscript(r.Context(), times, now, &detail.SessionRow)
+	} else if at, ok := times[id]; ok && s.radar != nil {
+		// a running session that never reported reads the row its transcript gives it
+		for _, running := range s.radar.RunningSessions(r.Context()) {
+			if running.ID == id {
+				detail = &hub.SessionDetail{
+					SessionRow: hub.TranscriptRow(running.ID, running.Cwd, at, now),
+					Events:     []hub.SessionEvent{},
+				}
+				break
+			}
+		}
 	}
 	if detail == nil {
 		return &channel.HuddleError{Status: 404, Msg: "no session " + id}

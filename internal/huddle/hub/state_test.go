@@ -60,11 +60,46 @@ func TestStateOfFollowsTheRulesOfTheSpec(t *testing.T) {
 		{"a SessionStart fifteen minutes ago", Facts{LastEvent: "SessionStart", LastEventAt: ago(15 * time.Minute)}, StateStuck},
 		{"a Notification an hour ago that asks nothing", Facts{LastEvent: "Notification", LastEventAt: ago(time.Hour)}, StateStuck},
 		{"a torn timestamp reads as long ago", Facts{LastEvent: "UserPromptSubmit", LastEventAt: time.Time{}}, StateStuck},
+
+		// hooks stale: the pid is alive and the transcript is newer than the last report by more
+		// than 2 minutes, so the transcript is the session's clock — working while it moves,
+		// idle once it is quiet, never stuck
+		{"pid alive and hooks stale under a moving transcript", Facts{LastEvent: "PostToolUse", LastEventAt: ago(30 * time.Minute), TranscriptAt: ago(10 * time.Second), Running: true}, StateWorking},
+		{"pid alive and hooks stale after a Stop", Facts{LastEvent: "Stop", LastEventAt: ago(time.Hour), TranscriptAt: ago(time.Minute), Running: true}, StateWorking},
+		{"pid alive and hooks stale over a transcript quiet past the limit", Facts{LastEvent: "PostToolUse", LastEventAt: ago(time.Hour), TranscriptAt: ago(20 * time.Minute), Running: true}, StateIdle},
+		{"a transcript that never reported, moving", Facts{TranscriptAt: ago(5 * time.Second), Running: true}, StateWorking},
+		{"an open item holds a hooks-stale session", Facts{LastEvent: "PostToolUse", LastEventAt: ago(30 * time.Minute), TranscriptAt: ago(10 * time.Second), Running: true, OpenItem: true}, StateNeedsYou},
+		{"a pid gone under a moving transcript", Facts{LastEvent: "PostToolUse", LastEventAt: ago(30 * time.Minute), TranscriptAt: ago(10 * time.Second), Ended: true}, StateEnded},
+		{"a dead pid under a moving transcript keeps the reports' reading", Facts{LastEvent: "PostToolUse", LastEventAt: ago(30 * time.Minute), TranscriptAt: ago(10 * time.Second)}, StateStuck},
+		{"a transcript ahead by under the limit keeps the reports' reading", Facts{LastEvent: "UserPromptSubmit", LastEventAt: ago(11 * time.Minute), TranscriptAt: ago(10 * time.Minute), Running: true}, StateStuck},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := StateOf(tc.f, stateNow); got != tc.want {
 				t.Errorf("StateOf(%+v) = %q, want %q", tc.f, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHooksStaleReadsTheTranscriptAgainstTheReports(t *testing.T) {
+	cases := []struct {
+		name string
+		f    Facts
+		want bool
+	}{
+		{"pid alive, transcript three minutes ahead", Facts{LastEventAt: ago(4 * time.Minute), TranscriptAt: ago(time.Minute), Running: true}, true},
+		{"pid alive, a transcript that never reported", Facts{TranscriptAt: ago(time.Second), Running: true}, true},
+		{"pid alive, transcript exactly two minutes ahead", Facts{LastEventAt: ago(3 * time.Minute), TranscriptAt: ago(time.Minute), Running: true}, false},
+		{"pid alive, a session that keeps reporting", Facts{LastEventAt: ago(time.Second), TranscriptAt: ago(2 * time.Second), Running: true}, false},
+		{"pid alive, no transcript", Facts{LastEventAt: ago(time.Hour), Running: true}, false},
+		{"pid dead, transcript far ahead", Facts{LastEventAt: ago(time.Hour), TranscriptAt: ago(time.Second)}, false},
+		{"an ended session, transcript far ahead", Facts{LastEventAt: ago(time.Hour), TranscriptAt: ago(time.Second), Running: true, Ended: true}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := HooksStale(tc.f); got != tc.want {
+				t.Errorf("HooksStale(%+v) = %v, want %v", tc.f, got, tc.want)
 			}
 		})
 	}

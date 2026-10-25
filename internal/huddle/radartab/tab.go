@@ -19,6 +19,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -552,6 +553,88 @@ func (t *Tab) FactsOf(ctx context.Context, id string) SessionFacts {
 		facts.Provider = &provider
 	}
 	return facts
+}
+
+// RunningSession is one session Claude Code's own session registry names running, as radar
+// reads it: its id and its working dir.
+type RunningSession struct {
+	ID  string
+	Cwd string
+}
+
+// RunningSessions reads the running sessions radar knows through the tab's own API, in-process:
+// those whose pid Claude Code's session registry names alive. The requests outside any session,
+// the sessions radar knows only from the router, the jobs a session submitted and a session with
+// no working dir are left out.
+func (t *Tab) RunningSessions(ctx context.Context) []RunningSession {
+	body, ok := t.RadarAnswer(ctx, "/api/sessions")
+	if !ok {
+		return nil
+	}
+	var answer struct {
+		Sessions []struct {
+			ID              string  `json:"id"`
+			Cwd             *string `json:"cwd"`
+			ParentSessionID *string `json:"parentSessionId"`
+			Live            bool    `json:"live"`
+			External        bool    `json:"external"`
+		} `json:"sessions"`
+	}
+	if err := json.Unmarshal(body, &answer); err != nil {
+		return nil
+	}
+	var out []RunningSession
+	for _, session := range answer.Sessions {
+		if !session.Live || session.ID == shared.OutsideSession || session.External ||
+			session.ParentSessionID != nil || session.Cwd == nil || *session.Cwd == "" {
+			continue
+		}
+		out = append(out, RunningSession{ID: session.ID, Cwd: *session.Cwd})
+	}
+	return out
+}
+
+// TranscriptTimes answers, by session id, when each of the sessions' transcripts last changed:
+// the modification time of <claude config dir>/projects/<project>/<id>.jsonl. A session with no
+// transcript there is absent. Each project dir is listed once, and only the files the ids name
+// are read for their time.
+func (t *Tab) TranscriptTimes(ids []string) map[string]time.Time {
+	out := map[string]time.Time{}
+	if len(ids) == 0 {
+		return out
+	}
+	wanted := make(map[string]string, len(ids))
+	for _, id := range ids {
+		wanted[id+".jsonl"] = id
+	}
+	root := filepath.Join(paths.ClaudeConfigDir(t.env), "projects")
+	projects, err := os.ReadDir(root)
+	if err != nil {
+		return out
+	}
+	for _, project := range projects {
+		if !project.IsDir() {
+			continue
+		}
+		entries, err := os.ReadDir(filepath.Join(root, project.Name()))
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			id, ok := wanted[entry.Name()]
+			if !ok || entry.IsDir() {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if at := info.ModTime(); at.After(out[id]) {
+				out[id] = at
+			}
+		}
+	}
+	return out
 }
 
 // Stop ends the mount. The watcher, the insights, the retention and the history writer stop, the

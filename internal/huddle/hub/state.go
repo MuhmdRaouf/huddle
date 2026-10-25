@@ -30,14 +30,34 @@ var states = []string{StateNeedsYou, StateWorking, StateIdle, StateStuck, StateE
 // minutes is not.
 const stuckAfter = 10 * time.Minute
 
+// hooksStaleAfter is how far a session's transcript may run ahead of its last report before its
+// hooks read stale. A long model turn fires no hook while it streams, so the transcript leads the
+// reports by seconds in normal work; two minutes ahead with the pid alive means the hook commands
+// stopped running, the way they do when the plugin copy a session started from is replaced.
+const hooksStaleAfter = 2 * time.Minute
+
 // Facts is what one session's state is computed from. Asking says the last event itself waits
 // on the owner: a Notification that asks (a permission request names itself in LastEvent).
+// TranscriptAt is the newest time the session's transcript moved, zero when none is known;
+// Running says the session's process lives; it is read only when the transcript runs ahead.
 type Facts struct {
-	LastEvent   string
-	LastEventAt time.Time
-	Asking      bool
-	OpenItem    bool
-	Ended       bool
+	LastEvent    string
+	LastEventAt  time.Time
+	Asking       bool
+	OpenItem     bool
+	Ended        bool
+	TranscriptAt time.Time
+	Running      bool
+}
+
+// HooksStale says whether a live session's transcript runs ahead of its last report by more than
+// the limit: the session works while none of its hooks reach the registry. A session that never
+// reported reads its last report as long ago.
+func HooksStale(f Facts) bool {
+	if f.Ended || !f.Running || f.TranscriptAt.IsZero() {
+		return false
+	}
+	return f.TranscriptAt.Sub(f.LastEventAt) > hooksStaleAfter
 }
 
 // StateOf answers the state of one session at now. Ended outranks everything: a session whose
@@ -47,11 +67,20 @@ type Facts struct {
 // then idle, whose Stops never go stuck, then stuck past the quiet limit, and working
 // otherwise: a young event of another kind (a session that just started, a notification that
 // asks nothing) still reads working, so every live session shows one of the five states.
+// A session whose hooks are stale reads its transcript instead of its last report, which the
+// transcript has outrun: working while the transcript moved within the quiet limit, idle once
+// it is quiet past it, and never stuck.
 func StateOf(f Facts, now time.Time) string {
 	switch {
 	case f.Ended:
 		return StateEnded
-	case f.OpenItem, f.LastEvent == "PermissionRequest", f.LastEvent == "Notification" && f.Asking:
+	case f.OpenItem:
+		return StateNeedsYou
+	case HooksStale(f) && now.Sub(f.TranscriptAt) < stuckAfter:
+		return StateWorking
+	case HooksStale(f):
+		return StateIdle
+	case f.LastEvent == "PermissionRequest", f.LastEvent == "Notification" && f.Asking:
 		return StateNeedsYou
 	case f.LastEvent == "Stop" || f.LastEvent == "SubagentStop":
 		return StateIdle
@@ -104,6 +133,46 @@ type SessionRow struct {
 	DeliveryRoute string `json:"delivery_route"`
 	// Teammates are the session's agent-team teammates, sorted by name; absent without a team.
 	Teammates []Teammate `json:"teammates,omitempty"`
+	// HooksStale says the session's transcript runs ahead of its reports while its process
+	// lives: its hook commands no longer reach the registry.
+	HooksStale bool `json:"hooks_stale"`
+
+	// facts are the inputs the state and the flag are computed from, kept so the transcript's
+	// facts can join them when the row is served.
+	facts Facts
+}
+
+// live computes the row's state and its hooks-stale flag from its facts at now: the one place
+// the list and the detail read a session's liveness.
+func (r *SessionRow) live(now time.Time) {
+	r.State = StateOf(r.facts, now)
+	r.HooksStale = HooksStale(r.facts)
+}
+
+// SeeTranscript joins the session's transcript to the row's facts: at is the newest time the
+// transcript moved, and running answers whether the session's process lives. Running is asked
+// only when the transcript runs ahead of the last report by more than the limit, the one case its
+// answer changes the row.
+func (r *SessionRow) SeeTranscript(at time.Time, running func() bool, now time.Time) {
+	r.facts.TranscriptAt = at
+	r.facts.Running = HooksStale(Facts{
+		LastEventAt: r.facts.LastEventAt, TranscriptAt: at, Ended: r.facts.Ended, Running: true,
+	}) && running()
+	r.live(now)
+}
+
+// TranscriptRow answers the row of a session the registry never heard from: a running session
+// whose transcript names its id and working dir, last moved at. No report ever reached the
+// registry, so its hooks read stale.
+func TranscriptRow(id, cwd string, at, now time.Time) SessionRow {
+	row := SessionRow{
+		SessionID:     id,
+		Cwd:           cwd,
+		DeliveryRoute: RouteNextPrompt,
+		facts:         Facts{TranscriptAt: at, Running: true},
+	}
+	row.live(now)
+	return row
 }
 
 // SessionEvent is one stored report in a session's event list: the row's number and the report
@@ -241,13 +310,14 @@ func (d *DB) rowOfSession(ctx context.Context, row store.Row, now time.Time, wai
 	out.ContextPercent, _ = row["context_percent"].(float64)
 	pid, _ := row["pid"].(int64)
 	out.Pid = int(pid)
-	out.State = StateOf(Facts{
+	out.facts = Facts{
 		LastEvent:   out.LastEvent,
 		LastEventAt: parseEventTime(out.LastEventAt),
 		Asking:      asking,
 		OpenItem:    waiting,
 		Ended:       textOfRow(row, "ended_at") != "",
-	}, now)
+	}
+	out.live(now)
 	out.DeliveryRoute = d.routeOfMember(ctx, out.Channel, out.Member, now)
 	out.Teammates = d.teammatesOf(ctx, out.SessionID)
 	return out
