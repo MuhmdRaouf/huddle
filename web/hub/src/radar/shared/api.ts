@@ -51,7 +51,8 @@ export type AlertKind =
   | "budget"
   | "context"
   | "upstream"
-  | "quota_nearly_used";
+  | "quota_nearly_used"
+  | "plugin_behind";
 
 export type Alert = {
   id: string;

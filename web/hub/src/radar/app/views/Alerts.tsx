@@ -37,6 +37,10 @@ const HOW_ALERTS_WORK: [AlertKind, string][] = [
     "quota_nearly_used",
     "Claude's 5-hour plan window at 80% or more, as the newest status line snapshot reports it. Raised once per window, with the reset time in UTC.",
   ],
+  [
+    "plugin_behind",
+    "A session start found Claude Code's plugin cache on another huddle commit than the binary. Run `claude plugin update huddle@muhmdraouf`, then start a new session; the next start that finds them equal clears it.",
+  ],
 ];
 
 /** The whole alerts tab: the active list (or an all-clear) and the plain-language explanation of each kind. */

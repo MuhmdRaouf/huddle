@@ -80,6 +80,7 @@ const ALERT_LABEL: Record<AlertKind, string> = {
   budget: "Budget",
   upstream: "Claude cannot reach Anthropic through huddle-router",
   quota_nearly_used: "Quota nearly used",
+  plugin_behind: "Plugin cache behind the binary",
 };
 
 export function alertLabel(kind: AlertKind): string {

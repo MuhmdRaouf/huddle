@@ -19,12 +19,14 @@ export const ALERT_ICON: Record<AlertKind, IconName> = {
   budget: "dollar",
   upstream: "alert",
   quota_nearly_used: "clock",
+  plugin_behind: "plug",
 };
 
 /** Where the alerts that belong to no session happened, by kind; any other reads as the router. */
 const SESSIONLESS_WHERE: Partial<Record<AlertKind, string>> = {
   budget: "All sessions",
   quota_nearly_used: "Claude",
+  plugin_behind: "Claude Code",
 };
 
 /** Where an alert happened: the project and agent, the session id when the project is unknown, Claude's plan

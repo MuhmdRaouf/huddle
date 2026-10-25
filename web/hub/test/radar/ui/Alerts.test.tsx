@@ -125,6 +125,35 @@ describe("AlertStrip", () => {
     expect(alertLabel("context")).toBe("Context nearly full");
   });
 
+  it("names a plugin_behind alert, its plug icon and Claude Code as where it happened", () => {
+    const detail =
+      "Claude Code's plugin cache holds huddle 052c8e49c9ff, the binary is 38e9e40e321e: run `claude plugin update huddle@muhmdraouf`, then start a new session";
+    const { container } = renderApp(
+      <AlertStrip />,
+      {
+        alerts: [
+          makeAlert({
+            id: "plugin_behind:052c8e49c9ff:38e9e40e321e",
+            kind: "plugin_behind",
+            sessionId: "",
+            project: "",
+            agentId: null,
+            costUsd: null,
+            detail,
+          }),
+        ],
+      },
+      NOW,
+    );
+    const row = rowTextOf(container);
+    expect(alertLabel("plugin_behind")).toBe("Plugin cache behind the binary");
+    expect(row).toContain("Plugin cache behind the binary");
+    expect(row).toContain(detail);
+    expect(row).toContain("Claude Code");
+    expect(row).not.toContain("Router");
+    expect(container.querySelector("[role='alert'] [data-icon='plug']")).not.toBeNull();
+  });
+
   it("paints an error-severity alert with the error tone", () => {
     const { container } = renderApp(<AlertStrip />, { alerts: [makeAlert({ severity: "err" })] }, NOW);
     const row = container.querySelector("[role='alert']");
@@ -160,8 +189,9 @@ describe("AlertsView", () => {
       "Budget",
       "Claude cannot reach Anthropic through huddle-router",
       "Quota nearly used",
+      "Plugin cache behind the binary",
     ]);
-    expect(container.querySelectorAll("dd")).toHaveLength(7);
+    expect(container.querySelectorAll("dd")).toHaveLength(8);
   });
 
   it("dismisses from the full list too", async () => {
