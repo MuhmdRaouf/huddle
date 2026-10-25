@@ -112,8 +112,25 @@ func TestIncidentGuardsExist(t *testing.T) {
 	if len(guards) == 0 {
 		t.Fatal("docs/INCIDENTS.md holds no **Guard:** bullet naming a test: every incident names the test that stops it")
 	}
-	found := make(map[string]bool, len(guards))
-	err = filepath.WalkDir(moduleRoot(t), func(path string, entry fs.DirEntry, err error) error {
+	found := presentInModule(t, guards)
+	for _, g := range guards {
+		if !found[g.name] {
+			if g.title {
+				t.Errorf("%s names the guard `\"%s\"` and no web test file in the module holds that title: the guard was renamed or deleted; restore it or point the incident at the test that now stops it", g.heading, g.name)
+				continue
+			}
+			t.Errorf("%s names the guard `%s` and no *_test.go in the module holds func %s(: the guard was renamed or deleted; restore it or point the incident at the test that now stops it", g.heading, g.name, g.name)
+		}
+	}
+}
+
+// presentInModule walks the module's test files once and answers which of the wanted tests
+// exist: a Go name as `func Name(` in a *_test.go, a web title as that quoted string in a web
+// test file. The worktrees and scratch under .agents hold other cards' copies, not this run's.
+func presentInModule(t *testing.T, wants []guard) map[string]bool {
+	t.Helper()
+	found := make(map[string]bool, len(wants))
+	err := filepath.WalkDir(moduleRoot(t), func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -135,7 +152,7 @@ func TestIncidentGuardsExist(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		for _, g := range guards {
+		for _, g := range wants {
 			switch {
 			case g.title && webTest && strings.Contains(string(data), `"`+g.name+`"`):
 				found[g.name] = true
@@ -148,13 +165,5 @@ func TestIncidentGuardsExist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("walk the module's tests: %v", err)
 	}
-	for _, g := range guards {
-		if !found[g.name] {
-			if g.title {
-				t.Errorf("%s names the guard `\"%s\"` and no web test file in the module holds that title: the guard was renamed or deleted; restore it or point the incident at the test that now stops it", g.heading, g.name)
-				continue
-			}
-			t.Errorf("%s names the guard `%s` and no *_test.go in the module holds func %s(: the guard was renamed or deleted; restore it or point the incident at the test that now stops it", g.heading, g.name, g.name)
-		}
-	}
+	return found
 }
