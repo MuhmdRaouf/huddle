@@ -32,17 +32,25 @@ type PermissionAsk struct {
 	DecidedAt time.Time // zero while unanswered
 }
 
+// Request is one model request a lane served, as Radar's history holds it.
+type Request struct {
+	Provider string // the lane: "anthropic", "zai", "kimi", …
+	Status   int    // the answer's HTTP status; 0 when the upstream never answered
+	At       time.Time
+}
+
 // Input is everything Detect reads. Now is the clock, so the rules are pure.
 type Input struct {
-	Now   time.Time
-	Tools []ToolRun
-	Asks  []PermissionAsk
+	Now      time.Time
+	Tools    []ToolRun
+	Asks     []PermissionAsk
+	Requests []Request
 }
 
 // Tip is one sentence the owner can act on, with the numbers behind it.
 type Tip struct {
 	ID       string // stable for one occurrence: "<rule>:<what it is about>"
-	Rule     string // RuleSameCommand, RuleAlwaysAllowed or RuleToolFailing
+	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing or RuleLaneFailing
 	Session  string // the session a tip is about; "" for a tip about the whole huddle
 	Sentence string
 	Count    int           // the runs or asks behind the tip
@@ -53,6 +61,7 @@ const (
 	RuleSameCommand   = "same_command"
 	RuleAlwaysAllowed = "always_allowed"
 	RuleToolFailing   = "tool_failing"
+	RuleLaneFailing   = "lane_failing"
 )
 
 // The points each rule fires at.
@@ -67,6 +76,7 @@ const (
 func Detect(in Input) []Tip {
 	tips := append(sameCommandTips(in.Tools), alwaysAllowedTips(in)...)
 	tips = append(tips, toolFailingTips(in.Tools)...)
+	tips = append(tips, laneFailingTips(in)...)
 	slices.SortFunc(tips, func(a, b Tip) int {
 		if byRule := cmp.Compare(a.Rule, b.Rule); byRule != 0 {
 			return byRule
