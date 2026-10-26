@@ -111,7 +111,7 @@ function ThemeToggle(): JSX.Element {
       onClick={() => {
         const next: SchemePref = dark ? "light" : "dark";
         writeScheme(localStorage, next);
-        applyScheme(document.documentElement, next, systemDark());
+        applyScheme(document.documentElement, next, systemDark(), localStorage);
         setPref(next);
       }}
     >

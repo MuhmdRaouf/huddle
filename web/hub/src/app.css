@@ -1,6 +1,6 @@
 /* Huddle's CSS entry. Tailwind scans only this directory (source(none) + @source), daisyUI ships its
  * components with the stock themes off — the twelve themes and the font tokens come from the shared
- * package. <html data-theme="…"> picks the variant.
+ * package. <html data-theme="…"> names the ui theme, <html data-scheme="…"> the side.
  *
  * What is still hand-written here is the little daisyUI has no component for: the hue carriers the
  * avatars and status marks read (--c the fill, --ci the ink), the segmented progress bar, the
@@ -30,9 +30,9 @@
 @import "./radar/legacy.css" layer(legacy);
 
 /* One hue per name the way the models have theirs: the avatar ring, the doing tick, the paused
- * chip. Every dark variant carries mocha's set, every light one latte's (which darkens each so the
- * ink stays readable on the light panels). */
-[data-theme="mocha"],
+ * chip. The dark side and the dark family ids share mocha's set, the light side and the light
+ * family ids latte's (which darkens each so the ink stays readable on the light panels). */
+[data-scheme="dark"],
 [data-theme="gruvbox-dark"],
 [data-theme="tokyo-night"],
 [data-theme="rose-pine"],
@@ -51,7 +51,7 @@
   --hue-peach: #fab387;
   --hue-red: #f38ba8;
 }
-[data-theme="latte"],
+[data-scheme="light"],
 [data-theme="gruvbox-light"],
 [data-theme="tokyo-day"],
 [data-theme="rose-pine-dawn"],

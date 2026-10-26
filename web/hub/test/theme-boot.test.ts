@@ -53,6 +53,14 @@ describe("theme-boot.js", () => {
     expect(bootIds()).toEqual(THEMES.map((t) => t.id));
   });
 
+  it("defines no global: the id list lives inside the IIFE", () => {
+    boot();
+    expect("THEME_IDS" in globalThis).toBe(false);
+    const iife = source.indexOf("(function");
+    expect(iife, "theme-boot.js wraps its work in an IIFE").toBeGreaterThan(-1);
+    expect(source.indexOf("const THEME_IDS"), "the id list sits inside the IIFE").toBeGreaterThan(iife);
+  });
+
   for (const pref of ["system", "light", "dark"] as const satisfies readonly SchemePref[])
     for (const osDark of [false, true])
       for (const kept of [null, "huddle", "nope"]) {

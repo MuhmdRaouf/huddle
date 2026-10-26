@@ -197,7 +197,7 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
 
   const pick = (p: SchemePref): void => {
     writeScheme(store, p);
-    applyScheme(root, p, query.matches);
+    applyScheme(root, p, query.matches, store);
     setPref(p);
   };
 

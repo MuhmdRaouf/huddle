@@ -78,12 +78,14 @@ function paintBar(doc: Document, pref: SchemePref): void {
 }
 
 /** Puts the resolved side and the kept theme on the root element, paints the status bar to match,
- *  and answers the side. */
+ *  and answers the side. The store is the one the page already reads and writes the scheme and the
+ *  theme through: reaching for the localStorage global here would itself throw on blocked site
+ *  data. */
 export function applyScheme(
   root: HTMLElement,
   pref: SchemePref,
   systemDark: boolean,
-  store: SchemeStore = localStorage,
+  store: SchemeStore,
 ): Scheme {
   const scheme = resolveScheme(pref, systemDark);
   const theme = readTheme(store);

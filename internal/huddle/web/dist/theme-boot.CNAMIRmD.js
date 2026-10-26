@@ -8,10 +8,9 @@
  * ahead of this script. A file of its own because the page's CSP allows no inline script (SPEC 7.5).
  * Mirrors ui/src/theme.ts and the registry's ids in ui/src/themes.ts; keep the three in step. */
 
-/** The registered theme ids, mirroring web/ui/src/themes.ts's THEMES. */
-const THEME_IDS = ["huddle"];
-
 (function () {
+  /** The registered theme ids, mirroring web/ui/src/themes.ts's THEMES. */
+  const THEME_IDS = ["huddle"];
   let pref = "system";
   try {
     const raw = localStorage.getItem("huddle:scheme");

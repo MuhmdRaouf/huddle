@@ -14,6 +14,7 @@ import {
   writeFlavour,
   writeScheme,
 } from "../src/theme.ts";
+import { THEME_KEY } from "../src/themes.ts";
 
 /** An in-memory store the way localStorage answers. */
 function memory(seed: Record<string, string> = {}): SchemeStore & { data: Map<string, string> } {
@@ -111,29 +112,39 @@ describe("theme", () => {
 
   it("puts the resolved scheme on the root element", () => {
     const root = document.createElement("html");
-    expect(applyScheme(root, "system", true)).toBe("dark");
+    expect(applyScheme(root, "system", true, memory())).toBe("dark");
     expect(root.dataset.scheme).toBe("dark");
     expect(root.dataset.theme).toBe("huddle");
-    expect(applyScheme(root, "light", true)).toBe("light");
+    expect(applyScheme(root, "light", true, memory())).toBe("light");
     expect(root.dataset.scheme).toBe("light");
     expect(root.dataset.theme).toBe("huddle");
+  });
+
+  it("paints the kept theme through the store it is given", () => {
+    const root = document.createElement("html");
+    const store = memory({ [THEME_KEY]: "huddle" });
+    expect(applyScheme(root, "dark", false, store)).toBe("dark");
+    expect(root.dataset.theme).toBe("huddle");
+    expect(root.dataset.scheme).toBe("dark");
+    expect(applyScheme, "the store is required: no localStorage default").toHaveLength(4);
   });
 
   it("paints the status bar in the chosen scheme, whatever the OS, and gives System back the OS pair", () => {
     const bg = shellBg();
     const metas = themeColours();
     const root = document.documentElement;
-    applyScheme(root, "dark", false);
+    const store = memory();
+    applyScheme(root, "dark", false, store);
     for (const m of metas) {
       expect(m.content).toBe(bg.dark);
       expect(m.hasAttribute("media")).toBe(false);
     }
-    applyScheme(root, "light", true);
+    applyScheme(root, "light", true, store);
     for (const m of metas) {
       expect(m.content).toBe(bg.light);
       expect(m.hasAttribute("media")).toBe(false);
     }
-    applyScheme(root, "system", true);
+    applyScheme(root, "system", true, store);
     expect(metas.map((m) => [m.media, m.content])).toEqual([
       ["(prefers-color-scheme: dark)", bg.dark],
       ["(prefers-color-scheme: light)", bg.light],

@@ -1,7 +1,7 @@
 /* The standalone board page's CSS entry: the theme base the hub's entry imports, exactly as
    theme.css's own header prescribes it — Tailwind's reset, daisyUI with the shared package's
    twelve themes and bundled faces — and the design system's tokens and components, for the
-   phone's card sheet. <html data-theme="…"> picks the variant; mocha is the default. The board's
+   phone's card sheet. <html data-theme="…"> names the ui theme, <html data-scheme="…"> the side. The board's
    own styles (kanban.css, panel.css) the components import. */
 
 @import "tailwindcss" source(none);

@@ -18,5 +18,5 @@ export const systemDark = (): boolean => window.matchMedia("(prefers-color-schem
 /** Keeps the choice and paints it on <html>. */
 export function pickScheme(store: SchemeStore, pref: SchemePref): void {
   writeScheme(store, pref);
-  applyScheme(document.documentElement, pref, systemDark());
+  applyScheme(document.documentElement, pref, systemDark(), store);
 }
