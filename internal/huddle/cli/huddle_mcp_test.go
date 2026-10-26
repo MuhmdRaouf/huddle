@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
+	"github.com/MuhmdRaouf/huddle/internal/insights"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
@@ -1063,6 +1065,194 @@ func TestResourcesListNamesTheChannelTopics(t *testing.T) {
 			t.Errorf("%s mimeType = %q, want application/json", uri, mime)
 		}
 	}
+}
+
+// startTipsHub answers the insights route the tips read calls with answer, and records every
+// session query it saw; seen reads that record.
+func startTipsHub(t *testing.T, answer string) (*httptest.Server, func() string) {
+	t.Helper()
+	var mu sync.Mutex
+	seen := ""
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/insights" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		mu.Lock()
+		seen = r.URL.RawQuery
+		mu.Unlock()
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(answer))
+	}))
+	t.Cleanup(hub.Close)
+	return hub, func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return seen
+	}
+}
+
+// turnTipsOn writes the owner's tips-to-sessions switch on into home, the home the bridge reads
+// it from.
+func turnTipsOn(t *testing.T, home string) {
+	t.Helper()
+	if err := insights.WriteSettings(insights.SettingsFile(home),
+		insights.Settings{TipsForMe: true, TipsToSessions: true}); err != nil {
+		t.Fatalf("write the switch: %v", err)
+	}
+}
+
+// insightsReadText answers the one content's text of a resources/read of huddle://insights,
+// checking the entry's uri and mime on the way.
+func insightsReadText(t *testing.T, reply *jsfmt.Value) string {
+	t.Helper()
+	contents := mcpField(mcpField(reply, "result"), "contents")
+	if contents == nil || contents.Kind() != jsfmt.KindArray || len(contents.Items()) != 1 {
+		t.Fatalf("read = %s, want one content entry", reply.EncodeJSON())
+	}
+	entry := contents.Items()[0]
+	if got := mcpText(entry, "uri"); got != "huddle://insights" {
+		t.Errorf("content uri = %q, want huddle://insights", got)
+	}
+	if got := mcpText(entry, "mimeType"); got != "application/json" {
+		t.Errorf("content mimeType = %q, want application/json", got)
+	}
+	return mcpText(entry, "text")
+}
+
+func TestInsightsResourceServesTheSessionTips(t *testing.T) {
+	t.Run("the switch off leaves every list as it was and the read answers no tips", func(t *testing.T) {
+		closed := freePort(t) // the read answers without reaching any Huddle
+		home := t.TempDir()   // no insights.json: the switch is off
+		b := runMcpBridge(t, "", map[string]string{
+			"HUDDLE_URL":     fmt.Sprintf("http://127.0.0.1:%d", closed),
+			"HUDDLE_HOME":    home,
+			"HUDDLE_SESSION": "sess-off",
+			"HUDDLE_PUSH":    "off",
+		})
+		b.send(`{"jsonrpc":"2.0","id":2,"method":"resources/list"}`)
+		listed := b.until(8000, mcpIDIs("2"))
+		if listed == nil {
+			t.Fatal("no resources/list answer")
+		}
+		if got := mcpFieldOf(listed, "result").EncodeJSON(); got != `{"resources":[]}` {
+			t.Errorf("list with the switch off = %s, want {\"resources\":[]}", got)
+		}
+		b.send(`{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"huddle://insights"}}`)
+		read := b.until(8000, mcpIDIs("3"))
+		if read == nil {
+			t.Fatal("no resources/read answer")
+		}
+		if text := insightsReadText(t, read); text != `{"tips":[]}` {
+			t.Errorf("read with the switch off = %s, want {\"tips\":[]}", text)
+		}
+	})
+
+	t.Run("the switch on with a session id lists the tips resource and its read answers the hub's tips", func(t *testing.T) {
+		hub, seen := startTipsHub(t,
+			`{"tips":[{"id":"tip-1","sentence":"The last build failed twice; rerun it before the next push."}]}`)
+		home := t.TempDir()
+		turnTipsOn(t, home)
+		b := runMcpBridge(t, "", map[string]string{
+			"HUDDLE_URL":     hub.URL,
+			"HUDDLE_HOME":    home,
+			"HUDDLE_SESSION": "sess-mcp-1",
+			"HUDDLE_PUSH":    "off",
+		})
+		b.send(`{"jsonrpc":"2.0","id":2,"method":"resources/list"}`)
+		listed := b.until(8000, mcpIDIs("2"))
+		if listed == nil {
+			t.Fatal("no resources/list answer")
+		}
+		resources := mcpResources(listed)
+		if len(resources) != 1 {
+			t.Fatalf("list holds %d resources, want only huddle://insights: %v", len(resources), resources)
+		}
+		if uri := mcpText(resources[0], "uri"); uri != "huddle://insights" {
+			t.Errorf("resource uri = %q, want huddle://insights", uri)
+		}
+		if name := mcpText(resources[0], "name"); name != "Huddle tips" {
+			t.Errorf("resource name = %q, want Huddle tips", name)
+		}
+		if mime := mcpText(resources[0], "mimeType"); mime != "application/json" {
+			t.Errorf("resource mimeType = %q, want application/json", mime)
+		}
+		b.send(`{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"huddle://insights"}}`)
+		read := b.until(8000, mcpIDIs("3"))
+		if read == nil {
+			t.Fatal("no resources/read answer")
+		}
+		want := `{"tips":[{"id":"tip-1","sentence":"The last build failed twice; rerun it before the next push."}]}`
+		if text := insightsReadText(t, read); text != want {
+			t.Errorf("tips text = %s, want %s", text, want)
+		}
+		if query := seen(); query != "session=sess-mcp-1" {
+			t.Errorf("the hub saw %q, want session=sess-mcp-1", query)
+		}
+	})
+
+	t.Run("in a channel the list holds the channel's resources and then the tips resource", func(t *testing.T) {
+		u := startMcpHuddle(t, mcpRootToken)
+		mcpOp(t, u, "ci", "join", "a", "{}", mcpRootToken)
+		mcpOp(t, u, "ci", "join", "b", "{}", mcpRootToken)
+		mcpOp(t, u, "ci", "publish", "a", `{"topic":"note.ready","msg":"one"}`, mcpRootToken)
+		mcpOp(t, u, "ci", "publish", "a", `{"topic":"build.done","msg":"two"}`, mcpRootToken)
+		home := t.TempDir()
+		turnTipsOn(t, home)
+		b := runMcpBridge(t, "", map[string]string{
+			"HUDDLE_URL": u, "HUDDLE_CHANNEL": "ci", "HUDDLE_AS": "b", "HUDDLE_TOKEN": mcpRootToken,
+			"HUDDLE_HOME": home, "HUDDLE_SESSION": "sess-mcp-2", "HUDDLE_PUSH": "off",
+		})
+		b.send(`{"jsonrpc":"2.0","id":2,"method":"resources/list"}`)
+		listed := b.until(8000, mcpIDIs("2"))
+		if listed == nil {
+			t.Fatal("no resources/list answer")
+		}
+		uris := []string{}
+		for _, r := range mcpResources(listed) {
+			uris = append(uris, mcpText(r, "uri"))
+		}
+		want := []string{
+			"huddle://ci/events", "huddle://ci/topic/session.joined",
+			"huddle://ci/topic/note.ready", "huddle://ci/topic/build.done", "huddle://insights"}
+		if !reflect.DeepEqual(uris, want) {
+			t.Errorf("list = %v, want %v", uris, want)
+		}
+	})
+
+	t.Run("the switch on with no session id lists nothing and the read names what is missing", func(t *testing.T) {
+		closed := freePort(t) // the read fails before reaching any Huddle
+		home := t.TempDir()
+		turnTipsOn(t, home)
+		b := runMcpBridge(t, "", map[string]string{
+			"HUDDLE_URL":  fmt.Sprintf("http://127.0.0.1:%d", closed),
+			"HUDDLE_HOME": home,
+			"HUDDLE_PUSH": "off",
+		})
+		b.send(`{"jsonrpc":"2.0","id":2,"method":"resources/list"}`)
+		listed := b.until(8000, mcpIDIs("2"))
+		if listed == nil {
+			t.Fatal("no resources/list answer")
+		}
+		if got := mcpFieldOf(listed, "result").EncodeJSON(); got != `{"resources":[]}` {
+			t.Errorf("list with no session id = %s, want {\"resources\":[]}", got)
+		}
+		b.send(`{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"huddle://insights"}}`)
+		read := b.until(8000, mcpIDIs("3"))
+		if read == nil {
+			t.Fatal("no resources/read answer")
+		}
+		errField := mcpField(read, "error")
+		if errField == nil {
+			t.Fatalf("read = %s, want an error", read.EncodeJSON())
+		}
+		if code := mcpNumberOf(mcpField(errField, "code")); code != -32002 {
+			t.Errorf("error code = %v, want -32002", code)
+		}
+		if msg := mcpText(errField, "message"); msg != "no session id: the bridge reads it from CLAUDE_CODE_SESSION_ID" {
+			t.Errorf("error message = %q, want the no-session-id one", msg)
+		}
+	})
 }
 
 func TestResourcesReadReturnsEventsAfterCursor(t *testing.T) {

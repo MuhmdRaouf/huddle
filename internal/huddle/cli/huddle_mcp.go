@@ -29,6 +29,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
+	"github.com/MuhmdRaouf/huddle/internal/insights"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"github.com/MuhmdRaouf/huddle/internal/routerd"
 )
@@ -46,6 +47,12 @@ func worldEnv(w *World) domain.EnvLookup {
 
 // notInYet is what a session that is not in a huddle yet is told, with the two ways in.
 const notInYet = "not in a huddle yet: run /huddle:setup in this project (the first session), or paste the /huddle:join line that /huddle:invite shows in a session that is in one"
+
+// mcpInsightsURI is the one resource that holds this session's tips.
+const mcpInsightsURI = "huddle://insights"
+
+// mcpSessionIDOK is the shape the hub names sessions by; a session id outside it asks for nothing.
+var mcpSessionIDOK = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 
 // noPortYet is what a session in a channel whose Huddle has no url is told.
 const noPortYet = "huddle: this project's Huddle has no port yet: start it with huddle up (it picks one and saves it). Treat yourself as paused and retry."
@@ -436,7 +443,11 @@ func (b *mcpBridge) local(ctx context.Context, msg *jsfmt.Value) bool {
 			return true
 		}
 		if !b.isIn(ctx) {
-			return ok(jsfmt.Object([]string{"resources"}, []*jsfmt.Value{jsfmt.Array(nil)}))
+			entries := []*jsfmt.Value{}
+			if entry, ok := b.insightsEntry(ctx); ok {
+				entries = append(entries, entry.value())
+			}
+			return ok(jsfmt.Object([]string{"resources"}, []*jsfmt.Value{jsfmt.Array(entries)}))
 		}
 		safego.Go(func(line string) { b.logf("%s", line) }, func() { b.resourceList(ctx, id) })
 		return true
@@ -965,8 +976,36 @@ func mcpError(id *jsfmt.Value, code float64, message string) *jsfmt.Value {
 	return jsfmt.Object([]string{"jsonrpc", "id", "error"}, []*jsfmt.Value{jsfmt.String("2.0"), id, err})
 }
 
-// resourceList answers resources/list for a session in a huddle: the channel's event log and one
-// resource per topic the recent history shows.
+// sessionID answers the session id the bridge's environment names: the first of HUDDLE_SESSION
+// and CLAUDE_CODE_SESSION_ID in the shape the hub names sessions by, empty when neither has one.
+func (b *mcpBridge) sessionID() string {
+	for _, key := range []string{"HUDDLE_SESSION", "CLAUDE_CODE_SESSION_ID"} {
+		if id := b.w.getenv(key); mcpSessionIDOK.MatchString(id) {
+			return id
+		}
+	}
+	return ""
+}
+
+// insightsEntry answers the tips resource when the owner's tips-to-sessions switch is on and the
+// bridge holds a session id; ok is false when the list stays without it.
+func (b *mcpBridge) insightsEntry(ctx context.Context) (mcpResource, bool) {
+	if b.sessionID() == "" {
+		return mcpResource{}, false
+	}
+	if !insights.ReadSettings(insights.SettingsFile(Home(ctx, b.w))).TipsToSessions {
+		return mcpResource{}, false
+	}
+	return mcpResource{
+		URI:         mcpInsightsURI,
+		Name:        "Huddle tips",
+		Description: "tips the hub holds about this session, one sentence each",
+	}, true
+}
+
+// resourceList answers resources/list for a session in a huddle: the channel's event log, one
+// resource per topic the recent history shows and, when the switch and a session id allow, the
+// session's tips.
 func (b *mcpBridge) resourceList(ctx context.Context, id *jsfmt.Value) {
 	s := b.state()
 	resources := []mcpResource{{
@@ -996,6 +1035,9 @@ func (b *mcpBridge) resourceList(ctx context.Context, id *jsfmt.Value) {
 		b.resListed = true
 		b.mu.Unlock()
 	}
+	if entry, ok := b.insightsEntry(ctx); ok {
+		resources = append(resources, entry)
+	}
 	values := make([]*jsfmt.Value, len(resources))
 	for i, r := range resources {
 		values[i] = r.value()
@@ -1007,6 +1049,10 @@ func (b *mcpBridge) resourceList(ctx context.Context, id *jsfmt.Value) {
 // most mcpReadLimit of them.
 func (b *mcpBridge) resourceRead(ctx context.Context, id *jsfmt.Value, uri string) {
 	s := b.state()
+	if uri == mcpInsightsURI {
+		b.readInsights(ctx, id, uri)
+		return
+	}
 	if s.url == "" || s.channelName == "" || s.me == "" {
 		b.write(mcpError(id, -32002, "huddle: "+notInYet))
 		return
@@ -1037,6 +1083,36 @@ func (b *mcpBridge) resourceRead(ctx context.Context, id *jsfmt.Value, uri strin
 	}
 	content := jsfmt.Object([]string{"uri", "mimeType", "text"}, []*jsfmt.Value{
 		jsfmt.String(uri), jsfmt.String("application/json"), jsfmt.String(jsfmt.Array(shown).EncodeJSON())})
+	b.write(mcpReply(id, jsfmt.Object([]string{"contents"}, []*jsfmt.Value{jsfmt.Array([]*jsfmt.Value{content})})))
+}
+
+// readInsights answers a read of the tips resource with the hub's tips about this session as one
+// JSON text. The switch off empties the answer before anything else is read; a session id the
+// environment does not name is an error that says so; a hub that answers none, or that fails,
+// answers an empty list, so the read never turns a Huddle's absence into a broken one.
+func (b *mcpBridge) readInsights(ctx context.Context, id *jsfmt.Value, uri string) {
+	if !insights.ReadSettings(insights.SettingsFile(Home(ctx, b.w))).TipsToSessions {
+		b.writeInsights(id, uri, jsfmt.Object([]string{"tips"}, []*jsfmt.Value{jsfmt.Array(nil)}))
+		return
+	}
+	sid := b.sessionID()
+	if sid == "" {
+		b.write(mcpError(id, -32002, "no session id: the bridge reads it from CLAUDE_CODE_SESSION_ID"))
+		return
+	}
+	tips := SessionTips(ctx, b.w, Identify(ctx, b.w, sid), sid, b.callMS)
+	entries := make([]*jsfmt.Value, len(tips))
+	for i, tip := range tips {
+		entries[i] = jsfmt.Object([]string{"id", "sentence"},
+			[]*jsfmt.Value{jsfmt.String(tip.ID), jsfmt.String(tip.Sentence)})
+	}
+	b.writeInsights(id, uri, jsfmt.Object([]string{"tips"}, []*jsfmt.Value{jsfmt.Array(entries)}))
+}
+
+// writeInsights answers a tips read with one content entry whose text is the tips JSON.
+func (b *mcpBridge) writeInsights(id *jsfmt.Value, uri string, tips *jsfmt.Value) {
+	content := jsfmt.Object([]string{"uri", "mimeType", "text"},
+		[]*jsfmt.Value{jsfmt.String(uri), jsfmt.String("application/json"), jsfmt.String(tips.EncodeJSON())})
 	b.write(mcpReply(id, jsfmt.Object([]string{"contents"}, []*jsfmt.Value{jsfmt.Array([]*jsfmt.Value{content})})))
 }
 
