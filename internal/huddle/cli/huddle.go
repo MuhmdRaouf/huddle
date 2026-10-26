@@ -25,6 +25,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	channelpkg "github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
@@ -1551,7 +1552,8 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 }
 
 // follow keeps one channel's events coming: a live stream, a replay of what was missed, and a
-// periodic re-read, reconnecting when the stream goes quiet.
+// periodic re-read, reconnecting when the stream goes quiet. An owner's message to another
+// member is never printed.
 func (c *cli) follow(ctx context.Context, channel string, channels []string, after int64, state *listenState, all bool) int {
 	var last int64
 	if have, ok := state.get(channel); ok {
@@ -1567,7 +1569,11 @@ func (c *cli) follow(ctx context.Context, channel string, channels []string, aft
 		}
 		last = seq
 		state.set(channel, last)
-		if from := textField(event, "from"); from == c.me && !all {
+		from := textField(event, "from")
+		if from == c.me && !all {
+			return
+		}
+		if c.me != "" && channelpkg.OwnerPrivate(from, textField(event, "to"), c.me) {
 			return
 		}
 		fmt.Fprintln(c.stdout, withChannel(channel, event).EncodeJSON())

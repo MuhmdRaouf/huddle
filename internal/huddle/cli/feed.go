@@ -5,10 +5,10 @@
 // It shows the others' messages, asks and replies in full, also those between other sessions,
 // and folds the rest (task updates, knowledge entries, custom topics such as build.ready) into
 // one count line, so a busy channel costs a line per tool call, not thirty ("listen_detail":
-// "all" shows every event in full). Joins and leaves (session.*) and this session's own
-// subagents (<me>.<role>) stay out. It remembers, per Claude session, the last seq shown in
-// each channel: <Huddle home>/seen/<session id>.json. Never blocks long: 1.5 s (or the caller's
-// budget), silent when down.
+// "all" shows every event in full). Joins and leaves (session.*), this session's own subagents
+// (<me>.<role>) and an owner's message to another session stay out. It remembers, per Claude
+// session, the last seq shown in each channel: <Huddle home>/seen/<session id>.json. Never
+// blocks long: 1.5 s (or the caller's budget), silent when down.
 package cli
 
 import (
@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	channelpkg "github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
@@ -145,7 +146,8 @@ func mine(as, from string) bool {
 func channelPart(id Identity, channel string, events []feedEvent, from int64) string {
 	shown := make([]feedEvent, 0, len(events))
 	for _, event := range events {
-		if mine(id.As, event.From) || strings.HasPrefix(event.Topic, "session.") {
+		if mine(id.As, event.From) || strings.HasPrefix(event.Topic, "session.") ||
+			channelpkg.OwnerPrivate(event.From, event.To, id.As) {
 			continue
 		}
 		shown = append(shown, event)

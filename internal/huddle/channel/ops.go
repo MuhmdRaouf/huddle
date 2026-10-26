@@ -318,7 +318,7 @@ var ops = map[string]opDef{
 		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
 			return c.ch.Events(ctx, EventsFilter{
 				After: argIntPtr(a, "after"), Limit: argIntPtr(a, "limit"),
-				Topic: argStr(a, "topic"), From: argStrPtr(a, "from"),
+				Topic: argStr(a, "topic"), From: argStrPtr(a, "from"), Reader: c.me,
 			})
 		},
 	},

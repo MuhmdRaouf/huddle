@@ -48,6 +48,13 @@ func httpErr(status int, msg string) *HuddleError { return &HuddleError{Status: 
 // Owner is the channel's owner, the one session that is always there and never paused.
 const Owner = "owner"
 
+// OwnerPrivate is an owner's message addressed to one member, read by another: only its
+// addressee sees it, the way only a session's main agent reads what its owner types. to is ""
+// for everyone.
+func OwnerPrivate(from, to, reader string) bool {
+	return from == Owner && to != "" && to != reader
+}
+
 const nameReSrc = `^[a-z][a-z0-9_-]{0,31}(\.[a-z0-9][a-z0-9_-]{0,31})?$`
 const topicReSrc = `^[a-z][a-z0-9_.*-]{0,63}$`
 
@@ -606,13 +613,15 @@ type SendOpts struct {
 	Key  *string
 }
 
-// EventsFilter reads the channel history.
+// EventsFilter reads the channel history. Reader is the member reading: set, an owner's message
+// to another member is left out.
 type EventsFilter struct {
 	After  *int64
 	Before *int64
 	Limit  *int64
 	Topic  string
 	From   *string
+	Reader string
 }
 
 // Note is a review note on a task. Resolved is the stored 0 or 1, the number every view of a
@@ -2583,6 +2592,9 @@ func (c *Channel) Events(ctx context.Context, o EventsFilter) ([]Ev, error) {
 	out := []Ev{}
 	for i := len(rows) - 1; i >= 0; i-- {
 		ev := toEv(rows[i])
+		if o.Reader != "" && OwnerPrivate(ev.From, deref(ev.To), o.Reader) {
+			continue
+		}
 		if o.Topic == "" || GlobMatch(ev.Topic, []string{o.Topic}) {
 			out = append(out, ev)
 		}
@@ -2600,13 +2612,17 @@ func (c *Channel) LastSeq(ctx context.Context) (int64, error) {
 }
 
 // Unread is everything the session has not acked yet, in order: every member sees every message,
-// also those addressed to another session (it overhears them); only its own are left out.
+// also those addressed to another session (it overhears them); only its own are left out. One
+// exception: an owner's message addressed to one member is that member's alone, so another
+// member's unread leaves it out.
 func (c *Channel) Unread(ctx context.Context, name string) ([]Ev, error) {
 	s, err := c.need(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := c.dbAll(ctx, "SELECT * FROM events WHERE seq > ? AND from_name != ? ORDER BY seq", s.Cursor, name)
+	rows, err := c.dbAll(ctx,
+		"SELECT * FROM events WHERE seq > ? AND from_name != ? AND NOT (from_name = ? AND to_name IS NOT NULL AND to_name != ?) ORDER BY seq",
+		s.Cursor, name, Owner, name)
 	if err != nil {
 		return nil, err
 	}

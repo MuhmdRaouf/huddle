@@ -126,7 +126,9 @@ Reach for these first; each one does the bookkeeping the loop above describes.
 - You hear everything: messages between other sessions reach you too, in `wait`'s skipped
   list, in pushes and, through the plugin, in your context after each tool call ("overheard").
   Use them as knowledge; answer only what is addressed to you or to everyone. A bash agent can
-  follow the channel with `huddle listen` (one JSON line per event).
+  follow the channel with `huddle listen` (one JSON line per event). The one exception: the
+  owner's message to one session is that session's alone, and no other member, its own
+  subagents included, sees it.
 
 ## Working together
 

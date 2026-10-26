@@ -1027,8 +1027,16 @@ func (b *mcpBridge) resourceRead(ctx context.Context, id *jsfmt.Value, uri strin
 		b.write(mcpError(id, -32000, "huddle: "+err.Error()))
 		return
 	}
+	// an owner's message to another member stays out of this session's read
+	shown := make([]*jsfmt.Value, 0, len(items))
+	for _, ev := range items {
+		if channel.OwnerPrivate(mcpTextOf(ev, "from"), mcpTextOf(ev, "to"), s.me) {
+			continue
+		}
+		shown = append(shown, ev)
+	}
 	content := jsfmt.Object([]string{"uri", "mimeType", "text"}, []*jsfmt.Value{
-		jsfmt.String(uri), jsfmt.String("application/json"), jsfmt.String(jsfmt.Array(items).EncodeJSON())})
+		jsfmt.String(uri), jsfmt.String("application/json"), jsfmt.String(jsfmt.Array(shown).EncodeJSON())})
 	b.write(mcpReply(id, jsfmt.Object([]string{"contents"}, []*jsfmt.Value{jsfmt.Array([]*jsfmt.Value{content})})))
 }
 
@@ -1132,8 +1140,10 @@ func mcpStrings(items []string) *jsfmt.Value {
 	return jsfmt.Array(out)
 }
 
-// eventsAfter reads the channel's events after a cursor that match the topic globs.
+// eventsAfter reads the channel's events after a cursor that match the topic globs. An owner's
+// message to another member never answers a poll here.
 func (b *mcpBridge) eventsAfter(ctx context.Context, after int64, topics []string) []*jsfmt.Value {
+	me := b.state().me
 	items, err := b.opList(ctx, "events", jsfmt.Object(
 		[]string{"after", "limit"},
 		[]*jsfmt.Value{jsfmt.Number(float64(after)), jsfmt.Number(mcpReadLimit)}), b.callMS)
@@ -1143,6 +1153,9 @@ func (b *mcpBridge) eventsAfter(ctx context.Context, after int64, topics []strin
 	}
 	out := []*jsfmt.Value{}
 	for _, ev := range items {
+		if channel.OwnerPrivate(mcpTextOf(ev, "from"), mcpTextOf(ev, "to"), me) {
+			continue
+		}
 		if channel.GlobMatch(mcpTextOf(ev, "topic"), topics) {
 			out = append(out, ev)
 		}
@@ -1179,6 +1192,11 @@ func (b *mcpBridge) deliver(event *jsfmt.Value, advance bool) {
 	channelName, me := b.channelName, b.me
 	b.mu.Unlock()
 	if from == me {
+		return
+	}
+	// an owner's word to one member is that member's alone: the live stream carries every
+	// event, so the bridge drops it for every other session
+	if channel.OwnerPrivate(from, to, me) {
 		return
 	}
 	overheard := to != "" && to != me
