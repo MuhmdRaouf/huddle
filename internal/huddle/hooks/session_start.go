@@ -34,7 +34,6 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
-	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 )
 
 // joinAnswer is one join's outcome: the HTTP status and the op's answer.
@@ -56,10 +55,6 @@ func SessionStart(ctx context.Context, w *cli.World, in io.Reader, out io.Writer
 			SessionID string `json:"session_id"`
 		}
 		readInput(in, startStdinMS, &input)
-		// the one-time import's notice is said here, once, whatever the project configures
-		if notices := home.PendingImportNotices(cli.HomeOf(ctx, w)); len(notices) > 0 {
-			writeContext(out, "SessionStart", strings.Join(notices, "\n"))
-		}
 		onPath(w)
 		_ = cli.RecordPluginSkew(ctx, w) // report only: a failure costs the alert, never the start
 		id := cli.Identify(ctx, w, input.SessionID)

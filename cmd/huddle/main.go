@@ -12,7 +12,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"time"
 
 	kanbanapp "github.com/MuhmdRaouf/huddle/internal/kanban/app"
 	radarapp "github.com/MuhmdRaouf/huddle/internal/radar/app"
@@ -27,13 +26,6 @@ import (
 
 // version is the huddle version, set at build time with -ldflags "-X main.version=<VERSION>".
 var version = "dev"
-
-// The import budgets: a hook grants the one-time import 2 s of its own budget, anything else
-// 10 s; what a budget does not finish waits for the next entry.
-const (
-	hookImportBudget  = 2 * time.Second
-	entryImportBudget = 10 * time.Second
-)
 
 // run is one invocation; the returned int is the process exit code.
 func run(args []string, stdout, stderr io.Writer) int {
@@ -59,8 +51,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	// The satellite words: radar, kanban and the gateway run their own command lines inside this
-	// binary, ahead of every huddle word and the legacy import — a satellite invocation never
-	// imports a huddle home.
+	// binary, ahead of every huddle word — a satellite invocation never touches a huddle home.
 	if len(args) > 0 {
 		switch args[0] {
 		case "radar":
@@ -79,7 +70,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	command, rest := splitCommand(args)
 	// The hidden word another agent's hook runs is no plugin entry point: it is its own
-	// dispatch, ahead of the entries map and the legacy import it does not need.
+	// dispatch, ahead of the entries map.
 	if command == "hook" && len(rest) > 0 && rest[0] == "external" {
 		return externalEntry(context.Background(), args[2:], stdout, stderr)
 	}
@@ -88,7 +79,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		key = "hook " + rest[0]
 		rest = rest[1:]
 	}
-	importLegacy(key)
 	if entry, ok := entries[key]; ok {
 		return entry(context.Background(), rest, stdout, stderr)
 	}
@@ -98,16 +88,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// every CLI word — a subcommand or an operation by name — reaches the CLI as one argv, so a
 	// flag keeps its place and its meaning wherever it stands around the command word
 	return cli.Huddle(context.Background(), &cli.World{}, args, stdout, stderr)
-}
-
-// importLegacy brings this project's legacy huddle homes into the user's home before the entry
-// runs, inside the entry's budget. It never says anything and never fails the entry.
-func importLegacy(key string) {
-	budget := entryImportBudget
-	if strings.HasPrefix(key, "hook") {
-		budget = hookImportBudget
-	}
-	cli.ImportLegacy(context.Background(), &cli.World{}, budget)
 }
 
 // envOf splits an ordered environment into the lookup the state resolvers take.

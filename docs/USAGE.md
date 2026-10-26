@@ -664,20 +664,9 @@ shows up in radar ([README · The gateway](../README.md#the-gateway)).
    `X-Huddle-Harness` header, which lands on the route line next to `via: gateway`, so radar
    tells the harnesses apart.
 
-### Coming from 0.0.1
-
-A machine set up with 0.0.1 runs one router per provider (zai on 18787, kimi on 18788 and so on). It
-moves to huddle-router on the first start of the daemon: each provider joins
-`~/.agents/huddle-router/providers.json`, Claude Code's `HTTPS_PROXY` moves to the daemon's port,
-the ledger names it, and the old router's binary copy and watch files go. A router that is still
-serving sessions you have open retires — it keeps answering those sessions and exits once they
-close, so nothing running is cut off. huddle-router also answers on the 0.0.1 ports 18787–18791
-itself, so a session started before the move keeps working, and the old generation has nothing
-left to bring back.
-
-A hub a 0.0.1 build left running gives way the same way: the next `huddle up` or session start from
-the current build stops it and starts the hub on the same port. The router beside it moves to the
-current build by its own handover, so it never stops answering.
+A hub an older build left running gives way on the next `huddle up` or session start: the hub
+starts again on the same port, and the router beside it moves over by its own handover, so it
+never stops answering.
 
 A router whose resident size passes its memory ceiling (1 GiB by default,
 `HUDDLE_ROUTER_RSS_CEILING_MB` to move it) hands itself over to a fresh copy.

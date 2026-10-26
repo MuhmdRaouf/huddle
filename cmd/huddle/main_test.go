@@ -23,7 +23,6 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakeclaude"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
-	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 
 	"github.com/MuhmdRaouf/huddle/internal/pki"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
@@ -515,54 +514,6 @@ func TestRunReplaysTheRecordedArgvAnswers(t *testing.T) {
 				t.Errorf("huddle %v stderr = %q, want the recorded %q", c.Args, errOut, c.Stderr)
 			}
 		})
-	}
-}
-
-// TestEveryEntryImportsTheLegacyHomesFirst pins the funnel: a hook entry (any entry) brings the
-// project's legacy home into the user's home before it runs, records it in imports.json, and
-// stays silent — the notice waits for the next session start.
-func TestEveryEntryImportsTheLegacyHomesFirst(t *testing.T) {
-	t.Setenv("HUDDLE_URL", "")
-	t.Setenv("HUDDLE_CHANNEL", "")
-	t.Setenv("HUDDLE_AS", "")
-	t.Setenv("HUDDLE_TOKEN", "")
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	home := t.TempDir()
-	t.Setenv("HUDDLE_HOME", home)
-	repo := t.TempDir()
-	t.Setenv("CLAUDE_PROJECT_DIR", repo)
-	source := filepath.Join(repo, ".agents", "huddle")
-	ctx := context.Background()
-	st, err := store.Open(ctx, filepath.Join(source, "data", "channels", "main.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Init(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Run(ctx, "INSERT INTO tasks (id, title, created_at) VALUES (?,?,?)", "t1", "the legacy task", "2026-10-16T00:00:00.000Z"); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
-	var stdout, stderr bytes.Buffer
-	if code := run([]string{"hook", "stop"}, &stdout, &stderr); code != 0 || stdout.Len() != 0 || stderr.Len() != 0 {
-		t.Fatalf("hook stop = (%d, %q, %q), want silent and 0", code, stdout.String(), stderr.String())
-	}
-	if _, err := os.Stat(filepath.Join(home, "channels", "main.db")); err != nil {
-		t.Fatalf("the legacy channel did not move in: %v", err)
-	}
-	raw, err := os.ReadFile(filepath.Join(home, "imports.json"))
-	if err != nil {
-		t.Fatalf("read the ledger: %v", err)
-	}
-	if !strings.Contains(string(raw), `"source": `+strconv.Quote(source)) {
-		t.Errorf("the ledger = %s, want it to record %s", raw, source)
-	}
-	if _, err := os.Stat(filepath.Join(source, "data", "channels", "main.db")); err != nil {
-		t.Errorf("the legacy folder lost its channel: %v", err)
 	}
 }
 

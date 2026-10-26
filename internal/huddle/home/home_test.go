@@ -54,7 +54,6 @@ func TestThePathsFollowTheLayout(t *testing.T) {
 		"channels":  h.Channels(),
 		"sessions":  h.Sessions(),
 		"outbox":    h.Outbox(),
-		"imports":   h.Imports(),
 		"service":   h.Service(),
 		"run":       h.Run(),
 		"tls":       h.TLS(),
@@ -113,7 +112,7 @@ func TestEnsureCreatesTheTreeOnceAndNeverChangesItAgain(t *testing.T) {
 			t.Errorf("%s is %o, want 0700", dir, mode(t, dir))
 		}
 	}
-	for _, file := range []string{h.Config(), h.Outbox(), h.Imports()} {
+	for _, file := range []string{h.Config(), h.Outbox()} {
 		if mode(t, file) != 0o600 {
 			t.Errorf("%s is %o, want 0600", file, mode(t, file))
 		}

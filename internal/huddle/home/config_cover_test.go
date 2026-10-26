@@ -22,6 +22,18 @@ func TestLoadConfigNamesAFileItCannotRead(t *testing.T) {
 	}
 }
 
+func TestLoadConfigFillsAFileThatNamesEmptyKeys(t *testing.T) {
+	h := oneHome(t)
+	writeFile(t, h.Config(), "role = \"\"\nmachine = \"\"\n")
+	cfg, err := LoadConfig(h)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Role != "solo" || cfg.Machine == "" {
+		t.Errorf("the empty keys read = %+v, want the defaults filled in", cfg)
+	}
+}
+
 func TestSaveConfigFillsAnEmptyRoleAndMachineWithTheDefaults(t *testing.T) {
 	h := oneHome(t)
 	if err := SaveConfig(h, Config{Port: 18862}); err != nil {
@@ -123,6 +135,16 @@ func TestWriteTOMLNamesItsFailures(t *testing.T) {
 	}
 	if err := writeTOML(filepath.Join(blocked, "sub", "config.toml"), map[string]any{"x": 1}); err == nil {
 		t.Error("a write under a file succeeded")
+	}
+}
+
+func TestEnsureConfigRefusesAConfigItCannotStat(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "huddle")
+	if err := os.WriteFile(root, []byte("a file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureConfig(Home{Root: root}); err == nil {
+		t.Error("ensureConfig laid a config under a file")
 	}
 }
 

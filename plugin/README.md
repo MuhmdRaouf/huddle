@@ -152,9 +152,8 @@ the gateway under `/gateway`; `huddle gateway status` answers its address.
 
 | Where | What |
 |---|---|
-| the home | `config.toml`; `channels/<name>.db`, one SQLite file per channel; `auth.json`, the credential digests; `sessions/`, the sessions' credentials; `run/`, the pid, port, log and owner key; `gateway.json`; `harness-ledger.json`; `pki/`, the local CA; `imports.json`, the one-time import's record |
+| the home | `config.toml`; `channels/<name>.db`, one SQLite file per channel; `auth.json`, the credential digests; `sessions/`, the sessions' credentials; `run/`, the pid, port, log and owner key; `gateway.json`; `harness-ledger.json`; `pki/`, the local CA |
 | a project | `.agents/huddle/huddle.json` (the settings) and `.agents/kanban/` (the board: one Markdown file per ticket, `kanban.db`) |
-| a legacy `<repo>/.agents/huddle` home | imports once into the user's home: each channel copied through SQLite's backup API, the old folder left untouched |
 
 The hub is the only writer of a channel's database, so a copy of the file is a complete backup of the channel.
 

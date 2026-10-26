@@ -49,7 +49,7 @@ func (h Home) Ensure(ctx context.Context) error {
 			return err
 		}
 	}
-	for _, file := range []string{h.Outbox(), h.Imports()} {
+	for _, file := range []string{h.Outbox()} {
 		if _, err := os.Stat(file); err == nil {
 			continue
 		}
@@ -80,7 +80,7 @@ func (h Home) Knowledge() string { return filepath.Join(h.Root, "knowledge.db") 
 
 // KnowledgeFile answers the server-wide knowledge store's file under dir, adopting the earlier
 // shared.db spelling once: a directory written before the rename keeps its rows. The rename is
-// guarded by the new file's absence, so a store the import already filled is never overwritten.
+// guarded by the new file's absence, so a store that already holds its rows is never overwritten.
 func KnowledgeFile(dir string) string {
 	file := filepath.Join(dir, "knowledge.db")
 	if _, err := os.Stat(file); err != nil {
@@ -89,17 +89,11 @@ func KnowledgeFile(dir string) string {
 	return file
 }
 
-// ImportNotice is where the one-time import leaves the line the next session start says.
-func (h Home) ImportNotice() string { return filepath.Join(h.Run(), "import-notice") }
-
 // Sessions is the directory of the sessions' credential files.
 func (h Home) Sessions() string { return filepath.Join(h.Root, "sessions") }
 
 // Outbox is a satellite's reports while the hub is unreachable.
 func (h Home) Outbox() string { return filepath.Join(h.Root, "outbox.jsonl") }
-
-// Imports is the import ledger: which legacy homes already moved in.
-func (h Home) Imports() string { return filepath.Join(h.Root, "imports.json") }
 
 // Service is the service ledger: the record of the system service install (the launchd agent or
 // systemd user unit written outside the home), removed with the service.

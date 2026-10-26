@@ -476,3 +476,39 @@ func TestRenewalTreatsAnIssuerThatCannotBeBuiltAsOneFailure(t *testing.T) {
 		t.Errorf("line %q does not say why", deps.lines[0])
 	}
 }
+
+func TestSaveCertificateRefusesAPairItCannotLay(t *testing.T) {
+	h := Home{Root: filepath.Join(t.TempDir(), "huddle")}
+	if err := os.MkdirAll(filepath.Join(h.TLS(), "cert.pem"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pair := mintPair(t, time.Hour)
+	if err := SaveCertificate(h, pair.certPEM, pair.keyPEM); err == nil {
+		t.Error("a certificate laid over a directory")
+	}
+}
+
+func TestLeafExpiryNamesACertificateItCannotParse(t *testing.T) {
+	torn := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("not a certificate")})
+	if _, err := leafExpiry(torn); err == nil {
+		t.Error("a torn leaf answered an expiry")
+	}
+}
+
+func TestRenewalTakesItsRealClockAndSleepWhenGivenNone(t *testing.T) {
+	h := Home{Root: filepath.Join(t.TempDir(), "huddle")}
+	// no certificate: the loop says so and ends before it ever sleeps
+	RenewCertificates(context.Background(), h, func(context.Context) (ACME, error) {
+		return nil, errors.New("unused")
+	}, "hub.test", RenewalOptions{})
+	// the real sleep runs its short stretch and answers
+	if !sleepStretches(context.Background(), 10*time.Millisecond) {
+		t.Error("a sleep the context outlived answered stop")
+	}
+	// a wait longer than one stretch is cut to the stretch
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if sleepStretches(ctx, 25*time.Hour) {
+		t.Error("a sleep over a done context answered keep-going")
+	}
+}

@@ -6,8 +6,6 @@ package home
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -149,21 +147,6 @@ func TestSaveCertificateAndExpiryReadWhatTheyWrote(t *testing.T) {
 	}
 }
 
-func TestShaOfAFileAnswersTheContentHashOrNothing(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "f")
-	if _, err := shaOfFile(file); err == nil {
-		t.Error("the hash of a missing file answered")
-	}
-	if err := os.WriteFile(file, []byte("body"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256([]byte("body"))
-	got, err := shaOfFile(file)
-	if err != nil || got != hex.EncodeToString(sum[:]) {
-		t.Errorf("shaOfFile = (%q, %v), want the content's hash", got, err)
-	}
-}
-
 func TestGetRefusesAnAccountThatIsNotAName(t *testing.T) {
 	secrets := KeyFiles{Dir: t.TempDir()}
 	if _, ok := secrets.Get(bg(), "../escape"); ok {
@@ -178,6 +161,17 @@ func TestGetRefusesAnAccountThatIsNotAName(t *testing.T) {
 	}
 	if _, ok := secrets.Get(bg(), "dns:empty"); ok {
 		t.Error("Get answered an empty file with a secret")
+	}
+}
+
+func TestResolveTakesTheEnvironmentWhenGivenNone(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HUDDLE_HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
+	got, err := Resolve(nil)
+	if err != nil || got.Root != home {
+		t.Errorf("Resolve(nil) = (%+v, %v), want the environment's home", got, err)
 	}
 }
 
