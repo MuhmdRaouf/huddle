@@ -52,9 +52,8 @@ func (p JobPaths) LandCheckLog(n int) string {
 }
 
 // StateLayout names every file and directory a plugin keeps under its state root, named once.
-// Nothing else in the codebase spells a state file's name; the router's uninstall cleanup and the
-// setup ledger read the same names here. Pure paths (path/filepath only), so the ensure hook and
-// the emergency passthrough may use it without pulling more in.
+// Nothing else in the codebase spells a state file's name; the setup ledger reads the same names
+// here. Pure paths (path/filepath only).
 type StateLayout struct {
 	Root string
 	// Setup ran (and was not removed); the hooks act only once it exists.
@@ -68,26 +67,6 @@ type StateLayout struct {
 	DisabledLedger string
 	// The router's copied bundles, its package.json and its log.
 	RouterDir string
-	RouterLog string
-	// What the starter knows about the running router (pid, port, version, control token).
-	RouterPid string
-	// The retired router's pid record, moved here from `routerPid` when setup --remove retires
-	// it: the hooks then treat the plugin as not set up, and a later setup still finds the token
-	// to take the port over.
-	RouterRetired string
-	// The running silence episode against the router (unix ms of its first silent probe): a
-	// front of ours is replaced only once its silence is sustained, never on one probe.
-	RouterSilent string
-	// The logged-exit marker: the pid of the router process whose exit left its line in
-	// router.log. The next start compares it with the pid record — a holder that is gone while
-	// no marker vouches for it died with no line (SIGKILL, the OS), and the next start names it.
-	RouterExit string
-	// Held by whoever is starting or stopping the router.
-	RouterLock string
-	// Why the router last crashed, appended and rotated.
-	CrashLog string
-	// What an uninstall could not remove, for the user to read.
-	LeftBehind string
 	// The CLAUDE_CONFIG_DIR the claude worker runs with.
 	ClaudeHome string
 	// The adaptive concurrency limiter's shared state.
@@ -122,14 +101,6 @@ func NewStateLayout(root string) StateLayout {
 		Ledger:         filepath.Join(root, "ledger.json"),
 		DisabledLedger: filepath.Join(root, "ledger.disabled.json"),
 		RouterDir:      routerDir,
-		RouterLog:      filepath.Join(routerDir, "router.log"),
-		RouterPid:      filepath.Join(root, "router.pid"),
-		RouterRetired:  filepath.Join(root, "router.retired"),
-		RouterSilent:   filepath.Join(root, "router.silent"),
-		RouterExit:     filepath.Join(root, "router.exit"),
-		RouterLock:     filepath.Join(root, "router.lock"),
-		CrashLog:       filepath.Join(root, "router-crash.log"),
-		LeftBehind:     filepath.Join(root, "LEFT-BEHIND.md"),
 		ClaudeHome:     filepath.Join(root, "claude-home"),
 		Limiter:        filepath.Join(root, "limiter.json"),
 		Slots:          filepath.Join(root, "slots"),
