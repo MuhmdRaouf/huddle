@@ -3,7 +3,8 @@
  * ladder, radii, a type scale and the system font stack with a mono face for commands and numbers.
  * A control's height follows the pointer: 44 px under a finger, 36 px under a mouse or trackpad.
  * Six layers fix the stacking order: sticky, tab bar, scrim, popup, toast, tooltip.
- * Three shadows lift a raised card, a menu or popover, and a dialog, sheet or toast.
+ * Three shadows lift a raised card, a menu or popover, and a dialog or toast; the sheet shadow
+ * lifts a bottom sheet, over a scrim that dims the page behind it.
  * Motion is one easing and three durations, all 0 ms when the OS asks for reduced motion.
  * Nothing loads from the network.
  *
@@ -50,6 +51,7 @@
   /* the one accent: links, the primary action, focus and the selected tab */
   --ui-accent: light-dark(#1f5fd1, #7aaeff);
   --ui-on-accent: light-dark(#ffffff, #0e1014);
+  --ui-accent-soft: light-dark(rgba(37, 99, 235, 0.1), rgba(122, 174, 255, 0.14));
 
   /* the four status colours */
   --ui-ok: light-dark(#1f883d, #3fb950);
@@ -125,10 +127,15 @@
   --ui-layer-toast: 50;
   --ui-layer-tooltip: 60;
 
+  /* the dimmed page behind a bottom sheet */
+  --ui-scrim: light-dark(rgba(16, 24, 40, 0.32), rgba(0, 0, 0, 0.55));
+
   /* shadows: a raised card, a menu or popover, a dialog, sheet or toast */
   --ui-shadow-1: 0 1px 2px rgb(0 0 0 / 0.12);
   --ui-shadow-2: 0 1px 2px rgb(0 0 0 / 0.12), 0 4px 16px -4px rgb(0 0 0 / 0.25);
   --ui-shadow-3: 0 1px 2px rgb(0 0 0 / 0.2), 0 12px 32px -12px rgb(0 0 0 / 0.45);
+  /* a shadow cannot sit in light-dark(): the sheet's dark half sits under :root[data-scheme="dark"] */
+  --ui-shadow-sheet: 0 -12px 40px rgb(16 24 40 / 0.16);
 
   /* motion: one easing and three durations, all 0 ms when the OS asks for reduced motion */
   --ui-ease: cubic-bezier(0.2, 0, 0, 1);
@@ -164,6 +171,7 @@
 
 :root[data-scheme="dark"] {
   color-scheme: dark;
+  --ui-shadow-sheet: 0 -12px 40px rgb(0 0 0 / 0.45);
 }
 
 /* Catppuccin: latte in the light scheme, mocha in the dark one */
@@ -178,6 +186,7 @@
 
   --ui-accent: light-dark(#1a57d0, #89b4fa);
   --ui-on-accent: light-dark(#eff1f5, #11111b);
+  --ui-accent-soft: light-dark(rgba(26, 87, 208, 0.1), rgba(137, 180, 250, 0.14));
 
   --ui-ok: light-dark(#3a9027, #a6e3a1);
   --ui-ok-soft: light-dark(#d5e5d7, #364143);
