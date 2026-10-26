@@ -27,7 +27,7 @@ func orderedLedger() Ledger {
 	return Ledger{
 		Version:      1,
 		Plugin:       "zai",
-		RouterURL:    "http://127.0.0.1:18787",
+		RouterURL:    "http://127.0.0.1:20001",
 		SettingsPath: "/home/.claude/settings.json",
 		Settings:     emptyUndo(),
 		Keystore:     LedgerKeystore{Created: false},
@@ -53,7 +53,7 @@ func TestLedgerAgentsOrder(t *testing.T) {
 		want := `{
   "version": 1,
   "plugin": "zai",
-  "routerUrl": "http://127.0.0.1:18787",
+  "routerUrl": "http://127.0.0.1:20001",
   "settingsPath": "/home/.claude/settings.json",
   "settings": {
     "optionsAdded": [],
@@ -242,7 +242,7 @@ func orderedLedgerJSON(t *testing.T) string {
 	return `{
   "version": 1,
   "plugin": "zai",
-  "routerUrl": "http://127.0.0.1:18787",
+  "routerUrl": "http://127.0.0.1:20001",
   "settings": {
     "optionsAdded": [],
     "availableAppended": [],

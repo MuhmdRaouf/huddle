@@ -16,14 +16,14 @@ func TestWithoutRouterProxies(t *testing.T) {
 	env := []string{
 		"HUDDLE_ROUTER_PORT=20999",
 		"HTTPS_PROXY=http://127.0.0.1:20999",
-		"https_proxy=127.0.0.1:18787",
+		"https_proxy=127.0.0.1:" + strconv.Itoa(domain.HuddleRouterPort),
 		"HTTP_PROXY=http://proxy.corp:3128",
 		"NO_PROXY=corp",
 		"ZAI_API_KEY=k",
 		"PORT=18860",
 	}
 	got := strings.Join(withoutRouterProxies(env), "\n")
-	for _, dropped := range []string{"HTTPS_PROXY=http://127.0.0.1:20999", "https_proxy=127.0.0.1:18787"} {
+	for _, dropped := range []string{"HTTPS_PROXY=http://127.0.0.1:20999", "https_proxy=127.0.0.1:" + strconv.Itoa(domain.HuddleRouterPort)} {
 		if strings.Contains(got, dropped) {
 			t.Errorf("withoutRouterProxies kept %s, want the router proxy dropped", dropped)
 		}

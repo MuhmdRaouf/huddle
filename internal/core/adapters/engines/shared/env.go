@@ -10,11 +10,11 @@ import (
 // The environment a delegation tool starts with: the user's own, as if they had run the tool
 // themselves, so the tool finds its own login, config and keys. Only what this session added on
 // top is withheld — the plugin's own provider variables (its key and every `<PREFIX>_` knob,
-// named by withheld) and Claude Code's routing and session variables, which can point at a plugin
-// router. The plugin never adds a provider, model, endpoint or key of its own.
+// named by withheld) and Claude Code's routing and session variables, which can point at
+// huddle-router. The plugin never adds a provider, model, endpoint or key of its own.
 
-// claudeRouting is Claude Code's routing (its settings env can point ANTHROPIC_BASE_URL at a
-// plugin router) variables.
+// claudeRouting is Claude Code's routing (its settings env can point ANTHROPIC_BASE_URL at
+// huddle-router) variables.
 var claudeRouting = map[string]bool{
 	"ANTHROPIC_BASE_URL":         true,
 	"ANTHROPIC_AUTH_TOKEN":       true,
@@ -32,7 +32,7 @@ func IsClaudeSessionVar(name string) bool {
 		name == "CLAUDECODE"
 }
 
-// proxyLoopDrop reports whether a variable is a proxy variable naming a plugin router, which never
+// proxyLoopDrop reports whether a variable is a proxy variable naming huddle-router, which never
 // passes on to a tool: proxy mode puts the router in HTTPS_PROXY, and a tool sending its own
 // requests through the router loops back into itself. no_proxy is an exemption list, not a proxy.
 func proxyLoopDrop(name, value string) bool {
@@ -42,7 +42,7 @@ func proxyLoopDrop(name, value string) bool {
 
 // ToolEnv is the parent's environment minus the withheld names and Claude's session; then the
 // brief's env, minus the names a brief may not set (reserved: the tool's own variables and any
-// key), since brief names are orchestrator-written. A proxy naming a plugin router goes the same
+// key), since brief names are orchestrator-written. A proxy naming huddle-router goes the same
 // way as the withheld names, and NODE_EXTRA_CA_CERTS goes with it, since it was set for that
 // proxy's certificate; a corporate proxy and its CA stay.
 func ToolEnv(

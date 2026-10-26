@@ -18,7 +18,7 @@ func TestLedgerFile(t *testing.T) {
 		ledger := Ledger{
 			Version:      1,
 			Plugin:       "zai",
-			RouterURL:    "http://127.0.0.1:18787",
+			RouterURL:    "http://127.0.0.1:20001",
 			SettingsPath: "/home/.claude/settings.json",
 			Settings: adapters.SettingsUndo{
 				OptionsAdded:      []string{"glm-5.3", "glm-5.3-flash"},

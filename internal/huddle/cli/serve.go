@@ -712,9 +712,10 @@ func GCPercentOf(env func(string) string) (int, bool) {
 	return 50, true
 }
 
-// withoutRouterProxies drops the proxy variables whose value names a router of ours — one on
-// the known ports, or the router on its own port (`HUDDLE_ROUTER_PORT`, else 18786). Pure: no
-// probe; the daemon asks its loopback proxies for a health answer itself (routerd.CleanProxyEnv).
+// withoutRouterProxies drops the proxy variables whose value names a router of ours —
+// huddle-router's canonical address, or the router on its own port (`HUDDLE_ROUTER_PORT`,
+// else 18786). Pure: no probe; the daemon asks its loopback proxies for a health answer
+// itself (routerd.CleanProxyEnv).
 func withoutRouterProxies(env []string) []string {
 	lookup := domain.EnvLookup{}
 	for _, entry := range env {

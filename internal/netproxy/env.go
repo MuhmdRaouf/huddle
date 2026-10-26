@@ -1,6 +1,6 @@
 // The proxy environment as an explicit map: which outbound request goes through which proxy, read
-// from the variables in either case (lowercase first), NO_PROXY honoured, and a proxy that names a
-// plugin router refused — routing the router's own upstream through the router is a loop.
+// from the variables in either case (lowercase first), NO_PROXY honoured, and a proxy that names
+// huddle-router refused — routing the router's own upstream through the router is a loop.
 package netproxy
 
 import (
@@ -132,7 +132,7 @@ func ExemptLoopback(env map[string]string) map[string]string {
 }
 
 // ProxyFor is the proxy a request to the target goes through, from HTTPS_PROXY/HTTP_PROXY (either
-// case), or none. A proxy naming a plugin router is no proxy: routing the router's own upstream
+// case), or none. A proxy naming huddle-router is no proxy: routing the router's own upstream
 // through the router is a loop.
 func ProxyFor(target *url.URL, env Env) (*url.URL, bool) {
 	port := target.Port()

@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
@@ -354,16 +353,6 @@ type RoutingApplied struct {
 	Restored AgentSource
 }
 
-// liveOthers is the live plugin routers other than this one, as base URLs.
-func liveOthers(ctx context.Context, deps SetupDeps) []string {
-	entries := router.LiveRouters(ctx, deps.Env, deps.Provider.Name, nil)
-	urls := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		urls = append(urls, fmt.Sprintf("http://127.0.0.1:%d", entry.Port))
-	}
-	return urls
-}
-
 // othersEnabled is the providers huddle-router still serves, this one left out: the callers of
 // the removal plans name them, so a removal keeps the shared routing env while one is left.
 func othersEnabled(deps SetupDeps) []string {
@@ -392,31 +381,18 @@ func adapterOurs(env domain.EnvLookup) adapters.ProxyOurs {
 	return adapters.ProxyOurs{CAPath: pki.CACertPath(routerCADir(env)), NoProxy: domain.OwnNoProxy()}
 }
 
-// routesProvider is where Claude Code's settings point now, and whether that is a router of ours
-// that will route the provider's ids: the proxy keys naming this router (when it is up) or
-// another live plugin router (which forwards them here), or — base-URL mode, beside a proxy of
-// the user's own — the base URL on this router or another live one.
-func routesProvider(deps SetupDeps, routerOk bool, live []string) bool {
+// routesProvider is whether Claude Code's settings point at this router in a way that routes the
+// provider's ids: the proxy keys naming it, or — base-URL mode, beside a proxy of the user's own
+// — the base URL on it. Either way the ids only route while the router is up.
+func routesProvider(deps SetupDeps, routerOk bool) bool {
+	routerURL := domain.RouterBaseURL(deps.Provider, deps.Env)
 	settings, ok := adapters.ReadProxySettings(deps.SettingsPath)
-	if ok && settings.HTTPSProxy != nil {
-		port := proxyPortOf(*settings.HTTPSProxy)
-		if port == domain.PortOf(domain.RouterBaseURL(deps.Provider, deps.Env)) {
-			return routerOk
-		}
-		for _, url := range live {
-			if domain.PortOf(url) == port {
-				return true
-			}
-		}
+	if ok && settings.HTTPSProxy != nil &&
+		proxyPortOf(*settings.HTTPSProxy) == domain.PortOf(routerURL) {
+		return routerOk
 	}
 	current, ok := adapters.ReadBaseUrl(deps.SettingsPath)
-	if !ok {
-		return false
-	}
-	if current == domain.RouterBaseURL(deps.Provider, deps.Env) && routerOk {
-		return true
-	}
-	return slices.Contains(live, current)
+	return ok && current == routerURL && routerOk
 }
 
 // proxyPortOf is the port a proxy variable's value names, a missing scheme added the way a proxy
@@ -496,7 +472,7 @@ func recordLedger(ctx context.Context, deps SetupDeps, delta *adapters.SettingsD
 
 // mergeSettings merges the settings under the shared lock, the ledger updated with exactly what
 // changed.
-func mergeSettings(ctx context.Context, deps SetupDeps, live []string) LinesResult {
+func mergeSettings(ctx context.Context, deps SetupDeps) LinesResult {
 	var delta *adapters.SettingsDelta
 	// What earlier runs own in /model, so this run can bring those rows up to what setup writes
 	// today.
@@ -506,9 +482,8 @@ func mergeSettings(ctx context.Context, deps SetupDeps, live []string) LinesResu
 		previous, hadPrevious = router.ReadLedger(ctx, layout.DisabledLedger)
 	}
 	options := adapters.ApplyProviderOptions{
-		LivePluginURLs: live,
-		CADir:          routerCADir(deps.Env),
-		EnvProxy:       ownProxyInEnv(deps.Env),
+		CADir:    routerCADir(deps.Env),
+		EnvProxy: ownProxyInEnv(deps.Env),
 		Record: func(recorded adapters.SettingsDelta) {
 			delta = &recorded
 		},
@@ -527,7 +502,7 @@ func mergeSettings(ctx context.Context, deps SetupDeps, live []string) LinesResu
 
 // ownProxyInEnv is the proxy variable this process's own environment applies, lowercase before
 // uppercase the way Claude Code reads them: a user who exported their own proxy keeps base-URL
-// mode even where the settings carry none of it. A value naming a plugin router is ours.
+// mode even where the settings carry none of it. A value naming huddle-router is ours.
 func ownProxyInEnv(env domain.EnvLookup) *string {
 	for _, name := range []string{"https_proxy", "HTTPS_PROXY"} {
 		value, ok := env[name]
@@ -571,21 +546,15 @@ func withRouterKey(ctx context.Context, deps SetupDeps, started app.StringResult
 	return app.StringResult{Error: message}
 }
 
-// ApplyRouting is `setup`'s wiring, in order: router, registry, settings merge (and ledger),
-// agents, the setupDone mark. The agents name the provider's ids only when Claude Code's settings
-// point at a router of ours that can route them.
+// ApplyRouting is `setup`'s wiring, in order: router, settings merge (and ledger), agents, the
+// setupDone mark. The agents name the provider's ids only when Claude Code's settings point at
+// huddle-router and it is up to route them.
 func ApplyRouting(ctx context.Context, deps SetupDeps) RoutingApplied {
 	startedLine, startedErr := deps.EnsureRouter(ctx)
-	if startedErr == nil {
-		// The router announces itself when it starts; setup's copy only covers the
-		// installed-but-not-running case.
-		_ = router.SaveRegistryEntry(ctx, deps.Env, router.RegistryEntryFor(deps.Provider, deps.Env, nil))
-	}
-	live := liveOthers(ctx, deps)
-	settings := mergeSettings(ctx, deps, live)
+	settings := mergeSettings(ctx, deps)
 	started := withRouterKey(ctx, deps, stringResult(startedLine, startedErr))
 	models := AgentModelsSonnet
-	if started.OK && routesProvider(deps, startedErr == nil, live) {
+	if started.OK && routesProvider(deps, startedErr == nil) {
 		models = AgentModelsProvider
 	}
 	agents := ApplyAgentModels(ctx, deps.BundlePath, deps.Provider, models, deps.Env)
@@ -597,9 +566,9 @@ func ApplyRouting(ctx context.Context, deps SetupDeps) RoutingApplied {
 }
 
 // RemoveRouting is `setup --remove`: the agents back on their models before setup, this plugin's
-// entries out of settings and the registry, the router retired (it keeps serving the Claude Code
-// sessions already open, which hold its URL until they exit), the ledger gone (nothing is left for
-// the router to undo).
+// entries out of settings, the router retired (it keeps serving the Claude Code sessions already
+// open, which hold its URL until they exit), the ledger gone (nothing is left for the router to
+// undo).
 func RemoveRouting(ctx context.Context, deps SetupDeps) RoutingApplied {
 	layout := domain.NewStateLayout(deps.StateRoot)
 	// Read before the router retires this provider: the removal plans keep the shared proxy
@@ -615,7 +584,7 @@ func RemoveRouting(ctx context.Context, deps SetupDeps) RoutingApplied {
 	var settings LinesResult
 	if hasLedger && ledger.SettingsPath == deps.SettingsPath {
 		settings = linesResult(adapters.UndoProviderSettings(ctx, deps.SettingsPath, deps.Provider.Name,
-			ledger.Settings, ledger.RouterURL, nil, others, adapterOurs(deps.Env)))
+			ledger.Settings, ledger.RouterURL, others, adapterOurs(deps.Env)))
 	} else {
 		lines, err := adapters.RemoveProviderSettings(ctx, deps.SettingsPath, deps.Provider,
 			domain.RouterBaseURL(deps.Provider, deps.Env), others)
@@ -634,7 +603,6 @@ func RemoveRouting(ctx context.Context, deps SetupDeps) RoutingApplied {
 	}
 	retiredLine, retireErr := deps.RetireRouter(ctx)
 	ClearSetupDone(deps.StateRoot)
-	router.RemoveRegistryEntry(deps.Env, deps.Provider.Name)
 	router.RemoveLedger(layout.Ledger)
 	router.RemoveLedger(layout.DisabledLedger)
 	restored := AgentSourceDefault
@@ -676,8 +644,7 @@ func RoutingHook(ctx context.Context, deps SetupDeps) ExitCode {
 			"the %s router could not start, so the %s agents cannot reach %s this session. Run %ssetup to see why.",
 			deps.Provider.Name, deps.Provider.Name, deps.Provider.Display, deps.Provider.Slash), nil, true)
 	}
-	live := liveOthers(ctx, deps)
-	settings := mergeSettings(ctx, deps, live)
+	settings := mergeSettings(ctx, deps)
 	var repaired []string
 	if settings.OK {
 		for _, line := range settings.Value {
@@ -713,10 +680,10 @@ func reEnable(ctx context.Context, deps SetupDeps) ExitCode {
 
 // hookFallback is the router being down or the key missing: the agents keep the provider's models
 // (asking for GLM gets GLM or an honest failure, never Sonnet in its place). With the router down,
-// the settings come off it — the proxy keys, or the base URL a fallback mode kept — onto another
-// live plugin router when there is one, so Claude itself keeps working. A missing key leaves the
-// router and the settings alone: Claude traffic does not need the key. The user hears why at every
-// session start until it is fixed. The repaired lines parameter is kept for the signature and unused.
+// the settings come off it — the proxy keys, or the base URL a fallback mode kept — unless another
+// enabled provider still routes through them. A missing key leaves the router and the settings
+// alone: Claude traffic does not need the key. The user hears why at every session start until it
+// is fixed. The repaired lines parameter is kept for the signature and unused.
 func hookFallback(ctx context.Context, deps SetupDeps, message string, repaired []string, routerDown bool) ExitCode {
 	recordAgentsBefore(ctx, deps, ApplyAgentModels(ctx, deps.BundlePath, deps.Provider, AgentModelsProvider, deps.Env))
 	if routerDown {

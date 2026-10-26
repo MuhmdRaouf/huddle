@@ -258,18 +258,15 @@ func TestLiveRouters(t *testing.T) {
 
 func TestThePortMap(t *testing.T) {
 	t.Parallel()
-	t.Run("knows every plugin's router port, and reads ports out of URLs", func(t *testing.T) {
-		if got := domain.PluginRouters[18787]; got != "zai" {
-			t.Fatalf("PLUGIN_ROUTERS.get(18787) = %q, want zai", got)
+	t.Run("names huddle-router's port, and reads ports out of URLs", func(t *testing.T) {
+		if got := domain.PluginRouters[domain.HuddleRouterPort]; got != "huddle-router" {
+			t.Fatalf("PLUGIN_ROUTERS.get(%d) = %q, want huddle-router", domain.HuddleRouterPort, got)
 		}
-		if got := domain.PluginRouters[18791]; got != "qwen" {
-			t.Fatalf("PLUGIN_ROUTERS.get(18791) = %q, want qwen", got)
+		if len(domain.PluginRouters) != 1 {
+			t.Fatalf("PLUGIN_ROUTERS holds %d routers, want 1", len(domain.PluginRouters))
 		}
-		if len(domain.PluginRouters) != 6 {
-			t.Fatalf("PLUGIN_ROUTERS holds %d plugins, want 6", len(domain.PluginRouters))
-		}
-		if got := domain.PortOf("http://127.0.0.1:18788/health"); got != 18788 {
-			t.Fatalf("portOf(health URL) = %d, want 18788", got)
+		if got := domain.PortOf(fmt.Sprintf("http://127.0.0.1:%d/health", domain.HuddleRouterPort)); got != domain.HuddleRouterPort {
+			t.Fatalf("portOf(health URL) = %d, want %d", got, domain.HuddleRouterPort)
 		}
 		if got := domain.PortOf("http://localhost/x"); got != -1 {
 			t.Fatalf("portOf(no port) = %d, want -1", got)

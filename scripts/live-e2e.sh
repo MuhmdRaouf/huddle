@@ -2,8 +2,8 @@
 # live-e2e: two real claude sessions set up, join and ping-pong through one huddle channel, and
 # the channel's own events prove it happened — then an opencode agent, configured by
 # `huddle harness install opencode` in the same temp home, joins the same channel and
-# ping-pongs with the Claude session too. Not part of CI: it needs `claude`, `opencode` and the
-# zai router on 127.0.0.1 (the opencode leg skips with a clear line when opencode is away).
+# ping-pongs with the Claude session too. Not part of CI: it needs `claude`, `opencode` and
+# huddle-router on 127.0.0.1 (the opencode leg skips with a clear line when opencode is away).
 # sh scripts/live-e2e.sh (KEEP=1 keeps the temp dir and its logs).
 #
 # Everything runs in one mktemp home: the built binary stands in for the release download
@@ -14,7 +14,7 @@
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-ROUTER=${HUDDLE_LIVE_E2E_ROUTER:-http://127.0.0.1:18787}
+ROUTER=${HUDDLE_LIVE_E2E_ROUTER:-http://127.0.0.1:18786}
 MODEL=glm-5.3-flash
 CAP=240
 KEEP=${KEEP:-0}

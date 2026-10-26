@@ -17,7 +17,7 @@ import (
 )
 
 // PortFirst and PortLast bound the ports huddle picks for itself; kanban's boards sit just below
-// (18800 to 18849) and the routers below them (18787 to 18791).
+// (18800 to 18849) and huddle-router below them (18786).
 const PortFirst = 18860
 
 const PortLast = 18869

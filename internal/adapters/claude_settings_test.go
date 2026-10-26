@@ -21,10 +21,9 @@ import (
 // careful write, and the undo that restores exactly what setup changed. Every path sits under
 // t.TempDir(); the real ~/.claude is never touched.
 
-const (
-	routerURL  = "http://127.0.0.1:18787"
-	kimiRouter = "http://127.0.0.1:18788"
-)
+var routerURL = fmt.Sprintf("http://127.0.0.1:%d", domain.HuddleRouterPort)
+
+var localURL = fmt.Sprintf("http://localhost:%d", domain.HuddleRouterPort)
 
 func settingsFilePath(t *testing.T) string {
 	t.Helper()
@@ -299,12 +298,13 @@ func TestApplyProviderSettings(t *testing.T) {
 		}
 	})
 
-	t.Run("replaces another plugin's router, and keeps a foreign proxy while reporting it", func(t *testing.T) {
+	t.Run("moves the canonical address's other spelling, and keeps a foreign base URL while reporting it", func(t *testing.T) {
 		moved := settingsFilePath(t)
-		writeSettingsFile(t, moved, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+kimiRouter+"\"\n  }\n}\n")
+		local := fmt.Sprintf("http://localhost:%d", domain.HuddleRouterPort)
+		writeSettingsFile(t, moved, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+local+"\"\n  }\n}\n")
 		lines := appliedLines(t, moved)
-		if !strings.Contains(lines[len(lines)-2], "kimi") {
-			t.Fatalf("lines = %#v; want the move to name the kimi router", lines)
+		if !strings.Contains(lines[len(lines)-2], "moved ANTHROPIC_BASE_URL from") {
+			t.Fatalf("lines = %#v; want the move to be reported", lines)
 		}
 		assertFile(t, moved, `{
   "env": {
@@ -564,7 +564,8 @@ func TestApplyProviderSettings(t *testing.T) {
 
 	t.Run("sets ENABLE_TOOL_SEARCH only when there is no value yet", func(t *testing.T) {
 		path := settingsFilePath(t)
-		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+kimiRouter+"\",\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  }\n}\n")
+		local := fmt.Sprintf("http://localhost:%d", domain.HuddleRouterPort)
+		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+local+"\",\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  }\n}\n")
 		var delta SettingsDelta
 		if _, err := ApplyProviderSettings(t.Context(), path, providers.Zai, routerURL, ApplyProviderOptions{
 			Record: func(recorded SettingsDelta) { delta = recorded },
@@ -1132,7 +1133,7 @@ func TestUndoProviderSettings(t *testing.T) {
 }
 `)
 
-		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, nil, ProxyOurs{})
+		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1164,7 +1165,7 @@ func TestUndoProviderSettings(t *testing.T) {
 			t.Fatalf("the apply did not rewrite the file: %v", err)
 		}
 
-		if _, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, nil, ProxyOurs{}); err != nil {
+		if _, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, ProxyOurs{}); err != nil {
 			t.Fatal(err)
 		}
 		// The undo equals the backup's JSON, so the backup's own bytes come back — odd spacing
@@ -1177,7 +1178,7 @@ func TestUndoProviderSettings(t *testing.T) {
 		writeSettingsFile(t, path, "{\n  \"availableModels\": [\n    \"sonnet\"\n  ],\n  \"modelPicker\": \"odd\"\n}\n")
 		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo{
 			AvailableAppended: []string{"glm-5.3"},
-		}, routerURL, nil, nil, ProxyOurs{})
+		}, routerURL, nil, ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1188,7 +1189,7 @@ func TestUndoProviderSettings(t *testing.T) {
 		lines, err = UndoProviderSettings(t.Context(), path, "zai", SettingsUndo{
 			AvailableAppended:  []string{"glm-5.3"},
 			CreatedModelPicker: true,
-		}, routerURL, nil, nil, ProxyOurs{})
+		}, routerURL, nil, ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1196,36 +1197,44 @@ func TestUndoProviderSettings(t *testing.T) {
 		assertFile(t, path, "{\n  \"availableModels\": [\n    \"sonnet\"\n  ],\n  \"modelPicker\": {\n    \"options\": \"odd\"\n  }\n}\n")
 	})
 
-	t.Run("puts the base URL back at the live plugin router it came from", func(t *testing.T) {
+	t.Run("moves the canonical address's other spelling and takes the base URL out on the undo", func(t *testing.T) {
 		path := settingsFilePath(t)
-		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+kimiRouter+"\"\n  }\n}\n")
+		local := fmt.Sprintf("http://localhost:%d", domain.HuddleRouterPort)
+		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+local+"\"\n  }\n}\n")
 		var delta SettingsDelta
 		if _, err := ApplyProviderSettings(t.Context(), path, providers.Zai, routerURL, ApplyProviderOptions{
-			LivePluginURLs: nil, // kimi's router is down, so the apply moves the base URL
-			Record:         func(recorded SettingsDelta) { delta = recorded },
+			Record: func(recorded SettingsDelta) { delta = recorded },
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if delta.BaseURLBefore == nil || *delta.BaseURLBefore != kimiRouter {
-			t.Fatalf("delta.baseUrlBefore = %v; want %q", delta.BaseURLBefore, kimiRouter)
+		if delta.BaseURLBefore == nil || *delta.BaseURLBefore != local {
+			t.Fatalf("delta.BaseURLBefore = %v; want %q", delta.BaseURLBefore, local)
 		}
 
-		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, []string{kimiRouter}, nil, ProxyOurs{})
+		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		assertLines(t, lines,
 			"took glm-5.3 and glm-5.3-flash out of /model",
-			"set ANTHROPIC_BASE_URL back to "+kimiRouter,
+			"removed ANTHROPIC_BASE_URL ("+routerURL+")",
 			"removed ENABLE_TOOL_SEARCH",
 			"took glm-5.3 and glm-5.3-flash out of modelSettings",
 		)
-		assertFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+kimiRouter+"\"\n  }\n}\n")
+		assertFile(t, path, "{}\n")
+	})
+
+	t.Run("puts a base URL the ledger recorded back", func(t *testing.T) {
+		path := settingsFilePath(t)
+		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+routerURL+"\"\n  }\n}\n")
+		before := "https://relay.example/v1"
+		assertLines(t, mustUndo(t, path, SettingsUndo{BaseURLBefore: &before}, routerURL), "set ANTHROPIC_BASE_URL back to "+before)
+		assertFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+before+"\"\n  }\n}\n")
 	})
 
 	t.Run("keeps a tool-search value the user set", func(t *testing.T) {
 		path := settingsFilePath(t)
-		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+kimiRouter+"\",\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  }\n}\n")
+		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+routerURL+"\",\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  }\n}\n")
 		var delta SettingsDelta
 		if _, err := ApplyProviderSettings(t.Context(), path, providers.Zai, routerURL, ApplyProviderOptions{
 			Record: func(recorded SettingsDelta) { delta = recorded },
@@ -1236,7 +1245,7 @@ func TestUndoProviderSettings(t *testing.T) {
 			t.Fatal("delta.createdToolSearch = true; want false")
 		}
 
-		if _, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, nil, ProxyOurs{}); err != nil {
+		if _, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, ProxyOurs{}); err != nil {
 			t.Fatal(err)
 		}
 		assertFile(t, path, "{\n  \"env\": {\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  }\n}\n")
@@ -1250,7 +1259,7 @@ func TestUndoProviderSettings(t *testing.T) {
 			OptionsAdded:      []string{},
 			AvailableAppended: []string{},
 			CreatedProxy:      true,
-		}, routerURL, nil, nil, ProxyOurs{})
+		}, routerURL, nil, ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1299,7 +1308,7 @@ func TestUndoProviderSettings(t *testing.T) {
 }
 `)
 
-		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, nil, ProxyOurs{})
+		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo(delta), routerURL, nil, ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1331,7 +1340,7 @@ func TestUndoProviderSettings(t *testing.T) {
 			AvailableAppended: []string{"glm-5.3"},
 			CreatedToolSearch: true,
 			EffortsAdded:      stringEfforts("glm-5.3", "xhigh"),
-		}, routerURL, nil, nil, ProxyOurs{})
+		}, routerURL, nil, ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1342,7 +1351,7 @@ func TestUndoProviderSettings(t *testing.T) {
 		writeSettingsFile(t, entries, "{\n  \"modelSettings\": {\n    \"glm-5.3\": \"odd\"\n  }\n}\n")
 		lines, err = UndoProviderSettings(t.Context(), entries, "zai", SettingsUndo{
 			EffortsAdded: stringEfforts("glm-5.3", "xhigh"),
-		}, routerURL, nil, nil, ProxyOurs{})
+		}, routerURL, nil, ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1353,7 +1362,7 @@ func TestUndoProviderSettings(t *testing.T) {
 	t.Run("refuses an env that is not an object", func(t *testing.T) {
 		path := settingsFilePath(t)
 		writeSettingsFile(t, path, "{\"env\":\"nope\"}\n")
-		if _, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo{}, routerURL, nil, nil, ProxyOurs{}); err == nil || !strings.Contains(err.Error(), "env must be an object") {
+		if _, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo{}, routerURL, nil, ProxyOurs{}); err == nil || !strings.Contains(err.Error(), "env must be an object") {
 			t.Fatalf("error = %v; want it to say env must be an object", err)
 		}
 		assertFile(t, path, "{\"env\":\"nope\"}\n")
@@ -1365,7 +1374,7 @@ func TestUndoProviderSettings(t *testing.T) {
 		writeSettingsFile(t, path, content)
 		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo{
 			EffortsAdded: stringEfforts("glm-5.3", "xhigh"),
-		}, routerURL, nil, nil, ProxyOurs{})
+		}, routerURL, nil, ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1373,34 +1382,23 @@ func TestUndoProviderSettings(t *testing.T) {
 		assertFile(t, path, content)
 	})
 
-	t.Run("repoints a base URL with no ledger at another live router, and drops an env it created", func(t *testing.T) {
-		path := settingsFilePath(t)
-		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+routerURL+"\"\n  }\n}\n")
-		lines, err := UndoProviderSettings(t.Context(), path, "zai", SettingsUndo{
-			CreatedEnv: true,
-		}, routerURL, []string{routerURL, kimiRouter}, nil, ProxyOurs{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertLines(t, lines, "set ANTHROPIC_BASE_URL back to "+kimiRouter)
-		assertFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+kimiRouter+"\"\n  }\n}\n")
-
+	t.Run("takes a router base URL with no ledger out, and drops an env it created", func(t *testing.T) {
 		created := settingsFilePath(t)
 		writeSettingsFile(t, created, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+routerURL+"\"\n  }\n}\n")
-		assertLines(t, mustUndo(t, created, SettingsUndo{CreatedEnv: true}, routerURL, nil), "removed ANTHROPIC_BASE_URL ("+routerURL+")")
+		assertLines(t, mustUndo(t, created, SettingsUndo{CreatedEnv: true}, routerURL), "removed ANTHROPIC_BASE_URL ("+routerURL+")")
 		assertFile(t, created, "{}\n")
 
 		// A tool search the ledger claims but whose value moved on is not setup's to take.
 		moved := settingsFilePath(t)
 		writeSettingsFile(t, moved, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+routerURL+"\",\n    \"ENABLE_TOOL_SEARCH\": \"off\"\n  }\n}\n")
-		assertLines(t, mustUndo(t, moved, SettingsUndo{CreatedToolSearch: true}, routerURL, nil), "removed ANTHROPIC_BASE_URL ("+routerURL+")")
+		assertLines(t, mustUndo(t, moved, SettingsUndo{CreatedToolSearch: true}, routerURL), "removed ANTHROPIC_BASE_URL ("+routerURL+")")
 		assertFile(t, moved, "{\n  \"env\": {\n    \"ENABLE_TOOL_SEARCH\": \"off\"\n  }\n}\n")
 	})
 }
 
-func mustUndo(t *testing.T, path string, undo SettingsUndo, routerURL string, live []string) []string {
+func mustUndo(t *testing.T, path string, undo SettingsUndo, routerURL string) []string {
 	t.Helper()
-	lines, err := UndoProviderSettings(t.Context(), path, "zai", undo, routerURL, live, nil, ProxyOurs{})
+	lines, err := UndoProviderSettings(t.Context(), path, "zai", undo, routerURL, nil, ProxyOurs{})
 	if err != nil {
 		t.Fatalf("undoProviderSettings(%s): %v", path, err)
 	}
@@ -1907,7 +1905,7 @@ func TestApplyProxy(t *testing.T) {
 	})
 
 	t.Run("a keep plan writes only the NO_PROXY it appends", func(t *testing.T) {
-		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \"http://localhost:18787\"\n  }\n}\n")
+		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+localURL+"\"\n  }\n}\n")
 		lines := applyProxy(root, domain.ProxyPlan{
 			Kind:    domain.ProxyPlanKeep,
 			NoProxy: "localhost,127.0.0.1",
@@ -1917,15 +1915,15 @@ func TestApplyProxy(t *testing.T) {
 		if value, _ := envString(t, root, "NO_PROXY"); value != "localhost,127.0.0.1" {
 			t.Fatalf("NO_PROXY = %q; want the loopback entries", value)
 		}
-		if value, _ := envString(t, root, "HTTPS_PROXY"); value != "http://localhost:18787" {
+		if value, _ := envString(t, root, "HTTPS_PROXY"); value != localURL {
 			t.Fatalf("HTTPS_PROXY = %q; want untouched", value)
 		}
 	})
 
-	t.Run("a keep plan takes a stale plugin-router base URL out", func(t *testing.T) {
-		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\",\n    \"ANTHROPIC_BASE_URL\": \""+kimiRouter+"\"\n  }\n}\n")
+	t.Run("a keep plan takes a stale router base URL out", func(t *testing.T) {
+		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\",\n    \"ANTHROPIC_BASE_URL\": \""+localURL+"\"\n  }\n}\n")
 		lines := applyProxy(root, domain.ProxyPlan{Kind: domain.ProxyPlanKeep, RemoveBaseURL: true}, "settings.json")
-		assertLines(t, lines, "removed ANTHROPIC_BASE_URL ("+kimiRouter+")")
+		assertLines(t, lines, "removed ANTHROPIC_BASE_URL ("+localURL+")")
 		if _, ok := envString(t, root, "ANTHROPIC_BASE_URL"); ok {
 			t.Fatal("ANTHROPIC_BASE_URL survived")
 		}
@@ -1944,7 +1942,7 @@ func TestApplyProxy(t *testing.T) {
 	})
 
 	t.Run("a set plan takes the base URL out with it", func(t *testing.T) {
-		root := proxyRoot(t, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+kimiRouter+"\"\n  }\n}\n")
+		root := proxyRoot(t, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+localURL+"\"\n  }\n}\n")
 		lines := applyProxy(root, domain.ProxyPlan{
 			Kind:          domain.ProxyPlanSet,
 			Proxy:         routerURL,
@@ -1955,7 +1953,7 @@ func TestApplyProxy(t *testing.T) {
 		}, "settings.json")
 		assertLines(t, lines,
 			"pointed HTTPS_PROXY at "+routerURL,
-			"removed ANTHROPIC_BASE_URL ("+kimiRouter+")",
+			"removed ANTHROPIC_BASE_URL ("+localURL+")",
 		)
 		if _, ok := envString(t, root, "ANTHROPIC_BASE_URL"); ok {
 			t.Fatal("ANTHROPIC_BASE_URL survived")
@@ -1966,15 +1964,16 @@ func TestApplyProxy(t *testing.T) {
 	})
 
 	t.Run("a repoint set writes only HTTPS_PROXY", func(t *testing.T) {
+		standIn := "http://127.0.0.1:20999"
 		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\",\n    \"NODE_EXTRA_CA_CERTS\": \""+caPath+"\",\n    \"NO_PROXY\": \"localhost,127.0.0.1\"\n  }\n}\n")
 		lines := applyProxy(root, domain.ProxyPlan{
 			Kind:   domain.ProxyPlanSet,
-			Proxy:  kimiRouter,
-			Report: strPtr("pointed HTTPS_PROXY at " + kimiRouter),
+			Proxy:  standIn,
+			Report: strPtr("pointed HTTPS_PROXY at " + standIn),
 		}, "settings.json")
-		assertLines(t, lines, "pointed HTTPS_PROXY at "+kimiRouter)
-		if value, _ := envString(t, root, "HTTPS_PROXY"); value != kimiRouter {
-			t.Fatalf("HTTPS_PROXY = %q; want %q", value, kimiRouter)
+		assertLines(t, lines, "pointed HTTPS_PROXY at "+standIn)
+		if value, _ := envString(t, root, "HTTPS_PROXY"); value != standIn {
+			t.Fatalf("HTTPS_PROXY = %q; want %q", value, standIn)
 		}
 		if value, _ := envString(t, root, "NODE_EXTRA_CA_CERTS"); value != caPath {
 			t.Fatalf("NODE_EXTRA_CA_CERTS = %q; want untouched", value)
@@ -2015,7 +2014,7 @@ func TestUndoProxy(t *testing.T) {
 			ProxyBefore:   strPtr("http://proxy.corp:3128"),
 			CABefore:      strPtr("/old/ca.pem"),
 			NoProxyBefore: strPtr("corp.internal"),
-		}, routerURL, nil, nil, ProxyOurs{})
+		}, routerURL, nil, ProxyOurs{})
 		assertLines(t, lines,
 			"set HTTPS_PROXY back to http://proxy.corp:3128",
 			"set NODE_EXTRA_CA_CERTS back to /old/ca.pem",
@@ -2031,7 +2030,7 @@ func TestUndoProxy(t *testing.T) {
 
 	t.Run("removes our keys and the env this run created", func(t *testing.T) {
 		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
-		lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil, nil, ProxyOurs{})
+		lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil, ProxyOurs{})
 		assertLines(t, lines, "removed HTTPS_PROXY ("+routerURL+")")
 		if root.Get("env") != nil {
 			t.Fatal("an emptied env this run created survived")
@@ -2040,12 +2039,12 @@ func TestUndoProxy(t *testing.T) {
 
 	t.Run("an emptied env goes when the last provider goes, stays while another is enabled", func(t *testing.T) {
 		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
-		undoProxy(root, SettingsUndo{}, routerURL, nil, nil, ProxyOurs{})
+		undoProxy(root, SettingsUndo{}, routerURL, nil, ProxyOurs{})
 		if root.Get("env") != nil {
 			t.Fatalf("env = %v; want the emptied object taken out", root.Get("env"))
 		}
 		kept := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
-		undoProxy(kept, SettingsUndo{}, routerURL, nil, []string{"kimi"}, ProxyOurs{})
+		undoProxy(kept, SettingsUndo{}, routerURL, []string{"kimi"}, ProxyOurs{})
 		env := kept.Get("env")
 		if !env.IsObject() || env.Len() != 1 {
 			t.Fatalf("env = %v; want the shared proxy left in place", env)
@@ -2054,7 +2053,7 @@ func TestUndoProxy(t *testing.T) {
 
 	t.Run("leaves everything when the proxy is not ours anymore", func(t *testing.T) {
 		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \"http://proxy.corp:3128\",\n    \"NODE_EXTRA_CA_CERTS\": \""+caPath+"\"\n  }\n}\n")
-		if lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil, nil, ProxyOurs{}); lines != nil {
+		if lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil, ProxyOurs{}); lines != nil {
 			t.Fatalf("lines = %#v; want none", lines)
 		}
 		if value, _ := envString(t, root, "NODE_EXTRA_CA_CERTS"); value != caPath {
@@ -2064,21 +2063,18 @@ func TestUndoProxy(t *testing.T) {
 
 	t.Run("leaves everything when there is no env", func(t *testing.T) {
 		root := proxyRoot(t, "{}\n")
-		if lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil, nil, ProxyOurs{}); lines != nil {
+		if lines := undoProxy(root, SettingsUndo{CreatedProxy: true}, routerURL, nil, ProxyOurs{}); lines != nil {
 			t.Fatalf("lines = %#v; want none", lines)
 		}
 	})
 
-	t.Run("a dead before router is replaced by a live other", func(t *testing.T) {
+	t.Run("a before value naming this router is not restored", func(t *testing.T) {
 		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
-		lines := undoProxy(root, SettingsUndo{ProxyBefore: strPtr(kimiRouter)}, routerURL, []string{"http://localhost:18790"}, nil, ProxyOurs{})
-		assertLines(t, lines, "set HTTPS_PROXY back to http://localhost:18790")
-	})
-
-	t.Run("a live before router goes back", func(t *testing.T) {
-		root := proxyRoot(t, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\"\n  }\n}\n")
-		lines := undoProxy(root, SettingsUndo{ProxyBefore: strPtr(kimiRouter)}, routerURL, []string{kimiRouter}, nil, ProxyOurs{})
-		assertLines(t, lines, "set HTTPS_PROXY back to "+kimiRouter)
+		lines := undoProxy(root, SettingsUndo{ProxyBefore: strPtr(routerURL)}, routerURL, nil, ProxyOurs{})
+		assertLines(t, lines, "removed HTTPS_PROXY ("+routerURL+")")
+		if _, ok := envString(t, root, "HTTPS_PROXY"); ok {
+			t.Fatal("HTTPS_PROXY survived")
+		}
 	})
 }
 
@@ -2108,9 +2104,9 @@ func TestClearProxy(t *testing.T) {
 		assertFile(t, path, content)
 	})
 
-	t.Run("takes a stale plugin-router base URL out with the keys", func(t *testing.T) {
+	t.Run("takes a stale router base URL out with the keys", func(t *testing.T) {
 		path := settingsFilePath(t)
-		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\",\n    \"ANTHROPIC_BASE_URL\": \""+kimiRouter+"\"\n  }\n}\n")
+		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"HTTPS_PROXY\": \""+routerURL+"\",\n    \"ANTHROPIC_BASE_URL\": \""+localURL+"\"\n  }\n}\n")
 
 		lines, err := ClearProxy(t.Context(), path, routerURL, nil, "provider-router")
 		if err != nil {
@@ -2118,7 +2114,7 @@ func TestClearProxy(t *testing.T) {
 		}
 		assertLines(t, lines,
 			"removed HTTPS_PROXY and NODE_EXTRA_CA_CERTS ("+routerURL+")",
-			"removed ANTHROPIC_BASE_URL ("+kimiRouter+")",
+			"removed ANTHROPIC_BASE_URL ("+localURL+")",
 		)
 		content, err := os.ReadFile(path)
 		if err != nil {
@@ -2161,7 +2157,7 @@ func TestCurrentProxySettingsReadsTheLowercaseProxyFirst(t *testing.T) {
 	if got.HTTPSProxy == nil || *got.HTTPSProxy != "http://proxy.corp:3128" {
 		t.Fatalf("HTTPSProxy = %v; want the lowercase value", got.HTTPSProxy)
 	}
-	if plan := domain.PlanProxy(got, routerURL, caPath, nil); plan.Kind != domain.ProxyPlanBaseURL {
+	if plan := domain.PlanProxy(got, routerURL, caPath); plan.Kind != domain.ProxyPlanBaseURL {
 		t.Fatalf("plan = %s; want base-url beside the user's own proxy", plan.Kind)
 	}
 }
@@ -2236,7 +2232,7 @@ func TestApplyProviderSettingsProxyMode(t *testing.T) {
 
 	t.Run("a plugin-router base URL is taken out: the proxy replaces it", func(t *testing.T) {
 		path := settingsFilePath(t)
-		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+kimiRouter+"\"\n  }\n}\n")
+		writeSettingsFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+routerURL+"\"\n  }\n}\n")
 
 		assertLines(t, proxyAppliedLines(t, path, proxyCADir(t), ApplyProviderOptions{}),
 			"added GLM 5.3 (glm-5.3) to /model",
@@ -2244,7 +2240,7 @@ func TestApplyProviderSettingsProxyMode(t *testing.T) {
 			"set GLM 5.3 default effort to xhigh",
 			"set GLM 5.3 Flash default effort to xhigh",
 			"pointed HTTPS_PROXY at "+routerURL,
-			"removed ANTHROPIC_BASE_URL ("+kimiRouter+")",
+			"removed ANTHROPIC_BASE_URL ("+routerURL+")",
 			"turned on MCP tool search",
 		)
 		env := proxyEnvIn(t, path)

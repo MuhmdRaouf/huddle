@@ -23,8 +23,8 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
-// routedEnv is the ANTHROPIC_BASE_URL of a session Claude Code routes through this plugin's router.
-const routedEnv = "http://127.0.0.1:18786"
+// routedEnv is the ANTHROPIC_BASE_URL of a session Claude Code routes through huddle-router.
+var routedEnv = fmt.Sprintf("http://127.0.0.1:%d", domain.HuddleRouterPort)
 
 const retiredLine = "retired (pid 4242): keeps Claude working in open sessions, exits when they close"
 
@@ -89,7 +89,7 @@ func newHarness(t *testing.T, env map[string]string) *harness {
 		env:       env,
 		out:       &fakes.RecordingOutput{},
 		key:       ports.ProviderKey{Value: "test-key", Source: "ZAI_API_KEY"},
-		router:    "running on http://127.0.0.1:18787 (pid 4242)",
+		router:    "running on " + routedEnv + " (pid 4242)",
 		routerKey: "ZAI_API_KEY",
 		retired:   retiredLine,
 	}
@@ -329,7 +329,7 @@ func TestModelsReportLine(t *testing.T) {
 }
 
 func TestApplyRouting(t *testing.T) {
-	t.Run("starts the router, announces it in the registry, merges settings and rewrites the agents", func(t *testing.T) {
+	t.Run("starts the router, merges settings and rewrites the agents", func(t *testing.T) {
 		h := newHarness(t, nil)
 
 		applied := cli.ApplyRouting(context.Background(), h.deps())
@@ -340,20 +340,6 @@ func TestApplyRouting(t *testing.T) {
 		if h.ensureCalls != 1 {
 			t.Fatalf("ensureCalls = %d, want 1", h.ensureCalls)
 		}
-		registryRaw, err := os.ReadFile(filepath.Join(h.root, "routers", "zai.json"))
-		if err != nil {
-			t.Fatalf("read registry entry: %v", err)
-		}
-		var registry map[string]any
-		if err := json.Unmarshal(registryRaw, &registry); err != nil {
-			t.Fatalf("parse registry entry: %v", err)
-		}
-		if registry["name"] != "zai" || registry["port"] != float64(18787) {
-			t.Fatalf("registry entry = %v, want zai on 18787", registry)
-		}
-		if got, want := registry["catalogIds"], []any{"glm-5.3", "glm-5.3-flash"}; !reflect.DeepEqual(got, want) {
-			t.Fatalf("catalogIds = %v, want %v", got, want)
-		}
 		caPath, _ := envOf(t, settingsOf(t, h))["NODE_EXTRA_CA_CERTS"].(string)
 		want := jsonValue(t, fmt.Sprintf(`{
 			"modelPicker": {
@@ -362,13 +348,13 @@ func TestApplyRouting(t *testing.T) {
 					{"model": "glm-5.3-flash", "label": "GLM 5.3 Flash", "behavesAs": "claude-opus-5-5"}
 				]
 			},
-			"env": {"HTTPS_PROXY": "http://127.0.0.1:18786", "NODE_EXTRA_CA_CERTS": %q,
+			"env": {"HTTPS_PROXY": %q, "NODE_EXTRA_CA_CERTS": %q,
 				"NO_PROXY": "localhost,127.0.0.1", "ENABLE_TOOL_SEARCH": "true"},
 			"modelSettings": {
 				"glm-5.3": {"effortLevel": "xhigh"},
 				"glm-5.3-flash": {"effortLevel": "xhigh"}
 			}
-		}`, caPath))
+		}`, routedEnv, caPath))
 		if got := settingsOf(t, h); !reflect.DeepEqual(got, want) {
 			t.Fatalf("settings = %v, want %v", got, want)
 		}
@@ -414,14 +400,15 @@ func TestApplyRouting(t *testing.T) {
 		}
 	})
 
-	t.Run("takes a pre-existing plugin-router base URL out when proxy mode takes over", func(t *testing.T) {
+	t.Run("takes a stale router base URL out when proxy mode takes over", func(t *testing.T) {
 		h := newHarness(t, nil)
 		ctx := context.Background()
 		if err := os.MkdirAll(filepath.Dir(h.deps().SettingsPath), 0o755); err != nil {
 			t.Fatalf("mkdir settings dir: %v", err)
 		}
+		stale := fmt.Sprintf(`{"env":{"ANTHROPIC_BASE_URL":"http://localhost:%d"}}`, domain.HuddleRouterPort)
 		if err := os.WriteFile(h.deps().SettingsPath,
-			[]byte(`{"env":{"ANTHROPIC_BASE_URL":"http://127.0.0.1:18788"}}`), 0o644); err != nil {
+			[]byte(stale), 0o644); err != nil {
 			t.Fatalf("write settings: %v", err)
 		}
 
@@ -432,7 +419,7 @@ func TestApplyRouting(t *testing.T) {
 		}
 		env := envOf(t, settingsOf(t, h))
 		if _, has := env["ANTHROPIC_BASE_URL"]; has {
-			t.Fatal("the plugin-router base URL survived proxy mode")
+			t.Fatal("the stale router base URL survived proxy mode")
 		}
 		if got := env["HTTPS_PROXY"]; got != routedEnv {
 			t.Fatalf("HTTPS_PROXY = %v, want %q", got, routedEnv)

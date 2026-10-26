@@ -6,7 +6,10 @@ package netproxy
 import (
 	"net/url"
 	"reflect"
+	"strconv"
 	"testing"
+
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 func mustURL(t *testing.T, raw string) *url.URL {
@@ -116,13 +119,14 @@ func TestProxyEnvironment(t *testing.T) {
 				t.Errorf("ProxyFor(%v) = %v, want none", env, proxy)
 			}
 		}
-		// A proxy naming a plugin router is no proxy: routing the router's own upstream through
+		// A proxy naming huddle-router is no proxy: routing the router's own upstream through
 		// the router is a loop.
+		routerAddr := "127.0.0.1:" + strconv.Itoa(domain.HuddleRouterPort)
 		for _, env := range []Env{
-			{"HTTPS_PROXY": "http://127.0.0.1:18787"},
-			{"https_proxy": "http://127.0.0.1:18787"},
-			{"HTTPS_PROXY": "127.0.0.1:18788"},
-			{"HTTP_PROXY": "http://localhost:18790"},
+			{"HTTPS_PROXY": "http://" + routerAddr},
+			{"https_proxy": "http://" + routerAddr},
+			{"HTTPS_PROXY": routerAddr},
+			{"HTTP_PROXY": "http://localhost:" + strconv.Itoa(domain.HuddleRouterPort)},
 		} {
 			if proxy, ok := ProxyFor(https, env); ok {
 				t.Errorf("ProxyFor(%v) = %v, want none", env, proxy)
@@ -130,6 +134,10 @@ func TestProxyEnvironment(t *testing.T) {
 			if proxy, ok := ProxyFor(plain, env); ok {
 				t.Errorf("ProxyFor(%v) = %v, want none", env, proxy)
 			}
+		}
+		// A loopback proxy at any other address is the user's own and is kept.
+		if proxy, ok := ProxyFor(https, Env{"HTTPS_PROXY": "http://127.0.0.1:20999"}); !ok || proxy.String() != "http://127.0.0.1:20999" {
+			t.Errorf("ProxyFor(the user's own loopback proxy) = %v, %v, want it kept", proxy, ok)
 		}
 		if proxy, ok := ProxyFor(https, Env{"HTTPS_PROXY": "http://proxy.corp:3128"}); !ok || proxy.String() != "http://proxy.corp:3128" {
 			t.Errorf("ProxyFor(corporate proxy) = %v, %v, want http://proxy.corp:3128", proxy, ok)

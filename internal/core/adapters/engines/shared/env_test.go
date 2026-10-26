@@ -2,6 +2,7 @@ package shared
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -21,7 +22,7 @@ func TestToolEnv(t *testing.T) {
 			"TOOL_CONFIG":                    "/home/user/.tool",
 			"ACME_API_KEY":                   "plugin-key",
 			"ACME_BASE_URL":                  "https://acme.test",
-			"ANTHROPIC_BASE_URL":             "http://127.0.0.1:18800",
+			"ANTHROPIC_BASE_URL":             "http://127.0.0.1:20999",
 			"ANTHROPIC_DEFAULT_SONNET_MODEL": "big-9",
 			"CLAUDE_PLUGIN_ROOT":             "/plugins/acme",
 			"CLAUDECODE":                     "1",
@@ -47,12 +48,14 @@ func TestToolEnv(t *testing.T) {
 		}
 	})
 
-	t.Run("withholds a proxy that names a plugin router and the CA set for it, keeps a corporate proxy and its CA", func(t *testing.T) {
+	t.Run("withholds a proxy that names huddle-router and the CA set for it, keeps a corporate proxy and its CA", func(t *testing.T) {
+		routerProxy := "http://127.0.0.1:" + strconv.Itoa(domain.HuddleRouterPort)
+		localProxy := "http://localhost:" + strconv.Itoa(domain.HuddleRouterPort)
 		cases := []domain.EnvLookup{
-			{"HTTPS_PROXY": "http://127.0.0.1:18787"},
-			{"https_proxy": "http://127.0.0.1:18787"},
-			{"HTTP_PROXY": "http://localhost:18790"},
-			{"HTTPS_PROXY": "localhost:18790"},
+			{"HTTPS_PROXY": routerProxy},
+			{"https_proxy": routerProxy},
+			{"HTTP_PROXY": localProxy},
+			{"HTTPS_PROXY": "localhost:" + strconv.Itoa(domain.HuddleRouterPort)},
 		}
 		for _, parent := range cases {
 			parent["NODE_EXTRA_CA_CERTS"] = "/ca.pem"
@@ -71,6 +74,11 @@ func TestToolEnv(t *testing.T) {
 		}, nil, withheld, reserved)
 		if env["HTTPS_PROXY"] != "http://proxy.corp:3128" || env["NODE_EXTRA_CA_CERTS"] != "/ca.pem" {
 			t.Errorf("ToolEnv dropped a corporate proxy or its CA: %v", env)
+		}
+		// A loopback proxy at any other address is the user's own and stays.
+		env = ToolEnv(domain.EnvLookup{"HTTPS_PROXY": "http://127.0.0.1:20999"}, nil, withheld, reserved)
+		if env["HTTPS_PROXY"] != "http://127.0.0.1:20999" {
+			t.Errorf("ToolEnv dropped the user's own loopback proxy: %v", env)
 		}
 	})
 

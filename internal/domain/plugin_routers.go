@@ -1,6 +1,6 @@
-// The five provider plugins' routers as any of them sees the others: where each listens, and what `setup` may do with
-// Claude Code's ANTHROPIC_BASE_URL given where it points now. Pure: no I/O, so the settings merge, the router and the
-// setup report share one answer.
+// The one router of ours, huddle-router, at its canonical address: what `setup` may do with Claude Code's
+// ANTHROPIC_BASE_URL and the proxy keys given where they point. Pure: no I/O, so the settings merge, the router and
+// the setup report share one answer.
 package domain
 
 import (
@@ -11,17 +11,11 @@ import (
 	"strings"
 )
 
-// PluginRouters maps every router of ours — huddle-router and the five 0.0.1 plugins' ports —
-// to its name, so a settings value can be told from the user's own proxy and one plugin can tell
-// another's router from its own. The 0.0.1 ports stay recognised so settings left pointing there
-// are still moved on setup and cleared on remove.
+// PluginRouters maps huddle-router's canonical address to its name, so a settings value can be
+// told from the user's own proxy. A `HUDDLE_ROUTER_PORT` override moves the router off that
+// address; ProxyIsThisRouter is the helper that claims the router wherever it serves.
 var PluginRouters = map[int64]string{
 	HuddleRouterPort: "huddle-router",
-	18787:            "zai",
-	18788:            "kimi",
-	18789:            "deepseek",
-	18790:            "minimax",
-	18791:            "qwen",
 }
 
 // schemeDefaultPort lists the ports a WHATWG URL drops as the scheme's default; new URL("https://x:443/") has none.
@@ -65,8 +59,8 @@ func IsLoopback(hostname string) bool {
 	return hostname == "localhost" || hostname == "::1" || strings.HasPrefix(hostname, "127.")
 }
 
-// IsPluginRouterURL reports whether the URL is one of the five plugin routers (loopback host, known port) — the only
-// base URL setup may replace. Anything else is the user's own proxy.
+// IsPluginRouterURL reports whether the URL is huddle-router's canonical address (loopback host, canonical port) — the
+// only base URL setup may replace. Anything else is the user's own proxy.
 func IsPluginRouterURL(rawURL string) bool {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed.Scheme == "" {
@@ -75,9 +69,9 @@ func IsPluginRouterURL(rawURL string) bool {
 	return IsLoopback(urlHostname(parsed)) && PluginRouters[routerPortOf(parsed)] != ""
 }
 
-// IsPluginRouterProxy reports whether a proxy variable's value names one of the five plugin routers, adding `http://`
-// when the value has no scheme the way a proxy URL is read. Proxy mode must not hand such a proxy on: a process
-// sending its own upstream requests through the router loops back into itself.
+// IsPluginRouterProxy reports whether a proxy variable's value names huddle-router's canonical address, adding
+// `http://` when the value has no scheme the way a proxy URL is read. Proxy mode must not hand such a proxy on: a
+// process sending its own upstream requests through the router loops back into itself.
 func IsPluginRouterProxy(raw string) bool {
 	if !strings.Contains(raw, "://") {
 		raw = "http://" + raw
@@ -89,8 +83,8 @@ func IsPluginRouterProxy(raw string) bool {
 // must not chain through a router drops these when their value names one.
 var ProxyEnvVars = []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"}
 
-// IsRouterProxy reports whether a proxy variable's value names a router of ours: one on the known
-// ports, or this router on its own port — loopback host, whatever port that is (the
+// IsRouterProxy reports whether a proxy variable's value names huddle-router: its canonical
+// address, or this router on its own port — loopback host, whatever port that is (the
 // `HUDDLE_ROUTER_PORT` override moves it). A process sending its own upstream requests through a
 // router chains routers; spawns and the daemon's engine environment use this to go direct.
 func IsRouterProxy(raw string, ownPort int64) bool {
@@ -137,36 +131,26 @@ type BaseUrlPlan struct {
 // KeptPrefix is the report line of a plan that changed nothing: a note, not a change (the hook stays silent about it).
 const KeptPrefix = "kept "
 
-// PlanBaseUrl applies: point it at this plugin's router when unset or at a plugin router that is down; a live plugin
-// router keeps it (every plugin's router serves every plugin's models, so there is nothing to win by moving it, and
-// five hooks moving it back and forth is what this prevents); anything else is the user's own proxy, kept and
-// reported.
-func PlanBaseUrl(current *string, routerURL string, livePluginURLs []string) BaseUrlPlan {
+// PlanBaseUrl applies: point it at this router when unset or at huddle-router's canonical
+// address; a `HUDDLE_ROUTER_PORT` override moves the router off that address and the plan reports
+// the move; anything else is the user's own proxy, kept and reported.
+func PlanBaseUrl(current *string, routerURL string) BaseUrlPlan {
 	if current == nil {
 		return setBaseUrlPlan(routerURL, fmt.Sprintf("pointed ANTHROPIC_BASE_URL at %s", routerURL))
 	}
 	if *current == routerURL {
 		return BaseUrlPlan{Kind: BaseUrlPlanKeep}
 	}
-	other := ""
 	if IsPluginRouterURL(*current) {
-		other = PluginRouters[PortOf(*current)]
-	}
-	if other != "" && pluginURLIsLive(livePluginURLs, *current) {
-		return BaseUrlPlan{Kind: BaseUrlPlanKeep}
-	}
-	if other != "" {
-		return setBaseUrlPlan(routerURL, fmt.Sprintf(
-			"moved ANTHROPIC_BASE_URL from the %s plugin's router (%s, not running) to %s",
-			other, *current, routerURL))
+		return setBaseUrlPlan(routerURL, fmt.Sprintf("moved ANTHROPIC_BASE_URL from %s to %s", *current, routerURL))
 	}
 	note := fmt.Sprintf("%sANTHROPIC_BASE_URL (%s): your own proxy", KeptPrefix, *current)
 	return BaseUrlPlan{Kind: BaseUrlPlanKeep, Report: &note}
 }
 
-// PlanBaseUrlRemoval clears: take it out when it names a router of ours — huddle-router or one
-// of the 0.0.1 ports — and no other provider is still enabled; while one is, the router is
-// shared and the plan keeps silently. A URL that is not one of ours is not ours to touch.
+// PlanBaseUrlRemoval clears: take it out when it names huddle-router — the address this setup
+// writes, or the canonical one — and no other provider is still enabled; while one is, the router
+// is shared and the plan keeps silently. A URL that is not one of ours is not ours to touch.
 func PlanBaseUrlRemoval(current *string, routerURL string, othersEnabled []string) BaseUrlPlan {
 	if current == nil || (*current != routerURL && !IsPluginRouterURL(*current)) {
 		return BaseUrlPlan{Kind: BaseUrlPlanKeep}
@@ -180,15 +164,6 @@ func PlanBaseUrlRemoval(current *string, routerURL string, othersEnabled []strin
 
 func setBaseUrlPlan(routerURL string, report string) BaseUrlPlan {
 	return BaseUrlPlan{Kind: BaseUrlPlanSet, URL: routerURL, Report: &report}
-}
-
-func pluginURLIsLive(livePluginURLs []string, want string) bool {
-	for _, live := range livePluginURLs {
-		if live == want {
-			return true
-		}
-	}
-	return false
 }
 
 // ── proxy mode ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -227,31 +202,12 @@ type ProxyPlan struct {
 	Proxy   string
 	CA      string
 	NoProxy string
-	// RemoveBaseURL takes a plugin router's ANTHROPIC_BASE_URL out on the way: proxy mode
+	// RemoveBaseURL takes huddle-router's ANTHROPIC_BASE_URL out on the way: proxy mode
 	// replaces it.
 	RemoveBaseURL bool
 	// Report is the change to report; a keep that changed nothing has none (a note, not a change:
 	// the hook stays silent about it).
 	Report *string
-}
-
-// ProxyRouterName is the plugin whose router a proxy variable's value names (a missing scheme is
-// added the way a proxy URL is read), "" when it names none of the five.
-func ProxyRouterName(raw string) string {
-	if !IsPluginRouterProxy(raw) {
-		return ""
-	}
-	return PluginRouters[PortOf(proxyURL(raw))]
-}
-
-// ProxyRouterIsLive is whether any of the live plugin router URLs belongs to that plugin.
-func ProxyRouterIsLive(livePluginURLs []string, name string) bool {
-	for _, url := range livePluginURLs {
-		if PluginRouters[PortOf(url)] == name {
-			return true
-		}
-	}
-	return false
 }
 
 // proxyURL adds the scheme a proxy URL without one reads with.
@@ -263,8 +219,8 @@ func proxyURL(raw string) string {
 }
 
 // ProxyIsThisRouter is whether a proxy variable's value points at this router: its loopback host
-// with this router's port, whatever port that is (the `${P}_ROUTER_PORT` override moves the router
-// off the five canonical ones, and a router of ours there is still ours).
+// with this router's port, whatever port that is (the `HUDDLE_ROUTER_PORT` override moves the
+// router off its canonical address, and the router there is still ours).
 func ProxyIsThisRouter(raw, routerURL string) bool {
 	port := PortOf(routerURL)
 	if port == -1 {
@@ -275,18 +231,17 @@ func ProxyIsThisRouter(raw, routerURL string) bool {
 }
 
 // PlanProxy decides the proxy keys the way PlanBaseUrl decides the base URL: point them at this
-// router when unset or at a plugin router that is down; a live plugin router's keys stay (five
-// hooks moving them back and forth is what this prevents); the user's own proxy or CA is never
-// touched and the plan falls back to base-URL mode instead.
-func PlanProxy(env ProxySettings, routerURL, caPath string, livePluginURLs []string) ProxyPlan {
-	if env.HTTPSProxy != nil && !ProxyIsThisRouter(*env.HTTPSProxy, routerURL) && ProxyRouterName(*env.HTTPSProxy) == "" {
+// router when unset or at huddle-router's canonical address; a `HUDDLE_ROUTER_PORT` override
+// moves the router, and a proxy naming the canonical address moves with it; the user's own proxy
+// or CA is never touched and the plan falls back to base-URL mode instead.
+func PlanProxy(env ProxySettings, routerURL, caPath string) ProxyPlan {
+	if env.HTTPSProxy != nil && !ProxyIsThisRouter(*env.HTTPSProxy, routerURL) && !IsPluginRouterProxy(*env.HTTPSProxy) {
 		note := ownProxyNote
 		return ProxyPlan{Kind: ProxyPlanBaseURL, Report: &note}
 	}
 	ours := env.HTTPSProxy != nil && ProxyIsThisRouter(*env.HTTPSProxy, routerURL)
 	// A CA we did not write is only in the way when this plan would have to own it: next to this
-	// router a foreign CA cannot reach it, while next to another live plugin router it rides along
-	// with that one.
+	// router a foreign CA cannot reach it.
 	if env.CA != nil && *env.CA != caPath && (env.HTTPSProxy == nil || ours) {
 		note := ownProxyNote
 		return ProxyPlan{Kind: ProxyPlanBaseURL, Report: &note}
@@ -298,7 +253,7 @@ func PlanProxy(env ProxySettings, routerURL, caPath string, livePluginURLs []str
 		report := fmt.Sprintf("pointed HTTPS_PROXY at %s", routerURL)
 		return ProxyPlan{Kind: ProxyPlanSet, Proxy: routerURL, CA: caPath, NoProxy: noProxy,
 			RemoveBaseURL: staleBaseURL, Report: &report}
-	case ours || ProxyRouterIsLive(livePluginURLs, ProxyRouterName(*env.HTTPSProxy)):
+	case ours:
 		plan := ProxyPlan{Kind: ProxyPlanKeep, RemoveBaseURL: staleBaseURL}
 		// A NO_PROXY the user never set is not ours to start on a keep; their own list gets the
 		// loopback entries it lacks.
@@ -308,17 +263,15 @@ func PlanProxy(env ProxySettings, routerURL, caPath string, livePluginURLs []str
 		}
 		return plan
 	default:
-		name := ProxyRouterName(*env.HTTPSProxy)
-		report := fmt.Sprintf("moved HTTPS_PROXY from the %s plugin's router (%s, not running) to %s",
-			name, *env.HTTPSProxy, routerURL)
+		report := fmt.Sprintf("moved HTTPS_PROXY from %s to %s", *env.HTTPSProxy, routerURL)
 		return ProxyPlan{Kind: ProxyPlanSet, Proxy: routerURL, CA: caPath, NoProxy: noProxy,
 			RemoveBaseURL: staleBaseURL, Report: &report}
 	}
 }
 
 // PlanProxyRemoval clears: take the proxy and CA out when HTTPS_PROXY names a router of ours —
-// huddle-router, one of the 0.0.1 ports, or this router on its port override — and no other
-// provider is still enabled; while one is, the proxy is shared and the plan keeps silently.
+// huddle-router's canonical address or this router on its `HUDDLE_ROUTER_PORT` override — and no
+// other provider is still enabled; while one is, the proxy is shared and the plan keeps silently.
 // Anything else is not ours to touch.
 func PlanProxyRemoval(env ProxySettings, routerURL string, othersEnabled []string) ProxyPlan {
 	if env.HTTPSProxy == nil || !proxyIsOurs(*env.HTTPSProxy, routerURL) {
@@ -333,8 +286,8 @@ func PlanProxyRemoval(env ProxySettings, routerURL string, othersEnabled []strin
 }
 
 // proxyIsOurs is whether an HTTPS_PROXY value names a router of ours: this router (its loopback
-// host with its port, whatever override moved it), or any of the ports a 0.0.1 install left
-// behind.
+// host with its port, whatever override moved it), or huddle-router's canonical address in any
+// spelling.
 func proxyIsOurs(proxy, routerURL string) bool {
 	return ProxyIsThisRouter(proxy, routerURL) || IsPluginRouterProxy(proxy)
 }

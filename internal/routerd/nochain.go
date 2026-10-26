@@ -1,7 +1,7 @@
 // The no-chain rule: a router never routes upstream through a router. The daemon's engine
-// environment drops every proxy variable that names one — one on the known ports, this router
-// on its own port, or any loopback proxy that answers a router health path — and keeps the
-// rest, so the user's own proxy survives.
+// environment drops every proxy variable that names one — this router at huddle-router's
+// canonical address or on its own port, or any loopback proxy that answers a router health
+// path — and keeps the rest, so the user's own proxy survives.
 package routerd
 
 import (

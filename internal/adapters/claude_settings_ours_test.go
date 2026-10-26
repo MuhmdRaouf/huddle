@@ -98,7 +98,7 @@ func TestTheUndoTakesItsOwnValuesOutOfALedger(t *testing.T) {
 			ProxyBefore:   nil,
 			CABefore:      strPtr(caPath),
 			NoProxyBefore: strPtr("localhost,127.0.0.1"),
-		}, routerURL, nil, nil, ours)
+		}, routerURL, nil, ours)
 		if err != nil {
 			t.Fatalf("UndoProviderSettings: %v", err)
 		}
@@ -122,7 +122,7 @@ func TestTheUndoTakesItsOwnValuesOutOfALedger(t *testing.T) {
 			ProxyBefore:   nil,
 			CABefore:      strPtr("/etc/ssl/company.pem"),
 			NoProxyBefore: strPtr("corp.example,localhost"),
-		}, routerURL, nil, nil, ours)
+		}, routerURL, nil, ours)
 		if err != nil {
 			t.Fatalf("UndoProviderSettings: %v", err)
 		}

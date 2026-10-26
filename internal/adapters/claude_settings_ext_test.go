@@ -18,10 +18,9 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
-const (
-	extRouter     = "http://127.0.0.1:18787"
-	extKimiRouter = "http://127.0.0.1:18788"
-	extAcmeRouter = "http://127.0.0.1:18800"
+var (
+	extRouter   = fmt.Sprintf("http://127.0.0.1:%d", domain.HuddleRouterPort)
+	extLocalURL = fmt.Sprintf("http://localhost:%d", domain.HuddleRouterPort)
 )
 
 // The two catalog rows setup writes, and the modelSettings it sets, as they land in the file.
@@ -130,25 +129,25 @@ func extDeltaAsUndo(delta adapters.SettingsDelta) adapters.SettingsUndo {
 }
 
 func TestTheBaseURLPlan(t *testing.T) {
-	t.Run("sets when unset, keeps when already ours, moves from another plugin router", func(t *testing.T) {
-		set := domain.PlanBaseUrl(nil, extRouter, nil)
+	t.Run("sets when unset, keeps when already ours, moves the canonical address's other spelling", func(t *testing.T) {
+		set := domain.PlanBaseUrl(nil, extRouter)
 		if set.Kind != domain.BaseUrlPlanSet || set.URL != extRouter {
 			t.Fatalf("planBaseUrl(unset) = %+v, want a set at the router", set)
 		}
-		if got := domain.PlanBaseUrl(extStrPtr(extRouter), extRouter, nil); got.Kind != domain.BaseUrlPlanKeep {
+		if got := domain.PlanBaseUrl(extStrPtr(extRouter), extRouter); got.Kind != domain.BaseUrlPlanKeep {
 			t.Fatalf("planBaseUrl(ours) = %+v, want a keep", got)
 		}
-		moved := domain.PlanBaseUrl(extStrPtr(extKimiRouter), extRouter, nil)
+		moved := domain.PlanBaseUrl(extStrPtr(extLocalURL), extRouter)
 		if moved.Kind != domain.BaseUrlPlanSet || moved.URL != extRouter {
-			t.Fatalf("planBaseUrl(kimi's) = %+v, want a set at the router", moved)
+			t.Fatalf("planBaseUrl(local spelling) = %+v, want a set at the router", moved)
 		}
-		if moved.Report == nil || !strings.Contains(*moved.Report, "kimi") {
-			t.Fatalf("the move's report = %v, want it to name kimi", moved.Report)
+		if moved.Report == nil || !strings.Contains(*moved.Report, "moved ANTHROPIC_BASE_URL from") {
+			t.Fatalf("the move's report = %v, want it to name the move", moved.Report)
 		}
 	})
 
 	t.Run("keeps and reports anything else as the user's own proxy", func(t *testing.T) {
-		plan := domain.PlanBaseUrl(extStrPtr("https://proxy.example"), extRouter, nil)
+		plan := domain.PlanBaseUrl(extStrPtr("https://proxy.example"), extRouter)
 		if plan.Kind != domain.BaseUrlPlanKeep {
 			t.Fatalf("plan = %+v, want a keep", plan)
 		}
@@ -167,16 +166,6 @@ func TestTheBaseURLPlan(t *testing.T) {
 		}
 		if got := domain.PlanBaseUrlRemoval(extStrPtr("https://proxy.example"), extRouter, nil); got.Kind != domain.BaseUrlPlanKeep {
 			t.Fatalf("planBaseUrlRemoval(foreign) = %+v, want a keep", got)
-		}
-	})
-
-	t.Run("does not move the base URL from a live plugin router, and says a dead one was not running", func(t *testing.T) {
-		if got := domain.PlanBaseUrl(extStrPtr(extKimiRouter), extRouter, []string{extKimiRouter}); got.Kind != domain.BaseUrlPlanKeep || got.Report != nil {
-			t.Fatalf("planBaseUrl(kimi live) = %+v, want a silent keep", got)
-		}
-		dead := domain.PlanBaseUrl(extStrPtr(extKimiRouter), extRouter, nil)
-		if dead.Kind != domain.BaseUrlPlanSet || dead.Report == nil || !strings.Contains(*dead.Report, "not running") {
-			t.Fatalf("planBaseUrl(kimi dead) = %+v, want a set that says the old one was not running", dead)
 		}
 	})
 }
@@ -372,7 +361,7 @@ func TestApplyProviderSettingsTS(t *testing.T) {
 `)
 
 		plain := extSettingsPath(t)
-		if _, err := adapters.ApplyProviderSettings(t.Context(), plain, testkit.AcmeProvider, extAcmeRouter, adapters.ApplyProviderOptions{}); err != nil {
+		if _, err := adapters.ApplyProviderSettings(t.Context(), plain, testkit.AcmeProvider, extRouter, adapters.ApplyProviderOptions{}); err != nil {
 			t.Fatal(err)
 		}
 		extAssertFile(t, plain, `{
@@ -389,24 +378,27 @@ func TestApplyProviderSettingsTS(t *testing.T) {
     ]
   },
   "env": {
-    "ANTHROPIC_BASE_URL": "`+extAcmeRouter+`",
+    "ANTHROPIC_BASE_URL": "`+extRouter+`",
     "ENABLE_TOOL_SEARCH": "true"
   }
 }
 `)
 	})
 
-	t.Run("sets ENABLE_TOOL_SEARCH when it points the base URL at the router, but never over a value the user set", func(t *testing.T) {
+	t.Run("never touches a base URL or a tool-search value the user set", func(t *testing.T) {
 		path := extSettingsPath(t)
 		extWriteJSON(t, path, `{
   "env": {
-    "ANTHROPIC_BASE_URL": "`+extKimiRouter+`",
+    "ANTHROPIC_BASE_URL": "https://relay.example/v1",
     "ENABLE_TOOL_SEARCH": "false"
   }
 }
 `)
-		_, delta := extApply(t, path, nil)
-		extAssertFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+extRouter+"\",\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  },\n"+
+		lines, delta := extApply(t, path, nil)
+		if !strings.Contains(lines[len(lines)-1], "your own proxy") || slices.Contains(lines, "turned on MCP tool search") {
+			t.Fatalf("lines = %#v; want the user's base URL kept and no tool search set", lines)
+		}
+		extAssertFile(t, path, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \"https://relay.example/v1\",\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  },\n"+
 			extReferenceOptions+",\n"+extReferenceEfforts+"\n}\n")
 		if delta.CreatedToolSearch {
 			t.Fatal("the delta claims setup created the tool-search value the user had set")
@@ -525,7 +517,7 @@ func TestTheUninstallUndoOfSettings(t *testing.T) {
 			"      {\n        \"model\": \"glm-5.3-flash\",\n        \"label\": \"GLM 5.3 Flash\",\n        \"behavesAs\": \"claude-opus-5-5\"\n      },\n"+
 			"      {\n        \"model\": \"mine\",\n        \"label\": \"Mine\"\n      }\n    ]\n  },\n"+
 			extReferenceEfforts+",\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+extRouter+"\",\n    \"ENABLE_TOOL_SEARCH\": \"true\"\n  }\n}\n")
-		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil, nil, adapters.ProxyOurs{})
+		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil, adapters.ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -543,7 +535,7 @@ func TestTheUninstallUndoOfSettings(t *testing.T) {
 			OptionsAdded:      []string{},
 			AvailableAppended: []string{"glm-5.3"},
 			EffortsAdded:      adapters.NewStringMap(),
-		}, extRouter, nil, nil, adapters.ProxyOurs{}); err != nil {
+		}, extRouter, nil, adapters.ProxyOurs{}); err != nil {
 			t.Fatal(err)
 		}
 		extAssertFile(t, path, untouched)
@@ -554,7 +546,7 @@ func TestTheUninstallUndoOfSettings(t *testing.T) {
 			AvailableAppended:  []string{"glm-5.3"},
 			CreatedModelPicker: true,
 			EffortsAdded:       adapters.NewStringMap(),
-		}, extRouter, nil, nil, adapters.ProxyOurs{}); err != nil {
+		}, extRouter, nil, adapters.ProxyOurs{}); err != nil {
 			t.Fatal(err)
 		}
 		extAssertFile(t, path, "{\n  \"availableModels\": [\n    \"sonnet\"\n  ],\n  \"modelPicker\": {\n    \"options\": \"odd\"\n  }\n}\n")
@@ -563,7 +555,7 @@ func TestTheUninstallUndoOfSettings(t *testing.T) {
 	t.Run("takes ENABLE_TOOL_SEARCH and the behaving-as rows back out when setup added them, and keeps a value the user set", func(t *testing.T) {
 		path := extSettingsPath(t)
 		_, delta := extApply(t, path, nil)
-		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil, nil, adapters.ProxyOurs{})
+		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil, adapters.ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -573,14 +565,17 @@ func TestTheUninstallUndoOfSettings(t *testing.T) {
 		extAssertFile(t, path, "{}\n")
 
 		user := extSettingsPath(t)
-		extWriteJSON(t, user, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+extKimiRouter+"\",\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  }\n}\n")
+		extWriteJSON(t, user, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \"https://relay.example/v1\",\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  }\n}\n")
 		_, userDelta := extApply(t, user, nil)
-		extAssertFile(t, user, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+extRouter+"\",\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  },\n"+
+		extAssertFile(t, user, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \"https://relay.example/v1\",\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  },\n"+
 			extReferenceOptions+",\n"+extReferenceEfforts+"\n}\n")
-		if _, err := adapters.UndoProviderSettings(t.Context(), user, "zai", extDeltaAsUndo(userDelta), extRouter, nil, nil, adapters.ProxyOurs{}); err != nil {
+		if userDelta.CreatedToolSearch {
+			t.Fatal("the delta claims setup created the tool-search value the user had set")
+		}
+		if _, err := adapters.UndoProviderSettings(t.Context(), user, "zai", extDeltaAsUndo(userDelta), extRouter, nil, adapters.ProxyOurs{}); err != nil {
 			t.Fatal(err)
 		}
-		extAssertFile(t, user, "{\n  \"env\": {\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  }\n}\n")
+		extAssertFile(t, user, "{\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \"https://relay.example/v1\",\n    \"ENABLE_TOOL_SEARCH\": \"false\"\n  }\n}\n")
 	})
 }
 
@@ -598,7 +593,7 @@ func TestTheModelSettingsEffortLevels(t *testing.T) {
 		if delta.EffortsAdded.Len() != 0 {
 			t.Fatalf("delta efforts = %v, want none", delta.EffortsAdded.Keys())
 		}
-		if _, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil, nil, adapters.ProxyOurs{}); err != nil {
+		if _, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil, adapters.ProxyOurs{}); err != nil {
 			t.Fatal(err)
 		}
 		extAssertFile(t, path, "{\n  \"modelSettings\": {\n    \"glm-5.3\": {\n      \"effortLevel\": \"low\"\n    },\n    \"glm-5.3-flash\": {\n      \"effortLevel\": \"medium\"\n    }\n  }\n}\n")
@@ -614,7 +609,7 @@ func TestTheModelSettingsEffortLevels(t *testing.T) {
 			"    \"glm-5.3-flash\": {\n      \"effortLevel\": \"xhigh\"\n    },\n    \"mine\": {\n      \"effortLevel\": \"high\"\n    }\n  },\n"+
 			"  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \""+extRouter+"\",\n    \"ENABLE_TOOL_SEARCH\": \"true\"\n  }\n}\n")
 
-		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil, nil, adapters.ProxyOurs{})
+		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", extDeltaAsUndo(delta), extRouter, nil, adapters.ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -722,7 +717,7 @@ func TestTheUpgradeOfAnOlderSettings(t *testing.T) {
 		previous := extOldUndo()
 		undo := router.MergeSettingsUndo(&previous, &delta)
 
-		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", undo, extRouter, nil, nil, adapters.ProxyOurs{})
+		lines, err := adapters.UndoProviderSettings(t.Context(), path, "zai", undo, extRouter, nil, adapters.ProxyOurs{})
 		if err != nil {
 			t.Fatal(err)
 		}

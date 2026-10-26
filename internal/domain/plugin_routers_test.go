@@ -1,16 +1,24 @@
 package domain
 
-import "testing"
+import (
+	"fmt"
+	"strconv"
+	"testing"
+)
+
+// The router's canonical address, built from the constant so no test holds the literal port the
+// owner's live router answers on. canonicalLoopback is the same address in its localhost
+// spelling; overrideURL is the router moved off it by a `HUDDLE_ROUTER_PORT` override, on a port
+// outside the reserved range.
+var (
+	canonicalURL      = fmt.Sprintf("http://127.0.0.1:%d", HuddleRouterPort)
+	canonicalLoopback = fmt.Sprintf("http://localhost:%d", HuddleRouterPort)
+	canonicalPort     = strconv.Itoa(HuddleRouterPort)
+	overrideURL       = "http://127.0.0.1:26244"
+)
 
 func TestPluginRouters(t *testing.T) {
-	want := map[int64]string{
-		18786: "huddle-router",
-		18787: "zai",
-		18788: "kimi",
-		18789: "deepseek",
-		18790: "minimax",
-		18791: "qwen",
-	}
+	want := map[int64]string{HuddleRouterPort: "huddle-router"}
 	if len(PluginRouters) != len(want) {
 		t.Fatalf("PluginRouters has %d entries, want %d", len(PluginRouters), len(want))
 	}
@@ -26,9 +34,9 @@ func TestPortOf(t *testing.T) {
 		url  string
 		want int64
 	}{
-		{"http://localhost:18787/", 18787},
-		{"http://127.0.0.1:18791/x", 18791},
-		{"http://LOCALHOST:18788", 18788},
+		{"http://localhost:20787/", 20787},
+		{"http://127.0.0.1:20791/x", 20791},
+		{"http://LOCALHOST:20788", 20788},
 		{"http://x:043/", 43},
 		{"http://localhost:8080", 8080},
 		{"https://localhost:8443", 8443},
@@ -40,8 +48,8 @@ func TestPortOf(t *testing.T) {
 		{"http://x:99999999999999999999/", -1},
 		{"http://[::1", -1},
 		{"http://x:abc/", -1},
-		{"//localhost:18787", -1},
-		{"localhost:18787", -1},
+		{"//localhost:20787", -1},
+		{"localhost:20787", -1},
 		{"not a url", -1},
 		{"", -1},
 	}
@@ -80,18 +88,21 @@ func TestIsPluginRouterURL(t *testing.T) {
 		url  string
 		want bool
 	}{
-		{"http://localhost:18787/", true},
-		{"http://127.0.0.1:18786", true},
-		{"http://127.0.0.1:18791/x", true},
-		{"HTTP://LOCALHOST:18788", true},
+		{"http://localhost:" + canonicalPort + "/", true},
+		{canonicalURL, true},
+		{"http://127.0.0.1:" + canonicalPort + "/x", true},
+		{"HTTP://LOCALHOST:" + canonicalPort, true},
 		{"https://api.z.ai", false},
 		{"http://localhost:8080", false},
-		{"http://example.com:18787", false},
-		{"http://[::1]:18787", false},
+		{"http://example.com:20787", false},
+		{"http://[::1]:20787", false},
 		{"http://localhost", false},
-		{"//localhost:18787", false},
-		{"localhost:18787", false},
+		{"//localhost:20787", false},
+		{"localhost:20787", false},
 		{"http://[::1", false},
+		// The override address is this router, but not the canonical one the map holds:
+		// ProxyIsThisRouter is the helper that claims it.
+		{overrideURL, false},
 		{"", false},
 	}
 	for _, tc := range cases {
@@ -106,18 +117,18 @@ func TestIsPluginRouterProxy(t *testing.T) {
 		proxy string
 		want  bool
 	}{
-		{"http://127.0.0.1:18787", true},
-		{"http://127.0.0.1:18786", true},
-		{"localhost:18786", true},
-		{"http://localhost:18790", true},
-		{"https://LOCALHOST:18788", true},
-		{"127.0.0.1:18787", true},
-		{"localhost:18791", true},
+		{canonicalURL, true},
+		{"localhost:" + canonicalPort, true},
+		{"127.0.0.1:" + canonicalPort, true},
 		{"http://proxy.corp:3128", false},
 		{"proxy.corp:3128", false},
 		{"http://localhost:8080", false},
-		{"http://example.com:18787", false},
+		{"http://localhost:20787", false},
+		{"127.0.0.1:20787", false},
+		{"localhost:20791", false},
+		{"http://example.com:20787", false},
 		{"127.0.0.1", false},
+		{overrideURL, false},
 		{"", false},
 	}
 	for _, tc := range cases {
@@ -128,11 +139,10 @@ func TestIsPluginRouterProxy(t *testing.T) {
 }
 
 func TestPlanBaseUrl(t *testing.T) {
-	const routerURL = "http://127.0.0.1:18787"
-	kimi := "http://localhost:18788"
+	routerURL := canonicalURL
 
 	t.Run("unset points it at this router", func(t *testing.T) {
-		plan := PlanBaseUrl(nil, routerURL, nil)
+		plan := PlanBaseUrl(nil, routerURL)
 		if plan.Kind != BaseUrlPlanSet || plan.URL != routerURL {
 			t.Fatalf("plan = %+v, want set %q", plan, routerURL)
 		}
@@ -143,27 +153,19 @@ func TestPlanBaseUrl(t *testing.T) {
 
 	t.Run("already this router keeps it silently", func(t *testing.T) {
 		current := routerURL
-		plan := PlanBaseUrl(&current, routerURL, nil)
+		plan := PlanBaseUrl(&current, routerURL)
 		if plan.Kind != BaseUrlPlanKeep || plan.Report != nil {
 			t.Fatalf("plan = %+v, want keep with no report", plan)
 		}
 	})
 
-	t.Run("a live plugin router keeps it silently", func(t *testing.T) {
-		current := kimi
-		plan := PlanBaseUrl(&current, routerURL, []string{kimi})
-		if plan.Kind != BaseUrlPlanKeep || plan.Report != nil {
-			t.Fatalf("plan = %+v, want keep with no report", plan)
+	t.Run("the canonical address moves when the router answers on its override", func(t *testing.T) {
+		current := canonicalURL
+		plan := PlanBaseUrl(&current, overrideURL)
+		if plan.Kind != BaseUrlPlanSet || plan.URL != overrideURL {
+			t.Fatalf("plan = %+v, want set %q", plan, overrideURL)
 		}
-	})
-
-	t.Run("a dead plugin router moves it here", func(t *testing.T) {
-		current := kimi
-		plan := PlanBaseUrl(&current, routerURL, []string{"http://localhost:18790"})
-		if plan.Kind != BaseUrlPlanSet || plan.URL != routerURL {
-			t.Fatalf("plan = %+v, want set %q", plan, routerURL)
-		}
-		want := "moved ANTHROPIC_BASE_URL from the kimi plugin's router (" + kimi + ", not running) to " + routerURL
+		want := "moved ANTHROPIC_BASE_URL from " + canonicalURL + " to " + overrideURL
 		if plan.Report == nil || *plan.Report != want {
 			t.Fatalf("report = %v, want %q", plan.Report, want)
 		}
@@ -171,7 +173,7 @@ func TestPlanBaseUrl(t *testing.T) {
 
 	t.Run("the user's own proxy is kept and reported", func(t *testing.T) {
 		current := "https://proxy.example.com"
-		plan := PlanBaseUrl(&current, routerURL, nil)
+		plan := PlanBaseUrl(&current, routerURL)
 		if plan.Kind != BaseUrlPlanKeep {
 			t.Fatalf("plan = %+v, want keep", plan)
 		}
@@ -183,7 +185,7 @@ func TestPlanBaseUrl(t *testing.T) {
 
 	t.Run("a loopback server on an unknown port is the user's own too", func(t *testing.T) {
 		current := "http://localhost:8080"
-		plan := PlanBaseUrl(&current, routerURL, nil)
+		plan := PlanBaseUrl(&current, routerURL)
 		if plan.Kind != BaseUrlPlanKeep {
 			t.Fatalf("plan = %+v, want keep", plan)
 		}
@@ -191,10 +193,22 @@ func TestPlanBaseUrl(t *testing.T) {
 			t.Fatalf("report = %v, want the own-proxy note", plan.Report)
 		}
 	})
+
+	t.Run("a base URL on a port no router of ours serves is the user's own", func(t *testing.T) {
+		current := "http://localhost:20787"
+		plan := PlanBaseUrl(&current, routerURL)
+		if plan.Kind != BaseUrlPlanKeep {
+			t.Fatalf("plan = %+v, want keep", plan)
+		}
+		want := "kept ANTHROPIC_BASE_URL (http://localhost:20787): your own proxy"
+		if plan.Report == nil || *plan.Report != want {
+			t.Fatalf("report = %v, want %q", plan.Report, want)
+		}
+	})
 }
 
 func TestPlanBaseUrlRemoval(t *testing.T) {
-	const huddleURL = "http://127.0.0.1:18786"
+	huddleURL := canonicalURL
 
 	t.Run("nothing set keeps it silently", func(t *testing.T) {
 		plan := PlanBaseUrlRemoval(nil, huddleURL, nil)
@@ -230,25 +244,30 @@ func TestPlanBaseUrlRemoval(t *testing.T) {
 		}
 	})
 
-	t.Run("a 0.0.1 router URL in the settings is ours to remove too", func(t *testing.T) {
-		current := "http://localhost:18788"
+	t.Run("the canonical address in another spelling is ours to remove too", func(t *testing.T) {
+		current := canonicalLoopback
 		plan := PlanBaseUrlRemoval(&current, huddleURL, nil)
 		if plan.Kind != BaseUrlPlanRemove || plan.Report == nil || *plan.Report != "removed ANTHROPIC_BASE_URL ("+current+")" {
 			t.Fatalf("plan = %+v, want a remove", plan)
 		}
 	})
+
+	t.Run("a base URL on a port no router of ours serves is not ours to remove", func(t *testing.T) {
+		current := "http://localhost:20788"
+		plan := PlanBaseUrlRemoval(&current, huddleURL, nil)
+		if plan.Kind != BaseUrlPlanKeep || plan.Report != nil {
+			t.Fatalf("plan = %+v, want keep with no report", plan)
+		}
+	})
 }
 
 func TestPlanProxy(t *testing.T) {
-	const (
-		routerURL = "http://127.0.0.1:18787"
-		caPath    = "/agents/zai/ca/ca.pem"
-	)
-	kimi := "http://localhost:18788"
+	const caPath = "/agents/zai/ca/ca.pem"
+	routerURL := canonicalURL
 	ownProxyNote := "kept your own proxy/CA; Remote Control needs ANTHROPIC_BASE_URL unset, so routing uses the base URL"
 
 	t.Run("nothing set sets the three keys", func(t *testing.T) {
-		plan := PlanProxy(ProxySettings{}, routerURL, caPath, nil)
+		plan := PlanProxy(ProxySettings{}, routerURL, caPath)
 		if plan.Kind != ProxyPlanSet || plan.Proxy != routerURL || plan.CA != caPath {
 			t.Fatalf("plan = %+v, want set with proxy %q and CA %q", plan, routerURL, caPath)
 		}
@@ -265,55 +284,35 @@ func TestPlanProxy(t *testing.T) {
 
 	t.Run("this router with this CA keeps silently", func(t *testing.T) {
 		proxy, ca := routerURL, caPath
-		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, routerURL, caPath, nil)
+		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, routerURL, caPath)
 		if plan.Kind != ProxyPlanKeep || plan.Report != nil || plan.NoProxy != "" {
 			t.Fatalf("plan = %+v, want a silent keep with nothing to write", plan)
 		}
 	})
 
 	t.Run("a bare this-router value keeps silently", func(t *testing.T) {
-		proxy, ca := "127.0.0.1:18787", caPath
-		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, routerURL, caPath, nil)
+		proxy, ca := "127.0.0.1:"+canonicalPort, caPath
+		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, routerURL, caPath)
 		if plan.Kind != ProxyPlanKeep || plan.Report != nil {
 			t.Fatalf("plan = %+v, want a silent keep", plan)
 		}
 	})
 
-	t.Run("a live other plugin router keeps silently", func(t *testing.T) {
-		proxy, ca := kimi, caPath
-		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, routerURL, caPath, []string{"http://127.0.0.1:18788"})
-		if plan.Kind != ProxyPlanKeep || plan.Report != nil {
-			t.Fatalf("plan = %+v, want a silent keep", plan)
+	t.Run("the canonical address moves when the router answers on its override", func(t *testing.T) {
+		proxy, ca := canonicalURL, caPath
+		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, overrideURL, caPath)
+		if plan.Kind != ProxyPlanSet || plan.Proxy != overrideURL || plan.CA != caPath {
+			t.Fatalf("plan = %+v, want a set at the override", plan)
 		}
-	})
-
-	t.Run("a dead other plugin router moves here", func(t *testing.T) {
-		proxy, ca := kimi, caPath
-		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, routerURL, caPath, []string{"http://localhost:18790"})
-		if plan.Kind != ProxyPlanSet || plan.Proxy != routerURL || plan.CA != caPath {
-			t.Fatalf("plan = %+v, want set with proxy %q", plan, routerURL)
-		}
-		want := "moved HTTPS_PROXY from the kimi plugin's router (" + kimi + ", not running) to " + routerURL
-		if plan.Report == nil || *plan.Report != want {
-			t.Fatalf("report = %v, want %q", plan.Report, want)
-		}
-	})
-
-	t.Run("a 0.0.1 router URL in the settings is moved to huddle-router", func(t *testing.T) {
-		proxy, ca := kimi, caPath
-		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, "http://127.0.0.1:18786", caPath, nil)
-		if plan.Kind != ProxyPlanSet || plan.Proxy != "http://127.0.0.1:18786" || plan.CA != caPath {
-			t.Fatalf("plan = %+v, want a set at huddle-router", plan)
-		}
-		want := "moved HTTPS_PROXY from the kimi plugin's router (" + kimi + ", not running) to http://127.0.0.1:18786"
+		want := "moved HTTPS_PROXY from " + canonicalURL + " to " + overrideURL
 		if plan.Report == nil || *plan.Report != want {
 			t.Fatalf("report = %v, want %q", plan.Report, want)
 		}
 	})
 
 	t.Run("the huddle-router proxy is ours and keeps silently", func(t *testing.T) {
-		proxy, ca := "http://127.0.0.1:18786", caPath
-		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, "http://127.0.0.1:18786", caPath, nil)
+		proxy, ca := canonicalURL, caPath
+		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, routerURL, caPath)
 		if plan.Kind != ProxyPlanKeep || plan.Report != nil {
 			t.Fatalf("plan = %+v, want a silent keep", plan)
 		}
@@ -321,7 +320,7 @@ func TestPlanProxy(t *testing.T) {
 
 	t.Run("the user's own proxy falls back to base-URL mode", func(t *testing.T) {
 		proxy := "http://proxy.corp:3128"
-		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy}, routerURL, caPath, nil)
+		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy}, routerURL, caPath)
 		if plan.Kind != ProxyPlanBaseURL {
 			t.Fatalf("plan = %+v, want the base-URL fallback", plan)
 		}
@@ -331,16 +330,15 @@ func TestPlanProxy(t *testing.T) {
 	})
 
 	t.Run("this router on a port override is never the user's own proxy", func(t *testing.T) {
-		overridden := "http://127.0.0.1:26244"
-		plan := PlanProxy(ProxySettings{HTTPSProxy: &overridden}, overridden, caPath, nil)
+		plan := PlanProxy(ProxySettings{HTTPSProxy: &overrideURL}, overrideURL, caPath)
 		if plan.Kind != ProxyPlanKeep {
 			t.Fatalf("plan = %+v, want a keep of our own overridden router", plan)
 		}
-		plan = PlanProxy(ProxySettings{}, overridden, caPath, nil)
-		if plan.Kind != ProxyPlanSet || plan.Proxy != overridden {
+		plan = PlanProxy(ProxySettings{}, overrideURL, caPath)
+		if plan.Kind != ProxyPlanSet || plan.Proxy != overrideURL {
 			t.Fatalf("plan = %+v, want a set on the overridden router", plan)
 		}
-		plan = PlanProxyRemoval(ProxySettings{HTTPSProxy: &overridden}, overridden, nil)
+		plan = PlanProxyRemoval(ProxySettings{HTTPSProxy: &overrideURL}, overrideURL, nil)
 		if plan.Kind != ProxyPlanRemove {
 			t.Fatalf("removal = %+v, want remove on the overridden router", plan)
 		}
@@ -348,7 +346,7 @@ func TestPlanProxy(t *testing.T) {
 
 	t.Run("a foreign CA falls back too, with no proxy of ours in the way", func(t *testing.T) {
 		ca := "/elsewhere/ca.pem"
-		plan := PlanProxy(ProxySettings{CA: &ca}, routerURL, caPath, nil)
+		plan := PlanProxy(ProxySettings{CA: &ca}, routerURL, caPath)
 		if plan.Kind != ProxyPlanBaseURL || plan.Report == nil || *plan.Report != ownProxyNote {
 			t.Fatalf("plan = %+v, want the base-URL fallback with its note", plan)
 		}
@@ -356,27 +354,19 @@ func TestPlanProxy(t *testing.T) {
 
 	t.Run("a foreign CA next to this router falls back rather than clobbers it", func(t *testing.T) {
 		proxy, ca := routerURL, "/elsewhere/ca.pem"
-		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, routerURL, caPath, nil)
+		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, routerURL, caPath)
 		if plan.Kind != ProxyPlanBaseURL {
 			t.Fatalf("plan = %+v, want the base-URL fallback", plan)
 		}
 	})
 
-	t.Run("another plugin's CA rides along with its live router", func(t *testing.T) {
-		proxy, ca := kimi, "/agents/kimi/ca/ca.pem"
-		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca}, routerURL, caPath, []string{kimi})
-		if plan.Kind != ProxyPlanKeep || plan.Report != nil {
-			t.Fatalf("plan = %+v, want a silent keep", plan)
-		}
-	})
-
-	t.Run("a stale plugin-router base URL is marked for removal", func(t *testing.T) {
-		proxy, ca, baseURL := routerURL, caPath, kimi
-		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca, BaseURL: &baseURL}, routerURL, caPath, nil)
+	t.Run("a stale base URL of ours is marked for removal", func(t *testing.T) {
+		proxy, ca, baseURL := routerURL, caPath, canonicalLoopback
+		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca, BaseURL: &baseURL}, routerURL, caPath)
 		if plan.Kind != ProxyPlanKeep || !plan.RemoveBaseURL {
 			t.Fatalf("plan = %+v, want a keep that removes the base URL", plan)
 		}
-		plan = PlanProxy(ProxySettings{BaseURL: &baseURL}, routerURL, caPath, nil)
+		plan = PlanProxy(ProxySettings{BaseURL: &baseURL}, routerURL, caPath)
 		if plan.Kind != ProxyPlanSet || !plan.RemoveBaseURL {
 			t.Fatalf("plan = %+v, want a set that removes the base URL", plan)
 		}
@@ -384,7 +374,7 @@ func TestPlanProxy(t *testing.T) {
 
 	t.Run("the user's NO_PROXY entries stay first, the missing loopback entries appended", func(t *testing.T) {
 		proxy, ca, noProxy := routerURL, caPath, "example.com, other.org"
-		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca, NoProxy: &noProxy}, routerURL, caPath, nil)
+		plan := PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca, NoProxy: &noProxy}, routerURL, caPath)
 		if plan.Kind != ProxyPlanKeep || plan.NoProxy != "example.com,other.org,localhost,127.0.0.1" {
 			t.Fatalf("plan = %+v, want a keep writing the merged NO_PROXY", plan)
 		}
@@ -393,7 +383,7 @@ func TestPlanProxy(t *testing.T) {
 		}
 
 		noProxy = "localhost"
-		plan = PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca, NoProxy: &noProxy}, routerURL, caPath, nil)
+		plan = PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca, NoProxy: &noProxy}, routerURL, caPath)
 		if plan.NoProxy != "localhost,127.0.0.1" {
 			t.Fatalf("noProxy = %q, want 127.0.0.1 appended", plan.NoProxy)
 		}
@@ -402,13 +392,13 @@ func TestPlanProxy(t *testing.T) {
 		}
 
 		noProxy = "localhost,127.0.0.1"
-		plan = PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca, NoProxy: &noProxy}, routerURL, caPath, nil)
+		plan = PlanProxy(ProxySettings{HTTPSProxy: &proxy, CA: &ca, NoProxy: &noProxy}, routerURL, caPath)
 		if plan.Kind != ProxyPlanKeep || plan.Report != nil || plan.NoProxy != "" {
 			t.Fatalf("plan = %+v, want a silent keep", plan)
 		}
 
 		noProxy = "example.com"
-		plan = PlanProxy(ProxySettings{NoProxy: &noProxy}, routerURL, caPath, nil)
+		plan = PlanProxy(ProxySettings{NoProxy: &noProxy}, routerURL, caPath)
 		if plan.Kind != ProxyPlanSet || plan.NoProxy != "example.com,localhost,127.0.0.1" {
 			t.Fatalf("plan = %+v, want a set writing the merged NO_PROXY", plan)
 		}
@@ -416,11 +406,8 @@ func TestPlanProxy(t *testing.T) {
 }
 
 func TestPlanProxyRemoval(t *testing.T) {
-	const (
-		huddleURL = "http://127.0.0.1:18786"
-		caPath    = "/agents/zai/ca/ca.pem"
-	)
-	kimi := "http://localhost:18788"
+	const caPath = "/agents/zai/ca/ca.pem"
+	huddleURL := canonicalURL
 
 	t.Run("no proxy at all is kept silently", func(t *testing.T) {
 		plan := PlanProxyRemoval(ProxySettings{}, huddleURL, nil)
@@ -450,66 +437,35 @@ func TestPlanProxyRemoval(t *testing.T) {
 	})
 
 	t.Run("ours while another provider is enabled keeps silently: the proxy is shared", func(t *testing.T) {
-		proxy, baseURL := huddleURL, kimi
+		proxy, baseURL := huddleURL, canonicalLoopback
 		plan := PlanProxyRemoval(ProxySettings{HTTPSProxy: &proxy, BaseURL: &baseURL}, huddleURL, []string{"kimi"})
 		if plan.Kind != ProxyPlanKeep || plan.Report != nil || plan.RemoveBaseURL {
 			t.Fatalf("plan = %+v, want a silent keep that touches nothing", plan)
 		}
 	})
 
-	t.Run("a 0.0.1 router URL in the settings is ours to remove too", func(t *testing.T) {
-		proxy := kimi
+	t.Run("a proxy on a port no router of ours serves is not ours to remove", func(t *testing.T) {
+		proxy := "http://localhost:20788"
 		plan := PlanProxyRemoval(ProxySettings{HTTPSProxy: &proxy}, huddleURL, nil)
-		if plan.Kind != ProxyPlanRemove || plan.Report == nil || *plan.Report != "removed HTTPS_PROXY and NODE_EXTRA_CA_CERTS ("+proxy+")" {
-			t.Fatalf("plan = %+v, want a remove", plan)
+		if plan.Kind != ProxyPlanKeep || plan.Report != nil {
+			t.Fatalf("plan = %+v, want a silent keep", plan)
 		}
 	})
 
 	t.Run("this router on a port override is ours to remove", func(t *testing.T) {
-		overridden := "http://127.0.0.1:26244"
-		plan := PlanProxyRemoval(ProxySettings{HTTPSProxy: &overridden}, overridden, nil)
+		plan := PlanProxyRemoval(ProxySettings{HTTPSProxy: &overrideURL}, overrideURL, nil)
 		if plan.Kind != ProxyPlanRemove {
 			t.Fatalf("removal = %+v, want remove on the overridden router", plan)
 		}
 	})
 
-	t.Run("a stale plugin-router base URL goes with our removal", func(t *testing.T) {
-		proxy, baseURL := huddleURL, kimi
+	t.Run("a stale base URL of ours goes with the removal", func(t *testing.T) {
+		proxy, baseURL := huddleURL, canonicalLoopback
 		plan := PlanProxyRemoval(ProxySettings{HTTPSProxy: &proxy, BaseURL: &baseURL}, huddleURL, nil)
 		if plan.Kind != ProxyPlanRemove || !plan.RemoveBaseURL {
 			t.Fatalf("plan = %+v, want a remove that takes the base URL with it", plan)
 		}
 	})
-}
-
-func TestProxyRouterName(t *testing.T) {
-	cases := []struct {
-		proxy string
-		want  string
-	}{
-		{"http://127.0.0.1:18786", "huddle-router"},
-		{"http://127.0.0.1:18787", "zai"},
-		{"localhost:18791", "qwen"},
-		{"http://LOCALHOST:18788", "kimi"},
-		{"http://proxy.corp:3128", ""},
-		{"http://localhost:8080", ""},
-		{"", ""},
-	}
-	for _, tc := range cases {
-		if got := ProxyRouterName(tc.proxy); got != tc.want {
-			t.Errorf("ProxyRouterName(%q) = %q, want %q", tc.proxy, got, tc.want)
-		}
-	}
-}
-
-func TestProxyRouterIsLive(t *testing.T) {
-	live := []string{"http://127.0.0.1:18788", "http://localhost:18791"}
-	if !ProxyRouterIsLive(live, "kimi") || !ProxyRouterIsLive(live, "qwen") {
-		t.Fatal("kimi and qwen count as live")
-	}
-	if ProxyRouterIsLive(live, "zai") || ProxyRouterIsLive(nil, "kimi") {
-		t.Fatal("zai and an empty list count as not live")
-	}
 }
 
 func TestKeptPrefix(t *testing.T) {
@@ -525,18 +481,19 @@ func TestIsRouterProxy(t *testing.T) {
 		ownPort int64
 		want    bool
 	}{
-		{"http://127.0.0.1:18786", own, true},
-		{"127.0.0.1:18787", own, true},
-		{"http://localhost:18791", own, true},
+		{canonicalURL, own, true},
+		{"localhost:" + canonicalPort, own, true},
 		{"http://127.0.0.1:20999", own, true},
 		{"127.0.0.1:20999", own, true},
 		{"localhost:20999", own, true},
 		{"[::1]:20999", own, true},
 		{"http://[::1]:20999", own, true},
 		{"http://127.0.0.1:3128", own, false},
-		{"127.0.0.1:3128", 18786, false},
-		{"http://127.0.0.1:3128", 18786, false},
-		{"proxy.corp:18786", own, false},
+		{"127.0.0.1:3128", HuddleRouterPort, false},
+		{"http://127.0.0.1:3128", HuddleRouterPort, false},
+		{"proxy.corp:" + canonicalPort, own, false},
+		{"127.0.0.1:20787", own, false},
+		{"http://localhost:20791", own, false},
 		{"http://proxy.corp:20999", own, false},
 		{"", own, false},
 		{"not a url", own, false},

@@ -1,5 +1,5 @@
 // The Claude Code settings merge: `setup` puts the provider's models in `/model` and routes
-// Claude Code through the plugin's router — proxy mode where it can (the three proxy keys at the
+// Claude Code through huddle-router — proxy mode where it can (the three proxy keys at the
 // router and its local CA, so Remote Control keeps working), base-URL mode as the fallback —
 // owning exactly the entries whose `model` is in its catalog so `setup --remove`
 // (and the router's own uninstall cleanup) can take those back out. Everything else in the file survives. Every write
@@ -68,14 +68,12 @@ type SettingsDelta struct {
 
 // ApplyProviderOptions are the options of ApplyProviderSettings.
 type ApplyProviderOptions struct {
-	// LivePluginURLs are the plugin router URLs answering health checks now.
-	LivePluginURLs []string
 	// CADir is the local CA's directory; proxy mode needs it to name the CA file. Empty, or a
 	// directory the CA cannot be loaded from, keeps base-URL mode.
 	CADir string
 	// EnvProxy is the proxy variable the caller's own process environment applies, lowercase
 	// before uppercase the way Claude Code reads them; nil when there is none. A value that is
-	// not a plugin router is the user's own proxy and keeps base-URL mode.
+	// not huddle-router's is the user's own proxy and keeps base-URL mode.
 	EnvProxy *string
 	// OwnOptions are the ids the ledger says earlier runs added to /model: their rows are
 	// setup's, however they look now, so an upgrade brings them up to what setup writes today
@@ -150,11 +148,11 @@ func applyProviderEdit(root *jsfmt.Value, path string, provider domain.Provider,
 		if err != nil {
 			return nil, err
 		}
-		plan := domain.PlanProxy(proxyBefore, routerURL, caPath, options.LivePluginURLs)
+		plan := domain.PlanProxy(proxyBefore, routerURL, caPath)
 		if plan.Kind != domain.ProxyPlanBaseURL && !userBaseURL(baseURLBefore) {
-			// "Routing through a router of ours" is a fresh set, or keys kept naming this router
-			// or another live one (which forwards here).
-			routed := proxyRouted(plan, proxyBefore, routerURL, options.LivePluginURLs)
+			// "Routing through this router" is a fresh set, or keys kept naming it; a user's own
+			// proxy falls through to the base URL.
+			routed := proxyRouted(plan, proxyBefore, routerURL)
 			var lines []string
 			lines = append(lines, mergeModelOptions(modelOptions, provider, options.OwnOptions)...)
 			lines = append(lines, efforts.lines...)
@@ -171,8 +169,8 @@ func applyProviderEdit(root *jsfmt.Value, path string, provider domain.Provider,
 			proxyNote = plan.Report
 		}
 	}
-	plan := domain.PlanBaseUrl(baseURLBefore, routerURL, options.LivePluginURLs)
-	// "Routing through this router" is a fresh set, a move from a dead plugin router — or the
+	plan := domain.PlanBaseUrl(baseURLBefore, routerURL)
+	// "Routing through this router" is a fresh set, a move from the canonical address — or the
 	// base URL an earlier run already pointed here.
 	routed := routedThrough(plan, baseURLBefore, routerURL)
 	var lines []string
@@ -194,33 +192,30 @@ func applyProviderEdit(root *jsfmt.Value, path string, provider domain.Provider,
 	return lines, nil
 }
 
-// userProxyInEnv is whether the caller's own environment applies a proxy that is not a plugin
-// router's: the user exported their own proxy, and Claude Code reads it before anything the
-// settings could add.
+// userProxyInEnv is whether the caller's own environment applies a proxy that is not
+// huddle-router's: the user exported their own proxy, and Claude Code reads it before anything
+// the settings could add.
 func userProxyInEnv(envProxy *string) bool {
 	return envProxy != nil && !domain.IsPluginRouterProxy(*envProxy)
 }
 
-// userBaseURL is whether the settings point Claude at a base URL that is not one of the plugin
-// routers: the user's own gateway. Proxy mode would put every one of their requests on our
-// router, so it stays off until the base URL goes.
+// userBaseURL is whether the settings point Claude at a base URL that is not huddle-router's
+// canonical address: the user's own gateway. Proxy mode would put every one of their requests on
+// our router, so it stays off until the base URL goes.
 func userBaseURL(baseURL *string) bool {
 	return baseURL != nil && !domain.IsPluginRouterURL(*baseURL)
 }
 
-// proxyRouted is true when the settings end up routing Claude Code through a router of ours that
-// can route the provider's ids: the proxy keys freshly set on this router, or kept naming this
-// router or another live one (which forwards here).
-func proxyRouted(plan domain.ProxyPlan, before domain.ProxySettings, routerURL string, live []string) bool {
+// proxyRouted is true when the settings end up routing Claude Code through this router: the
+// proxy keys freshly set on it, or kept naming it.
+func proxyRouted(plan domain.ProxyPlan, before domain.ProxySettings, routerURL string) bool {
 	if plan.Kind == domain.ProxyPlanSet {
 		return true
 	}
 	if plan.Kind != domain.ProxyPlanKeep || before.HTTPSProxy == nil {
 		return false
 	}
-	name := domain.ProxyRouterName(*before.HTTPSProxy)
-	ours := name != "" && name == domain.PluginRouters[domain.PortOf(routerURL)]
-	return ours || domain.ProxyRouterIsLive(live, name)
+	return domain.ProxyIsThisRouter(*before.HTTPSProxy, routerURL)
 }
 
 // routedThrough is true when the settings end up routing Claude Code through this router: a fresh
@@ -430,24 +425,24 @@ type ProxyOurs struct {
 // UndoProviderSettings is the uninstall's settings step: takes out the /model entries and
 // availableModels ids setup added (an entry the user removed or changed meanwhile is theirs),
 // removes the containers setup created when they end up empty, and puts the base URL back only if
-// it still points at this router: the ledger's previous value (unless that is a plugin router
-// that is not running), else another live plugin router, else none. While another provider is
+// it still points at this router: the ledger's previous value, unless that names huddle-router
+// too, else none. While another provider is
 // still enabled (othersEnabled names them), the routing env stays: the router is shared and the
 // next removal undoes it. A CA or NO_PROXY the ledger names as "before" that is exactly ours
 // (ours) goes rather than coming back. When the result equals the backup taken before the first
 // write ever, the backup's own bytes are restored.
-func UndoProviderSettings(ctx context.Context, path string, name string, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string, ours ProxyOurs) ([]string, error) {
+func UndoProviderSettings(ctx context.Context, path string, name string, undo SettingsUndo, routerURL string, othersEnabled []string, ours ProxyOurs) ([]string, error) {
 	return editSettings(ctx, path, name, func(root *jsfmt.Value) ([]string, error) {
 		last := len(othersEnabled) == 0
 		var lines []string
 		lines = append(lines, undoPicker(root, undo, last)...)
 		lines = append(lines, undoAvailable(root, undo)...)
-		baseURL, err := undoBaseUrl(root, undo, routerURL, livePluginURLs, othersEnabled, path)
+		baseURL, err := undoBaseUrl(root, undo, routerURL, othersEnabled, path)
 		if err != nil {
 			return nil, err
 		}
 		lines = append(lines, baseURL...)
-		lines = append(lines, undoProxy(root, undo, routerURL, livePluginURLs, othersEnabled, ours)...)
+		lines = append(lines, undoProxy(root, undo, routerURL, othersEnabled, ours)...)
 		lines = append(lines, undoToolSearch(root, undo, last)...)
 		lines = append(lines, undoEfforts(root, undo)...)
 		return lines, nil
@@ -508,7 +503,7 @@ func undoAvailable(root *jsfmt.Value, undo SettingsUndo) []string {
 
 // undoBaseUrl puts the base URL back, only while it still points at this router and no other
 // provider is still enabled (see UndoProviderSettings).
-func undoBaseUrl(root *jsfmt.Value, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string, path string) ([]string, error) {
+func undoBaseUrl(root *jsfmt.Value, undo SettingsUndo, routerURL string, othersEnabled []string, path string) ([]string, error) {
 	current, err := currentBaseUrl(root, path)
 	if err != nil {
 		return nil, err
@@ -520,15 +515,8 @@ func undoBaseUrl(root *jsfmt.Value, undo SettingsUndo, routerURL string, livePlu
 		return nil, nil
 	}
 	restore := ""
-	if undo.BaseURLBefore != nil && (!domain.IsPluginRouterURL(*undo.BaseURLBefore) || slices.Contains(livePluginURLs, *undo.BaseURLBefore)) {
+	if undo.BaseURLBefore != nil && !domain.IsPluginRouterURL(*undo.BaseURLBefore) {
 		restore = *undo.BaseURLBefore
-	} else {
-		for _, url := range livePluginURLs {
-			if url != routerURL {
-				restore = url
-				break
-			}
-		}
 	}
 	env := root.Get("env")
 	if restore != "" {
@@ -547,7 +535,7 @@ func undoBaseUrl(root *jsfmt.Value, undo SettingsUndo, routerURL string, livePlu
 // since takes its CA and NO_PROXY with it. The before-values go back; a key with nothing before
 // it goes (see UndoProviderSettings), a before-value that is exactly ours counts as nothing —
 // our own values never come back — and an env this undo created and emptied goes with them.
-func undoProxy(root *jsfmt.Value, undo SettingsUndo, routerURL string, livePluginURLs, othersEnabled []string, ours ProxyOurs) []string {
+func undoProxy(root *jsfmt.Value, undo SettingsUndo, routerURL string, othersEnabled []string, ours ProxyOurs) []string {
 	env := root.Get("env")
 	if !env.IsObject() {
 		return nil
@@ -561,20 +549,8 @@ func undoProxy(root *jsfmt.Value, undo SettingsUndo, routerURL string, livePlugi
 	}
 	var lines []string
 	restore := ""
-	if undo.ProxyBefore != nil {
-		if name := domain.ProxyRouterName(*undo.ProxyBefore); name == "" || domain.ProxyRouterIsLive(livePluginURLs, name) {
-			restore = *undo.ProxyBefore
-		}
-	}
-	if restore == "" {
-		// The before router is gone or was never recorded: another live plugin router takes over
-		// when there is one.
-		for _, url := range livePluginURLs {
-			if domain.PluginRouters[domain.PortOf(url)] != domain.PluginRouters[domain.PortOf(routerURL)] {
-				restore = url
-				break
-			}
-		}
+	if undo.ProxyBefore != nil && !proxyIsOurs(*undo.ProxyBefore, routerURL) {
+		restore = *undo.ProxyBefore
 	}
 	if restore != "" {
 		env.Set("HTTPS_PROXY", jsfmt.String(restore))
@@ -608,8 +584,8 @@ func undoProxy(root *jsfmt.Value, undo SettingsUndo, routerURL string, livePlugi
 	return lines
 }
 
-// proxyIsOurs is whether an HTTPS_PROXY value names a router of ours: this router's loopback
-// host with its port, canonical or overridden, or any of the ports a 0.0.1 install left behind.
+// proxyIsOurs is whether an HTTPS_PROXY value names huddle-router: this router's loopback host
+// with its port, canonical or overridden.
 func proxyIsOurs(current, routerURL string) bool {
 	return domain.ProxyIsThisRouter(current, routerURL) || domain.IsPluginRouterProxy(current)
 }

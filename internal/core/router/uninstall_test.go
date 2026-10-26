@@ -16,8 +16,8 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
-const undoRouterURL = "http://127.0.0.1:18787"
-const undoKimiURL = "http://127.0.0.1:18788"
+// undoRouterURL is the address a test setup points Claude Code at.
+var undoRouterURL = fmt.Sprintf("http://127.0.0.1:%d", domain.HuddleRouterPort)
 
 // presenceConfig is a Claude Code config dir with a plugins dir, as the presence tests shape it.
 func presenceConfig(t *testing.T) string {
@@ -128,13 +128,12 @@ func undoSettings(t *testing.T, text string) string {
 }
 
 // undoSetUp runs setup on the settings file and returns what it recorded.
-func undoSetUp(t *testing.T, path string, live []string) adapters.SettingsDelta {
+func undoSetUp(t *testing.T, path string) adapters.SettingsDelta {
 	t.Helper()
 	var delta adapters.SettingsDelta
 	_, err := adapters.ApplyProviderSettings(context.Background(), path, routerProvider, undoRouterURL,
 		adapters.ApplyProviderOptions{
-			LivePluginURLs: live,
-			Record:         func(recorded adapters.SettingsDelta) { delta = recorded },
+			Record: func(recorded adapters.SettingsDelta) { delta = recorded },
 		})
 	if err != nil {
 		t.Fatal(err)
@@ -147,13 +146,13 @@ func TestUninstallSettingsUndo(t *testing.T) {
 	t.Run("setup then uninstall leaves settings.json byte-identical, even in the user's own formatting", func(t *testing.T) {
 		original := "{\n    \"theme\": \"dark\",\n    \"permissions\": { \"allow\": [] }\n}\n"
 		path := undoSettings(t, original)
-		delta := undoSetUp(t, path, nil)
+		delta := undoSetUp(t, path)
 		backup, err := os.ReadFile(adapters.SettingsBackupPath(path, "zai"))
 		if err != nil || string(backup) != original {
 			t.Fatalf("the backup = %q %v, want the original", backup, err)
 		}
 		if _, err := adapters.UndoProviderSettings(context.Background(), path, "zai",
-			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, nil, adapters.ProxyOurs{}); err != nil {
+			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, adapters.ProxyOurs{}); err != nil {
 			t.Fatal(err)
 		}
 		after, err := os.ReadFile(path)
@@ -196,7 +195,7 @@ func TestUninstallSettingsUndo(t *testing.T) {
 		}
 
 		if _, err := adapters.UndoProviderSettings(context.Background(), path, "zai",
-			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, nil, adapters.ProxyOurs{}); err != nil {
+			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, adapters.ProxyOurs{}); err != nil {
 			t.Fatal(err)
 		}
 		after, err := os.ReadFile(path)
@@ -207,7 +206,7 @@ func TestUninstallSettingsUndo(t *testing.T) {
 
 	t.Run("reverts only this plugin's keys when the user edited another key in between", func(t *testing.T) {
 		path := undoSettings(t, "{\n  \"theme\": \"dark\",\n  \"availableModels\": [\n    \"sonnet\"\n  ]\n}\n")
-		delta := undoSetUp(t, path, nil)
+		delta := undoSetUp(t, path)
 		edited := map[string]any{}
 		if err := json.Unmarshal(mustRead(t, path), &edited); err != nil {
 			t.Fatal(err)
@@ -217,7 +216,7 @@ func TestUninstallSettingsUndo(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := adapters.UndoProviderSettings(context.Background(), path, "zai",
-			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, nil, adapters.ProxyOurs{}); err != nil {
+			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, adapters.ProxyOurs{}); err != nil {
 			t.Fatal(err)
 		}
 		var after map[string]any
@@ -232,7 +231,7 @@ func TestUninstallSettingsUndo(t *testing.T) {
 
 	t.Run("leaves a base URL the user changed meanwhile alone", func(t *testing.T) {
 		path := undoSettings(t, "{}\n")
-		delta := undoSetUp(t, path, nil)
+		delta := undoSetUp(t, path)
 		edited := map[string]any{}
 		if err := json.Unmarshal(mustRead(t, path), &edited); err != nil {
 			t.Fatal(err)
@@ -243,7 +242,7 @@ func TestUninstallSettingsUndo(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := adapters.UndoProviderSettings(context.Background(), path, "zai",
-			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, nil, adapters.ProxyOurs{}); err != nil {
+			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, adapters.ProxyOurs{}); err != nil {
 			t.Fatal(err)
 		}
 		var after map[string]any
@@ -256,70 +255,45 @@ func TestUninstallSettingsUndo(t *testing.T) {
 		}
 	})
 
-	t.Run("repoints at the surviving plugin's router when two were set up and one is removed", func(t *testing.T) {
-		path := undoSettings(t, "{}\n")
-		delta := undoSetUp(t, path, nil)
+	t.Run("puts the base URL it replaced back, and takes one of the router's out", func(t *testing.T) {
+		// Setup moved the canonical address's other spelling onto the router and recorded it; the
+		// before value names the router, so uninstall removes the key (the env this undo empties
+		// goes with it — the last provider is leaving).
+		path := undoSettings(t, string(mustMarshal(t, map[string]any{"env": map[string]any{
+			"ANTHROPIC_BASE_URL": fmt.Sprintf("http://localhost:%d", domain.HuddleRouterPort),
+		}}))+"\n")
+		delta := undoSetUp(t, path)
+		if delta.BaseURLBefore == nil {
+			t.Fatalf("baseUrlBefore = %+v, want the moved spelling", delta.BaseURLBefore)
+		}
 		if _, err := adapters.UndoProviderSettings(context.Background(), path, "zai",
-			MergeSettingsUndo(nil, &delta), undoRouterURL, []string{undoKimiURL}, nil, adapters.ProxyOurs{}); err != nil {
+			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, adapters.ProxyOurs{}); err != nil {
 			t.Fatal(err)
 		}
 		var after map[string]any
 		if err := json.Unmarshal(mustRead(t, path), &after); err != nil {
 			t.Fatal(err)
 		}
-		want := map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": undoKimiURL}}
-		if !reflect.DeepEqual(after, want) {
-			t.Fatalf("settings after = %+v, want %+v", after, want)
-		}
-	})
-
-	t.Run("puts a previous base URL back unless it is a plugin router that is not running", func(t *testing.T) {
-		proxy := undoSettings(t, string(mustMarshal(t, map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": undoKimiURL}}))+"\n")
-		delta := undoSetUp(t, proxy, nil)
-		if delta.BaseURLBefore == nil || *delta.BaseURLBefore != undoKimiURL {
-			t.Fatalf("baseUrlBefore = %+v, want "+undoKimiURL, delta.BaseURLBefore)
-		}
-		if _, err := adapters.UndoProviderSettings(context.Background(), proxy, "zai",
-			MergeSettingsUndo(nil, &delta), undoRouterURL, nil, nil, adapters.ProxyOurs{}); err != nil {
-			t.Fatal(err)
-		}
-		var after map[string]any
-		if err := json.Unmarshal(mustRead(t, proxy), &after); err != nil {
-			t.Fatal(err)
-		}
-		// The kimi router it replaced is not running: nothing to point at, and the env this undo
-		// empties goes with the keys (the last provider is leaving).
 		if want := map[string]any{}; !reflect.DeepEqual(after, want) {
 			t.Fatalf("settings after = %+v, want %+v", after, want)
 		}
 
-		live := undoSettings(t, string(mustMarshal(t, map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": undoKimiURL}}))+"\n")
-		again := undoSetUp(t, live, nil)
-		if _, err := adapters.UndoProviderSettings(context.Background(), live, "zai",
-			MergeSettingsUndo(nil, &again), undoRouterURL, []string{undoKimiURL}, nil, adapters.ProxyOurs{}); err != nil {
+		// A before value that names no router of ours goes back.
+		restored := undoSettings(t, string(mustMarshal(t, map[string]any{"env": map[string]any{
+			"ANTHROPIC_BASE_URL": undoRouterURL,
+		}}))+"\n")
+		before := adapters.SettingsDelta{BaseURLBefore: strPtrLocal("https://my-proxy.example")}
+		if _, err := adapters.UndoProviderSettings(context.Background(), restored, "zai",
+			MergeSettingsUndo(nil, &before), undoRouterURL, nil, adapters.ProxyOurs{}); err != nil {
 			t.Fatal(err)
 		}
-		var afterLive map[string]any
-		if err := json.Unmarshal(mustRead(t, live), &afterLive); err != nil {
+		var afterRestore map[string]any
+		if err := json.Unmarshal(mustRead(t, restored), &afterRestore); err != nil {
 			t.Fatal(err)
 		}
-		if want := map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": undoKimiURL}}; !reflect.DeepEqual(afterLive, want) {
-			t.Fatalf("settings after = %+v, want %+v", afterLive, want)
-		}
-	})
-
-	t.Run("keeps a live plugin router's base URL at setup instead of moving it", func(t *testing.T) {
-		path := undoSettings(t, string(mustMarshal(t, map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": undoKimiURL}}))+"\n")
-		delta := undoSetUp(t, path, []string{undoKimiURL})
-		if delta.BaseURLBefore != nil {
-			t.Fatalf("baseUrlBefore = %q, want none", *delta.BaseURLBefore)
-		}
-		var after map[string]any
-		if err := json.Unmarshal(mustRead(t, path), &after); err != nil {
-			t.Fatal(err)
-		}
-		if want := map[string]any{"ANTHROPIC_BASE_URL": undoKimiURL}; !reflect.DeepEqual(after["env"], want) {
-			t.Fatalf("env after = %+v, want %+v", after["env"], want)
+		want := map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": "https://my-proxy.example"}}
+		if !reflect.DeepEqual(afterRestore, want) {
+			t.Fatalf("settings after = %+v, want %+v", afterRestore, want)
 		}
 	})
 }
