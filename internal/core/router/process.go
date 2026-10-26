@@ -1,6 +1,4 @@
-// The router's registry entry and its pid's command line: RegistryEntryFor is the entry a
-// provider's router reports about itself, and CommandLineOf reads the command a pid runs
-// (/proc, else `ps`).
+// A pid's command line: CommandLineOf reads the command a pid runs (/proc, else `ps`).
 package router
 
 import (
@@ -11,22 +9,7 @@ import (
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
-	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
-
-// RegistryEntryFor is this plugin's registry entry: its resolved catalog ids (env overrides
-// included) and the pid when it is known.
-func RegistryEntryFor(provider domain.Provider, env domain.EnvLookup, pid *int64) RegisteredRouter {
-	claim := domain.ResolveProvider(provider, env).ModelClaim()
-	return RegisteredRouter{
-		Name:          provider.Name,
-		Port:          int64(domain.RouterPort(provider, env)),
-		ModelPrefixes: claim.Prefixes,
-		CatalogIds:    claim.IDs,
-		Pid:           pid,
-		UpdatedAt:     isoNow(),
-	}
-}
 
 // CommandLineOf is a pid's command line (/proc, else `ps`), or false when neither can say.
 func CommandLineOf(ctx context.Context, pid int64) (string, bool) {

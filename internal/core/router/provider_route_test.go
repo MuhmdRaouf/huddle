@@ -2,7 +2,7 @@ package router
 
 // The provider route's answers: the refusals that become a non-retryable 400, the key that never
 // reaches a log, the error that quotes it, and the request that goes nowhere. The lane here is
-// the worker a router server serves with, driven the way the front drives it.
+// the worker a router server serves with, driven the way huddle-router drives it.
 
 import (
 	"context"
@@ -275,23 +275,14 @@ func TestProviderRouteRecordsTheEventsClaudeCodeReads(t *testing.T) {
 func TestRouteOfSendsAModelWhereItBelongs(t *testing.T) {
 	t.Parallel()
 	claim := routerProvider.ModelClaim()
-	route, _, hasPeer := routeOf(claim, "glm-5.3", nil)
-	if route != "provider" || hasPeer {
-		t.Errorf("routeOf(glm-5.3) = %q, %t, want the provider", route, hasPeer)
+	if route := routeOf(claim, "glm-5.3"); route != "provider" {
+		t.Errorf("routeOf(glm-5.3) = %q, want the provider", route)
 	}
-	route, _, _ = routeOf(claim, "claude-opus-5-5", nil)
-	if route != "anthropic" {
+	if route := routeOf(claim, "claude-opus-5-5"); route != "anthropic" {
 		t.Errorf("routeOf(claude) = %q, want anthropic", route)
 	}
-	route, peer, hasPeer := routeOf(claim, "kimi-main", func(string) (PeerTarget, bool) {
-		return PeerTarget{Name: "kimi", Port: 18788}, true
-	})
-	if !hasPeer || route != "peer:kimi" || peer.Port != 18788 {
-		t.Errorf("routeOf(kimi-main) = %q, %+v, %t, want the peer", route, peer, hasPeer)
-	}
-	route, _, _ = routeOf(claim, "kimi-main", nil)
-	if route != "anthropic" {
-		t.Errorf("routeOf with no peers = %q, want anthropic", route)
+	if route := routeOf(claim, "kimi-main"); route != "anthropic" {
+		t.Errorf("routeOf(kimi-main) = %q, want anthropic", route)
 	}
 }
 

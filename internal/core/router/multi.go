@@ -1,8 +1,7 @@
 // The one router every provider plugin shares: huddle-router holds one lane per enabled provider
-// (the same routerWorker a per-provider router serves with) and one Anthropic lane, picks the
-// lane from the request's model, and serves both base-URL mode and HTTPS-proxy mode. No peers and
-// no hop: a model no lane claims goes to Anthropic, and each lane's key, budget and refusals are
-// its own.
+// and one Anthropic lane, picks the lane from the request's model, and serves both base-URL mode
+// and HTTPS-proxy mode. A model no lane claims goes to Anthropic, and each lane's key, budget and
+// refusals are its own.
 package router
 
 import (
@@ -41,7 +40,8 @@ type MultiOptions struct {
 	Port int
 	// Anthropic is where every request for a model no lane claims goes, unchanged.
 	Anthropic *url.URL
-	// Lanes is one entry per enabled provider; Port, Token and Peers are ignored.
+	// Lanes is one entry per enabled provider; the router's own Anthropic URL and proxy
+	// environment are each lane's.
 	Lanes []RouterOptions
 	// CADir is the local CA's directory; "" never decrypts (every CONNECT is a blind tunnel).
 	CADir string
@@ -230,9 +230,6 @@ func (m *Multi) buildLanes(lanes []RouterOptions) []*routerWorker {
 	built := make([]*routerWorker, 0, len(lanes))
 	for _, lane := range lanes {
 		laneOpts := lane
-		laneOpts.Port = 0
-		laneOpts.Token = ""
-		laneOpts.Peers = nil
 		laneOpts.Anthropic = m.o.Anthropic
 		laneOpts.Env = m.o.Env
 		if laneOpts.Log == nil {

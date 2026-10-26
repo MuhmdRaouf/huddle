@@ -1,6 +1,6 @@
 // A refused key or an empty balance on a provider route reaches Claude Code as a non-retryable
 // 400 that says what to run or where to top up, never as the 401 it would read as its own login
-// failing or the 429 it would retry for minutes. Anthropic's and a peer's answers are never
+// failing or the 429 it would retry for minutes. Anthropic's answers are never
 // touched. The refusals' cases, inputs and expected outputs come from refusal.go and
 // router.go.
 package router

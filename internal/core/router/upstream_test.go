@@ -120,7 +120,6 @@ type relayServer struct {
 
 type relayExtra struct {
 	idleMs int64
-	direct bool
 }
 
 func relay(t *testing.T, target func(req *http.Request) *url.URL, env ProxyEnv, extra relayExtra) *relayServer {
@@ -139,7 +138,6 @@ func relay(t *testing.T, target func(req *http.Request) *url.URL, env ProxyEnv, 
 			Headers: ForwardHeaders(req.Header, upstream, len(body)),
 			Body:    body,
 			Env:     env,
-			Direct:  extra.direct,
 			IdleMs:  extra.idleMs,
 		}, res, UpstreamHooks{
 			Failed: func(failure UpstreamFailure) {
@@ -775,7 +773,7 @@ func TestOneRequestUpstream(t *testing.T) {
 		}, nil)
 		rs := relay(t, func(req *http.Request) *url.URL {
 			return mustURL(t, fmt.Sprintf("http://127.0.0.1:%d/x", upstream))
-		}, ProxyEnv{}, relayExtra{direct: true})
+		}, ProxyEnv{}, relayExtra{})
 		socket, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", rs.port))
 		if err != nil {
 			t.Fatalf("dial: %v", err)

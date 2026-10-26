@@ -34,10 +34,8 @@ type Ledger struct {
 	// SettingsPath is where Claude Code's settings live.
 	SettingsPath string `json:"settingsPath"`
 	// Settings is what setup changed in them, as the ledger recorded it.
-	Settings      adapters.SettingsUndo `json:"settings"`
-	Keystore      LedgerKeystore        `json:"keystore"`
-	RouterFiles   []string              `json:"routerFiles"`
-	LegacyRemoved *string               `json:"legacyRemoved,omitempty"`
+	Settings adapters.SettingsUndo `json:"settings"`
+	Keystore LedgerKeystore        `json:"keystore"`
 	// Marker is `${CLAUDE_PLUGIN_DATA}/installed`, deleted by Claude Code on uninstall.
 	Marker *string `json:"marker,omitempty"`
 	// Agents is each agent's `model:` value before setup first changed it (nil: it had no `model:`
@@ -70,8 +68,8 @@ func (l *Ledger) UnmarshalJSON(data []byte) error {
 
 // ledgerKeys is the order a ledger built in memory marshals in: the recordLedger literal's own.
 var ledgerKeys = []string{
-	"version", "plugin", "routerUrl", "settingsPath", "settings", "keystore", "routerFiles",
-	"legacyRemoved", "marker", "agents", "agentsDir", "stateRoot",
+	"version", "plugin", "routerUrl", "settingsPath", "settings", "keystore", "marker", "agents",
+	"agentsDir", "stateRoot",
 }
 
 // checkedKeys is what readLedger's zod schema checks, in its order; a read ledger marshals with
@@ -120,10 +118,6 @@ func (l Ledger) fieldValue(key string) (any, bool) {
 		return l.Settings, true
 	case "keystore":
 		return l.Keystore, true
-	case "routerFiles":
-		return l.RouterFiles, true
-	case "legacyRemoved":
-		return l.LegacyRemoved, l.LegacyRemoved != nil
 	case "marker":
 		return l.Marker, l.Marker != nil
 	case "agents":

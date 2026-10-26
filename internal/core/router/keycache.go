@@ -29,8 +29,7 @@ type keyRun struct {
 }
 
 // keyCache is the worker's provider key: one in-flight lookup every reader shares (provider
-// requests, the warm read at start, the front's key checks), its answer kept until the provider
-// refuses it. The lookup runs under the cache's own deadline and no caller's context, so one
+// requests), its answer kept until the provider refuses it. The lookup runs under the cache's own deadline and no caller's context, so one
 // request's end never ends the shared read, and a hung store is asked once instead of once per
 // request.
 type keyCache struct {

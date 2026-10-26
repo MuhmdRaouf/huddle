@@ -16,9 +16,6 @@
   "keystore": {
     "created": false
   },
-  "routerFiles": [
-    "/ROOT/router"
-  ],
   "agentsDir": "/ROOT/plugin/agents",
   "stateRoot": "/ROOT",
   "agents": {

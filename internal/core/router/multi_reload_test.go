@@ -6,6 +6,7 @@ package router
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"reflect"
 	"sync/atomic"
@@ -72,12 +73,29 @@ func TestMultiReloadFollowsTheNewLanes(t *testing.T) {
 // finishes on it across a reload (the lane set is swapped, never mutated).
 func TestMultiReloadKeepsARoutedRequestOnItsLane(t *testing.T) {
 	zaiSeen := &seenList{}
-	zaiUp := recordingUpstream(t, "zai", "/api/anthropic", zaiSeen)
 	anthropicUp := recordingUpstream(t, "anthropic", "", &seenList{})
 	port := reservePort(t)
 	var reloaded atomic.Bool
-	var server *http.Server
 	var multi *Multi
+	// zai's upstream fires the reload once the request reaches it: the lanes swap while the
+	// request sits on its lane.
+	zaiPort := serve(t, func(w http.ResponseWriter, req *http.Request) {
+		body, err := ReadBody(req, BodyLimitBytes)
+		if err != nil {
+			return
+		}
+		res := NewResponse(w)
+		zaiSeen.record(pathOf(req), req.Header, string(body))
+		if !reloaded.Swap(true) {
+			multi.Reload(nil)
+		}
+		res.Header().Set("Content-Type", "text/event-stream")
+		res.WriteHeader(200)
+		res.Write([]byte("data: zai-1\n\n"))
+		res.End([]byte("data: zai-2\n\n"))
+	}, nil)
+	zaiUp := mustURL(t, fmt.Sprintf("http://127.0.0.1:%d/api/anthropic", zaiPort))
+	var server *http.Server
 	server, multi = CreateMulti(MultiOptions{
 		Port:      port,
 		Anthropic: anthropicUp,
@@ -85,12 +103,6 @@ func TestMultiReloadKeepsARoutedRequestOnItsLane(t *testing.T) {
 			Provider:    routerProvider,
 			ProviderURL: zaiUp,
 			Key:         func(context.Context) (string, error) { return "zai-secret", nil },
-			OnUpstream: func(*http.Request) {
-				// The request is on its way to zai: swap the lanes from under it.
-				if !reloaded.Swap(true) {
-					multi.Reload(nil)
-				}
-			},
 		}},
 	})
 	serveRouter(t, server, port)

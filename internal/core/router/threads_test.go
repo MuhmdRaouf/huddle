@@ -1,6 +1,6 @@
 // The message-threads beta: a provider-bound request carrying it is refused with the 400 Claude
 // Code reads as "beta rejected", so it drops threading and resends the whole conversation;
-// Claude and peer traffic pass untouched.
+// Claude traffic passes untouched.
 package router
 
 import (

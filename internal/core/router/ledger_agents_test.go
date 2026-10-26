@@ -31,7 +31,6 @@ func orderedLedger() Ledger {
 		SettingsPath: "/home/.claude/settings.json",
 		Settings:     emptyUndo(),
 		Keystore:     LedgerKeystore{Created: false},
-		RouterFiles:  []string{"/state/router"},
 		Agents:       orderedAgents(),
 		AgentsDir:    strp("/plugin/agents"),
 		StateRoot:    "/state",
@@ -68,9 +67,6 @@ func TestLedgerAgentsOrder(t *testing.T) {
   "keystore": {
     "created": false
   },
-  "routerFiles": [
-    "/state/router"
-  ],
   "agents": {
     "zealot": "opus",
     "alpha": null,
@@ -257,9 +253,6 @@ func orderedLedgerJSON(t *testing.T) string {
   "keystore": {
     "created": false
   },
-  "routerFiles": [
-    "REPLACED/router"
-  ],
   "agentsDir": "/plugin/agents",
   "stateRoot": "REPLACED",
   "agents": {

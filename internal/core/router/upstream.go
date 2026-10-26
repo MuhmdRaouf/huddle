@@ -1,10 +1,9 @@
-// The HTTP plumbing every router process shares: the front, the worker and the emergency
-// passthrough. Standard library only, so the binary that carries it stays free of any
-// dependency. It owns the hardening every server gets, the Anthropic-shaped error, the bounded
-// body read, the single-leading-slash path rule, and the upstream request: keep-alive clients,
-// the caller's proxy environment, a retry on a socket the upstream had already closed, an idle
-// timeout on silence (never a total one) and a client stream that always ends when the upstream
-// does.
+// The HTTP plumbing every router process shares. Standard library only, so the binary that
+// carries it stays free of any dependency. It owns the hardening every server gets, the
+// Anthropic-shaped error, the bounded body read, the single-leading-slash path rule, and the
+// upstream request: keep-alive clients, the caller's proxy environment, a retry on a socket the
+// upstream had already closed, an idle timeout on silence (never a total one) and a client stream
+// that always ends when the upstream does.
 package router
 
 import (
@@ -42,10 +41,6 @@ type ProxyEnv = netproxy.Env
 // BodyLimitBytes is the largest request body any router process accepts; a larger one gets an
 // Anthropic-shaped 413.
 const BodyLimitBytes int64 = 64 * 1024 * 1024
-
-// TokenHeader is the header name reserved for a front's token; UpstreamHeaders strips it, so a
-// token never reaches an upstream.
-const TokenHeader = "x-provider-router-token"
 
 // InspectLimitBytes is the most of an answer an inspection may hold back before deciding; a longer
 // one goes out unchanged.
@@ -447,18 +442,6 @@ func tunnel(proxy *url.URL) func(ctx context.Context, network, addr string) (net
 var (
 	agentsMu sync.Mutex
 	agents   = map[string]*http.Transport{}
-	// directTransport serves Direct calls the way Node's global agent serves an agentless request.
-	// No transport of the router's decompresses an answer: Node's client never does, so the answer's
-	// own bytes (gzip included) reach the client as the upstream sent them. The idle pool matches
-	// the concurrency cap: with Go's default of 2 idle per host, a burst of parallel requests opens
-	// and closes a connection for each, pinning an ephemeral port per request in TIME_WAIT.
-	directTransport = &http.Transport{
-		MaxConnsPerHost:     256,
-		MaxIdleConns:        256,
-		MaxIdleConnsPerHost: 64,
-		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  true,
-	}
 )
 
 // AgentFor is the keep-alive HTTP client for a target: direct, or through our own CONNECT tunnel
@@ -541,8 +524,6 @@ type UpstreamCall struct {
 	Headers http.Header
 	Body    []byte
 	Env     ProxyEnv
-	// Direct: loopback peers and the worker are dialled directly and never through a proxy.
-	Direct bool
 	// IdleMs is the silence budget of the call; 0 is the default ten minutes.
 	IdleMs int64
 	// Timing carries the moment the router took the request; SendUpstream stamps the moment the
@@ -732,10 +713,7 @@ func SendUpstream(ctx context.Context, call UpstreamCall, res *Response, hooks U
 	// retry, so it can never be handed the same dead socket again. reused is taken off the
 	// connection the client handed this attempt: true when it was a pooled keep-alive socket.
 	attempt := func(fresh bool) (*http.Response, bool, error) {
-		attemptTransport := directTransport
-		if !call.Direct {
-			attemptTransport = AgentFor(call.URL, call.Env, fresh)
-		}
+		attemptTransport := AgentFor(call.URL, call.Env, fresh)
 		var reused atomic.Bool
 		traceCtx := httptrace.WithClientTrace(callCtx, &httptrace.ClientTrace{
 			GotConn: func(info httptrace.GotConnInfo) { reused.Store(info.Reused) },

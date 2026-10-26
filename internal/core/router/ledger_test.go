@@ -25,9 +25,8 @@ func TestLedgerFile(t *testing.T) {
 				AvailableAppended: []string{},
 				EffortsAdded:      adapters.NewStringMap(),
 			},
-			Keystore:    LedgerKeystore{Created: true},
-			RouterFiles: []string{"/state/router/zai.js"},
-			StateRoot:   "/state",
+			Keystore:  LedgerKeystore{Created: true},
+			StateRoot: "/state",
 		}
 		if err := WriteLedger(t.Context(), path, ledger); err != nil {
 			t.Fatal(err)
@@ -43,8 +42,7 @@ func TestLedgerFile(t *testing.T) {
 		read, ok := ReadLedger(t.Context(), path)
 		if !ok || read.Plugin != ledger.Plugin || read.RouterURL != ledger.RouterURL ||
 			read.SettingsPath != ledger.SettingsPath || !read.Keystore.Created ||
-			strings.Join(read.RouterFiles, ",") != strings.Join(ledger.RouterFiles, ",") ||
-			read.StateRoot != ledger.StateRoot || read.LegacyRemoved != nil {
+			read.StateRoot != ledger.StateRoot {
 			t.Fatalf("readLedger = %+v (%v)", read, ok)
 		}
 	})
@@ -53,7 +51,7 @@ func TestLedgerFile(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "ledger.json")
 		if err := os.WriteFile(path, []byte(`{"version":1,"plugin":"zai","routerUrl":"u","settingsPath":"s",
 "settings":{"optionsAdded":["glm-5.3"],"availableAppended":[],"createdModelPicker":true,"createdOptions":true,"createdEnv":true,"createdToolSearch":true,"effortsAdded":{"glm-5.3":"xhigh"},"extra":"kept"},
-"keystore":{"created":false},"routerFiles":[],"unknown":"ignored","stateRoot":"/state"}`), 0o600); err != nil {
+"keystore":{"created":false},"routerFiles":[],"legacyRemoved":"gone","unknown":"ignored","stateRoot":"/state"}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		read, ok := ReadLedger(t.Context(), path)

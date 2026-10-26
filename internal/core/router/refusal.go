@@ -3,7 +3,7 @@
 // or 403 as its own Anthropic login failing ("run /login"), and retries a 429 or a 5xx with backoff
 // for minutes, so on a provider route neither may reach it as it came: a refused or missing key and
 // an empty balance both become a 400 that is not retried (`x-should-retry: false`) and says what to
-// run or where to top up. `claude-*` and peer routes never come through here. No upstream text is
+// run or where to top up. `claude-*` models never come through here. No upstream text is
 // copied into the answer, so nothing the provider echoes (a key included) can leak through it.
 package router
 

@@ -61,28 +61,6 @@ func (diskFs) Rename(from, to string) error {
 	return os.Rename(from, to)
 }
 
-// CrashLogLimit is the crash log's kept size: the last bytes only.
-const CrashLogLimit int64 = 1024 * 1024
-
-// LogRole is who wrote a crash-log line.
-type LogRole string
-
-const (
-	RoleFront     LogRole = "front"
-	RoleWorker    LogRole = "worker"
-	RoleEmergency LogRole = "emergency"
-)
-
-// CrashEntry is one crash-log line's own fields; a nil pointer is a field the line omits, the way
-// JSON.stringify drops an undefined.
-type CrashEntry struct {
-	Role    LogRole `json:"role"`
-	Version string  `json:"version"`
-	Event   *string `json:"event,omitempty"`
-	Error   *string `json:"error,omitempty"`
-	Stack   *string `json:"stack,omitempty"`
-}
-
 // isoNow is new Date().toISOString(): UTC, millisecond precision.
 func isoNow() string {
 	return time.Now().UTC().Format("2006-01-02T15:04:05.000Z07:00")

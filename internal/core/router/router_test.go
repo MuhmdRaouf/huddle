@@ -422,46 +422,6 @@ func TestTheRouteEventCarriesTheRoutersOwnMicroseconds(t *testing.T) {
 		}
 		assertRouterMicroseconds(t, routes[0])
 	})
-
-	t.Run("a request refused as a second hop carries none", func(t *testing.T) {
-		t.Parallel()
-		upstream := laneUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ string) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(200)
-			_, _ = w.Write([]byte(`{}`))
-		})
-		events := &eventLog{}
-		worker := laneWorker(t, upstream, keyOfTheLane, func(o *RouterOptions) {
-			o.Anthropic = upstream
-			o.Events = events.record
-		})
-		port := laneServer(t, worker)
-		got, err := postRawBody(port, "/v1/messages", `{"model":"claude-sonnet-4-5","messages":[]}`, map[string]string{
-			"Content-Type":          "application/json",
-			"Authorization":         "Bearer anthropic-oauth",
-			"X-Provider-Router-Hop": "1",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got.status != 508 {
-			t.Fatalf("the answer = %d %q, want 508", got.status, got.body)
-		}
-		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) && len(events.routes()) == 0 {
-			time.Sleep(10 * time.Millisecond)
-		}
-		routes := events.routes()
-		if len(routes) != 1 {
-			t.Fatalf("the router wrote %d route events, want 1", len(routes))
-		}
-		if routes[0].Route != "refused" {
-			t.Fatalf("the route = %q, want refused", routes[0].Route)
-		}
-		if routes[0].RouterUs != nil {
-			t.Errorf("the refused request's router_us = %d, want none: nothing went upstream", *routes[0].RouterUs)
-		}
-	})
 }
 
 func TestPromptRefWaitsForItsCapture(t *testing.T) {

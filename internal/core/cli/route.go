@@ -447,10 +447,8 @@ func recordLedger(ctx context.Context, deps SetupDeps, delta *adapters.SettingsD
 		SettingsPath: deps.SettingsPath,
 		Settings:     router.MergeSettingsUndo(previousUndo, delta),
 		Keystore:     router.LedgerKeystore{Created: previousCreated || storedKey},
-		RouterFiles:  []string{layout.RouterDir},
 	}
 	if hadPrevious {
-		ledger.LegacyRemoved = previous.LegacyRemoved
 		ledger.Marker = previous.Marker
 		ledger.Agents = previous.Agents
 	}

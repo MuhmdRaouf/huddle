@@ -1,8 +1,7 @@
-// Routes Claude Code's API requests by model: the provider's own ids to it with its key, another
-// plugin's ids to that plugin's router unchanged, and everything else — every `claude-*` request —
-// to Anthropic as is. Only this machine may use it: the server listens on 127.0.0.1 and refuses
-// any other Host (DNS rebinding). The router must never cut Claude off: every error path degrades
-// to an answer, never a dropped connection.
+// Routes Claude Code's API requests by model: the provider's own ids to it with its key, and
+// everything else — every `claude-*` request — to Anthropic as is. Only this machine may use it:
+// the server listens on 127.0.0.1 and refuses any other Host (DNS rebinding). The router must
+// never cut Claude off: every error path degrades to an answer, never a dropped connection.
 package router
 
 import (
@@ -16,7 +15,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -40,12 +38,11 @@ import (
 
 // RouterOptions is what the router needs to know: whose router this is (the resolved provider:
 // env model overrides applied), where each kind of request goes, and the plugs the caller owns
-// (the key, the log, the spool, the budget gate, the front's token).
+// (the key, the log, the spool, the budget gate).
 type RouterOptions struct {
 	// Provider is whose router this is, as resolved for this process (ResolveProvider): the model
 	// ids it claims, the fields it strips, its health path and every line it prints.
 	Provider domain.Provider
-	Port     int
 	// Anthropic is where every request for a model this provider does not serve goes, unchanged.
 	Anthropic *url.URL
 	// ProviderURL is the provider's Anthropic-compatible endpoint.
@@ -60,9 +57,6 @@ type RouterOptions struct {
 	// Log receives one line per request: method, path, model, route, status. Never headers or
 	// bodies.
 	Log func(line string)
-	// Peers says which other plugin's router serves a model this one does not; set by the service,
-	// nil in tests.
-	Peers func(model string) (PeerTarget, bool)
 	// Events receives one spool event per forwarded request and the health events (refusals, rate
 	// limits, a budget stop), when Radar's spool is reachable.
 	Events func(event domain.SpoolEvent)
@@ -76,13 +70,6 @@ type RouterOptions struct {
 	Budget func() (domain.BudgetStop, bool)
 	// Env is the proxy environment upstream requests honour (HTTPS_PROXY, NO_PROXY, …).
 	Env ProxyEnv
-	// OnUpstream is called just before a request goes upstream, so the front knows the upstream may
-	// have seen it.
-	OnUpstream func(req *http.Request)
-	// Token is the front's token, required on the data path when set: a request without it is
-	// answered 403 and never read or forwarded (the worker behind its front takes one; tests on
-	// port 0 run without).
-	Token string
 	// KeyTimeoutMs is how long a key lookup may take before a provider request is answered 503; 0
 	// is the default two seconds.
 	KeyTimeoutMs int64
@@ -95,14 +82,6 @@ type RouterOptions struct {
 	// after it answers three 5xx, 429 or dropped answers in a row. nil never falls back.
 	Fallback []string
 }
-
-// PeerHop is the hop header a router stamps on a request it forwards to a peer, so no request is
-// ever forwarded twice.
-const PeerHop = "x-provider-router-hop"
-
-// RequestID is the header the front stamps on a request it hands its worker, echoed back over IPC
-// once it goes upstream.
-const RequestID = "x-provider-router-request"
 
 // keyTimeoutDefault is the key lookup's budget: a keychain prompt or a hung store answers the
 // provider request 503, never hangs it.
@@ -667,10 +646,6 @@ func requestPath(req *http.Request) string {
 // other route keeps them untouched.
 func UpstreamHeaders(incoming http.Header, target *url.URL, length int, key string) http.Header {
 	out := ForwardHeaders(incoming, target, length)
-	out.Del(RequestID)
-	out.Del(PeerHop)
-	// The front's token belongs to the loopback hop alone; it never reaches an upstream.
-	out.Del(TokenHeader)
 	if key != "" {
 		out.Del("X-Api-Key")
 		out.Set("Authorization", "Bearer "+key)
@@ -780,22 +755,12 @@ func newRouterWorker(opts RouterOptions, keyLookup func(ctx context.Context) (po
 	}
 }
 
-// routeOf is where a request for this model goes: "provider", "anthropic", or "peer:<name>".
-func routeOf(claim domain.ModelClaim, model string, peers func(string) (PeerTarget, bool)) (string, PeerTarget, bool) {
+// routeOf is where a request for this model goes: "provider" or "anthropic".
+func routeOf(claim domain.ModelClaim, model string) string {
 	if domain.Claims(claim, model) {
-		return "provider", PeerTarget{}, false
+		return "provider"
 	}
-	if model != "" && peers != nil {
-		if peer, ok := peers(model); ok {
-			return "peer:" + peer.Name, peer, true
-		}
-	}
-	return "anthropic", PeerTarget{}, false
-}
-
-// hopPresent reports whether the request already carries the peer-hop header.
-func hopPresent(req *http.Request) bool {
-	return len(req.Header.Values(PeerHop)) > 0
+	return "anthropic"
 }
 
 // threadsBeta collects the message-threads tokens of the anthropic-beta header: every
@@ -1504,8 +1469,7 @@ func keyWithin(ctx context.Context, w *routerWorker) (string, keyOutcome) {
 
 // forward serves one request on its original bytes: the body is parsed only on the provider
 // route, where its fields are edited; every other route forwards the bytes as they came. A
-// refused request — a second hop, the message-threads beta, a stopped budget, no key — parses
-// nothing.
+// refused request — the message-threads beta, a stopped budget, no key — parses nothing.
 func (w *routerWorker) forward(req *http.Request, res *Response, original []byte, model string) {
 	provider := w.provider
 	prompt := &promptRef{}
@@ -1514,34 +1478,17 @@ func (w *routerWorker) forward(req *http.Request, res *Response, original []byte
 	startedAt := takenAt.UnixMilli()
 	timing := &answerTiming{takenAt: takenAt}
 	note := w.noteOf(req, served, startedAt, prompt, timing)
-	route, peer, hasPeer := routeOf(w.claim, model, w.opts.Peers)
-	// A request another plugin's router forwarded here is served when it is this provider's model;
-	// anything else would be a second hop (a loop, or two routers disagreeing about who serves the
-	// model), so it is refused.
-	if hopPresent(req) && route != "provider" {
-		w.log(fmt.Sprintf("%s %s model=%s → refused: second peer hop", req.Method, requestPath(req), modelOrDash(model)))
-		AnthropicError(res, 508, "api_error", provider.Name+" router: refusing to forward a request twice")
-		if note != nil {
-			reason := "refusing to forward a request twice"
-			note(508, "refused", "-", nil, &reason, nil)
-		}
-		return
-	}
+	route := routeOf(w.claim, model)
 	// The request is on its way: read what its body carried, once per content. The provider route
 	// scans its members once, before the capture starts, and hands the spans to the capture and its
 	// own rewrite alike; every other route lets the capture scan for itself.
 	var spans []keySpan
-	if route == "provider" && !hasPeer {
+	if route == "provider" {
 		spans, _ = splitTopLevel(original)
 	}
 	w.capture(prompt, original, spans)
-	if hasPeer {
-		target := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.FormatInt(peer.Port, 10))}
-		w.dispatch(req, res, original, model, route, target, note, timing, &peer, "", nil)
-		return
-	}
 	if route != "provider" {
-		w.dispatch(req, res, original, model, route, w.opts.Anthropic, note, timing, nil, "", nil)
+		w.dispatch(req, res, original, model, route, w.opts.Anthropic, note, timing, "", nil)
 		return
 	}
 	// The message-threads beta is Anthropic-only: Claude Code sends only the newest messages and
@@ -1589,7 +1536,7 @@ func (w *routerWorker) forward(req *http.Request, res *Response, original []byte
 	}
 	system, first := promptPartsOf(original, spans)
 	adapted, named := providerBody(w, original, spans, model, fallback, req)
-	w.dispatch(req, res, adapted, named, "provider", w.opts.ProviderURL, note, timing, nil, key, promptHintOf(system, first, int64(len(adapted))))
+	w.dispatch(req, res, adapted, named, "provider", w.opts.ProviderURL, note, timing, key, promptHintOf(system, first, int64(len(adapted))))
 }
 
 // budgetStopped answers a provider request while its budget is stopped: the same non-retryable
@@ -1846,7 +1793,7 @@ func failureStatus(failure UpstreamFailure) int64 {
 }
 
 // dispatch sends one request on its route and pipes its answer back, streaming it.
-func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, model, route string, target *url.URL, note eventNote, timing *answerTiming, peer *PeerTarget, key string, prompt *PromptHint) {
+func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, model, route string, target *url.URL, note eventNote, timing *answerTiming, key string, prompt *PromptHint) {
 	provider := w.provider
 	u, err := UpstreamURL(target, requestPath(req))
 	if err != nil {
@@ -1865,9 +1812,6 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 		return
 	}
 	headers := UpstreamHeaders(req.Header, target, len(body), key)
-	if peer != nil {
-		headers.Set(PeerHop, "1")
-	}
 	// The answer's allow-listed headers, read once as its head arrives, for the route event's
 	// note; usage is parsed out of the passing stream, so the client never waits on it.
 	var tracker *UsageTracker
@@ -1875,9 +1819,6 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 	// What this answer's inspection decided (a provider route only): the client's status when the
 	// answer was rewritten, and why the upstream failed.
 	decided := inspection{}
-	if w.opts.OnUpstream != nil {
-		w.opts.OnUpstream(req)
-	}
 	hooks := UpstreamHooks{
 		Answered: func(answer *http.Response) {
 			timing.headAt = time.Now().UnixMilli()
@@ -1947,10 +1888,6 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			}
 			if !failure.AfterHeaders {
 				message := fmt.Sprintf("%s router: %s unreachable (%s)", provider.Name, route, failure.Code)
-				if peer != nil {
-					message = fmt.Sprintf("%s router: the %s plugin's router is down; run /%s:setup to restart it",
-						provider.Name, peer.Name, peer.Name)
-				}
 				AnthropicError(res, int(status), "api_error", message)
 			}
 			if note != nil {
@@ -1961,8 +1898,8 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			}
 		},
 	}
-	// Only a provider route (the one carrying the key) has its error answers read; Anthropic's and
-	// a peer's always go through as they came.
+	// Only a provider route (the one carrying the key) has its error answers read; Anthropic's
+	// always go through as they came.
 	if key != "" {
 		hooks.Inspect, hooks.Oversize = w.providerInspection(req, u, route, model, key, &decided)
 	}
@@ -1972,7 +1909,6 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 		Headers: headers,
 		Body:    body,
 		Env:     w.opts.Env,
-		Direct:  peer != nil,
 		IdleMs:  w.opts.IdleMs,
 		Timing:  timing,
 	}, res, hooks)

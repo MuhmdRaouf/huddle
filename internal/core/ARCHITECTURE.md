@@ -304,7 +304,7 @@ The dispatcher subagent:
 
 ## Code structure (functional core, imperative shell)
 
-One dispatch, `internal/core/entry`, answers `huddle provider <provider> <cli|router|passthrough|ensure>`; the
+One dispatch, `internal/core/entry`, answers `huddle provider <provider> cli`; the
 engine's detached children re-run it as the bare `<p> <entry> ...` and
 `--orphan-launch ...` argv. The engine needs no runtime.
 
@@ -333,7 +333,7 @@ internal/core/
                           top-up page
   router/                 the model router: multi.go is huddle-router (one lane per enabled provider plus the
                           Anthropic lane, matched by catalog id then the longest prefix), budget.go the gate,
-                          emergency.go the passthrough, process.go the worker environment; internal/routerd holds
+                          tlsproxy.go the proxy passthrough, crashlog.go the router's own log; internal/routerd holds
                           the daemon around it (start, watchdog, handover)
   render/                 pure text renderers: board, job, review packet, usage, the price table
   cli/                    argument parsing, one file per command (setup, setup-key, auth-serve, engine-setup, run,

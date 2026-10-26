@@ -1,6 +1,6 @@
-// One provider's lane as the router processes build it: the endpoint overrides the environment
-// names, the spool, the budget gate, the proxy environment and the keystore lookup. The per-
-// provider worker and the huddle-router daemon both start from here, so a lane is built one way.
+// One provider's lane as the router builds it: the endpoint overrides the environment names, the
+// spool, the budget gate, the proxy environment and the keystore lookup. Every huddle-router lane
+// starts from here, so a lane is built one way.
 package router
 
 import (
@@ -40,10 +40,9 @@ func (e *BadURL) Error() string { return e.Name + ": " + e.Err.Error() }
 
 func (e *BadURL) Unwrap() error { return e.Err }
 
-// LaneOf is one provider's lane options as the router process builds them: endpoint overrides,
-// spool, budget gate, proxy environment, the keystore lookup and providers.json's fallback list.
-// The multi-level plugs (Port, Token, Peers, the Anthropic URL every lane shares) are the
-// caller's to set.
+// LaneOf is one provider's lane options as the router builds them: endpoint overrides, spool,
+// budget gate, proxy environment, the keystore lookup and providers.json's fallback list. The
+// Anthropic URL every lane shares is the caller's to set.
 func LaneOf(provider domain.Provider, env domain.EnvLookup, log func(string)) (RouterOptions, error) {
 	resolved := domain.ResolveProvider(provider, env)
 	anthropicKnob := domain.RouterEnvName(resolved, domain.RouterEnvKnobAnthropicURL)

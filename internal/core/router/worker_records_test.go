@@ -1,7 +1,7 @@
 package router
 
-// The worker's small records and tools: the registry entry a hub reads, the installed plugin's
-// path, the disk operations the rotating log stands on, and the key cache's forget.
+// The worker's small records and tools: the installed plugin's path, the disk operations the
+// rotating log stands on, and the key cache's forget.
 
 import (
 	"context"
@@ -11,30 +11,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/core/ports"
-	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
-
-func TestRegistryEntryForCarriesTheClaimAndThePid(t *testing.T) {
-	t.Parallel()
-	pid := int64(4242)
-	entry := RegistryEntryFor(routerProvider, domain.EnvLookup{}, &pid)
-	if entry.Name != "zai" || entry.Port != int64(routerProvider.Router.Port) {
-		t.Errorf("RegistryEntryFor = %+v, want zai on its own port", entry)
-	}
-	if len(entry.ModelPrefixes) == 0 || len(entry.CatalogIds) == 0 {
-		t.Errorf("RegistryEntryFor = %+v, want the claim's prefixes and ids", entry)
-	}
-	if entry.Pid == nil || *entry.Pid != 4242 {
-		t.Errorf("RegistryEntryFor pid = %v, want 4242", entry.Pid)
-	}
-	if entry.UpdatedAt == "" {
-		t.Error("RegistryEntryFor carried no timestamp")
-	}
-	anonymous := RegistryEntryFor(routerProvider, domain.EnvLookup{}, nil)
-	if anonymous.Pid != nil {
-		t.Errorf("RegistryEntryFor pid = %v, want none", anonymous.Pid)
-	}
-}
 
 func TestDiskFsReadsAndWritesWhatIsThere(t *testing.T) {
 	t.Parallel()
