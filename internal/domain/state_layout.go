@@ -59,9 +59,6 @@ type StateLayout struct {
 	Root string
 	// Setup ran (and was not removed); the hooks act only once it exists.
 	SetupDone string
-	// The `route: provider` mark an older install carries in place of `setup-done`; read, then
-	// removed.
-	LegacyRouteMark string
 	// Which delegation engines are enabled and who watches each.
 	Engines string
 	// Every change setup made outside the plugin, so the router can undo exactly those on
@@ -119,27 +116,26 @@ func NewStateLayout(root string) StateLayout {
 	jobs := filepath.Join(root, "jobs")
 	checkouts := filepath.Join(root, "checkouts")
 	return StateLayout{
-		Root:            root,
-		SetupDone:       filepath.Join(root, "setup-done"),
-		LegacyRouteMark: filepath.Join(root, "route"),
-		Engines:         filepath.Join(root, "engines.json"),
-		Ledger:          filepath.Join(root, "ledger.json"),
-		DisabledLedger:  filepath.Join(root, "ledger.disabled.json"),
-		RouterDir:       routerDir,
-		RouterLog:       filepath.Join(routerDir, "router.log"),
-		RouterPid:       filepath.Join(root, "router.pid"),
-		RouterRetired:   filepath.Join(root, "router.retired"),
-		RouterSilent:    filepath.Join(root, "router.silent"),
-		RouterExit:      filepath.Join(root, "router.exit"),
-		RouterLock:      filepath.Join(root, "router.lock"),
-		CrashLog:        filepath.Join(root, "router-crash.log"),
-		LeftBehind:      filepath.Join(root, "LEFT-BEHIND.md"),
-		ClaudeHome:      filepath.Join(root, "claude-home"),
-		Limiter:         filepath.Join(root, "limiter.json"),
-		Slots:           filepath.Join(root, "slots"),
-		Jobs:            jobs,
-		Checkouts:       checkouts,
-		CA:              filepath.Join(filepath.Dir(root), "ca"),
+		Root:           root,
+		SetupDone:      filepath.Join(root, "setup-done"),
+		Engines:        filepath.Join(root, "engines.json"),
+		Ledger:         filepath.Join(root, "ledger.json"),
+		DisabledLedger: filepath.Join(root, "ledger.disabled.json"),
+		RouterDir:      routerDir,
+		RouterLog:      filepath.Join(routerDir, "router.log"),
+		RouterPid:      filepath.Join(root, "router.pid"),
+		RouterRetired:  filepath.Join(root, "router.retired"),
+		RouterSilent:   filepath.Join(root, "router.silent"),
+		RouterExit:     filepath.Join(root, "router.exit"),
+		RouterLock:     filepath.Join(root, "router.lock"),
+		CrashLog:       filepath.Join(root, "router-crash.log"),
+		LeftBehind:     filepath.Join(root, "LEFT-BEHIND.md"),
+		ClaudeHome:     filepath.Join(root, "claude-home"),
+		Limiter:        filepath.Join(root, "limiter.json"),
+		Slots:          filepath.Join(root, "slots"),
+		Jobs:           jobs,
+		Checkouts:      checkouts,
+		CA:             filepath.Join(filepath.Dir(root), "ca"),
 	}
 }
 

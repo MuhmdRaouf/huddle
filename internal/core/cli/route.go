@@ -96,32 +96,23 @@ func linesResult(value []string, err error) LinesResult {
 	return LinesResult{OK: true, Value: value}
 }
 
-// ReadSetupDone is whether setup has run: the `setup-done` mark, or the `route: provider` record an
-// older install carries.
+// ReadSetupDone is whether setup has run: the `setup-done` mark exists.
 func ReadSetupDone(stateRoot string) bool {
 	layout := domain.NewStateLayout(stateRoot)
-	if _, err := os.Stat(layout.SetupDone); err == nil {
-		return true
-	}
-	data, err := os.ReadFile(layout.LegacyRouteMark)
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(string(data)) == "provider"
+	_, err := os.Stat(layout.SetupDone)
+	return err == nil
 }
 
-// RecordSetupDone drops the legacy `route` mark and writes the `setup-done` mark.
+// RecordSetupDone writes the `setup-done` mark.
 func RecordSetupDone(stateRoot string) {
 	layout := domain.NewStateLayout(stateRoot)
-	_ = os.Remove(layout.LegacyRouteMark)
 	_ = os.WriteFile(layout.SetupDone, []byte("true\n"), 0o600)
 }
 
-// ClearSetupDone removes the `setup-done` mark and the legacy route mark.
+// ClearSetupDone removes the `setup-done` mark.
 func ClearSetupDone(stateRoot string) {
 	layout := domain.NewStateLayout(stateRoot)
 	_ = os.Remove(layout.SetupDone)
-	_ = os.Remove(layout.LegacyRouteMark)
 }
 
 // AgentsDir is where the agents sit beside the dist bundle: `<plugin>/agents` above

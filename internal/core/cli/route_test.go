@@ -185,45 +185,29 @@ func TestSetupDoneRecord(t *testing.T) {
 		}
 	})
 
-	t.Run("reads a legacy route file: provider counts, sonnet and garbage do not", func(t *testing.T) {
+	t.Run("a route file alone reads as not set up, and recording leaves it in place", func(t *testing.T) {
 		root := testkit.TempDir(t, "core-route-")
-		mark := filepath.Join(root, "route")
-		for _, text := range []string{"sonnet\n", "provider-ish\n"} {
-			if err := os.WriteFile(mark, []byte(text), 0o644); err != nil {
-				t.Fatalf("write mark: %v", err)
-			}
-			if cli.ReadSetupDone(root) {
-				t.Fatalf("readSetupDone(%q) = true, want false", text)
-			}
+		route := filepath.Join(root, "route")
+		if err := os.WriteFile(route, []byte("provider\n"), 0o644); err != nil {
+			t.Fatalf("write route file: %v", err)
 		}
-		if err := os.WriteFile(mark, []byte("provider\n"), 0o644); err != nil {
-			t.Fatalf("write mark: %v", err)
-		}
-		if !cli.ReadSetupDone(root) {
-			t.Fatal("readSetupDone(provider) = false, want true")
-		}
-	})
 
-	t.Run("recording replaces the legacy file with the mark", func(t *testing.T) {
-		root := testkit.TempDir(t, "core-route-")
-		if err := os.WriteFile(filepath.Join(root, "route"), []byte("provider\n"), 0o644); err != nil {
-			t.Fatalf("write mark: %v", err)
+		if cli.ReadSetupDone(root) {
+			t.Fatal("readSetupDone = true with only a route file, want false")
 		}
 
 		cli.RecordSetupDone(root)
 
 		if !cli.ReadSetupDone(root) {
-			t.Fatal("readSetupDone = false, want true")
+			t.Fatal("readSetupDone = false after recording, want true")
 		}
-		// rmSync(..., { force: true }): gone already is fine.
-		if err := os.Remove(filepath.Join(root, "route")); err != nil && !os.IsNotExist(err) {
-			t.Fatalf("remove legacy mark: %v", err)
+		// The route file is an inert leftover: nothing reads or removes it.
+		data, err := os.ReadFile(route)
+		if err != nil {
+			t.Fatalf("read route file: %v", err)
 		}
-		if !cli.ReadSetupDone(root) {
-			t.Fatal("readSetupDone = false without the legacy file, want true")
-		}
-		if got := domain.NewStateLayout(root).SetupDone; got != filepath.Join(root, "setup-done") {
-			t.Fatalf("setupDone path = %q, want %q", got, filepath.Join(root, "setup-done"))
+		if string(data) != "provider\n" {
+			t.Fatalf("route file = %q, want it left in place", string(data))
 		}
 	})
 }
