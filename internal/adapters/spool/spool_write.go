@@ -1,7 +1,6 @@
 package spool
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -23,13 +22,11 @@ func stderrLog(line string) {
 	fmt.Fprintln(os.Stderr, line)
 }
 
-// RadarHome is Radar's home: $RADAR_HOME, else ~/.agents/radar (an old ~/.local/state/radar moves
-// over once).
+// RadarHome is Radar's home: $RADAR_HOME, else ~/.agents/radar.
 func RadarHome(env domain.EnvLookup) string {
 	if home, ok := env["RADAR_HOME"]; ok {
 		return home
 	}
-	adapters.MigrateStateDir(context.Background(), "radar", env, stderrLog)
 	return adapters.AgentsStateDir(env, "radar")
 }
 

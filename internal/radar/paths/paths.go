@@ -1,6 +1,6 @@
 // Package paths resolves the paths radar reads and writes: the state dir everything lives
-// under (RADAR_HOME, else ~/.agents/radar with an old XDG dir moved over), the spool, port
-// and autostart files inside it, and the provider plugins' state dirs.
+// under (RADAR_HOME, else ~/.agents/radar), the spool, port and autostart files inside it, and
+// the provider plugins' state dirs.
 package paths
 
 import (
@@ -22,8 +22,12 @@ func StateDir(ctx context.Context, env domain.EnvLookup) string {
 	if home, ok := env["RADAR_HOME"]; ok {
 		return home
 	}
-	MigrateStateDir(ctx, "radar", env, stderrLog)
 	return AgentsStateDir(env, "radar")
+}
+
+// AgentsStateDir is the machine-wide state dir: ~/.agents/<name>.
+func AgentsStateDir(env domain.EnvLookup, name string) string {
+	return adapters.AgentsStateDir(env, name)
 }
 
 // SpoolDir is where the routers' request and event lines land.
@@ -260,7 +264,7 @@ func statExists(path string) bool {
 	return err == nil
 }
 
-// stderrLog writes a migration's line to stderr, the log a caller gets when it passes none.
+// stderrLog is the default log (stderr); internal/adapters and the spool have their own twins.
 func stderrLog(line string) {
 	fmt.Fprintln(os.Stderr, line)
 }

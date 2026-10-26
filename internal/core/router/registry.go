@@ -43,16 +43,11 @@ func peerHealthPath(name string) string {
 	return "/" + name + "-router/health"
 }
 
-// RoutersHome is the shared dir: $PROVIDER_ROUTERS_HOME, else ~/.agents/provider-routers (an old
-// XDG one moves over). A nil log is stderrLog.
+// RoutersHome is the shared dir: $PROVIDER_ROUTERS_HOME, else ~/.agents/provider-routers.
 func RoutersHome(env domain.EnvLookup, log func(line string)) string {
 	if home, ok := env["PROVIDER_ROUTERS_HOME"]; ok {
 		return home
 	}
-	if log == nil {
-		log = stderrLog
-	}
-	adapters.MigrateStateDir(context.Background(), "provider-routers", env, log)
 	return adapters.AgentsStateDir(env, "provider-routers")
 }
 

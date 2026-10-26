@@ -183,7 +183,7 @@ func TestPathResolution(t *testing.T) {
 
 // TestProviderStateDirMatchesStateRoot pins providerStateDir to the state root plugin-core
 // resolves: radar reads the same dir the provider's hooks, commands and router write, env
-// override, plugin-data leftovers and all.
+// override and all.
 func TestProviderStateDirMatchesStateRoot(t *testing.T) {
 	zai := domain.Provider{Name: "zai", EnvPrefix: "ZAI"}
 	home := t.TempDir()
@@ -197,7 +197,7 @@ func TestProviderStateDirMatchesStateRoot(t *testing.T) {
 			"HOME":          home,
 			"ZAI_STATE_DIR": "",
 		},
-		"plugin data and an xdg home": {
+		"a plugin data dir and an XDG state home change nothing": {
 			"HOME":               home,
 			"CLAUDE_PLUGIN_DATA": filepath.Join(home, "zai-plugin-cc-m"),
 			"XDG_STATE_HOME":     filepath.Join(home, "xdg"),
