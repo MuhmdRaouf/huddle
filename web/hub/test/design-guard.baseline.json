@@ -1,10 +1,10 @@
 {
   "app.css": {
-    "colour": 32,
+    "colour": 30,
     "daisy": 2,
     "hr": 10,
     "legacy": 26,
-    "px": 44
+    "px": 35
   },
   "app/App.tsx": {
     "control": 3,
@@ -390,7 +390,6 @@
   "work/TaskDrawer.tsx": {
     "control": 28,
     "daisy": 123,
-    "hr": 1,
     "legacy": 18,
     "px": 3
   },

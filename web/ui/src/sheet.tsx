@@ -5,6 +5,7 @@
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useId, useRef } from "preact/hooks";
 import { Button } from "./button.tsx";
+import { restack, showLayer } from "./layer.ts";
 
 /** What a sheet shows: open or not, how to close it, its title, header actions and body. */
 export type SheetProps = {
@@ -26,7 +27,7 @@ export function Sheet({ open, onClose, title, actions, children }: SheetProps): 
     if (!d) return;
     if (open && !d.open) {
       opener.current = document.activeElement;
-      d.showModal();
+      showLayer(d);
     } else if (!open && d.open) {
       d.close();
     }
@@ -37,6 +38,7 @@ export function Sheet({ open, onClose, title, actions, children }: SheetProps): 
   };
   const closed = (): void => {
     onClose();
+    restack(document);
     const back = opener.current;
     opener.current = null;
     if (back instanceof HTMLElement && back.isConnected) back.focus({ preventScroll: true });

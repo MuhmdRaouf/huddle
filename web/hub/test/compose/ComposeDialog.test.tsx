@@ -93,8 +93,9 @@ describe("ComposeDialog", () => {
     expect(dlg().open).toBe(true);
     const h = screen.getByText("Send a message");
     expect(h.tagName).toBe("H2");
-    expect(h.id).toBe("mtitle");
-    expect(dlg().getAttribute("aria-labelledby")).toBe("mtitle");
+    expect(dlg().getAttribute("aria-labelledby")).toBe(
+      screen.getByRole("heading", { name: "Send a message" }).id,
+    );
     expect(msgBox().getAttribute("rows")).toBe("5");
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Message" })).toBeTruthy();

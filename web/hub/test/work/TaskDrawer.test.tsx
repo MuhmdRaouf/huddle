@@ -479,8 +479,8 @@ describe("TaskDrawer snippets and files", () => {
     await waitFor(() => expect(screen.getByText(/of 10/)).not.toBeNull());
     expect(screen.getByText("hello")).not.toBeNull();
     // the excerpt's dialog closes from its own header, not from the slide-over's
-    fireEvent.click(must(document.querySelector("dialog.dlg[open] [aria-label='Close']")));
-    await waitFor(() => expect(document.querySelector("dialog.dlg[open]")).toBeNull());
+    fireEvent.click(must(document.querySelector("dialog.ui-dialog[open] [aria-label='Close']")));
+    await waitFor(() => expect(document.querySelector("dialog.ui-dialog[open]")).toBeNull());
     expect(document.querySelector("dialog[open]")).not.toBeNull();
   });
 

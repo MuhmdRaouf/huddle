@@ -355,7 +355,7 @@ describe("the passkey offer's failures", () => {
 describe("the authenticator's tokens", () => {
   /** Every daisyUI or legacy class under root, past the parts other files paint: the shared Dialog's
    *  head and the step-up sheet Needs.tsx lends. */
-  const lent = ".dlg-h, [data-stepup]";
+  const lent = ".ui-dialog-head, [data-stepup]";
   const leftovers = (root: ParentNode = document.body): string[] => {
     const daisy = [...root.querySelectorAll("[class]")]
       .filter((el) => el.closest(lent) === null)

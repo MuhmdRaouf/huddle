@@ -25,6 +25,7 @@ const BLOCKS = [
   "Field",
   "Chart frame",
   "Sheet",
+  "Dialog",
 ] as const;
 
 /** A CSS time in milliseconds: the built stylesheet minifies 180 ms to .18 s and 0 ms to 0 s, so a
@@ -168,5 +169,47 @@ test.describe("the design tokens page", () => {
     expect(box && view && box.x >= 0 && box.x + box.width <= view.width + 0.5).toBe(true);
     await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
+  });
+
+  test("the dialog is a bottom sheet on the phone and centred on the desktop", async ({ page }) => {
+    await openTokens(page);
+    await page.getByRole("button", { name: "Open dialog" }).click();
+    const dlg = page.getByRole("dialog", { name: "Remove channel" });
+    await expect(dlg).toBeVisible();
+    await expectAccessible(page);
+    const box = await dlg.boundingBox();
+    const view = page.viewportSize();
+    expect(box && view).toBeTruthy();
+    if (!box || !view) return;
+    if (test.info().project.name === "desktop") {
+      expect(Math.abs(box.x * 2 + box.width - view.width)).toBeLessThanOrEqual(1);
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(view.width + 0.5);
+    } else {
+      expect(box.x).toBe(0);
+      expect(box.width).toBe(view.width);
+      expect(Math.abs(box.y + box.height - view.height)).toBeLessThanOrEqual(1);
+    }
+    await page.keyboard.press("Escape");
+    await expect(dlg).toBeHidden();
+  });
+
+  test("one layer shows at a time on the phone, every layer on the desktop", async ({ page }) => {
+    await openTokens(page);
+    await page.getByRole("button", { name: "Open sheet" }).click();
+    const sheet = page.getByRole("dialog", { name: "Task 42" });
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole("button", { name: "Open dialog" }).click();
+    const dlg = page.getByRole("dialog", { name: "Remove channel" });
+    await expect(dlg).toBeVisible();
+    if (test.info().project.name === "desktop") {
+      await expect(sheet).toBeVisible();
+    } else {
+      await expect(sheet).toBeHidden();
+    }
+    await page.keyboard.press("Escape");
+    await expect(dlg).toBeHidden();
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "Open dialog" })).toBeFocused();
   });
 });

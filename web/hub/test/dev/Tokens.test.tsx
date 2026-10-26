@@ -49,6 +49,7 @@ describe("Tokens", () => {
       "Field",
       "Chart frame",
       "Sheet",
+      "Dialog",
     ])
       expect(screen.getByRole("heading", { level: 2, name })).toBeTruthy();
     expect(screen.getByRole("table", { name: "Cost by model" }).textContent).toContain("$6.10");

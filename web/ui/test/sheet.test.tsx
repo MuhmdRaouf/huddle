@@ -75,6 +75,17 @@ describe("Sheet", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("an open sheet carries data-ui-layer as the first layer, uncovered", () => {
+    const view = render(
+      <Sheet open title="Logs" onClose={() => {}}>
+        <p>line</p>
+      </Sheet>,
+    );
+    const dlg = view.baseElement.querySelector("dialog") as HTMLDialogElement;
+    expect(dlg.getAttribute("data-ui-layer")).toBe("1");
+    expect(dlg.hasAttribute("data-ui-covered")).toBe(false);
+  });
+
   it("closes when open turns false", () => {
     const onClose = vi.fn();
     const view = render(

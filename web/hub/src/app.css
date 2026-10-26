@@ -226,20 +226,6 @@
     color: color-mix(in oklab, var(--color-base-content) 72%, transparent);
   }
 
-  /* The shared dialog's header row (its <dialog> rides daisyUI's modal). */
-  .dlg-h {
-    display: flex;
-    height: 3.25rem;
-    flex-shrink: 0;
-    align-items: center;
-    gap: 0.5rem;
-    border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
-    padding-inline: 1rem;
-  }
-  .dlg-h h2 {
-    font-size: 0.9375rem;
-  }
-
   /* A square icon button: daisyUI 5 spells it btn-square; the shared package says btn-icon. */
   .btn-icon {
     width: 2rem;
@@ -414,28 +400,6 @@
     color: var(--ui-muted);
   }
 
-  /* The shared dialog's element: centred, a panel, flex-column when open. */
-  .dlg {
-    margin: auto;
-    width: min(640px, calc(100vw - 24px));
-    max-height: 85dvh;
-    overflow: hidden;
-    border-radius: var(--radius-box);
-    border: 1px solid color-mix(in oklab, var(--color-base-content) 16%, transparent);
-    background: var(--color-base-100);
-    color: var(--color-base-content);
-    box-shadow:
-      0 1px 2px rgb(0 0 0 / 0.2),
-      0 18px 44px -12px rgb(0 0 0 / 0.5);
-  }
-  .dlg[open] {
-    display: flex;
-    flex-direction: column;
-  }
-  .dlg-top {
-    margin-block-start: 12dvh;
-    margin-block-end: auto;
-  }
   dialog {
     color: var(--color-base-content);
   }

@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/preact";
+import { fireEvent, render, screen, within } from "@testing-library/preact";
 import type { JSX } from "preact";
 import { useState } from "preact/hooks";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { Dialog } from "../src/dialog.tsx";
+import { Sheet } from "../src/sheet.tsx";
 
 /** A page with a trigger button and a dialog the button opens. */
 function Harness({ initial = false }: { initial?: boolean | undefined }): JSX.Element {
@@ -20,7 +21,7 @@ function Harness({ initial = false }: { initial?: boolean | undefined }): JSX.El
 }
 
 describe("Dialog", () => {
-  it("opens modally with its title and body, and closes from the header button", () => {
+  it("opens modally as a ui-dialog with its title and body, and closes from the header button", () => {
     const onClose = vi.fn();
     const view = render(
       <Dialog open onClose={onClose} title="Rename">
@@ -28,13 +29,34 @@ describe("Dialog", () => {
       </Dialog>,
     );
     const dlg = view.baseElement.querySelector("dialog");
+    expect(dlg?.className).toBe("ui-dialog");
     expect(dlg?.open).toBe(true);
     expect(screen.getByText("Rename")).toBeTruthy();
     expect(screen.getByText("body text")).toBeTruthy();
-    expect(dlg?.getAttribute("aria-labelledby")).toBe("mtitle");
+    expect(dlg?.getAttribute("aria-labelledby")).toBe(screen.getByRole("heading", { name: "Rename" }).id);
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalled();
     expect(dlg?.open).toBe(false);
+  });
+
+  it("gives its title an id of its own, so two open dialogs never share one", () => {
+    const view = render(
+      <>
+        <Dialog open onClose={() => {}} title="One">
+          <p>1</p>
+        </Dialog>
+        <Dialog open onClose={() => {}} title="Two">
+          <p>2</p>
+        </Dialog>
+      </>,
+    );
+    const dlgs = [...view.baseElement.querySelectorAll("dialog")];
+    expect(dlgs.length).toBe(2);
+    const ha = screen.getByRole("heading", { name: "One" });
+    const hb = screen.getByRole("heading", { name: "Two" });
+    expect(dlgs[0]?.getAttribute("aria-labelledby")).toBe(ha.id);
+    expect(dlgs[1]?.getAttribute("aria-labelledby")).toBe(hb.id);
+    expect(ha.id).not.toBe(hb.id);
   });
 
   it("renders no header and no labelledby without a title", () => {
@@ -43,7 +65,7 @@ describe("Dialog", () => {
         <p>body</p>
       </Dialog>,
     );
-    expect(view.baseElement.querySelector(".dlg-h")).toBeNull();
+    expect(view.baseElement.querySelector(".ui-dialog-head")).toBeNull();
     expect(view.baseElement.querySelector("dialog")?.getAttribute("aria-labelledby")).toBeNull();
   });
 
@@ -126,15 +148,13 @@ describe("Dialog", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("takes the caller's class and labelledby over the modal defaults", () => {
+  it("takes the caller's labelledby over the title default", () => {
     const view = render(
-      <Dialog open onClose={() => {}} class="drawer hr-dialog" labeledBy="td-title">
+      <Dialog open onClose={() => {}} labeledBy="td-title">
         <p>body</p>
       </Dialog>,
     );
-    const dlg = view.baseElement.querySelector("dialog");
-    expect(dlg?.getAttribute("class")).toBe("drawer hr-dialog");
-    expect(dlg?.getAttribute("aria-labelledby")).toBe("td-title");
+    expect(view.baseElement.querySelector("dialog")?.getAttribute("aria-labelledby")).toBe("td-title");
   });
 
   it("paints the close button as a ghost icon button on the tokens", () => {
@@ -145,6 +165,62 @@ describe("Dialog", () => {
     );
     const close = screen.getByRole("button", { name: "Close" });
     expect(close.getAttribute("class")).toBe("ui-btn ui-btn-ghost ui-btn-icon");
+  });
+
+  // A page like the tokens gallery: the sheet stays mounted while the dialog opens over it, so the
+  // button that opened the dialog keeps its place and takes the focus back on close.
+  function SheetHarness(): JSX.Element {
+    const [dlgOpen, setDlgOpen] = useState(false);
+    return (
+      <>
+        <Sheet open title="Task 42" onClose={() => {}}>
+          <button type="button" onClick={() => setDlgOpen(true)}>
+            Open dialog
+          </button>
+        </Sheet>
+        {dlgOpen ? (
+          <Dialog open title="Remove channel" onClose={() => setDlgOpen(false)}>
+            <p>dialog body</p>
+          </Dialog>
+        ) : null}
+      </>
+    );
+  }
+
+  it("closing above an open sheet hands the focus back into the sheet", async () => {
+    const view = render(<SheetHarness />);
+    const sheet = view.baseElement.querySelector("dialog.ui-sheet") as HTMLDialogElement;
+    const opener = within(sheet).getByRole("button", { name: "Open dialog" });
+    opener.focus();
+    fireEvent.click(opener);
+    const dlg = view.baseElement.querySelector("dialog.ui-dialog") as HTMLDialogElement;
+    expect(dlg.open).toBe(true);
+    fireEvent.keyDown(dlg, { key: "Escape" });
+    expect(dlg.open).toBe(false);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("opened over an open sheet, marks the sheet covered and uncovers it when it closes", () => {
+    const view = render(
+      <>
+        <Sheet open title="Task 42" onClose={() => {}}>
+          <p>sheet body</p>
+        </Sheet>
+        <Dialog open onClose={() => {}} title="Remove channel">
+          <p>dialog body</p>
+        </Dialog>
+      </>,
+    );
+    const sheet = view.baseElement.querySelector("dialog.ui-sheet") as HTMLDialogElement;
+    const dlg = view.baseElement.querySelector("dialog.ui-dialog") as HTMLDialogElement;
+    expect(sheet.open).toBe(true);
+    expect(dlg.open).toBe(true);
+    expect(sheet.hasAttribute("data-ui-covered")).toBe(true);
+    expect(dlg.hasAttribute("data-ui-covered")).toBe(false);
+    fireEvent.click(within(dlg).getByRole("button", { name: "Close" }));
+    expect(dlg.open).toBe(false);
+    expect(sheet.hasAttribute("data-ui-covered")).toBe(false);
   });
 
   it("unmounts cleanly while open", () => {

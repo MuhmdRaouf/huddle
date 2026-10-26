@@ -517,7 +517,7 @@ export function CmdPalette(props: PaletteProps): JSX.Element {
   });
 
   return (
-    <Dialog open={props.open} onClose={props.onClose} class="dlg">
+    <Dialog open={props.open} onClose={props.onClose}>
       <div class="flex h-12 shrink-0 items-center gap-2.5 border-b hairline px-4">
         <span class="muted">
           <Icon name="search" />
@@ -922,7 +922,7 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
   const mac = isMac(navigator.platform || navigator.userAgent);
   const sections = helpSections(mac);
   return (
-    <Dialog open={open} onClose={onClose} title="Keyboard shortcuts" class="dlg">
+    <Dialog open={open} onClose={onClose} title="Keyboard shortcuts">
       <div class="grid gap-x-10 gap-y-6 p-5 sm:grid-cols-2">
         {sections.map((s) => (
           <section key={s.head}>

@@ -2277,7 +2277,7 @@ export function TaskDrawer(props: TaskDrawerProps): JSX.Element | null {
           />
         </div>
       </SlideOver>
-      <Dialog open={file !== null} onClose={() => setFile(null)} title={file?.path} class="dlg hr-dialog">
+      <Dialog open={file !== null} onClose={() => setFile(null)} title={file?.path}>
         {file ? <FileBody st={file} /> : null}
       </Dialog>
     </>

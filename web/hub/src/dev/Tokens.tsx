@@ -6,6 +6,7 @@ import { Badge } from "@huddle/ui/badge.tsx";
 import { Button } from "@huddle/ui/button.tsx";
 import { Card } from "@huddle/ui/card.tsx";
 import { ChartFrame } from "@huddle/ui/chart-frame.tsx";
+import { Dialog } from "@huddle/ui/dialog.tsx";
 import { Field } from "@huddle/ui/field.tsx";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
@@ -176,6 +177,7 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
   const [name, setName] = useState("huddle");
   const [picked, setPicked] = useState(false);
   const [sheet, setSheet] = useState(false);
+  const [dlg, setDlg] = useState(false);
   const [computed, setComputed] = useState<Computed>({});
 
   useEffect(() => {
@@ -389,8 +391,19 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
         </Button>
         <Sheet open={sheet} title="Task 42" onClose={() => setSheet(false)}>
           <p style={{ marginTop: 0 }}>A bottom sheet on a phone, a side panel on a wide screen.</p>
+          <Button onClick={() => setDlg(true)}>Open dialog</Button>
           <Button onClick={() => setSheet(false)}>Done</Button>
         </Sheet>
+      </Block>
+
+      <Block title="Dialog">
+        <Button variant="secondary" onClick={() => setDlg(true)}>
+          Open dialog
+        </Button>
+        <Dialog open={dlg} title="Remove channel" onClose={() => setDlg(false)}>
+          <p style={{ marginTop: 0 }}>This removes #huddle and its history for everyone.</p>
+          <Button onClick={() => setDlg(false)}>Done</Button>
+        </Dialog>
       </Block>
     </main>
   );
