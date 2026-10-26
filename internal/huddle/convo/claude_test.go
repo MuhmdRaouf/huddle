@@ -6,6 +6,7 @@ package convo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -16,9 +17,10 @@ import (
 	"unicode/utf8"
 )
 
-// fixtureItems is what the committed fixture yields, in order: the summary, sidechain, meta,
-// broken and thinking-only lines yield nothing, and the 5000-é text is cut to 2048 whole
-// characters, which are exactly MaxText bytes.
+// fixtureItems is what the committed fixture yields, in order: the summary, sidechain, meta and
+// broken lines yield nothing, each thinking block yields its thinking item with the line's
+// duration when the line names one, and the 5000-é text is cut to 2048 whole characters, which
+// are exactly MaxText bytes.
 func fixtureItems() []Item {
 	return []Item{
 		{ID: "u1:0", Kind: KindUser, At: "2026-10-26T10:00:01.000Z", Text: "run the tests"},
@@ -26,7 +28,9 @@ func fixtureItems() []Item {
 		{ID: "a1:1", Kind: KindToolUse, At: "2026-10-26T10:00:02.000Z", Tool: "Bash", ToolUseID: "toolu_1", Input: `{"command":"go test ./..."}`},
 		{ID: "u2:0", Kind: KindToolResult, At: "2026-10-26T10:00:03.000Z", ToolUseID: "toolu_1", Text: "ok  \tpkg"},
 		{ID: "u3:0", Kind: KindToolResult, At: "2026-10-26T10:00:04.000Z", ToolUseID: "toolu_2", IsError: true, Text: "exit 1"},
+		{ID: "a3:0", Kind: KindThinking, At: "2026-10-26T10:00:07.000Z", Text: "which package"},
 		{ID: "a3:1", Kind: KindAssistant, At: "2026-10-26T10:00:07.000Z", Text: "Done."},
+		{ID: "a5:0", Kind: KindThinking, At: "2026-10-26T10:00:07.500Z", Text: "checking the failing package", DurationMS: 2400},
 		{ID: "a4:0", Kind: KindAssistant, At: "2026-10-26T10:00:08.000Z", Text: strings.Repeat("é", 2048), Cut: true},
 	}
 }
@@ -227,5 +231,53 @@ func TestTheReaderStopsOnACancelledContext(t *testing.T) {
 	_, err := Read(ctx, fixturePath(t), 0)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("the cancelled read answered %v, want context.Canceled", err)
+	}
+}
+
+func TestTheReaderCutsLongThinking(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "claude.jsonl")
+	line := fmt.Sprintf(`{"type":"assistant","uuid":"a1","timestamp":"2026-10-26T10:00:02.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":%q,"signature":"sig-a1"}]}}`+"\n", strings.Repeat("é", 5000))
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := Read(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("read the transcript: %v", err)
+	}
+	checkItems(t, page.Items, []Item{
+		{ID: "a1:0", Kind: KindThinking, At: "2026-10-26T10:00:02.000Z", Text: strings.Repeat("é", 2048), Cut: true},
+	})
+}
+
+func TestTheReaderSkipsAnEmptyThinkingBlock(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "claude.jsonl")
+	line := `{"type":"assistant","uuid":"a1","timestamp":"2026-10-26T10:00:02.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"","signature":"sig-a1"},{"type":"text","text":"Done."}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := Read(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("read the transcript: %v", err)
+	}
+	checkItems(t, page.Items, []Item{
+		{ID: "a1:1", Kind: KindAssistant, At: "2026-10-26T10:00:02.000Z", Text: "Done."},
+	})
+}
+
+func TestTheReaderNeverServesTheThinkingSignature(t *testing.T) {
+	page, err := Read(context.Background(), fixturePath(t), 0)
+	if err != nil {
+		t.Fatalf("read the fixture: %v", err)
+	}
+	served, err := json.Marshal(page.Items)
+	if err != nil {
+		t.Fatalf("marshal the items: %v", err)
+	}
+	if strings.Contains(string(served), "sig-a5") {
+		t.Errorf("the items carry the thinking's signature: %s", served)
 	}
 }

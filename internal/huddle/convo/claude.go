@@ -20,6 +20,7 @@ import (
 const (
 	KindUser       = "user"        // a prompt the owner typed
 	KindAssistant  = "assistant"   // the assistant's text
+	KindThinking   = "thinking"    // the assistant's thinking, shown between its replies
 	KindToolUse    = "tool_use"    // a tool call: its name and input
 	KindToolResult = "tool_result" // what a tool call answered
 )
@@ -34,15 +35,16 @@ const MaxRead = 1 << 20
 
 // Item is one conversation item.
 type Item struct {
-	ID        string `json:"id"` // "<line uuid>:<block index>", stable across reads
-	Kind      string `json:"kind"`
-	At        string `json:"at"` // the line's timestamp as Claude Code wrote it
-	Text      string `json:"text,omitempty"`
-	Tool      string `json:"tool,omitempty"`
-	ToolUseID string `json:"tool_use_id,omitempty"`
-	Input     string `json:"input,omitempty"` // a tool call's input as compact JSON
-	IsError   bool   `json:"is_error,omitempty"`
-	Cut       bool   `json:"cut,omitempty"`
+	ID         string `json:"id"` // "<line uuid>:<block index>", stable across reads
+	Kind       string `json:"kind"`
+	At         string `json:"at"` // the line's timestamp as Claude Code wrote it
+	Text       string `json:"text,omitempty"`
+	DurationMS int64  `json:"duration_ms,omitempty"` // the line's thinkingDurationMs, thinking items only
+	Tool       string `json:"tool,omitempty"`
+	ToolUseID  string `json:"tool_use_id,omitempty"`
+	Input      string `json:"input,omitempty"` // a tool call's input as compact JSON
+	IsError    bool   `json:"is_error,omitempty"`
+	Cut        bool   `json:"cut,omitempty"`
 }
 
 // Page is one read: the items of the complete lines read, and the offset the next read starts at.
@@ -55,22 +57,26 @@ type Page struct {
 // content, which is a plain string for a typed prompt and a block array otherwise. IsSidechain
 // marks a subagent's lines and IsMeta a line the harness injected; neither is this conversation.
 type transcriptLine struct {
-	Type        string `json:"type"`
-	UUID        string `json:"uuid"`
-	Timestamp   string `json:"timestamp"`
-	IsSidechain bool   `json:"isSidechain"`
-	IsMeta      bool   `json:"isMeta"`
-	Message     struct {
+	Type               string `json:"type"`
+	UUID               string `json:"uuid"`
+	Timestamp          string `json:"timestamp"`
+	ThinkingDurationMS int64  `json:"thinkingDurationMs"` // the line's thinking time, in ms
+	IsSidechain        bool   `json:"isSidechain"`
+	IsMeta             bool   `json:"isMeta"`
+	Message            struct {
 		Role    string          `json:"role"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
 }
 
-// contentBlock is one content block: text carries words, tool_use names a call and its input,
-// tool_result answers a call, and every other kind (thinking, image, …) is left out.
+// contentBlock is one content block: text carries words, thinking carries the assistant's
+// thinking, tool_use names a call and its input, tool_result answers a call, and every other
+// kind (image, …) is left out. A thinking block's signature is an opaque token the reader never
+// reads or serves.
 type contentBlock struct {
 	Type      string          `json:"type"`
 	Text      string          `json:"text"`
+	Thinking  string          `json:"thinking"`
 	Name      string          `json:"name"`
 	ID        string          `json:"id"`
 	Input     json.RawMessage `json:"input"`
@@ -181,8 +187,9 @@ func userItems(line transcriptLine) []Item {
 	return items
 }
 
-// assistantItems answers an assistant line's items: each text block is the assistant's words,
-// each tool_use block the call it made; thinking and every other block are for the model only.
+// assistantItems answers an assistant line's items: each thinking block the assistant's thinking
+// with the line's thinking time, each text block the assistant's words, each tool_use block the
+// call it made; every other block is left out.
 func assistantItems(line transcriptLine) []Item {
 	var blocks []contentBlock
 	if err := json.Unmarshal(line.Message.Content, &blocks); err != nil {
@@ -191,6 +198,13 @@ func assistantItems(line transcriptLine) []Item {
 	var items []Item
 	for i, block := range blocks {
 		switch block.Type {
+		case "thinking":
+			if block.Thinking == "" {
+				continue
+			}
+			item := textItem(line, i, KindThinking, block.Thinking)
+			item.DurationMS = line.ThinkingDurationMS
+			items = append(items, item)
 		case "text":
 			if block.Text == "" {
 				continue
