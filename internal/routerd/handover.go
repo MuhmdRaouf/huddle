@@ -70,8 +70,8 @@ const rssCeilingDefault = 1 << 30
 // file descriptor plus one `ok <port>` line, retires the socket file at once so the taker can
 // open its own, and names the taker on handed for Run's drain. A socket that cannot be opened
 // — a run dir whose path is past the OS's sun_path limit — is logged and skipped: the extra
-// never stops the router. The returned stop closes the socket; the caller runs it when serving
-// ends.
+// never stops the router. The returned stop closes the socket and removes its file, unless a
+// handover retired it already; the caller runs it when serving ends.
 func serveHandover(home string, port int, listener net.Listener, handed chan<- int, log func(line string)) (stop func()) {
 	tcp, ok := listener.(*net.TCPListener)
 	if !ok {
@@ -113,10 +113,9 @@ func serveHandover(home string, port int, listener net.Listener, handed chan<- i
 			})
 		}
 	})
-	return func() {
-		_ = unix.Close()
-		_ = os.Remove(path)
-	}
+	// a daemon that handed over retired its file already, and the path now names the taker's
+	// socket: the once keeps this stop, which runs when the drain ends, off it
+	return func() { once.Do(retire) }
 }
 
 // answerHandover is one takeover connection's exchange: read the taker's line, hand the

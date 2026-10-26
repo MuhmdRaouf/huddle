@@ -162,3 +162,14 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** `TestTheRecordLandsBeforeTheFirstHealthAnswer` (internal/routerd/record_test.go)
 - **Rule:** the daemon publishes its record before the serve goroutine starts, so a router seen healthy always
   has a pid to show.
+
+## 2026-10-26, a deploy found no router to hand over from
+
+- **What happened:** the 8a3cac9 deploy printed "the daemon (pid 29918) never handed over". The router log read
+  "takeover: no daemon to take over from at run/handover.sock", and `run/` held no socket. The router kept
+  serving from a build of 2026-10-25 21:37, so no later deploy reached it.
+- **Cause:** a daemon that hands over retires its socket file at once, and the taker opens its own at the same
+  path. The old daemon's stop ran again when its drain ended ten minutes later, and it removed that path, which
+  was now the taker's socket.
+- **Guard:** `TestTheRetiredDaemonLeavesItsTakersSocketAlone` (internal/routerd/handover_test.go)
+- **Rule:** a daemon removes its handover socket file once, either at the handover or at its stop, never both.

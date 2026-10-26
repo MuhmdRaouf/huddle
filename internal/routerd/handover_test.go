@@ -428,3 +428,41 @@ func TestRSSIntervalOf(t *testing.T) {
 		})
 	}
 }
+
+// TestTheRetiredDaemonLeavesItsTakersSocketAlone: once a daemon handed over and retired its
+// socket file, the taker opens its own at the same path; the old daemon's stop, run when its
+// drain ends minutes later, must leave that file where it is, or the next deploy finds no
+// daemon to take over from.
+func TestTheRetiredDaemonLeavesItsTakersSocketAlone(t *testing.T) {
+	t.Parallel()
+	home := shortHome(t)
+	tcp := ports.Listen(t)
+	port := tcp.Addr().(*net.TCPAddr).Port
+	handed := make(chan int, 1)
+	stopOld := serveHandover(home, port, tcp, handed, func(string) {})
+
+	taker, err := Takeover(context.Background(), home)
+	if err != nil {
+		t.Fatalf("takeover: %v", err)
+	}
+	defer taker.Close()
+	select {
+	case <-handed:
+	case <-time.After(time.Second):
+		t.Fatal("the server side never named the taker on handed")
+	}
+	stopNew := serveHandover(home, port, taker, make(chan int, 1), func(string) {})
+	t.Cleanup(stopNew)
+	path := filepath.Join(home, "run", handoverName)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("the taker's handover socket: %v", err)
+	}
+
+	stopOld()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("the old daemon's stop took the taker's handover socket: %v", err)
+	}
+	if _, err := Takeover(context.Background(), home); err != nil {
+		t.Fatalf("a second takeover after the old daemon stopped: %v", err)
+	}
+}
