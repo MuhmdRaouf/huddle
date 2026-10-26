@@ -204,7 +204,7 @@ func TestProviderStateDirMatchesStateRoot(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			want := adapters.ResolveStateRoot(t.Context(), env, adapters.NewStateRootRule(zai), func(string) {})
+			want := adapters.ResolveStateRoot(t.Context(), env, adapters.NewStateRootRule(zai))
 			if got := paths.ProviderStateDir(t.Context(), env, "zai"); got != want {
 				t.Fatalf("ProviderStateDir = %q, want the state root %q", got, want)
 			}

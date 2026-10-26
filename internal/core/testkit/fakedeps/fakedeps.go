@@ -23,9 +23,8 @@ import (
 // REFERENCE_STATE_ROOT). It lives here, not beside ReferenceProvider in package testkit: that
 // package cannot import adapters, whose own internal tests import testkit (a test import cycle).
 var ReferenceStateRoot = adapters.StateRootRule{
-	EnvVar:     "ZAI_STATE_DIR",
-	DataPrefix: "zai-",
-	XdgName:    "zai",
+	EnvVar:  "ZAI_STATE_DIR",
+	XdgName: "zai",
 }
 
 // WriteAgents writes the agents beside the bundle, `model: sonnet` as the plugin ships them, so

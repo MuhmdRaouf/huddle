@@ -6,7 +6,6 @@ package router
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,12 +30,6 @@ type RegisteredRouter struct {
 	UpdatedAt     string   `json:"updatedAt"`
 }
 
-// stderrLog is the router's default log line, on the process's stderr; adapters and the spool
-// have their own twins.
-func stderrLog(line string) {
-	fmt.Fprintln(os.Stderr, line)
-}
-
 // peerHealthPath is where a peer router answers its health check: every plugin's is
 // `/<name>-router/health`.
 func peerHealthPath(name string) string {
@@ -44,7 +37,7 @@ func peerHealthPath(name string) string {
 }
 
 // RoutersHome is the shared dir: $PROVIDER_ROUTERS_HOME, else ~/.agents/provider-routers.
-func RoutersHome(env domain.EnvLookup, log func(line string)) string {
+func RoutersHome(env domain.EnvLookup) string {
 	if home, ok := env["PROVIDER_ROUTERS_HOME"]; ok {
 		return home
 	}
@@ -52,13 +45,13 @@ func RoutersHome(env domain.EnvLookup, log func(line string)) string {
 }
 
 func entryFile(env domain.EnvLookup, name string) string {
-	return filepath.Join(RoutersHome(env, nil), name+".json")
+	return filepath.Join(RoutersHome(env), name+".json")
 }
 
 // ReadRegistry is every valid entry, sorted by plugin name; unreadable files are skipped, not
 // fatal.
 func ReadRegistry(env domain.EnvLookup) []RegisteredRouter {
-	names, err := os.ReadDir(RoutersHome(env, nil))
+	names, err := os.ReadDir(RoutersHome(env))
 	if err != nil {
 		return nil
 	}
@@ -67,7 +60,7 @@ func ReadRegistry(env domain.EnvLookup) []RegisteredRouter {
 		if !strings.HasSuffix(file.Name(), ".json") {
 			continue
 		}
-		text, err := os.ReadFile(filepath.Join(RoutersHome(env, nil), file.Name()))
+		text, err := os.ReadFile(filepath.Join(RoutersHome(env), file.Name()))
 		if err != nil {
 			continue
 		}

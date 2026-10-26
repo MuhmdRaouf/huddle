@@ -4,7 +4,6 @@ package router
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -52,10 +51,10 @@ func mustSaveEntry(t *testing.T, env domain.EnvLookup, entry RegisteredRouter) {
 func TestRoutersHome(t *testing.T) {
 	t.Parallel()
 	t.Run("takes PROVIDER_ROUTERS_HOME over ~/.agents", func(t *testing.T) {
-		if got := RoutersHome(domain.EnvLookup{"PROVIDER_ROUTERS_HOME": "/pin", "HOME": "/home"}, nil); got != "/pin" {
+		if got := RoutersHome(domain.EnvLookup{"PROVIDER_ROUTERS_HOME": "/pin", "HOME": "/home"}); got != "/pin" {
 			t.Fatalf("routersHome(pin) = %q, want /pin", got)
 		}
-		if got := RoutersHome(domain.EnvLookup{"HOME": "/home"}, nil); got != filepath.Join("/home", ".agents", "provider-routers") {
+		if got := RoutersHome(domain.EnvLookup{"HOME": "/home"}); got != filepath.Join("/home", ".agents", "provider-routers") {
 			t.Fatalf("routersHome(home) = %q, want %s", got, filepath.Join("/home", ".agents", "provider-routers"))
 		}
 	})
@@ -121,7 +120,7 @@ func TestRegistryFiles(t *testing.T) {
 			t.Fatalf("an absent dir read as %v, want empty", entries)
 		}
 
-		dir := RoutersHome(env, nil)
+		dir := RoutersHome(env)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -255,30 +254,6 @@ func TestLiveRouters(t *testing.T) {
 			peer.Close()
 		}
 	})
-}
-
-// stderrLog is the default log RoutersHome falls back to; it writes the line to stderr, the way
-// console.error does.
-// TestStderrLog stays serial: it swaps the process-wide os.Stderr for a pipe.
-func TestStderrLog(t *testing.T) {
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	saved := os.Stderr
-	os.Stderr = writer
-	stderrLog("state migrate: a line")
-	os.Stderr = saved
-	if err := writer.Close(); err != nil {
-		t.Fatal(err)
-	}
-	text, err := io.ReadAll(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(text) != "state migrate: a line\n" {
-		t.Fatalf("stderrLog wrote %q", text)
-	}
 }
 
 func TestThePortMap(t *testing.T) {

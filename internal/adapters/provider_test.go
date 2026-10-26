@@ -17,7 +17,7 @@ func TestZaiIsCoresReferenceProvider(t *testing.T) {
 			t.Fatal("zai's provider drifted from core's reference copy")
 		}
 		// The reference provider's state-root rule (core's testing REFERENCE_STATE_ROOT).
-		want := StateRootRule{EnvVar: "ZAI_STATE_DIR", DataPrefix: "zai-", XdgName: "zai"}
+		want := StateRootRule{EnvVar: "ZAI_STATE_DIR", XdgName: "zai"}
 		if got := NewStateRootRule(providers.Zai); !reflect.DeepEqual(got, want) {
 			t.Fatalf("state root rule = %+v, want %+v", got, want)
 		}

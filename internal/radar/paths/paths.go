@@ -105,10 +105,9 @@ func ZaiStateDir(ctx context.Context, env domain.EnvLookup) string {
 // and router use, so radar always reads the dir they write.
 func ProviderStateDir(ctx context.Context, env domain.EnvLookup, name string) string {
 	return adapters.ResolveStateRoot(ctx, env, adapters.StateRootRule{
-		EnvVar:     strings.ToUpper(name) + "_STATE_DIR",
-		DataPrefix: name + "-",
-		XdgName:    name,
-	}, stderrLog)
+		EnvVar:  strings.ToUpper(name) + "_STATE_DIR",
+		XdgName: name,
+	})
 }
 
 // StateMarker is the marker that says "this directory is radar's own state dir". Only a
@@ -262,9 +261,4 @@ func homeDir(env domain.EnvLookup) string {
 func statExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-// stderrLog is the default log (stderr); internal/adapters and the spool have their own twins.
-func stderrLog(line string) {
-	fmt.Fprintln(os.Stderr, line)
 }

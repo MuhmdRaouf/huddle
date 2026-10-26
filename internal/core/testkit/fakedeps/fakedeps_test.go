@@ -398,7 +398,7 @@ func TestWriteAgents(t *testing.T) {
 
 func TestReferenceStateRoot(t *testing.T) {
 	t.Run("is zai's rule", func(t *testing.T) {
-		want := adapters.StateRootRule{EnvVar: "ZAI_STATE_DIR", DataPrefix: "zai-", XdgName: "zai"}
+		want := adapters.StateRootRule{EnvVar: "ZAI_STATE_DIR", XdgName: "zai"}
 		if ReferenceStateRoot != want {
 			t.Errorf("ReferenceStateRoot = %+v, want %+v", ReferenceStateRoot, want)
 		}

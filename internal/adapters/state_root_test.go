@@ -1,8 +1,6 @@
 package adapters
 
 import (
-	"io"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -17,12 +15,9 @@ var referenceProvider = domain.Provider{Name: "zai", EnvPrefix: "ZAI"}
 var acmeProvider = domain.Provider{Name: "acme", EnvPrefix: "ACME"}
 
 // referenceStateRoot is the reference provider's state-root rule.
-var referenceStateRoot = StateRootRule{EnvVar: "ZAI_STATE_DIR", DataPrefix: "zai-", XdgName: "zai"}
+var referenceStateRoot = StateRootRule{EnvVar: "ZAI_STATE_DIR", XdgName: "zai"}
 
-var acmeStateRoot = StateRootRule{EnvVar: "ACME_STATE_DIR", DataPrefix: "acme-plugin-", XdgName: "acme"}
-
-// quietLog keeps log lines off the test output; these cases assert roots only.
-func quietLog(string) {}
+var acmeStateRoot = StateRootRule{EnvVar: "ACME_STATE_DIR", XdgName: "acme"}
 
 func TestResolveStateRoot(t *testing.T) {
 	t.Run("zai: its env var, else ~/.agents/zai, with or without CLAUDE_PLUGIN_DATA", func(t *testing.T) {
@@ -45,10 +40,10 @@ func TestResolveStateRoot(t *testing.T) {
 			"HOME":               "/h",
 		}
 
-		if got := ResolveStateRoot(t.Context(), zaiOwn, acmeStateRoot, quietLog); got != filepath.Join("/h", ".agents", "acme") {
+		if got := ResolveStateRoot(t.Context(), zaiOwn, acmeStateRoot); got != filepath.Join("/h", ".agents", "acme") {
 			t.Fatalf("resolveStateRoot(zai's world, acme rule) = %q, want %q", got, filepath.Join("/h", ".agents", "acme"))
 		}
-		if got := ResolveStateRoot(t.Context(), acmeOwn, referenceStateRoot, quietLog); got != filepath.Join("/h", ".agents", "zai") {
+		if got := ResolveStateRoot(t.Context(), acmeOwn, referenceStateRoot); got != filepath.Join("/h", ".agents", "zai") {
 			t.Fatalf("resolveStateRoot(acme's world, reference rule) = %q, want %q", got, filepath.Join("/h", ".agents", "zai"))
 		}
 	})
@@ -57,7 +52,7 @@ func TestResolveStateRoot(t *testing.T) {
 		if got := NewStateRootRule(referenceProvider); got != referenceStateRoot {
 			t.Fatalf("stateRootRule(reference) = %+v, want %+v", got, referenceStateRoot)
 		}
-		want := StateRootRule{EnvVar: "ACME_STATE_DIR", DataPrefix: "acme-", XdgName: "acme"}
+		want := StateRootRule{EnvVar: "ACME_STATE_DIR", XdgName: "acme"}
 		if got := NewStateRootRule(acmeProvider); got != want {
 			t.Fatalf("stateRootRule(acme) = %+v, want %+v", got, want)
 		}
@@ -93,7 +88,7 @@ func assertStateRoots(t *testing.T, rule StateRootRule, envVar, own, name string
 		},
 	}
 	for _, tc := range cases {
-		if got := ResolveStateRoot(t.Context(), tc.env, rule, quietLog); got != tc.want {
+		if got := ResolveStateRoot(t.Context(), tc.env, rule); got != tc.want {
 			t.Fatalf("resolveStateRoot(%v) = %q, want %q", tc.env, got, tc.want)
 		}
 	}
@@ -111,31 +106,8 @@ func TestStateRoot(t *testing.T) {
 
 	t.Run("a CLAUDE_PLUGIN_DATA value leaves the root at ~/.agents", func(t *testing.T) {
 		env := domain.EnvLookup{"CLAUDE_PLUGIN_DATA": "zai-plugin-m", "HOME": "/h"}
-		if got := ResolveStateRoot(t.Context(), env, referenceStateRoot, quietLog); got != filepath.Join("/h", ".agents", "zai") {
+		if got := ResolveStateRoot(t.Context(), env, referenceStateRoot); got != filepath.Join("/h", ".agents", "zai") {
 			t.Fatalf("resolveStateRoot(own data dir) = %q, want %q", got, filepath.Join("/h", ".agents", "zai"))
-		}
-	})
-}
-
-func TestStderrLog(t *testing.T) {
-	t.Run("writes the line to stderr", func(t *testing.T) {
-		reader, writer, err := os.Pipe()
-		if err != nil {
-			t.Fatalf("pipe: %v", err)
-		}
-		oldStderr := os.Stderr
-		os.Stderr = writer
-		stderrLog("a line")
-		os.Stderr = oldStderr
-		if err := writer.Close(); err != nil {
-			t.Fatalf("close the pipe's writer: %v", err)
-		}
-		text, err := io.ReadAll(reader)
-		if err != nil {
-			t.Fatalf("read the pipe: %v", err)
-		}
-		if string(text) != "a line\n" {
-			t.Fatalf("stderrLog wrote %q, want %q", text, "a line\n")
 		}
 	})
 }

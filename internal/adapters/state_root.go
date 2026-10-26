@@ -2,8 +2,6 @@ package adapters
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
@@ -17,8 +15,6 @@ const UninstallMarkerName = "installed"
 type StateRootRule struct {
 	// The variable that names the root outright, e.g. ZAI_STATE_DIR.
 	EnvVar string
-	// The prefix of the provider's own Claude Code data dir (its `<name>-…` entry).
-	DataPrefix string
 	// The dir name under ~/.agents.
 	XdgName string
 }
@@ -28,29 +24,22 @@ type StateRootRule struct {
 // Claude Code sets it only for hooks, and hooks, setup and the router must find the same files.
 // Claude Code leaks one plugin's CLAUDE_PLUGIN_DATA into every Bash tool call, so a foreign one
 // is never read: the plugin would walk another plugin's data dir.
-func ResolveStateRoot(ctx context.Context, env domain.EnvLookup, rule StateRootRule, log func(line string)) string {
+func ResolveStateRoot(ctx context.Context, env domain.EnvLookup, rule StateRootRule) string {
 	if explicit, ok := env[rule.EnvVar]; ok && explicit != "" {
 		return explicit
 	}
 	return AgentsStateDir(env, rule.XdgName)
 }
 
-// NewStateRootRule derives every provider's rule from its own names: $<envPrefix>_STATE_DIR, its
-// `<name>-…` data dir, `<name>`.
+// NewStateRootRule derives every provider's rule from its own names: $<envPrefix>_STATE_DIR, `<name>`.
 func NewStateRootRule(provider domain.Provider) StateRootRule {
 	return StateRootRule{
-		EnvVar:     provider.EnvPrefix + "_STATE_DIR",
-		DataPrefix: provider.Name + "-",
-		XdgName:    provider.Name,
+		EnvVar:  provider.EnvPrefix + "_STATE_DIR",
+		XdgName: provider.Name,
 	}
 }
 
 // StateRoot is a provider's state root (see ResolveStateRoot).
 func StateRoot(ctx context.Context, provider domain.Provider, env domain.EnvLookup) string {
-	return ResolveStateRoot(ctx, env, NewStateRootRule(provider), stderrLog)
-}
-
-// stderrLog is the default log (stderr).
-func stderrLog(line string) {
-	fmt.Fprintln(os.Stderr, line)
+	return ResolveStateRoot(ctx, env, NewStateRootRule(provider))
 }

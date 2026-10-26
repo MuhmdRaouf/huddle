@@ -396,7 +396,7 @@ func TestMarshalSpoolLine(t *testing.T) {
 	})
 }
 
-// stderrLog's twin in adapters is covered the same way.
+// TestStderrLog stays serial: it swaps the process-wide os.Stderr for a pipe.
 func TestStderrLog(t *testing.T) {
 	t.Run("writes the line to stderr", func(t *testing.T) {
 		reader, writer, err := os.Pipe()
