@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
@@ -272,7 +272,7 @@ func rolloutTsOf(entry rawObject) (int64, bool) {
 	if !ok {
 		return 0, false
 	}
-	parsed, ok := jsfmt.ParseISO(value)
+	parsed, ok := jsscalar.ParseISO(value)
 	if !ok {
 		return 0, false
 	}

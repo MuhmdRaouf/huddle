@@ -16,6 +16,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // The send limits (SPEC 6.3): 1 to 20 sessions, 1 to 4,000 characters.
@@ -160,7 +161,7 @@ func (s *server) sessionActRoute(w http.ResponseWriter, r *http.Request, path st
 		}{true, route, messageID}, nil)
 		return nil
 	case "messages":
-		taken, err := s.registry.TakeMessages(ctx, id, jsfmt.ISOTime(s.now()))
+		taken, err := s.registry.TakeMessages(ctx, id, jsscalar.ISOTime(s.now()))
 		if err != nil {
 			return err
 		}
@@ -274,7 +275,7 @@ func (s *server) pushAckRoute(w http.ResponseWriter, r *http.Request) error {
 	}
 	ctx := r.Context()
 	if err := s.registry.RecordPushAck(ctx, name, member, s.commandOfMember(ctx, name, member),
-		jsfmt.ISOTime(s.now())); err != nil {
+		jsscalar.ISOTime(s.now())); err != nil {
 		return err
 	}
 	pushed := 0
@@ -333,7 +334,7 @@ func (s *server) pushMessage(ctx context.Context, id int64, in hub.MessageIn) st
 	if _, err := ch.Send(ctx, channel.Owner, &row.Member, in.Header(), channel.SendOpts{}); err != nil {
 		return hub.RouteNextPrompt // the channel refused: the next prompt still reaches it
 	}
-	_ = s.registry.MarkDelivered(ctx, id, hub.RouteNow, jsfmt.ISOTime(s.now()))
+	_ = s.registry.MarkDelivered(ctx, id, hub.RouteNow, jsscalar.ISOTime(s.now()))
 	return hub.RouteNow
 }
 
@@ -403,12 +404,12 @@ func (s *server) syncBlocked(ctx context.Context) error {
 			})
 		}
 	}
-	return s.registry.SyncBlocked(ctx, in, jsfmt.ISOTime(s.now()))
+	return s.registry.SyncBlocked(ctx, in, jsscalar.ISOTime(s.now()))
 }
 
 // messageTextErr answers why a message's text is refused, or "" when it is not.
 func messageTextErr(text string) string {
-	length := jsfmt.UTF16Len(text)
+	length := jsscalar.UTF16Len(text)
 	switch {
 	case length == 0:
 		return "text is required: 1 to 4000 characters"

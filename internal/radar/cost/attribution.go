@@ -9,7 +9,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/clock"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
@@ -116,7 +116,7 @@ func pricedOfRow(row LedgerRow) PricedRequest {
 
 // shortId is the head of an id, the way a short label shows it.
 func shortId(id string) string {
-	return jsfmt.UTF16Slice(id, 0, 8)
+	return jsscalar.UTF16Slice(id, 0, 8)
 }
 
 // sessionLabel is what a session is called in a flat grouping: its project and short id, or
@@ -300,7 +300,7 @@ func mixOf(models []modelBucket) []MixEntry {
 		if c := cmp.Compare(b.Tokens, a.Tokens); c != 0 {
 			return c
 		}
-		return jsfmt.LocaleCompare(a.Model, b.Model)
+		return jsscalar.LocaleCompare(a.Model, b.Model)
 	})
 	return mix
 }
@@ -326,7 +326,7 @@ func mergeMix(parts [][]MixEntry) []MixEntry {
 		if c := cmp.Compare(b.Tokens, a.Tokens); c != 0 {
 			return c
 		}
-		return jsfmt.LocaleCompare(a.Model, b.Model)
+		return jsscalar.LocaleCompare(a.Model, b.Model)
 	})
 	return mix
 }

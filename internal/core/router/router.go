@@ -35,6 +35,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // RouterOptions is what the router needs to know: whose router this is (the resolved provider:
@@ -197,7 +198,7 @@ func writeCanonical(b *strings.Builder, node *jsfmt.Value) {
 			if i > 0 {
 				b.WriteString(",")
 			}
-			jsfmt.WriteQuoted(b, key)
+			jsscalar.WriteQuoted(b, key)
 			b.WriteString(":")
 			writeCanonical(b, node.Get(key))
 		}
@@ -212,7 +213,7 @@ func writeCanonical(b *strings.Builder, node *jsfmt.Value) {
 		}
 		b.WriteString("]")
 	case jsfmt.KindString:
-		jsfmt.WriteQuoted(b, node.Text())
+		jsscalar.WriteQuoted(b, node.Text())
 	case jsfmt.KindNumber:
 		b.WriteString(string(node.Literal()))
 	case jsfmt.KindBool:
@@ -334,7 +335,7 @@ func (p capturedPrompt) hash() string {
 			b.WriteString(",")
 		}
 		first = false
-		jsfmt.WriteQuoted(&b, top.key)
+		jsscalar.WriteQuoted(&b, top.key)
 		b.WriteString(":")
 		writeCanonical(&b, top.value)
 	}

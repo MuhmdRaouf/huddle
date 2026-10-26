@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 )
 
@@ -206,7 +206,7 @@ func stillLive(state any) bool {
 func updatedAtOf(attempts []JobAttempt, raw any) *int64 {
 	var recorded *int64
 	if text, ok := raw.(string); ok {
-		if parsed, ok := jsfmt.ParseISO(text); ok {
+		if parsed, ok := jsscalar.ParseISO(text); ok {
 			ms := parsed.UnixMilli()
 			recorded = &ms
 		}

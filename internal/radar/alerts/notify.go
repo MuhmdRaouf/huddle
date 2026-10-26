@@ -21,6 +21,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/settings"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -286,7 +287,7 @@ func (n notifiedIDs) MarshalJSON() ([]byte, error) {
 		}
 		out.WriteString(jsfmt.String(entry.id).EncodeJSON())
 		out.WriteByte(':')
-		out.WriteString(jsfmt.JSNumber(entry.at))
+		out.WriteString(jsscalar.JSNumber(entry.at))
 	}
 	out.WriteByte('}')
 	return out.Bytes(), nil
@@ -330,8 +331,8 @@ func readNotified(path string) []notifiedID {
 
 // clip caps text at max UTF-16 units, the measure the desktop shows, marking the cut.
 func clip(text string, max int) string {
-	if jsfmt.UTF16Len(text) <= max {
+	if jsscalar.UTF16Len(text) <= max {
 		return text
 	}
-	return jsfmt.UTF16Slice(text, 0, max-1) + "…"
+	return jsscalar.UTF16Slice(text, 0, max-1) + "…"
 }

@@ -18,13 +18,13 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // isoAgo answers one registry timestamp age before now, so a fixture's state against the wall
 // clock is the state the test names.
 func isoAgo(age time.Duration) string {
-	return jsfmt.ISOTime(time.Now().Add(-age))
+	return jsscalar.ISOTime(time.Now().Add(-age))
 }
 
 func TestTheRegistryReportRouteStoresEventsAndUpsertsTheSession(t *testing.T) {

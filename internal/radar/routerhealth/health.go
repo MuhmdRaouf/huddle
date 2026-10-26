@@ -11,7 +11,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
@@ -92,7 +92,7 @@ func healthKindOf(line shared.SpoolLine) (shared.RouterEventKind, bool) {
 
 // tsOf reads a timestamp as epoch ms.
 func tsOf(value string) (int64, bool) {
-	parsed, ok := jsfmt.ParseISO(value)
+	parsed, ok := jsscalar.ParseISO(value)
 	if !ok {
 		return 0, false
 	}
@@ -119,7 +119,7 @@ func ParseRouterEvent(line shared.SpoolLine) *shared.RouterEventRecord {
 	}
 	reason := ""
 	if line.Reason != nil {
-		reason = jsfmt.UTF16Slice(*line.Reason, 0, 200)
+		reason = jsscalar.UTF16Slice(*line.Reason, 0, 200)
 	}
 	var model *string
 	if line.Model != nil && *line.Model != "" {
@@ -206,7 +206,7 @@ func Health(events []shared.RouterEventRecord, now, windowMs, buckets int64) Rou
 		if seriesTotal(a) != seriesTotal(b) {
 			return cmp.Compare(seriesTotal(b), seriesTotal(a))
 		}
-		return jsfmt.LocaleCompare(a.Plugin, b.Plugin)
+		return jsscalar.LocaleCompare(a.Plugin, b.Plugin)
 	})
 	recent := slices.Clone(inWindow)
 	if recent == nil {

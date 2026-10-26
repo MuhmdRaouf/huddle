@@ -1,3 +1,5 @@
+// Package jsfmt holds an order-keeping JSON value that decodes and re-encodes the way
+// JSON.stringify writes it.
 package jsfmt
 
 import (
@@ -9,7 +11,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"unicode/utf8"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // Kind is which JSON shape a Value holds.
@@ -159,10 +162,10 @@ func (v *Value) encode(out *strings.Builder, literal bool, unit, at string) {
 			out.WriteString(string(v.number))
 		} else {
 			number, _ := v.number.Float64()
-			out.WriteString(JSNumber(number))
+			out.WriteString(jsscalar.JSNumber(number))
 		}
 	case KindString:
-		WriteQuoted(out, v.text)
+		jsscalar.WriteQuoted(out, v.text)
 	case KindObject:
 		v.encodeObject(out, literal, unit, at)
 	case KindArray:
@@ -190,7 +193,7 @@ func (v *Value) encodeObject(out *strings.Builder, literal bool, unit, at string
 				out.WriteByte(',')
 			}
 			wrote++
-			WriteQuoted(out, key)
+			jsscalar.WriteQuoted(out, key)
 			out.WriteByte(':')
 			v.fields[i].encode(out, literal, unit, at)
 		}
@@ -209,7 +212,7 @@ func (v *Value) encodeObject(out *strings.Builder, literal bool, unit, at string
 			continue
 		}
 		out.WriteString(inner)
-		WriteQuoted(out, key)
+		jsscalar.WriteQuoted(out, key)
 		out.WriteString(": ")
 		v.fields[i].encode(out, literal, unit, inner)
 		wrote++
@@ -261,79 +264,6 @@ func (v *Value) encodeArray(out *strings.Builder, literal bool, unit, at string)
 	out.WriteByte(']')
 }
 
-// QuoteWriter is the string sink WriteQuoted writes into; a *strings.Builder and a
-// *bytes.Buffer both qualify.
-type QuoteWriter interface {
-	io.ByteWriter
-	io.StringWriter
-}
-
-// hexDigits spells a nibble in lowercase hex.
-const hexDigits = "0123456789abcdef"
-
-// WriteQuoted writes s as a JSON string the way JSON.stringify does: only the quote, the
-// backslash and the C0 controls escape, the five controls with short forms take them,
-// the rest take \u00xx in lowercase hex, and a lone surrogate — a UTF-16 cut can leave
-// one at the end of a truncated string — takes \udXXX.
-func WriteQuoted(out QuoteWriter, s string) {
-	out.WriteByte('"')
-	for i := 0; i < len(s); {
-		r, size := utf8.DecodeRuneInString(s[i:])
-		if r == utf8.RuneError && size == 1 {
-			if unit, ok := wtf16Unit(s[i:]); ok {
-				writeHex4(out, unit)
-				i += 3
-				continue
-			}
-			out.WriteString(string(utf8.RuneError))
-			i++
-			continue
-		}
-		switch r {
-		case '"':
-			out.WriteString(`\"`)
-		case '\\':
-			out.WriteString(`\\`)
-		case '\b':
-			out.WriteString(`\b`)
-		case '\f':
-			out.WriteString(`\f`)
-		case '\n':
-			out.WriteString(`\n`)
-		case '\r':
-			out.WriteString(`\r`)
-		case '\t':
-			out.WriteString(`\t`)
-		default:
-			if r < 0x20 {
-				writeHex4(out, uint16(r))
-			} else {
-				out.WriteString(s[i : i+size])
-			}
-		}
-		i += size
-	}
-	out.WriteByte('"')
-}
-
-// writeHex4 writes u as \uHHHH in lowercase hex.
-func writeHex4(out QuoteWriter, u uint16) {
-	out.WriteString(`\u`)
-	out.WriteByte(hexDigits[u>>12&0xf])
-	out.WriteByte(hexDigits[u>>8&0xf])
-	out.WriteByte(hexDigits[u>>4&0xf])
-	out.WriteByte(hexDigits[u&0xf])
-}
-
-// wtf16Unit reads one lone-surrogate unit a UTF-16 cut left behind in its WTF-8 form;
-// ok is false when the bytes are not that shape.
-func wtf16Unit(s string) (uint16, bool) {
-	if len(s) < 3 || s[0] != 0xED || s[1] < 0xA0 || s[1] > 0xBF || s[2] < 0x80 || s[2] > 0xBF {
-		return 0, false
-	}
-	return 0xD000 | uint16(s[1]&0x3F)<<6 | uint16(s[2]&0x3F), true
-}
-
 // Kind reports which JSON shape the value holds.
 func (v *Value) Kind() Kind { return v.kind }
 
@@ -360,7 +290,7 @@ func Number(f float64) *Value {
 	if math.IsInf(f, 0) || math.IsNaN(f) {
 		return &Value{kind: KindNull}
 	}
-	return &Value{kind: KindNumber, number: json.Number(JSNumber(f))}
+	return &Value{kind: KindNumber, number: json.Number(jsscalar.JSNumber(f))}
 }
 
 // Object builds an object value whose keys pair with fields positionally.

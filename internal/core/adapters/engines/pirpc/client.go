@@ -20,7 +20,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/core/adapters/engines/shared"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // DefaultHandshakeTimeoutMs: a healthy pi answers get_state within a second of spawn (probed on
@@ -560,11 +560,11 @@ func unattendedReply(frame Frame) json.RawMessage {
 	switch frameString(frame, "method") {
 	case "confirm":
 		out.WriteString(`{"type":"extension_ui_response","id":`)
-		jsfmt.WriteQuoted(&out, id)
+		jsscalar.WriteQuoted(&out, id)
 		out.WriteString(`,"confirmed":true}`)
 	case "select", "input", "editor":
 		out.WriteString(`{"type":"extension_ui_response","id":`)
-		jsfmt.WriteQuoted(&out, id)
+		jsscalar.WriteQuoted(&out, id)
 		out.WriteString(`,"cancelled":true}`)
 	default:
 		return nil
@@ -579,7 +579,7 @@ func withID(id string, command json.RawMessage) json.RawMessage {
 	}
 	var out bytes.Buffer
 	out.WriteString(`{"id":`)
-	jsfmt.WriteQuoted(&out, id)
+	jsscalar.WriteQuoted(&out, id)
 	out.WriteByte(',')
 	out.Write(command[1:])
 	return json.RawMessage(out.Bytes())
@@ -589,7 +589,7 @@ func withID(id string, command json.RawMessage) json.RawMessage {
 func promptCommand(message string) json.RawMessage {
 	var out bytes.Buffer
 	out.WriteString(`{"type":"prompt","message":`)
-	jsfmt.WriteQuoted(&out, message)
+	jsscalar.WriteQuoted(&out, message)
 	out.WriteByte('}')
 	return json.RawMessage(out.Bytes())
 }

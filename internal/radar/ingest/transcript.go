@@ -15,7 +15,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
@@ -418,7 +418,7 @@ func retryable(status int64) bool {
 
 // apiErrorPattern allows JavaScript's whitespace, Unicode spaces included, which RE2's \s
 // does not match.
-var apiErrorPattern = regexp.MustCompile(`API Error:` + jsfmt.SpaceClass + `*(\d{3})`)
+var apiErrorPattern = regexp.MustCompile(`API Error:` + jsscalar.SpaceClass + `*(\d{3})`)
 
 // APIErrorStatus reads "API Error: 529 {…}" as 529; anything else, or a status nobody
 // retries, is no status.
@@ -503,9 +503,9 @@ func capText(text string) (string, *int64) {
 	if len(text) <= textCap {
 		return text, nil
 	}
-	kept := jsfmt.UTF16Slice(text, 0, textCap)
+	kept := jsscalar.UTF16Slice(text, 0, textCap)
 	for len(kept) > textCap {
-		kept = jsfmt.UTF16Slice(kept, 0, -1)
+		kept = jsscalar.UTF16Slice(kept, 0, -1)
 	}
 	cut := int64(len(text) - len(kept))
 	return kept + "…[truncated " + strconv.FormatInt(cut, 10) + " bytes]", &cut
@@ -527,7 +527,7 @@ func decodedBytesOf(data json.RawMessage) (int64, bool) {
 	case strings.HasSuffix(text, "="):
 		padding = 1
 	}
-	decoded := int64(jsfmt.UTF16Len(text)*3/4) - int64(padding)
+	decoded := int64(jsscalar.UTF16Len(text)*3/4) - int64(padding)
 	if decoded < 0 {
 		return 0, true
 	}
@@ -708,8 +708,8 @@ func commandHeadOf(command string) string {
 		words = words[:2]
 	}
 	head := strings.Join(words, " ")
-	if jsfmt.UTF16Len(head) > whatArgChars {
-		return jsfmt.UTF16Slice(head, 0, whatArgChars)
+	if jsscalar.UTF16Len(head) > whatArgChars {
+		return jsscalar.UTF16Slice(head, 0, whatArgChars)
 	}
 	return head
 }
@@ -731,7 +731,7 @@ func toolArgOf(name string, input json.RawMessage) string {
 	}
 	if name == "Grep" || name == "Glob" {
 		pattern, _ := text("pattern")
-		return jsfmt.UTF16Slice(oneLineOf(pattern), 0, whatArgChars)
+		return jsscalar.UTF16Slice(oneLineOf(pattern), 0, whatArgChars)
 	}
 	for _, key := range []string{"file_path", "notebook_path", "path"} {
 		if file, ok := text(key); ok {
@@ -754,7 +754,7 @@ func inputPartOf(blocks []ContentBlock) *string {
 		if text == "" {
 			return nil
 		}
-		part := "prompt: " + jsfmt.UTF16Slice(text, 0, whatPromptChars)
+		part := "prompt: " + jsscalar.UTF16Slice(text, 0, whatPromptChars)
 		return &part
 	}
 	var results int
@@ -1240,7 +1240,7 @@ func jsStringOf(raw json.RawMessage) (string, bool) {
 	var num json.Number
 	if err := json.Unmarshal(raw, &num); err == nil {
 		if value, err := strconv.ParseFloat(num.String(), 64); err == nil {
-			return jsfmt.JSNumber(value), true
+			return jsscalar.JSNumber(value), true
 		}
 		return "", false
 	}

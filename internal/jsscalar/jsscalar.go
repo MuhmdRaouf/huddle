@@ -1,7 +1,7 @@
-// Package jsfmt holds the JavaScript-compatible formatting rules: number and date strings,
-// UTF-16 length and slice semantics, and an order-keeping JSON value that re-encodes the way
-// JSON.stringify writes it.
-package jsfmt
+// Package jsscalar holds the JavaScript scalar rules the Go code shares: number text
+// (String(n) and toFixed), UTF-16 length and slices, ISO time, whitespace classes, locale
+// compare and JSON string quoting.
+package jsscalar
 
 import (
 	"math"

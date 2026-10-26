@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/server"
 )
 
@@ -157,7 +157,7 @@ func ParseArgs(argv []string, defaultSinceMs int64) ParsedArgs {
 // trimmed at both ends, an optional sign, then digits, and anything after the digits ignored;
 // ok is false when no digits were there.
 func parseInt10(value string) (int64, bool) {
-	text := jsfmt.Trim(value)
+	text := jsscalar.Trim(value)
 	sign := int64(1)
 	if strings.HasPrefix(text, "-") {
 		sign = -1
@@ -185,11 +185,11 @@ var unitMs = map[string]int64{"s": 1_000, "m": 60_000, "h": 3_600_000, "d": 86_4
 
 // sincePattern matches `Ns`, `Nm`, `Nh`, `Nd` case-insensitively, with the unit's word allowed
 // after it (`2 hrs`); the space class is JavaScript's \s, not RE2's.
-var sincePattern = regexp.MustCompile(`(?i)^(\d+)[` + jsfmt.SpaceSet + `]*([smhd]?)[a-z]*$`)
+var sincePattern = regexp.MustCompile(`(?i)^(\d+)[` + jsscalar.SpaceSet + `]*([smhd]?)[a-z]*$`)
 
 // ParseSince reads one --since duration; ok is false when the text is unusable.
 func ParseSince(raw string) (int64, bool) {
-	match := sincePattern.FindStringSubmatch(jsfmt.Trim(raw))
+	match := sincePattern.FindStringSubmatch(jsscalar.Trim(raw))
 	if match == nil {
 		return 0, false
 	}
@@ -418,7 +418,7 @@ func whereText(alert watchedAlert) string {
 		return alert.project
 	}
 	if alert.sessionID != "" {
-		return jsfmt.UTF16Slice(alert.sessionID, 0, 8)
+		return jsscalar.UTF16Slice(alert.sessionID, 0, 8)
 	}
 	if alert.kind == "budget" {
 		return "All sessions"

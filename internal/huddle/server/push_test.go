@@ -36,7 +36,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/webauthntest"
 )
@@ -232,7 +232,7 @@ func TestThePushPayloadCarriesOnlyWhoKindAndTool(t *testing.T) {
 
 	// an alert's payload is the same shape: the alert's own name for the kind, who it names, and
 	// no item row to decide on
-	event := AlertEvent{Type: "alert.remote_allow", ID: 3, At: jsfmt.ISOTime(pushClock), Body: vv(t,
+	event := AlertEvent{Type: "alert.remote_allow", ID: 3, At: jsscalar.ISOTime(pushClock), Body: vv(t,
 		`{"item":9,"session":"s-3","tool":"Bash"}`)}
 	raw, _ = json.Marshal(alertPushPayload(event, "laptop"))
 	for _, want := range []string{`"kind":"alert.remote_allow"`, `"session":"s-3"`, `"machine":"laptop"`, `"tool":"Bash"`} {
@@ -254,7 +254,7 @@ func TestTheEncryptedPushCarriesNoCommandText(t *testing.T) {
 	// the session reports its machine, so the push can name who waits
 	if err := s.registry.Report(context.Background(), hub.Report{
 		SessionID: "s-1", Machine: "laptop", LastEvent: "UserPromptSubmit",
-		LastEventAt: jsfmt.ISOTime(pushClock),
+		LastEventAt: jsscalar.ISOTime(pushClock),
 	}); err != nil {
 		t.Fatalf("report the session: %v", err)
 	}
@@ -387,7 +387,7 @@ func TestThePushSweepSendsOnceAndEscalatesOnceAndNeverAfterADecision(t *testing.
 		t.Fatalf("create the second item: %v", err)
 	}
 	if won, err := s.registry.DecidePermission(context.Background(), second, "deny", "",
-		jsfmt.ISOTime(clock), clock); err != nil || !won {
+		jsscalar.ISOTime(clock), clock); err != nil || !won {
 		t.Fatalf("decide the second = (%v, %v), want the decision to win", won, err)
 	}
 	s.sweepPushes(context.Background())
@@ -417,7 +417,7 @@ func TestAPushGoesOncePerNeedsYouEntry(t *testing.T) {
 	report := func(event string) {
 		if err := s.registry.Report(context.Background(), hub.Report{
 			SessionID: "s-1", Machine: "laptop", LastEvent: event,
-			LastEventAt: jsfmt.ISOTime(pushClock),
+			LastEventAt: jsscalar.ISOTime(pushClock),
 		}); err != nil {
 			t.Fatalf("report %s: %v", event, err)
 		}
@@ -474,7 +474,7 @@ func TestANeedsYouPushCarriesTheOpenNeedsYouCount(t *testing.T) {
 	for _, id := range []string{"s-1", "s-2", "s-3"} {
 		if err := s.registry.Report(context.Background(), hub.Report{
 			SessionID: id, Machine: "laptop", LastEvent: "UserPromptSubmit",
-			LastEventAt: jsfmt.ISOTime(pushClock),
+			LastEventAt: jsscalar.ISOTime(pushClock),
 		}); err != nil {
 			t.Fatalf("report %s: %v", id, err)
 		}
@@ -504,7 +504,7 @@ func TestANeedsYouPushCarriesTheOpenNeedsYouCount(t *testing.T) {
 	// a session's own entry push carries the same count
 	if err := s.registry.Report(context.Background(), hub.Report{
 		SessionID: "s-3", Machine: "laptop", LastEvent: "PermissionRequest",
-		LastEventAt: jsfmt.ISOTime(pushClock),
+		LastEventAt: jsscalar.ISOTime(pushClock),
 	}); err != nil {
 		t.Fatalf("report the entry: %v", err)
 	}
@@ -527,7 +527,7 @@ func TestAnItemsFirstPushSpeaksForTheSessionsEntry(t *testing.T) {
 	report := func(event string) {
 		if err := s.registry.Report(context.Background(), hub.Report{
 			SessionID: "s-1", Machine: "laptop", LastEvent: event,
-			LastEventAt: jsfmt.ISOTime(pushClock),
+			LastEventAt: jsscalar.ISOTime(pushClock),
 		}); err != nil {
 			t.Fatalf("report %s: %v", event, err)
 		}
@@ -549,7 +549,7 @@ func TestAnItemsFirstPushSpeaksForTheSessionsEntry(t *testing.T) {
 
 	// the tool runs: the session leaves needs-you, and the next entry pushes again
 	if _, err := s.registry.WithdrawPermissions(context.Background(), "s-1",
-		jsfmt.ISOTime(pushClock)); err != nil {
+		jsscalar.ISOTime(pushClock)); err != nil {
 		t.Fatalf("withdraw the item: %v", err)
 	}
 	report("PostToolUse")
@@ -590,7 +590,7 @@ func TestAlertsReachOnlyTheDevicesThatAskedForThem(t *testing.T) {
 	// an alert reaches only the devices that chose needs-and-alerts
 	before := service.count()
 	s.pushAlertEvent(context.Background(), AlertEvent{
-		Type: "alert.device_paired", ID: 1, At: jsfmt.ISOTime(pushClock),
+		Type: "alert.device_paired", ID: 1, At: jsscalar.ISOTime(pushClock),
 		Body: vv(t, `{"device":"tablet","at":"2026-10-16T12:00:00.000Z"}`),
 	})
 	if service.count() != before+1 {
@@ -633,7 +633,7 @@ func TestAFinishedTurnPushesOnlyTheDevicesThatChoseIt(t *testing.T) {
 	}
 	report := func(event string, at time.Time) {
 		if err := s.registry.Report(context.Background(), hub.Report{
-			SessionID: "s-1", Machine: "laptop", LastEvent: event, LastEventAt: jsfmt.ISOTime(at),
+			SessionID: "s-1", Machine: "laptop", LastEvent: event, LastEventAt: jsscalar.ISOTime(at),
 			Digest: "ran the tests",
 		}); err != nil {
 			t.Fatalf("report %s: %v", event, err)
@@ -892,7 +892,7 @@ func TestEveryPushCarriesTheAppAddressItOpens(t *testing.T) {
 	if got := sessionPushOf(hub.SessionRow{SessionID: "s-2", Machine: "laptop"}, 1).URL; got != "/#/now/s-2" {
 		t.Fatalf("the session entry's link = %q, want the session's screen", got)
 	}
-	event := AlertEvent{Type: "alert.device_paired", ID: 1, At: jsfmt.ISOTime(pushClock), Body: vv(t, `{"device":"tablet"}`)}
+	event := AlertEvent{Type: "alert.device_paired", ID: 1, At: jsscalar.ISOTime(pushClock), Body: vv(t, `{"device":"tablet"}`)}
 	if got := alertPushPayload(event, "laptop").URL; got != "/#/now" {
 		t.Fatalf("an owner alert's link = %q, want the Now list", got)
 	}

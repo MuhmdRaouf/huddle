@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // OpResult is one op's outcome: its result, and its text for an agent's context (nil when the
@@ -855,7 +856,7 @@ var ops = map[string]opDef{
 				}
 				lines = append(lines, fmt.Sprintf("#%d [%s] %s — %s%s%s\n   %s",
 					k.ID, k.Kind, k.Title, k.By, kbFlags(k), tags,
-					jsfmt.UTF16Slice(spaceRuns.ReplaceAllString(k.Hit, " "), 0, 240)))
+					jsscalar.UTF16Slice(spaceRuns.ReplaceAllString(k.Hit, " "), 0, 240)))
 			}
 			if len(lines) == 0 {
 				return "(nothing yet: remember what you learn)"

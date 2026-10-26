@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // Radar answers in 800 ms or not at all, and one answer stands for 5 seconds.
@@ -119,7 +119,7 @@ func (r *Radar) Port() int {
 	if err != nil {
 		return 0
 	}
-	port, err := strconv.ParseFloat(jsfmt.Trim(string(data)), 64)
+	port, err := strconv.ParseFloat(jsscalar.Trim(string(data)), 64)
 	if err != nil || port <= 0 || port >= 65536 || port != math.Trunc(port) {
 		return 0
 	}
@@ -319,7 +319,7 @@ func jsText(raw json.RawMessage, fallback string) string {
 	var number json.Number
 	if err := json.Unmarshal(raw, &number); err == nil {
 		if value, err := number.Float64(); err == nil {
-			return jsfmt.JSNumber(value)
+			return jsscalar.JSNumber(value)
 		}
 		return fallback
 	}

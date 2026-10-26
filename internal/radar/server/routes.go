@@ -17,6 +17,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/budget"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/history"
@@ -305,7 +306,7 @@ func errorOf(status int, message string) ApiResponse {
 // whitespace, an optional sign, then digits, stopping at the first other character. A digit
 // run too long for an int64 saturates, the way the double it parses to stays finite.
 func parseInt10(raw string) (int64, bool) {
-	text := jsfmt.Trim(raw)
+	text := jsscalar.Trim(raw)
 	negative := false
 	switch {
 	case strings.HasPrefix(text, "-"):

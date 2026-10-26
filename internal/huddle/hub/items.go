@@ -19,6 +19,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/bmatcuk/doublestar/v4"
 )
 
@@ -65,7 +66,7 @@ const permissionColumns = `tool, input, truncated, last_poll_at, decided_at, dec
 // shared cleaner's one line over the tool and its joined input.
 func (d *DB) CreatePermissionItem(ctx context.Context, sessionID, tool string, input []byte, now time.Time) (int64, error) {
 	kept, truncated := cutInput(normalizeInput(input))
-	at := jsfmt.ISOTime(now)
+	at := jsscalar.ISOTime(now)
 	// a fresh key per prompt: the hook posts one item per permission prompt, and no replay of
 	// a post there is (the hook never retries a prompt it already asked about)
 	noise := make([]byte, 8)
@@ -132,7 +133,7 @@ func PermissionState(item PermissionItem, now time.Time) string {
 // is cleaned here, where it enters storage: whatever reads it back — the hook's answer, the
 // dashboard — shows one calm line.
 func (d *DB) DecidePermission(ctx context.Context, id int64, decision, message, at string, now time.Time) (bool, error) {
-	message = jsfmt.UTF16Slice(cleanSummary(message), 0, messageLimit)
+	message = jsscalar.UTF16Slice(cleanSummary(message), 0, messageLimit)
 	won := false
 	err := d.st.Tx(ctx, func(ctx context.Context, q store.Q) error {
 		row, err := q.Get(ctx,
@@ -201,12 +202,12 @@ func (d *DB) WithdrawPermissions(ctx context.Context, sessionID, at string) ([]i
 // prompt without waiting for the next read. The expiry itself stays computed on read; this is
 // only the sweeper that keeps the stored list honest.
 func (d *DB) ExpirePermissions(ctx context.Context, now time.Time) ([]string, error) {
-	at := jsfmt.ISOTime(now)
+	at := jsscalar.ISOTime(now)
 	rows, err := d.st.All(ctx,
 		"SELECT id, session_id FROM items WHERE kind = ? AND state = 'open' AND ("+
 			"created_at < ? OR COALESCE(last_poll_at, created_at) < ?)",
-		KindPermission, jsfmt.ISOTime(now.Add(-PermissionExpiresAfter)),
-		jsfmt.ISOTime(now.Add(-PermissionSilentPollAfter)))
+		KindPermission, jsscalar.ISOTime(now.Add(-PermissionExpiresAfter)),
+		jsscalar.ISOTime(now.Add(-PermissionSilentPollAfter)))
 	if err != nil {
 		return nil, err
 	}

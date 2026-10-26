@@ -17,7 +17,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/convo"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/radartab"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // the literal agents and shells the tray unit tests lay out: a main, a finished worker a1, a
@@ -235,12 +235,12 @@ func TestTheSessionLiveRouteCarriesTheSubagentRadarFacts(t *testing.T) {
 	now := time.Now().UTC()
 	promptLine := func(text string, at time.Time) string {
 		return fmt.Sprintf(`{"type":"user","timestamp":%q,"message":{"content":[{"type":"text","text":%q}]}}`,
-			jsfmt.ISOTime(at), text)
+			jsscalar.ISOTime(at), text)
 	}
 	replyLine := func(at time.Time, tokens int) string {
 		return fmt.Sprintf(`{"type":"assistant","timestamp":%q,"message":{"model":"test-model",`+
 			`"content":[{"type":"text","text":"working"}],"usage":{"input_tokens":10,"output_tokens":%d}}}`,
-			jsfmt.ISOTime(at), tokens)
+			jsscalar.ISOTime(at), tokens)
 	}
 	land := func(path, body string) {
 		t.Helper()

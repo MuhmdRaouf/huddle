@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ingest"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -34,7 +34,7 @@ var (
 )
 
 // iso renders epoch ms the way the transcripts and spool lines stamp their timestamps.
-func iso(ms int64) string { return jsfmt.ISOTime(time.UnixMilli(ms)) }
+func iso(ms int64) string { return jsscalar.ISOTime(time.UnixMilli(ms)) }
 
 // jsonl marshals entries to one jsonl document, trailing newline included.
 func jsonl(t *testing.T, entries ...any) string {
@@ -1520,7 +1520,7 @@ func TestWatcherInterval(t *testing.T) {
 	t.Run("survives a throwing tick and keeps ingesting afterwards", func(t *testing.T) {
 		e := makeEnv(t)
 		path := writeText(t, todaySpoolPath(t, e.env), jsonl(t, map[string]any{
-			"ts": jsfmt.ISOTime(time.Now()), "event": "UserPromptSubmit", "session_id": "s1", "prompt": "a",
+			"ts": jsscalar.ISOTime(time.Now()), "event": "UserPromptSubmit", "session_id": "s1", "prompt": "a",
 		}))
 		realStore := newStore()
 		var trip atomic.Bool
@@ -1542,7 +1542,7 @@ func TestWatcherInterval(t *testing.T) {
 		})
 		trip.Store(true)
 		appendText(t, path, oneLine(t, map[string]any{
-			"ts": jsfmt.ISOTime(time.Now()), "event": "UserPromptSubmit", "session_id": "s1", "prompt": "b",
+			"ts": jsscalar.ISOTime(time.Now()), "event": "UserPromptSubmit", "session_id": "s1", "prompt": "b",
 		}))
 		tick.fire() // the tick throws; the watcher must not die
 		waitFor(t, "the throwing tick's line", 5*time.Second, func() bool {
@@ -1550,7 +1550,7 @@ func TestWatcherInterval(t *testing.T) {
 		})
 		trip.Store(false)
 		appendText(t, path, oneLine(t, map[string]any{
-			"ts": jsfmt.ISOTime(time.Now()), "event": "Stop", "session_id": "s1",
+			"ts": jsscalar.ISOTime(time.Now()), "event": "Stop", "session_id": "s1",
 		}))
 		tick.fire()
 		waitFor(t, "the next healthy tick", 5*time.Second, func() bool {
@@ -1561,7 +1561,7 @@ func TestWatcherInterval(t *testing.T) {
 	t.Run("stops ingesting once stopped", func(t *testing.T) {
 		e := makeEnv(t)
 		path := writeText(t, todaySpoolPath(t, e.env), jsonl(t, map[string]any{
-			"ts": jsfmt.ISOTime(time.Now()), "event": "UserPromptSubmit", "session_id": "s1", "prompt": "a",
+			"ts": jsscalar.ISOTime(time.Now()), "event": "UserPromptSubmit", "session_id": "s1", "prompt": "a",
 		}))
 		st := newStore()
 		tick := newFakeTicker()
@@ -1580,7 +1580,7 @@ func TestWatcherInterval(t *testing.T) {
 			t.Fatal("watcher goroutine still running after Stop")
 		}
 		appendText(t, path, oneLine(t, map[string]any{
-			"ts": jsfmt.ISOTime(time.Now()), "event": "Stop", "session_id": "s1",
+			"ts": jsscalar.ISOTime(time.Now()), "event": "Stop", "session_id": "s1",
 		}))
 		tick.fire()  // the loop is out: the tick lands nowhere
 		w.PollOnce() // a poll after stop is a no-op
@@ -1630,7 +1630,7 @@ func TestWatcherInterval(t *testing.T) {
 		before := runtime.NumGoroutine()
 		e := makeEnv(t)
 		writeText(t, todaySpoolPath(t, e.env), jsonl(t, map[string]any{
-			"ts": jsfmt.ISOTime(time.Now()), "event": "UserPromptSubmit", "session_id": "s1", "prompt": "a",
+			"ts": jsscalar.ISOTime(time.Now()), "event": "UserPromptSubmit", "session_id": "s1", "prompt": "a",
 		}))
 		st := newStore()
 		tick := newFakeTicker()

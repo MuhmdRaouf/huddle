@@ -17,6 +17,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters/spool"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ingest"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
@@ -191,7 +192,7 @@ func TestProxyForwardsRequestAndAnswerUnchanged(t *testing.T) {
 	if event.LatencyMs < 0 {
 		t.Errorf("route line latency = %d, want a measured one", event.LatencyMs)
 	}
-	if _, ok := jsfmt.ParseISO(event.Ts); !ok {
+	if _, ok := jsscalar.ParseISO(event.Ts); !ok {
 		t.Errorf("route line ts = %q, want ISO", event.Ts)
 	}
 }
@@ -522,7 +523,7 @@ func TestRouteLinesReachRadar(t *testing.T) {
 	if line.Event != "route" || line.Model == nil || *line.Model != "glm-5.3" {
 		t.Fatalf("line = event %q model %v, want a route line on glm-5.3", line.Event, line.Model)
 	}
-	ts, ok := jsfmt.ParseISO(line.Ts)
+	ts, ok := jsscalar.ParseISO(line.Ts)
 	if !ok {
 		t.Fatalf("line ts = %q, want ISO", line.Ts)
 	}

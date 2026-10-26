@@ -16,6 +16,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // builtinViews are the repo tabs every channel with a repo offers.
@@ -214,7 +215,7 @@ func (v *Views) Route(ctx context.Context, ch *channel.Channel, sub string, quer
 		cached, ok := v.drift[ch.Name]
 		v.mu.Unlock()
 		if ok && nowMs-cached.atMs < 120_000 {
-			return DriftAnswer{At: jsfmt.ISOTime(time.UnixMilli(cached.atMs)), Rows: cached.rows}, nil
+			return DriftAnswer{At: jsscalar.ISOTime(time.UnixMilli(cached.atMs)), Rows: cached.rows}, nil
 		}
 		tasks, err := allTasks(ctx, ch)
 		if err != nil {
@@ -227,7 +228,7 @@ func (v *Views) Route(ctx context.Context, ch *channel.Channel, sub string, quer
 		v.mu.Lock()
 		v.drift[ch.Name] = driftEntry{atMs: nowMs, rows: rows}
 		v.mu.Unlock()
-		return DriftAnswer{At: jsfmt.ISOTime(time.UnixMilli(nowMs)), Rows: rows}, nil
+		return DriftAnswer{At: jsscalar.ISOTime(time.UnixMilli(nowMs)), Rows: rows}, nil
 	case "diagrams":
 		names, err := os.ReadDir(*cfg.Repo + "/docs/architecture")
 		out := []string{}
@@ -294,7 +295,7 @@ func (v *Views) ExportMd(ctx context.Context, ch *channel.Channel) (string, erro
 	cfg := ch.Config()
 	out := []string{
 		"# " + cfg.Title, "",
-		"Exported " + jsfmt.ISOTime(ch.Now()) + " from Huddle (channel " + ch.Name + ").", "",
+		"Exported " + jsscalar.ISOTime(ch.Now()) + " from Huddle (channel " + ch.Name + ").", "",
 	}
 	tasks, err := ch.Tasks(ctx, channel.TasksFilter{})
 	if err != nil {

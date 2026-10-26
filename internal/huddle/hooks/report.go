@@ -32,7 +32,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/prompttext"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // The report hook's own deadlines, in milliseconds. Together they sit inside the 2 s budget
@@ -107,7 +107,7 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			Cwd:         input.Cwd,
 			Harness:     claudeHarness,
 			LastEvent:   input.HookEventName,
-			LastEventAt: jsfmt.ISOTime(nowOf(w)),
+			LastEventAt: jsscalar.ISOTime(nowOf(w)),
 		}
 		if input.HookEventName == "Notification" && (input.Message != "" || input.NotificationType != "") {
 			// the notification's own words ride the report: the item a question grows needs them
@@ -129,8 +129,8 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 		// title (the first prompt cut to 80 runes) and the task (its first line), which the
 		// registry keeps as the first title and the newest task
 		if input.Prompt != "" && !prompttext.IsHarness(input.Prompt) {
-			rep.Title = jsfmt.UTF16Slice(input.Prompt, 0, 80)
-			rep.Task = jsfmt.UTF16Slice(firstLineOf(input.Prompt), 0, 80)
+			rep.Title = jsscalar.UTF16Slice(input.Prompt, 0, 80)
+			rep.Task = jsscalar.UTF16Slice(firstLineOf(input.Prompt), 0, 80)
 			if input.HookEventName == "UserPromptSubmit" {
 				rep.PromptLine = cutRunes(firstLineOf(input.Prompt), toolTargetRunes)
 			}

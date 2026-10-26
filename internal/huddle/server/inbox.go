@@ -18,7 +18,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 const (
@@ -64,7 +64,7 @@ func (s *server) postInbox(ctx context.Context, id int64, in hub.MessageIn) stri
 	// No live pid names no sessions file: the claude that answers the socket reads the turn.
 	row, err := s.registry.SessionRow(ctx, in.SessionID, s.now())
 	if err != nil || row == nil || row.Pid <= 0 {
-		_ = s.registry.MarkDelivered(ctx, id, hub.RouteInbox, jsfmt.ISOTime(s.now()))
+		_ = s.registry.MarkDelivered(ctx, id, hub.RouteInbox, jsscalar.ISOTime(s.now()))
 		return hub.RouteInbox
 	}
 
@@ -83,7 +83,7 @@ func (s *server) postInbox(ctx context.Context, id int64, in hub.MessageIn) stri
 	deadline := time.Now().Add(heldWindow)
 	for {
 		if ctx.Err() == nil && inboxHolds(file, in.SessionID, row.Pid) {
-			if err := s.registry.MarkHeld(ctx, id, jsfmt.ISOTime(s.now())); err != nil {
+			if err := s.registry.MarkHeld(ctx, id, jsscalar.ISOTime(s.now())); err != nil {
 				return ""
 			}
 			return hub.RouteHeld
@@ -93,7 +93,7 @@ func (s *server) postInbox(ctx context.Context, id int64, in hub.MessageIn) stri
 		}
 		time.Sleep(heldPoll)
 	}
-	_ = s.registry.MarkDelivered(ctx, id, hub.RouteInbox, jsfmt.ISOTime(s.now()))
+	_ = s.registry.MarkDelivered(ctx, id, hub.RouteInbox, jsscalar.ISOTime(s.now()))
 	return hub.RouteInbox
 }
 

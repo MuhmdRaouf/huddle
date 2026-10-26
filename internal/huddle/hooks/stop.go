@@ -23,6 +23,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // stopKeep caps the asks remembered per session identity.
@@ -77,7 +78,7 @@ func Stop(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 		}
 		maxAgeMS := stopMaxAgeMS(w) // NaN never blocks: nothing is fresh beside it
 		fresh := func(item stopItem) bool {
-			ts, ok := jsfmt.ParseISO(item.Ts)
+			ts, ok := jsscalar.ParseISO(item.Ts)
 			return ok && float64(nowOf(w).UnixMilli()-ts.UnixMilli()) <= maxAgeMS
 		}
 		home := cli.Home(ctx, w)

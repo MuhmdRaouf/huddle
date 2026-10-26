@@ -19,7 +19,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // The deadlines each hook grants itself, in milliseconds. Together they stay at most 70 % inside
@@ -92,7 +92,7 @@ func LogHookError(ctx context.Context, w *cli.World, hook string, err error) {
 		return
 	}
 	defer log.Close()
-	_, _ = fmt.Fprintf(log, "%s %s: %s\n", jsfmt.ISOTime(nowOf(w)), hook, err.Error())
+	_, _ = fmt.Fprintf(log, "%s %s: %s\n", jsscalar.ISOTime(nowOf(w)), hook, err.Error())
 }
 
 // hookInput is what Claude Code sends a hook on stdin; every field is optional and absent input

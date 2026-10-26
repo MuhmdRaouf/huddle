@@ -18,7 +18,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // The permit hook's own deadlines, in milliseconds. The budget sits under seventy percent of
@@ -149,7 +149,7 @@ func Permit(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 				writeJSON(out, answer)
 				return nil
 			case row.State == hub.StateAnswered && row.Decision == "deny":
-				message := jsfmt.UTF16Slice(row.Message, 0, 300)
+				message := jsscalar.UTF16Slice(row.Message, 0, 300)
 				if message == "" {
 					message = permitDenyMessage
 				}
@@ -195,7 +195,7 @@ func permitPause(ctx context.Context, w *cli.World, deadline time.Time) error {
 // permitBudget answers the hook's whole budget: HUDDLE_PERMIT_BUDGET_MS over the default, a
 // value that is no number answering the default rather than an endless wait.
 func permitBudget(w *cli.World) time.Duration {
-	raw := jsfmt.Trim(getenvOf(w, "HUDDLE_PERMIT_BUDGET_MS"))
+	raw := jsscalar.Trim(getenvOf(w, "HUDDLE_PERMIT_BUDGET_MS"))
 	if raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
 			return time.Duration(n) * time.Millisecond

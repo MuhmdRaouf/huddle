@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 func TestTheReportHookNamesTheMemberAndCarriesTheNotification(t *testing.T) {
@@ -54,7 +54,7 @@ func TestTheReportHookNamesTheMemberAndCarriesTheNotification(t *testing.T) {
 func TestTheListenHookBringsTheOwnersAnswerOnTheNextPrompt(t *testing.T) {
 	s := startHuddle(t)
 	report := fmt.Sprintf(`{"session_id":"s-take","channel":"hooks","member":"me","last_event":"UserPromptSubmit","last_event_at":%q}`,
-		jsfmt.ISOTime(time.Now()))
+		jsscalar.ISOTime(time.Now()))
 	if code, body := post(t, s, "/api/registry/report", s.token, report); code != 200 {
 		t.Fatalf("the report: %d %s", code, body)
 	}

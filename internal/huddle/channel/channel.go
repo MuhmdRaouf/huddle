@@ -29,6 +29,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // Row is one result row of the channel's database.
@@ -291,7 +292,7 @@ func deref(p *string) string {
 func sp(s string) *string { return &s }
 
 // utf16Cut truncates a user-facing string the way the dashboard's text is cut: on UTF-16 units.
-func utf16Cut(s string, n int) string { return jsfmt.UTF16Slice(s, 0, n) }
+func utf16Cut(s string, n int) string { return jsscalar.UTF16Slice(s, 0, n) }
 
 func utf16CutPtr(s *string, n int) *string {
 	if s == nil {
@@ -1489,7 +1490,7 @@ func (c *Channel) emit(typ string, data any) {
 	c.stateMu.Lock()
 	listeners := slices.Clone(c.listeners)
 	c.stateMu.Unlock()
-	m := Live{Ch: c.Name, Type: typ, Data: data, At: jsfmt.ISOTime(c.Now())}
+	m := Live{Ch: c.Name, Type: typ, Data: data, At: jsscalar.ISOTime(c.Now())}
 	for _, l := range listeners {
 		func() {
 			defer func() { _ = recover() }()
@@ -1968,7 +1969,7 @@ func (c *Channel) Brief(ctx context.Context, by, session, msg string) (BriefResu
 		if _, err := c.need(ctx, session); err != nil {
 			return err
 		}
-		if strings.TrimSpace(msg) == "" || jsfmt.UTF16Len(msg) > 20000 {
+		if strings.TrimSpace(msg) == "" || jsscalar.UTF16Len(msg) > 20000 {
 			return bad("need msg (≤ 20000 chars)")
 		}
 		trimmed := strings.TrimSpace(msg)
@@ -3629,7 +3630,7 @@ func (c *Channel) Note(ctx context.Context, by, id, kind, body string) (*TaskVie
 		if !slices.Contains(NoteKinds, kind) {
 			return bad("kind must be one of " + strings.Join(NoteKinds, ", "))
 		}
-		if strings.TrimSpace(body) == "" || jsfmt.UTF16Len(body) > 20000 {
+		if strings.TrimSpace(body) == "" || jsscalar.UTF16Len(body) > 20000 {
 			return bad("need body (≤ 20000 chars)")
 		}
 		if err := c.dbRun(ctx, "INSERT INTO notes (task_id, kind, body, by, created_at) VALUES (?,?,?,?,?)", id, kind, strings.TrimSpace(body), by, c.nowISO()); err != nil {
@@ -4016,7 +4017,7 @@ func (c *Channel) Remember(ctx context.Context, by string, k RememberInput) (KBE
 		if strings.TrimSpace(k.Title) == "" || strings.TrimSpace(k.Body) == "" {
 			return bad("need title and body")
 		}
-		if jsfmt.UTF16Len(k.Body) > 50000 {
+		if jsscalar.UTF16Len(k.Body) > 50000 {
 			return bad("body ≤ 50000 chars; link the rest with refs")
 		}
 		if k.Task != nil && *k.Task != "" {

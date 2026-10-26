@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 func TestTheSessionTurnRouteAnswersTheTranscriptFacts(t *testing.T) {
@@ -85,13 +85,13 @@ func TestTheSessionTurnRouteAnswersTheTurnsOutputTokens(t *testing.T) {
 	minutesAgo := func(m int) time.Time { return now.Add(-time.Duration(m) * time.Minute) }
 	prompt := func(text string, at time.Time) string {
 		return fmt.Sprintf(`{"type":"user","timestamp":%q,"message":{"role":"user","content":%q}}`,
-			jsfmt.ISOTime(at), text)
+			jsscalar.ISOTime(at), text)
 	}
 	// the fields radar's transcript reader needs to record one request: an assistant entry
 	// with a timestamp, a model, a message id and a usage block holding output_tokens
 	reply := func(id string, output int64, at time.Time) string {
 		return fmt.Sprintf(`{"type":"assistant","timestamp":%q,"message":{"id":%q,"model":"test-model",`+
-			`"usage":{"input_tokens":10,"output_tokens":%d}}}`, jsfmt.ISOTime(at), id, output)
+			`"usage":{"input_tokens":10,"output_tokens":%d}}}`, jsscalar.ISOTime(at), id, output)
 	}
 	lines := []string{
 		// the earlier turn: its prompt and its one reply, summed by no later answer
@@ -135,7 +135,7 @@ func TestTheSessionTurnRouteAnswersTheTurnsOutputTokens(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}
 	page := bodyMap(t, body)
-	if page["started_at"] != jsfmt.ISOTime(minutesAgo(1)) {
+	if page["started_at"] != jsscalar.ISOTime(minutesAgo(1)) {
 		t.Errorf("started_at = %v, want the current prompt's timestamp", page["started_at"])
 	}
 	if page["ended"] != false {

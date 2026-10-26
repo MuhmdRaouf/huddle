@@ -19,6 +19,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 func bad(msg string) error {
@@ -74,7 +75,7 @@ func strAnyOf(v *jsfmt.Value) string {
 		if err != nil {
 			return v.EncodeJSON()
 		}
-		return jsfmt.JSNumber(f)
+		return jsscalar.JSNumber(f)
 	case jsfmt.KindBool:
 		return v.EncodeJSON()
 	default:
@@ -504,7 +505,7 @@ func RadarOf(ctx context.Context, ch *channel.Channel) (any, error) {
 		}
 		view.Alerts = append(view.Alerts, RadarAlertView{
 			ID: a.ID, Kind: a.Kind, Session: name, Agent: a.AgentID, Since: a.Since,
-			Detail: jsfmt.UTF16Slice(a.Detail, 0, 300), Cost: a.CostUSD,
+			Detail: jsscalar.UTF16Slice(a.Detail, 0, 300), Cost: a.CostUSD,
 		})
 	}
 	if costsOK {
@@ -535,7 +536,7 @@ func RadarOf(ctx context.Context, ch *channel.Channel) (any, error) {
 
 // jfloat answers one number value, printed the way JavaScript prints the double.
 func jfloat(f float64) *jsfmt.Value {
-	v, _ := jsfmt.DecodeValue([]byte(jsfmt.JSNumber(f)))
+	v, _ := jsfmt.DecodeValue([]byte(jsscalar.JSNumber(f)))
 	return v
 }
 

@@ -25,6 +25,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters/process"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
@@ -1178,9 +1179,9 @@ func (m *StringMap) MarshalJSON() ([]byte, error) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		jsfmt.WriteQuoted(&b, key)
+		jsscalar.WriteQuoted(&b, key)
 		b.WriteByte(':')
-		jsfmt.WriteQuoted(&b, m.values[key])
+		jsscalar.WriteQuoted(&b, m.values[key])
 	}
 	b.WriteByte('}')
 	return []byte(b.String()), nil

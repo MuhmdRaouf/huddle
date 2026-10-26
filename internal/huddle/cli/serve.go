@@ -49,6 +49,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // Home answers where this user's Huddle files live.
@@ -130,7 +131,7 @@ func noteRun(root string, at time.Time, line string) {
 		return
 	}
 	defer log.Close()
-	_, _ = fmt.Fprintf(log, "%s %s\n", jsfmt.ISOTime(at), line)
+	_, _ = fmt.Fprintf(log, "%s %s\n", jsscalar.ISOTime(at), line)
 }
 
 // savedRunPort reads the port the running server noted in run/huddle.port; 0 when there is none.
@@ -560,7 +561,7 @@ func upHub(ctx context.Context, w *World, bin, rawURL string, budgetMS int, sid 
 		return Result{OK: true, URL: reuse, Msg: fmt.Sprintf("%sHuddle is up at %s", said, reuse)}
 	}
 	if !proceed { // the budget ran out clearing a hung server: nothing was spawned
-		still := fmt.Sprintf(" within %s s (still starting)", jsfmt.JSNumber(math.Round(float64(budgetMS)/100)/10))
+		still := fmt.Sprintf(" within %s s (still starting)", jsscalar.JSNumber(math.Round(float64(budgetMS)/100)/10))
 		return Result{URL: rawURL, Msg: fmt.Sprintf("%sHuddle did not come up at %s%s; see %s", said, rawURL, still, logFile(h))}
 	}
 	log, err := os.OpenFile(logFile(h), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
@@ -630,7 +631,7 @@ func upHub(ctx context.Context, w *World, bin, rawURL string, budgetMS int, sid 
 	for isRunning(child, exited) && rest() > 0 {
 		if Healthy(ctx, rawURL, int(clampMS(rest(), 500))) {
 			noteServer(ctx, w, h, ServerEntry{
-				URL: rawURL, Channel: me.Channel, Project: projectOf(ctx, w), PID: child.Process.Pid, At: jsfmt.ISOTime(w.now()),
+				URL: rawURL, Channel: me.Channel, Project: projectOf(ctx, w), PID: child.Process.Pid, At: jsscalar.ISOTime(w.now()),
 			})
 			if replaced > 0 { // an older hub gave way: the answer names the switch
 				return Result{OK: true, Created: true, First: first, URL: rawURL,
@@ -651,7 +652,7 @@ func upHub(ctx context.Context, w *World, bin, rawURL string, budgetMS int, sid 
 	}
 	still := ""
 	if !dead {
-		still = fmt.Sprintf(" within %s s (still starting)", jsfmt.JSNumber(math.Round(float64(budgetMS)/100)/10))
+		still = fmt.Sprintf(" within %s s (still starting)", jsscalar.JSNumber(math.Round(float64(budgetMS)/100)/10))
 	}
 	return Result{URL: rawURL, Msg: fmt.Sprintf("%sHuddle did not come up at %s%s; see %s", said, rawURL, still, logFile(h))}
 }

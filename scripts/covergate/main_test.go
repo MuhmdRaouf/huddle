@@ -130,6 +130,7 @@ func TestThreshold(t *testing.T) {
 		{mp + "/internal/adapters/process", 90, true},
 		{mp + "/internal/ports", 90, true},
 		{mp + "/internal/jsfmt", 90, true},
+		{mp + "/internal/jsscalar", 90, true},
 		{mp + "/internal/radar/shared", 90, true},
 		{mp + "/internal/radar/store", 90, true},
 		{mp + "/internal/radar/history", 90, true},

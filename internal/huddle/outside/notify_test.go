@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // fakeClock is a clock the tests move by hand.
@@ -105,7 +105,7 @@ func TestNotifier(t *testing.T) {
 		if want := "token=… … key: … … ok bell"; c != want {
 			t.Errorf("Clean = %q, want %q", c, want)
 		}
-		if got := jsfmt.UTF16Len(Clean(strings.Repeat("y", 500), 140)); got > 140 {
+		if got := jsscalar.UTF16Len(Clean(strings.Repeat("y", 500), 140)); got > 140 {
 			t.Errorf("Clean of 500 chars is %d long, want at most 140", got)
 		}
 	})
@@ -274,13 +274,13 @@ func TestNotifier(t *testing.T) {
 			t.Fatalf("spawned %q %v", program, args)
 		}
 		title, body := args[len(args)-2], args[len(args)-1]
-		if got := jsfmt.UTF16Len(title); got != 80 {
+		if got := jsscalar.UTF16Len(title); got != 80 {
 			t.Errorf("title is %d units, want 80: %q", got, title)
 		}
 		if !strings.HasSuffix(title, "…") {
 			t.Errorf("title = %q, want it capped with …", title)
 		}
-		if got := jsfmt.UTF16Len(body); got != 160 {
+		if got := jsscalar.UTF16Len(body); got != 160 {
 			t.Errorf("body is %d units, want 160", got)
 		}
 		if how == "osascript" {

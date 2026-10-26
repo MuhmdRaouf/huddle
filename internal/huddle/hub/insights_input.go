@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // ItemRecord is one needs-you item's row as a read-only reader sees it.
@@ -27,7 +27,7 @@ type ItemRecord struct {
 func (d *DB) ItemHistory(ctx context.Context, since time.Time) ([]ItemRecord, error) {
 	rows, err := d.st.All(ctx,
 		"SELECT session_id, kind, tool, input, decision, created_at, decided_at FROM items"+
-			" WHERE created_at >= ? ORDER BY created_at, id", jsfmt.ISOTime(since))
+			" WHERE created_at >= ? ORDER BY created_at, id", jsscalar.ISOTime(since))
 	if err != nil {
 		return nil, err
 	}

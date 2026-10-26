@@ -86,8 +86,9 @@ var outside = map[string]Layer{
 	"internal/routerd": LayerAdapters,
 	// The shared pure-logic packages every layer reads: the JavaScript formatting rules and the
 	// one price model.
-	"internal/jsfmt":   LayerDomain,
-	"internal/pricing": LayerDomain,
+	"internal/jsfmt":    LayerDomain,
+	"internal/jsscalar": LayerDomain,
+	"internal/pricing":  LayerDomain,
 }
 
 // classify maps a slash package directory, relative to the engine root (internal/core), to its

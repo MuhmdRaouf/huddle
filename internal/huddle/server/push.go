@@ -23,6 +23,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/SherClockHolmes/webpush-go"
 )
 
@@ -348,7 +349,7 @@ func (s *server) pushSessionEntries(ctx context.Context, now time.Time, subs []h
 				s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
 			}
 		}
-		if err := s.registry.MarkSessionPushed(ctx, row.SessionID, jsfmt.ISOTime(now)); err != nil {
+		if err := s.registry.MarkSessionPushed(ctx, row.SessionID, jsscalar.ISOTime(now)); err != nil {
 			fmt.Fprintf(s.o.Stderr, "push: mark session %s: %v\n", row.SessionID, err)
 		}
 	}
@@ -401,7 +402,7 @@ func (s *server) pushItems(ctx context.Context, now time.Time, subs []hub.PushSu
 				s.sendPush(ctx, sub, payload, webpush.UrgencyHigh)
 			}
 		}
-		if err := mark(ctx, item, jsfmt.ISOTime(now)); err != nil {
+		if err := mark(ctx, item, jsscalar.ISOTime(now)); err != nil {
 			fmt.Fprintf(s.o.Stderr, "push: mark item %d: %v\n", item.ID, err)
 		}
 	}

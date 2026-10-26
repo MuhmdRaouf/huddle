@@ -25,7 +25,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/kanbantab"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/netproxy"
 )
 
@@ -291,7 +291,7 @@ func (l *Link) settle(ctx context.Context, handout hub.SatHandout) {
 
 // apply runs one handout on this machine and answers the result it earned.
 func (l *Link) apply(ctx context.Context, handout hub.SatHandout) (result, reason string) {
-	at := jsfmt.ISOTime(l.now())
+	at := jsscalar.ISOTime(l.now())
 	switch handout.Kind {
 	case hub.SatDecision:
 		var payload hub.SatRefusalBody

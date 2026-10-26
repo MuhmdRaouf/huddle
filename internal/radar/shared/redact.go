@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // Redaction and truncation: nothing the hook or the server writes may carry a secret.
@@ -60,12 +61,12 @@ func maskString(text string) string {
 // Truncate cuts text at limit UTF-16 code units and notes what was dropped; text within
 // the limit stands as it is.
 func Truncate(text string, limit int) string {
-	length := jsfmt.UTF16Len(text)
+	length := jsscalar.UTF16Len(text)
 	if length <= limit {
 		return text
 	}
 	cut := strconv.Itoa(length - limit)
-	return jsfmt.UTF16Slice(text, 0, limit) + "…[truncated " + cut + " chars]"
+	return jsscalar.UTF16Slice(text, 0, limit) + "…[truncated " + cut + " chars]"
 }
 
 // Scrub redacts and truncates a value recursively; scalars other than strings pass

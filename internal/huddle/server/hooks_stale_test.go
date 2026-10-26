@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // appendTranscript appends one user line stamped now to the session's transcript under
@@ -32,7 +32,7 @@ func appendTranscript(t *testing.T, claude, id, cwd string) {
 	}
 	defer file.Close()
 	line := fmt.Sprintf(`{"type":"user","sessionId":%q,"cwd":%q,"message":{"role":"user","content":"go on"},"timestamp":%q}`,
-		id, cwd, jsfmt.ISOTime(time.Now()))
+		id, cwd, jsscalar.ISOTime(time.Now()))
 	if _, err := file.WriteString(line + "\n"); err != nil {
 		t.Fatalf("append the transcript: %v", err)
 	}

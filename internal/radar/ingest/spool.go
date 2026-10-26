@@ -17,6 +17,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
@@ -116,7 +117,7 @@ func withISOts(object *jsfmt.Value) (*jsfmt.Value, bool) {
 		if err != nil || math.Abs(ms) > maxDateMs {
 			return nil, false
 		}
-		fields[i] = jsfmt.String(jsfmt.ISOTime(time.UnixMilli(int64(ms))))
+		fields[i] = jsfmt.String(jsscalar.ISOTime(time.UnixMilli(int64(ms))))
 	}
 	return jsfmt.Object(slices.Clone(keys), fields), true
 }

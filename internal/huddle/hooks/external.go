@@ -16,7 +16,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/harness"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // externalInput is what an agent's hook sends on stdin; every field is optional. The field
@@ -55,7 +55,7 @@ func External(ctx context.Context, w *cli.World, name, event string, in io.Reade
 			Cwd:         payload.Cwd,
 			Harness:     name,
 			LastEvent:   report,
-			LastEventAt: jsfmt.ISOTime(nowOf(w)),
+			LastEventAt: jsscalar.ISOTime(nowOf(w)),
 		}
 		rep.Machine = machineOf(ctx, w)
 		rep.Project, rep.Branch = checkoutOf(payload.Cwd)
@@ -63,12 +63,12 @@ func External(ctx context.Context, w *cli.World, name, event string, in io.Reade
 		case payload.Prompt != "":
 			// the title is the first prompt cut to 80 runes and the task its first line, the
 			// report hook's own rule
-			rep.Title = jsfmt.UTF16Slice(payload.Prompt, 0, 80)
-			rep.Task = jsfmt.UTF16Slice(firstLineOf(payload.Prompt), 0, 80)
+			rep.Title = jsscalar.UTF16Slice(payload.Prompt, 0, 80)
+			rep.Task = jsscalar.UTF16Slice(firstLineOf(payload.Prompt), 0, 80)
 		case payload.ToolName != "" && (report == "PreToolUse" || report == "PostToolUse"):
 			// a tool event's word is what the session is doing right now: the row's task
 			// line says so until the next prompt replaces it
-			rep.Task = jsfmt.UTF16Slice(payload.ToolName, 0, 80)
+			rep.Task = jsscalar.UTF16Slice(payload.ToolName, 0, 80)
 		}
 		t0 := nowOf(w)
 		left := func() int {

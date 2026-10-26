@@ -15,7 +15,7 @@ import (
 	"unicode"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // The item kinds (SPEC 6.1). permission belongs to the permission flow, not this list.
@@ -241,7 +241,7 @@ func (d *DB) withdrawKind(ctx context.Context, kind, session string) error {
 // over.
 func (d *DB) SnoozeItem(ctx context.Context, id int64, until time.Time) error {
 	return d.updateOpenItem(ctx, id, func() (string, []any) {
-		return "UPDATE items SET snoozed_until = ? WHERE id = ?", []any{jsfmt.ISOTime(until), id}
+		return "UPDATE items SET snoozed_until = ? WHERE id = ?", []any{jsscalar.ISOTime(until), id}
 	})
 }
 
@@ -376,7 +376,7 @@ func cleanSummary(s string) string {
 		}
 		out.WriteRune(r)
 	}
-	return jsfmt.UTF16Slice(strings.TrimRight(out.String(), " "), 0, 200)
+	return jsscalar.UTF16Slice(strings.TrimRight(out.String(), " "), 0, 200)
 }
 
 // rowID reads one row's id; NULL and any value that is not an integer read as 0.

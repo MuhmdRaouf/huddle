@@ -18,6 +18,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // one link by its channel and its session, and one channel's links
@@ -92,7 +93,7 @@ func (s *server) linkRoute(w http.ResponseWriter, r *http.Request, me auth.Who) 
 	if err != nil {
 		return err
 	}
-	if err := s.registry.LinkSessions(ctx, ch.Name, distinct, level, jsfmt.ISOTime(s.now())); err != nil {
+	if err := s.registry.LinkSessions(ctx, ch.Name, distinct, level, jsscalar.ISOTime(s.now())); err != nil {
 		return err
 	}
 	// each session hears of the tie at once, on its own route — a satellite's through its

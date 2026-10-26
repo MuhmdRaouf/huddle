@@ -9,10 +9,11 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
-	"testing"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 func TestParseBodyNodeKeepsEveryShape(t *testing.T) {
@@ -72,9 +73,9 @@ func TestWriteJSONStringEscapesLikeJSONStringify(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var b strings.Builder
-			jsfmt.WriteQuoted(&b, tt.in)
+			jsscalar.WriteQuoted(&b, tt.in)
 			if got := b.String(); got != tt.want {
-				t.Errorf("jsfmt.WriteQuoted = %s, want %s", got, tt.want)
+				t.Errorf("jsscalar.WriteQuoted = %s, want %s", got, tt.want)
 			}
 		})
 	}

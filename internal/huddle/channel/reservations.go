@@ -19,6 +19,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // DefaultTTLMin is how long a reservation holds when the call names no ttl.
@@ -96,7 +97,7 @@ func cleanReservePath(p string) (string, error) {
 	if p == "" || p == "." || !strings.HasPrefix(p, "/") {
 		return "", bad("path: an absolute path, as the working tree sees it")
 	}
-	if strings.ContainsRune(p, 0) || jsfmt.UTF16Len(p) > 500 {
+	if strings.ContainsRune(p, 0) || jsscalar.UTF16Len(p) > 500 {
 		return "", bad("path: an absolute path, as the working tree sees it")
 	}
 	return p, nil

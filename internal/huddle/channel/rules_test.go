@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 func TestRules(t *testing.T) {
@@ -392,7 +392,7 @@ func utf16Preview(s string) string {
 	const cut = 40
 	r := []rune(s)
 	if len(r) <= cut {
-		return fmt.Sprintf("%s (%d utf16)", s, jsfmt.UTF16Len(s))
+		return fmt.Sprintf("%s (%d utf16)", s, jsscalar.UTF16Len(s))
 	}
-	return fmt.Sprintf("%s… (%d utf16)", string(r[:cut]), jsfmt.UTF16Len(s))
+	return fmt.Sprintf("%s… (%d utf16)", string(r[:cut]), jsscalar.UTF16Len(s))
 }

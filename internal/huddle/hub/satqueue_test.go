@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // satFixture grows one forwarded permission item on one machine's session, the shape every
@@ -43,7 +43,7 @@ func TestSatOfferHandsOnceAndAgain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	id, err := f.db.SatEnqueue(ctx, "mbp", SatDecision, "s-1", f.itemID, 0, payload, jsfmt.ISOTime(now))
+	id, err := f.db.SatEnqueue(ctx, "mbp", SatDecision, "s-1", f.itemID, 0, payload, jsscalar.ISOTime(now))
 	if err != nil || id == 0 {
 		t.Fatalf("enqueue = %d, %v", id, err)
 	}
@@ -77,7 +77,7 @@ func TestSatResultEndsAndReoffers(t *testing.T) {
 	}
 	enq := func() int64 {
 		t.Helper()
-		id, err := f.db.SatEnqueue(ctx, "mbp", SatMessage, "s-1", 0, 7, payload, jsfmt.ISOTime(now))
+		id, err := f.db.SatEnqueue(ctx, "mbp", SatMessage, "s-1", 0, 7, payload, jsscalar.ISOTime(now))
 		if err != nil {
 			t.Fatalf("enqueue: %v", err)
 		}
@@ -90,7 +90,7 @@ func TestSatResultEndsAndReoffers(t *testing.T) {
 	// busy keeps the row pending and moves its offer to the busy moment: it is handed again a
 	// full SatReofferAfter from there, not before
 	busy := enq()
-	if handout, live, err := f.db.SatResult(ctx, busy, SatBusy, "", jsfmt.ISOTime(now.Add(time.Second))); err != nil || !live || handout.MessageID != 7 {
+	if handout, live, err := f.db.SatResult(ctx, busy, SatBusy, "", jsscalar.ISOTime(now.Add(time.Second))); err != nil || !live || handout.MessageID != 7 {
 		t.Fatalf("busy = ( %+v, %v, %v ), want the handout live", handout, live, err)
 	}
 	if out, _ := f.db.SatOffer(ctx, "mbp", now.Add(time.Second+SatReofferAfter-time.Millisecond)); len(out) != 0 {
@@ -103,10 +103,10 @@ func TestSatResultEndsAndReoffers(t *testing.T) {
 
 	// delivered ends the row: a second result for it is refused as late, and no offer carries it
 	done := enq()
-	if _, live, err := f.db.SatResult(ctx, done, SatDelivered, "", jsfmt.ISOTime(now.Add(time.Second))); err != nil || !live {
+	if _, live, err := f.db.SatResult(ctx, done, SatDelivered, "", jsscalar.ISOTime(now.Add(time.Second))); err != nil || !live {
 		t.Fatalf("delivered = ( %v, %v ), want live", live, err)
 	}
-	if _, live, _ := f.db.SatResult(ctx, done, SatRefused, "late", jsfmt.ISOTime(now.Add(2*time.Second))); live {
+	if _, live, _ := f.db.SatResult(ctx, done, SatRefused, "late", jsscalar.ISOTime(now.Add(2*time.Second))); live {
 		t.Fatal("a done row took a second result")
 	}
 	if out, _ := f.db.SatOffer(ctx, "mbp", now.Add(2*time.Second+SatReofferAfter)); len(out) != 0 {
@@ -132,11 +132,11 @@ func TestMarkPermissionRefusedRewritesBothStates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := f.db.WithdrawPermissions(ctx, "s-3", jsfmt.ISOTime(now)); err != nil {
+	if _, err := f.db.WithdrawPermissions(ctx, "s-3", jsscalar.ISOTime(now)); err != nil {
 		t.Fatalf("withdraw: %v", err)
 	}
 
-	if moved, err := f.db.MarkPermissionRefused(ctx, f.itemID, "refused: a deleting command; allow it in the terminal", jsfmt.ISOTime(now)); err != nil || !moved {
+	if moved, err := f.db.MarkPermissionRefused(ctx, f.itemID, "refused: a deleting command; allow it in the terminal", jsscalar.ISOTime(now)); err != nil || !moved {
 		t.Fatalf("the answered row refused = (%v, %v), want moved", moved, err)
 	}
 	item, err := f.db.PermissionItemByID(ctx, f.itemID, now)
@@ -148,7 +148,7 @@ func TestMarkPermissionRefusedRewritesBothStates(t *testing.T) {
 		t.Fatalf("the answered row = %s/%s/%q, want refused with the reason", item.State, item.Decision, item.Message)
 	}
 
-	if moved, err := f.db.MarkPermissionRefused(ctx, otherID, "not in this machine's remote allow list; allow it in the terminal", jsfmt.ISOTime(now)); err != nil || !moved {
+	if moved, err := f.db.MarkPermissionRefused(ctx, otherID, "not in this machine's remote allow list; allow it in the terminal", jsscalar.ISOTime(now)); err != nil || !moved {
 		t.Fatalf("the open row refused = (%v, %v), want moved", moved, err)
 	}
 	other, _ := f.db.PermissionItemByID(ctx, otherID, now)
@@ -156,7 +156,7 @@ func TestMarkPermissionRefusedRewritesBothStates(t *testing.T) {
 		t.Fatalf("the open row = %s/%s, want answered refused", other.State, other.Decision)
 	}
 
-	if moved, err := f.db.MarkPermissionRefused(ctx, goneID, "too late", jsfmt.ISOTime(now)); err != nil || moved {
+	if moved, err := f.db.MarkPermissionRefused(ctx, goneID, "too late", jsscalar.ISOTime(now)); err != nil || moved {
 		t.Fatalf("the withdrawn row = (%v, %v), want untouched", moved, err)
 	}
 	gone, _ := f.db.PermissionItemByID(ctx, goneID, now)
@@ -176,7 +176,7 @@ func TestTouchPollsOfMachineKeepsOnlyThatMachineAlive(t *testing.T) {
 	for _, seed := range []struct{ id, machine string }{{"s-1", "mbp"}, {"s-9", "desk"}} {
 		if err := f.db.st.Run(ctx,
 			"INSERT INTO sessions (session_id, machine, last_event, last_event_at) VALUES (?, ?, 'Stop', ?)",
-			seed.id, seed.machine, jsfmt.ISOTime(now)); err != nil {
+			seed.id, seed.machine, jsscalar.ISOTime(now)); err != nil {
 			t.Fatalf("seed %s: %v", seed.id, err)
 		}
 	}
@@ -184,7 +184,7 @@ func TestTouchPollsOfMachineKeepsOnlyThatMachineAlive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := f.db.TouchPollsOfMachine(ctx, "mbp", jsfmt.ISOTime(now.Add(time.Minute))); err != nil {
+	if err := f.db.TouchPollsOfMachine(ctx, "mbp", jsscalar.ISOTime(now.Add(time.Minute))); err != nil {
 		t.Fatalf("touch: %v", err)
 	}
 	if item, _ := f.db.PermissionItemByID(ctx, f.itemID, now.Add(80*time.Second)); item.State != StateOpen {
@@ -227,7 +227,7 @@ func TestForwardListAndSaveDedupeByKey(t *testing.T) {
 		t.Fatalf("%d permission items grew for one key, want 1", count)
 	}
 	// once the machine's own item is answered, the flush carries it no more
-	if _, err := f.db.DecidePermission(ctx, f.itemID, "deny", "", jsfmt.ISOTime(now.Add(time.Minute)), now.Add(time.Minute)); err != nil {
+	if _, err := f.db.DecidePermission(ctx, f.itemID, "deny", "", jsscalar.ISOTime(now.Add(time.Minute)), now.Add(time.Minute)); err != nil {
 		t.Fatalf("decide: %v", err)
 	}
 	list, err = f.db.ForwardList(ctx)

@@ -9,6 +9,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/alerts"
 	"github.com/MuhmdRaouf/huddle/internal/radar/budget"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
@@ -367,7 +368,7 @@ func (i *Insights) dismissedHasLocked(id string) bool {
 // or longer than 300 UTF-16 units is refused. A failed file write leaves the dismissal
 // holding for this run; the file catches up on the next dismissal.
 func (i *Insights) Dismiss(id string) bool {
-	if id == "" || jsfmt.UTF16Len(id) > 300 {
+	if id == "" || jsscalar.UTF16Len(id) > 300 {
 		return false
 	}
 	i.mu.Lock()

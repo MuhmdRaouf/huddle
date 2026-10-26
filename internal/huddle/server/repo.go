@@ -14,6 +14,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // repoSkip names the entries a directory level never lists.
@@ -171,7 +172,7 @@ func (r *RepoTools) Tree(ctx context.Context, rel string) (any, error) {
 		if di != dj {
 			return di
 		}
-		return jsfmt.LocaleCompare(kept[i], kept[j]) < 0
+		return jsscalar.LocaleCompare(kept[i], kept[j]) < 0
 	})
 	entries := make([]TreeEntry, 0, len(kept))
 	for _, name := range kept {
@@ -231,8 +232,8 @@ func (r *RepoTools) File(ctx context.Context, rel string) (any, error) {
 	}
 	text := string(body)
 	head := text
-	if jsfmt.UTF16Len(head) > 2000 {
-		head = jsfmt.UTF16Slice(head, 0, 2000)
+	if jsscalar.UTF16Len(head) > 2000 {
+		head = jsscalar.UTF16Slice(head, 0, 2000)
 	}
 	if strings.ContainsRune(head, 0) {
 		return FileBinary{Path: rel, Size: info.Size(), Binary: true}, nil
@@ -253,7 +254,7 @@ type DriftRow struct {
 var lineRangeRe = regexp.MustCompile(`:\d+(-\d+)?$`)
 
 // spaceRuns matches runs of whitespace the way /\s+/ does, JavaScript's set.
-var spaceRuns = regexp.MustCompile(jsfmt.SpaceClass + `+`)
+var spaceRuns = regexp.MustCompile(jsscalar.SpaceClass + `+`)
 
 // norm flattens one line the way the drift check reads it: any whitespace run one space, the
 // ends trimmed.
@@ -279,7 +280,7 @@ func skippedQuote(line string) bool {
 	if rest == line {
 		rest = strings.TrimPrefix(line, "//")
 	}
-	return jsfmt.Trim(rest) == "…"
+	return jsscalar.Trim(rest) == "…"
 }
 
 // truthy reads a JSON value the way JavaScript's if does.
@@ -360,7 +361,7 @@ func (r *RepoTools) Drift(ctx context.Context, steps []*channel.TaskView) ([]Dri
 			var lines []string
 			for _, raw := range strings.Split(textOf(fieldOf(sn, "code")), "\n") {
 				line := ellipsisEnds(norm(raw))
-				if jsfmt.UTF16Len(line) <= 3 || skippedQuote(line) {
+				if jsscalar.UTF16Len(line) <= 3 || skippedQuote(line) {
 					continue
 				}
 				lines = append(lines, line)

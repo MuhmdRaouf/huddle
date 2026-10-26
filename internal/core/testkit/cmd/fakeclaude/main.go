@@ -35,7 +35,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // grandchildArg re-executes this binary as the FAKE_CLAUDE_PIDFILE grandchild: a process that
@@ -350,13 +350,13 @@ func marshal(v jval) string {
 func appendVal(b *strings.Builder, v jval) {
 	switch v.kind {
 	case 's':
-		jsfmt.WriteQuoted(b, v.str)
+		jsscalar.WriteQuoted(b, v.str)
 	case 'n':
 		// JSON.stringify writes a non-finite number as null, not as String(n)
 		if math.IsNaN(v.num) || math.IsInf(v.num, 0) {
 			b.WriteString("null")
 		} else {
-			b.WriteString(jsfmt.JSNumber(v.num))
+			b.WriteString(jsscalar.JSNumber(v.num))
 		}
 	case 'b':
 		b.WriteString(strconv.FormatBool(v.bol))
@@ -377,7 +377,7 @@ func appendVal(b *strings.Builder, v jval) {
 			if i > 0 {
 				b.WriteByte(',')
 			}
-			jsfmt.WriteQuoted(b, f.key)
+			jsscalar.WriteQuoted(b, f.key)
 			b.WriteString(":")
 			appendVal(b, f.val)
 		}

@@ -32,6 +32,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // Identity is what a session is in a Huddle: where its server answers, in which channel, as
@@ -220,7 +221,7 @@ func Slug(dir, or string) string {
 		}
 	}
 	name := slugTrails.ReplaceAllString(
-		jsfmt.UTF16Slice(slugLeading.ReplaceAllString(slugNoise.ReplaceAllString(strings.ToLower(last), "-"), ""), 0, 32),
+		jsscalar.UTF16Slice(slugLeading.ReplaceAllString(slugNoise.ReplaceAllString(strings.ToLower(last), "-"), ""), 0, 32),
 		"")
 	if name == "" {
 		return or

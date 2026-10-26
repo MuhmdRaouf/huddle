@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // OfferingID is a provider offering: one API host and the model sheet behind it.
@@ -326,7 +326,7 @@ var datedSuffix = regexp.MustCompile(`[-@]\d{8}$`)
 // canonicalModelID maps "zai/glm-5.3[1m]" to "glm-5.3": drop a provider prefix, a context
 // bracket and a dated snapshot suffix, lowercased.
 func canonicalModelID(model string) string {
-	bare := bracketSuffix.ReplaceAllString(strings.ToLower(jsfmt.Trim(model)), "")
+	bare := bracketSuffix.ReplaceAllString(strings.ToLower(jsscalar.Trim(model)), "")
 	unprefixed := bare
 	if slash := strings.LastIndex(bare, "/"); slash >= 0 {
 		unprefixed = bare[slash+1:]
@@ -381,7 +381,7 @@ func resolveSheet(offering *OfferingID, model string) *sheetRef {
 // OfferingOfHost is the offering that serves a host, given as `https://host/…` or bare
 // `host`; false when no offering has that host.
 func OfferingOfHost(urlOrHost string) (OfferingID, bool) {
-	trimmed := strings.ToLower(jsfmt.Trim(urlOrHost))
+	trimmed := strings.ToLower(jsscalar.Trim(urlOrHost))
 	var host string
 	if strings.Contains(trimmed, "://") {
 		parsed, err := url.Parse(trimmed)
@@ -487,13 +487,13 @@ func inPeak(ts int64, peak []PeakWindow) bool {
 
 func tierLabel(tokens float64) string {
 	if tokens >= 1_000_000 {
-		return jsfmt.JSNumber(tokens/1_000_000) + "M"
+		return jsscalar.JSNumber(tokens/1_000_000) + "M"
 	}
-	return jsfmt.JSNumber(tokens/1000) + "k"
+	return jsscalar.JSNumber(tokens/1000) + "k"
 }
 
 func isFast(speed *string) bool {
-	return speed != nil && strings.ToLower(jsfmt.Trim(*speed)) == "fast"
+	return speed != nil && strings.ToLower(jsscalar.Trim(*speed)) == "fast"
 }
 
 // tierOver is the tier a request's prompt tokens land it in, or nil for the base rates.
@@ -559,16 +559,16 @@ type priceCondition struct {
 func conditionsOf(sheet ModelSheet, request PriceRequest) []priceCondition {
 	conditions := make([]priceCondition, 0, 3)
 	if sheet.Priority != nil && request.ServiceTier != nil &&
-		strings.ToLower(jsfmt.Trim(*request.ServiceTier)) == "priority" {
-		conditions = append(conditions, priceCondition{*sheet.Priority, "priority ×" + jsfmt.JSNumber(*sheet.Priority)})
+		strings.ToLower(jsscalar.Trim(*request.ServiceTier)) == "priority" {
+		conditions = append(conditions, priceCondition{*sheet.Priority, "priority ×" + jsscalar.JSNumber(*sheet.Priority)})
 	}
 	if sheet.OffPeak != nil && !inPeak(request.Ts, sheet.OffPeak.Peak) {
 		conditions = append(conditions, priceCondition{
-			sheet.OffPeak.Multiplier, "off-peak ×" + jsfmt.JSNumber(sheet.OffPeak.Multiplier),
+			sheet.OffPeak.Multiplier, "off-peak ×" + jsscalar.JSNumber(sheet.OffPeak.Multiplier),
 		})
 	}
-	if sheet.GeoUS != nil && request.Geo != nil && strings.ToLower(jsfmt.Trim(*request.Geo)) == "us" {
-		conditions = append(conditions, priceCondition{*sheet.GeoUS, "US geo ×" + jsfmt.JSNumber(*sheet.GeoUS)})
+	if sheet.GeoUS != nil && request.Geo != nil && strings.ToLower(jsscalar.Trim(*request.Geo)) == "us" {
+		conditions = append(conditions, priceCondition{*sheet.GeoUS, "US geo ×" + jsscalar.JSNumber(*sheet.GeoUS)})
 	}
 	return conditions
 }

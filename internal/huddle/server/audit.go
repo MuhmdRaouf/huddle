@@ -18,6 +18,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // errNoRegistry names a registry that cannot take rows: the action that wanted one is refused,
@@ -148,7 +149,7 @@ func (s *server) emitNewestAlert(ctx context.Context) {
 
 // emitAlert fans one stored alert out with this server's clock naming the moment.
 func (s *server) emitAlert(id int64, kind string, body *jsfmt.Value) {
-	s.alerts.emit(AlertEvent{Type: kind, ID: id, At: jsfmt.ISOTime(s.now()), Body: body})
+	s.alerts.emit(AlertEvent{Type: kind, ID: id, At: jsscalar.ISOTime(s.now()), Body: body})
 }
 
 // redactDetail encodes one detail and strips every credential, code and invite of this run out

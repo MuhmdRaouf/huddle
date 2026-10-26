@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // Rule is one approval rule.
@@ -28,8 +29,8 @@ type Rule struct {
 // jsS and jsNotS are one whitespace and one non-whitespace of the source's set: the
 // JavaScript class jsfmt carries, which RE2's own \s (ASCII, no \v) is not.
 const (
-	jsS    = jsfmt.SpaceClass
-	jsNotS = `[^` + jsfmt.SpaceSet + `]`
+	jsS    = jsscalar.SpaceClass
+	jsNotS = `[^` + jsscalar.SpaceSet + `]`
 )
 
 // wRe is a command word's position: at the start of the line or after a shell separator
@@ -107,7 +108,7 @@ func segmentAround(c string, at int) string {
 // an assignment's value counts as a path too.
 func leavesProject(segment, project string) bool {
 	project = filepath.Clean(project)
-	for _, word := range strings.FieldsFunc(segment, jsfmt.IsSpace) {
+	for _, word := range strings.FieldsFunc(segment, jsscalar.IsSpace) {
 		word = strings.Trim(word, "'\"")
 		if eq := strings.IndexByte(word, '='); eq >= 0 && (strings.HasPrefix(word, "-") || isAssignment(word[:eq])) {
 			word = word[eq+1:]
@@ -159,7 +160,7 @@ func skipJSSpace(s string) int {
 	j := 0
 	for j < len(s) {
 		r, size := utf8.DecodeRuneInString(s[j:])
-		if !jsfmt.IsSpace(r) {
+		if !jsscalar.IsSpace(r) {
 			break
 		}
 		j += size
@@ -259,7 +260,7 @@ type Switch struct {
 // remote branch, or names a path the shell decides still matches. An empty project clears nothing.
 func Matching(command, project string) []Rule {
 	c := command
-	if jsfmt.Trim(c) == "" || jsfmt.UTF16Len(c) > 100000 {
+	if jsscalar.Trim(c) == "" || jsscalar.UTF16Len(c) > 100000 {
 		return nil
 	}
 	var out []Rule

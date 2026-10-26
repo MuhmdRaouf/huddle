@@ -24,6 +24,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
@@ -539,7 +540,7 @@ func (w *Watcher) ingestSpoolText(text string) {
 // was written.
 func (w *Watcher) ingestSpoolLine(text string, line shared.SpoolLine) {
 	if line.SessionID != nil && line.BaseURL != nil {
-		if ts, ok := jsfmt.ParseISO(line.Ts); ok {
+		if ts, ok := jsscalar.ParseISO(line.Ts); ok {
 			w.rememberUpstream(*line.SessionID, ts.UnixMilli(), *line.BaseURL)
 		}
 	}
@@ -561,7 +562,7 @@ func (w *Watcher) ingestSpoolLine(text string, line shared.SpoolLine) {
 // ingestCaptureEvent lands a capture line: the gzipped prompt a route line points at, handed to
 // the history writer once per sighting.
 func (w *Watcher) ingestCaptureEvent(line shared.SpoolLine) {
-	ts, ok := jsfmt.ParseISO(line.Ts)
+	ts, ok := jsscalar.ParseISO(line.Ts)
 	if !ok || line.PromptHash == nil || *line.PromptHash == "" || line.Gz == nil {
 		return
 	}
@@ -587,7 +588,7 @@ func (w *Watcher) ingestRouterEvent(line shared.SpoolLine) {
 // from Anthropic's headers, then the request it stands for and whatever it taught about where a
 // plugin's models go.
 func (w *Watcher) ingestRouteEvent(text string, line shared.SpoolLine) {
-	ts, ok := jsfmt.ParseISO(line.Ts)
+	ts, ok := jsscalar.ParseISO(line.Ts)
 	if !ok {
 		return
 	}
@@ -822,7 +823,7 @@ func (w *Watcher) tailJobFile(file string, identity FileIdentity) {
 // hook for one).
 func InterruptLine(stop Interrupt) shared.SpoolLine {
 	line := shared.SpoolLine{
-		Ts:        jsfmt.ISOTime(time.UnixMilli(stop.Ts)),
+		Ts:        jsscalar.ISOTime(time.UnixMilli(stop.Ts)),
 		Event:     "Interrupted",
 		SessionID: &stop.SessionID,
 	}
@@ -836,7 +837,7 @@ func InterruptLine(stop Interrupt) shared.SpoolLine {
 // it as an agent error.
 func NoticeLine(notice Notice) shared.SpoolLine {
 	line := shared.SpoolLine{
-		Ts:        jsfmt.ISOTime(time.UnixMilli(notice.Ts)),
+		Ts:        jsscalar.ISOTime(time.UnixMilli(notice.Ts)),
 		Event:     shared.NoticeEvent,
 		SessionID: &notice.SessionID,
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // The read's bounds: a page serves at most 500 rows, and a filter that names no limit takes 300.
@@ -156,7 +157,7 @@ func (d *DB) Alerts(ctx context.Context, f AlertsFilter) ([]AlertRow, error) {
 		}
 		alert.Body, _ = jsonOfRow(stored, "json")
 		if read := intOfRow(stored, "read_at"); read != 0 {
-			at := jsfmt.ISOTime(time.UnixMilli(read))
+			at := jsscalar.ISOTime(time.UnixMilli(read))
 			alert.ReadAt = &at
 		}
 		out = append(out, alert)
@@ -211,7 +212,7 @@ func jsonOfRow(row map[string]any, col string) (*jsfmt.Value, error) {
 
 // isoOfRow reads one column's whole milliseconds as the ISO timestamp every served row carries.
 func isoOfRow(row map[string]any, col string) string {
-	return jsfmt.ISOTime(time.UnixMilli(intOfRow(row, col)))
+	return jsscalar.ISOTime(time.UnixMilli(intOfRow(row, col)))
 }
 
 // intOfRow reads one column as an integer; NULL and other types read as 0.

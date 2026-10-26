@@ -10,7 +10,7 @@ import (
 	"cmp"
 	"slices"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
@@ -116,7 +116,7 @@ func Advise(requests []shared.RequestRecord, tools []shared.ToolCallRecord) Advi
 		if c := cmp.Compare(b.Runs, a.Runs); c != 0 {
 			return c
 		}
-		return jsfmt.LocaleCompare(a.Model, b.Model)
+		return jsscalar.LocaleCompare(a.Model, b.Model)
 	})
 	candidates := int64(len(examples))
 	if len(examples) > 5 {
@@ -195,7 +195,7 @@ func dominantModel(run *advisorRun) string {
 		if c := cmp.Compare(b.count, a.count); c != 0 {
 			return c
 		}
-		return jsfmt.LocaleCompare(a.model, b.model)
+		return jsscalar.LocaleCompare(a.model, b.model)
 	})
 	if len(pairs) == 0 {
 		return ""

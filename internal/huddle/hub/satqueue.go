@@ -21,7 +21,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // The handout kinds, the queue's two states, and the results a satellite may answer with.
@@ -82,7 +82,7 @@ func (d *DB) SatEnqueue(ctx context.Context, machine, kind, session string, item
 // now: a row offered inside the last SatReofferAfter stays put (it is in flight, or its machine
 // answered busy), and one older than that is offered again.
 func (d *DB) SatOffer(ctx context.Context, machine string, now time.Time) ([]SatHandout, error) {
-	reoffer := jsfmt.ISOTime(now.Add(-SatReofferAfter))
+	reoffer := jsscalar.ISOTime(now.Add(-SatReofferAfter))
 	rows, err := d.st.All(ctx,
 		"SELECT id, kind, session_id, item_id, message_id, payload FROM sat_queue "+
 			"WHERE machine = ? AND state = ? AND (offered_at IS NULL OR offered_at <= ?) ORDER BY id",
@@ -91,7 +91,7 @@ func (d *DB) SatOffer(ctx context.Context, machine string, now time.Time) ([]Sat
 		return nil, err
 	}
 	out := make([]SatHandout, 0, len(rows))
-	at := jsfmt.ISOTime(now)
+	at := jsscalar.ISOTime(now)
 	for _, row := range rows {
 		handout := satHandoutOf(row)
 		out = append(out, handout)
@@ -336,7 +336,7 @@ func (d *DB) PermissionItemByKey(ctx context.Context, key string, now time.Time)
 // open is answered refused the same way, because the machine's answer is an answer. A row the
 // terminal's own answer withdrew stays as it lays: that prompt needs no explaining.
 func (d *DB) MarkPermissionRefused(ctx context.Context, id int64, reason, at string) (bool, error) {
-	message := jsfmt.UTF16Slice(cleanSummary(reason), 0, messageLimit)
+	message := jsscalar.UTF16Slice(cleanSummary(reason), 0, messageLimit)
 	if err := d.st.Run(ctx,
 		"UPDATE items SET state = 'answered', decision = 'refused', message = ?, decided_at = ? "+
 			"WHERE id = ? AND state IN ('open', 'answered')",

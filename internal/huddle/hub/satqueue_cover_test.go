@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // TestSessionMachineNamesTheSessionsMachine pins what the hub reads a report's session against:
@@ -22,7 +22,7 @@ func TestSessionMachineNamesTheSessionsMachine(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	if err := db.Report(ctx, Report{
-		SessionID: "s-1", Machine: "mbp", LastEvent: "SessionStart", LastEventAt: jsfmt.ISOTime(now),
+		SessionID: "s-1", Machine: "mbp", LastEvent: "SessionStart", LastEventAt: jsscalar.ISOTime(now),
 	}); err != nil {
 		t.Fatalf("report: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestNewestSeqStartsAtZeroAndMovesWithReports(t *testing.T) {
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	for _, session := range []string{"s-1", "s-2"} {
 		if err := db.Report(ctx, Report{
-			SessionID: session, Machine: "mbp", LastEvent: "UserPromptSubmit", LastEventAt: jsfmt.ISOTime(now),
+			SessionID: session, Machine: "mbp", LastEvent: "UserPromptSubmit", LastEventAt: jsscalar.ISOTime(now),
 		}); err != nil {
 			t.Fatalf("report: %v", err)
 		}
@@ -65,14 +65,14 @@ func TestEventsAfterAnswersTheEventsAfterTheCursor(t *testing.T) {
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 	for _, session := range []string{"s-1", "s-2"} {
 		if err := db.Report(ctx, Report{
-			SessionID: session, Machine: "mbp", LastEvent: "UserPromptSubmit", LastEventAt: jsfmt.ISOTime(now),
+			SessionID: session, Machine: "mbp", LastEvent: "UserPromptSubmit", LastEventAt: jsscalar.ISOTime(now),
 		}); err != nil {
 			t.Fatalf("report: %v", err)
 		}
 	}
 	// a torn row is lost, never a blocker for the events after it
 	if err := db.st.Run(ctx, "INSERT INTO events (session_id, at, kind, json) VALUES (?, ?, ?, ?)",
-		"s-1", jsfmt.ISOTime(now), "UserPromptSubmit", "{torn"); err != nil {
+		"s-1", jsscalar.ISOTime(now), "UserPromptSubmit", "{torn"); err != nil {
 		t.Fatalf("insert the torn row: %v", err)
 	}
 	events, err := db.EventsAfter(ctx, 0, 100)
@@ -175,13 +175,13 @@ func TestSatQueueRefusesOnAClosedDatabase(t *testing.T) {
 	if err := f.db.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if _, err := f.db.SatEnqueue(ctx, "mbp", SatDecision, "s-1", f.itemID, 0, payload, jsfmt.ISOTime(now)); err == nil {
+	if _, err := f.db.SatEnqueue(ctx, "mbp", SatDecision, "s-1", f.itemID, 0, payload, jsscalar.ISOTime(now)); err == nil {
 		t.Error("SatEnqueue stored on a closed database")
 	}
 	if _, err := f.db.SatOffer(ctx, "mbp", now); err == nil {
 		t.Error("SatOffer read a closed database")
 	}
-	if _, err := f.db.MarkPermissionRefused(ctx, f.itemID, "no", jsfmt.ISOTime(now)); err == nil {
+	if _, err := f.db.MarkPermissionRefused(ctx, f.itemID, "no", jsscalar.ISOTime(now)); err == nil {
 		t.Error("MarkPermissionRefused wrote on a closed database")
 	}
 	if _, err := f.db.EventsAfter(ctx, 0, 10); err == nil {
@@ -252,7 +252,7 @@ func TestSatEnqueueAndSatOfferKeepTheirColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	id, err := f.db.SatEnqueue(ctx, "mbp", SatMessage, "s-1", f.itemID, 7, payload, jsfmt.ISOTime(now))
+	id, err := f.db.SatEnqueue(ctx, "mbp", SatMessage, "s-1", f.itemID, 7, payload, jsscalar.ISOTime(now))
 	if err != nil || id == 0 {
 		t.Fatalf("enqueue = %d, %v", id, err)
 	}
@@ -269,10 +269,10 @@ func TestSatEnqueueAndSatOfferKeepTheirColumns(t *testing.T) {
 		got.ItemID != f.itemID || got.MessageID != 7 || got.Payload != payload {
 		t.Fatalf("the handout = %+v, want the enqueued row whole", got)
 	}
-	if _, _, err := f.db.SatResult(ctx, id, SatDelivered, "", jsfmt.ISOTime(now.Add(time.Second))); err != nil {
+	if _, _, err := f.db.SatResult(ctx, id, SatDelivered, "", jsscalar.ISOTime(now.Add(time.Second))); err != nil {
 		t.Fatalf("the result: %v", err)
 	}
-	if moved, err := f.db.MarkPermissionRefused(ctx, f.itemID, "never answered", jsfmt.ISOTime(now.Add(time.Second))); err != nil || !moved {
+	if moved, err := f.db.MarkPermissionRefused(ctx, f.itemID, "never answered", jsscalar.ISOTime(now.Add(time.Second))); err != nil || !moved {
 		t.Fatalf("the refusal moved = %v, %v, want the item rewritten", moved, err)
 	}
 }
@@ -287,17 +287,17 @@ func TestSatResultKeepsASecondAnswerOut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	id, err := f.db.SatEnqueue(ctx, "mbp", SatDecision, "s-1", f.itemID, 0, payload, jsfmt.ISOTime(now))
+	id, err := f.db.SatEnqueue(ctx, "mbp", SatDecision, "s-1", f.itemID, 0, payload, jsscalar.ISOTime(now))
 	if err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
-	if _, live, err := f.db.SatResult(ctx, id, SatRefused, "not on my machine", jsfmt.ISOTime(now)); err != nil || !live {
+	if _, live, err := f.db.SatResult(ctx, id, SatRefused, "not on my machine", jsscalar.ISOTime(now)); err != nil || !live {
 		t.Fatalf("the first result = live %v, %v, want it taken", live, err)
 	}
-	if _, live, err := f.db.SatResult(ctx, id, SatDelivered, "", jsfmt.ISOTime(now.Add(time.Second))); err != nil || live {
+	if _, live, err := f.db.SatResult(ctx, id, SatDelivered, "", jsscalar.ISOTime(now.Add(time.Second))); err != nil || live {
 		t.Fatalf("the second result = live %v, %v, want it held out", live, err)
 	}
-	if _, live, err := f.db.SatResult(ctx, 99999, SatDelivered, "", jsfmt.ISOTime(now)); err != nil || live {
+	if _, live, err := f.db.SatResult(ctx, 99999, SatDelivered, "", jsscalar.ISOTime(now)); err != nil || live {
 		t.Fatalf("an unknown handout = live %v, %v, want it held out", live, err)
 	}
 }
@@ -313,7 +313,7 @@ func TestSatQueueAnswersABrokenStoreInsideItsTransactions(t *testing.T) {
 		t.Fatalf("encode: %v", err)
 	}
 	dropTable(t, f.db, "sat_queue")
-	if _, err := f.db.SatEnqueue(ctx, "mbp", SatDecision, "s-1", f.itemID, 0, payload, jsfmt.ISOTime(now)); err == nil {
+	if _, err := f.db.SatEnqueue(ctx, "mbp", SatDecision, "s-1", f.itemID, 0, payload, jsscalar.ISOTime(now)); err == nil {
 		t.Error("SatEnqueue stored a handout without its table")
 	}
 	dropTable(t, f.db, "pairings")
@@ -344,10 +344,10 @@ func TestSatQueueAnswersABrokenStoreInsideItsTransactions(t *testing.T) {
 	// does every push read
 	itemsGone := satelliteDB(t)
 	dropTable(t, itemsGone, "items")
-	if err := itemsGone.SyncBlocked(ctx, nil, jsfmt.ISOTime(now)); err == nil {
+	if err := itemsGone.SyncBlocked(ctx, nil, jsscalar.ISOTime(now)); err == nil {
 		t.Error("SyncBlocked read a broken store")
 	}
-	if _, err := itemsGone.WithdrawPermissions(ctx, "s-1", jsfmt.ISOTime(now)); err == nil {
+	if _, err := itemsGone.WithdrawPermissions(ctx, "s-1", jsscalar.ISOTime(now)); err == nil {
 		t.Error("WithdrawPermissions read a broken store")
 	}
 	dropTable(t, itemsGone, "push_subscriptions")

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ingest"
 	"github.com/MuhmdRaouf/huddle/internal/radar/routerhealth"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -100,7 +101,7 @@ func TestContractSpoolLinesParse(t *testing.T) {
 		if routed.Event != "route" || routed.Model == nil || *routed.Model != "glm-5.3" {
 			t.Fatalf("line 2 = event %q model %v, want a route line on glm-5.3", routed.Event, routed.Model)
 		}
-		ts, ok := jsfmt.ParseISO(routed.Ts)
+		ts, ok := jsscalar.ParseISO(routed.Ts)
 		if !ok || ts.UnixMilli() != contractTsMs {
 			t.Fatalf("line 2 ts %q = %d ms, want %d", routed.Ts, ts.UnixMilli(), contractTsMs)
 		}

@@ -19,6 +19,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/clock"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
@@ -65,7 +66,7 @@ func (p Percent) MarshalJSON() ([]byte, error) {
 	if math.IsInf(float64(p), 0) || math.IsNaN(float64(p)) {
 		return []byte("null"), nil
 	}
-	return []byte(jsfmt.JSNumber(float64(p))), nil
+	return []byte(jsscalar.JSNumber(float64(p))), nil
 }
 
 // BudgetSpend is one budget's spend for its current period.

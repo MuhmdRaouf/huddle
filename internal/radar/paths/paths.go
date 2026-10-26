@@ -14,7 +14,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // StateDir is where everything radar writes lives (0700 dir, 0600 files); RADAR_HOME overrides it.
@@ -211,7 +211,7 @@ func FileExists(ctx context.Context, path string) bool {
 // parsePort keeps a port file's number only when it is a whole live port: JavaScript's
 // Number(file text), integer and 0 < port < 65536.
 func parsePort(text string) (int, bool) {
-	number, ok := jsNumber(jsfmt.Trim(text))
+	number, ok := jsNumber(jsscalar.Trim(text))
 	if !ok || number != math.Trunc(number) {
 		return 0, false
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/alerts"
 	"github.com/MuhmdRaouf/huddle/internal/radar/history"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ingest"
@@ -73,7 +74,7 @@ func (i ServerInfo) MarshalJSON() ([]byte, error) {
 // jsFloat is a JSON number rendered the way JavaScript prints it.
 type jsFloat float64
 
-func (f jsFloat) MarshalJSON() ([]byte, error) { return []byte(jsfmt.JSNumber(float64(f))), nil }
+func (f jsFloat) MarshalJSON() ([]byte, error) { return []byte(jsscalar.JSNumber(float64(f))), nil }
 
 // WriteServerInfo publishes server.json (0600, one line); false when the file could not be
 // written. A first-ever start has no state dir yet, so it is created on the way.
@@ -113,7 +114,7 @@ func ReadServerInfo(ctx context.Context, env domain.EnvLookup) *ServerInfo {
 	if !pidOk || !portOk {
 		return nil
 	}
-	url := "http://127.0.0.1:" + jsfmt.JSNumber(port)
+	url := "http://127.0.0.1:" + jsscalar.JSNumber(port)
 	if field := fieldOf(value, "url"); field != nil && field.Kind() == jsfmt.KindString {
 		url = field.Text()
 	}

@@ -23,6 +23,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 	"github.com/MuhmdRaouf/huddle/internal/radar/store"
 )
@@ -1748,8 +1749,8 @@ func previewOf(blocks []shared.JSON) string {
 			continue
 		}
 		line, _, _ := strings.Cut(text, "\n")
-		if jsfmt.UTF16Len(line) > previewChars {
-			return jsfmt.UTF16Slice(line, 0, previewChars) + "…"
+		if jsscalar.UTF16Len(line) > previewChars {
+			return jsscalar.UTF16Slice(line, 0, previewChars) + "…"
 		}
 		return line
 	}

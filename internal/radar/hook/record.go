@@ -19,6 +19,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
@@ -172,7 +173,7 @@ func buildLine(payload *Payload, io *HookIo, now time.Time) (string, string) {
 		keys = append(keys, key)
 		fields = append(fields, value)
 	}
-	add("ts", jsfmt.String(jsfmt.ISOTime(now)))
+	add("ts", jsfmt.String(jsscalar.ISOTime(now)))
 	add("event", jsfmt.String(event))
 	for _, key := range stringKeys {
 		if value, ok := payload.strField(key); ok {
@@ -285,12 +286,12 @@ func RunHook(ctx context.Context, raw string, io *HookIo) (string, bool) {
 	payload := ParsePayload(raw)
 	if payload == nil {
 		io.LogError(ctx, paths.HookErrorLog(ctx, io.Env),
-			fmt.Sprintf("unparseable stdin (%d bytes)", jsfmt.UTF16Len(raw)))
+			fmt.Sprintf("unparseable stdin (%d bytes)", jsscalar.UTF16Len(raw)))
 		return "", false
 	}
 	now := io.Now()
 	line, event := buildLine(payload, io, now)
-	path := filepath.Join(paths.SpoolDir(ctx, io.Env), jsfmt.ISOTime(now)[:10]+".jsonl")
+	path := filepath.Join(paths.SpoolDir(ctx, io.Env), jsscalar.ISOTime(now)[:10]+".jsonl")
 	if err := io.AppendLine(ctx, path, line+"\n"); err != nil {
 		io.LogError(ctx, paths.HookErrorLog(ctx, io.Env), err.Error())
 		return "", false
@@ -395,7 +396,7 @@ func MakeIo(environ []string, now func() time.Time, pid, ppid int64) HookIo {
 			return nil
 		},
 		LogError: func(ctx context.Context, path, text string) {
-			line := jsfmt.ISOTime(now()) + " " + text + "\n"
+			line := jsscalar.ISOTime(now()) + " " + text + "\n"
 			if info, err := os.Stat(path); err == nil && info.Size() > errorLogCap {
 				keepTail(path, info.Size(), errorLogTail)
 			}

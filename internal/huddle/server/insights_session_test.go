@@ -17,7 +17,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 	"github.com/MuhmdRaouf/huddle/internal/insights"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 func TestTheSessionInsightsAnswerKeepsItsOwnTips(t *testing.T) {
@@ -50,7 +50,7 @@ func TestTheSessionInsightsAnswerKeepsItsOwnTips(t *testing.T) {
 		"INSERT INTO items (key, session_id, kind, summary, created_at, state, decided_at)"+
 			" VALUES (?, ?, ?, ?, ?, 'answered', ?)",
 		"turn:insights-session:s1", "s1", hub.KindTurn, "a finished turn",
-		jsfmt.ISOTime(raised), jsfmt.ISOTime(decided)); err != nil {
+		jsscalar.ISOTime(raised), jsscalar.ISOTime(decided)); err != nil {
 		t.Fatalf("seed the s1 turn: %v", err)
 	}
 	if err := st.Close(); err != nil {
@@ -69,10 +69,10 @@ func TestTheSessionInsightsAnswerKeepsItsOwnTips(t *testing.T) {
 			t.Fatalf("create the s2 ask: %v", err)
 		}
 		answered := at.Add(2 * time.Minute)
-		if err := reg.TouchPoll(context.Background(), id, jsfmt.ISOTime(answered)); err != nil {
+		if err := reg.TouchPoll(context.Background(), id, jsscalar.ISOTime(answered)); err != nil {
 			t.Fatalf("poll the s2 ask: %v", err)
 		}
-		if won, err := reg.DecidePermission(context.Background(), id, "allow", "", jsfmt.ISOTime(answered), answered); err != nil || !won {
+		if won, err := reg.DecidePermission(context.Background(), id, "allow", "", jsscalar.ISOTime(answered), answered); err != nil || !won {
 			t.Fatalf("decide the s2 ask = (%v, %v), want the decision to win", won, err)
 		}
 	}
@@ -131,11 +131,11 @@ func TestTheSessionInsightsAnswerLeavesOutTheToolFailingTip(t *testing.T) {
 	toolUse := func(id, command string, at time.Time) string {
 		return fmt.Sprintf(`{"type":"assistant","timestamp":%q,"message":{"model":"test-model",`+
 			`"content":[{"type":"tool_use","id":%q,"name":"Bash","input":{"command":%q}}]}}`,
-			jsfmt.ISOTime(at), id, command)
+			jsscalar.ISOTime(at), id, command)
 	}
 	toolResult := func(id string, failed bool, at time.Time) string {
 		return fmt.Sprintf(`{"type":"user","timestamp":%q,"message":{"content":[`+
-			`{"type":"tool_result","tool_use_id":%q,"is_error":%t}]}}`, jsfmt.ISOTime(at), id, failed)
+			`{"type":"tool_result","tool_use_id":%q,"is_error":%t}]}}`, jsscalar.ISOTime(at), id, failed)
 	}
 	run := func(n int, command string, failed bool, at time.Time) string {
 		id := fmt.Sprintf("tu-%d", n)

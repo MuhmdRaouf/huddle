@@ -17,7 +17,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // The rate window, the switch's read budget and the spawn budget. HUDDLE_NOTIFY_WINDOW_MS
@@ -33,8 +33,8 @@ var (
 	controlRe     = regexp.MustCompile(`[\x00-\x1f\x7f]+`)
 	credentialRe  = regexp.MustCompile(`\b(?:sk|pk|rk|ghp|gho|ghs|ghu|github_pat|glpat|xox[abpr]|AKIA|ASIA)[-_A-Za-z0-9]{8,}`)
 	blobRe        = regexp.MustCompile(`\b[A-Za-z0-9+/_=-]{40,}\b`)
-	assignmentRe  = regexp.MustCompile(`(?i)((?:token|secret|password|passwd|api[-_]?key|key|credential|auth)` + jsfmt.SpaceClass + `*[=:]` + jsfmt.SpaceClass + `*)\S+`)
-	spaceRe       = regexp.MustCompile(jsfmt.SpaceClass + `+`)
+	assignmentRe  = regexp.MustCompile(`(?i)((?:token|secret|password|passwd|api[-_]?key|key|credential|auth)` + jsscalar.SpaceClass + `*[=:]` + jsscalar.SpaceClass + `*)\S+`)
+	spaceRe       = regexp.MustCompile(jsscalar.SpaceClass + `+`)
 	notifySetting = `"notify"`
 )
 
@@ -46,9 +46,9 @@ func Clean(s string, max int) string {
 	t = credentialRe.ReplaceAllString(t, "…")
 	t = blobRe.ReplaceAllString(t, "…")
 	t = assignmentRe.ReplaceAllString(t, "$1…")
-	t = jsfmt.Trim(spaceRe.ReplaceAllString(t, " "))
-	if jsfmt.UTF16Len(t) > max {
-		t = jsfmt.UTF16Slice(t, 0, max-1) + "…"
+	t = jsscalar.Trim(spaceRe.ReplaceAllString(t, " "))
+	if jsscalar.UTF16Len(t) > max {
+		t = jsscalar.UTF16Slice(t, 0, max-1) + "…"
 	}
 	return t
 }

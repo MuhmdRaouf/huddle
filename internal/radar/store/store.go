@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
@@ -2082,7 +2082,7 @@ func (s *Store) viewNameLocked(state *sessionState) *string {
 	if repo := s.repoForLocked(state); repo != nil {
 		return strPtr(shared.RepoName(*repo))
 	}
-	return strPtr("Session " + jsfmt.UTF16Slice(state.id, 0, 8))
+	return strPtr("Session " + jsscalar.UTF16Slice(state.id, 0, 8))
 }
 
 // repoForLocked is the repo a session works in: a job's own workspace repo, else the
@@ -2425,13 +2425,13 @@ func (s *Store) applyToolEventLocked(line *shared.SpoolLine, ts int64, sessionID
 // dumping its payload.
 func labelFor(line *shared.SpoolLine) *string {
 	if line.Prompt != nil {
-		return strPtr(jsfmt.UTF16Slice(*line.Prompt, 0, 120))
+		return strPtr(jsscalar.UTF16Slice(*line.Prompt, 0, 120))
 	}
 	if line.Message != nil {
-		return strPtr(jsfmt.UTF16Slice(*line.Message, 0, 120))
+		return strPtr(jsscalar.UTF16Slice(*line.Message, 0, 120))
 	}
 	if message, ok := extraString(line, "message"); ok {
-		return strPtr(jsfmt.UTF16Slice(message, 0, 120))
+		return strPtr(jsscalar.UTF16Slice(message, 0, 120))
 	}
 	if line.Model != nil && line.Upstream != nil {
 		return strPtr(*line.Model + " → " + *line.Upstream)
@@ -2468,7 +2468,7 @@ func toolLabel(name string, input any) string {
 	}
 	for _, key := range []string{"file_path", "path", "command", "pattern", "url", "description"} {
 		if value, ok := object[key].(string); ok && value != "" {
-			return name + " " + jsfmt.UTF16Slice(value, 0, 90)
+			return name + " " + jsscalar.UTF16Slice(value, 0, 90)
 		}
 	}
 	return name

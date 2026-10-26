@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // Preset is one of the time picker's named ranges.
@@ -163,7 +163,7 @@ func numOf(raw string) (int64, bool) {
 	if raw == "" {
 		return 0, false
 	}
-	parsed, err := strconv.ParseFloat(jsfmt.Trim(raw), 64)
+	parsed, err := strconv.ParseFloat(jsscalar.Trim(raw), 64)
 	if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
 		return 0, false
 	}

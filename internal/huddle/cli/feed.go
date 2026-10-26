@@ -24,6 +24,7 @@ import (
 
 	channelpkg "github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // feedLimit is how many events one look pulls per channel.
@@ -235,7 +236,7 @@ func eventLine(id Identity, e feedEvent, other string) string {
 		tail = fmt.Sprintf(" [answer: reply seq=%d%s]", e.Seq, other)
 	}
 	return fmt.Sprintf("#%d %s → %s (%s): %s%s", e.Seq, e.From, to, e.Topic,
-		jsfmt.UTF16Slice(e.Msg, 0, 600), tail)
+		jsscalar.UTF16Slice(e.Msg, 0, 600), tail)
 }
 
 // writeSeen stores what each channel has shown, in channel order, and on a start forgets the

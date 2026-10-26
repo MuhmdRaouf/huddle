@@ -14,6 +14,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // digestMaxMs is the oldest a window may start: 90 days.
@@ -123,15 +124,15 @@ type DigestOpts struct {
 
 // sinceRe reads a relative window ("24h", "90m", "7d", "2w", bare seconds); the whitespace class
 // is JavaScript's.
-var sinceRe = regexp.MustCompile(`(?i)^(\d+(?:\.\d+)?)` + jsfmt.SpaceClass + `*([smhdw]?)$`)
+var sinceRe = regexp.MustCompile(`(?i)^(\d+(?:\.\d+)?)` + jsscalar.SpaceClass + `*([smhdw]?)$`)
 
 // spaceRuns matches runs of whitespace the way /\s+/ does, JavaScript's set.
-var spaceRuns = regexp.MustCompile(jsfmt.SpaceClass + `+`)
+var spaceRuns = regexp.MustCompile(jsscalar.SpaceClass + `+`)
 
 // ParseSince reads "24h", "90m", "7d", "2w", seconds, or an ISO date as epoch ms (default: 24
 // hours ago), never older than 90 days.
 func ParseSince(v string, nowMs int64) (int64, error) {
-	s := jsfmt.Trim(v)
+	s := jsscalar.Trim(v)
 	if s == "" {
 		return nowMs - 86400000, nil
 	}
@@ -152,7 +153,7 @@ func ParseSince(v string, nowMs int64) (int64, error) {
 			return nowMs - int64(ms), nil
 		}
 	}
-	if t, ok := jsfmt.ParseISO(s); ok {
+	if t, ok := jsscalar.ParseISO(s); ok {
 		return max(t.UnixMilli(), nowMs-digestMaxMs), nil
 	}
 	return 0, httpErr(400, fmt.Sprintf("since: 24h, 90m, 7d or an ISO date, not %s", s))
@@ -295,7 +296,7 @@ func Digest(ctx context.Context, c *Channel, since any, o DigestOpts) (*DigestRe
 			}
 			entry := finishedTask{
 				who: s.Name, id: key, title: title, status: status,
-				note: jsfmt.UTF16Slice(fieldStr(d, "note"), 0, 300), at: e.Ts, now: now,
+				note: jsscalar.UTF16Slice(fieldStr(d, "note"), 0, 300), at: e.Ts, now: now,
 			}
 			if i, ok := finAt[key]; ok {
 				finished[i] = entry // the position of its first finish stays
@@ -358,7 +359,7 @@ func Digest(ctx context.Context, c *Channel, since any, o DigestOpts) (*DigestRe
 		}
 		sess(by).Notes = append(sess(by).Notes, DigestNote{
 			Task: rStr(n, "task_id"), Title: title, Kind: rStr(n, "kind"),
-			Body: jsfmt.UTF16Slice(rStr(n, "body"), 0, 300), At: rStr(n, "created_at"),
+			Body: jsscalar.UTF16Slice(rStr(n, "body"), 0, 300), At: rStr(n, "created_at"),
 		})
 	}
 
@@ -377,7 +378,7 @@ func Digest(ctx context.Context, c *Channel, since any, o DigestOpts) (*DigestRe
 		}
 		questions = append(questions, DigestQuestion{
 			Seq: e.Seq, From: e.From, To: e.To,
-			Msg: jsfmt.UTF16Slice(deref(e.Msg), 0, 300), At: e.Ts, Task: task,
+			Msg: jsscalar.UTF16Slice(deref(e.Msg), 0, 300), At: e.Ts, Task: task,
 		})
 	}
 	for _, q := range questions {
@@ -463,7 +464,7 @@ func Digest(ctx context.Context, c *Channel, since any, o DigestOpts) (*DigestRe
 		if d := int(b.Events - a.Events); d != 0 {
 			return d
 		}
-		return jsfmt.LocaleCompare(a.Name, b.Name)
+		return jsscalar.LocaleCompare(a.Name, b.Name)
 	})
 
 	sessList := []DigestSess{}
@@ -519,11 +520,11 @@ func dataStrPtr(v *jsfmt.Value, key string) *string {
 func usd(n float64) string {
 	switch {
 	case n >= 100:
-		return "$" + jsfmt.ToFixed(n, 0)
+		return "$" + jsscalar.ToFixed(n, 0)
 	case n >= 0.01:
-		return "$" + jsfmt.ToFixed(n, 2)
+		return "$" + jsscalar.ToFixed(n, 2)
 	case n > 0:
-		return "$" + jsfmt.ToFixed(n, 3)
+		return "$" + jsscalar.ToFixed(n, 3)
 	default:
 		return "$0"
 	}
@@ -578,7 +579,7 @@ func DigestText(r *DigestResult) string {
 			}
 			note := ""
 			if d.Note != "" {
-				note = " — " + jsfmt.UTF16Slice(d.Note, 0, 120)
+				note = " — " + jsscalar.UTF16Slice(d.Note, 0, 120)
 			}
 			L = append(L, fmt.Sprintf("  %s %s%s%s", verb, d.ID, title, note))
 		}
@@ -598,7 +599,7 @@ func DigestText(r *DigestResult) string {
 				break
 			}
 			L = append(L, fmt.Sprintf("  note on %s [%s] %s", n.Task, n.Kind,
-				jsfmt.UTF16Slice(spaceRuns.ReplaceAllString(n.Body, " "), 0, 100)))
+				jsscalar.UTF16Slice(spaceRuns.ReplaceAllString(n.Body, " "), 0, 100)))
 		}
 		if len(s.Notes) > 8 {
 			L = append(L, fmt.Sprintf("  … %d more notes", len(s.Notes)-8))
@@ -629,7 +630,7 @@ func DigestText(r *DigestResult) string {
 			}
 			note := ""
 			if b.Note != "" {
-				note = " — " + jsfmt.UTF16Slice(b.Note, 0, 120)
+				note = " — " + jsscalar.UTF16Slice(b.Note, 0, 120)
 			}
 			waits := ""
 			if len(b.WaitsOn) > 0 {
@@ -649,7 +650,7 @@ func DigestText(r *DigestResult) string {
 				to = *q.To
 			}
 			L = append(L, fmt.Sprintf("  #%d %s → %s: %s", q.Seq, q.From, to,
-				jsfmt.UTF16Slice(spaceRuns.ReplaceAllString(q.Msg, " "), 0, 140)))
+				jsscalar.UTF16Slice(spaceRuns.ReplaceAllString(q.Msg, " "), 0, 140)))
 		}
 	}
 	return strings.Join(L, "\n")

@@ -36,6 +36,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // Header carries a session's credential; a browser sends its cookie instead.
@@ -262,10 +263,10 @@ func number(v any) (float64, bool) {
 	case float64:
 		return x, !math.IsNaN(x)
 	case string:
-		if jsfmt.Trim(x) == "" {
+		if jsscalar.Trim(x) == "" {
 			return 0, true
 		}
-		f, err := strconv.ParseFloat(jsfmt.Trim(x), 64)
+		f, err := strconv.ParseFloat(jsscalar.Trim(x), 64)
 		if err != nil {
 			return math.NaN(), false
 		}
@@ -318,7 +319,7 @@ func coerceStr(v any, fallback string) string {
 	case string:
 		return x
 	case float64:
-		return jsfmt.JSNumber(x)
+		return jsscalar.JSNumber(x)
 	case bool:
 		if x {
 			return "true"
@@ -952,7 +953,7 @@ func (a *Auth) scrub(s string) string {
 	})
 	s = credShape.ReplaceAllString(s, "<redacted>")
 	for _, secret := range a.live.order {
-		if jsfmt.UTF16Len(secret) >= 8 && strings.Contains(s, secret) {
+		if jsscalar.UTF16Len(secret) >= 8 && strings.Contains(s, secret) {
 			s = strings.ReplaceAll(s, secret, "<redacted>")
 		}
 	}
@@ -1071,7 +1072,7 @@ func Given(req *http.Request, cookie string) string {
 	if h := req.Header.Get(Header); h != "" {
 		return h
 	}
-	m := regexp.MustCompile(`(?:^|;` + jsfmt.SpaceClass + `*)` + regexp.QuoteMeta(cookie) + `=([^;]*)`).FindStringSubmatch(req.Header.Get("Cookie"))
+	m := regexp.MustCompile(`(?:^|;` + jsscalar.SpaceClass + `*)` + regexp.QuoteMeta(cookie) + `=([^;]*)`).FindStringSubmatch(req.Header.Get("Cookie"))
 	if m == nil {
 		return ""
 	}

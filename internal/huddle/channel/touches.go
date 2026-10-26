@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // WindowMin is the conflict window, in minutes.
@@ -107,10 +108,10 @@ func cleanTouch(path, repo any) (string, string, error) {
 	p := strings.ReplaceAll(anyToString(path), `\`, "/")
 	p = strings.TrimPrefix(p, "./")
 	r := anyToString(repo)
-	if p == "" || jsfmt.UTF16Len(p) > 500 || strings.HasPrefix(p, "/") || dotDot.MatchString(p) || badPathChars.MatchString(p) {
+	if p == "" || jsscalar.UTF16Len(p) > 500 || strings.HasPrefix(p, "/") || dotDot.MatchString(p) || badPathChars.MatchString(p) {
 		return "", "", bad("path: a file path relative to its repo")
 	}
-	if r == "" || jsfmt.UTF16Len(r) > 500 || badPathChars.MatchString(r) {
+	if r == "" || jsscalar.UTF16Len(r) > 500 || badPathChars.MatchString(r) {
 		return "", "", bad("repo: the repo the file is in")
 	}
 	return p, r, nil

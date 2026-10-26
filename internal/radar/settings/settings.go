@@ -16,6 +16,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 )
 
@@ -142,7 +143,7 @@ func (d dismissedIDs) MarshalJSON() ([]byte, error) {
 		if math.IsInf(dismissal.At, 0) || math.IsNaN(dismissal.At) {
 			out.WriteString("null")
 		} else {
-			out.WriteString(jsfmt.JSNumber(dismissal.At))
+			out.WriteString(jsscalar.JSNumber(dismissal.At))
 		}
 	}
 	out.WriteByte('}')
@@ -190,7 +191,7 @@ func validatedKey(key string, value *jsfmt.Value, current Settings) (Settings, s
 		return next, ""
 	}
 	// the length of the refused key's head counts UTF-16 units, the way the dashboard reads it
-	return Settings{}, "unknown setting: " + jsfmt.UTF16Slice(key, 0, 40)
+	return Settings{}, "unknown setting: " + jsscalar.UTF16Slice(key, 0, 40)
 }
 
 // isRetentionDays says whether a number is one of the offered retention choices; anything

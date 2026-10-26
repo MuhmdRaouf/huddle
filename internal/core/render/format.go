@@ -1,6 +1,6 @@
 // Package render holds the text renderers: plain ASCII layout, no colour, no ISO timestamps.
 // Every number prints the way JavaScript prints it, byte for byte: jsToFixed and jsRound are
-// ECMAScript's own number algorithms, and the plain number strings come from jsfmt.JSNumber.
+// ECMAScript's own number algorithms, and the plain number strings come from jsscalar.JSNumber.
 package render
 
 import (
@@ -14,7 +14,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 const minute = 60_000
@@ -71,17 +71,17 @@ func Duration(ms float64) string {
 	}
 	s := jsRound(ms / 1000)
 	if s < 60 {
-		return jsfmt.JSNumber(s) + "s"
+		return jsscalar.JSNumber(s) + "s"
 	}
 	if s < 3600 {
-		return jsfmt.JSNumber(math.Floor(s/60)) + "m" + pad2(math.Mod(s, 60)) + "s"
+		return jsscalar.JSNumber(math.Floor(s/60)) + "m" + pad2(math.Mod(s, 60)) + "s"
 	}
-	return jsfmt.JSNumber(math.Floor(s/3600)) + "h" + pad2(math.Floor(math.Mod(s, 3600)/60)) + "m"
+	return jsscalar.JSNumber(math.Floor(s/3600)) + "h" + pad2(math.Floor(math.Mod(s, 3600)/60)) + "m"
 }
 
 // pad2 is String(n).padStart(2, "0").
 func pad2(n float64) string {
-	text := jsfmt.JSNumber(n)
+	text := jsscalar.JSNumber(n)
 	if len(text) < 2 {
 		return "0" + text
 	}
@@ -91,7 +91,7 @@ func pad2(n float64) string {
 // Count renders 310, 4.2k, 1.2M.
 func Count(n float64) string {
 	if n < 1000 {
-		return jsfmt.JSNumber(n)
+		return jsscalar.JSNumber(n)
 	}
 	if n < 1_000_000 {
 		return jsToFixed(n/1000, 1) + "k"
@@ -114,7 +114,7 @@ func Percent(rate *float64) string {
 	if rate == nil {
 		return "n/a"
 	}
-	return jsfmt.JSNumber(jsRound(float64(*rate*100))) + "%"
+	return jsscalar.JSNumber(jsRound(float64(*rate*100))) + "%"
 }
 
 // Plural renders "1 attempt" / "2 attempts"; nouns overrides the plural form.
@@ -328,7 +328,7 @@ func jsToFixed(f float64, digits int) string {
 		return "-Infinity"
 	}
 	if f >= 1e21 || f <= -1e21 {
-		return jsfmt.JSNumber(f)
+		return jsscalar.JSNumber(f)
 	}
 	negative := f < 0
 	rat := new(big.Rat).SetFloat64(f)

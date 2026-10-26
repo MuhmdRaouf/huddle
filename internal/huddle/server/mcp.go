@@ -17,6 +17,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // Instructions is the system prompt a channel's sessions start with.
@@ -97,7 +98,7 @@ func evLine(e channel.Ev) string {
 	if e.Msg != nil {
 		msg = *e.Msg
 	}
-	return fmt.Sprintf("#%d %s → %s (%s): %s", e.Seq, e.From, to, e.Topic, jsfmt.UTF16Slice(msg, 0, 400))
+	return fmt.Sprintf("#%d %s → %s (%s): %s", e.Seq, e.From, to, e.Topic, jsscalar.UTF16Slice(msg, 0, 400))
 }
 
 // shortLine is one op's one-line answer; "" means the whole JSON object is the answer.

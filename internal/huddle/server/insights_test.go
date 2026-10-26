@@ -11,7 +11,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 func TestTheInsightsRouteNamesAnAlwaysAllowedPrompt(t *testing.T) {
@@ -33,10 +33,10 @@ func TestTheInsightsRouteNamesAnAlwaysAllowedPrompt(t *testing.T) {
 			t.Fatalf("create the ask: %v", err)
 		}
 		decided := raised.Add(2 * time.Minute)
-		if err := reg.TouchPoll(context.Background(), id, jsfmt.ISOTime(decided)); err != nil {
+		if err := reg.TouchPoll(context.Background(), id, jsscalar.ISOTime(decided)); err != nil {
 			t.Fatalf("poll the ask: %v", err)
 		}
-		if won, err := reg.DecidePermission(context.Background(), id, "allow", "", jsfmt.ISOTime(decided), decided); err != nil || !won {
+		if won, err := reg.DecidePermission(context.Background(), id, "allow", "", jsscalar.ISOTime(decided), decided); err != nil || !won {
 			t.Fatalf("decide the ask = (%v, %v), want the decision to win", won, err)
 		}
 	}

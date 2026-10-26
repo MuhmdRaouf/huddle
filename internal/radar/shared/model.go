@@ -13,6 +13,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // ptr is the usual pointer-of helper.
@@ -118,10 +119,10 @@ func PromptTitle(text string) string {
 		flat.WriteRune(r)
 	}
 	oneLine := strings.TrimFunc(flat.String(), isJSSpace)
-	if jsfmt.UTF16Len(oneLine) <= 80 {
+	if jsscalar.UTF16Len(oneLine) <= 80 {
 		return oneLine
 	}
-	return jsfmt.UTF16Slice(oneLine, 0, 80)
+	return jsscalar.UTF16Slice(oneLine, 0, 80)
 }
 
 // isJSSpace reports whether r counts as whitespace in JavaScript (\s and trim): Go's
@@ -765,7 +766,7 @@ type RouteEvent struct {
 // MarshalJSON prints the figure exactly as JavaScript's String(n), so the dashboard's
 // JavaScript reads back the same number.
 func (u USD) MarshalJSON() ([]byte, error) {
-	return []byte(jsfmt.JSNumber(float64(u))), nil
+	return []byte(jsscalar.JSNumber(float64(u))), nil
 }
 
 // UnmarshalJSON fills the line, parking every key its fields do not name in Extra and

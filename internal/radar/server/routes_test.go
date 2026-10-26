@@ -17,6 +17,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/history"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ingest"
@@ -78,7 +79,7 @@ func valueOf(t *testing.T, answer ApiResponse) *jsfmt.Value {
 func readClock() time.Time { return nowAt.Add(time.Millisecond) }
 
 // isoOf stamps one epoch the way the spool and the transcripts carry it.
-func isoOf(ms int64) string { return jsfmt.ISOTime(time.UnixMilli(ms)) }
+func isoOf(ms int64) string { return jsscalar.ISOTime(time.UnixMilli(ms)) }
 
 // addSpool drops one spool line in the store, the way the watcher would.
 func addSpool(st *store.Store, entry shared.SpoolLine) { st.AddSpoolLine(entry) }

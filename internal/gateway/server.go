@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // pluginGateway is the plugin name the gateway's route lines carry; radar reads it as the via.
@@ -152,7 +152,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, kind apiKind) {
 // the harness the client named. Never a body byte or another header value.
 func (s *Server) event(model, upstream string, status int64, harness string, problem *string, usage *Usage, start time.Time) domain.RouteEvent {
 	return domain.RouteEvent{
-		Ts:        jsfmt.ISOTime(s.now()),
+		Ts:        jsscalar.ISOTime(s.now()),
 		Event:     domain.EventRoute,
 		Plugin:    pluginGateway,
 		Model:     model,
@@ -220,11 +220,11 @@ func modelOf(body []byte) string {
 // harnessOf is the harness the client named, one word, capped; a client that names none is
 // unknown.
 func harnessOf(h http.Header) string {
-	name := jsfmt.Trim(h.Get(harnessHeader))
+	name := jsscalar.Trim(h.Get(harnessHeader))
 	if name == "" {
 		return "unknown"
 	}
-	return jsfmt.UTF16Slice(name, 0, 64)
+	return jsscalar.UTF16Slice(name, 0, 64)
 }
 
 // loopbackHost answers whether the Host header names this machine: 127.0.0.1 or localhost, any

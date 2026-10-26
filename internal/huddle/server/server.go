@@ -43,6 +43,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/satellite"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/web"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 //go:embed connect.md
@@ -352,17 +353,17 @@ func OptionsFromEnv(version string, env func(string) string, stdout, stderr io.W
 		stderr = os.Stderr
 	}
 	o := Options{Version: version, Stdout: stdout, Stderr: stderr, Stdin: stdin, AutoCreate: true}
-	if p := jsfmt.Trim(env("PORT")); p != "" {
+	if p := jsscalar.Trim(env("PORT")); p != "" {
 		o.PortNamed = true
 		if n, err := strconv.Atoi(p); err == nil {
 			o.Port = n
 		}
 	}
-	o.Host = jsfmt.Trim(env("HOST"))
+	o.Host = jsscalar.Trim(env("HOST"))
 	if o.Host == "" {
 		o.Host = "127.0.0.1"
 	}
-	homeDir := jsfmt.Trim(env("HUDDLE_HOME"))
+	homeDir := jsscalar.Trim(env("HUDDLE_HOME"))
 	if homeDir == "" {
 		if h, err := home.Resolve(env); err == nil {
 			homeDir = h.Root
@@ -376,15 +377,15 @@ func OptionsFromEnv(version string, env func(string) string, stdout, stderr io.W
 			o.Hosts = append(o.Hosts, cfg.Hub.Host)
 		}
 	}
-	o.Data = jsfmt.Trim(env("HUDDLE_DATA"))
+	o.Data = jsscalar.Trim(env("HUDDLE_DATA"))
 	if o.Data == "" {
 		o.Data = homeDir // the channels sit in the home itself: <home>/channels/<name>.db
 	}
 	root := env("HUDDLE_TOKEN")
-	rootStdin := jsfmt.Trim(env("HUDDLE_ROOT_STDIN")) == "1"
+	rootStdin := jsscalar.Trim(env("HUDDLE_ROOT_STDIN")) == "1"
 	if root == "" && rootStdin && stdin != nil {
 		line, _ := bufio.NewReader(stdin).ReadString('\n')
-		root = jsfmt.Trim(line)
+		root = jsscalar.Trim(line)
 	}
 	if root == "" {
 		root = uuid() + uuid()
@@ -394,43 +395,43 @@ func OptionsFromEnv(version string, env func(string) string, stdout, stderr io.W
 	// a server started by hand on a terminal, with no root handed to it, shows how to get in once
 	o.ShowRoot = env("HUDDLE_TOKEN") == "" && !rootStdin && isTerminal(stdout)
 	for _, h := range strings.Split(env("HUDDLE_HOSTS"), ",") {
-		if h = jsfmt.Trim(h); h != "" {
+		if h = jsscalar.Trim(h); h != "" {
 			o.Hosts = append(o.Hosts, h)
 		}
 	}
 	o.AutoCreate = env("HUDDLE_AUTO_CREATE") != "0"
-	o.RemovalWatch = jsfmt.Trim(env("HUDDLE_REMOVAL_WATCH")) == "1"
-	if ms := jsfmt.Trim(env("HUDDLE_REMOVAL_MS")); ms != "" {
+	o.RemovalWatch = jsscalar.Trim(env("HUDDLE_REMOVAL_WATCH")) == "1"
+	if ms := jsscalar.Trim(env("HUDDLE_REMOVAL_MS")); ms != "" {
 		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
 			o.RemovalMS = n
 		}
 	}
-	if ms := jsfmt.Trim(env("HUDDLE_PID_CHECK_MS")); ms != "" {
+	if ms := jsscalar.Trim(env("HUDDLE_PID_CHECK_MS")); ms != "" {
 		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
 			o.PidCheckMS = n
 		}
 	}
-	if ms := jsfmt.Trim(env("HUDDLE_TRANSCRIPT_CHECK_MS")); ms != "" {
+	if ms := jsscalar.Trim(env("HUDDLE_TRANSCRIPT_CHECK_MS")); ms != "" {
 		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
 			o.TranscriptCheckMS = n
 		}
 	}
-	if ms := jsfmt.Trim(env("HUDDLE_PERMIT_SWEEP_MS")); ms != "" {
+	if ms := jsscalar.Trim(env("HUDDLE_PERMIT_SWEEP_MS")); ms != "" {
 		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
 			o.PermitSweepMS = n
 		}
 	}
-	if ms := jsfmt.Trim(env("HUDDLE_PUSH_SWEEP_MS")); ms != "" {
+	if ms := jsscalar.Trim(env("HUDDLE_PUSH_SWEEP_MS")); ms != "" {
 		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
 			o.PushSweepMS = n
 		}
 	}
-	if ms := jsfmt.Trim(env("HUDDLE_DESK_QUIET_MS")); ms != "" {
+	if ms := jsscalar.Trim(env("HUDDLE_DESK_QUIET_MS")); ms != "" {
 		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
 			o.DeskQuietMS = n
 		}
 	}
-	if ms := jsfmt.Trim(env("HUDDLE_SSE_PING_MS")); ms != "" {
+	if ms := jsscalar.Trim(env("HUDDLE_SSE_PING_MS")); ms != "" {
 		if n, err := strconv.Atoi(ms); err == nil && n > 0 {
 			o.SSEPingMS = n
 		}
@@ -440,7 +441,7 @@ func OptionsFromEnv(version string, env func(string) string, stdout, stderr io.W
 	if err != nil {
 		wd = ""
 	}
-	project := jsfmt.Trim(env("CLAUDE_PROJECT_DIR"))
+	project := jsscalar.Trim(env("CLAUDE_PROJECT_DIR"))
 	o.Projects = func() []string {
 		out := []string{}
 		for _, p := range []string{project, wd} {
@@ -577,7 +578,7 @@ func Serve(ctx context.Context, o Options) error {
 		listener:     listener,
 		port:         port,
 		cookie:       fmt.Sprintf("huddle_session_%d", port),
-		started:      jsfmt.ISOTime(now()),
+		started:      jsscalar.ISOTime(now()),
 		machine:      machine,
 		exe:          exe,
 		hosts:        map[string]bool{},
@@ -1263,7 +1264,7 @@ func (s *server) joinRoute(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-			base := jsfmt.UTF16Slice(name, 0, 28)
+			base := jsscalar.UTF16Slice(name, 0, 28)
 			for i := 2; taken[name]; i++ {
 				name = fmt.Sprintf("%s-%d", base, i)
 			}
@@ -1661,7 +1662,7 @@ func (s *server) registrySessionRoute(w http.ResponseWriter, r *http.Request, pa
 		return &channel.HuddleError{Status: 500, Msg: "the registry's database is unavailable"}
 	}
 	id := registrySessionPath.FindStringSubmatch(path)[1]
-	answered, err := s.registry.OpenTheSession(r.Context(), id, jsfmt.ISOTime(s.now()))
+	answered, err := s.registry.OpenTheSession(r.Context(), id, jsscalar.ISOTime(s.now()))
 	if err != nil {
 		return err
 	}
@@ -1905,7 +1906,7 @@ func (s *server) watchPids(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			marked, err := s.registry.MarkEndedPids(ctx, jsfmt.ISOTime(s.now()), pidCommandOf)
+			marked, err := s.registry.MarkEndedPids(ctx, jsscalar.ISOTime(s.now()), pidCommandOf)
 			if err != nil {
 				fmt.Fprintf(s.o.Stderr, "registry: pid check: %v\n", err)
 				continue
@@ -2108,7 +2109,7 @@ func (s *server) adminRoute(w http.ResponseWriter, r *http.Request, path string,
 		}
 		description := ""
 		if v := fieldOf(body, "description"); v != nil && v.Kind() == jsfmt.KindString {
-			description = jsfmt.UTF16Slice(v.Text(), 0, 200)
+			description = jsscalar.UTF16Slice(v.Text(), 0, 200)
 		}
 		s.writeJSON(w, 200, s.auth.Create(auth.InviteOptions{
 			TTL: ttl, Single: truthy(fieldOf(body, "single_use")),
@@ -2185,7 +2186,7 @@ func numberOf(v *jsfmt.Value) (int64, bool) {
 		}
 		return int64(f), true
 	case jsfmt.KindString:
-		f, err := strconv.ParseFloat(jsfmt.Trim(v.Text()), 64)
+		f, err := strconv.ParseFloat(jsscalar.Trim(v.Text()), 64)
 		if err != nil {
 			return 0, false
 		}

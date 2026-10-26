@@ -23,7 +23,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // reportEvents is the nine events hooks.json registers the report hook for.
@@ -303,10 +303,10 @@ func TestTheReportHookCutsTheTitleAndTaskToEightyRunes(t *testing.T) {
 		t.Fatalf("the registry took %d POSTs, want 1", len(took))
 	}
 	body := took[0].Body
-	if title := field(body, "title"); jsfmt.UTF16Len(title) != 80 {
-		t.Errorf("title is %d UTF-16 units (%q), want 80", jsfmt.UTF16Len(title), title)
+	if title := field(body, "title"); jsscalar.UTF16Len(title) != 80 {
+		t.Errorf("title is %d UTF-16 units (%q), want 80", jsscalar.UTF16Len(title), title)
 	}
-	if task := field(body, "task"); strings.ContainsRune(task, '\n') || jsfmt.UTF16Len(task) != 80 {
+	if task := field(body, "task"); strings.ContainsRune(task, '\n') || jsscalar.UTF16Len(task) != 80 {
 		t.Errorf("task = %q, want the prompt's first line cut to 80 units", task)
 	}
 }

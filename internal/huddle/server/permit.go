@@ -22,6 +22,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // permitItemPath matches the permission flow's actions on one item: the hook's long poll and
@@ -182,7 +183,7 @@ func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id in
 		}
 	}
 	won, err := s.registry.DecidePermission(ctx, id, decision, textOf(fieldOf(body, "message")),
-		jsfmt.ISOTime(s.now()), s.now())
+		jsscalar.ISOTime(s.now()), s.now())
 	if err != nil {
 		return err
 	}
@@ -248,7 +249,7 @@ func (s *server) permitWaitRoute(w http.ResponseWriter, r *http.Request, id int6
 		return &channel.HuddleError{Status: 404, Msg: "no such item"}
 	}
 	if item.State == hub.StateOpen {
-		if err := s.registry.TouchPoll(ctx, id, jsfmt.ISOTime(s.now())); err != nil {
+		if err := s.registry.TouchPoll(ctx, id, jsscalar.ISOTime(s.now())); err != nil {
 			return err
 		}
 		if hold := s.permitHold(*item, seconds); hold > 0 {
@@ -281,7 +282,7 @@ func (s *server) permitWaitRoute(w http.ResponseWriter, r *http.Request, id int6
 // age limit, whichever ends first.
 func (s *server) permitHold(item hub.PermissionItem, seconds int64) time.Duration {
 	hold := time.Duration(seconds) * time.Second
-	if created, ok := jsfmt.ParseISO(item.CreatedAt); ok {
+	if created, ok := jsscalar.ParseISO(item.CreatedAt); ok {
 		if left := created.Add(hub.PermissionExpiresAfter).Sub(s.now()); left < hold {
 			return left
 		}
@@ -348,7 +349,7 @@ func (s *server) withdrawPermissions(ctx context.Context, sessionID string) {
 	if s.registry == nil || sessionID == "" {
 		return
 	}
-	ids, err := s.registry.WithdrawPermissions(ctx, sessionID, jsfmt.ISOTime(s.now()))
+	ids, err := s.registry.WithdrawPermissions(ctx, sessionID, jsscalar.ISOTime(s.now()))
 	if err != nil {
 		fmt.Fprintf(s.o.Stderr, "permit: withdraw: %v\n", err)
 		return

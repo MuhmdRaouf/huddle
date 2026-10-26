@@ -25,7 +25,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/satellite"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // satJoinPath is the one public satellite path: the exchange turns a one-use invite into the
@@ -250,7 +250,7 @@ func (s *server) satNextRoute(w http.ResponseWriter, r *http.Request, machine st
 	}
 	ctx := r.Context()
 	at := s.now()
-	if err := s.registry.TouchPollsOfMachine(ctx, machine, jsfmt.ISOTime(at)); err != nil {
+	if err := s.registry.TouchPollsOfMachine(ctx, machine, jsscalar.ISOTime(at)); err != nil {
 		s.writeJSON(w, 500, errorAnswer{Error: err.Error()}, nil)
 		return
 	}
@@ -322,7 +322,7 @@ func (s *server) satResultRoute(w http.ResponseWriter, r *http.Request, path, ma
 		return
 	}
 	ctx := r.Context()
-	at := jsfmt.ISOTime(s.now())
+	at := jsscalar.ISOTime(s.now())
 	handout, live, err := s.registry.SatResult(ctx, id, body.Result, body.Reason, at)
 	if err != nil {
 		s.writeJSON(w, 500, errorAnswer{Error: err.Error()}, nil)
@@ -401,7 +401,7 @@ func (s *server) satSessionMachine(ctx context.Context, session string) (string,
 // its own delivery route. The hub's row stays pending either way — delivered is what the
 // machine's result says, never the enqueue.
 func (s *server) queueForSession(ctx context.Context, session string, in hub.MessageIn) (string, int64, error) {
-	at := jsfmt.ISOTime(s.now())
+	at := jsscalar.ISOTime(s.now())
 	messageID, err := s.registry.QueueMessage(ctx, in, at)
 	if err != nil {
 		return "", 0, err
@@ -442,7 +442,7 @@ func (s *server) offerDecision(ctx context.Context, item hub.PermissionItem, dec
 		return
 	}
 	if _, err := s.registry.SatEnqueue(ctx, machine, hub.SatDecision, item.SessionID, item.ID, 0,
-		payload, jsfmt.ISOTime(s.now())); err != nil {
+		payload, jsscalar.ISOTime(s.now())); err != nil {
 		fmt.Fprintf(s.o.Stderr, "sat: the decision for item %d is not queued: %v\n", item.ID, err)
 		return
 	}

@@ -20,6 +20,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // SharedBase is where the shared store's ids start, so an id says which store holds it.
@@ -235,13 +236,13 @@ var (
 	urlRefRe = regexp.MustCompile(`(?i)^[a-z][\w+.-]*://`)
 	seqRefRe = regexp.MustCompile(`^#?\d+$`)
 	lineRe   = regexp.MustCompile(`:\d+(-\d+)?$`)
-	refSpace = regexp.MustCompile(jsfmt.SpaceClass)
+	refSpace = regexp.MustCompile(jsscalar.SpaceClass)
 )
 
 // fileRef reads one knowledge ref as a file path: empty for a url, an event seq or prose. A
 // trailing line range comes off, and a leading ./; the whitespace test is JavaScript's set.
 func fileRef(r string) string {
-	trimmed := jsfmt.Trim(r)
+	trimmed := jsscalar.Trim(r)
 	if urlRefRe.MatchString(r) || seqRefRe.MatchString(r) || refSpace.MatchString(trimmed) {
 		return ""
 	}
@@ -251,7 +252,7 @@ func fileRef(r string) string {
 
 // parseMs reads one of the store's timestamps; ok is false for a value that is not a date.
 func parseMs(s string) (int64, bool) {
-	t, ok := jsfmt.ParseISO(s)
+	t, ok := jsscalar.ParseISO(s)
 	if !ok {
 		return 0, false
 	}
@@ -272,7 +273,7 @@ func staleness(ctx context.Context, c *Channel, r Row) (int64, *string, error) {
 		days = int64(math.Floor(float64(nowMs-created) / 86400000))
 	}
 	if sinceMs, ok := parseMs(since); ok && float64(nowMs-sinceMs) > StaleDays()*86400000 {
-		return days, sp(fmt.Sprintf("not verified for over %s days", jsfmt.JSNumber(StaleDays()))), nil
+		return days, sp(fmt.Sprintf("not verified for over %s days", jsscalar.JSNumber(StaleDays()))), nil
 	}
 	repo := deref(c.Config().Repo)
 	for _, ref := range strsOf(rJSON(r, "refs")) {
@@ -315,7 +316,7 @@ func kbShape(ctx context.Context, c *Channel, r Row) (KBShape, error) {
 			hit = s
 		}
 	} else {
-		hit = jsfmt.UTF16Slice(rStr(r, "body"), 0, 200)
+		hit = jsscalar.UTF16Slice(rStr(r, "body"), 0, 200)
 	}
 	tags := strsOf(rJSON(r, "tags"))
 	if tags == nil {
@@ -369,7 +370,7 @@ func Recall(ctx context.Context, c *Channel, q string, o RecallOpts) ([]KBShape,
 		r["hit"] = k.Hit
 		list = append(list, recallRanked{row: r, rank: float64(i)})
 	}
-	trimmed := jsfmt.Trim(q)
+	trimmed := jsscalar.Trim(q)
 	if S := SharedOf(c); S != nil {
 		gone, err := sharedRetired(ctx, S)
 		if err != nil {
@@ -418,7 +419,7 @@ func Recall(ctx context.Context, c *Channel, q string, o RecallOpts) ([]KBShape,
 		}
 		if trimmed == "" {
 			slices.SortStableFunc(list, func(a, b recallRanked) int {
-				return jsfmt.LocaleCompare(rStr(b.row, "created_at"), rStr(a.row, "created_at"))
+				return jsscalar.LocaleCompare(rStr(b.row, "created_at"), rStr(a.row, "created_at"))
 			})
 		} else {
 			slices.SortStableFunc(list, func(a, b recallRanked) int {
@@ -467,7 +468,7 @@ func jsWords(s string) []string {
 	start, inSpace := 0, false
 	for i, r := range s {
 		switch {
-		case jsfmt.IsSpace(r):
+		case jsscalar.IsSpace(r):
 			if !inSpace {
 				out = append(out, s[start:i])
 				inSpace = true
@@ -659,7 +660,7 @@ func Remember(ctx context.Context, c *Channel, me string, k RememberArgs) (any, 
 	if k.Scope != "" && k.Scope != "channel" && k.Scope != "server" {
 		return nil, bad("scope: channel (default) or server (every channel on this server)")
 	}
-	if !k.Force && k.Supersedes == nil && jsfmt.Trim(k.Title) != "" && jsfmt.Trim(k.Body) != "" {
+	if !k.Force && k.Supersedes == nil && jsscalar.Trim(k.Title) != "" && jsscalar.Trim(k.Body) != "" {
 		d, err := Similar(ctx, c, k.Title, k.Body)
 		if err != nil {
 			return nil, err
@@ -693,10 +694,10 @@ func Remember(ctx context.Context, c *Channel, me string, k RememberArgs) (any, 
 	if !slices.Contains(KBKinds, k.Kind) {
 		return nil, bad("kind must be one of " + strings.Join(KBKinds, ", "))
 	}
-	if jsfmt.Trim(k.Title) == "" || jsfmt.Trim(k.Body) == "" {
+	if jsscalar.Trim(k.Title) == "" || jsscalar.Trim(k.Body) == "" {
 		return nil, bad("need title and body")
 	}
-	if jsfmt.UTF16Len(k.Body) > 50000 {
+	if jsscalar.UTF16Len(k.Body) > 50000 {
 		return nil, bad("body ≤ 50000 chars; link the rest with refs")
 	}
 	if k.Supersedes != nil {
@@ -726,7 +727,7 @@ func Remember(ctx context.Context, c *Channel, me string, k RememberArgs) (any, 
 		refs = []string{}
 	}
 	row, err := insertShared(ctx, S, sharedEntry{
-		by: me, kind: k.Kind, title: jsfmt.UTF16Slice(jsfmt.Trim(k.Title), 0, 200), body: jsfmt.Trim(k.Body),
+		by: me, kind: k.Kind, title: jsscalar.UTF16Slice(jsscalar.Trim(k.Title), 0, 200), body: jsscalar.Trim(k.Body),
 		tags: tags, refs: refs, supersedes: k.Supersedes, origin: c.Name, createdAt: c.nowISO(),
 	})
 	if err != nil {
@@ -952,7 +953,7 @@ func ExportMarkdown(ctx context.Context, c *Channel, o ExportOpts) (string, erro
 					refs = append(refs, x)
 				}
 			}
-			body := strings.Split(jsfmt.Trim(rStr(r, "body")), "\n")
+			body := strings.Split(jsscalar.Trim(rStr(r, "body")), "\n")
 			var tail []string
 			if len(refs) > 0 {
 				quoted := make([]string, len(refs))
@@ -974,7 +975,7 @@ func ExportMarkdown(ctx context.Context, c *Channel, o ExportOpts) (string, erro
 			L = append(L, line)
 			if len(body) > 1 {
 				for _, l := range body {
-					if jsfmt.Trim(l) != "" {
+					if jsscalar.Trim(l) != "" {
 						L = append(L, "  "+l)
 					} else {
 						L = append(L, "")

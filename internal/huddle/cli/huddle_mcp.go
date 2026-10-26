@@ -31,6 +31,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 	"github.com/MuhmdRaouf/huddle/internal/insights"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/routerd"
 )
 
@@ -111,7 +112,7 @@ func McpStdio(ctx context.Context, w *World, version string, stdin io.Reader, st
 			if at < 0 {
 				break
 			}
-			line := jsfmt.Trim(string(data[:at]))
+			line := jsscalar.Trim(string(data[:at]))
 			data = data[at+1:]
 			if line == "" {
 				continue
@@ -381,7 +382,7 @@ func (b *mcpBridge) exchange(ctx context.Context, s mcpState, sent *jsfmt.Value,
 func (b *mcpBridge) transportFailure(rawURL string, ms int, err error, reply func(string)) {
 	late := err != nil && mcpIsTimeout(err)
 	if late {
-		reply("huddle: no answer from " + rawURL + " within " + jsfmt.JSNumber(float64(ms)/1000) +
+		reply("huddle: no answer from " + rawURL + " within " + jsscalar.JSNumber(float64(ms)/1000) +
 			" s. Treat yourself as paused and retry.")
 		return
 	}
@@ -567,7 +568,7 @@ func (b *mcpBridge) outside(ctx context.Context, msg *jsfmt.Value) bool {
 
 // join runs the one tool that works outside a huddle: joining with an invite.
 func (b *mcpBridge) join(ctx context.Context, msg *jsfmt.Value, args *jsfmt.Value) {
-	host := jsfmt.Trim(mcpStringOf(mcpFieldOf(args, "host_port")))
+	host := jsscalar.Trim(mcpStringOf(mcpFieldOf(args, "host_port")))
 	rawURL := host
 	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
 		rawURL = "http://" + host
@@ -1402,7 +1403,7 @@ func mcpStringOf(v *jsfmt.Value) string {
 	case jsfmt.KindString:
 		return v.Text()
 	case jsfmt.KindNumber:
-		return jsfmt.JSNumber(mcpNumberOf(v))
+		return jsscalar.JSNumber(mcpNumberOf(v))
 	case jsfmt.KindBool:
 		return v.EncodeJSON()
 	default:

@@ -1,4 +1,4 @@
-package jsfmt
+package jsscalar
 
 import (
 	"math"

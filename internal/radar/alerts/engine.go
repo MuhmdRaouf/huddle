@@ -39,7 +39,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/budget"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 	"github.com/MuhmdRaouf/huddle/internal/radar/store"
@@ -551,7 +551,7 @@ func budgetAlerts(in AlertInput, t Thresholds) []shared.Alert {
 				action = "requests are stopped"
 			}
 		}
-		threshold := jsfmt.JSNumber(t.BudgetWarnPct)
+		threshold := jsscalar.JSNumber(t.BudgetWarnPct)
 		if over {
 			threshold = "100"
 		}
@@ -565,7 +565,7 @@ func budgetAlerts(in AlertInput, t Thresholds) []shared.Alert {
 			Detail: fmt.Sprintf("%s %s budget at %d%% ($%s of $%s), %s",
 				shared.ScopeLabel(spend.Scope), periodWord[spend.Period],
 				int64(math.Round(float64(spend.Pct))),
-				jsfmt.ToFixed(float64(spend.SpentUsd), 2), jsfmt.ToFixed(float64(spend.LimitUsd), 2),
+				jsscalar.ToFixed(float64(spend.SpentUsd), 2), jsscalar.ToFixed(float64(spend.LimitUsd), 2),
 				action),
 			CostUsd:  &cost,
 			Severity: shared.SeverityWarn,

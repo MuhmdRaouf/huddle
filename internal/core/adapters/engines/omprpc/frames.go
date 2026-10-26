@@ -12,10 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // Frame is a decoded frame: an object with a string type, otherwise opaque here.
@@ -147,7 +147,7 @@ func EncodeChunks(text, chunkID string) []string {
 		end := min((index+1)*chunkBytes, int64(len(data)))
 		var buf bytes.Buffer
 		buf.WriteString(`{"type":"rpc_chunk","chunkId":`)
-		jsfmt.WriteQuoted(&buf, chunkID)
+		jsscalar.WriteQuoted(&buf, chunkID)
 		buf.WriteString(`,"index":`)
 		buf.WriteString(strconv.FormatInt(index, 10))
 		buf.WriteString(`,"count":`)
@@ -155,7 +155,7 @@ func EncodeChunks(text, chunkID string) []string {
 		buf.WriteString(`,"byteLength":`)
 		buf.WriteString(strconv.FormatInt(int64(len(data)), 10))
 		buf.WriteString(`,"data":`)
-		jsfmt.WriteQuoted(&buf, base64.StdEncoding.EncodeToString(data[index*chunkBytes:end]))
+		jsscalar.WriteQuoted(&buf, base64.StdEncoding.EncodeToString(data[index*chunkBytes:end]))
 		buf.WriteByte('}')
 		out = append(out, buf.String())
 	}

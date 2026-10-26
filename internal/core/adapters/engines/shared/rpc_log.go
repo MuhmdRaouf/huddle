@@ -8,9 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"sync"
+
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // What an RPC engine's (omp's, pi's) attempt logs hold. Inbound frames are logged byte for byte,
@@ -44,7 +44,7 @@ func OutboundLogText(command json.RawMessage, promptRef string) string {
 	if commandType(command) == "prompt" {
 		var ref bytes.Buffer
 		ref.WriteString(`{"$ref":`)
-		jsfmt.WriteQuoted(&ref, promptRef)
+		jsscalar.WriteQuoted(&ref, promptRef)
 		ref.WriteByte('}')
 		return replaceField(command, "message", ref.Bytes())
 	}
@@ -122,9 +122,9 @@ func cutValue(value json.RawMessage) (json.RawMessage, bool) {
 	out.WriteString(`{"$truncated":`)
 	out.WriteString(strconv.Itoa(len(b)))
 	out.WriteString(`,"head":`)
-	jsfmt.WriteQuoted(&out, cutBytes(b, 0, LogKeep))
+	jsscalar.WriteQuoted(&out, cutBytes(b, 0, LogKeep))
 	out.WriteString(`,"tail":`)
-	jsfmt.WriteQuoted(&out, cutBytes(b, len(b)-LogKeep, len(b)))
+	jsscalar.WriteQuoted(&out, cutBytes(b, len(b)-LogKeep, len(b)))
 	out.WriteByte('}')
 	return out.Bytes(), true
 }
@@ -154,7 +154,7 @@ func replaceField(raw json.RawMessage, key string, replacement json.RawMessage) 
 		if out.Len() > 1 {
 			out.WriteByte(',')
 		}
-		jsfmt.WriteQuoted(&out, name)
+		jsscalar.WriteQuoted(&out, name)
 		out.WriteByte(':')
 		if name == key {
 			out.Write(replacement)
@@ -168,7 +168,7 @@ func replaceField(raw json.RawMessage, key string, replacement json.RawMessage) 
 		if out.Len() > 1 {
 			out.WriteByte(',')
 		}
-		jsfmt.WriteQuoted(&out, key)
+		jsscalar.WriteQuoted(&out, key)
 		out.WriteString(":")
 		out.Write(replacement)
 	}

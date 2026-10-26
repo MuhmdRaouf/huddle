@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // PushEscalatesAfter is how long an item may stay open before its one escalation push goes out.
@@ -161,8 +161,8 @@ func (d *DB) FreshPushItems(ctx context.Context, now time.Time) ([]Item, error) 
 		// a permission item whose prompt has expired or gone silent pushes nobody: the waiting
 		// is over even before the sweeper's pass withdraws the row
 		"AND (kind != ? OR (created_at >= ? AND COALESCE(last_poll_at, created_at) >= ?))",
-		[]any{KindPermission, jsfmt.ISOTime(now.Add(-PermissionExpiresAfter)),
-			jsfmt.ISOTime(now.Add(-PermissionSilentPollAfter))},
+		[]any{KindPermission, jsscalar.ISOTime(now.Add(-PermissionExpiresAfter)),
+			jsscalar.ISOTime(now.Add(-PermissionSilentPollAfter))},
 		"pushed_at IS NULL")
 }
 
@@ -173,7 +173,7 @@ func (d *DB) FreshPushItems(ctx context.Context, now time.Time) ([]Item, error) 
 func (d *DB) EscalatePushItems(ctx context.Context, now time.Time) ([]Item, error) {
 	return d.pushItems(ctx, now, "", nil,
 		"pushed_at IS NOT NULL AND escalated_at IS NULL AND created_at <= ?",
-		jsfmt.ISOTime(now.Add(-PushEscalatesAfter)))
+		jsscalar.ISOTime(now.Add(-PushEscalatesAfter)))
 }
 
 // pushItems answers the open items one push pass takes at now: open, past any snooze, the
@@ -184,7 +184,7 @@ func (d *DB) pushItems(ctx context.Context, now time.Time,
 		"FROM items WHERE state = 'open' " +
 		"AND (snoozed_until IS NULL OR snoozed_until <= ?) " + expiry +
 		" AND " + marks + " ORDER BY id"
-	params := append([]any{jsfmt.ISOTime(now)}, expiryArgs...)
+	params := append([]any{jsscalar.ISOTime(now)}, expiryArgs...)
 	params = append(params, markArgs...)
 	rows, err := d.st.All(ctx, query, params...)
 	if err != nil {

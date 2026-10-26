@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 	"github.com/MuhmdRaouf/huddle/internal/testkit"
@@ -29,7 +29,7 @@ var (
 )
 
 // isoTime renders a moment the way the hook stamps its lines.
-func isoTime(ms int64) string { return jsfmt.ISOTime(time.UnixMilli(ms)) }
+func isoTime(ms int64) string { return jsscalar.ISOTime(time.UnixMilli(ms)) }
 
 // newTestStore is a store whose clock stands still, so every read names its own moment.
 func newTestStore() *Store {

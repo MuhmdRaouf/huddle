@@ -5,7 +5,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
@@ -223,7 +223,7 @@ func ToolCounts(tools []*shared.ToolCallRecord) []ToolCountRow {
 		if a.Count != b.Count {
 			return cmp.Compare(b.Count, a.Count)
 		}
-		return jsfmt.LocaleCompare(a.Name, b.Name)
+		return jsscalar.LocaleCompare(a.Name, b.Name)
 	})
 	return rows
 }

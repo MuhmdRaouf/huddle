@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
@@ -27,7 +27,7 @@ func strp(s string) *string { return &s }
 
 func i64p(v int64) *int64 { return &v }
 
-func iso(ms int64) string { return jsfmt.ISOTime(time.UnixMilli(ms)) }
+func iso(ms int64) string { return jsscalar.ISOTime(time.UnixMilli(ms)) }
 
 // feedFile feeds one line: a raw string as it lay in the file, or a value marshalled to JSON.
 func feedFile(state *TranscriptState, raw any, file FileIdentity) TranscriptEmit {

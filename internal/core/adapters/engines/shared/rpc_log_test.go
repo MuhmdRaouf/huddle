@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // The omp and pi client tests cover the rpc-log helpers through their own shapes; these direct
@@ -396,9 +396,9 @@ func TestJSONStringLiteral(t *testing.T) {
 	}
 	for _, c := range cases {
 		var out bytes.Buffer
-		jsfmt.WriteQuoted(&out, c.text)
+		jsscalar.WriteQuoted(&out, c.text)
 		if out.String() != c.want {
-			t.Errorf("jsfmt.WriteQuoted(%q) = %s, want %s", c.text, out.String(), c.want)
+			t.Errorf("jsscalar.WriteQuoted(%q) = %s, want %s", c.text, out.String(), c.want)
 		}
 	}
 }

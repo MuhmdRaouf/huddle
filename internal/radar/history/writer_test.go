@@ -22,6 +22,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ingest"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -32,7 +33,7 @@ import (
 const writerT0 = int64(1_700_000_000_000)
 
 // writerISO renders epoch ms the way the transcripts and spool lines stamp their times.
-func writerISO(ms int64) string { return jsfmt.ISOTime(time.UnixMilli(ms)) }
+func writerISO(ms int64) string { return jsscalar.ISOTime(time.UnixMilli(ms)) }
 
 func kindPtrOf(kind shared.AgentKind) *shared.AgentKind { return &kind }
 func boolPtrOf(value bool) *bool                        { return &value }

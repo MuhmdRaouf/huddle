@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/budget"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -115,7 +115,7 @@ func num(value float64) string {
 	if value != math.Trunc(value) || math.IsInf(value, 0) || math.IsNaN(value) {
 		figure = math.Round(value*1e6) / 1e6
 	}
-	return jsfmt.JSNumber(figure)
+	return jsscalar.JSNumber(figure)
 }
 
 // tokenKinds maps the ledger's four counters to their label values, in the order the
@@ -212,7 +212,7 @@ func latencyFamily(input MetricsInput) metricFamily {
 				}
 			}
 			histogram.lines = append(histogram.lines, histogram.name+"_bucket"+
-				labels(labelPair{key: "provider", value: provider}, labelPair{key: "le", value: jsfmt.JSNumber(le)})+
+				labels(labelPair{key: "provider", value: provider}, labelPair{key: "le", value: jsscalar.JSNumber(le)})+
 				" "+strconv.Itoa(count))
 		}
 		histogram.lines = append(histogram.lines, histogram.name+"_bucket"+

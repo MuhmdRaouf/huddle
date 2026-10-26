@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
@@ -36,7 +36,7 @@ var contextSuffix = regexp.MustCompile(`\[[^\]]*\]$`)
 // NormalizeModel maps "zai/glm-5.3[1m]" to "glm-5.3": drop a provider prefix and a
 // context-window suffix, lowercased.
 func NormalizeModel(model string) string {
-	bare := contextSuffix.ReplaceAllString(jsfmt.Trim(model), "")
+	bare := contextSuffix.ReplaceAllString(jsscalar.Trim(model), "")
 	unprefixed := bare
 	if slash := strings.LastIndex(bare, "/"); slash >= 0 {
 		unprefixed = bare[slash+1:]

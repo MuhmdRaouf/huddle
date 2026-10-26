@@ -24,7 +24,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
 // asksItself reports whether Claude Code shows permission prompts in this mode. The default,
@@ -106,7 +106,7 @@ func Approve(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 		var output approveOutput
 		output.HookSpecificOutput.HookEventName = "PreToolUse"
 		output.HookSpecificOutput.PermissionDecision = "ask"
-		output.HookSpecificOutput.PermissionDecisionReason = jsfmt.UTF16Slice(reason, 0, 300)
+		output.HookSpecificOutput.PermissionDecisionReason = jsscalar.UTF16Slice(reason, 0, 300)
 		writeJSON(out, output)
 		return nil
 	})
