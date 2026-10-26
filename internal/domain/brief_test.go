@@ -55,9 +55,6 @@ var referenceProvider = DefineProvider(ProviderSpec{
 	WebSearchModel: strPtr("glm-5.3"),
 	Caveats:        []string{},
 	Router: ProviderRouter{
-		Port:          18787,
-		Label:         "dev.muhmdraouf.zai-router",
-		HealthPath:    "/zai-router/health",
 		ModelPrefixes: []string{"glm-"},
 	},
 })
@@ -89,9 +86,6 @@ var acmeProvider = DefineProvider(ProviderSpec{
 	Strip:       []string{"trace"},
 	Caveats:     []string{"acme ignores the trace field"},
 	Router: ProviderRouter{
-		Port:          18800,
-		Label:         "test.acme-router",
-		HealthPath:    "/acme-router/health",
 		ModelPrefixes: []string{"big-", "small-"},
 	},
 })

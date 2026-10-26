@@ -50,9 +50,6 @@ var Deepseek = domain.DefineProvider(domain.ProviderSpec{
 	Strip:       []string{"cache_control"},
 	Caveats:     []string{"DeepSeek ignores cache_control"},
 	Router: domain.ProviderRouter{
-		Port:          18789,
-		Label:         "com.muhmdraouf.deepseek-router",
-		HealthPath:    "/deepseek-router/health",
 		ModelPrefixes: []string{"deepseek-"},
 	},
 })

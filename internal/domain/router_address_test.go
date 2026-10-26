@@ -29,19 +29,3 @@ func TestHuddleRouterURL(t *testing.T) {
 		})
 	}
 }
-
-// TestRouterBaseURLIsHuddleRouterForEveryProvider pins the one address: every provider's setup
-// points the settings at huddle-router, whatever its own router port says (the old router code
-// still reads RouterPort until it is deleted).
-func TestRouterBaseURLIsHuddleRouterForEveryProvider(t *testing.T) {
-	zai := Provider{Name: "zai", Router: ProviderRouter{Port: 18787}}
-	kimi := Provider{Name: "kimi", Router: ProviderRouter{Port: 18788}}
-	for _, provider := range []Provider{zai, kimi} {
-		if got := RouterBaseURL(provider, EnvLookup{}); got != "http://127.0.0.1:18786" {
-			t.Errorf("RouterBaseURL(%s) = %q, want huddle-router's URL", provider.Name, got)
-		}
-	}
-	if got := RouterBaseURL(zai, EnvLookup{"HUDDLE_ROUTER_PORT": "19000"}); got != "http://127.0.0.1:19000" {
-		t.Errorf("RouterBaseURL(zai, override) = %q, want the overridden huddle-router URL", got)
-	}
-}

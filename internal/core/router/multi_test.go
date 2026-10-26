@@ -37,9 +37,6 @@ func kimiProvider() domain.Provider {
 		domain.ModelTierFlash: {Tier: domain.ModelTierFlash, ID: "kimi-flash", Label: "Kimi Flash"},
 	}
 	provider.Router = domain.ProviderRouter{
-		Port:          18788,
-		Label:         "dev.muhmdraouf.kimi-router",
-		HealthPath:    "/kimi-router/health",
 		ModelPrefixes: []string{"kimi-"},
 	}
 	return provider

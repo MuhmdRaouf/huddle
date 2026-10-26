@@ -63,9 +63,6 @@ func TestZaiIsCoresReferenceProvider(t *testing.T) {
 			WebSearchModel: strPtr("glm-5.3"),
 			Caveats:        []string{},
 			Router: domain.ProviderRouter{
-				Port:          18787,
-				Label:         "dev.muhmdraouf.zai-router",
-				HealthPath:    "/zai-router/health",
 				ModelPrefixes: []string{"glm-"},
 			},
 		})
@@ -73,7 +70,7 @@ func TestZaiIsCoresReferenceProvider(t *testing.T) {
 }
 
 func TestKimiIsTheDataKimiPluginCcShips(t *testing.T) {
-	t.Run("names its provider, models, endpoint, key variables, billing page, router port and the fields it strips", func(t *testing.T) {
+	t.Run("names its provider, models, endpoint, key variables, billing page and the fields it strips", func(t *testing.T) {
 		requireProvider(t, "kimi", Kimi, domain.Provider{
 			Name:         "kimi",
 			Display:      "Moonshot Kimi",
@@ -119,9 +116,6 @@ func TestKimiIsTheDataKimiPluginCcShips(t *testing.T) {
 			Strip:       []string{},
 			Caveats:     []string{},
 			Router: domain.ProviderRouter{
-				Port:          18788,
-				Label:         "com.muhmdraouf.kimi-router",
-				HealthPath:    "/kimi-router/health",
 				ModelPrefixes: []string{"kimi-"},
 			},
 		})
@@ -129,7 +123,7 @@ func TestKimiIsTheDataKimiPluginCcShips(t *testing.T) {
 }
 
 func TestDeepseekIsTheDataDeepseekPluginCcShips(t *testing.T) {
-	t.Run("names its provider, models, endpoint, key variables, billing page, router port and the fields it strips", func(t *testing.T) {
+	t.Run("names its provider, models, endpoint, key variables, billing page and the fields it strips", func(t *testing.T) {
 		requireProvider(t, "deepseek", Deepseek, domain.Provider{
 			Name:         "deepseek",
 			Display:      "DeepSeek",
@@ -178,9 +172,6 @@ func TestDeepseekIsTheDataDeepseekPluginCcShips(t *testing.T) {
 			Strip:       []string{"cache_control"},
 			Caveats:     []string{"DeepSeek ignores cache_control"},
 			Router: domain.ProviderRouter{
-				Port:          18789,
-				Label:         "com.muhmdraouf.deepseek-router",
-				HealthPath:    "/deepseek-router/health",
 				ModelPrefixes: []string{"deepseek-"},
 			},
 		})
@@ -188,7 +179,7 @@ func TestDeepseekIsTheDataDeepseekPluginCcShips(t *testing.T) {
 }
 
 func TestMinimaxIsTheDataMinimaxPluginCcShips(t *testing.T) {
-	t.Run("names its provider, models, endpoint, key variables, billing page, router port and the fields it strips", func(t *testing.T) {
+	t.Run("names its provider, models, endpoint, key variables, billing page and the fields it strips", func(t *testing.T) {
 		requireProvider(t, "minimax", Minimax, domain.Provider{
 			Name:         "minimax",
 			Display:      "MiniMax",
@@ -234,9 +225,6 @@ func TestMinimaxIsTheDataMinimaxPluginCcShips(t *testing.T) {
 			Strip:       []string{"context_management"},
 			Caveats:     []string{"MiniMax ignores context_management"},
 			Router: domain.ProviderRouter{
-				Port:          18790,
-				Label:         "com.muhmdraouf.minimax-router",
-				HealthPath:    "/minimax-router/health",
 				ModelPrefixes: []string{"MiniMax-"},
 			},
 		})
@@ -244,7 +232,7 @@ func TestMinimaxIsTheDataMinimaxPluginCcShips(t *testing.T) {
 }
 
 func TestQwenIsTheDataQwenPluginCcShips(t *testing.T) {
-	t.Run("names its provider, models, endpoint, key variables, billing page, router port and the fields it strips", func(t *testing.T) {
+	t.Run("names its provider, models, endpoint, key variables, billing page and the fields it strips", func(t *testing.T) {
 		requireProvider(t, "qwen", Qwen, domain.Provider{
 			Name:         "qwen",
 			Display:      "Alibaba Qwen",
@@ -291,9 +279,6 @@ func TestQwenIsTheDataQwenPluginCcShips(t *testing.T) {
 			Strip:       []string{"context_management"},
 			Caveats:     []string{"Qwen ignores context_management"},
 			Router: domain.ProviderRouter{
-				Port:          18791,
-				Label:         "com.muhmdraouf.qwen-router",
-				HealthPath:    "/qwen-router/health",
 				ModelPrefixes: []string{"qwen"},
 			},
 		})

@@ -60,13 +60,10 @@ type StateLayout struct {
 	SetupDone string
 	// Which delegation engines are enabled and who watches each.
 	Engines string
-	// Every change setup made outside the plugin, so the router can undo exactly those on
-	// uninstall.
+	// Every change setup made outside the plugin, so removal undoes exactly those.
 	Ledger string
 	// The ledger of a disabled plugin, kept for its re-enable.
 	DisabledLedger string
-	// The router's copied bundles, its package.json and its log.
-	RouterDir string
 	// The CLAUDE_CONFIG_DIR the claude worker runs with.
 	ClaudeHome string
 	// The adaptive concurrency limiter's shared state.
@@ -91,7 +88,6 @@ func EnginePidBeside(attemptLog string) string {
 
 // NewStateLayout lays out every file a plugin keeps under root.
 func NewStateLayout(root string) StateLayout {
-	routerDir := filepath.Join(root, "router")
 	jobs := filepath.Join(root, "jobs")
 	checkouts := filepath.Join(root, "checkouts")
 	return StateLayout{
@@ -100,7 +96,6 @@ func NewStateLayout(root string) StateLayout {
 		Engines:        filepath.Join(root, "engines.json"),
 		Ledger:         filepath.Join(root, "ledger.json"),
 		DisabledLedger: filepath.Join(root, "ledger.disabled.json"),
-		RouterDir:      routerDir,
 		ClaudeHome:     filepath.Join(root, "claude-home"),
 		Limiter:        filepath.Join(root, "limiter.json"),
 		Slots:          filepath.Join(root, "slots"),

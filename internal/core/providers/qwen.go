@@ -49,9 +49,6 @@ var Qwen = domain.DefineProvider(domain.ProviderSpec{
 	Strip:       []string{"context_management"},
 	Caveats:     []string{"Qwen ignores context_management"},
 	Router: domain.ProviderRouter{
-		Port:          18791,
-		Label:         "com.muhmdraouf.qwen-router",
-		HealthPath:    "/qwen-router/health",
 		ModelPrefixes: []string{"qwen"},
 	},
 })

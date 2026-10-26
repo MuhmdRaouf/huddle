@@ -290,9 +290,6 @@ func TestReferenceProvider(t *testing.T) {
 		if !slices.Equal(AcmeProvider.Caveats, []string{"acme ignores the trace field"}) {
 			t.Errorf("caveats = %v", AcmeProvider.Caveats)
 		}
-		if AcmeProvider.Router.Port != 18800 {
-			t.Errorf("router port = %d", AcmeProvider.Router.Port)
-		}
 	})
 
 	t.Run("acme worker shares no term with the claude worker", func(t *testing.T) {

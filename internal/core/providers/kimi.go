@@ -49,9 +49,6 @@ var Kimi = domain.DefineProvider(domain.ProviderSpec{
 	Strip:       []string{},
 	Caveats:     []string{},
 	Router: domain.ProviderRouter{
-		Port:          18788,
-		Label:         "com.muhmdraouf.kimi-router",
-		HealthPath:    "/kimi-router/health",
 		ModelPrefixes: []string{"kimi-"},
 	},
 })

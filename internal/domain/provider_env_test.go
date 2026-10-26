@@ -46,8 +46,8 @@ func TestResolveProvider(t *testing.T) {
 	})
 }
 
-// Direct rows for the provider's derived data and the router port/base-url helpers: no other
-// layer's tests reach them.
+// Direct rows for the provider's derived data and the base-url helper: no other layer's tests
+// reach them.
 func TestProviderDerivedData(t *testing.T) {
 	t.Run("defineProvider names the agents after the catalog's model ids", func(t *testing.T) {
 		want := map[ModelTier]string{ModelTierMain: "glm-5.3", ModelTierFlash: "glm-5.3-flash"}
@@ -57,27 +57,11 @@ func TestProviderDerivedData(t *testing.T) {
 	})
 
 	t.Run("routerEnvName appends the knob after the prefix", func(t *testing.T) {
-		if got := RouterEnvName(referenceProvider, RouterEnvKnobPort); got != "ZAI_ROUTER_PORT" {
-			t.Fatalf("port knob = %q", got)
-		}
 		if got := RouterEnvName(referenceProvider, RouterEnvKnobURL); got != "ZAI_ROUTER_URL" {
 			t.Fatalf("url knob = %q", got)
 		}
 		if got := RouterEnvName(referenceProvider, RouterEnvKnobAnthropicURL); got != "ZAI_ROUTER_ANTHROPIC_URL" {
 			t.Fatalf("anthropic url knob = %q", got)
-		}
-	})
-
-	t.Run("routerPort takes the env override, else the provider's port", func(t *testing.T) {
-		if got := RouterPort(referenceProvider, EnvLookup{}); got != 18787 {
-			t.Fatalf("default port = %d, want 18787", got)
-		}
-		if got := RouterPort(referenceProvider, EnvLookup{"ZAI_ROUTER_PORT": "19000"}); got != 19000 {
-			t.Fatalf("overridden port = %d, want 19000", got)
-		}
-		// Number("not-a-port") is NaN, and NaN || port is the provider's port.
-		if got := RouterPort(referenceProvider, EnvLookup{"ZAI_ROUTER_PORT": "not-a-port"}); got != 18787 {
-			t.Fatalf("invalid override = %d, want 18787", got)
 		}
 	})
 

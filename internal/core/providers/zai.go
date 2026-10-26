@@ -50,9 +50,6 @@ var Zai = domain.DefineProvider(domain.ProviderSpec{
 	WebSearchModel: strPtr("glm-5.3"),
 	Caveats:        []string{},
 	Router: domain.ProviderRouter{
-		Port:          18787,
-		Label:         "dev.muhmdraouf.zai-router",
-		HealthPath:    "/zai-router/health",
 		ModelPrefixes: []string{"glm-"},
 	},
 })

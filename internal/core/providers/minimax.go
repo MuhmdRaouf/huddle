@@ -50,9 +50,6 @@ var Minimax = domain.DefineProvider(domain.ProviderSpec{
 	Strip:       []string{"context_management"},
 	Caveats:     []string{"MiniMax ignores context_management"},
 	Router: domain.ProviderRouter{
-		Port:          18790,
-		Label:         "com.muhmdraouf.minimax-router",
-		HealthPath:    "/minimax-router/health",
 		ModelPrefixes: []string{"MiniMax-"},
 	},
 })

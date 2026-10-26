@@ -16,13 +16,6 @@ func HuddleRouterURL(env EnvLookup) string {
 	return fmt.Sprintf("http://127.0.0.1:%d", jsNumberOr(env["HUDDLE_ROUTER_PORT"], HuddleRouterPort))
 }
 
-// RouterPort is the port the router takes: `${envPrefix}_ROUTER_PORT`, else the provider's
-// router port. The override parses the way JS Number does, and Number(x) || port drops NaN and
-// 0 on the floor.
-func RouterPort(provider Provider, env EnvLookup) int {
-	return jsNumberOr(env[RouterEnvName(provider, RouterEnvKnobPort)], provider.Router.Port)
-}
-
 // RouterBaseURL is the router's base URL, the one ANTHROPIC_BASE_URL must point at: the one
 // huddle-router, for every provider.
 func RouterBaseURL(provider Provider, env EnvLookup) string {

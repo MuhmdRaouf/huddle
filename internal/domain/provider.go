@@ -15,16 +15,9 @@ type AuthStyle string
 
 const AuthBearer AuthStyle = "bearer"
 
-// ProviderRouter is this plugin's own router: its port, its legacy service label, its health
-// path, and the model prefixes it claims.
+// ProviderRouter is the part of huddle-router a provider names: the model prefixes its lane
+// claims.
 type ProviderRouter struct {
-	// The port the router takes when no env override names one.
-	Port int `json:"port"`
-	// zai keeps its historical `dev.muhmdraouf.zai-router`; new plugins use
-	// `com.muhmdraouf.<name>-router`.
-	Label string `json:"label"`
-	// The GET path answering `{"ok":true,"name":…,"provider":…}`.
-	HealthPath string `json:"healthPath"`
 	// A request whose model id starts with one of these goes to the provider; everything else to
 	// Anthropic untouched.
 	ModelPrefixes []string `json:"modelPrefixes"`
@@ -88,7 +81,7 @@ type Provider struct {
 	WebSearchModel *string `json:"webSearchModel,omitempty"`
 	// Model caveats brief writers must heed, one sentence each, printed in the brief template.
 	Caveats []string `json:"caveats"`
-	// This plugin's own router.
+	// This provider's lane in huddle-router: the model prefixes it claims.
 	Router ProviderRouter `json:"router"`
 }
 
@@ -117,13 +110,12 @@ func ModelEnvName(provider Provider, tier ModelTier) string {
 type RouterEnvKnob string
 
 const (
-	RouterEnvKnobPort         RouterEnvKnob = "PORT"
 	RouterEnvKnobURL          RouterEnvKnob = "URL"
 	RouterEnvKnobAnthropicURL RouterEnvKnob = "ANTHROPIC_URL"
 )
 
 // RouterEnvName is the env var the router service reads:
-// `${envPrefix}_ROUTER_PORT`, `_ROUTER_URL`, `_ROUTER_ANTHROPIC_URL`.
+// `${envPrefix}_ROUTER_URL`, `_ROUTER_ANTHROPIC_URL`.
 func RouterEnvName(provider Provider, knob RouterEnvKnob) string {
 	return provider.EnvPrefix + "_ROUTER_" + string(knob)
 }
@@ -154,9 +146,9 @@ func (e EnvLookup) value(name, fallback string) string {
 	return fallback
 }
 
-// ModelClaim says which model ids a provider's router takes: its resolved catalog ids (env
-// overrides included) and its prefixes. The one answer to "is this our model?" that the worker,
-// the front, the emergency passthrough and the peer registry all share.
+// ModelClaim says which model ids a provider's lane takes in huddle-router: its resolved catalog
+// ids (env overrides included) and its prefixes. The one answer to "is this our model?" the
+// router routes by.
 type ModelClaim struct {
 	IDs      []string `json:"ids"`
 	Prefixes []string `json:"prefixes"`

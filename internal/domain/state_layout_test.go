@@ -12,14 +12,13 @@ func TestStateLayout(t *testing.T) {
 	root := "/state"
 	layout := NewStateLayout(root)
 
-	t.Run("names the setup, engine, ledger and router files", func(t *testing.T) {
+	t.Run("names the setup, engine, ledger and job files", func(t *testing.T) {
 		want := StateLayout{
 			Root:           root,
 			SetupDone:      filepath.Join(root, "setup-done"),
 			Engines:        filepath.Join(root, "engines.json"),
 			Ledger:         filepath.Join(root, "ledger.json"),
 			DisabledLedger: filepath.Join(root, "ledger.disabled.json"),
-			RouterDir:      filepath.Join(root, "router"),
 			ClaudeHome:     filepath.Join(root, "claude-home"),
 			Limiter:        filepath.Join(root, "limiter.json"),
 			Slots:          filepath.Join(root, "slots"),

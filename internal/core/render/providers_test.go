@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -17,7 +16,7 @@ import (
 )
 
 // The five provider plugins side by side — the rules no single plugin can check alone (unique
-// ports, env prefixes, agent names, model prefixes that never claim another plugin's models) and
+// env prefixes, agent names, model prefixes that never claim another plugin's models) and
 // the price sheet each one's catalog must be on.
 
 // pluginsRoot is where the provider plugins' own directories sit, relative to this package: the
@@ -59,7 +58,7 @@ func TestProviderPluginsAreTheFive(t *testing.T) {
 	}
 }
 
-// They never share a name, port, env prefix, key variable, key file, state root, display name or
+// They never share a name, env prefix, key variable, key file, state root, display name or
 // agent.
 func TestProviderPluginsShareNothing(t *testing.T) {
 	list := pluginProviders(t)
@@ -76,8 +75,6 @@ func TestProviderPluginsShareNothing(t *testing.T) {
 	}
 	unique("name", func(p domain.Provider) []string { return []string{p.Name} })
 	unique("display name", func(p domain.Provider) []string { return []string{p.Display} })
-	unique("router port", func(p domain.Provider) []string { return []string{strconv.Itoa(p.Router.Port)} })
-	unique("router label", func(p domain.Provider) []string { return []string{p.Router.Label} })
 	unique("env prefix", func(p domain.Provider) []string { return []string{p.EnvPrefix} })
 	unique("key variable", func(p domain.Provider) []string { return p.KeyEnv })
 	unique("key file", func(p domain.Provider) []string { return []string{p.KeyFile} })

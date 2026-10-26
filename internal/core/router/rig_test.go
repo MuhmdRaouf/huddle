@@ -50,9 +50,6 @@ var routerProvider = domain.DefineProvider(domain.ProviderSpec{
 	// Z.ai's probe: the web_search server tool answers 500 on glm-5.3-flash and works on glm-5.3.
 	WebSearchModel: strPtrLocal("glm-5.3"),
 	Router: domain.ProviderRouter{
-		Port:          18787,
-		Label:         "dev.muhmdraouf.zai-router",
-		HealthPath:    "/zai-router/health",
 		ModelPrefixes: []string{"glm-"},
 	},
 })
