@@ -20,6 +20,7 @@ const MaxTextBytes = 1 << 20
 type Message struct {
 	SessionID string // the session's own id: Claude drops a line whose id is not its own
 	Text      string // the turn, non-empty
+	Token     string // the session's messaging token; set, an auth line goes first
 }
 
 // NoSocket says nothing listens at the socket path; it wraps the dial error.
@@ -55,14 +56,22 @@ type wireLine struct {
 	Message   wireMessage `json:"message"`
 }
 
+// wireAuthLine proves the poster holds the session's messaging token; it goes before the user
+// line whenever the post carries a token.
+type wireAuthLine struct {
+	Type  string `json:"type"`
+	Token string `json:"token"`
+}
+
 type wireMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
 // Post writes the message as one JSON line to the socket at path and closes the connection.
-// It returns nil once the line is written, *NoSocket when nothing listens at path, *TooLong
-// when the text is over the limit, and ctx's error when the write does not finish in time.
+// A message carrying a token writes its auth line first, in the same write. It returns nil
+// once the write is done, *NoSocket when nothing listens at path, *TooLong when the text is
+// over the limit, and ctx's error when the write does not finish in time.
 func Post(ctx context.Context, path string, m Message) error {
 	if m.SessionID == "" {
 		return &Invalid{Field: "SessionID"}
@@ -84,6 +93,20 @@ func Post(ctx context.Context, path string, m Message) error {
 	}
 	line = append(line, '\n')
 
+	// One write carries the auth line and the user line together, so a peeking reader never
+	// sees an authenticated-but-empty turn.
+	wire := line
+	if m.Token != "" {
+		auth, err := json.Marshal(wireAuthLine{Type: "auth", Token: m.Token})
+		if err != nil {
+			return fmt.Errorf("encode inbox auth line: %w", err)
+		}
+		auth = append(auth, '\n')
+		wire = make([]byte, 0, len(auth)+len(line))
+		wire = append(wire, auth...)
+		wire = append(wire, line...)
+	}
+
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", path)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -102,7 +125,7 @@ func Post(ctx context.Context, path string, m Message) error {
 		}
 		bounded = true
 	}
-	if _, err := conn.Write(line); err != nil {
+	if _, err := conn.Write(wire); err != nil {
 		// The write deadline was set from ctx, so its expiry is ctx's deadline, whichever
 		// timer was observed first.
 		if bounded && errors.Is(err, os.ErrDeadlineExceeded) {

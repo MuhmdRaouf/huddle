@@ -107,6 +107,55 @@ func TestPostWritesOneUserLine(t *testing.T) {
 	}
 }
 
+func TestPostSendsTheAuthLineFirst(t *testing.T) {
+	dir := tempSocketDir(t)
+	path, ln := listen(t, dir, "auth.sock")
+	accepted := acceptOnce(t, ln)
+
+	m := Message{SessionID: "5cfe8626-2c6f-4f0d-8ff8-4f7c4a3b9c01", Text: "carry on", Token: "tok-7d21"}
+	if err := Post(context.Background(), path, m); err != nil {
+		t.Fatalf("Post: %v", err)
+	}
+
+	var conn net.Conn
+	select {
+	case conn = <-accepted:
+		if conn == nil {
+			t.Fatal("the listener accepted no connection")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Post never dialled the socket")
+	}
+	defer conn.Close()
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+	data, err := io.ReadAll(conn)
+	if err != nil {
+		t.Fatalf("read the wire: %v", err)
+	}
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("the wire carries %d lines (%q), want the auth line then the user line", len(lines), data)
+	}
+	var auth struct {
+		Type  string `json:"type"`
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &auth); err != nil {
+		t.Fatalf("decode the first line %q: %v", lines[0], err)
+	}
+	if auth.Type != "auth" || auth.Token != m.Token {
+		t.Errorf("the first line = %q, want the auth line naming the session's token", lines[0])
+	}
+	var got wireLine
+	if err := json.Unmarshal([]byte(lines[1]), &got); err != nil {
+		t.Fatalf("decode the second line %q: %v", lines[1], err)
+	}
+	if got.Type != "user" || got.SessionID != m.SessionID || got.Message.Content != m.Text {
+		t.Errorf("the second line = %+v, want the user turn", got)
+	}
+}
+
 func TestPostAnswersNoSocketAsAValue(t *testing.T) {
 	dir := tempSocketDir(t)
 	path := filepath.Join(dir, "missing.sock")

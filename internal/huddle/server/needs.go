@@ -318,7 +318,14 @@ func (s *server) commandOfMember(ctx context.Context, channelName, member string
 // proof is fresh and its claude shows channel pushes (the push route the bridge turns into a
 // claude/channel notification), else left for the listen hook on the session's next prompt. The
 // route used is answered and marked on the row.
+// pushMessage carries one queued message the last mile and answers the route it took: through
+// the session's inbox socket (inbox, and held while the claude keeps the words for the owner's
+// approval in its terminal), through a channel push while the session's bridge proves its pushes
+// flow (now), and through the next prompt otherwise (next_prompt).
 func (s *server) pushMessage(ctx context.Context, id int64, in hub.MessageIn) string {
+	if route := s.postInbox(ctx, id, in); route != "" {
+		return route
+	}
 	row, err := s.registry.SessionRow(ctx, in.SessionID, s.now())
 	if err != nil || row == nil || row.DeliveryRoute != hub.RouteNow || row.Channel == "" || row.Member == "" {
 		return hub.RouteNextPrompt

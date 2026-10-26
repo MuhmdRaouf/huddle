@@ -194,6 +194,11 @@ composer says "Delivers now" for a session started with the flag, and "Delivers 
 prompt" for any other. Huddle never restarts a session or wraps `claude`; add the flag yourself
 when you want idle sessions to wake.
 
+A session on the hub's own machine gets the owner's message through its inbox socket first. Four
+routes answer an owner's message: `inbox` delivers at once through the session's inbox socket,
+`held` waits for your approval in the session's terminal and expires after 5 minutes, `now`
+arrives through the channel, and `next_prompt` arrives when you next prompt the session.
+
 ### Removing a channel
 
 Only the session that started Huddle may remove a channel:

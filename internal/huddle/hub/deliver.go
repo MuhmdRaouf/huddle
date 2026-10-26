@@ -1,8 +1,10 @@
 // The owner's words carried into a session (SPEC 6.3, 6.4): one queued row per session, headed
-// by who sent it, delivered through a channel push while the session's bridge proves its pushes
-// flow and its claude runs with the channels flag (route now), and otherwise taken by the listen
-// hook on the session's next prompt (route next_prompt). The registry row says which route a
-// message to the session would take.
+// by who sent it. Four delivery routes: posted through the session's inbox socket on the hub's
+// own machine (route inbox), the same post while the session's claude keeps the words for the
+// owner's approval in its terminal (route held), a channel push while the session's bridge
+// proves its pushes flow and its claude runs with the channels flag (route now), and otherwise
+// the listen hook takes it on the session's next prompt (route next_prompt). The registry row
+// says which route a message to the session would take.
 package hub
 
 import (
@@ -13,10 +15,12 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 )
 
-// The two delivery routes (SPEC 6.4), and the message senders: the owner, another session whose
+// The four delivery routes (SPEC 6.4), and the message senders: the owner, another session whose
 // words the owner passed on, or a channel a session is linked to (SPEC 8). A channel message's
 // FromName is <channel>/<member>.
 const (
+	RouteInbox      = "inbox"
+	RouteHeld       = "held"
 	RouteNow        = "now"
 	RouteNextPrompt = "next_prompt"
 	FromOwner       = "owner"
@@ -123,6 +127,14 @@ func (d *DB) TakeMessages(ctx context.Context, session, at string) ([]string, er
 func (d *DB) MarkDelivered(ctx context.Context, id int64, route, at string) error {
 	return d.st.Run(ctx,
 		"UPDATE messages SET state = 'delivered', route = ?, delivered_at = ? WHERE id = ?", route, at, id)
+}
+
+// MarkHeld records one message posted to an inbox socket whose session's claude keeps it for the
+// owner's approval in the terminal. A held row is out of the listen hook's hands: the claude
+// shows it itself, so no next prompt takes it a second time.
+func (d *DB) MarkHeld(ctx context.Context, id int64, at string) error {
+	return d.st.Run(ctx,
+		"UPDATE messages SET state = 'held', route = ?, delivered_at = ? WHERE id = ?", RouteInbox, at, id)
 }
 
 // PendingOf answers the messages still waiting on one channel member, oldest first: what a fresh

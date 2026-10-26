@@ -408,3 +408,26 @@ func TestMigrateRecordsEachStepAsItLands(t *testing.T) {
 		t.Errorf("schema_version after the resume = %v (%v), want %d", row, err, SchemaVersion)
 	}
 }
+
+func TestMarkHeldLeavesTheMessageOutOfTheNextPrompt(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	id, err := db.QueueMessage(ctx, MessageIn{SessionID: "s-h", FromKind: FromOwner, Text: "hold"}, "2026-10-16T09:00:00.000Z")
+	if err != nil {
+		t.Fatalf("queue: %v", err)
+	}
+	if err := db.MarkHeld(ctx, id, "2026-10-16T09:00:01.000Z"); err != nil {
+		t.Fatalf("hold: %v", err)
+	}
+	row, err := db.st.Get(ctx, "SELECT state, route, delivered_at FROM messages WHERE id = ?", id)
+	if err != nil || row == nil {
+		t.Fatalf("the row: %v %v", row, err)
+	}
+	if row["state"] != "held" || row["route"] != RouteInbox || row["delivered_at"] != "2026-10-16T09:00:01.000Z" {
+		t.Errorf("the held row = %v", row)
+	}
+	// a held message is the session's claude's to show, not the listen hook's to take again
+	if taken, _ := db.TakeMessages(ctx, "s-h", "2026-10-16T09:00:02.000Z"); len(taken) != 0 {
+		t.Errorf("a held message was taken on the next prompt: %q", taken)
+	}
+}
