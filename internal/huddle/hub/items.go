@@ -301,6 +301,12 @@ func RemoteAllow(patterns []string, tool, input string) (string, bool) {
 			return floorPath, false
 		}
 	}
+	// A question runs nothing: Claude asked, the owner picked. Its allow needs no list entry —
+	// the floors above still read its input, and the route reads the answers through
+	// AnswersFloor — so a question is admitted here, never smuggled past them.
+	if tool == "AskUserQuestion" {
+		return "", true
+	}
 	joined := JoinedInput(tool, input)
 	for _, pattern := range patterns {
 		if patternAllows(pattern, tool, joined) {

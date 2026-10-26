@@ -9,6 +9,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -153,6 +154,13 @@ func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id in
 	if decision != "allow" && decision != "deny" {
 		return &channel.HuddleError{Status: 400, Msg: "decision: allow or deny"}
 	}
+	answers, err := answersOfBody(body)
+	if err != nil {
+		return err
+	}
+	if decision == "deny" && len(answers) > 0 {
+		return &channel.HuddleError{Status: 400, Msg: "answers: only an allow takes answers"}
+	}
 	ctx := r.Context()
 	item, err := s.registry.PermissionItemByID(ctx, id, s.now())
 	if err != nil {
@@ -168,6 +176,13 @@ func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id in
 		if item.Truncated {
 			return &channel.HuddleError{Status: 409, Msg: "the input was cut; allow it in the terminal"}
 		}
+		if err := hub.CheckAnswers(item.Tool, item.Input, answers); err != nil {
+			var refused *hub.AnswersError
+			if !errors.As(err, &refused) {
+				return err
+			}
+			return &channel.HuddleError{Status: 400, Msg: refused.Msg}
+		}
 		if s.stepUp.Required(r, me) {
 			return &channel.HuddleError{Status: 401, Msg: "step-up required"}
 		}
@@ -180,6 +195,13 @@ func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id in
 		}
 		if reason, ok := hub.RemoteAllow(cfg.Remote.Allow, item.Tool, item.Input); !ok {
 			return &channel.HuddleError{Status: 403, Msg: reason}
+		}
+		if item.Tool == "AskUserQuestion" {
+			// the exemption that let the question past the list is on the audit row (SPEC 7.7),
+			// and the answers themselves still pass the path floor
+			if reason, ok := hub.AnswersFloor(answers); !ok {
+				return &channel.HuddleError{Status: 403, Msg: reason}
+			}
 		}
 	}
 	won, err := s.registry.DecidePermission(ctx, id, decision, textOf(fieldOf(body, "message")),
@@ -198,7 +220,13 @@ func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id in
 	} else if me.Browser != "" {
 		actor = me.Browser
 	}
-	if _, err := s.audit(ctx, actor, decision, strconv.FormatInt(id, 10), nil); err != nil {
+	var detail any
+	if decision == "allow" && item.Tool == "AskUserQuestion" {
+		detail = struct {
+			Exempt string `json:"exempt"`
+		}{"allow list: AskUserQuestion"}
+	}
+	if _, err := s.audit(ctx, actor, decision, strconv.FormatInt(id, 10), detail); err != nil {
 		return err
 	}
 	if decision == "allow" {
@@ -216,6 +244,27 @@ func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id in
 	// applies it there, under the machine's own switches
 	s.offerDecision(ctx, *item, decision, textOf(fieldOf(body, "message")))
 	return s.answerPermission(w, r, id)
+}
+
+// answersOfBody reads the decide body's answers: an object of question text to answer, each
+// answer one string. Any other shape refuses — the route never guesses what an owner meant.
+func answersOfBody(body *jsfmt.Value) (map[string]string, error) {
+	field := fieldOf(body, "answers")
+	if field == nil || field.Kind() == jsfmt.KindNull {
+		return nil, nil
+	}
+	if field.Kind() != jsfmt.KindObject {
+		return nil, &channel.HuddleError{Status: 400, Msg: "answers: an object of question text to answer"}
+	}
+	keys, fields := field.Keys(), field.Fields()
+	answers := make(map[string]string, len(keys))
+	for i, key := range keys {
+		if i >= len(fields) || fields[i] == nil || fields[i].Kind() != jsfmt.KindString {
+			return nil, &channel.HuddleError{Status: 400, Msg: "answers: an object of question text to answer"}
+		}
+		answers[key] = fields[i].Text()
+	}
+	return answers, nil
 }
 
 // permitWaitRoute is the hook's long poll (SPEC 6.2.1): it holds until the item is decided,

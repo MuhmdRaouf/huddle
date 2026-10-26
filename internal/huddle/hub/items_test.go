@@ -247,6 +247,34 @@ func TestDecidePermissionLetsTheFirstAnswerWin(t *testing.T) {
 	}
 }
 
+// TestRemoteAllowLetsAQuestionThroughTheList proves a question's exemption from the allow
+// list: a question runs nothing, so an empty list admits it where it refuses a Bash call,
+// while its input still answers to the path floor.
+func TestRemoteAllowLetsAQuestionThroughTheList(t *testing.T) {
+	question := `{"questions":[{"question":"Which database?","options":[{"label":"Postgres"},{"label":"SQLite"}]}]}`
+	gnupg := `{"questions":[{"question":"import the key in ~/.gnupg/pubring.kbx?"}]}`
+	cases := []struct {
+		name     string
+		patterns []string
+		tool     string
+		input    string
+		want     bool
+		reason   string // the exact refusal; "" when allowed
+	}{
+		{"an empty list still refuses a Bash call", nil, "Bash", `{"command":"npm test"}`, false, listMiss},
+		{"a question needs no list entry", nil, "AskUserQuestion", question, true, ""},
+		{"a question's .gnupg input keeps the path floor", nil, "AskUserQuestion", gnupg, false, floorPath},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reason, ok := RemoteAllow(tc.patterns, tc.tool, tc.input)
+			if ok != tc.want || reason != tc.reason {
+				t.Errorf("RemoteAllow(%q, %s, …) = (%q, %v), want (%q, %v)", tc.patterns, tc.tool, reason, ok, tc.reason, tc.want)
+			}
+		})
+	}
+}
+
 func TestSnoozeHoldsAndDismissDropsAPermissionItem(t *testing.T) {
 	db := openForTest(t)
 	ctx := context.Background()
