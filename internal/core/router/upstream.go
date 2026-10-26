@@ -43,8 +43,8 @@ type ProxyEnv = netproxy.Env
 // Anthropic-shaped 413.
 const BodyLimitBytes int64 = 64 * 1024 * 1024
 
-// TokenHeader is the header carrying the pid file's token on a control call to a front or an
-// emergency passthrough.
+// TokenHeader is the header name reserved for a front's token; UpstreamHeaders strips it, so a
+// token never reaches an upstream.
 const TokenHeader = "x-provider-router-token"
 
 // InspectLimitBytes is the most of an answer an inspection may hold back before deciding; a longer
@@ -259,14 +259,9 @@ func ReadBody(req *http.Request, limit int64) ([]byte, error) {
 }
 
 // RefuseHost is the Host check every router server runs first (DNS rebinding): true, after
-// answering 421, when the request does not name one of the ports as 127.0.0.1 or localhost.
-func RefuseHost(req *http.Request, res *Response, name string, ports []int) bool {
-	for _, port := range ports {
-		host := fmt.Sprintf("127.0.0.1:%d", port)
-		if req.Host == host {
-			return false
-		}
-		host = fmt.Sprintf("localhost:%d", port)
+// answering 421, when the request does not name the port as 127.0.0.1 or localhost.
+func RefuseHost(req *http.Request, res *Response, name string, port int) bool {
+	for _, host := range []string{fmt.Sprintf("127.0.0.1:%d", port), fmt.Sprintf("localhost:%d", port)} {
 		if req.Host == host {
 			return false
 		}

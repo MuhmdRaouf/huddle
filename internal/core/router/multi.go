@@ -39,9 +39,6 @@ const GatewayPrefix = "/gateway"
 type MultiOptions struct {
 	// Port is the canonical port the base URL names; 0 takes any Host (tests).
 	Port int
-	// ExtraPorts are the loopback ports this daemon also serves — the 0.0.1 ones it adopted —
-	// and their Hosts pass the same guard the canonical one does.
-	ExtraPorts []int
 	// Anthropic is where every request for a model no lane claims goes, unchanged.
 	Anthropic *url.URL
 	// Lanes is one entry per enabled provider; Port, Token and Peers are ignored.
@@ -72,9 +69,6 @@ type MultiOptions struct {
 type Multi struct {
 	// o is what the router was built with: Reload builds fresh lanes with the same plugs.
 	o MultiOptions
-	// hostPorts is every loopback port a request's Host may name: the canonical one and the
-	// adopted 0.0.1 ones; nil is any Host.
-	hostPorts []int
 	// lanes is the immutable set of provider lanes in force; Reload swaps it, and every
 	// request reads it once.
 	lanes     atomic.Pointer[multiLanes]
@@ -105,9 +99,6 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 		note = func(string) {}
 	}
 	m := &Multi{o: opts, limit: limit, gateway: opts.Gateway, streak: &FailStreak{}}
-	if opts.Port != 0 {
-		m.hostPorts = append([]int{opts.Port}, opts.ExtraPorts...)
-	}
 	m.lanes.Store(&multiLanes{lanes: m.buildLanes(opts.Lanes)})
 	// The Anthropic lane claims nothing, so its requests always take the Anthropic route, and it
 	// never reads a key (there is none to read).
@@ -144,7 +135,7 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 			return
 		}
 		res := NewResponse(rw)
-		if m.hostPorts != nil && RefuseHost(req, res, MultiName, m.hostPorts) {
+		if m.o.Port != 0 && RefuseHost(req, res, MultiName, m.o.Port) {
 			return
 		}
 		// The mounted gateway answers its own paths, and adds no key: the client's credentials

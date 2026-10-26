@@ -1279,12 +1279,12 @@ func TestReceive(t *testing.T) {
 
 func TestRefuseHost(t *testing.T) {
 	t.Parallel()
-	t.Run("lets a request that names one of the ports as 127.0.0.1 or localhost through", func(t *testing.T) {
-		for _, host := range []string{"127.0.0.1:18787", "localhost:18788"} {
+	t.Run("lets a request that names the port as 127.0.0.1 or localhost through", func(t *testing.T) {
+		for _, host := range []string{"127.0.0.1:18786", "localhost:18786"} {
 			request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:1/x", nil)
 			request.Host = host
 			recorder := httptest.NewRecorder()
-			if RefuseHost(request, NewResponse(recorder), "zai", []int{18787, 18788}) {
+			if RefuseHost(request, NewResponse(recorder), "zai", 18786) {
 				t.Errorf("Host %q must pass", host)
 			}
 			if recorder.Body.Len() != 0 {
@@ -1293,17 +1293,19 @@ func TestRefuseHost(t *testing.T) {
 		}
 	})
 	t.Run("answers 421 for any other Host", func(t *testing.T) {
-		request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:1/x", nil)
-		request.Host = "evil.example:1"
-		recorder := httptest.NewRecorder()
-		if !RefuseHost(request, NewResponse(recorder), "zai", []int{18787}) {
-			t.Fatal("the request must be refused")
-		}
-		if recorder.Code != 421 {
-			t.Errorf("code = %d, want 421", recorder.Code)
-		}
-		if want := `{"type":"error","error":{"type":"invalid_request_error","message":"zai router: wrong Host"}}`; recorder.Body.String() != want {
-			t.Errorf("body = %s, want %s", recorder.Body.String(), want)
+		for _, host := range []string{"127.0.0.1:18787", "evil.example:1"} {
+			request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:1/x", nil)
+			request.Host = host
+			recorder := httptest.NewRecorder()
+			if !RefuseHost(request, NewResponse(recorder), "zai", 18786) {
+				t.Fatalf("Host %q must be refused", host)
+			}
+			if recorder.Code != 421 {
+				t.Errorf("Host %q: code = %d, want 421", host, recorder.Code)
+			}
+			if want := `{"type":"error","error":{"type":"invalid_request_error","message":"zai router: wrong Host"}}`; recorder.Body.String() != want {
+				t.Errorf("Host %q: body = %s, want %s", host, recorder.Body.String(), want)
+			}
 		}
 	})
 }
