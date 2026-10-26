@@ -1355,6 +1355,10 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.agentConversationRoute(w, r, path)
 	case credentialed && sessionTasksPath.MatchString(path) && r.Method == http.MethodGet:
 		return s.sessionTasksRoute(w, r, path)
+	case credentialed && agentShellsPath.MatchString(path) && r.Method == http.MethodGet:
+		return s.agentShellsRoute(w, r, path)
+	case credentialed && agentShellOutputPath.MatchString(path) && r.Method == http.MethodGet:
+		return s.agentShellOutputRoute(w, r, path)
 	case credentialed && path == "/api/send" && r.Method == http.MethodPost:
 		return s.sendRoute(w, r, me)
 	// links (SPEC 8): the tie itself owes the step-up like a send, its level move and its read do
