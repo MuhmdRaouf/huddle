@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -36,23 +37,56 @@ const MaxText = 4096
 // that takes it past this, so one huge line is still read whole.
 const MaxRead = 1 << 20
 
+// MaxHunkLines is the most hunk lines one answer's facts keep in all; past it the remaining
+// lines and hunks go and the facts are marked Cut.
+const MaxHunkLines = 400
+
 // Item is one conversation item.
 type Item struct {
-	ID         string `json:"id"` // "<line uuid>:<block index>", stable across reads
-	Kind       string `json:"kind"`
-	At         string `json:"at"` // the line's timestamp as Claude Code wrote it
-	Text       string `json:"text,omitempty"`
-	DurationMS int64  `json:"duration_ms,omitempty"` // the line's thinkingDurationMs, thinking items only
-	Tool       string `json:"tool,omitempty"`
-	ToolUseID  string `json:"tool_use_id,omitempty"`
-	Input      string `json:"input,omitempty"` // a tool call's input as compact JSON
-	IsError    bool   `json:"is_error,omitempty"`
-	Cut        bool   `json:"cut,omitempty"`
-	Parent     string `json:"parent,omitempty"`     // the line's parentUuid, on file items, so a view joins a file to its prompt
-	Path       string `json:"path,omitempty"`       // a file item's displayPath
-	Lines      int    `json:"lines,omitempty"`      // a file item's totalLines, else numLines
-	MediaType  string `json:"media_type,omitempty"` // an image item's source media type
-	Bytes      int    `json:"bytes,omitempty"`      // an image item's decoded size, from the base64 length alone
+	ID         string     `json:"id"` // "<line uuid>:<block index>", stable across reads
+	Kind       string     `json:"kind"`
+	At         string     `json:"at"` // the line's timestamp as Claude Code wrote it
+	Text       string     `json:"text,omitempty"`
+	DurationMS int64      `json:"duration_ms,omitempty"` // the line's thinkingDurationMs, thinking items only
+	Tool       string     `json:"tool,omitempty"`
+	ToolUseID  string     `json:"tool_use_id,omitempty"`
+	Input      string     `json:"input,omitempty"` // a tool call's input as compact JSON
+	IsError    bool       `json:"is_error,omitempty"`
+	Result     *ToolFacts `json:"result,omitempty"` // what the tool did, on tool_result items
+	Cut        bool       `json:"cut,omitempty"`
+	Parent     string     `json:"parent,omitempty"`     // the line's parentUuid, on file items, so a view joins a file to its prompt
+	Path       string     `json:"path,omitempty"`       // a file item's displayPath
+	Lines      int        `json:"lines,omitempty"`      // a file item's totalLines, else numLines
+	MediaType  string     `json:"media_type,omitempty"` // an image item's source media type
+	Bytes      int        `json:"bytes,omitempty"`      // an image item's decoded size, from the base64 length alone
+}
+
+// ToolFacts is what a tool call did, from the transcript's toolUseResult.
+type ToolFacts struct {
+	ExitCode     *int     `json:"exit_code,omitempty"` // from an error result's "Exit code N"
+	Stderr       string   `json:"stderr,omitempty"`    // cut to MaxText
+	Interrupted  bool     `json:"interrupted,omitempty"`
+	BackgroundID string   `json:"background_id,omitempty"`
+	FilePath     string   `json:"file_path,omitempty"` // Edit and Write
+	Hunks        []Hunk   `json:"hunks,omitempty"`
+	Answers      []Answer `json:"answers,omitempty"` // AskUserQuestion, in question order
+	Cut          bool     `json:"cut,omitempty"`     // stderr or the hunks were cut
+}
+
+// Hunk is one changed region of a file.
+type Hunk struct {
+	OldStart int      `json:"old_start"`
+	OldLines int      `json:"old_lines"`
+	NewStart int      `json:"new_start"`
+	NewLines int      `json:"new_lines"`
+	Lines    []string `json:"lines"` // each line keeps its " ", "-" or "+" prefix
+}
+
+// Answer is one question the owner answered and the answer given.
+type Answer struct {
+	Header   string `json:"header,omitempty"`
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
 }
 
 // Page is one read: the items of the complete lines read, and the offset the next read starts at.
@@ -74,11 +108,41 @@ type transcriptLine struct {
 	ThinkingDurationMS int64           `json:"thinkingDurationMs"` // the line's thinking time, in ms
 	IsSidechain        bool            `json:"isSidechain"`
 	IsMeta             bool            `json:"isMeta"`
+	ToolUseResult      json.RawMessage `json:"toolUseResult"` // what a tool did, beside its tool_result block
 	Attachment         json.RawMessage `json:"attachment"`
 	Message            struct {
 		Role    string          `json:"role"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
+}
+
+// toolUseResult is a user line's toolUseResult decoded: what the tool did. The fields the reader
+// never serves — a command's stdout, an edit's old and new text and the file it replaced, a
+// question's options — are left out of the decode, so they cannot reach an item.
+type toolUseResult struct {
+	Stderr          string            `json:"stderr"`
+	Interrupted     bool              `json:"interrupted"`
+	BackgroundID    string            `json:"backgroundTaskId"`
+	FilePath        string            `json:"filePath"`
+	StructuredPatch []structuredHunk  `json:"structuredPatch"`
+	Questions       []askedQuestion   `json:"questions"`
+	Answers         map[string]string `json:"answers"` // each answer keyed by its question's text
+}
+
+// structuredHunk is one region an edit changed, its lines each keeping their " ", "-" or "+"
+// prefix.
+type structuredHunk struct {
+	OldStart int      `json:"oldStart"`
+	OldLines int      `json:"oldLines"`
+	NewStart int      `json:"newStart"`
+	NewLines int      `json:"newLines"`
+	Lines    []string `json:"lines"`
+}
+
+// askedQuestion is one question an AskUserQuestion call asked.
+type askedQuestion struct {
+	Question string `json:"question"`
+	Header   string `json:"header"`
 }
 
 // contentBlock is one content block: text carries words, thinking carries the assistant's
@@ -221,6 +285,7 @@ func userItems(line transcriptLine) []Item {
 		return nil
 	}
 	var items []Item
+	factsServed := false // the line's toolUseResult belongs to its first tool_result block alone
 	for i, block := range blocks {
 		switch block.Type {
 		case "text":
@@ -231,7 +296,12 @@ func userItems(line transcriptLine) []Item {
 		case "image":
 			items = append(items, imageItem(line, i, block))
 		case "tool_result":
-			items = append(items, resultItem(line, i, block))
+			item := resultItem(line, i, block)
+			if !factsServed {
+				factsServed = true
+				item.Result = resultFacts(line.ToolUseResult, block)
+			}
+			items = append(items, item)
 		}
 	}
 	return items
@@ -388,6 +458,85 @@ func resultText(raw json.RawMessage) string {
 		}
 	}
 	return strings.Join(texts, "\n")
+}
+
+// resultFacts answers what a tool call did, from the toolUseResult beside its tool_result block:
+// a failed command's exit code and stderr, whether it was interrupted, a background command's id,
+// an edit's file and hunks, the answers an AskUserQuestion call was given. A toolUseResult that
+// is absent, not an object, or of a shape naming no fact answers nil.
+func resultFacts(raw json.RawMessage, block contentBlock) *ToolFacts {
+	var decoded toolUseResult
+	if len(raw) == 0 || json.Unmarshal(raw, &decoded) != nil {
+		return nil
+	}
+	facts := &ToolFacts{}
+	if block.IsError {
+		if code, ok := exitCodeOf(resultText(block.Content)); ok {
+			facts.ExitCode = &code
+		}
+	}
+	hunks, hunksCut := hunksOf(decoded.StructuredPatch)
+	facts.Hunks = hunks
+	facts.Stderr, facts.Cut = cut(decoded.Stderr)
+	facts.Cut = facts.Cut || hunksCut
+	facts.Interrupted = decoded.Interrupted
+	facts.BackgroundID = decoded.BackgroundID
+	facts.FilePath = decoded.FilePath
+	for _, asked := range decoded.Questions {
+		answer, ok := decoded.Answers[asked.Question]
+		if !ok {
+			continue
+		}
+		facts.Answers = append(facts.Answers, Answer{Header: asked.Header, Question: asked.Question, Answer: answer})
+	}
+	if facts.ExitCode == nil && facts.Stderr == "" && !facts.Interrupted && facts.BackgroundID == "" &&
+		facts.FilePath == "" && len(facts.Hunks) == 0 && len(facts.Answers) == 0 {
+		return nil
+	}
+	return facts
+}
+
+// hunksOf answers an edit's structured patch as hunks, keeping hunk lines in order while they in
+// all stay within MaxHunkLines: the hunk that crosses the limit keeps only its first lines up to
+// it, every hunk after it goes, and the answer is marked cut.
+func hunksOf(patch []structuredHunk) ([]Hunk, bool) {
+	hunks := make([]Hunk, 0, len(patch))
+	lines := 0
+	cut := false
+	for _, hunk := range patch {
+		room := MaxHunkLines - lines
+		if room <= 0 {
+			cut = true
+			break
+		}
+		if len(hunk.Lines) > room {
+			hunk.Lines = hunk.Lines[:room]
+			cut = true
+		}
+		lines += len(hunk.Lines)
+		hunks = append(hunks, Hunk(hunk))
+	}
+	if len(hunks) == 0 {
+		return nil, cut
+	}
+	return hunks, cut
+}
+
+// exitCodeRe matches a failed answer's "Exit code N", anchoring at the text's start, so only the
+// first line can match.
+var exitCodeRe = regexp.MustCompile(`^Exit code (\d+)`)
+
+// exitCodeOf answers the exit code a failed answer's text names, from the text's first line.
+func exitCodeOf(text string) (int, bool) {
+	match := exitCodeRe.FindStringSubmatch(text)
+	if match == nil {
+		return 0, false
+	}
+	code, err := strconv.Atoi(match[1])
+	if err != nil {
+		return 0, false
+	}
+	return code, true
 }
 
 // cut keeps at most MaxText bytes of s, never splitting a rune, and says whether it did.

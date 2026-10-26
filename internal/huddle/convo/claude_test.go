@@ -12,6 +12,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -20,8 +22,9 @@ import (
 // fixtureItems is what the committed fixture yields, in order: the summary, sidechain, meta and
 // broken lines yield nothing, each thinking block yields its thinking item with the line's
 // duration when the line names one, the 5000-é text is cut to 2048 whole characters, which are
-// exactly MaxText bytes, and the prompt's image and attached files come out as references
-// beside it while the paste attachment yields nothing.
+// exactly MaxText bytes, the prompt's image and attached files come out as references
+// beside it while the paste attachment yields nothing, and each tool answer carries the facts
+// its line's toolUseResult names.
 func fixtureItems() []Item {
 	return []Item{
 		{ID: "u1:0", Kind: KindUser, At: "2026-10-26T10:00:01.000Z", Text: "run the tests"},
@@ -37,8 +40,36 @@ func fixtureItems() []Item {
 		{ID: "u6:1", Kind: KindImage, At: "2026-10-26T10:00:09.000Z", MediaType: "image/png", Bytes: 5},
 		{ID: "f1:0", Kind: KindFile, At: "2026-10-26T10:00:10.000Z", Parent: "u6", Path: "spec.md", Lines: 2, Text: "line one\nline two\n"},
 		{ID: "f2:0", Kind: KindFile, At: "2026-10-26T10:00:11.000Z", Parent: "f1", Path: "notes.log"},
+		{ID: "a6:0", Kind: KindToolUse, At: "2026-10-26T10:00:13.000Z", Tool: "Bash", ToolUseID: "toolu_3", Input: `{"command":"go test ./..."}`},
+		{ID: "u7:0", Kind: KindToolResult, At: "2026-10-26T10:00:14.000Z", ToolUseID: "toolu_3", IsError: true,
+			Text:   "Exit code 2\nFAIL example.com/pkg\n",
+			Result: &ToolFacts{ExitCode: intPtr(2), Stderr: "FAIL example.com/pkg\n"}},
+		{ID: "a7:0", Kind: KindToolUse, At: "2026-10-26T10:00:15.000Z", Tool: "Bash", ToolUseID: "toolu_4", Input: `{"command":"bun run dev","run_in_background":true}`},
+		{ID: "u8:0", Kind: KindToolResult, At: "2026-10-26T10:00:16.000Z", ToolUseID: "toolu_4", Text: "dev server up\n",
+			Result: &ToolFacts{BackgroundID: "b04niotyy"}},
+		{ID: "a8:0", Kind: KindToolUse, At: "2026-10-26T10:00:17.000Z", Tool: "Edit", ToolUseID: "toolu_5", Input: `{"file_path":"/abs/a.go","old_string":"keep me","new_string":"kept"}`},
+		{ID: "u9:0", Kind: KindToolResult, At: "2026-10-26T10:00:18.000Z", ToolUseID: "toolu_5", Text: "The file /abs/a.go has been updated.",
+			Result: &ToolFacts{
+				FilePath: "/abs/a.go",
+				Hunks: []Hunk{
+					{OldStart: 10, OldLines: 3, NewStart: 10, NewLines: 4, Lines: []string{" keep", "-old", "+new", "+added", " keep"}},
+					{OldStart: 40, OldLines: 2, NewStart: 41, NewLines: 2, Lines: []string{" keep", "+grown"}},
+				},
+			}},
+		{ID: "a9:0", Kind: KindToolUse, At: "2026-10-26T10:00:19.000Z", Tool: "AskUserQuestion", ToolUseID: "toolu_6",
+			Input: `{"questions":[{"question":"Which port?","header":"Port","multiSelect":false,"options":[{"label":"A","description":"first"},{"label":"B","description":"second"}]},{"question":"Ship now?","header":"Ship","multiSelect":false,"options":[{"label":"yes","description":"now"}]}]}`},
+		{ID: "u10:0", Kind: KindToolResult, At: "2026-10-26T10:00:20.000Z", ToolUseID: "toolu_6", Text: "The user answered the questions.",
+			Result: &ToolFacts{
+				Answers: []Answer{
+					{Header: "Port", Question: "Which port?", Answer: "A"},
+					{Header: "Ship", Question: "Ship now?", Answer: "yes"},
+				},
+			}},
 	}
 }
+
+// intPtr answers a pointer to n, for facts that carry an exit code only when one is named.
+func intPtr(n int) *int { return &n }
 
 func fixturePath(t *testing.T) string {
 	t.Helper()
@@ -51,10 +82,23 @@ func checkItems(t *testing.T, got, want []Item) {
 		t.Fatalf("got %d items, want %d:\n%+v", len(got), len(want), got)
 	}
 	for i := range want {
-		if got[i] != want[i] {
+		if !sameItem(got[i], want[i]) {
 			t.Errorf("item %d:\ngot  %+v\nwant %+v", i, got[i], want[i])
 		}
 	}
+}
+
+// sameItem answers whether two items are the same: the rest compares with ==, while the facts
+// compare by value, since ToolFacts carries slices and each expected item holds its own copy.
+func sameItem(got, want Item) bool {
+	if (got.Result == nil) != (want.Result == nil) {
+		return false
+	}
+	if got.Result != nil && !reflect.DeepEqual(*got.Result, *want.Result) {
+		return false
+	}
+	got.Result, want.Result = nil, nil
+	return got == want
 }
 
 func TestTheReaderAnswersTheConversationItems(t *testing.T) {
@@ -373,5 +417,159 @@ func TestTheFileItemCountsTheLinesTheReadNames(t *testing.T) {
 	checkItems(t, page.Items, []Item{
 		{ID: "f1:0", Kind: KindFile, At: "2026-10-26T10:00:01.000Z", Parent: "u1", Path: "spec.md", Lines: 9, Text: "line one\n"},
 		{ID: "f2:0", Kind: KindFile, At: "2026-10-26T10:00:01.000Z", Parent: "u1", Path: "spec.md", Lines: 3, Text: "line one\n"},
+	})
+}
+
+func TestTheReaderCutsHunksPastMaxHunkLines(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "claude.jsonl")
+	hunkJSON := func(oldStart, newStart, count int) string {
+		return fmt.Sprintf(`{"oldStart":%d,"oldLines":%d,"newStart":%d,"newLines":%d,"lines":%s}`,
+			oldStart, count, newStart, count, quotedHunkLines(count))
+	}
+	editLine := func(uuid, patch string) string {
+		return fmt.Sprintf(`{"type":"user","uuid":%q,"timestamp":"2026-10-26T10:00:01.000Z","toolUseResult":{"filePath":"/abs/big.go","structuredPatch":[%s]},"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"updated"}]}}`,
+			uuid, patch)
+	}
+	body := strings.Join([]string{
+		editLine("e1", hunkJSON(1, 1, 500)),                             // one hunk of 500 lines: its first 400 stay and the facts are marked
+		editLine("e2", hunkJSON(1, 1, 300)+","+hunkJSON(100, 101, 300)), // the first stays whole and the second keeps its first 100
+		editLine("e3", hunkJSON(1, 1, 400)+","+hunkJSON(100, 101, 1)),   // the limit filled: the second hunk goes and the facts are marked
+		editLine("e4", hunkJSON(1, 1, 400)),                             // exactly 400: the hunk stays whole, unmarked
+	}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := Read(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("read the transcript: %v", err)
+	}
+	checkItems(t, page.Items, []Item{
+		{ID: "e1:0", Kind: KindToolResult, At: "2026-10-26T10:00:01.000Z", ToolUseID: "toolu_1", Text: "updated",
+			Result: &ToolFacts{
+				FilePath: "/abs/big.go",
+				Hunks:    []Hunk{{OldStart: 1, OldLines: 500, NewStart: 1, NewLines: 500, Lines: keptHunkLines(400)}},
+				Cut:      true,
+			}},
+		{ID: "e2:0", Kind: KindToolResult, At: "2026-10-26T10:00:01.000Z", ToolUseID: "toolu_1", Text: "updated",
+			Result: &ToolFacts{
+				FilePath: "/abs/big.go",
+				Hunks: []Hunk{
+					{OldStart: 1, OldLines: 300, NewStart: 1, NewLines: 300, Lines: keptHunkLines(300)},
+					{OldStart: 100, OldLines: 300, NewStart: 101, NewLines: 300, Lines: keptHunkLines(100)},
+				},
+				Cut: true,
+			}},
+		{ID: "e3:0", Kind: KindToolResult, At: "2026-10-26T10:00:01.000Z", ToolUseID: "toolu_1", Text: "updated",
+			Result: &ToolFacts{
+				FilePath: "/abs/big.go",
+				Hunks:    []Hunk{{OldStart: 1, OldLines: 400, NewStart: 1, NewLines: 400, Lines: keptHunkLines(400)}},
+				Cut:      true,
+			}},
+		{ID: "e4:0", Kind: KindToolResult, At: "2026-10-26T10:00:01.000Z", ToolUseID: "toolu_1", Text: "updated",
+			Result: &ToolFacts{
+				FilePath: "/abs/big.go",
+				Hunks:    []Hunk{{OldStart: 1, OldLines: 400, NewStart: 1, NewLines: 400, Lines: keptHunkLines(400)}},
+			}},
+	})
+}
+
+// keptHunkLines answers n hunk lines of one kept context line each, as an edit's hunk carries them.
+func keptHunkLines(n int) []string {
+	lines := make([]string, n)
+	for i := range lines {
+		lines[i] = " kept"
+	}
+	return lines
+}
+
+// quotedHunkLines answers n kept hunk lines as they sit in a transcript line's JSON.
+func quotedHunkLines(n int) string {
+	quoted := make([]string, n)
+	for i := range quoted {
+		quoted[i] = strconv.Quote(" kept")
+	}
+	return "[" + strings.Join(quoted, ",") + "]"
+}
+
+func TestAStringToolUseResultGivesNoFacts(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "claude.jsonl")
+	line := `{"type":"user","uuid":"s1","timestamp":"2026-10-26T10:00:01.000Z","toolUseResult":"Edited /abs/a.go","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"done"}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := Read(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("read the transcript: %v", err)
+	}
+	checkItems(t, page.Items, []Item{
+		{ID: "s1:0", Kind: KindToolResult, At: "2026-10-26T10:00:01.000Z", ToolUseID: "toolu_1", Text: "done"},
+	})
+}
+
+func TestTheReaderNeverServesAnEditContents(t *testing.T) {
+	page, err := Read(context.Background(), fixturePath(t), 0)
+	if err != nil {
+		t.Fatalf("read the fixture: %v", err)
+	}
+	var served string
+	for _, item := range page.Items {
+		if item.ID != "u9:0" {
+			continue
+		}
+		raw, err := json.Marshal(item)
+		if err != nil {
+			t.Fatalf("marshal the edit's answer: %v", err)
+		}
+		served = string(raw)
+	}
+	if served == "" {
+		t.Fatalf("the fixture answers no edit result u9:0")
+	}
+	if strings.Contains(served, "package a") {
+		t.Errorf("the edit's answer carries the originalFile text: %s", served)
+	}
+	if strings.Contains(served, "keep me") {
+		t.Errorf("the edit's answer carries the oldString text: %s", served)
+	}
+}
+
+func TestAnInterruptedRunCarriesNoExitCode(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "claude.jsonl")
+	line := `{"type":"user","uuid":"i1","timestamp":"2026-10-26T10:00:01.000Z","toolUseResult":{"stdout":"partial words","stderr":"","interrupted":true,"isImage":false,"noOutputExpected":false},"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","is_error":true,"content":"Request interrupted by user"}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := Read(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("read the transcript: %v", err)
+	}
+	checkItems(t, page.Items, []Item{
+		{ID: "i1:0", Kind: KindToolResult, At: "2026-10-26T10:00:01.000Z", ToolUseID: "toolu_1", IsError: true,
+			Text: "Request interrupted by user", Result: &ToolFacts{Interrupted: true}},
+	})
+}
+
+func TestASuccessNeverCarriesAnExitCode(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "claude.jsonl")
+	// a succeeded command whose own output prints "Exit code 3": neither the answer's text nor the
+	// stdout names an exit code for a success, and the stdout itself is never served
+	line := `{"type":"user","uuid":"c1","timestamp":"2026-10-26T10:00:01.000Z","toolUseResult":{"stdout":"Exit code 3\n","stderr":"","interrupted":false,"isImage":false,"noOutputExpected":false},"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"Exit code 3\ndone"}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := Read(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("read the transcript: %v", err)
+	}
+	checkItems(t, page.Items, []Item{
+		{ID: "c1:0", Kind: KindToolResult, At: "2026-10-26T10:00:01.000Z", ToolUseID: "toolu_1", Text: "Exit code 3\ndone"},
 	})
 }
