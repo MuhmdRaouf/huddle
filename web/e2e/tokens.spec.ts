@@ -1,8 +1,9 @@
 // tokens.spec.ts — the design system's own page, #/dev/tokens: every web/ui component on the
 // tokens, checked on the phone and the desktop project. It must fit the viewport with no
-// horizontal scroll, keep every tap target at least 44 px, pass axe in the light and the dark
-// scheme, follow the OS scheme, and keep the switch's override across a reload. The tokens
-// themselves compute for the pointer and the motion setting, and the page runs the system font.
+// horizontal scroll, keep every tap target at least 44 px under a finger, pass axe in the light
+// and the dark scheme, follow the OS scheme, and keep the switch's override across a reload. The
+// tokens themselves compute for the pointer and the motion setting, and the page runs the system
+// font.
 // Tailwind's utilities compute from the tokens too: a text-sm element matches --ui-text-sm and a
 // p-4 element pads four --ui-space-1.
 
@@ -60,6 +61,8 @@ test.describe("the design tokens page", () => {
   });
 
   test("keeps every tap target at least 44 px", async ({ page }) => {
+    // B's desk controls stand 40 px, so the 44 px floor holds under a finger only
+    test.skip(!test.info().project.use.hasTouch, "the 44 px floor is a touch rule");
     await openTokens(page);
     const small = await page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>("main button, main input, main [role=tab], main a")]
@@ -79,7 +82,7 @@ test.describe("the design tokens page", () => {
     await openTokens(page);
     const token = (name: string): Promise<string> =>
       page.evaluate((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name);
-    expect(await token("--ui-control-h")).toBe(fine ? "36px" : "44px");
+    expect(await token("--ui-control-h")).toBe(fine ? "40px" : "48px");
     expect(await token("--ui-layer-toast")).toBe("50");
     expect(ms(await token("--ui-dur"))).toBe(0);
     await page.emulateMedia({ reducedMotion: "no-preference" });

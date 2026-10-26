@@ -45,6 +45,7 @@ const COLORS = [
   "muted",
   "text",
   "accent",
+  "accent-soft",
   "ok",
   "warn",
   "fail",
@@ -54,9 +55,10 @@ const COLORS = [
 const TYPE = [
   ["xl", "Needs you: 2"],
   ["lg", "Cost today"],
-  ["md", "Body text reads at 16 px."],
+  ["md", "Body text reads at 15 px."],
   ["sm", "A muted line under a title."],
   ["xs", "A badge or a table header."],
+  ["mono", "huddle provider zai setup"],
 ] as const;
 
 const SPACES = [1, 2, 3, 4, 5, 6] as const;
@@ -71,7 +73,14 @@ const LAYERS: readonly (readonly [string, string])[] = [
   ["tooltip", "60"],
 ];
 
-const SHADOWS = [1, 2, 3] as const;
+/** The shadow tokens and the scrim that sits under a sheet, each on its own swatch. */
+const SHADOWS: readonly (readonly [string, CSSProperties])[] = [
+  ["--ui-shadow-1", { boxShadow: "var(--ui-shadow-1)" }],
+  ["--ui-shadow-2", { boxShadow: "var(--ui-shadow-2)" }],
+  ["--ui-shadow-3", { boxShadow: "var(--ui-shadow-3)" }],
+  ["--ui-shadow-sheet", { boxShadow: "var(--ui-shadow-sheet)" }],
+  ["--ui-scrim", { background: "var(--ui-scrim)" }],
+];
 
 /** The motion tokens, each shown with the value it computes to. */
 const MOTION = ["--ui-ease", "--ui-dur-fast", "--ui-dur", "--ui-dur-slow"] as const;
@@ -79,6 +88,7 @@ const MOTION = ["--ui-ease", "--ui-dur-fast", "--ui-dur", "--ui-dur-slow"] as co
 /** The tokens whose value depends on the device and its settings. */
 const COMPUTED = [
   "--ui-font",
+  "--ui-text-mono",
   "--ui-control-h",
   "--ui-ease",
   "--ui-dur-fast",
@@ -224,17 +234,29 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
 
       <Block title="Type">
         {TYPE.map(([size, text]) => (
-          <p key={size} style={{ margin: "0 0 var(--ui-space-2)", fontSize: `var(--ui-text-${size})` }}>
+          <p
+            key={size}
+            class={size === "mono" ? "ui-mono" : undefined}
+            style={{ margin: "0 0 var(--ui-space-2)", fontSize: `var(--ui-text-${size})` }}
+          >
             {text}
           </p>
         ))}
-        <p class="ui-mono" style={{ margin: 0 }}>
-          huddle up --port 18860
-        </p>
         <p
           class="ui-mono"
           style={{
             margin: "var(--ui-space-2) 0 0",
+            overflowWrap: "anywhere",
+            color: "var(--ui-muted)",
+            fontSize: "var(--ui-text-sm)",
+          }}
+        >
+          --ui-text-mono: {computed["--ui-text-mono"]}
+        </p>
+        <p
+          class="ui-mono"
+          style={{
+            margin: 0,
             overflowWrap: "anywhere",
             color: "var(--ui-muted)",
             fontSize: "var(--ui-text-sm)",
@@ -267,19 +289,19 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
           </div>
         ))}
         <div style={{ ...grid("150px"), marginTop: "var(--ui-space-3)" }}>
-          {SHADOWS.map((n) => (
-            <div key={n} class="ui-card" style={{ overflow: "hidden" }}>
+          {SHADOWS.map(([name, lift]) => (
+            <div key={name} class="ui-card" style={{ overflow: "hidden" }}>
               <div
                 style={{
                   margin: "var(--ui-space-3)",
                   height: "48px",
                   borderRadius: "var(--ui-radius)",
                   background: "var(--ui-bg)",
-                  boxShadow: `var(--ui-shadow-${n})`,
+                  ...lift,
                 }}
               />
               <div class="ui-mono" style={{ padding: "var(--ui-space-2)", fontSize: "var(--ui-text-sm)" }}>
-                --ui-shadow-{n}
+                {name}
               </div>
             </div>
           ))}

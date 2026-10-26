@@ -56,6 +56,15 @@ describe("Tokens", () => {
     expect(screen.getByRole("img", { name: /Tokens per hour/ }).querySelectorAll("rect")).toHaveLength(12);
   });
 
+  it("shows the mono type step, the scrim, the sheet shadow and accent-soft", () => {
+    setup();
+    const mono = screen.getByText("huddle provider zai setup");
+    expect(mono.classList.contains("ui-mono")).toBe(true);
+    expect(mono.getAttribute("style")).toContain("var(--ui-text-mono)");
+    for (const name of ["--ui-accent-soft", "--ui-scrim", "--ui-shadow-sheet"])
+      expect(screen.getByText(name)).toBeTruthy();
+  });
+
   it("follows the OS, and the switch overrides it, keeps it and presses its button", () => {
     const { store, root } = setup(true);
     expect(root.dataset.scheme).toBe("dark");

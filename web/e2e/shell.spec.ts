@@ -121,7 +121,7 @@ test.describe("the phone shell", () => {
         await open(page, hash);
         const before = await barBox(page);
         expect(before.bottom, `${name}: the bar's bottom`).toBeCloseTo(before.view, 0);
-        expect(before.height, `${name}: the bar is 56 px plus the inset`).toBeGreaterThanOrEqual(56);
+        expect(before.height, `${name}: the bar is 50 px plus the inset`).toBeGreaterThanOrEqual(50);
         await scrollToEnd(page);
         const after = await barBox(page);
         expect(after.bottom, `${name}: the bar's bottom after scrolling`).toBeCloseTo(after.view, 0);

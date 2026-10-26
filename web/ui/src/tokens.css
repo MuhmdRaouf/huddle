@@ -1,7 +1,7 @@
 /* tokens.css — the design system's tokens, and the one source of colour for every page: surfaces,
  * inks, marks, four status tones and the state roles built on them; spacing on a 4-8-12-16-24-32
- * ladder, radii, a type scale and the system font stack with a mono face for commands and numbers.
- * A control's height follows the pointer: 44 px under a finger, 36 px under a mouse or trackpad.
+ * ladder, radii, a six-step type scale (a mono step for commands and numbers) and the system font
+ * stack. A control's height follows the pointer: 48 px under a finger, 40 px under a mouse or trackpad.
  * Six layers fix the stacking order: sticky, tab bar, scrim, popup, toast, tooltip.
  * Three shadows lift a raised card, a menu or popover, and a dialog or toast; the sheet shadow
  * lifts a bottom sheet, over a scrim that dims the page behind it.
@@ -96,19 +96,20 @@
   --ui-space-6: 32px;
 
   /* radii: small parts, controls, panels, and a full pill */
-  --ui-radius-sm: 6px;
-  --ui-radius: 10px;
-  --ui-radius-lg: 16px;
+  --ui-radius-sm: 8px;
+  --ui-radius: 12px;
+  --ui-radius-lg: 20px;
   --ui-radius-full: 999px;
 
-  /* type: the system faces, a mono for commands and numbers, and a five-step scale */
+  /* type: the system faces and a mono face, a six-step scale: five text sizes and a mono step */
   --ui-font: -apple-system, system-ui, "Segoe UI", Inter, sans-serif;
   --ui-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
-  --ui-text-xs: 0.75rem;
-  --ui-text-sm: 0.875rem;
+  --ui-text-xs: 0.8rem;
+  --ui-text-sm: 0.8667rem;
   --ui-text-md: 1rem;
-  --ui-text-lg: 1.25rem;
-  --ui-text-xl: 1.75rem;
+  --ui-text-lg: 1.1333rem;
+  --ui-text-xl: 2rem;
+  --ui-text-mono: 0.8333rem;
   --ui-leading: 1.45;
 
   /* the smallest tap target a control may have */
@@ -116,8 +117,8 @@
   /* the target of the action a thumb reaches first, such as an approve at a card's foot */
   --ui-tap-lg: 48px;
 
-  /* a control's height: a finger's 44 px on touch, 36 px under a mouse or trackpad */
-  --ui-control-h: 44px;
+  /* a control's height: 48 px on touch, 40 px under a mouse or trackpad */
+  --ui-control-h: 48px;
 
   /* stacking order, low to high */
   --ui-layer-sticky: 10; /* pinned headers */
@@ -131,10 +132,11 @@
   --ui-scrim: light-dark(rgba(16, 24, 40, 0.32), rgba(0, 0, 0, 0.55));
 
   /* shadows: a raised card, a menu or popover, a dialog, sheet or toast */
-  --ui-shadow-1: 0 1px 2px rgb(0 0 0 / 0.12);
+  --ui-shadow-1: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.04);
   --ui-shadow-2: 0 1px 2px rgb(0 0 0 / 0.12), 0 4px 16px -4px rgb(0 0 0 / 0.25);
   --ui-shadow-3: 0 1px 2px rgb(0 0 0 / 0.2), 0 12px 32px -12px rgb(0 0 0 / 0.45);
-  /* a shadow cannot sit in light-dark(): the sheet's dark half sits under :root[data-scheme="dark"] */
+  /* shadows cannot sit in light-dark(): the card's and the sheet's dark halves sit under
+   * :root[data-scheme="dark"] */
   --ui-shadow-sheet: 0 -12px 40px rgb(16 24 40 / 0.16);
 
   /* motion: one easing and three durations, all 0 ms when the OS asks for reduced motion */
@@ -147,13 +149,13 @@
   --ui-safe-top: env(safe-area-inset-top, 0px);
   --ui-safe-bottom: env(safe-area-inset-bottom, 0px);
 
-  /* the phone's pinned tab bar: 56 px of targets above the bottom inset */
-  --ui-tabbar-h: calc(56px + var(--ui-safe-bottom));
+  /* the phone's pinned tab bar: 50 px of targets above the bottom inset */
+  --ui-tabbar-h: calc(50px + var(--ui-safe-bottom));
 }
 
 @media (pointer: fine) {
   :root {
-    --ui-control-h: 36px;
+    --ui-control-h: 40px;
   }
 }
 
@@ -171,6 +173,7 @@
 
 :root[data-scheme="dark"] {
   color-scheme: dark;
+  --ui-shadow-1: 0 1px 0 rgb(255 255 255 / 0.03) inset;
   --ui-shadow-sheet: 0 -12px 40px rgb(0 0 0 / 0.45);
 }
 
