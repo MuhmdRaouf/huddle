@@ -17,6 +17,8 @@ import (
 	"regexp"
 	"testing"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // localCAHome answers a temp home set up as a hub whose listener binds any free port, with the
@@ -49,7 +51,7 @@ func localCAHome(t *testing.T, pair bool) string {
 // localCAServer runs the server over dir until it is stopped, answering where its words landed.
 func localCAServer(t *testing.T, dir string) (*syncBuffer, func()) {
 	t.Helper()
-	port := compatFreePort(t)
+	port := ports.Free(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	log := &syncBuffer{}
 	done := make(chan error, 1)

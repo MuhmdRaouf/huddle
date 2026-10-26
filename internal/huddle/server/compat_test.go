@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,6 +27,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // The fixture's own facts: three channels, the tasks the routes read in full, the words the
@@ -230,22 +230,6 @@ func compatRequireChanged(t *testing.T, label string, changed []string) {
 	}
 }
 
-// compatFreePort reserves and releases a loopback port away from the routers' 18787-18791.
-func compatFreePort(t *testing.T) int {
-	t.Helper()
-	for {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatalf("reserve a port: %v", err)
-		}
-		port := listener.Addr().(*net.TCPAddr).Port
-		_ = listener.Close()
-		if port < 18787 || port > 18791 {
-			return port
-		}
-	}
-}
-
 // compatRun is one server over the fixture: its port and how to stop it.
 type compatRun struct {
 	port int
@@ -257,7 +241,7 @@ type compatRun struct {
 // staleness windows ride the wall clock, so the assertions never pin a freshness.
 func compatServe(t *testing.T, token, home, data string, now time.Time) *compatRun {
 	t.Helper()
-	port := compatFreePort(t)
+	port := ports.Free(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {

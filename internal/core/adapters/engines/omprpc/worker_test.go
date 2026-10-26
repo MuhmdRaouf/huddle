@@ -35,7 +35,7 @@ var parentEnv = domain.EnvLookup{
 	"ZAI_API_KEY":        "plugin-provider-key",
 	"ZAI_BASE_URL":       "https://api.z.ai/api/anthropic",
 	"ZAI_MODEL_MAIN":     "glm-5.3",
-	"ANTHROPIC_BASE_URL": "http://127.0.0.1:18787",
+	"ANTHROPIC_BASE_URL": "http://127.0.0.1:17787",
 	"CLAUDECODE":         "1",
 	childModeEnv:         "omp",
 }
@@ -392,7 +392,7 @@ func TestOmpRpcWorker(t *testing.T) {
 			}
 		}
 		if leaked, _ := json.Marshal([]any{run.argv, run.env}); strings.Contains(string(leaked), "plugin-provider-key") ||
-			strings.Contains(string(leaked), "api.z.ai") || strings.Contains(string(leaked), "18787") {
+			strings.Contains(string(leaked), "api.z.ai") || strings.Contains(string(leaked), "17787") {
 			t.Errorf("argv or env leaks the plugin's provider: %s", leaked)
 		}
 		entries, err := os.ReadDir(run.jobDir)

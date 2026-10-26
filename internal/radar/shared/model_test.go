@@ -239,7 +239,7 @@ func TestRequestRecordJSON(t *testing.T) {
 		b, err := json.Marshal(RequestRecord{
 			ID: "r1", SessionID: "s1", AgentID: "a1", Model: "m", Upstream: "u", Ts: 1,
 			Tokens: Tokens{Input: 1}, StopReason: ptr("end_turn"), Provider: "p",
-			CacheWrite1h: &oneHour, What: ptr("→ text"), Via: ptr("127.0.0.1:18787"),
+			CacheWrite1h: &oneHour, What: ptr("→ text"), Via: ptr("127.0.0.1:17787"),
 			Route: ptr("direct"), PromptHash: ptr("h"),
 			TailKeys: []string{"what", "via", "route", "promptHash"},
 		})
@@ -250,7 +250,7 @@ func TestRequestRecordJSON(t *testing.T) {
 			`"latencyMs":null,` +
 			`"tokens":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0},` +
 			`"cacheWrite1h":2,"stopReason":"end_turn","provider":"p",` +
-			`"what":"→ text","via":"127.0.0.1:18787","route":"direct","promptHash":"h"}`
+			`"what":"→ text","via":"127.0.0.1:17787","route":"direct","promptHash":"h"}`
 		if string(b) != want {
 			t.Errorf("json = %s, want %s", b, want)
 		}
@@ -443,11 +443,11 @@ func TestSpoolLineMarshal(t *testing.T) {
 				"a SessionStart hook line",
 				`{"ts":"2026-10-14T08:00:00.000Z","event":"SessionStart","session_id":"9d1e",` +
 					`"transcript_path":"/Users/raouf/.claude/projects/p/9d1e.jsonl","cwd":"/Users/raouf/work/radar",` +
-					`"agent_id":"main","pid":4242,"ppid":4241,"base_url":"http://127.0.0.1:18787",` +
+					`"agent_id":"main","pid":4242,"ppid":4241,"base_url":"http://127.0.0.1:17787",` +
 					`"model_env":{"ANTHROPIC_MODEL":"glm-5.3"},"cc_version":"2.1.5"}`,
 				`{"ts":"2026-10-14T08:00:00.000Z","event":"SessionStart","session_id":"9d1e",` +
 					`"transcript_path":"/Users/raouf/.claude/projects/p/9d1e.jsonl","cwd":"/Users/raouf/work/radar",` +
-					`"agent_id":"main","pid":4242,"ppid":4241,"base_url":"http://127.0.0.1:18787",` +
+					`"agent_id":"main","pid":4242,"ppid":4241,"base_url":"http://127.0.0.1:17787",` +
 					`"model_env":{"ANTHROPIC_MODEL":"glm-5.3"},"cc_version":"2.1.5"}`,
 			},
 			{
@@ -579,7 +579,7 @@ func TestSpoolLineMarshal(t *testing.T) {
 			Ts: "2026-10-14T08:00:00.000Z", Event: "route",
 			SessionID: ptr("s1"), AgentID: ptr("main"),
 			ToolName: ptr("Bash"), ToolInput: map[string]any{"command": "ls"},
-			PID: ptr(int64(7)), BaseURL: ptr("http://127.0.0.1:18787"),
+			PID: ptr(int64(7)), BaseURL: ptr("http://127.0.0.1:17787"),
 			ModelEnv: map[string]string{"ANTHROPIC_MODEL": "glm-5.3"},
 			Model:    ptr("glm-5.3"), Upstream: ptr("https://api.z.ai/api/anthropic"),
 			Status: ptr("200"), LatencyMs: ptr(int64(150)),
@@ -590,7 +590,7 @@ func TestSpoolLineMarshal(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := `{"ts":"2026-10-14T08:00:00.000Z","event":"route","session_id":"s1","agent_id":"main",` +
-			`"tool_name":"Bash","tool_input":{"command":"ls"},"pid":7,"base_url":"http://127.0.0.1:18787",` +
+			`"tool_name":"Bash","tool_input":{"command":"ls"},"pid":7,"base_url":"http://127.0.0.1:17787",` +
 			`"model_env":{"ANTHROPIC_MODEL":"glm-5.3"},"model":"glm-5.3",` +
 			`"upstream":"https://api.z.ai/api/anthropic","status":"200","latency_ms":150,` +
 			`"usage":{"input_tokens":1,"output_tokens":2}}`

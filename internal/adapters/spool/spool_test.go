@@ -37,7 +37,7 @@ func pinnedNoon() int64 {
 func routerStart(ts string) domain.RouterEvent {
 	return domain.RouterEvent{
 		Ts: ts, Event: domain.EventRouter, Plugin: "zai",
-		Port: 18787, State: domain.RouterStateStart, Version: 1,
+		Port: 17787, State: domain.RouterStateStart, Version: 1,
 	}
 }
 

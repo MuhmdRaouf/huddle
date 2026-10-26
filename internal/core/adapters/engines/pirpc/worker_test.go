@@ -44,7 +44,7 @@ func workerTestParentEnv() domain.EnvLookup {
 		"OPENROUTER_API_KEY":     "users-own-key",
 		"ZAI_API_KEY":            "plugin-provider-key",
 		"ZAI_BASE_URL":           "https://api.z.ai/api/anthropic",
-		"ANTHROPIC_BASE_URL":     "http://127.0.0.1:18787",
+		"ANTHROPIC_BASE_URL":     "http://127.0.0.1:17787",
 		"CLAUDE_CODE_ENTRYPOINT": "cli",
 	}
 	if dir := os.Getenv("GOCOVERDIR"); dir != "" {
@@ -415,7 +415,7 @@ func TestPiRpcWorker(t *testing.T) {
 			}
 		}
 		serialized := string(mustJSON(t, run.argv)) + string(mustJSON(t, run.env))
-		for _, leak := range []string{"plugin-provider-key", "api.z.ai", "18787"} {
+		for _, leak := range []string{"plugin-provider-key", "api.z.ai", "17787"} {
 			if strings.Contains(serialized, leak) {
 				t.Errorf("argv or env leaks %q", leak)
 			}

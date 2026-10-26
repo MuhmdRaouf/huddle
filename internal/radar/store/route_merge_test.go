@@ -93,7 +93,7 @@ func TestRequestSeenByRouterAndTranscript(t *testing.T) {
 
 	t.Run("names both the router it went through and where the router sent it", func(t *testing.T) {
 		store := newTestStore()
-		store.AddRequest(transcriptCopy(func(r *shared.RequestRecord) { r.Via = str("127.0.0.1:18787") }), nil)
+		store.AddRequest(transcriptCopy(func(r *shared.RequestRecord) { r.Via = str("127.0.0.1:17787") }), nil)
 		store.AddRequest(route(func(r *shared.RequestRecord) { r.Via = str("zai") }), nil)
 		rows := store.Requests(RequestFilter{})
 		if len(rows) == 0 {
@@ -111,11 +111,11 @@ func TestRequestSeenByRouterAndTranscript(t *testing.T) {
 		stores[0].AddRequest(route(func(r *shared.RequestRecord) { r.Upstream = "https://api.z.ai"; r.Via = str("zai") }), nil)
 		stores[0].AddRequest(transcriptCopy(func(r *shared.RequestRecord) {
 			r.Upstream = shared.DefaultUpstream
-			r.Via = str("127.0.0.1:18787")
+			r.Via = str("127.0.0.1:17787")
 		}), nil)
 		stores[1].AddRequest(transcriptCopy(func(r *shared.RequestRecord) {
 			r.Upstream = shared.DefaultUpstream
-			r.Via = str("127.0.0.1:18787")
+			r.Via = str("127.0.0.1:17787")
 		}), nil)
 		stores[1].AddRequest(route(func(r *shared.RequestRecord) { r.Upstream = "https://api.z.ai"; r.Via = str("zai") }), nil)
 		for at, store := range stores {

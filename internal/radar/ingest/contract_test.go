@@ -82,8 +82,8 @@ func TestContractSpoolLinesParse(t *testing.T) {
 		start, routed, capture, stop := parsed[0], parsed[1], parsed[2], parsed[3]
 
 		if start.Event != "router" || contractTextField(start, "state") != "start" ||
-			contractTextField(start, "plugin") != "zai" || start.Field("port").EncodeJSON() != "18787" {
-			t.Errorf("line 1 = event %q state %q plugin %q port %s, want the router coming up on 18787 as zai",
+			contractTextField(start, "plugin") != "zai" || start.Field("port").EncodeJSON() != "17787" {
+			t.Errorf("line 1 = event %q state %q plugin %q port %s, want the router coming up on 17787 as zai",
 				start.Event, contractTextField(start, "state"), contractTextField(start, "plugin"), start.Field("port").EncodeJSON())
 		}
 		if stop.Event != "router" || contractTextField(stop, "state") != "stop" {

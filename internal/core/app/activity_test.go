@@ -92,7 +92,7 @@ func TestSpoolRows(t *testing.T) {
 				func(e *domain.RouteEvent) { e.Plugin = "kimi" }),
 			domain.RouterEvent{
 				Ts: activityAt(0, 11, 50, 45), Event: domain.EventRouter, Plugin: "zai",
-				Port: 18787, State: domain.RouterStateStart, Version: 1,
+				Port: 17787, State: domain.RouterStateStart, Version: 1,
 			},
 			activityRoute(activityAt(0, 11, 50, 45), func(e *domain.RouteEvent) { e.Route = "anthropic" }),
 		}

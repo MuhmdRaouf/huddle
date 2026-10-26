@@ -343,7 +343,7 @@ func TestEngineWorkersTools(t *testing.T) {
 				"ZAI_API_KEY":          "plugin-provider-key",
 				"ZAI_BASE_URL":         testkit.ReferenceProvider.BaseURL,
 				"ZAI_MODEL_MAIN":       "glm-9",
-				"ANTHROPIC_BASE_URL":   "http://127.0.0.1:18787",
+				"ANTHROPIC_BASE_URL":   "http://127.0.0.1:17787",
 				"ANTHROPIC_AUTH_TOKEN": "router-token",
 				"CLAUDECODE":           "1",
 				"ZAI_" + strings.ToUpper(string(tool)) + "_BIN": engineFakeBin(t),
@@ -415,7 +415,7 @@ func TestEngineWorkersTools(t *testing.T) {
 				t.Errorf("the engine saw routing variables: %s", strings.Join(routed, ", "))
 			}
 			wire := string(argvText) + string(envText)
-			for _, leak := range []string{"plugin-provider-key", "brief-supplied", "api.z.ai", "18787", "glm-5.3", "glm-9"} {
+			for _, leak := range []string{"plugin-provider-key", "brief-supplied", "api.z.ai", "17787", "glm-5.3", "glm-9"} {
 				if strings.Contains(wire, leak) {
 					t.Errorf("the wire carries %q", leak)
 				}

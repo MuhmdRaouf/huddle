@@ -93,13 +93,13 @@ func TestSpoolEventJSON(t *testing.T) {
 		},
 		{
 			"a router start event",
-			RouterEvent{Ts: "t", Event: EventRouter, Plugin: "zai", Port: 18787, State: RouterStateStart, Version: 1},
-			`{"ts":"t","event":"router","plugin":"zai","port":18787,"state":"start","version":1}`,
+			RouterEvent{Ts: "t", Event: EventRouter, Plugin: "zai", Port: 17787, State: RouterStateStart, Version: 1},
+			`{"ts":"t","event":"router","plugin":"zai","port":17787,"state":"start","version":1}`,
 		},
 		{
 			"a router stop event",
-			RouterEvent{Ts: "t", Event: EventRouter, Plugin: "zai", Port: 18787, State: RouterStateStop, Version: 1},
-			`{"ts":"t","event":"router","plugin":"zai","port":18787,"state":"stop","version":1}`,
+			RouterEvent{Ts: "t", Event: EventRouter, Plugin: "zai", Port: 17787, State: RouterStateStop, Version: 1},
+			`{"ts":"t","event":"router","plugin":"zai","port":17787,"state":"stop","version":1}`,
 		},
 		{
 			"a health event with no model",

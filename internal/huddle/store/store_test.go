@@ -819,11 +819,11 @@ func TestOpenLegacyChannel(t *testing.T) {
 		if hits := s.SearchTasks(ctx, "changelog"); len(hits) != 1 || hits[0]["id"] != "t2" {
 			t.Fatalf("task hits: %v", hits)
 		}
-		rows := s.SearchKnowledge(ctx, "18787", 10)
+		rows := s.SearchKnowledge(ctx, "kimi", 10)
 		if len(rows) != 1 || rows[0]["title"] != "Router ports" {
 			t.Fatalf("knowledge rows: %v", rows)
 		}
-		if hit, _ := rows[0]["hit"].(string); !strings.Contains(hit, "«18787»") {
+		if hit, _ := rows[0]["hit"].(string); !strings.Contains(hit, "«kimi»") {
 			t.Fatalf("hit %q marks the match", hit)
 		}
 		if rows := s.SearchKnowledge(ctx, "guillemets", 10); len(rows) != 1 || rows[0]["title"] != "Search snippets" {

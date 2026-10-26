@@ -280,14 +280,14 @@ func TestRunDispatchesThroughTheTable(t *testing.T) {
 			},
 		}
 		var stdout, stderr bytes.Buffer
-		code := Run([]string{key, "--port", "18787"}, &stdout, &stderr, testVersion)
+		code := Run([]string{key, "--port", "17787"}, &stdout, &stderr, testVersion)
 		if code != 7 {
 			t.Errorf("Run(%q) = %d, want the entry's 7", []string{key}, code)
 		}
 		if gotCtx == nil {
 			t.Errorf("Run(%q) passed a nil context", []string{key})
 		}
-		if want := []string{"--port", "18787"}; !reflect.DeepEqual(gotArgs, want) {
+		if want := []string{"--port", "17787"}; !reflect.DeepEqual(gotArgs, want) {
 			t.Errorf("entry args = %q, want %q", gotArgs, want)
 		}
 		if gotVersion != testVersion {

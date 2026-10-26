@@ -631,7 +631,7 @@ func TestHostAllowed(t *testing.T) {
 			{"a rebound name with no port", "evil.example", 8787, false},
 			{"the ipv6 loopback", "[::1]:8787", 8787, false},
 			{"an uppercase localhost", "LOCALHOST:8787", 8787, false},
-			{"a router port", "localhost:18787", 8787, false},
+			{"a router port", "localhost:17787", 8787, false},
 			{"no host header", "", 8787, false},
 		} {
 			if got := HostAllowed(table.host, table.port); got != table.want {

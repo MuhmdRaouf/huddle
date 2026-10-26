@@ -219,7 +219,7 @@ func (fakeKeyEntry) Check(ctx context.Context, key string) ports.KeyVerdict {
 	return ports.KeyVerdictAccepted
 }
 func (fakeKeyEntry) OpenPage(ctx context.Context) (string, error) {
-	return "http://127.0.0.1:18787/key", nil
+	return "http://127.0.0.1:17787/key", nil
 }
 func (fakeKeyEntry) PageOpen(ctx context.Context, url string) bool { return false }
 func (fakeKeyEntry) RemoveFromFile(ctx context.Context, value string) bool {

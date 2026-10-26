@@ -745,7 +745,7 @@ func TestWatcherTranscripts(t *testing.T) {
 		writeText(t, spoolFilePath(t, e.env), jsonl(t,
 			hook(watchT0, "https://api.anthropic.com"),
 			hook(watchT0+30_000, "https://api.anthropic.com"), // a repeat changes nothing
-			hook(watchT0+60_000, "http://127.0.0.1:18787"),    // the router was set up mid-session
+			hook(watchT0+60_000, "http://127.0.0.1:17787"),    // the router was set up mid-session
 		))
 		st := newStore()
 		manualWatcher(t, e.env, st)
@@ -764,8 +764,8 @@ func TestWatcherTranscripts(t *testing.T) {
 		if got := upstream("req-routed"); got != shared.DefaultUpstream {
 			t.Errorf("req-routed upstream = %q, want %q", got, shared.DefaultUpstream)
 		}
-		if via := findRequest(t, st, "req-routed").Via; via == nil || *via != "127.0.0.1:18787" {
-			t.Errorf("req-routed via = %v, want 127.0.0.1:18787", via)
+		if via := findRequest(t, st, "req-routed").Via; via == nil || *via != "127.0.0.1:17787" {
+			t.Errorf("req-routed via = %v, want 127.0.0.1:17787", via)
 		}
 	})
 
@@ -862,7 +862,7 @@ func TestClaudeUpstreamEnrichment(t *testing.T) {
 	}
 
 	t.Run("went to Anthropic through the local router, which the request names as via", func(t *testing.T) {
-		st := watched(t, "s1", "claude-sonnet-5-5", ptr("http://127.0.0.1:18787"))
+		st := watched(t, "s1", "claude-sonnet-5-5", ptr("http://127.0.0.1:17787"))
 		all := st.Requests(store.RequestFilter{})
 		if len(all) != 1 {
 			t.Fatalf("requests = %+v, want one", all)
@@ -870,8 +870,8 @@ func TestClaudeUpstreamEnrichment(t *testing.T) {
 		if all[0].Upstream != shared.DefaultUpstream || all[0].Provider != "Anthropic" {
 			t.Errorf("request = %+v, want Anthropic at the default upstream", all[0])
 		}
-		if all[0].Via == nil || *all[0].Via != "127.0.0.1:18787" {
-			t.Errorf("via = %v, want 127.0.0.1:18787", all[0].Via)
+		if all[0].Via == nil || *all[0].Via != "127.0.0.1:17787" {
+			t.Errorf("via = %v, want 127.0.0.1:17787", all[0].Via)
 		}
 	})
 
@@ -890,7 +890,7 @@ func TestClaudeUpstreamEnrichment(t *testing.T) {
 	})
 
 	t.Run("names a provider model after its own offering until a route line says where it went", func(t *testing.T) {
-		st := watched(t, "s3", "glm-5.3", ptr("http://127.0.0.1:18787"))
+		st := watched(t, "s3", "glm-5.3", ptr("http://127.0.0.1:17787"))
 		all := st.Requests(store.RequestFilter{})
 		if len(all) != 1 {
 			t.Fatalf("requests = %+v, want one", all)
@@ -898,13 +898,13 @@ func TestClaudeUpstreamEnrichment(t *testing.T) {
 		if all[0].Upstream != "https://api.z.ai" || all[0].Provider != "Z.ai" {
 			t.Errorf("request = %+v, want Z.ai at its own offering", all[0])
 		}
-		if all[0].Via == nil || *all[0].Via != "127.0.0.1:18787" {
-			t.Errorf("via = %v, want 127.0.0.1:18787", all[0].Via)
+		if all[0].Via == nil || *all[0].Via != "127.0.0.1:17787" {
+			t.Errorf("via = %v, want 127.0.0.1:17787", all[0].Via)
 		}
 	})
 
 	t.Run("leaves a model no offering serves unnamed", func(t *testing.T) {
-		st := watched(t, "s5", "totally-unknown-model", ptr("http://127.0.0.1:18787"))
+		st := watched(t, "s5", "totally-unknown-model", ptr("http://127.0.0.1:17787"))
 		all := st.Requests(store.RequestFilter{})
 		if len(all) != 1 {
 			t.Fatalf("requests = %+v, want one", all)
@@ -912,8 +912,8 @@ func TestClaudeUpstreamEnrichment(t *testing.T) {
 		if all[0].Upstream != "" || all[0].Provider != "other" {
 			t.Errorf("request = %+v, want an empty upstream and provider other", all[0])
 		}
-		if all[0].Via == nil || *all[0].Via != "127.0.0.1:18787" {
-			t.Errorf("via = %v, want 127.0.0.1:18787", all[0].Via)
+		if all[0].Via == nil || *all[0].Via != "127.0.0.1:17787" {
+			t.Errorf("via = %v, want 127.0.0.1:17787", all[0].Via)
 		}
 	})
 
@@ -1657,8 +1657,8 @@ func TestWatcherInterval(t *testing.T) {
 
 func TestLoopbackHost(t *testing.T) {
 	t.Run("names a router on this machine and nothing else", func(t *testing.T) {
-		if host, ok := ingest.LoopbackHost("http://127.0.0.1:18787"); !ok || host != "127.0.0.1:18787" {
-			t.Errorf("loopbackHost(127.0.0.1:18787) = %q, %v", host, ok)
+		if host, ok := ingest.LoopbackHost("http://127.0.0.1:17787"); !ok || host != "127.0.0.1:17787" {
+			t.Errorf("loopbackHost(127.0.0.1:17787) = %q, %v", host, ok)
 		}
 		if host, ok := ingest.LoopbackHost("http://localhost:8080/v1"); !ok || host != "localhost:8080" {
 			t.Errorf("loopbackHost(localhost:8080/v1) = %q, %v", host, ok)

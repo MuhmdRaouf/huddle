@@ -202,7 +202,7 @@ var parentEnv = domain.EnvLookup{
 	"OPENROUTER_API_KEY":   "users-own-key",
 	"ZAI_API_KEY":          "plugin-provider-key",
 	"ZAI_BASE_URL":         "https://api.z.ai/api/anthropic",
-	"ANTHROPIC_BASE_URL":   "http://127.0.0.1:18787",
+	"ANTHROPIC_BASE_URL":   "http://127.0.0.1:17787",
 	"ANTHROPIC_AUTH_TOKEN": "router-token",
 }
 
@@ -562,7 +562,7 @@ func TestOpenCodeWorker(t *testing.T) {
 		for name, value := range run.env {
 			everything.WriteString(name + "=" + value)
 		}
-		for _, secret := range []string{"plugin-provider-key", "brief-supplied", "api.z.ai", "18787"} {
+		for _, secret := range []string{"plugin-provider-key", "brief-supplied", "api.z.ai", "17787"} {
 			if strings.Contains(everything.String(), secret) {
 				t.Errorf("argv or env leaks %q", secret)
 			}

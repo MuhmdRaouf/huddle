@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,6 +22,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/radar/store"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // The fixture's own facts: two sessions under one project, a subagent, a captured prompt.
@@ -253,22 +253,6 @@ func compatFixtureNow(t *testing.T, home string) time.Time {
 	return time.Date(year, time.Month(month), day, 12, 0, 0, 0, time.UTC)
 }
 
-// compatFreePort reserves and releases a loopback port away from the routers' 18787-18791.
-func compatFreePort(t *testing.T) int {
-	t.Helper()
-	for {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatalf("reserve a port: %v", err)
-		}
-		port := listener.Addr().(*net.TCPAddr).Port
-		_ = listener.Close()
-		if port < 18787 || port > 18791 {
-			return port
-		}
-	}
-}
-
 // compatFetch reads one answer whole: status and body text.
 func compatFetch(t *testing.T, port int, path string) (int, string) {
 	t.Helper()
@@ -380,7 +364,7 @@ func TestCompatLegacyHome(t *testing.T) {
 		"CLAUDE_CONFIG_DIR": config,
 	}
 	now := compatFixtureNow(t, home)
-	port := compatFreePort(t)
+	port := ports.Free(t)
 	mainRoute := compatRouteID(t, home, compatMainSession, "main", "glm-5.3")
 	scoutRoute := compatRouteID(t, home, compatMainSession, "scout-01", "glm-5.3-flash")
 

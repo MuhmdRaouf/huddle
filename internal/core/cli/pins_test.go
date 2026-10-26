@@ -28,7 +28,7 @@ func TestPinsOf(t *testing.T) {
 			"PLUGIN_CORE_NOW_MS":         "1791288000000",
 			"PLUGIN_CORE_SEQUENTIAL_IDS": "1",
 			"PLUGIN_CORE_RUNTIME":        "bun 1.3.14 (/usr/local/bin/bun)",
-			"PLUGIN_CORE_ROUTER_LINE":    "running on http://127.0.0.1:18787 (already running)",
+			"PLUGIN_CORE_ROUTER_LINE":    "running on http://127.0.0.1:17787 (already running)",
 		})
 		if pins.NowMS != 1791288000000 {
 			t.Errorf("NowMS = %d, want 1791288000000", pins.NowMS)
@@ -39,7 +39,7 @@ func TestPinsOf(t *testing.T) {
 		if pins.Runtime != "bun 1.3.14 (/usr/local/bin/bun)" {
 			t.Errorf("Runtime = %q", pins.Runtime)
 		}
-		if pins.RouterLine != "running on http://127.0.0.1:18787 (already running)" {
+		if pins.RouterLine != "running on http://127.0.0.1:17787 (already running)" {
 			t.Errorf("RouterLine = %q", pins.RouterLine)
 		}
 	})
@@ -59,7 +59,7 @@ func TestWirePins(t *testing.T) {
 			"PLUGIN_CORE_NOW_MS":         "1791288000000",
 			"PLUGIN_CORE_SEQUENTIAL_IDS": "1",
 			"PLUGIN_CORE_RUNTIME":        "bun 1.3.14 (/usr/local/bin/bun)",
-			"PLUGIN_CORE_ROUTER_LINE":    "running on http://127.0.0.1:18787 (already running)",
+			"PLUGIN_CORE_ROUTER_LINE":    "running on http://127.0.0.1:17787 (already running)",
 		})
 		return env
 	}
@@ -107,7 +107,7 @@ func TestWirePins(t *testing.T) {
 			t.Errorf("runtime = %q, want the pinned line", deps.Host.Runtime)
 		}
 		line, err := deps.Host.EnsureRouter(context.Background())
-		if err != nil || line != "running on http://127.0.0.1:18787 (already running)" {
+		if err != nil || line != "running on http://127.0.0.1:17787 (already running)" {
 			t.Fatalf("ensureRouter = (%q, %v), want the pinned line and no error", line, err)
 		}
 	})

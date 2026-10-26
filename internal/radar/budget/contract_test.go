@@ -108,7 +108,7 @@ func TestContractFixturesAreTheSharedCopy(t *testing.T) {
 	}{
 		{"budget-status.json", "b67cddb6a1d00261f1969f5b778171cbfa3451193b8a22ae29fe92ea0a424f99"},
 		{"spool-health.jsonl", "6bd62fa50864ad11b6b702c84f7f635dd36ed90ed91cb08219e14b3f550e8565"},
-		{"spool-route.jsonl", "9bacc945eb2ff12ca8c6b37ef73f37e9dd1a92306386704874f2d94ccab0e8fe"},
+		{"spool-route.jsonl", "722978a1ecc52b64ca39efd2bb815ccadd4f424d9fa3184dfe2eeffbbceaa678"},
 	}
 	for _, fixture := range fixtures {
 		data, err := os.ReadFile(filepath.Join(contractFixtureDir, fixture.name))

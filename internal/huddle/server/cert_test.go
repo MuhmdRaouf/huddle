@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // renewPair answers one self-signed pair for the hub's name, valid from now for the lifetime.
@@ -83,7 +84,7 @@ func renewHome(t *testing.T, role string, lifetime time.Duration) (string, strin
 func renewServer(t *testing.T, dir string) (*syncBuffer, func()) {
 	t.Helper()
 	issuer := &renewIssuer{}
-	port := compatFreePort(t)
+	port := ports.Free(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	log := &syncBuffer{}
 	done := make(chan error, 1)

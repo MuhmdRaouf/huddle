@@ -56,7 +56,7 @@ func contractRouteEvents() []domain.SpoolEvent {
 	return []domain.SpoolEvent{
 		domain.RouterEvent{
 			Ts: contractTs, Event: domain.EventRouter, Plugin: "zai",
-			Port: 18787, State: domain.RouterStateStart, Version: SpoolVersion,
+			Port: 17787, State: domain.RouterStateStart, Version: SpoolVersion,
 		},
 		domain.RouteEvent{
 			Ts: contractTs, Event: domain.EventRoute, Plugin: "zai",
@@ -71,7 +71,7 @@ func contractRouteEvents() []domain.SpoolEvent {
 		},
 		domain.RouterEvent{
 			Ts: contractTs, Event: domain.EventRouter, Plugin: "zai",
-			Port: 18787, State: domain.RouterStateStop, Version: SpoolVersion,
+			Port: 17787, State: domain.RouterStateStop, Version: SpoolVersion,
 		},
 	}
 }

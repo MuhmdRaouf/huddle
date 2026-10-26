@@ -45,7 +45,7 @@ func TestOpsWalk(t *testing.T) {
 	ask := runOp(t, ch, "send", "a", `{"to": "b", "msg": "which port?", "ask": true}`)
 	seq := jsonField(t, ask, "seq")
 	runOp(t, ch, "publish", "a", `{"topic": "build.ready", "msg": "done", "ref": "run/7"}`)
-	runOp(t, ch, "reply", "b", `{"seq": `+seq+`, "msg": "18787"}`)
+	runOp(t, ch, "reply", "b", `{"seq": `+seq+`, "msg": "17787"}`)
 	if inbox := runOp(t, ch, "inbox", "b", ""); strings.Contains(mustJSONT(t, inbox), "which port?") {
 		t.Fatalf("the answered ask still waits: %#v", inbox)
 	}
@@ -93,7 +93,7 @@ func TestOpsWalk(t *testing.T) {
 	runOp(t, ch, "handoff", "a", `{"to": "b", "msg": "take the announcement", "wait": false}`)
 
 	// knowledge and the digests over everything above
-	entry := runOp(t, ch, "remember", "a", `{"kind": "fact", "title": "the port", "body": "18787", "tags": ["ops"]}`)
+	entry := runOp(t, ch, "remember", "a", `{"kind": "fact", "title": "the port", "body": "17787", "tags": ["ops"]}`)
 	kbID := jsonField(t, entry, "id")
 	if items := runOp(t, ch, "recall", "a", `{"q": "port"}`); !strings.Contains(mustJSONT(t, items), "the port") {
 		t.Fatalf("recall = %#v", items)
