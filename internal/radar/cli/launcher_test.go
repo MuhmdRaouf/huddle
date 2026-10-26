@@ -131,7 +131,10 @@ type launcherWorld struct {
 	binHome string
 	state   string
 	home    string
-	base    []string
+	// launcher is the dist/run launcherRun starts: the committed launcher, or a copy of it under a
+	// temp dir whose tree holds no source checkout (the fresh install).
+	launcher string
+	base     []string
 }
 
 // newLauncherWorld builds a world whose PATH holds the base tools plus any extras (a tool the
@@ -140,9 +143,10 @@ func newLauncherWorld(t *testing.T, extras ...string) *launcherWorld {
 	t.Helper()
 	home := t.TempDir()
 	world := &launcherWorld{
-		binHome: filepath.Join(home, "huddle-bin"),
-		state:   filepath.Join(home, "state"),
-		home:    home,
+		binHome:  filepath.Join(home, "huddle-bin"),
+		state:    filepath.Join(home, "state"),
+		home:     home,
+		launcher: launcherPath(t),
 	}
 	base := []string{"sh", "uname", "dirname", "mkdir", "rm", "mv", "chmod", "date", "kill", "sleep", "ps"}
 	bin := t.TempDir()
@@ -270,8 +274,8 @@ func fetchLeftovers(t *testing.T, binHome string) []string {
 }
 
 // fetchProcesses answers the command lines of one launcher's detached fetches still running.
-// The launcher path is this checkout's, so only fetches this world's own hook runs started can
-// match; a machine without ps falls back to the file wait.
+// The launcher path names this checkout's file or the test's own copy of it, so only fetches
+// this world's own hook runs started can match; a machine without ps falls back to the file wait.
 func fetchProcesses(launcher string) []string {
 	out, err := exec.Command("ps", "axo", "command=").Output()
 	if err != nil {
@@ -337,10 +341,10 @@ func (w *launcherWorld) run(t *testing.T, timeout time.Duration, command, stdin 
 	return code, stdout.String(), stderr.String()
 }
 
-// launcherRun runs the launcher itself with one entry and its arguments.
+// launcherRun runs this world's launcher itself with one entry and its arguments.
 func (w *launcherWorld) launcherRun(t *testing.T, timeout time.Duration, stdin, entry string, env []string) (int, string, string) {
 	t.Helper()
-	return w.run(t, timeout, fmt.Sprintf(`sh %q %s`, launcherPath(t), entry), stdin, env)
+	return w.run(t, timeout, fmt.Sprintf(`sh %q %s`, w.launcher, entry), stdin, env)
 }
 
 // expectSilentSuccess is the hook's contract: exit 0, nothing on either stream.
@@ -440,12 +444,28 @@ func TestHooksJsonCommand(t *testing.T) {
 	})
 }
 
-// TestLauncherFreshInstall is the fresh-install leg: the committed launcher on a PATH holding no
-// JavaScript runtime, with the binary preinstalled the way its own download leaves it — one
-// SessionStart hook through the radar word, the words pointing at the huddle hub, and nothing
-// left behind: no dashboard of radar's own is ever started.
+// TestLauncherFreshInstall is the fresh-install leg: a copy of the committed launcher on a PATH
+// holding no JavaScript runtime, under a temp dir with no source checkout above it, with the
+// binary preinstalled the way its own download leaves it — one SessionStart hook through the
+// radar word, the words pointing at the huddle hub, and nothing left behind: no dashboard of
+// radar's own is ever started.
 func TestLauncherFreshInstall(t *testing.T) {
 	world := newLauncherWorld(t, "curl", "shasum", "openssl")
+	// The leg runs a copy of the committed launcher under a temp dir: no go.mod sits above it and
+	// the world's CLAUDE_CONFIG_DIR holds no marketplace checkout, so the launcher has no source
+	// checkout to build from, as on a fresh install.
+	launcher := filepath.Join(t.TempDir(), "plugin", "dist", "run")
+	data, err := os.ReadFile(launcherPath(t))
+	if err != nil {
+		t.Fatalf("read the committed launcher: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(launcher), 0o700); err != nil {
+		t.Fatalf("mkdir the copy's dir: %v", err)
+	}
+	if err := os.WriteFile(launcher, data, 0o755); err != nil {
+		t.Fatalf("write the copied launcher: %v", err)
+	}
+	world.launcher = launcher
 	world.installBin(t)
 	env := world.env()
 
@@ -473,7 +493,7 @@ func TestLauncherFreshInstall(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(world.state, "server.json")); !os.IsNotExist(err) {
 		t.Errorf("a standalone dashboard left server.json behind (err %v)", err)
 	}
-	if procs := fetchProcesses(launcherPath(t)); len(procs) != 0 {
+	if procs := fetchProcesses(world.launcher); len(procs) != 0 {
 		t.Errorf("the launcher left %v running", procs)
 	}
 }
