@@ -350,7 +350,8 @@ func TestPromptRefWaitsForItsCapture(t *testing.T) {
 		})
 		body := []byte(`{"system":"the system prompt","messages":[{"role":"user"}]}`)
 		prompt := &promptRef{}
-		worker.capture(prompt, body)
+		// nil spans: the capture scans for itself, as on a route that read no spans.
+		worker.capture(prompt, body, nil)
 		want, ok := PromptHashOf(parseBodyNode(body))
 		if !ok {
 			t.Fatal("the body hashed to nothing")
@@ -372,7 +373,7 @@ func TestPromptRefWaitsForItsCapture(t *testing.T) {
 			o.Events = events.record
 		})
 		prompt := &promptRef{}
-		worker.capture(prompt, []byte(`{"model":"glm-5.3","messages":[]}`))
+		worker.capture(prompt, []byte(`{"model":"glm-5.3","messages":[]}`), nil)
 		if hash := hashWithin(t, prompt); hash != nil {
 			t.Errorf("Hash() = %v, want nil", hash)
 		}

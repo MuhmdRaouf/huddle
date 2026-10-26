@@ -71,6 +71,62 @@ func TestPromptKey(t *testing.T) {
 	})
 }
 
+// The raw fast path must answer exactly what the encoder's own path answers: the head window's
+// bytes are the first ones of the whole value's compact text, so past any cut both read the same.
+func TestCutPartRawMatchesTheEncodersPath(t *testing.T) {
+	t.Parallel()
+	// One giant string per body, in every rune width the window can cut in half, each long enough
+	// to pass both the window and the budget.
+	giants := map[string]json.RawMessage{
+		"plain ascii":            messageWith(strings.Repeat("x", 100000)),
+		"two-byte runes":         messageWith(strings.Repeat("é", 60000)),
+		"three-byte runes":       messageWith(strings.Repeat("中", 50000)),
+		"a four-byte emoji":      messageWith(strings.Repeat("\U0001F600", 40000)),
+		"escapes as they came":   messageWith(strings.Repeat(`a\"b\\c`, 20000)),
+		"line-separator escapes": messageWith(strings.Repeat(`a\u2028b`, 20000)),
+		"spaces in and out":      json.RawMessage(`{ "role" : "user" , "content" : "` + strings.Repeat(" ", 100000) + `" }`),
+		"the window's last byte": messageWith(strings.Repeat("x", keyPartHead)),
+	}
+	for name, raw := range giants {
+		if got, want := cutPartRaw(raw), cutCompact(raw); got != want {
+			t.Errorf("%s: cutPartRaw read %d bytes, want the encoder's own %d", name, len(got), len(want))
+		}
+	}
+	// The window cuts at every phase: a one-to-three byte shift moves the cut inside two-, three-
+	// and four-byte runes, where the head must end at a rune's own end.
+	for _, shift := range []string{"", "a", "ab", "abc"} {
+		for _, text := range []string{
+			strings.Repeat("é", 60000),
+			strings.Repeat("中", 50000),
+			strings.Repeat("\U0001F600", 40000),
+		} {
+			if got, want := cutPartRaw(messageWith(shift+text)), cutCompact(messageWith(shift+text)); got != want {
+				t.Errorf("shift %q: cutPartRaw read %d bytes, want the encoder's own %d", shift, len(got), len(want))
+			}
+		}
+	}
+	// The budget's cut at a surrogate pair: whole pairs, and one lone surrogate both sides leave.
+	for _, emoji := range []string{strings.Repeat("\U0001F600", 2048), strings.Repeat("\U0001F600", 2047)} {
+		if got, want := cutPartRaw(messageWith(emoji+"A")), cutCompact(messageWith(emoji+"A")); got != want {
+			t.Error("the cut at a surrogate pair disagreed with the encoder's path")
+		}
+	}
+	// A part the window holds whole, a window short of the budget, and no part at all keep the
+	// encoder's own answers.
+	short := messageWith(strings.Repeat("x", keyPartChars-1))
+	if cutPartRaw(short) != cutCompact(short) {
+		t.Error("a part short of the budget took the window")
+	}
+	if cutPartRaw(nil) != "" || cutPartRaw(json.RawMessage("")) != "" {
+		t.Error("a missing part was not empty")
+	}
+}
+
+// messageWith is a first message whose `content` is one string of text, as raw body bytes.
+func messageWith(text string) json.RawMessage {
+	return json.RawMessage(`{"role":"user","content":"` + text + `"}`)
+}
+
 func TestEstimatePrompt(t *testing.T) {
 	t.Parallel()
 	t.Run("takes a quarter token per byte for a conversation never seen", func(t *testing.T) {

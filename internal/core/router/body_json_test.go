@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"testing"
 )
@@ -197,6 +199,62 @@ func TestPromptHashOfHashesSystemAndToolsAlone(t *testing.T) {
 	})
 }
 
+// The splitter's capture must answer exactly what the whole-body parse answers: the members it
+// hands over parse to the same trees, and a body it refuses keeps the whole-body parse.
+func TestCapturedOfMatchesTheWholeBodyParse(t *testing.T) {
+	t.Parallel()
+	cases := []string{
+		`{"system":"s","tools":[{"t":1}],"messages":[{"role":"user","content":"hi"}]}`,
+		`{"messages":[{"role":"user","content":"hi"}],"system":[` +
+			`{"type":"text","text":"` + billingPrefix + `cc_prompt_id=p;","cache_control":{"type":"ephemeral"}},` +
+			`{"type":"text","text":"real"}]}`,
+		`{"system":null}`,
+		`{"tools":[]}`,
+		`{"messages":[]}`,
+		`[1,2]`,
+		`not json`,
+		// The splitter refuses a repeated key; the parse reads the last one.
+		`{"system":"s","system":"t"}`,
+	}
+	for _, raw := range cases {
+		body := []byte(raw)
+		// Both handovers answer the parse: the capture's own scan, and the spans the provider
+		// route's forward read first (nil again when the splitter refuses).
+		for _, spans := range [][]keySpan{nil, ownSpans(body)} {
+			fromSplit, splitOK := capturedOf(body, spans)
+			fromParse, parseOK := promptOf(parseBodyNode(body))
+			hashSplit, hashParse := "", ""
+			billingSplit, billingParse := billingLine{}, billingLine{}
+			if splitOK {
+				hashSplit, billingSplit = fromSplit.hash(), fromSplit.billing
+			}
+			if parseOK {
+				hashParse, billingParse = fromParse.hash(), fromParse.billing
+			}
+			sameID := (billingSplit.promptID == nil) == (billingParse.promptID == nil)
+			if sameID && billingSplit.promptID != nil {
+				sameID = *billingSplit.promptID == *billingParse.promptID
+			}
+			if splitOK != parseOK || hashSplit != hashParse || !sameID {
+				t.Errorf("%s: capturedOf = %q, %t, %v, want %q, %t, %v", raw, hashSplit, splitOK, billingSplit.promptID, hashParse, parseOK, billingParse.promptID)
+			}
+		}
+	}
+	// A giant body carrying neither member parses nothing: the answer is still no capture, and
+	// the scan alone reads it.
+	huge := `{"messages":[{"role":"user","content":"` + strings.Repeat("x", 2<<20) + `"}]}`
+	if _, ok := capturedOf([]byte(huge), nil); ok {
+		t.Error("a giant body without system and tools counts as captured")
+	}
+}
+
+// ownSpans is the body's spans when the splitter accepts it, and nil when it refuses — the same
+// handover the provider route's forward makes.
+func ownSpans(body []byte) []keySpan {
+	spans, _ := splitTopLevel(body)
+	return spans
+}
+
 func TestCaptureMemoRemembersEveryHashOnce(t *testing.T) {
 	t.Parallel()
 	memo := newCaptureMemo()
@@ -233,7 +291,8 @@ func TestProviderBodyAdaptsWhatTheProviderNeeds(t *testing.T) {
 	t.Run("a body that is no object goes as it came", func(t *testing.T) {
 		t.Parallel()
 		original := []byte(`[1,2]`)
-		out, model := providerBody(worker, original, parseBodyNode(original), "glm-5.3", nil)
+		// The splitter refuses the body, so forward has no spans to hand over.
+		out, model := providerBody(worker, original, nil, "glm-5.3", "", nil)
 		if string(out) != string(original) || model != "glm-5.3" {
 			t.Errorf("providerBody = %s, %q, want the original", out, model)
 		}
@@ -242,7 +301,7 @@ func TestProviderBodyAdaptsWhatTheProviderNeeds(t *testing.T) {
 	t.Run("max_tokens is clamped to the model's cap", func(t *testing.T) {
 		t.Parallel()
 		original := []byte(`{"model":"glm-5.3","max_tokens":999999}`)
-		out, _ := providerBody(worker, original, parseBodyNode(original), "glm-5.3", nil)
+		out, _ := providerBody(worker, original, spansOf(t, original), "glm-5.3", "", nil)
 		var parsed struct {
 			MaxTokens int64 `json:"max_tokens"`
 		}
@@ -257,7 +316,7 @@ func TestProviderBodyAdaptsWhatTheProviderNeeds(t *testing.T) {
 		var lines []string
 		worker := newRouterWorker(RouterOptions{Provider: routerProvider, Log: func(line string) { lines = append(lines, line) }}, nil)
 		request := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
-		out, model := providerBody(worker, original, parseBodyNode(original), "glm-5.3-flash", request)
+		out, model := providerBody(worker, original, spansOf(t, original), "glm-5.3-flash", "", request)
 		if model != "glm-5.3" {
 			t.Errorf("providerBody model = %q, want the web search model", model)
 		}
@@ -272,9 +331,93 @@ func TestProviderBodyAdaptsWhatTheProviderNeeds(t *testing.T) {
 	t.Run("a regular tool changes nothing", func(t *testing.T) {
 		t.Parallel()
 		original := []byte(`{"model":"glm-5.3-flash","tools":[{"name":"bash"}]}`)
-		out, model := providerBody(worker, original, parseBodyNode(original), "glm-5.3-flash", nil)
+		out, model := providerBody(worker, original, spansOf(t, original), "glm-5.3-flash", "", nil)
 		if string(out) != string(original) || model != "glm-5.3-flash" {
 			t.Errorf("providerBody = %s, %q, want the original", out, model)
 		}
 	})
+
+	t.Run("a strip field anywhere in the body takes the tree so the field is stripped", func(t *testing.T) {
+		t.Parallel()
+		stripper := routerProvider
+		stripper.Strip = []string{"cache_control"}
+		worker := newRouterWorker(RouterOptions{Provider: stripper}, nil)
+		original := []byte(`{"model":"glm-5.3","cache_control":{"type":"ephemeral"},"max_tokens":999999}`)
+		out, model := providerBody(worker, original, spansOf(t, original), "glm-5.3", "", nil)
+		if model != "glm-5.3" {
+			t.Errorf("providerBody model = %q, want the model as it came", model)
+		}
+		var parsed struct {
+			CacheControl json.RawMessage `json:"cache_control"`
+			MaxTokens    int64           `json:"max_tokens"`
+		}
+		if json.Unmarshal(out, &parsed) != nil || parsed.CacheControl != nil || parsed.MaxTokens != 131072 {
+			t.Errorf("providerBody = %s, want cache_control stripped and max_tokens 131072", out)
+		}
+	})
+
+	t.Run("a strip field named only inside a string value keeps the body as it came", func(t *testing.T) {
+		t.Parallel()
+		stripper := routerProvider
+		stripper.Strip = []string{"cache_control"}
+		worker := newRouterWorker(RouterOptions{Provider: stripper}, nil)
+		original := []byte(`{"model":"glm-5.3","note":"cache_control"}`)
+		out, model := providerBody(worker, original, spansOf(t, original), "glm-5.3", "", nil)
+		if string(out) != string(original) || model != "glm-5.3" {
+			t.Errorf("providerBody = %s, %q, want the original", out, model)
+		}
+	})
+}
+
+// TestProviderBodyPathsAgree is the one proof the fast path may serve the provider: on every body,
+// what the real entry answers — the spliced bytes when its stripsAny gate allows them, the tree's
+// re-encoding otherwise — decodes to the same JSON as the tree's own answer and names the same
+// model. A body whose bytes hide a name the parse would see (`cache_control`) goes through
+// both here: the gate must send it to the tree, never serve it raw.
+func TestProviderBodyPathsAgree(t *testing.T) {
+	t.Parallel()
+	request := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	stripper := routerProvider
+	stripper.Strip = []string{"cache_control"}
+	cases := []struct {
+		name     string
+		body     string
+		model    string
+		fallback string
+		provider domain.Provider
+	}{
+		{"nothing to change", `{"model":"glm-5.3","messages":[{"role":"user","content":"hi"}]}`, "glm-5.3", "", routerProvider},
+		{"a max_tokens above the cap", `{"model":"glm-5.3","max_tokens":999999}`, "glm-5.3", "", routerProvider},
+		{"a web_search tool", `{"model":"glm-5.3-flash","tools":[{"type":"web_search_20250305","name":"x"}]}`, "glm-5.3-flash", "", routerProvider},
+		{"the fallback's rename", `{"model":"glm-5.3-flash","messages":[{"role":"user","content":"hi"}]}`, "glm-5.3-flash", "glm-5.3", routerProvider},
+		{"the fallback's rename and a clamp", `{"model":"glm-5.3-flash","max_tokens":999999}`, "glm-5.3-flash", "glm-5.3", routerProvider},
+		{"a rename the web_search model already serves", `{"model":"glm-5.3-flash","tools":[{"type":"web_search_20250305","name":"x"}]}`, "glm-5.3-flash", "glm-5.3", routerProvider},
+		{"whitespace wherever JSON allows it", `  {  "model" : "glm-5.3-flash" ,  "max_tokens" : 999999 }  `, "glm-5.3-flash", "", routerProvider},
+		{"a strip provider's rejected field", `{"model":"glm-5.3","cache_control":{"type":"ephemeral"},"max_tokens":999999}`, "glm-5.3", "", stripper},
+		{"an escaped strip key", `{"model":"glm-5.3","cache\u005fcontrol":{"type":"ephemeral"},"max_tokens":999999}`, "glm-5.3", "", stripper},
+		{"an escaped web_search tool", `{"model":"glm-5.3-flash","tools":[{"type":"web\u005fsearch_20250305","name":"x"}]}`, "glm-5.3-flash", "", routerProvider},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			original := []byte(testCase.body)
+			entryOut, entryNamed := providerBody(newRouterWorker(RouterOptions{Provider: testCase.provider}, nil),
+				original, spansOf(t, original), testCase.model, testCase.fallback, request)
+			treeOut, treeNamed := providerBodyTree(newRouterWorker(RouterOptions{Provider: testCase.provider}, nil),
+				original, testCase.model, testCase.fallback, request)
+			var entryValue, treeValue any
+			if err := json.Unmarshal(entryOut, &entryValue); err != nil {
+				t.Fatalf("the entry's bytes do not decode: %s: %v", entryOut, err)
+			}
+			if err := json.Unmarshal(treeOut, &treeValue); err != nil {
+				t.Fatalf("the tree's bytes do not decode: %s: %v", treeOut, err)
+			}
+			if !reflect.DeepEqual(entryValue, treeValue) {
+				t.Errorf("the paths disagree: entry %s, tree %s", entryOut, treeOut)
+			}
+			if entryNamed != treeNamed {
+				t.Errorf("the paths name %q and %q", entryNamed, treeNamed)
+			}
+		})
+	}
 }

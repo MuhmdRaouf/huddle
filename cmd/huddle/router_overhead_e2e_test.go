@@ -271,9 +271,6 @@ func TestE2ERouterOverhead(t *testing.T) {
 		for at := 1; at < len(paths); at++ {
 			path := paths[at]
 			t.Run(path.name+", "+size.name, func(t *testing.T) {
-				if path.name == "lane" && size.name == "2 MiB" {
-					t.Skip("the provider rewrite still parses the whole body; the top-level byte splitter's cycle holds it to the budget")
-				}
 				firstBytes := make([]time.Duration, 0, firstByteRuns)
 				directFirst := make([]time.Duration, 0, firstByteRuns)
 				for _, timings := range runs[:firstByteRuns] {

@@ -248,7 +248,12 @@ func promptOf(json *jsfmt.Value) (capturedPrompt, bool) {
 	if !json.IsObject() {
 		return capturedPrompt{}, false
 	}
-	system, tools := json.Get("system"), json.Get("tools")
+	return promptParts(json.Get("system"), json.Get("tools"))
+}
+
+// promptParts is the capture of two top-level members as the tree parsed them; false when both
+// are absent (a null counts as carried).
+func promptParts(system, tools *jsfmt.Value) (capturedPrompt, bool) {
 	if system == nil && tools == nil {
 		return capturedPrompt{}, false
 	}
@@ -267,6 +272,28 @@ func promptOf(json *jsfmt.Value) (capturedPrompt, bool) {
 		}
 	}
 	return prompt, true
+}
+
+// capturedOf is the body's captured prompt, read on the body's own scan: the splitter finds the
+// two members the capture needs and only they are parsed, so a body carrying neither — most
+// requests — parses nothing at all. The provider route hands over the spans its rewrite already
+// read, so the bytes are never scanned twice; nil spans have the capture scan for itself, and a
+// body the scan refuses keeps the whole-body parse.
+func capturedOf(original []byte, spans []keySpan) (capturedPrompt, bool) {
+	if spans == nil {
+		var whole bool
+		if spans, whole = splitTopLevel(original); !whole {
+			return promptOf(parseBodyNode(original))
+		}
+	}
+	var system, tools *jsfmt.Value
+	if span := spanOf(spans, "system"); span != nil {
+		system = parseBodyNode(original[span.valueStart:span.valueEnd])
+	}
+	if span := spanOf(spans, "tools"); span != nil {
+		tools = parseBodyNode(original[span.valueStart:span.valueEnd])
+	}
+	return promptParts(system, tools)
 }
 
 // billingOf reads the `key=value;` pairs of a billing block's text.
@@ -435,19 +462,151 @@ func stripFromNode(value *jsfmt.Value, rejected map[string]bool) bool {
 
 // providerBody is a provider-bound request as this provider accepts it: rejected fields stripped
 // (every message, every block), `max_tokens` clamped to the model's cap, and a web_search tool sent
-// to the catalog model that serves it. The original bytes and model when nothing changed, else the
-// re-serialised body and the model it now names.
-func providerBody(w *routerWorker, original []byte, json *jsfmt.Value, model string, req *http.Request) ([]byte, string) {
-	if !json.IsObject() {
+// to the catalog model that serves it. The rewrite runs on the body's own bytes when forward's
+// splitter read the body whole and no rejected field is named in it, and on the parsed tree for
+// every other body — both answer the same JSON. The original bytes and model when nothing changed,
+// else the rewritten body and the model it names.
+func providerBody(w *routerWorker, original []byte, spans []keySpan, model, fallback string, req *http.Request) ([]byte, string) {
+	if spans != nil && !stripsAny(w.opts.Provider, original) {
+		if out, named, ok := providerBodySplice(w, original, spans, model, fallback, req); ok {
+			return out, named
+		}
+	}
+	return providerBodyTree(w, original, model, fallback, req)
+}
+
+// stripsAny is true when one of the provider's rejected fields may be named in the body: a cheap
+// maybe over raw bytes that only ever sends a body to the parsed path, never keeps one from it — a
+// name inside a string value strips nothing, and the parsed path leaves such a body as it came. A
+// name spelled with an escape is invisible to the raw-byte test — the parse unescapes keys — so an
+// escaped printable-ASCII byte anywhere sends the body to the parsed path too.
+func stripsAny(provider domain.Provider, body []byte) bool {
+	if len(provider.Strip) == 0 {
+		return false
+	}
+	for _, field := range provider.Strip {
+		if bytes.Contains(body, []byte(`"`+field+`"`)) {
+			return true
+		}
+	}
+	return escapedPrintableIn(body)
+}
+
+// escapedPrintableIn is true when the body carries a backslash-u-0-0 escape whose first hex digit
+// is `2` through `7`: an escaped printable-ASCII byte, the one place a name the parse would
+// unescape can hide from a raw-byte test. A control escape (first digit `0` or `1`) does not read
+// as one.
+func escapedPrintableIn(body []byte) bool {
+	for at := 0; at < len(body); {
+		found := bytes.Index(body[at:], []byte(`\u00`))
+		if found < 0 {
+			return false
+		}
+		at += found
+		if at+5 <= len(body) && body[at+4] >= '2' && body[at+4] <= '7' {
+			return true
+		}
+		at++
+	}
+	return false
+}
+
+// providerBodyTree is the rewrite on the parsed body: the fallback's rename, then the in-place
+// edits, and the whole body re-encoded. Every body the splice does not take comes here.
+func providerBodyTree(w *routerWorker, original []byte, model, fallback string, req *http.Request) ([]byte, string) {
+	body := parseBodyNode(original)
+	if fallback != "" {
+		if body != nil {
+			body.Set("model", jsfmt.String(fallback))
+			original = []byte(body.EncodeLiteral())
+		}
+		model = fallback
+	}
+	if body == nil || !body.IsObject() {
 		return original, model
 	}
-	if !adaptBody(w, json, model, req) {
+	if !adaptBody(w, body, model, req) {
 		return original, model
 	}
-	if named := json.Get("model"); named == nil || named.Kind() != jsfmt.KindString {
-		return []byte(json.EncodeLiteral()), model
+	if named := body.Get("model"); named == nil || named.Kind() != jsfmt.KindString {
+		return []byte(body.EncodeLiteral()), model
 	}
-	return []byte(json.EncodeLiteral()), modelIn(json)
+	return []byte(body.EncodeLiteral()), modelIn(body)
+}
+
+// providerBodySplice is the rewrite as splices on the body's own bytes: the model renamed, and
+// `max_tokens` clamped to the model's cap when the member carries a number above it. It answers
+// ok=false for a body whose edit needs the parse — a model member a rename would have to add.
+func providerBodySplice(w *routerWorker, original []byte, spans []keySpan, model, fallback string, req *http.Request) ([]byte, string, bool) {
+	provider := w.opts.Provider
+	named := model
+	var modelValue []byte
+	if fallback != "" {
+		named = fallback
+		modelValue = []byte(jsfmt.String(fallback).EncodeLiteral())
+	}
+	if provider.WebSearchModel != nil && model != *provider.WebSearchModel {
+		if tools := spanOf(spans, "tools"); tools != nil {
+			raw := original[tools.valueStart:tools.valueEnd]
+			// The bytes only hint; the parse says whether a web_search tool is really there. An
+			// escaped byte hides a name from a raw-byte test, so an escape hints too.
+			if bytes.Contains(raw, []byte("web_search")) || bytes.Contains(raw, []byte(`\u`)) {
+				if !carriesWebSearch(parseBodyNode(raw)) {
+					return nil, "", false
+				}
+				modelValue = []byte(jsfmt.String(*provider.WebSearchModel).EncodeLiteral())
+				named = *provider.WebSearchModel
+				w.log(fmt.Sprintf("%s %s model=%s → provider: web_search tool served by %s",
+					req.Method, requestPath(req), model, *provider.WebSearchModel))
+			}
+		}
+	}
+	var capped *keySpan
+	var capValue []byte
+	if cap := catalogCap(provider, model); cap != nil {
+		if tokens := spanOf(spans, "max_tokens"); tokens != nil {
+			digits := original[tokens.valueStart:tokens.valueEnd]
+			if len(digits) > 0 && (digits[0] == '-' || digits[0] >= '0' && digits[0] <= '9') {
+				if value, err := json.Number(digits).Float64(); err == nil && value > float64(*cap) {
+					// The span lives in the spans slice the capture goroutine also reads, and the
+					// shift below writes it: shift a copy.
+					span := *tokens
+					capped, capValue = &span, []byte(strconv.FormatInt(*cap, 10))
+				}
+			}
+		}
+	}
+	if modelValue == nil && capped == nil {
+		return original, named, true
+	}
+	modelSpan := spanOf(spans, "model")
+	if modelValue != nil && modelSpan == nil {
+		return nil, "", false
+	}
+	out := original
+	if modelValue != nil {
+		out = spliced(original, *modelSpan, modelValue)
+	}
+	if capped != nil {
+		if modelValue != nil && capped.valueStart >= modelSpan.valueEnd {
+			shift := len(out) - len(original)
+			capped.valueStart += shift
+			capped.valueEnd += shift
+		}
+		out = spliced(out, *capped, capValue)
+	}
+	return out, named, true
+}
+
+// catalogCap is the model's output-token cap out of the provider's catalog, or nil when the
+// catalog carries no such model.
+func catalogCap(provider domain.Provider, model string) *int64 {
+	for _, tier := range []domain.ModelTier{domain.ModelTierMain, domain.ModelTierFlash} {
+		if entry := provider.Catalog[tier]; entry.ID == model {
+			return entry.MaxOutputTokens
+		}
+	}
+	return nil
 }
 
 // adaptBody is the in-place edits a provider-bound body needs, one truth each: rejected fields
@@ -463,14 +622,7 @@ func adaptBody(w *routerWorker, record *jsfmt.Value, model string, req *http.Req
 		}
 		changed = stripFromNode(record, rejected)
 	}
-	var cap *int64
-	for _, tier := range []domain.ModelTier{domain.ModelTierMain, domain.ModelTierFlash} {
-		if entry := provider.Catalog[tier]; entry.ID == model {
-			cap = entry.MaxOutputTokens
-			break
-		}
-	}
-	if cap != nil {
+	if cap := catalogCap(provider, model); cap != nil {
 		if tokens := record.Get("max_tokens"); tokens != nil && tokens.Kind() == jsfmt.KindNumber {
 			if value, err := tokens.Literal().Float64(); err == nil && value > float64(*cap) {
 				record.Set("max_tokens", jsfmt.NumberLiteral(json.Number(strconv.FormatInt(*cap, 10))))
@@ -737,11 +889,12 @@ func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt i
 }
 
 // capture reads what the request's body carried, once per distinct content, and writes its one
-// capture event off the request's own goroutine, on its own parse of the body's bytes: a
+// capture event off the request's own goroutine, on the body's own bytes: the provider route hands
+// over the spans its rewrite read, every other route has the capture scan for itself, and a
 // provider-bound rewrite of the request never reaches the captured prompt. The ref is marked
 // started under the lock at once, and the hash lands before the capture ends, so the route event,
 // which waits for that end, always names it. A failure costs one log line.
-func (w *routerWorker) capture(prompt *promptRef, original []byte) {
+func (w *routerWorker) capture(prompt *promptRef, original []byte, spans []keySpan) {
 	if w.opts.Events == nil {
 		return
 	}
@@ -751,7 +904,7 @@ func (w *routerWorker) capture(prompt *promptRef, original []byte) {
 	done := prompt.done
 	safego.Go(w.log, func() {
 		defer close(done)
-		captured, ok := promptOf(parseBodyNode(original))
+		captured, ok := capturedOf(original, spans)
 		if !ok {
 			return
 		}
@@ -1267,19 +1420,21 @@ func sseEventNode(line string) *jsfmt.Value {
 	return node
 }
 
-// promptPartsOf is the two top-level parts a conversation's key comes from, as the parsed body
-// carries them: the `system` and the first message, each as its own JSON text so the key stays
-// byte-stable. A body that is no object carries neither.
-func promptPartsOf(body *jsfmt.Value) (system, first json.RawMessage) {
-	if !body.IsObject() {
+// promptPartsOf is the two top-level parts a conversation's key comes from, read straight off the
+// body's own bytes: the `system` and the first message, each as its own JSON text so the key stays
+// byte-stable. A body the splitter read as no object carries neither.
+func promptPartsOf(body []byte, spans []keySpan) (system, first json.RawMessage) {
+	if spans == nil {
 		return nil, nil
 	}
-	if node := body.Get("system"); node != nil {
-		system = json.RawMessage(node.EncodeLiteral())
-	}
-	if messages := body.Get("messages"); messages.IsArray() {
-		if items := messages.Items(); len(items) > 0 && items[0] != nil {
-			first = json.RawMessage(items[0].EncodeLiteral())
+	for at := range spans {
+		switch spans[at].key {
+		case "system":
+			system = json.RawMessage(body[spans[at].valueStart:spans[at].valueEnd])
+		case "messages":
+			if item, ok := firstItem(body[spans[at].valueStart:spans[at].valueEnd]); ok {
+				first = json.RawMessage(item)
+			}
 		}
 	}
 	return system, first
@@ -1361,8 +1516,14 @@ func (w *routerWorker) forward(req *http.Request, res *Response, original []byte
 		}
 		return
 	}
-	// The request is on its way: read what its body carried, once per content.
-	w.capture(prompt, original)
+	// The request is on its way: read what its body carried, once per content. The provider route
+	// scans its members once, before the capture starts, and hands the spans to the capture and its
+	// own rewrite alike; every other route lets the capture scan for itself.
+	var spans []keySpan
+	if route == "provider" && !hasPeer {
+		spans, _ = splitTopLevel(original)
+	}
+	w.capture(prompt, original, spans)
 	if hasPeer {
 		target := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.FormatInt(peer.Port, 10))}
 		w.dispatch(req, res, original, model, route, target, note, timing, &peer, "", nil)
@@ -1403,22 +1564,20 @@ func (w *routerWorker) forward(req *http.Request, res *Response, original []byte
 		w.noKey(req, res, model, outcome, note)
 		return
 	}
-	// The provider route's one parse: the fallback's model rename and the hint's parts both read
-	// this tree; a body that is no whole JSON parses to nil and goes upstream as it came.
-	body := parseBodyNode(original)
-	// A model out after three failures in a row goes to the lane's next model, its body
-	// naming that model from here on.
-	if next := w.fallback.pick(model); next != model {
-		if body != nil {
-			body.Set("model", jsfmt.String(next))
-			original = []byte(body.EncodeLiteral())
-		}
+	// The provider route's rewrite runs on the body's own bytes: the splitter reads the top-level
+	// members, the fallback's rename and the hint's parts come off them, and a body the splitter
+	// refuses is parsed instead. A model out after three failures in a row goes to the lane's next
+	// model, its body naming that model from here on.
+	next := w.fallback.pick(model)
+	fallback := ""
+	if next != model {
 		asked := model
 		served.model, served.fallback = next, &asked
+		fallback = next
 		model = next
 	}
-	system, first := promptPartsOf(body)
-	adapted, named := providerBody(w, original, body, model, req)
+	system, first := promptPartsOf(original, spans)
+	adapted, named := providerBody(w, original, spans, model, fallback, req)
 	w.dispatch(req, res, adapted, named, "provider", w.opts.ProviderURL, note, timing, nil, key, promptHintOf(system, first, int64(len(adapted))))
 }
 
