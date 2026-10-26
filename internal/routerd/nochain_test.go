@@ -91,10 +91,9 @@ func TestCleanProxyEnv(t *testing.T) {
 		}
 	})
 
-	t.Run("a loopback proxy answering only a provider's legacy health path is kept", func(t *testing.T) {
-		// zaiLegacyHealthPath is the path zai's 0.0.1 router answered; no router of ours answers it.
-		zaiLegacyHealthPath := "/" + "zai" + "-router" + "/health"
-		url, _ := healthServer(t, map[string]bool{zaiLegacyHealthPath: true})
+	t.Run("a loopback proxy answering only a provider's health path is kept", func(t *testing.T) {
+		// /zai-router/health is a provider-named health path; no router of ours answers it.
+		url, _ := healthServer(t, map[string]bool{"/zai-router/health": true})
 		cleaned := CleanProxyEnv(context.Background(), withProxy("https_proxy", url), 20999, nil)
 		if cleaned["https_proxy"] != url {
 			t.Errorf("https_proxy = %q, want %q kept as the user's own proxy", cleaned["https_proxy"], url)
