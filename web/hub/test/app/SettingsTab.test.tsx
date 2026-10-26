@@ -299,7 +299,7 @@ describe("the phone's grouped list", () => {
       "Scheme and colours",
       "Push and what wakes a device",
       "Devices, Phone, Sign-in methods",
-      "This hub, Time zone, Radar, Self-check",
+      "This hub, Time zone, Radar, Insights, Self-check",
     ]);
     expect(rows.every((a) => a.classList.contains("ui-list-row"))).toBe(true);
     expect(rows.some((a) => a.className.includes("rounded-full"))).toBe(false);
@@ -385,7 +385,7 @@ describe("the four groups", () => {
       ["appearance", ["appearance"]],
       ["notifications", ["notifications"]],
       ["devices", ["devices", "phone", "signin"]],
-      ["hub", ["hub", "zone", "radar", "selfcheck"]],
+      ["hub", ["hub", "zone", "radar", "insights", "selfcheck"]],
     ];
     for (const [group, want] of groups) {
       mountSection(<SettingsTab section={group} />, []);
@@ -399,6 +399,7 @@ describe("the four groups", () => {
     expect(settingsSectionOf("hub")).toBe("hub");
     expect(settingsSectionOf("zone")).toBe("hub");
     expect(settingsSectionOf("radar")).toBe("hub");
+    expect(settingsSectionOf("insights")).toBe("hub");
     expect(settingsSectionOf("selfcheck")).toBe("hub");
     expect(settingsSectionOf("phone")).toBe("devices");
     expect(settingsSectionOf("signin")).toBe("devices");

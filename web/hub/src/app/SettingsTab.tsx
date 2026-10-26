@@ -1,10 +1,10 @@
 // SettingsTab.tsx — the Settings page: four groups, a grouped list of rows on the phone that opens
 // one page per group, a sidebar beside the page on the tablet and the desktop; each page draws its
-// group's members in order. Appearance (System, Dark, Light, and the
-// Catppuccin flavour); Notifications (the two switches and what wakes the device); Devices and
-// sign-in (the paired devices with remove, the phone's trust guide in a sheet, the sign-in
-// methods); Hub and Radar (name, address and version, the hub's time zone, Radar's budgets,
-// notifications and history retention, and Radar's self-check against the transcripts). A
+// group's members in order. Appearance (System, Dark, Light, and the Catppuccin flavour);
+// Notifications (the two switches and what wakes the device); Devices and sign-in (the paired
+// devices with remove, the phone's trust guide in a sheet, the sign-in methods); Hub and Radar
+// (name, address and version, the hub's time zone, Radar's budgets, notifications and history
+// retention, the two Insights switches, and Radar's self-check against the transcripts). A
 // channel's linked sessions live in that channel's own Settings view. Every class comes from the
 // ui components or the tokens.
 
@@ -31,6 +31,7 @@ import { SettingsView } from "../radar/app/views/Settings.tsx";
 import { RadarProvider, radarController } from "../radar/mount.tsx";
 import { ageText } from "../registry.ts";
 import { errText, useHuddle } from "./context.tsx";
+import { InsightsSettings } from "./InsightsSettings.tsx";
 import { useLayout } from "./layout.ts";
 import { useStepUp } from "./Needs.tsx";
 import { NotificationsCard } from "./Notifications.tsx";
@@ -593,6 +594,7 @@ const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       { id: "hub", label: "This hub", Pane: ThisHub },
       { id: "zone", label: "Time zone", Pane: () => <TimeZone /> },
       { id: "radar", label: "Radar", Pane: RadarSettings },
+      { id: "insights", label: "Insights", Pane: InsightsSettings },
       { id: "selfcheck", label: "Self-check", Pane: SelfCheck },
     ],
   },

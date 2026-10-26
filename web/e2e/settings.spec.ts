@@ -5,7 +5,8 @@
 // a member's own address opening the group that holds it, the appearance switch that overrides the
 // OS scheme and keeps the choice across a reload, the push switch that says what the browser
 // allows, the finished-turn push a paired device turns on and keeps across a reload, the hub's own facts, the hub's time zone (seeded by the first signed-in browser, picked
-// again and kept across a reload), and the phone guide in a sheet. Every group fits the viewport
+// again and kept across a reload), the Insights switches (tips for me on, tips to the sessions
+// off, a flip kept across a reload), and the phone guide in a sheet. Every group fits the viewport
 // with no horizontal scroll, keeps its tap targets at least 44 px and passes axe.
 
 import { expect, test, type Page } from "@playwright/test";
@@ -18,7 +19,7 @@ const GROUPS: readonly (readonly [name: string, hash: string, members: readonly 
   ["Appearance", "#/settings/appearance", ["appearance"], "Scheme and colours"],
   ["Notifications", "#/settings/notifications", ["notifications"], "Push and what wakes a device"],
   ["Devices and sign-in", "#/settings/devices", ["devices", "phone", "signin"], "Devices, Phone, Sign-in methods"],
-  ["Hub and Radar", "#/settings/hub", ["hub", "zone", "radar", "selfcheck"], "This hub, Time zone, Radar, Self-check"],
+  ["Hub and Radar", "#/settings/hub", ["hub", "zone", "radar", "insights", "selfcheck"], "This hub, Time zone, Radar, Insights, Self-check"],
 ];
 
 /** Opens one Settings address in a signed-in browser. The authenticator set-up the first sign-in
@@ -154,6 +155,7 @@ test.describe("the Settings tab", () => {
     }
     for (const [member, name] of [
       ["radar", "Hub and Radar"],
+      ["insights", "Hub and Radar"],
       ["signin", "Devices and sign-in"],
       ["phone", "Devices and sign-in"],
     ] as const) {
@@ -255,6 +257,27 @@ test.describe("the Settings tab", () => {
     await expect(page.getByRole("combobox", { name: "Time zone" })).toHaveValue(next);
     await page.getByRole("combobox", { name: "Time zone" }).selectOption("UTC");
     await expect(heading).toHaveText("Time zone: UTC");
+  });
+
+  test("the Insights switches start on and off and keep a change across a reload", async ({ page }) => {
+    await openSettings(page, "#/settings/insights");
+    const tipsForMe = page.getByRole("switch", { name: "Tips for me", exact: true });
+    const tipsToSessions = page.getByRole("switch", { name: "Tips to my sessions" });
+    await expect(tipsForMe).toHaveAttribute("aria-checked", "true");
+    await expect(tipsToSessions).toHaveAttribute("aria-checked", "false");
+    await tipsForMe.click();
+    await tipsToSessions.click();
+    await expect(tipsForMe).toHaveAttribute("aria-checked", "false");
+    await expect(tipsToSessions).toHaveAttribute("aria-checked", "true");
+    await page.reload();
+    await expect(tipsForMe).toHaveAttribute("aria-checked", "false");
+    await expect(tipsToSessions).toHaveAttribute("aria-checked", "true");
+    // the next read starts where the switches began
+    await tipsForMe.click();
+    await tipsToSessions.click();
+    await expect(tipsForMe).toHaveAttribute("aria-checked", "true");
+    await expect(tipsToSessions).toHaveAttribute("aria-checked", "false");
+    await expectAccessible(page);
   });
 
   test("the phone guide opens in a sheet", async ({ page }) => {
