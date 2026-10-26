@@ -1,7 +1,7 @@
 // The no-chain rule: a router never routes upstream through a router. The daemon's engine
 // environment drops every proxy variable that names one — this router at huddle-router's
-// canonical address or on its own port, or any loopback proxy that answers a router health
-// path — and keeps the rest, so the user's own proxy survives.
+// canonical address or on its own port, or any loopback proxy that answers huddle-router's
+// health path — and keeps the rest, so the user's own proxy survives.
 package routerd
 
 import (
@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MuhmdRaouf/huddle/internal/core/providers"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
@@ -21,8 +20,8 @@ import (
 const proxyProbeWait = 300 * time.Millisecond
 
 // CleanProxyEnv returns a copy of env without the proxy variables that name a router, each
-// dropped variable logged once. A loopback proxy is recognised by asking it for a router health
-// answer; a non-loopback proxy is kept and never contacted.
+// dropped variable logged once. A loopback proxy is recognised by asking it for huddle-router's
+// health answer; a non-loopback proxy is kept and never contacted.
 func CleanProxyEnv(ctx context.Context, env domain.EnvLookup, ownPort int, log func(string)) domain.EnvLookup {
 	return cleanProxyEnv(ctx, env, ownPort, log, nil)
 }
@@ -50,9 +49,8 @@ func cleanProxyEnv(ctx context.Context, env domain.EnvLookup, ownPort int, log f
 	return out
 }
 
-// answersRouterHealth is whether a loopback proxy answers a router health path — huddle-router's
-// own, or one of the five providers' legacy ones. A proxy that is not loopback is never
-// contacted, and a value without a port is never a router of ours.
+// answersRouterHealth is whether a loopback proxy answers huddle-router's health path. A proxy
+// that is not loopback is never contacted, and a value without a port is never a router of ours.
 func answersRouterHealth(ctx context.Context, raw string, client *http.Client) bool {
 	parsed, err := url.Parse(proxyValueURL(raw))
 	if err != nil || parsed.Port() == "" || !domain.IsLoopback(parsed.Hostname()) {
@@ -61,34 +59,16 @@ func answersRouterHealth(ctx context.Context, raw string, client *http.Client) b
 	if client == nil {
 		client = &http.Client{Timeout: proxyProbeWait, Transport: &http.Transport{Proxy: nil}}
 	}
-	base := "http://" + parsed.Host
-	paths := append([]string{router.MultiHealthPath}, providerHealthPaths()...)
-	for _, path := range paths {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
-		if err != nil {
-			return false
-		}
-		resp, err := client.Do(request)
-		if err != nil {
-			continue
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			return true
-		}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+parsed.Host+router.MultiHealthPath, nil)
+	if err != nil {
+		return false
 	}
-	return false
-}
-
-// providerHealthPaths is every provider's legacy health path, the one its 0.0.1 router answered.
-func providerHealthPaths() []string {
-	paths := make([]string, 0, len(providers.Names))
-	for _, name := range providers.Names {
-		if provider, ok := providers.ByName(name); ok {
-			paths = append(paths, provider.Router.HealthPath)
-		}
+	resp, err := client.Do(request)
+	if err != nil {
+		return false
 	}
-	return paths
+	_ = resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 // proxyValueURL adds the scheme a proxy value without one reads with.

@@ -16,7 +16,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
 )
 
-// fakeRouter is one fake router of another generation: it answers the health paths a router
+// fakeRouter is one fake router of another generation: it answers the health path a router
 // probe asks and records every request it is given.
 type fakeRouter struct {
 	server *httptest.Server
@@ -32,8 +32,7 @@ func newFakeRouter(t *testing.T) *fakeRouter {
 		fake.method = append(fake.method, r.Method)
 		fake.paths = append(fake.paths, r.URL.Path)
 		fake.mu.Unlock()
-		if r.Method == http.MethodGet && (r.URL.Path == router.MultiHealthPath ||
-			strings.HasSuffix(r.URL.Path, "-router/health")) {
+		if r.Method == http.MethodGet && r.URL.Path == router.MultiHealthPath {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"ok":true,"name":"huddle-router"}`))
 			return
@@ -49,7 +48,7 @@ func (f *fakeRouter) tunnelled() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for i, path := range f.paths {
-		if f.method[i] == http.MethodConnect || (path != router.MultiHealthPath && !strings.HasSuffix(path, "-router/health")) {
+		if f.method[i] == http.MethodConnect || path != router.MultiHealthPath {
 			return true
 		}
 	}
