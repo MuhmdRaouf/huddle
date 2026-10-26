@@ -964,7 +964,7 @@ describe("palette actions through the dialog", () => {
     fireEvent.click(screen.getByText("Theme: Dark"));
     await flush();
     expect(document.documentElement.getAttribute("data-scheme")).toBe("dark");
-    expect(document.documentElement.getAttribute("data-theme")).toBe("mocha");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("huddle");
     expect(prefs.getItem("huddle:scheme")).toBe("dark");
   });
 });

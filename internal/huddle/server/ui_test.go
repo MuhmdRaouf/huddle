@@ -57,8 +57,8 @@ func TestPWARoutes(t *testing.T) {
 }
 
 // The static shell the server hands out: every asset the page loads is served, nothing points
-// off-box or at a route the build no longer ships, and the compiled CSS carries the shared
-// mocha/latte themes through daisyUI.
+// off-box or at a route the build no longer ships, and the compiled CSS carries the theme —
+// daisyUI's dark default and the light side the scheme switch keys.
 func TestUI(t *testing.T) {
 	srv := startServer(t, nil)
 
@@ -114,8 +114,8 @@ func TestUI(t *testing.T) {
 				t.Fatalf("the CSS carries the foreign colour %s", gone)
 			}
 		}
-		if !strings.Contains(css, "prefers-color-scheme:dark") || !strings.Contains(css, "[data-theme=latte]") {
-			t.Fatal("the CSS misses the dark default or the latte switch")
+		if !strings.Contains(css, "prefers-color-scheme:dark") || !strings.Contains(css, ":root[data-scheme=light]") {
+			t.Fatal("the CSS misses the dark default or the light side")
 		}
 		for _, part := range []string{".btn{", ".badge{", ".menu{", ".card{", ".join{", ".stat{", ".skeleton{", ".kbd{"} {
 			if !strings.Contains(css, part) {

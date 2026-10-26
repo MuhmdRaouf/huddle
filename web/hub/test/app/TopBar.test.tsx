@@ -83,7 +83,7 @@ describe("the theme menu", () => {
     });
     expect(localStorage.getItem("huddle:scheme")).toBe("light");
     expect(document.documentElement.dataset.scheme).toBe("light");
-    expect(document.documentElement.dataset.theme).toBe("latte");
+    expect(document.documentElement.dataset.theme).toBe("huddle");
     expect(screen.getByLabelText("Theme: Light")).toBeDefined();
     expect(document.querySelector('[role="menu"]')).toBeNull();
   });
@@ -112,7 +112,7 @@ describe("the theme menu", () => {
     });
     expect(localStorage.getItem("huddle:scheme")).toBe("system");
     expect(document.documentElement.dataset.scheme).toBe("dark");
-    expect(document.documentElement.dataset.theme).toBe("mocha");
+    expect(document.documentElement.dataset.theme).toBe("huddle");
   });
 });
 

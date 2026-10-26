@@ -1,12 +1,14 @@
 // theme.ts — the light or dark scheme the tokens paint in, and the flavour they paint it with. The
 // scheme is the OS's choice, unless this browser keeps an override (the switch in Settings) under
-// "huddle:scheme". The resolved scheme lands on <html data-scheme>, which tokens.css reads, and as the
-// matching Catppuccin variant on <html data-theme>, which the daisyUI themes in theme.css read; with
-// the OS choice it follows every flip of prefers-color-scheme while the page is open. The installed
-// app's status bar takes its colour from the theme-color metas: an override paints every one in its
-// scheme with no media query, and the OS choice keeps the dark-then-light pair keyed to the OS. The flavour,
-// kept under "huddle:flavour", lands on <html data-flavour>, where tokens.css remaps its colour
-// tokens to Catppuccin latte or mocha; plain leaves the attribute off.
+// "huddle:scheme". The resolved side lands on <html data-scheme>, which tokens.css and theme.css
+// read, and the kept theme's id (the registry in themes.ts) lands on <html data-theme>, which
+// theme.css's side rules and variants read; with the OS choice it follows every flip of
+// prefers-color-scheme while the page is open. The installed app's status bar takes its colour from
+// the theme-color metas: an override paints every one in its scheme with no media query, and the OS
+// choice keeps the dark-then-light pair keyed to the OS. The flavour, kept under "huddle:flavour",
+// lands on <html data-flavour>, where tokens.css remaps its colour tokens to Catppuccin latte or
+// mocha; plain leaves the attribute off.
+import { readTheme, sideOf } from "./themes.ts";
 
 /** The two schemes tokens.css paints. */
 export type Scheme = "light" | "dark";
@@ -58,9 +60,6 @@ export function resolveScheme(pref: SchemePref, systemDark: boolean): Scheme {
   return systemDark ? "dark" : "light";
 }
 
-/** The daisyUI variant each scheme paints the pages not yet on the tokens in. */
-const VARIANT: Record<Scheme, string> = { dark: "mocha", light: "latte" };
-
 /** The status bar colour of each scheme: tokens.css's plain --ui-bg, which .ui-shell paints under
  *  the bar. theme-boot.js and index.html carry the same two values. */
 const BAR: Record<Scheme, string> = { light: "#f6f7f9", dark: "#0e1014" };
@@ -78,12 +77,18 @@ function paintBar(doc: Document, pref: SchemePref): void {
   });
 }
 
-/** Puts the resolved scheme and its daisyUI variant on the root element, paints the status bar to
- *  match, and answers the scheme. */
-export function applyScheme(root: HTMLElement, pref: SchemePref, systemDark: boolean): Scheme {
+/** Puts the resolved side and the kept theme on the root element, paints the status bar to match,
+ *  and answers the side. */
+export function applyScheme(
+  root: HTMLElement,
+  pref: SchemePref,
+  systemDark: boolean,
+  store: SchemeStore = localStorage,
+): Scheme {
   const scheme = resolveScheme(pref, systemDark);
-  root.dataset.scheme = scheme;
-  root.dataset.theme = VARIANT[scheme];
+  const theme = readTheme(store);
+  root.dataset.theme = theme;
+  root.dataset.scheme = sideOf(theme, scheme);
   paintBar(root.ownerDocument, pref);
   return scheme;
 }
@@ -117,7 +122,7 @@ export function applyFlavour(root: HTMLElement, flavour: Flavour): void {
 export function followScheme(root: HTMLElement, store: SchemeStore, query: SchemeQuery): () => void {
   applyFlavour(root, readFlavour(store));
   const apply = (): void => {
-    applyScheme(root, readScheme(store), query.matches);
+    applyScheme(root, readScheme(store), query.matches, store);
   };
   apply();
   query.addEventListener("change", apply);

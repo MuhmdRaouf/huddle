@@ -113,10 +113,10 @@ describe("theme", () => {
     const root = document.createElement("html");
     expect(applyScheme(root, "system", true)).toBe("dark");
     expect(root.dataset.scheme).toBe("dark");
-    expect(root.dataset.theme).toBe("mocha");
+    expect(root.dataset.theme).toBe("huddle");
     expect(applyScheme(root, "light", true)).toBe("light");
     expect(root.dataset.scheme).toBe("light");
-    expect(root.dataset.theme).toBe("latte");
+    expect(root.dataset.theme).toBe("huddle");
   });
 
   it("paints the status bar in the chosen scheme, whatever the OS, and gives System back the OS pair", () => {

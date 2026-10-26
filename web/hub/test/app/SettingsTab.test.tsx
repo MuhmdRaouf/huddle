@@ -231,7 +231,7 @@ describe("the appearance section", () => {
     expect(pressed()).toEqual(["true", "false", "false"]);
     expect(localStorage.getItem("huddle:scheme")).toBe("system");
     expect(document.documentElement.dataset.scheme).toBe("light");
-    expect(document.documentElement.dataset.theme).toBe("latte");
+    expect(document.documentElement.dataset.theme).toBe("huddle");
   });
 
   it("TestOffersTheThreeSchemesAndTheCatppuccinFlavour", async () => {

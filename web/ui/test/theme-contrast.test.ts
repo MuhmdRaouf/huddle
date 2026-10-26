@@ -1,10 +1,12 @@
-// theme-contrast.test.ts — the colour the pages paint keeps WCAG AA. tokens.css comes first: in each
-// of its four schemes (light, dark, and the Catppuccin flavour's latte and mocha) every ink is 4.5:1
-// on every surface and on its own tint, and every mark is 3:1 on every surface. Then the daisyUI
-// variants theme.css still ships: base-content on each base shade, and each colour's *-content on
-// the colour. The ratios come from the WCAG relative-luminance formula, written here; no dependency.
+// theme-contrast.test.ts — the colour the pages paint keeps WCAG AA. tokens.css comes first: in
+// every scheme it paints (each registered theme's side, and the Catppuccin flavour's latte and
+// mocha) every ink is 4.5:1 on every surface and on its own tint, and every mark is 3:1 on every
+// surface. Then the looks theme.css ships: base-content on each base shade, and each colour's
+// *-content on the colour. The ratios come from the WCAG relative-luminance formula, written here;
+// no dependency.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
+import { THEMES, type ThemeSide } from "../src/themes.ts";
 
 /** WCAG relative luminance: the channel linearised, then the three weights. */
 function luminance(hex: string): number {
@@ -25,15 +27,17 @@ function contrast(a: string, b: string): number {
 /** One colour declaration: a light-dark(light, dark) pair, or another token it takes its colour from. */
 type Colour = { kind: "pair"; light: string; dark: string } | { kind: "alias"; of: string };
 
-/** The four schemes: the plain tokens in each scheme, and the Catppuccin flavour over them. */
-const SCHEMES = [
-  { id: "light", side: "light", flavour: false },
-  { id: "dark", side: "dark", flavour: false },
+/** One scheme tokens.css paints: a registered theme's side, or the Catppuccin flavour over the plain. */
+type Scheme = { id: string; side: ThemeSide; flavour: boolean };
+
+/** Every registered theme's every side, then the flavour's two. */
+const SCHEMES: readonly Scheme[] = [
+  ...THEMES.flatMap((t): Scheme[] =>
+    t.sides.map((side) => ({ id: `${t.id} ${side}`, side, flavour: false })),
+  ),
   { id: "latte", side: "light", flavour: true },
   { id: "mocha", side: "dark", flavour: true },
-] as const;
-
-type Scheme = (typeof SCHEMES)[number];
+];
 
 /** The colour declarations of one rule body, keyed by token name without the --ui- prefix. */
 function colours(body: string): Map<string, Colour> {
@@ -127,8 +131,9 @@ describe("tokens.css", () => {
 
 /* ---- theme.css ---- */
 
-/** The twelve variants the shared css ships: six families, a dark and a light one each. */
-const THEMES = [
+/** The twelve looks the shared css ships: six families, a dark and a light one each; latte's tokens
+ *  come from the light side rule, the rest from daisyUI theme blocks. */
+const VARIANTS = [
   "mocha",
   "latte",
   "gruvbox-dark",
@@ -158,7 +163,8 @@ const TOKENS = [
 /** One variant's declarations, read straight from the css: token name to #rrggbb. */
 type Tokens = Partial<Record<(typeof TOKENS)[number], string>>;
 
-/** The daisyUI theme blocks of theme.css, keyed by the name each declares. */
+/** The daisyUI theme blocks of theme.css, keyed by the name each declares, plus the light side rule
+ *  under "latte", whose tokens it carries. */
 function readThemes(): Map<string, Tokens> {
   const css = readFileSync("src/theme.css", "utf8");
   const out = new Map<string, Tokens>();
@@ -171,12 +177,19 @@ function readThemes(): Map<string, Tokens> {
       tokens[decl[1] as (typeof TOKENS)[number]] = decl[2] ?? "";
     out.set(name, tokens);
   }
+  const light = css.match(/:root\[data-scheme="light"\]\s*\{([^}]*)\}/)?.[1];
+  if (light) {
+    const tokens: Tokens = {};
+    for (const decl of light.matchAll(/--color-([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})/g))
+      tokens[decl[1] as (typeof TOKENS)[number]] = decl[2] ?? "";
+    out.set("latte", tokens);
+  }
   return out;
 }
 
 describe("theme.css", () => {
   it("ships the twelve variants: six families, a dark and a light one each", () => {
-    expect([...readThemes().keys()].sort()).toEqual([...THEMES].sort());
+    expect([...readThemes().keys()].sort()).toEqual([...VARIANTS].sort());
   });
 
   it("declares every base, ink and status token in each variant", () => {
@@ -185,7 +198,7 @@ describe("theme.css", () => {
   });
 });
 
-describe.each(THEMES)("%s", (id) => {
+describe.each(VARIANTS)("%s", (id) => {
   const tokens = readThemes().get(id) ?? {};
 
   it("keeps body text at WCAG AA on every base shade", () => {

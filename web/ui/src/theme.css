@@ -1,17 +1,21 @@
-/* The look Radar and Huddle share: twelve daisyUI themes in six families, a dark and a light one
- * each (Catppuccin, Gruvbox, Tokyo, Rosé Pine, Nord, Solarized), the design system's font tokens,
- * one colour per model, and the few utilities daisyUI has no component for.
+/* The look Radar and Huddle share: a dark and a light side in six families (Catppuccin, Gruvbox,
+ * Tokyo, Rosé Pine, Nord, Solarized), the design system's font tokens, one colour per model, and
+ * the few utilities daisyUI has no component for.
  *
  * A dashboard's CSS entry imports Tailwind, turns daisyUI on without its stock themes, then this file:
  *   @import "tailwindcss";
  *   @plugin "daisyui" { themes: false; }
  *   @import "@huddle/ui/theme.css";
- * <html data-theme="mocha|latte|gruvbox-dark|…"> picks the variant; mocha is the default and the
- * prefers-dark choice. Text runs the system font: the @theme block points --font-sans and
- * --font-mono at the design system's --ui-font and --ui-font-mono, and no face loads from anywhere.
- * Every variant keeps its inks at WCAG AA (test/theme-contrast.test.ts); where the family's own ink
- * misses 4.5:1 the content token moves to black, white or a 4%-stepped shade of the body ink, never
- * the hue. */
+ * <html data-theme> names a theme from the ui registry (web/ui/src/themes.ts) and <html
+ * data-scheme> names the side it paints; theme-boot.js sets both before first paint and applyScheme
+ * keeps them in step. The dark side is daisyUI's mocha, the plugin's default and prefers-dark
+ * choice; the light side is the plain rule after it, which carries latte's tokens onto the side.
+ * The other ten plugin themes name the families' ids, which no registry theme holds, so their rules
+ * key on the side first and keep the ids beside it. Text runs the system font: the @theme block
+ * points --font-sans and --font-mono at the design system's --ui-font and --ui-font-mono, and no
+ * face loads from anywhere. Every side keeps its inks at WCAG AA (test/theme-contrast.test.ts);
+ * where the family's own ink misses 4.5:1 the content token moves to black, white or a 4%-stepped
+ * shade of the body ink, never the hue. */
 
 @plugin "daisyui/theme" {
   name: "mocha";
@@ -50,10 +54,10 @@
   --noise: 0;
 }
 
-@plugin "daisyui/theme" {
-  name: "latte";
-  default: false;
-  prefersdark: false;
+/* The light side: latte's tokens, keyed to the side so every theme on <html data-theme> paints
+ * light with them. The tokens here sit over the dark default's, and color-scheme puts the form
+ * controls in light mode. */
+:root[data-scheme="light"] {
   color-scheme: light;
 
   --color-base-100: #eff1f5;
@@ -461,9 +465,9 @@
 }
 
 /* One colour per model family, the same in every dot, chart series, strip and chip (read by modelColor()).
- * Every dark variant carries mocha's set and every light one latte's, so a model keeps its colour
- * whichever family is on. */
-[data-theme="mocha"],
+ * The side carries mocha's set on dark and latte's on light, so a model keeps its colour whichever
+ * family is on. */
+[data-scheme="dark"],
 [data-theme="gruvbox-dark"],
 [data-theme="tokyo-night"],
 [data-theme="rose-pine"],
@@ -487,7 +491,7 @@
   --haze-2: rgb(203 166 247 / 0.08);
 }
 
-[data-theme="latte"],
+[data-scheme="light"],
 [data-theme="gruvbox-light"],
 [data-theme="tokyo-day"],
 [data-theme="rose-pine-dawn"],
@@ -701,8 +705,8 @@
   );
 }
 
-/* the ring's two shades: two of mocha's blues on the dark variants, two of Catppuccin's lavenders on the light ones */
-[data-theme="mocha"],
+/* the ring's two shades: two of mocha's blues on the dark side, two of Catppuccin's lavenders on the light one */
+[data-scheme="dark"],
 [data-theme="gruvbox-dark"],
 [data-theme="tokyo-night"],
 [data-theme="rose-pine"],
@@ -712,7 +716,7 @@
   --aura-b: #74c7ec;
 }
 
-[data-theme="latte"],
+[data-scheme="light"],
 [data-theme="gruvbox-light"],
 [data-theme="tokyo-day"],
 [data-theme="rose-pine-dawn"],
@@ -722,14 +726,14 @@
   --aura-b: #b4befe;
 }
 
-/* The light variants' legibility floor. On a dark variant a faded text colour still reads (light ink on
+/* The light side's legibility floor. On a dark side a faded text colour still reads (light ink on
  * near-black), on a light one the same fade drops under WCAG AA. So there every muted ink becomes
  * Catppuccin's Subtext 1, and the pastel status hues deepen when they colour text (the fills and dots
  * keep the palette's own hue through their bg-/border- classes). */
 @layer utilities {
-  /* daisyUI fades inactive tabs to 3.96:1 on the dark variants; Subtext 0 keeps them quieter than the
+  /* daisyUI fades inactive tabs to 3.96:1 on the dark side; Subtext 0 keeps them quieter than the
    * active tab and above AA */
-  [data-theme="mocha"] .tab:not(.tab-active),
+  [data-scheme="dark"] .tab:not(.tab-active),
   [data-theme="gruvbox-dark"] .tab:not(.tab-active),
   [data-theme="tokyo-night"] .tab:not(.tab-active),
   [data-theme="rose-pine"] .tab:not(.tab-active),
@@ -738,7 +742,7 @@
     color: #bac2de;
   }
 
-  [data-theme="latte"],
+  [data-scheme="light"],
   [data-theme="gruvbox-light"],
   [data-theme="tokyo-day"],
   [data-theme="rose-pine-dawn"],
@@ -790,4 +794,86 @@
       color: color-mix(in oklab, var(--alert-color, var(--color-base-content)) 68%, black);
     }
   }
+}
+
+/* The hub's side-keyed values, carried here while their homes still key them on the family ids:
+ * the hue sets and --code-hue from web/hub/src/app.css, and the latte palette, the status inks and
+ * the chart band from web/hub/src/radar/legacy.css. A page whose theme id is in the registry and
+ * whose side is set reads them from here. */
+[data-scheme="dark"] {
+  /* app.css's hue set, read by its c-* colour utilities */
+  --hue-blue: #89b4fa;
+  --hue-teal: #94e2d5;
+  --hue-sky: #89dceb;
+  --hue-lavender: #b4befe;
+  --hue-pink: #f5c2e7;
+  --hue-flamingo: #f2cdcd;
+  --hue-sapphire: #74c7ec;
+  --hue-mauve: #cba6f7;
+  --hue-green: #a6e3a1;
+  --hue-yellow: #f9e2af;
+  --hue-peach: #fab387;
+  --hue-red: #f38ba8;
+}
+
+[data-scheme="light"] {
+  /* app.css's hue set, read by its c-* colour utilities */
+  --hue-blue: #1e66f5;
+  --hue-teal: #179299;
+  --hue-sky: #04a5e5;
+  --hue-lavender: #7287fd;
+  --hue-pink: #ea76cb;
+  --hue-flamingo: #dd7878;
+  --hue-sapphire: #209fb5;
+  --hue-mauve: #8839ef;
+  --hue-green: #40a02b;
+  --hue-yellow: #df8e1d;
+  --hue-peach: #fe640b;
+  --hue-red: #d20f39;
+  --code-hue: 70%;
+
+  /* legacy.css's latte palette and the radar tokens read off it */
+  --ctp-rosewater: #dc8a78;
+  --ctp-flamingo: #dd7878;
+  --ctp-pink: #ea76cb;
+  --ctp-mauve: #8839ef;
+  --ctp-red: #d20f39;
+  --ctp-maroon: #e64553;
+  --ctp-peach: #fe640b;
+  --ctp-yellow: #df8e1d;
+  --ctp-green: #40a02b;
+  --ctp-teal: #179299;
+  --ctp-sky: #04a5e5;
+  --ctp-sapphire: #209fb5;
+  --ctp-blue: #1e66f5;
+  --ctp-lavender: #7287fd;
+  --ctp-text: #4c4f69;
+  --ctp-subtext1: #5c5f77;
+  --ctp-subtext0: #6c6f85;
+  --ctp-overlay2: #7c7f93;
+  --ctp-overlay1: #8c8fa1;
+  --ctp-overlay0: #9ca0b0;
+  --ctp-surface2: #acb0be;
+  --ctp-surface1: #bcc0cc;
+  --ctp-surface0: #ccd0da;
+  --ctp-base: #eff1f5;
+  --ctp-mantle: #e6e9ef;
+  --ctp-crust: #dce0e8;
+  --on-accent: #ffffff;
+  --muted-ink: var(--ctp-subtext1);
+  --shadow: 0 1px 2px rgb(76 79 105 / 0.12);
+  --shadow-lg: 0 18px 48px rgb(76 79 105 / 0.22);
+  --tint: 13%;
+
+  /* legacy.css deepens the status inks for light panels */
+  --primary-fg: color-mix(in srgb, var(--ctp-blue) 85%, black);
+  --success-fg: color-mix(in srgb, var(--ctp-green) 68%, black);
+  --warning-fg: color-mix(in srgb, var(--ctp-peach) 62%, black);
+  --danger-fg: color-mix(in srgb, var(--ctp-red) 90%, black);
+  --info-fg: color-mix(in srgb, var(--ctp-sapphire) 62%, black);
+  --focus: var(--ctp-blue);
+}
+
+[data-scheme="light"] .chart-band {
+  fill-opacity: 0.28;
 }
