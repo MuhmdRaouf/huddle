@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -577,6 +578,45 @@ func (t *Tab) FactsOf(ctx context.Context, id string) SessionFacts {
 		facts.Provider = &provider
 	}
 	return facts
+}
+
+// ToolRun is one tool call radar recorded for a session: its tool, the hash of its input,
+// whether it answered without an error, and when it started.
+type ToolRun struct {
+	Name     string
+	InputKey string
+	OK       bool
+	At       time.Time
+}
+
+// ToolRunsOf reads one session's recorded tool calls through the tab's own API, in process,
+// oldest first. The limit is radar's own largest, so the whole history answers; a call with no
+// input key is left out, and an unreadable answer answers none.
+func (t *Tab) ToolRunsOf(ctx context.Context, session string) []ToolRun {
+	body, ok := t.RadarAnswer(ctx, "/api/tools?"+url.Values{"session": {session}, "limit": {"1000"}}.Encode())
+	if !ok {
+		return nil
+	}
+	var answer struct {
+		Tools []struct {
+			Name      string  `json:"name"`
+			StartedAt int64   `json:"startedAt"`
+			Ok        bool    `json:"ok"`
+			InputKey  *string `json:"inputKey"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &answer); err != nil {
+		return nil
+	}
+	runs := make([]ToolRun, 0, len(answer.Tools))
+	for _, tool := range answer.Tools {
+		if tool.InputKey == nil || *tool.InputKey == "" {
+			continue
+		}
+		runs = append(runs, ToolRun{Name: tool.Name, InputKey: *tool.InputKey, OK: tool.Ok, At: time.UnixMilli(tool.StartedAt)})
+	}
+	slices.SortStableFunc(runs, func(a, b ToolRun) int { return a.At.Compare(b.At) })
+	return runs
 }
 
 // RunningSession is one session Claude Code's own session registry names running, as radar

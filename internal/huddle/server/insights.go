@@ -1,8 +1,11 @@
 package server
 
 // The insights route: today's tips over the history the registry already holds, the owner's
-// credential only. Tool runs and lane requests live in radar and are not read here, so the
-// always_allowed and longest_wait rules are the ones that can fire.
+// credential only. The owner's card (no session) reads the needs-you history alone, so the
+// always_allowed and longest_wait rules are the ones that can fire there; a session's answer
+// adds that session's tool runs from the mounted radar tab, and same_command is the rule they
+// add: tool_failing needs the error text radar does not record, so the session's answer
+// leaves its tips out.
 
 import (
 	"net/http"
@@ -36,10 +39,20 @@ type insightsSettingsAnswer struct {
 }
 
 // insightsRoute answers GET /api/insights with the tips the last 7 days of needs-you history
-// supports, read-only over the registry's own rows. Tips for me off empties the answer before
-// anything else is read.
+// supports, read-only over the registry's own rows. A session query narrows the answer to that
+// session: its rows alone go in, its tool runs come in from the mounted radar tab and add
+// same_command alone (tool_failing needs the error text radar does not record), and its tips
+// alone come out. Tips for me gates the owner's answer, tips to my sessions the session's; the
+// switch that is off empties the answer before anything else is read.
 func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
-	if !insights.ReadSettings(insights.SettingsFile(s.o.Home)).TipsForMe {
+	session := r.URL.Query().Get("session")
+	settings := insights.ReadSettings(insights.SettingsFile(s.o.Home))
+	if session != "" {
+		if !settings.TipsToSessions {
+			s.writeJSON(w, 200, insightsAnswer{Tips: []tipView{}}, nil)
+			return nil
+		}
+	} else if !settings.TipsForMe {
 		s.writeJSON(w, 200, insightsAnswer{Tips: []tipView{}}, nil)
 		return nil
 	}
@@ -53,6 +66,9 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 	}
 	in := insights.Input{Now: now}
 	for _, record := range records {
+		if session != "" && record.SessionID != session {
+			continue
+		}
 		in.Items = append(in.Items, insights.Item{
 			Session:   record.SessionID,
 			Kind:      record.Kind,
@@ -71,9 +87,28 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 			DecidedAt: record.DecidedAt,
 		})
 	}
+	if session != "" && s.radar != nil {
+		for _, run := range s.radar.ToolRunsOf(r.Context(), session) {
+			in.Tools = append(in.Tools, insights.ToolRun{
+				Session:  session,
+				Tool:     run.Name,
+				InputKey: run.InputKey,
+				OK:       run.OK,
+				At:       run.At,
+			})
+		}
+	}
 	tips := insights.Detect(in)
 	views := make([]tipView, 0, len(tips))
 	for _, tip := range tips {
+		if session != "" && tip.Session != session {
+			continue
+		}
+		// tool_failing reads the error text the radar tab's tool runs do not carry, so the
+		// session's answer leaves its tips out rather than name a failure it cannot see
+		if session != "" && tip.Rule == insights.RuleToolFailing {
+			continue
+		}
 		views = append(views, tipView{
 			ID:       tip.ID,
 			Rule:     tip.Rule,
