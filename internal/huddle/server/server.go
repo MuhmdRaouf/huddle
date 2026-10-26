@@ -1469,6 +1469,10 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.devicesRoute(w, r)
 	case credentialed && devicePath.MatchString(path) && r.Method == http.MethodDelete:
 		return s.deviceRemoveRoute(w, r, path, me)
+	case credentialed && path == "/api/signout" && r.Method == http.MethodPost:
+		return s.signOutRoute(w, r, me)
+	case credentialed && path == "/api/signout/all" && r.Method == http.MethodPost:
+		return s.signOutAllRoute(w, r, me)
 	// the phone guide the dashboard's "Add a phone" shows: started here, its QR served beside
 	// it (phone.go)
 	case credentialed && path == "/api/phone" && r.Method == http.MethodPost:

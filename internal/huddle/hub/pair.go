@@ -161,6 +161,42 @@ func (d *DB) DeviceRemove(ctx context.Context, name string, nowMS int64) (bool, 
 	return removed, err
 }
 
+// SessionRemove ends one device session by its digest and answers whether a session went; the
+// device itself and its other sessions stay.
+func (d *DB) SessionRemove(ctx context.Context, digest string) (bool, error) {
+	removed := false
+	err := d.st.Tx(ctx, func(ctx context.Context, q store.Q) error {
+		if err := q.Run(ctx, "DELETE FROM device_sessions WHERE digest = ?", digest); err != nil {
+			return err
+		}
+		gone, err := changesOf(ctx, q)
+		if err != nil {
+			return err
+		}
+		removed = gone
+		return nil
+	})
+	return removed, err
+}
+
+// SessionsRemoveAll ends every device session and answers how many went; every paired device
+// keeps its row, its passkey credential and any TOTP enrolment.
+func (d *DB) SessionsRemoveAll(ctx context.Context) (int64, error) {
+	gone := int64(0)
+	err := d.st.Tx(ctx, func(ctx context.Context, q store.Q) error {
+		if err := q.Run(ctx, "DELETE FROM device_sessions"); err != nil {
+			return err
+		}
+		row, err := q.Get(ctx, "SELECT changes() AS n")
+		if err != nil {
+			return err
+		}
+		gone, _ = row["n"].(int64)
+		return nil
+	})
+	return gone, err
+}
+
 // DeviceSession resolves a session digest to its device while the session lives, and refreshes
 // the device's last-seen moment when it is a minute old or older. The session table is keyed by
 // the digest, so a removed device's sessions are already gone with it.

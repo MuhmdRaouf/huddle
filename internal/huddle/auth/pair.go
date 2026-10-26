@@ -435,6 +435,26 @@ func (p *Pairing) Remove(ctx context.Context, name string) bool {
 	return removed
 }
 
+// EndSession ends the device session one cookie names, leaving the device paired; an empty
+// cookie names no session.
+func (p *Pairing) EndSession(ctx context.Context, cookie string) bool {
+	if cookie == "" {
+		return false
+	}
+	ended, err := p.db.SessionRemove(ctx, PairDigest(cookie))
+	if err != nil {
+		p.log(fmt.Sprintf("could not end the device session: %v", err))
+		return false
+	}
+	return ended
+}
+
+// EndAllSessions ends every device session at once and answers how many went; every device
+// stays paired.
+func (p *Pairing) EndAllSessions(ctx context.Context) (int64, error) {
+	return p.db.SessionsRemoveAll(ctx)
+}
+
 // freshSession draws one cookie value with its digest and expiry.
 func (p *Pairing) freshSession() (cookie, digest string, expires int64) {
 	cookie = "hdev_" + base64.RawURLEncoding.EncodeToString(randomBytes(32))

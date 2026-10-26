@@ -816,6 +816,37 @@ func (a *Auth) Kick(name string) bool {
 	return true
 }
 
+// SignOut ends the credential a browser presents — one of its browser sessions, the owner's
+// own included, or one of the root tokens — and answers whether one went. A member's own
+// credential is not the browser's to end and stays.
+func (a *Auth) SignOut(cred string) bool {
+	if cred == "" {
+		return false
+	}
+	d := digestOf(cred)
+	browserGone := drop(&a.browsers, func(b browser) bool { return same(d, b.cred) })
+	rootGone := drop(&a.roots, func(r digest) bool { return same(d, r) })
+	if !browserGone && !rootGone {
+		return false
+	}
+	a.log("a signed-in browser signed out")
+	a.save()
+	return true
+}
+
+// SignOutAll ends every browser session, the owner's and every member's, and answers how many
+// went; the root tokens, the members' own credentials and the invites stay.
+func (a *Auth) SignOutAll() int {
+	gone := len(a.browsers)
+	a.browsers = nil
+	if gone == 0 {
+		return 0
+	}
+	a.log("every signed-in browser signed out")
+	a.save()
+	return gone
+}
+
 // LoginCode mints a code good once, for five minutes; by is the member asking for it (nil
 // means the root), whose browser gets none of its rights.
 func (a *Auth) LoginCode(by *string) string {
