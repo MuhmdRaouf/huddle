@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 )
 
 // inboxListener opens a unix socket at a short path — the 104-byte limit rules out t.TempDir()'s
@@ -203,6 +204,54 @@ func TestAHeldInboxMessageSaysApproveInTheTerminal(t *testing.T) {
 	taken := bodyMap(t, out)
 	if list, _ := taken["messages"].([]any); len(list) != 0 {
 		t.Errorf("the listen hook took %v, want nothing: the claude holds the message", list)
+	}
+}
+
+func TestTheHoldWindowEndsUnderAFixedClock(t *testing.T) {
+	registry, _ := openRegistry(t)
+	sock, ln := inboxListener(t)
+	lines := inboxLines(t, ln)
+
+	const id = "44444444-5555-6666-7777-888888888888"
+	pid := os.Getpid()
+	if err := registry.Report(bg, hub.Report{
+		SessionID: id, Pid: pid, InboxSocket: sock,
+		LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T08:59:58.000Z",
+	}); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	config := t.TempDir()
+	s := &server{
+		registry: registry,
+		now:      fixedClock(),
+		o: Options{
+			Home:    t.TempDir(),
+			Environ: []string{"CLAUDE_CONFIG_DIR=" + config},
+			Secrets: func(context.Context, home.Home) home.SecretStore {
+				return home.KeyFiles{Dir: filepath.Join(t.TempDir(), "keys")}
+			},
+		},
+	}
+	// no sessions file under config: nothing ever says the claude holds the turn, so the read
+	// only ends when the window itself ends
+	in := hub.MessageIn{SessionID: id, FromKind: hub.FromOwner, Text: "still with me?"}
+	msgID, err := registry.QueueMessage(bg, in, "2026-10-16T09:00:00.000Z")
+	if err != nil {
+		t.Fatalf("queue the message: %v", err)
+	}
+
+	route := make(chan string, 1)
+	go func() { route <- s.postInbox(bg, msgID, in) }()
+	select {
+	case got := <-route:
+		if got != hub.RouteInbox {
+			t.Fatalf("postInbox route = %q, want inbox", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("postInbox never came back: the hold window runs on the server's fixed clock")
+	}
+	if data := <-lines; data == nil {
+		t.Fatal("nothing reached the inbox socket")
 	}
 }
 

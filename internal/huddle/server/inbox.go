@@ -78,7 +78,9 @@ func (s *server) postInbox(ctx context.Context, id int64, in hub.MessageIn) stri
 	}
 	file := filepath.Join(outside.ClaudeConfigDir(environOf(env)),
 		"sessions", strconv.Itoa(row.Pid)+".json")
-	deadline := s.now().Add(heldWindow)
+	// The window waits on a real file, so it runs on the wall clock: a fixed clock (a test's)
+	// must not hold the read open past the window.
+	deadline := time.Now().Add(heldWindow)
 	for {
 		if ctx.Err() == nil && inboxHolds(file, in.SessionID, row.Pid) {
 			if err := s.registry.MarkHeld(ctx, id, jsfmt.ISOTime(s.now())); err != nil {
@@ -86,7 +88,7 @@ func (s *server) postInbox(ctx context.Context, id int64, in hub.MessageIn) stri
 			}
 			return hub.RouteHeld
 		}
-		if ctx.Err() != nil || !s.now().Before(deadline) {
+		if ctx.Err() != nil || !time.Now().Before(deadline) {
 			break
 		}
 		time.Sleep(heldPoll)
