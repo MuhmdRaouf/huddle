@@ -6,8 +6,9 @@ package providers
 
 import "github.com/MuhmdRaouf/huddle/internal/domain"
 
-// Names is every provider a huddle provider invocation may name first, in router-port order.
-var Names = []string{"zai", "kimi", "deepseek", "minimax", "qwen"}
+// Names is every provider a huddle provider invocation may name first, in the providers' own
+// order — the order lanes and lists name them.
+var Names = domain.ProviderNames()
 
 var byName = map[string]domain.Provider{
 	Zai.Name:      Zai,

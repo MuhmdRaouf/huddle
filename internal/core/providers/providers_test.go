@@ -332,10 +332,14 @@ func TestByName(t *testing.T) {
 }
 
 func TestNames(t *testing.T) {
-	t.Run("lists the five providers in port order", func(t *testing.T) {
-		want := []string{"zai", "kimi", "deepseek", "minimax", "qwen"}
-		if !reflect.DeepEqual(Names, want) {
+	t.Run("is the domain's provider list and every name has a provider", func(t *testing.T) {
+		if want := domain.ProviderNames(); !reflect.DeepEqual(Names, want) {
 			t.Fatalf("Names = %v, want %v", Names, want)
+		}
+		for _, name := range Names {
+			if _, ok := ByName(name); !ok {
+				t.Errorf("ByName(%q) found nothing", name)
+			}
 		}
 	})
 }

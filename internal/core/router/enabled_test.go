@@ -66,6 +66,18 @@ func TestReadEnabled(t *testing.T) {
 		}
 	})
 
+	t.Run("every provider enabled in a shuffled file comes back in the providers' order", func(t *testing.T) {
+		env := domain.EnvLookup{"HUDDLE_ROUTER_HOME": t.TempDir()}
+		writeEnabled(t, env, `{"providers":["qwen","minimax","deepseek","kimi","zai"]}`)
+		names, err := ReadEnabled(env)
+		if err != nil {
+			t.Fatalf("ReadEnabled: %v", err)
+		}
+		if want := domain.ProviderNames(); !slices.Equal(names, want) {
+			t.Errorf("ReadEnabled = %v, want %v", names, want)
+		}
+	})
+
 	t.Run("an empty list is none", func(t *testing.T) {
 		env := domain.EnvLookup{"HUDDLE_ROUTER_HOME": t.TempDir()}
 		writeEnabled(t, env, `{"providers":[]}`)

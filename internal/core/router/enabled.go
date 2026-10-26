@@ -90,15 +90,8 @@ func ReadEnabled(env domain.EnvLookup) ([]string, error) {
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return nil, fmt.Errorf("%s: not valid providers.json (%s)", file, err)
 	}
-	// The compiled providers' order is the router ports' order.
-	byPort := make([]int64, 0, len(domain.PluginRouters))
-	for port := range domain.PluginRouters {
-		byPort = append(byPort, port)
-	}
-	slices.Sort(byPort)
 	var names []string
-	for _, port := range byPort {
-		name := domain.PluginRouters[port]
+	for _, name := range domain.ProviderNames() {
 		if slices.Contains(parsed.Providers, name) {
 			names = append(names, name)
 		}
