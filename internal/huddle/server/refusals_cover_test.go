@@ -62,9 +62,6 @@ func TestTheRoutesRefuseShapesTheyCannotActOn(t *testing.T) {
 	if code, _, body := srv.get(t, "/static/no-such-file.css", nil); code != 404 || !strings.Contains(body, "not found") {
 		t.Errorf("a missing static file = %d %s, want the 404", code, body)
 	}
-	if code, _, body := srv.get(t, "/fonts/no-such-face.woff2", nil); code != 404 || !strings.Contains(body, "missing build artifact") {
-		t.Errorf("a missing face = %d %s, want the artifact 404", code, body)
-	}
 	if code, _, body := srv.get(t, "/icons/icon-no-such-size.png", nil); code != 404 || !strings.Contains(body, "missing build artifact") {
 		t.Errorf("a missing icon = %d %s, want the artifact 404", code, body)
 	}

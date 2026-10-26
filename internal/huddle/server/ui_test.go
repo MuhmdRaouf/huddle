@@ -57,8 +57,8 @@ func TestPWARoutes(t *testing.T) {
 }
 
 // The static shell the server hands out: every asset the page loads is served, nothing points
-// off-box, the compiled CSS carries the shared mocha/latte themes through daisyUI, and the
-// bundled fonts answer with their type.
+// off-box or at a route the build no longer ships, and the compiled CSS carries the shared
+// mocha/latte themes through daisyUI.
 func TestUI(t *testing.T) {
 	srv := startServer(t, nil)
 
@@ -123,43 +123,16 @@ func TestUI(t *testing.T) {
 			}
 		}
 		if regexp.MustCompile(`url\((["']?)https?://`).MatchString(css) {
-			t.Fatal("the CSS loads a font from the network")
+			t.Fatal("the CSS loads something from the network")
 		}
-		if !strings.Contains(css, "url(/fonts/") {
-			t.Fatal("the CSS does not point at the bundled fonts")
+		if strings.Contains(css, "url(/fonts/") {
+			t.Fatal("the CSS points at /fonts/, which the build no longer ships")
 		}
 	})
 
-	t.Run("(e) every font the stylesheet names answers 200 as font/woff2; anything else is a 404", func(t *testing.T) {
-		_, _, sheet := srv.get(t, css, nil)
-		names := map[string]bool{}
-		for _, m := range regexp.MustCompile(`url\((/fonts/[^)]+)\)`).FindAllStringSubmatch(sheet, -1) {
-			names[strings.TrimPrefix(m[1], "/fonts/")] = true
-		}
-		if len(names) == 0 {
-			t.Fatal("the stylesheet names no fonts")
-		}
-		for name := range names {
-			if !strings.HasSuffix(name, ".woff2") {
-				continue // the .woff fallbacks ship only as woff2, like radar's
-			}
-			code, header, body := srv.get(t, "/fonts/"+name, nil)
-			if code != 200 || !strings.Contains(header.Get("Content-Type"), "font/woff2") {
-				t.Fatalf("%s = %d %q, want 200 font/woff2", name, code, header.Get("Content-Type"))
-			}
-			if len(body) <= 1000 {
-				t.Fatalf("%s carries %d bytes", name, len(body))
-			}
-		}
-		for _, path := range []string{
-			"/fonts/ibm-plex-mono-latin-400-normal.woff",
-			"/fonts/nope.woff2",
-			"/fonts/..%2Findex.html.woff2",
-			"/fonts/../../etc/passwd.woff2",
-		} {
-			if code, _, _ := srv.get(t, path, nil); code != 404 {
-				t.Fatalf("%s = %d, want 404", path, code)
-			}
+	t.Run("(e) no route serves fonts: /fonts/x.woff2 answers 404 as any unknown path does", func(t *testing.T) {
+		if code, _, _ := srv.get(t, "/fonts/x.woff2", nil); code != 404 {
+			t.Fatalf("/fonts/x.woff2 = %d, want 404", code)
 		}
 	})
 }

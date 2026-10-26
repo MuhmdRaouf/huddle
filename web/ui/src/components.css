@@ -771,9 +771,7 @@ button.ui-list-row:hover {
   background: var(--ui-surface);
   color: var(--ui-text);
   font-size: var(--ui-text-sm);
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.2),
-    0 12px 32px -12px rgb(0 0 0 / 0.45);
+  box-shadow: var(--ui-shadow-3);
   pointer-events: auto;
 }
 

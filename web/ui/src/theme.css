@@ -1,19 +1,17 @@
 /* The look Radar and Huddle share: twelve daisyUI themes in six families, a dark and a light one
- * each (Catppuccin, Gruvbox, Tokyo, Rosé Pine, Nord, Solarized), the bundled IBM Plex faces, one
- * colour per model, and the few utilities daisyUI has no component for.
+ * each (Catppuccin, Gruvbox, Tokyo, Rosé Pine, Nord, Solarized), the design system's font tokens,
+ * one colour per model, and the few utilities daisyUI has no component for.
  *
  * A dashboard's CSS entry imports Tailwind, turns daisyUI on without its stock themes, then this file:
  *   @import "tailwindcss";
  *   @plugin "daisyui" { themes: false; }
  *   @import "@huddle/ui/theme.css";
  * <html data-theme="mocha|latte|gruvbox-dark|…"> picks the variant; mocha is the default and the
- * prefers-dark choice. Fonts load from the bundle, never from the network. Every variant keeps its
- * inks at WCAG AA (test/theme-contrast.test.ts); where the family's own ink misses 4.5:1 the
- * content token moves to black, white or a 4%-stepped shade of the body ink, never the hue. */
-
-@import "@fontsource-variable/ibm-plex-sans/standard.css";
-@import "@fontsource/ibm-plex-mono/400.css";
-@import "@fontsource/ibm-plex-mono/500.css";
+ * prefers-dark choice. Text runs the system font: the @theme block points --font-sans and
+ * --font-mono at the design system's --ui-font and --ui-font-mono, and no face loads from anywhere.
+ * Every variant keeps its inks at WCAG AA (test/theme-contrast.test.ts); where the family's own ink
+ * misses 4.5:1 the content token moves to black, white or a 4%-stepped shade of the body ink, never
+ * the hue. */
 
 @plugin "daisyui/theme" {
   name: "mocha";
@@ -514,8 +512,8 @@
 }
 
 @theme {
-  --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: var(--ui-font);
+  --font-mono: var(--ui-font-mono);
   --text-meta: 0.8125rem;
   --text-meta--line-height: 1.125rem;
   --text-row: 0.9375rem;

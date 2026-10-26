@@ -169,10 +169,6 @@ var staticTypes = map[string]string{
 	".webmanifest": "application/manifest+json",
 }
 
-// fontName admits one allowlisted font file: the regex admits no "/", so the path can never
-// leave fonts/, and only .woff2 ships.
-var fontName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*\.woff2$`)
-
 // iconName admits the PWA's icon files by name: the regex admits no "/", so the path can never
 // leave icons/, and only the .png the manifest names ships.
 var iconName = regexp.MustCompile(`^icon-[a-z0-9-]+\.png$`)
@@ -1416,8 +1412,6 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 			return nil
 		}
 		return s.staticFile(w, name, staticTypes[name[strings.LastIndex(name, "."):]], "no-store")
-	case strings.HasPrefix(path, "/fonts/"):
-		return s.fontRoute(w, path)
 	case path == "/signed-out.css":
 		writeText(w, 200, signedOutCSS, map[string]string{"Content-Type": staticTypes[".css"]})
 		return nil
@@ -1958,12 +1952,6 @@ func (s *server) assetRoute(w http.ResponseWriter, path, prefix string, name *re
 	}
 	writeText(w, 200, string(body), map[string]string{"Content-Type": contentType, "Cache-Control": cache})
 	return nil
-}
-
-// fontRoute serves the bundled IBM Plex faces the dashboard's stylesheet points at. The build
-// names each face by its content hash, so a face never changes under its name.
-func (s *server) fontRoute(w http.ResponseWriter, path string) error {
-	return s.assetRoute(w, path, "/fonts/", fontName, "font/woff2", immutable)
 }
 
 // swRoute serves the app-shell service worker. The browser revalidates it on every load

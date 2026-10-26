@@ -1,7 +1,8 @@
 // tokens.spec.ts — the design system's own page, #/dev/tokens: every web/ui component on the
 // tokens, checked on the phone and the desktop project. It must fit the viewport with no
 // horizontal scroll, keep every tap target at least 44 px, pass axe in the light and the dark
-// scheme, follow the OS scheme, and keep the switch's override across a reload.
+// scheme, follow the OS scheme, and keep the switch's override across a reload. The tokens
+// themselves compute for the pointer and the motion setting, and the page runs the system font.
 
 import { expect, test, type Page } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
@@ -12,6 +13,7 @@ const BLOCKS = [
   "Colors",
   "Type",
   "Spacing",
+  "Layers, shadows and motion",
   "Buttons",
   "Badges",
   "Card",
@@ -22,6 +24,11 @@ const BLOCKS = [
   "Chart frame",
   "Sheet",
 ] as const;
+
+/** A CSS time in milliseconds: the built stylesheet minifies 180 ms to .18 s and 0 ms to 0 s, so a
+ *  duration is compared by value, not by the unit the minifier picked. */
+const ms = (time: string): number =>
+  time.endsWith("ms") ? Number.parseFloat(time) : Number.parseFloat(time) * 1000;
 
 /** Opens the tokens page in a signed-in browser. The authenticator set-up the first sign-in offers
  *  is not this page's subject, so the browser starts with its "Later" already kept. */
@@ -61,6 +68,28 @@ test.describe("the design tokens page", () => {
         }),
     );
     expect(small).toEqual([]);
+  });
+
+  test("the tokens compute for the pointer and the motion setting", async ({ page }) => {
+    const fine = test.info().project.name === "desktop";
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await openTokens(page);
+    const token = (name: string): Promise<string> =>
+      page.evaluate((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name);
+    expect(await token("--ui-control-h")).toBe(fine ? "36px" : "44px");
+    expect(await token("--ui-layer-toast")).toBe("50");
+    expect(ms(await token("--ui-dur"))).toBe(0);
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    expect(ms(await token("--ui-dur"))).toBe(180);
+    const fonts = await page.evaluate(async () => {
+      await document.fonts.ready;
+      return {
+        body: getComputedStyle(document.body).fontFamily,
+        families: [...document.fonts].map((face) => face.family),
+      };
+    });
+    expect(fonts.body).not.toMatch(/Plex|IBM/);
+    expect(fonts.families.filter((family) => /Plex/i.test(family))).toEqual([]);
   });
 
   for (const scheme of ["light", "dark"] as const) {

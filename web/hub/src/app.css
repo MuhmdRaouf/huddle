@@ -1,6 +1,6 @@
 /* Huddle's CSS entry. Tailwind scans only this directory (source(none) + @source), daisyUI ships its
- * components with the stock themes off — the twelve themes come from the shared package, which also
- * carries the bundled IBM Plex faces. <html data-theme="…"> picks the variant.
+ * components with the stock themes off — the twelve themes and the font tokens come from the shared
+ * package. <html data-theme="…"> picks the variant.
  *
  * What is still hand-written here is the little daisyUI has no component for: the hue carriers the
  * avatars and status marks read (--c the fill, --ci the ink), the segmented progress bar, the

@@ -7,8 +7,8 @@ import (
 )
 
 // Files holds the dashboard as built: index.html, the hashed app script, stylesheet and theme boot
-// script with their .br and .gz copies, and the fonts. The embed directive fails the build when dist
-// is missing, so Files is never nil or empty in a binary that exists.
+// script with their .br and .gz copies. The embed directive fails the build when dist is missing, so
+// Files is never nil or empty in a binary that exists.
 //
 //go:embed all:dist
 var Files embed.FS

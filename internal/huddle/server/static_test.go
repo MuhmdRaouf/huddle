@@ -51,13 +51,10 @@ func TestHashedAssetsAreImmutableAndPrecompressed(t *testing.T) {
 		}
 	}
 
-	// the fonts carry their hash in the name too; the PWA files under fixed names keep an hour
-	_, _, sheet := srv.get(t, shellAsset(t, srv, "app", ".css"), nil)
-	font := regexp.MustCompile(`/fonts/[^)]+\.woff2`).FindString(sheet)
+	// the PWA files under fixed names keep an hour
 	for path, want := range map[string]string{
 		"/":                     "no-store",
 		"/index.html":           "no-store",
-		font:                    wantCache,
 		"/icons/icon-192.png":   "public, max-age=3600",
 		"/manifest.webmanifest": "public, max-age=3600",
 	} {

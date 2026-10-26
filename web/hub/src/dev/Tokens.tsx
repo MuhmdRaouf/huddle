@@ -60,6 +60,33 @@ const TYPE = [
 
 const SPACES = [1, 2, 3, 4, 5, 6] as const;
 
+/** The stacking layers, low to high, with their values. */
+const LAYERS: readonly (readonly [string, string])[] = [
+  ["sticky", "10"],
+  ["tabbar", "20"],
+  ["scrim", "30"],
+  ["popup", "40"],
+  ["toast", "50"],
+  ["tooltip", "60"],
+];
+
+const SHADOWS = [1, 2, 3] as const;
+
+/** The motion tokens, each shown with the value it computes to. */
+const MOTION = ["--ui-ease", "--ui-dur-fast", "--ui-dur", "--ui-dur-slow"] as const;
+
+/** The tokens whose value depends on the device and its settings. */
+const COMPUTED = [
+  "--ui-font",
+  "--ui-control-h",
+  "--ui-ease",
+  "--ui-dur-fast",
+  "--ui-dur",
+  "--ui-dur-slow",
+] as const;
+
+type Computed = Partial<Record<(typeof COMPUTED)[number], string>>;
+
 type CostRow = { model: string; requests: number; cost: number };
 
 const COST_ROWS: readonly CostRow[] = [
@@ -149,6 +176,7 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
   const [name, setName] = useState("huddle");
   const [picked, setPicked] = useState(false);
   const [sheet, setSheet] = useState(false);
+  const [computed, setComputed] = useState<Computed>({});
 
   useEffect(() => {
     const stop = followScheme(root, store, query);
@@ -156,6 +184,13 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
       stop();
       delete root.dataset.scheme;
     };
+  }, []);
+
+  useEffect(() => {
+    const style = getComputedStyle(document.documentElement);
+    const values: Computed = {};
+    for (const name of COMPUTED) values[name] = style.getPropertyValue(name).trim();
+    setComputed(values);
   }, []);
 
   const pick = (p: SchemePref): void => {
@@ -194,6 +229,17 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
         <p class="ui-mono" style={{ margin: 0 }}>
           huddle up --port 18860
         </p>
+        <p
+          class="ui-mono"
+          style={{
+            margin: "var(--ui-space-2) 0 0",
+            overflowWrap: "anywhere",
+            color: "var(--ui-muted)",
+            fontSize: "var(--ui-text-sm)",
+          }}
+        >
+          --ui-font: {computed["--ui-font"]}
+        </p>
       </Block>
 
       <Block title="Spacing">
@@ -203,6 +249,59 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
               --ui-space-{n}
             </span>
             <span style={{ width: `var(--ui-space-${n})`, height: "12px", background: "var(--ui-accent)" }} />
+          </div>
+        ))}
+      </Block>
+
+      <Block title="Layers, shadows and motion">
+        {LAYERS.map(([layer, value]) => (
+          <div key={layer} style={{ display: "flex", alignItems: "center", gap: "var(--ui-space-3)" }}>
+            <span class="ui-mono" style={{ width: "9rem", fontSize: "var(--ui-text-sm)" }}>
+              --ui-layer-{layer}
+            </span>
+            <span class="ui-mono" style={{ fontSize: "var(--ui-text-sm)" }}>
+              {value}
+            </span>
+          </div>
+        ))}
+        <div style={{ ...grid("150px"), marginTop: "var(--ui-space-3)" }}>
+          {SHADOWS.map((n) => (
+            <div key={n} class="ui-card" style={{ overflow: "hidden" }}>
+              <div
+                style={{
+                  margin: "var(--ui-space-3)",
+                  height: "48px",
+                  borderRadius: "var(--ui-radius)",
+                  background: "var(--ui-bg)",
+                  boxShadow: `var(--ui-shadow-${n})`,
+                }}
+              />
+              <div class="ui-mono" style={{ padding: "var(--ui-space-2)", fontSize: "var(--ui-text-sm)" }}>
+                --ui-shadow-{n}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p style={{ margin: "var(--ui-space-3) 0 0", color: "var(--ui-muted)" }}>
+          A control stands <span class="ui-mono">--ui-control-h</span> ={" "}
+          <span class="ui-mono">{computed["--ui-control-h"]}</span> tall here.
+        </p>
+        {MOTION.map((name) => (
+          <div
+            key={name}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--ui-space-3)",
+              marginTop: "var(--ui-space-2)",
+            }}
+          >
+            <span class="ui-mono" style={{ width: "9rem", fontSize: "var(--ui-text-sm)" }}>
+              {name}
+            </span>
+            <span class="ui-mono" style={{ fontSize: "var(--ui-text-sm)", overflowWrap: "anywhere" }}>
+              {computed[name]}
+            </span>
           </div>
         ))}
       </Block>

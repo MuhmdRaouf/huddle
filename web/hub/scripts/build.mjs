@@ -177,20 +177,27 @@ function flagStale(dir) {
 // check mode fails at the end on a committed file the build no longer produces
 if (!check) rmSync(resolve(root, APP_DIR), { recursive: true, force: true });
 
-// The dashboard: one vite build covers app.<hash>.js, app.<hash>.css and every font.
+// The dashboard: one vite build covers app.<hash>.js and app.<hash>.css, and nothing else — an
+// asset that escapes the stylesheet as a file of its own is a build failure, the same rule the
+// standalone page keeps.
 const appFiles = await bundleApp();
 const appScript = appFiles.find((f) => /^app\.[^/]+\.js$/.test(f.fileName));
 const appStyle = appFiles.find((f) => /^app\.[^/]+\.css$/.test(f.fileName));
 if (appScript === undefined || appStyle === undefined)
   throw new Error("vite produced no app script or stylesheet");
-for (const file of appFiles) {
-  if (file === appScript || file === appStyle) await shipHashed(join(APP_DIR, file.fileName), file.contents);
-  else await ship(join(APP_DIR, file.fileName), file.contents);
+const appExtra = appFiles.filter((f) => f !== appScript && f !== appStyle);
+if (appExtra.length > 0) {
+  throw new Error(
+    `the dashboard must inline every asset, got separate files: ${appExtra.map((f) => f.fileName).join(", ")}`,
+  );
+}
+for (const file of [appScript, appStyle]) {
+  await shipHashed(join(APP_DIR, file.fileName), file.contents);
 }
 
 // The standalone kanban page: the hub's board code over the standalone entry, one script and one
-// stylesheet. Every font and image inlines into app.css, so the exported page reaches no network;
-// any other asset file is a build failure.
+// stylesheet. Assets inline into app.css, so the exported page reaches no network; an asset left
+// as its own file is a build failure.
 const boardFiles = await bundleApp({
   outDir: "../../internal/kanban/web/dist",
   emptyOutDir: false,

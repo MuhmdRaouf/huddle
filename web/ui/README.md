@@ -9,7 +9,7 @@ each dashboard in `web/` — `hub`, `radar` and `kanban`. It is private and neve
 | Navigation and overlays | Tabs, menus, dialogs, slide-overs and toasts.                |
 | Data display            | Charts, counters, code and Markdown rendering.               |
 | Shared behavior         | Time labels, fuzzy matching and model colors.                |
-| Visual styles           | Theme styles and the IBM Plex font dependencies.             |
+| Visual styles           | Theme styles and the font tokens.                            |
 | Tests                   | Component behavior, keyboard interaction and shared helpers. |
 
 ## Use the design system
@@ -72,7 +72,7 @@ bun run check        # every web package: vp check, tests with coverage, no it.t
 bun run build        # rebuild every page into internal/*/web/dist (committed)
 ```
 
-Consumers import these sources and fonts directly; each also has its own locked dependencies.
+Consumers import these sources directly; each also has its own locked dependencies.
 
 ## Make a shared change
 

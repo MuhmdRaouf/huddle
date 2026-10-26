@@ -15,10 +15,6 @@
     "coverage": "vp test run --coverage",
     "check": "bun run check:static && bun run coverage"
   },
-  "dependencies": {
-    "@fontsource-variable/ibm-plex-sans": "5.3.0",
-    "@fontsource/ibm-plex-mono": "5.3.0"
-  },
   "devDependencies": {
     "@testing-library/preact": "3.2.4",
     "@testing-library/user-event": "14.6.7",

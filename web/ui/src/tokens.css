@@ -1,6 +1,10 @@
 /* tokens.css — the design system's tokens, and the one source of colour for every page: surfaces,
  * inks, marks, four status tones and the state roles built on them; spacing on a 4-8-12-16-24-32
  * ladder, radii, a type scale and the system font stack with a mono face for commands and numbers.
+ * A control's height follows the pointer: 44 px under a finger, 36 px under a mouse or trackpad.
+ * Six layers fix the stacking order: sticky, tab bar, scrim, popup, toast, tooltip.
+ * Three shadows lift a raised card, a menu or popover, and a dialog, sheet or toast.
+ * Motion is one easing and three durations, all 0 ms when the OS asks for reduced motion.
  * Nothing loads from the network.
  *
  * Every colour is one light-dark(light, dark) pair, so one declaration covers both schemes.
@@ -107,12 +111,48 @@
   /* the target of the action a thumb reaches first, such as an approve at a card's foot */
   --ui-tap-lg: 48px;
 
+  /* a control's height: a finger's 44 px on touch, 36 px under a mouse or trackpad */
+  --ui-control-h: 44px;
+
+  /* stacking order, low to high */
+  --ui-layer-sticky: 10; /* pinned headers */
+  --ui-layer-tabbar: 20; /* the phone's tab bar and the desktop's rail */
+  --ui-layer-scrim: 30; /* the dimmed page under a dialog or sheet */
+  --ui-layer-popup: 40; /* dialog, sheet, slide-over, menu, picker */
+  --ui-layer-toast: 50;
+  --ui-layer-tooltip: 60;
+
+  /* shadows: a raised card, a menu or popover, a dialog, sheet or toast */
+  --ui-shadow-1: 0 1px 2px rgb(0 0 0 / 0.12);
+  --ui-shadow-2: 0 1px 2px rgb(0 0 0 / 0.12), 0 4px 16px -4px rgb(0 0 0 / 0.25);
+  --ui-shadow-3: 0 1px 2px rgb(0 0 0 / 0.2), 0 12px 32px -12px rgb(0 0 0 / 0.45);
+
+  /* motion: one easing and three durations, all 0 ms when the OS asks for reduced motion */
+  --ui-ease: cubic-bezier(0.2, 0, 0, 1);
+  --ui-dur-fast: 120ms;
+  --ui-dur: 180ms;
+  --ui-dur-slow: 260ms;
+
   /* the safe areas a pinned bar pads itself by */
   --ui-safe-top: env(safe-area-inset-top, 0px);
   --ui-safe-bottom: env(safe-area-inset-bottom, 0px);
 
   /* the phone's pinned tab bar: 56 px of targets above the bottom inset */
   --ui-tabbar-h: calc(56px + var(--ui-safe-bottom));
+}
+
+@media (pointer: fine) {
+  :root {
+    --ui-control-h: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ui-dur-fast: 0ms;
+    --ui-dur: 0ms;
+    --ui-dur-slow: 0ms;
+  }
 }
 
 :root[data-scheme="light"] {

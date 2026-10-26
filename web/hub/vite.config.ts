@@ -12,8 +12,8 @@ const repo = fileURLToPath(new URL("../..", import.meta.url));
 // internal/huddle/web/dist, where the huddle binary embeds them next to the index.html that
 // scripts/build.mjs writes with those names: no html entry, no public dir to copy. A name changes
 // whenever its bytes do, so the hub serves every hashed file as immutable. The CSS entry is
-// src/app.css, imported by main.tsx; @tailwindcss/vite compiles it and the fonts it references land
-// in dist/fonts/, hashed the same way.
+// src/app.css, imported by main.tsx; @tailwindcss/vite compiles it, and the build ships no other
+// asset: scripts/build.mjs fails when vite emits a file beyond the app script and this stylesheet.
 export default defineConfig({
   oxc: { jsx: { runtime: "automatic", importSource: "preact" } },
   // The plugin is typed against this package's own vite (the one scripts/build.mjs runs); the config type
@@ -23,7 +23,7 @@ export default defineConfig({
     alias: [{ find: /^@huddle\/ui\/(.*)$/, replacement: `${shared}/$1` }],
     dedupe: ["preact"],
   },
-  // theme.css pulls its IBM Plex faces from the hoisted node_modules at the repository root.
+  // The shared sources live one workspace up, outside vite's default serve root.
   server: { fs: { allow: [repo] } },
   publicDir: false,
   build: {
@@ -41,11 +41,10 @@ export default defineConfig({
       output: {
         format: "es",
         entryFileNames: "app.[hash].js",
-        // the one stylesheet is app.<hash>.css; the bundled fonts collect under fonts/.
+        // the one stylesheet is app.<hash>.css; any other asset file fails the build in
+        // scripts/build.mjs
         assetFileNames: (asset) =>
-          asset.names.some((name) => name.endsWith(".css"))
-            ? "app.[hash].css"
-            : "fonts/[name].[hash][extname]",
+          asset.names.some((name) => name.endsWith(".css")) ? "app.[hash].css" : "[name][extname]",
         codeSplitting: false,
       },
     },
