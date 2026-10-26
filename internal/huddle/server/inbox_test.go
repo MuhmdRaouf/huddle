@@ -20,11 +20,12 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 )
 
-// inboxListener opens a unix socket at a short path — the 104-byte limit rules out t.TempDir()'s
-// deeper tree — and answers it, closed with the test.
+// inboxListener opens a unix socket at a short path — the package's TMPDIR sits too deep for a
+// socket path under the 104-byte limit, so the folder comes straight from /tmp — and answers it,
+// closed with the test.
 func inboxListener(t *testing.T) (path string, ln net.Listener) {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "cc")
+	dir, err := os.MkdirTemp("/tmp", "hi")
 	if err != nil {
 		t.Fatalf("temp dir: %v", err)
 	}
