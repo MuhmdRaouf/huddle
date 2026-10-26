@@ -550,6 +550,10 @@ type UpstreamCall struct {
 	Direct bool
 	// IdleMs is the silence budget of the call; 0 is the default ten minutes.
 	IdleMs int64
+	// Timing carries the moment the router took the request; SendUpstream stamps the moment the
+	// first upstream attempt left, so the route event can say how long the router held it. Nil
+	// on calls that ride no route event.
+	Timing *answerTiming
 }
 
 // UpstreamFailure is how one upstream request failed: the errno-style code, whether the failure
@@ -752,6 +756,11 @@ func SendUpstream(ctx context.Context, call UpstreamCall, res *Response, hooks U
 		// The body's own length is the request's; a copied Content-Length header would fight it.
 		upstream.Header.Del("Content-Length")
 		upstream.Header.Del("Host")
+		// sentAt pins the first attempt only: a stale-socket retry never moves it, so the route
+		// event's own-time stays the time the router held the request before anything left.
+		if call.Timing != nil && call.Timing.sentAt.IsZero() {
+			call.Timing.sentAt = time.Now()
+		}
 		answer, err := attemptTransport.RoundTrip(upstream)
 		return answer, reused.Load(), err
 	}

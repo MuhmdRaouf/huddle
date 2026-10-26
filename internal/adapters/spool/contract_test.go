@@ -52,6 +52,7 @@ func contractRouteEvents() []domain.SpoolEvent {
 		"request-id":                         "req_01ja9c2x7qe4bfv5smr3nd08pa",
 	}
 	usage := domain.RouteUsage{"input_tokens": 4.0, "output_tokens": 212.0, "cache_read_input_tokens": 13598.0}
+	routerUs := int64(812)
 	return []domain.SpoolEvent{
 		domain.RouterEvent{
 			Ts: contractTs, Event: domain.EventRouter, Plugin: "zai",
@@ -60,7 +61,7 @@ func contractRouteEvents() []domain.SpoolEvent {
 		domain.RouteEvent{
 			Ts: contractTs, Event: domain.EventRoute, Plugin: "zai",
 			Model: "glm-5.3", Upstream: "https://api.z.ai/api/anthropic", Route: "provider",
-			Status: 200, LatencyMs: 4123,
+			Status: 200, LatencyMs: 4123, RouterUs: &routerUs,
 			SessionID: &session, AgentID: &agent, ParentAgentID: &parent,
 			Usage: &usage, Headers: &headers, PromptHash: &hash,
 		},

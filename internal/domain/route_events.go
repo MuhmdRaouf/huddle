@@ -38,6 +38,10 @@ type RouteEvent struct {
 	// answer streamed no content_block_delta (a JSON answer, an error, an empty stream).
 	TtfbMs *int64 `json:"ttfb_ms,omitempty"`
 	TtftMs *int64 `json:"ttft_ms,omitempty"`
+	// RouterUs is how long the router held the request before its first upstream attempt began, in
+	// microseconds from the moment the router took it: the body scan, the key lookup, the rewrite.
+	// Nil when nothing went upstream (a refusal, a stopped budget, no key).
+	RouterUs *int64 `json:"router_us,omitempty"`
 	// SessionID, AgentID and ParentAgentID are the ids Claude Code sends with the request.
 	SessionID     *string            `json:"session_id,omitempty"`
 	AgentID       *string            `json:"agent_id,omitempty"`

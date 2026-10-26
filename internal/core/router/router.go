@@ -833,8 +833,13 @@ type routeModel struct {
 type eventNote func(status int64, route, upstream string, usage domain.RouteUsage, reason *string, headers *map[string]string)
 
 // answerTiming is when one answer's head and first token arrived, in ms since the epoch; zero
-// while not seen.
-type answerTiming struct{ headAt, firstTokenAt int64 }
+// while not seen. takenAt is the moment the router took the request and sentAt the moment the
+// first upstream attempt left, so the route event can say how long the router held the request.
+type answerTiming struct {
+	headAt, firstTokenAt int64
+	takenAt              time.Time
+	sentAt               time.Time
+}
 
 // noteOf builds the request's note: the ids Claude Code stamped the request with, the usage and
 // the allow-listed headers the answer carried, the prompt hash and the billing block's ids — each
@@ -876,6 +881,10 @@ func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt i
 		if timing.firstTokenAt != 0 {
 			ttft := timing.firstTokenAt - startedAt
 			event.TtftMs = &ttft
+		}
+		if !timing.sentAt.IsZero() {
+			routerUs := timing.sentAt.Sub(timing.takenAt).Microseconds()
+			event.RouterUs = &routerUs
 		}
 		if len(usage) > 0 {
 			carried := usage
@@ -1500,8 +1509,9 @@ func (w *routerWorker) forward(req *http.Request, res *Response, original []byte
 	provider := w.provider
 	prompt := &promptRef{}
 	served := &routeModel{model: model}
-	startedAt := time.Now().UnixMilli()
-	timing := &answerTiming{}
+	takenAt := time.Now()
+	startedAt := takenAt.UnixMilli()
+	timing := &answerTiming{takenAt: takenAt}
 	note := w.noteOf(req, served, startedAt, prompt, timing)
 	route, peer, hasPeer := routeOf(w.claim, model, w.opts.Peers)
 	// A request another plugin's router forwarded here is served when it is this provider's model;
@@ -1963,5 +1973,6 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 		Env:     w.opts.Env,
 		Direct:  peer != nil,
 		IdleMs:  w.opts.IdleMs,
+		Timing:  timing,
 	}, res, hooks)
 }

@@ -145,6 +145,57 @@ func median(values []time.Duration) time.Duration {
 	return sorted[len(sorted)/2]
 }
 
+// medianInt64 is the median of a slice of counts, 0 when there is none.
+func medianInt64(values []int64) int64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := slices.Clone(values)
+	slices.Sort(sorted)
+	return sorted[len(sorted)/2]
+}
+
+// spoolRoute is one route event the daemon wrote: the route the request took and the router's
+// own microseconds for it, nil when the event carries none.
+type spoolRoute struct {
+	route    string
+	routerUs *int64
+}
+
+// spoolRoutes reads every route event in the daemon's spool, in the day files' order.
+func spoolRoutes(t *testing.T, spoolDir string) []spoolRoute {
+	t.Helper()
+	entries, err := os.ReadDir(spoolDir)
+	if err != nil {
+		return nil
+	}
+	var routes []spoolRoute
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		file, err := os.Open(filepath.Join(spoolDir, entry.Name()))
+		if err != nil {
+			t.Fatalf("reading %s: %v", entry.Name(), err)
+		}
+		scanner := bufio.NewScanner(file)
+		scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)
+		for scanner.Scan() {
+			var line struct {
+				Event    string `json:"event"`
+				Route    string `json:"route"`
+				RouterUs *int64 `json:"router_us"`
+			}
+			if json.Unmarshal(scanner.Bytes(), &line) != nil || line.Event != "route" {
+				continue
+			}
+			routes = append(routes, spoolRoute{route: line.Route, routerUs: line.RouterUs})
+		}
+		_ = file.Close()
+	}
+	return routes
+}
+
 func TestE2ERouterOverhead(t *testing.T) {
 	root := t.TempDir()
 	routerHome := filepath.Join(root, "router-home")
@@ -225,15 +276,18 @@ func TestE2ERouterOverhead(t *testing.T) {
 		TLSClientConfig:    &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
 		DisableCompression: true,
 	}}
+	// route is the route event name the daemon writes for a forwarded request on this path,
+	// "" for the direct path that never meets the router.
 	paths := []struct {
 		name   string
 		client *http.Client
 		target string
 		model  string
+		route  string
 	}{
-		{"direct", plain, fake.URL + "/v1/messages", "claude-opus-5-5"},
-		{"lane", plain, routerURL + "/v1/messages", "glm-5.3"},
-		{"connect", proxied, "https://" + pki.RouterHost + "/v1/messages", "claude-opus-5-5"},
+		{"direct", plain, fake.URL + "/v1/messages", "claude-opus-5-5", ""},
+		{"lane", plain, routerURL + "/v1/messages", "glm-5.3", "provider"},
+		{"connect", proxied, "https://" + pki.RouterHost + "/v1/messages", "claude-opus-5-5", "anthropic"},
 	}
 	// Real Claude Code requests run from a small prompt to several MiB of context, and each size
 	// must hold the budgets.
@@ -245,6 +299,13 @@ func TestE2ERouterOverhead(t *testing.T) {
 		{"100 KiB", 100 << 10},
 		{"2 MiB", 2 << 20},
 	}
+
+	spoolDir := filepath.Join(root, "radar", "spool")
+	// served counts the route events a path's earlier sizes already claimed, so each size reads
+	// only its own; every forwarded request of a size writes exactly one.
+	served := map[string]int{}
+	// own keeps the router's own microseconds each routed path carried, for the closing summary.
+	own := map[string][]int64{}
 
 	for _, size := range sizes {
 		// The three paths of one run stream at the same moment, so each run's noise lands on all
@@ -268,6 +329,34 @@ func TestE2ERouterOverhead(t *testing.T) {
 			runs[run] = timings
 		}
 
+		// The daemon appends one route event per forwarded request once its answer ends; wait
+		// for this size's own events before the cases read their medians from them.
+		var sized map[string][]spoolRoute
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			sized = map[string][]spoolRoute{}
+			counts := map[string]int{}
+			for _, event := range spoolRoutes(t, spoolDir) {
+				counts[event.route]++
+				if counts[event.route] > served[event.route] {
+					sized[event.route] = append(sized[event.route], event)
+				}
+			}
+			ready := true
+			for _, path := range paths[1:] {
+				if len(sized[path.route]) < overheadRuns {
+					ready = false
+				}
+			}
+			if ready || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		for _, path := range paths[1:] {
+			served[path.route] += len(sized[path.route])
+		}
+
 		for at := 1; at < len(paths); at++ {
 			path := paths[at]
 			t.Run(path.name+", "+size.name, func(t *testing.T) {
@@ -283,9 +372,19 @@ func TestE2ERouterOverhead(t *testing.T) {
 				}
 				firstOverhead := slices.Min(firstBytes) - slices.Min(directFirst)
 				chunkOverhead := median(chunkOverheads)
-				t.Logf("%s, %s: first byte %v (direct %v, overhead %v, budget %v); chunk overhead median %v (budget %v)",
+				// Every forwarded request's route event says how long the router itself held it.
+				ownUs := make([]int64, 0, overheadRuns)
+				for _, event := range sized[path.route] {
+					if event.routerUs == nil || *event.routerUs < 1 {
+						t.Errorf("%s: the route event carries no router's own time (router_us %v)", path.name, event.routerUs)
+						continue
+					}
+					ownUs = append(ownUs, *event.routerUs)
+				}
+				own[path.route] = append(own[path.route], ownUs...)
+				t.Logf("%s, %s: first byte %v (direct %v, overhead %v, budget %v); chunk overhead median %v (budget %v); router %d µs",
 					path.name, size.name, slices.Min(firstBytes), slices.Min(directFirst), firstOverhead, firstByteBudget,
-					chunkOverhead, chunkBudget)
+					chunkOverhead, chunkBudget, medianInt64(ownUs))
 				// the race detector slows the router's own work 5-20x and not the fake's, so a race
 				// build logs the numbers and holds the budgets to the plain build
 				if testkit.RaceEnabled {
@@ -299,5 +398,11 @@ func TestE2ERouterOverhead(t *testing.T) {
 				}
 			})
 		}
+	}
+
+	// One closing line per routed path: the router's own median over every forwarded request of
+	// every size.
+	for _, path := range paths[1:] {
+		t.Logf("%s: router %d µs median over %d route events", path.name, medianInt64(own[path.route]), len(own[path.route]))
 	}
 }
