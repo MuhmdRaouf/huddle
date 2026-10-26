@@ -1,7 +1,8 @@
 package server
 
 // The session tasks route: one GET naming what a session is working on — its own todo list,
-// read from the transcript its reports named, beside the channel tasks its member owns.
+// read from the transcript its reports named, beside the channel tasks its member owns and the
+// kanban cards it holds on the board at its working directory.
 
 import (
 	"errors"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/convo"
+	"github.com/MuhmdRaouf/huddle/internal/kanban/board"
 )
 
 // sessionTasksPath is one session's tasks.
@@ -22,6 +24,13 @@ type taskEntry struct {
 	Title   string `json:"title"`
 	Status  string `json:"status"`
 	Channel string `json:"channel"`
+}
+
+// cardEntry is one kanban card a session's member holds.
+type cardEntry struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Column string `json:"column"`
 }
 
 // sessionTasksRoute answers the session's todos and the channel tasks its member owns. The
@@ -80,9 +89,26 @@ func (s *server) sessionTasksRoute(w http.ResponseWriter, r *http.Request, path 
 			}
 		}
 	}
+	cards := []cardEntry{}
+	if row.Cwd != "" && row.Member != "" {
+		// the board is the one at the session's own working directory; noNamedEnv keeps the
+		// huddle process's own KANBAN_BOARD out of it. A dir with no board holds no cards.
+		if b, err := board.Resolve("", noNamedEnv, row.Cwd); err == nil {
+			held, err := b.List(ctx, "")
+			if err != nil {
+				return err
+			}
+			for _, card := range held {
+				if card.Holder == row.Member && card.Column != "done" {
+					cards = append(cards, cardEntry{ID: card.ID, Title: card.Title, Column: card.Column})
+				}
+			}
+		}
+	}
 	s.writeJSON(w, 200, struct {
 		Todos []convo.Todo `json:"todos"`
 		Tasks []taskEntry  `json:"tasks"`
-	}{todos, tasks}, nil)
+		Cards []cardEntry  `json:"cards"`
+	}{todos, tasks, cards}, nil)
 	return nil
 }

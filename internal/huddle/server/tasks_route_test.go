@@ -13,13 +13,16 @@ import (
 	"time"
 )
 
-// reportTasksSession registers one live session in a channel as a member; a path names its
-// transcript.
-func reportTasksSession(t *testing.T, srv *childServer, id, channel, member, path string) {
+// reportTasksSession registers one live session in a channel as a member; a cwd names its
+// working directory and a path its transcript.
+func reportTasksSession(t *testing.T, srv *childServer, id, channel, member, cwd, path string) {
 	t.Helper()
 	body := fmt.Sprintf(`{"session_id":%q,"machine":"box","last_event":"UserPromptSubmit","last_event_at":%q`, id, isoAgo(time.Second))
 	if channel != "" {
 		body += fmt.Sprintf(`,"channel":%q,"member":%q`, channel, member)
+	}
+	if cwd != "" {
+		body += fmt.Sprintf(`,"cwd":%q`, cwd)
 	}
 	if path != "" {
 		body += fmt.Sprintf(`,"transcript_path":%q`, path)
@@ -48,6 +51,20 @@ func writeTasksTranscript(t *testing.T, lines ...string) string {
 	return path
 }
 
+// writeTasksBoard writes one board card file at repo/.agents/kanban/<column>/<id>.md, held
+// by holder, the folder shape Board.List reads.
+func writeTasksBoard(t *testing.T, repo, column, id, holder, title string) {
+	t.Helper()
+	card := fmt.Sprintf("---\nid: %s\ntitle: %q\ntype: fix\nclaimed_by: %s\n---\n\n# %s\n\nBody text.\n", id, title, holder, id)
+	path := filepath.Join(repo, ".agents", "kanban", column, id+".md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(card), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTheSessionTasksRouteAnswersTodosAndOwnedTasks(t *testing.T) {
 	srv := startServer(t, nil)
 	if code, out := srv.post(t, "/api/channels", `{"name":"build"}`, nil); code != 200 {
@@ -58,7 +75,7 @@ func TestTheSessionTasksRouteAnswersTodosAndOwnedTasks(t *testing.T) {
 	srv.op(t, "build", "task_create", "api", `{"id":"t-1","title":"Ship it","owner":"api"}`)
 	srv.op(t, "build", "task_create", "web", `{"id":"t-2","title":"Review it","owner":"web"}`)
 	path := writeTasksTranscript(t, tasksTodoLine)
-	reportTasksSession(t, srv, "s-1", "build", "api", path)
+	reportTasksSession(t, srv, "s-1", "build", "api", "", path)
 
 	code, _, body := srv.get(t, "/api/sessions/s-1/tasks", nil)
 	if code != 200 {
@@ -90,7 +107,7 @@ func TestTheSessionTasksRouteAnswersTodosAndOwnedTasks(t *testing.T) {
 func TestTheSessionTasksRouteAnswersNoTasksForASessionInNoChannel(t *testing.T) {
 	srv := startServer(t, nil)
 	path := writeTasksTranscript(t, tasksTodoLine)
-	reportTasksSession(t, srv, "s-lone", "", "", path)
+	reportTasksSession(t, srv, "s-lone", "", "", "", path)
 
 	code, _, body := srv.get(t, "/api/sessions/s-lone/tasks", nil)
 	if code != 200 {
@@ -110,7 +127,7 @@ func TestTheSessionTasksRouteAnswersNoTasksForASessionInNoChannel(t *testing.T) 
 func TestTheSessionTasksRouteAnswersNoTasksForAChannelItDoesNotHold(t *testing.T) {
 	srv := startServer(t, nil)
 	path := writeTasksTranscript(t, tasksTodoLine)
-	reportTasksSession(t, srv, "s-gone", "vanished", "api", path)
+	reportTasksSession(t, srv, "s-gone", "vanished", "api", "", path)
 
 	code, _, body := srv.get(t, "/api/sessions/s-gone/tasks", nil)
 	if code != 200 {
@@ -135,5 +152,54 @@ func TestTheSessionTasksRouteNeedsACredential(t *testing.T) {
 	code, _, body := srv.get(t, "/api/sessions/s-1/tasks", map[string]string{"x-huddle-token": ""})
 	if code != 401 {
 		t.Errorf("a request without a token = %d %s, want 401", code, body)
+	}
+}
+
+func TestTheSessionTasksRouteAnswersTheBoardCardsTheMemberHolds(t *testing.T) {
+	srv := startServer(t, nil)
+	if code, out := srv.post(t, "/api/channels", `{"name":"build"}`, nil); code != 200 {
+		t.Fatalf("create the channel: %d %s", code, out)
+	}
+	srv.op(t, "build", "join", "api", "{}")
+	repo := filepath.Join(t.TempDir(), "repo")
+	writeTasksBoard(t, repo, "in-progress", "GATE-1", "api", "Free the gate")
+	writeTasksBoard(t, repo, "ready", "OTHER-2", "web", "Someone else's card")
+	writeTasksBoard(t, repo, "done", "MINE-3", "api", "Already finished")
+	path := writeTasksTranscript(t, tasksTodoLine)
+	reportTasksSession(t, srv, "s-cards", "build", "api", repo, path)
+
+	code, _, body := srv.get(t, "/api/sessions/s-cards/tasks", nil)
+	if code != 200 {
+		t.Fatalf("tasks: %d %s", code, body)
+	}
+	cards, _ := bodyMap(t, body)["cards"].([]any)
+	if len(cards) != 1 {
+		t.Fatalf("cards = %v, want exactly the card the member holds in progress", cards)
+	}
+	card, _ := cards[0].(map[string]any)
+	if card["id"] != "GATE-1" || card["title"] != "Free the gate" || card["column"] != "in-progress" {
+		t.Errorf("the card = %v, want GATE-1 Free the gate in-progress", card)
+	}
+}
+
+func TestTheSessionTasksRouteAnswersNoCardsWithoutABoardOfItsOwn(t *testing.T) {
+	srv := startServer(t, nil)
+	if code, out := srv.post(t, "/api/channels", `{"name":"build"}`, nil); code != 200 {
+		t.Fatalf("create the channel: %d %s", code, out)
+	}
+	srv.op(t, "build", "join", "api", "{}")
+	path := writeTasksTranscript(t, tasksTodoLine)
+	reportTasksSession(t, srv, "s-nocwd", "build", "api", "", path)
+	reportTasksSession(t, srv, "s-noboard", "build", "api", t.TempDir(), path)
+
+	for _, id := range []string{"s-nocwd", "s-noboard"} {
+		code, _, body := srv.get(t, "/api/sessions/"+id+"/tasks", nil)
+		if code != 200 {
+			t.Fatalf("%s tasks: %d %s", id, code, body)
+		}
+		cards, _ := bodyMap(t, body)["cards"].([]any)
+		if cards == nil || len(cards) != 0 {
+			t.Errorf("%s cards = %v, want an empty list", id, cards)
+		}
 	}
 }
