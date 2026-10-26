@@ -594,7 +594,7 @@ describe("the Now list's actions", () => {
     });
     expect(document.querySelector('[data-act="deny"]')).toBeNull();
     expect(document.querySelector('[data-act="allow"]')).toBeNull();
-    expect(screen.getByRole("link", { name: "Review" }).getAttribute("href")).toBe("#/now/s-1");
+    expect(screen.getByRole("link", { name: "Review" }).getAttribute("href")).toBe("#/sessions/s-1");
   });
 
   it("snoozes from the card's menu, optimistically, and rolls back when the server refuses", async () => {

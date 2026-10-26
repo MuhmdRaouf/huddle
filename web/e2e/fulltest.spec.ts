@@ -1,6 +1,6 @@
 // fulltest.spec.ts — the whole dashboard over the TLS hub, one signed-in walk: the browser
 // pairs at https://hub.example.test behind the run's own CA (the listener refuses one-time
-// links, so the passkey ceremony is the way in), then clicks through every tab — Now,
+// links, so the passkey ceremony is the way in), then clicks through every tab — Sessions,
 // Channels, each Radar view, Kanban, Settings — asserting each one's own heading, with the
 // Usage tiles and the Costs series carrying the seeded totals, one screenshot per view under
 // the scratch folder, and not one console error. The second test proves the other trust path:
@@ -60,10 +60,10 @@ test("one signed-in walk over TLS covers every tab with no console error", async
   fs.mkdirSync(shots, { recursive: true });
   const shot = (view: string): Promise<unknown> => page.screenshot({ path: path.join(shots, `${view}.png`) });
 
-  // Now: the seeded session sits in the Working group
-  await openTab(page, "Now");
+  // Sessions: the seeded session sits in the Working group
+  await openTab(page, "Sessions");
   await expect(page.getByRole("heading", { name: "Working · 1" })).toBeVisible();
-  await shot("now");
+  await shot("sessions");
 
   // Channels: the connect card names the seeded channel and its invite works over TLS
   await openTab(page, "Channels");

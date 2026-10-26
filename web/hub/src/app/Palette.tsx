@@ -890,7 +890,7 @@ export function helpSections(mac: boolean): readonly HelpSection[] {
     {
       head: "Go to",
       rows: [
-        ["g n", "Now"],
+        ["g n", "Sessions"],
         ["g c", "Channels"],
         ["g r", "Radar"],
         ["g b", "Kanban"],

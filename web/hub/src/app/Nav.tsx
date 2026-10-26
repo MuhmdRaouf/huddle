@@ -1,7 +1,7 @@
-// Nav.tsx — the five tabs (Now, Channels, Radar, Kanban, Settings) as each layout draws them: the
-// phone's bar pinned to the bottom edge, the tablet's 72 px icon rail, the desktop's left sidebar
-// with the brand on top. Every one is the `Main` navigation and carries the needs-you count on Now,
-// coloured by the one badge rule. Every colour comes from the tokens.
+// Nav.tsx — the five tabs (Sessions, Channels, Radar, Kanban, Settings) as each layout draws them:
+// the phone's bar pinned to the bottom edge, the tablet's 72 px icon rail, the desktop's left
+// sidebar with the brand on top. Every one is the `Main` navigation and carries the needs-you count
+// on Sessions, coloured by the one badge rule. Every colour comes from the tokens.
 
 import { Badge } from "@huddle/ui/badge.tsx";
 import { Icon as SharedIcon } from "@huddle/ui/icons.tsx";
@@ -42,15 +42,15 @@ const tone = (on: boolean, current: string): string =>
     ? `bg-[var(--ui-surface-2)] ${current}`
     : "text-[var(--ui-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]";
 
-/** One tab's mark: the shared glyphs for the three the design draws, the settings sunburst and
- *  the kanban columns from the owner UI's own set. */
+/** One tab's mark: the shared glyphs for the three the design draws (the shared set names the
+ *  sessions glyph `now`), the settings sunburst and the kanban columns from the owner UI's own set. */
 function TabGlyph({ id, class: c }: { id: Tab; class?: string | undefined }): JSX.Element {
   return id === "settings" ? (
     <Icon name="sparkle" class={c} />
   ) : id === "kanban" ? (
     <Icon name="columns" class={c} />
   ) : (
-    <SharedIcon name={id} class={c} />
+    <SharedIcon name={id === "sessions" ? "now" : id} class={c} />
   );
 }
 
@@ -74,7 +74,7 @@ export function BottomNav({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.
         >
           <TabGlyph id={id} class="size-[22px]" />
           <span>{label}</span>
-          {id === "now" ? (
+          {id === "sessions" ? (
             <span class="absolute top-1 left-[54%]">
               <TabBadge needs={needs} />
             </span>
@@ -85,7 +85,7 @@ export function BottomNav({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.
   );
 }
 
-/** The rail's Now tab names its count too, so its accessible name holds the number it shows. */
+/** The rail's Sessions tab names its count too, so its accessible name holds the number it shows. */
 function nowName(label: string, needs: NeedsBadge): string {
   if (needs.n === 0) return label;
   const one = needs.n === 1;
@@ -107,7 +107,7 @@ export function IconRail({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.E
           key={id}
           href={href}
           data-tab={id}
-          aria-label={id === "now" ? nowName(label, needs) : label}
+          aria-label={id === "sessions" ? nowName(label, needs) : label}
           title={label}
           aria-current={tab === id ? "page" : undefined}
           class={`relative flex size-[52px] items-center justify-center rounded-[14px] ${RING} ${
@@ -115,7 +115,7 @@ export function IconRail({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.E
           } ${tone(tab === id, "text-[var(--ui-accent)]")}`}
         >
           <TabGlyph id={id} class="size-6" />
-          {id === "now" ? (
+          {id === "sessions" ? (
             <span class="absolute top-1 right-1">
               <TabBadge needs={needs} />
             </span>
@@ -156,7 +156,7 @@ export function SideNav({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.El
           >
             <TabGlyph id={id} class="size-5 shrink-0" />
             <span class="min-w-0 flex-1 truncate">{label}</span>
-            {id === "now" ? <TabBadge needs={needs} /> : null}
+            {id === "sessions" ? <TabBadge needs={needs} /> : null}
           </a>
         ))}
       </nav>

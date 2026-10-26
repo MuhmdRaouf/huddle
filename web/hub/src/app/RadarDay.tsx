@@ -1,6 +1,6 @@
-// RadarDay.tsx — the Radar card on Now: today's estimated cost and requests from Radar's usage
-// report, the loudest open alert, and the day's peak sessions and cards done when Radar's day
-// route answers. Read on mount and once a minute through the hub's /api/radar prefix. A usage
+// RadarDay.tsx — the Radar card on the Overview: today's estimated cost and requests from Radar's
+// usage report, the loudest open alert, and the day's peak sessions and cards done when Radar's
+// day route answers. Read on mount and once a minute through the hub's /api/radar prefix. A usage
 // report that cannot be read hides the card; a day route that answers 404 or 503 (an older
 // Radar, or none running) hides its two numbers and nothing else.
 import { Badge } from "@huddle/ui/badge.tsx";
@@ -134,8 +134,8 @@ export function RadarDayView({ data }: { data: RadarDayData }): JSX.Element {
   );
 }
 
-/** The card as Now mounts it: read on mount and once a minute; nothing while there is nothing
- *  to show. */
+/** The card as the Overview mounts it: read on mount and once a minute; nothing while there is
+ *  nothing to show. */
 export function RadarDayCard(): JSX.Element | null {
   const { api } = useHuddle();
   const [data, setData] = useState<RadarDayData | null>(null);

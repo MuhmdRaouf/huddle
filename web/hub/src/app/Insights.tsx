@@ -101,7 +101,7 @@ export function InsightsView({ tips }: { tips: readonly Tip[] }): JSX.Element {
                 {tip.session !== undefined ? (
                   <>
                     {" · "}
-                    <a href={`#/now/${tip.session}`}>open the session</a>
+                    <a href={`#/sessions/${tip.session}`}>open the session</a>
                   </>
                 ) : null}
               </p>

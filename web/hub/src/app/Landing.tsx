@@ -22,9 +22,10 @@ import { bioName } from "./Totp.tsx";
 /** The muted ink the landing's second lines wear. */
 const MUTED = "text-[var(--ui-muted)]";
 
-/** The tour's four steps: the tab it shows, the picture it carries, the one sentence it says. */
+/** The tour's four steps: the tab it shows, the picture it carries, the one sentence it says.
+ *  The key names the step's picture file under tour/, so the first step keeps now.jpg. */
 const TOUR: readonly (readonly [key: string, label: string, sentence: string])[] = [
-  ["now", "Now", "Every session at work, the ones that need you first."],
+  ["now", "Sessions", "Every session at work, the ones that need you first."],
   ["channels", "Channels", "One channel per piece of shared work, its plan and its knowledge."],
   ["radar", "Radar", "Requests, tokens and cost across every model, with budgets."],
   ["kanban", "Kanban", "The board the sessions claim cards from and move."],

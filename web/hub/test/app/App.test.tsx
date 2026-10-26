@@ -87,19 +87,19 @@ const linksOf = (nav: string): HTMLAnchorElement[] =>
 describe("the three layouts", () => {
   it("under 640 px: a header with the tab's title, the pane, and the five tabs in a pinned bar", () => {
     stubMedia(PHONE);
-    nav("#/now");
+    nav("#/sessions");
     mountApp();
-    expect(document.querySelector("h1")?.textContent).toBe("Now");
+    expect(document.querySelector("h1")?.textContent).toBe("Sessions");
     expect(screen.getByLabelText("Machines")).toBeDefined();
     expect(linksOf("bottom").map((a) => a.dataset.tab)).toEqual([
-      "now",
+      "sessions",
       "channels",
       "radar",
       "kanban",
       "settings",
     ]);
     expect(linksOf("bottom").map((a) => a.textContent)).toEqual([
-      "Now",
+      "Sessions",
       "Channels",
       "Radar",
       "Kanban",
@@ -128,7 +128,7 @@ describe("the three layouts", () => {
     expect(linksOf("bottom")).toEqual([]);
     const rail = linksOf("rail");
     expect(rail.map((a) => a.getAttribute("aria-label"))).toEqual([
-      "Now",
+      "Sessions",
       "Channels",
       "Radar",
       "Kanban",
@@ -140,13 +140,13 @@ describe("the three layouts", () => {
 
   it("from 1024 px: a sidebar with the five tabs, a top bar with the jump field and the machines line", () => {
     stubMedia(DESKTOP);
-    nav("#/now");
+    nav("#/sessions");
     mountApp();
     expect(linksOf("bottom")).toEqual([]);
     expect(linksOf("rail")).toEqual([]);
     const side = linksOf("side");
-    expect(side.map((a) => a.dataset.tab)).toEqual(["now", "channels", "radar", "kanban", "settings"]);
-    expect(side.map((a) => a.textContent)).toEqual(["Now", "Channels", "Radar", "Kanban", "Settings"]);
+    expect(side.map((a) => a.dataset.tab)).toEqual(["sessions", "channels", "radar", "kanban", "settings"]);
+    expect(side.map((a) => a.textContent)).toEqual(["Sessions", "Channels", "Radar", "Kanban", "Settings"]);
     expect(side.map((a) => a.getAttribute("aria-current"))).toEqual(["page", null, null, null, null]);
     expect(screen.getByRole("button", { name: "Jump to a session" })).toBeDefined();
     expect(document.querySelector("#jump kbd")).not.toBeNull();
@@ -155,7 +155,7 @@ describe("the three layouts", () => {
 
   it("follows a viewport that crosses a breakpoint", () => {
     const media = stubMedia(PHONE);
-    nav("#/now");
+    nav("#/sessions");
     mountApp();
     expect(linksOf("bottom")).toHaveLength(5);
     void act(() => {
@@ -170,7 +170,7 @@ describe("the three layouts", () => {
     expect(linksOf("side")).toHaveLength(5);
   });
 
-  it("carries the needs-you count on the Now tab in every layout", () => {
+  it("carries the needs-you count on the Sessions tab in every layout", () => {
     const needsYou = makeState({
       attention: attention({
         asks: [
@@ -185,16 +185,16 @@ describe("the three layouts", () => {
       [DESKTOP, "side"],
     ] as const) {
       stubMedia(layout);
-      nav("#/now");
+      nav("#/sessions");
       mountApp({}, needsYou);
-      const now = document.querySelector(`[data-nav="${name}"] a[data-tab="now"]`) as HTMLElement;
-      expect(now.querySelector(".ui-badge-needs-you")?.textContent, name).toBe("2");
+      const tab = document.querySelector(`[data-nav="${name}"] a[data-tab="sessions"]`) as HTMLElement;
+      expect(tab.querySelector(".ui-badge-needs-you")?.textContent, name).toBe("2");
     }
   });
 
-  it("paints the Now count orange when every session waits on a finished turn", () => {
+  it("paints the Sessions count orange when every session waits on a finished turn", () => {
     stubMedia(DESKTOP);
-    nav("#/now");
+    nav("#/sessions");
     const row: RegistrySession = {
       session_id: "s-1",
       state: "needs-you",
@@ -213,14 +213,14 @@ describe("the three layouts", () => {
       <App pages={{}} />,
       makeCtx(makeState(), { registry: makeRegistry({ sessions: [row], needs: [turn] }) }),
     );
-    const now = document.querySelector("[data-nav='side'] a[data-tab='now']") as HTMLElement;
-    expect(now.querySelector(".ui-badge-turn-done")?.textContent).toBe("1");
-    expect(now.querySelector(".ui-badge-needs-you")).toBeNull();
+    const tab = document.querySelector("[data-nav='side'] a[data-tab='sessions']") as HTMLElement;
+    expect(tab.querySelector(".ui-badge-turn-done")?.textContent).toBe("1");
+    expect(tab.querySelector(".ui-badge-needs-you")).toBeNull();
   });
 
   it("draws no needs-you badge when nothing needs the owner", () => {
     stubMedia(DESKTOP);
-    nav("#/now");
+    nav("#/sessions");
     mountApp();
     expect(document.querySelector("[data-nav='side'] .ui-badge")).toBeNull();
   });
@@ -228,11 +228,11 @@ describe("the three layouts", () => {
   it("paints the chrome of every layout with no daisyUI or legacy class", () => {
     const chrome = "[data-nav], [data-sidebar], [data-desktop-bar], .ui-shell > header, [data-radar-views]";
     for (const [layout, hash] of [
-      [PHONE, "#/now"],
+      [PHONE, "#/sessions"],
       [PHONE, "#/radar/overview"],
       [TABLET, "#/radar/costs"],
       [DESKTOP, "#/radar/overview"],
-      [DESKTOP, "#/now"],
+      [DESKTOP, "#/sessions"],
     ] as const) {
       stubMedia(layout);
       nav(hash);
@@ -249,7 +249,7 @@ describe("the three layouts", () => {
 
   it("paints the placeholder pane from the tokens", () => {
     stubMedia(DESKTOP);
-    nav("#/now");
+    nav("#/sessions");
     const row: RegistrySession = {
       session_id: "s-1",
       state: "working",
@@ -263,16 +263,16 @@ describe("the three layouts", () => {
 
 describe("routes and panes", () => {
   it("renders Now's empty state, and the session screen when the address names one", () => {
-    nav("#/now");
+    nav("#/sessions");
     mountApp();
     expect(screen.getByText("No sessions yet")).toBeDefined();
-    nav("#/now/s-1");
+    nav("#/sessions/s-1");
     expect(screen.getByText("Reading the session…")).toBeDefined();
   });
 
   it("carries the empty registry's welcome in the main pane, once, and keeps the dashed box once sessions stand", () => {
     stubMedia(DESKTOP);
-    nav("#/now");
+    nav("#/sessions");
     // nothing registered: the welcome and its start-a-session card stand in the main pane, and
     // the list beside them drops its copy of the card
     mountApp();
@@ -441,33 +441,33 @@ describe("routes and panes", () => {
     expect(screen.getByRole("radiogroup", { name: "Notifications" })).toBeDefined();
   });
 
-  it("sends an unknown address to Now with a rewrite", () => {
+  it("sends an unknown address to Sessions with a rewrite", () => {
     nav("#/nope");
     mountApp();
-    expect(location.hash).toBe("#/now");
+    expect(location.hash).toBe("#/sessions");
     expect(screen.getByText("No sessions yet")).toBeDefined();
   });
 
-  it("rewrites the old home into the channels list", () => {
+  it("rewrites the old home into the sessions list", () => {
     nav("#/");
     mountApp();
-    expect(location.hash).toBe("#/channels");
+    expect(location.hash).toBe("#/sessions");
   });
 
   it("leaves an address that moved on before the rewrite ran where it moved to", () => {
     // a page's own mount effect stands for a move that lands between the shell's render and its
     // rewrite (a click or a goto the instant the first-run gate closes): the rewrite must not
     // pull the address back to the canonical form of the route it replaced
-    nav("#/");
+    nav("#/c/ch/inbox");
     mountApp({
-      home: () => {
+      inbox: () => {
         useEffect(() => {
-          location.hash = "#/radar/requests";
+          location.hash = "#/channels/ch/team";
         }, []);
-        return <div>home page</div>;
+        return <div>inbox page</div>;
       },
     });
-    expect(location.hash).toBe("#/radar/requests");
+    expect(location.hash).toBe("#/channels/ch/team");
   });
 
   it("rewrites an old channel address into its channels one and keeps the page working", () => {
@@ -516,7 +516,7 @@ describe("routes and panes", () => {
 describe("the shell's keys", () => {
   it("switches tabs with the g chords", () => {
     stubMedia(DESKTOP);
-    nav("#/now");
+    nav("#/sessions");
     mountApp();
     press("g");
     press("c");
@@ -532,24 +532,24 @@ describe("the shell's keys", () => {
     expect(location.hash).toBe("#/settings");
     press("g");
     press("n");
-    expect(location.hash).toBe("#/now");
+    expect(location.hash).toBe("#/sessions");
   });
 
   it("leaves g k to the palette's Knowledge chord: the shell opens no Kanban with it", () => {
     stubMedia(DESKTOP);
-    nav("#/now");
+    nav("#/sessions");
     mountApp();
     press("g");
     press("k");
     // the shell takes no k chord; Knowledge's navigation is the palette layer's goChord,
     // proven with a channel open in Palette.test's goChord test
     expect(location.hash).not.toBe("#/kanban");
-    expect(location.hash).toBe("#/now");
+    expect(location.hash).toBe("#/sessions");
   });
 
   it("focuses the jump field with ⌘K, Ctrl-K and /", () => {
     stubMedia(DESKTOP);
-    nav("#/now");
+    nav("#/sessions");
     mountApp();
     press("k", { metaKey: true });
     expect(document.activeElement?.id).toBe("jump");
@@ -561,7 +561,7 @@ describe("the shell's keys", () => {
 
   it("opens the palette from ⌘K where no jump field is drawn", () => {
     const onPalette = vi.fn();
-    nav("#/now");
+    nav("#/sessions");
     renderIn(<App pages={{}} onPalette={onPalette} />, makeCtx(makeState()));
     press("k", { metaKey: true });
     expect(onPalette).toHaveBeenCalledTimes(1);
@@ -571,7 +571,7 @@ describe("the shell's keys", () => {
 
   it("keeps the chords and / out of text fields and dialogs", () => {
     stubMedia(DESKTOP);
-    nav("#/now");
+    nav("#/sessions");
     const { container } = mountApp();
     const input = document.createElement("input");
     container.append(input);
@@ -580,7 +580,7 @@ describe("the shell's keys", () => {
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "n", bubbles: true }));
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true }));
     });
-    expect(location.hash).toBe("#/now");
+    expect(location.hash).toBe("#/sessions");
     expect(document.activeElement?.id).not.toBe("jump");
     input.remove();
     const dlg = document.createElement("dialog");
@@ -588,18 +588,18 @@ describe("the shell's keys", () => {
     document.body.append(dlg);
     press("g");
     press("n");
-    expect(location.hash).toBe("#/now");
+    expect(location.hash).toBe("#/sessions");
     dlg.remove();
   });
 
   it("spends the chord on a key that is no tab and forgets it", () => {
     stubMedia(DESKTOP);
-    nav("#/now");
+    nav("#/sessions");
     mountApp();
     press("g");
     press("x");
     press("n"); // free again: no chord pending, plain n types nothing and goes nowhere
-    expect(location.hash).toBe("#/now");
+    expect(location.hash).toBe("#/sessions");
   });
 });
 
@@ -725,7 +725,7 @@ describe("under Channels", () => {
   });
 
   it("sets the title without a channel part off the channel pages", () => {
-    nav("#/now");
+    nav("#/sessions");
     mountApp({}, makeState({ attention: attention({ asks: [{ seq: 1, from: "api" }] }) }));
     expect(document.title).toBe("(1) Huddle");
   });
@@ -833,7 +833,7 @@ describe("the first-run checklist's passkey row", () => {
 
   /** The checklist rides the Now list, so the shell mounts there. */
   const mountOnNow = (kind: string, mintAnswer?: unknown) => {
-    location.hash = "#/now";
+    location.hash = "#/sessions";
     return mountAs(kind, mintAnswer);
   };
 

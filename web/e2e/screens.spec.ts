@@ -116,11 +116,11 @@ const KNOWN: Partial<Record<PageId, Known>> = {
 };
 
 /** What the shell's own chrome fails on every page, by rule and the axe target its node starts
- *  with: the sidebar's channel switcher text in the dark scheme, and the tablet's Now tab whose
+ *  with: the sidebar's channel switcher text in the dark scheme, and the tablet's Sessions tab whose
  *  name differs from its visible label. HV-TOKENS-SHELL fixes both and removes them. */
 const SHELL_KNOWN: readonly { rule: AxeRule; node: string }[] = [
   { rule: "color-contrast", node: "#jump" },
-  { rule: "label-content-name-mismatch", node: 'a[href$="#/now"]' },
+  { rule: "label-content-name-mismatch", node: 'a[href$="#/sessions"]' },
 ];
 
 /** The names a project's seeded rows go by: the project's name keeps the three projects' rows
@@ -213,13 +213,13 @@ const SCREENS: readonly Screen[] = [
       await expect(page.locator("[data-landing]")).toBeVisible();
     },
   },
-  { id: "now", signedIn: true, open: route(() => "#/now") },
-  { id: "session", signedIn: true, open: route(() => `#/now/${SEEDED.session}`) },
+  { id: "now", signedIn: true, open: route(() => "#/sessions") },
+  { id: "session", signedIn: true, open: route(() => `#/sessions/${SEEDED.session}`) },
   {
     id: "needs",
     signedIn: true,
     open: async (page, seeded) => {
-      await route((s) => `#/now/${s.permit}`)(page, seeded);
+      await route((s) => `#/sessions/${s.permit}`)(page, seeded);
       await expect(page.locator("[data-needs-sheet], [data-needs-bar]")).toBeVisible();
     },
   },

@@ -15,12 +15,12 @@ import { expect, test, type Page } from "@playwright/test";
 import { axeViolations, expectAccessible } from "./axe.ts";
 import { api, expectTapTargets, SEEDED, signIn, theSetup } from "./helpers.ts";
 
-/** The five tabs, in the order the shell draws them; Now may carry its needs-you count after it. */
-const TABS = [/^Now\d*$/, /^Channels$/, /^Radar$/, /^Kanban$/, /^Settings$/];
+/** The five tabs, in the order the shell draws them; Sessions may carry its needs-you count after it. */
+const TABS = [/^Sessions\d*$/, /^Channels$/, /^Radar$/, /^Kanban$/, /^Settings$/];
 
 /** Every page the shell frames: the five tabs and a channel's own page under Channels. */
 const PAGES: readonly (readonly [name: string, hash: string])[] = [
-  ["Now", "#/now"],
+  ["Sessions", "#/sessions"],
   ["Channels", "#/channels"],
   ["Channel overview", "#/c/e2e/overview"],
   ["Radar", "#/radar/overview"],
@@ -29,10 +29,10 @@ const PAGES: readonly (readonly [name: string, hash: string])[] = [
 ];
 
 /** The pages the tap check walks: the five tabs, a channel's page and a session's own page under
- *  Now (its Back to Now sits there). */
+ *  Sessions (its Back to Sessions sits there). */
 const TAP_PAGES: readonly (readonly [name: string, hash: string])[] = [
-  ["Now", "#/now"],
-  ["A session", `#/now/${SEEDED.session}`],
+  ["Sessions", "#/sessions"],
+  ["A session", `#/sessions/${SEEDED.session}`],
   ["Channels", "#/channels"],
   ["Channel overview", "#/c/e2e/overview"],
   ["Radar", "#/radar/overview"],
@@ -196,7 +196,7 @@ test.describe("the phone shell", () => {
   });
 
   test("the five tabs are targets of at least 44 px", async ({ page }) => {
-    await open(page, "#/now");
+    await open(page, "#/sessions");
     const links = page.getByRole("navigation", { name: "Main" }).getByRole("link");
     await expect(links).toHaveText(TABS);
     for (const box of await links.evaluateAll((els) =>
@@ -210,6 +210,17 @@ test.describe("the phone shell", () => {
     }
   });
 
+  test("the old home and the old Now address land on the sessions tab", async ({ page }) => {
+    for (const hash of ["#/", "#/now"]) {
+      await open(page, hash);
+      await expect(page, hash).toHaveURL(/#\/sessions$/);
+      await expect(
+        page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /^Sessions/ }),
+        hash,
+      ).toHaveAttribute("aria-current", "page");
+    }
+  });
+
   for (const [name, hash] of TAP_PAGES) {
     test(`${name}: every control is a target of at least 44 px`, async ({ page }) => {
       await open(page, hash);
@@ -218,7 +229,7 @@ test.describe("the phone shell", () => {
   }
 
   test("a tab opens its page and marks itself current", async ({ page }) => {
-    await open(page, "#/now");
+    await open(page, "#/sessions");
     const nav = page.getByRole("navigation", { name: "Main" });
     await nav.getByRole("link", { name: "Radar" }).click();
     await expect(page).toHaveURL(/#\/radar\//);
@@ -226,7 +237,7 @@ test.describe("the phone shell", () => {
   });
 
   test("passes axe", async ({ page }) => {
-    await open(page, "#/now");
+    await open(page, "#/sessions");
     await expectAccessible(page, CONTENT);
   });
 });
@@ -235,7 +246,7 @@ test.describe("the desktop shell", () => {
   test.skip(({ isMobile }) => isMobile, "the sidebar is the desktop's");
 
   test("the five tabs stand in a left sidebar and no bottom bar is drawn", async ({ page }) => {
-    await open(page, "#/now");
+    await open(page, "#/sessions");
     const side = page.locator("[data-nav='side']");
     await expect(side).toBeVisible();
     await expect(side.getByRole("link")).toHaveText(TABS);
@@ -250,14 +261,14 @@ test.describe("the desktop shell", () => {
   });
 
   test("passes axe", async ({ page }) => {
-    await open(page, "#/now");
+    await open(page, "#/sessions");
     await expectAccessible(page, CONTENT);
   });
 });
 
 test.describe("the installed app", () => {
   test("names a theme colour per scheme and a manifest with a maskable icon", async ({ page }) => {
-    await open(page, "#/now");
+    await open(page, "#/sessions");
     const colours = await page.evaluate(() =>
       [...document.querySelectorAll<HTMLMetaElement>("meta[name='theme-color']")].map((m) => m.media),
     );
@@ -271,7 +282,7 @@ test.describe("the installed app", () => {
   });
 
   test("links a 180 px Apple Home Screen icon that answers as a PNG", async ({ page }) => {
-    await open(page, "#/now");
+    await open(page, "#/sessions");
     const href = await page.locator("link[rel='apple-touch-icon']").getAttribute("href");
     expect(href).toBe("/icons/icon-apple-180.png");
     const answer = await page.request.get(`${theSetup().rootUrl}${href}`);
@@ -295,7 +306,7 @@ test.describe("the update offer", () => {
       const executable = answered === 1 ? body.executable : `${body.executable}.next`;
       await route.fulfill({ response: real, json: { ...body, executable } });
     });
-    await open(page, "#/now");
+    await open(page, "#/sessions");
     await expect(page.getByRole("button", { name: "Reload" })).toHaveCount(0);
     // the owner comes back to the tab: the page asks the hub which build it serves
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
@@ -391,7 +402,7 @@ test.describe("the utility layer", () => {
       tool_name: "Bash",
       tool_input: { command: "bun run build" },
     });
-    await open(page, `#/now/${session}`);
+    await open(page, `#/sessions/${session}`);
     // the session screen's ask: the phone's bottom sheet, or the wide layouts' inline box
     const bar = page.locator("[data-needs-sheet], [data-needs-bar]");
     const allow = bar.locator("[data-act='allow']");
@@ -429,13 +440,13 @@ test.describe("the needs sheet", () => {
       tool_name: "Bash",
       tool_input: { command: "bun run build", description: "Build the bundle" },
     });
-    await open(page, `#/now/${session}`);
+    await open(page, `#/sessions/${session}`);
     for (const scheme of ["light", "dark"] as const) {
       for (const width of WIDTHS) {
         const at = `${width} px, ${scheme}`;
         await page.emulateMedia({ colorScheme: scheme });
         await page.setViewportSize({ width, height: 900 });
-        await page.goto(`${theSetup().rootUrl}/#/now/${session}`);
+        await page.goto(`${theSetup().rootUrl}/#/sessions/${session}`);
         await expect(page.locator("html"), at).toHaveAttribute("data-scheme", scheme);
         const bar = page.locator("[data-needs-sheet], [data-needs-bar]");
         await expect(bar, at).toBeVisible();
@@ -446,9 +457,14 @@ test.describe("the needs sheet", () => {
         for (const act of ["allow", "deny"]) {
           const button = bar.locator(`[data-act='${act}']`);
           expect(await button.evaluate((el) => el.tagName), `${at}: ${act}`).toBe("BUTTON");
-          const box = await button.boundingBox();
-          expect(box?.width ?? 0, `${at}: ${act} width`).toBeGreaterThanOrEqual(44);
-          expect(box?.height ?? 0, `${at}: ${act} height`).toBeGreaterThanOrEqual(44);
+          // a list re-read can re-draw the sheet between the resolve and the measure, so the
+          // touch-target sizes are polled, not read once
+          await expect
+            .poll(async () => (await button.boundingBox())?.width ?? 0, `${at}: ${act} width`)
+            .toBeGreaterThanOrEqual(44);
+          await expect
+            .poll(async () => (await button.boundingBox())?.height ?? 0, `${at}: ${act} height`)
+            .toBeGreaterThanOrEqual(44);
         }
         const over = await page.evaluate(
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

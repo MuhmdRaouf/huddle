@@ -161,7 +161,7 @@ for (const scheme of SCHEMES) {
         await shot(view);
       };
 
-      await openAndShoot("Now");
+      await openAndShoot("Sessions");
       await openAndShoot("Channels");
 
       // the channel itself, opened the way a channel card opens it: its Messages card is the

@@ -5,9 +5,9 @@
 // names its harness on its row and in its header (the seeded Claude Code one and a Codex one), one whose
 // last event asks for permission waits in Needs you with its state word, behind the filter too,
 // an agent-team teammate that went idle shows under its lead's row with the word idle, a seeded
-// permission ask is allowed with one tap on the 48 px button at its card's foot, and the Radar
-// card carries today's seeded cost and requests. A session's stream on the phone opens at its
-// latest event and folds repeated calls of one tool into one row a tap opens. The phone's page
+// permission ask is allowed with one tap on the 48 px button at its card's foot. A session's
+// stream on the phone opens at its latest event and folds repeated calls of one tool into one row
+// a tap opens. The phone's page
 // scrolls nothing sideways and every target on it is at least 44 px; axe finds nothing serious on
 // either.
 
@@ -23,15 +23,10 @@ import {
   flowingStreams,
   openTab,
   returnAfter,
-  SEEDED,
   signIn,
   soloPairHome,
   theSetup,
-  TOTALS,
 } from "./helpers.ts";
-
-/** Today's three seeded glm-5.3 calls at the price table's 1.40 / 4.40 / 0.26 USD per million. */
-const TODAY_USD = (TOTALS.input * 1.4 + TOTALS.output * 4.4 + TOTALS.cacheRead * 0.26) / 1e6;
 
 // the authenticator set-up the first sign-in offers is not this page's subject: the browser
 // starts with its "Later" already kept
@@ -44,7 +39,7 @@ test("the sign-in link opens the hub and the Now list shows the seeded session",
   isMobile,
 }) => {
   await signIn(page);
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
 
   // the seeded session sits in the Working group, one row strong
   await expect(page.getByRole("heading", { name: "Working · 1" })).toBeVisible();
@@ -76,7 +71,7 @@ test("on the phone a seeded ask's card sits above the fold, before the first-run
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page);
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
 
   const checklist = page.locator("[data-first-run]");
   await expect(checklist).toBeVisible();
@@ -94,7 +89,7 @@ test("on the phone a seeded ask's card sits above the fold, before the first-run
 
 test("every session names its harness: the seeded Claude Code one and a Codex one", async ({ page }, info) => {
   await signIn(page);
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
 
   // a Codex session reports its turn done, so it sits with the idle ones and the Working count
   // the other cases read stays as it was
@@ -126,7 +121,7 @@ test("a session whose last event asks for permission waits in Needs you first", 
   page,
 }) => {
   await signIn(page);
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
 
   // a session reports a permission request and nothing after: the registry reads needs-you
   await api("/api/registry/report", {
@@ -154,7 +149,7 @@ test("a session whose last event asks for permission waits in Needs you first", 
 
 test("a teammate that went idle shows under its lead's row", async ({ page }) => {
   await signIn(page);
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
 
   // the lead's TeammateIdle hook reports the teammate under the lead's session, then the lead's
   // own turn ends: the teammate stays listed under the idle lead (and the Working count the
@@ -204,7 +199,7 @@ test("a session with stale hooks shows its chip and the resume line, never stuck
     fs.utimesSync(transcript, minutesAgo(12), minutesAgo(12));
 
     await signIn(page);
-    await openTab(page, "Now");
+    await openTab(page, "Sessions");
     const row = page.locator(`a[data-row='${session}']`);
     await expect(row.locator("[data-hooks-stale]")).toHaveText("hooks stale");
     // the transcript, not the twenty-minute-old report, settles the state: idle, never stuck
@@ -244,7 +239,7 @@ test("a seeded permission ask is allowed with one tap at its card's foot", async
     tool_input: { command: "bun run test" },
   });
   await signIn(page);
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
 
   const card = page.locator(`article[data-row='${session}']`);
   await expect(card.getByText("bun run test")).toBeVisible();
@@ -298,9 +293,9 @@ test("the phone's stream folds repeated calls into one row a tap opens, and open
 
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page);
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
   // the finished turn holds the session in Needs you: its card's link opens it
-  await page.locator(`a[href='#/now/${session}']`).first().click();
+  await page.locator(`a[href='#/sessions/${session}']`).first().click();
   const stream = page.locator("[data-stream]");
   const group = stream.getByRole("button", { name: /Read.*3 calls/ });
   await expect(group).toContainText("×3");
@@ -333,8 +328,8 @@ test("a finished turn's sheet shows its digest line with Snooze and Dismiss, and
     last_event_at: new Date().toISOString(),
   });
   await signIn(page);
-  await openTab(page, "Now");
-  await page.locator(`a[href='#/now/${session}']`).first().click();
+  await openTab(page, "Sessions");
+  await page.locator(`a[href='#/sessions/${session}']`).first().click();
 
   const sheet = page.locator(isMobile ? "[data-needs-sheet]" : "[data-needs-bar]");
   await expect(sheet.getByRole("heading", { name: "Goal: fix the login bug" })).toBeVisible();
@@ -370,8 +365,8 @@ test("opening a session clears its finished turn from Needs you in every open br
   const other = await context.newPage();
   for (const p of [page, other]) {
     await signIn(p);
-    await openTab(p, "Now");
-    await expect(p.locator(`a[href='#/now/${session}']`).first()).toBeVisible();
+    await openTab(p, "Sessions");
+    await expect(p.locator(`a[href='#/sessions/${session}']`).first()).toBeVisible();
   }
   const heading = page.getByRole("heading", { name: /Needs you · \d+$/ });
   const before = Number(/· (\d+)/.exec((await heading.textContent()) ?? "")?.[1]);
@@ -380,7 +375,7 @@ test("opening a session clears its finished turn from Needs you in every open br
 
   // one browser opens the session in-app and comes back; neither page reloads
   const opened = page.waitForResponse((r) => r.url().endsWith(`/api/registry/sessions/${session}`));
-  await page.locator(`a[href='#/now/${session}']`).first().click();
+  await page.locator(`a[href='#/sessions/${session}']`).first().click();
   expect((await opened).status()).toBe(200);
   await page.goBack();
   await expect(page.locator("[data-now-pane]")).toBeVisible();
@@ -393,32 +388,20 @@ test("opening a session clears its finished turn from Needs you in every open br
   await other.close();
 });
 
-test("the Radar card shows today's seeded cost and requests", async ({ page }) => {
-  await signIn(page);
-  await openTab(page, "Now");
-  const radar = page.getByRole("region", { name: "Today in Radar" });
-  await expect(radar).toBeVisible();
-  const cost = radar.locator("[data-radar-cost]");
-  await expect(cost).toHaveText("$0.0073");
-  expect(Number(await cost.getAttribute("data-radar-cost"))).toBeCloseTo(TODAY_USD, 9);
-  await expect(radar.locator("[data-radar-requests]")).toHaveText(String(SEEDED.requests.length));
-});
-
 test("the desktop sets the list and the open pane side by side", async ({ page, isMobile }) => {
   test.skip(isMobile, "the phone paints the list alone");
   await signIn(page);
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
   const list = await page.locator("[data-now-pane]").boundingBox();
   const pane = await page.getByText("No session open").boundingBox();
   expect(list && pane && list.x + list.width).toBeLessThanOrEqual(pane?.x ?? 0);
-  await expect(page.getByRole("region", { name: "Today in Radar" })).toBeVisible();
 });
 
 test("at tablet width the open session's header keeps its full name", async ({ page }, info) => {
   test.skip(info.project.name !== "desktop", "the tablet width is set on the desktop project");
   await page.setViewportSize({ width: 820, height: 1180 });
   await signIn(page);
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
   await page.locator("[data-row='e2e-seed']").click();
 
   const name = page.locator("[data-session] header").getByText(theSetup().sessionTitle, { exact: true });
@@ -427,15 +410,14 @@ test("at tablet width the open session's header keeps its full name", async ({ p
   expect(scroll).toBeLessThanOrEqual(client);
 });
 
-test("the phone's Now scrolls nothing sideways and every target is at least 44 px", async ({
+test("the phone's Sessions page scrolls nothing sideways and every target is at least 44 px", async ({
   page,
   isMobile,
 }) => {
   test.skip(!isMobile, "the thumb's targets are the phone's");
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page);
-  await openTab(page, "Now");
-  await expect(page.getByRole("region", { name: "Today in Radar" })).toBeVisible();
+  await openTab(page, "Sessions");
   const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(over).toBeLessThanOrEqual(0);
   const small = await page.evaluate(() =>
@@ -450,10 +432,9 @@ test("the phone's Now scrolls nothing sideways and every target is at least 44 p
   expect(small).toEqual([]);
 });
 
-test("the Now page passes axe", async ({ page }) => {
+test("the Sessions page passes axe", async ({ page }) => {
   await signIn(page);
-  await openTab(page, "Now");
-  await expect(page.getByRole("region", { name: "Today in Radar" })).toBeVisible();
+  await openTab(page, "Sessions");
   await expectAccessible(page);
 });
 
@@ -475,7 +456,7 @@ test("a registry stream gone silent is replaced within 40 s and the list catches
     await cuttableStreams(page);
     await page.clock.install();
     await signIn(page);
-    await openTab(page, "Now");
+    await openTab(page, "Sessions");
     await expect(page.locator("[data-row='e2e-seed']")).toBeVisible();
     expect(await cutStreams(page, "/api/registry/live")).toBe(1);
   });
@@ -498,7 +479,7 @@ test("a page back from the background re-subscribes the registry stream within 5
   await test.step("Given the Now list on a stream that goes quiet with no error", async () => {
     await cuttableStreams(page);
     await signIn(page);
-    await openTab(page, "Now");
+    await openTab(page, "Sessions");
     await expect(page.locator("[data-row='e2e-seed']")).toBeVisible();
     expect(await cutStreams(page, "/api/registry/live")).toBe(1);
     await reportIdle(id, "Reported while the page was away");

@@ -328,7 +328,7 @@ test("the overview's first tile shows 5 h and 7 d used with their resets once an
   await expectAccessible(page);
 });
 
-test("the phone's overview leads with three one-line tiles under one window label; the desk keeps six cards", async ({
+test("the phone's overview leads with the Radar card, then three one-line tiles under one window label; the desk keeps six cards", async ({
   page,
   isMobile,
 }) => {
@@ -354,23 +354,27 @@ test("the phone's overview leads with three one-line tiles under one window labe
   await expect(tiles.locator("#ovw-window")).toHaveText("Last hour");
   await expect(tiles.locator("[data-stat]")).toHaveCount(3);
   await expect(tiles.locator('[data-stat="spend"]')).toContainText("1 unpriced");
-  // all three in the first screen, each figure on one line inside its tile
+  // the Radar card leads the pane inside the first screen, and each tile figure stays on one
+  // line inside its tile; the peak figure waits for the card's day counts, so the card stands
+  // at its full height before the first screen is measured
+  const radarCard = page.getByRole("region", { name: "Today in Radar" });
+  await expect(radarCard).toBeVisible();
+  await expect(radarCard.locator("[data-radar-peak]")).toBeVisible();
   const viewport = page.viewportSize();
+  const radarBottom = await radarCard.evaluate((el) => Math.round(el.getBoundingClientRect().bottom));
+  expect(radarBottom, "the Radar card sits in the first screen").toBeLessThanOrEqual(viewport?.height ?? 0);
   const fits = await tiles.evaluate((root) =>
     [...root.querySelectorAll<HTMLElement>("[data-stat]")].map((tile) => {
       const value = tile.querySelector<HTMLElement>(".num");
-      const box = tile.getBoundingClientRect();
       const line = value ? Number.parseFloat(getComputedStyle(value).lineHeight) : 0;
       return {
         stat: tile.getAttribute("data-stat"),
-        bottom: Math.round(box.bottom),
         oneLine: value !== null && value.getBoundingClientRect().height < line * 1.5,
         inside: value !== null && value.scrollWidth <= value.clientWidth,
       };
     }),
   );
   for (const fit of fits) {
-    expect(fit.bottom, `${fit.stat} sits in the first screen`).toBeLessThanOrEqual(viewport?.height ?? 0);
     expect(fit, `${fit.stat} on one line`).toMatchObject({ oneLine: true, inside: true });
   }
   await expectAccessible(page);

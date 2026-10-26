@@ -104,7 +104,7 @@ export function Pair({
       // the shell — the app this page runs in opened its streams before the cookie existed (the
       // TLS hub's only sign-in is this ceremony), and no stream reconnects on a hash change
       history.replaceState(null, "", "/");
-      location.hash = "#/now";
+      location.hash = "#/sessions";
       location.reload();
       onPaired?.();
     } catch (e) {

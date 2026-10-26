@@ -1,13 +1,13 @@
 // phone-perf.spec.ts — the hub on a slow phone, against the built binary over TLS (the only
 // origin a browser offers brotli to): an iPhone-sized Chromium with its CPU slowed 4x on the
-// CDP "Slow 4G" link (1.6 Mbps down, 150 ms round trip) opens the Now page cold, then again.
+// CDP "Slow 4G" link (1.6 Mbps down, 150 ms round trip) opens the Sessions page cold, then again.
 // The cold open stays under the byte budget and turns interactive under the time budget, the
 // second open moves no asset byte, and no URL is asked for more than twice in the first 10 s.
 
 import { expect, type CDPSession, type Page, test } from "@playwright/test";
 import { theSetup } from "./helpers.ts";
 
-/** Everything a cold open of the Now page may move over the wire, compressed. */
+/** Everything a cold open of the Sessions page may move over the wire, compressed. */
 const firstLoadBudgetBytes = 300_000;
 
 /** From navigation start to the Now list on screen, on the slowed phone. */
@@ -62,7 +62,7 @@ async function signInOverTls(page: Page): Promise<void> {
   if (!r.ok) throw new Error(`/api/login answered ${r.status}`);
   const { code } = (await r.json()) as { code: string };
   // the authenticator set-up stays skipped, the way its "Later" keeps it: the measured opens
-  // land on the Now page itself
+  // land on the Sessions page itself
   await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
   const settled = page.waitForURL((url) => !url.searchParams.has("code"));
   await page.goto(`${hubUrl}/?code=${code}`);
@@ -70,14 +70,14 @@ async function signInOverTls(page: Page): Promise<void> {
   await page.goto("about:blank");
 }
 
-/** Opens the Now page and answers the milliseconds from navigation start to its list on screen. */
-async function openNow(page: Page): Promise<number> {
-  await page.goto(`${theSetup().hubUrl}/#/now`);
+/** Opens the Sessions page and answers the milliseconds from navigation start to its list on screen. */
+async function openSessions(page: Page): Promise<number> {
+  await page.goto(`${theSetup().hubUrl}/#/sessions`);
   await expect(page.getByRole("heading", { name: /^Working · \d+$/ })).toBeVisible({ timeout: 20_000 });
   return page.evaluate(() => Date.now() - performance.timing.navigationStart);
 }
 
-test("the Now page opens fast on a slow phone, and the second open moves no asset byte", async ({
+test("the Sessions page opens fast on a slow phone, and the second open moves no asset byte", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -94,7 +94,7 @@ test("the Now page opens fast on a slow phone, and the second open moves no asse
 
   const cold = countTransfer(cdp);
   const started = Date.now();
-  const interactive = await openNow(page);
+  const interactive = await openSessions(page);
   const firstBytes = total(cold);
   console.log(`phone-perf: first open ${firstBytes} bytes, interactive in ${interactive} ms`);
   for (const [url, bytes] of [...cold.bytes].sort((a, b) => b[1] - a[1])) {
@@ -114,7 +114,7 @@ test("the Now page opens fast on a slow phone, and the second open moves no asse
   // answers from the cache
   await page.goto("about:blank");
   const warm = countTransfer(cdp);
-  await openNow(page);
+  await openSessions(page);
   expect(warm.bytes.has(`${theSetup().hubUrl}/`), "the shell page goes to the network again").toBe(true);
   const assetBytes = [...warm.bytes]
     .filter(([url]) => /\/(static|fonts)\//.test(new URL(url).pathname))

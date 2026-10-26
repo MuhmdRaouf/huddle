@@ -1,7 +1,7 @@
 // App.tsx — the shell: one component tree that draws its chrome per viewport (a header, the pane
 // and the five tabs in a bar pinned to the bottom edge under 640 px; a 72 px icon rail with a list
 // and a detail pane to 1023 px; a left sidebar beside a 52 px top bar over list, detail and
-// context panes from 1024 px) inside a frame as tall as the viewport, over the tab the address names — Now, Channels, Radar, Kanban or Settings. Every later tab fills its own panes; today's
+// context panes from 1024 px) inside a frame as tall as the viewport, over the tab the address names — Sessions, Channels, Radar, Kanban or Settings. Every later tab fills its own panes; today's
 // channel pages stay reachable under Channels, with their destination tabs, their intro and the
 // session rail beside them. The landing and no-channel pages stand alone.
 
@@ -120,7 +120,7 @@ const NAV_GROUPS: { label: string; tabs: Exclude<Dest, "home">[] }[] = [
 
 /** The g chords' destinations: g n, g c, g r, g b and g s open the five tabs. */
 const CHORD: Readonly<Record<string, Tab>> = {
-  n: "now",
+  n: "sessions",
   c: "channels",
   r: "radar",
   b: "kanban",
@@ -142,7 +142,7 @@ export function inboxOf(state: HuddleState): number {
 /** The counts the channel tabs read: the needs-you badge, the online sessions, the open tasks. */
 export type NavCounts = { needs: NeedsBadge; sessions: number; open: number };
 
-/** The count a channel tab carries: the Inbox's needs-you by the one badge rule the Now tab
+/** The count a channel tab carries: the Inbox's needs-you by the one badge rule the Sessions tab
  *  follows, the Team's online sessions and Work's open tasks in neutral; the pages without a
  *  count and a zero draw nothing. */
 function tabBadge(dest: Dest, c: NavCounts): JSX.Element | null {
@@ -572,7 +572,7 @@ export function App({
   loadChannels?: (() => void) | undefined;
 }): JSX.Element {
   // the pairing link's screen owns this window until it says otherwise (the state, not the
-  // pathname, drops the gate — a repaint with the session cookie in lands the shell on Now)
+  // pathname, drops the gate — a repaint with the session cookie in lands the shell on the sessions tab)
   const [pairing, setPairing] = useState(() => location.pathname === "/pair");
   // the token the checklist minted, which runs the same pair screen in place
   const [pairToken, setPairToken] = useState<string | null>(null);
@@ -626,7 +626,7 @@ export function App({
   }, [state.ch]);
 
   // the needs-you count the chrome carries: what the open channel holds, plus the registry's
-  // sessions that wait on the owner (the Now tab's own list)
+  // sessions that wait on the owner (the sessions tab's own list)
   const needs = needsBadge({
     inbox: inboxOf(state),
     sessions: registry.needs(),
@@ -680,9 +680,9 @@ export function App({
   const introActions = introActs && introActs.dest === route.dest ? introActs.render() : null;
 
   // each tab's panes: the list beside the detail on tablet and desktop, and the desktop's
-  // context pane where a screen carries one (Now's session screen: the linked sessions and the
-  // session's facts). The Now list carries the first-run checklist at its top.
-  const nowId = route.tab === "now" ? (route.sub[0] ?? null) : null;
+  // context pane where a screen carries one (the sessions tab's session screen: the linked
+  // sessions and the session's facts). The sessions list carries the first-run checklist at its top.
+  const nowId = route.tab === "sessions" ? (route.sub[0] ?? null) : null;
   const reg = registry.getState();
   // the registry read answered and holds nothing: no session ever reported, so the main pane
   // leads with the welcome (the list beside it drops its copy of the card)
@@ -698,14 +698,14 @@ export function App({
   const list =
     route.tab === "channels" && ch && layout !== "phone" ? (
       <Rail onHelp={onHelp} />
-    ) : route.tab === "now" && layout !== "phone" ? (
+    ) : route.tab === "sessions" && layout !== "phone" ? (
       <NowPane layout={layout} above={firstRun} />
     ) : null;
   const context: ComponentChildren =
-    route.tab === "now" && layout === "desktop" && nowId ? <NowContext /> : null;
+    route.tab === "sessions" && layout === "desktop" && nowId ? <NowContext /> : null;
 
   const detail: ComponentChildren =
-    route.tab === "now" ? (
+    route.tab === "sessions" ? (
       nowId ? (
         <SessionScreen id={nowId} layout={layout} />
       ) : layout === "phone" ? (
@@ -768,9 +768,9 @@ export function App({
   );
 
   // the machines line reads the registry; its live dot follows the stream the open tab runs on
-  // (the registry's on Now, the channel's everywhere else)
+  // (the registry's on the sessions tab, the channel's everywhere else)
   const mline = machinesLine(layout, machinesOf(reg.sessions));
-  const liveOf = route.tab === "now" ? reg.live : state.live;
+  const liveOf = route.tab === "sessions" ? reg.live : state.live;
 
   // the phone: a header over the pane, the tab bar pinned under it. A session's screen paints its
   // own header (the back link and the name), so the shell's steps aside there.

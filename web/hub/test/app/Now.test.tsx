@@ -291,7 +291,7 @@ describe("the Now list", () => {
     void act(() => {
       screen.getByText("kanban-e2e").closest("a")?.click();
     });
-    expect(location.hash).toBe("#/now/s-need-1");
+    expect(location.hash).toBe("#/sessions/s-need-1");
   });
 
   it("offers Review alone when the session has no permission ask to answer", () => {
@@ -308,7 +308,9 @@ describe("the Now list", () => {
     ]);
     expect(document.querySelector('[data-act="deny"]')).toBeNull();
     const card = document.querySelector('[data-row="s-need-1"]') as HTMLElement;
-    expect(within(card).getByRole("link", { name: "Review" }).getAttribute("href")).toBe("#/now/s-need-1");
+    expect(within(card).getByRole("link", { name: "Review" }).getAttribute("href")).toBe(
+      "#/sessions/s-need-1",
+    );
   });
 
   it("draws the working row: mark, name, model chip, machine · task, context", () => {
@@ -569,7 +571,7 @@ describe("the Now list", () => {
     void act(() => {
       screen.getByText("lead").closest("a")?.click();
     });
-    expect(location.hash).toBe("#/now/s-work-1");
+    expect(location.hash).toBe("#/sessions/s-work-1");
   });
 
   it("moves the selection with j and k and opens it with Enter on the desktop", () => {
@@ -583,7 +585,7 @@ describe("the Now list", () => {
     press("j");
     expect(rows()[2]?.getAttribute("aria-current")).toBe("true");
     press("Enter");
-    expect(location.hash).toBe("#/now/s-work-1");
+    expect(location.hash).toBe("#/sessions/s-work-1");
     press("k");
     expect(rows()[1]?.getAttribute("aria-current")).toBe("true");
     // the keys stay out of fields, and a wrapped selection stops at the ends
@@ -625,9 +627,9 @@ describe("the Session screen", () => {
     return registry;
   };
 
-  it("shows the header, the chips and the context bar, and goes back to Now", () => {
+  it("shows the header, the chips and the context bar, and goes back to Sessions", () => {
     mountSession("phone");
-    expect(screen.getByRole("link", { name: "Back to Now" }).getAttribute("href")).toBe("#/now");
+    expect(screen.getByRole("link", { name: "Back to Sessions" }).getAttribute("href")).toBe("#/sessions");
     expect(screen.getByText("kanban-e2e")).toBeDefined();
     expect(screen.getByText("laptop · claude-code-plugins · port/KBN-E2E")).toBeDefined();
     expect(screen.getByText("needs you")).toBeDefined();
@@ -970,7 +972,7 @@ describe("the Session screen", () => {
       mountSession(layout);
       expect(screen.getByText("kanban-e2e"), layout).toBeDefined();
       expect(screen.getByLabelText("Context 58 percent used"), layout).toBeDefined();
-      expect(screen.queryByRole("link", { name: "Back to Now" }), layout).toBeNull();
+      expect(screen.queryByRole("link", { name: "Back to Sessions" }), layout).toBeNull();
     }
   });
 });

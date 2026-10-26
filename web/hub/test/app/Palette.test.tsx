@@ -564,7 +564,7 @@ describe("HelpDialog", () => {
     // the tab chords list all five tabs, Kanban on g b, Knowledge kept on g k
     const goTo = helpSections(true).find((s) => s.head === "Go to")?.rows ?? [];
     expect(goTo.slice(0, 5)).toEqual([
-      ["g n", "Now"],
+      ["g n", "Sessions"],
       ["g c", "Channels"],
       ["g r", "Radar"],
       ["g b", "Kanban"],

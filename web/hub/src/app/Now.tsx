@@ -52,7 +52,6 @@ import {
   useNeedsAct,
   useStepUp,
 } from "./Needs.tsx";
-import { RadarDayCard } from "./RadarDay.tsx";
 import { MachinesLine } from "./TopBar.tsx";
 
 /** One state's mark: its shape and the svg it draws; its colour comes from the state's role. */
@@ -267,7 +266,7 @@ function HooksStaleChip({ s }: { s: RegistrySession }): JSX.Element | null {
 }
 
 /** The link that opens one session from the list. */
-const openHref = (s: RegistrySession): string => `#/now/${s.session_id}`;
+const openHref = (s: RegistrySession): string => `#/sessions/${s.session_id}`;
 
 /** The needs-you card: the session that waits on the owner (its name, then its harness chip and
  *  where it works), what it asks, and the answers at the card's foot, 48 px tall for one thumb. A
@@ -686,16 +685,15 @@ export function NowPane({
     );
   };
 
-  /** The sections in order, each heading over its rows, with the Radar card after the asks. */
+  /** The sections in order, each heading over its rows, with the Insights card after the asks. */
   const sections = (): JSX.Element => {
-    // the Radar card and the Insights card ride after the needs-you cards, before the first
-    // other section; the needs-you filter holds the asks alone
+    // the Insights card rides after the needs-you cards, before the first other section;
+    // the needs-you filter holds the asks alone
     const firstOther = onlyNeeds
       ? null
       : (SECTIONS.find(([key]) => key !== "needsYou" && groups[key].length > 0)?.[0] ?? null);
-    const radar = (
+    const cards = (
       <div class="flex flex-col gap-3 px-3 pt-3">
-        <RadarDayCard />
         <InsightsCard />
       </div>
     );
@@ -704,8 +702,8 @@ export function NowPane({
         {SECTIONS.filter(([key]) => (!onlyNeeds || key === "needsYou") && groups[key].length > 0).map(
           ([key, label, warn]) => (
             <Fragment key={key}>
-              {/* the Radar card follows what needs the owner, or leads when nothing does */}
-              {key === firstOther ? radar : null}
+              {/* the Insights card follows what needs the owner, or leads when nothing does */}
+              {key === firstOther ? cards : null}
               <section aria-labelledby={`now-${key}`} class="flex flex-col gap-2 px-3 pt-3">
                 <h2
                   id={`now-${key}`}
@@ -722,7 +720,7 @@ export function NowPane({
             </Fragment>
           ),
         )}
-        {!onlyNeeds && firstOther === null ? radar : null}
+        {!onlyNeeds && firstOther === null ? cards : null}
       </>
     );
   };
@@ -1365,8 +1363,8 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
           <div class="flex items-center gap-1">
             {layout === "phone" ? (
               <a
-                href="#/now"
-                aria-label="Back to Now"
+                href="#/sessions"
+                aria-label="Back to Sessions"
                 class="flex size-[var(--ui-tap)] shrink-0 items-center justify-center rounded-[var(--ui-radius)] text-[var(--ui-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
               >
                 <Icon name="left" class="size-[22px]" />

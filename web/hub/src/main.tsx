@@ -256,8 +256,8 @@ const onComposeSent: ComposeSent = (op) => {
 async function syncChannel(): Promise<void> {
   const route = parseHash(location.hash, (k, fb) => readPref(localStorage, k, fb));
   for (const [k, v] of Object.entries(route.prefs)) writePref(localStorage, k, v);
-  // the session the Now tab names loads before anything channel-shaped runs (or returns early)
-  registry.setOpenId(route.tab === "now" ? (route.sub[0] ?? null) : null);
+  // the session the sessions tab names loads before anything channel-shaped runs (or returns early)
+  registry.setOpenId(route.tab === "sessions" ? (route.sub[0] ?? null) : null);
   const ch = route.ch;
   failedCh = null;
   if (ch === store.getState().ch) return;
@@ -612,8 +612,9 @@ function startShell(): void {
       who.devicePasskey = passkey === true;
       if (who.kind === "owner" && who.totp === false && !readPref(localStorage, "totp-later", false)) {
         // the gate stands between the link sign-in and the shell: a slow answer arriving after
-        // this browser already moved must not pull it back onto the set-up
-        if (["", "#/", "#/channels"].includes(location.hash)) totpGate.on = true;
+        // this browser already moved must not pull it back onto the set-up. The sessions home
+        // counts as unmoved: the shell rewrites an empty home onto it on the way (router.ts).
+        if (["", "#/", "#/channels", "#/sessions"].includes(location.hash)) totpGate.on = true;
       }
     })
     .catch(() => {})

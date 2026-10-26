@@ -1,6 +1,6 @@
 // router.test.ts — every route, redirect, alias, drawer and builder the hash router answers: the
 // five tabs' own addresses, the channel pages under #/channels/<name>, the radar views, and the
-// old #/c/… addresses rewritten into them.
+// old #/c/…, #/now… and #/ addresses rewritten into them.
 import { describe, expect, it } from "vite-plus/test";
 import {
   channelHref,
@@ -24,10 +24,24 @@ const reader =
     views[k] ?? fb;
 
 describe("parseHash: the five tabs", () => {
-  it("reads Now, with or without a session id", () => {
-    expect(parseHash("#/now", reader())).toMatchObject({ tab: "now", ch: null, sub: [] });
-    expect(parseHash("#/now/s-1", reader())).toMatchObject({ tab: "now", sub: ["s-1"] });
-    for (const h of ["#/now", "#/now/s-1"]) expect(parseHash(h, reader()).replace, h).toBeNull();
+  it("reads Sessions, with or without a session id", () => {
+    expect(parseHash("#/sessions", reader())).toMatchObject({ tab: "sessions", ch: null, sub: [] });
+    expect(parseHash("#/sessions/s-1", reader())).toMatchObject({ tab: "sessions", sub: ["s-1"] });
+    for (const h of ["#/sessions", "#/sessions/s-1"]) expect(parseHash(h, reader()).replace, h).toBeNull();
+  });
+
+  it("rewrites the old #/now addresses into the sessions tab, keeping the query", () => {
+    expect(parseHash("#/now", reader())).toMatchObject({
+      tab: "sessions",
+      ch: null,
+      sub: [],
+      replace: "#/sessions",
+    });
+    expect(parseHash("#/now/s-1?x=1", reader())).toMatchObject({
+      tab: "sessions",
+      sub: ["s-1"],
+      replace: "#/sessions/s-1?x=1",
+    });
   });
 
   it("reads Settings, with or without a section", () => {
@@ -68,7 +82,7 @@ describe("parseHash: the five tabs", () => {
     expect(parseHash("#/kanban/a1a1", reader())).toMatchObject({ tab: "kanban", sub: ["a1a1"] });
     for (const h of ["#/kanban", "#/kanban/a1a1"]) expect(parseHash(h, reader()).replace, h).toBeNull();
     expect(TABS).toEqual([
-      ["now", "Now", "#/now"],
+      ["sessions", "Sessions", "#/sessions"],
       ["channels", "Channels", "#/channels"],
       ["radar", "Radar", "#/radar/overview"],
       ["kanban", "Kanban", "#/kanban"],
@@ -78,9 +92,9 @@ describe("parseHash: the five tabs", () => {
     expect(tabLabel("kanban")).toBe("Kanban");
   });
 
-  it("sends an unknown address to Now with a rewrite", () => {
-    expect(parseHash("#/nope", reader())).toMatchObject({ tab: "now", replace: "#/now" });
-    expect(parseHash("#/nope/deep", reader()).replace).toBe("#/now");
+  it("sends an unknown address to Sessions with a rewrite", () => {
+    expect(parseHash("#/nope", reader())).toMatchObject({ tab: "sessions", replace: "#/sessions" });
+    expect(parseHash("#/nope/deep", reader()).replace).toBe("#/sessions");
   });
 });
 
@@ -212,9 +226,9 @@ describe("parseHash: the alias redirects", () => {
 });
 
 describe("parseHash: the old addresses", () => {
-  it("rewrites Home into the channels list", () => {
+  it("rewrites the old home into the sessions tab", () => {
     for (const hash of ["", "#", "#/"]) {
-      expect(parseHash(hash, reader()).replace, hash).toBe("#/channels");
+      expect(parseHash(hash, reader()).replace, hash).toBe("#/sessions");
     }
   });
 

@@ -1,4 +1,4 @@
-// insights.spec.ts — the Insights card on Now: the tips GET /api/insights answers, each one
+// insights.spec.ts — the Insights card on Sessions: the tips GET /api/insights answers, each one
 // sentence with its code and source, and a tip's session as a link. The fixture answer pins what
 // the card draws and that it fits a phone; the live answer proves the route serves the owner; an
 // answer without a tip leaves the Now list without the card.
@@ -23,12 +23,12 @@ const FIXTURE = {
   ],
 };
 
-test("the Insights card on Now shows a tip's sentence, code and source", async ({ page }) => {
+test("the Insights card on Sessions shows a tip's sentence, code and source", async ({ page }) => {
   // the authenticator set-up the first sign-in offers is not this page's subject
   await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
   await page.route(INSIGHTS_ROUTE, (route) => route.fulfill({ json: FIXTURE }));
   await signIn(page);
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
   const card = page.locator("[data-insights]");
   await expect(card).toBeVisible();
   await expect(card.locator("code")).toHaveText("Bash(go test:*)");
@@ -42,7 +42,7 @@ test("the Insights card fits a phone", async ({ page }) => {
   await page.setViewportSize({ width: 393, height: 852 });
   await page.route(INSIGHTS_ROUTE, (route) => route.fulfill({ json: FIXTURE }));
   await signIn(page);
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
   const card = page.locator("[data-insights]");
   await card.scrollIntoViewIfNeeded();
   await expect(card).toBeVisible();
@@ -60,6 +60,6 @@ test("the live route answers the owner, and an answer without a tip shows no car
   const body = (await answer.json()) as { tips: unknown[] };
   expect(Array.isArray(body.tips)).toBe(true);
   await page.route(INSIGHTS_ROUTE, (route) => route.fulfill({ json: { tips: [] } }));
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
   await expect(page.locator("[data-insights]")).toHaveCount(0);
 });

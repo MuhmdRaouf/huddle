@@ -105,7 +105,7 @@ describe("the Insights view", () => {
   it("links a tip's session into the Now list", () => {
     renderIn(<InsightsView tips={[{ ...ALLOW_TIP, session: "s-1" }]} />);
     const link = document.querySelector('[data-tip="always_allowed"] a');
-    expect(link?.getAttribute("href")).toBe("#/now/s-1");
+    expect(link?.getAttribute("href")).toBe("#/sessions/s-1");
     expect(link?.textContent).toBe("open the session");
     expect(itemText("always_allowed")).toContain("From your permission asks, last 7 days · ");
   });

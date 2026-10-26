@@ -189,8 +189,8 @@ describe("the radar Overview", () => {
         },
       ],
     });
-    const rows = [...container.querySelectorAll('a[href^="#/now/"]')] as HTMLAnchorElement[];
-    expect(rows.map((a) => a.getAttribute("href"))).toEqual(["#/now/s-lead", "#/now/s-kanban"]);
+    const rows = [...container.querySelectorAll('a[href^="#/sessions/"]')] as HTMLAnchorElement[];
+    expect(rows.map((a) => a.getAttribute("href"))).toEqual(["#/sessions/s-lead", "#/sessions/s-kanban"]);
     expect(rows[0]?.textContent).toContain("lead");
     expect(rows[0]?.textContent).toContain("studio");
     expect(rows[1]?.textContent).toContain("kanban-e2e · laptop");

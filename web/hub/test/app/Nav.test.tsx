@@ -1,6 +1,6 @@
 // Nav.test.tsx — the five tabs in each layout's chrome: the phone's pinned bar, the tablet's icon
 // rail and the desktop's sidebar with the brand over them, each the Main navigation with the
-// needs-you count on Now, painted from the tokens by the one badge rule.
+// needs-you count on Sessions, painted from the tokens by the one badge rule.
 import { render, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { BottomNav, IconRail, type NeedsBadge, needsBadge, SideNav } from "../../src/app/Nav.tsx";
@@ -37,7 +37,7 @@ const links = (nav: string): HTMLAnchorElement[] =>
 
 describe("the sidebar", () => {
   it("puts the brand with the server's version over the tabs, outside the Main navigation", async () => {
-    render(<SideNav tab="now" needs={NONE} />);
+    render(<SideNav tab="sessions" needs={NONE} />);
     const brand = screen.getByText("Huddle").closest("a") as HTMLAnchorElement;
     expect(brand.getAttribute("href")).toBe("#/channels");
     expect(brand.closest("nav")).toBeNull();
@@ -48,10 +48,10 @@ describe("the sidebar", () => {
   it("lays the five tabs out with the active one current", () => {
     render(<SideNav tab="radar" needs={NONE} />);
     const tabs = links("side");
-    expect(tabs.map((a) => a.dataset.tab)).toEqual(["now", "channels", "radar", "kanban", "settings"]);
+    expect(tabs.map((a) => a.dataset.tab)).toEqual(["sessions", "channels", "radar", "kanban", "settings"]);
     expect(tabs.map((a) => a.getAttribute("aria-current"))).toEqual([null, null, "page", null, null]);
     expect(tabs.map((a) => a.getAttribute("href"))).toEqual([
-      "#/now",
+      "#/sessions",
       "#/channels",
       "#/radar/overview",
       "#/kanban",
@@ -62,7 +62,7 @@ describe("the sidebar", () => {
   });
 
   it("marks the tab the shell names, for each of the five", () => {
-    for (const tab of ["now", "channels", "radar", "kanban", "settings"] as const) {
+    for (const tab of ["sessions", "channels", "radar", "kanban", "settings"] as const) {
       const { unmount } = render(<SideNav tab={tab satisfies Tab} needs={NONE} />);
       expect(
         (document.querySelector("[data-nav='side'] a[aria-current='page']") as HTMLElement).dataset.tab,
@@ -105,35 +105,37 @@ describe("the one badge rule", () => {
   });
 });
 
-describe("the needs-you count on Now", () => {
-  it("rides on Now in the bar, the rail and the sidebar in its tone, and is gone at zero", () => {
+describe("the needs-you count on Sessions", () => {
+  it("rides on Sessions in the bar, the rail and the sidebar in its tone, and is gone at zero", () => {
     for (const [Nav, name] of [
       [BottomNav, "bottom"],
       [IconRail, "rail"],
       [SideNav, "side"],
     ] as const) {
-      const { rerender, unmount } = render(<Nav tab="now" needs={{ n: 3, tone: "needs-you" }} />);
+      const { rerender, unmount } = render(<Nav tab="sessions" needs={{ n: 3, tone: "needs-you" }} />);
       expect(
-        document.querySelector(`[data-nav='${name}'] a[data-tab='now'] .ui-badge-needs-you`)?.textContent,
+        document.querySelector(`[data-nav='${name}'] a[data-tab='sessions'] .ui-badge-needs-you`)
+          ?.textContent,
       ).toBe("3");
-      rerender(<Nav tab="now" needs={{ n: 1, tone: "turn-done" }} />);
+      rerender(<Nav tab="sessions" needs={{ n: 1, tone: "turn-done" }} />);
       expect(
-        document.querySelector(`[data-nav='${name}'] a[data-tab='now'] .ui-badge-turn-done`)?.textContent,
+        document.querySelector(`[data-nav='${name}'] a[data-tab='sessions'] .ui-badge-turn-done`)
+          ?.textContent,
       ).toBe("1");
-      rerender(<Nav tab="now" needs={NONE} />);
+      rerender(<Nav tab="sessions" needs={NONE} />);
       expect(document.querySelector(`[data-nav='${name}'] .ui-badge`)).toBeNull();
       unmount();
     }
   });
 
-  it("names the rail's Now tab with its count, so the name holds the number the tab shows", () => {
-    const { rerender } = render(<IconRail tab="now" needs={{ n: 3, tone: "needs-you" }} />);
-    const now = () => document.querySelector("[data-nav='rail'] a[data-tab='now']");
-    expect(now()?.getAttribute("aria-label")).toBe("Now, 3 need you");
-    rerender(<IconRail tab="now" needs={{ n: 1, tone: "turn-done" }} />);
-    expect(now()?.getAttribute("aria-label")).toBe("Now, 1 turn done");
-    rerender(<IconRail tab="now" needs={NONE} />);
-    expect(now()?.getAttribute("aria-label")).toBe("Now");
+  it("names the rail's Sessions tab with its count, so the name holds the number the tab shows", () => {
+    const { rerender } = render(<IconRail tab="sessions" needs={{ n: 3, tone: "needs-you" }} />);
+    const sessions = () => document.querySelector("[data-nav='rail'] a[data-tab='sessions']");
+    expect(sessions()?.getAttribute("aria-label")).toBe("Sessions, 3 need you");
+    rerender(<IconRail tab="sessions" needs={{ n: 1, tone: "turn-done" }} />);
+    expect(sessions()?.getAttribute("aria-label")).toBe("Sessions, 1 turn done");
+    rerender(<IconRail tab="sessions" needs={NONE} />);
+    expect(sessions()?.getAttribute("aria-label")).toBe("Sessions");
     expect(
       document.querySelector("[data-nav='rail'] a[data-tab='channels']")?.getAttribute("aria-label"),
     ).toBe("Channels");
@@ -143,7 +145,7 @@ describe("the needs-you count on Now", () => {
 describe("the tokens", () => {
   it("paints the bar, the rail and the sidebar with no daisyUI or legacy class", async () => {
     for (const Nav of [BottomNav, IconRail, SideNav]) {
-      const { unmount } = render(<Nav tab="now" needs={{ n: 2, tone: "needs-you" }} />);
+      const { unmount } = render(<Nav tab="sessions" needs={{ n: 2, tone: "needs-you" }} />);
       await flush();
       expect(legacyClasses(), Nav.name).toEqual([]);
       unmount();
@@ -151,7 +153,7 @@ describe("the tokens", () => {
   });
 
   it("keeps the sidebar's version as a neutral badge", async () => {
-    render(<SideNav tab="now" needs={NONE} />);
+    render(<SideNav tab="sessions" needs={NONE} />);
     await flush();
     expect(screen.getByText("v1.2.3").className).toBe("ui-badge ui-badge-neutral");
   });
@@ -164,7 +166,7 @@ describe("the phone's bar", () => {
     expect(nav.className).toContain("ui-tabbar");
     expect(nav.getAttribute("aria-label")).toBe("Main");
     expect(links("bottom").map((a) => a.textContent)).toEqual([
-      "Now",
+      "Sessions",
       "Channels",
       "Radar",
       "Kanban",

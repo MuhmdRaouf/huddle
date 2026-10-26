@@ -1,7 +1,7 @@
-// RadarDay.test.tsx — the Radar card on Now: today's cost and requests from the usage report's
-// last day, the loudest alert, the day route's two counts when it answers and nothing of them on
-// a 404 or a 503, no card at all when the usage report cannot be read, and the once-a-minute
-// re-read.
+// RadarDay.test.tsx — the Radar card on the Overview: today's cost and requests from the usage
+// report's last day, the loudest alert, the day route's two counts when it answers and nothing
+// of them on a 404 or a 503, no card at all when the usage report cannot be read, and the
+// once-a-minute re-read.
 import { act, cleanup, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api, ApiError } from "../../src/api.ts";

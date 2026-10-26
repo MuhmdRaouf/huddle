@@ -125,7 +125,7 @@ describe("the pair screen", () => {
     expect(screen.getByText(/Pair this device as “Android”\?/)).toBeDefined();
   });
 
-  it("TestTheSuccessPathLandsOnNow", async () => {
+  it("TestTheSuccessPathLandsOnSessions", async () => {
     mount({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)" });
     await begin();
     await act(async () => {
@@ -133,10 +133,10 @@ describe("the pair screen", () => {
     });
     await flush();
     expect(location.pathname).toBe("/");
-    expect(location.hash).toBe("#/now");
-    // the address change repaints the shell over the Now tab
+    expect(location.hash).toBe("#/sessions");
+    // the address change repaints the shell over the sessions tab
     await hashchange();
-    expect(screen.getByRole("heading", { level: 1 })?.textContent).toBe("Now");
+    expect(screen.getByRole("heading", { level: 1 })?.textContent).toBe("Sessions");
   });
 
   it("TestTheFinishCarriesTheTokenAndTheEncodedCredential", async () => {

@@ -1,8 +1,8 @@
 // landing.spec.ts — the owner's first screen when not signed in, over the real binary: a fresh
 // hub shows the first-time card with no warning, the tour's thumbnails and lightbox, and the
 // start-a-session tabs whose commands copy; a signed-out visit logs no console error; a registry
-// with nothing in it greets the Now tab with the welcome in the main pane, once; a browser that
-// paired here lands on the biometric button Touch ID names; the first-run checklist on Now ticks
+// with nothing in it greets the Sessions tab with the welcome in the main pane, once; a browser that
+// paired here lands on the biometric button Touch ID names; the first-run checklist on Sessions ticks
 // its items from server state and stands down when all four hold; and `huddle open` on a
 // hub-role home prints the hub's own https link, which a browser opens over TLS and lands
 // signed in. On both projects the landing is one sign-in card that fits 390 px with every
@@ -272,14 +272,14 @@ test("a fresh hub shows the first-time landing, its tour and its copyable comman
 
     // the tour: four thumbnails, and the lightbox steps through them
     await expect(page.locator("[data-tour] img")).toHaveCount(4);
-    await page.getByRole("button", { name: "Now: open the tour step" }).click();
-    await expect(page.getByText("Now (1 of 4)")).toBeVisible();
+    await page.getByRole("button", { name: "Sessions: open the tour step" }).click();
+    await expect(page.getByText("Sessions (1 of 4)")).toBeVisible();
     await page.getByRole("button", { name: "Next" }).click();
     await expect(page.getByText("Channels (2 of 4)")).toBeVisible();
     await page.getByRole("button", { name: "Previous" }).click();
-    await expect(page.getByText("Now (1 of 4)")).toBeVisible();
+    await expect(page.getByText("Sessions (1 of 4)")).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.getByText("Now (1 of 4)")).toHaveCount(0);
+    await expect(page.getByText("Sessions (1 of 4)")).toHaveCount(0);
 
     // the start-a-session tabs, in their sheet: each harness carries its own commands, and they
     // copy (a command shows in its label, its code block and a button's hidden name: the first
@@ -309,7 +309,7 @@ test("a signed-out visit to the landing logs no console error", async ({ page })
   expect(errors.errors()).toEqual([]);
 });
 
-test("an empty registry greets the Now tab with the welcome in the main pane, once", async ({
+test("an empty registry greets the Sessions tab with the welcome in the main pane, once", async ({
   browser,
 }) => {
   test.setTimeout(60_000);
@@ -322,7 +322,7 @@ test("an empty registry greets the Now tab with the welcome in the main pane, on
       const context = await browser.newContext({ viewport: { width, height } });
       const page = await context.newPage();
       await signInAt(page, hub.base, hub.token);
-      await openTab(page, "Now");
+      await openTab(page, "Sessions");
 
       // the welcome stands in the main pane, and nowhere else: one heading, one sentence, one
       // start-a-session card, and no dashed box pointing at a list that holds nothing
@@ -370,7 +370,7 @@ test("the first-run checklist ticks from server state and stands down when all f
   // localhost, not 127.0.0.1: the checklist's passkey ceremony follows, and the relying party is
   // the name
   await signIn(page, theSetup().pairOrigin);
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
 
   // the seeded channel and session already tick two items
   const checklist = page.locator("[data-first-run]");
@@ -394,7 +394,7 @@ test("the first-run checklist ticks from server state and stands down when all f
   await expect(page.getByText("Save your recovery codes")).toBeVisible();
   await page.getByRole("button", { name: "I saved them" }).click();
   await page.reload();
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
   await expect(checklist.locator("[data-item='totp']")).toHaveAttribute("data-done", "true");
 
   // a saved budget ticks the last one, and the checklist stands down — and stays down

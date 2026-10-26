@@ -255,7 +255,7 @@ export async function pairThroughLink(
  *  same two stages run on the token the server answered with. The checklist rides the Now list,
  *  so the caller's tab moves there first. */
 export async function pairThroughBanner(page: Page, name: string): Promise<void> {
-  await openTab(page, "Now");
+  await openTab(page, "Sessions");
   await page.getByRole("button", { name: "Save passkey" }).click();
   const field = page.getByLabel("Device name");
   await expect(field).toBeVisible();

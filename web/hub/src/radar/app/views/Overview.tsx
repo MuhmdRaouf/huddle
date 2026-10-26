@@ -1,19 +1,21 @@
 /**
- * The Overview: the tab's front page, composed from the parts every other view reads — six stat
- * cards (Anthropic's 5-hour and 7-day limits used, spend at list price against its budget,
- * requests and their failures, tokens and their cache share, sessions and who needs the owner,
- * routers and any budget stopped), the day card (peak sessions at once and cards done today), the
- * four usage graphs (requests per hour, tokens by kind, cost per day and per session), the
- * spend-by-hour chart stacked by model, the top sessions by spend (a row opens the Session
- * screen), the plan limits the statusline word reported, the newest alert, the routers list and
- * the top tools. The phone leads with the limits tile, then three tiles (spend, requests, sessions
- * live) under one label that names the window they read, then the day card, the graphs stacked,
- * the chart and the routers; the rest waits for a wider pane.
+ * The Overview: the tab's front page, composed from the parts every other view reads — today's
+ * Radar card (spend, requests, the loudest alert) first, then six stat cards (Anthropic's 5-hour
+ * and 7-day limits used, spend at list price against its budget, requests and their failures,
+ * tokens and their cache share, sessions and who needs the owner, routers and any budget stopped),
+ * the day card (peak sessions at once and cards done today), the four usage graphs (requests per
+ * hour, tokens by kind, cost per day and per session), the spend-by-hour chart stacked by model,
+ * the top sessions by spend (a row opens the Session screen), the plan limits the statusline word
+ * reported, the newest alert, the routers list and the top tools. The phone leads with the Radar
+ * card, then the limits tile, then three tiles (spend, requests, sessions live) under one label
+ * that names the window they read, then the day card, the graphs stacked, the chart and the
+ * routers; the rest waits for a wider pane.
  */
 
 import { modelColor } from "@huddle/ui/model-color.ts";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import { RadarDayCard } from "../../../app/RadarDay.tsx";
 import { useHuddle } from "../../../app/context.tsx";
 import { useLayout } from "../../../app/layout.ts";
 import type { RegistrySession } from "../../../registry.ts";
@@ -431,7 +433,7 @@ function TopSessions() {
                   </td>
                   <td class="min-w-0 py-2">
                     <a
-                      href={`#/now/${encodeURIComponent(item.id)}`}
+                      href={`#/sessions/${encodeURIComponent(item.id)}`}
                       class="block truncate py-2 hover:text-[var(--ui-accent)]"
                       title={item.id}
                     >
@@ -930,9 +932,10 @@ function PhoneTiles({ numbers }: { numbers: ReturnType<typeof rangeNumbers> }) {
   );
 }
 
-/** The Overview: the stat row over the active-block card, the day card, the graphs, the chart
- *  and the sessions table, the plan limits, the alert, routers and tools beside them; the phone
- *  leads with the limits tile and its three tiles, then the day card, the graphs, the chart, the sessions table
+/** The Overview: the Radar card first, then the stat row over the active-block card, the day
+ *  card, the graphs, the chart and the sessions table, the plan limits, the alert, routers and
+ *  tools beside them; the phone leads with the Radar card, then the limits tile and its three
+ *  tiles, then the day card, the graphs, the chart, the sessions table
  *  without its model column and the routers. */
 export function OverviewView(): JSX.Element {
   const { state, now } = useApp();
@@ -941,6 +944,9 @@ export function OverviewView(): JSX.Element {
   const phone = useLayout() === "phone";
   return (
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div class="min-w-0 xl:col-span-2">
+        <RadarDayCard />
+      </div>
       {phone ? (
         <PhoneTiles numbers={numbers} />
       ) : (
