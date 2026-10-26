@@ -95,6 +95,9 @@ type MountOptions struct {
 	// Procs names the live sessions' pids from huddle's registry, for the CPU and memory
 	// samples on the sessions rows; nil samples nothing.
 	Procs server.SessionPids
+	// Ended names the sessions huddle's registry has ended; nil keeps radar on Claude Code's
+	// registry alone.
+	Ended ingest.HubEnded
 	// PingMs is the stream's ping interval; 0 takes radar's 15 s default.
 	PingMs int64
 }
@@ -215,6 +218,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		Env:        env,
 		Store:      st,
 		Ledger:     led,
+		Ended:      options.Ended,
 		SinceMs:    since,
 		IntervalMs: options.IntervalMs,
 		Now:        func() int64 { return now().UnixMilli() },

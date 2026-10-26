@@ -74,7 +74,10 @@ type WatcherOptions struct {
 	// Ledger is the request ledger the route lines and the transcript requests file
 	// themselves into; nil keeps the watcher without a ledger.
 	Ledger *ledger.Store
-	Log    func(line string)
+	// Ended names the sessions huddle's registry has ended, left out of what Claude Code's
+	// registry says is live; nil keeps Claude's word alone.
+	Ended HubEnded
+	Log   func(line string)
 }
 
 // fileTail is one transcript file's read position and its parser.
@@ -184,6 +187,7 @@ type Watcher struct {
 	ledger    *ledger.Store
 	nowFn     func() int64
 	alive     PidAlive
+	ended     HubEnded
 	sinceMs   int64
 	rescanMs  int64
 	newTicker func(interval time.Duration) (<-chan time.Time, func())
@@ -258,6 +262,7 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 		ledger:              options.Ledger,
 		nowFn:               now,
 		alive:               options.Alive,
+		ended:               options.Ended,
 		sinceMs:             options.SinceMs,
 		rescanMs:            rescan,
 		newTicker:           newTicker,
@@ -1360,7 +1365,7 @@ func (p *passWork) stepRegistry() bool {
 		p.registryRead = true
 		p.w.livePaths = make(map[string]struct{})
 		p.registry = ReadRegistry(p.w.env, p.w.alive)
-		p.w.store.ApplyRegistry(p.registry, p.w.now())
+		p.w.store.ApplyRegistry(withoutEnded(p.w.ctx, p.w.ended, p.registry), p.w.now())
 		return true
 	}
 	for p.registryAt < len(p.registry) {

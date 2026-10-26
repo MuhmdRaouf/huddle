@@ -737,6 +737,8 @@ func Serve(ctx context.Context, o Options) error {
 			Zone: func() *time.Location { return s.zones.Get().Location() },
 			// and the sessions' pids, for each session's CPU and memory, from the registry
 			Procs: radarPids{s: s},
+			// and which sessions the registry has ended, so Radar never shows one live
+			Ended: radarEnded{s: s},
 			// the stream pings as often as the registry's, so one watchdog fits both
 			PingMs: int64(s.o.SSEPingMS),
 		})

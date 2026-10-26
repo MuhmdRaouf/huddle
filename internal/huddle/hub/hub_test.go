@@ -330,6 +330,40 @@ func TestLiveTranscriptsListsTheLiveSessionsPaths(t *testing.T) {
 	}
 }
 
+// TestEndedAmongNamesOnlyTheEndedOnes pins EndedAmong to the sessions a SessionEnd report
+// ended: a live one, a never-seen id and an empty ask all stay out of the answer.
+func TestEndedAmongNamesOnlyTheEndedOnes(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	report := func(rep Report) {
+		t.Helper()
+		if err := db.Report(ctx, rep); err != nil {
+			t.Fatalf("report %s: %v", rep.LastEvent, err)
+		}
+	}
+	report(Report{SessionID: "s-live", LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:00.000Z"})
+	report(Report{SessionID: "s-ended", LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:01.000Z"})
+	report(Report{SessionID: "s-ended", LastEvent: "SessionEnd", LastEventAt: "2026-10-16T09:00:02.000Z"})
+	report(Report{SessionID: "s-other", LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:03.000Z"})
+
+	got, err := db.EndedAmong(ctx, []string{"s-live", "s-ended", "s-other", "s-unknown"})
+	if err != nil {
+		t.Fatalf("ended among: %v", err)
+	}
+	want := map[string]bool{"s-ended": true}
+	if !maps.Equal(got, want) {
+		t.Errorf("ended among = %v, want %v", got, want)
+	}
+
+	empty, err := db.EndedAmong(ctx, nil)
+	if err != nil {
+		t.Fatalf("ended among none: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("ended among none = %v, want an empty answer", empty)
+	}
+}
+
 // openForTest answers an open registry database closed with the test.
 func openForTest(t *testing.T) *DB {
 	t.Helper()

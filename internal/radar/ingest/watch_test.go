@@ -3,8 +3,10 @@ package ingest_test
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1426,6 +1429,91 @@ func TestWatcherSessionNamesAndRepos(t *testing.T) {
 		}
 		t.Fatalf("session sess-a not listed")
 	})
+
+	t.Run("ends a session huddle's registry has ended though Claude's file still lists it", func(t *testing.T) {
+		e, sessions := registryEnv(t)
+		writeText(t, filepath.Join(sessions, "81812.json"), fmt.Sprintf(
+			`{"pid":%d,"sessionId":"sess-a","status":"idle"}`, os.Getpid()))
+		writeText(t, filepath.Join(sessions, "81813.json"), fmt.Sprintf(
+			`{"pid":%d,"sessionId":"sess-b","status":"idle"}`, os.Getpid()))
+		writeText(t, filepath.Join(e.config, "projects", "-w-app", "sess-a.jsonl"), jsonl(t, userLine(watchT0)))
+		writeText(t, filepath.Join(e.config, "projects", "-w-app", "sess-b.jsonl"), jsonl(t, userLine(watchT0)))
+		st := newStore()
+		hubEnded := &fakeHubEnded{ended: map[string]bool{"sess-b": true}}
+		w := ingest.StartWatcher(t.Context(), ingest.WatcherOptions{
+			Env:        e.env,
+			Store:      st,
+			SinceMs:    watchDay,
+			IntervalMs: 3_600_000,
+			RescanMs:   5_000,
+			Now:        func() int64 { return watchT0 },
+			Alive:      ownPidAlive,
+			Ended:      hubEnded,
+		})
+		waitFor(t, "initial ingest", 5*time.Second, func() bool { return !w.CatchingUp() })
+		w.Stop()
+		if detail := st.SessionDetail("sess-a"); detail == nil || !detail.Live {
+			t.Errorf("session sess-a = %+v, want live", detail)
+		}
+		if detail := st.SessionDetail("sess-b"); detail == nil || detail.Live {
+			t.Errorf("session sess-b = %+v, want ended by huddle's registry", detail)
+		}
+		if got := hubEnded.asked(); !slices.Equal(got, []string{"sess-a", "sess-b"}) {
+			t.Errorf("the fake was asked %v, want [sess-a sess-b]", got)
+		}
+	})
+
+	t.Run("leaves every listed session live when huddle's registry cannot answer", func(t *testing.T) {
+		e, sessions := registryEnv(t)
+		writeText(t, filepath.Join(sessions, "81812.json"), fmt.Sprintf(
+			`{"pid":%d,"sessionId":"sess-a","status":"idle"}`, os.Getpid()))
+		writeText(t, filepath.Join(sessions, "81813.json"), fmt.Sprintf(
+			`{"pid":%d,"sessionId":"sess-b","status":"idle"}`, os.Getpid()))
+		writeText(t, filepath.Join(e.config, "projects", "-w-app", "sess-a.jsonl"), jsonl(t, userLine(watchT0)))
+		writeText(t, filepath.Join(e.config, "projects", "-w-app", "sess-b.jsonl"), jsonl(t, userLine(watchT0)))
+		st := newStore()
+		hubEnded := &fakeHubEnded{err: errors.New("registry down")}
+		w := ingest.StartWatcher(t.Context(), ingest.WatcherOptions{
+			Env:        e.env,
+			Store:      st,
+			SinceMs:    watchDay,
+			IntervalMs: 3_600_000,
+			RescanMs:   5_000,
+			Now:        func() int64 { return watchT0 },
+			Alive:      ownPidAlive,
+			Ended:      hubEnded,
+		})
+		waitFor(t, "initial ingest", 5*time.Second, func() bool { return !w.CatchingUp() })
+		w.Stop()
+		for _, id := range []string{"sess-a", "sess-b"} {
+			if detail := st.SessionDetail(id); detail == nil || !detail.Live {
+				t.Errorf("session %s = %+v, want live", id, detail)
+			}
+		}
+	})
+}
+
+// fakeHubEnded is a HubEnded the test programs: it remembers the ids it was asked about and
+// answers the sessions it was told ended, or its error.
+type fakeHubEnded struct {
+	ended map[string]bool
+	err   error
+
+	mu   sync.Mutex
+	seen []string
+}
+
+func (f *fakeHubEnded) EndedAmong(_ context.Context, ids []string) (map[string]bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.seen = append(f.seen, ids...)
+	return f.ended, f.err
+}
+
+func (f *fakeHubEnded) asked() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.seen)
 }
 
 func TestWatcherInterval(t *testing.T) {
