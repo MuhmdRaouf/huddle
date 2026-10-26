@@ -117,7 +117,7 @@ test("the Sessions page opens fast on a slow phone, and the second open moves no
   await openSessions(page);
   expect(warm.bytes.has(`${theSetup().hubUrl}/`), "the shell page goes to the network again").toBe(true);
   const assetBytes = [...warm.bytes]
-    .filter(([url]) => /\/(static|fonts)\//.test(new URL(url).pathname))
+    .filter(([url]) => /\/static\//.test(new URL(url).pathname))
     .reduce((sum, [, bytes]) => sum + bytes, 0);
   console.log(`phone-perf: second open ${total(warm)} bytes, ${assetBytes} of them assets`);
   expect(assetBytes).toBe(0);

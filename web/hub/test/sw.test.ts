@@ -260,14 +260,29 @@ describe("fetch routing", () => {
     const w = worker();
     await w.install();
     w.fetch.mockClear();
-    const first = w.fetchHandled(get("/fonts/plex.woff2"));
+    const first = w.fetchHandled(get("/icons/icon-apple-180.png"));
     expect(first.answered).toBe(true);
-    await expect(first.response()).resolves.toHaveProperty("body", `net:${href("/fonts/plex.woff2")}`);
+    await expect(first.response()).resolves.toHaveProperty(
+      "body",
+      `net:${href("/icons/icon-apple-180.png")}`,
+    );
     expect(w.fetch).toHaveBeenCalledTimes(1);
-    const again = w.fetchHandled(get("/fonts/plex.woff2"));
-    await expect(again.response()).resolves.toHaveProperty("body", `net:${href("/fonts/plex.woff2")}`);
+    const again = w.fetchHandled(get("/icons/icon-apple-180.png"));
+    await expect(again.response()).resolves.toHaveProperty(
+      "body",
+      `net:${href("/icons/icon-apple-180.png")}`,
+    );
     expect(w.fetch).toHaveBeenCalledTimes(1);
-    expect(await (await theCache(w)).match("/fonts/plex.woff2")).toBeDefined();
+    expect(await (await theCache(w)).match("/icons/icon-apple-180.png")).toBeDefined();
+  });
+
+  it("leaves a font path to the network: the build ships no font, so nothing of one is cached", async () => {
+    const w = worker();
+    await w.install();
+    w.fetch.mockClear();
+    expect(w.fetchHandled(get("/fonts/x.woff2")).answered).toBe(false);
+    expect(w.fetch).not.toHaveBeenCalled();
+    expect(await (await theCache(w)).match("/fonts/x.woff2")).toBeUndefined();
   });
 
   it("passes a same-origin path that is neither live nor shell to the network untouched", async () => {

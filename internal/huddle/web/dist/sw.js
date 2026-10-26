@@ -63,8 +63,7 @@
     for (var i = 0; i < SHELL.length; i++) if (SHELL[i] === pathname) return true;
     return (
       pathname.indexOf("/static/", 0) === 0 ||
-      pathname.indexOf("/icons/", 0) === 0 ||
-      pathname.indexOf("/fonts/", 0) === 0
+      pathname.indexOf("/icons/", 0) === 0
     );
   }
 

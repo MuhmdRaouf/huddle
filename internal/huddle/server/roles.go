@@ -276,7 +276,7 @@ func (s *server) hubGate(next http.HandlerFunc) http.HandlerFunc {
 // shell it loads (with its static assets and its health), the two ceremonies that turn it into a
 // paired device, and the satellite join that turns a one-use invite into a machine's credential.
 func hubPublicPath(path string) bool {
-	for _, prefix := range []string{"/static/", "/fonts/", "/icons/", "/api/pair/", "/api/login/"} {
+	for _, prefix := range []string{"/static/", "/icons/", "/api/pair/", "/api/login/"} {
 		if strings.HasPrefix(path, prefix) {
 			return true
 		}

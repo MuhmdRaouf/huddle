@@ -96,12 +96,12 @@ func TestHubListenHostsReadsTheSpellingsOneAddressLegitimises(t *testing.T) {
 }
 
 func TestHubPublicPathNamesWhatACredentialFreeBrowserNeeds(t *testing.T) {
-	for _, path := range []string{"/", "/pair", "/static/app.Ab3_x-9Z.css", "/fonts/x.woff2", "/icons/x.png", "/api/pair/begin", "/api/login/begin"} {
+	for _, path := range []string{"/", "/pair", "/static/app.Ab3_x-9Z.css", "/icons/x.png", "/api/pair/begin", "/api/login/begin"} {
 		if !hubPublicPath(path) {
 			t.Errorf("hubPublicPath(%q) = false, want it public", path)
 		}
 	}
-	for _, path := range []string{"/api/channels", "/api/needs", "/private"} {
+	for _, path := range []string{"/api/channels", "/api/needs", "/private", "/fonts/x.woff2"} {
 		if hubPublicPath(path) {
 			t.Errorf("hubPublicPath(%q) = true, want it behind the door", path)
 		}
