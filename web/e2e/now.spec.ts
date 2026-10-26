@@ -27,6 +27,7 @@ import {
   soloPairHome,
   theSetup,
 } from "./helpers.ts";
+import { ASK_COMMAND, ASK_EDIT } from "./seed.ts";
 
 // the authenticator set-up the first sign-in offers is not this page's subject: the browser
 // starts with its "Later" already kept
@@ -263,6 +264,125 @@ test("a seeded permission ask is allowed with one tap at its card's foot", async
   // the ask left the list: the card is gone and the session reads idle
   await expect(card).toHaveCount(0);
   await expect(page.locator(`[data-row='${session}'] [data-state='idle']`)).toHaveText("idle");
+});
+
+test("a long command's ask opens the phone sheet that wraps it and keeps Allow once in view", async (
+  { page },
+  info,
+) => {
+  test.skip(info.project.name !== "iphone", "the sheet is the phone's");
+  // the session stopped, then its hook asked: the sheet holds the ask, and the denial at the end
+  // leaves the other cases' counts as they were
+  const session = "e2e-sheet-iphone";
+  await api("/api/registry/report", {
+    session_id: session,
+    machine: "e2e-machine",
+    project: "e2e",
+    title: "Asks in a sheet",
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+  const { id } = await api<{ id: number }>("/api/needs", {
+    session_id: session,
+    tool_name: "Bash",
+    tool_input: { command: ASK_COMMAND },
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page);
+  await openTab(page, "Sessions");
+  await page.locator(`a[href='#/sessions/${session}']`).first().click();
+
+  const sheet = page.locator("dialog[open].ui-sheet");
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole("heading", { name: /wants to run a command/ })).toBeVisible();
+  // the command wraps inside its code box: nothing scrolls sideways
+  const code = sheet.locator("code").filter({ hasText: ASK_COMMAND.slice(0, 24) });
+  await expect(code).toBeVisible();
+  const { scroll, client } = await code.evaluate((el) => ({
+    scroll: el.scrollWidth,
+    client: el.clientWidth,
+  }));
+  expect(scroll).toBeLessThanOrEqual(client);
+  // the body scrolls; at its end the footer's allow is still inside the viewport
+  await sheet.locator(".ui-sheet-body").evaluate((el) => (el.scrollTop = el.scrollHeight));
+  const box = await sheet.getByRole("button", { name: "Allow once" }).boundingBox();
+  expect(box && box.y + box.height).toBeLessThanOrEqual(844.5);
+  // the tab bar stands down while the sheet holds the ask
+  await expect(page.locator("[data-nav='bottom']")).toHaveCount(0);
+
+  await api(`/api/needs/${id}/decide`, { decision: "deny" });
+  await expect(sheet).toHaveCount(0);
+});
+
+test("an Edit ask opens the phone sheet with the change as a line diff", async ({ page }, info) => {
+  test.skip(info.project.name !== "iphone", "the sheet is the phone's");
+  const session = "e2e-edit-iphone";
+  await api("/api/registry/report", {
+    session_id: session,
+    machine: "e2e-machine",
+    project: "e2e",
+    title: "Asks to edit a file",
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+  const { id } = await api<{ id: number }>("/api/needs", {
+    session_id: session,
+    tool_name: "Edit",
+    tool_input: ASK_EDIT,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page);
+  await openTab(page, "Sessions");
+  await page.locator(`a[href='#/sessions/${session}']`).first().click();
+
+  const sheet = page.locator("dialog[open].ui-sheet");
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByText(ASK_EDIT.file_path)).toBeVisible();
+  await expect(sheet.locator("[data-sign='-']").filter({ hasText: "const rate = 1;" })).toBeVisible();
+  await expect(sheet.locator("[data-sign='+']").filter({ hasText: "return rate * 2;" })).toBeVisible();
+
+  await api(`/api/needs/${id}/decide`, { decision: "deny" });
+  await expect(sheet).toHaveCount(0);
+});
+
+test("the desktop's inline box shows the same previews", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop", "the inline box is the wide layout's");
+  // two stopped sessions, each holding one ask, answered at the end so the counts stay
+  const seedAsk = async (session: string, title: string, tool_name: string, tool_input: unknown) => {
+    await api("/api/registry/report", {
+      session_id: session,
+      machine: "e2e-machine",
+      project: "e2e",
+      title,
+      last_event: "Stop",
+      last_event_at: new Date().toISOString(),
+    });
+    const { id } = await api<{ id: number }>("/api/needs", { session_id: session, tool_name, tool_input });
+    return id;
+  };
+  const bashId = await seedAsk("e2e-inline-bash", "Asks inline to run a command", "Bash", {
+    command: ASK_COMMAND,
+  });
+  const editId = await seedAsk("e2e-inline-edit", "Asks inline to edit a file", "Edit", ASK_EDIT);
+  await signIn(page);
+  await openTab(page, "Sessions");
+
+  await page.locator("a[href='#/sessions/e2e-inline-bash']").first().click();
+  const bar = page.locator("[data-needs-bar]");
+  await expect(bar).toBeVisible();
+  const code = bar.locator("code").filter({ hasText: ASK_COMMAND.slice(0, 24) });
+  await expect(code).toBeVisible();
+  const { scroll, client } = await code.evaluate((el) => ({
+    scroll: el.scrollWidth,
+    client: el.clientWidth,
+  }));
+  expect(scroll).toBeLessThanOrEqual(client);
+
+  await api(`/api/needs/${bashId}/decide`, { decision: "deny" });
+  await page.locator("a[href='#/sessions/e2e-inline-edit']").first().click();
+  await expect(bar.locator("[data-sign='+']").filter({ hasText: "return rate * 2;" })).toBeVisible();
+
+  await api(`/api/needs/${editId}/decide`, { decision: "deny" });
 });
 
 test("the phone's stream folds repeated calls into one row a tap opens, and opens at the end", async ({

@@ -230,14 +230,38 @@ describe("the permission bar", () => {
 
   it("shows the tool ask, the input, where it runs and the two answers, as the phone sheet", () => {
     mountBar();
-    expect(screen.getByRole("heading", { name: /^Allow/ }).textContent).toBe("Allow Bash?");
+    const sheet = document.querySelector("dialog[open].ui-sheet");
+    expect(sheet).not.toBeNull();
+    expect(sheet?.querySelector("[data-needs-sheet]")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: /kanban-e2e wants to run a command/ })).toBeDefined();
     expect(screen.getByText("npm test -- --run e2e").tagName).toBe("CODE");
-    expect(screen.getByText(/Runs in port\/KBN-E2E on laptop\. Waiting 30 s\./)).toBeDefined();
-    expect(document.querySelector("[data-needs-sheet]")).not.toBeNull();
+    expect(
+      screen.getByText(/Bash · claude-code-plugins · Runs in port\/KBN-E2E on laptop\. Waiting 30 s\./),
+    ).toBeDefined();
     expect(document.querySelector("[data-needs-bar]")).toBeNull();
+    const foot = sheet?.querySelector("[data-needs-foot]");
+    expect(foot?.querySelector("[data-act='deny']")).not.toBeNull();
+    expect(foot?.querySelector("[data-act='allow']")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Deny" })).toBeDefined();
     expect(screen.getByRole("button", { name: /Allow once/ })).toBeDefined();
     expect(screen.getByRole("button", { name: "Reply instead" })).toBeDefined();
+  });
+
+  it("keeps the ask open, docked, when the owner closes the sheet without deciding", async () => {
+    const h = mountBar();
+    await act(async () => {
+      screen.getByRole("button", { name: "Close" }).click();
+    });
+    await flush();
+    expect(document.querySelector("dialog[open]")).toBeNull();
+    expect(h.registry.getState().needs?.[0]?.id).toBe(7);
+    expect(screen.getByText("Needs you · kanban-e2e wants to run a command")).toBeDefined();
+    await act(async () => {
+      screen.getByRole("button", { name: "Review" }).click();
+    });
+    await flush();
+    expect(document.querySelector("dialog[open].ui-sheet")).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Allow once/ })).toBeDefined();
   });
 
   it("lays the same ask out as the wide inline bar, with the keys named on the buttons", () => {
@@ -309,7 +333,8 @@ describe("the permission bar", () => {
     await flush();
     expect(h.calls.map((c) => c.path)).toEqual(["/api/needs/7/decide"]);
     expect(h.registry.getState().needs?.[0]?.id).toBe(7);
-    expect(document.querySelector("dialog[open]")).toBeNull();
+    // the passkey dialog is gone; the ask sheet stays open beneath it
+    expect(document.querySelector("dialog[open].ui-dialog")).toBeNull();
   });
 
   it("toasts a passkey check that cannot finish and keeps the sheet open", async () => {
@@ -901,18 +926,19 @@ describe("the needs sheet on the tokens", () => {
   });
 
   it("keeps another tool's input, and a cut Bash input, as they came", () => {
-    const edit = JSON.stringify({ file_path: "/work/a.go" });
-    mountAsk(ask({ tool: "Edit", input: edit }));
-    expect(screen.getByText(edit).tagName).toBe("CODE");
+    mountAsk(ask({ tool: "Edit", input: JSON.stringify({ file_path: "/work/a.go" }) }));
+    expect(screen.getByText("file_path")).toBeDefined();
+    expect(screen.getByText("/work/a.go")).toBeDefined();
     const cut = '{"command":"bun run bu';
     mountAsk(ask({ input: cut, truncated: true }));
     expect(screen.getByText(cut).tagName).toBe("CODE");
+    expect(screen.getByText(/the input was cut; allow it in the terminal/)).toBeDefined();
   });
 
   it("leaves Runs in out when the session reports no branch", () => {
     mountAsk(ask(), { session: { branch: "" } });
     expect(screen.queryByText(/Runs in/)).toBeNull();
-    expect(screen.getByText("On laptop. Waiting 30 s.")).toBeDefined();
+    expect(screen.getByText(/Bash · claude-code-plugins · On laptop\. Waiting 30 s\./)).toBeDefined();
   });
 
   it("paints the phone sheet with real 48 px buttons and no legacy class", () => {

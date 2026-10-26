@@ -34,3 +34,16 @@ export const LOAD_TOKENS = {
   uncached: LOAD_REQUESTS * LOAD_INPUT,
   output: LOAD_REQUESTS * LOAD_OUTPUT,
 } as const;
+
+// the asks the needs-sheet cases seed through /api/needs: one Bash whose command cannot fit one
+// line, one Edit whose change spans lines, so a preview has something to wrap and to diff.
+
+/** A Bash command exactly 400 characters long: it must wrap in its code box, never scroll. */
+export const ASK_COMMAND = `echo ${"a".repeat(387)} | wc -c`;
+
+/** The Edit the diff cases seed: two changed lines between kept ones. */
+export const ASK_EDIT = {
+  file_path: "/w/now.ts",
+  old_string: "const rate = 1;\nexport function read() {\n  return rate;\n}",
+  new_string: "const rate = 2;\nexport function read() {\n  return rate * 2;\n}",
+} as const;

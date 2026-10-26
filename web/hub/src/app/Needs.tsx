@@ -5,6 +5,7 @@
 // item list lives in the registry store, whose needs.item rows keep it in step with the server.
 import { Button } from "@huddle/ui/button.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
+import { Sheet } from "@huddle/ui/sheet.tsx";
 import type { ToastFn } from "@huddle/ui/toast.tsx";
 import type { JSX } from "preact";
 import { useRef, useState } from "preact/hooks";
@@ -14,10 +15,12 @@ import { assertionFromJSON, credentialToJSON } from "../passkey.ts";
 import {
   ageText,
   type NeedItem,
+  projectName,
   type RegistrySession,
   type RegistryStore,
   sessionName,
 } from "../registry.ts";
+import { AskPreview } from "./ask/preview.tsx";
 import { errText, useHuddle } from "./context.tsx";
 import type { Layout } from "./layout.ts";
 
@@ -495,41 +498,49 @@ function whereLine({ branch, machine }: RegistrySession, waited: string): string
   return `${where}. Waiting ${waited}.`;
 }
 
-/** The ask's facts: what it asks (the tool for a permission, the summary otherwise), the input
- *  it would run, and where it runs. */
-function AskFacts({
-  item,
-  session,
-  permission,
-}: {
-  item: NeedItem;
-  session: RegistrySession;
-  permission: boolean;
-}): JSX.Element {
-  const { now } = useHuddle();
+/** The where-and-waited note, hidden when the session reports neither branch nor machine. */
+function WhereNote({ session, waited }: { session: RegistrySession; waited: string }): JSX.Element | null {
+  if (!session.branch && !session.machine) return null;
+  return <p class={`m-0 text-xs ${MUTED}`}>{whereLine(session, waited)}</p>;
+}
+
+/** The screen reader's label for one item's ask. */
+function askLabel(item: NeedItem, who: string): string {
+  if (item.kind === "permission") return `Permission ask on ${who}`;
+  if (item.kind === "turn") return `Finished turn on ${who}`;
+  return `Ask from ${who}`;
+}
+
+/** The verb the ask's title names for its tool. */
+function askWhat(tool: string): string {
+  if (tool === "Bash") return "run a command";
+  if (tool === "Edit" || tool === "MultiEdit") return "edit a file";
+  if (tool === "Write") return "write a file";
+  if (tool === "WebFetch") return "fetch a page";
+  return `use ${tool}`;
+}
+
+/** The icon on a permission ask's title tile. */
+function toolIcon(tool: string): "terminal" | "pencil" | "file" | "ext" | "search" | "sparkle" {
+  if (tool === "Bash") return "terminal";
+  if (tool === "Edit" || tool === "MultiEdit") return "pencil";
+  if (tool === "Write") return "file";
+  if (tool === "WebFetch") return "ext";
+  if (tool === "WebSearch") return "search";
+  return "sparkle";
+}
+
+/** A non-permission item's facts: its summary and the input it carries, wrapped now that no box
+ *  scrolls sideways. */
+function ItemFacts({ item }: { item: NeedItem }): JSX.Element {
   const input = askInput(item);
   return (
-    <div class="flex min-w-0 flex-[1_1_240px] flex-col gap-2">
-      <h2 class="m-0 text-base font-semibold">
-        {permission ? (
-          <>
-            Allow <code class="ui-mono">{item.tool}</code>?
-          </>
-        ) : (
-          item.summary
-        )}
-      </h2>
+    <div class="flex min-w-0 flex-col gap-2">
+      <h2 class="m-0 text-base font-semibold">{item.summary}</h2>
       {input ? (
-        // a long command scrolls inside its box, so the box takes the focus a keyboard scrolls it with
-        <code
-          tabIndex={0}
-          class="ui-mono block overflow-x-auto whitespace-pre rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] px-3 py-2.5 text-[13px] text-[var(--ui-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
-        >
+        <code class="ui-mono block whitespace-pre-wrap break-words rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] px-3 py-2.5 text-sm text-[var(--ui-text)]">
           {input}
         </code>
-      ) : null}
-      {permission && (session.branch || session.machine) ? (
-        <p class={`m-0 text-xs ${MUTED}`}>{whereLine(session, ageText(item.created_at, now))}</p>
       ) : null}
     </div>
   );
@@ -621,10 +632,11 @@ function ItemActions({
   );
 }
 
-/** The session screen's action bar (SPEC 9): an item as the phone's bottom sheet and the wide
- *  layouts' inline box. A permission ask shows the tool, its input, where it runs, Deny and Allow
- *  once with the keys named, and Reply instead; every other item shows its summary with Snooze
- *  and Dismiss (and Answer when it asks something). The composer opens under it. */
+/** The session screen's action bar (SPEC 9): a permission ask as the phone's bottom sheet — the
+ *  per-tool preview inside, Deny and Allow once on a footer that stays in reach, Reply instead
+ *  under them — and the wide layouts' inline box with the same preview. Closing the sheet without
+ *  deciding docks a one-line row that reopens it. Every other item keeps its summary with Snooze
+ *  and Dismiss (and Answer when it asks something); the composer opens in place. */
 export function NeedsBar({
   item,
   session,
@@ -636,22 +648,127 @@ export function NeedsBar({
 }): JSX.Element {
   const act = useNeedsAct();
   const [replying, setReplying] = useState(false);
+  const [docked, setDocked] = useState(false);
+  const { now } = useHuddle();
   const permission = item.kind === "permission" && item.tool !== "";
+  const tool = permission ? (item.tool ?? "") : "";
   const wide = layout !== "phone";
   const who = sessionName(session);
   const confirm = confirmWhat(item, session, permission);
-  const ask = permission
-    ? `Permission ask on ${who}`
-    : item.kind === "turn"
-      ? `Finished turn on ${who}`
-      : `Ask from ${who}`;
+  const ask = askLabel(item, who);
   const replyWord = permission ? `Reply to ${who}…` : `Answer ${who}…`;
-  const sheet = wide
+  const title = `${who} wants to ${askWhat(tool)}`;
+  const panelClass = wide
     ? "mx-4 mb-4 flex shrink-0 flex-col gap-3 rounded-[var(--ui-radius-lg)] border border-[var(--ui-needs-you)] bg-[var(--ui-surface)] p-4 text-[var(--ui-text)] sm:mx-6 sm:mb-5"
     : "flex shrink-0 flex-col gap-3 rounded-t-[var(--ui-radius-lg)] border-t-2 border-[var(--ui-needs-you)] bg-[var(--ui-surface)] px-4 pt-4 pb-7 text-[var(--ui-text)]";
-  // the wide bar sets the answers beside the facts, and under them once the pane leaves the facts
-  // less than 240 px
-  const spread = wide ? "flex flex-wrap items-start gap-4" : "flex flex-col gap-3";
+  const composer = (
+    <ActComposer
+      kind="answer"
+      targets={[session.session_id]}
+      routes={[session.delivery_route]}
+      placeholder={replyWord}
+      onClose={() => setReplying(false)}
+    />
+  );
+  if (permission && wide) {
+    return (
+      <>
+        {act.sheet}
+        <section data-needs-bar="" aria-label={ask} class={panelClass}>
+          {replying ? (
+            composer
+          ) : (
+            <>
+              {/* the answers sit beside the facts, and under them once the pane leaves the facts
+                  less than 240 px */}
+              <div class="flex flex-wrap items-start gap-4">
+                <div class="flex min-w-0 flex-[1_1_240px] flex-col gap-2">
+                  <h2 class="m-0 text-base font-semibold">
+                    Allow <code class="ui-mono">{item.tool}</code>?
+                  </h2>
+                  <AskPreview tool={tool} input={item.input ?? ""} truncated={item.truncated} />
+                  <WhereNote session={session} waited={ageText(item.created_at, now)} />
+                </div>
+                <BarActions act={act} item={item} what={confirm} wide />
+              </div>
+              <Button variant="ghost" data-act="reply" class="self-start" onClick={() => setReplying(true)}>
+                Reply instead
+              </Button>
+            </>
+          )}
+        </section>
+      </>
+    );
+  }
+  if (permission && !docked) {
+    return (
+      <>
+        {act.sheet}
+        <Sheet
+          open
+          onClose={() => setDocked(true)}
+          title={
+            <span class="flex items-center gap-3">
+              <span class="flex size-10 shrink-0 items-center justify-center rounded-[var(--ui-radius)] bg-[var(--ui-warn-soft)] text-[var(--ui-warn-ink)]">
+                <Icon name={toolIcon(tool)} class="size-5" />
+              </span>
+              <span>{title}</span>
+            </span>
+          }
+        >
+          <section data-needs-sheet="" aria-label={ask} class="flex flex-col gap-3">
+            {replying ? (
+              composer
+            ) : (
+              <>
+                <p class={`m-0 text-xs ${MUTED}`}>
+                  {[
+                    item.tool,
+                    projectName(session.project),
+                    whereLine(session, ageText(item.created_at, now)),
+                  ]
+                    .filter((part) => part !== "")
+                    .join(" · ")}
+                </p>
+                <AskPreview tool={tool} input={item.input ?? ""} truncated={item.truncated} />
+                <footer
+                  data-needs-foot=""
+                  class="sticky bottom-0 flex flex-col gap-2.5 border-t border-[var(--ui-line)] bg-[var(--ui-surface)] pt-3"
+                >
+                  <BarActions act={act} item={item} what={confirm} wide={false} />
+                  <Button
+                    variant="ghost"
+                    data-act="reply"
+                    class="self-center"
+                    onClick={() => setReplying(true)}
+                  >
+                    Reply instead
+                  </Button>
+                </footer>
+              </>
+            )}
+          </section>
+        </Sheet>
+      </>
+    );
+  }
+  if (permission) {
+    return (
+      <>
+        {act.sheet}
+        <section
+          data-needs-sheet=""
+          aria-label={ask}
+          class="flex shrink-0 items-center gap-3 rounded-t-[var(--ui-radius-lg)] border-t-2 border-[var(--ui-needs-you)] bg-[var(--ui-surface)] px-4 py-3 text-[var(--ui-text)]"
+        >
+          <p class="m-0 flex-1 text-sm">{`Needs you · ${title}`}</p>
+          <Button variant="ghost" onClick={() => setDocked(false)}>
+            Review
+          </Button>
+        </section>
+      </>
+    );
+  }
   return (
     <>
       {act.sheet}
@@ -659,29 +776,14 @@ export function NeedsBar({
         data-needs-sheet={wide ? undefined : ""}
         data-needs-bar={wide ? "" : undefined}
         aria-label={ask}
-        class={sheet}
+        class={panelClass}
       >
         {replying ? (
-          <ActComposer
-            kind="answer"
-            targets={[session.session_id]}
-            routes={[session.delivery_route]}
-            placeholder={replyWord}
-            onClose={() => setReplying(false)}
-          />
+          composer
         ) : (
           <>
-            <div class={spread}>
-              <AskFacts item={item} session={session} permission={permission} />
-              {permission ? <BarActions act={act} item={item} what={confirm} wide={wide} /> : null}
-            </div>
-            {permission ? (
-              <Button variant="ghost" data-act="reply" class="self-start" onClick={() => setReplying(true)}>
-                Reply instead
-              </Button>
-            ) : (
-              <ItemActions act={act} item={item} wide={wide} onAnswer={() => setReplying(true)} />
-            )}
+            <ItemFacts item={item} />
+            <ItemActions act={act} item={item} wide={wide} onAnswer={() => setReplying(true)} />
           </>
         )}
       </section>

@@ -532,6 +532,21 @@ function useShellKeys(d: {
   });
 }
 
+/** Whether any dialog is open, the `<dialog open>` query watched live: the phone's tab bar steps
+ *  aside while a sheet holds the screen. A dialog's `open` attribute is set after it mounts and
+ *  dialogs unmount whole, so both the attribute and the tree are watched. */
+function useDialogOpen(): boolean {
+  const [open, setOpen] = useState(() => document.querySelector("dialog[open]") !== null);
+  useEffect(() => {
+    const sync = (): void => setOpen(document.querySelector("dialog[open]") !== null);
+    sync();
+    const mo = new MutationObserver(sync);
+    mo.observe(document.documentElement, { subtree: true, childList: true, attributeFilter: ["open"] });
+    return () => mo.disconnect();
+  }, []);
+  return open;
+}
+
 /** The sentence under a channel page's title: Overview speaks with the channel's own words when
  *  it has them, Settings carries the channel's facts, the rest come straight from the table. */
 function introDescription(dest: Dest, state: HuddleState, ch: string | null, now: number): ComponentChildren {
@@ -614,6 +629,7 @@ export function App({
   }, [route]);
 
   useShellKeys({ go, ch: state.ch, onCompose, onPalette });
+  const dialogOpen = useDialogOpen();
 
   // the channel list feeds the switcher and the palette: one read per page load, and again
   // whenever the open channel changes (a freshly created channel joins the list this way). The
@@ -792,7 +808,7 @@ export function App({
           </header>
         )}
         {main}
-        <BottomNav tab={route.tab} needs={needs} />
+        {dialogOpen ? null : <BottomNav tab={route.tab} needs={needs} />}
       </div>
     );
   }
