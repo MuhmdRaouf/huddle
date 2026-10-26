@@ -19,6 +19,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 )
 
 // fakeHub is the hub's satellite routes, as the link sees them: every batch and every result is
@@ -74,6 +75,12 @@ func startFakeHub(t *testing.T) *fakeHub {
 // linkOn builds one link over a fresh home and registry, paced for a test.
 func linkOn(t *testing.T, hubURL string) (*Link, *hub.DB) {
 	t.Helper()
+	return linkOnWith(t, hubURL, nil)
+}
+
+// linkOnWith builds one link whose Deliver is the given call, nil for a link without one.
+func linkOnWith(t *testing.T, hubURL string, deliver func(context.Context, int64, hub.MessageIn) string) (*Link, *hub.DB) {
+	t.Helper()
 	h := home.Home{Root: t.TempDir()}
 	db, err := hub.Open(context.Background(), filepath.Join(h.Root, "hub.db"))
 	if err != nil {
@@ -100,6 +107,7 @@ func linkOn(t *testing.T, hubURL string) (*Link, *hub.DB) {
 			woken = append(woken, itemID)
 			mu.Unlock()
 		},
+		Deliver: deliver,
 	})
 	return link, db
 }
@@ -252,6 +260,97 @@ func TestApplyMessageQueuesItForTheSession(t *testing.T) {
 	result, reason = link.apply(ctx, hub.SatHandout{ID: 6, Kind: hub.SatMessage, Payload: payload})
 	if result != hub.SatRefused || reason == "" {
 		t.Fatalf("the refused message = (%s, %q), want refused with a reason", result, reason)
+	}
+}
+
+// messageDelivery is one call the link made to its server's Deliver.
+type messageDelivery struct {
+	id int64
+	in hub.MessageIn
+}
+
+// messageRow answers the registry's one message row, read straight from the link's own hub.db.
+func messageRow(t *testing.T, h home.Home) map[string]any {
+	t.Helper()
+	db, err := store.SQLite(context.Background(), filepath.Join(h.Root, "hub.db"))
+	if err != nil {
+		t.Fatalf("open the registry: %v", err)
+	}
+	defer db.Close()
+	rows, err := db.All(context.Background(), "SELECT id, state FROM messages")
+	if err != nil {
+		t.Fatalf("read the message row: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("the registry holds %d message rows, %v, want 1", len(rows), err)
+	}
+	return rows[0]
+}
+
+// TestApplyMessageDeliversAQueuedMessageAtOnce proves the at-once half of the message road: the
+// moment the owner's words are queued the link hands them to the machine's own server, with the
+// id the registry answered, and the handout still reads delivered while the row waits as queued.
+func TestApplyMessageDeliversAQueuedMessageAtOnce(t *testing.T) {
+	f := startFakeHub(t)
+	var calls []messageDelivery
+	link, _ := linkOnWith(t, f.srv.URL, func(_ context.Context, id int64, in hub.MessageIn) string {
+		calls = append(calls, messageDelivery{id: id, in: in})
+		return hub.RouteInbox
+	})
+	ctx := context.Background()
+	payload, err := hub.EncodeSatPayload(hub.SatMessageBody{SessionID: "s-1", Text: "ship it"})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	result, reason := link.apply(ctx, hub.SatHandout{ID: 5, Kind: hub.SatMessage, Payload: payload})
+	if result != hub.SatDelivered || reason != "" {
+		t.Fatalf("the message = (%s, %q), want delivered", result, reason)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("Deliver ran %d times, want once: %+v", len(calls), calls)
+	}
+	got := calls[0]
+	if got.in.SessionID != "s-1" || got.in.FromKind != hub.FromOwner || got.in.Text != "ship it" {
+		t.Fatalf("Deliver heard %+v, want the owner's words for s-1", got.in)
+	}
+	row := messageRow(t, link.home)
+	queued, ok := row["id"].(int64)
+	if !ok || got.id != queued {
+		t.Fatalf("Deliver heard id %d, want the queued row's %v", got.id, row["id"])
+	}
+	if row["state"] != "pending" {
+		t.Fatalf("the queued row = %v, want it still pending for the session's next prompt", row)
+	}
+}
+
+// TestAMessagesOffLinkNeverCallsDeliver proves the machine's switch rules the at-once road too:
+// with remote messages off the handout is refused there and the server is never asked.
+func TestAMessagesOffLinkNeverCallsDeliver(t *testing.T) {
+	f := startFakeHub(t)
+	called := false
+	link, _ := linkOnWith(t, f.srv.URL, func(context.Context, int64, hub.MessageIn) string {
+		called = true
+		return hub.RouteInbox
+	})
+	h := home.Home{Root: link.home.Root}
+	cfg, err := home.LoadConfig(h)
+	if err != nil {
+		t.Fatalf("load the config: %v", err)
+	}
+	cfg.Remote.Messages = false
+	if err := home.SaveConfig(h, cfg); err != nil {
+		t.Fatalf("save the config: %v", err)
+	}
+	payload, err := hub.EncodeSatPayload(hub.SatMessageBody{SessionID: "s-1", Text: "ship it"})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	result, reason := link.apply(context.Background(), hub.SatHandout{ID: 7, Kind: hub.SatMessage, Payload: payload})
+	if result != hub.SatRefused || reason == "" {
+		t.Fatalf("the message = (%s, %q), want refused with a reason", result, reason)
+	}
+	if called {
+		t.Fatal("Deliver ran with the machine's remote messages off")
 	}
 }
 

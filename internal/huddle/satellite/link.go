@@ -63,6 +63,9 @@ type Options struct {
 	// Wake is called with an item's id once a decision landed on it, so the machine's own
 	// permission polls answer at once instead of on their next re-poll.
 	Wake func(itemID int64)
+	// Deliver is called with a queued owner message's id and body once it is queued, so the
+	// machine's own server carries it to an idle session at once; it answers the route taken.
+	Deliver func(ctx context.Context, id int64, in hub.MessageIn) string
 	// FlushEvery and PollWait override the pace; tests shorten both.
 	FlushEvery time.Duration
 	PollWait   time.Duration
@@ -82,6 +85,7 @@ type Link struct {
 	now        func() time.Time
 	log        func(string)
 	wake       func(int64)
+	deliver    func(context.Context, int64, hub.MessageIn) string
 	flushEvery time.Duration
 	pollWait   time.Duration
 
@@ -117,7 +121,7 @@ func New(o Options) *Link {
 	}
 	return &Link{
 		reg: o.Reg, home: o.Home, hubURL: o.HubURL, credential: o.Credential,
-		client: client, now: now, log: log, wake: o.Wake,
+		client: client, now: now, log: log, wake: o.Wake, deliver: o.Deliver,
 		readClient: readClientOf(o.Client),
 		flushEvery: flushEvery, pollWait: pollWait,
 	}
@@ -352,17 +356,23 @@ func (l *Link) refuseDecision(ctx context.Context, item *hub.PermissionItem, why
 	return hub.SatRefused, why
 }
 
-// applyMessage queues the owner's words for the machine's own session.
+// applyMessage queues the owner's words for the machine's own session and hands them to the
+// machine's own server, so an idle session reads them at once.
 func (l *Link) applyMessage(ctx context.Context, payload hub.SatMessageBody, at string) (string, string) {
 	cfg, err := home.LoadConfig(l.home)
 	if err != nil || !cfg.Remote.Messages {
 		// a torn config reads as its switches off, the way an unreadable allow list refuses
 		return hub.SatRefused, "remote messages are off on this machine"
 	}
-	if _, err := l.reg.QueueMessage(ctx, hub.MessageIn{
-		SessionID: payload.SessionID, FromKind: hub.FromOwner, Text: payload.Text,
-	}, at); err != nil {
+	in := hub.MessageIn{SessionID: payload.SessionID, FromKind: hub.FromOwner, Text: payload.Text}
+	id, err := l.reg.QueueMessage(ctx, in, at)
+	if err != nil {
 		return hub.SatBusy, "this machine's registry could not be written"
+	}
+	if l.deliver != nil {
+		// the handout stays delivered whatever route the server took: a message no route took
+		// waits for the session's next prompt, still queued
+		_ = l.deliver(ctx, id, in)
 	}
 	return hub.SatDelivered, ""
 }

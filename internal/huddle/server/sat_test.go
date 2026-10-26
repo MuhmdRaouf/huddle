@@ -362,3 +362,128 @@ func TestHubAndSatellitePassAPermitAndAMessage(t *testing.T) {
 		t.Fatalf("the audit never heard the refusal: %s", hubLog.joined())
 	}
 }
+
+// satelliteInboxRig is a hub paired with a satellite whose session listens on an inbox socket.
+type satelliteInboxRig struct {
+	hubBase string
+	sat     *childServer
+	lines   <-chan []byte
+	hubLog  *runLog
+}
+
+// startSatelliteInboxRig pairs a hub with a satellite the way the machines pair: a one-use
+// invite minted and spent at the join, the credential the machine keeps, its own server starting
+// into the satellite role with its link up. The satellite runs as a child process of its own
+// because the server under test is that process: its inbox report names a socket, and the
+// socket the owner's words must reach is the one its own server posts through. The session it
+// reports lives on an inbox socket with no pid, so a post takes the socket alone.
+func startSatelliteInboxRig(t *testing.T) *satelliteInboxRig {
+	t.Helper()
+	hubHome, satHome := t.TempDir(), t.TempDir()
+	hubLog := &runLog{}
+	hubBase, stopHub, hubDone := startHuddleRun(t, hubHome, "hub-token", hubLog)
+	t.Cleanup(func() {
+		stopHub()
+		select {
+		case <-hubDone:
+		case <-time.After(10 * time.Second):
+		}
+	})
+
+	minter, err := hub.Open(context.Background(), home.Home{Root: hubHome}.HubDB())
+	if err != nil {
+		t.Fatalf("open the hub's database: %v", err)
+	}
+	invite, err := minter.MintSatelliteInvite(context.Background(), time.Now().UnixMilli())
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	status, body := call(t, hubBase, http.MethodPost, "/api/sat/join", "", "",
+		`{"invite":"`+invite+`","name":"mbp"}`)
+	if status != 200 {
+		t.Fatalf("the join answered %d: %s", status, body)
+	}
+	var joined struct {
+		Credential string `json:"credential"`
+		Name       string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(body), &joined); err != nil || joined.Credential == "" || joined.Name != "mbp" {
+		t.Fatalf("the join = %s: %v", body, err)
+	}
+	if err := minter.Close(); err != nil {
+		t.Fatalf("close the hub's database: %v", err)
+	}
+
+	h := home.Home{Root: satHome}
+	if err := home.SaveConfig(h, home.Config{
+		Role: "satellite", Machine: "mbp", Hub: home.HubConfig{URL: hubBase},
+		Remote: home.RemoteConfig{Permissions: true, Messages: true, Allow: []string{"*"}},
+	}); err != nil {
+		t.Fatalf("the satellite's config: %v", err)
+	}
+	if err := home.SaveSatelliteSecret(context.Background(), home.KeyFiles{Dir: h.Keys()}, hubBase, joined.Credential); err != nil {
+		t.Fatalf("the satellite's credential: %v", err)
+	}
+	sat := startServer(t, map[string]string{"HUDDLE_HOME": satHome})
+	if !until(10*time.Second, func() bool {
+		return strings.Contains(sat.log.joined(), "satellite link to "+hubBase)
+	}) {
+		t.Fatalf("the link never came up: %s", sat.log.joined())
+	}
+
+	sock, ln := inboxListener(t)
+	lines := inboxLines(t, ln)
+	reportInboxSession(t, sat, "s-1", sock, 0)
+	if !until(10*time.Second, func() bool {
+		_, body := call(t, hubBase, http.MethodGet, "/api/registry/sessions?machine=mbp", "hub-token", "", "")
+		return strings.Contains(body, "s-1")
+	}) {
+		t.Fatalf("the hub's registry never carried the machine's session: %s", hubLog.joined())
+	}
+	return &satelliteInboxRig{hubBase: hubBase, sat: sat, lines: lines, hubLog: hubLog}
+}
+
+// inboxLine is one line a server posts to a session's inbox socket.
+type inboxLine struct {
+	Type      string `json:"type"`
+	SessionID string `json:"session_id"`
+	Message   struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	} `json:"message"`
+}
+
+// inboxOwnerLine decodes the one line the owner's words post to the socket; a second line — an
+// auth line — fails the decode, so the answer is one line or none.
+func inboxOwnerLine(t *testing.T, raw []byte) inboxLine {
+	t.Helper()
+	var line inboxLine
+	if err := json.Unmarshal(raw, &line); err != nil {
+		t.Fatalf("the socket carried %q: %v", raw, err)
+	}
+	return line
+}
+
+// TestASatelliteServerDeliversAnOwnersMessageAtOnce proves the at-once half of the satellite's
+// message road: the owner's send rides the link to the machine, and the machine's own server
+// posts it through the session's inbox socket with no prompt needed.
+func TestASatelliteServerDeliversAnOwnersMessageAtOnce(t *testing.T) {
+	rig := startSatelliteInboxRig(t)
+	status, body := call(t, rig.hubBase, http.MethodPost, "/api/send", "hub-token", "",
+		`{"sessions":["s-1"],"text":"ship it today"}`)
+	if status != 200 || !strings.Contains(body, `"route":"satellite"`) {
+		t.Fatalf("the send answered %d: %s", status, body)
+	}
+	var raw []byte
+	select {
+	case raw = <-rig.lines:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("the session's socket never heard the owner: %s / %s",
+			rig.hubLog.joined(), rig.sat.log.joined())
+	}
+	line := inboxOwnerLine(t, raw)
+	if line.Type != "user" || line.SessionID != "s-1" ||
+		line.Message.Role != "user" || !strings.Contains(line.Message.Content, "ship it today") {
+		t.Fatalf("the socket carried %+v, want the owner's words for s-1", line)
+	}
+}

@@ -481,6 +481,7 @@ func (s *server) startSatelliteLink(ctx context.Context) {
 		Now:        s.now,
 		Log:        func(line string) { fmt.Fprintln(s.o.Stdout, line) },
 		Wake:       s.wakeAppliedItem,
+		Deliver:    s.pushMessage,
 	})
 	link.StartCursor(ctx)
 	s.satMu.Lock()
