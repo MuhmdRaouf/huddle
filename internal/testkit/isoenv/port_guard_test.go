@@ -57,8 +57,6 @@ var hubLiteralAllowed = map[string]string{
 	"internal/huddle/cli/setup_test.go":          "the literal is golden status text the output compares against",
 	"internal/huddle/home/config_cover_test.go":  "the literals are SaveConfig and SavePort values temp homes round-trip",
 	"internal/huddle/home/config_test.go":        "the literals are config file content temp homes round-trip",
-	"internal/huddle/home/import_cover_test.go":  "the literal is a legacy hub url the import matches as text",
-	"internal/huddle/home/legacy_cover_test.go":  "the literals are legacy config bodies the parser reads back as data",
 	"internal/huddle/home/satsecret_test.go":     "the literal is a hub url the satellite secret's account name is derived from, never dialled",
 	"internal/huddle/hooks/hooks_test.go":        "a comment names the shared 18860-18869 range to say why the test names its own port",
 	"internal/huddle/outside/lifecycle_test.go":  "the literals are run-file and config content a temp home round-trips",

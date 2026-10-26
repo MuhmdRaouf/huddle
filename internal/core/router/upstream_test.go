@@ -1280,11 +1280,11 @@ func TestReceive(t *testing.T) {
 func TestRefuseHost(t *testing.T) {
 	t.Parallel()
 	t.Run("lets a request that names the port as 127.0.0.1 or localhost through", func(t *testing.T) {
-		for _, host := range []string{"127.0.0.1:18786", "localhost:18786"} {
+		for _, host := range []string{"127.0.0.1:40123", "localhost:40123"} {
 			request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:1/x", nil)
 			request.Host = host
 			recorder := httptest.NewRecorder()
-			if RefuseHost(request, NewResponse(recorder), "zai", 18786) {
+			if RefuseHost(request, NewResponse(recorder), "zai", 40123) {
 				t.Errorf("Host %q must pass", host)
 			}
 			if recorder.Body.Len() != 0 {
@@ -1293,11 +1293,11 @@ func TestRefuseHost(t *testing.T) {
 		}
 	})
 	t.Run("answers 421 for any other Host", func(t *testing.T) {
-		for _, host := range []string{"127.0.0.1:18787", "evil.example:1"} {
+		for _, host := range []string{"127.0.0.1:40124", "evil.example:1"} {
 			request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:1/x", nil)
 			request.Host = host
 			recorder := httptest.NewRecorder()
-			if !RefuseHost(request, NewResponse(recorder), "zai", 18786) {
+			if !RefuseHost(request, NewResponse(recorder), "zai", 40123) {
 				t.Fatalf("Host %q must be refused", host)
 			}
 			if recorder.Code != 421 {
