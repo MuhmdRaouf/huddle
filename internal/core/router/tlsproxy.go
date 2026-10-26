@@ -10,6 +10,7 @@ package router
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -107,8 +108,10 @@ func (c *tunnelConn) Close() error {
 
 // Connect serves one CONNECT. Browsers cannot send CONNECT, so the router's Host check (a
 // DNS-rebinding guard for pages a browser could reach) does not apply to it: the authority names
-// the tunnel's target, not this router. Any port on a remote host is tunnelled blind; only
-// api.anthropic.com:443 is decrypted, with the local CA.
+// the tunnel's target, not this router. A blind tunnel dials its target before anything goes
+// back, so a target that cannot be opened is answered with the reason instead of a 200 the
+// client's TLS handshake then fails on; only api.anthropic.com:443 is decrypted, with the local
+// CA.
 func (p *TLSProxy) Connect(w http.ResponseWriter, req *http.Request) {
 	host, port, err := net.SplitHostPort(req.RequestURI)
 	if err != nil {
@@ -132,16 +135,47 @@ func (p *TLSProxy) Connect(w http.ResponseWriter, req *http.Request) {
 		p.connectRefused(w, "the connection cannot be tunnelled")
 		return
 	}
+	// Only api.anthropic.com on its real port is decrypted; the same name on any other port is a
+	// blind tunnel like every other host.
+	decrypt := p.CADir != "" && number == 443 && strings.EqualFold(host, pki.RouterHost)
+	if decrypt {
+		if _, err := p.leafFor(); err != nil {
+			// The CA is unusable; the reason is in the log. Passing through blind keeps Claude Code
+			// working (no routing for these requests) where refusing would cut it off.
+			decrypt = false
+		}
+	}
+	// The dial comes before the hijack and the 200: once the client reads "established" it starts
+	// its TLS handshake, which cannot say why the tunnel never opened.
+	var target net.Conn
+	if !decrypt {
+		target, err = p.tunnelDial(req.Context(), "tcp", net.JoinHostPort(host, port))
+		if err != nil {
+			var local *localDialError
+			if errors.As(err, &local) {
+				p.connectRefused(w, "a CONNECT may not name this machine")
+				return
+			}
+			p.connectFailed(w)
+			return
+		}
+	}
 	// The tunnel is counted before the hijack, while the server still waits on this handler: a
 	// drain that starts once the server's shutdown returns finds it.
 	tunnel := p.trackTunnel()
 	conn, rw, err := hijacker.Hijack()
 	if err != nil {
+		if target != nil {
+			target.Close()
+		}
 		p.endTunnel(tunnel)
 		return
 	}
 	if _, err := conn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n")); err != nil {
 		conn.Close()
+		if target != nil {
+			target.Close()
+		}
 		p.endTunnel(tunnel)
 		return
 	}
@@ -149,17 +183,11 @@ func (p *TLSProxy) Connect(w http.ResponseWriter, req *http.Request) {
 	p.tunnelsMu.Lock()
 	tunnel.conn = client
 	p.tunnelsMu.Unlock()
-	// Only api.anthropic.com on its real port is decrypted; the same name on any other port is a
-	// blind tunnel like every other host.
-	if p.CADir != "" && number == 443 && strings.EqualFold(host, pki.RouterHost) {
-		if _, err := p.leafFor(); err == nil {
-			p.serveDecrypted(tunnel, client)
-			return
-		}
-		// The CA is unusable; the reason is in the log. Passing through blind keeps Claude Code
-		// working (no routing for these requests) where refusing would cut it off.
+	if decrypt {
+		p.serveDecrypted(tunnel, client)
+		return
 	}
-	p.blindTunnel(req.Context(), client, net.JoinHostPort(host, port))
+	p.tunnelPipe(client, target)
 }
 
 // connectRefused answers a CONNECT with the Anthropic error shape, so a client that inspects the
@@ -168,14 +196,16 @@ func (p *TLSProxy) connectRefused(w http.ResponseWriter, why string) {
 	AnthropicError(NewResponse(w), 403, "permission_error", p.Name+" router: CONNECT refused ("+why+")")
 }
 
-// blindTunnel pipes an established CONNECT socket to its target both ways, both sides closed once
-// either ends. The bytes are never read here: the client's TLS handshake is with the target.
-func (p *TLSProxy) blindTunnel(ctx context.Context, client net.Conn, addr string) {
-	target, err := p.tunnelDial(ctx, "tcp", addr)
-	if err != nil {
-		client.Close()
-		return
-	}
+// connectFailed answers a CONNECT whose target could not be opened with the Anthropic error
+// shape, so the client reads why its tunnel never started.
+func (p *TLSProxy) connectFailed(w http.ResponseWriter) {
+	AnthropicError(NewResponse(w), 502, "api_error", p.Name+" router: CONNECT failed (the target cannot be reached)")
+}
+
+// tunnelPipe pipes an established CONNECT socket to its already-open target both ways, both
+// sides closed once either ends. The bytes are never read here: the client's TLS handshake is
+// with the target.
+func (p *TLSProxy) tunnelPipe(client, target net.Conn) {
 	safego.Go(p.Note, func() {
 		_, _ = io.Copy(target, client)
 		target.Close()
@@ -205,6 +235,16 @@ func isLocalIP(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast()
 }
 
+// localDialError is the blind tunnel's dial refusing an address on this machine: a concrete type,
+// so a CONNECT handler can tell this refusal from a target that is merely down.
+type localDialError struct {
+	addr string
+}
+
+func (e *localDialError) Error() string {
+	return "tunnel to " + e.addr + " refused: it is this machine"
+}
+
 // refuseLocalDial is the blind tunnel's dial control: it refuses a resolved address isLocalIP names.
 func refuseLocalDial(_, address string, _ syscall.RawConn) error {
 	host, _, err := net.SplitHostPort(address)
@@ -212,7 +252,7 @@ func refuseLocalDial(_, address string, _ syscall.RawConn) error {
 		return err
 	}
 	if ip := net.ParseIP(host); ip == nil || isLocalIP(ip) {
-		return fmt.Errorf("tunnel to %s refused: it is this machine", address)
+		return &localDialError{addr: address}
 	}
 	return nil
 }
