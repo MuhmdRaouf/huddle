@@ -86,12 +86,11 @@ generates. It finds or installs the huddle binary under `${AGENTS_HUDDLE_HOME:-$
 points `current` at it. A provider plugin's `dist/run` execs `huddle provider <p> <entry>`. Plugins and binary come
 from the same commit, so there is no version lock between them.
 
-## D14: Migration from 0.0.1
+## D14: No 0.0.1 migration
 
-The daemon's first start moves every provider a 0.0.1 setup left behind onto huddle-router (`internal/routerd`):
-the provider joins `providers.json`, Claude Code's `HTTPS_PROXY` moves to the daemon's port and the ledger names the
-daemon. The old router retires, answering its open sessions until they close, its per-session watchdogs stop, and
-its binary copy goes once nothing runs from it. Job state and keys are never touched.
+huddle-router carries no 0.0.1 migration: it starts no move of a 0.0.1 setup, retires no per-provider router and
+adopts no 0.0.1 port. A 0.0.1 install joins the current layout by running the setup words again, and setup moves
+Claude Code's `HTTPS_PROXY` off a provider port it recognises. Job state and keys are never touched.
 
 ## D15: No leaks
 
@@ -142,21 +141,18 @@ A pure refactor is proven by the existing suites passing unchanged.
 claude-code-plugins is retired. huddle is the one repository for huddle and the five provider plugins, and the
 `muhmdraouf` marketplace (D19) is where every plugin installs from.
 
-## D22: One router generation, never a chain
+## D22: Never a chain
 
 The 2026-10-21 incident, a session left on a 0.0.1 port whose requests looped through huddle-router and failed with
-502 for hours, is in [docs/INCIDENTS.md](INCIDENTS.md). Four rules keep it from recurring:
+502 for hours, is in [docs/INCIDENTS.md](INCIDENTS.md). Three rules keep it from recurring:
 
 1. A router never sends upstream traffic through another router. It recognises one by its own port, the known port
    list, and by asking any loopback proxy for a router health answer, never by a port list alone; daemon spawns
    drop proxy variables that point at a router (`internal/routerd/nochain.go`).
-2. One generation serves the old ports too. huddle-router adopts the 0.0.1 ports 18787 to 18791: it stops a
-   verified 0.0.1 router and binds its port, so sessions started before a migration keep working and nothing of the
-   old generation is left to respawn (`internal/routerd/legacy.go`).
-3. A failure names its cause: TLS and certificate failures are `ECERT`, not `EUPSTREAM`
+2. A failure names its cause: TLS and certificate failures are `ECERT`, not `EUPSTREAM`
    (`internal/core/router/upstream.go`).
-4. A failing Anthropic path is visible within a minute: three `claude-*` upstream failures in 60 s raise one router
+3. A failing Anthropic path is visible within a minute: three `claude-*` upstream failures in 60 s raise one router
    health event and a Radar alert in the hub, with the code and the fix.
 
-Rules 1, 2 and 4 each have a BDD feature named "the 2026-10-21 incident cannot recur: ..." and an e2e test on the
-built binary (`cmd/huddle/nochain_e2e_test.go`, `legacy_ports_e2e_test.go`, `failalert_e2e_test.go`).
+Rules 1 and 3 each have a BDD feature named "the 2026-10-21 incident cannot recur: ..." and an e2e test on the
+built binary (`cmd/huddle/nochain_e2e_test.go`, `failalert_e2e_test.go`).

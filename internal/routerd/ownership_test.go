@@ -9,6 +9,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -83,6 +84,17 @@ func mustResolved(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return resolved
+}
+
+// deadPid is a pid that names no running process.
+func deadPid(t *testing.T) int64 {
+	t.Helper()
+	gone := exec.Command("true")
+	if err := gone.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = gone.Wait()
+	return int64(gone.Process.Pid)
 }
 
 // TestUpdatedOrUpTakesAnotherBuildsRouterOver covers the ownership row: the record names

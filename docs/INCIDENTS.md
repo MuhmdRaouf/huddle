@@ -83,10 +83,10 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Cause:** the daemon's `HTTPS_PROXY` and `HTTP_PROXY` named another router, one of another generation on a port
   that was not the known one, so the daemon tunnelled its claude traffic through it; a failing Anthropic path
   raised no event.
-- **Guard:** `TestNoChainScenarios` (internal/routerd/nochain_scenario_test.go), `TestLegacyPortScenarios`
-  (internal/routerd/legacy_scenario_test.go), `TestFailAlertScenarios`
+- **Guard:** `TestNoChainScenarios` (internal/routerd/nochain_scenario_test.go), `TestFailAlertScenarios`
   (internal/core/router/failalert_scenario_test.go), `TestE2ENoChainARouterNeverRoutesThroughAnotherRouter`
-  (cmd/huddle/nochain_e2e_test.go)
+  (cmd/huddle/nochain_e2e_test.go). huddle-router adopts no 0.0.1 port and carries no 0.0.1 migration, so the
+  no-chain guard is what keeps this incident from recurring.
 - **Rule:** a daemon never routes through a proxy that answers a router health path.
 
 ## 2026-10-22, the hub tab crashed in a repaint loop

@@ -61,7 +61,6 @@ func TestE2EAHubRestartKeepsAStreamingTurn(t *testing.T) {
 		pki.StoreOffEnv+"=1",
 		"HUDDLE_ROUTER_HOME="+routerHome,
 		"HUDDLE_ROUTER_PORT="+strconv.Itoa(routerPort),
-		"HUDDLE_ROUTER_LEGACY_PORTS=",
 		"HUDDLE_ROUTER_ANTHROPIC_URL="+anthropic.URL,
 		"ZAI_ROUTER_URL="+zaiUp.server.URL,
 		"ZAI_API_KEY=hub-restart-e2e-key",

@@ -86,7 +86,6 @@ func TestE2EUpStartsARouterAndAHub(t *testing.T) {
 		"HUDDLE_NO_PROJECT_CRED=1",
 		"HUDDLE_ROUTER_HOME="+routerHome,
 		"HUDDLE_ROUTER_PORT="+strconv.Itoa(routerPort),
-		"HUDDLE_ROUTER_LEGACY_PORTS=",
 		"HUDDLE_ROUTER_ANTHROPIC_URL="+anthropic.server.URL,
 		"ZAI_ROUTER_URL="+zaiUp.server.URL,
 		"ZAI_API_KEY=two-processes-e2e-key",

@@ -65,7 +65,6 @@ func TestRouterWatchdogGCE2E(t *testing.T) {
 		"HUDDLE_DATA="+filepath.Join(root, "data"),
 		"HUDDLE_ROUTER_HOME="+routerHome,
 		"HUDDLE_ROUTER_PORT="+strconv.Itoa(routerPort),
-		"HUDDLE_ROUTER_LEGACY_PORTS=",
 		"AGENTS_HUDDLE_HOME="+root,
 		"HUDDLE_NO_PROJECT_CRED=1",
 		"ZAI_API_KEY=watchdog-gc-e2e-key",

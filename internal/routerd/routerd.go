@@ -178,15 +178,14 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	// The CA is the one directory every provider's setup points NODE_EXTRA_CA_CERTS at: the
 	// state roots' parent, where the shared local CA lives.
 	server, multi := router.CreateMulti(router.MultiOptions{
-		Port:       port,
-		ExtraPorts: legacyPortNumbers(legacyPorts(env)),
-		Anthropic:  anthropic,
-		Lanes:      lanesOf(env, names, log),
-		CADir:      filepath.Join(filepath.Dir(home), "ca"),
-		Env:        router.ProxyEnv(env),
-		Log:        log,
-		Events:     spool.CreateSpoolWriter(env, log, nil),
-		Gateway:    gatewayOf(env, log),
+		Port:      port,
+		Anthropic: anthropic,
+		Lanes:     lanesOf(env, names, log),
+		CADir:     filepath.Join(filepath.Dir(home), "ca"),
+		Env:       router.ProxyEnv(env),
+		Log:       log,
+		Events:    spool.CreateSpoolWriter(env, log, nil),
+		Gateway:   gatewayOf(env, log),
 	})
 	server.Handler = guardPanics(server.Handler, log, o.panicOnce)
 	// The handover socket listens before the first health answer: a taker that sees the router
@@ -210,15 +209,6 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 		}()
 		served <- server.Serve(listener)
 	})
-	// The 0.0.1 ports are this server's too: one generation serves them, so a session started
-	// before a migration keeps working and the old generation has nothing left to respawn.
-	// They ride no handover — the next daemon adopts them on its own first tick, so during an
-	// update a legacy port may refuse connections for up to a second.
-	stopAdopting := adoptLegacyPorts(ctx, env, server, log)
-	defer stopAdopting()
-	// The 0.0.1 setups move once per start: a machine the per-provider routers served joins
-	// huddle-router on its first serve, old routers retiring as their sessions' lanes come up.
-	safego.Go(log, func() { migrateOnce(ctx, env, log) })
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
 	ceiling := rssCeilingOf(env, o)
