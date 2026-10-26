@@ -1,0 +1,402 @@
+{
+  "app.css": {
+    "colour": 32,
+    "daisy": 2,
+    "hr": 10,
+    "legacy": 26,
+    "px": 44
+  },
+  "app/App.tsx": {
+    "control": 3,
+    "daisy": 2,
+    "px": 13
+  },
+  "app/CodeField.tsx": {
+    "control": 1
+  },
+  "app/ConnectCard.tsx": {
+    "control": 3,
+    "daisy": 5,
+    "legacy": 1,
+    "px": 1
+  },
+  "app/FirstRun.tsx": {
+    "control": 3,
+    "px": 1
+  },
+  "app/Insights.tsx": {
+    "legacy": 1
+  },
+  "app/Landing.tsx": {
+    "control": 12,
+    "legacy": 3,
+    "px": 4
+  },
+  "app/LinkSheet.tsx": {
+    "control": 6,
+    "daisy": 6,
+    "legacy": 2,
+    "px": 1
+  },
+  "app/Nav.tsx": {
+    "px": 7
+  },
+  "app/Needs.tsx": {
+    "control": 4,
+    "px": 4
+  },
+  "app/Now.tsx": {
+    "control": 6,
+    "px": 19
+  },
+  "app/Pair.tsx": {
+    "control": 5,
+    "px": 2
+  },
+  "app/Palette.tsx": {
+    "control": 1,
+    "daisy": 20,
+    "legacy": 3,
+    "px": 1
+  },
+  "app/RadarDay.tsx": {
+    "daisy": 1,
+    "legacy": 2,
+    "px": 1
+  },
+  "app/Rail.tsx": {
+    "control": 4,
+    "daisy": 49,
+    "legacy": 1
+  },
+  "app/SettingsTab.tsx": {
+    "control": 1,
+    "daisy": 3,
+    "legacy": 5,
+    "px": 1
+  },
+  "app/TopBar.tsx": {
+    "control": 3,
+    "px": 5
+  },
+  "app/Totp.tsx": {
+    "colour": 2,
+    "control": 9,
+    "legacy": 1,
+    "px": 3
+  },
+  "app/layout.ts": {
+    "px": 2
+  },
+  "chat/Chat.tsx": {
+    "px": 1
+  },
+  "chat/ChatComposer.tsx": {
+    "control": 2
+  },
+  "chat/MembersSheet.tsx": {
+    "px": 1
+  },
+  "compose/Composer.tsx": {
+    "control": 7,
+    "daisy": 21,
+    "legacy": 7
+  },
+  "dev/Tokens.tsx": {
+    "px": 5
+  },
+  "icons.tsx": {
+    "colour": 13
+  },
+  "kanban/KanbanTab.tsx": {
+    "daisy": 1
+  },
+  "kanban/components/Badge.tsx": {
+    "daisy": 1
+  },
+  "kanban/components/Board.tsx": {
+    "px": 4
+  },
+  "kanban/components/BoardPicker.tsx": {
+    "control": 3
+  },
+  "kanban/components/Card.tsx": {
+    "control": 2,
+    "daisy": 2
+  },
+  "kanban/components/Column.tsx": {
+    "control": 3
+  },
+  "kanban/components/Drawer.tsx": {
+    "control": 5,
+    "daisy": 2,
+    "legacy": 3,
+    "px": 2
+  },
+  "kanban/components/FilterMenu.tsx": {
+    "control": 3,
+    "legacy": 1
+  },
+  "kanban/components/FlowBar.tsx": {
+    "control": 2
+  },
+  "kanban/components/Toolbar.tsx": {
+    "control": 6,
+    "daisy": 1,
+    "px": 1
+  },
+  "kanban/kanban.css": {
+    "colour": 2,
+    "daisy": 24,
+    "legacy": 1,
+    "px": 59
+  },
+  "kanban/markdown.ts": {
+    "daisy": 2,
+    "legacy": 1
+  },
+  "kanban/panel.css": {
+    "colour": 2,
+    "daisy": 1,
+    "legacy": 6,
+    "px": 86
+  },
+  "kit.tsx": {
+    "daisy": 19,
+    "legacy": 2
+  },
+  "pages/Home.tsx": {
+    "control": 10,
+    "daisy": 35,
+    "legacy": 7,
+    "px": 1
+  },
+  "pages/Inbox.tsx": {
+    "control": 15,
+    "daisy": 46,
+    "legacy": 8
+  },
+  "pages/Knowledge.tsx": {
+    "control": 9,
+    "daisy": 55,
+    "legacy": 5,
+    "px": 1
+  },
+  "pages/LinkedSessions.tsx": {
+    "control": 1,
+    "px": 1
+  },
+  "pages/Overview.tsx": {
+    "control": 2,
+    "daisy": 22,
+    "legacy": 4,
+    "px": 3
+  },
+  "pages/Settings.tsx": {
+    "control": 12,
+    "daisy": 24,
+    "legacy": 8
+  },
+  "pages/Team.tsx": {
+    "control": 2,
+    "daisy": 10
+  },
+  "pages/Today.tsx": {
+    "control": 2,
+    "daisy": 31,
+    "legacy": 11,
+    "px": 2
+  },
+  "picker.tsx": {
+    "control": 3,
+    "daisy": 12,
+    "legacy": 1
+  },
+  "progress.tsx": {
+    "daisy": 4,
+    "legacy": 1,
+    "px": 1
+  },
+  "radar/app/ActiveBlock.tsx": {
+    "legacy": 2
+  },
+  "radar/app/AgentTranscript.tsx": {
+    "control": 4,
+    "daisy": 23,
+    "legacy": 5
+  },
+  "radar/app/AlertStrip.tsx": {
+    "control": 2
+  },
+  "radar/app/Banner.tsx": {
+    "daisy": 2
+  },
+  "radar/app/Chart.tsx": {
+    "legacy": 17
+  },
+  "radar/app/ChartTip.tsx": {
+    "legacy": 6
+  },
+  "radar/app/Content.tsx": {
+    "control": 2,
+    "daisy": 25,
+    "legacy": 4
+  },
+  "radar/app/DayCard.tsx": {
+    "px": 2
+  },
+  "radar/app/Flow.tsx": {
+    "control": 1,
+    "daisy": 12,
+    "legacy": 1
+  },
+  "radar/app/OverviewGraphs.tsx": {
+    "legacy": 1,
+    "px": 1
+  },
+  "radar/app/RadarTab.tsx": {
+    "daisy": 2,
+    "legacy": 1,
+    "px": 1
+  },
+  "radar/app/SessionCard.tsx": {
+    "control": 1,
+    "daisy": 46,
+    "px": 1
+  },
+  "radar/app/StatCards.tsx": {
+    "control": 1,
+    "daisy": 24
+  },
+  "radar/app/TimeRange.tsx": {
+    "control": 7,
+    "daisy": 25
+  },
+  "radar/app/inspector/ContextTab.tsx": {
+    "legacy": 1
+  },
+  "radar/app/inspector/Inspector.tsx": {
+    "control": 4
+  },
+  "radar/app/kit.tsx": {
+    "control": 2,
+    "px": 5
+  },
+  "radar/app/table.tsx": {
+    "control": 2
+  },
+  "radar/app/views/Agents.tsx": {
+    "control": 3
+  },
+  "radar/app/views/Alerts.tsx": {
+    "daisy": 1
+  },
+  "radar/app/views/Blocks.tsx": {
+    "daisy": 2,
+    "legacy": 1
+  },
+  "radar/app/views/Costs.tsx": {
+    "control": 1,
+    "daisy": 1,
+    "legacy": 4,
+    "px": 4
+  },
+  "radar/app/views/Models.tsx": {
+    "daisy": 1
+  },
+  "radar/app/views/OtelUsage.tsx": {
+    "control": 1,
+    "daisy": 1
+  },
+  "radar/app/views/Overview.tsx": {
+    "control": 2,
+    "legacy": 2,
+    "px": 15
+  },
+  "radar/app/views/Requests.tsx": {
+    "control": 2
+  },
+  "radar/app/views/Settings.tsx": {
+    "control": 10,
+    "daisy": 2,
+    "px": 1
+  },
+  "radar/app/views/Timeline.tsx": {
+    "control": 1
+  },
+  "radar/app/views/Usage.tsx": {
+    "control": 3,
+    "daisy": 2
+  },
+  "radar/cost/price-table.ts": {
+    "daisy": 1
+  },
+  "radar/export.ts": {
+    "legacy": 1
+  },
+  "radar/fmt.ts": {
+    "daisy": 2
+  },
+  "radar/logo.ts": {
+    "colour": 39
+  },
+  "radar/radar.css": {
+    "px": 1
+  },
+  "team/Roster.tsx": {
+    "control": 1,
+    "daisy": 26,
+    "legacy": 6
+  },
+  "team/SessionDrawer.tsx": {
+    "control": 5,
+    "daisy": 22,
+    "legacy": 5
+  },
+  "team/Timeline.tsx": {
+    "control": 5,
+    "daisy": 28,
+    "legacy": 4,
+    "px": 1
+  },
+  "timeline.tsx": {
+    "daisy": 1
+  },
+  "work/Board.tsx": {
+    "control": 1,
+    "daisy": 20,
+    "legacy": 5,
+    "px": 1
+  },
+  "work/Graph.tsx": {
+    "daisy": 8,
+    "legacy": 2,
+    "px": 1
+  },
+  "work/List.tsx": {
+    "control": 1,
+    "daisy": 24,
+    "legacy": 8
+  },
+  "work/Map.tsx": {
+    "daisy": 21,
+    "legacy": 5
+  },
+  "work/Repo.tsx": {
+    "daisy": 28,
+    "legacy": 10,
+    "px": 1
+  },
+  "work/TaskDrawer.tsx": {
+    "control": 28,
+    "daisy": 123,
+    "hr": 1,
+    "legacy": 18,
+    "px": 3
+  },
+  "work/Work.tsx": {
+    "control": 7,
+    "daisy": 17,
+    "legacy": 1
+  }
+}
