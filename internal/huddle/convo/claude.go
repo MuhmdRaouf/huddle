@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -23,6 +24,8 @@ const (
 	KindThinking   = "thinking"    // the assistant's thinking, shown between its replies
 	KindToolUse    = "tool_use"    // a tool call: its name and input
 	KindToolResult = "tool_result" // what a tool call answered
+	KindFile       = "file"        // a file attached to a prompt
+	KindImage      = "image"       // an image in a prompt
 )
 
 // MaxText is the most bytes of one item's text or input kept; a longer one is cut on a rune
@@ -45,6 +48,11 @@ type Item struct {
 	Input      string `json:"input,omitempty"` // a tool call's input as compact JSON
 	IsError    bool   `json:"is_error,omitempty"`
 	Cut        bool   `json:"cut,omitempty"`
+	Parent     string `json:"parent,omitempty"`     // the line's parentUuid, on file items, so a view joins a file to its prompt
+	Path       string `json:"path,omitempty"`       // a file item's displayPath
+	Lines      int    `json:"lines,omitempty"`      // a file item's totalLines, else numLines
+	MediaType  string `json:"media_type,omitempty"` // an image item's source media type
+	Bytes      int    `json:"bytes,omitempty"`      // an image item's decoded size, from the base64 length alone
 }
 
 // Page is one read: the items of the complete lines read, and the offset the next read starts at.
@@ -56,13 +64,17 @@ type Page struct {
 // transcriptLine is one transcript line's shape: the kind of turn, its identity, and its message
 // content, which is a plain string for a typed prompt and a block array otherwise. IsSidechain
 // marks a subagent's lines and IsMeta a line the harness injected; neither is this conversation.
+// An attachment line carries its payload outside the message, and parentUuid names the line it
+// hangs from.
 type transcriptLine struct {
-	Type               string `json:"type"`
-	UUID               string `json:"uuid"`
-	Timestamp          string `json:"timestamp"`
-	ThinkingDurationMS int64  `json:"thinkingDurationMs"` // the line's thinking time, in ms
-	IsSidechain        bool   `json:"isSidechain"`
-	IsMeta             bool   `json:"isMeta"`
+	Type               string          `json:"type"`
+	UUID               string          `json:"uuid"`
+	ParentUUID         string          `json:"parentUuid"`
+	Timestamp          string          `json:"timestamp"`
+	ThinkingDurationMS int64           `json:"thinkingDurationMs"` // the line's thinking time, in ms
+	IsSidechain        bool            `json:"isSidechain"`
+	IsMeta             bool            `json:"isMeta"`
+	Attachment         json.RawMessage `json:"attachment"`
 	Message            struct {
 		Role    string          `json:"role"`
 		Content json.RawMessage `json:"content"`
@@ -70,9 +82,9 @@ type transcriptLine struct {
 }
 
 // contentBlock is one content block: text carries words, thinking carries the assistant's
-// thinking, tool_use names a call and its input, tool_result answers a call, and every other
-// kind (image, …) is left out. A thinking block's signature is an opaque token the reader never
-// reads or serves.
+// thinking, tool_use names a call and its input, tool_result answers a call, and image names a
+// picture in a prompt. A thinking block's signature is an opaque token the reader never reads
+// or serves.
 type contentBlock struct {
 	Type      string          `json:"type"`
 	Text      string          `json:"text"`
@@ -83,6 +95,39 @@ type contentBlock struct {
 	ToolUseID string          `json:"tool_use_id"`
 	IsError   bool            `json:"is_error"`
 	Content   json.RawMessage `json:"content"`
+	Source    imageSource     `json:"source"`
+}
+
+// imageSource is an image block's source: base64 data the reader sizes from its length but
+// never decodes, keeps or serves.
+type imageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+}
+
+// attachment is an attachment line's payload: a file attachment names the file it put in the
+// prompt and may carry the content that was read of it; other subtypes are left out.
+type attachment struct {
+	Type        string          `json:"type"`
+	FileName    string          `json:"filename"`
+	DisplayPath string          `json:"displayPath"`
+	Content     json.RawMessage `json:"content"`
+}
+
+// attachedContent is a file attachment's content block: the read of one file.
+type attachedContent struct {
+	Type string       `json:"type"`
+	File attachedFile `json:"file"`
+}
+
+// attachedFile is one file read into a prompt: its path, its content and its line counts.
+type attachedFile struct {
+	FilePath   string `json:"filePath"`
+	Content    string `json:"content"`
+	NumLines   int    `json:"numLines"`
+	StartLine  int    `json:"startLine"`
+	TotalLines int    `json:"totalLines"`
 }
 
 // Read answers the conversation items of the transcript at path from byte offset after. Only
@@ -137,8 +182,8 @@ func read(ctx context.Context, path string, after int64, keepSidechain bool) (Pa
 }
 
 // itemsOf decodes one complete transcript line into its items, in content order. A line that is
-// not JSON, not a user or assistant turn, or harness-injected yields nothing; a subagent's
-// sidechain line yields nothing unless keepSidechain.
+// not JSON, not a user, assistant or attachment turn, or harness-injected yields nothing; a
+// subagent's sidechain line yields nothing unless keepSidechain.
 func itemsOf(raw []byte, keepSidechain bool) []Item {
 	var line transcriptLine
 	if err := json.Unmarshal(raw, &line); err != nil {
@@ -152,14 +197,17 @@ func itemsOf(raw []byte, keepSidechain bool) []Item {
 		return userItems(line)
 	case KindAssistant:
 		return assistantItems(line)
+	case "attachment":
+		return attachmentItems(line)
 	default:
 		return nil
 	}
 }
 
 // userItems answers a user line's items: a string content is the prompt itself, a block array
-// yields its text blocks as prompts and its tool_result blocks as the answers they carry. A
-// prompt that is empty but for spacing is no words the person typed.
+// yields its text blocks as prompts, its image blocks as the pictures they carry and its
+// tool_result blocks as the answers they carry. A prompt that is empty but for spacing is no
+// words the person typed.
 func userItems(line transcriptLine) []Item {
 	var prompt string
 	if err := json.Unmarshal(line.Message.Content, &prompt); err == nil {
@@ -180,6 +228,8 @@ func userItems(line transcriptLine) []Item {
 				continue
 			}
 			items = append(items, textItem(line, i, KindUser, block.Text))
+		case "image":
+			items = append(items, imageItem(line, i, block))
 		case "tool_result":
 			items = append(items, resultItem(line, i, block))
 		}
@@ -215,6 +265,65 @@ func assistantItems(line transcriptLine) []Item {
 		}
 	}
 	return items
+}
+
+// attachmentItems answers an attachment line's items: a file attachment yields one file item
+// naming the file, its line count and the content read into the prompt, cut to MaxText; a file
+// with no content still yields its item, and an attachment of another subtype yields nothing.
+func attachmentItems(line transcriptLine) []Item {
+	var att attachment
+	if err := json.Unmarshal(line.Attachment, &att); err != nil {
+		return nil
+	}
+	if att.Type != "file" {
+		return nil
+	}
+	var content attachedContent
+	if len(att.Content) > 0 {
+		if err := json.Unmarshal(att.Content, &content); err != nil {
+			return nil
+		}
+	}
+	item := Item{
+		ID:     line.UUID + ":0",
+		Kind:   KindFile,
+		At:     line.Timestamp,
+		Parent: line.ParentUUID,
+		Path:   att.DisplayPath,
+		Lines:  fileLines(content.File),
+	}
+	item.Text, item.Cut = cut(content.File.Content)
+	return []Item{item}
+}
+
+// imageItem answers an image block's item: its media type and decoded size. The size comes from
+// the base64 length alone; the data itself is never decoded, kept or served.
+func imageItem(line transcriptLine, index int, block contentBlock) Item {
+	return Item{
+		ID:        line.UUID + ":" + strconv.Itoa(index),
+		Kind:      KindImage,
+		At:        line.Timestamp,
+		MediaType: block.Source.MediaType,
+		Bytes:     decodedSize(block.Source.Data),
+	}
+}
+
+// fileLines answers a file's line count: totalLines when the read names it, else numLines.
+func fileLines(file attachedFile) int {
+	if file.TotalLines > 0 {
+		return file.TotalLines
+	}
+	return file.NumLines
+}
+
+// decodedSize answers the byte size base64 data decodes to, from the length alone: DecodedLen
+// sizes the length and the trailing padding is taken back off.
+func decodedSize(data string) int {
+	padding := 0
+	for padding < 2 && padding < len(data) && data[len(data)-1-padding] == '=' {
+		padding++
+	}
+	return base64.StdEncoding.DecodedLen(len(data)) - padding
 }
 
 // textItem answers a text-bearing item of the given kind, its text cut to MaxText.

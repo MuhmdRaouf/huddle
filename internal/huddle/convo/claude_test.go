@@ -19,8 +19,9 @@ import (
 
 // fixtureItems is what the committed fixture yields, in order: the summary, sidechain, meta and
 // broken lines yield nothing, each thinking block yields its thinking item with the line's
-// duration when the line names one, and the 5000-é text is cut to 2048 whole characters, which
-// are exactly MaxText bytes.
+// duration when the line names one, the 5000-é text is cut to 2048 whole characters, which are
+// exactly MaxText bytes, and the prompt's image and attached files come out as references
+// beside it while the paste attachment yields nothing.
 func fixtureItems() []Item {
 	return []Item{
 		{ID: "u1:0", Kind: KindUser, At: "2026-10-26T10:00:01.000Z", Text: "run the tests"},
@@ -32,6 +33,10 @@ func fixtureItems() []Item {
 		{ID: "a3:1", Kind: KindAssistant, At: "2026-10-26T10:00:07.000Z", Text: "Done."},
 		{ID: "a5:0", Kind: KindThinking, At: "2026-10-26T10:00:07.500Z", Text: "checking the failing package", DurationMS: 2400},
 		{ID: "a4:0", Kind: KindAssistant, At: "2026-10-26T10:00:08.000Z", Text: strings.Repeat("é", 2048), Cut: true},
+		{ID: "u6:0", Kind: KindUser, At: "2026-10-26T10:00:09.000Z", Text: "what does this show"},
+		{ID: "u6:1", Kind: KindImage, At: "2026-10-26T10:00:09.000Z", MediaType: "image/png", Bytes: 5},
+		{ID: "f1:0", Kind: KindFile, At: "2026-10-26T10:00:10.000Z", Parent: "u6", Path: "spec.md", Lines: 2, Text: "line one\nline two\n"},
+		{ID: "f2:0", Kind: KindFile, At: "2026-10-26T10:00:11.000Z", Parent: "f1", Path: "notes.log"},
 	}
 }
 
@@ -280,4 +285,93 @@ func TestTheReaderNeverServesTheThinkingSignature(t *testing.T) {
 	if strings.Contains(string(served), "sig-a5") {
 		t.Errorf("the items carry the thinking's signature: %s", served)
 	}
+}
+
+func TestTheReaderNeverServesImageData(t *testing.T) {
+	page, err := Read(context.Background(), fixturePath(t), 0)
+	if err != nil {
+		t.Fatalf("read the fixture: %v", err)
+	}
+	for _, item := range page.Items {
+		if item.Kind == KindImage && item.Text != "" {
+			t.Errorf("the image item %s carries text %q, want none", item.ID, item.Text)
+		}
+	}
+	served, err := json.Marshal(page.Items)
+	if err != nil {
+		t.Fatalf("marshal the items: %v", err)
+	}
+	if strings.Contains(string(served), "aGVsbG8=") {
+		t.Errorf("the items carry an image's base64 data: %s", served)
+	}
+	if strings.Contains(string(served), `"data"`) {
+		t.Errorf("the items carry a data field: %s", served)
+	}
+}
+
+func TestTheImageItemSizesTheDataFromItsLengthAlone(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "claude.jsonl")
+	imageLine := func(uuid, data string) string {
+		return fmt.Sprintf(`{"type":"user","uuid":%q,"timestamp":"2026-10-26T10:00:01.000Z","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":%q,"data":%q}}]}}`+"\n", uuid, "image/png", data)
+	}
+	body := strings.Join([]string{
+		imageLine("i1", "aGV5"),     // no padding: 3 bytes
+		imageLine("i2", "aGVsbG8="), // one pad byte: 5 bytes
+		imageLine("i3", "aGVsbA=="), // two pad bytes: 4 bytes
+	}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := Read(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("read the transcript: %v", err)
+	}
+	checkItems(t, page.Items, []Item{
+		{ID: "i1:0", Kind: KindImage, At: "2026-10-26T10:00:01.000Z", MediaType: "image/png", Bytes: 3},
+		{ID: "i2:0", Kind: KindImage, At: "2026-10-26T10:00:01.000Z", MediaType: "image/png", Bytes: 5},
+		{ID: "i3:0", Kind: KindImage, At: "2026-10-26T10:00:01.000Z", MediaType: "image/png", Bytes: 4},
+	})
+}
+
+func TestTheReaderCutsALongAttachedFile(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "claude.jsonl")
+	line := fmt.Sprintf(`{"type":"attachment","uuid":"f9","parentUuid":"u1","timestamp":"2026-10-26T10:00:01.000Z","attachment":{"type":"file","filename":"/abs/path/big.md","displayPath":"big.md","content":{"type":"text","file":{"filePath":"/abs/path/big.md","content":%q,"numLines":5000,"startLine":1,"totalLines":5000}}}}`+"\n", strings.Repeat("é", 5000))
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := Read(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("read the transcript: %v", err)
+	}
+	checkItems(t, page.Items, []Item{
+		{ID: "f9:0", Kind: KindFile, At: "2026-10-26T10:00:01.000Z", Parent: "u1", Path: "big.md", Lines: 5000, Text: strings.Repeat("é", 2048), Cut: true},
+	})
+}
+
+func TestTheFileItemCountsTheLinesTheReadNames(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "claude.jsonl")
+	fileLine := func(uuid string, total, num int) string {
+		return fmt.Sprintf(`{"type":"attachment","uuid":%q,"parentUuid":"u1","timestamp":"2026-10-26T10:00:01.000Z","attachment":{"type":"file","filename":"/abs/path/spec.md","displayPath":"spec.md","content":{"type":"text","file":{"filePath":"/abs/path/spec.md","content":"line one\n","numLines":%d,"startLine":1,"totalLines":%d}}}}`+"\n", uuid, num, total)
+	}
+	body := strings.Join([]string{
+		fileLine("f1", 9, 3), // totalLines wins
+		fileLine("f2", 0, 3), // numLines when the read names no total
+	}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := Read(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("read the transcript: %v", err)
+	}
+	checkItems(t, page.Items, []Item{
+		{ID: "f1:0", Kind: KindFile, At: "2026-10-26T10:00:01.000Z", Parent: "u1", Path: "spec.md", Lines: 9, Text: "line one\n"},
+		{ID: "f2:0", Kind: KindFile, At: "2026-10-26T10:00:01.000Z", Parent: "u1", Path: "spec.md", Lines: 3, Text: "line one\n"},
+	})
 }
