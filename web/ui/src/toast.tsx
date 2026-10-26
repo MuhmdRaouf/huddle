@@ -1,6 +1,7 @@
-// toast.tsx — the toast stack: short confirmations and errors at the bottom of the screen, each with a
-// dismiss button, an optional Undo or named action and its own lifetime (8s with Undo, 6s for an error,
-// 3s else; a named action stays until it runs or the owner dismisses it).
+// toast.tsx — the toast stack: short confirmations and errors in a fixed stack over the page, above the
+// phone's tab bar, in a card at the desktop's foot on wide screens. Each row holds a dismiss button, an
+// optional Undo or named action and its own lifetime (8s with Undo, 6s for an error, 3s else; a named
+// action stays until it runs or the owner dismisses it).
 // A good toast is a polite live region, a bad one an assertive alert. Port of core.js toast; the timers are
 // injectable so tests can step time instead of waiting.
 
@@ -49,9 +50,8 @@ const Push = createContext<ToastFn | null>(null);
 const LIFETIME = { undo: 8000, bad: 6000, good: 3000, out: 180 } as const;
 const MAX_TOASTS = 4;
 
-/** The stack's shell: the classes the legacy index.html put on #toasts, popover attribute included. */
-const SHELL =
-  "pointer-events-none fixed inset-x-3 top-auto bottom-20 z-50 m-0 w-auto overflow-visible border-0 bg-transparent p-0 flex flex-col items-center gap-2 sm:inset-x-auto sm:right-4 sm:bottom-4 sm:items-end";
+/** The stack's shell: the design system's placement, a popover so the stack paints above dialogs. */
+const SHELL = "ui-toast-stack";
 
 /** Show the popover so the stack paints above dialogs; where the engine has no popover API this is a no-op. */
 function raise(box: HTMLElement | null): void {
@@ -147,30 +147,28 @@ function ToastRow({ t, onKill }: { t: Toast; onKill: () => void }): JSX.Element 
   const icon: IconName = t.bad ? "alert" : "check";
   return (
     <div
-      class={`toast hr-toast ${t.bad ? "hr-toast-bad" : "hr-toast-good"}${t.out ? " out" : ""}`}
+      class={`ui-toast ${t.bad ? "ui-toast-bad" : "ui-toast-good"}${t.out ? " out" : ""}`}
       role={t.bad ? "alert" : "status"}
     >
-      <span class="ink">
-        <Icon name={icon} class="size-4" />
-      </span>
-      <span class="min-w-0 flex-1">{t.text}</span>
+      <Icon name={icon} class="ui-icon" />
+      <span>{t.text}</span>
       {t.undo ? (
         <button
           type="button"
-          class="btn btn-sm"
+          class="ui-btn ui-btn-secondary"
           onClick={() => {
             onKill();
             t.undo?.();
           }}
         >
-          <Icon name="undo" class="size-3.5" />
+          <Icon name="undo" class="ui-icon" />
           Undo
         </button>
       ) : null}
       {t.action ? (
         <button
           type="button"
-          class="btn btn-sm min-h-[var(--ui-tap)]"
+          class="ui-btn ui-btn-secondary"
           onClick={() => {
             onKill();
             t.action?.run();
@@ -179,8 +177,8 @@ function ToastRow({ t, onKill }: { t: Toast; onKill: () => void }): JSX.Element 
           {t.action.label}
         </button>
       ) : null}
-      <button type="button" class="btn btn-ghost btn-icon" aria-label="Dismiss" onClick={onKill}>
-        <Icon name="x" class="size-3.5" />
+      <button type="button" class="ui-btn ui-btn-ghost ui-btn-icon" aria-label="Dismiss" onClick={onKill}>
+        <Icon name="x" class="ui-icon" />
       </button>
     </div>
   );

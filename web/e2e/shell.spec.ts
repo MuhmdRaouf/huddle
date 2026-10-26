@@ -308,6 +308,71 @@ test.describe("the update offer", () => {
     await Promise.all([page.waitForEvent("load"), reload.click()]);
     await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   });
+
+  test("the offer reads as one row above the tab bar, a 384 px card at the desktop's foot", async (
+    { page },
+    info,
+  ) => {
+    // the hub binary cannot change mid-run: the page's first /health answers the build it loaded
+    // with, and every later one names another launcher build of the same version
+    let answered = 0;
+    await page.route("**/health", async (route) => {
+      const real = await route.fetch();
+      const body = (await real.json()) as { executable: string };
+      answered += 1;
+      const executable = answered === 1 ? body.executable : `${body.executable}.next`;
+      await route.fulfill({ response: real, json: { ...body, executable } });
+    });
+    await open(page, "#/now");
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    const offer = page.getByRole("status").filter({ hasText: "Huddle updated" });
+    const reload = offer.getByRole("button", { name: "Reload" });
+    const dismiss = offer.getByRole("button", { name: "Dismiss" });
+    const text = offer.getByText("Huddle updated");
+    await expect(offer).toBeVisible();
+    await expect(reload).toBeVisible();
+    await expect(dismiss).toBeVisible();
+    await expect(text).toBeVisible();
+    // the toast grows in from a smaller scale: measure once the grow-in has ended
+    await expect.poll(async () => (await reload.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    const m = await page.evaluate(() => {
+      const row = [...document.querySelectorAll("[role='status']")].find((n) =>
+        n.textContent?.includes("Huddle updated"),
+      );
+      if (!(row instanceof HTMLElement)) throw new Error("no update toast");
+      const box = (el: Element) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right, bottom: r.bottom, width: r.width, cy: r.top + r.height / 2 };
+      };
+      const span = row.querySelector("span");
+      const buttons = [...row.querySelectorAll("button")];
+      const reload = buttons.find((b) => b.textContent?.includes("Reload"));
+      const dismiss = buttons.find((b) => b.getAttribute("aria-label") === "Dismiss");
+      if (!span || !reload || !dismiss) throw new Error("the toast is missing its text or a button");
+      const bar = document.querySelector("[data-nav='bottom']")?.getBoundingClientRect();
+      return {
+        row: box(row),
+        span: box(span),
+        reload: box(reload),
+        dismiss: box(dismiss),
+        barTop: bar?.top ?? null,
+        view: { w: window.innerWidth, h: window.innerHeight },
+      };
+    });
+    // one row: the text and Reload share a centre line, and Dismiss stands to Reload's right
+    expect(Math.abs(m.reload.cy - m.span.cy), "the text and Reload sit on one line").toBeLessThanOrEqual(4);
+    expect(m.dismiss.left, "Dismiss sits right of Reload").toBeGreaterThan(m.reload.right);
+    if (info.project.name === "desktop") {
+      expect(Math.abs(m.row.width - 384), `the card is ${m.row.width} px wide`).toBeLessThanOrEqual(1);
+      expect(Math.abs(m.view.w - m.row.right - 16), "16 px to the right edge").toBeLessThanOrEqual(1);
+      expect(Math.abs(m.view.h - m.row.bottom - 16), "16 px to the bottom edge").toBeLessThanOrEqual(1);
+    } else {
+      expect(Math.abs(m.row.left - 12), `${m.row.left} px to the left edge`).toBeLessThanOrEqual(1);
+      expect(Math.abs(m.view.w - m.row.right - 12), "12 px to the right edge").toBeLessThanOrEqual(1);
+      if (m.barTop == null) throw new Error("no tab bar on the page");
+      expect(m.barTop - m.row.bottom, "the row clears the tab bar by 8 px").toBeGreaterThanOrEqual(8);
+    }
+  });
 });
 
 test.describe("the utility layer", () => {

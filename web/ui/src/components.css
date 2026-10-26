@@ -727,3 +727,75 @@ button.ui-list-row:hover {
     border-radius: var(--ui-radius-lg) 0 0 var(--ui-radius-lg);
   }
 }
+
+/* Toast: a full-width stack above the phone's tab bar, a 384 px card at the desktop's foot on wide
+ * screens; the stack is a popover, so the UA's popover box is reset, and the rows take the pointer. */
+
+.ui-toast-stack {
+  position: fixed;
+  top: auto;
+  right: var(--ui-space-3);
+  bottom: calc(var(--ui-tabbar-h) + var(--ui-space-2));
+  left: var(--ui-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+  align-items: stretch;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+@media (min-width: 40rem) {
+  .ui-toast-stack {
+    right: var(--ui-space-4);
+    bottom: var(--ui-space-4);
+    left: auto;
+    /* 384 px, not a rem measure: a page may size its root below 16 px */
+    width: 384px;
+  }
+}
+
+.ui-toast {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-3);
+  padding: var(--ui-space-2) var(--ui-space-2) var(--ui-space-2) var(--ui-space-3);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font-size: var(--ui-text-sm);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 12px 32px -12px rgb(0 0 0 / 0.45);
+  pointer-events: auto;
+}
+
+.ui-toast > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.ui-toast-good > svg {
+  color: var(--ui-ok);
+}
+
+.ui-toast-bad {
+  border-color: var(--ui-fail);
+  background: var(--ui-fail-soft);
+}
+
+.ui-toast-bad > svg {
+  color: var(--ui-fail);
+}
+
+.ui-toast.out {
+  opacity: 0;
+  transition: opacity 0.15s;
+}

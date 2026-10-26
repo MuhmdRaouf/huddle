@@ -54,9 +54,13 @@ describe("toast stack", () => {
       </ToastProvider>,
     );
     await act(() => push("Saved"));
-    const row = screen.getByText("Saved").closest(".toast") as HTMLElement;
+    const row = screen.getByText("Saved").closest(".ui-toast") as HTMLElement;
     expect(row.getAttribute("role")).toBe("status");
-    expect(row.getAttribute("class")).toContain("hr-toast-good");
+    expect(row.getAttribute("class")).toContain("ui-toast-good");
+    // the row paints from the design system only: no placement wrapper, no foreign button class
+    const classes = (row.getAttribute("class") ?? "").split(" ");
+    expect(classes).not.toContain("toast");
+    expect(classes.some((c) => c.startsWith("btn"))).toBe(false);
     expect(row.querySelector("svg")).toBeTruthy();
     const stack = row.parentElement as HTMLElement;
     expect(stack.getAttribute("aria-live")).toBe("polite");
@@ -76,13 +80,13 @@ describe("toast stack", () => {
       </ToastProvider>,
     );
     await act(() => push("Failed", { bad: true }));
-    const row = screen.getByText("Failed").closest(".toast") as HTMLElement;
+    const row = screen.getByText("Failed").closest(".ui-toast") as HTMLElement;
     expect(row.getAttribute("role")).toBe("alert");
-    expect(row.getAttribute("class")).toContain("hr-toast-bad");
+    expect(row.getAttribute("class")).toContain("ui-toast-bad");
     await act(() => timers.run(5999));
     expect(screen.getByText("Failed")).toBeTruthy();
     await act(() => timers.run(1));
-    expect(screen.getByText("Failed").closest(".toast")?.getAttribute("class")).toContain("out");
+    expect(screen.getByText("Failed").closest(".ui-toast")?.getAttribute("class")).toContain("out");
     await act(() => timers.run(180));
     expect(screen.queryByText("Failed")).toBeNull();
   });
@@ -100,7 +104,7 @@ describe("toast stack", () => {
     await act(() => timers.run(2999));
     expect(screen.getByText("Copied")).toBeTruthy();
     await act(() => timers.run(1));
-    expect(screen.getByText("Copied").closest(".toast")?.getAttribute("class")).toContain("out");
+    expect(screen.getByText("Copied").closest(".ui-toast")?.getAttribute("class")).toContain("out");
     await act(() => timers.run(180));
     expect(screen.queryByText("Copied")).toBeNull();
   });
@@ -119,7 +123,7 @@ describe("toast stack", () => {
     await act(() => timers.run(7999));
     expect(screen.getByText("Deleted")).toBeTruthy();
     await act(() => timers.run(1));
-    expect(screen.getByText("Deleted").closest(".toast")?.getAttribute("class")).toContain("out");
+    expect(screen.getByText("Deleted").closest(".ui-toast")?.getAttribute("class")).toContain("out");
     await act(() => timers.run(180));
     expect(undo).not.toHaveBeenCalled();
     expect(screen.queryByText("Deleted")).toBeNull();
