@@ -81,19 +81,31 @@ func TestCaptureHashLeavesOutTheBillingBlock(t *testing.T) {
 		if routes[0].PromptHash == nil || routes[1].PromptHash == nil || *routes[0].PromptHash != *routes[1].PromptHash {
 			t.Errorf("the route events' prompt hashes = %v/%v, want one hash", routes[0].PromptHash, routes[1].PromptHash)
 		}
+		// The router writes its route events off the request path, so the two arrive in either
+		// order; each is found by its prompt id.
 		want := []struct {
 			promptID, prevReq string
 			turn              int64
 		}{{"p-1", "req_aaa", 3}, {"p-2", "req_bbb", 4}}
-		for i, route := range routes {
-			if route.PromptID == nil || *route.PromptID != want[i].promptID {
-				t.Errorf("route %d prompt_id = %v, want %q", i, route.PromptID, want[i].promptID)
+		for _, row := range want {
+			at := -1
+			for i := range routes {
+				if routes[i].PromptID != nil && *routes[i].PromptID == row.promptID {
+					if at >= 0 {
+						t.Fatalf("two route events carry prompt_id %q", row.promptID)
+					}
+					at = i
+				}
 			}
-			if route.PrevRequest == nil || *route.PrevRequest != want[i].prevReq {
-				t.Errorf("route %d prev_request = %v, want %q", i, route.PrevRequest, want[i].prevReq)
+			if at < 0 {
+				t.Fatalf("no route event carries prompt_id %q; the lane wrote %d route events", row.promptID, len(routes))
 			}
-			if route.TurnIndex == nil || *route.TurnIndex != want[i].turn {
-				t.Errorf("route %d turn_index = %v, want %d", i, route.TurnIndex, want[i].turn)
+			route := routes[at]
+			if route.PrevRequest == nil || *route.PrevRequest != row.prevReq {
+				t.Errorf("prompt %q prev_request = %v, want %q", row.promptID, route.PrevRequest, row.prevReq)
+			}
+			if route.TurnIndex == nil || *route.TurnIndex != row.turn {
+				t.Errorf("prompt %q turn_index = %v, want %d", row.promptID, route.TurnIndex, row.turn)
 			}
 		}
 		written := captures()
