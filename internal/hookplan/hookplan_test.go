@@ -49,8 +49,8 @@ func eventWord(command string) (word string, ok bool) {
 // wantParts is the coverage the old per-part hooks.json lines had, part for part and event for
 // event: the merged process must run exactly these, in this order.
 var wantParts = map[string][]string{
-	"session-start":      {"session-start", "report", "radar", "kanban", "providers"},
-	"user-prompt-submit": {"listen", "report", "radar"},
+	"session-start":      {"session-start", "tips", "report", "radar", "kanban", "providers"},
+	"user-prompt-submit": {"listen", "tips", "report", "radar"},
 	"pre-tool-use":       {"reserve", "report"},
 	"post-tool-use":      {"listen", "report"},
 	"notification":       {"report", "radar"},
@@ -123,6 +123,7 @@ func TestEveryPartKeepsItsHandlersWorstCase(t *testing.T) {
 	worst := map[string]time.Duration{
 		"session-start": 3000 * time.Millisecond,
 		"listen":        3000 * time.Millisecond,
+		"tips":          400 * time.Millisecond,
 		"report":        1900 * time.Millisecond,
 		"stop":          5500 * time.Millisecond,
 	}
@@ -160,6 +161,9 @@ func TestBudget(t *testing.T) {
 	}{
 		{"stop", "stop", 6000 * time.Millisecond, true},
 		{"session-start", "kanban", 2500 * time.Millisecond, true},
+		{"user-prompt-submit", "tips", 400 * time.Millisecond, true},
+		{"session-start", "tips", 500 * time.Millisecond, true},
+		{"stop", "tips", 0, false},
 		{"no-such-event", "report", 0, false},
 		{"pre-compact", "report", 0, false},
 	}

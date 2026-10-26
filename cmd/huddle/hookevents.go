@@ -179,6 +179,8 @@ func runNamedPart(ctx context.Context, name string, in io.Reader, out io.Writer)
 		hooks.SessionStart(ctx, hookWorld(), in, out)
 	case "listen":
 		hooks.Listen(ctx, hookWorld(), in, out)
+	case "tips":
+		hooks.Tips(ctx, hookWorld(), in, out)
 	case "reserve":
 		hooks.Reserve(ctx, hookWorld(), in, out)
 	case "stop":

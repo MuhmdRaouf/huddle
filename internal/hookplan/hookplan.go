@@ -24,6 +24,9 @@ func Events() map[string][]Part {
 	return map[string][]Part{
 		"session-start": {
 			{"session-start", 3000 * time.Millisecond},
+			// The session's own tip line: the first tip the hub holds that the session has
+			// not seen, once per tip.
+			{"tips", 500 * time.Millisecond},
 			{"report", 1900 * time.Millisecond},
 			{"radar", 1600 * time.Millisecond},
 			{"kanban", 2500 * time.Millisecond},
@@ -32,7 +35,10 @@ func Events() map[string][]Part {
 			{"providers", 4000 * time.Millisecond},
 		},
 		"user-prompt-submit": {
-			{"listen", 2600 * time.Millisecond},
+			// listen gives up the 400 ms the tips line needs: the event's 5 s sits at its
+			// 90 % floor.
+			{"listen", 2200 * time.Millisecond},
+			{"tips", 400 * time.Millisecond},
 			{"report", 1300 * time.Millisecond},
 			{"radar", 600 * time.Millisecond},
 		},

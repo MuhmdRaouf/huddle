@@ -179,6 +179,10 @@ and knowledge, whatever project each runs in.
 Messages (`huddle send`, `reply`), shared knowledge (`huddle remember`, `recall`) and the whole
 surface live in the huddle skill and `huddle help`.
 
+The dashboard's Insights card reads the hub's own tips and each session's. "Tips to my sessions"
+lets a session's own hooks ask for tips about it: with it on, a prompt or a start adds one line to
+the session's context when the hub has a tip about it, and each tip reaches a session once.
+
 ### Reach an idle session
 
 A message from the dashboard, a phone or the channel chat reaches an idle session at once only
