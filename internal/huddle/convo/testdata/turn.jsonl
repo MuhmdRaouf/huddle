@@ -1,0 +1,11 @@
+{"type":"user","uuid":"u1","timestamp":"2026-10-26T09:00:00.000Z","message":{"role":"user","content":"check the failing test"}}
+{"type":"assistant","uuid":"a1","timestamp":"2026-10-26T09:00:01.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu-1","name":"Bash","input":{"command":"go test ./internal/huddle/convo/"}}]}}
+{"type":"user","uuid":"u2","timestamp":"2026-10-26T09:00:02.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu-1","content":"ok"}]}}
+{"type":"system","subtype":"turn_duration","durationMs":99000,"isMeta":false,"timestamp":"2026-10-26T09:01:39.000Z"}
+{"type":"permission-mode","permissionMode":"default","sessionId":"s-1"}
+{"type":"user","uuid":"u3","timestamp":"2026-10-26T09:02:00.000Z","message":{"role":"user","content":[{"type":"text","text":"now fix it"}]}}
+{"type":"user","uuid":"u4","timestamp":"2026-10-26T09:02:01.000Z","isMeta":true,"message":{"role":"user","content":"a meta line is no prompt"}}
+{"type":"user","uuid":"u5","timestamp":"2026-10-26T09:02:02.000Z","isSidechain":true,"message":{"role":"user","content":"a subagent's line is no prompt"}}
+{"type":"permission-mode","permissionMode":"bypassPermissions","sessionId":"s-1"}
+{"type":"assistant","uuid":"a2","timestamp":"2026-10-26T09:02:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"working on it"}]}}
+{"type":"user","uuid":"u6","timestamp":"2026-10-26T09:02:04.000Z","message":{"role":"user","content":"half a prompt, still being written"}}

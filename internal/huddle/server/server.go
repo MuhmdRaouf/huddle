@@ -1356,6 +1356,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.agentSendRoute(w, r, path, me)
 	case credentialed && sessionTasksPath.MatchString(path) && r.Method == http.MethodGet:
 		return s.sessionTasksRoute(w, r, path)
+	case credentialed && sessionTurnPath.MatchString(path) && r.Method == http.MethodGet:
+		return s.sessionTurnRoute(w, r, path)
 	case credentialed && agentShellsPath.MatchString(path) && r.Method == http.MethodGet:
 		return s.agentShellsRoute(w, r, path)
 	case credentialed && agentShellOutputPath.MatchString(path) && r.Method == http.MethodGet:
