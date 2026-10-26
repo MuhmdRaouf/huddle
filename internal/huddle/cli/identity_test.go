@@ -28,8 +28,7 @@ func TestEnvWinsElseTheNearestAgentsHuddleHuddleJSONUpFromTheCwdElseDefaults(t *
 			t.Fatal(err)
 		}
 	}
-	// .agents/huddle/huddle.json wins over the legacy .agents/.huddle.json beside it
-	writeFile(t, filepath.Join(root, ".agents", ".huddle.json"), `{"channel": "legacy", "as": "old"}`)
+	// .agents/huddle/huddle.json is the project's settings file
 	writeFile(t, filepath.Join(root, ".agents", "huddle", "huddle.json"),
 		`{"channel": "shop", "as": "api", "role": "fixes", "url": "http://127.0.0.1:9000/", "push": ["ask", "task.ready"], "wait": 600}`)
 	cwd := realDir(t, filepath.Join(root, "a", "b"))
@@ -72,6 +71,15 @@ func TestEnvWinsElseTheNearestAgentsHuddleHuddleJSONUpFromTheCwdElseDefaults(t *
 	blank, _ := who(t, cwd, map[string]string{"HUDDLE_URL": "", "HUDDLE_AS": "", "HUDDLE_WAIT": ""})
 	if blank.As != "api" || blank.URL != "http://127.0.0.1:9000" || blank.Wait != 600 {
 		t.Errorf("empty vars = %+v", blank)
+	}
+	// a directory holding only .agents/.huddle.json finds no config there
+	old := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(old, ".agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(old, ".agents", ".huddle.json"), `{"channel": "shop", "as": "api"}`)
+	if id, _ := who(t, realDir(t, old), nil); id.Channel != "" || id.As != "" || id.File != "" {
+		t.Errorf("a stray .agents/.huddle.json read as a config: %+v", id)
 	}
 	// nothing anywhere: no url yet, no fixed port, the defaults
 	none, noneHome := who(t, realDir(t, t.TempDir()), nil)
@@ -129,10 +137,10 @@ func TestAGitWorktreeOutsideItsRepoSharesTheMainCheckoutsSettingsAndFiles(t *tes
 		t.Errorf("home = %q, want the user's ~/.config/huddle", home)
 	}
 	// the worktree's own file, when it has one, wins
-	if err := os.MkdirAll(filepath.Join(wt, ".agents"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(wt, ".agents", "huddle"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(wt, ".agents", ".huddle.json"), `{"channel": "other", "as": "x"}`)
+	writeFile(t, filepath.Join(wt, ".agents", "huddle", "huddle.json"), `{"channel": "other", "as": "x"}`)
 	own, _ := who(t, realDir(t, wt), nil)
 	if own.Channel != "other" || own.As != "x" {
 		t.Errorf("own file identity = %+v", own)
@@ -174,10 +182,10 @@ func TestTheJoinContextHuddleContextOrTheFilesContextWinsAutoMapsTheSessionStart
 		t.Errorf("a setting of sync or fresh wins")
 	}
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agents"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agents", "huddle"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(root, ".agents", ".huddle.json"), `{"channel": "shop", "as": "api", "context": "fresh"}`)
+	writeFile(t, filepath.Join(root, ".agents", "huddle", "huddle.json"), `{"channel": "shop", "as": "api", "context": "fresh"}`)
 	cwd := realDir(t, root)
 	if id, _ := who(t, cwd, nil); id.Context != "fresh" {
 		t.Errorf("the file's context: %+v", id)

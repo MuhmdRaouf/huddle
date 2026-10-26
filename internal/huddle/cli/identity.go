@@ -7,7 +7,7 @@
 //
 // Environment first (HUDDLE_URL, HUDDLE_CHANNEL, HUDDLE_AS, …; an empty variable counts as
 // unset), then the nearest .agents/huddle/huddle.json walking up from the project dir
-// (CLAUDE_PROJECT_DIR) or the cwd (a .agents/.huddle.json is read too; huddle.json wins).
+// (CLAUDE_PROJECT_DIR) or the cwd.
 // Worktrees share the main checkout's file: one nested under the repo finds it walking up;
 // one elsewhere finds it through git (the main checkout of its common .git dir). A worktree's
 // own file, if any, wins. Last, what this session joined with
@@ -55,9 +55,6 @@ type Identity struct {
 // FileRel is the project's settings file, under its .agents/huddle.
 const FileRel = ".agents/huddle/huddle.json"
 
-// LegacyRel is the settings file's earlier spelling, one folder up.
-const LegacyRel = ".agents/.huddle.json"
-
 // gitdirLine reads the "gitdir: <path>" line of a worktree's .git file.
 var gitdirLine = regexp.MustCompile(`(?m)^gitdir:\s*(.+)$`)
 
@@ -83,27 +80,23 @@ func readConfig(path string) (*jsfmt.Value, bool) {
 }
 
 // FindConfig walks up from from (the project dir, else the world's working directory) looking
-// for the project's settings: huddle.json first, the legacy .huddle.json beside it, in each
-// directory on the way up; nothing there means the main checkout of the repo around from. A
-// file that exists but cannot be read stops the walk with no config: a torn file is never
-// stepped over for an older one.
+// for the project's settings file, .agents/huddle/huddle.json, in each directory on the way up;
+// nothing there means the main checkout of the repo around from. A file that exists but cannot
+// be read stops the walk with no config: a torn file is never stepped over.
 func FindConfig(ctx context.Context, w *World, from string) *Config {
 	if from == "" {
 		from = firstNonEmpty(w.getenv("CLAUDE_PROJECT_DIR"), w.dir())
 	}
 	at := func(dir string) (*Config, bool) {
-		for _, rel := range []string{FileRel, LegacyRel} {
-			path := filepath.Join(dir, rel)
-			if _, err := os.Stat(path); err != nil {
-				continue
-			}
-			cfg, ok := readConfig(path)
-			if !ok {
-				return nil, true // unreadable: this directory's answer is "none"
-			}
-			return &Config{File: path, Cfg: cfg, Root: dir}, true
+		path := filepath.Join(dir, FileRel)
+		if _, err := os.Stat(path); err != nil {
+			return nil, false
 		}
-		return nil, false
+		cfg, ok := readConfig(path)
+		if !ok {
+			return nil, true // unreadable: this directory's answer is "none"
+		}
+		return &Config{File: path, Cfg: cfg, Root: dir}, true
 	}
 	for dir := from; ; dir = filepath.Dir(dir) {
 		if found, stop := at(dir); stop {

@@ -106,8 +106,7 @@ func setup(ctx context.Context, w *World, sub string, o *flags, url string, stdo
 		root = firstNonEmpty(w.getenv("CLAUDE_PROJECT_DIR"), w.dir())
 	}
 	file := filepath.Join(root, FileRel)
-	legacy := filepath.Join(root, LegacyRel)
-	next := mergeSettings(readSettings(legacy), readSettings(file))
+	next := readSettings(file)
 	if o.truthy("channel") {
 		channel, _ := o.str("channel")
 		as, _ := o.str("as")
@@ -142,10 +141,6 @@ func setup(ctx context.Context, w *World, sub string, o *flags, url string, stdo
 	_ = os.MkdirAll(filepath.Dir(file), 0o755)
 	_ = os.WriteFile(file, []byte(indentJSON(next.value())+"\n"), 0o644)
 	say(file + ": " + next.value().EncodeJSON())
-	if _, err := os.Stat(legacy); err == nil {
-		_ = os.Remove(legacy)
-		say("folded " + legacy + " into it")
-	}
 	if excluded := KeepOutOfGit(ctx, w, filepath.Join(root, ".agents", "huddle")); excluded != "" {
 		say("kept .agents/huddle/ out of git (" + excluded + ")")
 	}
@@ -226,16 +221,6 @@ func readSettings(path string) *settings {
 		return &settings{v: jsfmt.Object(nil, nil)}
 	}
 	return &settings{v: value}
-}
-
-// mergeSettings layers one file's settings over another's, keeping the base's key order and
-// replacing values in place (the legacy file's keys come first, the current file wins).
-func mergeSettings(base, over *settings) *settings {
-	merged := &settings{v: base.v}
-	for i, key := range over.v.Keys() {
-		merged.set(key, over.v.Fields()[i])
-	}
-	return merged
 }
 
 // value answers the settings as a JSON value.

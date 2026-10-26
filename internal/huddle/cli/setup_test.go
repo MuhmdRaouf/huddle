@@ -147,28 +147,32 @@ func TestSetupChannelAndAsGoTogetherAndUnknownSubsRefuse(t *testing.T) {
 	}
 }
 
-// A .agents/.huddle.json is folded into huddle.json and removed; the settings keep their shape.
-func TestSetupFoldsTheLegacyFileAndKeepsTheSettingsShape(t *testing.T) {
+// The settings file is .agents/huddle/huddle.json alone: a project holding only
+// .agents/.huddle.json gets the project's own names, the stray file stays as it is, and setup
+// says nothing about folding.
+func TestSetupReadsHuddleJSONAloneAndLeavesAStrayDotHuddleJSONInert(t *testing.T) {
 	proj := t.TempDir()
 	gitInit(t, proj)
 	if err := os.MkdirAll(filepath.Join(proj, ".agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(proj, ".agents", ".huddle.json"), `{"channel":"old","as":"alpha","role":"kept"}`)
+	stray := filepath.Join(proj, ".agents", ".huddle.json")
+	writeFile(t, stray, `{"channel":"old","as":"alpha"}`)
 	w := setupWorld(t, proj, nil)
-	code, out, errOut := runSetup(t, w, "--channel", "s1", "--as", "alpha", "--autostart")
+	code, out, errOut := runSetup(t, w)
 	if code != 0 || errOut != "" {
-		t.Fatalf("setup: %d %q", code, errOut)
+		t.Fatalf("setup: %d %q %q", code, out, errOut)
 	}
 	file := filepath.Join(proj, ".agents", "huddle", "huddle.json")
-	if raw := readFile(t, file); raw != "{\n  \"channel\": \"s1\",\n  \"as\": \"alpha\",\n  \"role\": \"kept\",\n  \"autostart\": true\n}\n" {
-		t.Errorf("the file %q", raw)
+	name := Slug(proj, "huddle")
+	if raw := readFile(t, file); raw != "{\n  \"channel\": \""+name+"\",\n  \"as\": \""+name+"\",\n  \"autostart\": true\n}\n" {
+		t.Errorf("the file %q, want the project's own names", raw)
 	}
-	if _, err := os.Stat(filepath.Join(proj, ".agents", ".huddle.json")); !os.IsNotExist(err) {
-		t.Error("the legacy file stayed")
+	if raw := readFile(t, stray); raw != `{"channel":"old","as":"alpha"}` {
+		t.Errorf("the stray file changed: %q", raw)
 	}
-	if !strings.Contains(out, "folded "+filepath.Join(proj, ".agents", ".huddle.json")+" into it") {
-		t.Errorf("the fold line %q", out)
+	if strings.Contains(out, "folded") {
+		t.Errorf("setup announced a fold: %q", out)
 	}
 	exclude := filepath.Join(proj, ".git", "info", "exclude")
 	if raw := readFile(t, exclude); !strings.Contains(raw, ".agents/huddle/") {
@@ -177,8 +181,14 @@ func TestSetupFoldsTheLegacyFileAndKeepsTheSettingsShape(t *testing.T) {
 	if !strings.Contains(out, "kept .agents/huddle/ out of git ("+exclude+")") {
 		t.Errorf("the git line %q", out)
 	}
-	if out, _ := exec.Command("git", "-C", proj, "status", "--porcelain").Output(); len(out) != 0 {
-		t.Errorf("git status is not clean: %q", out)
+	status, err := exec.Command("git", "-C", proj, "status", "--porcelain").Output()
+	if err != nil {
+		t.Fatalf("git status: %v", err)
+	}
+	// git names the whole .agents/ folder, collapsed: the kept-out .agents/huddle/ is excluded,
+	// the stray file is the only untracked one left in it
+	if string(status) != "?? .agents/\n" {
+		t.Errorf("git status = %q, want only the stray file's folder", status)
 	}
 }
 
