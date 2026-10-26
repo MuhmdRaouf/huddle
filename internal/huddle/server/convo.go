@@ -5,17 +5,14 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"regexp"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/convo"
 )
 
@@ -32,63 +29,80 @@ func (s *server) conversationRoute(w http.ResponseWriter, r *http.Request, path 
 		return s.needsUnavailable()
 	}
 	id := conversationPath.FindStringSubmatch(path)[1]
-	after := int64(0)
-	if raw := r.URL.Query().Get("after"); raw != "" {
-		parsed, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || parsed < 0 {
-			return &channel.HuddleError{Status: 400, Msg: "after must be a non-negative whole number"}
-		}
-		after = parsed
-	}
-	row, err := s.registry.SessionRow(r.Context(), id, s.now())
+	cursor, err := s.sessionCursorOf(r, id)
 	if err != nil {
 		return err
 	}
-	if row == nil {
-		return &channel.HuddleError{Status: 404, Msg: "no such session"}
-	}
-	transcript, err := s.registry.TranscriptPath(r.Context(), id)
+	page, err := readPage(r.Context(), cursor.transcript, cursor.after, convo.Read)
 	if err != nil {
 		return err
-	}
-	page := convo.Page{Items: []convo.Item{}, Next: after}
-	if transcript != "" {
-		read, err := convo.Read(r.Context(), transcript, after)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-		if err == nil {
-			page = read
-		}
 	}
 	s.writeJSON(w, 200, page, nil)
 	return nil
 }
 
-// grewEvent is one conversation.grew event's data: which session, and how many bytes its
-// transcript now holds.
+// grewEvent is one conversation.grew event's data: which session, which of its agents, and how
+// many bytes that transcript now holds.
 type grewEvent struct {
 	SessionID string `json:"session_id"`
+	Agent     string `json:"agent"`
 	Size      int64  `json:"size"`
 }
 
 // emitConversationGrew fans one conversation.grew event out to every open registry stream, so
 // a page holding the conversation refetches it from its cursor. Best effort, like every emit.
-func (s *server) emitConversationGrew(id string, size int64) {
+func (s *server) emitConversationGrew(id, agent string, size int64) {
 	encoded, err := domain.MarshalCompactJSON(struct {
 		Type string    `json:"type"`
 		Data grewEvent `json:"data"`
-	}{"conversation.grew", grewEvent{SessionID: id, Size: size}})
+	}{"conversation.grew", grewEvent{SessionID: id, Agent: agent, Size: size}})
 	if err != nil {
 		return
 	}
 	s.fanRegistryRow("data: " + string(encoded) + "\n\n")
 }
 
-// watchTranscripts tells every open registry stream which live transcripts grew, each pass:
-// the sizes are the watch's own, a session no longer listed leaving the map. A pass with no
-// stream open stats nothing; a first sighting records a size and fans nothing, so a session
-// the watch meets mid-life starts at the size it already is.
+// transcriptFile is one transcript the watch tracks: which of the session's agents it belongs
+// to, and how many bytes it holds.
+type transcriptFile struct {
+	agent string
+	size  int64
+}
+
+// agentTranscripts stats one session's main transcript and reads its subagents folder once: the
+// main as agent main, each agent-<id>.jsonl beside it as its id from the name. A main the disk
+// lost, and a session with no subagents folder, answer what is there.
+func agentTranscripts(path string) []transcriptFile {
+	var out []transcriptFile
+	if info, err := os.Stat(path); err == nil {
+		out = append(out, transcriptFile{agent: convo.MainAgent, size: info.Size()})
+	}
+	entries, err := os.ReadDir(convo.SubagentsDir(path))
+	if err != nil {
+		return out
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "agent-") || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		agent := strings.TrimSuffix(strings.TrimPrefix(entry.Name(), "agent-"), ".jsonl")
+		if agent == "" {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		out = append(out, transcriptFile{agent: agent, size: info.Size()})
+	}
+	return out
+}
+
+// watchTranscripts tells every open registry stream which live transcripts grew, each pass,
+// keyed by session and agent: the main transcript and every subagent's beside it. The sizes are
+// the watch's own, a transcript no longer listed leaving the map. A pass with no stream open
+// stats nothing; a first sighting records a size and fans nothing, so a session the watch meets
+// mid-life starts at the size it already is.
 func (s *server) watchTranscripts(ctx context.Context) {
 	interval := time.Duration(s.o.TranscriptCheckMS) * time.Millisecond
 	if interval <= 0 {
@@ -113,19 +127,20 @@ func (s *server) watchTranscripts(ctx context.Context) {
 				fmt.Fprintf(s.o.Stderr, "registry: transcript watch: %v\n", err)
 				continue
 			}
+			present := map[string]bool{}
 			for id, path := range live {
-				info, err := os.Stat(path)
-				if err != nil {
-					continue
+				for _, transcript := range agentTranscripts(path) {
+					key := id + "/" + transcript.agent
+					present[key] = true
+					if seen, ok := sizes[key]; ok && transcript.size > seen {
+						s.emitConversationGrew(id, transcript.agent, transcript.size)
+					}
+					sizes[key] = transcript.size
 				}
-				if seen, ok := sizes[id]; ok && info.Size() > seen {
-					s.emitConversationGrew(id, info.Size())
-				}
-				sizes[id] = info.Size()
 			}
-			for id := range sizes {
-				if _, ok := live[id]; !ok {
-					delete(sizes, id)
+			for key := range sizes {
+				if !present[key] {
+					delete(sizes, key)
 				}
 			}
 		}

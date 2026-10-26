@@ -182,6 +182,38 @@ func TestTheReaderStopsPastMaxRead(t *testing.T) {
 	}
 }
 
+func TestReadAgentKeepsSidechainLines(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "agent-x9.jsonl")
+	body := strings.Join([]string{
+		`{"type":"user","uuid":"u1","timestamp":"2026-10-26T10:00:01.000Z","isSidechain":true,"message":{"role":"user","content":"scan the files"}}`,
+		`{"type":"assistant","uuid":"a1","timestamp":"2026-10-26T10:00:02.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"Scanned."}]}}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	main, err := Read(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("read as a main transcript: %v", err)
+	}
+	if len(main.Items) != 0 {
+		t.Errorf("the main read answered %d sidechain items, want none", len(main.Items))
+	}
+
+	agent, err := ReadAgent(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("read as an agent transcript: %v", err)
+	}
+	checkItems(t, agent.Items, []Item{
+		{ID: "u1:0", Kind: KindUser, At: "2026-10-26T10:00:01.000Z", Text: "scan the files"},
+		{ID: "a1:0", Kind: KindAssistant, At: "2026-10-26T10:00:02.000Z", Text: "Scanned."},
+	})
+	if agent.Next != int64(len(body)) {
+		t.Errorf("the agent read stops at %d, want the file's %d bytes", agent.Next, len(body))
+	}
+}
+
 func TestTheReaderAnswersTheMissingFile(t *testing.T) {
 	_, err := Read(context.Background(), filepath.Join(t.TempDir(), "gone.jsonl"), 0)
 	if !errors.Is(err, fs.ErrNotExist) {

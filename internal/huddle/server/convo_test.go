@@ -51,6 +51,32 @@ const (
 	convoAnswerLine = `{"type":"assistant","uuid":"a1","timestamp":"2026-10-26T10:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Running them."}]}}`
 )
 
+// a subagent's prompt and answer, sidechain lines like Claude Code writes them
+const (
+	subagentPromptLine = `{"type":"user","uuid":"bu1","timestamp":"2026-10-26T10:00:05.000Z","isSidechain":true,"message":{"role":"user","content":"tab work"}}`
+	subagentAnswerLine = `{"type":"assistant","uuid":"ba1","timestamp":"2026-10-26T10:00:06.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"Done."}]}}`
+)
+
+// writeAgentLive writes one live session with one subagent beside it, Claude Code's layout, and
+// answers the main transcript's path.
+func writeAgentLive(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	main := filepath.Join(dir, "s.jsonl")
+	if err := os.WriteFile(main, []byte(convoPromptLine+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(dir, "s", "subagents")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	agent := filepath.Join(sub, "agent-b2.jsonl")
+	if err := os.WriteFile(agent, []byte(subagentPromptLine+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return main
+}
+
 // itemsOf reads one conversation answer's items.
 func itemsOf(t *testing.T, body string) []map[string]any {
 	t.Helper()
@@ -196,6 +222,39 @@ func TestTheRegistryStreamSaysWhenATranscriptGrows(t *testing.T) {
 	data := nextRegistryEvent(t, frames, "conversation.grew")
 	if data["session_id"] != "s-1" {
 		t.Errorf("grew = %v, want session s-1", data)
+	}
+	if data["agent"] != "main" {
+		t.Errorf("grew = %v, want the main agent", data)
+	}
+	if size, _ := data["size"].(float64); int64(size) != int64(len(whole)) {
+		t.Errorf("grew size = %v, want %d", data["size"], len(whole))
+	}
+}
+
+func TestTheRegistryStreamSaysWhenASubagentTranscriptGrows(t *testing.T) {
+	srv := startServer(t, map[string]string{"HUDDLE_TRANSCRIPT_CHECK_MS": "50"})
+	main := writeAgentLive(t)
+	agent := filepath.Join(filepath.Dir(main), "s", "subagents", "agent-b2.jsonl")
+	reportConvoSession(t, srv, "s-1", main)
+	frames := openRegistryLive(t, srv)
+	nextRegistryEvent(t, frames, "hello")
+
+	// let a tick pass so the watch has seen both transcripts at their first sizes
+	time.Sleep(250 * time.Millisecond)
+
+	whole := joinLines([]string{subagentPromptLine, subagentAnswerLine})
+	file, err := os.OpenFile(agent, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(subagentAnswerLine + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+
+	data := nextRegistryEvent(t, frames, "conversation.grew")
+	if data["session_id"] != "s-1" || data["agent"] != "b2" {
+		t.Errorf("grew = %v, want session s-1's agent b2", data)
 	}
 	if size, _ := data["size"].(float64); int64(size) != int64(len(whole)) {
 		t.Errorf("grew size = %v, want %d", data["size"], len(whole))

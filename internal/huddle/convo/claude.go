@@ -83,6 +83,18 @@ type contentBlock struct {
 // complete lines count: a torn last line is left unconsumed, so Next stops at its first byte and
 // the next read takes it whole. A missing file answers the os error; an empty read answers [].
 func Read(ctx context.Context, path string, after int64) (Page, error) {
+	return read(ctx, path, after, false)
+}
+
+// ReadAgent answers the conversation items of one agent's transcript at path, the same rules as
+// Read but keeping the sidechain lines a subagent's transcript is made of.
+func ReadAgent(ctx context.Context, path string, after int64) (Page, error) {
+	return read(ctx, path, after, true)
+}
+
+// read walks the transcript's complete lines past after, decoding each into items; meta lines are
+// harness-injected either way, and a subagent's sidechain lines count only when keepSidechain.
+func read(ctx context.Context, path string, after int64, keepSidechain bool) (Page, error) {
 	page := Page{Items: []Item{}}
 	file, err := os.Open(path)
 	if err != nil {
@@ -102,7 +114,7 @@ func Read(ctx context.Context, path string, after int64) (Page, error) {
 		raw, err := reader.ReadBytes('\n')
 		if len(raw) > 0 && raw[len(raw)-1] == '\n' {
 			consumed += int64(len(raw))
-			page.Items = append(page.Items, itemsOf(raw)...)
+			page.Items = append(page.Items, itemsOf(raw, keepSidechain)...)
 			if consumed > MaxRead {
 				break
 			}
@@ -119,13 +131,14 @@ func Read(ctx context.Context, path string, after int64) (Page, error) {
 }
 
 // itemsOf decodes one complete transcript line into its items, in content order. A line that is
-// not JSON, not a user or assistant turn, a subagent's, or harness-injected yields nothing.
-func itemsOf(raw []byte) []Item {
+// not JSON, not a user or assistant turn, or harness-injected yields nothing; a subagent's
+// sidechain line yields nothing unless keepSidechain.
+func itemsOf(raw []byte, keepSidechain bool) []Item {
 	var line transcriptLine
 	if err := json.Unmarshal(raw, &line); err != nil {
 		return nil
 	}
-	if line.IsSidechain || line.IsMeta {
+	if line.IsMeta || (line.IsSidechain && !keepSidechain) {
 		return nil
 	}
 	switch line.Type {
