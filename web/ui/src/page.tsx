@@ -31,7 +31,7 @@ export function PageIntro({ icon, title, description, actions, bare = false }: P
           </span>
         )}
         <div class="min-w-0">
-          {bare ? null : <h1 class="text-2xl font-semibold leading-tight tracking-tight">{title}</h1>}
+          {bare ? null : <h1 class="text-xl font-semibold leading-tight tracking-tight">{title}</h1>}
           <p class={`max-w-[72ch] text-[0.9375rem] leading-snug text-base-content/65${bare ? "" : " mt-1"}`}>
             {description}
           </p>

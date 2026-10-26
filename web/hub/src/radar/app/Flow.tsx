@@ -255,7 +255,7 @@ function FlowSummary({
   return (
     <div class="grid content-start gap-4">
       <div>
-        <span class="block text-3xl leading-tight font-semibold num" data-role="hero-value">
+        <span class="block text-xl leading-tight font-semibold num" data-role="hero-value">
           <FlowFigure
             ready={hero.value !== null}
             failed={failed}

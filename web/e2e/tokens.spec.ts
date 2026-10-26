@@ -3,6 +3,8 @@
 // horizontal scroll, keep every tap target at least 44 px, pass axe in the light and the dark
 // scheme, follow the OS scheme, and keep the switch's override across a reload. The tokens
 // themselves compute for the pointer and the motion setting, and the page runs the system font.
+// Tailwind's utilities compute from the tokens too: a text-sm element matches --ui-text-sm and a
+// p-4 element pads four --ui-space-1.
 
 import { expect, test, type Page } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
@@ -90,6 +92,48 @@ test.describe("the design tokens page", () => {
     });
     expect(fonts.body).not.toMatch(/Plex|IBM/);
     expect(fonts.families.filter((family) => /Plex/i.test(family))).toEqual([]);
+  });
+
+  test("a text-sm and a p-4 element compute from the tokens", async ({ page }) => {
+    await openTokens(page);
+    // The route renders the component blocks alone, so the two Tailwind specimens are injected
+    // here and measured against probes that resolve the same token straight from :root.
+    const got = await page.evaluate(() => {
+      const specimen = (cls: string): HTMLElement => {
+        const el = document.createElement("div");
+        el.className = cls;
+        document.body.append(el);
+        return el;
+      };
+      // The dashboard's CSP allows no style attributes, so the probes take their declarations
+      // through the CSSOM, which the browser does not strip.
+      const probe = (run: (el: HTMLElement) => void): HTMLElement => {
+        const el = document.createElement("div");
+        run(el);
+        document.body.append(el);
+        return el;
+      };
+      const px = (el: HTMLElement, side: keyof CSSStyleDeclaration): number =>
+        Number.parseFloat(String(getComputedStyle(el)[side]));
+      const sm = specimen("text-sm");
+      const p4 = specimen("p-4");
+      const smProbe = probe((el) => {
+        el.style.fontSize = "var(--ui-text-sm)";
+      });
+      const p4Probe = probe((el) => {
+        el.style.padding = "calc(var(--ui-space-1) * 4)";
+      });
+      const out = {
+        sm: px(sm, "fontSize"),
+        smWant: px(smProbe, "fontSize"),
+        p4: px(p4, "paddingTop"),
+        p4Want: px(p4Probe, "paddingTop"),
+      };
+      for (const el of [sm, p4, smProbe, p4Probe]) el.remove();
+      return out;
+    });
+    expect(got.sm, `text-sm is ${got.sm}px, --ui-text-sm is ${got.smWant}px`).toBeCloseTo(got.smWant);
+    expect(got.p4, `p-4 pads ${got.p4}px, --ui-space-1 * 4 is ${got.p4Want}px`).toBeCloseTo(got.p4Want);
   });
 
   for (const scheme of ["light", "dark"] as const) {

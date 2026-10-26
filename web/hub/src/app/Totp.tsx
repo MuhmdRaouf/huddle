@@ -46,7 +46,7 @@ function QRCode({ rows, label }: { rows: string[]; label: string }): JSX.Element
     }
   });
   return (
-    <div class="inline-flex rounded-[var(--ui-radius)] bg-white p-3" data-qr="">
+    <div class="inline-flex rounded-[var(--ui-radius)] bg-[var(--ui-qr-bg)] p-3" data-qr="">
       <svg
         viewBox={`0 0 ${n} ${n}`}
         shapeRendering="crispEdges"

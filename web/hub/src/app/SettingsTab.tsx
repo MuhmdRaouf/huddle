@@ -328,7 +328,7 @@ export function Phone(): JSX.Element {
               alt="QR code: the phone's trust guide"
               width={160}
               height={160}
-              class="size-40 shrink-0 rounded-lg bg-white p-2"
+              class="size-40 shrink-0 rounded-lg bg-[var(--ui-qr-bg)] p-2"
             />
             <code class="ui-mono break-all text-xs">{guide.fingerprint}</code>
             <p class={NOTE}>

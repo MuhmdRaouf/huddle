@@ -61,7 +61,7 @@ function Figure({ label, value, sub }: { label: string; value: string; sub: stri
   return (
     <div class="min-w-0">
       <div class="text-xs text-[var(--ui-muted)]">{label}</div>
-      <div class="num mt-0.5 text-xl font-semibold md:text-2xl">{value}</div>
+      <div class="num mt-0.5 text-xl font-semibold">{value}</div>
       <div class="num mt-0.5 text-xs text-[var(--ui-muted)]">{sub}</div>
     </div>
   );
@@ -76,7 +76,7 @@ function LiveBlock({ block, approximate, now }: { block: UsageBlock; approximate
   return (
     <div class="grid gap-4" data-active-block="">
       <div class="grid items-baseline gap-x-4 sm:grid-cols-[auto_1fr]">
-        <div class="num text-3xl font-semibold" data-block-left="">
+        <div class="num text-xl font-semibold" data-block-left="">
           {fmtDuration(left)}
           <span class="ml-1 text-sm font-normal text-[var(--ui-muted)]">left</span>
         </div>

@@ -87,7 +87,7 @@ function AdvisorCard({ report }: { report: AdvisorReport }) {
       ) : (
         <>
           <p class="m-0 flex flex-wrap items-baseline gap-x-3">
-            <span class="num text-3xl leading-none font-semibold">{fmtNum(report.candidates)}</span>
+            <span class="num text-xl leading-none font-semibold">{fmtNum(report.candidates)}</span>
             <span class="text-sm text-[var(--ui-muted)]">
               {`of ${fmtCount(report.runsChecked, "run")} look flash-sized${report.savingUsd === null ? "" : `, est. saving ${fmtUsd(report.savingUsd)}`}`}
             </span>

@@ -201,7 +201,7 @@ function Stat({
   return (
     <div class="ui-card w-full p-4 md:p-5">
       <div class="text-sm text-[var(--ui-muted)]">{title}</div>
-      <div class="num mt-0.5 text-2xl font-semibold">{value}</div>
+      <div class="num mt-0.5 text-xl font-semibold">{value}</div>
       <div class="mt-1 text-xs text-[var(--ui-muted)]">{subline}</div>
     </div>
   );

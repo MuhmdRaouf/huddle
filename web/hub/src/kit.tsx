@@ -182,7 +182,7 @@ export function Stat({
             </span>
           ) : null}
         </div>
-        <div class="stat-value num text-3xl font-semibold">{value}</div>
+        <div class="stat-value num text-xl font-semibold">{value}</div>
         {sub ? <div class="stat-desc text-xs whitespace-normal">{sub}</div> : null}
       </div>
     </div>

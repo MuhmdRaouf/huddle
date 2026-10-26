@@ -42,7 +42,7 @@ function Stat({
     <div class="stats panel w-full">
       <div class="stat w-full p-5">
         <div class="stat-title text-sm font-normal text-base-content/65">{title}</div>
-        <div class="stat-value num text-3xl font-semibold">{value}</div>
+        <div class="stat-value num text-xl font-semibold">{value}</div>
         {subline !== null && <div class="stat-desc text-xs whitespace-normal">{subline}</div>}
       </div>
     </div>

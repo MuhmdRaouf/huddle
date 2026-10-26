@@ -729,7 +729,7 @@ export function NowPane({
     <div class="flex min-h-0 min-w-0 flex-col" data-now-pane="">
       {layout === "tablet" ? (
         <header class="flex shrink-0 items-center justify-between px-4 pt-5 pb-3">
-          <h1 class="text-2xl font-semibold tracking-tight">Now</h1>
+          <h1 class="text-xl font-semibold tracking-tight">Now</h1>
           <MachinesLine live={st.live} text={machinesLine(layout, machinesOf(st.sessions))} />
         </header>
       ) : null}

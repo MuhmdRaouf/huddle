@@ -29,7 +29,7 @@ function Figure({ name, word, value }: { name: string; word: string; value: numb
   return (
     <div class="min-w-0">
       <div class="text-xs text-[var(--ui-muted)]">{word}</div>
-      <div class="num mt-0.5 text-2xl font-semibold md:text-[26px]" data-day={name}>
+      <div class="num mt-0.5 text-xl font-semibold md:text-[26px]" data-day={name}>
         {fmtNum(value)}
       </div>
     </div>

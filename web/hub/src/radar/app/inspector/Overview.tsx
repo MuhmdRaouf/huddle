@@ -93,7 +93,7 @@ function Stat({
   return (
     <div class="ui-card flex min-w-0 flex-col gap-1 p-4" data-stat={title}>
       <span class={`text-xs ${MUTED}`}>{title}</span>
-      <span class={`ui-mono text-2xl font-semibold ${valueClass}`} data-stat-value>
+      <span class={`ui-mono text-xl font-semibold ${valueClass}`} data-stat-value>
         {value}
       </span>
       <span class={`text-xs ${MUTED}`} data-stat-desc>

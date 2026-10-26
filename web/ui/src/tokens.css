@@ -44,6 +44,9 @@
   --ui-muted: light-dark(#545b69, #a4abb8);
   --ui-text: light-dark(#14161a, #e8eaee);
 
+  /* the paper a QR code renders on: a QR scans on white, in either scheme */
+  --ui-qr-bg: #ffffff;
+
   /* the one accent: links, the primary action, focus and the selected tab */
   --ui-accent: light-dark(#1f5fd1, #7aaeff);
   --ui-on-accent: light-dark(#ffffff, #0e1014);

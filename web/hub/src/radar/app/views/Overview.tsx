@@ -101,7 +101,7 @@ function Stat({
   return (
     <div class={`ui-card p-4 md:p-5 ${cls}`} data-stat={(stat ?? title).toLowerCase()}>
       <div class="text-xs text-[var(--ui-muted)]">{title}</div>
-      <div class={`num mt-0.5 text-2xl font-semibold md:text-[26px] ${oneLine ? "whitespace-nowrap" : ""}`}>
+      <div class={`num mt-0.5 text-xl font-semibold md:text-[26px] ${oneLine ? "whitespace-nowrap" : ""}`}>
         {value}
       </div>
       {subline !== null && <div class="mt-1 text-xs text-[var(--ui-muted)]">{subline}</div>}
@@ -159,7 +159,7 @@ function LimitWindow({ label, window, now }: { label: string; window: UnifiedWin
   const reset = resetWords(window.resets_at, now);
   return (
     <div class="min-w-0" data-limit-window={label}>
-      <div class="num text-2xl font-semibold whitespace-nowrap md:text-[26px]">{`${pct}%`}</div>
+      <div class="num text-xl font-semibold whitespace-nowrap md:text-[26px]">{`${pct}%`}</div>
       <Bar
         pct={Math.min(100, pct)}
         color={STATUS_COLOR[quotaTone(pct)]}

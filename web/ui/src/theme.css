@@ -514,10 +514,73 @@
 @theme {
   --font-sans: var(--ui-font);
   --font-mono: var(--ui-font-mono);
+
+  /* the type scale: every Tailwind text step is a scale step, and the five steps are the whole
+     scale, so utilities past xl never build. Tailwind's `base` step is the scale's md, and each
+     step keeps Tailwind's own line height for it; meta and row are the named steps tables use. */
+  --text-*: initial;
+  --text-xs: var(--ui-text-xs);
+  --text-xs--line-height: calc(1 / 0.75);
+  --text-sm: var(--ui-text-sm);
+  --text-sm--line-height: calc(1.25 / 0.875);
+  --text-base: var(--ui-text-md);
+  --text-base--line-height: calc(1.5 / 1);
+  --text-lg: var(--ui-text-lg);
+  --text-lg--line-height: calc(1.75 / 1.125);
+  --text-xl: var(--ui-text-xl);
+  --text-xl--line-height: calc(1.75 / 1.25);
   --text-meta: 0.8125rem;
   --text-meta--line-height: 1.125rem;
   --text-row: 0.9375rem;
   --text-row--line-height: 1.375rem;
+
+  /* spacing: one Tailwind unit is the ladder's first step */
+  --spacing: var(--ui-space-1);
+
+  /* radii: sm and md share the small radius, lg is the control radius, xl and 2xl the panel one */
+  --radius-*: initial;
+  --radius-sm: var(--ui-radius-sm);
+  --radius-md: var(--ui-radius-sm);
+  --radius-lg: var(--ui-radius);
+  --radius-xl: var(--ui-radius-lg);
+  --radius-2xl: var(--ui-radius-lg);
+
+  /* the default palette goes, family by family, so no default colour utility can ever build;
+     daisyUI's own colours (--color-base-100, --color-neutral, …) are theme vars of their own and stay */
+  --color-amber-*: initial;
+  --color-blue-*: initial;
+  --color-cyan-*: initial;
+  --color-emerald-*: initial;
+  --color-fuchsia-*: initial;
+  --color-gray-*: initial;
+  --color-green-*: initial;
+  --color-indigo-*: initial;
+  --color-lime-*: initial;
+  --color-mauve-*: initial;
+  --color-mist-*: initial;
+  --color-neutral-*: initial;
+  --color-olive-*: initial;
+  --color-orange-*: initial;
+  --color-pink-*: initial;
+  --color-purple-*: initial;
+  --color-red-*: initial;
+  --color-rose-*: initial;
+  --color-sky-*: initial;
+  --color-slate-*: initial;
+  --color-stone-*: initial;
+  --color-taupe-*: initial;
+  --color-teal-*: initial;
+  --color-violet-*: initial;
+  --color-yellow-*: initial;
+  --color-zinc-*: initial;
+  --color-black: initial;
+  --color-white: initial;
+}
+
+/* bare `rounded` takes the small radius inline: the legacy layer keeps --radius at its own value
+   for its rules, so the utility cannot read it from the cascade */
+@theme inline {
+  --radius: var(--ui-radius-sm);
 }
 
 @layer base {
