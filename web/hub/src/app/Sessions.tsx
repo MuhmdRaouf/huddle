@@ -1,16 +1,16 @@
 // Sessions.tsx — the Sessions list: what needs the owner first, then the sessions at work and the
-// idle ones, grouped by machine or project; picking several to send new work to, and the
-// needs-you card's deny and snooze. One tree serves the three layouts: the phone paints the list,
-// the tablet and the desktop paint the list beside the session. Session text is rendered as
-// text, never HTML (SPEC 9).
+// idle ones; a search box and the machine chips narrow the rows; picking several to send new work
+// to, and the needs-you card's deny and snooze. One tree serves the three layouts: the phone paints
+// the list, the tablet and the desktop paint the list beside the session. Session text is rendered
+// as text, never HTML (SPEC 9).
 import { Button } from "@huddle/ui/button.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
+import { Field } from "@huddle/ui/field.tsx";
 import { type ComponentChildren, Fragment, type JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Icon } from "../icons.tsx";
 import {
   ageText,
-  type GroupMode,
   groupSessions,
   machinesLine,
   machinesOf,
@@ -304,11 +304,10 @@ export function SessionsPane({
   const st = registry.getState();
   // an open item holds a session in Needs you even when its last live row reads idle
   const groups = groupSessions(st.sessions?.map((s) => ({ ...s, state: shownState(s, st.needs) })) ?? null);
-  const [group, setGroup] = useState<GroupMode>(() =>
-    readPref(localStorage, "nowgroup", "machine" as GroupMode),
-  );
-  // the needs-you filter: on, the list holds the sessions that need the owner and nothing else
-  const [onlyNeeds, setOnlyNeeds] = useState<boolean>(() => readPref(localStorage, "nowneeds", false));
+  // the machine chip the list filters to, kept between visits; the empty string is All
+  const [machine, setMachine] = useState<string>(() => readPref(localStorage, "sessionsmachine", ""));
+  // the search box narrows the rows and starts empty every visit
+  const [query, setQuery] = useState("");
   const [selId, setSelId] = useState<string | null>(null);
   const [picked, setPicked] = useState<readonly string[]>([]);
   // Select shows the rows' checkboxes; Done hides them and clears the picks
@@ -318,9 +317,24 @@ export function SessionsPane({
   const [linking, setLinking] = useState(false);
   const hold = useRef<number | null>(null);
 
-  const rows = onlyNeeds
-    ? groups.needsYou
-    : [...groups.needsYou, ...groups.working, ...groups.idle, ...groups.stuck, ...groups.ended];
+  // the search matches the title, project, branch, machine and the session's task or prompt line,
+  // case-insensitively; the machine chip holds one machine, or All
+  const q = query.trim().toLowerCase();
+  const hit = (s: RegistrySession): boolean =>
+    q === "" ||
+    [sessionName(s), projectName(s.project), s.branch, s.machine, s.task, s.prompt_line].some((t) =>
+      (t ?? "").toLowerCase().includes(q),
+    );
+  const shown = (list: RegistrySession[]): RegistrySession[] =>
+    list.filter((s) => (machine === "" || s.machine === machine) && hit(s));
+  const visible = {
+    needsYou: shown(groups.needsYou),
+    working: shown(groups.working),
+    idle: shown(groups.idle),
+    stuck: shown(groups.stuck),
+    ended: shown(groups.ended),
+  };
+  const rows = [...visible.needsYou, ...visible.working, ...visible.idle, ...visible.stuck, ...visible.ended];
   const selIdx = rows.findIndex((r) => r.session_id === selId);
   const cur = selIdx >= 0 ? selIdx : 0;
 
@@ -418,31 +432,6 @@ export function SessionsPane({
       </ul>
     );
 
-  /** One section's rows, each group under a sub-heading when the toggle groups them. */
-  const sectionRows = (list: RegistrySession[], label: string): JSX.Element => {
-    if (group === "machine" && new Set(list.map((s) => s.machine ?? "")).size <= 1) {
-      // one machine needs no sub-heading: the rows already carry it
-      return rowsOf(list, label);
-    }
-    const byKey = new Map<string, RegistrySession[]>();
-    for (const s of list) {
-      const key = group === "machine" ? s.machine || "No machine" : projectName(s.project) || "No project";
-      byKey.set(key, [...(byKey.get(key) ?? []), s]);
-    }
-    return (
-      <>
-        {[...byKey.entries()].map(([key, keyed]) => (
-          <div key={key} class="flex flex-col gap-1.5">
-            <h3 class={`m-0 px-1 pt-1 text-xs font-medium ${MUTED}`}>
-              {key} · {keyed.length}
-            </h3>
-            {rowsOf(keyed, `${label}, ${key}`)}
-          </div>
-        ))}
-      </>
-    );
-  };
-
   /** One row, as its group draws it, in the shell its layout gives it. */
   const rowOf = (s: RegistrySession): JSX.Element => {
     const sel = layout === "desktop" && rows[cur]?.session_id === s.session_id;
@@ -474,11 +463,8 @@ export function SessionsPane({
 
   /** The sections in order, each heading over its rows, with the Insights card after the asks. */
   const sections = (): JSX.Element => {
-    // the Insights card rides after the needs-you cards, before the first other section;
-    // the needs-you filter holds the asks alone
-    const firstOther = onlyNeeds
-      ? null
-      : (SECTIONS.find(([key]) => key !== "needsYou" && groups[key].length > 0)?.[0] ?? null);
+    // the Insights card rides after the needs-you cards, before the first other section
+    const firstOther = SECTIONS.find(([key]) => key !== "needsYou" && visible[key].length > 0)?.[0] ?? null;
     const cards = (
       <div class="flex flex-col gap-3 px-3 pt-3">
         <InsightsCard />
@@ -486,28 +472,26 @@ export function SessionsPane({
     );
     return (
       <>
-        {SECTIONS.filter(([key]) => (!onlyNeeds || key === "needsYou") && groups[key].length > 0).map(
-          ([key, label, warn]) => (
-            <Fragment key={key}>
-              {/* the Insights card follows what needs the owner, or leads when nothing does */}
-              {key === firstOther ? cards : null}
-              <section aria-labelledby={`sessions-${key}`} class="flex flex-col gap-2 px-3 pt-3">
-                <h2
-                  id={`sessions-${key}`}
-                  class={`m-0 flex items-center gap-2 px-1 text-[13px] font-semibold tracking-[0.06em] uppercase ${
-                    warn ? "text-[var(--ui-needs-you-ink)]" : MUTED
-                  }`}
-                >
-                  {warn ? <StateMark state="needs-you" /> : null}
-                  {label} · {groups[key].length}
-                </h2>
-                {sectionRows(groups[key], label)}
-              </section>
-              {key === "needsYou" ? above : null}
-            </Fragment>
-          ),
-        )}
-        {!onlyNeeds && firstOther === null ? cards : null}
+        {SECTIONS.filter(([key]) => visible[key].length > 0).map(([key, label, warn]) => (
+          <Fragment key={key}>
+            {/* the Insights card follows what needs the owner, or leads when nothing does */}
+            {key === firstOther ? cards : null}
+            <section aria-labelledby={`sessions-${key}`} class="flex flex-col gap-2 px-3 pt-3">
+              <h2
+                id={`sessions-${key}`}
+                class={`m-0 flex items-center gap-2 px-1 text-[13px] font-semibold tracking-[0.06em] uppercase ${
+                  warn ? "text-[var(--ui-needs-you-ink)]" : MUTED
+                }`}
+              >
+                {warn ? <StateMark state="needs-you" /> : null}
+                {label} · {visible[key].length}
+              </h2>
+              {rowsOf(visible[key], label)}
+            </section>
+            {key === "needsYou" ? above : null}
+          </Fragment>
+        ))}
+        {firstOther === null ? cards : null}
       </>
     );
   };
@@ -533,37 +517,41 @@ export function SessionsPane({
           </Button>
         </header>
       ) : null}
-      <div class={`flex shrink-0 flex-wrap items-center justify-between gap-2 border-b ${LINE} px-4 py-2`}>
-        <div class="flex items-center gap-2">
-          <span class={`text-xs ${MUTED}`}>Group by</span>
-          <div class="flex gap-1">
-            {(["machine", "project"] as const).map((k) => (
+      <div class={`flex shrink-0 flex-col gap-2 border-b ${LINE} px-4 py-2`}>
+        {/* the field's own label reads out with the input; the placeholder carries the visible name */}
+        <div data-session-search="" class="[&_.ui-field-label]:sr-only">
+          <Field
+            label="Search sessions"
+            type="search"
+            placeholder="Search sessions"
+            value={query}
+            onInput={setQuery}
+          />
+        </div>
+        <div class="flex gap-1 overflow-x-auto" data-machine-chips="">
+          {["", ...machinesOf(st.sessions)].map((m) => {
+            const on = machine === m;
+            return (
               <Button
-                key={k}
-                variant="ghost"
-                pressed={group === k}
+                key={m === "" ? "all" : m}
+                variant="secondary"
+                data-machine-chip={m === "" ? "all" : m}
+                pressed={on}
+                class={`!rounded-[var(--ui-radius-full)]! shrink-0 ${
+                  on
+                    ? "!bg-[var(--ui-text)]! !text-[var(--ui-bg)]!"
+                    : "!bg-[var(--ui-surface-2)]! !text-[var(--ui-muted)]!"
+                }`}
                 onClick={() => {
-                  setGroup(k);
-                  writePref(localStorage, "nowgroup", k);
+                  setMachine(m);
+                  writePref(localStorage, "sessionsmachine", m);
                 }}
               >
-                {k === "machine" ? "Machine" : "Project"}
+                {m === "" ? "All" : m}
               </Button>
-            ))}
-          </div>
+            );
+          })}
         </div>
-        <Button
-          variant="secondary"
-          data-needs-filter=""
-          pressed={onlyNeeds}
-          onClick={() => {
-            const next = !onlyNeeds;
-            setOnlyNeeds(next);
-            writePref(localStorage, "nowneeds", next);
-          }}
-        >
-          Needs you
-        </Button>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto pb-4" data-sessions-sections="">
         {groups.needsYou.length > 0 ? null : above}
@@ -578,14 +566,9 @@ export function SessionsPane({
             ))}
           </div>
         ) : rows.length === 0 ? (
-          onlyNeeds ? (
-            <div
-              class={`mx-auto m-4 flex max-w-lg flex-col items-center gap-2 rounded-[var(--ui-radius-lg)] border border-dashed border-[var(--ui-line-strong)] px-6 py-16 text-center text-sm ${MUTED}`}
-            >
-              <b class="text-base font-semibold text-[var(--ui-text)]">Nothing needs you</b>
-              <p>When a session needs you, it shows up here first.</p>
-            </div>
-          ) : layout === "phone" ? (
+          // the welcome is the empty registry's card; a search or a chip that narrows to nothing
+          // shows no rows
+          layout === "phone" && query === "" && machine === "" ? (
             <div class="m-4">
               <NoSessionsWelcome />
             </div>

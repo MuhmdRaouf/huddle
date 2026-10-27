@@ -1,9 +1,9 @@
 // Sessions.test.tsx — the Sessions list: the groups and their counts from a fixture, the state
 // marks as shape plus word, a registry.session row moving a session between groups live, the
-// group-by toggle, the needs-you card, the working and idle rows, the desktop keys (j/k move,
-// Enter opens, L links a pick of two), the pick bar's link sheet and the picks it clears, the
-// Select toggle that gates the desktop's checkboxes, and session text always rendered as text,
-// never HTML.
+// search box and the machine chips, the needs-you card, the working and idle rows, the desktop
+// keys (j/k move, Enter opens, L links a pick of two), the pick bar's link sheet and the picks
+// it clears, the Select toggle that gates the desktop's checkboxes, and session text always
+// rendered as text, never HTML.
 import { act, cleanup, screen, within } from "@testing-library/preact";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -166,9 +166,9 @@ describe("the Sessions list", () => {
     expect(headings()).toEqual(["Working · 1"]);
   });
 
-  it("shows a skeleton before the first read, the start-a-session card when nothing is registered, and the dashed box only behind the filter", () => {
+  it("shows a skeleton before the first read and the start-a-session card when nothing is registered", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
-    localStorage.clear(); // the filter's preference must not leak from this test
+    localStorage.clear(); // the machine chips' preference must not leak from this test
     mountNow("phone", null);
     expect(screen.getByRole("status", { name: "Reading the registry" })).toBeDefined();
     mountNow("phone", []);
@@ -184,18 +184,6 @@ describe("the Sessions list", () => {
     mountNow("desktop", []);
     expect(screen.queryByText("No sessions yet")).toBeNull();
     expect(screen.queryByRole("tab", { name: "Claude Code" })).toBeNull();
-    // the needs-you filter alone keeps the dashed box: sessions exist, none needs the owner
-    mountNow("phone", [row({ session_id: "s-1", title: "only" })]);
-    void act(() => {
-      screen.getByRole("button", { name: "Needs you" }).click();
-    });
-    expect(screen.getByText("Nothing needs you")).toBeDefined();
-    expect(screen.getByText("When a session needs you, it shows up here first.")).toBeDefined();
-    // back off, so the preference this test flipped leaves nothing behind
-    void act(() => {
-      screen.getByRole("button", { name: "Needs you" }).click();
-    });
-    expect(screen.getByRole("heading", { name: "Working · 1" })).toBeDefined();
   });
 
   it("gives every state mark a shape and a word, never colour alone", () => {
@@ -283,22 +271,93 @@ describe("the Sessions list", () => {
     }
   });
 
-  it("filters the list down to the sessions that need the owner, and keeps the choice", () => {
+  it("keeps the search and the machine chips, with no group-by control and no needs filter", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    localStorage.clear();
+    mountNow("phone", fixture(), [needItem()]);
+    expect(screen.queryByText("Group by")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Machine" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Project" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Needs you" })).toBeNull();
+    expect(document.querySelector("[data-needs-filter]")).toBeNull();
+    expect(screen.getByRole("searchbox", { name: "Search sessions" })).toBeDefined();
+    expect(document.querySelector("[data-machine-chips]")).not.toBeNull();
+  });
+
+  it("narrows the list from the search box, across name, project, branch, machine and task", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     localStorage.clear();
     mountNow("phone");
-    void act(() => {
-      screen.getByRole("button", { name: "Needs you" }).click();
-    });
-    expect(headings()).toEqual(["Needs you · 2"]);
-    expect(localStorage.getItem("huddle:nowneeds")).toBe("true");
+    const box = screen.getByRole("searchbox", { name: "Search sessions" }) as HTMLInputElement;
+    const type = (q: string): void => {
+      void act(() => {
+        box.value = q;
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    // the title, in any case
+    type("LEAD");
+    expect(headings()).toEqual(["Working · 1"]);
+    expect(screen.getByText("lead")).toBeDefined();
+    expect(screen.queryByText("hub-home")).toBeNull();
+    // the branch
+    type("kbn-e2e");
+    expect(headings()).toEqual(["Needs you · 1"]);
     expect(screen.getByText("kanban-e2e")).toBeDefined();
-    expect(screen.queryByText("lead")).toBeNull();
-    void act(() => {
-      screen.getByRole("button", { name: "Needs you" }).click();
-    });
+    // the project
+    type("gateway");
+    expect(headings()).toEqual(["Needs you · 1", "Idle · 1", "Stuck · 1", "Ended · 1"]);
+    // the machine
+    type("build-box");
+    expect(headings()).toEqual(["Needs you · 1", "Working · 1", "Ended · 1"]);
+    // the task line
+    type("chart");
+    expect(headings()).toEqual(["Working · 1"]);
+    expect(screen.getByText("radar-ui")).toBeDefined();
+    // an unknown word leaves no row and no welcome: the list is only quiet
+    type("zzz-no-such-session");
+    expect(headings()).toEqual([]);
+    expect(screen.queryByText("No sessions yet")).toBeNull();
+    // the search is not kept between visits: a fresh mount holds the whole list, box empty
+    mountNow("phone");
+    const fresh = screen.getByRole("searchbox", { name: "Search sessions" }) as HTMLInputElement;
+    expect(fresh.value).toBe("");
     expect(headings()).toEqual(["Needs you · 2", "Working · 3", "Idle · 2", "Stuck · 1", "Ended · 1"]);
-    expect(localStorage.getItem("huddle:nowneeds")).toBe("false");
+  });
+
+  it("filters by machine chip, clears with All, and keeps the pick across a remount", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    localStorage.clear();
+    mountNow("phone");
+    const chipRow = document.querySelector("[data-machine-chips]") as HTMLElement;
+    expect(chipRow).not.toBeNull();
+    const chips = (): HTMLButtonElement[] => [
+      ...(document.querySelector("[data-machine-chips]") as HTMLElement).querySelectorAll("button"),
+    ];
+    expect(chips().map((b) => b.textContent)).toEqual(["All", "build-box", "laptop", "studio"]);
+    const chip = (name: string): HTMLButtonElement =>
+      chips().find((b) => b.textContent === name) as HTMLButtonElement;
+    void act(() => {
+      chip("laptop").click();
+    });
+    expect(chip("laptop").getAttribute("aria-pressed")).toBe("true");
+    expect(chip("All").getAttribute("aria-pressed")).toBe("false");
+    expect(headings()).toEqual(["Needs you · 1", "Working · 1", "Idle · 1"]);
+    expect(screen.getByText("kanban-e2e")).toBeDefined();
+    expect(screen.queryByText("hub-home")).toBeNull();
+    expect(localStorage.getItem("huddle:sessionsmachine")).toBe('"laptop"');
+    // the pick survives a remount, read back through storage
+    mountNow("phone");
+    expect(chip("laptop").getAttribute("aria-pressed")).toBe("true");
+    expect(headings()).toEqual(["Needs you · 1", "Working · 1", "Idle · 1"]);
+    // All gives the whole list back and keeps that as the choice
+    void act(() => {
+      chip("All").click();
+    });
+    expect(chip("laptop").getAttribute("aria-pressed")).toBe("false");
+    expect(chip("All").getAttribute("aria-pressed")).toBe("true");
+    expect(headings()).toEqual(["Needs you · 2", "Working · 3", "Idle · 2", "Stuck · 1", "Ended · 1"]);
+    expect(localStorage.getItem("huddle:sessionsmachine")).toBe('""');
   });
 
   it("leads with Needs you and sets the checklist after it when asks exist, and leads with the checklist when none do", () => {
@@ -409,15 +468,23 @@ describe("the Sessions list", () => {
     });
     expect(document.querySelector("[data-select-bar]")).not.toBeNull();
     expect(legacyClasses(document.body, lent)).toEqual([]);
-    const filter = document.querySelector("[data-needs-filter]") as HTMLElement;
+    // a machine chip and its pressed state sit on the same tokens
+    const chip = ((): HTMLElement =>
+      [...(document.querySelector("[data-machine-chips]") as HTMLElement).querySelectorAll("button")].find(
+        (b) => b.textContent === "build-box",
+      ) as HTMLElement)();
     await act(async () => {
-      filter.click();
+      chip.click();
     });
-    expect(filter.getAttribute("aria-pressed")).toBe("true");
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
     expect(legacyClasses(document.body, lent)).toEqual([]);
-    // the filter keeps its choice: give the other cases their whole list back
+    // All gives the other cases their whole list back
+    const all = ((): HTMLElement =>
+      [...(document.querySelector("[data-machine-chips]") as HTMLElement).querySelectorAll("button")].find(
+        (b) => b.textContent === "All",
+      ) as HTMLElement)();
     await act(async () => {
-      filter.click();
+      all.click();
     });
   });
 
@@ -490,24 +557,6 @@ describe("the Sessions list", () => {
     });
     expect(headings()[1]).toBe("Working · 3");
     expect(screen.getByText("fresh")).toBeDefined();
-  });
-
-  it("groups the rows by machine or by project, and keeps the choice", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
-    localStorage.clear();
-    mountNow("phone");
-    expect(screen.queryByText("build-box")).toBeNull(); // machine rides each row, not a heading
-    void act(() => {
-      screen.getByRole("button", { name: "Project" }).click();
-    });
-    expect(screen.getByText("claude-code-plugins · 3")).toBeDefined(); // the working rows
-    expect(screen.getAllByText(/^gateway · \d+$/).length).toBeGreaterThan(0);
-    expect(localStorage.getItem("huddle:nowgroup")).toBe('"project"');
-    void act(() => {
-      screen.getByRole("button", { name: "Machine" }).click();
-    });
-    expect(screen.getAllByText(/^build-box · \d+$/).length).toBeGreaterThan(0);
-    expect(localStorage.getItem("huddle:nowgroup")).toBe('"machine"');
   });
 
   it("opens a session from a row on the phone", () => {

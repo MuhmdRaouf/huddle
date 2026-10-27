@@ -3,7 +3,7 @@
 // (with the desktop's main pane keeping its pointer beside it while none is picked), on the phone a
 // seeded ask's card sits above the fold with the first-run checklist after Needs you, every session
 // names its harness on its row and in its header (the seeded Claude Code one and a Codex one), one whose
-// last event asks for permission waits in Needs you with its state word, behind the filter too,
+// last event asks for permission waits in Needs you with its state word,
 // an agent-team teammate that went idle shows under its lead's row with the word idle, a seeded
 // permission ask is allowed with one tap on the 48 px button at its card's foot. A session's
 // stream on the phone opens at its latest event and folds repeated calls of one tool into one row
@@ -139,13 +139,6 @@ test("a session whose last event asks for permission waits in Needs you first", 
   await expect(card.getByRole("link", { name: /Waits on a permission/ })).toBeVisible();
   // the state rides as a word, not colour alone
   await expect(card.locator("[data-state='needs-you']")).toHaveText("needs you");
-
-  // the filter holds the needs-you list alone, then gives the whole list back
-  await page.getByRole("button", { name: "Needs you" }).click();
-  await expect(page.getByRole("heading", { name: "Needs you · 1" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Working · 1" })).toBeHidden();
-  await page.getByRole("button", { name: "Needs you" }).click();
-  await expect(page.getByRole("heading", { name: "Working · 1" })).toBeVisible();
 });
 
 test("a teammate that went idle shows under its lead's row", async ({ page }) => {
