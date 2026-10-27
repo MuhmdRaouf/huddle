@@ -87,6 +87,60 @@ test("the machine chips hold one line at 1440, and the search narrows the rows",
   await expectAccessible(page);
 });
 
+test("a desk row shows a 30-character title whole and no row holds a Review button", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "the desk rows are the desktop project's");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page);
+  await openTab(page, "Sessions");
+  const title = "Kanban board export queue jobs"; // exactly 30 characters
+  expect(title.length).toBe(30);
+  await api("/api/registry/report", {
+    session_id: "e2e-title-30",
+    machine: "e2e-machine",
+    project: "e2e",
+    title,
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+  // one row holds an open permission ask: on the desk it too is a plain row, so no row
+  // carries the Review button the card kept off the list. The session stopped, so the
+  // denial at the end moves it to Idle and the other cases' counts stay as they were —
+  // the hub serves every project of the run, this ask included.
+  await api("/api/registry/report", {
+    session_id: "e2e-title-ask",
+    machine: "e2e-machine",
+    project: "e2e",
+    title: "Ask holds",
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+  const ask = await api<{ id: number }>("/api/needs", {
+    session_id: "e2e-title-ask",
+    tool_name: "Bash",
+    tool_input: { command: "bun run test" },
+  });
+
+  const row = page.locator("[data-row='e2e-title-30']");
+  await expect(row).toBeVisible();
+  const name = row.getByText(title, { exact: true });
+  await expect(name).toBeVisible();
+  const { scroll, client } = await name.evaluate((el) => ({
+    scroll: el.scrollWidth,
+    client: el.clientWidth,
+  }));
+  expect(scroll).toBeLessThanOrEqual(client);
+  // every row opens its session; no row answers or reviews an ask itself
+  expect(await page.locator("[data-sessions-pane] [data-row] [data-needs-actions]").count()).toBe(0);
+  expect(await page.locator("[data-sessions-pane] [data-row] [data-act='review']").count()).toBe(0);
+  await expectAccessible(page);
+
+  // the denial settles the ask's session back among the idle ones
+  await api(`/api/needs/${ask.id}/decide`, { decision: "deny" });
+  await expect(page.locator("[data-row='e2e-title-ask'] [data-state='idle']")).toHaveText("idle");
+});
+
 test("at phone width the Sessions list scrolls nothing sideways", async ({ page }) => {
   await page.setViewportSize({ width: 393, height: 852 });
   await signIn(page);

@@ -124,6 +124,23 @@ export function StateChip({
   );
 }
 
+/** The desk row's state chip: the state's word on its role's tint in the row's own height, with
+ *  the working dot the artboard gives the live rows. It carries the same data-state and data-role
+ *  the badge does, so tests and styles read the two alike. */
+export function DeskStateChip({ state }: { state: string }): JSX.Element {
+  const role = stateRole(state);
+  return (
+    <span
+      data-state={state}
+      data-role={role}
+      class={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[var(--ui-radius)] px-2.5 text-sm font-medium ${ROLE_CHIP[role]}`}
+    >
+      {state === "working" ? <span class="size-1.5 rounded-full bg-current" aria-hidden="true" /> : null}
+      {stateWord(state)}
+    </span>
+  );
+}
+
 /** A model as its chip: the short name in the page's own text colour, the family's colour as
  *  the chip's leading edge (a fill behind the text fails contrast on the lighter families), a
  *  leading dot on the header's round pill, the raw id on hover. */

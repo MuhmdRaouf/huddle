@@ -146,10 +146,14 @@ function mountNow(
   layout: Layout = "phone",
   sessions: RegistrySession[] | null = fixture(),
   needs: NeedItem[] | null = null,
+  openId: string | null = null,
 ) {
   cleanup();
   const registry = makeRegistry({ sessions, needs });
-  return { registry, ...followRender(() => <SessionsPane layout={layout} />, registry) };
+  return {
+    registry,
+    ...followRender(() => <SessionsPane layout={layout} openId={openId ?? undefined} />, registry),
+  };
 }
 
 /** The list over a context shaped for the set-up row's tests: whether this browser holds TOTP,
@@ -269,6 +273,26 @@ describe("the Sessions list", () => {
     expect(within(card).getByRole("link", { name: "Review" }).getAttribute("href")).toBe(
       "#/sessions/s-need-1",
     );
+  });
+
+  it("on the desk a needs-you row is one plain link to the session, and the open row is marked", () => {
+    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    mountNow("desktop", fixture(), [needItem()], "s-need-1");
+    const deskRow = document.querySelector('a[data-row="s-need-1"]') as HTMLAnchorElement;
+    expect(deskRow.getAttribute("href")).toBe("#/sessions/s-need-1");
+    expect(deskRow.getAttribute("aria-current")).toBe("page");
+    // the row opens the session; its needs bar answers the ask, so no action lives on the row
+    expect(deskRow.querySelector('[data-act="allow"]')).toBeNull();
+    expect(deskRow.querySelector('[data-act="deny"]')).toBeNull();
+    expect(deskRow.querySelector('[data-act="review"]')).toBeNull();
+  });
+
+  it("on the phone a permission ask still answers Allow and Deny at the card", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    mountNow("phone", fixture(), [needItem()]);
+    const card = document.querySelector('[data-row="s-need-1"]') as HTMLElement;
+    expect(within(card).getByRole("button", { name: "Deny" })).toBeDefined();
+    expect(within(card).getByRole("button", { name: "Allow once" })).toBeDefined();
   });
 
   it("draws the working row: mark, name, model chip, machine · task, context", () => {

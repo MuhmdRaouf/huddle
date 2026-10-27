@@ -14,6 +14,7 @@ import { Icon } from "../icons.tsx";
 import {
   ageText,
   groupSessions,
+  harnessOf,
   machinesLine,
   machinesOf,
   openItemOf,
@@ -34,6 +35,7 @@ import { LinkSheet } from "./LinkSheet.tsx";
 import type { Layout } from "./layout.ts";
 import { ActComposer, confirmWhat, type NeedsAct, SnoozeMenu, useNeedsAct } from "./Needs.tsx";
 import {
+  DeskStateChip,
   HarnessBadge,
   HooksStaleChip,
   LINE,
@@ -46,32 +48,19 @@ import {
 } from "./session-parts.tsx";
 import { MachinesLine } from "./TopBar.tsx";
 
-/** The needs-you card: the session that waits on the owner (its name, then its harness chip and
- *  where it works), what it asks, and the answers at the card's foot, 48 px tall for one thumb. A
- *  permission ask offers Deny and Allow once, both posted at once (an allow may open the passkey
- *  sheet first); any other ask offers Review, which opens the session to answer it. The menu
- *  beside them snoozes or dismisses the item. */
-function NeedsCard({
-  s,
-  now,
-  sel,
-  act,
-}: {
-  s: RegistrySession;
-  now: number;
-  sel: boolean;
-  act: NeedsAct;
-}): JSX.Element {
+/** The phone's needs-you card: the session that waits on the owner (its name, then its harness
+ *  chip and where it works), what it asks, and the answers at the card's foot, 48 px tall for one
+ *  thumb. A permission ask offers Deny and Allow once, both posted at once (an allow may open the
+ *  passkey sheet first); any other ask offers Review, which opens the session to answer it. The
+ *  menu beside them snoozes or dismisses the item. The desk draws the same session as one plain
+ *  row and answers the ask at the session's own needs bar. */
+function NeedsCard({ s, now, act }: { s: RegistrySession; now: number; act: NeedsAct }): JSX.Element {
   const { registry } = useHuddle();
   const needs = registry.getState().needs;
   const ask = permissionOf(needs, s.session_id);
   const item = openItemOf(needs, s.session_id);
   return (
-    <article
-      class={`ui-card flex flex-col ${sel ? "ring-2 ring-[var(--ui-accent)]" : ""}`}
-      data-row={s.session_id}
-      aria-current={sel ? "true" : undefined}
-    >
+    <article class="ui-card flex flex-col" data-row={s.session_id}>
       <a href={openHref(s)} class="flex min-w-0 flex-col gap-1.5 p-4 text-[var(--ui-text)]">
         <div class="flex items-baseline justify-between gap-2">
           <span class="truncate text-base font-semibold">{sessionName(s)}</span>
@@ -131,6 +120,58 @@ function NeedsCard({
 
 /** The selected row's ring: the desktop's keyboard selection. */
 const selRing = (sel: boolean): string => (sel ? " ring-2 ring-inset ring-[var(--ui-accent)]" : "");
+
+/** The desk row's harness chip: the neutral pill naming the harness, no tile and no border. */
+function DeskHarness({ s }: { s: RegistrySession }): JSX.Element {
+  const h = harnessOf(s);
+  return (
+    <span
+      data-harness={h.id}
+      title={`This session runs in ${h.name}`}
+      class="inline-flex h-7 shrink-0 items-center rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] px-2.5 text-sm font-medium text-[var(--ui-muted)]"
+    >
+      {h.name}
+    </span>
+  );
+}
+
+/** The desk's one plain row for every state, needs-you included: the title alone on its line
+ *  taking the free width, the harness chip, where it works and how long it has been quiet under,
+ *  and the state chip at the end. It opens the session; the session's own needs bar answers an
+ *  ask. */
+function DeskRow({
+  s,
+  now,
+  sel,
+  open,
+}: {
+  s: RegistrySession;
+  now: number;
+  sel: boolean;
+  open: boolean;
+}): JSX.Element {
+  const meta = [projectName(s.project), s.branch, s.machine].filter(Boolean);
+  if (!s.delivery_route) meta.push("watch only");
+  return (
+    <a
+      href={openHref(s)}
+      data-row={s.session_id}
+      aria-current={open ? "page" : sel ? "true" : undefined}
+      class={`ui-list-row flex-col! justify-center! gap-0! min-h-14!${selRing(sel)}${
+        open ? " rounded-[var(--ui-radius-lg)] bg-[var(--ui-accent-soft)]" : ""
+      }`}
+    >
+      <span class="ui-list-title">{sessionName(s)}</span>
+      <span class="flex min-w-0 items-center gap-2">
+        <DeskHarness s={s} />
+        <span class="ui-list-meta min-w-0 flex-1 truncate">{meta.join(" · ")}</span>
+        <HooksStaleChip s={s} />
+        <span class={`shrink-0 text-xs ${MUTED} tabular-nums`}>{ageText(s.last_event_at, now)}</span>
+        <DeskStateChip state={s.state} />
+      </span>
+    </a>
+  );
+}
 
 /** A working or stuck row: the mark, the name taking the row's free width, its harness chip with
  *  where it works and its task under it, and the state badge, the model chip and how full its
@@ -220,13 +261,12 @@ function TeammateList({ teammates }: { teammates: RegistryTeammate[] }): JSX.Ele
 const SECTIONS: readonly (readonly [
   key: "needsYou" | "working" | "idle" | "stuck" | "ended",
   label: string,
-  warn: boolean,
 ])[] = [
-  ["needsYou", "Needs you", true],
-  ["working", "Working", false],
-  ["idle", "Idle", false],
-  ["stuck", "Stuck", false],
-  ["ended", "Ended", false],
+  ["needsYou", "Needs you"],
+  ["working", "Working"],
+  ["idle", "Idle"],
+  ["stuck", "Stuck"],
+  ["ended", "Ended"],
 ];
 
 /** One row's shell: the desktop carries a checkbox beside it while Select is on (the pick a send
@@ -356,14 +396,17 @@ function SetupPane({
  *  desktop carry their own header — the title with the Select toggle at its end (the phone's shell
  *  and the desktop's bar draw the rest); the desktop's j and k move a selection Enter opens and
  *  a, d and r answer, Select shows the checkboxes that pick sessions to send new work to, and the
- *  phone's long-press picks the same. While the first-run checklist has steps left and stands
+ *  phone's long-press picks the same. The session the pane sits beside is `openId`, its row filled
+ *  and marked `aria-current="page"`. While the first-run checklist has steps left and stands
  *  undismissed, the set-up row rides under the machine chips and opens the checklist in its sheet;
  *  a minted passkey hands its token back up through `onPairToken` to the pairing screen. */
 export function SessionsPane({
   layout,
+  openId,
   onPairToken,
 }: {
   layout: Layout;
+  openId?: string | undefined;
   onPairToken?: (token: string) => void;
 }): JSX.Element {
   const { registry, now } = useHuddle();
@@ -488,30 +531,47 @@ export function SessionsPane({
     return () => window.removeEventListener("keydown", on);
   });
 
-  /** One group's rows: the needs-you cards stacked, every other state's rows in one list. */
+  /** One group's rows: on the phone the needs-you cards stacked and every other state's rows in
+   *  one list; on the desk every state is plain rows in one grouped card. */
   const rowsOf = (list: RegistrySession[], label: string): JSX.Element =>
-    list[0]?.state === "needs-you" ? (
-      <div class="flex flex-col gap-3">{list.map((s) => rowOf(s))}</div>
+    layout === "phone" ? (
+      list[0]?.state === "needs-you" ? (
+        <div class="flex flex-col gap-3">{list.map((s) => rowOf(s))}</div>
+      ) : (
+        <ul class="ui-list" aria-label={label}>
+          {list.map((s) => (
+            <li key={s.session_id} class="ui-list-item">
+              {rowOf(s)}
+            </li>
+          ))}
+        </ul>
+      )
     ) : (
-      <ul class="ui-list" aria-label={label}>
-        {list.map((s) => (
-          <li key={s.session_id} class="ui-list-item">
+      <div class="overflow-hidden rounded-[var(--ui-radius-lg)] bg-[var(--ui-surface)]">
+        {list.map((s, i) => (
+          <Fragment key={s.session_id}>
+            {i > 0 ? <div class="ml-4 h-px bg-[var(--ui-line)]" aria-hidden="true" /> : null}
             {rowOf(s)}
-          </li>
+          </Fragment>
         ))}
-      </ul>
+      </div>
     );
 
   /** One row, as its group draws it, in the shell its layout gives it. */
   const rowOf = (s: RegistrySession): JSX.Element => {
     const sel = layout === "desktop" && rows[cur]?.session_id === s.session_id;
+    const open = layout !== "phone" && openId === s.session_id;
     const row =
-      s.state === "needs-you" ? (
-        <NeedsCard s={s} now={now} sel={sel} act={act} />
-      ) : s.state === "idle" || s.state === "ended" ? (
-        <IdleRow s={s} now={now} sel={sel} />
+      layout === "phone" ? (
+        s.state === "needs-you" ? (
+          <NeedsCard s={s} now={now} act={act} />
+        ) : s.state === "idle" || s.state === "ended" ? (
+          <IdleRow s={s} now={now} sel={sel} />
+        ) : (
+          <WorkRow s={s} sel={sel} />
+        )
       ) : (
-        <WorkRow s={s} sel={sel} />
+        <DeskRow s={s} now={now} sel={sel} open={open} />
       );
     return (
       <RowShell
@@ -542,18 +602,12 @@ export function SessionsPane({
     );
     return (
       <>
-        {SECTIONS.filter(([key]) => visible[key].length > 0).map(([key, label, warn]) => (
+        {SECTIONS.filter(([key]) => visible[key].length > 0).map(([key, label]) => (
           <Fragment key={key}>
             {/* the Insights card follows what needs the owner, or leads when nothing does */}
             {key === firstOther ? cards : null}
             <section aria-labelledby={`sessions-${key}`} class="flex flex-col gap-2 px-3 pt-3">
-              <h2
-                id={`sessions-${key}`}
-                class={`m-0 flex items-center gap-2 px-1 text-[13px] font-semibold tracking-[0.06em] uppercase ${
-                  warn ? "text-[var(--ui-needs-you-ink)]" : MUTED
-                }`}
-              >
-                {warn ? <StateMark state="needs-you" /> : null}
+              <h2 id={`sessions-${key}`} class={`m-0 px-1 text-sm font-semibold ${MUTED}`}>
                 {label} · {visible[key].length}
               </h2>
               {rowsOf(visible[key], label)}

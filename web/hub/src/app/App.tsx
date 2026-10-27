@@ -712,7 +712,7 @@ export function App({
     route.tab === "channels" && ch && layout !== "phone" ? (
       <Rail onHelp={onHelp} />
     ) : route.tab === "sessions" && layout !== "phone" ? (
-      <SessionsPane layout={layout} onPairToken={onPairToken} />
+      <SessionsPane layout={layout} openId={nowId ?? undefined} onPairToken={onPairToken} />
     ) : null;
   const context: ComponentChildren =
     route.tab === "sessions" && layout === "desktop" && nowId ? <NowContext /> : null;

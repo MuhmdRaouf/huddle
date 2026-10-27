@@ -6,7 +6,8 @@
 // names its harness on its row and in its header (the seeded Claude Code one and a Codex one), one whose
 // last event asks for permission waits in Needs you with its state word,
 // an agent-team teammate that went idle shows under its lead's row with the word idle, a seeded
-// permission ask is allowed with one tap on the 48 px button at its card's foot. A session's
+// permission ask is allowed with one tap at its card's foot on the phone and at the session's
+// needs bar on the desk. A session's
 // stream on the phone opens at its latest event and folds repeated calls of one tool into one row
 // a tap opens. The phone's page
 // scrolls nothing sideways and every target on it is at least 44 px; axe finds nothing serious on
@@ -124,9 +125,7 @@ test("every session names its harness: the seeded Claude Code one and a Codex on
   await expect(header).toContainText("Claude Code");
 });
 
-test("a session whose last event asks for permission waits in Needs you first", async ({
-  page,
-}) => {
+test("a session whose last event asks for permission waits in Needs you first", async ({ page }, info) => {
   await signIn(page);
   await openTab(page, "Sessions");
 
@@ -140,11 +139,19 @@ test("a session whose last event asks for permission waits in Needs you first", 
     last_event_at: new Date().toISOString(),
   });
   await expect(page.getByRole("heading", { name: "Needs you · 1" })).toBeVisible();
-  const card = page.locator("article[data-row='e2e-permit']");
-  await expect(card).toBeVisible();
-  await expect(card.getByRole("link", { name: /Waits on a permission/ })).toBeVisible();
   // the state rides as a word, not colour alone
-  await expect(card.locator("[data-state='needs-you']")).toHaveText("needs you");
+  if (info.project.name === "desktop") {
+    // the desk draws the ask as one plain row that opens the session
+    const row = page.locator("a[data-row='e2e-permit']");
+    await expect(row).toBeVisible();
+    await expect(row).toHaveAttribute("href", "#/sessions/e2e-permit");
+    await expect(row.locator("[data-state='needs-you']")).toHaveText("needs you");
+  } else {
+    const card = page.locator("article[data-row='e2e-permit']");
+    await expect(card).toBeVisible();
+    await expect(card.getByRole("link", { name: /Waits on a permission/ })).toBeVisible();
+    await expect(card.locator("[data-state='needs-you']")).toHaveText("needs you");
+  }
 });
 
 test("a teammate that went idle shows under its lead's row", async ({ page }) => {
@@ -241,29 +248,41 @@ test("a seeded permission ask is allowed with one tap at its card's foot", async
   await signIn(page);
   await openTab(page, "Sessions");
 
-  const card = page.locator(`article[data-row='${session}']`);
-  await expect(card.getByText("bun run test")).toBeVisible();
-  const allow = card.getByRole("button", { name: "Allow once" });
-  const deny = card.getByRole("button", { name: "Deny" });
-  // both answers sit side by side in the card's footer, 48 px tall: one thumb reaches either
-  for (const button of [allow, deny]) {
-    const box = await button.boundingBox();
-    expect(box?.height).toBeGreaterThanOrEqual(48);
-  }
-  const cardBox = await card.boundingBox();
-  const allowBox = await allow.boundingBox();
-  // the button is the card's last element: only the footer's 12 px and the card's 16 px padding
-  // come between its bottom edge and the card's, so nothing of the card sits under it
-  expect(cardBox && allowBox && cardBox.y + cardBox.height - (allowBox.y + allowBox.height)).toBeLessThanOrEqual(28);
-
   const decided = page.waitForResponse((r) => r.url().endsWith(`/api/needs/${id}/decide`));
-  if (isMobile) await allow.tap();
-  else await allow.click();
-  const answer = await decided;
-  expect(answer.status()).toBe(200);
-  expect(((await answer.json()) as { decision?: string }).decision).toBe("allow");
-  // the ask left the list: the card is gone and the session reads idle
-  await expect(card).toHaveCount(0);
+  if (isMobile) {
+    const card = page.locator(`article[data-row='${session}']`);
+    await expect(card.getByText("bun run test")).toBeVisible();
+    const allow = card.getByRole("button", { name: "Allow once" });
+    const deny = card.getByRole("button", { name: "Deny" });
+    // both answers sit side by side in the card's footer, 48 px tall: one thumb reaches either
+    for (const button of [allow, deny]) {
+      const box = await button.boundingBox();
+      expect(box?.height).toBeGreaterThanOrEqual(48);
+    }
+    const cardBox = await card.boundingBox();
+    const allowBox = await allow.boundingBox();
+    // the button is the card's last element: only the footer's 12 px and the card's 16 px padding
+    // come between its bottom edge and the card's, so nothing of the card sits under it
+    expect(cardBox && allowBox && cardBox.y + cardBox.height - (allowBox.y + allowBox.height)).toBeLessThanOrEqual(28);
+    await allow.tap();
+    const answer = await decided;
+    expect(answer.status()).toBe(200);
+    expect(((await answer.json()) as { decision?: string }).decision).toBe("allow");
+    // the ask left the list: the card is gone and the session reads idle
+    await expect(card).toHaveCount(0);
+  } else {
+    // the desk's row is one plain link: it opens the session, whose needs bar answers the ask
+    await page.locator(`a[data-row='${session}']`).click();
+    const bar = page.locator("[data-needs-bar]");
+    await expect(bar).toBeVisible();
+    await bar.getByRole("button", { name: /^Allow once/ }).click();
+    const answer = await decided;
+    expect(answer.status()).toBe(200);
+    expect(((await answer.json()) as { decision?: string }).decision).toBe("allow");
+    // back on the list the ask has left: the session reads idle
+    await page.goBack();
+    await expect(page.locator("[data-sessions-pane]")).toBeVisible();
+  }
   await expect(page.locator(`[data-row='${session}'] [data-state='idle']`)).toHaveText("idle");
 });
 
