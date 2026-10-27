@@ -197,6 +197,7 @@ The tips:
   the status that failed most.
 - One ask has waited on you far longer than the rest; pair your phone to answer from it.
 - One day's sessions together ran past 10 hours; the card names the day and the length.
+- A subagent started over 20 minutes ago and has no stop event; the card names it and its age.
 
 ### Reach an idle session
 

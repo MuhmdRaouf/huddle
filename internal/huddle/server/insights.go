@@ -7,7 +7,8 @@ package server
 // there; a session's answer adds that session's tool runs from the mounted radar tab, and
 // same_command is the rule they add: tool_failing needs the error text radar does not record,
 // and a lane's health and a day's length are no one session's, so the session's answer leaves
-// all three out.
+// all three out. Both answers add the subagents' recent starts and stops from the mounted
+// radar tab, so subagent_silent can fire on either.
 
 import (
 	"net/http"
@@ -43,7 +44,9 @@ type insightsSettingsAnswer struct {
 // insightsRoute answers GET /api/insights with the tips the last 7 days of needs-you history
 // supports, read-only over the registry's own rows. The owner's answer adds the lanes' requests
 // of the last 24 h from the mounted radar tab, so a lane that keeps failing names itself there,
-// and the registry's session spans, so a day of long sessions does too.
+// and the registry's session spans, so a day of long sessions does too. Both answers add the
+// subagents' starts and stops of the last 2 h from the mounted radar tab, so a run with no
+// stop event names itself to whoever reads.
 // A session query narrows the answer to that session: its rows alone go in, its tool runs come
 // in from the mounted radar tab and add same_command alone (tool_failing needs the error text
 // radar does not record), and its tips alone come out. Tips for me gates the owner's answer,
@@ -121,6 +124,19 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 		}
 		for _, span := range spans {
 			in.Spans = append(in.Spans, insights.SessionSpan{Session: span.SessionID, Start: span.Start, End: span.End})
+		}
+	}
+	// both answers add the subagents' runs of the last 2 h: a run gone silent is its session's
+	// fact and the huddle's
+	if s.radar != nil {
+		for _, run := range s.radar.SubagentsSince(r.Context(), session, now.Add(-2*time.Hour)) {
+			in.Subagents = append(in.Subagents, insights.SubagentRun{
+				Session: run.Session,
+				Agent:   run.Agent,
+				Name:    run.Name,
+				Started: run.Started,
+				Stopped: run.Stopped,
+			})
 		}
 	}
 	tips := insights.Detect(in)

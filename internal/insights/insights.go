@@ -53,20 +53,30 @@ type SessionSpan struct {
 	Start, End time.Time
 }
 
+// SubagentRun is one subagent run a session had: its start, and its stop once radar saw one.
+type SubagentRun struct {
+	Session string
+	Agent   string // the agent id radar keyed the run under
+	Name    string // the agent's own name, "Explore"; "" when radar recorded none
+	Started time.Time
+	Stopped time.Time // zero while no stop event was seen
+}
+
 // Input is everything Detect reads. Now is the clock, so the rules are pure.
 type Input struct {
-	Now      time.Time
-	Tools    []ToolRun
-	Asks     []PermissionAsk
-	Requests []Request
-	Items    []Item
-	Spans    []SessionSpan
+	Now       time.Time
+	Tools     []ToolRun
+	Asks      []PermissionAsk
+	Requests  []Request
+	Items     []Item
+	Spans     []SessionSpan
+	Subagents []SubagentRun
 }
 
 // Tip is one sentence the owner can act on, with the numbers behind it.
 type Tip struct {
 	ID       string // stable for one occurrence: "<rule>:<what it is about>"
-	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing, RuleLongestWait or RuleLongDay
+	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing, RuleLongestWait, RuleLongDay or RuleSubagentSilent
 	Session  string // the session a tip is about; "" for a tip about the whole huddle
 	Sentence string
 	Count    int           // the runs or asks behind the tip
@@ -74,12 +84,13 @@ type Tip struct {
 }
 
 const (
-	RuleSameCommand   = "same_command"
-	RuleAlwaysAllowed = "always_allowed"
-	RuleToolFailing   = "tool_failing"
-	RuleLaneFailing   = "lane_failing"
-	RuleLongestWait   = "longest_wait"
-	RuleLongDay       = "long_day"
+	RuleSameCommand    = "same_command"
+	RuleAlwaysAllowed  = "always_allowed"
+	RuleToolFailing    = "tool_failing"
+	RuleLaneFailing    = "lane_failing"
+	RuleLongestWait    = "longest_wait"
+	RuleLongDay        = "long_day"
+	RuleSubagentSilent = "subagent_silent"
 )
 
 // The points each rule fires at.
@@ -97,6 +108,7 @@ func Detect(in Input) []Tip {
 	tips = append(tips, laneFailingTips(in)...)
 	tips = append(tips, longDayTips(in)...)
 	tips = append(tips, longestWaitTips(in)...)
+	tips = append(tips, subagentSilentTips(in)...)
 	slices.SortFunc(tips, func(a, b Tip) int {
 		if byRule := cmp.Compare(a.Rule, b.Rule); byRule != 0 {
 			return byRule
