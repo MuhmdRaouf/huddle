@@ -331,6 +331,10 @@ func TestE2EHandoverAStartFromANewBinaryKeepsTheRouterPortOpen(t *testing.T) {
 			t.Fatalf("router.json still names %d after 60 s, want a fresh daemon's pid", before.PID)
 		}
 		pids.see(after.PID)
+		// the record lands before the fresh daemon serves, so the hammer keeps dialing until it
+		// answers health, plus one second more, before the count is read
+		until(t, 15*time.Second, func() bool { return routerHealthy(port) }, "the fresh daemon to answer its health path")
+		time.Sleep(time.Second)
 		if failures := h.halt(); failures != 0 {
 			t.Errorf("%d connections were refused across the ceiling handover", failures)
 		}
