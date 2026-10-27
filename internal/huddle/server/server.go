@@ -44,6 +44,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/web"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
+	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 )
 
 //go:embed connect.md
@@ -99,6 +100,10 @@ type Options struct {
 	// CLAUDE_CONFIG_DIR, the providers' state dirs). A nil Environ serves no radar tab: a
 	// caller that names no environment cannot be told where radar's files live.
 	Environ []string
+	// BodyKey is the body key's store the request-body reads open the router's store with,
+	// where nil is keystore.BodyKey(env) for the server's env. Tests pass a fake, so no real
+	// keystore is ever read.
+	BodyKey ledger.KeySource
 	// RootStdin says the root credential came from stdin's first line.
 	RootStdin bool
 	Stdin     io.Reader
@@ -325,6 +330,11 @@ type server struct {
 	// time; nil while none serves.
 	phoneMu sync.Mutex
 	phone   *phone.Helper
+
+	// bodiesMu guards bodies: the router's body store the owner's reads opened (bodies.go),
+	// nil while none opened — a read with no store or no key answers off and opens nothing.
+	bodiesMu sync.Mutex
+	bodies   *ledger.BodyStore
 
 	flights *flightTracker
 
@@ -821,6 +831,7 @@ func Serve(ctx context.Context, o Options) error {
 		s.stopRadar()                                   // the radar tab and its lock go with us
 		s.stopKanban()                                  // the boards' watches go with us
 		s.closePhone()                                  // the phone guide ends with the server
+		s.stopBodies()                                  // the body store the reads opened goes with us
 		s.flights.whenIdle(ctx, 30*time.Second)         // requests in flight finish, up to 30 s
 		time.Sleep(100 * time.Millisecond)              // their last bytes flush
 		_ = s.httpSrv.Close()                           // what outwaited the drain goes with its connection
@@ -866,6 +877,7 @@ func Serve(ctx context.Context, o Options) error {
 		s.stopRadar()
 		s.stopKanban()
 		s.closePhone()
+		s.stopBodies()
 		s.closeHTTP()
 		_ = s.hub.Close(context.Background())
 		if s.registry != nil {
@@ -1342,6 +1354,9 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.insightsMuteRoute(w, r, me)
 	case credentialed && path == "/api/insights/forget" && r.Method == http.MethodPost:
 		return s.insightsForgetRoute(w, r, me)
+	// the owner's read of one request's bodies in the router's own store
+	case credentialed && strings.HasPrefix(path, "/api/bodies/") && r.Method == http.MethodGet:
+		return s.bodiesRoute(w, r, me, strings.TrimPrefix(path, "/api/bodies/"))
 	case credentialed && permitItemPath.MatchString(path):
 		return s.permitItemRoute(w, r, path, me)
 	case credentialed && needsItemPath.MatchString(path) && r.Method == http.MethodPost:
