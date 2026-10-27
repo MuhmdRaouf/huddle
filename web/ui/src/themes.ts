@@ -36,6 +36,24 @@ export const THEMES: readonly [Theme, ...Theme[]] = [
     sides: ["light", "dark"],
     bar: { light: "#e5e9f0", dark: "#2e3440" },
   },
+  {
+    id: "gruvbox",
+    label: "Gruvbox",
+    sides: ["light", "dark"],
+    bar: { light: "#f2e5bc", dark: "#1d2021" },
+  },
+  {
+    id: "solarized",
+    label: "Solarized",
+    sides: ["light", "dark"],
+    bar: { light: "#eee8d5", dark: "#00212b" },
+  },
+  {
+    id: "rose-pine",
+    label: "Rosé Pine",
+    sides: ["light", "dark"],
+    bar: { light: "#f2e9e1", dark: "#191724" },
+  },
 ];
 
 /** Where this browser keeps its theme. */

@@ -28,14 +28,35 @@ const blocked: SchemeStore = {
 };
 
 describe("themes", () => {
-  it("registers Huddle first, then the four community themes with the sides each has", () => {
-    expect(THEMES.map((t) => t.id)).toEqual(["huddle", "tokyo-night", "monokai", "dracula", "nord"]);
-    expect(THEMES.map((t) => t.label)).toEqual(["Huddle", "Tokyo Night", "Monokai", "Dracula", "Nord"]);
+  it("registers Huddle first, then the seven community themes with the sides each has", () => {
+    expect(THEMES.map((t) => t.id)).toEqual([
+      "huddle",
+      "tokyo-night",
+      "monokai",
+      "dracula",
+      "nord",
+      "gruvbox",
+      "solarized",
+      "rose-pine",
+    ]);
+    expect(THEMES.map((t) => t.label)).toEqual([
+      "Huddle",
+      "Tokyo Night",
+      "Monokai",
+      "Dracula",
+      "Nord",
+      "Gruvbox",
+      "Solarized",
+      "Rosé Pine",
+    ]);
     expect(THEMES.map((t) => t.sides)).toEqual([
       ["light", "dark"],
       ["light", "dark"],
       ["dark"],
       ["dark"],
+      ["light", "dark"],
+      ["light", "dark"],
+      ["light", "dark"],
       ["light", "dark"],
     ]);
   });
@@ -47,11 +68,15 @@ describe("themes", () => {
       { dark: "#1e1f1c" },
       { dark: "#21222c" },
       { light: "#e5e9f0", dark: "#2e3440" },
+      { light: "#f2e5bc", dark: "#1d2021" },
+      { light: "#eee8d5", dark: "#00212b" },
+      { light: "#f2e9e1", dark: "#191724" },
     ]);
   });
 
   it("answers the theme an id names, and the default for an unknown one", () => {
     expect(themeOf("dracula")).toBe(THEMES[3]);
+    expect(themeOf("rose-pine")).toBe(THEMES[7]);
     expect(themeOf("nope")).toBe(THEMES[0]);
   });
 
@@ -85,6 +110,12 @@ describe("themes", () => {
     expect(sideOf("tokyo-night", "dark")).toBe("dark");
     expect(sideOf("nord", "light")).toBe("light");
     expect(sideOf("nord", "dark")).toBe("dark");
+    expect(sideOf("gruvbox", "light")).toBe("light");
+    expect(sideOf("gruvbox", "dark")).toBe("dark");
+    expect(sideOf("solarized", "light")).toBe("light");
+    expect(sideOf("solarized", "dark")).toBe("dark");
+    expect(sideOf("rose-pine", "light")).toBe("light");
+    expect(sideOf("rose-pine", "dark")).toBe("dark");
     expect(sideOf("monokai", "light")).toBe("dark");
     expect(sideOf("monokai", "dark")).toBe("dark");
     expect(sideOf("dracula", "light")).toBe("dark");

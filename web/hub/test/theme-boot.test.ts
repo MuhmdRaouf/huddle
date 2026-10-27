@@ -89,7 +89,7 @@ describe("theme-boot.js", () => {
 
   for (const pref of ["system", "light", "dark"] as const satisfies readonly SchemePref[])
     for (const osDark of [false, true])
-      for (const kept of [null, "huddle", "tokyo-night", "dracula", "nope"]) {
+      for (const kept of [null, "huddle", "tokyo-night", "dracula", "gruvbox", "nope"]) {
         it(`paints what applyScheme paints: ${pref}, os ${osDark ? "dark" : "light"}, kept ${kept ?? "none"}`, () => {
           stubSchemeMedia(osDark);
           localStorage.clear();
