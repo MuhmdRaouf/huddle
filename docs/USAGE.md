@@ -450,6 +450,10 @@ Radar raises a "Quota nearly used" alert when the newest status line snapshot sh
 `Claude 5-hour window 80% used, resets 14:00 UTC`. It comes once per window, as a desktop notification
 too, and the next window raises a new one.
 
+On macOS the notifications show the huddle icon by coming from a small Huddle app huddle builds once under
+`~/.agents/huddle/notify`; macOS asks once to allow notifications from Huddle, and
+`tccutil reset UserNotification dev.huddle.notify` makes it ask again.
+
 ### Claude Code's OpenTelemetry export
 
 Radar also takes Claude Code's own token and cost metrics as a second source. Usage › Source ›

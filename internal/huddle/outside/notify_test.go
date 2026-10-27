@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
+	"github.com/MuhmdRaouf/huddle/internal/notifyicon"
 )
 
 // fakeClock is a clock the tests move by hand.
@@ -269,6 +270,7 @@ func TestNotifier(t *testing.T) {
 			program, args = p, a
 			return nil
 		}
+		n.Build = func(string) {} // a missing applet must not start a real build here
 		if !n.Send("ask", "s", strings.Repeat("word ", 60), strings.Repeat("phrase ", 60)) {
 			t.Fatal("Send = false, want true")
 		}
@@ -305,6 +307,81 @@ func TestNotifier(t *testing.T) {
 			if args[0] != "-a" || args[1] != "Huddle" {
 				t.Errorf("args = %v, want [-a Huddle title body]", args)
 			}
+		}
+	})
+
+	t.Run("on macOS a ready applet takes the send; an absent one falls back and starts its build once", func(t *testing.T) {
+		if NotifierProgram() != "osascript" {
+			t.Skip("the applet branch runs where osascript is the program")
+		}
+		t.Setenv("HUDDLE_NOTIFY_LOG", "")
+		t.Setenv("HUDDLE_NOTIFY", "")
+		var program string
+		var args []string
+		builds := make(chan string, 2)
+		n := NewNotifier(t.TempDir())
+		n.Spawn = func(p string, a []string) error {
+			program, args = p, a
+			return nil
+		}
+		n.Build = func(home string) { builds <- home }
+
+		// a ready applet: its stub takes the send, no build starts
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		stub := notifyicon.AppletStub(home)
+		if err := os.MkdirAll(filepath.Dir(stub), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(stub, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(notifyicon.AppletDigestPath(home), []byte(notifyicon.AppletDigest()), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if !n.Send("ask", "s", "T", "b") {
+			t.Fatal("Send = false, want true")
+		}
+		if program != stub || !slices.Equal(args, []string{"T", "b"}) {
+			t.Errorf("spawned %q %v, want the stub %q [T b]", program, args, stub)
+		}
+		select {
+		case started := <-builds:
+			t.Errorf("a ready applet started a build for %q, want none", started)
+		default:
+		}
+
+		// no applet: today's osascript line, and the build starts once across two sends
+		empty := t.TempDir()
+		t.Setenv("HOME", empty)
+		if !n.Send("ask", "s2", "T2", "b2") {
+			t.Fatal("Send = false, want true")
+		}
+		scriptWant := []string{"-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run", "T2", "b2"}
+		if program != "osascript" || !slices.Equal(args, scriptWant) {
+			t.Errorf("spawned %q %v, want osascript %v", program, args, scriptWant)
+		}
+		if !n.Send("ask", "s3", "T3", "b3") {
+			t.Fatal("second Send = false, want true")
+		}
+		select {
+		case started := <-builds:
+			if started != empty {
+				t.Errorf("the build ran for %q, want %q", started, empty)
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("no build started for a missing applet")
+		}
+		select {
+		case started := <-builds:
+			t.Errorf("a second build started, for %q", started)
+		default:
+		}
+
+		// a nil Build builds nothing and costs the send nothing
+		n.Build = nil
+		if !n.Send("ask", "s4", "T4", "b4") {
+			t.Fatal("Send with a nil Build = false, want true")
 		}
 	})
 

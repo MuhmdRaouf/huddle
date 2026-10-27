@@ -100,10 +100,14 @@ type CommandLine struct {
 }
 
 // NotifyCommand is the command line that shows one notification on this platform (GOOS name),
-// or nil where there is none. The icon, a PNG path, goes to the linux line in its file://
-// form; an empty one or darwin leaves the line without an icon.
+// or nil where there is none. The icon carries the huddle icon: the applet's stub on darwin
+// (its bundle shows the icon) and the PNG on linux in its file:// form. An empty icon leaves
+// darwin on the osascript line and linux without one.
 func NotifyCommand(platform string, env domain.EnvLookup, title, body, icon string) *CommandLine {
 	if platform == "darwin" {
+		if icon != "" {
+			return &CommandLine{Command: icon, Args: []string{title, body}}
+		}
 		script := fmt.Sprintf("display notification \"%s\" with title \"%s\"", AppleScriptText(body), AppleScriptText(title))
 		return &CommandLine{Command: "osascript", Args: []string{"-e", script}}
 	}
@@ -252,9 +256,14 @@ func (n *Notifier) send(alert shared.Alert, now int64) bool {
 	return true
 }
 
-// iconPath is the huddle icon's file, written under the home when needed — linux only,
-// since darwin's osascript line takes no icon. "" when there is none to point at.
+// iconPath is the huddle icon's file: on darwin the ready applet's stub, never building here
+// (the hub builds the applet); on linux the PNG, written under the home when needed.
+// "" when there is none to point at.
 func (n *Notifier) iconPath() string {
+	if n.platform == "darwin" {
+		stub, _ := notifyicon.AppletReady(n.env["HOME"])
+		return stub
+	}
 	if n.platform != "linux" {
 		return ""
 	}

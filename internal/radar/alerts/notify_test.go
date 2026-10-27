@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/notifyicon"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
@@ -90,7 +91,7 @@ func TestDesktopNotifications(t *testing.T) {
 		}
 	})
 
-	t.Run("the linux line carries the icon in its file:// form, darwin ignores it", func(t *testing.T) {
+	t.Run("the linux line carries the icon in its file:// form, darwin's line is the applet stub", func(t *testing.T) {
 		env := makeEnv(t)
 		bin := filepath.Join(env.home, "bin", "notify-send")
 		writeText(t, bin, "#!/bin/sh\n")
@@ -106,9 +107,43 @@ func TestDesktopNotifications(t *testing.T) {
 		if line == nil || !slices.Equal(line.Args, []string{"--app-name=Radar", "T", "b"}) {
 			t.Errorf("line = %+v, want --app-name=Radar T b", line)
 		}
-		script := NotifyCommand("darwin", domain.EnvLookup{}, "T", "b", "/x/huddle.png")
+		stub := NotifyCommand("darwin", domain.EnvLookup{}, "T", "b", "/x/applet")
+		if stub == nil || stub.Command != "/x/applet" || !slices.Equal(stub.Args, []string{"T", "b"}) {
+			t.Errorf("darwin line = %+v, want the applet stub with the title and the body", stub)
+		}
+		script := NotifyCommand("darwin", domain.EnvLookup{}, "T", "b", "")
 		if script == nil || script.Command != "osascript" || slices.Contains(script.Args, "file:///x/huddle.png") {
 			t.Errorf("darwin line = %+v, want the osascript line with no icon", script)
+		}
+	})
+
+	t.Run("on darwin a ready applet's stub takes the alert, and nothing builds", func(t *testing.T) {
+		env := makeEnv(t)
+		ctx := context.Background()
+		stub := notifyicon.AppletStub(env.home)
+		if err := os.MkdirAll(filepath.Dir(stub), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(stub, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(notifyicon.AppletDigestPath(env.home), []byte(notifyicon.AppletDigest()), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var calls [][]string
+		notifier := NewNotifier(ctx, NotifierOptions{
+			Env:      env.env,
+			Enabled:  func() bool { return true },
+			Runner:   func(command string, args []string) { calls = append(calls, append([]string{command}, args...)) },
+			Platform: "darwin",
+			Now:      func() time.Time { return time.UnixMilli(1_000) },
+		})
+		if got := notifier.Consider(ctx, []shared.Alert{notifyAlert()}); got != 1 {
+			t.Fatalf("consider = %d, want 1", got)
+		}
+		want := []string{stub, "Radar: session looks stuck", "app: No activity"}
+		if len(calls) != 1 || !slices.Equal(calls[0], want) {
+			t.Errorf("calls = %v, want %v", calls, want)
 		}
 	})
 

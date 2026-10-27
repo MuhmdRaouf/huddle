@@ -39,6 +39,13 @@ ran separately is now one process set.
   omp, opencode, pi and zcode engines behave as before. Each provider's job state stays under `~/.agents/<p>/`,
   and keys keep their keystore names, so keys and jobs from 0.0.1 keep working.
 
+### Notifications
+
+- Desktop notifications show the huddle icon. On Linux, `notify-send` gets the icon PNG. On macOS, where a
+  banner always shows its sending app's icon, huddle builds one small Huddle app under `~/.agents/huddle/notify`
+  the first time a notification needs it, and its notifications run through that app. macOS asks once to allow
+  notifications from Huddle; `tccutil reset UserNotification dev.huddle.notify` makes it ask again.
+
 ## 0.0.1 (2026-10-18)
 
 First release: one local hub where AI coding sessions work as a team, from Claude Code or any agent that speaks

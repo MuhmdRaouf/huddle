@@ -4,6 +4,7 @@
 package outside
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,6 +29,7 @@ const (
 	spawnBudget     = 5 * time.Second
 	enabledCacheTTL = 2 * time.Second
 	seenTableLimit  = 2000
+	appletBuildTime = 60 * time.Second
 )
 
 var (
@@ -102,15 +104,18 @@ type enabledCache struct {
 // Notifier shows desktop notifications for what needs the owner. The text is built from names
 // and ids only, then cleaned; the same kind and subject notify at most once per window.
 type Notifier struct {
-	// Now is the clock; Spawn starts the OS notifier program (tests replace it).
+	// Now is the clock; Spawn starts the OS notifier program; Build builds the macOS
+	// notification applet in the background (tests replace all three).
 	Now   func() time.Time
 	Spawn func(program string, args []string) error
+	Build func(home string)
 
 	dir    string
 	getenv func(string) string
 	mu     sync.Mutex
 	last   map[string]time.Time
 	cache  *enabledCache
+	build  sync.Once
 }
 
 // NewNotifier reads and writes its switch in dir, the server's data dir.
@@ -118,6 +123,7 @@ func NewNotifier(dir string) *Notifier {
 	return &Notifier{
 		Now:    time.Now,
 		Spawn:  spawnDetached,
+		Build:  buildApplet,
 		dir:    dir,
 		getenv: os.Getenv,
 		last:   map[string]time.Time{},
@@ -239,12 +245,17 @@ func (n *Notifier) Send(kind, subject, title, body string) bool {
 	// the text goes in as arguments, never into the script: nothing in it can run
 	program, args := how, []string{"-a", "Huddle", cleanTitle, cleanBody}
 	if how == "osascript" {
-		program = "osascript"
-		args = []string{
-			"-e", "on run argv",
-			"-e", "display notification (item 2 of argv) with title (item 1 of argv)",
-			"-e", "end run",
-			cleanTitle, cleanBody,
+		if stub, ok := notifyicon.AppletReady(n.env("HOME")); ok {
+			program, args = stub, []string{cleanTitle, cleanBody}
+		} else {
+			program = "osascript"
+			args = []string{
+				"-e", "on run argv",
+				"-e", "display notification (item 2 of argv) with title (item 1 of argv)",
+				"-e", "end run",
+				cleanTitle, cleanBody,
+			}
+			n.startBuild()
 		}
 	} else if icon, err := notifyicon.EnsurePNG(n.env("HOME")); err == nil {
 		args = notifySendArgs(icon, cleanTitle, cleanBody)
@@ -264,6 +275,27 @@ func notifySendArgs(icon, title, body string) []string {
 		return []string{"-a", "Huddle", title, body}
 	}
 	return []string{"-a", "Huddle", "-i", "file://" + icon, title, body}
+}
+
+// buildApplet builds the macOS notification applet once, in the background and with a minute
+// of its own; an error leaves the osascript line in place until the next process tries again.
+func buildApplet(home string) {
+	ctx, cancel := context.WithTimeout(context.Background(), appletBuildTime)
+	defer cancel()
+	_, _ = notifyicon.EnsureApplet(ctx, home, notifyicon.ExecRunner)
+}
+
+// startBuild kicks the applet build off once per process, the first time a send finds no
+// ready applet.
+func (n *Notifier) startBuild() {
+	home := n.env("HOME")
+	n.build.Do(func() {
+		build := n.Build
+		if build == nil {
+			return
+		}
+		safego.Go(nil, func() { build(home) })
+	})
 }
 
 // window is how long one kind and subject stays quiet after a notification.
