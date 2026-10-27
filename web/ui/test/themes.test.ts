@@ -42,7 +42,7 @@ describe("themes", () => {
 
   it("carries each theme's status bar colour for every side it paints", () => {
     expect(THEMES.map((t) => t.bar)).toEqual([
-      { light: "#f6f7f9", dark: "#0e1014" },
+      { light: "#f4f5f7", dark: "#0b0c0f" },
       { light: "#d0d5e3", dark: "#16161e" },
       { dark: "#1e1f1c" },
       { dark: "#21222c" },

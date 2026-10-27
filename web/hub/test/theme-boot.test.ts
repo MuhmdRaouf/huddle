@@ -65,6 +65,20 @@ describe("theme-boot.js", () => {
     expect(bootBars()).toEqual(Object.fromEntries(THEMES.map((t) => [t.id, t.bar])));
   });
 
+  it("ships index.html's theme-color metas in the huddle theme's colours, dark first", () => {
+    const html = readFileSync(join(import.meta.dirname, "../index.html"), "utf8");
+    const metas = [
+      ...html.matchAll(
+        /<meta\s+name="theme-color"\s+media="\(prefers-color-scheme: (dark|light)\)"\s+content="([^"]+)"\s*\/>/g,
+      ),
+    ];
+    const bar = THEMES[0]?.bar;
+    expect(metas.map((m) => [m[1], m[2]])).toEqual([
+      ["dark", bar?.dark],
+      ["light", bar?.light],
+    ]);
+  });
+
   it("defines no global: the id list lives inside the IIFE", () => {
     boot();
     expect("THEME_IDS" in globalThis).toBe(false);

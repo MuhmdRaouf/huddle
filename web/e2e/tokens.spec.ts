@@ -14,6 +14,7 @@ import { signIn, theSetup } from "./helpers.ts";
 /** The page's blocks, one per token group and component. */
 const BLOCKS = [
   "Colors",
+  "Status tones",
   "Type",
   "Spacing",
   "Layers, shadows and motion",

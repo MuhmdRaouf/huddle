@@ -155,11 +155,13 @@ const route =
     ).toBeVisible();
   };
 
-/** A drawer over a page: the shared slide-over standing open. */
+/** A drawer over a page: the shared slide-over standing open. The hash opens the drawer on load,
+ *  and the phone's tab bar stands down while a dialog is open, so the slide-over, not the Main
+ *  nav, is the wait. */
 const drawer =
   (hash: (s: Seeded) => string) =>
   async (page: Page, seeded: Seeded): Promise<void> => {
-    await route(hash)(page, seeded);
+    await page.goto(at(hash(seeded)));
     await expect(page.locator("dialog[open] [data-slide-over]")).toBeVisible();
   };
 

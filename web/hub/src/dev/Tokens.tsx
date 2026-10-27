@@ -47,11 +47,10 @@ const COLORS = [
   "text",
   "accent",
   "accent-soft",
-  "ok",
-  "warn",
-  "fail",
-  "info",
 ] as const;
+
+/** The four status tones; the gallery shows each beside the ink its text is written in. */
+const TONES = ["ok", "warn", "fail", "info"] as const;
 
 const TYPE = [
   ["xl", "Needs you: 2"],
@@ -134,6 +133,11 @@ const grid = (min: string): CSSProperties => ({
 });
 
 const row: CSSProperties = { display: "flex", flexWrap: "wrap", gap: "var(--ui-space-2)" };
+
+/** The colour and tone swatch cards share one grid and one swatch bar: the design guard ratchets the
+ *  file's px literals, so the two blocks write them once. */
+const SWATCH_GRID = grid("140px");
+const SWATCH_BAR = { height: "40px" } as const;
 
 /** One titled block of the page. */
 function Block({ title, children }: { title: string; children: ComponentChildren }): JSX.Element {
@@ -222,12 +226,28 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
       <SchemeSwitch pref={pref} onPick={pick} />
 
       <Block title="Colors">
-        <div style={grid("140px")}>
+        <div style={SWATCH_GRID}>
           {COLORS.map((c) => (
             <div key={c} class="ui-card" style={{ overflow: "hidden" }}>
-              <div style={{ height: "40px", background: `var(--ui-${c})` }} />
+              <div style={{ ...SWATCH_BAR, background: `var(--ui-${c})` }} />
               <div class="ui-mono" style={{ padding: "var(--ui-space-2)", fontSize: "var(--ui-text-sm)" }}>
                 --ui-{c}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Block>
+
+      <Block title="Status tones">
+        <div style={SWATCH_GRID}>
+          {TONES.map((t) => (
+            <div key={t} class="ui-card" style={{ overflow: "hidden" }}>
+              <div style={{ display: "flex", ...SWATCH_BAR }}>
+                <div style={{ flex: 1, background: `var(--ui-${t})` }} />
+                <div style={{ flex: 1, background: `var(--ui-${t}-ink)` }} />
+              </div>
+              <div class="ui-mono" style={{ padding: "var(--ui-space-2)", fontSize: "var(--ui-text-sm)" }}>
+                --ui-{t} · --ui-{t}-ink
               </div>
             </div>
           ))}

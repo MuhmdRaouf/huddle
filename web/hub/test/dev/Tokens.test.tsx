@@ -38,6 +38,7 @@ describe("Tokens", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Design tokens" })).toBeTruthy();
     for (const name of [
       "Colors",
+      "Status tones",
       "Type",
       "Spacing",
       "Buttons",

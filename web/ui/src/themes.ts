@@ -20,7 +20,7 @@ export const THEMES: readonly [Theme, ...Theme[]] = [
     id: "huddle",
     label: "Huddle",
     sides: ["light", "dark"],
-    bar: { light: "#f6f7f9", dark: "#0e1014" },
+    bar: { light: "#f4f5f7", dark: "#0b0c0f" },
   },
   {
     id: "tokyo-night",

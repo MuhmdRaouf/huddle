@@ -1,4 +1,5 @@
-// tokens.test.ts — the non-colour tokens of tokens.css: the radii, the type scale with its mono
+// tokens.test.ts — the tokens of tokens.css: the palette's colour pairs (the refresh B surfaces,
+// inks, marks, translucent soft fills and status inks), the radii, the type scale with its mono
 // step, the control heights under each pointer, the tap floors, the tab bar, and the card shadow,
 // whose dark half sits under :root[data-scheme="dark"] because a shadow cannot sit in light-dark().
 import { readFileSync } from "node:fs";
@@ -28,6 +29,48 @@ function declared(name: string, body: string): string {
   if (!m?.[1]) throw new Error(`no ${name} declaration in the block`);
   return m[1].trim();
 }
+
+describe("the palette", () => {
+  it("paints the surfaces, inks and accent of the huddle palette", () => {
+    const root = block(":root");
+    expect(declared("--ui-bg", root)).toBe("light-dark(#f4f5f7, #0b0c0f)");
+    expect(declared("--ui-surface", root)).toBe("light-dark(#ffffff, #15171c)");
+    expect(declared("--ui-surface-2", root)).toBe("light-dark(#eceef2, #1e2128)");
+    expect(declared("--ui-line", root)).toBe("light-dark(rgba(15, 20, 30, 0.08), rgba(255, 255, 255, 0.07))");
+    expect(declared("--ui-line-strong", root)).toBe("light-dark(#7c8391, #6e7686)");
+    expect(declared("--ui-text", root)).toBe("light-dark(#111318, #ececf1)");
+    expect(declared("--ui-muted", root)).toBe("light-dark(#5b6170, #9a9fab)");
+    expect(declared("--ui-accent", root)).toBe("light-dark(#2462ea, #7aaeff)");
+    expect(declared("--ui-on-accent", root)).toBe("light-dark(#ffffff, #0b0c0f)");
+    expect(declared("--ui-accent-soft", root)).toBe(
+      "light-dark(rgba(37, 99, 235, 0.1), rgba(122, 174, 255, 0.14))",
+    );
+  });
+
+  it("marks and fills each status tone with the tone's colour, and writes text in its ink", () => {
+    const root = block(":root");
+    expect(declared("--ui-ok", root)).toBe("light-dark(#15803d, #4cc38a)");
+    expect(declared("--ui-ok-soft", root)).toBe(
+      "light-dark(rgba(21, 128, 61, 0.1), rgba(76, 195, 138, 0.14))",
+    );
+    expect(declared("--ui-ok-ink", root)).toBe("light-dark(#007333, #4cc38a)");
+    expect(declared("--ui-warn", root)).toBe("light-dark(#a16207, #e8b04f)");
+    expect(declared("--ui-warn-soft", root)).toBe(
+      "light-dark(rgba(161, 98, 7, 0.1), rgba(232, 176, 79, 0.14))",
+    );
+    expect(declared("--ui-warn-ink", root)).toBe("light-dark(#905600, #e8b04f)");
+    expect(declared("--ui-fail", root)).toBe("light-dark(#dc2626, #f26d6d)");
+    expect(declared("--ui-fail-soft", root)).toBe(
+      "light-dark(rgba(220, 38, 38, 0.08), rgba(242, 109, 109, 0.14))",
+    );
+    expect(declared("--ui-fail-ink", root)).toBe("light-dark(#cb0514, #f36d6d)");
+    expect(declared("--ui-info", root)).toBe("light-dark(#0369a1, #5aa9ff)");
+    expect(declared("--ui-info-soft", root)).toBe(
+      "light-dark(rgba(3, 105, 161, 0.1), rgba(90, 169, 255, 0.14))",
+    );
+    expect(declared("--ui-info-ink", root)).toBe("light-dark(#0268a0, #5aa9ff)");
+  });
+});
 
 describe("the tokens", () => {
   it("cuts the corners at 8, 12 and 20 px, and rounds the pill", () => {

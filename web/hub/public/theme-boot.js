@@ -14,7 +14,7 @@
   const THEME_IDS = ["huddle", "tokyo-night", "monokai", "dracula", "nord"];
   /** Each theme's status bar colour per side it paints, mirroring the registry's bar map. */
   const THEME_BARS = {
-    "huddle": { "light": "#f6f7f9", "dark": "#0e1014" },
+    "huddle": { "light": "#f4f5f7", "dark": "#0b0c0f" },
     "tokyo-night": { "light": "#d0d5e3", "dark": "#16161e" },
     "monokai": { "dark": "#1e1f1c" },
     "dracula": { "dark": "#21222c" },
