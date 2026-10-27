@@ -1354,6 +1354,9 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.insightsMuteRoute(w, r, me)
 	case credentialed && path == "/api/insights/forget" && r.Method == http.MethodPost:
 		return s.insightsForgetRoute(w, r, me)
+	// the owner's read of the body store's totals
+	case credentialed && path == "/api/bodies" && r.Method == http.MethodGet:
+		return s.bodiesStatsRoute(w, r, me)
 	// the owner's read of one request's bodies in the router's own store
 	case credentialed && strings.HasPrefix(path, "/api/bodies/") && r.Method == http.MethodGet:
 		return s.bodiesRoute(w, r, me, strings.TrimPrefix(path, "/api/bodies/"))

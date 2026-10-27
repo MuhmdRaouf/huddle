@@ -275,3 +275,52 @@ func TestTheBodiesRouteRefusesABadId(t *testing.T) {
 		}
 	}
 }
+
+func TestTheBodiesRouteAnswersTheOwnerTheKeptNumbers(t *testing.T) {
+	rig := bodiesServer(t, bodiesKeyed())
+	bodiesSeed(t, rig.radar, "b-1", "in", "out")
+	code, out := bodiesCall(t, rig, http.MethodGet, "/api/bodies", "", rig.token)
+	if code != 200 {
+		t.Fatalf("the owner's read = %d %s", code, out)
+	}
+	answer := bodyMap(t, out)
+	if answer["state"] != "kept" {
+		t.Errorf("the state = %v, want kept", answer["state"])
+	}
+	if requests, _ := answer["requests"].(float64); requests != 1 {
+		t.Errorf("the requests = %v, want the one stored request", answer["requests"])
+	}
+	if disk, _ := answer["bytes"].(float64); disk <= 0 {
+		t.Errorf("the bytes = %v, want the store's own disk", answer["bytes"])
+	}
+}
+
+func TestTheBodiesNumbersBelongToTheOwnerAlone(t *testing.T) {
+	rig := bodiesServer(t, bodiesKeyed())
+	member := bodiesMember(t, rig)
+	code, out := bodiesCall(t, rig, http.MethodGet, "/api/bodies", "", member)
+	if code != 403 {
+		t.Fatalf("a member's read = %d %s", code, out)
+	}
+	if msg, _ := bodyMap(t, out)["error"].(string); !strings.Contains(msg, "only the owner") {
+		t.Errorf("the refusal = %q, want only the owner", msg)
+	}
+}
+
+func TestTheBodiesNumbersAnswerOffWithoutAStoreAndNeverCreateOne(t *testing.T) {
+	rig := bodiesServer(t, bodiesKeyed())
+	code, out := bodiesCall(t, rig, http.MethodGet, "/api/bodies", "", rig.token)
+	if code != 200 {
+		t.Fatalf("the owner's read = %d %s", code, out)
+	}
+	answer := bodyMap(t, out)
+	if answer["state"] != "off" {
+		t.Errorf("the state = %v, want off", answer["state"])
+	}
+	if answer["requests"] != float64(0) || answer["bytes"] != float64(0) {
+		t.Errorf("the numbers = %v %v, want zeros", answer["requests"], answer["bytes"])
+	}
+	if _, err := os.Stat(filepath.Join(rig.radar, "ledger", "router.db")); !os.IsNotExist(err) {
+		t.Fatalf("the read left a body store behind: %v", err)
+	}
+}

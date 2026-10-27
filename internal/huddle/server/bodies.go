@@ -66,6 +66,37 @@ func (s *server) bodiesRoute(w http.ResponseWriter, r *http.Request, me auth.Who
 	return nil
 }
 
+// bodiesStatsAnswer is the switch page's read of the whole store: how many requests it
+// keeps bodies for and how much disk it holds. state is kept (the numbers follow) or off
+// (the store cannot be read, the numbers are zero).
+type bodiesStatsAnswer struct {
+	State    string `json:"state"`
+	Requests int    `json:"requests"`
+	Bytes    int64  `json:"bytes"`
+}
+
+// bodiesStatsRoute answers the owner's read of the store's totals. The same rule as the
+// per-request read: every failure to read the store is "off".
+func (s *server) bodiesStatsRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
+	if !(me.Root || me.Browser != "") {
+		return &channel.HuddleError{Status: http.StatusForbidden, Msg: "only the owner reads request bodies"}
+	}
+	answer := bodiesStatsAnswer{State: "off"}
+	store, err := s.bodiesStore(r.Context())
+	if err != nil {
+		return err
+	}
+	if store != nil {
+		stats, err := store.Stats(r.Context())
+		if err != nil {
+			return err
+		}
+		answer = bodiesStatsAnswer{State: "kept", Requests: stats.Requests, Bytes: stats.DiskBytes}
+	}
+	s.writeJSON(w, http.StatusOK, answer, nil)
+	return nil
+}
+
 // bodiesStore answers the body store opened under the machine's body key, or nil while it
 // cannot be read: no store file, no key store, no stored key, a key that does not open the
 // store. A store opened once stays open until the server stops; a nil answer opens nothing
