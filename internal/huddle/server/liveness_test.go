@@ -9,9 +9,9 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 )
 
-// TestRegistryLivenessReadsTheMembersSession pins the registry's answer to the channel's
-// liveness question: a member whose session works is alive, one whose last report ran quiet
-// past the limit is not, a member no session registered is not known, and neither is a
+// TestRegistryLivenessReadsTheMembersSession pins the registry's answer to the channel's state
+// question: a member whose session works reads working, one whose last report ran quiet past
+// the limit reads stuck, a member no session registered is not known, and neither is a
 // registry that cannot answer.
 func TestRegistryLivenessReadsTheMembersSession(t *testing.T) {
 	ctx := context.Background()
@@ -32,16 +32,16 @@ func TestRegistryLivenessReadsTheMembersSession(t *testing.T) {
 		}
 	}
 	live := registryLiveness{db: db}
-	if alive, known := live.MemberAlive(ctx, "huddle", "lead", now); !alive || !known {
-		t.Fatalf("lead = %v, %v, want alive and known", alive, known)
+	if state, known := live.MemberState(ctx, "huddle", "lead", now); !known || state != hub.StateWorking {
+		t.Fatalf("lead = %q, %v, want %q and known", state, known, hub.StateWorking)
 	}
-	if alive, known := live.MemberAlive(ctx, "huddle", "helper", now); alive || !known {
-		t.Fatalf("helper = %v, %v, want not alive and known", alive, known)
+	if state, known := live.MemberState(ctx, "huddle", "helper", now); !known || state != hub.StateStuck {
+		t.Fatalf("helper = %q, %v, want %q and known", state, known, hub.StateStuck)
 	}
-	if alive, known := live.MemberAlive(ctx, "huddle", "nobody", now); alive || known {
-		t.Fatalf("nobody = %v, %v, want not alive and not known", alive, known)
+	if state, known := live.MemberState(ctx, "huddle", "nobody", now); known || state != "" {
+		t.Fatalf("nobody = %q, %v, want not known and no state", state, known)
 	}
-	if alive, known := (registryLiveness{}).MemberAlive(ctx, "huddle", "lead", now); alive || known {
-		t.Fatalf("nil db = %v, %v, want not alive and not known", alive, known)
+	if state, known := (registryLiveness{}).MemberState(ctx, "huddle", "lead", now); known || state != "" {
+		t.Fatalf("nil db = %q, %v, want not known and no state", state, known)
 	}
 }

@@ -65,6 +65,9 @@ export function taskState(task: Task | null | undefined): TaskState {
 /** A session's raw state, as the server reports it. */
 export type SessionState = "working" | "blocked" | "waiting" | "idle" | "left";
 
+/** A session's state in the registry, when the registry knows the session. */
+export type RegistryState = "needs-you" | "working" | "idle" | "stuck" | "ended";
+
 /** One derived status per session, in this priority: Paused › Blocked › Waiting › Working › Idle › Left. */
 export type SessionStatus = SessionState | "paused";
 
@@ -76,6 +79,7 @@ export type Session = {
   control_at?: Stamp | undefined;
   step?: string | null | undefined;
   stale?: boolean | undefined;
+  registry?: RegistryState | undefined;
   last_seen?: Stamp | undefined;
 };
 
@@ -84,6 +88,12 @@ export function sessionStatus(session: Session | null | undefined, taskById: Tas
   if (!session) return "idle";
   if (session.state === "left") return "left";
   if (session.control === "pause") return "paused";
+  const r = session.registry;
+  if (r === "ended") return "left";
+  if (r === "stuck") return "blocked";
+  if (r === "needs-you") return "waiting";
+  if (r === "working") return "working";
+  if (r === "idle") return "idle";
   const task = session.step ? taskById(session.step) : null;
   if (session.state === "blocked" || task?.status === "blocked") return "blocked";
   if (session.state === "waiting" || (task && taskState(task) === "waiting")) return "waiting";
@@ -99,6 +109,8 @@ export function sessionWhy(session: Session | null | undefined, taskById: TaskLo
     const at = session?.control_at ? ` ${timeAgo(session.control_at, now)}` : "";
     return `Paused by ${by}${at}. Its changes are refused until you resume it.`;
   }
+  if (session?.registry === "stuck") return `Stuck: no movement since ${timeAgo(session.last_seen, now)}.`;
+  if (session?.registry === "needs-you") return "Waiting for you to answer it.";
   if (k === "idle" && session?.stale && session.state !== "idle")
     return `No sign of life since ${timeAgo(session.last_seen, now)}.`;
   if (k === "waiting") return "Waiting for another task or a reply.";

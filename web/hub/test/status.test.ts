@@ -95,6 +95,19 @@ describe("sessionStatus", () => {
     expect(sessionStatus({ state: "working" }, find)).toBe("working");
     expect(sessionStatus({ state: "working", stale: true }, find)).toBe("idle");
   });
+
+  it("reads the registry's state when the registry knows the session", () => {
+    expect(sessionStatus({ state: "working", registry: "ended" }, find)).toBe("left");
+    expect(sessionStatus({ state: "working", registry: "stuck" }, find)).toBe("blocked");
+    expect(sessionStatus({ state: "working", registry: "needs-you" }, find)).toBe("waiting");
+    expect(sessionStatus({ state: "working", registry: "working" }, find)).toBe("working");
+    expect(sessionStatus({ state: "working", registry: "idle" }, find)).toBe("idle");
+  });
+
+  it("lets the registry's word outrank stale and the step's task", () => {
+    expect(sessionStatus({ state: "working", stale: true, registry: "working" }, find)).toBe("working");
+    expect(sessionStatus({ state: "working", step: "t1", registry: "working" }, find)).toBe("working");
+  });
 });
 
 describe("sessionWhy", () => {
@@ -123,6 +136,26 @@ describe("sessionWhy", () => {
     expect(sessionWhy({ step: "t1" }, find, NOW)).toBe("Blocked: it cannot go on without help.");
     expect(sessionWhy({ state: "working" }, find, NOW)).toBe("");
     expect(sessionWhy(null, find, NOW)).toBe("");
+  });
+
+  it("tells a stuck session's last movement and a needs-you session's wait", () => {
+    expect(
+      sessionWhy(
+        { state: "working", stale: true, registry: "stuck", last_seen: "2026-10-08T11:57:00Z" },
+        find,
+        NOW,
+      ),
+    ).toBe("Stuck: no movement since 3 min ago.");
+    expect(sessionWhy({ state: "working", registry: "needs-you" }, find, NOW)).toBe(
+      "Waiting for you to answer it.",
+    );
+  });
+
+  it("keeps today's sentences for a session the registry does not know", () => {
+    expect(sessionWhy({ state: "working", stale: true, last_seen: "2026-10-08T11:57:00Z" }, find, NOW)).toBe(
+      "No sign of life since 3 min ago.",
+    );
+    expect(sessionWhy({ state: "waiting" }, find, NOW)).toBe("Waiting for another task or a reply.");
   });
 });
 

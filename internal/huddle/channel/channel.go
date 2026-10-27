@@ -97,11 +97,11 @@ var editable = func() map[string]bool {
 // without a seen write make a session stale.
 const PresenceStaleS = 900
 
-// Liveness answers whether a channel member is alive from outside the channel file: the hub
-// wires the registry in, so one rule says who is here. known is false for a member the
+// Liveness answers a channel member's state in the registry from outside the channel file: the
+// hub wires the registry in, so one rule says who is here. known is false for a member the
 // answerer never heard of, and the channel falls back to its own last_seen age.
 type Liveness interface {
-	MemberAlive(ctx context.Context, channel, member string, now time.Time) (alive, known bool)
+	MemberState(ctx context.Context, channel, member string, now time.Time) (state string, known bool)
 }
 
 // stopWords are the words too common to say what a session's role or task is about.
@@ -376,6 +376,7 @@ type PresenceView struct {
 	Step         *string `json:"step"`
 	LastSeen     string  `json:"last_seen"`
 	Stale        bool    `json:"stale"`
+	Registry     string  `json:"registry,omitempty"`
 	Control      string  `json:"control"`
 	ControlBy    *string `json:"control_by"`
 	ControlAt    *string `json:"control_at"`
@@ -1918,14 +1919,17 @@ func (c *Channel) shape(ctx context.Context, s *Session) PresenceView {
 		age = float64(c.nowMs()-t.UnixMilli()) / 1000
 	}
 	stale := age > PresenceStaleS
+	registry := ""
 	if c.Liveness != nil {
-		if alive, known := c.Liveness.MemberAlive(ctx, c.Name, s.Name, c.Now()); known {
-			stale = !alive
+		// The registry's word outranks the age: only its ended and stuck states read stale.
+		if state, known := c.Liveness.MemberState(ctx, c.Name, s.Name, c.Now()); known {
+			registry = state
+			stale = state == "ended" || state == "stuck"
 		}
 	}
 	return PresenceView{
 		Name: s.Name, Parent: s.Parent, Label: s.Label, Role: s.Role, State: s.State, Task: s.Task,
-		Step: s.Step, LastSeen: s.LastSeen, Stale: stale, Control: s.Control,
+		Step: s.Step, LastSeen: s.LastSeen, Stale: stale, Registry: registry, Control: s.Control,
 		ControlBy: s.ControlBy, ControlAt: s.ControlAt, Cursor: s.Cursor, Context: s.Context,
 		BriefWaiting: s.Brief != nil,
 	}
