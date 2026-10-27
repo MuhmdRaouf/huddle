@@ -1,6 +1,6 @@
 package server
 
-// The session digest's arrival (SPEC 8): a Stop report that carries a digest reaches every
+// The session digest's arrival: a Stop report that carries a digest reaches every
 // digest-level peer once — the newest digest of a sender replaces the one still waiting — and
 // is published in the session's own channel under digest.<session>. A satellite's report rides
 // the same path through /api/sat/report, with no satellite code of its own.

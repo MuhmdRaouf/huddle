@@ -1,6 +1,6 @@
 package server
 
-// The hub role's certificate renewal (SPEC 7.2) as the running server proves it: a hub whose
+// The hub role's certificate renewal as the running server proves it: a hub whose
 // certificate sits inside the 30-day window renews it from the server itself, whatever its
 // listener did — an address it cannot bind costs the listener, never the fresh certificate —
 // while a solo machine with the same config touches nothing. The issuer is a fake: the real one

@@ -1,6 +1,6 @@
 package server
 
-// The link routes and the overhear fan-out (SPEC 8): the app ties 2 or more sessions — here or
+// The link routes and the overhear fan-out: the app ties 2 or more sessions — here or
 // on a satellite — to a channel at a level, each hears of the tie at once, a broadcast post
 // reaches the overhear links alone, and an unlink stops the delivery with it.
 

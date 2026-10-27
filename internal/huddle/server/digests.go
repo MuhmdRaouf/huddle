@@ -1,6 +1,6 @@
 package server
 
-// The session digest's arrival and its two owner acts (SPEC 8). A Stop report that carries a
+// The session digest's arrival and its two owner acts. A Stop report that carries a
 // digest is shared the moment it lands: every digest-level link of the session holds at most
 // the sender's newest digest (the next one drops the one still waiting, so a peer reads each
 // peer's latest words once, on its next prompt), and the session's own channel hears it under
@@ -78,7 +78,7 @@ type briefBody struct {
 }
 
 // briefOf reads the body's pair, checks both sessions and answers the sender's newest digest.
-// The step-up is the route's to make: a brief carries a session's words into another (SPEC 7.4).
+// The step-up is the route's to make: a brief carries a session's words into another.
 func (s *server) briefOf(ctx context.Context, r *http.Request) (string, briefBody, error) {
 	body, err := s.body(r)
 	if err != nil {
@@ -107,7 +107,7 @@ func (s *server) briefOf(ctx context.Context, r *http.Request) (string, briefBod
 	return digest, pair, nil
 }
 
-// briefRoute sends one session's newest digest to another as a message (SPEC 8). A brief is
+// briefRoute sends one session's newest digest to another as a message. A brief is
 // explicit: nothing already waiting is dropped, the owner asked for this one to arrive.
 func (s *server) briefRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
 	if s.registry == nil {
@@ -137,7 +137,7 @@ func (s *server) briefRoute(w http.ResponseWriter, r *http.Request, me auth.Who)
 }
 
 // handoverRoute briefs another session and gives it the work: the sender's open tasks move to
-// the receiver and the sender leaves the channel (SPEC 8). Both must sit in the one channel,
+// the receiver and the sender leaves the channel. Both must sit in the one channel,
 // because that is the only place whose tasks and presence the move can name.
 func (s *server) handoverRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
 	if s.registry == nil {

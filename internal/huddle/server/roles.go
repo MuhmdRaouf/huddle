@@ -1,6 +1,6 @@
 package server
 
-// The machine's role (SPEC 3) decides which listeners exist. Solo, the default, answers loopback
+// The machine's role decides which listeners exist. Solo, the default, answers loopback
 // only. Hub without hub.listen answers loopback only, behind a TLS reverse proxy on this machine
 // that serves hub.host. Hub with hub.listen adds a second listener there, the NetBird address,
 // served with the certificate in tls/: a paired device's cookie or a satellite's credential is the only way past
@@ -113,7 +113,7 @@ func (s *server) applyRole(ctx context.Context, handler http.HandlerFunc) {
 	}
 }
 
-// startRenewal keeps the hub's certificate fresh (SPEC 7.2): the server itself renews it 30 days
+// startRenewal keeps the hub's certificate fresh: the server itself renews it 30 days
 // before expiry, for as long as it runs. It needs the DNS provider the config names (the one
 // `huddle cert` recorded), that provider's token and a certificate to keep fresh — a hub
 // without one of them serves with what it has, and the renewal starts with the next restart
@@ -238,7 +238,7 @@ func hubListenHosts(listen string, bound net.Addr, hubHost string) []string {
 	return hosts
 }
 
-// hubGate is the hub listener's own door (SPEC 3): everything a brand-new browser needs to load
+// hubGate is the hub listener's own door: everything a brand-new browser needs to load
 // the app and earn a session passes through — the shell, the sign-in ceremonies, the one-time
 // link `huddle open` prints on a hub (one use, five minutes, minted on the machine itself) —
 // everything else must carry a paired device's cookie or a satellite's credential.
@@ -290,7 +290,7 @@ func hubPublicPath(path string) bool {
 }
 
 // satelliteBearer resolves the satellite credential a request carries in its Authorization
-// header (SPEC 6.7): only the credential's sha256 digest is looked up, in the home's hub.db.
+// header: only the credential's sha256 digest is looked up, in the home's hub.db.
 func (s *server) satelliteBearer(r *http.Request) (string, bool) {
 	if s.registry == nil {
 		return "", false

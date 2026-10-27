@@ -15,7 +15,7 @@ import (
 // route the request reaches stays the authority on what ran.
 const ActionHeader = "x-huddle-action"
 
-// ContentSecurityPolicy is the exact policy SPEC 7.5 fixes: everything from this origin only,
+// ContentSecurityPolicy is the exact policy the hub serves: everything from this origin only,
 // images additionally as inline data, no framing, no base tag, no form posted elsewhere. It
 // admits no inline script or style, so the dashboard loads its code and styles as files.
 const ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; " +
@@ -61,7 +61,7 @@ func originHost(origin string) string {
 	return strings.TrimPrefix(host, "http://")
 }
 
-// guard wraps the router in the request guards of SPEC 7.5: the Host must be ours, a write
+// guard wraps the router in the request guards: the Host must be ours, a write
 // carries JSON and names its action (the OTLP intake carries OTLP's own encodings instead), a foreign Origin never writes, and every answer carries the
 // security headers — a strict Content-Security-Policy first of all, so the dashboard runs no
 // inline or third-party script. A refusal answers and returns; otherwise the security headers

@@ -1,6 +1,6 @@
 package server
 
-// The link routes and the overhear fan-out (SPEC 8): the owner ties 2 or more sessions — here or
+// The link routes and the overhear fan-out: the owner ties 2 or more sessions — here or
 // on a satellite — to a channel at a level, and every broadcast post the channel carries is fanned
 // out to the links that overhear it. A linked session is no member: the channel's events do not
 // reach it on their own, the fan-out queues each post through the owner-message queue, so a
@@ -37,7 +37,7 @@ func pathPart(raw string) string {
 }
 
 // linkRoute ties the named sessions to the channel at the one level and tells each session of the
-// tie on its own delivery route. Linking carries the owner's reach into sessions (SPEC 7.4), so
+// tie on its own delivery route. Linking carries the owner's reach into sessions, so
 // it is gated like a send; reads and the level move are not.
 func (s *server) linkRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
 	if s.registry == nil {
@@ -154,7 +154,7 @@ func (s *server) linkLevelRoute(w http.ResponseWriter, r *http.Request, path str
 	return nil
 }
 
-// unlinkRoute ends one link at once (SPEC 8: no further sharing). The owner's reach out of a
+// unlinkRoute ends one link at once, with no further sharing. The owner's reach out of a
 // channel into a session is what linking carried in, so it is gated like a send.
 func (s *server) unlinkRoute(w http.ResponseWriter, r *http.Request, path string, me auth.Who) error {
 	if s.registry == nil {

@@ -1,6 +1,6 @@
 package server
 
-// The owner answers Claude's questions from the phone (SPEC 6.2): an AskUserQuestion allow
+// The owner answers Claude's questions from the phone: an AskUserQuestion allow
 // carries the answers, keyed by each question's exact text, a question needs no remote-allow
 // entry, and the path floor still reads everything the input and the answers carry.
 

@@ -1,6 +1,6 @@
 package server
 
-// The satellite routes (SPEC 6.7): a satellite machine reports its sessions' events and its
+// The satellite routes: a satellite machine reports its sessions' events and its
 // permission items in batches, long-polls for the decisions and messages the hub owes it, and
 // answers each handout delivered, refused or busy. Every route but the join names a satellite
 // credential in its Authorization header — the machine is who its credential says, whatever a
@@ -133,7 +133,7 @@ func (s *server) satRoute(w http.ResponseWriter, r *http.Request, path string) {
 	}
 }
 
-// satJoinRoute spends one invite (SPEC 6.7: one use, 10 minutes) and mints the machine's
+// satJoinRoute spends one invite — one use, 10 minutes — and mints the machine's
 // credential. The invite is consumed before anything is stored, so a replayed join buys
 // nothing; the mint writes the audit row and the alert a satellite added owes.
 func (s *server) satJoinRoute(w http.ResponseWriter, r *http.Request) {
@@ -229,7 +229,7 @@ func (s *server) satReportRoute(w http.ResponseWriter, r *http.Request, machine 
 	}{true}, nil)
 }
 
-// satNextRoute is the machine's long poll (SPEC 6.7: wait up to 30 s): the poll itself is the
+// satNextRoute is the machine's long poll, waiting up to 30 s: the poll itself is the
 // proof the machine's hooks live, so it first keeps every open permission item of the machine's
 // sessions off the silent clock, then answers what is queued — or holds until something is.
 func (s *server) satNextRoute(w http.ResponseWriter, r *http.Request, machine string) {
@@ -373,7 +373,7 @@ func (s *server) refuseForwardedItem(ctx context.Context, handout hub.SatHandout
 		return
 	}
 	// the machine's refusal is this allow's end: the audit names the machine that refused,
-	// the way a device's decision names the device (SPEC 7.7)
+	// the way a device's decision names the device
 	if _, err := s.audit(ctx, machine, "refused", strconv.FormatInt(item.ID, 10), nil); err != nil {
 		fmt.Fprintf(s.o.Stderr, "sat: the refusal is unaudited: %v\n", err)
 	}
@@ -459,7 +459,7 @@ func (s *server) secrets(ctx context.Context, h home.Home) home.SecretStore {
 	return outside.SecretsFor(ctx, h)
 }
 
-// startSatelliteLink opens the outbound link a satellite role keeps to its hub (SPEC 3): it
+// startSatelliteLink opens the outbound link a satellite role keeps to its hub: it
 // rides this server's process and registry, stops with the server, and never blocks a start —
 // a machine whose config or credential is not in order serves its own sessions as solo does,
 // with one line saying what is missing. The link also carries this machine's board writes for

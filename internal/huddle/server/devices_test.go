@@ -1,6 +1,6 @@
 package server
 
-// The devices routes over the real server (SPEC 7.3): the paired devices as the owner lists
+// The devices routes over the real server: the paired devices as the owner lists
 // them, and the removal that needs the same step-up every dangerous act needs. A removed
 // device's sessions die with it, so its open browser is signed out on its very next request.
 

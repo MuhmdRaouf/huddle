@@ -1,6 +1,6 @@
 package server
 
-// The VAPID keys every push send signs with (SPEC 7.6, 4.1): the private key prefers the OS
+// The VAPID keys every push send signs with: the private key prefers the OS
 // keystore (service huddle, account vapid) and falls back to a 0600 file in the home after a
 // second, so a keystore that hangs holds no push back — and never changes the pair under the
 // browsers' subscriptions, because the file answers with the same key the keystore holds.

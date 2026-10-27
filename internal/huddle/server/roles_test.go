@@ -1,6 +1,6 @@
 package server
 
-// The machine's three roles (SPEC 3) as the running server proves them: solo and satellite keep
+// The machine's three roles as the running server proves them: solo and satellite keep
 // one listener on loopback — a satellite's leftover hub.listen is refused with one line — and
 // hub adds the TLS listener on hub.listen, where only a paired device's cookie or a satellite's
 // credential gets past the gate; the one-time link a hub's own `huddle open` prints signs a

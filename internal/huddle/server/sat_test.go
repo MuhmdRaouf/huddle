@@ -5,7 +5,7 @@ package server
 // the satellite keeps, the role it restarts into. The satellite's link then carries a session's
 // reports and a permission item to the hub, the owner's allow travels back and lands on the
 // machine's own item, a message follows the same road, and an allow outside the machine's own
-// allow list is refused with its reason — the machine's switches rule there (SPEC 6.6).
+// allow list is refused with its reason — the machine's switches rule there.
 
 import (
 	"context"
@@ -261,7 +261,7 @@ func TestHubAndSatellitePassAPermitAndAMessage(t *testing.T) {
 	}
 
 	// the owner's answers ride the same road: the question's allow carries them across, and the
-	// machine's own poll reads them beside the decision (SPEC 6.7)
+	// machine's own poll reads them beside the decision
 	status, body = call(t, satBase, http.MethodPost, "/api/needs", "sat-token", "",
 		`{"session_id":"s-1","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which database?","options":[{"label":"Postgres"},{"label":"SQLite"}]}]}}`)
 	if status != 200 {
@@ -414,7 +414,7 @@ func TestHubAndSatellitePassAPermitAndAMessage(t *testing.T) {
 	if err := reader.Close(); err != nil {
 		t.Fatalf("close the read-back: %v", err)
 	}
-	// and the refusal is the machine's own audit row (SPEC 7.7)
+	// and the refusal is the machine's own audit row
 	if !until(8*time.Second, func() bool {
 		_, body := call(t, hubBase, http.MethodGet, "/api/audit", "hub-token", "", "")
 		return strings.Contains(body, `"action":"refused"`) && strings.Contains(body, "mbp")

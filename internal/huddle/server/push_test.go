@@ -1,6 +1,6 @@
 package server
 
-// Web Push (SPEC 7.6): the payload carries who, what kind and the tool name only — never the
+// Web Push: the payload carries who, what kind and the tool name only — never the
 // command, path, prompt or answer text — encrypted to each paired device's subscription; one
 // push per needs-you item plus one escalation while it still waits, an alert to the devices
 // that asked for them, and a subscription the push service calls gone is dropped. The sends go

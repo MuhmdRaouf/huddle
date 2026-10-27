@@ -1,4 +1,4 @@
-// The guard table (SPEC 7.5): every write route refuses a missing x-huddle-action, a wrong
+// The guard table: every write route refuses a missing x-huddle-action, a wrong
 // content-type and a foreign Origin with 403, and a foreign Host with 421; reads are Host-checked
 // only; MCP over HTTP skips the action header and nothing else; every answer carries the strict
 // CSP and its company.
@@ -196,7 +196,7 @@ func TestGuardReads(t *testing.T) {
 	}
 }
 
-// TestGuardSecurityHeaders pins the headers every answer carries: the exact CSP of SPEC 7.5 and
+// TestGuardSecurityHeaders pins the headers every answer carries: the exact CSP and
 // its three companions, on a page, a JSON answer, a not-found and the guards' own refusals.
 func TestGuardSecurityHeaders(t *testing.T) {
 	srv := startServer(t, nil)
@@ -237,7 +237,7 @@ func TestGuardSecurityHeaders(t *testing.T) {
 }
 
 // TestGuardHubHost proves the home's config.toml hub.host is an allowed Host alongside loopback:
-// the name the owner's network reaches the hub by (SPEC 7.5), while any other still gets 421.
+// the name the owner's network reaches the hub by, while any other still gets 421.
 func TestGuardHubHost(t *testing.T) {
 	home := t.TempDir()
 	config := "[hub]\nhost = \"hub.mine.example\"\n"

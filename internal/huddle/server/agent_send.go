@@ -28,7 +28,7 @@ func (s *server) agentSendRoute(w http.ResponseWriter, r *http.Request, path str
 	if s.registry == nil {
 		return s.needsUnavailable()
 	}
-	// the owner's words reach a session's work (SPEC 7.4), so it is gated like an allow
+	// the owner's words reach a session's work, so it is gated like an allow
 	if s.stepUp.Required(r, me) {
 		return &channel.HuddleError{Status: 401, Msg: "step-up required"}
 	}
@@ -80,7 +80,7 @@ func (s *server) agentSendRoute(w http.ResponseWriter, r *http.Request, path str
 		return err
 	}
 	// the message stands once queued, so a row that cannot be written is answered as an error:
-	// an unaudited forward never passes silently (SPEC 7.7)
+	// an unaudited forward never passes silently
 	if _, err := s.audit(r.Context(), auditActor(me), "forward", id, nil); err != nil {
 		return err
 	}

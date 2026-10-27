@@ -1,6 +1,6 @@
 package server
 
-// The audit log's server face (SPEC 7.7): the one-time link's sign-in appends its row through
+// The audit log's server face: the one-time link's sign-in appends its row through
 // hub.Record — beside the pairing, sign-in and removal rows pairing writes — while the owner
 // alerts fan out in-process for the push sender and stay stored with a read state. A detail
 // passes through the run's redaction first: the log is append-only and serves the owner's
@@ -115,7 +115,7 @@ func (s *server) auditSignin(ctx context.Context, cred string) error {
 }
 
 // raiseAlert stores one owner alert, unread, and fans it out for the push sender. The kinds are
-// the pushed ones (SPEC 7.7): a device paired, a satellite added, a rule added or changed, a
+// the pushed ones: a device paired, a satellite added, a rule added or changed, a
 // remote allow.
 func (s *server) raiseAlert(ctx context.Context, kind string, body any) (int64, error) {
 	if s.registry == nil {
@@ -169,7 +169,7 @@ func (s *server) redactDetail(detail any) (*jsfmt.Value, error) {
 	return s.auth.Redact(value), nil
 }
 
-// auditRoute answers the audit log's read (SPEC 7.7): newest first, one page of at most 500
+// auditRoute answers the audit log's read: newest first, one page of at most 500
 // rows, paged by before — the last row id a page served. Owner-only: the log is the owner's
 // security record, and a member's credential or browser is refused it.
 func (s *server) auditRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {

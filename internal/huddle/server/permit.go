@@ -1,10 +1,10 @@
 package server
 
-// The permission flow's routes (SPEC 6.2): the PermissionRequest hook posts an item on the
+// The permission flow's routes: the PermissionRequest hook posts an item on the
 // shared needs-you list and holds a long poll for a decision; the owner's app allows or denies
 // it. Whichever answers first wins — the app's decision or the terminal's own — and the loser
 // reads withdrawn, so the prompt is never answered twice. An allow passes the machine's
-// switches (6.6) and a step-up (7.4); nothing here writes a permission rule that outlives the
+// switches and a step-up; nothing here writes a permission rule that outlives the
 // one prompt.
 
 import (
@@ -30,7 +30,7 @@ import (
 // the owner's decision. The number is the shared list's row id.
 var permitItemPath = regexp.MustCompile(`^/api/needs/([1-9][0-9]*)/(wait|decide)$`)
 
-// waitMax is the longest one wait holds (SPEC 6.2.1: the hook re-polls).
+// waitMax is the longest one wait holds; the hook re-polls.
 const waitMax = 30 * time.Second
 
 // permitSweepEvery is how often the sweeper withdraws the open permission items whose hook is
@@ -105,7 +105,7 @@ func (s *server) permitItemRoute(w http.ResponseWriter, r *http.Request, path st
 	return s.permitDecideRoute(w, r, id, me)
 }
 
-// permitCreateRoute takes the PermissionRequest hook's item (SPEC 6.2.1) and answers the id
+// permitCreateRoute takes the PermissionRequest hook's item and answers the id
 // its poll holds. Any credential may ask — the asking session's own — because asking is what a
 // session does when its terminal is prompted.
 func (s *server) permitCreateRoute(w http.ResponseWriter, r *http.Request) error {
@@ -134,10 +134,10 @@ func (s *server) permitCreateRoute(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
-// permitDecideRoute records the app's decision (SPEC 6.2): allow or deny, once. An allow passes
-// the machine's switches in their fixed order — a cut input that cannot be checked (6.2.4),
-// step-up (6.2.5), remote permissions, the floor and the allow list (6.6) — and a deny passes
-// nothing: refusing is always safe (7.4). Only the owner decides; a session never may, least
+// permitDecideRoute records the app's decision: allow or deny, once. An allow passes
+// the machine's switches in their fixed order — a cut input that cannot be checked,
+// step-up, remote permissions, the floor and the allow list — and a deny passes
+// nothing: refusing is always safe. Only the owner decides; a session never may, least
 // of all its own permission.
 func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id int64, me auth.Who) error {
 	if s.registry == nil {
@@ -197,7 +197,7 @@ func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id in
 			return &channel.HuddleError{Status: 403, Msg: reason}
 		}
 		if item.Tool == "AskUserQuestion" {
-			// the exemption that let the question past the list is on the audit row (SPEC 7.7),
+			// the exemption that let the question past the list is on the audit row,
 			// and the answers themselves still pass the path floor
 			if reason, ok := hub.AnswersFloor(answers); !ok {
 				return &channel.HuddleError{Status: 403, Msg: reason}
@@ -213,7 +213,7 @@ func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id in
 		return &channel.HuddleError{Status: 409, Msg: "already answered: the terminal or the app got there first"}
 	}
 	// the decision stands once won, so a row that cannot be written is answered as an error:
-	// an unaudited allow or deny never passes silently (SPEC 7.7)
+	// an unaudited allow or deny never passes silently
 	actor := "owner"
 	if me.Device != "" {
 		actor = me.Device
@@ -230,8 +230,8 @@ func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id in
 		return err
 	}
 	if decision == "allow" {
-		// the alert names the session and the tool, never the command or a path (SPEC 7.6's
-		// rule, kept for every owner-facing notice)
+		// the alert names the session and the tool, never the command or a path — the rule
+		// every owner-facing notice keeps
 		if _, err := s.raiseAlert(ctx, "alert.remote_allow", struct {
 			Item    int64  `json:"item"`
 			Session string `json:"session"`
@@ -240,7 +240,7 @@ func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id in
 			return err
 		}
 	}
-	// a decision on a satellite's forwarded item travels to the machine (SPEC 6.7): its link
+	// a decision on a satellite's forwarded item travels to the machine: its link
 	// applies it there, under the machine's own switches. The offer carries the answers the
 	// route checked.
 	item.Answers = answers
@@ -269,9 +269,9 @@ func answersOfBody(body *jsfmt.Value) (map[string]string, error) {
 	return answers, nil
 }
 
-// permitWaitRoute is the hook's long poll (SPEC 6.2.1): it holds until the item is decided,
+// permitWaitRoute is the hook's long poll: it holds until the item is decided,
 // withdrawn or expired — or its own timeout passes, when it answers the still-open item and
-// the hook re-polls. The poll itself is what keeps the item from reading silent (6.2.6), and
+// the hook re-polls. The poll itself is what keeps the item from reading silent, and
 // the item's age can still end it mid-wait, so the wait ends with it.
 func (s *server) permitWaitRoute(w http.ResponseWriter, r *http.Request, id int64) error {
 	if s.registry == nil {
@@ -393,8 +393,8 @@ func (s *server) emitPermissionItem(ctx context.Context, id int64) {
 	ch.Emit("needs.item", item)
 }
 
-// withdrawPermissions marks the session's open permission items withdrawn (SPEC 6.2.2: the
-// terminal answered its own prompt, so the app's pending decision arrives too late) and wakes
+// withdrawPermissions marks the session's open permission items withdrawn — the terminal
+// answered its own prompt, so the app's pending decision arrives too late — and wakes
 // every poller: each answers with no decision and Claude Code keeps the terminal's answer.
 func (s *server) withdrawPermissions(ctx context.Context, sessionID string) {
 	if s.registry == nil || sessionID == "" {

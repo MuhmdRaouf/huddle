@@ -1,4 +1,4 @@
-// The needs-you and answer routes (SPEC 6.1, 6.3, 6.4): the items list with the channels'
+// The needs-you and answer routes: the items list with the channels'
 // blocked tasks kept in step, the owner's answer and send queueing one headed message per
 // session, delivery through a channel push while the session's bridge acks one and through the
 // next prompt otherwise, and pause, resume, snooze and dismiss over the channels' own controls.
@@ -19,7 +19,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
-// The send limits (SPEC 6.3): 1 to 20 sessions, 1 to 4,000 characters.
+// The send limits: 1 to 20 sessions, 1 to 4,000 characters.
 const (
 	maxSendSessions = 20
 	maxMessageChars = 4000
@@ -93,7 +93,7 @@ func auditActor(me auth.Who) string {
 	return "owner"
 }
 
-// snoozeUntil maps one snooze span to its wake time (SPEC 6.3): a quarter, an hour, or tomorrow
+// snoozeUntil maps one snooze span to its wake time: a quarter, an hour, or tomorrow
 // at nine in the machine's own morning.
 func snoozeUntil(kind string, now time.Time) (time.Time, bool) {
 	switch kind {
@@ -127,7 +127,7 @@ func (s *server) sessionActRoute(w http.ResponseWriter, r *http.Request, path st
 	}
 	switch action {
 	case "answer":
-		// an answer carries the owner's words into a session (SPEC 7.4), so it is gated like an
+		// an answer carries the owner's words into a session, so it is gated like an
 		// allow; deny, snooze, dismiss and the reads are not
 		if s.stepUp.Required(r, me) {
 			return &channel.HuddleError{Status: 401, Msg: "step-up required"}
@@ -149,7 +149,7 @@ func (s *server) sessionActRoute(w http.ResponseWriter, r *http.Request, path st
 			return err
 		}
 		// the message stands once queued, so a row that cannot be written is answered as an
-		// error: an unaudited answer never passes silently (SPEC 7.7)
+		// error: an unaudited answer never passes silently
 		if _, err := s.audit(ctx, auditActor(me), "answer", id, nil); err != nil {
 			return err
 		}
@@ -202,7 +202,7 @@ func (s *server) sessionActRoute(w http.ResponseWriter, r *http.Request, path st
 }
 
 // sendRoute answers the owner's new work: one message per named session, each delivered on its
-// own session's route. New work is the owner's words at their bluntest (SPEC 7.4), so the
+// own session's route. New work is the owner's words at their bluntest, so the
 // step-up gates it like an allow.
 func (s *server) sendRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
 	if s.registry == nil {
@@ -257,7 +257,7 @@ type sentRoute struct {
 	Route   string `json:"route"`
 }
 
-// pushAckRoute records a bridge's proof that its channel pushes flow (SPEC 6.4), with the command
+// pushAckRoute records a bridge's proof that its channel pushes flow, with the command
 // line of the member's claude, and promotes what waited on that member to the now route: a
 // session answered while its bridge was gone is pushed the moment the bridge returns, when its
 // claude shows channel pushes.

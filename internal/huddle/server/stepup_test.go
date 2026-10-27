@@ -1,6 +1,6 @@
 package server
 
-// Step-up over the real server (SPEC 3, 7.4): the dangerous routes — an allow, an answer, a
+// Step-up over the real server: the dangerous routes — an allow, an answer, a
 // send — answer the one 401 without a passkey assertion fresh enough, and work with one. The
 // paired device's browser session owes that assertion wherever the request lands; the hub
 // listener asks it of every dangerous act, and loopback waives it for the machine's own
@@ -285,7 +285,7 @@ func TestStepUpGatesTheDangerousRoutes(t *testing.T) {
 
 	t.Run("the machine's own credentials keep working on loopback beside a paired device", func(t *testing.T) {
 		// the one-time-link browser and the root token hold no passkey and need none here: the
-		// loopback listener is the machine's own door (SPEC 3)
+		// loopback listener is the machine's own door
 		link := linkBrowser(t, srv)
 		for _, call := range []struct{ name, path, body string }{
 			{"the link browser's answer", "/api/sessions/s-1/answer", `{"text":"hi"}`},
@@ -305,7 +305,7 @@ func TestStepUpGatesTheDangerousRoutes(t *testing.T) {
 	})
 }
 
-// TestStepUpOnTheHubListener pins the network side (SPEC 3): a paired device's stale session
+// TestStepUpOnTheHubListener pins the network side: a paired device's stale session
 // passes the hub gate and still meets the step-up on a dangerous act — the one 401, not the
 // gate's — and the assertion it earns on loopback carries it there.
 func TestStepUpOnTheHubListener(t *testing.T) {
@@ -386,7 +386,7 @@ func TestSoloNeedsNoStepUp(t *testing.T) {
 	}
 
 	// pairing a device changes nothing for the machine's own credentials on loopback: its
-	// browser and the terminal keep answering (SPEC 3), and the paired device's own fresh
+	// browser and the terminal keep answering, and the paired device's own fresh
 	// session answers too
 	key := webauthntest.NewSoftKey(t)
 	pairCookie, _ := pairDevice(t, srv, key, "iPhone")

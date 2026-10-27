@@ -1,4 +1,4 @@
-// The hub's own-machine delivery of an owner's message (SPEC 6.4): the words posted straight
+// The hub's own-machine delivery of an owner's message: the words posted straight
 // through the session's inbox socket, and the sessions file read to tell the route — inbox when
 // the session's claude reads the turn at once, held while it keeps the words for the owner's
 // approval in its terminal. No socket, a dead socket and a failed post answer nothing: the

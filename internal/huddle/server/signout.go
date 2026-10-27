@@ -1,6 +1,6 @@
 package server
 
-// The sign-out routes (SPEC 7.7): /api/signout ends whatever credential this browser presents
+// The sign-out routes: /api/signout ends whatever credential this browser presents
 // — its link session, a root token it presents, or its paired device's session — and
 // /api/signout/all ends every browser and device session at once behind the same fresh
 // assertion a revocation rides on, keeping the root tokens. Neither unpairs a device or ends a
@@ -34,7 +34,7 @@ func (s *server) signOutRoute(w http.ResponseWriter, r *http.Request, me auth.Wh
 }
 
 // signOutAllRoute ends every browser and device session at once. Like the removal of a device,
-// it is a dangerous act (SPEC 7.4): it asks for the same fresh passkey assertion, and the audit
+// it is a dangerous act: it asks for the same fresh passkey assertion, and the audit
 // row lands before anything ends.
 func (s *server) signOutAllRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
 	if s.stepUp.Required(r, me) {

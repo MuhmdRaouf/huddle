@@ -1,6 +1,6 @@
 package server
 
-// The sign-in routes a browser without a terminal runs (SPEC 7.3): the signed-out page's one
+// The sign-in routes a browser without a terminal runs: the signed-out page's one
 // question — does this home hold a passkey at all — answered without a credential, the pairing
 // link the owner's own browser mints for itself, and the rolling device session whose cookie a
 // request past its renewal hour earns again. The refusals each get their own line: a mint

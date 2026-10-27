@@ -1,6 +1,6 @@
 package server
 
-// The pairing routes over the real server (SPEC 7.3): a virtual ES256 authenticator pairs a
+// The pairing routes over the real server: a virtual ES256 authenticator pairs a
 // device through /api/pair, signs in later through /api/login, the cookie it earns carries it,
 // and removing the device — the way the terminal's `huddle devices rm` does, straight through
 // the shared hub database — kills the session on the next request. The refusals each get their

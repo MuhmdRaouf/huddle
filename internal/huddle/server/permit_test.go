@@ -1,6 +1,6 @@
 package server
 
-// The permission flow's routes (SPEC 6.2, 6.6): the hook's item on the shared needs-you list,
+// The permission flow's routes: the hook's item on the shared needs-you list,
 // its long poll, and the owner's decision. The refusals each carry their own status: 409 for a
 // cut input or a lost race, 403 for a session that is not the owner or an allow the machine
 // will not make, 401 for a step-up that is due, 404 for an item that no longer waits.
@@ -181,7 +181,7 @@ func TestDecideAllowsAndDeniesOnce(t *testing.T) {
 	if code, _ = srv.post(t, "/api/needs/999999/decide", `{"decision":"allow"}`, nil); code != 404 {
 		t.Errorf("an unknown item = %d, want 404", code)
 	}
-	// one audit row per decision (SPEC 7.7): the actor, the action, the item
+	// one audit row per decision: the actor, the action, the item
 	code, _, out = srv.get(t, "/api/audit", nil)
 	if code != 200 {
 		t.Fatalf("the audit log = %d %s", code, out)

@@ -1,6 +1,6 @@
 package server
 
-// Web Push (SPEC 7.6): the needs-you items, a failing Anthropic path and the owner alerts reach
+// Web Push: the needs-you items, a failing Anthropic path and the owner alerts reach
 // the paired devices' subscriptions, each payload encrypted to that device's own keys. A payload
 // carries who (the session and its machine), what kind, the tool name, the app address the
 // notification opens and, on a needs-you push, the open needs-you count for the Home Screen
@@ -39,7 +39,7 @@ const (
 	pushSubscriber = "huddle-push@localhost"
 )
 
-// pushPayload is one needs-you item's push (SPEC 7.6): who, what kind, the tool name and the
+// pushPayload is one needs-you item's push: who, what kind, the tool name and the
 // open needs-you count the Home Screen badge shows. The summary, the input and every other
 // field of the item's row stay off it — the payload crosses a push service outside this
 // machine, and its plaintext is decrypted only by the devices.
@@ -53,7 +53,7 @@ type pushPayload struct {
 	Badge   int    `json:"badge"`
 }
 
-// sessionPushPayload is one session's needs-you entry push (SPEC 7.6): who, that it waits, and
+// sessionPushPayload is one session's needs-you entry push: who, that it waits, and
 // the open needs-you count. No item rides it — an entry with an open item has the item's own
 // push — and nothing of the session's words does.
 type sessionPushPayload struct {
@@ -514,7 +514,7 @@ func (s *server) pushKeyRoute(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// pushSubscribeRoute stores the browser's subscription for the device at the cookie (SPEC 7.6):
+// pushSubscribeRoute stores the browser's subscription for the device at the cookie:
 // the endpoint and the keys it encrypted for. A re-subscribe replaces the row the endpoint
 // holds — the push service's own name for one subscription.
 func (s *server) pushSubscribeRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {

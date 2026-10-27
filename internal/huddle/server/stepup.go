@@ -1,6 +1,6 @@
 package server
 
-// The step-up routes and the check they feed (SPEC 3, 7.4): allow, answer, send, link, unlink,
+// The step-up routes and the check they feed: allow, answer, send, link, unlink,
 // rule changes and pairing a new device each need a passkey assertion at most five minutes old
 // in this browser session; reads, deny, snooze and dismiss need only the session. The
 // assertion lives on the device session's own row, so one browser's never covers another's.
@@ -15,7 +15,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 )
 
-// StepUp is the passkey check the dangerous routes pass (SPEC 7.4): Required answers whether
+// StepUp is the passkey check the dangerous routes pass: Required answers whether
 // the request lacks an assertion fresh enough, and the route answers 401 "step-up required".
 type StepUp interface {
 	Required(r *http.Request, me auth.Who) bool
@@ -27,7 +27,7 @@ type soloStepUp struct{}
 
 func (soloStepUp) Required(*http.Request, auth.Who) bool { return false }
 
-// pairStepUp is the check once pairing exists. The hub listener is the network's door (SPEC 3),
+// pairStepUp is the check once pairing exists. The hub listener is the network's door,
 // so everything dangerous through it asserts a passkey: a paired device's browser carries its
 // own fresh assertion, and a credential that holds none — the terminal's token, a satellite's —
 // can never pass there. On loopback the same assertion is asked of a paired device's session
@@ -69,7 +69,7 @@ func (s *server) stepUpBeginRoute(w http.ResponseWriter, r *http.Request, me aut
 
 // stepUpFinishRoute verifies one assertion and stamps the five minutes it buys onto the
 // cookie's own session row. The audit row lands before the answer: an unaudited step-up never
-// happened (SPEC 7.7), so one that cannot be recorded is refused.
+// happened, so one that cannot be recorded is refused.
 func (s *server) stepUpFinishRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
 	if s.pairs == nil {
 		return &channel.HuddleError{Status: 500, Msg: "the pairing store is unavailable"}

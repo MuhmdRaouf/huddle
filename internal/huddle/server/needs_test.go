@@ -1,6 +1,6 @@
 package server
 
-// The answer, send and needs-you routes (SPEC 6.1, 6.3, 6.4): items grow from reports, the owner
+// The answer, send and needs-you routes: items grow from reports, the owner
 // answers and sends through them, a message reaches its session by channel push while the
 // session's bridge acks one and its claude runs with the channels flag (route now) and by the
 // next prompt otherwise, and pause, resume, snooze and dismiss reach the channels' own controls.

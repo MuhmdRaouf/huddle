@@ -1,6 +1,6 @@
 package server
 
-// The pairing routes (SPEC 7.3): the ceremonies a browser runs to pair a device with a passkey
+// The pairing routes: the ceremonies a browser runs to pair a device with a passkey
 // and sign in with it later, the availability fact the signed-out page asks first, the link an
 // owner's own browser mints for itself, and the page the printed link opens. The ceremonies and
 // the availability are the only uncredentialed /api paths beside the join: they are how a

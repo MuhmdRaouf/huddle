@@ -285,13 +285,13 @@ type server struct {
 	// totp is the authenticator core over the same hub.db; nil when the registry could not be
 	// built, in which case every authenticator route refuses and code sign-in is just wrong.
 	totp *auth.TOTP
-	// permits wakes the permission items' long polls; stepUp gates the dangerous acts (7.4):
+	// permits wakes the permission items' long polls; stepUp gates the dangerous acts:
 	// a remote allow, an answer, a send — every route that carries the owner's decision or
 	// words into a session.
 	permits *permitWaiters
 	stepUp  StepUp
 	// satQueue wakes the satellites' long polls when a decision or a message is queued for
-	// their machine (SPEC 6.7).
+	// their machine.
 	satQueue *satWaiters
 	// satMu guards satLink and satHubURL: the kanban tab mounts before the satellite link
 	// starts, and every relayed flow command reads the link per request — nil until it is up.
@@ -371,7 +371,7 @@ func OptionsFromEnv(version string, env func(string) string, stdout, stderr io.W
 	}
 	o.Home = homeDir
 	if homeDir != "" {
-		// the hub's own name from config.toml is an allowed Host (SPEC 7.5): the owner's network
+		// the hub's own name from config.toml is an allowed Host: the owner's network
 		// reaches the hub by it, so the rebinding guard must know it
 		if cfg, err := home.LoadConfig(home.Home{Root: homeDir}); err == nil && cfg.Hub.Host != "" {
 			o.Hosts = append(o.Hosts, cfg.Hub.Host)
@@ -645,7 +645,7 @@ func Serve(ctx context.Context, o Options) error {
 			safego.Go(s.warn, func() { s.pushAlertEvent(pidCtx, e) })
 		})
 		defer unsubscribeAlerts()
-		// a satellite keeps its outbound link for the lives of this server (SPEC 3): it is
+		// a satellite keeps its outbound link for the lives of this server: it is
 		// started from the same config the role's listeners read
 		s.startSatelliteLink(pidCtx)
 	}
@@ -689,7 +689,7 @@ func Serve(ctx context.Context, o Options) error {
 		handler = func(w http.ResponseWriter, r *http.Request) {
 			if p := r.URL.Path; p == kanbantab.Prefix || strings.HasPrefix(p, kanbantab.Prefix+"/") {
 				if _, ok := s.who(r); !ok {
-					// a satellite's credential is the one other way in (SPEC 6.7):
+					// a satellite's credential is the one other way in:
 					// its machine's boards write through this prefix, on the hub
 					// that holds them
 					machine, verified := s.satelliteBearer(r)
@@ -1125,7 +1125,7 @@ func (s *server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			location = "/?" + rest
 		}
 		// the sign-in is audited before the browser gets its cookie: a security event that
-		// cannot be recorded never happens (SPEC 7.7)
+		// cannot be recorded never happens
 		if err := s.auditSignin(r.Context(), cred); err != nil {
 			writeText(w, 503, "the audit log is unavailable, so this sign-in is refused: open a fresh link once this machine's hub.db is healthy", map[string]string{"Cache-Control": "no-store"})
 			return
@@ -1310,7 +1310,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.registryListRoute(w, r)
 	case credentialed && registrySessionPath.MatchString(path) && r.Method == http.MethodGet:
 		return s.registrySessionRoute(w, r, path)
-	// the audit log's read (SPEC 7.7): owner-only, newest first, one page at a time
+	// the audit log's read: owner-only, newest first, one page at a time
 	case credentialed && path == "/api/audit" && r.Method == http.MethodGet:
 		return s.auditRoute(w, r, me)
 	case credentialed && path == "/api/registry/live" && r.Method == http.MethodGet:
@@ -1331,7 +1331,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.permitItemRoute(w, r, path, me)
 	case credentialed && needsItemPath.MatchString(path) && r.Method == http.MethodPost:
 		return s.needsItemRoute(w, r, path)
-	// Web Push (SPEC 7.6): the browser's subscription, its notification choice, the public key
+	// Web Push: the browser's subscription, its notification choice, the public key
 	// it subscribes with, and the focus report that keeps the other devices quiet
 	case credentialed && path == "/api/push/key" && r.Method == http.MethodGet:
 		return s.pushKeyRoute(w, r)
@@ -1367,7 +1367,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.agentShellOutputRoute(w, r, path)
 	case credentialed && path == "/api/send" && r.Method == http.MethodPost:
 		return s.sendRoute(w, r, me)
-	// links (SPEC 8): the tie itself owes the step-up like a send, its level move and its read do
+	// links: the tie itself owes the step-up like a send, its level move and its read do
 	// not, and the unlink ends it gated the same way
 	case credentialed && path == "/api/links" && r.Method == http.MethodPost:
 		return s.linkRoute(w, r, me)
@@ -1379,7 +1379,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.unlinkRoute(w, r, path, me)
 	case credentialed && linksOfPath.MatchString(path) && r.Method == http.MethodGet:
 		return s.linksOfRoute(w, r, path)
-	// brief and hand over (SPEC 8): a digest on demand, and a session's open work given away —
+	// brief and hand over: a digest on demand, and a session's open work given away —
 	// both carry a session's words or tasks into another, so both pass the step-up like a send
 	case credentialed && path == "/api/brief" && r.Method == http.MethodPost:
 		return s.briefRoute(w, r, me)
@@ -1522,7 +1522,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 	return nil
 }
 
-// reportRoute records one session report from a hook (SPEC 5.1): one row in the home's hub.db
+// reportRoute records one session report from a hook: one row in the home's hub.db
 // per event, the session's row upserted. A report that names no session or no event is refused,
 // so a torn body never reaches the registry. Once it lands, the session's channel hears its
 // computed row on its live stream.
@@ -1560,7 +1560,7 @@ func (s *server) reportRoute(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// registryListRoute answers the registry's read (SPEC 5.3): every session with its state
+// registryListRoute answers the registry's read: every session with its state
 // computed when read, filtered by machine, project and state.
 func (s *server) registryListRoute(w http.ResponseWriter, r *http.Request) error {
 	if s.registry == nil {
@@ -1652,9 +1652,9 @@ func (s *server) seeTranscript(ctx context.Context, times map[string]time.Time, 
 	}, now)
 }
 
-// registrySessionRoute answers one session with its last events (SPEC 5.3). The read is the
+// registrySessionRoute answers one session with its last events. The read is the
 // owner opening the session's screen: it marks the session opened, which is what a later Stop
-// checks before growing a turn item (SPEC 6.1: a finished turn the owner has not opened). Each
+// checks before growing a turn item: a finished turn the owner has not opened. Each
 // turn item the read answers streams as a needs.item, and the session's row after them, so every
 // open list drops it at once.
 func (s *server) registrySessionRoute(w http.ResponseWriter, r *http.Request, path string) error {
@@ -1756,7 +1756,7 @@ func (s *server) fillRadarFacts(ctx context.Context, rows ...*hub.SessionRow) {
 	}
 }
 
-// registryLiveRoute serves one SSE client over the whole registry (SPEC 5.3's live updates, for
+// registryLiveRoute serves one SSE client over the whole registry (the live updates, for
 // the Now list): every session's computed row as it changes, whatever channel the session is in
 // or whether it is in one at all — the list the browser keeps spans every channel, so no single
 // channel's stream can feed it.
@@ -1891,8 +1891,8 @@ func (s *server) emitRegistrySession(ctx context.Context, sessionID string) {
 	ch.Emit("registry.session", row)
 }
 
-// watchPids ends the sessions whose claude process is gone (SPEC 5.2: "its machine reports the
-// pid gone"): a session that dies without its SessionEnd — a crash, a power loss — would read
+// watchPids ends the sessions whose claude process is gone — the machine reports the pid gone:
+// a session that dies without its SessionEnd — a crash, a power loss — would read
 // at work forever otherwise. The probe only looks; nothing is ever signalled.
 func (s *server) watchPids(ctx context.Context) {
 	interval := time.Duration(s.o.PidCheckMS) * time.Millisecond
