@@ -45,13 +45,15 @@ type permitInput struct {
 
 // permitDecision is the decision object Claude Code's PermissionRequest hook answers with.
 type permitDecision struct {
-	Behavior string `json:"behavior"`          // allow or deny
-	Message  string `json:"message,omitempty"` // deny only: why, for Claude
+	Behavior     string          `json:"behavior"`               // allow or deny
+	Message      string          `json:"message,omitempty"`      // deny only: why, for Claude
+	UpdatedInput json.RawMessage `json:"updatedInput,omitempty"` // allow only: an answered AskUserQuestion's input with the owner's answers set
 }
 
 // permitOutput is the one answer this hook gives: the documented hookSpecificOutput shape. An
-// allow carries no updatedInput and no updatedPermissions — Huddle decides this one prompt and
-// never writes a permission rule (SPEC 6.2.3).
+// allow carries updatedInput only for an answered AskUserQuestion, and never
+// updatedPermissions — Huddle decides this one prompt and never writes a permission rule
+// (SPEC 6.2.3).
 type permitOutput struct {
 	HookSpecificOutput struct {
 		HookEventName string         `json:"hookEventName"`
@@ -143,9 +145,14 @@ func Permit(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			}
 			switch {
 			case row.State == hub.StateAnswered && row.Decision == "allow":
+				updated, ok := permitUpdatedInput(input, row.Answers)
+				if !ok {
+					return nil // no complete updatedInput for a question: the terminal dialog stands
+				}
 				var answer permitOutput
 				answer.HookSpecificOutput.HookEventName = "PermissionRequest"
 				answer.HookSpecificOutput.Decision.Behavior = "allow"
+				answer.HookSpecificOutput.Decision.UpdatedInput = updated
 				writeJSON(out, answer)
 				return nil
 			case row.State == hub.StateAnswered && row.Decision == "deny":
@@ -168,6 +175,37 @@ func Permit(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			}
 		}
 	})
+}
+
+// permitUpdatedInput answers what an allow prints as the decision's updatedInput, and whether
+// there is an allow to print at all. Only an AskUserQuestion carries one: Claude Code runs a
+// question without its dialog only when the allow's updatedInput holds the owner's answers, so
+// the hook echoes the call's own stdin input — never the hub's stored copy, which may be cut —
+// with answers set to the item's picks, replacing any answers the input already had. An ask
+// with no answers stored, or whose input is no JSON object, has no complete one to give:
+// (nil, false) prints nothing and the terminal dialog stands, never a bare allow. Every other
+// tool answers (nil, true): its allow stays bare.
+func permitUpdatedInput(input permitInput, answers map[string]string) (json.RawMessage, bool) {
+	if input.ToolName != "AskUserQuestion" {
+		return nil, true
+	}
+	if len(answers) == 0 {
+		return nil, false
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(input.ToolInput, &fields); err != nil || fields == nil {
+		return nil, false
+	}
+	picked, err := domain.MarshalCompactJSON(answers)
+	if err != nil {
+		return nil, false
+	}
+	fields["answers"] = picked
+	updated, err := domain.MarshalCompactJSON(fields)
+	if err != nil {
+		return nil, false
+	}
+	return updated, true
 }
 
 // permitPause holds the hook between a failed poll and the next. The retry shape is a fixed
