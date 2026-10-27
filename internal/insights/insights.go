@@ -101,6 +101,13 @@ type Turn struct {
 	LastCommitAt time.Time // zero: no commit since the turn started
 }
 
+// ActiveAlert is one alert radar holds live right now: the session it is about and the kind
+// that fired, as radar's /api/alerts answers them.
+type ActiveAlert struct {
+	Session string
+	Kind    string
+}
+
 // Input is everything Detect reads. Now is the clock, so the rules are pure.
 type Input struct {
 	Now         time.Time
@@ -114,6 +121,7 @@ type Input struct {
 	ProjectDays []ProjectDay
 	Checkpoints []Checkpoint
 	Turns       []Turn
+	Alerts      []ActiveAlert
 }
 
 // Tip is one sentence the owner can act on, with the numbers behind it.
@@ -160,6 +168,7 @@ func Detect(in Input) []Tip {
 	tips = append(tips, projectCostTips(in)...)
 	tips = append(tips, contextCheckpointTips(in)...)
 	tips = append(tips, longTurnTips(in)...)
+	tips = withdrawn(tips, in.Alerts)
 	slices.SortFunc(tips, func(a, b Tip) int {
 		if byRule := cmp.Compare(a.Rule, b.Rule); byRule != 0 {
 			return byRule

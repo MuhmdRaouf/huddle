@@ -217,6 +217,8 @@ The tips:
 - A session past 70% context with nothing committed and no handoff in 30 minutes gets one tip
   to wrap the step.
 - A turn past 45 minutes that edited files with no commit gets one tip to checkpoint.
+- A tip steps aside while the alert that covers it is live for its session: a loop alert
+  covers the failing-tool and repeated-command tips, a context alert the checkpoint tip.
 
 ### Reach an idle session
 

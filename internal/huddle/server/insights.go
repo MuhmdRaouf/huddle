@@ -11,9 +11,11 @@ package server
 // session's answer leaves all five out. Both answers add the subagents' recent starts and
 // stops from the mounted radar tab, so subagent_silent can fire on either, the registry's
 // live sessions' checkpoints, so context_checkpoint can, and the registry's live sessions'
-// open turns, so long_turn can too.
+// open turns, so long_turn can too. Both answers add radar's live alerts last, so a tip the
+// alert that covers it fired for steps aside and the user hears each thing once.
 
 import (
+	"encoding/json"
 	"net/http"
 	"regexp"
 	"slices"
@@ -58,7 +60,10 @@ type insightsSettingsAnswer struct {
 // session still running — so a session past 70% context with no commit and no handoff in 30
 // minutes names itself to whoever reads, and the registry's live sessions' open turns — the
 // newest prompt of the last 24 h and the edits and commits since it — so a turn past 45 minutes
-// that edited files and committed nothing names itself to whoever reads.
+// that edited files and committed nothing names itself to whoever reads. Both answers take
+// radar's live alerts in (/api/alerts through the mounted tab), so a tip the alert that
+// covers it fired for leaves the answer until the alert lifts; radar down leaves every tip
+// standing.
 // A session query narrows the answer to that session: its rows alone go in, its tool runs come
 // in from the mounted radar tab and add same_command alone (tool_failing needs the error text
 // radar does not record), and its tips alone come out. Tips for me gates the owner's answer,
@@ -206,6 +211,24 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 			Edits:        turn.Edits,
 			LastCommitAt: turn.LastCommitAt,
 		})
+	}
+	// both answers take radar's live alerts in: a tip steps aside while the alert that covers
+	// it is live for its session, so the user hears each thing once. Radar down or a path that
+	// answers nothing leaves every tip standing, and says nothing.
+	if s.radar != nil {
+		if raw, ok := s.radar.RadarAnswer(r.Context(), "/api/alerts"); ok {
+			var answer struct {
+				Alerts []struct {
+					SessionID string `json:"sessionId"`
+					Kind      string `json:"kind"`
+				} `json:"alerts"`
+			}
+			if err := json.Unmarshal(raw, &answer); err == nil {
+				for _, alert := range answer.Alerts {
+					in.Alerts = append(in.Alerts, insights.ActiveAlert{Session: alert.SessionID, Kind: alert.Kind})
+				}
+			}
+		}
 	}
 	tips := insights.Detect(in)
 	// a rule the owner muted leaves the answer, the owner's and every session's, until its 30
