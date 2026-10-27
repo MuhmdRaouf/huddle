@@ -311,7 +311,7 @@ func utf16CutPtr(s *string, n int) *string {
 
 func toSession(r Row) *Session {
 	return &Session{
-		Name: rStr(r, "name"), Label: rStrPtr(r, "label"), Role: rStrPtr(r, "role"),
+		Name: rStr(r, "name"), Role: rStrPtr(r, "role"),
 		JoinedAt: rStr(r, "joined_at"), LastSeen: rStr(r, "last_seen"), State: rStr(r, "state"),
 		Task: rStrPtr(r, "task"), Step: rStrPtr(r, "step"), Control: rStr(r, "control"),
 		ControlBy: rStrPtr(r, "control_by"), ControlAt: rStrPtr(r, "control_at"), Cursor: rInt(r, "cursor"),
@@ -357,7 +357,6 @@ type listenerEntry struct {
 // Session is one session's row: its presence, its pause state and its cursor.
 type Session struct {
 	Name      string  `json:"name"`
-	Label     *string `json:"label"`
 	Role      *string `json:"role"`
 	JoinedAt  string  `json:"joined_at"`
 	LastSeen  string  `json:"last_seen"`
@@ -379,7 +378,6 @@ type Session struct {
 type PresenceView struct {
 	Name         string  `json:"name"`
 	Parent       *string `json:"parent"`
-	Label        *string `json:"label"`
 	Role         *string `json:"role"`
 	State        string  `json:"state"`
 	Task         *string `json:"task"`
@@ -436,7 +434,6 @@ type ConfigureArgs struct {
 
 // JoinOpts is how a session joins.
 type JoinOpts struct {
-	Label   *string
 	Role    *string
 	Task    *string
 	Context *string
@@ -1718,10 +1715,10 @@ func (c *Channel) Join(ctx context.Context, name string, o JoinOpts) (Snapshot, 
 		if isSub {
 			parentPtr = sp(parent)
 		}
-		if err := c.dbRun(ctx, `INSERT INTO sessions (name, label, role, joined_at, last_seen, state, task, parent) VALUES (?,?,?,?,?, 'working', ?, ?)
-        ON CONFLICT(name) DO UPDATE SET label=COALESCE(excluded.label, sessions.label), role=COALESCE(excluded.role, sessions.role),
+		if err := c.dbRun(ctx, `INSERT INTO sessions (name, role, joined_at, last_seen, state, task, parent) VALUES (?,?,?,?, 'working', ?, ?)
+        ON CONFLICT(name) DO UPDATE SET role=COALESCE(excluded.role, sessions.role),
         last_seen=excluded.last_seen, state='working', task=excluded.task`,
-			name, o.Label, o.Role, t, t, task, parentPtr); err != nil {
+			name, o.Role, t, t, task, parentPtr); err != nil {
 			return err
 		}
 		// what the session missed: skipped when it starts fresh, to catch up on when it syncs
@@ -1941,7 +1938,7 @@ func (c *Channel) shape(ctx context.Context, s *Session) PresenceView {
 		}
 	}
 	return PresenceView{
-		Name: s.Name, Parent: s.Parent, Label: s.Label, Role: s.Role, State: s.State, Task: s.Task,
+		Name: s.Name, Parent: s.Parent, Role: s.Role, State: s.State, Task: s.Task,
 		Step: s.Step, LastSeen: s.LastSeen, Stale: stale, Registry: registry, Control: s.Control,
 		ControlBy: s.ControlBy, ControlAt: s.ControlAt, Cursor: s.Cursor, Context: s.Context,
 		BriefWaiting: s.Brief != nil,

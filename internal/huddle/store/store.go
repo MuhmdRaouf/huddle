@@ -41,7 +41,7 @@ type dbDriver interface {
 const ddl = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS sessions (
-  name TEXT PRIMARY KEY, label TEXT, role TEXT, joined_at TEXT NOT NULL, last_seen TEXT NOT NULL,
+  name TEXT PRIMARY KEY, role TEXT, joined_at TEXT NOT NULL, last_seen TEXT NOT NULL,
   state TEXT NOT NULL DEFAULT 'idle', task TEXT, step TEXT,
   control TEXT NOT NULL DEFAULT 'run' CHECK (control IN ('run','pause')), control_by TEXT, control_at TEXT,
   cursor INTEGER NOT NULL DEFAULT 0, parent TEXT, context TEXT, brief TEXT, session_id TEXT
@@ -94,6 +94,12 @@ var added = [][2]string{
 	{"sessions", "parent TEXT"}, {"sessions", "context TEXT"}, {"sessions", "brief TEXT"},
 	{"knowledge", "verified_by TEXT"}, {"knowledge", "verified_at TEXT"}, {"knowledge", "moved_to INTEGER"}, {"knowledge", "origin TEXT"},
 	{"sessions", "session_id TEXT"},
+}
+
+// dropped: [table, column] pairs a channel file may still hold — columns an older schema left
+// behind and nothing reads any more. Opening the file drops them.
+var dropped = [][2]string{
+	{"sessions", "label"},
 }
 
 // Store is one channel's SQLite file. One connection serves it, so the Q a transaction hands
@@ -216,6 +222,10 @@ func (s *Store) Init(ctx context.Context) error {
 	for _, c := range added {
 		// a column the file already has fails, and the file keeps the one it has
 		_ = s.db.Exec(ctx, "ALTER TABLE "+c[0]+" ADD COLUMN "+c[1])
+	}
+	for _, c := range dropped {
+		// an older channel file still holds the column
+		_ = s.db.Exec(ctx, "ALTER TABLE "+c[0]+" DROP COLUMN "+c[1])
 	}
 	if err := s.db.Exec(ctx, `CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(id UNINDEXED, title, body, tokenize='porter unicode61')`); err != nil {
 		s.FTS = false

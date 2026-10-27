@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"encoding/json"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,7 +13,7 @@ import (
 func TestChannelBranches(t *testing.T) {
 	t.Run("a snapshot with everything in it reads everything", func(t *testing.T) {
 		ch := openChannel(t, "t")
-		if _, err := ch.Join(bg, "lead", JoinOpts{Role: sp("runs the plan"), Label: sp("the lead")}); err != nil {
+		if _, err := ch.Join(bg, "lead", JoinOpts{Role: sp("runs the plan")}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := ch.Join(bg, "api", JoinOpts{Role: sp("builds")}); err != nil {
@@ -193,7 +194,41 @@ func TestChannelBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("join refuses the names it must and keeps labels", func(t *testing.T) {
+	t.Run("a member's row and presence carry no label", func(t *testing.T) {
+		ch := openChannel(t, "t")
+		if _, err := ch.Join(bg, "a", JoinOpts{Role: sp("builds"), Task: sp("wiring the router")}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ch.Join(bg, "a", JoinOpts{}); err != nil {
+			t.Fatal(err)
+		}
+		s, err := ch.Session(bg, "a")
+		if err != nil || s == nil {
+			t.Fatalf("session: %v %v", s, err)
+		}
+		if deref(s.Role) != "builds" || deref(s.Task) != "joined" {
+			t.Errorf("session after rejoin = %+v", s)
+		}
+		sb, err := json.Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err := ch.PresenceOf(bg, "a")
+		if err != nil {
+			t.Fatal(err)
+		}
+		pb, err := json.Marshal(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range [][]byte{sb, pb} {
+			if strings.Contains(string(b), `"label"`) {
+				t.Errorf("json still names label:\n%s", b)
+			}
+		}
+	})
+
+	t.Run("join refuses the names it must and keeps its role", func(t *testing.T) {
 		ch := openChannel(t, "t")
 		if _, err := ch.Join(bg, "owner", JoinOpts{}); errStatus(err) != 400 {
 			t.Errorf("joining as the owner = %d (%v), want 400", errStatus(err), err)
@@ -219,16 +254,16 @@ func TestChannelBranches(t *testing.T) {
 		if _, err := ch.Leave(bg, "stranger", ""); errStatus(err) != 404 {
 			t.Errorf("leave of a stranger = %d (%v), want 404", errStatus(err), err)
 		}
-		snap, err := ch.Join(bg, "a", JoinOpts{Label: sp("L1"), Task: sp("starting"), Role: sp("r1")})
+		snap, err := ch.Join(bg, "a", JoinOpts{Task: sp("starting"), Role: sp("r1")})
 		if err != nil || snap.Me != "a" {
 			t.Fatalf("join = %v %v", snap, err)
 		}
-		snap, err = ch.Join(bg, "a", JoinOpts{Label: sp("L2")})
+		snap, err = ch.Join(bg, "a", JoinOpts{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		p, _ := ch.PresenceOf(bg, "a")
-		if deref(p.Label) != "L2" || deref(p.Role) != "r1" || deref(p.Task) != "joined" {
+		if deref(p.Role) != "r1" || deref(p.Task) != "joined" {
 			t.Errorf("presence after rejoin = %+v", p)
 		}
 		if _, err := ch.Assign(bg, Owner, "a", sp("sync"), "notask"); errStatus(err) != 404 {

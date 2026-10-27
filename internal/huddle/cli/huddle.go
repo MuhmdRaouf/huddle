@@ -380,7 +380,6 @@ func Huddle(ctx context.Context, w *World, argv []string, stdout, stderr io.Writ
 		return c.listen(ctx)
 	case "join":
 		args := newBody().textAlways("role", flagOr(c.opt, "role", c.id.Role))
-		args.flagText(c.opt, "label")
 		if task, ok := c.opt.text("task"); ok {
 			args.textAlways("task", task)
 		} else if rest := c.rest(); rest != "" {

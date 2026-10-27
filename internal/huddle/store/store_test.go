@@ -291,6 +291,60 @@ INSERT INTO sessions (name, joined_at, last_seen) VALUES ('ada', '2026-10-20T09:
 			t.Errorf("session_id = %v, want none", r["session_id"])
 		}
 	})
+	t.Run("drops the label column an older file holds", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "old.db")
+		db, err := SQLite(ctx, file)
+		if err != nil {
+			t.Fatalf("sqlite: %v", err)
+		}
+		// the sessions table while the label column existed
+		if err := db.Exec(ctx, `CREATE TABLE sessions (name TEXT PRIMARY KEY, label TEXT, role TEXT, joined_at TEXT NOT NULL, last_seen TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'idle', task TEXT, step TEXT,
+  control TEXT NOT NULL DEFAULT 'run' CHECK (control IN ('run','pause')), control_by TEXT, control_at TEXT,
+  cursor INTEGER NOT NULL DEFAULT 0, parent TEXT, context TEXT, brief TEXT, session_id TEXT);
+INSERT INTO sessions (name, label, role, joined_at, last_seen, task) VALUES ('ada', 'Ada', 'builds', '2026-10-20T09:00:00Z', '2026-10-20T09:01:00Z', 'wiring the router');`); err != nil {
+			t.Fatalf("old schema: %v", err)
+		}
+		if err := db.Close(); err != nil {
+			t.Fatalf("close: %v", err)
+		}
+		s, err := Open(ctx, file)
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		defer s.Close()
+		if err := s.Init(ctx); err != nil {
+			t.Fatalf("init: %v", err)
+		}
+		cols, err := s.All(ctx, "SELECT name FROM pragma_table_info('sessions')")
+		if err != nil {
+			t.Fatalf("table_info: %v", err)
+		}
+		for _, r := range cols {
+			if r["name"] == "label" {
+				t.Error("sessions still holds the label column after init")
+			}
+		}
+		r, err := s.Get(ctx, "SELECT name, role, task FROM sessions WHERE name = 'ada'")
+		if err != nil {
+			t.Fatalf("read the row: %v", err)
+		}
+		if r["name"] != "ada" || r["role"] != "builds" || r["task"] != "wiring the router" {
+			t.Errorf("the row did not survive: %v", r)
+		}
+	})
+	t.Run("a fresh file has no label column", func(t *testing.T) {
+		s := freshStore(t)
+		cols, err := s.All(ctx, "SELECT name FROM pragma_table_info('sessions')")
+		if err != nil {
+			t.Fatalf("table_info: %v", err)
+		}
+		for _, r := range cols {
+			if r["name"] == "label" {
+				t.Error("a fresh file's sessions table holds the label column")
+			}
+		}
+	})
 	t.Run("still opens when FTS5 is missing", func(t *testing.T) {
 		db, err := SQLite(ctx, filepath.Join(t.TempDir(), "t.db"))
 		if err != nil {
@@ -836,12 +890,22 @@ func TestOpenLegacyChannel(t *testing.T) {
 				t.Errorf("%s holds %v rows, want %d", table, r["n"], want)
 			}
 		}
-		r, err := s.Get(ctx, "SELECT label, context FROM sessions WHERE name = 'ada'")
+		// opening the file drops the fixture's label column; the rest of the row survives
+		r, err := s.Get(ctx, "SELECT context FROM sessions WHERE name = 'ada'")
 		if err != nil {
 			t.Fatalf("session: %v", err)
 		}
-		if r["label"] != "Ada" || r["context"] != "{\"repo\":\"x\"}" {
+		if r["context"] != "{\"repo\":\"x\"}" {
 			t.Fatalf("session row: %v", r)
+		}
+		cols, err := s.All(ctx, "SELECT name FROM pragma_table_info('sessions')")
+		if err != nil {
+			t.Fatalf("columns: %v", err)
+		}
+		for _, col := range cols {
+			if col["name"] == "label" {
+				t.Error("the legacy fixture still holds the label column after init")
+			}
 		}
 	})
 	t.Run("searches what the fixture indexed", func(t *testing.T) {

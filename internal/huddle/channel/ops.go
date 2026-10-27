@@ -221,13 +221,13 @@ var opsOrder = []string{
 var ops = map[string]opDef{
 	"join": {
 		desc: "Join the channel (or resume). Returns who else is here, the turn, your pause state, your inbox, your next task and the latest shared knowledge, plus either your unread events (context sync) or a brief instead of the backlog (context fresh). Call first.",
-		props: jsfmt.Object([]string{"role", "label", "task", "context"}, []*jsfmt.Value{
-			sProp("one line: what you do here"), sProp(""), sProp("what you are doing now"),
+		props: jsfmt.Object([]string{"role", "task", "context"}, []*jsfmt.Value{
+			sProp("one line: what you do here"), sProp("what you are doing now"),
 			enProp(Contexts, "sync: everything unread since you left; fresh: skip the backlog, get a brief (open asks are kept). Omit it: fresh on a first join, else what the orchestrator set for you, else sync"),
 		}),
 		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
 			return c.ch.Join(ctx, c.me, JoinOpts{
-				Label: argStrPtr(a, "label"), Role: argStrPtr(a, "role"), Task: argStrPtr(a, "task"), Context: argStrPtr(a, "context"),
+				Role: argStrPtr(a, "role"), Task: argStrPtr(a, "task"), Context: argStrPtr(a, "context"),
 			})
 		},
 		text: func(r any, c opCall) string { return snapText(r.(Snapshot)) },
