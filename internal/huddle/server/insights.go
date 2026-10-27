@@ -53,7 +53,9 @@ type insightsSettingsAnswer struct {
 // in from the mounted radar tab and add same_command alone (tool_failing needs the error text
 // radar does not record), and its tips alone come out. Tips for me gates the owner's answer,
 // tips to my sessions the session's; the switch that is off empties the answer before anything
-// else is read.
+// else is read. The owner's answer refreshes the spinner tips file the spinnerTipsOverride
+// entry names — the panel polls it, so the answer is the refresh point — and a session's
+// answer leaves the file alone.
 func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 	session := r.URL.Query().Get("session")
 	settings := insights.ReadSettings(insights.SettingsFile(s.o.Home))
@@ -63,6 +65,8 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		}
 	} else if !settings.TipsForMe {
+		// the file empties with the answer, so Claude Code stops showing the tips already there
+		s.writeSpinnerTips(insights.SpinnerTipsOf(nil, settings))
 		s.writeJSON(w, 200, insightsAnswer{Tips: []tipView{}}, nil)
 		return nil
 	}
@@ -145,6 +149,9 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 	// a rule the owner muted leaves the answer, the owner's and every session's, until its 30
 	// days run out
 	tips = insights.WithoutMuted(tips, insights.MutedRules(insights.SettingsFile(s.o.Home), now))
+	if session == "" {
+		s.writeSpinnerTips(insights.SpinnerTipsOf(tips, settings))
+	}
 	views := make([]tipView, 0, len(tips))
 	for _, tip := range tips {
 		if session != "" && tip.Session != session {
@@ -166,6 +173,17 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.writeJSON(w, 200, insightsAnswer{Tips: views}, nil)
 	return nil
+}
+
+// writeSpinnerTips lands the owner's spinner entries in the home the server was started with,
+// the file the spinnerTipsOverride entry names. It is best-effort: without a home, or when the
+// write fails, the answer stands and nothing is said.
+func (s *server) writeSpinnerTips(tips []insights.SpinnerTip) {
+	userHome := s.o.Env["HOME"]
+	if userHome == "" {
+		return
+	}
+	_ = insights.WriteSpinnerTips(insights.SpinnerTipsFile(userHome), tips)
 }
 
 // insightsSettingsRoute answers GET and PUT /api/insights/settings: the owner reads the two
