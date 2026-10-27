@@ -56,21 +56,6 @@ func openEvents(t *testing.T, url string) *events {
 	return e
 }
 
-// next answers the next non-empty line within the budget.
-func (e *events) next(t *testing.T, budget time.Duration) string {
-	t.Helper()
-	select {
-	case line, ok := <-e.lines:
-		if !ok {
-			t.Fatal("the event stream ended")
-		}
-		return line
-	case <-time.After(budget):
-		t.Fatalf("no event line within %s", budget)
-		return ""
-	}
-}
-
 // event reads one whole event: its name and its data payload.
 func (e *events) event(t *testing.T, budget time.Duration) (string, string) {
 	t.Helper()
