@@ -80,6 +80,17 @@ type ProjectDay struct {
 	CostUSD float64
 }
 
+// Checkpoint is one live session's context and its two recency facts, as the registry holds
+// them: the newest commit it ran and the newest handoff digest it left. A zero LastCommitAt
+// or LastHandoffAt is one the window saw nothing of.
+type Checkpoint struct {
+	Session        string
+	ContextPercent float64 // 0-100
+	LastEventAt    time.Time
+	LastCommitAt   time.Time // zero: no commit seen in the window
+	LastHandoffAt  time.Time // zero: no digest
+}
+
 // Input is everything Detect reads. Now is the clock, so the rules are pure.
 type Input struct {
 	Now         time.Time
@@ -91,12 +102,13 @@ type Input struct {
 	Subagents   []SubagentRun
 	Models      []ModelAdvice
 	ProjectDays []ProjectDay
+	Checkpoints []Checkpoint
 }
 
 // Tip is one sentence the owner can act on, with the numbers behind it.
 type Tip struct {
 	ID       string // stable for one occurrence: "<rule>:<what it is about>"
-	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing, RuleLongestWait, RuleLongDay, RuleSubagentSilent, RuleModelOversized or RuleProjectCost
+	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing, RuleLongestWait, RuleLongDay, RuleSubagentSilent, RuleModelOversized, RuleProjectCost or RuleContextCheckpoint
 	Session  string // the session a tip is about; "" for a tip about the whole huddle
 	Sentence string
 	Count    int           // the runs or asks behind the tip
@@ -104,15 +116,16 @@ type Tip struct {
 }
 
 const (
-	RuleSameCommand    = "same_command"
-	RuleAlwaysAllowed  = "always_allowed"
-	RuleToolFailing    = "tool_failing"
-	RuleLaneFailing    = "lane_failing"
-	RuleLongestWait    = "longest_wait"
-	RuleLongDay        = "long_day"
-	RuleSubagentSilent = "subagent_silent"
-	RuleModelOversized = "model_oversized"
-	RuleProjectCost    = "project_cost"
+	RuleSameCommand       = "same_command"
+	RuleAlwaysAllowed     = "always_allowed"
+	RuleToolFailing       = "tool_failing"
+	RuleLaneFailing       = "lane_failing"
+	RuleLongestWait       = "longest_wait"
+	RuleLongDay           = "long_day"
+	RuleSubagentSilent    = "subagent_silent"
+	RuleModelOversized    = "model_oversized"
+	RuleProjectCost       = "project_cost"
+	RuleContextCheckpoint = "context_checkpoint"
 )
 
 // The points each rule fires at.
@@ -133,6 +146,7 @@ func Detect(in Input) []Tip {
 	tips = append(tips, subagentSilentTips(in)...)
 	tips = append(tips, modelOversizedTips(in)...)
 	tips = append(tips, projectCostTips(in)...)
+	tips = append(tips, contextCheckpointTips(in)...)
 	slices.SortFunc(tips, func(a, b Tip) int {
 		if byRule := cmp.Compare(a.Rule, b.Rule); byRule != 0 {
 			return byRule

@@ -211,6 +211,8 @@ The tips:
 - Subagent runs on a main model look small enough for its flash sibling; the card names the
   model, the sibling and the saving.
 - A project whose spend today passes twice its 7-day average gets one tip with the numbers.
+- A session past 70% context with nothing committed and no handoff in 30 minutes gets one tip
+  to wrap the step.
 
 ### Reach an idle session
 
