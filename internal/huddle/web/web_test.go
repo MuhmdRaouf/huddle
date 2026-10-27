@@ -31,8 +31,8 @@ func TestIndexHTMLBootsTheThemeFromAFile(t *testing.T) {
 }
 
 // The PWA ships with the shell: the manifest, the service worker with its cache revision stamped
-// by the build (never the placeholder), the three icons the manifest names, and the page linking
-// the manifest.
+// by the build (never the placeholder), the icons the manifest names plus the white notification
+// badge, and the page linking the manifest.
 func TestEmbedsThePWA(t *testing.T) {
 	t.Run("index.html links the manifest and names the theme colour", func(t *testing.T) {
 		page, err := fs.ReadFile(FS(), "index.html")
@@ -110,8 +110,13 @@ func TestEmbedsThePWA(t *testing.T) {
 		}
 	})
 
-	t.Run("the three icons are PNGs of the sizes the manifest names", func(t *testing.T) {
-		for name, size := range map[string]int{"icon-192.png": 192, "icon-512.png": 512, "icon-maskable-512.png": 512} {
+	t.Run("the icons are PNGs of the sizes they ship at", func(t *testing.T) {
+		for name, size := range map[string]int{
+			"icon-192.png":          192,
+			"icon-512.png":          512,
+			"icon-maskable-512.png": 512,
+			"icon-badge-96.png":     96,
+		} {
 			data, err := fs.ReadFile(FS(), "icons/"+name)
 			if err != nil {
 				t.Fatalf("read icons/%s: %v", name, err)

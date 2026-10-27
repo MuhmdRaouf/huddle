@@ -13,6 +13,7 @@ import { createApi } from "./api.ts";
 import "./app.css";
 import { boot } from "./boot.ts";
 import { App, NoChannel } from "./app/App.tsx";
+import { browserNotifications } from "./app/browser-notify.ts";
 import { Landing } from "./app/Landing.tsx";
 import { createAct, createCopy, type HuddleContextValue, HuddleProvider } from "./app/context.tsx";
 import { CmdKeys, CmdPalette, HelpDialog } from "./app/Palette.tsx";
@@ -23,7 +24,7 @@ import { ComposeDialog } from "./compose/ComposeDialog.tsx";
 import type { ComposeSent } from "./compose/Composer.tsx";
 import type { ComposeOptions } from "./compose/drafts.ts";
 import { DEV_TOKENS_HASH, Tokens } from "./dev/Tokens.tsx";
-import { createLive, type Notifications } from "./live.ts";
+import { createLive } from "./live.ts";
 import { Home } from "./pages/Home.tsx";
 import { Inbox } from "./pages/Inbox.tsx";
 import { Knowledge } from "./pages/Knowledge.tsx";
@@ -132,19 +133,7 @@ const live = createLive({
   EventSource: (url) => new BrowserSource(url),
   fetch: (url) => fetch(url),
   storage: localStorage,
-  notify: {
-    supported: () => "Notification" in window,
-    permission: () => Notification.permission,
-    requestPermission: () => Notification.requestPermission(),
-    show: (title, body, tag, onClick) => {
-      const n = new Notification(title, { body, tag });
-      n.onclick = () => {
-        window.focus();
-        n.close();
-        onClick();
-      };
-    },
-  } satisfies Notifications,
+  notify: browserNotifications(),
   onSignedOut: () => paintSignedOut(),
   toast: (text, o) => toastFn(text, o),
   hidden: () => document.hidden,

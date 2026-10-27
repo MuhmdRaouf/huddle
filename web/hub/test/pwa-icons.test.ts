@@ -76,4 +76,33 @@ describe("iconFiles", () => {
   it("draws the logo larger in the Apple icon than in the maskable 512", () => {
     expect(memberSpan(byName("icon-apple-180"))).toBeGreaterThan(memberSpan(byName("icon-maskable-512")));
   });
+
+  it("ships the badge as a 96 px PNG", () => {
+    const badge = byName("icon-badge-96");
+    expect([badge.width, badge.height]).toEqual([96, 96]);
+  });
+
+  it("paints the badge white wherever the logo shows", () => {
+    const badge = byName("icon-badge-96");
+    for (let y = 0; y < badge.height; y++) {
+      for (let x = 0; x < badge.width; x++) {
+        const [r, g, b, a] = pixel(badge, x, y);
+        if (a === 0) continue;
+        expect([r, g, b], `pixel ${x},${y}`).toEqual([255, 255, 255]);
+      }
+    }
+  });
+
+  it("draws the badge as the logo's silhouette, not a filled square", () => {
+    const badge = byName("icon-badge-96");
+    let clear = 0;
+    let solid = 0;
+    for (let i = 3; i < badge.rgba.length; i += 4) {
+      const a = badge.rgba[i];
+      if (a === 0) clear++;
+      if (a === 255) solid++;
+    }
+    expect(clear).toBeGreaterThan(0);
+    expect(solid).toBeGreaterThan(0);
+  });
 });

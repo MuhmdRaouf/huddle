@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // icons.mjs — the PWA's PNG icons, rasterised from assets/huddle.svg (the logo the dashboard's
 // favicon and the hub's pages share): 192, 512, a maskable 512 whose background runs to the
-// edges so any launcher mask crops colour, not transparency, and the 180 px Apple Home Screen
-// icon: the logo's tile filling an opaque square, which iOS rounds itself. Pure Node over the SVG's own
+// edges so any launcher mask crops colour, not transparency, the 180 px Apple Home Screen
+// icon: the logo's tile filling an opaque square, which iOS rounds itself, and the 96 px
+// notification badge: the logo's silhouette in white, because Android draws a badge as an alpha
+// mask and would show a coloured one as a plain square. Pure Node over the SVG's own
 // shapes (rects, circles, two-stop gradients), zlib for the IDAT: no network, no dependencies,
 // and the same input gives the same bytes, so a fresh build never drifts from the committed
 // icons. scripts/build.mjs calls iconFiles() and ships what it returns.
@@ -225,6 +227,17 @@ function png(size, rgba) {
   ]);
 }
 
+/** The same raster white: every pixel keeps its coverage, every colour becomes 255. */
+function whiten(rgba) {
+  const out = Uint8Array.from(rgba);
+  for (let i = 0; i < out.length; i += 4) {
+    out[i] = 255;
+    out[i + 1] = 255;
+    out[i + 2] = 255;
+  }
+  return out;
+}
+
 /** The PWA's icons, as build.mjs ships them into the embedded dashboard. */
 export function iconFiles() {
   const svg = readFileSync(SVG, "utf8");
@@ -233,14 +246,16 @@ export function iconFiles() {
   // the whole viewBox; the Apple icon shows only the logo's tile, its first filled rect
   const whole = { from: 0, span: VIEW, bleed: false };
   const tile = specs.find((s) => s.kind === "rect" && s.fill !== "none") ?? { x: 0, w: VIEW };
-  const icon = (name, size, frame) => ({
+  const raster = (size, frame) => rasterize(size, frame, specs, grads);
+  const icon = (name, size, frame, badge = false) => ({
     fileName: `icons/${name}.png`,
-    contents: png(size, rasterize(size, frame, specs, grads)),
+    contents: png(size, badge ? whiten(raster(size, frame)) : raster(size, frame)),
   });
   return [
     icon("icon-192", 192, whole),
     icon("icon-512", 512, whole),
     icon("icon-maskable-512", 512, { ...whole, bleed: true }),
     icon("icon-apple-180", 180, { from: tile.x, span: tile.w, bleed: true }),
+    icon("icon-badge-96", 96, whole, true),
   ];
 }

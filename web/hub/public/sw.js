@@ -16,6 +16,7 @@
     "/icons/icon-192.png",
     "/icons/icon-512.png",
     "/icons/icon-maskable-512.png",
+    "/icons/icon-badge-96.png",
   ];
 
   self.addEventListener("install", function (event) {
@@ -177,7 +178,7 @@
         self.registration.showNotification(shown.title, {
           body: shown.body,
           icon: "/icons/icon-192.png",
-          badge: "/icons/icon-192.png",
+          badge: "/icons/icon-badge-96.png",
           tag: shown.tag,
           data: payload,
           actions: actions,

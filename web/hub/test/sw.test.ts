@@ -222,6 +222,7 @@ describe("install", () => {
       href("/icons/icon-192.png"),
       href("/icons/icon-512.png"),
       href("/icons/icon-maskable-512.png"),
+      href("/icons/icon-badge-96.png"),
     ]);
   });
 });
@@ -346,6 +347,17 @@ describe("push", () => {
     url: "/#/now/s-1?item=7",
   };
 
+  it("badges every notification with the white silhouette and keeps the full-colour icon", async () => {
+    const w = worker();
+    await w.pushed(permission);
+    await w.pushedEmpty();
+    expect(w.shown).toHaveLength(2);
+    for (const shown of w.shown) {
+      expect(shown.options.badge).toBe("/icons/icon-badge-96.png");
+      expect(shown.options.icon).toBe("/icons/icon-192.png");
+    }
+  });
+
   it("shows a permission item's notification with Allow, Deny and Open", async () => {
     const w = worker();
     await w.pushed(permission);
@@ -448,7 +460,7 @@ describe("push", () => {
     options: {
       body: "Open Huddle",
       icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
+      badge: "/icons/icon-badge-96.png",
       tag: "huddle-fallback",
       data: { url: "/#/now" },
       actions: [{ action: "open", title: "Open" }],

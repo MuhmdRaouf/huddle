@@ -39,7 +39,7 @@ func TestPWARoutes(t *testing.T) {
 	})
 
 	t.Run("(c) the icons answer image/png with PNG bytes; anything else under /icons/ is a 404", func(t *testing.T) {
-		for _, name := range []string{"icon-192.png", "icon-512.png", "icon-maskable-512.png"} {
+		for _, name := range []string{"icon-192.png", "icon-512.png", "icon-maskable-512.png", "icon-badge-96.png"} {
 			code, header, body := srv.get(t, "/icons/"+name, nil)
 			if code != 200 || !strings.Contains(header.Get("Content-Type"), "image/png") {
 				t.Fatalf("/icons/%s = %d %q", name, code, header.Get("Content-Type"))
