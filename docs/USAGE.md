@@ -573,7 +573,9 @@ The hub serves every board in process: `kanban start` and `kanban open` name the
 the hub (starting the hub when the huddle home is set up), and the live page shows every folder
 change within half a second. The owner closes and reopens a feature from the tab's picker;
 `POST /api/kanban/b/<key>/feature` is owner-only — any other identity gets 403 and the board
-stays as it was. A second machine works the same board through the satellite relay —
+stays as it was. On the command line, `huddle kanban feature close|reopen <feature>` closes a
+merged feature (its cards leave every column and count) or reopens it. A second machine works the
+same board through the satellite relay —
 see [Another machine](#another-machine).
 
 ## A hub on a local name

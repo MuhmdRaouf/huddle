@@ -263,6 +263,17 @@ var commands = map[string]*command{
 			{name: "note", kind: kindString, required: true, help: "the entry's text: evidence, findings, hand-offs"},
 		},
 	},
+	"feature": {
+		word: "feature", use: "feature close|reopen FEATURE", min: 2, max: 2,
+		short: "close a merged feature (its cards leave every column and count) or reopen it",
+		positionals: []positional{
+			{"close|reopen", "close records a merged feature, reopen brings its cards back"},
+			{"FEATURE", "the feature's name, a card's cluster"},
+		},
+		defs: []flagDef{
+			{name: "actor", kind: kindString, required: true, help: actorHelp},
+		},
+	},
 	"list": {
 		word: "list", use: "list [COLUMN]", min: 0, max: 1,
 		short:       "one line per ticket: badges and dependency states",
@@ -403,6 +414,10 @@ func Run(ctx context.Context, w World, argv []string, stdout, stderr io.Writer) 
 		usageError(stderr, cmd, positional[0]+" is not a column; use one of "+strings.Join(board.Columns, ", "))
 		return 2
 	}
+	if command == "feature" && positional[0] != "close" && positional[0] != "reopen" {
+		usageError(stderr, cmd, positional[0]+" is not a verb; use close or reopen")
+		return 2
+	}
 	if serverCommands[command] {
 		return runServerCommand(ctx, w, command, v, boardPath, stdout, stderr)
 	}
@@ -480,6 +495,16 @@ func Run(ctx context.Context, w World, argv []string, stdout, stderr io.Writer) 
 	case "log":
 		lines, err := b.Log(ctx, board.Args{
 			Actor: v.str("actor"), ID: at(positional, 0), Note: v.str("note")})
+		return answer(stdout, stderr, lines, err, false)
+	case "feature":
+		a := board.Args{Actor: v.str("actor"), ID: at(positional, 1)}
+		var lines []string
+		var err error
+		if positional[0] == "close" {
+			lines, err = b.CloseFeature(ctx, a)
+		} else {
+			lines, err = b.ReopenFeature(ctx, a)
+		}
 		return answer(stdout, stderr, lines, err, false)
 	case "stop-line":
 		lines, err := b.StopLine(ctx, board.Args{Actor: v.str("actor"), Note: v.str("note")})

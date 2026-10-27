@@ -39,6 +39,7 @@ var entries = map[string]runner{
 	"set":         cliEntry("set"),
 	"move":        cliEntry("move"),
 	"log":         cliEntry("log"),
+	"feature":     cliEntry("feature"),
 	"list":        cliEntry("list"),
 	"show":        cliEntry("show"),
 	"status":      cliEntry("status"),

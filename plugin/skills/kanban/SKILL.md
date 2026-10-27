@@ -41,6 +41,7 @@ shows every change on the live board within half a second.
 | Park it | `kanban block ID --actor A --note '<cause>' --on X --until '<condition>'` | `references/flow.md` §Block |
 | Urgent work | `kanban new ID ... --expedite --body-file F` | `references/flow.md` §Expedite |
 | Main is broken, everyone stop | `kanban stop-line --actor A --note '...'`, later `resume-line` | `references/flow.md` §Stop the line |
+| Close a merged feature, or reopen it | `kanban feature close\|reopen FEATURE --actor A` | `references/flow.md` §Features |
 | Plan a goal into tickets, run workers | | `references/lead.md` |
 | Open the live board | `kanban start` | §The live board |
 | Share a snapshot link | `kanban export --out FILE`, then the Artifact tool | §The live board |

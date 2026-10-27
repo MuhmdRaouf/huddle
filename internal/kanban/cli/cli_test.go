@@ -380,6 +380,39 @@ func TestEveryCommand(t *testing.T) {
 			},
 		},
 		{
+			name: "feature close archives a feature's cards",
+			prepare: func(f *fixture) {
+				f.card("backlog", "SWR-1", "id: SWR-1\ntitle: \"swr one\"\ntype: docs\ncluster: swr\nsummary: \"one\"")
+				f.card("ready", "SWR-2", "id: SWR-2\ntitle: \"swr two\"\ntype: fix\ncluster: swr\nsummary: \"one\"")
+			},
+			argv: func(*testing.T, *fixture) []string {
+				return []string{"feature", "close", "swr", "--actor", "lead"}
+			},
+			code:   0,
+			outHas: []string{"feature swr closed: 2 cards archived"},
+			check: func(t *testing.T, f *fixture, _ string) {
+				has(t, "FEATURES", f.readFile("FEATURES"), `"name":"swr"`, `"actor":"lead"`)
+			},
+		},
+		{
+			name: "feature reopen brings a closed feature's cards back",
+			prepare: func(f *fixture) {
+				f.card("backlog", "RPN-1", "id: RPN-1\ntitle: \"swr one\"\ntype: docs\ncluster: swr\nsummary: \"one\"")
+				f.card("ready", "RPN-2", "id: RPN-2\ntitle: \"swr two\"\ntype: fix\ncluster: swr\nsummary: \"one\"")
+				f.writeFile("FEATURES", `{"closed":[{"name":"swr","actor":"lead","closed_at":"2026-10-15T12:00:00+0300"}]}`+"\n")
+			},
+			argv: func(*testing.T, *fixture) []string {
+				return []string{"feature", "reopen", "swr", "--actor", "lead"}
+			},
+			code:   0,
+			outHas: []string{"feature swr reopened: 2 cards back"},
+			check: func(t *testing.T, f *fixture, _ string) {
+				if _, err := os.Stat(filepath.Join(f.root, "FEATURES")); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("FEATURES survived the reopen: %v", err)
+				}
+			},
+		},
+		{
 			name: "list prints one line per ticket with its badges",
 			prepare: func(f *fixture) {
 				f.fullCard("ready", "LST-1")
@@ -602,6 +635,16 @@ func TestUsageErrors(t *testing.T) {
 			"kanban move: ID and COLUMN are required\nrun kanban move --help\n"},
 		{"set without a key=value", []string{"set", "X-1", "--actor", "lead"},
 			"kanban set: ID and key=value are required\nrun kanban set --help\n"},
+		{"feature alone", []string{"feature"},
+			"kanban feature: --actor is required\nrun kanban feature --help\n"},
+		{"feature close without --actor", []string{"feature", "close", "swr"},
+			"kanban feature: --actor is required\nrun kanban feature --help\n"},
+		{"feature without its verb and name", []string{"feature", "--actor", "lead"},
+			"kanban feature: close|reopen and FEATURE are required\nrun kanban feature --help\n"},
+		{"feature close without its feature name", []string{"feature", "close", "--actor", "lead"},
+			"kanban feature: close|reopen and FEATURE are required\nrun kanban feature --help\n"},
+		{"a verb that is neither close nor reopen", []string{"feature", "open", "swr", "--actor", "lead"},
+			"kanban feature: open is not a verb; use close or reopen\nrun kanban feature --help\n"},
 		{"one positional too many", []string{"list", "ready", "done"},
 			"kanban list: unexpected argument done\nrun kanban list --help\n"},
 		{"a column that is not one", []string{"list", "done2"},
@@ -766,6 +809,17 @@ func TestRefusals(t *testing.T) {
 			t.Fatalf("exit = %d, want 1", code)
 		}
 		has(t, "stderr", stderr, "not a settable field")
+	})
+
+	t.Run("feature close refuses a name no card carries", func(t *testing.T) {
+		f := newFixture(t)
+		f.card("backlog", "FTR-1", "id: FTR-1\ntitle: \"other\"\ntype: docs\ncluster: web\nsummary: \"one\"")
+		code, stdout, stderr := f.run("feature", "close", "nope", "--actor", "lead")
+		if code != 1 {
+			t.Fatalf("exit = %d, want 1", code)
+		}
+		equals(t, "stdout", stdout, "")
+		has(t, "stderr", stderr, "no feature nope on this board")
 	})
 
 	t.Run("init --db and --from do not combine", func(t *testing.T) {

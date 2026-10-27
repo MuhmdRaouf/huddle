@@ -1,6 +1,6 @@
 # The flow, its gates and the special cases
 
-Contents: Columns, Gates, Expedite, Block and unblock, Hand moves, Stop the line, Refusals and what to do.
+Contents: Columns, Gates, Expedite, Block and unblock, Hand moves, Stop the line, Features, Refusals and what to do.
 
 ## Columns
 
@@ -76,6 +76,17 @@ When main is broken or a shared assumption turns out wrong, anyone runs
 `kanban resume-line --actor A`. Workers check `kanban epoch` before edits and commits; a changed epoch means stop,
 read `kanban status`, and wait or help fix main.
 
+## Features
+
+A feature is a cluster: the group name its tickets share. When a feature ships, the lead closes it. Closing moves
+no ticket and writes no ticket file; the cards stay in their folders but leave every column list and count, and
+`kanban show` says `Feature closed: <feature>` on a closed feature's card.
+
+```sh
+kanban feature close swr --actor lead     # the swr cards leave every column and count
+kanban feature reopen swr --actor lead    # the swr cards read as they did
+```
+
 ## Refusals and what to do
 
 Exit 1 always names the ticket's real column and the next step. Common ones:
@@ -89,3 +100,5 @@ Exit 1 always names the ticket's real column and the next step. Common ones:
 | `... is the author or holder` | Ask a different agent to test or finish it. |
 | `<ID>: under the ticket bar: ...` | Fill the listed sections, run `kanban lint`, then retry. |
 | `note needs evidence` | Put the commands and their exit codes in the note. |
+| `no feature <name> on this board` | No card carries that cluster. Check the spelling against a card's `cluster` field. |
+| `feature <name> is not closed` | Nothing to reopen; the feature is already open. |
