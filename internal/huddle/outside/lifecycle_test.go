@@ -1,6 +1,7 @@
 package outside
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io/fs"
@@ -9,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/harness"
+	"github.com/MuhmdRaouf/huddle/internal/insights"
 )
 
 const pluginKey = "huddle@muhmdraouf"
@@ -193,6 +197,86 @@ func TestWatchRemoval(t *testing.T) {
 			t.Fatalf("gone = %v, want [uninstalled]", gone)
 		}
 		watch.Stop()
+	})
+}
+
+// spinnerEnvOf answers the harness package's view of an outside env: the map's HOME and
+// CLAUDE_CONFIG_DIR, nothing else.
+func spinnerEnvOf(env map[string]string) harness.Env {
+	return harness.Env{Lookup: func(key string) string {
+		switch key {
+		case "HOME":
+			return env["HOME"]
+		case "CLAUDE_CONFIG_DIR":
+			return env["CLAUDE_CONFIG_DIR"]
+		}
+		return ""
+	}}
+}
+
+// TestRemoveSpinnerTips pins the plugin-removal path's spinner tips half: the settings entry
+// huddle added goes back out and the file it named goes with it, and nothing a person wrote
+// comes with either.
+func TestRemoveSpinnerTips(t *testing.T) {
+	t.Run("the removal gives settings.json back and takes the tips file it names", func(t *testing.T) {
+		userHome, config := t.TempDir(), t.TempDir()
+		hudHome := t.TempDir()
+		env := map[string]string{"HOME": userHome, "CLAUDE_CONFIG_DIR": config}
+		settings := filepath.Join(config, "settings.json")
+		writeFile(t, settings, `{"unrelated":"keep"}`)
+		seed, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tipsFile := insights.SpinnerTipsFile(userHome)
+		if _, err := harness.InstallSpinnerTips(hudHome, spinnerEnvOf(env), tipsFile); err != nil {
+			t.Fatalf("install: %v", err)
+		}
+		if err := insights.WriteSpinnerTips(tipsFile, []insights.SpinnerTip{{ID: "huddle-1", Text: "one line"}}); err != nil {
+			t.Fatalf("write the tips file: %v", err)
+		}
+		RemoveSpinnerTips(hudHome, env)
+		after, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(seed, after) {
+			t.Errorf("settings.json = %q, want the seed %q byte for byte", after, seed)
+		}
+		if _, err := os.Stat(tipsFile); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("the tips file stayed behind: %v", err)
+		}
+	})
+
+	t.Run("nothing of ours anywhere: a quiet no-op", func(t *testing.T) {
+		userHome, config := t.TempDir(), t.TempDir()
+		env := map[string]string{"HOME": userHome, "CLAUDE_CONFIG_DIR": config}
+		RemoveSpinnerTips(t.TempDir(), env)
+		if _, err := os.Stat(filepath.Join(config, "settings.json")); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("a settings file appeared: %v", err)
+		}
+		if _, err := os.Stat(insights.SpinnerTipsFile(userHome)); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("a tips file appeared: %v", err)
+		}
+	})
+
+	t.Run("someone else's override stays", func(t *testing.T) {
+		userHome, config := t.TempDir(), t.TempDir()
+		env := map[string]string{"HOME": userHome, "CLAUDE_CONFIG_DIR": config}
+		settings := filepath.Join(config, "settings.json")
+		writeFile(t, settings, `{"spinnerTipsOverride":{"tipsFile":"/elsewhere/other-tips.json"}}`)
+		seed, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		RemoveSpinnerTips(t.TempDir(), env)
+		after, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(seed, after) {
+			t.Errorf("someone else's override was touched: %q from %q", after, seed)
+		}
 	})
 }
 

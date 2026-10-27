@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
+	"github.com/MuhmdRaouf/huddle/internal/harness"
+	"github.com/MuhmdRaouf/huddle/internal/insights"
 )
 
 // Presence is what the plugin registry says about the huddle plugin. Unknown never acts: a
@@ -244,6 +246,25 @@ func RemoveRunFiles(home string) {
 		_ = os.Remove(filepath.Join(home, name))
 	}
 	_ = os.RemoveAll(filepath.Join(home, "seen"))
+}
+
+// RemoveSpinnerTips takes back the one settings.json entry huddle added — the owner's tips
+// under Claude Code's spinner — and the tips file that entry names: the plugin's removal must
+// not leave either behind, and nothing a person wrote comes with them. Best effort, like the
+// run files: a failure here never keeps the server from stopping.
+func RemoveSpinnerTips(home string, env map[string]string) {
+	harness.RemoveSpinnerTips(home, harness.Env{Lookup: func(key string) string {
+		switch key {
+		case "HOME":
+			return env["HOME"]
+		case "CLAUDE_CONFIG_DIR":
+			return env["CLAUDE_CONFIG_DIR"]
+		}
+		return ""
+	}})
+	if userHome := env["HOME"]; userHome != "" {
+		_ = os.Remove(insights.SpinnerTipsFile(userHome))
+	}
 }
 
 // LeftBehindPath is where the note for the owner sits.

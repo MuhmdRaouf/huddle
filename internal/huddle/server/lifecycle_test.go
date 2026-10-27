@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,8 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/harness"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
+	"github.com/MuhmdRaouf/huddle/internal/insights"
 )
 
 // The registry the removal watch reads: one installed plugin entry.
@@ -40,13 +43,22 @@ func writeTorn(config string) {
 // watchedServer is a server under a temp home and a temp Claude config, watching for its plugin
 // every 100 ms, with a conversation worth keeping and the run files a `huddle up` leaves.
 func watchedServer(t *testing.T) *childServer {
+	srv, _ := watchedServerWithUser(t)
+	return srv
+}
+
+// watchedServerWithUser is watchedServer plus the child's user home: the home its HOME names,
+// where the spinner tips file lives.
+func watchedServerWithUser(t *testing.T) (*childServer, string) {
 	t.Helper()
 	home := tempDir("huddle-gone-")
+	userHome := tempDir("huddle-gone-user-")
 	config := tempDir("huddle-gone-cfg-")
 	srv, err := spawnServer(t, map[string]string{
 		"HUDDLE_HOME":          home,
 		"HUDDLE_DATA":          "",
 		"CLAUDE_CONFIG_DIR":    config,
+		"HOME":                 userHome,
 		"HUDDLE_REMOVAL_WATCH": "1",
 		"HUDDLE_REMOVAL_MS":    "100",
 	})
@@ -75,7 +87,7 @@ func watchedServer(t *testing.T) *childServer {
 	if err := os.WriteFile(filepath.Join(home, "run", "huddle.log"), []byte("started\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return srv
+	return srv, userHome
 }
 
 // exited waits for the child to end by itself and answers its exit code (-1 on a timeout).
@@ -161,6 +173,50 @@ func TestLifecycleRemoval(t *testing.T) {
 		}
 	})
 
+	// spinnerEnv is the harness package's view of the child's environment: its HOME and
+	// CLAUDE_CONFIG_DIR, nothing else.
+	spinnerEnv := func(userHome, config string) harness.Env {
+		return harness.Env{Lookup: func(key string) string {
+			switch key {
+			case "HOME":
+				return userHome
+			case "CLAUDE_CONFIG_DIR":
+				return config
+			}
+			return ""
+		}}
+	}
+
+	t.Run("the uninstall takes the spinner tips entry and its file back", func(t *testing.T) {
+		srv, userHome := watchedServerWithUser(t)
+		settings := filepath.Join(srv.config, "settings.json")
+		seed := []byte(`{"unrelated":"keep"}`)
+		if err := os.WriteFile(settings, seed, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		tipsFile := insights.SpinnerTipsFile(userHome)
+		if _, err := harness.InstallSpinnerTips(srv.home, spinnerEnv(userHome, srv.config), tipsFile); err != nil {
+			t.Fatalf("install: %v", err)
+		}
+		if err := insights.WriteSpinnerTips(tipsFile, []insights.SpinnerTip{{ID: "huddle-1", Text: "one line"}}); err != nil {
+			t.Fatalf("write the tips file: %v", err)
+		}
+		writeRegistry(t, srv.config, `"other@market": [{"scope": "user", "installPath": "/x", "version": "1"}]`)
+		if code := srv.exited(15 * time.Second); code != 0 {
+			t.Fatalf("the server exited %d, want a clean 0", code)
+		}
+		after, err := os.ReadFile(settings)
+		if err != nil {
+			t.Fatalf("read the settings: %v", err)
+		}
+		if !bytes.Equal(seed, after) {
+			t.Errorf("settings.json = %q, want the seed %q byte for byte", after, seed)
+		}
+		if _, err := os.Stat(tipsFile); !os.IsNotExist(err) {
+			t.Errorf("the tips file stayed behind: %v", err)
+		}
+	})
+
 	t.Run("a disabled plugin stops the server the same way, and the channel databases stay", func(t *testing.T) {
 		srv := watchedServer(t)
 		if err := os.WriteFile(filepath.Join(srv.config, "settings.json"),
@@ -183,6 +239,72 @@ func TestLifecycleRemoval(t *testing.T) {
 			t.Fatal("no LEFT-BEHIND.md")
 		}
 	})
+}
+
+// TestShutdownKeepsTheSpinnerTips pins the plain shutdown's restraint: a cancelled context
+// stops the server and leaves the spinner tips entry and its file exactly as install wrote
+// them — only the plugin's removal takes them back.
+func TestShutdownKeepsTheSpinnerTips(t *testing.T) {
+	userHome, config := tempDir("huddle-tips-user-"), tempDir("huddle-tips-cfg-")
+	home := tempDir("huddle-tips-home-")
+	env := map[string]string{"HOME": userHome, "CLAUDE_CONFIG_DIR": config}
+	settings := filepath.Join(config, "settings.json")
+	if err := os.WriteFile(settings, []byte(`{"unrelated":"keep"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tipsFile := insights.SpinnerTipsFile(userHome)
+	if _, err := harness.InstallSpinnerTips(home, harness.Env{Lookup: func(key string) string {
+		return env[key]
+	}}, tipsFile); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if err := insights.WriteSpinnerTips(tipsFile, []insights.SpinnerTip{{ID: "huddle-1", Text: "one line"}}); err != nil {
+		t.Fatalf("write the tips file: %v", err)
+	}
+	installed, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := &syncBuffer{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- Serve(ctx, Options{
+			Token:   "root-in-process",
+			Stdout:  log,
+			Home:    home,
+			Data:    tempDir("huddle-tips-data-"),
+			Version: "0.0.0",
+			Env:     env,
+		})
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(log.joined(), "on http://127.0.0.1:") {
+		if time.Now().After(deadline) {
+			t.Fatalf("the server never started: %s", log.joined())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Serve = %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Serve never returned")
+	}
+	after, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatalf("read the settings: %v", err)
+	}
+	if !bytes.Equal(installed, after) {
+		t.Errorf("a plain shutdown touched the settings: %q from %q", after, installed)
+	}
+	if _, err := os.Stat(tipsFile); err != nil {
+		t.Errorf("the tips file left with the server: %v", err)
+	}
 }
 
 // TestServeInProcess runs the server in-process: a cancelled context stops it cleanly, and the

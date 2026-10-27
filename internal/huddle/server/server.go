@@ -827,6 +827,7 @@ func Serve(ctx context.Context, o Options) error {
 			_ = s.registry.Close()
 		}
 		outside.RemoveRunFiles(o.Home)                    // the pid (our lock) and the log leave with us
+		outside.RemoveSpinnerTips(o.Home, o.Env)          // the settings entry and its tips file go with the plugin
 		_ = os.Remove(filepath.Join(o.Data, "auth.json")) // and who was in: nobody joins a gone server
 		_ = outside.WriteLeftBehind(o.Home, s.hub.Where(), now())
 		removeInstalledService(ctx, o)
