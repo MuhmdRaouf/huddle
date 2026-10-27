@@ -90,7 +90,10 @@ function NeedsCard({
             Allow <code class="ui-mono">{ask.tool}</code>?
           </span>
           {ask.input ? (
-            <code class="ui-mono block overflow-x-auto whitespace-pre rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] px-3 py-2 text-[13px]">
+            <code
+              class="ui-mono block overflow-x-auto whitespace-pre rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] px-3 py-2 text-[13px]"
+              tabindex={0}
+            >
               {ask.input}
             </code>
           ) : null}
@@ -223,11 +226,13 @@ const SECTIONS: readonly (readonly [
   ["ended", "Ended", false],
 ];
 
-/** One row's shell: the desktop carries a checkbox beside it (the pick a send to many sends to),
- *  the phone hears a long-press for the same. A tap toggles the row only while a pick is on. */
+/** One row's shell: the desktop carries a checkbox beside it while Select is on (the pick a send
+ *  to many sends to), the phone hears a long-press for the same. A tap toggles the row only while
+ *  a pick is on. */
 function RowShell({
   layout,
   s,
+  selecting,
   picked,
   tap,
   onPick,
@@ -237,6 +242,7 @@ function RowShell({
 }: {
   layout: Layout;
   s: RegistrySession;
+  selecting: boolean;
   picked: boolean;
   tap: (e: MouseEvent) => void;
   onPick: () => void;
@@ -249,14 +255,16 @@ function RowShell({
       // biome-ignore lint/a11y/noStaticElementInteractions: the row's link keeps the keyboard; the click only toggles a pick
       // biome-ignore lint/a11y/useKeyWithClickEvents: the row's link keeps the keyboard; the click only toggles a pick
       <div class="flex items-start gap-1 pl-3" data-select-row={s.session_id} onClick={tap}>
-        <input
-          type="checkbox"
-          class="mt-5 size-4 shrink-0 accent-[var(--ui-accent)]"
-          aria-label={`Select ${sessionName(s)}`}
-          checked={picked}
-          onClick={(e) => e.stopPropagation()}
-          onChange={onPick}
-        />
+        {selecting ? (
+          <input
+            type="checkbox"
+            class="mt-5 size-4 shrink-0 accent-[var(--ui-accent)]"
+            aria-label={`Select ${sessionName(s)}`}
+            checked={picked}
+            onClick={(e) => e.stopPropagation()}
+            onChange={onPick}
+          />
+        ) : null}
         <div class="min-w-0 flex-1">{children}</div>
       </div>
     );
@@ -277,12 +285,13 @@ function RowShell({
   );
 }
 
-/** The Sessions list: the registry's sessions as the three layouts' list pane. The tablet carries its
- *  own header (the phone's shell and the desktop's bar draw theirs); the group-by toggle rides
- *  under it; the desktop's j and k move a selection Enter opens and a, d and r answer, the
- *  checkboxes pick sessions to send new work to, and the phone's long-press picks the same.
- *  `above` (the first-run checklist the shell hands down) rides at the top of the list, or right
- *  after the Needs you section when asks wait, so the first ask sits above a phone's fold. */
+/** The Sessions list: the registry's sessions as the three layouts' list pane. The tablet and the
+ *  desktop carry their own header — the title with the Select toggle at its end (the phone's shell
+ *  and the desktop's bar draw the rest); the group-by toggle rides under it; the desktop's j and k
+ *  move a selection Enter opens and a, d and r answer, Select shows the checkboxes that pick
+ *  sessions to send new work to, and the phone's long-press picks the same. `above` (the first-run
+ *  checklist the shell hands down) rides at the top of the list, or right after the Needs you
+ *  section when asks wait, so the first ask sits above a phone's fold. */
 export function SessionsPane({
   layout,
   above = null,
@@ -302,6 +311,8 @@ export function SessionsPane({
   const [onlyNeeds, setOnlyNeeds] = useState<boolean>(() => readPref(localStorage, "nowneeds", false));
   const [selId, setSelId] = useState<string | null>(null);
   const [picked, setPicked] = useState<readonly string[]>([]);
+  // Select shows the rows' checkboxes; Done hides them and clears the picks
+  const [selecting, setSelecting] = useState(false);
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -448,6 +459,7 @@ export function SessionsPane({
         key={s.session_id}
         layout={layout}
         s={s}
+        selecting={selecting}
         picked={picked.includes(s.session_id)}
         tap={onRowTap(s.session_id)}
         onPick={() => togglePick(s.session_id)}
@@ -502,10 +514,23 @@ export function SessionsPane({
 
   return (
     <div class="flex min-h-0 min-w-0 flex-col" data-sessions-pane="">
-      {layout === "tablet" ? (
-        <header class="flex shrink-0 items-center justify-between px-4 pt-5 pb-3">
-          <h1 class="text-xl font-semibold tracking-tight">Now</h1>
-          <MachinesLine live={st.live} text={machinesLine(layout, machinesOf(st.sessions))} />
+      {layout !== "phone" ? (
+        <header class="flex shrink-0 items-center justify-between gap-3 px-4 pt-5 pb-3">
+          <h1 class="text-xl font-bold leading-[1.2] tracking-tight">Sessions</h1>
+          {layout === "tablet" ? (
+            <MachinesLine live={st.live} text={machinesLine(layout, machinesOf(st.sessions))} />
+          ) : null}
+          <Button
+            variant="ghost"
+            data-select-toggle=""
+            pressed={selecting}
+            onClick={() => {
+              if (selecting) setPicked([]);
+              setSelecting(!selecting);
+            }}
+          >
+            {selecting ? "Done" : "Select"}
+          </Button>
         </header>
       ) : null}
       <div class={`flex shrink-0 flex-wrap items-center justify-between gap-2 border-b ${LINE} px-4 py-2`}>

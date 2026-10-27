@@ -793,6 +793,9 @@ describe("the Now list's actions", () => {
   it("sends to the sessions the desktop checkboxes pick", async () => {
     const h = mount(() => <SessionsPane layout="desktop" />, { layout: "desktop" });
     await act(async () => {
+      screen.getByRole("button", { name: "Select" }).click();
+    });
+    await act(async () => {
       screen.getByRole("checkbox", { name: "Select kanban-e2e" }).click();
       screen.getByRole("checkbox", { name: "Select lead" }).click();
     });
@@ -815,6 +818,9 @@ describe("the Now list's actions", () => {
 
   it("toggles a picked row off by clicking it, and clears the bar", async () => {
     mount(() => <SessionsPane layout="desktop" />, { layout: "desktop" });
+    await act(async () => {
+      screen.getByRole("button", { name: "Select" }).click();
+    });
     await act(async () => {
       screen.getByRole("checkbox", { name: "Select kanban-e2e" }).click();
     });

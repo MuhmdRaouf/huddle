@@ -1,8 +1,9 @@
 // Sessions.test.tsx — the Sessions list: the groups and their counts from a fixture, the state
 // marks as shape plus word, a registry.session row moving a session between groups live, the
 // group-by toggle, the needs-you card, the working and idle rows, the desktop keys (j/k move,
-// Enter opens, L links a pick of two), the pick bar's link sheet and the picks it clears, and
-// session text always rendered as text, never HTML.
+// Enter opens, L links a pick of two), the pick bar's link sheet and the picks it clears, the
+// Select toggle that gates the desktop's checkboxes, and session text always rendered as text,
+// never HTML.
 import { act, cleanup, screen, within } from "@testing-library/preact";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -398,6 +399,9 @@ describe("the Sessions list", () => {
     }
     // the desktop's picks open the pick bar, the filter its pressed state
     await act(async () => {
+      screen.getByRole("button", { name: "Select" }).click();
+    });
+    await act(async () => {
       screen.getByRole("checkbox", { name: "Select kanban-e2e" }).click();
     });
     await act(async () => {
@@ -626,6 +630,9 @@ describe("the pick bar's link", () => {
   it("TestTheLinkButtonShowsFromTwoPicksAndOpensTheSheetWithThem", async () => {
     mountNowOver("desktop");
     await act(async () => {
+      screen.getByRole("button", { name: "Select" }).click();
+    });
+    await act(async () => {
       screen.getByRole("checkbox", { name: "Select kanban-e2e" }).click();
     });
     expect(screen.queryByRole("button", { name: "Link 1 session" })).toBeNull();
@@ -646,6 +653,9 @@ describe("the pick bar's link", () => {
 
   it("TestALinkClearsThePicksAndToastsTheChannel", async () => {
     const h = mountNowOver("desktop", (path) => (path === "/api/links" ? { channel: "fresh-link" } : {}));
+    await act(async () => {
+      screen.getByRole("button", { name: "Select" }).click();
+    });
     await act(async () => {
       screen.getByRole("checkbox", { name: "Select kanban-e2e" }).click();
       screen.getByRole("checkbox", { name: "Select lead" }).click();
@@ -674,6 +684,9 @@ describe("the pick bar's link", () => {
   it("TestTheDesktopKeyLOpensTheSheetForAPickOfTwoOnly", async () => {
     mountNowOver("desktop");
     await act(async () => {
+      screen.getByRole("button", { name: "Select" }).click();
+    });
+    await act(async () => {
       screen.getByRole("checkbox", { name: "Select kanban-e2e" }).click();
     });
     press("L");
@@ -683,5 +696,58 @@ describe("the pick bar's link", () => {
     });
     press("L");
     expect(screen.getByRole("heading", { name: "Link 2 sessions" })).toBeDefined();
+  });
+});
+
+describe("the Select toggle", () => {
+  it("keeps every checkbox off the desktop rows until Select is pressed", async () => {
+    mountNowOver("desktop");
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    const toggle = screen.getByRole("button", { name: "Select" });
+    expect(toggle.getAttribute("data-select-toggle")).toBe("");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(screen.getByRole("button", { name: "Done" }).getAttribute("data-select-toggle")).toBe("");
+    // one checkbox per row, and a pick raises the send bar
+    const wrap = document.querySelectorAll("[data-select-row]");
+    const boxes = document.querySelectorAll("[data-select-row] input[type='checkbox']");
+    expect(wrap.length).toBeGreaterThan(0);
+    expect(boxes.length).toBe(wrap.length);
+    await act(async () => {
+      screen.getByRole("checkbox", { name: "Select lead" }).click();
+    });
+    expect(screen.getByText("1 selected")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Send to 1 session" })).toBeDefined();
+  });
+
+  it("hides the checkboxes and clears the picks on Done", async () => {
+    mountNowOver("desktop");
+    await act(async () => {
+      screen.getByRole("button", { name: "Select" }).click();
+    });
+    await act(async () => {
+      screen.getByRole("checkbox", { name: "Select kanban-e2e" }).click();
+    });
+    expect(screen.getByText("1 selected")).toBeDefined();
+    await act(async () => {
+      screen.getByRole("button", { name: "Done" }).click();
+    });
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByText("1 selected")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Send to/ })).toBeNull();
+  });
+
+  it("keeps the phone on its long-press, with no Select button and no checkbox", async () => {
+    mountNowOver("phone");
+    expect(screen.queryByRole("button", { name: "Select" })).toBeNull();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    const held = document.querySelector<HTMLElement>("[data-hold-row]");
+    expect(held).not.toBeNull();
+    await act(async () => {
+      held?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 560));
+    });
+    expect(screen.getByText("1 selected")).toBeDefined();
   });
 });
