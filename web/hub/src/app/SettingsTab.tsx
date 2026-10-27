@@ -4,8 +4,8 @@
 // (System, Dark, Light, and the Catppuccin flavour); Notifications (the two switches and what
 // wakes the device); Security (the paired devices with remove, the phone's trust guide in a sheet,
 // the sign-in methods); Spending (Radar's budgets, notifications and history retention); Tips (the
-// two Insights switches); Hub (name, address and version, the hub's time zone, and Radar's
-// self-check against the transcripts). A channel's linked sessions live in that channel's own
+// two Insights switches); Hub (name, address and version, the hub's time zone, the request
+// bodies capture, and Radar's self-check against the transcripts). A channel's linked sessions live in that channel's own
 // Settings view. Every class comes from the ui components or the tokens.
 
 import { Button } from "@huddle/ui/button.tsx";
@@ -30,6 +30,7 @@ import { SELFCHECK_PATH, SelfCheckBadge, selfCheckOf } from "../radar/app/SelfCh
 import { SettingsView } from "../radar/app/views/Settings.tsx";
 import { RadarProvider, radarController } from "../radar/mount.tsx";
 import { ageText } from "../registry.ts";
+import { CaptureSetting } from "./CaptureSetting.tsx";
 import { errText, useHuddle } from "./context.tsx";
 import { InsightsSettings } from "./InsightsSettings.tsx";
 import { useLayout } from "./layout.ts";
@@ -608,6 +609,7 @@ const SETTINGS_GROUPS: readonly SettingsGroup[] = [
     members: [
       { id: "hub", Pane: ThisHub },
       { id: "zone", Pane: () => <TimeZone /> },
+      { id: "capture", Pane: CaptureSetting },
       { id: "selfcheck", Pane: SelfCheck },
     ],
   },

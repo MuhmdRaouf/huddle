@@ -494,7 +494,7 @@ describe("the six groups", () => {
       ["security", ["devices", "phone", "signin"]],
       ["spending", ["radar"]],
       ["tips", ["insights"]],
-      ["hub", ["hub", "zone", "selfcheck"]],
+      ["hub", ["hub", "zone", "capture", "selfcheck"]],
     ];
     for (const [group, want] of groups) {
       mountSection(<SettingsTab section={group} />, []);
@@ -514,6 +514,7 @@ describe("the six groups", () => {
     expect(settingsSectionOf("insights")).toBe("tips");
     expect(settingsSectionOf("hub")).toBe("hub");
     expect(settingsSectionOf("zone")).toBe("hub");
+    expect(settingsSectionOf("capture")).toBe("hub");
     expect(settingsSectionOf("selfcheck")).toBe("hub");
     // Linked channels live under each channel's own Settings view
     expect(settingsSectionOf("channels")).toBe("appearance");

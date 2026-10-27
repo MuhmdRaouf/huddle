@@ -7,7 +7,9 @@
 // finished-turn push a paired device turns on and keeps across a reload, the hub's own facts, the
 // hub's time zone (seeded by the first signed-in browser, picked again and kept across a reload),
 // the Insights switches (tips for me on, tips to the sessions off, a flip kept across a reload),
-// and the phone guide in a sheet. Every group fits the viewport with no horizontal scroll, keeps
+// the hub's request-bodies switch (on by default, a tap read back off the hub, the Kept-now line
+// under it), and the phone guide in a sheet. Every group fits the viewport with no horizontal
+// scroll, keeps
 // its tap targets at least 44 px and passes axe.
 
 import { expect, test, type Page } from "@playwright/test";
@@ -22,7 +24,7 @@ const GROUPS: readonly (readonly [name: string, hash: string, members: readonly 
   ["Security", "#/settings/security", ["devices", "phone", "signin"], /^\d+ devices?$/],
   ["Spending", "#/settings/spending", ["radar"], ""],
   ["Tips", "#/settings/tips", ["insights"], "On"],
-  ["Hub", "#/settings/hub", ["hub", "zone", "selfcheck"], /\S/],
+  ["Hub", "#/settings/hub", ["hub", "zone", "capture", "selfcheck"], /\S/],
 ];
 
 /** Opens one Settings address in a signed-in browser. The authenticator set-up the first sign-in
@@ -187,6 +189,7 @@ test.describe("the Settings tab", () => {
       ["insights", "Tips"],
       ["hub", "Hub"],
       ["zone", "Hub"],
+      ["capture", "Hub"],
       ["selfcheck", "Hub"],
     ] as const) {
       await page.goto(`${theSetup().rootUrl}/#/settings/${member}`);
@@ -315,6 +318,34 @@ test.describe("the Settings tab", () => {
     await tipsToSessions.click();
     await expect(tipsForMe).toHaveAttribute("aria-checked", "true");
     await expect(tipsToSessions).toHaveAttribute("aria-checked", "false");
+    await expectAccessible(page);
+  });
+
+  test("the request-bodies switch reads on, a tap turns it off and a second brings it back", async ({
+    page,
+  }) => {
+    await openSettings(page, "#/settings/hub");
+    const keep = page.getByRole("switch", { name: "Keep request bodies" });
+    await expect(keep).toBeEnabled();
+    await expect(keep).toHaveAttribute("aria-checked", "true");
+    const flip = (on: boolean) =>
+      page.waitForResponse(
+        (r) =>
+          r.request().method() === "POST" &&
+          r.url().endsWith("/api/settings") &&
+          (r.request().postDataJSON() as { capture?: boolean }).capture === on,
+      );
+    const setting = () =>
+      page.evaluate(async () => {
+        const r = await fetch("/api/settings");
+        return (await r.json()) as { capture: boolean };
+      });
+    await Promise.all([flip(false), keep.click()]);
+    await expect(keep).toHaveAttribute("aria-checked", "false");
+    expect(await setting()).toMatchObject({ capture: false });
+    await Promise.all([flip(true), keep.click()]);
+    await expect(keep).toHaveAttribute("aria-checked", "true");
+    expect(await setting()).toMatchObject({ capture: true });
     await expectAccessible(page);
   });
 
