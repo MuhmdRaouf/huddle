@@ -28,7 +28,7 @@ const blocked: SchemeStore = {
 };
 
 describe("themes", () => {
-  it("registers Huddle first, then the seven community themes with the sides each has", () => {
+  it("registers Huddle first, then the eleven community themes with the sides each has", () => {
     expect(THEMES.map((t) => t.id)).toEqual([
       "huddle",
       "tokyo-night",
@@ -38,6 +38,10 @@ describe("themes", () => {
       "gruvbox",
       "solarized",
       "rose-pine",
+      "one-dark",
+      "github",
+      "everforest",
+      "kanagawa",
     ]);
     expect(THEMES.map((t) => t.label)).toEqual([
       "Huddle",
@@ -48,6 +52,10 @@ describe("themes", () => {
       "Gruvbox",
       "Solarized",
       "Rosé Pine",
+      "One Dark",
+      "GitHub",
+      "Everforest",
+      "Kanagawa",
     ]);
     expect(THEMES.map((t) => t.sides)).toEqual([
       ["light", "dark"],
@@ -55,6 +63,10 @@ describe("themes", () => {
       ["dark"],
       ["dark"],
       ["light", "dark"],
+      ["light", "dark"],
+      ["light", "dark"],
+      ["light", "dark"],
+      ["dark"],
       ["light", "dark"],
       ["light", "dark"],
       ["light", "dark"],
@@ -71,12 +83,18 @@ describe("themes", () => {
       { light: "#f2e5bc", dark: "#1d2021" },
       { light: "#eee8d5", dark: "#00212b" },
       { light: "#f2e9e1", dark: "#191724" },
+      { dark: "#21252b" },
+      { light: "#f6f8fa", dark: "#010409" },
+      { light: "#efebd4", dark: "#232a2e" },
+      { light: "#e5ddb0", dark: "#16161d" },
     ]);
   });
 
   it("answers the theme an id names, and the default for an unknown one", () => {
     expect(themeOf("dracula")).toBe(THEMES[3]);
     expect(themeOf("rose-pine")).toBe(THEMES[7]);
+    expect(themeOf("one-dark")).toBe(THEMES[8]);
+    expect(themeOf("kanagawa")).toBe(THEMES[11]);
     expect(themeOf("nope")).toBe(THEMES[0]);
   });
 
@@ -120,6 +138,14 @@ describe("themes", () => {
     expect(sideOf("monokai", "dark")).toBe("dark");
     expect(sideOf("dracula", "light")).toBe("dark");
     expect(sideOf("dracula", "dark")).toBe("dark");
+    expect(sideOf("one-dark", "light")).toBe("dark");
+    expect(sideOf("one-dark", "dark")).toBe("dark");
+    expect(sideOf("github", "light")).toBe("light");
+    expect(sideOf("github", "dark")).toBe("dark");
+    expect(sideOf("everforest", "light")).toBe("light");
+    expect(sideOf("everforest", "dark")).toBe("dark");
+    expect(sideOf("kanagawa", "light")).toBe("light");
+    expect(sideOf("kanagawa", "dark")).toBe("dark");
     expect(sideOf("nope", "light")).toBe("light");
     expect(sideOf("nope", "dark")).toBe("dark");
   });

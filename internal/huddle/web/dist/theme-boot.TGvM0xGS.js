@@ -11,7 +11,7 @@
 
 (function () {
   /** The registered theme ids, mirroring web/ui/src/themes.ts's THEMES. */
-  const THEME_IDS = ["huddle", "tokyo-night", "monokai", "dracula", "nord", "gruvbox", "solarized", "rose-pine"];
+  const THEME_IDS = ["huddle", "tokyo-night", "monokai", "dracula", "nord", "gruvbox", "solarized", "rose-pine", "one-dark", "github", "everforest", "kanagawa"];
   /** Each theme's status bar colour per side it paints, mirroring the registry's bar map. */
   const THEME_BARS = {
     "huddle": { "light": "#f4f5f7", "dark": "#0b0c0f" },
@@ -21,7 +21,11 @@
     "nord": { "light": "#e5e9f0", "dark": "#2e3440" },
     "gruvbox": { "light": "#f2e5bc", "dark": "#1d2021" },
     "solarized": { "light": "#eee8d5", "dark": "#00212b" },
-    "rose-pine": { "light": "#f2e9e1", "dark": "#191724" }
+    "rose-pine": { "light": "#f2e9e1", "dark": "#191724" },
+    "one-dark": { "dark": "#21252b" },
+    "github": { "light": "#f6f8fa", "dark": "#010409" },
+    "everforest": { "light": "#efebd4", "dark": "#232a2e" },
+    "kanagawa": { "light": "#e5ddb0", "dark": "#16161d" }
   };
   let pref = "system";
   try {

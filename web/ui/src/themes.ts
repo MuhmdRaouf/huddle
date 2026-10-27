@@ -54,6 +54,25 @@ export const THEMES: readonly [Theme, ...Theme[]] = [
     sides: ["light", "dark"],
     bar: { light: "#f2e9e1", dark: "#191724" },
   },
+  { id: "one-dark", label: "One Dark", sides: ["dark"], bar: { dark: "#21252b" } },
+  {
+    id: "github",
+    label: "GitHub",
+    sides: ["light", "dark"],
+    bar: { light: "#f6f8fa", dark: "#010409" },
+  },
+  {
+    id: "everforest",
+    label: "Everforest",
+    sides: ["light", "dark"],
+    bar: { light: "#efebd4", dark: "#232a2e" },
+  },
+  {
+    id: "kanagawa",
+    label: "Kanagawa",
+    sides: ["light", "dark"],
+    bar: { light: "#e5ddb0", dark: "#16161d" },
+  },
 ];
 
 /** Where this browser keeps its theme. */
