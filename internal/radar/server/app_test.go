@@ -18,6 +18,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/radar/alerts"
+	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 	"github.com/MuhmdRaouf/huddle/internal/radar/store"
@@ -325,6 +326,47 @@ func TestServerJson(t *testing.T) {
 			t.Fatalf("the open failed before it could truncate anything: got %+v", got)
 		}
 	})
+}
+
+// TestTheAppPrunesTheLedgerAtStart: the app runs the ledger's prune beat, so its start cuts
+// the ledger file back to the TTL. A row 100 days old goes at the start; a 1-day-old one
+// stays.
+func TestTheAppPrunesTheLedgerAtStart(t *testing.T) {
+	world := makeEnv(t)
+	ctx := t.Context()
+	ledPath := paths.LedgerPath(ctx, world.env)
+	now := time.Now()
+	seed, err := ledger.Open(ledPath)
+	if err != nil {
+		t.Fatalf("open the seed ledger: %v", err)
+	}
+	rows := []ledger.Row{
+		{ID: "req_100", StartedAt: now.Add(-100 * 24 * time.Hour).UnixMilli()},
+		{ID: "req_1", StartedAt: now.Add(-24 * time.Hour).UnixMilli()},
+	}
+	for _, row := range rows {
+		if err := seed.Upsert(ctx, row); err != nil {
+			t.Fatalf("upsert %s: %v", row.ID, err)
+		}
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatalf("close the seed ledger: %v", err)
+	}
+
+	app := mustStart(t, world.env, AppOptions{Version: "test", SinceMs: dayMs, IntervalMs: quietMs})
+	app.Stop()
+
+	again, err := ledger.Open(ledPath)
+	if err != nil {
+		t.Fatalf("reopen the ledger: %v", err)
+	}
+	t.Cleanup(func() { _ = again.Close() })
+	if row, err := again.Get(ctx, "req_100"); err != nil || row != nil {
+		t.Fatalf("the 100-day row = %+v, %v; want it gone at the start", row, err)
+	}
+	if row, err := again.Get(ctx, "req_1"); err != nil || row == nil {
+		t.Fatalf("the 1-day row = %+v, %v; want it kept", row, err)
+	}
 }
 
 func TestStartApp(t *testing.T) {

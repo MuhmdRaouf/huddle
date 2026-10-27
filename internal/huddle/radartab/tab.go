@@ -121,8 +121,9 @@ type Tab struct {
 	cancel func()
 	prunes *history.PruneSchedule
 	// ledger is the request ledger the watcher files into; nil when its file would not open
-	ledger     *ledger.Store
-	httpServer *server.HttpServer
+	ledger       *ledger.Store
+	ledgerPrunes *ledger.PruneBeat
+	httpServer   *server.HttpServer
 
 	// proxying mode: the recorded owner's address and whether its radar routes sit under the
 	// prefix too (another huddle) or at the root (a standalone radar)
@@ -210,10 +211,12 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		t.prunes = history.SchedulePrunes(appCtx, hist, retention, history.PruneOptions{})
 	}
 	var led *ledger.Store
+	var ledgerPrunes *ledger.PruneBeat
 	if opened, err := ledger.Open(paths.LedgerPath(appCtx, env)); err != nil {
 		log(fmt.Sprintf("radar: ledger unavailable, running without it (%v)", err))
 	} else {
 		led = opened
+		ledgerPrunes = ledger.SchedulePrune(appCtx, led, 0, now)
 	}
 	watcher := ingest.StartWatcher(appCtx, ingest.WatcherOptions{
 		Env:        env,
@@ -255,6 +258,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 	t.Insights = insights
 	t.Writer = writer
 	t.ledger = led
+	t.ledgerPrunes = ledgerPrunes
 	t.Owns = true
 	// the token a proxying huddle presents on this mount's guarded routes: huddle's own members
 	// live only in their owner's memory, so the lock record is the one ground two huddles share
@@ -701,9 +705,10 @@ func (t *Tab) TranscriptTimes(ids []string) map[string]time.Time {
 	return out
 }
 
-// Stop ends the mount. The watcher, the insights, the retention and the history writer stop, the
-// ledger closes, the streams radar holds close, and the lock goes — but only while the record on
-// disk is still this mount's own: a successor that already took the lock keeps it. Idempotent.
+// Stop ends the mount. The watcher, the insights, the retention, the ledger's prune beat and
+// the history writer stop, the ledger closes, the streams radar holds close, and the lock
+// goes — but only while the record on disk is still this mount's own: a successor that
+// already took the lock keeps it. Idempotent.
 func (t *Tab) Stop() {
 	t.stopOnce.Do(func() {
 		defer close(t.stopped)
@@ -711,6 +716,7 @@ func (t *Tab) Stop() {
 			return
 		}
 		t.Watcher.Stop()
+		t.ledgerPrunes.Stop()
 		if t.ledger != nil {
 			_ = t.ledger.Close()
 		}

@@ -15,6 +15,49 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 )
 
+// TestTheOwningMountPrunesTheLedgerAtStart: the owning mount runs the ledger's prune beat,
+// so its start cuts the ledger file back to the TTL. A row 100 days old goes at the mount;
+// a 1-day-old one stays.
+func TestTheOwningMountPrunesTheLedgerAtStart(t *testing.T) {
+	env := tempEnv(t)
+	ctx := context.Background()
+	ledPath := paths.LedgerPath(ctx, env)
+	now := time.Now()
+	seed, err := ledger.Open(ledPath)
+	if err != nil {
+		t.Fatalf("open the seed ledger: %v", err)
+	}
+	rows := []ledger.Row{
+		{ID: "req_100", StartedAt: now.Add(-100 * 24 * time.Hour).UnixMilli()},
+		{ID: "req_1", StartedAt: now.Add(-24 * time.Hour).UnixMilli()},
+	}
+	for _, row := range rows {
+		if err := seed.Upsert(ctx, row); err != nil {
+			t.Fatalf("upsert %s: %v", row.ID, err)
+		}
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatalf("close the seed ledger: %v", err)
+	}
+
+	tab, _, _ := mountMux(t, env, MountOptions{IntervalMs: 50, InsightsTickMs: quietMs})
+	if !tab.Owns {
+		t.Fatal("the mount did not take the lock on an empty radar home")
+	}
+
+	led, err := ledger.Open(ledPath)
+	if err != nil {
+		t.Fatalf("open the mount's ledger: %v", err)
+	}
+	t.Cleanup(func() { _ = led.Close() })
+	if row, err := led.Get(ctx, "req_100"); err != nil || row != nil {
+		t.Fatalf("the 100-day row = %+v, %v; want it gone at the mount", row, err)
+	}
+	if row, err := led.Get(ctx, "req_1"); err != nil || row == nil {
+		t.Fatalf("the 1-day row = %+v, %v; want it kept", row, err)
+	}
+}
+
 func TestTheOwningMountFilesRouteLinesIntoTheLedger(t *testing.T) {
 	env := tempEnv(t)
 	now := time.Now().UTC()
