@@ -35,7 +35,8 @@ var (
 // done ticket answers its front matter only, and there the field limits warn: a
 // done ticket is never edited, so a bar raised after it landed could never be
 // cleared. A duplicate id still fails — it names two files, not one ticket's
-// fields.
+// fields. An empty cluster warns everywhere: a card with no feature word is
+// allowed, and the board shows it under No feature.
 func Lint(t Ticket, c Context) []Problem {
 	var problems []Problem
 	problems = append(problems, lintFields(t, c)...)
@@ -46,7 +47,7 @@ func Lint(t Ticket, c Context) []Problem {
 			}
 			problems[i] = Problem{"warning", p.Rule, p.Message + " (done tickets are not edited)"}
 		}
-		return problems
+		return append(problems, noFeatureWarning(t)...)
 	}
 	problems = append(problems, lintSections(t)...)
 	problems = append(problems, lintDeps(t, c)...)
@@ -77,7 +78,7 @@ func lintFields(t Ticket, c Context) []Problem {
 		problems = append(problems, Problem{"failure", "est",
 			fmt.Sprintf("est %q: use one of S, M, L", t.Est)})
 	}
-	if !clusterRe.MatchString(t.Cluster) {
+	if strings.TrimSpace(t.Cluster) != "" && !clusterRe.MatchString(t.Cluster) {
 		problems = append(problems, Problem{"failure", "cluster",
 			fmt.Sprintf("cluster %q: one or two lowercase words", t.Cluster)})
 	}
@@ -209,7 +210,16 @@ func lintWarnings(t Ticket) []Problem {
 				fmt.Sprintf("## Implementation details is under 200 characters for an %s ticket", t.Est)})
 		}
 	}
-	return problems
+	return append(problems, noFeatureWarning(t)...)
+}
+
+// noFeatureWarning answers the empty-cluster warning: a blank cluster is no
+// failure, the card just shows under No feature on the board.
+func noFeatureWarning(t Ticket) []Problem {
+	if strings.TrimSpace(t.Cluster) != "" {
+		return nil
+	}
+	return []Problem{{"warning", "cluster", "no feature word: the card shows under No feature"}}
 }
 
 func sectionByName(sections []Section, name string) *Section {

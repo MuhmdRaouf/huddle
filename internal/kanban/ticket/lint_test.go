@@ -63,6 +63,10 @@ func TestLint(t *testing.T) {
 			[]string{`failure|cluster "Three Words": one or two lowercase words`}},
 		{"cluster with a colon", func(t *Ticket, _ *Context) { t.Cluster = "a: b" },
 			[]string{`failure|cluster "a: b": one or two lowercase words`}},
+		{"an empty cluster only warns", func(t *Ticket, _ *Context) { t.Cluster = "" },
+			[]string{"warning|no feature word: the card shows under No feature"}},
+		{"a blank cluster counts as empty", func(t *Ticket, _ *Context) { t.Cluster = "   " },
+			[]string{"warning|no feature word: the card shows under No feature"}},
 		{"tag with a space", func(t *Ticket, _ *Context) { t.Tags = []string{"Bad Tag"} },
 			[]string{`failure|tag "Bad Tag": lowercase words joined by dashes, at most 24 characters`}},
 		{"tag over 24 runes", func(t *Ticket, _ *Context) { t.Tags = []string{strings.Repeat("a", 25)} },
@@ -151,6 +155,11 @@ func TestLint(t *testing.T) {
 			t.Sections = nil
 			t.Summary = "Too short."
 		}, []string{"warning|summary is 10 characters; it needs 80 to 600 (done tickets are not edited)"}},
+		{"a done ticket with no cluster keeps the warning", func(t *Ticket, c *Context) {
+			c.Column = "done"
+			t.Cluster = ""
+			t.Sections = nil
+		}, []string{"warning|no feature word: the card shows under No feature"}},
 		{"a done old card gets no warning either", func(t *Ticket, c *Context) {
 			c.Column = "done"
 			t.OldLayout = true

@@ -725,6 +725,18 @@ func TestRefusals(t *testing.T) {
 		has(t, "stdout", stdout, "WAR-1:", "old layout")
 	})
 
+	t.Run("lint exits 0 when a card has no feature word", func(t *testing.T) {
+		f := newFixture(t)
+		f.card("ready", "NOF-1", "id: NOF-1\ntitle: \"no feature word\"\ntype: docs\n"+
+			"priority: P2\nest: M\nsummary: \""+longSummary+"\"", fullBody("NOF-1"))
+		code, stdout, stderr := f.run("lint")
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0 (a missing cluster only warns); stdout %q stderr %q", code, stdout, stderr)
+		}
+		has(t, "stdout", stdout, "NOF-1:", "warning: no feature word: the card shows under No feature",
+			"lint: 1 ticket(s) flagged, 0 failure(s), 1 warning(s)")
+	})
+
 	t.Run("a bad actor is refused with exit 1", func(t *testing.T) {
 		f := newFixture(t)
 		f.fullCard("backlog", "ACT-1")
