@@ -626,6 +626,7 @@ func Serve(ctx context.Context, o Options) error {
 	// age stays the fallback for a member the registry has never heard of. A nil registry
 	// answers unknown, so the wiring is unconditional.
 	s.hub.Liveness = registryLiveness{db: s.registry}
+	s.hub.MemberSessions = registryLiveness{db: s.registry}
 	// the registry's pid checker stops with the server, before the database closes under it
 	pidCtx, stopPidCheck := context.WithCancel(ctx)
 	defer stopPidCheck()

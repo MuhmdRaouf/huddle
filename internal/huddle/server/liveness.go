@@ -17,3 +17,16 @@ func (l registryLiveness) MemberState(ctx context.Context, channel, member strin
 	}
 	return l.db.MemberState(ctx, channel, member, now)
 }
+
+// MemberSessions answers the channel's Claude session ids from the registry: session id to
+// member, false when the registry cannot answer.
+func (l registryLiveness) MemberSessions(ctx context.Context, channel string) (map[string]string, bool) {
+	if l.db == nil {
+		return nil, false
+	}
+	out, err := l.db.MemberSessions(ctx, channel)
+	if err != nil {
+		return nil, false
+	}
+	return out, true
+}

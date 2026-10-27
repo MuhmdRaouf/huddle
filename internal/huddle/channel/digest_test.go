@@ -317,7 +317,7 @@ func TestSquashVectors(t *testing.T) {
 // The window names the range radar sums over, and the text carries the costs it answered.
 func TestDigestCostText(t *testing.T) {
 	ch := openChannel(t, "dg")
-	for _, n := range []string{"api", "web", "idle"} {
+	for _, n := range []string{"api", "web", "idle", "gone"} {
 		if _, err := ch.Join(bg, n, JoinOpts{}); err != nil {
 			t.Fatal(err)
 		}
@@ -326,6 +326,10 @@ func TestDigestCostText(t *testing.T) {
 	Link(bg, ch, "web", "claude-web")
 	Link(bg, ch, "idle", "claude-idle")
 	Link(bg, ch, "gone", "claude-gone")
+	// a link lives on the member's row, so a member that left keeps the id it linked
+	if _, err := ch.Leave(bg, "gone", ""); err != nil {
+		t.Fatal(err)
+	}
 	obs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		fmt.Fprint(w, `{"rows": [{"key": "claude-api", "label": "api", "requests": 10, "tokens": {}, "costUsd": 1.25}, {"key": "claude-web", "label": "web", "requests": 3, "tokens": {}, "costUsd": 0.5}, {"key": "claude-idle", "label": "idle", "requests": 1, "tokens": {}, "costUsd": 0}, {"key": "claude-gone", "label": "gone", "requests": 1, "tokens": {}, "costUsd": 5}]}`)

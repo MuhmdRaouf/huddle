@@ -2,6 +2,8 @@ package channel
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -82,5 +84,30 @@ func TestPresenceCarriesTheRegistrysState(t *testing.T) {
 	if !views["worker"].Stale || views["fresh"].Stale {
 		t.Fatalf("mixed knowledge = %v and %v, want worker stale by age and fresh not",
 			views["worker"].Stale, views["fresh"].Stale)
+	}
+
+	// the Claude session id stays off the wire: no session view, and no presence frame
+	// however it travels, names it
+	Link(ctx, ch, "worker", "c-wire")
+	sessions, err := ch.Sessions(ctx)
+	if err != nil {
+		t.Fatalf("sessions: %v", err)
+	}
+	wire, err := json.Marshal(sessions[0])
+	if err != nil {
+		t.Fatalf("marshal the view: %v", err)
+	}
+	p, err := ch.PresenceOf(ctx, "worker")
+	if err != nil {
+		t.Fatalf("presence: %v", err)
+	}
+	frame, err := json.Marshal(Live{Ch: ch.Name, Type: "presence", Data: *p})
+	if err != nil {
+		t.Fatalf("marshal the frame: %v", err)
+	}
+	for name, w := range map[string][]byte{"session view": wire, "presence frame": frame} {
+		if strings.Contains(string(w), "session_id") {
+			t.Errorf("the %s carries session_id: %s", name, w)
+		}
 	}
 }

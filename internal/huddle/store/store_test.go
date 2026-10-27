@@ -255,6 +255,42 @@ CREATE TABLE knowledge (id INTEGER PRIMARY KEY AUTOINCREMENT, by TEXT NOT NULL, 
 			}
 		}
 	})
+	t.Run("adds the session id an older file lacks", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "old.db")
+		db, err := SQLite(ctx, file)
+		if err != nil {
+			t.Fatalf("sqlite: %v", err)
+		}
+		// the sessions table without the Claude session id column
+		if err := db.Exec(ctx, `CREATE TABLE sessions (name TEXT PRIMARY KEY, label TEXT, role TEXT, joined_at TEXT NOT NULL, last_seen TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'idle', task TEXT, step TEXT,
+  control TEXT NOT NULL DEFAULT 'run' CHECK (control IN ('run','pause')), control_by TEXT, control_at TEXT,
+  cursor INTEGER NOT NULL DEFAULT 0, parent TEXT, context TEXT, brief TEXT);
+INSERT INTO sessions (name, joined_at, last_seen) VALUES ('ada', '2026-10-20T09:00:00Z', '2026-10-20T09:01:00Z');`); err != nil {
+			t.Fatalf("old schema: %v", err)
+		}
+		if err := db.Close(); err != nil {
+			t.Fatalf("close: %v", err)
+		}
+		s, err := Open(ctx, file)
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		defer s.Close()
+		if err := s.Init(ctx); err != nil {
+			t.Fatalf("init: %v", err)
+		}
+		r, err := s.Get(ctx, "SELECT session_id, joined_at, last_seen FROM sessions WHERE name = 'ada'")
+		if err != nil {
+			t.Fatalf("read the row: %v", err)
+		}
+		if r["joined_at"] != "2026-10-20T09:00:00Z" || r["last_seen"] != "2026-10-20T09:01:00Z" {
+			t.Errorf("the row did not survive: %v", r)
+		}
+		if r["session_id"] != nil {
+			t.Errorf("session_id = %v, want none", r["session_id"])
+		}
+	})
 	t.Run("still opens when FTS5 is missing", func(t *testing.T) {
 		db, err := SQLite(ctx, filepath.Join(t.TempDir(), "t.db"))
 		if err != nil {

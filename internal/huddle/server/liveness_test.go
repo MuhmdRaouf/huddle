@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"maps"
 	"path/filepath"
 	"testing"
 	"time"
@@ -43,5 +44,12 @@ func TestRegistryLivenessReadsTheMembersSession(t *testing.T) {
 	}
 	if state, known := (registryLiveness{}).MemberState(ctx, "huddle", "lead", now); known || state != "" {
 		t.Fatalf("nil db = %q, %v, want not known and no state", state, known)
+	}
+	sessions, known := live.MemberSessions(ctx, "huddle")
+	if !known || !maps.Equal(sessions, map[string]string{"s-work": "lead", "s-stuck": "helper"}) {
+		t.Fatalf("member sessions = %v, %v, want the two members and known", sessions, known)
+	}
+	if got, known := (registryLiveness{}).MemberSessions(ctx, "huddle"); known || got != nil {
+		t.Fatalf("nil db member sessions = %v, %v, want not known and none", got, known)
 	}
 }

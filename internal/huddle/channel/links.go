@@ -1,37 +1,19 @@
 // Which Claude Code session ids are which huddle session (top-level name), per channel: learnt
-// from the SessionStart join (its claude_session) and the approval hook, so radar's alerts and
-// costs, which know Claude session ids only, land on huddle names.
+// from the SessionStart join (its claude_session) and the approval hook onto the member's own
+// row, so radar's alerts and costs, which know Claude session ids only, land on huddle names.
 package channel
 
 import (
 	"context"
+	"maps"
 	"regexp"
 )
 
 var claudeIDRe = regexp.MustCompile(`^[\w-]{1,128}$`)
 
-// ensureLinks creates the session-link table once per channel.
-func ensureLinks(ctx context.Context, c *Channel) error {
-	c.stateMu.Lock()
-	made := c.linksMade
-	c.stateMu.Unlock()
-	if made {
-		return nil
-	}
-	err := c.serial(ctx, func(ctx context.Context) error {
-		return c.dbRun(ctx, "CREATE TABLE IF NOT EXISTS x_session_links (claude_id TEXT PRIMARY KEY, name TEXT NOT NULL, at TEXT NOT NULL)")
-	})
-	if err != nil {
-		return err
-	}
-	c.stateMu.Lock()
-	c.linksMade = true
-	c.stateMu.Unlock()
-	return nil
-}
-
 // Link records that claudeID is the named session's Claude Code session; a subagent's link is
-// its parent's. An id or name that is not fit to store is ignored, as is a write that fails.
+// its parent's. An id or name that is not fit to store is ignored, as is a member without a row
+// or a write that fails.
 func Link(ctx context.Context, c *Channel, name string, claudeID string) {
 	if !claudeIDRe.MatchString(claudeID) || !NameRe.MatchString(name) || name == Owner {
 		return
@@ -40,27 +22,26 @@ func Link(ctx context.Context, c *Channel, name string, claudeID string) {
 	if parent, ok := ParentOf(name); ok {
 		top = parent
 	}
-	if err := ensureLinks(ctx, c); err != nil {
-		return
-	}
 	_ = c.serial(ctx, func(ctx context.Context) error {
-		return c.dbRun(ctx, "INSERT INTO x_session_links (claude_id, name, at) VALUES (?,?,?) ON CONFLICT(claude_id) DO UPDATE SET name=excluded.name, at=excluded.at",
-			claudeID, top, isoOfMs(c.nowMs()))
+		return c.dbRun(ctx, "UPDATE sessions SET session_id=? WHERE name=?", claudeID, top)
 	})
 }
 
-// Links answers every Claude session id to huddle session mapping of the channel.
+// Links answers every Claude session id to huddle session mapping of the channel: the member
+// rows' own ids over the registry's answer, when one is wired — a row's own id wins.
 func Links(ctx context.Context, c *Channel) (map[string]string, error) {
-	if err := ensureLinks(ctx, c); err != nil {
-		return nil, err
-	}
-	rows, err := c.dbAll(ctx, "SELECT claude_id, name FROM x_session_links")
+	rows, err := c.dbAll(ctx, "SELECT session_id, name FROM sessions WHERE session_id IS NOT NULL AND session_id != ''")
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]string, len(rows))
+	out := map[string]string{}
+	if c.MemberSessions != nil {
+		if reg, ok := c.MemberSessions.MemberSessions(ctx, c.Name); ok {
+			maps.Copy(out, reg)
+		}
+	}
 	for _, r := range rows {
-		out[rStr(r, "claude_id")] = rStr(r, "name")
+		out[rStr(r, "session_id")] = rStr(r, "name")
 	}
 	return out, nil
 }

@@ -666,6 +666,10 @@ func TestExtrasRadar(t *testing.T) {
 	t.Run("the cost object keeps the order radar's rows name, not the sorted one", func(t *testing.T) {
 		ch := openChannel(t, "shop")
 		for _, n := range []string{"zeta", "alpha", "mid"} {
+			// a link lives on the member's row, so the member joins before it links
+			if _, err := ch.Join(bg, n, channel.JoinOpts{}); err != nil {
+				t.Fatalf("join %s: %v", n, err)
+			}
 			channel.Link(bg, ch, n, "claude-"+n)
 		}
 		obs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

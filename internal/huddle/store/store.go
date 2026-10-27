@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   name TEXT PRIMARY KEY, label TEXT, role TEXT, joined_at TEXT NOT NULL, last_seen TEXT NOT NULL,
   state TEXT NOT NULL DEFAULT 'idle', task TEXT, step TEXT,
   control TEXT NOT NULL DEFAULT 'run' CHECK (control IN ('run','pause')), control_by TEXT, control_at TEXT,
-  cursor INTEGER NOT NULL DEFAULT 0, parent TEXT, context TEXT, brief TEXT
+  cursor INTEGER NOT NULL DEFAULT 0, parent TEXT, context TEXT, brief TEXT, session_id TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
   seq {ID}, ts TEXT NOT NULL, from_name TEXT NOT NULL, to_name TEXT,
@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS reservations (
 var added = [][2]string{
 	{"sessions", "parent TEXT"}, {"sessions", "context TEXT"}, {"sessions", "brief TEXT"},
 	{"knowledge", "verified_by TEXT"}, {"knowledge", "verified_at TEXT"}, {"knowledge", "moved_to INTEGER"}, {"knowledge", "origin TEXT"},
+	{"sessions", "session_id TEXT"},
 }
 
 // Store is one channel's SQLite file. One connection serves it, so the Q a transaction hands

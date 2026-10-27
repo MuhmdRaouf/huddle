@@ -104,6 +104,13 @@ type Liveness interface {
 	MemberState(ctx context.Context, channel, member string, now time.Time) (state string, known bool)
 }
 
+// Sessions answers a channel's Claude session ids from outside the channel file: session id to
+// member, false when the answerer cannot answer. The hub wires the registry in, so the ids the
+// member rows carry and the ids the registry knows read as one map.
+type Sessions interface {
+	MemberSessions(ctx context.Context, channel string) (map[string]string, bool)
+}
+
 // stopWords are the words too common to say what a session's role or task is about.
 var stopWords = wordsSet("the and for with from that this into what when then than have has are was were will not but you your our its any all each per via use uses using")
 
@@ -309,6 +316,7 @@ func toSession(r Row) *Session {
 		Task: rStrPtr(r, "task"), Step: rStrPtr(r, "step"), Control: rStr(r, "control"),
 		ControlBy: rStrPtr(r, "control_by"), ControlAt: rStrPtr(r, "control_at"), Cursor: rInt(r, "cursor"),
 		Parent: rStrPtr(r, "parent"), Context: rStrPtr(r, "context"), Brief: rStrPtr(r, "brief"),
+		SessionID: rStrPtr(r, "session_id"),
 	}
 }
 
@@ -363,6 +371,8 @@ type Session struct {
 	Parent    *string `json:"parent"`
 	Context   *string `json:"context"`
 	Brief     *string `json:"brief"`
+	// SessionID is the member's Claude Code session id; it stays off the wire.
+	SessionID *string `json:"-"`
 }
 
 // PresenceView is a session as the live views see it.
@@ -1104,6 +1114,10 @@ type Channel struct {
 	// answerer, and the last_seen age decides.
 	Liveness Liveness
 
+	// MemberSessions answers the channel's Claude session ids from the registry; nil leaves the
+	// member rows the only answer.
+	MemberSessions Sessions
+
 	// Rand feeds the occasional-cleanup roll.
 	Rand func() float64
 
@@ -1121,7 +1135,6 @@ type Channel struct {
 	metaC     map[string]string  // meta, read once: this process is the only writer
 	metaP     map[string]*string // meta written by the open transaction
 	pending   []Ev               // events of the open transaction, emitted once it commits
-	linksMade bool               // the session-link table exists
 	shared    *Shared            // the server-wide knowledge store, when this server keeps one
 }
 

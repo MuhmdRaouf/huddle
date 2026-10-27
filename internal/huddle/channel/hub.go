@@ -57,6 +57,10 @@ type Hub struct {
 	// nil leaves each channel its own last_seen age.
 	Liveness Liveness
 
+	// MemberSessions answers every channel's Claude session ids from the registry; nil leaves
+	// each channel's member rows the only answer.
+	MemberSessions Sessions
+
 	onGet func(*Channel)
 
 	mu     sync.Mutex
@@ -215,6 +219,7 @@ func (h *Hub) get(ctx context.Context, name string, create bool) (*Channel, erro
 		ch.Radar = h.Radar
 	}
 	ch.Liveness = h.Liveness
+	ch.MemberSessions = h.MemberSessions
 	h.open[name] = ch
 	return ch, nil
 }
