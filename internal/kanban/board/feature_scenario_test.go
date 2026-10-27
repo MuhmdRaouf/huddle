@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
@@ -85,6 +86,33 @@ func TestCloseFeatureScenarios(t *testing.T) {
 					t.Fatalf("last LOG line = %v, want a feature-close by lead naming swr", entry)
 				}
 			})
+			s.And("list answers the web card alone", func(t *testing.T) {
+				got := mustCards(t, fx.list(""))
+				if len(got) != 1 || got[0].ID != "WEB-1" {
+					t.Fatalf("list after the close = %+v, want WEB-1 alone", got)
+				}
+			})
+			s.And("status counts leave the swr cards out", func(t *testing.T) {
+				counts := map[string]int{}
+				for _, c := range mustStatus(t, fx).Counts {
+					counts[c.Column] = c.Count
+				}
+				if counts["backlog"] != 1 || counts["ready"] != 0 || counts["testing"] != 0 {
+					t.Fatalf("counts after the close = %v, want backlog 1, ready 0, testing 0", counts)
+				}
+			})
+			s.And("show answers an swr card with its feature closed", func(t *testing.T) {
+				sh, err := fx.b.Show(context.Background(), "SWR-2")
+				if err != nil {
+					t.Fatalf("Show: %v", err)
+				}
+				if sh.Card.Column != "ready" {
+					t.Fatalf("SWR-2 column = %q, want ready: closing moves no card", sh.Card.Column)
+				}
+				if !sh.Card.FeatureClosed {
+					t.Fatalf("SWR-2 FeatureClosed = false, want true while swr is closed")
+				}
+			})
 			s.And("every card file keeps its bytes", func(t *testing.T) {
 				sameBytes(t, cards, cardBytes(t, fx), "after the close")
 			})
@@ -93,11 +121,15 @@ func TestCloseFeatureScenarios(t *testing.T) {
 		f.Scenario("reopening a feature clears the record", func(s *bdd.S) {
 			var fx *fixture
 			var cards map[string][]byte
+			var wantList []Card
+			var wantCounts []ColumnCount
 			s.Given("a board with three swr cards whose feature is closed", func(t *testing.T) {
 				fx = newFixtureAt(keep, filepath.Join(keep.TempDir(), "reopen"))
 				fx.card("backlog", "SWR-1", "id: SWR-1\ntitle: \"one\"\ncluster: swr\ntype: docs")
 				fx.card("ready", "SWR-2", "id: SWR-2\ntitle: \"two\"\ncluster: swr\ntype: docs")
 				fx.card("testing", "SWR-3", "id: SWR-3\ntitle: \"three\"\ncluster: swr\ntype: docs")
+				wantList = mustCards(t, fx.list(""))
+				wantCounts = mustStatus(t, fx).Counts
 				if _, err := fx.b.CloseFeature(context.Background(), Args{Actor: "lead", ID: "swr"}); err != nil {
 					t.Fatalf("CloseFeature: %v", err)
 				}
@@ -126,6 +158,24 @@ func TestCloseFeatureScenarios(t *testing.T) {
 				entry := fx.lastLog()
 				if entry["event"] != "feature-reopen" || entry["feature"] != "swr" || entry["actor"] != "lead" {
 					t.Fatalf("last LOG line = %v, want a feature-reopen by lead naming swr", entry)
+				}
+			})
+			s.And("list and status answer as before the close", func(t *testing.T) {
+				gotList := mustCards(t, fx.list(""))
+				if !reflect.DeepEqual(gotList, wantList) {
+					t.Fatalf("list after the reopen = %+v, want %+v", gotList, wantList)
+				}
+				if gotCounts := mustStatus(t, fx).Counts; !reflect.DeepEqual(gotCounts, wantCounts) {
+					t.Fatalf("counts after the reopen = %+v, want %+v", gotCounts, wantCounts)
+				}
+			})
+			s.And("an swr card shows its feature open again", func(t *testing.T) {
+				sh, err := fx.b.Show(context.Background(), "SWR-1")
+				if err != nil {
+					t.Fatalf("Show: %v", err)
+				}
+				if sh.Card.FeatureClosed {
+					t.Fatalf("SWR-1 FeatureClosed = true, want false after the reopen")
 				}
 			})
 			s.And("every card file's bytes are as before the close", func(t *testing.T) {

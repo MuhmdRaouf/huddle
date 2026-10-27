@@ -364,6 +364,29 @@ func TestFlow(t *testing.T) {
 		}
 	})
 
+	t.Run("test_pull_leaves_a_closed_feature_out_of_the_pick", func(t *testing.T) {
+		f := newFixture(t)
+		f.card("ready", "SWR-1", "id: SWR-1\ntitle: \"closed\"\ntype: docs\npriority: P0\ncluster: swr")
+		f.card("ready", "WEB-1", "id: WEB-1\ntitle: \"open\"\ntype: docs\npriority: P3\ncluster: web")
+		mustLines(t, func() ([]string, error) {
+			return f.b.CloseFeature(context.Background(), Args{Actor: "lead", ID: "swr"})
+		})
+		out := mustLines(t, f.pull(Args{Actor: "w1"}))
+		lastEndsWith(t, out, "in-progress", "WEB-1")
+	})
+
+	t.Run("test_pull_answers_nothing_ready_when_only_closed_cards_wait", func(t *testing.T) {
+		f := newFixture(t)
+		f.card("ready", "SWR-1", "id: SWR-1\ntitle: \"closed\"\ntype: docs\npriority: P0\ncluster: swr")
+		mustLines(t, func() ([]string, error) {
+			return f.b.CloseFeature(context.Background(), Args{Actor: "lead", ID: "swr"})
+		})
+		msg := mustRefuse(t, f.pull(Args{Actor: "w1"}))
+		if msg != "no ready tickets; promote one from backlog/ or unblock one from blocked/" {
+			t.Fatalf("refusal = %q, want the nothing-ready line", msg)
+		}
+	})
+
 	t.Run("test_block_records_new_fields", func(t *testing.T) {
 		f := newFixture(t)
 		f.card("in-progress", "CI-WIN", "id: CI-WIN\ntitle: \"ci\"\ntype: feature")

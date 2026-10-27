@@ -14,27 +14,28 @@ import (
 // Card is one ticket as the cli list and the server's snapshot show it; the
 // body never rides along.
 type Card struct {
-	ID          string         `json:"id"`
-	Title       string         `json:"title"`
-	Column      string         `json:"column"`
-	Summary     string         `json:"summary"`
-	Type        string         `json:"type"`
-	Priority    string         `json:"priority"`
-	Est         string         `json:"est"`
-	Cluster     string         `json:"cluster"`
-	Tags        []string       `json:"tags"`
-	Expedite    bool           `json:"expedite"`
-	Holder      string         `json:"holder"`
-	Author      string         `json:"author"`
-	Deps        []Dep          `json:"deps"`
-	Blocked     *Blocked       `json:"blocked"`
-	Badges      []ticket.Badge `json:"badges"`
-	Lint        CardLint       `json:"lint"`
-	MovedByHand string         `json:"movedByHand"`
-	Branch      string         `json:"branch"`
-	Worktree    string         `json:"worktree"`
-	FinishedAt  string         `json:"finishedAt"`
-	UpdatedAt   string         `json:"updatedAt"`
+	ID            string         `json:"id"`
+	Title         string         `json:"title"`
+	Column        string         `json:"column"`
+	Summary       string         `json:"summary"`
+	Type          string         `json:"type"`
+	Priority      string         `json:"priority"`
+	Est           string         `json:"est"`
+	Cluster       string         `json:"cluster"`
+	FeatureClosed bool           `json:"feature_closed"`
+	Tags          []string       `json:"tags"`
+	Expedite      bool           `json:"expedite"`
+	Holder        string         `json:"holder"`
+	Author        string         `json:"author"`
+	Deps          []Dep          `json:"deps"`
+	Blocked       *Blocked       `json:"blocked"`
+	Badges        []ticket.Badge `json:"badges"`
+	Lint          CardLint       `json:"lint"`
+	MovedByHand   string         `json:"movedByHand"`
+	Branch        string         `json:"branch"`
+	Worktree      string         `json:"worktree"`
+	FinishedAt    string         `json:"finishedAt"`
+	UpdatedAt     string         `json:"updatedAt"`
 }
 
 // Dep is one dependency with its state: a column, "missing" or "text".
@@ -196,7 +197,8 @@ func asRFC3339(stamp string) string {
 }
 
 // List answers the board's cards, one column's when named. A ticket file that
-// fails to parse still answers, with its problems attached.
+// fails to parse still answers, with its problems attached. A closed feature's
+// cards stay out until the feature reopens.
 func (b Board) List(ctx context.Context, column string) ([]Card, error) {
 	if column != "" && !validColumn(column) {
 		return nil, fmt.Errorf("kanban: %s is not a column", column)
@@ -205,10 +207,14 @@ func (b Board) List(ctx context.Context, column string) ([]Card, error) {
 	if column != "" {
 		cols = []string{column}
 	}
+	closed := b.closedSet()
 	var cards []Card
 	for _, col := range cols {
 		for _, name := range b.names(col) {
 			t, problems := b.loadCard(col, strings.TrimSuffix(name, ".md"))
+			if closed[t.Cluster] {
+				continue
+			}
 			cards = append(cards, CardOf(t, col, b, problems))
 		}
 	}
@@ -216,13 +222,15 @@ func (b Board) List(ctx context.Context, column string) ([]Card, error) {
 }
 
 // Status answers the epoch, the stop-line, the open expedite lane (furthest
-// along first) and the per-column counts.
+// along first) and the per-column counts. A closed feature's card holds neither
+// a lane entry nor a count.
 func (b Board) Status(ctx context.Context) (Status, error) {
 	st := Status{Epoch: b.readEpoch(), Stopped: b.stopped()}
+	closed := b.closedSet()
 	for _, col := range openColumns {
 		for _, name := range b.names(col) {
 			t, _ := b.loadCard(col, strings.TrimSuffix(name, ".md"))
-			if !t.Expedite {
+			if closed[t.Cluster] || !t.Expedite {
 				continue
 			}
 			entry := ExpediteEntry{ID: t.ID, Column: col}
@@ -234,7 +242,13 @@ func (b Board) Status(ctx context.Context) (Status, error) {
 		}
 	}
 	for _, col := range Columns {
-		st.Counts = append(st.Counts, ColumnCount{Column: col, Count: len(b.names(col))})
+		n := 0
+		for _, name := range b.names(col) {
+			if t, _ := b.loadCard(col, strings.TrimSuffix(name, ".md")); !closed[t.Cluster] {
+				n++
+			}
+		}
+		st.Counts = append(st.Counts, ColumnCount{Column: col, Count: n})
 	}
 	return st, nil
 }
@@ -345,8 +359,10 @@ func (b Board) Show(ctx context.Context, id string) (Shown, error) {
 		return Shown{}, err
 	}
 	t, problems := parseFile(filepath.Base(path), data)
+	card := CardOf(t, col, b, problems)
+	card.FeatureClosed = b.closedSet()[t.Cluster]
 	return Shown{
-		Card:   CardOf(t, col, b, problems),
+		Card:   card,
 		Fields: t.Fields,
 		Body:   t.Body,
 		Text:   string(data),

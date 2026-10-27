@@ -159,6 +159,8 @@ func (b Board) pull(ctx context.Context, a Args) ([]string, error) {
 		return nil, refused("%s already holds %s in in-progress/ (one card per actor); finish it with review, or park it with block",
 			actor, strings.Join(held, ", "))
 	}
+	// a closed feature's cards wait for the reopen: a plain pull never picks one
+	closed := b.closedSet()
 	var lines []string
 	best := ""
 	bestSet := false
@@ -194,7 +196,7 @@ func (b Board) pull(ctx context.Context, a Args) ([]string, error) {
 				continue
 			}
 			t, _ := b.loadCard("ready", cid)
-			if !t.Expedite {
+			if closed[t.Cluster] || !t.Expedite {
 				continue
 			}
 			if dep := b.openDep(t); dep != "" {
@@ -220,6 +222,9 @@ func (b Board) pull(ctx context.Context, a Args) ([]string, error) {
 		for _, name := range b.names("ready") {
 			path := filepath.Join(b.Root, "ready", name)
 			t, _ := b.loadCard("ready", strings.TrimSuffix(name, ".md"))
+			if closed[t.Cluster] {
+				continue
+			}
 			if dep := b.openDep(t); dep != "" {
 				waitingOn = append(waitingOn, wait{strings.TrimSuffix(name, ".md"), dep})
 				continue

@@ -513,6 +513,9 @@ func Run(ctx context.Context, w World, argv []string, stdout, stderr io.Writer) 
 			writeJSON(stdout, showJSON{Card: sh.Card, Fields: sh.Fields, Body: sh.Body})
 			return 0
 		}
+		if sh.Card.FeatureClosed {
+			fmt.Fprintf(stdout, "Feature closed: %s\n", sh.Card.Cluster)
+		}
 		fmt.Fprint(stdout, sh.Text)
 		return 0
 	case "status":

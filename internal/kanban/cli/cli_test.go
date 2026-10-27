@@ -918,6 +918,49 @@ func TestJSON(t *testing.T) {
 		indent(t, stdout)
 	})
 
+	t.Run("show flags a closed feature's card", func(t *testing.T) {
+		f := newFixture(t)
+		f.fullCard("review", "SHC-1")
+		f.card("review", "SHC-2", "id: SHC-2\ntitle: \"open\"\ncluster: web\ntype: docs")
+		f.writeFile("FEATURES", `{"closed":[{"name":"kanban","actor":"lead","closed_at":"2026-10-15T12:00:00+0300"}]}`+"\n")
+		code, stdout, stderr := f.run("show", "SHC-1")
+		if code != 0 {
+			t.Fatalf("exit = %d, stderr %q", code, stderr)
+		}
+		if first := strings.SplitN(stdout, "\n", 2)[0]; first != "Feature closed: kanban" {
+			t.Errorf("first line = %q, want the closed-feature line", first)
+		}
+		code, stdout, _ = f.run("show", "SHC-2")
+		if code != 0 {
+			t.Fatalf("exit = %d", code)
+		}
+		if strings.HasPrefix(stdout, "Feature closed:") {
+			t.Errorf("an open feature's card prints %q first", stdout)
+		}
+	})
+
+	t.Run("show --json marks a closed feature's card", func(t *testing.T) {
+		f := newFixture(t)
+		f.fullCard("review", "JHC-1")
+		f.writeFile("FEATURES", `{"closed":[{"name":"kanban","actor":"lead","closed_at":"2026-10-15T12:00:00+0300"}]}`+"\n")
+		code, stdout, stderr := f.run("show", "JHC-1", "--json")
+		if code != 0 {
+			t.Fatalf("exit = %d, stderr %q", code, stderr)
+		}
+		var doc struct {
+			Card struct {
+				FeatureClosed bool `json:"feature_closed"`
+			} `json:"card"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+			t.Fatalf("decode: %v (%q)", err, stdout)
+		}
+		if !doc.Card.FeatureClosed {
+			t.Errorf("feature_closed = false, want true for a closed feature's card")
+		}
+		indent(t, stdout)
+	})
+
 	t.Run("status prints the epoch, the columns and the lane", func(t *testing.T) {
 		f := newFixture(t)
 		f.fullCard("ready", "JST-1", "\nexpedite: true")

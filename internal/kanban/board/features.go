@@ -36,6 +36,15 @@ func (b Board) ClosedFeatures() []ClosedFeature {
 	return rec.Closed
 }
 
+// closedSet answers the board's closed feature names as a set.
+func (b Board) closedSet() map[string]bool {
+	set := map[string]bool{}
+	for _, f := range b.ClosedFeatures() {
+		set[f.Name] = true
+	}
+	return set
+}
+
 // CloseFeature records a merged feature as closed: its cards stay where they
 // are, and later cycles leave them out. A feature no card carries is refused; a
 // second close answers the already-closed line and writes nothing.
@@ -51,16 +60,13 @@ func (b Board) closeFeature(ctx context.Context, a Args) ([]string, error) {
 	if name == "" {
 		return nil, refused("feature: name required")
 	}
-	n, err := b.featureCards(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	if n == 0 {
-		return nil, refused("no feature %s on this board", name)
-	}
 	closed := b.ClosedFeatures()
 	if slices.ContainsFunc(closed, func(f ClosedFeature) bool { return f.Name == name }) {
 		return []string{fmt.Sprintf("feature %s is already closed", name)}, nil
+	}
+	n := b.clusterCards(name)
+	if n == 0 {
+		return nil, refused("no feature %s on this board", name)
 	}
 	closed = append(closed, ClosedFeature{Name: name, Actor: a.Actor, ClosedAt: b.stamp()})
 	if err := b.writeFeatures(ctx, closed); err != nil {
@@ -87,10 +93,7 @@ func (b Board) reopenFeature(ctx context.Context, a Args) ([]string, error) {
 	if len(kept) == len(closed) {
 		return nil, refused("feature %s is not closed", name)
 	}
-	n, err := b.featureCards(ctx, name)
-	if err != nil {
-		return nil, err
-	}
+	n := b.clusterCards(name)
 	if len(kept) == 0 {
 		if err := b.fs().remove(b.featuresPath()); err != nil {
 			return nil, err
@@ -104,19 +107,20 @@ func (b Board) reopenFeature(ctx context.Context, a Args) ([]string, error) {
 	return []string{fmt.Sprintf("feature %s reopened: %d cards back", name, n)}, nil
 }
 
-// featureCards counts the board's cards that carry the feature as their cluster.
-func (b Board) featureCards(ctx context.Context, name string) (int, error) {
-	cards, err := b.List(ctx, "")
-	if err != nil {
-		return 0, err
-	}
+// clusterCards counts every card carrying the name as its cluster, a closed
+// feature's included: the close and reopen lines answer the board's real cards,
+// while List leaves the closed ones out.
+func (b Board) clusterCards(name string) int {
 	n := 0
-	for _, c := range cards {
-		if c.Cluster == name {
-			n++
+	for _, col := range Columns {
+		for _, fname := range b.names(col) {
+			t, _ := b.loadCard(col, strings.TrimSuffix(fname, ".md"))
+			if t.Cluster == name {
+				n++
+			}
 		}
 	}
-	return n, nil
+	return n
 }
 
 // writeFeatures lands the FEATURES record whole: JSON, sorted by name, one
