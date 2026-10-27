@@ -204,7 +204,7 @@ func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id in
 			}
 		}
 	}
-	won, err := s.registry.DecidePermission(ctx, id, decision, textOf(fieldOf(body, "message")),
+	won, err := s.registry.DecidePermission(ctx, id, decision, answers, textOf(fieldOf(body, "message")),
 		jsscalar.ISOTime(s.now()), s.now())
 	if err != nil {
 		return err

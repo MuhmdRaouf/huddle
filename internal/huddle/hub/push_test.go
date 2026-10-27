@@ -267,7 +267,7 @@ func TestThePushSweepSkipsWhatNoLongerWaits(t *testing.T) {
 	if err := db.MarkItemPushed(context.Background(), decided, isoPerm(now)); err != nil {
 		t.Fatalf("mark pushed: %v", err)
 	}
-	if won, err := db.DecidePermission(context.Background(), decided, "deny", "", isoPerm(now), now.Add(time.Second)); err != nil || !won {
+	if won, err := db.DecidePermission(context.Background(), decided, "deny", nil, "", isoPerm(now), now.Add(time.Second)); err != nil || !won {
 		t.Fatalf("decide = (%v, %v), want the decision to win", won, err)
 	}
 	if late, err := db.EscalatePushItems(context.Background(), now.Add(PermissionExpiresAfter)); err != nil || len(late) != 0 {

@@ -216,12 +216,12 @@ func TestDecidePermissionLetsTheFirstAnswerWin(t *testing.T) {
 	ctx := context.Background()
 	id := growPermission(t, db, "s-1", "Bash", `{"command":"npm test"}`, permNow)
 	now := permNow.Add(5 * time.Second)
-	won, err := db.DecidePermission(ctx, id, "allow", "", isoPerm(now), now)
+	won, err := db.DecidePermission(ctx, id, "allow", nil, "", isoPerm(now), now)
 	if err != nil || !won {
 		t.Fatalf("the first decision = (%v, %v), want it to win", won, err)
 	}
 	// the second answer — the app's or the terminal's — changes nothing
-	won, err = db.DecidePermission(ctx, id, "deny", "no", isoPerm(now), now)
+	won, err = db.DecidePermission(ctx, id, "deny", nil, "no", isoPerm(now), now)
 	if err != nil {
 		t.Fatalf("the second decision: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestDecidePermissionLetsTheFirstAnswerWin(t *testing.T) {
 	}
 	// a denied item keeps its message for Claude, cleaned to one line
 	other := growPermission(t, db, "s-1", "Bash", `{"command":"npm run build"}`, permNow)
-	if won, err = db.DecidePermission(ctx, other, "deny", "not\ntonight", isoPerm(now), now); err != nil || !won {
+	if won, err = db.DecidePermission(ctx, other, "deny", nil, "not\ntonight", isoPerm(now), now); err != nil || !won {
 		t.Fatalf("deny: (%v, %v)", won, err)
 	}
 	item = readPermission(t, db, other, now)
@@ -242,8 +242,43 @@ func TestDecidePermissionLetsTheFirstAnswerWin(t *testing.T) {
 		t.Errorf("the denied item = %+v, want its decision and a one-line message kept", item)
 	}
 	// an unknown id wins nothing, and neither does another kind's item
-	if won, err = db.DecidePermission(ctx, 987654, "allow", "", isoPerm(now), now); err != nil || won {
+	if won, err = db.DecidePermission(ctx, 987654, "allow", nil, "", isoPerm(now), now); err != nil || won {
 		t.Errorf("an unknown id = (%v, %v), want (false, nil)", won, err)
+	}
+}
+
+// TestDecidePermissionKeepsTheAnswersBesideTheDecision pins the storage half of an answered
+// question: the answers an owner picked ride the same guarded update as the decision, read
+// back beside it, an allow without answers stores none, and a losing decide writes nothing
+// over the first answer's.
+func TestDecidePermissionKeepsTheAnswersBesideTheDecision(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	id := growPermission(t, db, "s-1", "AskUserQuestion",
+		`{"questions":[{"question":"Which database?","options":[{"label":"Postgres"},{"label":"SQLite"}]}]}`, permNow)
+	now := permNow.Add(5 * time.Second)
+	won, err := db.DecidePermission(ctx, id, "allow", map[string]string{"Which database?": "Postgres"}, "", isoPerm(now), now)
+	if err != nil || !won {
+		t.Fatalf("the allow with answers = (%v, %v), want it to win", won, err)
+	}
+	item := readPermission(t, db, id, now)
+	if len(item.Answers) != 1 || item.Answers["Which database?"] != "Postgres" {
+		t.Errorf("the allowed item's answers = %v, want Which database? Postgres", item.Answers)
+	}
+	// an allow without answers stores none
+	plain := growPermission(t, db, "s-1", "Bash", `{"command":"npm test"}`, permNow)
+	if won, err = db.DecidePermission(ctx, plain, "allow", nil, "", isoPerm(now), now); err != nil || !won {
+		t.Fatalf("the plain allow = (%v, %v)", won, err)
+	}
+	if item := readPermission(t, db, plain, now); item.Answers != nil {
+		t.Errorf("the plain item's answers = %v, want none", item.Answers)
+	}
+	// the first answer's answers hold: a losing decide writes nothing
+	if won, err = db.DecidePermission(ctx, id, "allow", map[string]string{"Which database?": "SQLite"}, "", isoPerm(now), now); err != nil || won {
+		t.Errorf("the second decide = (%v, %v), want it to lose", won, err)
+	}
+	if item := readPermission(t, db, id, now); item.Answers["Which database?"] != "Postgres" {
+		t.Errorf("the answers after the lost race = %v, want the first answer's kept", item.Answers)
 	}
 }
 
@@ -288,7 +323,7 @@ func TestSnoozeHoldsAndDismissDropsAPermissionItem(t *testing.T) {
 		t.Errorf("the snoozed item = %+v, want snoozed a quarter hour", item)
 	}
 	// a snoozed item refuses a decision: it is not waiting
-	if won, err := db.DecidePermission(ctx, id, "allow", "", isoPerm(permNow.Add(time.Minute)), permNow.Add(time.Minute)); err != nil || won {
+	if won, err := db.DecidePermission(ctx, id, "allow", nil, "", isoPerm(permNow.Add(time.Minute)), permNow.Add(time.Minute)); err != nil || won {
 		t.Errorf("deciding a snoozed item = (%v, %v), want refused", won, err)
 	}
 	if err := db.DismissItem(ctx, id); err != nil {
@@ -299,7 +334,7 @@ func TestSnoozeHoldsAndDismissDropsAPermissionItem(t *testing.T) {
 	}
 	// a decided item refuses the shared dismiss: its answer already happened
 	other := growPermission(t, db, "s-1", "Bash", `{"command":"npm run build"}`, permNow)
-	if _, err := db.DecidePermission(ctx, other, "deny", "", isoPerm(permNow), permNow); err != nil {
+	if _, err := db.DecidePermission(ctx, other, "deny", nil, "", isoPerm(permNow), permNow); err != nil {
 		t.Fatalf("decide: %v", err)
 	}
 	err := db.DismissItem(ctx, other)
@@ -414,7 +449,7 @@ func TestAnOpenPermissionPutsItsSessionInNeedsYou(t *testing.T) {
 	if items[0].Kind != KindPermission || items[0].Tool != "Bash" || items[0].Input != `{"command":"npm test"}` {
 		t.Errorf("the shared row = %+v, want it to carry the tool call", items[0])
 	}
-	if _, err := db.DecidePermission(ctx, id, "allow", "", isoPerm(permNow.Add(4*time.Second)), permNow.Add(4*time.Second)); err != nil {
+	if _, err := db.DecidePermission(ctx, id, "allow", nil, "", isoPerm(permNow.Add(4*time.Second)), permNow.Add(4*time.Second)); err != nil {
 		t.Fatalf("decide: %v", err)
 	}
 	row, _ = db.SessionRow(ctx, "s-1", permNow.Add(5*time.Second))

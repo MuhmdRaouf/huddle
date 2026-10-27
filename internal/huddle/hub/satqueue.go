@@ -272,9 +272,9 @@ func (d *DB) SaveForwardedItem(ctx context.Context, in ForwardedItem) error {
 	summary := cleanSummary(in.Tool + ": " + JoinedInput(in.Tool, kept))
 	return d.st.Run(ctx,
 		"INSERT INTO items (key, session_id, kind, summary, created_at, state, "+permissionColumns+") "+
-			"VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO NOTHING",
+			"VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO NOTHING",
 		in.Key, in.SessionID, KindPermission, summary, in.CreatedAt,
-		in.Tool, kept, cut || in.Truncated, nil, nil, "", "")
+		in.Tool, kept, cut || in.Truncated, nil, nil, "", "", "")
 }
 
 // ForwardList answers the machine's open permission items as its link forwards them, oldest

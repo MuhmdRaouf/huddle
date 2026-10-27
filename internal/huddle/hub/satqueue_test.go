@@ -227,7 +227,7 @@ func TestForwardListAndSaveDedupeByKey(t *testing.T) {
 		t.Fatalf("%d permission items grew for one key, want 1", count)
 	}
 	// once the machine's own item is answered, the flush carries it no more
-	if _, err := f.db.DecidePermission(ctx, f.itemID, "deny", "", jsscalar.ISOTime(now.Add(time.Minute)), now.Add(time.Minute)); err != nil {
+	if _, err := f.db.DecidePermission(ctx, f.itemID, "deny", nil, "", jsscalar.ISOTime(now.Add(time.Minute)), now.Add(time.Minute)); err != nil {
 		t.Fatalf("decide: %v", err)
 	}
 	list, err = f.db.ForwardList(ctx)

@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -46,8 +47,9 @@ const StateExpired = "expired"
 const messageLimit = 300
 
 // PermissionItem is one permission item as its routes answer it: the shared item's fields
-// plus the tool call it holds and the decision one answer wrote. LastPollAt stays off the
-// answer; it is the expiry's own bookkeeping.
+// plus the tool call it holds and the decision one answer wrote. On an allowed
+// AskUserQuestion, Answers holds what the owner picked, keyed by each question's exact text.
+// LastPollAt stays off the answer; it is the expiry's own bookkeeping.
 type PermissionItem struct {
 	Item
 	Tool       string `json:"tool,omitempty"`
@@ -56,10 +58,12 @@ type PermissionItem struct {
 	Decision   string `json:"decision,omitempty"`
 	Message    string `json:"message,omitempty"`
 	LastPollAt string `json:"-"`
+	// Answers is nil for every item but an allowed question.
+	Answers map[string]string `json:"answers,omitempty"`
 }
 
 // permissionColumns is the permission flow's own columns on items, after the shared ones.
-const permissionColumns = `tool, input, truncated, last_poll_at, decided_at, decision, message`
+const permissionColumns = `tool, input, truncated, last_poll_at, decided_at, decision, message, answers`
 
 // CreatePermissionItem records one permission item (SPEC 6.2.1) and answers its id. The item
 // is born polled — the POST that creates it is its hook's hello — and its summary is the
@@ -74,9 +78,9 @@ func (d *DB) CreatePermissionItem(ctx context.Context, sessionID, tool string, i
 	key := fmt.Sprintf("permission:%s:%s", sessionID, hex.EncodeToString(noise))
 	if err := d.st.Run(ctx,
 		"INSERT INTO items (key, session_id, kind, summary, created_at, state, "+permissionColumns+") "+
-			"VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)",
+			"VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)",
 		key, sessionID, KindPermission, cleanSummary(tool+": "+JoinedInput(tool, kept)), at,
-		tool, kept, truncated, at, nil, "", ""); err != nil {
+		tool, kept, truncated, at, nil, "", "", ""); err != nil {
 		return 0, err
 	}
 	row, err := d.st.Get(ctx, "SELECT id FROM items WHERE key = ?", key)
@@ -129,11 +133,20 @@ func PermissionState(item PermissionItem, now time.Time) string {
 // this call made it (SPEC 6.2.2: whichever answers first wins). An item whose state at now is
 // not open refuses: the other answer, the app's or the terminal's, already holds. The write is
 // guarded by the state its read saw and verified by a read back, so two answers in the same
-// instant on the store's one connection still leave exactly one winner. The denial's message
-// is cleaned here, where it enters storage: whatever reads it back — the hook's answer, the
-// dashboard — shows one calm line.
-func (d *DB) DecidePermission(ctx context.Context, id int64, decision, message, at string, now time.Time) (bool, error) {
+// instant on the store's one connection still leave exactly one winner. An allow of an
+// AskUserQuestion carries the answers the owner picked, stored beside the decision as compact
+// JSON; nil stores none. The denial's message is cleaned here, where it enters storage:
+// whatever reads it back — the hook's answer, the dashboard — shows one calm line.
+func (d *DB) DecidePermission(ctx context.Context, id int64, decision string, answers map[string]string, message, at string, now time.Time) (bool, error) {
 	message = jsscalar.UTF16Slice(cleanSummary(message), 0, messageLimit)
+	kept := ""
+	if len(answers) > 0 {
+		raw, err := json.Marshal(answers)
+		if err != nil {
+			return false, err
+		}
+		kept = string(raw)
+	}
 	won := false
 	err := d.st.Tx(ctx, func(ctx context.Context, q store.Q) error {
 		row, err := q.Get(ctx,
@@ -149,8 +162,8 @@ func (d *DB) DecidePermission(ctx context.Context, id int64, decision, message, 
 			return nil
 		}
 		if err := q.Run(ctx,
-			"UPDATE items SET state = 'answered', decision = ?, message = ?, decided_at = ? "+
-				"WHERE id = ? AND state = ?", decision, message, at, id, stored); err != nil {
+			"UPDATE items SET state = 'answered', decision = ?, answers = ?, message = ?, decided_at = ? "+
+				"WHERE id = ? AND state = ?", decision, kept, message, at, id, stored); err != nil {
 			return err
 		}
 		after, err := q.Get(ctx, "SELECT state, decision, decided_at FROM items WHERE id = ?", id)
@@ -242,7 +255,21 @@ func permissionOfRow(row store.Row) PermissionItem {
 		Decision:   textOfRow(row, "decision"),
 		Message:    textOfRow(row, "message"),
 		LastPollAt: textOfRow(row, "last_poll_at"),
+		Answers:    answersOfRow(row),
 	}
+}
+
+// answersOfRow reads the stored answers JSON back; empty or unreadable stays nil.
+func answersOfRow(row store.Row) map[string]string {
+	raw := textOfRow(row, "answers")
+	if raw == "" {
+		return nil
+	}
+	answers := map[string]string{}
+	if err := json.Unmarshal([]byte(raw), &answers); err != nil {
+		return nil
+	}
+	return answers
 }
 
 // normalizeInput answers the input as compact JSON, key order kept. Text that is not JSON

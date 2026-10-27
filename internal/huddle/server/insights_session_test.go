@@ -72,7 +72,7 @@ func TestTheSessionInsightsAnswerKeepsItsOwnTips(t *testing.T) {
 		if err := reg.TouchPoll(context.Background(), id, jsscalar.ISOTime(answered)); err != nil {
 			t.Fatalf("poll the s2 ask: %v", err)
 		}
-		if won, err := reg.DecidePermission(context.Background(), id, "allow", "", jsscalar.ISOTime(answered), answered); err != nil || !won {
+		if won, err := reg.DecidePermission(context.Background(), id, "allow", nil, "", jsscalar.ISOTime(answered), answered); err != nil || !won {
 			t.Fatalf("decide the s2 ask = (%v, %v), want the decision to win", won, err)
 		}
 	}

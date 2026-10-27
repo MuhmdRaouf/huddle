@@ -22,7 +22,6 @@ func TestAnAskUserQuestionAllowCarriesTheAnswers(t *testing.T) {
 				out  string
 			)
 			s.Given("a session asking one question", func(t *testing.T) {
-				// the server outlives this step: it starts under the scenario's own T
 				srv = startServer(s.T, nil) // the rig outlives the steps: it starts under the scenario's own T
 				id = permitPost(t, srv, "s-1", "AskUserQuestion",
 					`{"questions":[{"question":"Which database?","options":[{"label":"Postgres"},{"label":"SQLite"}]}]}`)
@@ -34,6 +33,16 @@ func TestAnAskUserQuestionAllowCarriesTheAnswers(t *testing.T) {
 			s.Then("the decision is taken", func(t *testing.T) {
 				if code != 200 {
 					t.Fatalf("the allow = %d %s, want 200", code, out)
+				}
+			})
+			s.And("the hook's next wait carries the answers back beside the decision", func(t *testing.T) {
+				wcode, _, wout := srv.get(t, fmt.Sprintf("/api/needs/%d/wait", id), nil)
+				if wcode != 200 {
+					t.Fatalf("the wait = %d %s, want 200", wcode, wout)
+				}
+				answers, _ := bodyMap(t, wout)["answers"].(map[string]any)
+				if answers["Which database?"] != "Postgres" {
+					t.Errorf("the wait's answers = %v, want Which database? Postgres", bodyMap(t, wout)["answers"])
 				}
 			})
 		})

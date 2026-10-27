@@ -337,7 +337,7 @@ func (l *Link) applyDecision(ctx context.Context, payload hub.SatRefusalBody, at
 			return l.refuseDecision(ctx, item, why, at)
 		}
 	}
-	won, err := l.reg.DecidePermission(ctx, item.ID, payload.Decision, payload.Message, at, l.now())
+	won, err := l.reg.DecidePermission(ctx, item.ID, payload.Decision, nil, payload.Message, at, l.now())
 	if err != nil {
 		return hub.SatBusy, "this machine's registry could not be written"
 	}
@@ -351,7 +351,7 @@ func (l *Link) applyDecision(ctx context.Context, payload hub.SatRefusalBody, at
 // refuseDecision records the machine's deny on its own item — the asking hook's poll must end
 // whatever the owner asked for — and answers the refusal the hub reads.
 func (l *Link) refuseDecision(ctx context.Context, item *hub.PermissionItem, why, at string) (string, string) {
-	_, _ = l.reg.DecidePermission(ctx, item.ID, "deny", why, at, l.now())
+	_, _ = l.reg.DecidePermission(ctx, item.ID, "deny", nil, why, at, l.now())
 	l.wakeItem(item.ID)
 	return hub.SatRefused, why
 }

@@ -386,7 +386,7 @@ func TestThePushSweepSendsOnceAndEscalatesOnceAndNeverAfterADecision(t *testing.
 	if err != nil {
 		t.Fatalf("create the second item: %v", err)
 	}
-	if won, err := s.registry.DecidePermission(context.Background(), second, "deny", "",
+	if won, err := s.registry.DecidePermission(context.Background(), second, "deny", nil, "",
 		jsscalar.ISOTime(clock), clock); err != nil || !won {
 		t.Fatalf("decide the second = (%v, %v), want the decision to win", won, err)
 	}

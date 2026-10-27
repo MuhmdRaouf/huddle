@@ -409,6 +409,59 @@ func TestMigrateRecordsEachStepAsItLands(t *testing.T) {
 	}
 }
 
+// TestMigration24KeepsOldPermissionRowsAnswerless pins migration 24 over a database an older
+// huddle wrote: brought to schema 23 with one permission row on it, the file opens at 24 with
+// the row answerless — the new column is empty and the item reads with no answers.
+func TestMigration24KeepsOldPermissionRowsAnswerless(t *testing.T) {
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "hub.db")
+	st, err := store.Open(ctx, file)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	// the meta table migrate() itself makes first, then each of the first 23 migrations with
+	// its version mark: the file an older huddle leaves behind
+	if err := st.Run(ctx, "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"); err != nil {
+		t.Fatalf("the meta table: %v", err)
+	}
+	for n, migration := range migrations[:23] {
+		if err := st.Run(ctx, migration); err != nil {
+			t.Fatalf("migration %d: %v", n+1, err)
+		}
+	}
+	if err := st.Run(ctx, "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '23')"); err != nil {
+		t.Fatalf("mark schema 23: %v", err)
+	}
+	at := isoPerm(permNow)
+	if err := st.Run(ctx,
+		"INSERT INTO items (key, session_id, kind, summary, created_at, state, tool, input, truncated, last_poll_at, decided_at, decision, message) "+
+			"VALUES ('permission:s-1:old', 's-1', 'permission', 'Bash: npm test', ?, 'open', 'Bash', '{\"command\":\"npm test\"}', 0, ?, NULL, '', '')",
+		at, at); err != nil {
+		t.Fatalf("the old permission row: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	db, err := Open(ctx, file)
+	if err != nil {
+		t.Fatalf("open at schema 24: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	row, err := db.st.Get(ctx, "SELECT id, answers FROM items WHERE key = 'permission:s-1:old'")
+	if err != nil {
+		t.Fatalf("the migrated row: %v", err)
+	}
+	if row == nil {
+		t.Fatal("the old permission row is gone after the migration")
+	}
+	if row["answers"] != "" {
+		t.Errorf("the migrated row's answers = %v, want empty", row["answers"])
+	}
+	if item := readPermission(t, db, rowID(row), permNow); item.Answers != nil {
+		t.Errorf("the old item reads answers %v, want none", item.Answers)
+	}
+}
+
 func TestMarkHeldLeavesTheMessageOutOfTheNextPrompt(t *testing.T) {
 	db := openForTest(t)
 	ctx := context.Background()

@@ -65,7 +65,7 @@ func TestPermissionRoutesNameAFailedStatement(t *testing.T) {
 	if _, err := db.PermissionItemByID(ctx, 1, permNow); err == nil {
 		t.Fatal("a read from a broken items table succeeded")
 	}
-	if _, err := db.DecidePermission(ctx, 1, "allow", "", isoPerm(permNow), permNow); err == nil {
+	if _, err := db.DecidePermission(ctx, 1, "allow", nil, "", isoPerm(permNow), permNow); err == nil {
 		t.Fatal("a decision on a broken items table succeeded")
 	}
 	if _, err := db.WithdrawPermissions(ctx, "s-1", isoPerm(permNow)); err == nil {

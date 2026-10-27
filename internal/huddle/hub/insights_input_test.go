@@ -24,7 +24,7 @@ func TestItemHistoryAnswersAsksWithTheirCommand(t *testing.T) {
 		if err := db.TouchPoll(ctx, id, isoPerm(at)); err != nil {
 			t.Fatalf("poll item %d: %v", id, err)
 		}
-		if won, err := db.DecidePermission(ctx, id, "allow", "", isoPerm(at), at); err != nil || !won {
+		if won, err := db.DecidePermission(ctx, id, "allow", nil, "", isoPerm(at), at); err != nil || !won {
 			t.Fatalf("decide item %d = (%v, %v), want the decision to win", id, won, err)
 		}
 	}
