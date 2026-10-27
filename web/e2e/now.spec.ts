@@ -1,7 +1,8 @@
 // now.spec.ts — the owner's first screen, on the phone and the desktop: the sign-in link lands
 // the browser on the hub, and the Now list shows the session the run seeded into the registry
 // (with the desktop's main pane keeping its pointer beside it while none is picked), on the phone a
-// seeded ask's card sits above the fold with the first-run checklist after Needs you, every session
+// seeded ask's card sits above the fold under the set-up row that opens the checklist in its sheet,
+// every session
 // names its harness on its row and in its header (the seeded Claude Code one and a Codex one), one whose
 // last event asks for permission waits in Needs you with its state word,
 // an agent-team teammate that went idle shows under its lead's row with the word idle, a seeded
@@ -50,7 +51,7 @@ test("the sign-in link opens the hub and the Now list shows the seeded session",
   if (!isMobile) await expect(page.getByText("No session open")).toBeVisible();
 });
 
-test("on the phone a seeded ask's card sits above the fold, before the first-run checklist", async ({
+test("on the phone a seeded ask's card sits above the fold, under the set-up row that opens the checklist", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "iphone", "the fold is the phone's");
@@ -74,15 +75,20 @@ test("on the phone a seeded ask's card sits above the fold, before the first-run
   await signIn(page);
   await openTab(page, "Sessions");
 
-  const checklist = page.locator("[data-first-run]");
-  await expect(checklist).toBeVisible();
+  // the set-up row rides under the chips, above the fold; the checklist is no longer a card in
+  // the list body — the row opens it in its sheet
+  const setup = page.getByRole("button", { name: /^Set up · \d+ steps? left$/ });
+  await expect(setup).toBeVisible();
+  const setupBox = await setup.boundingBox();
+  expect(setupBox?.y).toBeLessThan(844);
   const card = page.locator(`article[data-row='${session}']`);
   await expect(card.getByText("bun run lint")).toBeVisible();
   const cardBox = await card.boundingBox();
   expect(cardBox?.y).toBeLessThan(844);
-  const needsBox = await page.locator("section[aria-labelledby='sessions-needsYou']").boundingBox();
-  const checklistBox = await checklist.boundingBox();
-  expect(needsBox && checklistBox && checklistBox.y).toBeGreaterThanOrEqual((needsBox?.y ?? 0) + (needsBox?.height ?? 0));
+  await expect(page.locator("[data-sessions-sections] [data-first-run]")).toHaveCount(0);
+  await setup.tap();
+  const sheet = page.locator("dialog[open].ui-sheet");
+  await expect(sheet.locator("[data-first-run]")).toBeVisible();
 
   await api(`/api/needs/${id}/decide`, { decision: "deny" });
   await expect(card).toHaveCount(0);
@@ -540,9 +546,7 @@ test("the phone's Sessions page scrolls nothing sideways and every target is at 
   const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(over).toBeLessThanOrEqual(0);
   const small = await page.evaluate(() =>
-    // the first-run checklist rides above the list on its own component's terms
     [...document.querySelectorAll<HTMLElement>("[data-sessions-pane] :is(a, button, input, select, textarea)")]
-      .filter((el) => !el.closest("[data-first-run]"))
       .filter((el) => el.getClientRects().length > 0)
       .map((el) => ({ el, r: el.getBoundingClientRect() }))
       .filter(({ r }) => r.width < 44 || r.height < 44)

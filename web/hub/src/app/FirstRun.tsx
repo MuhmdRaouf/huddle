@@ -1,8 +1,8 @@
-// FirstRun.tsx — the checklist a freshly signed-in browser carries on Now, as one compact list:
-// four rows that tick themselves from server state, each open row one 44 px link straight to the
-// place that does it, and the passkey row an owner's link session is offered (minted and
-// dismissed the same way). Dismissal holds per browser; the panel hides once every item stands
-// ticked.
+// FirstRun.tsx — the first-run checklist: four rows that tick themselves from server state, each
+// open row one 44 px link straight to the place that does it, and the passkey row an owner's link
+// session is offered (minted and dismissed the same way). `useFirstRun` watches the steps for the
+// Sessions list's set-up row too, which opens this checklist in its sheet; dismissal holds per
+// browser, and the panel hides once every item stands ticked.
 
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -11,7 +11,66 @@ import { Icon } from "../icons.tsx";
 import { readPref, writePref } from "../storage.ts";
 
 /** One checklist item: its label, whether it stands done, and where its button goes. */
-type Item = { key: string; label: string; done: boolean; href: string };
+export type Item = { key: string; label: string; done: boolean; href: string };
+
+/** What the checklist and the set-up row read: the items with their done marks, how many wait,
+ *  and whether this browser dismissed the checklist. */
+export type FirstRunState = {
+  items: Item[];
+  left: number;
+  dismissed: boolean;
+  /** Hides the checklist in this browser from now on. */
+  dismiss: () => void;
+};
+
+/** Watches the checklist's steps: the four items ticked from server state, how many are left,
+ *  and whether this browser dismissed the checklist. */
+export function useFirstRun(): FirstRunState {
+  const { api, who, state, registry } = useHuddle();
+  const [budgets, setBudgets] = useState<boolean | null>(null);
+  const [dismissed, setDismissed] = useState(() => readPref(localStorage, "first-run", false));
+
+  useEffect(() => {
+    api
+      .api("/api/radar/api/budgets")
+      .then((r) => {
+        const list = (r as { budgets?: unknown }).budgets;
+        setBudgets(Array.isArray(list) && list.length > 0);
+      })
+      .catch(() => setBudgets(false));
+  }, [api]);
+
+  const items: Item[] = [
+    {
+      key: "totp",
+      label: "Set up your authenticator app",
+      done: who.totp === true,
+      href: "#/settings/signin",
+    },
+    {
+      key: "session",
+      label: "Connect a session",
+      done: (registry.getState().sessions ?? []).length > 0,
+      href: "#/channels",
+    },
+    {
+      key: "channel",
+      label: "Create a channel",
+      done: (state.channels ?? []).length > 0,
+      href: "#/channels",
+    },
+    { key: "budget", label: "Set a budget", done: budgets === true, href: "#/settings/radar" },
+  ];
+  return {
+    items,
+    left: items.filter((i) => !i.done).length,
+    dismissed,
+    dismiss: () => {
+      writePref(localStorage, "first-run", true);
+      setDismissed(true);
+    },
+  };
+}
 
 /** The passkey row: the moved banner, drawn inside the checklist like the items under it —
  *  one-line label, the why as the muted second line, the actions right-aligned. */
@@ -79,51 +138,24 @@ function ItemMark({ done }: { done: boolean }): JSX.Element {
   );
 }
 
-/** The first-run checklist on Now: the four items, the passkey row above them. `onPairToken`
- *  opens the pairing screen a minted token pays for (the shell owns that screen). */
+/** The first-run checklist: the four items, the passkey row above them. `onPairToken`
+ *  opens the pairing screen a minted token pays for (the shell owns that screen; a caller without
+ *  one leaves the mint with nowhere to go). `setup` hands the caller's own watch in — the Sessions
+ *  list's sheet does, so a dismissal inside it drops the set-up row that opened it. */
 export function FirstRunChecklist({
   onPairToken,
+  setup,
 }: {
-  onPairToken: (token: string) => void;
+  onPairToken?: ((token: string) => void) | undefined;
+  setup?: FirstRunState;
 }): JSX.Element | null {
-  const { api, who, state, registry } = useHuddle();
-  const [budgets, setBudgets] = useState<boolean | null>(null);
-  const [dismissed, setDismissed] = useState(() => readPref(localStorage, "first-run", false));
+  const { api, who } = useHuddle();
+  const own = useFirstRun();
+  const { items, dismissed, dismiss } = setup ?? own;
   const [bannerOff, setBannerOff] = useState(() => readPref(localStorage, "passkey-banner", false));
   const [minting, setMinting] = useState(false);
   const [mintError, setMintError] = useState("");
 
-  useEffect(() => {
-    api
-      .api("/api/radar/api/budgets")
-      .then((r) => {
-        const list = (r as { budgets?: unknown }).budgets;
-        setBudgets(Array.isArray(list) && list.length > 0);
-      })
-      .catch(() => setBudgets(false));
-  }, [api]);
-
-  const items: Item[] = [
-    {
-      key: "totp",
-      label: "Set up your authenticator app",
-      done: who.totp === true,
-      href: "#/settings/signin",
-    },
-    {
-      key: "session",
-      label: "Connect a session",
-      done: (registry.getState().sessions ?? []).length > 0,
-      href: "#/channels",
-    },
-    {
-      key: "channel",
-      label: "Create a channel",
-      done: (state.channels ?? []).length > 0,
-      href: "#/channels",
-    },
-    { key: "budget", label: "Set a budget", done: budgets === true, href: "#/settings/radar" },
-  ];
   if (dismissed || items.every((i) => i.done)) return null;
 
   /** Mints one pairing link without a terminal and opens the ceremony it pays for. */
@@ -133,7 +165,7 @@ export function FirstRunChecklist({
     try {
       const r = (await api.api("/api/pair/mint", { body: { action: "mint" } })) as { token?: string };
       if (!r.token) throw new Error("the server sent no pairing link");
-      onPairToken(r.token);
+      onPairToken?.(r.token);
     } catch (e) {
       setMintError(errText(e));
     } finally {
@@ -169,14 +201,7 @@ export function FirstRunChecklist({
         >
           Get set up
         </h2>
-        <button
-          type="button"
-          class="ui-btn ui-btn-ghost -mr-2"
-          onClick={() => {
-            writePref(localStorage, "first-run", true);
-            setDismissed(true);
-          }}
-        >
+        <button type="button" class="ui-btn ui-btn-ghost -mr-2" onClick={dismiss}>
           Hide checklist
         </button>
       </div>

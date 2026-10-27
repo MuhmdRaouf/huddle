@@ -838,10 +838,15 @@ describe("the first-run checklist's passkey row", () => {
     return { calls };
   }
 
-  /** The checklist rides the Now list, so the shell mounts there. */
+  /** The checklist rides the Now list's set-up row, opening in its sheet, so the shell mounts
+   *  there and the row's sheet opens. */
   const mountOnNow = (kind: string, mintAnswer?: unknown) => {
     location.hash = "#/sessions";
-    return mountAs(kind, mintAnswer);
+    const h = mountAs(kind, mintAnswer);
+    void act(() => {
+      screen.getByRole("button", { name: /^Set up · \d+ steps? left$/ }).click();
+    });
+    return h;
   };
 
   it("shows for an owner's link session, with its save and close buttons", () => {

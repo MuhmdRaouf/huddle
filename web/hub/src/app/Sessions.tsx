@@ -1,11 +1,13 @@
 // Sessions.tsx — the Sessions list: what needs the owner first, then the sessions at work and the
 // idle ones; a search box and the machine chips narrow the rows; picking several to send new work
-// to, and the needs-you card's deny and snooze. One tree serves the three layouts: the phone paints
-// the list, the tablet and the desktop paint the list beside the session. Session text is rendered
-// as text, never HTML (SPEC 9).
+// to, and the needs-you card's deny and snooze; the set-up row opens the first-run checklist in
+// its sheet while steps are left. One tree serves the three layouts: the phone paints the list,
+// the tablet and the desktop paint the list beside the session. Session text is rendered as text,
+// never HTML (SPEC 9).
 import { Button } from "@huddle/ui/button.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
 import { Field } from "@huddle/ui/field.tsx";
+import { Sheet } from "@huddle/ui/sheet.tsx";
 import { type ComponentChildren, Fragment, type JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Icon } from "../icons.tsx";
@@ -26,6 +28,7 @@ import {
 import { readPref, writePref } from "../storage.ts";
 import { ConnectCard } from "./ConnectCard.tsx";
 import { useHuddle } from "./context.tsx";
+import { FirstRunChecklist, type FirstRunState, useFirstRun } from "./FirstRun.tsx";
 import { InsightsCard } from "./Insights.tsx";
 import { LinkSheet } from "./LinkSheet.tsx";
 import type { Layout } from "./layout.ts";
@@ -285,19 +288,83 @@ function RowShell({
   );
 }
 
+/** The set-up row and its sheet: the row rides under the machine chips while the checklist has
+ *  steps left and stands undismissed, and opens the checklist in the sheet; a minted passkey hands
+ *  its token back up through `onPairToken` to the pairing screen. The steps finishing or the
+ *  checklist hiding itself close the sheet, the row going with them. */
+function SetupPane({
+  setup,
+  onPairToken,
+}: {
+  setup: FirstRunState;
+  onPairToken?: ((token: string) => void) | undefined;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const showRow = !setup.dismissed && setup.left > 0;
+
+  useEffect(() => {
+    if (open && !showRow) setOpen(false);
+  });
+
+  return (
+    <>
+      {showRow ? (
+        <div class="shrink-0 px-4 pt-4">
+          <Button
+            variant="secondary"
+            class="h-11! min-h-11! w-full justify-start! gap-3! bg-[var(--ui-surface)]! px-3! text-sm! font-medium! shadow-[var(--ui-shadow-1)]"
+            onClick={() => setOpen(true)}
+          >
+            <span
+              aria-hidden="true"
+              class="flex size-7 shrink-0 items-center justify-center rounded-[var(--ui-radius-sm)] bg-[var(--ui-accent-soft)] text-[var(--ui-accent)]"
+            >
+              {/* the checklist's own mark; the icon set has none */}
+              <svg
+                class="size-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="m3 7 2 2 4-4" />
+                <path d="M13 6h8" />
+                <path d="m3 17 2 2 4-4" />
+                <path d="M13 12h8" />
+                <path d="M13 18h8" />
+              </svg>
+            </span>
+            <span class="min-w-0 flex-1 truncate">
+              Set up · {setup.left} {setup.left === 1 ? "step" : "steps"} left
+            </span>
+            <Icon name="right" class="size-4 shrink-0 text-[var(--ui-muted)]" />
+          </Button>
+        </div>
+      ) : null}
+      {showRow || open ? (
+        <Sheet open={open} onClose={() => setOpen(false)} title="Set up">
+          {open ? <FirstRunChecklist onPairToken={onPairToken} setup={setup} /> : null}
+        </Sheet>
+      ) : null}
+    </>
+  );
+}
+
 /** The Sessions list: the registry's sessions as the three layouts' list pane. The tablet and the
  *  desktop carry their own header — the title with the Select toggle at its end (the phone's shell
- *  and the desktop's bar draw the rest); the group-by toggle rides under it; the desktop's j and k
- *  move a selection Enter opens and a, d and r answer, Select shows the checkboxes that pick
- *  sessions to send new work to, and the phone's long-press picks the same. `above` (the first-run
- *  checklist the shell hands down) rides at the top of the list, or right after the Needs you
- *  section when asks wait, so the first ask sits above a phone's fold. */
+ *  and the desktop's bar draw the rest); the desktop's j and k move a selection Enter opens and
+ *  a, d and r answer, Select shows the checkboxes that pick sessions to send new work to, and the
+ *  phone's long-press picks the same. While the first-run checklist has steps left and stands
+ *  undismissed, the set-up row rides under the machine chips and opens the checklist in its sheet;
+ *  a minted passkey hands its token back up through `onPairToken` to the pairing screen. */
 export function SessionsPane({
   layout,
-  above = null,
+  onPairToken,
 }: {
   layout: Layout;
-  above?: ComponentChildren;
+  onPairToken?: (token: string) => void;
 }): JSX.Element {
   const { registry, now } = useHuddle();
   const act = useNeedsAct();
@@ -316,6 +383,9 @@ export function SessionsPane({
   const [sending, setSending] = useState(false);
   const [linking, setLinking] = useState(false);
   const hold = useRef<number | null>(null);
+  // the set-up row's steps: one watch, handed to the row's sheet and the checklist inside it, so
+  // a dismissal there drops the row with it
+  const setup = useFirstRun();
 
   // the search matches the title, project, branch, machine and the session's task or prompt line,
   // case-insensitively; the machine chip holds one machine, or All
@@ -488,7 +558,6 @@ export function SessionsPane({
               </h2>
               {rowsOf(visible[key], label)}
             </section>
-            {key === "needsYou" ? above : null}
           </Fragment>
         ))}
         {firstOther === null ? cards : null}
@@ -553,8 +622,8 @@ export function SessionsPane({
           })}
         </div>
       </div>
+      <SetupPane setup={setup} onPairToken={onPairToken} />
       <div class="min-h-0 flex-1 overflow-y-auto pb-4" data-sessions-sections="">
-        {groups.needsYou.length > 0 ? null : above}
         {st.sessions === null ? (
           <div class="grid gap-2 px-3 pt-3" role="status" aria-label="Reading the registry">
             {[0, 1, 2, 3].map((row) => (

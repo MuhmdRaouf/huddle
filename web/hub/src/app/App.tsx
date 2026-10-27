@@ -23,13 +23,12 @@ import { FIN } from "../status.ts";
 import { readPref, writePref } from "../storage.ts";
 import type { HuddleState } from "../store.ts";
 import { useHuddle } from "./context.tsx";
-import { FirstRunChecklist } from "./FirstRun.tsx";
 import { IntroCtx } from "./intro.tsx";
 import { type Layout, useLayout } from "./layout.ts";
 import { BottomNav, IconRail, type NeedsBadge, needsBadge, SideNav, TabBadge } from "./Nav.tsx";
 import { NowContext, SessionScreen } from "./Now.tsx";
-import { NoSessionsWelcome, SessionsPane } from "./Sessions.tsx";
 import { Pair } from "./Pair.tsx";
+import { NoSessionsWelcome, SessionsPane } from "./Sessions.tsx";
 import { Rail } from "./Rail.tsx";
 import {
   channelHref,
@@ -698,25 +697,22 @@ export function App({
 
   // each tab's panes: the list beside the detail on tablet and desktop, and the desktop's
   // context pane where a screen carries one (the sessions tab's session screen: the linked
-  // sessions and the session's facts). The sessions list carries the first-run checklist at its top.
+  // sessions and the session's facts). The sessions list carries the set-up row; the checklist
+  // opens in its sheet.
   const nowId = route.tab === "sessions" ? (route.sub[0] ?? null) : null;
   const reg = registry.getState();
   // the registry read answered and holds nothing: no session ever reported, so the main pane
   // leads with the welcome (the list beside it drops its copy of the card)
   const noSessions = reg.sessions !== null && reg.sessions.length === 0;
-  const firstRun = (
-    <FirstRunChecklist
-      onPairToken={(token) => {
-        setPairToken(token);
-        setPairing(true);
-      }}
-    />
-  );
+  const onPairToken = (token: string): void => {
+    setPairToken(token);
+    setPairing(true);
+  };
   const list =
     route.tab === "channels" && ch && layout !== "phone" ? (
       <Rail onHelp={onHelp} />
     ) : route.tab === "sessions" && layout !== "phone" ? (
-      <SessionsPane layout={layout} above={firstRun} />
+      <SessionsPane layout={layout} onPairToken={onPairToken} />
     ) : null;
   const context: ComponentChildren =
     route.tab === "sessions" && layout === "desktop" && nowId ? <NowContext /> : null;
@@ -727,7 +723,7 @@ export function App({
         <SessionScreen id={nowId} layout={layout} />
       ) : layout === "phone" ? (
         <div class="flex min-h-0 flex-1 flex-col">
-          <SessionsPane layout="phone" above={firstRun} />
+          <SessionsPane layout="phone" onPairToken={onPairToken} />
         </div>
       ) : noSessions ? (
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5">

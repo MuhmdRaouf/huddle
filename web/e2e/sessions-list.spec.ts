@@ -1,6 +1,7 @@
 // sessions-list.spec.ts — the desk's Sessions header: the title and the Select toggle stand on
 // one line, and no checkbox shows on a row until Select is pressed; the search box and the
 // machine chips sit above the list, the chips on one line, and a typed word narrows the rows;
+// the set-up row shows while checklist steps are left and opens the checklist in its sheet;
 // at phone width the list scrolls nothing sideways. Axe finds nothing serious on either width.
 
 import { expect, test } from "@playwright/test";
@@ -94,5 +95,24 @@ test("at phone width the Sessions list scrolls nothing sideways", async ({ page 
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(over).toBeLessThanOrEqual(0);
+  await expectAccessible(page);
+});
+
+test("the set-up row shows while checklist steps are left and opens the checklist in a sheet", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await signIn(page);
+  await openTab(page, "Sessions");
+  // steps are left on a fresh browser: the row carries the count and opens the sheet
+  const setup = page.getByRole("button", { name: /^Set up · \d+ steps? left$/ });
+  await expect(setup).toBeVisible();
+  await setup.click();
+  const sheet = page.locator("dialog[open].ui-sheet");
+  await expect(sheet.locator("[data-first-run]")).toBeVisible();
+  // closing the sheet gives the row back: the steps are still left
+  await sheet.getByRole("button", { name: "Close" }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(setup).toBeVisible();
   await expectAccessible(page);
 });

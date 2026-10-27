@@ -1,6 +1,7 @@
 // Sessions.test.tsx — the Sessions list: the groups and their counts from a fixture, the state
 // marks as shape plus word, a registry.session row moving a session between groups live, the
-// search box and the machine chips, the needs-you card, the working and idle rows, the desktop
+// search box and the machine chips, the set-up row that opens the checklist in a sheet, the
+// needs-you card, the working and idle rows, the desktop
 // keys (j/k move, Enter opens, L links a pick of two), the pick bar's link sheet and the picks
 // it clears, the Select toggle that gates the desktop's checkboxes, and session text always
 // rendered as text, never HTML.
@@ -9,6 +10,7 @@ import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { Api } from "../../src/api.ts";
+import type { HuddleContextValue } from "../../src/app/context.tsx";
 import type { Layout } from "../../src/app/layout.ts";
 import { StateMark } from "../../src/app/session-parts.tsx";
 import { SessionsPane } from "../../src/app/Sessions.tsx";
@@ -122,13 +124,17 @@ const needItem = (): NeedItem => ({
 /** Mounts what `make` returns under a context whose registry repaints it on every change, the
  *  way the app's boot does — so a live row moves a row the moment it lands. `make` runs again on
  *  every repaint: one element held by reference would keep Preact from re-rendering it. */
-function followRender(make: () => ComponentChildren, registry: RegistryStore): ReturnType<typeof renderIn> {
+function followRender(
+  make: () => ComponentChildren,
+  registry: RegistryStore,
+  ctx: HuddleContextValue = makeCtx(makeState(), { registry }),
+): ReturnType<typeof renderIn> {
   function Follow(): JSX.Element {
     const [, set] = useState(0);
     useEffect(() => registry.subscribe(() => set((n) => n + 1)), [registry]);
     return <>{make()}</>;
   }
-  return renderIn(<Follow />, makeCtx(makeState(), { registry }));
+  return renderIn(<Follow />, ctx);
 }
 
 /** The headings of the list's sections, as text. */
@@ -144,6 +150,28 @@ function mountNow(
   cleanup();
   const registry = makeRegistry({ sessions, needs });
   return { registry, ...followRender(() => <SessionsPane layout={layout} />, registry) };
+}
+
+/** The list over a context shaped for the set-up row's tests: whether this browser holds TOTP,
+ *  whether a channel exists, what the budgets api answers. The fixture's nine sessions keep the
+ *  checklist's session step done, so the row's count moves with the rest. */
+function mountSetup(
+  over: { layout?: Layout; totp?: boolean; channels?: { name: string }[]; budgets?: unknown[] } = {},
+): ReturnType<typeof followRender> {
+  cleanup();
+  const api: Api = {
+    api: (path) => Promise.resolve(path === "/api/radar/api/budgets" ? { budgets: over.budgets ?? [] } : {}),
+    op: () => Promise.resolve({}),
+    channelPath: (ch, p) => `/api/c/${ch}${p}`,
+    channelHref: (ch, p) => `#/channels/${ch}${p}`,
+  };
+  const registry = makeRegistry({ sessions: fixture() });
+  const ctx = makeCtx(makeState({ channels: over.channels ?? null }), {
+    registry,
+    api,
+    who: over.totp ? { kind: "owner", totp: true } : { kind: "owner" },
+  });
+  return followRender(() => <SessionsPane layout={over.layout ?? "phone"} />, registry, ctx);
 }
 
 /** One keystroke at the window, the way the key layer hears it. */
@@ -360,30 +388,43 @@ describe("the Sessions list", () => {
     expect(localStorage.getItem("huddle:sessionsmachine")).toBe('""');
   });
 
-  it("leads with Needs you and sets the checklist after it when asks exist, and leads with the checklist when none do", () => {
+  it("carries the set-up row under the machine chips, its count the checklist's steps left", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     localStorage.clear();
-    /** The list's top-level blocks in order: the checklist stand-in, then each section's heading. */
-    const order = (): string[] =>
-      [...document.querySelectorAll("[data-checklist], [data-sessions-sections] h2")].map((el) =>
-        el.hasAttribute("data-checklist") ? "checklist" : (el.textContent ?? ""),
-      );
-    const checklist = <div data-checklist="">Get set up</div>;
-    const mountWith = (sessions: RegistrySession[]): void => {
-      cleanup();
-      followRender(() => <SessionsPane layout="phone" above={checklist} />, makeRegistry({ sessions }));
-    };
-    mountWith(fixture());
-    expect(order()).toEqual([
-      "Needs you · 2",
-      "checklist",
-      "Working · 3",
-      "Idle · 2",
-      "Stuck · 1",
-      "Ended · 1",
-    ]);
-    mountWith(fixture().filter((s) => s.state !== "needs-you"));
-    expect(order()).toEqual(["checklist", "Working · 3", "Idle · 2", "Stuck · 1", "Ended · 1"]);
+    mountSetup();
+    const row = screen.getByRole("button", { name: "Set up · 3 steps left" });
+    // the row rides under the machine chips, above every section, and the body holds no checklist
+    const chips = document.querySelector("[data-machine-chips]") as HTMLElement;
+    const sections = document.querySelector("[data-sessions-sections]") as HTMLElement;
+    expect(chips.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(row.compareDocumentPosition(sections) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(sections.querySelector("[data-first-run]")).toBeNull();
+    // TOTP on leaves two steps, and a channel too leaves the last one, in the singular
+    mountSetup({ totp: true });
+    expect(screen.getByRole("button", { name: "Set up · 2 steps left" })).toBeDefined();
+    mountSetup({ totp: true, channels: [{ name: "shop" }] });
+    expect(screen.getByRole("button", { name: "Set up · 1 step left" })).toBeDefined();
+  });
+
+  it("opens the checklist in a sheet from the set-up row, and leaves the row out when it is done or dismissed", async () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    localStorage.clear();
+    mountSetup({ totp: true, channels: [{ name: "shop" }] });
+    expect(document.querySelector("dialog[open]")).toBeNull();
+    await act(async () => {
+      screen.getByRole("button", { name: "Set up · 1 step left" }).click();
+    });
+    const sheet = document.querySelector("dialog[open].ui-sheet") as HTMLElement;
+    expect(sheet).not.toBeNull();
+    expect(within(sheet).getByRole("heading", { name: "Get set up" })).toBeDefined();
+    // with the budgets answered every step is done: the row is gone
+    mountSetup({ totp: true, channels: [{ name: "shop" }], budgets: [{ name: "cap" }] });
+    await flush();
+    expect(screen.queryByRole("button", { name: /^Set up · / })).toBeNull();
+    // a dismissed checklist hides the row too
+    localStorage.setItem("huddle:first-run", "true");
+    mountSetup({ totp: true, channels: [{ name: "shop" }] });
+    expect(screen.queryByRole("button", { name: /^Set up · / })).toBeNull();
   });
 
   it("names every session's harness on its row and its card, Claude Code included", () => {
