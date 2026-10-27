@@ -54,6 +54,22 @@ func LoadBodyKey(ctx context.Context, store KeySource, random io.Reader) ([]byte
 	return readBack, nil
 }
 
+// ReadBodyKey answers the machine's body key from the store, reading only: a reader never
+// draws or stores a key, so a store with no value is bodies off, not a first key. A stored
+// value goes through the same decode as a load — the key and true, or the decode's error,
+// which never carries the value.
+func ReadBodyKey(ctx context.Context, store KeySource) ([]byte, bool, error) {
+	value, ok := store.Get(ctx)
+	if !ok {
+		return nil, false, nil
+	}
+	key, err := decodeBodyKey(value)
+	if err != nil {
+		return nil, false, err
+	}
+	return key, true, nil
+}
+
 // decodeBodyKey answers the 32 bytes a stored encoding holds. The error says what is
 // wrong with the value, never what the value is.
 func decodeBodyKey(value string) ([]byte, error) {

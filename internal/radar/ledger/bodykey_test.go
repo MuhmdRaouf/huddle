@@ -180,6 +180,69 @@ func TestLoadBodyKeyRefusesAFailedSet(t *testing.T) {
 	}
 }
 
+// TestReadBodyKey: a reader draws no key of its own — an empty store is bodies off with no
+// Set, a stored value is answered as its key, and an unusable value is an error whose text
+// never carries the value.
+func TestReadBodyKey(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	t.Run("an empty store is bodies off", func(t *testing.T) {
+		t.Parallel()
+		source := &fakeKeySource{}
+		key, ok, err := ReadBodyKey(ctx, source)
+		if err != nil {
+			t.Fatalf("read an empty store: %v", err)
+		}
+		if ok {
+			t.Fatal("an empty store answers a key")
+		}
+		if key != nil {
+			t.Fatal("an empty store answers key bytes")
+		}
+		if source.sets != 0 {
+			t.Fatalf("sets = %d, want none: a reader never stores", source.sets)
+		}
+	})
+	t.Run("a stored key is answered", func(t *testing.T) {
+		t.Parallel()
+		source := &fakeKeySource{stored: base64.RawStdEncoding.EncodeToString(drawnKey), ok: true}
+		key, ok, err := ReadBodyKey(ctx, source)
+		if err != nil {
+			t.Fatalf("read a stored key: %v", err)
+		}
+		if !ok {
+			t.Fatal("a stored value answers no key")
+		}
+		if !bytes.Equal(key, drawnKey) {
+			t.Fatal("the stored key decoded to other bytes")
+		}
+		if source.sets != 0 {
+			t.Fatalf("sets = %d, want none", source.sets)
+		}
+	})
+	t.Run("a stored value that is not base64", func(t *testing.T) {
+		t.Parallel()
+		value := "not base64 at all!!"
+		source := &fakeKeySource{stored: value, ok: true}
+		key, ok, err := ReadBodyKey(ctx, source)
+		if err == nil {
+			t.Fatal("read a non-base64 stored value = nil error, want an error")
+		}
+		if ok {
+			t.Fatal("an unusable stored value answers a key")
+		}
+		if key != nil {
+			t.Fatal("an unusable stored value answers key bytes")
+		}
+		if strings.Contains(err.Error(), value) {
+			t.Fatal("the error carries the stored value")
+		}
+		if source.sets != 0 {
+			t.Fatalf("sets = %d, want none", source.sets)
+		}
+	})
+}
+
 // TestLoadBodyKeyRefusesADifferentReadBack: a store that reads back a value other than
 // the one Set wrote is an error, and no key is answered.
 func TestLoadBodyKeyRefusesADifferentReadBack(t *testing.T) {
