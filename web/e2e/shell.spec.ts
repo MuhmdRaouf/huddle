@@ -402,9 +402,14 @@ test.describe("the utility layer", () => {
       tool_name: "Bash",
       tool_input: { command: "bun run build" },
     });
-    await open(page, `#/sessions/${session}`);
+    // the ask's own opening, not open(): the phone draws no tab bar while a dialog is up, and
+    // this session's ask opens its sheet as soon as the page loads
+    await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
+    await signIn(page);
+    await page.goto(`${theSetup().rootUrl}/#/sessions/${session}`);
     // the session screen's ask: the phone's bottom sheet, or the wide layouts' inline box
     const bar = page.locator("[data-needs-sheet], [data-needs-bar]");
+    await expect(bar).toBeVisible();
     const allow = bar.locator("[data-act='allow']");
     const deny = bar.locator("[data-act='deny']");
     await expect(allow).toBeVisible();

@@ -29,7 +29,7 @@ type PageId =
   | "task-drawer"
   | "settings-appearance"
   | "settings-notifications"
-  | "settings-devices"
+  | "settings-security"
   | "settings-hub"
   | "radar-overview"
   | "radar-costs"
@@ -57,7 +57,7 @@ const LEGACY_PAGES: readonly (PageId | "shell")[] = [
   "task-drawer",
   "settings-appearance",
   "settings-notifications",
-  "settings-devices",
+  "settings-security",
   "settings-hub",
   "radar-overview",
   "radar-costs",
@@ -239,7 +239,7 @@ const SCREENS: readonly Screen[] = [
   { id: "task-drawer", signedIn: true, open: drawer((s) => `#/channels/e2e/work?t=${s.task}`) },
   settings("settings-appearance", "appearance"),
   settings("settings-notifications", "notifications"),
-  settings("settings-devices", "devices"),
+  settings("settings-security", "security"),
   settings("settings-hub", "hub"),
   radar("radar-overview", "overview", "Overview"),
   radar("radar-costs", "costs", "Costs"),

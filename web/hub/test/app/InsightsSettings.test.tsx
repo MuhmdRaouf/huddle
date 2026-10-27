@@ -1,4 +1,4 @@
-// InsightsSettings.test.tsx — Settings › Hub and Radar › Insights: the two switches wait disabled
+// InsightsSettings.test.tsx — Settings › Tips › Insights: the two switches wait disabled
 // until the route's answer, render from it, a flip PUTs its one field only, and a refusal flips
 // the switch back and says the error in a toast.
 import { act } from "@testing-library/preact";

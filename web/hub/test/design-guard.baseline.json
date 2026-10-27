@@ -75,9 +75,9 @@
   },
   "app/SettingsTab.tsx": {
     "control": 1,
-    "daisy": 3,
+    "daisy": 2,
     "legacy": 5,
-    "px": 1
+    "px": 0
   },
   "app/session-parts.tsx": {
     "px": 5

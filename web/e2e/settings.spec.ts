@@ -1,25 +1,28 @@
-// settings.spec.ts — the Settings tab on the phone and the desktop project: its four groups in order
-// (Appearance, Notifications, Devices and sign-in, Hub and Radar), at 390 px a grouped list of rows
-// that opens each group's page under a back link, at 1024 px a sidebar beside the page, the deep
-// link to a group on both widths, each group page with its members,
-// a member's own address opening the group that holds it, the appearance switch that overrides the
-// OS scheme and keeps the choice across a reload, the push switch that says what the browser
-// allows, the finished-turn push a paired device turns on and keeps across a reload, the hub's own facts, the hub's time zone (seeded by the first signed-in browser, picked
-// again and kept across a reload), the Insights switches (tips for me on, tips to the sessions
-// off, a flip kept across a reload), and the phone guide in a sheet. Every group fits the viewport
-// with no horizontal scroll, keeps its tap targets at least 44 px and passes axe.
+// settings.spec.ts — the Settings tab on the phone and the desktop project: its six groups in
+// order (Appearance, Notifications, Security, Spending, Tips, Hub), at 390 px a grouped list that
+// leads with the hub card and shows each row's current value, at 1024 px a sidebar beside the
+// page, the deep link to a group on both widths, each group page with its members, a member's own
+// address opening the group that holds it, the appearance switch that overrides the OS scheme and
+// keeps the choice across a reload, the push switch that says what the browser allows, the
+// finished-turn push a paired device turns on and keeps across a reload, the hub's own facts, the
+// hub's time zone (seeded by the first signed-in browser, picked again and kept across a reload),
+// the Insights switches (tips for me on, tips to the sessions off, a flip kept across a reload),
+// and the phone guide in a sheet. Every group fits the viewport with no horizontal scroll, keeps
+// its tap targets at least 44 px and passes axe.
 
 import { expect, test, type Page } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
 import { n, pairThroughLink, signIn, theSetup, TOTALS, useVirtualAuthenticator } from "./helpers.ts";
 
-/** The four groups, in order, each with its address, the members its page draws and the line
- *  that names them under its row on the phone. */
-const GROUPS: readonly (readonly [name: string, hash: string, members: readonly string[], named: string])[] = [
-  ["Appearance", "#/settings/appearance", ["appearance"], "Scheme and colours"],
-  ["Notifications", "#/settings/notifications", ["notifications"], "Push and what wakes a device"],
-  ["Devices and sign-in", "#/settings/devices", ["devices", "phone", "signin"], "Devices, Phone, Sign-in methods"],
-  ["Hub and Radar", "#/settings/hub", ["hub", "zone", "radar", "insights", "selfcheck"], "This hub, Time zone, Radar, Insights, Self-check"],
+/** The six groups, in order, each with its address, the members its page draws and the value its
+ *  phone row shows once the reads land (the row's own text when there is no source yet). */
+const GROUPS: readonly (readonly [name: string, hash: string, members: readonly string[], value: string | RegExp])[] = [
+  ["Appearance", "#/settings/appearance", ["appearance"], /^Huddle · (System|Light|Dark)$/],
+  ["Notifications", "#/settings/notifications", ["notifications"], ""],
+  ["Security", "#/settings/security", ["devices", "phone", "signin"], /^\d+ devices?$/],
+  ["Spending", "#/settings/spending", ["radar"], ""],
+  ["Tips", "#/settings/tips", ["insights"], "On"],
+  ["Hub", "#/settings/hub", ["hub", "zone", "selfcheck"], /\S/],
 ];
 
 /** Opens one Settings address in a signed-in browser. The authenticator set-up the first sign-in
@@ -55,7 +58,7 @@ const boxes = (page: Page, selector: string) =>
 test.describe("at 390 px", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("the groups are rows of a list, each naming its members, and no chip row", async ({ page }) => {
+  test("the groups are rows of three cards, each naming its value, and no chip row", async ({ page }) => {
     await openSettings(page);
     const nav = page.getByRole("navigation", { name: "Settings sections" });
     const rows = nav.locator("li a[data-section]");
@@ -63,10 +66,15 @@ test.describe("at 390 px", () => {
     expect(await rows.evaluateAll((els) => els.map((el) => el.getAttribute("href")))).toEqual(
       GROUPS.map(([, hash]) => hash),
     );
-    for (const [i, [name, , , named]] of GROUPS.entries()) {
-      await expect(rows.nth(i)).toContainText(name);
-      await expect(rows.nth(i)).toContainText(named);
+    for (const [i, [name, , , value]] of GROUPS.entries()) {
+      await expect(rows.nth(i).locator("[data-label]")).toHaveText(name);
+      await expect(rows.nth(i).locator("[data-value]")).toHaveText(value);
     }
+    await expect(nav.locator("[data-card-heading]")).toHaveText([
+      "Appearance and notifications",
+      "Security and spending",
+      "Tips and hub",
+    ]);
     // a column of full-width rows, each a 44 px target: never a scrolling row of chips
     const at = await boxes(page, '[aria-label="Settings sections"] li a[data-section]');
     expect(new Set(at.map((b) => b.x)).size).toBe(1);
@@ -74,19 +82,35 @@ test.describe("at 390 px", () => {
     expect(at.every((b) => b.h >= 44)).toBe(true);
     expect(await nav.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
     await expect(rows.and(page.locator("[aria-current]"))).toHaveCount(0);
-    // the list is the page: no group's settings drawn under it
+    // the list is the page: no group's settings drawn under it, and no title of its own
     await expect(page.locator("[data-setting]")).toHaveCount(0);
+    await expect(nav.locator("h1")).toHaveCount(0);
     await expectAccessible(page);
+  });
+
+  test("the list leads with the hub card, and the footnote says what stays where", async ({ page }) => {
+    await openSettings(page);
+    const card = page.locator("a[data-hub-card]");
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute("href", "#/settings/hub");
+    await expect(card.locator("[data-hub-name]")).toHaveText(/\S/);
+    // the owner's browser carries no device name, so the line is the version alone; this
+    // unstamped build reports dev where a release names its semver
+    await expect(card.locator("[data-hub-subtitle]")).toHaveText(/^huddle (dev|\d+\.\d+\.\d+)$/);
+    await expect(card).toContainText("Healthy");
+    await expect(page.locator("[data-footnote]")).toHaveText(
+      "Theme and appearance are kept in this browser. Everything else is kept on the hub.",
+    );
   });
 
   test("a row opens its group page and the back link returns to the list", async ({ page }) => {
     await openSettings(page);
     await page
       .getByRole("navigation", { name: "Settings sections" })
-      .locator('a[data-section="devices"]')
+      .locator('a[data-section="security"]')
       .click();
-    await expect(page).toHaveURL(/#\/settings\/devices$/);
-    await expectGroupOpen(page, "Devices and sign-in");
+    await expect(page).toHaveURL(/#\/settings\/security$/);
+    await expectGroupOpen(page, "Security");
     await expect(page.locator("[data-setting]")).toHaveCount(3);
     await expect(page.getByRole("navigation", { name: "Settings sections" })).toHaveCount(0);
     await page.getByRole("link", { name: "Back to Settings" }).click();
@@ -117,9 +141,9 @@ test.describe("at 1024 px", () => {
     const side = await nav.boundingBox();
     const body = await page.locator("[data-settings]").boundingBox();
     expect(side && body && side.x + side.width <= body.x).toBe(true);
-    await section(page, "Hub and Radar").click();
+    await section(page, "Hub").click();
     await expect(page).toHaveURL(/#\/settings\/hub$/);
-    await expect(section(page, "Hub and Radar")).toHaveAttribute("aria-current", "page");
+    await expect(section(page, "Hub")).toHaveAttribute("aria-current", "page");
     await expect(page.locator('[data-setting="hub"]')).toBeVisible();
     await expect(nav).toBeVisible();
     await expect(page.getByRole("link", { name: "Back to Settings" })).toHaveCount(0);
@@ -154,10 +178,16 @@ test.describe("the Settings tab", () => {
       expect(drawn, name).toEqual([...members]);
     }
     for (const [member, name] of [
-      ["radar", "Hub and Radar"],
-      ["insights", "Hub and Radar"],
-      ["signin", "Devices and sign-in"],
-      ["phone", "Devices and sign-in"],
+      ["appearance", "Appearance"],
+      ["notifications", "Notifications"],
+      ["devices", "Security"],
+      ["phone", "Security"],
+      ["signin", "Security"],
+      ["radar", "Spending"],
+      ["insights", "Tips"],
+      ["hub", "Hub"],
+      ["zone", "Hub"],
+      ["selfcheck", "Hub"],
     ] as const) {
       await page.goto(`${theSetup().rootUrl}/#/settings/${member}`);
       await expectGroupOpen(page, name);

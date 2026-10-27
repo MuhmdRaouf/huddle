@@ -1,4 +1,4 @@
-// InsightsSettings.tsx — Settings › Hub and Radar › Insights, the group's own member with the
+// InsightsSettings.tsx — Settings › Tips › Insights, the group's own member with the
 // address #/settings/insights: the owner's two switches. "Tips for me" shows the Insights card's
 // tips; "Tips to my sessions" lets a session take one tip line as context and spends its tokens.
 // Both live in one file in the huddle home; the tips come from what huddle already records and

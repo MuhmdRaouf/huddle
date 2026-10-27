@@ -1,5 +1,5 @@
 /**
- * The self-check Settings › Hub and Radar shows: today's (UTC) Radar totals against the same day
+ * The self-check Settings › Hub shows: today's (UTC) Radar totals against the same day
  * re-summed from the Claude Code transcripts. The badge is green while the worst counter drifts 1%
  * or less, yellow above, grey when the transcripts hold no call today; the sentence under it names
  * both sides' numbers. Read on mount and once a minute, the server's own cache window.

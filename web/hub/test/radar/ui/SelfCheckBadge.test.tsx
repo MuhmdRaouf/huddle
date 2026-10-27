@@ -1,4 +1,4 @@
-// SelfCheckBadge.test.tsx — the self-check Settings › Hub and Radar shows: its tone by drift, the
+// SelfCheckBadge.test.tsx — the self-check Settings › Hub shows: its tone by drift, the
 // sentence with both sides' numbers as text, and its silence when the route cannot answer.
 
 import { render, waitFor } from "@testing-library/preact";

@@ -475,14 +475,14 @@ function page(): ComponentChildren {
   );
 }
 
-/** Radar's controller (the Radar tab's views and Settings › Hub and Radar): started on the
+/** Radar's controller (the Radar tab's views and Settings › Spending): started on the
  *  first address that needs it, its state changes repainting the shell (the alerts badge, the
  *  range, the views). Later radar addresses answer the same one. */
 let radarWired = false;
 function ensureRadarTab(): void {
   const route = parseHash(location.hash, (k, fb) => readPref(localStorage, k, fb));
   const section = settingsSectionOf(route.tab === "settings" ? route.sub[0] : undefined);
-  if (route.tab !== "radar" && !(route.tab === "settings" && section === "hub")) return;
+  if (route.tab !== "radar" && !(route.tab === "settings" && section === "spending")) return;
   const radar = ensureRadar();
   if (radarWired) return;
   radarWired = true;

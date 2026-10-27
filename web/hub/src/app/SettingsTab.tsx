@@ -1,12 +1,12 @@
-// SettingsTab.tsx — the Settings page: four groups, a grouped list of rows on the phone that opens
-// one page per group, a sidebar beside the page on the tablet and the desktop; each page draws its
-// group's members in order. Appearance (System, Dark, Light, and the Catppuccin flavour);
-// Notifications (the two switches and what wakes the device); Devices and sign-in (the paired
-// devices with remove, the phone's trust guide in a sheet, the sign-in methods); Hub and Radar
-// (name, address and version, the hub's time zone, Radar's budgets, notifications and history
-// retention, the two Insights switches, and Radar's self-check against the transcripts). A
-// channel's linked sessions live in that channel's own Settings view. Every class comes from the
-// ui components or the tokens.
+// SettingsTab.tsx — the Settings page: six groups, on the phone a hub card over rows of three
+// cards whose rows name each group's current value and open one page per group, on the tablet and
+// the desktop a sidebar beside the page; each page draws its group's members in order. Appearance
+// (System, Dark, Light, and the Catppuccin flavour); Notifications (the two switches and what
+// wakes the device); Security (the paired devices with remove, the phone's trust guide in a sheet,
+// the sign-in methods); Spending (Radar's budgets, notifications and history retention); Tips (the
+// two Insights switches); Hub (name, address and version, the hub's time zone, and Radar's
+// self-check against the transcripts). A channel's linked sessions live in that channel's own
+// Settings view. Every class comes from the ui components or the tokens.
 
 import { Button } from "@huddle/ui/button.tsx";
 import { Field } from "@huddle/ui/field.tsx";
@@ -24,7 +24,7 @@ import {
 import type { JSX } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { ApiError } from "../api.ts";
-import { Icon } from "../icons.tsx";
+import { Icon, type IconName } from "../icons.tsx";
 import { creationFromJSON, credentialToJSON } from "../passkey.ts";
 import { SELFCHECK_PATH, SelfCheckBadge, selfCheckOf } from "../radar/app/SelfCheckBadge.tsx";
 import { SettingsView } from "../radar/app/views/Settings.tsx";
@@ -36,6 +36,7 @@ import { useLayout } from "./layout.ts";
 import { useStepUp } from "./Needs.tsx";
 import { NotificationsCard } from "./Notifications.tsx";
 import { pickScheme, SCHEMES } from "./scheme.ts";
+import { hubInitial, hubSubtitle, useSettingsValues, zoneOf, type HubZone } from "./settings-values.ts";
 import { AuthenticatorCard } from "./Totp.tsx";
 
 /** A section's heading, the same small caps on every section. */
@@ -47,7 +48,7 @@ const NOTE = "m-0 text-sm text-[var(--ui-muted)]";
 /** An error said inline. */
 const ERR = "m-0 text-sm text-[var(--ui-fail-ink)]";
 
-/** Settings › Hub and Radar › Radar: radar's budgets, notifications and history retention, loaded
+/** Settings › Spending › Radar: radar's budgets, notifications and history retention, loaded
  *  the first time the group shows (the controller runs already — main starts it on this group). */
 function RadarSettings(): JSX.Element {
   useEffect(() => {
@@ -62,7 +63,7 @@ function RadarSettings(): JSX.Element {
   );
 }
 
-/** Settings › Hub and Radar › Self-check: whether Radar's totals for today match the transcripts,
+/** Settings › Hub › Self-check: whether Radar's totals for today match the transcripts,
  *  said as a badge and a sentence, read through the hub's own client. */
 function SelfCheck(): JSX.Element {
   const { api } = useHuddle();
@@ -138,7 +139,15 @@ export function Appearance(): JSX.Element {
 /** What /health says about the hub this page talks to. */
 type HubFacts = { name: string; version: string };
 
-/** Settings › Hub and Radar › This hub: its name (the hub's own, else the machine's), the address this page
+/** The name and version /health answers, checked at the edge; the machine's name stands in for a
+ *  hub without one of its own. */
+function hubFactsOf(r: unknown): HubFacts {
+  const h = (r ?? {}) as { name?: unknown; machine?: unknown; version?: unknown };
+  const text = (v: unknown): string => (typeof v === "string" ? v : "");
+  return { name: text(h.name) || text(h.machine), version: text(h.version) };
+}
+
+/** Settings › Hub › This hub: its name (the hub's own, else the machine's), the address this page
  *  reached it at, and the version it runs. */
 export function ThisHub(): JSX.Element {
   const { api } = useHuddle();
@@ -148,9 +157,7 @@ export function ThisHub(): JSX.Element {
     api
       .api("/health")
       .then((r) => {
-        const h = r as { name?: unknown; machine?: unknown; version?: unknown };
-        const text = (v: unknown): string => (typeof v === "string" ? v : "");
-        if (alive) setFacts({ name: text(h.name) || text(h.machine), version: text(h.version) });
+        if (alive) setFacts(hubFactsOf(r));
       })
       .catch(() => {
         if (alive) setFacts({ name: "", version: "" });
@@ -174,18 +181,6 @@ export function ThisHub(): JSX.Element {
   );
 }
 
-/** The hub's display time zone as /api/settings answers it: "" when no browser has seeded it. */
-type HubZone = { zone: string; origin: string };
-
-/** The zone fields of a settings answer, checked at the edge. */
-function zoneOf(r: unknown): HubZone {
-  const o = (r ?? {}) as { zone?: unknown; zone_origin?: unknown };
-  return {
-    zone: typeof o.zone === "string" ? o.zone : "",
-    origin: typeof o.zone_origin === "string" ? o.zone_origin : "",
-  };
-}
-
 /** The IANA zones this browser knows, UTC first; empty where the browser cannot list them. */
 export function browserZones(): string[] {
   const list = (Intl as { supportedValuesOf?: (key: "timeZone") => string[] }).supportedValuesOf;
@@ -193,7 +188,7 @@ export function browserZones(): string[] {
   return ["UTC", ...list("timeZone").filter((z) => z !== "UTC")];
 }
 
-/** Settings › Hub and Radar › Time zone: the one zone the hub names the owner's day in, seeded from
+/** Settings › Hub › Time zone: the one zone the hub names the owner's day in, seeded from
  *  the first signed-in browser and said so until the owner picks one. The picker lists the zones
  *  this browser knows; a browser that lists none gets a typed field with UTC filled in. */
 export function TimeZone({ zones = browserZones() }: { zones?: string[] }): JSX.Element {
@@ -287,7 +282,7 @@ export function TimeZone({ zones = browserZones() }: { zones?: string[] }): JSX.
   );
 }
 
-/** Settings › Devices and sign-in › Phone: "Add a phone" opens a sheet that starts the guide the server serves
+/** Settings › Security › Phone: "Add a phone" opens a sheet that starts the guide the server serves
  *  (10 minutes, loopback-bound QR) and shows its QR and the fingerprint to compare with the
  *  phone's page. */
 export function Phone(): JSX.Element {
@@ -344,7 +339,7 @@ export function Phone(): JSX.Element {
   );
 }
 
-/** Settings › Devices and sign-in › Devices (SPEC 7.3): every paired device with its ages, the removal that asks for
+/** Settings › Security › Devices (SPEC 7.3): every paired device with its ages, the removal that asks for
  *  the passkey when the server says step-up, and the `huddle pair` line that pairs the next
  *  device. A removed device's browser is signed out server-side by the removal itself. */
 export function Devices(): JSX.Element {
@@ -451,7 +446,7 @@ export function Devices(): JSX.Element {
   );
 }
 
-/** Settings › Devices and sign-in › Sign-in: the two ways a browser signs itself in — the authenticator code (the
+/** Settings › Security › Sign-in: the two ways a browser signs itself in — the authenticator code (the
  *  primary, one enrolment per hub) and this browser's own passkey — with the enrolment's
  *  set-up, its removal, and the passkey a code session can save without a link. */
 export function SignInMethods(): JSX.Element {
@@ -557,47 +552,75 @@ export function SignInMethods(): JSX.Element {
 }
 
 /** One group of the Settings page. */
-export type SettingsSection = "appearance" | "notifications" | "devices" | "hub";
+export type SettingsSection = "appearance" | "notifications" | "security" | "spending" | "tips" | "hub";
 
-/** One setting a group page draws; its id is an address of its own that opens the group, its
- *  label names it under the group's row on the phone. */
-type SettingsMember = { id: string; label: string; Pane: () => JSX.Element };
+/** One setting a group page draws; its id is an address of its own that opens its group. */
+type SettingsMember = { id: string; Pane: () => JSX.Element };
 
-/** One group: its address, its name and its members in page order. */
-type SettingsGroup = { id: SettingsSection; label: string; members: readonly SettingsMember[] };
+/** One group: its address, its name, its glyph and its members in page order. */
+type SettingsGroup = {
+  id: SettingsSection;
+  label: string;
+  icon: IconName;
+  members: readonly SettingsMember[];
+};
 
-/** The four groups in order. The phone's list, the sidebar and the pages all read this table. */
+/** The six groups in order. The phone's list, the sidebar and the pages all read this table. */
 const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   {
     id: "appearance",
     label: "Appearance",
-    members: [{ id: "appearance", label: "Scheme and colours", Pane: Appearance }],
+    icon: "sun",
+    members: [{ id: "appearance", Pane: Appearance }],
   },
   {
     id: "notifications",
     label: "Notifications",
-    members: [{ id: "notifications", label: "Push and what wakes a device", Pane: NotificationsCard }],
+    icon: "bell",
+    members: [{ id: "notifications", Pane: NotificationsCard }],
   },
   {
-    id: "devices",
-    label: "Devices and sign-in",
+    id: "security",
+    label: "Security",
+    icon: "key",
     members: [
-      { id: "devices", label: "Devices", Pane: Devices },
-      { id: "phone", label: "Phone", Pane: Phone },
-      { id: "signin", label: "Sign-in methods", Pane: SignInMethods },
+      { id: "devices", Pane: Devices },
+      { id: "phone", Pane: Phone },
+      { id: "signin", Pane: SignInMethods },
     ],
+  },
+  {
+    id: "spending",
+    label: "Spending",
+    icon: "activity",
+    members: [{ id: "radar", Pane: RadarSettings }],
+  },
+  {
+    id: "tips",
+    label: "Tips",
+    icon: "sparkle",
+    members: [{ id: "insights", Pane: InsightsSettings }],
   },
   {
     id: "hub",
-    label: "Hub and Radar",
+    label: "Hub",
+    icon: "monitor",
     members: [
-      { id: "hub", label: "This hub", Pane: ThisHub },
-      { id: "zone", label: "Time zone", Pane: () => <TimeZone /> },
-      { id: "radar", label: "Radar", Pane: RadarSettings },
-      { id: "insights", label: "Insights", Pane: InsightsSettings },
-      { id: "selfcheck", label: "Self-check", Pane: SelfCheck },
+      { id: "hub", Pane: ThisHub },
+      { id: "zone", Pane: () => <TimeZone /> },
+      { id: "selfcheck", Pane: SelfCheck },
     ],
   },
+];
+
+/** One card of the phone's list: its heading and the groups whose rows it holds. */
+type SettingsCard = { heading: string; groups: readonly SettingsSection[] };
+
+/** The phone list's three cards, in order. */
+const SETTINGS_CARDS: readonly SettingsCard[] = [
+  { heading: "Appearance and notifications", groups: ["appearance", "notifications"] },
+  { heading: "Security and spending", groups: ["security", "spending"] },
+  { heading: "Tips and hub", groups: ["tips", "hub"] },
 ];
 
 /** The group the address names, or the group holding the member it names; a missing or unknown
@@ -621,39 +644,126 @@ export function SettingsHead({ section }: { section: SettingsSection }): JSX.Ele
         <Icon name="left" class="size-5" />
         Settings
       </a>
-      <h1 class="truncate text-[28px] font-semibold tracking-tight">
+      <h1 class="truncate text-[length:var(--ui-text-xl)] font-semibold tracking-tight">
         {SETTINGS_GROUPS.find((g) => g.id === section)?.label}
       </h1>
     </div>
   );
 }
 
-/** The phone's Settings page: one row per group with its members named under it, each row
- *  opening its group's page. */
+/** The phone's Settings page: the hub card, then three cards of rows, one row per group with the
+ *  group's current value, each row opening its group's page; the footnote says what is kept
+ *  where. */
 function GroupList(): JSX.Element {
+  const { api } = useHuddle();
+  // the hub card's facts: /health answering is the card's Healthy, whoami names this device
+  const [facts, setFacts] = useState<HubFacts | null>(null);
+  const [device, setDevice] = useState("");
+  useEffect(() => {
+    let alive = true;
+    api
+      .api("/health")
+      .then((r) => {
+        if (alive) setFacts(hubFactsOf(r));
+      })
+      .catch(() => {});
+    api
+      .api("/api/whoami")
+      .then((r) => {
+        const d = (r as { device?: unknown }).device;
+        if (alive && typeof d === "string") setDevice(d);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [api]);
+  const values = useSettingsValues();
   return (
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <nav aria-label="Settings sections" class="px-4 py-4" data-settings="">
-        <ul class="ui-list">
-          {SETTINGS_GROUPS.map((group) => (
-            <li key={group.id} class="ui-list-item">
-              <a
-                href={`#/settings/${group.id}`}
-                data-section={group.id}
-                class="ui-list-row hover:bg-[var(--ui-surface-2)]"
+      <div class="flex flex-col px-4 pb-4 pt-4">
+        <a
+          href="#/settings/hub"
+          data-hub-card=""
+          class="flex min-h-13 items-center gap-3 rounded-[var(--ui-radius-lg)] bg-[var(--ui-surface)] p-4 shadow-[var(--ui-shadow-1)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+        >
+          <span
+            data-hub-initial=""
+            class="flex size-11 shrink-0 items-center justify-center rounded-[var(--ui-radius-sm)] bg-[var(--ui-accent-soft)] text-[length:var(--ui-text-lg)] font-bold text-[var(--ui-accent)]"
+          >
+            {hubInitial(facts?.name ?? "")}
+          </span>
+          <span class="min-w-0 flex-1">
+            <span
+              data-hub-name=""
+              class="block truncate text-[length:var(--ui-text-md)] font-semibold text-[var(--ui-text)]"
+            >
+              {facts?.name ?? ""}
+            </span>
+            <span
+              data-hub-subtitle=""
+              class="block truncate text-[length:var(--ui-text-sm)] text-[var(--ui-muted)]"
+            >
+              {hubSubtitle(facts?.version ?? "", device)}
+            </span>
+          </span>
+          {facts !== null ? (
+            <span
+              data-hub-healthy=""
+              class="flex shrink-0 items-center gap-1.5 text-[length:var(--ui-text-sm)] text-[var(--ui-ok-ink)]"
+            >
+              <span class="size-2 rounded-full bg-[var(--ui-ok)]" aria-hidden="true" />
+              Healthy
+            </span>
+          ) : null}
+        </a>
+        <nav aria-label="Settings sections" data-settings="" class="flex flex-col">
+          {SETTINGS_CARDS.map((card) => (
+            <section key={card.heading}>
+              <h2
+                data-card-heading=""
+                class="m-0 mb-2 ms-1 mt-6 text-[length:var(--ui-text-sm)] font-semibold text-[var(--ui-muted)]"
               >
-                <span class="ui-list-text">
-                  <span class="ui-list-title">{group.label}</span>
-                  <span class="ui-list-meta">{group.members.map((m) => m.label).join(", ")}</span>
-                </span>
-                <span class="ui-list-trailing text-[var(--ui-muted)]">
-                  <Icon name="right" />
-                </span>
-              </a>
-            </li>
+                {card.heading}
+              </h2>
+              <div class="overflow-hidden rounded-[var(--ui-radius)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-1)]">
+                <ul class="m-0 list-none p-0">
+                  {SETTINGS_GROUPS.filter((g) => card.groups.includes(g.id)).map((group, i) => (
+                    <li key={group.id}>
+                      {i > 0 ? <div class="ms-14 h-px bg-[var(--ui-line)]" /> : null}
+                      <a
+                        href={`#/settings/${group.id}`}
+                        data-section={group.id}
+                        class="flex min-h-13 items-center gap-3 px-4 outline-none hover:bg-[var(--ui-surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+                      >
+                        <span class="flex size-7 shrink-0 items-center justify-center rounded-[var(--ui-radius-sm)] bg-[var(--ui-accent-soft)] text-[var(--ui-accent)]">
+                          <Icon name={group.icon} class="size-4" />
+                        </span>
+                        <span
+                          data-label=""
+                          class="min-w-0 flex-1 truncate text-[length:var(--ui-text-md)] font-medium text-[var(--ui-text)]"
+                        >
+                          {group.label}
+                        </span>
+                        <span
+                          data-value={group.id}
+                          class="shrink-0 text-[length:var(--ui-text-md)] text-[var(--ui-muted)]"
+                        >
+                          {values[group.id] ?? ""}
+                        </span>
+                        <Icon name="right" class="size-3.5 shrink-0 text-[var(--ui-muted)]" />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
           ))}
-        </ul>
-      </nav>
+        </nav>
+        <p data-footnote="" class="m-0 mt-2 text-[length:var(--ui-text-xs)] text-[var(--ui-muted)]">
+          Theme and appearance are kept in this browser. Everything else is kept on the hub.
+        </p>
+      </div>
     </div>
   );
 }
@@ -695,12 +805,13 @@ export function SettingsTab({ section }: { section: SettingsSection | null }): J
             href={`#/settings/${group.id}`}
             data-section={group.id}
             aria-current={group.id === open ? "page" : undefined}
-            class={`flex min-h-[var(--ui-tap)] items-center rounded-[var(--ui-radius)] px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
+            class={`flex min-h-[var(--ui-tap)] items-center gap-2.5 rounded-[var(--ui-radius)] px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
               group.id === open
                 ? "bg-[var(--ui-surface-2)] font-semibold text-[var(--ui-text)]"
                 : "text-[var(--ui-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
             }`}
           >
+            <Icon name={group.icon} class="size-4 shrink-0" />
             {group.label}
           </a>
         ))}

@@ -1,7 +1,7 @@
-// SettingsTab.test.tsx — the Settings tab's four groups (Appearance, Notifications, Devices and
-// sign-in, Hub and Radar): a grouped list of rows on the phone that opens each group's page under a
-// back link, a sidebar beside the page on the tablet and the desktop, the members each group page
-// draws and the member addresses that open their group; the Devices section (SPEC 7.3): the paired devices with
+// SettingsTab.test.tsx — the Settings tab's six groups (Appearance, Notifications, Security,
+// Spending, Tips, Hub): a card list with each row's current value on the phone that opens each
+// group's page under a back link, a sidebar beside the page on the tablet and the desktop, the
+// members each group page draws and the member addresses that open their group; the Devices section (SPEC 7.3): the paired devices with
 // their added and last-seen ages, the removal that asks for the passkey when the server says
 // step-up, the refusal said as the server spelled it, the empty list's word, and the copyable
 // `huddle pair` line that pairs the next device; then Appearance's three choices, This hub's facts,
@@ -279,37 +279,113 @@ describe("the phone's grouped list", () => {
     document.body.textContent = "";
   });
 
-  it("TestThePhoneListsTheGroupsAsRowsNamingTheirMembers", () => {
+  /** Answers the reads the phone list makes, by path; a name in `fail` is refused instead. */
+  function mountList(over: Record<string, unknown> = {}, fail: string[] = []): Array<{ url: string }> {
     stubMedia(PHONE);
-    mountSection(<SettingsTab section={null} />, []);
-    const rows = [...document.querySelectorAll<HTMLAnchorElement>('[aria-label="Settings sections"] li a')];
+    const answers: Record<string, unknown> = {
+      "/health": { name: "studio", machine: "mac", version: "0.4.0" },
+      "/api/whoami": { kind: "owner", device: "" },
+      "/api/devices": { devices: [device()] },
+      "/api/insights/settings": { tips_for_me: true },
+      "/api/settings": { zone: "Africa/Cairo", zone_origin: "owner" },
+      ...over,
+    };
+    const calls: Array<{ url: string }> = [];
+    const fetchFn: FetchFn = (url) => {
+      calls.push({ url });
+      return Promise.resolve(
+        new Response(JSON.stringify(fail.includes(url) ? {} : (answers[url] ?? {})), {
+          status: fail.includes(url) ? 500 : 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    };
+    renderHuddle(<SettingsTab section={null} />, {}, NOW, fetchFn);
+    return calls;
+  }
+
+  it("TestThePhoneListShowsSixGroupsUnderThreeHeadingsWithValues", async () => {
+    mountList();
+    await waitFor(() =>
+      expect(document.querySelector('[data-value="hub"]')?.textContent).toBe("Africa/Cairo"),
+    );
+    const rows = [
+      ...document.querySelectorAll<HTMLAnchorElement>('[aria-label="Settings sections"] a[data-section]'),
+    ];
+    expect(rows.map((a) => a.dataset.section)).toEqual([
+      "appearance",
+      "notifications",
+      "security",
+      "spending",
+      "tips",
+      "hub",
+    ]);
     expect(rows.map((a) => a.getAttribute("href"))).toEqual([
       "#/settings/appearance",
       "#/settings/notifications",
-      "#/settings/devices",
+      "#/settings/security",
+      "#/settings/spending",
+      "#/settings/tips",
       "#/settings/hub",
     ]);
-    expect(rows.map((a) => a.querySelector(".ui-list-title")?.textContent)).toEqual([
+    expect(rows.map((a) => a.querySelector("[data-label]")?.textContent)).toEqual([
       "Appearance",
       "Notifications",
-      "Devices and sign-in",
-      "Hub and Radar",
+      "Security",
+      "Spending",
+      "Tips",
+      "Hub",
     ]);
-    expect(rows.map((a) => a.querySelector(".ui-list-meta")?.textContent)).toEqual([
-      "Scheme and colours",
-      "Push and what wakes a device",
-      "Devices, Phone, Sign-in methods",
-      "This hub, Time zone, Radar, Insights, Self-check",
+    expect(rows.map((a) => a.querySelector("[data-value]")?.textContent)).toEqual([
+      "Huddle · System",
+      "",
+      "1 device",
+      "",
+      "On",
+      "Africa/Cairo",
     ]);
-    expect(rows.every((a) => a.classList.contains("ui-list-row"))).toBe(true);
-    expect(rows.some((a) => a.className.includes("rounded-full"))).toBe(false);
+    expect(
+      [...document.querySelectorAll<HTMLElement>("[data-card-heading]")].map((h) => h.textContent),
+    ).toEqual(["Appearance and notifications", "Security and spending", "Tips and hub"]);
+    // every row carries its group's icon and opens the group's page; the list paints no panes
+    expect(rows.every((a) => a.querySelector("svg"))).toBe(true);
+    expect(document.querySelectorAll("h1")).toHaveLength(0);
     expect(document.querySelectorAll("[data-setting]")).toHaveLength(0);
     expect(legacyClasses()).toEqual([]);
   });
 
+  it("TestThePhoneListSaysTheFootnote", () => {
+    mountList();
+    expect(document.querySelector("[data-footnote]")?.textContent).toBe(
+      "Theme and appearance are kept in this browser. Everything else is kept on the hub.",
+    );
+  });
+
+  it("TestThePhoneListLeadsWithTheHubCard", async () => {
+    mountList({ "/api/whoami": { kind: "device", device: "Pixel 9" } });
+    await waitFor(() => expect(document.querySelector("[data-hub-name]")?.textContent).toBe("studio"));
+    const card = document.querySelector("a[data-hub-card]");
+    expect(card?.getAttribute("href")).toBe("#/settings/hub");
+    expect(card?.querySelector("[data-hub-initial]")?.textContent).toBe("S");
+    expect(document.querySelector("[data-hub-subtitle]")?.textContent).toBe(
+      "huddle 0.4.0 · signed in on Pixel 9",
+    );
+    expect(card?.textContent).toContain("Healthy");
+  });
+
+  it("TestARefusedReadLeavesTheRowEmptyAndTheCardQuiet", async () => {
+    const calls = mountList({}, ["/api/devices", "/api/insights/settings", "/api/settings", "/health"]);
+    await waitFor(() => expect(calls.length).toBeGreaterThanOrEqual(4));
+    await flush();
+    const values = [...document.querySelectorAll<HTMLElement>("[data-value]")];
+    expect(values.map((v) => v.textContent)).toEqual(["Huddle · System", "", "", "", "", ""]);
+    expect(document.querySelector("[data-hub-subtitle]")?.textContent).toBe("");
+    expect(document.querySelector("a[data-hub-card]")?.textContent).not.toContain("Healthy");
+  });
+
   it("TestAPhoneGroupPageDrawsItsMembersWithoutTheList", () => {
     stubMedia(PHONE);
-    mountSection(<SettingsTab section="devices" />, []);
+    mountSection(<SettingsTab section="security" />, []);
     expect(document.querySelector('[aria-label="Settings sections"]')).toBeNull();
     expect(
       [...document.querySelectorAll<HTMLElement>("[data-setting]")].map((el) => el.dataset.setting),
@@ -321,8 +397,11 @@ describe("the phone's grouped list", () => {
     const back = screen.getByRole("link", { name: "Back to Settings" });
     expect(back.getAttribute("href")).toBe("#/settings");
     expect(back.className).toContain("min-h-[var(--ui-tap)]");
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Hub and Radar");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Hub");
     expect(legacyClasses()).toEqual([]);
+    document.body.textContent = "";
+    renderHuddle(<SettingsHead section="security" />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Security");
   });
 });
 
@@ -337,8 +416,25 @@ describe("the wide layouts' sidebar", () => {
       mountSection(<SettingsTab section="hub" />, [{ status: 200, body: { name: "studio" } }]);
       await waitFor(() => expect(screen.getByText("studio")).toBeDefined());
       const links = [...document.querySelectorAll<HTMLAnchorElement>('[aria-label="Settings sections"] a')];
-      expect(links.map((a) => a.getAttribute("aria-current"))).toEqual([null, null, null, "page"]);
+      expect(links.map((a) => a.getAttribute("aria-current"))).toEqual([
+        null,
+        null,
+        null,
+        null,
+        null,
+        "page",
+      ]);
       expect(links.every((a) => a.className.includes("min-h-[var(--ui-tap)]"))).toBe(true);
+      // each sidebar entry names its group beside its icon
+      expect(links.map((a) => a.textContent)).toEqual([
+        "Appearance",
+        "Notifications",
+        "Security",
+        "Spending",
+        "Tips",
+        "Hub",
+      ]);
+      expect(links.every((a) => a.querySelector("svg"))).toBe(true);
       const nav = document.querySelector('[aria-label="Settings sections"]');
       expect(nav?.nextElementSibling?.querySelector("[data-settings]")).not.toBeNull();
       expect(legacyClasses()).toEqual([]);
@@ -356,26 +452,37 @@ describe("the wide layouts' sidebar", () => {
   });
 });
 
-describe("the four groups", () => {
+describe("the six groups", () => {
   /** Every member a group page draws, in page order. */
   const members = (): string[] =>
     [...document.querySelectorAll<HTMLElement>("[data-setting]")].map((el) => el.dataset.setting ?? "");
 
-  it("TestTheRowNamesTheFourGroupsInOrder", () => {
+  it("TestTheRowNamesTheSixGroupsInOrder", () => {
     stubMedia(DESK);
     mountSection(<SettingsTab section="appearance" />, []);
     const links = [...document.querySelectorAll<HTMLAnchorElement>('[aria-label="Settings sections"] a')];
     expect(links.map((a) => a.textContent)).toEqual([
       "Appearance",
       "Notifications",
-      "Devices and sign-in",
-      "Hub and Radar",
+      "Security",
+      "Spending",
+      "Tips",
+      "Hub",
     ]);
-    expect(links.map((a) => a.dataset.section)).toEqual(["appearance", "notifications", "devices", "hub"]);
+    expect(links.map((a) => a.dataset.section)).toEqual([
+      "appearance",
+      "notifications",
+      "security",
+      "spending",
+      "tips",
+      "hub",
+    ]);
     expect(links.map((a) => a.getAttribute("href"))).toEqual([
       "#/settings/appearance",
       "#/settings/notifications",
-      "#/settings/devices",
+      "#/settings/security",
+      "#/settings/spending",
+      "#/settings/tips",
       "#/settings/hub",
     ]);
   });
@@ -384,8 +491,10 @@ describe("the four groups", () => {
     const groups: Array<[SettingsSection, string[]]> = [
       ["appearance", ["appearance"]],
       ["notifications", ["notifications"]],
-      ["devices", ["devices", "phone", "signin"]],
-      ["hub", ["hub", "zone", "radar", "insights", "selfcheck"]],
+      ["security", ["devices", "phone", "signin"]],
+      ["spending", ["radar"]],
+      ["tips", ["insights"]],
+      ["hub", ["hub", "zone", "selfcheck"]],
     ];
     for (const [group, want] of groups) {
       mountSection(<SettingsTab section={group} />, []);
@@ -396,13 +505,16 @@ describe("the four groups", () => {
 
   it("TestAMemberAddressOpensTheGroupThatHoldsIt", () => {
     expect(settingsSectionOf(undefined)).toBe("appearance");
+    expect(settingsSectionOf("appearance")).toBe("appearance");
+    expect(settingsSectionOf("notifications")).toBe("notifications");
+    expect(settingsSectionOf("devices")).toBe("security");
+    expect(settingsSectionOf("phone")).toBe("security");
+    expect(settingsSectionOf("signin")).toBe("security");
+    expect(settingsSectionOf("radar")).toBe("spending");
+    expect(settingsSectionOf("insights")).toBe("tips");
     expect(settingsSectionOf("hub")).toBe("hub");
     expect(settingsSectionOf("zone")).toBe("hub");
-    expect(settingsSectionOf("radar")).toBe("hub");
-    expect(settingsSectionOf("insights")).toBe("hub");
     expect(settingsSectionOf("selfcheck")).toBe("hub");
-    expect(settingsSectionOf("phone")).toBe("devices");
-    expect(settingsSectionOf("signin")).toBe("devices");
     // Linked channels live under each channel's own Settings view
     expect(settingsSectionOf("channels")).toBe("appearance");
     expect(settingsSectionOf("somewhere-else")).toBe("appearance");
@@ -431,7 +543,7 @@ describe("the self-check", () => {
     document.body.textContent = "";
   });
 
-  it("TestHubAndRadarSaysTheSelfCheckAndBothSidesAsText", async () => {
+  it("TestTheHubGroupSaysTheSelfCheckAndBothSidesAsText", async () => {
     const counts = { requests: 3, input: 2400, output: 600, cacheRead: 5000, cacheWrite: 2000 };
     const answer = {
       day: "2026-10-25",

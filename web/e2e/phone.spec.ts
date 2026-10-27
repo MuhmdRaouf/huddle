@@ -119,7 +119,7 @@ test("Settings › Phone offers Add a phone with the QR the hub serves", async (
   await openTab(page, "Settings");
   await page
     .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("link", { name: "Devices and sign-in" })
+    .getByRole("link", { name: "Security" })
     .click();
   await expect(page.getByRole("heading", { name: "Phone" })).toBeVisible();
 

@@ -403,7 +403,14 @@ describe("routes and panes", () => {
     nav("#/settings");
     mountApp();
     const rows = [...document.querySelectorAll('[aria-label="Settings sections"] a')] as HTMLAnchorElement[];
-    expect(rows.map((a) => a.dataset.section)).toEqual(["appearance", "notifications", "devices", "hub"]);
+    expect(rows.map((a) => a.dataset.section)).toEqual([
+      "appearance",
+      "notifications",
+      "security",
+      "spending",
+      "tips",
+      "hub",
+    ]);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Settings");
     nav("#/settings/radar");
     mountApp();
@@ -412,8 +419,8 @@ describe("routes and panes", () => {
     const backs = screen.getAllByRole("link", { name: "Back to Settings" });
     expect(backs.map((a) => a.getAttribute("href"))).toEqual(["#/settings", "#/settings"]);
     expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual([
-      "Hub and Radar",
-      "Hub and Radar",
+      "Spending",
+      "Spending",
     ]);
   });
 
@@ -430,7 +437,7 @@ describe("routes and panes", () => {
     mountApp();
     expect(
       document
-        .querySelector('[aria-label="Settings sections"] a[data-section="hub"]')
+        .querySelector('[aria-label="Settings sections"] a[data-section="spending"]')
         ?.getAttribute("aria-current"),
     ).toBe("page");
   });
