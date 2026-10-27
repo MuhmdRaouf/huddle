@@ -51,6 +51,7 @@ Run everything from the repo root: `go run ./scripts/tmpguard -count=1 ./...`, `
 | A prompt Claude Code injects names no session | `internal/huddle/hooks/report_test.go:TestTheReportHookLetsNoInjectedPromptNameTheSession` | A `UserPromptSubmit` whose prompt is a task notification, a system reminder or `!` shell input posts a report with no title and no task; a prompt the person typed still posts its words whole as the title and its first line as the task. |
 | Migration 18 clears the wrapper text stored before it | `internal/huddle/hub/sessions_test.go:TestMigration18ClearsWrapperTitlesAndTasks` | A schema-17 file holding sessions titled with a system reminder, a bash-input wrapper and a leading-whitespace task notification opens at schema 18 with those titles and the wrapper task cleared, `fix the bug` and `ship it` untouched, and a real report fills a cleared title. |
 | Now list | `web/e2e/now.spec.ts` "the sign-in link opens the hub and the Now list shows the seeded session"; `cmd/huddle/hub_e2e_test.go:TestE2EFreshInstallHubSatellitePWA/now_list` | The list names the live session under its machine, and one waiting on a permission sits in Needs you with its state word. |
+| A permission ask answered from the hub | `cmd/huddle/hub_e2e_test.go:TestE2EFreshInstallHubSatellitePWA/permission_allow` | The real binary's permit hook, run as the plugin's hooks.json runs it, posts the ask to the needs-you list and holds its poll; a decide posted to the hub reaches the waiting hook, and the hook prints the allow within its budget. |
 | Radar requests count | `cmd/huddle/fulltest_e2e_test.go:TestFullScenarioOnALocalDevName/radar_numbers`; `web/e2e/radar.spec.ts` "the requests table lists the seeded rows and the inspector opens one" | Radar answers the fixture's exact request count for today; the table lists each seeded row and the inspector shows one request's numbers. |
 | Radar input, output, cache tokens and cost | `cmd/huddle/fulltest_e2e_test.go:TestFullScenarioOnALocalDevName/radar_numbers`; `web/e2e/radar.spec.ts` "the overview's Day cards show the seeded totals" | The four token sums match the fixtures exactly, and the day's cost and spend match to the cent. |
 | Usage and cost charts | `web/e2e/usage.spec.ts` "the usage view shows the seeded totals and splits the picked day"; `web/e2e/fulltest.spec.ts` "one signed-in walk over TLS covers every tab with no console error" | The tiles carry the seeded token totals, the daily chart draws one line per model with its tooltip, and the Costs series carries the seeded window. |
@@ -109,6 +110,13 @@ The gates behind the flows:
   `TestE2ERouterEarly502IsWholeAndTheNextRequestFinishes` proves the router hands the 502 over whole and
   the next request streams to its end; a real `claude` turn against an upstream that fails once is the
   owner's check.
+- The terminal permission dialog against a real Claude Code:
+  `TestE2EFreshInstallHubSatellitePWA/permission_allow` proves the hook's half — the ask reaches the hub,
+  a decide reaches the waiting hook, the allow prints. That Claude Code keeps the terminal dialog live
+  while the hook polls, and applies the first answer, needs a person: in a real session, trigger a
+  permission prompt and answer it from the phone, and the terminal dialog closes with that answer; then
+  trigger another and answer it in the terminal first, and the phone's item withdraws. It is by hand
+  because it needs a real Claude Code dialog.
 
 ## Live check
 
