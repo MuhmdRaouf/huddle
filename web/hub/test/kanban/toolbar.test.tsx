@@ -117,7 +117,7 @@ describe("the toolbar row", () => {
   it("is one compact row: the board picker, search, one menu button per kind, the hide-done toggle", () => {
     const { container } = render(<Row cards={board()} initial={EMPTY_FILTERS} />);
     expect(container.querySelectorAll(".chips")).toHaveLength(0);
-    expect(kindButtons(container)).toEqual(["Domain", "Epic", "Holder", "Type", "Priority"]);
+    expect(kindButtons(container)).toEqual(["Domain", "Feature", "Holder", "Type", "Priority"]);
     expect(screen.getByRole("searchbox", { name: "Search" })).toBeTruthy();
     const picker = screen.getByRole("button", { name: "Board" });
     expect(picker.textContent).toContain("alpha");
@@ -134,7 +134,7 @@ describe("the toolbar row", () => {
   it("offers Domain only when some card carries tags", () => {
     const untagged = board().map((card) => ({ ...card, tags: [] }));
     const { container } = render(<Row cards={untagged} initial={EMPTY_FILTERS} />);
-    expect(kindButtons(container)).toEqual(["Epic", "Holder", "Type", "Priority"]);
+    expect(kindButtons(container)).toEqual(["Feature", "Holder", "Type", "Priority"]);
   });
 
   it("carries the hide-done toggle as a switch with its label beside it", async () => {
@@ -330,7 +330,7 @@ describe("a kind's menu", () => {
     );
     await userEvent.click(kindButton("cluster", container));
     // only glm-A's cards count: alpha on C-1 and C-2, beta nowhere
-    expect(optionsOf(screen.getByRole("menu", { name: "Epic" })).map((o) => o.textContent)).toEqual([
+    expect(optionsOf(screen.getByRole("menu", { name: "Feature" })).map((o) => o.textContent)).toEqual([
       "alpha 2",
     ]);
   });
@@ -580,7 +580,7 @@ describe("Feature: the filters fold behind one button on a phone", () => {
 
     await userEvent.click(filters);
     expect(filters.getAttribute("aria-expanded")).toBe("true");
-    expect(kindButtons(container)).toEqual(["Domain", "Epic", "Holder: 2", "Type", "Priority"]);
+    expect(kindButtons(container)).toEqual(["Domain", "Feature", "Holder: 2", "Type", "Priority"]);
     expect(screen.getByRole("checkbox", { name: /Hide done/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Expand cards" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Remove Holder glm-A" })).toBeTruthy();
@@ -599,7 +599,7 @@ describe("Feature: the filters fold behind one button on a phone", () => {
     stubMatchMedia(() => false);
     const { container } = render(<Row cards={board()} initial={EMPTY_FILTERS} />);
     expect(screen.queryByRole("button", { name: /^Filters/ })).toBeNull();
-    expect(kindButtons(container)).toEqual(["Domain", "Epic", "Holder", "Type", "Priority"]);
+    expect(kindButtons(container)).toEqual(["Domain", "Feature", "Holder", "Type", "Priority"]);
     expect(screen.queryByRole("button", { name: /^Group:/ })).toBeNull();
   });
 

@@ -14,11 +14,11 @@ function comfortable(children: Parameters<typeof CardView>[0]) {
 }
 
 describe("CardView", () => {
-  it("shows the epic beside the id and the title, the summary at comfortable density", () => {
+  it("shows the feature beside the id and the title, the summary at comfortable density", () => {
     const { container } = render(<CardView card={cardOf("KBN-UI")} flash={0} onOpen={() => undefined} />);
     const card = container.querySelector<HTMLElement>("article.card");
     expect(card?.dataset.id).toBe("KBN-UI");
-    expect(card?.querySelector("header .epic")?.textContent).toBe("kanban ui");
+    expect(card?.querySelector("header .feature")?.textContent).toBe("kanban ui");
     expect(card?.querySelector("header .cid")?.textContent).toBe("KBN-UI");
     expect(card?.querySelector("h3")?.textContent).toBe(TITLE);
     // compact carries no summary

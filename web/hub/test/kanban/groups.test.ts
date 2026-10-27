@@ -76,9 +76,9 @@ describe("Feature: groupCards", () => {
     ]);
   });
 
-  it("Scenario: by cluster, a card with no cluster groups under No cluster", () => {
+  it("Scenario: by cluster, a card with no cluster groups under No feature", () => {
     expect(shape("cluster")).toEqual([
-      ["", "No cluster", ["B"]],
+      ["", "No feature", ["B"]],
       ["hub", "hub", ["C"]],
       ["web", "web", ["A", "D"]],
     ]);

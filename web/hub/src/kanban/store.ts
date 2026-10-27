@@ -188,14 +188,14 @@ export function useBacklogView(board: string): [BacklogView, (view: BacklogView)
 export type CardGroup = { key: string; label: string; cards: Card[] };
 
 /** The cards grouped by priority or cluster, the groups in key order and each keeping the cards'
- *  order; a card with no value groups under "No priority" or "No cluster". */
+ *  order; a card with no value groups under "No priority" or "No feature". */
 export function groupCards(cards: Card[], grouping: Grouping): CardGroup[] {
   const byKey = new Map<string, Card[]>();
   for (const card of cards) {
     const key = grouping === "priority" ? card.priority : card.cluster;
     byKey.set(key, [...(byKey.get(key) ?? []), card]);
   }
-  const none = grouping === "priority" ? "No priority" : "No cluster";
+  const none = grouping === "priority" ? "No priority" : "No feature";
   return [...byKey.entries()]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([key, members]) => ({ key, label: key === "" ? none : key, cards: members }));

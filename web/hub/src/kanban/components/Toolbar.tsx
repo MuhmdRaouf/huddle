@@ -38,10 +38,10 @@ export type ToolbarProps = {
   onGrouping?: ((grouping: Grouping) => void) | undefined;
 };
 
-/** The row's kinds in their standing order: Domain is the tag kind, Epic the cluster. */
+/** The row's kinds in their standing order: Domain is the tag kind, Feature the cluster. */
 const KINDS: readonly { kind: FilterKind; label: string }[] = [
   { kind: "tag", label: "Domain" },
-  { kind: "cluster", label: "Epic" },
+  { kind: "cluster", label: "Feature" },
   { kind: "holder", label: "Holder" },
   { kind: "type", label: "Type" },
   { kind: "priority", label: "Priority" },
@@ -157,7 +157,7 @@ function SharedNote({ value }: { value: string }) {
 const DENSITY_ACTION: Record<Density, string> = { compact: "Expand cards", comfortable: "Compact cards" };
 
 /** The grouping toggle's word for each grouping. */
-const GROUPING_WORD: Record<Grouping, string> = { priority: "Priority", cluster: "Cluster" };
+const GROUPING_WORD: Record<Grouping, string> = { priority: "Priority", cluster: "Feature" };
 
 /** The filter controls: one menu per kind, the shared notes, the hide-done switch, the density
  *  button and, when handed one, the backlog's grouping toggle. The desktop shows them in the

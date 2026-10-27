@@ -90,11 +90,11 @@ describe("Feature: what a shared board hides", () => {
       sharedCluster: "hr",
     });
     // Then the cluster prefix is not on the card
-    expect(container.querySelector(".epic")).toBeNull();
+    expect(container.querySelector(".feature")).toBeNull();
     unmount();
     // Given the same card on a board whose clusters differ
     const mixed = open({ card: makeCard({ cluster: "hr" }), flash: 0, onOpen: () => undefined });
     // Then the cluster prefix shows
-    expect(mixed.container.querySelector(".epic")?.textContent).toBe("hr");
+    expect(mixed.container.querySelector(".feature")?.textContent).toBe("hr");
   });
 });

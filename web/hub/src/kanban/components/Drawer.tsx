@@ -107,7 +107,7 @@ export type Row = {
 
 /** The known fields in their order, under the labels the panel shows. */
 const SHOWN_ROWS: readonly { key: string; label: string }[] = [
-  { key: "cluster", label: "Epic" },
+  { key: "cluster", label: "Feature" },
   { key: "repos", label: "Repos" },
   { key: "tags", label: "Tags" },
   { key: "created", label: "Created" },

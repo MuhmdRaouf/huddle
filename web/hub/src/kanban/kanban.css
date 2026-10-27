@@ -617,7 +617,7 @@
   padding-right: 2px;
 }
 
-.kanban-tab .epic {
+.kanban-tab .feature {
   overflow: hidden;
   color: var(--ui-muted);
   font-size: var(--ui-text-xs);

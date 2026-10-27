@@ -704,7 +704,7 @@ test.describe("the board on a phone", () => {
       const box = (await toggle.boundingBox()) ?? expect.fail("no toggle");
       expect(box.height).toBeGreaterThanOrEqual(43.5);
       await toggle.tap();
-      await expect(page.getByRole("button", { name: "Group: Cluster" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Group: Feature" })).toBeVisible();
       await expect(backlog.getByRole("button", { name: "e2e 10" })).toHaveAttribute("aria-expanded", "false");
       await expect(backlogCards).toHaveCount(0);
     });
@@ -719,7 +719,7 @@ test.describe("the board on a phone", () => {
       await page.reload();
       await expect(backlog.getByRole("button", { name: "e2e 10" })).toHaveAttribute("aria-expanded", "false");
       await page.getByRole("button", { name: /^Filters/ }).tap();
-      await expect(page.getByRole("button", { name: "Group: Cluster" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Group: Feature" })).toBeVisible();
     });
   });
 

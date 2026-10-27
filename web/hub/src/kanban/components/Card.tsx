@@ -100,7 +100,7 @@ function CardViewBase({
         onClick={(event) => onOpen(card.id, event.currentTarget)}
       />
       <header class="card-head">
-        {cluster !== "" && <span class="epic">{cluster}</span>}
+        {cluster !== "" && <span class="feature">{cluster}</span>}
         <span class="cid">{card.id}</span>
         {card.holder !== "" && (
           <span class="holder" title={card.holder}>
