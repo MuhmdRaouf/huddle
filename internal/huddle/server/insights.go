@@ -21,6 +21,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/insights"
@@ -272,14 +273,18 @@ func (s *server) writeSpinnerTips(tips []insights.SpinnerTip) {
 }
 
 // insightsSettingsRoute answers GET and PUT /api/insights/settings: the owner reads the two
-// switches or turns either on. A PUT names either or both fields as booleans, the change merges
-// over the file's values, and the file keeps every key the switches do not own.
-func (s *server) insightsSettingsRoute(w http.ResponseWriter, r *http.Request) error {
+// switches or turns either on. The read takes any credential; the PUT is the owner's alone. A
+// PUT names either or both fields as booleans, the change merges over the file's values, and
+// the file keeps every key the switches do not own.
+func (s *server) insightsSettingsRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
 	path := insights.SettingsFile(s.o.Home)
 	if r.Method == http.MethodGet {
 		got := insights.ReadSettings(path)
 		s.writeJSON(w, 200, insightsSettingsAnswer{TipsForMe: got.TipsForMe, TipsToSessions: got.TipsToSessions}, nil)
 		return nil
+	}
+	if !(me.Root || me.Browser != "") {
+		return &channel.HuddleError{Status: 403, Msg: "only the owner changes Insights"}
 	}
 	body, err := s.body(r)
 	if err != nil {
@@ -319,7 +324,10 @@ type insightsMuteAnswer struct {
 
 // insightsMuteRoute answers POST /api/insights/mute: the owner mutes one rule's tips for 30
 // days. The body names the rule; the answer names every rule muted now, sorted.
-func (s *server) insightsMuteRoute(w http.ResponseWriter, r *http.Request) error {
+func (s *server) insightsMuteRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
+	if !(me.Root || me.Browser != "") {
+		return &channel.HuddleError{Status: 403, Msg: "only the owner changes Insights"}
+	}
 	body, err := s.body(r)
 	if err != nil {
 		return err
@@ -344,7 +352,10 @@ func (s *server) insightsMuteRoute(w http.ResponseWriter, r *http.Request) error
 
 // insightsForgetRoute answers POST /api/insights/forget: it deletes insights.json, the only
 // learning Insights keeps, and the switches answer their defaults again.
-func (s *server) insightsForgetRoute(w http.ResponseWriter, r *http.Request) error {
+func (s *server) insightsForgetRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
+	if !(me.Root || me.Browser != "") {
+		return &channel.HuddleError{Status: 403, Msg: "only the owner changes Insights"}
+	}
 	if err := insights.Forget(insights.SettingsFile(s.o.Home)); err != nil {
 		return err
 	}

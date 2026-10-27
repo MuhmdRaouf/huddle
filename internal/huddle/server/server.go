@@ -1335,11 +1335,11 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 	case credentialed && path == "/api/insights" && r.Method == http.MethodGet:
 		return s.insightsRoute(w, r)
 	case credentialed && path == "/api/insights/settings" && (r.Method == http.MethodGet || r.Method == http.MethodPut):
-		return s.insightsSettingsRoute(w, r)
+		return s.insightsSettingsRoute(w, r, me)
 	case credentialed && path == "/api/insights/mute" && r.Method == http.MethodPost:
-		return s.insightsMuteRoute(w, r)
+		return s.insightsMuteRoute(w, r, me)
 	case credentialed && path == "/api/insights/forget" && r.Method == http.MethodPost:
-		return s.insightsForgetRoute(w, r)
+		return s.insightsForgetRoute(w, r, me)
 	case credentialed && permitItemPath.MatchString(path):
 		return s.permitItemRoute(w, r, path, me)
 	case credentialed && needsItemPath.MatchString(path) && r.Method == http.MethodPost:
