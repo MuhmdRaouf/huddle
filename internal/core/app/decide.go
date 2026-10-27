@@ -11,11 +11,14 @@ import (
 // The review decisions — accept (with landing), return with feedback, discard and stop.
 
 // inReview is the states a review decision needs; undecided the ones discard may still take, and
-// stoppable the ones a stop request can reach.
-var inReview = []domain.JobState{domain.JobStateAwaitingReview}
+// stoppable the ones a stop request can reach. Interrupted decides with awaiting_review — accept,
+// return and discard are the owner's moves on it too — but never with stop: Stop answers that the
+// job is not running, and the sweep's move is the only way into interrupted.
+var inReview = []domain.JobState{domain.JobStateAwaitingReview, domain.JobStateInterrupted}
 
 var undecided = []domain.JobState{
 	domain.JobStateQueued, domain.JobStateRunning, domain.JobStateVerifying, domain.JobStateAwaitingReview,
+	domain.JobStateInterrupted,
 }
 
 var stoppable = []domain.JobState{domain.JobStateQueued, domain.JobStateRunning, domain.JobStateVerifying}

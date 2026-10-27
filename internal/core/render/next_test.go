@@ -122,6 +122,41 @@ func TestNextStepOutsideReviewPointsAtTheBoard(t *testing.T) {
 	}
 }
 
+// An interrupted job says the driver stopped and nothing reran, then names every way forward.
+func TestNextStepInterruptedNamesTheWaysForward(t *testing.T) {
+	job := testkit.AJob(func(job *domain.Job) {
+		job.ID = "261006-next01"
+		job.State = domain.JobStateInterrupted
+		job.Attempts = []domain.Attempt{testkit.AnAttempt()}
+	})
+	text := NextStep(testkit.ReferenceProvider, job)
+	want := "the driver stopped before the job finished; nothing reran. " +
+		"/zai:accept 261006-next01 --no-commit keeps the worktree's changes, " +
+		"/zai:return 261006-next01 \"<feedback>\" runs the brief again, " +
+		"/zai:discard 261006-next01 throws it away, or " +
+		"/zai:run <brief> --flash --bg starts it fresh."
+	if text != want {
+		t.Errorf("\ngot  %q\nwant %q", text, want)
+	}
+}
+
+// The board shows an interrupted job's state plainly, never as a stale run.
+func TestBoardInterruptedRendersPlainly(t *testing.T) {
+	job := testkit.AJob(func(job *domain.Job) {
+		job.ID = "261006-next02"
+		job.State = domain.JobStateInterrupted
+		job.Attempts = []domain.Attempt{testkit.AnAttempt()}
+	})
+	board := Board(testkit.ReferenceProvider,
+		app.JobRows(testkit.ReferenceProvider, []app.BoardRow{{Job: job}}), renderNow)
+	if !regexp.MustCompile(`(?m)^job +261006-next02 +\S+ +interrupted(?: |$)`).MatchString(board) {
+		t.Errorf("no interrupted job line in:\n%s", board)
+	}
+	if strings.Contains(board, "(stale)") {
+		t.Errorf("an interrupted row reads as stale:\n%s", board)
+	}
+}
+
 // No CLI name anywhere: every step names a slash command.
 func TestNextStepNamesSlashCommandsNotCLI(t *testing.T) {
 	cliName := regexp.MustCompile(`(?m)(^|\s)zai (accept|return|discard|review)`)

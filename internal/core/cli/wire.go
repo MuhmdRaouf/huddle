@@ -91,6 +91,10 @@ func Wire(ctx context.Context, options WireOptions) app.Deps {
 		// they measure with stays real, only what is printed is pinned.
 		gates = zeroedGates{gates}
 	}
+	// One process handling answers both stopping drivers and reading when they began: the
+	// dead-driver sweep tells a reused pid from the lock's holder through StartTime.
+	control, start := adapters.CreateProcessHandling(options.Executable, provider.Name,
+		func(id string) string { return store.Paths(id).DriverLog })
 	return app.Deps{
 		Worker: adapters.NewClaudeHeadlessWorker(adapters.ClaudeHeadlessOptions{
 			Provider:    resolved,
@@ -115,9 +119,9 @@ func Wire(ctx context.Context, options WireOptions) app.Deps {
 		Limiter: limiter,
 		Clock:   clock,
 		Ids:     ids,
-		Process: adapters.CreateProcessControl(options.Executable, provider.Name,
-			func(id string) string { return store.Paths(id).DriverLog }),
-		Out: options.Out,
+		Process: control,
+		Start:   start,
+		Out:     options.Out,
 		Host: app.HostInfo{
 			StateRoot: root,
 			WorkerBin: bin,

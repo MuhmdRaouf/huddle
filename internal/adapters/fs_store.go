@@ -29,7 +29,8 @@ var safeID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 // jobStates is the state half of the stored-job shape check.
 var jobStates = []domain.JobState{
 	domain.JobStateQueued, domain.JobStateRunning, domain.JobStateVerifying,
-	domain.JobStateAwaitingReview, domain.JobStateAccepted, domain.JobStateDiscarded,
+	domain.JobStateInterrupted, domain.JobStateAwaitingReview, domain.JobStateAccepted,
+	domain.JobStateDiscarded,
 }
 
 // storedJobShape is the shallow shape check of a stored job: enough to tell our file from a

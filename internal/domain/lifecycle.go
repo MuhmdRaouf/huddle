@@ -12,6 +12,8 @@ const (
 	EventAccepted     JobEventType = "accepted"
 	EventDiscarded    JobEventType = "discarded"
 	EventStopped      JobEventType = "stopped"
+	// Interrupted is the dead-driver sweep's move: never a driver's own event.
+	EventInterrupted JobEventType = "interrupted"
 )
 
 // JobEvent is what moves a job between states.
@@ -44,17 +46,27 @@ var transitions = map[JobState]map[JobEventType]JobState{
 		EventSlotAcquired: JobStateRunning,
 		EventDiscarded:    JobStateDiscarded,
 		EventStopped:      JobStateAwaitingReview,
+		EventInterrupted:  JobStateInterrupted,
 	},
 	JobStateRunning: {
 		EventWorkerExited: JobStateVerifying,
 		EventDiscarded:    JobStateDiscarded,
 		EventStopped:      JobStateAwaitingReview,
+		EventInterrupted:  JobStateInterrupted,
 	},
 	JobStateVerifying: {
-		EventVerified:  JobStateAwaitingReview,
-		EventRetry:     JobStateRunning,
+		EventVerified:    JobStateAwaitingReview,
+		EventRetry:       JobStateRunning,
+		EventDiscarded:   JobStateDiscarded,
+		EventStopped:     JobStateAwaitingReview,
+		EventInterrupted: JobStateInterrupted,
+	},
+	// Interrupted decides like awaiting_review, minus stopped and retried: only a return runs the
+	// job again.
+	JobStateInterrupted: {
+		EventReturned:  JobStateQueued,
+		EventAccepted:  JobStateAccepted,
 		EventDiscarded: JobStateDiscarded,
-		EventStopped:   JobStateAwaitingReview,
 	},
 	JobStateAwaitingReview: {
 		EventReturned:  JobStateQueued,

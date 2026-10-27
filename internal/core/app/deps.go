@@ -104,8 +104,11 @@ type Deps struct {
 	Clock     ports.Clock
 	Ids       ports.Ids
 	Process   ports.ProcessControl
-	Out       ports.Output
-	Host      HostInfo
+	// The same process handling as Process, seen only for start times: the dead-driver sweep
+	// tells a reused pid from the lock's holder by it.
+	Start ports.ProcessStart
+	Out   ports.Output
+	Host  HostInfo
 	// This plugin's CLI bundle: the detached driver re-runs it, and the router copy and the agents
 	// sit beside it.
 	BundlePath string

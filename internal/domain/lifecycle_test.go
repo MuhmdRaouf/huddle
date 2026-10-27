@@ -9,6 +9,7 @@ var jobStates = []JobState{
 	JobStateQueued,
 	JobStateRunning,
 	JobStateVerifying,
+	JobStateInterrupted,
 	JobStateAwaitingReview,
 	JobStateAccepted,
 	JobStateDiscarded,
@@ -24,6 +25,7 @@ var jobEvents = []JobEvent{
 	{Type: EventAccepted},
 	{Type: EventDiscarded},
 	{Type: EventStopped},
+	{Type: EventInterrupted},
 }
 
 // legalMoves is written out independently of the implementation's table.
@@ -45,6 +47,12 @@ var legalMoves = []struct {
 	{JobStateQueued, EventStopped, JobStateAwaitingReview},
 	{JobStateRunning, EventStopped, JobStateAwaitingReview},
 	{JobStateVerifying, EventStopped, JobStateAwaitingReview},
+	{JobStateQueued, EventInterrupted, JobStateInterrupted},
+	{JobStateRunning, EventInterrupted, JobStateInterrupted},
+	{JobStateVerifying, EventInterrupted, JobStateInterrupted},
+	{JobStateInterrupted, EventReturned, JobStateQueued},
+	{JobStateInterrupted, EventAccepted, JobStateAccepted},
+	{JobStateInterrupted, EventDiscarded, JobStateDiscarded},
 }
 
 func isLegalMove(from JobState, event JobEvent) bool {
@@ -207,7 +215,7 @@ func TestNextState(t *testing.T) {
 				}
 			}
 		}
-		for _, state := range []JobState{JobStateQueued, JobStateRunning, JobStateVerifying, JobStateAwaitingReview} {
+		for _, state := range []JobState{JobStateQueued, JobStateRunning, JobStateVerifying, JobStateInterrupted, JobStateAwaitingReview} {
 			if IsTerminal(state) {
 				t.Errorf("IsTerminal(%s) = true, want false", state)
 			}

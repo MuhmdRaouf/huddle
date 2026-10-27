@@ -443,7 +443,7 @@ func TestAccept(t *testing.T) {
 		_, err := Accept(ctx, deps, decideID, decideCommit)
 		wantAppErr(t, err, &AppError{
 			Kind: AppErrorWrongState, ID: decideID, State: domain.JobStateRunning,
-			Allowed: []domain.JobState{domain.JobStateAwaitingReview},
+			Allowed: []domain.JobState{domain.JobStateAwaitingReview, domain.JobStateInterrupted},
 		})
 
 		_, err = Accept(ctx, deps, "nope", decideCommit)
@@ -532,7 +532,7 @@ func TestReturnForFix(t *testing.T) {
 		_, err := ReturnForFix(ctx, deps, decideID, "more")
 		wantAppErr(t, err, &AppError{
 			Kind: AppErrorWrongState, ID: decideID, State: domain.JobStateAccepted,
-			Allowed: []domain.JobState{domain.JobStateAwaitingReview},
+			Allowed: []domain.JobState{domain.JobStateAwaitingReview, domain.JobStateInterrupted},
 		})
 	})
 }
@@ -663,6 +663,7 @@ func TestDiscardAndStop(t *testing.T) {
 			Kind: AppErrorWrongState, ID: decideID, State: domain.JobStateDiscarded,
 			Allowed: []domain.JobState{
 				domain.JobStateQueued, domain.JobStateRunning, domain.JobStateVerifying, domain.JobStateAwaitingReview,
+				domain.JobStateInterrupted,
 			},
 		})
 	})
@@ -854,7 +855,7 @@ func TestDecideFailurePaths(t *testing.T) {
 
 		wantAppErr(t, err, &AppError{
 			Kind: AppErrorWrongState, ID: decideID, State: domain.JobStateAccepted,
-			Allowed: []domain.JobState{domain.JobStateAwaitingReview},
+			Allowed: []domain.JobState{domain.JobStateAwaitingReview, domain.JobStateInterrupted},
 		})
 	})
 

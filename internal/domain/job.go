@@ -4,15 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // JobState is where a job is in its lifecycle.
 type JobState string
 
 const (
-	JobStateQueued         JobState = "queued"
-	JobStateRunning        JobState = "running"
-	JobStateVerifying      JobState = "verifying"
+	JobStateQueued    JobState = "queued"
+	JobStateRunning   JobState = "running"
+	JobStateVerifying JobState = "verifying"
+	// Interrupted says the driver died before the job finished and nothing reran: the sweep that
+	// found the dead driver moves the job here, and only the owner's return runs it again.
+	JobStateInterrupted    JobState = "interrupted"
 	JobStateAwaitingReview JobState = "awaiting_review"
 	JobStateAccepted       JobState = "accepted"
 	JobStateDiscarded      JobState = "discarded"
@@ -302,4 +306,39 @@ func StoredOrigin(value any) *Origin {
 		return nil
 	}
 	return JobOrigin(object["sessionId"])
+}
+
+// DriverLock is what a driver's lock file records: the holder's pid and, when the platform could
+// answer it, the process's start time — so a pid the OS handed to a new process is told from the
+// driver that wrote the lock.
+type DriverLock struct {
+	Pid        int64
+	Start      int64 // unix milliseconds, meaningful only when StartKnown
+	StartKnown bool
+}
+
+// ParseDriverLock reads a lock file's contents: "pid", or "pid start" — both pids under
+// ParsePid's rules, at most two fields. An old pid-only lock parses with no start time.
+func ParseDriverLock(text string) (DriverLock, bool) {
+	fields := strings.Fields(text)
+	switch len(fields) {
+	case 1:
+		pid, ok := ParsePid(fields[0])
+		if !ok {
+			return DriverLock{}, false
+		}
+		return DriverLock{Pid: pid}, true
+	case 2:
+		pid, ok := ParsePid(fields[0])
+		if !ok {
+			return DriverLock{}, false
+		}
+		start, ok := ParsePid(fields[1])
+		if !ok {
+			return DriverLock{}, false
+		}
+		return DriverLock{Pid: pid, Start: start, StartKnown: true}, true
+	default:
+		return DriverLock{}, false
+	}
 }

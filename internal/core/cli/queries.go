@@ -80,6 +80,7 @@ func boardScope(ctx context.Context, call Invocation) app.Scope {
 // printBoard prints the board once.
 func printBoard(ctx context.Context, call Invocation) ExitCode {
 	deps := call.Deps()
+	app.InterruptDead(ctx, deps)
 	rows := app.ActivityBoard(ctx, deps, boardScope(ctx, call))
 	if call.Flag("json") {
 		_ = call.JSON(rows)
@@ -204,6 +205,7 @@ func (ReviewCommand) Run(ctx context.Context, call Invocation) (ExitCode, error)
 		return call.Usage("--diff and --summary exclude each other"), nil
 	}
 	deps := call.Deps()
+	app.InterruptDead(ctx, deps)
 	packet, err := app.ReviewPacketOf(ctx, deps, positionals[0], app.ReviewOptions{
 		Diff:         call.Flag("diff"),
 		MaxDiffChars: queriesMaxDiffChars,
@@ -239,6 +241,7 @@ func (UsageCommand) Run(ctx context.Context, call Invocation) (ExitCode, error) 
 		return AgentStopHook(ctx, call.Deps(), []byte(ReadStdinWithin(hookStdinMs, os.Stdin))), nil
 	}
 	deps := call.Deps()
+	app.InterruptDead(ctx, deps)
 	events := app.UsageEvents(deps)
 	windows := app.UsageWindows(deps, events)
 	scope := boardScope(ctx, call)

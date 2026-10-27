@@ -97,7 +97,11 @@ func (f *testFiles) DriverPid(ctx context.Context, paths domain.JobPaths) (int64
 	if err != nil {
 		return 0, false
 	}
-	return domain.ParsePid(string(text))
+	lock, ok := domain.ParseDriverLock(string(text))
+	if !ok {
+		return 0, false
+	}
+	return lock.Pid, true
 }
 
 func (f *testFiles) EnginePid(paths domain.JobPaths) (int64, bool) {
@@ -129,11 +133,29 @@ type aliveProcess struct {
 	*fakes.FakeProcess
 	mu     sync.Mutex
 	extra  map[int64]bool
+	starts map[int64]int64
 	graces []int64
 }
 
 func newAliveProcess() *aliveProcess {
-	return &aliveProcess{FakeProcess: fakes.NewFakeProcess(), extra: map[int64]bool{}}
+	return &aliveProcess{FakeProcess: fakes.NewFakeProcess(), extra: map[int64]bool{}, starts: map[int64]int64{}}
+}
+
+// StartTime answers the start time a test recorded for the pid, so a reused pid is told from the
+// lock's holder. A pid with no recorded start answers false: the dead-driver check then stays on
+// liveness alone, as it does for an old pid-only lock.
+func (p *aliveProcess) StartTime(pid int64) (int64, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	start, ok := p.starts[pid]
+	return start, ok
+}
+
+// MarkStart records when the live pid's process began.
+func (p *aliveProcess) MarkStart(pid, start int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.starts[pid] = start
 }
 
 func (p *aliveProcess) IsAlive(pid int64) bool {
@@ -228,6 +250,7 @@ func newWorld(t *testing.T, env map[string]string) (Deps, *appWorld) {
 		Clock:        world.clock,
 		Ids:          world.ids,
 		Process:      world.process,
+		Start:        world.process,
 		Out:          world.out,
 		Host:         HostInfo{StateRoot: root},
 		BundlePath:   filepath.Join(root, "plugin", "dist", "zai.js"),

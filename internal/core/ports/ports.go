@@ -317,6 +317,12 @@ type ProcessControl interface {
 	SpawnDriver(jobID string) int64
 }
 
+// ProcessStart is the start time of a process, so a reused pid is told from the lock's holder.
+type ProcessStart interface {
+	// StartTime is when pid began, in unix milliseconds; false when the process cannot be seen.
+	StartTime(pid int64) (int64, bool)
+}
+
 // Output is where a command's text goes.
 type Output interface {
 	Line(text string)

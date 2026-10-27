@@ -123,7 +123,8 @@ func (f *fsJobFiles) DriverPid(ctx context.Context, paths domain.JobPaths) (int6
 	if err != nil {
 		return 0, false
 	}
-	return domain.ParsePid(string(text))
+	lock, ok := domain.ParseDriverLock(string(text))
+	return lock.Pid, ok
 }
 
 func (f *fsJobFiles) EnginePid(paths domain.JobPaths) (int64, bool) {
