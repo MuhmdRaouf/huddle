@@ -75,6 +75,8 @@ node scripts/check-attribution.mjs             # no AI attribution in the histor
   (`internal/hookplan`): huddle's handler, its report, radar, kanban's session start, and the providers' parts
   (session-start re-applies every set-up provider's wiring; subagent-stop adds the usage line). A part owns a
   deadline and a hook never blocks a session.
+- **Each store owns its events** ([ADR-3](docs/adr/0003-one-event-log.md)). No single event log: each
+  store has one writer and its own retention; readers join by session id, request id or a `seq` cursor.
 - **Thin provider plugins.** zai, kimi, deepseek, minimax and qwen are data and slash commands: setup records
   the provider in `providers.json`, points Claude Code's `HTTPS_PROXY` at huddle-router with the shared local CA
   (`NODE_EXTRA_CA_CERTS` at `~/.agents/ca`), and adds its models to `/model`; jobs run as detached drivers of

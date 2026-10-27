@@ -163,3 +163,11 @@ huddle installs from source while it has one user: the launchers build the binar
 own commit with Go (D18), so a machine installing huddle needs Go. The rule flips to signed release binaries the
 day huddle has a second user; darwin code signing and notarisation of the release binaries is the open question
 then.
+
+## D24: Each store owns its events
+
+There is no single event log. Each store — the spool, `hub.db events`, the channel files, ledger.db,
+router.db and its segments, history.db, kanban.db and its LOG — has one writer process and owns its
+retention ([ADR-3](adr/0003-one-event-log.md)). Readers join stores by session id, request id or a `seq`
+cursor, and never write another part's store. A new store names its writer, its join key, its retention
+and the process that runs it, and adds itself to the ADR's list.
