@@ -348,10 +348,11 @@ func (d *DB) MarkPermissionRefused(ctx context.Context, id int64, reason, at str
 
 // SatRefusalBody is the payload a decision handout carries, as the satellite reads it.
 type SatRefusalBody struct {
-	Key       string `json:"key"`
-	SessionID string `json:"session"`
-	Decision  string `json:"decision"`
-	Message   string `json:"message,omitempty"`
+	Key       string            `json:"key"`
+	SessionID string            `json:"session"`
+	Decision  string            `json:"decision"`
+	Message   string            `json:"message,omitempty"`
+	Answers   map[string]string `json:"answers,omitempty"`
 }
 
 // SatMessageBody is the payload a message handout carries, as the satellite reads it.

@@ -241,7 +241,9 @@ func (s *server) permitDecideRoute(w http.ResponseWriter, r *http.Request, id in
 		}
 	}
 	// a decision on a satellite's forwarded item travels to the machine (SPEC 6.7): its link
-	// applies it there, under the machine's own switches
+	// applies it there, under the machine's own switches. The offer carries the answers the
+	// route checked.
+	item.Answers = answers
 	s.offerDecision(ctx, *item, decision, textOf(fieldOf(body, "message")))
 	return s.answerPermission(w, r, id)
 }

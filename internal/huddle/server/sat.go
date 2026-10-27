@@ -436,6 +436,7 @@ func (s *server) offerDecision(ctx context.Context, item hub.PermissionItem, dec
 	}
 	payload, err := hub.EncodeSatPayload(hub.SatRefusalBody{
 		Key: key, SessionID: item.SessionID, Decision: decision, Message: message,
+		Answers: item.Answers,
 	})
 	if err != nil {
 		fmt.Fprintf(s.o.Stderr, "sat: the decision for item %d cannot be encoded: %v\n", item.ID, err)

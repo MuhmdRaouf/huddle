@@ -8,6 +8,7 @@ package hub
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -118,7 +119,8 @@ func TestDecodeSatPayloadReadsWhatEncodeSatPayloadWrote(t *testing.T) {
 		t.Fatalf("encode: %v", err)
 	}
 	var back SatRefusalBody
-	if err := DecodeSatPayload(payload, &back); err != nil || back != body {
+	// the answers map keeps the body out of =='s reach, so the compare reads every field
+	if err := DecodeSatPayload(payload, &back); err != nil || !reflect.DeepEqual(back, body) {
 		t.Fatalf("the decoded body = %+v, %v, want what was encoded", back, err)
 	}
 	if err := DecodeSatPayload("{not json", &back); err == nil {

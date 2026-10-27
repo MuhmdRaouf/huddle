@@ -336,8 +336,18 @@ func (l *Link) applyDecision(ctx context.Context, payload hub.SatRefusalBody, at
 		if why, ok := hub.RemoteAllow(cfg.Remote.Allow, item.Tool, item.Input); !ok {
 			return l.refuseDecision(ctx, item, why, at)
 		}
+		if item.Tool == "AskUserQuestion" {
+			// the owner's answers answer this machine's own question: they pass the same checks
+			// the hub's decide route runs (SPEC 6.2), then store beside the decision
+			if err := hub.CheckAnswers(item.Tool, item.Input, payload.Answers); err != nil {
+				return l.refuseDecision(ctx, item, err.Error(), at)
+			}
+			if why, ok := hub.AnswersFloor(payload.Answers); !ok {
+				return l.refuseDecision(ctx, item, why, at)
+			}
+		}
 	}
-	won, err := l.reg.DecidePermission(ctx, item.ID, payload.Decision, nil, payload.Message, at, l.now())
+	won, err := l.reg.DecidePermission(ctx, item.ID, payload.Decision, payload.Answers, payload.Message, at, l.now())
 	if err != nil {
 		return hub.SatBusy, "this machine's registry could not be written"
 	}

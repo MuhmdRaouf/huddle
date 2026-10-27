@@ -234,8 +234,9 @@ func TestHubAndSatellitePassAPermitAndAMessage(t *testing.T) {
 
 	// the owner allows on the hub; the machine's own hook hears the allow through its own poll
 	type waitAnswer struct {
-		State    string `json:"state"`
-		Decision string `json:"decision"`
+		State    string            `json:"state"`
+		Decision string            `json:"decision"`
+		Answers  map[string]string `json:"answers"`
 	}
 	decided := make(chan waitAnswer, 1)
 	go func() {
@@ -257,6 +258,65 @@ func TestHubAndSatellitePassAPermitAndAMessage(t *testing.T) {
 		}
 	case <-time.After(35 * time.Second):
 		t.Fatalf("the machine's poll never heard the allow: %s / %s", hubLog.joined(), satLog.joined())
+	}
+
+	// the owner's answers ride the same road: the question's allow carries them across, and the
+	// machine's own poll reads them beside the decision (SPEC 6.7)
+	status, body = call(t, satBase, http.MethodPost, "/api/needs", "sat-token", "",
+		`{"session_id":"s-1","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which database?","options":[{"label":"Postgres"},{"label":"SQLite"}]}]}}`)
+	if status != 200 {
+		t.Fatalf("the question's item answered %d: %s", status, body)
+	}
+	var askedQ struct {
+		ID int64 `json:"id"`
+	}
+	_ = json.Unmarshal([]byte(body), &askedQ)
+	hubQuestion := int64(0)
+	if !until(8*time.Second, func() bool {
+		_, body := call(t, hubBase, http.MethodGet, "/api/needs", "hub-token", "", "")
+		var list struct {
+			Items []struct {
+				ID      int64  `json:"id"`
+				Kind    string `json:"kind"`
+				State   string `json:"state"`
+				Summary string `json:"summary"`
+			} `json:"items"`
+		}
+		if json.Unmarshal([]byte(body), &list) != nil {
+			return false
+		}
+		for _, item := range list.Items {
+			if item.Kind == "permission" && strings.Contains(item.Summary, "Which database?") && item.State == "open" {
+				hubQuestion = item.ID
+				return true
+			}
+		}
+		return false
+	}) {
+		t.Fatalf("the question never appeared on the hub: %s / %s", hubLog.joined(), satLog.joined())
+	}
+	decidedQ := make(chan waitAnswer, 1)
+	go func() {
+		_, body := call(t, satBase, http.MethodGet,
+			fmt.Sprintf("/api/needs/%d/wait", askedQ.ID), "sat-token", "", "")
+		var item waitAnswer
+		_ = json.Unmarshal([]byte(body), &item)
+		decidedQ <- item
+	}()
+	status, body = call(t, hubBase, http.MethodPost,
+		fmt.Sprintf("/api/needs/%d/decide", hubQuestion), "hub-token", "",
+		`{"decision":"allow","answers":{"Which database?":"Postgres"}}`)
+	if status != 200 {
+		t.Fatalf("the question's allow answered %d: %s", status, body)
+	}
+	select {
+	case got := <-decidedQ:
+		if got.State != "answered" || got.Decision != "allow" ||
+			got.Answers["Which database?"] != "Postgres" {
+			t.Fatalf("the machine's poll = %+v, want answered allow carrying Which database? Postgres", got)
+		}
+	case <-time.After(35 * time.Second):
+		t.Fatalf("the machine's poll never heard the question's allow: %s / %s", hubLog.joined(), satLog.joined())
 	}
 
 	// the owner's words ride the same road: a send to the satellite's session is queued there

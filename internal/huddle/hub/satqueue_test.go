@@ -268,3 +268,31 @@ func TestSatelliteInviteExchangeSpendsOnce(t *testing.T) {
 		t.Fatal("an expired invite bought a credential")
 	}
 }
+
+// TestSatPayloadCarriesTheAnswers proves the decision payload round-trips the owner's answers
+// beside the decision, and a payload without any — an older hub's handout — decodes to no
+// answers at all, so the field rides the wire both ways without a version.
+func TestSatPayloadCarriesTheAnswers(t *testing.T) {
+	payload, err := EncodeSatPayload(SatRefusalBody{
+		Key: "k-1", SessionID: "s-1", Decision: "allow",
+		Answers: map[string]string{"Which database?": "Postgres"},
+	})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	var carried SatRefusalBody
+	if err := DecodeSatPayload(payload, &carried); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(carried.Answers) != 1 || carried.Answers["Which database?"] != "Postgres" {
+		t.Fatalf("the decoded answers = %v, want Which database? Postgres", carried.Answers)
+	}
+
+	var plain SatRefusalBody
+	if err := DecodeSatPayload(`{"key":"k-1","session":"s-1","decision":"allow"}`, &plain); err != nil {
+		t.Fatalf("decode the answerless payload: %v", err)
+	}
+	if len(plain.Answers) != 0 {
+		t.Fatalf("the answerless payload decoded answers = %v, want none", plain.Answers)
+	}
+}
