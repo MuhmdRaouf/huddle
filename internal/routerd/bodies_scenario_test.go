@@ -140,30 +140,31 @@ func postBodyOf(t *testing.T, url, body string) (int, string) {
 }
 
 // firstByteOf posts one raw body and answers how long the first byte of the answer took; a
-// non-200 fails, so a budget is never met by a fast error.
-func firstByteOf(t *testing.T, url, body string) time.Duration {
-	t.Helper()
+// non-200 is an error, so a budget is never met by a fast error. It answers an error rather
+// than failing the test because a run's two requests stream side by side, off the test
+// goroutine.
+func firstByteOf(url, body string) (time.Duration, error) {
 	request, err := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
 	if err != nil {
-		t.Fatalf("build the request: %v", err)
+		return 0, fmt.Errorf("build the request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
 	start := time.Now()
 	resp, err := client.Do(request)
 	if err != nil {
-		t.Fatalf("post %s: %v", url, err)
+		return 0, fmt.Errorf("post %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		answer, _ := io.ReadAll(resp.Body)
-		t.Fatalf("%s = %d %q", url, resp.StatusCode, string(answer))
+		return 0, fmt.Errorf("%s = %d %q", url, resp.StatusCode, string(answer))
 	}
 	one := make([]byte, 1)
 	if _, err := io.ReadFull(resp.Body, one); err != nil {
-		t.Fatalf("read the first byte of %s: %v", url, err)
+		return 0, fmt.Errorf("read the first byte of %s: %w", url, err)
 	}
-	return time.Since(start)
+	return time.Since(start), nil
 }
 
 // routeBodyID answers the body id of the first route event in the spool, waited for because
@@ -333,16 +334,27 @@ func TestTheRouterSweepsOldBodiesAtStart(t *testing.T) {
 	})
 }
 
-// bodiesFirstByteRuns is how many runs of each path the overhead takes; the best of each is
-// compared, the way the binary e2e measures.
-const bodiesFirstByteRuns = 5
+// bodiesFirstByteRuns is how many paired runs each size takes; the median of the paired deltas
+// is compared, the way the binary e2e takes a median.
+const bodiesFirstByteRuns = 11
 
 // bodiesFirstByteBudget is the most the tap may add to a first byte.
 const bodiesFirstByteBudget = 5 * time.Millisecond
 
+// medianOf answers the middle value of the sorted slice; with the odd run count there is
+// always exactly one.
+func medianOf(values []time.Duration) time.Duration {
+	sorted := slices.Clone(values)
+	slices.Sort(sorted)
+	return sorted[len(sorted)/2]
+}
+
 // TestTheTapKeepsTheOverheadBound proves the tap stays off the first byte: a 100 KiB and a
-// 2 MiB request through the router with the tap on answer as fast as the same request straight
-// to the upstream, best of five.
+// 2 MiB request through the router with the tap on answer as fast as the same request through
+// the same router with the tap off, by the median of eleven paired runs. Two daemons serve, one
+// with a keystore and one without, so both paths of a pair meet one router hop and the delta is
+// the tap's alone and never the hop's. The two requests of a pair stream at the same moment, so
+// the machine's load lands on both alike, the way the binary e2e measures.
 func TestTheTapKeepsTheOverheadBound(t *testing.T) {
 	// A timing test: it runs alone, never beside the package's other tests.
 	if testkit.RaceEnabled {
@@ -350,14 +362,20 @@ func TestTheTapKeepsTheOverheadBound(t *testing.T) {
 	}
 	bdd.Feature(t, "the router's bodies", func(f *bdd.F) {
 		f.Scenario("a 100 KiB and a 2 MiB request gain at most five milliseconds of first byte from the tap", func(s *bdd.S) {
-			var rig *daemonRig
-			s.Given("a daemon serves zai with a keystore", func(t *testing.T) {
-				rig = newDaemonRig(s.T)
-				if err := router.SetEnabled(rig.env, "zai", true); err != nil {
+			var tapped, untapped *daemonRig
+			s.Given("two daemons serve zai, one with a keystore and one without", func(t *testing.T) {
+				tapped = newDaemonRig(s.T)
+				if err := router.SetEnabled(tapped.env, "zai", true); err != nil {
 					t.Fatal(err)
 				}
-				startBodiesDaemon(s.T, rig, bodiesKeystoreOf(bodiesTestKey))
-				rig.awaitHealth(t, "zai")
+				startBodiesDaemon(s.T, tapped, bodiesKeystoreOf(bodiesTestKey))
+				tapped.awaitHealth(t, "zai")
+				untapped = newDaemonRig(s.T)
+				if err := router.SetEnabled(untapped.env, "zai", true); err != nil {
+					t.Fatal(err)
+				}
+				startBodiesDaemon(s.T, untapped, nil)
+				untapped.awaitHealth(t, "zai")
 			})
 			s.Then("neither size's first byte gains more than the budget", func(t *testing.T) {
 				for _, size := range []struct {
@@ -375,13 +393,32 @@ func TestTheTapKeepsTheOverheadBound(t *testing.T) {
 						t.Fatal(err)
 					}
 					body := string(request)
-					via := make([]time.Duration, 0, bodiesFirstByteRuns)
-					direct := make([]time.Duration, 0, bodiesFirstByteRuns)
-					for i := 0; i < bodiesFirstByteRuns; i++ {
-						via = append(via, firstByteOf(t, fmt.Sprintf("http://127.0.0.1:%d/v1/messages", rig.port), body))
-						direct = append(direct, firstByteOf(t, rig.zai.server.URL+"/v1/messages", body))
+					tappedURL := fmt.Sprintf("http://127.0.0.1:%d/v1/messages", tapped.port)
+					untappedURL := fmt.Sprintf("http://127.0.0.1:%d/v1/messages", untapped.port)
+					deltas := make([]time.Duration, 0, bodiesFirstByteRuns)
+					for range bodiesFirstByteRuns {
+						var tappedFirst, untappedFirst time.Duration
+						var tappedErr, untappedErr error
+						var pair sync.WaitGroup
+						pair.Add(2)
+						go func() {
+							defer pair.Done()
+							tappedFirst, tappedErr = firstByteOf(tappedURL, body)
+						}()
+						go func() {
+							defer pair.Done()
+							untappedFirst, untappedErr = firstByteOf(untappedURL, body)
+						}()
+						pair.Wait()
+						if tappedErr != nil {
+							t.Fatalf("the tapped request failed: %v", tappedErr)
+						}
+						if untappedErr != nil {
+							t.Fatalf("the untapped request failed: %v", untappedErr)
+						}
+						deltas = append(deltas, tappedFirst-untappedFirst)
 					}
-					overhead := slices.Min(via) - slices.Min(direct)
+					overhead := medianOf(deltas)
 					if overhead > bodiesFirstByteBudget {
 						t.Errorf("%s: the tap's first byte costs %s, budget %s",
 							size.name, overhead, bodiesFirstByteBudget)
