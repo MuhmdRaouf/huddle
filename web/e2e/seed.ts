@@ -47,3 +47,27 @@ export const ASK_EDIT = {
   old_string: "const rate = 1;\nexport function read() {\n  return rate;\n}",
   new_string: "const rate = 2;\nexport function read() {\n  return rate * 2;\n}",
 } as const;
+
+/** The AskUserQuestion the answer-sheet cases seed: one single choice and one multi-select. */
+export const ASK_QUESTIONS = {
+  questions: [
+    {
+      question: "Which database should this project use?",
+      header: "Database",
+      options: [
+        { label: "Postgres", description: "The managed default" },
+        { label: "SQLite", description: "One file on disk" },
+      ],
+      multiSelect: false,
+    },
+    {
+      question: "Which linters should run?",
+      header: "Lint",
+      options: [
+        { label: "ESLint", description: "The usual rules" },
+        { label: "Biome", description: "One binary" },
+      ],
+      multiSelect: true,
+    },
+  ],
+} as const;

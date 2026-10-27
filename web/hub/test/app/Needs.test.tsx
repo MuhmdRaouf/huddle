@@ -1004,3 +1004,108 @@ describe("the needs sheet on the tokens", () => {
     expect(legacyClasses()).toEqual([]);
   });
 });
+
+describe("the AskUserQuestion answer sheet", () => {
+  /** The two questions as the ask's raw input: one single choice, one multi-select. */
+  const askInput = JSON.stringify({
+    questions: [
+      {
+        question: "Which database should this project use?",
+        header: "Database",
+        options: [
+          { label: "Postgres", description: "The managed default" },
+          { label: "SQLite", description: "One file on disk" },
+        ],
+        multiSelect: false,
+      },
+      {
+        question: "Which linters should run?",
+        header: "Lint",
+        options: [
+          { label: "ESLint", description: "The usual rules" },
+          { label: "Biome", description: "One binary" },
+        ],
+        multiSelect: true,
+      },
+    ],
+  });
+
+  /** One AskUserQuestion ask carrying those questions. */
+  const asks = (over: Partial<NeedItem> = {}): NeedItem =>
+    ask({ tool: "AskUserQuestion", summary: "AskUserQuestion: 2 questions", input: askInput, ...over });
+
+  /** Mounts the session screen's bar for one ask, the way the sheet describe does. */
+  const mountAsk = (
+    item: NeedItem,
+    over: { layout?: Layout; onWrite?: (path: string, n: number) => unknown } = {},
+  ): Mount =>
+    mount(
+      (registry) => {
+        const s = registry.getState().sessions?.[0];
+        const it = registry.getState().needs?.[0];
+        return s && it ? <NeedsBar item={it} session={s} layout={over.layout ?? "phone"} /> : null;
+      },
+      {
+        sessions: [sess({ session_id: "s-1" }), working()],
+        needs: [item],
+        ...(over.layout ? { layout: over.layout } : {}),
+        ...(over.onWrite ? { onWrite: over.onWrite } : {}),
+      },
+    );
+
+  /** Picks Postgres for the single choice and ESLint on the multi-select. */
+  const answerBoth = async () => {
+    await act(async () => {
+      screen.getByRole("radio", { name: /Postgres/ }).click();
+    });
+    await act(async () => {
+      screen.getByRole("checkbox", { name: /ESLint/ }).click();
+    });
+  };
+
+  it("sends the owner's answers with the allow", async () => {
+    const h = mountAsk(asks());
+    await answerBoth();
+    await act(async () => {
+      screen.getByRole("button", { name: "Send answers" }).click();
+    });
+    await flush();
+    expect(h.calls).toEqual([
+      {
+        path: "/api/needs/7/decide",
+        body: {
+          decision: "allow",
+          answers: {
+            "Which database should this project use?": "Postgres",
+            "Which linters should run?": "ESLint",
+          },
+        },
+      },
+    ]);
+  });
+
+  it("a Bash ask still allows with no answers in the call", async () => {
+    const h = mountAsk(
+      ask({ input: JSON.stringify({ command: "bun test", description: "Run the unit tests" }) }),
+    );
+    await act(async () => {
+      screen.getByRole("button", { name: /Allow once/ }).click();
+    });
+    await flush();
+    expect(h.calls).toEqual([{ path: "/api/needs/7/decide", body: { decision: "allow" } }]);
+  });
+
+  it("a refusal speaks the server's line and keeps the sheet", async () => {
+    const h = mountAsk(asks(), {
+      onWrite: (path) =>
+        path === "/api/needs/7/decide" ? httpError(400, "answers: name an answer for each question") : {},
+    });
+    await answerBoth();
+    await act(async () => {
+      screen.getByRole("button", { name: "Send answers" }).click();
+    });
+    await flush();
+    expect(h.toast).toHaveBeenCalledWith("answers: name an answer for each question", { bad: true });
+    expect(screen.getByRole("button", { name: "Send answers" })).toBeDefined();
+  });
+});

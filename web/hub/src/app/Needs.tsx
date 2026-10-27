@@ -20,7 +20,9 @@ import {
   type RegistryStore,
   sessionName,
 } from "../registry.ts";
+import { AskAnswers } from "./ask/answers.tsx";
 import { AskPreview } from "./ask/preview.tsx";
+import { type AskQuestion, questionsOf } from "./ask/questions.ts";
 import { errText, useHuddle } from "./context.tsx";
 import type { Layout } from "./layout.ts";
 
@@ -58,11 +60,19 @@ type DecideDeps = {
   id: number;
   decision: "allow" | "deny";
   what?: StepUpWhat | undefined;
+  answers?: Record<string, string> | undefined;
   stepUp: (what?: StepUpWhat) => Promise<boolean>;
 };
 
-const postDecision = (api: Api, id: number, decision: string): Promise<unknown> =>
-  api.api(`/api/needs/${id}/decide`, { body: { decision } });
+const postDecision = (
+  api: Api,
+  id: number,
+  decision: string,
+  answers?: Record<string, string>,
+): Promise<unknown> =>
+  api.api(`/api/needs/${id}/decide`, {
+    body: answers === undefined ? { decision } : { decision, answers },
+  });
 
 /** The ask that left the list once its decision stood; the stream restates the session's row. */
 function decided(registry: RegistryStore, id: number): void {
@@ -74,7 +84,7 @@ function decided(registry: RegistryStore, id: number): void {
  *  a plain word; every other refusal is toasted as the server spelled it. */
 export async function decideItem(d: DecideDeps): Promise<void> {
   try {
-    await postDecision(d.api, d.id, d.decision);
+    await postDecision(d.api, d.id, d.decision, d.answers);
   } catch (e) {
     await decideRetry(e as ApiError, d);
     return;
@@ -89,7 +99,7 @@ async function decideRetry(e: ApiError, d: DecideDeps): Promise<void> {
   }
   if (!(await d.stepUp(d.what))) return;
   try {
-    await postDecision(d.api, d.id, d.decision);
+    await postDecision(d.api, d.id, d.decision, d.answers);
   } catch (e2) {
     decideRefused(e2 as ApiError, d);
     return;
@@ -248,7 +258,7 @@ export function useStepUp(): {
 /** Everything an item's card or bar can do with it: the decisions, the spans, and the sheet the
  *  decisions may open — render `sheet` beside the actions that use them. */
 export type NeedsAct = {
-  allow: (item: NeedItem, what?: StepUpWhat) => void;
+  allow: (item: NeedItem, what?: StepUpWhat, answers?: Record<string, string>) => void;
   deny: (item: NeedItem) => void;
   snooze: (item: NeedItem, span: SnoozeSpan) => void;
   dismiss: (item: NeedItem) => void;
@@ -262,8 +272,13 @@ export function useNeedsAct(): NeedsAct {
   const { api, registry, toast, now } = useHuddle();
   const { ask, sheet } = useStepUp();
 
-  const decide = (item: NeedItem, decision: "allow" | "deny", what?: StepUpWhat): void => {
-    void decideItem({ api, registry, toast, id: item.id, decision, what, stepUp: ask });
+  const decide = (
+    item: NeedItem,
+    decision: "allow" | "deny",
+    what?: StepUpWhat,
+    answers?: Record<string, string>,
+  ): void => {
+    void decideItem({ api, registry, toast, id: item.id, decision, what, answers, stepUp: ask });
   };
 
   // a 404 says the item waits no longer (opening its session answers a finished turn): the
@@ -300,7 +315,7 @@ export function useNeedsAct(): NeedsAct {
   };
 
   return {
-    allow: (item, what) => decide(item, "allow", what),
+    allow: (item, what, answers) => decide(item, "allow", what, answers),
     deny: (item) => decide(item, "deny"),
     snooze,
     dismiss,
@@ -530,6 +545,19 @@ function toolIcon(tool: string): "terminal" | "pencil" | "file" | "ext" | "searc
   return "sparkle";
 }
 
+/** An AskUserQuestion ask's questions when its input decodes; null keeps the per-tool preview. */
+function askOf(item: NeedItem): AskQuestion[] | null {
+  if (item.kind !== "permission" || item.tool !== "AskUserQuestion") return null;
+  return questionsOf(item.input ?? "");
+}
+
+/** A permission ask's heading: a decodable AskUserQuestion counts its questions, anything else
+ *  keeps the title. */
+function askTitleFor(who: string, questions: AskQuestion[] | null, title: string): string {
+  if (questions === null) return title;
+  return `${who} asks ${questions.length} question${questions.length === 1 ? "" : "s"}`;
+}
+
 /** A non-permission item's facts: its summary and the input it carries, wrapped now that no box
  *  scrolls sideways. */
 function ItemFacts({ item }: { item: NeedItem }): JSX.Element {
@@ -632,11 +660,70 @@ function ItemActions({
   );
 }
 
+/** The phone sheet's title row: the tool's tile, on the accent wash while the questions decode. */
+function SheetTitle({ asking, tool, title }: { asking: boolean; tool: string; title: string }): JSX.Element {
+  return (
+    <span class="flex items-center gap-3">
+      <span
+        class={`flex size-10 shrink-0 items-center justify-center rounded-[var(--ui-radius)] ${
+          asking
+            ? "bg-[var(--ui-accent-soft)] text-[var(--ui-accent)]"
+            : "bg-[var(--ui-warn-soft)] text-[var(--ui-warn-ink)]"
+        }`}
+      >
+        <Icon name={asking ? "sparkle" : toolIcon(tool)} class="size-5" />
+      </span>
+      <span>{title}</span>
+    </span>
+  );
+}
+
+/** The sheet's body once the meta line is said: the answer sheet when the input decodes, the
+ *  per-tool preview with Deny and Allow on the pinned footer otherwise. */
+function SheetBody({
+  act,
+  item,
+  tool,
+  confirm,
+  asking,
+  onSend,
+  onDock,
+  onReply,
+}: {
+  act: NeedsAct;
+  item: NeedItem;
+  tool: string;
+  confirm: StepUpWhat | undefined;
+  asking: boolean;
+  onSend: (answers: Record<string, string>) => void;
+  onDock: () => void;
+  onReply: () => void;
+}): JSX.Element {
+  if (asking) return <AskAnswers item={item} onSend={onSend} onTerminal={onDock} />;
+  return (
+    <>
+      <AskPreview tool={tool} input={item.input ?? ""} truncated={item.truncated} />
+      <footer
+        data-needs-foot=""
+        class="sticky bottom-0 flex flex-col gap-2.5 border-t border-[var(--ui-line)] bg-[var(--ui-surface)] pt-3"
+      >
+        <BarActions act={act} item={item} what={confirm} wide={false} />
+        <Button variant="ghost" data-act="reply" class="self-center" onClick={onReply}>
+          Reply instead
+        </Button>
+      </footer>
+    </>
+  );
+}
+
 /** The session screen's action bar (SPEC 9): a permission ask as the phone's bottom sheet — the
  *  per-tool preview inside, Deny and Allow once on a footer that stays in reach, Reply instead
- *  under them — and the wide layouts' inline box with the same preview. Closing the sheet without
- *  deciding docks a one-line row that reopens it. Every other item keeps its summary with Snooze
- *  and Dismiss (and Answer when it asks something); the composer opens in place. */
+ *  under them — and the wide layouts' inline box with the same preview. An AskUserQuestion ask
+ *  whose input decodes draws the answer sheet instead of the preview and its buttons: Send posts
+ *  the allow with the owner's answers, Answer in terminal docks the ask undecided. Closing the
+ *  sheet without deciding docks a one-line row that reopens it. Every other item keeps its
+ *  summary with Snooze and Dismiss (and Answer when it asks something); the composer opens in
+ *  place. */
 export function NeedsBar({
   item,
   session,
@@ -651,13 +738,17 @@ export function NeedsBar({
   const [docked, setDocked] = useState(false);
   const { now } = useHuddle();
   const permission = item.kind === "permission" && item.tool !== "";
-  const tool = permission ? (item.tool ?? "") : "";
+  const tool = item.tool ?? "";
   const wide = layout !== "phone";
   const who = sessionName(session);
   const confirm = confirmWhat(item, session, permission);
   const ask = askLabel(item, who);
   const replyWord = permission ? `Reply to ${who}…` : `Answer ${who}…`;
   const title = `${who} wants to ${askWhat(tool)}`;
+  const askQuestions = askOf(item);
+  const asking = askQuestions !== null;
+  const askTitle = askTitleFor(who, askQuestions, title);
+  const sendAnswers = (answers: Record<string, string>): void => act.allow(item, confirm, answers);
   const panelClass = wide
     ? "mx-4 mb-4 flex shrink-0 flex-col gap-3 rounded-[var(--ui-radius-lg)] border border-[var(--ui-needs-you)] bg-[var(--ui-surface)] p-4 text-[var(--ui-text)] sm:mx-6 sm:mb-5"
     : "flex shrink-0 flex-col gap-3 rounded-t-[var(--ui-radius-lg)] border-t-2 border-[var(--ui-needs-you)] bg-[var(--ui-surface)] px-4 pt-4 pb-7 text-[var(--ui-text)]";
@@ -670,13 +761,21 @@ export function NeedsBar({
       onClose={() => setReplying(false)}
     />
   );
-  if (permission && wide) {
+  if (permission && wide && !(asking && docked)) {
     return (
       <>
         {act.sheet}
         <section data-needs-bar="" aria-label={ask} class={panelClass}>
           {replying ? (
             composer
+          ) : asking ? (
+            <>
+              <h2 class="m-0 text-base font-semibold">{askTitle}</h2>
+              <AskAnswers item={item} onSend={sendAnswers} onTerminal={() => setDocked(true)} />
+              <Button variant="ghost" data-act="reply" class="self-start" onClick={() => setReplying(true)}>
+                Reply instead
+              </Button>
+            </>
           ) : (
             <>
               {/* the answers sit beside the facts, and under them once the pane leaves the facts
@@ -707,14 +806,7 @@ export function NeedsBar({
         <Sheet
           open
           onClose={() => setDocked(true)}
-          title={
-            <span class="flex items-center gap-3">
-              <span class="flex size-10 shrink-0 items-center justify-center rounded-[var(--ui-radius)] bg-[var(--ui-warn-soft)] text-[var(--ui-warn-ink)]">
-                <Icon name={toolIcon(tool)} class="size-5" />
-              </span>
-              <span>{title}</span>
-            </span>
-          }
+          title={<SheetTitle asking={asking} tool={tool} title={askTitle} />}
         >
           <section data-needs-sheet="" aria-label={ask} class="flex flex-col gap-3">
             {replying ? (
@@ -730,21 +822,16 @@ export function NeedsBar({
                     .filter((part) => part !== "")
                     .join(" · ")}
                 </p>
-                <AskPreview tool={tool} input={item.input ?? ""} truncated={item.truncated} />
-                <footer
-                  data-needs-foot=""
-                  class="sticky bottom-0 flex flex-col gap-2.5 border-t border-[var(--ui-line)] bg-[var(--ui-surface)] pt-3"
-                >
-                  <BarActions act={act} item={item} what={confirm} wide={false} />
-                  <Button
-                    variant="ghost"
-                    data-act="reply"
-                    class="self-center"
-                    onClick={() => setReplying(true)}
-                  >
-                    Reply instead
-                  </Button>
-                </footer>
+                <SheetBody
+                  act={act}
+                  item={item}
+                  tool={tool}
+                  confirm={confirm}
+                  asking={asking}
+                  onSend={sendAnswers}
+                  onDock={() => setDocked(true)}
+                  onReply={() => setReplying(true)}
+                />
               </>
             )}
           </section>
@@ -761,7 +848,7 @@ export function NeedsBar({
           aria-label={ask}
           class="flex shrink-0 items-center gap-3 rounded-t-[var(--ui-radius-lg)] border-t-2 border-[var(--ui-needs-you)] bg-[var(--ui-surface)] px-4 py-3 text-[var(--ui-text)]"
         >
-          <p class="m-0 flex-1 text-sm">{`Needs you · ${title}`}</p>
+          <p class="m-0 flex-1 text-sm">{`Needs you · ${askTitle}`}</p>
           <Button variant="ghost" onClick={() => setDocked(false)}>
             Review
           </Button>

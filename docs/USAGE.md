@@ -177,7 +177,8 @@ and knowledge, whatever project each runs in.
 5. Answer approvals from the dashboard or a paired phone. A session waiting on a permission sits
    in needs you, one push when it appears and one escalation after 5 minutes open, and its prompt holds
    10 minutes; an allow or
-   a deny settles it once. Snooze from the app for 15 minutes, an hour, or tomorrow at nine.
+   a deny settles it once. Claude's questions open as cards; pick or type each answer and send
+   them, or answer in the terminal. Snooze from the app for 15 minutes, an hour, or tomorrow at nine.
 
 Messages (`huddle send`, `reply`), shared knowledge (`huddle remember`, `recall`) and the whole
 surface live in the huddle skill and `huddle help`.
