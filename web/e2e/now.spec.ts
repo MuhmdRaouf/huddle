@@ -80,7 +80,7 @@ test("on the phone a seeded ask's card sits above the fold, before the first-run
   await expect(card.getByText("bun run lint")).toBeVisible();
   const cardBox = await card.boundingBox();
   expect(cardBox?.y).toBeLessThan(844);
-  const needsBox = await page.locator("section[aria-labelledby='now-needsYou']").boundingBox();
+  const needsBox = await page.locator("section[aria-labelledby='sessions-needsYou']").boundingBox();
   const checklistBox = await checklist.boundingBox();
   expect(needsBox && checklistBox && checklistBox.y).toBeGreaterThanOrEqual((needsBox?.y ?? 0) + (needsBox?.height ?? 0));
 
@@ -498,7 +498,7 @@ test("opening a session clears its finished turn from Needs you in every open br
   await page.locator(`a[href='#/sessions/${session}']`).first().click();
   expect((await opened).status()).toBe(200);
   await page.goBack();
-  await expect(page.locator("[data-now-pane]")).toBeVisible();
+  await expect(page.locator("[data-sessions-pane]")).toBeVisible();
 
   for (const p of [page, other]) {
     if (before > 1) await expect(p.getByRole("heading", { name: count(before - 1) })).toBeVisible();
@@ -512,7 +512,7 @@ test("the desktop sets the list and the open pane side by side", async ({ page, 
   test.skip(isMobile, "the phone paints the list alone");
   await signIn(page);
   await openTab(page, "Sessions");
-  const list = await page.locator("[data-now-pane]").boundingBox();
+  const list = await page.locator("[data-sessions-pane]").boundingBox();
   const pane = await page.getByText("No session open").boundingBox();
   expect(list && pane && list.x + list.width).toBeLessThanOrEqual(pane?.x ?? 0);
 });
@@ -542,7 +542,7 @@ test("the phone's Sessions page scrolls nothing sideways and every target is at 
   expect(over).toBeLessThanOrEqual(0);
   const small = await page.evaluate(() =>
     // the first-run checklist rides above the list on its own component's terms
-    [...document.querySelectorAll<HTMLElement>("[data-now-pane] :is(a, button, input, select, textarea)")]
+    [...document.querySelectorAll<HTMLElement>("[data-sessions-pane] :is(a, button, input, select, textarea)")]
       .filter((el) => !el.closest("[data-first-run]"))
       .filter((el) => el.getClientRects().length > 0)
       .map((el) => ({ el, r: el.getBoundingClientRect() }))

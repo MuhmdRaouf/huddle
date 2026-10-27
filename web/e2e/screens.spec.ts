@@ -286,9 +286,9 @@ const LEGACY_CLASS: readonly RegExp[] = [
   /^(bg|text|border|ring|outline|fill|stroke|divide|from|via|to)-(base-(100|200|300|content)|(primary|secondary|accent|neutral|info|success|warning|error)(-content)?)(\/\d+)?$/,
 ];
 
-/** What a page paints for itself: its main pane, the Now list beside it, and any dialog over it.
+/** What a page paints for itself: its main pane, the list beside it, and any dialog over it.
  *  Everything else is the shell's chrome. */
-const CONTENT = "main, [data-now-pane], dialog, [role=dialog]";
+const CONTENT = "main, [data-sessions-pane], dialog, [role=dialog]";
 
 /** The elements whose classes match LEGACY_CLASS, as `tag.class`, each pair once: in the page's
  *  own content, in the shell's chrome, or in both. */

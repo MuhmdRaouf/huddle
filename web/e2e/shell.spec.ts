@@ -40,8 +40,8 @@ const TAP_PAGES: readonly (readonly [name: string, hash: string])[] = [
   ["Settings", "#/settings"],
 ];
 
-/** The parts axe leaves to the pages' own specs: the main pane and the Now list beside it. */
-const CONTENT = ["main", "[data-now-pane]"] as const;
+/** The parts axe leaves to the pages' own specs: the main pane and the list beside it. */
+const CONTENT = ["main", "[data-sessions-pane]"] as const;
 
 /** The viewport heights the phone runs at: the iPhone 15's own, and a short screen (the keyboard
  *  up, a small phone) that makes every page longer than the view. */

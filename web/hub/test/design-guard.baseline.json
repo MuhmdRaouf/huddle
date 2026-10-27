@@ -46,8 +46,8 @@
     "px": 3
   },
   "app/Now.tsx": {
-    "control": 6,
-    "px": 19
+    "control": 5,
+    "px": 9
   },
   "app/Pair.tsx": {
     "control": 5,
@@ -69,11 +69,18 @@
     "daisy": 49,
     "legacy": 1
   },
+  "app/Sessions.tsx": {
+    "control": 1,
+    "px": 5
+  },
   "app/SettingsTab.tsx": {
     "control": 1,
     "daisy": 3,
     "legacy": 5,
     "px": 1
+  },
+  "app/session-parts.tsx": {
+    "px": 5
   },
   "app/TopBar.tsx": {
     "control": 3,

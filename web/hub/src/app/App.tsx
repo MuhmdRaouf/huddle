@@ -27,7 +27,8 @@ import { FirstRunChecklist } from "./FirstRun.tsx";
 import { IntroCtx } from "./intro.tsx";
 import { type Layout, useLayout } from "./layout.ts";
 import { BottomNav, IconRail, type NeedsBadge, needsBadge, SideNav, TabBadge } from "./Nav.tsx";
-import { NoSessionsWelcome, NowContext, NowPane, SessionScreen } from "./Now.tsx";
+import { NowContext, SessionScreen } from "./Now.tsx";
+import { NoSessionsWelcome, SessionsPane } from "./Sessions.tsx";
 import { Pair } from "./Pair.tsx";
 import { Rail } from "./Rail.tsx";
 import {
@@ -715,7 +716,7 @@ export function App({
     route.tab === "channels" && ch && layout !== "phone" ? (
       <Rail onHelp={onHelp} />
     ) : route.tab === "sessions" && layout !== "phone" ? (
-      <NowPane layout={layout} above={firstRun} />
+      <SessionsPane layout={layout} above={firstRun} />
     ) : null;
   const context: ComponentChildren =
     route.tab === "sessions" && layout === "desktop" && nowId ? <NowContext /> : null;
@@ -726,7 +727,7 @@ export function App({
         <SessionScreen id={nowId} layout={layout} />
       ) : layout === "phone" ? (
         <div class="flex min-h-0 flex-1 flex-col">
-          <NowPane layout="phone" above={firstRun} />
+          <SessionsPane layout="phone" above={firstRun} />
         </div>
       ) : noSessions ? (
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5">
