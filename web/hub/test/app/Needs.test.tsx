@@ -14,7 +14,7 @@ import type { Api, ApiError } from "../../src/api.ts";
 import { HuddleProvider } from "../../src/app/context.tsx";
 import type { Layout } from "../../src/app/layout.ts";
 import { NeedsBar, routeLine, routesLine, SnoozeMenu } from "../../src/app/Needs.tsx";
-import { NowPane } from "../../src/app/Now.tsx";
+import { SessionsPane } from "../../src/app/Sessions.tsx";
 import type { NeedItem, RegistrySession, RegistryStore } from "../../src/registry.ts";
 import { flush, legacyClasses, makeCtx, makeRegistry, makeState, NOW, stubMedia } from "../helpers.tsx";
 
@@ -588,7 +588,7 @@ describe("the Now list's actions", () => {
   };
 
   it("enables the card's Deny and posts the session's permission ask", async () => {
-    const h = mount(() => <NowPane layout="phone" />);
+    const h = mount(() => <SessionsPane layout="phone" />);
     const card = document.querySelector('[data-row="s-1"]');
     expect(card).not.toBeNull();
     const deny = card?.querySelector<HTMLButtonElement>('[data-act="deny"]');
@@ -601,7 +601,7 @@ describe("the Now list's actions", () => {
   });
 
   it("posts the allow from the card's Allow once, at the card's foot", async () => {
-    const h = mount(() => <NowPane layout="phone" />);
+    const h = mount(() => <SessionsPane layout="phone" />);
     const card = document.querySelector('[data-row="s-1"]');
     const allow = card?.querySelector<HTMLButtonElement>('[data-needs-actions] [data-act="allow"]');
     expect(allow?.textContent).toContain("Allow once");
@@ -614,7 +614,7 @@ describe("the Now list's actions", () => {
   });
 
   it("offers Review instead of Deny and Allow when the session carries no permission ask", () => {
-    mount(() => <NowPane layout="phone" />, {
+    mount(() => <SessionsPane layout="phone" />, {
       needs: [ask({ kind: "question", tool: "", input: "", summary: "Keep the timeout?" })],
     });
     expect(document.querySelector('[data-act="deny"]')).toBeNull();
@@ -625,7 +625,7 @@ describe("the Now list's actions", () => {
   it("snoozes from the card's menu, optimistically, and rolls back when the server refuses", async () => {
     // the POST's resolution the test holds back, so the optimistic moment can be seen
     const gate: { open: ((v: unknown) => void) | null } = { open: null };
-    const h = mount(() => <NowPane layout="phone" />, {
+    const h = mount(() => <SessionsPane layout="phone" />, {
       onWrite: (path) =>
         path === "/api/needs/7/snooze"
           ? new Promise((r) => {
@@ -651,7 +651,7 @@ describe("the Now list's actions", () => {
     expect(h.registry.getState().needs?.[0]?.snoozed_until).toBe("2026-10-08T12:15:00Z");
 
     // a refusal puts the item back and says so
-    const refused = mount(() => <NowPane layout="phone" />, {
+    const refused = mount(() => <SessionsPane layout="phone" />, {
       onWrite: () => httpError(409, "the ask expired a moment ago"),
     });
     await act(async () => {
@@ -667,7 +667,7 @@ describe("the Now list's actions", () => {
   });
 
   it("snoozes until tomorrow nine and dismisses, each once", async () => {
-    const h = mount(() => <NowPane layout="phone" />);
+    const h = mount(() => <SessionsPane layout="phone" />);
     await act(async () => {
       screen.getByRole("button", { name: "More actions" }).click();
     });
@@ -692,7 +692,7 @@ describe("the Now list's actions", () => {
   });
 
   it("puts a dismissed item back when the server refuses", async () => {
-    const h = mount(() => <NowPane layout="phone" />, {
+    const h = mount(() => <SessionsPane layout="phone" />, {
       onWrite: () => httpError(500, "the registry's database is unavailable"),
     });
     await act(async () => {
@@ -712,7 +712,7 @@ describe("the Now list's actions", () => {
       ["Dismiss", "/api/needs/7/dismiss"],
       ["Snooze 1 hour", "/api/needs/7/snooze"],
     ] as const) {
-      const h = mount(() => <NowPane layout="phone" />, {
+      const h = mount(() => <SessionsPane layout="phone" />, {
         onWrite: (p) => (p === path ? httpError(404, "no open item 7") : {}),
       });
       // the server's own list: opening the session already answered the item
@@ -731,7 +731,7 @@ describe("the Now list's actions", () => {
   });
 
   it("denies the selected row's ask with d", async () => {
-    const h = mount(() => <NowPane layout="desktop" />, { layout: "desktop" });
+    const h = mount(() => <SessionsPane layout="desktop" />, { layout: "desktop" });
     press("d");
     await flush();
     expect(h.calls).toEqual([{ path: "/api/needs/7/decide", body: { decision: "deny" } }]);
@@ -739,7 +739,7 @@ describe("the Now list's actions", () => {
 
   it("allows the selected row's ask with a, through the passkey sheet when it is due", async () => {
     let decides = 0;
-    const h = mount(() => <NowPane layout="desktop" />, {
+    const h = mount(() => <SessionsPane layout="desktop" />, {
       layout: "desktop",
       onWrite: (path) => {
         if (path === "/api/needs/7/decide") {
@@ -767,7 +767,7 @@ describe("the Now list's actions", () => {
   });
 
   it("opens the reply composer for the selected row with r and posts the answer", async () => {
-    const h = mount(() => <NowPane layout="desktop" />, { layout: "desktop" });
+    const h = mount(() => <SessionsPane layout="desktop" />, { layout: "desktop" });
     press("r");
     expect(screen.getByText("Reply to kanban-e2e")).toBeDefined();
     fireEvent.input(screen.getByLabelText("Message"), { target: { value: "keep it" } });
@@ -780,7 +780,7 @@ describe("the Now list's actions", () => {
   });
 
   it("acts only when there is something to act on", async () => {
-    const h = mount(() => <NowPane layout="desktop" />, {
+    const h = mount(() => <SessionsPane layout="desktop" />, {
       layout: "desktop",
       needs: [ask({ kind: "question", tool: "", input: "" })],
     });
@@ -791,7 +791,7 @@ describe("the Now list's actions", () => {
   });
 
   it("sends to the sessions the desktop checkboxes pick", async () => {
-    const h = mount(() => <NowPane layout="desktop" />, { layout: "desktop" });
+    const h = mount(() => <SessionsPane layout="desktop" />, { layout: "desktop" });
     await act(async () => {
       screen.getByRole("checkbox", { name: "Select kanban-e2e" }).click();
       screen.getByRole("checkbox", { name: "Select lead" }).click();
@@ -814,7 +814,7 @@ describe("the Now list's actions", () => {
   });
 
   it("toggles a picked row off by clicking it, and clears the bar", async () => {
-    mount(() => <NowPane layout="desktop" />, { layout: "desktop" });
+    mount(() => <SessionsPane layout="desktop" />, { layout: "desktop" });
     await act(async () => {
       screen.getByRole("checkbox", { name: "Select kanban-e2e" }).click();
     });
@@ -833,7 +833,7 @@ describe("the Now list's actions", () => {
   });
 
   it("picks with a long-press on the phone and sends to the pick", async () => {
-    const h = mount(() => <NowPane layout="phone" />);
+    const h = mount(() => <SessionsPane layout="phone" />);
     const held = document.querySelector<HTMLElement>("[data-hold-row]");
     expect(held).not.toBeNull();
     // a press that moves or lifts early is not a hold
@@ -860,7 +860,7 @@ describe("the Now list's actions", () => {
   });
 
   it("toggles a picked row by tapping it while a pick is on", async () => {
-    mount(() => <NowPane layout="phone" />);
+    mount(() => <SessionsPane layout="phone" />);
     const held = document.querySelector<HTMLElement>("[data-hold-row]");
     await act(async () => {
       held?.dispatchEvent(new Event("pointerdown", { bubbles: true }));

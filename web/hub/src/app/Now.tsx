@@ -563,10 +563,3 @@ export function NowContext(): JSX.Element | null {
     </aside>
   );
 }
-
-/** The list beside the session screen, re-exported under the pane's former name for the tests
- *  outside this change's scope that still import it from here. */
-export { SessionsPane as NowPane } from "./Sessions.tsx";
-
-/** The state mark, re-exported for the pages that import it from here. */
-export { StateMark } from "./session-parts.tsx";

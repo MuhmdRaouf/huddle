@@ -11,7 +11,7 @@ import type { ApiError } from "../api.ts";
 import { errText, useHuddle } from "../app/context.tsx";
 import { LinkSheet } from "../app/LinkSheet.tsx";
 import { useStepUp } from "../app/Needs.tsx";
-import { StateMark } from "../app/Now.tsx";
+import { StateMark } from "../app/session-parts.tsx";
 import { type ChannelLinks, LEVEL_LABEL, type LinkLevel, type LinkRow } from "../links.ts";
 import { ageText, sessionName } from "../registry.ts";
 
