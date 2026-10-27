@@ -38,6 +38,7 @@ request_id TEXT NOT NULL,
 side TEXT NOT NULL CHECK (side IN ('input','output')),
 blocks BLOB NOT NULL,
 bytes INTEGER NOT NULL,
+redactions INTEGER NOT NULL,
 PRIMARY KEY (request_id, side)
 );
 PRAGMA user_version = 1`
@@ -78,10 +79,11 @@ func (s *BodyStore) Close() error {
 	return s.db.Close()
 }
 
-// PutBody stores one request's body for the side named. The body's spans already stored
-// are not rewritten; their last_ts moves to at when at is later. Each new span compresses
-// into the day segment of at (UTC) and gets its ledger_blocks row. The body row for the
-// request and side is replaced.
+// PutBody stores one request's body for the side named. The body is redacted first, so
+// no secret shape reaches a block, a segment or the body row; bytes and the block hashes
+// are the redacted body's. Spans already stored are not rewritten; their last_ts moves to
+// at when at is later. Each new span compresses into the day segment of at (UTC) and gets
+// its ledger_blocks row. The body row for the request and side is replaced.
 func (s *BodyStore) PutBody(ctx context.Context, requestID, side string, body []byte, at time.Time) error {
 	if side != "input" && side != "output" {
 		return fmt.Errorf("body side %q is neither input nor output", side)
@@ -89,7 +91,8 @@ func (s *BodyStore) PutBody(ctx context.Context, requestID, side string, body []
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	spans := splitBody(body)
+	redacted, count := redactBody(body)
+	spans := splitBody(redacted)
 	hashes := make([][]byte, 0, len(spans))
 	for _, span := range spans {
 		sum := sha256.Sum256(span)
@@ -100,8 +103,8 @@ func (s *BodyStore) PutBody(ctx context.Context, requestID, side string, body []
 	}
 	blocks := bytes.Join(hashes, nil)
 	if err := s.db.Run(
-		"INSERT OR REPLACE INTO ledger_body (request_id, side, blocks, bytes) VALUES (?, ?, ?, ?)",
-		requestID, side, blocks, len(body),
+		"INSERT OR REPLACE INTO ledger_body (request_id, side, blocks, bytes, redactions) VALUES (?, ?, ?, ?, ?)",
+		requestID, side, blocks, len(redacted), count,
 	); err != nil {
 		return fmt.Errorf("store the body row of %s: %w", requestID, err)
 	}
@@ -218,6 +221,25 @@ func (s *BodyStore) Body(ctx context.Context, requestID, side string) ([]byte, b
 			"the body of %s reads back %d bytes, want the %d recorded", requestID, body.Len(), want)
 	}
 	return body.Bytes(), true, nil
+}
+
+// Redactions answers how many secret shapes were replaced when the request and side's
+// body was stored, false when they have no body row.
+func (s *BodyStore) Redactions(ctx context.Context, requestID, side string) (int, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, false, err
+	}
+	row, err := s.db.Get(
+		"SELECT redactions FROM ledger_body WHERE request_id = ? AND side = ?", requestID, side,
+	)
+	if err != nil {
+		return 0, false, fmt.Errorf("read the redactions of %s: %w", requestID, err)
+	}
+	if row == nil {
+		return 0, false, nil
+	}
+	count, _ := row["redactions"].(int64)
+	return int(count), true, nil
 }
 
 // readBlock answers one block's raw bytes, read from its segment at its offset and

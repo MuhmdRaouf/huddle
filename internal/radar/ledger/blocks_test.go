@@ -344,6 +344,158 @@ func TestBodyStoreLeavesTheLedgerAlone(t *testing.T) {
 	}
 }
 
+// TestBodyStoreRedactsSecrets: a body carrying one fake value of every secret shape is
+// stored redacted — no segment file and no block holds a value, the body reads back with
+// its labels, and the row records how many values were replaced.
+func TestBodyStoreRedactsSecrets(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := openBodies(t)
+	dir := st.dir
+	at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+
+	fakes := []struct{ name, fake, want string }{
+		{"bearer", "Bearer " + strings.Repeat("t", 20), "Bearer [redacted:bearer]"},
+		{"api-key", "sk-ant-" + strings.Repeat("x", 20), "[redacted:api-key]"},
+		{"api-key", strings.Repeat("ab", 16) + "." + strings.Repeat("z", 16), "[redacted:api-key]"},
+		{"huddle-credential", "hcred_" + strings.Repeat("x", 20), "[redacted:huddle-credential]"},
+		{"join-token", "k3m2x9." + strings.Repeat("a", 16), "[redacted:join-token]"},
+		{"sign-in-code", "?code=" + strings.Repeat("q", 24), "?code=[redacted:sign-in-code]"},
+	}
+	var body, want strings.Builder
+	body.WriteString(`{"model":"m","messages":[`)
+	want.WriteString(`{"model":"m","messages":[`)
+	for i, fake := range fakes {
+		if i > 0 {
+			body.WriteString(",")
+			want.WriteString(",")
+		}
+		body.WriteString(`{"role":"user","content":"seed ` + fake.fake + ` end"}`)
+		want.WriteString(`{"role":"user","content":"seed ` + fake.want + ` end"}`)
+	}
+	body.WriteString(`],"stream":true}`)
+	want.WriteString(`],"stream":true}`)
+
+	if err := st.PutBody(ctx, "req_secrets", "input", []byte(body.String()), at); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	t.Run("no segment file holds a value verbatim", func(t *testing.T) {
+		for _, raw := range segmentFiles(t, dir) {
+			for _, fake := range fakes {
+				if bytes.Contains(raw, []byte(fake.fake)) {
+					t.Fatalf("a segment file holds the %s value verbatim", fake.name)
+				}
+			}
+		}
+	})
+	t.Run("no block inflates to a value", func(t *testing.T) {
+		for _, hash := range blockHashes(t, st) {
+			block, err := st.readBlock(hash)
+			if err != nil {
+				t.Fatalf("read block %s: %v", hash, err)
+			}
+			for _, fake := range fakes {
+				if bytes.Contains(block, []byte(fake.fake)) {
+					t.Fatalf("block %s holds the %s value verbatim", hash, fake.name)
+				}
+			}
+		}
+	})
+	t.Run("the body reads back with its labels", func(t *testing.T) {
+		got, ok, err := st.Body(ctx, "req_secrets", "input")
+		if err != nil {
+			t.Fatalf("body: %v", err)
+		}
+		if !ok {
+			t.Fatal("body = not found, want the redacted bytes")
+		}
+		if string(got) != want.String() {
+			t.Fatalf("body = %s, want %s", got, want.String())
+		}
+	})
+	t.Run("the row records how many values were replaced", func(t *testing.T) {
+		count, ok, err := st.Redactions(ctx, "req_secrets", "input")
+		if err != nil {
+			t.Fatalf("redactions: %v", err)
+		}
+		if !ok {
+			t.Fatal("redactions = not found, want the stored count")
+		}
+		if count != len(fakes) {
+			t.Fatalf("redactions = %d, want %d", count, len(fakes))
+		}
+	})
+}
+
+// TestBodyStoreKeepsACleanBodyExact: a body with no secret shape in it reads back byte
+// for byte, with no replacements recorded.
+func TestBodyStoreKeepsACleanBodyExact(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := openBodies(t)
+	at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	body := []byte(`{"model":"m","messages":[{"role":"user","content":"nothing secret here"}],"stream":true}`)
+	if err := st.PutBody(ctx, "req_clean", "input", body, at); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	got, ok, err := st.Body(ctx, "req_clean", "input")
+	if err != nil || !ok {
+		t.Fatalf("body = %q, %t, %v; want the body found", got, ok, err)
+	}
+	if string(got) != string(body) {
+		t.Fatalf("body = %q, want the exact bytes back", got)
+	}
+	count, ok, err := st.Redactions(ctx, "req_clean", "input")
+	if err != nil || !ok {
+		t.Fatalf("redactions = %d, %t, %v; want the row found", count, ok, err)
+	}
+	if count != 0 {
+		t.Fatalf("redactions = %d, want 0", count)
+	}
+}
+
+// segmentFiles answers the raw bytes of every segment file in the store's directory.
+func segmentFiles(t *testing.T, dir string) [][]byte {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read the store directory: %v", err)
+	}
+	var raw [][]byte
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".seg") {
+			continue
+		}
+		segment, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+		raw = append(raw, segment)
+	}
+	if len(raw) == 0 {
+		t.Fatal("no segment file exists")
+	}
+	return raw
+}
+
+// blockHashes answers every block hash the store's ledger_blocks holds.
+func blockHashes(t *testing.T, st *BodyStore) []string {
+	t.Helper()
+	row, err := st.db.Get("SELECT GROUP_CONCAT(hash) AS hashes FROM ledger_blocks")
+	if err != nil {
+		t.Fatalf("list the blocks: %v", err)
+	}
+	if row == nil {
+		t.Fatal("no blocks were stored")
+	}
+	joined, _ := row["hashes"].(string)
+	if joined == "" {
+		return nil
+	}
+	return strings.Split(joined, ",")
+}
+
 // openBodies opens a router.db in a temp directory's ledger directory — the layout the
 // radar state dir uses — closed when the test ends.
 func openBodies(t *testing.T) *BodyStore {
