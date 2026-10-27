@@ -421,6 +421,22 @@ func TestSpoolLineUnmarshal(t *testing.T) {
 		}
 	})
 
+	t.Run("decodes a route line's body keys into their fields, out of Extra", func(t *testing.T) {
+		var line SpoolLine
+		if err := json.Unmarshal([]byte(`{"ts":"t","event":"route","body_id":"b-1","body":"kept"}`), &line); err != nil {
+			t.Fatal(err)
+		}
+		if line.BodyID == nil || *line.BodyID != "b-1" || line.Body == nil || *line.Body != "kept" {
+			t.Errorf("body_id/body = %v/%v, want b-1/kept", line.BodyID, line.Body)
+		}
+		if _, ok := line.Extra["body_id"]; ok {
+			t.Errorf("extra = %v, want no body_id key", line.Extra)
+		}
+		if _, ok := line.Extra["body"]; ok {
+			t.Errorf("extra = %v, want no body key", line.Extra)
+		}
+	})
+
 	t.Run("rejects broken JSON", func(t *testing.T) {
 		var line SpoolLine
 		if err := json.Unmarshal([]byte(`{"ts":`), &line); err == nil {

@@ -1,8 +1,10 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -533,4 +535,32 @@ func TestPairingLooksTheRequestIDUpFirst(t *testing.T) {
 			t.Fatalf("requests: got %d rows, req_011 = %+v; want 21 rows and req_011 carrying the route", len(rows), merged)
 		}
 	})
+}
+
+// A merged call keeps the route line's body keys: the inspector fetches the body the
+// router kept by the id the record carries, so they must survive the pairing and close
+// the tail.
+func TestMergedRequestKeepsRouteBodies(t *testing.T) {
+	store := newTestStore()
+	store.AddRequest(route(func(r *shared.RequestRecord) {
+		r.AgentID = "a31cd3de580148dc3"
+		r.Status = str("200")
+		r.StopReason = nil
+		r.Via = str("zai")
+		r.BodyID = str("b-1")
+		r.Body = str("kept")
+	}), nil)
+	store.AddRequest(transcriptCopy(nil), nil)
+	rows := store.Requests(RequestFilter{})
+	if len(rows) != 1 {
+		t.Fatalf("requests: got %d, want 1", len(rows))
+	}
+	payload, err := json.Marshal(rows[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	const tail = `"status":"200","route":"anthropic","via":"zai","bodyId":"b-1","body":"kept"}`
+	if !strings.HasSuffix(string(payload), tail) {
+		t.Errorf("merged record = %s, want the tail ending in %s", payload, tail)
+	}
 }

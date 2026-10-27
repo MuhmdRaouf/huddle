@@ -72,6 +72,10 @@ export type RequestRecord = {
    *  line; absent when no router saw the call or the line said none. */
   ttfbMs?: number | null;
   ttftMs?: number | null;
+  /** The id the router keys this request's kept body under, and whether it kept or dropped the
+   *  body; from the route line. Absent when no router saw the call or the line said none. */
+  bodyId?: string | null;
+  body?: "kept" | "dropped" | null;
   tokens: Tokens;
   stopReason: string | null;
   /** The HTTP status the router recorded for the call ("200", "429"), from the route line's own

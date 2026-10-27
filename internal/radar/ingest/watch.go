@@ -1033,6 +1033,14 @@ func RouteRequest(line shared.SpoolLine, model string, ts int64) shared.RequestR
 	}
 	applySpoolBilling(&record, line.Usage)
 	record.TailKeys = []string{"status", "route", "via"}
+	if line.BodyID != nil && *line.BodyID != "" {
+		record.BodyID = line.BodyID
+		record.TailKeys = append(record.TailKeys, "bodyId")
+	}
+	if line.Body != nil && *line.Body != "" {
+		record.Body = line.Body
+		record.TailKeys = append(record.TailKeys, "body")
+	}
 	return record
 }
 

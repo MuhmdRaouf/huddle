@@ -258,3 +258,44 @@ func TestRouterSpoolRoundTrip(t *testing.T) {
 		t.Errorf("health event = %+v", health)
 	}
 }
+
+// The body keys a route line carries — the id the router keys its kept request bodies
+// under, and whether it kept or dropped this one — land on the record after the router,
+// so the inspector can fetch a body by id.
+func TestRouteRequestBodyKeys(t *testing.T) {
+	const head = `{"ts":"2026-01-15T00:00:00.000Z","event":"route","plugin":"zai","model":"glm-5.3",` +
+		`"upstream":"https://api.z.ai/api/anthropic","route":"provider","status":200,"latency_ms":150,` +
+		`"session_id":"s1","agent_id":"main"`
+	recordJSON := func(t *testing.T, line string) string {
+		t.Helper()
+		parsed, ok := ingest.ParseSpoolLine(line)
+		if !ok {
+			t.Fatal("ParseSpoolLine rejected a route line")
+		}
+		payload, err := json.Marshal(ingest.RouteRequest(parsed, "glm-5.3", nowMs()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(payload)
+	}
+
+	t.Run("carries the body id and whether the body was kept, after the router", func(t *testing.T) {
+		want := `{"id":"route:s1:main:glm-5.3:1768435200000:200","sessionId":"s1","agentId":"main",` +
+			`"model":"glm-5.3","upstream":"https://api.z.ai/api/anthropic","ts":1768435200000,"latencyMs":150,` +
+			`"tokens":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"stopReason":null,"provider":"Z.ai",` +
+			`"status":"200","route":"provider","via":"zai","bodyId":"b-1","body":"kept"}`
+		if got := recordJSON(t, head+`,"body_id":"b-1","body":"kept"}`); got != want {
+			t.Errorf("record = %s, want %s", got, want)
+		}
+	})
+
+	t.Run("prints neither body key on a route line that names none, byte for byte", func(t *testing.T) {
+		want := `{"id":"route:s1:main:glm-5.3:1768435200000:200","sessionId":"s1","agentId":"main",` +
+			`"model":"glm-5.3","upstream":"https://api.z.ai/api/anthropic","ts":1768435200000,"latencyMs":150,` +
+			`"tokens":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"stopReason":null,"provider":"Z.ai",` +
+			`"status":"200","route":"provider","via":"zai"}`
+		if got := recordJSON(t, head+`}`); got != want {
+			t.Errorf("record = %s, want %s", got, want)
+		}
+	})
+}

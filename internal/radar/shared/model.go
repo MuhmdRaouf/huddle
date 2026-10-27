@@ -293,6 +293,12 @@ type RequestRecord struct {
 	// wire answered; nil when no router saw the call or the line said none. Kept apart from
 	// StopReason, which names how the model ended its turn — a 200 never was one.
 	Status *string `json:"status,omitempty"`
+	// BodyID is the id the router keys this request's kept body under in its own store, from
+	// the route line; nil when no router saw the call or the line named none.
+	BodyID *string `json:"-"`
+	// Body says whether the router kept or dropped this request's body ("kept", "dropped"),
+	// from the route line; nil when it said none.
+	Body *string `json:"-"`
 	// RequestID is the provider's own id for the call, the key both sources share: the
 	// route line's request-id response header, the transcript entry's requestId. Empty when
 	// the source named none; the store pairs on it and never prints it.
@@ -328,6 +334,8 @@ const (
 	keyWhat         = "what"
 	keyPromptHash   = "promptHash"
 	keyHeaders      = "headers"
+	keyBodyID       = "bodyId"
+	keyBody         = "body"
 )
 
 // billingKeys sit between tokens and stopReason for a record the live side holds.
@@ -428,6 +436,14 @@ func (r RequestRecord) MarshalJSON() ([]byte, error) {
 		case keyStatus:
 			if r.Status != nil {
 				add(keyStatus, *r.Status)
+			}
+		case keyBodyID:
+			if r.BodyID != nil {
+				add(keyBodyID, *r.BodyID)
+			}
+		case keyBody:
+			if r.Body != nil {
+				add(keyBody, *r.Body)
 			}
 		}
 	}
@@ -737,8 +753,12 @@ type SpoolLine struct {
 	// line carries the hash again with the gzipped content.
 	PromptHash *string  `json:"prompt_hash,omitempty"`
 	Headers    *Headers `json:"headers,omitempty"`
-	Gz         *string  `json:"gz,omitempty"`
-	LatencyMs  *int64   `json:"latency_ms,omitempty"`
+	// BodyID is the id the router keys the request's kept body under; Body says whether it
+	// kept or dropped the body ("kept", "dropped").
+	BodyID    *string `json:"body_id,omitempty"`
+	Body      *string `json:"body,omitempty"`
+	Gz        *string `json:"gz,omitempty"`
+	LatencyMs *int64  `json:"latency_ms,omitempty"`
 	// TtfbMs is time to the answer's head and TtftMs time to its first token, both as the
 	// route line carried them.
 	TtfbMs *int64      `json:"ttfb_ms,omitempty"`
