@@ -1,12 +1,13 @@
 package server
 
 // The insights route: today's tips over the history the registry already holds, the owner's
-// credential only. The owner's card (no session) reads the needs-you history plus the lanes'
-// requests from the mounted radar tab, so the always_allowed, longest_wait and lane_failing
-// rules are the ones that can fire there; a session's answer adds that session's tool runs
-// from the mounted radar tab, and same_command is the rule they add: tool_failing needs the
-// error text radar does not record, and a lane's health is no one session's, so the session's
-// answer leaves both out.
+// credential only. The owner's card (no session) reads the needs-you history, the lanes'
+// requests from the mounted radar tab and the registry's own session spans, so the
+// always_allowed, longest_wait, lane_failing and long_day rules are the ones that can fire
+// there; a session's answer adds that session's tool runs from the mounted radar tab, and
+// same_command is the rule they add: tool_failing needs the error text radar does not record,
+// and a lane's health and a day's length are no one session's, so the session's answer leaves
+// all three out.
 
 import (
 	"net/http"
@@ -41,7 +42,8 @@ type insightsSettingsAnswer struct {
 
 // insightsRoute answers GET /api/insights with the tips the last 7 days of needs-you history
 // supports, read-only over the registry's own rows. The owner's answer adds the lanes' requests
-// of the last 24 h from the mounted radar tab, so a lane that keeps failing names itself there.
+// of the last 24 h from the mounted radar tab, so a lane that keeps failing names itself there,
+// and the registry's session spans, so a day of long sessions does too.
 // A session query narrows the answer to that session: its rows alone go in, its tool runs come
 // in from the mounted radar tab and add same_command alone (tool_failing needs the error text
 // radar does not record), and its tips alone come out. Tips for me gates the owner's answer,
@@ -101,7 +103,8 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 			})
 		}
 	}
-	// the owner's answer adds the lanes' own requests; a lane's health is no one session's
+	// the owner's answer adds the lanes' own requests and the sessions' spans; a lane's health
+	// and a day's length are no one session's
 	if session == "" && s.radar != nil {
 		for _, request := range s.radar.RequestsSince(r.Context(), now.Add(-24*time.Hour)) {
 			in.Requests = append(in.Requests, insights.Request{
@@ -109,6 +112,15 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 				Status:   request.Status,
 				At:       request.At,
 			})
+		}
+	}
+	if session == "" {
+		spans, err := s.registry.SessionSpans(r.Context())
+		if err != nil {
+			return err
+		}
+		for _, span := range spans {
+			in.Spans = append(in.Spans, insights.SessionSpan{Session: span.SessionID, Start: span.Start, End: span.End})
 		}
 	}
 	tips := insights.Detect(in)

@@ -47,6 +47,12 @@ type Request struct {
 	At       time.Time
 }
 
+// SessionSpan is one session's life: its first event to its end, a zero End while it still runs.
+type SessionSpan struct {
+	Session    string
+	Start, End time.Time
+}
+
 // Input is everything Detect reads. Now is the clock, so the rules are pure.
 type Input struct {
 	Now      time.Time
@@ -54,12 +60,13 @@ type Input struct {
 	Asks     []PermissionAsk
 	Requests []Request
 	Items    []Item
+	Spans    []SessionSpan
 }
 
 // Tip is one sentence the owner can act on, with the numbers behind it.
 type Tip struct {
 	ID       string // stable for one occurrence: "<rule>:<what it is about>"
-	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing or RuleLongestWait
+	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing, RuleLongestWait or RuleLongDay
 	Session  string // the session a tip is about; "" for a tip about the whole huddle
 	Sentence string
 	Count    int           // the runs or asks behind the tip
@@ -72,6 +79,7 @@ const (
 	RuleToolFailing   = "tool_failing"
 	RuleLaneFailing   = "lane_failing"
 	RuleLongestWait   = "longest_wait"
+	RuleLongDay       = "long_day"
 )
 
 // The points each rule fires at.
@@ -87,6 +95,7 @@ func Detect(in Input) []Tip {
 	tips := append(sameCommandTips(in.Tools), alwaysAllowedTips(in)...)
 	tips = append(tips, toolFailingTips(in.Tools)...)
 	tips = append(tips, laneFailingTips(in)...)
+	tips = append(tips, longDayTips(in)...)
 	tips = append(tips, longestWaitTips(in)...)
 	slices.SortFunc(tips, func(a, b Tip) int {
 		if byRule := cmp.Compare(a.Rule, b.Rule); byRule != 0 {

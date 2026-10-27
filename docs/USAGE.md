@@ -196,6 +196,7 @@ The tips:
 - A model lane fails more than one request in twenty over a day; the card names the share and
   the status that failed most.
 - One ask has waited on you far longer than the rest; pair your phone to answer from it.
+- One day's sessions together ran past 10 hours; the card names the day and the length.
 
 ### Reach an idle session
 
