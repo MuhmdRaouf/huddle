@@ -122,7 +122,8 @@ func TestNextStepOutsideReviewPointsAtTheBoard(t *testing.T) {
 	}
 }
 
-// An interrupted job says the driver stopped and nothing reran, then names every way forward.
+// An interrupted job says the driver stopped and nothing reran, then names its way forward
+// through the review command alone: every slash command named is one the plugin ships.
 func TestNextStepInterruptedNamesTheWaysForward(t *testing.T) {
 	job := testkit.AJob(func(job *domain.Job) {
 		job.ID = "261006-next01"
@@ -131,12 +132,16 @@ func TestNextStepInterruptedNamesTheWaysForward(t *testing.T) {
 	})
 	text := NextStep(testkit.ReferenceProvider, job)
 	want := "the driver stopped before the job finished; nothing reran. " +
-		"/zai:accept 261006-next01 --no-commit keeps the worktree's changes, " +
-		"/zai:return 261006-next01 \"<feedback>\" runs the brief again, " +
-		"/zai:discard 261006-next01 throws it away, or " +
-		"/zai:run <brief> --flash --bg starts it fresh."
+		"/zai:review 261006-next01 to accept the worktree's changes as they stand, " +
+		"return it to run the brief again, or discard it."
 	if text != want {
 		t.Errorf("\ngot  %q\nwant %q", text, want)
+	}
+	shipped := map[string]bool{"board": true, "remove": true, "review": true, "setup": true, "usage": true}
+	for _, command := range regexp.MustCompile(`/zai:([a-z]+)`).FindAllStringSubmatch(text, -1) {
+		if !shipped[command[1]] {
+			t.Errorf("/zai:%s is named, which the plugin does not ship", command[1])
+		}
 	}
 }
 

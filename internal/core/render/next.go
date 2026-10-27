@@ -18,10 +18,8 @@ func NextStep(provider domain.Provider, job domain.Job) string {
 	}
 	if job.State == domain.JobStateInterrupted {
 		return "the driver stopped before the job finished; nothing reran. " +
-			provider.Slash + "accept " + job.ID + " --no-commit keeps the worktree's changes, " +
-			provider.Slash + "return " + job.ID + " \"<feedback>\" runs the brief again, " +
-			provider.Slash + "discard " + job.ID + " throws it away, or " +
-			provider.Slash + "run <brief> --flash --bg starts it fresh."
+			review + " to accept the worktree's changes as they stand, " +
+			"return it to run the brief again, or discard it."
 	}
 	if job.State != domain.JobStateAwaitingReview {
 		return "it is " + strings.Replace(string(job.State), "_", " ", 1) + "; " + provider.Slash +

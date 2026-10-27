@@ -69,15 +69,12 @@ func TestZaiInterruptedE2E(t *testing.T) {
 	if !strings.Contains(review, "interrupted") {
 		t.Fatalf("the review never says interrupted:\n%s", review)
 	}
-	for _, want := range []string{
-		"/zai:accept " + id + " --no-commit",
-		`/zai:return ` + id + ` "<feedback>"`,
-		"/zai:discard " + id,
-		"/zai:run <brief> --flash --bg",
-	} {
-		if !strings.Contains(review, want) {
-			t.Fatalf("the review never names %q:\n%s", want, review)
-		}
+	want := "/zai:review " + id + " to accept the worktree's changes as they stand, return it to run the brief again, or discard it."
+	if !strings.Contains(review, want) {
+		t.Fatalf("the review never names %q:\n%s", want, review)
+	}
+	if strings.Contains(review, "/zai:accept") {
+		t.Fatalf("the review names /zai:accept, which no plugin ships:\n%s", review)
 	}
 
 	// Nothing reran and nothing new started: the worktree keeps its untouched file and the lock
