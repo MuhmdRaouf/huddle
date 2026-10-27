@@ -327,7 +327,8 @@ func (s *fsStore) lock(ctx context.Context, id string, pid int64) (func(), error
 	if _, err := s.read(ctx, id); err != nil {
 		return nil, err
 	}
-	lock, err := TryLock(ctx, s.layout.Job(id).DriverLock, pid, s.isAlive)
+	paths := s.layout.Job(id)
+	lock, err := TryLock(ctx, paths.DriverLock, pid, s.isAlive)
 	var held *HeldError
 	if errors.As(err, &held) {
 		return nil, &ports.StoreError{Kind: ports.StoreErrorLocked, ID: id, HolderPid: held.HolderPid}
@@ -335,5 +336,19 @@ func (s *fsStore) lock(ctx context.Context, id string, pid int64) (func(), error
 	if err != nil {
 		return nil, err
 	}
-	return func() { _ = lock(context.Background()) }, nil
+	// The start-time sidecar tells a reused pid from the driver that wrote the lock; old builds
+	// read the lock alone and ignore it. A failed write or a platform that cannot answer the
+	// start time never fails the lock: the lock stands and readers fall back to liveness alone.
+	// A stale sidecar from a reclaimed holder is replaced, or dropped, by the same write.
+	if start, ok := procStartTime(pid); ok {
+		_, _ = fsutil.WriteFileAtomic(ctx, paths.DriverStart, []byte(strconv.FormatInt(start, 10)+"\n"), fsutil.WriteOptions{})
+	} else {
+		_ = removeForce(paths.DriverStart)
+	}
+	return func() {
+		// The sidecar goes first: while the lock still stands, no reader can mistake a stale
+		// start time for this holder's.
+		_ = removeForce(paths.DriverStart)
+		_ = lock(context.Background())
+	}, nil
 }

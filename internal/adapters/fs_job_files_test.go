@@ -133,11 +133,17 @@ func TestFsJobFilesPids(t *testing.T) {
 	if pid, ok := files.DriverPid(t.Context(), paths); !ok || pid != 202 {
 		t.Fatalf("driverPid = %d, %v, want 202, true", pid, ok)
 	}
+	if err := os.WriteFile(paths.DriverStart, []byte("1729\n"), 0o600); err != nil {
+		t.Fatalf("write the start-time sidecar: %v", err)
+	}
+	if pid, ok := files.DriverPid(t.Context(), paths); !ok || pid != 202 {
+		t.Fatalf("driverPid beside a start-time sidecar = %d, %v, want 202, true", pid, ok)
+	}
 	if err := os.WriteFile(paths.DriverLock, []byte("202 1729\n"), 0o600); err != nil {
 		t.Fatalf("write the driver lock: %v", err)
 	}
-	if pid, ok := files.DriverPid(t.Context(), paths); !ok || pid != 202 {
-		t.Fatalf("driverPid of a lock carrying a start time = %d, %v, want 202, true", pid, ok)
+	if _, ok := files.DriverPid(t.Context(), paths); ok {
+		t.Fatal("a start time in the lock counts as a holder; the sidecar carries it")
 	}
 	if err := os.WriteFile(paths.DriverLock, []byte("not a pid"), 0o600); err != nil {
 		t.Fatalf("write the driver lock: %v", err)

@@ -10,24 +10,33 @@ import (
 
 // InterruptDead moves every queued, running or verifying job whose driver died to interrupted, and
 // answers the ids it moved. The driver is dead when its lock names a pid that is gone, or one that
-// is alive but began after the lock was written — the OS handed the pid to a new process. An old
-// pid-only lock decides on liveness alone, and so does a live pid whose start time cannot be had;
-// a job without a lock file, or whose lock nobody can read, says nothing and stays. A job whose
-// update loses a version race is skipped, not fatal: the writer that won the race proved the
-// driver alive. Nothing is signalled and nothing is rerun — only the owner's return runs an
-// interrupted job again.
+// is alive but began after the sidecar beside the lock was written — the OS handed the pid to a
+// new process. A lock without a sidecar, or a live pid whose start time cannot be had, decides on
+// liveness alone; a job without a lock file, or whose lock nobody can read, says nothing and
+// stays. A job whose update loses a version race is skipped, not fatal: the writer that won the
+// race proved the driver alive. Nothing is signalled and nothing is rerun — only the owner's
+// return runs an interrupted job again.
 func InterruptDead(ctx context.Context, deps Deps) []string {
 	moved := []string{}
 	for _, job := range deps.Store.List(ctx, ports.ListFilter{}) {
 		if !slices.Contains(stoppable, job.State) {
 			continue
 		}
-		text, err := deps.Files.ReadText(ctx, deps.Store.Paths(job.ID).DriverLock)
+		paths := deps.Store.Paths(job.ID)
+		text, err := deps.Files.ReadText(ctx, paths.DriverLock)
 		if err != nil {
 			continue
 		}
 		lock, ok := domain.ParseDriverLock(text)
-		if !ok || driverAlive(deps, lock) {
+		if !ok {
+			continue
+		}
+		if start, err := deps.Files.ReadText(ctx, paths.DriverStart); err == nil {
+			if start, ok := domain.ParseDriverStart(start); ok {
+				lock.Start, lock.StartKnown = start, true
+			}
+		}
+		if driverAlive(deps, lock) {
 			continue
 		}
 		if err := interrupt(ctx, deps, job); err != nil {

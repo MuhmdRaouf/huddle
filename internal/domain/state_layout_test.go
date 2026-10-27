@@ -35,17 +35,18 @@ func TestStateLayout(t *testing.T) {
 		job := layout.Job("261008-abc123")
 		dir := filepath.Join(root, "jobs", "261008-abc123")
 		want := JobPaths{
-			Dir:        dir,
-			Record:     filepath.Join(dir, "job.json"),
-			Brief:      filepath.Join(dir, "brief.md"),
-			Artifacts:  filepath.Join(dir, "artifacts"),
-			DriverLog:  filepath.Join(dir, "driver.log"),
-			Stop:       filepath.Join(dir, "stop"),
-			Progress:   filepath.Join(dir, "progress.json"),
-			DriverLock: filepath.Join(dir, "driver.lock"),
-			EnginePid:  filepath.Join(dir, "engine.pid"),
-			Worktree:   filepath.Join(root, "worktrees", "261008-abc123"),
-			Checkout:   filepath.Join(root, "checkouts", "261008-abc123"),
+			Dir:         dir,
+			Record:      filepath.Join(dir, "job.json"),
+			Brief:       filepath.Join(dir, "brief.md"),
+			Artifacts:   filepath.Join(dir, "artifacts"),
+			DriverLog:   filepath.Join(dir, "driver.log"),
+			Stop:        filepath.Join(dir, "stop"),
+			Progress:    filepath.Join(dir, "progress.json"),
+			DriverLock:  filepath.Join(dir, "driver.lock"),
+			DriverStart: filepath.Join(dir, "driver.lock.start"),
+			EnginePid:   filepath.Join(dir, "engine.pid"),
+			Worktree:    filepath.Join(root, "worktrees", "261008-abc123"),
+			Checkout:    filepath.Join(root, "checkouts", "261008-abc123"),
 		}
 		if !reflect.DeepEqual(job, want) {
 			t.Fatalf("layout.job = %#v, want %#v", job, want)

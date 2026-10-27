@@ -1,8 +1,8 @@
 package app
 
 // InterruptDead moves every queued, running or verifying job whose driver died to interrupted:
-// these scenarios pin the dead-driver rule (lock pid not alive, or alive with another start
-// time), the upgrade fallbacks (old pid-only lock, missing lock), and that a version conflict or
+// these scenarios pin the dead-driver rule (lock pid not alive, or alive with a start time other
+// than the sidecar's), the fallbacks (no sidecar, missing lock), and that a version conflict or
 // a missing lock never invents a move. It starts nothing and signals nothing.
 
 import (
@@ -39,6 +39,14 @@ func writeDriverLock(t *testing.T, w *appWorld, id, text string) {
 	t.Helper()
 	if err := os.WriteFile(w.store.Paths(id).DriverLock, []byte(text), 0o600); err != nil {
 		t.Fatalf("write the driver lock: %v", err)
+	}
+}
+
+// writeDriverStart plants the driver lock's start-time sidecar.
+func writeDriverStart(t *testing.T, w *appWorld, id, text string) {
+	t.Helper()
+	if err := os.WriteFile(w.store.Paths(id).DriverStart, []byte(text), 0o600); err != nil {
+		t.Fatalf("write the driver start sidecar: %v", err)
 	}
 }
 
@@ -90,7 +98,7 @@ func TestInterruptDead(t *testing.T) {
 			s.Given("a running job whose driver lock names a pid that is not alive", func(t *testing.T) {
 				deps, w = newWorld(s.T, nil)
 				job = putRunning(w, "j1")
-				writeDriverLock(t, w, "j1", "4242 1700000000000\n")
+				writeDriverLock(t, w, "j1", "4242\n")
 			})
 			s.When("the sweep runs", func(t *testing.T) {
 				moved := InterruptDead(context.Background(), deps)
@@ -114,19 +122,20 @@ func TestInterruptDead(t *testing.T) {
 				if graces := w.process.gracesOf(); len(graces) != 0 {
 					t.Errorf("terminations were signalled with graces %v", graces)
 				}
-				if text := readDriverLockFile(t, w, "j1"); text != "4242 1700000000000\n" {
+				if text := readDriverLockFile(t, w, "j1"); text != "4242\n" {
 					t.Errorf("the driver lock changed to %q", text)
 				}
 			})
 		})
 
-		f.Scenario("a live pid with another start time is a reused pid: the job is interrupted", func(s *bdd.S) {
+		f.Scenario("a live pid whose start time differs from the sidecar's is a reused pid: the job is interrupted", func(s *bdd.S) {
 			var deps Deps
 			var w *appWorld
-			s.Given("a running job whose lock's pid is alive but began again after the lock was written", func(t *testing.T) {
+			s.Given("a running job whose lock's pid is alive but began again after the sidecar's start time", func(t *testing.T) {
 				deps, w = newWorld(s.T, nil)
 				putRunning(w, "j1")
-				writeDriverLock(t, w, "j1", "4242 1700000000000\n")
+				writeDriverLock(t, w, "j1", "4242\n")
+				writeDriverStart(t, w, "j1", "1700000000000\n")
 				w.process.MarkAlive(4242)
 				w.process.MarkStart(4242, 1799999000000)
 			})
@@ -144,13 +153,14 @@ func TestInterruptDead(t *testing.T) {
 			})
 		})
 
-		f.Scenario("a live pid with the same start time is still the driver: the job stays running", func(s *bdd.S) {
+		f.Scenario("a live pid whose start time matches the sidecar is still the driver: the job stays running", func(s *bdd.S) {
 			var deps Deps
 			var w *appWorld
-			s.Given("a running job whose lock's pid is alive and began at the recorded start time", func(t *testing.T) {
+			s.Given("a running job whose lock's pid is alive and began at the sidecar's start time", func(t *testing.T) {
 				deps, w = newWorld(s.T, nil)
 				putRunning(w, "j1")
-				writeDriverLock(t, w, "j1", "4242 1700000000000\n")
+				writeDriverLock(t, w, "j1", "4242\n")
+				writeDriverStart(t, w, "j1", "1700000000000\n")
 				w.process.MarkAlive(4242)
 				w.process.MarkStart(4242, 1700000000000)
 			})
@@ -168,10 +178,10 @@ func TestInterruptDead(t *testing.T) {
 			})
 		})
 
-		f.Scenario("an old pid-only lock reads by liveness alone", func(s *bdd.S) {
+		f.Scenario("a lock without a sidecar reads by liveness alone", func(s *bdd.S) {
 			var deps Deps
 			var w *appWorld
-			s.Given("a running job whose old lock carries only a dead pid, and one whose pid lives on", func(t *testing.T) {
+			s.Given("a running job whose lock carries a dead pid with no sidecar, and one whose pid lives on", func(t *testing.T) {
 				deps, w = newWorld(s.T, nil)
 				putRunning(w, "j-dead")
 				putRunning(w, "j-live")
@@ -230,7 +240,7 @@ func TestInterruptDead(t *testing.T) {
 			s.Given("a running job whose lock names a dead pid, over a store that answers every update with a conflict", func(t *testing.T) {
 				deps, w = newWorld(s.T, nil)
 				putRunning(w, "j1")
-				writeDriverLock(t, w, "j1", "4242 1700000000000\n")
+				writeDriverLock(t, w, "j1", "4242\n")
 				deps.Store = &conflictStore{JobStore: deps.Store}
 			})
 			s.When("the sweep runs", func(t *testing.T) {

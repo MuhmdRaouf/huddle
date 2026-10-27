@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -308,37 +309,36 @@ func StoredOrigin(value any) *Origin {
 	return JobOrigin(object["sessionId"])
 }
 
-// DriverLock is what a driver's lock file records: the holder's pid and, when the platform could
-// answer it, the process's start time — so a pid the OS handed to a new process is told from the
-// driver that wrote the lock.
+// DriverLock is what a driver's lock file records: the holder's pid. Start carries the
+// start-time sidecar's answer when a reader had one, so a pid the OS handed to a new process is
+// told from the driver that wrote the lock.
 type DriverLock struct {
 	Pid        int64
 	Start      int64 // unix milliseconds, meaningful only when StartKnown
 	StartKnown bool
 }
 
-// ParseDriverLock reads a lock file's contents: "pid", or "pid start" — both pids under
-// ParsePid's rules, at most two fields. An old pid-only lock parses with no start time.
+// ParseDriverLock reads a lock file's contents: the holder's pid alone, under ParsePid's rules.
+// The driver's start time lives beside the lock, in the .start sidecar, and ParseDriverStart
+// reads it.
 func ParseDriverLock(text string) (DriverLock, bool) {
-	fields := strings.Fields(text)
-	switch len(fields) {
-	case 1:
-		pid, ok := ParsePid(fields[0])
-		if !ok {
-			return DriverLock{}, false
-		}
-		return DriverLock{Pid: pid}, true
-	case 2:
-		pid, ok := ParsePid(fields[0])
-		if !ok {
-			return DriverLock{}, false
-		}
-		start, ok := ParsePid(fields[1])
-		if !ok {
-			return DriverLock{}, false
-		}
-		return DriverLock{Pid: pid, Start: start, StartKnown: true}, true
-	default:
+	pid, ok := ParsePid(text)
+	if !ok {
 		return DriverLock{}, false
 	}
+	return DriverLock{Pid: pid}, true
+}
+
+// ParseDriverStart reads the driver lock's start-time sidecar: unix milliseconds in decimal,
+// digits only under ParsePid's whitespace rules. The lock file itself carries the pid alone.
+func ParseDriverStart(text string) (int64, bool) {
+	trimmed := strings.TrimSpace(text)
+	if !onlyDigits(trimmed) {
+		return 0, false
+	}
+	start, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return start, true
 }

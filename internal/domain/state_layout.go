@@ -22,6 +22,9 @@ type JobPaths struct {
 	Progress string
 	// Held by the job's driver; holds its pid.
 	DriverLock string
+	// DriverLock's sidecar: the driver's process start time, written by the driver that took the
+	// lock, so a reader can tell a reused pid from the driver that wrote it.
+	DriverStart string
 	// The delegation engine's process group leader, while it runs.
 	EnginePid string
 	Worktree  string
@@ -78,7 +81,12 @@ type StateLayout struct {
 	CA string
 }
 
-const enginePidFilename = "engine.pid"
+const (
+	enginePidFilename = "engine.pid"
+	// The driver lock's start-time sidecar: the lock's file name plus this suffix. Old builds read
+	// the lock alone and ignore the sidecar.
+	driverStartSuffix = ".start"
+)
 
 // EnginePidBeside finds the job's engine.pid from one of its attempt logs (a worker knows its
 // log, not its job).
@@ -109,16 +117,17 @@ func NewStateLayout(root string) StateLayout {
 func (l StateLayout) Job(id string) JobPaths {
 	dir := filepath.Join(l.Jobs, id)
 	return JobPaths{
-		Dir:        dir,
-		Record:     filepath.Join(dir, "job.json"),
-		Brief:      filepath.Join(dir, "brief.md"),
-		Artifacts:  filepath.Join(dir, "artifacts"),
-		DriverLog:  filepath.Join(dir, "driver.log"),
-		Stop:       filepath.Join(dir, "stop"),
-		Progress:   filepath.Join(dir, "progress.json"),
-		DriverLock: filepath.Join(dir, "driver.lock"),
-		EnginePid:  filepath.Join(dir, enginePidFilename),
-		Worktree:   filepath.Join(l.Root, "worktrees", id),
-		Checkout:   filepath.Join(l.Checkouts, id),
+		Dir:         dir,
+		Record:      filepath.Join(dir, "job.json"),
+		Brief:       filepath.Join(dir, "brief.md"),
+		Artifacts:   filepath.Join(dir, "artifacts"),
+		DriverLog:   filepath.Join(dir, "driver.log"),
+		Stop:        filepath.Join(dir, "stop"),
+		Progress:    filepath.Join(dir, "progress.json"),
+		DriverLock:  filepath.Join(dir, "driver.lock"),
+		DriverStart: filepath.Join(dir, "driver.lock") + driverStartSuffix,
+		EnginePid:   filepath.Join(dir, enginePidFilename),
+		Worktree:    filepath.Join(l.Root, "worktrees", id),
+		Checkout:    filepath.Join(l.Checkouts, id),
 	}
 }

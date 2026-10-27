@@ -1089,6 +1089,83 @@ type acquireOutcome struct {
 	err     error
 }
 
+// The driver lock's start-time sidecar: the driver that takes the lock records its process's
+// start time beside the lock, so a reader can tell a reused pid from the driver that wrote it.
+// The lock itself holds the pid alone, which is all old builds read.
+func TestFsStoreDriverStart(t *testing.T) {
+	t.Run("taking the driver lock writes the pid alone and this process's start time beside it", func(t *testing.T) {
+		store := CreateFsStore(t.TempDir(), process.IsAlive)
+		job := testJob("261027-start01")
+		if _, err := store.Create(t.Context(), job); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		mine := int64(os.Getpid())
+		release, err := store.Lock(t.Context(), job.ID, mine)
+		if err != nil {
+			t.Fatalf("lock: %v", err)
+		}
+		paths := store.Paths(job.ID)
+
+		raw, err := os.ReadFile(paths.DriverLock)
+		if err != nil {
+			t.Fatalf("read the lock: %v", err)
+		}
+		lock, ok := domain.ParseDriverLock(string(raw))
+		if !ok {
+			t.Fatalf("ParseDriverLock(%q) = not ok", raw)
+		}
+		if lock.Pid != mine {
+			t.Errorf("lock pid = %d, want %d", lock.Pid, mine)
+		}
+
+		sidecar, err := os.ReadFile(paths.DriverStart)
+		if err != nil {
+			t.Fatalf("read the sidecar: %v", err)
+		}
+		want, wantOK := procStartTime(mine)
+		if !wantOK {
+			t.Fatal("this process's start time is unknown")
+		}
+		if start, ok := domain.ParseDriverStart(string(sidecar)); !ok || start != want {
+			t.Errorf("sidecar = %q, want %d", sidecar, want)
+		}
+		info, err := os.Stat(paths.DriverStart)
+		if err != nil {
+			t.Fatalf("stat the sidecar: %v", err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Errorf("sidecar mode = %o, want 600", info.Mode().Perm())
+		}
+
+		release()
+		if _, err := os.Stat(paths.DriverStart); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("sidecar after release: %v, want gone", err)
+		}
+		if _, err := os.Stat(paths.DriverLock); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("lock after release: %v, want gone", err)
+		}
+	})
+
+	t.Run("a sidecar that cannot be written leaves the lock standing", func(t *testing.T) {
+		store := CreateFsStore(t.TempDir(), process.IsAlive)
+		job := testJob("261027-start02")
+		if _, err := store.Create(t.Context(), job); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		paths := store.Paths(job.ID)
+		// WriteFileAtomic renames its temp file over the target, and a rename over a directory
+		// fails: the sidecar write drops its error and the lock stands anyway.
+		if err := os.Mkdir(paths.DriverStart, 0o700); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		release, err := store.Lock(t.Context(), job.ID, int64(os.Getpid()))
+		if err != nil {
+			t.Fatalf("lock: %v", err)
+		}
+		release()
+	})
+}
+
 // trackAcquire watches one acquire: settled tells whether it finished without waiting for it.
 func trackAcquire(sem ports.Semaphore, holder ports.SemaphoreHolder, ctx ...context.Context) chan acquireOutcome {
 	acquireCtx := context.Background()
