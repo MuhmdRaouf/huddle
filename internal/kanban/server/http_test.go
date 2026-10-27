@@ -454,3 +454,85 @@ func TestShutdownIsTokenChecked(t *testing.T) {
 		}
 	})
 }
+
+// writeFeatureCard lands one minimal ticket file carrying the named cluster.
+func writeFeatureCard(t *testing.T, b board.Board, col, id, cluster string) {
+	t.Helper()
+	text := "---\nid: " + id + "\ntitle: \"" + id + " title\"\ntype: docs\ncluster: " + cluster + "\n" +
+		"summary: \"one\"\n---\n\n# " + id + "\n\nBody text.\n"
+	if err := os.WriteFile(filepath.Join(b.Root, col, id+".md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A closed feature leaves /api/board whole: its cards out of the snapshot and
+// the counts, the feature named in features.closed. Board.Show already answers
+// feature_closed on the ticket, so /api/tickets keeps its 200.
+func TestAClosedFeatureLeavesTheBoardAndMarksItsTickets(t *testing.T) {
+	app, ts, b := newApp(t)
+	base := ts.URL
+	writeFeatureCard(t, b, "backlog", "SWR-1", "swr")
+	writeFeatureCard(t, b, "ready", "SWR-2", "swr")
+	writeFeatureCard(t, b, "review", "SWR-3", "swr")
+	writeFeatureCard(t, b, "backlog", "WEB-1", "web")
+	if _, changed := app.watcher.Scan(context.Background()); !changed {
+		t.Fatal("the first scan changed nothing")
+	}
+	if _, err := b.CloseFeature(context.Background(), board.Args{Actor: "lead", ID: "swr"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, changed := app.watcher.Scan(context.Background()); !changed {
+		t.Fatal("the close answered no change")
+	}
+
+	t.Run("the board leaves the closed cards out and names the feature", func(t *testing.T) {
+		status, body := getJSON(t, base+"/api/board")
+		if status != 200 {
+			t.Fatalf("status = %d, want 200", status)
+		}
+		var snap struct {
+			Columns []struct {
+				ID    string `json:"id"`
+				Count int    `json:"count"`
+			} `json:"columns"`
+			Cards []struct {
+				ID string `json:"id"`
+			} `json:"cards"`
+			Features struct {
+				Closed []struct {
+					Name     string `json:"name"`
+					ClosedAt string `json:"closedAt"`
+					Cards    int    `json:"cards"`
+				} `json:"closed"`
+			} `json:"features"`
+		}
+		if err := json.Unmarshal(body, &snap); err != nil {
+			t.Fatalf("decode %q: %v", body, err)
+		}
+		for _, card := range snap.Cards {
+			if strings.HasPrefix(card.ID, "SWR-") {
+				t.Errorf("the board still shows closed card %s: %s", card.ID, body)
+			}
+		}
+		if len(snap.Features.Closed) != 1 || snap.Features.Closed[0].Name != "swr" || snap.Features.Closed[0].Cards != 3 {
+			t.Errorf("features = %+v, want swr with its three cards", snap.Features.Closed)
+		}
+		counts := map[string]int{}
+		for _, col := range snap.Columns {
+			counts[col.ID] = col.Count
+		}
+		if counts["backlog"] != 1 || counts["ready"] != 0 || counts["review"] != 0 {
+			t.Errorf("counts = %v, want backlog 1, ready 0, review 0", counts)
+		}
+	})
+
+	t.Run("a closed card's ticket answers 200 with feature_closed", func(t *testing.T) {
+		status, body := getJSON(t, base+"/api/tickets/SWR-1")
+		if status != 200 {
+			t.Fatalf("status = %d, want 200", status)
+		}
+		if !strings.Contains(string(body), `"feature_closed":true`) {
+			t.Errorf("body = %q, want feature_closed true", body)
+		}
+	})
+}

@@ -28,6 +28,7 @@ type Snapshot struct {
 	Project     string          `json:"project"`
 	Epoch       int             `json:"epoch"`
 	StopLine    *board.StopLine `json:"stopLine"`
+	Features    Features        `json:"features"`
 	Columns     []Column        `json:"columns"`
 	Cards       []board.Card    `json:"cards"`
 	GeneratedAt string          `json:"generatedAt"`
@@ -41,11 +42,26 @@ type Column struct {
 	Count int    `json:"count"`
 }
 
+// ClosedFeature is one closed feature as the page names it: the feature, when
+// it closed and how many of its cards sit hidden.
+type ClosedFeature struct {
+	Name     string `json:"name"`
+	ClosedAt string `json:"closedAt"`
+	Cards    int    `json:"cards"`
+}
+
+// Features is the board's closed features; Closed is never nil in JSON, an
+// empty board encodes as [].
+type Features struct {
+	Closed []ClosedFeature `json:"closed"`
+}
+
 // Meta is a delta's board half: the fields around the cards, sent only when one
 // of them changed.
 type Meta struct {
 	Epoch    int             `json:"epoch"`
 	StopLine *board.StopLine `json:"stopLine"`
+	Features Features        `json:"features"`
 	Columns  []Column        `json:"columns"`
 }
 
@@ -98,6 +114,9 @@ type Watcher struct {
 	epochSeen bool
 	stopStat  stat
 	stopSeen  bool
+	featStat  stat
+	featSeen  bool
+	featRecs  []board.ClosedFeature
 }
 
 // file is one ticket file: its stat at the last read, that read's parse and the
@@ -112,6 +131,7 @@ type file struct {
 	problems []ticket.Problem
 	card     board.Card
 	hasCard  bool
+	hidden   bool // the file's cluster belongs to a closed feature: kept out of the cards
 }
 
 // entry is one file the current walk found.
@@ -160,9 +180,11 @@ func New(b board.Board, opts Options) *Watcher {
 // Scan walks the board's seven columns once and answers what changed since the
 // previous pass; false means the board still matches the snapshot. The walk is
 // stat only: a file is read when it is new or its size or mtime moved, and
-// EPOCH and STOP-LINE follow the same rule. A card is derived again only when
-// its own file moved or another card's move can change what it shows: a
-// dependency's column, or a second file holding its id.
+// EPOCH, STOP-LINE and FEATURES follow the same rule. A ticket whose cluster a
+// closed feature owns stays out of the cards, the counts and the deltas until
+// the feature reopens. A card is derived again only when its own file moved, it
+// comes back from a closed feature, or another card's move can change what it
+// shows: a dependency's column, or a second file holding its id.
 func (w *Watcher) Scan(ctx context.Context) (Delta, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -218,8 +240,8 @@ func (w *Watcher) Scan(ctx context.Context) (Delta, bool) {
 		if _, ok := found[path]; ok {
 			continue
 		}
-		if f.hasCard {
-			gone = append(gone, f.card.ID)
+		if f.hasCard && !f.hidden {
+			gone = append(gone, f.card.ID) // a hidden card left the page already
 		}
 		delete(w.files, path)
 	}
@@ -251,11 +273,33 @@ func (w *Watcher) Scan(ctx context.Context) (Delta, bool) {
 	}
 
 	epoch, stop := w.readBoardFiles()
+
+	// a closed feature keeps its tickets out of the page: the counts drop, the
+	// feature carries how many of its cards sit hidden
+	closed := make(map[string]bool, len(w.featRecs))
+	hiddenBy := make(map[string]int, len(w.featRecs))
+	for _, rec := range w.featRecs {
+		closed[rec.Name] = true
+	}
+	for _, f := range w.files {
+		if !closed[f.t.Cluster] {
+			continue
+		}
+		counts[f.col]--
+		hiddenBy[f.t.Cluster]++
+	}
+	feats := Features{Closed: make([]ClosedFeature, 0, len(w.featRecs))}
+	for _, rec := range w.featRecs {
+		feats.Closed = append(feats.Closed, ClosedFeature{
+			Name: rec.Name, ClosedAt: rec.ClosedAt, Cards: hiddenBy[rec.Name],
+		})
+	}
+
 	columns := make([]Column, 0, len(board.Columns))
 	for _, col := range board.Columns {
 		columns = append(columns, Column{ID: col, Title: columnTitles[col], Count: counts[col]})
 	}
-	newMeta := Meta{Epoch: epoch, StopLine: stop, Columns: columns}
+	newMeta := Meta{Epoch: epoch, StopLine: stop, Features: feats, Columns: columns}
 	metaChanged := !reflect.DeepEqual(w.meta, newMeta)
 
 	where := func(id string) (string, bool) {
@@ -273,7 +317,16 @@ func (w *Watcher) Scan(ctx context.Context) (Delta, bool) {
 		group := groups[col]
 		slices.SortStableFunc(group, lessCard)
 		for _, f := range group {
-			if recompute[f.path] {
+			if closed[f.t.Cluster] {
+				if f.hasCard && !f.hidden {
+					gone = append(gone, f.card.ID) // the page drops it this delta
+				}
+				f.hidden = true
+				continue
+			}
+			wasHidden := f.hidden
+			f.hidden = false
+			if recompute[f.path] || wasHidden {
 				selfID := f.id
 				prev, had := f.card, f.hasCard
 				f.card = board.CardOfLookup(f.t, f.col, f.path, f.problems, where, func(id string) bool {
@@ -289,7 +342,7 @@ func (w *Watcher) Scan(ctx context.Context) (Delta, bool) {
 					f.card.UpdatedAt = f.mod.Format(time.RFC3339)
 				}
 				f.hasCard = true
-				if !had || !reflect.DeepEqual(prev, f.card) {
+				if !had || wasHidden || !reflect.DeepEqual(prev, f.card) {
 					upsert = append(upsert, f.card)
 				}
 			}
@@ -313,7 +366,8 @@ func (w *Watcher) Scan(ctx context.Context) (Delta, bool) {
 	w.snap = Snapshot{
 		Rev: w.rev, Board: w.abs, Project: projectOf(w.abs),
 		Epoch: newMeta.Epoch, StopLine: newMeta.StopLine,
-		Columns: newMeta.Columns, Cards: cards,
+		Features: newMeta.Features,
+		Columns:  newMeta.Columns, Cards: cards,
 		GeneratedAt: now.Format(time.RFC3339),
 	}
 	d := Delta{Rev: w.rev, Upsert: upsert, Remove: remove}
@@ -389,9 +443,11 @@ func (w *Watcher) readFile(path string, e entry) {
 	}
 }
 
-// readBoardFiles answers the epoch and the stop-line, reading each only when
-// its stat moved. A missing or unreadable EPOCH reads as 1, as the board does;
-// an unchanged pass keeps the values the last meta carries.
+// readBoardFiles answers the epoch and the stop-line, and refreshes the closed
+// features, reading each only when its stat moved. A missing or unreadable
+// EPOCH reads as 1, as the board does; a missing or unreadable FEATURES means
+// no feature is closed; an unchanged pass keeps the values the last meta
+// carries.
 func (w *Watcher) readBoardFiles() (int, *board.StopLine) {
 	epoch := w.meta.Epoch
 	epochPath := filepath.Join(w.b.Root, "EPOCH")
@@ -404,19 +460,31 @@ func (w *Watcher) readBoardFiles() (int, *board.StopLine) {
 			}
 		}
 	}
+	stop := w.meta.StopLine
 	stopPath := filepath.Join(w.b.Root, "STOP-LINE")
 	if s := w.statOf(stopPath); !w.stopSeen || s != w.stopStat {
 		w.stopSeen, w.stopStat = true, s
-		var stop *board.StopLine
+		stop = nil
 		if data, err := w.read(stopPath); err == nil {
 			var rec board.StopLine
 			if json.Unmarshal(data, &rec) == nil {
 				stop = &rec
 			}
 		}
-		return epoch, stop
 	}
-	return epoch, w.meta.StopLine
+	w.readFeatures()
+	return epoch, stop
+}
+
+// readFeatures refreshes the closed-feature list when the FEATURES file's stat
+// moved, the way readBoardFiles reads EPOCH and STOP-LINE. On a db board the
+// file is the file:FEATURES meta row, and its stat moves by size alone.
+func (w *Watcher) readFeatures() {
+	featPath := filepath.Join(w.b.Root, "FEATURES")
+	if s := w.statOf(featPath); !w.featSeen || s != w.featStat {
+		w.featSeen, w.featStat = true, s
+		w.featRecs = w.b.ClosedFeatures()
+	}
 }
 
 // handMove answers whether a flow command owns this ticket's position: one

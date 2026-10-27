@@ -738,18 +738,27 @@ func TestRunPublishesAChangeWithinTheBudget(t *testing.T) {
 func TestDeltaAndSnapshotJSONNames(t *testing.T) {
 	s := Snapshot{
 		Rev: 7, Board: "/b/.agents/kanban", Project: "b", Epoch: 3,
+		Features: Features{Closed: []ClosedFeature{{
+			Name: "swr", ClosedAt: "2026-10-15T12:00:00+0300", Cards: 2,
+		}}},
 		Columns:     []Column{{ID: "backlog", Title: "Backlog", Count: 1}},
 		Cards:       []board.Card{{ID: "A-1"}},
 		GeneratedAt: "2026-10-15T12:00:00+03:00",
 	}
 	keys := marshalKeys(t, s)
-	for _, key := range []string{"rev", "board", "project", "epoch", "stopLine", "columns", "cards", "generatedAt"} {
+	for _, key := range []string{"rev", "board", "project", "epoch", "stopLine", "features", "columns", "cards", "generatedAt"} {
 		if _, ok := keys[key]; !ok {
 			t.Errorf("snapshot JSON lacks %q: %s", key, marshal(t, s))
 		}
 	}
 	if v := keys["stopLine"]; v != nil {
 		t.Errorf("stopLine = %v, want null", v)
+	}
+	featKeys := marshalKeys(t, s.Features.Closed[0])
+	for _, key := range []string{"name", "closedAt", "cards"} {
+		if _, ok := featKeys[key]; !ok {
+			t.Errorf("closed feature JSON lacks %q", key)
+		}
 	}
 	colKeys := marshalKeys(t, s.Columns[0])
 	for _, key := range []string{"id", "title", "count"} {
@@ -768,16 +777,19 @@ func TestDeltaAndSnapshotJSONNames(t *testing.T) {
 	if _, ok := keys["meta"]; ok {
 		t.Errorf("a delta without a meta change still carries meta: %s", marshal(t, d))
 	}
-	d.Meta = &Meta{Epoch: 3, Columns: []Column{}}
+	d.Meta = &Meta{Epoch: 3, Columns: []Column{}, Features: Features{Closed: []ClosedFeature{}}}
 	keys = marshalKeys(t, d)
 	meta, ok := keys["meta"].(map[string]any)
 	if !ok {
 		t.Fatalf("delta JSON carries no meta object: %s", marshal(t, d))
 	}
-	for _, key := range []string{"epoch", "stopLine", "columns"} {
+	for _, key := range []string{"epoch", "stopLine", "features", "columns"} {
 		if _, ok := meta[key]; !ok {
 			t.Errorf("meta JSON lacks %q: %s", key, marshal(t, d))
 		}
+	}
+	if metaFeatures := marshal(t, d.Meta.Features); string(metaFeatures) != `{"closed":[]}` {
+		t.Errorf("an empty closed list encodes as %s, want {\"closed\":[]}", metaFeatures)
 	}
 }
 
