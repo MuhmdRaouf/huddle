@@ -30,19 +30,22 @@ const Prefix = "/api/kanban"
 // from — huddle hands it the registry's sessions' cwds — Origin answers a
 // repository's origin URL (the default reads git's config, bounded at a
 // second), and Version and Now travel into every board app. Audit, when set,
-// sees one call per write the flow route runs, ok naming whether the board
-// took it. Relay, when set, carries one flow command for a board another
-// huddle hosts to that huddle before the local board is read; relayed names a
-// verdict to write through unchanged, false leaves the command local.
-// ReadRelay, when set, carries one GET read under a board's api/ to that
-// huddle first; relayed names a response to stream through, false leaves the
-// read on the local app.
+// sees one call per write the flow and feature routes run, ok naming whether
+// the board took it. Owner, when set, answers whether one request is the
+// owner's; the feature route takes the owner's writes alone, and a nil Owner
+// answers false for everyone. Relay, when set, carries one flow command for a
+// board another huddle hosts to that huddle before the local board is read;
+// relayed names a verdict to write through unchanged, false leaves the command
+// local. ReadRelay, when set, carries one GET read under a board's api/ to
+// that huddle first; relayed names a response to stream through, false leaves
+// the read on the local app.
 type Options struct {
 	Roots     func(ctx context.Context) []string
 	Origin    func(ctx context.Context, repoRoot string) string
 	Version   string
 	Now       func() time.Time
 	Audit     func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
+	Owner     func(r *http.Request) bool
 	Relay     func(ctx context.Context, key string, body []byte) (status int, answer []byte, relayed bool)
 	ReadRelay func(ctx context.Context, key, path string) (response *http.Response, relayed bool)
 }
@@ -64,6 +67,7 @@ type Tab struct {
 	version   string
 	now       func() time.Time
 	audit     func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
+	owner     func(r *http.Request) bool
 	relay     func(ctx context.Context, key string, body []byte) (int, []byte, bool)
 	readRelay func(ctx context.Context, key, path string) (*http.Response, bool)
 
@@ -82,6 +86,10 @@ func Mount(ctx context.Context, opts Options) *Tab {
 	if opts.Origin == nil {
 		opts.Origin = board.OriginOf
 	}
+	if opts.Owner == nil {
+		// a tab mounted without the answer refuses every feature write
+		opts.Owner = func(*http.Request) bool { return false }
+	}
 	return &Tab{
 		ctx:       ctx,
 		roots:     opts.Roots,
@@ -89,6 +97,7 @@ func Mount(ctx context.Context, opts Options) *Tab {
 		version:   opts.Version,
 		now:       opts.Now,
 		audit:     opts.Audit,
+		owner:     opts.Owner,
 		relay:     opts.Relay,
 		readRelay: opts.ReadRelay,
 		apps:      map[string]*entry{},
@@ -147,6 +156,10 @@ func (t *Tab) serveBoard(w http.ResponseWriter, r *http.Request, tail string) {
 	}
 	if rest == "flow" {
 		t.flowRoute(w, r, key)
+		return
+	}
+	if rest == "feature" {
+		t.featureRoute(w, r, key)
 		return
 	}
 	if t.readRelay != nil && relayedRead(r.Method, rest) {

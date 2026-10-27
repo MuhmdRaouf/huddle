@@ -567,7 +567,9 @@ the audit. Move tickets only with the `kanban` command — it checks the gates a
 
 The hub serves every board in process: `kanban start` and `kanban open` name the board's page in
 the hub (starting the hub when the huddle home is set up), and the live page shows every folder
-change within half a second. A second machine works the same board through the satellite relay —
+change within half a second. The owner closes and reopens a feature from the tab's picker;
+`POST /api/kanban/b/<key>/feature` is owner-only — any other identity gets 403 and the board
+stays as it was. A second machine works the same board through the satellite relay —
 see [Another machine](#another-machine).
 
 ## A hub on a local name

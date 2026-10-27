@@ -668,6 +668,12 @@ func Serve(ctx context.Context, o Options) error {
 			Roots:   s.boardRoots,
 			Version: o.Version,
 			Now:     now,
+			// the tab's feature route takes the owner's writes alone: the root
+			// credential, or the browser session the dashboard serves
+			Owner: func(r *http.Request) bool {
+				who, named := s.who(r)
+				return named && (who.Root || who.Browser != "")
+			},
 			// one audit row per board write the tab runs: the member the credential
 			// names, the command and the card, and whether the board took it
 			Audit: func(ctx context.Context, r *http.Request, command, key, id string, ok bool) {
