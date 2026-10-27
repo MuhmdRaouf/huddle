@@ -344,7 +344,7 @@ const bodiesFirstByteBudget = 5 * time.Millisecond
 // 2 MiB request through the router with the tap on answer as fast as the same request straight
 // to the upstream, best of five.
 func TestTheTapKeepsTheOverheadBound(t *testing.T) {
-	t.Parallel()
+	// A timing test: it runs alone, never beside the package's other tests.
 	if testkit.RaceEnabled {
 		t.Skip("the race build inflates every hop; the budget is a release-build gate")
 	}
@@ -413,4 +413,186 @@ func TestNoKeystoreMeansNoBodies(t *testing.T) {
 	if n := strings.Count(rig.logs.joined(), "bodies off: no keystore"); n != 1 {
 		t.Errorf("the bodies-off line is logged %d times, want once:\n%s", n, rig.logs.joined())
 	}
+}
+
+// scanRouteEvents reads every route event in the spool, raw, oldest file first; a route event
+// without a body id is exactly what capture off must leave.
+func scanRouteEvents(spoolDir string) []string {
+	var lines []string
+	entries, err := os.ReadDir(spoolDir)
+	if err != nil {
+		return lines
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		file, err := os.Open(filepath.Join(spoolDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(file)
+		scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)
+		for scanner.Scan() {
+			var line struct {
+				Event string `json:"event"`
+			}
+			if json.Unmarshal(scanner.Bytes(), &line) != nil || line.Event != "route" {
+				continue
+			}
+			lines = append(lines, string(scanner.Bytes()))
+		}
+		_ = file.Close()
+	}
+	return lines
+}
+
+// waitRouteEvents polls for the spool to hold n route events and answers them.
+func waitRouteEvents(t *testing.T, spoolDir string, n int) []string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		events := scanRouteEvents(spoolDir)
+		if len(events) >= n {
+			return events
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d route events never landed in %s (have %d)", n, spoolDir, len(events))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// settingsFileOf is where the daemon reads the hub's capture switch: the huddle home's data
+// dir, resolved the hub's way — $HUDDLE_DATA, else the home root, which with nothing set is
+// $HOME/.config/huddle of the daemon's own env.
+func settingsFileOf(rig *daemonRig) string {
+	return filepath.Join(rig.env["HOME"], ".config", "huddle", "settings.json")
+}
+
+// awaitCaptureLine waits for the daemon to log the switch within the two seconds the real
+// poll promises, and fails with its log when it does not.
+func awaitCaptureLine(t *testing.T, rig *daemonRig, line string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(rig.logs.joined(), line) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the daemon never logged %q; its log:\n%s", line, rig.logs.joined())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestCaptureOffStopsTheBodies runs the capture switch end to end: capture off in the hub's
+// settings file stops the bodies within a poll while the route events flow, and capture back
+// on keeps the next request's body.
+func TestCaptureOffStopsTheBodies(t *testing.T) {
+	bdd.Feature(t, "the router's bodies", func(f *bdd.F) {
+		f.Scenario("capture off keeps no body while its route event lands; back on, the next body is kept", func(s *bdd.S) {
+			var rig *daemonRig
+			var daemon *bodiesDaemon
+			var settings string
+			s.Given("a daemon serves zai with a keystore", func(t *testing.T) {
+				rig = newDaemonRig(s.T)
+				if err := router.SetEnabled(rig.env, "zai", true); err != nil {
+					t.Fatal(err)
+				}
+				settings = settingsFileOf(rig)
+				daemon = startBodiesDaemon(s.T, rig, bodiesKeystoreOf(bodiesTestKey))
+				rig.awaitHealth(t, "zai")
+			})
+			s.When("the hub's settings turn capture off", func(t *testing.T) {
+				if err := os.MkdirAll(filepath.Dir(settings), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(settings, []byte("{\"capture\": false}\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				awaitCaptureLine(t, rig, "huddle-router: bodies capture off")
+			})
+			var sent string
+			s.Then("a request through the lane keeps no body and its route event lands without one", func(t *testing.T) {
+				request, err := json.Marshal(bodiesRequest{
+					Model:    "glm-5.3",
+					Messages: []bodiesMessage{{Role: "user", Content: "capture off body"}},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				sent = string(request)
+				if status, body := postBodyOf(t, fmt.Sprintf("http://127.0.0.1:%d/v1/messages", rig.port), sent); status != 200 {
+					t.Fatalf("glm-5.3 = %d %q", status, body)
+				}
+				events := waitRouteEvents(t, filepath.Join(rig.env["RADAR_HOME"], "spool"), 1)
+				var line map[string]any
+				if err := json.Unmarshal([]byte(events[0]), &line); err != nil {
+					t.Fatal(err)
+				}
+				for _, member := range []string{"body_id", "body"} {
+					if _, ok := line[member]; ok {
+						t.Errorf("the route event with capture off carries %s: %s", member, events[0])
+					}
+				}
+			})
+			s.And("capture back on keeps the next request's body", func(t *testing.T) {
+				if err := os.WriteFile(settings, []byte("{\"capture\": true}\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				awaitCaptureLine(t, rig, "huddle-router: bodies capture on")
+				request, err := json.Marshal(bodiesRequest{
+					Model:    "glm-5.3",
+					Messages: []bodiesMessage{{Role: "user", Content: "capture on body"}},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if status, body := postBodyOf(t, fmt.Sprintf("http://127.0.0.1:%d/v1/messages", rig.port), string(request)); status != 200 {
+					t.Fatalf("glm-5.3 = %d %q", status, body)
+				}
+				events := waitRouteEvents(t, filepath.Join(rig.env["RADAR_HOME"], "spool"), 2)
+				var first, second struct {
+					BodyID *string `json:"body_id"`
+				}
+				if err := json.Unmarshal([]byte(events[0]), &first); err != nil {
+					t.Fatal(err)
+				}
+				if first.BodyID != nil {
+					t.Errorf("the capture-off event kept a body id: %s", events[0])
+				}
+				if err := json.Unmarshal([]byte(events[1]), &second); err != nil {
+					t.Fatal(err)
+				}
+				if second.BodyID == nil {
+					t.Fatalf("the capture-on event has no body id: %s", events[1])
+				}
+				daemon.stop(t)
+				ctx := context.Background()
+				store, err := ledger.OpenBodies(paths.RouterBodiesPath(ctx, rig.env), bodiesTestKey)
+				if err != nil {
+					t.Fatalf("open router.db: %v", err)
+				}
+				defer store.Close()
+				input, ok, err := store.Body(ctx, *second.BodyID, "input")
+				if err != nil {
+					t.Fatalf("read the input body: %v", err)
+				}
+				if !ok {
+					t.Fatal("the capture-on request's input body is not in router.db")
+				}
+				if string(input) == sent {
+					t.Error("the capture-on request's input body is the capture-off request's")
+				}
+				if string(input) != rig.zai.requests()[len(rig.zai.requests())-1].body {
+					t.Errorf("the kept input is %d bytes, want the %d the upstream saw", len(input), len(rig.zai.requests()[len(rig.zai.requests())-1].body))
+				}
+				output, ok, err := store.Body(ctx, *second.BodyID, "output")
+				if err != nil {
+					t.Fatalf("read the answer body: %v", err)
+				}
+				if !ok || !strings.Contains(string(output), "zai-1") || !strings.Contains(string(output), "zai-2") {
+					t.Errorf("the answer body lost the stream: %q", string(output))
+				}
+			})
+		})
+	})
 }

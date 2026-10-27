@@ -23,6 +23,9 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/gateway"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 )
 
@@ -189,6 +192,13 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	}
 	tap, bodyStore := openBodies(ctx, env, source, log)
 	kept := &bodies{tap: tap, store: bodyStore}
+	// The capture switch lives in the hub's settings file: read once at start, re-read on every
+	// poll, so the hub's switch reaches the router within one poll. With no tap there is
+	// nothing to switch, and with no data dir nothing said off reads on.
+	captureDir := captureDataDir(env)
+	if kept.tap != nil && captureDir != "" {
+		kept.tap.SetCapturing(outside.CaptureOn(captureDir))
+	}
 	kept.sweep(ctx, log)
 	server, multi := router.CreateMulti(router.MultiOptions{
 		Port:      port,
@@ -257,6 +267,17 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 					log("huddle-router: now serving " + strings.Join(multi.Providers(), ", "))
 				}
 			}
+			// The switch re-reads like providers.json, and says so only when it moved.
+			if kept.tap != nil && captureDir != "" {
+				if on := outside.CaptureOn(captureDir); on != kept.tap.Capturing() {
+					kept.tap.SetCapturing(on)
+					if on {
+						log("huddle-router: bodies capture on")
+					} else {
+						log("huddle-router: bodies capture off")
+					}
+				}
+			}
 			if !nextRSS.After(time.Now()) {
 				nextRSS = time.Now().Add(interval)
 				spawned = checkRSS(ceiling, spawned, env, log)
@@ -267,6 +288,20 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 			}
 		}
 	}
+}
+
+// captureDataDir is the data dir whose settings file holds the capture switch, found the way
+// the hub finds its own: HUDDLE_DATA, else the huddle home. "" when the environment names
+// neither.
+func captureDataDir(env domain.EnvLookup) string {
+	if data := jsscalar.Trim(env["HUDDLE_DATA"]); data != "" {
+		return data
+	}
+	resolved, err := home.Resolve(func(key string) string { return env[key] })
+	if err != nil {
+		return ""
+	}
+	return resolved.Root
 }
 
 // anthropicOf is the Anthropic the Claude models go to: $HUDDLE_ROUTER_ANTHROPIC_URL, else

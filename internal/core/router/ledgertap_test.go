@@ -7,6 +7,7 @@ package router
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -326,5 +327,67 @@ func TestTheTapBufferKeepsAWholeAnswerOrNothing(t *testing.T) {
 	buf.push([]byte("tiny"))
 	if body, whole := buf.bytes(); whole || body != nil {
 		t.Errorf("a push after the limit = %q whole=%v, want still nothing", body, whole)
+	}
+}
+
+// TestTheTapStopsCapturingWhenTold runs the capture switch on the live route: a new tap is
+// capturing, SetCapturing(false) takes the no-tap path for the requests after it — no body id,
+// nothing in the sink, a route event as without a tap — and SetCapturing(true) keeps bodies
+// again.
+func TestTheTapStopsCapturingWhenTold(t *testing.T) {
+	t.Parallel()
+	sink := newTapSink()
+	tap := NewLedgerTap(sink, TapBudget, func(string) {})
+	if !tap.Capturing() {
+		t.Fatal("a new tap is not capturing")
+	}
+
+	rig := newTapRouter(t, tap, tapJSONUpstream(t, &seenList{}), nil)
+	tap.SetCapturing(false)
+	got := postTap(t, rig.port, `{"model":"glm-5.3","messages":[]}`)
+	if got.status != 200 {
+		t.Fatalf("the answer's status = %d, want 200: %s", got.status, got.body)
+	}
+	event := waitRoute(t, rig.events)
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "body_id") || strings.Contains(string(data), `"body"`) {
+		t.Errorf("the route event with capture off = %s, want it without body_id and body", data)
+	}
+	// nothing was offered with capture off: the sink stays empty across a writer's beat
+	time.Sleep(50 * time.Millisecond)
+	sink.recorded(t, 0)
+
+	tap.SetCapturing(true)
+	if !tap.Capturing() {
+		t.Error("Capturing() = false after SetCapturing(true)")
+	}
+	got = postTap(t, rig.port, `{"model":"glm-5.3","messages":[]}`)
+	if got.status != 200 {
+		t.Fatalf("the answer's status = %d, want 200: %s", got.status, got.body)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if routes := rig.events.routes(); len(routes) == 2 {
+			event = routes[1]
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the second route event never landed (have %d)", len(rig.events.routes()))
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if event.BodyID == nil || *event.BodyID == "" {
+		t.Error("the route event after capture came back has no body id")
+	}
+	if event.Body != "kept" {
+		t.Errorf("the event's Body = %q, want kept", event.Body)
+	}
+	flushTap(t, tap)
+	calls := sink.recorded(t, 2)
+	if calls[0].side != "input" || calls[1].side != "output" || calls[0].id != calls[1].id {
+		t.Errorf("the bodies came back as %s then %s, want one input and one output under one id", calls[0].side, calls[1].side)
 	}
 }

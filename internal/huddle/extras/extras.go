@@ -3,7 +3,7 @@
 // notifications for what needs the owner, the session links, and Radar's alerts and costs.
 //
 // The routes live under /api/c/<ch>/x/…: rules, approval, approvals, approvals/dismiss, radar,
-// digest and link; plus the server-wide settings ({notify}) the dashboard switches.
+// digest and link; plus the server-wide settings ({notify}, {capture}) the dashboard switches.
 package extras
 
 import (
@@ -701,17 +701,20 @@ func Route(ctx context.Context, ch *channel.Channel, rest, method, since, as str
 	return nil, false, nil
 }
 
-// SettingsAnswer is the hub's settings: the notify switch and the display time zone.
+// SettingsAnswer is the hub's settings: the notify switch, the display time zone and the
+// router's body capture switch.
 type SettingsAnswer struct {
 	outside.State
 	outside.HubZone
+	Capture bool `json:"capture"`
 }
 
 // Settings answers the server-wide settings, the owner's to change: a POST turns the
-// notifications on or off, a PUT picks the display time zone.
-func Settings(method string, n *outside.Notifier, z *outside.Zones, me string, body *jsfmt.Value) (SettingsAnswer, error) {
+// notifications or the body capture on or off, a PUT picks the display time zone. A POST has
+// one switch only, and names it in full: {notify: true|false} or {capture: true|false}.
+func Settings(method string, n *outside.Notifier, z *outside.Zones, c *outside.Capture, me string, body *jsfmt.Value) (SettingsAnswer, error) {
 	if method != http.MethodPost && method != http.MethodPut {
-		return SettingsAnswer{State: n.State(), HubZone: z.Get()}, nil
+		return SettingsAnswer{State: n.State(), HubZone: z.Get(), Capture: c.On()}, nil
 	}
 	if me != channel.Owner {
 		return SettingsAnswer{}, &channel.HuddleError{
@@ -727,11 +730,16 @@ func Settings(method string, n *outside.Notifier, z *outside.Zones, me string, b
 		if err != nil {
 			return SettingsAnswer{}, bad(err.Error())
 		}
-		return SettingsAnswer{State: n.State(), HubZone: picked}, nil
+		return SettingsAnswer{State: n.State(), HubZone: picked, Capture: c.On()}, nil
 	}
-	notify := objField(body, "notify")
-	if notify == nil || notify.Kind() != jsfmt.KindBool {
-		return SettingsAnswer{}, bad("settings: {notify: true|false}")
+	notify, capture := objField(body, "notify"), objField(body, "capture")
+	if (notify != nil) == (capture != nil) ||
+		(notify != nil && notify.Kind() != jsfmt.KindBool) ||
+		(capture != nil && capture.Kind() != jsfmt.KindBool) {
+		return SettingsAnswer{}, bad("settings: {notify: true|false} or {capture: true|false}")
 	}
-	return SettingsAnswer{State: n.Set(notify.EncodeJSON() == "true"), HubZone: z.Get()}, nil
+	if capture == nil {
+		return SettingsAnswer{State: n.Set(notify.EncodeJSON() == "true"), HubZone: z.Get(), Capture: c.On()}, nil
+	}
+	return SettingsAnswer{State: n.State(), HubZone: z.Get(), Capture: c.Set(capture.EncodeJSON() == "true")}, nil
 }

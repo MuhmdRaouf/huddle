@@ -1840,8 +1840,9 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 		return
 	}
 	// The body going upstream is the input the tap keeps, offered before the call so the write
-	// never waits on the answer; a body the tap refuses marks the request dropped.
-	if w.opts.Tap != nil && note != nil && tap.id == "" {
+	// never waits on the answer; a body the tap refuses marks the request dropped. The capture
+	// switch is read once, here: off means no id and no offer, the request's no-tap path.
+	if w.opts.Tap != nil && w.opts.Tap.Capturing() && note != nil && tap.id == "" {
 		if id, ok := tapBodyID(); ok {
 			tap.id = id
 			if !w.opts.Tap.Offer(tap.id, "input", body, timing.takenAt) {
@@ -1868,7 +1869,9 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			}
 			if note != nil {
 				tracker = NewUsageTracker(answer.Header.Get("Content-Type"), answer.Header.Get("Content-Encoding"))
-				if w.opts.Tap != nil {
+				// The output buffer follows the input's decision: an id was minted only when the
+				// tap was capturing, so with capture off nothing is kept.
+				if tap.id != "" {
 					kept = newTapBuffer(TapBudget)
 				}
 				answer.Body = &bodyTap{source: answer.Body, push: func(chunk []byte) {

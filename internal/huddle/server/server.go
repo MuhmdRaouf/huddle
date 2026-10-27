@@ -254,6 +254,7 @@ type server struct {
 	auth     *auth.Auth
 	notify   *outside.Notifier
 	zones    *outside.Zones
+	capture  *outside.Capture
 	watcher  *extras.Watcher
 	views    *Views
 	mcp      *Mcp
@@ -573,6 +574,7 @@ func Serve(ctx context.Context, o Options) error {
 		auth:         auth.New(root, now, func(line string) { fmt.Fprintf(o.Stdout, "huddle: %s\n", line) }, filepath.Join(o.Data, "auth.json")),
 		notify:       outside.NewNotifier(o.Data),
 		zones:        outside.NewZones(o.Data),
+		capture:      outside.NewCapture(o.Data),
 		views:        NewViews(),
 		mcp:          NewMcp(o.Version),
 		listener:     listener,
@@ -1300,7 +1302,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		if err != nil {
 			return err
 		}
-		state, err := extras.Settings(r.Method, s.notify, s.zones, me.Name, body)
+		state, err := extras.Settings(r.Method, s.notify, s.zones, s.capture, me.Name, body)
 		if err != nil {
 			return err
 		}

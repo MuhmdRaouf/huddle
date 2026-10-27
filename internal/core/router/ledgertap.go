@@ -47,6 +47,7 @@ type LedgerTap struct {
 	queue     chan tapItem
 	queued    atomic.Int64 // bytes offered and not yet written
 	budget    int64
+	capturing atomic.Bool   // the capture switch: a lane reads it instead of deciding to tap
 	done      chan struct{} // closed by Close
 	drained   chan struct{} // closed when the writer returns
 	closeOnce sync.Once
@@ -70,8 +71,23 @@ func NewLedgerTap(sink BodySink, budget int64, log func(string)) *LedgerTap {
 		drained: make(chan struct{}),
 		log:     log,
 	}
+	t.capturing.Store(true)
 	safego.Go(log, func() { t.write() })
 	return t
+}
+
+// SetCapturing moves the capture switch: false makes every lane that has not decided yet take
+// its no-tap path — no id, no offer — while bodies already offered still reach the sink.
+func (t *LedgerTap) SetCapturing(on bool) {
+	if t == nil {
+		return
+	}
+	t.capturing.Store(on)
+}
+
+// Capturing reads the capture switch. A nil tap is not capturing.
+func (t *LedgerTap) Capturing() bool {
+	return t != nil && t.capturing.Load()
 }
 
 // Offer queues one plain body for the writer and answers whether it took it. It never blocks

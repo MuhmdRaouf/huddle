@@ -91,7 +91,9 @@ request in flight it uses under 0.5% of one core. `TestE2ERouterOverhead` and `T
 both budgets. Beside that, huddle-router keeps every request's and answer's body for 7 days in
 `~/.agents/radar/ledger/router.db` — redacted, and sealed under a key in the login account's keystore — so the
 dashboard can show a session's whole exchange afterwards; with no keystore (a home that is not the login
-account's, as an agent's or a test's is), bodies stay off and nothing is written.
+account's, as an agent's or a test's is), bodies stay off and nothing is written. The capture setting in the
+hub's settings turns body capture off, and huddle-router stops writing bodies within 2 seconds while the route
+metadata goes on.
 
 A lane can fall back to another of its provider's models when one keeps failing. List them under the
 provider in `~/.agents/huddle-router/providers.json`:
