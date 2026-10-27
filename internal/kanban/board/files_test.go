@@ -271,6 +271,15 @@ func TestDbFilesMapsPathsToRowsAndMeta(t *testing.T) {
 	if value, ok, _ := st.GetMeta(ctx, "file:STOP-LINE"); !ok || value != "stopped" {
 		t.Fatalf("file:STOP-LINE = %q, %v; want \"stopped\"", value, ok)
 	}
+	if err := f.writeFile(ctx, filepath.Join(root, "FEATURES"), []byte(`{"closed":[]}`)); err != nil {
+		t.Fatalf("writeFile FEATURES: %v", err)
+	}
+	if value, ok, _ := st.GetMeta(ctx, "file:FEATURES"); !ok || value != `{"closed":[]}` {
+		t.Fatalf("file:FEATURES = %q, %v; want the closed list", value, ok)
+	}
+	if data, err := f.readFile(filepath.Join(root, "FEATURES")); err != nil || string(data) != `{"closed":[]}` {
+		t.Fatalf("readFile FEATURES = %q, %v; want the closed list", data, err)
+	}
 
 	// remove drops the row; a missing path wraps fs.ErrNotExist.
 	if err := f.remove(filepath.Join(root, "review", "KBN-1.md")); err != nil {
@@ -287,6 +296,12 @@ func TestDbFilesMapsPathsToRowsAndMeta(t *testing.T) {
 	}
 	if err := f.remove(filepath.Join(root, "STOP-LINE")); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("the second STOP-LINE remove = %v, want an fs.ErrNotExist", err)
+	}
+	if err := f.remove(filepath.Join(root, "FEATURES")); err != nil {
+		t.Fatalf("remove FEATURES: %v", err)
+	}
+	if err := f.remove(filepath.Join(root, "FEATURES")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the second FEATURES remove = %v, want an fs.ErrNotExist", err)
 	}
 
 	// A path outside the root is the user's own file: the OS answers it.

@@ -137,6 +137,18 @@ func TestADbBoardMatchesAFolderBoard(t *testing.T) {
 		{"check B", func(b Board) ([]string, error) {
 			return b.Check(ctx, "B")
 		}},
+		{"feature close fix", func(b Board) ([]string, error) {
+			return b.CloseFeature(ctx, Args{Actor: "lead", ID: "fix"})
+		}},
+		{"closed features", func(b Board) ([]string, error) {
+			return closedFeatureLines(b), nil
+		}},
+		{"feature reopen fix", func(b Board) ([]string, error) {
+			return b.ReopenFeature(ctx, Args{Actor: "lead", ID: "fix"})
+		}},
+		{"closed features after reopen", func(b Board) ([]string, error) {
+			return closedFeatureLines(b), nil
+		}},
 	}
 
 	folderLines := drive(t, folder, steps)
@@ -172,7 +184,7 @@ func TestADbBoardMatchesAFolderBoard(t *testing.T) {
 	}
 
 	// The board's own files carry the same bytes.
-	for _, name := range []string{"LOG", "EPOCH", "STOP-LINE"} {
+	for _, name := range []string{"LOG", "EPOCH", "STOP-LINE", "FEATURES"} {
 		want := boardFile(t, folder, name)
 		got := boardFile(t, db, name)
 		if got != want {
@@ -219,6 +231,18 @@ func cardLines(cards []Card) []string {
 	for _, c := range cards {
 		c.UpdatedAt = ""
 		lines = append(lines, fmt.Sprintf("%+v", c))
+	}
+	return lines
+}
+
+// closedFeatureLines renders the board's closed features as comparable lines,
+// led by the count so an empty board still answers one.
+func closedFeatureLines(b Board) []string {
+	closed := b.ClosedFeatures()
+	lines := make([]string, 0, len(closed)+1)
+	lines = append(lines, fmt.Sprintf("%d closed", len(closed)))
+	for _, f := range closed {
+		lines = append(lines, fmt.Sprintf("%s %s %s", f.Name, f.Actor, f.ClosedAt))
 	}
 	return lines
 }

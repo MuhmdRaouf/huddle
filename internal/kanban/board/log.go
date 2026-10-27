@@ -17,9 +17,10 @@ const stampLayout = "2006-01-02T15:04:05-0700"
 
 func (b Board) stamp() string { return b.now().Format(stampLayout) }
 
-func (b Board) logPath() string   { return filepath.Join(b.Root, "LOG") }
-func (b Board) epochPath() string { return filepath.Join(b.Root, "EPOCH") }
-func (b Board) stopPath() string  { return filepath.Join(b.Root, "STOP-LINE") }
+func (b Board) logPath() string      { return filepath.Join(b.Root, "LOG") }
+func (b Board) epochPath() string    { return filepath.Join(b.Root, "EPOCH") }
+func (b Board) stopPath() string     { return filepath.Join(b.Root, "STOP-LINE") }
+func (b Board) featuresPath() string { return filepath.Join(b.Root, "FEATURES") }
 
 // jsonFields renders one JSON object with its pairs in call order: a Go map
 // has none, and a LOG line keeps the order its command wrote. Only `"`, `\`

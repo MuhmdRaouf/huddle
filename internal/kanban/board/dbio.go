@@ -15,7 +15,7 @@ import (
 
 // boardFileNames are the board's own top-level files: a migration carries the
 // ones present into meta rows, and an export writes the ones present back out.
-var boardFileNames = []string{"README.md", "LOG", "EPOCH", "STOP-LINE"}
+var boardFileNames = []string{"README.md", "LOG", "EPOCH", "STOP-LINE", "FEATURES"}
 
 // MigrateDB converts the resolved folder board in place: every ticket file
 // becomes a row carrying its whole text and its file mtime, and the board's

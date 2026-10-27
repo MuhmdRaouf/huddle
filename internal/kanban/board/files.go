@@ -271,7 +271,7 @@ func ticketOf(rel string) (col, id string, ok bool) {
 // is not one of the board's own top-level files.
 func metaKey(rel string) string {
 	switch rel {
-	case "LOG", "EPOCH", "STOP-LINE", "README.md":
+	case "LOG", "EPOCH", "STOP-LINE", "README.md", "FEATURES":
 		return "file:" + rel
 	}
 	return ""

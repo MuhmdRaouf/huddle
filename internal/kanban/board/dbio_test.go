@@ -190,6 +190,46 @@ func TestMigrateDBMovesEveryTicketAndBoardFile(t *testing.T) {
 	}
 }
 
+// A closed feature rides the migration into meta and the export writes it back
+// out, so the closed state survives the folder-to-db move and back.
+func TestFeaturesRideMigrationAndExport(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.card("backlog", "FEA-1", "id: FEA-1\ntitle: \"one\"\ncluster: swr\ntype: docs")
+	mustLines(t, func() ([]string, error) {
+		return f.b.CloseFeature(ctx, Args{Actor: "lead", ID: "swr"})
+	})
+	want, err := os.ReadFile(filepath.Join(f.root, "FEATURES"))
+	if err != nil {
+		t.Fatalf("read FEATURES: %v", err)
+	}
+
+	mustLines(t, func() ([]string, error) { return MigrateDB(ctx, f.b) })
+	if _, err := os.Stat(filepath.Join(f.root, "FEATURES")); err == nil {
+		t.Fatal("FEATURES still sits at the root after the migration")
+	}
+	db, closeBoard, err := Open(ctx, Board{Root: f.root, Now: func() time.Time { return fixedNow }})
+	if err != nil {
+		t.Fatalf("reopen as a db board: %v", err)
+	}
+	t.Cleanup(func() { _ = closeBoard() })
+	closed := db.ClosedFeatures()
+	if len(closed) != 1 || closed[0] != (ClosedFeature{Name: "swr", Actor: "lead", ClosedAt: stamp}) {
+		t.Fatalf("the db board's closed features = %+v, want swr by lead", closed)
+	}
+
+	out := filepath.Join(t.TempDir(), "exported")
+	mustLines(t, func() ([]string, error) { return ExportMarkdown(ctx, db, out) })
+	data, err := os.ReadFile(filepath.Join(out, "FEATURES"))
+	if err != nil || !bytes.Equal(data, want) {
+		t.Fatalf("the exported FEATURES = %q, %v; want %q", data, err, want)
+	}
+	exported := Board{Root: out, Now: func() time.Time { return fixedNow }}
+	if again := exported.ClosedFeatures(); len(again) != 1 || again[0] != closed[0] {
+		t.Fatalf("the exported board's closed features = %+v, want %+v", again, closed)
+	}
+}
+
 // A root already holding kanban.db refuses a second migration.
 func TestMigrateDBRefusesASecondRun(t *testing.T) {
 	ctx := context.Background()
