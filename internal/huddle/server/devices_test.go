@@ -141,6 +141,73 @@ func TestDeviceRemovalIsAudited(t *testing.T) {
 	t.Errorf("the audit log holds no device.remove row for iPhone: %s", out)
 }
 
+// currentFlags reads one devices body into each device's current flag; nil marks a row that
+// carries no current field at all.
+func currentFlags(t *testing.T, body string) map[string]*bool {
+	t.Helper()
+	var list struct {
+		Devices []struct {
+			Name    string `json:"name"`
+			Current *bool  `json:"current"`
+		} `json:"devices"`
+	}
+	if err := json.Unmarshal([]byte(body), &list); err != nil {
+		t.Fatalf("devices body %s: %v", body, err)
+	}
+	flags := make(map[string]*bool, len(list.Devices))
+	for _, d := range list.Devices {
+		flags[d.Name] = d.Current
+	}
+	return flags
+}
+
+func TestDevicesMarksTheCallerOwnDevice(t *testing.T) {
+	srv := startServer(t, nil)
+	key := webauthntest.NewSoftKey(t)
+	phoneCookie, _ := pairDevice(t, srv, key, "iPhone")
+	pairDevice(t, srv, key, "iPad")
+
+	code, _, out := srv.get(t, "/api/devices", deviceHeaders(cookieValueOf(t, phoneCookie)))
+	if code != 200 {
+		t.Fatalf("GET /api/devices = %d %s, want 200", code, out)
+	}
+	flags := currentFlags(t, out)
+	if len(flags) != 2 {
+		t.Fatalf("the device list holds %d devices, want 2: %s", len(flags), out)
+	}
+	if current := flags["iPhone"]; current == nil || !*current {
+		t.Errorf("the calling device answers current = %v, want true: %s", current, out)
+	}
+	if current := flags["iPad"]; current != nil && *current {
+		t.Errorf("the other device answers current = true, want false: %s", out)
+	}
+}
+
+func TestDevicesFromAnOwnerLinkSessionMarksNothingCurrent(t *testing.T) {
+	srv := startServer(t, nil)
+	key := webauthntest.NewSoftKey(t)
+	pairDevice(t, srv, key, "iPhone")
+	pairDevice(t, srv, key, "iPad")
+
+	// the owner's link session: the root signs its browser in with a login code, and the
+	// browser carries no device of its own
+	_, cookie := signInBrowser(t, srv, loginCode(t, srv, map[string]string{"x-huddle-token": srv.token}))
+	if cookie == "" {
+		t.Fatalf("the owner's sign-in set no cookie")
+	}
+	code, _, out := srv.get(t, "/api/devices", map[string]string{"Cookie": cookie, "x-huddle-token": ""})
+	if code != 200 {
+		t.Fatalf("GET /api/devices = %d %s, want 200", code, out)
+	}
+	for name, current := range currentFlags(t, out) {
+		if current == nil {
+			t.Errorf("the owner's link session's answer for %s carries no current field: %s", name, out)
+		} else if *current {
+			t.Errorf("the owner's link session marks %s current, want every row false: %s", name, out)
+		}
+	}
+}
+
 // containsDevice answers whether one JSON device list names the device.
 func containsDevice(list, name string) bool {
 	var parsed struct {

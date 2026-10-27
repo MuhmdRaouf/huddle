@@ -1504,7 +1504,7 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 	case credentialed && path == "/api/stepup/finish" && r.Method == http.MethodPost:
 		return s.stepUpFinishRoute(w, r, me)
 	case credentialed && path == "/api/devices" && r.Method == http.MethodGet:
-		return s.devicesRoute(w, r)
+		return s.devicesRoute(w, r, me)
 	case credentialed && devicePath.MatchString(path) && r.Method == http.MethodDelete:
 		return s.deviceRemoveRoute(w, r, path, me)
 	case credentialed && path == "/api/signout" && r.Method == http.MethodPost:

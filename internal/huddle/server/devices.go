@@ -17,8 +17,16 @@ import (
 // browser kept the spaces a device name may carry.
 var devicePath = regexp.MustCompile(`^/api/devices/([^/]+)$`)
 
-// devicesRoute answers every paired device, the oldest first.
-func (s *server) devicesRoute(w http.ResponseWriter, r *http.Request) error {
+// deviceAnswer is one paired device as the caller sees it: the store's view plus whether the
+// device answering is this one.
+type deviceAnswer struct {
+	auth.DeviceView
+	Current bool `json:"current"`
+}
+
+// devicesRoute answers every paired device, the oldest first, with the caller's own device
+// marked current — only a device session names a device; every other credential marks none.
+func (s *server) devicesRoute(w http.ResponseWriter, r *http.Request, me auth.Who) error {
 	if s.pairs == nil {
 		return &channel.HuddleError{Status: 500, Msg: "the pairing store is unavailable"}
 	}
@@ -26,9 +34,13 @@ func (s *server) devicesRoute(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	answers := make([]deviceAnswer, 0, len(devices))
+	for _, d := range devices {
+		answers = append(answers, deviceAnswer{DeviceView: d, Current: me.Device != "" && d.Name == me.Device})
+	}
 	s.writeJSON(w, 200, struct {
-		Devices []auth.DeviceView `json:"devices"`
-	}{devices}, nil)
+		Devices []deviceAnswer `json:"devices"`
+	}{answers}, nil)
 	return nil
 }
 
