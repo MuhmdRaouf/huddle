@@ -53,13 +53,9 @@ func ReadSettings(path string) Settings {
 }
 
 // WriteSettings records the switches: it rewrites only tips_for_me and tips_to_sessions and keeps
-// every other top-level key the file holds. The file lands at mode 0600 through a temp file in
-// its own folder and a rename, so a reader never meets a half-written file.
+// every other top-level key the file holds.
 func WriteSettings(path string, s Settings) error {
-	fields := map[string]json.RawMessage{}
-	if raw, err := os.ReadFile(path); err == nil && json.Unmarshal(raw, &fields) != nil {
-		fields = map[string]json.RawMessage{} // a file that says nothing readable starts fresh
-	}
+	set := map[string]json.RawMessage{}
 	for _, field := range []struct {
 		name  string
 		value bool
@@ -71,11 +67,25 @@ func WriteSettings(path string, s Settings) error {
 		if err != nil {
 			return fmt.Errorf("marshal %s: %w", field.name, err)
 		}
-		fields[field.name] = raw
+		set[field.name] = raw
+	}
+	return writeFields(path, set)
+}
+
+// writeFields sets the given top-level keys of the JSON object at path and keeps every other key
+// the file holds. The file lands at mode 0600 through a temp file in its own folder and a
+// rename, so a reader never meets a half-written file.
+func writeFields(path string, set map[string]json.RawMessage) error {
+	fields := map[string]json.RawMessage{}
+	if raw, err := os.ReadFile(path); err == nil && json.Unmarshal(raw, &fields) != nil {
+		fields = map[string]json.RawMessage{} // a file that says nothing readable starts fresh
+	}
+	for name, raw := range set {
+		fields[name] = raw
 	}
 	whole, err := json.Marshal(fields)
 	if err != nil {
-		return fmt.Errorf("marshal the switches: %w", err)
+		return fmt.Errorf("marshal the fields: %w", err)
 	}
 	temp, err := os.CreateTemp(filepath.Dir(path), ".insights-*.json")
 	if err != nil {
