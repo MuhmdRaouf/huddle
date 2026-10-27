@@ -106,6 +106,55 @@ func TestOriginReadsTheRepositoryConfig(t *testing.T) {
 	}
 }
 
+// TestBoardKeyKeepsTheOriginWhenTheLookupTurnsEmpty mounts a Tab whose Origin
+// answers a fixed origin on its first call and "" on every later one — the
+// shape of the default's git config lookup timing out under load — and checks
+// BoardKey answers the same key both times: a board's key must not change
+// with one slow git.
+func TestBoardKeyKeepsTheOriginWhenTheLookupTurnsEmpty(t *testing.T) {
+	home := t.TempDir()
+	repo := newRepo(t, home, "alpha")
+	const origin = "git@github.com:MuhmdRaouf/x.git"
+	calls := 0
+	tab := Mount(context.Background(), Options{
+		Roots: staticRoots(repo),
+		Origin: func(context.Context, string) string {
+			calls++
+			if calls == 1 {
+				return origin
+			}
+			return ""
+		},
+	})
+	root := boardRoot(repo)
+	want := board.RepoKey(origin, server.KeyOf(root))
+	if first := tab.BoardKey(context.Background(), root); first != want {
+		t.Fatalf("the first BoardKey = %q, want the origin key %q", first, want)
+	}
+	if second := tab.BoardKey(context.Background(), root); second != want {
+		t.Fatalf("the second BoardKey = %q, want the origin key %q again: an empty lookup moved the board", second, want)
+	}
+}
+
+// TestBoardKeyWithTheOriginNeverKnownKeepsThePathKey: a root the Origin fake
+// answers "" for from the start has no origin to remember, so its key stays
+// the one its path decides.
+func TestBoardKeyWithTheOriginNeverKnownKeepsThePathKey(t *testing.T) {
+	home := t.TempDir()
+	repo := newRepo(t, home, "beta")
+	tab := Mount(context.Background(), Options{
+		Roots:  staticRoots(repo),
+		Origin: func(context.Context, string) string { return "" },
+	})
+	root := boardRoot(repo)
+	want := server.KeyOf(root)
+	for i := range 2 {
+		if key := tab.BoardKey(context.Background(), root); key != want {
+			t.Fatalf("call %d: BoardKey = %q, want the path key %q", i+1, key, want)
+		}
+	}
+}
+
 // gitRepo answers one repo git itself initialised with an origin remote,
 // holding a board at .agents/kanban.
 func gitRepo(t *testing.T, home, name, origin string) string {

@@ -63,7 +63,7 @@ type entry struct {
 type Tab struct {
 	ctx       context.Context
 	roots     func(ctx context.Context) []string
-	origin    func(ctx context.Context, repoRoot string) string
+	originOf  func(ctx context.Context, repoRoot string) string
 	version   string
 	now       func() time.Time
 	audit     func(ctx context.Context, r *http.Request, command, key, id string, ok bool)
@@ -71,9 +71,11 @@ type Tab struct {
 	relay     func(ctx context.Context, key string, body []byte) (int, []byte, bool)
 	readRelay func(ctx context.Context, key, path string) (*http.Response, bool)
 
-	mu     sync.Mutex
-	apps   map[string]*entry
-	flowMu sync.Mutex
+	mu       sync.Mutex
+	apps     map[string]*entry
+	flowMu   sync.Mutex
+	originMu sync.Mutex
+	origins  map[string]string
 }
 
 // Mount builds the tab. Serving starts when the caller serves its handler;
@@ -93,7 +95,7 @@ func Mount(ctx context.Context, opts Options) *Tab {
 	return &Tab{
 		ctx:       ctx,
 		roots:     opts.Roots,
-		origin:    opts.Origin,
+		originOf:  opts.Origin,
 		version:   opts.Version,
 		now:       opts.Now,
 		audit:     opts.Audit,
@@ -101,6 +103,7 @@ func Mount(ctx context.Context, opts Options) *Tab {
 		relay:     opts.Relay,
 		readRelay: opts.ReadRelay,
 		apps:      map[string]*entry{},
+		origins:   map[string]string{},
 	}
 }
 
@@ -301,6 +304,23 @@ func (t *Tab) boardsOf(ctx context.Context) []boardRow {
 // a caller outside the tab names a board the way the list does.
 func (t *Tab) BoardKey(ctx context.Context, root string) string {
 	return board.RepoKey(t.origin(ctx, board.RepoRootOf(root)), server.KeyOf(root))
+}
+
+// origin answers the repo root's origin URL through the tab's Origin, keeping
+// the last non-empty answer per root: the lookup is a subprocess bounded at a
+// second that answers "" on a timeout, and a board's key must not change with
+// one slow git. A root never seen with an origin stays empty, so the path key
+// still decides.
+func (t *Tab) origin(ctx context.Context, repoRoot string) string {
+	if o := t.originOf(ctx, repoRoot); o != "" {
+		t.originMu.Lock()
+		t.origins[repoRoot] = o
+		t.originMu.Unlock()
+		return o
+	}
+	t.originMu.Lock()
+	defer t.originMu.Unlock()
+	return t.origins[repoRoot]
 }
 
 // noEnv answers nothing found, so the huddle process's own KANBAN_BOARD never
