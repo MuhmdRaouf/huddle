@@ -75,6 +75,10 @@ func (b Board) promote(ctx context.Context, a Args) ([]string, error) {
 		return nil, refused("%s: no card in backlog/%s; only backlog cards are promoted%s",
 			a.ID, b.whereIs(a.ID), b.missingHint(a.ID))
 	}
+	t, _ := b.loadCard("backlog", a.ID)
+	if err := b.closedRefusal(t); err != nil {
+		return nil, err
+	}
 	if _, err := b.readCardText(src, a.ID); err != nil {
 		return nil, err
 	}
@@ -187,6 +191,10 @@ func (b Board) pull(ctx context.Context, a Args) ([]string, error) {
 				return nil, refused("%s: not on the board; run list to see ids, or new to create it", a.ID)
 			}
 		}
+		target, _ := b.loadCard("ready", a.ID)
+		if err := b.closedRefusal(target); err != nil {
+			return nil, err
+		}
 		// the fast track: an unclaimed expedite ticket goes before any normal --id pull;
 		// one whose dependency is still open cannot be worked, so it holds nothing yet
 		var waiting []string
@@ -206,7 +214,6 @@ func (b Board) pull(ctx context.Context, a Args) ([]string, error) {
 				waiting = append(waiting, cid)
 			}
 		}
-		target, _ := b.loadCard("ready", a.ID)
 		if len(waiting) > 0 && !target.Expedite {
 			if !a.Force {
 				return nil, refused("expedite %s is waiting: pull it first (or --force to skip the fast track; logged)",
@@ -357,6 +364,9 @@ func (b Board) review(ctx context.Context, a Args) ([]string, error) {
 			a.ID, b.whereIs(a.ID), b.missingHint(a.ID))
 	}
 	t, _ := b.loadCard("in-progress", a.ID)
+	if err := b.closedRefusal(t); err != nil {
+		return nil, err
+	}
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(a.Note)), "pass-through") && authorIs(t, a.Actor) {
 		return nil, refused("%s: %s is the author or a holder (%s) and does not wave their own card through; a reviewer writes the pass-through note",
 			a.ID, a.Actor, whoHolds(t))
@@ -412,6 +422,9 @@ func (b Board) reject(ctx context.Context, a Args) ([]string, error) {
 			a.ID, b.whereIs(a.ID), b.missingHint(a.ID))
 	}
 	t, _ := b.loadCard("review", a.ID)
+	if err := b.closedRefusal(t); err != nil {
+		return nil, err
+	}
 	if authorIs(t, a.Actor) {
 		return nil, refused("%s: %s is the author or holder (%s) and does not reject their own card; a different --actor must",
 			a.ID, a.Actor, whoHolds(t))
@@ -462,6 +475,9 @@ func (b Board) test(ctx context.Context, a Args) ([]string, error) {
 			a.ID, b.whereIs(a.ID), b.missingHint(a.ID))
 	}
 	t, _ := b.loadCard("review", a.ID)
+	if err := b.closedRefusal(t); err != nil {
+		return nil, err
+	}
 	if authorIs(t, a.Actor) {
 		return nil, refused("%s: %s is the author or holder (%s) and does not verify their own card; a different --actor must test it (also for a pass-through wave)",
 			a.ID, a.Actor, whoHolds(t))
@@ -527,6 +543,9 @@ func (b Board) done(ctx context.Context, a Args) ([]string, error) {
 		return nil, refused("%s: not on the board; run list to see ids, or new to create it", a.ID)
 	}
 	t, _ := b.loadCard(col, a.ID)
+	if err := b.closedRefusal(t); err != nil {
+		return nil, err
+	}
 	if isImplementation(t.Type) {
 		if col != "testing" {
 			raw := strings.ToLower(strings.TrimSpace(t.Type))
@@ -595,6 +614,10 @@ func (b Board) block(ctx context.Context, a Args) ([]string, error) {
 		if _, ok := b.fs().stat(src); !ok {
 			continue
 		}
+		t, _ := b.loadCard(c, a.ID)
+		if err := b.closedRefusal(t); err != nil {
+			return nil, err
+		}
 		if _, err := b.readCardText(src, a.ID); err != nil {
 			return nil, err
 		}
@@ -653,6 +676,10 @@ func (b Board) unblock(ctx context.Context, a Args) ([]string, error) {
 		return nil, refused("%s: not in blocked/%s; only blocked cards are unblocked%s",
 			a.ID, b.whereIs(a.ID), b.missingHint(a.ID))
 	}
+	t, _ := b.loadCard("blocked", a.ID)
+	if err := b.closedRefusal(t); err != nil {
+		return nil, err
+	}
 	if _, err := b.readFMText(src, a.ID); err != nil {
 		return nil, err
 	}
@@ -694,6 +721,9 @@ func (b Board) move(ctx context.Context, a Args) ([]string, error) {
 		return nil, refused("%s: not on the board; run list to see ids, or new to create it", a.ID)
 	}
 	t, _ := b.loadCard(from, a.ID)
+	if err := b.closedRefusal(t); err != nil {
+		return nil, err
+	}
 	if (a.Column == "done" || from == "done") && isImplementation(t.Type) &&
 		strings.TrimSpace(t.Fields["test_note"]) == "" {
 		return nil, refused("%s: an implementation ticket without a test_note does not move into or out of done (review and test it first)", a.ID)
@@ -1054,6 +1084,9 @@ func (b Board) set(ctx context.Context, actor, id string, pairs []string) ([]str
 		return nil, refused("%s: not on the board; run list to see ids, or new to create it", id)
 	}
 	t, _ := b.loadCard(col, id)
+	if err := b.closedRefusal(t); err != nil {
+		return nil, err
+	}
 	if col == "done" {
 		for _, w := range wants {
 			if !slices.Contains(classifying, w.key) {

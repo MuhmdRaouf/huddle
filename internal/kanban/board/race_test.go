@@ -212,3 +212,39 @@ func TestARefusedCommandWritesNothing(t *testing.T) {
 		t.Fatalf("the refused Done changed the rows:\nbefore %+v\nafter  %+v", before, after)
 	}
 }
+
+// A closed feature's Done is refused on a db board too, and the refused
+// command leaves every row as it was.
+func TestAClosedFeatureRefusesDoneAndWritesNothing(t *testing.T) {
+	ctx := context.Background()
+	b, closeBoard := openDBBoard(t)
+	defer func() { _ = closeBoard() }()
+	text := "---\nid: ROLL-2\ntitle: \"closed\"\ncluster: swr\ntype: docs\n---\n\nBody.\n"
+	if err := b.Store.Put(ctx, store.Ticket{
+		ID: "ROLL-2", Column: "testing", Text: text, UpdatedAt: seedAt,
+	}); err != nil {
+		t.Fatalf("seed ROLL-2: %v", err)
+	}
+	if _, err := b.CloseFeature(ctx, Args{Actor: "lead", ID: "swr"}); err != nil {
+		t.Fatalf("CloseFeature: %v", err)
+	}
+	before, err := b.Store.All(ctx)
+	if err != nil {
+		t.Fatalf("read the rows before: %v", err)
+	}
+
+	_, err = b.Done(ctx, Args{Actor: "verifier", ID: "ROLL-2", Note: "shipped"})
+	if !errors.As(err, new(*Refused)) {
+		t.Fatalf("Done = %v, want a *Refused naming the closed feature", err)
+	}
+	if msg := refuseErr(t, err); !strings.HasPrefix(msg, "Feature closed: swr") {
+		t.Fatalf("refusal = %q, want one starting \"Feature closed: swr\"", msg)
+	}
+	after, err := b.Store.All(ctx)
+	if err != nil {
+		t.Fatalf("read the rows after: %v", err)
+	}
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("the refused Done changed the rows:\nbefore %+v\nafter  %+v", before, after)
+	}
+}

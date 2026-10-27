@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
@@ -116,6 +117,12 @@ func TestCloseFeatureScenarios(t *testing.T) {
 			s.And("every card file keeps its bytes", func(t *testing.T) {
 				sameBytes(t, cards, cardBytes(t, fx), "after the close")
 			})
+			s.And("pull by id refuses the closed card, naming the feature", func(t *testing.T) {
+				msg := mustRefuse(t, fx.pull(Args{Actor: "w1", ID: "SWR-2"}))
+				if !strings.HasPrefix(msg, "Feature closed: swr") {
+					t.Fatalf("pull --id after the close = %q, want one naming swr", msg)
+				}
+			})
 		})
 
 		f.Scenario("reopening a feature clears the record", func(s *bdd.S) {
@@ -180,6 +187,10 @@ func TestCloseFeatureScenarios(t *testing.T) {
 			})
 			s.And("every card file's bytes are as before the close", func(t *testing.T) {
 				sameBytes(t, cards, cardBytes(t, fx), "after the reopen")
+			})
+			s.And("pull by id takes the reopened card again", func(t *testing.T) {
+				out := mustLines(t, fx.pull(Args{Actor: "w1", ID: "SWR-2"}))
+				lastEndsWith(t, out, "in-progress", "SWR-2")
 			})
 		})
 	})

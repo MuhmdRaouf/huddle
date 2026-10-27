@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/MuhmdRaouf/huddle/internal/kanban/ticket"
 )
 
 // ClosedFeature is one feature a board closed: who closed it and when. Closing
@@ -43,6 +45,16 @@ func (b Board) closedSet() map[string]bool {
 		set[f.Name] = true
 	}
 	return set
+}
+
+// closedRefusal answers nil while the card's feature is open, and the closed
+// refusal once the board closed it: a closed feature's cards wait for the
+// reopen, so no flow command may move or edit them.
+func (b Board) closedRefusal(t ticket.Ticket) error {
+	if !b.closedSet()[t.Cluster] {
+		return nil
+	}
+	return refused("Feature closed: %s; reopen it with kanban feature reopen %s", t.Cluster, t.Cluster)
 }
 
 // CloseFeature records a merged feature as closed: its cards stay where they

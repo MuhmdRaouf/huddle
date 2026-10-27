@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1747,4 +1748,106 @@ func TestMoveRefusesANonUTF8Ticket(t *testing.T) {
 	if !f.exists("ready", "LAT-9") {
 		t.Error("the non-UTF-8 ticket moved")
 	}
+}
+
+// dirBytes answers every file under root keyed by its path below root, so a
+// test can hold a whole board still — cards and the board's own files alike.
+func dirBytes(t *testing.T, root string) map[string][]byte {
+	t.Helper()
+	out := map[string][]byte{}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		out[rel] = data
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	return out
+}
+
+// A closed feature's card refuses every flow command that names it: the
+// refusal names the feature and the board keeps its bytes. log changes no
+// state, so it still works.
+func TestAClosedFeatureRefusesTheFlowCommands(t *testing.T) {
+	ctx := context.Background()
+	text := "id: SWR-2\ntitle: \"two\"\ncluster: swr\ntype: docs"
+
+	tests := []struct {
+		name string
+		col  string
+		call func(f *fixture) cmd
+	}{
+		{"promote", "backlog", func(f *fixture) cmd {
+			return f.promote(Args{Actor: "lead", ID: "SWR-2"})
+		}},
+		{"pull by id", "ready", func(f *fixture) cmd {
+			return f.pull(Args{Actor: "w1", ID: "SWR-2"})
+		}},
+		{"review", "in-progress", func(f *fixture) cmd {
+			return f.review(Args{Actor: "reviewer", ID: "SWR-2", Note: "looks done"})
+		}},
+		{"reject", "review", func(f *fixture) cmd {
+			return f.reject(Args{Actor: "reviewer", ID: "SWR-2", Note: "not yet"})
+		}},
+		{"test", "review", func(f *fixture) cmd {
+			return f.test(Args{Actor: "verifier", ID: "SWR-2", Note: "go test ./... exit 0"})
+		}},
+		{"done", "testing", func(f *fixture) cmd {
+			return f.done(Args{Actor: "verifier", ID: "SWR-2", Note: "shipped"})
+		}},
+		{"block", "ready", func(f *fixture) cmd {
+			return f.block(Args{Actor: "w1", ID: "SWR-2", Note: "waiting on the api"})
+		}},
+		{"unblock", "blocked", func(f *fixture) cmd {
+			return f.unblock(Args{Actor: "lead", ID: "SWR-2"})
+		}},
+		{"move", "backlog", func(f *fixture) cmd {
+			return f.move(Args{Actor: "lead", ID: "SWR-2", Column: "ready"})
+		}},
+		{"set", "backlog", func(f *fixture) cmd {
+			return f.set("lead", "SWR-2", []string{"priority=P1"})
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.card(tt.col, "SWR-2", text)
+			mustLines(t, func() ([]string, error) {
+				return f.b.CloseFeature(ctx, Args{Actor: "lead", ID: "swr"})
+			})
+			before := dirBytes(t, f.root)
+			msg := mustRefuse(t, tt.call(f))
+			if !strings.HasPrefix(msg, "Feature closed: swr") {
+				t.Fatalf("refusal = %q, want one starting \"Feature closed: swr\"", msg)
+			}
+			sameBytes(t, before, dirBytes(t, f.root), "after the refused "+tt.name)
+		})
+	}
+
+	t.Run("log still works", func(t *testing.T) {
+		f := newFixture(t)
+		f.card("backlog", "SWR-2", text)
+		mustLines(t, func() ([]string, error) {
+			return f.b.CloseFeature(ctx, Args{Actor: "lead", ID: "swr"})
+		})
+		out := mustLines(t, f.log(Args{Actor: "lead", ID: "SWR-2", Note: "note only, no move"}))
+		if idOfLastLine(t, out) != "SWR-2" {
+			t.Fatalf("log = %v, want the SWR-2 path", out)
+		}
+		contains(t, f.fm("backlog", "SWR-2"), "note only, no move", "the card's log")
+	})
 }
