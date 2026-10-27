@@ -4,11 +4,12 @@
 // read, and the kept theme's id (the registry in themes.ts) lands on <html data-theme>, which
 // theme.css's side rules and variants read; with the OS choice it follows every flip of
 // prefers-color-scheme while the page is open. The installed app's status bar takes its colour from
-// the theme-color metas: an override paints every one in its scheme with no media query, and the OS
-// choice keeps the dark-then-light pair keyed to the OS. The flavour, kept under "huddle:flavour",
+// the theme-color metas, painting the kept theme's own bar for the side it paints: one colour on
+// every meta for an override or a one-sided theme, and the dark-then-light pair keyed to the OS
+// when System picks a two-sided theme. The flavour, kept under "huddle:flavour",
 // lands on <html data-flavour>, where tokens.css remaps its colour tokens to Catppuccin latte or
 // mocha; plain leaves the attribute off.
-import { readTheme, sideOf } from "./themes.ts";
+import { readTheme, sideOf, themeOf, type Theme, type ThemeSide } from "./themes.ts";
 
 /** The two schemes tokens.css paints. */
 export type Scheme = "light" | "dark";
@@ -60,19 +61,22 @@ export function resolveScheme(pref: SchemePref, systemDark: boolean): Scheme {
   return systemDark ? "dark" : "light";
 }
 
-/** The status bar colour of each scheme: tokens.css's plain --ui-bg, which .ui-shell paints under
- *  the bar. theme-boot.js and index.html carry the same two values. */
-const BAR: Record<Scheme, string> = { light: "#f6f7f9", dark: "#0e1014" };
+/** The sides the theme-color metas name in document order when the OS chooses. */
+const BAR_ORDER: readonly ThemeSide[] = ["dark", "light"];
 
-/** The schemes the theme-color metas name in document order when the OS chooses. */
-const BAR_ORDER: readonly Scheme[] = ["dark", "light"];
-
-/** Paints every theme-color meta in the chosen scheme, or keys the pair to the OS for "system". */
-function paintBar(doc: Document, pref: SchemePref): void {
-  doc.head.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((meta, i) => {
-    const scheme = pref === "system" ? (BAR_ORDER[i % 2] ?? "dark") : pref;
-    meta.content = BAR[scheme];
-    if (pref === "system") meta.media = `(prefers-color-scheme: ${scheme})`;
+/** Paints the kept theme's own bar colour into every theme-color meta: one side's colour on every
+ *  meta when a side is already painted (an override, or a one-sided theme under System), and the
+ *  dark-then-light pair keyed to the OS when System picks a two-sided theme. */
+function paintBar(doc: Document, pref: SchemePref, theme: Theme): void {
+  const metas = doc.head.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+  const keyed = pref === "system" && theme.sides.length > 1;
+  const order: readonly ThemeSide[] = keyed
+    ? BAR_ORDER
+    : [sideOf(theme.id, pref === "system" ? "dark" : pref)];
+  metas.forEach((meta, i) => {
+    const side = order[i % order.length] ?? "dark";
+    meta.content = theme.bar[side] ?? "";
+    if (keyed) meta.media = `(prefers-color-scheme: ${side})`;
     else meta.removeAttribute("media");
   });
 }
@@ -88,10 +92,10 @@ export function applyScheme(
   store: SchemeStore,
 ): Scheme {
   const scheme = resolveScheme(pref, systemDark);
-  const theme = readTheme(store);
-  root.dataset.theme = theme;
-  root.dataset.scheme = sideOf(theme, scheme);
-  paintBar(root.ownerDocument, pref);
+  const theme = themeOf(readTheme(store));
+  root.dataset.theme = theme.id;
+  root.dataset.scheme = sideOf(theme.id, scheme);
+  paintBar(root.ownerDocument, pref, theme);
   return scheme;
 }
 

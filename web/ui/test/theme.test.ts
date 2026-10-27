@@ -151,6 +151,49 @@ describe("theme", () => {
     ]);
   });
 
+  it("paints a two-sided community theme its own bar, keyed to the OS for System", () => {
+    const metas = themeColours();
+    const root = document.documentElement;
+    const store = memory({ [THEME_KEY]: "tokyo-night" });
+    applyScheme(root, "system", true, store);
+    expect(root.dataset.scheme).toBe("dark");
+    expect(metas.map((m) => [m.media, m.content])).toEqual([
+      ["(prefers-color-scheme: dark)", "#16161e"],
+      ["(prefers-color-scheme: light)", "#d0d5e3"],
+    ]);
+    applyScheme(root, "light", true, store);
+    expect(root.dataset.scheme).toBe("light");
+    for (const m of metas) {
+      expect(m.content).toBe("#d0d5e3");
+      expect(m.hasAttribute("media")).toBe(false);
+    }
+  });
+
+  it("paints a dark-only theme its dark bar whatever the scheme asks", () => {
+    const metas = themeColours();
+    const root = document.documentElement;
+    const store = memory({ [THEME_KEY]: "dracula" });
+    applyScheme(root, "light", false, store);
+    expect(root.dataset.scheme).toBe("dark");
+    for (const m of metas) {
+      expect(m.content).toBe("#21222c");
+      expect(m.hasAttribute("media")).toBe(false);
+    }
+  });
+
+  it("paints a one-sided theme its only bar under System too", () => {
+    const metas = themeColours();
+    const root = document.documentElement;
+    const store = memory({ [THEME_KEY]: "monokai" });
+    applyScheme(root, "system", false, store);
+    expect(root.dataset.theme).toBe("monokai");
+    expect(root.dataset.scheme).toBe("dark");
+    for (const m of metas) {
+      expect(m.content).toBe("#1e1f1c");
+      expect(m.hasAttribute("media")).toBe(false);
+    }
+  });
+
   it("re-applies when the OS flips, until stopped, and an override ignores the flip", () => {
     const root = document.createElement("html");
     const store = memory();

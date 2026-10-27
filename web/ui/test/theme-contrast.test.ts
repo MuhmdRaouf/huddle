@@ -1,10 +1,12 @@
 // theme-contrast.test.ts — the colour the pages paint keeps WCAG AA. tokens.css comes first: in
-// every scheme it paints (each registered theme's side, and the Catppuccin flavour's latte and
-// mocha) every ink is 4.5:1 on every surface and on its own soft fill laid over each surface, and
-// every mark is 3:1 on every surface. A translucent soft is judged as composited: the fill over
-// the surface under it, because that is the colour the eye reads. Then the looks theme.css ships:
-// base-content on each base shade, and each colour's *-content on the colour. The ratios come from
-// the WCAG relative-luminance formula, written here; no dependency.
+// every scheme it paints (the default theme's sides, and the Catppuccin flavour's latte and mocha)
+// every ink is 4.5:1 on every surface and on its own soft fill laid over each surface, and every
+// mark is 3:1 on every surface. A translucent soft is judged as composited: the fill over the
+// surface under it, because that is the colour the eye reads. Every other registered theme is its
+// own scheme, painted from its own block in theme.css; that block is the only source its scheme
+// reads, so a missing or weak token fails here and never borrows the default's colour. Then the
+// looks theme.css ships: base-content on each base shade, and each colour's *-content on the
+// colour. The ratios come from the WCAG relative-luminance formula, written here; no dependency.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
 import { THEMES, type ThemeSide } from "../src/themes.ts";
@@ -55,13 +57,19 @@ type Colour = { kind: "pair"; light: string; dark: string } | { kind: "alias"; o
 /** The colour halves a pair holds: an opaque #rrggbb or a translucent rgba(). */
 const HALF = "(#[0-9a-f]{6}|rgba\\(\\d+,\\s*\\d+,\\s*\\d+,\\s*\\d+(?:\\.\\d+)?\\))";
 
-/** One scheme tokens.css paints: a registered theme's side, or the Catppuccin flavour over the plain. */
-type Scheme = { id: string; side: ThemeSide; flavour: boolean };
+/** One scheme the ui paints: a registered theme's side, or the Catppuccin flavour over the plain.
+ *  A theme other than the default names the theme.css block its colours come from alone. */
+type Scheme = { id: string; side: ThemeSide; flavour: boolean; theme?: string };
 
 /** Every registered theme's every side, then the flavour's two. */
 const SCHEMES: readonly Scheme[] = [
   ...THEMES.flatMap((t): Scheme[] =>
-    t.sides.map((side) => ({ id: `${t.id} ${side}`, side, flavour: false })),
+    t.sides.map((side) => ({
+      id: `${t.id} ${side}`,
+      side,
+      flavour: false,
+      ...(t === THEMES[0] ? {} : { theme: t.id }),
+    })),
   ),
   { id: "latte", side: "light", flavour: true },
   { id: "mocha", side: "dark", flavour: true },
@@ -88,10 +96,18 @@ function rule(css: string, selector: string): string {
 const CSS = readFileSync("src/tokens.css", "utf8");
 const BASE = colours(rule(CSS, ":root"));
 const FLAVOUR = colours(rule(CSS, ':root[data-flavour="catppuccin"]'));
+const THEME_CSS = readFileSync("src/theme.css", "utf8");
+/** Each other theme's own block, keyed by its id: the only source its schemes read. */
+const BLOCKS = new Map(
+  THEMES.slice(1).map((t) => [t.id, colours(rule(THEME_CSS, `:root[data-theme="${t.id}"]`))]),
+);
 
-/** A token's colour in a scheme: the flavour's declaration over the plain one, aliases followed. */
+/** A token's colour in a scheme: the flavour's declaration over the plain one, aliases followed;
+ *  a theme block's declaration, from that block alone. */
 function colour(scheme: Scheme, token: string, seen: readonly string[] = []): Rgba | undefined {
-  const decl = (scheme.flavour ? FLAVOUR.get(token) : undefined) ?? BASE.get(token);
+  const decl = scheme.theme
+    ? BLOCKS.get(scheme.theme)?.get(token)
+    : ((scheme.flavour ? FLAVOUR.get(token) : undefined) ?? BASE.get(token));
   if (!decl || seen.includes(token)) return undefined;
   if (decl.kind === "alias") return colour(scheme, decl.of, [...seen, token]);
   return parse(decl[scheme.side]);
@@ -118,19 +134,22 @@ const PAIRS: readonly (readonly [fg: string, bg: string, min: number])[] = [
   ["on-accent", "accent", 4.5],
 ];
 
+/** Every colour token a scheme's source must declare: the surfaces, the inks and marks, and every
+ *  state role with its soft fill and ink. */
+const WANT: readonly string[] = [
+  ...SURFACES,
+  "line",
+  "line-strong",
+  "muted",
+  "text",
+  "accent",
+  "on-accent",
+  ...FILLED.flatMap((t) => [t, `${t}-soft`, `${t}-ink`]),
+];
+
 describe("tokens.css", () => {
   it("declares the surfaces, the inks, the marks, the tones and every state role", () => {
-    const want = [
-      ...SURFACES,
-      "line",
-      "line-strong",
-      "muted",
-      "text",
-      "accent",
-      "on-accent",
-      ...FILLED.flatMap((t) => [t, `${t}-soft`, `${t}-ink`]),
-    ];
-    for (const token of want) expect(BASE.has(token), token).toBe(true);
+    for (const token of WANT) expect(BASE.has(token), token).toBe(true);
   });
 
   it("reads every colour pair and alias the file declares, translucent or not", () => {
@@ -140,8 +159,15 @@ describe("tokens.css", () => {
     expect(pairs.length + aliases.length).toBeGreaterThan(0);
     for (const token of [...pairs, ...aliases]) {
       expect(BASE.has(token), `${token} is parsed`).toBe(true);
-      for (const scheme of SCHEMES)
-        expect(colour(scheme, token), `${token} resolves in ${scheme.id}`).toBeDefined();
+      for (const scheme of SCHEMES) {
+        // a theme block carries the theme's colours alone; a token the design keeps at its default
+        // (the scrim's dim, say) resolves from the plain tokens in that theme's scheme too
+        const source: Scheme =
+          scheme.theme && !BLOCKS.get(scheme.theme)?.has(token)
+            ? { id: scheme.id, side: scheme.side, flavour: scheme.flavour }
+            : scheme;
+        expect(colour(source, token), `${token} resolves in ${scheme.id}`).toBeDefined();
+      }
     }
   });
 
@@ -179,6 +205,21 @@ describe("tokens.css", () => {
       }
     }
     expect(misses, `${scheme.id}: every pair at its minimum`).toEqual([]);
+  });
+});
+
+describe("theme blocks", () => {
+  it("declares every colour token in each theme's own block", () => {
+    for (const t of THEMES.slice(1)) {
+      const block = BLOCKS.get(t.id);
+      expect(block?.size, `${t.id}: the block exists`).toBeGreaterThan(0);
+      for (const token of WANT) expect(block?.has(token), `${t.id}: ${token}`).toBe(true);
+    }
+  });
+
+  it("paints the quiet zone of a qr code white in each theme", () => {
+    for (const t of THEMES.slice(1))
+      expect(rule(THEME_CSS, `:root[data-theme="${t.id}"]`)).toContain("--ui-qr-bg: #ffffff");
   });
 });
 

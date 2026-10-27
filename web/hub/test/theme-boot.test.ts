@@ -1,6 +1,7 @@
 // theme-boot.test.ts — the boot script's exact shipped bytes, run the way a browser runs them: for
 // every preference, OS answer and kept theme it writes the theme readTheme keeps and the same
-// data-theme and data-scheme applyScheme paints, and its id list is the registry's.
+// data-theme and data-scheme applyScheme paints, and its id list and status bar map are the
+// registry's.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -28,6 +29,13 @@ function bootIds(): string[] {
   return [...(m?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((x) => x[1] ?? "");
 }
 
+/** The status bar map the script carries, read out of its own bytes. */
+function bootBars(): Record<string, { light?: string; dark?: string }> {
+  const m = /const THEME_BARS = (\{[\s\S]*?\n  \});/.exec(source);
+  expect(m, "theme-boot.js carries its THEME_BARS map").toBeTruthy();
+  return JSON.parse(m?.[1] ?? "{}") as Record<string, { light?: string; dark?: string }>;
+}
+
 /** Runs the script's bytes against the current document. */
 function boot(): void {
   // oxlint-disable-next-line typescript/no-implied-eval -- the Function constructor is the only way to run those exact bytes
@@ -53,6 +61,10 @@ describe("theme-boot.js", () => {
     expect(bootIds()).toEqual(THEMES.map((t) => t.id));
   });
 
+  it("carries the registry's bars", () => {
+    expect(bootBars()).toEqual(Object.fromEntries(THEMES.map((t) => [t.id, t.bar])));
+  });
+
   it("defines no global: the id list lives inside the IIFE", () => {
     boot();
     expect("THEME_IDS" in globalThis).toBe(false);
@@ -63,7 +75,7 @@ describe("theme-boot.js", () => {
 
   for (const pref of ["system", "light", "dark"] as const satisfies readonly SchemePref[])
     for (const osDark of [false, true])
-      for (const kept of [null, "huddle", "nope"]) {
+      for (const kept of [null, "huddle", "tokyo-night", "dracula", "nope"]) {
         it(`paints what applyScheme paints: ${pref}, os ${osDark ? "dark" : "light"}, kept ${kept ?? "none"}`, () => {
           stubSchemeMedia(osDark);
           localStorage.clear();

@@ -10,8 +10,9 @@
  * data-scheme> names the side it paints; theme-boot.js sets both before first paint and applyScheme
  * keeps them in step. The dark side is daisyUI's mocha, the plugin's default and prefers-dark
  * choice; the light side is the plain rule after it, which carries latte's tokens onto the side.
- * The other ten plugin themes name the families' ids, which no registry theme holds, so their rules
- * key on the side first and keep the ids beside it. Text runs the system font: the @theme block
+ * The other ten plugin themes name the families' ids (tokyo-night and nord are also registry ids;
+ * tokyo-day and nord-light are not), so their rules key on the side first and keep the ids beside
+ * it. Text runs the system font: the @theme block
  * points --font-sans and --font-mono at the design system's --ui-font and --ui-font-mono, and no
  * face loads from anywhere. Every side keeps its inks at WCAG AA (test/theme-contrast.test.ts);
  * where the family's own ink misses 4.5:1 the content token moves to black, white or a 4%-stepped
@@ -794,4 +795,186 @@
       color: color-mix(in oklab, var(--alert-color, var(--color-base-content)) 68%, black);
     }
   }
+}
+
+/* The community themes: each registered id (themes.ts) carries its own --ui-* palette here, every
+ * colour a light-dark pair over the side the registry gives it (a dark-only theme writes its dark
+ * value on both halves; tokens.css's :root[data-scheme] still flips color-scheme). Each block is
+ * the only source its scheme reads, so nothing borrows the default's colour. line-strong and the
+ * inks may sit a step off the family's own value where WCAG AA asks it
+ * (test/theme-contrast.test.ts judges each block alone). */
+:root[data-theme="tokyo-night"] {
+  --ui-bg: light-dark(#d0d5e3, #16161e);
+  --ui-surface: light-dark(#e1e2e7, #1a1b26);
+  --ui-surface-2: light-dark(#c4c8da, #24283b);
+  --ui-line: light-dark(#b4b5b9, #292e42);
+  --ui-line-strong: light-dark(#435286, #888eb0);
+  --ui-muted: light-dark(#435286, #888eb0);
+  --ui-text: light-dark(#2e509f, #c0caf5);
+  --ui-accent: light-dark(#1251a7, #7aa2f7);
+  --ui-on-accent: light-dark(#ffffff, #16161e);
+  --ui-accent-soft: light-dark(rgba(18, 81, 167, 0.1), rgba(122, 162, 247, 0.14));
+  --ui-ok: light-dark(#587539, #9ece6a);
+  --ui-ok-soft: light-dark(rgba(88, 117, 57, 0.1), rgba(158, 206, 106, 0.14));
+  --ui-ok-ink: light-dark(#3f5429, #9ece6a);
+  --ui-warn: light-dark(#88693c, #e0af68);
+  --ui-warn-soft: light-dark(rgba(136, 105, 60, 0.1), rgba(224, 175, 104, 0.14));
+  --ui-warn-ink: light-dark(#614b2b, #e0af68);
+  --ui-fail: light-dark(#da0a47, #f7768e);
+  --ui-fail-soft: light-dark(rgba(218, 10, 71, 0.1), rgba(247, 118, 142, 0.14));
+  --ui-fail-ink: light-dark(#980732, #f77b92);
+  --ui-info: light-dark(#007197, #7dcfff);
+  --ui-info-soft: light-dark(rgba(0, 113, 151, 0.1), rgba(125, 207, 255, 0.14));
+  --ui-info-ink: light-dark(#00526e, #7dcfff);
+  --ui-qr-bg: #ffffff;
+  --ui-needs-you: var(--ui-fail);
+  --ui-needs-you-soft: var(--ui-fail-soft);
+  --ui-needs-you-ink: var(--ui-fail-ink);
+  --ui-turn-done: var(--ui-warn);
+  --ui-turn-done-soft: var(--ui-warn-soft);
+  --ui-turn-done-ink: var(--ui-warn-ink);
+  --ui-working: var(--ui-info);
+  --ui-working-soft: var(--ui-info-soft);
+  --ui-working-ink: var(--ui-info-ink);
+  --ui-idle: var(--ui-muted);
+  --ui-idle-soft: var(--ui-surface-2);
+  --ui-idle-ink: var(--ui-muted);
+  --ui-failed: var(--ui-fail);
+  --ui-failed-soft: var(--ui-fail-soft);
+  --ui-failed-ink: var(--ui-fail-ink);
+  --ui-cancelled: var(--ui-line-strong);
+  --ui-cancelled-soft: var(--ui-surface-2);
+  --ui-cancelled-ink: var(--ui-muted);
+}
+
+:root[data-theme="monokai"] {
+  --ui-bg: light-dark(#1e1f1c, #1e1f1c);
+  --ui-surface: light-dark(#272822, #272822);
+  --ui-surface-2: light-dark(#3e3d32, #3e3d32);
+  --ui-line: light-dark(#49483e, #49483e);
+  --ui-line-strong: light-dark(#ada78f, #ada78f);
+  --ui-muted: light-dark(#ada78f, #ada78f);
+  --ui-text: light-dark(#f8f8f2, #f8f8f2);
+  --ui-accent: light-dark(#66d9ef, #66d9ef);
+  --ui-on-accent: light-dark(#1e1f1c, #1e1f1c);
+  --ui-accent-soft: light-dark(rgba(102, 217, 239, 0.14), rgba(102, 217, 239, 0.14));
+  --ui-ok: light-dark(#a6e22e, #a6e22e);
+  --ui-ok-soft: light-dark(rgba(166, 226, 46, 0.14), rgba(166, 226, 46, 0.14));
+  --ui-ok-ink: light-dark(#a6e22e, #a6e22e);
+  --ui-warn: light-dark(#e6db74, #e6db74);
+  --ui-warn-soft: light-dark(rgba(230, 219, 116, 0.14), rgba(230, 219, 116, 0.14));
+  --ui-warn-ink: light-dark(#e6db74, #e6db74);
+  --ui-fail: light-dark(#f9327a, #f9327a);
+  --ui-fail-soft: light-dark(rgba(249, 50, 122, 0.14), rgba(249, 50, 122, 0.14));
+  --ui-fail-ink: light-dark(#fc8bb4, #fc8bb4);
+  --ui-info: light-dark(#ae81ff, #ae81ff);
+  --ui-info-soft: light-dark(rgba(174, 129, 255, 0.14), rgba(174, 129, 255, 0.14));
+  --ui-info-ink: light-dark(#c8aaff, #c8aaff);
+  --ui-qr-bg: #ffffff;
+  --ui-needs-you: var(--ui-fail);
+  --ui-needs-you-soft: var(--ui-fail-soft);
+  --ui-needs-you-ink: var(--ui-fail-ink);
+  --ui-turn-done: var(--ui-warn);
+  --ui-turn-done-soft: var(--ui-warn-soft);
+  --ui-turn-done-ink: var(--ui-warn-ink);
+  --ui-working: var(--ui-info);
+  --ui-working-soft: var(--ui-info-soft);
+  --ui-working-ink: var(--ui-info-ink);
+  --ui-idle: var(--ui-muted);
+  --ui-idle-soft: var(--ui-surface-2);
+  --ui-idle-ink: var(--ui-muted);
+  --ui-failed: var(--ui-fail);
+  --ui-failed-soft: var(--ui-fail-soft);
+  --ui-failed-ink: var(--ui-fail-ink);
+  --ui-cancelled: var(--ui-line-strong);
+  --ui-cancelled-soft: var(--ui-surface-2);
+  --ui-cancelled-ink: var(--ui-muted);
+}
+
+:root[data-theme="dracula"] {
+  --ui-bg: light-dark(#21222c, #21222c);
+  --ui-surface: light-dark(#282a36, #282a36);
+  --ui-surface-2: light-dark(#44475a, #44475a);
+  --ui-line: light-dark(#44475a, #44475a);
+  --ui-line-strong: light-dark(#adb5d7, #adb5d7);
+  --ui-muted: light-dark(#adb5d7, #adb5d7);
+  --ui-text: light-dark(#f8f8f2, #f8f8f2);
+  --ui-accent: light-dark(#caa9fa, #caa9fa);
+  --ui-on-accent: light-dark(#21222c, #21222c);
+  --ui-accent-soft: light-dark(rgba(202, 169, 250, 0.14), rgba(202, 169, 250, 0.14));
+  --ui-ok: light-dark(#50fa7b, #50fa7b);
+  --ui-ok-soft: light-dark(rgba(80, 250, 123, 0.14), rgba(80, 250, 123, 0.14));
+  --ui-ok-ink: light-dark(#50fa7b, #50fa7b);
+  --ui-warn: light-dark(#ffb86c, #ffb86c);
+  --ui-warn-soft: light-dark(rgba(255, 184, 108, 0.14), rgba(255, 184, 108, 0.14));
+  --ui-warn-ink: light-dark(#ffc486, #ffc486);
+  --ui-fail: light-dark(#ff5d5d, #ff5d5d);
+  --ui-fail-soft: light-dark(rgba(255, 93, 93, 0.14), rgba(255, 93, 93, 0.14));
+  --ui-fail-ink: light-dark(#ffacac, #ffacac);
+  --ui-info: light-dark(#8be9fd, #8be9fd);
+  --ui-info-soft: light-dark(rgba(139, 233, 253, 0.14), rgba(139, 233, 253, 0.14));
+  --ui-info-ink: light-dark(#8be9fd, #8be9fd);
+  --ui-qr-bg: #ffffff;
+  --ui-needs-you: var(--ui-fail);
+  --ui-needs-you-soft: var(--ui-fail-soft);
+  --ui-needs-you-ink: var(--ui-fail-ink);
+  --ui-turn-done: var(--ui-warn);
+  --ui-turn-done-soft: var(--ui-warn-soft);
+  --ui-turn-done-ink: var(--ui-warn-ink);
+  --ui-working: var(--ui-info);
+  --ui-working-soft: var(--ui-info-soft);
+  --ui-working-ink: var(--ui-info-ink);
+  --ui-idle: var(--ui-muted);
+  --ui-idle-soft: var(--ui-surface-2);
+  --ui-idle-ink: var(--ui-muted);
+  --ui-failed: var(--ui-fail);
+  --ui-failed-soft: var(--ui-fail-soft);
+  --ui-failed-ink: var(--ui-fail-ink);
+  --ui-cancelled: var(--ui-line-strong);
+  --ui-cancelled-soft: var(--ui-surface-2);
+  --ui-cancelled-ink: var(--ui-muted);
+}
+
+:root[data-theme="nord"] {
+  --ui-bg: light-dark(#e5e9f0, #2e3440);
+  --ui-surface: light-dark(#eceff4, #3b4252);
+  --ui-surface-2: light-dark(#d8dee9, #434c5e);
+  --ui-line: light-dark(#c2c9d6, #4c566a);
+  --ui-line-strong: light-dark(#4c566a, #d8dee9);
+  --ui-muted: light-dark(#4c566a, #d8dee9);
+  --ui-text: light-dark(#2e3440, #eceff4);
+  --ui-accent: light-dark(#476489, #8fc4d3);
+  --ui-on-accent: light-dark(#ffffff, #2e3440);
+  --ui-accent-soft: light-dark(rgba(71, 100, 137, 0.1), rgba(143, 196, 211, 0.14));
+  --ui-ok: light-dark(#4c7a3a, #a3be8c);
+  --ui-ok-soft: light-dark(rgba(76, 122, 58, 0.1), rgba(163, 190, 140, 0.14));
+  --ui-ok-ink: light-dark(#3e642f, #c6d7b8);
+  --ui-warn: light-dark(#8a6a1c, #ebcb8b);
+  --ui-warn-soft: light-dark(rgba(138, 106, 28, 0.1), rgba(235, 203, 139, 0.14));
+  --ui-warn-ink: light-dark(#715617, #eed49f);
+  --ui-fail: light-dark(#a8434c, #ce858c);
+  --ui-fail-soft: light-dark(rgba(168, 67, 76, 0.1), rgba(206, 133, 140, 0.14));
+  --ui-fail-ink: light-dark(#963c44, #e7c3c6);
+  --ui-info: light-dark(#3b6e8f, #81a1c1);
+  --ui-info-soft: light-dark(rgba(59, 110, 143, 0.1), rgba(129, 161, 193, 0.14));
+  --ui-info-ink: light-dark(#335f7b, #bfcfdf);
+  --ui-qr-bg: #ffffff;
+  --ui-needs-you: var(--ui-fail);
+  --ui-needs-you-soft: var(--ui-fail-soft);
+  --ui-needs-you-ink: var(--ui-fail-ink);
+  --ui-turn-done: var(--ui-warn);
+  --ui-turn-done-soft: var(--ui-warn-soft);
+  --ui-turn-done-ink: var(--ui-warn-ink);
+  --ui-working: var(--ui-info);
+  --ui-working-soft: var(--ui-info-soft);
+  --ui-working-ink: var(--ui-info-ink);
+  --ui-idle: var(--ui-muted);
+  --ui-idle-soft: var(--ui-surface-2);
+  --ui-idle-ink: var(--ui-muted);
+  --ui-failed: var(--ui-fail);
+  --ui-failed-soft: var(--ui-fail-soft);
+  --ui-failed-ink: var(--ui-fail-ink);
+  --ui-cancelled: var(--ui-line-strong);
+  --ui-cancelled-soft: var(--ui-surface-2);
+  --ui-cancelled-ink: var(--ui-muted);
 }
