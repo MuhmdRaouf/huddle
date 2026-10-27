@@ -7,7 +7,6 @@ package harness
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -43,140 +42,25 @@ type StatusLineResult struct {
 // the value it replaced in the ledger. A file that does not parse is refused before anything
 // is written. Running it again with the entry already ours changes nothing.
 func InstallStatusLine(hudHome string, env Env, bin string) (StatusLineResult, error) {
-	path := StatusLineSettingsPath(env)
-	before, existed, err := readIfExists(path)
-	if err != nil {
-		return StatusLineResult{}, err
+	member := settingsMember{
+		ledgerName: statuslineLedgerName,
+		key:        "statusLine",
+		value:      fmt.Sprintf("{%q:%q,%q:%s}", "type", "command", "command", jsonString(statusLineCommand(bin))),
+		ours:       holdsStatusLineOurs,
 	}
-	value := fmt.Sprintf("{%q:%q,%q:%s}", "type", "command", "command", jsonString(statusLineCommand(bin)))
-	if !existed {
-		out := fmt.Sprintf("{\n  %q:%s\n}\n", "statusLine", value)
-		if err := writeAtomic0600(path, []byte(out)); err != nil {
-			return StatusLineResult{}, err
-		}
-		if err := recordLedger(hudHome, ledgerEntry{
-			Harness: statuslineLedgerName, Path: path, Created: true, Before: "",
-		}); err != nil {
-			return StatusLineResult{}, err
-		}
-		return StatusLineResult{Path: path, Changed: true, Created: true}, nil
-	}
-	if err := jsonCheck(before); err != nil {
-		return StatusLineResult{}, &MalformedError{Path: path, Err: err}
-	}
-	previous := ""
-	mine, err := jsonFind(before, 0, "statusLine")
-	if err != nil {
-		return StatusLineResult{}, &MalformedError{Path: path, Err: err}
-	}
-	if mine != nil {
-		if jsonEqual(before[mine.value.start:mine.value.end], []byte(value)) {
-			// already ours: only a lost ledger record is filled in, never over the first
-			// install's own previous value
-			ledger := readLedger(ledgerPath(hudHome))
-			if _, has := ledger.named(statuslineLedgerName); !has {
-				if err := recordLedger(hudHome, ledgerEntry{
-					Harness: statuslineLedgerName, Path: path, Before: string(before[mine.value.start:mine.value.end]),
-				}); err != nil {
-					return StatusLineResult{}, err
-				}
-			}
-			return StatusLineResult{Path: path, Already: true}, nil
-		}
-		previous = string(before[mine.value.start:mine.value.end])
-		// the value's span swapped for ours: the key, the members around it and every byte
-		// of whitespace stay exactly as they were, and remove's swap back is its exact inverse
-		next := jsonReplaceValue(before, *mine, value)
-		if err := writeAtomic0600(path, next); err != nil {
-			return StatusLineResult{}, err
-		}
-	} else {
-		next, err := jsonInsertMember(before, 0, fmt.Sprintf("%q:%s", "statusLine", value))
-		if err != nil {
-			return StatusLineResult{}, &MalformedError{Path: path, Err: err}
-		}
-		if err := writeAtomic0600(path, next); err != nil {
-			return StatusLineResult{}, err
-		}
-	}
-	if err := recordLedger(hudHome, ledgerEntry{
-		Harness: statuslineLedgerName, Path: path, Before: previous,
-	}); err != nil {
-		return StatusLineResult{}, err
-	}
-	return StatusLineResult{Path: path, Changed: true}, nil
+	return member.install(hudHome, env)
 }
 
 // RemoveStatusLine takes the statusline entry back out and restores the value the ledger
 // recorded, byte for byte; a key there was none of is taken out, and a file install created
 // and nothing else holds goes away entirely. The ledger record goes with it.
 func RemoveStatusLine(hudHome string, env Env) (StatusLineResult, error) {
-	ledger := readLedger(ledgerPath(hudHome))
-	record, hasRecord := ledger.named(statuslineLedgerName)
-	path := StatusLineSettingsPath(env)
-	if hasRecord && record.Path != "" {
-		path = record.Path
+	member := settingsMember{
+		ledgerName: statuslineLedgerName,
+		key:        "statusLine",
+		ours:       holdsStatusLineOurs,
 	}
-	before, existed, err := readIfExists(path)
-	if err != nil {
-		return StatusLineResult{}, err
-	}
-	if !existed {
-		if hasRecord {
-			if err := dropLedger(hudHome, statuslineLedgerName); err != nil {
-				return StatusLineResult{}, err
-			}
-		}
-		return StatusLineResult{Path: path, NotThere: true}, nil
-	}
-	if err := jsonCheck(before); err != nil {
-		return StatusLineResult{}, &MalformedError{Path: path, Err: err}
-	}
-	mine, err := jsonFind(before, 0, "statusLine")
-	if err != nil {
-		return StatusLineResult{}, &MalformedError{Path: path, Err: err}
-	}
-	if mine == nil {
-		return StatusLineResult{Path: path, NotThere: true}, nil
-	}
-	if hasRecord {
-		if record.Before != "" {
-			// the exact inverse of install's swap: the recorded value back in the value's
-			// span, so the file is byte for byte what it was
-			next := jsonReplaceValue(before, *mine, record.Before)
-			if err := writeAtomic0600(path, next); err != nil {
-				return StatusLineResult{}, err
-			}
-		} else {
-			next := jsonCutMember(before, *mine)
-			if record.Created && emptyObject(next) {
-				if err := os.Remove(path); err != nil {
-					return StatusLineResult{}, err
-				}
-				if err := dropLedger(hudHome, statuslineLedgerName); err != nil {
-					return StatusLineResult{}, err
-				}
-				return StatusLineResult{Path: path, Removed: true, FileGone: true}, nil
-			}
-			if err := writeAtomic0600(path, next); err != nil {
-				return StatusLineResult{}, err
-			}
-		}
-	} else {
-		// no record: ours is still recognisable — a command entry whose word is the
-		// statusline's — and anything else is the user's, never touched
-		if !holdsStatusLineOurs(before[mine.value.start:mine.value.end]) {
-			return StatusLineResult{Path: path, NotThere: true}, nil
-		}
-		next := jsonCutMember(before, *mine)
-		if err := writeAtomic0600(path, next); err != nil {
-			return StatusLineResult{}, err
-		}
-	}
-	if err := dropLedger(hudHome, statuslineLedgerName); err != nil {
-		return StatusLineResult{}, err
-	}
-	return StatusLineResult{Path: path, Removed: true}, nil
+	return member.remove(hudHome, env)
 }
 
 // StatusLineChain answers the command of the statusline install replaced, empty when there is
