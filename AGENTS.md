@@ -179,7 +179,9 @@ job (`bun run check`), the macOS job (tests and the reproducible-build proof) an
 
 - No release and no tag while there are no consumers. The plugins carry no version, so every marketplace update
   is one, and the launchers build huddle from the marketplace checkout's own commit with Go (see the launcher
-  spec in `scripts/launcher.mjs`): once per commit, kept three builds, hooks never waiting for it.
+  spec in `scripts/launcher.mjs`): once per commit, kept three builds, hooks never waiting for it. The rule
+  flips to signed release binaries the day huddle has a second user; darwin code signing is the open question
+  then.
 - The release machinery stays ready for the day it is used: `go run ./scripts/build -check` (or
   `-manifest -check`) rebuilds the four targets and exits 1
   naming every target whose digest differs from the committed `release/v<VERSION>.json`; exit 0 when all match,

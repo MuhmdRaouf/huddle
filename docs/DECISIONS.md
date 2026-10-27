@@ -156,3 +156,10 @@ The 2026-10-21 incident, a session left on a 0.0.1 port whose requests looped th
 
 Rules 1 and 3 each have a BDD feature named "the 2026-10-21 incident cannot recur: ..." and an e2e test on the
 built binary (`cmd/huddle/nochain_e2e_test.go`, `failalert_e2e_test.go`).
+
+## D23: Source builds while there is one user
+
+huddle installs from source while it has one user: the launchers build the binary of the marketplace checkout's
+own commit with Go (D18), so a machine installing huddle needs Go. The rule flips to signed release binaries the
+day huddle has a second user; darwin code signing and notarisation of the release binaries is the open question
+then.

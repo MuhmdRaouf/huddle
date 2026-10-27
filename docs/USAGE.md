@@ -15,7 +15,10 @@ runs the `huddle` binary the plugin's launcher downloaded (macOS and Linux, amd6
 
    The launcher builds the binary of the marketplace checkout's own commit with `go` while no release is
    published (a release download is checked against the committed manifest when one exists). No JS runtime is
-   needed on the PATH.
+   needed on the PATH. The build runs on the first hook after the install or a plugin update, each commit
+   building once, so `go` must be on the machine. The launcher keeps three builds and hooks never wait for
+   one: the hook that finds no build starts it detached and exits at once. Released binaries replace source
+   builds once huddle has a second user.
 
 2. Start any session in any project. The first session's `SessionStart` hook starts the hub
    through the launcher; the next `SessionStart`, prompt or tool call brings it back after a
