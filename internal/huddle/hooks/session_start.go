@@ -56,7 +56,8 @@ func SessionStart(ctx context.Context, w *cli.World, in io.Reader, out io.Writer
 		}
 		readInput(in, startStdinMS, &input)
 		onPath(w)
-		_ = cli.RecordPluginSkew(ctx, w) // report only: a failure costs the alert, never the start
+		_ = cli.RecordPluginSkew(ctx, w)  // report only: a failure costs the alert, never the start
+		_ = cli.EnsureSpinnerTips(ctx, w) // names the file the hub rewrites: a failure costs the tips, never the start
 		id := cli.Identify(ctx, w, input.SessionID)
 		if id.Channel == "" || id.As == "" {
 			// no channel to join: the server still comes up, because the hub, the Now list and

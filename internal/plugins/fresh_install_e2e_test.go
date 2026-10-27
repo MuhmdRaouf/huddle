@@ -35,6 +35,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit/fakeclaude"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
@@ -447,6 +448,17 @@ func (rig *freshInstall) runRemove(t *testing.T) (string, string, int) {
 	}, rig.env, rig.home)
 }
 
+// envOf answers one variable out of the rig's child environment, the shape the hub's own
+// removal takes.
+func (rig *freshInstall) envOf(key string) string {
+	for _, entry := range rig.env {
+		if name, value, ok := strings.Cut(entry, "="); ok && name == key {
+			return value
+		}
+	}
+	return ""
+}
+
 func TestFreshInstall(t *testing.T) {
 	bdd.Feature(t, "a fresh install works with /<p>:setup as the only step", func(f *bdd.F) {
 		for _, name := range providers.Names {
@@ -534,9 +546,32 @@ func TestFreshInstall(t *testing.T) {
 					if code != 0 {
 						t.Fatalf("setup --remove exited %d:\n%s\n%s", code, stdout, stderr)
 					}
+					// The session start above added huddle's own spinnerTipsOverride member, which
+					// a provider's removal rightly leaves: the hub's own removal — the one a
+					// plugin uninstall runs — takes it back out, and only then is settings.json
+					// back to the seed.
+					var settings struct {
+						SpinnerTipsOverride *struct {
+							TipsFile string `json:"tipsFile"`
+						} `json:"spinnerTipsOverride"`
+					}
 					raw, err := os.ReadFile(rig.settingsPath)
 					if err != nil {
 						t.Fatalf("read settings.json: %v", err)
+					}
+					if err := json.Unmarshal(raw, &settings); err != nil {
+						t.Fatalf("decode settings.json: %v", err)
+					}
+					if settings.SpinnerTipsOverride == nil || !strings.HasSuffix(settings.SpinnerTipsOverride.TipsFile, "spinner-tips.json") {
+						t.Fatalf("settings.json after setup --remove = %s, want huddle's spinnerTipsOverride member left for the hub to remove", raw)
+					}
+					outside.RemoveSpinnerTips(rig.envOf("HUDDLE_HOME"), map[string]string{
+						"HOME":              rig.envOf("HOME"),
+						"CLAUDE_CONFIG_DIR": rig.envOf("CLAUDE_CONFIG_DIR"),
+					})
+					raw, err = os.ReadFile(rig.settingsPath)
+					if err != nil {
+						t.Fatalf("read settings.json after the removal: %v", err)
 					}
 					if !bytes.Equal(raw, rig.settingsBytes) {
 						t.Errorf("settings.json was not restored byte for byte:\n%s", raw)

@@ -190,6 +190,12 @@ harness that only speaks MCP reads the same tips from the resource `huddle://ins
 useful" on a tip mutes its rule for 30 days, and "Forget what you learned" deletes insights.json,
 which resets both switches.
 
+With "Tips for me" on, the owner's tips also show under Claude Code's spinner. Each session start
+adds one `spinnerTipsOverride` entry to Claude Code's settings.json, naming
+`~/.agents/huddle/spinner-tips.json`; the hub rewrites that file whenever the Insights card loads,
+and Claude Code reads it at its next start. With the switch off the file is empty. Removing or
+disabling the plugin takes the entry and the file away.
+
 The tips:
 
 - You allowed one prompt five times in a week and waited for it each time; an allow rule would
