@@ -62,6 +62,16 @@ type SubagentRun struct {
 	Stopped time.Time // zero while no stop event was seen
 }
 
+// ModelAdvice is one model's line in radar's model advisor report: the subagent runs on it
+// that looked flash-sized, and what they would have cost on the model's flash sibling.
+type ModelAdvice struct {
+	Model     string
+	Flash     string  // the model's flash sibling; "" when it has none
+	Runs      int     // the flash-sized runs the advisor counted
+	SavingUsd float64 // what those runs would have saved on the sibling
+	Priced    bool    // whether the saving is a figure and not an estimate's absence
+}
+
 // Input is everything Detect reads. Now is the clock, so the rules are pure.
 type Input struct {
 	Now       time.Time
@@ -71,12 +81,13 @@ type Input struct {
 	Items     []Item
 	Spans     []SessionSpan
 	Subagents []SubagentRun
+	Models    []ModelAdvice
 }
 
 // Tip is one sentence the owner can act on, with the numbers behind it.
 type Tip struct {
 	ID       string // stable for one occurrence: "<rule>:<what it is about>"
-	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing, RuleLongestWait, RuleLongDay or RuleSubagentSilent
+	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing, RuleLongestWait, RuleLongDay, RuleSubagentSilent or RuleModelOversized
 	Session  string // the session a tip is about; "" for a tip about the whole huddle
 	Sentence string
 	Count    int           // the runs or asks behind the tip
@@ -91,6 +102,7 @@ const (
 	RuleLongestWait    = "longest_wait"
 	RuleLongDay        = "long_day"
 	RuleSubagentSilent = "subagent_silent"
+	RuleModelOversized = "model_oversized"
 )
 
 // The points each rule fires at.
@@ -109,6 +121,7 @@ func Detect(in Input) []Tip {
 	tips = append(tips, longDayTips(in)...)
 	tips = append(tips, longestWaitTips(in)...)
 	tips = append(tips, subagentSilentTips(in)...)
+	tips = append(tips, modelOversizedTips(in)...)
 	slices.SortFunc(tips, func(a, b Tip) int {
 		if byRule := cmp.Compare(a.Rule, b.Rule); byRule != 0 {
 			return byRule

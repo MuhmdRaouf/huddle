@@ -2,12 +2,13 @@ package server
 
 // The insights route: today's tips over the history the registry already holds, the owner's
 // credential only. The owner's card (no session) reads the needs-you history, the lanes'
-// requests from the mounted radar tab and the registry's own session spans, so the
-// always_allowed, longest_wait, lane_failing and long_day rules are the ones that can fire
-// there; a session's answer adds that session's tool runs from the mounted radar tab, and
-// same_command is the rule they add: tool_failing needs the error text radar does not record,
-// and a lane's health and a day's length are no one session's, so the session's answer leaves
-// all three out. Both answers add the subagents' recent starts and stops from the mounted
+// requests and the model advisor's rows from the mounted radar tab and the registry's own
+// session spans, so the always_allowed, longest_wait, lane_failing, long_day and
+// model_oversized rules are the ones that can fire there; a session's answer adds that
+// session's tool runs from the mounted radar tab, and same_command is the rule they add:
+// tool_failing needs the error text radar does not record, and a lane's health, a day's
+// length and a model's cost are no one session's, so the session's answer leaves all four
+// out. Both answers add the subagents' recent starts and stops from the mounted
 // radar tab, so subagent_silent can fire on either.
 
 import (
@@ -46,8 +47,9 @@ type insightsSettingsAnswer struct {
 // insightsRoute answers GET /api/insights with the tips the last 7 days of needs-you history
 // supports, read-only over the registry's own rows. The owner's answer adds the lanes' requests
 // of the last 24 h from the mounted radar tab, so a lane that keeps failing names itself there,
-// and the registry's session spans, so a day of long sessions does too. Both answers add the
-// subagents' starts and stops of the last 2 h from the mounted radar tab, so a run with no
+// the model advisor's rows, so a model its flash sibling would have served cheaper names itself
+// too, and the registry's session spans, so a day of long sessions does too. Both answers add
+// the subagents' starts and stops of the last 2 h from the mounted radar tab, so a run with no
 // stop event names itself to whoever reads.
 // A session query narrows the answer to that session: its rows alone go in, its tool runs come
 // in from the mounted radar tab and add same_command alone (tool_failing needs the error text
@@ -112,14 +114,27 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 			})
 		}
 	}
-	// the owner's answer adds the lanes' own requests and the sessions' spans; a lane's health
-	// and a day's length are no one session's
+	// the owner's answer adds the lanes' own requests, the model advisor's rows and the
+	// sessions' spans; a lane's health, a model's cost and a day's length are no one session's
 	if session == "" && s.radar != nil {
 		for _, request := range s.radar.RequestsSince(r.Context(), now.Add(-24*time.Hour)) {
 			in.Requests = append(in.Requests, insights.Request{
 				Provider: request.Provider,
 				Status:   request.Status,
 				At:       request.At,
+			})
+		}
+		for _, model := range s.radar.ModelAdvice() {
+			saving := 0.0
+			if model.CostUsd != nil && model.FlashCostUsd != nil {
+				saving = *model.CostUsd - *model.FlashCostUsd
+			}
+			in.Models = append(in.Models, insights.ModelAdvice{
+				Model:     model.Model,
+				Flash:     model.Flash,
+				Runs:      int(model.Runs),
+				SavingUsd: saving,
+				Priced:    model.CostUsd != nil && model.FlashCostUsd != nil,
 			})
 		}
 	}

@@ -207,6 +207,8 @@ The tips:
 - One ask has waited on you far longer than the rest; pair your phone to answer from it.
 - One day's sessions together ran past 10 hours; the card names the day and the length.
 - A subagent started over 20 minutes ago and has no stop event; the card names it and its age.
+- Subagent runs on a main model look small enough for its flash sibling; the card names the
+  model, the sibling and the saving.
 
 ### Reach an idle session
 
