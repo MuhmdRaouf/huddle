@@ -1,6 +1,6 @@
 package hub
 
-// Satellite credential storage (SPEC 6.7): a hub mints one credential per satellite machine and
+// Satellite credential storage: a hub mints one credential per satellite machine and
 // keeps only its sha256 digest, the same shape a pairing token takes, so a leaked database names
 // no live credential. The digest has no expiry of its own: the owner revokes a satellite by
 // removing its row, the way a device's removal ends its sessions.
@@ -15,7 +15,7 @@ import (
 )
 
 // SaveSatellite records one satellite credential's digest with the machine it belongs to, and
-// writes the audit row and the alert event SPEC 7.7 fixes for a satellite added.
+// writes the audit row and the alert event a satellite added owes.
 func (d *DB) SaveSatellite(ctx context.Context, digest, name string, nowMS int64) error {
 	return d.st.Tx(ctx, func(ctx context.Context, q store.Q) error {
 		if err := q.Run(ctx,

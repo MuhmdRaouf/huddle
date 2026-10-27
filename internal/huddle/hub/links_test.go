@@ -1,6 +1,6 @@
 package hub
 
-// The links table (SPEC 8): one row per session per channel with the level it hears the channel
+// The links table: one row per session per channel with the level it hears the channel
 // at, written and read through the link methods alone.
 
 import (

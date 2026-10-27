@@ -1,6 +1,6 @@
 package hub
 
-// Device pairing (SPEC 7.3): a one-use link is spent by exactly one finish, the device it pays
+// Device pairing: a one-use link is spent by exactly one finish, the device it pays
 // for lands with its session, the audit row and the alert event, and removing a device ends its
 // sessions with it. The database holds digests only, so nothing here writes a token.
 

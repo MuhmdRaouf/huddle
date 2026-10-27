@@ -10,7 +10,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 )
 
-// Report is one session event as the hooks send it (SPEC 5.1). Every field but the session, the
+// Report is one session event as the hooks send it. Every field but the session, the
 // event and its time is optional: a report that does not carry one leaves the session's stored
 // value alone.
 type Report struct {
@@ -37,7 +37,7 @@ type Report struct {
 	// InboxSocket is the session's messaging inbox, the Unix socket Claude Code hands its hooks.
 	// It is the hub's to write to and never leaves the hub: no row the web reads carries it.
 	InboxSocket string `json:"inbox_socket,omitempty"`
-	// Digest is the session's digest, built by its Stop hook (SPEC 8); empty on every other
+	// Digest is the session's digest, built by its Stop hook; empty on every other
 	// event.
 	Digest string `json:"digest,omitempty"`
 	// Notification is what a Notification event told the user, kept whole for the item it grows.
@@ -124,7 +124,7 @@ INSERT INTO teammates (session_id, name, state, at) VALUES (?, ?, ?, ?)
 ON CONFLICT(session_id, name) DO UPDATE SET state = excluded.state, at = excluded.at`
 
 // Report records one report: a row in events holding it whole, the session's row upserted, and
-// the needs-you items the event grows (SPEC 6.1): a notification that asks the owner a question,
+// the needs-you items the event grows: a notification that asks the owner a question,
 // a finished turn nobody opened, and a prompt or a resume that ends the waiting turn items.
 func (d *DB) Report(ctx context.Context, r Report) error {
 	raw, err := domain.MarshalCompactJSON(r)

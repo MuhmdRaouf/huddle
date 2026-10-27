@@ -1,6 +1,6 @@
 package hub
 
-// The audit log's reads and the owner alerts (SPEC 7.7). Pairing, sign-in and removal write
+// The audit log's reads and the owner alerts. Pairing, sign-in and removal write
 // their rows through pair.go's own transactions; Record is the one entry point the later
 // decision routes (allow, deny, answer, send, link, rule changes) call, and RaiseAlert is the
 // one an owner alert goes through. Nothing in the app updates or deletes an audit row; the

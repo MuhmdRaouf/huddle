@@ -1,6 +1,6 @@
 package hub
 
-// The owner's messages to sessions (SPEC 6.3, 6.4): one row per session with the exact header,
+// The owner's messages to sessions: one row per session with the exact header,
 // delivered through a channel push when the session's bridge acked one lately and its claude runs
 // with the channels flag (route now), or taken by the listen hook on the next prompt (route
 // next_prompt). The registry row says which route a message to the session would take.

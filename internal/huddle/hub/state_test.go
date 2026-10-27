@@ -1,6 +1,6 @@
 package hub
 
-// The registry's state rules (SPEC 5.2): the state is computed when read, never stored. The
+// The registry's state rules: the state is computed when read, never stored. The
 // table walks every rule with a fixed clock — the ages are counted from it, so nothing here
 // reads the wall.
 

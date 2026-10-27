@@ -1,6 +1,6 @@
 package hub
 
-// The audit log and the owner alerts (SPEC 7.7): one appended row per remote decision and
+// The audit log and the owner alerts: one appended row per remote decision and
 // security event, read back newest first, never updated or deleted by the app; the alerts carry
 // a read state on top. Pairing, sign-in and removal rows land through pair.go's transactions;
 // these cover the entry points the later decision routes call.
@@ -244,7 +244,7 @@ func TestMarkingReadNamesItsOwnFailure(t *testing.T) {
 }
 
 // forbidden is every statement shape no source under the huddle backend may run against the
-// audit table: the log is append-only (SPEC 7.7), so a delete, an update or a drop anywhere in
+// audit table: the log is append-only, so a delete, an update or a drop anywhere in
 // the app fails the test. The patterns live only here, and the scan skips test files, so this
 // file never matches itself.
 var forbidden = []*regexp.Regexp{

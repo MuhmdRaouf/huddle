@@ -1,4 +1,4 @@
-// Links (SPEC 8): a session tied to a channel at a level, without membership of the channel. The
+// Links: a session tied to a channel at a level, without membership of the channel. The
 // server fans the channel's broadcast posts out to the linked sessions through the owner-message
 // queue, so a link on a satellite is delivered by the satellite's own poll, with no code of its
 // own.
@@ -10,7 +10,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 )
 
-// The three levels a link hears its channel at (SPEC 8): every broadcast post, only the digests,
+// The three levels a link hears its channel at: every broadcast post, only the digests,
 // or nothing until the session is briefed itself.
 const (
 	LevelOverhear  = "overhear"
@@ -71,7 +71,7 @@ func (d *DB) SetLinkLevel(ctx context.Context, channel, session, level string) (
 	return moved, err
 }
 
-// Unlink ends one link at once (SPEC 8: no further sharing) and answers whether a link was
+// Unlink ends one link at once (no further sharing) and answers whether a link was
 // there to end.
 func (d *DB) Unlink(ctx context.Context, channel, session string) (bool, error) {
 	var gone bool

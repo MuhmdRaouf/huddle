@@ -135,7 +135,7 @@ func (d *DB) TOTPSignInRecovery(ctx context.Context, digest, device string, hand
 }
 
 // totpSession finds or births the browser's device row and carries the session the code earned,
-// born stepped up like every code proof is (SPEC 7.4: the code is the user verification itself).
+// born stepped up like every code proof is (the code is the user verification itself).
 func totpSession(ctx context.Context, q store.Q, device string, handle []byte,
 	sessionDigest string, sessionExpiresMS, nowMS int64) error {
 	row, err := q.Get(ctx, "SELECT 1 FROM devices WHERE name = ?", device)

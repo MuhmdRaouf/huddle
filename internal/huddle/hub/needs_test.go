@@ -1,6 +1,6 @@
 package hub
 
-// The needs-you items (SPEC 6.1): a Notification that asks the owner grows a question item, a
+// The needs-you items: a Notification that asks the owner grows a question item, a
 // Stop grows a turn item when nobody opened the session since its last prompt, and the channels'
 // tasks blocked on the owner grow blocked items through SyncBlocked. Snooze and dismiss move an
 // item's state; opening the session answers its turn items.

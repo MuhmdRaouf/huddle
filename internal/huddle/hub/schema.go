@@ -46,7 +46,7 @@ var migrations = []string{
 	// sets it when the session's process is gone, a SessionStart clears it. The state itself
 	// stays computed on read.
 	`ALTER TABLE sessions ADD COLUMN ended_at TEXT;`,
-	// 4: device pairing (SPEC 7.3): one-use links kept as digests only, the devices their
+	// 4: device pairing: one-use links kept as digests only, the devices their
 	// passkeys enrolled, the sessions their cookies carry, and the audit and alert
 	// rows a pairing owes. Times are whole milliseconds; a session dies with its device (the
 	// removal cascades), and audit rows are never deleted by the app.
@@ -121,7 +121,7 @@ var migrations = []string{
 	// an alert stays unread until the owner reads it, and the marking only ever moves forward.
 	`ALTER TABLE audit ADD COLUMN detail TEXT;
 	 ALTER TABLE alerts ADD COLUMN read_at INTEGER;`,
-	// 7: satellite credentials (SPEC 6.7): the sha256 digest of a credential the hub minted is
+	// 7: satellite credentials: the sha256 digest of a credential the hub minted is
 	// the key, exactly as a pairing token's digest is, so a leaked database names no live
 	// credential. `huddle pair --satellite` mints one and the satellite routes take it.
 	`CREATE TABLE satellites (
@@ -141,12 +141,12 @@ var migrations = []string{
 	 ALTER TABLE items ADD COLUMN decided_at TEXT;
 	 ALTER TABLE items ADD COLUMN decision TEXT NOT NULL DEFAULT '';
 	 ALTER TABLE items ADD COLUMN message TEXT NOT NULL DEFAULT '';`,
-	// 9: step-up (SPEC 7.4): the moment a device session last proved its passkey, on the
+	// 9: step-up: the moment a device session last proved its passkey, on the
 	// session's own row so one browser's assertion never covers another's. The ceremonies that
 	// mint a session stamp it (their user verification is itself an assertion); the step-up
 	// finish refreshes it; NULL is a session that never asserted.
 	`ALTER TABLE device_sessions ADD COLUMN stepup_at INTEGER;`,
-	// 10: Web Push (SPEC 7.6): one subscription per paired device's endpoint, the device's own
+	// 10: Web Push: one subscription per paired device's endpoint, the device's own
 	// notification choice beside it, and the items' push bookkeeping — one push at create, one
 	// escalation at five minutes, nothing once decided. An endpoint is the push service's own
 	// name for one subscription, so it is the row's key; a device's removal cascades to its
@@ -161,7 +161,7 @@ var migrations = []string{
 	   auth TEXT NOT NULL,
 	   added INTEGER NOT NULL
 	 );`,
-	// 11: the hub's handouts to satellites (SPEC 6.7): a decision or a message addressed to a
+	// 11: the hub's handouts to satellites: a decision or a message addressed to a
 	// machine's sessions waits here until the machine's long poll takes it. A row a poll hands
 	// out stays pending with offered_at naming the moment: the satellite answers delivered or
 	// refused to end it, busy to be offered again after 15 s, and a satellite that never answers
@@ -181,7 +181,7 @@ var migrations = []string{
 		   created_at TEXT NOT NULL
 		 );
 		 CREATE INDEX IF NOT EXISTS sat_queue_machine ON sat_queue(machine, state);`,
-	// 12: links tie a session to a channel at a level (SPEC 8); a linked session hears the
+	// 12: links tie a session to a channel at a level; a linked session hears the
 	// channel through the owner-message queue, so it needs no membership of its own. A session
 	// sits in a channel once, and linking it again only moves its level.
 	`CREATE TABLE links (
@@ -192,7 +192,7 @@ var migrations = []string{
 	   PRIMARY KEY (channel, session_id)
 	 );
 	 CREATE INDEX IF NOT EXISTS links_channel ON links(channel);`,
-	// 13: each session's newest digest (SPEC 8), one row per session: the Stop report that
+	// 13: each session's newest digest, one row per session: the Stop report that
 	// carries one replaces the row whole, so a peer is always briefed with the session's latest
 	// words and never a blend.
 	`CREATE TABLE digests (
@@ -200,7 +200,7 @@ var migrations = []string{
 	   text TEXT NOT NULL,
 	   at TEXT NOT NULL
 	 );`,
-	// 14: the needs-you entry push (SPEC 7.6): one push when a session enters needs-you, none
+	// 14: the needs-you entry push: one push when a session enters needs-you, none
 	// while it stays there. The mark names the moment the entry's push went out; NULL reads as
 	// an entry that has had none, and the pass clears it when the session leaves the state, so
 	// a re-entry pushes again.

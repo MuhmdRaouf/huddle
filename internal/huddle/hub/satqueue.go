@@ -1,6 +1,6 @@
 package hub
 
-// The satellite queue (SPEC 6.7): what the hub owes a satellite machine — a decision the owner
+// The satellite queue: what the hub owes a satellite machine — a decision the owner
 // made on one of the machine's permission items, a message the owner addressed to one of its
 // sessions — waits in sat_queue until the machine's long poll takes it. A row stays pending
 // while it is out: the satellite's result ends it (delivered, refused with a reason), busy
@@ -37,12 +37,11 @@ const (
 	SatBusy      = "busy"
 )
 
-// SatReofferAfter is how long a handout rests before the hub offers it again: the span SPEC 6.7
-// fixes for a busy answer, and the same grace a satellite that never answers gets.
+// SatReofferAfter is how long a handout rests before the hub offers it again: the span a busy
+// answer waits out, and the same grace a satellite that never answers gets.
 const SatReofferAfter = 15 * time.Second
 
-// SatInviteTTL is how long a `huddle pair --satellite` invite lives (SPEC 6.7: one use,
-// 10 minutes).
+// SatInviteTTL is how long a `huddle pair --satellite` invite lives (one use, 10 minutes).
 const SatInviteTTL = 10 * time.Minute
 
 // SatHandout is one queued row as the machine's poll reads it: the payload is the exact JSON
@@ -187,7 +186,7 @@ func (d *DB) MintSatelliteInvite(ctx context.Context, nowMS int64) (string, erro
 
 // ExchangeSatellite spends one invite and mints the machine's credential: the invite is
 // consumed first, so a replayed join buys nothing, and the credential's digest is the only
-// thing stored — with the audit row and the alert a satellite added owes (SPEC 7.7). The token
+// thing stored — with the audit row and the alert a satellite added owes. The token
 // itself appears exactly once, in the answer.
 func (d *DB) ExchangeSatellite(ctx context.Context, invite, name string, nowMS int64) (string, error) {
 	if spent, err := d.ConsumePairing(ctx, PairDigestOf(invite), nowMS); err != nil {

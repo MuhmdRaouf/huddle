@@ -1,6 +1,6 @@
 package hub
 
-// The digests table (SPEC 8): each Stop report upserts its session's newest digest, a peer
+// The digests table: each Stop report upserts its session's newest digest, a peer
 // holds at most one pending digest per sender (the next one drops the one before it), and a
 // digest message names the session it came from.
 

@@ -1,6 +1,6 @@
 package hub
 
-// The Web Push storage (SPEC 7.6): one subscription per paired device's endpoint, the device's
+// The Web Push storage: one subscription per paired device's endpoint, the device's
 // own notification choices beside it, and the items' push bookkeeping — one push at create, one
 // escalation at five minutes, nothing once decided. A device's subscriptions and its choice die
 // with the device (the foreign keys cascade), and a dead subscription is dropped the moment the
@@ -18,7 +18,7 @@ import (
 // PushEscalatesAfter is how long an item may stay open before its one escalation push goes out.
 const PushEscalatesAfter = 5 * time.Minute
 
-// The notification choices a device makes (SPEC 7.6, Settings › Notifications): needs-you items
+// The notification choices a device makes (Settings › Notifications): needs-you items
 // only, needs-you items and alerts, or nothing at all.
 const (
 	NotifyNeeds = "needs"

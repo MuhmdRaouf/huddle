@@ -1,8 +1,9 @@
 package hub
 
-// Satellite credentials (SPEC 6.7): a credential's sha256 digest is the only thing the database
+// Satellite credentials: a credential's sha256 digest is the only thing the database
 // holds, so a leaked file names no live credential; resolving one answers the machine it belongs
-// to while the row lives, and minting writes the audit row and the alert event SPEC 7.7 fixes.
+// to while the row lives, and minting writes the audit row and the alert event a satellite
+// added owes.
 
 import (
 	"context"
@@ -70,7 +71,7 @@ func TestSatelliteSessionResolvesTheDigest(t *testing.T) {
 	}
 }
 
-// TestSaveSatelliteWritesAuditAndAlert pins what minting owes (SPEC 7.7): one audit row naming the
+// TestSaveSatelliteWritesAuditAndAlert pins what minting owes: one audit row naming the
 // machine, one alert event for the owner's pushed alerts.
 func TestSaveSatelliteWritesAuditAndAlert(t *testing.T) {
 	db := satelliteDB(t)

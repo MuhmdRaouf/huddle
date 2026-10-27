@@ -1,4 +1,4 @@
-// The registry's state rules (SPEC 5.2): a session's state is computed when it is read, never
+// The registry's state rules: a session's state is computed when it is read, never
 // stored. The stored rows carry the inputs — the events, and the two facts that end a session —
 // and every read derives one of the five states from them.
 package hub
@@ -128,7 +128,7 @@ type SessionRow struct {
 	CostUSD     *float64 `json:"cost_usd"`
 	Provider    *string  `json:"provider"`
 	State       string   `json:"state"`
-	// DeliveryRoute says how a message to this session arrives (SPEC 6.4): pushed now while its
+	// DeliveryRoute says how a message to this session arrives: pushed now while its
 	// bridge proves its channel pushes flow and its claude runs with the channels flag, else on
 	// its next prompt.
 	DeliveryRoute string `json:"delivery_route"`
@@ -318,7 +318,7 @@ func (d *DB) Session(ctx context.Context, id string, now time.Time) (*SessionDet
 type PidProbe func(ctx context.Context, pid int) (string, bool)
 
 // MarkEndedPids ends every not-yet-ended session whose pid no longer runs a claude process:
-// the machine's report that the pid is gone (SPEC 5.2). A pid that lives but runs something
+// the machine's report that the pid is gone. A pid that lives but runs something
 // else ends its session too — the claude process it served is gone from under it. It answers
 // the session ids it marked, in id order.
 func (d *DB) MarkEndedPids(ctx context.Context, at string, probe PidProbe) ([]string, error) {
@@ -394,7 +394,7 @@ func (d *DB) teammatesOf(ctx context.Context, id string) []Teammate {
 
 // asksOf answers whether the session's newest event itself waits on the owner with nothing
 // that records the wait: a permission request, or a Notification that asks and carries no
-// words to grow a needs-you item from (SPEC 5.2). An ask whose item exists is the item's own
+// words to grow a needs-you item from. An ask whose item exists is the item's own
 // rule — open it holds the session in needs-you, and one the owner snoozed, answered or
 // dismissed is handled and holds it no more. A Notification this read cannot parse counts as
 // not asking, so a torn row never holds a session in needs-you.

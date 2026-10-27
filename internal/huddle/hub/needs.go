@@ -1,4 +1,4 @@
-// The needs-you items (SPEC 6.1): what waits on the owner. A question item grows from a
+// The needs-you items: what waits on the owner. A question item grows from a
 // Notification that asks the owner, a turn item from a Stop nobody opened since the session's
 // last prompt, a blocked item from a channel task that waits on a task the owner owns (kept in
 // step by SyncBlocked). An item's state moves through snooze and dismiss; the session's state
@@ -18,7 +18,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
-// The item kinds (SPEC 6.1). permission belongs to the permission flow, not this list.
+// The item kinds. permission belongs to the permission flow, not this list.
 const (
 	KindQuestion = "question"
 	KindTurn     = "turn"
@@ -36,7 +36,7 @@ const (
 	StateSnoozed = "snoozed"
 )
 
-// Item is one needs-you item as the list answers it (SPEC 6.1: id, session, kind, one-line
+// Item is one needs-you item as the list answers it (id, session, kind, one-line
 // summary, created, state). State is computed when read: an open item behind its snooze answers
 // snoozed, one whose snooze passed answers open again. The permission kind carries its tool
 // call on the same row (items.go); every other kind leaves those fields empty.
@@ -223,7 +223,7 @@ func (d *DB) OpenTheSession(ctx context.Context, session, at string) ([]Item, er
 }
 
 // CloseQuestions answers every open question item of one session: the owner's answer is on its
-// way (SPEC 6.3).
+// way.
 func (d *DB) CloseQuestions(ctx context.Context, session string) error {
 	return d.st.Run(ctx,
 		"UPDATE items SET state = 'answered' WHERE session_id = ? AND kind = ? AND state = 'open'",
@@ -357,7 +357,7 @@ func (d *DB) SyncBlocked(ctx context.Context, in []BlockedIn, at string) error {
 
 // cleanSummary makes one line of s: control and bidirectional characters go (they steer
 // terminals and reorder text), and whatever goes reads as a break, so words never glue; the
-// line is cut to 200 UTF-16 units (SPEC 6.1: one line, cleaned).
+// line is cut to 200 UTF-16 units (one line, cleaned).
 func cleanSummary(s string) string {
 	var out strings.Builder
 	space := false

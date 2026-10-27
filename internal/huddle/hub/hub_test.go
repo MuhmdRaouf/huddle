@@ -121,7 +121,7 @@ func TestReportStoresEveryEventAndUpsertsTheSession(t *testing.T) {
 	if row == nil {
 		t.Fatal("no session row after three reports")
 	}
-	// the title is the first one said (SPEC 5.1: first prompt, until the session sets one); the
+	// the title is the first one said (first prompt, until the session sets one); the
 	// task, model and the rest are the newest said
 	if row["title"] != "Fix the checkout flow" {
 		t.Errorf("title = %v, want the first one", row["title"])

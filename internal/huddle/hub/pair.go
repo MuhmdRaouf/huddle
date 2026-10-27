@@ -1,6 +1,6 @@
 package hub
 
-// Device pairing storage (SPEC 7.3): the pairing table holds sha256 digests only — a token
+// Device pairing storage: the pairing table holds sha256 digests only — a token
 // never lands in the database, so a leaked file names no live link. Every finish runs in one
 // transaction that consumes the pairing with the device it pays for, so a link registers one
 // device however two requests race, and removing a device drops its sessions with it (the
@@ -55,7 +55,7 @@ func (d *DB) PairingLive(ctx context.Context, digest string, nowMS int64) bool {
 // PairFinish consumes one pairing and records the device it pays for with the session the
 // browser earned, the audit row and the alert event, in one transaction. A pairing already
 // spent answers PairingGoneError and nothing is written. The session is born stepped up: the
-// ceremony's user verification is itself an assertion (SPEC 7.4).
+// ceremony's user verification is itself an assertion.
 func (d *DB) PairFinish(ctx context.Context, digest string, dev Device, sessionDigest string,
 	sessionExpiresMS, nowMS int64) error {
 	return d.st.Tx(ctx, func(ctx context.Context, q store.Q) error {
@@ -93,7 +93,7 @@ func (d *DB) PairFinish(ctx context.Context, digest string, dev Device, sessionD
 
 // LoginFinish records a device's sign-in: the credential's new signature counter (a cloned
 // authenticator's stale counter is what betrays it next time) and the session it earned, with
-// the audit row. The sign-in is an assertion, so the session starts stepped up (SPEC 7.4).
+// the audit row. The sign-in is an assertion, so the session starts stepped up.
 func (d *DB) LoginFinish(ctx context.Context, dev Device, sessionDigest string, sessionExpiresMS, nowMS int64) error {
 	return d.st.Tx(ctx, func(ctx context.Context, q store.Q) error {
 		if err := q.Run(ctx, "UPDATE devices SET credential = ?, seen = ? WHERE name = ?",
@@ -252,7 +252,7 @@ func (d *DB) SessionRenew(ctx context.Context, digest string, nowMS, renewEveryM
 }
 
 // SessionSteppedUp answers whether a live device session holds an assertion at most one window
-// old: the coverage a dangerous act rides on (SPEC 7.4). The window comes from the caller, so
+// old: the coverage a dangerous act rides on. The window comes from the caller, so
 // the edges stay testable; a session that never asserted, and a digest no live session answers,
 // read uncovered.
 func (d *DB) SessionSteppedUp(ctx context.Context, digest string, nowMS, windowMS int64) (bool, error) {
@@ -290,8 +290,8 @@ func (d *DB) StepUpFinish(ctx context.Context, digest string, dev Device, atMS i
 	return stamped, err
 }
 
-// AnyDevice answers whether any device is paired: the fact that ends the solo waiver (SPEC
-// 7.4) — while the home holds no passkey, the local sign-in stands as the assertion.
+// AnyDevice answers whether any device is paired: the fact that ends the solo waiver —
+// while the home holds no passkey, the local sign-in stands as the assertion.
 func (d *DB) AnyDevice(ctx context.Context) (bool, error) {
 	row, err := d.st.Get(ctx, "SELECT 1 FROM devices LIMIT 1")
 	return err == nil && row != nil, err

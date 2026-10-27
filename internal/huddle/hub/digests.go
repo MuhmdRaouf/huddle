@@ -1,4 +1,4 @@
-// The digests table (SPEC 8): one row per session, holding the newest digest its Stop hook
+// The digests table: one row per session, holding the newest digest its Stop hook
 // built. A digest replaces its row whole — it is a summary of a session's whole run so far, so
 // blending two would read like neither — and DropPendingDigests keeps the "delivered once" rule
 // on the peer side: the newest digest of a sender replaces the one still waiting.
@@ -32,7 +32,7 @@ func (d *DB) DigestOf(ctx context.Context, session string) (text, at string, ok 
 }
 
 // DropPendingDigests removes the digest still waiting to reach to from from: the next one
-// replaces it, so a digest-level peer holds at most the newest of each sender (SPEC 8).
+// replaces it, so a digest-level peer holds at most the newest of each sender.
 func (d *DB) DropPendingDigests(ctx context.Context, from, to string) error {
 	return d.st.Run(ctx,
 		"DELETE FROM messages WHERE state = 'pending' AND from_kind = ? AND from_name = ? AND session_id = ?",

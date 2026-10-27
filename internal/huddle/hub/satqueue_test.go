@@ -32,7 +32,7 @@ func satWithItem(t *testing.T) satFixture {
 	return satFixture{db: db, itemID: id, key: key}
 }
 
-// TestSatOfferHandsOnceAndAgain pins the offer clock (SPEC 6.7): a poll takes a pending row and
+// TestSatOfferHandsOnceAndAgain pins the offer clock: a poll takes a pending row and
 // the next poll right after takes nothing, because the row is out; after SatReofferAfter the
 // same row is offered again, so a satellite that never answers strands nothing.
 func TestSatOfferHandsOnceAndAgain(t *testing.T) {
@@ -236,9 +236,9 @@ func TestForwardListAndSaveDedupeByKey(t *testing.T) {
 	}
 }
 
-// TestSatelliteInviteExchangeSpendsOnce proves the join's half of SPEC 6.7: the invite is one
-// use — a second exchange with it buys nothing — and the exchanged credential resolves to the
-// machine, so a satellite added carries its audit row and alert.
+// TestSatelliteInviteExchangeSpendsOnce proves the join's half of the satellite pairing: the
+// invite is one use — a second exchange with it buys nothing — and the exchanged credential
+// resolves to the machine, so a satellite added carries its audit row and alert.
 func TestSatelliteInviteExchangeSpendsOnce(t *testing.T) {
 	db := satelliteDB(t)
 	ctx := context.Background()

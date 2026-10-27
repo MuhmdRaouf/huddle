@@ -1,4 +1,4 @@
-// The permission flow on the needs-you items (SPEC 6.2, 6.6): one tool call the terminal is
+// The permission flow on the needs-you items: one tool call the terminal is
 // being asked about grows an items row of kind permission — needs.go holds the list it joins —
 // carrying the tool and its input cut to 8 KiB, and a decision the first answerer wins. The
 // asking hook's long poll is what keeps the item alive: an item whose hook stops polling
@@ -27,7 +27,7 @@ import (
 // KindPermission is the permission flow's kind on the shared items list.
 const KindPermission = "permission"
 
-// The two expiry limits of SPEC 6.2.6: an open permission item lives ten minutes, and
+// The two expiry limits: an open permission item lives ten minutes, and
 // seventy-five seconds once its hook stops polling (the hook is gone).
 const (
 	PermissionExpiresAfter    = 10 * time.Minute
@@ -35,7 +35,7 @@ const (
 )
 
 // InputLimit is the most of a tool's input an item keeps: past it the input is cut and the
-// truncated flag set, and a cut input cannot be allowed remotely (SPEC 6.2.4).
+// truncated flag set, and a cut input cannot be allowed remotely.
 const InputLimit = 8 * 1024
 
 // StateExpired is what a read answers for an open permission item past either expiry limit.
@@ -65,7 +65,7 @@ type PermissionItem struct {
 // permissionColumns is the permission flow's own columns on items, after the shared ones.
 const permissionColumns = `tool, input, truncated, last_poll_at, decided_at, decision, message, answers`
 
-// CreatePermissionItem records one permission item (SPEC 6.2.1) and answers its id. The item
+// CreatePermissionItem records one permission item and answers its id. The item
 // is born polled — the POST that creates it is its hook's hello — and its summary is the
 // shared cleaner's one line over the tool and its joined input.
 func (d *DB) CreatePermissionItem(ctx context.Context, sessionID, tool string, input []byte, now time.Time) (int64, error) {
@@ -130,7 +130,7 @@ func PermissionState(item PermissionItem, now time.Time) string {
 }
 
 // DecidePermission records one decision — allow or deny — on one item and answers whether
-// this call made it (SPEC 6.2.2: whichever answers first wins). An item whose state at now is
+// this call made it (whichever answers first wins). An item whose state at now is
 // not open refuses: the other answer, the app's or the terminal's, already holds. The write is
 // guarded by the state its read saw and verified by a read back, so two answers in the same
 // instant on the store's one connection still leave exactly one winner. An allow of an
@@ -177,12 +177,12 @@ func (d *DB) DecidePermission(ctx context.Context, id int64, decision string, an
 	return won, err
 }
 
-// TouchPoll marks one item polled at at (SPEC 6.2.6): the poll is what proves its hook lives.
+// TouchPoll marks one item polled at at: the poll is what proves its hook lives.
 func (d *DB) TouchPoll(ctx context.Context, id int64, at string) error {
 	return d.st.Run(ctx, "UPDATE items SET last_poll_at = ? WHERE id = ? AND kind = ?", at, id, KindPermission)
 }
 
-// WithdrawPermissions marks the session's open permission items withdrawn (SPEC 6.2.2: the
+// WithdrawPermissions marks the session's open permission items withdrawn (the
 // terminal answered its own prompt first) and answers their ids. The guarded write keeps a
 // decision that lands in the same instant: it already holds.
 func (d *DB) WithdrawPermissions(ctx context.Context, sessionID, at string) ([]int64, error) {
@@ -297,7 +297,7 @@ func cutInput(norm string) (string, bool) {
 	return norm[:at], true
 }
 
-// The floor's refusal reasons (SPEC 6.6): the machine holds them whatever the allow list says.
+// The floor's refusal reasons: the machine holds them whatever the allow list says.
 const (
 	floorDeleting = "refused: a deleting command; allow it in the terminal"
 	floorForced   = "refused: a forced push; allow it in the terminal"
@@ -305,7 +305,7 @@ const (
 	listMiss      = "not in this machine's remote allow list; allow it in the terminal"
 )
 
-// RemoteAllow answers whether the app may allow one tool call on this machine (SPEC 6.6), and
+// RemoteAllow answers whether the app may allow one tool call on this machine, and
 // when not, the reason the dashboard reads. The floor comes first, whatever the list says,
 // because it is not a pattern but a refusal: a Bash command the channel's approval rules call
 // deleting or force-pushing, and any input string naming a path with a .ssh, .gnupg or
@@ -421,8 +421,8 @@ func fieldText(value *jsfmt.Value, key string) (string, bool) {
 	return "", false
 }
 
-// guardedText says whether s names a path under ~/.ssh, ~/.gnupg or a secrets directory
-// (SPEC 6.6): one of its whitespace words carries a slash segment named .ssh, .gnupg or
+// guardedText says whether s names a path under ~/.ssh, ~/.gnupg or a secrets directory:
+// one of its whitespace words carries a slash segment named .ssh, .gnupg or
 // secrets. Word-then-segment, so $HOME/.ssh, a relative .ssh/, "tar cf x secrets" (the floor's
 // Bash(* secrets*)) and a path named inside prose all match, whatever the shell would expand
 // them to.

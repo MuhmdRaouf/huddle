@@ -1,4 +1,4 @@
-// The answers an AskUserQuestion allow carries (SPEC 6.2): one answer per question the input
+// The answers an AskUserQuestion allow carries: one answer per question the input
 // asks, keyed by the question's exact text, multi-select labels joined by commas. The decide
 // route checks the answers here before it stores them, and reads them through the same path
 // floor every input string passes.
@@ -75,7 +75,7 @@ func questionsOf(input string) []string {
 	return questions
 }
 
-// AnswersFloor answers the path floor's read of the answers themselves (SPEC 6.6): a question
+// AnswersFloor answers the path floor's read of the answers themselves: a question
 // or an answer naming a .ssh, .gnupg or secrets path refuses, the same floor the input passes —
 // an answer is text the machine would act on, never a note it ignores.
 func AnswersFloor(answers map[string]string) (string, bool) {

@@ -1,6 +1,6 @@
 package hub
 
-// The Web Push storage (SPEC 7.6): one subscription per paired device's endpoint, the device's
+// The Web Push storage: one subscription per paired device's endpoint, the device's
 // own notification choice beside it, and the items' push bookkeeping — one push at create, one
 // escalation at five minutes, nothing once decided. A device's subscriptions die with the device.
 

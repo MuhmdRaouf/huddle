@@ -1,4 +1,4 @@
-// The owner's words carried into a session (SPEC 6.3, 6.4): one queued row per session, headed
+// The owner's words carried into a session: one queued row per session, headed
 // by who sent it. Four delivery routes: posted through the session's inbox socket on the hub's
 // own machine (route inbox), the same post while the session's claude keeps the words for the
 // owner's approval in its terminal (route held), a channel push while the session's bridge
@@ -15,8 +15,8 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 )
 
-// The four delivery routes (SPEC 6.4), and the message senders: the owner, another session whose
-// words the owner passed on, or a channel a session is linked to (SPEC 8). A channel message's
+// The four delivery routes, and the message senders: the owner, another session whose
+// words the owner passed on, or a channel a session is linked to. A channel message's
 // FromName is <channel>/<member>.
 const (
 	RouteInbox      = "inbox"
@@ -90,7 +90,7 @@ func (d *DB) QueueMessage(ctx context.Context, in MessageIn, at string) (int64, 
 }
 
 // TakeMessages answers the session's waiting messages as the session reads them, oldest first,
-// and marks each delivered on the next-prompt route (SPEC 6.4's second route: the listen hook
+// and marks each delivered on the next-prompt route (the listen hook
 // adds them to the next UserPromptSubmit). A take is once: a second run answers nothing.
 func (d *DB) TakeMessages(ctx context.Context, session, at string) ([]string, error) {
 	var out []string
@@ -164,7 +164,7 @@ func (d *DB) PendingOf(ctx context.Context, channel, member string) ([]Message, 
 	return out, nil
 }
 
-// RecordPushAck records a bridge's proof that its channel pushes flow (SPEC 6.4: the bridge
+// RecordPushAck records a bridge's proof that its channel pushes flow (the bridge
 // reports whether pushes are acknowledged), with whether the member's claude, started as command,
 // shows them. One row per channel member holds the newest proof.
 func (d *DB) RecordPushAck(ctx context.Context, channel, member, command, at string) error {
