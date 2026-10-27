@@ -111,6 +111,16 @@ func TestPathResolution(t *testing.T) {
 		}
 	})
 
+	t.Run("puts the router's body store beside the ledger database", func(t *testing.T) {
+		e := makeEnv(t)
+		if got := paths.RouterBodiesPath(t.Context(), e.env); got != filepath.Join(e.state, "ledger", "router.db") {
+			t.Fatalf("RouterBodiesPath = %q, want %q", got, filepath.Join(e.state, "ledger", "router.db"))
+		}
+		if filepath.Dir(paths.RouterBodiesPath(t.Context(), e.env)) != filepath.Dir(paths.LedgerPath(t.Context(), e.env)) {
+			t.Fatal("the router's body store does not sit in the ledger directory beside the ledger database")
+		}
+	})
+
 	t.Run("falls back to ~/.agents paths under HOME", func(t *testing.T) {
 		e := makeEnv(t)
 		bare := domain.EnvLookup{"HOME": e.home}

@@ -58,6 +58,14 @@ func LedgerPath(ctx context.Context, env domain.EnvLookup) string {
 	return filepath.Join(StateDir(ctx, env), "ledger", "ledger.db")
 }
 
+// RouterBodiesPath is the router's body store: the full request and response bodies,
+// content-addressed so a resent conversation is stored once. The router alone writes it,
+// radar only reads it. It sits beside the ledger database, in the state dir's ledger
+// directory.
+func RouterBodiesPath(ctx context.Context, env domain.EnvLookup) string {
+	return filepath.Join(StateDir(ctx, env), "ledger", "router.db")
+}
+
 // QuotaPath is the newest plan-limits snapshot the sessions post (Claude Code's rate limits,
 // read off its statusline payload — never any credential).
 func QuotaPath(ctx context.Context, env domain.EnvLookup) string {
