@@ -7,8 +7,10 @@ package router
 // writes what is still queued.
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -33,10 +35,11 @@ const (
 )
 
 type tapItem struct {
-	id   string
-	side string
-	body []byte
-	at   time.Time
+	id       string
+	side     string
+	encoding string // the answer's Content-Encoding; "" is plain
+	body     []byte
+	at       time.Time
 }
 
 type LedgerTap struct {
@@ -71,9 +74,17 @@ func NewLedgerTap(sink BodySink, budget int64, log func(string)) *LedgerTap {
 	return t
 }
 
-// Offer queues one body for the writer and answers whether it took it. It never blocks and
-// never copies body: the caller hands the slice over and never changes it afterwards.
+// Offer queues one plain body for the writer and answers whether it took it. It never blocks
+// and never copies body: the caller hands the slice over and never changes it afterwards.
 func (t *LedgerTap) Offer(id, side string, body []byte, at time.Time) bool {
+	return t.OfferEncoded(id, side, "", body, at)
+}
+
+// OfferEncoded queues one body carried in the named content encoding ("" is plain) and answers
+// whether it took it. The writer stores it decoded, so router.db holds plain bytes; a body the
+// writer cannot decode is dropped with one log line. It never blocks and never copies body: the
+// caller hands the slice over and never changes it afterwards.
+func (t *LedgerTap) OfferEncoded(id, side, encoding string, body []byte, at time.Time) bool {
 	select {
 	case <-t.done:
 		return false
@@ -84,7 +95,7 @@ func (t *LedgerTap) Offer(id, side string, body []byte, at time.Time) bool {
 		return false
 	}
 	select {
-	case t.queue <- tapItem{id: id, side: side, body: body, at: at}:
+	case t.queue <- tapItem{id: id, side: side, encoding: encoding, body: body, at: at}:
 		return true
 	default:
 		t.queued.Add(-int64(len(body)))
@@ -113,12 +124,40 @@ func (t *LedgerTap) write() {
 	}
 }
 
-// put writes one body and frees its share of the budget; a failed write costs one log line.
+// put decodes one body into plain bytes and writes it, freeing its share of the budget either
+// way; a failed write or an undecodable body costs one log line.
 func (t *LedgerTap) put(item tapItem) {
-	if err := t.sink.PutBody(context.Background(), item.id, item.side, item.body, item.at); err != nil {
+	defer t.queued.Add(-int64(len(item.body)))
+	body, ok := decodeBody(item.body, item.encoding)
+	if !ok {
+		t.log(fmt.Sprintf("ledger tap: body of %s (%s) not kept: cannot decode %s", item.id, item.side, item.encoding))
+		return
+	}
+	if err := t.sink.PutBody(context.Background(), item.id, item.side, body, item.at); err != nil {
 		t.log(fmt.Sprintf("ledger tap: body of %s (%s) not kept: %v", item.id, item.side, err))
 	}
-	t.queued.Add(-int64(len(item.body)))
+}
+
+// decodeBody turns a body carried in encoding into plain bytes; ok is false for an encoding the
+// router cannot read or bytes that do not decode.
+func decodeBody(body []byte, encoding string) (plain []byte, ok bool) {
+	if encoding == "" {
+		return body, true
+	}
+	open := streamDecoder(encoding)
+	if open == nil {
+		return nil, false
+	}
+	reader, err := open(bytes.NewReader(body))
+	if err != nil {
+		return nil, false
+	}
+	defer reader.Close()
+	plain, err = io.ReadAll(reader)
+	if err != nil {
+		return nil, false
+	}
+	return plain, true
 }
 
 // Close stops new offers, waits for the writer to write what is queued, and answers ctx.Err()

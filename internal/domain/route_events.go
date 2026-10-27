@@ -68,6 +68,11 @@ type RouteEvent struct {
 	// Utilization is Anthropic's unified 5-hour and 7-day limits as a claude-* answer's headers
 	// reported them; nil when the answer carried neither window.
 	Utilization *UnifiedUtilization `json:"utilization,omitempty"`
+	// BodyID names the request's bodies in router.db when a ledger tap took them; nil without a tap.
+	BodyID *string `json:"body_id,omitempty"`
+	// Body is "kept" when every side the request had went to the tap, "dropped" when the tap refused
+	// one (full); "" without a tap.
+	Body string `json:"body,omitempty"`
 }
 
 // UnifiedUtilization is the two windows of Anthropic's unified subscription limits, each nil

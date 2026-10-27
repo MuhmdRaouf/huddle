@@ -125,6 +125,51 @@ func TestSpoolEventJSON(t *testing.T) {
 	}
 }
 
+func TestRouteEventBodies(t *testing.T) {
+	id := "6f0a5c8d0b1e4a2f"
+	t.Run("round-trips the body id and the outcome", func(t *testing.T) {
+		data, err := json.Marshal(RouteEvent{Event: EventRoute, BodyID: &id, Body: "kept"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), `"body_id":"6f0a5c8d0b1e4a2f","body":"kept"`) {
+			t.Fatalf("the event = %s, want it to carry the body id and kept", data)
+		}
+		var got RouteEvent
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.BodyID == nil || *got.BodyID != id || got.Body != "kept" {
+			t.Fatalf("the round trip = %v/%q, want the id and kept", got.BodyID, got.Body)
+		}
+	})
+	t.Run("records a dropped body", func(t *testing.T) {
+		data, err := json.Marshal(RouteEvent{Event: EventRoute, BodyID: &id, Body: "dropped"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), `"body":"dropped"`) {
+			t.Fatalf("the event = %s, want it to carry dropped", data)
+		}
+		var got RouteEvent
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.BodyID == nil || *got.BodyID != id || got.Body != "dropped" {
+			t.Fatalf("the round trip = %v/%q, want the id and dropped", got.BodyID, got.Body)
+		}
+	})
+	t.Run("leaves both out without a tap", func(t *testing.T) {
+		data, err := json.Marshal(RouteEvent{Event: EventRoute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), "body") {
+			t.Errorf("the event without a tap = %s, want it without body_id and body", data)
+		}
+	})
+}
+
 func routeEventFull() RouteEvent {
 	text := "boom"
 	session := "s1"

@@ -9,6 +9,7 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -81,6 +82,8 @@ type RouterOptions struct {
 	// Fallback is the lane's fallback list: the models a model's requests go to, in order,
 	// after it answers three 5xx, 429 or dropped answers in a row. nil never falls back.
 	Fallback []string
+	// Tap is the ledger tap that keeps each request's bodies for router.db; nil keeps no bodies.
+	Tap *LedgerTap
 }
 
 // keyTimeoutDefault is the key lookup's budget: a keychain prompt or a hung store answers the
@@ -807,10 +810,27 @@ type answerTiming struct {
 	sentAt               time.Time
 }
 
+// tapNote is one request's share of the ledger tap: the id its two bodies share, and whether the
+// tap refused one of them.
+type tapNote struct {
+	id      string
+	dropped bool
+}
+
+// tapBodyID mints the id the tap's two bodies of one request share: 16 random bytes, hex. ok is
+// false when the random source failed, and the request keeps no body.
+func tapBodyID() (string, bool) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", false
+	}
+	return hex.EncodeToString(raw[:]), true
+}
+
 // noteOf builds the request's note: the ids Claude Code stamped the request with, the usage and
 // the allow-listed headers the answer carried, the prompt hash and the billing block's ids — each
 // only when there was one.
-func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt int64, prompt *promptRef, timing *answerTiming) eventNote {
+func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt int64, prompt *promptRef, timing *answerTiming, tap *tapNote) eventNote {
 	if w.opts.Events == nil {
 		return nil
 	}
@@ -858,6 +878,13 @@ func (w *routerWorker) noteOf(req *http.Request, served *routeModel, startedAt i
 		}
 		if headers != nil {
 			event.Utilization = domain.UnifiedUtilizationOf(*headers)
+		}
+		if tap != nil && tap.id != "" {
+			event.BodyID = &tap.id
+			event.Body = "kept"
+			if tap.dropped {
+				event.Body = "dropped"
+			}
 		}
 		w.opts.Events(event)
 	}
@@ -1477,7 +1504,8 @@ func (w *routerWorker) forward(req *http.Request, res *Response, original []byte
 	takenAt := time.Now()
 	startedAt := takenAt.UnixMilli()
 	timing := &answerTiming{takenAt: takenAt}
-	note := w.noteOf(req, served, startedAt, prompt, timing)
+	tap := &tapNote{}
+	note := w.noteOf(req, served, startedAt, prompt, timing, tap)
 	route := routeOf(w.claim, model)
 	// The request is on its way: read what its body carried, once per content. The provider route
 	// scans its members once, before the capture starts, and hands the spans to the capture and its
@@ -1488,7 +1516,7 @@ func (w *routerWorker) forward(req *http.Request, res *Response, original []byte
 	}
 	w.capture(prompt, original, spans)
 	if route != "provider" {
-		w.dispatch(req, res, original, model, route, w.opts.Anthropic, note, timing, "", nil)
+		w.dispatch(req, res, original, model, route, w.opts.Anthropic, note, timing, tap, "", nil)
 		return
 	}
 	// The message-threads beta is Anthropic-only: Claude Code sends only the newest messages and
@@ -1536,7 +1564,7 @@ func (w *routerWorker) forward(req *http.Request, res *Response, original []byte
 	}
 	system, first := promptPartsOf(original, spans)
 	adapted, named := providerBody(w, original, spans, model, fallback, req)
-	w.dispatch(req, res, adapted, named, "provider", w.opts.ProviderURL, note, timing, key, promptHintOf(system, first, int64(len(adapted))))
+	w.dispatch(req, res, adapted, named, "provider", w.opts.ProviderURL, note, timing, tap, key, promptHintOf(system, first, int64(len(adapted))))
 }
 
 // budgetStopped answers a provider request while its budget is stopped: the same non-retryable
@@ -1793,7 +1821,7 @@ func failureStatus(failure UpstreamFailure) int64 {
 }
 
 // dispatch sends one request on its route and pipes its answer back, streaming it.
-func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, model, route string, target *url.URL, note eventNote, timing *answerTiming, key string, prompt *PromptHint) {
+func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, model, route string, target *url.URL, note eventNote, timing *answerTiming, tap *tapNote, key string, prompt *PromptHint) {
 	provider := w.provider
 	u, err := UpstreamURL(target, requestPath(req))
 	if err != nil {
@@ -1811,11 +1839,22 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 		}
 		return
 	}
+	// The body going upstream is the input the tap keeps, offered before the call so the write
+	// never waits on the answer; a body the tap refuses marks the request dropped.
+	if w.opts.Tap != nil && note != nil && tap.id == "" {
+		if id, ok := tapBodyID(); ok {
+			tap.id = id
+			if !w.opts.Tap.Offer(tap.id, "input", body, timing.takenAt) {
+				tap.dropped = true
+			}
+		}
+	}
 	headers := UpstreamHeaders(req.Header, target, len(body), key)
 	// The answer's allow-listed headers, read once as its head arrives, for the route event's
 	// note; usage is parsed out of the passing stream, so the client never waits on it.
 	var tracker *UsageTracker
 	var answerHeaders *map[string]string
+	var kept *tapBuffer
 	// What this answer's inspection decided (a provider route only): the client's status when the
 	// answer was rewritten, and why the upstream failed.
 	decided := inspection{}
@@ -1829,7 +1868,15 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			}
 			if note != nil {
 				tracker = NewUsageTracker(answer.Header.Get("Content-Type"), answer.Header.Get("Content-Encoding"))
-				answer.Body = &bodyTap{source: answer.Body, push: tracker.Push}
+				if w.opts.Tap != nil {
+					kept = newTapBuffer(TapBudget)
+				}
+				answer.Body = &bodyTap{source: answer.Body, push: func(chunk []byte) {
+					tracker.Push(chunk)
+					if kept != nil {
+						kept.push(chunk)
+					}
+				}}
 				answerHeaders = CapturedHeaders(answer.Header)
 			}
 		},
@@ -1853,6 +1900,19 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			}
 			if route == "provider" {
 				w.fellBack(w.fallback.answered(model, answer.StatusCode))
+			}
+			// The bytes the client read are the output the tap keeps, offered whole or not at
+			// all; the note reads the tap's final state, so this runs first. The id guards the
+			// offer: kept is made whenever the tap is on, but an output never goes under an
+			// empty id (the random source failed).
+			if kept != nil && tap.id != "" {
+				if out, whole := kept.bytes(); whole {
+					if !w.opts.Tap.OfferEncoded(tap.id, "output", answer.Header.Get("Content-Encoding"), out, time.Now()) {
+						tap.dropped = true
+					}
+				} else {
+					tap.dropped = true
+				}
 			}
 			if note != nil {
 				status := int64(answer.StatusCode)

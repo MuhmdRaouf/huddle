@@ -58,6 +58,8 @@ type MultiOptions struct {
 	Events func(event domain.SpoolEvent)
 	// BodyLimit is the largest request body; 0 is the default 64 MiB.
 	BodyLimit int64
+	// Tap is the ledger tap every lane keeps its requests' bodies through; nil keeps no bodies.
+	Tap *LedgerTap
 	// Now is the clock, epoch milliseconds; nil is the wall clock.
 	Now func() int64
 	// Gateway serves every path under GatewayPrefix with the prefix removed; nil answers those paths 404.
@@ -109,6 +111,7 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 		Log:           opts.Log,
 		Events:        opts.Events,
 		BodyLimit:     opts.BodyLimit,
+		Tap:           opts.Tap,
 		AnthropicFail: m.noteAnthropicFailure,
 		AnthropicOk:   m.noteAnthropicOk,
 	}, nil)
@@ -237,6 +240,9 @@ func (m *Multi) buildLanes(lanes []RouterOptions) []*routerWorker {
 		}
 		if laneOpts.Events == nil {
 			laneOpts.Events = m.o.Events
+		}
+		if laneOpts.Tap == nil {
+			laneOpts.Tap = m.o.Tap
 		}
 		built = append(built, newRouterWorker(laneOpts, nil))
 	}

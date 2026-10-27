@@ -260,6 +260,44 @@ func TestClosingTheTapWritesWhatIsQueued(t *testing.T) {
 	}
 }
 
+func TestTheTapLogsAndDropsABodyItCannotDecode(t *testing.T) {
+	t.Parallel()
+	sink := newFakeSink()
+	lines := make(chan string, 8)
+	tap := NewLedgerTap(sink, 1<<10, func(line string) { lines <- line })
+	if !tap.OfferEncoded("rot-1", "output", "gzip", []byte("certainly not a gzip stream"), time.Now()) {
+		t.Fatal("the offer was refused")
+	}
+	select {
+	case line := <-lines:
+		for _, want := range []string{"rot-1", "output", "gzip"} {
+			if !strings.Contains(line, want) {
+				t.Errorf("the undecodable body's log line = %q, want it to name %s", line, want)
+			}
+		}
+		if strings.Contains(line, "certainly not a gzip stream") {
+			t.Errorf("the log line carries the body: %q", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no log line for the body the writer could not decode")
+	}
+	// the dropped body freed its share of the budget, and the next one goes through whole
+	deadline := time.Now().Add(2 * time.Second)
+	for offered := false; !offered; {
+		if offered = tap.OfferEncoded("ok-1", "input", "", bodyOf(1<<10, 'a'), time.Now()); offered {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the dropped body never freed its budget")
+		}
+		time.Sleep(100 * time.Microsecond)
+	}
+	if call := nextCall(t, sink); call.id != "ok-1" || call.side != "input" {
+		t.Errorf("the body after the drop = %s/%s, want ok-1 through", call.id, call.side)
+	}
+	closeTap(t, tap)
+}
+
 func TestTheTapBufferKeepsAWholeAnswerOrNothing(t *testing.T) {
 	t.Parallel()
 	buf := newTapBuffer(100)
