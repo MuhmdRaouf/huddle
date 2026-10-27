@@ -4,9 +4,11 @@ package server
 // board at the session's working directory whose holder is the session's member.
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
+	"github.com/MuhmdRaouf/huddle/internal/huddle/kanbantab"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
 )
 
@@ -32,7 +34,7 @@ func TestASessionsTasksShowTheCardsItHolds(t *testing.T) {
 					// the repo lives in the scenario's own temp dir: a step's temp dir is
 					// deleted when the step ends, before the screen ever asks
 					repo = filepath.Join(s.T.TempDir(), "repo")
-					writeTasksBoard(t, repo, "in-progress", "GATE-1", "api", "Free the gate")
+					writeTasksFeatureCard(t, repo, "in-progress", "GATE-1", "swr", "api", "web.kf", "Free the gate")
 					writeTasksBoard(t, repo, "ready", "OTHER-2", "web", "Someone else's card")
 					writeTasksBoard(t, repo, "done", "MINE-3", "api", "Already finished")
 					reportTasksSession(t, srv, "s-hold", "build", "api", repo, "")
@@ -60,6 +62,20 @@ func TestASessionsTasksShowTheCardsItHolds(t *testing.T) {
 					if card["id"] == "OTHER-2" || card["id"] == "MINE-3" {
 						t.Errorf("the answer holds %v, want only GATE-1", card)
 					}
+				}
+			})
+			s.And("the answer names the card's cluster and the board's key", func(t *testing.T) {
+				cards, _ := bodyMap(t, body)["cards"].([]any)
+				card, _ := cards[0].(map[string]any)
+				if card["cluster"] != "swr" {
+					t.Errorf("cluster = %v, want swr", card["cluster"])
+				}
+				tab := kanbantab.Mount(context.Background(), kanbantab.Options{
+					Roots: func(context.Context) []string { return []string{repo} },
+				})
+				want := tab.BoardKey(context.Background(), filepath.Join(repo, ".agents", "kanban"))
+				if got := bodyMap(t, body)["board"]; got != want {
+					t.Errorf("board = %v, want the boards list's key %s", got, want)
 				}
 			})
 		})

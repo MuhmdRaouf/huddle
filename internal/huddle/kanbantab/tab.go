@@ -252,10 +252,8 @@ func (t *Tab) Stop() {
 
 // boardsOf resolves every working dir to its board, folding the dirs of one
 // repo into one row: the walk stops at the repo root, so every cwd in a repo
-// names the same board. A row's key is the repository's identity — the
-// normalised origin, so clones of one repository share their board — and a
-// repo with no origin keeps the key its path decides. The list is deduped by
-// key and sorted by name, then key.
+// names the same board. Each row's key is BoardKey's answer for the board's
+// root, and the list is deduped by key and sorted by name, then key.
 func (t *Tab) boardsOf(ctx context.Context) []boardRow {
 	seen := map[string]bool{}
 	out := []boardRow{}
@@ -267,7 +265,7 @@ func (t *Tab) boardsOf(ctx context.Context) []boardRow {
 		if err != nil {
 			continue // a dir with no board is no row, never an error
 		}
-		key := board.RepoKey(t.origin(ctx, board.RepoRootOf(b.Root)), server.KeyOf(b.Root))
+		key := t.BoardKey(ctx, b.Root)
 		if seen[key] {
 			continue
 		}
@@ -281,6 +279,15 @@ func (t *Tab) boardsOf(ctx context.Context) []boardRow {
 		return out[i].Key < out[j].Key
 	})
 	return out
+}
+
+// BoardKey answers the key the boards list gives the board rooted at root —
+// the repository's identity: the normalised origin, so clones of one
+// repository share their board, and a repo with no origin keeps the key its
+// path decides. boardsOf answers every row's key through this one method, so
+// a caller outside the tab names a board the way the list does.
+func (t *Tab) BoardKey(ctx context.Context, root string) string {
+	return board.RepoKey(t.origin(ctx, board.RepoRootOf(root)), server.KeyOf(root))
 }
 
 // noEnv answers nothing found, so the huddle process's own KANBAN_BOARD never
