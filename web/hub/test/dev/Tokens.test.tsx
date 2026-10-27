@@ -47,6 +47,7 @@ describe("Tokens", () => {
       "Tabs",
       "Table",
       "Field",
+      "Switch",
       "Chart frame",
       "Sheet",
       "Dialog",
@@ -63,6 +64,14 @@ describe("Tokens", () => {
     expect(mono.getAttribute("style")).toContain("var(--ui-text-mono)");
     for (const name of ["--ui-accent-soft", "--ui-scrim", "--ui-shadow-sheet"])
       expect(screen.getByText(name)).toBeTruthy();
+  });
+
+  it("shows the hero card and the sheet's grab handle", () => {
+    setup();
+    expect(document.querySelector(".ui-card.ui-card-lg")).toBeTruthy();
+    const handle = document.querySelector(".ui-sheet-handle");
+    expect(handle).toBeTruthy();
+    expect(handle?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("follows the OS, and the switch overrides it, keeps it and presses its button", () => {

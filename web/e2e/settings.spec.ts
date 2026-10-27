@@ -295,8 +295,16 @@ test.describe("the Settings tab", () => {
     const tipsToSessions = page.getByRole("switch", { name: "Tips to my sessions" });
     await expect(tipsForMe).toHaveAttribute("aria-checked", "true");
     await expect(tipsToSessions).toHaveAttribute("aria-checked", "false");
-    await tipsForMe.click();
-    await tipsToSessions.click();
+    // a flip answers the tap at once and PUTs its one field; the reload must not race the save
+    const saved = (field: string) =>
+      page.waitForResponse(
+        (r) =>
+          r.request().method() === "PUT" &&
+          r.url().endsWith("/api/insights/settings") &&
+          (r.request().postData() ?? "").includes(field),
+      );
+    await Promise.all([saved("tips_for_me"), tipsForMe.click()]);
+    await Promise.all([saved("tips_to_sessions"), tipsToSessions.click()]);
     await expect(tipsForMe).toHaveAttribute("aria-checked", "false");
     await expect(tipsToSessions).toHaveAttribute("aria-checked", "true");
     await page.reload();
@@ -321,7 +329,7 @@ test.describe("the Settings tab", () => {
   });
 
   for (const [name, hash] of GROUPS) {
-    test(`${name}: no horizontal scroll, 44 px targets, axe clean`, async ({ page }) => {
+    test(`${name}: no horizontal scroll, tap targets, axe clean`, async ({ page }) => {
       await openSettings(page, hash);
       await expectGroupOpen(page, name);
       await page
@@ -329,19 +337,22 @@ test.describe("the Settings tab", () => {
         .catch(() => {});
       const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(over).toBeLessThanOrEqual(0);
-      const small = await page.evaluate(() =>
-        [...document.querySelectorAll<HTMLElement>("[data-settings] button, [data-settings] input, [data-settings] a")]
-          // Radar's own settings view keeps its 30 px controls until HV-TOKENS-SETTINGS moves it
-          .filter((el) => el.closest('[data-setting="radar"]') === null)
-          // a switch or a radio is tapped through the label around it
-          .map((el) => ({ el, r: (el.closest("label") ?? el).getBoundingClientRect() }))
-          .filter(({ r }) => r.width > 0 && (r.width < 44 || r.height < 44))
-          .map(({ el, r }) => {
-            const label = el.textContent?.trim() || el.getAttribute("aria-label") || el.id;
-            return `${el.tagName} "${label}" ${r.width}x${r.height}`;
-          }),
-      );
-      expect(small).toEqual([]);
+      // B's desk controls stand 40 px, so the 44 px floor is measured under a finger only
+      if (test.info().project.use.hasTouch) {
+        const small = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>("[data-settings] button, [data-settings] input, [data-settings] a")]
+            // Radar's own settings view keeps its 30 px controls until HV-TOKENS-SETTINGS moves it
+            .filter((el) => el.closest('[data-setting="radar"]') === null)
+            // a switch or a radio is tapped through the label around it
+            .map((el) => ({ el, r: (el.closest("label") ?? el).getBoundingClientRect() }))
+            .filter(({ r }) => r.width > 0 && (r.width < 44 || r.height < 44))
+            .map(({ el, r }) => {
+              const label = el.textContent?.trim() || el.getAttribute("aria-label") || el.id;
+              return `${el.tagName} "${label}" ${r.width}x${r.height}`;
+            }),
+        );
+        expect(small).toEqual([]);
+      }
       await expectAccessible(page);
     });
   }

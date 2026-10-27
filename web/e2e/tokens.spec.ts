@@ -24,6 +24,7 @@ const BLOCKS = [
   "Tabs",
   "Table",
   "Field",
+  "Switch",
   "Chart frame",
   "Sheet",
   "Dialog",
@@ -140,6 +141,86 @@ test.describe("the design tokens page", () => {
     expect(got.p4, `p-4 pads ${got.p4}px, --ui-space-1 * 4 is ${got.p4Want}px`).toBeCloseTo(got.p4Want);
   });
 
+  test("the components draw variant B's shape", async ({ page }) => {
+    const fine = test.info().project.name === "desktop";
+    await openTokens(page);
+    const got = await page.evaluate(() => {
+      // The dashboard's CSP allows no style attributes, so a token probe takes its declaration
+      // through the CSSOM, which the browser does not strip.
+      const fill = (token: string): string => {
+        const el = document.createElement("div");
+        el.style.backgroundColor = token;
+        document.body.append(el);
+        const v = getComputedStyle(el).backgroundColor;
+        el.remove();
+        return v;
+      };
+      const pick = (sel: string): CSSStyleDeclaration => {
+        const el = document.querySelector(sel);
+        if (!el) throw new Error(`missing ${sel}`);
+        return getComputedStyle(el);
+      };
+      // the gallery's first secondary button is the pressed scheme button; measure an unpressed one
+      const rest = [...document.querySelectorAll<HTMLElement>(".ui-btn-secondary")].find(
+        (b) => b.getAttribute("aria-pressed") !== "true",
+      );
+      if (!rest) throw new Error("missing an unpressed .ui-btn-secondary");
+      const px = (v: string): number => Number.parseFloat(v);
+      const card = pick(".ui-card");
+      const tab = pick('.ui-tabs [role="tab"]');
+      const picked = pick('.ui-tabs [role="tab"][aria-selected="true"]');
+      return {
+        secondaryBorder: px(getComputedStyle(rest).borderTopWidth),
+        secondaryFill: getComputedStyle(rest).backgroundColor,
+        surface2: fill("var(--ui-surface-2)"),
+        btnMin: px(pick(".ui-btn").minHeight),
+        dangerBorder: px(pick(".ui-btn-danger").borderTopWidth),
+        dangerFill: pick(".ui-btn-danger").backgroundColor,
+        failSoft: fill("var(--ui-fail-soft)"),
+        cardBorder: px(card.borderTopWidth),
+        cardRadius: px(card.borderTopLeftRadius),
+        cardShadow: card.boxShadow,
+        rowMin: px(pick(".ui-list-row").minHeight),
+        trackW: px(pick(".ui-switch-track").width),
+        trackH: px(pick(".ui-switch-track").height),
+        trackBorder: px(pick(".ui-switch-track").borderTopWidth),
+        thumbW: px(pick(".ui-switch-thumb").width),
+        thumbFill: pick(".ui-switch-thumb").backgroundColor,
+        inputBorder: px(pick(".ui-input").borderTopWidth),
+        inputMin: px(pick(".ui-input").minHeight),
+        inputFill: pick(".ui-input").backgroundColor,
+        tabMin: px(tab.minHeight),
+        tabFill: picked.backgroundColor,
+        surface: fill("var(--ui-surface)"),
+        tabShadow: picked.boxShadow,
+        thTransform: pick(".ui-table th").textTransform,
+      };
+    });
+    expect(got.btnMin, `button min-height ${got.btnMin}px`).toBe(fine ? 40 : 48);
+    expect(got.secondaryBorder, `secondary border ${got.secondaryBorder}px`).toBe(0);
+    expect(got.secondaryFill, `secondary fill ${got.secondaryFill}, surface-2 ${got.surface2}`).toBe(
+      got.surface2,
+    );
+    expect(got.dangerBorder, `danger border ${got.dangerBorder}px`).toBe(0);
+    expect(got.dangerFill, `danger fill ${got.dangerFill}, fail-soft ${got.failSoft}`).toBe(got.failSoft);
+    expect(got.cardBorder, `card border ${got.cardBorder}px`).toBe(0);
+    expect(got.cardRadius, `card radius ${got.cardRadius}px`).toBe(12);
+    expect(got.cardShadow, "the card lifts on a shadow, no border").not.toBe("none");
+    expect(got.rowMin, `list row min-height ${got.rowMin}px`).toBe(52);
+    expect(got.trackW, `switch track width ${got.trackW}px`).toBe(51);
+    expect(got.trackH, `switch track height ${got.trackH}px`).toBe(31);
+    expect(got.trackBorder, `switch track border ${got.trackBorder}px`).toBe(0);
+    expect(got.thumbW, `switch thumb width ${got.thumbW}px`).toBe(27);
+    expect(got.thumbFill, `switch thumb fill ${got.thumbFill}`).toBe("rgb(255, 255, 255)");
+    expect(got.inputBorder, `input border ${got.inputBorder}px`).toBe(0);
+    expect(got.inputMin, `input min-height ${got.inputMin}px`).toBe(fine ? 40 : 48);
+    expect(got.inputFill, `input fill ${got.inputFill}, surface-2 ${got.surface2}`).toBe(got.surface2);
+    expect(got.tabMin, `tab min-height ${got.tabMin}px`).toBe(fine ? 36 : 44);
+    expect(got.tabFill, `selected tab fill ${got.tabFill}, surface ${got.surface}`).toBe(got.surface);
+    expect(got.tabShadow, `selected tab shadow ${got.tabShadow}`).not.toContain("inset");
+    expect(got.thTransform, `th text-transform ${got.thTransform}`).toBe("none");
+  });
+
   for (const scheme of ["light", "dark"] as const) {
     test(`passes axe in the ${scheme} scheme`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: scheme });
@@ -170,6 +251,13 @@ test.describe("the design tokens page", () => {
     const box = await sheet.locator(".ui-sheet-panel").boundingBox();
     const view = page.viewportSize();
     expect(box && view && box.x >= 0 && box.x + box.width <= view.width + 0.5).toBe(true);
+    // the grab handle sits at the panel's top, 36×5, and the sheet shadow lifts the panel
+    const handle = await sheet.locator(".ui-sheet-handle").boundingBox();
+    expect(handle && Math.abs(handle.width - 36) <= 0.5 && Math.abs(handle.height - 5) <= 0.5).toBe(true);
+    const shadow = await sheet
+      .locator(".ui-sheet-panel")
+      .evaluate((el) => getComputedStyle(el).boxShadow);
+    expect(shadow).not.toBe("none");
     await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
   });

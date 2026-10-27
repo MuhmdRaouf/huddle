@@ -61,6 +61,7 @@ export function Sheet({ open, onClose, title, actions, children }: SheetProps): 
       }}
     >
       <div class="ui-sheet-panel">
+        <div class="ui-sheet-handle" aria-hidden="true" />
         <div class="ui-sheet-head">
           <h2 id={id} class="ui-sheet-title">
             {title}

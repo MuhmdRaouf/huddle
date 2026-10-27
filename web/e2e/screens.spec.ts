@@ -148,7 +148,11 @@ const route =
   (hash: (s: Seeded) => string) =>
   async (page: Page, seeded: Seeded): Promise<void> => {
     await page.goto(at(hash(seeded)));
-    await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+    // the shell is up when the nav shows; a page whose dialog opens with it (a drawer's address,
+    // a session's pending ask) steps the phone's tab bar aside, so an open dialog waits instead
+    await expect(
+      page.getByRole("navigation", { name: "Main" }).or(page.locator("dialog[open]")).first(),
+    ).toBeVisible();
   };
 
 /** A drawer over a page: the shared slide-over standing open. */

@@ -1,6 +1,8 @@
 /* components.css — the look of the web/ui components, drawn only from tokens.css. Phone first: every
  * control is at least --ui-tap (44 px) on each side, and nothing is wider than its container; wider
- * screens add room, never the other way round. Import tokens.css first. */
+ * screens add room, never the other way round. Import tokens.css first.
+ * The look is refresh B: surfaces and shadows carry the parts, hairlines only where a divider must
+ * read, and a control stands at --ui-control-h (48 px under a finger, 40 px under a pointer). */
 
 .ui-page {
   box-sizing: border-box;
@@ -154,12 +156,13 @@
   justify-content: center;
   gap: var(--ui-space-2);
   min-width: var(--ui-tap);
-  min-height: var(--ui-tap);
-  padding: 0 var(--ui-space-4);
-  border: 1px solid transparent;
+  min-height: var(--ui-control-h);
+  /* 20 px: the horizontal room a B button breathes with */
+  padding: 0 20px;
+  border: 0;
   border-radius: var(--ui-radius);
   font: inherit;
-  font-size: var(--ui-text-sm);
+  font-size: var(--ui-text-md);
   font-weight: 600;
   cursor: pointer;
   touch-action: manipulation;
@@ -186,14 +189,13 @@
 }
 
 .ui-btn-secondary {
-  background: var(--ui-surface);
-  border-color: var(--ui-line-strong);
+  background: var(--ui-surface-2);
   color: var(--ui-text);
 }
 
 .ui-btn-ghost {
   background: transparent;
-  color: var(--ui-text);
+  color: var(--ui-accent);
 }
 
 .ui-btn-ghost:hover,
@@ -203,13 +205,11 @@
 
 .ui-btn-danger {
   background: var(--ui-fail-soft);
-  border-color: var(--ui-fail);
   color: var(--ui-fail-ink);
 }
 
 .ui-btn[aria-pressed="true"] {
   background: var(--ui-accent);
-  border-color: var(--ui-accent);
   color: var(--ui-on-accent);
 }
 
@@ -269,9 +269,15 @@
 
 .ui-card {
   min-width: 0;
-  border: 1px solid var(--ui-line);
-  border-radius: var(--ui-radius-lg);
+  padding: var(--ui-space-4);
+  border-radius: var(--ui-radius);
   background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-1);
+}
+
+/* the hero card: one large raised panel on a page */
+.ui-card-lg {
+  border-radius: var(--ui-radius-lg);
 }
 
 .ui-card-head {
@@ -279,8 +285,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--ui-space-2) var(--ui-space-3);
-  padding: var(--ui-space-3) var(--ui-space-4);
-  border-bottom: 1px solid var(--ui-line);
+  padding: 0 0 var(--ui-space-3);
 }
 
 .ui-card-title {
@@ -301,7 +306,7 @@
 }
 
 .ui-card-body {
-  padding: var(--ui-space-4);
+  padding: 0;
 }
 
 /* List */
@@ -310,14 +315,22 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--ui-line);
   border-radius: var(--ui-radius-lg);
   background: var(--ui-surface);
   overflow: hidden;
 }
 
-.ui-list-item + .ui-list-item {
-  border-top: 1px solid var(--ui-line);
+.ui-list-item {
+  position: relative;
+}
+
+/* the separator: a hairline inset 56 px to clear the leading avatar or icon, 16 px from the right */
+.ui-list-item + .ui-list-item::before {
+  content: "";
+  position: absolute;
+  inset: 0 16px auto 56px;
+  height: 1px;
+  background: var(--ui-line);
 }
 
 .ui-list-row {
@@ -325,8 +338,8 @@
   align-items: center;
   gap: var(--ui-space-3);
   width: 100%;
-  min-height: 56px;
-  padding: var(--ui-space-2) var(--ui-space-4);
+  min-height: 52px;
+  padding: 0 var(--ui-space-4);
   border: 0;
   background: transparent;
   color: inherit;
@@ -351,7 +364,8 @@ button.ui-list-row:hover {
 
 .ui-list-title {
   overflow: hidden;
-  font-weight: 600;
+  font-size: var(--ui-text-md);
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -372,9 +386,9 @@ button.ui-list-row:hover {
 
 .ui-tabs {
   display: flex;
-  gap: var(--ui-space-1);
+  gap: 3px;
   max-width: 100%;
-  padding: var(--ui-space-1);
+  padding: 3px;
   overflow-x: auto;
   border-radius: var(--ui-radius);
   background: var(--ui-surface-2);
@@ -387,22 +401,31 @@ button.ui-list-row:hover {
   justify-content: center;
   gap: var(--ui-space-2);
   min-width: var(--ui-tap);
-  min-height: var(--ui-tap);
+  /* 36 px: the segmented item inside the 3 px track */
+  min-height: 36px;
   padding: 0 var(--ui-space-3);
   border: 0;
-  border-radius: var(--ui-radius-sm);
+  /* 9 px: the item rounds inside its 12 px track */
+  border-radius: calc(var(--ui-radius) - 3px);
   background: transparent;
   color: var(--ui-muted);
   font: inherit;
   font-size: var(--ui-text-sm);
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .ui-tabs [role="tab"][aria-selected="true"] {
   background: var(--ui-surface);
   color: var(--ui-text);
-  box-shadow: inset 0 -2px 0 var(--ui-accent);
+  font-weight: 600;
+  box-shadow: var(--ui-shadow-1);
+}
+
+@media (pointer: coarse) {
+  .ui-tabs [role="tab"] {
+    min-height: var(--ui-tap);
+  }
 }
 
 /* Table */
@@ -436,10 +459,8 @@ button.ui-list-row:hover {
 
 .ui-table th {
   color: var(--ui-muted);
-  font-size: var(--ui-text-xs);
+  font-size: var(--ui-text-sm);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .ui-table tbody tr:last-child td {
@@ -466,11 +487,11 @@ button.ui-list-row:hover {
 
 .ui-input {
   width: 100%;
-  min-height: var(--ui-tap);
-  padding: 0 var(--ui-space-3);
-  border: 1px solid var(--ui-line-strong);
+  min-height: var(--ui-control-h);
+  padding: 0 var(--ui-space-4);
+  border: 0;
   border-radius: var(--ui-radius);
-  background: var(--ui-surface);
+  background: var(--ui-surface-2);
   color: var(--ui-text);
   /* 16 px keeps iOS Safari from zooming into the field */
   font: inherit;
@@ -479,10 +500,6 @@ button.ui-list-row:hover {
 
 .ui-input::placeholder {
   color: var(--ui-muted);
-}
-
-.ui-input[aria-invalid="true"] {
-  border-color: var(--ui-fail);
 }
 
 .ui-field-hint,
@@ -524,33 +541,31 @@ button.ui-list-row:hover {
 .ui-switch-track {
   display: flex;
   align-items: center;
-  width: 40px;
-  height: 24px;
+  /* 51×31: a 27 px thumb, 2 px of padding each side, 20 px of travel */
+  width: 51px;
+  height: 31px;
   padding: 2px;
-  border: 2px solid var(--ui-line-strong);
+  border: 0;
   border-radius: var(--ui-radius-full);
   background: var(--ui-surface-2);
-  transition:
-    background-color 0.15s,
-    border-color 0.15s;
+  transition: background-color 0.15s;
 }
 
 .ui-switch-thumb {
-  width: 16px;
-  height: 16px;
+  width: 27px;
+  height: 27px;
   border-radius: var(--ui-radius-full);
-  background: var(--ui-line-strong);
+  /* the one literal colour: a knob reads raised on both the ok green and the idle grey */
+  background: #fff;
   transition: transform 0.15s;
 }
 
 .ui-switch[aria-checked="true"] .ui-switch-track {
-  border-color: var(--ui-accent);
-  background: var(--ui-accent);
+  background: var(--ui-ok);
 }
 
 .ui-switch[aria-checked="true"] .ui-switch-thumb {
-  background: var(--ui-on-accent);
-  transform: translateX(16px);
+  transform: translateX(20px);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -683,7 +698,7 @@ button.ui-list-row:hover {
 }
 
 .ui-sheet::backdrop {
-  background: rgb(0 0 0 / 0.45);
+  background: var(--ui-scrim);
 }
 
 .ui-sheet-panel {
@@ -695,6 +710,17 @@ button.ui-list-row:hover {
   padding-bottom: var(--ui-safe-bottom);
   border-radius: var(--ui-radius-lg) var(--ui-radius-lg) 0 0;
   background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sheet);
+}
+
+/* the grab handle every sheet draws above its head */
+.ui-sheet-handle {
+  flex-shrink: 0;
+  width: 36px;
+  height: 5px;
+  margin: var(--ui-space-2) auto 0;
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-line-strong);
 }
 
 .ui-sheet-head {
@@ -702,7 +728,6 @@ button.ui-list-row:hover {
   align-items: center;
   gap: var(--ui-space-2);
   padding: var(--ui-space-2) var(--ui-space-2) var(--ui-space-2) var(--ui-space-4);
-  border-bottom: 1px solid var(--ui-line);
 }
 
 .ui-sheet-title {
@@ -745,7 +770,7 @@ dialog[data-ui-covered]::backdrop {
   }
 
   dialog[data-ui-covered]::backdrop {
-    background: rgb(0 0 0 / 0.45);
+    background: var(--ui-scrim);
   }
 }
 
@@ -761,7 +786,6 @@ dialog[data-ui-covered]::backdrop {
   max-width: none;
   padding-bottom: var(--ui-safe-bottom);
   border: 0;
-  border-top: 1px solid var(--ui-line);
   border-radius: var(--ui-radius-lg) var(--ui-radius-lg) 0 0;
   background: var(--ui-surface);
   color: var(--ui-text);
@@ -778,7 +802,7 @@ dialog[data-ui-covered]::backdrop {
 }
 
 .ui-dialog::backdrop {
-  background: rgb(0 0 0 / 0.45);
+  background: var(--ui-scrim);
 }
 
 .ui-dialog-head {
@@ -786,7 +810,6 @@ dialog[data-ui-covered]::backdrop {
   align-items: center;
   gap: var(--ui-space-2);
   padding: var(--ui-space-2) var(--ui-space-2) var(--ui-space-2) var(--ui-space-4);
-  border-bottom: 1px solid var(--ui-line);
 }
 
 .ui-dialog-title {
@@ -807,7 +830,6 @@ dialog[data-ui-covered]::backdrop {
     width: min(40rem, calc(100vw - 2 * var(--ui-space-4)));
     margin: auto;
     padding-bottom: 0;
-    border: 1px solid var(--ui-line);
     border-radius: var(--ui-radius-lg);
     box-shadow: var(--ui-shadow-3);
   }
@@ -851,7 +873,6 @@ dialog[data-ui-covered]::backdrop {
   align-items: center;
   gap: var(--ui-space-3);
   padding: var(--ui-space-2) var(--ui-space-2) var(--ui-space-2) var(--ui-space-3);
-  border: 1px solid var(--ui-line);
   border-radius: var(--ui-radius);
   background: var(--ui-surface);
   color: var(--ui-text);
@@ -870,7 +891,6 @@ dialog[data-ui-covered]::backdrop {
 }
 
 .ui-toast-bad {
-  border-color: var(--ui-fail);
   background: var(--ui-fail-soft);
 }
 

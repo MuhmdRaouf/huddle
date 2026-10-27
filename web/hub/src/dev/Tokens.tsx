@@ -10,6 +10,7 @@ import { Dialog } from "@huddle/ui/dialog.tsx";
 import { Field } from "@huddle/ui/field.tsx";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
+import { Switch } from "@huddle/ui/switch.tsx";
 import { type Column, Table } from "@huddle/ui/table.tsx";
 import { Tabs } from "@huddle/ui/tabs.tsx";
 import {
@@ -186,6 +187,7 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
   const [range, setRange] = useState("day");
   const [name, setName] = useState("huddle");
   const [picked, setPicked] = useState(false);
+  const [push, setPush] = useState(true);
   const [sheet, setSheet] = useState(false);
   const [dlg, setDlg] = useState(false);
   const [computed, setComputed] = useState<Computed>({});
@@ -359,6 +361,16 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
             $10.40
           </p>
         </Card>
+        {/* the hero card: the page's one large raised panel */}
+        <section
+          class="ui-card ui-card-lg"
+          style={{ marginTop: "var(--ui-space-4)", display: "grid", gap: "var(--ui-space-2)" }}
+        >
+          <h2 style={{ margin: 0, fontSize: "var(--ui-text-md)" }}>Cost this week</h2>
+          <p class="ui-mono" style={{ margin: 0, fontSize: "var(--ui-text-xl)" }}>
+            $64.90
+          </p>
+        </section>
       </Block>
 
       <Block title="List">
@@ -396,6 +408,12 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
         </div>
       </Block>
 
+      <Block title="Switch">
+        <div style={row}>
+          <Switch label="Push to this device" checked={push} onChange={setPush} />
+        </div>
+      </Block>
+
       <Block title="Chart frame">
         <ChartFrame
           title="Tokens"
@@ -416,6 +434,8 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
           <Button onClick={() => setDlg(true)}>Open dialog</Button>
           <Button onClick={() => setSheet(false)}>Done</Button>
         </Sheet>
+        {/* the grab handle, drawn by every sheet above its head */}
+        <div class="ui-sheet-handle" aria-hidden="true" style={{ marginTop: "var(--ui-space-2)" }} />
       </Block>
 
       <Block title="Dialog">

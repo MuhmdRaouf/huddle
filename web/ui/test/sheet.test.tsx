@@ -48,6 +48,20 @@ describe("Sheet", () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  it("draws a grab handle above the head, hidden from the tree", () => {
+    const view = render(
+      <Sheet open title="Logs" onClose={() => {}}>
+        <p>line</p>
+      </Sheet>,
+    );
+    const panel = view.baseElement.querySelector(".ui-sheet-panel") as HTMLElement;
+    const handle = panel.querySelector(".ui-sheet-handle");
+    expect(handle).toBeTruthy();
+    expect(handle?.getAttribute("aria-hidden")).toBe("true");
+    // the handle leads the panel, above the head it pulls down
+    expect(panel.firstElementChild).toBe(handle);
+  });
+
   it("closes on Escape", () => {
     const onClose = vi.fn();
     const view = render(

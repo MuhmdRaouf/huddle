@@ -8,7 +8,8 @@
 // and links a 180 px Apple Home Screen icon the hub serves as a PNG.
 // A button styled by Tailwind utilities alone keeps its fill and its border over Radar's legacy
 // button reset. A session's needs sheet shows a Bash ask's command, leaves "Runs in" out for a
-// session with no branch, and fits at 390, 820 and 1440 px in both schemes with real 44 px answers.
+// session with no branch, and fits at 390, 820 and 1440 px in both schemes with answers sized to
+// the pointer (44 px under a finger, 40 px under one).
 // An open app offers "Huddle updated" with one Reload once the hub's /health names another build.
 
 import { expect, test, type Page } from "@playwright/test";
@@ -53,7 +54,11 @@ async function open(page: Page, hash: string): Promise<void> {
   await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
   await signIn(page);
   await page.goto(`${theSetup().rootUrl}/${hash}`);
-  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  // the shell is up when the nav shows; a page whose dialog opens with it (a session's pending
+  // ask, a drawer's address) steps the phone's tab bar aside, so an open dialog waits instead
+  await expect(
+    page.getByRole("navigation", { name: "Main" }).or(page.locator("dialog[open]")).first(),
+  ).toBeVisible();
   // the panels settle: their skeletons are gone, or three seconds passed
   await page
     .waitForFunction(() => document.querySelectorAll(".skeleton").length === 0, undefined, { timeout: 3000 })
@@ -315,7 +320,9 @@ test.describe("the update offer", () => {
     const reload = offer.getByRole("button", { name: "Reload" });
     await expect(reload).toBeVisible();
     // the toast grows in from a smaller scale: its button reaches its full size once that ends
-    await expect.poll(async () => (await reload.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    // (the 44 px floor under a finger, --ui-control-h's 40 px under a pointer)
+    const full = test.info().project.use.hasTouch ? 44 : 40;
+    await expect.poll(async () => (await reload.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(full);
     await Promise.all([page.waitForEvent("load"), reload.click()]);
     await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   });
@@ -345,7 +352,9 @@ test.describe("the update offer", () => {
     await expect(dismiss).toBeVisible();
     await expect(text).toBeVisible();
     // the toast grows in from a smaller scale: measure once the grow-in has ended
-    await expect.poll(async () => (await reload.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    // (the 44 px floor under a finger, --ui-control-h's 40 px under a pointer)
+    const full = test.info().project.use.hasTouch ? 44 : 40;
+    await expect.poll(async () => (await reload.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(full);
     const m = await page.evaluate(() => {
       const row = [...document.querySelectorAll("[role='status']")].find((n) =>
         n.textContent?.includes("Huddle updated"),
@@ -387,7 +396,7 @@ test.describe("the update offer", () => {
 });
 
 test.describe("the utility layer", () => {
-  test("a permission ask's Allow once keeps its fill and Deny its border", async ({ page }, info) => {
+  test("a permission ask's Allow once keeps its fill and Deny its fail fill", async ({ page }, info) => {
     const session = `e2e-layer-${info.project.name}`;
     await api("/api/registry/report", {
       session_id: session,
@@ -414,11 +423,13 @@ test.describe("the utility layer", () => {
     const deny = bar.locator("[data-act='deny']");
     await expect(allow).toBeVisible();
     expect(await allow.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
-    const border = await deny.evaluate((el) => {
+    // B's Deny carries no border; its fail-soft fill keeps it apart from Allow's accent
+    const denyStyle = await deny.evaluate((el) => {
       const s = getComputedStyle(el);
-      return `${s.borderTopWidth} ${s.borderTopStyle}`;
+      return { border: `${s.borderTopWidth} ${s.borderTopStyle}`, fill: s.backgroundColor };
     });
-    expect(border).toBe("1px solid");
+    expect(denyStyle.border).toBe("0px none");
+    expect(denyStyle.fill).not.toBe("rgba(0, 0, 0, 0)");
     // the answer moves the session out of Needs you, so the Now spec's counts stay as seeded
     await api(`/api/needs/${id}/decide`, { decision: "deny" });
   });
@@ -463,13 +474,14 @@ test.describe("the needs sheet", () => {
           const button = bar.locator(`[data-act='${act}']`);
           expect(await button.evaluate((el) => el.tagName), `${at}: ${act}`).toBe("BUTTON");
           // a list re-read can re-draw the sheet between the resolve and the measure, so the
-          // touch-target sizes are polled, not read once
+          // target sizes are polled, not read once; the 44 px floor holds under a finger only
+          const floor = info.project.use.hasTouch ? 44 : 40;
           await expect
             .poll(async () => (await button.boundingBox())?.width ?? 0, `${at}: ${act} width`)
-            .toBeGreaterThanOrEqual(44);
+            .toBeGreaterThanOrEqual(floor);
           await expect
             .poll(async () => (await button.boundingBox())?.height ?? 0, `${at}: ${act} height`)
-            .toBeGreaterThanOrEqual(44);
+            .toBeGreaterThanOrEqual(floor);
         }
         const over = await page.evaluate(
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
