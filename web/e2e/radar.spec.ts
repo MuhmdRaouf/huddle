@@ -794,6 +794,116 @@ test("the inspector attaches no history to a call the transcript holds no copy o
   await expect(sheet.locator("[data-context-totals]")).toHaveCount(0);
 });
 
+/** The first seeded request carrying a body id, and the body store's answer for it. */
+const BODY_ID = "b-e2e";
+
+/** The kept request body: an Anthropic messages ask with one Bash call, and the stream that answered. */
+const KEPT_BODIES = {
+  state: "kept",
+  input: JSON.stringify({
+    model: "glm-5.3",
+    system: "You are terse.",
+    messages: [
+      { role: "user", content: [{ type: "text", text: "List the files" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "Running ls" },
+          { type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "ls -la" } },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "toolu_1",
+            content: [{ type: "text", text: "a.go\nb.go\nc.go" }],
+          },
+        ],
+      },
+    ],
+  }),
+  output: [
+    "event: content_block_delta",
+    'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello world"}}',
+    "",
+    "event: message_delta",
+    'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":41}}',
+    "",
+  ].join("\n"),
+} as const;
+
+test("the inspector reads a kept request's bodies: the ask's words and a Bash call that unfolds", async ({
+  page,
+}) => {
+  await page.route("**/api/radar/api/requests?*", async (route) => {
+    const answer = await route.fetch();
+    const body = (await answer.json()) as { requests: Record<string, unknown>[] };
+    const first = SEEDED.requests[0];
+    const seed = body.requests.find((r) => (r.tokens as { input?: number } | undefined)?.input === first.input);
+    if (seed === undefined) throw new Error("the first seeded request is missing");
+    await route.fulfill({
+      response: answer,
+      json: { requests: body.requests.map((r) => (r === seed ? { ...r, bodyId: BODY_ID } : r)) },
+    });
+  });
+  await page.route(`**/api/bodies/${BODY_ID}`, async (route) => {
+    await route.fulfill({ json: KEPT_BODIES });
+  });
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/radar/requests`);
+  await page
+    .getByRole("row")
+    .filter({ hasText: n(SEEDED.requests[0].input) })
+    .filter({ hasText: n(SEEDED.requests[0].output) })
+    .click();
+  const sheet = page.locator("dialog[open] [data-slide-over]");
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("tab", { name: /Input/ }).click();
+  await expect(sheet.getByText(/As sent to .* · redacted · kept 7 days/)).toBeVisible();
+  await expect(sheet.getByText("List the files")).toBeVisible();
+  const call = sheet.getByRole("button", { name: /Bash/ });
+  await expect(call).toContainText("ls -la");
+  await expect(call).toHaveAttribute("aria-expanded", "false");
+  await call.click();
+  await expect(call).toHaveAttribute("aria-expanded", "true");
+  await expect(sheet.locator("pre").filter({ hasText: '"command": "ls -la"' })).toBeVisible();
+  await expectAccessible(page);
+});
+
+test("the inspector says when a request's bodies are off, with the settings link", async ({ page }) => {
+  await page.route("**/api/radar/api/requests?*", async (route) => {
+    const answer = await route.fetch();
+    const body = (await answer.json()) as { requests: Record<string, unknown>[] };
+    const first = SEEDED.requests[0];
+    const seed = body.requests.find((r) => (r.tokens as { input?: number } | undefined)?.input === first.input);
+    if (seed === undefined) throw new Error("the first seeded request is missing");
+    await route.fulfill({
+      response: answer,
+      json: { requests: body.requests.map((r) => (r === seed ? { ...r, bodyId: BODY_ID } : r)) },
+    });
+  });
+  await page.route(`**/api/bodies/${BODY_ID}`, async (route) => {
+    await route.fulfill({ json: { state: "off" } });
+  });
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/radar/requests`);
+  await page
+    .getByRole("row")
+    .filter({ hasText: n(SEEDED.requests[0].input) })
+    .filter({ hasText: n(SEEDED.requests[0].output) })
+    .click();
+  const sheet = page.locator("dialog[open] [data-slide-over]");
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("tab", { name: /Input/ }).click();
+  await expect(sheet.getByText("Request bodies are off. Turn them on in")).toBeVisible();
+  await expect(sheet.getByRole("link", { name: "Settings › Hub" })).toHaveAttribute(
+    "href",
+    "#/settings/hub",
+  );
+});
+
 /** Radar's stream as the hub serves it. */
 const RADAR_STREAM = "/api/radar/api/stream";
 

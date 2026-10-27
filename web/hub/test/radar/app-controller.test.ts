@@ -1939,6 +1939,86 @@ describe("the drawer's stored sides", () => {
   });
 });
 
+/* ------------------------- history: request bodies ------------------------- */
+
+/** A harness whose backfill carries `requests`, each with its body id. */
+function bodiesHarness(...requests: ReturnType<typeof makeRequest>[]): ReturnType<typeof makeHarness> {
+  const harness = makeHarness();
+  harness.answers.set("/api/requests?limit=1000", ok({ requests }));
+  return harness;
+}
+
+describe("the drawer's request bodies", () => {
+  it("fetches a kept body once per body id and caches it across tab switches", async () => {
+    const harness = bodiesHarness(makeRequest({ id: "a", bodyId: "b1" }));
+    harness.answers.set("/api/bodies/b1", ok({ state: "kept", input: '{"messages":[]}', output: "hi" }));
+    await started(harness);
+    harness.controller.act("drawer", "a");
+    harness.controller.act("drawer-tab", "input");
+    await settle();
+    expect(callsTo(harness, "/api/bodies/b1")).toBe(1);
+    harness.controller.act("drawer-tab", "output");
+    harness.controller.act("drawer-tab", "input");
+    await settle();
+    expect(callsTo(harness, "/api/bodies/b1")).toBe(1);
+    expect(harness.controller.getState().bodies.b1).toEqual({
+      status: "kept",
+      input: '{"messages":[]}',
+      output: "hi",
+    });
+  });
+
+  it("fetches no bodies for a request that carries no body id", async () => {
+    const harness = bodiesHarness(makeRequest({ id: "a" }));
+    await started(harness);
+    harness.controller.act("drawer", "a");
+    harness.controller.act("drawer-tab", "input");
+    await settle();
+    expect(harness.calls.some((call) => call.path.startsWith("/api/bodies/"))).toBe(false);
+  });
+
+  it("says when the store dropped the bodies, when bodies are off, and when the reader is not the owner", async () => {
+    const harness = bodiesHarness(
+      makeRequest({ id: "b", bodyId: "b2" }),
+      makeRequest({ id: "c", bodyId: "b3" }),
+      makeRequest({ id: "d", bodyId: "b4" }),
+    );
+    harness.answers.set("/api/bodies/b2", ok({ state: "missing" }));
+    harness.answers.set("/api/bodies/b3", ok({ state: "off" }));
+    harness.answers.set("/api/bodies/b4", fail(403));
+    await started(harness);
+    harness.controller.act("drawer", "b");
+    harness.controller.act("drawer-tab", "input");
+    await settle();
+    expect(harness.controller.getState().bodies.b2).toEqual({ status: "missing" });
+    harness.controller.act("drawer", "c");
+    harness.controller.act("drawer-tab", "input");
+    await settle();
+    expect(harness.controller.getState().bodies.b3).toEqual({ status: "off" });
+    harness.controller.act("drawer", "d");
+    harness.controller.act("drawer-tab", "input");
+    await settle();
+    expect(harness.controller.getState().bodies.b4).toEqual({ status: "forbidden" });
+  });
+
+  it("reads again after a read that failed", async () => {
+    const harness = bodiesHarness(makeRequest({ id: "e", bodyId: "b5" }));
+    harness.answers.set("/api/bodies/b5", fail(500));
+    await started(harness);
+    harness.controller.act("drawer", "e");
+    harness.controller.act("drawer-tab", "input");
+    await settle();
+    expect(harness.controller.getState().bodies.b5).toEqual({
+      status: "error",
+      cause: "GET /api/bodies/b5 → 500",
+    });
+    harness.controller.act("drawer-tab", "raw");
+    harness.controller.act("drawer-tab", "input");
+    await settle();
+    expect(callsTo(harness, "/api/bodies/b5")).toBe(2);
+  });
+});
+
 /* ---------------------- the inspector's Context tab ----------------------- */
 
 describe("the inspector's rebuilt conversation", () => {

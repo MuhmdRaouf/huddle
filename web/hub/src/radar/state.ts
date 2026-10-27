@@ -142,6 +142,15 @@ export type ContentState =
   | { status: "off" }
   | { status: "error"; cause?: string };
 
+/** One request's bodies, keyed by body id: loading, both raw sides, or why the store gives none. */
+export type BodiesState =
+  | { status: "loading" }
+  | { status: "kept"; input: string; output: string }
+  | { status: "missing" }
+  | { status: "off" }
+  | { status: "forbidden" }
+  | { status: "error"; cause?: string };
+
 /** One turn of a rebuilt conversation, as the context route serves it. */
 export type ContextMessage = {
   role: "user" | "assistant";
@@ -403,6 +412,8 @@ export type ClientState = {
   drawerTab: DrawerTab;
   /** Stored request content by id, fetched once per open of its Input or Output tab. */
   content: Record<string, ContentState>;
+  /** Request bodies by body id, fetched once per open of the Input or Output tab of a request that kept them. */
+  bodies: Record<string, BodiesState>;
   /** Rebuilt conversations by id, fetched once per open of the Context tab and paged backwards. */
   context: Record<string, ContextState>;
   /** Captured prompts by request id, fetched once per open of the Context tab beside the conversation. */
@@ -513,6 +524,7 @@ export function initialClientState(): ClientState {
     historyRequestsError: null,
     drawerTab: "overview",
     content: {},
+    bodies: {},
     context: {},
     capture: {},
     agentTranscript: null,
@@ -1003,6 +1015,12 @@ export function withBudget(budgets: Budget[], budget: Budget): Budget[] {
 /** Store (or replace) one request's fetched content; the drawer's Input and Output tabs read these. */
 export function applyContent(state: ClientState, id: string, content: ContentState): ClientState {
   return { ...state, content: { ...state.content, [id]: content } };
+}
+
+/** Store (or replace) one body id's fetched bodies; the Input and Output tabs of a request that
+ *  kept them read these. */
+export function applyBodies(state: ClientState, id: string, bodies: BodiesState): ClientState {
+  return { ...state, bodies: { ...state.bodies, [id]: bodies } };
 }
 
 /** Store (or replace) one request's rebuilt conversation; the inspector's Context tab reads these. */

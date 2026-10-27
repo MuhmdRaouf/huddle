@@ -24,6 +24,7 @@ import { Blocks, CopyButton } from "../Content.tsx";
 import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
 import { ModelChip } from "../kit.tsx";
+import { Bodies } from "./Bodies.tsx";
 import { ContextTab, ErrorAlert, holdsCall } from "./ContextTab.tsx";
 import { OverviewTab } from "./Overview.tsx";
 import { RawTab } from "./RawTab.tsx";
@@ -200,7 +201,12 @@ export function Inspector() {
         <div role="tablist" class="ui-tabs" aria-label="Request detail">
           {DRAWER_TABS.map((tab) => {
             const active = state.drawerTab === tab.id;
-            const count = tabCount(state, tab.id, request.id);
+            // a request that kept its bodies shows those on Input and Output, not the history sides,
+            // so the history count would describe content the tab does not show
+            const count =
+              request.bodyId !== undefined && (tab.id === "input" || tab.id === "output")
+                ? null
+                : tabCount(state, tab.id, request.id);
             return (
               <button
                 key={tab.id}
@@ -225,12 +231,12 @@ export function Inspector() {
         {state.drawerTab === "overview" && <OverviewTab request={request} />}
         {state.drawerTab === "input" && (
           <div class="inspector-content flex flex-col gap-3">
-            <ContentSide side="input" />
+            {request.bodyId ? <Bodies side="input" request={request} /> : <ContentSide side="input" />}
           </div>
         )}
         {state.drawerTab === "output" && (
           <div class="inspector-content flex flex-col gap-3">
-            <ContentSide side="output" />
+            {request.bodyId ? <Bodies side="output" request={request} /> : <ContentSide side="output" />}
           </div>
         )}
         {state.drawerTab === "context" && <ContextTab request={request} />}

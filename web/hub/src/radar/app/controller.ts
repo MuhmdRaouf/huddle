@@ -33,6 +33,7 @@ import {
   type AttributionSortKey,
   applyAgentTranscript,
   applyBackfill,
+  applyBodies,
   applyCapture,
   applyContent,
   applyContext,
@@ -41,6 +42,7 @@ import {
   blocksKey,
   type BudgetDraft,
   budgetFromDraft,
+  type BodiesState,
   type ClientState,
   type ContentState,
   type ContextState,
@@ -411,6 +413,8 @@ export class RadarController {
       if (id === null) return;
       if (drawerTab === "input" || drawerTab === "output" || drawerTab === "raw") {
         void this.ensureContent(id);
+        const withBody = drawerRequest(this.state);
+        if (drawerTab !== "raw" && withBody?.bodyId) void this.ensureBodies(withBody.bodyId);
       }
       if (drawerTab === "context") {
         void this.ensureContext(id);
@@ -843,7 +847,11 @@ export class RadarController {
     this.drawerOpener = id;
     this.setState({ ...this.state, request: id });
     const tab = this.state.drawerTab;
-    if (tab === "input" || tab === "output" || tab === "raw") void this.ensureContent(id);
+    if (tab === "input" || tab === "output" || tab === "raw") {
+      void this.ensureContent(id);
+      const withBody = drawerRequest(this.state);
+      if (tab !== "raw" && withBody?.bodyId) void this.ensureBodies(withBody.bodyId);
+    }
     if (tab === "context") {
       void this.ensureContext(id);
       void this.ensureCapture(id);
@@ -1573,6 +1581,45 @@ export class RadarController {
       );
     } catch (error) {
       this.setState(applyContent(this.state, id, this.historyFailure(error)));
+    }
+  }
+
+  /** One body id's request bodies, fetched the first time its Input or Output tab opens; the hub owns
+   *  this route (no /api/radar prefix), so it is read directly like the settings zone. A read that
+   *  failed is tried again on the next open; kept, missing, off and owner-only are remembered. */
+  private async ensureBodies(bodyId: string): Promise<void> {
+    const held = this.state.bodies[bodyId];
+    if (held !== undefined && held.status !== "error") return;
+    const path = `/api/bodies/${encodeURIComponent(bodyId)}`;
+    this.setState(applyBodies(this.state, bodyId, { status: "loading" }));
+    try {
+      const response = await this.io.fetch(path);
+      if (!response.ok) {
+        const bodies: BodiesState =
+          response.status === 403
+            ? { status: "forbidden" }
+            : response.status === 404
+              ? { status: "missing" }
+              : { status: "error", cause: `GET ${path} → ${response.status}` };
+        this.setState(applyBodies(this.state, bodyId, bodies));
+        return;
+      }
+      const answer = (await response.json()) as { state?: unknown; input?: unknown; output?: unknown };
+      if (answer.state === "kept") {
+        this.setState(
+          applyBodies(this.state, bodyId, {
+            status: "kept",
+            input: typeof answer.input === "string" ? answer.input : "",
+            output: typeof answer.output === "string" ? answer.output : "",
+          }),
+        );
+        return;
+      }
+      this.setState(
+        applyBodies(this.state, bodyId, answer.state === "off" ? { status: "off" } : { status: "missing" }),
+      );
+    } catch (error) {
+      this.setState(applyBodies(this.state, bodyId, { status: "error", cause: this.describe(error) }));
     }
   }
 

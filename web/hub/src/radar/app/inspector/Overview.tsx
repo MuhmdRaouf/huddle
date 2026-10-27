@@ -12,7 +12,7 @@ import { Fragment } from "preact";
 import { costDetailText, fmtDuration, fmtNum, fmtPercent, hostOf, sessionName } from "../../fmt.ts";
 import { SERIES } from "../../palette.ts";
 import { isInFlight, type RequestRecord, totalTokens } from "../../shared/model.ts";
-import { agentDisplayName, requestCost, stepScope } from "../../state.ts";
+import { agentDisplayName, requestCancelled, requestCost, requestFailed, stepScope } from "../../state.ts";
 import { StackedBar } from "../Chart.tsx";
 import { CopyButton } from "../Content.tsx";
 import { useApp } from "../context.ts";
@@ -20,7 +20,7 @@ import { Icon } from "../Icon.tsx";
 import type { IconName } from "../../icons.ts";
 import { cardName } from "../SessionCard.tsx";
 import { viaText } from "../views/Requests.tsx";
-import { nearbyRetries, RETRY_LOOKBACK_MS, retriesText } from "./util.ts";
+import { nearbyRetries, RETRY_LOOKBACK_MS, retriesText, httpStatusOf } from "./util.ts";
 
 /** The tones a latency can earn: the three a comparison produces (never idle or info). */
 type LatencyTone = "ok" | "warn" | "err";
@@ -195,6 +195,30 @@ function RetryBurst({ retries }: { retries: RequestRecord[] }) {
   );
 }
 
+/** The request's failure or its cancellation as its own alert — the stat row's numbers stay neutral.
+ *  A cancellation (status 499) says so in its own words; a failure carries the error the route recorded. */
+function FailedCard({ request }: { request: RequestRecord }) {
+  const cancelled = requestCancelled(request);
+  if (!cancelled && !requestFailed(request)) return null;
+  const status = httpStatusOf(request);
+  return (
+    <div
+      role="alert"
+      class="flex items-start gap-3 rounded-[var(--ui-radius)] border border-[var(--ui-fail)] bg-[var(--ui-fail-soft)] p-3 text-[var(--ui-fail-ink)]"
+      data-failed
+    >
+      <Icon name="alert" class="mt-0.5 size-4.5 shrink-0" />
+      <div class="min-w-0">
+        <p class="m-0 font-medium">{cancelled ? "Cancelled" : "Failed"}</p>
+        <p class="m-0 text-xs break-words">
+          {cancelled
+            ? "The request was cancelled before the model finished."
+            : (request.error ?? `The route answered HTTP ${status}.`)}
+        </p>
+      </div>
+    </div>
+  );
+}
 /** The request's tokens as one bar and one table: every kind's share of the whole, coloured the same. */
 function TokensPanel({ request }: { request: RequestRecord }) {
   const t = request.tokens;
@@ -331,7 +355,26 @@ export function OverviewTab({ request }: { request: RequestRecord }) {
           <Retries retries={retries} />
         </div>
         <RetryBurst retries={retries} />
+        <FailedCard request={request} />
       </div>
+      <Card title="Timing and result" icon="timer">
+        <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+          <Fact label="TTFB">
+            <span class="ui-mono">{fmtDuration(request.ttfbMs)}</span>
+          </Fact>
+          <Fact label="TTFT">
+            <span class="ui-mono">{fmtDuration(request.ttftMs)}</span>
+          </Fact>
+          <Fact label="Status">
+            <span class="ui-mono">
+              {httpStatusOf(request) === null ? "–" : String(httpStatusOf(request))}
+            </span>
+          </Fact>
+          <Fact label="Stop">
+            <span class="ui-mono">{request.stopReason ?? "–"}</span>
+          </Fact>
+        </dl>
+      </Card>
       <TokensPanel request={request} />
       <Card title="Where it ran" icon="route">
         <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
