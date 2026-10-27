@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -256,6 +257,7 @@ func TestNotifier(t *testing.T) {
 			t.Skip("no notifier program on this platform")
 		}
 		dir := t.TempDir()
+		t.Setenv("HOME", t.TempDir()) // the notify-send path writes the icon under HOME
 		t.Setenv("HUDDLE_NOTIFY_LOG", "")
 		t.Setenv("HUDDLE_NOTIFY", "")
 		clock := &fakeClock{now: time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)}
@@ -314,6 +316,55 @@ func TestNotifier(t *testing.T) {
 		n := NewNotifier(t.TempDir())
 		if n.Send("ask", "s", "t", "b") {
 			t.Error("Send = true with no program to show it, want false")
+		}
+	})
+
+	t.Run("the notify-send send carries the huddle icon in its file:// form", func(t *testing.T) {
+		if runtime.GOOS != "linux" {
+			t.Skip("NotifierProgram is this platform's, so notify-send only steers on linux")
+		}
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("HUDDLE_NOTIFY_LOG", "")
+		t.Setenv("HUDDLE_NOTIFY", "")
+		bin := t.TempDir()
+		if err := os.WriteFile(filepath.Join(bin, "notify-send"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", bin)
+		var program string
+		var args []string
+		n := NewNotifier(t.TempDir())
+		n.Spawn = func(p string, a []string) error {
+			program, args = p, a
+			return nil
+		}
+		if !n.Send("ask", "s", "T", "b") {
+			t.Fatal("Send = false, want true")
+		}
+		icon := filepath.Join(home, ".agents", "huddle", "huddle.png")
+		want := []string{"-a", "Huddle", "-i", "file://" + icon, "T", "b"}
+		if program != "notify-send" || !slices.Equal(args, want) {
+			t.Errorf("spawned %q %v, want %q %v", program, args, "notify-send", want)
+		}
+		if _, err := os.Stat(icon); err != nil {
+			t.Errorf("the icon PNG: %v", err)
+		}
+		t.Setenv("HOME", "")
+		if !n.Send("ask", "s2", "T", "b") {
+			t.Fatal("second send = false, want true")
+		}
+		if want := []string{"-a", "Huddle", "T", "b"}; !slices.Equal(args, want) {
+			t.Errorf("args with no HOME = %v, want %v", args, want)
+		}
+	})
+
+	t.Run("the argv choice: the icon in its file:// form, or today's argv without one", func(t *testing.T) {
+		if got := notifySendArgs("/i/huddle.png", "T", "b"); !slices.Equal(got, []string{"-a", "Huddle", "-i", "file:///i/huddle.png", "T", "b"}) {
+			t.Errorf("notifySendArgs with an icon = %v, want [-a Huddle -i file:///i/huddle.png T b]", got)
+		}
+		if got := notifySendArgs("", "T", "b"); !slices.Equal(got, []string{"-a", "Huddle", "T", "b"}) {
+			t.Errorf("notifySendArgs with no icon = %v, want [-a Huddle T b]", got)
 		}
 	})
 

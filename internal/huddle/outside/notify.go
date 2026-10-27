@@ -18,6 +18,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
+	"github.com/MuhmdRaouf/huddle/internal/notifyicon"
 )
 
 // The rate window, the switch's read budget and the spawn budget. HUDDLE_NOTIFY_WINDOW_MS
@@ -245,6 +246,8 @@ func (n *Notifier) Send(kind, subject, title, body string) bool {
 			"-e", "end run",
 			cleanTitle, cleanBody,
 		}
+	} else if icon, err := notifyicon.EnsurePNG(n.env("HOME")); err == nil {
+		args = notifySendArgs(icon, cleanTitle, cleanBody)
 	}
 	spawn := n.Spawn
 	if spawn == nil {
@@ -252,6 +255,15 @@ func (n *Notifier) Send(kind, subject, title, body string) bool {
 	}
 	_ = spawn(program, args) // a start failure is the program's business, not the caller's
 	return true
+}
+
+// notifySendArgs is the notify-send argv: the huddle icon in its file:// form when there is
+// one, then the title and the body. Without an icon it is the bare argv.
+func notifySendArgs(icon, title, body string) []string {
+	if icon == "" {
+		return []string{"-a", "Huddle", title, body}
+	}
+	return []string{"-a", "Huddle", "-i", "file://" + icon, title, body}
 }
 
 // window is how long one kind and subject stays quiet after a notification.

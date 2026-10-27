@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -65,12 +66,12 @@ func TestDesktopNotifications(t *testing.T) {
 		if got := AppleScriptText("say \"hi\"\\\n"); got != "say \\\"hi\\\"\\\\ " {
 			t.Errorf("AppleScriptText = %q, want %q", got, "say \\\"hi\\\"\\\\ ")
 		}
-		line := NotifyCommand("darwin", domain.EnvLookup{}, "T", "b \"q\"")
+		line := NotifyCommand("darwin", domain.EnvLookup{}, "T", "b \"q\"", "")
 		if line == nil || line.Command != "osascript" || len(line.Args) != 2 || line.Args[0] != "-e" ||
 			line.Args[1] != "display notification \"b \\\"q\\\"\" with title \"T\"" {
 			t.Errorf("line = %+v", line)
 		}
-		if NotifyCommand("linux", domain.EnvLookup{"PATH": "/nonexistent"}, "T", "b") != nil {
+		if NotifyCommand("linux", domain.EnvLookup{"PATH": "/nonexistent"}, "T", "b", "") != nil {
 			t.Error("linux without notify-send on PATH has no notifier")
 		}
 	})
@@ -82,10 +83,62 @@ func TestDesktopNotifications(t *testing.T) {
 		if err := os.Chmod(bin, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		line := NotifyCommand("linux", domain.EnvLookup{"PATH": ":" + filepath.Join(env.home, "bin")}, "T", "b")
+		line := NotifyCommand("linux", domain.EnvLookup{"PATH": ":" + filepath.Join(env.home, "bin")}, "T", "b", "")
 		if line == nil || line.Command != "notify-send" || len(line.Args) != 3 ||
 			line.Args[0] != "--app-name=Radar" || line.Args[1] != "T" || line.Args[2] != "b" {
 			t.Errorf("line = %+v", line)
+		}
+	})
+
+	t.Run("the linux line carries the icon in its file:// form, darwin ignores it", func(t *testing.T) {
+		env := makeEnv(t)
+		bin := filepath.Join(env.home, "bin", "notify-send")
+		writeText(t, bin, "#!/bin/sh\n")
+		if err := os.Chmod(bin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		linuxEnv := domain.EnvLookup{"PATH": ":" + filepath.Join(env.home, "bin")}
+		line := NotifyCommand("linux", linuxEnv, "T", "b", "/x/huddle.png")
+		if line == nil || !slices.Equal(line.Args, []string{"--app-name=Radar", "-i", "file:///x/huddle.png", "T", "b"}) {
+			t.Errorf("line = %+v, want --app-name=Radar -i file:///x/huddle.png T b", line)
+		}
+		line = NotifyCommand("linux", linuxEnv, "T", "b", "")
+		if line == nil || !slices.Equal(line.Args, []string{"--app-name=Radar", "T", "b"}) {
+			t.Errorf("line = %+v, want --app-name=Radar T b", line)
+		}
+		script := NotifyCommand("darwin", domain.EnvLookup{}, "T", "b", "/x/huddle.png")
+		if script == nil || script.Command != "osascript" || slices.Contains(script.Args, "file:///x/huddle.png") {
+			t.Errorf("darwin line = %+v, want the osascript line with no icon", script)
+		}
+	})
+
+	t.Run("on linux the notifier writes the huddle icon and points the command at it", func(t *testing.T) {
+		env := makeEnv(t)
+		ctx := context.Background()
+		bin := filepath.Join(env.home, "bin", "notify-send")
+		writeText(t, bin, "#!/bin/sh\n")
+		if err := os.Chmod(bin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		env.env["PATH"] = ":" + filepath.Dir(bin)
+		var calls [][]string
+		notifier := NewNotifier(ctx, NotifierOptions{
+			Env:      env.env,
+			Enabled:  func() bool { return true },
+			Runner:   func(command string, args []string) { calls = append(calls, append([]string{command}, args...)) },
+			Platform: "linux",
+			Now:      func() time.Time { return time.UnixMilli(1_000) },
+		})
+		if got := notifier.Consider(ctx, []shared.Alert{notifyAlert()}); got != 1 {
+			t.Fatalf("consider = %d, want 1", got)
+		}
+		icon := filepath.Join(env.home, ".agents", "huddle", "huddle.png")
+		want := []string{"notify-send", "--app-name=Radar", "-i", "file://" + icon, "Radar: session looks stuck", "app: No activity"}
+		if len(calls) != 1 || !slices.Equal(calls[0], want) {
+			t.Errorf("calls = %v, want %v", calls, want)
+		}
+		if _, err := os.Stat(icon); err != nil {
+			t.Errorf("the icon PNG: %v", err)
 		}
 	})
 
