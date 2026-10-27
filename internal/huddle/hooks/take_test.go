@@ -2,7 +2,7 @@ package hooks
 
 // The report hook names the session's channel member so the registry can tie a bridge to its
 // session, and carries a Notification's own words for the question item it grows. The listen
-// hook takes the owner's waiting messages on the next prompt (SPEC 6.4's second route) and only
+// hook takes the owner's waiting messages on the next prompt and only
 // there: a tool call mid-turn leaves them waiting.
 
 import (

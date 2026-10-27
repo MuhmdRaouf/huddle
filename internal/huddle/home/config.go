@@ -20,7 +20,7 @@ type HubConfig struct {
 }
 
 // RemoteConfig holds the per-machine switches: whether the app may answer permissions and send
-// messages, and which tools it may allow. The allow list is patterns; the floor SPEC 6.6 fixes
+// messages, and which tools it may allow. The allow list is patterns; the floor
 // (Bash(rm *), Bash(git push --force*), Bash(* secrets*), anything under ~/.ssh, ~/.gnupg or a
 // secrets directory) is enforced in code whatever the list says.
 type RemoteConfig struct {
@@ -30,7 +30,7 @@ type RemoteConfig struct {
 }
 
 // CertConfig is the certificate section: which DNS provider answers the DNS-01 challenge for
-// the hub's name (SPEC 7.2). The provider is chosen by name, the issuer knows the rest.
+// the hub's name. The provider is chosen by name, the issuer knows the rest.
 type CertConfig struct {
 	DNSProvider string `toml:"dns_provider"`
 }

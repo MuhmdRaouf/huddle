@@ -1,7 +1,7 @@
 // The PostToolUse and UserPromptSubmit hook: bring the new messages of this session's channels
 // into its context (the cli package's feed), so every session knows what the others said, also
 // to each other, without the channels preview. On a prompt it also takes what the owner sent the
-// session while it worked (the cli package's messages take, SPEC 6.4's next-prompt route),
+// session while it worked (the cli package's messages take),
 // whatever the channel: the take needs only the server's URL, while the touch report and the
 // feed are channel things.
 // Silent when nothing is new, the session holds no credential for the server

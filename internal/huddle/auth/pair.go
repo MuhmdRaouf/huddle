@@ -1,4 +1,4 @@
-// Pairing, passkeys and device sessions (SPEC 7.3): one-use links of five minutes, WebAuthn
+// Pairing, passkeys and device sessions: one-use links of five minutes, WebAuthn
 // credentials with user verification required, and cookie sessions that live while their device
 // uses them — seven days without a request ends one, and the owner revokes it by removing the
 // device. Nothing here writes crypto by hand: the ceremonies run through go-webauthn, the tokens
@@ -34,7 +34,7 @@ const (
 	PairPlainCookie = "huddle"
 )
 
-// The pairing clocks SPEC 7.3 fixes: a link lives five minutes, a session seven days of use. A
+// The pairing clocks: a link lives five minutes, a session seven days of use. A
 // request more than PairRenewEveryMS past the session's last renewal rolls its expiry that far
 // on, so a session in use never ends and an abandoned one dies within the week. The ceremony's
 // own challenge lives only as long as the link beside it.
@@ -47,7 +47,7 @@ const (
 // PairTokenRe is a pairing token's shape: 26 characters of base32, 130 bits of crypto/rand.
 var PairTokenRe = regexp.MustCompile(`^[A-Z2-7]{26}$`)
 
-// SatelliteRe is a satellite credential's shape (SPEC 6.7): the hsat_ prefix then url-safe
+// SatelliteRe is a satellite credential's shape: the hsat_ prefix then url-safe
 // base64. Only the credential's sha256 digest is ever looked up, so the shape is a cheap guard
 // before the hash, not a secret comparison.
 var SatelliteRe = regexp.MustCompile(`^hsat_[A-Za-z0-9_-]{20,64}$`)
@@ -591,10 +591,10 @@ func PairCookie(req *http.Request) string {
 	return ""
 }
 
-// StepUpWindowMS is how long one assertion covers the dangerous routes (SPEC 7.4).
+// StepUpWindowMS is how long one assertion covers the dangerous routes.
 const StepUpWindowMS int64 = 5 * 60 * 1000
 
-// BeginStepUp opens one discoverable assertion ceremony (SPEC 7.4), the user-verified shape a
+// BeginStepUp opens one discoverable assertion ceremony, the user-verified shape a
 // sign-in runs. Its challenges live apart from the sign-ins', so neither ceremony can spend the
 // other's response.
 func (p *Pairing) BeginStepUp(ctx context.Context) (*protocol.CredentialAssertion, error) {
@@ -672,8 +672,8 @@ func (p *Pairing) FinishStepUp(ctx context.Context, cookie string, body []byte) 
 	return dev.d.Name, nil
 }
 
-// StepUpDue answers whether the browser session a cookie names owes a fresh assertion (SPEC
-// 7.4): no cookie, no live session, no assertion yet, or one older than the window all read
+// StepUpDue answers whether the browser session a cookie names owes a fresh assertion: no
+// cookie, no live session, no assertion yet, or one older than the window all read
 // due. The now comes from the caller, so the window's edges are testable; a read that cannot be
 // answered reads due too — an error never waves a dangerous act through.
 func (p *Pairing) StepUpDue(ctx context.Context, cookie string, nowMS int64) bool {

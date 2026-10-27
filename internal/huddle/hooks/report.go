@@ -1,7 +1,7 @@
 // The report hook: every Claude Code event this session fires — SessionStart, UserPromptSubmit,
 // PreToolUse, PostToolUse, Notification, PermissionRequest, Stop, SubagentStop, SessionEnd,
 // TeammateIdle —
-// becomes one POST to the local huddle's /api/registry/report (SPEC 5.1), so the registry knows
+// becomes one POST to the local huddle's /api/registry/report, so the registry knows
 // every session on the machine, in a channel or not. The whole hook runs inside a 2 s budget
 // (the deadline constants' sum sits under it): the POST waits only for what is left of the
 // budget, so a server that never answers costs exactly that and no more. A report that cannot
@@ -35,8 +35,8 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
-// The report hook's own deadlines, in milliseconds. Together they sit inside the 2 s budget
-// SPEC 5.1 grants a report, well inside the timeout hooks.json gives each event.
+// The report hook's own deadlines, in milliseconds. Together they sit inside the 2 s budget,
+// itself well inside the timeout hooks.json gives each event.
 const (
 	reportStdinMS  = 500
 	reportBudgetMS = 1900
@@ -140,8 +140,8 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			rep.Model = model
 			rep.ContextPercent = contextPercentOf(model, used)
 		}
-		// a Stop is where a session's turn is done: its digest rides the report it already sends
-		// (SPEC 8), so the hub keeps the newest without a second post
+		// a Stop is where a session's turn is done: its digest rides the report it already sends,
+		// so the hub keeps the newest without a second post
 		if input.HookEventName == "Stop" {
 			rep.Digest = digestOf(input.TranscriptPath, input.Cwd)
 		}

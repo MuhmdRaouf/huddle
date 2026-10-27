@@ -349,7 +349,7 @@ func HFetch(ctx context.Context, w *World, method, rawURL string, headers map[st
 		if token != "" {
 			req.Header.Set(auth.Header, token)
 		}
-		// the server refuses a write that names no action (SPEC 7.5): the route's path is its
+		// the server refuses a write that names no action: the route's path is its
 		// name, so every caller gets it for free
 		if method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions &&
 			req.Header.Get(server.ActionHeader) == "" {

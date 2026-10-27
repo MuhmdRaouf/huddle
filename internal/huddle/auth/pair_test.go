@@ -1,6 +1,6 @@
 package auth
 
-// Device pairing (SPEC 7.3): one-use links of five minutes, WebAuthn passkeys with user
+// Device pairing: one-use links of five minutes, WebAuthn passkeys with user
 // verification required, device sessions that roll forward while their device uses them and end
 // after seven days without a request. The store is the real hub database over a temp file and the
 // browser is the software authenticator beside this file, so every refusal below is proven

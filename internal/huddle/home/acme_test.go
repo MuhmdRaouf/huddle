@@ -1,6 +1,6 @@
 package home
 
-// The certificate the hub listener serves (SPEC 7.2): obtained over DNS-01, laid in the home's
+// The certificate the hub listener serves: obtained over DNS-01, laid in the home's
 // tls/ with private modes, and kept fresh by a renewal loop that wakes 30 days before expiry and
 // retries every 6 hours after a failure — all proved here against a fake issuer and a fake clock,
 // because the real issuer talks to Let's Encrypt.

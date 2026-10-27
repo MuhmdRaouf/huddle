@@ -1,6 +1,6 @@
 package home
 
-// The satellite's credential at rest (SPEC 4.1): the store the caller hands holds it under the
+// The satellite's credential at rest: the store the caller hands holds it under the
 // one account the hub's address names, replaced whole by the next join. A missing or blank
 // credential is an error, because a link with none must not start. Tests answer from a map, so
 // no real keystore is read.

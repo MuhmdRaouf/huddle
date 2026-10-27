@@ -1,4 +1,4 @@
-// The session digest (SPEC 8): what the Stop hook builds from its own transcript so a linked
+// The session digest: what the Stop hook builds from its own transcript so a linked
 // peer can take over the session's context without reading it. No model call — the goal is the
 // newest prompt, the files come from the edit tool calls, the decisions and open questions from
 // the last assistant words — and nothing else of the transcript (tool results, commands, paths

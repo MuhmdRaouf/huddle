@@ -797,7 +797,7 @@ func (b *mcpBridge) frame(ctx context.Context, frame string) error {
 	return nil
 }
 
-// ack tells the registry this bridge's channel pushes flow (SPEC 6.4): while an ack is fresh,
+// ack tells the registry this bridge's channel pushes flow: while an ack is fresh,
 // the hub delivers the owner's words by push instead of waiting for the session's next prompt.
 // Best effort: an ack that cannot land costs one line on stderr and the next heartbeat's retry.
 func (b *mcpBridge) ack(ctx context.Context) {

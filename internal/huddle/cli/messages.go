@@ -1,4 +1,4 @@
-// What the owner sent this session and it has not read yet (SPEC 6.3, 6.4): the listen hook
+// What the owner sent this session and it has not read yet: the listen hook
 // takes it on the session's next prompt, as the second delivery route when no channel push
 // carried it. One bounded POST, silent on any failure, never blocking the hook.
 package cli

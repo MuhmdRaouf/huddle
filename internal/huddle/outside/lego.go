@@ -1,6 +1,6 @@
 package outside
 
-// The certificate issuer (SPEC 7.2): Let's Encrypt over DNS-01 through lego, the DNS provider
+// The certificate issuer: Let's Encrypt over DNS-01 through lego, the DNS provider
 // chosen by name. The provider's token is handed to it in-process — the one environment
 // variable the provider reads is set for its construction alone and put back after, so the token
 // never reaches the user's shell, the log or another child process. The ACME account key is

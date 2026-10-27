@@ -1,6 +1,6 @@
 package cli
 
-// `huddle cert` (SPEC 7.2): the terminal word that obtains the hub's certificate over DNS-01.
+// `huddle cert`: the terminal word that obtains the hub's certificate over DNS-01.
 // The token is asked for with the terminal's echo off, kept in the keystore under
 // `dns:<provider>` and never printed; the provider and the hub's name come from the line and
 // config.toml, and the issuer is a fake here — the real one talks to Let's Encrypt.

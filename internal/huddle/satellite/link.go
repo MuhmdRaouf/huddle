@@ -1,7 +1,7 @@
-// The satellite link (SPEC 3, 6.7): one outbound connection from a satellite machine to its
+// The satellite link: one outbound connection from a satellite machine to its
 // hub. It forwards this machine's reports and its open permission items in batches, long-polls
 // for the decisions and messages the hub owes it, and applies what arrives on this machine —
-// under this machine's own switches, which the hub cannot override (SPEC 6.6). While the hub is
+// under this machine's own switches, which the hub cannot override. While the hub is
 // unreachable the batches land in the home's outbox.jsonl and replay in order, so nothing a
 // machine said while offline is lost. The link never serves anything and never listens: when it
 // stops, the machine's own sessions go on exactly as a solo machine's do.
@@ -273,7 +273,7 @@ func (l *Link) poll(ctx context.Context) error {
 }
 
 // settle applies one handout on this machine and answers the hub with what became of it. The
-// machine's switches rule here (SPEC 6.6): an allow the machine's own floor or list refuses is
+// machine's switches rule here: an allow the machine's own floor or list refuses is
 // recorded as a deny on this machine — the terminal prompt must end — and the hub hears the
 // refusal with its reason.
 func (l *Link) settle(ctx context.Context, handout hub.SatHandout) {
@@ -338,7 +338,7 @@ func (l *Link) applyDecision(ctx context.Context, payload hub.SatRefusalBody, at
 		}
 		if item.Tool == "AskUserQuestion" {
 			// the owner's answers answer this machine's own question: they pass the same checks
-			// the hub's decide route runs (SPEC 6.2), then store beside the decision
+			// the hub's decide route runs, then store beside the decision
 			if err := hub.CheckAnswers(item.Tool, item.Input, payload.Answers); err != nil {
 				return l.refuseDecision(ctx, item, err.Error(), at)
 			}

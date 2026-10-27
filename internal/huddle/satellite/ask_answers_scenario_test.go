@@ -1,6 +1,6 @@
 package satellite
 
-// The hub relays the owner's answers with the decision it owes this machine (SPEC 6.7): the
+// The hub relays the owner's answers with the decision it owes this machine: the
 // machine's item takes them beside the decision, the machine's own switches and the same
 // answer checks rule there, and a plain tool's allow travels whole with none.
 

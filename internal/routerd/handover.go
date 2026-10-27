@@ -1,4 +1,4 @@
-// The daemon's handover (SPEC D9): a running daemon serves its listening socket to a taker
+// The daemon's handover: a running daemon serves its listening socket to a taker
 // over a unix socket in the run dir, so a new binary — or a fresh copy of the same one — takes
 // the port over without it ever closing, and the old process drains the streams it already
 // accepted. Takeover is the taker's side; the ceiling that makes a daemon hand itself over is

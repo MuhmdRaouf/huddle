@@ -1,6 +1,6 @@
 package outside
 
-// The OS keystore for huddle's own secrets (SPEC 4.1), through the shared
+// The OS keystore for huddle's own secrets, through the shared
 // keystore adapters: the macOS Keychain and the freedesktop Secret Service.
 // The tools run without a shell, a secret travels on the tool's stdin (never
 // its command line, where `ps` would show it), and a store that does not
@@ -22,7 +22,7 @@ import (
 // SecretsService is the name huddle's secrets live under in the OS keystore.
 const SecretsService = "huddle"
 
-// probeBudget bounds the question of whether the keystore answers (SPEC 4.1: one second);
+// probeBudget bounds the question of whether the keystore answers, at one second;
 // toolBudget bounds the get and set of one secret.
 const (
 	probeBudget = time.Second
@@ -35,7 +35,7 @@ type osKeyStore struct {
 	platform string // darwin or linux; the host's when empty
 }
 
-// SecretsFor answers the store a huddle secret goes to (SPEC 4.1): the OS keystore when its tool
+// SecretsFor answers the store a huddle secret goes to: the OS keystore when its tool
 // answers within a second, else the home's keys/ files. HUDDLE_KEYS=files pins the files outright:
 // a hermetic run's children must keep every secret under the temp home they were given, whatever
 // this machine's real keystore answers.

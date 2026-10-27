@@ -1,6 +1,6 @@
 package auth
 
-// Step-up (SPEC 7.4): a passkey assertion at most five minutes old, held on the device
+// Step-up: a passkey assertion at most five minutes old, held on the device
 // session's own row, covers the dangerous routes. The window's edges, the binding to one
 // session, and the refusals all run against the real pairing core with the clock in the test's
 // hands: the pairing core never reads time.Now itself.

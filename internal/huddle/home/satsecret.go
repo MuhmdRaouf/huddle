@@ -1,4 +1,4 @@
-// The satellite's hub credential at rest (SPEC 4.1): the OS keystore first, under the one
+// The satellite's hub credential at rest: the OS keystore first, under the one
 // account a hub's address names; the home's keys/ files hold it where no keystore answers —
 // the fallback every secret takes. A join replaces the credential whole, so a leaked home names
 // the one credential it carries and a `huddle join-hub` over it replaces it again.

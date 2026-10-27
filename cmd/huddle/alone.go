@@ -1,4 +1,4 @@
-// The binary's own words, for a machine that runs it without Claude Code (SPEC 10): up, down,
+// The binary's own words, for a machine that runs it without Claude Code: up, down,
 // status, open and pair run the one server of this user's home from a terminal, and help lists
 // them. A Claude session keeps the CLI's same words — its up mints the join line, its status is
 // the channel's — so each word hands the whole line to the CLI when a session identity is
@@ -218,7 +218,7 @@ func domainAlone(ctx context.Context, w *cli.World, argv []string, stdout, stder
 	return cli.Domain(ctx, w, argv, stdout, stderr)
 }
 
-// certAlone obtains the hub's certificate over DNS-01 (SPEC 7.2): a terminal word, because its
+// certAlone obtains the hub's certificate over DNS-01: a terminal word, because its
 // token is typed with the echo off — in a session the word stays the channel's own.
 func certAlone(ctx context.Context, w *cli.World, argv []string, stdout, stderr io.Writer) int {
 	return cli.Cert(ctx, w, argv, stdout, stderr)

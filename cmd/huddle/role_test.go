@@ -1,6 +1,6 @@
 package main
 
-// `huddle role` writes the machine's role into config.toml (SPEC 3): hub records the listener's
+// `huddle role` writes the machine's role into config.toml: hub records the listener's
 // address and the hub's name beside it, satellite records the hub it reaches, solo steps back to
 // one machine. Every shape the card fixes is refused with one usage line and exit 2.
 

@@ -1,4 +1,4 @@
-// `huddle join-hub <url> <invite>` (SPEC 6.7): a machine spends the one-use invite
+// `huddle join-hub <url> <invite>`: a machine spends the one-use invite
 // `huddle pair --satellite` minted on the hub, keeps the credential that comes back under the
 // home's keys, and writes its role and hub address into config.toml. A restart takes the role
 // up: the server it starts then links to the hub.

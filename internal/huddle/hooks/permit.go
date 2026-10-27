@@ -1,4 +1,4 @@
-// The PermissionRequest hook (SPEC 6.2): one tool call the terminal is being asked about
+// The PermissionRequest hook: one tool call the terminal is being asked about
 // becomes a needs-you item the owner's app may allow or deny, while the hook holds a long poll
 // for the decision. Whichever side answers first wins: the app's decision prints as Claude
 // Code's own PermissionRequest answer, and a terminal answer withdraws the item, so the poll
@@ -52,8 +52,7 @@ type permitDecision struct {
 
 // permitOutput is the one answer this hook gives: the documented hookSpecificOutput shape. An
 // allow carries updatedInput only for an answered AskUserQuestion, and never
-// updatedPermissions — Huddle decides this one prompt and never writes a permission rule
-// (SPEC 6.2.3).
+// updatedPermissions — Huddle decides this one prompt and never writes a permission rule.
 type permitOutput struct {
 	HookSpecificOutput struct {
 		HookEventName string         `json:"hookEventName"`

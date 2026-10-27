@@ -1,6 +1,6 @@
 package home
 
-// The hub's certificate (SPEC 7.2): obtained over DNS-01 by an ACME issuer (the real one talks
+// The hub's certificate: obtained over DNS-01 by an ACME issuer (the real one talks
 // to Let's Encrypt; everything here is issuer-agnostic), laid in the home's tls/ with private
 // modes, and kept fresh by a renewal loop that wakes 30 days before the leaf expires and tries
 // again every 6 hours after a failure — one line per attempt, so the log says what happened
@@ -25,7 +25,7 @@ type ACME interface {
 	Obtain(ctx context.Context, host string) (cert, key []byte, err error)
 }
 
-// The renewal loop's timing (SPEC 7.2): a renewal is tried 30 days before expiry, and a failed
+// The renewal loop's timing: a renewal is tried 30 days before expiry, and a failed
 // one is tried again 6 hours later. An imported certificate has nothing to renew from; the loop
 // looks at its expiry once a day instead, so the log says it is running out in time.
 const (

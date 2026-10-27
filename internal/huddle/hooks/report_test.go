@@ -876,7 +876,7 @@ func TestTheReportHookQueuesBeforeItsCallersDeadline(t *testing.T) {
 	}
 }
 
-// TestTheStopReportCarriesTheDigest pins the one event that carries a digest (SPEC 8): the
+// TestTheStopReportCarriesTheDigest pins the one event that carries a digest: the
 // Stop hook builds it from the transcript it already reads, and no other event carries one.
 func TestTheStopReportCarriesTheDigest(t *testing.T) {
 	reg, url := startRegistry(t)

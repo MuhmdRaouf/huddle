@@ -1,6 +1,6 @@
 package hooks
 
-// The Stop hook's digest (SPEC 8): built from the session's own transcript — the newest prompt
+// The Stop hook's digest: built from the session's own transcript — the newest prompt
 // as the goal, the files the session edited, the decisions and open questions of its last words
 // — with the golden files under testdata/digest pinning the exact bytes. No model call and no
 // other transcript text ever reaches it.

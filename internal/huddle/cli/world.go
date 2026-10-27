@@ -74,7 +74,7 @@ func (w *World) stdin() io.Reader {
 }
 
 // SecretsOf answers the home's secret store: the world's own when it was given one, else the OS
-// keystore with the home's keys/ files behind it (SPEC 4.1).
+// keystore with the home's keys/ files behind it.
 func (w *World) SecretsOf(ctx context.Context, h home.Home) home.SecretStore {
 	if w != nil && w.Secrets != nil {
 		return w.Secrets(ctx, h)

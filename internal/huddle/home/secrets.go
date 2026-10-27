@@ -1,6 +1,6 @@
 package home
 
-// Where huddle's own secrets live at rest (SPEC 4.1): the OS keystore is preferred, and the
+// Where huddle's own secrets live at rest: the OS keystore is preferred, and the
 // home's keys/ directory holds them where none answers — one 0600 file per secret, so a secret
 // never sits inside a file another secret shares. Accounts are huddle's names, as
 // "dns:<provider>" for a DNS provider's token.
@@ -17,7 +17,7 @@ import (
 )
 
 // SecretStore is where huddle's secrets live at rest: the OS keystore, or the home's keys/ files
-// where none answers (SPEC 4.1). Accounts are huddle's own names, as "dns:<provider>".
+// where none answers. Accounts are huddle's own names, as "dns:<provider>".
 type SecretStore interface {
 	Get(ctx context.Context, account string) (string, bool)
 	Set(ctx context.Context, account, value string) error

@@ -1,6 +1,6 @@
 package cli
 
-// The bridge's push ack (SPEC 6.4): while its live stream is up, the bridge tells the registry
+// The bridge's push ack: while its live stream is up, the bridge tells the registry
 // its channel pushes flow — on the stream's hello and on each heartbeat — so the hub delivers
 // the owner's words by push instead of waiting for the session's next prompt.
 

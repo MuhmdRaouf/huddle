@@ -1,6 +1,6 @@
 package cli
 
-// The role words (SPEC 3): `huddle role` writes the machine's role into the home's config.toml.
+// The role words: `huddle role` writes the machine's role into the home's config.toml.
 // Solo, the default, is one machine on loopback. Hub names the machine hub.host for the owner's
 // paired devices and satellites: with hub.listen it adds its own TLS listener there, without it a
 // TLS reverse proxy on this machine (Caddy) serves the name and forwards to the loopback port the
@@ -24,7 +24,7 @@ import (
 )
 
 // hubNameRe is the shape a hub's own name takes: a domain-style word, never a bare address — a
-// passkey's relying party is a name (SPEC 7.2).
+// passkey's relying party is a name.
 var hubNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$`)
 
 // roleUsage is the one line every wrong shape answers.

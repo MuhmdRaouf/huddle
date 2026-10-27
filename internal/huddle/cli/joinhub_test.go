@@ -24,8 +24,8 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 )
 
-// TestPairSatellitePrintsTheJoinLine pins the hub's half of SPEC 6.7: one line, one invite, one
-// expiry, and the machine's name on it.
+// TestPairSatellitePrintsTheJoinLine pins the hub's half of the pairing: one line, one invite,
+// one expiry, and the machine's name on it.
 func TestPairSatellitePrintsTheJoinLine(t *testing.T) {
 	homeDir, w := oneHome(t)
 	if _, err := home.SavePort(home.Home{Root: homeDir}, 18999, false); err != nil {
@@ -130,7 +130,7 @@ func TestJoinHubSpendsTheInviteAndKeepsTheCredential(t *testing.T) {
 	}
 }
 
-// TestJoinHubKeepsTheCredentialInTheSecretStore pins where the credential rests (SPEC 4.1): in
+// TestJoinHubKeepsTheCredentialInTheSecretStore pins where the credential rests: in
 // the secret store under the hub's account, and nowhere under the home's keys/.
 func TestJoinHubKeepsTheCredentialInTheSecretStore(t *testing.T) {
 	homeDir, w := oneHome(t)

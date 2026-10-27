@@ -1,6 +1,6 @@
 package cli
 
-// The pairing words (SPEC 7.3): `huddle pair` mints one one-use link from a trusted machine —
+// The pairing words: `huddle pair` mints one one-use link from a trusted machine —
 // the terminal writes the pairing into the same hub database the server reads, so no credential
 // is asked for — and `huddle devices` lists what paired and removes it. Removal works whether
 // the server runs or not: the sessions die with the device row, and the next request carrying
@@ -143,7 +143,7 @@ func Devices(ctx context.Context, w *World, argv []string, stdout, stderr io.Wri
 	return 0
 }
 
-// pairSatellite mints a satellite invite (SPEC 6.7: one use, 10 minutes) and prints the line
+// pairSatellite mints a one-use satellite invite that lives ten minutes and prints the line
 // the other machine runs. The invite names no device — the other machine's own join names
 // itself — and lives in the same hub database the server spends it from, so no server restart
 // is needed.

@@ -125,7 +125,7 @@ func resultsOf(f *fakeHub) []string {
 	return append([]string{}, f.results...)
 }
 
-// TestFlushReplaysTheOutboxInOrder proves the offline half of SPEC 6.7: with the hub down, a
+// TestFlushReplaysTheOutboxInOrder proves the offline half of the link: with the hub down, a
 // flush lands the batch in outbox.jsonl; when the hub answers again, the same batch is posted
 // first and the file is spent — and the cursor moved with the hand-off, so the hub never hears
 // the same event twice.
@@ -175,7 +175,7 @@ func TestFlushReplaysTheOutboxInOrder(t *testing.T) {
 	}
 }
 
-// TestApplyDecisionFollowsThisMachinesSwitches proves SPEC 6.6 on the machine: an allow within
+// TestApplyDecisionFollowsThisMachinesSwitches proves the machine's switches: an allow within
 // the allow list lands on the item and is answered delivered; an allow outside it is recorded
 // as this machine's deny — the asking hook's poll ends — and answered refused with the reason.
 func TestApplyDecisionFollowsThisMachinesSwitches(t *testing.T) {
