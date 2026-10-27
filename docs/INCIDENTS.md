@@ -173,3 +173,12 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   was now the taker's socket.
 - **Guard:** `TestTheRetiredDaemonLeavesItsTakersSocketAlone` (internal/routerd/handover_test.go)
 - **Rule:** a daemon removes its handover socket file once, either at the handover or at its stop, never both.
+
+## 2026-10-27, two test binaries leased the same port
+
+- **What happened:** zai job 261027-3gxj5j saw `TestAutostartOffLeavesHuddleDownWithNoChannel` fail because
+  another binary's hub answered on the port it had leased: `ports.Free` kept its answers in one map per test
+  binary, and `go test` runs package binaries in parallel.
+- **Cause:** a per-process lease under parallel package binaries.
+- **Guard:** `TestAFreshSearchSkipsThePortAnotherBinaryAnswered` (internal/testkit/ports/ports_test.go)
+- **Rule:** a port a child binds is leased through TMPDIR.
