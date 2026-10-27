@@ -48,9 +48,9 @@ test("a link sign-in offers the set-up, Settings enrols it, and a code signs the
   await page.getByRole("button", { name: /Later/ }).click();
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 
-  // Settings › Sign-in enrols, and the recovery codes show this one time
+  // Settings › Security's Sign-in pane enrols, and the recovery codes show this one time
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }).click();
-  await page.getByRole("link", { name: "Sign-in" }).click();
+  await page.getByRole("link", { name: "Security" }).click();
   await enrolFromSettings(page);
 
   // the landing page: cookies gone, the code field is the way in, the shell lands
@@ -85,23 +85,23 @@ test("a phone browser is offered its lock as a passkey after a code sign-in", as
   // machine waives the step-up on loopback), then set up again
   await signIn(page, pairOrigin);
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }).click();
-  await page.getByRole("link", { name: "Sign-in" }).click();
+  await page.getByRole("link", { name: "Security" }).click();
   await page.locator("[data-signin]").getByRole("button", { name: "Remove" }).click();
   await expect(page.getByText(/Not set up/)).toBeVisible();
   await enrolFromSettings(page);
 
-  // the landing page on the phone: the code field, then the shell, then the offer
+  // the landing page on the phone: the code field, then the offer standing over the shell —
+  // this browser holds no passkey and the platform has one to give. The offer is a modal
+  // dialog, so the shell behind it is inert to every role query until it is answered
   await page.context().clearCookies();
   await page.goto(`${pairOrigin}/`);
   await expect(page.getByText("Enter the code from your authenticator app")).toBeVisible();
   await expect(page.locator("[data-landing]")).toBeVisible();
   await typeCode(page, totpCode(secret));
-  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
-
-  // the sheet: this browser holds no passkey and the platform has one to give
   await expect(page.getByText("Use Face ID next time?")).toBeVisible();
   await page.getByRole("button", { name: "Turn on" }).click();
   await expect(page.getByText("Use Face ID next time?")).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 
   // the landing leads with the lock the platform names, and the code under it stays the fallback
   await page.context().clearCookies();

@@ -113,9 +113,9 @@ test("one signed-in walk over TLS covers every tab with no console error", async
   await expect(page.getByRole("button", { name: "E2E-1: First card" })).toBeVisible();
   await shot("kanban");
 
-  // Settings opens on Sign-in; the walk clicks through to the Radar section for its budgets
+  // the walk clicks through to the Spending group for its budgets
   await openTab(page, "Settings");
-  await page.getByRole("navigation", { name: "Settings sections" }).getByRole("link", { name: "Radar" }).click();
+  await page.getByRole("navigation", { name: "Settings sections" }).getByRole("link", { name: "Spending" }).click();
   await expect(page.getByRole("heading", { name: "Budgets" })).toBeVisible();
   await shot("settings");
 

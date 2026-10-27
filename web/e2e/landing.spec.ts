@@ -20,7 +20,6 @@ import {
   ConsoleErrors,
   MAC_UA,
   openTab,
-  pairThroughBanner,
   pairThroughLink,
   signIn,
   theSetup,
@@ -182,7 +181,8 @@ test("the landing is one sign-in card that fits 390 px, every control a tap targ
   await expect(page.getByRole("button", { name: "Start a session" })).toBeVisible();
 
   expect(await sideways(page), "the landing scrolls sideways").toBeLessThanOrEqual(0);
-  expect(await smallTargets(page, "[data-landing]"), "controls under 44 px").toEqual([]);
+  // the thumb's 44 px floor is the phone's rule; under a pointer the design system's control is 40 px
+  if (isMobile) expect(await smallTargets(page, "[data-landing]"), "controls under 44 px").toEqual([]);
   await expectAccessible(page);
 });
 
@@ -214,7 +214,10 @@ test("the start-a-session guide opens in a sheet whose code blocks scroll inside
   if (box.over) expect(box.scrolls, "an overflowing code block scrolls inside its box").toBe(true);
   expect(box.right, "the code block ends inside the screen").toBeLessThanOrEqual(box.view);
   expect(await sideways(page), "the sheet scrolls the page sideways").toBeLessThanOrEqual(0);
-  expect(await smallTargets(page, ".ui-sheet[open]"), "the sheet's controls under 44 px").toEqual([]);
+  // the thumb's 44 px floor is the phone's rule; under a pointer the design system's control is 40 px
+  if (isMobile) {
+    expect(await smallTargets(page, ".ui-sheet[open]"), "the sheet's controls under 44 px").toEqual([]);
+  }
   await expectAccessible(page);
   // the code tokens keep their contrast in the dark scheme too
   await page.emulateMedia({ colorScheme: "dark" });
@@ -228,7 +231,10 @@ test("the start-a-session guide opens in a sheet whose code blocks scroll inside
   await expect(sheet).toBeHidden();
 });
 
-test("the authenticator set-up a fresh hub's first sign-in lands on fits 390 px", async ({ page }) => {
+test("the authenticator set-up a fresh hub's first sign-in lands on fits 390 px", async ({
+  page,
+  isMobile,
+}) => {
   const hub = await emptyHub();
   try {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -241,9 +247,12 @@ test("the authenticator set-up a fresh hub's first sign-in lands on fits 390 px"
     const secret = await page.locator("[data-secret]").boundingBox();
     const secretEnd = (secret?.x ?? 0) + (secret?.width ?? 0);
     expect(secretEnd, "the secret row ends inside the screen").toBeLessThanOrEqual(390);
-    const later = await page.getByRole("button", { name: /Later/ }).boundingBox();
-    expect(later?.height ?? 0, "the Later button's height").toBeGreaterThanOrEqual(44);
-    expect(await smallTargets(page, "main"), "controls under 44 px").toEqual([]);
+    // the thumb's 44 px floor is the phone's rule; under a pointer the design system's control is 40 px
+    if (isMobile) {
+      const later = await page.getByRole("button", { name: /Later/ }).boundingBox();
+      expect(later?.height ?? 0, "the Later button's height").toBeGreaterThanOrEqual(44);
+      expect(await smallTargets(page, "main"), "controls under 44 px").toEqual([]);
+    }
     await expectAccessible(page);
 
     await page.getByRole("button", { name: /Later/ }).click();
@@ -372,21 +381,34 @@ test("the first-run checklist ticks from server state and stands down when all f
   await signIn(page, theSetup().pairOrigin);
   await openTab(page, "Sessions");
 
-  // the seeded channel and session already tick two items
-  const checklist = page.locator("[data-first-run]");
+  // the seeded channel and session already tick two items: the checklist rides the sheet the
+  // Set up row opens
+  const setup = page.getByRole("button", { name: /^Set up · \d+ steps? left$/ });
+  await expect(setup).toBeVisible();
+  await setup.click();
+  const sheet = page.locator("dialog[open].ui-sheet");
+  const checklist = sheet.locator("[data-first-run]");
   await expect(checklist).toBeVisible();
   await expect(checklist.locator("[data-item='channel']")).toHaveAttribute("data-done", "true");
   await expect(checklist.locator("[data-item='session']")).toHaveAttribute("data-done", "true");
   await expect(checklist.locator("[data-item='totp']")).toHaveAttribute("data-done", "false");
   await expect(checklist.locator("[data-item='budget']")).toHaveAttribute("data-done", "false");
 
-  // the passkey row stands down once this browser saved its own passkey
-  await pairThroughBanner(page, `E2E Landing Mac ${test.info().project.name}`);
+  // the passkey row stands down once this browser saved its own passkey: the sheet's row mints
+  // its own link and runs the ceremony — no terminal, no pasted code
+  await checklist.getByRole("button", { name: "Save passkey" }).click();
+  const field = page.getByLabel("Device name");
+  await expect(field).toBeVisible();
+  await field.fill(`E2E Landing Mac ${test.info().project.name}`);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText("Pairing code")).toBeVisible();
+  await page.getByRole("button", { name: "It matches" }).click();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save passkey" })).toHaveCount(0);
 
   // an authenticator enrolment ticks item one (the boot's whoami reads it after a reload)
   await openTab(page, "Settings");
-  await page.getByRole("link", { name: "Sign-in" }).click();
+  await page.getByRole("link", { name: "Security" }).click();
   await page.getByRole("button", { name: "Set up" }).click();
   await expect(page.locator("[data-qr]")).toBeVisible();
   const secret = await totpSecret(page);
@@ -395,6 +417,7 @@ test("the first-run checklist ticks from server state and stands down when all f
   await page.getByRole("button", { name: "I saved them" }).click();
   await page.reload();
   await openTab(page, "Sessions");
+  await setup.click();
   await expect(checklist.locator("[data-item='totp']")).toHaveAttribute("data-done", "true");
 
   // a saved budget ticks the last one, and the checklist stands down — and stays down
@@ -411,11 +434,11 @@ test("the first-run checklist ticks from server state and stands down when all f
   });
   if (!budgeted.ok) throw new Error(`saving a budget answered ${budgeted.status}`);
   await page.reload();
-  await expect(page.locator("[data-first-run]")).toHaveCount(0);
+  await expect(setup).toHaveCount(0);
 
   // the enrolment and the budget leave with the test, so the later specs meet the seeded hub
   await openTab(page, "Settings");
-  await page.getByRole("link", { name: "Sign-in" }).click();
+  await page.getByRole("link", { name: "Security" }).click();
   await page.locator("[data-signin]").getByRole("button", { name: "Remove" }).click();
   await expect(page.getByText(/Not set up/)).toBeVisible();
   const cleared = await fetch(`${theSetup().rootUrl}/api/radar/api/budgets`, {

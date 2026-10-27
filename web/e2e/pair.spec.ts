@@ -18,7 +18,7 @@ test("a pair link pairs the device with a passkey and it appears in Settings", a
   await openTab(page, "Settings");
   await page
     .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("link", { name: "Devices" })
+    .getByRole("link", { name: "Security" })
     .click();
   await expect(page.getByRole("heading", { name: /^Devices · \d+$/ })).toBeVisible();
   await expect(page.getByText(DEVICE)).toBeVisible();

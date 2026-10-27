@@ -8,7 +8,6 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   MAC_UA,
   openTab,
-  pairThroughBanner,
   pairThroughLink,
   signIn,
   theSetup,
@@ -55,13 +54,25 @@ test("a link sign-in offers a passkey, and the saved one signs in after cookies 
   const { pairOrigin } = theSetup();
   await useVirtualAuthenticator(page);
 
-  // the owner signs in by link: the Now list carries the checklist's passkey row
+  // the owner signs in by link: the Set up row opens the sheet that carries the checklist's
+  // passkey row
   await signIn(page, pairOrigin);
   await openTab(page, "Sessions");
-  await expect(page.getByText("Save a passkey")).toBeVisible();
+  const setup = page.getByRole("button", { name: /^Set up · \d+ steps? left$/ });
+  await expect(setup).toBeVisible();
+  await setup.click();
+  const sheet = page.locator("dialog[open].ui-sheet");
+  await expect(sheet.getByText("Save a passkey")).toBeVisible();
 
-  // the banner mints its own link and runs the ceremony: no terminal, no pasted code
-  await pairThroughBanner(page, `E2E Mac ${test.info().project.name}`);
+  // the sheet's row mints its own link and runs the ceremony: no terminal, no pasted code
+  await sheet.getByRole("button", { name: "Save passkey" }).click();
+  const field = page.getByLabel("Device name");
+  await expect(field).toBeVisible();
+  await field.fill(`E2E Mac ${test.info().project.name}`);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText("Pairing code")).toBeVisible();
+  await page.getByRole("button", { name: "It matches" }).click();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save passkey" })).toHaveCount(0);
 
   // cookies gone: the saved passkey is the way back in
