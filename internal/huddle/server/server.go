@@ -640,6 +640,7 @@ func Serve(ctx context.Context, o Options) error {
 			func(line string, args ...any) { fmt.Fprintf(o.Stdout, "huddle: "+line+"\n", args...) })
 		s.pushHTTP = &http.Client{Timeout: pushSendTimeout}
 		safego.Go(s.warn, func() { s.watchPushes(pidCtx) })
+		safego.Go(s.warn, func() { s.watchEventSweep(pidCtx) })
 		// every raised alert reaches the sender as it is raised; the sends run on their own, so
 		// a slow push service never holds the request that raised the alert
 		unsubscribeAlerts := s.alerts.subscribe(func(e AlertEvent) {

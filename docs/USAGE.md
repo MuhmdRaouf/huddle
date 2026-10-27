@@ -138,7 +138,8 @@ database stores UTC whatever the zone says.
 ## Bring sessions together
 
 A channel is one piece of shared work: every session in it sees the same events, tasks, messages
-and knowledge, whatever project each runs in.
+and knowledge, whatever project each runs in. The hub keeps reported events and channel events for
+90 days; an ask still waiting for its reply stays until the reply comes.
 
 1. In a session that is in a huddle (the one that ran `/huddle:setup`, or any session of that
    project), make a join line:
