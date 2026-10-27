@@ -187,6 +187,16 @@ lets a session's own hooks ask for tips about it: with it on, a prompt or a star
 the session's context when the hub has a tip about it, and each tip reaches a session once. A
 harness that only speaks MCP reads the same tips from the resource `huddle://insights`.
 
+The tips:
+
+- You allowed one prompt five times in a week and waited for it each time; an allow rule would
+  skip the prompt.
+- One command ran four times over in a session; a narrower run is faster while fixing.
+- A tool keeps failing in a session; the card quotes its error.
+- A model lane fails more than one request in twenty over a day; the card names the share and
+  the status that failed most.
+- One ask has waited on you far longer than the rest; pair your phone to answer from it.
+
 ### Reach an idle session
 
 A message from the dashboard, a phone or the channel chat reaches an idle session at once only

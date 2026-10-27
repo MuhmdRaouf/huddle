@@ -1,11 +1,12 @@
 package server
 
 // The insights route: today's tips over the history the registry already holds, the owner's
-// credential only. The owner's card (no session) reads the needs-you history alone, so the
-// always_allowed and longest_wait rules are the ones that can fire there; a session's answer
-// adds that session's tool runs from the mounted radar tab, and same_command is the rule they
-// add: tool_failing needs the error text radar does not record, so the session's answer
-// leaves its tips out.
+// credential only. The owner's card (no session) reads the needs-you history plus the lanes'
+// requests from the mounted radar tab, so the always_allowed, longest_wait and lane_failing
+// rules are the ones that can fire there; a session's answer adds that session's tool runs
+// from the mounted radar tab, and same_command is the rule they add: tool_failing needs the
+// error text radar does not record, and a lane's health is no one session's, so the session's
+// answer leaves both out.
 
 import (
 	"net/http"
@@ -39,11 +40,13 @@ type insightsSettingsAnswer struct {
 }
 
 // insightsRoute answers GET /api/insights with the tips the last 7 days of needs-you history
-// supports, read-only over the registry's own rows. A session query narrows the answer to that
-// session: its rows alone go in, its tool runs come in from the mounted radar tab and add
-// same_command alone (tool_failing needs the error text radar does not record), and its tips
-// alone come out. Tips for me gates the owner's answer, tips to my sessions the session's; the
-// switch that is off empties the answer before anything else is read.
+// supports, read-only over the registry's own rows. The owner's answer adds the lanes' requests
+// of the last 24 h from the mounted radar tab, so a lane that keeps failing names itself there.
+// A session query narrows the answer to that session: its rows alone go in, its tool runs come
+// in from the mounted radar tab and add same_command alone (tool_failing needs the error text
+// radar does not record), and its tips alone come out. Tips for me gates the owner's answer,
+// tips to my sessions the session's; the switch that is off empties the answer before anything
+// else is read.
 func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 	session := r.URL.Query().Get("session")
 	settings := insights.ReadSettings(insights.SettingsFile(s.o.Home))
@@ -95,6 +98,16 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 				InputKey: run.InputKey,
 				OK:       run.OK,
 				At:       run.At,
+			})
+		}
+	}
+	// the owner's answer adds the lanes' own requests; a lane's health is no one session's
+	if session == "" && s.radar != nil {
+		for _, request := range s.radar.RequestsSince(r.Context(), now.Add(-24*time.Hour)) {
+			in.Requests = append(in.Requests, insights.Request{
+				Provider: request.Provider,
+				Status:   request.Status,
+				At:       request.At,
 			})
 		}
 	}
