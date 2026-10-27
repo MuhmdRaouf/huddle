@@ -44,6 +44,7 @@ side TEXT NOT NULL CHECK (side IN ('input','output')),
 blocks BLOB NOT NULL,
 bytes INTEGER NOT NULL,
 redactions INTEGER NOT NULL,
+at INTEGER NOT NULL,
 PRIMARY KEY (request_id, side)
 );
 PRAGMA user_version = 1`
@@ -124,8 +125,8 @@ func (s *BodyStore) PutBody(ctx context.Context, requestID, side string, body []
 	}
 	blocks := bytes.Join(names, nil)
 	if err := s.db.Run(
-		"INSERT OR REPLACE INTO ledger_body (request_id, side, blocks, bytes, redactions) VALUES (?, ?, ?, ?, ?)",
-		requestID, side, blocks, len(redacted), count,
+		"INSERT OR REPLACE INTO ledger_body (request_id, side, blocks, bytes, redactions, at) VALUES (?, ?, ?, ?, ?, ?)",
+		requestID, side, blocks, len(redacted), count, at.UnixMilli(),
 	); err != nil {
 		return fmt.Errorf("store the body row of %s: %w", requestID, err)
 	}

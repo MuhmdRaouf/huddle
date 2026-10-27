@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 // Store is the ledger's SQLite file.
@@ -174,6 +176,44 @@ func (s *Store) Get(ctx context.Context, id string) (*Row, error) {
 // ByAnthropicID answers the row the request-id header names, nil when the file holds none.
 func (s *Store) ByAnthropicID(ctx context.Context, id string) (*Row, error) {
 	return s.read(ctx, "anthropic_id = ?", id)
+}
+
+// Prune cuts the ledger back to the TTL: every request row started before the cutoff —
+// now minus MetaTTL — goes, with the facts rows filed under the same ids. A row the file
+// heard of without a started_at stays. The DB surface offers no transaction, so the
+// request rows go first and their facts follow: an in-flight request files its facts
+// before its row, so an orphan facts row is a shape the file already holds, while an
+// orphan request row would sit in the dashboard with nothing behind it.
+func (s *Store) Prune(ctx context.Context, now time.Time) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	cutoff := now.Add(-MetaTTL).UnixMilli()
+	where := "WHERE started_at IS NOT NULL AND started_at < ?"
+	// The ids are read before the delete that would empty the set, and the Get surface
+	// answers one row, so they come back GROUP_CONCAT-ed into one string.
+	row, err := s.db.Get("SELECT GROUP_CONCAT(id, ',') AS ids FROM ledger_requests "+where, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("gather the spent ledger requests: %w", err)
+	}
+	var ids []string
+	if row != nil {
+		if joined, ok := row["ids"].(string); ok && joined != "" {
+			ids = strings.Split(joined, ",")
+		}
+	}
+	if err := s.db.Run("DELETE FROM ledger_requests "+where, cutoff); err != nil {
+		return 0, fmt.Errorf("prune the ledger requests: %w", err)
+	}
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if err := s.db.Run("DELETE FROM ledger_facts WHERE id = ?", id); err != nil {
+			return len(ids), fmt.Errorf("prune the ledger facts %s: %w", id, err)
+		}
+	}
+	return len(ids), nil
 }
 
 // read answers the first row the where clause matches, nil when it matches none.
