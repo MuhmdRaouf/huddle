@@ -7,9 +7,6 @@ package routerd
 import (
 	"context"
 	crand "crypto/rand"
-	"os/user"
-	"path/filepath"
-	"runtime"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/keystore"
@@ -38,30 +35,12 @@ func (k keystoreKey) Set(ctx context.Context, value string) error {
 
 // platformBodyKey is the body key source of this machine: the login account's keystore, or nil
 // where there is none — a home that is not the login account's (tests, agents) keeps bodies
-// off, the same rule the push key follows. It reads the daemon's env, never the process
-// environment: an in-process test's temp HOME in Options.Env decides, so the runner's real
-// login keystore is out of reach.
+// off, the same rule the push key follows. The rule is keystore.BodyKey's, shared with the hub;
+// the source reads the daemon's env, never the process environment: an in-process test's temp
+// HOME in Options.Env decides, so the runner's real login keystore is out of reach.
 func platformBodyKey(env domain.EnvLookup) ledger.KeySource {
-	login, err := user.Current()
-	if err != nil || login.HomeDir == "" {
-		return nil
-	}
-	homeEnv, set := env["HOME"]
-	if !set || homeEnv == "" || filepath.Clean(homeEnv) != filepath.Clean(login.HomeDir) {
-		return nil
-	}
-	id := keystore.KeyIdentity{
-		Service:  "huddle",
-		Account:  "router-body-key",
-		Display:  "Huddle",
-		Label:    "Huddle router body key",
-		AnyValue: true,
-	}
-	switch runtime.GOOS {
-	case "darwin":
-		return keystoreKey{keystore.MacosKeyStore(id, keystore.SpawnRunner)}
-	case "linux":
-		return keystoreKey{keystore.LinuxKeyStore(id, keystore.SpawnRunner)}
+	if store := keystore.BodyKey(env); store != nil {
+		return keystoreKey{store}
 	}
 	return nil
 }
