@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"compress/flate"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -16,11 +20,12 @@ import (
 
 // The router's body store. The router alone writes it, radar only reads it: full request
 // and response bodies live here as content-addressed blocks, so a conversation resent
-// whole on every request is stored once. Each body splits into spans (splitBody); a span's
-// SHA-256 names its row in ledger_blocks, which points at the span's compressed bytes in a
-// day segment file beside the database. ledger_body maps each request's input and output
-// sides to their blocks' hashes in order. The ledger's own database and schema are not
-// touched.
+// whole on every request is stored once. Each body splits into spans (splitBody); a
+// span's HMAC-SHA-256 under the store's key names its row in ledger_blocks, which points
+// at the span's compressed bytes, sealed with AES-256-GCM into a day segment file beside
+// the database with the name as their additional data. ledger_body maps each request's
+// input and output sides to their blocks' names in order. The ledger's own database and
+// schema are not touched.
 
 // blocksDDL creates the body store's tables in router.db. The ledger's schema (version 2)
 // stays in schema.go and never applies here.
@@ -44,17 +49,32 @@ PRIMARY KEY (request_id, side)
 PRAGMA user_version = 1`
 
 // BodyStore is the router's body store: one router.db plus the day segment files in its
-// directory. The mutex serialises segment appends; the database itself stays on the
-// package's single-connection open.
+// directory, every block named and sealed under the one key the store was opened with.
+// The mutex serialises segment appends; the database itself stays on the package's
+// single-connection open.
 type BodyStore struct {
-	db  DB
-	dir string
-	mu  sync.Mutex
+	db   DB
+	dir  string
+	key  []byte
+	aead cipher.AEAD
+	mu   sync.Mutex
 }
 
 // OpenBodies opens (creating when missing) the body store at file, and its segment
-// directory beside it.
-func OpenBodies(file string) (*BodyStore, error) {
+// directory beside it. The key is the machine's body key, 32 bytes: block names and the
+// seal both come from it, so every open of a store passes the same key.
+func OpenBodies(file string, key []byte) (*BodyStore, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("the body key is %d bytes, want 32", len(key))
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("start the body cipher: %w", err)
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("start the body seal: %w", err)
+	}
 	dir := filepath.Dir(file)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create the directory of %s: %w", file, err)
@@ -71,7 +91,7 @@ func OpenBodies(file string) (*BodyStore, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("chmod %s: %w", file, err)
 	}
-	return &BodyStore{db: db, dir: dir}, nil
+	return &BodyStore{db: db, dir: dir, key: key, aead: aead}, nil
 }
 
 // Close closes the body store's database. The segment files are already closed.
@@ -80,10 +100,11 @@ func (s *BodyStore) Close() error {
 }
 
 // PutBody stores one request's body for the side named. The body is redacted first, so
-// no secret shape reaches a block, a segment or the body row; bytes and the block hashes
+// no secret shape reaches a block, a segment or the body row; bytes and the block names
 // are the redacted body's. Spans already stored are not rewritten; their last_ts moves to
-// at when at is later. Each new span compresses into the day segment of at (UTC) and gets
-// its ledger_blocks row. The body row for the request and side is replaced.
+// at when at is later. Each new span compresses, is sealed under the store's key and lands
+// in the day segment of at (UTC) with its ledger_blocks row. The body row for the request
+// and side is replaced.
 func (s *BodyStore) PutBody(ctx context.Context, requestID, side string, body []byte, at time.Time) error {
 	if side != "input" && side != "output" {
 		return fmt.Errorf("body side %q is neither input nor output", side)
@@ -93,15 +114,15 @@ func (s *BodyStore) PutBody(ctx context.Context, requestID, side string, body []
 	}
 	redacted, count := redactBody(body)
 	spans := splitBody(redacted)
-	hashes := make([][]byte, 0, len(spans))
+	names := make([][]byte, 0, len(spans))
 	for _, span := range spans {
-		sum := sha256.Sum256(span)
-		if err := s.putBlock(sum, span, at); err != nil {
+		name := blockName(s.key, span)
+		if err := s.putBlock(name, span, at); err != nil {
 			return err
 		}
-		hashes = append(hashes, sum[:])
+		names = append(names, name[:])
 	}
-	blocks := bytes.Join(hashes, nil)
+	blocks := bytes.Join(names, nil)
 	if err := s.db.Run(
 		"INSERT OR REPLACE INTO ledger_body (request_id, side, blocks, bytes, redactions) VALUES (?, ?, ?, ?, ?)",
 		requestID, side, blocks, len(redacted), count,
@@ -111,10 +132,20 @@ func (s *BodyStore) PutBody(ctx context.Context, requestID, side string, body []
 	return nil
 }
 
-// putBlock stores one span under its hash unless it is already stored, moving last_ts to at
+// blockName answers a span's name: the HMAC-SHA-256 of the span under the store's key. A
+// stored name never confirms a guessed text, because only the key's holder can compute it.
+func blockName(key, span []byte) [32]byte {
+	mac := hmac.New(sha256.New, key)
+	mac.Write(span)
+	var name [32]byte
+	copy(name[:], mac.Sum(nil))
+	return name
+}
+
+// putBlock stores one span under its name unless it is already stored, moving last_ts to at
 // when at is later.
-func (s *BodyStore) putBlock(sum [32]byte, span []byte, at time.Time) error {
-	hash := hex.EncodeToString(sum[:])
+func (s *BodyStore) putBlock(name [32]byte, span []byte, at time.Time) error {
+	hash := hex.EncodeToString(name[:])
 	row, err := s.db.Get("SELECT last_ts FROM ledger_blocks WHERE hash = ?", hash)
 	if err != nil {
 		return fmt.Errorf("look up block %s: %w", hash, err)
@@ -140,13 +171,21 @@ func (s *BodyStore) putBlock(sum [32]byte, span []byte, at time.Time) error {
 	if err := writer.Close(); err != nil {
 		return fmt.Errorf("finish compressing block %s: %w", hash, err)
 	}
-	seg, off, err := s.appendSegment(segName(at), packed.Bytes())
+	// The seal: a fresh nonce, then AES-256-GCM over the compressed span with the block's
+	// name as the additional data. Seal appends to the nonce, so sealed is
+	// nonce || ciphertext, and the recorded len covers the whole of it.
+	nonce := make([]byte, s.aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return fmt.Errorf("draw the nonce of block %s: %w", hash, err)
+	}
+	sealed := s.aead.Seal(nonce, nonce, packed.Bytes(), []byte(hash))
+	seg, off, err := s.appendSegment(segName(at), sealed)
 	if err != nil {
 		return err
 	}
 	if err := s.db.Run(
 		"INSERT INTO ledger_blocks (hash, seg, off, len, raw, first_ts, last_ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		hash, seg, off, packed.Len(), len(span), at.UnixMilli(), at.UnixMilli(),
+		hash, seg, off, len(sealed), len(span), at.UnixMilli(), at.UnixMilli(),
 	); err != nil {
 		return fmt.Errorf("record block %s: %w", hash, err)
 	}
@@ -242,8 +281,10 @@ func (s *BodyStore) Redactions(ctx context.Context, requestID, side string) (int
 	return int(count), true, nil
 }
 
-// readBlock answers one block's raw bytes, read from its segment at its offset and
-// inflated back to the length recorded with it.
+// readBlock answers one block's raw bytes: read from its segment at its offset, opened
+// under the store's key with the block's name as the additional data, then inflated back
+// to the length recorded with it. A block that does not open answers an error naming the
+// block, never any bytes.
 func (s *BodyStore) readBlock(hash string) ([]byte, error) {
 	row, err := s.db.Get("SELECT seg, off, len, raw FROM ledger_blocks WHERE hash = ?", hash)
 	if err != nil {
@@ -262,9 +303,17 @@ func (s *BodyStore) readBlock(hash string) ([]byte, error) {
 		return nil, fmt.Errorf("open the segment of block %s: %w", hash, err)
 	}
 	defer file.Close()
-	packed := make([]byte, length)
-	if _, err := file.ReadAt(packed, off); err != nil {
+	sealed := make([]byte, length)
+	if _, err := file.ReadAt(sealed, off); err != nil {
 		return nil, fmt.Errorf("read block %s in %s: %w", hash, seg, err)
+	}
+	if len(sealed) < s.aead.NonceSize() {
+		return nil, fmt.Errorf("block %s holds %d sealed bytes, too few for a nonce", hash, len(sealed))
+	}
+	nonce := sealed[:s.aead.NonceSize()]
+	packed, err := s.aead.Open(nil, nonce, sealed[s.aead.NonceSize():], []byte(hash))
+	if err != nil {
+		return nil, fmt.Errorf("open block %s: %w", hash, err)
 	}
 	reader := flate.NewReader(bytes.NewReader(packed))
 	inflated, err := io.ReadAll(reader)

@@ -27,7 +27,7 @@ func TestBodyStoreScenarios(t *testing.T) {
 			ctx := context.Background()
 			at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
 			dir := filepath.Join(s.T.TempDir(), "ledger")
-			st, err := OpenBodies(filepath.Join(dir, "router.db"))
+			st, err := OpenBodies(filepath.Join(dir, "router.db"), testBodyKey)
 			if err != nil {
 				s.T.Fatalf("open the body store: %v", err)
 			}

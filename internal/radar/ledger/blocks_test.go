@@ -2,7 +2,10 @@ package ledger
 
 import (
 	"bytes"
+	"compress/flate"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -12,7 +15,15 @@ import (
 	"time"
 )
 
-// The router body store's cases, run against a router.db in a temp directory only.
+// The router body store's cases, run against a router.db in a temp directory only. The
+// keys are fakes built here, never a real key.
+
+// testBodyKey is the key every case opens its store with; otherBodyKey is a different
+// key for the wrong-key cases.
+var (
+	testBodyKey  = []byte("0123456789abcdef0123456789abcdef")
+	otherBodyKey = []byte("fedcba9876543210fedcba9876543210")
+)
 
 func TestBodyStoreRoundTripsABody(t *testing.T) {
 	t.Parallel()
@@ -260,7 +271,7 @@ func TestBodyStoreSurvivesAReopen(t *testing.T) {
 		"req_text": []byte("not json"),
 		"req_none": nil,
 	}
-	st, err := OpenBodies(filepath.Join(dir, "router.db"))
+	st, err := OpenBodies(filepath.Join(dir, "router.db"), testBodyKey)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -273,7 +284,7 @@ func TestBodyStoreSurvivesAReopen(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	reopened, err := OpenBodies(filepath.Join(dir, "router.db"))
+	reopened, err := OpenBodies(filepath.Join(dir, "router.db"), testBodyKey)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -292,6 +303,170 @@ func TestBodyStoreSurvivesAReopen(t *testing.T) {
 	}
 }
 
+// TestBodyStoreRefusesAShortKey: the body key is 32 bytes; a shorter one opens nothing
+// and creates no file.
+func TestBodyStoreRefusesAShortKey(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	st, err := OpenBodies(filepath.Join(dir, "router.db"), make([]byte, 16))
+	if err == nil {
+		t.Fatal("open with a 16-byte key = nil error, want an error")
+	}
+	if st != nil {
+		t.Fatal("open with a 16-byte key answers a store, want none")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read the temp directory: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("a refused open created %d entries, want none", len(entries))
+	}
+}
+
+// TestBodyStoreSealsBlocks: a body is stored sealed — the segment files hold neither the
+// body's bytes nor their compressed form, the same key reads the body back byte for byte,
+// another key answers an error and never the body, and a flipped bit in a segment answers
+// an error naming the block and never bytes.
+func TestBodyStoreSealsBlocks(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dir := t.TempDir()
+	at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	// A body that is not JSON stays one span, so the segment would hold exactly these 64
+	// bytes, or exactly their flate stream, if the block were not sealed.
+	body := []byte(strings.Repeat("M", 64))
+
+	path := filepath.Join(dir, "router.db")
+	st, err := OpenBodies(path, testBodyKey)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := st.PutBody(ctx, "req_sealed", "input", body, at); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	t.Run("the same key reads the body back byte for byte", func(t *testing.T) {
+		reopened, err := OpenBodies(path, testBodyKey)
+		if err != nil {
+			t.Fatalf("reopen: %v", err)
+		}
+		t.Cleanup(func() { _ = reopened.Close() })
+		got, ok, err := reopened.Body(ctx, "req_sealed", "input")
+		if err != nil || !ok {
+			t.Fatalf("body = %q, %t, %v; want the body found", got, ok, err)
+		}
+		if string(got) != string(body) {
+			t.Fatalf("body = %q, want the exact bytes back", got)
+		}
+	})
+
+	t.Run("the segment holds neither the body nor its compressed bytes", func(t *testing.T) {
+		var packed bytes.Buffer
+		writer, err := flate.NewWriter(&packed, flate.DefaultCompression)
+		if err != nil {
+			t.Fatalf("start the compressor: %v", err)
+		}
+		if _, err := writer.Write(body); err != nil {
+			t.Fatalf("compress the body: %v", err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatalf("finish compressing: %v", err)
+		}
+		for _, raw := range segmentFiles(t, dir) {
+			if bytes.Contains(raw, body) {
+				t.Fatal("a segment holds the body verbatim")
+			}
+			if bytes.Contains(raw, packed.Bytes()) {
+				t.Fatal("a segment holds the body's compressed bytes")
+			}
+		}
+	})
+
+	t.Run("another key answers an error and never the body", func(t *testing.T) {
+		reopened, err := OpenBodies(path, otherBodyKey)
+		if err != nil {
+			t.Fatalf("reopen under another key: %v", err)
+		}
+		t.Cleanup(func() { _ = reopened.Close() })
+		got, _, err := reopened.Body(ctx, "req_sealed", "input")
+		if err == nil {
+			t.Fatal("body under another key = nil error, want an error")
+		}
+		if got != nil {
+			t.Fatalf("body under another key = %d bytes, want none", len(got))
+		}
+		if strings.Contains(err.Error(), string(body)) {
+			t.Fatal("the error carries body bytes")
+		}
+	})
+
+	t.Run("a flipped bit answers an error and never bytes", func(t *testing.T) {
+		reopened, err := OpenBodies(path, testBodyKey)
+		if err != nil {
+			t.Fatalf("reopen: %v", err)
+		}
+		t.Cleanup(func() { _ = reopened.Close() })
+		flipOneBit(t, dir)
+		got, _, err := reopened.Body(ctx, "req_sealed", "input")
+		if err == nil {
+			t.Fatal("body of a flipped block = nil error, want an error")
+		}
+		if got != nil {
+			t.Fatalf("body of a flipped block = %d bytes, want none", len(got))
+		}
+		if strings.Contains(err.Error(), string(body)) {
+			t.Fatal("the error carries body bytes")
+		}
+	})
+}
+
+// TestBodyStoreNamesBlocksWithTheKey: a block's name is the span's HMAC-SHA-256 under the
+// store's key — not its bare SHA-256, and not its HMAC under another key — and the same
+// span stores once under that name however many bodies carry it.
+func TestBodyStoreNamesBlocksWithTheKey(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := openBodies(t)
+	at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+
+	body := []byte(`{"model":"m","messages":[{"role":"user","content":"a known message"}]}`)
+	if err := st.PutBody(ctx, "req_named", "input", body, at); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	spans := splitBody(body)
+	first := spans[0]
+	want := hmacName(testBodyKey, first)
+
+	if want == sha256Name(first) {
+		t.Fatal("a span's name equals its bare SHA-256")
+	}
+	if want == hmacName(otherBodyKey, first) {
+		t.Fatal("a span's name equals its HMAC under another key")
+	}
+	if got := bodyHash(t, st, "req_named", "input"); got != want {
+		t.Fatalf("the body row's first block = %s, want the span's HMAC %s", got, want)
+	}
+	row, err := st.db.Get("SELECT hash FROM ledger_blocks WHERE hash = ?", want)
+	if err != nil {
+		t.Fatalf("look up the named block: %v", err)
+	}
+	if row == nil {
+		t.Fatalf("ledger_blocks holds no row named %s", want)
+	}
+
+	if err := st.PutBody(ctx, "req_again", "input", body, at); err != nil {
+		t.Fatalf("put the same body again: %v", err)
+	}
+	if rows := countBlockRows(t, st); rows != int64(len(spans)) {
+		t.Fatalf("ledger_blocks holds %d rows after the same body again, want the %d spans once",
+			rows, len(spans))
+	}
+}
+
 // TestBodyStoreLeavesTheLedgerAlone: a ledger.db opened in the same directory keeps its
 // own schema; the body store creates nothing in it.
 func TestBodyStoreLeavesTheLedgerAlone(t *testing.T) {
@@ -305,7 +480,7 @@ func TestBodyStoreLeavesTheLedgerAlone(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ledger.Close() })
 
-	st, err := OpenBodies(filepath.Join(dir, "router.db"))
+	st, err := OpenBodies(filepath.Join(dir, "router.db"), testBodyKey)
 	if err != nil {
 		t.Fatalf("open the body store: %v", err)
 	}
@@ -500,7 +675,7 @@ func blockHashes(t *testing.T, st *BodyStore) []string {
 // radar state dir uses — closed when the test ends.
 func openBodies(t *testing.T) *BodyStore {
 	t.Helper()
-	st, err := OpenBodies(filepath.Join(t.TempDir(), "ledger", "router.db"))
+	st, err := OpenBodies(filepath.Join(t.TempDir(), "ledger", "router.db"), testBodyKey)
 	if err != nil {
 		t.Fatalf("open the body store: %v", err)
 	}
@@ -601,6 +776,46 @@ func fileMode(t *testing.T, path string) os.FileMode {
 		t.Fatalf("stat %s: %v", path, err)
 	}
 	return info.Mode().Perm()
+}
+
+// hmacName answers the name the store gives a span under key: the hex HMAC-SHA-256 of it.
+func hmacName(key, span []byte) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write(span)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// sha256Name answers a span's bare SHA-256, the name it would carry under no key at all.
+func sha256Name(span []byte) string {
+	sum := sha256.Sum256(span)
+	return hex.EncodeToString(sum[:])
+}
+
+// flipOneBit turns one bit of the store's first segment file, leaving the rest as they were.
+func flipOneBit(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read the store directory: %v", err)
+	}
+	var segment string
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".seg") {
+			segment = filepath.Join(dir, entry.Name())
+			break
+		}
+	}
+	if segment == "" {
+		t.Fatal("no segment file exists")
+	}
+	raw, err := os.ReadFile(segment)
+	if err != nil {
+		t.Fatalf("read %s: %v", segment, err)
+	}
+	raw[len(raw)/2] ^= 0x01
+	if err := os.WriteFile(segment, raw, 0o600); err != nil {
+		t.Fatalf("write %s: %v", segment, err)
+	}
 }
 
 // sharedSpanCount answers how many of a's spans are also spans of b.
