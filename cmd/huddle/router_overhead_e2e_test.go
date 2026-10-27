@@ -36,8 +36,9 @@ import (
 )
 
 const (
-	// firstByteBudget is the most the router may add to the first streamed byte (best of
-	// firstByteRuns).
+	// firstByteBudget is the most the router may add to the first streamed byte: the median
+	// over overheadRuns of each run's paired first-byte delta, the routed path's first byte
+	// minus the direct path's in that same run.
 	firstByteBudget = 5 * time.Millisecond
 	// chunkBudget is the most the router may add to one chunk's trip (the median over
 	// overheadRuns of each run's median chunk).
@@ -46,7 +47,6 @@ const (
 	overheadChunks = 200
 	overheadGap    = 10 * time.Millisecond
 	overheadRuns   = 20
-	firstByteRuns  = 5
 )
 
 // overheadFake streams one Anthropic-shaped answer per request: message_start at once, then
@@ -360,17 +360,15 @@ func TestE2ERouterOverhead(t *testing.T) {
 		for at := 1; at < len(paths); at++ {
 			path := paths[at]
 			t.Run(path.name+", "+size.name, func(t *testing.T) {
-				firstBytes := make([]time.Duration, 0, firstByteRuns)
-				directFirst := make([]time.Duration, 0, firstByteRuns)
-				for _, timings := range runs[:firstByteRuns] {
-					firstBytes = append(firstBytes, timings[at].firstByte)
-					directFirst = append(directFirst, timings[0].firstByte)
-				}
+				// The paired deltas come from the same run on both sides, so one moment's load
+				// lands on both and their median is what the router itself adds.
+				firstDeltas := make([]time.Duration, 0, overheadRuns)
 				chunkOverheads := make([]time.Duration, 0, overheadRuns)
 				for _, timings := range runs {
+					firstDeltas = append(firstDeltas, timings[at].firstByte-timings[0].firstByte)
 					chunkOverheads = append(chunkOverheads, timings[at].chunk-timings[0].chunk)
 				}
-				firstOverhead := slices.Min(firstBytes) - slices.Min(directFirst)
+				firstOverhead := median(firstDeltas)
 				chunkOverhead := median(chunkOverheads)
 				// Every forwarded request's route event says how long the router itself held it.
 				ownUs := make([]int64, 0, overheadRuns)
@@ -382,8 +380,8 @@ func TestE2ERouterOverhead(t *testing.T) {
 					ownUs = append(ownUs, *event.routerUs)
 				}
 				own[path.route] = append(own[path.route], ownUs...)
-				t.Logf("%s, %s: first byte %v (direct %v, overhead %v, budget %v); chunk overhead median %v (budget %v); router %d µs",
-					path.name, size.name, slices.Min(firstBytes), slices.Min(directFirst), firstOverhead, firstByteBudget,
+				t.Logf("%s, %s: first byte overhead %v, median of %d paired deltas (budget %v); chunk overhead median %v (budget %v); router %d µs",
+					path.name, size.name, firstOverhead, overheadRuns, firstByteBudget,
 					chunkOverhead, chunkBudget, medianInt64(ownUs))
 				// the race detector slows the router's own work 5-20x and not the fake's, so a race
 				// build logs the numbers and holds the budgets to the plain build
