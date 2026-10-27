@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/singleton"
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
+	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
 )
 
@@ -44,14 +46,62 @@ func slowUpstream(t *testing.T, started chan<- struct{}) *httptest.Server {
 	return server
 }
 
+// slowSetup is how long the slow keystore's read takes: the stalled setup a busy machine
+// stands for during a takeover.
+const slowSetup = 3 * time.Second
+
+// slowKeystore is a body key source whose read takes slowSetup, and that holds the scenarios'
+// key: openBodies waits on it while the taker sets up, the way every step of a setup stretches
+// on a busy machine.
+type slowKeystore struct {
+	*bodiesKeystore
+}
+
+func slowKeystoreOf() *slowKeystore {
+	return &slowKeystore{bodiesKeystore: bodiesKeystoreOf(bodiesTestKey)}
+}
+
+// Get sleeps before it answers, so the taker runs its whole setup while this one read is out.
+func (k *slowKeystore) Get(ctx context.Context) (string, bool) {
+	time.Sleep(slowSetup)
+	return k.bodiesKeystore.Get(ctx)
+}
+
+// dialHammer dials the daemon's port every five milliseconds until stop closes, dropping each
+// connection at once, and answers how many dials failed: a refusal during a takeover is the
+// window where nobody accepts.
+func dialHammer(port int, stop <-chan struct{}) <-chan int {
+	refused := make(chan int, 1)
+	go func() {
+		bad := 0
+		for {
+			select {
+			case <-stop:
+				refused <- bad
+				return
+			default:
+			}
+			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 500*time.Millisecond)
+			if err != nil {
+				bad++
+			} else {
+				_ = conn.Close()
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+	return refused
+}
+
 // startTakeover runs one Run with Takeover set until the test ends, and fails when it stops on
-// its own. Its context is its own, like a second process's would be.
-func startTakeover(t *testing.T, rig *daemonRig) <-chan error {
+// its own. Its context is its own, like a second process's would be. A non-nil key is the
+// taker's body key source, the way a scenario slows the setup down.
+func startTakeover(t *testing.T, rig *daemonRig, key ledger.KeySource) <-chan error {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Env: rig.env, Log: rig.logs.add, Poll: 30 * time.Millisecond, Takeover: true})
+		done <- Run(ctx, Options{Env: rig.env, Log: rig.logs.add, Poll: 30 * time.Millisecond, Takeover: true, BodyKey: key})
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -111,7 +161,7 @@ func TestHuddleRouterHandoverScenarios(t *testing.T) {
 				case <-time.After(5 * time.Second):
 					t.Fatal("the stream never started")
 				}
-				startTakeover(s.T, rig)
+				startTakeover(s.T, rig, nil)
 				rig.awaitHealth(t, "zai")
 			})
 			s.Then("the stream the old process held finishes 200", func(t *testing.T) {
@@ -193,7 +243,7 @@ func TestHuddleRouterHandoverScenarios(t *testing.T) {
 				rig.awaitHealth(t, "zai")
 			})
 			s.When("a takeover serves the same port", func(t *testing.T) {
-				newDone = startTakeover(s.T, rig)
+				newDone = startTakeover(s.T, rig, nil)
 				rig.awaitHealth(t, "zai")
 			})
 			s.And("the old Run returned nil after its drain", func(t *testing.T) {
@@ -219,6 +269,64 @@ func TestHuddleRouterHandoverScenarios(t *testing.T) {
 				case err := <-newDone:
 					t.Fatalf("the new Run stopped early with %v", err)
 				default:
+				}
+			})
+		})
+
+		f.Scenario("a takeover whose setup is slow refuses no dial", func(s *bdd.S) {
+			var rig *daemonRig
+			var refused <-chan int
+			s.Given("a daemon serves zai", func(t *testing.T) {
+				rig = newDaemonRig(s.T)
+				if err := router.SetEnabled(rig.env, "zai", true); err != nil {
+					t.Fatal(err)
+				}
+				rig.start()
+				rig.awaitHealth(t, "zai")
+			})
+			s.When("a hammer dials through a takeover whose setup stalls three seconds", func(t *testing.T) {
+				stop := make(chan struct{})
+				refused = dialHammer(rig.port, stop)
+				time.Sleep(50 * time.Millisecond) // the hammer reaches the old daemon first
+				startTakeover(s.T, rig, slowKeystoreOf())
+				// The old daemon's last answers race the handover: the window begins when health
+				// first goes quiet, and ends when the taker serves.
+				deadline := time.Now().Add(10 * time.Second)
+				for {
+					if _, ok := rig.health(t); !ok {
+						break
+					}
+					if time.Now().After(deadline) {
+						close(stop)
+						t.Fatalf("the old daemon never went quiet; its log:\n%s", rig.logs.joined())
+					}
+					time.Sleep(20 * time.Millisecond)
+				}
+				deadline = time.Now().Add(15 * time.Second)
+				for {
+					if _, ok := rig.health(t); ok {
+						break
+					}
+					if time.Now().After(deadline) {
+						close(stop)
+						t.Fatalf("the taker never answered health; its log:\n%s", rig.logs.joined())
+					}
+					time.Sleep(20 * time.Millisecond)
+				}
+				close(stop)
+			})
+			s.Then("no dial of the hammer was refused", func(t *testing.T) {
+				if n := <-refused; n != 0 {
+					t.Fatalf("%d dials were refused during the takeover", n)
+				}
+			})
+			s.And("the old Run returned nil after its drain", func(t *testing.T) {
+				awaitReturn(t, rig, "the old Run")
+			})
+			s.And("the taker serves zai afterwards", func(t *testing.T) {
+				rig.awaitHealth(t, "zai")
+				if status, body := rig.postModel(t, "glm-5.3"); status != 200 {
+					t.Fatalf("after the takeover: %d %q", status, body)
 				}
 			})
 		})

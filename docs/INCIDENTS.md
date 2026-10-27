@@ -182,3 +182,10 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Cause:** a per-process lease under parallel package binaries.
 - **Guard:** `TestAFreshSearchSkipsThePortAnotherBinaryAnswered` (internal/testkit/ports/ports_test.go)
 - **Rule:** a port a child binds is leased through TMPDIR.
+
+## 2026-10-27, a handover on a busy machine refused dials
+
+- **What happened:** the RSS-ceiling handover e2e saw 1-6 refused dials under five parallel build jobs.
+- **Cause:** the taker ran its setup before its first Accept, while the old daemon had closed its copy.
+- **Guard:** `TestAcceptAhead` (internal/routerd/acceptahead_test.go), `TestHuddleRouterHandoverScenarios` (internal/routerd/handover_scenario_test.go)
+- **Rule:** a daemon accepts on a live port before any setup.

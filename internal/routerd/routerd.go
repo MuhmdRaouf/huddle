@@ -155,6 +155,10 @@ func Run(ctx context.Context, o Options) error {
 // and watches its own resident size. done closes when serve returns; a takeover start's lock
 // holder waits on it.
 func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, log func(line string), listener net.Listener, port int, done chan struct{}) error {
+	// The port is live before the setup runs (a takeover inherits a socket dials already
+	// reach, and the old daemon has stopped accepting), so it accepts ahead of the setup and
+	// the queued connections are served once the server starts.
+	ahead := acceptAhead(listener, log)
 	if done != nil {
 		defer close(done)
 	}
@@ -167,7 +171,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	env = CleanProxyEnv(ctx, env, port, log)
 	anthropic, err := anthropicOf(env)
 	if err != nil {
-		_ = listener.Close()
+		_ = ahead.Close()
 		return err
 	}
 	enabledFile := router.EnabledFile(env)
@@ -231,7 +235,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 				served <- errors.New("huddle-router: panic in the serve loop")
 			}
 		}()
-		served <- server.Serve(listener)
+		served <- server.Serve(ahead)
 	})
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
