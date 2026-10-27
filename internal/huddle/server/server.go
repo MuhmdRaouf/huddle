@@ -1322,12 +1322,16 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.needsRoute(w, r)
 	case credentialed && path == "/api/needs" && r.Method == http.MethodPost:
 		return s.permitCreateRoute(w, r)
-	// today's insights tips, read-only over the registry's own history, and the owner's switches
-	// over them
+	// today's insights tips, read-only over the registry's own history, the owner's switches
+	// over them, and the owner's mute and forget over the rules
 	case credentialed && path == "/api/insights" && r.Method == http.MethodGet:
 		return s.insightsRoute(w, r)
 	case credentialed && path == "/api/insights/settings" && (r.Method == http.MethodGet || r.Method == http.MethodPut):
 		return s.insightsSettingsRoute(w, r)
+	case credentialed && path == "/api/insights/mute" && r.Method == http.MethodPost:
+		return s.insightsMuteRoute(w, r)
+	case credentialed && path == "/api/insights/forget" && r.Method == http.MethodPost:
+		return s.insightsForgetRoute(w, r)
 	case credentialed && permitItemPath.MatchString(path):
 		return s.permitItemRoute(w, r, path, me)
 	case credentialed && needsItemPath.MatchString(path) && r.Method == http.MethodPost:

@@ -186,7 +186,9 @@ surface live in the huddle skill and `huddle help`.
 The dashboard's Insights card reads the hub's own tips and each session's. "Tips to my sessions"
 lets a session's own hooks ask for tips about it: with it on, a prompt or a start adds one line to
 the session's context when the hub has a tip about it, and each tip reaches a session once. A
-harness that only speaks MCP reads the same tips from the resource `huddle://insights`.
+harness that only speaks MCP reads the same tips from the resource `huddle://insights`. "Not
+useful" on a tip mutes its rule for 30 days, and "Forget what you learned" deletes insights.json,
+which resets both switches.
 
 The tips:
 

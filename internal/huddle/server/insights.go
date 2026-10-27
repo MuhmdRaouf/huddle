@@ -12,6 +12,8 @@ package server
 
 import (
 	"net/http"
+	"regexp"
+	"slices"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
@@ -140,6 +142,9 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	tips := insights.Detect(in)
+	// a rule the owner muted leaves the answer, the owner's and every session's, until its 30
+	// days run out
+	tips = insights.WithoutMuted(tips, insights.MutedRules(insights.SettingsFile(s.o.Home), now))
 	views := make([]tipView, 0, len(tips))
 	for _, tip := range tips {
 		if session != "" && tip.Session != session {
@@ -198,5 +203,48 @@ func (s *server) insightsSettingsRoute(w http.ResponseWriter, r *http.Request) e
 		return err
 	}
 	s.writeJSON(w, 200, insightsSettingsAnswer{TipsForMe: got.TipsForMe, TipsToSessions: got.TipsToSessions}, nil)
+	return nil
+}
+
+// muteRuleRe names the rule a mute takes: an Insights rule name, nothing else.
+var muteRuleRe = regexp.MustCompile(`^[a-z_]{1,64}$`)
+
+// insightsMuteAnswer is the mute route's whole body.
+type insightsMuteAnswer struct {
+	Muted []string `json:"muted"`
+}
+
+// insightsMuteRoute answers POST /api/insights/mute: the owner mutes one rule's tips for 30
+// days. The body names the rule; the answer names every rule muted now, sorted.
+func (s *server) insightsMuteRoute(w http.ResponseWriter, r *http.Request) error {
+	body, err := s.body(r)
+	if err != nil {
+		return err
+	}
+	rule := fieldOf(body, "rule")
+	if rule == nil || rule.Kind() != jsfmt.KindString || !muteRuleRe.MatchString(rule.Text()) {
+		return &channel.HuddleError{Status: 400, Msg: "rule: the rule to mute, like same_command"}
+	}
+	path := insights.SettingsFile(s.o.Home)
+	if err := insights.Mute(path, rule.Text(), s.now()); err != nil {
+		return err
+	}
+	muted := insights.MutedRules(path, s.now())
+	rules := make([]string, 0, len(muted))
+	for name := range muted {
+		rules = append(rules, name)
+	}
+	slices.Sort(rules)
+	s.writeJSON(w, 200, insightsMuteAnswer{Muted: rules}, nil)
+	return nil
+}
+
+// insightsForgetRoute answers POST /api/insights/forget: it deletes insights.json, the only
+// learning Insights keeps, and the switches answer their defaults again.
+func (s *server) insightsForgetRoute(w http.ResponseWriter, r *http.Request) error {
+	if err := insights.Forget(insights.SettingsFile(s.o.Home)); err != nil {
+		return err
+	}
+	s.writeJSON(w, 200, insightsSettingsAnswer{TipsForMe: true, TipsToSessions: false}, nil)
 	return nil
 }
