@@ -2,14 +2,14 @@ package server
 
 // The insights route: today's tips over the history the registry already holds, the owner's
 // credential only. The owner's card (no session) reads the needs-you history, the lanes'
-// requests and the model advisor's rows from the mounted radar tab and the registry's own
-// session spans, so the always_allowed, longest_wait, lane_failing, long_day and
-// model_oversized rules are the ones that can fire there; a session's answer adds that
-// session's tool runs from the mounted radar tab, and same_command is the rule they add:
-// tool_failing needs the error text radar does not record, and a lane's health, a day's
-// length and a model's cost are no one session's, so the session's answer leaves all four
-// out. Both answers add the subagents' recent starts and stops from the mounted
-// radar tab, so subagent_silent can fire on either.
+// requests, the model advisor's rows and the ledger's project days from the mounted radar tab
+// and the registry's own session spans, so the always_allowed, longest_wait, lane_failing,
+// long_day, model_oversized and project_cost rules are the ones that can fire there; a
+// session's answer adds that session's tool runs from the mounted radar tab, and same_command
+// is the rule they add: tool_failing needs the error text radar does not record, and a lane's
+// health, a day's length, a model's cost and a project's spend are no one session's, so the
+// session's answer leaves all five out. Both answers add the subagents' recent starts and
+// stops from the mounted radar tab, so subagent_silent can fire on either.
 
 import (
 	"net/http"
@@ -48,7 +48,8 @@ type insightsSettingsAnswer struct {
 // supports, read-only over the registry's own rows. The owner's answer adds the lanes' requests
 // of the last 24 h from the mounted radar tab, so a lane that keeps failing names itself there,
 // the model advisor's rows, so a model its flash sibling would have served cheaper names itself
-// too, and the registry's session spans, so a day of long sessions does too. Both answers add
+// too, the ledger's project days, so a project spending past twice its 7-day average names
+// itself too, and the registry's session spans, so a day of long sessions does too. Both answers add
 // the subagents' starts and stops of the last 2 h from the mounted radar tab, so a run with no
 // stop event names itself to whoever reads.
 // A session query narrows the answer to that session: its rows alone go in, its tool runs come
@@ -114,8 +115,9 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 			})
 		}
 	}
-	// the owner's answer adds the lanes' own requests, the model advisor's rows and the
-	// sessions' spans; a lane's health, a model's cost and a day's length are no one session's
+	// the owner's answer adds the lanes' own requests, the model advisor's rows, the projects'
+	// days and the sessions' spans; a lane's health, a model's cost, a project's spend and a
+	// day's length are no one session's
 	if session == "" && s.radar != nil {
 		for _, request := range s.radar.RequestsSince(r.Context(), now.Add(-24*time.Hour)) {
 			in.Requests = append(in.Requests, insights.Request{
@@ -135,6 +137,13 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 				Runs:      int(model.Runs),
 				SavingUsd: saving,
 				Priced:    model.CostUsd != nil && model.FlashCostUsd != nil,
+			})
+		}
+		for _, day := range s.radar.ProjectDays() {
+			in.ProjectDays = append(in.ProjectDays, insights.ProjectDay{
+				Project: day.Project,
+				DaysAgo: day.DaysAgo,
+				CostUSD: day.CostUsd,
 			})
 		}
 	}

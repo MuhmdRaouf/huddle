@@ -72,22 +72,31 @@ type ModelAdvice struct {
 	Priced    bool    // whether the saving is a figure and not an estimate's absence
 }
 
+// ProjectDay is one project's priced spend on one calendar day: DaysAgo 0 is today in the
+// hub's time zone, 1 yesterday, and so on.
+type ProjectDay struct {
+	Project string
+	DaysAgo int
+	CostUSD float64
+}
+
 // Input is everything Detect reads. Now is the clock, so the rules are pure.
 type Input struct {
-	Now       time.Time
-	Tools     []ToolRun
-	Asks      []PermissionAsk
-	Requests  []Request
-	Items     []Item
-	Spans     []SessionSpan
-	Subagents []SubagentRun
-	Models    []ModelAdvice
+	Now         time.Time
+	Tools       []ToolRun
+	Asks        []PermissionAsk
+	Requests    []Request
+	Items       []Item
+	Spans       []SessionSpan
+	Subagents   []SubagentRun
+	Models      []ModelAdvice
+	ProjectDays []ProjectDay
 }
 
 // Tip is one sentence the owner can act on, with the numbers behind it.
 type Tip struct {
 	ID       string // stable for one occurrence: "<rule>:<what it is about>"
-	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing, RuleLongestWait, RuleLongDay, RuleSubagentSilent or RuleModelOversized
+	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing, RuleLongestWait, RuleLongDay, RuleSubagentSilent, RuleModelOversized or RuleProjectCost
 	Session  string // the session a tip is about; "" for a tip about the whole huddle
 	Sentence string
 	Count    int           // the runs or asks behind the tip
@@ -103,6 +112,7 @@ const (
 	RuleLongDay        = "long_day"
 	RuleSubagentSilent = "subagent_silent"
 	RuleModelOversized = "model_oversized"
+	RuleProjectCost    = "project_cost"
 )
 
 // The points each rule fires at.
@@ -122,6 +132,7 @@ func Detect(in Input) []Tip {
 	tips = append(tips, longestWaitTips(in)...)
 	tips = append(tips, subagentSilentTips(in)...)
 	tips = append(tips, modelOversizedTips(in)...)
+	tips = append(tips, projectCostTips(in)...)
 	slices.SortFunc(tips, func(a, b Tip) int {
 		if byRule := cmp.Compare(a.Rule, b.Rule); byRule != 0 {
 			return byRule

@@ -210,6 +210,7 @@ The tips:
 - A subagent started over 20 minutes ago and has no stop event; the card names it and its age.
 - Subagent runs on a main model look small enough for its flash sibling; the card names the
   model, the sibling and the saving.
+- A project whose spend today passes twice its 7-day average gets one tip with the numbers.
 
 ### Reach an idle session
 

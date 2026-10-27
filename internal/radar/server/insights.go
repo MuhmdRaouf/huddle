@@ -446,6 +446,14 @@ func (i *Insights) Attribution(by cost.AttributionBy, span cost.AttributionRange
 	return cost.Attribute(i.ledgerRowsLocked(), by, i.namesLocked(), cost.RangeStart(span, i.nowMs(), i.zone()))
 }
 
+// ProjectDays answers the ledger's priced spend per project and calendar day over the last
+// `days` days, the window the project-cost rule reads.
+func (i *Insights) ProjectDays(days int) []cost.ProjectDay {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return cost.ProjectDays(i.ledgerRowsLocked(), i.namesLocked(), i.nowMs(), i.zone(), days)
+}
+
 // Tree is the costs drill-down over the same rows: repos → sessions → agents → models.
 func (i *Insights) Tree(span cost.AttributionRange) []cost.AttributionNode {
 	i.mu.Lock()
