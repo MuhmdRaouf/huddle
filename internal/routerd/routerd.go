@@ -23,6 +23,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/gateway"
+	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 )
 
 const (
@@ -32,6 +33,8 @@ const (
 	anthropicDefault = "https://api.anthropic.com"
 	// stopBudget is how long a shutdown lets the streams in flight finish.
 	stopBudget = 10 * time.Second
+	// bodySweepEvery is how often the daemon prunes the bodies past their days.
+	bodySweepEvery = time.Hour
 )
 
 // Options shapes one daemon run.
@@ -53,6 +56,9 @@ type Options struct {
 	// RSSCeiling is the resident size over which the daemon hands itself over to a fresh copy
 	// of its own binary; 0 takes $HUDDLE_ROUTER_RSS_CEILING_MB, else one GiB.
 	RSSCeiling int64
+	// BodyKey is where the body key is drawn and kept; nil is the login keystore
+	// (platformBodyKey). Tests pass a fake.
+	BodyKey ledger.KeySource
 	// panicOnce is a test-only hook the handler runs before serving, so a scenario can put a
 	// panic in a lane and prove the recovery.
 	panicOnce func(req *http.Request)
@@ -177,6 +183,13 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	}
 	// The CA is the one directory every provider's setup points NODE_EXTRA_CA_CERTS at: the
 	// state roots' parent, where the shared local CA lives.
+	source := o.BodyKey
+	if source == nil {
+		source = platformBodyKey(env)
+	}
+	tap, bodyStore := openBodies(ctx, env, source, log)
+	kept := &bodies{tap: tap, store: bodyStore}
+	kept.sweep(ctx, log)
 	server, multi := router.CreateMulti(router.MultiOptions{
 		Port:      port,
 		Anthropic: anthropic,
@@ -186,6 +199,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 		Log:       log,
 		Events:    spool.CreateSpoolWriter(env, log, nil),
 		Gateway:   gatewayOf(env, log),
+		Tap:       kept.tap,
 	})
 	server.Handler = guardPanics(server.Handler, log, o.panicOnce)
 	// The handover socket listens before the first health answer: a taker that sees the router
@@ -215,10 +229,11 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	interval := rssIntervalOf(env)
 	spawned := time.Time{}
 	nextRSS := time.Now().Add(interval)
+	nextSweep := time.Now().Add(bodySweepEvery)
 	for {
 		select {
 		case <-ctx.Done():
-			return stop(server, recordFile, log)
+			return stop(server, recordFile, kept, log)
 		case err := <-served:
 			_ = os.Remove(recordFile)
 			if errors.Is(err, http.ErrServerClosed) {
@@ -226,7 +241,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 			}
 			return err
 		case taker := <-handed:
-			return handOver(server, multi, taker, log)
+			return handOver(server, multi, kept, taker, log)
 		case <-ticker.C:
 			now := statOf(enabledFile)
 			if now != before {
@@ -245,6 +260,10 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 			if !nextRSS.After(time.Now()) {
 				nextRSS = time.Now().Add(interval)
 				spawned = checkRSS(ceiling, spawned, env, log)
+			}
+			if !nextSweep.After(time.Now()) {
+				nextSweep = time.Now().Add(bodySweepEvery)
+				kept.sweep(ctx, log)
 			}
 		}
 	}
@@ -315,14 +334,15 @@ func guardPanics(next http.Handler, log func(line string), hook func(req *http.R
 	})
 }
 
-// stop drains the router with a bounded budget, then takes its record with it. The lock's
-// release runs on Run's defer.
-func stop(server *http.Server, recordFile string, log func(line string)) error {
+// stop drains the router with a bounded budget, writes the tap's queue into the body store and
+// closes it, then takes the record with it. The lock's release runs on Run's defer.
+func stop(server *http.Server, recordFile string, kept *bodies, log func(line string)) error {
 	budget, cancel := context.WithTimeout(context.Background(), stopBudget)
 	defer cancel()
 	if err := server.Shutdown(budget); err != nil {
 		log("huddle-router: " + err.Error())
 	}
+	kept.close(log)
 	_ = os.Remove(recordFile)
 	return nil
 }

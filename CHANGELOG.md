@@ -32,6 +32,9 @@ ran separately is now one process set.
 - Setup writes proxy mode: `HTTPS_PROXY` at the router, `NODE_EXTRA_CA_CERTS` at the shared local CA in
   `~/.agents/ca`, loopback entries in `NO_PROXY`. A proxy or CA of your own is never touched; removing a
   provider keeps the shared keys while another is set up, and restores `settings.json` after the last.
+- huddle-router keeps every request's and answer's body for 7 days in `~/.agents/radar/ledger/router.db`,
+  redacted and sealed under a key in the login account's keystore, and prunes the spent ones at start and every
+  hour. With no keystore, bodies stay off and the router serves as always.
 
 ### Jobs
 

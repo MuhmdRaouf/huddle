@@ -204,18 +204,18 @@ func (s *BodyStore) appendSegment(name string, packed []byte) (string, int64, er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	path := filepath.Join(s.dir, name)
-	offset := int64(0)
-	if info, err := os.Stat(path); err == nil {
-		offset = info.Size()
-	} else if !os.IsNotExist(err) {
-		return "", 0, fmt.Errorf("stat %s: %w", path, err)
-	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return "", 0, fmt.Errorf("open %s: %w", path, err)
 	}
 	written, err := file.Write(packed)
+	// The offset comes from the file after the write, not from a stat before it: O_APPEND
+	// placed these bytes at the end for sure, and two stores on one file stat the same size.
+	pos, seekErr := file.Seek(0, io.SeekCurrent)
 	closeErr := file.Close()
+	if err == nil {
+		err = seekErr
+	}
 	if err == nil {
 		err = closeErr
 	}
@@ -225,7 +225,7 @@ func (s *BodyStore) appendSegment(name string, packed []byte) (string, int64, er
 	if err != nil {
 		return "", 0, fmt.Errorf("append to %s: %w", path, err)
 	}
-	return name, offset, nil
+	return name, pos - int64(written), nil
 }
 
 // Body reads a stored body back byte for byte, answering false when the request and side

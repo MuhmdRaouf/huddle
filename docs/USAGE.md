@@ -88,7 +88,10 @@ huddle-router is up at http://127.0.0.1:18786 · pid 41188
 The router stays out of the way of a session: it adds under 5 ms to the first byte of a streamed answer and
 under 1 ms to each chunk, on a provider lane and on the decrypted `api.anthropic.com` path alike, and with no
 request in flight it uses under 0.5% of one core. `TestE2ERouterOverhead` and `TestRouterIdleCPU` hold it to
-both budgets.
+both budgets. Beside that, huddle-router keeps every request's and answer's body for 7 days in
+`~/.agents/radar/ledger/router.db` — redacted, and sealed under a key in the login account's keystore — so the
+dashboard can show a session's whole exchange afterwards; with no keystore (a home that is not the login
+account's, as an agent's or a test's is), bodies stay off and nothing is written.
 
 A lane can fall back to another of its provider's models when one keeps failing. List them under the
 provider in `~/.agents/huddle-router/providers.json`:

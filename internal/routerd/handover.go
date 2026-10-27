@@ -233,10 +233,10 @@ type tunnels interface {
 
 // handOver is the daemon's answer to a taker: the listening socket is the taker's now, so
 // Shutdown closes the daemon's own copy of it (the taker's dup keeps the port open) and lets the
-// requests in flight finish, the tunnels drain after them, all within ten minutes, and the run
-// returns nil. The lock's release is Run's defer, and the record stays for the taker to
-// overwrite.
-func handOver(server *http.Server, open tunnels, taker int, log func(line string)) error {
+// requests in flight finish, the tunnels drain after them, the tap's queue is written and the
+// store closed once nothing is serving, all within ten minutes, and the run returns nil. The
+// lock's release is Run's defer, and the record stays for the taker to overwrite.
+func handOver(server *http.Server, open tunnels, kept *bodies, taker int, log func(line string)) error {
 	log(fmt.Sprintf("huddle-router: handed over to pid %d; draining", taker))
 	budget, cancel := context.WithTimeout(context.Background(), drainBudget)
 	defer cancel()
@@ -246,6 +246,7 @@ func handOver(server *http.Server, open tunnels, taker int, log func(line string
 	if err := open.Drain(budget); err != nil {
 		log("huddle-router: tunnels: " + err.Error())
 	}
+	kept.close(log)
 	return nil
 }
 
