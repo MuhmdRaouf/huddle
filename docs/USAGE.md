@@ -216,6 +216,7 @@ The tips:
 - A project whose spend today passes twice its 7-day average gets one tip with the numbers.
 - A session past 70% context with nothing committed and no handoff in 30 minutes gets one tip
   to wrap the step.
+- A turn past 45 minutes that edited files with no commit gets one tip to checkpoint.
 
 ### Reach an idle session
 

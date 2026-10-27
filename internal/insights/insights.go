@@ -91,6 +91,16 @@ type Checkpoint struct {
 	LastHandoffAt  time.Time // zero: no digest
 }
 
+// Turn is one live session's turn still running: when its prompt came, how many distinct files
+// it edited since, and its newest commit since. A zero LastCommitAt is one the window saw
+// nothing of.
+type Turn struct {
+	Session      string
+	StartedAt    time.Time
+	Edits        int       // distinct files the turn's edit tools touched
+	LastCommitAt time.Time // zero: no commit since the turn started
+}
+
 // Input is everything Detect reads. Now is the clock, so the rules are pure.
 type Input struct {
 	Now         time.Time
@@ -103,12 +113,13 @@ type Input struct {
 	Models      []ModelAdvice
 	ProjectDays []ProjectDay
 	Checkpoints []Checkpoint
+	Turns       []Turn
 }
 
 // Tip is one sentence the owner can act on, with the numbers behind it.
 type Tip struct {
 	ID       string // stable for one occurrence: "<rule>:<what it is about>"
-	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing, RuleLongestWait, RuleLongDay, RuleSubagentSilent, RuleModelOversized, RuleProjectCost or RuleContextCheckpoint
+	Rule     string // RuleSameCommand, RuleAlwaysAllowed, RuleToolFailing, RuleLaneFailing, RuleLongestWait, RuleLongDay, RuleSubagentSilent, RuleModelOversized, RuleProjectCost, RuleContextCheckpoint or RuleLongTurn
 	Session  string // the session a tip is about; "" for a tip about the whole huddle
 	Sentence string
 	Count    int           // the runs or asks behind the tip
@@ -126,6 +137,7 @@ const (
 	RuleModelOversized    = "model_oversized"
 	RuleProjectCost       = "project_cost"
 	RuleContextCheckpoint = "context_checkpoint"
+	RuleLongTurn          = "long_turn"
 )
 
 // The points each rule fires at.
@@ -147,6 +159,7 @@ func Detect(in Input) []Tip {
 	tips = append(tips, modelOversizedTips(in)...)
 	tips = append(tips, projectCostTips(in)...)
 	tips = append(tips, contextCheckpointTips(in)...)
+	tips = append(tips, longTurnTips(in)...)
 	slices.SortFunc(tips, func(a, b Tip) int {
 		if byRule := cmp.Compare(a.Rule, b.Rule); byRule != 0 {
 			return byRule

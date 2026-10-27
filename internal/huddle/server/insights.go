@@ -9,8 +9,9 @@ package server
 // is the rule they add: tool_failing needs the error text radar does not record, and a lane's
 // health, a day's length, a model's cost and a project's spend are no one session's, so the
 // session's answer leaves all five out. Both answers add the subagents' recent starts and
-// stops from the mounted radar tab, so subagent_silent can fire on either, and the registry's
-// live sessions' checkpoints, so context_checkpoint can too.
+// stops from the mounted radar tab, so subagent_silent can fire on either, the registry's
+// live sessions' checkpoints, so context_checkpoint can, and the registry's live sessions'
+// open turns, so long_turn can too.
 
 import (
 	"net/http"
@@ -52,10 +53,12 @@ type insightsSettingsAnswer struct {
 // too, the ledger's project days, so a project spending past twice its 7-day average names
 // itself too, and the registry's session spans, so a day of long sessions does too. Both answers add
 // the subagents' starts and stops of the last 2 h from the mounted radar tab, so a run with no
-// stop event names itself to whoever reads, and the registry's live sessions' checkpoints — the
+// stop event names itself to whoever reads, the registry's live sessions' checkpoints — the
 // context percent, the newest commit run of the last 24 h and the newest handoff digest of every
 // session still running — so a session past 70% context with no commit and no handoff in 30
-// minutes names itself to whoever reads.
+// minutes names itself to whoever reads, and the registry's live sessions' open turns — the
+// newest prompt of the last 24 h and the edits and commits since it — so a turn past 45 minutes
+// that edited files and committed nothing names itself to whoever reads.
 // A session query narrows the answer to that session: its rows alone go in, its tool runs come
 // in from the mounted radar tab and add same_command alone (tool_failing needs the error text
 // radar does not record), and its tips alone come out. Tips for me gates the owner's answer,
@@ -187,6 +190,21 @@ func (s *server) insightsRoute(w http.ResponseWriter, r *http.Request) error {
 			LastEventAt:    cp.LastEventAt,
 			LastCommitAt:   cp.LastCommitAt,
 			LastHandoffAt:  cp.LastHandoffAt,
+		})
+	}
+	// both answers add the live sessions' open turns: a long uncommitted turn is its session's
+	// fact and the huddle's, and the per-session filter below keeps each tip to its own
+	// session's answer
+	turns, err := s.registry.OpenTurns(r.Context(), now.Add(-24*time.Hour))
+	if err != nil {
+		return err
+	}
+	for _, turn := range turns {
+		in.Turns = append(in.Turns, insights.Turn{
+			Session:      turn.SessionID,
+			StartedAt:    turn.StartedAt,
+			Edits:        turn.Edits,
+			LastCommitAt: turn.LastCommitAt,
 		})
 	}
 	tips := insights.Detect(in)
