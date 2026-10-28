@@ -120,7 +120,7 @@
 
   /** The title, body and tag one payload shows: a session's entry says Needs you and is tagged
    *  by its session, a failing path names itself with radar's detail and keeps one
-   *  notification, an item names its tool or kind. */
+   *  notification, a failing part of the hub says its name, an item names its tool or kind. */
   function shownOf(payload) {
     var on = payload.machine ? " on " + payload.machine : "";
     if (payload.kind === "session") {
@@ -128,6 +128,9 @@
     }
     if (payload.kind === "upstream_failing") {
       return { title: "Anthropic path failing", body: (payload.detail || "") + on, tag: "huddle-upstream" };
+    }
+    if (payload.kind === "health") {
+      return { title: "Huddle part failing", body: (payload.name || "") + on, tag: "huddle-health-" + payload.name };
     }
     return { title: payload.tool || payload.kind, body: payload.session + on, tag: "huddle-item-" + payload.item };
   }

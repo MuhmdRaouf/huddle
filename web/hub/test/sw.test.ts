@@ -416,6 +416,18 @@ describe("push", () => {
     expect(shown.options.actions).toEqual([{ action: "open", title: "Open" }]);
   });
 
+  it("shows a failing part of the hub with its name, one notification per part", async () => {
+    const w = worker();
+    await w.pushed({ kind: "health", name: "history.db", machine: "mac", url: "/#/settings/hub" });
+    expect(w.shown).toHaveLength(1);
+    const shown = w.shown[0];
+    if (!shown) throw new Error("nothing shown");
+    expect(shown.title).toBe("Huddle part failing");
+    expect(shown.options.body).toBe("history.db on mac");
+    expect(shown.options.tag).toBe("huddle-health-history.db");
+    expect(shown.options.actions).toEqual([{ action: "open", title: "Open" }]);
+  });
+
   it("sets the Home Screen badge to the payload's open needs-you count", async () => {
     const setAppBadge = vi.fn((_count?: number) => Promise.resolve());
     const clearAppBadge = vi.fn(() => Promise.resolve());
