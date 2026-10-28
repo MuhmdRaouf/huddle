@@ -4,6 +4,7 @@
 // offers a code-signed-in browser a passkey of its own. The QR rows the server sends become an
 // SVG here: no script, no canvas, nothing but rects.
 
+import { Button } from "@huddle/ui/button.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -27,7 +28,10 @@ function grouped(secret: string): string {
   return (secret.match(/.{1,4}/g) ?? [secret]).join(" ");
 }
 
-/** The QR as one SVG: one rect per horizontal run of dark modules, on the white the scan needs. */
+/** The QR as one SVG: one rect per horizontal run of dark modules, on the paper the container
+ *  paints with --ui-qr-bg (a QR scans on white, in either scheme). The modules take the constant
+ *  scan black: no token holds a dark-in-both-schemes ink, and a QR's black is the standard's,
+ *  the same black the server's own phone QR paints. */
 function QRCode({ rows, label }: { rows: string[]; label: string }): JSX.Element | null {
   if (rows.length === 0 || rows.some((row) => row.length !== rows.length)) return null;
   const n = rows.length;
@@ -52,11 +56,10 @@ function QRCode({ rows, label }: { rows: string[]; label: string }): JSX.Element
         shapeRendering="crispEdges"
         role="img"
         aria-label={label}
-        class="w-full max-w-[216px]"
+        class="w-full max-w-54"
       >
-        <rect width={n} height={n} fill="#fff" />
         {runs.map((r) => (
-          <rect key={`${r.x}-${r.y}`} x={r.x} y={r.y} width={r.w} height={1} fill="#0f172a" />
+          <rect key={`${r.x}-${r.y}`} x={r.x} y={r.y} width={r.w} height={1} fill="black" />
         ))}
       </svg>
     </div>
@@ -149,21 +152,17 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
           ))}
         </ul>
         <div class="flex flex-wrap gap-2">
-          <button
-            type="button"
-            class="ui-btn ui-btn-secondary"
-            onClick={() => copy(all, "Recovery codes copied")}
-          >
+          <Button variant="secondary" onClick={() => copy(all, "Recovery codes copied")}>
             <Icon name="copy" />
             Copy
-          </button>
-          <button type="button" class="ui-btn ui-btn-secondary" onClick={download}>
+          </Button>
+          <Button variant="secondary" onClick={download}>
             <Icon name="download" />
             Download .txt
-          </button>
-          <button type="button" class="ui-btn ui-btn-primary ml-auto w-full sm:w-auto" onClick={onDone}>
+          </Button>
+          <Button class="ml-auto w-full sm:w-auto" onClick={onDone}>
             I saved them, continue
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -188,14 +187,14 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
               >
                 {grouped(secret)}
               </code>
-              <button
-                type="button"
-                class="ui-btn ui-btn-ghost ui-btn-icon"
-                aria-label="Copy the secret"
+              <Button
+                variant="ghost"
+                class="ui-btn-icon"
+                label="Copy the secret"
                 onClick={() => copy(secret, "Secret copied")}
               >
                 <Icon name="copy" />
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>
@@ -219,7 +218,7 @@ export function TotpFirstRun({ onDone, onLater }: { onDone: () => void; onLater:
           <h1 class="m-0 text-[length:var(--ui-text-xl)] leading-tight font-bold tracking-tight">
             Set up your authenticator app
           </h1>
-          <p class="m-0 text-[15px] text-[var(--ui-muted)]">
+          <p class="m-0 text-[length:var(--ui-text-md)] text-[var(--ui-muted)]">
             This is how you sign in to Huddle from any browser: a code from your app, no terminal and no link.
             It takes a minute.
           </p>
@@ -227,9 +226,9 @@ export function TotpFirstRun({ onDone, onLater }: { onDone: () => void; onLater:
         <div class="ui-card min-w-0 p-4 sm:p-6">
           <TotpSetup onDone={onDone} />
         </div>
-        <button type="button" class="ui-btn ui-btn-ghost mx-auto" data-totp-later="" onClick={onLater}>
+        <Button variant="ghost" class="mx-auto" data-totp-later="" onClick={onLater}>
           Later — sign in with a link instead
-        </button>
+        </Button>
       </div>
     </main>
   );
@@ -298,7 +297,7 @@ export function AuthenticatorCard({
     >
       {sheet}
       <div class="flex min-w-0 flex-col">
-        <span class="text-[15px]">Authenticator app</span>
+        <span class="text-[length:var(--ui-text-md)]">Authenticator app</span>
         <span class="text-xs text-[var(--ui-muted)]">
           {enrolled
             ? "A code from your app signs any browser in."
@@ -306,13 +305,13 @@ export function AuthenticatorCard({
         </span>
       </div>
       {enrolled ? (
-        <button type="button" class="ui-btn ui-btn-danger" disabled={busy} onClick={() => void remove()}>
+        <Button variant="danger" disabled={busy} onClick={() => void remove()}>
           Remove
-        </button>
+        </Button>
       ) : (
-        <button type="button" class="ui-btn ui-btn-primary" disabled={busy} onClick={() => setSetting(true)}>
+        <Button disabled={busy} onClick={() => setSetting(true)}>
           Set up
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -377,7 +376,11 @@ export function PasskeyOffer({
     <Dialog open={open} onClose={onClose} title={word.title} labeledBy="passkey-offer-h">
       <div class="flex flex-col gap-4" data-passkey-offer="">
         <p class="m-0 text-sm text-[var(--ui-muted)]">
-          Sign in next time with this device's lock instead of a code. The code keeps working as the fallback.
+          {/* one string, not bare JSX text: the sentence's own apostrophe would open a quote the
+           * design guard's lexer reads across */}
+          {
+            "Sign in next time with this device's lock instead of a code. The code keeps working as the fallback."
+          }
         </p>
         {error ? (
           <p role="alert" class="m-0 text-sm text-[var(--ui-fail-ink)]">
@@ -385,12 +388,12 @@ export function PasskeyOffer({
           </p>
         ) : null}
         <div class="flex justify-end gap-2">
-          <button type="button" class="ui-btn ui-btn-ghost" disabled={busy} onClick={onClose}>
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
             Not now
-          </button>
-          <button type="button" class="ui-btn ui-btn-primary" disabled={busy} onClick={() => void turnOn()}>
+          </Button>
+          <Button disabled={busy} onClick={() => void turnOn()}>
             Turn on
-          </button>
+          </Button>
         </div>
       </div>
     </Dialog>

@@ -51,10 +51,6 @@
     "control": 5,
     "px": 5
   },
-  "app/Pair.tsx": {
-    "control": 5,
-    "px": 2
-  },
   "app/Palette.tsx": {
     "control": 1
   },
@@ -83,12 +79,6 @@
   "app/TopBar.tsx": {
     "control": 3,
     "px": 5
-  },
-  "app/Totp.tsx": {
-    "colour": 2,
-    "control": 9,
-    "legacy": 1,
-    "px": 3
   },
   "app/layout.ts": {
     "px": 2

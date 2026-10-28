@@ -3,6 +3,8 @@
 // The three stages are the approved design's: the name the device offers, the code both sides
 // compare, and the passkey the browser creates once the owner says the codes match.
 
+import { Button } from "@huddle/ui/button.tsx";
+import { Field } from "@huddle/ui/field.tsx";
 import type { JSX } from "preact";
 import { useState } from "preact/hooks";
 import { Icon, Logo } from "../icons.tsx";
@@ -143,7 +145,9 @@ export function Pair({
           {head}
           <div class="ui-card flex flex-col items-center gap-2 p-5">
             <span class="text-xs tracking-widest uppercase text-[var(--ui-muted)]">Pairing code</span>
-            <span class="ui-mono text-[34px] font-medium tracking-[0.12em]">{code}</span>
+            {/* the pairing code keeps its 34 px: 2.2667 rem at the 15 px root, the size the
+             *  terminal's own code prints at, so the two read as one */}
+            <span class="ui-mono text-[length:2.2667rem] font-medium tracking-[0.12em]">{code}</span>
             <span class="ui-mono text-xs text-[var(--ui-muted)]">{expiresLabel(expiresIn)}</span>
           </div>
           <p class="m-0 text-sm text-[var(--ui-muted)]">Check this matches the code in your terminal</p>
@@ -154,26 +158,21 @@ export function Pair({
               </p>
             ) : null}
             {retryable ? (
-              <button
-                type="button"
-                class="ui-btn ui-btn-secondary w-full"
+              <Button
+                variant="secondary"
+                class="w-full"
                 disabled={busy}
                 onClick={() => void createAndFinish()}
               >
                 Retry
-              </button>
+              </Button>
             ) : null}
-            <button
-              type="button"
-              class="ui-btn ui-btn-primary ui-btn-lg w-full"
-              disabled={busy}
-              onClick={() => void createAndFinish()}
-            >
+            <Button size="lg" class="w-full" disabled={busy} onClick={() => void createAndFinish()}>
               It matches
-            </button>
-            <button type="button" class="ui-btn ui-btn-ghost w-full" onClick={() => setStage("cancelled")}>
+            </Button>
+            <Button variant="ghost" class="w-full" onClick={() => setStage("cancelled")}>
               The code does not match
-            </button>
+            </Button>
           </div>
         </div>
       </main>
@@ -184,7 +183,7 @@ export function Pair({
     <main data-pair="" data-pair-stage="name" class="ui-page flex flex-col">
       <div class={COLUMN}>
         {head}
-        <p class="m-0 text-[15px] text-[var(--ui-muted)]">
+        <p class="m-0 text-[length:var(--ui-text-md)] text-[var(--ui-muted)]">
           You ran <code class="ui-mono text-[var(--ui-text)]">huddle pair</code> on your computer. Check the
           code matches what your terminal shows.
         </p>
@@ -203,23 +202,20 @@ export function Pair({
           </li>
         </ul>
         <div class="mt-auto flex flex-col gap-2">
-          <label class="ui-field">
-            <span class="ui-field-label">Device name</span>
-            <input class="ui-input" value={name} onInput={(e) => setName(e.currentTarget.value)} />
-          </label>
+          <Field label="Device name" value={name} onInput={setName} />
           {error ? (
             <p role="alert" class="m-0 text-sm text-[var(--ui-fail-ink)]">
               {error}
             </p>
           ) : null}
-          <button
-            type="button"
-            class="ui-btn ui-btn-primary ui-btn-lg w-full"
+          <Button
+            size="lg"
+            class="w-full"
             disabled={busy || name.trim().length === 0}
             onClick={() => void begin()}
           >
             Continue
-          </button>
+          </Button>
         </div>
       </div>
     </main>
