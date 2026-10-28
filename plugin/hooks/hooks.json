@@ -2,7 +2,7 @@
   "hooks": {
     "SessionStart": [
       { "matcher": "startup|resume|clear|compact",
-        "hooks": [{ "type": "command", "command": "h=\"${AGENTS_HUDDLE_HOME:-$HOME/.agents/huddle-bin}/current\"; [ -x \"$h\" ] && exec \"$h\" hook session-start; exec sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook session-start", "timeout": 16 }] }
+        "hooks": [{ "type": "command", "command": "h=\"${AGENTS_HUDDLE_HOME:-$HOME/.agents/huddle-bin}/current\"; [ -x \"$h\" ] && exec \"$h\" hook session-start; exec sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook session-start", "timeout": 15 }] }
     ],
     "UserPromptSubmit": [
       { "hooks": [{ "type": "command", "command": "h=\"${AGENTS_HUDDLE_HOME:-$HOME/.agents/huddle-bin}/current\"; [ -x \"$h\" ] && exec \"$h\" hook user-prompt-submit; exec sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook user-prompt-submit", "timeout": 5 }] }

@@ -163,7 +163,7 @@ func TestBudget(t *testing.T) {
 		{"session-start", "kanban", 2500 * time.Millisecond, true},
 		{"session-start", "agents", 100 * time.Millisecond, true},
 		{"user-prompt-submit", "tips", 400 * time.Millisecond, true},
-		{"session-start", "tips", 500 * time.Millisecond, true},
+		{"session-start", "tips", 400 * time.Millisecond, true},
 		{"stop", "tips", 0, false},
 		{"no-such-event", "report", 0, false},
 		{"pre-compact", "report", 0, false},

@@ -25,8 +25,9 @@ func Events() map[string][]Part {
 		"session-start": {
 			{"session-start", 3000 * time.Millisecond},
 			// The session's own tip line: the first tip the hub holds that the session has
-			// not seen, once per tip.
-			{"tips", 500 * time.Millisecond},
+			// not seen, once per tip. Granted its 400 ms worst case, so the agents part fits
+			// and the event's 15 s sits at its 90 % floor.
+			{"tips", 400 * time.Millisecond},
 			{"report", 1900 * time.Millisecond},
 			{"radar", 1600 * time.Millisecond},
 			{"kanban", 2500 * time.Millisecond},

@@ -133,7 +133,7 @@ func launcherLine(name string) string {
 // Code, not only observe it.
 func TestHooksJSONRunsTheLauncher(t *testing.T) {
 	want := []launcherHook{
-		{Event: "SessionStart", Matcher: "startup|resume|clear|compact", Name: "session-start", Command: launcherLine("session-start"), Timeout: 16},
+		{Event: "SessionStart", Matcher: "startup|resume|clear|compact", Name: "session-start", Command: launcherLine("session-start"), Timeout: 15},
 		{Event: "UserPromptSubmit", Name: "user-prompt-submit", Command: launcherLine("user-prompt-submit"), Timeout: 5},
 		{Event: "PreToolUse", Matcher: "Bash", Name: "approve", Command: launcherLine("approve"), Timeout: 5},
 		{Event: "PreToolUse", Name: "pre-tool-use", Command: launcherLine("pre-tool-use"), Timeout: 5},
