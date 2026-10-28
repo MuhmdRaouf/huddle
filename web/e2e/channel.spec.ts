@@ -365,3 +365,43 @@ test("the channel's Settings view lists the sessions linked into it", async ({ p
     }
   }
 });
+
+test("the channel's settings page holds the mock's sections and saves the name", async ({
+  page,
+}, info) => {
+  const ch = await freshChannel(info.project.name, []);
+  await openChannel(page, ch);
+  await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/settings`);
+  await expect(page.locator('[data-section="about"]')).toBeVisible();
+
+  // the sections stand in the mock's order: linked sessions between Repository and This browser
+  const order = await page.evaluate(() =>
+    [...document.querySelectorAll("[data-section], [data-linked-sessions]")].map(
+      (el) => el.getAttribute("data-section") ?? "linked",
+    ),
+  );
+  expect(order).toEqual(["about", "members", "turn", "repo", "linked", "browser", "export"]);
+
+  // a fresh channel's rows fall back to the mock's quiet words
+  await expect(page.locator('[data-section="about"]')).toContainText(ch);
+  await expect(page.locator('[data-section="about"]')).toContainText("None");
+  await expect(page.locator('[data-section="members"]')).toContainText("Any local session");
+  await expect(page.locator('[data-section="turn"]')).toContainText("Free (parallel)");
+  await expect(page.locator('[data-section="repo"]')).toContainText("Not set");
+
+  // About › Name opens the sheet; a save posts the title and the row says it
+  const about = page.locator('[data-section="about"]');
+  const nameRow = about.getByRole("button", { name: /^Name/ });
+  await expectTapTargets([nameRow]);
+  await nameRow.click();
+  const sheet = page.getByRole("dialog", { name: "About" });
+  await expect(sheet).toBeVisible();
+  // the Field input, addressed by class: the sheet title's and the field's Preact useId ids
+  // collide, so the label's for lands on the title and the input keeps no accessible name
+  await sheet.locator("input.ui-input").fill(`Named ${ch}`);
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await expect(sheet).toBeHidden();
+  await expect(about).toContainText(`Named ${ch}`);
+  await expectNoSideScroll(page);
+  await expectAccessible(page, SHELL);
+});

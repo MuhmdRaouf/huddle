@@ -195,7 +195,7 @@
   },
   "pages/LinkedSessions.tsx": {
     "control": 1,
-    "px": 1
+    "px": 0
   },
   "pages/Overview.tsx": {
     "control": 2,
@@ -204,9 +204,9 @@
     "px": 3
   },
   "pages/Settings.tsx": {
-    "control": 12,
-    "daisy": 24,
-    "legacy": 8
+    "control": 4,
+    "daisy": 0,
+    "legacy": 0
   },
   "pages/Team.tsx": {
     "control": 2,

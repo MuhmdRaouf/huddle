@@ -18,6 +18,9 @@ import { ageText, sessionName } from "../registry.ts";
 /** The levels the level select offers, in the picker's own order. */
 const LEVELS: readonly LinkLevel[] = ["overhear", "digest", "on-request"];
 
+/** A quiet note the card says (SettingsTab's NOTE). */
+const NOTE = "m-0 text-sm text-[var(--ui-muted)]";
+
 /** The channel's Linked sessions card: one row per session linked into it. */
 export function LinkedSessions({ channel }: { channel: string }): JSX.Element {
   const { api, toast, now, registry } = useHuddle();
@@ -109,47 +112,43 @@ export function LinkedSessions({ channel }: { channel: string }): JSX.Element {
         ) : null}
         {links === null ? (
           error ? null : (
-            <p class="m-0 text-sm text-[var(--ui-muted)]">Loading…</p>
+            <p class={NOTE}>Loading…</p>
           )
         ) : links.length === 0 ? (
-          <p class="m-0 text-sm text-[var(--ui-muted)]">
-            No sessions linked into this channel. Pick two or more on Now and choose Link.
-          </p>
+          <p class={NOTE}>No sessions linked into this channel. Pick two or more on Now and choose Link.</p>
         ) : (
-          <ul class="m-0 flex list-none flex-col p-0">
+          <ul class="ui-list">
             {links.map((l) => {
               const title = titleOf(l.session_id);
               return (
-                <li
-                  key={l.session_id}
-                  data-link={l.session_id}
-                  class="flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[var(--ui-line)] py-1 last:border-b-0"
-                >
-                  <div class="flex min-w-0 items-center gap-2.5">
-                    <StateMark state={stateOf(l.session_id)} />
-                    <span class="truncate text-[15px]">{title}</span>
-                  </div>
-                  <div class="flex shrink-0 items-center gap-2">
-                    {l.digest_at ? (
-                      <span class="text-xs text-[var(--ui-muted)] tabular-nums">
-                        digest {ageText(l.digest_at, now)}
-                      </span>
-                    ) : null}
-                    <select
-                      class="ui-input max-w-36"
-                      aria-label={`Level for ${title}`}
-                      value={l.level}
-                      onChange={(e) => void moveLevel(l.session_id, e.currentTarget.value as LinkLevel)}
-                    >
-                      {LEVELS.map((lv) => (
-                        <option key={lv} value={lv}>
-                          {LEVEL_LABEL[lv]}
-                        </option>
-                      ))}
-                    </select>
-                    <Button variant="ghost" onClick={() => void unlink(l.session_id)}>
-                      Unlink
-                    </Button>
+                <li key={l.session_id} data-link={l.session_id} class="ui-list-item">
+                  <div class="ui-list-row">
+                    <span class="ui-list-leading">
+                      <StateMark state={stateOf(l.session_id)} />
+                    </span>
+                    <span class="ui-list-text">
+                      <span class="ui-list-title">{title}</span>
+                      {l.digest_at ? (
+                        <span class="ui-list-meta tabular-nums">digest {ageText(l.digest_at, now)}</span>
+                      ) : null}
+                    </span>
+                    <span class="ui-list-trailing">
+                      <select
+                        class="ui-input max-w-36"
+                        aria-label={`Level for ${title}`}
+                        value={l.level}
+                        onChange={(e) => void moveLevel(l.session_id, e.currentTarget.value as LinkLevel)}
+                      >
+                        {LEVELS.map((lv) => (
+                          <option key={lv} value={lv}>
+                            {LEVEL_LABEL[lv]}
+                          </option>
+                        ))}
+                      </select>
+                      <Button variant="ghost" onClick={() => void unlink(l.session_id)}>
+                        Unlink
+                      </Button>
+                    </span>
                   </div>
                 </li>
               );
@@ -157,6 +156,7 @@ export function LinkedSessions({ channel }: { channel: string }): JSX.Element {
           </ul>
         )}
       </Card>
+      <p class={NOTE}>Unlinking a session asks for your passkey.</p>
     </div>
   );
 }
