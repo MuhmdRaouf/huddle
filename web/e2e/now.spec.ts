@@ -548,9 +548,12 @@ test("the desktop sets the list and the open pane side by side", async ({ page, 
   // no session was picked: the desk opened the row the list draws first, and the session's pane
   // stands beside the list
   await expect(page.locator("[data-session]")).toBeVisible();
-  const list = await page.locator("[data-sessions-pane]").boundingBox();
-  const pane = await page.locator("[data-session]").boundingBox();
-  expect(list && pane && list.x + list.width).toBeLessThanOrEqual(pane?.x ?? 0);
+  // the desk's auto-open re-renders the list; read both boxes once it settles
+  await expect(async () => {
+    const list = await page.locator("[data-sessions-pane]").boundingBox();
+    const pane = await page.locator("[data-session]").boundingBox();
+    expect(list && pane && list.x + list.width).toBeLessThanOrEqual(pane?.x ?? 0);
+  }).toPass();
 });
 
 test("at tablet width the open session's header keeps its full name", async ({ page }, info) => {
