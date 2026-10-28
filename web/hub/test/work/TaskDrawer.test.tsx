@@ -146,7 +146,7 @@ describe("TaskDrawer mount", () => {
     fireEvent.click(must(screen.getByLabelText("Next task: t2")));
     expect(onOpenTask).toHaveBeenCalledTimes(1);
     expect(onOpenTask).toHaveBeenCalledWith("t2");
-    // the slide-over's own X (the backdrop's accessible close shares the label)
+    // the slide-over's own X
     fireEvent.click(must(document.querySelector("[data-slide-over] [aria-label='Close']")));
     expect(onClose).toHaveBeenCalled();
   });

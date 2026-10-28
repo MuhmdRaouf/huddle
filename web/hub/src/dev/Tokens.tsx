@@ -14,6 +14,7 @@ import { Icon } from "@huddle/ui/icons.tsx";
 import { useUiId } from "@huddle/ui/id.ts";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
+import { SlideOver } from "@huddle/ui/slide-over.tsx";
 import { Switch } from "@huddle/ui/switch.tsx";
 import { type Column, Table } from "@huddle/ui/table.tsx";
 import { Tabs } from "@huddle/ui/tabs.tsx";
@@ -197,7 +198,9 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
   const [picked, setPicked] = useState(false);
   const [push, setPush] = useState(true);
   const [sheet, setSheet] = useState(false);
+  const [over, setOver] = useState(false);
   const [dlg, setDlg] = useState(false);
+  const [overDlg, setOverDlg] = useState(false);
   const [computed, setComputed] = useState<Computed>({});
 
   useEffect(() => {
@@ -483,6 +486,31 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
         </Sheet>
         {/* the grab handle, drawn by every sheet above its head */}
         <div class="ui-sheet-handle" aria-hidden="true" style={{ marginTop: "var(--ui-space-2)" }} />
+      </Block>
+
+      <Block title="Slide-over">
+        <Button variant="secondary" onClick={() => setOver(true)}>
+          Open slide-over
+        </Button>
+        <SlideOver
+          open={over}
+          label="Request details"
+          onClose={() => setOver(false)}
+          header={
+            <p class="m-0" style={{ fontSize: "var(--ui-text-md)", fontWeight: 600 }}>
+              Request details
+            </p>
+          }
+          actions={<Button variant="ghost" icon="plus" label="Add" onClick={() => {}} />}
+        >
+          <p style={{ marginTop: 0 }}>A bottom sheet on a phone, a right-hand pane on a wide screen.</p>
+          <Button onClick={() => setOverDlg(true)}>Open dialog</Button>
+          <Button onClick={() => setOver(false)}>Done</Button>
+        </SlideOver>
+        <Dialog open={overDlg} title="Detach session" onClose={() => setOverDlg(false)}>
+          <p style={{ marginTop: 0 }}>This detaches the session and keeps its history.</p>
+          <Button onClick={() => setOverDlg(false)}>Done</Button>
+        </Dialog>
       </Block>
 
       <Block title="Dialog">

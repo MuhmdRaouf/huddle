@@ -322,4 +322,61 @@ test.describe("the design tokens page", () => {
     }
     await expectAccessible(page);
   });
+
+  test("the slide-over is a bottom sheet on the phone and the right-hand pane on the desktop", async ({
+    page,
+  }) => {
+    await openTokens(page);
+    await page.getByRole("button", { name: "Open slide-over" }).click();
+    const over = page.getByRole("dialog", { name: "Request details" });
+    await expect(over).toBeVisible();
+    await expectAccessible(page);
+    // the element is the whole click-away; the box that moves is the panel inside it
+    const box = await over.locator("[data-slide-over]").boundingBox();
+    const view = page.viewportSize();
+    expect(box && view).toBeTruthy();
+    if (!box || !view) return;
+    if (test.info().project.name === "desktop") {
+      // the pane: the full height at the right edge, the page still showing beside it
+      expect(box.y).toBe(0);
+      expect(Math.abs(box.y + box.height - view.height)).toBeLessThanOrEqual(1);
+      expect(Math.abs(box.x + box.width - view.width)).toBeLessThanOrEqual(1);
+      expect(box.x).toBeGreaterThan(0);
+    } else {
+      // the bottom sheet: full width at the bottom edge, inside the viewport, and nothing of the
+      // page or the tab bar left uncovered under it
+      expect(box.x).toBe(0);
+      expect(box.width).toBe(view.width);
+      expect(Math.abs(box.y + box.height - view.height)).toBeLessThanOrEqual(1);
+      expect(box.height).toBeLessThanOrEqual(view.height * 0.85 + 1);
+      const atTabBar = await page.evaluate(
+        ([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest("[data-slide-over]") !== null,
+        [Math.round(view.width / 2), view.height - 10],
+      );
+      expect(atTabBar).toBe(true);
+    }
+    await page.keyboard.press("Escape");
+    await expect(over).toBeHidden();
+  });
+
+  test("a dialog opened from inside the slide-over covers it, and closing hands the focus back", async ({
+    page,
+  }) => {
+    await openTokens(page);
+    await page.getByRole("button", { name: "Open slide-over" }).click();
+    const over = page.getByRole("dialog", { name: "Request details" });
+    await expect(over).toBeVisible();
+    await over.getByRole("button", { name: "Open dialog" }).click();
+    const dlg = page.getByRole("dialog", { name: "Detach session" });
+    await expect(dlg).toBeVisible();
+    if (test.info().project.name === "desktop") {
+      await expect(over).toBeVisible();
+    } else {
+      await expect(over).toBeHidden();
+    }
+    await page.keyboard.press("Escape");
+    await expect(dlg).toBeHidden();
+    await expect(over).toBeVisible();
+    await expect(over.getByRole("button", { name: "Open dialog" })).toBeFocused();
+  });
 });

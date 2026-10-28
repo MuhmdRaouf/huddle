@@ -110,7 +110,7 @@ describe("Drawer", () => {
     const { container } = openDrawer(pickedRequest());
     const dlg = dialog(container);
     expect(dlg.getAttribute("aria-label")).toBe("Request details");
-    expect(dlg.classList.contains("modal-end")).toBe(true);
+    expect(dlg.classList.contains("ui-slide-over")).toBe(true);
     expect(dlg.getAttribute("open")).not.toBeNull();
     // the header: model chip, agent, stop reason, then the time and session muted underneath
     const header = dlg.querySelector("#drawer-title");
@@ -343,8 +343,7 @@ describe("Drawer", () => {
 
   it("closes from the slide-over's own close path, back through the controller's close action", async () => {
     const { act, container } = openDrawer(pickedRequest());
-    // the X and the backdrop both answer to "Close"; the X comes first in the dialog
-    const x = screen.getAllByRole("button", { name: "Close" })[0];
+    const x = screen.getByRole("button", { name: "Close" });
     expect(x).toBeTruthy();
     await userEvent.click(x as HTMLElement);
     expect(act).toHaveBeenCalledWith("close-drawer");

@@ -695,7 +695,7 @@ test.describe("radar on the phone", () => {
   }
 });
 
-test("the inspector's header is solid, and on the phone the sheet covers the viewport with a Back control", async ({
+test("the inspector's header is solid, and on the phone the sheet is a bottom sheet with a Back control", async ({
   page,
   isMobile,
 }) => {
@@ -735,9 +735,12 @@ test("the inspector's header is solid, and on the phone the sheet covers the vie
     expect((await landed())?.left ?? 0).toBeGreaterThan(0);
     return;
   }
-  // the phone's sheet is the whole viewport: no strip of the page, no tab bar under it
+  // the phone's sheet is the bottom-sheet form: full width at the bottom edge, inside the
+  // viewport, with no strip of the page or the tab bar left uncovered under it
   expect(await landed()).toEqual({ left: 0, right: viewport?.width });
-  expect((await sheet.boundingBox())?.height).toBe(viewport?.height);
+  const box = await sheet.boundingBox();
+  expect(Math.round((box?.y ?? -1) + (box?.height ?? -1))).toBe(viewport?.height);
+  expect(box?.height ?? 0).toBeLessThanOrEqual((viewport?.height ?? 0) * 0.85 + 1);
   const atTabBar = await page.evaluate(
     ([x, y]) => document.elementFromPoint(x ?? 0, y ?? 0)?.closest("[data-slide-over]") !== null,
     [(viewport?.width ?? 0) / 2, (viewport?.height ?? 0) - 10],

@@ -1,10 +1,13 @@
-// slide-over.tsx — a large panel that slides in from the right over the whole dashboard (daisyUI modal-end on a
-// native <dialog>): Escape, a click on the dimmed page or the close button closes it, focus stays inside while it
-// is open and returns to whatever opened it. The panel and its sticky header are solid on the tokens' surface,
-// the body scrolls on its own, and both pad themselves by the safe areas.
+// slide-over.tsx — a large panel over the whole dashboard: a bottom sheet on a phone, a full-height
+// pane at the right edge from 40 rem, on the shared layer rule — an opening slide-over numbers
+// itself above every open layer, and on a phone only the newest layer shows. Escape, a click on
+// the dimmed page or the close button closes it, focus stays inside while it is open and returns
+// to whatever opened it. The panel and its head are solid on the tokens' surface, the body scrolls
+// on its own, and both pad themselves by the safe areas.
 
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useRef } from "preact/hooks";
+import { restack, showLayer } from "./layer.ts";
 
 /** What a slide-over shows: open or not, how to close it, a header and the body. */
 export type SlideOverProps = {
@@ -18,7 +21,7 @@ export type SlideOverProps = {
   actions?: ComponentChildren;
   /** Under the header, above the scrolling body: the panel's tabs. */
   tabs?: ComponentChildren;
-  /** Width; defaults to most of a wide screen and all of a narrow one. */
+  /** The pane's width from 40 rem; on a phone the sheet is full width whatever this says. */
   width?: string;
   /** The dialog element's id, for the code that recognizes one slide-over by it. */
   id?: string;
@@ -39,7 +42,7 @@ const X = (
   </svg>
 );
 
-/** The right-hand slide-over. Every close path (Escape, backdrop, button, `open` turning false) ends in one onClose. */
+/** The slide-over. Every close path (Escape, backdrop, button, `open` turning false) ends in one onClose. */
 export function SlideOver({
   open,
   onClose,
@@ -54,24 +57,34 @@ export function SlideOver({
   const dlg = useRef<HTMLDialogElement>(null);
   const opener = useRef<Element | null>(null);
 
+  // Open modally as the newest layer and remember what to give focus back to; close when the parent
+  // flips `open` off.
   useEffect(() => {
     const d = dlg.current;
     if (!d) return;
     if (open && !d.open) {
       opener.current = document.activeElement;
-      d.showModal();
+      showLayer(d);
     } else if (!open && d.open) {
       d.close();
     }
   }, [open]);
 
+  // The native close event is the one path every close ends in: tell the parent, restack, and give
+  // focus back when the opener still lives in an open layer — or nothing is open any more.
   const closed = (): void => {
     onClose();
-    const back = opener.current;
+    restack(document);
+    const t = opener.current;
     opener.current = null;
-    if (back instanceof HTMLElement && back.isConnected && !document.querySelector("dialog[open]")) {
-      back.focus({ preventScroll: true });
-    }
+    const back =
+      t instanceof HTMLElement &&
+      t.isConnected &&
+      !t.closest("dialog:not([open])") &&
+      (document.querySelector("dialog[open]") === null || t.closest("dialog[open]") !== null)
+        ? t
+        : null;
+    back?.focus({ preventScroll: true });
   };
   const close = (): void => {
     if (dlg.current?.open) dlg.current.close();
@@ -81,7 +94,7 @@ export function SlideOver({
     <dialog
       ref={dlg}
       id={id}
-      class="modal modal-end"
+      class="ui-slide-over"
       aria-label={label}
       // Preact binds onClose to the native close event, the one path every close ends in
       onClose={closed}
@@ -89,14 +102,15 @@ export function SlideOver({
         e.preventDefault();
         close();
       }}
+      // the element is the dimmed click-away itself: a click that lands on it, not the panel, is outside
+      onClick={(e) => {
+        if (e.target === dlg.current) close();
+      }}
     >
-      <div
-        class={`modal-box flex h-dvh max-h-none ${width} max-w-none flex-col rounded-none border-l border-[var(--ui-line)] bg-[var(--ui-surface)] p-0 text-[var(--ui-text)] sm:rounded-l-[var(--ui-radius-lg)]`}
-        data-slide-over
-      >
-        <div class="sticky top-0 z-10 border-b border-[var(--ui-line)] bg-[var(--ui-surface)] pt-[var(--ui-safe-top)]">
-          {/* the header gives way to its actions once a phone leaves it under 16rem */}
+      <div class={`ui-slide-over-panel ${width}`} data-slide-over>
+        <div class="ui-slide-over-head border-b border-[var(--ui-line)]">
           <div class="flex flex-wrap items-start gap-x-4 gap-y-3 px-4 pt-4 pb-3 sm:px-6 sm:pt-5 sm:pb-4">
+            {/* the header gives way to its actions once a phone leaves it under 16rem */}
             <div class="min-w-0 flex-[1_1_16rem]">{header}</div>
             <div class="ml-auto flex shrink-0 items-center gap-1">
               {actions}
@@ -114,17 +128,12 @@ export function SlideOver({
           {tabs ? <div class="px-4 pb-3 sm:px-6">{tabs}</div> : null}
         </div>
         <div
-          class="min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-[calc(20px+var(--ui-safe-bottom))] sm:px-6"
+          class="ui-slide-over-body px-4 pt-5 pb-[calc(var(--ui-space-1)*5+var(--ui-safe-bottom))] sm:px-6"
           data-slide-over-body
         >
           {children}
         </div>
       </div>
-      <form method="dialog" class="modal-backdrop">
-        <button type="submit" aria-label="Close">
-          close
-        </button>
-      </form>
     </dialog>
   );
 }

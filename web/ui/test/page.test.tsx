@@ -104,22 +104,24 @@ describe("SlideOver", () => {
 });
 
 describe("SlideOver on the tokens", () => {
-  it("paints a solid header and the kit's close button, with no daisyUI glass or theme colour", () => {
+  it("paints the kit's own classes, a solid header and the kit's close button, with no daisyUI left", () => {
     render(
       <SlideOver open onClose={() => {}} label="R" header="h" tabs={<div>tabs</div>}>
         b
       </SlideOver>,
     );
-    const panel = document.querySelector("[data-slide-over]") as HTMLElement;
-    expect(panel.className).toContain("bg-[var(--ui-surface)]");
-    const head = panel.firstElementChild as HTMLElement;
-    expect(head.classList.contains("glass")).toBe(false);
-    expect(head.className).toContain("bg-[var(--ui-surface)]");
+    const dlg = document.querySelector("dialog.ui-slide-over") as HTMLDialogElement;
+    expect(dlg.open).toBe(true);
+    const panel = dlg.querySelector("[data-slide-over]") as HTMLElement;
+    expect(panel.className).toContain("ui-slide-over-panel");
+    const head = panel.querySelector(".ui-slide-over-head") as HTMLElement;
+    expect(head).toBeTruthy();
     expect(head.className).toContain("border-[var(--ui-line)]");
+    expect(panel.querySelector(".ui-slide-over-body")).toBeTruthy();
     const close = screen.getByTitle("Close (Esc)");
     expect(close.className).toBe("ui-btn ui-btn-ghost ui-btn-icon");
-    const legacy = [...panel.querySelectorAll("[class]"), panel].flatMap((el) =>
-      [...el.classList].filter((c) => /^(btn|glass|neon-ring|rounded-l-box)|base-content/.test(c)),
+    const legacy = [...dlg.querySelectorAll("[class]"), dlg].flatMap((el) =>
+      [...el.classList].filter((c) => /^(btn|glass|neon-ring|modal|rounded-l-box)|base-content/.test(c)),
     );
     expect(legacy).toEqual([]);
   });
