@@ -56,10 +56,7 @@
     "px": 2
   },
   "app/Palette.tsx": {
-    "control": 1,
-    "daisy": 20,
-    "legacy": 3,
-    "px": 1
+    "control": 1
   },
   "app/RadarDay.tsx": {
     "daisy": 1,

@@ -16,6 +16,102 @@ import { expect, test, type Page } from "@playwright/test";
 import { axeViolations, expectAccessible } from "./axe.ts";
 import { api, expectTapTargets, SEEDED, signIn, theSetup } from "./helpers.ts";
 
+/** The open layers' geometry: every visible open dialog's box, the viewport, whether the phone's
+ *  tab bar stands, the layers hidden under a newer one, and the page's sideways scroll. */
+function layers(page: Page): Promise<{
+  view: { w: number; h: number };
+  dialogs: { top: number; bottom: number; left: number; right: number }[];
+  covered: number;
+  barTop: number | null;
+  over: number;
+}> {
+  return page.evaluate(() => ({
+    view: { w: window.innerWidth, h: window.innerHeight },
+    dialogs: [...document.querySelectorAll("dialog[open]")]
+      .filter((d) => getComputedStyle(d).visibility !== "hidden")
+      .map((d) => {
+        const r = d.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+      }),
+    covered: document.querySelectorAll("dialog[open][data-ui-covered]").length,
+    barTop:
+      [...document.querySelectorAll("[data-nav='bottom']")].map(
+        (b) => b.getBoundingClientRect().top,
+      )[0] ?? null,
+    over: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  }));
+}
+
+/** The tap check for one open layer: every control inside the open dialog is a target of at
+ *  least 44 px, or 24 px standing alone (the spacing rule of WCAG 2.2 SC 2.5.8). The page behind
+ *  the layer is its own specs' subject, so the walk keeps to the dialog's own controls. */
+async function expectLayerTapTargets(page: Page, at: string): Promise<void> {
+  const misses = await page.evaluate(() => {
+    const root = document.querySelector("dialog[open]");
+    if (!root) return ["no open dialog"];
+    const targets = [...root.querySelectorAll("a, button, input, [role=tab]")]
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        const s = getComputedStyle(el);
+        return r.width >= 1 && r.height >= 1 && s.visibility !== "hidden" && s.display !== "none";
+      })
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return { el, left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      });
+    const gap = (a: { left: number; top: number; right: number; bottom: number }, b: {
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+    }): number => Math.max(b.left - a.right, a.left - b.right, b.top - a.bottom, a.top - b.bottom);
+    return targets
+      .filter((t) => {
+        const w = t.right - t.left;
+        const h = t.bottom - t.top;
+        if (w >= 43.5 && h >= 43.5) return false;
+        if (w < 23.5 || h < 23.5) return true;
+        return targets.some((o) => o !== t && !o.el.contains(t.el) && !t.el.contains(o.el) && gap(t, o) < 8);
+      })
+      .map((t) => {
+        const label = (t.el.getAttribute("aria-label") ?? t.el.textContent ?? "").trim().slice(0, 30);
+        return `${t.el.tagName.toLowerCase()} "${label}" ${Math.round(t.right - t.left)}x${Math.round(
+          t.bottom - t.top,
+        )}`;
+      });
+  });
+  expect(misses, `${at}: controls under 44 px`).toEqual([]);
+}
+
+/** One open layer holds the screen alone: one visible dialog, none covered, inside the viewport,
+ *  clear of the tab bar, no sideways scroll, every control a target, axe clean inside the dialog. */
+async function expectOneLayer(page: Page, at: string): Promise<void> {
+  const l = await layers(page);
+  expect(l.dialogs, `${at}: one layer at a time`).toHaveLength(1);
+  expect(l.covered, `${at}: nothing hides under the one layer`).toBe(0);
+  const d = l.dialogs[0];
+  if (!d) throw new Error("no dialog");
+  expect(d.top, `${at}: inside the viewport's top`).toBeGreaterThanOrEqual(-0.5);
+  expect(d.left, `${at}: inside the viewport's left`).toBeGreaterThanOrEqual(-0.5);
+  expect(d.right, `${at}: inside the viewport's right`).toBeLessThanOrEqual(l.view.w + 0.5);
+  expect(d.bottom, `${at}: inside the viewport's bottom`).toBeLessThanOrEqual(l.view.h + 0.5);
+  if (l.barTop != null) expect(d.bottom, `${at}: clear of the tab bar`).toBeLessThanOrEqual(l.barTop + 0.5);
+  expect(l.over, `${at}: the page scrolls sideways by ${l.over}px`).toBeLessThanOrEqual(0);
+  await expectLayerTapTargets(page, at);
+  const found = await axeViolations(page);
+  const inDialog = await page.evaluate((vs) => {
+    const inside = (sel: string): boolean => {
+      try {
+        return document.querySelector(sel)?.closest("dialog[open]") != null;
+      } catch {
+        return false;
+      }
+    };
+    return vs.filter((v) => v.nodes.some(inside)).map((v) => v.id);
+  }, found);
+  expect(inDialog, `${at}: axe on the open layer`).toEqual([]);
+}
+
 /** The five tabs, in the order the shell draws them; Sessions may carry its needs-you count after it. */
 const TABS = [/^Sessions\d*$/, /^Channels$/, /^Radar$/, /^Kanban$/, /^Settings$/];
 
@@ -513,5 +609,29 @@ test.describe("the needs sheet", () => {
     }
     // the answer moves the session out of Needs you, so the Now spec's counts stay as seeded
     await api(`/api/needs/${id}/decide`, { decision: "deny" });
+  });
+});
+
+test.describe("the command palette", () => {
+  /** Opens the palette the way the owner does: the jump field on the desk, the shell's / key
+   *  where the field is not. */
+  async function openPalette(page: Page): Promise<void> {
+    if (await page.locator("#jump").count()) await page.locator("#jump").click();
+    else await page.keyboard.press("/");
+    await page.locator("#palq").waitFor();
+  }
+
+  test("the palette and the shortcuts help hold one layer each, sized and clean", async ({ page }) => {
+    await open(page, "#/");
+    await openPalette(page);
+    await page.waitForTimeout(150);
+    await expectOneLayer(page, "the palette");
+    // the palette's one popup path: its shortcuts item closes it and opens the help alone
+    await page.locator("#palres [role='option']").filter({ hasText: "Keyboard shortcuts" }).click();
+    await expect(page.getByRole("heading", { name: "Keyboard shortcuts" })).toBeVisible();
+    await expectOneLayer(page, "the shortcuts help");
+    // esc closes the layer and gives the screen back
+    await page.keyboard.press("Escape");
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
   });
 });

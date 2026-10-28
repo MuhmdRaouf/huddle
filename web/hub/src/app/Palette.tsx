@@ -7,6 +7,7 @@
 // g n / g c / g r / g b / g s tab chords, and c for the composer.
 
 import { Dialog } from "@huddle/ui/dialog.tsx";
+import { Empty } from "@huddle/ui/empty.tsx";
 import { fuzzy } from "@huddle/ui/fuzzy.ts";
 import type { SchemePref } from "@huddle/ui/theme.ts";
 import type { ToastFn } from "@huddle/ui/toast.tsx";
@@ -368,6 +369,14 @@ export function paletteResults(a: {
 
 // ── the dialog ───────────────────────────────────────────────────────────────
 
+/** A keyboard chip: the mono face on a surface tile with a line edge, key-sized. */
+const KBD =
+  "ui-mono inline-flex h-[1.25rem] min-w-[1.3333rem] items-center justify-center rounded-[var(--ui-radius-sm)] border border-[var(--ui-line)] bg-[var(--ui-surface)] px-[0.375rem] text-[length:0.75rem] text-[var(--ui-muted)]";
+
+/** The footer's smaller keyboard chip. */
+const KBD_XS =
+  "ui-mono inline-flex h-4 min-w-4 items-center justify-center rounded-[var(--ui-radius-sm)] border border-[var(--ui-line)] bg-[var(--ui-surface)] px-1 text-[length:0.6875rem] text-[var(--ui-muted)]";
+
 /** The toast text of a failed op: the 404 "no operation" becomes an update nudge (core.js act). */
 function refusal(e: unknown, name: string): string {
   const raw = errText(e);
@@ -519,13 +528,13 @@ export function CmdPalette(props: PaletteProps): JSX.Element {
   return (
     <Dialog open={props.open} onClose={props.onClose}>
       <div class="flex h-12 shrink-0 items-center gap-2.5 border-b hairline px-4">
-        <span class="muted">
+        <span class="text-[var(--ui-muted)]">
           <Icon name="search" />
         </span>
         <input
           ref={input}
           id="palq"
-          class="h-full min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-base-content/50"
+          class="h-full min-w-0 flex-1 rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] px-2.5 text-row outline-none placeholder:text-[var(--ui-muted)]"
           placeholder={ch ? "Jump to a task, session or place, or run an action" : "Jump to a channel"}
           autocomplete="off"
           spellcheck={false}
@@ -553,7 +562,7 @@ export function CmdPalette(props: PaletteProps): JSX.Element {
             }
           }}
         />
-        <kbd class="kbd kbd-sm">esc</kbd>
+        <kbd class={KBD}>esc</kbd>
       </div>
       <div
         id="palres"
@@ -565,7 +574,7 @@ export function CmdPalette(props: PaletteProps): JSX.Element {
           groups.map((gr, gi) => (
             // biome-ignore lint/a11y/useSemanticElements: the legacy palette's group headings
             <div key={`${gr.label}/${gi}`} role="group" aria-labelledby={`pg-${gi}`}>
-              <div class="px-3 pt-3 pb-1 text-xs font-medium text-base-content/50" id={`pg-${gi}`}>
+              <div class="px-3 pt-3 pb-1 text-xs font-medium text-[var(--ui-muted)]" id={`pg-${gi}`}>
                 {gr.label}
               </div>
               {gr.rows.map(({ x, i }) => (
@@ -576,7 +585,7 @@ export function CmdPalette(props: PaletteProps): JSX.Element {
                   role="option"
                   id={`po-${i}`}
                   aria-selected={i === at}
-                  class="mx-1.5 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors aria-selected:bg-base-content/10"
+                  class="mx-1.5 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors aria-selected:bg-[var(--ui-accent-soft)]"
                   onClick={() => run(i)}
                   onMouseMove={() => {
                     if (at !== i) setSel(i);
@@ -588,16 +597,16 @@ export function CmdPalette(props: PaletteProps): JSX.Element {
                       <span class="font-mono text-xs">{x.id}</span>
                     </>
                   ) : (
-                    <span class="muted">
+                    <span class="text-[var(--ui-muted)]">
                       <Icon name={x.i ?? "arrow"} />
                     </span>
                   )}
                   <span class="truncate">{x.t}</span>
-                  <span class="min-w-0 flex-1 truncate text-xs text-base-content/50">{x.s ?? ""}</span>
+                  <span class="min-w-0 flex-1 truncate text-xs text-[var(--ui-muted)]">{x.s ?? ""}</span>
                   {x.kb ? (
                     <span class="flex gap-0.5">
                       {x.kb.split(" ").map((k) => (
-                        <kbd key={k} class="kbd kbd-sm">
+                        <kbd key={k} class={KBD}>
                           {k}
                         </kbd>
                       ))}
@@ -608,31 +617,24 @@ export function CmdPalette(props: PaletteProps): JSX.Element {
             </div>
           ))
         ) : (
-          <Empty text={`Nothing matches “${q}”.`} hint="esc to close" />
+          <Empty>
+            <p class="m-0 text-sm font-medium text-[var(--ui-text)]">{`Nothing matches “${q}”.`}</p>
+            <span class="text-xs text-[var(--ui-muted)]">esc to close</span>
+          </Empty>
         )}
       </div>
-      <div class="hidden shrink-0 items-center gap-3 border-t hairline px-4 py-2 text-xs text-base-content/50 sm:flex">
+      <div class="hidden shrink-0 items-center gap-3 border-t hairline px-4 py-2 text-xs text-[var(--ui-muted)] sm:flex">
         <span class="flex items-center gap-1">
-          <kbd class="kbd kbd-xs">↑</kbd>
-          <kbd class="kbd kbd-xs">↓</kbd> move
+          <kbd class={KBD_XS}>↑</kbd>
+          <kbd class={KBD_XS}>↓</kbd> move
         </span>
         <span class="flex items-center gap-1">
-          <kbd class="kbd kbd-xs">↵</kbd> run
+          <kbd class={KBD_XS}>↵</kbd> run
         </span>
         <span class="flex-1" />
         <span>Three letters or more also search the task text.</span>
       </div>
     </Dialog>
-  );
-}
-
-/** The palette's empty state, over the shared empty block. */
-function Empty({ text, hint }: { text: string; hint: string }): JSX.Element {
-  return (
-    <div class="flex flex-col items-center gap-1 px-6 py-10 text-center text-sm muted">
-      <p class="text-sm font-medium text-base-content">{text}</p>
-      <span class="text-xs text-base-content/50">{hint}</span>
-    </div>
   );
 }
 
@@ -917,22 +919,27 @@ export function helpSections(mac: boolean): readonly HelpSection[] {
   ];
 }
 
-/** The keyboard shortcuts dialog (cmd.js help). */
+/** The keyboard shortcuts dialog (cmd.js help). Its grid is the dialog's own scroll box — capped
+ *  under the sheet's height so the body never scrolls — and focusable, so the keys stay reachable
+ *  on a keyboard. */
 export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element {
   const mac = isMac(navigator.platform || navigator.userAgent);
   const sections = helpSections(mac);
   return (
     <Dialog open={open} onClose={onClose} title="Keyboard shortcuts">
-      <div class="grid gap-x-10 gap-y-6 p-5 sm:grid-cols-2">
+      <div
+        class="grid max-h-[min(70dvh,44rem)] gap-x-10 gap-y-6 overflow-y-auto overscroll-contain p-5 sm:grid-cols-2"
+        tabIndex={0}
+      >
         {sections.map((s) => (
           <section key={s.head}>
-            <h3 class="mb-2 text-xs font-medium text-base-content/50">{s.head}</h3>
+            <h3 class="mb-2 text-xs font-medium text-[var(--ui-muted)]">{s.head}</h3>
             <dl class="flex flex-col gap-1.5 text-sm">
               {s.rows.map(([k, d]) => (
                 <div key={`${k}/${d}`} class="flex items-baseline gap-3">
                   <dt class="flex shrink-0 gap-1">
                     {k.split(" ").map((x) => (
-                      <kbd key={x} class="kbd kbd-sm">
+                      <kbd key={x} class={KBD}>
                         {x}
                       </kbd>
                     ))}
