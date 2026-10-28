@@ -17,8 +17,15 @@
 // its tap targets at least 44 px and passes axe.
 
 import { expect, test, type Page } from "@playwright/test";
+import { themeOf } from "../ui/src/themes.ts";
 import { expectAccessible } from "./axe.ts";
 import { n, pairThroughLink, signIn, theSetup, TOTALS, useVirtualAuthenticator } from "./helpers.ts";
+
+/** A #rrggbb as computed style spells it. */
+const rgb = (hex: string): string => {
+  const nn = Number.parseInt(hex.slice(1), 16);
+  return `rgb(${(nn >> 16) & 255}, ${(nn >> 8) & 255}, ${nn & 255})`;
+};
 
 /** The six groups, in order, each with its address, the members its page draws and the value its
  *  phone row shows once the reads land (the row's own text when there is no source yet). */
@@ -203,20 +210,82 @@ test.describe("the Settings tab", () => {
     }
   });
 
-  test("the appearance switch overrides the OS and keeps the choice across a reload", async ({ page }) => {
+  test("the appearance control overrides the OS and keeps the choice across a reload", async ({ page }) => {
     await page.emulateMedia({ colorScheme: "light" });
     await openSettings(page, "#/settings/appearance");
     const html = page.locator("html");
+    const group = page.getByRole("radiogroup", { name: "Appearance" });
     await expect(html).toHaveAttribute("data-scheme", "light");
-    await page.getByRole("button", { name: "Dark", exact: true }).click();
+    await group.getByRole("radio", { name: "Dark", exact: true }).click();
     await expect(html).toHaveAttribute("data-scheme", "dark");
     await page.reload();
-    await expect(page.getByRole("button", { name: "Dark", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(group.getByRole("radio", { name: "Dark", exact: true })).toHaveAttribute("aria-checked", "true");
     await expect(html).toHaveAttribute("data-scheme", "dark");
-    await page.getByRole("button", { name: "System", exact: true }).click();
+    await group.getByRole("radio", { name: "System", exact: true }).click();
     await expect(html).toHaveAttribute("data-scheme", "light");
     await page.emulateMedia({ colorScheme: "dark" });
     await expect(html).toHaveAttribute("data-scheme", "dark");
+  });
+
+  test("picking a theme card paints it, and the pick survives a reload", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await openSettings(page, "#/settings/appearance");
+    const html = page.locator("html");
+    const nord = themeOf("nord");
+    await page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: "Nord" }).click();
+    await expect(html).toHaveAttribute("data-theme", "nord");
+    const bg = await page.evaluate(
+      () => getComputedStyle(document.querySelector(".ui-shell") as Element).backgroundColor,
+    );
+    // a theme's bar colour is its own background, and the shell paints --ui-bg
+    expect(bg).toBe(rgb(nord.bar.dark ?? ""));
+    await page.reload();
+    await expect(html).toHaveAttribute("data-theme", "nord");
+    await expect(
+      page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: "Nord" }),
+    ).toHaveAttribute("aria-checked", "true");
+  });
+
+  test("each theme card paints its own theme in its preview", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await openSettings(page, "#/settings/appearance");
+    const bgs = await page.evaluate(() =>
+      ["huddle", "catppuccin", "nord"].map((id) => {
+        const el = document.querySelector(`[data-theme-value="${id}"] [data-theme]`);
+        return getComputedStyle(el as Element).backgroundColor;
+      }),
+    );
+    expect(new Set(bgs).size).toBe(bgs.length);
+    // the dark page resolves every two-sided preview to its theme's dark side
+    expect(bgs[2]).toBe(rgb(themeOf("nord").bar.dark ?? ""));
+  });
+
+  test("a preview follows the device's flip while the page stays open", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await openSettings(page, "#/settings/appearance");
+    const nordBg = (): Promise<string> =>
+      page.evaluate(
+        () =>
+          getComputedStyle(
+            document.querySelector('[data-theme-value="nord"] [data-theme]') as Element,
+          ).backgroundColor,
+      );
+    expect(await nordBg()).toBe(rgb(themeOf("nord").bar.light ?? ""));
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect.poll(nordBg).toBe(rgb(themeOf("nord").bar.dark ?? ""));
+  });
+
+  test("a dark-only theme blocks the Light choice", async ({ page }) => {
+    await openSettings(page, "#/settings/appearance");
+    const group = page.getByRole("radiogroup", { name: "Appearance" });
+    const light = group.getByRole("radio", { name: "Light", exact: true });
+    await expect(light).not.toHaveAttribute("aria-disabled", "true");
+    await page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: "Monokai" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "monokai");
+    // Light sits blocked and unpicked: the browser refuses it, and Monokai keeps painting dark
+    await expect(light).toHaveAttribute("aria-disabled", "true");
+    await expect(light).toHaveAttribute("aria-checked", "false");
+    await expect(page.locator("html")).toHaveAttribute("data-scheme", "dark");
   });
 
   test.describe("with the app's worker running", () => {
@@ -499,7 +568,11 @@ test.describe("the Settings tab", () => {
       // B's desk controls stand 40 px, so the 44 px floor is measured under a finger only
       if (test.info().project.use.hasTouch) {
         const small = await page.evaluate(() =>
-          [...document.querySelectorAll<HTMLElement>("[data-settings] button, [data-settings] input, [data-settings] a")]
+          [
+            ...document.querySelectorAll<HTMLElement>(
+              '[data-settings] button, [data-settings] input, [data-settings] a, [data-settings] [role="radio"]',
+            ),
+          ]
             // a switch or a radio is tapped through the label around it
             .map((el) => ({ el, r: (el.closest("label") ?? el).getBoundingClientRect() }))
             .filter(({ r }) => r.width > 0 && (r.width < 44 || r.height < 44))

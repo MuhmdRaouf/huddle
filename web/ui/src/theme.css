@@ -799,11 +799,15 @@
 
 /* The community themes: each registered id (themes.ts) carries its own --ui-* palette here, every
  * colour a light-dark pair over the side the registry gives it (a dark-only theme writes its dark
- * value on both halves; tokens.css's :root[data-scheme] still flips color-scheme). Each block is
- * the only source its scheme reads, so nothing borrows the default's colour. line-strong and the
- * inks may sit a step off the family's own value where WCAG AA asks it
- * (test/theme-contrast.test.ts judges each block alone). */
-:root[data-theme="catppuccin"] {
+ * value on both halves; tokens.css's :root[data-scheme] still flips color-scheme). Each block
+ * matches the root as always, and any subtree carrying the id: the Appearance page paints each
+ * theme card's preview under [data-theme], and a declaration on the element beats the palette it
+ * inherits, so the preview reads its own theme's colours. Each block is the only source its
+ * scheme reads, so nothing borrows the default's colour. line-strong and the inks may sit a step
+ * off the family's own value where WCAG AA asks it (test/theme-contrast.test.ts judges each
+ * block alone). */
+:root[data-theme="catppuccin"],
+[data-theme="catppuccin"] {
   --ui-bg: light-dark(#e6e9ef, #11111b);
   --ui-surface: light-dark(#eff1f5, #1e1e2e);
   --ui-surface-2: light-dark(#dce0e8, #313244);
@@ -847,7 +851,8 @@
   --ui-cancelled-ink: var(--ui-muted);
 }
 
-:root[data-theme="tokyo-night"] {
+:root[data-theme="tokyo-night"],
+[data-theme="tokyo-night"] {
   --ui-bg: light-dark(#d0d5e3, #16161e);
   --ui-surface: light-dark(#e1e2e7, #1a1b26);
   --ui-surface-2: light-dark(#c4c8da, #24283b);
@@ -891,7 +896,8 @@
   --ui-cancelled-ink: var(--ui-muted);
 }
 
-:root[data-theme="monokai"] {
+:root[data-theme="monokai"],
+[data-theme="monokai"] {
   --ui-bg: light-dark(#1e1f1c, #1e1f1c);
   --ui-surface: light-dark(#272822, #272822);
   --ui-surface-2: light-dark(#3e3d32, #3e3d32);
@@ -935,7 +941,8 @@
   --ui-cancelled-ink: var(--ui-muted);
 }
 
-:root[data-theme="dracula"] {
+:root[data-theme="dracula"],
+[data-theme="dracula"] {
   --ui-bg: light-dark(#21222c, #21222c);
   --ui-surface: light-dark(#282a36, #282a36);
   --ui-surface-2: light-dark(#44475a, #44475a);
@@ -979,7 +986,8 @@
   --ui-cancelled-ink: var(--ui-muted);
 }
 
-:root[data-theme="nord"] {
+:root[data-theme="nord"],
+[data-theme="nord"] {
   --ui-bg: light-dark(#e5e9f0, #2e3440);
   --ui-surface: light-dark(#eceff4, #3b4252);
   --ui-surface-2: light-dark(#d8dee9, #434c5e);
@@ -1023,7 +1031,8 @@
   --ui-cancelled-ink: var(--ui-muted);
 }
 
-:root[data-theme="gruvbox"] {
+:root[data-theme="gruvbox"],
+[data-theme="gruvbox"] {
   --ui-bg: light-dark(#f2e5bc, #1d2021);
   --ui-surface: light-dark(#fbf1c7, #282828);
   --ui-surface-2: light-dark(#ebdbb2, #3c3836);
@@ -1067,7 +1076,8 @@
   --ui-cancelled-ink: var(--ui-muted);
 }
 
-:root[data-theme="solarized"] {
+:root[data-theme="solarized"],
+[data-theme="solarized"] {
   --ui-bg: light-dark(#eee8d5, #00212b);
   --ui-surface: light-dark(#fdf6e3, #002b36);
   --ui-surface-2: light-dark(#eee8d5, #073642);
@@ -1111,7 +1121,8 @@
   --ui-cancelled-ink: var(--ui-muted);
 }
 
-:root[data-theme="rose-pine"] {
+:root[data-theme="rose-pine"],
+[data-theme="rose-pine"] {
   --ui-bg: light-dark(#f2e9e1, #191724);
   --ui-surface: light-dark(#fffaf3, #1f1d2e);
   --ui-surface-2: light-dark(#f4ede8, #26233a);
@@ -1155,7 +1166,8 @@
   --ui-cancelled-ink: var(--ui-muted);
 }
 
-:root[data-theme="one-dark"] {
+:root[data-theme="one-dark"],
+[data-theme="one-dark"] {
   --ui-bg: light-dark(#21252b, #21252b);
   --ui-surface: light-dark(#282c34, #282c34);
   --ui-surface-2: light-dark(#2c313a, #2c313a);
@@ -1199,7 +1211,8 @@
   --ui-cancelled-ink: var(--ui-muted);
 }
 
-:root[data-theme="github"] {
+:root[data-theme="github"],
+[data-theme="github"] {
   --ui-bg: light-dark(#f6f8fa, #010409);
   --ui-surface: light-dark(#ffffff, #0d1117);
   --ui-surface-2: light-dark(#eff2f5, #161b22);
@@ -1243,7 +1256,8 @@
   --ui-cancelled-ink: var(--ui-muted);
 }
 
-:root[data-theme="everforest"] {
+:root[data-theme="everforest"],
+[data-theme="everforest"] {
   --ui-bg: light-dark(#efebd4, #232a2e);
   --ui-surface: light-dark(#fdf6e3, #2d353b);
   --ui-surface-2: light-dark(#f4f0d9, #343f44);
@@ -1287,7 +1301,8 @@
   --ui-cancelled-ink: var(--ui-muted);
 }
 
-:root[data-theme="kanagawa"] {
+:root[data-theme="kanagawa"],
+[data-theme="kanagawa"] {
   --ui-bg: light-dark(#e5ddb0, #16161d);
   --ui-surface: light-dark(#f2ecbc, #1f1f28);
   --ui-surface-2: light-dark(#e7dba0, #2a2a37);
@@ -1329,4 +1344,17 @@
   --ui-cancelled: var(--ui-line-strong);
   --ui-cancelled-soft: var(--ui-surface-2);
   --ui-cancelled-ink: var(--ui-muted);
+}
+
+/* The side a subtree paints: light-dark() reads the colour scheme in effect at each element, and
+ * the side rules above key on :root alone, so the Appearance page's theme previews carry
+ * [data-scheme] of their own and resolve their theme's palette to the side the Appearance choice
+ * names. These rules sit after the daisyUI theme blocks, whose [data-theme] rules would
+ * otherwise out-order them on a preview carrying a daisyUI id. */
+[data-scheme="light"] {
+  color-scheme: light;
+}
+
+[data-scheme="dark"] {
+  color-scheme: dark;
 }

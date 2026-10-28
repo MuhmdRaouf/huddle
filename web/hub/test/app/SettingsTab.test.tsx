@@ -6,15 +6,14 @@
 // freshness, the removal that asks for the passkey when the server says step-up, the refusal
 // said as the server spelled it, the empty list's word; the Add-a-device section with the phone
 // guide in its sheet and the copyable `huddle pair` line; the Sign-in rows whose sheets hold the
-// passkey and authenticator panes; then Appearance's three choices, This hub's facts, and the
-// hub's time zone with its picker.
+// passkey and authenticator panes; then the appearance group's page, This hub's facts, and the
+// hub's time zone with its picker. The Appearance pane itself is Appearance.test.tsx's subject.
 
 import { act, screen, waitFor, within } from "@testing-library/preact";
 import type { JSX } from "preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { createApi, type FetchFn } from "../../src/api.ts";
 import {
-  Appearance,
   Devices,
   Phone,
   SettingsHead,
@@ -229,35 +228,12 @@ describe("the appearance section", () => {
     localStorage.clear();
   });
 
-  it("TestPressesTheKeptChoiceAndPaintsAPick", async () => {
+  it("TestTheAppearanceGroupOpensItsOwnPage", async () => {
     stubMedia({ "(prefers-color-scheme: dark)": false });
-    localStorage.setItem("huddle:scheme", "dark");
-    renderHuddle(<Appearance />);
-    const pressed = (): string[] =>
-      ["System", "Dark", "Light"].map(
-        (name) => screen.getByRole("button", { name }).getAttribute("aria-pressed") ?? "",
-      );
-    expect(pressed()).toEqual(["false", "true", "false"]);
-    await act(async () => {
-      screen.getByRole("button", { name: "System" }).click();
-    });
-    expect(pressed()).toEqual(["true", "false", "false"]);
-    expect(localStorage.getItem("huddle:scheme")).toBe("system");
-    expect(document.documentElement.dataset.scheme).toBe("light");
-    expect(document.documentElement.dataset.theme).toBe("huddle");
-  });
-
-  it("TestOffersTheThreeSchemesAndNoSwitch", async () => {
-    stubMedia({ "(prefers-color-scheme: dark)": false });
-    renderHuddle(<Appearance />);
-    const scheme = screen.getByRole("group", { name: "Scheme" });
-    expect([...scheme.querySelectorAll("button")].map((b) => b.textContent?.trim())).toEqual([
-      "System",
-      "Dark",
-      "Light",
-    ]);
-    expect(screen.queryByRole("switch")).toBeNull();
-    expect(legacyClasses()).toEqual([]);
+    renderHuddle(<SettingsTab section="appearance" />);
+    await flush();
+    // the pane itself is Appearance.test.tsx's subject; here it is the group's only member
+    expect(document.querySelector('[data-setting="appearance"]')).not.toBeNull();
   });
 });
 

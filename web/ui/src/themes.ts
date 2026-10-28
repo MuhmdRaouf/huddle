@@ -125,3 +125,37 @@ export function sideOf(id: string, scheme: ThemeSide): ThemeSide {
   const sides = themeOf(id).sides;
   return sides.length === 1 ? (sides[0] ?? scheme) : scheme;
 }
+
+/** Keeps a pick and paints it the way theme-boot.js paints the kept one at boot: the id on the
+ *  root's data-theme, the side the Appearance choice resolves to on data-scheme, and the
+ *  theme-color metas — the dark-then-light pair keyed to the OS when Appearance is System on a
+ *  two-sided theme, one side's colour on every meta otherwise. The choice is kept through the
+ *  store the page already writes. An unknown id changes nothing. */
+export function applyTheme(
+  root: HTMLElement,
+  id: string,
+  pref: "system" | ThemeSide,
+  systemDark: boolean,
+  store: Pick<Storage, "setItem" | "removeItem">,
+): void {
+  const theme = THEMES.find((t) => t.id === id);
+  if (theme === undefined) return;
+  writeTheme(store, id);
+  const scheme: ThemeSide = pref === "system" ? (systemDark ? "dark" : "light") : pref;
+  root.dataset.theme = theme.id;
+  root.dataset.scheme = sideOf(theme.id, scheme);
+  const metas = root.ownerDocument.head.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+  if (pref === "system" && theme.sides.length > 1) {
+    metas.forEach((meta, i) => {
+      const side: ThemeSide = i % 2 === 0 ? "dark" : "light";
+      meta.content = theme.bar[side] ?? "";
+      meta.media = `(prefers-color-scheme: ${side})`;
+    });
+    return;
+  }
+  const side = sideOf(theme.id, scheme);
+  metas.forEach((meta) => {
+    meta.content = theme.bar[side] ?? "";
+    meta.removeAttribute("media");
+  });
+}

@@ -1,8 +1,9 @@
 // themes.test.ts — the theme registry: the id this browser keeps under "huddle:theme" (a missing,
-// unknown or unreadable one answers the default), the write that keeps registered ids only, and the
-// side a theme paints when Appearance resolves the scheme.
+// unknown or unreadable one answers the default), the write that keeps registered ids only, the
+// side a theme paints when Appearance resolves the scheme, and the apply that paints a pick the
+// way theme-boot.js paints the kept one at boot.
 import { describe, expect, it } from "vite-plus/test";
-import { THEMES, THEME_KEY, readTheme, sideOf, themeOf, writeTheme } from "../src/themes.ts";
+import { applyTheme, THEMES, THEME_KEY, readTheme, sideOf, themeOf, writeTheme } from "../src/themes.ts";
 
 /** The slice of localStorage a theme is read and written through. */
 type ThemeStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -177,5 +178,89 @@ describe("themes", () => {
     expect(sideOf("kanagawa", "dark")).toBe("dark");
     expect(sideOf("nope", "light")).toBe("light");
     expect(sideOf("nope", "dark")).toBe("dark");
+  });
+
+  describe("applyTheme", () => {
+    /** The two theme-color metas index.html ships, rebuilt clean for each test. */
+    function metas(): HTMLMetaElement[] {
+      for (const m of document.head.querySelectorAll('meta[name="theme-color"]')) m.remove();
+      return (["dark", "light"] as const).map((s) => {
+        const m = document.createElement("meta");
+        m.name = "theme-color";
+        m.media = `(prefers-color-scheme: ${s})`;
+        m.content = "#000000";
+        document.head.append(m);
+        return m;
+      });
+    }
+
+    it("keeps the pick and answers System with the OS-keyed bar pair on a two-sided theme", () => {
+      const store = memory();
+      const ms = metas();
+      applyTheme(document.documentElement, "nord", "system", false, store);
+      expect(store.data.get(THEME_KEY)).toBe("nord");
+      expect(document.documentElement.dataset.theme).toBe("nord");
+      expect(document.documentElement.dataset.scheme).toBe("light");
+      expect(ms.map((m) => m.content)).toEqual(["#2e3440", "#e5e9f0"]);
+      expect(ms.map((m) => m.media)).toEqual([
+        "(prefers-color-scheme: dark)",
+        "(prefers-color-scheme: light)",
+      ]);
+    });
+
+    it("paints one side's bar on every meta when Appearance holds a scheme", () => {
+      const store = memory();
+      const ms = metas();
+      applyTheme(document.documentElement, "nord", "dark", false, store);
+      expect(store.data.get(THEME_KEY)).toBe("nord");
+      expect(document.documentElement.dataset.theme).toBe("nord");
+      expect(document.documentElement.dataset.scheme).toBe("dark");
+      expect(ms.map((m) => m.content)).toEqual(["#2e3440", "#2e3440"]);
+    });
+
+    it("paints a dark-only theme its own side whatever Appearance asks", () => {
+      const store = memory();
+      const ms = metas();
+      applyTheme(document.documentElement, "monokai", "light", false, store);
+      expect(document.documentElement.dataset.theme).toBe("monokai");
+      expect(document.documentElement.dataset.scheme).toBe("dark");
+      expect(ms.map((m) => m.content)).toEqual(["#1e1f1c", "#1e1f1c"]);
+    });
+
+    it("paints a dark-only theme one bar while Appearance is System", () => {
+      const store = memory();
+      const ms = metas();
+      applyTheme(document.documentElement, "dracula", "system", true, store);
+      expect(document.documentElement.dataset.scheme).toBe("dark");
+      expect(ms.map((m) => m.content)).toEqual(["#21222c", "#21222c"]);
+    });
+
+    it("reads the OS's dark side while Appearance is System", () => {
+      const store = memory();
+      const ms = metas();
+      applyTheme(document.documentElement, "catppuccin", "system", true, store);
+      expect(document.documentElement.dataset.scheme).toBe("dark");
+      expect(ms.map((m) => m.content)).toEqual(["#11111b", "#e6e9ef"]);
+      expect(ms.map((m) => m.media)).toEqual([
+        "(prefers-color-scheme: dark)",
+        "(prefers-color-scheme: light)",
+      ]);
+    });
+
+    it("changes nothing for an unknown id", () => {
+      const store = memory({ [THEME_KEY]: "huddle" });
+      const ms = metas();
+      delete document.documentElement.dataset.theme;
+      delete document.documentElement.dataset.scheme;
+      applyTheme(document.documentElement, "nope", "dark", true, store);
+      expect(store.data.get(THEME_KEY)).toBe("huddle");
+      expect(document.documentElement.dataset.theme).toBeUndefined();
+      expect(document.documentElement.dataset.scheme).toBeUndefined();
+      expect(ms.map((m) => m.content)).toEqual(["#000000", "#000000"]);
+      expect(ms.map((m) => m.media)).toEqual([
+        "(prefers-color-scheme: dark)",
+        "(prefers-color-scheme: light)",
+      ]);
+    });
   });
 });

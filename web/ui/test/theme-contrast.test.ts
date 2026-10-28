@@ -91,9 +91,11 @@ function rule(css: string, selector: string): string {
 const CSS = readFileSync("src/tokens.css", "utf8");
 const BASE = colours(rule(CSS, ":root"));
 const THEME_CSS = readFileSync("src/theme.css", "utf8");
-/** Each other theme's own block, keyed by its id: the only source its schemes read. */
+/** Each other theme's own block, keyed by its id: the only source its schemes read. Each block
+ *  opens for the root and for any subtree carrying the id, and names the id alone on its last
+ *  selector line. */
 const BLOCKS = new Map(
-  THEMES.slice(1).map((t) => [t.id, colours(rule(THEME_CSS, `:root[data-theme="${t.id}"]`))]),
+  THEMES.slice(1).map((t) => [t.id, colours(rule(THEME_CSS, `[data-theme="${t.id}"]`))]),
 );
 
 /** A token's colour in a scheme: a theme block's declaration, from that block alone; the default
@@ -203,7 +205,7 @@ describe("theme blocks", () => {
 
   it("paints the quiet zone of a qr code white in each theme", () => {
     for (const t of THEMES.slice(1))
-      expect(rule(THEME_CSS, `:root[data-theme="${t.id}"]`)).toContain("--ui-qr-bg: #ffffff");
+      expect(rule(THEME_CSS, `[data-theme="${t.id}"]`)).toContain("--ui-qr-bg: #ffffff");
   });
 });
 

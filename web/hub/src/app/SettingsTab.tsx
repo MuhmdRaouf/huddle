@@ -1,19 +1,18 @@
 // SettingsTab.tsx — the Settings page: six groups, on the phone a hub card over rows of three
 // cards whose rows name each group's current value and open one page per group, on the tablet and
 // the desktop a sidebar beside the page; each page draws its group's members in order. Appearance
-// (System, Dark, Light); Notifications (the two switches and what
-// wakes the device); Security (the paired devices oldest first with the browser asking named
-// current, the phone's trust guide and the pair command, the sign-in methods in sheets, the two
-// sign-outs); Spending (Radar's budgets, notifications and history retention); Tips (the
-// two Insights switches); Hub (name, address and version, the hub's time zone, the request
-// bodies capture, and Radar's self-check against the transcripts). A channel's linked sessions live in that channel's own
-// Settings view. Every class comes from the ui components or the tokens.
+// (the scheme control and the theme cards, on Appearance.tsx); Notifications (the two switches
+// and what wakes the device); Security (the paired devices oldest first with the browser asking
+// named current, the phone's trust guide and the pair command, the sign-in methods in sheets, the
+// two sign-outs); Spending (Radar's budgets, notifications and history retention); Tips (the two
+// Insights switches); Hub (name, address and version, the hub's time zone, the request bodies
+// capture, and Radar's self-check against the transcripts). A channel's linked sessions live in
+// that channel's own Settings view. Every class comes from the ui components or the tokens.
 
 import { Button } from "@huddle/ui/button.tsx";
 import { Field } from "@huddle/ui/field.tsx";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
-import { readScheme, type SchemePref } from "@huddle/ui/theme.ts";
 import type { JSX } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { ApiError } from "../api.ts";
@@ -23,13 +22,13 @@ import { SELFCHECK_PATH, SelfCheckBadge, selfCheckOf } from "../radar/app/SelfCh
 import { SettingsView } from "../radar/app/views/Settings.tsx";
 import { RadarProvider, radarController } from "../radar/mount.tsx";
 import { ageText } from "../registry.ts";
+import { Appearance } from "./Appearance.tsx";
 import { CaptureSetting } from "./CaptureSetting.tsx";
 import { errText, useHuddle } from "./context.tsx";
 import { InsightsSettings } from "./InsightsSettings.tsx";
 import { useLayout } from "./layout.ts";
 import { useStepUp } from "./Needs.tsx";
 import { NotificationsCard } from "./Notifications.tsx";
-import { pickScheme, SCHEMES } from "./scheme.ts";
 import { SignOut } from "./SignOut.tsx";
 import { hubInitial, hubSubtitle, useSettingsValues, zoneOf, type HubZone } from "./settings-values.ts";
 import { AuthenticatorCard } from "./Totp.tsx";
@@ -91,38 +90,6 @@ function freshness(seen: string, now: number): string {
 /** The phone guide the server's "Add a phone" started: where it answers and the root's
  *  fingerprint, which the phone's page shows too. */
 type PhoneGuide = { url: string; fingerprint: string; expires_in: number };
-
-/** Settings › Appearance: System follows this device's own setting; Dark and Light hold one
- *  scheme in this browser whatever the device says. */
-export function Appearance(): JSX.Element {
-  const [pref, setPref] = useState<SchemePref>(() => readScheme(localStorage));
-  return (
-    <section aria-labelledby="appearance-h" class="flex flex-col gap-3">
-      <h2 id="appearance-h" class={HEAD}>
-        Appearance
-      </h2>
-      <p class={NOTE}>
-        Dark and light follow this device until you pick one here. The choice stays in this browser.
-      </p>
-      <div role="group" aria-label="Scheme" class="flex flex-wrap gap-2">
-        {SCHEMES.map(([id, label, icon]) => (
-          <Button
-            key={id}
-            variant="secondary"
-            icon={icon}
-            pressed={pref === id}
-            onClick={() => {
-              pickScheme(localStorage, id);
-              setPref(id);
-            }}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
-    </section>
-  );
-}
 
 /** What /health says about the hub this page talks to. */
 type HubFacts = { name: string; version: string };
