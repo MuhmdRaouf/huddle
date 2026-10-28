@@ -35,6 +35,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/extras"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/health"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/kanbantab"
@@ -286,6 +287,9 @@ type server struct {
 	registry *hub.DB
 	// now is the clock the registry's states are computed against.
 	now func() time.Time
+	// health is the registry this process's parts report their last success and last error
+	// to; the health answer lists it.
+	health *health.Registry
 	// pairs is the pairing core over the same hub.db; nil when the registry or the relying
 	// party could not be built, in which case every pairing route refuses.
 	pairs *auth.Pairing
@@ -599,6 +603,7 @@ func Serve(ctx context.Context, o Options) error {
 		streams:      map[*liveStream]struct{}{},
 		registrySubs: map[chan string]struct{}{},
 		now:          now,
+		health:       health.New(now),
 		alerts:       newAlertFanout(),
 		permits:      newPermitWaiters(),
 		satQueue:     newSatWaiters(),
@@ -1424,20 +1429,23 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		if err != nil {
 			return err
 		}
-		// the answer names both processes: the hub's own pid and the router's beside it
+		// the answer names both processes: the hub's own pid and the router's beside it, and
+		// lists what each part of this process last reported
 		s.writeJSON(w, 200, struct {
-			OK         bool         `json:"ok"`
-			Version    string       `json:"version"`
-			Started    string       `json:"started"`
-			Channels   int          `json:"channels"`
-			Home       string       `json:"home"`
-			Machine    string       `json:"machine"`
-			Name       string       `json:"name,omitempty"`
-			Executable string       `json:"executable"`
-			PID        int          `json:"pid"`
-			Router     routerHealth `json:"router"`
+			OK         bool          `json:"ok"`
+			Version    string        `json:"version"`
+			Started    string        `json:"started"`
+			Channels   int           `json:"channels"`
+			Home       string        `json:"home"`
+			Machine    string        `json:"machine"`
+			Name       string        `json:"name,omitempty"`
+			Executable string        `json:"executable"`
+			PID        int           `json:"pid"`
+			Router     routerHealth  `json:"router"`
+			Healthy    bool          `json:"healthy"`
+			Components []health.Part `json:"components"`
 		}{true, s.o.Version, s.started, len(names), s.o.Home, s.machine, hubName(s.o.Home), s.exe,
-			os.Getpid(), routerOf(r.Context(), s.o.Environ)}, nil)
+			os.Getpid(), routerOf(r.Context(), s.o.Environ), s.health.Healthy(), s.health.Snapshot()}, nil)
 		return nil
 	case path == "/" || path == "/index.html":
 		return s.staticFile(w, "index.html", "text/html; charset=utf-8", "no-store")
