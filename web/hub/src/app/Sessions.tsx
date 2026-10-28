@@ -773,23 +773,29 @@ export function SessionsPane({
         <div class="flex gap-2 overflow-x-auto" data-machine-chips="">
           {["", ...machinesOf(st.sessions)].map((m) => {
             const on = machine === m;
+            // the span paints the contract's 28 px chip on every pointer; the button is the box a
+            // thumb presses, so on a coarse pointer it grows to the --ui-tap target around the pill
             return (
               <Button
                 key={m === "" ? "all" : m}
                 variant="secondary"
                 data-machine-chip={m === "" ? "all" : m}
                 pressed={on}
-                class={`h-7! min-h-7! rounded-[var(--ui-radius-sm)]! px-2.5! text-sm! font-medium! shrink-0 ${
-                  on
-                    ? "bg-[var(--ui-text)]! text-[var(--ui-bg)]!"
-                    : "bg-[var(--ui-surface-2)]! text-[var(--ui-muted)]!"
-                }`}
+                class={`h-7! min-h-7! rounded-[var(--ui-radius-sm)]! bg-transparent! p-0! shrink-0 pointer-coarse:h-[var(--ui-tap)]! pointer-coarse:min-h-[var(--ui-tap)]! pointer-coarse:min-w-[var(--ui-tap)]!`}
                 onClick={() => {
                   setMachine(m);
                   writePref(localStorage, "sessionsmachine", m);
                 }}
               >
-                {m === "" ? "All" : m}
+                <span
+                  class={`inline-flex h-7 items-center rounded-[var(--ui-radius-sm)] px-2.5 text-sm font-medium ${
+                    on
+                      ? "bg-[var(--ui-text)] text-[var(--ui-bg)]"
+                      : "bg-[var(--ui-surface-2)] text-[var(--ui-muted)]"
+                  }`}
+                >
+                  {m === "" ? "All" : m}
+                </span>
               </Button>
             );
           })}

@@ -459,6 +459,49 @@ describe("the Sessions list", () => {
     expect(localStorage.getItem("huddle:sessionsmachine")).toBe('""');
   });
 
+  it("keeps each machine chip a 28 px pill in one inner span, the button the coarse pointer's tap target", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    localStorage.clear();
+    mountNow("phone");
+    const chips = (): HTMLButtonElement[] => [
+      ...(document.querySelector("[data-machine-chips]") as HTMLElement).querySelectorAll("button"),
+    ];
+    expect(chips().map((b) => [b.getAttribute("data-machine-chip"), b.getAttribute("aria-pressed")])).toEqual(
+      [
+        ["all", "true"],
+        ["build-box", "false"],
+        ["laptop", "false"],
+        ["studio", "false"],
+      ],
+    );
+    for (const b of chips()) {
+      const name = b.textContent ?? "";
+      // the pill: one span carries the whole look on every pointer
+      expect(b.querySelectorAll("span").length, name).toBe(1);
+      const pill = b.querySelector("span") as HTMLElement;
+      for (const cls of [
+        "h-7",
+        "items-center",
+        "rounded-[var(--ui-radius-sm)]",
+        "px-2.5",
+        "text-sm",
+        "font-medium",
+      ]) {
+        expect(pill.classList.contains(cls), `${name}: .${cls}`).toBe(true);
+      }
+      // the button: the transparent box at least --ui-tap on each side under a coarse pointer
+      expect(b.classList.contains("pointer-coarse:min-h-[var(--ui-tap)]!"), name).toBe(true);
+      expect(b.classList.contains("pointer-coarse:min-w-[var(--ui-tap)]!"), name).toBe(true);
+    }
+    // the pill's fill follows the chip's state
+    const pillOf = (name: string): HTMLElement =>
+      (chips().find((b) => b.textContent === name) as HTMLButtonElement).querySelector("span") as HTMLElement;
+    expect(pillOf("All").classList.contains("bg-[var(--ui-text)]")).toBe(true);
+    expect(pillOf("All").classList.contains("text-[var(--ui-bg)]")).toBe(true);
+    expect(pillOf("laptop").classList.contains("bg-[var(--ui-surface-2)]")).toBe(true);
+    expect(pillOf("laptop").classList.contains("text-[var(--ui-muted)]")).toBe(true);
+  });
+
   it("carries the set-up row under the machine chips, its count the checklist's steps left", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     localStorage.clear();
