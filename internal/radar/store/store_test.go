@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -743,6 +744,21 @@ func TestApplyRegistry(t *testing.T) {
 		}
 		if !seen[0].Sessions || !slices.Equal(seen[0].Touched, []string{"s1"}) {
 			t.Errorf("first change: got sessions %v touched %v, want s1", seen[0].Sessions, seen[0].Touched)
+		}
+	})
+
+	t.Run("keeps the version still when the same registry lands twice, and moves it once when one changes", func(t *testing.T) {
+		store := newTestStore()
+		store.AddSpoolLine(line(func(l *shared.SpoolLine) { l.Ts = isoTime(ts0); l.Event = "SessionStart" }))
+		store.ApplyRegistry([]shared.RegistrySession{entry("s1", registryOver{status: str("busy")})}, ts1)
+		held := store.Version()
+		store.ApplyRegistry([]shared.RegistrySession{entry("s1", registryOver{status: str("busy")})}, ts2)
+		if store.Version() != held {
+			t.Errorf("version after the same registry again: got %d, want %d", store.Version(), held)
+		}
+		store.ApplyRegistry([]shared.RegistrySession{entry("s1", registryOver{status: str("idle")})}, ts3)
+		if store.Version() != held+1 {
+			t.Errorf("version after a changed registry: got %d, want %d", store.Version(), held+1)
 		}
 	})
 
@@ -1561,6 +1577,61 @@ func TestBounds(t *testing.T) {
 		}
 		if got := len(store.Raw().Requests); got != requestsCount {
 			t.Errorf("requests: got %d, want %d", got, requestsCount)
+		}
+	})
+}
+
+func TestNoteUtilization(t *testing.T) {
+	windows := domain.UnifiedUtilization{
+		FiveHour: &domain.UnifiedWindow{Used: 0.25, ResetsAt: i64(ts9)},
+		SevenDay: &domain.UnifiedWindow{Used: 0.5},
+	}
+
+	t.Run("notes the same limits at the same time once — the version holds and no listener hears it", func(t *testing.T) {
+		store := newTestStore()
+		var seen []Change
+		off := store.OnUpdate(func(change Change) { seen = append(seen, change) })
+		defer off()
+		before := store.Version()
+		store.NoteUtilization(ts1, windows)
+		store.NoteUtilization(ts1, windows)
+		if after := store.Version(); after != before+1 {
+			t.Errorf("version: got %d, want %d", after, before+1)
+		}
+		if len(seen) != 0 {
+			t.Errorf("changes: got %d, want 0 — the mutator never notifies", len(seen))
+		}
+	})
+
+	t.Run("notes the same limits at a newer time again — the pair moved", func(t *testing.T) {
+		store := newTestStore()
+		before := store.Version()
+		store.NoteUtilization(ts1, windows)
+		store.NoteUtilization(ts2, windows)
+		if after := store.Version(); after != before+2 {
+			t.Errorf("version: got %d, want %d", after, before+2)
+		}
+	})
+
+	t.Run("notes different limits at the same time again", func(t *testing.T) {
+		store := newTestStore()
+		before := store.Version()
+		store.NoteUtilization(ts1, windows)
+		changed := windows
+		changed.FiveHour = &domain.UnifiedWindow{Used: 0.75, ResetsAt: i64(ts9)}
+		store.NoteUtilization(ts1, changed)
+		if after := store.Version(); after != before+2 {
+			t.Errorf("version: got %d, want %d", after, before+2)
+		}
+	})
+
+	t.Run("keeps the newer limits when an older line arrives", func(t *testing.T) {
+		store := newTestStore()
+		before := store.Version()
+		store.NoteUtilization(ts2, windows)
+		store.NoteUtilization(ts1, windows)
+		if after := store.Version(); after != before+1 {
+			t.Errorf("version: got %d, want %d", after, before+1)
 		}
 	})
 }

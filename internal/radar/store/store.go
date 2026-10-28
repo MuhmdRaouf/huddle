@@ -522,6 +522,22 @@ func sameStatus(a, b *shared.SessionStatus) bool {
 	return *a == *b
 }
 
+// sameUtilization says whether two unified-limits snapshots carry the same windows.
+func sameUtilization(a, b *domain.UnifiedUtilization) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return sameWindow(a.FiveHour, b.FiveHour) && sameWindow(a.SevenDay, b.SevenDay)
+}
+
+// sameWindow says whether two unified windows match, share and reset time both.
+func sameWindow(a, b *domain.UnifiedWindow) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Used == b.Used && sameInt64(a.ResetsAt, b.ResetsAt)
+}
+
 func (s *Store) nowMillis() int64 { return s.now().UnixMilli() }
 
 // orderedIDs keeps a set of ids in arrival order — the order a JavaScript Map iterates —
@@ -1781,11 +1797,15 @@ func (s *Store) buildSummaryLocked() shared.Summary {
 }
 
 // NoteUtilization keeps the unified limits a route line carried at ts (epoch ms) when no newer
-// line's are held.
+// line's are held. The same pair again is a no-op: a re-fed spool line must not churn the
+// version every derived cache keys on.
 func (s *Store) NoteUtilization(ts int64, utilization domain.UnifiedUtilization) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.utilization != nil && ts < s.utilizationAt {
+		return
+	}
+	if s.utilization != nil && ts == s.utilizationAt && sameUtilization(s.utilization, &utilization) {
 		return
 	}
 	s.utilization, s.utilizationAt = &utilization, ts

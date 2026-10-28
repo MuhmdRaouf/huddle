@@ -394,6 +394,38 @@ func TestInsights(t *testing.T) {
 		}
 	})
 
+	t.Run("holds one alert answer across the push sweep's 30 s on a quiet store, and rebuilds when it moves", func(t *testing.T) {
+		world := makeEnv(t)
+		at := nowAt
+		now := func() time.Time { return at }
+		counted := &countingStore{Store: store.CreateStore(now)}
+		seedStore(counted.Store)
+		created := CreateInsights(context.Background(), InsightsOptions{
+			Env:    world.env,
+			Store:  counted,
+			Now:    now,
+			TickMs: 0,
+		})
+		t.Cleanup(created.Stop)
+		before := counted.rawCalls // the one call the start-up tick made
+		created.Alerts()
+		if counted.rawCalls != before {
+			t.Fatalf("the first alerts read cost %d copies, want 0 — the start-up tick's answer holds", counted.rawCalls-before)
+		}
+		at = nowAt.Add(30 * time.Second) // the push sweep's gap
+		created.Alerts()
+		if counted.rawCalls != before {
+			t.Errorf("alerts 30 s later on a quiet store cost %d copies, want 0 — the held answer must cover the sweep", counted.rawCalls-before)
+		}
+		counted.Store.AddRequest(makeRequest(func(r *shared.RequestRecord) {
+			r.ID, r.Ts, r.Model, r.Tokens = "r3", nowAt.UnixMilli()+30_000, "kimi-k3", outTokens
+		}), nil)
+		created.Alerts()
+		if counted.rawCalls != before+1 {
+			t.Errorf("alerts after a store change cost %d copies, want 1 — a moved version must rebuild", counted.rawCalls-before)
+		}
+	})
+
 	t.Run("rebuilds the metrics text when the budgets change, not only when the store does", func(t *testing.T) {
 		ctx := context.Background()
 		counted, cached := seededCounting(t)

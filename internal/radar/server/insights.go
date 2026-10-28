@@ -22,8 +22,11 @@ import (
 // DefaultTickMs is the cadence the server flushes insights on.
 const DefaultTickMs = 10_000
 
-// alertCacheMs is how long one alert answer holds while nothing it was built from moves.
-const alertCacheMs = 2000
+// alertCacheMs is how long one alert answer holds while nothing it was built from moves. The
+// ceiling exists for the time-decay detectors, whose answers go stale with no version moving:
+// long enough to cover the push sweep's 30 s gap and the tick's 10 s, so quiet reads serve the
+// held answer, and short enough that they still refresh once a minute.
+const alertCacheMs = 60_000
 
 // The router health view the dashboard serves: one day, folded hourly.
 const (
