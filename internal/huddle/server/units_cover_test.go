@@ -163,24 +163,27 @@ func TestApplyRoleOfAHubWithoutAListenSaysSo(t *testing.T) {
 }
 
 func TestAPidThePsCanNameIsAliveAndOneItCannotIsGone(t *testing.T) {
-	command, alive := pidCommandOf(bg, os.Getpid())
-	if !alive || !strings.Contains(command, os.Args[0]) {
-		t.Errorf("pidCommandOf(this process) = (%q, %v), want this binary", command, alive)
+	info := probePid(bg, os.Getpid())
+	if !info.Alive || !strings.Contains(info.Command, os.Args[0]) {
+		t.Errorf("probePid(this process) = %+v, want this binary", info)
 	}
-	if _, alive := pidCommandOf(bg, 1<<30); alive {
-		t.Error("pidCommandOf of a pid nothing owns answered alive")
+	if !info.StartKnown {
+		t.Errorf("probePid(this process) names no start time, want the platform's answer")
+	}
+	if probePid(bg, 1<<30).Alive {
+		t.Error("probePid of a pid nothing owns answered alive")
 	}
 }
 
 func TestThePidProbeReadsAChildsWholeCommandLine(t *testing.T) {
 	pid := startClaudeLike(t, append([]string{"--marker-7f3a"}, listeningArgs...)...)
-	command, alive := pidCommandOf(bg, pid)
-	if !alive {
-		t.Fatalf("pidCommandOf(the child) answered gone")
+	info := probePid(bg, pid)
+	if !info.Alive {
+		t.Fatalf("probePid(the child) answered gone")
 	}
 	for _, want := range append([]string{"claude", "--marker-7f3a"}, listeningArgs...) {
-		if !strings.Contains(command, want) {
-			t.Errorf("pidCommandOf(the child) = %q, want it to name %q", command, want)
+		if !strings.Contains(info.Command, want) {
+			t.Errorf("probePid(the child) = %q, want it to name %q", info.Command, want)
 		}
 	}
 }

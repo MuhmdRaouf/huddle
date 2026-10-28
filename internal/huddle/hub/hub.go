@@ -24,7 +24,11 @@ type Report struct {
 	ContextPercent float64 `json:"context_percent,omitempty"`
 	Cwd            string  `json:"cwd,omitempty"`
 	Pid            int     `json:"pid,omitempty"`
-	Channel        string  `json:"channel,omitempty"`
+	// PidStart is when the reported pid began, in unix milliseconds, as the hook's platform
+	// answered it; 0 when it could not tell. It tells a reused pid from the session's own
+	// process, the way the driver lock's start-time sidecar does.
+	PidStart int64  `json:"pid_start,omitempty"`
+	Channel  string `json:"channel,omitempty"`
 	// Member is the session's name in its channel: the bridge that acts it there holds the same
 	// name, so a push ack under it belongs to this session.
 	Member string `json:"member,omitempty"`
@@ -88,13 +92,15 @@ func (d *DB) Close() error { return d.st.Close() }
 
 // sessionUpsert records one report's session fields: the title keeps the first value said (the
 // first prompt, until the session sets one), every other field keeps the newest said, and an
-// empty value never erases what an earlier report said. A SessionEnd sets ended_at and a
-// SessionStart clears it, so an ended session stays ended under an older report replayed after
-// its end, and a resumed one comes back.
+// empty value never erases what an earlier report said. pid_start rides pid: a report that
+// carries a pid writes both (NULL when it could not tell the start time), and one that carries
+// none keeps both, so a pid never keeps an earlier pid's start time. A SessionEnd sets ended_at
+// and a SessionStart clears it, so an ended session stays ended under an older report replayed
+// after its end, and a resumed one comes back.
 const sessionUpsert = `
 INSERT INTO sessions (session_id, machine, project, branch, title, task, model, context_percent,
-                      cwd, pid, channel, member, harness, transcript_path, inbox_socket, last_event, last_event_at, ended_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      cwd, pid, pid_start, channel, member, harness, transcript_path, inbox_socket, last_event, last_event_at, ended_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(session_id) DO UPDATE SET
   machine = COALESCE(NULLIF(excluded.machine, ''), sessions.machine),
   project = COALESCE(NULLIF(excluded.project, ''), sessions.project),
@@ -105,6 +111,10 @@ ON CONFLICT(session_id) DO UPDATE SET
   context_percent = COALESCE(NULLIF(excluded.context_percent, 0), sessions.context_percent),
   cwd = COALESCE(NULLIF(excluded.cwd, ''), sessions.cwd),
   pid = COALESCE(NULLIF(excluded.pid, 0), sessions.pid),
+  pid_start = CASE
+    WHEN excluded.pid = 0 THEN sessions.pid_start
+    ELSE NULLIF(excluded.pid_start, 0)
+  END,
   channel = COALESCE(NULLIF(excluded.channel, ''), sessions.channel),
   member = COALESCE(NULLIF(excluded.member, ''), sessions.member),
   harness = COALESCE(NULLIF(excluded.harness, ''), sessions.harness),
@@ -141,8 +151,8 @@ func (d *DB) Report(ctx context.Context, r Report) error {
 			return err
 		}
 		if err := q.Run(ctx, sessionUpsert, r.SessionID, r.Machine, r.Project, r.Branch, r.Title,
-			r.Task, r.Model, r.ContextPercent, r.Cwd, r.Pid, r.Channel, r.Member, r.Harness,
-			r.TranscriptPath, r.InboxSocket, r.LastEvent, r.LastEventAt, endedAt); err != nil {
+			r.Task, r.Model, r.ContextPercent, r.Cwd, r.Pid, r.PidStart, r.Channel, r.Member,
+			r.Harness, r.TranscriptPath, r.InboxSocket, r.LastEvent, r.LastEventAt, endedAt); err != nil {
 			return err
 		}
 		if r.Teammate != nil && r.Teammate.Name != "" {

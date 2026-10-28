@@ -313,25 +313,39 @@ func (d *DB) Session(ctx context.Context, id string, now time.Time) (*SessionDet
 	return &SessionDetail{SessionRow: *row, Events: events}, nil
 }
 
-// PidProbe answers a pid's command line, and whether the pid lives. A probe only looks: the
-// decision it feeds never signals the process it read.
-type PidProbe func(ctx context.Context, pid int) (string, bool)
+// PidInfo is what a probe saw at one pid: whether it lives, its command line, and its start time
+// when the platform could tell (unix milliseconds).
+type PidInfo struct {
+	Alive      bool
+	Command    string
+	Start      int64
+	StartKnown bool
+}
+
+// PidProbe answers what one pid is. A probe only looks: the decision it feeds never signals the
+// process it read.
+type PidProbe func(ctx context.Context, pid int) PidInfo
 
 // MarkEndedPids ends every not-yet-ended session whose pid no longer runs a claude process:
 // the machine's report that the pid is gone. A pid that lives but runs something
-// else ends its session too — the claude process it served is gone from under it. It answers
-// the session ids it marked, in id order.
+// else ends its session too — the claude process it served is gone from under it — and a live
+// claude pid that began at another time than the session's stored pid_start is the OS's reuse of
+// the pid, not the process that reported. A row without a stored start time, and one whose start
+// time the platform cannot answer, decides on liveness alone. It answers the session ids it
+// marked, in id order.
 func (d *DB) MarkEndedPids(ctx context.Context, at string, probe PidProbe) ([]string, error) {
 	rows, err := d.st.All(ctx,
-		"SELECT session_id, pid FROM sessions WHERE ended_at IS NULL AND pid > 0 ORDER BY session_id")
+		"SELECT session_id, pid, pid_start FROM sessions WHERE ended_at IS NULL AND pid > 0 ORDER BY session_id")
 	if err != nil {
 		return nil, err
 	}
 	marked := []string{}
 	for _, row := range rows {
 		pid, _ := row["pid"].(int64)
-		command, alive := probe(ctx, int(pid))
-		if alive && strings.Contains(command, "claude") {
+		start, _ := row["pid_start"].(int64)
+		info := probe(ctx, int(pid))
+		reused := start > 0 && info.StartKnown && info.Start != start
+		if info.Alive && strings.Contains(info.Command, "claude") && !reused {
 			continue
 		}
 		if err := d.st.Run(ctx, "UPDATE sessions SET ended_at = ? WHERE session_id = ?",

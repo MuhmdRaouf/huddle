@@ -1122,7 +1122,7 @@ func TestFsStoreDriverStart(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read the sidecar: %v", err)
 		}
-		want, wantOK := procStartTime(mine)
+		want, wantOK := ProcStartTime(mine)
 		if !wantOK {
 			t.Fatal("this process's start time is unknown")
 		}

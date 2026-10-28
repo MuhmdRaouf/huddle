@@ -27,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
@@ -146,6 +147,13 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			rep.Digest = digestOf(input.TranscriptPath, input.Cwd)
 		}
 		rep.Pid = claudePid()
+		// when the pid began rides beside it, so the registry can tell a pid the OS reused from
+		// the session's own process
+		if rep.Pid > 0 {
+			if start, ok := adapters.ProcStartTime(int64(rep.Pid)); ok {
+				rep.PidStart = start
+			}
+		}
 		// where the session's inbox is, and where its messaging token lives: the hub keeps the
 		// socket on the session's row, the store keeps the token until the session's end
 		env := envOf(w)

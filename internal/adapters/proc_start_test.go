@@ -68,16 +68,16 @@ func parseEtime(text string) (time.Duration, error) {
 
 func TestProcStartTimeAnswersThisProcess(t *testing.T) {
 	mine := int64(os.Getpid())
-	start, ok := procStartTime(mine)
+	start, ok := ProcStartTime(mine)
 	if !ok {
-		t.Fatalf("procStartTime(%d) = not ok, want this process's start time", mine)
+		t.Fatalf("ProcStartTime(%d) = not ok, want this process's start time", mine)
 	}
 	witness, ok := psStartedAt(t, int(mine))
 	if !ok {
 		t.Skip("ps could not see this process")
 	}
 	if diff := start - witness; diff < -60_000 || diff > 60_000 {
-		t.Errorf("procStartTime(%d) = %d, ps witnesses %d (off by %d ms)", mine, start, witness, diff)
+		t.Errorf("ProcStartTime(%d) = %d, ps witnesses %d (off by %d ms)", mine, start, witness, diff)
 	}
 }
 
@@ -89,8 +89,8 @@ func TestProcStartTimeAnswersFalseForANonexistentPid(t *testing.T) {
 		if err == nil && strings.TrimSpace(string(out)) != "" {
 			continue
 		}
-		if _, ok := procStartTime(int64(pid)); ok {
-			t.Errorf("procStartTime(%d) answered a start time, want not ok for a pid ps cannot see", pid)
+		if _, ok := ProcStartTime(int64(pid)); ok {
+			t.Errorf("ProcStartTime(%d) answered a start time, want not ok for a pid ps cannot see", pid)
 		}
 		return
 	}
@@ -108,9 +108,9 @@ func TestProcessControlImplementsProcessStart(t *testing.T) {
 	if !ok {
 		t.Fatalf("StartTime(%d) = not ok, want this process's start time", mine)
 	}
-	want, ok := procStartTime(mine)
+	want, ok := ProcStartTime(mine)
 	if !ok {
-		t.Fatalf("procStartTime(%d) = not ok", mine)
+		t.Fatalf("ProcStartTime(%d) = not ok", mine)
 	}
 	if got != want {
 		t.Errorf("StartTime(%d) = %d, want %d", mine, got, want)

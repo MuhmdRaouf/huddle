@@ -311,8 +311,8 @@ func (s *server) commandOfMember(ctx context.Context, channelName, member string
 	if row.Machine != "" && row.Machine != s.machine {
 		return ""
 	}
-	command, _ := pidCommandOf(ctx, row.Pid)
-	return command
+	info := probePid(ctx, row.Pid)
+	return info.Command
 }
 
 // pushMessage carries one queued message the last mile and answers the route it took: through

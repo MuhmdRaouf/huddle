@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
@@ -971,6 +972,33 @@ func TestTheReportHookStartsNoPs(t *testing.T) {
 	pid, ok := took[0].Body["pid"].(float64)
 	if !ok || pid <= 0 {
 		t.Errorf("the report's pid = %v, want this process's pid", took[0].Body["pid"])
+	}
+}
+
+// TestTheReportCarriesThePidsStartTime: pid_start rides beside the pid, holding what the
+// platform answers for that pid's start, so the registry can tell a reused pid from the
+// session's own process.
+func TestTheReportCarriesThePidsStartTime(t *testing.T) {
+	reg, url := startRegistry(t)
+	stdout, _ := runReportHook(t, reportFixture(t, "stop", writeTranscript(t), t.TempDir()), reportHome(t),
+		map[string]string{"HUDDLE_URL": url})
+	if stdout != "" {
+		t.Errorf("the hook printed %q, want silence", stdout)
+	}
+	took := reg.took()
+	if len(took) != 1 {
+		t.Fatalf("the registry took %d POSTs, want the one report", len(took))
+	}
+	pid, ok := took[0].Body["pid"].(float64)
+	if !ok || pid <= 0 {
+		t.Fatalf("the report's pid = %v, want a process", took[0].Body["pid"])
+	}
+	want, ok := adapters.ProcStartTime(int64(pid))
+	if !ok {
+		t.Fatalf("ProcStartTime(%d) = not ok, want the process's start time", int64(pid))
+	}
+	if got, _ := took[0].Body["pid_start"].(float64); got != float64(want) {
+		t.Errorf("pid_start = %v, want %d", took[0].Body["pid_start"], want)
 	}
 }
 

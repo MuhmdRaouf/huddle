@@ -13,4 +13,4 @@ func CreateProcessHandling(command string, provider string, logPath func(jobID s
 // StartTime is when pid began, in unix milliseconds: the ProcessStart view of the same process
 // handling as ProcessControl. The dead-driver sweep tells a reused pid from the lock's holder by
 // it. false when the platform cannot tell.
-func (c *hostProcessControl) StartTime(pid int64) (int64, bool) { return procStartTime(pid) }
+func (c *hostProcessControl) StartTime(pid int64) (int64, bool) { return ProcStartTime(pid) }

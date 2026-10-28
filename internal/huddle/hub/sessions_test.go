@@ -219,14 +219,14 @@ func TestMarkEndedPidsEndsSessionsWhoseProcessIsGone(t *testing.T) {
 			t.Fatalf("report %s: %v", rep.SessionID, err)
 		}
 	}
-	probe := func(ctx context.Context, pid int) (string, bool) {
+	probe := func(ctx context.Context, pid int) PidInfo {
 		switch pid {
 		case 101: // the claude process, at work
-			return "/usr/local/bin/claude", true
+			return PidInfo{Alive: true, Command: "/usr/local/bin/claude"}
 		case 103: // alive, but the pid now runs something else
-			return "/usr/bin/top", true
+			return PidInfo{Alive: true, Command: "/usr/bin/top"}
 		default: // 102 is gone; 104 is never probed again (already ended)
-			return "", false
+			return PidInfo{}
 		}
 	}
 	marked, err := db.MarkEndedPids(ctx, "2026-10-16T09:01:00.000Z", probe)
@@ -253,6 +253,104 @@ func TestMarkEndedPidsEndsSessionsWhoseProcessIsGone(t *testing.T) {
 	// the second pass finds nothing new to mark
 	if marked, err = db.MarkEndedPids(ctx, "2026-10-16T09:01:30.000Z", probe); err != nil || len(marked) != 0 {
 		t.Errorf("second pass = %v, %v; want nothing marked", marked, err)
+	}
+}
+
+// TestMarkEndedPidsTellsAReusedPidFromTheSession reads the pid_start the reports carry: a live
+// claude pid that began at another time than the session's process is a pid the OS handed out
+// again — after a reboot, to another session or a claude run by hand — so the session it names
+// is over. A row without a stored start time, and one whose start time the platform cannot
+// answer, keeps the liveness rule alone.
+func TestMarkEndedPidsTellsAReusedPidFromTheSession(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	for _, rep := range []Report{
+		{SessionID: "s-reused", Pid: 4242, PidStart: 1000, LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:20.000Z"},
+		{SessionID: "s-own", Pid: 4243, PidStart: 1000, LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:20.000Z"},
+		{SessionID: "s-nostart", Pid: 4244, LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:20.000Z"},
+		{SessionID: "s-unknown", Pid: 4245, PidStart: 1000, LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:20.000Z"},
+		{SessionID: "s-dead", Pid: 4246, PidStart: 1000, LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:20.000Z"},
+	} {
+		if err := db.Report(ctx, rep); err != nil {
+			t.Fatalf("report %s: %v", rep.SessionID, err)
+		}
+	}
+	probe := func(ctx context.Context, pid int) PidInfo {
+		switch pid {
+		case 4242: // alive, running claude, begun at another time: the pid was reused
+			return PidInfo{Alive: true, Command: "/usr/local/bin/claude", Start: 2000, StartKnown: true}
+		case 4243: // the session's own process, begun when its report said
+			return PidInfo{Alive: true, Command: "/usr/local/bin/claude", Start: 1000, StartKnown: true}
+		case 4244: // a row without a stored start time keeps the liveness rule
+			return PidInfo{Alive: true, Command: "/usr/local/bin/claude", Start: 9999, StartKnown: true}
+		case 4245: // a start time the platform cannot tell decides on liveness alone
+			return PidInfo{Alive: true, Command: "/usr/local/bin/claude"}
+		default: // 4246 is gone
+			return PidInfo{}
+		}
+	}
+	marked, err := db.MarkEndedPids(ctx, "2026-10-16T09:01:00.000Z", probe)
+	if err != nil {
+		t.Fatalf("mark: %v", err)
+	}
+	if len(marked) != 2 || marked[0] != "s-dead" || marked[1] != "s-reused" {
+		t.Fatalf("marked = %v, want s-dead and s-reused", marked)
+	}
+	got, err := db.Sessions(ctx, SessionsFilter{State: StateEnded}, readNow)
+	if err != nil {
+		t.Fatalf("sessions: %v", err)
+	}
+	ended := map[string]bool{}
+	for _, row := range got {
+		ended[row.SessionID] = true
+	}
+	if !ended["s-dead"] || !ended["s-reused"] {
+		t.Errorf("ended sessions = %v, want s-dead and s-reused", ended)
+	}
+	for _, id := range []string{"s-own", "s-nostart", "s-unknown"} {
+		if ended[id] {
+			t.Errorf("%s ended, want it left live", id)
+		}
+	}
+}
+
+// TestTheReportStoresThePidsStartTimeBesideIt pins the upsert's rule for the pair: pid_start is
+// written together with pid — a report that carries no pid keeps both stored values, and a new
+// pid never keeps the start time of the pid before it.
+func TestTheReportStoresThePidsStartTimeBesideIt(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	row := func(t *testing.T) (int64, any) {
+		t.Helper()
+		got, err := db.st.Get(ctx, "SELECT pid, pid_start FROM sessions WHERE session_id = 's-1'")
+		if err != nil || got == nil {
+			t.Fatalf("read the row: %v %v", got, err)
+		}
+		pid, _ := got["pid"].(int64)
+		return pid, got["pid_start"]
+	}
+	if err := db.Report(ctx, Report{SessionID: "s-1", Pid: 10, PidStart: 5,
+		LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:00.000Z"}); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	if pid, start := row(t); pid != 10 || start != int64(5) {
+		t.Errorf("row = (%d, %v), want (10, 5)", pid, start)
+	}
+	// a report that carries no pid keeps the pid and its start time
+	if err := db.Report(ctx, Report{SessionID: "s-1", LastEvent: "Stop",
+		LastEventAt: "2026-10-16T09:00:10.000Z"}); err != nil {
+		t.Fatalf("report without a pid: %v", err)
+	}
+	if pid, start := row(t); pid != 10 || start != int64(5) {
+		t.Errorf("row after a pidless report = (%d, %v), want (10, 5)", pid, start)
+	}
+	// a new pid whose start time the hook could not tell stores NULL, never the earlier pid's
+	if err := db.Report(ctx, Report{SessionID: "s-1", Pid: 11,
+		LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:20.000Z"}); err != nil {
+		t.Fatalf("report with a new pid: %v", err)
+	}
+	if pid, start := row(t); pid != 11 || start != nil {
+		t.Errorf("row after a new pid = (%d, %v), want (11, NULL)", pid, start)
 	}
 }
 

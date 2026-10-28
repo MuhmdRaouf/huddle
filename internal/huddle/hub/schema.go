@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 24
+const SchemaVersion = 25
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -284,6 +284,8 @@ var migrations = []string{
 	// 24: the answers an owner picked on an AskUserQuestion allow, as compact JSON; empty for
 	// every other item.
 	`ALTER TABLE items ADD COLUMN answers TEXT NOT NULL DEFAULT '';`,
+	// 25: when the session's pid began, in unix milliseconds beside the pid, so a live pid the OS handed to a newer process no longer holds the session.
+	`ALTER TABLE sessions ADD COLUMN pid_start INTEGER;`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

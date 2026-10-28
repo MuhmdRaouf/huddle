@@ -340,7 +340,7 @@ func (s *fsStore) lock(ctx context.Context, id string, pid int64) (func(), error
 	// read the lock alone and ignore it. A failed write or a platform that cannot answer the
 	// start time never fails the lock: the lock stands and readers fall back to liveness alone.
 	// A stale sidecar from a reclaimed holder is replaced, or dropped, by the same write.
-	if start, ok := procStartTime(pid); ok {
+	if start, ok := ProcStartTime(pid); ok {
 		_, _ = fsutil.WriteFileAtomic(ctx, paths.DriverStart, []byte(strconv.FormatInt(start, 10)+"\n"), fsutil.WriteOptions{})
 	} else {
 		_ = removeForce(paths.DriverStart)

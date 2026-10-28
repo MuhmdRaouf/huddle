@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
@@ -1680,8 +1681,7 @@ func (s *server) seeTranscript(ctx context.Context, times map[string]time.Time, 
 		if pid <= 0 {
 			return false
 		}
-		_, alive := pidCommandOf(ctx, pid)
-		return alive
+		return probePid(ctx, pid).Alive
 	}, now)
 }
 
@@ -1939,7 +1939,7 @@ func (s *server) watchPids(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			marked, err := s.registry.MarkEndedPids(ctx, jsscalar.ISOTime(s.now()), pidCommandOf)
+			marked, err := s.registry.MarkEndedPids(ctx, jsscalar.ISOTime(s.now()), probePid)
 			if err != nil {
 				fmt.Fprintf(s.o.Stderr, "registry: pid check: %v\n", err)
 				continue
@@ -1953,17 +1953,21 @@ func (s *server) watchPids(ctx context.Context) {
 	}
 }
 
-// pidCommandOf answers a pid's command line and whether the pid lives: a pid ps cannot name is
-// gone, so no signal is ever sent to find out. Each probe is bounded, so a wedged ps holds one
-// pass only.
-func pidCommandOf(ctx context.Context, pid int) (string, bool) {
+// probePid answers what one pid is: whether it lives, its command line, and when it began — a
+// pid ps cannot name is gone, so no signal is ever sent to find out. Each probe is bounded, so a
+// wedged ps holds one pass only.
+func probePid(ctx context.Context, pid int) hub.PidInfo {
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(probeCtx, "ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
 	if err != nil {
-		return "", false
+		return hub.PidInfo{}
 	}
-	return string(out), true
+	info := hub.PidInfo{Alive: true, Command: string(out)}
+	if start, ok := adapters.ProcStartTime(int64(pid)); ok {
+		info.Start, info.StartKnown = start, true
+	}
+	return info
 }
 
 // staticFile serves one embedded file under the Cache-Control it is given.

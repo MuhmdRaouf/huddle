@@ -5,12 +5,12 @@ import (
 	"unsafe"
 )
 
-// procStartTime is when pid began, in unix milliseconds, from the kern.proc.pid sysctl's
+// ProcStartTime is when pid began, in unix milliseconds, from the kern.proc.pid sysctl's
 // p_starttime: the raw __sysctl call answers 648 bytes of kinfo_proc whose first fields are the
 // start time (seconds at 0, microseconds at 8, identical on both darwin architectures). A pid
 // with no process answers an empty buffer and no error, so the length check is the liveness
 // test. false when the sysctl cannot tell.
-func procStartTime(pid int64) (int64, bool) {
+func ProcStartTime(pid int64) (int64, bool) {
 	// The name's mib — CTL_KERN (1), KERN_PROC (14), KERN_PROC_PID (1) — and the syscall number
 	// are the only pieces stdlib syscall lacks words for.
 	mib := [4]int32{1, 14, 1, int32(pid)}

@@ -10,10 +10,10 @@ import (
 // HZ — the constant every reader of these files bakes in.
 const procUserHZ = 100
 
-// procStartTime is when pid began, in unix milliseconds: /proc/<pid>/stat's starttime field
+// ProcStartTime is when pid began, in unix milliseconds: /proc/<pid>/stat's starttime field
 // (ticks since boot) over /proc/stat's btime. false when the process cannot be read — a gone pid
 // among them.
-func procStartTime(pid int64) (int64, bool) {
+func ProcStartTime(pid int64) (int64, bool) {
 	raw, err := os.ReadFile("/proc/" + strconv.FormatInt(pid, 10) + "/stat")
 	if err != nil {
 		return 0, false

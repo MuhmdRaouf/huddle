@@ -115,7 +115,7 @@ func TestSessionReadsNameAFailedStatement(t *testing.T) {
 
 func TestTheRegistryWritesNameAFailedStatement(t *testing.T) {
 	db := dbWithout(t, "sessions")
-	if _, err := db.MarkEndedPids(context.Background(), "2026-10-16T09:00:00.000Z", func(context.Context, int) (string, bool) { return "", false }); err == nil {
+	if _, err := db.MarkEndedPids(context.Background(), "2026-10-16T09:00:00.000Z", func(context.Context, int) PidInfo { return PidInfo{} }); err == nil {
 		t.Fatal("the pid check on a broken sessions table succeeded")
 	}
 	if _, err := db.OpenTheSession(context.Background(), "s-1", "2026-10-16T09:00:00.000Z"); err == nil {
