@@ -1,8 +1,9 @@
-// Now.test.tsx — the Session screen: the header's chips, context bar and state pill, the event
-// stream with its bubbles, tool rows, day dividers and scroll follow, the stale-hooks resume
-// line, the desktop context pane, the small pieces (the model chip, the context bar, the mark),
-// and the linked session's brief and hand over with their step-up, session text always rendered
-// as text, never HTML.
+// Now.test.tsx — the Session screen: the phone's two-row header (back link, title, state word,
+// where line) and the facts line at the pane's foot, the desktop's title, where line and status
+// line, the event stream with its bubbles, tool rows, day dividers and scroll follow, the
+// stale-hooks resume line, the desktop context pane, the small pieces (the mark), and the linked
+// session's brief and hand over with their step-up, session text always rendered as text, never
+// HTML.
 import { act, cleanup, screen, within } from "@testing-library/preact";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -10,7 +11,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import type { Api } from "../../src/api.ts";
 import type { Layout } from "../../src/app/layout.ts";
 import { NowContext, SessionScreen } from "../../src/app/Now.tsx";
-import { ContextBar, ModelChip, StateMark } from "../../src/app/session-parts.tsx";
+import { StateMark } from "../../src/app/session-parts.tsx";
 import type {
   NeedItem,
   RegistryDetail,
@@ -203,33 +204,71 @@ describe("the Session screen", () => {
     return registry;
   };
 
-  it("shows the header, the chips and the context bar, and goes back to Sessions", () => {
+  it("matches the mock's phone header: back, title, state word and the where line, no chips", () => {
     mountSession("phone");
-    expect(screen.getByRole("link", { name: "Back to Sessions" }).getAttribute("href")).toBe("#/sessions");
-    expect(screen.getByText("kanban-e2e")).toBeDefined();
-    expect(screen.getByText("laptop · claude-code-plugins · port/KBN-E2E")).toBeDefined();
-    expect(screen.getByText("needs you")).toBeDefined();
-    expect(screen.getByText("glm-5.3")).toBeDefined();
-    expect(screen.getByText("#kanban-release")).toBeDefined();
-    expect(screen.getByLabelText("Context 58 percent used")).toBeDefined();
-    expect(screen.getByText("58% context")).toBeDefined();
+    const back = screen.getByRole("link", { name: "Back to Sessions" }) as HTMLElement;
+    expect(back.getAttribute("href")).toBe("#/sessions");
+    // the mock's back control: the chevron in the accent ink
+    expect(back.className).toContain("text-[var(--ui-accent)]");
+    const header = document.querySelector("[data-session] header") as HTMLElement;
+    expect(header.querySelector("[data-session-title]")?.textContent).toBe("kanban-e2e");
+    const state = header.querySelector("[data-state]") as HTMLElement;
+    expect(state.textContent).toBe("Needs you");
+    expect(state.getAttribute("data-state")).toBe("needs-you");
+    // the where line rides in the title's column at 12 px, the mock's size for it
+    const where = screen.getByText("claude-code-plugins · port/KBN-E2E · laptop") as HTMLElement;
+    expect(where.className).toContain("text-xs");
+    expect(screen.getByText("claude-code-plugins · port/KBN-E2E · laptop").parentElement?.parentElement).toBe(
+      header.querySelector("[data-session-title]")?.parentElement,
+    );
+    // the chips row is gone: no model chip, no harness pill, no channel chip, no context bar
+    expect(header.querySelector("[data-model-dot]")).toBeNull();
+    expect(header.querySelector("[data-harness]")).toBeNull();
+    expect(header.textContent).not.toContain("#kanban-release");
+    expect(screen.queryByLabelText("Context 58 percent used")).toBeNull();
   });
 
-  it("names the session's harness among the header's chips, Claude Code included", () => {
-    for (const layout of ["phone", "desktop"] as const) {
-      for (const [harness, id, name] of [
-        ["claude", "claude", "Claude Code"],
-        ["codex", "codex", "Codex"],
-        [undefined, "claude", "Claude Code"],
-      ] as const) {
-        cleanup();
-        mountSession(layout, harness ? { harness } : {});
-        const chip = document.querySelector("[data-session] header [data-harness]") as HTMLElement | null;
-        expect(chip, `${layout} ${harness}`).not.toBeNull();
-        expect(chip?.dataset.harness).toBe(id);
-        expect(chip?.textContent).toContain(name);
-        expect(chip?.querySelector("[data-harness-mark]")).not.toBeNull();
-      }
+  it("reads the session's facts as one quiet line at the pane's foot", () => {
+    mountSession("phone", { harness: "claude" });
+    const facts = document.querySelector("[data-session-facts]") as HTMLElement;
+    expect(facts.textContent).toBe("glm-5.3 · 58% context · Claude Code");
+    expect(facts.className).toContain("text-xs");
+  });
+
+  it("draws no facts line when the session carries no model, context or harness", () => {
+    const { model: _model, context_percent: _pct, harness: _harness, ...bare } = detail();
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    const registry = makeRegistry({ sessions: fixture(), open: bare, openId: "s-need-1" });
+    followRender(() => <SessionScreen id="s-need-1" layout="phone" />, registry);
+    expect(document.querySelector("[data-session-facts]")).toBeNull();
+  });
+
+  it("names the session's harness: the desk header's badge, the phone's facts line", () => {
+    for (const [harness, id, name] of [
+      ["claude", "claude", "Claude Code"],
+      ["codex", "codex", "Codex"],
+      [undefined, "claude", "Claude Code"],
+    ] as const) {
+      cleanup();
+      mountSession("desktop", harness ? { harness } : {});
+      const chip = document.querySelector("[data-session] header [data-harness]") as HTMLElement | null;
+      expect(chip, `desktop ${harness}`).not.toBeNull();
+      expect(chip?.dataset.harness).toBe(id);
+      expect(chip?.textContent).toContain(name);
+      expect(chip?.querySelector("[data-harness-mark]")).not.toBeNull();
+    }
+    for (const [harness, name] of [
+      ["claude", "Claude Code"],
+      ["codex", "Codex"],
+    ] as const) {
+      cleanup();
+      mountSession("phone", { harness });
+      // the phone header carries no pill: the facts line names the harness the report feeds
+      expect(document.querySelector("[data-session] header [data-harness]"), `phone ${harness}`).toBeNull();
+      expect(
+        (document.querySelector("[data-session-facts]") as HTMLElement | null)?.textContent,
+        `phone ${harness}`,
+      ).toContain(name);
     }
   });
 
@@ -264,6 +303,8 @@ describe("the Session screen", () => {
       const pill = document.querySelector("[data-session] header [data-state]") as HTMLElement;
       expect(pill.dataset.role, state).toBe(role);
       expect(pill.className, state).toContain(`text-[var(--ui-${role}-ink)]`);
+      // the phone's state reads at the mock's 12 px, not the title's size
+      expect(pill.className, state).toContain("text-xs");
       expect(pill.className, state).not.toContain("warning");
     }
   });
@@ -271,7 +312,7 @@ describe("the Session screen", () => {
   it("reads a session with an open item as Needs you in its header, not idle", () => {
     mountSession("phone", { state: "idle" }, [needItem()]);
     const pill = document.querySelector("[data-session] header [data-state]") as HTMLElement;
-    expect(pill.textContent).toBe("needs you");
+    expect(pill.textContent).toBe("Needs you");
     expect(pill.dataset.role).toBe("needs-you");
   });
 
@@ -542,16 +583,13 @@ describe("the Session screen", () => {
     expect(document.querySelector("[data-resume]")).toBeNull();
   });
 
-  it("keeps the context bar on the tablet, and at both widths the full name and no back link", () => {
+  it("keeps the full name and no back link on the tablet and the desk, the back link on the phone alone", () => {
     for (const layout of ["tablet", "desktop"] as const) {
       cleanup();
       mountSession(layout);
       expect(screen.getByText("kanban-e2e"), layout).toBeDefined();
       expect(screen.queryByRole("link", { name: "Back to Sessions" }), layout).toBeNull();
     }
-    cleanup();
-    mountSession("tablet");
-    expect(screen.getByLabelText("Context 58 percent used")).toBeDefined();
   });
 
   it("puts the desk title alone on its row and the facts in one status line under it", async () => {
@@ -700,39 +738,11 @@ describe("the session rail", () => {
 });
 
 describe("the small pieces", () => {
-  it("colors a model chip by its family and titles the raw id", () => {
-    const chip = renderIn(<ModelChip model="claude-opus-4-6" />);
-    const el = chip.getByText("opus-4-6"); // the chip span holds only its short name
-    expect(el.getAttribute("title")).toBe("claude-opus-4-6");
-    expect(el.getAttribute("style")).toContain("var(--model-opus)");
-    chip.unmount();
-  });
-
-  it("fills the context bar to its percent and hides it at zero", () => {
-    const bar = renderIn(<ContextBar pct={58} />);
-    expect(bar.getByRole("img").getAttribute("aria-label")).toBe("Context 58 percent used");
-    expect((bar.getByRole("img").firstElementChild as HTMLElement).style.width).toBe("58%");
-    bar.unmount();
-    const empty = renderIn(<ContextBar pct={0} />);
-    expect(empty.container.firstElementChild).toBeNull();
-    empty.unmount();
-  });
-
-  it("draws an unknown state as the hollow mark, and the header's pill chip", () => {
+  it("draws an unknown state as the hollow mark, saying its own name", () => {
     const mark = renderIn(<StateMark state="confused" />);
     expect(mark.getByRole("img").getAttribute("aria-label")).toBe("confused");
     expect(mark.getByRole("img").dataset.shape).toBe("hollow");
     mark.unmount();
-    const chip = renderIn(<ModelChip model="glm-5.3" pill />);
-    const pill = chip.getByText("glm-5.3");
-    expect(pill.className).toContain("rounded-full");
-    // the pill carries the family's colour as a leading dot, never a border on a round chip
-    expect(pill.getAttribute("style") ?? "").not.toContain("border-left");
-    expect((pill.querySelector("[data-model-dot]") as HTMLElement).getAttribute("style")).toContain(
-      "background",
-    );
-    expect(legacyClasses(chip.container)).toEqual([]);
-    chip.unmount();
   });
 });
 

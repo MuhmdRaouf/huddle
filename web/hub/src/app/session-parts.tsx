@@ -1,15 +1,12 @@
 // session-parts.tsx — the pieces the Sessions list and the Session screen share: the state mark
-// and chip (shape plus word, so the state never rides on colour alone), the model chip, the
-// context bar, the harness badge, the hooks-stale chip, the link that opens a session, and the
-// muted ink and hairline both draw with.
-import { modelColor } from "@huddle/ui/model-color.ts";
+// and chip (shape plus word, so the state never rides on colour alone), the harness badge, the
+// hooks-stale chip, the link that opens a session, and the muted ink and hairline both draw with.
 import { type JSX } from "preact";
 import {
   harnessOf,
   type NeedItem,
   projectName,
   type RegistrySession,
-  shortModel,
   type StateRole,
   stateRole,
   stateWord,
@@ -144,68 +141,9 @@ export function RowStateChip({ state }: { state: string }): JSX.Element {
   );
 }
 
-/** A model as its chip: the short name in the page's own text colour, the family's colour as
- *  the chip's leading edge (a fill behind the text fails contrast on the lighter families), a
- *  leading dot on the header's round pill, the raw id on hover. */
-export function ModelChip({
-  model,
-  pill = false,
-}: {
-  model: string;
-  /** The session header's round pill; the list's rows carry the small square chip. */
-  pill?: boolean | undefined;
-}): JSX.Element {
-  const look =
-    "inline-flex items-center whitespace-nowrap border border-[var(--ui-line)] bg-[var(--ui-surface-2)] ui-mono text-[var(--ui-text)]";
-  if (pill) {
-    return (
-      <span class={`${look} gap-1.5 rounded-full px-2.5 py-[3px] text-xs`} title={model}>
-        <span
-          data-model-dot=""
-          class="size-2 shrink-0 rounded-full"
-          style={`background:${modelColor(model)}`}
-          aria-hidden="true"
-        />
-        {shortModel(model)}
-      </span>
-    );
-  }
-  return (
-    <span
-      class={`${look} rounded-md px-1.5 py-px text-[11px] leading-4`}
-      style={`border-left:4px solid ${modelColor(model)}`}
-      title={model}
-    >
-      {shortModel(model)}
-    </span>
-  );
-}
-
-/** The context bar: how full the session's window is, one accent fill over a quiet track.
- *  Nothing at zero — a session that never said reads as unknown, not empty. */
-export function ContextBar({
-  pct,
-  class: c = "",
-}: {
-  pct: number;
-  class?: string | undefined;
-}): JSX.Element | null {
-  if (!pct) return null;
-  const n = Math.round(pct);
-  return (
-    <div
-      class={`h-1.5 w-full overflow-hidden rounded-full bg-[var(--ui-surface-2)] ${c}`.trim()}
-      role="img"
-      aria-label={`Context ${n} percent used`}
-    >
-      <div class="h-full rounded-full bg-[var(--ui-accent)]" style={`width:${n}%`} />
-    </div>
-  );
-}
-
-/** A row's where: machine · project · branch, the parts that exist joined by middots. */
+/** A row's where: project · branch · machine, the parts that exist joined by middots. */
 export const whereOf = (s: RegistrySession): string =>
-  [s.machine, projectName(s.project), s.branch].filter(Boolean).join(" · ");
+  [projectName(s.project), s.branch, s.machine].filter(Boolean).join(" · ");
 
 /** The quiet ink of a secondary line, and the hairline a divider draws. */
 export const MUTED = "text-[var(--ui-muted)]";

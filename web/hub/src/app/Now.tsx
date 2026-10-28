@@ -1,6 +1,7 @@
-// Now.tsx — the Session screen: the header (the phone's two rows with their chips and context
-// bar, the desktop's title, where line and status line), the stream of the session's events, and
-// the action bar its open ask carries; and the desktop's right rail (the session's Now, the
+// Now.tsx — the Session screen: the header (the phone's two rows — the title's row with the
+// state word at its right, the where line under it — the desktop's title, where line and status
+// line), the facts line at the phone pane's foot, the stream of the session's events, and the
+// action bar its open ask carries; and the desktop's right rail (the session's Now, the
 // teammates it runs, the linked sessions). One tree serves the three layouts: the phone paints
 // the session alone, the tablet and the desktop paint it beside the list, and the desktop adds
 // the rail. Session text is rendered as text, never HTML (SPEC 9).
@@ -14,8 +15,9 @@ import { Icon } from "../icons.tsx";
 import type { ChannelLinks } from "../links.ts";
 import {
   ageText,
-  type NeedItem,
+  harnessOf,
   openItemOf,
+  type RegistryDetail,
   type RegistrySession,
   sessionName,
   shortModel,
@@ -30,36 +32,7 @@ import {
 import { errText, useHuddle } from "./context.tsx";
 import type { Layout } from "./layout.ts";
 import { NeedsBar, useStepUp } from "./Needs.tsx";
-import {
-  ContextBar,
-  HarnessBadge,
-  HooksStaleChip,
-  LINE,
-  ModelChip,
-  MUTED,
-  openHref,
-  StateChip,
-  StateMark,
-  whereOf,
-} from "./session-parts.tsx";
-
-/** The session's chips: its state (mark and word) in its role's tone, the hooks-stale chip when
- *  its hooks stopped reporting, its model, its channel when it is in one, and the harness it runs
- *  in. The state is the one the session shows, and its open item tells a finished turn from a
- *  blocking ask. */
-function Chips({ s, needs }: { s: RegistrySession; needs: NeedItem[] | null }): JSX.Element {
-  return (
-    <span class="flex min-w-0 flex-wrap items-center gap-1.5">
-      <StateChip state={shownState(s, needs)} item={openItemOf(needs, s.session_id)} mark />
-      <HooksStaleChip s={s} />
-      {s.model ? <ModelChip model={s.model} pill /> : null}
-      {s.channel ? (
-        <span class={`rounded-full border ${LINE} px-2.5 py-0.5 text-xs ${MUTED}`}>#{s.channel}</span>
-      ) : null}
-      <HarnessBadge s={s} pill />
-    </span>
-  );
-}
+import { HarnessBadge, HooksStaleChip, LINE, MUTED, openHref, StateMark, whereOf } from "./session-parts.tsx";
 
 /** One timestamp's wall-clock time, always 24 h, whatever the browser's locale spells. */
 function hhmm(ms: number): string {
@@ -467,12 +440,31 @@ function StateLead({ state, role, tails }: { state: string; role: StateRole; tai
   );
 }
 
+/** The session's facts as the phone's and tablet's one quiet line at the pane's foot, above the
+ *  ask's action bar: its model, how full its context window is, and the harness its report
+ *  names — each left out when the session does not carry it, the line itself when none is known. */
+function SessionFacts({ d, pct }: { d: RegistryDetail; pct: number }): JSX.Element | null {
+  const parts = [
+    d.model ? shortModel(d.model) : "",
+    pct ? `${pct}% context` : "",
+    d.harness ? harnessOf(d).name : "",
+  ].filter(Boolean);
+  if (parts.length === 0) return null;
+  return (
+    <p data-session-facts="" class={`shrink-0 px-4 pb-2 text-xs ${MUTED}`}>
+      {parts.join(" · ")}
+    </p>
+  );
+}
+
 /** The Session screen: the header, the line that says how to restart a session whose hooks
  *  stopped reporting, the stream of the session's events, and the action bar its open needs-you
  *  ask carries (the phone's sheet, the wide layouts' inline box). The phone and the tablet paint
- *  the two-row header, so the name keeps its own row (the phone's carries the back link; the
- *  tablet's list stands beside it); the desktop leads with the title alone, the where line and
- *  one status line under it, and the actions at its right. */
+ *  the mock's one-row header: the title's column — the phone's carries the accent back link, the
+ *  where line rides under the title with the hooks-stale chip beside it — and the state as a
+ *  small dot and word at the column's right; the facts line sits at the pane's foot. The desktop
+ *  leads with the title alone, the where line and one status line under it, and the actions at
+ *  its right. */
 export function SessionScreen({ id, layout }: { id: string; layout: Layout }): JSX.Element {
   const { registry, now } = useHuddle();
   const st = registry.getState();
@@ -487,6 +479,9 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
     );
   }
   const ask = openItemOf(st.needs, id);
+  const state = shownState(d, st.needs);
+  const role = stateRole(state, ask);
+  const word = stateWord(state);
 
   const items = streamItems(d.events ?? []);
   const pct = d.context_percent ? Math.round(d.context_percent) : 0;
@@ -494,34 +489,36 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
   return (
     <div class="flex min-h-0 min-w-0 flex-1 flex-col" data-session="">
       {layout !== "desktop" ? (
-        <header
-          class={`flex shrink-0 flex-col gap-2.5 border-b ${LINE} bg-[var(--ui-surface)] px-3 pt-3.5 pb-3`}
-        >
-          <div class="flex items-center gap-1">
+        <header class={`shrink-0 border-b ${LINE} bg-[var(--ui-surface)] px-3 pt-3.5 pb-3`}>
+          <div class="flex min-w-0 items-center gap-1">
             {layout === "phone" ? (
               <a
                 href="#/sessions"
                 aria-label="Back to Sessions"
-                class="flex size-[var(--ui-tap)] shrink-0 items-center justify-center rounded-[var(--ui-radius)] text-[var(--ui-text)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+                class="flex size-[var(--ui-tap)] shrink-0 items-center justify-center rounded-[var(--ui-radius)] text-[var(--ui-accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
               >
                 <Icon name="left" class="size-[22px]" />
               </a>
             ) : null}
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-              <div class="truncate text-lg font-semibold">{sessionName(d)}</div>
-              <div class={`truncate text-xs ${MUTED}`}>{whereOf(d)}</div>
+              <div data-session-title="" class="truncate text-lg font-semibold">
+                {sessionName(d)}
+              </div>
+              <div class="flex min-w-0 items-center gap-2">
+                <div class={`min-w-0 truncate text-xs ${MUTED}`}>{whereOf(d)}</div>
+                <HooksStaleChip s={d} />
+              </div>
             </div>
+            <span
+              data-state={state}
+              data-role={role}
+              class={`flex shrink-0 items-center gap-1.5 text-xs ${STATE_INK[role]}`}
+            >
+              <span aria-hidden="true" class="size-2 shrink-0 rounded-full bg-current" />
+              {word.charAt(0).toUpperCase() + word.slice(1)}
+            </span>
             <SessionActions session={d} />
           </div>
-          <div class="px-2">
-            <Chips s={d} needs={st.needs} />
-          </div>
-          {pct ? (
-            <div class="flex items-center gap-2.5 px-2">
-              <ContextBar pct={pct} class="min-w-0 flex-1" />
-              <span class={`shrink-0 text-xs ${MUTED}`}>{pct}% context</span>
-            </div>
-          ) : null}
         </header>
       ) : (
         <header class="shrink-0 px-6 pt-4">
@@ -533,8 +530,8 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
               <div class={`mt-1 truncate ${T13} ${MUTED}`}>{whereOf(d)}</div>
               <div data-status-line="" class="mt-2 flex min-w-0 items-center gap-2">
                 <StateLead
-                  state={shownState(d, st.needs)}
-                  role={stateRole(shownState(d, st.needs), ask)}
+                  state={state}
+                  role={role}
                   tails={[d.model ? shortModel(d.model) : "", pct ? `${pct}% context` : ""]}
                 />
                 <HooksStaleChip s={d} />
@@ -552,6 +549,7 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
         </p>
       ) : null}
       <StreamPane key={d.session_id} items={items} now={now} />
+      {layout !== "desktop" ? <SessionFacts d={d} pct={pct} /> : null}
       {ask ? <NeedsBar item={ask} session={d} layout={layout} /> : null}
     </div>
   );

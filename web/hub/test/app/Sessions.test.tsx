@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import type { Api } from "../../src/api.ts";
 import type { HuddleContextValue } from "../../src/app/context.tsx";
 import type { Layout } from "../../src/app/layout.ts";
-import { StateMark } from "../../src/app/session-parts.tsx";
+import { StateMark, whereOf } from "../../src/app/session-parts.tsx";
 import { SessionsPane } from "../../src/app/Sessions.tsx";
 import type { NeedItem, RegistrySession, RegistryStore } from "../../src/registry.ts";
 import { flush, legacyClasses, makeCtx, makeRegistry, makeState, renderIn, stubMedia } from "../helpers.tsx";
@@ -241,7 +241,7 @@ describe("the Sessions list", () => {
     expect(card).not.toBeNull();
     expect(within(card as HTMLElement).getByText("30 s")).toBeDefined();
     expect(
-      within(card as HTMLElement).getByText("laptop · claude-code-plugins · port/KBN-E2E"),
+      within(card as HTMLElement).getByText("claude-code-plugins · port/KBN-E2E · laptop"),
     ).toBeDefined();
     expect(within(card as HTMLElement).getByText("Run the board export e2e")).toBeDefined();
     // the ask names its tool and the input it would run
@@ -1063,5 +1063,16 @@ describe("the feature chips", () => {
     });
     await flush();
     expect(h.calls.filter((c) => c.path === "/api/sessions/s-work-1/tasks").length).toBe(asked);
+  });
+});
+
+describe("whereOf", () => {
+  it("joins project · branch · machine, the mocks' order, and leaves the parts it lacks out", () => {
+    expect(
+      whereOf(row({ session_id: "s", machine: "mbp", project: "/work/huddle", branch: "feat/huddle-daily" })),
+    ).toBe("huddle · feat/huddle-daily · mbp");
+    expect(whereOf(row({ session_id: "s", machine: "mbp", project: "/work/huddle" }))).toBe("huddle · mbp");
+    expect(whereOf(row({ session_id: "s", project: "/work/huddle" }))).toBe("huddle");
+    expect(whereOf(row({ session_id: "s" }))).toBe("");
   });
 });
