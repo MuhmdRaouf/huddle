@@ -194,6 +194,8 @@ function StreamPane({ items, now }: { items: StreamItem[]; now: number }): JSX.E
       ref={pane}
       onScroll={onScroll}
       class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 sm:px-6"
+      tabIndex={0}
+      aria-label="Transcript"
       data-stream=""
     >
       <div class="mx-auto flex max-w-[51.25rem] flex-col gap-3 text-sm leading-relaxed sm:text-[15px]">

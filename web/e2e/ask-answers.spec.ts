@@ -64,9 +64,7 @@ test("a two-question ask opens the answer sheet and the wait carries the owner's
     }));
     expect(body.scroll).toBeLessThanOrEqual(body.client);
   }
-  // the Now page's own parts stay out of this sheet's audit: the transcript pane and the session
-  // list's raw-input preview overflow without keyboard access on a long ask, which is Now's to fix
-  await expectAccessible(page, ["[data-stream]", "[data-ask]"]);
+  await expectAccessible(page);
 
   const send = ask.getByRole("button", { name: "Send answers" });
   await expect(send).toBeDisabled();
