@@ -286,6 +286,19 @@ func (s *server) pushUpstream(ctx context.Context, now time.Time, subs []hub.Pus
 	if radar == nil {
 		return
 	}
+	// only a NotifyAll device hears an upstream alert, and the fetch rebuilds radar's whole
+	// alert set: with no listener the pass stops here, and a failure seen now stays unmarked
+	// for the next pass that has one.
+	listener := false
+	for _, sub := range subs {
+		if sub.Notify == hub.NotifyAll {
+			listener = true
+			break
+		}
+	}
+	if !listener {
+		return
+	}
 	raw, ok := radar.RadarAnswer(ctx, "/api/alerts")
 	if !ok {
 		return

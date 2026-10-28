@@ -983,10 +983,12 @@ func verifyVapidJWT(t *testing.T, token, public string) vapidClaims {
 	return claims
 }
 
-// fakeRadar answers the alerts radar raises, as its in-process API writes them.
+// fakeRadar answers the alerts radar raises, as its in-process API writes them, and counts
+// the fetches: every one rebuilds radar's whole alert set.
 type fakeRadar struct {
 	mu     sync.Mutex
 	alerts string
+	calls  int
 }
 
 func (f *fakeRadar) set(alerts string) {
@@ -1001,7 +1003,15 @@ func (f *fakeRadar) RadarAnswer(_ context.Context, path string) ([]byte, bool) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.calls++
 	return []byte(f.alerts), true
+}
+
+// count answers how many alerts fetches it served.
+func (f *fakeRadar) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
 }
 
 func TestAFailingAnthropicPathPushesOncePerFailure(t *testing.T) {
@@ -1048,6 +1058,77 @@ func TestAFailingAnthropicPathPushesOncePerFailure(t *testing.T) {
 	s.sweepPushes(context.Background())
 	if service.count() != 2 {
 		t.Fatalf("the pushes after the second failure = %d, want one more", service.count())
+	}
+}
+
+// Each alerts fetch rebuilds radar's whole alert set, and only a device that chose
+// needs-and-alerts can hear an upstream alert: a pass with no such device asks radar nothing,
+// and a pass with one asks once.
+func TestTheSweepAsksRadarOnlyWhenADeviceChoseAlerts(t *testing.T) {
+	service := newFakePush(t)
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return pushClock })
+	radar := &fakeRadar{alerts: `{"alerts":[]}`}
+	s.radarAlerts = radar
+
+	// no device paired: the pass asks radar nothing
+	s.sweepPushes(context.Background())
+	if got := radar.count(); got != 0 {
+		t.Fatalf("the alerts fetches with no subscription = %d, want none", got)
+	}
+
+	// needs-you and off devices hear no upstream alert: still nothing
+	subscribeDevice(t, s, "needs", service.srv.URL+"/needs", newBrowserKeys(t), hub.NotifyNeeds)
+	subscribeDevice(t, s, "dark", service.srv.URL+"/dark", newBrowserKeys(t), hub.NotifyOff)
+	s.sweepPushes(context.Background())
+	if got := radar.count(); got != 0 {
+		t.Fatalf("the alerts fetches with needs-you and off devices = %d, want none", got)
+	}
+
+	// a device chose needs-and-alerts: one fetch per pass
+	subscribeDevice(t, s, "all", service.srv.URL+"/all", newBrowserKeys(t), hub.NotifyAll)
+	s.sweepPushes(context.Background())
+	s.sweepPushes(context.Background())
+	if got := radar.count(); got != 2 {
+		t.Fatalf("the alerts fetches over two passes = %d, want one per pass", got)
+	}
+}
+
+// A failing path no device could hear stays unmarked: when a device later chooses
+// needs-and-alerts, the next pass pushes it once, and no pass asks radar while it has no one
+// to hear it.
+func TestAFailingPathNoDeviceHeardWaitsForADeviceThatChoseAlerts(t *testing.T) {
+	service := newFakePush(t)
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return pushClock })
+	radar := &fakeRadar{alerts: `{"alerts":[]}`}
+	s.radarAlerts = radar
+	subscribeDevice(t, s, "needs", service.srv.URL+"/needs", newBrowserKeys(t), hub.NotifyNeeds)
+
+	// the path fails while only a needs-you device is paired: no push, and no fetch
+	radar.set(`{"alerts":[{"kind":"upstream","id":"upstream:anthropic:1000","since":1000,"detail":"ECERT: trust the CA"}]}`)
+	s.sweepPushes(context.Background())
+	if service.count() != 0 {
+		t.Fatalf("the pushes with no alerts device = %d, want none", service.count())
+	}
+	if got := radar.count(); got != 0 {
+		t.Fatalf("the alerts fetches with no alerts device = %d, want none", got)
+	}
+
+	// a device chooses needs-and-alerts: the pass pushes the failure once
+	all := newBrowserKeys(t)
+	subscribeDevice(t, s, "all", service.srv.URL+"/all", all, hub.NotifyAll)
+	s.sweepPushes(context.Background())
+	if service.count() != 1 || service.bodyAt("/all") == nil {
+		t.Fatalf("the pushes after a device chose alerts = %d, want the failure's one", service.count())
+	}
+	plaintext := string(decryptPush(t, service.bodyAt("/all"), all))
+	for _, want := range []string{`"kind":"upstream_failing"`, `"detail":"ECERT: trust the CA"`} {
+		if !strings.Contains(plaintext, want) {
+			t.Fatalf("the failure's plaintext = %s, want %s", plaintext, want)
+		}
+	}
+	s.sweepPushes(context.Background())
+	if service.count() != 1 {
+		t.Fatalf("the pushes after a second pass = %d, want no repeat", service.count())
 	}
 }
 
