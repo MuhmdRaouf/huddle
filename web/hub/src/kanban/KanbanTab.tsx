@@ -9,8 +9,9 @@
 
 import { Button } from "@huddle/ui/button.tsx";
 import type { JSX } from "preact";
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import "./kanban.css";
+import { HuddleContext } from "../app/context.tsx";
 import { Board } from "./components/Board.tsx";
 import { BoardPicker } from "./components/BoardPicker.tsx";
 import { Drawer, useDrawerSelection } from "./components/Drawer.tsx";
@@ -30,6 +31,7 @@ import {
   closedOf,
   featureLabel,
   featureView,
+  type FeatureView,
   type Io,
   staticBoardState,
   togglePick,
@@ -171,6 +173,21 @@ function sharedValues(visible: ReturnType<typeof filterCards>): {
   return { tags, cluster };
 }
 
+/** The status line under the head: a closed feature word says the feature is closed, an unknown
+ *  one says no card carries it; every other word, and no word, says nothing. */
+function FeatureNote({
+  feature,
+  note,
+}: {
+  feature: string | null;
+  note: FeatureView["note"];
+}): JSX.Element | null {
+  if (feature === null) return null;
+  if (note === "closed") return <p role="status">{`${featureLabel(feature)} is closed.`}</p>;
+  if (note === "unknown") return <p role="status">{`No cards in ${featureLabel(feature)}.`}</p>;
+  return null;
+}
+
 /** The chosen board's page: the toolbar, the board and the drawer on the io's store. The picker
  *  rides along only when the caller hands one in — the standalone page has none. */
 export function BoardPane({
@@ -211,6 +228,10 @@ export function BoardPane({
   const cards = useMemo(() => snapshot?.cards ?? [], [snapshot]);
   const feature = picker?.feature ?? null;
   const closed = useMemo(() => closedOf(snapshot?.features).closed, [snapshot]);
+  // the owner and the board's own device may close and reopen a feature; the standalone board
+  // page has no huddle around it and shows no action
+  const huddle = useContext(HuddleContext);
+  const canClose = huddle?.who.kind === "owner" || huddle?.who.kind === "device";
   // the picked feature filters the cards before every other filter; a word the board does not
   // know, or a closed one, reads its own way instead of an empty board
   const featureBoard = useMemo(() => featureView(snapshot, feature), [snapshot, feature]);
@@ -257,16 +278,19 @@ export function BoardPane({
           <span class="head-sep" aria-hidden="true">
             /
           </span>
-          <FeaturePicker cards={cards} closed={closed} feature={feature} onFeature={picker.onFeature} />
+          <FeaturePicker
+            cards={cards}
+            closed={closed}
+            feature={feature}
+            onFeature={picker.onFeature}
+            canClose={canClose}
+            boardKey={picker.boardKey}
+            toast={huddle?.toast}
+          />
           {toolbar}
         </div>
       )}
-      {feature !== null && featureBoard.note === "closed" && (
-        <p role="status">{`${featureLabel(feature)} is closed.`}</p>
-      )}
-      {feature !== null && featureBoard.note === "unknown" && (
-        <p role="status">{`No cards in ${featureLabel(feature)}.`}</p>
-      )}
+      <FeatureNote feature={feature} note={featureBoard.note} />
       <div class="board-with-panel">
         <Board
           snapshot={featureBoard.snapshot}

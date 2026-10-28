@@ -52,6 +52,8 @@ export type Card = {
   updatedAt: string;
   /** when the ticket reached done, empty unless done; done orders by it, falling back to updatedAt */
   finishedAt: string;
+  /** true when the card's feature is closed: the card is off the board until the feature reopens */
+  feature_closed?: boolean;
 };
 
 /** A feature the board has closed: its cards are gone from the board until it reopens. */

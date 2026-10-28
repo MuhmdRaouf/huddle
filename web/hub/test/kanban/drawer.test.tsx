@@ -600,3 +600,61 @@ describe("Feature: the placements follow the window", () => {
     expect(unblocks("KBN-EXPORT", snapshot.cards)).toEqual([]);
   });
 });
+
+describe("Feature: the closed-feature badge", () => {
+  /** The KBN-UI ticket the way a closed feature's card answers: feature_closed on the card. */
+  function closedTicket(): Ticket {
+    return { ...clone(ticketUi), card: { ...clone(ticketUi.card), feature_closed: true } };
+  }
+
+  it("Scenario: a card whose feature is closed wears the badge beside its id", async () => {
+    // Given a desktop window and a ticket whose card answers feature_closed
+    stubMatchMedia(() => false);
+    const ticket = closedTicket();
+    const { container } = render(
+      <Drawer
+        card={ticket.card}
+        cards={snapshot.cards}
+        getTicket={async () => ticket}
+        onClose={() => {}}
+        onOpenDep={() => {}}
+      />,
+    );
+    await screen.findByText("Feature closed");
+    // Then the badge sits in the header block that holds the id
+    const id = container.querySelector(".panel-top .panel-id");
+    expect(id?.querySelector(".cid")?.textContent).toBe("KBN-UI");
+    expect(id?.querySelector(".feature-closed")?.textContent).toBe("Feature closed");
+  });
+
+  it("Scenario: a card whose feature is open carries no badge", async () => {
+    // Given the ordinary KBN-UI ticket, whose feature stands open
+    stubMatchMedia(() => false);
+    const { container } = renderDrawer();
+    await screen.findByText("Tags");
+    // Then no badge is on the page
+    expect(container.querySelector(".feature-closed")).toBeNull();
+  });
+
+  it("Scenario: on a phone the badge leads the chips row in the sheet", async () => {
+    // Given a phone window and a closed feature's card
+    stubMatchMedia((query) => query.includes("max-width: 639"));
+    const ticket = closedTicket();
+    const { container } = render(
+      <Drawer
+        card={ticket.card}
+        cards={snapshot.cards}
+        getTicket={async () => ticket}
+        onClose={() => {}}
+        onOpenDep={() => {}}
+      />,
+    );
+    const sheet = container.querySelector("dialog.ui-sheet") as HTMLDialogElement;
+    expect(sheet).not.toBeNull();
+    // the ticket arrives after the sheet, so the badge waits for it
+    await screen.findByText("Feature closed");
+    // Then the sheet's chips row opens with the badge
+    const chips = [...sheet.querySelectorAll(".panel.in-sheet .chips .chip")].map((chip) => chip.textContent);
+    expect(chips[0]).toBe("Feature closed");
+  });
+});

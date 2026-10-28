@@ -1,7 +1,8 @@
 /**
- * The huddle side of the kanban API: the board list, and one board's read-only slice of the
- * kanban page's own API (snapshot, tickets, events) under its key. Every request rides the
- * session cookie the app already sends; a non-2xx is an Error carrying the status.
+ * The huddle side of the kanban API: the board list, one board's read-only slice of the kanban
+ * page's own API (snapshot, tickets, events) under its key, and the one write the page makes,
+ * closing or reopening a feature. Every request rides the session cookie the app already sends;
+ * a non-2xx is an Error carrying the status, except the feature action, which answers as a value.
  */
 
 import type { Io } from "./store.ts";
@@ -66,6 +67,39 @@ export function ioAt(base: string): Io {
 /** The board's store over the hub, every path under its key. */
 export function boardIo(key: string): Io {
   return ioAt(`/api/kanban/b/${encodeURIComponent(key)}`);
+}
+
+/** The answer a close or reopen gives: the server's lines, or the refusal as a value. */
+export type FeatureActionResult =
+  | { ok: true; lines: string[] }
+  | { ok: false; status: number; error: string };
+
+/** Closes or reopens a feature on the board at `key`. The refusal rides back as a value — the
+ *  status and the server's error, a dead connection as status 0 — never a throw: the caller toasts
+ *  whatever comes back. */
+export async function featureAction(
+  key: string,
+  action: "close" | "reopen",
+  feature: string,
+): Promise<FeatureActionResult> {
+  try {
+    const response = await fetch(`/api/kanban/b/${encodeURIComponent(key)}/feature`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        // the hub's write guard refuses a POST that names no action
+        "x-huddle-action": `/api/kanban/b/${encodeURIComponent(key)}/feature`,
+      },
+      body: JSON.stringify({ action, feature }),
+    });
+    const body = (await response.json().catch(() => ({}))) as { lines?: string[]; error?: string };
+    if (!response.ok) {
+      return { ok: false, status: response.status, error: body.error ?? `api/feature: ${response.status}` };
+    }
+    return { ok: true, lines: body.lines ?? [] };
+  } catch (error) {
+    return { ok: false, status: 0, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /**

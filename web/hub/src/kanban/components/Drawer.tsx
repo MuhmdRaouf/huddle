@@ -318,8 +318,9 @@ const COLUMN_LABELS: Record<ColumnId, string> = {
 };
 
 /** One header chip: the column chip carries its data-column for the hue. */
-function HeaderChips({ card }: { card: Card }) {
+function HeaderChips({ card, featureClosed = false }: { card: Card; featureClosed?: boolean }) {
   const chips: { text: string; column?: ColumnId }[] = [
+    ...(featureClosed ? [{ text: "Feature closed" }] : []),
     { text: COLUMN_LABELS[card.column], column: card.column },
     { text: card.priority },
     { text: card.type },
@@ -466,22 +467,28 @@ function nextOnTab(list: HTMLElement[], shift: boolean): HTMLElement | null {
   return list[index === -1 || index === list.length - 1 ? 0 : index + 1] ?? null;
 }
 
-/** The header: the id with its copy button, the title, the summary, the chips. */
+/** The header: the id with its copy button, the title, the summary, the chips. A closed feature's
+ *  card wears the badge beside its id. */
 function PanelHeader({
   card,
   copied,
   onCopy,
   onClose,
+  featureClosed = false,
 }: {
   card: Card;
   copied: boolean;
   onCopy: () => void;
   onClose: () => void;
+  featureClosed?: boolean;
 }): JSX.Element {
   return (
     <header class="panel-head">
       <div class="panel-top">
-        <p class="cid">{card.id}</p>
+        <div class="panel-id">
+          <p class="cid">{card.id}</p>
+          {featureClosed && <span class="chip feature-closed">Feature closed</span>}
+        </div>
         <button type="button" class="copy" aria-label={`Copy ${card.id}`} onClick={onCopy}>
           {copied ? "Copied" : <span aria-hidden="true">⧉</span>}
         </button>
@@ -659,7 +666,7 @@ export function Drawer({ card, cards, getTicket, onClose, onOpenDep }: DrawerPro
       >
         <div class="panel in-sheet">
           {card.summary !== "" && <p class="panel-summary">{card.summary}</p>}
-          <HeaderChips card={card} />
+          <HeaderChips card={card} featureClosed={ticket?.card.feature_closed === true} />
           {depGroups}
           <PanelContent loading={loading} failed={failed} retry={retry} ticket={ticket} />
         </div>
@@ -678,7 +685,13 @@ export function Drawer({ card, cards, getTicket, onClose, onOpenDep }: DrawerPro
         ref={panel}
         style={docked ? { width: `${width}px` } : undefined}
       >
-        <PanelHeader card={card} copied={copied} onCopy={copy} onClose={onClose} />
+        <PanelHeader
+          card={card}
+          copied={copied}
+          onCopy={copy}
+          onClose={onClose}
+          featureClosed={ticket?.card.feature_closed === true}
+        />
         {depGroups}
         <PanelContent loading={loading} failed={failed} retry={retry} ticket={ticket} />
         {docked && (

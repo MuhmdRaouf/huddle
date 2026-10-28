@@ -1,7 +1,7 @@
 // io.test.ts — the huddle side of the kanban API: the board list, the per-key prefixes, the
 // non-2xx errors, and the browser event stream's wiring.
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { type BoardRef, boardIo, fetchBoards, ioAt, staticIo } from "../../src/kanban/io.ts";
+import { type BoardRef, boardIo, fetchBoards, featureAction, ioAt, staticIo } from "../../src/kanban/io.ts";
 import type { StreamHandlers } from "../../src/kanban/types.ts";
 import { clone, snapshot, ticketUi } from "./helpers.ts";
 
@@ -170,5 +170,74 @@ describe("boardIo", () => {
     ]);
     stream.close();
     expect(seen[seen.length - 1]).toBe("closed");
+  });
+});
+
+describe("featureAction", () => {
+  it("posts the action and the feature to the board's feature endpoint, and answers its lines", async () => {
+    const seen: { url: string; init: RequestInit | undefined }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: URL | string, init?: RequestInit) => {
+        seen.push({ url: String(input), init });
+        return reply({ lines: ["Closed pick-a: 2 cards archived"] });
+      }),
+    );
+    expect(await featureAction("a b", "close", "pick-a")).toEqual({
+      ok: true,
+      lines: ["Closed pick-a: 2 cards archived"],
+    });
+    expect(seen).toEqual([
+      {
+        url: "/api/kanban/b/a%20b/feature",
+        init: {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            // the hub's write guard refuses a POST that names no action
+            "x-huddle-action": "/api/kanban/b/a%20b/feature",
+          },
+          body: JSON.stringify({ action: "close", feature: "pick-a" }),
+        },
+      },
+    ]);
+  });
+
+  it("posts reopen with the reopen action in the body", async () => {
+    const bodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: URL | string, init?: RequestInit) => {
+        if (typeof init?.body === "string") bodies.push(init.body);
+        return reply({ lines: ["Reopened gamma: 7 cards back"] });
+      }),
+    );
+    await featureAction("k", "reopen", "gamma");
+    expect(bodies).toEqual([JSON.stringify({ action: "reopen", feature: "gamma" })]);
+  });
+
+  it("answers a refusal as a value — the status and the server's error, never a throw", async () => {
+    stubFetch(() =>
+      reply({ error: "only the owner closes or reopens a feature" }, { ok: false, status: 403 }),
+    );
+    expect(await featureAction("k", "close", "pick-a")).toEqual({
+      ok: false,
+      status: 403,
+      error: "only the owner closes or reopens a feature",
+    });
+  });
+
+  it("answers a dead connection as bad news with status 0", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("fetch failed");
+      }),
+    );
+    expect(await featureAction("k", "close", "pick-a")).toEqual({
+      ok: false,
+      status: 0,
+      error: "fetch failed",
+    });
   });
 });

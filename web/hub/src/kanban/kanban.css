@@ -229,11 +229,59 @@
 }
 
 /* the feature picker: the picked row's check at the row's right, and the closed features
-   read-only under the open ones, each row its name over its Closed ago · cards line */
+   under the open ones, each row its name over its Closed ago · cards line; the owner's Close
+   buttons ride a column beside the list, each slot its row's height, so list and column read
+   as one row for the eyes — a listbox owns only options, so no button may sit inside one */
 
 .kanban-tab .picker-check {
   margin-left: auto;
   color: var(--ui-accent);
+}
+
+.kanban-tab .picker-body {
+  display: flex;
+  align-items: stretch;
+}
+
+.kanban-tab .picker-body .picker-list {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.kanban-tab .picker-body .picker-opt strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kanban-tab .picker-acts {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+}
+
+/* slot and option row share one height, so the two columns pair on a touch screen too, where
+   the Button stands taller (control-h is 48 px there, 40 px under a fine pointer) */
+.kanban-tab .picker-act-slot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: max(var(--ui-tap), var(--ui-control-h));
+}
+
+.kanban-tab .picker-body .picker-opt {
+  min-height: max(var(--ui-tap), var(--ui-control-h));
+}
+
+/* the actions are the design system's ghost Button, which owns the height, colours and hover;
+   the page keeps only the type size and the flush right edge */
+.kanban-tab .picker-act {
+  font-size: var(--ui-text-sm);
+}
+
+.kanban-tab .picker-acts .picker-act,
+.kanban-tab .picker-closed-row .picker-act {
+  margin-right: calc(var(--ui-space-2) * -1);
 }
 
 .kanban-tab .picker-closed {
@@ -251,9 +299,16 @@
 
 .kanban-tab .picker-closed-row {
   display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  padding: 0 var(--ui-space-2);
+}
+
+.kanban-tab .picker-closed-text {
+  display: flex;
   flex-direction: column;
   gap: var(--ui-space-1);
-  padding: 0 var(--ui-space-2);
+  min-width: 0;
 }
 
 .kanban-tab .picker-closed-name {
@@ -264,6 +319,21 @@
 .kanban-tab .picker-closed-when {
   color: var(--ui-muted);
   font-size: var(--ui-text-xs);
+}
+
+/* the drawer's closed-feature badge: the id and the badge share the header's free space, the
+   copy and close buttons staying at the right */
+
+.kanban-tab .panel .panel-id {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  min-width: 0;
+  margin-right: auto;
+}
+
+.kanban-tab .panel .panel-id .cid {
+  margin-right: 0;
 }
 
 /* the live dot: a quiet mark whose title carries the epoch and the stream's state */
