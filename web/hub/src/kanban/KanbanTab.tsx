@@ -1,7 +1,8 @@
 // KanbanTab.tsx — the Kanban tab: a board picker over /api/kanban/boards and, for the chosen
 // board, the kanban page's toolbar, board and drawer on a store of its own. The address owns the
-// choice (#/kanban/<key>): a bare #/kanban adopts the first board's, a key the list does not know
-// reads as a gone board. A key change stops the old store's stream before the new one starts, and
+// choice (#/kanban/<key>[/<feature>]): a bare #/kanban adopts the first board's, a key the list
+// does not know reads as a gone board, and the feature word scopes the board, All features reading
+// as no word. A key change stops the old store's stream before the new one starts, and
 // an unmount stops it for good. The board list asks again on its own after a failure, and again
 // whenever the page turns visible; the board's stream is replaced when the page turns visible after
 // more than 30 s away, since a phone may resume it on a socket that never delivers again.
@@ -13,6 +14,7 @@ import "./kanban.css";
 import { Board } from "./components/Board.tsx";
 import { BoardPicker } from "./components/BoardPicker.tsx";
 import { Drawer, useDrawerSelection } from "./components/Drawer.tsx";
+import { FeaturePicker } from "./components/FeaturePicker.tsx";
 import { Toolbar } from "./components/Toolbar.tsx";
 import { resumeOnReturn } from "../shared/watchdog.ts";
 import { boardIo, type BoardRef, fetchBoards } from "./io.ts";
@@ -25,6 +27,9 @@ import {
   EMPTY_FILTERS,
   type Filters,
   filterCards,
+  closedOf,
+  featureLabel,
+  featureView,
   type Io,
   staticBoardState,
   togglePick,
@@ -173,7 +178,13 @@ export function BoardPane({
   picker,
 }: {
   io: Io;
-  picker?: { boards: BoardRef[]; boardKey: string; onBoard: (key: string) => void };
+  picker?: {
+    boards: BoardRef[];
+    boardKey: string;
+    onBoard: (key: string) => void;
+    feature: string | null;
+    onFeature: (feature: string | null) => void;
+  };
 }): JSX.Element {
   const store = useBoardStore(io);
   const sel = useDrawerSelection();
@@ -198,7 +209,12 @@ export function BoardPane({
   }, [snapshot]);
   const [view, setView] = useBacklogView(picker?.boardKey ?? snapshot?.board ?? "");
   const cards = useMemo(() => snapshot?.cards ?? [], [snapshot]);
-  const visible = useMemo(() => filterCards(cards, filters), [cards, filters]);
+  const feature = picker?.feature ?? null;
+  const closed = useMemo(() => closedOf(snapshot?.features).closed, [snapshot]);
+  // the picked feature filters the cards before every other filter; a word the board does not
+  // know, or a closed one, reads its own way instead of an empty board
+  const featureBoard = useMemo(() => featureView(snapshot, feature), [snapshot, feature]);
+  const visible = useMemo(() => filterCards(featureBoard.cards, filters), [featureBoard.cards, filters]);
   const shared = useMemo(() => sharedValues(visible), [visible]);
   if (store === null) {
     return <Board snapshot={null} filters={filters} changeSeq={0} changedIds={new Set()} onOpen={sel.open} />;
@@ -214,27 +230,46 @@ export function BoardPane({
       }),
   };
   const openCard = sel.openId === null ? null : (cards.find((card) => card.id === sel.openId) ?? null);
+  const toolbar = (
+    <Toolbar
+      cards={featureBoard.cards}
+      filters={filters}
+      onChange={setFilters}
+      epoch={snapshot?.epoch ?? 0}
+      connected={state.connected}
+      live={state.mode === "live"}
+      lastFrameAt={state.lastFrameAt}
+      density={density}
+      onDensity={setDensity}
+      sharedTags={shared.tags}
+      sharedCluster={shared.cluster}
+      grouping={view.grouping}
+      onGrouping={(grouping) => setView(defaultView(grouping))}
+    />
+  );
   return (
     <>
-      <Toolbar
-        cards={cards}
-        filters={filters}
-        onChange={setFilters}
-        {...picker}
-        epoch={snapshot?.epoch ?? 0}
-        connected={state.connected}
-        live={state.mode === "live"}
-        lastFrameAt={state.lastFrameAt}
-        density={density}
-        onDensity={setDensity}
-        sharedTags={shared.tags}
-        sharedCluster={shared.cluster}
-        grouping={view.grouping}
-        onGrouping={(grouping) => setView(defaultView(grouping))}
-      />
+      {picker === undefined ? (
+        toolbar
+      ) : (
+        <div class="kanban-head">
+          <BoardPicker boards={picker.boards} boardKey={picker.boardKey} onBoard={picker.onBoard} />
+          <span class="head-sep" aria-hidden="true">
+            /
+          </span>
+          <FeaturePicker cards={cards} closed={closed} feature={feature} onFeature={picker.onFeature} />
+          {toolbar}
+        </div>
+      )}
+      {feature !== null && featureBoard.note === "closed" && (
+        <p role="status">{`${featureLabel(feature)} is closed.`}</p>
+      )}
+      {feature !== null && featureBoard.note === "unknown" && (
+        <p role="status">{`No cards in ${featureLabel(feature)}.`}</p>
+      )}
       <div class="board-with-panel">
         <Board
-          snapshot={snapshot}
+          snapshot={featureBoard.snapshot}
           filters={filters}
           changeSeq={state.changeSeq}
           changedIds={state.changedIds}
@@ -262,8 +297,15 @@ export function BoardPane({
   );
 }
 
-/** The tab: the board picker, its status lines, and the chosen board's own page. */
-export function KanbanTab({ boardKey }: { boardKey: string | null }): JSX.Element {
+/** The tab: the board picker, its status lines, and the chosen board's own page. The address owns
+ *  the choice: the board's key, then the feature word after it, All features reading as no word. */
+export function KanbanTab({
+  boardKey,
+  feature = null,
+}: {
+  boardKey: string | null;
+  feature?: string | null;
+}): JSX.Element {
   const { state, retry } = useBoards();
   const boards = state.kind === "ok" ? state.boards : [];
   const first = boards[0] ?? null;
@@ -271,13 +313,20 @@ export function KanbanTab({ boardKey }: { boardKey: string | null }): JSX.Elemen
   const gone = boardKey !== null && !known;
   const effective = known ? boardKey : boardKey === null ? (first?.key ?? null) : null;
 
-  // a bare #/kanban adopts the first board's address; the hashchange repaints with the key in
+  // a bare #/kanban adopts the first board's address, feature word and all; the hashchange
+  // repaints with the key in
   useEffect(() => {
-    if (boardKey === null && first !== null) location.hash = `#/kanban/${first.key}`;
-  }, [boardKey, first]);
+    if (boardKey === null && first !== null) {
+      location.hash =
+        feature === null ? `#/kanban/${first.key}` : `#/kanban/${first.key}/${encodeURIComponent(feature)}`;
+    }
+  }, [boardKey, first, feature]);
 
-  const toAddress = (key: string): void => {
-    location.hash = `#/kanban/${key}`;
+  const toAddress = (key: string, word: string | null = feature): void => {
+    location.hash = word === null ? `#/kanban/${key}` : `#/kanban/${key}/${encodeURIComponent(word)}`;
+  };
+  const onFeature = (word: string | null): void => {
+    if (effective !== null) toAddress(effective, word);
   };
 
   // the io changes only with the board, so the pane's store follows the address alone
@@ -310,7 +359,7 @@ export function KanbanTab({ boardKey }: { boardKey: string | null }): JSX.Elemen
         </>
       )}
       {effective !== null && io !== null && (
-        <BoardPane io={io} picker={{ boards, boardKey: effective, onBoard: toAddress }} />
+        <BoardPane io={io} picker={{ boards, boardKey: effective, onBoard: toAddress, feature, onFeature }} />
       )}
     </div>
   );

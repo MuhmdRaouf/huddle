@@ -761,7 +761,7 @@ export function App({
       </div>
     ) : route.tab === "kanban" ? (
       <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <KanbanTab boardKey={route.sub[0] ?? null} />
+        <KanbanTab boardKey={route.sub[0] ?? null} feature={route.sub[1] ?? null} />
       </div>
     ) : route.tab === "settings" ? (
       <SettingsTab section={route.sub[0] ? settingsSectionOf(route.sub[0]) : null} />

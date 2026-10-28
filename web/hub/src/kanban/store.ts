@@ -7,6 +7,7 @@ import { useEffect, useState } from "preact/hooks";
 import { silenceWatchdog, type Watchdog } from "../shared/watchdog.ts";
 import type {
   Card,
+  Closed,
   ColumnId,
   Delta,
   Snapshot,
@@ -187,6 +188,64 @@ export function useBacklogView(board: string): [BacklogView, (view: BacklogView)
 /** One group of the phone's backlog: its key, the name its header shows, and its cards. */
 export type CardGroup = { key: string; label: string; cards: Card[] };
 
+/** The address word for the cards without a feature. */
+export const NO_FEATURE = "-";
+
+/** The closed features a snapshot carries, an older answer without the field read as none. */
+export function closedOf(features: Snapshot["features"]): Closed {
+  return features ?? { closed: [] };
+}
+
+/** The cards one feature holds: null keeps every card, NO_FEATURE keeps the ones with none. */
+export function scopeCards(cards: Card[], feature: string | null): Card[] {
+  if (feature === null) return cards;
+  if (feature === NO_FEATURE) return cards.filter((card) => card.cluster === "");
+  return cards.filter((card) => card.cluster === feature);
+}
+
+/** The board as one feature sees it: the scoped cards and the column counts re-derived from them. */
+export function scopeSnapshot(snapshot: Snapshot, feature: string | null): Snapshot {
+  const cards = scopeCards(snapshot.cards, feature);
+  return {
+    ...snapshot,
+    cards,
+    columns: snapshot.columns.map((column) => ({
+      ...column,
+      count: cards.filter((card) => card.column === column.id).length,
+    })),
+  };
+}
+
+/** What the board shows for one feature word: the snapshot the board renders, the cards the
+ *  toolbar counts, and a note when the word names no card on the board. */
+export type FeatureView = {
+  snapshot: Snapshot | null;
+  cards: Card[];
+  /** "closed" for a closed feature, "unknown" for a name no open card carries */
+  note: "closed" | "unknown" | null;
+};
+
+/** The board one feature word shows. The word filters the cards before every other filter; a
+ *  closed feature shows the scoped, empty board; a name the board does not know shows the whole
+ *  board, with the note saying so. */
+export function featureView(snapshot: Snapshot | null, feature: string | null): FeatureView {
+  const all = snapshot?.cards ?? [];
+  if (snapshot === null || feature === null) return { snapshot, cards: all, note: null };
+  if (closedOf(snapshot.features).closed.some((f) => f.name === feature)) {
+    return { snapshot: scopeSnapshot(snapshot, feature), cards: [], note: "closed" };
+  }
+  const scoped = scopeSnapshot(snapshot, feature);
+  if (all.length > 0 && scoped.cards.length === 0) return { snapshot, cards: all, note: "unknown" };
+  return { snapshot: scoped, cards: scoped.cards, note: null };
+}
+
+/** The word a picker row or a status line shows: All features, No feature, or the name itself. */
+export function featureLabel(feature: string | null): string {
+  if (feature === null) return "All features";
+  if (feature === NO_FEATURE) return "No feature";
+  return feature;
+}
+
 /** The cards grouped by priority or cluster, the groups in key order and each keeping the cards'
  *  order; a card with no value groups under "No priority" or "No feature". */
 export function groupCards(cards: Card[], grouping: Grouping): CardGroup[] {
@@ -216,6 +275,7 @@ export function applyDelta(snapshot: Snapshot, delta: Delta): Snapshot {
     next.epoch = delta.meta.epoch;
     next.stopLine = delta.meta.stopLine;
     next.columns = delta.meta.columns;
+    next.features = closedOf(delta.meta.features);
   }
   return next;
 }
@@ -249,6 +309,7 @@ export const SILENCE_MS = 40_000;
 export function staticBoardState(win: { __KANBAN__?: StaticBoard } | null | undefined): BoardState | null {
   const board = win?.__KANBAN__;
   if (board === undefined) return null;
+  // the page's own data passes through as it came; readers read none closed from the field's absence
   return { ...initialBoardState(), mode: "static", snapshot: board.snapshot };
 }
 
@@ -421,7 +482,7 @@ export class BoardStore {
   private async loadSnapshot(): Promise<boolean> {
     try {
       const snapshot = await this.io.fetchSnapshot();
-      this.state = { ...this.state, snapshot };
+      this.state = { ...this.state, snapshot: { ...snapshot, features: closedOf(snapshot.features) } };
       this.emit();
       return true;
     } catch {
@@ -444,7 +505,11 @@ export class BoardStore {
       onSnapshot: (snapshot) => {
         alive();
         this.attempt = 0;
-        this.state = { ...this.state, snapshot, connected: true };
+        this.state = {
+          ...this.state,
+          snapshot: { ...snapshot, features: closedOf(snapshot.features) },
+          connected: true,
+        };
         this.emit();
       },
       onDelta: (delta) => {

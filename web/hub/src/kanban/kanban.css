@@ -88,6 +88,30 @@
   width: min(240px, 100%);
 }
 
+/* the head: the board picker, the feature picker after a slash, then the toolbar's row in the
+   same line; the pills take their own line under it */
+
+.kanban-tab .kanban-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-2);
+  align-items: center;
+  padding: var(--ui-space-3) var(--ui-space-4) var(--ui-space-2);
+}
+
+.kanban-tab .kanban-head .toolbar {
+  flex: 1 1 auto;
+  padding: 0;
+}
+
+.kanban-tab .kanban-head .pills {
+  flex-basis: 100%;
+}
+
+.kanban-tab .head-sep {
+  color: var(--ui-muted);
+}
+
 /* the filter chips: one per kind, the phone's Filters button and the picks below the row */
 
 .kanban-tab :is(.toolbar, .pills) .chip {
@@ -202,6 +226,44 @@
 .kanban-tab .picker-opt:hover,
 .kanban-tab .picker-opt.active {
   background: var(--ui-surface-2);
+}
+
+/* the feature picker: the picked row's check at the row's right, and the closed features
+   read-only under the open ones, each row its name over its Closed ago · cards line */
+
+.kanban-tab .picker-check {
+  margin-left: auto;
+  color: var(--ui-accent);
+}
+
+.kanban-tab .picker-closed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+}
+
+.kanban-tab .picker-closed-label {
+  padding: 0 var(--ui-space-2);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
+  font-weight: 600;
+}
+
+.kanban-tab .picker-closed-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-1);
+  padding: 0 var(--ui-space-2);
+}
+
+.kanban-tab .picker-closed-name {
+  color: var(--ui-muted);
+  font-weight: 500;
+}
+
+.kanban-tab .picker-closed-when {
+  color: var(--ui-muted);
+  font-size: var(--ui-text-xs);
 }
 
 /* the live dot: a quiet mark whose title carries the epoch and the stream's state */

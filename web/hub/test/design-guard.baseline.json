@@ -131,6 +131,10 @@
   "kanban/components/BoardPicker.tsx": {
     "control": 3
   },
+  "kanban/components/FeaturePicker.tsx": {
+    "control": 2,
+    "px": 1
+  },
   "kanban/components/Card.tsx": {
     "control": 2,
     "daisy": 2

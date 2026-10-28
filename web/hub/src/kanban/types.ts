@@ -54,6 +54,18 @@ export type Card = {
   finishedAt: string;
 };
 
+/** A feature the board has closed: its cards are gone from the board until it reopens. */
+export type ClosedFeature = {
+  name: string;
+  /** when the feature was closed, empty when unknown */
+  closedAt: string;
+  /** how many cards the feature holds, closed */
+  cards: number;
+};
+
+/** The closed features a snapshot or a delta meta carries. */
+export type Closed = { closed: ClosedFeature[] };
+
 export type Snapshot = {
   rev: number;
   board: string;
@@ -63,9 +75,17 @@ export type Snapshot = {
   columns: ColumnInfo[];
   cards: Card[];
   generatedAt: string;
+  /** the features the board has closed; absent on an older server, read as none */
+  features?: Closed;
 };
 
-export type DeltaMeta = { epoch: number; stopLine: StopLine | null; columns: ColumnInfo[] };
+export type DeltaMeta = {
+  epoch: number;
+  stopLine: StopLine | null;
+  columns: ColumnInfo[];
+  /** the closed features as the snapshot carries them; absent reads as none */
+  features?: Closed;
+};
 
 export type Delta = {
   rev: number;

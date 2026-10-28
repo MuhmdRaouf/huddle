@@ -37,6 +37,17 @@ function seedBoard(): void {
   seedTicket("backlog", "E2E-4", "The card that waits", "depends_on: [E2E-1]");
 }
 
+/** Writes one ticket of its own feature into the run's board, the way `kanban new` would; an
+ *  empty feature is a card with no cluster at all. */
+function seedFeature(column: string, id: string, title: string, cluster: string): void {
+  const dir = path.join(boardDir(), column);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    path.join(dir, `${id}.md`),
+    `---\nid: ${id}\ntitle: "${title}"\ntype: feature\ncluster: ${cluster}\npriority: P2\nsummary: "A card the kanban spec seeded."\n---\n\nBody.\n`,
+  );
+}
+
 /** Registers a second board under its own project folder and reports a session working in it.
  *  The project is its own git repository with its own origin: a board's key is its repository's
  *  identity, and inside this repository both boards would fold into one. Both projects run it, so
@@ -343,6 +354,137 @@ test.describe("expedite cards", () => {
   });
 });
 
+test.describe("the feature picker", () => {
+  /** Four cards the feature scenarios add and remove again, so every other scenario keeps its
+   *  board: two in pick-a, one in pick-b, one with no feature at all. */
+  const seededIds = ["PICK-A1", "PICK-A2", "PICK-B1", "PICK-N1"];
+
+  test.afterEach(() => {
+    for (const id of seededIds) rmSync(path.join(boardDir(), "backlog", `${id}.md`), { force: true });
+  });
+
+  /** Writes the four cards into the backlog. */
+  function seedFeatures(): void {
+    seedFeature("backlog", "PICK-A1", "Picked card one", "pick-a");
+    seedFeature("backlog", "PICK-A2", "Picked card two", "pick-a");
+    seedFeature("backlog", "PICK-B1", "Other card", "pick-b");
+    seedFeature("backlog", "PICK-N1", "Unclustered card", "");
+  }
+
+  test.skip(({ isMobile }) => isMobile, "the columns and the popover are the desktop's");
+
+  test("a picked feature scopes the columns, and the address brings the same view back", async ({ page }) => {
+    await test.step("Given a board with cards in two features and one with none", async () => {
+      seedFeatures();
+      await kanbanAt(page, 1440, 900);
+      await expect(page.getByRole("button", { name: "Feature" })).toContainText("All features");
+    });
+
+    await test.step("When pick-a is picked from the feature picker", async () => {
+      await page.getByRole("button", { name: "Feature" }).click();
+      await page.getByRole("option", { name: "pick-a 2" }).click();
+    });
+
+    await test.step("Then only pick-a's cards stand in the columns, and the address carries the word", async () => {
+      await expect(page.getByRole("button", { name: "Feature" })).toContainText("pick-a");
+      await expect(page.getByRole("heading", { name: "Backlog 2" })).toBeVisible();
+      await expect(page.locator(".kanban-tab article.card")).toHaveCount(2);
+      await expect(page.locator('article.card[data-id="PICK-A1"]')).toBeVisible();
+      await expect(page.locator('article.card[data-id="PICK-A2"]')).toBeVisible();
+      await expect(page.locator('article.card[data-id="PICK-B1"]')).toHaveCount(0);
+      await expect(page.locator('article.card[data-id="PICK-N1"]')).toHaveCount(0);
+      await expect.poll(() => page.evaluate(() => location.hash)).toMatch(/\/pick-a$/);
+    });
+
+    await test.step("When the address is reloaded, the same view comes back", async () => {
+      await page.reload();
+      await page.locator(".kanban-tab .card").first().waitFor();
+      await expect(page.getByRole("button", { name: "Feature" })).toContainText("pick-a");
+      await expect(page.getByRole("heading", { name: "Backlog 2" })).toBeVisible();
+      await expect(page.locator('section[data-column="backlog"] article.card')).toHaveCount(2);
+    });
+
+    await test.step("And axe finds nothing serious on the scoped board", async () => {
+      await expectAccessible(page, AXE_EXCLUDE);
+    });
+  });
+
+  test("the address without a word reads All features, and the word in it scopes the board", async ({ page }) => {
+    let key = "";
+    await test.step("Given a board with an extra feature and a card with none", async () => {
+      seedFeature("backlog", "PICK-A1", "Picked card one", "pick-a");
+      seedFeature("backlog", "PICK-B1", "Other card", "pick-b");
+      seedFeature("backlog", "PICK-N1", "Unclustered card", "");
+      await kanbanAt(page, 1440, 900);
+    });
+
+    await test.step("Then the bare address holds every card under All features", async () => {
+      key = (await page.evaluate(() => location.hash)).split("/")[2] ?? expect.fail("no board key");
+      await expect(page.getByRole("button", { name: "Feature" })).toContainText("All features");
+      await expect(page.getByRole("heading", { name: "Backlog 13" })).toBeVisible();
+      await expect(page.locator('section[data-column="backlog"] article.card')).toHaveCount(13);
+    });
+
+    await test.step("When the address names pick-a, only its card stands", async () => {
+      await page.evaluate((k) => {
+        location.hash = `#/kanban/${k}/pick-a`;
+      }, key);
+      await expect(page.getByRole("button", { name: "Feature" })).toContainText("pick-a");
+      await expect(page.getByRole("heading", { name: "Backlog 1" })).toBeVisible();
+      await expect(page.locator('article.card[data-id="PICK-A1"]')).toBeVisible();
+      await expect(page.locator('article.card[data-id="PICK-B1"]')).toHaveCount(0);
+    });
+
+    await test.step("And back to the bare key, the board is All features again", async () => {
+      await page.evaluate((k) => {
+        location.hash = `#/kanban/${k}`;
+      }, key);
+      await expect(page.getByRole("button", { name: "Feature" })).toContainText("All features");
+      await expect(page.getByRole("heading", { name: "Backlog 13" })).toBeVisible();
+      await expect(page.locator('section[data-column="backlog"] article.card')).toHaveCount(13);
+    });
+  });
+
+  test.skip(({ isMobile }) => !isMobile, "the sheet and the strip are the phone's");
+
+  test("the feature picker opens as a sheet, and the picked feature scopes the strip", async ({ page }) => {
+    await test.step("Given a board with cards in two features and one with none", async () => {
+      seedFeatures();
+      await kanbanAt(page, 390, 844);
+    });
+
+    await test.step("When the Feature button is tapped, the sheet lists every feature", async () => {
+      await page.getByRole("button", { name: "Feature" }).tap();
+      const sheet = page.getByRole("dialog", { name: "Feature" });
+      await expect(sheet).toBeVisible();
+      await expect(sheet.getByRole("option", { name: "All features 14" })).toBeVisible();
+      await expect(sheet.getByRole("option", { name: "e2e 10" })).toBeVisible();
+      await expect(sheet.getByRole("option", { name: "pick-a 2" })).toBeVisible();
+      await expect(sheet.getByRole("option", { name: "pick-b 1" })).toBeVisible();
+      await expect(sheet.getByRole("option", { name: "No feature 1" })).toBeVisible();
+    });
+
+    await test.step("When pick-a is tapped, the sheet closes and the strip holds only its cards", async () => {
+      await page.getByRole("dialog", { name: "Feature" }).getByRole("option", { name: "pick-a 2" }).tap();
+      await expect(page.getByRole("dialog", { name: "Feature" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Feature" })).toContainText("pick-a");
+      await expect(page.getByRole("tab", { selected: true })).toHaveText("Backlog 2");
+      await expect.poll(() => page.evaluate(() => location.hash)).toMatch(/\/pick-a$/);
+      await openGroup(page, /^P2 /);
+      await expect(page.locator(".kanban-tab article.card[data-id^='PICK-A']")).toHaveCount(2);
+      await expect(page.locator('article.card[data-id="PICK-B1"]')).toHaveCount(0);
+    });
+
+    await test.step("When the address is reloaded, the same view comes back", async () => {
+      await page.reload();
+      // the P2 group stayed open from before the reload, so its cards stand where they did
+      await expect(page.locator('article.card[data-id="PICK-A1"]')).toBeVisible();
+      await expect(page.getByRole("button", { name: "Feature" })).toContainText("pick-a");
+      await expect(page.getByRole("tab", { selected: true })).toHaveText("Backlog 2");
+    });
+  });
+});
+
 /** Swipes the snap strip one thumb's stroke to the left, the way a finger moves to the next
  *  column: a touch scroll gesture Chromium synthesizes, so the snap settles as it would on the
  *  phone. */
@@ -640,7 +782,7 @@ test.describe("the board on a phone", () => {
         expect(Math.abs(head.said - head.seen)).toBeLessThanOrEqual(1);
       });
     });
-    test("the header above the first group is at most 160 px and the tabs stay in view 4,000 px down", async ({
+    test("the header above the first group is at most 200 px and the tabs stay in view 4,000 px down", async ({
       page,
     }) => {
       const backlog = page.locator('.lanes section[data-column="backlog"]');
@@ -653,13 +795,15 @@ test.describe("the board on a phone", () => {
         await expect(page.locator(".kanban-tab article.card[data-id^='DEEP-']")).toHaveCount(152);
       });
 
-      await test.step("Then the header from the Kanban tab's top to the first group is at most 160 px", async () => {
+      await test.step("Then the header from the Kanban tab's top to the first group is at most 200 px", async () => {
         const head = await backlog.evaluate((lane) => {
           const tab = lane.closest(".kanban-tab") ?? lane;
           const first = lane.querySelector(".group-head, article.card") ?? lane;
           return first.getBoundingClientRect().top - tab.getBoundingClientRect().top;
         });
-        expect(head).toBeLessThanOrEqual(160);
+        // two control rows: the board and feature pickers, then the toolbar's live line, search
+        // and Filters button; the search cannot share the pickers' row at 390 px
+        expect(head).toBeLessThanOrEqual(200);
       });
 
       await test.step("When the backlog lane is scrolled 4,000 px", async () => {
