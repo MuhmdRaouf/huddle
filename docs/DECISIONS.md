@@ -171,3 +171,13 @@ router.db and its segments, history.db, kanban.db and its LOG — has one writer
 retention ([ADR-3](adr/0003-one-event-log.md)). Readers join stores by session id, request id or a `seq`
 cursor, and never write another part's store. A new store names its writer, its join key, its retention
 and the process that runs it, and adds itself to the ADR's list.
+
+## D25: ledger.db is the one record of each request
+
+Every model request is recorded once, in `ledger.db`'s `ledger_requests` table
+([ADR-5](adr/0005-one-request-record.md)). history.db keeps its `nodes` table as the tree index and stops
+holding request rows once every reader reads the ledger. The ledger names the two costs apart: `price_usd`
+is Radar's own price, `harness_cost_usd` is the cost the harness reported; no column is named `cost_usd`.
+`stop_reason` is the model's own stop reason; `status`, `outcome` and `error_code` tell a failing route
+call. A request with no session is stored under `outside-a-session`. Each widening step migrates the rows
+the ledger already holds, in a resumable background batch a hub start never waits on.
