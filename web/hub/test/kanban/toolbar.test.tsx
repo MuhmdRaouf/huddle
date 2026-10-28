@@ -575,12 +575,13 @@ describe("Feature: the filters fold behind one button on a phone", () => {
     expect(screen.queryByRole("checkbox", { name: /Hide done/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Expand cards" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Remove Holder glm-A" })).toBeNull();
-    expect(screen.getByRole("searchbox", { name: "Search" })).toBeTruthy();
+    expect(screen.queryByRole("searchbox", { name: "Search" })).toBeNull();
     expect(screen.getByRole("button", { name: "Board" })).toBeTruthy();
 
     await userEvent.click(filters);
     expect(filters.getAttribute("aria-expanded")).toBe("true");
     expect(kindButtons(container)).toEqual(["Domain", "Feature", "Holder: 2", "Type", "Priority"]);
+    expect(screen.getByRole("searchbox", { name: "Search" })).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: /Hide done/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Expand cards" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Remove Holder glm-A" })).toBeTruthy();
@@ -611,5 +612,52 @@ describe("Feature: the filters fold behind one button on a phone", () => {
     await userEvent.click(screen.getByRole("button", { name: "Filters" }));
     await userEvent.click(screen.getByRole("button", { name: "Group: Priority" }));
     expect(onGrouping).toHaveBeenCalledWith("cluster");
+  });
+
+  it("Scenario: the search box hides behind the same button and leads the folded row", async () => {
+    stubMatchMedia((query) => query.includes("max-width"));
+    const { container } = render(
+      <Row cards={board()} initial={withPicks({ holder: ["glm-A"] }, { q: "glm" })} />,
+    );
+    // Given the phone's header: no search box in the row
+    expect(screen.queryByRole("searchbox", { name: "Search" })).toBeNull();
+    // When the Filters button opens the folded row
+    await userEvent.click(screen.getByRole("button", { name: "Filters: 1" }));
+    // Then the search box leads it, carrying the value it filtered by
+    const row = container.querySelector(".filters-row");
+    expect(row?.firstElementChild).toBe(screen.getByRole("searchbox", { name: "Search" }));
+    expect(screen.getByRole("searchbox", { name: "Search" })).toHaveProperty("value", "glm");
+    // And typing keeps filtering as before
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search" }), "-A");
+    expect(screen.getByRole("searchbox", { name: "Search" })).toHaveProperty("value", "glm-A");
+  });
+
+  it("Scenario: the age line stays off the phone, and the dot still says live or reconnecting", async () => {
+    vi.useFakeTimers();
+    try {
+      // Given a live phone toolbar whose last frame came just now
+      stubMatchMedia((query) => query.includes("max-width"));
+      const phone = render(
+        <Row cards={board()} initial={EMPTY_FILTERS} over={{ lastFrameAt: Date.now() }} />,
+      );
+      // Then no age line ticks in the header, and the dot still says live
+      await pass(5_000);
+      expect(phone.container.querySelector(".stale-line")).toBeNull();
+      expect(phone.container.querySelector(".live-dot")?.getAttribute("title")).toBe("epoch 3, live");
+      // And with the stream down the dot says reconnecting, still without an age line
+      phone.rerender(
+        <Row cards={board()} initial={EMPTY_FILTERS} over={{ lastFrameAt: Date.now(), connected: false }} />,
+      );
+      await pass(11_000);
+      expect(phone.container.querySelector(".stale-line")).toBeNull();
+      expect(phone.container.querySelector(".live-dot")?.getAttribute("title")).toBe("epoch 3, reconnecting");
+      // And on the desktop the age line still ticks
+      stubMatchMedia(() => false);
+      const desk = render(<Row cards={board()} initial={EMPTY_FILTERS} over={{ lastFrameAt: Date.now() }} />);
+      await pass(5_000);
+      expect(desk.container.querySelector(".toolbar .stale-line")?.textContent).toBe("Updated 5 s ago");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -127,15 +127,18 @@ function StaleLine({ connected, lastFrameAt }: { connected: boolean; lastFrameAt
   );
 }
 
-/** The live dot, its title naming the epoch and the connection, and the status line beside it. */
+/** The live dot, its title naming the epoch and the connection, and — where there is room for it,
+ *  never on a phone — the status line beside it. */
 function LiveDot({
   epoch,
   connected,
   lastFrameAt,
+  withLine,
 }: {
   epoch: number;
   connected: boolean;
   lastFrameAt: number | null;
+  withLine: boolean;
 }) {
   const liveWord = connected ? "live" : "reconnecting";
   return (
@@ -143,7 +146,7 @@ function LiveDot({
       <span class={`live-dot ${connected ? "on" : "off"}`} title={`epoch ${epoch}, ${liveWord}`}>
         <span class="ui-sr">{liveWord}</span>
       </span>
-      <StaleLine connected={connected} lastFrameAt={lastFrameAt} />
+      {withLine && <StaleLine connected={connected} lastFrameAt={lastFrameAt} />}
     </>
   );
 }
@@ -279,9 +282,11 @@ const FILTERS_ID = "kanban-filters";
 /** The header row: the picker as the page title, the live dot, search, one menu per filter kind,
  *  the shared note, the hide-done switch and the density button at the right. `/` jumps to the
  *  search box and b opens the picker, but never while a menu holds the keyboard. The picks sit
- *  as pills below. On a phone the menus, the switch, the buttons and the pills fold behind one Filters
- *  button that counts the picks and Hide done, so the header stays one row high; the folded row
- *  also carries the backlog's grouping toggle, which the desktop's flat columns have no use for. */
+ *  as pills below. On a phone the row holds only the picker, the dot and one Filters button that
+ *  counts the picks and Hide done, so the header stays one row high; the search box leads the
+ *  folded row the button opens, beside the menus, the switch, the buttons and the pills, and the
+ *  dot's age line stays off. The folded row also carries the backlog's grouping toggle, which the
+ *  desktop's flat columns have no use for. */
 export function Toolbar({
   cards,
   filters,
@@ -323,7 +328,6 @@ export function Toolbar({
     filters.picks[kind].map((value) => ({ kind, label, value })),
   );
   const active = picks.length + (filters.hideDone ? 1 : 0);
-  const showFilters = !narrow || unfolded;
 
   const controls = (
     <FilterControls
@@ -341,22 +345,29 @@ export function Toolbar({
     />
   );
 
+  const searchBox = (
+    <input
+      ref={search}
+      type="search"
+      class="ui-input"
+      aria-label="Search"
+      placeholder={touch ? "Search" : "Search (press /)"}
+      value={filters.q}
+      onInput={(event) => onChange({ ...filters, q: event.currentTarget.value })}
+    />
+  );
+
+  // the phone's pills fold with the rest: a nowrap header cannot hand them their own line
+  const pills = <Pills picks={picks} filters={filters} onChange={onChange} />;
+
   return (
     <>
       <div class="toolbar">
         {boards !== undefined && boards.length > 0 && onBoard !== undefined && (
           <BoardPicker boards={boards} boardKey={boardKey ?? null} onBoard={onBoard} />
         )}
-        {live && <LiveDot epoch={epoch} connected={connected} lastFrameAt={lastFrameAt} />}
-        <input
-          ref={search}
-          type="search"
-          class="ui-input"
-          aria-label="Search"
-          placeholder={touch ? "Search" : "Search (press /)"}
-          value={filters.q}
-          onInput={(event) => onChange({ ...filters, q: event.currentTarget.value })}
-        />
+        {live && <LiveDot epoch={epoch} connected={connected} lastFrameAt={lastFrameAt} withLine={!narrow} />}
+        {!narrow && searchBox}
         {narrow && (
           <button
             type="button"
@@ -371,11 +382,13 @@ export function Toolbar({
         {!narrow && controls}
         {narrow && unfolded && (
           <div class="filters-row" id={FILTERS_ID}>
+            {searchBox}
             {controls}
+            {pills}
           </div>
         )}
       </div>
-      {showFilters && <Pills picks={picks} filters={filters} onChange={onChange} />}
+      {!narrow && pills}
     </>
   );
 }

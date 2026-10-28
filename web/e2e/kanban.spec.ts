@@ -128,10 +128,25 @@ test("the header names / only where a keyboard is, and its stale line ticks out 
     await kanbanAt(page, isMobile ? 390 : 1440, isMobile ? 844 : 900);
   });
 
+  if (isMobile) {
+    await test.step("Given the phone's search box lives behind the Filters button", async () => {
+      await expect(page.getByRole("searchbox", { name: "Search" })).toHaveCount(0);
+      await page.getByRole("button", { name: /^Filters/ }).tap();
+      await expect(page.getByRole("searchbox", { name: "Search" })).toHaveAttribute(
+        "placeholder",
+        "Search",
+      );
+    });
+    await test.step("Then the phone's header keeps no age line beside its dot", async () => {
+      await expect(page.locator(".kanban-tab .stale-line")).toHaveCount(0);
+    });
+    return;
+  }
+
   await test.step("Then the search hint fits the device", async () => {
     await expect(page.getByRole("searchbox", { name: "Search" })).toHaveAttribute(
       "placeholder",
-      isMobile ? "Search" : "Search (press /)",
+      "Search (press /)",
     );
   });
 
@@ -932,7 +947,7 @@ test.describe("the board on a phone", () => {
         expect(Math.abs(head.said - head.seen)).toBeLessThanOrEqual(1);
       });
     });
-    test("the header above the first group is at most 200 px and the tabs stay in view 4,000 px down", async ({
+    test("the header above the first group is at most 160 px on one row, and the tabs stay in view 4,000 px down", async ({
       page,
     }) => {
       const backlog = page.locator('.lanes section[data-column="backlog"]');
@@ -945,15 +960,32 @@ test.describe("the board on a phone", () => {
         await expect(page.locator(".kanban-tab article.card[data-id^='DEEP-']")).toHaveCount(152);
       });
 
-      await test.step("Then the header from the Kanban tab's top to the first group is at most 200 px", async () => {
+      await test.step("Then the header from the Kanban tab's top to the first group is at most 160 px", async () => {
         const head = await backlog.evaluate((lane) => {
           const tab = lane.closest(".kanban-tab") ?? lane;
           const first = lane.querySelector(".group-head, article.card") ?? lane;
           return first.getBoundingClientRect().top - tab.getBoundingClientRect().top;
         });
-        // two control rows: the board and feature pickers, then the toolbar's live line, search
-        // and Filters button; the search cannot share the pickers' row at 390 px
-        expect(head).toBeLessThanOrEqual(200);
+        // one row: the board and feature pickers, the live dot and the Filters button share it;
+        // the search box lives in the folded row behind Filters
+        expect(head).toBeLessThanOrEqual(160);
+      });
+
+      await test.step("And the pickers, the live dot and the Filters button sit on one row", async () => {
+        const centres = await page.evaluate(() => {
+          const mid = (el: Element): number => {
+            const box = el.getBoundingClientRect();
+            return box.top + box.height / 2;
+          };
+          const board = document.querySelector<HTMLButtonElement>('.kanban-tab button[aria-label="Board"]');
+          const feature = document.querySelector<HTMLButtonElement>('.kanban-tab button[aria-label="Feature"]');
+          const filters = document.querySelector<HTMLButtonElement>(".kanban-tab button.chip.filters");
+          const dot = document.querySelector(".kanban-tab .live-dot");
+          return [board, feature, dot, filters].map((el) => (el === null ? null : mid(el)));
+        });
+        for (const at of centres) expect(at, "a header control is missing").not.toBeNull();
+        const first = centres[0] as number;
+        for (const at of centres.slice(1)) expect(Math.abs((at as number) - first)).toBeLessThanOrEqual(4);
       });
 
       await test.step("When the backlog lane is scrolled 4,000 px", async () => {

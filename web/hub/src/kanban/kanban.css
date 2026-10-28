@@ -1041,12 +1041,16 @@
   scroll-snap-stop: always;
 }
 
-/* the phone: one row of picker, dot, search and the Filters button, the picker opening as a
-   full-width sheet */
+/* the phone: one row of picker, dot and the Filters button, the search box and every other
+   control folded behind it, the picker opening as a full-width sheet */
 
 @media (max-width: 639px) {
   .kanban-tab .toolbar {
     padding-bottom: var(--ui-space-1);
+  }
+
+  .kanban-tab .kanban-head {
+    flex-wrap: nowrap;
   }
 
   .kanban-tab .picker {
@@ -1074,5 +1078,16 @@
     flex: 1 1 0;
     min-width: 0;
     width: auto;
+  }
+
+  /* the folded search keeps the rule above's grow, but its basis fills the row, so it leads the
+     folded row on a line of its own */
+  .kanban-tab .filters-row input[type="search"] {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+
+  .kanban-tab .toolbar .chip.filters {
+    margin-left: auto;
   }
 }
