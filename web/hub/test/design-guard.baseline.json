@@ -32,9 +32,7 @@
     "px": 1
   },
   "app/Landing.tsx": {
-    "control": 12,
-    "legacy": 3,
-    "px": 4
+    "control": 1
   },
   "app/LinkSheet.tsx": {
     "control": 6,

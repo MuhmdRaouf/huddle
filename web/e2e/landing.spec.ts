@@ -231,6 +231,52 @@ test("the start-a-session guide opens in a sheet whose code blocks scroll inside
   await expect(sheet).toBeHidden();
 });
 
+test("the landing's layers hold the viewport: one at a time, inside it, every control on target", async ({
+  page,
+  isMobile,
+}) => {
+  if (isMobile) await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${theSetup().rootUrl}/`);
+  await expect(page.locator("[data-landing]")).toBeVisible();
+  // signed out there is no tab bar: nothing has to clear one
+  await expect(page.locator(".ui-tabbar")).toHaveCount(0);
+
+  /** The open layer's box: inside the viewport on every side. */
+  const inside = async (name: string): Promise<void> => {
+    const box = await page.locator("dialog[open]").first().boundingBox();
+    const view = page.viewportSize();
+    expect(box && view, `${name}: the open layer has a box`).toBeTruthy();
+    if (!box || !view) return;
+    expect(box.x, `${name}: left edge`).toBeGreaterThanOrEqual(-0.5);
+    expect(box.y, `${name}: top edge`).toBeGreaterThanOrEqual(-0.5);
+    expect(box.x + box.width, `${name}: right edge inside the viewport`).toBeLessThanOrEqual(view.width + 0.5);
+    expect(box.y + box.height, `${name}: bottom edge inside the viewport`).toBeLessThanOrEqual(view.height + 0.5);
+  };
+
+  // the tour's lightbox: the one open layer, inside the viewport, its controls on target
+  await page.getByRole("button", { name: "Sessions: open the tour step" }).click();
+  await expect(page.getByText("Sessions (1 of 4)")).toBeVisible();
+  await expect(page.locator("dialog[open]")).toHaveCount(1);
+  await inside("the tour lightbox");
+  await expectAccessible(page);
+  if (isMobile) expect(await smallTargets(page, "dialog[open]"), "lightbox controls under 44 px").toEqual([]);
+
+  // Escape lands back on the bare page, and the guide's sheet then stands as the one layer
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await page.getByRole("button", { name: "Start a session" }).click();
+  const sheet = page.getByRole("dialog", { name: "Start a session" });
+  await expect(sheet).toBeVisible();
+  await expect(page.locator("dialog[open]")).toHaveCount(1);
+  await inside("the start-a-session sheet");
+  await expectAccessible(page);
+  if (isMobile) expect(await smallTargets(page, "dialog[open]"), "sheet controls under 44 px").toEqual([]);
+  expect(await sideways(page), "the sheet scrolls the page sideways").toBeLessThanOrEqual(0);
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+});
+
 test("the authenticator set-up a fresh hub's first sign-in lands on fits 390 px", async ({
   page,
   isMobile,

@@ -268,7 +268,7 @@ describe("the landing page's tokens", () => {
     for (const box of screen.getAllByRole("textbox")) expect(box.className).toContain("ui-input");
   });
 
-  it("paints the tour's lightbox picture with the line token", async () => {
+  it("paints the tour's lightbox picture with the radius token", async () => {
     mount();
     await act(async () => {
       screen.getByRole("button", { name: "Kanban: open the tour step" }).click();
@@ -276,7 +276,7 @@ describe("the landing page's tokens", () => {
     await flush();
     const box = document.querySelector("[data-tour-box]") as HTMLElement;
     expect(legacyClasses(box)).toEqual([]);
-    expect(box.querySelector("img")?.className).toContain("border-[var(--ui-line)]");
+    expect(box.querySelector("img")?.className).toContain("rounded-[var(--ui-radius)]");
   });
 
   it("paints the start-a-session guide in its sheet from the tokens", async () => {
