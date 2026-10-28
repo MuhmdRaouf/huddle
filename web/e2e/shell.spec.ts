@@ -566,7 +566,15 @@ test.describe("the needs sheet", () => {
         await expect(bar.locator("code").filter({ hasText: "bun run build" }), at).toHaveText("bun run build");
         await expect(bar, at).not.toContainText('"command"');
         await expect(bar, at).not.toContainText("Runs in");
-        await expect(bar, at).toContainText("On e2e-machine. Waiting");
+        if (width === 390) {
+          // the phone sheet's head carries the meta line: the tool, the where, the waited age
+          await expect(page.locator("dialog[open].ui-sheet"), at).toContainText(
+            "Bash · e2e · e2e-machine · waiting",
+          );
+        } else {
+          // the wide bar keeps the where sentence; with no branch it reads On <machine>
+          await expect(bar, at).toContainText("On e2e-machine. Waiting");
+        }
         for (const act of ["allow", "deny"]) {
           const button = bar.locator(`[data-act='${act}']`);
           expect(await button.evaluate((el) => el.tagName), `${at}: ${act}`).toBe("BUTTON");

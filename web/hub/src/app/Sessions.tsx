@@ -37,6 +37,7 @@ import { InsightsCard } from "./Insights.tsx";
 import { LinkSheet } from "./LinkSheet.tsx";
 import type { Layout } from "./layout.ts";
 import { ActComposer, confirmWhat, type NeedsAct, SnoozeMenu, useNeedsAct } from "./Needs.tsx";
+import { AskPreview } from "./ask/preview.tsx";
 import {
   FeatureChips,
   featuresOf,
@@ -51,15 +52,19 @@ import {
 } from "./session-parts.tsx";
 import { MachinesLine } from "./TopBar.tsx";
 
+/** How many lines of the ask's preview the card shows before the "+N lines" count; the sheet
+ *  shows it all. */
+const CARD_PREVIEW_LINES = 4;
+
 /** The phone's needs-you card: the session that waits on the owner (its name, then its harness
- *  chip and where it works), what it asks, and the answers at the card's foot, 48 px tall for one
- *  thumb. A permission ask offers Deny and Allow once, both posted at once (an allow may open the
- *  passkey sheet first); any other ask offers Review, which opens the session to answer it. The
- *  menu beside them snoozes or dismisses the item. The desk draws the same session as one plain
- *  row and answers the ask at the session's own needs bar. An `<a>` cannot hold another, so the
- *  card is the container, its opening link stretches over the whole of it, and the feature chip
- *  line rides above that overlay; the ask and the answer bar sit above it too, so their controls
- *  stay their own. */
+ *  chip and where it works), what it asks as the per-tool preview folded at four lines, and the
+ *  answers at the card's foot. A permission ask offers Deny and Allow once, both posted at once
+ *  (an allow may open the passkey sheet first); any other ask offers Review, which opens the
+ *  session to answer it. The menu beside them snoozes or dismisses the item. The desk draws the
+ *  same session as one plain row and answers the ask at the session's own needs bar. An `<a>`
+ *  cannot hold another, so the card is the container, its opening link stretches over the whole
+ *  of it, and the feature chip line rides above that overlay; the ask and the answer bar sit
+ *  above it too, so their controls stay their own. */
 function NeedsCard({
   s,
   now,
@@ -76,8 +81,12 @@ function NeedsCard({
   const ask = permissionOf(needs, s.session_id);
   const item = openItemOf(needs, s.session_id);
   const chips = tasks && featuresOf(tasks).length > 0 ? <FeatureChips tasks={tasks} phone /> : null;
+  const summary = s.task || s.title || stateWord(s.state);
   return (
-    <article class="ui-card relative flex flex-col" data-row={s.session_id}>
+    <article
+      class="relative flex flex-col rounded-[var(--ui-radius)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-1)]"
+      data-row={s.session_id}
+    >
       <a
         href={openHref(s)}
         class="flex min-w-0 flex-col gap-1.5 p-4 text-[var(--ui-text)] after:absolute after:inset-0 after:content-['']"
@@ -86,7 +95,7 @@ function NeedsCard({
           <span class="truncate text-base font-semibold">{sessionName(s)}</span>
           <span class="flex shrink-0 items-center gap-1.5">
             <HooksStaleChip s={s} />
-            <StateChip state={s.state} item={item} />
+            <RowStateChip state={s.state} item={item} />
             <span class={`text-xs ${MUTED}`}>{ageText(s.last_event_at, now)}</span>
           </span>
         </div>
@@ -94,35 +103,41 @@ function NeedsCard({
           <HarnessBadge s={s} />
           <span class={`truncate text-xs ${MUTED}`}>{whereOf(s)}</span>
         </div>
-        <div class="line-clamp-2 text-sm">{s.task || s.title || stateWord(s.state)}</div>
+        {summary !== sessionName(s) ? <div class="line-clamp-2 text-sm">{summary}</div> : null}
       </a>
       {chips ? <div class="px-4 pb-3">{chips}</div> : null}
       {ask ? (
-        <div class="relative flex min-w-0 flex-col gap-1.5 px-4 pb-3" data-ask="">
+        <div class="relative flex min-w-0 flex-col gap-2 px-4 pb-3" data-ask="">
           <span class="text-sm font-semibold">
             Allow <code class="ui-mono">{ask.tool}</code>?
           </span>
           {ask.input ? (
-            <code
-              class="ui-mono block overflow-x-auto whitespace-pre rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] px-3 py-2 text-[13px]"
-              tabindex={0}
-            >
-              {ask.input}
-            </code>
+            <AskPreview
+              tool={ask.tool ?? ""}
+              input={ask.input}
+              truncated={ask.truncated}
+              fold={CARD_PREVIEW_LINES}
+            />
           ) : null}
         </div>
       ) : null}
-      <div class={`relative flex gap-2 border-t ${LINE} p-3`} data-needs-actions="">
+      <div class={`relative flex items-center gap-2 border-t ${LINE} p-4`} data-needs-actions="">
         {item ? <SnoozeMenu item={item} /> : null}
         {ask ? (
           <>
-            <Button variant="danger" size="lg" data-act="deny" class="flex-1" onClick={() => act.deny(ask)}>
+            <Button
+              variant="danger"
+              size="lg"
+              data-act="deny"
+              class="flex-1 px-4! whitespace-nowrap"
+              onClick={() => act.deny(ask)}
+            >
               Deny
             </Button>
             <Button
               size="lg"
               data-act="allow"
-              class="flex-1"
+              class="flex-1 px-4! whitespace-nowrap"
               onClick={() => act.allow(ask, confirmWhat(ask, s, true))}
             >
               <Icon name="key" class="size-4" />

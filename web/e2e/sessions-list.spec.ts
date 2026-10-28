@@ -181,3 +181,41 @@ test("the set-up row shows while checklist steps are left and opens the checklis
   await expect(setup).toBeVisible();
   await expectAccessible(page);
 });
+
+test("at phone width the needs card's preview wraps its command and never shows the raw JSON", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page);
+  await openTab(page, "Sessions");
+  // a stopped session whose hook asked to run a ten-line command
+  await api("/api/registry/report", {
+    session_id: "e2e-card-preview",
+    machine: "e2e-machine",
+    project: "e2e",
+    title: "Card preview",
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+  const command = Array.from({ length: 10 }, (_, i) => `echo step-${i + 1}`).join("\n");
+  const ask = await api<{ id: number }>("/api/needs", {
+    session_id: "e2e-card-preview",
+    tool_name: "Bash",
+    tool_input: { command, description: "Run the ten steps" },
+  });
+  const card = page.locator("[data-row='e2e-card-preview']");
+  await expect(card).toBeVisible();
+  const preview = card.locator("[data-ask-preview]");
+  await expect(preview).toBeVisible();
+  const fit = await preview.evaluate((el) => ({
+    scroll: el.scrollWidth,
+    client: el.clientWidth,
+    text: el.textContent ?? "",
+  }));
+  expect(fit.scroll, "the preview scrolls sideways").toBeLessThanOrEqual(fit.client);
+  expect(fit.text, "the card shows the raw JSON").not.toContain('{"');
+  expect(fit.text).toContain("+6 lines");
+  // this project's ask leaves with the run: the other specs count the needs-you items
+  await api(`/api/needs/${ask.id}/decide`, { decision: "deny" });
+  await expect(card.locator("[data-ask-preview]")).toHaveCount(0);
+});

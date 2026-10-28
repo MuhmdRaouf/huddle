@@ -8,6 +8,7 @@ import { Dialog } from "@huddle/ui/dialog.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
 import type { ToastFn } from "@huddle/ui/toast.tsx";
 import type { JSX } from "preact";
+import { Fragment } from "preact";
 import { useRef, useState } from "preact/hooks";
 import type { Api, ApiError } from "../api.ts";
 import { Icon } from "../icons.tsx";
@@ -21,10 +22,11 @@ import {
   sessionName,
 } from "../registry.ts";
 import { AskAnswers } from "./ask/answers.tsx";
-import { AskPreview } from "./ask/preview.tsx";
+import { AskPreview, SECTION_LABEL } from "./ask/preview.tsx";
 import { type AskQuestion, questionsOf } from "./ask/questions.ts";
 import { errText, useHuddle } from "./context.tsx";
 import type { Layout } from "./layout.ts";
+import { homeShort } from "../radar/shared/repo.ts";
 
 /** The spans a snooze offers (SPEC 6.3): a quarter, an hour, tomorrow at nine. */
 export type SnoozeSpan = "15m" | "1h" | "tomorrow";
@@ -433,7 +435,7 @@ const MENU_ITEM =
   "flex min-h-[var(--ui-tap)] items-center rounded-[var(--ui-radius-sm)] px-2.5 text-left text-sm outline-none hover:bg-[var(--ui-surface-2)] focus-visible:bg-[var(--ui-surface-2)]";
 
 /** The snooze and dismiss menu of one item's card: the three spans, then the dismissal. The
- *  trigger is a 48 px target in the card's footer, so the menu opens upward from it. */
+ *  trigger is a 44 px square in the card's footer, so the menu opens upward from it. */
 export function SnoozeMenu({ item }: { item: NeedItem }): JSX.Element {
   const act = useNeedsAct();
   const [open, setOpen] = useState(false);
@@ -448,7 +450,7 @@ export function SnoozeMenu({ item }: { item: NeedItem }): JSX.Element {
         type="button"
         aria-label="More actions"
         aria-expanded={open ? "true" : "false"}
-        class="ui-btn ui-btn-secondary ui-btn-icon ui-btn-lg"
+        class="ui-btn ui-btn-secondary ui-btn-icon size-11! min-h-11!"
         onClick={() => setOpen((v) => !v)}
       >
         <Icon name="more" class="size-4" />
@@ -660,10 +662,21 @@ function ItemActions({
   );
 }
 
-/** The phone sheet's title row: the tool's tile, on the accent wash while the questions decode. */
-function SheetTitle({ asking, tool, title }: { asking: boolean; tool: string; title: string }): JSX.Element {
+/** The phone sheet's title row: the tool's tile, on the accent wash while the questions decode,
+ *  the session's wants-to line at the mock's 17 px / 600, and the ask's meta under it. */
+function SheetTitle({
+  asking,
+  tool,
+  title,
+  meta,
+}: {
+  asking: boolean;
+  tool: string;
+  title: string;
+  meta: string;
+}): JSX.Element {
   return (
-    <span class="flex items-center gap-3">
+    <span class="flex min-w-0 items-center gap-3">
       <span
         class={`flex size-10 shrink-0 items-center justify-center rounded-[var(--ui-radius)] ${
           asking
@@ -673,19 +686,65 @@ function SheetTitle({ asking, tool, title }: { asking: boolean; tool: string; ti
       >
         <Icon name={asking ? "sparkle" : toolIcon(tool)} class="size-5" />
       </span>
-      <span>{title}</span>
+      <span class="flex min-w-0 flex-col">
+        <span class="text-lg font-semibold leading-[1.2]">{title}</span>
+        {meta === "" ? null : <span class={`text-sm ${MUTED}`}>{meta}</span>}
+      </span>
     </span>
   );
 }
 
+/** The sheet head's meta line: the tool, where the ask runs, and how long it has waited. */
+function sheetMeta(item: NeedItem, session: RegistrySession, waited: string): string {
+  return [
+    item.tool,
+    projectName(session.project),
+    session.branch ?? "",
+    session.machine,
+    waited === "" ? "" : `waiting ${waited}`,
+  ]
+    .filter((part) => part !== "")
+    .join(" · ");
+}
+
+/** The Where section: the folder and branch the ask runs in, as an inset grouped list. A row
+ *  without a value stays out, and a section with no rows never draws. */
+function WhereSection({ session }: { session: RegistrySession }): JSX.Element | null {
+  const folder = session.cwd ?? session.project;
+  const rows = [
+    ...(folder ? [{ term: "Folder", value: homeShort(folder) }] : []),
+    ...(session.branch ? [{ term: "Branch", value: session.branch }] : []),
+  ];
+  if (rows.length === 0) return null;
+  return (
+    <section class="flex flex-col" data-ask-where="">
+      <h3 class={`${SECTION_LABEL} mb-2`}>Where</h3>
+      <div class="overflow-hidden rounded-[var(--ui-radius)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-1)]">
+        {rows.map(({ term, value }, i) => (
+          <Fragment key={term}>
+            {i > 0 ? <div class="ml-4 h-px bg-[var(--ui-line)]" aria-hidden="true" /> : null}
+            <div class="flex min-h-[var(--ui-tap)] items-center justify-between gap-3 px-4">
+              <span class={`shrink-0 text-sm ${MUTED}`}>{term}</span>
+              <span class="ui-mono min-w-0 break-words text-right text-[length:var(--ui-text-md)]">
+                {value}
+              </span>
+            </div>
+          </Fragment>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 /** The sheet's body once the meta line is said: the answer sheet when the input decodes, the
- *  per-tool preview with Deny and Allow on the pinned footer otherwise. */
+ *  per-tool preview with Where and the Deny/Allow footer otherwise. */
 function SheetBody({
   act,
   item,
   tool,
   confirm,
   asking,
+  session,
   onSend,
   onDock,
   onReply,
@@ -695,6 +754,7 @@ function SheetBody({
   tool: string;
   confirm: StepUpWhat | undefined;
   asking: boolean;
+  session: RegistrySession;
   onSend: (answers: Record<string, string>) => void;
   onDock: () => void;
   onReply: () => void;
@@ -703,6 +763,7 @@ function SheetBody({
   return (
     <>
       <AskPreview tool={tool} input={item.input ?? ""} truncated={item.truncated} />
+      <WhereSection session={session} />
       <footer
         data-needs-foot=""
         class="sticky bottom-0 flex flex-col gap-2.5 border-t border-[var(--ui-line)] bg-[var(--ui-surface)] pt-3"
@@ -748,6 +809,7 @@ export function NeedsBar({
   const askQuestions = askOf(item);
   const asking = askQuestions !== null;
   const askTitle = askTitleFor(who, askQuestions, title);
+  const meta = sheetMeta(item, session, ageText(item.created_at, now));
   const sendAnswers = (answers: Record<string, string>): void => act.allow(item, confirm, answers);
   const panelClass = wide
     ? "mx-4 mb-4 flex shrink-0 flex-col gap-3 rounded-[var(--ui-radius-lg)] border border-[var(--ui-needs-you)] bg-[var(--ui-surface)] p-4 text-[var(--ui-text)] sm:mx-6 sm:mb-5"
@@ -806,33 +868,32 @@ export function NeedsBar({
         <Sheet
           open
           onClose={() => setDocked(true)}
-          title={<SheetTitle asking={asking} tool={tool} title={askTitle} />}
+          title={<SheetTitle asking={asking} tool={tool} title={askTitle} meta={meta} />}
         >
-          <section data-needs-sheet="" aria-label={ask} class="flex flex-col gap-3">
+          {/* autofocus keeps the sheet's opening focus here instead of the close button, whose
+              ring would paint on every open that did not come from a pointer; the outline goes
+              with it, since this target only ever takes programmatic focus */}
+          <section
+            data-needs-sheet=""
+            aria-label={ask}
+            class="flex flex-col gap-4 focus-visible:outline-none"
+            autofocus
+            tabindex={-1}
+          >
             {replying ? (
               composer
             ) : (
-              <>
-                <p class={`m-0 text-xs ${MUTED}`}>
-                  {[
-                    item.tool,
-                    projectName(session.project),
-                    whereLine(session, ageText(item.created_at, now)),
-                  ]
-                    .filter((part) => part !== "")
-                    .join(" · ")}
-                </p>
-                <SheetBody
-                  act={act}
-                  item={item}
-                  tool={tool}
-                  confirm={confirm}
-                  asking={asking}
-                  onSend={sendAnswers}
-                  onDock={() => setDocked(true)}
-                  onReply={() => setReplying(true)}
-                />
-              </>
+              <SheetBody
+                act={act}
+                item={item}
+                tool={tool}
+                confirm={confirm}
+                asking={asking}
+                session={session}
+                onSend={sendAnswers}
+                onDock={() => setDocked(true)}
+                onReply={() => setReplying(true)}
+              />
             )}
           </section>
         </Sheet>

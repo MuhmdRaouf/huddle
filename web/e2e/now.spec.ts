@@ -194,7 +194,8 @@ test("a session whose last event asks for permission waits in Needs you first", 
     const card = page.locator("article[data-row='e2e-permit']");
     await expect(card).toBeVisible();
     await expect(card.getByRole("link", { name: /Waits on a permission/ })).toBeVisible();
-    await expect(card.locator("[data-state='needs-you']")).toHaveText("needs you");
+    // the card's chip reads the word the mock writes, as the list's rows do
+    await expect(card.locator("[data-state='needs-you']")).toHaveText("Needs you");
   }
 });
 

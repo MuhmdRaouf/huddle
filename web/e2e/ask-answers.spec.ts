@@ -97,3 +97,69 @@ test("a two-question ask opens the answer sheet and the wait carries the owner's
   // the ask left the list
   await expect(ask).toHaveCount(0);
 });
+
+test("the approval sheet fits its command: Copy clears the text, Allow once holds one line", async ({
+  page,
+  isMobile,
+}, info) => {
+  test.skip(!isMobile, "the phone sheet is the iphone project's");
+  // a stopped session whose hook asked to run a ten-line command
+  const session = `e2e-ask-bash-${info.project.name}`;
+  await api("/api/registry/report", {
+    session_id: session,
+    machine: "e2e-machine",
+    project: "e2e",
+    title: "Asks to run the tests",
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+  const command = Array.from({ length: 10 }, (_, i) => `echo step-${i + 1}`).join("\n");
+  const { id } = await api<{ id: number }>("/api/needs", {
+    session_id: session,
+    tool_name: "Bash",
+    tool_input: { command, description: "Run the ten steps" },
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page);
+  await openTab(page, "Sessions");
+  await page.locator(`a[href='#/sessions/${session}']`).first().click();
+  const sheet = page.locator("dialog[open].ui-sheet");
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole("heading", { name: "Command", exact: true })).toBeVisible();
+
+  // the Copy button lives in the Command label row: its box never meets the code text's box
+  const copyBox = await sheet.getByRole("button", { name: "Copy" }).boundingBox();
+  const codeBox = await sheet.locator("[data-ask-preview] code").first().boundingBox();
+  expect(copyBox).not.toBeNull();
+  expect(codeBox).not.toBeNull();
+  const overlaps =
+    copyBox!.x < codeBox!.x + codeBox!.width &&
+    copyBox!.x + copyBox!.width > codeBox!.x &&
+    copyBox!.y < codeBox!.y + codeBox!.height &&
+    copyBox!.y + copyBox!.height > codeBox!.y;
+  expect(overlaps, "the Copy button sits on the command text").toBe(false);
+
+  // the Allow once label reads on one line: its own box stays under 30 px tall
+  const allow = sheet.getByRole("button", { name: /Allow once/ });
+  const labelHeight = await allow.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return range.getBoundingClientRect().height;
+  });
+  expect(labelHeight, "the Allow once label wraps").toBeLessThan(30);
+
+  // nothing in the sheet is wider than the viewport
+  const widest = await sheet.evaluate((el) => {
+    const limit = el.ownerDocument.documentElement.clientWidth;
+    let over = 0;
+    for (const child of el.querySelectorAll("*")) {
+      const box = child.getBoundingClientRect();
+      if (box.width > 0) over = Math.max(over, box.width - limit);
+    }
+    return over;
+  });
+  expect(widest, "a sheet element is wider than the viewport").toBeLessThanOrEqual(0.5);
+
+  // this project's ask leaves with the run: the other specs count the needs-you items
+  await api(`/api/needs/${id}/dismiss`, {}).catch(() => null);
+});

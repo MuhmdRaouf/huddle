@@ -1,7 +1,8 @@
 // preview.tsx — what one tool's ask shows before the owner allows it: the Bash command with its
 // why, an Edit or MultiEdit as a line diff with a fold, the Write's head, the fetch's URL and the
 // search's query, and any other tool's input as one row per key. Every box wraps; nothing scrolls
-// sideways.
+// sideways. A caller may fold the text blocks (the list's card shows four lines and a "+N lines"
+// count where the sheet shows it all).
 
 import { Button } from "@huddle/ui/button.tsx";
 import type { JSX } from "preact";
@@ -10,7 +11,12 @@ import { lineDiff, type DiffLine } from "./diff.ts";
 
 /** The code box every preview fact sits in: mono, wrapping, on the raised surface. */
 const BOX =
-  "ui-mono block whitespace-pre-wrap break-words rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] p-3 text-sm";
+  "ui-mono block whitespace-pre-wrap break-words rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] p-3 text-[length:var(--ui-text-mono)] leading-[1.5]";
+
+/** A section's heading: the mock's 13 px / 600 quiet label, inset 4 px. */
+export const SECTION_LABEL = "m-0 ms-1 text-sm font-semibold text-[var(--ui-muted)]";
+
+/** The quiet ink of a hint or a label. */
 const MUTED = "text-[var(--ui-muted)]";
 
 /** The rows one fold shows before the owner asks for the whole diff. */
@@ -62,10 +68,10 @@ const FilePath = ({
   added: number | null;
   removed: number | null;
 }): JSX.Element => (
-  <p class="m-0 flex items-center gap-2">
+  <p class="m-0 flex min-h-[var(--ui-tap)] items-center gap-2 rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] px-3">
     {path === null ? null : <span class="ui-mono min-w-0 truncate text-sm">{path}</span>}
     {added === null || removed === null ? null : (
-      <span class="shrink-0 text-xs">
+      <span class="shrink-0 text-sm font-semibold">
         <span class="text-[var(--ui-ok-ink)]">+{added}</span>{" "}
         <span class="text-[var(--ui-fail-ink)]">−{removed}</span>
       </span>
@@ -91,22 +97,23 @@ const Row = ({ line }: { line: DiffLine }): JSX.Element => (
             : MUTED
       }`}
     >
-      {line.sign === "-" ? "−" : line.sign === "+" ? "+" : " "}
+      {line.sign === "-" ? "−" : line.sign === "+" ? "+" : " "}
     </span>
-    <span class="min-w-0 whitespace-pre-wrap break-words">{line.text === "" ? " " : line.text}</span>
+    <span class="min-w-0 whitespace-pre-wrap break-words text-[length:var(--ui-text-mono)] leading-[1.5]">
+      {line.text === "" ? " " : line.text}
+    </span>
   </div>
 );
 
-/** The line diff, folded at twelve rows until the owner opens the rest in place. */
-const DiffBlock = ({ rows }: { rows: DiffLine[] }): JSX.Element => {
+/** The line diff on its raised surface, folded at twelve rows until the owner opens the rest in
+ *  place — or at the caller's fold, as the list's card does. */
+const DiffBlock = ({ rows, fold }: { rows: DiffLine[]; fold?: number | undefined }): JSX.Element => {
+  const cap = fold ?? FOLD;
   const [open, setOpen] = useState(false);
-  const shown = open ? rows : rows.slice(0, FOLD);
-  const hidden = rows.length - FOLD;
+  const shown = open ? rows : rows.slice(0, cap);
+  const hidden = rows.length - cap;
   return (
-    <div
-      data-diff
-      class="flex flex-col divide-y divide-[var(--ui-line)] rounded-[var(--ui-radius)] border border-[var(--ui-line)] py-1"
-    >
+    <div data-diff class="flex flex-col rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] py-2">
       {shown.map((line, i) => (
         <Row key={`${i}:${line.text}`} line={line} />
       ))}
@@ -119,24 +126,51 @@ const DiffBlock = ({ rows }: { rows: DiffLine[] }): JSX.Element => {
   );
 };
 
-/** The Bash ask: the command to copy, then the why the caller gave. */
-const BashFacts = ({ command, why }: { command: string; why: string | null }): JSX.Element => (
-  <>
-    <div class="relative">
-      <code class={`${BOX} pr-12`}>{command}</code>
-      <Button
-        variant="ghost"
-        class="absolute right-1 top-1"
-        onClick={() => void navigator.clipboard?.writeText(command)}
-      >
-        Copy
-      </Button>
+/** The head of a text block at the caller's fold, with the count of the lines that wait. */
+const foldLines = (text: string, fold: number | undefined): { head: string; more: number } => {
+  if (fold === undefined) return { head: text, more: 0 };
+  const lines = text.split("\n");
+  return { head: lines.slice(0, fold).join("\n"), more: Math.max(0, lines.length - fold) };
+};
+
+/** A text block in the code box, folded at the caller's cap with the count of the hidden lines
+ *  tight under it. */
+const Box = ({ text, fold }: { text: string; fold?: number | undefined }): JSX.Element => {
+  const { head, more } = foldLines(text, fold);
+  return (
+    <div class="flex flex-col">
+      <code class={BOX}>{head}</code>
+      {more > 0 ? <p class="m-0 text-sm font-semibold text-[var(--ui-accent)]">+{more} lines</p> : null}
     </div>
+  );
+};
+
+/** The Bash ask: the Command label with its Copy, the command to copy, then the why the caller
+ *  gave. */
+const BashFacts = ({
+  command,
+  why,
+  fold,
+}: {
+  command: string;
+  why: string | null;
+  fold?: number | undefined;
+}): JSX.Element => (
+  <>
+    <section class="flex flex-col">
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <h3 class={SECTION_LABEL}>Command</h3>
+        <Button variant="ghost" onClick={() => void navigator.clipboard?.writeText(command)}>
+          Copy
+        </Button>
+      </div>
+      <Box text={command} fold={fold} />
+    </section>
     {why === null ? null : (
-      <>
-        <h3 class="m-0 text-sm font-semibold">Why</h3>
+      <section class="flex flex-col">
+        <h3 class={`${SECTION_LABEL} mb-2`}>Why</h3>
         <p class={`m-0 whitespace-pre-wrap break-words text-sm ${MUTED}`}>{why}</p>
-      </>
+      </section>
     )}
   </>
 );
@@ -146,16 +180,18 @@ const EditFacts = ({
   path,
   before,
   after,
+  fold,
 }: {
   path: string | null;
   before: string;
   after: string;
+  fold?: number | undefined;
 }): JSX.Element => {
   const rows = lineDiff(before, after);
   return (
     <>
       <FilePath path={path} added={count(rows, "+")} removed={count(rows, "-")} />
-      <DiffBlock rows={rows} />
+      <DiffBlock rows={rows} fold={fold} />
     </>
   );
 };
@@ -164,9 +200,11 @@ const EditFacts = ({
 const MultiEditFacts = ({
   path,
   edits,
+  fold,
 }: {
   path: string | null;
   edits: { old_string: string; new_string: string }[];
+  fold?: number | undefined;
 }): JSX.Element => {
   const all = edits.map((e) => lineDiff(e.old_string, e.new_string));
   return (
@@ -179,7 +217,7 @@ const MultiEditFacts = ({
       {all.map((rows, i) => (
         <div key={i} class="flex flex-col gap-2">
           <FilePath path={null} added={count(rows, "+")} removed={count(rows, "-")} />
-          <DiffBlock rows={rows} />
+          <DiffBlock rows={rows} fold={fold} />
         </div>
       ))}
     </>
@@ -187,25 +225,35 @@ const MultiEditFacts = ({
 };
 
 /** The Write ask: the file row, then the head of the content. */
-const WriteFacts = ({ path, content }: { path: string | null; content: string }): JSX.Element => {
-  const lines = content.split("\n");
-  return (
-    <>
-      <FilePath path={path} added={null} removed={null} />
-      <code class={BOX}>{lines.slice(0, FOLD).join("\n")}</code>
-      {lines.length > FOLD ? <p class={`m-0 text-xs ${MUTED}`}>{lines.length - FOLD} more lines</p> : null}
-    </>
-  );
-};
+const WriteFacts = ({
+  path,
+  content,
+  fold,
+}: {
+  path: string | null;
+  content: string;
+  fold?: number | undefined;
+}): JSX.Element => (
+  <>
+    <FilePath path={path} added={null} removed={null} />
+    <Box text={content} fold={fold ?? FOLD} />
+  </>
+);
 
 /** Any other tool: one row per top-level key, objects and arrays as compact JSON. */
-const KeyRows = ({ facts }: { facts: Record<string, unknown> }): JSX.Element => (
+const KeyRows = ({
+  facts,
+  fold,
+}: {
+  facts: Record<string, unknown>;
+  fold?: number | undefined;
+}): JSX.Element => (
   <dl class="m-0 flex flex-col gap-2">
     {Object.entries(facts).map(([k, v]) => (
       <div key={k} class="flex flex-col gap-0.5">
         <dt class={`text-xs ${MUTED}`}>{k}</dt>
         <dd class="m-0">
-          <code class={BOX}>{isFacts(v) || Array.isArray(v) ? JSON.stringify(v) : String(v)}</code>
+          <Box text={isFacts(v) || Array.isArray(v) ? JSON.stringify(v) : String(v)} fold={fold} />
         </dd>
       </div>
     ))}
@@ -252,48 +300,52 @@ const askView = (tool: string, input: string, facts: Record<string, unknown> | n
 };
 
 /** The facts part of one ask: the view's own layout, nothing else. */
-const AskBody = ({ view }: { view: AskView }): JSX.Element => {
+const AskBody = ({ view, fold }: { view: AskView; fold?: number | undefined }): JSX.Element => {
   switch (view.kind) {
     case "bash":
-      return <BashFacts command={view.command} why={view.why} />;
+      return <BashFacts command={view.command} why={view.why} fold={fold} />;
     case "edit":
-      return <EditFacts path={view.path} before={view.before} after={view.after} />;
+      return <EditFacts path={view.path} before={view.before} after={view.after} fold={fold} />;
     case "multi":
-      return <MultiEditFacts path={view.path} edits={view.edits} />;
+      return <MultiEditFacts path={view.path} edits={view.edits} fold={fold} />;
     case "write":
-      return <WriteFacts path={view.path} content={view.content} />;
+      return <WriteFacts path={view.path} content={view.content} fold={fold} />;
     case "fetch":
       return (
         <>
-          <code class={BOX}>{view.url}</code>
+          <Box text={view.url} fold={fold} />
           {view.prompt === null ? null : (
             <p class={`m-0 whitespace-pre-wrap break-words text-sm ${MUTED}`}>{view.prompt}</p>
           )}
         </>
       );
     case "search":
-      return <code class={BOX}>{view.query}</code>;
+      return <Box text={view.query} fold={fold} />;
     case "keys":
-      return <KeyRows facts={view.facts} />;
+      return <KeyRows facts={view.facts} fold={fold} />;
     case "plain":
-      return <code class={BOX}>{view.text}</code>;
+      return <Box text={view.text} fold={fold} />;
   }
 };
 
-/** What one tool's ask shows, from the input string exactly as the item carried it. */
+/** What one tool's ask shows, from the input string exactly as the item carried it. `fold` caps
+ *  the text blocks at that many lines with a "+N lines" count; the sheet leaves it out and shows
+ *  it all. */
 export function AskPreview({
   tool,
   input,
   truncated,
+  fold,
 }: {
   tool: string;
   input: string;
   truncated?: boolean | undefined;
+  fold?: number | undefined;
 }): JSX.Element {
   const view = askView(tool, input, parseFacts(input));
   return (
-    <div class="flex flex-col gap-3">
-      <AskBody view={view} />
+    <div class="flex flex-col gap-4" data-ask-preview="">
+      <AskBody view={view} fold={fold} />
       {truncated ? <p class={`m-0 text-sm ${MUTED}`}>the input was cut; allow it in the terminal</p> : null}
     </div>
   );

@@ -20,6 +20,9 @@ describe("AskPreview", () => {
     const box = screen.getByText("bun run test");
     expect(box.tagName).toBe("CODE");
     expect(box.className).toContain("whitespace-pre-wrap");
+    // the Command label owns the copy button, so no text ever runs under it
+    expect(screen.getByRole("heading", { name: "Command" })).toBeDefined();
+    expect(box.contains(screen.getByRole("button", { name: "Copy" }))).toBe(false);
     const clip = stubClipboard();
     await act(async () => {
       screen.getByRole("button", { name: "Copy" }).click();
@@ -27,6 +30,15 @@ describe("AskPreview", () => {
     expect(clip.writes).toEqual(["bun run test"]);
     expect(screen.getByRole("heading", { name: "Why" })).toBeDefined();
     expect(screen.getByText("Build the bundle")).toBeDefined();
+  });
+
+  it("folds a long command at the caller's fold and counts the hidden lines", () => {
+    const command = Array.from({ length: 10 }, (_, i) => `echo step-${i + 1}`).join("\n");
+    render(<AskPreview tool="Bash" input={json({ command })} fold={4} />);
+    const box = screen.getByText(/echo step-1/).closest("code") as HTMLElement;
+    expect(box.textContent).toContain("echo step-4");
+    expect(box.textContent).not.toContain("echo step-5");
+    expect(screen.getByText("+6 lines")).toBeDefined();
   });
 
   it("draws an Edit as a file row with its counts and a line diff with gutter signs", () => {
@@ -104,7 +116,7 @@ describe("AskPreview", () => {
     const code = screen.getByText(/l-01 l-02/).closest("code");
     expect(code?.textContent).toContain("l-12");
     expect(code?.textContent).not.toContain("l-13");
-    expect(screen.getByText("2 more lines")).toBeDefined();
+    expect(screen.getByText("+2 lines")).toBeDefined();
   });
 
   it("shows a WebFetch's URL in a code box and its prompt", () => {

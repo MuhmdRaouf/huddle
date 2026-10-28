@@ -125,9 +125,10 @@ export function StateChip({
 /** The list row's state chip: the state's word on its role's tint, with the working dot the
  *  artboard gives the live rows. It carries the same data-state and data-role the badge does, so
  *  tests and styles read the two alike. The word reads as the mock writes it — "Working",
- *  "Needs you" — while data-state keeps the raw lowercase state. */
-export function RowStateChip({ state }: { state: string }): JSX.Element {
-  const role = stateRole(state);
+ *  "Needs you" — while data-state keeps the raw lowercase state. The item is the session's open
+ *  ask, which tells a finished turn from a blocking one. */
+export function RowStateChip({ state, item }: { state: string; item?: NeedItem | undefined }): JSX.Element {
+  const role = stateRole(state, item);
   const word = stateWord(state);
   return (
     <span

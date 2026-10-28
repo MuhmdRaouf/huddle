@@ -256,6 +256,39 @@ describe("the Sessions list", () => {
     expect(location.hash).toBe("#/sessions/s-need-1");
   });
 
+  it("draws the card's ask as the per-tool preview, folded at four lines, never the raw JSON", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    const command = Array.from({ length: 10 }, (_, i) => `echo step-${i + 1}`).join("\n");
+    mountNow("phone", fixture(), [{ ...needItem(), input: JSON.stringify({ command }) }]);
+    const card = screen.getByText("kanban-e2e").closest("article") as HTMLElement;
+    const preview = card.querySelector("[data-ask-preview]") as HTMLElement;
+    expect(preview).not.toBeNull();
+    expect(preview.textContent, "the raw input leaks into the card").not.toContain('{"command"');
+    const code = preview.querySelector("code") as HTMLElement;
+    expect(code.textContent).toContain("echo step-4");
+    expect(code.textContent, "the card shows more than four lines").not.toContain("echo step-5");
+    expect(within(card).getByText("+6 lines")).toBeDefined();
+  });
+
+  it("shows the card's summary line only when it differs from the title", () => {
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    mountNow("phone", [
+      row({
+        session_id: "s-same",
+        state: "needs-you",
+        title: "Asks to run the tests",
+        task: "Asks to run the tests",
+      }),
+      row({ session_id: "s-diff", state: "needs-you", title: "board-fix", task: "Export the board" }),
+    ]);
+    const same = screen.getByText("Asks to run the tests").closest("[data-row]") as HTMLElement;
+    expect(within(same).getAllByText("Asks to run the tests").length, "the summary repeats the title").toBe(
+      1,
+    );
+    const other = screen.getByText("board-fix").closest("[data-row]") as HTMLElement;
+    expect(within(other).getByText("Export the board")).toBeDefined();
+  });
+
   it("offers Review alone when the session has no permission ask to answer", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone", fixture(), [
@@ -345,8 +378,8 @@ describe("the Sessions list", () => {
       ["docs-sweep", "Idle", "idle"],
       ["quiet-one", "Stuck", "stuck"],
       ["finished", "Ended", "ended"],
-      // the phone's needs-you row is the card, whose chip keeps the plain word
-      ["kanban-e2e", "needs you", "needs-you"],
+      // the phone's needs-you row is the card, whose chip reads the word the mock writes
+      ["kanban-e2e", "Needs you", "needs-you"],
     ] as const) {
       const rowEl = screen.getByText(title).closest("[data-row]") as HTMLElement;
       const chip = within(rowEl).getByText(word);
@@ -701,7 +734,7 @@ describe("the Sessions list", () => {
     const card = document.querySelector('article[data-row="s-idle-1"]') as HTMLElement;
     expect(card).not.toBeNull();
     const chip = card.querySelector("[data-state]") as HTMLElement;
-    expect(chip.textContent).toBe("needs you");
+    expect(chip.textContent).toBe("Needs you");
     expect(chip.dataset.role).toBe("needs-you");
   });
 

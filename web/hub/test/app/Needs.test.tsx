@@ -6,7 +6,7 @@
 // and the desktop keys a, d and r.
 
 import type { ToastFn } from "@huddle/ui/toast.tsx";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/preact";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/preact";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -239,8 +239,11 @@ describe("the permission bar", () => {
     expect(screen.getByRole("heading", { name: /kanban-e2e wants to run a command/ })).toBeDefined();
     expect(screen.getByText("npm test -- --run e2e").tagName).toBe("CODE");
     expect(
-      screen.getByText(/Bash · claude-code-plugins · Runs in port\/KBN-E2E on laptop\. Waiting 30 s\./),
+      screen.getByText(/Bash · claude-code-plugins · port\/KBN-E2E · laptop · waiting 30 s/),
     ).toBeDefined();
+    // the close button never opens the sheet holding focus, so no ring paints on open by pointer
+    const body = sheet?.querySelector("[data-needs-sheet]");
+    expect(body?.hasAttribute("autofocus")).toBe(true);
     expect(document.querySelector("[data-needs-bar]")).toBeNull();
     const foot = sheet?.querySelector("[data-needs-foot]");
     expect(foot?.querySelector("[data-act='deny']")).not.toBeNull();
@@ -907,10 +910,37 @@ describe("the needs sheet on the tokens", () => {
   const bash = (command: string): NeedItem =>
     ask({ input: JSON.stringify({ command, description: "Build the bundle" }) });
 
+  it("leads the sheet with the session's wants-to line and the ask's meta under it", () => {
+    mountAsk(bash("bun run build"), {
+      session: { title: "lead", branch: "feat/one", machine: "mbp" },
+    });
+    const head = document.querySelector(".ui-sheet-title") as HTMLElement;
+    expect(head).not.toBeNull();
+    expect(head.textContent).toContain("lead wants to run a command");
+    expect(
+      within(head).getByText("Bash · claude-code-plugins · feat/one · mbp · waiting 30 s"),
+    ).toBeDefined();
+  });
+
+  it("draws the Where section only from the rows the session reports", () => {
+    mountAsk(ask(), { session: { branch: "" } });
+    expect(screen.getByText("Where")).toBeDefined();
+    expect(screen.getByText("Folder")).toBeDefined();
+    expect(screen.getByText("/work/claude-code-plugins")).toBeDefined();
+    expect(screen.queryByText("Branch")).toBeNull();
+    mountAsk(ask(), { session: { project: "", branch: "", machine: "" } });
+    expect(screen.queryByText("Where")).toBeNull();
+    expect(screen.queryByText("Folder")).toBeNull();
+  });
+
   it("shows a Bash ask's command, not its raw JSON", () => {
     mountAsk(bash("bun run build"));
     expect(screen.getByText("bun run build").tagName).toBe("CODE");
     expect(screen.queryByText(/"command"/)).toBeNull();
+    // the Command label row owns the Copy button, so no text runs under it
+    expect(screen.getByRole("heading", { name: "Command" })).toBeDefined();
+    const code = screen.getByText("bun run build");
+    expect(code.contains(screen.getByRole("button", { name: "Copy" }))).toBe(false);
   });
 
   it("names the command in the passkey sheet an allow opens", async () => {
@@ -931,7 +961,9 @@ describe("the needs sheet on the tokens", () => {
     });
     await flush();
     expect(h.calls.map((c) => c.path)).toEqual(["/api/needs/7/decide"]);
-    expect(screen.getByText("Command").nextElementSibling?.textContent).toBe("bun run build");
+    const what = document.querySelector("[data-stepup-what]") as HTMLElement;
+    expect(what).not.toBeNull();
+    expect(within(what).getByText("Command").nextElementSibling?.textContent).toBe("bun run build");
   });
 
   it("keeps another tool's input, and a cut Bash input, as they came", () => {
@@ -944,10 +976,10 @@ describe("the needs sheet on the tokens", () => {
     expect(screen.getByText(/the input was cut; allow it in the terminal/)).toBeDefined();
   });
 
-  it("leaves Runs in out when the session reports no branch", () => {
+  it("leaves the branch out of the meta when the session reports none", () => {
     mountAsk(ask(), { session: { branch: "" } });
     expect(screen.queryByText(/Runs in/)).toBeNull();
-    expect(screen.getByText(/Bash · claude-code-plugins · On laptop\. Waiting 30 s\./)).toBeDefined();
+    expect(screen.getByText("Bash · claude-code-plugins · laptop · waiting 30 s")).toBeDefined();
   });
 
   it("paints the phone sheet with real 48 px buttons and no legacy class", () => {
