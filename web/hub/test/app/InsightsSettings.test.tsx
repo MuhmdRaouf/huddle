@@ -76,6 +76,13 @@ describe("the Insights switches", () => {
     expect(document.body.textContent).toContain("Tips to my sessions");
   });
 
+  it("the pane's heading reads Tips", async () => {
+    const { api } = apiFake(Promise.resolve(DEFAULTS));
+    mount(api);
+    await flush();
+    expect(screen.getByRole("heading", { level: 2, name: "Tips" })).toBeDefined();
+  });
+
   it("a flip PUTs its one field only", async () => {
     const { api, calls } = apiFake(Promise.resolve({ tips_for_me: true, tips_to_sessions: true }));
     mount(api);

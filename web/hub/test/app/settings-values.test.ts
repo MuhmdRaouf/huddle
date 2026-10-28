@@ -1,7 +1,8 @@
 // settings-values.test.ts — the one-line values Settings' rows show: the formatters (theme and
-// scheme, the paired devices' count, the Insights switch's On and Off, the hub's zone, the hub
-// card's line and initial) and the hook that reads each source once through the panes' client and
-// leaves a value out when its read fails.
+// scheme, the paired devices' count, this device's notify choice, the day against the per-day
+// budget on everything, the Insights switch's On and Off, the hub's zone, the hub card's line and
+// initial) and the hook that reads each source once through the panes' client and leaves a value
+// out when its read fails.
 
 import { waitFor } from "@testing-library/preact";
 import { createElement } from "preact";
@@ -13,6 +14,8 @@ import {
   devicesValue,
   hubInitial,
   hubSubtitle,
+  notifyValue,
+  spendingValue,
   tipsValue,
   useSettingsValues,
   zoneOf,
@@ -31,6 +34,32 @@ describe("the row values' formatters", () => {
     expect(devicesValue(1)).toBe("1 device");
     expect(devicesValue(3)).toBe("3 devices");
     expect(devicesValue(0)).toBe("0 devices");
+  });
+
+  it("TestNotificationsNamesTheDeviceChoice", () => {
+    expect(notifyValue({ notify: "needs" })).toBe("Needs you only");
+    expect(notifyValue({ notify: "all" })).toBe("Needs you and alerts");
+    expect(notifyValue({ notify: "off" })).toBe("Off");
+    expect(notifyValue({})).toBe("Needs you only");
+    expect(notifyValue(null)).toBe("Needs you only");
+  });
+
+  it("TestSpendingNamesTheDayAgainstThePerDayBudgetOnEverything", () => {
+    expect(spendingValue({ spend: [{ scope: "total", period: "day", spentUsd: 1.2, limitUsd: 40 }] })).toBe(
+      "$1.20 of $40.00 today",
+    );
+  });
+
+  it("TestSpendingNamesNothingWithoutAPerDayBudgetOnEverything", () => {
+    expect(spendingValue({ spend: [] })).toBe("");
+    expect(spendingValue({ spend: [{ scope: "provider", period: "day", spentUsd: 1, limitUsd: 5 }] })).toBe(
+      "",
+    );
+    expect(spendingValue({ spend: [{ scope: "total", period: "month", spentUsd: 1, limitUsd: 5 }] })).toBe(
+      "",
+    );
+    expect(spendingValue({})).toBe("");
+    expect(spendingValue(null)).toBe("");
   });
 
   it("TestTipsSaysOnOrOff", () => {
@@ -101,18 +130,23 @@ describe("the values hook", () => {
       "/api/devices": { devices: [{ name: "iPhone", added: "", seen: "" }] },
       "/api/insights/settings": { tips_for_me: true },
       "/api/settings": { zone: "Africa/Cairo", zone_origin: "owner" },
+      "/api/push/notify": { notify: "needs" },
+      "/api/radar/api/budget-status": {
+        spend: [{ scope: "total", period: "day", spentUsd: 1.2, limitUsd: 40 }],
+      },
     });
     await waitFor(() => {
       expect(document.querySelector('[data-value="security"]')?.textContent).toBe("1 device");
       expect(document.querySelector('[data-value="tips"]')?.textContent).toBe("On");
       expect(document.querySelector('[data-value="hub"]')?.textContent).toBe("Africa/Cairo");
+      expect(document.querySelector('[data-value="notifications"]')?.textContent).toBe("Needs you only");
+      expect(document.querySelector('[data-value="spending"]')?.textContent).toBe("$1.20 of $40.00 today");
     });
     expect(document.querySelector('[data-value="appearance"]')?.textContent).toBe("Huddle · System");
     expect(calls.filter((c) => c.url === "/api/devices")).toHaveLength(1);
     expect(calls.filter((c) => c.url === "/api/settings")).toHaveLength(1);
-    // notifications and spending have no source yet: no value names them
-    expect(document.querySelector('[data-value="notifications"]')).toBeNull();
-    expect(document.querySelector('[data-value="spending"]')).toBeNull();
+    expect(calls.filter((c) => c.url === "/api/push/notify")).toHaveLength(1);
+    expect(calls.filter((c) => c.url === "/api/radar/api/budget-status")).toHaveLength(1);
   });
 
   it("TestTheKeptSchemeIsNamed", async () => {
@@ -129,16 +163,27 @@ describe("the values hook", () => {
     await waitFor(() => expect(document.querySelector('[data-value="tips"]')?.textContent).toBe("Off"));
   });
 
+  it("TestTheNotificationsRowNamesTheChoiceTheHubKeeps", async () => {
+    mountValues({ "/api/push/notify": { notify: "off" } });
+    await waitFor(() =>
+      expect(document.querySelector('[data-value="notifications"]')?.textContent).toBe("Off"),
+    );
+  });
+
   it("TestAFailedReadLeavesItsValueOut", async () => {
     const calls = mountValues({});
     await flush();
     expect(calls.map((c) => c.url).sort()).toEqual([
       "/api/devices",
       "/api/insights/settings",
+      "/api/push/notify",
+      "/api/radar/api/budget-status",
       "/api/settings",
     ]);
     expect(document.querySelector('[data-value="appearance"]')?.textContent).toBe("Huddle · System");
     expect(document.querySelector('[data-value="security"]')).toBeNull();
+    expect(document.querySelector('[data-value="notifications"]')).toBeNull();
+    expect(document.querySelector('[data-value="spending"]')).toBeNull();
     expect(document.querySelector('[data-value="tips"]')).toBeNull();
     expect(document.querySelector('[data-value="hub"]')).toBeNull();
   });

@@ -1,12 +1,13 @@
 // settings-values.ts — the current value each Settings row names: a formatter per group's source,
 // and one hook that reads each source once on mount through the hub's api client. A read that
 // fails leaves its value out, so the row shows nothing rather than a stale or wrong answer.
-// Notifications and Spending name no value yet; their cards add them.
 
 import { readScheme, type SchemePref } from "@huddle/ui/theme.ts";
 import { readTheme, THEMES } from "@huddle/ui/themes.ts";
 import { useEffect, useState } from "preact/hooks";
+import { fmtUsd } from "../radar/fmt.ts";
 import { useHuddle } from "./context.tsx";
+import { CHOICES, readNotifyChoice } from "./Notifications.tsx";
 import { SCHEMES } from "./scheme.ts";
 import type { SettingsSection } from "./SettingsTab.tsx";
 
@@ -21,9 +22,30 @@ export function appearanceValue(theme: string, scheme: SchemePref): string {
   return `${themeLabel} · ${schemeLabel}`;
 }
 
+/** The label of this device's choice of what wakes it: the pane's own words. */
+export function notifyValue(v: unknown): string {
+  return CHOICES.find((c) => c.value === readNotifyChoice(v))?.label ?? "";
+}
+
 /** The paired devices' count: "1 device", "3 devices". */
 export function devicesValue(count: number): string {
   return `${count} ${count === 1 ? "device" : "devices"}`;
+}
+
+/** One line of radar's budget answer, as the wire holds it. */
+type SpendLine = { scope: unknown; period: unknown; spentUsd: unknown; limitUsd: unknown };
+
+/** The day against the per-day budget on everything: "$1.20 of $40.00 today". No such budget in
+ *  the answer — or one it does not price — and the row names nothing. */
+export function spendingValue(r: unknown): string {
+  const spend = (r as { spend?: unknown } | null)?.spend;
+  if (!Array.isArray(spend)) return "";
+  for (const s of spend as SpendLine[]) {
+    if (s.scope !== "total" || s.period !== "day") continue;
+    if (typeof s.spentUsd !== "number" || typeof s.limitUsd !== "number") return "";
+    return `${fmtUsd(s.spentUsd)} of ${fmtUsd(s.limitUsd)} today`;
+  }
+  return "";
 }
 
 /** Whether the hub's tips reach this browser. */
@@ -87,6 +109,17 @@ export function useSettingsValues(): SettingsValues {
       .then((r) => {
         const { zone } = zoneOf(r);
         if (zone) put("hub", zone);
+      })
+      .catch(() => {});
+    api
+      .api("/api/push/notify")
+      .then((r) => put("notifications", notifyValue(r)))
+      .catch(() => {});
+    api
+      .api("/api/radar/api/budget-status")
+      .then((r) => {
+        const value = spendingValue(r);
+        if (value !== "") put("spending", value);
       })
       .catch(() => {});
     return () => {

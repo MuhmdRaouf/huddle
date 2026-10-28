@@ -225,6 +225,10 @@ test.describe("the Settings tab", () => {
 
     test("the notification switches say what this browser allows", async ({ page }) => {
       await openSettings(page, "#/settings/notifications");
+      // the page reads as a Settings section: its heading, with the rows in one card under it
+      await expect(page.locator('[data-setting="notifications"] > section > h2')).toHaveText(
+        "Notifications",
+      );
       await expect(page.locator("#set-notif")).toBeVisible();
       const push = page.locator("#set-push");
       await expect(push).toHaveAttribute("aria-checked", "false");
@@ -299,6 +303,8 @@ test.describe("the Settings tab", () => {
 
   test("the Insights switches start on and off and keep a change across a reload", async ({ page }) => {
     await openSettings(page, "#/settings/insights");
+    // the group's member is the Tips pane; its heading names the group, not the engine
+    await expect(page.locator('[data-setting="insights"] > section > h2')).toHaveText("Tips");
     const tipsForMe = page.getByRole("switch", { name: "Tips for me", exact: true });
     const tipsToSessions = page.getByRole("switch", { name: "Tips to my sessions" });
     await expect(tipsForMe).toHaveAttribute("aria-checked", "true");

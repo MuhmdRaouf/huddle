@@ -5,18 +5,19 @@
 // Those choices are the device's own: the routes answer a browser that
 // holds no paired device with the refusal to read or write one.
 
-import { Card } from "@huddle/ui/card.tsx";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { RadioGroup, type RadioOption } from "@huddle/ui/radio-group.tsx";
 import { Switch } from "@huddle/ui/switch.tsx";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { Icon } from "../icons.tsx";
 import type { PushStatus } from "../pwa.ts";
 import { errText, useHuddle } from "./context.tsx";
 
+/** A section's heading, the same small caps on every section. */
+const HEAD = "mb-1.5 text-xs font-semibold tracking-[0.06em] uppercase text-[var(--ui-muted)]";
+
 /** The choices the server knows, and what each one wakes the device for. */
-const CHOICES: readonly RadioOption<NotifyChoice>[] = [
+export const CHOICES: readonly RadioOption<NotifyChoice>[] = [
   {
     value: "needs",
     label: "Needs you only",
@@ -181,7 +182,7 @@ function BrowserRows(): JSX.Element {
   );
 }
 
-/** The notifications card: this browser's two switches (or the Home Screen step), then the
+/** The notifications pane: this browser's two switches (or the Home Screen step), then the
  *  choice as three radios and the finished-turn switch, each saved the moment it changes. */
 export function NotificationsCard(): JSX.Element {
   const { api, toast } = useHuddle();
@@ -230,16 +231,10 @@ export function NotificationsCard(): JSX.Element {
       });
   };
   return (
-    <Card
-      title={
-        <span class="flex items-center gap-2.5">
-          <span class="text-[var(--ui-accent)]" aria-hidden="true">
-            <Icon name="bell" />
-          </span>
-          Notifications
-        </span>
-      }
-    >
+    <section aria-labelledby="notifications-h" class="flex flex-col gap-3">
+      <h2 id="notifications-h" class={HEAD}>
+        Notifications
+      </h2>
       <BrowserRows />
       <p class="mt-4 mb-1 text-sm font-semibold">What wakes this device</p>
       <RadioGroup
@@ -267,6 +262,6 @@ export function NotificationsCard(): JSX.Element {
           {err}
         </p>
       ) : null}
-    </Card>
+    </section>
   );
 }

@@ -176,10 +176,12 @@ describe("the notifications card", () => {
     expect(turn().getAttribute("aria-checked")).toBe("true");
   });
 
-  it("paints the card, its three switches and its three radios on the tokens", async () => {
+  it("paints the pane, its three switches and its three radios on the tokens", async () => {
     card([{ status: 200, body: { notify: "needs" } }]);
     await waitFor(() => expect(radio(0).checked).toBe(true));
-    expect(screen.getByRole("region", { name: "Notifications" }).className).toBe("ui-card");
+    const pane = screen.getByRole("region", { name: "Notifications" });
+    expect(pane.querySelector("h2")?.textContent).toBe("Notifications");
+    expect(pane.className).toBe("flex flex-col gap-3");
     const switches = screen.getAllByRole("switch");
     expect(switches.map((x) => x.className)).toEqual(["ui-switch", "ui-switch", "ui-switch"]);
     expect(screen.getByRole("radiogroup", { name: "Notifications" }).className).toBe("ui-radios");

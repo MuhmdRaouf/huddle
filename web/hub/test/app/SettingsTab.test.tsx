@@ -301,6 +301,10 @@ describe("the phone's grouped list", () => {
       "/api/devices": { devices: [device()] },
       "/api/insights/settings": { tips_for_me: true },
       "/api/settings": { zone: "Africa/Cairo", zone_origin: "owner" },
+      "/api/push/notify": { notify: "needs" },
+      "/api/radar/api/budget-status": {
+        spend: [{ scope: "total", period: "day", spentUsd: 1.2, limitUsd: 40 }],
+      },
       ...over,
     };
     const calls: Array<{ url: string }> = [];
@@ -319,9 +323,11 @@ describe("the phone's grouped list", () => {
 
   it("TestThePhoneListShowsSixGroupsUnderThreeHeadingsWithValues", async () => {
     mountList();
-    await waitFor(() =>
-      expect(document.querySelector('[data-value="hub"]')?.textContent).toBe("Africa/Cairo"),
-    );
+    await waitFor(() => {
+      expect(document.querySelector('[data-value="hub"]')?.textContent).toBe("Africa/Cairo");
+      expect(document.querySelector('[data-value="notifications"]')?.textContent).toBe("Needs you only");
+      expect(document.querySelector('[data-value="spending"]')?.textContent).toBe("$1.20 of $40.00 today");
+    });
     const rows = [
       ...document.querySelectorAll<HTMLAnchorElement>('[aria-label="Settings sections"] a[data-section]'),
     ];
@@ -351,9 +357,9 @@ describe("the phone's grouped list", () => {
     ]);
     expect(rows.map((a) => a.querySelector("[data-value]")?.textContent)).toEqual([
       "Huddle · System",
-      "",
+      "Needs you only",
       "1 device",
-      "",
+      "$1.20 of $40.00 today",
       "On",
       "Africa/Cairo",
     ]);
@@ -387,8 +393,15 @@ describe("the phone's grouped list", () => {
   });
 
   it("TestARefusedReadLeavesTheRowEmptyAndTheCardQuiet", async () => {
-    const calls = mountList({}, ["/api/devices", "/api/insights/settings", "/api/settings", "/health"]);
-    await waitFor(() => expect(calls.length).toBeGreaterThanOrEqual(4));
+    const calls = mountList({}, [
+      "/api/devices",
+      "/api/insights/settings",
+      "/api/push/notify",
+      "/api/radar/api/budget-status",
+      "/api/settings",
+      "/health",
+    ]);
+    await waitFor(() => expect(calls.length).toBeGreaterThanOrEqual(6));
     await flush();
     const values = [...document.querySelectorAll<HTMLElement>("[data-value]")];
     expect(values.map((v) => v.textContent)).toEqual(["Huddle · System", "", "", "", "", ""]);

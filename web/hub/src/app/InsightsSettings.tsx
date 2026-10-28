@@ -1,5 +1,5 @@
-// InsightsSettings.tsx — Settings › Tips › Insights, the group's own member with the
-// address #/settings/insights: the owner's two switches, and Start over. "Tips for me" shows the
+// InsightsSettings.tsx — Settings › Tips, the pane the address #/settings/insights opens:
+// the owner's two switches, and Start over. "Tips for me" shows the
 // Insights card's tips; "Tips to my sessions" lets a session take one tip line as context and
 // spends its tokens. Start over's Forget asks once, then posts to the forget route, re-reads the
 // switches and says it forgot; a refusal says the error and keeps the confirm up. Both live in one
@@ -139,7 +139,7 @@ export function InsightsSettings(): JSX.Element {
   return (
     <section aria-labelledby="insights-h" class="flex flex-col gap-3">
       <h2 id="insights-h" class={HEAD}>
-        Insights
+        Tips
       </h2>
       <p class={NOTE}>Tips come from what huddle already records. Nothing leaves this machine.</p>
       <List label="Insights">
