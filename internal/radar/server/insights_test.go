@@ -426,6 +426,112 @@ func TestInsights(t *testing.T) {
 		}
 	})
 
+	t.Run("rebuilds the alerts at most once per 5 s while records stream in", func(t *testing.T) {
+		world := makeEnv(t)
+		ctx := context.Background()
+		at := nowAt
+		now := func() time.Time { return at }
+		// one $15 monthly budget for zai: the seeded calls sit under the 80 percent the
+		// detector warns at, and the overspend below lifts the month past it
+		writeText(t, filepath.Join(world.state, "budgets.json"),
+			`{"version":1,"budgets":[{"id":"zai-month","scope":"provider:zai","period":"month","limitUsd":15,"action":"warn"}]}`)
+		counted := &countingStore{Store: store.CreateStore(now)}
+		seedStore(counted.Store)
+		quotas := CreateQuotas(world.env)
+		created := CreateInsights(ctx, InsightsOptions{
+			Env:    world.env,
+			Store:  counted,
+			Now:    now,
+			TickMs: 0,
+			Quotas: quotas,
+		})
+		t.Cleanup(created.Stop)
+		before := counted.rawCalls // the one call the start-up tick made
+		hasBudgetAlert := func(list []shared.Alert) bool {
+			for _, alert := range list {
+				if alert.Kind == shared.AlertBudget {
+					return true
+				}
+			}
+			return false
+		}
+		// one line of the stream: a stored request whose day sits outside the ledger's
+		// window, so the store version moves and the ledger's does not
+		streamLine := func(id string) {
+			counted.Store.AddRequest(makeRequest(func(r *shared.RequestRecord) { r.ID = id }), nil)
+		}
+
+		// 0 s: the start-up answer is brand new, the floor covers the first line
+		streamLine("r3")
+		created.Alerts()
+		if counted.rawCalls != before {
+			t.Fatalf("alerts at 0 s cost %d copies, want 0 — the floor covers the start-up answer", counted.rawCalls-before)
+		}
+		// +1 s: a priced line lands, the ledger moves with the store, and the overspend it
+		// carries is held back with the answer until the floor runs out
+		at = nowAt.Add(1 * time.Second)
+		counted.Store.AddRequest(makeRequest(func(r *shared.RequestRecord) {
+			r.ID, r.Ts, r.Model, r.Tokens = "r4", at.UnixMilli(), "glm-5.3", outTokens
+		}), nil)
+		if hasBudgetAlert(created.Alerts()) {
+			t.Error("the budget alert shows at +1 s, want it held back with the answer")
+		}
+		if counted.rawCalls != before {
+			t.Fatalf("alerts at +1 s cost %d copies, want 0 — the floor holds the ledger move", counted.rawCalls-before)
+		}
+		// +2 s .. +4 s: one line a second, every read served by the one held answer
+		for _, step := range []struct {
+			seconds int
+			id      string
+		}{{2, "r5"}, {3, "r6"}, {4, "r7"}} {
+			at = nowAt.Add(time.Duration(step.seconds) * time.Second)
+			streamLine(step.id)
+			created.Alerts()
+			if counted.rawCalls != before {
+				t.Errorf("alerts at +%d s cost %d copies, want 0 — the floor holds while the store and its ledger move", step.seconds, counted.rawCalls-before)
+			}
+		}
+		// +5 s: the floor has run out — one rebuild serves the whole stream, and the
+		// overspend from +1 s shows here at the latest
+		at = nowAt.Add(5 * time.Second)
+		streamLine("r8")
+		fresh := created.Alerts()
+		if counted.rawCalls != before+1 {
+			t.Errorf("alerts at +5 s cost %d copies, want 1 — one rebuild per floor", counted.rawCalls-before)
+		}
+		if !hasBudgetAlert(fresh) {
+			t.Error("the budget alert is missing at +5 s, want the rebuild to raise the overspend")
+		}
+		// +6 s: nothing moved, today's rule holds the fresh answer again
+		at = nowAt.Add(6 * time.Second)
+		created.Alerts()
+		if counted.rawCalls != before+1 {
+			t.Errorf("alerts at +6 s on a quiet store cost %d copies, want 0", counted.rawCalls-before)
+		}
+		// +6.5 s: a quota-time move inside the floor rebuilds at once
+		at = nowAt.Add(6500 * time.Millisecond)
+		used, resets := 85.0, nowAt.Add(2*time.Hour).Unix()
+		if _, err := quotas.Record(ctx, QuotaSnapshot{
+			SessionID: "s1", FiveHour: &used, FiveHourResetsAt: &resets, At: at.Unix(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		created.Alerts()
+		if counted.rawCalls != before+2 {
+			t.Errorf("alerts after the quota move cost %d copies, want 1 — a quota change rebuilds at once", counted.rawCalls-before)
+		}
+		// +7 s: a budget change is never held back by the floor
+		at = nowAt.Add(7 * time.Second)
+		if _, _, err := created.SetBudgets(ctx, mustValue(t,
+			`{"budgets":[{"id":"z","scope":"provider:zai","period":"day","limitUsd":2,"action":"warn"}]}`)); err != nil {
+			t.Fatalf("SetBudgets errored: %v", err)
+		}
+		created.Alerts()
+		if counted.rawCalls < before+3 {
+			t.Errorf("alerts after the budget change cost %d copies, want at least 3 — a budget change rebuilds at once", counted.rawCalls-before)
+		}
+	})
+
 	t.Run("rebuilds the metrics text when the budgets change, not only when the store does", func(t *testing.T) {
 		ctx := context.Background()
 		counted, cached := seededCounting(t)

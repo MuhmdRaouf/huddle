@@ -25,8 +25,15 @@ const DefaultTickMs = 10_000
 // alertCacheMs is how long one alert answer holds while nothing it was built from moves. The
 // ceiling exists for the time-decay detectors, whose answers go stale with no version moving:
 // long enough to cover the push sweep's 30 s gap and the tick's 10 s, so quiet reads serve the
-// held answer, and short enough that they still refresh once a minute.
+// held answer, and short enough that they still refresh once a minute. A store or ledger that
+// moves on its own holds the answer only for alertRebuildFloorMs.
 const alertCacheMs = 60_000
+
+// alertRebuildFloorMs is the least time between two alert builds while nothing but the store
+// and its ledger move: a busy store and its ledger change on every ingested line, and each
+// build copies every record, so a stream of lines costs one build per floor, not one per read.
+// A budget or quota change still rebuilds at once.
+const alertRebuildFloorMs = 5_000
 
 // The router health view the dashboard serves: one day, folded hourly.
 const (
@@ -80,6 +87,18 @@ type alertCacheState struct {
 	ledger  int64
 	quota   int64
 	alerts  []shared.Alert
+}
+
+// serves says the held answer still answers a read: either nothing it was built from moved
+// and it is young enough for the time-decay detectors, or the store or the ledger moved and
+// it is inside the rebuild floor a stream of lines is held to.
+func (h *alertCacheState) serves(at, version, ledger, quota int64) bool {
+	// nothing moved: hold to the full cache window
+	if at-h.at < alertCacheMs && h.version == version && h.ledger == ledger && h.quota == quota {
+		return true
+	}
+	// the store or the ledger moved: hold one answer per rebuild floor
+	return at-h.at < alertRebuildFloorMs && h.quota == quota
 }
 
 // advisorCacheState is one advisor report, per store version.
@@ -229,14 +248,13 @@ func (i *Insights) statusLocked() budget.BudgetStatus {
 	return budget.ComputeStatus(i.budgets, i.ledgerRowsLocked(), i.nowMs())
 }
 
-// allAlertsLocked detects every active alert, serving the held answer while it is young
-// enough and nothing it was built from has moved.
+// allAlertsLocked detects every active alert, serving the held answer while nothing it was
+// built from has moved, and for the rebuild floor while only the store or the ledger has.
 func (i *Insights) allAlertsLocked() []shared.Alert {
 	at := i.nowMs()
 	version := i.store.Version()
 	window, quotaAt := i.claudeWindow()
-	if held := i.alertCache; held != nil && at-held.at < alertCacheMs &&
-		held.version == version && held.ledger == i.ledger.Version() && held.quota == quotaAt {
+	if held := i.alertCache; held != nil && held.serves(at, version, i.ledger.Version(), quotaAt) {
 		return held.alerts
 	}
 	raw := i.store.Raw()
