@@ -713,10 +713,11 @@ function apiFake(answer: (path: string, n: number) => unknown = () => ({})): {
 }
 
 /** Mounts the Sessions list over a recording api, repainting on every registry change; the toast
- *  is a spy the link flows assert on. */
+ *  is a spy the link flows assert on. `needs` seeds the needs-you items. */
 function mountNowOver(
   layout: Layout,
   answer?: (path: string, n: number) => unknown,
+  needs: NeedItem[] | null = null,
 ): {
   registry: RegistryStore;
   calls: { path: string; body: unknown }[];
@@ -729,7 +730,7 @@ function mountNowOver(
   });
   const { api, calls } = apiFake(answer);
   const toast = vi.fn();
-  const registry = makeRegistry({ sessions: fixture() });
+  const registry = makeRegistry({ sessions: fixture(), needs });
   const ctx = makeCtx(makeState(), { registry, api, toast });
   function Follow(): JSX.Element {
     const [, set] = useState(0);
@@ -786,7 +787,9 @@ describe("the pick bar's link", () => {
       document.querySelector<HTMLButtonElement>("[data-link-submit]")?.click();
     });
     await flush();
-    expect(h.calls[0]).toEqual({
+    // the pane's tasks reads share the call log; the link POST is picked by path
+    const link = h.calls.find((c) => c.path === "/api/links");
+    expect(link).toEqual({
       path: "/api/links",
       body: { sessions: ["s-need-1", "s-work-1"], channel: "fresh-link", create: true, level: "digest" },
     });
@@ -863,5 +866,105 @@ describe("the Select toggle", () => {
       await new Promise((r) => setTimeout(r, 560));
     });
     expect(screen.getByText("1 selected")).toBeDefined();
+  });
+});
+
+describe("the feature chips", () => {
+  /** The tasks answer of a carded session: two held cards in two clusters on one board. */
+  const held = (): unknown => ({
+    todos: [],
+    tasks: [],
+    cards: [
+      { id: "c1", title: "Ship the router", column: "doing", cluster: "swr", source: "held" },
+      { id: "c2", title: "Wire the hub", column: "doing", cluster: "swe", source: "held" },
+    ],
+    board: "e2e-demo",
+  });
+
+  it("shows the held cards' clusters as chip links under a working row, each to its board feature", async () => {
+    mountNowOver("phone", (path) => (path === "/api/sessions/s-work-1/tasks" ? held() : {}));
+    await flush();
+    const chips = [
+      ...document.querySelectorAll('[data-row="s-work-1"] [data-feature-chip]'),
+    ] as HTMLAnchorElement[];
+    expect(chips.map((c) => c.textContent)).toEqual(["swe", "swr"]);
+    expect(chips.map((c) => c.getAttribute("href"))).toEqual([
+      "#/kanban/e2e-demo/swe",
+      "#/kanban/e2e-demo/swr",
+    ]);
+    // a row with chips is a container, never one anchor holding others: its title link opens it
+    expect(document.querySelector("a[data-row='s-work-1']")).toBeNull();
+    expect(document.querySelector('[data-row="s-work-1"] > a[href="#/sessions/s-work-1"]')).not.toBeNull();
+  });
+
+  it("keeps the desk row one tap: its title link opens the session, the chips are links of their own", async () => {
+    mountNowOver("desktop", (path) => (path === "/api/sessions/s-work-1/tasks" ? held() : {}));
+    await flush();
+    expect(document.querySelector("a[data-row='s-work-1']")).toBeNull();
+    const rowEl = document.querySelector('[data-row="s-work-1"]') as HTMLElement;
+    expect(rowEl).not.toBeNull();
+    const chips = [...rowEl.querySelectorAll("[data-feature-chip]")] as HTMLAnchorElement[];
+    expect(chips.map((c) => c.textContent)).toEqual(["swe", "swr"]);
+    // the title link's overlay stretches over the whole row, so the row's tap still opens it
+    const title = rowEl.querySelector('a[href="#/sessions/s-work-1"]') as HTMLAnchorElement;
+    expect(title?.className).toContain("after:absolute");
+  });
+
+  it("carries the chips inside the needs-you card too", async () => {
+    mountNowOver("phone", (path) => (path === "/api/sessions/s-need-1/tasks" ? held() : {}), [needItem()]);
+    await flush();
+    const card = document.querySelector('article[data-row="s-need-1"]') as HTMLElement;
+    expect(card).not.toBeNull();
+    const chips = [...card.querySelectorAll("[data-feature-chip]")] as HTMLAnchorElement[];
+    expect(chips.map((c) => c.textContent)).toEqual(["swe", "swr"]);
+  });
+
+  it("falls back to the authored cards when the member holds none", async () => {
+    mountNowOver("phone", (path) =>
+      path === "/api/sessions/s-work-1/tasks"
+        ? {
+            todos: [],
+            tasks: [],
+            cards: [
+              { id: "c3", title: "Sweep the docs", column: "doing", cluster: "docs", source: "authored" },
+            ],
+            board: "e2e-demo",
+          }
+        : {},
+    );
+    await flush();
+    const chips = [...document.querySelectorAll('[data-row="s-work-1"] [data-feature-chip]')];
+    expect(chips.map((c) => c.textContent)).toEqual(["docs"]);
+  });
+
+  it("shows no chip line when the answer names no board", async () => {
+    const h = mountNowOver("phone", (path) =>
+      path === "/api/sessions/s-work-1/tasks"
+        ? {
+            todos: [],
+            tasks: [],
+            cards: [{ id: "c1", title: "Ship", column: "doing", cluster: "swr", source: "held" }],
+          }
+        : {},
+    );
+    await flush();
+    expect(h.calls.some((c) => c.path === "/api/sessions/s-work-1/tasks")).toBe(true);
+    expect(document.querySelector('[data-row="s-work-1"] [data-feature-chips]')).toBeNull();
+    // no chips: the row keeps its one plain anchor
+    expect(document.querySelector("a[data-row='s-work-1']")).not.toBeNull();
+  });
+
+  it("asks each open row once while the list stands, and never the ended one", async () => {
+    const h = mountNowOver("phone");
+    await flush();
+    expect(h.calls.some((c) => c.path === "/api/sessions/s-done/tasks")).toBe(false);
+    const asked = h.calls.filter((c) => c.path === "/api/sessions/s-work-1/tasks").length;
+    expect(asked).toBeGreaterThan(0);
+    // a registry repaint re-renders the list without re-asking: the pane keeps one cache per session
+    void act(() => {
+      h.registry.applyRow(row({ session_id: "s-fresh", title: "fresh" }));
+    });
+    await flush();
+    expect(h.calls.filter((c) => c.path === "/api/sessions/s-work-1/tasks").length).toBe(asked);
   });
 });

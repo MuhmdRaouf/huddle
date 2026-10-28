@@ -92,7 +92,9 @@ export type ShellOutputPage = {
 };
 
 /** What a session is working on, as GET /api/sessions/<id>/tasks answers it: its own todo list,
- *  the channel tasks its member owns, and the kanban cards it holds. */
+ *  the channel tasks its member owns, and the kanban cards it holds. `board` names the kanban
+ *  board the cards sit on; each card carries its cluster and whether the session's member holds
+ *  it or only authored it. An older hub answers none of these. */
 export type SessionTasks = {
   todos: {
     id: string;
@@ -110,7 +112,10 @@ export type SessionTasks = {
     id: string;
     title: string;
     column: string;
+    cluster?: string;
+    source?: string;
   }[];
+  board?: string;
 };
 
 /** The facts of a session's current turn, as GET /api/sessions/<id>/turn answers it; radar's

@@ -27,6 +27,7 @@ const PHONE_SPECS = [
   "radar.spec.ts",
   "ask-answers.spec.ts",
   "sessions-list.spec.ts",
+  "session-feature.spec.ts",
   "insights.spec.ts",
 ];
 /** The specs that run on the phone only: the phone's load budget under throttled CDP. */

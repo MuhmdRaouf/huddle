@@ -192,10 +192,21 @@ describe("sessionApi decodes well-formed answers whole", () => {
         { id: "t2", content: "wire the screen", status: "pending" },
       ],
       tasks: [{ id: "j1", title: "Sessions screens", status: "open", channel: "eng" }],
-      cards: [{ id: "c1", title: "Typed client", column: "doing" }],
+      cards: [{ id: "c1", title: "Typed client", column: "doing", cluster: "swr", source: "held" }],
+      board: "e2e-demo",
     };
     const tasks = await sessionApi(fakeApi(answer)).tasks("s");
     expect(tasks).toEqual(answer);
+  });
+
+  it("keeps the tasks answer's board and card facts absent when the wire leaves them out", async () => {
+    const tasks = await sessionApi(
+      fakeApi({ todos: [], tasks: [], cards: [{ id: "c1", title: "Typed client", column: "doing" }] }),
+    ).tasks("s");
+    expect("board" in tasks).toBe(false);
+    const [card] = tasks.cards;
+    if (!card) throw new Error("the answer lost its one card");
+    for (const key of ["cluster", "source"]) expect(key in card).toBe(false);
   });
 
   it("decodes the turn answer with and without output_tokens", async () => {

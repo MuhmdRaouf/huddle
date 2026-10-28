@@ -84,7 +84,7 @@
     "px": 0
   },
   "app/session-parts.tsx": {
-    "px": 5
+    "px": 6
   },
   "app/TopBar.tsx": {
     "control": 3,

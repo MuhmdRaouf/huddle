@@ -104,8 +104,11 @@ function apiFake(answer: (path: string, n: number) => unknown = () => ({})): {
 } {
   const calls: { path: string; body: unknown }[] = [];
   const call = (path: string, body?: unknown): Promise<unknown> => {
-    // the list's Radar and Insights cards read their own routes; they are no act of the list's
-    if (path.startsWith("/api/radar/") || path === "/api/insights") return Promise.resolve({});
+    // the list's Radar and Insights cards read their own routes, and each row reads its
+    // sessions tasks for the feature chips; these are no act of the list's
+    if (path.startsWith("/api/radar/") || path === "/api/insights" || path.endsWith("/tasks")) {
+      return Promise.resolve({});
+    }
     calls.push({ path, body });
     const r = answer(path, calls.length);
     return r instanceof Error ? Promise.reject(r) : Promise.resolve(r ?? {});

@@ -241,11 +241,13 @@ function decodeOutputPage(path: string, v: unknown): ShellOutputPage {
 
 function decodeTasks(path: string, v: unknown): SessionTasks {
   const o = obj(`${path}: answer`, v);
-  return {
+  const out: SessionTasks = {
     todos: arr(`${path}: todos`, o.todos).map((todo, i) => decodeTodo(`${path}: todos[${i}]`, todo)),
     tasks: arr(`${path}: tasks`, o.tasks).map((task, i) => decodeTaskEntry(`${path}: tasks[${i}]`, task)),
     cards: arr(`${path}: cards`, o.cards).map((card, i) => decodeCardEntry(`${path}: cards[${i}]`, card)),
   };
+  if (o.board !== undefined) out.board = str(`${path}: board`, o.board);
+  return out;
 }
 
 function decodeTodo(base: string, v: unknown): SessionTasks["todos"][number] {
@@ -271,11 +273,14 @@ function decodeTaskEntry(base: string, v: unknown): SessionTasks["tasks"][number
 
 function decodeCardEntry(base: string, v: unknown): SessionTasks["cards"][number] {
   const o = obj(base, v);
-  return {
+  const out: SessionTasks["cards"][number] = {
     id: str(`${base}.id`, o.id),
     title: str(`${base}.title`, o.title),
     column: str(`${base}.column`, o.column),
   };
+  if (o.cluster !== undefined) out.cluster = str(`${base}.cluster`, o.cluster);
+  if (o.source !== undefined) out.source = str(`${base}.source`, o.source);
+  return out;
 }
 
 function decodeTurn(path: string, v: unknown): TurnFacts {

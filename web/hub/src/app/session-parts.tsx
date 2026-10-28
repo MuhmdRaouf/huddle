@@ -14,6 +14,7 @@ import {
   stateRole,
   stateWord,
 } from "../registry.ts";
+import type { SessionTasks } from "../session/types.ts";
 
 /** One state's mark: its shape and the svg it draws; its colour comes from the state's role. */
 type Mark = { shape: string; draw: JSX.Element };
@@ -245,3 +246,55 @@ export function HooksStaleChip({ s }: { s: RegistrySession }): JSX.Element | nul
 
 /** The link that opens one session from the list. */
 export const openHref = (s: RegistrySession): string => `#/sessions/${s.session_id}`;
+
+/** The distinct clusters of a tasks answer's cards, in name order; empty when the answer names
+ *  no board, so a session whose cards sit nowhere links nowhere. */
+export function featuresOf(tasks: SessionTasks): string[] {
+  if (!tasks.board) return [];
+  return [
+    ...new Set(tasks.cards.map((c) => c.cluster).filter((name): name is string => Boolean(name))),
+  ].sort();
+}
+
+/** One cluster chip: a real link to `#/kanban/<board>/<feature>`, leading with the board's mark
+ *  in the muted ink. The list's rows and needs-you cards draw it 28 px tall at a desk and 44 px
+ *  on a phone, the control height the phone's rows must meet. */
+export function FeatureChips({ tasks, phone }: { tasks: SessionTasks; phone?: boolean }): JSX.Element | null {
+  const board = tasks.board;
+  if (!board) return null;
+  const names = featuresOf(tasks);
+  if (names.length === 0) return null;
+  return (
+    <div
+      data-feature-chips=""
+      class={`relative z-10 flex flex-wrap items-center gap-1.5${phone ? " pt-0.5" : ""}`}
+    >
+      {names.map((name) => (
+        <a
+          key={name}
+          data-feature-chip={name}
+          href={`#/kanban/${board}/${encodeURIComponent(name)}`}
+          title={`Open the ${name} cluster on the board`}
+          class={`inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--ui-surface-2)] px-2.5 text-[13px] font-medium text-[var(--ui-text)] ${
+            phone ? "h-11" : "h-7"
+          }`}
+        >
+          {/* the icon set has none: the board's three columns, drawn once per chip */}
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            class={`size-3.5 shrink-0 ${MUTED}`}
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M4 4h5v16H4zM10 4h5v10h-5zM16 4h4v7h-4z" />
+          </svg>
+          <span class="overflow-hidden text-ellipsis whitespace-nowrap">{name}</span>
+        </a>
+      ))}
+    </div>
+  );
+}

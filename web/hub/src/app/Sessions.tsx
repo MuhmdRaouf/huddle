@@ -10,6 +10,7 @@ import { Field } from "@huddle/ui/field.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
 import { type ComponentChildren, Fragment, type JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
+import type { Api } from "../api.ts";
 import { Icon } from "../icons.tsx";
 import {
   ageText,
@@ -26,6 +27,8 @@ import {
   shownState,
   stateWord,
 } from "../registry.ts";
+import { sessionApi } from "../session/api.ts";
+import type { SessionTasks } from "../session/types.ts";
 import { readPref, writePref } from "../storage.ts";
 import { ConnectCard } from "./ConnectCard.tsx";
 import { useHuddle } from "./context.tsx";
@@ -36,6 +39,8 @@ import type { Layout } from "./layout.ts";
 import { ActComposer, confirmWhat, type NeedsAct, SnoozeMenu, useNeedsAct } from "./Needs.tsx";
 import {
   DeskStateChip,
+  FeatureChips,
+  featuresOf,
   HarnessBadge,
   HooksStaleChip,
   LINE,
@@ -53,15 +58,32 @@ import { MachinesLine } from "./TopBar.tsx";
  *  thumb. A permission ask offers Deny and Allow once, both posted at once (an allow may open the
  *  passkey sheet first); any other ask offers Review, which opens the session to answer it. The
  *  menu beside them snoozes or dismisses the item. The desk draws the same session as one plain
- *  row and answers the ask at the session's own needs bar. */
-function NeedsCard({ s, now, act }: { s: RegistrySession; now: number; act: NeedsAct }): JSX.Element {
+ *  row and answers the ask at the session's own needs bar. An `<a>` cannot hold another, so the
+ *  card is the container, its opening link stretches over the whole of it, and the feature chip
+ *  line rides above that overlay; the ask and the answer bar sit above it too, so their controls
+ *  stay their own. */
+function NeedsCard({
+  s,
+  now,
+  act,
+  tasks,
+}: {
+  s: RegistrySession;
+  now: number;
+  act: NeedsAct;
+  tasks: SessionTasks | null;
+}): JSX.Element {
   const { registry } = useHuddle();
   const needs = registry.getState().needs;
   const ask = permissionOf(needs, s.session_id);
   const item = openItemOf(needs, s.session_id);
+  const chips = tasks && featuresOf(tasks).length > 0 ? <FeatureChips tasks={tasks} phone /> : null;
   return (
-    <article class="ui-card flex flex-col" data-row={s.session_id}>
-      <a href={openHref(s)} class="flex min-w-0 flex-col gap-1.5 p-4 text-[var(--ui-text)]">
+    <article class="ui-card relative flex flex-col" data-row={s.session_id}>
+      <a
+        href={openHref(s)}
+        class="flex min-w-0 flex-col gap-1.5 p-4 text-[var(--ui-text)] after:absolute after:inset-0 after:content-['']"
+      >
         <div class="flex items-baseline justify-between gap-2">
           <span class="truncate text-base font-semibold">{sessionName(s)}</span>
           <span class="flex shrink-0 items-center gap-1.5">
@@ -76,8 +98,9 @@ function NeedsCard({ s, now, act }: { s: RegistrySession; now: number; act: Need
         </div>
         <div class="line-clamp-2 text-sm">{s.task || s.title || stateWord(s.state)}</div>
       </a>
+      {chips ? <div class="px-4 pb-3">{chips}</div> : null}
       {ask ? (
-        <div class="flex min-w-0 flex-col gap-1.5 px-4 pb-3" data-ask="">
+        <div class="relative flex min-w-0 flex-col gap-1.5 px-4 pb-3" data-ask="">
           <span class="text-sm font-semibold">
             Allow <code class="ui-mono">{ask.tool}</code>?
           </span>
@@ -91,7 +114,7 @@ function NeedsCard({ s, now, act }: { s: RegistrySession; now: number; act: Need
           ) : null}
         </div>
       ) : null}
-      <div class={`flex gap-2 border-t ${LINE} p-3`} data-needs-actions="">
+      <div class={`relative flex gap-2 border-t ${LINE} p-3`} data-needs-actions="">
         {item ? <SnoozeMenu item={item} /> : null}
         {ask ? (
           <>
@@ -138,20 +161,51 @@ function DeskHarness({ s }: { s: RegistrySession }): JSX.Element {
 /** The desk's one plain row for every state, needs-you included: the title alone on its line
  *  taking the free width, the harness chip, where it works and how long it has been quiet under,
  *  and the state chip at the end. It opens the session; the session's own needs bar answers an
- *  ask. */
+ *  ask. With a carded session's feature chips the row turns container: an `<a>` cannot hold
+ *  another, so the title link stretches over the whole row and the chip line rides above that
+ *  overlay as links of their own. */
 function DeskRow({
   s,
   now,
   sel,
   open,
+  tasks,
 }: {
   s: RegistrySession;
   now: number;
   sel: boolean;
   open: boolean;
+  tasks: SessionTasks | null;
 }): JSX.Element {
   const meta = [projectName(s.project), s.branch, s.machine].filter(Boolean);
   if (!s.delivery_route) meta.push("watch only");
+  const chips = tasks && featuresOf(tasks).length > 0 ? <FeatureChips tasks={tasks} /> : null;
+  if (chips) {
+    return (
+      <div
+        data-row={s.session_id}
+        aria-current={open ? "page" : sel ? "true" : undefined}
+        class={`relative${selRing(sel)}${
+          open ? " rounded-[var(--ui-radius-lg)] bg-[var(--ui-accent-soft)]" : ""
+        }`}
+      >
+        <a
+          href={openHref(s)}
+          class="ui-list-row flex-col! justify-center! gap-0! min-h-14! after:absolute after:inset-0 after:content-['']"
+        >
+          <span class="ui-list-title">{sessionName(s)}</span>
+          <span class="flex min-w-0 items-center gap-2">
+            <DeskHarness s={s} />
+            <span class="ui-list-meta min-w-0 flex-1 truncate">{meta.join(" · ")}</span>
+            <HooksStaleChip s={s} />
+            <span class={`shrink-0 text-xs ${MUTED} tabular-nums`}>{ageText(s.last_event_at, now)}</span>
+            <DeskStateChip state={s.state} />
+          </span>
+        </a>
+        <div class="px-4 pb-2.5">{chips}</div>
+      </div>
+    );
+  }
   return (
     <a
       href={openHref(s)}
@@ -175,15 +229,21 @@ function DeskRow({
 
 /** A working or stuck row: the mark, the name taking the row's free width, its harness chip with
  *  where it works and its task under it, and the state badge, the model chip and how full its
- *  window is after. */
-function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element {
-  return (
-    <a
-      href={openHref(s)}
-      data-row={s.session_id}
-      aria-current={sel ? "true" : undefined}
-      class={`ui-list-row${selRing(sel)}`}
-    >
+ *  window is after. With a carded session's feature chips the row turns container: an `<a>`
+ *  cannot hold another, so the row's link stretches over the whole row and the chip line rides
+ *  above that overlay as links of their own. */
+function WorkRow({
+  s,
+  sel,
+  tasks,
+}: {
+  s: RegistrySession;
+  sel: boolean;
+  tasks: SessionTasks | null;
+}): JSX.Element {
+  const chips = tasks && featuresOf(tasks).length > 0 ? <FeatureChips tasks={tasks} phone /> : null;
+  const body = (
+    <>
       <span class="ui-list-leading">
         <StateMark state={s.state} />
       </span>
@@ -204,13 +264,21 @@ function WorkRow({ s, sel }: { s: RegistrySession; sel: boolean }): JSX.Element 
           {s.context_percent ? `${Math.round(s.context_percent)}%` : ""}
         </span>
       </span>
-    </a>
+    </>
   );
-}
-
-/** An idle or ended row: the mark, the name taking the row's free width with its machine and its
- *  harness chip under it, the state badge after it, and how long it has been quiet. */
-function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolean }): JSX.Element {
+  if (chips) {
+    return (
+      <div data-row={s.session_id} aria-current={sel ? "true" : undefined} class="relative">
+        <a
+          href={openHref(s)}
+          class={`ui-list-row${selRing(sel)} after:absolute after:inset-0 after:content-['']`}
+        >
+          {body}
+        </a>
+        <div class="px-4 pb-2">{chips}</div>
+      </div>
+    );
+  }
   return (
     <a
       href={openHref(s)}
@@ -218,6 +286,29 @@ function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolea
       aria-current={sel ? "true" : undefined}
       class={`ui-list-row${selRing(sel)}`}
     >
+      {body}
+    </a>
+  );
+}
+
+/** An idle or ended row: the mark, the name taking the row's free width with its machine and its
+ *  harness chip under it, the state badge after it, and how long it has been quiet. With a carded
+ *  session's feature chips the row turns container, the row's link stretching over the whole of
+ *  it and the chip line riding above that overlay. */
+function IdleRow({
+  s,
+  now,
+  sel,
+  tasks,
+}: {
+  s: RegistrySession;
+  now: number;
+  sel: boolean;
+  tasks: SessionTasks | null;
+}): JSX.Element {
+  const chips = tasks && featuresOf(tasks).length > 0 ? <FeatureChips tasks={tasks} phone /> : null;
+  const body = (
+    <>
       <span class="ui-list-leading">
         <StateMark state={s.state} />
       </span>
@@ -235,6 +326,29 @@ function IdleRow({ s, now, sel }: { s: RegistrySession; now: number; sel: boolea
         <StateChip state={s.state} />
         <span class={`text-xs ${MUTED}`}>{ageText(s.last_event_at, now)}</span>
       </span>
+    </>
+  );
+  if (chips) {
+    return (
+      <div data-row={s.session_id} aria-current={sel ? "true" : undefined} class="relative">
+        <a
+          href={openHref(s)}
+          class={`ui-list-row${selRing(sel)} after:absolute after:inset-0 after:content-['']`}
+        >
+          {body}
+        </a>
+        <div class="px-4 pb-2">{chips}</div>
+      </div>
+    );
+  }
+  return (
+    <a
+      href={openHref(s)}
+      data-row={s.session_id}
+      aria-current={sel ? "true" : undefined}
+      class={`ui-list-row${selRing(sel)}`}
+    >
+      {body}
     </a>
   );
 }
@@ -400,6 +514,40 @@ export function deskRows(shown: RegistrySession[]): RegistrySession[] {
   return [...g.needsYou, ...g.working, ...g.idle, ...g.stuck, ...g.ended];
 }
 
+/** How long one row's tasks answer stays fresh before the pane asks again. */
+const TASKS_TTL_MS = 60_000;
+
+/** One cache entry: the answer, or null when the read failed, stamped when it landed. */
+type TasksEntry = { at: number; tasks: SessionTasks | null };
+
+/** Every listed row's tasks, one cache entry per session id: the pane reads each row once when it
+ *  first shows and again at most every 60 s while the list stands. An ended row is never asked —
+ *  its work is done. A failed read caches null (no chip line) so one bad answer cannot turn into
+ *  a re-ask loop. */
+function useTasks(listed: RegistrySession[], api: Api): Map<string, TasksEntry> {
+  const [cache, setCache] = useState<Map<string, TasksEntry>>(() => new Map());
+  const reading = useRef(new Set<string>());
+  // no dependency list: the pane repaints on every change, and the walk reads the cache fresh
+  useEffect(() => {
+    for (const s of listed) {
+      if (s.state === "ended") continue;
+      const id = s.session_id;
+      const seen = cache.get(id);
+      if (seen && Date.now() - seen.at < TASKS_TTL_MS) continue;
+      if (reading.current.has(id)) continue;
+      reading.current.add(id);
+      sessionApi(api)
+        .tasks(id)
+        .then(
+          (tasks) => setCache((m) => new Map(m).set(id, { at: Date.now(), tasks })),
+          () => setCache((m) => new Map(m).set(id, { at: Date.now(), tasks: null })),
+        )
+        .finally(() => reading.current.delete(id));
+    }
+  });
+  return cache;
+}
+
 /** The Sessions list: the registry's sessions as the three layouts' list pane. The tablet and the
  *  desktop carry their own header — the title with the Select toggle at its end (the phone's shell
  *  and the desktop's bar draw the rest); the desktop's j and k move a selection Enter opens and
@@ -417,7 +565,7 @@ export function SessionsPane({
   openId?: string | undefined;
   onPairToken?: (token: string) => void;
 }): JSX.Element {
-  const { registry, now } = useHuddle();
+  const { registry, now, api } = useHuddle();
   const act = useNeedsAct();
   const st = registry.getState();
   // the machine chip the list filters to, kept between visits; the empty string is All
@@ -450,6 +598,7 @@ export function SessionsPane({
   // keep the sections' buckets and `listed` the flat order the desk reads and the rows draw
   const listed = deskRows(shown(st.sessions?.map((s) => ({ ...s, state: shownState(s, st.needs) })) ?? []));
   const groups = groupSessions(listed);
+  const tasks = useTasks(listed, api);
   const selIdx = listed.findIndex((r) => r.session_id === selId);
   const cur = selIdx >= 0 ? selIdx : 0;
 
@@ -563,17 +712,18 @@ export function SessionsPane({
   const rowOf = (s: RegistrySession): JSX.Element => {
     const sel = layout === "desktop" && listed[cur]?.session_id === s.session_id;
     const open = layout !== "phone" && openId === s.session_id;
+    const held = tasks.get(s.session_id)?.tasks ?? null;
     const row =
       layout === "phone" ? (
         s.state === "needs-you" ? (
-          <NeedsCard s={s} now={now} act={act} />
+          <NeedsCard s={s} now={now} act={act} tasks={held} />
         ) : s.state === "idle" || s.state === "ended" ? (
-          <IdleRow s={s} now={now} sel={sel} />
+          <IdleRow s={s} now={now} sel={sel} tasks={held} />
         ) : (
-          <WorkRow s={s} sel={sel} />
+          <WorkRow s={s} sel={sel} tasks={held} />
         )
       ) : (
-        <DeskRow s={s} now={now} sel={sel} open={open} />
+        <DeskRow s={s} now={now} sel={sel} open={open} tasks={held} />
       );
     return (
       <RowShell
