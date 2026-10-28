@@ -412,16 +412,20 @@ type Store struct {
 	ver      int64
 	repoRoot map[string]*string
 
-	sessions      map[string]*sessionState
-	sessionOrder  orderedIDs
-	requests      map[string]*storedRequest
-	tools         map[string]*storedTool
-	events        []shared.EventRecord
-	listeners     []*listenerEntry
-	apiErrors     []shared.APIErrorRecord
-	routerEvents  []shared.RouterEventRecord
-	notices       map[string]map[string]int64
-	pendingStarts map[string]int64
+	sessions     map[string]*sessionState
+	sessionOrder orderedIDs
+	requests     map[string]*storedRequest
+	tools        map[string]*storedTool
+	// requestsBySession and toolsBySession file each held record's id under its session,
+	// so a session drop touches its own records, not the whole store.
+	requestsBySession map[string]map[string]struct{}
+	toolsBySession    map[string]map[string]struct{}
+	events            []shared.EventRecord
+	listeners         []*listenerEntry
+	apiErrors         []shared.APIErrorRecord
+	routerEvents      []shared.RouterEventRecord
+	notices           map[string]map[string]int64
+	pendingStarts     map[string]int64
 
 	proj         *projectionCache
 	views        *viewsCache
@@ -443,20 +447,22 @@ type Store struct {
 // CreateStore builds an empty store; now is the clock its derived answers age by.
 func CreateStore(now func() time.Time) *Store {
 	return &Store{
-		now:           now,
-		maxRecords:    shared.MaxRecords,
-		evictBatch:    (shared.MaxRecords + 9) / 10,
-		repoRoot:      make(map[string]*string),
-		sessions:      make(map[string]*sessionState),
-		requests:      make(map[string]*storedRequest),
-		tools:         make(map[string]*storedTool),
-		notices:       make(map[string]map[string]int64),
-		pendingStarts: make(map[string]int64),
-		lonelyRoutes:  make(map[string]*waitingMap),
-		lonelyCopies:  make(map[string]*waitingSet),
-		aliases:       newAliasMap(),
-		routedTotals:  make(map[string]struct{}),
-		calls:         make(map[string]*callSlot),
+		now:               now,
+		maxRecords:        shared.MaxRecords,
+		evictBatch:        (shared.MaxRecords + 9) / 10,
+		repoRoot:          make(map[string]*string),
+		sessions:          make(map[string]*sessionState),
+		requests:          make(map[string]*storedRequest),
+		tools:             make(map[string]*storedTool),
+		notices:           make(map[string]map[string]int64),
+		requestsBySession: make(map[string]map[string]struct{}),
+		toolsBySession:    make(map[string]map[string]struct{}),
+		pendingStarts:     make(map[string]int64),
+		lonelyRoutes:      make(map[string]*waitingMap),
+		lonelyCopies:      make(map[string]*waitingSet),
+		aliases:           newAliasMap(),
+		routedTotals:      make(map[string]struct{}),
+		calls:             make(map[string]*callSlot),
 	}
 }
 
@@ -1112,9 +1118,13 @@ func (s *Store) applyEvictionsLocked(picks []evictionCandidate) {
 		case 0:
 			if held, ok := s.requests[pick.id]; ok {
 				s.forgetCallLocked(held.record)
+				unfile(s.requestsBySession, held.record.SessionID, pick.id)
 			}
 			delete(s.requests, pick.id)
 		case 1:
+			if held, ok := s.tools[pick.id]; ok {
+				unfile(s.toolsBySession, held.record.SessionID, pick.id)
+			}
 			delete(s.tools, pick.id)
 		default:
 			eventsGone = true
@@ -1151,16 +1161,40 @@ func (s *Store) dropSessionLocked(sessionID string) {
 	delete(s.sessions, sessionID)
 	s.sessionOrder.delete(sessionID)
 	delete(s.notices, sessionID)
-	for id, held := range s.requests {
-		if held.record.SessionID == sessionID {
+	for id := range s.requestsBySession[sessionID] {
+		if held, ok := s.requests[id]; ok {
 			s.forgetCallLocked(held.record)
 			delete(s.requests, id)
 		}
 	}
-	for id, held := range s.tools {
-		if held.record.SessionID == sessionID {
-			delete(s.tools, id)
-		}
+	delete(s.requestsBySession, sessionID)
+	for id := range s.toolsBySession[sessionID] {
+		delete(s.tools, id)
+	}
+	delete(s.toolsBySession, sessionID)
+}
+
+// fileUnder adds a record id to its session's set in an index, making the set when the
+// session has none yet.
+func fileUnder(index map[string]map[string]struct{}, sessionID, id string) {
+	ids, ok := index[sessionID]
+	if !ok {
+		ids = make(map[string]struct{})
+		index[sessionID] = ids
+	}
+	ids[id] = struct{}{}
+}
+
+// unfile removes a record id from its session's set in an index, dropping the set when
+// it empties.
+func unfile(index map[string]map[string]struct{}, sessionID, id string) {
+	ids, ok := index[sessionID]
+	if !ok {
+		return
+	}
+	delete(ids, id)
+	if len(ids) == 0 {
+		delete(index, sessionID)
 	}
 }
 
@@ -1219,14 +1253,23 @@ func (s *Store) placeRequestLocked(record shared.RequestRecord) shared.RequestRe
 			// call only repeats what the (possibly rewritten) stream opened with
 			stored.Tokens = existing.record.Tokens
 		}
+		if existing.record.SessionID != stored.SessionID {
+			unfile(s.requestsBySession, existing.record.SessionID, stored.ID)
+			fileUnder(s.requestsBySession, stored.SessionID, stored.ID)
+		}
 		existing.record = stored
 		s.noteCallLocked(stored, FromRouter(record), !FromRouter(record))
 		return stored
 	}
 	stored, paired := s.pairLocked(record)
 	if existing, ok := s.requests[stored.ID]; ok {
+		if existing.record.SessionID != stored.SessionID {
+			unfile(s.requestsBySession, existing.record.SessionID, stored.ID)
+			fileUnder(s.requestsBySession, stored.SessionID, stored.ID)
+		}
 		existing.record = stored // the paired twin's slot, its arrival number kept
 	} else {
+		fileUnder(s.requestsBySession, stored.SessionID, stored.ID)
 		s.requests[stored.ID] = &storedRequest{record: stored, seq: s.nextArrivalLocked()}
 	}
 	s.noteCallLocked(stored, paired || FromRouter(record), paired || !FromRouter(record))
@@ -1547,9 +1590,14 @@ func (s *Store) AddToolCall(record shared.ToolCallRecord) {
 // storeToolLocked places a tool call, keeping an existing slot's arrival number.
 func (s *Store) storeToolLocked(record shared.ToolCallRecord) {
 	if existing, ok := s.tools[record.ID]; ok {
+		if existing.record.SessionID != record.SessionID {
+			unfile(s.toolsBySession, existing.record.SessionID, record.ID)
+			fileUnder(s.toolsBySession, record.SessionID, record.ID)
+		}
 		existing.record = record
 		return
 	}
+	fileUnder(s.toolsBySession, record.SessionID, record.ID)
 	s.tools[record.ID] = &storedTool{record: record, seq: s.nextArrivalLocked()}
 }
 
