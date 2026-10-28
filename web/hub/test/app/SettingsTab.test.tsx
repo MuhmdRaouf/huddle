@@ -1,13 +1,15 @@
 // SettingsTab.test.tsx — the Settings tab's six groups (Appearance, Notifications, Security,
 // Spending, Tips, Hub): a card list with each row's current value on the phone that opens each
 // group's page under a back link, a sidebar beside the page on the tablet and the desktop, the
-// members each group page draws and the member addresses that open their group; the Devices section (SPEC 7.3): the paired devices with
-// their added and last-seen ages, the removal that asks for the passkey when the server says
-// step-up, the refusal said as the server spelled it, the empty list's word, and the copyable
-// `huddle pair` line that pairs the next device; then Appearance's three choices, This hub's facts,
-// the hub's time zone with its picker, and the phone guide in its sheet.
+// members each group page draws and the member addresses that open their group; the Security
+// group: the paired devices oldest first with this browser's own chip and each device's
+// freshness, the removal that asks for the passkey when the server says step-up, the refusal
+// said as the server spelled it, the empty list's word; the Add-a-device section with the phone
+// guide in its sheet and the copyable `huddle pair` line; the Sign-in rows whose sheets hold the
+// passkey and authenticator panes; then Appearance's three choices, This hub's facts, and the
+// hub's time zone with its picker.
 
-import { act, screen, waitFor } from "@testing-library/preact";
+import { act, screen, waitFor, within } from "@testing-library/preact";
 import type { JSX } from "preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { FetchFn } from "../../src/api.ts";
@@ -26,11 +28,13 @@ import {
 import { flush, legacyClasses, NOW, stubMedia } from "../helpers.tsx";
 import { renderHuddle } from "../render.tsx";
 
-/** One device row as the server lists it: added an hour ago, seen half a minute ago. */
-const device = (over: Partial<{ name: string; added: string; seen: string }> = {}) => ({
+/** One device row as the server lists it: added an hour ago, seen half a minute ago, not this
+ * browser's own. */
+const device = (over: Partial<{ name: string; added: string; seen: string; current: boolean }> = {}) => ({
   name: "iPhone",
   added: "2026-10-08T11:00:00Z",
   seen: "2026-10-08T11:59:30Z",
+  current: false,
   ...over,
 });
 
@@ -95,16 +99,37 @@ afterEach(() => {
 });
 
 describe("the devices section", () => {
-  it("TestTheListNamesEachDeviceAndItsAges", async () => {
+  it("TestTheListOrdersOldestFirstAndNamesEachFreshness", async () => {
     mount([
-      { status: 200, body: { devices: [device(), device({ name: "iPad", added: "2026-10-05T09:00:00Z" })] } },
+      {
+        status: 200,
+        body: {
+          devices: [
+            device({ name: "iPhone", added: "2026-10-08T11:00:00Z", seen: "2026-10-08T11:40:00Z" }),
+            device({ name: "gtking", added: "2026-10-05T09:00:00Z", seen: "2026-10-05T09:00:00Z" }),
+            device({
+              name: "This Mac",
+              added: "2026-09-01T09:00:00Z",
+              seen: "2026-10-08T11:59:30Z",
+              current: true,
+            }),
+          ],
+        },
+      },
     ]);
-    await waitFor(() => expect(screen.getByText("iPhone")).toBeDefined());
-    expect(screen.getByText("iPad")).toBeDefined();
-    expect(screen.getByText("iPhone").parentElement?.textContent).toContain("added 1 h");
-    expect(screen.getByText("iPhone").parentElement?.textContent).toContain("last seen 30 s");
-    expect(screen.getByText("iPad").parentElement?.textContent).toContain("added 3 d");
-    expect(screen.getAllByRole("button", { name: "Remove" }).length).toBe(2);
+    await waitFor(() => expect(screen.getByText("This Mac")).toBeDefined());
+    expect(screen.getByRole("heading", { name: "Devices · 3" })).toBeDefined();
+    // oldest pairing first, and this browser's device leads the list
+    const titles = [...document.querySelectorAll(".ui-list-title")].map((el) => el.textContent);
+    expect(titles).toEqual(["This Mac", "gtking", "iPhone"]);
+    // the caller's own device: the chip and the active-now line, and nothing to remove
+    expect(screen.getByText("This device")).toBeDefined();
+    expect(screen.getByText("This device · active now")).toBeDefined();
+    expect(screen.getByText("This Mac").closest("li")?.querySelector("button")).toBeNull();
+    // the others say how fresh they are and each carries a Remove
+    expect(screen.getByText("active 20 min ago")).toBeDefined();
+    expect(screen.getByText("last used 3 d")).toBeDefined();
+    expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(2);
   });
 
   it("TestARemovalNeedsThePasskeyWhenTheServerSaysSo", async () => {
@@ -163,9 +188,7 @@ describe("the devices section", () => {
     mount([{ status: 200, body: { devices: [device()] } }]);
     await waitFor(() => expect(screen.getByText("iPhone")).toBeDefined());
     expect(screen.getByRole("button", { name: "Remove" }).className).toContain("ui-btn");
-    const line = screen.getByText("huddle pair").parentElement;
-    expect(line?.className).toContain("min-h-[var(--ui-tap)]");
-    expect(line?.className).toContain("bg-[var(--ui-surface-2)]");
+    expect(screen.getByText("A device signs out on its own after 7 days unused.")).toBeDefined();
     // the passkey sheet a removal opens is the Needs page's own
     expect(legacyClasses(document.body, "dialog")).toEqual([]);
   });
@@ -174,27 +197,17 @@ describe("the devices section", () => {
     mount([{ status: 200, body: { devices: [] } }]);
     await waitFor(() => expect(screen.getByText("No devices paired yet.")).toBeDefined());
   });
-
-  it("TestThePairLineNamesTheCommandAndCopiesIt", async () => {
-    const h = mount([{ status: 200, body: { devices: [] } }]);
-    await waitFor(() => expect(screen.getByText("No devices paired yet.")).toBeDefined());
-    expect(screen.getByText("Pair a new device")).toBeDefined();
-    expect(
-      screen.getByText("Run this on the computer running huddle, then open the link on the device:"),
-    ).toBeDefined();
-    expect(screen.getByText("huddle pair").tagName).toBe("CODE");
-    await act(async () => {
-      screen.getByRole("button", { name: "Copy huddle pair" }).click();
-    });
-    expect(h.copy).toHaveBeenCalledWith("huddle pair");
-  });
 });
 
 /** Renders one section over one fetch answer per call, the calls kept for asserting. */
 function mountSection(
   ui: JSX.Element,
   answers: Array<{ status: number; body: unknown }>,
-): { calls: Array<{ url: string; init?: RequestInit }>; toast: ReturnType<typeof renderHuddle>["toast"] } {
+): {
+  calls: Array<{ url: string; init?: RequestInit }>;
+  toast: ReturnType<typeof renderHuddle>["toast"];
+  copy: ReturnType<typeof renderHuddle>["copy"];
+} {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   const queue = [...answers];
   const fetchFn: FetchFn = (url, init) => {
@@ -208,7 +221,7 @@ function mountSection(
     );
   };
   const r = renderHuddle(ui, {}, NOW, fetchFn);
-  return { calls, toast: r.toast };
+  return { calls, toast: r.toast, copy: r.copy };
 }
 
 describe("the appearance section", () => {
@@ -389,7 +402,7 @@ describe("the phone's grouped list", () => {
     expect(document.querySelector('[aria-label="Settings sections"]')).toBeNull();
     expect(
       [...document.querySelectorAll<HTMLElement>("[data-setting]")].map((el) => el.dataset.setting),
-    ).toEqual(["devices", "phone", "signin"]);
+    ).toEqual(["devices", "phone", "signin", "signout"]);
   });
 
   it("TestTheHeaderBacksOutToTheListAndNamesTheGroup", () => {
@@ -491,7 +504,7 @@ describe("the six groups", () => {
     const groups: Array<[SettingsSection, string[]]> = [
       ["appearance", ["appearance"]],
       ["notifications", ["notifications"]],
-      ["security", ["devices", "phone", "signin"]],
+      ["security", ["devices", "phone", "signin", "signout"]],
       ["spending", ["radar"]],
       ["tips", ["insights"]],
       ["hub", ["hub", "zone", "capture", "selfcheck"]],
@@ -510,6 +523,7 @@ describe("the six groups", () => {
     expect(settingsSectionOf("devices")).toBe("security");
     expect(settingsSectionOf("phone")).toBe("security");
     expect(settingsSectionOf("signin")).toBe("security");
+    expect(settingsSectionOf("signout")).toBe("security");
     expect(settingsSectionOf("radar")).toBe("spending");
     expect(settingsSectionOf("insights")).toBe("tips");
     expect(settingsSectionOf("hub")).toBe("hub");
@@ -689,6 +703,17 @@ describe("the phone section", () => {
     expect(document.querySelector("img[data-phone-qr]")).toBeNull();
     expect(document.querySelector("dialog[open]")).toBeNull();
   });
+
+  it("TestThePairCommandIsSatelliteAndCopiesIt", async () => {
+    const h = mountSection(<Phone />, []);
+    expect(screen.getByText("Pair a machine")).toBeDefined();
+    const cmd = "huddle pair --satellite";
+    expect(screen.getByText(cmd).tagName).toBe("CODE");
+    await act(async () => {
+      screen.getByRole("button", { name: "Copy the pair command" }).click();
+    });
+    expect(h.copy).toHaveBeenCalledWith(cmd);
+  });
 });
 
 /** Renders the Sign-in section over one whoami answer (and whatever the test queues after it),
@@ -730,60 +755,103 @@ function mountSignin(
 }
 
 describe("the sign-in section", () => {
+  /** The section's one list; the sheets repeat the row titles, so row queries stay inside it. */
+  const list = (): HTMLElement => document.querySelector(".ui-list") as HTMLElement;
+  /** A row's own button, found by its title inside the list. */
+  const row = (title: string): HTMLElement =>
+    within(list()).getByText(title).closest("button") as HTMLElement;
+  /** The sheet a row opened. */
+  const sheet = (): HTMLElement => document.querySelector("dialog[open]") as HTMLElement;
+
   it("TestABrowserWithItsPasskeyNeedsNoOffer", async () => {
-    mountSignin({ status: 200, body: { kind: "device", totp: true, device_passkey: true } });
+    mountSignin({
+      status: 200,
+      body: { kind: "device", totp: true, device_passkey: true, device: "This Mac" },
+    });
     await flush();
-    expect(screen.getByText("This browser signs in with its passkey.")).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
+    expect(within(list()).getByText("On · This Mac")).toBeDefined();
+    expect(within(list()).getByText("On")).toBeDefined();
+    await act(async () => {
+      row("Passkey").click();
+    });
+    expect(within(sheet()).getByText("This browser signs in with its passkey.")).toBeDefined();
+    expect(within(sheet()).queryByRole("button", { name: "Save passkey" })).toBeNull();
   });
 
   it("TestAnOwnerIsToldToSignInByCodeFirst", async () => {
-    mountSignin({ status: 200, body: { kind: "owner", totp: true, device_passkey: false } });
+    mountSignin({
+      status: 200,
+      body: { kind: "owner", totp: true, device_passkey: false, device: "This Mac" },
+    });
     await flush();
+    await act(async () => {
+      row("Passkey").click();
+    });
     expect(
-      screen.getByText("A passkey is saved per browser: sign in with a code first, then accept the offer."),
+      within(sheet()).getByText(
+        "A passkey is saved per browser: sign in with a code first, then accept the offer.",
+      ),
     ).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
+    expect(within(sheet()).queryByRole("button", { name: "Save passkey" })).toBeNull();
   });
 
   it("TestSavePasskeyRunsTheWholeRegistrationAndReloads", async () => {
-    const h = mountSignin({ status: 200, body: { kind: "device", totp: true, device_passkey: false } }, [
-      { status: 200, body: { options: { publicKey: { challenge: "aGk", rp: { id: "localhost" } } } } },
-      { status: 200, body: {} },
-      { status: 200, body: { kind: "device", totp: true, device_passkey: true } },
-    ]);
+    const h = mountSignin(
+      { status: 200, body: { kind: "device", totp: true, device_passkey: false, device: "This Mac" } },
+      [
+        { status: 200, body: { options: { publicKey: { challenge: "aGk", rp: { id: "localhost" } } } } },
+        { status: 200, body: {} },
+        { status: 200, body: { kind: "device", totp: true, device_passkey: true, device: "This Mac" } },
+      ],
+    );
     await flush();
     await act(async () => {
-      screen.getByRole("button", { name: "Save passkey" }).click();
+      row("Passkey").click();
+    });
+    await act(async () => {
+      within(sheet()).getByRole("button", { name: "Save passkey" }).click();
     });
     await flush();
     expect(h.create).toHaveBeenCalledTimes(1);
     expect(h.toast).toHaveBeenCalledWith("Passkey saved for this browser");
-    expect(screen.getByText("This browser signs in with its passkey.")).toBeDefined();
+    expect(within(list()).getByText("On · This Mac")).toBeDefined();
     expect(h.calls.filter((u) => u.endsWith("/api/whoami"))).toHaveLength(2);
   });
 
   it("TestThePasskeyRowIsOnTheTokens", async () => {
-    mountSignin({ status: 200, body: { kind: "device", totp: true, device_passkey: false } });
+    mountSignin({
+      status: 200,
+      body: { kind: "device", totp: true, device_passkey: false, device: "This Mac" },
+    });
     await flush();
-    expect(screen.getByRole("button", { name: "Save passkey" }).className).toBe("ui-btn ui-btn-primary");
-    const row = document.querySelector("[data-passkey-row]") as HTMLElement;
-    expect(row.className).toContain("border-[var(--ui-line)]");
-    expect(legacyClasses(row)).toEqual([]);
+    await act(async () => {
+      row("Passkey").click();
+    });
+    const save = within(sheet()).getByRole("button", { name: "Save passkey" });
+    expect(save.className).toBe("ui-btn ui-btn-primary");
+    const pane = document.querySelector("[data-passkey-row]") as HTMLElement;
+    expect(pane).not.toBeNull();
+    expect(legacyClasses(pane)).toEqual([]);
+    // the panes live in dialogs; everything outside them is on the tokens
+    expect(legacyClasses(document.body, "dialog")).toEqual([]);
   });
 
   it("TestACreationTheBrowserRefusedIsSaidInline", async () => {
-    const h = mountSignin({ status: 200, body: { kind: "device", totp: true, device_passkey: false } }, [
-      { status: 200, body: { options: { publicKey: { challenge: "aGk", rp: { id: "localhost" } } } } },
-    ]);
+    const h = mountSignin(
+      { status: 200, body: { kind: "device", totp: true, device_passkey: false, device: "This Mac" } },
+      [{ status: 200, body: { options: { publicKey: { challenge: "aGk", rp: { id: "localhost" } } } } }],
+    );
     await flush();
+    await act(async () => {
+      row("Passkey").click();
+    });
     h.create.mockRejectedValueOnce(new Error("cancelled"));
     await act(async () => {
-      screen.getByRole("button", { name: "Save passkey" }).click();
+      within(sheet()).getByRole("button", { name: "Save passkey" }).click();
     });
     await flush();
-    expect(screen.getByText("The passkey was not created. Try again.")).toBeDefined();
-    expect(screen.getByRole("button", { name: "Save passkey" })).toBeDefined();
+    expect(within(sheet()).getByText("The passkey was not created. Try again.")).toBeDefined();
+    expect(within(sheet()).getByRole("button", { name: "Save passkey" })).toBeDefined();
   });
 
   it("TestAWhoamiTheServerRefusedIsSaidInline", async () => {
@@ -791,5 +859,21 @@ describe("the sign-in section", () => {
     await flush();
     expect(screen.getByRole("alert")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Save passkey" })).toBeNull();
+  });
+
+  it("TestTheAuthenticatorRowOpensItsPane", async () => {
+    mountSignin({
+      status: 200,
+      body: { kind: "device", totp: false, device_passkey: true, device: "This Mac" },
+    });
+    await flush();
+    expect(within(list()).getByText("Off")).toBeDefined();
+    await act(async () => {
+      row("Authenticator app").click();
+    });
+    expect(
+      within(sheet()).getByText(/Not set up\. A code from your app would sign any browser in\./),
+    ).toBeDefined();
+    expect(within(sheet()).getByRole("button", { name: "Set up" })).toBeDefined();
   });
 });

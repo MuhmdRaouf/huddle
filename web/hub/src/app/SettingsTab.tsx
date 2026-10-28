@@ -2,8 +2,9 @@
 // cards whose rows name each group's current value and open one page per group, on the tablet and
 // the desktop a sidebar beside the page; each page draws its group's members in order. Appearance
 // (System, Dark, Light, and the Catppuccin flavour); Notifications (the two switches and what
-// wakes the device); Security (the paired devices with remove, the phone's trust guide in a sheet,
-// the sign-in methods); Spending (Radar's budgets, notifications and history retention); Tips (the
+// wakes the device); Security (the paired devices oldest first with the browser asking named
+// current, the phone's trust guide and the pair command, the sign-in methods in sheets, the two
+// sign-outs); Spending (Radar's budgets, notifications and history retention); Tips (the
 // two Insights switches); Hub (name, address and version, the hub's time zone, the request
 // bodies capture, and Radar's self-check against the transcripts). A channel's linked sessions live in that channel's own
 // Settings view. Every class comes from the ui components or the tokens.
@@ -37,6 +38,7 @@ import { useLayout } from "./layout.ts";
 import { useStepUp } from "./Needs.tsx";
 import { NotificationsCard } from "./Notifications.tsx";
 import { pickScheme, SCHEMES } from "./scheme.ts";
+import { SignOut } from "./SignOut.tsx";
 import { hubInitial, hubSubtitle, useSettingsValues, zoneOf, type HubZone } from "./settings-values.ts";
 import { AuthenticatorCard } from "./Totp.tsx";
 
@@ -82,8 +84,17 @@ function SelfCheck(): JSX.Element {
   );
 }
 
-/** One paired device as the server lists it. */
-type DeviceRow = { name: string; added: string; seen: string };
+/** One paired device as the server lists it; `current` marks the browser asking. */
+type DeviceRow = { name: string; added: string; seen: string; current: boolean };
+
+/** How fresh one device's check-in is: live within two minutes, active within the hour, else the
+ *  last use. */
+function freshness(seen: string, now: number): string {
+  const ago = now - Date.parse(seen);
+  if (ago < 2 * 60_000) return "active now";
+  if (ago < 3_600_000) return `active ${ageText(seen, now)} ago`;
+  return `last used ${ageText(seen, now)}`;
+}
 
 /** The phone guide the server's "Add a phone" started: where it answers and the root's
  *  fingerprint, which the phone's page shows too. */
@@ -283,11 +294,12 @@ export function TimeZone({ zones = browserZones() }: { zones?: string[] }): JSX.
   );
 }
 
-/** Settings › Security › Phone: "Add a phone" opens a sheet that starts the guide the server serves
- *  (10 minutes, loopback-bound QR) and shows its QR and the fingerprint to compare with the
- *  phone's page. */
+/** Settings › Security › Add a device: the phone joins through the trust guide — "Add a phone"
+ *  starts it (10 minutes, loopback-bound QR) and the sheet shows its QR and the fingerprint to
+ *  compare with the phone's page — and a machine joins through `huddle pair --satellite`, run on
+ *  this hub, one tap to copy. */
 export function Phone(): JSX.Element {
-  const { api, toast } = useHuddle();
+  const { api, toast, copy } = useHuddle();
   const [open, setOpen] = useState(false);
   const [guide, setGuide] = useState<PhoneGuide | null>(null);
 
@@ -303,18 +315,25 @@ export function Phone(): JSX.Element {
     }
   };
 
+  const cmd = "huddle pair --satellite";
+
   return (
-    <section aria-labelledby="phone-h" class="flex flex-col gap-3">
+    <section aria-labelledby="phone-h" class="flex flex-col gap-1">
       <h2 id="phone-h" class={HEAD}>
-        Phone
+        Add a device
       </h2>
-      <p class={NOTE}>
-        A phone trusts the hub's root once: it scans a QR this computer serves for 10 minutes, and the page it
-        opens walks the taps.
-      </p>
-      <Button class="w-fit" onClick={() => void start()}>
-        Add a phone
-      </Button>
+      <List label="Add a device">
+        <ListItem title="Add a phone" onClick={() => void start()} />
+        <ListItem
+          title="Pair a machine"
+          meta={<code class="ui-mono">{cmd}</code>}
+          trailing={
+            <Button variant="ghost" label="Copy the pair command" onClick={() => copy(cmd)}>
+              Copy
+            </Button>
+          }
+        />
+      </List>
       <Sheet open={open} onClose={() => setOpen(false)} title="Add a phone">
         {guide ? (
           <div class="flex flex-col items-start gap-4">
@@ -340,11 +359,12 @@ export function Phone(): JSX.Element {
   );
 }
 
-/** Settings › Security › Devices (SPEC 7.3): every paired device with its ages, the removal that asks for
- *  the passkey when the server says step-up, and the `huddle pair` line that pairs the next
- *  device. A removed device's browser is signed out server-side by the removal itself. */
+/** Settings › Security › Devices: every paired device, oldest first, the browser asking named
+ *  current, the rest by how long since their last check-in; the removal asks for the passkey when
+ *  the server says step-up, and the removed device's browser is signed out server-side by the
+ *  removal itself. */
 export function Devices(): JSX.Element {
-  const { api, toast, copy, now } = useHuddle();
+  const { api, toast, now } = useHuddle();
   const { ask, sheet } = useStepUp();
   const [devices, setDevices] = useState<DeviceRow[] | null>(null);
   const [error, setError] = useState("");
@@ -365,7 +385,7 @@ export function Devices(): JSX.Element {
   }, [api]);
 
   const remove = async (name: string): Promise<void> => {
-    // the removal is a dangerous act (SPEC 7.4): a 401 runs the passkey sheet once and deletes again
+    // the removal is a dangerous act: a 401 runs the passkey sheet once and deletes again
     const drop = async (): Promise<void> => {
       setDevices((d) => (d ?? []).filter((x) => x.name !== name));
     };
@@ -389,11 +409,13 @@ export function Devices(): JSX.Element {
     }
   };
 
+  const ordered = [...(devices ?? [])].sort((a, b) => Date.parse(a.added) - Date.parse(b.added));
+
   return (
     <section aria-labelledby="devices-h" data-devices="" class="flex flex-col gap-1">
       {sheet}
       <h2 id="devices-h" class={HEAD}>
-        Devices{devices && devices.length > 0 ? ` · ${devices.length}` : ""}
+        Devices{ordered.length > 0 ? ` · ${ordered.length}` : ""}
       </h2>
       {error ? (
         <p role="alert" class={ERR}>
@@ -402,59 +424,62 @@ export function Devices(): JSX.Element {
       ) : null}
       {devices === null ? (
         <p class={NOTE}>Loading…</p>
-      ) : devices.length === 0 ? (
+      ) : ordered.length === 0 ? (
         <p class={NOTE}>No devices paired yet.</p>
       ) : (
         <List label="Paired devices">
-          {devices.map((d) => (
+          {ordered.map((d) => (
             <ListItem
               key={d.name}
               title={d.name}
               meta={
                 <span class="tabular-nums">
-                  added {ageText(d.added, now)} · last seen {ageText(d.seen, now)}
+                  {d.current ? "This device · active now" : freshness(d.seen, now)}
                 </span>
               }
               trailing={
                 <span data-device={d.name}>
-                  <Button
-                    variant="ghost"
-                    class="text-[var(--ui-fail-ink)]"
-                    onClick={() => void remove(d.name)}
-                  >
-                    Remove
-                  </Button>
+                  {d.current ? (
+                    <span data-this-device="" class="text-xs text-[var(--ui-muted)]">
+                      This device
+                    </span>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      class="text-[var(--ui-fail-ink)]"
+                      onClick={() => void remove(d.name)}
+                    >
+                      Remove
+                    </Button>
+                  )}
                 </span>
               }
             />
           ))}
         </List>
       )}
-      <div class="mt-4 flex flex-col gap-1.5">
-        <h3 class="m-0 text-[15px] font-semibold">Pair a new device</h3>
-        <p class={NOTE}>Run this on the computer running huddle, then open the link on the device:</p>
-        <div class="flex min-h-[var(--ui-tap)] items-center gap-2.5 rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] pl-3">
-          <span class="text-[var(--ui-muted)]">
-            <Icon name="terminal" />
-          </span>
-          <code class="min-w-0 flex-1 truncate text-sm">huddle pair</code>
-          <Button variant="ghost" label="Copy huddle pair" onClick={() => copy("huddle pair")}>
-            <Icon name="copy" />
-          </Button>
-        </div>
-      </div>
+      <p class={NOTE}>A device signs out on its own after 7 days unused.</p>
     </section>
   );
 }
 
-/** Settings › Security › Sign-in: the two ways a browser signs itself in — the authenticator code (the
- *  primary, one enrolment per hub) and this browser's own passkey — with the enrolment's
- *  set-up, its removal, and the passkey a code session can save without a link. */
+/** Settings › Security › Sign-in methods: two rows — this browser's passkey and the authenticator
+ *  code (one enrolment per hub) — each opening its pane in a sheet; the passkey pane offers to save
+ *  this browser one when its session rides a code, and the authenticator pane holds the enrolment's
+ *  set-up and removal. */
 export function SignInMethods(): JSX.Element {
   const { api, toast } = useHuddle();
-  const [facts, setFacts] = useState<{ enrolled: boolean; kind: string; passkey: boolean } | null>(null);
+  const [facts, setFacts] = useState<{
+    enrolled: boolean;
+    kind: string;
+    passkey: boolean;
+    device: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  /** The error the save itself said, inside the passkey pane. */
+  const [saveError, setSaveError] = useState("");
+  const [pane, setPane] = useState<"passkey" | "authenticator" | null>(null);
 
   const alive = useRef(true);
   const load = (): void => {
@@ -462,11 +487,12 @@ export function SignInMethods(): JSX.Element {
       .api("/api/whoami")
       .then((r) => {
         if (!alive.current) return;
-        const w = r as { totp?: unknown; kind?: unknown; device_passkey?: unknown };
+        const w = r as { totp?: unknown; kind?: unknown; device_passkey?: unknown; device?: unknown };
         setFacts({
           enrolled: w.totp === true,
           kind: typeof w.kind === "string" ? w.kind : "",
           passkey: w.device_passkey === true,
+          device: typeof w.device === "string" ? w.device : "",
         });
       })
       .catch((e: unknown) => {
@@ -485,7 +511,7 @@ export function SignInMethods(): JSX.Element {
   /** Saves this browser a passkey of its own, on the device row its session belongs to. */
   const savePasskey = async (): Promise<void> => {
     setBusy(true);
-    setError("");
+    setSaveError("");
     try {
       const r = (await api.api("/api/passkey/begin", { body: {} })) as { options?: unknown };
       let cred: PublicKeyCredential;
@@ -494,14 +520,15 @@ export function SignInMethods(): JSX.Element {
           publicKey: creationFromJSON(r.options).publicKey,
         })) as PublicKeyCredential;
       } catch {
-        setError("The passkey was not created. Try again.");
+        setSaveError("The passkey was not created. Try again.");
         return;
       }
       await api.api("/api/passkey/finish", { body: { response: credentialToJSON(cred) } });
       toast("Passkey saved for this browser");
+      setPane(null);
       load();
     } catch (e) {
-      setError(errText(e));
+      setSaveError(errText(e));
     } finally {
       setBusy(false);
     }
@@ -518,34 +545,48 @@ export function SignInMethods(): JSX.Element {
         </p>
       ) : null}
       {facts === null ? (
-        <p class={NOTE}>Loading…</p>
+        error ? null : (
+          <p class={NOTE}>Loading…</p>
+        )
       ) : (
         <>
-          <AuthenticatorCard enrolled={facts.enrolled} onChanged={load} />
-          <div
-            class="flex items-center justify-between gap-3 border-b border-[var(--ui-line)] py-3"
-            data-passkey-row=""
-          >
-            <div class="flex min-w-0 flex-col">
-              <span class="text-[15px]">Passkey for this browser</span>
-              <span class="text-xs text-[var(--ui-muted)]">
+          <List label="Sign-in methods">
+            <ListItem
+              title="Passkey"
+              meta={facts.passkey ? `On · ${facts.device}` : "Off"}
+              onClick={() => setPane("passkey")}
+            />
+            <ListItem
+              title="Authenticator app"
+              meta={facts.enrolled ? "On" : "Off"}
+              onClick={() => setPane("authenticator")}
+            />
+          </List>
+          <p class={NOTE}>Removing the authenticator asks for your passkey first.</p>
+          <Sheet open={pane === "passkey"} onClose={() => setPane(null)} title="Passkey">
+            <div data-passkey-row="" class="flex flex-col gap-4">
+              <p class={NOTE}>
                 {facts.kind === "device"
                   ? facts.passkey
                     ? "This browser signs in with its passkey."
                     : "Not saved. This device's lock would sign in without a code."
                   : "A passkey is saved per browser: sign in with a code first, then accept the offer."}
-              </span>
+              </p>
+              {saveError ? (
+                <p role="alert" class={ERR}>
+                  {saveError}
+                </p>
+              ) : null}
+              {facts.kind === "device" && !facts.passkey ? (
+                <Button disabled={busy} onClick={() => void savePasskey()}>
+                  Save passkey
+                </Button>
+              ) : null}
             </div>
-            {facts.kind === "device" && !facts.passkey ? (
-              <Button disabled={busy} onClick={() => void savePasskey()}>
-                Save passkey
-              </Button>
-            ) : null}
-          </div>
-          <p class="m-0 pt-2 text-xs text-[var(--ui-muted)]">
-            Every device session ends after 7 days unused; one code or touch starts a fresh one. Manage the
-            devices themselves under Devices.
-          </p>
+          </Sheet>
+          <Sheet open={pane === "authenticator"} onClose={() => setPane(null)} title="Authenticator app">
+            <AuthenticatorCard enrolled={facts.enrolled} onChanged={load} />
+          </Sheet>
         </>
       )}
     </section>
@@ -588,6 +629,7 @@ const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       { id: "devices", Pane: Devices },
       { id: "phone", Pane: Phone },
       { id: "signin", Pane: SignInMethods },
+      { id: "signout", Pane: SignOut },
     ],
   },
   {

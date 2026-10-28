@@ -22,10 +22,13 @@ import {
 let secret = "";
 let recovery: string[] = [];
 
-/** Enrols the authenticator from the open Settings › Sign-in, capturing the secret and the codes. */
+/** Enrols the authenticator from Settings › Security, capturing the secret and the codes. The
+ *  set-up stands in the row's sheet: the row opens it, the steps run inside it. */
 async function enrolFromSettings(page: Page): Promise<void> {
-  await expect(page.getByText("Authenticator app")).toBeVisible();
-  await page.getByRole("button", { name: "Set up" }).click();
+  await page.getByRole("button", { name: "Authenticator app" }).click();
+  const sheet = page.getByRole("dialog", { name: "Authenticator app" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: "Set up" }).click();
   await expect(page.locator("[data-qr]")).toBeVisible();
   secret = await totpSecret(page);
   await typeCode(page, totpCode(secret));
@@ -82,12 +85,18 @@ test("a phone browser is offered its lock as a passkey after a code sign-in", as
   await useVirtualAuthenticator(page);
 
   // replace the enrolment so this test reads its own secret: remove (the link session's own
-  // machine waives the step-up on loopback), then set up again
+  // machine waives the step-up on loopback), then set up again. The remove stands in the row's
+  // sheet too, and the sheet closes before the enrolment below re-opens the row
   await signIn(page, pairOrigin);
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }).click();
   await page.getByRole("link", { name: "Security" }).click();
-  await page.locator("[data-signin]").getByRole("button", { name: "Remove" }).click();
-  await expect(page.getByText(/Not set up/)).toBeVisible();
+  await page.getByRole("button", { name: "Authenticator app" }).click();
+  const sheet = page.getByRole("dialog", { name: "Authenticator app" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: "Remove" }).click();
+  await expect(sheet.getByText(/Not set up/)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
   await enrolFromSettings(page);
 
   // the landing page on the phone: the code field, then the offer standing over the shell —

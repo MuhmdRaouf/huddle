@@ -8,8 +8,10 @@
 // hub's time zone (seeded by the first signed-in browser, picked again and kept across a reload),
 // the Insights switches (tips for me on, tips to the sessions off, a flip kept across a reload),
 // the hub's request-bodies switch (on by default, a tap read back off the hub, the Kept-now line
-// under it), the phone guide in a sheet, and the Spending page: its sections in the mock's order,
-// a budget added through its sheet and removed from it, and the alerts switch flipped. Every
+// under it), the phone guide in a sheet, the Spending page: its sections in the mock's order,
+// a budget added through its sheet and removed from it, and the alerts switch flipped, and the
+// Security page: its sections in the mock's order, a paired browser naming its own row This
+// device, and the sign-out that lands on the sign-in page with the old cookie refused. Every
 // group fits the viewport with no horizontal
 // scroll, keeps
 // its tap targets at least 44 px and passes axe.
@@ -23,7 +25,7 @@ import { n, pairThroughLink, signIn, theSetup, TOTALS, useVirtualAuthenticator }
 const GROUPS: readonly (readonly [name: string, hash: string, members: readonly string[], value: string | RegExp])[] = [
   ["Appearance", "#/settings/appearance", ["appearance"], /^Huddle · (System|Light|Dark)$/],
   ["Notifications", "#/settings/notifications", ["notifications"], ""],
-  ["Security", "#/settings/security", ["devices", "phone", "signin"], /^\d+ devices?$/],
+  ["Security", "#/settings/security", ["devices", "phone", "signin", "signout"], /^\d+ devices?$/],
   ["Spending", "#/settings/spending", ["radar"], ""],
   ["Tips", "#/settings/tips", ["insights"], "On"],
   ["Hub", "#/settings/hub", ["hub", "zone", "capture", "selfcheck"], /\S/],
@@ -115,7 +117,7 @@ test.describe("at 390 px", () => {
       .click();
     await expect(page).toHaveURL(/#\/settings\/security$/);
     await expectGroupOpen(page, "Security");
-    await expect(page.locator("[data-setting]")).toHaveCount(3);
+    await expect(page.locator("[data-setting]")).toHaveCount(4);
     await expect(page.getByRole("navigation", { name: "Settings sections" })).toHaveCount(0);
     await page.getByRole("link", { name: "Back to Settings" }).click();
     await expect(page).toHaveURL(/#\/settings$/);
@@ -187,6 +189,7 @@ test.describe("the Settings tab", () => {
       ["devices", "Security"],
       ["phone", "Security"],
       ["signin", "Security"],
+      ["signout", "Security"],
       ["radar", "Spending"],
       ["insights", "Tips"],
       ["hub", "Hub"],
@@ -423,6 +426,58 @@ test.describe("the Settings tab", () => {
       await alerts.click();
       await expect(alerts).toHaveAttribute("aria-checked", start ?? "true");
       await expectAccessible(page);
+    });
+  });
+
+  test.describe("the Security page", () => {
+    test("its sections stand in the mock's order", async ({ page }) => {
+      await openSettings(page, "#/settings/security");
+      const heads = await page.locator("[data-settings] [data-setting] > section > h2").allTextContents();
+      expect(heads[0] ?? "").toMatch(/^Devices( · \d+)?$/);
+      expect(heads.slice(1)).toEqual(["Add a device", "Sign-in methods", "Sign out"]);
+    });
+
+    test("a paired browser names its own row This device, with no Remove on it", async ({ page }) => {
+      // this browser pairs under its own name first, as a device of the run does
+      await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
+      await useVirtualAuthenticator(page);
+      await pairThroughLink(page, `E2E Security ${test.info().project.name}`);
+      await page.goto(`${theSetup().pairOrigin}/#/settings/security`);
+      const devices = page.locator('[data-setting="devices"]');
+      await expect(devices).toBeVisible();
+      const mine = devices.locator("[data-this-device]");
+      await expect(mine).toHaveText("This device");
+      const row = devices.locator("li:has([data-this-device])");
+      await expect(row).toContainText("This device · active now");
+      await expect(row.getByRole("button", { name: "Remove" })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: /^Devices · \d+$/ })).toBeVisible();
+    });
+
+    test("Sign out of this browser lands on the sign-in page and the old cookie is refused", async ({
+      page,
+    }) => {
+      await openSettings(page, "#/settings/signout");
+      // the cookie this browser holds stands for a live credential; replay it by hand so the
+      // sign-out is judged on the hub, not on the cookie the server just cleared
+      const session = (await page.context().cookies(theSetup().rootUrl)).find((c) =>
+        c.name.startsWith("huddle_session_"),
+      );
+      if (!session) throw new Error("the browser holds no session cookie");
+      const alive = () =>
+        fetch(`${theSetup().rootUrl}/api/whoami`, {
+          headers: { cookie: `${session.name}=${session.value}` },
+        }).then((r) => r.status);
+      await page.getByRole("button", { name: "Sign out of this browser" }).click();
+      const confirm = page.getByRole("dialog", { name: "Sign out of this browser" });
+      await expect(confirm).toBeVisible();
+      // the first click only asked: the session still answers for this browser
+      expect(await alive()).toBe(200);
+      await confirm.getByRole("button", { name: "Sign out", exact: true }).click();
+      await page.waitForURL((u) => u.pathname === "/");
+      await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0);
+      await expect(page.locator("[data-landing]")).toBeVisible();
+      // the credential the cookie stood for is dead on the hub
+      expect(await alive()).toBe(401);
     });
   });
 

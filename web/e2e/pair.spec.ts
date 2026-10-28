@@ -21,7 +21,7 @@ test("a pair link pairs the device with a passkey and it appears in Settings", a
     .getByRole("link", { name: "Security" })
     .click();
   await expect(page.getByRole("heading", { name: /^Devices · \d+$/ })).toBeVisible();
-  await expect(page.getByText(DEVICE)).toBeVisible();
+  await expect(page.getByText(DEVICE, { exact: true })).toBeVisible();
 
   // the session the pairing earned survives a fresh load, no link needed
   await page.reload();
