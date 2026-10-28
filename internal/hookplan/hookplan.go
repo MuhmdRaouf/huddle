@@ -30,6 +30,9 @@ func Events() map[string][]Part {
 			{"report", 1900 * time.Millisecond},
 			{"radar", 1600 * time.Millisecond},
 			{"kanban", 2500 * time.Millisecond},
+			// The model agent files in Claude Code's agents folder, one per Claude family, so the
+			// agent panel names each subagent's model.
+			{"agents", 100 * time.Millisecond},
 			// The five provider plugins' session-start work in one pass; a cold daemon start
 			// takes what the start itself budgets (4 s).
 			{"providers", 4000 * time.Millisecond},

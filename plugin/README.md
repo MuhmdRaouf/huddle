@@ -56,6 +56,8 @@
    - It names the channel and this session after the project folder; `/huddle:setup shop api` names them yourself.
    - It writes `.agents/huddle/huddle.json` (kept out of git) and turns autostart on: the SessionStart hook brings the
      hub back whenever it is down, after a reboot too.
+   - Every session start also refreshes one model agent file per Claude family in the Claude agents folder, so the
+     agent panel names the model each subagent runs on.
    - It starts the hub, joins and prints two lines: a `join:` line for other sessions, and a `dashboard:` link that
      signs the browser in once, within 5 minutes. The first sign-in offers the authenticator QR; "Later" skips it.
 

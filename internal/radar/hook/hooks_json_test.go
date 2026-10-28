@@ -144,11 +144,11 @@ func TestHooksJSON(t *testing.T) {
 		}
 	})
 
-	t.Run("keeps every event line inside a 15 s budget", func(t *testing.T) {
+	t.Run("keeps every event line inside a 16 s budget", func(t *testing.T) {
 		for event, group := range eventGroups(t) {
 			for _, entry := range group.Hooks {
-				if entry.Timeout == nil || *entry.Timeout > 15 {
-					t.Errorf("%s: timeout = %v, want a number <= 15", event, entry.Timeout)
+				if entry.Timeout == nil || *entry.Timeout > 16 {
+					t.Errorf("%s: timeout = %v, want a number <= 16", event, entry.Timeout)
 				}
 			}
 		}

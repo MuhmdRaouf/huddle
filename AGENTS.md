@@ -72,7 +72,8 @@ node scripts/check-attribution.mjs             # no AI attribution in the histor
   Anthropic routes are mounted under `/gateway`; Radar's `budget-status.json` can stop a provider. A handover
   serves a binary update and an RSS ceiling of 1 GiB (`HUDDLE_ROUTER_RSS_CEILING_MB`, checked every 30 s).
 - **One hook process.** Each Claude Code event runs one `huddle hook <event>` process whose parts run in order
-  (`internal/hookplan`): huddle's handler, its report, radar, kanban's session start, and the providers' parts
+  (`internal/hookplan`): huddle's handler, its report, radar, kanban's session start, the model agent files (one
+  per Claude family, so the agent panel names each subagent's model), and the providers' parts
   (session-start re-applies every set-up provider's wiring; subagent-stop adds the usage line). A part owns a
   deadline and a hook never blocks a session.
 - **Each store owns its events** ([ADR-3](docs/adr/0003-one-event-log.md)). No single event log: each

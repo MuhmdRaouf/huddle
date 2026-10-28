@@ -2,8 +2,9 @@ package main
 
 // The merged event hooks: one process per Claude Code event runs, in order, the parts
 // internal/hookplan lists for it — huddle's own handler for the event, huddle's report, radar's
-// hook, kanban's session start and the providers' work (SessionStart), the providers' usage line
-// (SubagentStop), the task's channel line and board card (TaskCreated). Every part runs under its own deadline and the deadlines of one event sum
+// hook, kanban's session start, the model agent files and the providers' work (SessionStart), the
+// providers' usage line (SubagentStop), the task's channel line and board card (TaskCreated).
+// Every part runs under its own deadline and the deadlines of one event sum
 // inside the timeout hooks.json grants it. The parts' outputs fold into one JSON object, so
 // their messages never collide. A part that fails or overruns is dropped with its output; the
 // next part still runs, and the exit code is 0 whatever happened: a hook never fails the session
@@ -19,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	corecli "github.com/MuhmdRaouf/huddle/internal/core/cli"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/hookplan"
@@ -196,6 +198,10 @@ func runNamedPart(ctx context.Context, name string, in io.Reader, out io.Writer)
 	case "kanban-task":
 		payload, _ := io.ReadAll(in)
 		kanbanapp.TaskCreated(ctx, payload, version)
+	case "agents":
+		// The model agent files in Claude Code's agents folder; a failure stays silent like
+		// every part's — the hook still exits 0 and the other parts still answer.
+		_ = adapters.SyncClaudeAgents(ctx, envOf(os.Environ()))
 	case "providers":
 		// The five provider plugins' session-start work, one process for them all: each
 		// provider's output lands as its own line, and the merge above folds them into the one
