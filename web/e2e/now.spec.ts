@@ -569,6 +569,46 @@ test("at tablet width the open session's header keeps its full name", async ({ p
   expect(scroll).toBeLessThanOrEqual(client);
 });
 
+test("at desk width the title owns its row and the rail holds a Now section", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop", "the desk width is the desktop project's");
+  // one session whose title is long enough to fill the row it stands on; its turn has ended
+  // (Stop), so the Working group keeps only the seed and the phone project's first test, which
+  // pins that group to one, still finds it on this shared server
+  const session = "e2e-desk-title";
+  await api("/api/registry/report", {
+    session_id: session,
+    machine: "e2e-machine",
+    project: "e2e",
+    branch: "desk-title",
+    title: "Kanban release: the export inlines every ticket and the board draws its flow bar",
+    model: "claude-sonnet-4-5",
+    context_percent: 41,
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+  await signIn(page);
+  await openTab(page, "Sessions");
+
+  // the seeded session's short title is not cut while space is free
+  await page.locator("[data-row='e2e-seed']").click();
+  const name = page.locator("[data-session] header [data-session-title]");
+  await expect(name).toHaveText(theSetup().sessionTitle);
+  expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+
+  // the long title takes its row: at least 60% of the header's width
+  await page.locator(`a[data-row='${session}']`).click();
+  const long = page.locator("[data-session] header [data-session-title]");
+  await expect(long).toHaveText(/Kanban release/);
+  const box = await long.boundingBox();
+  const headerBox = await page.locator("[data-session] header").boundingBox();
+  expect(box && headerBox && box.width).toBeGreaterThanOrEqual((headerBox?.width ?? 0) * 0.6);
+
+  // the rail opens with a Now section
+  await expect(
+    page.locator("[data-now-context]").getByRole("heading", { name: "Now", exact: true }),
+  ).toBeVisible();
+});
+
 test("the phone's Sessions page scrolls nothing sideways and every target is at least 44 px", async ({
   page,
   isMobile,

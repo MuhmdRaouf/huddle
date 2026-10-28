@@ -542,36 +542,160 @@ describe("the Session screen", () => {
     expect(document.querySelector("[data-resume]")).toBeNull();
   });
 
-  it("lays the same facts out for the tablet and the desktop widths", () => {
+  it("keeps the context bar on the tablet, and at both widths the full name and no back link", () => {
     for (const layout of ["tablet", "desktop"] as const) {
       cleanup();
       mountSession(layout);
       expect(screen.getByText("kanban-e2e"), layout).toBeDefined();
-      expect(screen.getByLabelText("Context 58 percent used"), layout).toBeDefined();
       expect(screen.queryByRole("link", { name: "Back to Sessions" }), layout).toBeNull();
     }
+    cleanup();
+    mountSession("tablet");
+    expect(screen.getByLabelText("Context 58 percent used")).toBeDefined();
+  });
+
+  it("puts the desk title alone on its row and the facts in one status line under it", async () => {
+    cleanup();
+    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    // the actions read the channel links before they render, so the api answers them
+    const { api } = apiFake((path) =>
+      path === "/api/links"
+        ? {
+            channels: [
+              {
+                channel: "kanban-release",
+                links: [
+                  {
+                    channel: "kanban-release",
+                    session_id: "s-need-1",
+                    level: "digest",
+                    linked_at: "2026-10-08T11:00:00Z",
+                  },
+                  {
+                    channel: "kanban-release",
+                    session_id: "s-work-1",
+                    level: "digest",
+                    linked_at: "2026-10-08T11:00:00Z",
+                  },
+                ],
+              },
+            ],
+          }
+        : {},
+    );
+    const registry = makeRegistry({
+      sessions: fixture(),
+      open: detail({ hooks_stale: true, teammates: [{ name: "scout", state: "working" }] }),
+      openId: "s-need-1",
+    });
+    renderIn(<SessionScreen id="s-need-1" layout="desktop" />, makeCtx(makeState(), { registry, api }));
+    await flush();
+    const header = document.querySelector("[data-session] header") as HTMLElement;
+    // the title stands alone on its row: its parent stacks the facts as a column
+    const title = header.querySelector("[data-session-title]") as HTMLElement;
+    expect(title.textContent).toBe("kanban-e2e");
+    expect(title.parentElement?.classList.contains("flex-col")).toBe(true);
+    // one status line under the title holds the state word, the model and the context
+    const status = header.querySelector("[data-status-line]") as HTMLElement;
+    expect(status).not.toBeNull();
+    expect(status.textContent).toContain("Needs you");
+    expect(status.textContent).toContain("glm-5.3");
+    expect(status.textContent).toContain("58% context");
+    expect(within(status).getByLabelText("needs you")).toBeDefined();
+    // the chips leave the desk header with it; the stale-hooks chip and the harness stay
+    expect(header.querySelector("[data-model-dot]")).toBeNull();
+    expect(screen.queryByLabelText("Context 58 percent used")).toBeNull();
+    expect(within(status).getByText("hooks stale")).toBeDefined();
+    expect(header.querySelector("[data-harness]")).not.toBeNull();
+    // the actions keep their place in the header
+    expect(header.querySelector("[data-session-actions]")).not.toBeNull();
+  });
+
+  it("names the state as the mock does in the header's status line and the rail's Now row: first letter capitalised", () => {
+    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    const registry = makeRegistry({ sessions: fixture(), open: detail(), openId: "s-need-1" });
+    followRender(
+      () => (
+        <>
+          <SessionScreen id="s-need-1" layout="desktop" />
+          <NowContext />
+        </>
+      ),
+      registry,
+    );
+    const status = document.querySelector("[data-status-line]") as HTMLElement;
+    const word = within(status).getByText("Needs you") as HTMLElement;
+    // the word reads capitalised while its data attributes keep the raw state
+    expect(word.getAttribute("data-state")).toBe("needs-you");
+    expect(word.getAttribute("data-role")).toBe("needs-you");
+    const rail = document.querySelector("[data-now-context]") as HTMLElement;
+    expect(within(rail).getByText("Needs you")).toBeDefined();
+    cleanup();
+    const working = makeRegistry({
+      sessions: fixture(),
+      open: detail({ state: "working" }),
+      openId: "s-need-1",
+    });
+    followRender(() => <NowContext />, working);
+    expect(
+      within(document.querySelector("[data-now-context]") as HTMLElement).getByText("Working"),
+    ).toBeDefined();
   });
 });
 
-describe("the desktop context pane", () => {
-  it("shows the linked sessions and the session's facts", () => {
+describe("the session rail", () => {
+  const mountRail = (over: Partial<RegistryDetail> = {}, open: RegistryDetail = detail(over)): void => {
     stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
-    const registry = makeRegistry({ sessions: fixture(), open: detail() });
+    const registry = makeRegistry({ sessions: fixture(), open });
     followRender(() => <NowContext />, registry);
+  };
+
+  it("opens with the Now section: the state, its age and the facts the session carries", () => {
+    mountRail({
+      teammates: [
+        { name: "scout", state: "working" },
+        { name: "writer", state: "idle" },
+      ],
+    });
+    const rail = document.querySelector("[data-now-context]") as HTMLElement;
+    expect(within(rail).getByText("Now")).toBeDefined();
+    // the state word on its row, with the age of the session's last event beside it
+    expect(within(rail).getByText("Needs you")).toBeDefined();
+    expect(rail.textContent).toContain("30 s");
+    // the fact line holds the model, the context and the teammates
+    const facts = rail.querySelector("[data-now-facts]") as HTMLElement;
+    expect(facts.textContent).toContain("glm-5.3");
+    expect(facts.textContent).toContain("58% context");
+    expect(facts.textContent).toContain("2 agents");
+    // the teammates run under their own head
+    expect(within(rail).getByText("Running")).toBeDefined();
+    expect(within(rail).getByText("scout")).toBeDefined();
+    expect(within(rail).getByText("writer")).toBeDefined();
+    // and nothing anywhere is a placeholder dash
+    expect(rail.textContent).not.toContain("—");
+  });
+
+  it("leaves a fact out when the session does not carry it, and never draws a dash", () => {
+    // the optional fields gone: this session carries no model, context, teammates or channel
+    const { model: _model, context_percent: _pct, teammates: _mates, ...bare } = detail();
+    mountRail({}, { ...bare, channel: "" });
+    const rail = document.querySelector("[data-now-context]") as HTMLElement;
+    // a session carrying nothing shows only its state and age: no fact row is drawn at all
+    expect(rail.querySelector("[data-now-facts]")).toBeNull();
+    // no teammates, no Running section; no channel, no linked list
+    expect(within(rail).queryByText("Running")).toBeNull();
+    expect(within(rail).queryByText(/Linked in/)).toBeNull();
+    expect(rail.textContent).not.toContain("—");
+  });
+
+  it("keeps the linked sessions under their own head", () => {
+    mountRail();
     expect(screen.getByText("Linked in #kanban-release")).toBeDefined();
     const linked = screen.getByText("lead").closest("a");
     expect(within(linked as HTMLElement).getByLabelText("working")).toBeDefined();
-    expect(screen.getByText("Session")).toBeDefined();
-    expect(screen.getByText("58% used")).toBeDefined();
-    expect(screen.getByText(/\d\d:\d\d · 12 min/)).toBeDefined();
-  });
-
-  it("hides the linked list when the session is in no channel", () => {
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
-    const registry = makeRegistry({ sessions: [], open: detail({ channel: "" }) });
-    followRender(() => <NowContext />, registry);
-    expect(screen.queryByText(/Linked in/)).toBeNull();
-    expect(screen.getByText("Session")).toBeDefined();
+    expect(
+      within(document.querySelector("[data-now-context]") as HTMLElement).getByText("Now"),
+    ).toBeDefined();
   });
 });
 

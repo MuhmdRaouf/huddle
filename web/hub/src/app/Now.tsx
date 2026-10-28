@@ -1,8 +1,9 @@
-// Now.tsx — the Session screen: the header with its chips and context bar, the stream of the
-// session's events, and the action bar its open ask carries; and the desktop's context pane (the
-// linked sessions and the session's facts). One tree serves the three layouts: the phone paints
+// Now.tsx — the Session screen: the header (the phone's two rows with their chips and context
+// bar, the desktop's title, where line and status line), the stream of the session's events, and
+// the action bar its open ask carries; and the desktop's right rail (the session's Now, the
+// teammates it runs, the linked sessions). One tree serves the three layouts: the phone paints
 // the session alone, the tablet and the desktop paint it beside the list, and the desktop adds
-// the context pane. Session text is rendered as text, never HTML (SPEC 9).
+// the rail. Session text is rendered as text, never HTML (SPEC 9).
 import { Button } from "@huddle/ui/button.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
 import { stampMs } from "@huddle/ui/time.ts";
@@ -17,7 +18,11 @@ import {
   openItemOf,
   type RegistrySession,
   sessionName,
+  shortModel,
   shownState,
+  type StateRole,
+  stateRole,
+  stateWord,
   streamItems,
   type StreamItem,
   type ToolCall,
@@ -429,12 +434,45 @@ function SessionActions({ session }: { session: RegistrySession }): JSX.Element 
   );
 }
 
-/** The Session screen: the header (name, where, chips, context bar), the line that says how to
- *  restart a session whose hooks stopped reporting, the stream of the session's events, and the
- *  action bar its open needs-you ask carries (the phone's sheet, the wide layouts' inline box).
- *  The phone and the tablet paint the two-row header, so the name keeps its own row (the phone's
- *  carries the back link; the tablet's list stands beside it); the desktop carries its header in
- *  one bar. */
+/** The session line's text size, the one the desk header's and the rail's facts share. */
+const T13 = "text-[13px]";
+
+/** The role's ink token for each state's word: the read guaranteed 4.5:1 on every surface, so
+ *  the word holds its colour on the desk header's page background as well as on the rail's
+ *  surface card. The mark keeps its own fill. */
+const STATE_INK: Record<StateRole, string> = {
+  "needs-you": "text-[var(--ui-needs-you-ink)]",
+  "turn-done": "text-[var(--ui-turn-done-ink)]",
+  working: "text-[var(--ui-working-ink)]",
+  idle: "text-[var(--ui-idle-ink)]",
+  failed: "text-[var(--ui-failed-ink)]",
+  cancelled: "text-[var(--ui-cancelled-ink)]",
+};
+
+/** A session's state as its mark and word in the role's ink, the facts that ride behind it
+ *  muted: the desk header's status line and the rail's Now row draw the same lead. */
+function StateLead({ state, role, tails }: { state: string; role: StateRole; tails: string[] }): JSX.Element {
+  const tail = tails.filter(Boolean).join(" · ");
+  // the word reads as the mock writes it — "Working", "Needs you" — while data-state keeps the
+  // raw lowercase state
+  const word = stateWord(state);
+  return (
+    <span class="flex min-w-0 items-center gap-1.5">
+      <StateMark state={state} role={role} />
+      <span data-state={state} data-role={role} class={`shrink-0 font-semibold ${STATE_INK[role]}`}>
+        {word.charAt(0).toUpperCase() + word.slice(1)}
+      </span>
+      {tail ? <span class={`min-w-0 truncate ${T13} ${MUTED}`}>· {tail}</span> : null}
+    </span>
+  );
+}
+
+/** The Session screen: the header, the line that says how to restart a session whose hooks
+ *  stopped reporting, the stream of the session's events, and the action bar its open needs-you
+ *  ask carries (the phone's sheet, the wide layouts' inline box). The phone and the tablet paint
+ *  the two-row header, so the name keeps its own row (the phone's carries the back link; the
+ *  tablet's list stands beside it); the desktop leads with the title alone, the where line and
+ *  one status line under it, and the actions at its right. */
 export function SessionScreen({ id, layout }: { id: string; layout: Layout }): JSX.Element {
   const { registry, now } = useHuddle();
   const st = registry.getState();
@@ -486,20 +524,24 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
           ) : null}
         </header>
       ) : (
-        <header class={`flex shrink-0 border-b ${LINE} px-6 pt-4 pb-3.5`}>
-          <div class="mx-auto flex w-full max-w-[51.25rem] flex-wrap items-center gap-3.5">
-            <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-              <div class="truncate text-xl font-semibold">{sessionName(d)}</div>
-              <div class={`truncate text-[13px] ${MUTED}`}>{whereOf(d)}</div>
+        <header class="shrink-0 px-6 pt-4">
+          <div class="flex min-w-0 items-start gap-4">
+            <div class="flex min-w-0 flex-1 flex-col">
+              <div data-session-title="" class="truncate text-lg font-semibold">
+                {sessionName(d)}
+              </div>
+              <div class={`mt-1 truncate ${T13} ${MUTED}`}>{whereOf(d)}</div>
+              <div data-status-line="" class="mt-2 flex min-w-0 items-center gap-2">
+                <StateLead
+                  state={shownState(d, st.needs)}
+                  role={stateRole(shownState(d, st.needs), ask)}
+                  tails={[d.model ? shortModel(d.model) : "", pct ? `${pct}% context` : ""]}
+                />
+                <HooksStaleChip s={d} />
+                <HarnessBadge s={d} pill />
+              </div>
             </div>
-            <Chips s={d} needs={st.needs} />
             <SessionActions session={d} />
-            {pct ? (
-              <span class="flex w-[140px] shrink-0 items-center gap-2">
-                <ContextBar pct={pct} />
-                <span class={`shrink-0 text-xs ${MUTED}`}>{pct}%</span>
-              </span>
-            ) : null}
           </div>
         </header>
       )}
@@ -515,8 +557,9 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
   );
 }
 
-/** The desktop's context pane: the sessions linked with the open one, and the session's own
- *  facts. The digest arrives with the linking work; the cost shows when Radar knows the session. */
+/** The desktop's right rail: the session's Now (its state, how long ago it last reported, and
+ *  the facts it carries), the teammates it runs when it has any, and the sessions linked with its
+ *  channel. A fact with no value is left out; nothing is drawn as a dash. */
 export function NowContext(): JSX.Element | null {
   const { registry, now } = useHuddle();
   const st = registry.getState();
@@ -525,19 +568,61 @@ export function NowContext(): JSX.Element | null {
   const linked = (st.sessions ?? []).filter(
     (s) => s.channel && s.channel === d.channel && s.session_id !== d.session_id,
   );
-  const startedAt = d.events?.[0]?.report.last_event_at ?? d.last_event_at;
-  const startedMs = stampMs(startedAt);
-  const started = startedMs === null ? "—" : `${hhmm(startedMs)} · ${ageText(startedAt, now)}`;
+  const state = shownState(d, st.needs);
+  const role = stateRole(state, openItemOf(st.needs, d.session_id));
+  const age = ageText(d.last_event_at, now);
+  const mates = d.teammates ?? [];
+  const facts: { text: string; warn?: boolean }[] = [];
+  if (d.model) facts.push({ text: shortModel(d.model) });
+  if (d.context_percent) facts.push({ text: `${Math.round(d.context_percent)}% context` });
+  if (d.hooks_stale) facts.push({ text: "hooks stale", warn: true });
+  if (mates.length) facts.push({ text: `${mates.length} agent${mates.length === 1 ? "" : "s"}` });
   return (
     <aside
-      class={`flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto bg-[var(--ui-surface)] p-4`}
+      class="flex min-h-0 min-w-0 flex-col gap-6 overflow-y-auto bg-[var(--ui-surface)] px-4 pt-4 pb-6"
       data-now-context=""
     >
+      <section>
+        <h2 class={`mb-2 ml-1 ${T13} font-semibold ${MUTED}`}>Now</h2>
+        <div class="flex flex-col gap-2">
+          <StateLead state={state} role={role} tails={age ? [age] : []} />
+          {facts.length ? (
+            <div data-now-facts="" class={`flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs ${MUTED}`}>
+              {facts.map((f, i) => (
+                <span key={f.text} class="flex items-center gap-1.5">
+                  {i > 0 ? <span aria-hidden="true">·</span> : null}
+                  <span class={f.warn ? "text-[var(--ui-warn)]" : undefined}>{f.text}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </section>
+      {mates.length ? (
+        <section>
+          <h2 class={`mb-2 ml-1 ${T13} font-semibold ${MUTED}`}>Running</h2>
+          <div class="overflow-hidden rounded-[var(--ui-radius)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-1)]">
+            {mates.map((m, i) => (
+              <div key={m.name} class={`relative flex min-h-10 items-center gap-2 px-3 ${T13}`}>
+                {i > 0 ? (
+                  <span aria-hidden="true" class="absolute top-0 right-0 left-4 h-px bg-[var(--ui-line)]" />
+                ) : null}
+                <span
+                  aria-hidden="true"
+                  class={`size-1.5 shrink-0 rounded-full bg-current ${STATE_INK[stateRole(m.state)]}`}
+                />
+                <span class="min-w-0 truncate font-semibold">{m.name}</span>
+                <span class={`ml-auto shrink-0 ${MUTED}`}>{stateWord(m.state)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
       {d.channel ? (
         <section class="flex flex-col gap-2.5">
-          <h2 class={`text-xs font-semibold tracking-[0.06em] uppercase ${MUTED}`}>Linked in #{d.channel}</h2>
+          <h2 class={`mb-1 ml-1 ${T13} font-semibold ${MUTED}`}>Linked in #{d.channel}</h2>
           {linked.length === 0 ? (
-            <p class={`text-[13px] ${MUTED}`}>No other session is linked here yet.</p>
+            <p class={`${T13} ${MUTED}`}>No other session is linked here yet.</p>
           ) : (
             linked.map((s) => (
               <a
@@ -553,17 +638,6 @@ export function NowContext(): JSX.Element | null {
           )}
         </section>
       ) : null}
-      <section class="flex flex-col gap-2">
-        <h2 class={`text-xs font-semibold tracking-[0.06em] uppercase ${MUTED}`}>Session</h2>
-        <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
-          <dt class={MUTED}>Model</dt>
-          <dd class="ui-mono m-0 truncate">{d.model || "—"}</dd>
-          <dt class={MUTED}>Context</dt>
-          <dd class="m-0">{d.context_percent ? `${Math.round(d.context_percent)}% used` : "—"}</dd>
-          <dt class={MUTED}>Started</dt>
-          <dd class="m-0">{started}</dd>
-        </dl>
-      </section>
     </aside>
   );
 }
