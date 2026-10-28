@@ -553,6 +553,7 @@ type serveEnv struct {
 type serveLog struct {
 	mu  sync.Mutex
 	buf strings.Builder
+	cmd *exec.Cmd
 }
 
 func (l *serveLog) Write(p []byte) (int, error) {
@@ -610,7 +611,7 @@ func startServe(parent, t *testing.T, bin string, cfg serveEnv) *serveLog {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start the server: %v", err)
 	}
-	log := &serveLog{}
+	log := &serveLog{cmd: cmd}
 	doneReading := make(chan struct{})
 	go func() {
 		defer close(doneReading)

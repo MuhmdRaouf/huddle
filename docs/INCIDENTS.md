@@ -214,3 +214,15 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   internal/radar/ledger/db_test.go), `TestOpen/"flushes checkpoints past the disk cache"`
   (internal/huddle/store/store_test.go)
 - **Rule:** every SQLite store Radar and the hub open sets `checkpoint_fullfsync(1)`.
+
+## 2026-10-29, the hub burned two cores on a busy machine
+
+- **What happened:** with the dashboard open on a machine past 200 sessions, the hub held near two full
+  cores and reached 526 MB resident.
+- **Cause:** on a machine past 200 sessions, every new session made the Radar store walk every record to
+  drop one stale session, and a line for an old session brought it back to be dropped again; every store
+  change also threw away every cached view, so each poll and each stream push rebuilt and re-sorted up to
+  200,000 records, and the pricing ran regexps per request.
+- **Guard:** `TestE2EHubStaysLight` (cmd/huddle/hub_light_e2e_test.go)
+- **Rule:** the hub spends under 0.2 s of CPU over 20 s idle and under 12.5 s over the fixed 30 s polled
+  workload, and stays under 300 MB resident; a change that costs more fails CI.
