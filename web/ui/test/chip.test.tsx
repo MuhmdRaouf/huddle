@@ -74,4 +74,24 @@ describe("Chip", () => {
     fireEvent.click(chip);
     expect(onClick).toHaveBeenCalledTimes(2);
   });
+
+  it("carries the data attributes a page or a test finds it by", () => {
+    render(<Chip data-k="tag">x</Chip>);
+    const chip = screen.getByText("x");
+    expect(chip.tagName).toBe("SPAN");
+    expect(chip.className).toBe("ui-chip ui-chip-neutral");
+    expect(chip.getAttribute("data-k")).toBe("tag");
+  });
+
+  it("carries the data attributes on the filter button too", () => {
+    render(
+      <Chip pressed={true} onClick={() => {}} data-k="fact">
+        Fact
+      </Chip>,
+    );
+    const chip = screen.getByRole("button", { name: "Fact" });
+    expect(chip.className).toBe("ui-chip ui-chip-neutral ui-chip-toggle");
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    expect(chip.getAttribute("data-k")).toBe("fact");
+  });
 });
