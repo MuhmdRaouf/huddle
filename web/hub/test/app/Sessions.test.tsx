@@ -1,7 +1,7 @@
 // Sessions.test.tsx — the Sessions list: the groups and their counts from a fixture, the state
-// marks as shape plus word, a registry.session row moving a session between groups live, the
-// search box and the machine chips, the set-up row that opens the checklist in a sheet, the
-// needs-you card, the working and idle rows, the desktop
+// chips as words on their role's tint, a registry.session row moving a session between groups
+// live, the search box and the machine chips, the set-up row that opens the checklist in a sheet,
+// the needs-you card, the desk's two-line rows and the phone's avatar rows, the desktop
 // keys (j/k move, Enter opens, L links a pick of two), the pick bar's link sheet and the picks
 // it clears, the Select toggle that gates the desktop's checkboxes, and session text always
 // rendered as text, never HTML.
@@ -295,31 +295,78 @@ describe("the Sessions list", () => {
     expect(within(card).getByRole("button", { name: "Allow once" })).toBeDefined();
   });
 
-  it("draws the working row: mark, name, model chip, machine · task, context", () => {
+  it("splits a desk row into a title line and a meta line", () => {
+    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    mountNow("desktop");
+    const rowEl = document.querySelector('a[data-row="s-work-1"]') as HTMLElement;
+    expect(rowEl).not.toBeNull();
+    const lines = [...rowEl.children].filter((el) => el.tagName === "SPAN") as HTMLElement[];
+    expect(lines.length, rowEl.outerHTML).toBe(2);
+    // the name's line carries the harness chip and no state
+    expect(lines[0]?.querySelector("[data-harness]"), "line 1 harness").not.toBeNull();
+    expect(lines[0]?.textContent, "line 1 name").toContain("lead");
+    expect(lines[0]?.querySelector("[data-state]"), "line 1 state").toBeNull();
+    // the meta line carries the where and the state, and no harness
+    expect(lines[1]?.querySelector("[data-state]"), "line 2 state").not.toBeNull();
+    expect(lines[1]?.querySelector("[data-harness]"), "line 2 harness").toBeNull();
+    expect(lines[1]?.textContent, "line 2 where").toContain("claude-code-plugins · studio");
+  });
+
+  it("keeps the set-up row's text at the left edge", () => {
+    mountSetup({ totp: true, channels: [{ name: "shop" }] });
+    const btn = screen.getByRole("button", { name: "Set up · 1 step left" });
+    expect(btn.className, "no centring").not.toMatch(/text-center|justify-center/);
+    expect(btn.className, "left-aligned text").toContain("text-left");
+  });
+
+  it("draws the working row: harness chip, where, state chip, no model chip", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone");
-    const name = screen.getByText("lead").closest("[data-row]");
-    expect(name).not.toBeNull();
-    const rowEl = name as HTMLElement;
-    expect(within(rowEl).getByLabelText("working")).toBeDefined();
-    expect(within(rowEl).getByText("opus-4-6")).toBeDefined();
-    expect(within(rowEl).getByText("studio · Release kanban 0.0.1")).toBeDefined();
-    expect(within(rowEl).getByText("41%")).toBeDefined();
+    const rowEl = screen.getByText("lead").closest("[data-row]") as HTMLElement;
+    const harness = rowEl.querySelector("[data-harness]") as HTMLElement;
+    expect(harness.dataset.harness).toBe("claude");
+    expect(harness.textContent).toContain("Claude Code");
+    // the where reads project · machine, the meta line the mock draws
+    const meta = rowEl.querySelector(".ui-list-meta") as HTMLElement;
+    expect(meta.textContent, "the where").toContain("claude-code-plugins · studio");
+    const state = rowEl.querySelector('[data-state="working"]') as HTMLElement;
+    expect(state.dataset.role).toBe("working");
+    expect(state.textContent).toContain("Working");
+    // the phone row carries no model chip and no context bar
+    expect(rowEl.textContent).not.toContain("opus-4-6");
+    expect(rowEl.textContent).not.toContain("41%");
   });
 
   it("carries the state as a word on every row, never colour alone", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone");
     for (const [title, word, state] of [
-      ["lead", "working", "working"],
-      ["docs-sweep", "idle", "idle"],
-      ["quiet-one", "stuck", "stuck"],
-      ["finished", "ended", "ended"],
+      ["lead", "Working", "working"],
+      ["docs-sweep", "Idle", "idle"],
+      ["quiet-one", "Stuck", "stuck"],
+      ["finished", "Ended", "ended"],
+      // the phone's needs-you row is the card, whose chip keeps the plain word
       ["kanban-e2e", "needs you", "needs-you"],
     ] as const) {
       const rowEl = screen.getByText(title).closest("[data-row]") as HTMLElement;
       const chip = within(rowEl).getByText(word);
       expect(chip.getAttribute("data-state"), title).toBe(state);
+    }
+  });
+
+  it("writes the row chip's word the mock's way: a capital first letter, the raw state on data-state", () => {
+    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    mountNow("desktop");
+    for (const [id, word, state] of [
+      ["s-need-1", "Needs you", "needs-you"],
+      ["s-work-1", "Working", "working"],
+      ["s-idle-1", "Idle", "idle"],
+      ["s-stuck", "Stuck", "stuck"],
+      ["s-done", "Ended", "ended"],
+    ] as const) {
+      const chip = document.querySelector(`[data-row="${id}"] [data-state]`) as HTMLElement;
+      expect(chip.textContent, id).toBe(word);
+      expect(chip.getAttribute("data-state"), id).toBe(state);
     }
   });
 
@@ -475,21 +522,29 @@ describe("the Sessions list", () => {
       const chip = document.querySelector(`[data-row="${id}"] [data-harness]`) as HTMLElement | null;
       expect(chip, id).not.toBeNull();
       expect(chip?.dataset.harness, id).toBe(harness);
-      // the chip names the agent in words beside its mark, so the mark never carries it alone
+      // the chip names the agent in words, so a mark or colour never carries it alone
       expect(chip?.textContent, id).toContain(name);
-      expect(chip?.querySelector("[data-harness-mark]"), id).not.toBeNull();
+      // the needs-you card's chip leads with its mark; the list's rows draw the name alone
+      const rowEl = document.querySelector(`[data-row="${id}"]`) as HTMLElement;
+      const mark = rowEl.querySelector("[data-harness-mark]");
+      if (rowEl.tagName === "ARTICLE") {
+        expect(mark, id).not.toBeNull();
+      } else {
+        expect(mark, id).toBeNull();
+      }
     }
     expect(legacyClasses(document.body, "[data-needs-bar], [data-needs-sheet]")).toEqual([]);
   });
 
-  it("draws the idle row: hollow mark, name, machine, age", () => {
+  it("draws the idle row: name, where, state chip, age", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone");
-    const idle = screen.getByText("docs-sweep").closest("[data-row]");
-    expect(idle).not.toBeNull();
-    expect(within(idle as HTMLElement).getByLabelText("idle")).toBeDefined();
-    expect(within(idle as HTMLElement).getByText(/· studio/)).toBeDefined();
-    expect(within(idle as HTMLElement).getByText("12 min")).toBeDefined();
+    const idle = screen.getByText("docs-sweep").closest("[data-row]") as HTMLElement;
+    const state = idle.querySelector('[data-state="idle"]') as HTMLElement;
+    expect(state.dataset.role).toBe("idle");
+    const meta = idle.querySelector(".ui-list-meta") as HTMLElement;
+    expect(meta.textContent, "the where").toContain("claude-code-plugins · studio");
+    expect(within(idle).getByText("12 min")).toBeDefined();
   });
 
   it("chips a session whose hooks stopped reporting on its working and its idle row, and no other", () => {
@@ -553,7 +608,7 @@ describe("the Sessions list", () => {
     });
   });
 
-  it("colours each row's mark and chip with its state's role token", () => {
+  it("colours each row's state chip with its state's role token", () => {
     stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
     mountNow("phone", fixture(), [
       needItem(),
@@ -579,10 +634,9 @@ describe("the Sessions list", () => {
       expect(chip.dataset.role, title).toBe(role);
       expect(chip.className, title).toContain(`text-[var(--ui-${role}-ink)]`);
       expect(chip.className, title).toContain(`bg-[var(--ui-${role}-soft)]`);
-      // the needs-you card carries its chip alone; every other row leads with its mark
-      const mark = rowEl.querySelector("svg[data-shape]");
+      // the list's rows carry the word alone; the needs-you card answers for its own chip
       if (rowEl.tagName !== "ARTICLE") {
-        expect(mark?.getAttribute("class"), title).toContain(`text-[var(--ui-${role})]`);
+        expect(rowEl.querySelector("svg[data-shape]"), title).toBeNull();
       }
     }
   });

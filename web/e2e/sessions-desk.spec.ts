@@ -133,6 +133,99 @@ test("at desk widths Sessions lands on the list's first row in three columns, wi
   }
 });
 
+test("the list's rows draw the mock's geometry at the desk and at phone width", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop", "the phone width is set on the desktop project");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page);
+  await page.evaluate(() => {
+    location.hash = "#/sessions";
+  });
+  const pane = page.locator("[data-sessions-pane]");
+  await expect(pane).toBeVisible();
+  // every row: 56 px tall or more, its title at the row's left edge, its chips inside the column
+  const desk = await page.evaluate(() => {
+    const list = document.querySelector("[data-sessions-pane]");
+    if (!list) return ["no list"];
+    const bad: string[] = [];
+    for (const row of list.querySelectorAll("a[data-row]")) {
+      const r = row.getBoundingClientRect();
+      const id = row.getAttribute("data-row");
+      if (r.height < 56) bad.push(`${id} is ${r.height}px tall`);
+      const title = [...row.children].find((el) => el.tagName === "SPAN");
+      if (title) {
+        const t = title.getBoundingClientRect();
+        if (t.left - r.left > 20) bad.push(`${id}'s title indents ${Math.round(t.left - r.left)}px`);
+      }
+      for (const chip of row.querySelectorAll("[data-harness], [data-state], [data-hooks-stale]")) {
+        if (chip.getBoundingClientRect().right > r.right + 0.5) bad.push(`${id}'s chip passes the row's edge`);
+      }
+    }
+    const paneRight = list.getBoundingClientRect().right;
+    for (const chip of list.querySelectorAll("[data-machine-chip]")) {
+      if (chip.getBoundingClientRect().right > paneRight + 0.5) {
+        bad.push(`machine chip ${chip.textContent} passes the column`);
+      }
+    }
+    return bad;
+  });
+  expect(desk).toEqual([]);
+  // the row the desk lands on wears the mock's accent-soft fill: the utility must beat the
+  // unlayered .ui-list-row background, in either scheme
+  const landedFill = await page.evaluate(
+    () => getComputedStyle(document.querySelector(".ui-list-row[aria-current='page']")!).backgroundColor,
+  );
+  expect(landedFill, "the landed row wears the accent fill").not.toBe("rgba(0, 0, 0, 0)");
+  // the machine chips are the mock's 28 px tall
+  const chipHeights = await page.evaluate(() =>
+    [...document.querySelectorAll("[data-machine-chip]")].map((c) => c.getBoundingClientRect().height),
+  );
+  expect(chipHeights.length).toBeGreaterThan(0);
+  for (const h of chipHeights) expect(Math.abs(h - 28), "machine chip height").toBeLessThanOrEqual(1);
+  // the search field carries the mock's leading magnifier and stands the desk's 40 px
+  const deskSearch = await page.evaluate(() => {
+    const box = document.querySelector("[data-session-search]");
+    const input = box?.querySelector("input");
+    const icon = box?.querySelector("svg");
+    return {
+      icon: icon !== null,
+      clear: icon !== null && getComputedStyle(icon).pointerEvents === "none",
+      height: input?.getBoundingClientRect().height ?? 0,
+      padLeft: input ? getComputedStyle(input).paddingLeft : "",
+    };
+  });
+  expect(deskSearch.icon, "the desk search wears the magnifier").toBe(true);
+  expect(deskSearch.clear, "the magnifier never takes the pointer").toBe(true);
+  expect(Math.abs(deskSearch.height - 40), "desk search height").toBeLessThanOrEqual(1);
+  expect(parseFloat(deskSearch.padLeft)).toBeGreaterThanOrEqual(36);
+
+  // at phone width the same list shows no horizontal overflow and its titles align; the desk
+  // landed on a session's address, and at phone width that address is the detail view, so the
+  // run goes back to the list first — after the phone layout has taken over, or the desk's
+  // landing effect replaces the address while the reset is still in flight
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator("[data-session]")).toBeVisible();
+  await page.evaluate(() => {
+    location.hash = "#/sessions";
+  });
+  await expect(pane.locator("a[data-row]").first()).toBeVisible();
+  const phone = await page.evaluate(() => {
+    const doc = document.documentElement;
+    const titles = [...document.querySelectorAll("[data-sessions-pane] a[data-row]")].map((row) => {
+      const r = row.getBoundingClientRect();
+      const kid = [...row.children].find((el) => el.tagName === "SPAN");
+      return kid ? kid.getBoundingClientRect().left - r.left : 0;
+    });
+    return { overflow: doc.scrollWidth - doc.clientWidth, spread: Math.max(...titles) - Math.min(...titles) };
+  });
+  expect(phone.overflow, "no horizontal overflow").toBe(0);
+  expect(phone.spread, "titles align").toBeLessThanOrEqual(2);
+  // the phone's search stands the mock's 48 px
+  const phoneSearch = await page.evaluate(() =>
+    document.querySelector("[data-session-search] input")?.getBoundingClientRect().height ?? 0,
+  );
+  expect(Math.abs(phoneSearch - 48), "phone search height").toBeLessThanOrEqual(1);
+});
+
 test("at phone width the list stands alone and Back returns to it", async ({ page }, info) => {
   test.skip(info.project.name !== "desktop", "the phone width is set on the desktop project");
   await page.setViewportSize({ width: 393, height: 852 });

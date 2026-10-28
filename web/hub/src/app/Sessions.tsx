@@ -38,17 +38,15 @@ import { LinkSheet } from "./LinkSheet.tsx";
 import type { Layout } from "./layout.ts";
 import { ActComposer, confirmWhat, type NeedsAct, SnoozeMenu, useNeedsAct } from "./Needs.tsx";
 import {
-  DeskStateChip,
   FeatureChips,
   featuresOf,
   HarnessBadge,
   HooksStaleChip,
   LINE,
-  ModelChip,
   MUTED,
   openHref,
+  RowStateChip,
   StateChip,
-  StateMark,
   whereOf,
 } from "./session-parts.tsx";
 import { MachinesLine } from "./TopBar.tsx";
@@ -141,29 +139,51 @@ function NeedsCard({
   );
 }
 
-/** The selected row's ring: the desktop's keyboard selection. */
-const selRing = (sel: boolean): string => (sel ? " ring-2 ring-inset ring-[var(--ui-accent)]" : "");
+/** The row's selection look: the desktop's keyboard pick and the open session both fill the row
+ *  with the accent's soft tint and round it off from the card's edges. The fill carries the
+ *  important mark: .ui-list-row's own transparent background is unlayered, so the bare utility
+ *  would lose the cascade to it. */
+const selRing = (sel: boolean): string =>
+  sel ? " rounded-[var(--ui-radius)] bg-[var(--ui-accent-soft)]!" : "";
 
-/** The desk row's harness chip: the neutral pill naming the harness, no tile and no border. */
-function DeskHarness({ s }: { s: RegistrySession }): JSX.Element {
+/** The list row's harness chip: the quiet chip naming the harness in words, no mark and no
+ *  border. */
+function RowHarness({ s }: { s: RegistrySession }): JSX.Element {
   const h = harnessOf(s);
   return (
     <span
       data-harness={h.id}
       title={`This session runs in ${h.name}`}
-      class="inline-flex h-7 shrink-0 items-center rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] px-2.5 text-sm font-medium text-[var(--ui-muted)]"
+      class="inline-flex h-7 shrink-0 items-center rounded-[var(--ui-radius-sm)] bg-[var(--ui-surface-2)] px-2.5 text-sm font-medium text-[var(--ui-muted)]"
     >
       {h.name}
     </span>
   );
 }
 
-/** The desk's one plain row for every state, needs-you included: the title alone on its line
- *  taking the free width, the harness chip, where it works and how long it has been quiet under,
- *  and the state chip at the end. It opens the session; the session's own needs bar answers an
- *  ask. With a carded session's feature chips the row turns container: an `<a>` cannot hold
- *  another, so the title link stretches over the whole row and the chip line rides above that
- *  overlay as links of their own. */
+/** The phone row's avatar: the harness's initials in a quiet circle. */
+function RowAvatar({ s }: { s: RegistrySession }): JSX.Element {
+  const initials = harnessOf(s)
+    .name.split(/\s+/)
+    .slice(0, 2)
+    .map((w) => (w[0] ?? "").toUpperCase())
+    .join("");
+  return (
+    <span
+      aria-hidden="true"
+      class="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--ui-surface-2)] text-xs font-bold text-[var(--ui-muted)]"
+    >
+      {initials}
+    </span>
+  );
+}
+
+/** The desk's one plain row for every state, needs-you included, the artboard's two lines: the
+ *  title with its harness chip, then where it works with the state chip and the quiet age at the
+ *  end. It opens the session; the session's own needs bar answers an ask. With a carded session's
+ *  feature chips the row turns container: an `<a>` cannot hold another, so the title link
+ *  stretches over the whole row and the chip line rides above that overlay as links of their
+ *  own. */
 function DeskRow({
   s,
   now,
@@ -180,27 +200,32 @@ function DeskRow({
   const meta = [projectName(s.project), s.branch, s.machine].filter(Boolean);
   if (!s.delivery_route) meta.push("watch only");
   const chips = tasks && featuresOf(tasks).length > 0 ? <FeatureChips tasks={tasks} /> : null;
+  const body = (
+    <>
+      <span class="flex h-7 min-w-0 items-center gap-2">
+        <span class="ui-list-title min-w-0 flex-1 leading-[1.2]">{sessionName(s)}</span>
+        <RowHarness s={s} />
+      </span>
+      <span class="flex h-7 min-w-0 items-center gap-2">
+        <span class="ui-list-meta min-w-0 flex-1 truncate">{meta.join(" · ")}</span>
+        <HooksStaleChip s={s} />
+        <span class={`shrink-0 text-xs ${MUTED} tabular-nums`}>{ageText(s.last_event_at, now)}</span>
+        <RowStateChip state={s.state} />
+      </span>
+    </>
+  );
   if (chips) {
     return (
       <div
         data-row={s.session_id}
         aria-current={open ? "page" : sel ? "true" : undefined}
-        class={`relative${selRing(sel)}${
-          open ? " rounded-[var(--ui-radius-lg)] bg-[var(--ui-accent-soft)]" : ""
-        }`}
+        class={`relative${selRing(sel || open)}`}
       >
         <a
           href={openHref(s)}
-          class="ui-list-row flex-col! justify-center! gap-0! min-h-14! after:absolute after:inset-0 after:content-['']"
+          class="ui-list-row flex-col! items-stretch! justify-center! gap-0! min-h-14! after:absolute after:inset-0 after:content-['']"
         >
-          <span class="ui-list-title">{sessionName(s)}</span>
-          <span class="flex min-w-0 items-center gap-2">
-            <DeskHarness s={s} />
-            <span class="ui-list-meta min-w-0 flex-1 truncate">{meta.join(" · ")}</span>
-            <HooksStaleChip s={s} />
-            <span class={`shrink-0 text-xs ${MUTED} tabular-nums`}>{ageText(s.last_event_at, now)}</span>
-            <DeskStateChip state={s.state} />
-          </span>
+          {body}
         </a>
         <div class="px-4 pb-2.5">{chips}</div>
       </div>
@@ -211,91 +236,19 @@ function DeskRow({
       href={openHref(s)}
       data-row={s.session_id}
       aria-current={open ? "page" : sel ? "true" : undefined}
-      class={`ui-list-row flex-col! justify-center! gap-0! min-h-14!${selRing(sel)}${
-        open ? " rounded-[var(--ui-radius-lg)] bg-[var(--ui-accent-soft)]" : ""
-      }`}
-    >
-      <span class="ui-list-title">{sessionName(s)}</span>
-      <span class="flex min-w-0 items-center gap-2">
-        <DeskHarness s={s} />
-        <span class="ui-list-meta min-w-0 flex-1 truncate">{meta.join(" · ")}</span>
-        <HooksStaleChip s={s} />
-        <span class={`shrink-0 text-xs ${MUTED} tabular-nums`}>{ageText(s.last_event_at, now)}</span>
-        <DeskStateChip state={s.state} />
-      </span>
-    </a>
-  );
-}
-
-/** A working or stuck row: the mark, the name taking the row's free width, its harness chip with
- *  where it works and its task under it, and the state badge, the model chip and how full its
- *  window is after. With a carded session's feature chips the row turns container: an `<a>`
- *  cannot hold another, so the row's link stretches over the whole row and the chip line rides
- *  above that overlay as links of their own. */
-function WorkRow({
-  s,
-  sel,
-  tasks,
-}: {
-  s: RegistrySession;
-  sel: boolean;
-  tasks: SessionTasks | null;
-}): JSX.Element {
-  const chips = tasks && featuresOf(tasks).length > 0 ? <FeatureChips tasks={tasks} phone /> : null;
-  const body = (
-    <>
-      <span class="ui-list-leading">
-        <StateMark state={s.state} />
-      </span>
-      <span class="ui-list-text">
-        <span class="ui-list-title min-w-0">{sessionName(s)}</span>
-        <span class="flex min-w-0 items-center gap-1.5">
-          <HarnessBadge s={s} />
-          <span class="ui-list-meta truncate">{[s.machine, s.task].filter(Boolean).join(" · ")}</span>
-        </span>
-      </span>
-      <span class="ui-list-trailing flex-col items-end gap-1">
-        <span class="flex items-center gap-1.5">
-          <HooksStaleChip s={s} />
-          <StateChip state={s.state} />
-          {s.model ? <ModelChip model={s.model} /> : null}
-        </span>
-        <span class={`text-xs ${MUTED} tabular-nums`}>
-          {s.context_percent ? `${Math.round(s.context_percent)}%` : ""}
-        </span>
-      </span>
-    </>
-  );
-  if (chips) {
-    return (
-      <div data-row={s.session_id} aria-current={sel ? "true" : undefined} class="relative">
-        <a
-          href={openHref(s)}
-          class={`ui-list-row${selRing(sel)} after:absolute after:inset-0 after:content-['']`}
-        >
-          {body}
-        </a>
-        <div class="px-4 pb-2">{chips}</div>
-      </div>
-    );
-  }
-  return (
-    <a
-      href={openHref(s)}
-      data-row={s.session_id}
-      aria-current={sel ? "true" : undefined}
-      class={`ui-list-row${selRing(sel)}`}
+      class={`ui-list-row flex-col! items-stretch! justify-center! gap-0! min-h-14!${selRing(sel || open)}`}
     >
       {body}
     </a>
   );
 }
 
-/** An idle or ended row: the mark, the name taking the row's free width with its machine and its
- *  harness chip under it, the state badge after it, and how long it has been quiet. With a carded
- *  session's feature chips the row turns container, the row's link stretching over the whole of
- *  it and the chip line riding above that overlay. */
-function IdleRow({
+/** The phone's one row for every state but needs-you, the artboard's three columns: the
+ *  harness's initials, the name over where it works over the harness chip, and the state chip
+ *  over how long the session has been quiet. With a carded session's feature chips the row turns
+ *  container: an `<a>` cannot hold another, so the row's link stretches over the whole of it and
+ *  the chip line rides above that overlay as links of their own. */
+function PhoneRow({
   s,
   now,
   sel,
@@ -306,25 +259,21 @@ function IdleRow({
   sel: boolean;
   tasks: SessionTasks | null;
 }): JSX.Element {
+  const meta = [projectName(s.project), s.branch, s.machine].filter(Boolean);
+  if (!s.delivery_route) meta.push("watch only");
   const chips = tasks && featuresOf(tasks).length > 0 ? <FeatureChips tasks={tasks} phone /> : null;
   const body = (
     <>
-      <span class="ui-list-leading">
-        <StateMark state={s.state} />
+      <RowAvatar s={s} />
+      <span class="flex min-w-0 flex-1 flex-col items-start gap-1">
+        <span class="ui-list-title max-w-full leading-[1.2]">{sessionName(s)}</span>
+        <span class="ui-list-meta max-w-full truncate leading-[1.35]">{meta.join(" · ")}</span>
+        <RowHarness s={s} />
       </span>
-      <span class="ui-list-text">
-        <span class="ui-list-title min-w-0">
-          {sessionName(s)}{" "}
-          {s.machine ? <span class={`text-[13px] font-normal ${MUTED}`}>· {s.machine}</span> : null}
-        </span>
-        <span class="flex min-w-0 items-center">
-          <HarnessBadge s={s} />
-        </span>
-      </span>
-      <span class="ui-list-trailing gap-1.5">
+      <span class="flex shrink-0 flex-col items-end gap-1">
         <HooksStaleChip s={s} />
-        <StateChip state={s.state} />
-        <span class={`text-xs ${MUTED}`}>{ageText(s.last_event_at, now)}</span>
+        <RowStateChip state={s.state} />
+        <span class={`text-xs ${MUTED} tabular-nums`}>{ageText(s.last_event_at, now)}</span>
       </span>
     </>
   );
@@ -333,7 +282,7 @@ function IdleRow({
       <div data-row={s.session_id} aria-current={sel ? "true" : undefined} class="relative">
         <a
           href={openHref(s)}
-          class={`ui-list-row${selRing(sel)} after:absolute after:inset-0 after:content-['']`}
+          class="ui-list-row min-h-16! py-2.5! after:absolute after:inset-0 after:content-['']"
         >
           {body}
         </a>
@@ -346,7 +295,7 @@ function IdleRow({
       href={openHref(s)}
       data-row={s.session_id}
       aria-current={sel ? "true" : undefined}
-      class={`ui-list-row${selRing(sel)}`}
+      class="ui-list-row min-h-16! py-2.5!"
     >
       {body}
     </a>
@@ -411,7 +360,11 @@ function RowShell({
     return (
       // biome-ignore lint/a11y/noStaticElementInteractions: the row's link keeps the keyboard; the click only toggles a pick
       // biome-ignore lint/a11y/useKeyWithClickEvents: the row's link keeps the keyboard; the click only toggles a pick
-      <div class="flex items-start gap-1 pl-3" data-select-row={s.session_id} onClick={tap}>
+      <div
+        class={`flex items-start gap-1${selecting ? " pl-3" : ""}`}
+        data-select-row={s.session_id}
+        onClick={tap}
+      >
         {selecting ? (
           <input
             type="checkbox"
@@ -449,9 +402,11 @@ function RowShell({
 function SetupPane({
   setup,
   onPairToken,
+  layout,
 }: {
   setup: FirstRunState;
   onPairToken?: ((token: string) => void) | undefined;
+  layout: Layout;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const showRow = !setup.dismissed && setup.left > 0;
@@ -466,7 +421,7 @@ function SetupPane({
         <div class="shrink-0 px-4 pt-4">
           <Button
             variant="secondary"
-            class="h-11! min-h-11! w-full justify-start! gap-3! bg-[var(--ui-surface)]! px-3! text-sm! font-medium! shadow-[var(--ui-shadow-1)]"
+            class={`${layout === "phone" ? "h-13! min-h-13! px-4!" : "h-11! min-h-11! px-3!"} w-full justify-start! gap-3! bg-[var(--ui-surface)]! text-left! font-medium! shadow-[var(--ui-shadow-1)]`}
             onClick={() => setOpen(true)}
           >
             <span
@@ -490,10 +445,10 @@ function SetupPane({
                 <path d="M13 18h8" />
               </svg>
             </span>
-            <span class="min-w-0 flex-1 truncate">
+            <span class="min-w-0 flex-1 truncate text-base!">
               Set up · {setup.left} {setup.left === 1 ? "step" : "steps"} left
             </span>
-            <Icon name="right" class="size-4 shrink-0 text-[var(--ui-muted)]" />
+            <Icon name="right" class="size-3.5 shrink-0 text-[var(--ui-muted)]" />
           </Button>
         </div>
       ) : null}
@@ -682,23 +637,25 @@ export function SessionsPane({
     return () => window.removeEventListener("keydown", on);
   });
 
-  /** One group's rows: on the phone the needs-you cards stacked and every other state's rows in
-   *  one list; on the desk every state is plain rows in one grouped card. */
-  const rowsOf = (list: RegistrySession[], label: string): JSX.Element =>
+  /** One group's rows, either layout the artboard's one card: the phone's needs-you cards stack
+   *  bare, every other group sits in one rounded card whose hairlines stop short of the rows'
+   *  leading edge. */
+  const rowsOf = (list: RegistrySession[]): JSX.Element =>
     layout === "phone" ? (
       list[0]?.state === "needs-you" ? (
         <div class="flex flex-col gap-3">{list.map((s) => rowOf(s))}</div>
       ) : (
-        <ul class="ui-list" aria-label={label}>
-          {list.map((s) => (
-            <li key={s.session_id} class="ui-list-item">
+        <div class="overflow-hidden rounded-[var(--ui-radius)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-1)]">
+          {list.map((s, i) => (
+            <Fragment key={s.session_id}>
+              {i > 0 ? <div class="ml-16 h-px bg-[var(--ui-line)]" aria-hidden="true" /> : null}
               {rowOf(s)}
-            </li>
+            </Fragment>
           ))}
-        </ul>
+        </div>
       )
     ) : (
-      <div class="overflow-hidden rounded-[var(--ui-radius-lg)] bg-[var(--ui-surface)]">
+      <div class="overflow-hidden rounded-[var(--ui-radius)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-1)]">
         {list.map((s, i) => (
           <Fragment key={s.session_id}>
             {i > 0 ? <div class="ml-4 h-px bg-[var(--ui-line)]" aria-hidden="true" /> : null}
@@ -717,10 +674,8 @@ export function SessionsPane({
       layout === "phone" ? (
         s.state === "needs-you" ? (
           <NeedsCard s={s} now={now} act={act} tasks={held} />
-        ) : s.state === "idle" || s.state === "ended" ? (
-          <IdleRow s={s} now={now} sel={sel} tasks={held} />
         ) : (
-          <WorkRow s={s} sel={sel} tasks={held} />
+          <PhoneRow s={s} now={now} sel={sel} tasks={held} />
         )
       ) : (
         <DeskRow s={s} now={now} sel={sel} open={open} tasks={held} />
@@ -758,11 +713,11 @@ export function SessionsPane({
           <Fragment key={key}>
             {/* the Insights card follows what needs the owner, or leads when nothing does */}
             {key === firstOther ? cards : null}
-            <section aria-labelledby={`sessions-${key}`} class="flex flex-col gap-2 px-3 pt-3">
+            <section aria-labelledby={`sessions-${key}`} class="flex flex-col gap-2 px-3 pt-6">
               <h2 id={`sessions-${key}`} class={`m-0 px-1 text-sm font-semibold ${MUTED}`}>
                 {label} · {groups[key].length}
               </h2>
-              {rowsOf(groups[key], label)}
+              {rowsOf(groups[key])}
             </section>
           </Fragment>
         ))}
@@ -775,7 +730,7 @@ export function SessionsPane({
     <div class="flex min-h-0 min-w-0 flex-col bg-[var(--ui-surface)]" data-sessions-pane="">
       {layout !== "phone" ? (
         <header class="flex shrink-0 items-center justify-between gap-3 px-4 pt-5 pb-3">
-          <h1 class="text-xl font-bold leading-[1.2] tracking-tight">Sessions</h1>
+          <h1 class="text-[20px] font-bold leading-[1.2] tracking-tight">Sessions</h1>
           {layout === "tablet" ? (
             <MachinesLine live={st.live} text={machinesLine(layout, machinesOf(st.sessions))} />
           ) : null}
@@ -793,8 +748,20 @@ export function SessionsPane({
         </header>
       ) : null}
       <div class={`flex shrink-0 flex-col gap-2 border-b ${LINE} px-4 py-2`}>
-        {/* the field's own label reads out with the input; the placeholder carries the visible name */}
-        <div data-session-search="" class="[&_.ui-field-label]:sr-only">
+        {/* the field's own label reads out with the input; the placeholder carries the visible name.
+         *  The mock's magnifier leads the field: the icon is painted over the input from this
+         *  wrapper because the shared Field forwards no class of its own, and the input's own left
+         *  padding makes the room. The phone's field stands the mock's 48 px, the desk's 40 px. */}
+        <div
+          data-session-search=""
+          class={`relative [&_.ui-field-label]:sr-only [&_.ui-input]:pl-11! ${
+            layout === "phone" ? "[&_.ui-input]:h-12!" : ""
+          }`}
+        >
+          <Icon
+            name="search"
+            class="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-[var(--ui-muted)]"
+          />
           <Field
             label="Search sessions"
             type="search"
@@ -803,7 +770,7 @@ export function SessionsPane({
             onInput={setQuery}
           />
         </div>
-        <div class="flex gap-1 overflow-x-auto" data-machine-chips="">
+        <div class="flex gap-2 overflow-x-auto" data-machine-chips="">
           {["", ...machinesOf(st.sessions)].map((m) => {
             const on = machine === m;
             return (
@@ -812,10 +779,10 @@ export function SessionsPane({
                 variant="secondary"
                 data-machine-chip={m === "" ? "all" : m}
                 pressed={on}
-                class={`!rounded-[var(--ui-radius-full)]! shrink-0 ${
+                class={`h-7! min-h-7! rounded-[var(--ui-radius-sm)]! px-2.5! text-sm! font-medium! shrink-0 ${
                   on
-                    ? "!bg-[var(--ui-text)]! !text-[var(--ui-bg)]!"
-                    : "!bg-[var(--ui-surface-2)]! !text-[var(--ui-muted)]!"
+                    ? "bg-[var(--ui-text)]! text-[var(--ui-bg)]!"
+                    : "bg-[var(--ui-surface-2)]! text-[var(--ui-muted)]!"
                 }`}
                 onClick={() => {
                   setMachine(m);
@@ -828,7 +795,7 @@ export function SessionsPane({
           })}
         </div>
       </div>
-      <SetupPane setup={setup} onPairToken={onPairToken} />
+      <SetupPane setup={setup} onPairToken={onPairToken} layout={layout} />
       <div class="min-h-0 flex-1 overflow-y-auto pb-4" data-sessions-sections="">
         {st.sessions === null ? (
           <div class="grid gap-2 px-3 pt-3" role="status" aria-label="Reading the registry">

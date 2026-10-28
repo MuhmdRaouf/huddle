@@ -125,19 +125,21 @@ export function StateChip({
   );
 }
 
-/** The desk row's state chip: the state's word on its role's tint in the row's own height, with
- *  the working dot the artboard gives the live rows. It carries the same data-state and data-role
- *  the badge does, so tests and styles read the two alike. */
-export function DeskStateChip({ state }: { state: string }): JSX.Element {
+/** The list row's state chip: the state's word on its role's tint, with the working dot the
+ *  artboard gives the live rows. It carries the same data-state and data-role the badge does, so
+ *  tests and styles read the two alike. The word reads as the mock writes it — "Working",
+ *  "Needs you" — while data-state keeps the raw lowercase state. */
+export function RowStateChip({ state }: { state: string }): JSX.Element {
   const role = stateRole(state);
+  const word = stateWord(state);
   return (
     <span
       data-state={state}
       data-role={role}
-      class={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[var(--ui-radius)] px-2.5 text-sm font-medium ${ROLE_CHIP[role]}`}
+      class={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[var(--ui-radius-sm)] px-2.5 text-sm font-medium ${ROLE_CHIP[role]}`}
     >
       {state === "working" ? <span class="size-1.5 rounded-full bg-current" aria-hidden="true" /> : null}
-      {stateWord(state)}
+      {word.charAt(0).toUpperCase() + word.slice(1)}
     </span>
   );
 }

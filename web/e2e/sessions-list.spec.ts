@@ -87,7 +87,7 @@ test("the machine chips hold one line at 1440, and the search narrows the rows",
   await expectAccessible(page);
 });
 
-test("a desk row shows a 30-character title whole and no row holds a Review button", async ({
+test("a desk row ellipsizes a 30-character title and no row holds a Review button", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "desktop", "the desk rows are the desktop project's");
@@ -126,11 +126,22 @@ test("a desk row shows a 30-character title whole and no row holds a Review butt
   await expect(row).toBeVisible();
   const name = row.getByText(title, { exact: true });
   await expect(name).toBeVisible();
-  const { scroll, client } = await name.evaluate((el) => ({
-    scroll: el.scrollWidth,
-    client: el.clientWidth,
-  }));
-  expect(scroll).toBeLessThanOrEqual(client);
+  // the mock's rows clip: the title ellipsizes inside its line beside the harness chip instead
+  // of widening the row, so the clip is the assert and the row scrolls nothing sideways
+  const clip = await name.evaluate((el) => {
+    const s = getComputedStyle(el);
+    const host = el.closest("[data-row]") as HTMLElement;
+    return {
+      overflow: s.overflowX,
+      ellipsis: s.textOverflow,
+      inside: el.getBoundingClientRect().right <= host.getBoundingClientRect().right + 0.5,
+      rowScroll: host.scrollWidth - host.clientWidth,
+    };
+  });
+  expect(clip.overflow, "the title clips").toBe("hidden");
+  expect(clip.ellipsis, "the title draws an ellipsis").toBe("ellipsis");
+  expect(clip.inside, "the title stays inside its row").toBe(true);
+  expect(clip.rowScroll, "the row scrolls nothing sideways").toBeLessThanOrEqual(0);
   // every row opens its session; no row answers or reviews an ask itself
   expect(await page.locator("[data-sessions-pane] [data-row] [data-needs-actions]").count()).toBe(0);
   expect(await page.locator("[data-sessions-pane] [data-row] [data-act='review']").count()).toBe(0);
@@ -138,7 +149,7 @@ test("a desk row shows a 30-character title whole and no row holds a Review butt
 
   // the denial settles the ask's session back among the idle ones
   await api(`/api/needs/${ask.id}/decide`, { decision: "deny" });
-  await expect(page.locator("[data-row='e2e-title-ask'] [data-state='idle']")).toHaveText("idle");
+  await expect(page.locator("[data-row='e2e-title-ask'] [data-state='idle']")).toHaveText("Idle");
 });
 
 test("at phone width the Sessions list scrolls nothing sideways", async ({ page }) => {
