@@ -11,10 +11,11 @@
 
 (function () {
   /** The registered theme ids, mirroring web/ui/src/themes.ts's THEMES. */
-  const THEME_IDS = ["huddle", "tokyo-night", "monokai", "dracula", "nord", "gruvbox", "solarized", "rose-pine", "one-dark", "github", "everforest", "kanagawa"];
+  const THEME_IDS = ["huddle", "catppuccin", "tokyo-night", "monokai", "dracula", "nord", "gruvbox", "solarized", "rose-pine", "one-dark", "github", "everforest", "kanagawa"];
   /** Each theme's status bar colour per side it paints, mirroring the registry's bar map. */
   const THEME_BARS = {
     "huddle": { "light": "#f4f5f7", "dark": "#0b0c0f" },
+    "catppuccin": { "light": "#e6e9ef", "dark": "#11111b" },
     "tokyo-night": { "light": "#d0d5e3", "dark": "#16161e" },
     "monokai": { "dark": "#1e1f1c" },
     "dracula": { "dark": "#21222c" },
@@ -36,8 +37,13 @@
   }
   let theme = THEME_IDS[0] ?? "huddle";
   try {
-    const raw = localStorage.getItem("huddle:theme");
-    if (raw !== null && THEME_IDS.includes(raw)) theme = raw;
+    const kept = localStorage.getItem("huddle:theme");
+    if (kept !== null && THEME_IDS.includes(kept)) {
+      theme = kept;
+    } else if (localStorage.getItem("huddle:flavour") === "catppuccin") {
+      // browsers on the deployed build keep their Catppuccin choice under the flavour key
+      theme = "catppuccin";
+    }
   } catch {
     /* site data is blocked: the default theme stands */
   }

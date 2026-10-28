@@ -1,14 +1,11 @@
-// theme.ts — the light or dark scheme the tokens paint in, and the flavour they paint it with. The
-// scheme is the OS's choice, unless this browser keeps an override (the switch in Settings) under
-// "huddle:scheme". The resolved side lands on <html data-scheme>, which tokens.css and theme.css
-// read, and the kept theme's id (the registry in themes.ts) lands on <html data-theme>, which
-// theme.css's side rules and variants read; with the OS choice it follows every flip of
-// prefers-color-scheme while the page is open. The installed app's status bar takes its colour from
-// the theme-color metas, painting the kept theme's own bar for the side it paints: one colour on
-// every meta for an override or a one-sided theme, and the dark-then-light pair keyed to the OS
-// when System picks a two-sided theme. The flavour, kept under "huddle:flavour",
-// lands on <html data-flavour>, where tokens.css remaps its colour tokens to Catppuccin latte or
-// mocha; plain leaves the attribute off.
+// theme.ts — the light or dark scheme the tokens paint in. The scheme is the OS's choice, unless
+// this browser keeps an override (the switch in Settings) under "huddle:scheme". The resolved side
+// lands on <html data-scheme>, which tokens.css and theme.css read, and the kept theme's id (the
+// registry in themes.ts) lands on <html data-theme>, which theme.css's side rules and variants
+// read; with the OS choice it follows every flip of prefers-color-scheme while the page is open.
+// The installed app's status bar takes its colour from the theme-color metas, painting the kept
+// theme's own bar for the side it paints: one colour on every meta for an override or a one-sided
+// theme, and the dark-then-light pair keyed to the OS when System picks a two-sided theme.
 import { readTheme, sideOf, themeOf, type Theme, type ThemeSide } from "./themes.ts";
 
 /** The two schemes tokens.css paints. */
@@ -27,14 +24,8 @@ export type SchemeQuery = {
   removeEventListener: (type: "change", fn: () => void) => void;
 };
 
-/** The palettes the tokens paint a scheme with: their own, or Catppuccin mapped onto them. */
-export type Flavour = "plain" | "catppuccin";
-
 /** Where the override is kept. */
 export const SCHEME_KEY = "huddle:scheme";
-
-/** Where the flavour is kept. */
-export const FLAVOUR_KEY = "huddle:flavour";
 
 /** The override this browser keeps, or "system" when none (or site data is blocked). */
 export function readScheme(store: SchemeStore): SchemePref {
@@ -99,34 +90,8 @@ export function applyScheme(
   return scheme;
 }
 
-/** The flavour this browser keeps, or "plain" when none (or site data is blocked). */
-export function readFlavour(store: SchemeStore): Flavour {
-  try {
-    return store.getItem(FLAVOUR_KEY) === "catppuccin" ? "catppuccin" : "plain";
-  } catch {
-    return "plain";
-  }
-}
-
-/** Keeps the flavour; blocked site data keeps it for this page only. */
-export function writeFlavour(store: SchemeStore, flavour: Flavour): void {
-  try {
-    store.setItem(FLAVOUR_KEY, flavour);
-  } catch {
-    // site data is blocked: the choice lasts until the page reloads
-  }
-}
-
-/** Puts the flavour on the root element; plain takes the attribute off. */
-export function applyFlavour(root: HTMLElement, flavour: Flavour): void {
-  if (flavour === "plain") delete root.dataset.flavour;
-  else root.dataset.flavour = flavour;
-}
-
-/** Applies the kept flavour, and the kept scheme now and again on every OS flip; the answer stops
- *  following. */
+/** Applies the kept scheme now and again on every OS flip; the answer stops following. */
 export function followScheme(root: HTMLElement, store: SchemeStore, query: SchemeQuery): () => void {
-  applyFlavour(root, readFlavour(store));
   const apply = (): void => {
     applyScheme(root, readScheme(store), query.matches, store);
   };

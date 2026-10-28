@@ -803,6 +803,50 @@
  * the only source its scheme reads, so nothing borrows the default's colour. line-strong and the
  * inks may sit a step off the family's own value where WCAG AA asks it
  * (test/theme-contrast.test.ts judges each block alone). */
+:root[data-theme="catppuccin"] {
+  --ui-bg: light-dark(#e6e9ef, #11111b);
+  --ui-surface: light-dark(#eff1f5, #1e1e2e);
+  --ui-surface-2: light-dark(#dce0e8, #313244);
+  --ui-line: light-dark(#bcc0cc, #45475a);
+  --ui-line-strong: light-dark(#7a7c90, #7f849c);
+  --ui-muted: light-dark(#5c5f77, #a6adc8);
+  --ui-text: light-dark(#4c4f69, #cdd6f4);
+  --ui-accent: light-dark(#1a57d0, #89b4fa);
+  --ui-on-accent: light-dark(#eff1f5, #11111b);
+  --ui-accent-soft: light-dark(rgba(26, 87, 208, 0.1), rgba(137, 180, 250, 0.14));
+  --ui-ok: light-dark(#3a9027, #a6e3a1);
+  --ui-ok-soft: light-dark(#d5e5d7, #364143);
+  --ui-ok-ink: light-dark(#2d701e, #a6e3a1);
+  --ui-warn: light-dark(#d55409, #fab387);
+  --ui-warn-soft: light-dark(#f1dcd2, #46393e);
+  --ui-warn-ink: light-dark(#a84207, #fab387);
+  --ui-fail: light-dark(#d20f39, #f38ba8);
+  --ui-fail-soft: light-dark(#ebcfd9, #443244);
+  --ui-fail-ink: light-dark(#b90d32, #f38ba8);
+  --ui-info: light-dark(#1c8a9d, #74c7ec);
+  --ui-info-soft: light-dark(#d0e5eb, #2d3c50);
+  --ui-info-ink: light-dark(#166c7b, #74c7ec);
+  --ui-qr-bg: #ffffff;
+  --ui-needs-you: var(--ui-fail);
+  --ui-needs-you-soft: var(--ui-fail-soft);
+  --ui-needs-you-ink: var(--ui-fail-ink);
+  --ui-turn-done: var(--ui-warn);
+  --ui-turn-done-soft: var(--ui-warn-soft);
+  --ui-turn-done-ink: var(--ui-warn-ink);
+  --ui-working: var(--ui-info);
+  --ui-working-soft: var(--ui-info-soft);
+  --ui-working-ink: var(--ui-info-ink);
+  --ui-idle: var(--ui-muted);
+  --ui-idle-soft: var(--ui-surface-2);
+  --ui-idle-ink: var(--ui-muted);
+  --ui-failed: var(--ui-fail);
+  --ui-failed-soft: var(--ui-fail-soft);
+  --ui-failed-ink: var(--ui-fail-ink);
+  --ui-cancelled: var(--ui-line-strong);
+  --ui-cancelled-soft: var(--ui-surface-2);
+  --ui-cancelled-ink: var(--ui-muted);
+}
+
 :root[data-theme="tokyo-night"] {
   --ui-bg: light-dark(#d0d5e3, #16161e);
   --ui-surface: light-dark(#e1e2e7, #1a1b26);

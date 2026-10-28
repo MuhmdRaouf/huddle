@@ -247,7 +247,7 @@ describe("the appearance section", () => {
     expect(document.documentElement.dataset.theme).toBe("huddle");
   });
 
-  it("TestOffersTheThreeSchemesAndTheCatppuccinFlavour", async () => {
+  it("TestOffersTheThreeSchemesAndNoSwitch", async () => {
     stubMedia({ "(prefers-color-scheme: dark)": false });
     renderHuddle(<Appearance />);
     const scheme = screen.getByRole("group", { name: "Scheme" });
@@ -256,28 +256,7 @@ describe("the appearance section", () => {
       "Dark",
       "Light",
     ]);
-    const flavour = screen.getByRole("switch", { name: "Catppuccin colours" });
-    expect(flavour.getAttribute("aria-checked")).toBe("false");
-    await act(async () => {
-      flavour.click();
-    });
-    expect(flavour.getAttribute("aria-checked")).toBe("true");
-    expect(localStorage.getItem("huddle:flavour")).toBe("catppuccin");
-    expect(document.documentElement.dataset.flavour).toBe("catppuccin");
-    await act(async () => {
-      flavour.click();
-    });
-    expect(flavour.getAttribute("aria-checked")).toBe("false");
-    expect(localStorage.getItem("huddle:flavour")).toBe("plain");
-    expect(document.documentElement.hasAttribute("data-flavour")).toBe(false);
-  });
-
-  it("TestTheFlavourIsATokenSwitchInATapTallRow", () => {
-    stubMedia({ "(prefers-color-scheme: dark)": false });
-    renderHuddle(<Appearance />);
-    const flavour = screen.getByRole("switch", { name: "Catppuccin colours" });
-    expect(flavour.className).toBe("ui-switch");
-    expect(flavour.closest("label")?.className).toContain("min-h-[var(--ui-tap)]");
+    expect(screen.queryByRole("switch")).toBeNull();
     expect(legacyClasses()).toEqual([]);
   });
 });

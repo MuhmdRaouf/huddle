@@ -23,6 +23,12 @@ export const THEMES: readonly [Theme, ...Theme[]] = [
     bar: { light: "#f4f5f7", dark: "#0b0c0f" },
   },
   {
+    id: "catppuccin",
+    label: "Catppuccin",
+    sides: ["light", "dark"],
+    bar: { light: "#e6e9ef", dark: "#11111b" },
+  },
+  {
     id: "tokyo-night",
     label: "Tokyo Night",
     sides: ["light", "dark"],
@@ -78,27 +84,36 @@ export const THEMES: readonly [Theme, ...Theme[]] = [
 /** Where this browser keeps its theme. */
 export const THEME_KEY = "huddle:theme";
 
+/** Where the deployed build kept its Catppuccin choice. Browsers still holding it read as the
+ *  catppuccin theme, and the next writeTheme retires the key. */
+const FLAVOUR_KEY = "huddle:flavour";
+
 /** The theme an id names, or the default when none does. */
 export function themeOf(id: string): Theme {
   return THEMES.find((t) => t.id === id) ?? THEMES[0];
 }
 
-/** The kept theme's id; a missing, unknown or unreadable value answers the default. */
+/** The kept theme's id; a missing, unknown or unreadable value answers the default. A store with
+ *  no theme key but the deployed build's flavour key naming catppuccin reads as catppuccin. */
 export function readTheme(store: Pick<Storage, "getItem">): string {
   try {
-    return themeOf(store.getItem(THEME_KEY) ?? "").id;
+    const kept = store.getItem(THEME_KEY);
+    if (kept !== null) return themeOf(kept).id;
+    return store.getItem(FLAVOUR_KEY) === "catppuccin" ? "catppuccin" : THEMES[0].id;
   } catch {
     // site data is blocked: the default stands
     return THEMES[0].id;
   }
 }
 
-/** Keeps a registered id; an unknown one writes nothing. Blocked site data keeps the choice for
- *  this page only. */
-export function writeTheme(store: Pick<Storage, "setItem">, id: string): void {
+/** Keeps a registered id; an unknown one writes nothing. The flavour key a deployed build may
+ *  have left goes with the pick: the theme key answers from then on. Blocked site data keeps the
+ *  choice for this page only. */
+export function writeTheme(store: Pick<Storage, "setItem" | "removeItem">, id: string): void {
   if (!THEMES.some((t) => t.id === id)) return;
   try {
     store.setItem(THEME_KEY, id);
+    store.removeItem(FLAVOUR_KEY);
   } catch {
     // site data is blocked: the choice lasts until the page reloads
   }

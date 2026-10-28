@@ -89,7 +89,16 @@ describe("theme-boot.js", () => {
 
   for (const pref of ["system", "light", "dark"] as const satisfies readonly SchemePref[])
     for (const osDark of [false, true])
-      for (const kept of [null, "huddle", "tokyo-night", "dracula", "gruvbox", "one-dark", "nope"]) {
+      for (const kept of [
+        null,
+        "huddle",
+        "catppuccin",
+        "tokyo-night",
+        "dracula",
+        "gruvbox",
+        "one-dark",
+        "nope",
+      ]) {
         it(`paints what applyScheme paints: ${pref}, os ${osDark ? "dark" : "light"}, kept ${kept ?? "none"}`, () => {
           stubSchemeMedia(osDark);
           localStorage.clear();
@@ -107,4 +116,18 @@ describe("theme-boot.js", () => {
           expect(document.documentElement.dataset.theme).toBe(readTheme(store));
         });
       }
+
+  it("paints catppuccin for a browser holding only the deployed build's flavour key", () => {
+    stubSchemeMedia(false);
+    localStorage.clear();
+    localStorage.setItem("huddle:flavour", "catppuccin");
+    boot();
+    const store = memory({ "huddle:flavour": "catppuccin" });
+    const root = document.createElement("html");
+    applyScheme(root, readScheme(store), false, store);
+    expect(document.documentElement.dataset.theme).toBe("catppuccin");
+    expect(document.documentElement.dataset.theme).toBe(root.dataset.theme);
+    expect(document.documentElement.dataset.theme).toBe(readTheme(store));
+    expect(document.documentElement.dataset.scheme).toBe(root.dataset.scheme);
+  });
 });

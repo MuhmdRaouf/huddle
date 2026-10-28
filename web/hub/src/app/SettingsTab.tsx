@@ -1,7 +1,7 @@
 // SettingsTab.tsx — the Settings page: six groups, on the phone a hub card over rows of three
 // cards whose rows name each group's current value and open one page per group, on the tablet and
 // the desktop a sidebar beside the page; each page draws its group's members in order. Appearance
-// (System, Dark, Light, and the Catppuccin flavour); Notifications (the two switches and what
+// (System, Dark, Light); Notifications (the two switches and what
 // wakes the device); Security (the paired devices oldest first with the browser asking named
 // current, the phone's trust guide and the pair command, the sign-in methods in sheets, the two
 // sign-outs); Spending (Radar's budgets, notifications and history retention); Tips (the
@@ -13,15 +13,7 @@ import { Button } from "@huddle/ui/button.tsx";
 import { Field } from "@huddle/ui/field.tsx";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
-import { Switch } from "@huddle/ui/switch.tsx";
-import {
-  applyFlavour,
-  type Flavour,
-  readFlavour,
-  readScheme,
-  type SchemePref,
-  writeFlavour,
-} from "@huddle/ui/theme.ts";
+import { readScheme, type SchemePref } from "@huddle/ui/theme.ts";
 import type { JSX } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { ApiError } from "../api.ts";
@@ -101,12 +93,9 @@ function freshness(seen: string, now: number): string {
 type PhoneGuide = { url: string; fingerprint: string; expires_in: number };
 
 /** Settings › Appearance: System follows this device's own setting; Dark and Light hold one
- *  scheme in this browser whatever the device says. The Catppuccin switch paints either scheme in
- *  Catppuccin's colours (latte when light, mocha when dark), also kept in this browser. */
+ *  scheme in this browser whatever the device says. */
 export function Appearance(): JSX.Element {
   const [pref, setPref] = useState<SchemePref>(() => readScheme(localStorage));
-  const [flavour, setFlavour] = useState<Flavour>(() => readFlavour(localStorage));
-  const catppuccin = flavour === "catppuccin";
   return (
     <section aria-labelledby="appearance-h" class="flex flex-col gap-3">
       <h2 id="appearance-h" class={HEAD}>
@@ -131,19 +120,6 @@ export function Appearance(): JSX.Element {
           </Button>
         ))}
       </div>
-      <label class="flex min-h-[var(--ui-tap)] items-center gap-3 text-sm">
-        <Switch
-          labelledBy="flavour-l"
-          checked={catppuccin}
-          onChange={(on) => {
-            const next: Flavour = on ? "catppuccin" : "plain";
-            writeFlavour(localStorage, next);
-            applyFlavour(document.documentElement, next);
-            setFlavour(next);
-          }}
-        />
-        <span id="flavour-l">Catppuccin colours</span>
-      </label>
     </section>
   );
 }

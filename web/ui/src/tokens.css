@@ -30,12 +30,7 @@
  *             cancelled   stopped on purpose, out of counts: grey
  *             Each state is <state>, <state>-soft and <state>-ink, aliased to a tone or a neutral.
  *
- * The Catppuccin flavour: theme.ts puts data-flavour="catppuccin" on <html> when Settings turns it on,
- * and the rule at the foot remaps the plain colour tokens to latte (light) and mocha (dark). It adds
- * no names; the states follow through their aliases. Inks and marks are darkened in latte where the
- * pastel hue misses its minimum.
- *
- * test/theme-contrast.test.ts holds every ink and mark pair to its minimum in all four schemes. */
+ * test/theme-contrast.test.ts holds every ink and mark pair to its minimum in every scheme. */
 
 :root {
   /* the neutral scale, page to ink */
@@ -178,32 +173,4 @@
   color-scheme: dark;
   --ui-shadow-1: 0 1px 0 rgb(255 255 255 / 0.03) inset;
   --ui-shadow-sheet: 0 -12px 40px rgb(0 0 0 / 0.45);
-}
-
-/* Catppuccin: latte in the light scheme, mocha in the dark one */
-:root[data-flavour="catppuccin"] {
-  --ui-bg: light-dark(#e6e9ef, #11111b);
-  --ui-surface: light-dark(#eff1f5, #1e1e2e);
-  --ui-surface-2: light-dark(#dce0e8, #313244);
-  --ui-line: light-dark(#bcc0cc, #45475a);
-  --ui-line-strong: light-dark(#7a7c90, #7f849c);
-  --ui-muted: light-dark(#5c5f77, #a6adc8);
-  --ui-text: light-dark(#4c4f69, #cdd6f4);
-
-  --ui-accent: light-dark(#1a57d0, #89b4fa);
-  --ui-on-accent: light-dark(#eff1f5, #11111b);
-  --ui-accent-soft: light-dark(rgba(26, 87, 208, 0.1), rgba(137, 180, 250, 0.14));
-
-  --ui-ok: light-dark(#3a9027, #a6e3a1);
-  --ui-ok-soft: light-dark(#d5e5d7, #364143);
-  --ui-ok-ink: light-dark(#2d701e, #a6e3a1);
-  --ui-warn: light-dark(#d55409, #fab387);
-  --ui-warn-soft: light-dark(#f1dcd2, #46393e);
-  --ui-warn-ink: light-dark(#a84207, #fab387);
-  --ui-fail: light-dark(#d20f39, #f38ba8);
-  --ui-fail-soft: light-dark(#ebcfd9, #443244);
-  --ui-fail-ink: light-dark(#b90d32, #f38ba8);
-  --ui-info: light-dark(#1c8a9d, #74c7ec);
-  --ui-info-soft: light-dark(#d0e5eb, #2d3c50);
-  --ui-info-ink: light-dark(#166c7b, #74c7ec);
 }

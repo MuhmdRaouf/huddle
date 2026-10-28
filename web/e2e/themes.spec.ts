@@ -5,7 +5,7 @@
 // for light. The bar map doubles as the bg map: a theme's bar colour is its own background.
 
 import { expect, test, type Page } from "@playwright/test";
-import { THEMES, type Theme, type ThemeSide } from "../ui/src/themes.ts";
+import { THEMES, type Theme, type ThemeSide, themeOf } from "../ui/src/themes.ts";
 import { signIn, theSetup } from "./helpers.ts";
 
 /** A #rrggbb as computed style spells it. */
@@ -32,6 +32,14 @@ async function openTheme(page: Page, id: string): Promise<void> {
   await page.goto(`${theSetup().rootUrl}/#/`);
 }
 
+/** Opens the signed-in app with only the deployed build's flavour key kept. */
+async function openFlavour(page: Page): Promise<void> {
+  await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
+  await page.addInitScript((f) => localStorage.setItem(f, "catppuccin"), "huddle:flavour");
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/`);
+}
+
 for (const { theme, emulate, side } of CASES) {
   const stays = emulate !== side;
   test(`${theme.label} paints its ${side} side${stays ? " whatever the scheme asks" : ""}`, async ({
@@ -53,5 +61,23 @@ for (const { theme, emulate, side } of CASES) {
       return [...new Set((keyed.length > 0 ? keyed : metas).map((m) => m.content))];
     }, emulate);
     expect(bars).toEqual([barOf(theme, side)]);
+  });
+}
+
+for (const side of ["light", "dark"] as const) {
+  test(`a browser holding only the deployed build's flavour key paints Catppuccin's ${side} side`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: side });
+    await openFlavour(page);
+    const catppuccin = themeOf("catppuccin");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "catppuccin");
+    await expect(page.locator("html")).toHaveAttribute("data-scheme", side);
+    const shell = await page.evaluate(
+      () => getComputedStyle(document.querySelector(".ui-shell") as Element).backgroundColor,
+    );
+    expect(shell, "catppuccin: .ui-shell paints the theme's own background").toBe(
+      rgb(barOf(catppuccin, side)),
+    );
   });
 }
