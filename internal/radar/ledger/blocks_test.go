@@ -513,9 +513,9 @@ func TestBodyStoreLeavesTheLedgerAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read ledger.db's user_version: %v", err)
 	}
-	// 2 is the ledger schema's version; the body store must not have moved it.
-	if version := row["user_version"]; version != int64(2) {
-		t.Fatalf("ledger.db's user_version = %v, want 2", version)
+	// 3 is the ledger schema's version; the body store must not have moved it.
+	if version := row["user_version"]; version != int64(3) {
+		t.Fatalf("ledger.db's user_version = %v, want 3", version)
 	}
 }
 

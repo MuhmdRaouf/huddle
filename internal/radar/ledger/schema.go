@@ -50,6 +50,11 @@ const ledgerRequestsIndex = `
 CREATE UNIQUE INDEX IF NOT EXISTS ledger_requests_anthropic_id
 ON ledger_requests(anthropic_id) WHERE anthropic_id <> ''`
 
+// A session's requests in time order: the reader pages them newest first.
+const ledgerRequestsSessionIndex = `
+CREATE INDEX IF NOT EXISTS ledger_requests_session
+ON ledger_requests(session_id, started_at)`
+
 // What each source filed for one request, as JSON blobs, empty when that source has not spoken
 // yet. A later source of the same kind replaces the earlier one; a different kind joins it.
 const ledgerFactsDDL = `
@@ -59,9 +64,12 @@ CREATE TABLE IF NOT EXISTS ledger_facts (
   transcript TEXT NOT NULL DEFAULT ''
 )`
 
-// applySchema creates the tables and their index on a newly opened file.
+// applySchema creates the tables and their indexes on a newly opened file. Every statement
+// is IF NOT EXISTS, so a file at an older version gains whatever it is missing on its next
+// Open.
 func applySchema(db DB) error {
-	if err := db.Exec(ledgerRequestsDDL + ";" + ledgerRequestsIndex + ";" + ledgerFactsDDL + ";PRAGMA user_version = 2"); err != nil {
+	if err := db.Exec(ledgerRequestsDDL + ";" + ledgerRequestsIndex + ";" + ledgerFactsDDL + ";" +
+		ledgerRequestsSessionIndex + ";PRAGMA user_version = 3"); err != nil {
 		return fmt.Errorf("create the ledger schema: %w", err)
 	}
 	return nil
