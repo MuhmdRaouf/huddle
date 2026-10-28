@@ -406,10 +406,14 @@ test("the first-run checklist ticks from server state and stands down when all f
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save passkey" })).toHaveCount(0);
 
-  // an authenticator enrolment ticks item one (the boot's whoami reads it after a reload)
+  // an authenticator enrolment ticks item one (the boot's whoami reads it after a reload).
+  // The set-up stands in the row's sheet: the row opens it, the steps run inside it
   await openTab(page, "Settings");
   await page.getByRole("link", { name: "Security" }).click();
-  await page.getByRole("button", { name: "Set up" }).click();
+  await page.getByRole("button", { name: "Authenticator app" }).click();
+  const totpSheet = page.getByRole("dialog", { name: "Authenticator app" });
+  await expect(totpSheet).toBeVisible();
+  await totpSheet.getByRole("button", { name: "Set up" }).click();
   await expect(page.locator("[data-qr]")).toBeVisible();
   const secret = await totpSecret(page);
   await typeCode(page, totpCode(secret));
@@ -436,10 +440,13 @@ test("the first-run checklist ticks from server state and stands down when all f
   await page.reload();
   await expect(setup).toHaveCount(0);
 
-  // the enrolment and the budget leave with the test, so the later specs meet the seeded hub
+  // the enrolment and the budget leave with the test, so the later specs meet the seeded hub.
+  // The removal stands in the same sheet, open until the row's steps are done with it
   await openTab(page, "Settings");
   await page.getByRole("link", { name: "Security" }).click();
-  await page.locator("[data-signin]").getByRole("button", { name: "Remove" }).click();
+  await page.getByRole("button", { name: "Authenticator app" }).click();
+  await expect(totpSheet).toBeVisible();
+  await totpSheet.getByRole("button", { name: "Remove" }).click();
   await expect(page.getByText(/Not set up/)).toBeVisible();
   const cleared = await fetch(`${theSetup().rootUrl}/api/radar/api/budgets`, {
     method: "PUT",
