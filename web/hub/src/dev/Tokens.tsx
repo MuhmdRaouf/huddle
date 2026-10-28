@@ -7,6 +7,7 @@ import { Banner } from "@huddle/ui/banner.tsx";
 import { Button } from "@huddle/ui/button.tsx";
 import { Card } from "@huddle/ui/card.tsx";
 import { ChartFrame } from "@huddle/ui/chart-frame.tsx";
+import { Chip } from "@huddle/ui/chip.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
 import { Empty } from "@huddle/ui/empty.tsx";
 import { Field } from "@huddle/ui/field.tsx";
@@ -56,6 +57,9 @@ const COLORS = [
 
 /** The four status tones; the gallery shows each beside the ink its text is written in. */
 const TONES = ["ok", "warn", "fail", "info"] as const;
+
+/** The filters the gallery's toggle chips pick from. */
+const FILTERS = ["Ready", "Waiting", "Overdue", "Mine"] as const;
 
 const TYPE = [
   ["xl", "Needs you: 2"],
@@ -195,6 +199,8 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
   const [pref, setPref] = useState<SchemePref>(() => readScheme(store));
   const [range, setRange] = useState("day");
   const [name, setName] = useState("huddle");
+  const [notes, setNotes] = useState("");
+  const [picks, setPicks] = useState<readonly string[]>([]);
   const [picked, setPicked] = useState(false);
   const [push, setPush] = useState(true);
   const [sheet, setSheet] = useState(false);
@@ -223,6 +229,9 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
     applyScheme(root, p, query.matches, store);
     setPref(p);
   };
+
+  const flip = (f: string): void =>
+    setPicks(picks.includes(f) ? picks.filter((x) => x !== f) : [...picks, f]);
 
   return (
     <main class="ui-page">
@@ -382,6 +391,30 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
         </div>
       </Block>
 
+      <Block title="Chips">
+        <div style={row}>
+          <Chip>idle</Chip>
+          <Chip tone="ok" dot>
+            healthy
+          </Chip>
+          <Chip tone="warn">slow</Chip>
+          <Chip tone="fail">down</Chip>
+          <Chip tone="info" dot>
+            new
+          </Chip>
+          <Chip tone="accent" icon={<Icon name="plus" />}>
+            pinned
+          </Chip>
+        </div>
+        <div class="ui-chip-row" style={{ marginTop: "var(--ui-space-3)" }}>
+          {FILTERS.map((f) => (
+            <Chip key={f} tone="accent" pressed={picks.includes(f)} onClick={() => flip(f)}>
+              {f}
+            </Chip>
+          ))}
+        </div>
+      </Block>
+
       <Block title="Banners">
         <div style={{ display: "grid", gap: "var(--ui-space-3)" }}>
           <Banner title="Update ready" action={{ label: "Reload", onClick: () => {} }}>
@@ -455,6 +488,7 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
         <div style={{ display: "grid", gap: "var(--ui-space-4)", maxWidth: "28rem" }}>
           <Field label="Channel name" value={name} onInput={setName} hint="Lowercase, no spaces" mono />
           <Field label="Daily budget" type="number" value="" onInput={() => {}} error="Enter a number" />
+          <Field label="Notes" value={notes} onInput={setNotes} multiline hint="Grows as you type" />
         </div>
       </Block>
 

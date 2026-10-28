@@ -1,7 +1,8 @@
-// field.tsx — one labelled input: the label above, a hint or an error under it, both read out with the
-// input. The input is a full tap target tall; ids, commands and numbers can ask for the mono face.
+// field.tsx — one labelled field: the label above, a hint or an error under it, both read out with
+// the control. The input is a full tap target tall; ids, commands and numbers can ask for the mono
+// face. A multiline field is a textarea that grows with its text up to maxRows lines, then scrolls.
 
-import type { JSX } from "preact";
+import type { CSSProperties, JSX } from "preact";
 import { useUiId } from "./id.ts";
 
 /** What a field shows and reports. */
@@ -15,7 +16,89 @@ export type FieldProps = {
   /** Marks the input invalid and replaces the hint. */
   error?: string | undefined;
   mono?: boolean | undefined;
+  /** A growing textarea instead of the one-line input; type is ignored. */
+  multiline?: boolean | undefined;
+  /** The lines the textarea grows to before it scrolls; multiline only, 6 when left out. */
+  maxRows?: number | undefined;
 };
+
+/** The wiring every control carries: the invalid mark and the note it reads out. */
+function described(
+  error: string | undefined,
+  note: string | undefined,
+  id: string,
+): {
+  "aria-invalid": true | undefined;
+  "aria-describedby": string | undefined;
+} {
+  return {
+    "aria-invalid": error !== undefined ? true : undefined,
+    "aria-describedby": note !== undefined ? `${id}-note` : undefined,
+  };
+}
+
+/** The one-line input. */
+function Line(props: {
+  id: string;
+  value: string;
+  onInput: (value: string) => void;
+  type: "text" | "search" | "number";
+  placeholder: string | undefined;
+  error: string | undefined;
+  note: string | undefined;
+  mono: boolean;
+}): JSX.Element {
+  return (
+    <input
+      id={props.id}
+      class={props.mono ? "ui-input ui-mono" : "ui-input"}
+      // preact types each input type with the roles it allows; a type held in a variable matches no
+      // single pair, so it is read as the text pair, whose role (none set here) all three share
+      type={props.type as "text"}
+      value={props.value}
+      placeholder={props.placeholder}
+      {...described(props.error, props.note, props.id)}
+      onInput={(e) => props.onInput(e.currentTarget.value)}
+    />
+  );
+}
+
+/** The growing field: the box follows its text up to maxRows lines, then scrolls. */
+function Growing(props: {
+  id: string;
+  value: string;
+  onInput: (value: string) => void;
+  placeholder: string | undefined;
+  error: string | undefined;
+  note: string | undefined;
+  maxRows: number;
+}): JSX.Element {
+  return (
+    <textarea
+      id={props.id}
+      class="ui-input ui-input-multi"
+      rows={1}
+      // the cap travels as a custom property the stylesheet reads, set through the CSSOM, which
+      // the page's CSP allows where a style attribute would be stripped
+      style={{ "--ui-field-rows": props.maxRows } as CSSProperties}
+      value={props.value}
+      placeholder={props.placeholder}
+      {...described(props.error, props.note, props.id)}
+      onInput={(e) => {
+        // field-sizing grows the box where the browser has it; elsewhere the input sets its own
+        // height as the text changes
+        if (!CSS.supports("field-sizing", "content")) grow(e.currentTarget);
+        props.onInput(e.currentTarget.value);
+      }}
+    />
+  );
+}
+
+/** The height a growing field needs right now, where the browser has no field-sizing to grow it. */
+function grow(box: HTMLTextAreaElement): void {
+  box.style.height = "auto";
+  box.style.height = `${box.scrollHeight}px`;
+}
 
 /** The field. */
 export function Field({
@@ -27,6 +110,8 @@ export function Field({
   hint,
   error,
   mono = false,
+  multiline = false,
+  maxRows = 6,
 }: FieldProps): JSX.Element {
   const id = useUiId("ui-field");
   const note = error ?? hint;
@@ -35,18 +120,28 @@ export function Field({
       <label class="ui-field-label" for={id}>
         {label}
       </label>
-      <input
-        id={id}
-        class={mono ? "ui-input ui-mono" : "ui-input"}
-        // preact types each input type with the roles it allows; a type held in a variable matches no
-        // single pair, so it is read as the text pair, whose role (none set here) all three share
-        type={type as "text"}
-        value={value}
-        placeholder={placeholder}
-        aria-invalid={error !== undefined ? true : undefined}
-        aria-describedby={note !== undefined ? `${id}-note` : undefined}
-        onInput={(e) => onInput(e.currentTarget.value)}
-      />
+      {multiline ? (
+        <Growing
+          id={id}
+          value={value}
+          onInput={onInput}
+          placeholder={placeholder}
+          error={error}
+          note={note}
+          maxRows={maxRows}
+        />
+      ) : (
+        <Line
+          id={id}
+          value={value}
+          onInput={onInput}
+          type={type}
+          placeholder={placeholder}
+          error={error}
+          note={note}
+          mono={mono}
+        />
+      )}
       {note !== undefined ? (
         <p id={`${id}-note`} class={error !== undefined ? "ui-field-error" : "ui-field-hint"}>
           {note}

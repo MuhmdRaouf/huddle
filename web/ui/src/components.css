@@ -502,6 +502,17 @@ button.ui-list-row:hover {
   color: var(--ui-muted);
 }
 
+/* the growing field: the box follows its text up to --ui-field-rows lines, then scrolls; the
+ * component sets --ui-field-rows from its maxRows (6 when left out), and where the browser has no
+ * field-sizing the component sets its own height on input */
+.ui-input-multi {
+  min-height: var(--ui-control-h);
+  max-height: calc(var(--ui-field-rows, 6) * var(--ui-leading) * var(--ui-text-md));
+  overflow-y: auto;
+  resize: none;
+  field-sizing: content;
+}
+
 .ui-field-hint,
 .ui-field-error {
   margin: 0;
@@ -1039,4 +1050,142 @@ dialog[data-ui-covered]::backdrop {
   height: var(--ui-tap);
   border-radius: var(--ui-radius);
   background: var(--ui-surface-2);
+}
+
+/* Chip: a small rounded label — a status or a tag that only shows, or a filter the user turns on
+ * and off. 28 px tall on an 8 px corner, 13 px / 500 text, 10 px of side room; a tone's soft fill
+ * carries the tone's ink, and the neutral sits on surface-2 in muted. */
+
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  height: 1.8667rem; /* 28 px: the chip the contract draws */
+  padding: 0 0.6667rem; /* 0 10px: the side room the contract draws */
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  font: inherit;
+  font-size: var(--ui-text-sm); /* 13 px */
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* the leading icon a chip carries: 14 px, whatever the icon's own class asks */
+.ui-chip > svg {
+  width: 0.9333rem; /* 14 px */
+  height: 0.9333rem; /* 14 px */
+}
+
+/* the 6 px status dot, in its tone's colour */
+.ui-chip-dot {
+  flex-shrink: 0;
+  width: 0.4rem; /* 6 px */
+  height: 0.4rem; /* 6 px */
+  border-radius: var(--ui-radius-full);
+}
+
+.ui-chip-neutral .ui-chip-dot {
+  background: var(--ui-muted);
+}
+
+.ui-chip-ok .ui-chip-dot {
+  background: var(--ui-ok);
+}
+
+.ui-chip-warn .ui-chip-dot {
+  background: var(--ui-warn);
+}
+
+.ui-chip-fail .ui-chip-dot {
+  background: var(--ui-fail);
+}
+
+.ui-chip-info .ui-chip-dot {
+  background: var(--ui-info);
+}
+
+.ui-chip-accent .ui-chip-dot {
+  background: var(--ui-accent);
+}
+
+.ui-chip-neutral {
+  background: var(--ui-surface-2);
+  color: var(--ui-muted);
+}
+
+.ui-chip-ok {
+  background: var(--ui-ok-soft);
+  color: var(--ui-ok-ink);
+}
+
+.ui-chip-warn {
+  background: var(--ui-warn-soft);
+  color: var(--ui-warn-ink);
+}
+
+.ui-chip-fail {
+  background: var(--ui-fail-soft);
+  color: var(--ui-fail-ink);
+}
+
+.ui-chip-info {
+  background: var(--ui-info-soft);
+  color: var(--ui-info-ink);
+}
+
+.ui-chip-accent {
+  background: var(--ui-accent-soft);
+  /* the accent carries no ink token of its own, and --ui-accent reads 4.1:1 on the soft fill in
+   * the light scheme, under the 4.5 text is held to: the fill and the dot carry the accent, the
+   * text takes the plain ink */
+  color: var(--ui-text);
+}
+
+/* the filter chip: off sits quiet on surface-2, on takes the accent */
+.ui-chip-toggle {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ui-chip-toggle[aria-pressed="false"] {
+  background: var(--ui-surface-2);
+  color: var(--ui-muted);
+}
+
+.ui-chip-toggle[aria-pressed="true"] {
+  background: var(--ui-accent-soft);
+  color: var(--ui-text);
+  font-weight: 600;
+}
+
+.ui-chip-toggle:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+/* a row of toggle chips: 8 px apart in a row */
+.ui-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-2);
+}
+
+@media (pointer: coarse) {
+  /* the finger's target stands --ui-tap tall around the 28 px chip, painted by nothing */
+  .ui-chip-toggle {
+    position: relative;
+  }
+
+  .ui-chip-toggle::before {
+    content: "";
+    position: absolute;
+    /* --ui-tap on both sides of the 1.8667rem chip: 8 px above and 8 px below */
+    inset: calc((var(--ui-tap) - 1.8667rem) / -2) 0;
+  }
+
+  /* the hit areas reach 8 px past their chips, so wrapped rows stand 16 px apart and no two hit
+   * areas overlap */
+  .ui-chip-row {
+    row-gap: var(--ui-space-4);
+  }
 }

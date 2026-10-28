@@ -20,6 +20,7 @@ const BLOCKS = [
   "Layers, shadows and motion",
   "Buttons",
   "Badges",
+  "Chips",
   "Card",
   "List",
   "Tabs",
@@ -68,6 +69,9 @@ test.describe("the design tokens page", () => {
     await openTokens(page);
     const small = await page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>("main button, main input, main [role=tab], main a")]
+        // a toggle chip's box stands 28 px; its ::before pads the hit to --ui-tap under a finger,
+        // which the Chips test proves, so its box alone does not fail here
+        .filter((el) => !el.matches(".ui-chip-toggle"))
         .map((el) => ({ el, r: el.getBoundingClientRect() }))
         .filter(({ r }) => r.width > 0 && (r.width < 44 || r.height < 44))
         .map(({ el, r }) => {
@@ -378,5 +382,72 @@ test.describe("the design tokens page", () => {
     await expect(dlg).toBeHidden();
     await expect(over).toBeVisible();
     await expect(over.getByRole("button", { name: "Open dialog" })).toBeFocused();
+  });
+
+  test("the chips stand 28 px, toggle, and the multiline field grows to its cap", async ({ page }) => {
+    await openTokens(page);
+    await expect(page.getByRole("heading", { level: 2, name: "Chips" })).toBeVisible();
+    // the display chip: 28 px tall (±1) on an 8 px corner
+    const chip = page.locator(".ui-chip").first();
+    const chipBox = await chip.boundingBox();
+    expect(chipBox && Math.abs(chipBox.height - 28) <= 1).toBe(true);
+    expect(
+      await chip.evaluate((el) => Number.parseFloat(getComputedStyle(el).borderTopLeftRadius)),
+    ).toBe(8);
+    // a filter chip answers a click with its pressed state
+    const mine = page.getByRole("button", { name: "Mine" });
+    await expect(mine).toHaveAttribute("aria-pressed", "false");
+    await mine.click();
+    await expect(mine).toHaveAttribute("aria-pressed", "true");
+    // the growing field: one line to several, then it stops at the six-line cap and scrolls
+    const notes = page.getByRole("textbox", { name: "Notes" });
+    await expect(notes).toHaveAttribute("rows", "1");
+    const rest = (await notes.boundingBox())?.height ?? 0;
+    await notes.pressSequentially("a\nb\nc");
+    const grown = (await notes.boundingBox())?.height ?? 0;
+    expect(grown, `three lines stand ${grown}px over the ${rest}px rest`).toBeGreaterThan(rest + 8);
+    await notes.fill("1\n2\n3\n4\n5\n6\n7\n8");
+    const line = await notes.evaluate((el) => Number.parseFloat(getComputedStyle(el).lineHeight));
+    const capped = (await notes.boundingBox())?.height ?? 0;
+    expect(Math.abs(capped - line * 6), `eight lines stand ${capped}px, the cap is six`).toBeLessThanOrEqual(1.5);
+    const box = await notes.evaluate((el) => ({ client: el.clientHeight, scroll: el.scrollHeight }));
+    expect(box.scroll, "the lines past the cap scroll").toBeGreaterThan(box.client);
+    // under a finger the hit area reaches --ui-tap past the 28 px box, and no two hits overlap
+    if (test.info().project.use.hasTouch) {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await mine.scrollIntoViewIfNeeded();
+      const hit = await page.evaluate(() => {
+        const chips = [...document.querySelectorAll<HTMLElement>(".ui-chip-toggle")].map((el) => {
+          const r = el.getBoundingClientRect();
+          // the ::before pads the hit out of the 28 px box; its reach is ~8 px each way
+          const before = getComputedStyle(el, "::before");
+          const p = before.position === "absolute" ? Math.abs(Number.parseFloat(before.top)) : 0;
+          return { r, hit: { l: r.left, r: r.right, t: r.top - p, b: r.bottom + p } };
+        });
+        const onChip = (r: DOMRect, y: number): boolean =>
+          document.elementFromPoint(r.left + r.width / 2, y)?.closest(".ui-chip-toggle") !== null;
+        return {
+          tall: chips.every((c) => c.hit.b - c.hit.t >= 44 - 0.01),
+          // a hair inside the edge, so the probe never sits on the box's own boundary
+          probe: chips.every((c) => onChip(c.r, c.hit.t + 0.5) && onChip(c.r, c.hit.b - 0.5)),
+          apart: chips.every((a, i) =>
+            chips.every(
+              (b, j) =>
+                i === j ||
+                a.hit.r <= b.hit.l ||
+                b.hit.r <= a.hit.l ||
+                a.hit.b <= b.hit.t ||
+                b.hit.b <= a.hit.t,
+            ),
+          ),
+          over: document.documentElement.scrollWidth - window.innerWidth,
+        };
+      });
+      expect(hit.tall, "each filter chip's hit stands at least 44 px tall").toBe(true);
+      expect(hit.probe, "the point 8 px above and below each chip still lands on the chip").toBe(true);
+      expect(hit.apart, "no two filter chips' hit areas overlap").toBe(true);
+      expect(hit.over, "no horizontal scroll at 390 px").toBeLessThanOrEqual(0);
+    }
+    await expectAccessible(page);
   });
 });
