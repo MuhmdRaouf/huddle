@@ -59,7 +59,7 @@ export function useFirstRun(): FirstRunState {
       done: (state.channels ?? []).length > 0,
       href: "#/channels",
     },
-    { key: "budget", label: "Set a budget", done: budgets === true, href: "#/settings/radar" },
+    { key: "budget", label: "Set a budget", done: budgets === true, href: "#/settings/spending" },
   ];
   return {
     items,

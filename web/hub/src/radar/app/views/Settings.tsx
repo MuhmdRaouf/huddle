@@ -1,19 +1,103 @@
 /**
- * The settings tab: appearance, budgets (the add-or-edit form and the saved rows with their spend bars),
- * desktop notifications, the history store with its retention, and where Radar reads its data.
+ * The Spending page, one grouped scroll: today's spend against a per-day budget, the saved budgets
+ * with their add-or-edit sheet, desktop notifications, the history store with its retention, and
+ * where Radar reads its data.
  */
 
+import { Button } from "@huddle/ui/button.tsx";
+import { List, ListItem } from "@huddle/ui/list.tsx";
+import { RadioGroup } from "@huddle/ui/radio-group.tsx";
+import { Sheet } from "@huddle/ui/sheet.tsx";
 import { Switch } from "@huddle/ui/switch.tsx";
-import { useId } from "preact/hooks";
-import { ESTIMATE_NOTE, fmtBytes, fmtNum, fmtUsd } from "../../fmt.ts";
+import type { ComponentChildren } from "preact";
+import { ESTIMATE_NOTE, fmtUsd } from "../../fmt.ts";
 import { budgetTone, STATUS_COLOR } from "../../palette.ts";
 import type { Budget } from "../../shared/api.ts";
 import { pluginLabel, scopeLabel } from "../../shared/provider.ts";
 import type { BudgetDraft } from "../../state.ts";
-import { StackedBar } from "../Chart.tsx";
 import { useApp } from "../context.ts";
 import { Icon } from "../Icon.tsx";
-import { Badge, EmptyState, Notice, Panel, Segmented, Status } from "../kit.tsx";
+import { Badge, EmptyState, IconTile, Notice, Panel, Status } from "../kit.tsx";
+
+/** A section of the page: its heading over one surface card, and the quiet note under the card. */
+const HEAD = "m-0 text-xs font-semibold tracking-[0.06em] uppercase text-[var(--ui-muted)]";
+
+function Section({
+  id,
+  title,
+  note,
+  children,
+}: {
+  id: string;
+  title: string;
+  note?: string;
+  children: ComponentChildren;
+}) {
+  return (
+    <section aria-labelledby={`${id}-h`} class="flex flex-col gap-3">
+      <h2 id={`${id}-h`} class={HEAD}>
+        {title}
+      </h2>
+      {children}
+      {note !== undefined && <p class="m-0 text-xs text-[var(--ui-muted)]">{note}</p>}
+    </section>
+  );
+}
+
+/** Today's spend so far against the one budget that caps everything per day; absent without one. */
+function TodaySection() {
+  const { state } = useApp();
+  const budget = state.budgets?.find((b) => b.scope === "total" && b.period === "day");
+  if (budget === undefined) return null;
+  const pct = Math.min(state.budgetStatus?.spend.find((s) => s.id === budget.id)?.pct ?? 0, 100);
+  return (
+    <Section id="spending-today" title="Today" note="Resets at midnight.">
+      <Panel>
+        <div class="flex items-baseline gap-2">
+          <span class="num text-2xl font-bold">{fmtUsd(state.spendToday)}</span>
+          <span class="text-sm text-[var(--ui-muted)]">{`of ${fmtUsd(budget.limitUsd)}`}</span>
+        </div>
+        <div
+          role="progressbar"
+          aria-label="Today's spend"
+          aria-valuenow={Math.round(pct)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          class="mt-3 h-2 w-full overflow-hidden rounded-full bg-[var(--ui-surface-2)]"
+        >
+          <div
+            class="h-full rounded-full"
+            style={`width:${pct}%;background:${STATUS_COLOR[budgetTone(pct)]}`}
+          />
+        </div>
+      </Panel>
+    </Section>
+  );
+}
+
+/** One saved budget as a row: its plate, label, period line, Stop chip, limit, and a chevron. */
+function BudgetRow({ budget }: { budget: Budget }) {
+  const { act } = useApp();
+  return (
+    <ListItem
+      leading={<IconTile name={budget.scope === "total" ? "gauge" : "bot"} color="var(--ui-muted)" />}
+      title={scopeLabel(budget.scope)}
+      meta={
+        budget.action === "stop"
+          ? `Per ${budget.period} · stop at 100%`
+          : `Per ${budget.period} · warn at 80% and 100%`
+      }
+      trailing={
+        <>
+          {budget.action === "stop" && <Badge text="Stop" tone="warn" />}
+          <span class="num text-sm">{fmtUsd(budget.limitUsd)}</span>
+          <Icon name="chevronRight" class="size-4 shrink-0 text-[var(--ui-muted)]" />
+        </>
+      }
+      onClick={() => act("edit-budget", budget.id)}
+    />
+  );
+}
 
 /** A labelled select bound to one draft field; changing it reports `draft-field` as `field=value`. */
 function SelectField({
@@ -49,7 +133,8 @@ function SelectField({
   );
 }
 
-/** The add-or-edit budget form: scope, period, limit and the action at 100%, plus save and cancel. */
+/** The add-or-edit budget form the sheet hosts: scope, period, limit, the action at 100%, and the
+ *  save, cancel and (when editing) remove buttons. */
 function BudgetForm({ draft }: { draft: BudgetDraft }) {
   const { state, act } = useApp();
   const scopes: [string, string][] = [
@@ -58,317 +143,263 @@ function BudgetForm({ draft }: { draft: BudgetDraft }) {
   ];
   if (!scopes.some(([v]) => v === draft.scope)) scopes.push([draft.scope, scopeLabel(draft.scope)]);
   return (
-    <div class="-mx-4 -mt-4 mb-4 grid gap-3.5 border-b border-[var(--ui-line)] bg-[var(--ui-surface-2)] p-4">
-      <fieldset class="m-0 grid min-w-0 gap-3 border-0 p-0">
-        <legend class="mb-1 p-0 text-sm font-semibold">
-          {draft.id === null ? "New budget" : "Edit budget"}
-        </legend>
-        <div class="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(190px,100%),1fr))]">
-          <SelectField label="Scope" field="scope" value={draft.scope} options={scopes} />
-          <SelectField
-            label="Period"
-            field="period"
-            value={draft.period}
-            options={[
-              ["day", "Per day"],
-              ["week", "Per week (from Monday)"],
-              ["month", "Per month"],
-            ]}
-          />
-          <label class="ui-field min-w-0">
-            <span class="ui-field-label">Limit (USD)</span>
-            <input
-              key={draft.id ?? "new"}
-              class="ui-input w-full"
-              type="text"
-              inputmode="decimal"
-              defaultValue={draft.limit}
-              data-field="limit"
-              data-key="field-limit"
-              aria-label="Limit in US dollars"
-              onInput={(event) => act("draft-field", `limit=${event.currentTarget.value}`)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  act("save-budget");
-                }
-              }}
-            />
-          </label>
-          <SelectField
-            label="At 100%"
-            field="action"
-            value={draft.action}
-            options={[
-              ["warn", "Warn only"],
-              ["stop", "Stop that provider's requests"],
-            ]}
-          />
-        </div>
-      </fieldset>
-      <div class="flex flex-wrap gap-2">
-        <button
-          type="button"
-          class="ui-btn ui-btn-primary"
-          data-action="save-budget"
-          onClick={() => act("save-budget")}
-        >
-          <Icon name="check" class="ui-icon" />
-          <span>{draft.id === null ? "Add budget" : "Save"}</span>
-        </button>
-        <button
-          type="button"
-          class="ui-btn ui-btn-secondary"
-          data-action="cancel-budget"
-          onClick={() => act("cancel-budget")}
-        >
-          <span>Cancel</span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** One saved budget: its label and action badge, spend so far, and edit/remove buttons. */
-function SavedBudget({ budget }: { budget: Budget }) {
-  const { state, act } = useApp();
-  const spend = state.budgetStatus?.spend.find((s) => s.id === budget.id);
-  const pct = spend?.pct ?? 0;
-  const tone = budgetTone(pct);
-  return (
-    <div class="budget-row grid gap-2 py-4 first:pt-0 last:pb-0">
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span class="text-sm font-medium">
-          {`${scopeLabel(budget.scope)}, ${fmtUsd(budget.limitUsd)} per ${budget.period}`}
-        </span>
-        <Badge
-          text={budget.action === "stop" ? "Stops at 100%" : "Warns"}
-          tone={budget.action === "stop" ? "err" : "info"}
+    <div class="grid gap-4">
+      <SelectField label="Scope" field="scope" value={draft.scope} options={scopes} />
+      <SelectField
+        label="Period"
+        field="period"
+        value={draft.period}
+        options={[
+          ["day", "Per day"],
+          ["week", "Per week (from Monday)"],
+          ["month", "Per month"],
+        ]}
+      />
+      <label class="ui-field min-w-0">
+        <span class="ui-field-label">Limit (USD)</span>
+        <input
+          key={draft.id ?? "new"}
+          class="ui-input w-full"
+          type="text"
+          inputmode="decimal"
+          defaultValue={draft.limit}
+          data-field="limit"
+          data-key="field-limit"
+          aria-label="Limit in US dollars"
+          onInput={(event) => act("draft-field", `limit=${event.currentTarget.value}`)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              act("save-budget");
+            }
+          }}
         />
-        <span class="num ml-auto text-sm text-[var(--ui-muted)]">
-          {spend === undefined ? "–" : `${fmtUsd(spend.spentUsd)} so far (${Math.round(pct)}%)`}
-        </span>
-        <span class="inline-flex gap-1">
-          <button
-            type="button"
-            class="ui-btn ui-btn-ghost ui-btn-icon"
-            data-action="edit-budget"
-            data-value={budget.id}
-            aria-label={`Edit the ${scopeLabel(budget.scope)} budget`}
-            onClick={() => act("edit-budget", budget.id)}
-          >
-            <Icon name="pencil" class="ui-icon" />
-          </button>
-          <button
-            type="button"
-            class="ui-btn ui-btn-ghost ui-btn-icon"
-            data-action="remove-budget"
-            data-value={budget.id}
-            aria-label={`Remove the ${scopeLabel(budget.scope)} budget`}
-            onClick={() => act("remove-budget", budget.id)}
-          >
-            <Icon name="trash" class="ui-icon" />
-          </button>
-        </span>
+      </label>
+      <SelectField
+        label="At 100%"
+        field="action"
+        value={draft.action}
+        options={[
+          ["warn", "Warn only"],
+          ["stop", "Stop that provider's requests"],
+        ]}
+      />
+      <div class="flex flex-wrap gap-2">
+        <Button variant="primary" icon="check" data-action="save-budget" onClick={() => act("save-budget")}>
+          {draft.id === null ? "Add budget" : "Save"}
+        </Button>
+        <Button variant="secondary" data-action="cancel-budget" onClick={() => act("cancel-budget")}>
+          Cancel
+        </Button>
       </div>
-      <StackedBar segments={[{ value: Math.min(pct, 100), color: STATUS_COLOR[tone] }]} max={100} />
+      {draft.id !== null && (
+        <Button
+          variant="danger"
+          class="w-full"
+          data-action="remove-budget"
+          data-value={draft.id}
+          onClick={() => act("remove-budget", draft.id ?? undefined)}
+        >
+          Remove budget
+        </Button>
+      )}
     </div>
   );
 }
 
-/** The budgets panel: add button, save messages, the form when open, and the saved rows. */
-export function BudgetsPanel() {
+/** The budgets sheet: the form rises over the page while a draft is open, titled by what it edits.
+ *  A close with a draft still open cancels it; a close the save itself caused (the draft already
+ *  gone) leaves the confirmation standing. */
+function BudgetSheet() {
+  const { state, act } = useApp();
+  const draft = state.draft;
+  return (
+    <Sheet
+      open={draft !== null}
+      onClose={() => {
+        if (state.draft !== null) act("cancel-budget");
+      }}
+      title={draft === null || draft.id === null ? "Add a budget" : "Edit budget"}
+    >
+      {draft !== null && <BudgetForm draft={draft} />}
+    </Sheet>
+  );
+}
+
+/** The budgets section: the saved rows, the add row, the sheet, and the two notes under the card. */
+function BudgetsSection() {
   const { state, act } = useApp();
   const budgets = state.budgets;
   return (
-    <Panel
-      icon="dollar"
-      title="Budgets"
-      subtitle="Estimated spend per day, week or month"
-      actions={
-        state.draft === null ? (
-          <button
-            type="button"
-            class="ui-btn ui-btn-secondary"
-            data-action="new-budget"
-            onClick={() => act("new-budget")}
-          >
-            <Icon name="plus" class="ui-icon" />
-            <span>Add budget</span>
-          </button>
-        ) : undefined
-      }
-    >
+    <Section id="spending-budgets" title="Budgets">
       {state.formMessage !== null && (
         <Notice
           tone={state.formMessage.tone === "err" ? "err" : "ok"}
           role={state.formMessage.tone === "err" ? "alert" : "status"}
-          class="mb-4"
         >
           <Status tone={state.formMessage.tone} word={state.formMessage.text} />
         </Notice>
       )}
-      {state.draft !== null && <BudgetForm draft={state.draft} />}
       {budgets === null ? (
         <div class="skeleton h-24 w-full" role="status" aria-label="Loading budgets" />
-      ) : budgets.length === 0 && state.draft === null ? (
-        <EmptyState
-          title="No budgets yet"
-          hint="Set a limit for everything or for one provider. A warn budget raises an alert at 80% and 100%; a stop budget also makes that provider's router refuse requests until the period ends. Claude requests are never stopped."
-          icon="dollar"
-        />
       ) : (
-        <div class="divide-y divide-[var(--ui-line)]">
-          {budgets.map((budget) => (
-            <SavedBudget key={budget.id} budget={budget} />
-          ))}
-        </div>
+        <>
+          <List label="Budgets">
+            {budgets.map((budget) => (
+              <BudgetRow key={budget.id} budget={budget} />
+            ))}
+            <ListItem
+              leading={<IconTile name="plus" color="var(--ui-accent)" />}
+              title={<span class="font-medium text-[var(--ui-accent)]">Add a budget</span>}
+              onClick={() => act("new-budget")}
+            />
+          </List>
+          {budgets.length === 0 && (
+            <EmptyState
+              title="No budgets yet"
+              hint="Set a limit for everything or for one provider. A warn budget raises an alert at 80% and 100%; a stop budget also makes that provider's router refuse requests until the period ends. Claude requests are never stopped."
+              icon="dollar"
+            />
+          )}
+        </>
       )}
-      <p class="mt-4 mb-0 text-xs text-[var(--ui-muted)]">{ESTIMATE_NOTE}</p>
-    </Panel>
+      <p class="m-0 text-xs text-[var(--ui-muted)]">
+        A stop budget makes that provider's requests wait until the period ends. Claude requests are never
+        stopped.
+      </p>
+      <p class="m-0 text-xs text-[var(--ui-muted)]">{ESTIMATE_NOTE}</p>
+    </Section>
   );
 }
 
-/** The desktop-notifications panel with its on/off switch. */
-export function NotificationsPanel() {
+/** The alerts section: the one desktop-notifications row, and what fires an alert. */
+function AlertsSection() {
   const { state, act } = useApp();
-  const helpId = useId();
-  const on = state.settings?.notifications ?? true;
   return (
-    <Panel
-      icon="bell"
-      title="Desktop notifications"
-      subtitle="Budgets at 80% and 100%, new stuck sessions and loops"
-    >
-      <div class="flex items-center justify-between gap-6">
-        <div class="grid">
-          <p class="m-0 mb-2 font-semibold">{on ? "On" : "Off"}</p>
-          <p class="m-0 text-sm text-[var(--ui-muted)]" id={helpId}>
-            macOS Notification Center, or notify-send on Linux when it is installed. Each alert notifies once;
-            nothing in them but the project name and what happened.
-          </p>
-        </div>
-        <Switch
-          checked={on}
-          label="Desktop notifications"
-          describedBy={helpId}
-          onChange={() => act("toggle-notifications")}
+    <Section id="spending-alerts" title="Alerts" note="Budgets at 80% and 100%, stuck sessions and loops.">
+      <List label="Alerts">
+        <ListItem
+          title="Desktop notifications"
+          trailing={
+            <Switch
+              checked={state.settings?.notifications ?? true}
+              label="Desktop notifications"
+              onChange={() => act("toggle-notifications")}
+            />
+          }
         />
-      </div>
-    </Panel>
+      </List>
+    </Section>
   );
 }
 
-/** The history panel: how big the store is, how long it keeps things, and the button that wipes it. */
-export function HistoryPanel() {
+/** How long the history store keeps things; the retention values the settings route takes. */
+const RETENTION_OPTIONS = [
+  { value: "7", label: "7 days" },
+  { value: "30", label: "30 days" },
+  { value: "90", label: "90 days" },
+  { value: "0", label: "Forever" },
+] as const;
+
+/** The history section: the retention choice while the store is on, and the wipe button. */
+function HistorySection() {
   const { state, act } = useApp();
-  const stats = state.historyStats;
+  const store = state.historyStats;
+  const current =
+    store === null
+      ? null
+      : (RETENTION_OPTIONS.find((o) => o.value === String(store.retentionDays))?.value ?? null);
   return (
-    <Panel icon="history" title="History" subtitle="Sessions, requests and their content, on disk">
+    <Section
+      id="spending-history"
+      title="History"
+      note="Kept in ~/.agents/radar/history.db. Older rows are pruned hourly; clearing cannot be undone."
+    >
       {state.historyOff ? (
         <p class="m-0 text-sm text-[var(--ui-muted)]">
           History is off on this machine; nothing is being kept.
         </p>
-      ) : stats === null ? (
+      ) : store === null ? (
         <div class="skeleton h-16 w-full" role="status" aria-label="Reading the history store" />
       ) : (
-        <div class="mb-5">
-          <p class="m-0 mb-2 font-semibold">
-            {`${fmtBytes(stats.bytes)}, ${fmtNum(stats.nodes)} sessions, ${fmtNum(stats.requests)} requests`}
+        <Panel>
+          <p class="m-0 text-sm font-medium">Keep history</p>
+          <RadioGroup
+            label="Keep history"
+            name="history-retention"
+            value={current}
+            options={RETENTION_OPTIONS}
+            onChange={(value) => act("retention", value)}
+          />
+          <p class="m-0 mt-2 text-xs text-[var(--ui-muted)]">
+            A session older than this disappears from History with its content.
           </p>
-          <p class="m-0 text-sm text-[var(--ui-muted)]">
-            Kept in ~/.agents/radar/history.db. Older rows are pruned hourly; clearing cannot be undone.
-          </p>
-        </div>
+        </Panel>
       )}
-      <div class="flex flex-wrap items-center justify-between gap-4">
-        <div class="grid">
-          <p class="m-0 mb-2 font-semibold">Keep history for</p>
-          <p class="m-0 text-sm text-[var(--ui-muted)]">
-            A session older than this disappears from the History tab with its content.
-          </p>
-        </div>
-        <Segmented
-          action="retention"
-          label="History retention"
-          segments={[
-            { label: "7d", value: "7", on: stats?.retentionDays === 7 },
-            { label: "30d", value: "30", on: stats?.retentionDays === 30 },
-            { label: "90d", value: "90", on: stats?.retentionDays === 90 },
-            { label: "Forever", value: "0", on: stats?.retentionDays === 0 },
-          ]}
-        />
-      </div>
       {state.clearConfirm ? (
-        <Notice tone="warn" class="mt-5">
+        <Notice tone="warn">
           <span>Delete every stored session, request and its content?</span>
-          <button
-            type="button"
-            class="ui-btn ui-btn-danger"
+          <Button
+            variant="danger"
             data-action="clear-history"
             data-value="confirm"
             onClick={() => act("clear-history", "confirm")}
           >
             Clear now
-          </button>
-          <button
-            type="button"
-            class="ui-btn ui-btn-secondary"
+          </Button>
+          <Button
+            variant="secondary"
             data-action="clear-history"
             data-value="cancel"
             onClick={() => act("clear-history", "cancel")}
           >
             Keep it
-          </button>
+          </Button>
         </Notice>
       ) : (
-        <div class="mt-5">
-          <button
-            type="button"
-            class="ui-btn ui-btn-danger"
-            data-action="clear-history"
-            onClick={() => act("clear-history")}
-          >
-            <Icon name="trash" class="ui-icon" />
-            <span>Clear history</span>
-          </button>
-        </div>
+        <Button
+          variant="danger"
+          class="w-full"
+          data-action="clear-history"
+          onClick={() => act("clear-history")}
+        >
+          Clear history
+        </Button>
       )}
-    </Panel>
+    </Section>
   );
 }
 
-/** The data panel: where Radar reads its sessions, requests and settings from. */
-export function DataPanel() {
+/** The data section: where Radar reads its sessions, requests and settings from. */
+function DataSection() {
   return (
-    <Panel icon="folder" title="Data" subtitle="Where Radar reads and keeps what it shows">
-      <dl class="grid gap-x-5 gap-y-3 max-sm:grid-cols-1 sm:grid-cols-[max-content_1fr]">
-        <dt class="text-sm font-semibold">Live sessions</dt>
-        <dd class="m-0 text-sm text-[var(--ui-muted)]">
-          Claude Code's own session files under ~/.claude/projects, read as they are written.
-        </dd>
-        <dt class="text-sm font-semibold">History store</dt>
-        <dd class="m-0 text-sm text-[var(--ui-muted)]">
-          ~/.agents/radar/history.db keeps past sessions once their live files close.
-        </dd>
-        <dt class="text-sm font-semibold">Settings</dt>
-        <dd class="m-0 text-sm text-[var(--ui-muted)]">
-          Budgets and notification settings live in ~/.agents/radar.
-        </dd>
-      </dl>
-    </Panel>
+    <Section id="spending-data" title="Data">
+      <List label="Data">
+        <ListItem
+          title="Live sessions"
+          meta="Claude Code's own session files under ~/.claude/projects, read as they are written."
+        />
+        <ListItem
+          title="History store"
+          meta="~/.agents/radar/history.db keeps past sessions once their live files close."
+        />
+        <ListItem title="Settings" meta="Budgets and notification settings live in ~/.agents/radar." />
+      </List>
+    </Section>
   );
 }
 
-/** The settings view huddle's Settings › Radar section shows: budgets, desktop notifications, the
- *  history store with its retention, and where Radar reads its data. */
+/** The Spending view huddle's Settings › Radar section shows: today, budgets, alerts, history and
+ *  where the data lives. */
 export function SettingsView() {
   return (
-    <div class="grid gap-5">
-      <BudgetsPanel />
-      <NotificationsPanel />
-      <HistoryPanel />
-      <DataPanel />
+    <div class="grid gap-6">
+      <TodaySection />
+      <BudgetsSection />
+      <AlertsSection />
+      <HistorySection />
+      <DataSection />
+      <BudgetSheet />
     </div>
   );
 }

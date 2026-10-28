@@ -129,7 +129,7 @@ function SpendStat() {
         spend === undefined ? (
           <a
             class="inline-flex min-h-[var(--ui-tap)] items-center text-[var(--ui-accent)] underline"
-            href="#/settings/radar"
+            href="#/settings/spending"
           >
             No budget set
           </a>
@@ -771,7 +771,7 @@ function AlertCard() {
       </p>
       <div class="mt-1 flex flex-wrap gap-2">
         {alert.kind === "budget" ? (
-          <a href="#/settings/radar" class="ui-btn ui-btn-secondary" data-alert-action="">
+          <a href="#/settings/spending" class="ui-btn ui-btn-secondary" data-alert-action="">
             <Icon name="dollar" class="ui-icon" />
             Raise budget
           </a>

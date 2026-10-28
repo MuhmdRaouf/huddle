@@ -229,7 +229,7 @@ describe("the radar Overview", () => {
     const card = container.querySelector('[aria-labelledby="ovw-alert"]');
     expect(card?.textContent).toContain(fixtures.alert.detail);
     expect((container.querySelector("a[data-alert-action]") as HTMLAnchorElement)?.getAttribute("href")).toBe(
-      "#/settings/radar",
+      "#/settings/spending",
     );
     // a non-budget alert leads to the Alerts view instead
     const other = overview({
@@ -278,7 +278,7 @@ describe("the radar Overview", () => {
   it("says where a budget comes from when none is set", () => {
     const { container } = overview({ summary: fixtures.summary });
     const link = container.querySelector('[data-stat="spend today"] a');
-    expect(link?.getAttribute("href")).toBe("#/settings/radar");
+    expect(link?.getAttribute("href")).toBe("#/settings/spending");
     expect(link?.textContent).toContain("No budget set");
   });
 

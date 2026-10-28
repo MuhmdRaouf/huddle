@@ -810,10 +810,10 @@ export class RadarController {
   /* ------------------------------ interaction --------------------------- */
 
   private selectTab(value: string): void {
-    // radar's settings moved into huddle's Settings tab (Settings › Radar), outside the hash this
+    // radar's settings live in huddle's Settings tab, Settings › Spending, outside the hash this
     // controller owns; a real history entry takes the reader there and Back brings them back
     if (value === "settings") {
-      this.io.pushHash("#/settings/radar");
+      this.io.pushHash("#/settings/spending");
       return;
     }
     const tab = TABS.find((entry) => entry.id === value);
@@ -1182,11 +1182,13 @@ export class RadarController {
     return error instanceof Error ? error.message : String(error);
   }
 
-  /** One of the dashboard's own writes: JSON, same origin; the answer's error text becomes the thrown message. */
+  /** One of the dashboard's own writes: JSON, same origin, naming its action — the hub's guard
+   *  refuses a write that does not carry the header, so it names the full path the browser calls.
+   *  The answer's error text becomes the thrown message. */
   private async sendJson<T>(method: "PUT" | "POST", path: string, body: unknown): Promise<T> {
     const response = await this.io.fetch(API + path, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-huddle-action": API + path },
       body: JSON.stringify(body),
     });
     const parsed = (await response.json().catch(() => ({}))) as { error?: string };

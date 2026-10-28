@@ -17,7 +17,7 @@ import { turnDocument } from "../helpers.tsx";
 import { makeRequest, makeSessionView, makeTool, uiFixtures } from "./helpers.ts";
 
 type Answer = HttpResponse;
-type Call = { path: string; init?: { body?: string; method?: string } };
+type Call = { path: string; init?: { body?: string; headers?: Record<string, string>; method?: string } };
 
 const ok = (body: unknown): Answer => ({ ok: true, status: 200, json: async () => body });
 const fail = (status: number, body: unknown = {}): Answer => ({
@@ -203,14 +203,19 @@ function makeHarness(
   }
 
   const io: Io = {
-    fetch: vi.fn((rawPath: string, init?: { body?: string; method?: string }): Promise<Answer> => {
-      // huddle serves radar under /api/radar; the harness strips it the way the server does, so
-      // every answer and assertion keeps radar's own paths
-      const path = rawPath.replace(/^\/api\/radar/, "");
-      calls.push(init === undefined ? { path } : { path, init });
-      const answer = answers.get(path);
-      return Promise.resolve(answer ?? fail(404));
-    }),
+    fetch: vi.fn(
+      (
+        rawPath: string,
+        init?: { body?: string; headers?: Record<string, string>; method?: string },
+      ): Promise<Answer> => {
+        // huddle serves radar under /api/radar; the harness strips it the way the server does, so
+        // every answer and assertion keeps radar's own paths
+        const path = rawPath.replace(/^\/api\/radar/, "");
+        calls.push(init === undefined ? { path } : { path, init });
+        const answer = answers.get(path);
+        return Promise.resolve(answer ?? fail(404));
+      },
+    ),
     EventSource: FakeStream,
     storage,
     location,
@@ -931,6 +936,10 @@ describe("budgets", () => {
       ],
     });
     expect(callsTo(harness, "/api/alerts")).toBe(alertsBefore + 1);
+    // the hub's guard refuses a write that does not name its action, so the save names the path
+    // it calls — the full one the browser fetches, hub prefix included
+    const put = harness.calls.find((call) => call.path === "/api/budgets" && call.init?.method !== undefined);
+    expect(put?.init?.headers?.["x-huddle-action"]).toBe("/api/radar/api/budgets");
   });
 
   it("saves an edit as a replacement", async () => {
@@ -1627,6 +1636,12 @@ describe("the URL hash beyond the tab", () => {
     expect(harness.pushed).toEqual(["#/radar/overview?panel=history"]);
     harness.controller.act("history-repo", "/w/app");
     expect(harness.pushed.at(-1)).toBe("#/radar/overview?panel=history&repo=%2Fw%2Fapp");
+  });
+
+  it("sends the Settings tab to the Spending page, outside the hash this controller owns", () => {
+    const harness = makeHarness();
+    harness.controller.act("tab", "settings");
+    expect(harness.pushed.at(-1)).toBe("#/settings/spending");
   });
 
   it("restores the rail from a Back step, fetching what the restored state needs", async () => {

@@ -117,7 +117,7 @@ describe("the first-run checklist", () => {
     const hrefs = [...document.querySelectorAll("[data-first-run] [data-item] a")].map((a) =>
       a.getAttribute("href"),
     );
-    expect(hrefs).toEqual(["#/settings/signin", "#/channels", "#/channels", "#/settings/radar"]);
+    expect(hrefs).toEqual(["#/settings/signin", "#/channels", "#/channels", "#/settings/spending"]);
   });
 
   it("offers the passkey as one checklist row: one-line label, the why under it, the Save button", () => {

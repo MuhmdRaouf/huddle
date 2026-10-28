@@ -328,9 +328,8 @@
     "control": 2
   },
   "radar/app/views/Settings.tsx": {
-    "control": 10,
-    "daisy": 2,
-    "px": 1
+    "control": 2,
+    "daisy": 1
   },
   "radar/app/views/Timeline.tsx": {
     "control": 1

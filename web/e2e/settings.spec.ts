@@ -8,7 +8,9 @@
 // hub's time zone (seeded by the first signed-in browser, picked again and kept across a reload),
 // the Insights switches (tips for me on, tips to the sessions off, a flip kept across a reload),
 // the hub's request-bodies switch (on by default, a tap read back off the hub, the Kept-now line
-// under it), and the phone guide in a sheet. Every group fits the viewport with no horizontal
+// under it), the phone guide in a sheet, and the Spending page: its sections in the mock's order,
+// a budget added through its sheet and removed from it, and the alerts switch flipped. Every
+// group fits the viewport with no horizontal
 // scroll, keeps
 // its tap targets at least 44 px and passes axe.
 
@@ -359,6 +361,71 @@ test.describe("the Settings tab", () => {
     await expect(sheet).toBeHidden();
   });
 
+  test.describe("the Spending page", () => {
+    test("its sections stand in the mock's order, a budget is added through the sheet and removed from it, and the alerts switch flips", async ({
+      page,
+    }) => {
+      await openSettings(page, "#/settings/spending");
+      const view = page.locator('[data-setting="radar"]');
+      await expect(view.getByRole("heading", { name: "Budgets" })).toBeVisible();
+      // without a per-day budget on everything there is no Today section
+      expect(await view.locator("section > h2").allTextContents()).toEqual([
+        "Budgets",
+        "Alerts",
+        "History",
+        "Data",
+      ]);
+      await view.getByRole("button", { name: "Add a budget" }).click();
+      const sheet = page.getByRole("dialog", { name: "Add a budget" });
+      await expect(sheet).toBeVisible();
+      await sheet.getByRole("combobox", { name: "Scope" }).selectOption("total");
+      await sheet.getByRole("combobox", { name: "Period" }).selectOption("day");
+      await sheet.getByRole("textbox", { name: "Limit in US dollars" }).fill("40");
+      await Promise.all([
+        page.waitForResponse(
+          (r) => r.request().method() === "PUT" && r.url().endsWith("/api/radar/api/budgets"),
+        ),
+        sheet.getByRole("button", { name: "Add budget" }).click(),
+      ]);
+      await expect(sheet).toBeHidden();
+      const row = view.getByRole("button", { name: /Per day · warn at 80% and 100%/ });
+      await expect(row).toBeVisible();
+      await expect(row).toContainText("Total");
+      await expect(row).toContainText("$40.00");
+      expect(await view.locator("section > h2").allTextContents()).toEqual([
+        "Today",
+        "Budgets",
+        "Alerts",
+        "History",
+        "Data",
+      ]);
+      await expect(view.getByRole("progressbar", { name: "Today's spend" })).toBeVisible();
+      // the row opens the edit sheet, and Remove budget takes the budget away
+      await row.click();
+      const edit = page.getByRole("dialog", { name: "Edit budget" });
+      await expect(edit).toBeVisible();
+      await expect(edit.getByRole("combobox", { name: "Period" })).toHaveValue("day");
+      await edit.getByRole("button", { name: "Remove budget" }).click();
+      await expect(row).toBeHidden();
+      await expect(view.getByRole("progressbar", { name: "Today's spend" })).toHaveCount(0);
+      // the alerts switch flips and its choice is read back off the hub; the server is shared
+      // across the run's projects, so the switch may arrive in either state — flip it once and
+      // put it back, asserting only the flip itself
+      const alerts = view.getByRole("switch", { name: "Desktop notifications" });
+      const start = await alerts.getAttribute("aria-checked");
+      await Promise.all([
+        page.waitForResponse(
+          (r) => r.request().method() === "PUT" && r.url().endsWith("/api/radar/api/settings"),
+        ),
+        alerts.click(),
+      ]);
+      await expect(alerts).toHaveAttribute("aria-checked", start === "true" ? "false" : "true");
+      await alerts.click();
+      await expect(alerts).toHaveAttribute("aria-checked", start ?? "true");
+      await expectAccessible(page);
+    });
+  });
+
   for (const [name, hash] of GROUPS) {
     test(`${name}: no horizontal scroll, tap targets, axe clean`, async ({ page }) => {
       await openSettings(page, hash);
@@ -372,8 +439,6 @@ test.describe("the Settings tab", () => {
       if (test.info().project.use.hasTouch) {
         const small = await page.evaluate(() =>
           [...document.querySelectorAll<HTMLElement>("[data-settings] button, [data-settings] input, [data-settings] a")]
-            // Radar's own settings view keeps its 30 px controls until HV-TOKENS-SETTINGS moves it
-            .filter((el) => el.closest('[data-setting="radar"]') === null)
             // a switch or a radio is tapped through the label around it
             .map((el) => ({ el, r: (el.closest("label") ?? el).getBoundingClientRect() }))
             .filter(({ r }) => r.width > 0 && (r.width < 44 || r.height < 44))

@@ -189,3 +189,15 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Cause:** the taker ran its setup before its first Accept, while the old daemon had closed its copy.
 - **Guard:** `TestAcceptAhead` (internal/routerd/acceptahead_test.go), `TestHuddleRouterHandoverScenarios` (internal/routerd/handover_scenario_test.go)
 - **Rule:** a daemon accepts on a live port before any setup.
+
+## 2026-10-28, Radar's writes were refused through the hub
+
+- **What happened:** saving a budget, changing Radar's settings or clearing history from the hub's Settings
+  answered 403 "writes need x-huddle-action naming the action"; HV-SET-06's add-budget e2e found it.
+- **Cause:** Radar's controller `sendJson` (web/hub/src/radar/app/controller.ts) sent no `x-huddle-action`
+  header, and the hub's write guard (internal/huddle/server/guard.go, `ActionHeader`) refuses a write without
+  it; no test wrote through the hub.
+- **Guard:** `"saves a new budget and re-polls the spend"` (web/hub/test/radar/app-controller.test.ts), and
+  the Spending e2e in web/e2e/settings.spec.ts
+- **Rule:** every write a page makes through the hub names its action in `x-huddle-action`, and an e2e writes
+  through the hub.
