@@ -376,15 +376,6 @@
     "daisy": 24,
     "legacy": 8
   },
-  "work/Map.tsx": {
-    "daisy": 21,
-    "legacy": 5
-  },
-  "work/Repo.tsx": {
-    "daisy": 28,
-    "legacy": 10,
-    "px": 1
-  },
   "work/TaskDrawer.tsx": {
     "control": 28,
     "daisy": 123,

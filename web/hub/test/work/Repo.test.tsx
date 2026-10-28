@@ -225,9 +225,9 @@ describe("RepoCode", () => {
     expect(screen.getAllByText("app.tsx").length).toBeGreaterThan(0);
     expect(screen.getByText("Tasks that touch this (1)")).toBeDefined();
     expect(screen.getByText("Wire the rail")).toBeDefined();
-    const pre = must(document.querySelector(".mockup-code pre"));
+    const pre = must(document.querySelector("[data-code] pre"));
     expect(pre.getAttribute("data-prefix")).toBe("1");
-    expect(document.querySelectorAll(".mockup-code pre")).toHaveLength(1);
+    expect(document.querySelectorAll("[data-code] pre")).toHaveLength(1);
   });
 
   it("opens a ref chip's drawer", async () => {
@@ -254,7 +254,7 @@ describe("RepoCode", () => {
     });
     const { container } = repo({ api, parts: ["code", "r.md"] });
     await waitFor(() => expect(container.querySelector(".prose-h")).not.toBeNull());
-    expect(container.querySelector(".mockup-code")).toBeNull();
+    expect(container.querySelector("[data-code]")).toBeNull();
   });
 
   it("tells a binary file's size instead of drawing it", async () => {
@@ -413,8 +413,8 @@ describe("RepoGeneric", () => {
   it("falls back to the raw JSON, and shows the view's refusal", async () => {
     const api = apiF({ "/repo/stats": { ok: true } });
     const { container } = repo({ api, views: ["stats"], parts: ["stats"] });
-    await waitFor(() => expect(container.querySelector(".mockup-code")).not.toBeNull());
-    expect(must(container.querySelector(".mockup-code")).textContent).toContain('"ok": true');
+    await waitFor(() => expect(container.querySelector("[data-code]")).not.toBeNull());
+    expect(must(container.querySelector("[data-code]")).textContent).toContain('"ok": true');
 
     const api2 = apiF({ "/repo/stats": { error: "not served" } });
     repo({ api: api2, views: ["stats"], parts: ["stats"] });

@@ -7,6 +7,7 @@
 import { highlight, langOf, type TokenKind } from "@huddle/ui/code.tsx";
 import { Markdown } from "@huddle/ui/markdown.tsx";
 import { Panel } from "@huddle/ui/page.tsx";
+import { Table, type Column } from "@huddle/ui/table.tsx";
 import type { Stamp } from "@huddle/ui/time.ts";
 import type { ComponentChild, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -41,6 +42,30 @@ export type DriftReply = { rows?: DriftRow[]; at?: Stamp };
 
 /** The built-in views' words; an extension's view capitalises itself. */
 const RNAMES: Record<string, string> = { code: "Code", drift: "Drift", diagrams: "Diagrams" };
+
+/** The segmented track the view chips sit on: a quiet fill the picked chip is raised out of. */
+const TRACK =
+  "flex max-w-full items-center gap-0.5 overflow-x-auto rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] p-[0.2rem]";
+
+/** One view chip: the picked one on the surface with the drop shadow, the others quiet. */
+const chip = (on: boolean): string =>
+  `inline-flex min-h-[2.4rem] shrink-0 items-center whitespace-nowrap rounded-[calc(var(--ui-radius)-0.2rem)] px-3 text-sm pointer-coarse:min-h-[var(--ui-tap)]${
+    on
+      ? " bg-[var(--ui-surface)] font-semibold text-[var(--ui-text)] shadow-[var(--ui-shadow-1)]"
+      : " font-medium text-[var(--ui-muted)]"
+  }`;
+
+/** One row of the file listing: quiet until hovered, the current path held on surface. */
+const listingRow = (on: boolean): string =>
+  `flex min-h-[2.4rem] items-center gap-2 rounded-[var(--ui-radius-sm)] px-2 text-sm text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] pointer-coarse:min-h-[var(--ui-tap)]${
+    on ? " bg-[var(--ui-surface-2)] font-medium" : ""
+  }`;
+
+/** A link in the design's accent, underlined as links read. */
+const LINK = "text-[var(--ui-accent)] underline";
+
+/** Around rendered Markdown: its links read in the accent over the page's surfaces. */
+const MD = "[&_a]:text-[var(--ui-accent)]";
 
 /** A view's chip word: the built-in's name, or the extension's own, capitalised. */
 export function repoLabel(k: string): string {
@@ -110,19 +135,25 @@ const TOKEN_CLASS: Record<TokenKind, string> = {
   kw: "text-[var(--hue-mauve)]",
   str: "text-[var(--hue-green)]",
   num: "text-[var(--hue-peach)]",
-  com: "text-base-content/50 italic",
+  com: "text-[var(--ui-muted)] italic",
   key: "text-[var(--hue-blue)]",
   param: "text-[var(--hue-teal)]",
 };
 
-/** A file's text as a daisyUI code mockup: line numbers down the left, the offline highlighter's
- *  tokens over them. */
+/** A file's text as a code box on the quiet surface: line numbers down the left, the offline
+ *  highlighter's tokens over them. */
 export function MockupCode({ text, lang }: { text: string; lang: string }): JSX.Element {
   return (
-    <div class="mockup-code before:hidden rounded-none font-mono text-xs">
+    <div
+      data-code
+      class="ui-mono overflow-x-auto rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] p-3 text-xs leading-relaxed"
+    >
       {highlight(text, lang).map((toks, i) => (
-        <pre key={i} data-prefix={String(i + 1)}>
-          <code>
+        <pre key={i} data-prefix={String(i + 1)} class="m-0 flex gap-3">
+          <span aria-hidden="true" class="w-6 shrink-0 select-none text-right text-[var(--ui-muted)]">
+            {i + 1}
+          </span>
+          <code class="whitespace-pre">
             {toks.map((t, j) =>
               t.kind ? (
                 <span key={j} class={TOKEN_CLASS[t.kind]}>
@@ -201,11 +232,11 @@ export function Repo(props: RepoProps): JSX.Element {
     <div class="flex min-w-0 flex-col gap-5">
       <nav class="flex flex-wrap items-center gap-3" aria-label="Repo views">
         {/* biome-ignore lint/a11y/useSemanticElements: the view switch's group role */}
-        <div class="join" role="group" aria-label="Repo view">
+        <div class={TRACK} role="group" aria-label="Repo view">
           {views.map((k) => (
             <a
               key={k}
-              class={`btn join-item btn-sm${k === pick.view ? " btn-primary" : ""}`}
+              class={chip(k === pick.view)}
               href={viewHref(ch, k)}
               aria-current={k === pick.view ? "page" : undefined}
             >
@@ -214,7 +245,7 @@ export function Repo(props: RepoProps): JSX.Element {
           ))}
         </div>
         <span class="flex-1" />
-        <code class="hidden truncate text-meta muted lg:block">{props.repoPath ?? ""}</code>
+        <code class="hidden truncate text-meta text-[var(--ui-muted)] lg:block">{props.repoPath ?? ""}</code>
       </nav>
       {!pick.view ? (
         <Empty
@@ -280,19 +311,25 @@ function RepoListing({
 }): JSX.Element {
   return (
     <Panel label="Files" flush class="max-h-[70dvh] overflow-y-auto">
-      <ul class="menu w-full">
+      <ul class="flex w-full flex-col gap-0.5 p-1.5">
         {dirPath ? (
           <li>
-            <a href={codeHref(ch, dirPath.split("/").slice(0, -1).join("/"))}>
-              <Icon name="left" class="size-4" />
-              Up
+            <a class={listingRow(false)} href={codeHref(ch, dirPath.split("/").slice(0, -1).join("/"))}>
+              <span class="shrink-0 text-[var(--ui-muted)]">
+                <Icon name="left" class="size-4" />
+              </span>
+              <span>Up</span>
             </a>
           </li>
         ) : null}
         {(tree.entries ?? []).map((e) => (
           <li key={e.path}>
-            <a href={codeHref(ch, e.path)} aria-current={e.path === path ? "page" : undefined}>
-              <span class="muted shrink-0">
+            <a
+              class={listingRow(e.path === path)}
+              href={codeHref(ch, e.path)}
+              aria-current={e.path === path ? "page" : undefined}
+            >
+              <span class="shrink-0 text-[var(--ui-muted)]">
                 <Icon name={e.dir ? "folder" : "file"} class="size-4" />
               </span>
               <span class="truncate">{e.name}</span>
@@ -325,7 +362,7 @@ function RepoRefs({
         {refs.slice(0, 80).map((s) => (
           <a
             key={s.id}
-            class="badge badge-ghost gap-1.5 hover:underline"
+            class="ui-badge ui-badge-neutral gap-1.5 hover:underline"
             href={taskHref(api, ch, s.id)}
             onClick={(e) => {
               e.preventDefault();
@@ -350,7 +387,7 @@ function fileMain(f: RepoFile, path: string): ComponentChild {
   if (/\.md$/i.test(path))
     return (
       <Panel label={path}>
-        <div class="prose-h">
+        <div class={MD}>
           <Markdown text={f.text ?? ""} />
         </div>
       </Panel>
@@ -360,7 +397,9 @@ function fileMain(f: RepoFile, path: string): ComponentChild {
       title={path.split("/").at(-1) ?? path}
       icon="code"
       flush
-      right={<span class="text-meta muted tnum">{(f.text ?? "").split("\n").length} lines</span>}
+      right={
+        <span class="text-meta text-[var(--ui-muted)] tnum">{(f.text ?? "").split("\n").length} lines</span>
+      }
     >
       <MockupCode text={f.text ?? ""} lang={langOf(path)} />
     </Box>
@@ -374,7 +413,7 @@ function codeMain(st: CodeState): ComponentChild {
   if (st.tree.readme)
     return (
       <Box title="README" icon="book">
-        <div class="prose-h">
+        <div class={MD}>
           <Markdown text={st.tree.readme} />
         </div>
       </Box>
@@ -427,14 +466,14 @@ export function RepoCode({
 
   const parts = st.path ? st.path.split("/") : [];
   const crumbs = (
-    <nav class="flex flex-wrap items-center gap-1 font-mono text-sm muted" aria-label="Path">
-      <a class="link link-primary" href={codeHref(ch, "")}>
+    <nav class="flex flex-wrap items-center gap-1 font-mono text-sm text-[var(--ui-muted)]" aria-label="Path">
+      <a class={LINK} href={codeHref(ch, "")}>
         repo
       </a>
       {parts.map((x, i) => (
         <span key={`${x}/${i}`}>
           {" / "}
-          <a class="link link-primary" href={codeHref(ch, parts.slice(0, i + 1).join("/"))}>
+          <a class={LINK} href={codeHref(ch, parts.slice(0, i + 1).join("/"))}>
             {x}
           </a>
         </span>
@@ -452,7 +491,7 @@ export function RepoCode({
   return (
     <>
       {crumbs}
-      <div class="grid items-start gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <div class="grid items-start gap-5 lg:grid-cols-[18.6667rem_minmax(0,1fr)]">
         <RepoListing ch={ch} tree={st.tree} dirPath={st.dirPath} path={st.path} />
         <div class="flex min-w-0 flex-col gap-5">
           <RepoRefs api={api} ch={ch} refs={st.refs} byId={byId} onOpenTask={onOpenTask} />
@@ -506,64 +545,61 @@ export function RepoDrift({
   const bad = rows.filter((r) => r.state !== "ok").length;
   return (
     <div class="flex min-w-0 flex-col gap-5">
-      <p class="max-w-[72ch] text-[0.9375rem] muted">
+      <p class="max-w-[72ch] text-[0.9375rem] text-[var(--ui-muted)]">
         Every code snippet a task quotes from a file, checked against the file now.{" "}
         {bad ? `${bad} of ${rows.length} no longer match.` : rows.length ? `All ${rows.length} match.` : ""}{" "}
         Checked <Time ts={d.at} now={now} />.
       </p>
       <Box title="Snippet drift" icon="code" flush>
-        <div class="overflow-x-auto">
-          <table class="table table-pin-rows text-row">
-            <thead>
-              <tr class="bg-base-200/60 text-sm text-base-content/70">
-                <th>State</th>
-                <th>Task</th>
-                <th>File</th>
-                <th class="text-right tnum">Lines kept</th>
-              </tr>
-            </thead>
-            <tbody>
-              {driftOrdered(rows).map((r) => {
+        <Table
+          label="Drift rows"
+          columns={[
+            {
+              key: "state",
+              label: "State",
+              cell: (r) => {
                 const pill = driftPill(r.state);
-                const file = String(r.path ?? "").replace(/:\d.*$/, "");
-                return (
-                  <tr key={`${r.step}/${r.path}`} class="hover:bg-base-200/50">
-                    <td class="whitespace-nowrap">
-                      <Pill status={pill.status} label={pill.label} />
-                    </td>
-                    <td>
-                      <a
-                        class="link link-primary font-mono text-sm"
-                        href={taskHref(api, ch, r.step)}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          onOpenTask(r.step);
-                        }}
-                      >
-                        {r.step}
-                      </a>
-                    </td>
-                    <td>
-                      <a class="link link-primary font-mono text-sm" href={codeHref(ch, file)}>
-                        {r.path}
-                      </a>
-                    </td>
-                    <td class="text-right tnum">
-                      {r.score === null || r.score === undefined ? "" : `${r.score}%`}
-                    </td>
-                  </tr>
-                );
-              })}
-              {!rows.length ? (
-                <tr>
-                  <td colSpan={4} class="px-5 py-4 text-sm muted">
-                    No snippet quotes a file.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+                return <Pill status={pill.status} label={pill.label} />;
+              },
+            },
+            {
+              key: "step",
+              label: "Task",
+              mono: true,
+              cell: (r) => (
+                <a
+                  class={LINK}
+                  href={taskHref(api, ch, r.step)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onOpenTask(r.step);
+                  }}
+                >
+                  {r.step}
+                </a>
+              ),
+            },
+            {
+              key: "path",
+              label: "File",
+              mono: true,
+              cell: (r) => (
+                <a class={LINK} href={codeHref(ch, String(r.path ?? "").replace(/:\d.*$/, ""))}>
+                  {r.path}
+                </a>
+              ),
+            },
+            {
+              key: "score",
+              label: "Lines kept",
+              align: "end",
+              cell: (r) => (r.score === null || r.score === undefined ? "" : `${r.score}%`),
+            },
+          ]}
+          rows={driftOrdered(rows)}
+          rowKey={(r) => `${r.step}/${r.path}`}
+          empty="No snippet quotes a file."
+        />
       </Box>
     </div>
   );
@@ -620,12 +656,12 @@ export function RepoDiagrams({
   const label = (x: string): string => x.replace(/\.png$/, "").replace(/-/g, " ");
   return (
     <div class="flex min-w-0 flex-col gap-5">
-      {/* biome-ignore lint/a11y/useSemanticElements: the legacy chip group's role, kept word for word */}
-      <div class="join flex-wrap" role="group" aria-label="Diagrams">
+      {/* biome-ignore lint/a11y/useSemanticElements: the chip group's role */}
+      <div class={TRACK} role="group" aria-label="Diagrams">
         {ds.map((x) => (
           <a
             key={x}
-            class={`btn join-item btn-sm${x === cur ? " btn-primary" : ""}`}
+            class={chip(x === cur)}
             href={viewHref(ch, "diagrams", encodeURIComponent(x))}
             aria-current={x === cur ? "page" : undefined}
           >
@@ -640,7 +676,7 @@ export function RepoDiagrams({
           alt={`Diagram: ${label(cur)}`}
         />
       </Panel>
-      <p class="text-meta muted">
+      <p class="text-meta text-[var(--ui-muted)]">
         From <code>docs/architecture/{cur}</code>.
       </p>
     </div>
@@ -701,7 +737,7 @@ export function RepoGeneric({
       <div class="flex min-w-0 flex-col gap-5">
         {r.map((x, i) => (
           <Panel key={i} label={`${repoLabel(view)} document ${i + 1}`}>
-            <div class="prose-h">
+            <div class={MD}>
               <Markdown text={x.md} />
             </div>
           </Panel>
@@ -711,28 +747,16 @@ export function RepoGeneric({
     );
   if (isRows(r)) {
     const keys = tableKeys(r);
+    type Keyed = { x: Record<string, unknown>; i: number };
+    const keyed = r.map((x, i) => ({ x, i }));
+    const cols: Column<Keyed>[] = keys.map((k) => ({
+      key: k,
+      label: k,
+      cell: (row) => cellNode(row.x[k]),
+    }));
     return (
       <Panel label={repoLabel(view)} flush class="min-w-0">
-        <div class="overflow-x-auto">
-          <table class="table text-row">
-            <thead>
-              <tr class="bg-base-200/60 text-sm text-base-content/70">
-                {keys.map((k) => (
-                  <th key={k}>{k}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {r.map((x, i) => (
-                <tr key={i} class="hover:bg-base-200/50 align-top">
-                  {keys.map((k) => (
-                    <td key={k}>{cellNode(x[k])}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table label={repoLabel(view)} columns={cols} rows={keyed} rowKey={(row) => String(row.i)} />
       </Panel>
     );
   }

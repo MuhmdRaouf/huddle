@@ -2,6 +2,8 @@
 // session online with the task it is on now and the one queued next, and the critical path with
 // the link that shows it in the Graph. Port of work.js paintMap.
 
+import { Badge } from "@huddle/ui/badge.tsx";
+import { Button } from "@huddle/ui/button.tsx";
 import { Panel } from "@huddle/ui/page.tsx";
 import type { JSX } from "preact";
 import type { Api } from "../api.ts";
@@ -42,7 +44,7 @@ function PhaseCard({ p, steps }: { p: Phase; steps: readonly Step[] }): JSX.Elem
       meta={
         <span class="inline-flex items-center gap-2">
           {done ? (
-            <span class="text-success" title="complete">
+            <span class="text-[var(--ui-ok-ink)]" title="complete">
               <Icon name="checkc" class="size-4.5" />
             </span>
           ) : null}
@@ -82,11 +84,15 @@ export function MapView(props: MapProps): JSX.Element {
         }}
       >
         <StatusIcon status={stepState(t)} class="size-3.5" />
-        <span class="badge badge-ghost badge-sm font-mono">{id}</span>
+        <Badge tone="neutral">
+          <span class="ui-mono">{id}</span>
+        </Badge>
         <span class="truncate">{t.title}</span>
       </a>
     ) : (
-      <span class="badge badge-ghost badge-sm font-mono">{id}</span>
+      <Badge tone="neutral">
+        <span class="ui-mono">{id}</span>
+      </Badge>
     );
   };
 
@@ -109,24 +115,24 @@ export function MapView(props: MapProps): JSX.Element {
             <Avatar name={s.name} />
             <b class="truncate text-[0.9375rem] font-semibold">{s.name}</b>
             {orchestrator === s.name ? (
-              <span class="text-base-content/50" title="Orchestrator">
+              <span class="text-[var(--ui-muted)]" title="Orchestrator">
                 <Icon name="baton" class="size-4" />
               </span>
             ) : null}
           </a>
-          <span class={`badge badge-sm gap-1.5 ${m.c} tinted ink`}>
+          <span class={`ui-badge gap-1.5 ${m.c} tinted ink`}>
             <Icon name={m.i} class="size-3.5" />
             {m.l}
           </span>
         </div>
         <div class="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 text-sm">
-          <span class="text-base-content/50">Now</span>
+          <span class="text-[var(--ui-muted)]">Now</span>
           <span class="min-w-0">
-            {s.step ? tl(s.step) : <span class="text-base-content/50">{s.task || "nothing"}</span>}
+            {s.step ? tl(s.step) : <span class="text-[var(--ui-muted)]">{s.task || "nothing"}</span>}
           </span>
-          <span class="text-base-content/50">Next</span>
+          <span class="text-[var(--ui-muted)]">Next</span>
           <span class="min-w-0">
-            {nxId && nxId !== s.step ? tl(nxId) : <span class="text-base-content/50">nothing queued</span>}
+            {nxId && nxId !== s.step ? tl(nxId) : <span class="text-[var(--ui-muted)]">nothing queued</span>}
           </span>
         </div>
       </li>
@@ -136,14 +142,14 @@ export function MapView(props: MapProps): JSX.Element {
   return (
     <div class="grid min-w-0 items-start gap-5 lg:grid-cols-2">
       <section class="flex min-w-0 flex-col gap-3" aria-labelledby="mp-ph">
-        <h2 id="mp-ph" class="text-sm font-medium muted px-1">
+        <h2 id="mp-ph" class="text-sm font-medium text-[var(--ui-muted)] px-1">
           Phases
         </h2>
         {ps.length ? (
           ps.map((p) => <PhaseCard key={p.n} p={p} steps={board.steps.filter((x) => x.phase_n === p.n)} />)
         ) : (
           <Panel>
-            <p class="text-center text-sm muted">No phases yet.</p>
+            <p class="text-center text-sm text-[var(--ui-muted)]">No phases yet.</p>
           </Panel>
         )}
       </section>
@@ -155,11 +161,11 @@ export function MapView(props: MapProps): JSX.Element {
         label="Sessions"
         class="min-w-0"
       >
-        <ul class="divide-y divide-base-content/10">
+        <ul class="divide-y divide-[var(--ui-line)]">
           {tops.length ? (
             tops.map(sessRow)
           ) : (
-            <li class="px-5 py-10 text-center text-sm muted">No session online.</li>
+            <li class="px-5 py-10 text-center text-sm text-[var(--ui-muted)]">No session online.</li>
           )}
         </ul>
       </Panel>
@@ -168,23 +174,23 @@ export function MapView(props: MapProps): JSX.Element {
         label="Critical path"
         icon={<Icon name="graph" class="size-4.5" />}
         actions={
-          <a class="btn btn-ghost btn-sm" href={api.channelHref(ch, "/work/graph")}>
+          <Button variant="ghost" href={api.channelHref(ch, "/work/graph")}>
             <Icon name="graph" class="size-4.5" />
             Show in Graph
-          </a>
+          </Button>
         }
         class="min-w-0 lg:col-span-2"
       >
         {crit.length ? (
           <>
-            <p class="mb-4 text-sm muted">
+            <p class="mb-4 text-sm text-[var(--ui-muted)]">
               The longest chain of unfinished tasks. Any delay here delays the end.
             </p>
             <ol class="flex flex-wrap items-center gap-2">
               {crit.map((id, i) => (
                 <li key={id} class="flex min-w-0 items-center gap-2">
-                  {i ? <Icon name="arrow" class="size-4 text-base-content/50" /> : null}
-                  <span class="badge badge-ghost max-w-64 gap-1.5 px-2 py-1.5 text-[0.9375rem]">
+                  {i ? <Icon name="arrow" class="size-4 text-[var(--ui-muted)]" /> : null}
+                  <span class="inline-flex max-w-64 items-center gap-1.5 rounded-[var(--ui-radius-sm)] bg-[var(--ui-surface-2)] px-2 py-1.5 text-[0.9375rem]">
                     {tl(id)}
                   </span>
                 </li>
@@ -192,7 +198,9 @@ export function MapView(props: MapProps): JSX.Element {
             </ol>
           </>
         ) : (
-          <p class="text-sm muted">No chain of unfinished tasks: everything open can run in parallel.</p>
+          <p class="text-sm text-[var(--ui-muted)]">
+            No chain of unfinished tasks: everything open can run in parallel.
+          </p>
         )}
       </Panel>
     </div>

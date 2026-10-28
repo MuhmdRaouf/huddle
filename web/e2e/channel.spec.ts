@@ -12,8 +12,9 @@
 // one.
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { expectAccessible } from "./axe.ts";
+import { axeViolations, expectAccessible } from "./axe.ts";
 import { api, openTab, signIn, theSetup } from "./helpers.ts";
+import { repoRoot } from "./paths.ts";
 
 /** The height the played keyboard covers: about the iPhone 15's own. */
 const KEYBOARD = 300;
@@ -21,6 +22,27 @@ const KEYBOARD = 300;
 /** The parts axe leaves to their own specs: the shell's chrome and the channel rail beside the
  *  page on wide screens. */
 const SHELL = ["[data-sidebar]", "[data-nav]", "#side"] as const;
+
+/** The work page's colour-contrast debts that predate it, each named by its node: the work tab
+ *  strip's quiet tabs (Work's own strip) and the status pill's tone ink, the same tinted-ink pair
+ *  every status pill on the hub paints. Their cards retire these entries when they fix them. */
+const WORK_KNOWN: readonly { rule: string; node: string }[] = [
+  { rule: "color-contrast", node: "#wt-" },
+  { rule: "color-contrast", node: ".c-yellow" },
+];
+
+/** Axe over the work page, less the shell, `extra`'s parts and the known debts. */
+async function expectWorkAccessible(page: Page, extra: readonly string[] = []): Promise<void> {
+  const found = (await axeViolations(page, [...SHELL, ...extra]))
+    .map((v) => ({
+      ...v,
+      nodes: v.nodes.filter(
+        (node) => !WORK_KNOWN.some((k) => k.rule === v.id && node.startsWith(k.node)),
+      ),
+    }))
+    .filter((v) => v.nodes.length > 0);
+  expect(found).toEqual([]);
+}
 
 /** The channels this spec made, removed after each test so the specs after it see the run's one
  *  seeded channel alone. */
@@ -40,9 +62,13 @@ test.afterEach(async () => {
 });
 
 /** A fresh channel with the named sessions joined, unique to this project and run. */
-async function freshChannel(project: string, sessions: readonly string[]): Promise<string> {
+async function freshChannel(
+  project: string,
+  sessions: readonly string[],
+  opts: { repo?: string } = {},
+): Promise<string> {
   const name = `chat-${project}-${Date.now().toString(36)}`;
-  await api("/api/channels", { name });
+  await api("/api/channels", { name, repo: opts.repo });
   made.push({ name, sessions });
   for (const s of sessions) await api(`/api/c/${name}/op/join?as=${s}`, {});
   return name;
@@ -97,6 +123,32 @@ async function expectNoSideScroll(page: Page): Promise<void> {
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(over).toBeLessThanOrEqual(0);
+}
+
+/** Every element stands whole inside the viewport, however the page scrolls it into view. */
+async function expectInsideViewport(page: Page, targets: readonly Locator[]): Promise<void> {
+  const vp = page.viewportSize() ?? { width: 0, height: 0 };
+  for (const t of targets) {
+    await t.scrollIntoViewIfNeeded();
+    const box = await t.boundingBox();
+    expect(box, `${t}`).not.toBeNull();
+    expect(box?.x ?? -1, `${t} left`).toBeGreaterThanOrEqual(0);
+    expect(box?.y ?? -1, `${t} top`).toBeGreaterThanOrEqual(0);
+    expect((box?.x ?? 0) + (box?.width ?? 0), `${t} right`).toBeLessThanOrEqual(vp.width + 1);
+    expect((box?.y ?? 0) + (box?.height ?? 0), `${t} bottom`).toBeLessThanOrEqual(vp.height + 1);
+  }
+}
+
+/** On the phone every element rests above the tab bar, never under it. */
+async function expectClearOfTabBar(page: Page, targets: readonly Locator[]): Promise<void> {
+  if (!test.info().project.use.hasTouch) return;
+  const bar = await page.locator("[data-nav='bottom']").boundingBox();
+  if (bar === null) return;
+  for (const t of targets) {
+    await t.scrollIntoViewIfNeeded();
+    const box = await t.boundingBox();
+    expect((box?.y ?? 0) + (box?.height ?? 0), `${t} clears the tab bar`).toBeLessThanOrEqual(bar.y + 1);
+  }
 }
 
 test("the channel page lists the seeded ping and pong with who told whom", async ({ page }) => {
@@ -434,4 +486,58 @@ test("the channel settings page gives every element an id of its own", async ({ 
   await sheet.getByRole("button", { name: "Save" }).click();
   await expect(sheet).toBeHidden();
   await expect(page.locator('[data-section="about"]')).toContainText(`Named ${ch}`);
+});
+
+test("the work map and the repo views keep their layers inside the viewport", async ({ page }, info) => {
+  // a channel with a repo: the repo's Code and Drift views join the page
+  const ch = await freshChannel(info.project.name, ["alpha"], { repo: repoRoot });
+  // two chained tasks: the map's critical path carries their drawer links
+  await api(`/api/c/${ch}/op/task_create?as=alpha`, { id: "map-a", title: "First map task", phase: 1 });
+  await api(`/api/c/${ch}/op/task_create?as=alpha`, {
+    id: "map-b",
+    title: "Second map task",
+    after: ["map-a"],
+    phase: 1,
+  });
+
+  await openChannel(page, ch);
+  await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/work/map`);
+  const map = page.locator("main");
+  await expect(map.getByRole("heading", { name: "Critical path" })).toBeVisible();
+  await expectNoSideScroll(page);
+  const graph = map.getByRole("link", { name: "Show in Graph" });
+  await expectTapTargets([graph]);
+  await expectInsideViewport(page, [graph]);
+  await expectClearOfTabBar(page, [graph]);
+  await expectWorkAccessible(page);
+
+  // the page's one layer: a chain task's drawer over the map. The drawer's own markup belongs to
+  // the TaskDrawer card, so its open dialog stays out of the page's axe read.
+  await map.locator("ol a").filter({ hasText: "Second map task" }).click();
+  const layer = page.locator("dialog[open]");
+  await expect(layer.locator("[data-slide-over]")).toBeVisible();
+  expect(await layer.count(), "one layer at a time").toBeLessThanOrEqual(1);
+  await expectInsideViewport(page, [layer.first()]);
+  await expectAccessible(page, [...SHELL, "dialog[open]"]);
+  await page.keyboard.press("Escape");
+  await expect(layer).toHaveCount(0);
+
+  // the repo's code view: the chips, the listing and the folder read on the tokens. The README's
+  // markdown (web/ui's renderer over app.css's .code fences) stays out of the page's read; its
+  // cards own it.
+  await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/work/repo/code`);
+  const files = page.getByRole("region", { name: "Files" });
+  await expect(files).toBeVisible();
+  await expectNoSideScroll(page);
+  const chips = await page.getByRole("group", { name: "Repo view" }).locator("a").all();
+  await expectTapTargets(chips);
+  await expectInsideViewport(page, chips);
+  await expectClearOfTabBar(page, chips);
+  await expectWorkAccessible(page, [".prose-h"]);
+
+  // the drift view: its table scrolls inside its own region
+  await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/work/repo/drift`);
+  await expect(page.getByRole("region", { name: "Drift rows" })).toBeVisible();
+  await expectNoSideScroll(page);
+  await expectWorkAccessible(page);
 });
