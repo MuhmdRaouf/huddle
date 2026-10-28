@@ -4,7 +4,8 @@ package main
 // process Claude Code starts for the event — writes one model agent file per Claude family into
 // the temp config dir's agents/ folder, and a second run leaves every byte and mtime alone. A
 // config dir whose agents entry is a regular file (the folder cannot exist) still exits 0. Every
-// home is a temp one; nothing touches the real ~/.claude, ~/.agents or ports 18786-18879.
+// home is a temp one; nothing touches the real ~/.claude, ~/.agents or the daemons' loopback
+// ports.
 
 import (
 	"bytes"
