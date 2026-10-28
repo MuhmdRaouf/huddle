@@ -5,8 +5,9 @@
 // and of app.js openModal's title + close-button shell.
 
 import type { ComponentChildren, JSX } from "preact";
-import { useEffect, useId, useRef } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 import { Button } from "./button.tsx";
+import { useUiId } from "./id.ts";
 import { restack, showLayer } from "./layer.ts";
 
 /** What a dialog shows: whether it is open, how to close it, an optional title and the body. */
@@ -23,7 +24,7 @@ export type DialogProps = {
 export function Dialog({ open, onClose, title, labeledBy, children }: DialogProps): JSX.Element {
   const dlg = useRef<HTMLDialogElement>(null);
   const opener = useRef<Element | null>(null);
-  const titleId = useId();
+  const titleId = useUiId("ui-dialog");
 
   // Open modally as the newest layer and remember what to give focus back to; close when the parent
   // flips `open` off.

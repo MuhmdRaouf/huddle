@@ -5,9 +5,9 @@
  */
 
 import type { Tone } from "@huddle/ui/badge.tsx";
+import { useUiId } from "@huddle/ui/id.ts";
 import { modelColor } from "@huddle/ui/model-color.ts";
 import type { ComponentChildren, HTMLAttributes } from "preact";
-import { useId } from "preact/hooks";
 import type { IconName } from "../icons.ts";
 import { STATUS_COLOR, type StatusTone } from "../palette.ts";
 import { useApp } from "./context.ts";
@@ -119,7 +119,7 @@ export function Panel({
   class?: string;
   children?: ComponentChildren;
 }) {
-  const id = useId();
+  const id = useUiId("radar-panel");
   const titled = title !== undefined;
   const classes = ["ui-card min-w-0", flush ? "overflow-hidden" : "", cls].filter(Boolean).join(" ");
   return (

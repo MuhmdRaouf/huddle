@@ -2,7 +2,7 @@
 // muted note above the chart, which is one image to a screen reader, named by what it shows.
 
 import type { ComponentChildren, JSX } from "preact";
-import { useId } from "preact/hooks";
+import { useUiId } from "./id.ts";
 
 /** What a chart frame shows around its chart. */
 export type ChartFrameProps = {
@@ -18,7 +18,7 @@ export type ChartFrameProps = {
 
 /** A figure: the caption over the chart. */
 export function ChartFrame({ title, value, meta, label, children }: ChartFrameProps): JSX.Element {
-  const id = useId();
+  const id = useUiId("ui-chart");
   return (
     <figure class="ui-chart" aria-labelledby={id}>
       <figcaption id={id} class="ui-chart-head">

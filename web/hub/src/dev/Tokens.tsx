@@ -8,6 +8,7 @@ import { Card } from "@huddle/ui/card.tsx";
 import { ChartFrame } from "@huddle/ui/chart-frame.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
 import { Field } from "@huddle/ui/field.tsx";
+import { useUiId } from "@huddle/ui/id.ts";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
 import { Switch } from "@huddle/ui/switch.tsx";
@@ -23,7 +24,7 @@ import {
   writeScheme,
 } from "@huddle/ui/theme.ts";
 import type { ComponentChildren, CSSProperties, JSX } from "preact";
-import { useEffect, useId, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 
 /** The address the page answers on. */
 export const DEV_TOKENS_HASH = "#/dev/tokens";
@@ -141,7 +142,7 @@ const SWATCH_BAR = { height: "40px" } as const;
 
 /** One titled block of the page. */
 function Block({ title, children }: { title: string; children: ComponentChildren }): JSX.Element {
-  const id = useId();
+  const id = useUiId("dev-block");
   return (
     <section aria-labelledby={id} style={{ marginTop: "var(--ui-space-6)" }}>
       <h2 id={id} style={{ margin: "0 0 var(--ui-space-3)", fontSize: "var(--ui-text-lg)" }}>

@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/preact";
 import type { JSX } from "preact";
 import { useState } from "preact/hooks";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { Field } from "../src/field.tsx";
 import { Sheet } from "../src/sheet.tsx";
 
 /** A trigger and the sheet it opens, its state owned here. */
@@ -24,6 +25,16 @@ function Harness({ onClose }: { onClose: () => void }): JSX.Element {
         <p>body</p>
       </Sheet>
     </>
+  );
+}
+
+/** A sheet whose body gains a field only from `named`, the way a page's form mounts when its sheet
+ * opens. */
+function SheetWithField({ named }: { named: boolean }): JSX.Element {
+  return (
+    <Sheet open title="Task 42" onClose={() => {}}>
+      {named ? <Field label="Name" value="" onInput={() => {}} /> : <p>body</p>}
+    </Sheet>
   );
 }
 
@@ -113,5 +124,18 @@ describe("Sheet", () => {
       </Sheet>,
     );
     expect((view.baseElement.querySelector("dialog") as HTMLDialogElement).open).toBe(false);
+  });
+
+  it("a field mounted after the first paints keeps an id of its own, not the sheet title's", () => {
+    const view = render(<SheetWithField named={false} />);
+    // an intervening paint, the way the live page paints between mount and the sheet opening
+    view.rerender(<SheetWithField named={false} />);
+    view.rerender(<SheetWithField named={true} />);
+    const title = screen.getByRole("heading", { name: "Task 42" });
+    const input = screen.getByLabelText("Name");
+    expect(input.tagName).toBe("INPUT");
+    expect((input as HTMLInputElement).id).not.toBe(title.id);
+    // one element on the page carries the input's id, so the label resolves to the input
+    expect(view.baseElement.querySelectorAll(`[id="${(input as HTMLInputElement).id}"]`)).toHaveLength(1);
   });
 });

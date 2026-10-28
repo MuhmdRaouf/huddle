@@ -396,12 +396,42 @@ test("the channel's settings page holds the mock's sections and saves the name",
   await nameRow.click();
   const sheet = page.getByRole("dialog", { name: "About" });
   await expect(sheet).toBeVisible();
-  // the Field input, addressed by class: the sheet title's and the field's Preact useId ids
-  // collide, so the label's for lands on the title and the input keeps no accessible name
-  await sheet.locator("input.ui-input").fill(`Named ${ch}`);
+  // the Field input, named through its label now that the page's ids stay unique
+  await sheet.getByLabel("Title").fill(`Named ${ch}`);
   await sheet.getByRole("button", { name: "Save" }).click();
   await expect(sheet).toBeHidden();
   await expect(about).toContainText(`Named ${ch}`);
   await expectNoSideScroll(page);
   await expectAccessible(page, SHELL);
+});
+
+test("the channel settings page gives every element an id of its own", async ({ page }, info) => {
+  const ch = await freshChannel(info.project.name, []);
+  await openChannel(page, ch);
+  await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/settings`);
+  await expect(page.locator('[data-section="about"]')).toBeVisible();
+
+  // About › Name opens the sheet that holds the field
+  await page.locator('[data-section="about"]').getByRole("button", { name: /^Name/ }).click();
+  const sheet = page.getByRole("dialog", { name: "About" });
+  await expect(sheet).toBeVisible();
+
+  // no two elements share an id: a repeat makes label[for] and aria-labelledby resolve to the
+  // first match in the tree, leaving the later element with no accessible name
+  const repeats = await page.evaluate(() => {
+    const seen = new Set<string>();
+    const dupes: string[] = [];
+    for (const el of document.querySelectorAll("[id]")) {
+      if (seen.has(el.id)) dupes.push(el.id);
+      seen.add(el.id);
+    }
+    return dupes;
+  });
+  expect(repeats).toEqual([]);
+
+  // the field's label reaches the input the way a reader and a tap both name it
+  await sheet.getByLabel("Title").fill(`Named ${ch}`);
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await expect(sheet).toBeHidden();
+  await expect(page.locator('[data-section="about"]')).toContainText(`Named ${ch}`);
 });

@@ -3,8 +3,9 @@
 // button closes it; focus returns to whatever opened it.
 
 import type { ComponentChildren, JSX } from "preact";
-import { useEffect, useId, useRef } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 import { Button } from "./button.tsx";
+import { useUiId } from "./id.ts";
 import { restack, showLayer } from "./layer.ts";
 
 /** What a sheet shows: open or not, how to close it, its title, header actions and body. */
@@ -20,7 +21,7 @@ export type SheetProps = {
 export function Sheet({ open, onClose, title, actions, children }: SheetProps): JSX.Element {
   const dlg = useRef<HTMLDialogElement>(null);
   const opener = useRef<Element | null>(null);
-  const id = useId();
+  const id = useUiId("ui-sheet");
 
   useEffect(() => {
     const d = dlg.current;

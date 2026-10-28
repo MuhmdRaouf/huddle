@@ -2,7 +2,7 @@
 // input. The input is a full tap target tall; ids, commands and numbers can ask for the mono face.
 
 import type { JSX } from "preact";
-import { useId } from "preact/hooks";
+import { useUiId } from "./id.ts";
 
 /** What a field shows and reports. */
 export type FieldProps = {
@@ -28,7 +28,7 @@ export function Field({
   error,
   mono = false,
 }: FieldProps): JSX.Element {
-  const id = useId();
+  const id = useUiId("ui-field");
   const note = error ?? hint;
   return (
     <div class="ui-field">
