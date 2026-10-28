@@ -4,8 +4,6 @@
 package pricing
 
 import (
-	"net/url"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -320,18 +318,39 @@ var Offerings = []Offering{
 	},
 }
 
-var bracketSuffix = regexp.MustCompile(`\[[^\]]*\]$`)
-var datedSuffix = regexp.MustCompile(`[-@]\d{8}$`)
-
 // canonicalModelID maps "zai/glm-5.3[1m]" to "glm-5.3": drop a provider prefix, a context
-// bracket and a dated snapshot suffix, lowercased.
+// bracket and a dated snapshot suffix, lowercased. Plain string steps, so an id already in
+// canonical form passes through with no allocation.
 func canonicalModelID(model string) string {
-	bare := bracketSuffix.ReplaceAllString(strings.ToLower(jsscalar.Trim(model)), "")
+	bare := strings.ToLower(jsscalar.Trim(model))
+	if strings.HasSuffix(bare, "]") {
+		// The suffix starts at the leftmost `[` with no `]` between it and the final one.
+		closing := len(bare) - 1
+		prev := strings.LastIndexByte(bare[:closing], ']')
+		if open := strings.IndexByte(bare[prev+1:closing], '['); open >= 0 {
+			bare = bare[:prev+1+open]
+		}
+	}
 	unprefixed := bare
 	if slash := strings.LastIndex(bare, "/"); slash >= 0 {
 		unprefixed = bare[slash+1:]
 	}
-	return datedSuffix.ReplaceAllString(unprefixed, "")
+	// A dated snapshot suffix is `-` or `@` plus eight ASCII digits.
+	if n := len(unprefixed); n >= 9 {
+		if sep := unprefixed[n-9]; sep == '-' || sep == '@' {
+			dated := true
+			for i := n - 8; i < n; i++ {
+				if c := unprefixed[i]; c < '0' || c > '9' {
+					dated = false
+					break
+				}
+			}
+			if dated {
+				unprefixed = unprefixed[:n-9]
+			}
+		}
+	}
+	return unprefixed
 }
 
 // sheetRef is where a canonical id lives; several offerings could name the same id, so the
@@ -379,16 +398,33 @@ func resolveSheet(offering *OfferingID, model string) *sheetRef {
 }
 
 // OfferingOfHost is the offering that serves a host, given as `https://host/…` or bare
-// `host`; false when no offering has that host.
+// `host`; false when no offering has that host. String steps cut the host out, so a plain
+// `https://host/…` upstream answers with no allocation.
 func OfferingOfHost(urlOrHost string) (OfferingID, bool) {
 	trimmed := strings.ToLower(jsscalar.Trim(urlOrHost))
 	var host string
-	if strings.Contains(trimmed, "://") {
-		parsed, err := url.Parse(trimmed)
-		if err != nil {
-			return "", false
+	if scheme := strings.Index(trimmed, "://"); scheme >= 0 {
+		rest := trimmed[scheme+3:]
+		if end := strings.IndexAny(rest, "/?#"); end >= 0 {
+			rest = rest[:end]
 		}
-		host = parsed.Hostname()
+		// User info runs to the last `@` of the authority.
+		if at := strings.LastIndexByte(rest, '@'); at >= 0 {
+			rest = rest[at+1:]
+		}
+		if strings.HasPrefix(rest, "[") {
+			// A bracketed host is the text inside the brackets, as Hostname keeps it.
+			closing := strings.IndexByte(rest, ']')
+			if closing < 0 {
+				return "", false
+			}
+			host = rest[1:closing]
+		} else {
+			host = rest
+			if colon := strings.IndexByte(rest, ':'); colon >= 0 {
+				host = rest[:colon]
+			}
+		}
 	} else {
 		host = trimmed
 		if slash := strings.Index(host, "/"); slash >= 0 {
