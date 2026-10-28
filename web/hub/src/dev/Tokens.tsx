@@ -3,11 +3,14 @@
 // desktop project (no horizontal scroll, 44 px tap targets, axe in both schemes).
 
 import { Badge } from "@huddle/ui/badge.tsx";
+import { Banner } from "@huddle/ui/banner.tsx";
 import { Button } from "@huddle/ui/button.tsx";
 import { Card } from "@huddle/ui/card.tsx";
 import { ChartFrame } from "@huddle/ui/chart-frame.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
+import { Empty } from "@huddle/ui/empty.tsx";
 import { Field } from "@huddle/ui/field.tsx";
+import { Icon } from "@huddle/ui/icons.tsx";
 import { useUiId } from "@huddle/ui/id.ts";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
@@ -373,6 +376,29 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
           <Badge tone="warn">slow</Badge>
           <Badge tone="fail">down</Badge>
           <Badge tone="info">new</Badge>
+        </div>
+      </Block>
+
+      <Block title="Banners">
+        <div style={{ display: "grid", gap: "var(--ui-space-3)" }}>
+          <Banner title="Update ready" action={{ label: "Reload", onClick: () => {} }}>
+            Huddle updated in the background; reload to pick it up.
+          </Banner>
+          <Banner tone="warn" title="Budget low" action={{ label: "Review", onClick: () => {} }}>
+            The zai budget is at 90% for today.
+          </Banner>
+          <Banner tone="fail" title="Router down" action={{ label: "Retry", onClick: () => {} }}>
+            The hub cannot reach huddle-router.
+          </Banner>
+        </div>
+      </Block>
+
+      <Block title="Empty states">
+        <div style={{ display: "grid", gap: "var(--ui-space-3)" }}>
+          <Empty icon={<Icon name="radar" class="ui-icon" />}>No sessions are running.</Empty>
+          <Empty action={{ label: "Add a channel", onClick: () => {} }}>
+            This huddle has no channels yet.
+          </Empty>
         </div>
       </Block>
 

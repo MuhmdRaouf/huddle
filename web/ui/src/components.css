@@ -902,3 +902,74 @@ dialog[data-ui-covered]::backdrop {
   opacity: 0;
   transition: opacity 0.15s;
 }
+
+/* Banner */
+
+.ui-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-2) var(--ui-space-3);
+  padding: var(--ui-space-3) var(--ui-space-4);
+  border-radius: var(--ui-radius);
+  font-size: var(--ui-text-md);
+}
+
+.ui-banner-title {
+  margin-inline-end: var(--ui-space-2);
+  font-weight: 600;
+}
+
+/* the action waits at the line's end, and wraps under the text on a narrow width */
+.ui-banner-action {
+  margin-inline-start: auto;
+}
+
+.ui-banner-info {
+  background: var(--ui-info-soft);
+}
+
+.ui-banner-info > .ui-icon {
+  color: var(--ui-info-ink);
+}
+
+.ui-banner-warn {
+  background: var(--ui-warn-soft);
+}
+
+.ui-banner-warn > .ui-icon {
+  color: var(--ui-warn-ink);
+}
+
+.ui-banner-fail {
+  background: var(--ui-fail-soft);
+}
+
+.ui-banner-fail > .ui-icon {
+  color: var(--ui-fail-ink);
+}
+
+/* Empty state */
+
+.ui-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ui-space-3);
+  padding: var(--ui-space-5) var(--ui-space-4);
+  border-radius: var(--ui-radius);
+  color: var(--ui-muted);
+  font-size: var(--ui-text-md);
+  text-align: center;
+}
+
+.ui-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* --ui-tap: the tile reads at the 44 px the pointer's smallest target stands at */
+  width: var(--ui-tap);
+  height: var(--ui-tap);
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface-2);
+}

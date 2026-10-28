@@ -304,4 +304,22 @@ test.describe("the design tokens page", () => {
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole("button", { name: "Open dialog" })).toBeFocused();
   });
+
+  test("the banner and empty state sections render and fit the viewport", async ({ page }) => {
+    await openTokens(page);
+    await expect(page.getByRole("heading", { level: 2, name: "Banners" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Empty states" })).toBeVisible();
+    for (const tone of ["info", "warn", "fail"] as const) {
+      await expect(page.locator(`.ui-banner-${tone}`)).toHaveCount(1);
+    }
+    await expect(page.locator(".ui-empty").first()).toBeVisible();
+    const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(over).toBeLessThanOrEqual(0);
+    // the 44 px floor is a touch rule, as in the screens suite
+    if (test.info().project.use.hasTouch) {
+      const { expectTapTargets } = await import("./helpers.ts");
+      await expectTapTargets(page);
+    }
+    await expectAccessible(page);
+  });
 });
