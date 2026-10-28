@@ -12,7 +12,7 @@
 import { act, screen, waitFor, within } from "@testing-library/preact";
 import type { JSX } from "preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import type { FetchFn } from "../../src/api.ts";
+import { createApi, type FetchFn } from "../../src/api.ts";
 import {
   Appearance,
   Devices,
@@ -25,8 +25,8 @@ import {
   ThisHub,
   TimeZone,
 } from "../../src/app/SettingsTab.tsx";
-import { flush, legacyClasses, NOW, stubMedia } from "../helpers.tsx";
-import { renderHuddle } from "../render.tsx";
+import { flush, legacyClasses, makeCtx, NOW, renderIn, stubMedia } from "../helpers.tsx";
+import { initialHuddleState, renderHuddle } from "../render.tsx";
 
 /** One device row as the server lists it: added an hour ago, seen half a minute ago, not this
  * browser's own. */
@@ -292,7 +292,8 @@ describe("the phone's grouped list", () => {
     document.body.textContent = "";
   });
 
-  /** Answers the reads the phone list makes, by path; a name in `fail` is refused instead. */
+  /** Answers the reads the phone list makes, by path; a name in `fail` is refused instead. The
+   *  browser is a paired device: the notify routes answer it alone. */
   function mountList(over: Record<string, unknown> = {}, fail: string[] = []): Array<{ url: string }> {
     stubMedia(PHONE);
     const answers: Record<string, unknown> = {
@@ -317,7 +318,10 @@ describe("the phone's grouped list", () => {
         }),
       );
     };
-    renderHuddle(<SettingsTab section={null} />, {}, NOW, fetchFn);
+    renderIn(
+      <SettingsTab section={null} />,
+      makeCtx(initialHuddleState(), { who: { kind: "device" }, api: createApi(fetchFn, () => {}) }),
+    );
     return calls;
   }
 

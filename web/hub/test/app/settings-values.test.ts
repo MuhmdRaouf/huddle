@@ -1,14 +1,15 @@
 // settings-values.test.ts — the one-line values Settings' rows show: the formatters (theme and
 // scheme, the paired devices' count, this device's notify choice, the day against the per-day
 // budget on everything, the Insights switch's On and Off, the hub's zone, the hub card's line and
-// initial) and the hook that reads each source once through the panes' client and leaves a value
-// out when its read fails.
+// initial) and the hook that reads each source once through the panes' client — a paired device
+// alone reads the notify choice — and leaves a value out when its read fails.
 
 import { waitFor } from "@testing-library/preact";
 import { createElement } from "preact";
 import type { JSX } from "preact";
 import { afterEach, describe, expect, it } from "vite-plus/test";
-import type { FetchFn } from "../../src/api.ts";
+import { createApi, type FetchFn } from "../../src/api.ts";
+import type { WhoAmI } from "../../src/app/context.tsx";
 import {
   appearanceValue,
   devicesValue,
@@ -20,8 +21,8 @@ import {
   useSettingsValues,
   zoneOf,
 } from "../../src/app/settings-values.ts";
-import { flush, NOW, stubMedia } from "../helpers.tsx";
-import { renderHuddle } from "../render.tsx";
+import { flush, makeCtx, renderIn, stubMedia } from "../helpers.tsx";
+import { initialHuddleState } from "../render.tsx";
 
 describe("the row values' formatters", () => {
   it("TestAppearanceNamesTheThemeAndTheScheme", () => {
@@ -100,8 +101,12 @@ function ValuesProbe(): JSX.Element {
   );
 }
 
-/** Answers each path by name; a path given no answer fails the way the network would. */
-function mountValues(answers: Record<string, unknown>): Array<{ url: string }> {
+/** Answers each path by name; a path given no answer fails the way the network would. The probe
+ *  runs under `who`: a paired device by default, the only browser the notify routes answer. */
+function mountValues(
+  answers: Record<string, unknown>,
+  who: WhoAmI = { kind: "device" },
+): Array<{ url: string }> {
   stubMedia();
   const calls: Array<{ url: string }> = [];
   const fetchFn: FetchFn = (url) => {
@@ -115,7 +120,10 @@ function mountValues(answers: Record<string, unknown>): Array<{ url: string }> {
       }),
     );
   };
-  renderHuddle(createElement(ValuesProbe, null), {}, NOW, fetchFn);
+  renderIn(
+    createElement(ValuesProbe, null),
+    makeCtx(initialHuddleState(), { who, api: createApi(fetchFn, () => {}) }),
+  );
   return calls;
 }
 
@@ -126,15 +134,18 @@ afterEach(() => {
 
 describe("the values hook", () => {
   it("TestReadsEachSourceOnceAndShowsEveryValue", async () => {
-    const calls = mountValues({
-      "/api/devices": { devices: [{ name: "iPhone", added: "", seen: "" }] },
-      "/api/insights/settings": { tips_for_me: true },
-      "/api/settings": { zone: "Africa/Cairo", zone_origin: "owner" },
-      "/api/push/notify": { notify: "needs" },
-      "/api/radar/api/budget-status": {
-        spend: [{ scope: "total", period: "day", spentUsd: 1.2, limitUsd: 40 }],
+    const calls = mountValues(
+      {
+        "/api/devices": { devices: [{ name: "iPhone", added: "", seen: "" }] },
+        "/api/insights/settings": { tips_for_me: true },
+        "/api/settings": { zone: "Africa/Cairo", zone_origin: "owner" },
+        "/api/push/notify": { notify: "needs" },
+        "/api/radar/api/budget-status": {
+          spend: [{ scope: "total", period: "day", spentUsd: 1.2, limitUsd: 40 }],
+        },
       },
-    });
+      { kind: "device" },
+    );
     await waitFor(() => {
       expect(document.querySelector('[data-value="security"]')?.textContent).toBe("1 device");
       expect(document.querySelector('[data-value="tips"]')?.textContent).toBe("On");
@@ -163,15 +174,39 @@ describe("the values hook", () => {
     await waitFor(() => expect(document.querySelector('[data-value="tips"]')?.textContent).toBe("Off"));
   });
 
+  it("TestADeviceBrowserReadsTheNotifyChoice", async () => {
+    const calls = mountValues({ "/api/push/notify": { notify: "all" } }, { kind: "device" });
+    await waitFor(() =>
+      expect(document.querySelector('[data-value="notifications"]')?.textContent).toBe(
+        "Needs you and alerts",
+      ),
+    );
+    expect(calls.filter((c) => c.url === "/api/push/notify")).toHaveLength(1);
+  });
+
+  it("TestAnOwnerBrowserReadsNoNotifyChoice", async () => {
+    // the notify routes refuse a browser with no paired device, so the owner's rows never ask
+    const calls = mountValues(
+      {
+        "/api/insights/settings": { tips_for_me: true },
+        "/api/push/notify": { notify: "all" },
+      },
+      { kind: "owner" },
+    );
+    await waitFor(() => expect(document.querySelector('[data-value="tips"]')?.textContent).toBe("On"));
+    expect(calls).not.toContainEqual({ url: "/api/push/notify" });
+    expect(document.querySelector('[data-value="notifications"]')).toBeNull();
+  });
+
   it("TestTheNotificationsRowNamesTheChoiceTheHubKeeps", async () => {
-    mountValues({ "/api/push/notify": { notify: "off" } });
+    mountValues({ "/api/push/notify": { notify: "off" } }, { kind: "device" });
     await waitFor(() =>
       expect(document.querySelector('[data-value="notifications"]')?.textContent).toBe("Off"),
     );
   });
 
   it("TestAFailedReadLeavesItsValueOut", async () => {
-    const calls = mountValues({});
+    const calls = mountValues({}, { kind: "device" });
     await flush();
     expect(calls.map((c) => c.url).sort()).toEqual([
       "/api/devices",

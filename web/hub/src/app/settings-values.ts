@@ -1,6 +1,7 @@
 // settings-values.ts — the current value each Settings row names: a formatter per group's source,
-// and one hook that reads each source once on mount through the hub's api client. A read that
-// fails leaves its value out, so the row shows nothing rather than a stale or wrong answer.
+// and one hook that reads each source once on mount through the hub's api client (the notify
+// choice on a paired device alone). A read that fails leaves its value out, so the row shows
+// nothing rather than a stale or wrong answer.
 
 import { readScheme, type SchemePref } from "@huddle/ui/theme.ts";
 import { readTheme, THEMES } from "@huddle/ui/themes.ts";
@@ -80,7 +81,7 @@ export function hubInitial(name: string): string {
 /** Reads every source once on mount and keeps the values it got. Appearance comes from this
  *  browser alone, so it is there before the first paint. */
 export function useSettingsValues(): SettingsValues {
-  const { api } = useHuddle();
+  const { api, who } = useHuddle();
   const [values, setValues] = useState<SettingsValues>(() => ({
     appearance: appearanceValue(readTheme(localStorage), readScheme(localStorage)),
   }));
@@ -111,10 +112,14 @@ export function useSettingsValues(): SettingsValues {
         if (zone) put("hub", zone);
       })
       .catch(() => {});
-    api
-      .api("/api/push/notify")
-      .then((r) => put("notifications", notifyValue(r)))
-      .catch(() => {});
+    // the notify choice is a paired device's own; the route refuses every other browser, and a
+    // refused read would put a 403 in the console
+    if (who.kind === "device") {
+      api
+        .api("/api/push/notify")
+        .then((r) => put("notifications", notifyValue(r)))
+        .catch(() => {});
+    }
     api
       .api("/api/radar/api/budget-status")
       .then((r) => {
@@ -125,6 +130,6 @@ export function useSettingsValues(): SettingsValues {
     return () => {
       alive = false;
     };
-  }, [api]);
+  }, [api, who.kind]);
   return values;
 }
