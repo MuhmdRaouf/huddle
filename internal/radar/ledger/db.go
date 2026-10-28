@@ -21,9 +21,11 @@ type DB interface {
 }
 
 // openPragmas ride in the DSN so every pooled connection opens with them set: the file is
-// read while the watcher writes it, so WAL, and the busy timeout that waits out a writer.
+// read while the watcher writes it, so WAL, the busy timeout that waits out a writer, and
+// checkpoint_fullfsync, because on macOS a plain fsync leaves the drive's cache unflushed
+// and a power loss mid-checkpoint tears the main file.
 const openPragmas = "_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&" +
-	"_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+	"_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=checkpoint_fullfsync(1)"
 
 // openDB opens (and creates when missing) the ledger's database file.
 func openDB(file string) (DB, error) {

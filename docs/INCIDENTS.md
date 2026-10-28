@@ -201,3 +201,16 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   the Spending e2e in web/e2e/settings.spec.ts
 - **Rule:** every write a page makes through the hub names its action in `x-huddle-action`, and an e2e writes
   through the hub.
+
+## 2026-10-28, a hard reboot left Radar's history malformed
+
+- **What happened:** after a hard reboot at 13:09, `history.db` failed `quick_check` as malformed. Every hub
+  start logged "history unavailable" once in its run log and ran without history for about 12 hours: history
+  reads answered 503 and new requests were not kept. A recovered copy (`.recover`, integrity ok) replaced it
+  with nothing lost.
+- **Cause:** the stores ran WAL with `synchronous=NORMAL` and no `checkpoint_fullfsync`; on macOS a plain
+  `fsync` leaves the drive's own cache unflushed, so a power loss mid-checkpoint tore the main file.
+- **Guard:** `TestOpenDBFlushesCheckpointsPastTheDiskCache` (internal/radar/history/driver_test.go and
+  internal/radar/ledger/db_test.go), `TestOpen/"flushes checkpoints past the disk cache"`
+  (internal/huddle/store/store_test.go)
+- **Rule:** every SQLite store Radar and the hub open sets `checkpoint_fullfsync(1)`.

@@ -129,7 +129,8 @@ func Open(ctx context.Context, file string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := db.Exec(ctx, "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;"); err != nil {
+	// checkpoint_fullfsync: on macOS a plain fsync leaves the drive's cache unflushed, and a power loss mid-checkpoint tears the main file.
+	if err := db.Exec(ctx, "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA checkpoint_fullfsync = ON; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;"); err != nil {
 		db.Close()
 		return nil, err
 	}

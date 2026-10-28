@@ -117,6 +117,23 @@ func TestOpen(t *testing.T) {
 			}
 		}
 	})
+	t.Run("flushes checkpoints past the disk cache", func(t *testing.T) {
+		s, err := Open(ctx, filepath.Join(t.TempDir(), "t.db"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		defer s.Close()
+		rows, err := s.All(ctx, "PRAGMA checkpoint_fullfsync")
+		if err != nil {
+			t.Fatalf("read the pragma: %v", err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("checkpoint_fullfsync matched %d rows, want 1", len(rows))
+		}
+		if got := rows[0]["checkpoint_fullfsync"]; got != int64(1) {
+			t.Errorf("checkpoint_fullfsync = %v (%T), want int64 1", got, got)
+		}
+	})
 	t.Run("memory needs no directory", func(t *testing.T) {
 		s, err := Open(ctx, ":memory:")
 		if err != nil {
