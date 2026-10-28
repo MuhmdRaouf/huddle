@@ -33,7 +33,7 @@ async function startPhoneGuide(): Promise<PhoneGuide> {
   fs.mkdirSync(home, { recursive: true });
   fs.writeFileSync(
     path.join(home, "config.toml"),
-    'role = "hub"\n[hub]\nlisten = "127.0.0.1:0"\nhost = "hub.example.test"\n',
+    'role = "hub"\n[hub]\nlisten = "127.0.0.1:0"\nhost = "hub.example.invalid"\n',
   );
   const child = spawn(path.join(runDir, "bin", "huddle"), ["trust", "--phone"], {
     cwd: repoRoot,
@@ -109,7 +109,7 @@ test.describe("the phone guide an iPhone opens", () => {
     await page.goto(guide.url);
     await expect(page.getByRole("button", { name: "Check" })).toBeVisible();
     await page.getByRole("button", { name: "Check" }).click();
-    // hub.example.test resolves nowhere here, so the check answers the honest "not yet"
+    // hub.example.invalid never resolves (RFC 6761), so the check answers the honest not yet
     await expect(page.getByText("Not trusted yet", { exact: false })).toBeVisible();
   });
 });
