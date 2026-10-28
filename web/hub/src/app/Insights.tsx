@@ -1,15 +1,20 @@
 // Insights.tsx — the Insights card on Now: the tips GET /api/insights answers from the needs-you
 // history, each one a sentence with the text between backticks drawn as code, over the line that
-// names the rule's source and links the tip's session. Read on mount and once every five minutes
-// through the owner's own credential. A body that cannot be read, or one without a tip, hides the
-// card; the card never notifies and never interrupts.
+// names the rule's source and links the tip's session and ends in the tip's Not useful button. A
+// tap posts the rule to the mute route; on 200 the tip leaves the card and a toast says for how
+// long, a refusal keeps the tip and says the route's message. Read on mount and once every five
+// minutes through the owner's own credential. A body that cannot be read, or one without a tip,
+// hides the card; the card never notifies and never interrupts.
+import { Button } from "@huddle/ui/button.tsx";
 import { Card } from "@huddle/ui/card.tsx";
 import { Fragment, type JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "../api.ts";
-import { useHuddle } from "./context.tsx";
+import { errText, useHuddle } from "./context.tsx";
 
 const INSIGHTS_PATH = "/api/insights";
+const MUTE_PATH = "/api/insights/mute";
+const MUTE_TOAST = "No more tips like this for 30 days.";
 const REFRESH_MS = 300_000;
 
 /** One tip the insights route answers: what it noticed, how often, and — when it names one — the
@@ -76,7 +81,7 @@ function Sentence({ text }: { text: string }): JSX.Element {
     <p class="m-0 text-sm">
       {parts.map((part, i) =>
         i % 2 === 1 && i !== last ? (
-          <code key={i} class="ui-mono">
+          <code key={i} class="ui-mono rounded-[6px] bg-[var(--ui-surface-2)] px-1 text-sm">
             {part}
           </code>
         ) : (
@@ -87,8 +92,15 @@ function Sentence({ text }: { text: string }): JSX.Element {
   );
 }
 
-/** The card itself, over tips already read. */
-export function InsightsView({ tips }: { tips: readonly Tip[] }): JSX.Element {
+/** The card itself, over tips already read. With `onMute` each tip's source line ends in its
+ *  Not useful button. */
+export function InsightsView({
+  tips,
+  onMute,
+}: {
+  tips: readonly Tip[];
+  onMute?: ((tip: Tip) => void) | undefined;
+}): JSX.Element {
   return (
     <div data-insights="">
       <Card title="Insights" meta={String(tips.length)}>
@@ -96,15 +108,27 @@ export function InsightsView({ tips }: { tips: readonly Tip[] }): JSX.Element {
           {tips.map((tip) => (
             <li key={tip.id} data-tip={tip.rule}>
               <Sentence text={tip.sentence} />
-              <p class="m-0 text-xs muted">
-                {sourceOf(tip.rule)}
-                {tip.session !== undefined ? (
-                  <>
-                    {" · "}
-                    <a href={`#/sessions/${tip.session}`}>open the session</a>
-                  </>
+              <div class="flex min-h-8 items-center gap-2">
+                <p class="m-0 text-xs text-[var(--ui-muted)]">
+                  {sourceOf(tip.rule)}
+                  {tip.session !== undefined ? (
+                    <>
+                      {" · "}
+                      <a href={`#/sessions/${tip.session}`}>open the session</a>
+                    </>
+                  ) : null}
+                </p>
+                {onMute ? (
+                  <Button
+                    variant="ghost"
+                    label={`Not useful: ${tip.rule.replaceAll("_", " ")}`}
+                    class="ml-auto shrink-0 text-sm font-medium text-[var(--ui-muted)]"
+                    onClick={() => onMute(tip)}
+                  >
+                    Not useful
+                  </Button>
                 ) : null}
-              </p>
+              </div>
             </li>
           ))}
         </ul>
@@ -114,10 +138,12 @@ export function InsightsView({ tips }: { tips: readonly Tip[] }): JSX.Element {
 }
 
 /** The card as Now mounts it: read on mount and once every five minutes; nothing while there is
- *  nothing to show. */
+ *  nothing to show. A tip whose mute the route accepts leaves at once, and the card goes when no
+ *  tip is left. */
 export function InsightsCard(): JSX.Element | null {
-  const { api } = useHuddle();
+  const { api, toast } = useHuddle();
   const [tips, setTips] = useState<Tip[] | null>(null);
+  const [gone, setGone] = useState<readonly string[]>([]);
   useEffect(() => {
     let alive = true;
     const read = (): void => {
@@ -132,5 +158,16 @@ export function InsightsCard(): JSX.Element | null {
       window.clearInterval(timer);
     };
   }, [api]);
-  return tips !== null && tips.length > 0 ? <InsightsView tips={tips} /> : null;
+  if (tips === null) return null;
+  const left = tips.filter((t) => !gone.includes(t.id));
+  const mute = (tip: Tip): void => {
+    void api
+      .api(MUTE_PATH, { method: "POST", body: { rule: tip.rule } })
+      .then(() => {
+        setGone((all) => [...all, tip.id]);
+        toast(MUTE_TOAST);
+      })
+      .catch((e: unknown) => toast(errText(e), { bad: true }));
+  };
+  return left.length > 0 ? <InsightsView tips={left} onMute={mute} /> : null;
 }

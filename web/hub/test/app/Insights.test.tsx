@@ -1,10 +1,12 @@
 // Insights.test.tsx — the Insights card on Now: the tips GET /api/insights answers, each one
 // drawn as its sentence with the text between backticks as code over its source line, a tip's
 // session as a link into the Now list, the card hidden while the route refuses or holds no tip,
-// and the once-every-five-minutes re-read.
+// the once-every-five-minutes re-read, and a tip's Not useful button: its name says the rule in
+// words, a tap posts the rule to the mute route and the tip leaves on 200, a refusal keeps it.
 import { act, cleanup, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import type { Api, ApiError } from "../../src/api.ts";
+import type { Api, ApiError, ApiOptions } from "../../src/api.ts";
+import type { HuddleContextValue } from "../../src/app/context.tsx";
 import { InsightsCard, InsightsView, readInsights, type Tip } from "../../src/app/Insights.tsx";
 import { flush, makeCtx, makeState, renderIn } from "../helpers.tsx";
 
@@ -27,14 +29,21 @@ const tipOf = (rule: string): Tip => ({
   sentence: `A ${rule} tip.`,
 });
 
-/** An API whose answers are a function of the path; a thrown Error is a refusal. */
-function apiOf(answer: (path: string) => unknown): Api & { paths: string[] } {
-  const paths: string[] = [];
+/** One call the fake api saw: the path and the options it went out with. */
+type Call = { path: string; o?: ApiOptions | undefined };
+
+/** An API whose answers are a function of the path and the options; a thrown Error is a refusal.
+ *  Every call lands in `calls`, and `paths` keeps the paths alone for the reads older tests name. */
+function apiOf(answer: (path: string, o?: ApiOptions) => unknown): Api & { paths: string[]; calls: Call[] } {
+  const calls: Call[] = [];
   return {
-    paths,
-    api: (path) => {
-      paths.push(path);
-      const r = answer(path);
+    get paths() {
+      return calls.map((c) => c.path);
+    },
+    calls,
+    api: (path, o) => {
+      calls.push({ path, o });
+      const r = answer(path, o);
       return r instanceof Error ? Promise.reject(r) : Promise.resolve(r);
     },
     op: () => Promise.resolve({}),
@@ -108,6 +117,66 @@ describe("the Insights view", () => {
     expect(link?.getAttribute("href")).toBe("#/sessions/s-1");
     expect(link?.textContent).toBe("open the session");
     expect(itemText("always_allowed")).toContain("From your permission asks, last 7 days · ");
+  });
+});
+
+describe("the Not useful button", () => {
+  it("ends each tip's source line, a ghost button whose name says the rule in words", () => {
+    renderIn(<InsightsView tips={[tipOf("same_command")]} onMute={() => {}} />);
+    const b = document.querySelector('[data-tip="same_command"] button');
+    expect(b?.getAttribute("aria-label")).toBe("Not useful: same command");
+    expect(b?.className).toContain("ui-btn-ghost");
+    expect(b?.textContent).toBe("Not useful");
+  });
+
+  it("reads a rule's underscores as spaces in its name", () => {
+    renderIn(<InsightsView tips={[tipOf("tool_failing"), tipOf("lane_failing")]} onMute={() => {}} />);
+    expect(screen.getByRole("button", { name: "Not useful: tool failing" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Not useful: lane failing" })).toBeDefined();
+  });
+});
+
+describe("muting a tip", () => {
+  const TWO = { tips: [tipOf("same_command"), ALLOW_TIP] };
+
+  it("a tap posts the rule to the mute route, then the tip leaves, the count drops and the toast says for how long", async () => {
+    const toast: HuddleContextValue["toast"] = vi.fn();
+    const api = apiOf((_path, o) => (o?.method === "POST" ? { muted: ["same_command"] } : TWO));
+    renderIn(<InsightsCard />, makeCtx(makeState(), { api, toast }));
+    await act(async () => {
+      await flush();
+    });
+    await act(async () => {
+      screen.getByRole("button", { name: "Not useful: same command" }).click();
+      await flush();
+    });
+    expect(api.calls).toEqual([
+      { path: "/api/insights" },
+      { path: "/api/insights/mute", o: { method: "POST", body: { rule: "same_command" } } },
+    ]);
+    expect(document.querySelector('[data-tip="same_command"]')).toBeNull();
+    expect(document.querySelector('[data-tip="always_allowed"]')).not.toBeNull();
+    expect(screen.getByText("1")).toBeDefined();
+    expect(toast).toHaveBeenCalledWith("No more tips like this for 30 days.");
+  });
+
+  it("a refusal keeps the tip and says the route's message as bad news", async () => {
+    const toast: HuddleContextValue["toast"] = vi.fn();
+    const api = apiOf((_path, o) =>
+      o?.method === "POST"
+        ? (Object.assign(new Error("only the owner changes Insights"), { status: 403 }) as ApiError)
+        : TWO,
+    );
+    renderIn(<InsightsCard />, makeCtx(makeState(), { api, toast }));
+    await act(async () => {
+      await flush();
+    });
+    await act(async () => {
+      screen.getByRole("button", { name: "Not useful: same command" }).click();
+      await flush();
+    });
+    expect(document.querySelector('[data-tip="same_command"]')).not.toBeNull();
+    expect(toast).toHaveBeenCalledWith("only the owner changes Insights", { bad: true });
   });
 });
 

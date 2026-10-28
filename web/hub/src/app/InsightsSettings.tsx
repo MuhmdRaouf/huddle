@@ -1,9 +1,13 @@
 // InsightsSettings.tsx — Settings › Tips › Insights, the group's own member with the
-// address #/settings/insights: the owner's two switches. "Tips for me" shows the Insights card's
-// tips; "Tips to my sessions" lets a session take one tip line as context and spends its tokens.
-// Both live in one file in the huddle home; the tips come from what huddle already records and
-// nothing here leaves the machine.
+// address #/settings/insights: the owner's two switches, and Start over. "Tips for me" shows the
+// Insights card's tips; "Tips to my sessions" lets a session take one tip line as context and
+// spends its tokens. Start over's Forget asks once, then posts to the forget route, re-reads the
+// switches and says it forgot; a refusal says the error and keeps the confirm up. Both live in one
+// file in the huddle home; the tips come from what huddle already records and nothing here leaves
+// the machine.
 
+import { Button } from "@huddle/ui/button.tsx";
+import { Card } from "@huddle/ui/card.tsx";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Switch } from "@huddle/ui/switch.tsx";
 import type { ComponentChildren, JSX } from "preact";
@@ -12,6 +16,12 @@ import { errText, useHuddle } from "./context.tsx";
 
 /** The switches' route. */
 const SWITCHES_PATH = "/api/insights/settings";
+
+/** The forget route. */
+const FORGET_PATH = "/api/insights/forget";
+
+/** What a kept forget says. */
+const FORGOT_TOAST = "Insights forgot what it learned.";
 
 /** A section's heading, the same small caps on every section. */
 const HEAD = "mb-1.5 text-xs font-semibold tracking-[0.06em] uppercase text-[var(--ui-muted)]";
@@ -71,12 +81,15 @@ function SwitchRow({
   );
 }
 
-/** This hub's Insights section: the two switches. The section reads them once on mount, a flip
- *  PUTs its one field alone and shows the switches the hub kept, and a refusal flips the switch
- *  back and says the error. */
+/** This hub's Insights section: the two switches, and Start over. The section reads the switches
+ *  once on mount, a flip PUTs its one field alone and shows the switches the hub kept, and a
+ *  refusal flips the switch back and says the error. The forget button swaps for the confirm; a
+ *  kept forget posts to the forget route, re-reads the switches and puts the button back, and a
+ *  refusal says the error and keeps the confirm up. */
 export function InsightsSettings(): JSX.Element {
   const { api, toast } = useHuddle();
   const [held, setHeld] = useState<InsightsSwitches | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -109,6 +122,20 @@ export function InsightsSettings(): JSX.Element {
       });
   };
 
+  const forget = (): void => {
+    api
+      // the forget takes no fields; an empty body is still JSON, the hub refusing writes without
+      // the content-type
+      .api(FORGET_PATH, { method: "POST", body: {} })
+      .then(() => api.api(SWITCHES_PATH))
+      .then((r) => {
+        setHeld(switchesOf(r));
+        setConfirming(false);
+        toast(FORGOT_TOAST);
+      })
+      .catch((e: unknown) => toast(errText(e), { bad: true }));
+  };
+
   return (
     <section aria-labelledby="insights-h" class="flex flex-col gap-3">
       <h2 id="insights-h" class={HEAD}>
@@ -133,6 +160,35 @@ export function InsightsSettings(): JSX.Element {
           onFlip={() => flip("tips_to_sessions")}
         />
       </List>
+      <section aria-labelledby="insights-so-h">
+        <h2 id="insights-so-h" class={HEAD}>
+          Start over
+        </h2>
+        <Card>
+          {confirming ? (
+            <>
+              <p class={NOTE}>
+                Huddle forgets the muted tips and turns both switches back to their defaults.
+              </p>
+              <div class="mt-3 flex gap-2">
+                <Button variant="secondary" class="flex-1" onClick={() => setConfirming(false)}>
+                  Cancel
+                </Button>
+                <Button variant="danger" class="flex-1" onClick={forget}>
+                  Forget
+                </Button>
+              </div>
+            </>
+          ) : (
+            <Button variant="danger" class="w-full" onClick={() => setConfirming(true)}>
+              Forget what you learned
+            </Button>
+          )}
+        </Card>
+        <p data-footnote="" class="m-0 mt-2 text-[length:var(--ui-text-xs)] text-[var(--ui-muted)]">
+          Removes insights.json on this machine.
+        </p>
+      </section>
     </section>
   );
 }
