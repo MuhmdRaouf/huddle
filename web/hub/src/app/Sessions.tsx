@@ -392,6 +392,14 @@ function SetupPane({
   );
 }
 
+/** The rows the desk draws, in the order the list shows them: needs you, then working, idle,
+ *  stuck and ended. The desk opens `deskRows(shown)[0]` when no session is picked, so the row it
+ *  lands on is the list's own first row. */
+export function deskRows(shown: RegistrySession[]): RegistrySession[] {
+  const g = groupSessions(shown);
+  return [...g.needsYou, ...g.working, ...g.idle, ...g.stuck, ...g.ended];
+}
+
 /** The Sessions list: the registry's sessions as the three layouts' list pane. The tablet and the
  *  desktop carry their own header — the title with the Select toggle at its end (the phone's shell
  *  and the desktop's bar draw the rest); the desktop's j and k move a selection Enter opens and
@@ -412,8 +420,6 @@ export function SessionsPane({
   const { registry, now } = useHuddle();
   const act = useNeedsAct();
   const st = registry.getState();
-  // an open item holds a session in Needs you even when its last live row reads idle
-  const groups = groupSessions(st.sessions?.map((s) => ({ ...s, state: shownState(s, st.needs) })) ?? null);
   // the machine chip the list filters to, kept between visits; the empty string is All
   const [machine, setMachine] = useState<string>(() => readPref(localStorage, "sessionsmachine", ""));
   // the search box narrows the rows and starts empty every visit
@@ -440,15 +446,11 @@ export function SessionsPane({
     );
   const shown = (list: RegistrySession[]): RegistrySession[] =>
     list.filter((s) => (machine === "" || s.machine === machine) && hit(s));
-  const visible = {
-    needsYou: shown(groups.needsYou),
-    working: shown(groups.working),
-    idle: shown(groups.idle),
-    stuck: shown(groups.stuck),
-    ended: shown(groups.ended),
-  };
-  const rows = [...visible.needsYou, ...visible.working, ...visible.idle, ...visible.stuck, ...visible.ended];
-  const selIdx = rows.findIndex((r) => r.session_id === selId);
+  // an open item holds a session in Needs you even when its last live row reads idle; the groups
+  // keep the sections' buckets and `listed` the flat order the desk reads and the rows draw
+  const listed = deskRows(shown(st.sessions?.map((s) => ({ ...s, state: shownState(s, st.needs) })) ?? []));
+  const groups = groupSessions(listed);
+  const selIdx = listed.findIndex((r) => r.session_id === selId);
   const cur = selIdx >= 0 ? selIdx : 0;
 
   const stopHold = (): void => {
@@ -479,7 +481,7 @@ export function SessionsPane({
     st.sessions?.find((s) => s.session_id === id)?.delivery_route;
   const replyRow = replyTo ? st.sessions?.find((s) => s.session_id === replyTo) : undefined;
 
-  // no dependency list: the pane repaints on every change, and the handler reads rows fresh
+  // no dependency list: the pane repaints on every change, and the handler reads the rows fresh
   useEffect(() => {
     if (layout !== "desktop") return;
     // oxlint-disable-next-line complexity -- one guard per key the list owns
@@ -504,19 +506,19 @@ export function SessionsPane({
         e.key !== "r"
       )
         return;
-      if (rows.length === 0) return;
+      if (listed.length === 0) return;
       e.preventDefault();
       if (e.key === "Enter") {
-        const s = rows[cur];
+        const s = listed[cur];
         if (s) location.hash = openHref(s);
         return;
       }
       if (e.key === "j" || e.key === "k") {
-        const next = Math.min(rows.length - 1, Math.max(0, cur + (e.key === "j" ? 1 : -1)));
-        setSelId(rows[next]?.session_id ?? null);
+        const next = Math.min(listed.length - 1, Math.max(0, cur + (e.key === "j" ? 1 : -1)));
+        setSelId(listed[next]?.session_id ?? null);
         return;
       }
-      const s = rows[cur];
+      const s = listed[cur];
       if (!s) return;
       if (e.key === "r") {
         setReplyTo(s.session_id);
@@ -559,7 +561,7 @@ export function SessionsPane({
 
   /** One row, as its group draws it, in the shell its layout gives it. */
   const rowOf = (s: RegistrySession): JSX.Element => {
-    const sel = layout === "desktop" && rows[cur]?.session_id === s.session_id;
+    const sel = layout === "desktop" && listed[cur]?.session_id === s.session_id;
     const open = layout !== "phone" && openId === s.session_id;
     const row =
       layout === "phone" ? (
@@ -594,7 +596,7 @@ export function SessionsPane({
   /** The sections in order, each heading over its rows, with the Insights card after the asks. */
   const sections = (): JSX.Element => {
     // the Insights card rides after the needs-you cards, before the first other section
-    const firstOther = SECTIONS.find(([key]) => key !== "needsYou" && visible[key].length > 0)?.[0] ?? null;
+    const firstOther = SECTIONS.find(([key]) => key !== "needsYou" && groups[key].length > 0)?.[0] ?? null;
     const cards = (
       <div class="flex flex-col gap-3 px-3 pt-3">
         <InsightsCard />
@@ -602,15 +604,15 @@ export function SessionsPane({
     );
     return (
       <>
-        {SECTIONS.filter(([key]) => visible[key].length > 0).map(([key, label]) => (
+        {SECTIONS.filter(([key]) => groups[key].length > 0).map(([key, label]) => (
           <Fragment key={key}>
             {/* the Insights card follows what needs the owner, or leads when nothing does */}
             {key === firstOther ? cards : null}
             <section aria-labelledby={`sessions-${key}`} class="flex flex-col gap-2 px-3 pt-3">
               <h2 id={`sessions-${key}`} class={`m-0 px-1 text-sm font-semibold ${MUTED}`}>
-                {label} · {visible[key].length}
+                {label} · {groups[key].length}
               </h2>
-              {rowsOf(visible[key], label)}
+              {rowsOf(groups[key], label)}
             </section>
           </Fragment>
         ))}
@@ -620,7 +622,7 @@ export function SessionsPane({
   };
 
   return (
-    <div class="flex min-h-0 min-w-0 flex-col" data-sessions-pane="">
+    <div class="flex min-h-0 min-w-0 flex-col bg-[var(--ui-surface)]" data-sessions-pane="">
       {layout !== "phone" ? (
         <header class="flex shrink-0 items-center justify-between gap-3 px-4 pt-5 pb-3">
           <h1 class="text-xl font-bold leading-[1.2] tracking-tight">Sessions</h1>
@@ -688,7 +690,7 @@ export function SessionsPane({
               />
             ))}
           </div>
-        ) : rows.length === 0 ? (
+        ) : listed.length === 0 ? (
           // the welcome is the empty registry's card; a search or a chip that narrows to nothing
           // shows no rows
           layout === "phone" && query === "" && machine === "" ? (

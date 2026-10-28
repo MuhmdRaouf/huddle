@@ -13,7 +13,7 @@ import { DESKTOP_QUERY, TABLET_QUERY } from "../../src/app/layout.ts";
 import { parseHash } from "../../src/app/router.ts";
 import type { ComposeOptions } from "../../src/compose/drafts.ts";
 import { ensureRadar, stopRadar } from "../../src/radar/mount.tsx";
-import type { RegistrySession } from "../../src/registry.ts";
+import type { RegistryDetail, RegistrySession } from "../../src/registry.ts";
 import type { HuddleState } from "../../src/store.ts";
 import { radarIo } from "../radar/ui/io.ts";
 import {
@@ -247,7 +247,7 @@ describe("the three layouts", () => {
     }
   });
 
-  it("paints the placeholder pane from the tokens", () => {
+  it("splits the desk into the 320 px list, the open session and the 300 px rail, with no pane between", () => {
     stubMedia(DESKTOP);
     nav("#/sessions");
     const row: RegistrySession = {
@@ -256,8 +256,19 @@ describe("the three layouts", () => {
       last_event: "UserPromptSubmit",
       last_event_at: "2026-10-08T11:00:00Z",
     };
-    renderIn(<App pages={{}} />, makeCtx(makeState(), { registry: makeRegistry({ sessions: [row] }) }));
-    expect(paints(screen.getByText("No session open").parentElement as HTMLElement)).toEqual([]);
+    const open: RegistryDetail = { ...row, events: [] };
+    renderIn(
+      <App pages={{}} />,
+      makeCtx(makeState(), { registry: makeRegistry({ sessions: [row], open, openId: "s-1" }) }),
+    );
+    // a session is always open: the desk lands on the list's first row
+    expect(location.hash).toBe("#/sessions/s-1");
+    expect(document.querySelector("[data-session]")).not.toBeNull();
+    // the three columns: the list, the session in the middle, the rail — no vertical borders
+    const grid = document.querySelector("[data-now-context]")?.parentElement;
+    expect(grid?.className).toContain("grid-cols-[320px_minmax(0,1fr)_300px]");
+    expect(document.querySelector("[data-now-context]")?.className).not.toContain("border-l");
+    expect(screen.queryByText("No session open")).toBeNull();
   });
 });
 
@@ -270,17 +281,18 @@ describe("routes and panes", () => {
     expect(screen.getByText("Reading the session…")).toBeDefined();
   });
 
-  it("carries the empty registry's welcome in the main pane, once, and keeps the dashed box once sessions stand", () => {
+  it("carries the empty registry's welcome in the main pane, once, and opens the list's first row once sessions stand", () => {
     stubMedia(DESKTOP);
     nav("#/sessions");
     // nothing registered: the welcome and its start-a-session card stand in the main pane, and
     // the list beside them drops its copy of the card
     mountApp();
+    expect(location.hash).toBe("#/sessions");
     expect(screen.getByText("No sessions yet")).toBeDefined();
     expect(screen.getAllByRole("tab", { name: "Claude Code" })).toHaveLength(1);
     expect(document.querySelector("#main [data-no-sessions]")).not.toBeNull();
     expect(screen.queryByText("No session open")).toBeNull();
-    // sessions stand and none is picked: the main pane keeps its pointer at the list
+    // sessions stand and none is picked: the desk opens the list's first row
     cleanup();
     const row: RegistrySession = {
       session_id: "s-1",
@@ -289,8 +301,46 @@ describe("routes and panes", () => {
       last_event_at: "2026-10-08T11:00:00Z",
     };
     renderIn(<App pages={{}} />, makeCtx(makeState(), { registry: makeRegistry({ sessions: [row] }) }));
-    expect(screen.getByText("No session open")).toBeDefined();
+    expect(location.hash).toBe("#/sessions/s-1");
     expect(screen.queryByText("No sessions yet")).toBeNull();
+  });
+
+  it("opens the session the list would show first, and replaces the address instead of pushing it", () => {
+    stubMedia(DESKTOP);
+    nav("#/sessions");
+    const row = (session_id: string, state: string): RegistrySession => ({
+      session_id,
+      state,
+      last_event: state === "needs-you" ? "PermissionRequest" : "UserPromptSubmit",
+      last_event_at: "2026-10-08T11:00:00Z",
+    });
+    const before = history.length;
+    renderIn(
+      <App pages={{}} />,
+      makeCtx(makeState(), {
+        registry: makeRegistry({
+          sessions: [row("s-1", "working"), row("s-2", "needs-you"), row("s-3", "idle")],
+        }),
+      }),
+    );
+    // needs you comes first in the list, so it is the row the desk opens
+    expect(location.hash).toBe("#/sessions/s-2");
+    // replaced, not pushed: Back leaves Sessions instead of bouncing back to the bare list
+    expect(history.length).toBe(before);
+  });
+
+  it("leaves the phone on the list when no session is picked", () => {
+    stubMedia(PHONE);
+    nav("#/sessions");
+    const row: RegistrySession = {
+      session_id: "s-1",
+      state: "working",
+      last_event: "UserPromptSubmit",
+      last_event_at: "2026-10-08T11:00:00Z",
+    };
+    renderIn(<App pages={{}} />, makeCtx(makeState(), { registry: makeRegistry({ sessions: [row] }) }));
+    expect(location.hash).toBe("#/sessions");
+    expect(document.querySelector("[data-sessions-pane]")).not.toBeNull();
   });
 
   it("renders the channels page when no channel is named", () => {

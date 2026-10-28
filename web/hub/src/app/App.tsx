@@ -9,7 +9,7 @@ import { Badge } from "@huddle/ui/badge.tsx";
 import { PageIntro } from "@huddle/ui/page.tsx";
 import type { Stamp } from "@huddle/ui/time.ts";
 import type { ComponentChildren, ComponentType, JSX } from "preact";
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ComposeOptions } from "../compose/drafts.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Time } from "../kit.tsx";
@@ -18,7 +18,7 @@ import { markPasskeyHere } from "../passkey.ts";
 import { PHONE_VIEWS } from "../radar/app/nav.ts";
 import { RadarTab } from "../radar/app/RadarTab.tsx";
 import { radarAct, useRadarState } from "../radar/mount.tsx";
-import { machinesLine, machinesOf } from "../registry.ts";
+import { machinesLine, machinesOf, shownState } from "../registry.ts";
 import { FIN } from "../status.ts";
 import { readPref, writePref } from "../storage.ts";
 import type { HuddleState } from "../store.ts";
@@ -28,7 +28,7 @@ import { type Layout, useLayout } from "./layout.ts";
 import { BottomNav, IconRail, type NeedsBadge, needsBadge, SideNav, TabBadge } from "./Nav.tsx";
 import { NowContext, SessionScreen } from "./Now.tsx";
 import { Pair } from "./Pair.tsx";
-import { NoSessionsWelcome, SessionsPane } from "./Sessions.tsx";
+import { deskRows, NoSessionsWelcome, SessionsPane } from "./Sessions.tsx";
 import { Rail } from "./Rail.tsx";
 import {
   channelHref,
@@ -227,16 +227,6 @@ function ChannelHead({ ch }: { ch: string }): JSX.Element {
 /** The dashed frame a placeholder stands in, on the tokens. */
 const PLACEHOLDER =
   "mx-auto flex flex-col items-center gap-2 rounded-[var(--ui-radius-lg)] border border-dashed border-[var(--ui-line-strong)] px-6 text-center text-sm text-[var(--ui-muted)]";
-
-/** A placeholder pane: what a tab shows until its own screen lands. */
-export function EmptyPane({ title, line }: { title: string; line?: string | undefined }): JSX.Element {
-  return (
-    <div class={`${PLACEHOLDER} max-w-lg py-16`}>
-      <b class="text-base font-semibold text-[var(--ui-text)]">{title}</b>
-      <p>{line ?? "Coming soon."}</p>
-    </div>
-  );
-}
 
 /** The placeholder for a channel page no page is registered for yet. */
 export function ComingSoon({ label }: { label: string }): JSX.Element {
@@ -623,6 +613,28 @@ export function App({
     history.replaceState(null, "", route.replace);
   }, [route.replace, route.key]);
 
+  // a session is always open on the desk: with no session picked, the row the list would draw
+  // first (needs you, then working, then idle) opens by replacing the address, so Back leaves
+  // Sessions instead of bouncing back to the bare list. The registry's answer can land after the
+  // first paint, so the effect follows its two lists; the guard keeps a move that lands between
+  // the render and this effect in charge of the address.
+  const deskRowsKey = registry.getState().sessions;
+  const deskNeedsKey = registry.getState().needs;
+  useLayoutEffect(() => {
+    if (route.tab !== "sessions" || route.sub[0] || layout !== "desktop") return;
+    const st = registry.getState();
+    const first = deskRows((st.sessions ?? []).map((s) => ({ ...s, state: shownState(s, st.needs) })))[0];
+    if (!first) return;
+    const now = parseHash(location.hash, (k, fb) => readPref(localStorage, k, fb));
+    if (now.key !== route.key) return;
+    const href = `#/sessions/${first.session_id}`;
+    history.replaceState(null, "", href);
+    setHash(href);
+    // a replaced address fires no hashchange, so the page-level move that names the open session
+    // never runs: the store learns the pick here and loads the detail it needs
+    registry.setOpenId(first.session_id);
+  }, [route.tab, route.key, route.sub, layout, registry, deskRowsKey, deskNeedsKey]);
+
   // the preferences an alias carried land in this browser's settings before any view reads them
   useEffect(() => {
     for (const [k, v] of Object.entries(route.prefs)) writePref(localStorage, k, v);
@@ -732,9 +744,8 @@ export function App({
           </div>
         </div>
       ) : (
-        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5">
-          <EmptyPane title="No session open" line="Pick a session from the list to read its stream." />
-        </div>
+        // the tablet's quiet middle until a pick: the desk has already opened the list's first row
+        <div class="min-h-0 flex-1" />
       )
     ) : route.tab === "radar" ? (
       <div class={`flex min-h-0 flex-1 ${layout === "phone" ? "flex-col" : ""}`}>
@@ -775,7 +786,7 @@ export function App({
     );
 
   const main = (
-    <main id="main" tabindex={-1} class="ui-shell-main outline-none">
+    <main id="main" tabindex={-1} class="ui-shell-main bg-[var(--ui-bg)] outline-none">
       {detail}
     </main>
   );
@@ -837,7 +848,7 @@ export function App({
           <div
             class={`grid min-h-0 min-w-0 ${
               list && context
-                ? "grid-cols-[320px_minmax(0,1fr)_340px]"
+                ? "grid-cols-[320px_minmax(0,1fr)_300px]"
                 : list
                   ? "grid-cols-[320px_minmax(0,1fr)]"
                   : "grid-cols-1"

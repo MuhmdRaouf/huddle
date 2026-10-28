@@ -218,7 +218,8 @@ test.describe("the phone shell", () => {
   test("the old home and the old Now address land on the sessions tab", async ({ page }) => {
     for (const hash of ["#/", "#/now"]) {
       await open(page, hash);
-      await expect(page, hash).toHaveURL(/#\/sessions$/);
+      // the desk then opens the row the list draws first, so the address may carry a session
+      await expect(page, hash).toHaveURL(/#\/sessions(\/|$)/);
       await expect(
         page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /^Sessions/ }),
         hash,

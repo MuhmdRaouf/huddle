@@ -1,6 +1,7 @@
 // now.spec.ts — the owner's first screen, on the phone and the desktop: the sign-in link lands
 // the browser on the hub, and the Now list shows the session the run seeded into the registry
-// (with the desktop's main pane keeping its pointer beside it while none is picked), on the phone a
+// (on the desktop the tab lands on the row the list draws first, so its session screen stands in
+// the main pane), on the phone a
 // seeded ask's card sits above the fold under the set-up row that opens the checklist in its sheet,
 // every session
 // names its harness on its row and in its header (the seeded Claude Code one and a Codex one), one whose
@@ -44,12 +45,13 @@ test("the sign-in link opens the hub and the Now list shows the seeded session",
   await signIn(page);
   await openTab(page, "Sessions");
 
-  // the seeded session sits in the Working group, one row strong
+  // the seeded session sits in the Working group, one row strong; the row link names it (on the
+  // desk the title also stands in the open session's header and prompt bubble)
   await expect(page.getByRole("heading", { name: "Working · 1" })).toBeVisible();
-  await expect(page.getByText(theSetup().sessionTitle)).toBeVisible();
-  // sessions stand and none is picked: the desktop's main pane keeps its pointer at the list
-  // (the phone paints the list alone)
-  if (!isMobile) await expect(page.getByText("No session open")).toBeVisible();
+  await expect(page.getByRole("link", { name: theSetup().sessionTitle })).toBeVisible();
+  // sessions stand and none is picked: the desktop lands on the row the list draws first, so the
+  // session screen stands in the main pane (the phone paints the list alone)
+  if (!isMobile) await expect(page.locator("[data-session]")).toBeVisible();
 });
 
 test("on the phone a seeded ask's card sits above the fold, under the set-up row that opens the checklist", async ({
@@ -456,8 +458,10 @@ test("a finished turn's sheet shows its digest line with Snooze and Dismiss, and
   page,
   isMobile,
 }, info) => {
-  // a prompt, then a Stop whose hook built a digest: nobody opened the session, so the turn waits
-  // in Needs you; the dismissal at the end keeps the other cases' counts as they were
+  // a prompt, then a Stop whose hook built a digest: the turn waits in Needs you. The desk opens
+  // the list's first row by itself, and that read answers the turn — the sheet stays while the
+  // session stands open — so no tab click may rewind the address off it; the dismissal at the end
+  // keeps the other cases' counts as they were
   const session = `e2e-digest-${info.project.name}`;
   const base = { session_id: session, machine: "e2e-machine", project: "e2e", title: "Fixes the login" };
   await api("/api/registry/report", { ...base, last_event: "UserPromptSubmit", last_event_at: new Date().toISOString() });
@@ -468,7 +472,8 @@ test("a finished turn's sheet shows its digest line with Snooze and Dismiss, and
     last_event_at: new Date().toISOString(),
   });
   await signIn(page);
-  await openTab(page, "Sessions");
+  // signIn already lands on the sessions tab (the shell rewrites the empty home onto it), and the
+  // desk has opened this very row: a tab click here would rewind the address and drop the sheet
   await page.locator(`a[href='#/sessions/${session}']`).first().click();
 
   const sheet = page.locator(isMobile ? "[data-needs-sheet]" : "[data-needs-bar]");
@@ -500,6 +505,10 @@ test("opening a session clears its finished turn from Needs you in every open br
   page,
   context,
 }, info) => {
+  test.skip(
+    info.project.name !== "iphone",
+    "the phone keeps its list-first path; the desk opens the list's first row by itself",
+  );
   // a prompt, then a Stop nobody opened: the turn item holds the session in Needs you, and
   // opening it answers the item, so the other cases' counts stay as they were
   const session = `e2e-open-${info.project.name}`;
@@ -536,8 +545,11 @@ test("the desktop sets the list and the open pane side by side", async ({ page, 
   test.skip(isMobile, "the phone paints the list alone");
   await signIn(page);
   await openTab(page, "Sessions");
+  // no session was picked: the desk opened the row the list draws first, and the session's pane
+  // stands beside the list
+  await expect(page.locator("[data-session]")).toBeVisible();
   const list = await page.locator("[data-sessions-pane]").boundingBox();
-  const pane = await page.getByText("No session open").boundingBox();
+  const pane = await page.locator("[data-session]").boundingBox();
   expect(list && pane && list.x + list.width).toBeLessThanOrEqual(pane?.x ?? 0);
 });
 

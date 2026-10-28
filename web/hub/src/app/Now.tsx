@@ -196,7 +196,7 @@ function StreamPane({ items, now }: { items: StreamItem[]; now: number }): JSX.E
       class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 sm:px-6"
       data-stream=""
     >
-      <div class="mx-auto flex max-w-[720px] flex-col gap-3 text-sm leading-relaxed sm:text-[15px]">
+      <div class="mx-auto flex max-w-[51.25rem] flex-col gap-3 text-sm leading-relaxed sm:text-[15px]">
         {items.map((item, i) => {
           const parts: JSX.Element[] = [];
           const day = dayLabel(item.at, now);
@@ -484,19 +484,21 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
           ) : null}
         </header>
       ) : (
-        <header class={`flex shrink-0 flex-wrap items-center gap-3.5 border-b ${LINE} px-6 pt-4 pb-3.5`}>
-          <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-            <div class="truncate text-xl font-semibold">{sessionName(d)}</div>
-            <div class={`truncate text-[13px] ${MUTED}`}>{whereOf(d)}</div>
+        <header class={`flex shrink-0 border-b ${LINE} px-6 pt-4 pb-3.5`}>
+          <div class="mx-auto flex w-full max-w-[51.25rem] flex-wrap items-center gap-3.5">
+            <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+              <div class="truncate text-xl font-semibold">{sessionName(d)}</div>
+              <div class={`truncate text-[13px] ${MUTED}`}>{whereOf(d)}</div>
+            </div>
+            <Chips s={d} needs={st.needs} />
+            <SessionActions session={d} />
+            {pct ? (
+              <span class="flex w-[140px] shrink-0 items-center gap-2">
+                <ContextBar pct={pct} />
+                <span class={`shrink-0 text-xs ${MUTED}`}>{pct}%</span>
+              </span>
+            ) : null}
           </div>
-          <Chips s={d} needs={st.needs} />
-          <SessionActions session={d} />
-          {pct ? (
-            <span class="flex w-[140px] shrink-0 items-center gap-2">
-              <ContextBar pct={pct} />
-              <span class={`shrink-0 text-xs ${MUTED}`}>{pct}%</span>
-            </span>
-          ) : null}
         </header>
       )}
       {d.hooks_stale ? (
@@ -526,7 +528,7 @@ export function NowContext(): JSX.Element | null {
   const started = startedMs === null ? "—" : `${hhmm(startedMs)} · ${ageText(startedAt, now)}`;
   return (
     <aside
-      class={`flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto border-l ${LINE} bg-[var(--ui-surface)] p-4`}
+      class={`flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto bg-[var(--ui-surface)] p-4`}
       data-now-context=""
     >
       {d.channel ? (
