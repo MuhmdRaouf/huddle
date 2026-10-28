@@ -147,7 +147,7 @@ test("a session whose last event asks for permission waits in Needs you first", 
     const row = page.locator("a[data-row='e2e-permit']");
     await expect(row).toBeVisible();
     await expect(row).toHaveAttribute("href", "#/sessions/e2e-permit");
-    await expect(row.locator("[data-state='needs-you']")).toHaveText("needs you");
+    await expect(row.locator("[data-state='needs-you']")).toHaveText("Needs you");
   } else {
     const card = page.locator("article[data-row='e2e-permit']");
     await expect(card).toBeVisible();
@@ -212,7 +212,7 @@ test("a session with stale hooks shows its chip and the resume line, never stuck
     const row = page.locator(`a[data-row='${session}']`);
     await expect(row.locator("[data-hooks-stale]")).toHaveText("hooks stale");
     // the transcript, not the twenty-minute-old report, settles the state: idle, never stuck
-    await expect(row.locator("[data-state]")).toHaveText("idle");
+    await expect(row.locator("[data-state]")).toHaveText("Idle");
     await expect(page.locator(`[data-row='${session}'] [data-state='stuck']`)).toHaveCount(0);
     await expectAccessible(page);
 
@@ -285,7 +285,7 @@ test("a seeded permission ask is allowed with one tap at its card's foot", async
     await page.goBack();
     await expect(page.locator("[data-sessions-pane]")).toBeVisible();
   }
-  await expect(page.locator(`[data-row='${session}'] [data-state='idle']`)).toHaveText("idle");
+  await expect(page.locator(`[data-row='${session}'] [data-state='idle']`)).toHaveText("Idle");
 });
 
 test("a long command's ask opens the phone sheet that wraps it and keeps Allow once in view", async (
