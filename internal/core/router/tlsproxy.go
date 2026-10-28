@@ -556,6 +556,9 @@ func (p *TLSProxy) passed(req *http.Request, started time.Time, outcome passOutc
 	if agent, ok := textHeader(req, "x-claude-code-agent-id"); ok {
 		event.AgentID = &agent
 	}
+	if parent, ok := textHeader(req, "x-claude-code-parent-agent-id"); ok {
+		event.ParentAgentID = &parent
+	}
 	p.Events(event)
 }
 

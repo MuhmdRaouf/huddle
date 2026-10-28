@@ -501,3 +501,77 @@ func TestThePassThroughLogsEachRequestAndACutStream(t *testing.T) {
 		}
 	}
 }
+
+// TestThePassThroughRecordsClaudeCodesAgentIds: Claude Code stamps its session, agent and parent
+// agent ids on every request, and the pass-through's route event carries all three, so the ledger
+// ties a Claude subagent to its parent. A request without the parent header leaves the field out.
+func TestThePassThroughRecordsClaudeCodesAgentIds(t *testing.T) {
+	t.Parallel()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_, _ = w.Write([]byte(`{"passthrough":true}`))
+	}))
+	t.Cleanup(upstream.Close)
+	events := &eventLog{}
+	rig := newTLSProxyRig(t, func(p *TLSProxy) {
+		p.Anthropic = mustURL(t, upstream.URL)
+		p.Transport = upstream.Client().Transport
+		p.Events = events.record
+	})
+	client := rig.proxiedClient(t)
+
+	pass := func(headers map[string]string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, "https://api.anthropic.com/v1/me", nil)
+		if err != nil {
+			t.Fatalf("the request: %v", err)
+		}
+		for name, value := range headers {
+			req.Header.Set(name, value)
+		}
+		answer, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("get through the proxy: %v", err)
+		}
+		_, _ = io.Copy(io.Discard, answer.Body)
+		_ = answer.Body.Close()
+		if answer.StatusCode != 200 {
+			t.Fatalf("the pass-through = %d, want 200", answer.StatusCode)
+		}
+	}
+	pass(map[string]string{
+		"x-claude-code-session-id":      "s1",
+		"x-claude-code-agent-id":        "a2",
+		"x-claude-code-parent-agent-id": "a1",
+	})
+	pass(map[string]string{
+		"x-claude-code-session-id": "s1",
+		"x-claude-code-agent-id":   "a2",
+	})
+
+	deadline := time.Now().Add(5 * time.Second)
+	for len(events.routes()) < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	got := events.routes()
+	if len(got) != 2 {
+		t.Fatalf("the route events = %+v, want two", got)
+	}
+	sub, lone := got[0], got[1]
+	if sub.SessionID == nil || *sub.SessionID != "s1" || sub.AgentID == nil || *sub.AgentID != "a2" {
+		t.Errorf("the subagent's event ids = session %v, agent %v, want s1 and a2", sub.SessionID, sub.AgentID)
+	}
+	if sub.ParentAgentID == nil || *sub.ParentAgentID != "a1" {
+		t.Errorf("the subagent's event ParentAgentID = %s, want a1", strOf(sub.ParentAgentID))
+	}
+	if lone.ParentAgentID != nil {
+		t.Errorf("the lone agent's event ParentAgentID = %q, want none", *lone.ParentAgentID)
+	}
+}
+
+// strOf prints an optional string for a test failure line.
+func strOf(s *string) string {
+	if s == nil {
+		return "<nil>"
+	}
+	return *s
+}
