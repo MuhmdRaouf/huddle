@@ -29,6 +29,7 @@ const PHONE_SPECS = [
   "sessions-list.spec.ts",
   "session-feature.spec.ts",
   "insights.spec.ts",
+  "totp.spec.ts",
 ];
 /** The specs that run on the phone only: the phone's load budget under throttled CDP. */
 const PHONE_ONLY = ["phone-perf.spec.ts"];

@@ -88,7 +88,7 @@ export function SignOut(): JSX.Element {
         onClose={() => setConfirm(null)}
         title={confirm === "everywhere" ? "Sign out everywhere" : "Sign out of this browser"}
       >
-        <div class="flex flex-col gap-4">
+        <div class="flex flex-col gap-4 px-4" data-signout-confirm="">
           <p class={NOTE}>
             {confirm === "everywhere"
               ? "Sign out everywhere ends every device's session, this one too."

@@ -11,6 +11,7 @@
 import { devices, expect, test, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
 import {
+  expectSheetGutter,
   expectTapTargets,
   loginCode,
   signIn,
@@ -207,6 +208,15 @@ test("a link sign-in offers the set-up, Settings enrols it, and a code signs the
 test("the passkey offer stands inside its three widths, one dialog, axe clean", async ({ browser }) => {
   test.setTimeout(90_000);
   const { pairOrigin } = theSetup();
+  // the offer stands only when this browser's device row holds no passkey, and the desk
+  // project runs this file first on the shared hub: its phone test turns one on for the row
+  // the iPhone's agent names. The row starts removed; the code sign-in below re-creates it
+  // without one
+  const row = await fetch(`${theSetup().rootUrl}/api/devices/iPhone`, {
+    method: "DELETE",
+    headers: { "x-huddle-action": "/api/devices/iPhone", "x-huddle-token": theSetup().token },
+  });
+  if (!row.ok && row.status !== 404) throw new Error(`DELETE /api/devices/iPhone answered ${row.status}`);
   for (const w of WIDTHS) {
     const context = await widthContext(browser, w);
     const page = await context.newPage();
@@ -222,6 +232,7 @@ test("the passkey offer stands inside its three widths, one dialog, axe clean", 
     await typeCode(page, await freshCode(page, secret));
     const offer = page.locator("[data-passkey-offer]");
     await expect(offer).toBeVisible();
+    await expectSheetGutter(offer);
     await expect(page.getByRole("dialog")).toHaveCount(1);
     await expectLayerInside(page, page.getByRole("dialog"), w);
     await expectLayerDiscipline(page, w);

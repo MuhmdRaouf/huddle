@@ -19,7 +19,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { themeOf } from "../ui/src/themes.ts";
 import { expectAccessible } from "./axe.ts";
-import { n, pairThroughLink, signIn, theSetup, TOTALS, useVirtualAuthenticator } from "./helpers.ts";
+import { expectSheetGutter, n, pairThroughLink, signIn, theSetup, TOTALS, useVirtualAuthenticator } from "./helpers.ts";
 
 /** A #rrggbb as computed style spells it. */
 const rgb = (hex: string): string => {
@@ -548,6 +548,7 @@ test.describe("the Settings tab", () => {
       await page.getByRole("button", { name: "Sign out of this browser" }).click();
       const confirm = page.getByRole("dialog", { name: "Sign out of this browser" });
       await expect(confirm).toBeVisible();
+      await expectSheetGutter(confirm.locator("[data-signout-confirm]"));
       // the first click only asked: the session still answers for this browser
       expect(await alive()).toBe(200);
       await confirm.getByRole("button", { name: "Sign out", exact: true }).click();

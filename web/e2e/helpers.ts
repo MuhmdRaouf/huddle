@@ -2,7 +2,7 @@
 // sign-in through that one-time link, the virtual authenticator a passkey ceremony runs on, and
 // the headers a direct API call needs. The tests read the setup file the global setup wrote.
 
-import { expect, type CDPSession, type Page } from "@playwright/test";
+import { expect, test, type CDPSession, type Locator, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { readSetup, repoRoot, runDir, type E2eSetup } from "./paths.ts";
@@ -335,6 +335,23 @@ export async function expectTapTargets(page: Page): Promise<void> {
       });
   }, TAP_EXCLUSIONS.map((x) => x.selector));
   expect(misses, "controls under 44 px").toEqual([]);
+}
+
+/** On the phone every direct child of a sheet keeps the 16 px side gutter: nothing sits flush
+ *  against the screen edge, and nothing asks for a sideways scroll. */
+export async function expectSheetGutter(sheet: Locator): Promise<void> {
+  if (!test.info().project.use.hasTouch) return;
+  const outside = await sheet.evaluate((root) => {
+    const edge = document.documentElement.clientWidth - 16;
+    return [...root.children]
+      .map((el) => ({ el, r: el.getBoundingClientRect() }))
+      .filter(({ r }) => r.width > 0 && (r.x < 16 || r.x + r.width > edge))
+      .map(
+        ({ el, r }) =>
+          `${el.tagName}${el.hasAttribute("data-link-submit") ? "[data-link-submit]" : ""} "${el.textContent?.trim().slice(0, 40) || el.id}" x=${r.x} right=${r.x + r.width}`,
+      );
+  });
+  expect(outside, "children outside the 16 px side gutter").toEqual([]);
 }
 
 /** Wraps the page's EventSource before any script runs, so a test can cut the streams open on a

@@ -193,7 +193,7 @@ export function StepUpSheet({
   };
   return (
     <Dialog open={open} onClose={onClose} title="Confirm with your passkey">
-      <div class="flex flex-col gap-4" data-stepup="">
+      <div class="flex flex-col gap-4 px-4" data-stepup="">
         <p class={`m-0 text-center text-sm ${MUTED}`}>Huddle checks it is you before it allows this.</p>
         {what ? (
           <dl

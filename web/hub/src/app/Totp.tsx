@@ -374,7 +374,7 @@ export function PasskeyOffer({
 
   return (
     <Dialog open={open} onClose={onClose} title={word.title} labeledBy="passkey-offer-h">
-      <div class="flex flex-col gap-4" data-passkey-offer="">
+      <div class="flex flex-col gap-4 px-4" data-passkey-offer="">
         <p class="m-0 text-sm text-[var(--ui-muted)]">
           {/* one string, not bare JSX text: the sentence's own apostrophe would open a quote the
            * design guard's lexer reads across */}

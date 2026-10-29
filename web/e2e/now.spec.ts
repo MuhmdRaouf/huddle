@@ -25,6 +25,7 @@ import {
   api,
   cutStreams,
   cuttableStreams,
+  expectSheetGutter,
   flowingStreams,
   openTab,
   returnAfter,
@@ -329,6 +330,75 @@ test("a seeded permission ask is allowed with one tap at its card's foot", async
     await expect(page.locator("[data-sessions-pane]")).toBeVisible();
   }
   await expect(page.locator(`[data-row='${session}'] [data-state='idle']`)).toHaveText("Idle");
+});
+
+test("the passkey sheet an allow opens keeps the 16 px side gutter", async ({ page }, info) => {
+  test.skip(info.project.name !== "iphone", "the gutter is the phone's");
+  // the ask stands on the TLS hub, whose door is where a signed-in browser owes the passkey
+  // check: the machine's own loopback waives it, and a paired browser's fresh pairing is
+  // itself an assertion. The ask leaves with the run: dismissed at the end, so no other case
+  // counts it
+  const { hubRootUrl, hubToken, hubUrl } = theSetup();
+  const session = `e2e-stepup-${info.project.name}`;
+  const post = async <T>(route: string, body: unknown): Promise<T> => {
+    const r = await fetch(`${hubRootUrl}${route}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-huddle-action": route.split("?", 1)[0] ?? route,
+        "x-huddle-token": hubToken,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`${route} answered ${r.status}: ${await r.text()}`);
+    const text = await r.text();
+    return (text === "" ? undefined : JSON.parse(text)) as T;
+  };
+  await post("/api/registry/report", {
+    session_id: session,
+    machine: "e2e-machine",
+    project: "e2e",
+    title: "Asks over the hub's door",
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+  const { id } = await post<{ id: number }>("/api/needs", {
+    session_id: session,
+    tool_name: "Bash",
+    tool_input: { command: "bun run test" },
+  });
+
+  // signed in by code on the listener itself, the way a phone earns its session there
+  const login = await fetch(`${hubRootUrl}/api/login`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-huddle-action": "/api/login",
+      "x-huddle-token": hubToken,
+    },
+    body: "{}",
+  });
+  if (!login.ok) throw new Error(`/api/login answered ${login.status}`);
+  const { code } = (await login.json()) as { code: string };
+  await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
+  await page.goto(`${hubUrl}/?code=${code}`);
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  // a phone-shaped browser on a platform that holds a lock earns the biometrics offer over the
+  // shell: close it when it stood, the ask's card is this test's subject
+  const notNow = page.getByRole("button", { name: "Not now" });
+  if (await notNow.isVisible().catch(() => false)) await notNow.click();
+  await page.goto(`${hubUrl}/#/sessions`);
+
+  const card = page.locator(`article[data-row='${session}']`);
+  await expect(card.getByText("bun run test")).toBeVisible();
+  await card.getByRole("button", { name: "Allow once" }).tap();
+  // the allow through the door draws the 401: the passkey sheet stands over the card
+  const sheet = page.locator("[data-stepup]");
+  await expect(sheet).toBeVisible();
+  await expectSheetGutter(sheet);
+
+  await page.keyboard.press("Escape");
+  await post(`/api/needs/${id}/dismiss`, {});
 });
 
 test("a long command's ask opens the phone sheet that wraps it and keeps Allow once in view", async (
