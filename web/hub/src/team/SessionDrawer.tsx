@@ -189,7 +189,7 @@ function EventsPanel({
   return (
     <section class="panel min-w-0" aria-label={`Recent activity of ${name}`} data-sess-events>
       <PanelHead icon="activity" title="Recent activity" n={evs.length || undefined} />
-      <div class="max-h-72 overflow-y-auto p-2" role="log" aria-label={`Events of ${name}`}>
+      <div class="max-h-72 overflow-y-auto p-2" role="log" tabIndex={0} aria-label={`Events of ${name}`}>
         {evs.length ? (
           evs.map((e) => (
             <EventRow

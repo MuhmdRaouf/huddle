@@ -36,7 +36,7 @@ function Bubble({ e, now }: { e: FeedEvent; now: number }): JSX.Element {
         <Time ts={e.ts} now={now} />
       </span>
       <p
-        class={`m-0 max-w-[85%] rounded-2xl px-3.5 py-2 text-[15px] break-words whitespace-pre-wrap ${
+        class={`m-0 max-w-[85%] rounded-2xl px-3.5 py-2 text-[length:var(--ui-text-md)] break-words whitespace-pre-wrap ${
           mine
             ? "rounded-br-md bg-[var(--ui-accent)] text-[var(--ui-on-accent)]"
             : "rounded-bl-md bg-[var(--ui-surface-2)] text-[var(--ui-text)]"

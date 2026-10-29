@@ -38,7 +38,7 @@ describe("verb", () => {
     expect(phrase(ev("task.status", { data: { status: "done", task: "Fix login" } }))).toEqual({
       text: "finished Fix login",
       bold: "Fix login",
-      boldClass: "font-medium text-base-content",
+      boldClass: "font-medium text-[var(--ui-text)]",
     });
     expect(verb(ev("task.status", { data: { status: "doing", task: "Fix login" } }))).toMatchObject({
       i: "half",
@@ -109,7 +109,7 @@ describe("verb", () => {
     expect(approved).toEqual({
       text: "approved Fix login",
       bold: "Fix login",
-      boldClass: "font-medium text-base-content",
+      boldClass: "font-medium text-[var(--ui-text)]",
     });
     expect(verb(ev("msg", { data: { approved: true } }))).toMatchObject({ i: "key", c: "c-green" });
     expect(phrase(ev("msg", { data: { brief: true } })).text).toBe("briefed everyone");

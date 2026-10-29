@@ -56,7 +56,7 @@ describe("PhaseDiagram", () => {
     const svg = view.baseElement.querySelector("svg.pgraph") as SVGSVGElement;
     expect(svg.getAttribute("role")).toBe("group");
     expect(svg.getAttribute("aria-label")).toBe("How the phase fits together");
-    expect(svg.getAttribute("style")).toContain("max-height: 420px");
+    expect(svg.getAttribute("style")).toContain("max-height: 28rem");
     expect(svg.querySelector("marker#arr")).toBeTruthy();
     for (const label of ["Public network", "API server", "Postgres", "Mystery box"]) {
       expect(screen.getByText(label)).toBeTruthy();

@@ -396,6 +396,76 @@ test("the members sheet lists the sessions with their claims and removes one", a
   await expectNoSideScroll(page);
 });
 
+test("the overview page keeps its layers and controls at the pointer's size", async ({ page }, info) => {
+  const ch = await freshChannel(info.project.name, ["gamma", "delta"]);
+  await api(`/api/c/${ch}/op/reserve?as=gamma`, {
+    paths: ["/work/app/src/chat.ts"],
+    note: "the chat",
+  });
+  await openChannel(page, ch);
+
+  // the page's own controls take the pointer's full target: the activity window's chips carry
+  // the 44 px hit area their css draws around the 28 px chip, and the Members button is one
+  // full target itself
+  const segment = page.getByRole("group", { name: "Activity window" });
+  await expect(segment.locator("[data-win]")).toHaveCount(3);
+  const members = page.getByRole("button", { name: /^Members/ });
+  await expectTapTargets([members]);
+  await expectInsideViewport(page, [...(await segment.locator("[data-win]").all()), members]);
+  if (test.info().project.use.hasTouch) {
+    const hits = await segment.evaluate((root) =>
+      [...root.querySelectorAll<HTMLElement>("[data-win]")].map((el) => {
+        const r = el.getBoundingClientRect();
+        const before = getComputedStyle(el, "::before");
+        const p = before.position === "absolute" ? Math.abs(Number.parseFloat(before.top)) : 0;
+        return { l: r.left, r: r.right, t: r.top - p, b: r.bottom + p };
+      }),
+    );
+    expect(hits.length > 0 && hits.every((h) => h.b - h.t >= 44 - 0.01)).toBe(true);
+    expect(
+      hits.every((a, i) =>
+        hits.every(
+          (b, j) =>
+            i === j || a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t,
+        ),
+      ),
+    ).toBe(true);
+  }
+  await expectNoSideScroll(page);
+
+  // the members sheet: the page's one layer, whole inside the viewport, clear of the tab bar,
+  // inside the phone's side gutter, its controls at the pointer's full target, and the page
+  // still reads clean
+  await page.getByRole("button", { name: /^Members/ }).click();
+  const sheet = page.getByRole("dialog", { name: "Members" });
+  await expect(sheet).toBeVisible();
+  expect(await page.locator("dialog[open]").count(), "one layer at a time").toBeLessThanOrEqual(1);
+  await expectInsideViewport(page, [sheet]);
+  if ((await page.locator("[data-nav='bottom']").count()) > 0)
+    await expectClearOfTabBar(page, [sheet]);
+  await expectSheetGutter(sheet.locator(".ui-sheet-body"));
+  await expectLayerTargets(sheet);
+  await expectAccessible(page, SHELL);
+
+  // a confirmed remove raises the page's toast: alone, whole inside the viewport, above the
+  // tab bar
+  await sheet.locator('[data-member="gamma"]').getByRole("button", { name: "Remove gamma" }).click();
+  await sheet
+    .locator('[data-member="gamma"]')
+    .locator("[data-member-confirm]")
+    .getByRole("button", { name: "Remove" })
+    .click();
+  await expect(sheet.locator('[data-member="gamma"]')).toHaveCount(0);
+  const toast = page.locator(".ui-toast");
+  await expect(toast).toBeVisible();
+  expect(await page.locator("dialog[open]").count(), "one layer at a time").toBeLessThanOrEqual(1);
+  await expectInsideViewport(page, [toast]);
+  if ((await page.locator("[data-nav='bottom']").count()) > 0)
+    await expectClearOfTabBar(page, [toast]);
+  await expectNoSideScroll(page);
+  await expectAccessible(page, SHELL);
+});
+
 test("the channel's Settings view lists the sessions linked into it", async ({ page }, info) => {
   const ch = await freshChannel(info.project.name, []);
   // two ended sessions: linkable, and out of the Now list's Working and Needs you counts

@@ -185,12 +185,12 @@ export function PhaseDiagram({ g }: { g: PhaseGraph | null | undefined }): JSX.E
 
   return (
     <div>
-      <div class="overflow-x-auto rounded-lg border hairline bg-base-200/50">
+      <div class="overflow-x-auto rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)]">
         {/* biome-ignore lint/a11y/useSemanticElements: the legacy diagram's svg and its group role, kept word for word */}
         <svg
           class="pgraph"
           viewBox={`0 0 ${W} ${H}`}
-          style={`min-width:${Math.min(W, 900)}px;max-height:420px;width:100%`}
+          style={`min-width:${Math.min(W, 900)}px;max-height:28rem;width:100%`}
           role="group"
           aria-label="How the phase fits together"
         >
@@ -248,12 +248,12 @@ export function PhaseDiagram({ g }: { g: PhaseGraph | null | undefined }): JSX.E
         </svg>
       </div>
       <p
-        class="mt-2 rounded-lg border-l-2 border-base-content/15 bg-base-200/50 px-3 py-2 text-sm muted"
+        class="mt-2 rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] px-3 py-2 text-sm text-[var(--ui-muted)]"
         aria-live="polite"
       >
         {chosen ? (
           <>
-            <b class="text-base-content">{chosen[1]}</b>: {chosen[3] ?? ""}
+            <b class="text-[var(--ui-text)]">{chosen[1]}</b>: {chosen[3] ?? ""}
           </>
         ) : (
           "Select a box to read what it is."

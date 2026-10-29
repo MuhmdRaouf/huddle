@@ -45,7 +45,7 @@ export type Verb = { v: ComponentChildren; i: IconName; c: string };
 
 /** A task id shown emphasised, or nothing when the event carries no id. */
 const tq = (id: string | undefined): ComponentChildren =>
-  id ? <b class="font-medium text-base-content">{id}</b> : "";
+  id ? <b class="font-medium text-[var(--ui-text)]">{id}</b> : "";
 
 const STATUS_WORDS: Record<string, string> = {
   done: "finished",

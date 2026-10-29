@@ -72,14 +72,8 @@
   "app/layout.ts": {
     "px": 2
   },
-  "chat/Chat.tsx": {
-    "px": 1
-  },
   "chat/ChatComposer.tsx": {
     "control": 2
-  },
-  "chat/MembersSheet.tsx": {
-    "px": 1
   },
   "compose/Composer.tsx": {
     "control": 7,
@@ -163,10 +157,7 @@
     "control": 1
   },
   "pages/Overview.tsx": {
-    "control": 2,
-    "daisy": 22,
-    "legacy": 4,
-    "px": 3
+    "daisy": 1
   },
   "pages/Settings.tsx": {
     "control": 3
@@ -185,11 +176,6 @@
     "control": 3,
     "daisy": 12,
     "legacy": 1
-  },
-  "progress.tsx": {
-    "daisy": 4,
-    "legacy": 1,
-    "px": 1
   },
   "radar/app/ActiveBlock.tsx": {
     "legacy": 2
@@ -327,12 +313,9 @@
   },
   "team/Timeline.tsx": {
     "control": 5,
-    "daisy": 28,
+    "daisy": 26,
     "legacy": 4,
     "px": 1
-  },
-  "timeline.tsx": {
-    "daisy": 1
   },
   "work/Board.tsx": {
     "control": 1,

@@ -6,7 +6,11 @@
 // of app.js ovVals/ovSub/ovTexts/ovRows/ovNeeds/ovTopHTML/ovSeries/overviewView and conflicts.js.
 
 import { AreaChart } from "@huddle/ui/area-chart.tsx";
+import { Badge } from "@huddle/ui/badge.tsx";
+import { Banner } from "@huddle/ui/banner.tsx";
+import { Button } from "@huddle/ui/button.tsx";
 import { Card } from "@huddle/ui/card.tsx";
+import { Chip } from "@huddle/ui/chip.tsx";
 import { Panel } from "@huddle/ui/page.tsx";
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -231,36 +235,36 @@ export function reservationLeft(expires: string, now: number): string {
 }
 
 /** The needs banner: N things need you, with the breakdown and the way to the Inbox (ovNeeds). */
-function NeedsBanner({ state, ch, inboxHref }: { state: HuddleState; ch: string; inboxHref: string }) {
+function NeedsBanner({
+  state,
+  ch,
+  inboxHref,
+  go,
+}: {
+  state: HuddleState;
+  ch: string;
+  inboxHref: string;
+  go: (href: string) => void;
+}) {
   const n = inboxCountOf(state, ch);
   if (!n) return null;
   const parts = needsParts(state, ch);
   return (
-    <section
-      class="alert c-mauve sm:alert-horizontal"
-      style="border-color:color-mix(in srgb,var(--hue-mauve) 32%,transparent);background:color-mix(in srgb,var(--hue-mauve) 8%,transparent)"
-      aria-labelledby="ov-needs"
-      data-needs
-    >
-      <span class="tinted ink inline-flex size-7 shrink-0 items-center justify-center rounded-lg">
-        <Icon name="inbox" />
-      </span>
-      <div class="min-w-0">
-        <h2 class="text-sm font-semibold" id="ov-needs">
-          {n} thing{n > 1 ? "s" : ""} need{n === 1 ? "s" : ""} you
-        </h2>
-        <p class="text-sm muted">{parts.length > 0 ? parts.join(", ") : "The channel waits on you."}</p>
-      </div>
-      <a class="btn btn-primary" href={inboxHref}>
-        Open Inbox
-      </a>
+    <section data-needs>
+      <Banner
+        tone="warn"
+        title={`${n} thing${n > 1 ? "s" : ""} need${n === 1 ? "s" : ""} you`}
+        action={{ label: "Open Inbox", onClick: () => go(inboxHref) }}
+      >
+        {parts.length > 0 ? parts.join(", ") : "The channel waits on you."}
+      </Banner>
     </section>
   );
 }
 
 /** The plan progress: the ring, the done count and the per-state breakdown, on the token card with
  *  the plan's segmented bar across the top (ovTopHTML's hero). The breakdown stands in one column
- *  under 900 px, where two would crowd the ring beside them, and in two from there. */
+ *  under 60 rem, where two would crowd the ring beside them, and in two from there. */
 function PlanProgress({ v, steps }: { v: OverviewValues; steps: readonly PlanStep[] }) {
   return (
     <Card
@@ -278,7 +282,10 @@ function PlanProgress({ v, steps }: { v: OverviewValues; steps: readonly PlanSte
           <div class="flex items-center gap-5">
             <Ring pct={v.pct} />
             <p class="flex items-baseline gap-1.5">
-              <span class="text-[28px] font-semibold text-[var(--ui-text)] tabular-nums" data-ov="done">
+              <span
+                class="text-[length:1.8667rem] font-semibold text-[var(--ui-text)] tabular-nums"
+                data-ov="done"
+              >
                 {v.done}
               </span>
               <span class="text-lg text-[var(--ui-muted)] tabular-nums">
@@ -287,7 +294,7 @@ function PlanProgress({ v, steps }: { v: OverviewValues; steps: readonly PlanSte
             </p>
           </div>
           <div
-            class="grid min-w-0 flex-1 gap-3 min-[900px]:grid-cols-2 md:border-l md:border-[var(--ui-line)] md:pl-8"
+            class="grid min-w-0 flex-1 gap-3 min-[60rem]:grid-cols-2 md:border-l md:border-[var(--ui-line)] md:pl-8"
             data-ovrows
           >
             {ovRows(v).map((r) => (
@@ -317,7 +324,11 @@ function CostCard({ obs, ch, api }: { obs: Radar; ch: string; api: Api }): JSX.E
     <Panel
       title="Estimated cost today"
       label="Estimated cost today"
-      actions={<span class="text-[22px] font-semibold text-base-content tnum">{usd(obs.total ?? 0)}</span>}
+      actions={
+        <span class="text-[length:1.4667rem] font-semibold text-[var(--ui-text)] tnum">
+          {usd(obs.total ?? 0)}
+        </span>
+      }
     >
       <div class="flex flex-col gap-3">
         {rows.length > 0 ? (
@@ -340,7 +351,7 @@ function CostCard({ obs, ch, api }: { obs: Radar; ch: string; api: Api }): JSX.E
             </div>
           ))
         ) : (
-          <p class="text-sm muted">No spend recorded for this channel's sessions today.</p>
+          <p class="text-sm text-[var(--ui-muted)]">No spend recorded for this channel's sessions today.</p>
         )}
       </div>
     </Panel>
@@ -354,15 +365,15 @@ function ConflictsCard({ conf, now }: { conf: Conflicts | null; now: number }): 
     <Panel
       title="Conflicts"
       label="Conflicts"
-      meta={list.length > 0 ? <span class="badge badge-warning badge-sm tnum">{list.length}</span> : null}
+      meta={list.length > 0 ? <Badge tone="warn">{list.length}</Badge> : null}
     >
-      <p class="mb-3 text-xs muted">
+      <p class="mb-3 text-xs text-[var(--ui-muted)]">
         Files two sessions edited in the last {conf?.window_min ?? 30} minutes. Each was told once; nothing is
         locked.
       </p>
       {list.length > 0 ? (
         <ul
-          class="flex flex-col divide-y divide-base-content/10"
+          class="flex flex-col divide-y divide-[var(--ui-line)]"
           aria-label="Files edited by more than one session"
         >
           {list.map((c) => (
@@ -375,17 +386,19 @@ function ConflictsCard({ conf, now }: { conf: Conflicts | null; now: number }): 
                   {c.path}
                 </code>
                 {c.repo_name ? (
-                  <span class="badge badge-ghost badge-sm shrink-0 gap-1" title={c.repo ?? ""}>
-                    <Icon name="folder" class="size-3.5" />
-                    {c.repo_name}
+                  <span class="inline-flex shrink-0" title={c.repo ?? ""}>
+                    <Badge tone="neutral">
+                      <Icon name="folder" class="mr-1 size-3.5" />
+                      {c.repo_name}
+                    </Badge>
                   </span>
                 ) : null}
               </div>
               <ul class="flex flex-wrap items-center gap-x-3 gap-y-1" aria-label="Sessions that edited it">
                 {c.sessions.map((s) => (
-                  <li key={s.name} class="flex items-center gap-1.5 text-xs muted">
+                  <li key={s.name} class="flex items-center gap-1.5 text-xs text-[var(--ui-muted)]">
                     <Avatar name={s.name} small={true} />
-                    <span class="font-medium text-base-content">{s.name}</span>
+                    <span class="font-medium text-[var(--ui-text)]">{s.name}</span>
                     <Time ts={s.at} now={now} />
                   </li>
                 ))}
@@ -418,13 +431,13 @@ function ReservationsCard({
       icon={<Icon name="file" />}
       title="Reservations"
       label="Reservations"
-      meta={<span class="badge badge-ghost badge-sm tnum">{reservations.length}</span>}
+      meta={<Badge tone="neutral">{reservations.length}</Badge>}
     >
-      <p class="mb-3 text-xs muted">
+      <p class="mb-3 text-xs text-[var(--ui-muted)]">
         Files the sessions reserved before changing them. A reservation warns, never locks; it lapses or lifts
         when its holder moves on.
       </p>
-      <ul class="flex flex-col divide-y divide-base-content/10" aria-label="Reserved files">
+      <ul class="flex flex-col divide-y divide-[var(--ui-line)]" aria-label="Reserved files">
         {reservations.map((r) => (
           <li
             key={r.path}
@@ -438,10 +451,10 @@ function ReservationsCard({
                 {r.path}
               </code>
             </div>
-            <div class="flex shrink-0 items-center gap-3 text-xs muted">
+            <div class="flex shrink-0 items-center gap-3 text-xs text-[var(--ui-muted)]">
               <span class="flex items-center gap-1.5">
                 <Avatar name={r.holder} small={true} />
-                <span class="font-medium text-base-content">{r.holder}</span>
+                <span class="font-medium text-[var(--ui-text)]">{r.holder}</span>
               </span>
               {r.note ? (
                 <span class="max-w-48 truncate" title={r.note}>
@@ -493,22 +506,14 @@ function ActivityCard({
   );
 }
 
-/** The activity window's segment: one pressed button per window. */
+/** The activity window's segment: one pressed chip per window. */
 function WindowSegment({ win, onWin }: { win: Win; onWin: (w: Win) => void }): JSX.Element {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: the window segment's group role
-    <div class="join join-sm" role="group" aria-label="Activity window">
+    <div role="group" aria-label="Activity window">
       {OV_WINS.map(([k, l]) => (
-        <button
-          type="button"
-          key={k}
-          class={`btn join-item btn-sm${k === win ? " btn-primary" : ""}`}
-          data-win={k}
-          aria-pressed={k === win}
-          onClick={() => onWin(k)}
-        >
+        <Chip key={k} tone="accent" pressed={k === win} data-win={k} onClick={() => onWin(k)}>
           {l}
-        </button>
+        </Chip>
       ))}
     </div>
   );
@@ -527,7 +532,7 @@ export type OverviewProps = {
 
 /** The Overview page: the channel at a glance. */
 export function Overview({ onCompose, prefs = localStorage, store }: OverviewProps = {}): JSX.Element | null {
-  const { state, api, now } = useHuddle();
+  const { state, api, now, go } = useHuddle();
   const ch = state.ch;
   const [win, setWin] = useState<Win>(() => readPref<Win>(prefs, ch ? `ovwin:${ch}` : "ovwin", "15m"));
   const [conf, setConf] = useState<Conflicts | null>(null);
@@ -596,12 +601,12 @@ export function Overview({ onCompose, prefs = localStorage, store }: OverviewPro
     <div class="grid min-w-0 gap-5" id="ovwrap">
       <IntroActions>
         {onCompose ? (
-          <button type="button" id="ovmsg" class="btn" onClick={onCompose}>
+          <Button onClick={onCompose}>
             <Icon name="send" class="size-4" /> Send a message
-          </button>
+          </Button>
         ) : null}
       </IntroActions>
-      <NeedsBanner state={state} ch={ch} inboxHref={api.channelHref(ch, "/inbox")} />
+      <NeedsBanner state={state} ch={ch} inboxHref={api.channelHref(ch, "/inbox")} go={go} />
       <Chat events={state.timeline ?? []} now={now} reservations={reservations} />
       <PlanProgress v={v} steps={state.board?.steps ?? []} />
       <section

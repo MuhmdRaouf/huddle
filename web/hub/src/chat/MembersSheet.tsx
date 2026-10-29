@@ -47,7 +47,7 @@ function MemberRow({
       <div class="flex min-w-0 items-center gap-3">
         <Avatar name={name} small={true} />
         <div class="flex min-w-0 flex-1 flex-col">
-          <span class="truncate text-[15px] font-medium">{name}</span>
+          <span class="truncate text-[length:var(--ui-text-md)] font-medium">{name}</span>
           <span class="truncate text-xs text-[var(--ui-muted)]">
             {[member.role, member.state].filter(Boolean).join(" · ")}
           </span>

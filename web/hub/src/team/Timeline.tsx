@@ -158,11 +158,11 @@ function linkTask(
   const swap = (c: ComponentChild): ComponentChild => {
     if (!isBoldTask(c)) return c;
     const id = c.props.children as string | undefined;
-    if (!id || c.props.class !== "font-medium text-base-content" || !taskById(id)) return c;
+    if (!id || c.props.class !== "font-medium text-[var(--ui-text)]" || !taskById(id)) return c;
     return (
       <button
         type="button"
-        class="font-medium text-base-content underline-offset-2 hover:underline"
+        class="font-medium text-[var(--ui-text)] underline-offset-2 hover:underline"
         onClick={() => onOpenTask?.(id)}
       >
         {id}

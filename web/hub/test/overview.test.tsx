@@ -133,13 +133,13 @@ describe("Overview plan progress", () => {
     expect(screen.getByRole("img", { name: "Blocked: 1 of 4" })).not.toBeNull();
   });
 
-  it("paints on the tokens, the breakdown in one column under 900 px", () => {
+  it("paints on the tokens, the breakdown in one column under 60 rem", () => {
     renderHuddle(<Overview />, state(), NOW, fetchF());
     const panel = screen.getByRole("region", { name: "Plan progress" });
     expect(panel.classList.contains("ui-card")).toBe(true);
     expect(legacyClasses(panel)).toEqual([]);
     const rows = panel.querySelector("[data-ovrows]") as HTMLElement;
-    expect(rows.classList.contains("min-[900px]:grid-cols-2")).toBe(true);
+    expect(rows.classList.contains("min-[60rem]:grid-cols-2")).toBe(true);
     expect([...rows.classList].filter((c) => /^(sm|md):grid-cols-/.test(c))).toEqual([]);
   });
 
@@ -193,8 +193,8 @@ describe("Overview needs banner", () => {
     const { value } = renderHuddle(<Overview />, state(), NOW, fetchF());
     expect(screen.getByText("1 thing needs you")).not.toBeNull();
     expect(screen.getByText("1 question")).not.toBeNull();
-    expect(document.querySelector('a[href="#/channels/dev/inbox"]')).not.toBeNull();
-    expect(value.go).toBeDefined();
+    fireEvent.click(screen.getByText("Open Inbox"));
+    expect(value.go).toHaveBeenCalledWith("#/channels/dev/inbox");
   });
 
   it("joins the attention kinds and the extras' needs", () => {
