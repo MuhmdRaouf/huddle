@@ -141,6 +141,7 @@ describe("the Remove channel action", () => {
     await flush();
     expect(dlg.open).toBe(true);
     expect(dlg.textContent).toContain("old has 1 session(s) online");
+    expect(dlg.querySelector("[role='alert']")?.textContent).toBe("old has 1 session(s) online");
   });
 });
 

@@ -137,10 +137,7 @@
     "legacy": 2
   },
   "pages/Home.tsx": {
-    "control": 10,
-    "daisy": 35,
-    "legacy": 7,
-    "px": 1
+    "daisy": 1
   },
   "pages/Inbox.tsx": {
     "control": 2,

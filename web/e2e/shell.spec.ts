@@ -620,6 +620,112 @@ test.describe("the needs sheet", () => {
   });
 });
 
+test.describe("the channels page", () => {
+  /** The widths the page is drawn at: a phone, a tablet and a desktop. */
+  const WIDTHS = [390, 820, 1440] as const;
+
+  /** A fresh channel of this run's own, with a title, a description and a session online, so the
+   *  card paints every cell; a second bare one follows. */
+  async function seedTwo(project: string): Promise<{ full: string; bare: string }> {
+    const stamp = Date.now().toString(36);
+    const full = `layer-${project}-${stamp}-full`;
+    const bare = `layer-${project}-${stamp}-bare`;
+    await api("/api/channels", {
+      name: full,
+      title: "Checkout rewrite",
+      description: "The checkout service moves to the new pricing engine this week.",
+    });
+    await api("/api/channels", { name: bare });
+    await api(`/api/c/${full}/op/join?as=gamma`, {});
+    return { full, bare };
+  }
+
+  /** Removes the channels the test made, so the specs after it see the seeded hub's own channel
+   *  alone. A channel with a session online leaves first (a removed one already left). */
+  async function cleanUp(names: readonly string[]): Promise<void> {
+    for (const name of names) {
+      await api(`/api/c/${name}/op/leave?as=gamma`, {}).catch(() => {});
+      const path = `/api/channels/${name}`;
+      await fetch(`${theSetup().rootUrl}${path}`, {
+        method: "DELETE",
+        headers: { "x-huddle-action": path, "x-huddle-token": theSetup().token },
+      });
+    }
+  }
+
+  test("the New channel dialog, the Remove confirmation and the toast hold one layer each, sized and clean", async ({
+    page,
+  }, info) => {
+    const { full, bare } = await seedTwo(info.project.name);
+    try {
+      await open(page, "#/channels");
+      await expect(page.locator(`[data-ch='${full}']`)).toBeVisible();
+      for (const scheme of ["light", "dark"] as const) {
+        for (const width of WIDTHS) {
+          const at = `${width} px, ${scheme}`;
+          await page.emulateMedia({ colorScheme: scheme });
+          await page.setViewportSize({ width, height: 900 });
+          await page.goto(`${theSetup().rootUrl}/#/channels`);
+          await expect(page.locator(`[data-ch='${full}']`), at).toBeVisible();
+          // the page's one popup: one layer, whole inside the viewport, clear of the tab bar,
+          // its controls at the pointer's target, axe clean inside it
+          await page.getByRole("button", { name: "New channel" }).click();
+          const dlg = page.getByRole("dialog", { name: "New channel" });
+          await expect(dlg, at).toBeVisible();
+          await expectOneLayer(page, at);
+          // Escape gives the screen back with no layer left
+          await page.keyboard.press("Escape");
+          await expect(page.locator("dialog[open]"), at).toHaveCount(0);
+        }
+      }
+      // the Remove confirmation and the toast it raises, at the phone width: each alone, whole
+      // inside the viewport, clear of the tab bar, its controls at the pointer's target
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`${theSetup().rootUrl}/#/channels`);
+      await expect(page.locator(`[data-ch='${bare}']`)).toBeVisible();
+      await page.locator(`[data-remove='${bare}']`).click();
+      await expect(page.getByRole("dialog", { name: "Remove channel" })).toBeVisible();
+      await expectOneLayer(page, "the remove confirmation");
+      await page.locator("[data-confirm-remove]").click();
+      const toast = page.locator(".ui-toast");
+      await expect(toast).toBeVisible();
+      expect(await page.locator("dialog[open]").count(), "one layer at a time").toBeLessThanOrEqual(1);
+      const box = await toast.boundingBox();
+      const view = page.viewportSize();
+      expect(box, "the toast has a box").not.toBeNull();
+      expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+      expect((box?.x ?? 0) + (box?.width ?? 0), "the toast's right edge").toBeLessThanOrEqual(
+        (view?.width ?? 0) + 1,
+      );
+      expect(box?.y ?? -1).toBeGreaterThanOrEqual(0);
+      expect((box?.y ?? 0) + (box?.height ?? 0), "the toast's bottom edge").toBeLessThanOrEqual(
+        (view?.height ?? 0) + 1,
+      );
+      const bar = await page.locator("[data-nav='bottom']").boundingBox();
+      if (bar !== null) {
+        expect(
+          (box?.y ?? 0) + (box?.height ?? 0),
+          "the toast clears the tab bar",
+        ).toBeLessThanOrEqual(bar.y + 1);
+      }
+      // the toast grows in from a smaller scale: its dismiss reaches its full size once that ends
+      const dismiss = toast.getByRole("button", { name: "Dismiss" });
+      const floor = info.project.use.hasTouch ? 44 : 40;
+      await expect.poll(async () => (await dismiss.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(floor);
+      await expect.poll(async () => (await dismiss.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(floor);
+      const over = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(over, `the page scrolls sideways by ${over}px`).toBeLessThanOrEqual(0);
+      const found = await axeViolations(page);
+      expect(found, "axe with the toast up").toEqual([]);
+    } finally {
+      await cleanUp([full, bare]);
+    }
+  });
+});
+
 test.describe("the command palette", () => {
   /** Opens the palette the way the owner does: the jump field on the desk, the shell's / key
    *  where the field is not. */

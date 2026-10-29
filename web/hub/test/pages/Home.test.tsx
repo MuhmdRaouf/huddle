@@ -1,6 +1,6 @@
 // Home.test.tsx — the channels page: the cards, the New channel dialog, the connect card and the
 // 10 s poll, all over an injected api and injected timers.
-import { act, screen } from "@testing-library/preact";
+import { act, fireEvent, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api } from "../../src/api.ts";
 import { ConnectCard } from "../../src/app/ConnectCard.tsx";
@@ -119,10 +119,10 @@ describe("the channel cards", () => {
     expect(calm.textContent).toContain("No events yet");
   });
 
-  it("folds the sixth online session into a +n more badge", () => {
+  it("folds the sixth online session into a +n more disc", () => {
     const six = { sessions: ["a", "b", "c", "d", "e", "f", "g"].map((n) => ({ name: n })) };
     renderIn(<ChannelCard c={{ name: "big", ...six }} />);
-    expect(document.querySelectorAll(".avatar")).toHaveLength(6); // five avatars plus the +2 disc
+    expect(document.querySelectorAll(".avatar")).toHaveLength(5); // the stack shows five avatars alone
     expect(screen.getByTitle("2 more online").textContent).toBe("+2");
   });
 
@@ -221,17 +221,24 @@ describe("the New channel dialog", () => {
     const view = ctxWith(api);
     await flush();
     void act(() => {
-      (document.querySelector("#newch") as HTMLButtonElement).click();
+      screen.getByRole("button", { name: "New channel" }).click();
     });
     await flush();
     return { view, dlg: view.baseElement.querySelector("dialog") };
   };
 
+  /** Types into one of the dialog's labelled fields. */
+  const type = (label: string, value: string): void => {
+    fireEvent.input(screen.getByLabelText(label), { target: { value } });
+  };
+
   it("opens with the form and closes on Cancel", async () => {
     const { dlg } = await open();
     expect(dlg?.open).toBe(true);
-    expect(dlg?.querySelector("#nc-name")).not.toBeNull();
+    expect(screen.getByLabelText("Name")).toBeDefined();
     expect(dlg?.textContent).toContain("Lowercase letters, digits and dashes");
+    // the hint keeps the base page's code markup around the file the name ends up in
+    expect(dlg?.querySelector(".ui-field-hint code")?.textContent).toBe(".agents/huddle/huddle.json");
     void act(() => {
       screen.getByText("Cancel").click();
     });
@@ -241,14 +248,14 @@ describe("the New channel dialog", () => {
 
   it("refuses a bad name without calling the api", async () => {
     const { dlg } = await open();
-    const name = dlg?.querySelector("#nc-name") as HTMLInputElement;
-    name.value = "Bad Name";
+    type("Name", "Bad Name");
     void act(() => {
       screen.getByText("Create channel").click();
     });
     await flush();
-    expect(dlg?.querySelector("#nc-err")?.textContent).toContain("Use 1 to 40 lowercase letters");
-    expect(name.getAttribute("aria-invalid")).toBe("true");
+    expect(dlg?.textContent).toContain("Use 1 to 40 lowercase letters");
+    expect(screen.getByRole("alert").textContent).toContain("Use 1 to 40 lowercase letters");
+    expect((screen.getByLabelText("Name") as HTMLInputElement).getAttribute("aria-invalid")).toBe("true");
     expect(dlg?.open).toBe(true);
   });
 
@@ -264,14 +271,14 @@ describe("the New channel dialog", () => {
     const view = ctxWith(api);
     await flush();
     void act(() => {
-      (document.querySelector("#newch") as HTMLButtonElement).click();
+      screen.getByRole("button", { name: "New channel" }).click();
     });
     await flush();
     const dlg = view.baseElement.querySelector("dialog") as HTMLDialogElement;
-    (dlg.querySelector("#nc-name") as HTMLInputElement).value = "checkout-v2";
-    (dlg.querySelector("#nc-title") as HTMLInputElement).value = "Checkout 2";
-    (dlg.querySelector("#nc-desc") as HTMLTextAreaElement).value = "next version";
-    (dlg.querySelector("#nc-members") as HTMLInputElement).value = "api, web,, docs";
+    type("Name", "checkout-v2");
+    type("Title (optional)", "Checkout 2");
+    type("What the team is doing (optional)", "next version");
+    type("Allowed sessions (optional)", "api, web,, docs");
     void act(() => {
       screen.getByText("Create channel").click();
     });
@@ -295,14 +302,13 @@ describe("the New channel dialog", () => {
       if (path === "/api/channels") return [];
       return { asks: [], gates: [], paused: [], blocked: [] };
     });
-    const view = ctxWith(api);
+    ctxWith(api);
     await flush();
     void act(() => {
-      (document.querySelector("#newch") as HTMLButtonElement).click();
+      screen.getByRole("button", { name: "New channel" }).click();
     });
     await flush();
-    const dlg = view.baseElement.querySelector("dialog") as HTMLDialogElement;
-    (dlg.querySelector("#nc-name") as HTMLInputElement).value = "c1";
+    type("Name", "c1");
     void act(() => {
       screen.getByText("Create channel").click();
     });
@@ -315,16 +321,17 @@ describe("the New channel dialog", () => {
     const view = ctxWith(api);
     await flush();
     void act(() => {
-      (document.querySelector("#newch") as HTMLButtonElement).click();
+      screen.getByRole("button", { name: "New channel" }).click();
     });
     await flush();
     const dlg = view.baseElement.querySelector("dialog") as HTMLDialogElement;
-    (dlg.querySelector("#nc-name") as HTMLInputElement).value = "taken";
+    type("Name", "taken");
     void act(() => {
       screen.getByText("Create channel").click();
     });
     await flush();
-    expect(dlg.querySelector("#nc-err")?.textContent).toBe("name taken");
+    expect(dlg.textContent).toContain("name taken");
+    expect(screen.getByRole("alert").textContent).toBe("name taken");
     expect(dlg.open).toBe(true);
   });
 });

@@ -3,15 +3,19 @@
 // page shows and the tab is visible (app.js homeView/homeData/paintChannels/newChannel); the
 // poll's timers are injected, so tests step it.
 
+import { Badge } from "@huddle/ui/badge.tsx";
+import { Button } from "@huddle/ui/button.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
+import { Empty } from "@huddle/ui/empty.tsx";
+import { Field } from "@huddle/ui/field.tsx";
 import type { JSX } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { Api } from "../api.ts";
 import { ConnectCard } from "../app/ConnectCard.tsx";
 import { errText, useHuddle } from "../app/context.tsx";
 import { IntroActions } from "../app/intro.tsx";
 import { Icon } from "../icons.tsx";
-import { Avatar, Empty, Pill } from "../kit.tsx";
+import { Avatar } from "../kit.tsx";
 import type { Attention, ChannelSummary } from "../store.ts";
 
 /** One row of GET /api/channels, with what the card shows: description, who is online, the
@@ -57,24 +61,26 @@ export async function homeData(api: Api): Promise<ChannelRow[]> {
 function ChannelHead({ c }: { c: ChannelRow }): JSX.Element {
   return (
     <div class="flex items-start gap-3">
-      <span class="tinted ink inline-flex size-7 shrink-0 items-center justify-center rounded-lg c-blue size-9">
+      <span class="inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-sm)] bg-[var(--ui-accent-soft)] text-[var(--ui-accent)]">
         <Icon name="hash" class="size-4" />
       </span>
       <div class="min-w-0 flex-1">
         <div class="flex min-w-0 items-center gap-2">
-          <h2 class="truncate text-[15px] font-semibold">{c.title || c.name}</h2>
+          <h2 class="truncate text-[length:var(--ui-text-md)] font-semibold">{c.title || c.name}</h2>
           {c.title && c.title !== c.name ? (
-            <span class="badge badge-ghost badge-sm font-mono">{c.name}</span>
+            <Badge tone="neutral">
+              <span class="font-mono">{c.name}</span>
+            </Badge>
           ) : null}
         </div>
-        <p class="mt-0.5 line-clamp-2 text-sm muted">
+        <p class="mt-0.5 line-clamp-2 text-sm text-[var(--ui-muted)]">
           {c.description ? c.description : "No description yet."}
         </p>
       </div>
       {c.needs ? (
-        <Pill status="needs" label={`${c.needs} need${c.needs === 1 ? "s" : ""} you`} />
+        <Badge tone="needs-you">{`${c.needs} need${c.needs === 1 ? "s" : ""} you`}</Badge>
       ) : (
-        <Pill status="done" label="All clear" />
+        <Badge tone="ok">All clear</Badge>
       )}
     </div>
   );
@@ -92,10 +98,11 @@ function OnlineCell({ on }: { on: { name: string }[] }): JSX.Element {
               <Avatar key={s.name} name={s.name} small />
             ))}
             {more > 0 ? (
-              <span class="avatar avatar-placeholder c-idle" title={`${more} more online`}>
-                <span class="w-6 rounded-full tinted">
-                  <span class="ink text-xs font-semibold">+{more}</span>
-                </span>
+              <span
+                class="flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--ui-surface-2)] text-xs font-semibold text-[var(--ui-muted)]"
+                title={`${more} more online`}
+              >
+                +{more}
               </span>
             ) : null}
           </span>
@@ -103,7 +110,7 @@ function OnlineCell({ on }: { on: { name: string }[] }): JSX.Element {
         </>
       ) : (
         <>
-          <Icon name="users" class="size-4 text-base-content/50" />
+          <Icon name="users" class="size-4 text-[var(--ui-muted)]" />
           Nobody online
         </>
       )}
@@ -131,7 +138,7 @@ function TasksCell({ st }: { st: ChannelRow["stats"] }): JSX.Element {
         </>
       ) : (
         <>
-          <Icon name="list" class="size-4 text-base-content/50" />
+          <Icon name="list" class="size-4 text-[var(--ui-muted)]" />
           No tasks yet
         </>
       )}
@@ -143,7 +150,7 @@ function TasksCell({ st }: { st: ChannelRow["stats"] }): JSX.Element {
 function LastCell({ st }: { st: ChannelRow["stats"] }): JSX.Element {
   return (
     <span class="flex items-center gap-1.5 tabular-nums" title="Last event">
-      <Icon name="activity" class="size-4 text-base-content/50" />
+      <Icon name="activity" class="size-4 text-[var(--ui-muted)]" />
       {st?.last ? `Last event #${st.last}` : "No events yet"}
     </span>
   );
@@ -163,13 +170,13 @@ export function ChannelCard({
   return (
     <div class="relative">
       <a
-        class="panel h-full flex flex-col gap-4 p-5 transition-colors hover:bg-base-content/5"
+        class="h-full flex flex-col gap-4 rounded-[var(--ui-radius)] bg-[var(--ui-surface)] p-5 shadow-[var(--ui-shadow-1)] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] hover:bg-[var(--ui-surface-2)]"
         href={`#/channels/${c.name}`}
         data-ch={c.name}
       >
         <ChannelHead c={c} />
         <div
-          class={`mt-auto flex flex-wrap items-center gap-x-5 gap-y-3 border-t hairline pt-4 text-xs muted${onRemove ? " pr-10" : ""}`}
+          class={`mt-auto flex flex-wrap items-center gap-x-5 gap-y-3 border-t border-[var(--ui-line)] pt-4 text-xs text-[var(--ui-muted)]${onRemove ? " pr-10" : ""}`}
         >
           <OnlineCell on={c.sessions ?? []} />
           <TasksCell st={st} />
@@ -177,20 +184,16 @@ export function ChannelCard({
         </div>
       </a>
       {onRemove ? (
-        <button
-          type="button"
-          class="btn btn-ghost btn-square btn-xs absolute right-4 bottom-4 text-base-content/60 hover:text-error"
-          data-remove={c.name}
-          aria-label={`Remove channel ${c.name}`}
+        <Button
+          variant="ghost"
+          class="ui-btn-icon absolute right-4 bottom-4 text-[var(--ui-muted)] hover:text-[var(--ui-fail-ink)]"
+          label={`Remove channel ${c.name}`}
           title="Remove channel"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onRemove(c);
-          }}
+          data-remove={c.name}
+          onClick={() => onRemove(c)}
         >
-          <Icon name="trash" class="size-3.5" />
-        </button>
+          <Icon name="trash" class="size-4" />
+        </Button>
       ) : null}
     </div>
   );
@@ -234,22 +237,23 @@ function RemoveChannel({
           <code>channels/.removed/</code>; stop the hub and move the file back to{" "}
           <code>channels/{c?.name}.db</code> to undo.
         </p>
-        <p class="text-xs text-error" role="alert">
+        <p class="text-xs text-[var(--ui-fail-ink)]" role="alert">
           {err}
         </p>
         <div class="flex justify-end gap-2">
-          <button type="button" class="btn btn-ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="button"
-            class="btn btn-error"
-            data-confirm-remove
+          </Button>
+          <Button
+            variant="danger"
+            data-confirm-remove=""
             disabled={busy}
-            onClick={() => void submit()}
+            onClick={() => {
+              void submit();
+            }}
           >
             Remove channel
-          </button>
+          </Button>
         </div>
       </div>
     </Dialog>
@@ -261,36 +265,34 @@ function RemoveChannel({
 function NewChannel({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element {
   const { api, go, toast } = useHuddle();
   const [err, setErr] = useState("");
-  const [badName, setBadName] = useState(false);
-  const nameRef = useRef<HTMLInputElement>(null);
+  const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [members, setMembers] = useState("");
   const submit = async (e: Event): Promise<void> => {
     e.preventDefault();
     setErr("");
-    const f = e.target as HTMLFormElement;
-    const name = (f.elements.namedItem("nc-name") as HTMLInputElement).value.trim();
-    const members = (f.elements.namedItem("nc-members") as HTMLInputElement).value
-      .split(/[\s,]+/)
-      .filter(Boolean);
-    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(name)) {
+    const clean = name.trim();
+    const memberList = members.split(/[\s,]+/).filter(Boolean);
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(clean)) {
       setErr("Use 1 to 40 lowercase letters, digits or dashes, starting with a letter or digit.");
-      setBadName(true);
-      nameRef.current?.focus();
+      (e.target as HTMLFormElement).querySelector<HTMLInputElement>("input")?.focus();
       return;
     }
-    const title = (f.elements.namedItem("nc-title") as HTMLInputElement).value.trim();
-    const description = (f.elements.namedItem("nc-desc") as HTMLTextAreaElement).value.trim();
+    const cleanTitle = title.trim();
+    const cleanDescription = description.trim();
     try {
       await api.api("/api/channels", {
         body: {
-          name,
-          title: title || undefined,
-          description: description || undefined,
-          ...(members.length ? { members } : {}),
+          name: clean,
+          title: cleanTitle || undefined,
+          description: cleanDescription || undefined,
+          ...(memberList.length ? { members: memberList } : {}),
         },
       });
       onClose();
-      toast(`Created ${name}`);
-      go(`#/channels/${name}`);
+      toast(`Created ${clean}`);
+      go(`#/channels/${clean}`);
     } catch (x) {
       setErr(errText(x));
     }
@@ -298,61 +300,42 @@ function NewChannel({ open, onClose }: { open: boolean; onClose: () => void }): 
   return (
     <Dialog open={open} onClose={onClose} title="New channel">
       <form class="flex flex-col gap-3 p-4" noValidate onSubmit={(e) => void submit(e)}>
-        <label class="flex flex-col gap-1.5 text-sm font-medium">
-          Name{" "}
-          <input
-            ref={nameRef}
-            class="input input-sm"
-            id="nc-name"
-            name="nc-name"
-            required
-            pattern="[a-z0-9][a-z0-9\-]{0,39}"
-            placeholder="checkout-v2"
-            autoComplete="off"
-            aria-describedby="nc-nh nc-err"
-            aria-invalid={badName ? "true" : undefined}
-          />
-          <span class="text-xs font-normal muted" id="nc-nh">
-            Lowercase letters, digits and dashes. Sessions use it in <code>.agents/huddle/huddle.json</code>.
-          </span>
-        </label>
-        <label class="flex flex-col gap-1.5 text-sm font-medium">
-          <span>
-            Title <span class="text-xs font-normal muted">(optional)</span>
-          </span>
-          <input class="input input-sm" id="nc-title" name="nc-title" placeholder="Checkout, version 2" />
-        </label>
-        <label class="flex flex-col gap-1.5 text-sm font-medium">
-          <span>
-            What the team is doing <span class="text-xs font-normal muted">(optional)</span>
-          </span>
-          <textarea class="input input-sm" id="nc-desc" name="nc-desc" rows={2} />
-        </label>
-        <label class="flex flex-col gap-1.5 text-sm font-medium">
-          <span>
-            Allowed sessions <span class="text-xs font-normal muted">(optional)</span>
-          </span>
-          <input
-            class="input input-sm"
-            id="nc-members"
-            name="nc-members"
-            placeholder="api, web, docs"
-            aria-describedby="nc-mh"
-          />
-          <span class="text-xs font-normal muted" id="nc-mh">
-            Leave empty to let any local session join.
-          </span>
-        </label>
-        <p class="text-xs text-error" id="nc-err" role="alert">
-          {err}
-        </p>
+        <Field
+          label="Name"
+          value={name}
+          onInput={(v) => {
+            setName(v);
+            setErr("");
+          }}
+          placeholder="checkout-v2"
+          error={err || undefined}
+          hint={
+            <>
+              Lowercase letters, digits and dashes. Sessions use it in <code>.agents/huddle/huddle.json</code>
+              .
+            </>
+          }
+        />
+        <Field label="Title (optional)" value={title} onInput={setTitle} placeholder="Checkout, version 2" />
+        <Field
+          label="What the team is doing (optional)"
+          value={description}
+          onInput={setDescription}
+          multiline
+          minRows={2}
+        />
+        <Field
+          label="Allowed sessions (optional)"
+          value={members}
+          onInput={setMembers}
+          placeholder="api, web, docs"
+          hint="Leave empty to let any local session join."
+        />
         <div class="flex justify-end gap-2">
-          <button type="button" class="btn btn-ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
-          </button>
-          <button class="btn btn-primary" type="submit">
-            Create channel
-          </button>
+          </Button>
+          <Button type="submit">Create channel</Button>
         </div>
       </form>
     </Dialog>
@@ -389,24 +372,25 @@ export function Home({ timers = realTimers }: { timers?: PollTimers }): JSX.Elem
   return (
     <div class="flex min-w-0 flex-col gap-6">
       <IntroActions>
-        <button type="button" class="btn btn-primary" id="newch" onClick={() => setOpen(true)}>
+        <Button onClick={() => setOpen(true)}>
           <Icon name="plus" class="size-4" /> New channel
-        </button>
+        </Button>
       </IntroActions>
       {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: the list region's label */}
       <div id="chlist" aria-label="Channels">
         {list.length ? (
-          <div class="grid gap-4 md:grid-cols-2">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             {list.map((c) => (
               <ChannelCard key={c.name} c={c} onRemove={who.kind === "owner" ? setRm : undefined} />
             ))}
           </div>
         ) : (
-          <Empty
-            text="No channels yet"
-            hint="Create one with New channel, or let a session's first join create it."
-            icon="layers"
-          />
+          <Empty icon={<Icon name="layers" class="size-6" />}>
+            <span class="block font-medium text-[var(--ui-text)]">No channels yet</span>
+            <span class="block text-sm">
+              Create one with New channel, or let a session's first join create it.
+            </span>
+          </Empty>
         )}
       </div>
       <ConnectCard ch={first} />
