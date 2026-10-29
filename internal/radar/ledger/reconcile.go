@@ -8,7 +8,7 @@ import (
 
 // ReconcileVersion is the version of Reconcile's rules. Every row is written with it; a
 // change to the rules raises it, and the backfill rebuilds each older row from its facts.
-const ReconcileVersion = 1
+const ReconcileVersion = 2
 
 // Reconcile answers the row the sources agree on, false when no source knows the request
 // (every pointer nil).
@@ -22,6 +22,7 @@ func Reconcile(s Sources) (Row, bool) {
 	timing(s, &row)
 	lane(s, &row)
 	usage(s, &row)
+	billing(s, &row)
 	outcome(s, &row)
 	turn(s, &row)
 	return row, true
@@ -50,10 +51,12 @@ func ids(s Sources, row *Row) {
 }
 
 // request reads which model served, who sent it and where it sat in its turn, all the
-// route's own facts; the transcript backs up the prompt id alone.
+// route's own facts; the transcript backs up the model and the prompt id when no route saw
+// the request.
 func request(s Sources, row *Row) {
 	if s.Route == nil {
 		if s.Transcript != nil {
+			row.Model = s.Transcript.Model
 			row.PromptID = s.Transcript.PromptID
 		}
 		return
@@ -114,21 +117,25 @@ func lane(s Sources, row *Row) {
 	}
 }
 
+// chosenUsage answers the usage map the first source that carries one holds, named by its
+// source: the router's report first, OTel and the transcript as backups.
+func chosenUsage(s Sources) (domain.RouteUsage, string) {
+	switch {
+	case s.Route != nil && s.Route.Event.Usage != nil:
+		return *s.Route.Event.Usage, "router"
+	case s.OTel != nil && len(s.OTel.Usage) > 0:
+		return s.OTel.Usage, "otel"
+	case s.Transcript != nil && len(s.Transcript.Usage) > 0:
+		return s.Transcript.Usage, "transcript"
+	}
+	return nil, ""
+}
+
 // usage reads the counters, the price and the limits: the router's report first, OTel and
 // the transcript as backups.
 func usage(s Sources, row *Row) {
-	var counters domain.RouteUsage
-	switch {
-	case s.Route != nil && s.Route.Event.Usage != nil:
-		counters = *s.Route.Event.Usage
-		row.UsageSource = "router"
-	case s.OTel != nil && len(s.OTel.Usage) > 0:
-		counters = s.OTel.Usage
-		row.UsageSource = "otel"
-	case s.Transcript != nil && len(s.Transcript.Usage) > 0:
-		counters = s.Transcript.Usage
-		row.UsageSource = "transcript"
-	}
+	counters, source := chosenUsage(s)
+	row.UsageSource = source
 	row.Input = counterOf(counters, "input_tokens")
 	row.Output = counterOf(counters, "output_tokens")
 	row.CacheRead = counterOf(counters, "cache_read_input_tokens")

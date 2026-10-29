@@ -151,13 +151,14 @@ const upsertQuery = "INSERT OR REPLACE INTO ledger_requests (" +
 	"id, anthropic_id, started_at, ttfb_ms, ttft_ms, duration_ms, lane, harness, " +
 	"model, fallback_from, upstream, session_id, agent_id, parent_agent_id, prompt_id, turn_index, " +
 	"prev_request, query_source, outcome, status, error_code, stop_reason, input, output, " +
-	"cache_read, cache_write, usage_source, cost_usd, cost_reported_usd, ratelimit_5h, " +
+	"cache_read, cache_write, cache_write_1h, speed, geo, service_tier, provider, via, " +
+	"usage_source, cost_usd, cost_reported_usd, ratelimit_5h, " +
 	"ratelimit_7d, prompt_hash, in_transcript, reconciled) VALUES (" +
 	"?, ?, ?, ?, ?, ?, ?, ?, " +
 	"?, ?, ?, ?, ?, ?, ?, ?, " +
 	"?, ?, ?, ?, ?, ?, ?, ?, " +
 	"?, ?, ?, ?, ?, ?, ?, ?, " +
-	"?, ?)"
+	"?, ?, ?, ?, ?, ?, ?, ?)"
 
 // upsertRow inserts the row through db, or replaces the one its ID names, stamped with the
 // version of the rules that built it.
@@ -167,7 +168,9 @@ func upsertRow(db DB, row Row) error {
 		row.Lane, row.Harness, row.Model, row.FallbackFrom, row.Upstream,
 		row.SessionID, row.AgentID, row.ParentAgentID, row.PromptID, row.TurnIndex,
 		row.PrevRequest, row.QuerySource, row.Outcome, row.Status, row.ErrorCode, row.StopReason,
-		row.Input, row.Output, row.CacheRead, row.CacheWrite, row.UsageSource,
+		row.Input, row.Output, row.CacheRead, row.CacheWrite,
+		row.CacheWrite1h, row.Speed, row.Geo, row.ServiceTier, row.Provider, row.Via,
+		row.UsageSource,
 		row.CostUSD, row.CostReportedUSD, row.Ratelimit5h, row.Ratelimit7d,
 		row.PromptHash, boolColumn(row.InTranscript), ReconcileVersion)
 	if err != nil {
@@ -273,6 +276,12 @@ func rowOf(found map[string]any) Row {
 		Output:          intColumn(found, "output"),
 		CacheRead:       intColumn(found, "cache_read"),
 		CacheWrite:      intColumn(found, "cache_write"),
+		CacheWrite1h:    intPtrColumn(found, "cache_write_1h"),
+		Speed:           textPtrColumn(found, "speed"),
+		Geo:             textPtrColumn(found, "geo"),
+		ServiceTier:     textPtrColumn(found, "service_tier"),
+		Provider:        textColumn(found, "provider"),
+		Via:             textPtrColumn(found, "via"),
 		UsageSource:     textColumn(found, "usage_source"),
 		CostUSD:         floatColumn(found, "cost_usd"),
 		CostReportedUSD: floatPtrColumn(found, "cost_reported_usd"),
@@ -286,6 +295,14 @@ func rowOf(found map[string]any) Row {
 func textColumn(row map[string]any, name string) string {
 	text, _ := row[name].(string)
 	return text
+}
+
+func textPtrColumn(row map[string]any, name string) *string {
+	if row[name] == nil {
+		return nil
+	}
+	value := textColumn(row, name)
+	return &value
 }
 
 func intColumn(row map[string]any, name string) int64 {

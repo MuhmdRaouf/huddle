@@ -165,6 +165,8 @@ func TestTheLedgerJoinsARouteAndItsTranscriptInEitherOrder(t *testing.T) {
 		StopReason:   "end_turn",
 		Input:        100,
 		Output:       20,
+		Provider:     "Z.ai",
+		Via:          strp("zai"),
 		UsageSource:  "router",
 		CostUSD:      0.5,
 		InTranscript: true,

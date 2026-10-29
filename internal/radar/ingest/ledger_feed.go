@@ -41,19 +41,33 @@ func routeCostUSD(line shared.SpoolLine, model string, ts int64) float64 {
 }
 
 // transcriptFactsOf is what one transcript request record says about its request; false when
-// it carries no API request id.
+// it carries no API request id. The billing conditions ride in the usage map in the shape
+// the provider's usage block has, so one reader in the ledger handles both sources.
 func transcriptFactsOf(request shared.RequestRecord) (ledger.TranscriptFacts, bool) {
 	if request.RequestID == "" {
 		return ledger.TranscriptFacts{}, false
 	}
 	facts := ledger.TranscriptFacts{
 		RequestID: request.RequestID,
+		Model:     request.Model,
 		Usage: domain.RouteUsage{
 			"input_tokens":                request.Tokens.Input,
 			"output_tokens":               request.Tokens.Output,
 			"cache_read_input_tokens":     request.Tokens.CacheRead,
 			"cache_creation_input_tokens": request.Tokens.CacheWrite,
 		},
+	}
+	if request.CacheWrite1h != nil {
+		facts.Usage["cache_creation"] = map[string]any{"ephemeral_1h_input_tokens": *request.CacheWrite1h}
+	}
+	if request.Speed != nil {
+		facts.Usage["speed"] = *request.Speed
+	}
+	if request.Geo != nil {
+		facts.Usage["inference_geo"] = *request.Geo
+	}
+	if request.ServiceTier != nil {
+		facts.Usage["service_tier"] = *request.ServiceTier
 	}
 	if request.StopReason != nil {
 		facts.StopReason = *request.StopReason

@@ -71,6 +71,13 @@ var schemaSteps = [...]string{
 	// 4: the version of the rules each row was built with, and the ledger's own key/value table
 	"ALTER TABLE ledger_requests ADD COLUMN reconciled INTEGER NOT NULL DEFAULT 0;" +
 		"CREATE TABLE IF NOT EXISTS ledger_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+	// 5: the billing columns history carries (ADR-5)
+	"ALTER TABLE ledger_requests ADD COLUMN cache_write_1h INTEGER;" +
+		"ALTER TABLE ledger_requests ADD COLUMN speed TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN geo TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN service_tier TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN provider TEXT NOT NULL DEFAULT '';" +
+		"ALTER TABLE ledger_requests ADD COLUMN via TEXT",
 }
 
 // SchemaVersion is the version a file sits at once Open has applied every step.

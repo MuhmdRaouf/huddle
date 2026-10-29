@@ -88,3 +88,50 @@ func TestTheWatcherFeedsTheLedger(t *testing.T) {
 		t.Error("transcriptFactsOf a record with no request id = true, want false")
 	}
 }
+
+// TestTranscriptFactsCarryTheModelAndTheBillingKeys: the facts carry the record's model and
+// put the four billing conditions into the usage map in the shape the provider's usage block
+// has — cache_creation nested, the other three flat — each only when the record has it, so
+// one reader in the ledger handles both sources.
+func TestTranscriptFactsCarryTheModelAndTheBillingKeys(t *testing.T) {
+	hour := int64(32)
+	facts, ok := transcriptFactsOf(shared.RequestRecord{
+		RequestID:    "req_bill",
+		Model:        "glm-4.6",
+		CacheWrite1h: &hour,
+		Speed:        strp("fast"),
+		Geo:          strp("us"),
+		ServiceTier:  strp("priority"),
+	})
+	if !ok {
+		t.Fatal("transcriptFactsOf refused a record with a request id")
+	}
+	if facts.Model != "glm-4.6" {
+		t.Errorf("Model = %q, want glm-4.6", facts.Model)
+	}
+	creation, held := facts.Usage["cache_creation"].(map[string]any)
+	if !held {
+		t.Fatalf("cache_creation = %v, want an object holding the 1-hour writes", facts.Usage["cache_creation"])
+	}
+	if creation["ephemeral_1h_input_tokens"] != int64(32) {
+		t.Errorf("ephemeral_1h_input_tokens = %v, want 32", creation["ephemeral_1h_input_tokens"])
+	}
+	for key, want := range map[string]string{"speed": "fast", "inference_geo": "us", "service_tier": "priority"} {
+		if facts.Usage[key] != want {
+			t.Errorf("%s = %v, want %q", key, facts.Usage[key], want)
+		}
+	}
+
+	bare, ok := transcriptFactsOf(shared.RequestRecord{RequestID: "req_bare", Model: "glm-4.6"})
+	if !ok {
+		t.Fatal("transcriptFactsOf refused a record with a request id")
+	}
+	if bare.Model != "glm-4.6" {
+		t.Errorf("Model = %q, want glm-4.6 on a record with no billing", bare.Model)
+	}
+	for _, key := range []string{"cache_creation", "speed", "inference_geo", "service_tier"} {
+		if _, held := bare.Usage[key]; held {
+			t.Errorf("the usage holds %s for a record that has none", key)
+		}
+	}
+}

@@ -31,6 +31,12 @@ type Row struct {
 	ErrorCode                            string
 	StopReason                           string
 	Input, Output, CacheRead, CacheWrite int64
+	CacheWrite1h                         *int64   // the part of CacheWrite the 1-hour cache holds, from the usage block's cache_creation.ephemeral_1h_input_tokens; nil when it said nothing
+	Speed                                *string  // how fast the provider ran it, from the usage block's speed; nil when it said nothing
+	Geo                                  *string  // the provider's inference region, from the usage block's inference_geo; nil when it said nothing
+	ServiceTier                          *string  // the provider's service tier, from the usage block's service_tier; nil when it said nothing
+	Provider                             string   // the provider the model belongs to, the route's plugin naming it when the model is unknown; "" when no source names one
+	Via                                  *string  // the router that served it: the route line's plugin, else "router"; nil when no route line saw the request
 	UsageSource                          string   // "router" | "otel" | "transcript"
 	CostUSD                              float64  // Radar's price, as the caller priced the usage; 0 when unpriced
 	CostReportedUSD                      *float64 // OTel's own cost_usd, shown beside Radar's when known
@@ -49,6 +55,7 @@ type RouteFacts struct {
 // TranscriptFacts is what Claude Code's transcript says about the same request.
 type TranscriptFacts struct {
 	RequestID   string            `json:"request_id"` // requestId, joins on Row.AnthropicID
+	Model       string            `json:"model"`      // the assistant line's model, the provider read off it when no route saw the request
 	PromptID    string            `json:"prompt_id"`
 	QuerySource string            `json:"query_source"`
 	StopReason  string            `json:"stop_reason"`

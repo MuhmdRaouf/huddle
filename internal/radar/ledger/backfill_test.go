@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -215,7 +216,7 @@ func TestTheBackfillRebuildsEveryOlderRow(t *testing.T) {
 		if !ok {
 			t.Fatalf("the facts of %s reconcile to nothing", id)
 		}
-		if got := rowOf(found); got != want {
+		if got := rowOf(found); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s = %+v, want %+v", id, got, want)
 		}
 		if intColumn(found, "reconciled") != ReconcileVersion {
@@ -226,6 +227,87 @@ func TestTheBackfillRebuildsEveryOlderRow(t *testing.T) {
 	rebuilt, more, err := st.BackfillOnce(ctx, BackfillBatch)
 	if err != nil || rebuilt != 0 || more {
 		t.Errorf("the call past the end answered (%d, %t, %v), want (0, false, nil)", rebuilt, more, err)
+	}
+}
+
+// TestTheBackfillRebuildsTheBillingColumns: a row the version-1 rules wrote — reconciled 1 —
+// whose route facts carry the four billing keys and the zai plugin, gains all six billing
+// columns when the backfill rebuilds it, exactly as Reconcile answers them from those facts.
+func TestTheBackfillRebuildsTheBillingColumns(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "ledger.db")
+	buildVersion4File(t, file)
+	pool, err := sql.Open("sqlite", file)
+	if err != nil {
+		t.Fatalf("open the version-4 file: %v", err)
+	}
+	fact, err := json.Marshal(RouteFacts{Event: domain.RouteEvent{
+		Ts:      "2026-10-01T12:00:00Z",
+		Event:   domain.EventRoute,
+		Plugin:  "zai",
+		Model:   "glm-5.3",
+		Route:   "provider",
+		Status:  200,
+		Headers: &map[string]string{"request-id": "req_billing"},
+		Usage: &domain.RouteUsage{
+			"input_tokens":   float64(100),
+			"output_tokens":  float64(20),
+			"cache_creation": map[string]any{"ephemeral_1h_input_tokens": float64(32)},
+			"speed":          "fast",
+			"inference_geo":  "us",
+			"service_tier":   "priority",
+		},
+	}})
+	if err != nil {
+		t.Fatalf("marshal the route facts: %v", err)
+	}
+	if _, err := pool.Exec(
+		"INSERT INTO ledger_requests (id, anthropic_id, model, reconciled) VALUES ('req_billing', 'req_billing', 'stale', 1);"+
+			"INSERT INTO ledger_facts (id, route, transcript) VALUES ('req_billing', ?, '')", string(fact)); err != nil {
+		t.Fatalf("insert the billing row and its facts: %v", err)
+	}
+	if err := pool.Close(); err != nil {
+		t.Fatalf("close the file: %v", err)
+	}
+
+	st := openLedgerFile(t, file)
+	ctx := context.Background()
+	rebuilt, more, err := st.BackfillOnce(ctx, BackfillBatch)
+	if err != nil || rebuilt != 1 || more {
+		t.Fatalf("the batch answered (%d, %t, %v), want (1, false, nil)", rebuilt, more, err)
+	}
+	found, err := st.db.Get("SELECT * FROM ledger_requests WHERE id = 'req_billing'")
+	if err != nil || found == nil {
+		t.Fatalf("the rebuilt row = %+v, %v", found, err)
+	}
+	facts, err := factsOf(ctx, st.db, "req_billing")
+	if err != nil {
+		t.Fatalf("read the facts: %v", err)
+	}
+	want, ok := Reconcile(facts)
+	if !ok {
+		t.Fatal("the route facts reconcile to nothing")
+	}
+	got := rowOf(found)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("the rebuilt row =\n %+v\nwant\n %+v", got, want)
+	}
+	if got.CacheWrite1h == nil || *got.CacheWrite1h != 32 {
+		t.Errorf("cache_write_1h = %v, want 32", got.CacheWrite1h)
+	}
+	if got.Speed == nil || *got.Speed != "fast" {
+		t.Errorf("speed = %v, want fast", got.Speed)
+	}
+	if got.Geo == nil || *got.Geo != "us" {
+		t.Errorf("geo = %v, want us", got.Geo)
+	}
+	if got.ServiceTier == nil || *got.ServiceTier != "priority" {
+		t.Errorf("service_tier = %v, want priority", got.ServiceTier)
+	}
+	if got.Provider != "Z.ai" {
+		t.Errorf("provider = %q, want Z.ai", got.Provider)
+	}
+	if got.Via == nil || *got.Via != "zai" {
+		t.Errorf("via = %v, want zai", got.Via)
 	}
 }
 
