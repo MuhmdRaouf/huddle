@@ -14,6 +14,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,10 +27,11 @@ import (
 )
 
 // w1IDs are the requests the fixture seeds: one per join shape, a transcript-only one whose
-// run total only its result event names, a transcript-only subagent call, and the two turns
-// of a codex rollout plus one opencode message, filed under their own record ids.
+// run total only its result event names, a transcript-only subagent call, a route line the
+// upstream answered 429, and the two turns of a codex rollout plus one opencode message,
+// filed under their own record ids.
 var w1IDs = []string{
-	"req_w1_a", "req_w1_b", "req_w1_c", "req_w2_d", "req_w3_e",
+	"req_w1_a", "req_w1_b", "req_w1_c", "req_w2_d", "req_w3_e", "req_w5_f",
 	"codex:" + w1CodexSessionID + ":0", "codex:" + w1CodexSessionID + ":1", "opencode:msg_aaa",
 }
 
@@ -160,6 +162,28 @@ func w1RouteLine(t *testing.T, at time.Time, id, plugin, model, route string, us
 	return string(text)
 }
 
+// w1FailedRouteLine is one route line the router wrote for a call the upstream answered with
+// the given status and error text; the line reads as w1RouteLine's otherwise, zai's glm-5.3
+// on the direct route.
+func w1FailedRouteLine(t *testing.T, at time.Time, id string, status int, errText string, usage map[string]any, headers map[string]string) string {
+	t.Helper()
+	pairs := map[string]string{"request-id": id}
+	for name, value := range headers {
+		pairs[name] = value
+	}
+	line := map[string]any{
+		"ts": isoOf(at.UnixMilli()), "event": "route", "session_id": "s1",
+		"model": "glm-5.3", "upstream": w1Upstream("zai"), "route": "direct",
+		"plugin": "zai", "status": status, "error": errText, "latency_ms": 42,
+		"usage": usage, "headers": pairs,
+	}
+	text, err := json.Marshal(line)
+	if err != nil {
+		t.Fatalf("marshal the route line of %s: %v", id, err)
+	}
+	return string(text)
+}
+
 // w1UserLine is one user entry a transcript logs before its assistant line: the request's
 // logged input, the text prompt the what line names.
 func w1UserLine(t *testing.T, at time.Time, session, text string) string {
@@ -259,8 +283,8 @@ func w1HistoryHolds(file string, ids []string) bool {
 	return true
 }
 
-// w1HistoryRow is one history request row's billing and capture half, the columns nullable
-// the way history stores them.
+// w1HistoryRow is one history request row's billing, capture and outcome half, the columns
+// nullable the way history stores them.
 type w1HistoryRow struct {
 	id                      string
 	ts                      sql.NullInt64
@@ -274,6 +298,7 @@ type w1HistoryRow struct {
 	costUsd                 sql.NullFloat64
 	nodeID                  string
 	sessionID, agentID      sql.NullString
+	stopReason, status      sql.NullString
 }
 
 // w1HistoryRowFor answers the history row the request id names: the row whose id is the id,
@@ -283,7 +308,7 @@ func w1HistoryRowFor(t *testing.T, db *sql.DB, id string) w1HistoryRow {
 	t.Helper()
 	rows, err := db.Query("SELECT id, ts, headers, what, thinking, totals, " +
 		"cache_write_1h, speed, geo, service_tier, provider, via, cost_usd, node_id, " +
-		"session_id, agent_id FROM requests")
+		"session_id, agent_id, stop_reason, status FROM requests")
 	if err != nil {
 		t.Fatalf("read the history requests: %v", err)
 	}
@@ -294,7 +319,7 @@ func w1HistoryRowFor(t *testing.T, db *sql.DB, id string) w1HistoryRow {
 		if err := rows.Scan(&found.id, &found.ts, &headers, &found.what, &found.thinking, &found.totals,
 			&found.cacheWrite1h, &found.speed, &found.geo, &found.serviceTier,
 			&found.provider, &found.via, &found.costUsd, &found.nodeID,
-			&found.sessionID, &found.agentID); err != nil {
+			&found.sessionID, &found.agentID, &found.stopReason, &found.status); err != nil {
 			t.Fatalf("scan the history request row: %v", err)
 		}
 		found.headers = headers
@@ -328,6 +353,16 @@ func w1TextPtr(value sql.NullString) *string {
 		return nil
 	}
 	return &value.String
+}
+
+// w1TextOrEmpty folds a nullable history column into the pointer shape the ledger's Row
+// reads, a NULL and an "" counting as the same.
+func w1TextOrEmpty(value sql.NullString) *string {
+	text := ""
+	if value.Valid {
+		text = value.String
+	}
+	return &text
 }
 
 // w1IntPtr lifts a nullable history column into the pointer shape the ledger's Row reads.
@@ -390,8 +425,9 @@ func w1Headers(t *testing.T, id string, history sql.NullString, led map[string]s
 	}
 }
 
-// w1Compare compares the session and agent a request sits under, the seven billing columns
-// and the four capture columns of one request, column by column.
+// w1Compare compares the session and agent a request sits under, the seven billing columns,
+// the four capture columns and the two outcome columns (stop_reason and status) of one
+// request, column by column.
 func w1Compare(t *testing.T, id string, h w1HistoryRow, row ledger.Row) {
 	t.Helper()
 	w1One(t, id, "session_id", w1TextPtr(h.sessionID), &row.SessionID)
@@ -408,13 +444,40 @@ func w1Compare(t *testing.T, id string, h w1HistoryRow, row ledger.Row) {
 	w1Headers(t, id, h.headers, row.Headers)
 	w1One(t, id, "totals", w1BoolPtr(h.totals == 1), &row.Totals)
 	w1One(t, id, "node_id", &h.nodeID, &row.NodeID)
+	// The one known difference (ADR-5 point 4): history files a failed route's status text
+	// into stop_reason (routeStatus in ingest/watch.go), while the ledger keeps stop_reason
+	// for the model's own stop reason alone and tells the failure by status, outcome and
+	// error_code. When history's stop_reason is its status text and that status is not 2xx,
+	// the ledger's stop_reason must be "" — nothing else counts as agreement. Every other id
+	// must agree, a NULL and an "" counting as the same.
+	filesStatus := false
+	if h.stopReason.Valid && h.status.Valid && h.stopReason.String == h.status.String {
+		code, err := strconv.Atoi(h.status.String)
+		filesStatus = err != nil || code < 200 || code >= 300
+	}
+	if filesStatus {
+		if row.StopReason != "" {
+			t.Errorf("%s stop_reason: history=%s ledger=%s, want \"\"", id, h.stopReason.String, row.StopReason)
+		}
+	} else {
+		w1One(t, id, "stop_reason", w1TextOrEmpty(h.stopReason), &row.StopReason)
+	}
+	// status: history keeps the TEXT the route line printed, the ledger the same number as an
+	// int64; a NULL history status pairs with the ledger's 0 — no route line named one.
+	status := "0"
+	if h.status.Valid {
+		status = h.status.String
+	}
+	led := strconv.FormatInt(row.Status, 10)
+	w1One(t, id, "status", &status, &led)
 }
 
 // TestTheLedgerMatchesHistory: the seeded requests — a zai one both sources saw with the
 // four billing keys, a thinking count, a prompt and a Bash call; a kimi one only the route
-// line saw; an Anthropic passthrough with a speed; a transcript-only one whose run total its
-// result event names; and a codex rollout plus an opencode message under their own record
-// ids — land the same values in history.db and ledger.db.
+// line saw; an Anthropic passthrough with a speed; a zai route line the upstream answered
+// 429; a transcript-only one whose run total its result event names; and a codex rollout
+// plus an opencode message under their own record ids — land the same values in history.db
+// and ledger.db.
 func TestTheLedgerMatchesHistory(t *testing.T) {
 	world := makeEnv(t)
 	ctx := t.Context()
@@ -452,6 +515,11 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 		w1RouteLine(t, at, "req_w1_c", "", "claude-sonnet-4-5", "anthropic", map[string]any{
 			"input_tokens": 50, "output_tokens": 8, "speed": "fast",
 		}, nil),
+		// at +11s the line sits outside the store's 10 s match window (MatchMs in
+		// store/merge.go), so history never pairs it with req_w3_e's transcript copy
+		w1FailedRouteLine(t, at.Add(11*time.Second), "req_w5_f", 429, "rate limited by api.z.ai",
+			map[string]any{"input_tokens": 100, "output_tokens": 0},
+			map[string]string{"retry-after": "30"}),
 	)
 	writeText(t, filepath.Join(world.config, "projects", "-w-app", "s1.jsonl"), strings.Join([]string{
 		w1UserLine(t, at, "s1", "fix the flaky test"),
@@ -535,5 +603,44 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 	}
 	if h := w1HistoryRowFor(t, history, "req_w3_e"); h.nodeID != "s1/a7" {
 		t.Errorf("req_w3_e node_id: history=%s", h.nodeID)
+	}
+
+	// the failed call's outcome, pinned field by field: a shared empty value must never read
+	// as agreement
+	limited, err := led.Get(ctx, "req_w5_f")
+	if err != nil || limited == nil {
+		t.Fatalf("read the ledger row of req_w5_f: %+v, %v", limited, err)
+	}
+	if limited.Outcome != "http_error" {
+		t.Errorf("req_w5_f outcome = %q, want http_error", limited.Outcome)
+	}
+	if limited.Status != 429 {
+		t.Errorf("req_w5_f status = %d, want 429", limited.Status)
+	}
+	if limited.ErrorCode != "rate limited by api.z.ai" {
+		t.Errorf("req_w5_f error_code = %q, want rate limited by api.z.ai", limited.ErrorCode)
+	}
+	if limited.StopReason != "" {
+		t.Errorf("req_w5_f stop_reason = %q, want \"\"", limited.StopReason)
+	}
+	if limited.Headers["retry-after"] != "30" {
+		t.Errorf("req_w5_f retry-after = %q, want 30", limited.Headers["retry-after"])
+	}
+	limitedHistory := w1HistoryRowFor(t, history, "req_w5_f")
+	if !limitedHistory.stopReason.Valid || limitedHistory.stopReason.String != "429" {
+		t.Errorf("req_w5_f history stop_reason = %s, want 429", w1Show(w1TextPtr(limitedHistory.stopReason)))
+	}
+	if !limitedHistory.status.Valid || limitedHistory.status.String != "429" {
+		t.Errorf("req_w5_f history status = %s, want 429", w1Show(w1TextPtr(limitedHistory.status)))
+	}
+	routed, err := led.Get(ctx, "req_w1_b")
+	if err != nil || routed == nil {
+		t.Fatalf("read the ledger row of req_w1_b: %+v, %v", routed, err)
+	}
+	if routed.Outcome != "ok" {
+		t.Errorf("req_w1_b outcome = %q, want ok", routed.Outcome)
+	}
+	if routed.Status != 200 {
+		t.Errorf("req_w1_b status = %d, want 200", routed.Status)
 	}
 }
