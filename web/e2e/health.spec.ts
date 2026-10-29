@@ -91,8 +91,10 @@ test.describe("with the real health answer", () => {
     await expect(page.locator("[data-health-dot]")).toHaveCount(0);
     await page.goto(`${theSetup().rootUrl}/#/settings/hub`);
     await expect(page.locator("[data-health-dot]")).toHaveCount(0);
-    // the run's hub reports no parts yet, so there is no Health card to draw
-    await expect(page.locator("[data-health]")).toHaveCount(0);
+    // the real hub reports its parts: the card names the well ones and lists no failing row
+    const health = page.locator("[data-health]");
+    await expect(health.locator(".ui-list-title").filter({ hasText: /^[1-9]\d* parts? healthy$/ })).toBeVisible();
+    await expect(health).not.toContainText("Failing");
     await expectAccessible(page);
   });
 });
