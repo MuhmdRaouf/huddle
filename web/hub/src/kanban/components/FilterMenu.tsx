@@ -109,7 +109,7 @@ export function FilterMenu({ kind, label, cards, filters, buttonRef, onToggle, o
           onInput={(event) => setQuery(event.currentTarget.value)}
         />
       )}
-      {groups.length === 0 && <p class="empty">No values</p>}
+      {groups.length === 0 && <p class="my-1 mx-2 text-[var(--ui-muted)]">No values</p>}
       {groups.map((group) => (
         <section key={group.name}>
           {group.name !== "" && group.fold && (

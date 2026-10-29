@@ -98,40 +98,32 @@
   "kanban/components/Badge.tsx": {
     "daisy": 1
   },
-  "kanban/components/Board.tsx": {
-    "px": 4
-  },
   "kanban/components/BoardPicker.tsx": {
     "control": 3
   },
   "kanban/components/FeaturePicker.tsx": {
-    "control": 2,
-    "px": 1
+    "control": 2
   },
   "kanban/components/Card.tsx": {
     "control": 2,
-    "daisy": 2
+    "daisy": 1
   },
   "kanban/components/Column.tsx": {
     "control": 3
   },
   "kanban/components/Drawer.tsx": {
-    "control": 5,
-    "daisy": 2,
-    "legacy": 3,
-    "px": 2
+    "control": 2,
+    "daisy": 1,
+    "legacy": 3
   },
   "kanban/components/FilterMenu.tsx": {
-    "control": 3,
-    "legacy": 1
+    "control": 3
   },
   "kanban/components/FlowBar.tsx": {
     "control": 2
   },
   "kanban/components/Toolbar.tsx": {
-    "control": 6,
-    "daisy": 1,
-    "px": 1
+    "control": 4
   },
   "kanban/kanban.css": {
     "colour": 2,

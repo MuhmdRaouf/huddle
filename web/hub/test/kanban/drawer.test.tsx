@@ -264,7 +264,7 @@ describe("Feature: the docked panel resizes and remembers", () => {
     // Given the panel docked at its default 440
     // When the reader presses ArrowLeft twice and ArrowRight once on the handle
     // Then the width moves 24 px a step, clamps at 720, and lands in localStorage
-    stubMatchMedia((query) => query.includes("min-width: 1200"));
+    stubMatchMedia((query) => query.includes("min-width: 75rem"));
     const { container } = renderDrawer();
     const separator = (await screen.findByRole("separator")) as HTMLElement;
     expect(separator.getAttribute("aria-valuemin")).toBe(String(PANEL_MIN_WIDTH));
@@ -285,7 +285,7 @@ describe("Feature: the docked panel resizes and remembers", () => {
     // When the reader keeps pressing ArrowLeft
     // Then the width stops at 720 and never leaves the range
     writePanelWidth(719);
-    stubMatchMedia((query) => query.includes("min-width: 1200"));
+    stubMatchMedia((query) => query.includes("min-width: 75rem"));
     const { container } = renderDrawer();
     const separator = screen.getByRole("separator") as HTMLElement;
     const panel = container.querySelector("[data-drawer]") as HTMLElement;
@@ -299,7 +299,7 @@ describe("Feature: the docked panel resizes and remembers", () => {
     // Given the docked panel
     // When the pointer drags the handle 160 px to the left
     // Then the width grows by 160 and is remembered; after the drag ends a move does nothing
-    stubMatchMedia((query) => query.includes("min-width: 1200"));
+    stubMatchMedia((query) => query.includes("min-width: 75rem"));
     const { container } = renderDrawer();
     const separator = screen.getByRole("separator") as HTMLElement;
     const panel = container.querySelector("[data-drawer]") as HTMLElement;
@@ -362,7 +362,7 @@ describe("Feature: the panel opens, fails and recovers", () => {
         name: "kanban: Preact board page, responsive and live, with its Vitest suite",
       }),
     ).toBeDefined();
-    expect(document.querySelectorAll("[data-drawer] .skeleton")).toHaveLength(4);
+    expect(document.querySelectorAll("[data-drawer] .pending-bar")).toHaveLength(4);
     expect(screen.queryByText("Tags")).toBeNull();
   });
 
@@ -524,7 +524,7 @@ describe("Feature: the placements follow the window", () => {
     // Given a window of 1200 px and more
     // When the panel opens
     // Then it is docked: a separator handle, no scrim, its width inline
-    stubMatchMedia((query) => query.includes("min-width: 1200"));
+    stubMatchMedia((query) => query.includes("min-width: 75rem"));
     const { container } = renderDrawer();
     expect(container.querySelector("[data-drawer]")?.classList.contains("docked")).toBe(true);
     expect(container.querySelector(".panel-scrim")).toBeNull();
@@ -548,7 +548,7 @@ describe("Feature: the placements follow the window", () => {
     // Given a PWA window under 640
     // When the panel opens
     // Then it stands in the ui sheet, titled with the id and title, and Close ends in onClose
-    stubMatchMedia((query) => query.includes("max-width: 639"));
+    stubMatchMedia((query) => query.includes("max-width: 39.9375rem"));
     const { container, onClose } = renderDrawer();
     const sheet = container.querySelector("dialog.ui-sheet") as HTMLDialogElement;
     expect(sheet).not.toBeNull();
@@ -638,7 +638,7 @@ describe("Feature: the closed-feature badge", () => {
 
   it("Scenario: on a phone the badge leads the chips row in the sheet", async () => {
     // Given a phone window and a closed feature's card
-    stubMatchMedia((query) => query.includes("max-width: 639"));
+    stubMatchMedia((query) => query.includes("max-width: 39.9375rem"));
     const ticket = closedTicket();
     const { container } = render(
       <Drawer

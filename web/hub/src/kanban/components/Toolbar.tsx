@@ -70,7 +70,7 @@ function KindMenu({
   const button = useRef<HTMLButtonElement>(null);
   const count = filters.picks[kind].length;
   return (
-    <span class="menu-wrap">
+    <span class="relative inline-flex">
       <button
         ref={button}
         type="button"
@@ -259,19 +259,19 @@ function Pills({
   return (
     <div class="pills">
       {picks.map((pick) => (
-        <button
+        <Button
           key={`${pick.kind}:${pick.value}`}
-          type="button"
+          variant="ghost"
           class="chip pill"
-          aria-label={`Remove ${pick.label} ${pick.value}`}
+          label={`Remove ${pick.label} ${pick.value}`}
           onClick={() => onChange(togglePick(filters, pick.kind, pick.value))}
         >
           {pick.label}: {pick.value} <span aria-hidden="true">×</span>
-        </button>
+        </Button>
       ))}
-      <button type="button" class="chip pill clear" onClick={() => onChange(clearPicks(filters))}>
+      <Button variant="ghost" class="chip pill clear" onClick={() => onChange(clearPicks(filters))}>
         Clear all
-      </button>
+      </Button>
     </div>
   );
 }
@@ -307,7 +307,7 @@ export function Toolbar({
 }: ToolbarProps) {
   const search = useRef<HTMLInputElement>(null);
   const [openKind, setOpenKind] = useState<FilterKind | null>(null);
-  const narrow = useMedia("(max-width: 639px)");
+  const narrow = useMedia("(max-width: 39.9375rem)");
   // a touch screen has no / key to press, so its hint is the plain word
   const touch = useMedia("(pointer: coarse)");
   const [unfolded, setUnfolded] = useState(false);

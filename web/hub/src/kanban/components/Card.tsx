@@ -99,7 +99,7 @@ function CardViewBase({
         aria-label={`${card.id}: ${card.title}`}
         onClick={(event) => onOpen(card.id, event.currentTarget)}
       />
-      <header class="card-head">
+      <header class="flex items-center gap-1 mb-0.5 pr-0.5">
         {cluster !== "" && <span class="feature">{cluster}</span>}
         <span class="cid">{card.id}</span>
         {card.holder !== "" && (

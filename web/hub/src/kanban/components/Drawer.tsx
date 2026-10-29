@@ -489,12 +489,12 @@ function PanelHeader({
           <p class="cid">{card.id}</p>
           {featureClosed && <span class="chip feature-closed">Feature closed</span>}
         </div>
-        <button type="button" class="copy" aria-label={`Copy ${card.id}`} onClick={onCopy}>
+        <Button variant="secondary" class="copy" label={`Copy ${card.id}`} onClick={onCopy}>
           {copied ? "Copied" : <span aria-hidden="true">⧉</span>}
-        </button>
-        <button type="button" class="close" onClick={onClose}>
+        </Button>
+        <Button variant="secondary" class="close" onClick={onClose}>
           Close
-        </button>
+        </Button>
       </div>
       <h2 class="panel-title" tabIndex={-1}>
         {card.title}
@@ -523,7 +523,11 @@ function PanelContent({
       <div class="panel-loading" role="status">
         <span class="sr-only">Loading the ticket…</span>
         {[0, 1, 2, 3].map((row) => (
-          <div class="skeleton" aria-hidden="true" key={row} />
+          <div
+            class="pending-bar h-[0.93333rem] my-[0.66667rem] rounded-[0.4rem] bg-[var(--ui-surface-2)]"
+            aria-hidden="true"
+            key={row}
+          />
         ))}
       </div>
     );
@@ -532,9 +536,9 @@ function PanelContent({
     return (
       <div class="panel-error" role="alert">
         <p>This card could not be loaded.</p>
-        <button type="button" onClick={retry}>
+        <Button variant="secondary" onClick={retry}>
           Try again
-        </button>
+        </Button>
       </div>
     );
   }
@@ -565,8 +569,8 @@ function PanelContent({
  *  markdown and the log collapsed — docked beside the board on a wide window, a sheet over a
  *  scrim on a tablet, and on a phone the design system's sheet rising from the bottom, read only. */
 export function Drawer({ card, cards, getTicket, onClose, onOpenDep }: DrawerProps) {
-  const docked = useMedia("(min-width: 1200px)");
-  const phone = useMedia("(max-width: 639px)");
+  const docked = useMedia("(min-width: 75rem)");
+  const phone = useMedia("(max-width: 39.9375rem)");
   const [width, setWidth] = useState(readPanelWidth);
   const { ticket, loading, failed, retry } = useTicket(getTicket, card.id);
   const panel = useRef<HTMLDivElement>(null);

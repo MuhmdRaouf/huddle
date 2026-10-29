@@ -39,9 +39,9 @@ export type BoardProps = {
 /** Done shows its latest cards first, capped until the reader asks for the rest. */
 const DONE_CAP = 20;
 
-/** The track a column sits in: a rail's 40 px, or the card-holding minmax. */
-const TRACK = "minmax(260px, 380px)";
-const RAIL_TRACK = "40px";
+/** The track a column sits in: a rail's 40 px, or the card-holding minmax (rem at the 15 px root). */
+const TRACK = "minmax(17.33333rem, 25.33333rem)";
+const RAIL_TRACK = "2.66667rem";
 
 /** The done cards latest first, ordering by finishedAt and falling back to updatedAt. */
 function doneFirst(cards: CardData[]): CardData[] {
@@ -166,7 +166,7 @@ export function Board({
   sharedCluster = null,
   backlogGroups,
 }: BoardProps) {
-  const narrow = useMedia("(max-width: 639px)");
+  const narrow = useMedia("(max-width: 39.9375rem)");
   const reduced = useMedia("(prefers-reduced-motion: reduce)");
   const [showAllDone, setShowAllDone] = useState(false);
   const [tab, setTab] = useState<ColumnId | null>(null);

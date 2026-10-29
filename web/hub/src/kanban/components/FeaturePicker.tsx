@@ -49,7 +49,7 @@ export function FeaturePicker({
   boardKey,
   toast,
 }: FeaturePickerProps): JSX.Element {
-  const phone = useMedia("(max-width: 639px)");
+  const phone = useMedia("(max-width: 39.9375rem)");
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLSpanElement>(null);
