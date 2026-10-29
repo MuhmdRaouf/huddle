@@ -44,6 +44,8 @@ type HistoryWriterOptions struct {
 	Store   *store.Store
 	History HistorySink
 	Log     func(line string)
+	// Health takes each flush's result; nil reports nothing.
+	Health HealthReport
 }
 
 // HistoryWriter is the running bridge from one store into one history file. The flush loop
@@ -53,6 +55,7 @@ type HistoryWriter struct {
 	store   *store.Store
 	history HistorySink
 	log     func(line string)
+	health  HealthReport
 
 	mu      sync.Mutex
 	broken  bool
@@ -144,6 +147,7 @@ func AttachHistoryWriter(ctx context.Context, options HistoryWriterOptions) *His
 		store:   options.Store,
 		history: options.History,
 		log:     log,
+		health:  options.Health,
 		known:   make(map[string]knownSession),
 		wake:    make(chan struct{}, 1),
 		stop:    make(chan struct{}),
@@ -201,8 +205,11 @@ func (w *HistoryWriter) Flush() {
 		if unsubscribe != nil {
 			unsubscribe()
 		}
+		reportTo(w.health, WriterHealthName, err)
 		w.log(fmt.Sprintf("radar: history write failed, history disabled (%v)", err))
+		return
 	}
+	reportTo(w.health, WriterHealthName, nil)
 }
 
 // transact runs one batch's write inside the history's transaction; a panic inside the

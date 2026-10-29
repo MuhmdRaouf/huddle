@@ -1010,6 +1010,71 @@ func TestWriterCoalescing(t *testing.T) {
 	})
 }
 
+// TestTheWriterReportsEachFlush: every flush that writes a batch lands its result on health —
+// ok after a good write, failing after a failed one — so a writer that lost its history shows
+// in /health beside the log line; a flush with nothing queued reports nothing.
+func TestTheWriterReportsEachFlush(t *testing.T) {
+	t.Run("records a flush into a good history ok", func(t *testing.T) {
+		world := newWriterWorld(t)
+		h, err := OpenHistory(filepath.Join(world.dir, "history.db"), nil)
+		if err != nil {
+			t.Fatalf("open history: %v", err)
+		}
+		health := &recordingHealth{}
+		world.writer = AttachHistoryWriter(t.Context(), HistoryWriterOptions{
+			Store:   world.store,
+			History: h,
+			Log:     world.logLine,
+			Health:  health,
+		})
+		world.store.UpsertSession(store.SessionUpsert{ID: "s1"})
+		world.store.AddRequest(writerRequest(func(r *shared.RequestRecord) { r.ID = "r1" }), nil)
+		world.writer.Flush()
+		if got := health.snapshot(); len(got) != 1 || got[0].name != WriterHealthName || !got[0].ok {
+			t.Errorf("the flush reported %v, want one %s ok", got, WriterHealthName)
+		}
+	})
+
+	t.Run("records a flush into a failing history failing", func(t *testing.T) {
+		world := newWriterWorld(t)
+		health := &recordingHealth{}
+		world.writer = AttachHistoryWriter(t.Context(), HistoryWriterOptions{
+			Store:   world.store,
+			History: throwingHistory{},
+			Log:     world.logLine,
+			Health:  health,
+		})
+		world.store.UpsertSession(store.SessionUpsert{ID: "s1"})
+		world.store.AddRequest(writerRequest(func(r *shared.RequestRecord) { r.ID = "r1" }), nil)
+		world.writer.Flush()
+		got := health.snapshot()
+		if len(got) != 1 || got[0].name != WriterHealthName || got[0].ok {
+			t.Fatalf("the flush reported %v, want one %s failing", got, WriterHealthName)
+		}
+		if got[0].err == nil {
+			t.Errorf("the failing flush carried no error")
+		}
+	})
+
+	t.Run("reports nothing on an empty queue", func(t *testing.T) {
+		world := newWriterWorld(t)
+		h, err := OpenHistory(filepath.Join(world.dir, "history.db"), nil)
+		if err != nil {
+			t.Fatalf("open history: %v", err)
+		}
+		health := &recordingHealth{}
+		world.writer = AttachHistoryWriter(t.Context(), HistoryWriterOptions{
+			Store:   world.store,
+			History: h,
+			Health:  health,
+		})
+		world.writer.Flush()
+		if got := health.snapshot(); len(got) != 0 {
+			t.Errorf("an empty queue reported %v, want nothing", got)
+		}
+	})
+}
+
 func TestWriterRouteCapture(t *testing.T) {
 	t.Run("links a route line's prompt hash and headers, and stores each capture once in the history", func(t *testing.T) {
 		env := writerEnv(t)

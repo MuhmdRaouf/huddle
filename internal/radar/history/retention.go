@@ -49,6 +49,8 @@ func PruneOnce(ctx context.Context, h *History, retention RetentionSource, now i
 type PruneOptions struct {
 	IntervalMs int64
 	Now        func() int64
+	// Health takes each prune's result; nil reports nothing.
+	Health HealthReport
 }
 
 // PruneSchedule is a running prune beat.
@@ -82,7 +84,8 @@ func SchedulePrunes(ctx context.Context, h *History, retention RetentionSource, 
 	}
 	run := func() {
 		// the next beat tries again; the dashboard keeps serving either way
-		_, _ = PruneOnce(ctx, h, retention, now())
+		_, err := PruneOnce(ctx, h, retention, now())
+		reportTo(options.Health, PruneHealthName, err)
 	}
 	run()
 	p := &PruneSchedule{stop: make(chan struct{}), done: make(chan struct{})}

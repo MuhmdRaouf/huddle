@@ -30,6 +30,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/health"
 	"github.com/MuhmdRaouf/huddle/internal/radar/alerts"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cli"
 	"github.com/MuhmdRaouf/huddle/internal/radar/history"
@@ -99,6 +100,9 @@ type MountOptions struct {
 	// Ended names the sessions huddle's registry has ended; nil keeps radar on Claude Code's
 	// registry alone.
 	Ended ingest.HubEnded
+	// Health is the hub's health registry: Radar's stores and loops report into it; nil
+	// reports nothing.
+	Health *health.Registry
 	// PingMs is the stream's ping interval; 0 takes radar's 15 s default.
 	PingMs int64
 }
@@ -190,6 +194,17 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 
 	appCtx, cancel := context.WithCancel(ctx)
 	t.cancel = cancel
+	options.Health.Register(history.PruneHealthName, domain.HealthLoop, time.Duration(history.PruneIntervalMs)*time.Millisecond)
+	options.Health.Register(history.WriterHealthName, domain.HealthLoop, 0)
+	options.Health.Register(ledger.PruneHealthName, domain.HealthLoop, ledger.PruneEvery)
+	var report history.HealthReport
+	if options.Health != nil {
+		report = options.Health
+	}
+	var ledgerReport ledger.HealthReport
+	if options.Health != nil {
+		ledgerReport = options.Health
+	}
 	since := options.SinceMs
 	if since == 0 {
 		since = cli.DefaultSinceMs
@@ -198,25 +213,29 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 	var hist *history.History
 	var writer *history.HistoryWriter
 	if opened, err := history.OpenHistory(paths.HistoryPath(appCtx, env), nil); err != nil {
+		options.Health.Fail("history.db", err)
 		log(fmt.Sprintf("radar: history unavailable, running without it (%v)", err))
 	} else {
+		options.Health.OK("history.db")
 		hist = opened
-		writer = history.AttachHistoryWriter(appCtx, history.HistoryWriterOptions{Store: st, History: hist})
+		writer = history.AttachHistoryWriter(appCtx, history.HistoryWriterOptions{Store: st, History: hist, Health: report})
 	}
 	if hist != nil {
 		// the retention the user chose, read fresh on every prune so a change takes the next beat
 		retention := func(ctx context.Context) int {
 			return settings.ReadSettings(ctx, env).HistoryRetentionDays
 		}
-		t.prunes = history.SchedulePrunes(appCtx, hist, retention, history.PruneOptions{})
+		t.prunes = history.SchedulePrunes(appCtx, hist, retention, history.PruneOptions{Health: report})
 	}
 	var led *ledger.Store
 	var ledgerPrunes *ledger.PruneBeat
 	if opened, err := ledger.Open(paths.LedgerPath(appCtx, env)); err != nil {
+		options.Health.Fail("ledger.db", err)
 		log(fmt.Sprintf("radar: ledger unavailable, running without it (%v)", err))
 	} else {
+		options.Health.OK("ledger.db")
 		led = opened
-		ledgerPrunes = ledger.SchedulePrune(appCtx, led, 0, now)
+		ledgerPrunes = ledger.SchedulePrune(appCtx, led, 0, now, ledgerReport)
 	}
 	watcher := ingest.StartWatcher(appCtx, ingest.WatcherOptions{
 		Env:        env,

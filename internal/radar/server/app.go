@@ -238,7 +238,7 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		log(fmt.Sprintf("radar: ledger unavailable, running without it (%v)", err))
 	} else {
 		led = opened
-		ledgerPrunes = ledger.SchedulePrune(appCtx, led, 0, now)
+		ledgerPrunes = ledger.SchedulePrune(appCtx, led, 0, now, nil)
 	}
 	watcher := ingest.StartWatcher(appCtx, ingest.WatcherOptions{
 		Env:        options.Env,

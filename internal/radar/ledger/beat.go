@@ -20,9 +20,9 @@ type PruneBeat struct {
 }
 
 // SchedulePrune prunes the store once now, then every every (0 or less: PruneEvery); each
-// prune reads now() (nil: time.Now). The beat ends with ctx or Stop. Without a store it
-// starts nothing and answers nil.
-func SchedulePrune(ctx context.Context, st *Store, every time.Duration, now func() time.Time) *PruneBeat {
+// prune reads now() (nil: time.Now), and each result goes to health (nil: none). The beat
+// ends with ctx or Stop. Without a store it starts nothing and answers nil.
+func SchedulePrune(ctx context.Context, st *Store, every time.Duration, now func() time.Time, health HealthReport) *PruneBeat {
 	if st == nil {
 		return nil
 	}
@@ -32,7 +32,10 @@ func SchedulePrune(ctx context.Context, st *Store, every time.Duration, now func
 	if now == nil {
 		now = time.Now
 	}
-	run := func() { _, _ = st.Prune(ctx, now()) }
+	run := func() {
+		_, err := st.Prune(ctx, now())
+		reportTo(health, PruneHealthName, err)
+	}
 	run() // the first prune lands before the caller carries on, so a start cuts the file back
 	beat := &PruneBeat{stop: make(chan struct{}), done: make(chan struct{})}
 	go func() {

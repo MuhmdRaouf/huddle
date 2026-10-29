@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -148,6 +149,82 @@ func TestRetentionPrunes(t *testing.T) {
 		time.Sleep(60 * time.Millisecond)
 		if got := allTreeIDs(t, h, base); !reflect.DeepEqual(got, []string{"old2/main"}) {
 			t.Errorf("nothing prunes after the context ends: got %v", got)
+		}
+	})
+}
+
+// recordingHealth records what a loop reported, the cases' stand-in for the registry.
+type recordingHealth struct {
+	mu      sync.Mutex
+	records []healthRecord
+}
+
+// healthRecord is one report a loop left: the component, and whether its pass was good.
+type healthRecord struct {
+	name string
+	ok   bool
+	err  error
+}
+
+func (r *recordingHealth) OK(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.records = append(r.records, healthRecord{name: name, ok: true})
+}
+
+func (r *recordingHealth) Fail(name string, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.records = append(r.records, healthRecord{name: name, err: err})
+}
+
+func (r *recordingHealth) snapshot() []healthRecord {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.records)
+}
+
+// TestThePruneBeatReportsEachPass: every pass of the prune beat lands its result on health —
+// ok after a good pass, failing after a bad one — so a history that stopped pruning shows in
+// /health instead of only in silence.
+func TestThePruneBeatReportsEachPass(t *testing.T) {
+	t.Run("records its first pass ok over a good history", func(t *testing.T) {
+		base := int64(1_000_000_000_000)
+		h, err := OpenHistory(filepath.Join(t.TempDir(), "beat.db"), nil)
+		if err != nil {
+			t.Fatalf("open history: %v", err)
+		}
+		t.Cleanup(func() { _ = h.Close() })
+		health := &recordingHealth{}
+		schedule := SchedulePrunes(t.Context(), h, retentionEnv(t, 7), PruneOptions{
+			IntervalMs: 20,
+			Now:        func() int64 { return base },
+			Health:     health,
+		})
+		t.Cleanup(schedule.Stop)
+		if got := health.snapshot(); len(got) != 1 || got[0].name != PruneHealthName || !got[0].ok {
+			t.Errorf("the first pass reported %v, want one %s ok", got, PruneHealthName)
+		}
+	})
+
+	t.Run("records its first pass failing over a history closed before the beat", func(t *testing.T) {
+		h, err := OpenHistory(filepath.Join(t.TempDir(), "closed.db"), nil)
+		if err != nil {
+			t.Fatalf("open history: %v", err)
+		}
+		retention := retentionEnv(t, 7)
+		if err := h.Close(); err != nil {
+			t.Fatalf("close the history: %v", err)
+		}
+		health := &recordingHealth{}
+		schedule := SchedulePrunes(t.Context(), h, retention, PruneOptions{IntervalMs: 20, Health: health})
+		t.Cleanup(schedule.Stop)
+		got := health.snapshot()
+		if len(got) != 1 || got[0].name != PruneHealthName || got[0].ok {
+			t.Fatalf("the first pass reported %v, want one %s failing", got, PruneHealthName)
+		}
+		if got[0].err == nil {
+			t.Errorf("the failing pass carried no error")
 		}
 	})
 }

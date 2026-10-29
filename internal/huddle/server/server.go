@@ -766,6 +766,8 @@ func Serve(ctx context.Context, o Options) error {
 			Procs: radarPids{s: s},
 			// and which sessions the registry has ended, so Radar never shows one live
 			Ended: radarEnded{s: s},
+			// and its stores and loops report into the hub's health
+			Health: s.health,
 			// the stream pings as often as the registry's, so one watchdog fits both
 			PingMs: int64(s.o.SSEPingMS),
 		})
