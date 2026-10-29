@@ -18,12 +18,6 @@
   "app/CodeField.tsx": {
     "control": 1
   },
-  "app/ConnectCard.tsx": {
-    "control": 3,
-    "daisy": 5,
-    "legacy": 1,
-    "px": 1
-  },
   "app/FirstRun.tsx": {
     "control": 3,
     "px": 1
@@ -35,10 +29,7 @@
     "control": 1
   },
   "app/LinkSheet.tsx": {
-    "control": 6,
-    "daisy": 6,
-    "legacy": 2,
-    "px": 1
+    "control": 1
   },
   "app/Nav.tsx": {
     "px": 7
@@ -69,9 +60,7 @@
     "px": 3
   },
   "app/SettingsTab.tsx": {
-    "control": 1,
-    "legacy": 1,
-    "px": 0
+    "control": 1
   },
   "app/session-parts.tsx": {
     "px": 3
@@ -179,8 +168,7 @@
     "control": 1
   },
   "pages/LinkedSessions.tsx": {
-    "control": 1,
-    "px": 0
+    "control": 1
   },
   "pages/Overview.tsx": {
     "control": 2,
@@ -189,9 +177,7 @@
     "px": 3
   },
   "pages/Settings.tsx": {
-    "control": 4,
-    "daisy": 0,
-    "legacy": 0
+    "control": 3
   },
   "pages/Team.tsx": {
     "control": 2,
@@ -313,8 +299,7 @@
     "control": 2
   },
   "radar/app/views/Settings.tsx": {
-    "control": 2,
-    "daisy": 1
+    "control": 1
   },
   "radar/app/views/Timeline.tsx": {
     "control": 1

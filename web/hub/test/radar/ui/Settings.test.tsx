@@ -125,9 +125,9 @@ describe("Spending budgets", () => {
     expect((within(sheet).getByRole("combobox", { name: "At 100%" }) as HTMLSelectElement).value).toBe(
       "stop",
     );
-    expect(
-      (within(sheet).getByRole("textbox", { name: "Limit in US dollars" }) as HTMLInputElement).value,
-    ).toBe("30");
+    expect((within(sheet).getByRole("textbox", { name: "Limit (USD)" }) as HTMLInputElement).value).toBe(
+      "30",
+    );
     await userEvent.click(within(sheet).getByRole("button", { name: "Remove budget" }));
     expect(act).toHaveBeenCalledWith("remove-budget", "b1");
   });
@@ -145,9 +145,9 @@ describe("Spending budgets", () => {
     expect((within(sheet).getByRole("combobox", { name: "Scope" }) as HTMLSelectElement).value).toBe(
       "provider:zai",
     );
-    expect(
-      (within(sheet).getByRole("textbox", { name: "Limit in US dollars" }) as HTMLInputElement).value,
-    ).toBe("10");
+    expect((within(sheet).getByRole("textbox", { name: "Limit (USD)" }) as HTMLInputElement).value).toBe(
+      "10",
+    );
     expect(within(sheet).queryByRole("button", { name: "Remove budget" })).toBeNull();
   });
 
@@ -164,7 +164,7 @@ describe("Spending budgets", () => {
     expect(act).toHaveBeenCalledWith("draft-field", "period=week");
     await userEvent.selectOptions(within(sheet).getByRole("combobox", { name: "At 100%" }), "stop");
     expect(act).toHaveBeenCalledWith("draft-field", "action=stop");
-    const limit = within(sheet).getByRole("textbox", { name: "Limit in US dollars" }) as HTMLInputElement;
+    const limit = within(sheet).getByRole("textbox", { name: "Limit (USD)" }) as HTMLInputElement;
     await userEvent.clear(limit);
     await userEvent.type(limit, "7.5");
     expect(act).toHaveBeenLastCalledWith("draft-field", "limit=7.5");

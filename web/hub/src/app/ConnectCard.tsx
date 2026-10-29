@@ -5,8 +5,10 @@
 // inside its own box. A signed-in caller gets the Invite button that mints a join line; the
 // landing (no credential yet) shows the commands instead.
 
+import { Button } from "@huddle/ui/button.tsx";
 import { CodeBlock } from "@huddle/ui/code.tsx";
 import { Card } from "@huddle/ui/card.tsx";
+import { Tabs } from "@huddle/ui/tabs.tsx";
 import type { ComponentChildren, JSX } from "preact";
 import { useState } from "preact/hooks";
 import type { ApiError } from "../api.ts";
@@ -30,11 +32,10 @@ function CxCode({ t, c, msg }: { t: string; c: string; msg: string }): JSX.Eleme
     <div class="overflow-hidden rounded-[var(--ui-radius)] border border-[var(--ui-line)]">
       <div class="flex items-center gap-2 border-b border-[var(--ui-line)] bg-[var(--ui-surface-2)] px-3 py-1 text-xs">
         <span class="min-w-0 flex-1 truncate font-medium text-[var(--ui-muted)]">{t}</span>
-        <button type="button" class="ui-btn ui-btn-ghost" onClick={() => void copyText(c, msg, toast)}>
+        <Button variant="ghost" label={`Copy ${t}`} onClick={() => void copyText(c, msg, toast)}>
           <Icon name="copy" class="size-3.5" />
           Copy
-          <span class="sr-only"> {t}</span>
-        </button>
+        </Button>
       </div>
       <CodeBlock code={c} lang="sh" label={t} />
     </div>
@@ -60,7 +61,7 @@ function CxStep({
         {n}
       </span>
       <div class="min-w-0 flex-1 pt-0.5">
-        <h3 class="text-[14px] font-semibold">{title}</h3>
+        <h3 class="text-[0.9333rem] font-semibold">{title}</h3>
         {children}
       </div>
     </li>
@@ -120,16 +121,9 @@ function ClaudeSteps({ ch, invite }: { ch: string; invite: boolean }): JSX.Eleme
               on their own).
             </p>
             <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <button
-                type="button"
-                class="ui-btn ui-btn-secondary"
-                id="cx-invite"
-                disabled={busy}
-                onClick={() => void inviteSession()}
-              >
-                <Icon name="plus" class="size-4" />
+              <Button variant="secondary" icon="plus" disabled={busy} onClick={() => void inviteSession()}>
                 Invite a session
-              </button>
+              </Button>
               <span class="text-xs text-[var(--ui-muted)]" id="cx-inv-note">
                 or run <code>/huddle:invite</code> in a Claude session in this huddle
               </span>
@@ -195,9 +189,9 @@ function McpSteps({ ch }: { ch: string }): JSX.Element {
   return (
     <div class="flex flex-col gap-3">
       <p class="m-0 text-sm text-[var(--ui-muted)]">
-        Any MCP client can call the channel's tools at <code>/mcp/&lt;channel&gt;?as=&lt;session&gt;</code>{" "}
-        with a credential in the <code>x-huddle-token</code> header (the one <code>huddle join</code> keeps
-        for a session).
+        {"Any MCP client can call the channel's tools at "}
+        <code>/mcp/&lt;channel&gt;?as=&lt;session&gt;</code> with a credential in the{" "}
+        <code>x-huddle-token</code> header (the one <code>huddle join</code> keeps for a session).
       </p>
       <CxCode
         t="claude mcp add"
@@ -230,21 +224,15 @@ export function ConnectGuide({ ch, invite = true }: { ch: string; invite?: boole
   const [tab, setTab] = useState("claude");
   return (
     <div class="flex min-w-0 flex-col gap-4" data-connect-card="">
-      <div role="tablist" aria-label="Harnesses" class="ui-tabs flex-wrap">
-        {HARNESS_TABS.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            data-harness={key}
-            aria-selected={tab === key ? "true" : "false"}
-            onClick={() => setTab(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel" data-panel={tab}>
+      <Tabs
+        class="ui-tabs flex-wrap"
+        label="Harnesses"
+        panel="connect-guide"
+        value={tab}
+        onPick={setTab}
+        tabs={HARNESS_TABS.map(([key, label]) => ({ id: key, label }))}
+      />
+      <div id="connect-guide" role="tabpanel" data-panel={tab}>
         {tab === "claude" ? (
           <ClaudeSteps ch={ch} invite={invite} />
         ) : tab === "mcp" ? (

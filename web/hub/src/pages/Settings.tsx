@@ -160,15 +160,13 @@ function AboutForm({
       }}
     >
       <Field label="Title" value={title} onInput={setTitle} />
-      <label class="flex flex-col gap-1.5 text-sm font-semibold">
-        What the team is doing
-        <textarea
-          class="ui-input min-h-20 py-2"
-          rows={3}
-          value={description}
-          onInput={(e) => setDescription(e.currentTarget.value)}
-        />
-      </label>
+      <Field
+        label="What the team is doing"
+        value={description}
+        onInput={setDescription}
+        multiline
+        maxRows={3}
+      />
       <Button type="submit">Save</Button>
       <span role="alert" ref={err} class={ALERT} />
     </form>

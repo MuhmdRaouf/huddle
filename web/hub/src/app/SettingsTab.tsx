@@ -582,11 +582,15 @@ export function SignInMethods(): JSX.Element {
           <Sheet open={pane === "passkey"} onClose={() => setPane(null)} title="Passkey">
             <div data-passkey-row="" class="flex flex-col gap-4">
               <p class={NOTE}>
-                {facts.kind === "device"
-                  ? facts.passkey
-                    ? "This browser signs in with its passkey."
-                    : "Not saved. This device's lock would sign in without a code."
-                  : "A passkey is saved per browser: sign in with a code first, then accept the offer."}
+                {facts.kind === "device" ? (
+                  facts.passkey ? (
+                    "This browser signs in with its passkey."
+                  ) : (
+                    "Not saved. This device's lock would sign in without a code."
+                  )
+                ) : (
+                  <>A passkey is saved per browser: sign in with a code first, then accept the offer.</>
+                )}
               </p>
               {saveError ? (
                 <p role="alert" class={ERR}>

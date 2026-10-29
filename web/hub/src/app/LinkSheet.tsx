@@ -3,7 +3,10 @@
 // link posts once — the passkey sheet a 401 opens first, the retry riding it. The channel list
 // comes from the read the shell already makes for the switcher; no second one here.
 
+import { Button } from "@huddle/ui/button.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
+import { Field } from "@huddle/ui/field.tsx";
+import { RadioGroup, type RadioOption } from "@huddle/ui/radio-group.tsx";
 import type { JSX } from "preact";
 import { useState } from "preact/hooks";
 import type { ApiError } from "../api.ts";
@@ -14,6 +17,12 @@ import { useStepUp } from "./Needs.tsx";
 
 /** The three levels, in the order the picker offers them. */
 const LEVELS: readonly LinkLevel[] = ["overhear", "digest", "on-request"];
+
+/** The two ways the sheet names a channel, as the radio group's options. */
+const MODES: readonly RadioOption<"new" | "existing">[] = [
+  { value: "new", label: "New channel" },
+  { value: "existing", label: "Existing channel" },
+];
 
 /** The channel half of the sheet: the new/existing radio pair and the field each one shows. */
 function ChannelChoice({
@@ -37,46 +46,21 @@ function ChannelChoice({
 }): JSX.Element {
   return (
     <div class="flex flex-col gap-2">
-      <label class="flex min-h-9 items-center gap-2.5 text-sm">
-        <input
-          type="radio"
-          name="channel-mode"
-          value="new"
-          checked={mode === "new"}
-          onChange={() => onMode("new")}
-        />
-        New channel
-      </label>
+      <RadioGroup label="Channel mode" name="channel-mode" value={mode} options={MODES} onChange={onMode} />
       {mode === "new" ? (
         <div class="flex flex-col gap-1 pb-1 pl-7">
-          <input
-            class="input"
-            aria-label="Channel name"
-            placeholder="kanban-release"
-            value={name}
-            onInput={(e) => onName(e.currentTarget.value)}
-          />
+          <Field label="Channel name" value={name} onInput={onName} placeholder="kanban-release" />
           {nameError ? (
-            <p role="alert" class="m-0 text-xs text-error">
+            <p role="alert" class="m-0 text-xs text-[var(--ui-fail-ink)]">
               {nameError}
             </p>
           ) : null}
         </div>
       ) : null}
-      <label class="flex min-h-9 items-center gap-2.5 text-sm">
-        <input
-          type="radio"
-          name="channel-mode"
-          value="existing"
-          checked={mode === "existing"}
-          onChange={() => onMode("existing")}
-        />
-        Existing channel
-      </label>
       {mode === "existing" ? (
-        <div class="pb-1 pl-7">
+        <div class="pb-1 pr-4 pl-7">
           <select
-            class="select"
+            class="ui-input"
             aria-label="Channel"
             value={chosen}
             onChange={(e) => onChosen(e.currentTarget.value)}
@@ -93,27 +77,16 @@ function ChannelChoice({
   );
 }
 
-/** The level half of the sheet: one real radio per level, its own line under the picker's eye. */
+/** The level half of the sheet: one radio per level, its own line under the picker's eye. */
 function LevelChoice({ level, onLevel }: { level: LinkLevel; onLevel: (l: LinkLevel) => void }): JSX.Element {
   return (
-    <div role="radiogroup" aria-label="How much they share" class="flex flex-col gap-1.5">
-      {LEVELS.map((lv) => (
-        <label
-          key={lv}
-          class="flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[10px] border px-3 text-sm outline-none focus-within:ring-2 focus-within:ring-primary"
-        >
-          <input
-            type="radio"
-            name="link-level"
-            value={lv}
-            checked={level === lv}
-            onChange={() => onLevel(lv)}
-          />
-          <span class="font-medium">{LEVEL_LABEL[lv]}</span>
-          <span class="text-xs muted">{LEVEL_TEXT[lv]}</span>
-        </label>
-      ))}
-    </div>
+    <RadioGroup
+      label="How much they share"
+      name="link-level"
+      value={level}
+      options={LEVELS.map((lv) => ({ value: lv, label: LEVEL_LABEL[lv], help: LEVEL_TEXT[lv] }))}
+      onChange={onLevel}
+    />
   );
 }
 
@@ -198,7 +171,7 @@ export function LinkSheet({
     <Dialog open onClose={onClose} title={`Link ${sessions.length} sessions`}>
       <div class="flex flex-col gap-4" data-link-sheet="">
         {sheet}
-        <p class="m-0 text-sm muted">
+        <p class="m-0 text-sm text-[var(--ui-muted)]">
           Linked sessions share one channel. Each one sees what the others are doing, at the level you pick.
         </p>
         <ChannelChoice
@@ -212,15 +185,9 @@ export function LinkSheet({
           onChosen={setChosen}
         />
         <LevelChoice level={level} onLevel={setLevel} />
-        <button
-          type="button"
-          data-link-submit=""
-          class="btn btn-primary min-h-12"
-          disabled={dead}
-          onClick={() => void send()}
-        >
+        <Button data-link-submit="" disabled={dead} onClick={() => void send()}>
           Link {sessions.length} sessions
-        </button>
+        </Button>
       </div>
     </Dialog>
   );

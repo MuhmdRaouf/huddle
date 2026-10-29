@@ -5,6 +5,7 @@
  */
 
 import { Button } from "@huddle/ui/button.tsx";
+import { Field } from "@huddle/ui/field.tsx";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { RadioGroup } from "@huddle/ui/radio-group.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
@@ -155,26 +156,23 @@ function BudgetForm({ draft }: { draft: BudgetDraft }) {
           ["month", "Per month"],
         ]}
       />
-      <label class="ui-field min-w-0">
-        <span class="ui-field-label">Limit (USD)</span>
-        <input
-          key={draft.id ?? "new"}
-          class="ui-input w-full"
-          type="text"
-          inputmode="decimal"
-          defaultValue={draft.limit}
-          data-field="limit"
-          data-key="field-limit"
-          aria-label="Limit in US dollars"
-          onInput={(event) => act("draft-field", `limit=${event.currentTarget.value}`)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              act("save-budget");
-            }
-          }}
+      <div
+        class="min-w-0"
+        data-field="limit"
+        data-key="field-limit"
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            act("save-budget");
+          }
+        }}
+      >
+        <Field
+          label="Limit (USD)"
+          value={draft.limit}
+          onInput={(value) => act("draft-field", `limit=${value}`)}
         />
-      </label>
+      </div>
       <SelectField
         label="At 100%"
         field="action"
@@ -241,7 +239,11 @@ function BudgetsSection() {
         </Notice>
       )}
       {budgets === null ? (
-        <div class="skeleton h-24 w-full" role="status" aria-label="Loading budgets" />
+        <div
+          class="h-24 w-full animate-pulse rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)]"
+          role="status"
+          aria-label="Loading budgets"
+        />
       ) : (
         <>
           <List label="Budgets">
@@ -264,8 +266,9 @@ function BudgetsSection() {
         </>
       )}
       <p class="m-0 text-xs text-[var(--ui-muted)]">
-        A stop budget makes that provider's requests wait until the period ends. Claude requests are never
-        stopped.
+        {
+          "A stop budget makes that provider's requests wait until the period ends. Claude requests are never stopped."
+        }
       </p>
       <p class="m-0 text-xs text-[var(--ui-muted)]">{ESTIMATE_NOTE}</p>
     </Section>
@@ -320,7 +323,11 @@ function HistorySection() {
           History is off on this machine; nothing is being kept.
         </p>
       ) : store === null ? (
-        <div class="skeleton h-16 w-full" role="status" aria-label="Reading the history store" />
+        <div
+          class="h-16 w-full animate-pulse rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)]"
+          role="status"
+          aria-label="Reading the history store"
+        />
       ) : (
         <Panel>
           <p class="m-0 text-sm font-medium">Keep history</p>

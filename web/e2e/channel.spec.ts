@@ -151,6 +151,23 @@ async function expectClearOfTabBar(page: Page, targets: readonly Locator[]): Pro
   }
 }
 
+/** A layer's controls at the pointer's full target: a radio or a switch is tapped through the
+ *  label around it, so the label's box is the one the finger meets. */
+async function expectLayerTargets(layer: Locator): Promise<void> {
+  if (!test.info().project.use.hasTouch) return;
+  const small = await layer.evaluate((root) =>
+    [...root.querySelectorAll<HTMLElement>("button, input, select, textarea, a")]
+      .filter((el) => el.getClientRects().length > 0)
+      .map((el) => ({ el, r: (el.closest("label") ?? el).getBoundingClientRect() }))
+      .filter(({ r }) => r.width > 0 && (r.width < 44 || r.height < 44))
+      .map(
+        ({ el, r }) =>
+          `${el.tagName} "${el.textContent?.trim() || el.getAttribute("aria-label") || el.id}" ${r.width}x${r.height}`,
+      ),
+  );
+  expect(small, "controls under the 44 px target").toEqual([]);
+}
+
 test("the channel page lists the seeded ping and pong with who told whom", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
   await signIn(page);
@@ -486,6 +503,105 @@ test("the channel settings page gives every element an id of its own", async ({ 
   await sheet.getByRole("button", { name: "Save" }).click();
   await expect(sheet).toBeHidden();
   await expect(page.locator('[data-section="about"]')).toContainText(`Named ${ch}`);
+});
+
+test("the settings page keeps its sheets, the link sheet and the toast inside the viewport", async ({
+  page,
+}, info) => {
+  const ch = await freshChannel(info.project.name, []);
+  // two ended sessions linked, so the page's link-another sheet joins its layers
+  const sessions = ["a", "b"].map((x) => `layer-${info.project.name}-${x}`);
+  for (const id of sessions) {
+    await api("/api/registry/report", {
+      session_id: id,
+      machine: "e2e-machine",
+      project: "e2e",
+      last_event: "SessionEnd",
+      last_event_at: new Date().toISOString(),
+    });
+  }
+  await api("/api/links", { sessions, channel: ch, level: "digest" });
+  try {
+    await openChannel(page, ch);
+    await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/settings`);
+    await expect(page.locator('[data-section="about"]')).toBeVisible();
+
+    // every sheet stands alone: one layer at a time, whole inside the viewport, its own
+    // controls at the pointer's full target, and the page still reads clean
+    for (const [section, row] of [
+      ["about", /^Name/],
+      ["members", /^api|^Any local session/],
+      ["turn", /^Turn order/],
+      ["repo", /^Path/],
+    ] as const) {
+      await page.locator(`[data-section="${section}"]`).getByRole("button", { name: row }).click();
+      const layer = page.locator("dialog[open]");
+      await expect(layer).toHaveCount(1);
+      await expectInsideViewport(page, [layer.first()]);
+      // the tab bar stands down while a layer is open: what remains above it is itself
+      if ((await page.locator("[data-nav='bottom']").count()) > 0)
+        await expectClearOfTabBar(page, [layer.first()]);
+      await expectLayerTargets(layer.first());
+      await expectAccessible(page, SHELL);
+      await page.keyboard.press("Escape");
+      await expect(layer).toHaveCount(0);
+    }
+
+    // a saved sheet raises the page's toast: alone, inside the viewport, above the tab bar
+    await page.locator('[data-section="about"]').getByRole("button", { name: /^Name/ }).click();
+    const about = page.getByRole("dialog", { name: "About" });
+    await about.getByLabel("Title").fill(`Layered ${ch}`);
+    await about.getByRole("button", { name: "Save" }).click();
+    const toast = page.locator(".ui-toast");
+    await expect(toast).toBeVisible();
+    expect(await page.locator("dialog[open]").count()).toBeLessThanOrEqual(1);
+    await expectInsideViewport(page, [toast]);
+    if ((await page.locator("[data-nav='bottom']").count()) > 0)
+      await expectClearOfTabBar(page, [toast]);
+    await expectAccessible(page, SHELL);
+
+    // the link sheet over the linked sessions: the page's one layer again, its picker, its
+    // fields and its submit at the full target
+    await page.locator("[data-link-another]").click();
+    const link = page.locator("dialog[open]");
+    await expect(link.locator("[data-link-sheet]")).toBeVisible();
+    expect(await link.count()).toBeLessThanOrEqual(1);
+    await expectInsideViewport(page, [link.first()]);
+    if ((await page.locator("[data-nav='bottom']").count()) > 0)
+      await expectClearOfTabBar(page, [link.first()]);
+    await expectLayerTargets(link.first());
+    // the sheet's one select stands inside the panel: a filled control that reaches the
+    // panel's right edge sits under the panel's corner radius and reads as clipped
+    if (test.info().project.use.hasTouch) {
+      const edges = await link.first().evaluate((root) => {
+        const panel = root.closest("dialog");
+        const select = root.querySelector("select");
+        if (!panel || !select) return null;
+        const gutter = Number.parseFloat(getComputedStyle(panel).paddingRight) || 0;
+        return {
+          content: panel.getBoundingClientRect().right - gutter,
+          select: select.getBoundingClientRect().right,
+        };
+      });
+      expect(edges, "the sheet's select is on the page").not.toBeNull();
+      expect(
+        edges?.select ?? 0,
+        "the select's right edge stays inside the sheet panel",
+      ).toBeLessThan(edges?.content ?? 0);
+    }
+    await expectAccessible(page, SHELL);
+    await page.keyboard.press("Escape");
+    await expect(link).toHaveCount(0);
+    await expectNoSideScroll(page);
+  } finally {
+    for (const id of sessions) {
+      const path = `/api/links/${ch}/${id}`;
+      await fetch(`${theSetup().rootUrl}${path}`, {
+        method: "DELETE",
+        headers: { "x-huddle-action": path, "x-huddle-token": theSetup().token },
+      });
+    }
+  }
 });
 
 test("the work map and the repo views keep their layers inside the viewport", async ({ page }, info) => {

@@ -458,7 +458,7 @@ test.describe("the Settings tab", () => {
       await expect(sheet).toBeVisible();
       await sheet.getByRole("combobox", { name: "Scope" }).selectOption("total");
       await sheet.getByRole("combobox", { name: "Period" }).selectOption("day");
-      await sheet.getByRole("textbox", { name: "Limit in US dollars" }).fill("40");
+      await sheet.getByRole("textbox", { name: "Limit (USD)" }).fill("40");
       await Promise.all([
         page.waitForResponse(
           (r) => r.request().method() === "PUT" && r.url().endsWith("/api/radar/api/budgets"),
