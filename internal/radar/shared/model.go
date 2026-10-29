@@ -712,8 +712,8 @@ type SpoolUsage struct {
 }
 
 // SpoolLine is a parsed spool line, as the hook wrote it. Unknown fields ride along in
-// Extra, and the decoded line rides along whole: MarshalJSON hands back its bytes, so the
-// payload the API serves is the line as read, every key in its own order.
+// Extra, and the line rides along as its encoded bytes: MarshalJSON hands them back, so
+// the payload the API serves is the line as read, every key in its own order.
 type SpoolLine struct {
 	Ts             string            `json:"ts"`
 	Event          string            `json:"event"`
@@ -767,9 +767,10 @@ type SpoolLine struct {
 	// Utilization is the unified limits a route line read from Anthropic's answer headers.
 	Utilization *domain.UnifiedUtilization `json:"utilization,omitempty"`
 	Extra       map[string]json.RawMessage `json:"-"`
-	// source is the line as decoded: every key it arrived with, in arrival order. A line
-	// built in code carries none and marshals its declared fields instead.
-	source *jsfmt.Value
+	// encoded is the line as decoded, re-encoded once: every key in arrival order, numbers
+	// as String(n). A line built in code carries none and marshals its declared fields
+	// instead.
+	encoded []byte
 }
 
 // RouteEvent is one request a router's route line recorded.
@@ -790,9 +791,9 @@ func (u USD) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON fills the line, parking every key its fields do not name in Extra and
-// keeping the decoded line for MarshalJSON. Each declared field decodes on its own: one
-// field of another shape reads as absent and never costs the line, the way every reader
-// guards the value it reads.
+// keeping the line's encoded bytes for MarshalJSON. Each declared field decodes on its
+// own: one field of another shape reads as absent and never costs the line, the way every
+// reader guards the value it reads.
 func (l *SpoolLine) UnmarshalJSON(data []byte) error {
 	value, err := jsfmt.DecodeValue(data)
 	if err != nil {
@@ -805,10 +806,11 @@ func (l *SpoolLine) UnmarshalJSON(data []byte) error {
 	if value.Kind() != jsfmt.KindObject {
 		return &json.UnmarshalTypeError{Value: jsonKindName(value), Type: reflect.TypeOf(SpoolLine{})}
 	}
-	line := SpoolLine{source: value}
+	line := SpoolLine{}
 	if err := fillDeclaredFields(&line, value); err != nil {
 		return err
 	}
+	line.encoded = []byte(value.EncodeJSON())
 	*l = line
 	return nil
 }
@@ -817,8 +819,8 @@ func (l *SpoolLine) UnmarshalJSON(data []byte) error {
 // carried, in the order it carried them, numbers as they printed — and its declared
 // fields, in the line's field order, when it was built in code.
 func (l SpoolLine) MarshalJSON() ([]byte, error) {
-	if l.source != nil {
-		return []byte(l.source.EncodeJSON()), nil
+	if l.encoded != nil {
+		return l.encoded, nil
 	}
 	type plain SpoolLine
 	return domain.MarshalCompactJSON(plain(l))
@@ -826,12 +828,17 @@ func (l SpoolLine) MarshalJSON() ([]byte, error) {
 
 // Field is the line's own value for a key, as read: the shape a declared field of another
 // kind keeps in the payload while its typed field reads absent. The key's last value is the
-// one a JSON parse keeps; nil for a key the line did not carry and for a line built in code.
+// one a JSON parse keeps; nil for a key the line did not carry, for a line built in code,
+// and when the line's bytes do not decode.
 func (l SpoolLine) Field(key string) *jsfmt.Value {
-	if l.source == nil {
+	if l.encoded == nil {
 		return nil
 	}
-	keys, fields := l.source.Keys(), l.source.Fields()
+	value, err := jsfmt.DecodeValue(l.encoded)
+	if err != nil {
+		return nil
+	}
+	keys, fields := value.Keys(), value.Fields()
 	for i := len(keys) - 1; i >= 0; i-- {
 		if keys[i] == key {
 			return fields[i]
