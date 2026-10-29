@@ -166,12 +166,6 @@
     "control": 2,
     "daisy": 10
   },
-  "pages/Today.tsx": {
-    "control": 2,
-    "daisy": 31,
-    "legacy": 11,
-    "px": 2
-  },
   "picker.tsx": {
     "control": 3,
     "daisy": 12,

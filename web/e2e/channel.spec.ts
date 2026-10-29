@@ -844,3 +844,57 @@ test("the knowledge page keeps its export menu and toast inside the viewport", a
   await expectNoSideScroll(page);
   await expectAccessible(page, SHELL);
 });
+
+test("the Today digest keeps its controls and its toast inside the viewport", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/channels/e2e/today`);
+  await expect(page.locator("#dgwrap")).toBeVisible();
+  // the shell hosts the page, so its two controls paint in the intro's actions slot
+  const copy = page.getByRole("button", { name: "Copy as text" });
+  const since = page.locator("[data-dgwin]");
+  await expect(copy).toBeVisible();
+  await expect(since).toHaveCount(3);
+
+  // the window chips take the finger's 44 px target through the hit area the shared chip draws
+  // around its 28 px box (the same check the knowledge page's kind chips make)
+  if (test.info().project.use.hasTouch) {
+    const tall = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>("[data-dgwin]")].every((el) => {
+        const r = el.getBoundingClientRect();
+        const before = getComputedStyle(el, "::before");
+        const p = before.position === "absolute" ? Math.abs(Number.parseFloat(before.top)) : 0;
+        return r.width > 0 && r.height + 2 * p >= 44 - 0.01;
+      }),
+    );
+    expect(tall, "each Since chip's hit stands at least 44 px tall").toBe(true);
+  }
+  const controls = [...(await since.all()), copy];
+  await expectTapTargets([copy]);
+  await expectInsideViewport(page, controls);
+  await expectClearOfTabBar(page, controls);
+  await expectNoSideScroll(page);
+  // the digest's own surface stands alone: no dialog, menu or sheet under it
+  expect(await page.locator("dialog[open]").count()).toBe(0);
+  await expectAccessible(page, SHELL);
+
+  // copying refetches the digest as text and raises the page's one toast: alone, whole inside
+  // the viewport, above the tab bar
+  await copy.click();
+  const toast = page.locator(".ui-toast");
+  await expect(toast).toBeVisible();
+  expect(await page.locator("dialog[open]").count(), "one layer at a time").toBeLessThanOrEqual(1);
+  await expectInsideViewport(page, [toast]);
+  await expectClearOfTabBar(page, [toast]);
+  await expectAccessible(page, SHELL);
+
+  // the window chips still drive the digest: the pick refetches the digest op with the new
+  // window. The header slot repaints on the shell's next render, so the wire carries the proof
+  const refetch = page.waitForRequest(
+    (r) => r.url().includes("/op/digest") && (r.postData() ?? "").includes('"since":"3d"'),
+  );
+  await since.filter({ hasText: "3 days" }).click();
+  await refetch;
+  await expectNoSideScroll(page);
+});

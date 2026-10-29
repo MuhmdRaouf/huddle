@@ -129,8 +129,8 @@ describe("Today", () => {
     expect(screen.getAllByText("Open questions")[0]?.closest(".stat")?.textContent).toContain(
       "Waiting for an answer",
     );
-    expect(screen.getByText("Estimated cost").closest(".stat")?.textContent).toContain("$12.50");
-    expect(screen.getByText("Estimated cost").closest(".stat")?.textContent).toContain(
+    expect(screen.getByText("Estimated cost").closest(".panel")?.textContent).toContain("$12.50");
+    expect(screen.getByText("Estimated cost").closest(".panel")?.textContent).toContain(
       "This day, from Radar",
     );
   });
@@ -163,7 +163,9 @@ describe("Today", () => {
     const gone = container.querySelector("section[aria-label='aliceworker']");
     expect(gone?.textContent).toContain("left the channel");
     expect(gone?.textContent).toContain("Nothing finished or shared in this window.");
-    expect(container.querySelectorAll(".text-success svg").length).toBeGreaterThanOrEqual(1);
+    expect(
+      container.querySelectorAll("[class*='text-[var(--ui-ok-ink)]'] svg").length,
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it("links each session card by name and shows the cost chip", async () => {

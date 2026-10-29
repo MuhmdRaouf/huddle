@@ -3,6 +3,9 @@
 // session when Radar runs. The digest loads from the `digest` op; "Copy as text" refetches it as
 // the plain text an agent would see and hands it to the clipboard.
 
+import { Banner } from "@huddle/ui/banner.tsx";
+import { Button } from "@huddle/ui/button.tsx";
+import { Chip } from "@huddle/ui/chip.tsx";
 import { Panel } from "@huddle/ui/page.tsx";
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -113,7 +116,7 @@ function TaskLink({
 }) {
   return (
     <a class="inline-flex min-w-0 max-w-full items-center gap-1.5 hover:underline" href={href}>
-      <span class="badge badge-ghost badge-sm font-mono">{id}</span>
+      <span class="ui-badge ui-badge-neutral font-mono">{id}</span>
       <span class="truncate">{title || byId(id)?.title || ""}</span>
     </a>
   );
@@ -124,7 +127,7 @@ function List({ title, rows }: { title: string; rows: JSX.Element[] }): JSX.Elem
   if (!rows.length) return null;
   return (
     <div class="flex flex-col gap-1.5">
-      <h4 class="text-xs font-medium text-base-content/50">{title}</h4>
+      <h4 class="text-xs font-medium text-[var(--ui-muted)]">{title}</h4>
       <ul class="flex flex-col gap-1.5 text-sm">{rows}</ul>
     </div>
   );
@@ -148,13 +151,13 @@ function FinishedList({
 }): JSX.Element | null {
   const rows = s.done.map((d) => (
     <li key={d.id} class="flex min-w-0 items-start gap-2">
-      <span class="mt-0.5 text-success">
+      <span class="mt-0.5 text-[var(--ui-ok-ink)]">
         <Icon name={d.status === "skipped" ? "minusc" : "checkc"} class="size-4" />
       </span>
       <span class="min-w-0 flex-1">
         <TaskLink id={d.id} title={d.title} byId={byId} href={taskHref(api, ch, d.id)} />
         {d.note ? (
-          <span class="block truncate text-xs muted" title={d.note}>
+          <span class="block truncate text-xs text-[var(--ui-muted)]" title={d.note}>
             {d.note}
           </span>
         ) : null}
@@ -168,13 +171,13 @@ function FinishedList({
 function SharedList({ s, ch, api }: { s: DigestSession; ch: string; api: Api }): JSX.Element | null {
   const rows = s.knowledge.map((k) => (
     <li key={k.id} class="flex min-w-0 items-center gap-2">
-      <span class="text-base-content/50">
+      <span class="text-[var(--ui-muted)]">
         <Icon name="book" class="size-4" />
       </span>
       <a class="truncate hover:underline" href={api.channelHref(ch, `/knowledge/${k.id}`)}>
         {k.title || `#${k.id}`}
       </a>
-      <span class="badge badge-ghost badge-sm c-lavender">{k.kind || ""}</span>
+      <Chip tone="neutral">{k.kind || ""}</Chip>
     </li>
   ));
   return <List title="Knowledge shared" rows={rows} />;
@@ -194,21 +197,21 @@ function NoteList({
 }): JSX.Element | null {
   const rows = s.notes.slice(0, 6).map((n, i) => (
     <li key={i} class="flex min-w-0 items-start gap-2">
-      <span class="mt-0.5 text-base-content/50">
+      <span class="mt-0.5 text-[var(--ui-muted)]">
         <Icon name="note" class="size-4" />
       </span>
       <span class="min-w-0 flex-1">
-        <span class="text-xs muted">{n.kind} on </span>
+        <span class="text-xs text-[var(--ui-muted)]">{n.kind} on </span>
         {n.task ? (
           <TaskLink id={n.task} title={n.title} byId={byId} href={taskHref(api, ch, n.task)} />
         ) : null}
-        <span class="block truncate text-xs muted">{n.body}</span>
+        <span class="block truncate text-xs text-[var(--ui-muted)]">{n.body}</span>
       </span>
     </li>
   ));
   if (s.notes.length > 6)
     rows.push(
-      <li key="more" class="text-xs muted">
+      <li key="more" class="text-xs text-[var(--ui-muted)]">
         and {s.notes.length - 6} more
       </li>,
     );
@@ -221,7 +224,7 @@ function ApprovalList({ s }: { s: DigestSession }): JSX.Element | null {
     s.approvals.length > 0
       ? [
           <li key="asked" class="flex items-center gap-2">
-            <span class="text-base-content/50">
+            <span class="text-[var(--ui-muted)]">
               <Icon name="key" class="size-4" />
             </span>
             {`${s.approvals.length}× · ${[...new Set(s.approvals.flatMap((a) => a.labels ?? []))].join(", ")}`}
@@ -276,7 +279,7 @@ function SessionCard({
       actions={
         <>
           {s.cost != null ? (
-            <span class="badge badge-ghost badge-sm c-info" title="Estimated cost, from Radar">
+            <span class="ui-badge ui-badge-info tnum" title="Estimated cost, from Radar">
               {usd(s.cost)}
             </span>
           ) : null}
@@ -285,7 +288,11 @@ function SessionCard({
       }
     >
       <div class="flex flex-1 flex-col gap-4">
-        {empty ? <p class="text-sm muted">Nothing finished or shared in this window.</p> : sections}
+        {empty ? (
+          <p class="text-sm text-[var(--ui-muted)]">Nothing finished or shared in this window.</p>
+        ) : (
+          sections
+        )}
       </div>
     </Panel>
   );
@@ -301,7 +308,7 @@ function BlockedCard({ d, byId, ch, api }: { d: Digest; byId: ById; ch: string; 
       flush={true}
     >
       {d.blocked.length ? (
-        <ul class="flex flex-col divide-y divide-base-content/10">
+        <ul class="flex flex-col divide-y divide-[var(--ui-line)]">
           {d.blocked.map((b) => (
             <li key={b.id} class="flex flex-col gap-1 px-5 py-3 text-sm">
               <TaskLink
@@ -310,7 +317,7 @@ function BlockedCard({ d, byId, ch, api }: { d: Digest; byId: ById; ch: string; 
                 byId={byId}
                 href={api.channelHref(ch, `/work?t=${encodeURIComponent(b.id)}`)}
               />
-              <span class="text-xs muted">
+              <span class="text-xs text-[var(--ui-muted)]">
                 {b.owner ? who(b.owner) : "Nobody owns it"}
                 {b.note ? ` · “${b.note}”` : ""}
                 {b.waits_on?.length ? ` · waits on ${b.waits_on.join(", ")}` : ""}
@@ -336,21 +343,21 @@ function QuestionsCard({ d, ch, api, now }: { d: Digest; ch: string; api: Api; n
       label="Open questions"
       actions={
         answerable ? (
-          <a class="btn btn-ghost btn-sm" href={api.channelHref(ch, "/inbox")}>
+          <Button variant="ghost" href={api.channelHref(ch, "/inbox")}>
             Answer in Inbox
-          </a>
+          </Button>
         ) : null
       }
       flush={true}
     >
       {d.questions.length ? (
-        <ul class="flex flex-col divide-y divide-base-content/10">
+        <ul class="flex flex-col divide-y divide-[var(--ui-line)]">
           {d.questions.map((q) => (
             <li key={q.seq} class="flex items-start gap-3 px-5 py-3 text-sm">
               <Avatar name={q.from} small={true} />
               <div class="min-w-0 flex-1">
-                <div class="text-xs muted">
-                  <b class="text-base-content">{q.from}</b> → {q.to ? who(q.to) : "everyone"} ·{" "}
+                <div class="text-xs text-[var(--ui-muted)]">
+                  <b class="text-[var(--ui-text)]">{q.from}</b> → {q.to ? who(q.to) : "everyone"} ·{" "}
                   <Time ts={q.at} now={now} />
                 </div>
                 <p class="line-clamp-2">{q.msg}</p>
@@ -375,8 +382,10 @@ function DigestView({ d, ch, now }: { d: Digest; ch: string; now: number }) {
   const c = d.cost;
   return (
     <div class="flex flex-col gap-5">
+      {/* the stat cards pair up from 420 px: a media query reads rem at the 16 px initial root,
+          not this page's 15 px one, so the breakpoint is 26.25rem */}
       <div
-        class={`grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 xl:grid-cols-4${c.available ? " xl:grid-cols-5" : ""}`}
+        class={`grid grid-cols-1 gap-4 min-[26.25rem]:grid-cols-2 xl:grid-cols-4${c.available ? " xl:grid-cols-5" : ""}`}
       >
         <Stat
           icon="checkc"
@@ -449,35 +458,30 @@ function DigestView({ d, ch, now }: { d: Digest; ch: string; now: number }) {
 /** Radar's estimated-cost stat: its mark is a dollar sign, not an icon. */
 function CostStat({ total, range }: { total: number | null; range: string }) {
   return (
-    <div class="stat panel px-4 py-3">
+    <div class="panel w-full px-4 py-3">
       <div class="flex min-w-0 items-center gap-2">
-        <span class="text-sm font-medium muted min-w-0 flex-1 truncate">Estimated cost</span>
-        <span class="tinted ink inline-flex size-7 shrink-0 items-center justify-center rounded-lg c-blue">
+        <span class="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ui-muted)]">Estimated cost</span>
+        <span class="inline-flex size-7 shrink-0 items-center justify-center rounded-[var(--ui-radius-sm)] bg-[var(--ui-accent-soft)] text-[var(--ui-accent)]">
           <span class="text-xs font-bold">$</span>
         </span>
       </div>
-      <p class="text-[28px] leading-tight font-semibold text-base-content tnum">{usd(total || 0)}</p>
-      <p class="text-xs muted">{`This ${range}, from Radar`}</p>
+      <p class="text-[1.8667rem] leading-tight font-semibold text-[var(--ui-text)] tnum">{usd(total || 0)}</p>
+      <p class="text-xs text-[var(--ui-muted)]">{`This ${range}, from Radar`}</p>
     </div>
   );
 }
 
-/** The "Since" segment: the window the digest covers, one pressed button per choice. */
+/** The "Since" segment: the window the digest covers, one pressed chip per choice. */
 function SinceSegment({ win, pick }: { win: string; pick: (k: string) => void }): JSX.Element {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: the legacy segment's markup, kept word for word
-    <div class="join join-sm" role="group" aria-label="Since">
+    // biome-ignore lint/a11y/useSemanticElements: the chips are buttons under one group role
+    // full width on the phone: the intro's actions row sizes to its one-line content and never
+    // shrinks, so a segment-plus-button line overflows the page's 16 px gutter
+    <div class="ui-chip-row w-full sm:w-auto" role="group" aria-label="Since">
       {WINS.map(([k, l]) => (
-        <button
-          type="button"
-          key={k}
-          class={`btn join-item btn-sm${k === win ? " btn-primary" : ""}`}
-          data-dgwin={k}
-          aria-pressed={k === win}
-          onClick={() => pick(k)}
-        >
+        <Chip key={k} pressed={k === win} data-dgwin={k} onClick={() => pick(k)}>
           {l}
-        </button>
+        </Chip>
       ))}
     </div>
   );
@@ -486,7 +490,7 @@ function SinceSegment({ win, pick }: { win: string; pick: (k: string) => void })
 /** The line under a card's name: its role, then how much it did and asked. */
 function SessionMeta({ s }: { s: DigestSession }): JSX.Element {
   return (
-    <p class="truncate text-xs muted">
+    <p class="truncate text-xs text-[var(--ui-muted)]">
       {s.role || (s.state === "left" ? "left the channel" : "")}
       {s.events ? `${s.role ? " · " : ""}${s.events} event${s.events === 1 ? "" : "s"}` : ""}
       {s.asked ? ` · ${s.asked} open question${s.asked === 1 ? "" : "s"}` : ""}
@@ -545,18 +549,15 @@ export function Today({ prefs = localStorage }: { prefs?: Storage | undefined } 
     <div class="flex min-w-0 flex-col gap-5" id="dgwrap">
       <IntroActions>
         <SinceSegment win={win} pick={pick} />
-        <button type="button" class="btn" id="dgcopy" onClick={copyDigest}>
+        <Button variant="secondary" onClick={copyDigest}>
           <Icon name="copy" class="size-4" /> Copy as text
-        </button>
+        </Button>
       </IntroActions>
       <div id="dgbody">
         {error ? (
-          <div class="alert alert-error alert-soft" role="alert">
-            <Icon name="alert" class="size-5 shrink-0" />
-            <span>
-              <b class="font-semibold">The digest did not load</b> <span class="muted">{error}</span>
-            </span>
-          </div>
+          <Banner tone="fail" title="The digest did not load">
+            {error}
+          </Banner>
         ) : !loaded ? (
           <Skeleton />
         ) : digest ? (
