@@ -458,7 +458,10 @@ test.describe("the Settings tab", () => {
       await expect(sheet).toBeVisible();
       await sheet.getByRole("combobox", { name: "Scope" }).selectOption("total");
       await sheet.getByRole("combobox", { name: "Period" }).selectOption("day");
-      await sheet.getByRole("textbox", { name: "Limit (USD)" }).fill("40");
+      const limit = sheet.getByRole("textbox", { name: "Limit (USD)" });
+      // the phone raises the decimal keypad for the limit, not the full keyboard
+      await expect(limit).toHaveAttribute("inputmode", "decimal");
+      await limit.fill("40");
       await Promise.all([
         page.waitForResponse(
           (r) => r.request().method() === "PUT" && r.url().endsWith("/api/radar/api/budgets"),

@@ -502,11 +502,19 @@ button.ui-list-row:hover {
   color: var(--ui-muted);
 }
 
-/* the growing field: the box follows its text up to --ui-field-rows lines, then scrolls; the
- * component sets --ui-field-rows from its maxRows (6 when left out), and where the browser has no
- * field-sizing the component sets its own height on input */
+/* the growing field: the box stands --ui-field-min-rows lines open and follows its text up to
+ * --ui-field-rows lines, then scrolls; the component sets both from its minRows and maxRows (1
+ * and 6 when left out), and where the browser has no field-sizing the component sets its own
+ * height on input. The min-height formula mirrors the max-height one, so a box whose minRows
+ * equals its maxRows opens exactly at its cap; the leading is pinned to the token because a
+ * sheet stands outside .ui-page and would otherwise inherit the preflight's 1.5, leaving the
+ * two formulas measuring a shorter line than the one painted. */
 .ui-input-multi {
-  min-height: var(--ui-control-h);
+  line-height: var(--ui-leading);
+  min-height: max(
+    var(--ui-control-h),
+    calc(var(--ui-field-min-rows, 1) * var(--ui-leading) * var(--ui-text-md))
+  );
   max-height: calc(var(--ui-field-rows, 6) * var(--ui-leading) * var(--ui-text-md));
   overflow-y: auto;
   resize: none;

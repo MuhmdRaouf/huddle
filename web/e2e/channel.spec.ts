@@ -482,6 +482,23 @@ test("the channel's settings page holds the mock's sections and saves the name",
   await nameRow.click();
   const sheet = page.getByRole("dialog", { name: "About" });
   await expect(sheet).toBeVisible();
+  // the description stands three rows open, as its native textarea did
+  const description = sheet.getByLabel("What the team is doing");
+  await expect(description).toHaveAttribute("rows", "3");
+  // and the box paints those rows: where the browser sizes the box to its content, the rows
+  // attribute alone sets nothing
+  const height = await description.evaluate((el) => {
+    const s = getComputedStyle(el);
+    const line = Number.parseFloat(s.lineHeight);
+    if (Number.isNaN(line)) return null;
+    const pad = Number.parseFloat(s.paddingTop) + Number.parseFloat(s.paddingBottom);
+    const border = Number.parseFloat(s.borderTopWidth) + Number.parseFloat(s.borderBottomWidth);
+    return { floor: 3 * line + pad + border, actual: el.getBoundingClientRect().height };
+  });
+  expect(height, "the line-height did not resolve to a length").not.toBeNull();
+  expect(height?.actual ?? 0, `three lines need ${height?.floor}px`).toBeGreaterThanOrEqual(
+    height?.floor ?? 0,
+  );
   // the Field input, named through its label now that the page's ids stay unique
   await sheet.getByLabel("Title").fill(`Named ${ch}`);
   await sheet.getByRole("button", { name: "Save" }).click();

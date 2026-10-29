@@ -110,3 +110,49 @@ describe("Field multiline", () => {
     expect(box.style.height).toBe("");
   });
 });
+
+describe("Field inputMode", () => {
+  it("passes the input mode to the one-line input", () => {
+    render(<Field label="Limit" value="" onInput={() => {}} inputMode="decimal" />);
+    expect(screen.getByRole("textbox", { name: "Limit" }).getAttribute("inputmode")).toBe("decimal");
+  });
+
+  it("passes the input mode to the textarea", () => {
+    render(<Field label="Notes" value="" onInput={() => {}} multiline inputMode="decimal" />);
+    expect(screen.getByLabelText("Notes").getAttribute("inputmode")).toBe("decimal");
+  });
+
+  it("carries no inputmode when none is asked", () => {
+    render(<Field label="Name" value="" onInput={() => {}} />);
+    expect(screen.getByRole("textbox", { name: "Name" }).hasAttribute("inputmode")).toBe(false);
+    render(<Field label="Notes" value="" onInput={() => {}} multiline />);
+    expect(screen.getByLabelText("Notes").hasAttribute("inputmode")).toBe(false);
+  });
+});
+
+describe("Field minRows", () => {
+  it("stands minRows lines open and still grows to maxRows", () => {
+    render(<Field label="Notes" value="" onInput={() => {}} multiline minRows={3} maxRows={5} />);
+    const box = screen.getByLabelText("Notes") as HTMLTextAreaElement;
+    expect(box.getAttribute("rows")).toBe("3");
+    expect(box.style.getPropertyValue("--ui-field-rows")).toBe("5");
+    expect(box.style.getPropertyValue("--ui-field-min-rows")).toBe("3");
+  });
+
+  it("carries the floor to the stylesheet clamped, and none without minRows", () => {
+    render(<Field label="Notes" value="" onInput={() => {}} multiline minRows={9} maxRows={4} />);
+    expect(screen.getByLabelText("Notes").style.getPropertyValue("--ui-field-min-rows")).toBe("4");
+    render(<Field label="Body" value="" onInput={() => {}} multiline />);
+    expect(screen.getByLabelText("Body").style.getPropertyValue("--ui-field-min-rows")).toBe("");
+  });
+
+  it("clamps a minRows above maxRows", () => {
+    render(<Field label="Notes" value="" onInput={() => {}} multiline minRows={9} maxRows={4} />);
+    expect(screen.getByLabelText("Notes").getAttribute("rows")).toBe("4");
+  });
+
+  it("stands one row open when neither minRows nor maxRows is given", () => {
+    render(<Field label="Notes" value="" onInput={() => {}} multiline />);
+    expect(screen.getByLabelText("Notes").getAttribute("rows")).toBe("1");
+  });
+});

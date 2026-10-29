@@ -11,6 +11,8 @@ export type FieldProps = {
   value: string;
   onInput: (value: string) => void;
   type?: "text" | "search" | "number" | undefined;
+  /** The keyboard a touch screen raises for the control; none when left out. */
+  inputMode?: "decimal" | "numeric" | "email" | "tel" | "url" | "search" | "text" | undefined;
   placeholder?: string | undefined;
   hint?: string | undefined;
   /** Marks the input invalid and replaces the hint. */
@@ -18,6 +20,8 @@ export type FieldProps = {
   mono?: boolean | undefined;
   /** A growing textarea instead of the one-line input; type is ignored. */
   multiline?: boolean | undefined;
+  /** The lines the textarea stands open at before it grows; multiline only, 1 when left out. */
+  minRows?: number | undefined;
   /** The lines the textarea grows to before it scrolls; multiline only, 6 when left out. */
   maxRows?: number | undefined;
 };
@@ -43,6 +47,7 @@ function Line(props: {
   value: string;
   onInput: (value: string) => void;
   type: "text" | "search" | "number";
+  inputMode: FieldProps["inputMode"];
   placeholder: string | undefined;
   error: string | undefined;
   note: string | undefined;
@@ -55,6 +60,7 @@ function Line(props: {
       // preact types each input type with the roles it allows; a type held in a variable matches no
       // single pair, so it is read as the text pair, whose role (none set here) all three share
       type={props.type as "text"}
+      inputMode={props.inputMode}
       value={props.value}
       placeholder={props.placeholder}
       {...described(props.error, props.note, props.id)}
@@ -63,24 +69,37 @@ function Line(props: {
   );
 }
 
-/** The growing field: the box follows its text up to maxRows lines, then scrolls. */
+/** The growing field: the box stands minRows lines open and follows its text up to maxRows lines,
+ *  then scrolls. */
 function Growing(props: {
   id: string;
   value: string;
   onInput: (value: string) => void;
+  inputMode: FieldProps["inputMode"];
   placeholder: string | undefined;
   error: string | undefined;
   note: string | undefined;
+  minRows: number | undefined;
   maxRows: number;
 }): JSX.Element {
   return (
     <textarea
       id={props.id}
       class="ui-input ui-input-multi"
-      rows={1}
-      // the cap travels as a custom property the stylesheet reads, set through the CSSOM, which
-      // the page's CSP allows where a style attribute would be stripped
-      style={{ "--ui-field-rows": props.maxRows } as CSSProperties}
+      rows={Math.min(props.minRows ?? 1, props.maxRows)}
+      inputMode={props.inputMode}
+      // the cap and the opening height travel as custom properties the stylesheet reads, set
+      // through the CSSOM, which the page's CSP allows where a style attribute would be stripped
+      style={
+        {
+          "--ui-field-rows": props.maxRows,
+          // where the browser sizes the box to its content the rows attribute sets nothing, so
+          // the height it opens at travels to the stylesheet beside the cap
+          ...(props.minRows === undefined
+            ? undefined
+            : { "--ui-field-min-rows": Math.min(props.minRows, props.maxRows) }),
+        } as CSSProperties
+      }
       value={props.value}
       placeholder={props.placeholder}
       {...described(props.error, props.note, props.id)}
@@ -106,11 +125,13 @@ export function Field({
   value,
   onInput,
   type = "text",
+  inputMode,
   placeholder,
   hint,
   error,
   mono = false,
   multiline = false,
+  minRows,
   maxRows = 6,
 }: FieldProps): JSX.Element {
   const id = useUiId("ui-field");
@@ -125,9 +146,11 @@ export function Field({
           id={id}
           value={value}
           onInput={onInput}
+          inputMode={inputMode}
           placeholder={placeholder}
           error={error}
           note={note}
+          minRows={minRows}
           maxRows={maxRows}
         />
       ) : (
@@ -136,6 +159,7 @@ export function Field({
           value={value}
           onInput={onInput}
           type={type}
+          inputMode={inputMode}
           placeholder={placeholder}
           error={error}
           note={note}

@@ -171,6 +171,7 @@ function BudgetForm({ draft }: { draft: BudgetDraft }) {
           label="Limit (USD)"
           value={draft.limit}
           onInput={(value) => act("draft-field", `limit=${value}`)}
+          inputMode="decimal"
         />
       </div>
       <SelectField

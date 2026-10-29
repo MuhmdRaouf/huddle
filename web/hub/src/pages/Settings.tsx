@@ -165,6 +165,7 @@ function AboutForm({
         value={description}
         onInput={setDescription}
         multiline
+        minRows={3}
         maxRows={3}
       />
       <Button type="submit">Save</Button>
