@@ -64,6 +64,7 @@ func transcriptFactsOf(request shared.RequestRecord) (ledger.TranscriptFacts, bo
 	}
 	facts := ledger.TranscriptFacts{
 		RequestID: request.RequestID,
+		Ts:        request.Ts,
 		Model:     request.Model,
 		What:      request.What,
 		Totals:    request.Totals,

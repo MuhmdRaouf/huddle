@@ -251,3 +251,39 @@ func TestReconcileFillsEveryFieldFromItsSource(t *testing.T) {
 		}
 	})
 }
+
+// TestReconcileStartsARowWhenItsTranscriptCarriesTheTs: a request no route saw starts when
+// its transcript says; the route's own start wins over the transcript's, and a transcript
+// without a ts starts nothing.
+func TestReconcileStartsARowWhenItsTranscriptCarriesTheTs(t *testing.T) {
+	routeStart := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC).UnixMilli()
+	transcript := func(ts int64) *TranscriptFacts { return &TranscriptFacts{RequestID: "req_ts", Ts: ts} }
+	route := &RouteFacts{Event: domain.RouteEvent{
+		Ts:      "2026-10-25T12:00:00Z",
+		Event:   domain.EventRoute,
+		Model:   "glm-5.3",
+		Route:   "provider",
+		Status:  200,
+		Headers: &map[string]string{"request-id": "req_ts"},
+	}}
+	cases := []struct {
+		name    string
+		sources Sources
+		want    int64
+	}{
+		{"a transcript-only request starts when its transcript says", Sources{Transcript: transcript(1730000000000)}, 1730000000000},
+		{"a route's start wins over the transcript's ts", Sources{Route: route, Transcript: transcript(1730000000000)}, routeStart},
+		{"a transcript without a ts starts nothing", Sources{Transcript: transcript(0)}, 0},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			row, ok := Reconcile(testCase.sources)
+			if !ok {
+				t.Fatal("reconcile refused sources that know the request")
+			}
+			if row.StartedAt != testCase.want {
+				t.Errorf("StartedAt = %d, want %d", row.StartedAt, testCase.want)
+			}
+		})
+	}
+}

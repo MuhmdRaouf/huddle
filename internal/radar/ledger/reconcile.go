@@ -8,7 +8,7 @@ import (
 
 // ReconcileVersion is the version of Reconcile's rules. Every row is written with it; a
 // change to the rules raises it, and the backfill rebuilds each older row from its facts.
-const ReconcileVersion = 4
+const ReconcileVersion = 5
 
 // Reconcile answers the row the sources agree on, false when no source knows the request
 // (every pointer nil).
@@ -80,7 +80,8 @@ func request(s Sources, row *Row) {
 }
 
 // timing reads the clock: when the router received the request, how long the answer took,
-// and when its first token came back.
+// and when its first token came back. A request no route saw starts when its transcript
+// says and still takes OTel's duration.
 func timing(s Sources, row *Row) {
 	if s.Route != nil {
 		if started, err := time.Parse(time.RFC3339, s.Route.Event.Ts); err == nil {
@@ -89,8 +90,13 @@ func timing(s Sources, row *Row) {
 		row.DurationMs = s.Route.Event.LatencyMs
 		row.TtfbMs = s.Route.Event.TtfbMs
 		row.TtftMs = s.Route.Event.TtftMs
-	} else if s.OTel != nil {
-		row.DurationMs = s.OTel.DurationMs
+	} else {
+		if s.Transcript != nil && s.Transcript.Ts > 0 {
+			row.StartedAt = s.Transcript.Ts
+		}
+		if s.OTel != nil {
+			row.DurationMs = s.OTel.DurationMs
+		}
 	}
 	if row.TtftMs == nil && s.OTel != nil {
 		row.TtftMs = s.OTel.TtftMs

@@ -277,6 +277,47 @@ func TestTheLedgerKeepsTheStickyCaptureFacts(t *testing.T) {
 	})
 }
 
+// TestTheLedgerKeepsTheHeldTsOnALaterTranscriptCopy: a later transcript copy never moves
+// the row's start — a copy that says nothing about when the request was made keeps the held
+// copy's ts, and a copy stamped later keeps the first copy's ts.
+func TestTheLedgerKeepsTheHeldTsOnALaterTranscriptCopy(t *testing.T) {
+	t.Run("a later copy with no ts keeps the held ts", func(t *testing.T) {
+		st := openLedger(t)
+		ctx := context.Background()
+		if err := st.AddTranscript(ctx, TranscriptFacts{RequestID: "req_sticky_ts", Ts: 1730000000000}); err != nil {
+			t.Fatalf("add the first transcript: %v", err)
+		}
+		if err := st.AddTranscript(ctx, TranscriptFacts{RequestID: "req_sticky_ts"}); err != nil {
+			t.Fatalf("add the second transcript: %v", err)
+		}
+		row, err := st.Get(ctx, "req_sticky_ts")
+		if err != nil || row == nil {
+			t.Fatalf("read the row: %+v, %v", row, err)
+		}
+		if row.StartedAt != 1730000000000 {
+			t.Errorf("StartedAt = %d, want the held 1730000000000", row.StartedAt)
+		}
+	})
+
+	t.Run("a later copy stamped later keeps the first ts", func(t *testing.T) {
+		st := openLedger(t)
+		ctx := context.Background()
+		if err := st.AddTranscript(ctx, TranscriptFacts{RequestID: "req_first_ts", Ts: 1730000000000}); err != nil {
+			t.Fatalf("add the first transcript: %v", err)
+		}
+		if err := st.AddTranscript(ctx, TranscriptFacts{RequestID: "req_first_ts", Ts: 1730000005000}); err != nil {
+			t.Fatalf("add the second transcript: %v", err)
+		}
+		row, err := st.Get(ctx, "req_first_ts")
+		if err != nil || row == nil {
+			t.Fatalf("read the row: %+v, %v", row, err)
+		}
+		if row.StartedAt != 1730000000000 {
+			t.Errorf("StartedAt = %d, want the first copy's 1730000000000", row.StartedAt)
+		}
+	})
+}
+
 // TestStoreRoundTripsTheCaptureColumns: a row with all four capture columns set reads back
 // equal through Get, the headers map round-tripping through its JSON.
 func TestStoreRoundTripsTheCaptureColumns(t *testing.T) {

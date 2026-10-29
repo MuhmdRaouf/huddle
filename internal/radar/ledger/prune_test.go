@@ -138,6 +138,37 @@ func TestStorePrunesPastTheDaysGiven(t *testing.T) {
 	t.Run("a negative day count keeps every row", func(t *testing.T) { keepsEveryRow(t, -1) })
 }
 
+// TestThePruneKeepsATranscriptOnlyRowItsTranscriptStamps: the facts of a request only a
+// transcript saw carry its ts, so its row starts inside the window the prune keeps and
+// stays with its facts.
+func TestThePruneKeepsATranscriptOnlyRowItsTranscriptStamps(t *testing.T) {
+	st := openLedger(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	ts := now.Add(-24 * time.Hour).UnixMilli()
+
+	if err := st.AddTranscript(ctx, TranscriptFacts{RequestID: "req_ts_guard", Ts: ts}); err != nil {
+		t.Fatalf("file the transcript facts: %v", err)
+	}
+	went, err := st.Prune(ctx, now, 30)
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	row, err := st.Get(ctx, "req_ts_guard")
+	if err != nil || row == nil {
+		t.Fatalf("the transcript-only row = %+v, %v; want it kept by the prune", row, err)
+	}
+	if row.StartedAt != ts {
+		t.Errorf("StartedAt = %d, want the transcript's %d", row.StartedAt, ts)
+	}
+	if !holdsFacts(t, st, "req_ts_guard") {
+		t.Fatal("the transcript-only row's facts are gone, want them kept")
+	}
+	if went != 0 {
+		t.Errorf("the prune removed %d request rows, want none", went)
+	}
+}
+
 // holdsFacts answers whether the file still holds a facts row for the id.
 func holdsFacts(t *testing.T, st *Store, id string) bool {
 	t.Helper()

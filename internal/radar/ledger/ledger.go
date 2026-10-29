@@ -60,8 +60,9 @@ type RouteFacts struct {
 
 // TranscriptFacts is what Claude Code's transcript says about the same request.
 type TranscriptFacts struct {
-	RequestID   string            `json:"request_id"` // requestId, joins on Row.AnthropicID
-	Model       string            `json:"model"`      // the assistant line's model, the provider read off it when no route saw the request
+	RequestID   string            `json:"request_id"`   // requestId, joins on Row.AnthropicID
+	Ts          int64             `json:"ts,omitempty"` // when the request was made, in Unix milliseconds; 0 when the facts predate it
+	Model       string            `json:"model"`        // the assistant line's model, the provider read off it when no route saw the request
 	PromptID    string            `json:"prompt_id"`
 	QuerySource string            `json:"query_source"`
 	StopReason  string            `json:"stop_reason"`

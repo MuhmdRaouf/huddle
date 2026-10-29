@@ -168,6 +168,7 @@ func w1HistoryHolds(file string, ids []string) bool {
 // the way history stores them.
 type w1HistoryRow struct {
 	id                      string
+	ts                      sql.NullInt64
 	what                    sql.NullString
 	thinking                sql.NullInt64
 	headers                 sql.NullString
@@ -184,7 +185,7 @@ type w1HistoryRow struct {
 // lands.
 func w1HistoryRowFor(t *testing.T, db *sql.DB, id string) w1HistoryRow {
 	t.Helper()
-	rows, err := db.Query("SELECT id, headers, what, thinking, totals, " +
+	rows, err := db.Query("SELECT id, ts, headers, what, thinking, totals, " +
 		"cache_write_1h, speed, geo, service_tier, provider, via, cost_usd, node_id FROM requests")
 	if err != nil {
 		t.Fatalf("read the history requests: %v", err)
@@ -193,7 +194,7 @@ func w1HistoryRowFor(t *testing.T, db *sql.DB, id string) w1HistoryRow {
 	for rows.Next() {
 		var found w1HistoryRow
 		var headers sql.NullString
-		if err := rows.Scan(&found.id, &headers, &found.what, &found.thinking, &found.totals,
+		if err := rows.Scan(&found.id, &found.ts, &headers, &found.what, &found.thinking, &found.totals,
 			&found.cacheWrite1h, &found.speed, &found.geo, &found.serviceTier,
 			&found.provider, &found.via, &found.costUsd, &found.nodeID); err != nil {
 			t.Fatalf("scan the history request row: %v", err)
@@ -386,6 +387,27 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 		}
 		w1Compare(t, id, w1HistoryRowFor(t, history, id), *row)
 	}
+
+	// A transcript-only request starts when its transcript says, the same instant both
+	// stores hold, so started_at agrees for them. A merged request keeps history's first
+	// copy's ts while the ledger keeps the route's start, so its numbers only print.
+	for _, id := range []string{"req_w2_d", "req_w3_e"} {
+		held := w1HistoryRowFor(t, history, id)
+		row, err := led.Get(ctx, id)
+		if err != nil {
+			t.Fatalf("read the ledger row of %s: %v", id, err)
+		}
+		if row == nil {
+			t.Fatalf("the ledger holds no row for %s", id)
+		}
+		w1One(t, id, "started_at", w1IntPtr(held.ts), &row.StartedAt)
+	}
+	mergedHistory := w1HistoryRowFor(t, history, "req_w1_a")
+	merged, err := led.Get(ctx, "req_w1_a")
+	if err != nil || merged == nil {
+		t.Fatalf("read the ledger row of req_w1_a: %+v, %v", merged, err)
+	}
+	t.Logf("req_w1_a started_at: history=%d ledger=%d", mergedHistory.ts.Int64, merged.StartedAt)
 
 	// the ground w1Compare cannot pin alone: a shared nil or empty would read as agreement
 	via, err := led.Get(ctx, "req_w2_d")

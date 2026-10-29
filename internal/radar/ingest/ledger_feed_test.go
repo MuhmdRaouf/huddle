@@ -249,6 +249,18 @@ func TestTranscriptFactsCarryTheModelAndTheBillingKeys(t *testing.T) {
 	}
 }
 
+// TestTranscriptFactsCarryTheTs: the facts carry the record's ts, the moment the request
+// was made, so the ledger can start a request no route saw.
+func TestTranscriptFactsCarryTheTs(t *testing.T) {
+	facts, ok := transcriptFactsOf(shared.RequestRecord{RequestID: "req_ts", Ts: 1730000000000})
+	if !ok {
+		t.Fatal("transcriptFactsOf refused a record with a request id")
+	}
+	if facts.Ts != 1730000000000 {
+		t.Errorf("Ts = %d, want 1730000000000", facts.Ts)
+	}
+}
+
 // TestTranscriptFactsCarryTheCaptureFacts: the facts carry the what line the transcript
 // computed, the result's totals flag, and the thinking tokens inside the usage map in the
 // shape the provider's output_tokens_details block has — each only when the record has it,

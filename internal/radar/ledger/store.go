@@ -87,7 +87,7 @@ func (s *Store) file(ctx context.Context, id string, route *RouteFacts, transcri
 }
 
 // keepSticky folds a held transcript fact into the next copy: history's Refresh keeps the
-// fuller what and a result's totals on later copies.
+// fuller what, a result's totals and a record's first ts on later copies.
 func keepSticky(held, next *TranscriptFacts) {
 	if held == nil || next == nil {
 		return
@@ -97,6 +97,9 @@ func keepSticky(held, next *TranscriptFacts) {
 	}
 	if held.Totals {
 		next.Totals = true
+	}
+	if held.Ts > 0 {
+		next.Ts = held.Ts
 	}
 }
 
