@@ -1,10 +1,12 @@
 package main
 
 // The hub's light guard: the built binary serves temp homes seeded like a busy machine, and
-// three runs from identical copies of two seeded homes hold it to its budgets. Run A settles
-// and stops and is the polled phase's baseline; run B adds 20 s of idle, its CPU read live at
-// both ends; run C adds the fixed 30 s polled workload and stops, its whole-life CPU minus the
-// baseline's. The resident size is sampled while the idle and the polled phases run.
+// three runs from identical copies of two seeded homes hold it to its budgets. The polled
+// run's home carries a quarter of the live world's shape — 18,500 requests and the spool of
+// route and hook lines a busy machine writes; the idle runs' home carries a small seed. Run A
+// settles and stops and is the polled phase's baseline; run B adds 20 s of idle, its CPU read
+// live at both ends; run C adds the fixed 30 s polled workload and stops, its CPU read live
+// across the workload. The resident size is sampled through run C's catch-up and its workload.
 
 import (
 	"bufio"
@@ -17,11 +19,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 )
 
 const (
@@ -32,27 +38,46 @@ const (
 	// workload: two web clients that hold the Radar stream and send three poll ticks each,
 	// while a writer appends 30 request lines and opens 10 new sessions.
 	hubPolledCPUBudget = 12500 * time.Millisecond
-	// hubRSSCeilingMB is the most a busy hub may hold resident: a 200k-record Radar store with its
-	// views and the web pages fits well under it.
-	hubRSSCeilingMB = 300
+	// hubCatchUpRSSCeilingMB is the peak RSS the hub may reach while the watcher's first
+	// catch-up drains the seeded spool and transcripts.
+	hubCatchUpRSSCeilingMB = 165
+	// hubSettledRSSCeilingMB is the peak RSS the hub may hold over the 30 s polled workload
+	// once catch-up has drained.
+	hubSettledRSSCeilingMB = 215
 
 	hubLightToken = "hub-light-root-token"
-	// hubLightSeedBudget is the most the template's transcripts may take to write.
+	// hubLightSeedBudget is the most the template's transcripts and spool may take to write.
 	hubLightSeedBudget = 5 * time.Second
 
+	// The live world's shape the seed scales down: 74,000 requests over 200 busy sessions
+	// of 370 transcript lines each, one spool route line per call for about four requests
+	// in five, 6,600 hook event lines, and 160 small sessions from 2 to 3 days ago.
+	liveBusySessions  = 200
+	liveSmallSessions = 160
+	liveBusyLines     = 370
+	liveRouteLines    = 58_000
+	liveHookLines     = 6_600
+	// liveShapeScale is what the live shape above is divided by: a quarter of the live
+	// shape keeps the cold catch-up inside CI's 10-minute job.
+	liveShapeScale = 4
+
 	busyLines     = 400
-	smallSessions = 160
+	smallSessions = liveSmallSessions / liveShapeScale
 	// idleSeedBusy is the busy sessions of the idle runs' seed: 2,000 requests.
 	idleSeedBusy = 5
-	// polledSeedBusy is the busy sessions of the polled run's seed: 20,000 requests, which
-	// with the small ones sits past the store's 200-session cap, so session eviction runs
-	// the way it does on a busy machine.
-	polledSeedBusy = 50
 
-	// idleSeedRequests and polledSeedRequests are the request counts the two seeds carry and
-	// their settles wait for.
+	polledSeedBusy  = liveBusySessions / liveShapeScale
+	polledBusyLines = liveBusyLines
+	// polledRouteLines is the route lines of one busy session, one per call for about four
+	// requests in five.
+	polledRouteLines = liveRouteLines / liveBusySessions
+	polledHookLines  = liveHookLines / liveShapeScale
+
+	// idleSeedRequests and polledSeedRequests are the request counts the two seeds carry
+	// and their settles wait for; the small sessions sit under the store's 200-session cap
+	// at this scale, so the polled seed's summary counts them beside the busy requests.
 	idleSeedRequests   = idleSeedBusy * busyLines
-	polledSeedRequests = polledSeedBusy * busyLines
+	polledSeedRequests = polledSeedBusy*polledBusyLines + smallSessions
 )
 
 // hubLightModels is the models the seeded requests rotate through.
@@ -80,55 +105,67 @@ func TestE2EHubStaysLight(t *testing.T) {
 	// One seed per phase, both laid out once and copied fresh per run: the idle runs settle
 	// the small one, the polled run settles the busy one.
 	idleTemplate := t.TempDir()
-	seedHubLightTemplate(t, idleTemplate, idleSeedBusy)
+	seedHubLightTemplate(t, idleTemplate, idleSeedBusy, busyLines, false)
 	polledTemplate := t.TempDir()
-	seedHubLightTemplate(t, polledTemplate, polledSeedBusy)
+	seedHubLightTemplate(t, polledTemplate, polledSeedBusy, polledBusyLines, true)
 
 	// Run A, the polled phase's baseline: the settle alone, then the hub's whole-life CPU out
 	// of its rusage.
-	logA, _, _ := startHubLightRun(t, client, idleTemplate, idleSeedRequests)
+	logA, _, _, _ := startHubLightRun(t, client, idleTemplate, idleSeedRequests)
 	cpuA := stopAndMeasure(t, logA)
 
 	// Run B, idle: the same settle, then 20 s with no clients and no writes, the hub's CPU
 	// read live at both ends.
-	logB, _, _ := startHubLightRun(t, client, idleTemplate, idleSeedRequests)
+	logB, _, _, _ := startHubLightRun(t, client, idleTemplate, idleSeedRequests)
 	pidB := logB.cmd.Process.Pid
 	idleStart := processCPU(t, pidB)
-	idleRSS := sampleRSS(t, pidB, 20*time.Second, 5*time.Second)
+	time.Sleep(20 * time.Second)
 	idleCPU := processCPU(t, pidB) - idleStart
 
-	// Run C, polled: the busy seed, then the fixed 30 s workload of two clients and a writer.
-	logC, hubURL, transcripts := startHubLightRun(t, client, polledTemplate, polledSeedRequests)
+	// Run C, polled: the busy seed, whose settle carries the catch-up peak, then the fixed
+	// 30 s workload of two clients and a writer, its CPU read live at both ends so the
+	// budget weighs the workload alone and not the catch-up that ran before it.
+	logC, hubURL, transcripts, catchUpPeak := startHubLightRun(t, client, polledTemplate, polledSeedRequests)
+	pidC := logC.cmd.Process.Pid
+	workloadStart := processCPU(t, pidC)
 	workload := startHubLightWorkload(t, client, hubURL, transcripts)
-	polledRSS := sampleRSS(t, logC.cmd.Process.Pid, 30*time.Second, 5*time.Second)
+	settledRSS := sampleRSS(t, pidC, 30*time.Second, 2*time.Second)
 	workload.stop()
 	workload.reportErrors(t)
+	polledCPU := processCPU(t, pidC) - workloadStart
 	cpuC := stopAndMeasure(t, logC)
 
-	polledCPU := cpuC - cpuA
-	peakMB := max(idleRSS, polledRSS) / (1024 * 1024)
+	catchUpMB := catchUpPeak / (1024 * 1024)
+	settledMB := settledRSS / (1024 * 1024)
 
-	t.Logf("hub light: baseline %v, idle %v cpu, polled %v cpu, peak rss %d MB",
-		cpuA, idleCPU, polledCPU, peakMB)
+	t.Logf("hub light: baseline %v, idle %v cpu, polled %v cpu, run C whole life %v, catch-up peak rss %d MB, settled peak rss %d MB",
+		cpuA, idleCPU, polledCPU, cpuC-cpuA, catchUpMB, settledMB)
 	if idleCPU >= hubIdleCPUBudget {
 		t.Errorf("idle CPU %v over 20 s is at or over the %v budget", idleCPU, hubIdleCPUBudget)
 	}
 	if polledCPU >= hubPolledCPUBudget {
 		t.Errorf("polled CPU %v over the 30 s workload is at or over the %v budget", polledCPU, hubPolledCPUBudget)
 	}
-	if peakMB >= hubRSSCeilingMB {
-		t.Errorf("peak rss %d MB is at or over the %d MB ceiling", peakMB, hubRSSCeilingMB)
+	if catchUpMB >= hubCatchUpRSSCeilingMB {
+		t.Errorf("catch-up peak rss %d MB is at or over the %d MB ceiling", catchUpMB, hubCatchUpRSSCeilingMB)
+	}
+	if settledMB >= hubSettledRSSCeilingMB {
+		t.Errorf("settled peak rss %d MB is at or over the %d MB ceiling", settledMB, hubSettledRSSCeilingMB)
 	}
 }
 
 // seedHubLightTemplate writes the one home a phase's runs start from, under its user's
-// .claude/projects/-tmp-hub-light: busy sessions of 400 assistant lines each over the last 6
-// hours, and 160 small sessions from 2 to 3 days ago, one request each. The whole seed must
-// land in under hubLightSeedBudget.
-func seedHubLightTemplate(t *testing.T, root string, busy int) {
+// .claude/projects/-tmp-hub-light: busy sessions whose answers fill the last 6 hours at the
+// given lines per session, and smallSessions small sessions from 2 to 3 days ago, one request
+// each. With withSpool the busy sessions also feed the run's spool, one route line per seeded
+// call for the first polledRouteLines lines of every session plus polledHookLines hook
+// events, written into the RADAR_HOME the runs start with. The whole seed must land in under
+// hubLightSeedBudget.
+func seedHubLightTemplate(t *testing.T, root string, busy, lines int, withSpool bool) {
 	t.Helper()
 	user := filepath.Join(root, "user")
 	transcripts := filepath.Join(user, ".claude", "projects", "-tmp-hub-light")
+	var spool hubLightSpool
 	for _, dir := range []string{
 		transcripts,
 		filepath.Join(user, "data"),
@@ -140,24 +177,47 @@ func seedHubLightTemplate(t *testing.T, root string, busy int) {
 	}
 	started := time.Now()
 	now := time.Now()
-	// the busy lines walk the whole 6-hour window, one session's answers a step apart
-	lineStep := time.Duration(int64((6*time.Hour)/busyLines/time.Millisecond)) * time.Millisecond
+	// the busy lines walk the whole 6-hour window, one session's answers a step apart; each
+	// line and its route spool line render from the same instant and model, so the two pair
+	lineStep := time.Duration(int64(6*time.Hour/time.Millisecond)/int64(lines)) * time.Millisecond
 	for s := 0; s < busy; s++ {
 		session := fmt.Sprintf("light-busy-%02d", s)
 		first := now.Add(-6 * time.Hour).Add(time.Duration(s) * time.Second)
 		writeHubLightTranscript(t, filepath.Join(transcripts, session+".jsonl"), func(w *bufio.Writer) error {
-			for i := 0; i < busyLines; i++ {
+			for i := 0; i < lines; i++ {
 				at := first.Add(time.Duration(i) * lineStep)
-				line, err := hubLightAssistantLine(session, i, at, hubLightModels[(s+i)%len(hubLightModels)])
+				model := hubLightModels[(s+i)%len(hubLightModels)]
+				line, err := hubLightAssistantLine(session, i, at, model)
 				if err != nil {
 					return err
 				}
 				if _, err := w.WriteString(line); err != nil {
 					return err
 				}
+				if withSpool && i < polledRouteLines {
+					route, err := hubLightRouteLine(session, i, at, model)
+					if err != nil {
+						return err
+					}
+					spool.add(at, route)
+				}
 			}
 			return nil
 		})
+	}
+	if withSpool {
+		hookStep := time.Duration(int64(6*time.Hour/time.Millisecond)/polledHookLines) * time.Millisecond
+		for i := 0; i < polledHookLines; i++ {
+			at := now.Add(-6 * time.Hour).Add(time.Duration(i) * hookStep)
+			line, err := hubLightHookLine(i, at)
+			if err != nil {
+				t.Fatalf("render hook line %d: %v", i, err)
+			}
+			spool.add(at, line)
+		}
+		spool.write(t, paths.SpoolDir(t.Context(), domain.EnvLookup{
+			"RADAR_HOME": filepath.Join(root, "hub-radar"),
+		}))
 	}
 	for s := 0; s < smallSessions; s++ {
 		session := fmt.Sprintf("light-small-%03d", s)
@@ -210,9 +270,10 @@ func writeHubLightTurn(w *bufio.Writer, session string, at time.Time, model stri
 
 // startHubLightRun copies the template and starts one hub on the copy, settled the same way
 // every run settles: radar's summary at the seeded request count, the watcher's catching-up
-// word false on the stream's snapshot, then 5 s more. The run's seed directory comes back for
-// a phase that writes.
-func startHubLightRun(t *testing.T, client *http.Client, template string, requests int64) (*serveLog, string, string) {
+// word false on the stream's snapshot, then 5 s more. The hub's resident size is sampled all
+// through the settle and the largest sample comes back as the catch-up peak. The run's seed
+// directory comes back for a phase that writes.
+func startHubLightRun(t *testing.T, client *http.Client, template string, requests int64) (*serveLog, string, string, int64) {
 	t.Helper()
 	run := t.TempDir()
 	if err := os.CopyFS(run, os.DirFS(template)); err != nil {
@@ -228,24 +289,46 @@ func startHubLightRun(t *testing.T, client *http.Client, template string, reques
 		// the hub records itself in its own RADAR_HOME, kept beside the run's other homes
 		extra: map[string]string{"RADAR_HOME": filepath.Join(run, "hub-radar")},
 	})
+	pid := log.cmd.Process.Pid
+	// catchUpPeak is the largest resident size sampled while the catch-up runs
+	var catchUpPeak int64
+	noteRSS := func() {
+		if rss := processRSS(t, pid); rss > catchUpPeak {
+			catchUpPeak = rss
+		}
+	}
 	hubURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	until(t, 30*time.Second, func() bool { return healthy(hubURL) }, "the hub to answer /health")
+	settling := time.Now()
 	last := int64(-1)
 	readAt := time.Now().Add(-time.Minute)
-	until(t, 120*time.Second, func() bool {
-		// the summary read is the hub's costliest answer while the store changes: one every
-		// half second is enough to watch the count climb
-		if time.Since(readAt) < 500*time.Millisecond {
+	until(t, 300*time.Second, func() bool {
+		// the summary read is the hub's costliest answer while the store changes, and the
+		// hub needs its CPU for the catch-up: one read every two seconds is enough to watch
+		// the count climb
+		if time.Since(readAt) < 2*time.Second {
 			return last >= requests
 		}
 		readAt = time.Now()
+		noteRSS()
 		last = hubLightSummaryRequests(t, client, hubURL)
 		return last >= requests
 	}, fmt.Sprintf("radar's summary to count %d requests", requests))
-	until(t, 120*time.Second, func() bool { return hubLightStreamSettled(t, client, hubURL) },
-		"the watcher to finish its first catch-up")
+	streamAt := time.Now().Add(-time.Minute)
+	until(t, 300*time.Second, func() bool {
+		// every stream attempt costs the hub a snapshot, so the attempts stay half a second
+		// apart while the catch-up runs
+		if time.Since(streamAt) < 500*time.Millisecond {
+			return false
+		}
+		streamAt = time.Now()
+		noteRSS()
+		return hubLightStreamSettled(t, client, hubURL)
+	}, "the watcher to finish its first catch-up")
+	t.Logf("hub light: settled %d requests in %s, catch-up peak rss %d MB", last,
+		time.Since(settling).Round(time.Second), catchUpPeak/(1024*1024))
 	time.Sleep(5 * time.Second)
-	return log, hubURL, transcripts
+	return log, hubURL, transcripts, catchUpPeak
 }
 
 // hubLightSummaryRequests reads radar's summary through the hub, under the hub's credential
@@ -722,7 +805,7 @@ func (w *hubLightWorkload) runWriter(transcripts string) {
 			return
 		}
 		session := fmt.Sprintf("light-busy-%02d", (second-1)%polledSeedBusy)
-		line, err := hubLightAssistantLine(session, busyLines+second, time.Now(),
+		line, err := hubLightAssistantLine(session, polledBusyLines+second, time.Now(),
 			hubLightModels[second%len(hubLightModels)])
 		if err != nil {
 			w.errs <- err
@@ -911,4 +994,214 @@ func hubLightUserLine(session string, at time.Time) (string, error) {
 		return "", fmt.Errorf("marshal the user line for %s: %w", session, err)
 	}
 	return string(raw) + "\n", nil
+}
+
+// The spool line shapes the polled seed writes, the ones a busy machine's router and hooks
+// append: one route line per model call, and hook events carrying prompt, tool and
+// notification payloads.
+
+// hubLightRoute is one route spool line, the fields the router writes per call.
+type hubLightRoute struct {
+	Ts        string                `json:"ts"`
+	Event     string                `json:"event"`
+	SessionID string                `json:"session_id"`
+	Model     string                `json:"model"`
+	Plugin    string                `json:"plugin"`
+	Route     string                `json:"route"`
+	Upstream  string                `json:"upstream"`
+	Status    int                   `json:"status"`
+	LatencyMs int64                 `json:"latency_ms"`
+	Headers   *hubLightRouteHeaders `json:"headers,omitempty"`
+	Usage     hubLightUsage         `json:"usage"`
+}
+
+// hubLightRouteHeaders is the response header set a route line may carry: the names the
+// router's allow-list keeps. The request id rides on every line, pairing the call with its
+// transcript copy however the watcher orders the two sources; four lines in ten carry the
+// rate-limit pairs besides, about 420 bytes of header pairs on the lines that hold them.
+type hubLightRouteHeaders struct {
+	RequestID         string `json:"request-id"`
+	ContentType       string `json:"content-type"`
+	RequestsLimit     string `json:"anthropic-ratelimit-requests-limit"`
+	RequestsRemaining string `json:"anthropic-ratelimit-requests-remaining"`
+	RequestsReset     string `json:"anthropic-ratelimit-requests-reset"`
+	TokensLimit       string `json:"anthropic-ratelimit-tokens-limit"`
+	TokensRemaining   string `json:"anthropic-ratelimit-tokens-remaining"`
+	TokensReset       string `json:"anthropic-ratelimit-tokens-reset"`
+	RateRemaining     string `json:"x-ratelimit-remaining"`
+	RateReset         string `json:"x-ratelimit-reset"`
+}
+
+// hubLightRouteLine renders the route spool line of one seeded call: the same session,
+// model, instant and transcript request id its transcript line carries, so the two join
+// into the one record the way a live call's router line and transcript copy do. Every line
+// carries the request id; four lines in ten carry the rest of the allow-listed headers.
+func hubLightRouteLine(session string, n int, at time.Time, model string) (string, error) {
+	line := hubLightRoute{
+		Ts:        hubLightStamp(at),
+		Event:     "route",
+		SessionID: session,
+		Model:     model,
+		Plugin:    "zai",
+		Route:     "direct",
+		Upstream:  "https://api.z.ai/api/anthropic",
+		Status:    200,
+		LatencyMs: int64(400 + (n*7)%3000),
+		Usage: hubLightUsage{
+			Input:      int64(100 + n%97),
+			Output:     int64(10 + n%37),
+			CacheRead:  int64((n % 5) * 512),
+			CacheWrite: int64((n % 7) * 256),
+		},
+		Headers: &hubLightRouteHeaders{
+			RequestID: fmt.Sprintf("req-%s-%04d", session, n),
+		},
+	}
+	if n%5 < 2 {
+		line.Headers.ContentType = "application/json"
+		line.Headers.RequestsLimit = "1000"
+		line.Headers.RequestsRemaining = fmt.Sprintf("%03d", 999-n%700)
+		line.Headers.RequestsReset = fmt.Sprintf("%d", at.Add(time.Hour).Unix())
+		line.Headers.TokensLimit = "12000000"
+		line.Headers.TokensRemaining = fmt.Sprintf("%07d", 11_000_000-n%1_000_000)
+		line.Headers.TokensReset = fmt.Sprintf("%d", at.Add(time.Hour).Unix())
+		line.Headers.RateRemaining = fmt.Sprintf("%03d", 99-n%100)
+		line.Headers.RateReset = fmt.Sprintf("%d", at.Unix())
+	}
+	raw, err := json.Marshal(line)
+	if err != nil {
+		return "", fmt.Errorf("marshal the route line for %s: %w", session, err)
+	}
+	return string(raw) + "\n", nil
+}
+
+// hubLightToolInput is the tool call a PreToolUse line names.
+type hubLightToolInput struct {
+	Command     string `json:"command,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// hubLightHook is one hook event spool line, the fields the hooks write per event kind.
+type hubLightHook struct {
+	Ts           string             `json:"ts"`
+	Event        string             `json:"event"`
+	SessionID    string             `json:"session_id,omitempty"`
+	AgentID      string             `json:"agent_id,omitempty"`
+	ToolName     string             `json:"tool_name,omitempty"`
+	ToolUseID    string             `json:"tool_use_id,omitempty"`
+	ToolInput    *hubLightToolInput `json:"tool_input,omitempty"`
+	ToolResponse string             `json:"tool_response,omitempty"`
+	Prompt       string             `json:"prompt,omitempty"`
+	Message      string             `json:"message,omitempty"`
+}
+
+// hubLightHookLine renders one hook event spool line: the six event kinds a busy machine's
+// hooks write, their payloads generated filler text of about 3.3 KB with every hundredth
+// line near 30 KB, the sizes the live spool holds. The tool lines pair Pre with Post by
+// tool use id, the way the store joins them into one timed call.
+func hubLightHookLine(n int, at time.Time) (string, error) {
+	session := fmt.Sprintf("light-busy-%02d", n%polledSeedBusy)
+	filler := 2_950 + (n%53)*8
+	if n%100 == 99 {
+		filler = 29_000
+	}
+	line := hubLightHook{Ts: hubLightStamp(at), SessionID: session}
+	switch n % 6 {
+	case 0:
+		line.Event = "UserPromptSubmit"
+		line.Prompt = hubLightFiller(filler)
+	case 1:
+		line.Event = "PreToolUse"
+		line.ToolName = "Bash"
+		line.ToolUseID = fmt.Sprintf("toolu-%06d", n)
+		line.ToolInput = &hubLightToolInput{
+			Command:     "verify " + hubLightFiller(filler/4),
+			Description: hubLightFiller(filler),
+		}
+	case 2:
+		line.Event = "PostToolUse"
+		line.ToolName = "Bash"
+		line.ToolUseID = fmt.Sprintf("toolu-%06d", n-1)
+		line.ToolResponse = hubLightFiller(filler)
+	case 3:
+		line.Event = "Stop"
+		line.Message = hubLightFiller(filler)
+	case 4:
+		line.Event = "SubagentStop"
+		line.AgentID = fmt.Sprintf("agent-%04d", n%7)
+		line.Message = hubLightFiller(filler)
+	case 5:
+		line.Event = "Notification"
+		line.Message = hubLightFiller(filler)
+	}
+	raw, err := json.Marshal(line)
+	if err != nil {
+		return "", fmt.Errorf("marshal hook line %d: %w", n, err)
+	}
+	return string(raw) + "\n", nil
+}
+
+// hubLightFiller builds exactly n bytes of deterministic filler text: the same lorem-style
+// words repeated, never any real data.
+func hubLightFiller(n int) string {
+	const words = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore "
+	return strings.Repeat(words, n/len(words)+1)[:n]
+}
+
+// hubLightSpool collects the seeded spool lines in memory and writes them out dated, the
+// way the hooks append them: one file per UTC day, oldest line first.
+type hubLightSpool struct {
+	lines []hubLightSpoolLine
+}
+
+// hubLightSpoolLine is one spool line and the moment it happened.
+type hubLightSpoolLine struct {
+	at   time.Time
+	text string
+}
+
+// add collects one line.
+func (s *hubLightSpool) add(at time.Time, text string) {
+	s.lines = append(s.lines, hubLightSpoolLine{at: at, text: text})
+}
+
+// write lays the collected lines into dated spool files under dir.
+func (s *hubLightSpool) write(t *testing.T, dir string) {
+	t.Helper()
+	slices.SortStableFunc(s.lines, func(a, b hubLightSpoolLine) int { return a.at.Compare(b.at) })
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("make %s: %v", dir, err)
+	}
+	day := ""
+	var file *os.File
+	var w *bufio.Writer
+	closeFile := func() {
+		if w == nil {
+			return
+		}
+		if err := w.Flush(); err != nil {
+			t.Fatalf("flush the spool file: %v", err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatalf("close the spool file: %v", err)
+		}
+		w, file = nil, nil
+	}
+	defer closeFile()
+	for _, line := range s.lines {
+		lineDay := line.at.UTC().Format("2006-01-02")
+		if lineDay != day {
+			closeFile()
+			path := filepath.Join(dir, lineDay+".jsonl")
+			f, err := os.Create(path)
+			if err != nil {
+				t.Fatalf("create %s: %v", path, err)
+			}
+			file, w = f, bufio.NewWriter(f)
+			day = lineDay
+		}
+		if _, err := w.WriteString(line.text); err != nil {
+			t.Fatalf("write the spool: %v", err)
+		}
+	}
 }

@@ -225,7 +225,7 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   200,000 records, and the pricing ran regexps per request.
 - **Guard:** `TestE2EHubStaysLight` (cmd/huddle/hub_light_e2e_test.go)
 - **Rule:** the hub spends under 0.2 s of CPU over 20 s idle and under 12.5 s over the fixed 30 s polled
-  workload, and stays under 300 MB resident; a change that costs more fails CI.
+  workload, and stays under the guard's RSS ceiling; a change that costs more fails CI.
 
 ## 2026-10-29, an e2e hub built the notify applet and showed a real notification
 
@@ -255,3 +255,15 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   holding prose is not a class list"` (web/hub/test/design-guard/scan.test.ts)
 - **Rule:** a baseline a lexer fix shows to be false is reset once to the true count; from there it moves
   down only.
+
+## 2026-10-29, the light guard passed while the live hub held 700-800 MB
+
+- **What happened:** the guard answered 116 MB resident and passed, while the live hub held 700-800 MB and a probe
+  of the snapshot home read 604 MB peak.
+- **Cause:** the guard's seed did not look like the live world: it carried transcripts only — about 20k requests
+  and no spool lines — while the live hub's store held 74k requests and 65k spool lines of route calls and hook
+  events, and the parse trees of those hook events are what holds most of the resident size.
+- **Guard:** `TestE2EHubStaysLight` (cmd/huddle/hub_light_e2e_test.go), whose polled run serves a home
+  seeded with the live shape at quarter scale
+- **Rule:** the guard's seed is the live shape scaled down to keep the cold catch-up inside CI's 10-minute job,
+  and its RSS ceilings only move down.
