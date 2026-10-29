@@ -192,6 +192,66 @@ func TestCombine(t *testing.T) {
 		}
 	})
 
+	t.Run("the route line's billing conditions ride with its usage", func(t *testing.T) {
+		route := routeLine(func(r *shared.RequestRecord) {
+			r.Tokens = tokens(200, 40, 0, 50)
+			r.CacheWrite1h = i64(40)
+			r.Speed = str("fast")
+			r.Geo = str("us")
+			r.ServiceTier = str("priority")
+		})
+		transcript := transcriptCall(func(r *shared.RequestRecord) {
+			r.CacheWrite1h = i64(10)
+			r.Speed = str("standard")
+			r.Geo = nil
+			r.ServiceTier = str("default")
+		})
+		merged := Combine(transcript, route, "req_011")
+		if merged.CacheWrite1h == nil || *merged.CacheWrite1h != 40 {
+			t.Errorf("cacheWrite1h: got %s, want 40", showInt(merged.CacheWrite1h))
+		}
+		if merged.Speed == nil || *merged.Speed != "fast" {
+			t.Errorf("speed: got %v, want fast", merged.Speed)
+		}
+		if merged.Geo == nil || *merged.Geo != "us" {
+			t.Errorf("geo: got %v, want us", merged.Geo)
+		}
+		if merged.ServiceTier == nil || *merged.ServiceTier != "priority" {
+			t.Errorf("serviceTier: got %v, want priority", merged.ServiceTier)
+		}
+	})
+
+	t.Run("the route line's billing fields win as nil when its usage block says nothing", func(t *testing.T) {
+		route := routeLine(func(r *shared.RequestRecord) { r.Tokens = tokens(5, 0, 0, 0) })
+		transcript := transcriptCall(func(r *shared.RequestRecord) { r.Speed = str("fast") })
+		merged := Combine(transcript, route, "req_011")
+		if merged.Speed != nil {
+			t.Errorf("speed: got %v, want nil (the route's usage block is the whole billing answer)", merged.Speed)
+		}
+	})
+
+	t.Run("keeps the transcript's billing fields when the route line carries no usage", func(t *testing.T) {
+		transcript := transcriptCall(func(r *shared.RequestRecord) {
+			r.CacheWrite1h = i64(10)
+			r.Speed = str("standard")
+			r.Geo = str("us")
+			r.ServiceTier = str("default")
+		})
+		merged := Combine(transcript, routeLine(nil), "req_011")
+		if merged.CacheWrite1h == nil || *merged.CacheWrite1h != 10 {
+			t.Errorf("cacheWrite1h: got %s, want 10", showInt(merged.CacheWrite1h))
+		}
+		if merged.Speed == nil || *merged.Speed != "standard" {
+			t.Errorf("speed: got %v, want standard", merged.Speed)
+		}
+		if merged.Geo == nil || *merged.Geo != "us" {
+			t.Errorf("geo: got %v, want us", merged.Geo)
+		}
+		if merged.ServiceTier == nil || *merged.ServiceTier != "default" {
+			t.Errorf("serviceTier: got %v, want default", merged.ServiceTier)
+		}
+	})
+
 	t.Run("keeps the transcript's latency when the route line never measured one", func(t *testing.T) {
 		route := routeLine(func(r *shared.RequestRecord) { r.LatencyMs = nil })
 		merged := Combine(transcriptCall(nil), route, "req_011")

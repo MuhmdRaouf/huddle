@@ -60,10 +60,10 @@ func MatchDistance(transcript, route shared.RequestRecord, routeAgent string) *i
 	return &distance
 }
 
-// Combine builds the single record for a call both sources saw, stored under id. The
-// route line's usage wins when it carries any: the router tracked the provider's own
-// stream before any rewrite, while the transcript's copy repeats what the (possibly
-// rewritten) stream opened with.
+// Combine builds the single record for a call both sources saw, stored under id. When the
+// route line carries any tokens, its usage and the billing conditions that ride with it
+// win: the router tracked the provider's own stream before any rewrite, while the
+// transcript's copy repeats what the (possibly rewritten) stream opened with.
 func Combine(transcript, route shared.RequestRecord, id string) shared.RequestRecord {
 	merged := transcript
 	merged.ID = id
@@ -78,6 +78,10 @@ func Combine(transcript, route shared.RequestRecord, id string) shared.RequestRe
 	}
 	if shared.TotalTokens(route.Tokens) > 0 {
 		merged.Tokens = route.Tokens
+		merged.CacheWrite1h = route.CacheWrite1h
+		merged.Speed = route.Speed
+		merged.Geo = route.Geo
+		merged.ServiceTier = route.ServiceTier
 	}
 	if transcript.StopReason == nil {
 		merged.StopReason = route.StopReason

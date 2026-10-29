@@ -28,10 +28,11 @@ import (
 
 // w1IDs are the requests the fixture seeds: one per join shape, a transcript-only one whose
 // run total only its result event names, a transcript-only subagent call, a route line the
-// upstream answered 429, and the two turns of a codex rollout plus one opencode message,
-// filed under their own record ids.
+// upstream answered 429, a merged one whose two copies disagree on every billing key, and
+// the two turns of a codex rollout plus one opencode message, filed under their own record
+// ids.
 var w1IDs = []string{
-	"req_w1_a", "req_w1_b", "req_w1_c", "req_w2_d", "req_w3_e", "req_w5_f",
+	"req_w1_a", "req_w1_b", "req_w1_c", "req_w2_d", "req_w3_e", "req_w5_f", "req_w6_g",
 	"codex:" + w1CodexSessionID + ":0", "codex:" + w1CodexSessionID + ":1", "opencode:msg_aaa",
 }
 
@@ -475,9 +476,9 @@ func w1Compare(t *testing.T, id string, h w1HistoryRow, row ledger.Row) {
 // TestTheLedgerMatchesHistory: the seeded requests — a zai one both sources saw with the
 // four billing keys, a thinking count, a prompt and a Bash call; a kimi one only the route
 // line saw; an Anthropic passthrough with a speed; a zai route line the upstream answered
-// 429; a transcript-only one whose run total its result event names; and a codex rollout
-// plus an opencode message under their own record ids — land the same values in history.db
-// and ledger.db.
+// 429; a merged one whose two copies disagree on every billing key; a transcript-only one
+// whose run total its result event names; and a codex rollout plus an opencode message
+// under their own record ids — land the same values in history.db and ledger.db.
 func TestTheLedgerMatchesHistory(t *testing.T) {
 	world := makeEnv(t)
 	ctx := t.Context()
@@ -501,6 +502,22 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 		"input_tokens": 300, "output_tokens": 90,
 		"cache_read_input_tokens": 1500, "cache_creation_input_tokens": 100,
 	}
+	// req_w6_g: the router's usage block and the transcript's copy disagree on every billing
+	// key — the route line is the billing answer both stores must read.
+	routeUsage := map[string]any{
+		"input_tokens": 200, "output_tokens": 40,
+		"cache_read_input_tokens": 0, "cache_creation_input_tokens": 50,
+		"cache_creation":        map[string]any{"ephemeral_1h_input_tokens": 40},
+		"output_tokens_details": map[string]any{"thinking_tokens": 12},
+		"speed":                 "fast", "inference_geo": "us", "service_tier": "priority",
+	}
+	transcriptUsage := map[string]any{
+		"input_tokens": 200, "output_tokens": 40,
+		"cache_read_input_tokens": 0, "cache_creation_input_tokens": 50,
+		"cache_creation":        map[string]any{"ephemeral_1h_input_tokens": 10},
+		"output_tokens_details": map[string]any{"thinking_tokens": 3},
+		"speed":                 "standard", "service_tier": "default",
+	}
 	seedSpool(t, world.state,
 		spoolStart("s1", "/w/app"),
 		spoolStart("s2", "/w/app"),
@@ -520,11 +537,14 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 		w1FailedRouteLine(t, at.Add(11*time.Second), "req_w5_f", 429, "rate limited by api.z.ai",
 			map[string]any{"input_tokens": 100, "output_tokens": 0},
 			map[string]string{"retry-after": "30"}),
+		w1RouteLine(t, at.Add(30*time.Second), "req_w6_g", "zai", "glm-4.6", "provider", routeUsage, nil),
 	)
 	writeText(t, filepath.Join(world.config, "projects", "-w-app", "s1.jsonl"), strings.Join([]string{
 		w1UserLine(t, at, "s1", "fix the flaky test"),
 		w1TranscriptLine(t, at, "s1", "req_w1_a", "glm-4.6",
 			w1WorkContent("On it — running the suite."), full),
+		w1TranscriptLine(t, at.Add(30*time.Second), "s1", "req_w6_g", "glm-4.6",
+			w1TextContent("Done."), transcriptUsage),
 	}, "\n")+"\n")
 	writeText(t, filepath.Join(world.config, "projects", "-w-app", "s2.jsonl"), strings.Join([]string{
 		w1TranscriptLine(t, at, "s2", "req_w2_d", "glm-5.3", w1TextContent("On it."), zero),
@@ -561,6 +581,22 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 			t.Fatalf("the ledger holds no row for %s", id)
 		}
 		w1Compare(t, id, w1HistoryRowFor(t, history, id), *row)
+	}
+
+	// req_w6_g's billing answer, pinned: the router's usage block wins over the transcript's
+	// copy, and a shared wrong value must not read as agreement
+	billed, err := led.Get(ctx, "req_w6_g")
+	if err != nil || billed == nil {
+		t.Fatalf("read the ledger row of req_w6_g: %+v, %v", billed, err)
+	}
+	if billed.Speed == nil || *billed.Speed != "fast" {
+		t.Errorf("req_w6_g speed = %s, want fast", w1Show(billed.Speed))
+	}
+	if billed.ServiceTier == nil || *billed.ServiceTier != "priority" {
+		t.Errorf("req_w6_g service_tier = %s, want priority", w1Show(billed.ServiceTier))
+	}
+	if billed.CacheWrite1h == nil || *billed.CacheWrite1h != 40 {
+		t.Errorf("req_w6_g cache_write_1h = %s, want 40", w1Show(billed.CacheWrite1h))
 	}
 
 	// A transcript-only request starts when its transcript says, the same instant both
