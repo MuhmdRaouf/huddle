@@ -26,7 +26,6 @@ Status: accepted, 2026-10-29. It sets D25 in [DECISIONS.md](../DECISIONS.md).
 2. The ledger grows to hold everything a reader needs:
    - the ten columns;
    - a `node_id`, filled at ingest by the same rule history uses;
-   - a `history_id` column with the record id history gives the same request;
    - codex, opencode and id-less transcript records, filed under their history ids.
 3. Two costs, two columns:
    - `price_usd` is Radar's own price from its pricing table;
@@ -45,8 +44,8 @@ Status: accepted, 2026-10-29. It sets D25 in [DECISIONS.md](../DECISIONS.md).
 7. `headers` hold only the allow-listed pairs, in the same redacted form history stores. Authorization, API
    keys, cookies and tokens never land in either store in clear text.
 8. The ledger keeps rows for the user's history retention setting (7, 30, 90 days, or forever).
-9. The readers move to the ledger one per cycle, then the old history rows migrate into the ledger, then the
-   history writer stops writing `requests`. Dropping the `requests` table waits for the owner's yes.
+9. The old history rows migrate into the ledger first, then the readers move to the ledger one per cycle, then
+   the history writer stops writing `requests`. Dropping the `requests` table waits for the owner's yes.
 
 ## Consequences
 
