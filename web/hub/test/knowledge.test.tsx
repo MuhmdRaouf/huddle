@@ -3,13 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vite
 import type { FetchFn } from "../src/api.ts";
 import { HuddleContext } from "../src/app/context.tsx";
 import {
-  ExportActions,
   Hits,
   KB_KINDS,
   KB_L,
   type KbEntry,
   KbTag,
   Knowledge,
+  exportItems,
   kbAge,
   kbMarks,
 } from "../src/pages/Knowledge.tsx";
@@ -196,6 +196,19 @@ describe("Knowledge list", () => {
     for (const k of KB_KINDS) expect(screen.getAllByText(KB_L[k]).length).toBeGreaterThan(0);
   });
 
+  it("renders the kind filter as ui-chip toggles: All pressed at start, a click moves the press", async () => {
+    const { container } = renderHuddle(<Knowledge prefs={prefs} />, { ch: "dev" }, 1, kbFetch({}));
+    await listLoaded();
+    const chips = container.querySelectorAll('[aria-label="Kind"] button.ui-chip');
+    expect(chips.length).toBe(KB_KINDS.length + 1);
+    expect(screen.getByText("All").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByText("How-to"));
+    await vi.waitFor(() => {
+      expect(screen.getByText("How-to").getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByText("All").getAttribute("aria-pressed")).toBe("false");
+    });
+  });
+
   it("says no entry matches when the list comes back empty", async () => {
     renderHuddle(<Knowledge prefs={prefs} />, { ch: "dev" }, 1, kbFetch({ rows: [] }));
     await screen.findByText("No entry matches");
@@ -263,6 +276,13 @@ describe("Knowledge reader", () => {
     expect(screen.getByText("Body").tagName).toBe("H2");
   });
 
+  it("renders an entry's tags as display chips", async () => {
+    const { container } = renderHuddle(<Knowledge prefs={prefs} />, { ch: "dev" }, 1, kbFetch({}));
+    await readerLoaded();
+    const tags = container.querySelectorAll("#kbr article .ui-chip-row span.ui-chip");
+    expect([...tags].map((t) => t.textContent)).toEqual(["grafana", "ports"]);
+  });
+
   it("shows who verified an entry and its mark", async () => {
     const { container } = renderHuddle(
       <Knowledge prefs={prefs} />,
@@ -272,7 +292,9 @@ describe("Knowledge reader", () => {
     );
     await readerLoaded();
     expect(container.querySelector("#kbr article")?.textContent).toContain("Verified by owner");
-    expect(container.querySelector(".badge-success")?.getAttribute("title")).toBe("Verified by owner");
+    expect(container.querySelector(".ui-badge-ok")?.closest("[title]")?.getAttribute("title")).toBe(
+      "Verified by owner",
+    );
   });
 
   it("says an old unverified entry may be out of date, and never when it was just written", async () => {
@@ -307,7 +329,7 @@ describe("Knowledge reader", () => {
     expect(card?.textContent).toContain(
       "May be stale: not verified for over 30 days. Check it, then verify it or replace it.",
     );
-    expect(container.querySelector(".badge-warning")?.getAttribute("title")).toBe(
+    expect(container.querySelector(".ui-badge-warn")?.closest("[title]")?.getAttribute("title")).toBe(
       "not verified for over 30 days",
     );
     expect(screen.getByText("Verify").closest("button")?.getAttribute("data-kbv")).toBe("do");
@@ -372,7 +394,7 @@ describe("Knowledge reader", () => {
     );
     await readerLoaded();
     expect(screen.queryByText("Share with every channel")).toBeNull();
-    expect(container.querySelector(".c-info")?.getAttribute("title")).toBe(
+    expect(container.querySelector(".ui-badge-info")?.closest("[title]")?.getAttribute("title")).toBe(
       "From channel other; every channel on this server recalls it",
     );
     container.remove();
@@ -415,7 +437,7 @@ describe("Knowledge reader", () => {
     const { container } = renderHuddle(<Knowledge id={2} prefs={prefs} />, { ch: "dev" }, 1, fetchFn);
     await readerLoaded();
     expect(fetchFn.mock.calls.some(([u]) => u === "/api/c/dev/kb/2")).toBe(true);
-    expect(container.querySelector("#kblist")?.className).toContain("panel");
+    expect(container.querySelector("#kblist")?.className).toContain("ui-list");
     expect(
       container.querySelector("#kbr section, #kbr article, #kbr .panel") ??
         container.querySelector("#kbr .panel"),
@@ -474,7 +496,7 @@ describe("Knowledge reader", () => {
     expect(card?.textContent).toContain("read 1 time");
     expect(card?.textContent).not.toContain("· task");
     expect(card?.textContent).not.toContain("References");
-    expect(container.querySelector("#kbr .badge:not(.c-lavender)")).toBeNull();
+    expect(container.querySelector("#kbr .ui-badge:not(.ui-badge-neutral)")).toBeNull();
   });
 
   it("verifies without a verifier's name and lists an entry without a hit or marks", async () => {
@@ -488,11 +510,13 @@ describe("Knowledge reader", () => {
     );
     await screen.findByText("No hit");
     await vi.waitFor(() => expect(container.querySelector("#kbr article")).not.toBeNull());
-    expect(container.querySelector(".badge-success")?.getAttribute("title")).toBe("Verified by ");
+    expect(container.querySelector(".ui-badge-ok")?.closest("[title]")?.getAttribute("title")).toBe(
+      "Verified by ",
+    );
     expect(container.querySelector("#kbr article")?.textContent).toContain("Verified by");
     const row = screen.getByText("No hit").closest("a");
     expect(row?.querySelector("mark")).toBeNull();
-    expect(row?.querySelector(".badge-success, .c-info")).toBeNull();
+    expect(row?.querySelector(".ui-badge-ok, .ui-badge-info")).toBeNull();
   });
 
   it("splits an unbalanced closing marker and answers a null list", async () => {
@@ -523,7 +547,7 @@ describe("Knowledge reader", () => {
     await vi.waitFor(() => {
       expect(h.toast).toHaveBeenCalledWith("raw refusal", { bad: true });
     });
-    fireEvent.click(h.getByText("Share with every channel"));
+    fireEvent.click(await screen.findByText("Share with every channel"));
     await vi.waitFor(() => {
       expect(h.toast).toHaveBeenCalledWith("Every channel on this server now recalls it (#undefined)");
       expect(fetchFn.mock.calls.filter(([u]) => u === "/api/c/dev/kb/5")).toHaveLength(2);
@@ -644,10 +668,19 @@ describe("Knowledge export", () => {
     expect(revoke).toHaveBeenCalledWith("blob:x");
   });
 
-  it("names the download after the channel in ExportActions", async () => {
+  it("names the download after the channel in the export items", async () => {
     const save = vi.fn();
-    renderHuddle(<ExportActions ch="dev" md={() => Promise.resolve("# MD")} save={save} onDone={() => {}} />);
-    fireEvent.click(screen.getByText("Download .md"));
+    const items = exportItems(
+      "dev",
+      () => Promise.resolve("# MD"),
+      save,
+      () => {},
+      {
+        toast: vi.fn(),
+        copy: vi.fn(),
+      },
+    );
+    items.find((i) => i.label === "Download .md")?.run();
     await vi.waitFor(() => {
       expect(save).toHaveBeenCalledWith("# MD", "dev-knowledge.md");
     });
@@ -693,7 +726,7 @@ describe("kb helpers", () => {
     );
     expect(container.textContent).toContain("How-to");
     expect(container.textContent).toContain("mystery");
-    expect(container.querySelectorAll(".c-lavender").length).toBe(2);
+    expect(container.querySelectorAll(".ui-badge-neutral").length).toBe(2);
   });
 
   it("Hits draws the search markers as <mark>, plain or unbalanced", () => {

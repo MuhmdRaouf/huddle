@@ -176,10 +176,7 @@
     "legacy": 8
   },
   "pages/Knowledge.tsx": {
-    "control": 9,
-    "daisy": 55,
-    "legacy": 5,
-    "px": 1
+    "control": 1
   },
   "pages/LinkedSessions.tsx": {
     "control": 1,

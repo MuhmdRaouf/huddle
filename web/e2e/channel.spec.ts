@@ -541,3 +541,102 @@ test("the work map and the repo views keep their layers inside the viewport", as
   await expectNoSideScroll(page);
   await expectWorkAccessible(page);
 });
+
+test("the knowledge page keeps its export menu and toast inside the viewport", async ({
+  page,
+}, info) => {
+  const ch = await freshChannel(info.project.name, ["gamma"]);
+  await api(`/api/c/${ch}/op/remember?as=gamma`, {
+    kind: "fact",
+    title: `Router port (${ch})`,
+    body: "huddle-router listens on loopback only, and the hub reaches it there.",
+    tags: ["ports", "router"],
+  });
+  await openChannel(page, ch);
+  await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/knowledge`);
+  const view = page.viewportSize();
+  await expect(page.locator("#kblist")).toBeVisible();
+  await expect(page.locator("#kblist")).toContainText(`Router port (${ch})`);
+
+  // the page's own controls take the pointer's full target
+  const exp = page.getByRole("button", { name: "Export" });
+  const search = page.getByLabel("Search knowledge");
+  const chips = page.locator("[data-k]");
+  await expect(chips).toHaveCount(7);
+  await expectTapTargets([exp, search, page.locator("#kblist a").first()]);
+  // the kind chips take the finger's 44 px target through the hit area the Chip CSS draws
+  // around their 28 px box: at a coarse pointer the ::before reaches --ui-tap out, and no
+  // two hit areas overlap (the same check the tokens page makes for its chips)
+  if (test.info().project.use.hasTouch) {
+    const hits = await page.evaluate(() => {
+      const chips = [...document.querySelectorAll<HTMLElement>("[data-k]")].map((el) => {
+        const r = el.getBoundingClientRect();
+        const before = getComputedStyle(el, "::before");
+        const p = before.position === "absolute" ? Math.abs(Number.parseFloat(before.top)) : 0;
+        return { r, hit: { l: r.left, r: r.right, t: r.top - p, b: r.bottom + p } };
+      });
+      return {
+        tall: chips.length > 0 && chips.every((c) => c.hit.b - c.hit.t >= 44 - 0.01),
+        apart: chips.every((a, i) =>
+          chips.every(
+            (b, j) =>
+              i === j ||
+              a.hit.r <= b.hit.l ||
+              b.hit.r <= a.hit.l ||
+              a.hit.b <= b.hit.t ||
+              b.hit.b <= a.hit.t,
+          ),
+        ),
+      };
+    });
+    expect(hits.tall, "each kind chip's hit stands at least 44 px tall").toBe(true);
+    expect(hits.apart, "no two kind chips' hit areas overlap").toBe(true);
+  }
+  // the Kind chips wrap to at most two rows at the phone's width: 28 px chips on rows the
+  // coarse pointer stands --ui-space-4 (16 px) apart — the wrapped rows' hit-area room —
+  // so two rows stand 72 px
+  const kind = page.getByRole("group", { name: "Kind" });
+  const kindBox = await kind.boundingBox();
+  expect(kindBox?.height ?? 0).toBeLessThanOrEqual(2 * 28 + 16 + 1);
+  await expectAccessible(page, SHELL);
+
+  // the export menu is the page's one popup layer: it stands alone, whole inside the viewport
+  await exp.click();
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  expect(await page.locator("dialog[open]").count()).toBe(0);
+  expect(await page.getByRole("menu").all()).toHaveLength(1);
+  const box = await menu.boundingBox();
+  expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+  expect(box?.y ?? -1).toBeGreaterThanOrEqual(0);
+  expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual((view?.width ?? 0) + 1);
+  expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(view?.height ?? 0);
+  await expectAccessible(page, SHELL);
+
+  // Escape closes it the way the keyboard closes a menu, with the focus on an entry
+  await menu.getByRole("menuitem").first().focus();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(exp).toHaveAttribute("aria-expanded", "false");
+
+  // the reader's actions stand open with the entry: Verify raises the page's toast, alone,
+  // inside the viewport and above the tab bar
+  await page.locator("#kblist a").first().click();
+  const verify = page.getByRole("button", { name: "Verify" });
+  await expect(verify).toBeVisible();
+  await expectTapTargets([verify, page.getByRole("button", { name: "Share with every channel" })]);
+  await verify.click();
+  const toast = page.locator(".ui-toast");
+  await expect(toast).toBeVisible();
+  expect(await page.getByRole("menu").count()).toBe(0);
+  const tb = await toast.boundingBox();
+  expect(tb?.y ?? -1).toBeGreaterThanOrEqual(0);
+  expect((tb?.x ?? 0) + (tb?.width ?? 0)).toBeLessThanOrEqual((view?.width ?? 0) + 1);
+  const bar = page.locator("[data-nav='bottom']");
+  if ((await bar.count()) > 0) {
+    const bb = await bar.boundingBox();
+    expect((tb?.y ?? 0) + (tb?.height ?? 0)).toBeLessThanOrEqual((bb?.y ?? 0) + 1);
+  }
+  await expectNoSideScroll(page);
+  await expectAccessible(page, SHELL);
+});
