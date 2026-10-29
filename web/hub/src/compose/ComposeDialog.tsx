@@ -81,15 +81,15 @@ export function ComposeDialog(props: ComposeDialogProps): JSX.Element | null {
   // a pending save outlives the dialog only if it is written now
   useEffect(() => () => drafts.flush(), [drafts]);
 
-  // openCompose's focus: a task with no reply starts in its title, everything else in the message
+  // openCompose's focus: a task with no reply starts in its title, everything else in the message;
+  // each place-named id wraps the shared Field that renders the control
   useEffect(() => {
     if (!open) return;
     const d = drafts.draft(ch, PLACE);
-    const el =
-      d.reply == null && d.mode === "task"
-        ? document.getElementById("dlg-title")
-        : document.getElementById("dlg-msg");
-    el?.focus();
+    const control = document
+      .getElementById(d.reply == null && d.mode === "task" ? "dlg-title" : "dlg-msg")
+      ?.querySelector<HTMLElement>("input, textarea");
+    control?.focus();
   }, [open, drafts, ch]);
 
   // openCompose: no channel, nothing to compose into (every hook above stays mounted)

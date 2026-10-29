@@ -84,8 +84,8 @@ function Harness({
 }
 
 const dlg = (): HTMLDialogElement => document.querySelector("dialog") as HTMLDialogElement;
-const msgBox = (): HTMLTextAreaElement => document.getElementById("dlg-msg") as HTMLTextAreaElement;
-const titleBox = (): HTMLInputElement => document.getElementById("dlg-title") as HTMLInputElement;
+const msgBox = (): HTMLTextAreaElement => document.querySelector("#dlg-msg textarea") as HTMLTextAreaElement;
+const titleBox = (): HTMLInputElement => document.querySelector("#dlg-title input") as HTMLInputElement;
 
 describe("ComposeDialog", () => {
   it("opens the shared dialog with the composer inside, titled for a plain message", () => {
@@ -144,7 +144,7 @@ describe("ComposeDialog", () => {
     render(<Harness open options={{ mode: "task" }} />);
     fireEvent.input(titleBox(), { target: { value: "Fallback" } });
     // the drafts go to the page's localStorage; the title field took them without a crash
-    expect((document.getElementById("dlg-title") as HTMLInputElement).value).toBe("Fallback");
+    expect(titleBox().value).toBe("Fallback");
   });
 
   it("takes an injected storage alone and keeps the browser's save timer", () => {

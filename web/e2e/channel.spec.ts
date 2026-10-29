@@ -466,6 +466,75 @@ test("the overview page keeps its layers and controls at the pointer's size", as
   await expectAccessible(page, SHELL);
 });
 
+test("the compose dialog, its picker menu and its toast keep one layer inside the viewport", async ({
+  page,
+}, info) => {
+  const ch = await freshChannel(info.project.name, ["gamma"]);
+  await openChannel(page, ch);
+
+  // the overview's Send a message opens the compose dialog: the one layer on screen, whole
+  // inside the viewport and clear of the tab bar, its composer controls at the pointer's
+  // full target
+  const open = page.getByRole("button", { name: "Send a message" });
+  await expectTapTargets([open]);
+  await open.click();
+  const dialog = page.getByRole("dialog", { name: "Send a message" });
+  await expect(dialog).toBeVisible();
+  expect(await page.locator("dialog[open]").count(), "one layer at a time").toBeLessThanOrEqual(1);
+  await expectInsideViewport(page, [dialog]);
+  if ((await page.locator("[data-nav='bottom']").count()) > 0)
+    await expectClearOfTabBar(page, [dialog]);
+  await expectTapTargets([
+    dialog.getByRole("combobox", { name: "To" }),
+    dialog.getByRole("button", { name: "Message" }),
+    dialog.getByRole("button", { name: "Question" }),
+    dialog.getByRole("button", { name: "Task" }),
+    dialog.getByRole("button", { name: "Cancel" }),
+    dialog.getByRole("button", { name: "Send to everyone" }),
+  ]);
+  await expectNoSideScroll(page);
+  await expectAccessible(page, SHELL);
+
+  // task mode retitles the dialog to "New task", adds the title field, and the waits-on
+  // picker opens its menu as the same single layer
+  await dialog.getByRole("button", { name: "Task" }).click();
+  const task = page.getByRole("dialog", { name: "New task" });
+  await expect(task).toBeVisible();
+  const title = task.getByRole("textbox", { name: "Title" });
+  await expect(title).toBeVisible();
+  // the browser must not offer old entries over the title
+  await expect(title).toHaveAttribute("autocomplete", "off");
+  await expectTapTargets([title, task.getByRole("textbox", { name: "Details" })]);
+  await task.getByRole("combobox", { name: "Tasks it waits on" }).focus();
+  const menu = task.locator("#dlg-after-menu");
+  await expect(menu).toBeVisible();
+  expect(await page.locator("dialog[open]").count(), "one layer at a time").toBeLessThanOrEqual(1);
+  await expectInsideViewport(page, [task]);
+  if ((await page.locator("[data-nav='bottom']").count()) > 0)
+    await expectClearOfTabBar(page, [task]);
+  // the picker's own empty menu paints text inside its role=listbox, the debt picker.tsx
+  // carries; axe takes the rest of the layer
+  await expectAccessible(page, [...SHELL, "#dlg-after-menu"]);
+  await page.keyboard.press("Escape");
+
+  // a send closes the dialog and raises the confirmation toast: alone, whole inside the
+  // viewport, above the tab bar
+  await task.getByRole("button", { name: "Message" }).click();
+  const back = page.getByRole("dialog", { name: "Send a message" });
+  await back
+    .getByRole("textbox", { name: "Message" })
+    .fill(`compose layers check from ${info.project.name}`);
+  await back.getByRole("button", { name: /^Send to everyone/ }).click();
+  const sent = page.locator(".ui-toast");
+  await expect(sent).toBeVisible();
+  expect(await page.locator("dialog[open]").count(), "one layer at a time").toBeLessThanOrEqual(1);
+  await expectInsideViewport(page, [sent]);
+  if ((await page.locator("[data-nav='bottom']").count()) > 0)
+    await expectClearOfTabBar(page, [sent]);
+  await expectNoSideScroll(page);
+  await expectAccessible(page, SHELL);
+});
+
 test("the channel's Settings view lists the sessions linked into it", async ({ page }, info) => {
   const ch = await freshChannel(info.project.name, []);
   // two ended sessions: linkable, and out of the Now list's Working and Needs you counts

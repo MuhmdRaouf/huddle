@@ -257,7 +257,7 @@ describe("SessionDrawer", () => {
     drawer({ api });
     expect(document.querySelector("select[id$='-to']")).toBeNull();
     expect(screen.getByText("Send to api")).not.toBeNull();
-    fireEvent.input(must(document.querySelector("textarea[id$='-msg']") as HTMLTextAreaElement), {
+    fireEvent.input(must(document.querySelector("div[id$='-msg'] textarea") as HTMLTextAreaElement), {
       target: { value: "carry on" },
     });
     fireEvent.click(screen.getByText("Send to api"));

@@ -112,9 +112,10 @@ function setup(over: Partial<ComposerProps> = {}) {
 const msgBox = (): HTMLTextAreaElement => screen.getByLabelText(/Message|Details/) as HTMLTextAreaElement;
 const titleBox = (): HTMLInputElement => screen.getByLabelText(/Title/) as HTMLInputElement;
 const toMenu = (): HTMLSelectElement => screen.getByLabelText("To") as HTMLSelectElement;
-const sendBtn = (): HTMLButtonElement => document.getElementById("dlg-send") as HTMLButtonElement;
+const sendBtn = (): HTMLButtonElement =>
+  screen.getByRole("button", { name: /^(Send|Create task|Ask)/ }) as HTMLButtonElement;
 const fx = (): HTMLElement => document.getElementById("dlg-fx") as HTMLElement;
-const terr = (): HTMLElement => document.getElementById("dlg-terr") as HTMLElement;
+const titleNote = (): HTMLElement | null => screen.queryByText("A task needs a title.");
 const type = (text: string): void => {
   fireEvent.input(msgBox(), { target: { value: text } });
 };
@@ -296,10 +297,10 @@ describe("Composer render", () => {
     expect(sendBtn().querySelector("svg")).toBeTruthy();
     expect(sendBtn().disabled).toBe(false);
     expect(fx().textContent).toBe("Every session reads it at the next check of the inbox.");
-    expect(fx().classList.contains("muted")).toBe(true);
+    expect(fx().classList.contains("text-[var(--ui-muted)]")).toBe(true);
     expect(screen.getByText("About a task")).toBeTruthy();
     expect(screen.queryByLabelText(/Title/)).toBeNull();
-    expect(terr()).toBeNull();
+    expect(titleNote()).toBeNull();
   });
 
   it("a fixed recipient hides the To menu and words everything for them", () => {
@@ -314,14 +315,14 @@ describe("Composer render", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Task" }));
     expect(titleBox().placeholder).toBe("What should everyone finish?");
-    expect(titleBox().getAttribute("aria-describedby")).toBe("dlg-terr");
+    expect(titleBox().getAttribute("aria-describedby")).toBeNull();
     expect(msgBox().placeholder).toBe("What done means, where to look");
     expect(screen.getByText("Details")).toBeTruthy();
     expect(screen.queryByText("About a task")).toBeNull();
     expect(screen.getByLabelText("Tasks it waits on")).toBeTruthy();
     expect(screen.getByText("Waits on")).toBeTruthy();
     expect(sendBtn().textContent).toContain("Create task");
-    expect(terr().hidden).toBe(true);
+    expect(titleNote()).toBeNull();
     expect(fx().textContent).toBe("Creates a task that nobody owns yet.");
   });
 
@@ -364,7 +365,7 @@ describe("Composer render", () => {
 
   it("names the composer's ids after its place", () => {
     setup({ place: "s:scan.agent" });
-    expect(document.getElementById("s_scan_agent-send")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^(Send|Create task|Ask)/ })).toBeTruthy();
     expect(document.getElementById("s_scan_agent-fx")).toBeTruthy();
   });
 });
@@ -640,11 +641,12 @@ describe("Composer validation and failures", () => {
     expect(op).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(titleBox());
     expect(titleBox().getAttribute("aria-invalid")).toBe("true");
-    expect(terr().hidden).toBe(false);
-    expect(terr().textContent).toContain("A task needs a title.");
+    const note = titleNote();
+    expect(note).toBeTruthy();
+    expect(titleBox().getAttribute("aria-describedby")).toBe(note?.id);
     fireEvent.input(titleBox(), { target: { value: "Now named" } });
     expect(titleBox().getAttribute("aria-invalid")).toBeNull();
-    expect(terr().hidden).toBe(true);
+    expect(titleNote()).toBeNull();
   });
 
   it("refuses an empty reply and focuses the box", () => {

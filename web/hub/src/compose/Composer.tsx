@@ -6,6 +6,8 @@
 // Port of compose.js mount/send/effect; the state lives in the draft (drafts.ts), the op call and
 // the toasts go through the injected api and toast, and Preact keeps the nodes a repaint used to lose.
 
+import { Button } from "@huddle/ui/button.tsx";
+import { Field } from "@huddle/ui/field.tsx";
 import { Inline } from "@huddle/ui/markdown.tsx";
 import type { ToastFn } from "@huddle/ui/toast.tsx";
 import type { ComponentChildren, JSX } from "preact";
@@ -226,8 +228,9 @@ export function Composer(props: ComposerProps): JSX.Element {
   const [, setGen] = useState(0);
   const [busy, setBusy] = useState(false);
   const [titleBad, setTitleBad] = useState(false);
-  const box = useRef<HTMLTextAreaElement | null>(null);
-  const title = useRef<HTMLInputElement | null>(null);
+  // the wrapper a shared Field renders its control in: the composer focuses the control through it
+  const box = useRef<HTMLDivElement | null>(null);
+  const title = useRef<HTMLDivElement | null>(null);
 
   // the draft object is shared and mutable; a repaint reads it back (compose.js remounted the host)
   const paint = (): void => {
@@ -342,11 +345,11 @@ export function Composer(props: ComposerProps): JSX.Element {
   const send = async (): Promise<void> => {
     const missing = missingField(d, d.msg.trim());
     if (missing === "msg") {
-      box.current?.focus();
+      box.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
       return;
     }
     if (missing === "title") {
-      title.current?.focus();
+      title.current?.querySelector<HTMLInputElement>("input")?.focus();
       setTitleBad(true);
       return;
     }
@@ -367,7 +370,7 @@ export function Composer(props: ComposerProps): JSX.Element {
       return;
     }
     paint();
-    box.current?.focus();
+    box.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
   };
 
   return (
@@ -382,29 +385,29 @@ export function Composer(props: ComposerProps): JSX.Element {
       }}
     >
       {rep ? (
-        <div class="flex items-start gap-3 rounded-lg bg-base-200 p-3 text-sm">
-          <span class="mt-0.5 text-base-content/50">
+        <div class="flex items-start gap-3 rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] p-3 text-sm">
+          <span class="mt-0.5 text-[var(--ui-muted)]">
             <Icon name="undo" class="size-4" />
           </span>
           <div class="min-w-0 flex-1">
             Replying to <b>{rep.from}</b>, <Time ts={rep.ts} now={at} />
-            <div class="line-clamp-2 mt-0.5 muted">
+            <div class="line-clamp-2 mt-0.5 text-[var(--ui-muted)]">
               <Inline text={(rep.msg ?? "").slice(0, 300)} />
             </div>
           </div>
-          <button type="button" class="btn btn-ghost btn-sm" onClick={cancelReply}>
+          <Button variant="ghost" onClick={cancelReply}>
             Cancel reply
-          </button>
+          </Button>
         </div>
       ) : (
         <>
           <div class="flex flex-wrap items-center gap-2">
             {props.to === undefined ? (
-              <label class="flex min-w-44 flex-1 items-center gap-2 text-sm muted">
+              <label class="flex min-w-44 flex-1 items-center gap-2 text-sm text-[var(--ui-muted)]">
                 To{" "}
                 <select
                   id={`${P}-to`}
-                  class="select min-w-0 flex-1"
+                  class="ui-input min-w-0 flex-1"
                   value={d.to}
                   onChange={(e) => setTo(e.currentTarget.value)}
                 >
@@ -418,45 +421,39 @@ export function Composer(props: ComposerProps): JSX.Element {
               </label>
             ) : null}
             {/* biome-ignore lint/a11y/useSemanticElements: a segmented control, not a section */}
-            <div class="join" role="group" aria-label="Kind">
+            <div class="flex flex-wrap gap-2" role="group" aria-label="Kind">
               {MODES.map(([k, l, ic]) => (
-                <button
+                <Button
                   key={k}
-                  type="button"
+                  variant="secondary"
+                  pressed={d.mode === k}
                   data-mode={k}
-                  class={`btn join-item btn-sm${d.mode === k ? " btn-primary" : ""}`}
-                  aria-pressed={d.mode === k}
                   onClick={() => setMode(k)}
                 >
                   <Icon name={ic} class="size-4.5" />
                   {l}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
           {d.mode === "task" ? (
             <>
-              <label class="flex flex-col gap-1.5 text-sm font-medium">
-                Title{" "}
-                <input
-                  ref={title}
-                  id={`${P}-title`}
-                  class="input"
-                  placeholder={`What should ${toLabelOf(d)} finish?`}
-                  autocomplete="off"
-                  aria-describedby={`${P}-terr`}
-                  aria-invalid={titleBad ? "true" : undefined}
+              <div id={`${P}-title`} ref={title}>
+                <Field
+                  label="Title"
                   value={d.title}
-                  onInput={(e) => setTitle(e.currentTarget.value)}
+                  onInput={setTitle}
+                  placeholder={`What should ${toLabelOf(d)} finish?`}
+                  autoComplete="off"
+                  error={titleBad ? "A task needs a title." : undefined}
                 />
-              </label>
-              <p class="flex items-center gap-1.5 text-sm text-error" id={`${P}-terr`} hidden={!titleBad}>
-                <Icon name="alert" class="size-4" />A task needs a title.
-              </p>
+              </div>
               <div class="flex flex-col gap-1.5 text-sm font-medium">
                 <span id={`${P}-afl`}>
                   Waits on{" "}
-                  <span class="text-sm font-normal muted">(optional: it starts once these are done)</span>
+                  <span class="text-sm font-normal text-[var(--ui-muted)]">
+                    (optional: it starts once these are done)
+                  </span>
                 </span>
                 <Picker
                   id={`${P}-after`}
@@ -476,28 +473,22 @@ export function Composer(props: ComposerProps): JSX.Element {
           ) : null}
         </>
       )}
-      <label class={!rep && d.mode === "task" ? "label" : "sr-only"} for={`${P}-msg`}>
-        {!rep && d.mode === "task" ? (
-          <>
-            Details <span class="text-xs font-normal muted">(optional)</span>
-          </>
-        ) : (
-          "Message"
-        )}
-      </label>
-      <textarea
-        ref={box}
-        id={`${P}-msg`}
-        class="textarea"
-        rows={dialog ? 5 : 3}
-        placeholder={msgPlaceholder(d, rep)}
-        value={d.msg}
-        onInput={(e) => setMessage(e.currentTarget.value)}
-      />
+      <div id={`${P}-msg`} ref={box}>
+        <Field
+          label={!rep && d.mode === "task" ? "Details" : "Message"}
+          hint={!rep && d.mode === "task" ? "(optional)" : undefined}
+          multiline
+          minRows={dialog ? 5 : 3}
+          maxRows={dialog ? 5 : 3}
+          placeholder={msgPlaceholder(d, rep)}
+          value={d.msg}
+          onInput={setMessage}
+        />
+      </div>
       {!rep && d.mode !== "task" ? (
         <div class="flex flex-col gap-1.5 text-sm font-medium">
           <span>
-            About a task <span class="text-sm font-normal muted">(optional)</span>
+            About a task <span class="text-sm font-normal text-[var(--ui-muted)]">(optional)</span>
           </span>
           <Picker
             id={`${P}-about`}
@@ -515,30 +506,29 @@ export function Composer(props: ComposerProps): JSX.Element {
           />
         </div>
       ) : null}
-      <p class="text-sm muted" id={`${P}-fx`}>
+      <p class="text-sm text-[var(--ui-muted)]" id={`${P}-fx`}>
         {rep ? `${rep.from} gets it as the answer, and the question closes.` : effect(d)}
       </p>
       <div class="flex items-center gap-2">
-        <span class="hidden items-center text-sm muted sm:flex">
-          <kbd class="kbd kbd-sm">⌘</kbd>
-          <kbd class="kbd kbd-sm">↵</kbd> sends
+        <span class="hidden items-center text-sm text-[var(--ui-muted)] sm:flex">
+          <kbd class="ui-mono rounded-[var(--ui-radius-sm)] border border-[var(--ui-line-strong)] px-1 text-xs text-[var(--ui-text)]">
+            ⌘
+          </kbd>
+          <kbd class="ui-mono rounded-[var(--ui-radius-sm)] border border-[var(--ui-line-strong)] px-1 text-xs text-[var(--ui-text)]">
+            ↵
+          </kbd>{" "}
+          sends
         </span>
         <span class="flex-1" />
         {dialog && onCancel ? (
-          <button type="button" class="btn btn-ghost" onClick={onCancel}>
+          <Button variant="ghost" onClick={onCancel}>
             Cancel
-          </button>
+          </Button>
         ) : null}
-        <button
-          type="button"
-          class="btn btn-primary"
-          id={`${P}-send`}
-          disabled={busy}
-          onClick={() => void send()}
-        >
+        <Button disabled={busy} onClick={() => void send()}>
           <Icon name={sendIcon(d, rep)} class="size-4" />
           {sendLabel(d, rep)}
-        </button>
+        </Button>
       </div>
     </div>
   );

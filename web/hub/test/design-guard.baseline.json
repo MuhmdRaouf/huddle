@@ -75,9 +75,7 @@
     "control": 2
   },
   "compose/Composer.tsx": {
-    "control": 7,
-    "daisy": 21,
-    "legacy": 7
+    "control": 1
   },
   "dev/Tokens.tsx": {
     "px": 5
