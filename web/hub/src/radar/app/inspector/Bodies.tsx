@@ -74,12 +74,7 @@ function FoldRow({
   return (
     <div class="flex w-full flex-col gap-2">
       <div class="w-full rounded-[var(--ui-radius)] border border-[var(--ui-line)]">
-        <Button
-          variant="ghost"
-          class="w-full"
-          aria-expanded={open ? "true" : "false"}
-          onClick={() => setOpen(!open)}
-        >
+        <Button variant="ghost" class="w-full" expanded={open} onClick={() => setOpen(!open)}>
           <span
             class={`flex size-7 shrink-0 items-center justify-center rounded-[var(--ui-radius-sm)] bg-[var(--ui-surface-2)] ${ink}`}
           >

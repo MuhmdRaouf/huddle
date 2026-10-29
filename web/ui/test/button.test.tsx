@@ -88,4 +88,58 @@ describe("Button", () => {
     render(<Button href="#/now/s-1">Review</Button>);
     expect(screen.getByRole("link", { name: "Review" }).hasAttribute("title")).toBe(false);
   });
+
+  it("takes a menu item's role on the button, never on the link form", () => {
+    render(<Button role="menuitem">Move</Button>);
+    expect(screen.getByRole("menuitem", { name: "Move" }).getAttribute("role")).toBe("menuitem");
+    render(
+      <Button href="#/now/s-1" role="menuitem">
+        Review
+      </Button>,
+    );
+    expect(screen.getByRole("link", { name: "Review" }).hasAttribute("role")).toBe(false);
+  });
+
+  it("names what it opens as aria-haspopup on the button and on the link form", () => {
+    render(<Button hasPopup="menu">Move</Button>);
+    expect(screen.getByRole("button", { name: "Move" }).getAttribute("aria-haspopup")).toBe("menu");
+    render(
+      <Button href="#/now/s-1" hasPopup="menu">
+        Pick
+      </Button>,
+    );
+    expect(screen.getByRole("link", { name: "Pick" }).getAttribute("aria-haspopup")).toBe("menu");
+  });
+
+  it("reads what it opens as open or closed in aria-expanded on both forms", () => {
+    render(<Button expanded>Move</Button>);
+    expect(screen.getByRole("button", { name: "Move" }).getAttribute("aria-expanded")).toBe("true");
+    render(<Button expanded={false}>Closed</Button>);
+    expect(screen.getByRole("button", { name: "Closed" }).getAttribute("aria-expanded")).toBe("false");
+    render(
+      <Button href="#/now/s-1" expanded>
+        Pick
+      </Button>,
+    );
+    expect(screen.getByRole("link", { name: "Pick" }).getAttribute("aria-expanded")).toBe("true");
+    render(
+      <Button href="#/now/s-1" expanded={false}>
+        Shut
+      </Button>,
+    );
+    expect(screen.getByRole("link", { name: "Shut" }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("carries no menu attribute when none is asked", () => {
+    render(<Button>Approve</Button>);
+    const b = screen.getByRole("button", { name: "Approve" });
+    expect(b.hasAttribute("role")).toBe(false);
+    expect(b.hasAttribute("aria-haspopup")).toBe(false);
+    expect(b.hasAttribute("aria-expanded")).toBe(false);
+    render(<Button href="#/now/s-1">Review</Button>);
+    const a = screen.getByRole("link", { name: "Review" });
+    expect(a.hasAttribute("role")).toBe(false);
+    expect(a.hasAttribute("aria-haspopup")).toBe(false);
+    expect(a.hasAttribute("aria-expanded")).toBe(false);
+  });
 });

@@ -22,6 +22,13 @@ export type ButtonProps = {
   title?: string | undefined;
   /** A switch segment's state; leave it out on a plain button. */
   pressed?: boolean | undefined;
+  /** The role a menu's item takes; leave it out on a plain button. The link form carries no role. */
+  role?: "menuitem" | undefined;
+  /** What the button opens, read out as aria-haspopup; leave it out on a plain button. */
+  hasPopup?: "menu" | "listbox" | "dialog" | undefined;
+  /** Whether what it opens is open, read out as aria-expanded; leave it out when the button opens
+   *  nothing. Preact writes an aria-* false as the string "false", so a closed trigger reads. */
+  expanded?: boolean | undefined;
   type?: "button" | "submit" | undefined;
   disabled?: boolean | undefined;
   onClick?: (() => void) | undefined;
@@ -41,6 +48,9 @@ export function Button({
   label,
   title,
   pressed,
+  role,
+  hasPopup,
+  expanded,
   type = "button",
   disabled = false,
   onClick,
@@ -59,7 +69,16 @@ export function Button({
   );
   if (href !== undefined) {
     return (
-      <a {...data} href={href} class={cls} aria-label={label} title={title} onClick={onClick}>
+      <a
+        {...data}
+        href={href}
+        class={cls}
+        aria-label={label}
+        title={title}
+        aria-haspopup={hasPopup}
+        aria-expanded={expanded}
+        onClick={onClick}
+      >
         {parts}
       </a>
     );
@@ -72,6 +91,9 @@ export function Button({
       aria-label={label}
       title={title}
       aria-pressed={pressed}
+      role={role}
+      aria-haspopup={hasPopup}
+      aria-expanded={expanded}
       disabled={disabled}
       onClick={onClick}
     >
