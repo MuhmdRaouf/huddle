@@ -6,6 +6,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/health"
 	"github.com/MuhmdRaouf/huddle/internal/routerd"
 )
 
@@ -17,6 +18,9 @@ type routerHealth struct {
 	PID       int      `json:"pid,omitempty"`
 	Port      int      `json:"port,omitempty"`
 	Providers []string `json:"providers"`
+	// parts is what the router's own process reports, folded into the answer's components and
+	// its healthy verdict; never serialized here.
+	parts []routerd.HealthPart `json:"-"`
 }
 
 // routerOf reads the router the process environment's router home names. A server that names no
@@ -42,5 +46,36 @@ func routerOf(ctx context.Context, environ []string) routerHealth {
 	if !ok {
 		return routerHealth{Providers: providers}
 	}
-	return routerHealth{Running: true, PID: running.PID, Port: running.Port, Providers: providers}
+	return routerHealth{Running: true, PID: running.PID, Port: running.Port, Providers: providers, parts: running.Components}
+}
+
+// routerParts answers the router's components as the hub's parts, each named router.<name>.
+func routerParts(parts []routerd.HealthPart) []health.Part {
+	out := make([]health.Part, 0, len(parts))
+	for _, part := range parts {
+		out = append(out, health.Part{
+			Name:      "router." + part.Name,
+			Kind:      part.Kind,
+			State:     part.State,
+			LastOKAt:  part.LastOKAt,
+			LastErrAt: part.LastErrAt,
+			LastError: part.LastError,
+			Errors:    part.Errors,
+		})
+	}
+	return out
+}
+
+// healthyWith answers the hub's health once the router's parts are folded in: the hub's own
+// verdict, and no router part failing or stale.
+func healthyWith(hub bool, parts []routerd.HealthPart) bool {
+	if !hub {
+		return false
+	}
+	for _, part := range parts {
+		if part.State == string(domain.HealthFailing) || part.State == string(domain.HealthStale) {
+			return false
+		}
+	}
+	return true
 }

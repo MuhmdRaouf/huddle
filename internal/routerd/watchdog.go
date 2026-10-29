@@ -179,7 +179,7 @@ func watchHealthy(ctx context.Context, env domain.EnvLookup) bool {
 		return false
 	}
 	var answer HealthAnswer
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, healthAnswerMax))
 	if err != nil || json.Unmarshal(body, &answer) != nil {
 		return false
 	}

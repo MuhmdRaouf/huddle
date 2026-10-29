@@ -16,7 +16,55 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/health"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
+	"github.com/MuhmdRaouf/huddle/internal/routerd"
 )
+
+func TestRouterPartsArePrefixed(t *testing.T) {
+	parts := routerParts([]routerd.HealthPart{
+		{Name: "reload", Kind: "loop", State: "failing", LastOKAt: 100, LastErrAt: 200, LastError: "is a directory", Errors: 3},
+		{Name: "bodies.db", Kind: "store", State: "ok", LastOKAt: 300},
+	})
+	if len(parts) != 2 {
+		t.Fatalf("routerParts = %+v, want two parts", parts)
+	}
+	if part := parts[0]; part.Name != "router.reload" || part.Kind != "loop" || part.State != "failing" ||
+		part.LastOKAt != 100 || part.LastErrAt != 200 || part.LastError != "is a directory" || part.Errors != 3 {
+		t.Errorf("part = %+v, want reload's own record under router.reload", part)
+	}
+	if part := parts[1]; part.Name != "router.bodies.db" || part.Kind != "store" || part.State != "ok" ||
+		part.LastOKAt != 300 || part.Errors != 0 {
+		t.Errorf("part = %+v, want bodies.db's own record under router.bodies.db", part)
+	}
+	if empty := routerParts(nil); empty == nil || len(empty) != 0 {
+		t.Errorf("routerParts(nil) = %+v, want an empty non-nil slice", empty)
+	}
+}
+
+func TestAFailingRouterPartMakesTheHubUnhealthy(t *testing.T) {
+	t.Run("a failing router part makes a healthy hub unhealthy", func(t *testing.T) {
+		if healthyWith(true, []routerd.HealthPart{{Name: "reload", State: "failing"}}) {
+			t.Error("healthy = true, want false while a router part fails")
+		}
+	})
+	t.Run("a stale router part makes a healthy hub unhealthy", func(t *testing.T) {
+		if healthyWith(true, []routerd.HealthPart{{Name: "reload", State: "stale"}}) {
+			t.Error("healthy = true, want false while a router part is stale")
+		}
+	})
+	t.Run("ok and unknown parts keep a healthy hub healthy, and none at all does", func(t *testing.T) {
+		if !healthyWith(true, nil) {
+			t.Error("healthy = false with no router parts, want the hub's own verdict kept")
+		}
+		if !healthyWith(true, []routerd.HealthPart{{Name: "reload", State: "ok"}, {Name: "rss", State: "unknown"}}) {
+			t.Error("healthy = false, want true while every part is ok or unknown")
+		}
+	})
+	t.Run("an unhealthy hub stays unhealthy whatever the parts say", func(t *testing.T) {
+		if healthyWith(false, nil) {
+			t.Error("healthy = true, want the hub's own false kept")
+		}
+	})
+}
 
 func TestTheHealthAnswerListsTheComponents(t *testing.T) {
 	srv := startServer(t, nil)

@@ -5,8 +5,10 @@ package routerd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -392,5 +394,34 @@ func TestReplaceHungRouterNeverTouchesWhatIsNotTheDaemon(t *testing.T) {
 	}
 	if replaceHungRouter(ctx, self, os.Getpid()) {
 		t.Error("replaceHungRouter(this process) = true, want false")
+	}
+}
+
+// TestWatchHealthyReadsAFullHealthAnswer pins the probe's body limit: an answer carrying a
+// dozen components with 200-byte errors must read as healthy, never truncate into a body the
+// probe cannot parse — a truncated answer would restart a healthy router.
+func TestWatchHealthyReadsAFullHealthAnswer(t *testing.T) {
+	t.Parallel()
+	env := startEnv(t)
+	answer := HealthAnswer{Name: router.MultiName, Components: make([]HealthPart, 20)}
+	for i := range answer.Components {
+		answer.Components[i] = HealthPart{
+			Name:      fmt.Sprintf("part-%02d", i),
+			Kind:      "loop",
+			State:     "ok",
+			LastOKAt:  1000,
+			LastError: strings.Repeat("x", 200),
+		}
+	}
+	body, err := json.Marshal(answer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) <= 4096 {
+		t.Fatalf("the fake answer is %d bytes, want over the 4096 the probe once read", len(body))
+	}
+	healthFake(t, env, http.StatusOK, string(body))
+	if !watchHealthy(context.Background(), env) {
+		t.Errorf("watchHealthy over a %d-byte answer = false, want healthy", len(body))
 	}
 }

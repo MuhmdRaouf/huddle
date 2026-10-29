@@ -26,8 +26,8 @@ func TestRunningOfNamesOnlyALiveAnsweringRouter(t *testing.T) {
 		port, _ := strconv.Atoi(env["HUDDLE_ROUTER_PORT"])
 		writeStartRecord(t, env, record{PID: os.Getpid(), Port: port, Version: "test", Started: "now"})
 		got, ok := RunningOf(context.Background(), env)
-		if !ok || got != (Running{PID: os.Getpid(), Port: port, Version: "test"}) {
-			t.Errorf("RunningOf = %+v, %v, want pid %d on port %d", got, ok, os.Getpid(), port)
+		if !ok || got.PID != os.Getpid() || got.Port != port || got.Version != "test" || got.Components != nil {
+			t.Errorf("RunningOf = %+v, %v, want pid %d on port %d with no components", got, ok, os.Getpid(), port)
 		}
 	})
 	t.Run("a dead pid is no router", func(t *testing.T) {

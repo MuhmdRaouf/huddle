@@ -434,7 +434,10 @@ func TestCheckRSSHandsOverOnlyOverTheCeiling(t *testing.T) {
 	t.Run("under the ceiling nothing happens", func(t *testing.T) {
 		t.Parallel()
 		env := startEnv(t)
-		spawned := checkRSS(1<<40, time.Time{}, env, func(string) {})
+		spawned, err := checkRSS(1<<40, time.Time{}, env, func(string) {})
+		if err != nil {
+			t.Errorf("checkRSS = %v, want nil while ps reads this process", err)
+		}
 		if !spawned.IsZero() {
 			t.Errorf("checkRSS answered %v, want the spawn time unchanged", spawned)
 		}
@@ -444,7 +447,10 @@ func TestCheckRSSHandsOverOnlyOverTheCeiling(t *testing.T) {
 		t.Parallel()
 		env := startEnv(t)
 		var lines []string
-		spawned := checkRSS(1, time.Time{}, env, func(line string) { lines = append(lines, line) })
+		spawned, err := checkRSS(1, time.Time{}, env, func(line string) { lines = append(lines, line) })
+		if err != nil {
+			t.Errorf("checkRSS = %v, want nil on the handover paths", err)
+		}
 		if spawned.IsZero() {
 			t.Error("checkRSS answered a zero spawn time, want now")
 		}
@@ -459,7 +465,9 @@ func TestCheckRSSHandsOverOnlyOverTheCeiling(t *testing.T) {
 		env := startEnv(t)
 		var lines []string
 		stale := time.Now().Add(-2 * rssInterval)
-		checkRSS(1, stale, env, func(line string) { lines = append(lines, line) })
+		if _, err := checkRSS(1, stale, env, func(line string) { lines = append(lines, line) }); err != nil {
+			t.Errorf("checkRSS = %v, want nil on the handover paths", err)
+		}
 		if !strings.Contains(strings.Join(lines, "\n"), "no takeover arrived within") {
 			t.Errorf("the log = %q, want the stale try", strings.Join(lines, "\n"))
 		}
@@ -474,7 +482,10 @@ func TestCheckRSSHandsOverOnlyOverTheCeiling(t *testing.T) {
 		}
 		env := domain.EnvLookup{"HUDDLE_ROUTER_HOME": filepath.Join(blocker, "router-home")}
 		var lines []string
-		spawned := checkRSS(1, time.Time{}, env, func(line string) { lines = append(lines, line) })
+		spawned, err := checkRSS(1, time.Time{}, env, func(line string) { lines = append(lines, line) })
+		if err != nil {
+			t.Errorf("checkRSS = %v, want nil on the handover paths", err)
+		}
 		if spawned.IsZero() {
 			t.Error("checkRSS answered a zero spawn time, want now")
 		}

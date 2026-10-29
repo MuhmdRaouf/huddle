@@ -22,8 +22,20 @@ import (
 // Anthropic lane's spool events.
 const MultiName = "huddle-router"
 
-// MultiHealthPath answers GET with the router's name and the providers it serves.
+// MultiHealthPath answers GET with the router's name, the providers it serves and the
+// components its process reports.
 const MultiHealthPath = "/huddle-router/health"
+
+// healthPart is one router component on the health path, its state computed at the answer.
+type healthPart struct {
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	State     string `json:"state"`
+	LastOKAt  int64  `json:"lastOkAt,omitempty"`
+	LastErrAt int64  `json:"lastErrAt,omitempty"`
+	LastError string `json:"lastError,omitempty"`
+	Errors    int64  `json:"errors"`
+}
 
 // routerPath matches a path whose first segment names a per-provider router (`/zai-router/health`).
 var routerPath = regexp.MustCompile(`^/[a-z0-9-]+-router(/|$)`)
@@ -62,6 +74,8 @@ type MultiOptions struct {
 	Tap *LedgerTap
 	// Now is the clock, epoch milliseconds; nil is the wall clock.
 	Now func() int64
+	// Health answers the router process's components for the health path; nil answers none.
+	Health func() []domain.HealthComponent
 	// Gateway serves every path under GatewayPrefix with the prefix removed; nil answers those paths 404.
 	Gateway http.Handler
 }
@@ -154,10 +168,11 @@ func CreateMulti(opts MultiOptions) (*http.Server, *Multi) {
 		}
 		if req.Method == http.MethodGet && req.URL.Path == MultiHealthPath && req.URL.RawQuery == "" {
 			jsonAnswer(res, 200, struct {
-				OK        bool     `json:"ok"`
-				Name      string   `json:"name"`
-				Providers []string `json:"providers"`
-			}{OK: true, Name: MultiName, Providers: m.Providers()})
+				OK         bool         `json:"ok"`
+				Name       string       `json:"name"`
+				Providers  []string     `json:"providers"`
+				Components []healthPart `json:"components"`
+			}{OK: true, Name: MultiName, Providers: m.Providers(), Components: m.healthParts()})
 			return
 		}
 		// A probe for a per-provider router's path is not a model call: it is answered 404 here
@@ -224,6 +239,32 @@ func (m *Multi) Providers() []string {
 // already routed keeps its lane, and the next one picks from the new set.
 func (m *Multi) Reload(lanes []RouterOptions) {
 	m.lanes.Store(&multiLanes{lanes: m.buildLanes(lanes)})
+}
+
+// healthParts answers the components the process reports, each with its state at the router's
+// own clock; with no Health the list is empty, never null.
+func (m *Multi) healthParts() []healthPart {
+	if m.o.Health == nil {
+		return []healthPart{}
+	}
+	now := m.o.Now
+	if now == nil {
+		now = func() int64 { return time.Now().UnixMilli() }
+	}
+	components := m.o.Health()
+	parts := make([]healthPart, 0, len(components))
+	for _, c := range components {
+		parts = append(parts, healthPart{
+			Name:      c.Name,
+			Kind:      string(c.Kind),
+			State:     string(domain.HealthStateOf(c, now())),
+			LastOKAt:  c.LastOKAt,
+			LastErrAt: c.LastErrAt,
+			LastError: c.LastError,
+			Errors:    c.Errors,
+		})
+	}
+	return parts
 }
 
 // buildLanes builds the workers over the lanes given, the way CreateMulti first did: the

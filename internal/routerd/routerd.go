@@ -23,6 +23,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/gateway"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/health"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
@@ -194,7 +195,21 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	if source == nil {
 		source = platformBodyKey(env)
 	}
-	tap, bodyStore := openBodies(ctx, env, source, log)
+	// The daemon's loops and stores report here, and the health path answers their states; the
+	// hub lists the same parts as router.<name>.
+	reg := health.New(time.Now)
+	report := func(name string, err error) {
+		if err != nil {
+			reg.Fail(name, err)
+			return
+		}
+		reg.OK(name)
+	}
+	interval := rssIntervalOf(env)
+	reg.Register("reload", domain.HealthLoop, poll)
+	reg.Register("rss", domain.HealthLoop, interval)
+	reg.Register("body-sweep", domain.HealthLoop, bodySweepEvery)
+	tap, bodyStore := openBodies(ctx, env, source, log, report)
 	kept := &bodies{tap: tap, store: bodyStore}
 	// The capture switch lives in the hub's settings file: read once at start, re-read on every
 	// poll, so the hub's switch reaches the router within one poll. With no tap there is
@@ -203,7 +218,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	if kept.tap != nil && captureDir != "" {
 		kept.tap.SetCapturing(outside.CaptureOn(captureDir))
 	}
-	kept.sweep(ctx, log)
+	report("body-sweep", kept.sweep(ctx, log))
 	server, multi := router.CreateMulti(router.MultiOptions{
 		Port:      port,
 		Anthropic: anthropic,
@@ -214,6 +229,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 		Events:    spool.CreateSpoolWriter(env, log, nil),
 		Gateway:   gatewayOf(env, log),
 		Tap:       kept.tap,
+		Health:    reg.Components,
 	})
 	server.Handler = guardPanics(server.Handler, log, o.panicOnce)
 	// The handover socket listens before the first health answer: a taker that sees the router
@@ -240,7 +256,6 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
 	ceiling := rssCeilingOf(env, o)
-	interval := rssIntervalOf(env)
 	spawned := time.Time{}
 	nextRSS := time.Now().Add(interval)
 	nextSweep := time.Now().Add(bodySweepEvery)
@@ -257,13 +272,17 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 		case taker := <-handed:
 			return handOver(server, multi, kept, taker, log)
 		case <-ticker.C:
-			now := statOf(enabledFile)
-			if now != before {
-				before = now
-				names, err := router.ReadEnabled(env)
-				if err != nil {
-					log("huddle-router: " + err.Error())
-				} else if len(names) == 0 {
+			// The reload loop re-reads providers.json every pass — a failed read is the
+			// pass's failure, and the log line stays — while the fingerprint decides only
+			// whether what the read brought becomes new lanes.
+			changed := statOf(enabledFile)
+			names, err := router.ReadEnabled(env)
+			report("reload", err)
+			if err != nil {
+				log("huddle-router: " + err.Error())
+			} else if changed != before {
+				before = changed
+				if len(names) == 0 {
 					// Nothing is enabled: keep serving. Sessions still point at the router until
 					// their settings are restored, and an empty answer would cut them off.
 				} else if lanes := lanesOf(env, names, log); len(lanes) != 0 {
@@ -284,11 +303,13 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 			}
 			if !nextRSS.After(time.Now()) {
 				nextRSS = time.Now().Add(interval)
-				spawned = checkRSS(ceiling, spawned, env, log)
+				var rssErr error
+				spawned, rssErr = checkRSS(ceiling, spawned, env, log)
+				report("rss", rssErr)
 			}
 			if !nextSweep.After(time.Now()) {
 				nextSweep = time.Now().Add(bodySweepEvery)
-				kept.sweep(ctx, log)
+				report("body-sweep", kept.sweep(ctx, log))
 			}
 		}
 	}
@@ -418,11 +439,12 @@ func readRecord(env domain.EnvLookup) (record, bool) {
 }
 
 // Running is the router a home's record names while it serves: what status and the hub's
-// health answer show beside the hub's own pid.
+// health answer show beside the hub's own pid, with the components its process reports.
 type Running struct {
-	PID     int
-	Port    int
-	Version string
+	PID        int
+	Port       int
+	Version    string
+	Components []HealthPart
 }
 
 // RunningOf reads the router the home's record names, and false unless that pid lives and its
@@ -433,10 +455,11 @@ func RunningOf(ctx context.Context, env domain.EnvLookup) (Running, bool) {
 	if !ok || r.PID <= 0 || r.Port <= 0 || !process.IsAlive(int64(r.PID)) {
 		return Running{}, false
 	}
-	if _, up := Health(ctx, r.Port); !up {
+	answer, up := Health(ctx, r.Port)
+	if !up {
 		return Running{}, false
 	}
-	return Running{PID: r.PID, Port: r.Port, Version: r.Version}, true
+	return Running{PID: r.PID, Port: r.Port, Version: r.Version, Components: answer.Components}, true
 }
 
 // fingerprint is what a watched file must keep for its reader to skip it: size and mtime. A

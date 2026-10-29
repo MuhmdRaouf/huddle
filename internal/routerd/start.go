@@ -36,10 +36,26 @@ const updateWait = 10 * time.Second
 // spawnPoll is how often the start re-probes while its daemon comes up.
 const spawnPoll = 50 * time.Millisecond
 
+// healthAnswerMax is the most of the health answer any reader takes: a dozen components with
+// 200-byte errors all fit.
+const healthAnswerMax = 64 << 10
+
+// HealthPart is one router component as the router's health path answers it.
+type HealthPart struct {
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	State     string `json:"state"`
+	LastOKAt  int64  `json:"lastOkAt,omitempty"`
+	LastErrAt int64  `json:"lastErrAt,omitempty"`
+	LastError string `json:"lastError,omitempty"`
+	Errors    int64  `json:"errors"`
+}
+
 // HealthAnswer is the running router's health answer.
 type HealthAnswer struct {
-	Name      string   `json:"name"`
-	Providers []string `json:"providers"`
+	Name       string       `json:"name"`
+	Providers  []string     `json:"providers"`
+	Components []HealthPart `json:"components"`
 }
 
 // Health is the running router's health answer, ok false while nothing answers naming
@@ -61,7 +77,7 @@ func Health(ctx context.Context, port int) (HealthAnswer, bool) {
 		return HealthAnswer{}, false
 	}
 	var answer HealthAnswer
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, healthAnswerMax))
 	if err != nil || json.Unmarshal(body, &answer) != nil {
 		return HealthAnswer{}, false
 	}

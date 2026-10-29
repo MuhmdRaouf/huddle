@@ -85,6 +85,10 @@ type multiOpts struct {
 	anthropic *url.URL
 	// log is the router's own log sink; nil discards the lines.
 	log func(line string)
+	// health is the components the router's process reports on the health path; nil answers none.
+	health func() []domain.HealthComponent
+	// now is the router's clock, epoch milliseconds; nil is the wall clock.
+	now func() int64
 }
 
 // newMultiRig builds the router over the lanes given (zai and kimi when none are named) and
@@ -133,6 +137,8 @@ func newMultiRig(t *testing.T, opts multiOpts) *multiRig {
 		Events:    r.events.record,
 		Gateway:   opts.gateway,
 		Log:       opts.log,
+		Health:    opts.health,
+		Now:       opts.now,
 	})
 	serveRouter(t, server, r.port)
 	return r

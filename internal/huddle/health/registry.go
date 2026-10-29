@@ -73,6 +73,21 @@ func (r *Registry) Fail(name string, err error) {
 	part.Errors++
 }
 
+// Components answers a copy of every component's record, sorted by name; a nil registry answers none.
+func (r *Registry) Components() []domain.HealthComponent {
+	if r == nil {
+		return []domain.HealthComponent{}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	parts := make([]domain.HealthComponent, 0, len(r.parts))
+	for _, part := range r.parts {
+		parts = append(parts, *part)
+	}
+	slices.SortFunc(parts, func(a, b domain.HealthComponent) int { return strings.Compare(a.Name, b.Name) })
+	return parts
+}
+
 // Snapshot answers every component with its state at now, sorted by name.
 func (r *Registry) Snapshot() []Part {
 	if r == nil {

@@ -1436,7 +1436,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 			return err
 		}
 		// the answer names both processes: the hub's own pid and the router's beside it, and
-		// lists what each part of this process last reported
+		// lists what each part of each process last reported
+		router := routerOf(r.Context(), s.o.Environ)
 		s.writeJSON(w, 200, struct {
 			OK         bool          `json:"ok"`
 			Version    string        `json:"version"`
@@ -1451,7 +1452,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 			Healthy    bool          `json:"healthy"`
 			Components []health.Part `json:"components"`
 		}{true, s.o.Version, s.started, len(names), s.o.Home, s.machine, hubName(s.o.Home), s.exe,
-			os.Getpid(), routerOf(r.Context(), s.o.Environ), s.health.Healthy(), s.health.Snapshot()}, nil)
+			os.Getpid(), router, healthyWith(s.health.Healthy(), router.parts),
+			append(s.health.Snapshot(), routerParts(router.parts)...)}, nil)
 		return nil
 	case path == "/" || path == "/index.html":
 		return s.staticFile(w, "index.html", "text/html; charset=utf-8", "no-store")

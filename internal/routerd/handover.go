@@ -267,20 +267,21 @@ func holdRouterLock(path string, done <-chan struct{}, log func(line string)) {
 // checkRSS is the memory ceiling (D9): a daemon whose resident size passes the ceiling hands
 // itself over to a fresh copy of its own binary — spawned once per try, and a try that no
 // takeover answers within one interval is logged, so the next check tries again. It answers the
-// spawn time the next check waits from.
-func checkRSS(ceiling int64, spawned time.Time, env domain.EnvLookup, log func(line string)) time.Time {
+// spawn time the next check waits from, and the error reading the resident size failed with;
+// the handover paths answer a nil error.
+func checkRSS(ceiling int64, spawned time.Time, env domain.EnvLookup, log func(line string)) (time.Time, error) {
 	rss, err := rssOf(os.Getpid())
 	if err != nil {
 		log("huddle-router: RSS: " + fsutil.ErrorMessage(err))
-		return spawned
+		return spawned, err
 	}
 	if rss <= ceiling {
-		return spawned
+		return spawned, nil
 	}
 	interval := rssIntervalOf(env)
 	if !spawned.IsZero() {
 		if time.Since(spawned) < interval {
-			return spawned
+			return spawned, nil
 		}
 		log("huddle-router: no takeover arrived within " + interval.String() + "; trying again at the next check")
 	}
@@ -288,13 +289,13 @@ func checkRSS(ceiling int64, spawned time.Time, env domain.EnvLookup, log func(l
 	logFile, err := startLog(env)
 	if err != nil {
 		log("huddle-router: " + err.Error())
-		return time.Now()
+		return time.Now(), nil
 	}
 	defer logFile.Close()
 	if err := spawnServeArgs(selfExecutable(env), env, logFile, "--takeover"); err != nil {
 		log("huddle-router: " + err.Error())
 	}
-	return time.Now()
+	return time.Now(), nil
 }
 
 // rssCeilingOf is the resident size a daemon hands itself over at: the options', else

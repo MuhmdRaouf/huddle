@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 )
 
@@ -59,7 +60,7 @@ func TestOpenBodiesWiresTheTapToTheStore(t *testing.T) {
 	env := domain.EnvLookup{"RADAR_HOME": t.TempDir()}
 	logs := &daemonLog{}
 
-	tap, store := openBodies(ctx, env, &bodiesKey{}, logs.add)
+	tap, store := openBodies(ctx, env, &bodiesKey{}, logs.add, nil)
 	if tap == nil {
 		t.Fatal("openBodies answered no tap with a keystore to draw from")
 	}
@@ -105,7 +106,7 @@ func TestOpenBodiesWithoutAKeystoreStaysOff(t *testing.T) {
 	env := domain.EnvLookup{"RADAR_HOME": t.TempDir()}
 	logs := &daemonLog{}
 
-	tap, store := openBodies(ctx, env, nil, logs.add)
+	tap, store := openBodies(ctx, env, nil, logs.add, nil)
 	if tap != nil {
 		t.Error("openBodies answered a tap with no keystore")
 	}
@@ -124,7 +125,7 @@ func TestOpenBodiesRefusedKeyNeverNamesIt(t *testing.T) {
 	logs := &daemonLog{}
 	key := &bodiesKey{refuse: errors.New("the keystore refused")}
 
-	tap, store := openBodies(ctx, env, key, logs.add)
+	tap, store := openBodies(ctx, env, key, logs.add, nil)
 	if tap != nil {
 		t.Error("openBodies answered a tap with a keystore that refuses")
 	}
@@ -139,5 +140,30 @@ func TestOpenBodiesRefusedKeyNeverNamesIt(t *testing.T) {
 		if strings.Contains(joined, drawn) {
 			t.Error("the log carries the drawn key")
 		}
+	}
+}
+
+// TestSweepAnswersItsError proves the sweep hands its failure to the loop that called it: a
+// sweep over a done context fails, and a nil bodies or a storeless one sweeps nothing.
+func TestSweepAnswersItsError(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	env := domain.EnvLookup{"RADAR_HOME": t.TempDir()}
+	store, err := ledger.OpenBodies(paths.RouterBodiesPath(ctx, env), bodiesTestKey)
+	if err != nil {
+		t.Fatalf("open router.db: %v", err)
+	}
+	defer store.Close()
+	kept := &bodies{store: store}
+	done, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := kept.sweep(done, func(string) {}); err == nil {
+		t.Error("sweep over a done context = nil error, want the sweep's own")
+	}
+	if err := (*bodies)(nil).sweep(ctx, func(string) {}); err != nil {
+		t.Errorf("a nil bodies sweep = %v, want nil", err)
+	}
+	if err := (&bodies{}).sweep(ctx, func(string) {}); err != nil {
+		t.Errorf("a storeless bodies sweep = %v, want nil", err)
 	}
 }

@@ -47,8 +47,13 @@ func platformBodyKey(env domain.EnvLookup) ledger.KeySource {
 
 // openBodies opens the body store under RADAR_HOME and answers the tap that feeds it. It
 // answers nil, nil and logs one line when bodies stay off: no keystore, a key the keystore
-// refuses (that error never carries the key), or a store that does not open.
-func openBodies(ctx context.Context, env domain.EnvLookup, source ledger.KeySource, log func(string)) (*router.LedgerTap, *ledger.BodyStore) {
+// refuses (that error never carries the key), or a store that does not open. The open's
+// outcome goes to report as bodies.db; a key that never loads reports nothing, because bodies
+// staying off is not a fault.
+func openBodies(ctx context.Context, env domain.EnvLookup, source ledger.KeySource, log func(string), report func(name string, err error)) (*router.LedgerTap, *ledger.BodyStore) {
+	if report == nil {
+		report = func(string, error) {}
+	}
 	if source == nil {
 		log("huddle-router: bodies off: no keystore")
 		return nil, nil
@@ -61,8 +66,10 @@ func openBodies(ctx context.Context, env domain.EnvLookup, source ledger.KeySour
 	store, err := ledger.OpenBodies(paths.RouterBodiesPath(ctx, env), key)
 	if err != nil {
 		log("huddle-router: bodies off: " + err.Error())
+		report("bodies.db", err)
 		return nil, nil
 	}
+	report("bodies.db", nil)
 	return router.NewLedgerTap(store, 0, log), store
 }
 
@@ -91,12 +98,15 @@ func (b *bodies) close(log func(line string)) {
 	}
 }
 
-// sweep prunes the bodies past their days; a failed sweep is one line and the router serves on.
-func (b *bodies) sweep(ctx context.Context, log func(line string)) {
+// sweep prunes the bodies past their days; a failed sweep is one line and the error the loop
+// reports, and the router serves on.
+func (b *bodies) sweep(ctx context.Context, log func(line string)) error {
 	if b == nil || b.store == nil {
-		return
+		return nil
 	}
-	if _, err := b.store.Sweep(ctx, time.Now()); err != nil {
+	_, err := b.store.Sweep(ctx, time.Now())
+	if err != nil {
 		log("huddle-router: bodies sweep: " + err.Error())
 	}
+	return err
 }

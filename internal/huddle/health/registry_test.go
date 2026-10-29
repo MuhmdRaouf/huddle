@@ -160,6 +160,34 @@ func TestRegistry(t *testing.T) {
 		}
 	})
 
+	t.Run("components answers copies sorted by name and a nil registry answers none", func(t *testing.T) {
+		c := &testClock{at: t0}
+		r := New(c.Now)
+		r.OK("sweep")
+		r.Fail("hub.db", errors.New("locked"))
+		got := r.Components()
+		if len(got) != 2 {
+			t.Fatalf("Components = %+v, want two records", got)
+		}
+		for i, want := range []string{"hub.db", "sweep"} {
+			if got[i].Name != want {
+				t.Errorf("record %d = %s, want %s", i, got[i].Name, want)
+			}
+		}
+		if got[0].LastError != "locked" || got[1].LastOKAt != t0.UnixMilli() {
+			t.Errorf("Components = %+v, want each record's own reports", got)
+		}
+		// the records are copies: editing the answer leaves the registry's own untouched
+		got[1].LastOKAt = 0
+		if again := r.Components(); again[1].LastOKAt != t0.UnixMilli() {
+			t.Errorf("Components handed out the registry's own records: %+v", again)
+		}
+		var nilRegistry *Registry
+		if parts := nilRegistry.Components(); parts == nil || len(parts) != 0 {
+			t.Errorf("a nil registry answered %+v, want an empty non-nil slice", parts)
+		}
+	})
+
 	t.Run("ok without a register shows as a store", func(t *testing.T) {
 		c := &testClock{at: t0}
 		r := New(c.Now)

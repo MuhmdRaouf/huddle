@@ -181,15 +181,15 @@ func TestMultiRouterScenarios(t *testing.T) {
 				}
 				health = got
 			})
-			s.Then(`it answers {"ok":true,"name":"huddle-router","providers":["zai","kimi"]}`, func(t *testing.T) {
+			s.Then(`it answers {"ok":true,"name":"huddle-router","providers":["zai","kimi"],"components":[]}`, func(t *testing.T) {
 				if health.status != 200 {
 					t.Fatalf("status = %d", health.status)
 				}
-				if health.body != `{"ok":true,"name":"huddle-router","providers":["zai","kimi"]}` {
+				if health.body != `{"ok":true,"name":"huddle-router","providers":["zai","kimi"],"components":[]}` {
 					t.Errorf("health = %s", health.body)
 				}
 			})
-			s.Given("a huddle-router with no lanes", func(t *testing.T) {
+			s.Given("a huddle-router with no lanes and no component source", func(t *testing.T) {
 				anthropic := recordingUpstream(s.T, "anthropic", "", &seenList{})
 				rig = &multiRig{t: t, anthropicSeen: &seenList{}, events: &eventLog{}, anthropic: anthropic}
 				rig.port = reservePort(s.T)
@@ -203,9 +203,65 @@ func TestMultiRouterScenarios(t *testing.T) {
 				}
 				health = got
 			})
-			s.Then("providers is []", func(t *testing.T) {
-				if health.body != `{"ok":true,"name":"huddle-router","providers":[]}` {
+			s.Then(`providers and components are empty, never null`, func(t *testing.T) {
+				if health.body != `{"ok":true,"name":"huddle-router","providers":[],"components":[]}` {
 					t.Errorf("health = %s", health.body)
+				}
+			})
+		})
+
+		f.Scenario("the health answer lists the components the router's process reports, each with its state", func(s *bdd.S) {
+			var rig *multiRig
+			var health answer
+			s.Given("a process that reports an ok reload loop and a failing body store, on a fixed clock", func(t *testing.T) {
+				now := int64(1_700_000_000_000)
+				rig = newMultiRig(s.T, multiOpts{
+					now: func() int64 { return now },
+					health: func() []domain.HealthComponent {
+						return []domain.HealthComponent{
+							{Name: "reload", Kind: domain.HealthLoop, EveryMs: 2000, LastOKAt: now},
+							{Name: "bodies.db", Kind: domain.HealthStore, LastOKAt: now - 60_000, LastErrAt: now, LastError: "disk full", Errors: 2},
+						}
+					},
+				})
+			})
+			s.When("GET /huddle-router/health is read", func(t *testing.T) {
+				got, err := getBody(rig.port, MultiHealthPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				health = got
+			})
+			s.Then("each component carries its name, kind, state at the router's clock, times and errors", func(t *testing.T) {
+				if health.status != 200 {
+					t.Fatalf("status = %d", health.status)
+				}
+				var got struct {
+					Components []struct {
+						Name      string `json:"name"`
+						Kind      string `json:"kind"`
+						State     string `json:"state"`
+						LastOKAt  int64  `json:"lastOkAt"`
+						LastErrAt int64  `json:"lastErrAt"`
+						LastError string `json:"lastError"`
+						Errors    int64  `json:"errors"`
+					} `json:"components"`
+				}
+				if err := json.Unmarshal([]byte(health.body), &got); err != nil {
+					t.Fatalf("health = %s: %v", health.body, err)
+				}
+				if len(got.Components) != 2 {
+					t.Fatalf("components = %s", health.body)
+				}
+				reload, store := got.Components[0], got.Components[1]
+				if reload.Name != "reload" || reload.Kind != "loop" || reload.State != "ok" ||
+					reload.LastOKAt != 1_700_000_000_000 || reload.LastErrAt != 0 || reload.LastError != "" || reload.Errors != 0 {
+					t.Errorf("reload = %+v, want the ok loop's own record", reload)
+				}
+				if store.Name != "bodies.db" || store.Kind != "store" || store.State != "failing" ||
+					store.LastOKAt != 1_699_999_940_000 || store.LastErrAt != 1_700_000_000_000 ||
+					store.LastError != "disk full" || store.Errors != 2 {
+					t.Errorf("bodies.db = %+v, want the failing store's own record", store)
 				}
 			})
 		})
