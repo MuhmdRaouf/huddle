@@ -34,50 +34,56 @@ type Match struct {
 // MatchOf names the ledger id a history row files under and whether the ledger holds it.
 // The rules apply in order; the first that fits the row decides.
 func (s *Store) MatchOf(ctx context.Context, h HistoryRow) (Match, error) {
+	return matchOf(ctx, s.db, h)
+}
+
+// matchOf matches the row through db — the store's or the transaction's, so a migrate
+// batch's matches see the rows the batch filed before it.
+func matchOf(ctx context.Context, db DB, h HistoryRow) (Match, error) {
 	if err := ctx.Err(); err != nil {
 		return Match{}, fmt.Errorf("match the history row %s: %w", h.ID, err)
 	}
 	switch {
 	case strings.HasPrefix(h.ID, "codex:"), strings.HasPrefix(h.ID, "opencode:"):
 		// 1. a harness record files under its own id
-		return s.ownRow(ctx, h.ID, 1)
+		return ownRow(ctx, db, h.ID, 1)
 	case h.Headers["request-id"] != "":
 		// 2. the request-id header names the call, whether the ledger filed it under
 		//    the header as its id or only named the row with it
 		header := h.Headers["request-id"]
-		held, err := s.ledgerHoldsID(ctx, header)
+		held, err := ledgerHoldsID(ctx, db, header)
 		if err != nil {
 			return Match{}, err
 		}
 		if !held {
-			row, err := s.ByAnthropicID(ctx, header)
+			found, err := db.Get("SELECT * FROM ledger_requests WHERE anthropic_id = ?", header)
 			if err != nil {
-				return Match{}, err
+				return Match{}, fmt.Errorf("read the ledger row: %w", err)
 			}
-			held = row != nil
+			held = found != nil
 		}
 		return Match{ID: header, InLedger: held, Rule: 2}, nil
 	case strings.HasPrefix(h.ID, "req_"):
 		// 3. a transcript request id with no header files under its own id
-		return s.ownRow(ctx, h.ID, 3)
+		return ownRow(ctx, db, h.ID, 3)
 	case strings.HasPrefix(h.ID, "route:") && h.PromptHash != "":
 		// 4. a route-only row keeps the route's own ts, so the hash-named id the live
 		//    filing built is spelled again from the row
-		return s.ownRow(ctx, hashID(h.PromptHash, h.Ts), 4)
+		return ownRow(ctx, db, hashID(h.PromptHash, h.Ts), 4)
 	case h.Route != "" && h.PromptHash != "":
 		// 5. a merged copy-first row carries the copy's ts, so the hash-named id can
 		//    only be searched for inside the pairing window
-		return s.matchWindow(ctx, h)
+		return matchWindow(ctx, db, h)
 	default:
 		// 6. nothing names the call: the row files under its own history id
-		return s.ownRow(ctx, h.ID, 6)
+		return ownRow(ctx, db, h.ID, 6)
 	}
 }
 
 // ownRow answers the match that files the row under id, for the rules that name the id
 // exactly: InLedger is whether the ledger holds that id.
-func (s *Store) ownRow(ctx context.Context, id string, rule int) (Match, error) {
-	held, err := s.ledgerHoldsID(ctx, id)
+func ownRow(ctx context.Context, db DB, id string, rule int) (Match, error) {
+	held, err := ledgerHoldsID(ctx, db, id)
 	if err != nil {
 		return Match{}, err
 	}
@@ -85,8 +91,8 @@ func (s *Store) ownRow(ctx context.Context, id string, rule int) (Match, error) 
 }
 
 // ledgerHoldsID answers whether the ledger holds a request row under id.
-func (s *Store) ledgerHoldsID(ctx context.Context, id string) (bool, error) {
-	found, err := s.db.Get("SELECT id FROM ledger_requests WHERE id = ?", id)
+func ledgerHoldsID(ctx context.Context, db DB, id string) (bool, error) {
+	found, err := db.Get("SELECT id FROM ledger_requests WHERE id = ?", id)
 	if err != nil {
 		return false, fmt.Errorf("match the history row %s: %w", id, err)
 	}
@@ -97,12 +103,12 @@ func (s *Store) ledgerHoldsID(ctx context.Context, id string) (bool, error) {
 // ts, so the ledger row the call filed under — named by the route's own ts — shows only
 // inside the pairing window: the same prompt hash, session and model, within matchMs, the
 // closest first and the smallest id breaking a tie.
-func (s *Store) matchWindow(ctx context.Context, h HistoryRow) (Match, error) {
+func matchWindow(ctx context.Context, db DB, h HistoryRow) (Match, error) {
 	session := h.SessionID
 	if session == "" {
 		session = shared.OutsideSession
 	}
-	found, err := s.db.Get(
+	found, err := db.Get(
 		"SELECT id FROM ledger_requests "+
 			"WHERE prompt_hash = ? AND session_id = ? AND model = ? AND ABS(started_at - ?) <= ? "+
 			"ORDER BY ABS(started_at - ?), id LIMIT 1",

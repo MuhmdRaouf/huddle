@@ -83,7 +83,13 @@ func (s *Store) AddHistory(ctx context.Context, facts HistoryFacts) error {
 // both the facts row and the reconciled ledger row. The watcher calls this from its one
 // goroutine, so the read and the write need no transaction.
 func (s *Store) file(ctx context.Context, id string, route *RouteFacts, transcript *TranscriptFacts, harness *HarnessFacts, history *HistoryFacts) error {
-	facts, err := factsOf(ctx, s.db, id)
+	return fileIn(ctx, s.db, id, route, transcript, harness, history)
+}
+
+// fileIn files through db — the store's or the transaction's, so a migrate batch's rows
+// commit with its cursor or not at all.
+func fileIn(ctx context.Context, db DB, id string, route *RouteFacts, transcript *TranscriptFacts, harness *HarnessFacts, history *HistoryFacts) error {
+	facts, err := factsOf(ctx, db, id)
 	if err != nil {
 		return err
 	}
@@ -101,10 +107,13 @@ func (s *Store) file(ctx context.Context, id string, route *RouteFacts, transcri
 		facts.History = history // a later history fact replaces the earlier one
 	}
 	row, _ := Reconcile(facts) // one caller's source is always set, so this always names a row
-	if err := s.writeFacts(ctx, id, facts); err != nil {
+	if err := writeFactsIn(db, id, facts); err != nil {
 		return err
 	}
-	if err := s.Upsert(ctx, row); err != nil {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("upsert the ledger row %s: %w", row.ID, err)
+	}
+	if err := upsertRow(db, row); err != nil {
 		return fmt.Errorf("file the ledger facts %s: %w", id, err)
 	}
 	return nil
@@ -172,8 +181,8 @@ func factsOf(ctx context.Context, db DB, id string) (Sources, error) {
 	return facts, nil
 }
 
-// writeFacts replaces the id's facts row with the sources now known.
-func (s *Store) writeFacts(ctx context.Context, id string, facts Sources) error {
+// writeFactsIn replaces the id's facts row with the sources now known, through db.
+func writeFactsIn(db DB, id string, facts Sources) error {
 	route, transcript, harness, history := "", "", "", ""
 	if facts.Route != nil {
 		text, err := json.Marshal(facts.Route)
@@ -203,7 +212,7 @@ func (s *Store) writeFacts(ctx context.Context, id string, facts Sources) error 
 		}
 		history = string(text)
 	}
-	if err := s.db.Run("INSERT OR REPLACE INTO ledger_facts (id, route, transcript, harness, history) VALUES (?, ?, ?, ?, ?)",
+	if err := db.Run("INSERT OR REPLACE INTO ledger_facts (id, route, transcript, harness, history) VALUES (?, ?, ?, ?, ?)",
 		id, route, transcript, harness, history); err != nil {
 		return fmt.Errorf("file the ledger facts %s: %w", id, err)
 	}

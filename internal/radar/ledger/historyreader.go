@@ -54,33 +54,75 @@ type HistoryRow struct {
 	Totals                                          bool
 }
 
-// historyPageQuery answers the requests rows after one id, in id order. The columns are
-// named, never *, so a widened history table cannot shift a scan.
-const historyPageQuery = "SELECT id, node_id, session_id, agent_id, model, upstream, ts, " +
+// HistoryCursor is where the sweep stopped: the ts and id of the last row it handled.
+type HistoryCursor struct {
+	Ts int64
+	ID string
+}
+
+// historyColumns names the requests columns the pages read, in scan order. The columns
+// are named, never *, so a widened history table cannot shift a scan.
+const historyColumns = "id, node_id, session_id, agent_id, model, upstream, ts, " +
 	"latency_ms, ttfb_ms, ttft_ms, input, output, cache_read, cache_write, cache_write_1h, " +
 	"speed, geo, service_tier, stop_reason, error, parent_agent_id, fallback, provider, " +
-	"route, via, status, harness, cost_usd, what, thinking, prompt_hash, headers, totals " +
-	"FROM requests WHERE id > ? ORDER BY id LIMIT ?"
+	"route, via, status, harness, cost_usd, what, thinking, prompt_hash, headers, totals"
+
+// historyPageQuery answers the requests rows after one id, in id order.
+const historyPageQuery = "SELECT " + historyColumns + " FROM requests WHERE id > ? ORDER BY id LIMIT ?"
+
+// historySettledQuery answers the requests rows after one cursor, oldest first, at or
+// before the cutoff: the rows the sweep still has to file.
+const historySettledQuery = "SELECT " + historyColumns + " FROM requests " +
+	"WHERE (ts > ? OR (ts = ? AND id > ?)) AND ts <= ? ORDER BY ts, id LIMIT ?"
 
 // HistoryPage answers at most limit request rows whose id sorts after afterID, in id
 // order; limit is held to 1..1000.
 func (r *HistoryReader) HistoryPage(ctx context.Context, afterID string, limit int) ([]HistoryRow, error) {
-	if limit < 1 {
-		limit = 1
-	}
-	if limit > 1000 {
-		limit = 1000
-	}
-	rows, err := r.pool.QueryContext(ctx, historyPageQuery, afterID, limit)
+	return r.readRows(ctx, historyPageQuery,
+		fmt.Sprintf("read the history requests after %s", afterID), afterID, pageLimit(limit))
+}
+
+// SettledPage answers at most limit rows after the cursor in (ts, id) order whose ts is at
+// or before cutoffMs; limit is held to 1..1000.
+func (r *HistoryReader) SettledPage(ctx context.Context, after HistoryCursor, cutoffMs int64, limit int) ([]HistoryRow, error) {
+	return r.readRows(ctx, historySettledQuery, "read the settled history rows",
+		after.Ts, after.Ts, after.ID, cutoffMs, pageLimit(limit))
+}
+
+// WaitingCount answers how many rows are younger than cutoffMs: the rows still waiting to
+// settle.
+func (r *HistoryReader) WaitingCount(ctx context.Context, cutoffMs int64) (int64, error) {
+	rows, err := r.pool.QueryContext(ctx, "SELECT COUNT(*) AS waiting FROM requests WHERE ts > ?", cutoffMs)
 	if err != nil {
-		return nil, fmt.Errorf("read the history requests after %s: %w", afterID, err)
+		return 0, fmt.Errorf("count the history rows waiting to settle: %w", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, fmt.Errorf("count the history rows waiting to settle: %w", err)
+		}
+		return 0, fmt.Errorf("count the history rows waiting to settle: the count answered no row")
+	}
+	found, err := scanRow(rows)
+	if err != nil {
+		return 0, fmt.Errorf("count the history rows waiting to settle: %w", err)
+	}
+	return intColumn(found, "waiting"), nil
+}
+
+// readRows answers every row the query matches through the reader's pool, in the order the
+// query answered them; what names the read in its errors.
+func (r *HistoryReader) readRows(ctx context.Context, query, what string, params ...any) ([]HistoryRow, error) {
+	rows, err := r.pool.QueryContext(ctx, query, params...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 	defer rows.Close()
 	var out []HistoryRow
 	for rows.Next() {
 		found, err := scanRow(rows)
 		if err != nil {
-			return nil, fmt.Errorf("read the history requests after %s: %w", afterID, err)
+			return nil, fmt.Errorf("%s: %w", what, err)
 		}
 		row, err := historyRowOf(found)
 		if err != nil {
@@ -89,9 +131,20 @@ func (r *HistoryReader) HistoryPage(ctx context.Context, afterID string, limit i
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read the history requests after %s: %w", afterID, err)
+		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 	return out, nil
+}
+
+// pageLimit holds a page's limit to 1..1000.
+func pageLimit(limit int) int {
+	if limit < 1 {
+		return 1
+	}
+	if limit > 1000 {
+		return 1000
+	}
+	return limit
 }
 
 // historyRowOf converts one requests row from the driver's map shape into a HistoryRow;
