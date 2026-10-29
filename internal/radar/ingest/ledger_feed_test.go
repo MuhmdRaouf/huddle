@@ -171,3 +171,46 @@ func TestTranscriptFactsCarryTheModelAndTheBillingKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestTranscriptFactsCarryTheCaptureFacts: the facts carry the what line the transcript
+// computed, the result's totals flag, and the thinking tokens inside the usage map in the
+// shape the provider's output_tokens_details block has — each only when the record has it,
+// so one reader in the ledger handles both sources.
+func TestTranscriptFactsCarryTheCaptureFacts(t *testing.T) {
+	facts, ok := transcriptFactsOf(shared.RequestRecord{
+		RequestID: "req_capture",
+		What:      strp("↳ prompt: hi  → Bash npm test"),
+		Totals:    true,
+		Tokens:    shared.Tokens{Thinking: i64p(7)},
+	})
+	if !ok {
+		t.Fatal("transcriptFactsOf refused a record with a request id")
+	}
+	if facts.What == nil || *facts.What != "↳ prompt: hi  → Bash npm test" {
+		t.Errorf("What = %v, want the computed what line", facts.What)
+	}
+	if !facts.Totals {
+		t.Error("Totals = false, want the record's true")
+	}
+	details, held := facts.Usage["output_tokens_details"].(map[string]any)
+	if !held {
+		t.Fatalf("output_tokens_details = %v, want an object holding the thinking tokens", facts.Usage["output_tokens_details"])
+	}
+	if details["thinking_tokens"] != int64(7) {
+		t.Errorf("thinking_tokens = %v, want 7", details["thinking_tokens"])
+	}
+
+	bare, ok := transcriptFactsOf(shared.RequestRecord{RequestID: "req_bare"})
+	if !ok {
+		t.Fatal("transcriptFactsOf refused a record with a request id")
+	}
+	if bare.What != nil {
+		t.Errorf("What = %q, want nil for a record with no what line", *bare.What)
+	}
+	if bare.Totals {
+		t.Error("Totals = true, want false for a record with no result fill")
+	}
+	if _, held := bare.Usage["output_tokens_details"]; held {
+		t.Error("the usage holds output_tokens_details for a record with no thinking")
+	}
+}

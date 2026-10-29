@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // Store is the ledger's SQLite file.
@@ -71,6 +73,7 @@ func (s *Store) file(ctx context.Context, id string, route *RouteFacts, transcri
 		facts.Route = route // a later route fact replaces the earlier one
 	}
 	if transcript != nil {
+		keepSticky(facts.Transcript, transcript)
 		facts.Transcript = transcript // a later transcript fact replaces the earlier one
 	}
 	row, _ := Reconcile(facts) // one caller's source is always set, so this always names a row
@@ -81,6 +84,20 @@ func (s *Store) file(ctx context.Context, id string, route *RouteFacts, transcri
 		return fmt.Errorf("file the ledger facts %s: %w", id, err)
 	}
 	return nil
+}
+
+// keepSticky folds a held transcript fact into the next copy: history's Refresh keeps the
+// fuller what and a result's totals on later copies.
+func keepSticky(held, next *TranscriptFacts) {
+	if held == nil || next == nil {
+		return
+	}
+	if next.What == nil {
+		next.What = held.What
+	}
+	if held.Totals {
+		next.Totals = true
+	}
 }
 
 // factsOf reads the facts the file already holds for the id through db — the store's or the
@@ -152,17 +169,26 @@ const upsertQuery = "INSERT OR REPLACE INTO ledger_requests (" +
 	"model, fallback_from, upstream, session_id, agent_id, parent_agent_id, prompt_id, turn_index, " +
 	"prev_request, query_source, outcome, status, error_code, stop_reason, input, output, " +
 	"cache_read, cache_write, cache_write_1h, speed, geo, service_tier, provider, via, " +
+	"what, thinking, headers, totals, " +
 	"usage_source, cost_usd, cost_reported_usd, ratelimit_5h, " +
 	"ratelimit_7d, prompt_hash, in_transcript, reconciled) VALUES (" +
 	"?, ?, ?, ?, ?, ?, ?, ?, " +
 	"?, ?, ?, ?, ?, ?, ?, ?, " +
 	"?, ?, ?, ?, ?, ?, ?, ?, " +
 	"?, ?, ?, ?, ?, ?, ?, ?, " +
-	"?, ?, ?, ?, ?, ?, ?, ?)"
+	"?, ?, ?, ?, " +
+	"?, ?, ?, ?, " +
+	"?, ?, ?, ?)"
 
 // upsertRow inserts the row through db, or replaces the one its ID names, stamped with the
 // version of the rules that built it.
 func upsertRow(db DB, row Row) error {
+	var headers any
+	if len(row.Headers) > 0 {
+		if text, err := domain.MarshalCompactJSON(row.Headers); err == nil {
+			headers = string(text)
+		}
+	}
 	err := db.Run(upsertQuery,
 		row.ID, row.AnthropicID, row.StartedAt, row.TtfbMs, row.TtftMs, row.DurationMs,
 		row.Lane, row.Harness, row.Model, row.FallbackFrom, row.Upstream,
@@ -170,6 +196,7 @@ func upsertRow(db DB, row Row) error {
 		row.PrevRequest, row.QuerySource, row.Outcome, row.Status, row.ErrorCode, row.StopReason,
 		row.Input, row.Output, row.CacheRead, row.CacheWrite,
 		row.CacheWrite1h, row.Speed, row.Geo, row.ServiceTier, row.Provider, row.Via,
+		row.What, row.Thinking, headers, boolColumn(row.Totals),
 		row.UsageSource,
 		row.CostUSD, row.CostReportedUSD, row.Ratelimit5h, row.Ratelimit7d,
 		row.PromptHash, boolColumn(row.InTranscript), ReconcileVersion)
@@ -282,6 +309,10 @@ func rowOf(found map[string]any) Row {
 		ServiceTier:     textPtrColumn(found, "service_tier"),
 		Provider:        textColumn(found, "provider"),
 		Via:             textPtrColumn(found, "via"),
+		What:            textPtrColumn(found, "what"),
+		Thinking:        intPtrColumn(found, "thinking"),
+		Headers:         headersColumn(found, "headers"),
+		Totals:          intColumn(found, "totals") != 0,
 		UsageSource:     textColumn(found, "usage_source"),
 		CostUSD:         floatColumn(found, "cost_usd"),
 		CostReportedUSD: floatPtrColumn(found, "cost_reported_usd"),
@@ -303,6 +334,19 @@ func textPtrColumn(row map[string]any, name string) *string {
 	}
 	value := textColumn(row, name)
 	return &value
+}
+
+// headersColumn answers the header pairs the stored JSON holds; NULL and a value that does
+// not decode read as none.
+func headersColumn(row map[string]any, name string) map[string]string {
+	if row[name] == nil {
+		return nil
+	}
+	var headers map[string]string
+	if err := json.Unmarshal([]byte(textColumn(row, name)), &headers); err != nil {
+		return nil
+	}
+	return headers
 }
 
 func intColumn(row map[string]any, name string) int64 {

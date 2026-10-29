@@ -78,6 +78,11 @@ var schemaSteps = [...]string{
 		"ALTER TABLE ledger_requests ADD COLUMN service_tier TEXT;" +
 		"ALTER TABLE ledger_requests ADD COLUMN provider TEXT NOT NULL DEFAULT '';" +
 		"ALTER TABLE ledger_requests ADD COLUMN via TEXT",
+	// 6: the capture columns history carries (ADR-5)
+	"ALTER TABLE ledger_requests ADD COLUMN what TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN thinking INTEGER;" +
+		"ALTER TABLE ledger_requests ADD COLUMN headers TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN totals INTEGER NOT NULL DEFAULT 0",
 }
 
 // SchemaVersion is the version a file sits at once Open has applied every step.

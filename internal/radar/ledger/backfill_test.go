@@ -311,6 +311,62 @@ func TestTheBackfillRebuildsTheBillingColumns(t *testing.T) {
 	}
 }
 
+// TestTheBackfillRebuildsTheCaptureColumns: a row the previous rules wrote — reconciled 2 —
+// whose route facts carry a thinking count and two allow-listed headers, gains both when the
+// backfill rebuilds it from those facts.
+func TestTheBackfillRebuildsTheCaptureColumns(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "ledger.db")
+	buildVersion5Schema(t, file)
+	pool, err := sql.Open("sqlite", file)
+	if err != nil {
+		t.Fatalf("open the version-5 file: %v", err)
+	}
+	fact, err := json.Marshal(RouteFacts{Event: domain.RouteEvent{
+		Ts:      "2026-10-01T12:00:00Z",
+		Event:   domain.EventRoute,
+		Plugin:  "zai",
+		Model:   "glm-5.3",
+		Route:   "provider",
+		Status:  200,
+		Headers: &map[string]string{"request-id": "req_capture", "x-ratelimit-remaining": "99"},
+		Usage: &domain.RouteUsage{
+			"input_tokens":          float64(100),
+			"output_tokens":         float64(20),
+			"output_tokens_details": map[string]any{"thinking_tokens": float64(16)},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("marshal the route facts: %v", err)
+	}
+	if _, err := pool.Exec(
+		"INSERT INTO ledger_requests (id, anthropic_id, model, reconciled) VALUES ('req_capture', 'req_capture', 'stale', 2);"+
+			"INSERT INTO ledger_facts (id, route, transcript) VALUES ('req_capture', ?, '')", string(fact)); err != nil {
+		t.Fatalf("insert the capture row and its facts: %v", err)
+	}
+	if err := pool.Close(); err != nil {
+		t.Fatalf("close the file: %v", err)
+	}
+
+	st := openLedgerFile(t, file)
+	ctx := context.Background()
+	rebuilt, more, err := st.BackfillOnce(ctx, BackfillBatch)
+	if err != nil || rebuilt != 1 || more {
+		t.Fatalf("the batch answered (%d, %t, %v), want (1, false, nil)", rebuilt, more, err)
+	}
+	found, err := st.db.Get("SELECT * FROM ledger_requests WHERE id = 'req_capture'")
+	if err != nil || found == nil {
+		t.Fatalf("the rebuilt row = %+v, %v", found, err)
+	}
+	got := rowOf(found)
+	if got.Thinking == nil || *got.Thinking != 16 {
+		t.Errorf("thinking = %s, want 16", ptrShow(got.Thinking))
+	}
+	want := map[string]string{"request-id": "req_capture", "x-ratelimit-remaining": "99"}
+	if !reflect.DeepEqual(got.Headers, want) {
+		t.Errorf("headers = %v, want %v", got.Headers, want)
+	}
+}
+
 // TestTheBackfillStampsARowWithNoFacts: a row no source ever spoke for — no facts row
 // behind it — cannot be rebuilt, so the backfill stamps it with the rules version and
 // leaves every other column as it stands, and the next call picks no row.

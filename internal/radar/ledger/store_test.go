@@ -165,6 +165,7 @@ func TestTheLedgerJoinsARouteAndItsTranscriptInEitherOrder(t *testing.T) {
 		StopReason:   "end_turn",
 		Input:        100,
 		Output:       20,
+		Headers:      map[string]string{"request-id": "req_1"},
 		Provider:     "Z.ai",
 		Via:          strp("zai"),
 		UsageSource:  "router",
@@ -230,6 +231,75 @@ func TestTheLedgerJoinsARouteAndItsTranscriptInEitherOrder(t *testing.T) {
 			t.Fatalf("an unnamed route filed %+v, want no row", row)
 		}
 	})
+}
+
+// TestTheLedgerKeepsTheStickyCaptureFacts: a later transcript copy never loses what an
+// earlier one captured — a copy with no what line keeps the held one, and once a copy
+// carries the result's totals every later copy totals too.
+func TestTheLedgerKeepsTheStickyCaptureFacts(t *testing.T) {
+	t.Run("a later copy with no what keeps the held what", func(t *testing.T) {
+		st := openLedger(t)
+		ctx := context.Background()
+		first := TranscriptFacts{RequestID: "req_sticky", What: strp("a")}
+		if err := st.AddTranscript(ctx, first); err != nil {
+			t.Fatalf("add the first transcript: %v", err)
+		}
+		if err := st.AddTranscript(ctx, TranscriptFacts{RequestID: "req_sticky"}); err != nil {
+			t.Fatalf("add the second transcript: %v", err)
+		}
+		row, err := st.Get(ctx, "req_sticky")
+		if err != nil || row == nil {
+			t.Fatalf("read the row: %+v, %v", row, err)
+		}
+		if row.What == nil || *row.What != "a" {
+			t.Errorf("What = %s, want a", ptrShow(row.What))
+		}
+	})
+
+	t.Run("a later copy keeps the held totals", func(t *testing.T) {
+		st := openLedger(t)
+		ctx := context.Background()
+		if err := st.AddTranscript(ctx, TranscriptFacts{RequestID: "req_totals", Totals: true}); err != nil {
+			t.Fatalf("add the first transcript: %v", err)
+		}
+		if err := st.AddTranscript(ctx, TranscriptFacts{RequestID: "req_totals"}); err != nil {
+			t.Fatalf("add the second transcript: %v", err)
+		}
+		row, err := st.Get(ctx, "req_totals")
+		if err != nil || row == nil {
+			t.Fatalf("read the row: %+v, %v", row, err)
+		}
+		if !row.Totals {
+			t.Error("Totals = false, want the held true")
+		}
+	})
+}
+
+// TestStoreRoundTripsTheCaptureColumns: a row with all four capture columns set reads back
+// equal through Get, the headers map round-tripping through its JSON.
+func TestStoreRoundTripsTheCaptureColumns(t *testing.T) {
+	st := openLedger(t)
+	ctx := context.Background()
+	row := Row{
+		ID:       "req_capture",
+		What:     strp("↳ prompt: hi  → Bash npm test"),
+		Thinking: i64p(16),
+		Headers:  map[string]string{"request-id": "req_capture", "x-ratelimit-remaining": "99"},
+		Totals:   true,
+	}
+	if err := st.Upsert(ctx, row); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	got, err := st.Get(ctx, row.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got == nil {
+		t.Fatal("get answered no row for the id just written")
+	}
+	if !reflect.DeepEqual(*got, row) {
+		t.Errorf("row =\n %+v\nwant\n %+v", *got, row)
+	}
 }
 
 // assertLedgerRow reads the row back by both of its names and holds it against want.
