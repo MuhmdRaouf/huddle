@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
 // The reconcile scenarios: one request seen by up to three sources, each field read from
@@ -291,5 +292,135 @@ func TestReconcileStartsARowWhenItsTranscriptCarriesTheTs(t *testing.T) {
 				t.Errorf("StartedAt = %d, want %d", row.StartedAt, testCase.want)
 			}
 		})
+	}
+}
+
+// TestReconcileBuildsARowFromHistoryAlone: a history.db row no live source filed still
+// builds a row — the lane read from its route and via, the session and agent defaults the
+// request rule applies, and the failure told by status and error code: a row whose stop
+// reason is its status text keeps none.
+func TestReconcileBuildsARowFromHistoryAlone(t *testing.T) {
+	got, ok := Reconcile(Sources{History: &HistoryFacts{
+		ID:         "route:s1:main:glm-5.3:1787400000000:429",
+		Route:      "provider",
+		Via:        strp("zai"),
+		Status:     "429",
+		StopReason: "429",
+		Error:      "rate limited",
+	}})
+	want := Row{
+		ID:         "route:s1:main:glm-5.3:1787400000000:429",
+		Lane:       "provider:zai",
+		Harness:    "claude",
+		SessionID:  shared.OutsideSession,
+		AgentID:    "main",
+		Outcome:    "http_error",
+		Status:     429,
+		ErrorCode:  "rate limited",
+		Provider:   "other",
+		Via:        strp("zai"),
+		StopReason: "",
+	}
+	if !ok {
+		t.Fatal("reconcile refused a history source")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("row =\n %+v\nwant\n %+v", got, want)
+	}
+}
+
+// TestReconcileReadsAHistoryCopy: the copy of a transcript request history stored carries
+// its tokens and stop reason and the fact it came from a transcript, and names no lane or
+// outcome — history never stored those for it.
+func TestReconcileReadsAHistoryCopy(t *testing.T) {
+	got, ok := Reconcile(Sources{History: &HistoryFacts{
+		ID:             "msg_sub1",
+		StopReason:     "end_turn",
+		Input:          10,
+		Output:         5,
+		FromTranscript: true,
+	}})
+	want := Row{
+		ID:           "msg_sub1",
+		Harness:      "claude",
+		SessionID:    shared.OutsideSession,
+		AgentID:      "main",
+		StopReason:   "end_turn",
+		Input:        10,
+		Output:       5,
+		Provider:     "other",
+		UsageSource:  "history",
+		InTranscript: true,
+	}
+	if !ok {
+		t.Fatal("reconcile refused a history source")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("row =\n %+v\nwant\n %+v", got, want)
+	}
+}
+
+// TestReconcileTakesTheRequestIDHeaderFromHistory: the request-id header the row's headers
+// JSON held becomes the row's AnthropicID; the id the facts file under stays its own.
+func TestReconcileTakesTheRequestIDHeaderFromHistory(t *testing.T) {
+	got, ok := Reconcile(Sources{History: &HistoryFacts{
+		ID:      "route:s1:main:glm-5.3:1787400001000:200",
+		Headers: map[string]string{"request-id": "req_h1"},
+	}})
+	if !ok {
+		t.Fatal("reconcile refused a history source")
+	}
+	if got.AnthropicID != "req_h1" {
+		t.Errorf("AnthropicID = %q, want req_h1", got.AnthropicID)
+	}
+	if got.ID != "route:s1:main:glm-5.3:1787400001000:200" {
+		t.Errorf("ID = %q, want the facts' own id", got.ID)
+	}
+}
+
+// TestLiveFactsRuleAndHistoryFillsTheRest: a transcript and the history row of one call
+// build one row — the transcript's tokens, session and id rule as a group, history fills
+// only what the live source never spoke for.
+func TestLiveFactsRuleAndHistoryFillsTheRest(t *testing.T) {
+	got, ok := Reconcile(Sources{
+		Transcript: &TranscriptFacts{
+			RequestID:  "req_t1",
+			StopReason: "end_turn",
+			SessionID:  "s1",
+			Usage:      domain.RouteUsage{"input_tokens": float64(7)},
+		},
+		History: &HistoryFacts{
+			ID:     "req_t1",
+			Route:  "provider",
+			Via:    strp("zai"),
+			Status: "200",
+			Speed:  strp("fast"),
+			Input:  99,
+			NodeID: "n1",
+		},
+	})
+	want := Row{
+		ID:           "req_t1",
+		AnthropicID:  "req_t1",
+		Lane:         "provider:zai",
+		Harness:      "claude",
+		SessionID:    "s1",
+		AgentID:      "main",
+		Outcome:      "ok",
+		Status:       200,
+		StopReason:   "end_turn",
+		Input:        7,
+		Speed:        strp("fast"),
+		Provider:     "other",
+		Via:          strp("zai"),
+		NodeID:       "n1",
+		UsageSource:  "transcript",
+		InTranscript: true,
+	}
+	if !ok {
+		t.Fatal("reconcile refused the transcript and history sources")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("row =\n %+v\nwant\n %+v", got, want)
 	}
 }

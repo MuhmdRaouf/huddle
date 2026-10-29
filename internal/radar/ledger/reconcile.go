@@ -9,13 +9,17 @@ import (
 
 // ReconcileVersion is the version of Reconcile's rules. Every row is written with it; a
 // change to the rules raises it, and the backfill rebuilds each older row from its facts.
-const ReconcileVersion = 6
+const ReconcileVersion = 7
 
 // Reconcile answers the row the sources agree on, false when no source knows the request
 // (every pointer nil).
 func Reconcile(s Sources) (Row, bool) {
-	if s.Route == nil && s.Transcript == nil && s.OTel == nil && s.Harness == nil {
+	live := s.Route != nil || s.Transcript != nil || s.OTel != nil || s.Harness != nil
+	if !live && s.History == nil {
 		return Row{}, false
+	}
+	if !live {
+		return historyRow(*s.History), true
 	}
 	row := Row{InTranscript: s.Transcript != nil}
 	ids(s, &row)
@@ -28,6 +32,9 @@ func Reconcile(s Sources) (Row, bool) {
 	node(s, &row)
 	outcome(s, &row)
 	turn(s, &row)
+	if s.History != nil {
+		fillFromHistory(&row, *s.History)
+	}
 	return row, true
 }
 

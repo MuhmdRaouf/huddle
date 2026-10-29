@@ -441,3 +441,117 @@ func TestTheLedgerFilesAHarnessRecord(t *testing.T) {
 		t.Errorf("an id-less record filed %+v, want no row", orphan)
 	}
 }
+
+// TestAddHistoryFilesARowAndAReRunAddsNothing: the same history facts filed twice leave one
+// ledger row and one facts row, and the row reads identically both times.
+func TestAddHistoryFilesARowAndAReRunAddsNothing(t *testing.T) {
+	st := openLedger(t)
+	ctx := context.Background()
+	facts := HistoryFacts{
+		ID:     "route:s2:main:glm-5.3:1787400000000:200",
+		Ts:     1787400000000,
+		Model:  "glm-5.3",
+		Route:  "provider",
+		Via:    strp("zai"),
+		Status: "200",
+		Input:  12,
+		Output: 3,
+		NodeID: "s2/main",
+	}
+	if err := st.AddHistory(ctx, facts); err != nil {
+		t.Fatalf("add the history facts: %v", err)
+	}
+	first, err := st.Get(ctx, facts.ID)
+	if err != nil || first == nil {
+		t.Fatalf("read the history row: %+v, %v", first, err)
+	}
+	if err := st.AddHistory(ctx, facts); err != nil {
+		t.Fatalf("add the same history facts again: %v", err)
+	}
+	again, err := st.Get(ctx, facts.ID)
+	if err != nil || again == nil {
+		t.Fatalf("reread the history row: %+v, %v", again, err)
+	}
+	if !reflect.DeepEqual(*first, *again) {
+		t.Errorf("row =\n %+v\nwas\n %+v", *again, *first)
+	}
+	for _, query := range []string{"SELECT COUNT(*) AS n FROM ledger_requests", "SELECT COUNT(*) AS n FROM ledger_facts"} {
+		found, err := st.db.Get(query)
+		if err != nil {
+			t.Fatalf("count the rows: %v", err)
+		}
+		if n := intColumn(found, "n"); n != 1 {
+			t.Errorf("%s answers %d, want 1", query, n)
+		}
+	}
+}
+
+// TestALaterTranscriptJoinsAHistoryRowWithoutDroppingIt: a transcript landing after the
+// history facts keeps what history filled — the speed, the lane, the outcome — takes the
+// transcript's tokens, and the facts row ends up holding both sources.
+func TestALaterTranscriptJoinsAHistoryRowWithoutDroppingIt(t *testing.T) {
+	st := openLedger(t)
+	ctx := context.Background()
+	if err := st.AddHistory(ctx, HistoryFacts{
+		ID:     "req_j1",
+		Route:  "provider",
+		Via:    strp("zai"),
+		Status: "200",
+		Speed:  strp("fast"),
+	}); err != nil {
+		t.Fatalf("add the history facts: %v", err)
+	}
+	if err := st.AddTranscript(ctx, TranscriptFacts{
+		RequestID: "req_j1",
+		Usage:     domain.RouteUsage{"input_tokens": float64(7), "output_tokens": float64(3)},
+	}); err != nil {
+		t.Fatalf("add the transcript: %v", err)
+	}
+	row, err := st.Get(ctx, "req_j1")
+	if err != nil || row == nil {
+		t.Fatalf("read the joined row: %+v, %v", row, err)
+	}
+	if row.Speed == nil || *row.Speed != "fast" {
+		t.Errorf("Speed = %s, want fast", ptrShow(row.Speed))
+	}
+	if row.Lane != "provider:zai" {
+		t.Errorf("Lane = %q, want provider:zai", row.Lane)
+	}
+	if row.Outcome != "ok" || row.Status != 200 {
+		t.Errorf("Outcome = %q, Status = %d, want ok and 200", row.Outcome, row.Status)
+	}
+	if row.Input != 7 || row.Output != 3 || row.UsageSource != "transcript" {
+		t.Errorf("usage = %d in, %d out, source %q; want the transcript's 7 and 3", row.Input, row.Output, row.UsageSource)
+	}
+	facts, err := st.db.Get("SELECT history, transcript FROM ledger_facts WHERE id = 'req_j1'")
+	if err != nil || facts == nil {
+		t.Fatalf("read the facts row: %+v, %v", facts, err)
+	}
+	if textColumn(facts, "history") == "" || textColumn(facts, "transcript") == "" {
+		t.Errorf("facts row holds history %q and transcript %q, want both filed",
+			textColumn(facts, "history"), textColumn(facts, "transcript"))
+	}
+}
+
+// TestAddHistoryWithoutAnIDFilesNothing: facts that name no id file no row and no facts.
+func TestAddHistoryWithoutAnIDFilesNothing(t *testing.T) {
+	st := openLedger(t)
+	ctx := context.Background()
+	if err := st.AddHistory(ctx, HistoryFacts{Model: "glm-5.3"}); err != nil {
+		t.Fatalf("add the id-less facts: %v", err)
+	}
+	row, err := st.Get(ctx, "")
+	if err != nil {
+		t.Fatalf("get the empty id: %v", err)
+	}
+	if row != nil {
+		t.Errorf("an id-less filing wrote %+v, want no row", row)
+	}
+	found, err := st.db.Get("SELECT COUNT(*) AS n FROM ledger_facts")
+	if err != nil {
+		t.Fatalf("count the facts rows: %v", err)
+	}
+	if n := intColumn(found, "n"); n != 0 {
+		t.Errorf("ledger_facts holds %d rows, want none", n)
+	}
+}

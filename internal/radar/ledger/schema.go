@@ -90,6 +90,8 @@ var schemaSteps = [...]string{
 		"ALTER TABLE ledger_requests RENAME COLUMN cost_reported_usd TO harness_cost_usd",
 	// 9: the facts a harness's own record files (ADR-5)
 	"ALTER TABLE ledger_facts ADD COLUMN harness TEXT NOT NULL DEFAULT ''",
+	// 10: the facts a history.db row files (ADR-5)
+	"ALTER TABLE ledger_facts ADD COLUMN history TEXT NOT NULL DEFAULT ''",
 }
 
 // SchemaVersion is the version a file sits at once Open has applied every step.

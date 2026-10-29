@@ -42,7 +42,7 @@ type Row struct {
 	Headers                              map[string]string // the allow-listed response headers the route line recorded; nil when it recorded none
 	Totals                               bool              // the tokens are the run's total from its result event, not one call's context
 	NodeID                               string            // the node the request lands on, as history spells it: the transcript's naming when a transcript saw the request, else the route's; "" when no source could name it
-	UsageSource                          string            // "router" | "otel" | "transcript"
+	UsageSource                          string            // "router" | "otel" | "transcript" | "history"
 	PriceUSD                             float64           // Radar's price from its pricing table; 0 when unpriced
 	HarnessCostUSD                       *float64          // the cost the harness reported for the call; nil when it reported none
 	Ratelimit5h                          *float64
@@ -99,10 +99,52 @@ type HarnessFacts struct {
 	NodeID         string            `json:"node_id,omitempty"`          // the node the watcher computed at ingest, by the history writer's rule
 }
 
+// HistoryFacts is what history.db's request row says about a call no live source filed; the
+// migrate sweep files it under the id the match rule names. Live sources rule every field they
+// speak for; these fill the rest.
+type HistoryFacts struct {
+	ID             string            `json:"id"` // the id the row files under
+	Ts             int64             `json:"ts"` // history's ts, Unix milliseconds
+	NodeID         string            `json:"node_id,omitempty"`
+	SessionID      string            `json:"session_id,omitempty"`
+	AgentID        string            `json:"agent_id,omitempty"`
+	ParentAgentID  string            `json:"parent_agent_id,omitempty"`
+	Model          string            `json:"model,omitempty"`
+	Upstream       string            `json:"upstream,omitempty"`
+	LatencyMs      int64             `json:"latency_ms,omitempty"`
+	TtfbMs         *int64            `json:"ttfb_ms,omitempty"`
+	TtftMs         *int64            `json:"ttft_ms,omitempty"`
+	Input          int64             `json:"input,omitempty"`
+	Output         int64             `json:"output,omitempty"`
+	CacheRead      int64             `json:"cache_read,omitempty"`
+	CacheWrite     int64             `json:"cache_write,omitempty"`
+	CacheWrite1h   *int64            `json:"cache_write_1h,omitempty"`
+	Speed          *string           `json:"speed,omitempty"`
+	Geo            *string           `json:"geo,omitempty"`
+	ServiceTier    *string           `json:"service_tier,omitempty"`
+	StopReason     string            `json:"stop_reason,omitempty"`
+	Error          string            `json:"error,omitempty"`
+	Fallback       string            `json:"fallback,omitempty"`
+	Provider       string            `json:"provider,omitempty"`
+	Route          string            `json:"route,omitempty"`  // history's route column: "anthropic", "provider", "refused", …; "" when no router saw it
+	Via            *string           `json:"via,omitempty"`    // history's via column
+	Status         string            `json:"status,omitempty"` // history's status TEXT ("200", "429"); "" when none
+	Harness        string            `json:"harness,omitempty"`
+	HarnessCostUSD *float64          `json:"harness_cost_usd,omitempty"` // history's cost_usd: the cost the harness itself reported
+	PriceUSD       float64           `json:"price_usd,omitempty"`        // Radar's price, computed by the sweep from model and usage
+	What           *string           `json:"what,omitempty"`
+	Thinking       *int64            `json:"thinking,omitempty"`
+	PromptHash     string            `json:"prompt_hash,omitempty"`
+	Headers        map[string]string `json:"headers,omitempty"`
+	Totals         bool              `json:"totals,omitempty"`
+	FromTranscript bool              `json:"from_transcript,omitempty"` // the row came from a transcript copy
+}
+
 // Sources is everything known about one request; a nil source knows nothing.
 type Sources struct {
 	Route      *RouteFacts
 	Transcript *TranscriptFacts
 	OTel       *OTelFacts
 	Harness    *HarnessFacts
+	History    *HistoryFacts
 }

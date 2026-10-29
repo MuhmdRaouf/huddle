@@ -49,7 +49,7 @@ func (s *Store) AddRoute(ctx context.Context, facts RouteFacts) error {
 	if row.ID == "" {
 		return nil
 	}
-	return s.file(ctx, row.ID, &facts, nil, nil)
+	return s.file(ctx, row.ID, &facts, nil, nil, nil)
 }
 
 // AddTranscript files what a transcript says about the request its RequestID names and
@@ -58,7 +58,7 @@ func (s *Store) AddTranscript(ctx context.Context, facts TranscriptFacts) error 
 	if facts.RequestID == "" {
 		return nil
 	}
-	return s.file(ctx, facts.RequestID, nil, &facts, nil)
+	return s.file(ctx, facts.RequestID, nil, &facts, nil, nil)
 }
 
 // AddHarness files what a harness's own record says about the call its id names and
@@ -67,13 +67,22 @@ func (s *Store) AddHarness(ctx context.Context, facts HarnessFacts) error {
 	if facts.ID == "" {
 		return nil
 	}
-	return s.file(ctx, facts.ID, nil, nil, &facts)
+	return s.file(ctx, facts.ID, nil, nil, &facts, nil)
+}
+
+// AddHistory files what history.db's row says about the call its ID names and re-reconciles
+// that row. An empty ID is skipped.
+func (s *Store) AddHistory(ctx context.Context, facts HistoryFacts) error {
+	if facts.ID == "" {
+		return nil
+	}
+	return s.file(ctx, facts.ID, nil, nil, nil, &facts)
 }
 
 // file joins the new facts with whatever the file already holds about the id, then writes
 // both the facts row and the reconciled ledger row. The watcher calls this from its one
 // goroutine, so the read and the write need no transaction.
-func (s *Store) file(ctx context.Context, id string, route *RouteFacts, transcript *TranscriptFacts, harness *HarnessFacts) error {
+func (s *Store) file(ctx context.Context, id string, route *RouteFacts, transcript *TranscriptFacts, harness *HarnessFacts, history *HistoryFacts) error {
 	facts, err := factsOf(ctx, s.db, id)
 	if err != nil {
 		return err
@@ -87,6 +96,9 @@ func (s *Store) file(ctx context.Context, id string, route *RouteFacts, transcri
 	}
 	if harness != nil {
 		facts.Harness = harness // a later harness fact replaces the earlier one
+	}
+	if history != nil {
+		facts.History = history // a later history fact replaces the earlier one
 	}
 	row, _ := Reconcile(facts) // one caller's source is always set, so this always names a row
 	if err := s.writeFacts(ctx, id, facts); err != nil {
@@ -122,7 +134,7 @@ func factsOf(ctx context.Context, db DB, id string) (Sources, error) {
 	if err := ctx.Err(); err != nil {
 		return facts, fmt.Errorf("read the ledger facts %s: %w", id, err)
 	}
-	found, err := db.Get("SELECT route, transcript, harness FROM ledger_facts WHERE id = ?", id)
+	found, err := db.Get("SELECT route, transcript, harness, history FROM ledger_facts WHERE id = ?", id)
 	if err != nil {
 		return facts, fmt.Errorf("read the ledger facts %s: %w", id, err)
 	}
@@ -150,12 +162,19 @@ func factsOf(ctx context.Context, db DB, id string) (Sources, error) {
 		}
 		facts.Harness = &harness
 	}
+	if text := textColumn(found, "history"); text != "" {
+		var history HistoryFacts
+		if err := json.Unmarshal([]byte(text), &history); err != nil {
+			return facts, fmt.Errorf("read the ledger facts %s: %w", id, err)
+		}
+		facts.History = &history
+	}
 	return facts, nil
 }
 
 // writeFacts replaces the id's facts row with the sources now known.
 func (s *Store) writeFacts(ctx context.Context, id string, facts Sources) error {
-	route, transcript, harness := "", "", ""
+	route, transcript, harness, history := "", "", "", ""
 	if facts.Route != nil {
 		text, err := json.Marshal(facts.Route)
 		if err != nil {
@@ -177,8 +196,15 @@ func (s *Store) writeFacts(ctx context.Context, id string, facts Sources) error 
 		}
 		harness = string(text)
 	}
-	if err := s.db.Run("INSERT OR REPLACE INTO ledger_facts (id, route, transcript, harness) VALUES (?, ?, ?, ?)",
-		id, route, transcript, harness); err != nil {
+	if facts.History != nil {
+		text, err := json.Marshal(facts.History)
+		if err != nil {
+			return fmt.Errorf("file the ledger facts %s: %w", id, err)
+		}
+		history = string(text)
+	}
+	if err := s.db.Run("INSERT OR REPLACE INTO ledger_facts (id, route, transcript, harness, history) VALUES (?, ?, ?, ?, ?)",
+		id, route, transcript, harness, history); err != nil {
 		return fmt.Errorf("file the ledger facts %s: %w", id, err)
 	}
 	return nil

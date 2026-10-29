@@ -311,6 +311,74 @@ func TestOpenRaisesAVersion8FileToTheHarnessFactsColumn(t *testing.T) {
 	}
 }
 
+// buildVersion9File writes file as a version-9 ledger holding one stale row and one facts
+// row, the shape a version-9 file sits at between Opens.
+func buildVersion9File(t *testing.T, file string) {
+	t.Helper()
+	pool, err := sql.Open("sqlite", file)
+	if err != nil {
+		t.Fatalf("open the version-9 file: %v", err)
+	}
+	defer func() { _ = pool.Close() }()
+	if _, err := pool.Exec(ledgerRequestsDDL + ";" + ledgerRequestsIndex + ";" + ledgerFactsDDL + ";" +
+		ledgerRequestsSessionIndex + ";" +
+		"ALTER TABLE ledger_requests ADD COLUMN reconciled INTEGER NOT NULL DEFAULT 0;" +
+		"CREATE TABLE IF NOT EXISTS ledger_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);" +
+		"ALTER TABLE ledger_requests ADD COLUMN cache_write_1h INTEGER;" +
+		"ALTER TABLE ledger_requests ADD COLUMN speed TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN geo TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN service_tier TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN provider TEXT NOT NULL DEFAULT '';" +
+		"ALTER TABLE ledger_requests ADD COLUMN via TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN what TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN thinking INTEGER;" +
+		"ALTER TABLE ledger_requests ADD COLUMN headers TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN totals INTEGER NOT NULL DEFAULT 0;" +
+		"ALTER TABLE ledger_requests ADD COLUMN node_id TEXT NOT NULL DEFAULT '';" +
+		"ALTER TABLE ledger_requests RENAME COLUMN cost_usd TO price_usd;" +
+		"ALTER TABLE ledger_requests RENAME COLUMN cost_reported_usd TO harness_cost_usd;" +
+		"ALTER TABLE ledger_facts ADD COLUMN harness TEXT NOT NULL DEFAULT '';" +
+		"PRAGMA user_version = 9"); err != nil {
+		t.Fatalf("build the version-9 schema: %v", err)
+	}
+	if _, err := pool.Exec(
+		"INSERT INTO ledger_requests (id, anthropic_id, model) VALUES ('req_old', 'req_old', 'stale');" +
+			"INSERT INTO ledger_facts (id, route, transcript) VALUES ('req_old', '', '{\"request_id\":\"req_old\"}')"); err != nil {
+		t.Fatalf("insert the held rows: %v", err)
+	}
+}
+
+// TestOpenRaisesAVersion9FileToTheHistoryFactsColumn: Open brings a version-9 file up to
+// SchemaVersion, its ledger_facts gains the column the history.db rows file under, and the
+// facts row it already held reads an empty one.
+func TestOpenRaisesAVersion9FileToTheHistoryFactsColumn(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "ledger.db")
+	buildVersion9File(t, file)
+	st := openLedgerFile(t, file)
+
+	if version := userVersion(t, st.db); version != SchemaVersion {
+		t.Errorf("user_version = %d, want %d", version, SchemaVersion)
+	}
+	found, err := st.db.All("PRAGMA table_info(ledger_facts)")
+	if err != nil {
+		t.Fatalf("read the facts table's columns: %v", err)
+	}
+	names := make([]string, 0, len(found))
+	for _, column := range found {
+		names = append(names, textColumn(column, "name"))
+	}
+	if !slices.Contains(names, "history") {
+		t.Errorf("ledger_facts holds no history column after Open (has %v)", names)
+	}
+	held, err := st.db.Get("SELECT history FROM ledger_facts WHERE id = 'req_old'")
+	if err != nil || held == nil {
+		t.Fatalf("read the held facts row: %+v, %v", held, err)
+	}
+	if history := textColumn(held, "history"); history != "" {
+		t.Errorf("history = %q, want the default empty string", history)
+	}
+}
+
 // TestOpenRaisesAVersion7FileToTheTwoMoneyColumns: Open brings a version-7 file up to
 // SchemaVersion, its two money columns read price_usd and harness_cost_usd — one meaning
 // each — and the priced row it already held reads back through Get with both values.
