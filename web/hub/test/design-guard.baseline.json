@@ -35,8 +35,7 @@
     "px": 7
   },
   "app/Needs.tsx": {
-    "control": 4,
-    "px": 3
+    "control": 4
   },
   "app/Now.tsx": {
     "control": 5,
@@ -146,9 +145,8 @@
     "px": 1
   },
   "pages/Inbox.tsx": {
-    "control": 15,
-    "daisy": 46,
-    "legacy": 8
+    "control": 2,
+    "daisy": 1
   },
   "pages/Knowledge.tsx": {
     "control": 1

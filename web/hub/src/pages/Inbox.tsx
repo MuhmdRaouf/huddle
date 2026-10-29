@@ -5,6 +5,9 @@
 // card carries its one or two actions and leaves the list once handled; focus moves to the card
 // now in its place, and the list ends on "All clear". (inbox.js, extras.js inboxHTML/wireInbox)
 
+import { Badge } from "@huddle/ui/badge.tsx";
+import { Button } from "@huddle/ui/button.tsx";
+import { Field } from "@huddle/ui/field.tsx";
 import { Markdown } from "@huddle/ui/markdown.tsx";
 import type { ToastFn } from "@huddle/ui/toast.tsx";
 import type { ComponentChildren, JSX } from "preact";
@@ -146,7 +149,7 @@ function Card({
   children: ComponentChildren;
 }): JSX.Element {
   return (
-    <li class="panel p-4" data-item={k} hidden={hidden}>
+    <li class="ui-card" data-item={k} hidden={hidden}>
       {children}
     </li>
   );
@@ -171,7 +174,7 @@ function Section({
     <section class="flex flex-col gap-2" aria-labelledby={`ih-${id}`}>
       <h2 class="text-sm font-semibold flex items-center gap-2 px-1" id={`ih-${id}`}>
         {title}
-        <span class="text-xs font-medium muted tabular-nums">{n}</span>
+        <span class="text-xs font-medium text-[var(--ui-muted)] tabular-nums">{n}</span>
         {extra ? (
           <>
             <span class="flex-1" />
@@ -201,7 +204,9 @@ function TaskLink({
         onOpenTask(t.id);
       }}
     >
-      <span class="badge badge-ghost badge-sm font-mono">{t.id}</span>
+      <Badge tone="neutral">
+        <span class="ui-mono">{t.id}</span>
+      </Badge>
       <span class="truncate">{t.title}</span>
     </a>
   );
@@ -233,8 +238,8 @@ function AskCard({
       <div class="flex items-start gap-3">
         <Avatar name={a.from} />
         <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-base-content/50">
-            <b class="text-sm text-base-content">{a.from}</b>
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--ui-muted)]">
+            <b class="text-sm text-[var(--ui-text)]">{a.from}</b>
             <span>
               asks you · <Time ts={a.ts} now={now} />
             </span>
@@ -250,19 +255,20 @@ function AskCard({
           {/* biome-ignore lint/a11y/useSemanticElements: the legacy quick replies' group, kept word for word */}
           <div class="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Quick replies">
             {QUICK.map((q) => (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
                 key={q}
-                class="btn btn-sm btn-ghost"
-                data-quick={a.seq}
+                data-quick={String(a.seq)}
                 disabled={sending}
                 onClick={() => onReply(q)}
               >
                 {q}
-              </button>
+              </Button>
             ))}
           </div>
-          <div class="mt-2 flex items-end gap-2">
+          {/* the field takes the row and the Reply button sits under its end on a phone, where
+              the placeholder wraps; from sm the two share the row */}
+          <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
             <label class="sr-only" for={`ar-${a.seq}`}>
               {`Your reply to ${a.from}`}
             </label>
@@ -270,7 +276,7 @@ function AskCard({
               id={`ar-${a.seq}`}
               ref={ta}
               rows={1}
-              class="input input-sm min-h-8 flex-1 resize-none py-1.5"
+              class="min-h-[var(--ui-control-h)] max-sm:min-h-[calc(2*var(--ui-leading)*var(--ui-text-md)+2*var(--ui-space-2))] flex-1 resize-none rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] px-3 py-2 text-[length:var(--ui-text-md)] leading-[var(--ui-leading)] text-[var(--ui-text)] placeholder:text-[var(--ui-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-accent)]"
               placeholder="Write a reply (Enter sends, Shift+Enter adds a line)"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -284,16 +290,15 @@ function AskCard({
                 t.style.height = `${Math.min(t.scrollHeight + 2, 200)}px`;
               }}
             />
-            <button
-              type="button"
-              class="btn btn-primary"
-              data-send={a.seq}
+            <Button
+              data-send={String(a.seq)}
               disabled={sending}
+              class="self-end"
               onClick={() => onReply(ta.current?.value ?? "")}
             >
               <Icon name="send" class="size-4" />
               Reply
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -322,7 +327,7 @@ function GateCard({
   busy: boolean;
   task: { id: string; href: string; title: string };
   onOpenTask: (id: string) => void;
-  onApprove: (el: Element) => void;
+  onApprove: () => void;
   onOpenNote: () => void;
   onCloseNote: (refocus: boolean) => void;
   onNoteText: (text: string) => void;
@@ -339,7 +344,7 @@ function GateCard({
             <div class="text-sm font-medium">
               <TaskLink t={task} onOpenTask={onOpenTask} />
             </div>
-            <div class="mt-0.5 text-xs muted">
+            <div class="mt-0.5 text-xs text-[var(--ui-muted)]">
               {g.owner && g.owner !== "owner" ? `${g.owner} waits` : "It waits"}
               {" for your go-ahead before it starts"}
               {g.gate === "ask-first" ? " (ask first)" : ""}.
@@ -347,54 +352,45 @@ function GateCard({
           </div>
         </div>
         <div class="flex flex-wrap gap-1.5 sm:justify-end">
-          <button
-            type="button"
-            class="btn btn-primary"
-            data-approve={g.id}
-            disabled={busy}
-            onClick={(e) => onApprove(e.currentTarget)}
-          >
+          <Button data-approve={g.id} disabled={busy} onClick={() => onApprove()}>
             <Icon name="check" class="size-4" />
             Approve
-          </button>
+          </Button>
           {note === undefined ? (
-            <button type="button" class="btn" data-approve-note={g.id} onClick={onOpenNote}>
+            <Button variant="secondary" data-approve-note={g.id} onClick={onOpenNote}>
               Approve with a note
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
       {note !== undefined ? (
-        <div class="mt-3 flex gap-2 sm:pl-9">
-          <label class="sr-only" for={`gn-${g.id}`}>
-            {`Note for ${owner}`}
-          </label>
-          <input
-            class="input input-sm"
-            id={`gn-${g.id}`}
-            placeholder={`Note for ${owner}`}
-            value={note}
-            onInput={(e) => onNoteText(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") onApprove(e.currentTarget);
-              if (e.key === "Escape") {
-                e.preventDefault();
-                onCloseNote(false);
-              }
-            }}
-          />
-          <button
-            type="button"
-            class="btn btn-primary"
-            data-approve={g.id}
-            disabled={busy}
-            onClick={(e) => onApprove(e.currentTarget)}
-          >
+        // Enter approves and Escape closes from the field inside; the wrapper carries the keys
+        // because the field owns none, and data-note-for is where the focus lands when it opens
+        <div
+          class="mt-3 flex items-end gap-2 sm:pl-9"
+          data-note-for={g.id}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onApprove();
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onCloseNote(false);
+            }
+          }}
+        >
+          <div class="min-w-0 flex-1">
+            <Field
+              label={`Note for ${owner}`}
+              value={note}
+              onInput={onNoteText}
+              placeholder={`Note for ${owner}`}
+            />
+          </div>
+          <Button data-approve={g.id} disabled={busy} onClick={() => onApprove()}>
             Approve
-          </button>
-          <button type="button" class="btn btn-ghost" data-close={g.id} onClick={() => onCloseNote(true)}>
+          </Button>
+          <Button variant="ghost" data-close={g.id} onClick={() => onCloseNote(true)}>
             Cancel
-          </button>
+          </Button>
         </div>
       ) : null}
     </Card>
@@ -420,7 +416,7 @@ function PauseCard({
   href: string;
   busy: boolean;
   onOpenSession: (name: string) => void;
-  onResume: (el: Element) => void;
+  onResume: () => void;
   onCompose: (prefill: ComposePrefill) => void;
 }): JSX.Element {
   return (
@@ -440,32 +436,25 @@ function PauseCard({
           >
             {`${p.name} is paused`}
           </a>
-          <div class="text-xs muted">
+          <div class="text-xs text-[var(--ui-muted)]">
             {`Paused by ${whoL(p.by || "someone")} `}
             <Time ts={p.at} now={now} />
             {". Its changes are refused until you resume it."}
           </div>
         </div>
         <div class="flex gap-1.5">
-          <button
-            type="button"
-            class="btn"
+          <Button
+            variant="secondary"
             data-msg={p.name}
             onClick={() => onCompose({ to: p.name, mode: "msg" })}
           >
             <Icon name="msg" class="size-4" />
             Message
-          </button>
-          <button
-            type="button"
-            class="btn btn-primary"
-            data-resume={p.name}
-            disabled={busy}
-            onClick={(e) => onResume(e.currentTarget)}
-          >
+          </Button>
+          <Button data-resume={p.name} disabled={busy} onClick={() => onResume()}>
             <Icon name="play" class="size-4" />
             {`Resume ${p.name}`}
-          </button>
+          </Button>
         </div>
       </div>
     </Card>
@@ -495,7 +484,7 @@ function BlockedCard({
   hrefOf: (id: string) => string;
   titleOf: (id: string) => string;
   onOpenTask: (id: string) => void;
-  onUnblock: (el: Element) => void;
+  onUnblock: () => void;
   onReassign: (to: string) => void;
 }): JSX.Element {
   return (
@@ -508,28 +497,28 @@ function BlockedCard({
           <div class="text-sm font-medium">
             <TaskLink t={task} onOpenTask={onOpenTask} />
           </div>
-          <div class="mt-0.5 text-xs muted">
+          <div class="mt-0.5 text-xs text-[var(--ui-muted)]">
             {b.owner ? (b.owner === "owner" ? "Yours" : `Owned by ${b.owner}`) : "Nobody owns it"}
             {b.note ? `. “${b.note}”` : ""}
           </div>
           {waitsOn.length ? (
             <div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-              <span class="text-base-content/50">Waits on</span>
+              <span class="text-[var(--ui-muted)]">Waits on</span>
               {waitsOn.map((id) => (
                 <TaskLink key={id} t={{ id, href: hrefOf(id), title: titleOf(id) }} onOpenTask={onOpenTask} />
               ))}
             </div>
           ) : null}
           <div class="mt-3 flex flex-wrap items-center gap-1.5">
-            <button type="button" class="btn" data-unblock={b.id} onClick={(e) => onUnblock(e.currentTarget)}>
+            <Button variant="secondary" data-unblock={b.id} onClick={() => onUnblock()}>
               <Icon name="undo" class="size-4" />
               Unblock
-            </button>
+            </Button>
             <label class="sr-only" for={`ro-${b.id}`}>
               {`Give ${b.id} to`}
             </label>
             <select
-              class="input input-sm w-auto"
+              class="min-h-[var(--ui-control-h)] w-auto rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] px-3 text-[length:var(--ui-text-md)] text-[var(--ui-text)]"
               id={`ro-${b.id}`}
               data-reassign={b.id}
               onChange={(e) => onReassign(e.currentTarget.value)}
@@ -543,7 +532,7 @@ function BlockedCard({
               ))}
             </select>
             <a
-              class="btn btn-ghost"
+              class="ui-btn ui-btn-ghost"
               href={task.href}
               onClick={(e) => {
                 e.preventDefault();
@@ -600,14 +589,14 @@ function ApprovalCard({
             {" wants to run a command your rules name: "}
             <b class="font-medium">{(a.labels ?? []).join(", ") || "a command"}</b>
           </div>
-          <div class="text-xs muted">
+          <div class="text-xs text-[var(--ui-muted)]">
             <Time ts={a.ts} now={now} />
             {" · Claude Code asks for the go-ahead in that session's window; answer there."}
           </div>
         </div>
         <div class="flex gap-1.5">
           <a
-            class="btn"
+            class="ui-btn ui-btn-secondary"
             href={href}
             onClick={(e) => {
               e.preventDefault();
@@ -617,15 +606,9 @@ function ApprovalCard({
             <Icon name="users" class="size-4" />
             Open session
           </a>
-          <button
-            type="button"
-            class="btn btn-ghost"
-            data-xdismiss={a.seq}
-            disabled={busy}
-            onClick={() => onDismiss()}
-          >
+          <Button variant="ghost" data-xdismiss={String(a.seq)} disabled={busy} onClick={() => onDismiss()}>
             Dismiss
-          </button>
+          </Button>
         </div>
       </div>
     </Card>
@@ -674,10 +657,10 @@ function AlertCard({
             >
               {a.session}
             </a>
-            {a.agent ? <span class="text-base-content/50"> (a subagent)</span> : null}
+            {a.agent ? <span class="text-[var(--ui-muted)]"> (a subagent)</span> : null}
             {`: ${alertKind(a.kind)}`}
           </div>
-          <div class="text-xs muted">
+          <div class="text-xs text-[var(--ui-muted)]">
             {a.detail}
             {a.since ? (
               <>
@@ -690,7 +673,7 @@ function AlertCard({
         </div>
         <div class="flex gap-1.5">
           <a
-            class="btn"
+            class="ui-btn ui-btn-secondary"
             href={href}
             onClick={(e) => {
               e.preventDefault();
@@ -700,11 +683,9 @@ function AlertCard({
             Open session
           </a>
           {pausedHere ? (
-            <span class="badge badge-sm badge-warning">Paused</span>
+            <Badge tone="warn">Paused</Badge>
           ) : (
-            <button
-              type="button"
-              class="btn btn-primary"
+            <Button
               data-xpause={a.session}
               data-xwhy={alertKind(a.kind)}
               disabled={busy}
@@ -712,7 +693,7 @@ function AlertCard({
             >
               <Icon name="pause" class="size-4" />
               {`Pause ${a.session}`}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -738,24 +719,24 @@ function refusal(e: unknown, name: string): string {
 /** The empty Inbox: the all-clear card and its two ways out (inbox.js paint). */
 function AllClear({ ch, api }: { ch: string; api: Api }): JSX.Element {
   return (
-    <div class="panel flex flex-col items-center gap-2 px-6 py-14 text-center text-sm muted">
+    <div class="ui-card flex flex-col items-center gap-2 px-6 py-14 text-center text-sm text-[var(--ui-muted)]">
       <span class="tinted ink c-good mb-1 inline-flex size-12 shrink-0 items-center justify-center rounded-full">
         <Icon name="check" class="size-6" />
       </span>
-      <b class="text-base font-semibold text-base-content" tabindex={-1} id="ib-clear">
+      <b class="text-base font-semibold text-[var(--ui-text)]" tabindex={-1} id="ib-clear">
         All clear
       </b>
       <span>No questions, approvals, paused sessions or blocked tasks.</span>
-      <span class="max-w-sm text-sm muted">The sessions are working on their own.</span>
+      <span class="max-w-sm text-sm text-[var(--ui-muted)]">The sessions are working on their own.</span>
       <div class="mt-2 flex flex-wrap justify-center gap-2">
-        <a class="btn" href={api.channelHref(ch, "/team")}>
+        <Button variant="secondary" href={api.channelHref(ch, "/team")}>
           <Icon name="users" class="size-4" />
           See the team
-        </a>
-        <a class="btn" href={api.channelHref(ch, "/work")}>
+        </Button>
+        <Button variant="secondary" href={api.channelHref(ch, "/work")}>
           <Icon name="list" class="size-4" />
           Plan work
-        </a>
+        </Button>
       </div>
     </div>
   );
@@ -797,15 +778,14 @@ function ExtrasSections({
         n={ext.approvals.length}
         extra={
           ext.approvals.length > 1 ? (
-            <button
-              type="button"
-              class="btn btn-ghost btn-sm font-normal"
-              data-xdismiss-all
+            <Button
+              variant="ghost"
+              data-xdismiss-all=""
               disabled={btnBusy === "xdall"}
               onClick={onDismissAll}
             >
               Dismiss all
-            </button>
+            </Button>
           ) : null
         }
       >
@@ -943,10 +923,15 @@ export function Inbox({
     }
   }
 
+  /** The card a handled key belongs to: the li whose data-item carries it. */
+  function cardOf(k: string): Element | null {
+    return root.current?.querySelector(`[data-item="${CSS.escape(k)}"]`) ?? null;
+  }
+
   /** handled(): the card leaves the list and focus moves to the card now in its place. */
-  async function handled(k: string, el: Element | null): Promise<void> {
+  async function handled(k: string): Promise<void> {
     const items = [...(root.current?.querySelectorAll("[data-item]") ?? [])];
-    const li = el?.closest("[data-item]");
+    const li = cardOf(k);
     pendingFocus.current = li ? items.indexOf(li) : -1;
     setHiddenKeys((h) => new Set(h).add(k));
     await store?.loadAttention();
@@ -961,14 +946,14 @@ export function Inbox({
     }
     setCardBusy(k);
     if (await act("reply", { seq, msg }, "Reply sent")) {
-      await handled(k, root.current?.querySelector(`#ar-${seq}`) ?? null);
+      await handled(k);
     } else {
       setCardBusy(null);
     }
   }
 
   /** Approve a gated task, with the open note when there is one (wire()'s data-approve). */
-  async function approve(id: string, el: Element | null): Promise<void> {
+  async function approve(id: string): Promise<void> {
     setBtnBusy(`ap:${id}`);
     if (await act("approve", { id, msg: (notes.get(id) ?? "").trim() }, `Approved ${id}`)) {
       setNotes((m) => {
@@ -977,7 +962,7 @@ export function Inbox({
         return next;
       });
       store?.boardChanged();
-      await handled(`g${id}`, el);
+      await handled(`g${id}`);
     } else {
       setBtnBusy(null);
     }
@@ -985,7 +970,7 @@ export function Inbox({
 
   /** Open the note field of one gate (data-approve-note). */
   function openNote(id: string): void {
-    focusSel.current = `#gn-${CSS.escape(id)}`;
+    focusSel.current = `[data-note-for="${CSS.escape(id)}"] input`;
     setNotes((m) => {
       const next = new Map(m);
       next.set(id, "");
@@ -1018,8 +1003,8 @@ export function Inbox({
   }
 
   /** Unblock a blocked task: back to To do, noted for the board (data-unblock). */
-  async function unblock(id: string, el: Element | null): Promise<void> {
-    if (await setTaskStatus(id, "todo", "unblocked by the owner")) await handled(`b${id}`, el);
+  async function unblock(id: string): Promise<void> {
+    if (await setTaskStatus(id, "todo", "unblocked by the owner")) await handled(`b${id}`);
   }
 
   /** Give a blocked task to another session (data-reassign), with Undo. */
@@ -1045,7 +1030,7 @@ export function Inbox({
   }
 
   /** Resume a paused session (data-resume), with Undo. */
-  async function resume(name: string, el: Element | null): Promise<void> {
+  async function resume(name: string): Promise<void> {
     setBtnBusy(`rs:${name}`);
     const ok = await act("resume", { target: name }, `${name} resumed`, {
       undo: () =>
@@ -1056,7 +1041,7 @@ export function Inbox({
     });
     if (ok) {
       void store?.loadSessions();
-      await handled(`p${name}`, el);
+      await handled(`p${name}`);
     } else {
       setBtnBusy(null);
     }
@@ -1148,7 +1133,7 @@ export function Inbox({
             busy={btnBusy === `ap:${g.id}`}
             task={{ id: g.id, href: taskH(g.id), title: g.title || titleOf(g.id) }}
             onOpenTask={onOpenTask}
-            onApprove={(el) => void approve(g.id, el)}
+            onApprove={() => void approve(g.id)}
             onOpenNote={() => openNote(g.id)}
             onCloseNote={(refocus) => closeNote(g.id, refocus)}
             onNoteText={(text) =>
@@ -1172,7 +1157,7 @@ export function Inbox({
             href={sessH(p.name)}
             busy={btnBusy === `rs:${p.name}`}
             onOpenSession={onOpenSession}
-            onResume={(el) => void resume(p.name, el)}
+            onResume={() => void resume(p.name)}
             onCompose={onCompose}
           />
         ))}
@@ -1190,7 +1175,7 @@ export function Inbox({
             hrefOf={taskH}
             titleOf={titleOf}
             onOpenTask={onOpenTask}
-            onUnblock={(el) => void unblock(b.id, el)}
+            onUnblock={() => void unblock(b.id)}
             onReassign={(to) => void reassign(b.id, to)}
           />
         ))}

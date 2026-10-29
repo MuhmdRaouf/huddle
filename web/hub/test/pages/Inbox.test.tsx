@@ -762,7 +762,7 @@ describe("extras: Radar alerts", () => {
         sessions: { sessions: [{ name: "greta", state: "idle", control: "pause" }] },
       }),
     );
-    expect(document.querySelector(".badge-warning")?.textContent).toBe("Paused");
+    expect(document.querySelector(".ui-badge-warn")?.textContent).toBe("Paused");
     expect(screen.queryByRole("button", { name: "Pause greta" })).toBeNull();
   });
 });
@@ -916,7 +916,7 @@ describe("shell hand-offs", () => {
     const approval = cards.find((c) => c.getAttribute("data-item") === "x7") as HTMLElement;
     await click(approval.querySelectorAll("a")[0]);
     expect(h.openSession).toHaveBeenCalledWith("greta");
-    const open = approval.querySelector('a[href="#/channels/lab/inbox?s=greta"].btn');
+    const open = approval.querySelector('a[href="#/channels/lab/inbox?s=greta"].ui-btn');
     await click(open);
     expect(h.openSession).toHaveBeenCalledWith("greta");
   });

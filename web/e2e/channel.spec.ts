@@ -898,3 +898,75 @@ test("the Today digest keeps its controls and its toast inside the viewport", as
   await refetch;
   await expectNoSideScroll(page);
 });
+
+test("the inbox page keeps its cards, its note row and its toast inside the viewport", async ({
+  page,
+}, info) => {
+  const ch = await freshChannel(info.project.name, ["greta"]);
+  // one question and one gated task wait on the owner: the two need kinds the page answers
+  await api(`/api/c/${ch}/op/send?as=greta`, {
+    to: "owner",
+    msg: "Which database should the service use?",
+    ask: true,
+  });
+  await api(`/api/c/${ch}/op/import_plan?as=owner`, {
+    plan: {
+      phases: [
+        { n: 0, title: "Plan", steps: [{ id: "gate-1", title: "Run the migration", gate: "ask-first" }] },
+      ],
+    },
+  });
+  await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/inbox`);
+  const asks = page.getByRole("region", { name: "Questions for you" });
+  const gates = page.getByRole("region", { name: "Waiting for your approval" });
+  await expect(asks).toBeVisible();
+  await expect(gates).toBeVisible();
+
+  // the page's own action controls take the pointer's full target and stand whole in the viewport
+  const controls = [
+    asks.getByRole("button", { name: "Yes, go ahead" }),
+    asks.getByRole("button", { name: "Reply" }),
+    asks.getByRole("textbox"),
+    gates.getByRole("button", { name: "Approve", exact: true }),
+    gates.getByRole("button", { name: "Approve with a note" }),
+  ];
+  await expectTapTargets(controls);
+  await expectInsideViewport(page, controls);
+  await expectNoSideScroll(page);
+
+  // the empty reply box stands tall enough for its wrapped placeholder: no line clips
+  const clip = await asks.getByRole("textbox").evaluate((el) => ({
+    scroll: el.scrollHeight,
+    client: el.clientHeight,
+  }));
+  expect(clip.scroll, "the empty reply box clips its placeholder").toBeLessThanOrEqual(clip.client);
+
+  // the note row opens in place: its field, its Approve and its Cancel, whole in the viewport
+  await gates.getByRole("button", { name: "Approve with a note" }).click();
+  const noteRow = gates.locator("[data-note-for]");
+  const note = noteRow.getByRole("textbox");
+  await expect(note).toBeVisible();
+  await expectInsideViewport(page, [noteRow]);
+  await expectLayerTargets(noteRow);
+
+  // the page opens no sheet, dialog or menu of its own: an approved gate leaves over one toast
+  await note.fill("watch the index");
+  await note.press("Enter");
+  const toast = page.locator(".ui-toast");
+  await expect(toast).toBeVisible();
+  expect(await page.locator("dialog[open]").count(), "one layer at a time").toBeLessThanOrEqual(1);
+  await expectInsideViewport(page, [toast]);
+  if ((await page.locator("[data-nav='bottom']").count()) > 0)
+    await expectClearOfTabBar(page, [toast]);
+
+  // a quick reply raises the page's toast the same way, and the card leaves the list
+  await asks.getByRole("button", { name: "Yes, go ahead" }).click();
+  const sent = page.getByText("Reply sent");
+  await expect(sent).toBeVisible();
+  expect(await page.locator("dialog[open]").count(), "one layer at a time").toBeLessThanOrEqual(1);
+  await expectInsideViewport(page, [sent]);
+  await expectNoSideScroll(page);
+  await expectAccessible(page, SHELL);
+});

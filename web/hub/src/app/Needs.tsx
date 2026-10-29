@@ -141,7 +141,11 @@ function Fact({ term, value }: { term: string; value: string | undefined }): JSX
   return (
     <>
       <dt class={MUTED}>{term}</dt>
-      <dd class={`m-0 min-w-0 ${term === "Command" ? "ui-mono truncate text-[13px]" : ""}`}>{value}</dd>
+      <dd
+        class={`m-0 min-w-0 ${term === "Command" ? "ui-mono truncate text-[length:var(--ui-text-sm)]" : ""}`}
+      >
+        {value}
+      </dd>
     </>
   );
 }
@@ -401,7 +405,7 @@ export function ActComposer({
     <div class="flex flex-col gap-3" data-act-composer="">
       {sheet}
       <textarea
-        class="min-h-[88px] w-full rounded-[var(--ui-radius)] border border-[var(--ui-line-strong)] bg-[var(--ui-surface)] px-3 py-2 text-[length:var(--ui-text-md)] text-[var(--ui-text)] placeholder:text-[var(--ui-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-accent)]"
+        class="min-h-[5.8667rem] w-full rounded-[var(--ui-radius)] border border-[var(--ui-line-strong)] bg-[var(--ui-surface)] px-3 py-2 text-[length:var(--ui-text-md)] text-[var(--ui-text)] placeholder:text-[var(--ui-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-accent)]"
         rows={3}
         aria-label="Message"
         placeholder={placeholder}
@@ -579,7 +583,7 @@ function ItemFacts({ item }: { item: NeedItem }): JSX.Element {
 /** The key a wide bar's answer names, in the ink of the button it sits on. */
 function Key({ k }: { k: string }): JSX.Element {
   return (
-    <kbd class="ui-mono rounded-[var(--ui-radius-sm)] border border-current px-1 text-[11px] leading-4">
+    <kbd class="ui-mono rounded-[var(--ui-radius-sm)] border border-current px-1 text-[0.7333rem] leading-4">
       {k}
     </kbd>
   );
