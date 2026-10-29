@@ -264,6 +264,25 @@ func TestRequestSeenByRouterAndTranscript(t *testing.T) {
 		}
 	})
 
+	t.Run("does not pair two calls whose request ids differ", func(t *testing.T) {
+		store := newTestStore()
+		store.AddRequest(route(func(r *shared.RequestRecord) {
+			r.AgentID = "a31cd3de580148dc3"
+			r.RequestID = "req_b"
+		}), nil)
+		store.AddRequest(transcriptCopy(func(r *shared.RequestRecord) {
+			r.RequestID = "req_a"
+			r.Ts = routeT + 1_000
+		}), nil)
+		rows := store.Requests(RequestFilter{})
+		if len(rows) != 2 {
+			t.Fatalf("requests: got %d, want 2", len(rows))
+		}
+		if rows[0].ID == rows[1].ID {
+			t.Errorf("rows: got %s twice, want two different calls", rows[0].ID)
+		}
+	})
+
 	t.Run("pairs each spool line with the closest transcript call once", func(t *testing.T) {
 		store := newTestStore()
 		store.AddRequest(transcriptCopy(func(r *shared.RequestRecord) { r.ID = "first"; r.Ts = routeT - 3_000; r.LatencyMs = i64(1230) }), nil)

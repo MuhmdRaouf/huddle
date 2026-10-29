@@ -36,6 +36,10 @@ func FillUpstream(record shared.RequestRecord) shared.RequestRecord {
 // the same call, else a distance where smaller is closer (time apart, plus any difference
 // in measured latency).
 func MatchDistance(transcript, route shared.RequestRecord, routeAgent string) *int64 {
+	// two different API request ids are two different calls
+	if transcript.RequestID != "" && route.RequestID != "" && transcript.RequestID != route.RequestID {
+		return nil
+	}
 	if transcript.SessionID != route.SessionID || transcript.Model != route.Model {
 		return nil
 	}

@@ -79,6 +79,39 @@ func TestMatchDistance(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects two records whose request ids differ", func(t *testing.T) {
+		call := transcript
+		call.Ts = route.Ts
+		call.RequestID = "req_a"
+		other := route
+		other.RequestID = "req_b"
+		if got := MatchDistance(call, other, "a31cd3de"); got != nil {
+			t.Errorf("req_a vs req_b: got %s, want no match", showInt(got))
+		}
+	})
+
+	t.Run("pairs a record whose request id the other side lacks", func(t *testing.T) {
+		call := transcript
+		call.Ts = route.Ts
+		call.RequestID = "req_a"
+		unnamed := route
+		unnamed.RequestID = ""
+		if got := MatchDistance(call, unnamed, "a31cd3de"); got == nil {
+			t.Error("req_a vs none: got no match, want a distance")
+		}
+	})
+
+	t.Run("pairs two records naming the same request id", func(t *testing.T) {
+		call := transcript
+		call.Ts = route.Ts
+		call.RequestID = "req_a"
+		same := route
+		same.RequestID = "req_a"
+		if got := MatchDistance(call, same, "a31cd3de"); got == nil {
+			t.Error("req_a vs req_a: got no match, want a distance")
+		}
+	})
+
 	t.Run("rejects a different agent when the line names one", func(t *testing.T) {
 		if got := MatchDistance(transcript, route, "agent-someone-else"); got != nil {
 			t.Errorf("another agent: got %s, want no match", showInt(got))
