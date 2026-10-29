@@ -63,7 +63,7 @@ func (s *Store) AddTranscript(ctx context.Context, facts TranscriptFacts) error 
 // both the facts row and the reconciled ledger row. The watcher calls this from its one
 // goroutine, so the read and the write need no transaction.
 func (s *Store) file(ctx context.Context, id string, route *RouteFacts, transcript *TranscriptFacts) error {
-	facts, err := s.factsOf(ctx, id)
+	facts, err := factsOf(ctx, s.db, id)
 	if err != nil {
 		return err
 	}
@@ -83,13 +83,14 @@ func (s *Store) file(ctx context.Context, id string, route *RouteFacts, transcri
 	return nil
 }
 
-// factsOf reads the facts the file already holds for the id; an empty Sources when none.
-func (s *Store) factsOf(ctx context.Context, id string) (Sources, error) {
+// factsOf reads the facts the file already holds for the id through db — the store's or the
+// transaction's; an empty Sources when none.
+func factsOf(ctx context.Context, db DB, id string) (Sources, error) {
 	facts := Sources{}
 	if err := ctx.Err(); err != nil {
 		return facts, fmt.Errorf("read the ledger facts %s: %w", id, err)
 	}
-	found, err := s.db.Get("SELECT route, transcript FROM ledger_facts WHERE id = ?", id)
+	found, err := db.Get("SELECT route, transcript FROM ledger_facts WHERE id = ?", id)
 	if err != nil {
 		return facts, fmt.Errorf("read the ledger facts %s: %w", id, err)
 	}
@@ -142,26 +143,33 @@ func (s *Store) Upsert(ctx context.Context, row Row) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("upsert the ledger row %s: %w", row.ID, err)
 	}
-	// VALUES mirrors the column list above, one ? per column, in order.
-	const query = "INSERT OR REPLACE INTO ledger_requests (" +
-		"id, anthropic_id, started_at, ttfb_ms, ttft_ms, duration_ms, lane, harness, " +
-		"model, fallback_from, upstream, session_id, agent_id, parent_agent_id, prompt_id, turn_index, " +
-		"prev_request, query_source, outcome, status, error_code, stop_reason, input, output, " +
-		"cache_read, cache_write, usage_source, cost_usd, cost_reported_usd, ratelimit_5h, " +
-		"ratelimit_7d, prompt_hash, in_transcript) VALUES (" +
-		"?, ?, ?, ?, ?, ?, ?, ?, " +
-		"?, ?, ?, ?, ?, ?, ?, ?, " +
-		"?, ?, ?, ?, ?, ?, ?, ?, " +
-		"?, ?, ?, ?, ?, ?, ?, ?, " +
-		"?)"
-	err := s.db.Run(query,
+	return upsertRow(s.db, row)
+}
+
+// VALUES mirrors the column list above, one ? per column, in order.
+const upsertQuery = "INSERT OR REPLACE INTO ledger_requests (" +
+	"id, anthropic_id, started_at, ttfb_ms, ttft_ms, duration_ms, lane, harness, " +
+	"model, fallback_from, upstream, session_id, agent_id, parent_agent_id, prompt_id, turn_index, " +
+	"prev_request, query_source, outcome, status, error_code, stop_reason, input, output, " +
+	"cache_read, cache_write, usage_source, cost_usd, cost_reported_usd, ratelimit_5h, " +
+	"ratelimit_7d, prompt_hash, in_transcript, reconciled) VALUES (" +
+	"?, ?, ?, ?, ?, ?, ?, ?, " +
+	"?, ?, ?, ?, ?, ?, ?, ?, " +
+	"?, ?, ?, ?, ?, ?, ?, ?, " +
+	"?, ?, ?, ?, ?, ?, ?, ?, " +
+	"?, ?)"
+
+// upsertRow inserts the row through db, or replaces the one its ID names, stamped with the
+// version of the rules that built it.
+func upsertRow(db DB, row Row) error {
+	err := db.Run(upsertQuery,
 		row.ID, row.AnthropicID, row.StartedAt, row.TtfbMs, row.TtftMs, row.DurationMs,
 		row.Lane, row.Harness, row.Model, row.FallbackFrom, row.Upstream,
 		row.SessionID, row.AgentID, row.ParentAgentID, row.PromptID, row.TurnIndex,
 		row.PrevRequest, row.QuerySource, row.Outcome, row.Status, row.ErrorCode, row.StopReason,
 		row.Input, row.Output, row.CacheRead, row.CacheWrite, row.UsageSource,
 		row.CostUSD, row.CostReportedUSD, row.Ratelimit5h, row.Ratelimit7d,
-		row.PromptHash, boolColumn(row.InTranscript))
+		row.PromptHash, boolColumn(row.InTranscript), ReconcileVersion)
 	if err != nil {
 		return fmt.Errorf("upsert the ledger row %s: %w", row.ID, err)
 	}
@@ -180,10 +188,10 @@ func (s *Store) ByAnthropicID(ctx context.Context, id string) (*Row, error) {
 
 // Prune cuts the ledger back to the TTL: every request row started before the cutoff —
 // now minus MetaTTL — goes, with the facts rows filed under the same ids. A row the file
-// heard of without a started_at stays. The DB surface offers no transaction, so the
-// request rows go first and their facts follow: an in-flight request files its facts
-// before its row, so an orphan facts row is a shape the file already holds, while an
-// orphan request row would sit in the dashboard with nothing behind it.
+// heard of without a started_at stays. The request rows go first and their facts follow:
+// an in-flight request files its facts before its row, so an orphan facts row is a shape
+// the file already holds, while an orphan request row would sit in the dashboard with
+// nothing behind it.
 func (s *Store) Prune(ctx context.Context, now time.Time) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err

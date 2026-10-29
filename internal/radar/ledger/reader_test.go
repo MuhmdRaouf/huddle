@@ -261,8 +261,8 @@ func TestReader(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read user_version: %v", err)
 		}
-		if version := row["user_version"]; version != int64(3) {
-			t.Errorf("user_version = %v, want 3", version)
+		if version := row["user_version"]; version != int64(SchemaVersion) {
+			t.Errorf("user_version = %v, want %d", version, SchemaVersion)
 		}
 		found, err := st.db.Get("SELECT name FROM sqlite_master " +
 			"WHERE type = 'index' AND name = 'ledger_requests_session'")

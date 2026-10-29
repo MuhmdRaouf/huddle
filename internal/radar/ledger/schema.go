@@ -64,13 +64,52 @@ CREATE TABLE IF NOT EXISTS ledger_facts (
   transcript TEXT NOT NULL DEFAULT ''
 )`
 
-// applySchema creates the tables and their indexes on a newly opened file. Every statement
-// is IF NOT EXISTS, so a file at an older version gains whatever it is missing on its next
-// Open.
+// schemaSteps are the migrations after version 3, one per version: index 0 takes a file to
+// version 4. A step does schema work only (ALTER, CREATE, an index); rows are rebuilt by
+// the backfill.
+var schemaSteps = [...]string{
+	// 4: the version of the rules each row was built with, and the ledger's own key/value table
+	"ALTER TABLE ledger_requests ADD COLUMN reconciled INTEGER NOT NULL DEFAULT 0;" +
+		"CREATE TABLE IF NOT EXISTS ledger_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+}
+
+// SchemaVersion is the version a file sits at once Open has applied every step.
+const SchemaVersion = 3 + len(schemaSteps)
+
+// applySchema creates the tables and their indexes on a newly opened file, then raises the
+// file through every step it is behind. The base statements are IF NOT EXISTS and each step
+// runs once per version, so a file at an older version gains whatever it is missing on its
+// next Open.
 func applySchema(db DB) error {
 	if err := db.Exec(ledgerRequestsDDL + ";" + ledgerRequestsIndex + ";" + ledgerFactsDDL + ";" +
-		ledgerRequestsSessionIndex + ";PRAGMA user_version = 3"); err != nil {
+		ledgerRequestsSessionIndex); err != nil {
 		return fmt.Errorf("create the ledger schema: %w", err)
+	}
+	found, err := db.Get("PRAGMA user_version")
+	if err != nil {
+		return fmt.Errorf("read the ledger schema's version: %w", err)
+	}
+	version := int(intColumn(found, "user_version"))
+	if version < 3 {
+		if err := db.Exec("PRAGMA user_version = 3"); err != nil {
+			return fmt.Errorf("raise the ledger schema's version to 3: %w", err)
+		}
+		version = 3
+	}
+	for at, step := range schemaSteps {
+		to := 3 + at + 1
+		if version >= to {
+			continue
+		}
+		// the step and its version go in together: a half-applied step never stands
+		if err := db.Tx(func(tx DB) error {
+			if err := tx.Exec(step); err != nil {
+				return err
+			}
+			return tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", to))
+		}); err != nil {
+			return fmt.Errorf("raise the ledger schema's version to %d: %w", to, err)
+		}
 	}
 	return nil
 }

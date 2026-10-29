@@ -6,6 +6,10 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
+// ReconcileVersion is the version of Reconcile's rules. Every row is written with it; a
+// change to the rules raises it, and the backfill rebuilds each older row from its facts.
+const ReconcileVersion = 1
+
 // Reconcile answers the row the sources agree on, false when no source knows the request
 // (every pointer nil).
 func Reconcile(s Sources) (Row, bool) {

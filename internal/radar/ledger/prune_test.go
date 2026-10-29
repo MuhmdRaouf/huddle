@@ -46,7 +46,7 @@ func TestStorePrunesPastTheTTL(t *testing.T) {
 	if row, err := st.Get(ctx, "req_100"); err != nil || row != nil {
 		t.Fatalf("the 100-day row = %+v, %v; want it gone", row, err)
 	}
-	if factsOf(t, st, "req_100") {
+	if holdsFacts(t, st, "req_100") {
 		t.Fatal("the 100-day row's facts are still filed, want them gone with it")
 	}
 	got89, err := st.Get(ctx, "req_89")
@@ -60,14 +60,14 @@ func TestStorePrunesPastTheTTL(t *testing.T) {
 		t.Fatalf("the row without a start = %+v, %v; want it kept", row, err)
 	}
 	for _, id := range []string{"req_89", "req_none"} {
-		if !factsOf(t, st, id) {
+		if !holdsFacts(t, st, id) {
 			t.Fatalf("the facts of %s are gone, want them kept", id)
 		}
 	}
 }
 
-// factsOf answers whether the file still holds a facts row for the id.
-func factsOf(t *testing.T, st *Store, id string) bool {
+// holdsFacts answers whether the file still holds a facts row for the id.
+func holdsFacts(t *testing.T, st *Store, id string) bool {
 	t.Helper()
 	found, err := st.db.Get("SELECT id FROM ledger_facts WHERE id = ?", id)
 	if err != nil {

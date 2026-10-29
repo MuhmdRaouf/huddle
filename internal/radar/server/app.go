@@ -185,13 +185,14 @@ type App struct {
 	URL       string
 	MovedFrom int
 
-	env          domain.EnvLookup
-	ctx          context.Context
-	cancel       func()
-	prunes       *history.PruneSchedule
-	ledger       *ledger.Store
-	ledgerPrunes *ledger.PruneBeat
-	removal      *lifecycle.RemovalWatch
+	env            domain.EnvLookup
+	ctx            context.Context
+	cancel         func()
+	prunes         *history.PruneSchedule
+	ledger         *ledger.Store
+	ledgerPrunes   *ledger.PruneBeat
+	ledgerBackfill *ledger.BackfillRun
+	removal        *lifecycle.RemovalWatch
 
 	signals   chan os.Signal
 	sigDone   chan struct{}
@@ -234,11 +235,13 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 	}
 	var led *ledger.Store
 	var ledgerPrunes *ledger.PruneBeat
+	var ledgerBackfill *ledger.BackfillRun
 	if opened, err := ledger.Open(paths.LedgerPath(appCtx, options.Env)); err != nil {
 		log(fmt.Sprintf("radar: ledger unavailable, running without it (%v)", err))
 	} else {
 		led = opened
 		ledgerPrunes = ledger.SchedulePrune(appCtx, led, 0, now, nil)
+		ledgerBackfill = ledger.StartBackfill(appCtx, led, 0, nil)
 	}
 	watcher := ingest.StartWatcher(appCtx, ingest.WatcherOptions{
 		Env:        options.Env,
@@ -296,24 +299,25 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 	httpServer.SetPort(bound)
 	url := fmt.Sprintf("http://127.0.0.1:%d", bound)
 	a := &App{
-		Server:       httpServer,
-		Store:        st,
-		Watcher:      watcher,
-		Insights:     insights,
-		Writer:       writer,
-		Port:         bound,
-		URL:          url,
-		MovedFrom:    movedFrom,
-		env:          options.Env,
-		ctx:          ctx,
-		cancel:       cancel,
-		prunes:       prunes,
-		ledger:       led,
-		ledgerPrunes: ledgerPrunes,
-		signals:      make(chan os.Signal, 1),
-		sigDone:      make(chan struct{}),
-		serveDone:    make(chan struct{}),
-		stopped:      make(chan struct{}),
+		Server:         httpServer,
+		Store:          st,
+		Watcher:        watcher,
+		Insights:       insights,
+		Writer:         writer,
+		Port:           bound,
+		URL:            url,
+		MovedFrom:      movedFrom,
+		env:            options.Env,
+		ctx:            ctx,
+		cancel:         cancel,
+		prunes:         prunes,
+		ledger:         led,
+		ledgerPrunes:   ledgerPrunes,
+		ledgerBackfill: ledgerBackfill,
+		signals:        make(chan os.Signal, 1),
+		sigDone:        make(chan struct{}),
+		serveDone:      make(chan struct{}),
+		stopped:        make(chan struct{}),
 	}
 	safego.Go(options.Log, func() {
 		defer close(a.serveDone)
@@ -434,6 +438,7 @@ func (a *App) shutdown() {
 	a.removal.Stop()
 	a.Insights.Stop()
 	a.prunes.Stop()
+	a.ledgerBackfill.Stop()
 	a.ledgerPrunes.Stop()
 	if a.Writer != nil {
 		a.Writer.Stop()

@@ -125,9 +125,10 @@ type Tab struct {
 	cancel func()
 	prunes *history.PruneSchedule
 	// ledger is the request ledger the watcher files into; nil when its file would not open
-	ledger       *ledger.Store
-	ledgerPrunes *ledger.PruneBeat
-	httpServer   *server.HttpServer
+	ledger         *ledger.Store
+	ledgerPrunes   *ledger.PruneBeat
+	ledgerBackfill *ledger.BackfillRun
+	httpServer     *server.HttpServer
 
 	// proxying mode: the recorded owner's address and whether its radar routes sit under the
 	// prefix too (another huddle) or at the root (a standalone radar)
@@ -229,6 +230,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 	}
 	var led *ledger.Store
 	var ledgerPrunes *ledger.PruneBeat
+	var ledgerBackfill *ledger.BackfillRun
 	if opened, err := ledger.Open(paths.LedgerPath(appCtx, env)); err != nil {
 		options.Health.Fail("ledger.db", err)
 		log(fmt.Sprintf("radar: ledger unavailable, running without it (%v)", err))
@@ -236,6 +238,8 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		options.Health.OK("ledger.db")
 		led = opened
 		ledgerPrunes = ledger.SchedulePrune(appCtx, led, 0, now, ledgerReport)
+		options.Health.Register(ledger.BackfillHealthName, domain.HealthLoop, 0)
+		ledgerBackfill = ledger.StartBackfill(appCtx, led, 0, ledgerReport)
 	}
 	watcher := ingest.StartWatcher(appCtx, ingest.WatcherOptions{
 		Env:        env,
@@ -278,6 +282,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 	t.Writer = writer
 	t.ledger = led
 	t.ledgerPrunes = ledgerPrunes
+	t.ledgerBackfill = ledgerBackfill
 	t.Owns = true
 	// the token a proxying huddle presents on this mount's guarded routes: huddle's own members
 	// live only in their owner's memory, so the lock record is the one ground two huddles share
@@ -735,6 +740,7 @@ func (t *Tab) Stop() {
 			return
 		}
 		t.Watcher.Stop()
+		t.ledgerBackfill.Stop()
 		t.ledgerPrunes.Stop()
 		if t.ledger != nil {
 			_ = t.ledger.Close()
