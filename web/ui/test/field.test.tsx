@@ -130,6 +130,81 @@ describe("Field inputMode", () => {
   });
 });
 
+describe("Field native attributes", () => {
+  it("passes the autocomplete hint, the spelling check and the form name to the input", () => {
+    render(
+      <Field label="Title" value="" onInput={() => {}} autoComplete="off" spellCheck={false} name="title" />,
+    );
+    const input = screen.getByRole("textbox", { name: "Title" });
+    expect(input.getAttribute("autocomplete")).toBe("off");
+    expect(input.getAttribute("spellcheck")).toBe("false");
+    expect(input.getAttribute("name")).toBe("title");
+  });
+
+  it("passes the autocomplete hint, the spelling check and the form name to the textarea", () => {
+    render(
+      <Field
+        label="Body"
+        value=""
+        onInput={() => {}}
+        multiline
+        autoComplete="off"
+        spellCheck={false}
+        name="body"
+      />,
+    );
+    const box = screen.getByLabelText("Body");
+    expect(box.getAttribute("autocomplete")).toBe("off");
+    expect(box.getAttribute("spellcheck")).toBe("false");
+    expect(box.getAttribute("name")).toBe("body");
+  });
+
+  it("carries no autocomplete, spellcheck or name when none is asked", () => {
+    render(<Field label="Name" value="" onInput={() => {}} />);
+    const input = screen.getByRole("textbox", { name: "Name" });
+    expect(input.hasAttribute("autocomplete")).toBe(false);
+    expect(input.hasAttribute("spellcheck")).toBe(false);
+    expect(input.hasAttribute("name")).toBe(false);
+    render(<Field label="Notes" value="" onInput={() => {}} multiline />);
+    const box = screen.getByLabelText("Notes");
+    expect(box.hasAttribute("autocomplete")).toBe(false);
+    expect(box.hasAttribute("spellcheck")).toBe(false);
+    expect(box.hasAttribute("name")).toBe(false);
+  });
+});
+
+describe("Field error note", () => {
+  it("announces the error as an alert", () => {
+    render(<Field label="Budget" value="" onInput={() => {}} error="Enter a number" />);
+    expect(screen.getByRole("alert").textContent).toBe("Enter a number");
+  });
+
+  it("gives the hint no role", () => {
+    render(<Field label="Channel" value="" onInput={() => {}} hint="Lowercase, no spaces" />);
+    expect(screen.getByText("Lowercase, no spaces").getAttribute("role")).toBeNull();
+  });
+});
+
+describe("Field hint", () => {
+  it("renders a marked-up hint inside the hint node", () => {
+    render(<Field label="Token" value="" onInput={() => {}} hint={<code>x</code>} />);
+    const input = screen.getByRole("textbox", { name: "Token" });
+    const code = screen.getByText("x");
+    expect(code.tagName).toBe("CODE");
+    const hint = code.closest("p") as HTMLParagraphElement;
+    expect(hint.className).toBe("ui-field-hint");
+    expect(input.getAttribute("aria-describedby")).toBe(hint.id);
+  });
+
+  it("renders a plain string hint as its text", () => {
+    render(<Field label="Channel" value="" onInput={() => {}} hint="Lowercase, no spaces" />);
+    const input = screen.getByRole("textbox", { name: "Channel" });
+    const hint = screen.getByText("Lowercase, no spaces");
+    expect(hint.className).toBe("ui-field-hint");
+    expect(input.getAttribute("aria-describedby")).toBe(hint.id);
+  });
+});
+
 describe("Field minRows", () => {
   it("stands minRows lines open and still grows to maxRows", () => {
     render(<Field label="Notes" value="" onInput={() => {}} multiline minRows={3} maxRows={5} />);

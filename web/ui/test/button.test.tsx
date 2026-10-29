@@ -70,4 +70,22 @@ describe("Button", () => {
     expect(a.dataset.act).toBe("review");
     expect(a.hasAttribute("type")).toBe(false);
   });
+
+  it("shows its title as the tooltip on the button and on the link form", () => {
+    render(<Button title="Approve the card">Approve</Button>);
+    expect(screen.getByRole("button", { name: "Approve" }).getAttribute("title")).toBe("Approve the card");
+    render(
+      <Button href="#/now/s-1" title="Review the card">
+        Review
+      </Button>,
+    );
+    expect(screen.getByRole("link", { name: "Review" }).getAttribute("title")).toBe("Review the card");
+  });
+
+  it("carries no title when none is asked", () => {
+    render(<Button>Approve</Button>);
+    expect(screen.getByRole("button", { name: "Approve" }).hasAttribute("title")).toBe(false);
+    render(<Button href="#/now/s-1">Review</Button>);
+    expect(screen.getByRole("link", { name: "Review" }).hasAttribute("title")).toBe(false);
+  });
 });

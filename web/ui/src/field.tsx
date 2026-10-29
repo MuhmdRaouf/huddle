@@ -2,7 +2,7 @@
 // the control. The input is a full tap target tall; ids, commands and numbers can ask for the mono
 // face. A multiline field is a textarea that grows with its text up to maxRows lines, then scrolls.
 
-import type { CSSProperties, JSX } from "preact";
+import type { ComponentChild, CSSProperties, JSX } from "preact";
 import { useUiId } from "./id.ts";
 
 /** What a field shows and reports. */
@@ -13,8 +13,15 @@ export type FieldProps = {
   type?: "text" | "search" | "number" | undefined;
   /** The keyboard a touch screen raises for the control; none when left out. */
   inputMode?: "decimal" | "numeric" | "email" | "tel" | "url" | "search" | "text" | undefined;
+  /** The control's autocomplete hint, for example "off", "one-time-code" or "username"; none when left out. */
+  autoComplete?: string | undefined;
+  /** Whether the browser checks spelling in the control; none when left out. */
+  spellCheck?: boolean | undefined;
+  /** The control's form name. */
+  name?: string | undefined;
   placeholder?: string | undefined;
-  hint?: string | undefined;
+  /** The hint under the control; text or markup such as a code snippet. */
+  hint?: ComponentChild | undefined;
   /** Marks the input invalid and replaces the hint. */
   error?: string | undefined;
   mono?: boolean | undefined;
@@ -29,7 +36,7 @@ export type FieldProps = {
 /** The wiring every control carries: the invalid mark and the note it reads out. */
 function described(
   error: string | undefined,
-  note: string | undefined,
+  note: ComponentChild | undefined,
   id: string,
 ): {
   "aria-invalid": true | undefined;
@@ -41,6 +48,13 @@ function described(
   };
 }
 
+/** The spelling check a control carries. Preact drops an attribute whose value is false, and the
+ *  browser then falls back to its default, which leaves spellchecking on, so the check travels as
+ *  the string the DOM stores; preact types the attribute boolean-only, so the type steps aside. */
+function spellCheckAttr(check: boolean | undefined): { spellCheck: boolean | undefined } {
+  return { spellCheck: check === undefined ? undefined : (String(check) as unknown as boolean) };
+}
+
 /** The one-line input. */
 function Line(props: {
   id: string;
@@ -48,9 +62,12 @@ function Line(props: {
   onInput: (value: string) => void;
   type: "text" | "search" | "number";
   inputMode: FieldProps["inputMode"];
+  autoComplete: FieldProps["autoComplete"];
+  spellCheck: FieldProps["spellCheck"];
+  name: FieldProps["name"];
   placeholder: string | undefined;
   error: string | undefined;
-  note: string | undefined;
+  note: ComponentChild | undefined;
   mono: boolean;
 }): JSX.Element {
   return (
@@ -61,6 +78,9 @@ function Line(props: {
       // single pair, so it is read as the text pair, whose role (none set here) all three share
       type={props.type as "text"}
       inputMode={props.inputMode}
+      autoComplete={props.autoComplete}
+      {...spellCheckAttr(props.spellCheck)}
+      name={props.name}
       value={props.value}
       placeholder={props.placeholder}
       {...described(props.error, props.note, props.id)}
@@ -76,9 +96,12 @@ function Growing(props: {
   value: string;
   onInput: (value: string) => void;
   inputMode: FieldProps["inputMode"];
+  autoComplete: FieldProps["autoComplete"];
+  spellCheck: FieldProps["spellCheck"];
+  name: FieldProps["name"];
   placeholder: string | undefined;
   error: string | undefined;
-  note: string | undefined;
+  note: ComponentChild | undefined;
   minRows: number | undefined;
   maxRows: number;
 }): JSX.Element {
@@ -88,6 +111,9 @@ function Growing(props: {
       class="ui-input ui-input-multi"
       rows={Math.min(props.minRows ?? 1, props.maxRows)}
       inputMode={props.inputMode}
+      autoComplete={props.autoComplete}
+      {...spellCheckAttr(props.spellCheck)}
+      name={props.name}
       // the cap and the opening height travel as custom properties the stylesheet reads, set
       // through the CSSOM, which the page's CSP allows where a style attribute would be stripped
       style={
@@ -126,6 +152,9 @@ export function Field({
   onInput,
   type = "text",
   inputMode,
+  autoComplete,
+  spellCheck,
+  name,
   placeholder,
   hint,
   error,
@@ -147,6 +176,9 @@ export function Field({
           value={value}
           onInput={onInput}
           inputMode={inputMode}
+          autoComplete={autoComplete}
+          spellCheck={spellCheck}
+          name={name}
           placeholder={placeholder}
           error={error}
           note={note}
@@ -160,6 +192,9 @@ export function Field({
           onInput={onInput}
           type={type}
           inputMode={inputMode}
+          autoComplete={autoComplete}
+          spellCheck={spellCheck}
+          name={name}
           placeholder={placeholder}
           error={error}
           note={note}
@@ -167,7 +202,12 @@ export function Field({
         />
       )}
       {note !== undefined ? (
-        <p id={`${id}-note`} class={error !== undefined ? "ui-field-error" : "ui-field-hint"}>
+        <p
+          id={`${id}-note`}
+          class={error !== undefined ? "ui-field-error" : "ui-field-hint"}
+          // the screen reader announces an error at once; a hint reads in the normal order
+          role={error !== undefined ? "alert" : undefined}
+        >
           {note}
         </p>
       ) : null}

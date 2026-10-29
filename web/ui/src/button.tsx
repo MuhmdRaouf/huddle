@@ -18,6 +18,8 @@ export type ButtonProps = {
   icon?: IconName | undefined;
   /** The accessible name; required when the button shows an icon alone. */
   label?: string | undefined;
+  /** The tooltip a pointer shows. */
+  title?: string | undefined;
   /** A switch segment's state; leave it out on a plain button. */
   pressed?: boolean | undefined;
   type?: "button" | "submit" | undefined;
@@ -37,6 +39,7 @@ export function Button({
   size = "md",
   icon,
   label,
+  title,
   pressed,
   type = "button",
   disabled = false,
@@ -56,7 +59,7 @@ export function Button({
   );
   if (href !== undefined) {
     return (
-      <a {...data} href={href} class={cls} aria-label={label} onClick={onClick}>
+      <a {...data} href={href} class={cls} aria-label={label} title={title} onClick={onClick}>
         {parts}
       </a>
     );
@@ -67,6 +70,7 @@ export function Button({
       type={type}
       class={cls}
       aria-label={label}
+      title={title}
       aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
