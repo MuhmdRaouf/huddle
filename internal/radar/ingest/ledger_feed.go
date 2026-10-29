@@ -67,6 +67,7 @@ func transcriptFactsOf(request shared.RequestRecord) (ledger.TranscriptFacts, bo
 		Model:     request.Model,
 		What:      request.What,
 		Totals:    request.Totals,
+		Via:       request.Via,
 		Usage: domain.RouteUsage{
 			"input_tokens":                request.Tokens.Input,
 			"output_tokens":               request.Tokens.Output,

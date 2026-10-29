@@ -367,6 +367,53 @@ func TestTheBackfillRebuildsTheCaptureColumns(t *testing.T) {
 	}
 }
 
+// TestTheBackfillRebuildsTheNodeColumn: a row the previous rules wrote — reconciled 3 —
+// whose route facts name session s1 and no node, reads the node the rule gives that
+// session's untagged main agent once the backfill rebuilds it.
+func TestTheBackfillRebuildsTheNodeColumn(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "ledger.db")
+	buildVersion6Schema(t, file)
+	pool, err := sql.Open("sqlite", file)
+	if err != nil {
+		t.Fatalf("open the version-6 file: %v", err)
+	}
+	fact, err := json.Marshal(RouteFacts{Event: domain.RouteEvent{
+		Ts:        "2026-10-01T12:00:00Z",
+		Event:     domain.EventRoute,
+		Plugin:    "zai",
+		Model:     "glm-5.3",
+		Route:     "provider",
+		Status:    200,
+		SessionID: strp("s1"),
+		Headers:   &map[string]string{"request-id": "req_node"},
+	}})
+	if err != nil {
+		t.Fatalf("marshal the route facts: %v", err)
+	}
+	if _, err := pool.Exec(
+		"INSERT INTO ledger_requests (id, anthropic_id, model, reconciled) VALUES ('req_node', 'req_node', 'stale', 3);"+
+			"INSERT INTO ledger_facts (id, route, transcript) VALUES ('req_node', ?, '')", string(fact)); err != nil {
+		t.Fatalf("insert the node row and its facts: %v", err)
+	}
+	if err := pool.Close(); err != nil {
+		t.Fatalf("close the file: %v", err)
+	}
+
+	st := openLedgerFile(t, file)
+	ctx := context.Background()
+	rebuilt, more, err := st.BackfillOnce(ctx, BackfillBatch)
+	if err != nil || rebuilt != 1 || more {
+		t.Fatalf("the batch answered (%d, %t, %v), want (1, false, nil)", rebuilt, more, err)
+	}
+	row, err := st.Get(ctx, "req_node")
+	if err != nil || row == nil {
+		t.Fatalf("the rebuilt row = %+v, %v", row, err)
+	}
+	if row.NodeID != "s1/main" {
+		t.Errorf("NodeID = %q, want s1/main", row.NodeID)
+	}
+}
+
 // TestTheBackfillStampsARowWithNoFacts: a row no source ever spoke for — no facts row
 // behind it — cannot be rebuilt, so the backfill stamps it with the rules version and
 // leaves every other column as it stands, and the next call picks no row.

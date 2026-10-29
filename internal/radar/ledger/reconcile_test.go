@@ -98,6 +98,7 @@ func TestReconcileFillsEveryFieldFromItsSource(t *testing.T) {
 			Headers:         map[string]string{"request-id": "req_01"},
 			Provider:        "Z.ai",
 			Via:             strp("zai"),
+			NodeID:          "ses_1/agt_1",
 			UsageSource:     "router",
 			CostUSD:         0.0042,
 			CostReportedUSD: f64p(0.0123),
@@ -152,6 +153,7 @@ func TestReconcileFillsEveryFieldFromItsSource(t *testing.T) {
 			Headers:     map[string]string{"request-id": "req_02"},
 			Provider:    "Moonshot",
 			Via:         strp("kimi"),
+			NodeID:      "outside-a-session/main",
 			UsageSource: "router",
 			CostUSD:     0.0011,
 			PromptHash:  "hash2",
@@ -238,6 +240,7 @@ func TestReconcileFillsEveryFieldFromItsSource(t *testing.T) {
 			ErrorCode:  "insufficient credits",
 			Provider:   "Z.ai",
 			Via:        strp("zai"),
+			NodeID:     "outside-a-session/main",
 			PromptHash: "hash5",
 		}
 		if !ok {

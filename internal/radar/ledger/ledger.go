@@ -41,6 +41,7 @@ type Row struct {
 	Thinking                             *int64            // the reasoning tokens the chosen usage's output_tokens_details breaks out; nil when it said nothing
 	Headers                              map[string]string // the allow-listed response headers the route line recorded; nil when it recorded none
 	Totals                               bool              // the tokens are the run's total from its result event, not one call's context
+	NodeID                               string            // the node the request lands on, as history spells it: the transcript's naming when a transcript saw the request, else the route's; "" when no source could name it
 	UsageSource                          string            // "router" | "otel" | "transcript"
 	CostUSD                              float64           // Radar's price, as the caller priced the usage; 0 when unpriced
 	CostReportedUSD                      *float64          // OTel's own cost_usd, shown beside Radar's when known
@@ -52,8 +53,9 @@ type Row struct {
 
 // RouteFacts is what the router's route event says about the request.
 type RouteFacts struct {
-	Event   domain.RouteEvent `json:"event"`    // as the spool line decodes
-	CostUSD float64           `json:"cost_usd"` // Radar's price for the event's usage, 0 when the caller has none
+	Event   domain.RouteEvent `json:"event"`             // as the spool line decodes
+	CostUSD float64           `json:"cost_usd"`          // Radar's price for the event's usage, 0 when the caller has none
+	NodeID  string            `json:"node_id,omitempty"` // the node the watcher computed at ingest, by the history writer's rule
 }
 
 // TranscriptFacts is what Claude Code's transcript says about the same request.
@@ -63,9 +65,11 @@ type TranscriptFacts struct {
 	PromptID    string            `json:"prompt_id"`
 	QuerySource string            `json:"query_source"`
 	StopReason  string            `json:"stop_reason"`
-	Usage       domain.RouteUsage `json:"usage"`            // the assistant line's final usage
-	What        *string           `json:"what,omitempty"`   // the what line the transcript computed at ingest
-	Totals      bool              `json:"totals,omitempty"` // the tokens are the run's total from its result event
+	Usage       domain.RouteUsage `json:"usage"`             // the assistant line's final usage
+	What        *string           `json:"what,omitempty"`    // the what line the transcript computed at ingest
+	Totals      bool              `json:"totals,omitempty"`  // the tokens are the run's total from its result event
+	NodeID      string            `json:"node_id,omitempty"` // the node the watcher computed at ingest, by the history writer's rule
+	Via         *string           `json:"via,omitempty"`     // the way the call left, when the session's hooks reported a loopback base URL for it
 }
 
 // OTelFacts is what an OTel api_request or api_error event says about it.

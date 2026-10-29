@@ -330,20 +330,6 @@ func touchedOf(change store.Change) []string {
 	return touched.snapshot()
 }
 
-// nodeIdOf is a record's node id: the session's lead agent (main, or a job's own agent)
-// sits on the session node, every other agent on its own /agent node. A job's phantom main
-// agent collapses onto the job node. A subagent's node takes its bare id: the router and the
-// hooks spell it bare, its transcript file agent-<id>, and both name one agent.
-func nodeIdOf(sessionID, agentID string, external bool, lead string) string {
-	if agentID == "main" || agentID == "" || (external && agentID == lead) {
-		if external {
-			return "job:" + sessionID
-		}
-		return sessionID + "/main"
-	}
-	return sessionID + "/" + store.BareAgent(agentID)
-}
-
 // rootUpsertOf is the session node's id, kind and parent: a job hangs under the session
 // that submitted it.
 func rootUpsertOf(view *shared.SessionView, lead string, lastAt *int64) NodeUpsert {
@@ -363,7 +349,7 @@ func rootUpsertOf(view *shared.SessionView, lead string, lastAt *int64) NodeUpse
 		ended = EndAt(*view.EndedAt)
 	}
 	return NodeUpsert{
-		ID:              nodeIdOf(view.ID, "main", view.External, lead),
+		ID:              shared.NodeID(view.ID, "main", view.External, lead),
 		Kind:            kind,
 		SessionID:       view.ID,
 		AgentID:         lead,
@@ -384,10 +370,10 @@ func rootUpsertOf(view *shared.SessionView, lead string, lastAt *int64) NodeUpse
 // agentUpsertOf maps one agent view onto its node: subagent nodes are named after their
 // agent view, and the session node carries the session's own facts.
 func agentUpsertOf(view *shared.SessionView, agent shared.AgentView, rootID, lead string) NodeUpsert {
-	id := nodeIdOf(view.ID, agent.ID, view.External, lead)
+	id := shared.NodeID(view.ID, agent.ID, view.External, lead)
 	parent := &rootID
 	if agent.ParentID != nil && *agent.ParentID != agent.ID {
-		named := nodeIdOf(view.ID, *agent.ParentID, view.External, lead)
+		named := shared.NodeID(view.ID, *agent.ParentID, view.External, lead)
 		parent = &named
 	}
 	if *parent == id {
@@ -535,7 +521,7 @@ func needsRefresh(known map[string]knownSession, pairs []sessionAgent, sessionID
 		return true
 	}
 	for _, pair := range pairs {
-		if pair.session == sessionID && !state.nodes.holds(nodeIdOf(sessionID, pair.agent, state.external, state.lead)) {
+		if pair.session == sessionID && !state.nodes.holds(shared.NodeID(sessionID, pair.agent, state.external, state.lead)) {
 			return true
 		}
 	}
@@ -569,7 +555,7 @@ func recordNodeOf(known map[string]knownSession, sessionID string, agentID *stri
 	if state, ok := known[sessionID]; ok {
 		external, lead = state.external, state.lead
 	}
-	return nodeIdOf(sessionID, agentOf(agentID), external, lead)
+	return shared.NodeID(sessionID, agentOf(agentID), external, lead)
 }
 
 // writeRecordsLocked lands the records beside their nodes.

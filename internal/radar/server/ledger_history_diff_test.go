@@ -24,9 +24,9 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
-// w1IDs are the four requests the fixture seeds: one per join shape, plus a transcript-only
-// one whose run total only its result event names.
-var w1IDs = []string{"req_w1_a", "req_w1_b", "req_w1_c", "req_w2_d"}
+// w1IDs are the five requests the fixture seeds: one per join shape, a transcript-only one
+// whose run total only its result event names, and a transcript-only subagent call.
+var w1IDs = []string{"req_w1_a", "req_w1_b", "req_w1_c", "req_w2_d", "req_w3_e"}
 
 // w1Upstream is the upstream a request's plugin names; the Anthropic passthrough for a line
 // with none.
@@ -175,6 +175,7 @@ type w1HistoryRow struct {
 	cacheWrite1h            sql.NullInt64
 	speed, geo, serviceTier sql.NullString
 	provider, via           sql.NullString
+	nodeID                  string
 }
 
 // w1HistoryRowFor answers the history row the request id names: the row whose id is the id,
@@ -183,7 +184,7 @@ type w1HistoryRow struct {
 func w1HistoryRowFor(t *testing.T, db *sql.DB, id string) w1HistoryRow {
 	t.Helper()
 	rows, err := db.Query("SELECT id, headers, what, thinking, totals, " +
-		"cache_write_1h, speed, geo, service_tier, provider, via FROM requests")
+		"cache_write_1h, speed, geo, service_tier, provider, via, node_id FROM requests")
 	if err != nil {
 		t.Fatalf("read the history requests: %v", err)
 	}
@@ -193,7 +194,7 @@ func w1HistoryRowFor(t *testing.T, db *sql.DB, id string) w1HistoryRow {
 		var headers sql.NullString
 		if err := rows.Scan(&found.id, &headers, &found.what, &found.thinking, &found.totals,
 			&found.cacheWrite1h, &found.speed, &found.geo, &found.serviceTier,
-			&found.provider, &found.via); err != nil {
+			&found.provider, &found.via, &found.nodeID); err != nil {
 			t.Fatalf("scan the history request row: %v", err)
 		}
 		found.headers = headers
@@ -295,6 +296,7 @@ func w1Compare(t *testing.T, id string, h w1HistoryRow, row ledger.Row) {
 	w1One(t, id, "thinking", w1IntPtr(h.thinking), row.Thinking)
 	w1Headers(t, id, h.headers, row.Headers)
 	w1One(t, id, "totals", w1BoolPtr(h.totals == 1), &row.Totals)
+	w1One(t, id, "node_id", &h.nodeID, &row.NodeID)
 }
 
 // TestTheLedgerMatchesHistory: four requests — a zai one both sources saw with the four
@@ -321,6 +323,9 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 	seedSpool(t, world.state,
 		spoolStart("s1", "/w/app"),
 		spoolStart("s2", "/w/app"),
+		// the hook told the watcher how s2's calls leave, before the transcript line below
+		fmt.Sprintf(`{"ts":%q,"event":"UserPromptSubmit","session_id":"s2","base_url":"http://127.0.0.1:18999"}`,
+			isoOf(at.Add(-time.Second).UnixMilli())),
 		w1RouteLine(t, at, "req_w1_a", "zai", "glm-4.6", "provider", full,
 			map[string]string{"x-ratelimit-remaining": "99"}),
 		w1RouteLine(t, at, "req_w1_b", "kimi", "mystery-1", "provider", map[string]any{
@@ -339,6 +344,8 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 		w1TranscriptLine(t, at, "s2", "req_w2_d", "glm-5.3", w1TextContent("On it."), zero),
 		w1ResultLine(t, at, "s2", result),
 	}, "\n")+"\n")
+	writeText(t, filepath.Join(world.config, "projects", "-w-app", "s1", "subagents", "agent-a7.jsonl"),
+		w1TranscriptLine(t, at, "s1", "req_w3_e", "glm-5.3", w1TextContent("Scouting the suite."), zero)+"\n")
 
 	app := mustStart(t, world.env, AppOptions{Version: "test", SinceMs: dayMs, IntervalMs: quietMs})
 	historyPath := paths.HistoryPath(ctx, world.env)
@@ -368,5 +375,24 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 			t.Fatalf("the ledger holds no row for %s", id)
 		}
 		w1Compare(t, id, w1HistoryRowFor(t, history, id), *row)
+	}
+
+	// the ground w1Compare cannot pin alone: a shared nil or empty would read as agreement
+	via, err := led.Get(ctx, "req_w2_d")
+	if err != nil || via == nil {
+		t.Fatalf("read the ledger row of req_w2_d: %+v, %v", via, err)
+	}
+	if via.Via == nil || *via.Via != "127.0.0.1:18999" {
+		t.Errorf("req_w2_d via = %s, want 127.0.0.1:18999", w1Show(via.Via))
+	}
+	sub, err := led.Get(ctx, "req_w3_e")
+	if err != nil || sub == nil {
+		t.Fatalf("read the ledger row of req_w3_e: %+v, %v", sub, err)
+	}
+	if sub.NodeID != "s1/a7" {
+		t.Errorf("req_w3_e node_id: ledger=%s", sub.NodeID)
+	}
+	if h := w1HistoryRowFor(t, history, "req_w3_e"); h.nodeID != "s1/a7" {
+		t.Errorf("req_w3_e node_id: history=%s", h.nodeID)
 	}
 }

@@ -168,6 +168,7 @@ func TestTheLedgerJoinsARouteAndItsTranscriptInEitherOrder(t *testing.T) {
 		Headers:      map[string]string{"request-id": "req_1"},
 		Provider:     "Z.ai",
 		Via:          strp("zai"),
+		NodeID:       "outside-a-session/main",
 		UsageSource:  "router",
 		CostUSD:      0.5,
 		InTranscript: true,

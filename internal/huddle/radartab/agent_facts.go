@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
-	"github.com/MuhmdRaouf/huddle/internal/radar/store"
 )
 
 // AgentFacts is what radar knows of one tray subagent: its output tokens, when it last made a
@@ -59,7 +58,7 @@ func (t *Tab) AgentFactsOf(ctx context.Context, session string) map[string]Agent
 		if agent.Kind != shared.KindSubagent {
 			continue
 		}
-		bare := store.BareAgent(agent.ID)
+		bare := shared.BareAgent(agent.ID)
 		if held, seen := rows[bare]; seen && held.requests >= agent.Requests {
 			continue
 		}

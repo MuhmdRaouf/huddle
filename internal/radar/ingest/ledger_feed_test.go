@@ -90,6 +90,83 @@ func TestTheWatcherFeedsTheLedger(t *testing.T) {
 	}
 }
 
+// TestTheWatcherFeedsTheLedgerTheNodeAndTheVia: the facts name the node the request lands
+// on — the store's answer at ingest — and a transcript-only request names the way its call
+// left, the loopback base URL its session's hooks reported before the call.
+func TestTheWatcherFeedsTheLedgerTheNodeAndTheVia(t *testing.T) {
+	home := t.TempDir()
+	env := domain.EnvLookup{
+		"HOME":              home,
+		"RADAR_HOME":        filepath.Join(home, "state"),
+		"CLAUDE_CONFIG_DIR": filepath.Join(home, "claude"),
+	}
+	led, err := ledger.Open(filepath.Join(t.TempDir(), "ledger.db"))
+	if err != nil {
+		t.Fatalf("open the ledger: %v", err)
+	}
+	t.Cleanup(func() { _ = led.Close() })
+
+	w := StartWatcher(t.Context(), WatcherOptions{
+		Env:        env,
+		Store:      store.CreateStore(time.Now),
+		Ledger:     led,
+		SinceMs:    24 * 3_600_000,
+		IntervalMs: 3_600_000,
+		RescanMs:   5_000,
+		Now:        func() int64 { return t1 },
+		Alive:      func(int64) bool { return false },
+		NewTicker:  func(time.Duration) (<-chan time.Time, func()) { return make(chan time.Time), func() {} },
+	})
+	t.Cleanup(w.Stop)
+	deadline := time.Now().Add(5 * time.Second)
+	for w.CatchingUp() {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the initial ingest")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	// The session's hooks reported a loopback router before the call was made.
+	hook, err := json.Marshal(map[string]any{
+		"ts": iso(t0), "event": "UserPromptSubmit", "session_id": "s8",
+		"base_url": "http://127.0.0.1:18999",
+	})
+	if err != nil {
+		t.Fatalf("marshal the hook line: %v", err)
+	}
+	w.ingestSpoolText(string(hook))
+	w.applyEmit(feedFile(NewTranscriptState(), assistantLine(assistantOverrides{
+		requestID: strp("req_via"),
+	}), FileIdentity{SessionID: "s8", Kind: shared.KindMain}))
+
+	// A subagent's transcript record lands on the node its bare id names.
+	w.applyEmit(feedFile(NewTranscriptState(), assistantLine(assistantOverrides{
+		requestID: strp("req_sub"),
+	}), FileIdentity{SessionID: "s1", AgentID: strp("agent-a7"), Kind: shared.KindSubagent}))
+
+	via, err := led.ByAnthropicID(t.Context(), "req_via")
+	if err != nil || via == nil {
+		t.Fatalf("the ledger row of req_via = %+v, %v", via, err)
+	}
+	if via.Via == nil || *via.Via != "127.0.0.1:18999" {
+		t.Errorf("Via = %v, want 127.0.0.1:18999", via.Via)
+	}
+	if via.NodeID != "s8/main" {
+		t.Errorf("NodeID = %q, want s8/main", via.NodeID)
+	}
+
+	sub, err := led.ByAnthropicID(t.Context(), "req_sub")
+	if err != nil || sub == nil {
+		t.Fatalf("the ledger row of req_sub = %+v, %v", sub, err)
+	}
+	if sub.NodeID != "s1/a7" {
+		t.Errorf("NodeID = %q, want s1/a7", sub.NodeID)
+	}
+	if sub.Via != nil {
+		t.Errorf("Via = %v, want nil: no hook reported a base URL for s1", *sub.Via)
+	}
+}
+
 // TestTheRouteFactsKeepOnlyTheAllowListedHeaders: the spool is data, so the facts a route
 // line files keep only the allow-listed response headers, whatever wrote the line; a line
 // whose headers all fail the list files none.

@@ -169,14 +169,14 @@ const upsertQuery = "INSERT OR REPLACE INTO ledger_requests (" +
 	"model, fallback_from, upstream, session_id, agent_id, parent_agent_id, prompt_id, turn_index, " +
 	"prev_request, query_source, outcome, status, error_code, stop_reason, input, output, " +
 	"cache_read, cache_write, cache_write_1h, speed, geo, service_tier, provider, via, " +
-	"what, thinking, headers, totals, " +
+	"what, thinking, headers, totals, node_id, " +
 	"usage_source, cost_usd, cost_reported_usd, ratelimit_5h, " +
 	"ratelimit_7d, prompt_hash, in_transcript, reconciled) VALUES (" +
 	"?, ?, ?, ?, ?, ?, ?, ?, " +
 	"?, ?, ?, ?, ?, ?, ?, ?, " +
 	"?, ?, ?, ?, ?, ?, ?, ?, " +
 	"?, ?, ?, ?, ?, ?, ?, ?, " +
-	"?, ?, ?, ?, " +
+	"?, ?, ?, ?, ?, " +
 	"?, ?, ?, ?, " +
 	"?, ?, ?, ?)"
 
@@ -196,7 +196,7 @@ func upsertRow(db DB, row Row) error {
 		row.PrevRequest, row.QuerySource, row.Outcome, row.Status, row.ErrorCode, row.StopReason,
 		row.Input, row.Output, row.CacheRead, row.CacheWrite,
 		row.CacheWrite1h, row.Speed, row.Geo, row.ServiceTier, row.Provider, row.Via,
-		row.What, row.Thinking, headers, boolColumn(row.Totals),
+		row.What, row.Thinking, headers, boolColumn(row.Totals), row.NodeID,
 		row.UsageSource,
 		row.CostUSD, row.CostReportedUSD, row.Ratelimit5h, row.Ratelimit7d,
 		row.PromptHash, boolColumn(row.InTranscript), ReconcileVersion)
@@ -313,6 +313,7 @@ func rowOf(found map[string]any) Row {
 		Thinking:        intPtrColumn(found, "thinking"),
 		Headers:         headersColumn(found, "headers"),
 		Totals:          intColumn(found, "totals") != 0,
+		NodeID:          textColumn(found, "node_id"),
 		UsageSource:     textColumn(found, "usage_source"),
 		CostUSD:         floatColumn(found, "cost_usd"),
 		CostReportedUSD: floatPtrColumn(found, "cost_reported_usd"),

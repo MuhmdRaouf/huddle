@@ -8,17 +8,6 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
-func TestBareAgent(t *testing.T) {
-	t.Run("a transcript file name and a router header name the same agent", func(t *testing.T) {
-		if got := BareAgent("agent-a31cd3de580148dc3"); got != "a31cd3de580148dc3" {
-			t.Errorf("BareAgent(agent-a31cd3de580148dc3): got %q, want %q", got, "a31cd3de580148dc3")
-		}
-		if got := BareAgent("a31cd3de580148dc3"); got != "a31cd3de580148dc3" {
-			t.Errorf("BareAgent(a31cd3de580148dc3): got %q, want %q", got, "a31cd3de580148dc3")
-		}
-	})
-}
-
 func TestFromRouter(t *testing.T) {
 	t.Run("a record carrying a route came from the router's spool", func(t *testing.T) {
 		routed := makeRequest(func(r *shared.RequestRecord) { r.Route = str("provider") })

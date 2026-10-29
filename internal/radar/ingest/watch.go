@@ -429,8 +429,9 @@ func (w *Watcher) applyEmit(emit TranscriptEmit) {
 		captured[content.RequestID] = content
 	}
 	for _, request := range emit.Requests {
-		w.store.AddRequest(w.defaultUpstream(w.enrichUpstream(request)), contentOf(captured, request.ID))
-		w.fileTranscriptFacts(request)
+		enriched := w.defaultUpstream(w.enrichUpstream(request))
+		w.store.AddRequest(enriched, contentOf(captured, request.ID))
+		w.fileTranscriptFacts(enriched)
 	}
 }
 
@@ -616,6 +617,17 @@ func (w *Watcher) fileRouteFacts(text string, line shared.SpoolLine, model strin
 	if !ok {
 		return
 	}
+	// the same session and agent RouteRequest gives the record, so the facts and the store's
+	// copy name one node
+	session := shared.OutsideSession
+	if line.SessionID != nil && *line.SessionID != "" {
+		session = *line.SessionID
+	}
+	agent := ""
+	if line.AgentID != nil {
+		agent = *line.AgentID
+	}
+	facts.NodeID = w.store.NodeOf(session, agent)
 	if err := w.ledger.AddRoute(w.ctx, facts); err != nil {
 		w.log(fmt.Sprintf("radar: the ledger missed a route line (%v)", err))
 	}
@@ -632,6 +644,7 @@ func (w *Watcher) fileTranscriptFacts(request shared.RequestRecord) {
 	if !ok {
 		return
 	}
+	facts.NodeID = w.store.NodeOf(request.SessionID, request.AgentID)
 	if err := w.ledger.AddTranscript(w.ctx, facts); err != nil {
 		w.log(fmt.Sprintf("radar: the ledger missed a transcript request (%v)", err))
 	}

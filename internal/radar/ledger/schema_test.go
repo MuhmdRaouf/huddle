@@ -134,3 +134,76 @@ func TestOpenRaisesAVersion5FileToTheCaptureColumns(t *testing.T) {
 		t.Errorf("totals = %d, want the default 0", totals)
 	}
 }
+
+// buildVersion6Schema writes file as a version-6 ledger: the version-3 tables plus every
+// column the steps to version 6 added, stamped version 6 — the shape Open of the previous
+// schema left behind, rows and facts to add.
+func buildVersion6Schema(t *testing.T, file string) {
+	t.Helper()
+	pool, err := sql.Open("sqlite", file)
+	if err != nil {
+		t.Fatalf("open the version-6 file: %v", err)
+	}
+	defer func() { _ = pool.Close() }()
+	if _, err := pool.Exec(ledgerRequestsDDL + ";" + ledgerRequestsIndex + ";" + ledgerFactsDDL + ";" +
+		ledgerRequestsSessionIndex + ";" +
+		"ALTER TABLE ledger_requests ADD COLUMN reconciled INTEGER NOT NULL DEFAULT 0;" +
+		"CREATE TABLE IF NOT EXISTS ledger_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);" +
+		"ALTER TABLE ledger_requests ADD COLUMN cache_write_1h INTEGER;" +
+		"ALTER TABLE ledger_requests ADD COLUMN speed TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN geo TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN service_tier TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN provider TEXT NOT NULL DEFAULT '';" +
+		"ALTER TABLE ledger_requests ADD COLUMN via TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN what TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN thinking INTEGER;" +
+		"ALTER TABLE ledger_requests ADD COLUMN headers TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN totals INTEGER NOT NULL DEFAULT 0;" +
+		"PRAGMA user_version = 6"); err != nil {
+		t.Fatalf("build the version-6 schema: %v", err)
+	}
+}
+
+// buildVersion6File writes file as a version-6 ledger holding one stale row, the shape a
+// version-6 file sits at between Opens.
+func buildVersion6File(t *testing.T, file string) {
+	t.Helper()
+	buildVersion6Schema(t, file)
+	pool, err := sql.Open("sqlite", file)
+	if err != nil {
+		t.Fatalf("open the version-6 file: %v", err)
+	}
+	defer func() { _ = pool.Close() }()
+	if _, err := pool.Exec(
+		"INSERT INTO ledger_requests (id, anthropic_id, model) VALUES ('req_old', 'req_old', 'stale')"); err != nil {
+		t.Fatalf("insert the stale row: %v", err)
+	}
+}
+
+// TestOpenRaisesAVersion6FileToTheNodeColumn: Open brings a version-6 file up to
+// SchemaVersion, its ledger_requests gains the node a request lands on, and the row it
+// already held reads an empty one.
+func TestOpenRaisesAVersion6FileToTheNodeColumn(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "ledger.db")
+	buildVersion6File(t, file)
+	st := openLedgerFile(t, file)
+
+	if version := userVersion(t, st.db); version != SchemaVersion {
+		t.Errorf("user_version = %d, want %d", version, SchemaVersion)
+	}
+	names := ledgerRequestColumns(t, st.db)
+	held := map[string]bool{}
+	for _, name := range names {
+		held[name] = true
+	}
+	if !held["node_id"] {
+		t.Errorf("ledger_requests holds no node_id column after Open (has %v)", names)
+	}
+	found, err := st.db.Get("SELECT node_id FROM ledger_requests WHERE id = 'req_old'")
+	if err != nil || found == nil {
+		t.Fatalf("read the held row: %+v, %v", found, err)
+	}
+	if node := textColumn(found, "node_id"); node != "" {
+		t.Errorf("node_id = %q, want the default empty string", node)
+	}
+}

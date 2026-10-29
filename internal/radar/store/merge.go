@@ -2,7 +2,6 @@ package store
 
 import (
 	"slices"
-	"strings"
 
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -11,15 +10,6 @@ import (
 // MatchMs is how far apart the two clocks may read for one call: both stamp the moment
 // the answer is written.
 const MatchMs = 10_000
-
-// BareAgent strips the transcript's agent- prefix: "agent-a31cd…" (a transcript file
-// name) and "a31cd…" (the router's header) name the same agent.
-func BareAgent(id string) string {
-	if bare, ok := strings.CutPrefix(id, "agent-"); ok {
-		return bare
-	}
-	return id
-}
 
 // FromRouter reports whether a record came from a router's spool line.
 func FromRouter(record shared.RequestRecord) bool {
@@ -49,7 +39,7 @@ func MatchDistance(transcript, route shared.RequestRecord, routeAgent string) *i
 	if transcript.SessionID != route.SessionID || transcript.Model != route.Model {
 		return nil
 	}
-	if routeAgent != "" && BareAgent(routeAgent) != BareAgent(transcript.AgentID) {
+	if routeAgent != "" && shared.BareAgent(routeAgent) != shared.BareAgent(transcript.AgentID) {
 		return nil
 	}
 	apart := transcript.Ts - route.Ts
