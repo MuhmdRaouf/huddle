@@ -214,17 +214,26 @@ function pxOffences(
   }
 }
 
-/** Whether a literal carries classes: it follows class=/className=, is an upper-case const's
- *  value, or holds several tokens of which one looks like a class (`-`, `:` or `[`). */
-function isClassLiteral(text: string, lit: Literal): boolean {
-  const before = text.slice(0, lit.open);
-  if (/class(?:Name)?=?\{?\s*$/.test(before)) return true;
-  if (/const\s+[A-Z][A-Z0-9_]*\s*=\s*$/.test(before)) return true;
-  const tokens = lit.parts
+/** The literal's words, whitespace-split, across all of a template's parts. */
+function literalTokens(lit: Literal): string[] {
+  return lit.parts
     .map((p) => p.text)
     .join(" ")
     .split(/\s+/)
     .filter((t) => t.length > 0);
+}
+
+/** Whether a literal carries classes: it follows class=/className=, is an upper-case const's value
+ *  that reads as a class list, or holds several tokens of which one looks like a class (`-`, `:` or
+ *  `[`). An upper-case const holds prose, not classes, when a token starts with a capital letter or
+ *  the text closes a sentence (`.`, `?` or `!`); a class list has neither. */
+function isClassLiteral(text: string, lit: Literal): boolean {
+  const before = text.slice(0, lit.open);
+  if (/class(?:Name)?=?\{?\s*$/.test(before)) return true;
+  const tokens = literalTokens(lit);
+  if (/const\s+[A-Z][A-Z0-9_]*\s*=\s*$/.test(before)) {
+    return !tokens.some((t) => /^[A-Z]/.test(t)) && !/[.?!]$/.test(tokens.join(" "));
+  }
   return tokens.length >= 2 && tokens.some((t) => /[-:[\]]/.test(t));
 }
 
@@ -250,8 +259,108 @@ function stepTpl(text: string, i: number, f: Frame, stack: Frame[], literals: Li
   return i + 1;
 }
 
+// characters that leave an expression open, so a `/` after one starts a regex literal, not division
+const REGEX_BEFORE = new Set([
+  "(",
+  ",",
+  "=",
+  ":",
+  "[",
+  "!",
+  "&",
+  "|",
+  "?",
+  "{",
+  ";",
+  "+",
+  "-",
+  "*",
+  "%",
+  "~",
+  "^",
+]);
+
+/** Whether the `/` at `i` opens a regex literal: the character before it, ignoring whitespace, is
+ *  one that leaves an expression open (or there is none), or the word before it is `return`. `<`,
+ *  `>` and `}` are left out on purpose: they precede JSX closing tags and JSX text, which stay code. */
+function opensRegex(text: string, i: number): boolean {
+  let j = i - 1;
+  while (j >= 0 && /\s/.test(text[j] as string)) j -= 1;
+  if (j < 0) return true;
+  const c = text[j] as string;
+  if (REGEX_BEFORE.has(c)) return true;
+  if (!/[A-Za-z0-9_$]/.test(c)) return false;
+  let k = j;
+  while (k >= 0 && /[A-Za-z0-9_$]/.test(text[k] as string)) k -= 1;
+  return text.slice(k + 1, j + 1) === "return";
+}
+
+/** The index just past the regex literal opening at `i` (its `/`): the closing `/` — the first one
+ *  not escaped by `\` and not inside a `[…]` class — plus any flag letters. A regex never spans a
+ *  line, so a `/` with no closing one before the newline is division, and only itself is skipped. */
+function skipRegex(text: string, i: number): number {
+  let j = i + 1;
+  let cls = false;
+  while (j < text.length) {
+    const c = text[j] as string;
+    if (c === "\n") return i + 1;
+    if (c === "\\") {
+      j += 2;
+      continue;
+    }
+    if (cls) {
+      if (c === "]") cls = false;
+    } else if (c === "[") {
+      cls = true;
+    } else if (c === "/") {
+      j += 1;
+      while (j < text.length && /[a-z]/.test(text[j] as string)) j += 1;
+      return j;
+    }
+    j += 1;
+  }
+  return i + 1;
+}
+
+/** Whether the `'` at `i` sits inside a word (`session's`): a letter on both sides. TypeScript
+ *  never puts a letter right before a string's opening quote, so this apostrophe opens no string. */
+function wordApostrophe(text: string, i: number): boolean {
+  return /[A-Za-z]/.test(text[i - 1] as string) && /[A-Za-z]/.test(text[i + 1] as string);
+}
+
+/** The index just past the string literal opening at `i` (its quote), the literal recorded. */
+function scanString(text: string, i: number, literals: Literal[]): number {
+  const quote = text[i] as string;
+  let j = i + 1;
+  while (j < text.length && text[j] !== quote) {
+    if (text[j] === "\\") j += 1;
+    j += 1;
+  }
+  literals.push({ parts: [{ text: text.slice(i + 1, j), index: i + 1 }], open: i });
+  return j + 1;
+}
+
+/** The index just past the comment opening at `i`, or -1 when no comment opens there: a `//` runs
+ *  to the newline, a block comment to its closing delimiter, and the range is recorded either way. */
+function skipComment(text: string, i: number, comments: [number, number][]): number {
+  if (text[i] !== "/") return -1;
+  if (text[i + 1] === "/") {
+    const end = text.indexOf("\n", i);
+    comments.push([i, end < 0 ? text.length : end]);
+    return end < 0 ? text.length : end;
+  }
+  if (text[i + 1] === "*") {
+    const end = text.indexOf("*/", i + 2);
+    comments.push([i, end < 0 ? text.length : end + 2]);
+    return end < 0 ? text.length : end + 2;
+  }
+  return -1;
+}
+
 /** The lexer's step inside code: the comment ranges, the string literals, a template's opening,
- *  and the braces by which a `${…}`'s closing `}` is told from any other one. Returns the next index. */
+ *  the regex literal, the word-internal apostrophe (a `'` between two letters is prose, never a
+ *  string opening), and the braces by which a `${…}`'s closing `}` is told from any other one.
+ *  Returns the next index. */
 function stepCode(
   text: string,
   i: number,
@@ -261,26 +370,11 @@ function stepCode(
   comments: [number, number][],
 ): number {
   const c = text[i] as string;
-  const next = text[i + 1] as string | undefined;
-  if (c === "/" && next === "/") {
-    const end = text.indexOf("\n", i);
-    comments.push([i, end < 0 ? text.length : end]);
-    return end < 0 ? text.length : end;
-  }
-  if (c === "/" && next === "*") {
-    const end = text.indexOf("*/", i + 2);
-    comments.push([i, end < 0 ? text.length : end + 2]);
-    return end < 0 ? text.length : end + 2;
-  }
-  if (c === "'" || c === '"') {
-    let j = i + 1;
-    while (j < text.length && text[j] !== c) {
-      if (text[j] === "\\") j += 1;
-      j += 1;
-    }
-    literals.push({ parts: [{ text: text.slice(i + 1, j), index: i + 1 }], open: i });
-    return j + 1;
-  }
+  const comment = skipComment(text, i, comments);
+  if (comment >= 0) return comment;
+  if (c === "/" && opensRegex(text, i)) return skipRegex(text, i);
+  if (c === "'" && wordApostrophe(text, i)) return i + 1;
+  if (c === "'" || c === '"') return scanString(text, i, literals);
   if (c === "`") {
     literals.push({ parts: [], open: i });
     stack.push({ tpl: true, braces: 0, partStart: i + 1 });

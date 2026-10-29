@@ -80,6 +80,48 @@ describe("design guard scan", () => {
     ]);
   });
 
+  it("a word-internal apostrophe in JSX text opens no string", () => {
+    const src = [
+      "<p>the session's join line</p>",
+      '<p class="x">it\'s a card</p>',
+      '<div class="btn">x</div>',
+    ].join("\n");
+    expect(scanFile("a.tsx", src, NO_LEGACY)).toEqual([{ rule: "daisy", line: 3, text: "btn" }]);
+  });
+
+  it("a regex literal with a backtick or a quote opens no string", () => {
+    expect(
+      scanFile(
+        "a.ts",
+        ["const INLINE = /`([^`]+)`|\\[([^\\]]+)\\]/g;", "const Q = /[\"']/g;", 'const c = "btn";'].join(
+          "\n",
+        ),
+        NO_LEGACY,
+      ),
+    ).toEqual([]);
+    expect(
+      scanFile("a.ts", ["const INLINE = /`x`/g;", 'const K = "btn btn-primary";'].join("\n"), NO_LEGACY),
+    ).toEqual([
+      { rule: "daisy", line: 2, text: "btn" },
+      { rule: "daisy", line: 2, text: "btn-primary" },
+    ]);
+  });
+
+  it("division and JSX closing tags are not regex literals", () => {
+    const src = ["const r = a / b / c;", "<div>{a}/{b}</div>", '<span class="btn">x</span>'].join("\n");
+    expect(scanFile("a.tsx", src, NO_LEGACY)).toEqual([{ rule: "daisy", line: 3, text: "btn" }]);
+  });
+
+  it("a line comment right after a newline ends the scan", () => {
+    const src = 'const a = 1;\n// a comment\nconst B = "btn";\n';
+    expect(scanFile("a.ts", src, NO_LEGACY)).toEqual([{ rule: "daisy", line: 3, text: "btn" }]);
+  });
+
+  it("an upper-case const holding prose is not a class list", () => {
+    const src = ['const FAILED_LINE = "The board list is unreachable.";', 'const CARD = "card";'].join("\n");
+    expect(scanFile("a.ts", src, NO_LEGACY)).toEqual([{ rule: "daisy", line: 2, text: "card" }]);
+  });
+
   it("reads rgb(var()) as no colour and rgba(0, …) as one", () => {
     expect(scanFile("a.ts", 'const tint = "rgb(var(--x))";', NO_LEGACY)).toEqual([]);
     expect(scanFile("a.ts", 'const shadow = "rgba(0, 0, 0, 0.5)";', NO_LEGACY)).toEqual([

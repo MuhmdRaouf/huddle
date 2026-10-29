@@ -240,3 +240,18 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   notifications.
 - **Guard:** `TestE2EABlockedTaskNeverBuildsTheNotifyApplet` (internal/huddle/cli/e2e_test.go)
 - **Rule:** e2e hubs run with desktop notifications off; only in-process fakes exercise the notifier.
+
+## 2026-10-29, the design guard counted prose and hid real classes
+
+- **What happened:** the hub's design guard counted prose words as daisy and legacy classes (`list` out of
+  "The board list is unreachable." in KanbanTab.tsx, `code` and `row` out of doc comments) and, in
+  radar/app/AgentTranscript.tsx, hid 10 daisy and 1 legacy offences behind a fake string, so the file's
+  baseline recorded a false count.
+- **Cause:** the design guard's lexer reads a word-internal apostrophe in JSX text as a string opening, a
+  backtick or quote inside a regex literal as a template or string, and any upper-case const's value as a
+  class list.
+- **Guard:** `"a word-internal apostrophe in JSX text opens no string"`, `"a regex literal with a backtick or
+  a quote opens no string"`, `"division and JSX closing tags are not regex literals"`, `"an upper-case const
+  holding prose is not a class list"` (web/hub/test/design-guard/scan.test.ts)
+- **Rule:** a baseline a lexer fix shows to be false is reset once to the true count; from there it moves
+  down only.
