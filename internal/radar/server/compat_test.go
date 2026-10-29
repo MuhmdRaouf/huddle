@@ -415,7 +415,8 @@ func TestCompatLegacyHome(t *testing.T) {
 			Log:               func(string) {},
 		})
 		waitFor(t, "the fixture to ingest", 10*time.Second, func() bool {
-			return len(app.Store.Requests(store.RequestFilter{})) == 4 && app.Store.SessionCount() == 2
+			return len(app.Store.Requests(store.RequestFilter{})) == 4 && app.Store.SessionCount() == 2 &&
+				len(app.Store.Tools(store.ToolsFilter{})) == 1
 		})
 		// while it runs, the one file only a live server owns is there (stop takes it back)
 		if !exists(filepath.Join(home, "server.json")) {
@@ -434,7 +435,7 @@ func TestCompatLegacyHome(t *testing.T) {
 		return answers, before
 	}
 
-	assertRows := func(answers map[string]string) {
+	assertRows := func(t *testing.T, answers map[string]string) {
 		health := compatObject(t, "/api/health", answers["/api/health"])
 		// uptimeMs rides the real clock (it is the live process's age), everything else the pinned one
 		if health["ok"] != true || compatString(t, "/api/health", health, "version") != "compat" ||
@@ -662,7 +663,7 @@ func TestCompatLegacyHome(t *testing.T) {
 	}
 
 	firstAnswers, beforeFirst := startOnce()
-	assertRows(firstAnswers)
+	assertRows(t, firstAnswers)
 	compatRequireChanged(t, "the first start", compatChangedFiles(beforeFirst, compatHashTree(t, home)))
 	// the stop took the live server's own file with it; the saved port stays for the next start
 	if exists(filepath.Join(home, "server.json")) {
@@ -671,7 +672,7 @@ func TestCompatLegacyHome(t *testing.T) {
 
 	t.Run("a stop and a fresh start answer the same, with nothing moved twice", func(t *testing.T) {
 		secondAnswers, beforeSecond := startOnce()
-		assertRows(secondAnswers)
+		assertRows(t, secondAnswers)
 		compatRequireChanged(t, "the second start", compatChangedFiles(beforeSecond, compatHashTree(t, home)))
 		for _, route := range compatRoutes {
 			// health rides the real clock (uptimeMs); assertRows checks it per run instead
