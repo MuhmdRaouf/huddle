@@ -13,11 +13,25 @@ import (
 // Store.AddRoute and Store.AddTranscript.
 
 // routeFactsOf is a route line's facts: the event decoded from the line's own text, priced
-// with Radar's table. False when the text is not a route event.
+// with Radar's table. False when the text is not a route event. The spool is data, so the
+// facts keep only the allow-listed headers, whatever wrote the line.
 func routeFactsOf(text string, line shared.SpoolLine, model string, ts int64) (ledger.RouteFacts, bool) {
 	var event domain.RouteEvent
 	if err := json.Unmarshal([]byte(text), &event); err != nil {
 		return ledger.RouteFacts{}, false
+	}
+	if event.Headers != nil {
+		kept := map[string]string{}
+		for name, value := range *event.Headers {
+			if domain.CapturedHeader(name) {
+				kept[name] = value
+			}
+		}
+		if len(kept) == 0 {
+			event.Headers = nil
+		} else {
+			event.Headers = &kept
+		}
 	}
 	return ledger.RouteFacts{Event: event, CostUSD: routeCostUSD(line, model, ts)}, true
 }

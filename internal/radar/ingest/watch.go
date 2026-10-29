@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -942,18 +941,14 @@ func routerOf(line shared.SpoolLine) string {
 	return "router"
 }
 
-// capturedHeader is the response headers a route line may carry, case-insensitively. The router
-// already keeps only these; the spool is data, so the allow-list is enforced again here,
-// whatever wrote the line.
-var capturedHeader = regexp.MustCompile(`(?i)^(request-id|x-request-id|retry-after|content-type|anthropic-ratelimit-.+|x-ratelimit-.+)$`)
-
 // headersOf is the allow-listed response headers a route line carries, as the pairs in
-// the order the line carried them; nil when none survived.
+// the order the line carried them; nil when none survived. The router already keeps only
+// these; the spool is data, so the allow-list is enforced again here, whatever wrote the line.
 func headersOf(line shared.SpoolLine) *shared.Headers {
 	var out shared.Headers
 	if line.Headers != nil {
 		for _, pair := range *line.Headers {
-			if capturedHeader.MatchString(pair.Name) {
+			if domain.CapturedHeader(pair.Name) {
 				out = append(out, pair)
 			}
 		}

@@ -147,16 +147,12 @@ func modelIn(json *jsfmt.Value) string {
 // parse of the body's bytes, and the gzip and spool write with it; a request only waits for the
 // hash when it writes its route event.
 
-// capturedHeaderRE is the response headers a route event may carry, case-insensitively; nothing
-// else ever leaves.
-var capturedHeaderRE = regexp.MustCompile(`^(?i:request-id|x-request-id|retry-after|content-type|anthropic-ratelimit-.+|x-ratelimit-.+)$`)
-
 // CapturedHeaders is the allow-listed response headers one answer carries, lowercased the way the
 // route event spells a header name; nil when it answered with none of them.
 func CapturedHeaders(header http.Header) *map[string]string {
 	out := map[string]string{}
 	for name, values := range header {
-		if capturedHeaderRE.MatchString(name) {
+		if domain.CapturedHeader(name) {
 			// An array header is joined as Node's join(", ") reads it.
 			out[strings.ToLower(name)] = strings.Join(values, ", ")
 		}

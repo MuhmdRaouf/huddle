@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -86,6 +87,41 @@ func TestTheWatcherFeedsTheLedger(t *testing.T) {
 
 	if _, ok := transcriptFactsOf(shared.RequestRecord{}); ok {
 		t.Error("transcriptFactsOf a record with no request id = true, want false")
+	}
+}
+
+// TestTheRouteFactsKeepOnlyTheAllowListedHeaders: the spool is data, so the facts a route
+// line files keep only the allow-listed response headers, whatever wrote the line; a line
+// whose headers all fail the list files none.
+func TestTheRouteFactsKeepOnlyTheAllowListedHeaders(t *testing.T) {
+	route := func(headers string) string {
+		return fmt.Sprintf(`{"ts":%q,"event":"route","session_id":"s9","model":"glm-5.3",`+
+			`"upstream":"http://127.0.0.1:8787","route":"provider","status":200,"latency_ms":42,`+
+			`"headers":{%s}}`, iso(t1), headers)
+	}
+	facts, ok := routeFactsOf(route(
+		`"request-id":"req_headers","x-ratelimit-remaining":"99",`+
+			`"authorization":"Bearer sk-test-not-a-real-secret","x-api-key":"test-key-not-real"`,
+	), shared.SpoolLine{}, "glm-5.3", t1)
+	if !ok {
+		t.Fatal("routeFactsOf refused a route event")
+	}
+	if facts.Event.Headers == nil {
+		t.Fatal("Headers = nil, want exactly the two allow-listed pairs")
+	}
+	got := *facts.Event.Headers
+	if len(got) != 2 || got["request-id"] != "req_headers" || got["x-ratelimit-remaining"] != "99" {
+		t.Fatalf("Headers = %v, want exactly request-id and x-ratelimit-remaining", got)
+	}
+
+	none, ok := routeFactsOf(route(
+		`"authorization":"Bearer sk-test-not-a-real-secret","x-api-key":"test-key-not-real"`,
+	), shared.SpoolLine{}, "glm-5.3", t1)
+	if !ok {
+		t.Fatal("routeFactsOf refused a route event")
+	}
+	if none.Event.Headers != nil {
+		t.Fatalf("Headers = %v, want nil when every header fails the list", *none.Event.Headers)
 	}
 }
 
