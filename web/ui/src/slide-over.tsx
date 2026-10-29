@@ -109,21 +109,21 @@ export function SlideOver({
     >
       <div class={`ui-slide-over-panel ${width}`} data-slide-over>
         <div class="ui-slide-over-head border-b border-[var(--ui-line)]">
-          <div class="flex flex-wrap items-start gap-x-4 gap-y-3 px-4 pt-4 pb-3 sm:px-6 sm:pt-5 sm:pb-4">
-            {/* the header gives way to its actions once a phone leaves it under 16rem */}
-            <div class="min-w-0 flex-[1_1_16rem]">{header}</div>
-            <div class="ml-auto flex shrink-0 items-center gap-1">
-              {actions}
-              <button
-                type="button"
-                class="ui-btn ui-btn-ghost ui-btn-icon"
-                aria-label="Close"
-                title="Close (Esc)"
-                onClick={close}
-              >
-                {X}
-              </button>
-            </div>
+          <div class="ui-slide-over-bar px-4 pt-4 pb-3 sm:px-6 sm:pt-5 sm:pb-4">
+            {/* one DOM on the bar's grid areas: on a phone the close button keeps the header
+             * company on the first row and the actions wrap on their own full-width row, so a
+             * wide action group cannot push the close button past the sheet's edge */}
+            <div class="ui-slide-over-bar-head">{header}</div>
+            {actions ? <div class="ui-slide-over-bar-actions">{actions}</div> : null}
+            <button
+              type="button"
+              class="ui-btn ui-btn-ghost ui-btn-icon ui-slide-over-bar-close"
+              aria-label="Close"
+              title="Close (Esc)"
+              onClick={close}
+            >
+              {X}
+            </button>
           </div>
           {tabs ? <div class="px-4 pb-3 sm:px-6">{tabs}</div> : null}
         </div>

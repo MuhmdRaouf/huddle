@@ -119,7 +119,7 @@ describe("SlideOver on the tokens", () => {
     expect(head.className).toContain("border-[var(--ui-line)]");
     expect(panel.querySelector(".ui-slide-over-body")).toBeTruthy();
     const close = screen.getByTitle("Close (Esc)");
-    expect(close.className).toBe("ui-btn ui-btn-ghost ui-btn-icon");
+    expect(close.className).toBe("ui-btn ui-btn-ghost ui-btn-icon ui-slide-over-bar-close");
     const legacy = [...dlg.querySelectorAll("[class]"), dlg].flatMap((el) =>
       [...el.classList].filter((c) => /^(btn|glass|neon-ring|modal|rounded-l-box)|base-content/.test(c)),
     );

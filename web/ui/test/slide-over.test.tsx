@@ -133,4 +133,34 @@ describe("SlideOver", () => {
     );
     expect(() => view.unmount()).not.toThrow();
   });
+
+  it("lays the head on the bar: each action once, the close once, the actions in their grid area", () => {
+    const { baseElement } = render(
+      <SlideOver
+        open
+        onClose={() => {}}
+        label="Request"
+        header={<h2>Opus</h2>}
+        actions={
+          <>
+            <button type="button">Pause alpha</button>
+            <button type="button">Remove from channel</button>
+          </>
+        }
+      >
+        b
+      </SlideOver>,
+    );
+    // getByRole throws on a second match, so each action renders once, and the close button is
+    // the one button its name finds
+    expect(screen.getByRole("button", { name: "Pause alpha" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove from channel" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Close" })).toHaveLength(1);
+    const actions = baseElement.querySelector(".ui-slide-over-bar-actions") as HTMLElement | null;
+    expect(actions, "the actions sit in the bar's actions grid area").toBeTruthy();
+    expect(actions?.textContent).toContain("Pause alpha");
+    expect(actions?.textContent).toContain("Remove from channel");
+    // the close button is a grid area of its own, outside the actions
+    expect(actions?.contains(screen.getByRole("button", { name: "Close" }))).toBe(false);
+  });
 });

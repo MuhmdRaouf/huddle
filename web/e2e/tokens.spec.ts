@@ -450,4 +450,61 @@ test.describe("the design tokens page", () => {
     }
     await expectAccessible(page);
   });
+
+  test("the slide-over's head keeps every button inside the panel and wraps the actions on a phone", async ({
+    page,
+  }) => {
+    await openTokens(page);
+    await page.getByRole("button", { name: "Open slide-over" }).click();
+    const over = page.getByRole("dialog", { name: "Request details" });
+    await expect(over).toBeVisible();
+    // the gallery's one action is narrow, so the phone case squeezes to 320 px, the width where a
+    // wide action group would run the close button past the sheet's right edge
+    const phone = test.info().project.name !== "desktop";
+    if (phone) await page.setViewportSize({ width: 320, height: 700 });
+    // the element is the whole click-away; the buttons must stay inside the panel inside it
+    const panel = await over.locator("[data-slide-over]").boundingBox();
+    expect(panel).toBeTruthy();
+    if (!panel) return;
+    const buttons = await over.locator(".ui-slide-over-head button").all();
+    const close = { name: "", box: null as null | { x: number; y: number; width: number; height: number } };
+    for (const button of buttons) {
+      const box = await button.boundingBox();
+      expect(box).toBeTruthy();
+      if (!box) return;
+      const name = ((await button.getAttribute("aria-label")) ?? (await button.textContent()) ?? "").trim();
+      expect(box.x, `${name} sits inside the panel's left edge`).toBeGreaterThanOrEqual(panel.x - 0.5);
+      expect(
+        box.x + box.width,
+        `${name} sits inside the panel's right edge`,
+      ).toBeLessThanOrEqual(panel.x + panel.width + 0.5);
+      if (name === "Close") close.box = box;
+    }
+    expect(close.box, "the head carries a close button").toBeTruthy();
+    // the actions sit in the bar's actions grid area, on the phone as a full-width row under the
+    // header, with the close button top-aligned beside the header
+    const actions = await over.locator(".ui-slide-over-bar-actions").boundingBox();
+    expect(actions, "the actions sit in the bar's actions grid area").toBeTruthy();
+    if (phone && close.box && actions) {
+      expect(close.box.width, "the close button stands at least 44 px wide").toBeGreaterThanOrEqual(44);
+      expect(close.box.height, "the close button stands at least 44 px tall").toBeGreaterThanOrEqual(44);
+      const title = await over.getByText("Request details").boundingBox();
+      expect(title).toBeTruthy();
+      if (!title) return;
+      expect(
+        Math.abs(close.box.y - title.y),
+        "the close button tops out with the header",
+      ).toBeLessThanOrEqual(2);
+      expect(
+        Math.abs(actions.x - title.x),
+        "the actions start at the content's left edge",
+      ).toBeLessThanOrEqual(2);
+      expect(
+        Math.abs(actions.x + actions.width - (close.box.x + close.box.width)),
+        "the actions span the full content width",
+      ).toBeLessThanOrEqual(2);
+    }
+    await page.keyboard.press("Escape");
+    await expect(over).toBeHidden();
+  });
 });

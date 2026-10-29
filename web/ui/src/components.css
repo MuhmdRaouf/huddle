@@ -903,7 +903,48 @@ dialog[data-ui-covered]::backdrop {
   overflow-y: auto;
 }
 
+/* The head's bar: header, actions and close button in one row from 40 rem; below that the close
+ * button keeps the header company on the first row and the actions wrap on their own full-width
+ * row, so a wide action group cannot push the close button past the sheet's edge. The grid areas
+ * lay the three elements out, so each renders once. */
+.ui-slide-over-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "head close"
+    "actions actions";
+  align-items: start;
+  gap: var(--ui-space-3) var(--ui-space-4);
+}
+
+.ui-slide-over-bar-head {
+  grid-area: head;
+  min-width: 0;
+}
+
+.ui-slide-over-bar-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-2);
+}
+
+.ui-slide-over-bar-close {
+  grid-area: close;
+}
+
+/* no actions element, no second row */
+.ui-slide-over-bar:not(:has(> .ui-slide-over-bar-actions)) {
+  grid-template-areas: "head close";
+}
+
 @media (min-width: 40rem) {
+  .ui-slide-over-bar {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "head actions close";
+  }
+
   .ui-slide-over-panel {
     inset: 0 0 0 auto;
     min-width: 0;
