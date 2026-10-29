@@ -168,6 +168,23 @@ async function expectLayerTargets(layer: Locator): Promise<void> {
   expect(small, "controls under the 44 px target").toEqual([]);
 }
 
+/** On the phone every direct child of a sheet keeps the 16 px side gutter: nothing sits flush
+ *  against the screen edge, and nothing asks for a sideways scroll. */
+async function expectSheetGutter(sheet: Locator): Promise<void> {
+  if (!test.info().project.use.hasTouch) return;
+  const outside = await sheet.evaluate((root) => {
+    const edge = document.documentElement.clientWidth - 16;
+    return [...root.children]
+      .map((el) => ({ el, r: el.getBoundingClientRect() }))
+      .filter(({ r }) => r.width > 0 && (r.x < 16 || r.x + r.width > edge))
+      .map(
+        ({ el, r }) =>
+          `${el.tagName}${el.hasAttribute("data-link-submit") ? "[data-link-submit]" : ""} "${el.textContent?.trim().slice(0, 40) || el.id}" x=${r.x} right=${r.x + r.width}`,
+      );
+  });
+  expect(outside, "children outside the 16 px side gutter").toEqual([]);
+}
+
 test("the channel page lists the seeded ping and pong with who told whom", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
   await signIn(page);
@@ -570,6 +587,7 @@ test("the settings page keeps its sheets, the link sheet and the toast inside th
     if ((await page.locator("[data-nav='bottom']").count()) > 0)
       await expectClearOfTabBar(page, [link.first()]);
     await expectLayerTargets(link.first());
+    await expectSheetGutter(link.locator("[data-link-sheet]"));
     // the sheet's one select stands inside the panel: a filled control that reaches the
     // panel's right edge sits under the panel's corner radius and reads as clipped
     if (test.info().project.use.hasTouch) {

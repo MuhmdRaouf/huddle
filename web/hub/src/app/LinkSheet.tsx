@@ -169,7 +169,7 @@ export function LinkSheet({
 
   return (
     <Dialog open onClose={onClose} title={`Link ${sessions.length} sessions`}>
-      <div class="flex flex-col gap-4" data-link-sheet="">
+      <div class="flex flex-col gap-4 px-4" data-link-sheet="">
         {sheet}
         <p class="m-0 text-sm text-[var(--ui-muted)]">
           Linked sessions share one channel. Each one sees what the others are doing, at the level you pick.
