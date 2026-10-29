@@ -610,12 +610,15 @@ func Serve(ctx context.Context, o Options) error {
 		stepUp:       soloStepUp{},
 		pushWake:     make(chan struct{}, 1),
 	}
+	s.hub.Health = s.health
 	// the registry opens beside the channels: a home whose hub.db cannot open keeps every
 	// channel working, with each report refused (the hooks outbox theirs)
 	registry, err := hub.Open(ctx, home.Home{Root: o.Home}.HubDB())
 	if err != nil {
 		fmt.Fprintf(o.Stderr, "registry: %v\n", err)
+		s.health.Fail("hub.db", err)
 	} else {
+		s.health.OK("hub.db")
 		s.registry = registry
 		// pairing rides the same database: its links, devices and sessions live in hub.db, so
 		// the terminal that mints a link and the server that spends it share one truth
@@ -686,6 +689,7 @@ func Serve(ctx context.Context, o Options) error {
 			Roots:   s.boardRoots,
 			Version: o.Version,
 			Now:     now,
+			Health:  s.health,
 			// the tab's feature route takes the owner's writes alone: the root
 			// credential, or the browser session the dashboard serves
 			Owner: func(r *http.Request) bool {

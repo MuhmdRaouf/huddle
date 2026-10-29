@@ -83,6 +83,7 @@ var goldenPerRoute = []struct {
 	{"/api/login", regexp.MustCompile(`"(code)":"[^"]*"`)},
 	{"/health", regexp.MustCompile(`"(machine|executable)":"[^"]*"`)},
 	{"/health", regexp.MustCompile(`"(pid)":\d+`)},
+	{"/health", regexp.MustCompile(`"(lastOkAt|lastErrAt)":\d+`)},
 }
 
 // goldenMark replaces the volatile fields of one answer, the same rules on both sides.

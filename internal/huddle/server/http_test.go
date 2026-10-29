@@ -1454,7 +1454,15 @@ func TestHealthNamesTheMachineAndTheHub(t *testing.T) {
 	if machine == nil || machine[1] == "" {
 		t.Fatalf("health names no machine: %s", out)
 	}
-	if strings.Contains(out, `"name"`) {
+	// the answer's components carry their own names, so the hub's own name is read off the
+	// top level
+	var solo struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(out), &solo); err != nil {
+		t.Fatalf("the health answer %s: %v", out, err)
+	}
+	if solo.Name != "" {
 		t.Fatalf("a solo home names a hub: %s", out)
 	}
 

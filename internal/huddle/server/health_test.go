@@ -2,13 +2,20 @@ package server
 
 // The health answer names the serving process's executable, symlinks resolved: up from a newer
 // binary reads it to give an older hub way (the router's start applies the same rule to its
-// daemon), so a hub that cannot name its binary counts as an old one.
+// daemon), so a hub that cannot name its binary counts as an old one. The stores the hub opens
+// report into the same answer: a store that cannot open shows failing, and healthy turns false.
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/health"
+	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
 )
 
 func TestTheHealthAnswerListsTheComponents(t *testing.T) {
@@ -18,8 +25,8 @@ func TestTheHealthAnswerListsTheComponents(t *testing.T) {
 		t.Fatalf("/health = %d %s", code, body)
 	}
 	var answer struct {
-		Healthy    bool              `json:"healthy"`
-		Components []json.RawMessage `json:"components"`
+		Healthy    bool          `json:"healthy"`
+		Components []health.Part `json:"components"`
 	}
 	if err := json.Unmarshal([]byte(body), &answer); err != nil {
 		t.Fatalf("the health answer %s: %v", body, err)
@@ -27,11 +34,16 @@ func TestTheHealthAnswerListsTheComponents(t *testing.T) {
 	if !answer.Healthy {
 		t.Errorf("healthy = false, want true on a server with nothing failing")
 	}
-	if answer.Components == nil {
-		t.Errorf("components = null, want an empty array")
+	// other parts may list their own components beside the stores
+	hubDB := findComponent(answer.Components, "hub.db")
+	if hubDB == nil {
+		t.Fatalf("components = %+v, want hub.db listed", answer.Components)
 	}
-	if len(answer.Components) != 0 {
-		t.Errorf("components = %s, want none before any part reports", answer.Components)
+	if hubDB.Kind != "store" || hubDB.State != "ok" || hubDB.Errors != 0 {
+		t.Errorf("the hub.db component = %+v, want a store, ok, no errors", hubDB)
+	}
+	if hubDB.LastOKAt <= 0 {
+		t.Errorf("lastOkAt = %d, want the open's moment", hubDB.LastOKAt)
 	}
 }
 
@@ -57,5 +69,103 @@ func TestTheHealthAnswerNamesItsExecutable(t *testing.T) {
 	}
 	if answer.Executable != resolved {
 		t.Errorf("health names executable %q, want %q", answer.Executable, resolved)
+	}
+}
+
+// findComponent answers the named component of a health answer, nil when it is missing.
+func findComponent(parts []health.Part, name string) *health.Part {
+	for i := range parts {
+		if parts[i].Name == name {
+			return &parts[i]
+		}
+	}
+	return nil
+}
+
+// A hub.db that cannot open shows failing in the health answer, and healthy turns false: the
+// server keeps serving every channel, and /health says what cannot open.
+func TestAHubDBThatCannotOpenShowsFailing(t *testing.T) {
+	home := tempDir("huddle-no-hub-db-")
+	// a directory where hub.db would open: the registry cannot start, and the server runs
+	// without it
+	if err := os.MkdirAll(filepath.Join(home, "hub.db"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	srv := startServer(t, map[string]string{"HUDDLE_HOME": home})
+	code, _, body := srv.get(t, "/health", nil)
+	if code != 200 {
+		t.Fatalf("/health = %d %s", code, body)
+	}
+	var answer struct {
+		OK         bool          `json:"ok"`
+		Healthy    bool          `json:"healthy"`
+		Components []health.Part `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(body), &answer); err != nil {
+		t.Fatalf("the health answer %s: %v", body, err)
+	}
+	if !answer.OK {
+		t.Errorf("ok = false, want the server still serving without its registry")
+	}
+	if answer.Healthy {
+		t.Errorf("healthy = true, want false while hub.db cannot open")
+	}
+	part := findComponent(answer.Components, "hub.db")
+	if part == nil {
+		t.Fatalf("components = %+v, want hub.db listed", answer.Components)
+	}
+	if part.State != "failing" {
+		t.Errorf("state = %q, want failing", part.State)
+	}
+	if part.Errors != 1 {
+		t.Errorf("errors = %d, want the one open failure", part.Errors)
+	}
+	if part.LastError == "" {
+		t.Errorf("lastError = empty, want the open's error")
+	}
+}
+
+// A router body store that cannot open shows failing once a read has tried it: the read
+// itself answers off as before, and /health names the store failing.
+func TestARouterDBThatCannotOpenShowsFailing(t *testing.T) {
+	rig := bodiesServer(t, bodiesKeyed())
+	// bytes no body store opens: the read's open fails, and the read answers off
+	file := paths.RouterBodiesPath(context.Background(), domain.EnvLookup{"RADAR_HOME": rig.radar})
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out := bodiesCall(t, rig, http.MethodGet, "/api/bodies/b-1", "", rig.token)
+	if code != 200 {
+		t.Fatalf("the owner's read = %d %s", code, out)
+	}
+	if answer := bodyMap(t, out); answer["state"] != "off" {
+		t.Errorf("the state = %v, want off: the unreadable store stays off", answer["state"])
+	}
+	code, out = bodiesCall(t, rig, http.MethodGet, "/health", "", rig.token)
+	if code != 200 {
+		t.Fatalf("/health = %d %s", code, out)
+	}
+	var answer struct {
+		Healthy    bool          `json:"healthy"`
+		Components []health.Part `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(out), &answer); err != nil {
+		t.Fatalf("the health answer %s: %v", out, err)
+	}
+	part := findComponent(answer.Components, "router.db")
+	if part == nil {
+		t.Fatalf("components = %+v, want router.db listed", answer.Components)
+	}
+	if part.State != "failing" {
+		t.Errorf("state = %q, want failing", part.State)
+	}
+	if part.Errors != 1 {
+		t.Errorf("errors = %d, want the one open failure", part.Errors)
+	}
+	if answer.Healthy {
+		t.Errorf("healthy = true, want false while router.db cannot open")
 	}
 }

@@ -125,8 +125,10 @@ func (s *server) bodiesStore(ctx context.Context) (*ledger.BodyStore, error) {
 	}
 	store, err := ledger.OpenBodies(file, bodyKey)
 	if err != nil {
+		s.health.Fail("router.db", err)
 		return nil, nil // the store stays unread: off, and the next read tries again
 	}
+	s.health.OK("router.db")
 	s.bodies = store
 	return store, nil
 }

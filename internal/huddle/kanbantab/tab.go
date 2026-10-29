@@ -26,6 +26,12 @@ import (
 // them, /api/kanban/b/<key>/api/… answers one board's API.
 const Prefix = "/api/kanban"
 
+// HealthReport takes a store's open result: OK after a good open, Fail after a failed one.
+type HealthReport interface {
+	OK(name string)
+	Fail(name string, err error)
+}
+
 // Options shapes the mount. Roots answers the working dirs to look for boards
 // from — huddle hands it the registry's sessions' cwds — Origin answers a
 // repository's origin URL (the default reads git's config, bounded at a
@@ -48,6 +54,9 @@ type Options struct {
 	Owner     func(r *http.Request) bool
 	Relay     func(ctx context.Context, key string, body []byte) (status int, answer []byte, relayed bool)
 	ReadRelay func(ctx context.Context, key, path string) (response *http.Response, relayed bool)
+
+	// Health takes each board store's open result; nil reports nothing.
+	Health HealthReport
 }
 
 // entry is one mounted board: its app, the watch run under the cancel, and the
@@ -70,6 +79,7 @@ type Tab struct {
 	owner     func(r *http.Request) bool
 	relay     func(ctx context.Context, key string, body []byte) (int, []byte, bool)
 	readRelay func(ctx context.Context, key, path string) (*http.Response, bool)
+	health    HealthReport
 
 	mu       sync.Mutex
 	apps     map[string]*entry
@@ -102,6 +112,7 @@ func Mount(ctx context.Context, opts Options) *Tab {
 		owner:     opts.Owner,
 		relay:     opts.Relay,
 		readRelay: opts.ReadRelay,
+		health:    opts.Health,
 		apps:      map[string]*entry{},
 		origins:   map[string]string{},
 	}
@@ -241,6 +252,7 @@ func (t *Tab) appFor(ctx context.Context, key string) *server.App {
 			continue
 		}
 		b, closeBoard, err := board.Open(ctx, board.Board{Root: row.Root, Now: t.now})
+		t.report("kanban:"+row.Name, err)
 		if err != nil {
 			return nil
 		}
@@ -252,6 +264,18 @@ func (t *Tab) appFor(ctx context.Context, key string) *server.App {
 		return e.app
 	}
 	return nil
+}
+
+// report hands one open result to Health: a nil err is a good open.
+func (t *Tab) report(name string, err error) {
+	if t.health == nil {
+		return
+	}
+	if err != nil {
+		t.health.Fail(name, err)
+		return
+	}
+	t.health.OK(name)
 }
 
 // Stop ends every mounted board's watch, closes its event streams and releases

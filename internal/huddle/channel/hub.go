@@ -46,6 +46,12 @@ type HubEntry struct {
 	Stats       Stats        `json:"stats"`
 }
 
+// HealthReport takes a store's open result: OK after a good open, Fail after a failed one.
+type HealthReport interface {
+	OK(name string)
+	Fail(name string, err error)
+}
+
 // Hub is every channel of one server. AutoCreate says a session's join may create the channel it
 // names; Radar answers the digest's estimated costs.
 type Hub struct {
@@ -60,6 +66,10 @@ type Hub struct {
 	// MemberSessions answers every channel's Claude session ids from the registry; nil leaves
 	// each channel's member rows the only answer.
 	MemberSessions Sessions
+
+	// Health takes each channel store's and the knowledge store's open result; nil reports
+	// nothing.
+	Health HealthReport
 
 	onGet func(*Channel)
 
@@ -194,13 +204,16 @@ func (h *Hub) get(ctx context.Context, name string, create bool) (*Channel, erro
 	}
 	st, err := store.Open(ctx, h.File(name))
 	if err != nil {
+		h.report("channel:"+name, err)
 		return nil, err
 	}
 	ch, err := Open(ctx, name, st)
 	if err != nil {
 		_ = st.Close()
+		h.report("channel:"+name, err)
 		return nil, err
 	}
+	h.report("channel:"+name, nil)
 	if h.shared == nil {
 		// the store's earlier spelling (shared.db) moves onto knowledge.db once, here, because
 		// this open is the file's only reader and writer
@@ -208,8 +221,10 @@ func (h *Hub) get(ctx context.Context, name string, create bool) (*Channel, erro
 		if err != nil {
 			// a channel works without the server-wide knowledge; the next open tries again
 			log.Printf("shared knowledge: %v", err)
+			h.report("knowledge.db", err)
 		} else {
 			h.shared = s
+			h.report("knowledge.db", nil)
 		}
 	}
 	if h.shared != nil {
@@ -222,6 +237,18 @@ func (h *Hub) get(ctx context.Context, name string, create bool) (*Channel, erro
 	ch.MemberSessions = h.MemberSessions
 	h.open[name] = ch
 	return ch, nil
+}
+
+// report hands one open result to Health: a nil err is a good open.
+func (h *Hub) report(name string, err error) {
+	if h.Health == nil {
+		return
+	}
+	if err != nil {
+		h.Health.Fail(name, err)
+		return
+	}
+	h.Health.OK(name)
 }
 
 // List answers every channel with its configuration, its live sessions and its stats.

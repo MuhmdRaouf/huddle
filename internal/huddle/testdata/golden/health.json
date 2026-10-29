@@ -7,5 +7,5 @@
   "auth": "root",
   "status": 200,
   "contentType": "application/json",
-  "body": "{\"ok\":true,\"version\":\"0.0.2\",\"started\":\"<volatile>\",\"channels\":1,\"home\":\"<volatile>\",\"machine\":\"<volatile>\",\"executable\":\"<volatile>\",\"pid\":\"<volatile>\",\"router\":{\"running\":false,\"providers\":[]},\"healthy\":true,\"components\":[]}"
+  "body": "{\"ok\":true,\"version\":\"0.0.2\",\"started\":\"<volatile>\",\"channels\":1,\"home\":\"<volatile>\",\"machine\":\"<volatile>\",\"executable\":\"<volatile>\",\"pid\":\"<volatile>\",\"router\":{\"running\":false,\"providers\":[]},\"healthy\":true,\"components\":[{\"name\":\"channel:golden\",\"kind\":\"store\",\"state\":\"ok\",\"lastOkAt\":\"<volatile>\",\"errors\":0},{\"name\":\"hub.db\",\"kind\":\"store\",\"state\":\"ok\",\"lastOkAt\":\"<volatile>\",\"errors\":0},{\"name\":\"knowledge.db\",\"kind\":\"store\",\"state\":\"ok\",\"lastOkAt\":\"<volatile>\",\"errors\":0}]}"
 }

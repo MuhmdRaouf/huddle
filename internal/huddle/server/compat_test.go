@@ -444,6 +444,21 @@ func compatRoutes() []string {
 	return routes
 }
 
+// compatHealthWithoutComponents answers a /health body with its components key dropped: the
+// parts a start has opened depend on the requests before it, so the list moves with the run.
+func compatHealthWithoutComponents(body string) string {
+	var answer map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &answer); err != nil {
+		return body
+	}
+	delete(answer, "components")
+	out, err := json.Marshal(answer)
+	if err != nil {
+		return body
+	}
+	return string(out)
+}
+
 // TestCompatLegacyHome opens the recorded home and proves the compat rules: every channel lists,
 // searches its full-text indexes and serves its rows with the recorded credentials logging in,
 // only the server's own files change, and a stop followed by a fresh start answers the same,
@@ -768,8 +783,14 @@ func TestCompatLegacyHome(t *testing.T) {
 			if strings.HasSuffix(route, "/knowledge.md") {
 				continue
 			}
-			if first[route] != second[route] {
-				t.Fatalf("%s answered differently on the second start:\n%s\n%s", route, first[route], second[route])
+			firstBody, secondBody := first[route], second[route]
+			if route == "/health" {
+				// the parts a start has opened depend on the requests before it
+				firstBody = compatHealthWithoutComponents(firstBody)
+				secondBody = compatHealthWithoutComponents(secondBody)
+			}
+			if firstBody != secondBody {
+				t.Fatalf("%s answered differently on the second start:\n%s\n%s", route, firstBody, secondBody)
 			}
 		}
 		// nothing moved twice: every database and the auth state sit byte for byte where the first

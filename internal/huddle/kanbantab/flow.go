@@ -112,8 +112,12 @@ func (t *Tab) serveFlow(w http.ResponseWriter, r *http.Request, key string) {
 		writeJSON(w, http.StatusNotFound, errorAnswer{Error: "no board " + key})
 		return
 	}
+	// the root the row carries names the store's report; Open answers a bare board on
+	// failure, so the name is taken before it
+	root := b.Root
 	// a root holding kanban.db writes through its store, exactly as the cli opens it
 	b, closeBoard, err := board.Open(r.Context(), b)
+	t.report("kanban:"+repoName(root), err)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorAnswer{Error: err.Error()})
 		return
