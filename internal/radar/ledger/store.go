@@ -186,17 +186,20 @@ func (s *Store) ByAnthropicID(ctx context.Context, id string) (*Row, error) {
 	return s.read(ctx, "anthropic_id = ?", id)
 }
 
-// Prune cuts the ledger back to the TTL: every request row started before the cutoff —
-// now minus MetaTTL — goes, with the facts rows filed under the same ids. A row the file
-// heard of without a started_at stays. The request rows go first and their facts follow:
-// an in-flight request files its facts before its row, so an orphan facts row is a shape
-// the file already holds, while an orphan request row would sit in the dashboard with
-// nothing behind it.
-func (s *Store) Prune(ctx context.Context, now time.Time) (int, error) {
+// Prune cuts the ledger back to the days given: every request row started before the
+// cutoff — now minus that many days — goes, with the facts rows filed under the same ids.
+// Zero or less keeps every row. A row the file heard of without a started_at stays. The
+// request rows go first and their facts follow: an in-flight request files its facts before
+// its row, so an orphan facts row is a shape the file already holds, while an orphan request
+// row would sit in the dashboard with nothing behind it.
+func (s *Store) Prune(ctx context.Context, now time.Time, days int) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	cutoff := now.Add(-MetaTTL).UnixMilli()
+	if days <= 0 {
+		return 0, nil
+	}
+	cutoff := now.Add(-time.Duration(days) * 24 * time.Hour).UnixMilli()
 	where := "WHERE started_at IS NOT NULL AND started_at < ?"
 	// The ids are read before the delete that would empty the set, and the Get surface
 	// answers one row, so they come back GROUP_CONCAT-ed into one string.

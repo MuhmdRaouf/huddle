@@ -225,12 +225,12 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		hist = opened
 		writer = history.AttachHistoryWriter(appCtx, history.HistoryWriterOptions{Store: st, History: hist})
 	}
+	// the retention the user chose, read fresh on every prune so a change takes the next beat
+	retention := func(ctx context.Context) int {
+		return settings.ReadSettings(ctx, options.Env).HistoryRetentionDays
+	}
 	var prunes *history.PruneSchedule
 	if hist != nil {
-		// the retention the user chose, read fresh on every prune so a change takes the next beat
-		retention := func(ctx context.Context) int {
-			return settings.ReadSettings(ctx, options.Env).HistoryRetentionDays
-		}
 		prunes = history.SchedulePrunes(appCtx, hist, retention, history.PruneOptions{})
 	}
 	var led *ledger.Store
@@ -240,7 +240,7 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		log(fmt.Sprintf("radar: ledger unavailable, running without it (%v)", err))
 	} else {
 		led = opened
-		ledgerPrunes = ledger.SchedulePrune(appCtx, led, 0, now, nil)
+		ledgerPrunes = ledger.SchedulePrune(appCtx, led, 0, now, retention, nil)
 		ledgerBackfill = ledger.StartBackfill(appCtx, led, 0, nil)
 	}
 	watcher := ingest.StartWatcher(appCtx, ingest.WatcherOptions{

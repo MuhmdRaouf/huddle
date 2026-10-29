@@ -15,9 +15,6 @@ import (
 // BodyTTL is how long a stored body stays in router.db.
 const BodyTTL = 7 * 24 * time.Hour
 
-// MetaTTL is how long a request row and its facts stay in ledger.db.
-const MetaTTL = 90 * 24 * time.Hour
-
 // BodySweep answers what one body sweep removed.
 type BodySweep struct {
 	Bodies   int

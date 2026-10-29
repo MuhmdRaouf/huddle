@@ -221,11 +221,11 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		hist = opened
 		writer = history.AttachHistoryWriter(appCtx, history.HistoryWriterOptions{Store: st, History: hist, Health: report})
 	}
+	// the retention the user chose, read fresh on every prune so a change takes the next beat
+	retention := func(ctx context.Context) int {
+		return settings.ReadSettings(ctx, env).HistoryRetentionDays
+	}
 	if hist != nil {
-		// the retention the user chose, read fresh on every prune so a change takes the next beat
-		retention := func(ctx context.Context) int {
-			return settings.ReadSettings(ctx, env).HistoryRetentionDays
-		}
 		t.prunes = history.SchedulePrunes(appCtx, hist, retention, history.PruneOptions{Health: report})
 	}
 	var led *ledger.Store
@@ -237,7 +237,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 	} else {
 		options.Health.OK("ledger.db")
 		led = opened
-		ledgerPrunes = ledger.SchedulePrune(appCtx, led, 0, now, ledgerReport)
+		ledgerPrunes = ledger.SchedulePrune(appCtx, led, 0, now, retention, ledgerReport)
 		options.Health.Register(ledger.BackfillHealthName, domain.HealthLoop, 0)
 		ledgerBackfill = ledger.StartBackfill(appCtx, led, 0, ledgerReport)
 	}

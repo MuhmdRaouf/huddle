@@ -1,6 +1,6 @@
 // The ledger's prune beat: one prune at start, then one every PruneEvery, so a process that
-// holds ledger.db open keeps it inside the metadata TTL without a restart. A failed prune is
-// dropped and retried on the next beat: serving never depends on it.
+// holds ledger.db open keeps it inside the retention its source answers without a restart. A
+// failed prune is dropped and retried on the next beat: serving never depends on it.
 package ledger
 
 import (
@@ -20,9 +20,10 @@ type PruneBeat struct {
 }
 
 // SchedulePrune prunes the store once now, then every every (0 or less: PruneEvery); each
-// prune reads now() (nil: time.Now), and each result goes to health (nil: none). The beat
-// ends with ctx or Stop. Without a store it starts nothing and answers nil.
-func SchedulePrune(ctx context.Context, st *Store, every time.Duration, now func() time.Time, health HealthReport) *PruneBeat {
+// prune reads now() (nil: time.Now) and the days the retention source answers (nil: keep
+// every row), and each result goes to health (nil: none). The beat ends with ctx or Stop.
+// Without a store it starts nothing and answers nil.
+func SchedulePrune(ctx context.Context, st *Store, every time.Duration, now func() time.Time, retention RetentionSource, health HealthReport) *PruneBeat {
 	if st == nil {
 		return nil
 	}
@@ -33,7 +34,11 @@ func SchedulePrune(ctx context.Context, st *Store, every time.Duration, now func
 		now = time.Now
 	}
 	run := func() {
-		_, err := st.Prune(ctx, now())
+		days := 0
+		if retention != nil {
+			days = retention(ctx)
+		}
+		_, err := st.Prune(ctx, now(), days)
 		reportTo(health, PruneHealthName, err)
 	}
 	run() // the first prune lands before the caller carries on, so a start cuts the file back
