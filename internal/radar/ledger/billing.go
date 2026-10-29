@@ -33,7 +33,7 @@ func billing(s Sources, row *Row) {
 			via = "router"
 		}
 		row.Via = &via
-	} else if s.Transcript != nil {
+	} else if s.Transcript != nil || s.Harness != nil {
 		row.Provider = shared.ProviderOf(row.Model)
 	}
 }

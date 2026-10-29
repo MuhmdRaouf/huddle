@@ -14,7 +14,7 @@ const ReconcileVersion = 6
 // Reconcile answers the row the sources agree on, false when no source knows the request
 // (every pointer nil).
 func Reconcile(s Sources) (Row, bool) {
-	if s.Route == nil && s.Transcript == nil && s.OTel == nil {
+	if s.Route == nil && s.Transcript == nil && s.OTel == nil && s.Harness == nil {
 		return Row{}, false
 	}
 	row := Row{InTranscript: s.Transcript != nil}
@@ -32,8 +32,13 @@ func Reconcile(s Sources) (Row, bool) {
 }
 
 // ids names the row: the request-id header when the answer carried one, else the route's
-// prompt hash joined to its ts, else the transcript's request id.
+// prompt hash joined to its ts, else the transcript's request id. A harness row takes its
+// record's own id, which is never a request-id header.
 func ids(s Sources, row *Row) {
+	if s.Harness != nil {
+		row.ID = s.Harness.ID
+		return
+	}
 	if s.Route != nil && s.Route.Event.Headers != nil {
 		row.AnthropicID = (*s.Route.Event.Headers)["request-id"]
 	}
@@ -55,14 +60,20 @@ func ids(s Sources, row *Row) {
 
 // request reads which model served, who sent it and where it sat in its turn, all the
 // route's own facts; the transcript backs up the model and the prompt id when no route saw
-// the request, and names the session and agent the call sits under.
+// the request, and names the session and agent the call sits under. A harness row carries
+// its record's own model, session and agent.
 func request(s Sources, row *Row) {
-	if s.Route == nil {
+	switch {
+	case s.Harness != nil:
+		row.Model = s.Harness.Model
+		row.SessionID = s.Harness.SessionID
+		row.AgentID = s.Harness.AgentID
+	case s.Route == nil:
 		if s.Transcript != nil {
 			row.Model = s.Transcript.Model
 			row.PromptID = s.Transcript.PromptID
 		}
-	} else {
+	default:
 		event := s.Route.Event
 		row.Model = event.Model
 		row.FallbackFrom = textOf(event.Fallback)
@@ -98,16 +109,19 @@ func request(s Sources, row *Row) {
 
 // timing reads the clock: when the router received the request, how long the answer took,
 // and when its first token came back. A request no route saw starts when its transcript
-// says and still takes OTel's duration.
+// says and still takes OTel's duration; a harness row starts when its record says.
 func timing(s Sources, row *Row) {
-	if s.Route != nil {
+	switch {
+	case s.Route != nil:
 		if started, err := time.Parse(time.RFC3339, s.Route.Event.Ts); err == nil {
 			row.StartedAt = started.UnixMilli()
 		}
 		row.DurationMs = s.Route.Event.LatencyMs
 		row.TtfbMs = s.Route.Event.TtfbMs
 		row.TtftMs = s.Route.Event.TtftMs
-	} else {
+	case s.Harness != nil:
+		row.StartedAt = s.Harness.Ts
+	default:
 		if s.Transcript != nil && s.Transcript.Ts > 0 {
 			row.StartedAt = s.Transcript.Ts
 		}
@@ -120,8 +134,13 @@ func timing(s Sources, row *Row) {
 	}
 }
 
-// lane names the path the request took and the harness that sent it.
+// lane names the path the request took and the harness that sent it. A harness row sits on
+// no lane; its record names the harness itself.
 func lane(s Sources, row *Row) {
+	if s.Harness != nil {
+		row.Harness = s.Harness.Harness
+		return
+	}
 	row.Harness = "claude"
 	if s.Route == nil {
 		return
@@ -143,7 +162,8 @@ func lane(s Sources, row *Row) {
 }
 
 // chosenUsage answers the usage map the first source that carries one holds, named by its
-// source: the router's report first, OTel and the transcript as backups.
+// source: the router's report first, OTel, the transcript and the harness's own record as
+// backups.
 func chosenUsage(s Sources) (domain.RouteUsage, string) {
 	switch {
 	case s.Route != nil && s.Route.Event.Usage != nil:
@@ -152,6 +172,8 @@ func chosenUsage(s Sources) (domain.RouteUsage, string) {
 		return s.OTel.Usage, "otel"
 	case s.Transcript != nil && len(s.Transcript.Usage) > 0:
 		return s.Transcript.Usage, "transcript"
+	case s.Harness != nil && len(s.Harness.Usage) > 0:
+		return s.Harness.Usage, "harness"
 	}
 	return nil, ""
 }
@@ -178,6 +200,8 @@ func usage(s Sources, row *Row) {
 	}
 	if s.OTel != nil {
 		row.HarnessCostUSD = s.OTel.HarnessCostUSD
+	} else if s.Harness != nil {
+		row.HarnessCostUSD = s.Harness.HarnessCostUSD
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,9 +25,103 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
-// w1IDs are the five requests the fixture seeds: one per join shape, a transcript-only one
-// whose run total only its result event names, and a transcript-only subagent call.
-var w1IDs = []string{"req_w1_a", "req_w1_b", "req_w1_c", "req_w2_d", "req_w3_e"}
+// w1IDs are the requests the fixture seeds: one per join shape, a transcript-only one whose
+// run total only its result event names, a transcript-only subagent call, and the two turns
+// of a codex rollout plus one opencode message, filed under their own record ids.
+var w1IDs = []string{
+	"req_w1_a", "req_w1_b", "req_w1_c", "req_w2_d", "req_w3_e",
+	"codex:" + w1CodexSessionID + ":0", "codex:" + w1CodexSessionID + ":1", "opencode:msg_aaa",
+}
+
+// w1CodexSessionID is the session the codex fixture rollout names.
+const w1CodexSessionID = "3f9d1c9e-8c2a-4b7e-9a51-0f5c2a81d001"
+
+// w1SeedCodex copies the codex fixture rollout into a temp CODEX_HOME, at the path the
+// collector's own date rule builds.
+func w1SeedCodex(t *testing.T, codexHome string) {
+	t.Helper()
+	rollout := filepath.Join(codexHome, "sessions", "2026", "10", "16",
+		"rollout-2026-10-16T10-00-00-"+w1CodexSessionID+".jsonl")
+	blob, err := os.ReadFile(filepath.Join("..", "ingest", "testdata", "codex", "rollout-sample.jsonl"))
+	if err != nil {
+		t.Fatalf("read the codex fixture: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(rollout), 0o700); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(rollout), err)
+	}
+	if err := os.WriteFile(rollout, blob, 0o600); err != nil {
+		t.Fatalf("write the rollout: %v", err)
+	}
+}
+
+// w1SeedOpencode builds a temp database holding opencode's two tables and one completed
+// assistant message that reported a cost and the four counters.
+func w1SeedOpencode(t *testing.T, file string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(file), err)
+	}
+	db, err := sql.Open("sqlite", file)
+	if err != nil {
+		t.Fatalf("open the opencode fixture: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	const sessionDDL = "CREATE TABLE IF NOT EXISTS `session` (" +
+		"`id` text PRIMARY KEY NOT NULL," +
+		"`project_id` text NOT NULL," +
+		"`workspace_id` text," +
+		"`parent_id` text," +
+		"`slug` text NOT NULL," +
+		"`directory` text NOT NULL," +
+		"`path` text," +
+		"`title` text NOT NULL," +
+		"`version` text NOT NULL," +
+		"`share_url` text," +
+		"`summary_additions` integer," +
+		"`summary_deletions` integer," +
+		"`summary_files` integer," +
+		"`summary_diffs` text," +
+		"`metadata` text," +
+		"`cost` real DEFAULT 0 NOT NULL," +
+		"`tokens_input` integer DEFAULT 0 NOT NULL," +
+		"`tokens_output` integer DEFAULT 0 NOT NULL," +
+		"`tokens_reasoning` integer DEFAULT 0 NOT NULL," +
+		"`tokens_cache_read` integer DEFAULT 0 NOT NULL," +
+		"`tokens_cache_write` integer DEFAULT 0 NOT NULL," +
+		"`revert` text," +
+		"`permission` text," +
+		"`agent` text," +
+		"`model` text," +
+		"`time_created` integer NOT NULL," +
+		"`time_updated` integer NOT NULL," +
+		"`time_compacting` integer," +
+		"`time_archived` integer)"
+	const messageDDL = "CREATE TABLE IF NOT EXISTS `message` (" +
+		"`id` text PRIMARY KEY NOT NULL," +
+		"`session_id` text NOT NULL REFERENCES `session` (`id`) ON DELETE CASCADE," +
+		"`time_created` integer NOT NULL," +
+		"`time_updated` integer NOT NULL," +
+		"`data` text NOT NULL)"
+	if _, err := db.Exec(sessionDDL + ";" + messageDDL); err != nil {
+		t.Fatalf("create the opencode tables: %v", err)
+	}
+	at := time.Now().Add(-time.Hour).UnixMilli()
+	if _, err := db.Exec(
+		"INSERT INTO session (id, project_id, slug, directory, title, version, time_created, time_updated) "+
+			"VALUES ('ses_w1', 'prj_1', 'fix-the-login-flow', '/w/app', 'Fix the login flow', '1.17.7', ?, ?)",
+		at-60_000, at-60_000); err != nil {
+		t.Fatalf("insert the session: %v", err)
+	}
+	data := fmt.Sprintf(`{"id":"msg_aaa","role":"assistant","parentID":"msg_000","modelID":"claude-sonnet-5-5",`+
+		`"providerID":"anthropic","mode":"build","agent":"build","path":{"cwd":"/w/app","root":"/w/app"},`+
+		`"cost":0.0123,"tokens":{"input":900,"output":400,"reasoning":50,"cache":{"read":300,"write":40}},`+
+		`"time":{"created":%d,"completed":%d}}`, at, at+1_000)
+	if _, err := db.Exec(
+		"INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES ('msg_aaa', 'ses_w1', ?, ?, ?)",
+		at, at+1_000, data); err != nil {
+		t.Fatalf("insert the message: %v", err)
+	}
+}
 
 // w1Upstream is the upstream a request's plugin names; the Anthropic passthrough for a line
 // with none.
@@ -315,14 +410,21 @@ func w1Compare(t *testing.T, id string, h w1HistoryRow, row ledger.Row) {
 	w1One(t, id, "node_id", &h.nodeID, &row.NodeID)
 }
 
-// TestTheLedgerMatchesHistory: four requests — a zai one both sources saw with the four
-// billing keys, a thinking count, a prompt and a Bash call; a kimi one only the route line
-// saw; an Anthropic passthrough with a speed; and a transcript-only one whose run total its
-// result event names — land the same ten values in history.db and ledger.db.
+// TestTheLedgerMatchesHistory: the seeded requests — a zai one both sources saw with the
+// four billing keys, a thinking count, a prompt and a Bash call; a kimi one only the route
+// line saw; an Anthropic passthrough with a speed; a transcript-only one whose run total its
+// result event names; and a codex rollout plus an opencode message under their own record
+// ids — land the same values in history.db and ledger.db.
 func TestTheLedgerMatchesHistory(t *testing.T) {
 	world := makeEnv(t)
 	ctx := t.Context()
 	at := time.Now()
+
+	// the harness collectors read their own stores out of the env, both inside the temp home
+	world.env["CODEX_HOME"] = filepath.Join(world.home, "codex")
+	world.env["OPENCODE_DATA"] = filepath.Join(world.home, "opencode", "opencode.db")
+	w1SeedCodex(t, world.env["CODEX_HOME"])
+	w1SeedOpencode(t, world.env["OPENCODE_DATA"])
 
 	full := map[string]any{
 		"input_tokens": 120, "output_tokens": 45,
@@ -366,7 +468,7 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 	app := mustStart(t, world.env, AppOptions{Version: "test", SinceMs: dayMs, IntervalMs: quietMs})
 	historyPath := paths.HistoryPath(ctx, world.env)
 	ledgerPath := paths.LedgerPath(ctx, world.env)
-	waitFor(t, "the four requests in history.db and ledger.db", 10*time.Second, func() bool {
+	waitFor(t, "the seeded requests in history.db and ledger.db", 10*time.Second, func() bool {
 		return w1HistoryHolds(historyPath, w1IDs) && w1LedgerHolds(ledgerPath, w1IDs)
 	})
 	app.Stop()
@@ -394,9 +496,11 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 	}
 
 	// A transcript-only request starts when its transcript says, the same instant both
-	// stores hold, so started_at agrees for them. A merged request keeps history's first
-	// copy's ts while the ledger keeps the route's start, so its numbers only print.
-	for _, id := range []string{"req_w2_d", "req_w3_e"} {
+	// stores hold, so started_at agrees for them; a harness record starts when the record
+	// says, on both sides too. A merged request keeps history's first copy's ts while the
+	// ledger keeps the route's start, so its numbers only print.
+	for _, id := range append([]string{"req_w2_d", "req_w3_e"},
+		"codex:"+w1CodexSessionID+":0", "opencode:msg_aaa") {
 		held := w1HistoryRowFor(t, history, id)
 		row, err := led.Get(ctx, id)
 		if err != nil {

@@ -4,9 +4,11 @@ import "github.com/MuhmdRaouf/huddle/internal/radar/shared"
 
 // node fills the row's node and, for a request only a transcript saw, the way its call
 // left. It runs after billing: billing names the via when a route line saw the request and
-// leaves it unset when none did.
+// leaves it unset when none did. A harness row takes the node its facts carry.
 func node(s Sources, row *Row) {
 	switch {
+	case s.Harness != nil:
+		row.NodeID = s.Harness.NodeID
 	case s.Transcript != nil && s.Transcript.NodeID != "":
 		// the merged record's session and agent are the transcript's (Combine), so its
 		// node rules the row

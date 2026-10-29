@@ -323,3 +323,65 @@ func TestTranscriptFactsCarryTheCaptureFacts(t *testing.T) {
 		t.Error("the usage holds output_tokens_details for a record with no thinking")
 	}
 }
+
+// TestHarnessFactsCarryTheRecord: a harness record's facts carry the record's own id,
+// harness, session, agent, model, ts, usage and the cost the harness reported, in the same
+// usage shape transcriptFactsOf builds; a Claude record or one with no id files nothing.
+func TestHarnessFactsCarryTheRecord(t *testing.T) {
+	facts, ok := harnessFactsOf(shared.RequestRecord{
+		ID:        "codex:s9:0",
+		Harness:   shared.HarnessCodex,
+		SessionID: "s9",
+		AgentID:   "main",
+		Model:     "gpt-5-codex",
+		Ts:        1730000000000,
+		Tokens:    shared.Tokens{Input: 800, Output: 300, CacheRead: 200, Thinking: i64p(100)},
+	})
+	if !ok {
+		t.Fatal("harnessFactsOf refused a codex record")
+	}
+	if facts.ID != "codex:s9:0" || facts.Harness != "codex" || facts.SessionID != "s9" ||
+		facts.AgentID != "main" || facts.Model != "gpt-5-codex" || facts.Ts != 1730000000000 {
+		t.Errorf("facts = %+v, want the record's own naming", facts)
+	}
+	if facts.HarnessCostUSD != nil {
+		t.Errorf("HarnessCostUSD = %v, want nil: codex reports no cost", *facts.HarnessCostUSD)
+	}
+	if facts.Usage["input_tokens"] != int64(800) || facts.Usage["output_tokens"] != int64(300) ||
+		facts.Usage["cache_read_input_tokens"] != int64(200) {
+		t.Errorf("usage = %v, want the four counters", facts.Usage)
+	}
+	details, held := facts.Usage["output_tokens_details"].(map[string]any)
+	if !held || details["thinking_tokens"] != int64(100) {
+		t.Errorf("output_tokens_details = %v, want the thinking count", facts.Usage["output_tokens_details"])
+	}
+
+	cost := 0.03
+	costed, ok := harnessFactsOf(shared.RequestRecord{
+		ID:      "opencode:msg_aaa",
+		Harness: shared.HarnessOpencode,
+		Model:   "claude-sonnet-5-5",
+		Tokens:  shared.Tokens{Input: 600, Output: 400, CacheWrite: 40},
+		CostUSD: &cost,
+	})
+	if !ok {
+		t.Fatal("harnessFactsOf refused an opencode record")
+	}
+	if costed.HarnessCostUSD == nil || *costed.HarnessCostUSD != 0.03 {
+		t.Errorf("HarnessCostUSD = %v, want the reported 0.03", costed.HarnessCostUSD)
+	}
+	if costed.Usage["cache_creation_input_tokens"] != int64(40) {
+		t.Errorf("cache_creation_input_tokens = %v, want 40", costed.Usage["cache_creation_input_tokens"])
+	}
+
+	refused := map[string]shared.RequestRecord{
+		"no id":           {Harness: shared.HarnessCodex, Model: "gpt-5-codex"},
+		"a claude one":    {ID: "req_c", Harness: shared.HarnessClaude, SessionID: "s9"},
+		"an untagged one": {ID: "req_u", SessionID: "s9"},
+	}
+	for name, record := range refused {
+		if _, ok := harnessFactsOf(record); ok {
+			t.Errorf("harnessFactsOf %s = true, want false", name)
+		}
+	}
+}

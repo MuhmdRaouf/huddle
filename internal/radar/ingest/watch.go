@@ -1732,5 +1732,23 @@ func (w *Watcher) landHarness(record shared.RequestRecord) {
 		w.harnessMetas[record.SessionID] = *record.Cwd
 		w.applySessionMeta(SessionMeta{ID: record.SessionID, Cwd: record.Cwd})
 	}
-	w.store.AddRequest(w.defaultUpstream(record), nil)
+	enriched := w.defaultUpstream(record)
+	w.store.AddRequest(enriched, nil)
+	w.fileHarnessFacts(enriched)
+}
+
+// fileHarnessFacts hands one harness record's facts to the ledger, so its row holds what the
+// harness's own record says; a ledger miss is one log line, never a stop — ingest goes on.
+func (w *Watcher) fileHarnessFacts(record shared.RequestRecord) {
+	if w.ledger == nil {
+		return
+	}
+	facts, ok := harnessFactsOf(record)
+	if !ok {
+		return
+	}
+	facts.NodeID = w.store.NodeOf(record.SessionID, record.AgentID)
+	if err := w.ledger.AddHarness(w.ctx, facts); err != nil {
+		w.log(fmt.Sprintf("radar: the ledger missed a harness record (%v)", err))
+	}
 }

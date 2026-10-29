@@ -385,3 +385,59 @@ func TestARouteFactsBlobUnderItsTagDecodes(t *testing.T) {
 		t.Errorf("Event.Model = %q, want glm-5.3", facts.Event.Model)
 	}
 }
+
+// TestTheLedgerFilesAHarnessRecord: a harness's own record files a row under the record's
+// id, reading the record's own facts, a second copy of the record replaces the first one's
+// numbers, and a record that names no id files nothing.
+func TestTheLedgerFilesAHarnessRecord(t *testing.T) {
+	st := openLedger(t)
+	ctx := context.Background()
+	codex := HarnessFacts{
+		ID:        "codex:s9:0",
+		Harness:   "codex",
+		SessionID: "s9",
+		AgentID:   "main",
+		Model:     "gpt-5-codex",
+		Ts:        1730000000000,
+		Usage:     domain.RouteUsage{"input_tokens": float64(800), "output_tokens": float64(300)},
+		NodeID:    "s9/main",
+	}
+	if err := st.AddHarness(ctx, codex); err != nil {
+		t.Fatalf("add the harness record: %v", err)
+	}
+	row, err := st.Get(ctx, codex.ID)
+	if err != nil {
+		t.Fatalf("get the harness row: %v", err)
+	}
+	if row == nil {
+		t.Fatal("no row for the harness record's id")
+	}
+	if row.Model != "gpt-5-codex" || row.Input != 800 || row.Output != 300 || row.StartedAt != codex.Ts ||
+		row.Harness != "codex" || row.SessionID != "s9" || row.NodeID != "s9/main" {
+		t.Errorf("row = %+v, want the record's own facts", row)
+	}
+
+	again := codex
+	again.Usage = domain.RouteUsage{"input_tokens": float64(1000), "output_tokens": float64(700)}
+	if err := st.AddHarness(ctx, again); err != nil {
+		t.Fatalf("add the second copy: %v", err)
+	}
+	replaced, err := st.Get(ctx, codex.ID)
+	if err != nil || replaced == nil {
+		t.Fatalf("reread the harness row: %+v, %v", replaced, err)
+	}
+	if replaced.Input != 1000 || replaced.Output != 700 {
+		t.Errorf("usage = %d in, %d out, want the later copy's 1000 and 700", replaced.Input, replaced.Output)
+	}
+
+	if err := st.AddHarness(ctx, HarnessFacts{Harness: "codex", Model: "gpt-5-codex"}); err != nil {
+		t.Fatalf("add the id-less record: %v", err)
+	}
+	orphan, err := st.Get(ctx, "")
+	if err != nil {
+		t.Fatalf("get the empty id: %v", err)
+	}
+	if orphan != nil {
+		t.Errorf("an id-less record filed %+v, want no row", orphan)
+	}
+}

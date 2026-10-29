@@ -10,7 +10,7 @@ import (
 )
 
 // What the watcher hands the ledger: each source's own facts about a request, for
-// Store.AddRoute and Store.AddTranscript.
+// Store.AddRoute, Store.AddTranscript and Store.AddHarness.
 
 // routeFactsOf is a route line's facts: the event decoded from the line's own text, priced
 // with Radar's table. False when the text is not a route event. The spool is data, so the
@@ -54,10 +54,36 @@ func routePriceUSD(line shared.SpoolLine, model string, ts int64) float64 {
 	return float64(priced.USD)
 }
 
+// usageOf is a record's usage map in the shape the provider's usage block has: the four
+// counters, the thinking count and the billing conditions, each riding only when the record
+// has it, so one reader in the ledger handles every source.
+func usageOf(request shared.RequestRecord) domain.RouteUsage {
+	usage := domain.RouteUsage{
+		"input_tokens":                request.Tokens.Input,
+		"output_tokens":               request.Tokens.Output,
+		"cache_read_input_tokens":     request.Tokens.CacheRead,
+		"cache_creation_input_tokens": request.Tokens.CacheWrite,
+	}
+	if request.Tokens.Thinking != nil {
+		usage["output_tokens_details"] = map[string]any{"thinking_tokens": *request.Tokens.Thinking}
+	}
+	if request.CacheWrite1h != nil {
+		usage["cache_creation"] = map[string]any{"ephemeral_1h_input_tokens": *request.CacheWrite1h}
+	}
+	if request.Speed != nil {
+		usage["speed"] = *request.Speed
+	}
+	if request.Geo != nil {
+		usage["inference_geo"] = *request.Geo
+	}
+	if request.ServiceTier != nil {
+		usage["service_tier"] = *request.ServiceTier
+	}
+	return usage
+}
+
 // transcriptFactsOf is what one transcript request record says about its request; false when
-// it carries no API request id. The billing conditions and the thinking count ride in the
-// usage map in the shape the provider's usage block has, so one reader in the ledger handles
-// both sources.
+// it carries no API request id.
 func transcriptFactsOf(request shared.RequestRecord) (ledger.TranscriptFacts, bool) {
 	if request.RequestID == "" {
 		return ledger.TranscriptFacts{}, false
@@ -71,30 +97,29 @@ func transcriptFactsOf(request shared.RequestRecord) (ledger.TranscriptFacts, bo
 		SessionID: request.SessionID,
 		AgentID:   request.AgentID,
 		Via:       request.Via,
-		Usage: domain.RouteUsage{
-			"input_tokens":                request.Tokens.Input,
-			"output_tokens":               request.Tokens.Output,
-			"cache_read_input_tokens":     request.Tokens.CacheRead,
-			"cache_creation_input_tokens": request.Tokens.CacheWrite,
-		},
-	}
-	if request.Tokens.Thinking != nil {
-		facts.Usage["output_tokens_details"] = map[string]any{"thinking_tokens": *request.Tokens.Thinking}
-	}
-	if request.CacheWrite1h != nil {
-		facts.Usage["cache_creation"] = map[string]any{"ephemeral_1h_input_tokens": *request.CacheWrite1h}
-	}
-	if request.Speed != nil {
-		facts.Usage["speed"] = *request.Speed
-	}
-	if request.Geo != nil {
-		facts.Usage["inference_geo"] = *request.Geo
-	}
-	if request.ServiceTier != nil {
-		facts.Usage["service_tier"] = *request.ServiceTier
+		Usage:     usageOf(request),
 	}
 	if request.StopReason != nil {
 		facts.StopReason = *request.StopReason
 	}
 	return facts, true
+}
+
+// harnessFactsOf is what one harness record (codex, opencode) says about its call; false for
+// a record that names no id or that Claude made.
+func harnessFactsOf(record shared.RequestRecord) (ledger.HarnessFacts, bool) {
+	if record.ID == "" ||
+		(record.Harness != shared.HarnessCodex && record.Harness != shared.HarnessOpencode) {
+		return ledger.HarnessFacts{}, false
+	}
+	return ledger.HarnessFacts{
+		ID:             record.ID,
+		Harness:        record.Harness,
+		SessionID:      record.SessionID,
+		AgentID:        record.AgentID,
+		Model:          record.Model,
+		Ts:             record.Ts,
+		Usage:          usageOf(record),
+		HarnessCostUSD: record.CostUSD,
+	}, true
 }

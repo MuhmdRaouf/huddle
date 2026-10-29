@@ -85,9 +85,24 @@ type OTelFacts struct {
 	ErrorCode      string // api_error only
 }
 
+// HarnessFacts is what a harness's own record (codex, opencode) says about one call; the row
+// files under the record's id, which is history's id for the same call.
+type HarnessFacts struct {
+	ID             string            `json:"id"`                         // the record's id ("codex:<session>:<n>", "opencode:<messageID>")
+	Harness        string            `json:"harness"`                    // the agent CLI that made the call ("codex", "opencode")
+	SessionID      string            `json:"session_id"`                 // the record's own session
+	AgentID        string            `json:"agent_id"`                   // the record's own agent
+	Model          string            `json:"model"`                      // the model the record names
+	Ts             int64             `json:"ts"`                         // when the call was made, in Unix milliseconds
+	Usage          domain.RouteUsage `json:"usage"`                      // the record's final usage, in the shape the provider's usage block has
+	HarnessCostUSD *float64          `json:"harness_cost_usd,omitempty"` // the cost the harness itself reported; nil when it reported none
+	NodeID         string            `json:"node_id,omitempty"`          // the node the watcher computed at ingest, by the history writer's rule
+}
+
 // Sources is everything known about one request; a nil source knows nothing.
 type Sources struct {
 	Route      *RouteFacts
 	Transcript *TranscriptFacts
 	OTel       *OTelFacts
+	Harness    *HarnessFacts
 }
