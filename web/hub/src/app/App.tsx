@@ -11,6 +11,7 @@ import type { Stamp } from "@huddle/ui/time.ts";
 import type { ComponentChildren, ComponentType, JSX } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ComposeOptions } from "../compose/drafts.ts";
+import { useHealth } from "../health.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Time } from "../kit.tsx";
 import { KanbanTab } from "../kanban/KanbanTab.tsx";
@@ -660,6 +661,8 @@ export function App({
     sessions: registry.needs(),
     items: registry.getState().needs,
   });
+  // whether every part of the hub is well; a failing one paints the red dot in the chrome
+  const healthy = useHealth().healthy;
   const n = needs.n;
   const chname = state.info?.config?.title || state.ch;
   useEffect(() => {
@@ -816,7 +819,7 @@ export function App({
           </header>
         )}
         {main}
-        {dialogOpen ? null : <BottomNav tab={route.tab} needs={needs} />}
+        {dialogOpen ? null : <BottomNav tab={route.tab} needs={needs} healthy={healthy} />}
       </div>
     );
   }
@@ -827,7 +830,7 @@ export function App({
       <div class="ui-shell">
         {passkeyAsk}
         <div class="grid min-h-0 min-w-0 flex-1 grid-cols-[72px_minmax(0,1fr)]">
-          <IconRail tab={route.tab} needs={needs} />
+          <IconRail tab={route.tab} needs={needs} healthy={healthy} />
           <div class={`grid min-h-0 min-w-0 ${list ? "grid-cols-[360px_minmax(0,1fr)]" : "grid-cols-1"}`}>
             {list}
             {main}
@@ -842,7 +845,7 @@ export function App({
     <div class="ui-shell">
       {passkeyAsk}
       <div class="flex min-h-0 min-w-0 flex-1">
-        <SideNav tab={route.tab} needs={needs} />
+        <SideNav tab={route.tab} needs={needs} healthy={healthy} />
         <div class="grid min-h-0 min-w-0 flex-1 grid-rows-[52px_minmax(0,1fr)]">
           <DesktopBar live={liveOf} machines={mline} onPalette={onPalette} onHelp={onHelp} />
           <div

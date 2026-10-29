@@ -33,6 +33,21 @@ export function TabBadge({ needs }: { needs: NeedsBadge }): JSX.Element | null {
   return needs.n > 0 ? <Badge tone={needs.tone}>{needs.n}</Badge> : null;
 }
 
+/** A red dot that says a part of the hub is failing; nothing while every part is well. */
+export function HealthDot({ healthy }: { healthy: boolean }): JSX.Element | null {
+  if (healthy) return null;
+  return (
+    <>
+      <span
+        data-health-dot=""
+        class="ms-2 inline-block size-2 shrink-0 rounded-full bg-[var(--ui-fail)]"
+        aria-hidden="true"
+      />
+      <span class="sr-only">A part of the hub is failing</span>
+    </>
+  );
+}
+
 /** A tab's focus ring, on the accent. */
 const RING = "outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]";
 
@@ -55,7 +70,15 @@ function TabGlyph({ id, class: c }: { id: Tab; class?: string | undefined }): JS
 }
 
 /** The phone's tab bar: five 52 px targets, pinned to the viewport's bottom over the inset. */
-export function BottomNav({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.Element {
+export function BottomNav({
+  tab,
+  needs,
+  healthy,
+}: {
+  tab: Tab;
+  needs: NeedsBadge;
+  healthy: boolean;
+}): JSX.Element {
   return (
     <nav
       data-nav="bottom"
@@ -79,6 +102,11 @@ export function BottomNav({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.
               <TabBadge needs={needs} />
             </span>
           ) : null}
+          {id === "settings" ? (
+            <span class="absolute top-1 left-[54%]">
+              <HealthDot healthy={healthy} />
+            </span>
+          ) : null}
         </a>
       ))}
     </nav>
@@ -95,7 +123,15 @@ function nowName(label: string, needs: NeedsBadge): string {
 }
 
 /** The tablet's icon rail: the five tabs as 52 px labelled icons, Settings at the bottom. */
-export function IconRail({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.Element {
+export function IconRail({
+  tab,
+  needs,
+  healthy,
+}: {
+  tab: Tab;
+  needs: NeedsBadge;
+  healthy: boolean;
+}): JSX.Element {
   return (
     <nav
       data-nav="rail"
@@ -120,6 +156,11 @@ export function IconRail({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.E
               <TabBadge needs={needs} />
             </span>
           ) : null}
+          {id === "settings" ? (
+            <span class="absolute top-1 right-1">
+              <HealthDot healthy={healthy} />
+            </span>
+          ) : null}
         </a>
       ))}
     </nav>
@@ -128,7 +169,15 @@ export function IconRail({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.E
 
 /** The desktop's sidebar: the brand with the server's version over the five tabs, as 44 px rows
  *  of icon and label, Settings at the bottom. */
-export function SideNav({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.Element {
+export function SideNav({
+  tab,
+  needs,
+  healthy,
+}: {
+  tab: Tab;
+  needs: NeedsBadge;
+  healthy: boolean;
+}): JSX.Element {
   const v = useVersion();
   return (
     <aside
@@ -140,7 +189,10 @@ export function SideNav({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.El
         class={`mb-3 flex min-h-[var(--ui-tap)] shrink-0 items-center gap-2.5 rounded-[var(--ui-radius)] px-3 text-base font-semibold ${RING}`}
       >
         <SharedIcon name="channels" class="size-5 text-[var(--ui-accent)]" />
-        <span>Huddle</span>
+        <span>
+          Huddle
+          <HealthDot healthy={healthy} />
+        </span>
         <Badge>{`v${v}`}</Badge>
       </a>
       <nav data-nav="side" aria-label="Main" class="flex min-h-0 flex-1 flex-col gap-1">
@@ -155,7 +207,10 @@ export function SideNav({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.El
             } ${tone(tab === id, "font-semibold text-[var(--ui-text)]")}`}
           >
             <TabGlyph id={id} class="size-5 shrink-0" />
-            <span class="min-w-0 flex-1 truncate">{label}</span>
+            <span class="min-w-0 flex-1 truncate">
+              {label}
+              {id === "settings" ? <HealthDot healthy={healthy} /> : null}
+            </span>
             {id === "sessions" ? <TabBadge needs={needs} /> : null}
           </a>
         ))}

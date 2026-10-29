@@ -10,13 +10,16 @@
 // that channel's own Settings view. Every class comes from the ui components or the tokens.
 
 import { Button } from "@huddle/ui/button.tsx";
+import { Chip } from "@huddle/ui/chip.tsx";
 import { Field } from "@huddle/ui/field.tsx";
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
 import type { JSX } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { ApiError } from "../api.ts";
+import { decodeHealth, failingParts, partLabel, setHealth, useHealth, type HealthState } from "../health.ts";
 import { Icon, type IconName } from "../icons.tsx";
+import { Time } from "../kit.tsx";
 import { creationFromJSON, credentialToJSON } from "../passkey.ts";
 import { SELFCHECK_PATH, SelfCheckBadge, selfCheckOf } from "../radar/app/SelfCheckBadge.tsx";
 import { SettingsView } from "../radar/app/views/Settings.tsx";
@@ -102,8 +105,72 @@ function hubFactsOf(r: unknown): HubFacts {
   return { name: text(h.name) || text(h.machine), version: text(h.version) };
 }
 
+/** A part's state as its word in the Health rows: the state name, said in full. */
+const HEALTH_WORDS: Readonly<Record<HealthState, string>> = {
+  ok: "OK",
+  failing: "Failing",
+  stale: "Stale",
+  unknown: "Unknown",
+};
+
+/** Settings › Hub › Health: one row per failing part — the reader's name for it, its state word
+ *  and last error in full, and when it last worked — then how many parts are well. The store
+ *  holds the last /health answer, which the page's own read and the update watch's feed; a hub
+ *  with no parts to report draws no Health card at all. */
+function HealthSection(): JSX.Element | null {
+  const view = useHealth();
+  const { now } = useHuddle();
+  const bad = failingParts(view);
+  const well = view.parts.length - bad.length;
+  if (view.parts.length === 0) return null;
+  return (
+    <section aria-labelledby="health-h" data-health="" class="flex flex-col gap-1">
+      <h2 id="health-h" class={HEAD}>
+        Health
+      </h2>
+      <List label="Hub health">
+        {bad.map((p) => (
+          <ListItem
+            key={p.name}
+            leading={
+              <span class="flex size-7 shrink-0 items-center justify-center rounded-[var(--ui-radius-sm)] bg-[var(--ui-fail-soft)] text-[var(--ui-fail)]">
+                <Icon name="layers" class="size-4" />
+              </span>
+            }
+            title={partLabel(p.name)}
+            meta={
+              <span class="flex min-w-0 items-start gap-2">
+                <Chip tone="fail" dot>
+                  {HEALTH_WORDS[p.state]}
+                </Chip>
+                <span class="break-words text-[var(--ui-fail-ink)]" data-health-error="">
+                  {p.lastError}
+                </span>
+              </span>
+            }
+            trailing={p.lastOkAt ? <Time ts={new Date(p.lastOkAt).toISOString()} now={now} /> : undefined}
+          />
+        ))}
+        {well > 0 ? (
+          <ListItem
+            leading={
+              <span class="flex size-7 shrink-0 items-center justify-center rounded-[var(--ui-radius-sm)] bg-[var(--ui-ok-soft)] text-[var(--ui-ok)]">
+                <Icon name="check" class="size-4" />
+              </span>
+            }
+            title={`${well} ${well === 1 ? "part" : "parts"} healthy`}
+          />
+        ) : null}
+      </List>
+      <p class={NOTE}>
+        The hub checks its stores and loops every minute. A failure sends one push to your phone.
+      </p>
+    </section>
+  );
+}
+
 /** Settings › Hub › This hub: its name (the hub's own, else the machine's), the address this page
- *  reached it at, and the version it runs. */
+ *  reached it at, and the version it runs, with the Health section standing above it. */
 export function ThisHub(): JSX.Element {
   const { api } = useHuddle();
   const [facts, setFacts] = useState<HubFacts | null>(null);
@@ -112,7 +179,10 @@ export function ThisHub(): JSX.Element {
     api
       .api("/health")
       .then((r) => {
-        if (alive) setFacts(hubFactsOf(r));
+        if (alive) {
+          setHealth(decodeHealth(r));
+          setFacts(hubFactsOf(r));
+        }
       })
       .catch(() => {
         if (alive) setFacts({ name: "", version: "" });
@@ -123,16 +193,19 @@ export function ThisHub(): JSX.Element {
   }, [api]);
   const unknown = facts === null ? "Loading…" : "Unknown";
   return (
-    <section aria-labelledby="hub-h" data-hub-facts="" class="flex flex-col gap-1">
-      <h2 id="hub-h" class={HEAD}>
-        This hub
-      </h2>
-      <List label="This hub">
-        <ListItem title="Name" meta={facts?.name || unknown} />
-        <ListItem title="Address" meta={<span class="ui-mono break-all">{location.origin}</span>} />
-        <ListItem title="Version" meta={<span class="ui-mono">{facts?.version || unknown}</span>} />
-      </List>
-    </section>
+    <div class="flex flex-col gap-8">
+      <HealthSection />
+      <section aria-labelledby="hub-h" data-hub-facts="" class="flex flex-col gap-1">
+        <h2 id="hub-h" class={HEAD}>
+          This hub
+        </h2>
+        <List label="This hub">
+          <ListItem title="Name" meta={facts?.name || unknown} />
+          <ListItem title="Address" meta={<span class="ui-mono break-all">{location.origin}</span>} />
+          <ListItem title="Version" meta={<span class="ui-mono">{facts?.version || unknown}</span>} />
+        </List>
+      </section>
+    </div>
   );
 }
 
@@ -651,7 +724,10 @@ function GroupList(): JSX.Element {
     api
       .api("/health")
       .then((r) => {
-        if (alive) setFacts(hubFactsOf(r));
+        if (alive) {
+          setHealth(decodeHealth(r));
+          setFacts(hubFactsOf(r));
+        }
       })
       .catch(() => {});
     api
@@ -666,6 +742,7 @@ function GroupList(): JSX.Element {
     };
   }, [api]);
   const values = useSettingsValues();
+  const bad = failingParts(useHealth());
   return (
     <div class="min-h-0 flex-1 overflow-y-auto">
       <div class="flex flex-col px-4 pb-4 pt-4">
@@ -687,21 +764,46 @@ function GroupList(): JSX.Element {
             >
               {facts?.name ?? ""}
             </span>
-            <span
-              data-hub-subtitle=""
-              class="block truncate text-[length:var(--ui-text-sm)] text-[var(--ui-muted)]"
-            >
-              {hubSubtitle(facts?.version ?? "", device)}
-            </span>
+            {bad.length > 0 ? (
+              <>
+                <span
+                  data-hub-subtitle=""
+                  class="flex items-center gap-2 text-[length:var(--ui-text-sm)] text-[var(--ui-fail-ink)]"
+                >
+                  <span class="size-2 shrink-0 rounded-full bg-[var(--ui-fail)]" aria-hidden="true" />
+                  <span class="truncate">
+                    {bad.length} {bad.length === 1 ? "part" : "parts"} failing
+                  </span>
+                </span>
+                <span class="block truncate text-[length:var(--ui-text-sm)] text-[var(--ui-muted)]">
+                  {hubSubtitle(facts?.version ?? "", device)}
+                </span>
+              </>
+            ) : (
+              <span
+                data-hub-subtitle=""
+                class="block truncate text-[length:var(--ui-text-sm)] text-[var(--ui-muted)]"
+              >
+                {hubSubtitle(facts?.version ?? "", device)}
+              </span>
+            )}
           </span>
           {facts !== null ? (
-            <span
-              data-hub-healthy=""
-              class="flex shrink-0 items-center gap-1.5 text-[length:var(--ui-text-sm)] text-[var(--ui-ok-ink)]"
-            >
-              <span class="size-2 rounded-full bg-[var(--ui-ok)]" aria-hidden="true" />
-              Healthy
-            </span>
+            bad.length > 0 ? (
+              <span data-hub-healthy="" class="shrink-0">
+                <Chip tone="fail" dot>
+                  Failing
+                </Chip>
+              </span>
+            ) : (
+              <span
+                data-hub-healthy=""
+                class="flex shrink-0 items-center gap-1.5 text-[length:var(--ui-text-sm)] text-[var(--ui-ok-ink)]"
+              >
+                <span class="size-2 rounded-full bg-[var(--ui-ok)]" aria-hidden="true" />
+                Healthy
+              </span>
+            )
           ) : null}
         </a>
         <nav aria-label="Settings sections" data-settings="" class="flex flex-col">

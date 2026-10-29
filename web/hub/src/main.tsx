@@ -24,6 +24,7 @@ import { ComposeDialog } from "./compose/ComposeDialog.tsx";
 import type { ComposeSent } from "./compose/Composer.tsx";
 import type { ComposeOptions } from "./compose/drafts.ts";
 import { DEV_TOKENS_HASH, Tokens } from "./dev/Tokens.tsx";
+import { decodeHealth, setHealth } from "./health.ts";
 import { createLive } from "./live.ts";
 import { Home } from "./pages/Home.tsx";
 import { Inbox } from "./pages/Inbox.tsx";
@@ -529,7 +530,13 @@ watchForUpdate(
         if (document.visibilityState === "visible") fn();
       }),
   },
-  () => fetch("/health", { cache: "no-store" }).then((r) => r.json() as Promise<HealthBuild>),
+  () =>
+    fetch("/health", { cache: "no-store" })
+      .then((r) => r.json() as Promise<HealthBuild>)
+      .then((h) => {
+        setHealth(decodeHealth(h));
+        return h;
+      }),
   { interval: (fn, ms) => setInterval(fn, ms) },
   () => toastFn("Huddle updated", { action: { label: "Reload", run: () => location.reload() } }),
 );

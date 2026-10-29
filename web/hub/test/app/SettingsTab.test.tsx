@@ -13,6 +13,7 @@ import { act, screen, waitFor, within } from "@testing-library/preact";
 import type { JSX } from "preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { createApi, type FetchFn } from "../../src/api.ts";
+import { decodeHealth, failingParts, setHealth } from "../../src/health.ts";
 import {
   Devices,
   Phone,
@@ -522,6 +523,154 @@ describe("the hub section", () => {
     expect(screen.getByText("Unknown")).toBeDefined();
     mountSection(<ThisHub />, [{ status: 500, body: {} }]);
     await waitFor(() => expect(screen.getAllByText("Unknown").length).toBeGreaterThan(1));
+  });
+});
+
+describe("the hub's health", () => {
+  /** The answer /health gives while one store fails, as the server spells it. */
+  const FAILING = {
+    name: "studio",
+    machine: "mac",
+    version: "0.4.0",
+    healthy: false,
+    components: [
+      {
+        name: "history.db",
+        kind: "store",
+        state: "failing",
+        lastOkAt: 0,
+        lastErrAt: NOW - 12 * 3_600_000,
+        lastError: "database disk image is malformed (11)",
+        errors: 3,
+      },
+      {
+        name: "ledger.db",
+        kind: "store",
+        state: "failing",
+        lastOkAt: NOW - 3_600_000,
+        lastErrAt: NOW - 60_000,
+        lastError: "disk I/O error",
+        errors: 2,
+      },
+    ],
+  };
+
+  afterEach(() => {
+    document.body.textContent = "";
+    setHealth({ healthy: true, parts: [] });
+  });
+
+  /** Answers every read by path, so the phone list's own /health drives the card. */
+  function mountPhone(health: unknown): Array<{ url: string }> {
+    stubMedia(PHONE);
+    const answers: Record<string, unknown> = {
+      "/health": health,
+      "/api/whoami": { kind: "device", device: "" },
+      "/api/devices": { devices: [] },
+      "/api/insights/settings": { tips_for_me: true },
+      "/api/settings": { zone: "UTC", zone_origin: "owner" },
+      "/api/push/notify": { notify: "needs" },
+      "/api/radar/api/budget-status": { spend: [] },
+    };
+    const calls: Array<{ url: string }> = [];
+    const fetchFn: FetchFn = (url) => {
+      calls.push({ url });
+      return Promise.resolve(
+        new Response(JSON.stringify(answers[url] ?? {}), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    };
+    renderIn(
+      <SettingsTab section={null} />,
+      makeCtx(initialHuddleState(), { who: { kind: "device" }, api: createApi(fetchFn, () => {}) }),
+    );
+    return calls;
+  }
+
+  it("TestTheHubCardReadsFailingAndCountsTheParts", async () => {
+    mountPhone({ ...FAILING, components: FAILING.components.slice(0, 1) });
+    await waitFor(() => expect(document.querySelector("[data-hub-name]")?.textContent).toBe("studio"));
+    expect(document.querySelector("[data-hub-healthy]")?.textContent).toBe("Failing");
+    expect(document.querySelector("[data-hub-subtitle]")?.textContent).toBe("1 part failing");
+  });
+
+  it("TestTheHubCardStaysHealthyWhenEveryPartIsWell", async () => {
+    mountPhone({
+      ...FAILING,
+      healthy: true,
+      components: [
+        { name: "hub.db", kind: "store", state: "ok", lastOkAt: NOW - 60_000, errors: 0 },
+        { name: "ledger.db", kind: "store", state: "ok", lastOkAt: NOW - 60_000, errors: 0 },
+      ],
+    });
+    await waitFor(() => expect(document.querySelector("[data-hub-name]")?.textContent).toBe("studio"));
+    expect(document.querySelector("[data-hub-healthy]")?.textContent).toBe("Healthy");
+    expect(document.querySelector("[data-hub-subtitle]")?.textContent).toBe("huddle 0.4.0");
+  });
+
+  it("TestTheHubPageListsEachFailingPartWithItsError", async () => {
+    stubMedia(DESK);
+    mountSection(<SettingsTab section="hub" />, [{ status: 200, body: FAILING }]);
+    // the section stands above This hub, inside the hub member's page, once the read feeds the store
+    await waitFor(() => {
+      const hub = document.querySelector('[data-setting="hub"]') as HTMLElement | null;
+      expect(hub?.querySelector("[data-health]")?.textContent).toContain("Radar history");
+    });
+    const health = document.querySelector("[data-health]") as HTMLElement;
+    // the error is the reason the row exists: it shows in full, wrapping, never clipped
+    const err = health.querySelector("[data-health-error]") as HTMLElement;
+    expect(err.textContent).toBe("database disk image is malformed (11)");
+    expect(err.className).toContain("break-words");
+    expect(err.className).not.toContain("truncate");
+    // a part that never worked leaves the when cell empty, not a dash
+    const rowOf = (name: string): HTMLElement =>
+      ([...health.querySelectorAll(".ui-list-item")].find((li) => li.textContent?.includes(name)) ??
+        null) as HTMLElement;
+    expect(rowOf("Radar history").querySelector("[data-ts]")).toBeNull();
+    // a part that last worked an hour ago says so
+    expect(rowOf("Radar ledger").querySelector("[data-ts]")).not.toBeNull();
+    // no well parts: the healthy row stays out
+    expect(health.textContent).not.toContain("parts healthy");
+  });
+
+  it("TestTheHealthCardStaysOutWhenTheRegistryIsEmpty", async () => {
+    stubMedia(DESK);
+    mountSection(<SettingsTab section="hub" />, [
+      { status: 200, body: { ...FAILING, healthy: true, components: [] } },
+    ]);
+    // This hub's own read landed; with no parts at all there is no Health card
+    await waitFor(() => expect(screen.getByText("studio")).toBeDefined());
+    expect(document.querySelector("[data-health]")).toBeNull();
+  });
+
+  it("TestTheAllClearHubPageSaysTheWholeRegistryIsWell", async () => {
+    stubMedia(DESK);
+    mountSection(<SettingsTab section="hub" />, [
+      {
+        status: 200,
+        body: {
+          ...FAILING,
+          healthy: true,
+          components: [
+            { name: "hub.db", kind: "store", state: "ok", lastOkAt: NOW - 60_000, errors: 0 },
+            { name: "ledger.db", kind: "store", state: "ok", lastOkAt: NOW - 60_000, errors: 0 },
+          ],
+        },
+      },
+    ]);
+    await waitFor(() => {
+      const hub = document.querySelector('[data-setting="hub"]') as HTMLElement | null;
+      expect(hub?.querySelector("[data-health]")?.textContent).toContain("2 parts healthy");
+    });
+    expect((document.querySelector("[data-health]") as HTMLElement).textContent).not.toContain("Failing");
+  });
+
+  it("TestTheCardAndTheSectionReadTheSameDecode", () => {
+    const view = decodeHealth({ ...FAILING, components: FAILING.components.slice(0, 1) });
+    expect(failingParts(view)).toHaveLength(1);
+    expect(view.healthy).toBe(false);
   });
 });
 
