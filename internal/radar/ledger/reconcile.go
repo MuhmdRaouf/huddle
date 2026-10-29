@@ -143,7 +143,7 @@ func usage(s Sources, row *Row) {
 	row.CacheRead = counterOf(counters, "cache_read_input_tokens")
 	row.CacheWrite = counterOf(counters, "cache_creation_input_tokens")
 	if s.Route != nil {
-		row.CostUSD = s.Route.CostUSD
+		row.PriceUSD = s.Route.PriceUSD
 		if limits := s.Route.Event.Utilization; limits != nil {
 			if limits.FiveHour != nil {
 				row.Ratelimit5h = &limits.FiveHour.Used
@@ -154,7 +154,7 @@ func usage(s Sources, row *Row) {
 		}
 	}
 	if s.OTel != nil {
-		row.CostReportedUSD = s.OTel.CostUSD
+		row.HarnessCostUSD = s.OTel.HarnessCostUSD
 	}
 }
 

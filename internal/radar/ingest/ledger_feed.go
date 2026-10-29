@@ -33,12 +33,12 @@ func routeFactsOf(text string, line shared.SpoolLine, model string, ts int64) (l
 			event.Headers = &kept
 		}
 	}
-	return ledger.RouteFacts{Event: event, CostUSD: routeCostUSD(line, model, ts)}, true
+	return ledger.RouteFacts{Event: event, PriceUSD: routePriceUSD(line, model, ts)}, true
 }
 
-// routeCostUSD prices the line's usage the way the routes view prices a record: 0 while the
+// routePriceUSD prices the line's usage the way the routes view prices a record: 0 while the
 // answer is still streaming or the table knows no price.
-func routeCostUSD(line shared.SpoolLine, model string, ts int64) float64 {
+func routePriceUSD(line shared.SpoolLine, model string, ts int64) float64 {
 	record := RouteRequest(line, model, ts)
 	priced := cost.RequestCost(cost.PricedRequest{
 		Model:          model,

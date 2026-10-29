@@ -4,6 +4,7 @@ package ledger
 // version added, in place.
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
@@ -205,5 +206,77 @@ func TestOpenRaisesAVersion6FileToTheNodeColumn(t *testing.T) {
 	}
 	if node := textColumn(found, "node_id"); node != "" {
 		t.Errorf("node_id = %q, want the default empty string", node)
+	}
+}
+
+// buildVersion7File writes file as a version-7 ledger holding one priced row, the shape a
+// version-7 file sits at between Opens.
+func buildVersion7File(t *testing.T, file string) {
+	t.Helper()
+	pool, err := sql.Open("sqlite", file)
+	if err != nil {
+		t.Fatalf("open the version-7 file: %v", err)
+	}
+	defer func() { _ = pool.Close() }()
+	if _, err := pool.Exec(ledgerRequestsDDL + ";" + ledgerRequestsIndex + ";" + ledgerFactsDDL + ";" +
+		ledgerRequestsSessionIndex + ";" +
+		"ALTER TABLE ledger_requests ADD COLUMN reconciled INTEGER NOT NULL DEFAULT 0;" +
+		"CREATE TABLE IF NOT EXISTS ledger_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);" +
+		"ALTER TABLE ledger_requests ADD COLUMN cache_write_1h INTEGER;" +
+		"ALTER TABLE ledger_requests ADD COLUMN speed TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN geo TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN service_tier TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN provider TEXT NOT NULL DEFAULT '';" +
+		"ALTER TABLE ledger_requests ADD COLUMN via TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN what TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN thinking INTEGER;" +
+		"ALTER TABLE ledger_requests ADD COLUMN headers TEXT;" +
+		"ALTER TABLE ledger_requests ADD COLUMN totals INTEGER NOT NULL DEFAULT 0;" +
+		"ALTER TABLE ledger_requests ADD COLUMN node_id TEXT NOT NULL DEFAULT '';" +
+		"PRAGMA user_version = 7"); err != nil {
+		t.Fatalf("build the version-7 schema: %v", err)
+	}
+	if _, err := pool.Exec(
+		"INSERT INTO ledger_requests (id, anthropic_id, model, cost_usd, cost_reported_usd) " +
+			"VALUES ('req_priced', 'req_priced', 'glm-5.3', 0.25, 0.5)"); err != nil {
+		t.Fatalf("insert the priced row: %v", err)
+	}
+}
+
+// TestOpenRaisesAVersion7FileToTheTwoMoneyColumns: Open brings a version-7 file up to
+// SchemaVersion, its two money columns read price_usd and harness_cost_usd — one meaning
+// each — and the priced row it already held reads back through Get with both values.
+func TestOpenRaisesAVersion7FileToTheTwoMoneyColumns(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "ledger.db")
+	buildVersion7File(t, file)
+	st := openLedgerFile(t, file)
+
+	if version := userVersion(t, st.db); version != SchemaVersion {
+		t.Errorf("user_version = %d, want %d", version, SchemaVersion)
+	}
+	names := ledgerRequestColumns(t, st.db)
+	held := map[string]bool{}
+	for _, name := range names {
+		held[name] = true
+	}
+	for _, want := range []string{"price_usd", "harness_cost_usd"} {
+		if !held[want] {
+			t.Errorf("ledger_requests holds no %s column after Open (has %v)", want, names)
+		}
+	}
+	for _, gone := range []string{"cost_usd", "cost_reported_usd"} {
+		if held[gone] {
+			t.Errorf("ledger_requests still holds a %s column after Open (has %v)", gone, names)
+		}
+	}
+	row, err := st.Get(context.Background(), "req_priced")
+	if err != nil || row == nil {
+		t.Fatalf("read the held row: %+v, %v", row, err)
+	}
+	if row.PriceUSD != 0.25 {
+		t.Errorf("PriceUSD = %v, want 0.25", row.PriceUSD)
+	}
+	if row.HarnessCostUSD == nil || *row.HarnessCostUSD != 0.5 {
+		t.Errorf("HarnessCostUSD = %v, want 0.5", row.HarnessCostUSD)
 	}
 }

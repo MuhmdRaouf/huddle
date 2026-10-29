@@ -43,17 +43,17 @@ func openReader(t *testing.T, file string) *Reader {
 // reported cost and a nil turn index, so both pointer shapes round-trip.
 func sessionRow(started int64) Row {
 	return Row{
-		ID:              fmt.Sprintf("req_s1_%05d", started),
-		StartedAt:       started,
-		TtfbMs:          i64p(started + 1),
-		DurationMs:      started + 2,
-		Model:           "glm-5.3-flash",
-		Upstream:        "api.z.ai",
-		SessionID:       "s1",
-		Outcome:         "ok",
-		Status:          200,
-		CostUSD:         0.5,
-		CostReportedUSD: f64p(1.25),
+		ID:             fmt.Sprintf("req_s1_%05d", started),
+		StartedAt:      started,
+		TtfbMs:         i64p(started + 1),
+		DurationMs:     started + 2,
+		Model:          "glm-5.3-flash",
+		Upstream:       "api.z.ai",
+		SessionID:      "s1",
+		Outcome:        "ok",
+		Status:         200,
+		PriceUSD:       0.5,
+		HarnessCostUSD: f64p(1.25),
 	}
 }
 
@@ -108,8 +108,8 @@ func TestReader(t *testing.T) {
 		if first.TtfbMs == nil || *first.TtfbMs != 25001 {
 			t.Errorf("the first row's ttfb = %v, want 25001", first.TtfbMs)
 		}
-		if first.CostReportedUSD == nil || *first.CostReportedUSD != 1.25 {
-			t.Errorf("the first row's reported cost = %v, want 1.25", first.CostReportedUSD)
+		if first.HarnessCostUSD == nil || *first.HarnessCostUSD != 1.25 {
+			t.Errorf("the first row's harness cost = %v, want 1.25", first.HarnessCostUSD)
 		}
 	})
 

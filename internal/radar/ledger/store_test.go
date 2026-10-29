@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -21,39 +22,39 @@ func TestStoreRoundTripsARow(t *testing.T) {
 	ctx := context.Background()
 
 	row := Row{
-		ID:              "req_full",
-		AnthropicID:     "req_full",
-		StartedAt:       1761386400123,
-		TtfbMs:          i64p(21),
-		TtftMs:          i64p(300),
-		DurationMs:      4123,
-		Lane:            "provider:zai",
-		Harness:         "claude",
-		Model:           "glm-5.3-flash",
-		FallbackFrom:    "claude-sonnet-5-5",
-		Upstream:        "api.z.ai",
-		SessionID:       "ses_full",
-		AgentID:         "agt_full",
-		ParentAgentID:   "par_full",
-		PromptID:        "pr_full",
-		TurnIndex:       i64p(3),
-		PrevRequest:     "req_prev",
-		QuerySource:     "user",
-		Outcome:         "ok",
-		Status:          200,
-		ErrorCode:       "",
-		StopReason:      "end_turn",
-		Input:           120,
-		Output:          45,
-		CacheRead:       7,
-		CacheWrite:      9,
-		UsageSource:     "router",
-		CostUSD:         0.0042,
-		CostReportedUSD: f64p(0.0123),
-		Ratelimit5h:     f64p(0.25),
-		Ratelimit7d:     f64p(0.5),
-		PromptHash:      "hash_full",
-		InTranscript:    true,
+		ID:             "req_full",
+		AnthropicID:    "req_full",
+		StartedAt:      1761386400123,
+		TtfbMs:         i64p(21),
+		TtftMs:         i64p(300),
+		DurationMs:     4123,
+		Lane:           "provider:zai",
+		Harness:        "claude",
+		Model:          "glm-5.3-flash",
+		FallbackFrom:   "claude-sonnet-5-5",
+		Upstream:       "api.z.ai",
+		SessionID:      "ses_full",
+		AgentID:        "agt_full",
+		ParentAgentID:  "par_full",
+		PromptID:       "pr_full",
+		TurnIndex:      i64p(3),
+		PrevRequest:    "req_prev",
+		QuerySource:    "user",
+		Outcome:        "ok",
+		Status:         200,
+		ErrorCode:      "",
+		StopReason:     "end_turn",
+		Input:          120,
+		Output:         45,
+		CacheRead:      7,
+		CacheWrite:     9,
+		UsageSource:    "router",
+		PriceUSD:       0.0042,
+		HarnessCostUSD: f64p(0.0123),
+		Ratelimit5h:    f64p(0.25),
+		Ratelimit7d:    f64p(0.5),
+		PromptHash:     "hash_full",
+		InTranscript:   true,
 	}
 	if err := store.Upsert(ctx, row); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -137,7 +138,7 @@ func TestTheLedgerJoinsARouteAndItsTranscriptInEitherOrder(t *testing.T) {
 			},
 			Headers: &map[string]string{"request-id": "req_1"},
 		},
-		CostUSD: 0.5,
+		PriceUSD: 0.5,
 	}
 	transcript := TranscriptFacts{
 		RequestID:  "req_1",
@@ -170,7 +171,7 @@ func TestTheLedgerJoinsARouteAndItsTranscriptInEitherOrder(t *testing.T) {
 		Via:          strp("zai"),
 		NodeID:       "outside-a-session/main",
 		UsageSource:  "router",
-		CostUSD:      0.5,
+		PriceUSD:     0.5,
 		InTranscript: true,
 	}
 
@@ -322,5 +323,22 @@ func assertLedgerRow(t *testing.T, st *Store, ctx context.Context, want Row) {
 	}
 	if byAnthropic == nil || !reflect.DeepEqual(*byAnthropic, want) {
 		t.Errorf("by anthropic id =\n %+v\nwant\n %+v", byAnthropic, want)
+	}
+}
+
+// TestARouteFactsBlobUnderItsTagDecodes: ledger_facts stores RouteFacts as the JSON its
+// tags name, so a blob holding the price under its stored key decodes into the field that
+// carries it.
+func TestARouteFactsBlobUnderItsTagDecodes(t *testing.T) {
+	blob := `{"event":{"ts":"2026-10-25T12:00:00Z","event":"route","model":"glm-5.3"},"cost_usd":0.12}`
+	var facts RouteFacts
+	if err := json.Unmarshal([]byte(blob), &facts); err != nil {
+		t.Fatalf("decode the stored blob: %v", err)
+	}
+	if facts.PriceUSD != 0.12 {
+		t.Errorf("PriceUSD = %v, want 0.12", facts.PriceUSD)
+	}
+	if facts.Event.Model != "glm-5.3" {
+		t.Errorf("Event.Model = %q, want glm-5.3", facts.Event.Model)
 	}
 }

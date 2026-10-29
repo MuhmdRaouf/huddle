@@ -85,6 +85,9 @@ var schemaSteps = [...]string{
 		"ALTER TABLE ledger_requests ADD COLUMN totals INTEGER NOT NULL DEFAULT 0",
 	// 7: the node a request lands on (ADR-5)
 	"ALTER TABLE ledger_requests ADD COLUMN node_id TEXT NOT NULL DEFAULT ''",
+	// 8: two money columns, one meaning each (ADR-5)
+	"ALTER TABLE ledger_requests RENAME COLUMN cost_usd TO price_usd;" +
+		"ALTER TABLE ledger_requests RENAME COLUMN cost_reported_usd TO harness_cost_usd",
 }
 
 // SchemaVersion is the version a file sits at once Open has applied every step.

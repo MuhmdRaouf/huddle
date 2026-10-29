@@ -1,7 +1,7 @@
 package server
 
 // The differential test ADR-5 asks for: the same requests read out of history.db and
-// ledger.db, the six billing columns and the four capture columns compared column by
+// ledger.db, the seven billing columns and the four capture columns compared column by
 // column. The two stores join through the request-id header — the ledger's row id IS the
 // header's value, and history holds that value either as the row's own id (a request only
 // the transcript named) or inside the headers JSON the route line recorded (a request a
@@ -175,6 +175,7 @@ type w1HistoryRow struct {
 	cacheWrite1h            sql.NullInt64
 	speed, geo, serviceTier sql.NullString
 	provider, via           sql.NullString
+	costUsd                 sql.NullFloat64
 	nodeID                  string
 }
 
@@ -184,7 +185,7 @@ type w1HistoryRow struct {
 func w1HistoryRowFor(t *testing.T, db *sql.DB, id string) w1HistoryRow {
 	t.Helper()
 	rows, err := db.Query("SELECT id, headers, what, thinking, totals, " +
-		"cache_write_1h, speed, geo, service_tier, provider, via, node_id FROM requests")
+		"cache_write_1h, speed, geo, service_tier, provider, via, cost_usd, node_id FROM requests")
 	if err != nil {
 		t.Fatalf("read the history requests: %v", err)
 	}
@@ -194,7 +195,7 @@ func w1HistoryRowFor(t *testing.T, db *sql.DB, id string) w1HistoryRow {
 		var headers sql.NullString
 		if err := rows.Scan(&found.id, &headers, &found.what, &found.thinking, &found.totals,
 			&found.cacheWrite1h, &found.speed, &found.geo, &found.serviceTier,
-			&found.provider, &found.via, &found.nodeID); err != nil {
+			&found.provider, &found.via, &found.costUsd, &found.nodeID); err != nil {
 			t.Fatalf("scan the history request row: %v", err)
 		}
 		found.headers = headers
@@ -236,6 +237,14 @@ func w1IntPtr(value sql.NullInt64) *int64 {
 		return nil
 	}
 	return &value.Int64
+}
+
+// w1FloatPtr lifts a nullable history column into the pointer shape the ledger's Row reads.
+func w1FloatPtr(value sql.NullFloat64) *float64 {
+	if !value.Valid {
+		return nil
+	}
+	return &value.Float64
 }
 
 // w1BoolPtr lifts a stored 0/1 into the pointer shape the ledger's Row reads.
@@ -282,7 +291,7 @@ func w1Headers(t *testing.T, id string, history sql.NullString, led map[string]s
 	}
 }
 
-// w1Compare compares the six billing columns and the four capture columns of one request,
+// w1Compare compares the seven billing columns and the four capture columns of one request,
 // column by column.
 func w1Compare(t *testing.T, id string, h w1HistoryRow, row ledger.Row) {
 	t.Helper()
@@ -292,6 +301,7 @@ func w1Compare(t *testing.T, id string, h w1HistoryRow, row ledger.Row) {
 	w1One(t, id, "service_tier", w1TextPtr(h.serviceTier), row.ServiceTier)
 	w1One(t, id, "provider", w1TextPtr(h.provider), &row.Provider)
 	w1One(t, id, "via", w1TextPtr(h.via), row.Via)
+	w1One(t, id, "harness_cost_usd", w1FloatPtr(h.costUsd), row.HarnessCostUSD)
 	w1One(t, id, "what", w1TextPtr(h.what), row.What)
 	w1One(t, id, "thinking", w1IntPtr(h.thinking), row.Thinking)
 	w1Headers(t, id, h.headers, row.Headers)

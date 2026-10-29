@@ -43,8 +43,8 @@ type Row struct {
 	Totals                               bool              // the tokens are the run's total from its result event, not one call's context
 	NodeID                               string            // the node the request lands on, as history spells it: the transcript's naming when a transcript saw the request, else the route's; "" when no source could name it
 	UsageSource                          string            // "router" | "otel" | "transcript"
-	CostUSD                              float64           // Radar's price, as the caller priced the usage; 0 when unpriced
-	CostReportedUSD                      *float64          // OTel's own cost_usd, shown beside Radar's when known
+	PriceUSD                             float64           // Radar's price from its pricing table; 0 when unpriced
+	HarnessCostUSD                       *float64          // the cost the harness reported for the call; nil when it reported none
 	Ratelimit5h                          *float64
 	Ratelimit7d                          *float64
 	PromptHash                           string
@@ -53,9 +53,9 @@ type Row struct {
 
 // RouteFacts is what the router's route event says about the request.
 type RouteFacts struct {
-	Event   domain.RouteEvent `json:"event"`             // as the spool line decodes
-	CostUSD float64           `json:"cost_usd"`          // Radar's price for the event's usage, 0 when the caller has none
-	NodeID  string            `json:"node_id,omitempty"` // the node the watcher computed at ingest, by the history writer's rule
+	Event    domain.RouteEvent `json:"event"`             // as the spool line decodes
+	PriceUSD float64           `json:"cost_usd"`          // Radar's price for the event's usage, 0 when the caller has none; the tag is the stored blob's key
+	NodeID   string            `json:"node_id,omitempty"` // the node the watcher computed at ingest, by the history writer's rule
 }
 
 // TranscriptFacts is what Claude Code's transcript says about the same request.
@@ -74,12 +74,12 @@ type TranscriptFacts struct {
 
 // OTelFacts is what an OTel api_request or api_error event says about it.
 type OTelFacts struct {
-	RequestID  string
-	DurationMs int64
-	TtftMs     *int64
-	CostUSD    *float64
-	Usage      domain.RouteUsage
-	ErrorCode  string // api_error only
+	RequestID      string
+	DurationMs     int64
+	TtftMs         *int64
+	HarnessCostUSD *float64
+	Usage          domain.RouteUsage
+	ErrorCode      string // api_error only
 }
 
 // Sources is everything known about one request; a nil source knows nothing.
