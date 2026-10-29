@@ -90,13 +90,23 @@ type e2eServer struct {
 	stop func()
 }
 
-// startE2EServer spawns the binary's serve entry on any free port and waits for /health.
+// startE2EServer spawns the binary's serve entry on any free port and waits for /health. The
+// hub runs with desktop notifications off: the switch lives in the data dir, and a
+// notification here would spawn osascript and build the notify applet under the temp home.
 func startE2EServer(t *testing.T, bin string, base map[string]string) *e2eServer {
 	t.Helper()
 	root := "e2e-root-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	data := filepath.Join(t.TempDir(), "data")
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// the switch as Notifier.Set(false) writes it
+	if err := os.WriteFile(filepath.Join(data, "settings.json"), []byte("{\n  \"notify\": false\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	child := e2eEnv(base, map[string]string{
 		"PORT":         "0",
-		"HUDDLE_DATA":  filepath.Join(t.TempDir(), "data"),
+		"HUDDLE_DATA":  data,
 		"HUDDLE_TOKEN": root,
 		"HUDDLE_HOME":  filepath.Join(t.TempDir(), "home"),
 	})
@@ -936,6 +946,19 @@ func TestE2ETheDigestOverTheCLI(t *testing.T) {
 	}
 	if !strings.Contains(out, "blocked now:") {
 		t.Errorf("digest said %q", out)
+	}
+}
+
+// A blocked task never reaches the desktop here: an e2e hub runs with its switch seeded off,
+// so nothing spawns osascript and no notify applet is built under the temp home.
+func TestE2EABlockedTaskNeverBuildsTheNotifyApplet(t *testing.T) {
+	srv := startE2EServer(t, huddleBin, e2eBase(t))
+	srv.inviteJoin(t, "shop", "api", "web")
+	srv.op(t, "shop", "task_create", "api", `{"id":"b1","title":"Migrate"}`)
+	srv.op(t, "shop", "task_status", "api", `{"id":"b1","status":"blocked","note":"disk full"}`)
+	time.Sleep(2 * time.Second) // the notifier reads its switch at most every 2 s
+	if _, err := os.Stat(filepath.Join(srv.base["HOME"], ".agents", "huddle", "notify")); !os.IsNotExist(err) {
+		t.Error("the notify applet directory exists under the temp home")
 	}
 }
 

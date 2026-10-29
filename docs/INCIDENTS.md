@@ -226,3 +226,17 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** `TestE2EHubStaysLight` (cmd/huddle/hub_light_e2e_test.go)
 - **Rule:** the hub spends under 0.2 s of CPU over 20 s idle and under 12.5 s over the fixed 30 s polled
   workload, and stays under 300 MB resident; a change that costs more fails CI.
+
+## 2026-10-29, an e2e hub built the notify applet and showed a real notification
+
+- **What happened:** the full gate on `0d673c99` failed `TestE2ETheDigestOverTheCLI` with
+  `TempDir RemoveAll cleanup: unlinkat .../.agents/huddle/notify/Huddle.app/Contents/Resources: directory not
+  empty`. The digest test's blocked task made the hub notify the owner: with no applet in the temp home it
+  spawned `osascript` (a real notification on the screen) and started the applet build in the background, which
+  ran `osacompile`, `plutil`, `codesign` and `lsregister -f` under the temp HOME while the test's cleanup was
+  deleting it.
+- **Cause:** an e2e hub started with the notify switch's default (on), so the first needs-you event built the
+  notify applet from the temp HOME, registered it with the real Launch Services database, and showed real
+  notifications.
+- **Guard:** `TestE2EABlockedTaskNeverBuildsTheNotifyApplet` (internal/huddle/cli/e2e_test.go)
+- **Rule:** e2e hubs run with desktop notifications off; only in-process fakes exercise the notifier.
