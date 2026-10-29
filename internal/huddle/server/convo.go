@@ -108,6 +108,7 @@ func (s *server) watchTranscripts(ctx context.Context) {
 	if interval <= 0 {
 		interval = time.Second
 	}
+	s.health.Register("hub.transcripts", domain.HealthLoop, interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	sizes := map[string]int64{}
@@ -120,13 +121,19 @@ func (s *server) watchTranscripts(ctx context.Context) {
 			open := len(s.registrySubs) > 0
 			s.registrySubsMu.Unlock()
 			if !open {
+				// a pass with no stream open still ran; it is what keeps the watch off stale
+				s.health.OK("hub.transcripts")
 				continue
 			}
 			live, err := s.registry.LiveTranscripts(ctx)
 			if err != nil {
 				fmt.Fprintf(s.o.Stderr, "registry: transcript watch: %v\n", err)
+				// the fail stands alone: ok and fail can land in the same millisecond, and the
+				// state rule reads lastErrAt > lastOkAt
+				s.health.Fail("hub.transcripts", err)
 				continue
 			}
+			s.health.OK("hub.transcripts")
 			present := map[string]bool{}
 			for id, path := range live {
 				for _, transcript := range agentTranscripts(path) {

@@ -652,16 +652,16 @@ func Serve(ctx context.Context, o Options) error {
 	pidCtx, stopPidCheck := context.WithCancel(ctx)
 	defer stopPidCheck()
 	if s.registry != nil {
-		safego.Go(s.warn, func() { s.watchPids(pidCtx) })
-		safego.Go(s.warn, func() { s.watchTranscripts(pidCtx) })
-		safego.Go(s.warn, func() { s.watchPermissions(pidCtx) })
+		safego.Go(s.loopWarn("hub.pids"), func() { s.watchPids(pidCtx) })
+		safego.Go(s.loopWarn("hub.transcripts"), func() { s.watchTranscripts(pidCtx) })
+		safego.Go(s.loopWarn("hub.permits"), func() { s.watchPermissions(pidCtx) })
 		// the push sender rides the same database: its keys, the subscriptions and the items'
 		// bookkeeping all live in hub.db, so a home without one pushes nothing
 		s.vapid = newVapidSource(vapidKeystoreStore(), filepath.Join(o.Home, "keys", "vapid"),
 			func(line string, args ...any) { fmt.Fprintf(o.Stdout, "huddle: "+line+"\n", args...) })
 		s.pushHTTP = &http.Client{Timeout: pushSendTimeout}
-		safego.Go(s.warn, func() { s.watchPushes(pidCtx) })
-		safego.Go(s.warn, func() { s.watchEventSweep(pidCtx) })
+		safego.Go(s.loopWarn("hub.pushes"), func() { s.watchPushes(pidCtx) })
+		safego.Go(s.loopWarn("hub.event-sweep"), func() { s.watchEventSweep(pidCtx) })
 		// every raised alert reaches the sender as it is raised; the sends run on their own, so
 		// a slow push service never holds the request that raised the alert
 		unsubscribeAlerts := s.alerts.subscribe(func(e AlertEvent) {
@@ -1761,6 +1761,24 @@ type reportHookPayload struct {
 // panic in a background goroutine leaves behind.
 func (s *server) warn(line string) { fmt.Fprintln(s.o.Stderr, line) }
 
+// loopWarn answers the warn a loop's goroutine runs under: a panic that ends the loop is logged
+// and marks the loop failing, so the health answer says it stopped.
+func (s *server) loopWarn(name string) func(line string) {
+	return func(line string) {
+		s.warn(line)
+		s.health.Fail(name, errors.New(firstLine(line)))
+	}
+}
+
+// firstLine keeps a line's text up to its first newline: a panic's message, not the stack
+// under it.
+func firstLine(line string) string {
+	if end := strings.IndexByte(line, '\n'); end >= 0 {
+		return line[:end]
+	}
+	return line
+}
+
 // claudeReport is the harness name every Claude Code hook's report carries.
 const claudeReport = "claude"
 
@@ -1948,6 +1966,7 @@ func (s *server) watchPids(ctx context.Context) {
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}
+	s.health.Register("hub.pids", domain.HealthLoop, interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -1958,8 +1977,10 @@ func (s *server) watchPids(ctx context.Context) {
 			marked, err := s.registry.MarkEndedPids(ctx, jsscalar.ISOTime(s.now()), probePid)
 			if err != nil {
 				fmt.Fprintf(s.o.Stderr, "registry: pid check: %v\n", err)
+				s.health.Fail("hub.pids", err)
 				continue
 			}
+			s.health.OK("hub.pids")
 			// each end the checker found reaches the live streams too, so an open list does not
 			// wait for a reconnect to drop the session
 			for _, id := range marked {

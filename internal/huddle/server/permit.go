@@ -423,6 +423,7 @@ func (s *server) watchPermissions(ctx context.Context) {
 	if interval <= 0 {
 		interval = permitSweepEvery
 	}
+	s.health.Register("hub.permits", domain.HealthLoop, interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -433,8 +434,10 @@ func (s *server) watchPermissions(ctx context.Context) {
 			sessions, err := s.registry.ExpirePermissions(ctx, s.now())
 			if err != nil {
 				fmt.Fprintf(s.o.Stderr, "permit: sweep: %v\n", err)
+				s.health.Fail("hub.permits", err)
 				continue
 			}
+			s.health.OK("hub.permits")
 			for _, id := range sessions {
 				s.emitRegistrySession(ctx, id)
 			}

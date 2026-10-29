@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
@@ -142,6 +143,7 @@ func (s *server) watchPushes(ctx context.Context) {
 	if interval <= 0 {
 		interval = pushSweepEvery
 	}
+	s.health.Register("hub.pushes", domain.HealthLoop, interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -151,7 +153,11 @@ func (s *server) watchPushes(ctx context.Context) {
 		case <-ticker.C:
 		case <-s.pushWake:
 		}
-		s.sweepPushes(ctx)
+		if err := s.sweepPushes(ctx); err != nil {
+			s.health.Fail("hub.pushes", err)
+			continue
+		}
+		s.health.OK("hub.pushes")
 	}
 }
 
@@ -168,31 +174,32 @@ func (s *server) wakePushes() {
 }
 
 // sweepPushes carries one pass: every item waiting for its first push, then every escalation
-// due, then the sessions' own needs-you entries. An item with no device to hear it waits
-// unmarked, so the next device paired still hears of it once; one the pass did carry is
-// marked, whatever the push service said, so an item never pushes twice because a service
-// answered slowly.
-func (s *server) sweepPushes(ctx context.Context) {
+// due, then the sessions' own needs-you entries. It answers the first step error the pass met,
+// or nil when the pass ran clean; a server with no registry or no keys sweeps nothing and
+// answers nil. An item with no device to hear it waits unmarked, so the next device paired
+// still hears of it once; one the pass did carry is marked, whatever the push service said, so
+// an item never pushes twice because a service answered slowly.
+func (s *server) sweepPushes(ctx context.Context) error {
 	if s.registry == nil || s.vapid == nil {
-		return
+		return nil
 	}
 	now := s.now()
 	subs, err := s.registry.PushSubscriptions(ctx)
 	if err != nil {
 		fmt.Fprintf(s.o.Stderr, "push: subscriptions: %v\n", err)
-		return
+		return err
 	}
 	// the badge every needs-you push carries: the sessions waiting on the owner, the Now tab's count
 	waiting, err := s.registry.Sessions(ctx, hub.SessionsFilter{State: hub.StateNeedsYou}, now)
 	if err != nil {
 		fmt.Fprintf(s.o.Stderr, "push: needs-you count: %v\n", err)
-		return
+		return err
 	}
 	badge := len(waiting)
 	fresh, err := s.registry.FreshPushItems(ctx, now)
 	if err != nil {
 		fmt.Fprintf(s.o.Stderr, "push: fresh items: %v\n", err)
-		return
+		return err
 	}
 	// the item's first push is its session's entry push: the session pass sends no second one
 	// for the same entry
@@ -205,13 +212,14 @@ func (s *server) sweepPushes(ctx context.Context) {
 	due, err := s.registry.EscalatePushItems(ctx, now)
 	if err != nil {
 		fmt.Fprintf(s.o.Stderr, "push: escalations: %v\n", err)
-		return
+		return err
 	}
 	s.pushItems(ctx, now, subs, badge, due, func(ctx context.Context, item hub.Item, at string) error {
 		return s.registry.MarkItemEscalated(ctx, item.ID, at)
 	})
 	s.pushSessionEntries(ctx, now, subs, badge)
 	s.pushUpstream(ctx, now, subs)
+	return nil
 }
 
 // deskTab names one hub tab that reports its focus: the paired device it runs on (empty for the
