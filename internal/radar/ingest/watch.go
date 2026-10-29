@@ -55,6 +55,13 @@ const listingSettle = 2 * time.Second
 // a new byte re-arms it on the read that brings it.
 const idleCompact = 10 * time.Minute
 
+// pendingCopiesCap is where the pending id-less copies stop growing, and pendingCopiesKeep
+// how many of the newest survive the trim.
+const (
+	pendingCopiesCap  = 4_096
+	pendingCopiesKeep = 2_048
+)
+
 // WatcherOptions configures the ingest loop. Now is the clock the cadences and windows read
 // (epoch ms); Alive decides who counts as a living pid in the session registry; NewTicker builds
 // the poll clock, so tests drive the interval by hand. Log receives the one line a failing
@@ -214,7 +221,14 @@ type Watcher struct {
 	// routerUpstreams is per provider plugin the base URL its router sent that plugin's models
 	// to, learned from route lines: a job's own calls name no upstream, so its plugin's is all
 	// radar can tell about where they went.
-	routerUpstreams       map[string]string
+	routerUpstreams map[string]string
+	// pendingCopies holds the id-less transcript copies still waiting for their route line,
+	// keyed by the copy's own id: when the route line lands with a request-id header, the
+	// copy's facts file under it and join the route's row. A copy folded into a route with
+	// no request id is not kept — it left the store's waiting map, so no later route line
+	// can join it. Dropping an entry only loses a join, never a row: the route's row stands
+	// either way.
+	pendingCopies         map[string]shared.RequestRecord
 	agentMetas            map[string]*AgentMeta
 	referencedTranscripts pathSet
 	livePaths             map[string]struct{}
@@ -272,6 +286,7 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 		spoolTails:          make(map[string]*TailState),
 		sessionUpstreams:    make(map[string][]upstreamAt),
 		routerUpstreams:     make(map[string]string),
+		pendingCopies:       make(map[string]shared.RequestRecord),
 		agentMetas:          make(map[string]*AgentMeta),
 		livePaths:           make(map[string]struct{}),
 		registryTranscripts: make(map[string]string),
@@ -431,7 +446,26 @@ func (w *Watcher) applyEmit(emit TranscriptEmit) {
 	for _, request := range emit.Requests {
 		enriched := w.defaultUpstream(w.enrichUpstream(request))
 		w.store.AddRequest(enriched, contentOf(captured, request.ID))
-		w.fileTranscriptFacts(enriched)
+		if enriched.RequestID != "" {
+			w.fileTranscriptFacts(enriched)
+			continue
+		}
+		stored, ok := w.store.StoredOf(enriched)
+		if ok && stored.RequestID != "" {
+			// the copy folded into a route call that carries a request id: file the copy's
+			// own facts under that id, so they join the route's row
+			delete(w.pendingCopies, stored.ID)
+			w.fileCopyFacts(enriched, stored.RequestID)
+			continue
+		}
+		if ok && stored.ID == enriched.ID {
+			// the copy still waits under its own id: when its route line lands with a
+			// request-id header, the pending facts file under it
+			w.pendingCopies[stored.ID] = enriched
+			w.trimPendingCopies()
+		}
+		// a copy folded into a route with no request id files nothing and is not kept: it
+		// left the store's waiting map, so no later route line can join it
 	}
 }
 
@@ -602,8 +636,10 @@ func (w *Watcher) ingestRouteEvent(text string, line shared.SpoolLine) {
 		return
 	}
 	w.rememberRouterUpstream(line, *line.Model)
-	w.store.AddRequest(RouteRequest(line, *line.Model, ts.UnixMilli()), nil)
+	route := RouteRequest(line, *line.Model, ts.UnixMilli())
+	w.store.AddRequest(route, nil)
 	w.fileRouteFacts(text, line, *line.Model, ts.UnixMilli())
+	w.joinWaitingCopy(route)
 }
 
 // fileRouteFacts hands one route line's facts to the ledger, so its row joins what the
@@ -648,6 +684,54 @@ func (w *Watcher) fileTranscriptFacts(request shared.RequestRecord) {
 	if err := w.ledger.AddTranscript(w.ctx, facts); err != nil {
 		w.log(fmt.Sprintf("radar: the ledger missed a transcript request (%v)", err))
 	}
+}
+
+// fileCopyFacts files an id-less copy's own facts under the request id the route it paired
+// with carried, so they join the route's row. The facts build from the raw copy, never the
+// stored record: the merged record's stop reason falls back to the route's status text,
+// which never counts as one.
+func (w *Watcher) fileCopyFacts(copy shared.RequestRecord, requestID string) {
+	filed := copy
+	filed.RequestID = requestID
+	w.fileTranscriptFacts(filed)
+}
+
+// joinWaitingCopy files a pending id-less copy's facts when this route line joined it: the
+// store holds the call under the copy's id, carrying the route's request id now.
+func (w *Watcher) joinWaitingCopy(route shared.RequestRecord) {
+	if len(w.pendingCopies) == 0 {
+		return
+	}
+	stored, ok := w.store.StoredOf(route)
+	if !ok {
+		return
+	}
+	pending, waited := w.pendingCopies[stored.ID]
+	if !waited || stored.RequestID == "" {
+		return
+	}
+	delete(w.pendingCopies, stored.ID)
+	w.fileCopyFacts(pending, stored.RequestID)
+}
+
+// trimPendingCopies keeps the pending copies bounded: past the cap it keeps the
+// pendingCopiesKeep newest by Ts.
+func (w *Watcher) trimPendingCopies() {
+	if len(w.pendingCopies) <= pendingCopiesCap {
+		return
+	}
+	ids := make([]string, 0, len(w.pendingCopies))
+	for id := range w.pendingCopies {
+		ids = append(ids, id)
+	}
+	slices.SortFunc(ids, func(a, b string) int {
+		return cmp.Compare(w.pendingCopies[b].Ts, w.pendingCopies[a].Ts)
+	})
+	kept := make(map[string]shared.RequestRecord, pendingCopiesKeep)
+	for _, id := range ids[:pendingCopiesKeep] {
+		kept[id] = w.pendingCopies[id]
+	}
+	w.pendingCopies = kept
 }
 
 // rememberRouterUpstream learns a plugin's real base URL from a route line that sent one of the

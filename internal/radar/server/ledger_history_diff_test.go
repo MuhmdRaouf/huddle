@@ -34,6 +34,7 @@ import (
 var w1IDs = []string{
 	"req_w1_a", "req_w1_b", "req_w1_c", "req_w2_d", "req_w3_e", "req_w5_f", "req_w6_g",
 	"codex:" + w1CodexSessionID + ":0", "codex:" + w1CodexSessionID + ":1", "opencode:msg_aaa",
+	"req_w7_h",
 }
 
 // w1CodexSessionID is the session the codex fixture rollout names.
@@ -183,6 +184,68 @@ func w1FailedRouteLine(t *testing.T, at time.Time, id string, status int, errTex
 		t.Fatalf("marshal the route line of %s: %v", id, err)
 	}
 	return string(text)
+}
+
+// w1SubagentRouteLine is one route line the router wrote for a subagent call, its agent
+// given: the line the store pairs with an id-less transcript copy by session, model, bare
+// agent and the 10 s window.
+func w1SubagentRouteLine(t *testing.T, at time.Time, id, agent, model string, usage map[string]any) string {
+	t.Helper()
+	line := map[string]any{
+		"ts": isoOf(at.UnixMilli()), "event": "route", "session_id": "s1",
+		"agent_id": agent, "model": model, "upstream": w1Upstream("zai"),
+		"route": "provider", "plugin": "zai", "status": 200, "latency_ms": 42,
+		"usage":   usage,
+		"headers": map[string]string{"request-id": id},
+	}
+	text, err := json.Marshal(line)
+	if err != nil {
+		t.Fatalf("marshal the route line of %s: %v", id, err)
+	}
+	return string(text)
+}
+
+// w1IdlessSubagentLine is one assistant line a subagent transcript wrote with no requestId:
+// the record rides the message's own id, so only the store's closest fit pairs it with the
+// route line.
+func w1IdlessSubagentLine(t *testing.T, at time.Time, session, model string, content []any, usage map[string]any) string {
+	t.Helper()
+	line := map[string]any{
+		"timestamp": isoOf(at.UnixMilli()), "type": "assistant", "sessionId": session,
+		"message": map[string]any{
+			"role": "assistant", "id": "msg_sub1", "model": model, "stop_reason": "end_turn",
+			"content": content,
+			"usage":   usage,
+		},
+	}
+	text, err := json.Marshal(line)
+	if err != nil {
+		t.Fatalf("marshal the subagent line of %s: %v", session, err)
+	}
+	return string(text)
+}
+
+// w1SessionIDs answers the request ids one store holds for the session, the count gate's
+// failure line when the two stores disagree.
+func w1SessionIDs(t *testing.T, db *sql.DB, table, session string) []string {
+	t.Helper()
+	rows, err := db.Query("SELECT id FROM "+table+" WHERE session_id = ? ORDER BY id", session)
+	if err != nil {
+		t.Fatalf("read the ids of %s: %v", table, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scan the ids of %s: %v", table, err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read the ids of %s: %v", table, err)
+	}
+	return ids
 }
 
 // w1UserLine is one user entry a transcript logs before its assistant line: the request's
@@ -538,6 +601,10 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 			map[string]any{"input_tokens": 100, "output_tokens": 0},
 			map[string]string{"retry-after": "30"}),
 		w1RouteLine(t, at.Add(30*time.Second), "req_w6_g", "zai", "glm-4.6", "provider", routeUsage, nil),
+		// the subagent call's route line, 60 s after the turns above so no other line is in
+		// its match window: history pairs it with the id-less copy below by closest fit
+		w1SubagentRouteLine(t, at.Add(60*time.Second), "req_w7_h", "agent-sub1", "glm-5.3",
+			map[string]any{"input_tokens": 80, "output_tokens": 22}),
 	)
 	writeText(t, filepath.Join(world.config, "projects", "-w-app", "s1.jsonl"), strings.Join([]string{
 		w1UserLine(t, at, "s1", "fix the flaky test"),
@@ -552,6 +619,9 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 	}, "\n")+"\n")
 	writeText(t, filepath.Join(world.config, "projects", "-w-app", "s1", "subagents", "agent-a7.jsonl"),
 		w1TranscriptLine(t, at, "s1", "req_w3_e", "glm-5.3", w1TextContent("Scouting the suite."), zero)+"\n")
+	writeText(t, filepath.Join(world.config, "projects", "-w-app", "s1", "subagents", "agent-sub1.jsonl"),
+		w1IdlessSubagentLine(t, at.Add(59*time.Second), "s1", "glm-5.3", w1TextContent("Watching the suite."),
+			map[string]any{"input_tokens": 80, "output_tokens": 22})+"\n")
 
 	app := mustStart(t, world.env, AppOptions{Version: "test", SinceMs: dayMs, IntervalMs: quietMs})
 	historyPath := paths.HistoryPath(ctx, world.env)
@@ -597,6 +667,28 @@ func TestTheLedgerMatchesHistory(t *testing.T) {
 	}
 	if billed.CacheWrite1h == nil || *billed.CacheWrite1h != 40 {
 		t.Errorf("req_w6_g cache_write_1h = %s, want 40", w1Show(billed.CacheWrite1h))
+	}
+
+	// The count gate: per session the ledger holds exactly the requests history holds — a
+	// second row for one call is a double count the column compares above cannot see.
+	for _, session := range []string{"s1", "s2"} {
+		var ledCount, historyCount int
+		if err := history.QueryRow("SELECT COUNT(*) FROM requests WHERE session_id = ?", session).Scan(&historyCount); err != nil {
+			t.Fatalf("count history's requests of %s: %v", session, err)
+		}
+		ledDB, err := sql.Open("sqlite", "file:"+ledgerPath+"?mode=ro")
+		if err != nil {
+			t.Fatalf("open the ledger for the count: %v", err)
+		}
+		if err := ledDB.QueryRow("SELECT COUNT(*) FROM ledger_requests WHERE session_id = ?", session).Scan(&ledCount); err != nil {
+			t.Fatalf("count the ledger's requests of %s: %v", session, err)
+		}
+		if ledCount != historyCount {
+			t.Fatalf("session %s request count: ledger=%d history=%d\nledger ids: %v\nhistory ids: %v",
+				session, ledCount, historyCount,
+				w1SessionIDs(t, ledDB, "ledger_requests", session), w1SessionIDs(t, history, "requests", session))
+		}
+		_ = ledDB.Close()
 	}
 
 	// A transcript-only request starts when its transcript says, the same instant both
