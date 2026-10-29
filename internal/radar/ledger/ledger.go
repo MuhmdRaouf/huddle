@@ -66,11 +66,13 @@ type TranscriptFacts struct {
 	PromptID    string            `json:"prompt_id"`
 	QuerySource string            `json:"query_source"`
 	StopReason  string            `json:"stop_reason"`
-	Usage       domain.RouteUsage `json:"usage"`             // the assistant line's final usage
-	What        *string           `json:"what,omitempty"`    // the what line the transcript computed at ingest
-	Totals      bool              `json:"totals,omitempty"`  // the tokens are the run's total from its result event
-	NodeID      string            `json:"node_id,omitempty"` // the node the watcher computed at ingest, by the history writer's rule
-	Via         *string           `json:"via,omitempty"`     // the way the call left, when the session's hooks reported a loopback base URL for it
+	Usage       domain.RouteUsage `json:"usage"`                // the assistant line's final usage
+	What        *string           `json:"what,omitempty"`       // the what line the transcript computed at ingest
+	Totals      bool              `json:"totals,omitempty"`     // the tokens are the run's total from its result event
+	SessionID   string            `json:"session_id,omitempty"` // the transcript record's session
+	AgentID     string            `json:"agent_id,omitempty"`   // the transcript record's agent
+	NodeID      string            `json:"node_id,omitempty"`    // the node the watcher computed at ingest, by the history writer's rule
+	Via         *string           `json:"via,omitempty"`        // the way the call left, when the session's hooks reported a loopback base URL for it
 }
 
 // OTelFacts is what an OTel api_request or api_error event says about it.

@@ -178,6 +178,7 @@ type w1HistoryRow struct {
 	provider, via           sql.NullString
 	costUsd                 sql.NullFloat64
 	nodeID                  string
+	sessionID, agentID      sql.NullString
 }
 
 // w1HistoryRowFor answers the history row the request id names: the row whose id is the id,
@@ -186,7 +187,8 @@ type w1HistoryRow struct {
 func w1HistoryRowFor(t *testing.T, db *sql.DB, id string) w1HistoryRow {
 	t.Helper()
 	rows, err := db.Query("SELECT id, ts, headers, what, thinking, totals, " +
-		"cache_write_1h, speed, geo, service_tier, provider, via, cost_usd, node_id FROM requests")
+		"cache_write_1h, speed, geo, service_tier, provider, via, cost_usd, node_id, " +
+		"session_id, agent_id FROM requests")
 	if err != nil {
 		t.Fatalf("read the history requests: %v", err)
 	}
@@ -196,7 +198,8 @@ func w1HistoryRowFor(t *testing.T, db *sql.DB, id string) w1HistoryRow {
 		var headers sql.NullString
 		if err := rows.Scan(&found.id, &found.ts, &headers, &found.what, &found.thinking, &found.totals,
 			&found.cacheWrite1h, &found.speed, &found.geo, &found.serviceTier,
-			&found.provider, &found.via, &found.costUsd, &found.nodeID); err != nil {
+			&found.provider, &found.via, &found.costUsd, &found.nodeID,
+			&found.sessionID, &found.agentID); err != nil {
 			t.Fatalf("scan the history request row: %v", err)
 		}
 		found.headers = headers
@@ -292,10 +295,12 @@ func w1Headers(t *testing.T, id string, history sql.NullString, led map[string]s
 	}
 }
 
-// w1Compare compares the seven billing columns and the four capture columns of one request,
-// column by column.
+// w1Compare compares the session and agent a request sits under, the seven billing columns
+// and the four capture columns of one request, column by column.
 func w1Compare(t *testing.T, id string, h w1HistoryRow, row ledger.Row) {
 	t.Helper()
+	w1One(t, id, "session_id", w1TextPtr(h.sessionID), &row.SessionID)
+	w1One(t, id, "agent_id", w1TextPtr(h.agentID), &row.AgentID)
 	w1One(t, id, "cache_write_1h", w1IntPtr(h.cacheWrite1h), row.CacheWrite1h)
 	w1One(t, id, "speed", w1TextPtr(h.speed), row.Speed)
 	w1One(t, id, "geo", w1TextPtr(h.geo), row.Geo)

@@ -4,11 +4,12 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
+	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
 // ReconcileVersion is the version of Reconcile's rules. Every row is written with it; a
 // change to the rules raises it, and the backfill rebuilds each older row from its facts.
-const ReconcileVersion = 5
+const ReconcileVersion = 6
 
 // Reconcile answers the row the sources agree on, false when no source knows the request
 // (every pointer nil).
@@ -54,28 +55,44 @@ func ids(s Sources, row *Row) {
 
 // request reads which model served, who sent it and where it sat in its turn, all the
 // route's own facts; the transcript backs up the model and the prompt id when no route saw
-// the request.
+// the request, and names the session and agent the call sits under.
 func request(s Sources, row *Row) {
 	if s.Route == nil {
 		if s.Transcript != nil {
 			row.Model = s.Transcript.Model
 			row.PromptID = s.Transcript.PromptID
 		}
-		return
+	} else {
+		event := s.Route.Event
+		row.Model = event.Model
+		row.FallbackFrom = textOf(event.Fallback)
+		row.Upstream = event.Upstream
+		row.ParentAgentID = textOf(event.ParentAgentID)
+		row.PromptHash = textOf(event.PromptHash)
+		row.PromptID = textOf(event.PromptID)
+		row.PrevRequest = textOf(event.PrevRequest)
+		row.TurnIndex = event.TurnIndex
+		if row.PromptID == "" && s.Transcript != nil {
+			row.PromptID = s.Transcript.PromptID
+		}
 	}
-	event := s.Route.Event
-	row.Model = event.Model
-	row.FallbackFrom = textOf(event.Fallback)
-	row.Upstream = event.Upstream
-	row.SessionID = textOf(event.SessionID)
-	row.AgentID = textOf(event.AgentID)
-	row.ParentAgentID = textOf(event.ParentAgentID)
-	row.PromptHash = textOf(event.PromptHash)
-	row.PromptID = textOf(event.PromptID)
-	row.PrevRequest = textOf(event.PrevRequest)
-	row.TurnIndex = event.TurnIndex
-	if row.PromptID == "" && s.Transcript != nil {
-		row.PromptID = s.Transcript.PromptID
+	// the session and the agent: the transcript's naming when its facts carry a session —
+	// the transcript copy rules history's merged record — else the route event's; a request
+	// neither source puts in a session counts outside any session.
+	switch {
+	case s.Transcript != nil && s.Transcript.SessionID != "":
+		row.SessionID = s.Transcript.SessionID
+		row.AgentID = s.Transcript.AgentID
+	case s.Route != nil:
+		row.SessionID = textOf(s.Route.Event.SessionID)
+		row.AgentID = textOf(s.Route.Event.AgentID)
+	}
+	if row.SessionID == "" {
+		row.SessionID = shared.OutsideSession
+	}
+	// the store files an untagged call under the main agent (store.go waitRouteLocked)
+	if row.AgentID == "" {
+		row.AgentID = "main"
 	}
 }
 

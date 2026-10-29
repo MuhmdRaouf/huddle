@@ -261,6 +261,26 @@ func TestTranscriptFactsCarryTheTs(t *testing.T) {
 	}
 }
 
+// TestTranscriptFactsCarryTheSessionAndTheAgent: the facts carry the record's session and
+// agent, the transcript's own naming of where the call sits, so the ledger can name a
+// session for a request no route line saw.
+func TestTranscriptFactsCarryTheSessionAndTheAgent(t *testing.T) {
+	facts, ok := transcriptFactsOf(shared.RequestRecord{
+		RequestID: "req_ses",
+		SessionID: "s1",
+		AgentID:   "agent-a7",
+	})
+	if !ok {
+		t.Fatal("transcriptFactsOf refused a record with a request id")
+	}
+	if facts.SessionID != "s1" {
+		t.Errorf("SessionID = %q, want s1", facts.SessionID)
+	}
+	if facts.AgentID != "agent-a7" {
+		t.Errorf("AgentID = %q, want agent-a7", facts.AgentID)
+	}
+}
+
 // TestTranscriptFactsCarryTheCaptureFacts: the facts carry the what line the transcript
 // computed, the result's totals flag, and the thinking tokens inside the usage map in the
 // shape the provider's output_tokens_details block has — each only when the record has it,

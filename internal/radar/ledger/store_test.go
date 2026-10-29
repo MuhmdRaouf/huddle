@@ -161,6 +161,8 @@ func TestTheLedgerJoinsARouteAndItsTranscriptInEitherOrder(t *testing.T) {
 		Harness:      "claude",
 		Model:        "glm-5.3",
 		Upstream:     "api.z.ai",
+		SessionID:    "outside-a-session",
+		AgentID:      "main",
 		Outcome:      "ok",
 		Status:       200,
 		StopReason:   "end_turn",
