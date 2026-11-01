@@ -101,6 +101,34 @@ describe("SlideOver", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
+  it("reopens when its owner asks for it again before the owner repainted the close", () => {
+    // an owner that keeps `open` outside the tree, as the hub shell keeps it in the address:
+    // the close and the next open both land before the tree paints again
+    let wanted = true;
+    const props = (): { open: boolean; onClose: () => void } => ({
+      open: wanted,
+      onClose: () => {
+        wanted = false;
+      },
+    });
+    const { baseElement, rerender } = render(
+      <SlideOver {...props()} label="Session" header="h">
+        b
+      </SlideOver>,
+    );
+    const dlg = baseElement.querySelector("dialog") as HTMLDialogElement;
+    expect(dlg.open).toBe(true);
+    fireEvent(dlg, new Event("cancel", { cancelable: true })); // Escape
+    expect(dlg.open).toBe(false);
+    wanted = true; // the next click on the opener, before any repaint
+    rerender(
+      <SlideOver {...props()} label="Session" header="h">
+        b
+      </SlideOver>,
+    );
+    expect(dlg.open).toBe(true);
+  });
+
   it("keeps a click inside the panel from reading as the backdrop", () => {
     const onClose = vi.fn();
     render(

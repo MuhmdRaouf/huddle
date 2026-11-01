@@ -58,7 +58,9 @@ export function SlideOver({
   const opener = useRef<Element | null>(null);
 
   // Open modally as the newest layer and remember what to give focus back to; close when the parent
-  // flips `open` off.
+  // flips `open` off. It runs on every render, not only when `open` changes: a native close the
+  // owner has not repainted yet (Escape, then the opener clicked again before the next paint) leaves
+  // `open` true on both sides, and the render that carries it must still show the dialog.
   useEffect(() => {
     const d = dlg.current;
     if (!d) return;
@@ -68,7 +70,7 @@ export function SlideOver({
     } else if (!open && d.open) {
       d.close();
     }
-  }, [open]);
+  });
 
   // The native close event is the one path every close ends in: tell the parent, restack, and give
   // focus back when the opener still lives in an open layer — or nothing is open any more.
