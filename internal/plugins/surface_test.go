@@ -968,3 +968,24 @@ func decodeStrictJSON(t *testing.T, text string, out any) {
 		t.Fatalf("decode JSON: %v", err)
 	}
 }
+
+// TestHuddlePluginCommandsListJoinAndChannel pins the huddle plugin's channel words: join and
+// channel ship, and the project setup they replace does not.
+func TestHuddlePluginCommandsListJoinAndChannel(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join(repoRoot, "plugin", "commands"))
+	if err != nil {
+		t.Fatalf("read the huddle plugin's commands: %v", err)
+	}
+	listed := map[string]bool{}
+	for _, entry := range entries {
+		listed[strings.TrimSuffix(entry.Name(), ".md")] = true
+	}
+	for _, name := range []string{"join", "channel"} {
+		if !listed[name] {
+			t.Errorf("the huddle plugin lists no %s command", name)
+		}
+	}
+	if listed["setup"] {
+		t.Errorf("the huddle plugin still lists setup: /huddle:join <channel> and /huddle:channel create replace it")
+	}
+}

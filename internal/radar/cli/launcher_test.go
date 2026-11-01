@@ -480,7 +480,7 @@ func TestLauncherFreshInstall(t *testing.T) {
 	if code != 6 {
 		t.Fatalf("radar start = %d, stdout %q, stderr %q, want 6", code, stdout, stderr)
 	}
-	if want := "radar: the huddle hub is not set up; run /huddle:setup"; strings.TrimSpace(stderr) != want {
+	if want := "radar: the huddle hub is not set up; run /huddle:open"; strings.TrimSpace(stderr) != want {
 		t.Errorf("stderr = %q, want %q", stderr, want)
 	}
 

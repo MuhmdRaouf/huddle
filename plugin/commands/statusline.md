@@ -17,6 +17,6 @@ Arguments, if any: $ARGUMENTS
    ```
 
    — and show the line it printed. An empty line means this project is not in a huddle yet: say so and
-   point at `/huddle:setup`.
+   point at `/huddle:join <channel>`.
 
 No preamble or recap; report what the command said.

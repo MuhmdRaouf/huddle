@@ -380,23 +380,23 @@ describe("the landing page's sign-in", () => {
 });
 
 describe("the landing page's copy fields", () => {
-  it("offers /huddle:setup, the command that replaced /huddle:open", () => {
+  it("offers /huddle:open, the command that prints a sign-in link", () => {
     mount();
-    expect(screen.getByLabelText("Copy /huddle:setup")).toBeDefined();
-    expect(screen.queryByLabelText("Copy /huddle:open")).toBeNull();
+    expect(screen.getByLabelText("Copy /huddle:open")).toBeDefined();
+    expect(screen.queryByLabelText("Copy /huddle:setup")).toBeNull();
     expect(screen.getByLabelText("Copy huddle open")).toBeDefined();
   });
 
-  it("copies /huddle:setup and flashes the button", async () => {
+  it("copies /huddle:open and flashes the button", async () => {
     vi.useFakeTimers();
     const { writes } = stubClipboardLanding();
     mount();
-    const big = screen.getByText("Copy /huddle:setup").closest("button") as HTMLButtonElement;
+    const big = screen.getByText("Copy /huddle:open").closest("button") as HTMLButtonElement;
     await act(async () => {
       big.click();
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(writes).toEqual(["/huddle:setup"]);
+    expect(writes).toEqual(["/huddle:open"]);
     expect(screen.getByText("Copied: paste it into a Claude session")).toBeDefined();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1700);
@@ -412,7 +412,7 @@ describe("the landing page's copy fields", () => {
     });
     mount();
     void act(() => {
-      screen.getByLabelText("Copy /huddle:setup").click();
+      screen.getByLabelText("Copy /huddle:open").click();
     });
     expect(screen.queryByText(/Copied/)).toBeNull();
   });

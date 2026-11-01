@@ -37,7 +37,7 @@ func runEntry(ctx context.Context, stdin io.Reader, stdout io.Writer, environ []
 // sessionStartMessage is the one line a SessionStart owes the user: where radar lives in the
 // running huddle hub. Empty when it owes nothing — not a SessionStart, no hub, or autostart
 // off. With no hub the hook starts nothing and says nothing: the hub is the one server this
-// edition runs, and the user reaches it through /huddle:setup.
+// edition runs, and the user reaches it through /huddle:open.
 func sessionStartMessage(ctx context.Context, hookIO *HookIo, event string, hub func(ctx context.Context) (string, bool)) string {
 	if event != "SessionStart" {
 		return ""

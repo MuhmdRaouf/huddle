@@ -328,7 +328,7 @@ func joinRunning(ctx context.Context, w *World, o *flags, say func(string)) (int
 	// a credential with no channel is the server's root key, which `huddle up` saves its
 	// creator, not a membership: the project is not in yet
 	if held := LoadCred(ctx, w, entry.URL, ""); held != nil && held.Channel != "" {
-		say(fmt.Sprintf("This project is already in the Huddle at %s (channel %s, as %s). To start a separate one: /huddle:setup --new",
+		say(fmt.Sprintf("This project is already in the Huddle at %s (channel %s, as %s). To start a separate one: huddle setup --new",
 			entry.URL, firstNonEmpty(held.Channel, entry.Channel), firstNonEmpty(held.As, "?")))
 		return 0, true
 	}
@@ -337,7 +337,7 @@ func joinRunning(ctx context.Context, w *World, o *flags, say func(string)) (int
 		project = ProjectCred(ctx, w, entry.Project, entry.URL)
 	}
 	if project == nil {
-		say(fmt.Sprintf("A Huddle already runs for %s at %s (channel %s). To join it, run /huddle:invite in a session there and paste its join line here (/huddle:join …). To start a separate one anyway: /huddle:setup --new",
+		say(fmt.Sprintf("A Huddle already runs for %s at %s (channel %s). To join it, run /huddle:invite in a session there and paste its join line here (/huddle:join …). To start a separate one anyway: huddle setup --new",
 			where, entry.URL, firstNonEmpty(entry.Channel, "?")))
 		return 0, true
 	}
@@ -355,7 +355,7 @@ func joinRunning(ctx context.Context, w *World, o *flags, say func(string)) (int
 	minted, ok := postJSON(ctx, entry.URL+"/api/tokens", map[string]string{auth.Header: project.Credential},
 		newBody().number("ttl", 120).bool("single_use", true).bool("can_invite", true).text("channel", channel).text("description", "huddle setup in another project"), 5*time.Second)
 	if !ok || textField(minted, "token") == "" {
-		say(fmt.Sprintf("A Huddle already runs for %s at %s, but this machine holds no credential there that may invite. Run /huddle:invite in a session there and paste its join line here, or /huddle:setup --new for a separate one.", where, entry.URL))
+		say(fmt.Sprintf("A Huddle already runs for %s at %s, but this machine holds no credential there that may invite. Run /huddle:invite in a session there and paste its join line here, or huddle setup --new for a separate one.", where, entry.URL))
 		return 0, true
 	}
 	wish := Slug(root, "session")
@@ -371,14 +371,14 @@ func joinRunning(ctx context.Context, w *World, o *flags, say func(string)) (int
 		if ok {
 			why = textField(joined, "error")
 		}
-		say(fmt.Sprintf("A Huddle already runs for %s at %s, but joining it failed (%s). /huddle:setup --new starts a separate one.", where, entry.URL, why))
+		say(fmt.Sprintf("A Huddle already runs for %s at %s, but joining it failed (%s). huddle setup --new starts a separate one.", where, entry.URL, why))
 		return 5, true
 	}
 	// the answer's channel is the token's: a hub that grants none grants no membership, so
 	// nothing is saved and nothing is claimed
 	got := textField(joined, "channel")
 	if got == "" {
-		say(fmt.Sprintf("A Huddle already runs for %s at %s, but joining it gave no channel. /huddle:setup --new starts a separate one.", where, entry.URL))
+		say(fmt.Sprintf("A Huddle already runs for %s at %s, but joining it gave no channel. huddle setup --new starts a separate one.", where, entry.URL))
 		return 5, true
 	}
 	name := textField(joined, "name")
@@ -388,7 +388,7 @@ func joinRunning(ctx context.Context, w *World, o *flags, say func(string)) (int
 	joinArgs.textAlways("task", "set up")
 	_, _ = postJSON(ctx, fmt.Sprintf("%s/api/c/%s/op/join?as=%s", entry.URL, neturl.PathEscape(got), queryEscape(name)),
 		map[string]string{auth.Header: textField(joined, "credential")}, joinArgs, 5*time.Second)
-	say(fmt.Sprintf("Joined the Huddle that already runs for %s: %s, channel %s, as %s. This project's sessions are in it from now on (no second Huddle started; /huddle:setup --new starts a separate one).",
+	say(fmt.Sprintf("Joined the Huddle that already runs for %s: %s, channel %s, as %s. This project's sessions are in it from now on (no second Huddle started; huddle setup --new starts a separate one).",
 		where, entry.URL, got, name))
 	if link := Dashboard(ctx, w, entry.URL, "", 1500); link != "" {
 		say("dashboard: " + link)

@@ -144,7 +144,7 @@ func TestServerEndToEnd(t *testing.T) {
 
 	// with no hub and no set-up home, start starts nothing and says so
 	if code, out := e.run("start", "--no-open"); code != 6 ||
-		!strings.Contains(out, "kanban: the huddle hub is not set up; run /huddle:setup") {
+		!strings.Contains(out, "kanban: the huddle hub is not set up; run /huddle:open") {
 		t.Fatalf("start = %d, %q, want 6 with the setup line", code, out)
 	}
 	if entries, err := filepath.Glob(filepath.Join(e.home, "*")); err != nil || len(entries) != 0 {

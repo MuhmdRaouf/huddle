@@ -60,7 +60,7 @@ func runHook(ctx context.Context, w World, positional []string, boardPath string
 	}
 	open, inProgress, inReview := hookCounts(st)
 	counts := fmt.Sprintf(".agents/kanban (%d open, %d in progress, %d in review)", open, inProgress, inReview)
-	line := counts + ". Open it in the huddle hub once it runs (/huddle:setup)."
+	line := counts + ". Open it in the huddle hub once it runs (/huddle:open)."
 	if link, ok := hubLink(ctx, w, abs); ok {
 		line = counts + " in the huddle hub at " + link + "."
 	}

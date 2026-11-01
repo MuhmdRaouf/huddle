@@ -62,7 +62,7 @@ const HOOK_LINES = [
  *  the board server together, domain names the hub behind Caddy, and kanban's own words carry the
  *  kanban- prefix. */
 const COMMANDS = {
-  huddle: ["invite", "join", "setup", "statusline"],
+  huddle: ["channel", "invite", "join", "statusline"],
   hub: ["domain", "open", "status", "stop"],
   kanban: ["kanban-export", "kanban-init", "kanban-lint", "kanban-refresh"],
 };

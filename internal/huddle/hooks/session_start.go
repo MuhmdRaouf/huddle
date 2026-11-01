@@ -97,7 +97,7 @@ func SessionStart(ctx context.Context, w *cli.World, in io.Reader, out io.Writer
 			say(`Huddle "` + id.Channel + `" runs at ` + serverURL + ", but this session holds no credential for it" +
 				" (it was never invited here, or it was kicked). To get in: in a session that is in it, the user runs" +
 				" /huddle:invite and pastes its join line here (/huddle:join …); if no such session is left," +
-				" /huddle:setup --restart in the project that started it. Until then, leave Huddle alone.")
+				" /huddle:stop and /huddle:open in the project that started it. Until then, leave Huddle alone.")
 			return errors.New("join " + id.Channel + " as " + id.As + ": 401 no credential for " + serverURL)
 		case try.Answer == nil || !try.Answer.joined():
 			reason := reasonOf(try)

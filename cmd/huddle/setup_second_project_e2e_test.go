@@ -1,9 +1,10 @@
 package main
 
-// A second project's setup against a hub a plain `huddle up` started (HR-SETUP-JOIN-CHANNEL):
-// the hub's registry entry names no channel, so setup lands the project in its own channel on
-// that hub, named after the project, `huddle status` says it is in, and a rerun adds no second
-// member. Every process here is this test's child and every home a temp one.
+// A second project joins a channel on the machine's one hub (V2-CH-SLASH-WORDS): `huddle join
+// <channel>` refuses a channel nobody created and names the create word, `huddle channel create
+// <name>` makes the channel and puts its project in, and `huddle join <channel>` then brings the
+// second project in, saving the channel in its huddle.json. Every process here is this test's
+// child and every home a temp one.
 
 import (
 	"fmt"
@@ -20,9 +21,9 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
-func TestE2ESetupSecondProjectJoinsARunningHub(t *testing.T) {
-	bdd.Feature(t, "a second project joins a running hub", func(f *bdd.F) {
-		f.Scenario("setup in a second project lands in the project's own channel", func(s *bdd.S) {
+func TestE2EJoinSecondProjectToAChannel(t *testing.T) {
+	bdd.Feature(t, "a second project joins a channel on the running hub", func(f *bdd.F) {
+		f.Scenario("join refuses an unknown channel, create makes it, join brings the second project in", func(s *bdd.S) {
 			// a short root: the homes and sockets under it stay inside the unix path bounds
 			root, err := os.MkdirTemp("", "hr-s2-")
 			if err != nil {
@@ -45,9 +46,7 @@ func TestE2ESetupSecondProjectJoinsARunningHub(t *testing.T) {
 				}
 			}
 			hubURL := fmt.Sprintf("http://127.0.0.1:%d", hubPort)
-			// each side is its own session in its own project, as Claude Code names it: the
-			// creator's root credential stays the hub-listing one, the joiner's member credential
-			// never overwrites it
+			// each side is its own session in its own project, as Claude Code names it
 			env1 := argvLayer(env, map[string]string{"HUDDLE_SESSION": "owner", "CLAUDE_PROJECT_DIR": p1})
 			env2 := argvLayer(env, map[string]string{"HUDDLE_SESSION": "joiner", "CLAUDE_PROJECT_DIR": p2})
 			stopHub := func() {
@@ -78,20 +77,63 @@ func TestE2ESetupSecondProjectJoinsARunningHub(t *testing.T) {
 				until(t, 20*time.Second, func() bool { return argvHealthy(hubURL) }, "the hub to answer its health path")
 			})
 
-			var joined string
-			s.When("setup runs in a second project", func(t *testing.T) {
-				code, out, errOut := runBin(t, huddleBin, env2, p2, "setup", "--start")
-				if code != 0 {
-					t.Fatalf("setup --start = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+			projectFile := func(dir string) string {
+				raw, _ := os.ReadFile(filepath.Join(dir, ".agents", "huddle", "huddle.json"))
+				return string(raw)
+			}
+
+			s.When("the second project joins a channel nobody created", func(t *testing.T) {
+				code, out, errOut := runBin(t, huddleBin, env2, p2, "join", "shared")
+				if code != 2 {
+					t.Fatalf("join shared = %d, want 2\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 				}
-				joined = out
+				if want := "/huddle:channel create shared"; !strings.Contains(errOut, want) {
+					t.Errorf("join said %q, want a hint naming %q", errOut, want)
+				}
 			})
-			s.Then("the setup names the project's own channel, not an empty one", func(t *testing.T) {
-				if !strings.Contains(joined, "channel second-proj") {
-					t.Errorf("setup said %q, want channel second-proj", joined)
+			s.Then("nothing was created or saved", func(t *testing.T) {
+				if raw := projectFile(p2); raw != "" {
+					t.Errorf("the second project saved %q for a channel that does not exist", raw)
 				}
-				if strings.Contains(joined, "channel ,") {
-					t.Errorf("setup said %q, want no empty channel", joined)
+				if _, err := os.Stat(filepath.Join(root, "huddle-data", "channels", "shared.db")); err == nil {
+					t.Errorf("a join created the channel's file")
+				}
+			})
+
+			s.When("the first project creates the channel", func(t *testing.T) {
+				code, out, errOut := runBin(t, huddleBin, env1, p1, "channel", "create", "shared")
+				if code != 0 {
+					t.Fatalf("channel create shared = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+				}
+			})
+			s.Then("the first project is in it, saved in its huddle.json", func(t *testing.T) {
+				if raw := projectFile(p1); !strings.Contains(raw, `"channel": "shared"`) {
+					t.Errorf("first project's huddle.json = %q, want channel shared", raw)
+				}
+				code, out, errOut := runBin(t, huddleBin, env1, p1, "status")
+				if code != 0 || !strings.Contains(out+errOut, "shared") {
+					t.Errorf("status = %d %q %q, want channel shared", code, out, errOut)
+				}
+			})
+			s.Then("creating it again is refused with a hint to join", func(t *testing.T) {
+				code, _, errOut := runBin(t, huddleBin, env1, p1, "channel", "create", "shared")
+				if code == 0 || !strings.Contains(errOut, "/huddle:join shared") {
+					t.Errorf("second create = %d %q, want a refusal naming /huddle:join shared", code, errOut)
+				}
+			})
+
+			s.When("the second project joins that channel", func(t *testing.T) {
+				code, out, errOut := runBin(t, huddleBin, env2, p2, "join", "shared")
+				if code != 0 {
+					t.Fatalf("join shared = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+				}
+			})
+			s.Then("its huddle.json names the channel and the project's session", func(t *testing.T) {
+				raw := projectFile(p2)
+				for _, want := range []string{`"channel": "shared"`, `"as": "second-proj"`} {
+					if !strings.Contains(raw, want) {
+						t.Errorf("second project's huddle.json = %q, want %s", raw, want)
+					}
 				}
 			})
 			s.Then("status in the second project says it is in", func(t *testing.T) {
@@ -99,26 +141,14 @@ func TestE2ESetupSecondProjectJoinsARunningHub(t *testing.T) {
 				if code != 0 {
 					t.Fatalf("status = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 				}
-				if !strings.Contains(out+errOut, "second-proj") {
-					t.Errorf("status said %q %q, want channel second-proj", out, errOut)
+				if !strings.Contains(out+errOut, "shared") || !strings.Contains(out+errOut, "second-proj") {
+					t.Errorf("status said %q %q, want channel shared and second-proj", out, errOut)
 				}
 			})
-			s.Then("the second project may invite the next session into its channel", func(t *testing.T) {
-				code, out, errOut := runBin(t, huddleBin, env2, p2, "token", "create", "--print-join-command")
+			s.Then("a rerun adds no second member", func(t *testing.T) {
+				code, out, errOut := runBin(t, huddleBin, env2, p2, "join", "shared")
 				if code != 0 {
-					t.Fatalf("token create = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
-				}
-				if !strings.Contains(out, "/huddle:join ") {
-					t.Errorf("token create said %q, want a join line", out)
-				}
-			})
-			s.Then("a rerun says already in and adds no second member", func(t *testing.T) {
-				code, out, errOut := runBin(t, huddleBin, env2, p2, "setup", "--start")
-				if code != 0 {
-					t.Fatalf("setup again = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
-				}
-				if !strings.Contains(out, "already in the Huddle") {
-					t.Errorf("the rerun said %q", out)
+					t.Fatalf("join again = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 				}
 				code, members, errOut := runBin(t, huddleBin, env1, p1, "members")
 				if code != 0 {
@@ -130,8 +160,8 @@ func TestE2ESetupSecondProjectJoinsARunningHub(t *testing.T) {
 						count++
 					}
 				}
-				if count != 1 {
-					t.Errorf("the hub lists %d members for the second project (%q), want one", count, members)
+				if count > 1 {
+					t.Errorf("the hub lists %d members for the second project (%q), want at most one", count, members)
 				}
 			})
 		})

@@ -242,20 +242,20 @@ function LinkCommands({ primary }: { primary: boolean }): JSX.Element {
     <>
       <ol class="m-0 flex list-none flex-col gap-3 p-0">
         <li>
-          <CmdField id="so-c" label="In a Claude session" cmd="/huddle:setup" />
+          <CmdField id="so-c" label="In a Claude session" cmd="/huddle:open" />
         </li>
         <li>
           <CmdField id="so-t" label="Or in a terminal" cmd="huddle open" />
         </li>
       </ol>
       <CopyButton
-        text="/huddle:setup"
+        text="/huddle:open"
         done="Copied: paste it into a Claude session"
         variant={primary ? "primary" : "secondary"}
         class="w-full"
       >
         <Icon name="copy" />
-        Copy /huddle:setup
+        Copy /huddle:open
       </CopyButton>
     </>
   );
@@ -266,7 +266,7 @@ function FirstTimeSteps(): JSX.Element {
   return (
     <div class="flex flex-col gap-3" data-first-time="">
       <p class="m-0 text-sm">
-        First time here? Run <code class="ui-mono">/huddle:setup</code> or{" "}
+        First time here? Run <code class="ui-mono">/huddle:open</code> or{" "}
         <code class="ui-mono">huddle open</code> for your setup link, then open the link it prints.
       </p>
       <LinkCommands primary />
@@ -283,7 +283,7 @@ function OtherWays(): JSX.Element {
       </summary>
       <div class="flex flex-col gap-3 px-3 pb-3">
         <p class={`m-0 ${MUTED}`}>
-          Run <code class="ui-mono">/huddle:setup</code> in any session of this huddle — or{" "}
+          Run <code class="ui-mono">/huddle:open</code> in any session of this huddle — or{" "}
           <code class="ui-mono">huddle open</code> in a terminal — for a new sign-in link, then open it here.
         </p>
         <LinkCommands primary={false} />

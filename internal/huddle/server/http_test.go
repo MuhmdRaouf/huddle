@@ -1081,7 +1081,7 @@ func TestInvites(t *testing.T) {
 		if response.StatusCode != 401 || !strings.Contains(response.Header.Get("Content-Type"), "text/html") {
 			t.Fatalf("the used link = %d %s", response.StatusCode, response.Header.Get("Content-Type"))
 		}
-		for _, want := range []string{"Signed out", "huddle open", "/huddle:setup"} {
+		for _, want := range []string{"Signed out", "huddle open", "/huddle:open"} {
 			if !strings.Contains(string(page), want) {
 				t.Fatalf("the signed-out page misses %q", want)
 			}

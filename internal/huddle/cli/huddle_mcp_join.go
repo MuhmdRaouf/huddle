@@ -274,7 +274,7 @@ func (b *mcpBridge) noteRefusal(err error, connected bool) {
 	channelName := b.channelName
 	b.mu.Unlock()
 	if sayGone {
-		b.logf("the channel %s does not exist on the hub, so this session does not join it; /huddle:setup creates one", channelName)
+		b.logf("the channel %s does not exist on the hub, so this session does not join it; /huddle:channel create <name> creates one", channelName)
 	}
 	if sayLost {
 		b.logf("the hub holds no credential for this session; run /huddle:join with the join line /huddle:invite shows in a session that is in")

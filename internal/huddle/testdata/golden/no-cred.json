@@ -7,5 +7,5 @@
   "auth": "none",
   "status": 401,
   "contentType": "application/json",
-  "body": "{\"error\":\"This browser is not signed in to Huddle (its sign-in ended, or the link expired). Run `huddle open` in a terminal of this project, or /huddle:setup in a Claude session there, and open the new link.\",\"signin\":true}"
+  "body": "{\"error\":\"This browser is not signed in to Huddle (its sign-in ended, or the link expired). Run `huddle open` in a terminal of this project, or /huddle:open in a Claude session there, and open the new link.\",\"signin\":true}"
 }

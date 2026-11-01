@@ -9,7 +9,6 @@ package cli
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -26,7 +25,6 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/adapters/safego"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	channelpkg "github.com/MuhmdRaouf/huddle/internal/huddle/channel"
-	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 )
 
@@ -68,11 +66,14 @@ var helpLines = []string{
 	"                                           blocked, open questions (and the estimated cost when Radar runs)",
 	"  huddle assign <session> --fresh|--sync|--default [--task id]   orchestrator: how it rejoins (+ a task)",
 	"  huddle brief <session> <text…>          orchestrator: what its next fresh join gets",
+	"  huddle join <channel> [--as name]        join a channel that exists on this machine's hub and save it in the",
+	"                                           project's huddle.json (a join never creates a channel)",
 	"  huddle join <host:port> --token <id.secret> [--as name] [--channel c]   join a huddle with an invite: this",
 	"                                           session gets its own credential (kept per session, never the invite)",
 	"  huddle token create [--ttl 24h|0] [--single-use] [--can-invite] [--print-join-command] | token list | token delete <id>",
 	"                                           (--print-join-command prints the join: line to paste into the other session)",
 	"  huddle members | kick <name>            who holds a credential; revoke one (the creator only)",
+	"  huddle channel create <name>            create a channel and join this session to it",
 	"  huddle channel rm <name>                remove a channel (the creator only); a session online refuses",
 	"                                           it, the history stays under channels/.removed/",
 	"  huddle harness list | install <name> | remove <name>   wire huddle's MCP server, and the",
@@ -102,7 +103,7 @@ var helpLines = []string{
 // channel and name to ask as.
 const (
 	noPort       = "Huddle has no port here yet: start it with huddle up (it takes 18860, then 18861 to 18869, and saves the choice)"
-	notInAHuddle = "not in a huddle: in a session that is in one, run /huddle:invite and paste its join line here (/huddle:join …); or run /huddle:setup to start one"
+	notInAHuddle = "not in a huddle: run /huddle:join <channel> to join a channel, or /huddle:channel create <name> to start one; or paste the join line /huddle:invite shows in a session that is in one"
 )
 
 // nullValue builds the JSON null: a field the server expects even when it carries nothing.
@@ -351,9 +352,14 @@ func Huddle(ctx context.Context, w *World, argv []string, stdout, stderr io.Writ
 	if cmd == "totp" {
 		return TOTPCommand(ctx, w, argv, stdout, stderr)
 	}
-	if cmd == "join" && (c.raw.has("token") || (len(c.pos) > 0 && hostPort.MatchString(c.pos[0]))) {
-		if code := c.joinWithInvite(ctx); code != 0 {
-			return code
+	if cmd == "join" {
+		switch c.joinShapeOf() {
+		case joinInvite:
+			if code := c.joinWithInvite(ctx); code != 0 {
+				return code
+			}
+		case joinChannel:
+			return c.joinChannelWord(ctx)
 		}
 	}
 	if cmd == "whoami" {
@@ -1097,47 +1103,6 @@ func (c *cli) kick(ctx context.Context) int {
 	return 0
 }
 
-// channel runs the channel remove branch.
-func (c *cli) channel(ctx context.Context) int {
-	sub, ok := c.shift()
-	if !ok || sub != "rm" {
-		return c.die("channel rm <name>", 2)
-	}
-	return c.channelRemove(ctx)
-}
-
-// channelRemove takes one channel off the hub (the creator only): its history stays on disk.
-// Not found exits 4, any other refusal 1.
-func (c *cli) channelRemove(ctx context.Context) int {
-	name, ok := c.shift()
-	if !ok {
-		return c.die("channel rm <name>", 2)
-	}
-	if c.url == "" {
-		return c.die(noPort, 5)
-	}
-	resp, err := HFetch(ctx, c.w, http.MethodDelete, c.url+"/api/channels/"+queryEscape(name),
-		map[string]string{"content-type": "application/json"}, nil, 0, "")
-	if err != nil {
-		return c.die(fmt.Sprintf("Huddle unreachable at %s (start it: huddle up)", c.url), 5)
-	}
-	raw, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	value, decodeErr := jsfmt.DecodeValue(raw)
-	if decodeErr != nil {
-		value = jsfmt.Object(nil, nil)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		code := 1
-		if resp.StatusCode == 404 {
-			code = 4
-		}
-		return c.die(errorMessage(value, resp.StatusCode), code)
-	}
-	c.say(fmt.Sprintf("%s removed; its history is kept at %s", name, textField(value, "kept")))
-	return 0
-}
-
 // open prints the dashboard link that signs a browser in once.
 func (c *cli) open(ctx context.Context) int {
 	if c.url == "" {
@@ -1149,109 +1114,6 @@ func (c *cli) open(ctx context.Context) int {
 	}
 	c.say(fmt.Sprintf("dashboard: %s   (signs your browser in once, within 5 min)", link))
 	return 0
-}
-
-// joinWithInvite joins a huddle with an invite: this session gets its own credential (never the
-// invite), the invite's channel wins over this project's file, and the session then joins it.
-// The answer is 0 to keep going with the join operation, or the exit code.
-func (c *cli) joinWithInvite(ctx context.Context) int {
-	host, ok := c.shift()
-	if !ok {
-		return c.die("join <host:port> --token <id.secret>", 2)
-	}
-	serverURL := host
-	if !httpPrefix.MatchString(host) {
-		serverURL = "http://" + host
-	}
-	serverURL = strings.TrimSuffix(serverURL, "/")
-	token, isText := c.raw.text("token")
-	if !isText {
-		return c.die("join <host:port> --token <id.secret>", 2)
-	}
-	fallback := Slug(firstNonEmpty(c.w.getenv("CLAUDE_PROJECT_DIR"), c.w.dir()), "session")
-	// a name given (--as) is kept; this session joining again keeps the one it has; else the
-	// project's (or folder's) name is only a wish: the server makes it unique
-	given, givenSet := c.raw.str("as")
-	if !givenSet {
-		if name, has := c.opt.str("name"); has {
-			given, givenSet = name, true
-		}
-	}
-	previousName := ""
-	if prev := LoadCred(ctx, c.w, serverURL, ""); prev != nil && !prev.Root {
-		previousName = prev.As
-	}
-	wish := given
-	if !givenSet {
-		switch {
-		case previousName != "":
-			wish = previousName
-		case c.id.As != "":
-			wish = strings.SplitN(c.id.As, ".", 2)[0]
-		default:
-			wish = fallback
-		}
-	}
-	joinBody := newBody().textAlways("token", token).textAlways("name", wish).bool("unique", !givenSet && previousName == "")
-	if c.id.Channel != "" {
-		joinBody.textAlways("channel", c.id.Channel)
-	}
-	joined, code := c.postJoin(ctx, serverURL, joinBody)
-	if code != 0 {
-		return code
-	}
-	name := textField(joined, "name")
-	if name == "" {
-		name = wish
-	}
-	// the invite's channel wins over this project's file: the owner invited this session into it
-	channel := ""
-	if v, hadChannel := c.raw.str("channel"); hadChannel {
-		channel = v
-	} else {
-		channel = firstNonEmpty(textField(joined, "channel"), c.id.Channel)
-	}
-	if channel == "" {
-		return c.die("joined, but the invite names no channel: run join again with --channel <c>", 2)
-	}
-	if _, hadChannel := c.raw.value("channel"); !hadChannel {
-		if invited := textField(joined, "channel"); invited != "" && c.id.Channel != "" && c.id.Channel != invited {
-			fmt.Fprintf(c.stderr, "huddle: joined channel %s (the invite's); this project's file named %s\n", invited, c.id.Channel)
-		}
-	}
-	_ = SaveCred(ctx, c.w, Cred{URL: serverURL, Channel: channel, As: name, Credential: textField(joined, "credential")}, "")
-	fmt.Fprintf(c.stderr, "huddle: joined %s as %s; this project's next sessions are in it too (the invite is not kept)\n", serverURL, name)
-	c.url, c.ch, c.me = serverURL, channel, name
-	c.opt = c.opt.without("token", "name")
-	if link := Dashboard(ctx, c.w, serverURL, "", 1500); link != "" {
-		fmt.Fprintf(c.stderr, "dashboard: %s   (signs your browser in once, within 5 min)\n", link)
-	}
-	return 0
-}
-
-// postJoin sends the invite join itself: a plain request, no credential of this machine's.
-func (c *cli) postJoin(ctx context.Context, serverURL string, joinBody *body) (*jsfmt.Value, int) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL+"/api/join",
-		bytes.NewReader([]byte(joinBody.build().EncodeJSON())))
-	if err != nil {
-		return nil, c.die(fmt.Sprintf("Huddle unreachable at %s", serverURL), 5)
-	}
-	req.Header.Set("content-type", "application/json")
-	req.Header.Set(server.ActionHeader, "/api/join")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, c.die(fmt.Sprintf("Huddle unreachable at %s", serverURL), 5)
-	}
-	raw, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	value, decodeErr := jsfmt.DecodeValue(raw)
-	if decodeErr != nil {
-		value = jsfmt.Object(nil, nil)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, c.die(errorMessage(value, resp.StatusCode), 2)
-	}
-	return value, 0
 }
 
 // ops lists the server's tools, the name padded.

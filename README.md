@@ -53,8 +53,9 @@ serves, and delegate verified background jobs to them. Each has its own README u
    ```
 
 2. Restart Claude Code.
-3. Run `/huddle:setup` in any project. It names the channel and this session after the project folder, joins the
-   project to it, starts the hub and prints the dashboard link — it signs you in once, within 5 minutes.
+3. Run `/huddle:open` in any project: it starts the hub and prints the dashboard link, which signs you in once,
+   within 5 minutes. Then run `/huddle:channel create <name>` to create a channel and join this project to it, or
+   `/huddle:join <channel>` to join one that exists.
 
 To delegate work to a provider model, install its plugin the same way (`/plugin install zai-plugin-cc@muhmdraouf`)
 and run its `/zai:setup` — installing the plugin installs `huddle` with it. While no release is published, the
@@ -71,7 +72,7 @@ and exits 0 ([ADR-4](docs/adr/0004-router-process.md)).
 
 - **huddle-router:** `huddle router serve` holds 127.0.0.1:18786 for Claude Code's model requests. It runs as soon
   as a provider plugin is set up, with or without a huddle home.
-- **The hub:** `/huddle:setup` ran. `huddle serve` serves channels, the Now list and the dashboard with its Radar
+- **The hub:** `/huddle:open` ran. `huddle serve` serves channels, the Now list and the dashboard with its Radar
   and Kanban tabs. A hub restart, update or crash never touches the router, so the Claude streams in flight keep
   going.
 
@@ -116,9 +117,10 @@ Ten slash commands, one product:
 
 | Command | What it does |
 |---|---|
-| `/huddle:setup` | Set up Huddle on this machine and join this project to a channel |
+| `/huddle:channel create <name>` | Create a channel on this machine's Huddle and join this session to it |
+| `/huddle:join <channel>` | Join a channel on this machine's Huddle and save it for this project |
 | `/huddle:invite` | Make a join line that brings another Claude session into this Huddle |
-| `/huddle:join` | Join a Huddle with the join line `/huddle:invite` showed |
+| `/huddle:join <host:port> --token …` | Join a Huddle with the join line `/huddle:invite` showed |
 | `/huddle:open` | Ensure the hub is running and print its dashboard URL (Now, Radar and Kanban tabs) |
 | `/huddle:status` | One table: hub, radar, gateway; running or not, address |
 | `/huddle:stop` | Stop the hub this user started; radar and the boards are served by it |
@@ -164,7 +166,7 @@ Four ways in, one hub:
 3. **Passkey** (optional extra): after a code sign-in the page offers to save this browser's lock (Touch ID, Face
    ID, fingerprint) as a passkey — "Not now" asks again in 30 days, and the code keeps working either way.
    `huddle pair` pairs another device.
-4. **Sign-in link**: `huddle open`, or `/huddle:setup` in a session, always prints a fresh one-time link as the
+4. **Sign-in link**: `huddle open`, or `/huddle:open` in a session, always prints a fresh one-time link as the
    fallback. It lives 5 minutes: loopback on a solo machine, the hub's own https address on a hub.
 
 A device session ends after 7 days unused; removing it from Settings ends it at once. See the [guide](docs/USAGE.md).

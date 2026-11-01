@@ -70,7 +70,7 @@ func TestE2EStandaloneWordsStartNothing(t *testing.T) {
 		if code != 6 {
 			t.Fatalf("radar start = %d, stdout %q, stderr %q", code, out, errOut)
 		}
-		if want := "radar: the huddle hub is not set up; run /huddle:setup\n"; errOut != want {
+		if want := "radar: the huddle hub is not set up; run /huddle:open\n"; errOut != want {
 			t.Errorf("stderr = %q, want %q", errOut, want)
 		}
 	})

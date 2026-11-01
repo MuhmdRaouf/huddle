@@ -224,11 +224,11 @@ func TestServerCommands(t *testing.T) {
 		{
 			name: "start with no hub to start is exit 6 with the message on stderr",
 			prepare: func(t *testing.T, s *serverFixture) {
-				s.ensureMsg = "the huddle hub is not set up; run /huddle:setup"
+				s.ensureMsg = "the huddle hub is not set up; run /huddle:open"
 			},
 			argv:   []string{"start"},
 			code:   6,
-			errHas: []string{"kanban: the huddle hub is not set up; run /huddle:setup"},
+			errHas: []string{"kanban: the huddle hub is not set up; run /huddle:open"},
 			check: func(t *testing.T, s *serverFixture, _ string) {
 				if len(s.browsers) != 0 {
 					t.Errorf("browsers = %v, want none", s.browsers)
@@ -312,11 +312,11 @@ func TestServerCommands(t *testing.T) {
 		{
 			name: "open with no hub to start is exit 6 with the message on stderr",
 			prepare: func(t *testing.T, s *serverFixture) {
-				s.ensureMsg = "the huddle hub is not set up; run /huddle:setup"
+				s.ensureMsg = "the huddle hub is not set up; run /huddle:open"
 			},
 			argv:   []string{"open"},
 			code:   6,
-			errHas: []string{"kanban: the huddle hub is not set up; run /huddle:setup"},
+			errHas: []string{"kanban: the huddle hub is not set up; run /huddle:open"},
 		},
 		{
 			name: "refresh says the hub watches the board while a hub answers",

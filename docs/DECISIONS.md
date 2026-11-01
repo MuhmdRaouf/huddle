@@ -121,7 +121,7 @@ ready.
 `zai-plugin-cc`, `kimi-plugin-cc`, `deepseek-plugin-cc`, `minimax-plugin-cc` and `qwen-plugin-cc`, so `/zai:setup`
 and its siblings keep their names. huddle's plugin is `plugin/`, the path the git-subdir source of existing installs
 names, and each provider plugin is `plugins/<p>-plugin-cc/`. Installing a provider plugin installs `huddle` as its
-dependency. A machine runs the router alone until `/huddle:setup`, and the hub beside it after.
+dependency. A machine runs the router alone until `/huddle:open`, and the hub beside it after.
 
 ## D20: Tests describe behaviour
 

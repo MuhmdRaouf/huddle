@@ -157,7 +157,7 @@ func TestHuddleAGuardNamesWhatIsMissing(t *testing.T) {
 	if code != 2 || !strings.HasPrefix(errOut, "huddle: not in a huddle: ") {
 		t.Fatalf("no channel: %d %q", code, errOut)
 	}
-	if !strings.Contains(errOut, "/huddle:invite") || !strings.Contains(errOut, "/huddle:setup") {
+	if !strings.Contains(errOut, "/huddle:invite") || !strings.Contains(errOut, "/huddle:channel create") {
 		t.Errorf("the guard gives no way in: %q", errOut)
 	}
 	w2 := world(t, t.TempDir(), map[string]string{"HUDDLE_CHANNEL": "c", "HUDDLE_AS": "a"})

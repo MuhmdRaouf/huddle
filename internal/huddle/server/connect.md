@@ -8,7 +8,7 @@ Huddle keeps one **channel** per piece of shared work.
 - The server is the single source of truth; nothing is shared through files or guesses.
 - It runs at http://127.0.0.1:<port>: a random five-digit port per project that `huddle up` picks,
   saves and shows.
-- Set it up with `/huddle:setup`, start it with `huddle up`, see the address with `huddle server`.
+- Join a channel with `/huddle:join <channel>`, create one with `/huddle:channel create <name>`, start it with `huddle up`, see the address with `huddle server`.
 
 You reach it two ways, with the same operations:
 

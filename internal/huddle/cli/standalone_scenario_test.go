@@ -47,7 +47,7 @@ func newWorld(t *testing.T) *world {
 	}
 }
 
-// setUp creates the home the way /huddle:setup does, so EnsureHub may start
+// setUp creates the home the way huddle up does, so EnsureHub may start
 // its hub.
 func (w *world) setUp(t *testing.T) {
 	t.Helper()
@@ -221,7 +221,7 @@ func TestOneServerTheDaemon(t *testing.T) {
 			})
 		})
 
-		f.Scenario("radar start without a huddle home says to run /huddle:setup", func(s *bdd.S) {
+		f.Scenario("radar start without a huddle home says to run /huddle:open", func(s *bdd.S) {
 			var (
 				w    *world
 				errs []string
@@ -235,11 +235,11 @@ func TestOneServerTheDaemon(t *testing.T) {
 				deps := w.radarDeps(func(line string) { out.WriteString(line + "\n") }, func(line string) { errs = append(errs, line) })
 				code = radarcli.RunCli(context.Background(), []string{"start"}, deps)
 			})
-			s.Then("it exits 6 and tells the user to run /huddle:setup", func(t *testing.T) {
+			s.Then("it exits 6 and tells the user to run /huddle:open", func(t *testing.T) {
 				if code != 6 {
 					t.Fatalf("radar start = %d, want 6", code)
 				}
-				if strings.Join(errs, "\n") != "radar: the huddle hub is not set up; run /huddle:setup" {
+				if strings.Join(errs, "\n") != "radar: the huddle hub is not set up; run /huddle:open" {
 					t.Errorf("stderr = %q, want the setup line", strings.Join(errs, "\n"))
 				}
 				if out.String() != "" {

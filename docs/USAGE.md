@@ -126,7 +126,7 @@ background jobs, delegation to omp, opencode, pi and zcode, and the cost report.
 The ways in and what each is for are in [README · Signing in](../README.md#signing-in). The
 walkthrough for the first one:
 
-1. Open the link `/huddle:open` (or `/huddle:setup`) printed. With no authenticator enrolled yet,
+1. Open the link `/huddle:open` printed. With no authenticator enrolled yet,
    the link lands on the set-up page: scan the QR with your authenticator app (Google
    Authenticator, 1Password, Authy), type the confirming code, and the page shows ten one-time
    recovery codes once — copy or download them. "Later" skips it; Settings → Sign-in offers it
@@ -154,7 +154,7 @@ A channel is one piece of shared work: every session in it sees the same events,
 and knowledge, whatever project each runs in. The hub keeps reported events and channel events for
 90 days; an ask still waiting for its reply stays until the reply comes.
 
-1. In a session that is in a huddle (the one that ran `/huddle:setup`, or any session of that
+1. In a session that is in a huddle (the one that created the channel, or any session of that
    project), make a join line:
 
    ```text

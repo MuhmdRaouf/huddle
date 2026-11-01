@@ -131,7 +131,7 @@ type Options struct {
 // session401 is what a session without a working credential is told; signedOut what a browser is.
 const session401 = "not in this huddle: this session holds no credential for it. In a session that is in it, run /huddle:invite and paste the join line it shows into this session (/huddle:join …)"
 
-const signedOut = "This browser is not signed in to Huddle (its sign-in ended, or the link expired). Run `huddle open` in a terminal of this project, or /huddle:setup in a Claude session there, and open the new link."
+const signedOut = "This browser is not signed in to Huddle (its sign-in ended, or the link expired). Run `huddle open` in a terminal of this project, or /huddle:open in a Claude session there, and open the new link."
 
 const logoSVG = `<svg viewBox="0 0 26 26" width="36" height="36" aria-hidden="true"><path d="M5 17 Q13 2 21 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.2 2.2" opacity=".75"/><circle cx="13" cy="9.6" r="2.4" fill="currentColor"/><rect x="2.5" y="17" width="5" height="6" rx="2.5" fill="currentColor"/><rect x="18.5" y="17" width="5" height="6" rx="2.5" fill="currentColor"/></svg>`
 
@@ -161,7 +161,7 @@ func signedOutPage(version string) string {
 <body><main><div class="head"><span class="logo">` + logoSVG + `</span><h1>Huddle</h1><p class="sub">Sign in to see your channels and sessions</p></div>
 <section class="card"><div class="note" role="status"><i aria-hidden="true">!</i><p><b>Signed out.</b> <span>This sign-in link was used or has expired: each link signs in one browser, once.</span></p></div>
 <p class="muted">Get a new link from any session in this huddle, then open it here.</p>
-<div><div class="lab">In a Claude session</div><div class="field">/huddle:setup</div></div>
+<div><div class="lab">In a Claude session</div><div class="field">/huddle:open</div></div>
 <div><div class="lab">Or in a terminal</div><div class="field">huddle open</div></div></section>
 <footer>Huddle v` + version + `</footer></main></body></html>`
 }
@@ -2242,7 +2242,7 @@ func (s *server) adminRoute(w http.ResponseWriter, r *http.Request, path string,
 	}
 	if path == "/api/login" && r.Method == http.MethodPost {
 		if me.Browser != "" {
-			s.writeJSON(w, 403, errorAnswer{Error: "a browser does not sign in other browsers: run huddle open (or /huddle:setup) in a session"}, nil)
+			s.writeJSON(w, 403, errorAnswer{Error: "a browser does not sign in other browsers: run huddle open (or /huddle:open) in a session"}, nil)
 			return true, nil
 		}
 		var by *string

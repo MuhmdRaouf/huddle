@@ -151,8 +151,8 @@ function ClaudeSteps({ ch, invite }: { ch: string; invite: boolean }): JSX.Eleme
       </CxStep>
       <CxStep n={3} title="Paste it into the other session">
         <p class="mt-1 text-sm text-[var(--ui-muted)]">
-          It joins this channel and shows its own dashboard link. Do not run <code>/huddle:setup</code> there:
-          setup is for the first project.
+          It joins this channel and shows its own dashboard link. Do not run{" "}
+          <code>/huddle:channel create</code> there: the channel exists.
         </p>
       </CxStep>
     </ol>

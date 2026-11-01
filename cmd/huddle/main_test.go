@@ -110,12 +110,12 @@ func TestRun(t *testing.T) {
 	}{
 		{"--version prints the version and exits 0", []string{"--version"}, 0, "huddle dev\n", ""},
 		{"no args runs help, the binary's entries above the CLI's list", nil, 0, "Huddle runs without Claude Code too — the same binary, the same home (~/.config/huddle):\n", ""},
-		{"unknown subcommand is an operation the server refuses", []string{"frobnicate"}, 2, "", "huddle: not in a huddle: in a session that is in one, run /huddle:invite and paste its join line here (/huddle:join …); or run /huddle:setup to start one\n"},
-		{"a flag and its value before the subcommand", []string{"--as", "boss", "map"}, 2, "", "huddle: not in a huddle: in a session that is in one, run /huddle:invite and paste its join line here (/huddle:join …); or run /huddle:setup to start one\n"},
+		{"unknown subcommand is an operation the server refuses", []string{"frobnicate"}, 2, "", "huddle: not in a huddle: run /huddle:join <channel> to join a channel, or /huddle:channel create <name> to start one; or paste the join line /huddle:invite shows in a session that is in one\n"},
+		{"a flag and its value before the subcommand", []string{"--as", "boss", "map"}, 2, "", "huddle: not in a huddle: run /huddle:join <channel> to join a channel, or /huddle:channel create <name> to start one; or paste the join line /huddle:invite shows in a session that is in one\n"},
 		{"a lone flag leaves help as the subcommand", []string{"--pretty"}, 0, "Huddle runs without Claude Code too — the same binary, the same home (~/.config/huddle):\n", ""},
 		{"-h is a subcommand, not a flag", []string{"-h"}, 0, "Huddle runs without Claude Code too — the same binary, the same home (~/.config/huddle):\n", ""},
 		{"hook stop is silent and exits 0", []string{"hook", "stop"}, 0, "", ""},
-		{"unknown hook is an operation too", []string{"hook", "bogus"}, 2, "", "huddle: not in a huddle: in a session that is in one, run /huddle:invite and paste its join line here (/huddle:join …); or run /huddle:setup to start one\n"},
+		{"unknown hook is an operation too", []string{"hook", "bogus"}, 2, "", "huddle: not in a huddle: run /huddle:join <channel> to join a channel, or /huddle:channel create <name> to start one; or paste the join line /huddle:invite shows in a session that is in one\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -249,9 +249,13 @@ else
 	finish
 fi
 
-# ── step 4: session A sets up and prints the join line ───────────────────────
+# ── step 4: session A starts the hub, creates a channel and prints the join line ──
 CC_N=$((CC_N + 1))
-SID_A=$(cc proj-a "/huddle:setup")
+SID_A=$(cc proj-a "/huddle:open")
+CC_N=$((CC_N + 1))
+SID_A=$(cc proj-a "/huddle:channel create live-check" --resume "$SID_A")
+CC_N=$((CC_N + 1))
+SID_A=$(cc proj-a "/huddle:invite" --resume "$SID_A")
 LOG_A="$T/log/$CC_N-proj-a.jsonl"
 JOINLINE=$(grep -o '/huddle:join 127\.0\.0\.1:[0-9]* --token [^ "\\]*' "$LOG_A" 2>/dev/null | tail -1 | sed 's/[^A-Za-z0-9._:/-]*$//') || true
 if [ -n "$JOINLINE" ] && [ -n "$SID_A" ]; then

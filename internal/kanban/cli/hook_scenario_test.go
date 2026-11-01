@@ -136,7 +136,7 @@ func TestASessionStartPointsAtTheHubsBoard(t *testing.T) {
 				if !strings.Contains(line, "(8 open, 1 in progress, 2 in review)") {
 					t.Errorf("the line = %q, want the board's counts", line)
 				}
-				if !strings.Contains(line, "Open it in the huddle hub once it runs (/huddle:setup).") {
+				if !strings.Contains(line, "Open it in the huddle hub once it runs (/huddle:open).") {
 					t.Errorf("the line = %q, want the way to the hub", line)
 				}
 				if strings.Contains(line, "http://") {

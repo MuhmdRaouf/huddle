@@ -199,14 +199,14 @@ func TestCLIEntries(t *testing.T) {
 		}
 	})
 
-	t.Run("start with no set-up home says to run /huddle:setup and exits 6", func(t *testing.T) {
+	t.Run("start with no set-up home says to run /huddle:open and exits 6", func(t *testing.T) {
 		isolateState(t)
 		t.Setenv("HUDDLE_HOME", filepath.Join(t.TempDir(), "huddle")) // never created
 		var stdout, stderr bytes.Buffer
 		if code := Run([]string{"start"}, &stdout, &stderr, testVersion); code != 6 {
 			t.Fatalf("Run(start) = %d, stdout %q, stderr %q, want 6", code, stdout.String(), stderr.String())
 		}
-		if want := "radar: the huddle hub is not set up; run /huddle:setup\n"; stderr.String() != want {
+		if want := "radar: the huddle hub is not set up; run /huddle:open\n"; stderr.String() != want {
 			t.Errorf("stderr = %q, want %q", stderr.String(), want)
 		}
 	})

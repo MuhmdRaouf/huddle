@@ -33,7 +33,7 @@ func fillBoard(s *serverFixture) {
 func hookAnswer(t *testing.T, open, inProgress, inReview int, link string) string {
 	t.Helper()
 	board := fmt.Sprintf(".agents/kanban (%d open, %d in progress, %d in review)", open, inProgress, inReview)
-	line := "Kanban board: " + board + ". Open it in the huddle hub once it runs (/huddle:setup)."
+	line := "Kanban board: " + board + ". Open it in the huddle hub once it runs (/huddle:open)."
 	if link != "" {
 		line = "Kanban board: " + board + " in the huddle hub at " + link + "."
 	}

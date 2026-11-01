@@ -430,7 +430,7 @@ func TestSetupWithoutACredentialThereSaysHowToJoin(t *testing.T) {
 	if code != 0 || errOut != "" {
 		t.Fatalf("web setup: %d %q %q", code, out, errOut)
 	}
-	if !strings.Contains(out, "A Huddle already runs for "+api+" at "+fake.server.URL+" (channel team). To join it, run /huddle:invite in a session there and paste its join line here (/huddle:join …). To start a separate one anyway: /huddle:setup --new") {
+	if !strings.Contains(out, "A Huddle already runs for "+api+" at "+fake.server.URL+" (channel team). To join it, run /huddle:invite in a session there and paste its join line here (/huddle:join …). To start a separate one anyway: huddle setup --new") {
 		t.Errorf("web setup said %q", out)
 	}
 	if _, err := os.Stat(filepath.Join(web, ".agents", "huddle", "huddle.pid")); !os.IsNotExist(err) {
@@ -466,7 +466,7 @@ func TestSetupWithAHeldCredentialSaysAlreadyIn(t *testing.T) {
 	if code != 0 || errOut != "" {
 		t.Fatalf("web setup: %d %q", code, errOut)
 	}
-	if !strings.Contains(out, "This project is already in the Huddle at "+fake.server.URL+" (channel team, as web). To start a separate one: /huddle:setup --new") {
+	if !strings.Contains(out, "This project is already in the Huddle at "+fake.server.URL+" (channel team, as web). To start a separate one: huddle setup --new") {
 		t.Errorf("web setup said %q", out)
 	}
 }
@@ -683,7 +683,7 @@ func TestSetupAJoinWithNoChannelSavesNothingAndSaysSo(t *testing.T) {
 	if code != 5 {
 		t.Fatalf("web setup = %d %q %q, want 5", code, out, errOut)
 	}
-	if !strings.Contains(out, "A Huddle already runs for "+api+" at "+fake.server.URL+", but joining it gave no channel. /huddle:setup --new starts a separate one.") {
+	if !strings.Contains(out, "A Huddle already runs for "+api+" at "+fake.server.URL+", but joining it gave no channel. huddle setup --new starts a separate one.") {
 		t.Errorf("web setup said %q", out)
 	}
 	if strings.Contains(out, "Joined") {

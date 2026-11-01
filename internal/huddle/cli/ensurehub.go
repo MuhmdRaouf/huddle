@@ -1,7 +1,7 @@
 // One way in for the satellite words: radar's and kanban's commands reach the
 // hub through EnsureHub, so no word of theirs starts a server of its own. It
 // answers a hub that already runs, starts the hub when the huddle home is set
-// up, and says to run setup when it never was.
+// up, and says to run /huddle:open when it never was.
 package cli
 
 import (
@@ -24,7 +24,7 @@ func EnsureHub(ctx context.Context, w *World, budgetMS int) (string, bool, strin
 	}
 	hh, ok := TheHome(ctx, w)
 	if !ok || !homeIsSetUp(hh) {
-		return "", false, "the huddle hub is not set up; run /huddle:setup"
+		return "", false, "the huddle hub is not set up; run /huddle:open"
 	}
 	result := UpAlone(ctx, w, base, budgetMS)
 	if !result.OK {
@@ -42,7 +42,7 @@ func envLookupOf(w *World) func(string) (string, bool) {
 	}
 }
 
-// homeIsSetUp says whether the home's files are there: /huddle:setup lays the
+// homeIsSetUp says whether the home's files are there: `huddle up` lays the
 // root out with home.Ensure, so a resolved root that does not exist is a
 // machine that never set huddle up — one whose hub must not be started behind
 // the user's back.

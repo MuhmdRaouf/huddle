@@ -234,12 +234,12 @@ func TestTheThreeCommandsRunTheCLI(t *testing.T) {
 	for _, entry := range entries {
 		names[entry.Name()] = true
 	}
-	for _, name := range []string{"invite.md", "join.md", "setup.md"} {
+	for _, name := range []string{"invite.md", "join.md", "channel.md"} {
 		if !names[name] {
 			t.Errorf("the commands hold no %s (/huddle:%s is gone)", name, strings.TrimSuffix(name, ".md"))
 		}
 	}
-	for _, name := range []string{"setup.md", "invite.md", "join.md"} {
+	for _, name := range []string{"channel.md", "invite.md", "join.md"} {
 		raw, err := os.ReadFile(filepath.Join(commands, name))
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
@@ -650,7 +650,7 @@ func (b *launcherMcp) stop() {
 
 // TestLauncherFreshInstall is the fresh-install leg: the committed launcher on a PATH holding
 // no JavaScript runtime, with the huddle binary preinstalled the way its own download leaves it.
-// Before any setup every hook is silent and the MCP bridge holds two tools; /huddle:setup's one
+// Before any setup every hook is silent and the MCP bridge holds two tools; /huddle:join's one
 // CLI call starts the server and joins the project; the next session start carries the channel
 // and puts the CLI on the session's PATH; the bridge answers one tool call as the joined
 // project; huddle down stops the server and nothing is left behind.
@@ -700,8 +700,8 @@ func TestLauncherFreshInstall(t *testing.T) {
 			t.Errorf("the tools before setup are %v, want status and join", names)
 		}
 		status := bridge.answerOf(t, 3, 30*time.Second)
-		if text := jsonPath(t, status, "result", "content"); !strings.Contains(text, "/huddle:setup") {
-			t.Errorf("status says %q, want it to name /huddle:setup", text)
+		if text := jsonPath(t, status, "result", "content"); !strings.Contains(text, "/huddle:channel create") {
+			t.Errorf("status says %q, want it to name /huddle:channel create", text)
 		}
 	})
 

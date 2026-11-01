@@ -47,7 +47,7 @@ func worldEnv(w *World) domain.EnvLookup {
 }
 
 // notInYet is what a session that is not in a huddle yet is told, with the two ways in.
-const notInYet = "not in a huddle yet: run /huddle:setup in this project (the first session), or paste the /huddle:join line that /huddle:invite shows in a session that is in one"
+const notInYet = "not in a huddle yet: run /huddle:join <channel> to join a channel, or /huddle:channel create <name> to start one; or paste the /huddle:join line that /huddle:invite shows in a session that is in one"
 
 // mcpInsightsURI is the one resource that holds this session's tips.
 const mcpInsightsURI = "huddle://insights"
@@ -680,7 +680,7 @@ func (b *mcpBridge) join(ctx context.Context, msg *jsfmt.Value, args *jsfmt.Valu
 	b.mu.Unlock()
 	b.write(mcpNotification("notifications/tools/list_changed"))
 	link := Dashboard(ctx, b.w, b.state().url, "", 1500)
-	tail := " (huddle open, or /huddle:setup, prints the user a dashboard link that signs their browser in.)"
+	tail := " (huddle open, or /huddle:open, prints the user a dashboard link that signs their browser in.)"
 	if link != "" {
 		tail = "\ndashboard: " + link + "   (signs your browser in once, within 5 min)"
 	}

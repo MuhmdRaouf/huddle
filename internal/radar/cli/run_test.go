@@ -23,7 +23,7 @@ const (
 	notOnHub    = "radar: the huddle hub is not running"
 	hubBase     = "http://127.0.0.1:41860"
 	hubPage     = "radar: in the huddle hub at " + hubBase + "/#/radar"
-	notSetUpMsg = "the huddle hub is not set up; run /huddle:setup"
+	notSetUpMsg = "the huddle hub is not set up; run /huddle:open"
 	testVersion = "test"
 )
 

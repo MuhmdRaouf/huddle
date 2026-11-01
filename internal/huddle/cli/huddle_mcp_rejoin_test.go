@@ -292,8 +292,8 @@ func TestAMissingChannelStopsRejoiningAndSaysHowToCreateIt(t *testing.T) {
 	if n := linesWith(b.errs, "does not exist"); n != 1 {
 		t.Errorf("the bridge said the channel does not exist %d times, want once:\n%s", n, b.errs.text())
 	}
-	if linesWith(b.errs, "/huddle:setup") != 1 {
-		t.Errorf("the bridge never named /huddle:setup:\n%s", b.errs.text())
+	if linesWith(b.errs, "/huddle:channel create") != 1 {
+		t.Errorf("the bridge never named /huddle:channel create:\n%s", b.errs.text())
 	}
 }
 

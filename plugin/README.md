@@ -46,26 +46,27 @@
    release download, when one exists, is checked against the committed manifest. No JS runtime is needed on the
    PATH.
 
-3. **Set it up** from a session in a project that should take part:
+3. **Start the hub and create a channel** from a session in a project that should take part:
 
    ```text
-   /huddle:setup
+   /huddle:open
+   /huddle:channel create shop
    ```
 
-   That is the only step; it asks nothing.
-   - It names the channel and this session after the project folder; `/huddle:setup shop api` names them yourself.
-   - It writes `.agents/huddle/huddle.json` (kept out of git) and turns autostart on: the SessionStart hook brings the
-     hub back whenever it is down, after a reboot too.
+   - `/huddle:open` starts the hub and prints the `dashboard:` link that signs the browser in once, within 5 minutes.
+     The first sign-in offers the authenticator QR; "Later" skips it.
+   - `/huddle:channel create shop` makes the channel, joins this session to it and writes `.agents/huddle/huddle.json`
+     (kept out of git) with the channel, this session's name (the project folder's) and autostart on: the SessionStart
+     hook brings the hub back whenever it is down, after a reboot too.
+   - Channels are never created by a join or a session start; only `/huddle:channel create` makes one.
    - The session start joins the channel inside 3 seconds, trying again when the hub is slow. When no try lands it
      says why in one line, and the session's `huddle mcp` bridge keeps trying for 10 minutes.
    - Every session start also refreshes one model agent file per Claude family in the Claude agents folder, so the
      agent panel names the model each subagent runs on.
-   - It starts the hub, joins and prints two lines: a `join:` line for other sessions, and a `dashboard:` link that
-     signs the browser in once, within 5 minutes. The first sign-in offers the authenticator QR; "Later" skips it.
 
-4. **Bring in each other project.** Paste the join line into a session there (`/huddle:join 127.0.0.1:<port>
-   --token …`), or run `/huddle:invite` for a new one (24 h by default). A project with no settings joins the Huddle
-   that already runs instead of starting a second one; `/huddle:setup --new` starts a separate one on purpose.
+4. **Bring in each other project.** Run `/huddle:join shop` in a session there: it joins the channel and saves it for
+   that project. A session on another machine pastes the join line (`/huddle:join 127.0.0.1:<port> --token …`), or you
+   run `/huddle:invite` for a new one (24 h by default).
 
 ## Requirements
 
@@ -78,8 +79,9 @@
 
 | Command | What it does |
 |---|---|
-| `/huddle:setup [channel] [session]` | Set up Huddle on this machine and join this project to a channel (or to the Huddle you already run) |
+| `/huddle:channel create <name>` | Create a channel on this machine's Huddle and join this session to it |
 | `/huddle:invite` | Make a join line that brings another Claude session into this Huddle |
+| `/huddle:join <channel>` | Join a channel on this machine's Huddle and save it for this project |
 | `/huddle:join <host:port> --token …` | Join a Huddle with the join line `/huddle:invite` showed in a session that is in it |
 | `/huddle:open` | Ensure the hub is running and print its dashboard URL (Now, Radar and Kanban tabs) |
 | `/huddle:status` | One table: hub, radar, board server, gateway; running or not, address |
@@ -89,7 +91,7 @@
 | `/huddle:kanban-refresh` | Rescan the board now and reload every open board page |
 | `/huddle:kanban-export` | Write the board as one self-contained HTML page for sharing |
 
-`/huddle:setup` also takes `--no-autostart`, `--port <n>`, `--new` and `--restart`; `/huddle:invite` takes `--ttl 2h`,
+`/huddle:invite` takes `--ttl 2h`,
 `--single-use` and `--can-invite`; `/huddle:join` takes `--as <name>`.
 
 ## How it works
