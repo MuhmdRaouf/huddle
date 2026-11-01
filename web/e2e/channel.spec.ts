@@ -1390,6 +1390,27 @@ test("the team page keeps its roster, its filters and its drawer inside the view
   expect(log).toBeLessThanOrEqual(cap);
 });
 
+test("the team page keeps its drawer open when the opener is pressed in the task that closes it", async ({
+  page,
+}, info) => {
+  const ch = await freshChannel(info.project.name, ["alpha", "beta"]);
+  await openChannel(page, ch);
+  await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/team`);
+  const roster = page.getByRole("region", { name: "Sessions", exact: true });
+  const alpha = roster.getByRole("button", { name: /^alpha,/ });
+  await alpha.click();
+  const layer = page.locator("dialog[open]");
+  await expect(layer).toHaveCount(1);
+  // Escape cancels the dialog and the opener is pressed before the browser delivers the close
+  // event: the owner has already heard about the close, so the press reopens the drawer
+  await page.evaluate((row) => {
+    document.querySelector("dialog[open]")?.dispatchEvent(new Event("cancel", { cancelable: true }));
+    (row as HTMLElement).click();
+  }, await alpha.elementHandle());
+  await expect(layer).toHaveCount(1);
+  expect(await page.evaluate(() => location.hash)).toContain("s=alpha");
+});
+
 test("the inbox page keeps its cards, its note row and its toast inside the viewport", async ({
   page,
 }, info) => {

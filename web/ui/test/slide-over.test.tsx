@@ -20,6 +20,24 @@ function Harness(): JSX.Element {
   );
 }
 
+/**
+ * Makes `dialog.close()` behave as it does in a browser: the dialog closes at once and its close
+ * event is queued for a later task. Returns the function that delivers the queued events.
+ */
+function queueCloseEvents(dlg: HTMLDialogElement): () => void {
+  let due = 0;
+  dlg.close = () => {
+    if (!dlg.open) return;
+    dlg.removeAttribute("open");
+    due += 1;
+  };
+  return () => {
+    const n = due;
+    due = 0;
+    for (let i = 0; i < n; i += 1) dlg.dispatchEvent(new Event("close"));
+  };
+}
+
 describe("SlideOver", () => {
   it("opens as the kit's own layer dialog, with no daisyUI class anywhere in it", () => {
     const { baseElement } = render(
@@ -127,6 +145,104 @@ describe("SlideOver", () => {
       </SlideOver>,
     );
     expect(dlg.open).toBe(true);
+  });
+
+  it.each([
+    ["Escape", (dlg: HTMLDialogElement) => fireEvent(dlg, new Event("cancel", { cancelable: true }))],
+    ["a backdrop click", (dlg: HTMLDialogElement) => fireEvent.click(dlg)],
+    [
+      "the close button",
+      (dlg: HTMLDialogElement) => fireEvent.click(within(dlg).getByRole("button", { name: "Close" })),
+    ],
+  ])("tells its owner once about %s, in the task that starts the close", (_name, start) => {
+    const onClose = vi.fn();
+    const { baseElement } = render(
+      <SlideOver open onClose={onClose} label="Request" header="h">
+        b
+      </SlideOver>,
+    );
+    const dlg = baseElement.querySelector("dialog") as HTMLDialogElement;
+    const deliver = queueCloseEvents(dlg);
+    start(dlg);
+    expect(dlg.open).toBe(false);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    deliver();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("tells its owner once when the owner closes it, from the close event", () => {
+    const onClose = vi.fn();
+    const { baseElement, rerender } = render(
+      <SlideOver open onClose={onClose} label="Request" header="h">
+        b
+      </SlideOver>,
+    );
+    const dlg = baseElement.querySelector("dialog") as HTMLDialogElement;
+    const deliver = queueCloseEvents(dlg);
+    rerender(
+      <SlideOver open={false} onClose={onClose} label="Request" header="h">
+        b
+      </SlideOver>,
+    );
+    expect(dlg.open).toBe(false);
+    deliver();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a reopened dialog open when the close event of the Escape arrives late", () => {
+    const onClose = vi.fn();
+    const { baseElement, rerender } = render(
+      <SlideOver open onClose={onClose} label="Request" header="h">
+        b
+      </SlideOver>,
+    );
+    const dlg = baseElement.querySelector("dialog") as HTMLDialogElement;
+    const deliver = queueCloseEvents(dlg);
+    fireEvent(dlg, new Event("cancel", { cancelable: true })); // Escape
+    expect(onClose).toHaveBeenCalledTimes(1);
+    rerender(
+      <SlideOver open onClose={onClose} label="Request" header="h">
+        b
+      </SlideOver>,
+    ); // the owner is asked to open it again before the event ran
+    expect(dlg.open).toBe(true);
+    deliver();
+    expect(dlg.open).toBe(true);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts each close it started: two Escapes before either event ran call the owner twice", () => {
+    const onClose = vi.fn();
+    const { baseElement, rerender } = render(
+      <SlideOver open onClose={onClose} label="Request" header="h">
+        b
+      </SlideOver>,
+    );
+    const dlg = baseElement.querySelector("dialog") as HTMLDialogElement;
+    const deliver = queueCloseEvents(dlg);
+    fireEvent(dlg, new Event("cancel", { cancelable: true }));
+    rerender(
+      <SlideOver open onClose={onClose} label="Request" header="h">
+        b
+      </SlideOver>,
+    );
+    fireEvent(dlg, new Event("cancel", { cancelable: true }));
+    expect(onClose).toHaveBeenCalledTimes(2);
+    deliver();
+    expect(onClose).toHaveBeenCalledTimes(2);
+    // both events are spent: a close the owner starts afterwards is heard from its event
+    rerender(
+      <SlideOver open onClose={onClose} label="Request" header="h">
+        b
+      </SlideOver>,
+    );
+    rerender(
+      <SlideOver open={false} onClose={onClose} label="Request" header="h">
+        b
+      </SlideOver>,
+    );
+    deliver();
+    expect(onClose).toHaveBeenCalledTimes(3);
   });
 
   it("keeps a click inside the panel from reading as the backdrop", () => {

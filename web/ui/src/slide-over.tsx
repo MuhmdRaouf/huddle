@@ -42,7 +42,11 @@ const X = (
   </svg>
 );
 
-/** The slide-over. Every close path (Escape, backdrop, button, `open` turning false) ends in one onClose. */
+/**
+ * The slide-over. Every close path (Escape, backdrop, button, `open` turning false) ends in one
+ * onClose. A close the slide-over starts tells the owner in the same task; a close the owner starts
+ * by turning `open` false, or a form method="dialog", tells it from the native close event.
+ */
 export function SlideOver({
   open,
   onClose,
@@ -56,6 +60,10 @@ export function SlideOver({
 }: SlideOverProps): JSX.Element {
   const dlg = useRef<HTMLDialogElement>(null);
   const opener = useRef<Element | null>(null);
+  // The closes the slide-over started whose native close event has not run yet: the browser queues
+  // that event for a later task, after the owner has been told and may have reopened the dialog. Each
+  // such event is spent against this count, so it never reports the same close twice.
+  const startedCloses = useRef(0);
 
   // Open modally as the newest layer and remember what to give focus back to; close when the parent
   // flips `open` off. It runs on every render, not only when `open` changes: a native close the
@@ -72,8 +80,8 @@ export function SlideOver({
     }
   });
 
-  // The native close event is the one path every close ends in: tell the parent, restack, and give
-  // focus back when the opener still lives in an open layer — or nothing is open any more.
+  // Tell the parent, restack, and give focus back when the opener still lives in an open layer —
+  // or nothing is open any more.
   const closed = (): void => {
     onClose();
     restack(document);
@@ -88,8 +96,23 @@ export function SlideOver({
         : null;
     back?.focus({ preventScroll: true });
   };
+  // Escape, the backdrop and the close button close the dialog here and tell the parent now, in
+  // this task, and note that one native close event is still due for it.
   const close = (): void => {
-    if (dlg.current?.open) dlg.current.close();
+    const d = dlg.current;
+    if (!d?.open) return;
+    startedCloses.current += 1;
+    d.close();
+    closed();
+  };
+  // The native close event of a close the slide-over started was told already; any other close
+  // (the parent turning `open` false, a form method="dialog") is told from here.
+  const closeEvent = (): void => {
+    if (startedCloses.current > 0) {
+      startedCloses.current -= 1;
+      return;
+    }
+    closed();
   };
 
   return (
@@ -98,8 +121,8 @@ export function SlideOver({
       id={id}
       class="ui-slide-over"
       aria-label={label}
-      // Preact binds onClose to the native close event, the one path every close ends in
-      onClose={closed}
+      // Preact binds onClose to the native close event
+      onClose={closeEvent}
       onCancel={(e) => {
         e.preventDefault();
         close();
