@@ -43,10 +43,11 @@ const maxBody = 64 * 1024
 // the huddle hub's Radar tab.
 const pagesAnswer = "radar's pages are the huddle hub's Radar tab"
 
-// How long a stream may hold a full-state message back to fold in further changes: the
-// record deltas (a request, a tool call, an event) still go out at once, but the sessions
+// How long the server holds the full-state sessions message back to fold in further changes:
+// the record deltas (a request, a tool call, an event) still go out at once, but the sessions
 // message rebuilds every view, so a catch-up feeding hundreds of single-record changes must
-// cost one rebuild here, not one per line. Short enough that the rail reads as live.
+// cost one rebuild here, not one per line, and one build serves every open stream. Short
+// enough that the rail reads as live.
 const sessionsEveryMs = 500
 
 // How often the ingest backlog word is checked for a flip to tell the open streams about:
@@ -165,10 +166,13 @@ func (f *FlightTracker) WhenIdle(ctx context.Context, timeoutMs int64) {
 	}
 }
 
-// streamConn is one open SSE client: the frames queued for it and how to end it.
+// streamConn is one open SSE client: the frames queued for it and how to end it. live is
+// set once the client's snapshot is built and is guarded by the server's windowMu: a sessions
+// message goes only to live clients, so none is older than the snapshot the client opened with.
 type streamConn struct {
 	frames chan string
 	cancel context.CancelFunc
+	live   bool
 }
 
 // HttpServer is the dashboard's loopback server: unbound until the caller serves a
@@ -182,13 +186,24 @@ type HttpServer struct {
 	originOK func(string) bool
 	flights  *FlightTracker
 
-	streamsMu sync.Mutex
-	streams   map[*streamConn]struct{}
+	// streamsMu guards the open streams, the store subscription held while any is open, and
+	// whether a sessions window is armed.
+	streamsMu   sync.Mutex
+	streams     map[*streamConn]struct{}
+	unsubscribe func()
+	windowArmed bool
+	// windowMu orders a sessions build against a client's snapshot build, so each client sees
+	// the two in the order they were built.
+	windowMu sync.Mutex
 
 	ingestMu   sync.Mutex
 	ingestWord *bool
 	closeOnce  sync.Once
 	closed     chan struct{}
+
+	// sessionsBuilt, when set, runs each time a sessions message is built; tests count the
+	// builds through it.
+	sessionsBuilt func()
 }
 
 // CreateHttpServer builds the server. The port the handler host-checks against is read
@@ -235,13 +250,7 @@ func (h *HttpServer) WhenIdle(ctx context.Context, timeoutMs int64) {
 func (h *HttpServer) CloseStreams() {
 	h.closeOnce.Do(func() {
 		close(h.closed)
-		h.streamsMu.Lock()
-		conns := make([]*streamConn, 0, len(h.streams))
-		for conn := range h.streams {
-			conns = append(conns, conn)
-		}
-		h.streamsMu.Unlock()
-		for _, conn := range conns {
+		for _, conn := range h.openStreams() {
 			conn.cancel()
 		}
 	})
@@ -477,13 +486,14 @@ func (h *HttpServer) streamClient(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(r.Context())
 	conn := &streamConn{frames: make(chan string, 256), cancel: cancel}
-	h.streamsMu.Lock()
-	h.streams[conn] = struct{}{}
-	h.streamsMu.Unlock()
+	// the client is registered, and so subscribed to the store's changes, before its snapshot
+	// is built: a change that lands while the snapshot is being read waits in the
+	// connection's queue and goes out after it, in order, so nothing is lost between the two.
+	// A repeat is harmless: the snapshot carries no records, and the dashboard replaces a
+	// request or tool frame's older copy by id.
+	h.addStream(conn)
 	defer func() {
-		h.streamsMu.Lock()
-		delete(h.streams, conn)
-		h.streamsMu.Unlock()
+		h.removeStream(conn)
 		cancel()
 	}()
 
@@ -504,44 +514,7 @@ func (h *HttpServer) streamClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// the subscription goes in before the snapshot is built: a change that lands while the
-	// snapshot is being read waits in the connection's queue and goes out after it, in
-	// order, so nothing is lost between the two. A repeat is harmless: the snapshot carries
-	// no records, and the dashboard replaces a request or tool frame's older copy by id.
-	// the sessions message rebuilds every view, so a burst of changes costs it one build:
-	// the first change arms a window, changes inside it fold in, the window's end sends one
-	// message
-	sessions := make(chan struct{}, 1)
-	pushSessions := func() {
-		select {
-		case sessions <- struct{}{}:
-		default:
-		}
-	}
-	unsubscribe := h.options.Store.OnUpdate(func(change store.Change) {
-		for _, request := range change.Requests {
-			conn.enqueue(sseFrame(requestMessage{Type: "request", Request: request}))
-		}
-		for _, tool := range change.Tools {
-			conn.enqueue(sseFrame(toolMessage{Type: "tool", Tool: tool}))
-		}
-		for _, event := range change.Events {
-			conn.enqueue(sseFrame(eventMessage{Type: "event", Event: event}))
-		}
-		if change.Sessions {
-			pushSessions()
-		}
-	})
-	defer unsubscribe()
-
-	catchingUp := h.options.Watcher != nil && h.options.Watcher.CatchingUp()
-	if !write(sseFrame(snapshotMessage{
-		Type:       "snapshot",
-		Summary:    h.options.Store.Summary(),
-		Sessions:   h.options.Store.SessionList(),
-		Models:     h.options.Store.Models(nil),
-		CatchingUp: catchingUp,
-	})) {
+	if !write(h.snapshotFrame(conn)) {
 		return
 	}
 	if h.options.SnapshotSent != nil {
@@ -554,43 +527,12 @@ func (h *HttpServer) streamClient(w http.ResponseWriter, r *http.Request) {
 	}
 	beat := time.NewTicker(time.Duration(heartbeat) * time.Millisecond)
 	defer beat.Stop()
-	sessionsWindow := time.NewTimer(sessionsEveryMs * time.Millisecond)
-	defer sessionsWindow.Stop()
-	if !sessionsWindow.Stop() {
-		<-sessionsWindow.C
-	}
-	windowArmed := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case frame := <-conn.frames:
 			if !write(frame) {
-				return
-			}
-		case <-sessions:
-			if !windowArmed {
-				windowArmed = true
-				sessionsWindow.Reset(sessionsEveryMs * time.Millisecond)
-			}
-		case <-sessionsWindow.C:
-			windowArmed = false
-			// the changes that landed inside the window are spent here: their signals are
-			// drained, so only a change after this point opens the next window
-			drainDone := false
-			for !drainDone {
-				select {
-				case <-sessions:
-				default:
-					drainDone = true
-				}
-			}
-			if !write(sseFrame(sessionsMessage{
-				Type:     "sessions",
-				Sessions: h.options.Store.SessionList(),
-				Summary:  h.options.Store.Summary(),
-				Models:   h.options.Store.Models(nil),
-			})) {
 				return
 			}
 		case <-beat.C:
@@ -600,6 +542,129 @@ func (h *HttpServer) streamClient(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	}
+}
+
+// addStream registers one client; the first open stream subscribes the server to the store.
+func (h *HttpServer) addStream(conn *streamConn) {
+	h.streamsMu.Lock()
+	defer h.streamsMu.Unlock()
+	h.streams[conn] = struct{}{}
+	if len(h.streams) == 1 {
+		h.unsubscribe = h.options.Store.OnUpdate(h.fanOut)
+	}
+}
+
+// removeStream drops one client; the last one leaving cuts the store subscription.
+func (h *HttpServer) removeStream(conn *streamConn) {
+	h.streamsMu.Lock()
+	defer h.streamsMu.Unlock()
+	delete(h.streams, conn)
+	if len(h.streams) == 0 && h.unsubscribe != nil {
+		h.unsubscribe()
+		h.unsubscribe = nil
+	}
+}
+
+// openStreams lists the registered clients.
+func (h *HttpServer) openStreams() []*streamConn {
+	h.streamsMu.Lock()
+	defer h.streamsMu.Unlock()
+	conns := make([]*streamConn, 0, len(h.streams))
+	for conn := range h.streams {
+		conns = append(conns, conn)
+	}
+	return conns
+}
+
+// snapshotFrame builds the first full-state frame of one client and marks it live. It runs
+// under windowMu, so a sessions message built before it is skipped for this client and one
+// built after it is newer.
+func (h *HttpServer) snapshotFrame(conn *streamConn) string {
+	catchingUp := h.options.Watcher != nil && h.options.Watcher.CatchingUp()
+	h.windowMu.Lock()
+	snapshot := snapshotMessage{
+		Type:       "snapshot",
+		Summary:    h.options.Store.Summary(),
+		Sessions:   h.options.Store.SessionList(),
+		Models:     h.options.Store.Models(nil),
+		CatchingUp: catchingUp,
+	}
+	conn.live = true
+	h.windowMu.Unlock()
+	return sseFrame(snapshot)
+}
+
+// fanOut delivers one store change to every open stream. Each record frame is encoded once
+// and queued for every client. The sessions message rebuilds every view, so the first
+// change arms a window, changes inside it fold in, and the window's end sends one message.
+func (h *HttpServer) fanOut(change store.Change) {
+	conns := h.openStreams()
+	if len(conns) == 0 {
+		return
+	}
+	var frames []string
+	for _, request := range change.Requests {
+		frames = append(frames, sseFrame(requestMessage{Type: "request", Request: request}))
+	}
+	for _, tool := range change.Tools {
+		frames = append(frames, sseFrame(toolMessage{Type: "tool", Tool: tool}))
+	}
+	for _, event := range change.Events {
+		frames = append(frames, sseFrame(eventMessage{Type: "event", Event: event}))
+	}
+	for _, conn := range conns {
+		for _, frame := range frames {
+			conn.enqueue(frame)
+		}
+	}
+	if change.Sessions {
+		h.armSessionsWindow()
+	}
+}
+
+// armSessionsWindow opens the window the next sessions message waits out, unless one is open.
+func (h *HttpServer) armSessionsWindow() {
+	h.streamsMu.Lock()
+	defer h.streamsMu.Unlock()
+	if h.windowArmed {
+		return
+	}
+	h.windowArmed = true
+	time.AfterFunc(sessionsEveryMs*time.Millisecond, func() {
+		safego.Go(nil, h.sendSessions)
+	})
+}
+
+// sendSessions ends a window: it builds the sessions message once and queues the same frame
+// for every live client. The changes that landed inside the window are spent here, so only a
+// change after this point opens the next window.
+func (h *HttpServer) sendSessions() {
+	h.windowMu.Lock()
+	defer h.windowMu.Unlock()
+	h.streamsMu.Lock()
+	h.windowArmed = false
+	var live []*streamConn
+	for conn := range h.streams {
+		if conn.live {
+			live = append(live, conn)
+		}
+	}
+	h.streamsMu.Unlock()
+	if len(live) == 0 {
+		return
+	}
+	if h.sessionsBuilt != nil {
+		h.sessionsBuilt()
+	}
+	frame := sseFrame(sessionsMessage{
+		Type:     "sessions",
+		Sessions: h.options.Store.SessionList(),
+		Summary:  h.options.Store.Summary(),
+		Models:   h.options.Store.Models(nil),
+	})
+	for _, conn := range live {
+		conn.enqueue(frame)
 	}
 }
 
@@ -637,14 +702,9 @@ func (h *HttpServer) watchIngest() {
 			if !flipped {
 				continue
 			}
-			h.streamsMu.Lock()
-			conns := make([]*streamConn, 0, len(h.streams))
-			for conn := range h.streams {
-				conns = append(conns, conn)
-			}
-			h.streamsMu.Unlock()
-			for _, conn := range conns {
-				conn.enqueue(sseFrame(ingestMessage{Type: "ingest", CatchingUp: catchingUp}))
+			frame := sseFrame(ingestMessage{Type: "ingest", CatchingUp: catchingUp})
+			for _, conn := range h.openStreams() {
+				conn.enqueue(frame)
 			}
 		}
 	}

@@ -5,8 +5,10 @@ package main
 // run's home carries a quarter of the live world's shape — 18,500 requests and the spool of
 // route and hook lines a busy machine writes; the idle runs' home carries a small seed. Run A
 // settles and stops and is the polled phase's baseline; run B adds 20 s of idle, its CPU read
-// live at both ends; run C adds the fixed 30 s polled workload and stops, its CPU read live
-// across the workload. The resident size is sampled through run C's catch-up and its workload.
+// live at both ends; run C adds the fixed 30 s polled workload, its CPU read live across the
+// workload, then two writer windows on the same hub, one with a single stream client and one
+// with three, whose CPU the stream's one-encode fan-out keeps within twice a single client's.
+// The resident size is sampled through run C's catch-up and its workload.
 
 import (
 	"bufio"
@@ -44,6 +46,17 @@ const (
 	// hubSettledRSSCeilingMB is the peak RSS the hub may hold over the 30 s polled workload
 	// once catch-up has drained.
 	hubSettledRSSCeilingMB = 215
+
+	// hubStreamClientsWide is the stream clients of the fan-out window that is held against
+	// the single-client window, and hubStreamFanoutRatio is how many times the single
+	// client's CPU the wide window may spend: the sessions message is built and encoded once
+	// per window however many clients read it.
+	hubStreamClientsWide = 3
+	hubStreamFanoutRatio = 2
+	// hubStreamWindow is how long each fan-out window's CPU is read, after hubStreamSettle
+	// lets the window's clients take their snapshots.
+	hubStreamWindow = 15 * time.Second
+	hubStreamSettle = 3 * time.Second
 
 	hubLightToken = "hub-light-root-token"
 	// hubLightSeedBudget is the most the template's transcripts and spool may take to write.
@@ -133,6 +146,10 @@ func TestE2EHubStaysLight(t *testing.T) {
 	workload.stop()
 	workload.reportErrors(t)
 	polledCPU := processCPU(t, pidC) - workloadStart
+	// the same hub then runs a writer window with one stream client and one with three, the
+	// wide window second so the store's growth works against the ratio, not for it
+	oneClientCPU := hubLightStreamWindowCPU(t, client, hubURL, transcripts, pidC, 1, 1)
+	wideCPU := hubLightStreamWindowCPU(t, client, hubURL, transcripts, pidC, hubStreamClientsWide, 2)
 	cpuC := stopAndMeasure(t, logC)
 
 	catchUpMB := catchUpPeak / (1024 * 1024)
@@ -140,11 +157,17 @@ func TestE2EHubStaysLight(t *testing.T) {
 
 	t.Logf("hub light: baseline %v, idle %v cpu, polled %v cpu, run C whole life %v, catch-up peak rss %d MB, settled peak rss %d MB",
 		cpuA, idleCPU, polledCPU, cpuC-cpuA, catchUpMB, settledMB)
+	t.Logf("hub light: %v of cpu over %v with 1 stream client, %v with %d",
+		oneClientCPU, hubStreamWindow, wideCPU, hubStreamClientsWide)
 	if idleCPU >= hubIdleCPUBudget {
 		t.Errorf("idle CPU %v over 20 s is at or over the %v budget", idleCPU, hubIdleCPUBudget)
 	}
 	if polledCPU >= hubPolledCPUBudget {
 		t.Errorf("polled CPU %v over the 30 s workload is at or over the %v budget", polledCPU, hubPolledCPUBudget)
+	}
+	if wideCPU >= hubStreamFanoutRatio*oneClientCPU {
+		t.Errorf("%d stream clients cost %v over %v, at or over %d times the %v of one client",
+			hubStreamClientsWide, wideCPU, hubStreamWindow, hubStreamFanoutRatio, oneClientCPU)
 	}
 	if catchUpMB >= hubCatchUpRSSCeilingMB {
 		t.Errorf("catch-up peak rss %d MB is at or over the %d MB ceiling", catchUpMB, hubCatchUpRSSCeilingMB)
@@ -718,10 +741,39 @@ func startHubLightWorkload(t *testing.T, client *http.Client, hubURL, transcript
 	w.wg.Add(1)
 	go func() {
 		defer w.wg.Done()
-		w.runWriter(transcripts)
+		w.runWriter(transcripts, 0)
 	}()
 	t.Cleanup(w.stop)
 	return w
+}
+
+// hubLightStreamWindowCPU holds `streams` Radar streams open beside the writer, lets the
+// clients take their snapshots, and reads the hub's CPU over hubStreamWindow. Each round
+// writes lines and sessions no earlier round wrote, so every line is a change.
+func hubLightStreamWindowCPU(t *testing.T, client *http.Client, hubURL, transcripts string, pid, streams, round int) time.Duration {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	w := &hubLightWorkload{client: client, done: make(chan struct{}), ctx: ctx, cancel: cancel, errs: make(chan error, 64)}
+	defer w.stop()
+	for n := 0; n < streams; n++ {
+		w.wg.Add(1)
+		go func() {
+			defer w.wg.Done()
+			w.drainStream(hubURL)
+		}()
+	}
+	w.wg.Add(1)
+	go func() {
+		defer w.wg.Done()
+		w.runWriter(transcripts, round)
+	}()
+	time.Sleep(hubStreamSettle)
+	start := processCPU(t, pid)
+	time.Sleep(hubStreamWindow)
+	cpu := processCPU(t, pid) - start
+	w.stop()
+	w.reportErrors(t)
+	return cpu
 }
 
 // stop ends the workload now and waits for every goroutine in it.
@@ -798,14 +850,16 @@ func (w *hubLightWorkload) drainStream(hubURL string) {
 
 // runWriter adds the polled phase's records for 30 s: one assistant line each second, walking
 // the busy sessions in turn, and a new session's transcript every 3 s — 30 lines, 10 sessions.
-func (w *hubLightWorkload) runWriter(transcripts string) {
+// Round r shifts the line numbers and the new sessions' names by r hundred, so a later round
+// adds records an earlier one did not.
+func (w *hubLightWorkload) runWriter(transcripts string, round int) {
 	start := time.Now()
 	for second := 1; second <= 30; second++ {
 		if !w.sleepUntil(start.Add(time.Duration(second) * time.Second)) {
 			return
 		}
 		session := fmt.Sprintf("light-busy-%02d", (second-1)%polledSeedBusy)
-		line, err := hubLightAssistantLine(session, polledBusyLines+second, time.Now(),
+		line, err := hubLightAssistantLine(session, polledBusyLines+round*100+second, time.Now(),
 			hubLightModels[second%len(hubLightModels)])
 		if err != nil {
 			w.errs <- err
@@ -816,7 +870,7 @@ func (w *hubLightWorkload) runWriter(transcripts string) {
 			return
 		}
 		if second%3 == 0 {
-			if err := w.writeNewSession(transcripts, second/3, time.Now()); err != nil {
+			if err := w.writeNewSession(transcripts, round*100+second/3, time.Now()); err != nil {
 				w.errs <- err
 				return
 			}

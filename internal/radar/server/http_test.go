@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,7 +58,13 @@ func call(t *testing.T, port int, method, path, body string, headers map[string]
 // running app fills the port in after listen.
 func serve(t *testing.T, options HttpOptions) (*HttpServer, int) {
 	t.Helper()
-	created := CreateHttpServer(options)
+	return serveCreated(t, CreateHttpServer(options))
+}
+
+// serveCreated binds an already built server, for a test that sets one of its seams before
+// the first request.
+func serveCreated(t *testing.T, created *HttpServer) (*HttpServer, int) {
+	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("bind the loopback listener: %v", err)
@@ -1383,5 +1390,90 @@ func TestStreamOverflowClosesTheStream(t *testing.T) {
 	conn.enqueue("data: two\n\n")
 	if ctx.Err() == nil {
 		t.Fatal("a stream too slow to take a frame stayed open, missing the frame")
+	}
+}
+
+// sessionsFrameLines lists the raw data lines of the sessions frames on one wire.
+func sessionsFrameLines(wire string) []string {
+	var lines []string
+	for _, line := range strings.Split(wire, "\n") {
+		if strings.HasPrefix(line, `data: {"type":"sessions"`) {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func TestSessionsMessageEncodesOncePerWindow(t *testing.T) {
+	st := store.CreateStore(clock)
+	var builds atomic.Int64
+	created := CreateHttpServer(HttpOptions{Store: st, Version: "test", StartedAt: 1_000})
+	created.sessionsBuilt = func() { builds.Add(1) }
+	_, port := serveCreated(t, created)
+
+	streams := []*streamTap{openStream(t, port), openStream(t, port), openStream(t, port)}
+	for i, stream := range streams {
+		defer stream.close()
+		waitFor(t, fmt.Sprintf("client %d's snapshot", i), 2*time.Second, func() bool {
+			return sseFrames(stream.buffer()).firstOf("snapshot") != nil
+		})
+	}
+
+	cwd := "/w/app"
+	st.AddSpoolLine(shared.SpoolLine{Ts: isoOf(nowAt.UnixMilli()), Event: "SessionStart", SessionID: strPtr("s1"), Cwd: &cwd})
+	for i, stream := range streams {
+		waitFor(t, fmt.Sprintf("client %d's sessions message", i), 2*time.Second, func() bool {
+			return len(sessionsFrameLines(stream.buffer())) == 1
+		})
+	}
+	// a second window would show as a second build or a second frame
+	time.Sleep(2 * sessionsEveryMs * time.Millisecond)
+
+	if got := builds.Load(); got != 1 {
+		t.Errorf("three clients and one change built the sessions message %d times, want 1", got)
+	}
+	first := sessionsFrameLines(streams[0].buffer())
+	for i, stream := range streams {
+		lines := sessionsFrameLines(stream.buffer())
+		if len(lines) != 1 || lines[0] != first[0] {
+			t.Errorf("client %d's sessions frames = %d, want the one frame every client shares", i, len(lines))
+		}
+	}
+}
+
+func TestSlowStreamDoesNotBlockTheOthers(t *testing.T) {
+	st := store.CreateStore(clock)
+	h := CreateHttpServer(HttpOptions{Store: st, Version: "test", StartedAt: 1_000})
+	t.Cleanup(h.CloseStreams)
+	slowCtx, slowCancel := context.WithCancel(t.Context())
+	defer slowCancel()
+	slow := &streamConn{frames: make(chan string, 1), cancel: slowCancel}
+	slow.frames <- "data: queued\n\n"
+	fastCtx, fastCancel := context.WithCancel(t.Context())
+	defer fastCancel()
+	fast := &streamConn{frames: make(chan string, 8), cancel: fastCancel}
+	h.addStream(slow)
+	h.addStream(fast)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.fanOut(store.Change{Requests: []shared.RequestRecord{makeRequest(func(r *shared.RequestRecord) {
+			r.ID, r.Ts = "r-1", nowAt.UnixMilli()
+		})}})
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a stream with a full queue held the fan-out")
+	}
+	if slowCtx.Err() == nil {
+		t.Error("the slow stream stayed open, missing a frame")
+	}
+	if fastCtx.Err() != nil {
+		t.Error("the fast stream was closed")
+	}
+	if len(fast.frames) != 1 || !strings.Contains(<-fast.frames, "r-1") {
+		t.Error("the fast stream did not get the request frame")
 	}
 }
