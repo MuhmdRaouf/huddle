@@ -650,8 +650,8 @@ func startServe(parent, t *testing.T, bin string, cfg serveEnv) *serveLog {
 	return log
 }
 
-// hookCommands reads one event's launcher lines out of the copied plugin's hooks.json, in the
-// order Claude Code runs them.
+// hookCommands reads one event's launcher lines that a session waits on out of the copied
+// plugin's hooks.json, in the order Claude Code runs them.
 func hookCommands(t *testing.T, pluginCopy, event string) []string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(pluginCopy, "hooks", "hooks.json"))
@@ -662,6 +662,7 @@ func hookCommands(t *testing.T, pluginCopy, event string) []string {
 		Hooks map[string][]struct {
 			Hooks []struct {
 				Command string `json:"command"`
+				Async   bool   `json:"async"`
 			} `json:"hooks"`
 		} `json:"hooks"`
 	}
@@ -671,6 +672,11 @@ func hookCommands(t *testing.T, pluginCopy, event string) []string {
 	var out []string
 	for _, group := range file.Hooks[event] {
 		for _, hook := range group.Hooks {
+			// an async hook runs beside the session, which never waits on it, so neither does
+			// a scenario that plays the session
+			if hook.Async {
+				continue
+			}
 			out = append(out, hook.Command)
 		}
 	}

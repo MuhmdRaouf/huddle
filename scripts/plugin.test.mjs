@@ -28,9 +28,18 @@ const hookLine = (name) =>
  *  per event — the launcher's hook word names the event and one process runs every part of it.
  *  PreToolUse keeps `hook approve` for Bash and PermissionRequest keeps `hook permit` as their
  *  own lines: the two hooks that answer Claude Code, not only observe it. Each event line keeps
- *  the largest timeout its parts had, each decision line its own. */
+ *  the largest timeout its parts had, each decision line its own. SessionStart and Stop also run
+ *  `hook idle-wait` as an async rewake line: it runs beside the session, which never waits on it,
+ *  and wakes it when the channel has something for it. */
 const HOOK_LINES = [
   { event: "SessionStart", matcher: "startup|resume|clear|compact", name: "session-start", timeout: 15 },
+  {
+    event: "SessionStart",
+    matcher: "startup|resume|clear|compact",
+    name: "idle-wait",
+    timeout: 2000000,
+    rewake: true,
+  },
   { event: "UserPromptSubmit", name: "user-prompt-submit", timeout: 5 },
   { event: "PreToolUse", matcher: "Bash", name: "approve", timeout: 5 },
   { event: "PreToolUse", name: "pre-tool-use", timeout: 5 },
@@ -39,6 +48,7 @@ const HOOK_LINES = [
   { event: "PermissionRequest", name: "permit", timeout: 600 },
   { event: "PermissionRequest", name: "permission-request", timeout: 5 },
   { event: "Stop", name: "stop", timeout: 15 },
+  { event: "Stop", name: "idle-wait", timeout: 2000000, rewake: true },
   { event: "SubagentStart", name: "subagent-start", timeout: 5 },
   { event: "SubagentStop", name: "subagent-stop", timeout: 7 },
   { event: "SessionEnd", name: "session-end", timeout: 5 },
@@ -110,21 +120,25 @@ describe("plugin/hooks/hooks.json", () => {
       matcher: group.matcher,
       command: entry.command,
       timeout: entry.timeout,
+      rewake: entry.async === true && entry.asyncRewake === true,
     }));
     assert.deepEqual(
       lines,
-      HOOK_LINES.map(({ event, matcher, name, timeout }) => ({
+      HOOK_LINES.map(({ event, matcher, name, timeout, rewake }) => ({
         event,
         matcher,
         command: hookLine(name),
         timeout,
+        rewake: rewake === true,
       })),
     );
   });
 
-  it("keeps every non-decision line inside a 15 s budget", () => {
+  it("keeps every line a session waits on, other than the decisions, inside a 15 s budget", () => {
     for (const { event, entry } of allEntries()) {
       if (["approve", "permit"].some((name) => entry.command.endsWith(`hook ${name}`))) continue;
+      // an async line runs beside the session, which never waits on it
+      if (entry.async === true) continue;
       assert.ok(entry.timeout <= 15, `${event}: timeout ${entry.timeout} exceeds 15 s`);
     }
   });
