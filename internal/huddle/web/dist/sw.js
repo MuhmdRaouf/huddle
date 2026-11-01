@@ -1,17 +1,17 @@
 /* sw.js — the app-shell service worker (SPEC 7.1). Hand-written, no Workbox. It caches the
  * static shell and nothing else: live answers — the API, the MCP bridge, the SSE stream — are
  * always the network's, and so is every path it does not know. The cache name carries the
- * shell's revision (scripts/build.mjs stamps 6bcadcd583ffc1364df5d3329fb974bb05ad74765909b5b4a90832600a90b68f with a hash of the shell's bytes), so a new
+ * shell's revision (scripts/build.mjs stamps 7add404ceeca318239c8abd3011f206dbbe1703905bb4883a868cca30ae58e5e with a hash of the shell's bytes), so a new
  * build installs beside the old cache and activate deletes the old one. The build also swaps the
  * assets placeholder in SHELL for the hashed /static/ names index.html loads, so the precache
  * list is the page's. */
 (function () {
-  var REV = "6bcadcd583ffc1364df5d3329fb974bb05ad74765909b5b4a90832600a90b68f";
+  var REV = "7add404ceeca318239c8abd3011f206dbbe1703905bb4883a868cca30ae58e5e";
   var CACHE = "huddle-shell-" + REV;
   var SHELL = [
     "/",
     "/index.html",
-    "/static/theme-boot.xtVoe825.js", "/static/app.CmjAHF_G.css", "/static/app.CiE2IpCQ.js",
+    "/static/theme-boot.xtVoe825.js", "/static/app.CmjAHF_G.css", "/static/app.Ck4wKGOv.js",
     "/manifest.webmanifest",
     "/icons/icon-192.png",
     "/icons/icon-512.png",

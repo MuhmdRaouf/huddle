@@ -94,15 +94,32 @@ describe("the list's pure reads", () => {
     expect(g.idle.map((s) => s.session_id)).toEqual(["s-idle-1", "s-idle-2"]);
     expect(g.stuck.map((s) => s.session_id)).toEqual(["s-stuck"]);
     expect(g.ended.map((s) => s.session_id)).toEqual(["s-done"]);
-    expect(needsYouCount(fixture())).toBe(2);
-    expect(needsYouCount(null)).toBe(0);
+    expect(needsYouCount(fixture(), null)).toBe(2);
+    expect(needsYouCount(null, null)).toBe(0);
     expect(groupSessions(null)).toEqual({
       needsYou: [],
       working: [],
       idle: [],
+      listening: [],
       stuck: [],
       ended: [],
     });
+  });
+
+  it("the badge count equals the Needs you section count", () => {
+    const sessions = [
+      row({ session_id: "s-n1", state: "needs-you" }),
+      row({ session_id: "s-n2", state: "needs-you" }),
+      row({ session_id: "s-n3", state: "needs-you" }),
+      row({ session_id: "s-n4", state: "needs-you" }),
+      // a live row idle at its prompt: only the needs list knows it waits on you
+      row({ session_id: "s-ask", state: "idle" }),
+    ];
+    const needs = [need({ id: 21, session: "s-ask", kind: "question", summary: "Keep the timeout?" })];
+    const shown = sessions.map((s) => ({ ...s, state: shownState(s, needs) }));
+    expect(groupSessions(shown).needsYou.map((s) => s.session_id)).toContain("s-ask");
+    expect(needsYouCount(sessions, needs)).toBe(groupSessions(shown).needsYou.length);
+    expect(needsYouCount(sessions, needs)).toBe(5);
   });
 
   it("lists the machines once, sorted", () => {
@@ -745,5 +762,27 @@ describe("the state a session shows and the role it paints with", () => {
     expect(shownState(row({ session_id: "s-over", state: "ended" }), needs)).toBe("ended");
     expect(shownState(row({ session_id: "s-none", state: "stuck" }), needs)).toBe("stuck");
     expect(shownState(row({ session_id: "s-ask", state: "idle" }), null)).toBe("idle");
+  });
+
+  it("an ended session's ask is in Ended and out of the badge", () => {
+    const sessions = [
+      row({ session_id: "s-done", state: "ended" }),
+      row({ session_id: "s-live", state: "needs-you" }),
+    ];
+    const needs = [need({ id: 22, session: "s-done", kind: "turn", summary: "Goal: fix the login" })];
+    const shown = sessions.map((s) => ({ ...s, state: shownState(s, needs) }));
+    expect(groupSessions(shown).ended.map((s) => s.session_id)).toEqual(["s-done"]);
+    expect(groupSessions(shown).needsYou.map((s) => s.session_id)).toEqual(["s-live"]);
+    expect(needsYouCount(sessions, needs)).toBe(1);
+  });
+
+  it("a live idle session with a channel and an armed waiter is Listening", () => {
+    const sessions = [
+      row({ session_id: "s-wait", state: "idle", channel: "homelab", listening: true }),
+      row({ session_id: "s-plain", state: "idle" }),
+    ];
+    const shown = sessions.map((s) => ({ ...s, state: shownState(s, null) }));
+    expect(groupSessions(shown).listening.map((s) => s.session_id)).toEqual(["s-wait"]);
+    expect(groupSessions(shown).idle.map((s) => s.session_id)).toEqual(["s-plain"]);
   });
 });

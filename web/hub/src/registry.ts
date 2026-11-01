@@ -6,6 +6,7 @@
 // are injected, so tests drive every branch; the watchdog around the stream reads the browser's
 // timers and visibility, which the tests fake.
 import type { Api } from "./api.ts";
+import { attentionOf } from "./attention.ts";
 import type { EventSourceFactory, EventSourceLike } from "./live.ts";
 import { watchedSource } from "./shared/watchdog.ts";
 import type { LiveStatus } from "./store.ts";
@@ -51,6 +52,10 @@ export type RegistrySession = RegistryReport & {
    *  longer reach the registry. The list and detail reads carry it; a live row comes from a
    *  report, so it reads false. */
   hooks_stale?: boolean;
+  /** The session's idle-wake waiter is armed: a live idle session with a channel, waiting on a
+   *  channel message. The hub probes the waiter's process when it reads the row; a row read
+   *  without that probe leaves it out. */
+  listening?: boolean;
 };
 
 /** One stored event of a session's list: its number and the report as it came. */
@@ -75,11 +80,12 @@ export type NeedItem = {
 /** GET /api/registry/sessions/<id>: the row plus the events that led to it. */
 export type RegistryDetail = RegistrySession & { events: RegistryEvent[] };
 
-/** The list's five groups, in the order the Now list shows them. */
+/** The list's groups, in the order the Now list shows them. */
 export type RegistryGroups = {
   needsYou: RegistrySession[];
   working: RegistrySession[];
   idle: RegistrySession[];
+  listening: RegistrySession[];
   stuck: RegistrySession[];
   ended: RegistrySession[];
 };
@@ -113,29 +119,32 @@ export function stateRole(state: string, item?: NeedItem): StateRole {
   return STATE_ROLES[state] ?? "idle";
 }
 
-/** The state a session shows: an open item holds it in needs-you whatever its last report said,
- *  since a live report row does not know the item; an ended session stays ended. */
+/** The state a session shows: the attention rule's answer, so an open item holds it in
+ *  needs-you whatever its last report said, an ended session stays ended, and an armed waiter
+ *  reads listening. */
 export function shownState(s: RegistrySession, needs: NeedItem[] | null): string {
-  if (s.state === "ended") return s.state;
-  return openItemsOf(needs, s.session_id).length > 0 ? "needs-you" : s.state;
+  return attentionOf(s, needs);
 }
 
-/** Splits the rows into the Now list's groups, keeping the read's newest-activity order. */
+/** Splits the rows into the Now list's groups by the state each row shows, keeping the read's
+ *  newest-activity order. */
 export function groupSessions(sessions: RegistrySession[] | null): RegistryGroups {
-  const g: RegistryGroups = { needsYou: [], working: [], idle: [], stuck: [], ended: [] };
+  const g: RegistryGroups = { needsYou: [], working: [], idle: [], listening: [], stuck: [], ended: [] };
   for (const s of sessions ?? []) {
     if (s.state === "needs-you") g.needsYou.push(s);
     else if (s.state === "working") g.working.push(s);
     else if (s.state === "idle") g.idle.push(s);
+    else if (s.state === "listening") g.listening.push(s);
     else if (s.state === "stuck") g.stuck.push(s);
     else if (s.state === "ended") g.ended.push(s);
   }
   return g;
 }
 
-/** How many sessions need the owner: the count the Now tab's badge carries. */
-export function needsYouCount(sessions: RegistrySession[] | null): number {
-  return (sessions ?? []).filter((s) => s.state === "needs-you").length;
+/** How many sessions need the owner: the count the Now tab's badge carries. The attention rule
+ *  decides, so the badge and the list's Needs you section can never disagree. */
+export function needsYouCount(sessions: RegistrySession[] | null, needs: NeedItem[] | null): number {
+  return (sessions ?? []).filter((s) => attentionOf(s, needs) === "needs-you").length;
 }
 
 /** The machines the reported sessions run on, each once, sorted. */
@@ -533,6 +542,6 @@ export function createRegistry(deps: {
     setNeeds,
     connect,
     disconnect,
-    needs: () => needsYouCount(state.sessions),
+    needs: () => needsYouCount(state.sessions, state.needs),
   };
 }
