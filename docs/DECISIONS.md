@@ -181,3 +181,13 @@ is Radar's own price, `harness_cost_usd` is the cost the harness reported; no co
 `stop_reason` is the model's own stop reason; `status`, `outcome` and `error_code` tell a failing route
 call. A request with no session is stored under `outside-a-session`. Each widening step migrates the rows
 the ledger already holds, in a resumable background batch a hub start never waits on.
+
+## D26: one stream serves the hub's pushes
+
+One endpoint, `/api/stream?topics=…&after=<seq>&snapshot=<topics>`, carries every push to the web
+([ADR-6](adr/0006-one-stream.md)). A message is `{topic, seq, op, id, data}` with the ops `snapshot`,
+`upsert`, `remove` and `touch`, under one global seq that starts at the boot time in microseconds. The ring
+keeps the last 2,048 frames or 4 MiB and replays only inside it; any other resume point, and every topic
+named in `snapshot=`, is answered with a snapshot stamped with the head seq. A frame is encoded once and a
+slow subscriber is closed, not skipped. Producers run only while someone listens, state topics carry rows
+and touch topics only name a view to refetch, and the old routes stay up until their last reader has moved.
