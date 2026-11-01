@@ -205,6 +205,66 @@ describe("Field hint", () => {
   });
 });
 
+describe("Field onKeyDown", () => {
+  it("a multiline field hands each key press to onKeyDown, and onInput still works", () => {
+    const onInput = vi.fn();
+    const onKeyDown = vi.fn();
+    render(<Field label="Reply" value="" onInput={onInput} onKeyDown={onKeyDown} multiline />);
+    const box = screen.getByLabelText("Reply");
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
+    expect(onKeyDown.mock.calls[0]?.[0]).toMatchObject({ key: "Enter" });
+    fireEvent.input(box, { target: { value: "hi" } });
+    expect(onInput).toHaveBeenCalledWith("hi");
+  });
+
+  it("a one-line field hands each key press to onKeyDown", () => {
+    const onKeyDown = vi.fn();
+    render(<Field label="Name" value="" onInput={() => {}} onKeyDown={onKeyDown} />);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), { key: "Enter" });
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
+    expect(onKeyDown.mock.calls[0]?.[0]).toMatchObject({ key: "Enter" });
+  });
+});
+
+describe("Field id", () => {
+  it("a field given an id puts it on its textarea, and the label points at it", () => {
+    render(<Field label="Reply" id="ar-7" value="" onInput={() => {}} multiline hint="Enter sends" />);
+    const box = screen.getByLabelText("Reply");
+    expect(box.id).toBe("ar-7");
+    expect(document.querySelector('label[for="ar-7"]')).not.toBeNull();
+    expect(box.getAttribute("aria-describedby")).toBe("ar-7-note");
+  });
+
+  it("a field given an id puts it on its input, and the label points at it", () => {
+    render(<Field label="Channel" id="ch-2" value="" onInput={() => {}} hint="Lowercase, no spaces" />);
+    const input = screen.getByRole("textbox", { name: "Channel" });
+    expect(input.id).toBe("ch-2");
+    expect(document.querySelector('label[for="ch-2"]')).not.toBeNull();
+    expect(input.getAttribute("aria-describedby")).toBe("ch-2-note");
+  });
+
+  it("a field without an id keeps its generated one", () => {
+    render(<Field label="Notes" value="" onInput={() => {}} multiline />);
+    const box = screen.getByLabelText("Notes");
+    expect(box.id).toMatch(/^ui-field-/);
+    expect(document.querySelector(`label[for="${box.id}"]`)).not.toBeNull();
+  });
+});
+
+describe("Field labelHidden", () => {
+  it("a hidden label stays readable", () => {
+    render(<Field label="Reply" value="" onInput={() => {}} multiline labelHidden />);
+    // happy-dom lays nothing out, so hiding is held structurally: the label stays in the DOM, for
+    // the control and under its accessible name, and carries the shared visually-hidden class
+    const box = screen.getByLabelText("Reply");
+    const label = document.querySelector(`label[for="${box.id}"]`);
+    expect(label).not.toBeNull();
+    expect(label?.textContent).toBe("Reply");
+    expect(label?.className).toContain("sr-only");
+  });
+});
+
 describe("Field minRows", () => {
   it("stands minRows lines open and still grows to maxRows", () => {
     render(<Field label="Notes" value="" onInput={() => {}} multiline minRows={3} maxRows={5} />);

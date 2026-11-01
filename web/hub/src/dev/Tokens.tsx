@@ -200,6 +200,8 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
   const [range, setRange] = useState("day");
   const [name, setName] = useState("huddle");
   const [notes, setNotes] = useState("");
+  const [reply, setReply] = useState("");
+  const [sent, setSent] = useState(false);
   const [picks, setPicks] = useState<readonly string[]>([]);
   const [picked, setPicked] = useState(false);
   const [push, setPush] = useState(true);
@@ -489,6 +491,17 @@ export function Tokens({ store, query, root }: TokensProps): JSX.Element {
           <Field label="Channel name" value={name} onInput={setName} hint="Lowercase, no spaces" mono />
           <Field label="Daily budget" type="number" value="" onInput={() => {}} error="Enter a number" />
           <Field label="Notes" value={notes} onInput={setNotes} multiline hint="Grows as you type" />
+          <Field
+            label="Reply"
+            labelHidden
+            multiline
+            value={reply}
+            onInput={setReply}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") setSent(true);
+            }}
+            hint={sent ? "Sent" : "Enter sends the reply"}
+          />
         </div>
       </Block>
 

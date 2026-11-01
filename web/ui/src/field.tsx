@@ -1,8 +1,9 @@
-// field.tsx — one labelled field: the label above, a hint or an error under it, both read out with
-// the control. The input is a full tap target tall; ids, commands and numbers can ask for the mono
-// face. A multiline field is a textarea that grows with its text up to maxRows lines, then scrolls.
+// field.tsx — one labelled field: the label above (or visually hidden, still read out), a hint or
+// an error under it, both read out with the control. The input is a full tap target tall; ids,
+// commands and numbers can ask for the mono face. A multiline field is a textarea that grows with
+// its text up to maxRows lines, then scrolls.
 
-import type { ComponentChild, CSSProperties, JSX } from "preact";
+import type { ComponentChild, CSSProperties, JSX, TargetedKeyboardEvent } from "preact";
 import { useUiId } from "./id.ts";
 
 /** What a field shows and reports. */
@@ -31,6 +32,12 @@ export type FieldProps = {
   minRows?: number | undefined;
   /** The lines the textarea grows to before it scrolls; multiline only, 6 when left out. */
   maxRows?: number | undefined;
+  /** Each key press on the control, for example Enter to send. */
+  onKeyDown?: ((event: TargetedKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void) | undefined;
+  /** The control's id, for a box a command focuses by name; a generated one when left out. */
+  id?: string | undefined;
+  /** The label is read out but not shown. */
+  labelHidden?: boolean | undefined;
 };
 
 /** The wiring every control carries: the invalid mark and the note it reads out. */
@@ -60,6 +67,7 @@ function Line(props: {
   id: string;
   value: string;
   onInput: (value: string) => void;
+  onKeyDown: FieldProps["onKeyDown"];
   type: "text" | "search" | "number";
   inputMode: FieldProps["inputMode"];
   autoComplete: FieldProps["autoComplete"];
@@ -85,6 +93,7 @@ function Line(props: {
       placeholder={props.placeholder}
       {...described(props.error, props.note, props.id)}
       onInput={(e) => props.onInput(e.currentTarget.value)}
+      onKeyDown={props.onKeyDown}
     />
   );
 }
@@ -95,6 +104,7 @@ function Growing(props: {
   id: string;
   value: string;
   onInput: (value: string) => void;
+  onKeyDown: FieldProps["onKeyDown"];
   inputMode: FieldProps["inputMode"];
   autoComplete: FieldProps["autoComplete"];
   spellCheck: FieldProps["spellCheck"];
@@ -135,6 +145,7 @@ function Growing(props: {
         if (!CSS.supports("field-sizing", "content")) grow(e.currentTarget);
         props.onInput(e.currentTarget.value);
       }}
+      onKeyDown={props.onKeyDown}
     />
   );
 }
@@ -143,6 +154,15 @@ function Growing(props: {
 function grow(box: HTMLTextAreaElement): void {
   box.style.height = "auto";
   box.style.height = `${box.scrollHeight}px`;
+}
+
+/** The field's label, out of sight but still read out when the field is hidden-labelled. */
+function Label(props: { label: string; for: string; hidden: boolean }): JSX.Element {
+  return (
+    <label class={props.hidden ? "ui-field-label sr-only" : "ui-field-label"} for={props.for}>
+      {props.label}
+    </label>
+  );
 }
 
 /** The field. */
@@ -162,19 +182,23 @@ export function Field({
   multiline = false,
   minRows,
   maxRows = 6,
+  onKeyDown,
+  id: asked,
+  labelHidden = false,
 }: FieldProps): JSX.Element {
-  const id = useUiId("ui-field");
+  // the hook runs on every render so the hook order holds; the asked id wins over the generated one
+  const generated = useUiId("ui-field");
+  const id = asked ?? generated;
   const note = error ?? hint;
   return (
     <div class="ui-field">
-      <label class="ui-field-label" for={id}>
-        {label}
-      </label>
+      <Label label={label} for={id} hidden={labelHidden} />
       {multiline ? (
         <Growing
           id={id}
           value={value}
           onInput={onInput}
+          onKeyDown={onKeyDown}
           inputMode={inputMode}
           autoComplete={autoComplete}
           spellCheck={spellCheck}
@@ -190,6 +214,7 @@ export function Field({
           id={id}
           value={value}
           onInput={onInput}
+          onKeyDown={onKeyDown}
           type={type}
           inputMode={inputMode}
           autoComplete={autoComplete}
