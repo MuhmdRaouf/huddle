@@ -188,13 +188,14 @@ function ViewTab({
   );
 }
 
-/** The tab groups over a channel's pages: three ui-tabs strips with a gap. Under 640 px they sit
- *  in one row that scrolls sideways with no scrollbar; wider, they wrap into rows. The ids are the
- *  pages, the address moves by hash. */
+/** The tab groups over a channel's pages: three ui-tabs strips with a gap, on an opaque band that
+ *  stays above the page's scroll pane, so no content shows behind or between the groups. Under
+ *  640 px they sit in one row that scrolls sideways with no scrollbar; wider, they wrap into
+ *  rows. The ids are the pages, the address moves by hash. */
 function ViewTabs({ dest, counts }: { dest: Dest; counts: NavCounts }): JSX.Element {
   return (
     <div
-      class="flex w-full flex-wrap gap-3 px-4 pt-4 max-sm:flex-nowrap max-sm:pt-2 max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden sm:px-6"
+      class="sticky top-0 z-[var(--ui-layer-sticky)] flex w-full shrink-0 flex-wrap gap-3 border-b border-[var(--ui-line)] bg-[var(--ui-bg)] px-4 pt-4 pb-3 max-sm:flex-nowrap max-sm:pt-1.5 max-sm:pb-0.5 max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden sm:px-6"
       data-view-tabs=""
     >
       {NAV_GROUPS.map((group) => (
@@ -773,7 +774,9 @@ export function App({
         {ch ? <ViewTabs dest={route.dest as Dest} counts={counts} /> : null}
         <div class="min-h-0 flex-1 overflow-y-auto">
           {body !== null || route.dest !== "home" ? (
-            <div class="mx-auto flex w-full max-w-[1600px] min-w-0 flex-col px-4 py-6 sm:px-6 lg:px-8">
+            <div
+              class={`mx-auto flex w-full max-w-[1600px] min-w-0 flex-col px-4 pb-6 sm:px-6 lg:px-8 ${ch ? "pt-4" : "pt-6"}`}
+            >
               <PageIntro
                 icon={<Icon name={meta.icon} />}
                 title={meta.label}

@@ -1461,3 +1461,111 @@ test("the inbox page keeps its cards, its note row and its toast inside the view
   await expectNoSideScroll(page);
   await expectAccessible(page, SHELL);
 });
+
+/** What a header's check finds after the page's scrollers move 400 px: the header's own
+ *  background alpha, the text that shows inside its box, the points inside it that a scrolling
+ *  pane answers, and the scrollers whose top edge lies above its bottom edge. */
+type BleedReport = { alpha: number; texts: string[]; covered: number; overlapping: string[] };
+
+/** Scrolls every scrolling pane that does not hold `header` by 400 px, then reads what shows
+ *  through and behind the header. A text node bleeds when its box meets the header's and the
+ *  point at its centre inside the header answers with the text's own element. */
+async function bleedAfterScroll(page: Page, header: Locator): Promise<BleedReport> {
+  return header.evaluate((head): BleedReport => {
+    const scrollers = [...document.querySelectorAll<HTMLElement>("*")].filter(
+      (el) =>
+        el.scrollHeight > el.clientHeight + 4 &&
+        ["auto", "scroll"].includes(getComputedStyle(el).overflowY) &&
+        !el.contains(head),
+    );
+    for (const el of scrollers) el.scrollTop = 400;
+    const box = head.getBoundingClientRect();
+    const color = getComputedStyle(head).backgroundColor;
+    const alpha = color.startsWith("rgba")
+      ? Number.parseFloat(color.slice(color.lastIndexOf(",") + 1))
+      : color === "transparent"
+        ? 0
+        : 1;
+
+    const texts: string[] = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const owner = node.parentElement;
+      if (!owner || head.contains(owner) || !(node.textContent ?? "").trim()) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      for (const r of range.getClientRects()) {
+        const left = Math.max(r.left, box.left);
+        const right = Math.min(r.right, box.right);
+        const top = Math.max(r.top, box.top);
+        const bottom = Math.min(r.bottom, box.bottom);
+        if (right - left < 1 || bottom - top < 1) continue;
+        const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+        if (hit && (hit === owner || owner.contains(hit))) texts.push((node.textContent ?? "").trim());
+      }
+    }
+
+    let covered = 0;
+    for (let x = box.left + 2; x < box.right; x += 40) {
+      for (let y = box.top + 2; y < box.bottom; y += 8) {
+        const hit = document.elementFromPoint(x, y);
+        if (hit && scrollers.some((el) => el.contains(hit))) covered += 1;
+      }
+    }
+
+    const overlapping = scrollers
+      .filter((el) => el.getBoundingClientRect().top < box.bottom - 0.5)
+      .map((el) => el.className.toString());
+    return { alpha, texts, covered, overlapping };
+  });
+}
+
+test("the channel tab strip stays opaque above scrolled content on every channel page", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "the 2000 px desk is the desktop project's");
+  const ch = await freshChannel(info.project.name, ["gamma", "delta"]);
+  for (let i = 0; i < 40; i += 1)
+    await api(`/api/c/${ch}/op/send?as=gamma`, { to: "delta", msg: `scrolled message ${i}` });
+  for (let i = 0; i < 30; i += 1)
+    await api(`/api/c/${ch}/op/task_create?as=gamma`, { id: `bleed-${i}`, title: `Bleed task ${i}`, phase: 1 });
+  await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
+  await page.setViewportSize({ width: 2000, height: 1200 });
+  await signIn(page);
+
+  for (const dest of ["overview", "today", "inbox", "team", "work", "knowledge", "settings"]) {
+    await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/${dest}`);
+    const strip = page.locator("[data-view-tabs]");
+    await expect(strip).toBeVisible();
+    await expect(strip.locator(`[data-dest="${dest}"][aria-selected="true"]`)).toBeVisible();
+    const report = await bleedAfterScroll(page, strip);
+    expect(report.alpha, `${dest}: the strip's background alpha`).toBe(1);
+    expect(report.texts, `${dest}: text showing inside the strip`).toEqual([]);
+    expect(report.covered, `${dest}: strip points a scrolling pane answers`).toBe(0);
+    expect(report.overlapping, `${dest}: panes reaching up under the strip`).toEqual([]);
+  }
+});
+
+test("the Sessions and Kanban headers keep scrolled content out of their boxes at the desk", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "the 2000 px desk is the desktop project's");
+  await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
+  await page.setViewportSize({ width: 2000, height: 1200 });
+  await signIn(page);
+
+  await page.goto(`${theSetup().rootUrl}/#/sessions`);
+  const sessionsHead = page.locator("[data-sessions-pane] > header");
+  await expect(sessionsHead).toBeVisible();
+  const sessions = await bleedAfterScroll(page, sessionsHead);
+  expect(sessions.texts, "Sessions: text showing inside the header").toEqual([]);
+  expect(sessions.covered, "Sessions: header points a scrolling pane answers").toBe(0);
+  expect(sessions.overlapping, "Sessions: panes reaching up under the header").toEqual([]);
+
+  await page.goto(`${theSetup().rootUrl}/#/kanban`);
+  const boardHead = page.locator(".kanban-head");
+  await expect(boardHead).toBeVisible();
+  const board = await bleedAfterScroll(page, boardHead);
+  expect(board.texts, "Kanban: text showing inside the header").toEqual([]);
+  expect(board.covered, "Kanban: header points a scrolling pane answers").toBe(0);
+});
