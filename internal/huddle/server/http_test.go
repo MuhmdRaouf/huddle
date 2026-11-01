@@ -104,10 +104,10 @@ func tempDir(prefix string) string {
 	return dir
 }
 
-// spawnServer starts one child server with env over the defaults. A value of "" removes the
-// variable (PORT: "" leaves the port unset, so the server draws one).
-func spawnServer(t testing.TB, env map[string]string) (*childServer, error) {
-	full := map[string]string{
+// childDefaults is the environment every child server starts with: a port of its own, throwaway
+// directories for everything it writes, and a version.
+func childDefaults() map[string]string {
+	return map[string]string{
 		"PORT":                "0",
 		"HUDDLE_TEST_VERSION": "9.8.7",
 		"HUDDLE_DATA":         tempDir("huddle-data-"),
@@ -122,7 +122,17 @@ func spawnServer(t testing.TB, env map[string]string) (*childServer, error) {
 		"XDG_CONFIG_HOME":   tempDir("huddle-xdg-config-"),
 		"XDG_STATE_HOME":    tempDir("huddle-xdg-state-"),
 		"XDG_DATA_HOME":     tempDir("huddle-xdg-data-"),
+		// a race-built child sleeps one second at exit by default, to catch races after main
+		// returns; the suite discards the child's stderr, where it would report them, so the
+		// second only lengthens every test that starts a server
+		"GORACE": "atexit_sleep_ms=0",
 	}
+}
+
+// spawnServer starts one child server with env over the defaults. A value of "" removes the
+// variable (PORT: "" leaves the port unset, so the server draws one).
+func spawnServer(t testing.TB, env map[string]string) (*childServer, error) {
+	full := childDefaults()
 	token := make([]byte, 16)
 	if _, err := rand.Read(token); err != nil {
 		return nil, err
