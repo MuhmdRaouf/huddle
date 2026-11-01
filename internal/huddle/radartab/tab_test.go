@@ -462,6 +462,26 @@ func TestAnOwningTabRecordsHooksAndAnswersFacts(t *testing.T) {
 	}
 }
 
+// TestFactsOfCarriesTheSessionsCustomTitleOverItsAiTitle: the name the facts answer is radar's
+// view name — the session's custom title when it has one, over its AI title; a session radar
+// never saw answers no name.
+func TestFactsOfCarriesTheSessionsCustomTitleOverItsAiTitle(t *testing.T) {
+	env := tempEnv(t)
+	tab, _, _ := mountMux(t, env, MountOptions{IntervalMs: quietMs, InsightsTickMs: quietMs})
+	if !tab.Owns {
+		t.Fatal("the mount did not take the lock")
+	}
+	custom, ai := "Set up Matt Pocock skills", "Working through the transcript titles"
+	tab.Store.UpsertSession(store.SessionUpsert{ID: "s-named", CustomTitle: &custom, AiTitle: &ai})
+	facts := tab.FactsOf(context.Background(), "s-named")
+	if facts.Name == nil || *facts.Name != custom {
+		t.Fatalf("the session's name = %+v, want the custom title %q over the AI title", facts.Name, custom)
+	}
+	if facts := tab.FactsOf(context.Background(), "sess-nobody"); facts.Name != nil {
+		t.Fatalf("an unknown session's name = %+v, want nil", facts.Name)
+	}
+}
+
 // TestAProxyingTabRecordsNothing: while a standalone radar owns the lock, the mount records no
 // hook line of its own (the owner's hook does) and answers the facts through the owner.
 func TestAProxyingTabRecordsNothing(t *testing.T) {

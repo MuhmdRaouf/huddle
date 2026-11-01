@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
+	radarstore "github.com/MuhmdRaouf/huddle/internal/radar/store"
 )
 
 // isoAgo answers one registry timestamp age before now, so a fixture's state against the wall
@@ -540,5 +542,45 @@ func TestTheRegistryRowsCarryTheCostAndProviderRadarKnows(t *testing.T) {
 	}
 	if listed := byID["s-cost"]; listed == nil || listed["cost_usd"] == nil || listed["provider"] != "Z.ai" {
 		t.Errorf("the listed row = %v, want the cost and provider carried", listed)
+	}
+}
+
+// TestTheRegistryRowCarriesTheNameRadarKnows: the served row's name is radar's own name for
+// the session — its custom title over its AI title — and a session radar never saw carries
+// none.
+func TestTheRegistryRowCarriesTheNameRadarKnows(t *testing.T) {
+	fix := newCostFixture(t)
+	custom, ai := "Set up Matt Pocock skills", "Working through the transcript titles"
+	fix.tab.Store.UpsertSession(radarstore.SessionUpsert{ID: "s-named", CustomTitle: &custom, AiTitle: &ai})
+	report := func(id string) {
+		t.Helper()
+		body := `{"session_id":"` + id + `","last_event":"UserPromptSubmit","last_event_at":"` +
+			jsscalar.ISOTime(fix.clock.Add(-time.Second)) + `"}`
+		rec := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/registry/report", strings.NewReader(body))
+		if err := fix.srv.reportRoute(rec, request); err != nil {
+			t.Fatalf("the report of %s: %v", id, err)
+		}
+		if rec.Code != 200 {
+			t.Fatalf("the report of %s = %d %s, want 200", id, rec.Code, rec.Body.String())
+		}
+	}
+	row := func(id string) map[string]any {
+		t.Helper()
+		path := "/api/registry/sessions/" + id
+		rec := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		if err := fix.srv.registrySessionRoute(rec, request, path); err != nil {
+			t.Fatalf("the session %s: %v", id, err)
+		}
+		return bodyMap(t, rec.Body.String())
+	}
+	report("s-named")
+	if got, _ := row("s-named")["name"].(string); got != custom {
+		t.Errorf("name = %v, want radar's custom title %q over the AI title", got, custom)
+	}
+	report("s-plain")
+	if name := row("s-plain")["name"]; name != nil {
+		t.Errorf("a session radar never saw carries name %v, want null", name)
 	}
 }

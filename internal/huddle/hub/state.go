@@ -105,9 +105,9 @@ type SessionsFilter struct {
 }
 
 // SessionRow is one registry read: the stored session with its state computed at read time.
-// The optional fields keep the report's own omitempty shape; cost_usd and provider are read
-// from the radar tab when the row is served, and stay null when radar knows nothing of the
-// session.
+// The optional fields keep the report's own omitempty shape; cost_usd, provider and name are
+// read from the radar tab when the row is served, and stay null when radar knows nothing of
+// the session.
 type SessionRow struct {
 	SessionID string `json:"session_id"`
 	Machine   string `json:"machine,omitempty"`
@@ -131,7 +131,10 @@ type SessionRow struct {
 	LastEventAt string   `json:"last_event_at"`
 	CostUSD     *float64 `json:"cost_usd"`
 	Provider    *string  `json:"provider"`
-	State       string   `json:"state"`
+	// Name is the session's name as radar's view carries it: the session's custom title,
+	// agent name or AI title.
+	Name  *string `json:"name"`
+	State string  `json:"state"`
 	// DeliveryRoute says how a message to this session arrives: pushed now while its
 	// bridge proves its channel pushes flow and its claude runs with the channels flag, else on
 	// its next prompt.

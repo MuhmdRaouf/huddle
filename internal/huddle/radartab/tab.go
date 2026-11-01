@@ -563,17 +563,19 @@ func (t *Tab) AnswersToken(given string) bool {
 	return subtle.ConstantTimeCompare([]byte(given), []byte(t.token)) == 1
 }
 
-// SessionFacts is one session's cost and provider as the mounted tab knows them: the two
+// SessionFacts is one session's cost, provider and name as the mounted tab knows them: the
 // fields the registry's rows carry, nil when radar has no answer for them.
 type SessionFacts struct {
 	CostUSD  *float64
 	Provider *string
+	Name     *string
 }
 
-// FactsOf reads one session's cost and provider through the tab's own API, in-process — the
-// same answer the dashboard reads. The cost is the sum over the session's agents, so a session
-// whose requests are all unpriced answers nil; the provider comes from the session's model, so
-// a session with no model answers nil.
+// FactsOf reads one session's cost, provider and name through the tab's own API, in-process —
+// the same answer the dashboard reads. The cost is the sum over the session's agents, so a
+// session whose requests are all unpriced answers nil; the provider comes from the session's
+// model, so a session with no model answers nil; the name is radar's view name, the custom
+// title, agent name or AI title the session carries.
 func (t *Tab) FactsOf(ctx context.Context, id string) SessionFacts {
 	body, ok := t.RadarAnswer(ctx, "/api/sessions/"+url.PathEscape(id))
 	if !ok {
@@ -582,6 +584,7 @@ func (t *Tab) FactsOf(ctx context.Context, id string) SessionFacts {
 	var answer struct {
 		Session *struct {
 			Model  *string `json:"model"`
+			Name   *string `json:"name"`
 			Agents []struct {
 				CostUsd *float64 `json:"costUsd"`
 			} `json:"agents"`
@@ -605,6 +608,9 @@ func (t *Tab) FactsOf(ctx context.Context, id string) SessionFacts {
 	if model := answer.Session.Model; model != nil && *model != "" {
 		provider := shared.ProviderOf(*model)
 		facts.Provider = &provider
+	}
+	if name := answer.Session.Name; name != nil && *name != "" {
+		facts.Name = name
 	}
 	return facts
 }

@@ -1816,8 +1816,8 @@ func (s *server) recordRadarHook(ctx context.Context, rep hub.Report) {
 	}
 }
 
-// fillRadarFacts reads each row's cost and provider from the radar tab in-process and writes
-// them onto the row; no tab mounted or no answer for a session leaves both null.
+// fillRadarFacts reads each row's cost, provider and name from the radar tab in-process and
+// writes them onto the row; no tab mounted or no answer for a session leaves all three null.
 func (s *server) fillRadarFacts(ctx context.Context, rows ...*hub.SessionRow) {
 	if s.radar == nil {
 		return
@@ -1829,6 +1829,7 @@ func (s *server) fillRadarFacts(ctx context.Context, rows ...*hub.SessionRow) {
 		facts := s.radar.FactsOf(ctx, row.SessionID)
 		row.CostUSD = facts.CostUSD
 		row.Provider = facts.Provider
+		row.Name = facts.Name
 	}
 }
 
