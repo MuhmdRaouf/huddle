@@ -408,6 +408,37 @@ func TestAggregateByHarness(t *testing.T) {
 	})
 }
 
+func TestAggregateByProvider(t *testing.T) {
+	prices := priceTable{
+		"glm-5.3":           {in: 1, out: 2, cacheRead: 0.1},
+		"claude-sonnet-5-5": {in: 3, out: 15, cacheRead: 0.3},
+	}
+	zai := func(r *Row) { r.Upstream = "https://api.z.ai" }
+	anthropic := func(r *Row) { r.Model, r.Upstream = "claude-sonnet-5-5", "https://api.anthropic.com" }
+	rows := []Row{
+		row(zai),
+		row(func(r *Row) { zai(r); r.TS = dayMoment(1, 9, 0) }),
+		row(func(r *Row) { anthropic(r); r.Input, r.Output = 1_000_000, 100_000 }),
+		row(func(r *Row) { anthropic(r); r.Upstream = ""; r.Input, r.Output = 1_000_000, 100_000 }),
+	}
+	report := Aggregate(rows, weekWindow(), prices)
+	if len(report.ByProvider) != 2 {
+		t.Fatalf("byProvider rows = %d, want 2: %+v", len(report.ByProvider), report.ByProvider)
+	}
+	// anthropic: 2 x (1M*3 + 0.1M*15) = 9.0; zai: 2 x (1000*1 + 100*2) / 1e6 = 0.0024
+	if first, second := report.ByProvider[0].Key, report.ByProvider[1].Key; first != "api.anthropic.com" || second != "api.z.ai" {
+		t.Errorf("byProvider order = %q, %q; want api.anthropic.com then api.z.ai by cost", first, second)
+	}
+	wantTotals(t, "anthropic", report.ByProvider[0].Totals, 2, 2_000_000, 200_000, 0, 0, 9.0, 0)
+	wantTotals(t, "zai", report.ByProvider[1].Totals, 2, 2_000, 200, 0, 0, 0.0024, 0)
+	if days := report.ByProvider[1].Days; len(days) != 7 || days[0].Requests != 1 || days[1].Requests != 1 {
+		t.Errorf("zai days = %+v, want 7 zero-filled days with a request on each of the first two", days)
+	}
+	if got := sumsOf(report.ByProvider); got.Requests != report.Totals.Requests || !close(got.CostUSD, report.Totals.CostUSD) {
+		t.Errorf("byProvider sums to %+v, want the grand %+v", got, report.Totals)
+	}
+}
+
 // athens loads Europe/Athens, the zone the zone tests name the owner's day in.
 func athens(t *testing.T) *time.Location {
 	t.Helper()

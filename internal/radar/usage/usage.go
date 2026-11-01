@@ -1,5 +1,5 @@
 // Package usage builds the long-range usage report: zero-filled daily series of requests,
-// tokens and estimated cost by model, project, agent kind and harness, the saving cached
+// tokens and estimated cost by model, provider, project, agent kind and harness, the saving cached
 // input made against the input rate, and each project's costliest sessions. Pure core: it
 // reads the rows its caller hands it and prices them through the Pricer given — it imports
 // neither the history nor the server.
@@ -96,7 +96,7 @@ type Day struct {
 }
 
 // Slice is one key's totals and its zero-filled daily series; the rows of ByModel,
-// ByProject and ByKind.
+// ByProvider, ByProject, ByKind and ByHarness.
 type Slice struct {
 	Key string `json:"key"`
 	Totals
@@ -116,14 +116,15 @@ type Session struct {
 }
 
 // Report is one window's usage: the daily series, the totals, the breakdowns by model,
-// project, kind and harness, each project's top sessions, and the honest flags about
-// prices.
+// provider, project, kind and harness, each project's top sessions, and the honest flags
+// about prices. A provider is the host a request's upstream names.
 type Report struct {
 	From            string               `json:"from"`
 	To              string               `json:"to"`
 	Days            []Day                `json:"days"`
 	Totals          Totals               `json:"totals"`
 	ByModel         []Slice              `json:"byModel"`
+	ByProvider      []Slice              `json:"byProvider"`
 	ByProject       []Slice              `json:"byProject"`
 	ByKind          []Slice              `json:"byKind"`
 	ByHarness       []Slice              `json:"byHarness"`
@@ -134,7 +135,7 @@ type Report struct {
 }
 
 // Aggregate sums the window's rows into one report: a zero-filled day per date the window
-// spans in its zone, the grand totals, the breakdowns by model, project, kind and
+// spans in its zone, the grand totals, the breakdowns by model, provider, project, kind and
 // harness, each project's top sessions, and the price honesty flags. Slices order by cost,
 // ties by key; sessions by cost, then last activity, then id. A row no price covers still
 // counts its requests and tokens at no cost, sits in Unpriced, and turns Approximate on;
@@ -145,6 +146,7 @@ func Aggregate(rows []Row, window Window, prices Pricer) Report {
 		To:              clock.DayKeyIn(time.UnixMilli(window.To), window.Zone),
 		Days:            daysOf(window),
 		ByModel:         []Slice{},
+		ByProvider:      []Slice{},
 		ByProject:       []Slice{},
 		ByKind:          []Slice{},
 		ByHarness:       []Slice{},
@@ -156,6 +158,8 @@ func Aggregate(rows []Row, window Window, prices Pricer) Report {
 		dayTotals[report.Days[i].Date] = &report.Days[i].Totals
 	}
 	models := map[string]*group{}
+	upstreams := map[string]*group{}
+	hostOf := map[string]string{} // each distinct upstream is parsed once, not once per row
 	projects := map[string]*group{}
 	kinds := map[string]*group{}
 	harnesses := map[string]*group{}
@@ -173,6 +177,12 @@ func Aggregate(rows []Row, window Window, prices Pricer) Report {
 			addRow(day, row, price)
 		}
 		groupAt(models, row.Model).add(row, price, date)
+		host, seen := hostOf[row.Upstream]
+		if !seen {
+			host = providerOf(row.Upstream)
+			hostOf[row.Upstream] = host
+		}
+		groupAt(upstreams, host).add(row, price, date)
 		groupAt(projects, row.Project).add(row, price, date)
 		groupAt(kinds, row.Kind).add(row, price, date)
 		groupAt(harnesses, harnessOf(row.Harness)).add(row, price, date)
@@ -183,6 +193,7 @@ func Aggregate(rows []Row, window Window, prices Pricer) Report {
 		dates[i] = day.Date
 	}
 	report.ByModel = slicesOf(models, dates)
+	report.ByProvider = slicesOf(upstreams, dates)
 	report.ByProject = slicesOf(projects, dates)
 	report.ByKind = slicesOf(kinds, dates)
 	report.ByHarness = slicesOf(harnesses, dates)
@@ -196,6 +207,16 @@ func harnessOf(harness string) string {
 		return shared.HarnessClaude
 	}
 	return harness
+}
+
+// providerOf is the provider a row groups under: the host its upstream names, and for a
+// row with no recorded upstream (Claude Code calling its API without a router) the host
+// Anthropic's API lives on.
+func providerOf(upstream string) string {
+	if upstream == "" {
+		upstream = shared.DefaultUpstream
+	}
+	return shared.UpstreamHost(upstream)
 }
 
 // priceRow prices one row: a harness-reported cost wins over the list prices, and nothing is
