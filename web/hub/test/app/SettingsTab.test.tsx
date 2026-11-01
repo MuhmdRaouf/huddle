@@ -389,6 +389,25 @@ describe("the phone's grouped list", () => {
     renderHuddle(<SettingsHead section="security" />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Security");
   });
+
+  it("TestTheHeaderIsOneRowWithTheChevronAloneInTheBackLink", () => {
+    renderHuddle(<SettingsHead section="hub" />);
+    const back = screen.getByRole("link", { name: "Back to Settings" });
+    expect(back.getAttribute("href")).toBe("#/settings");
+    expect(back.className).toContain("min-h-[var(--ui-tap)]");
+    // the tap target holds the chevron alone; the group's name stands beside it
+    expect(back.querySelector("svg")).not.toBeNull();
+    expect(back.textContent?.trim()).toBe("");
+    const title = screen.getByRole("heading", { level: 1 });
+    expect(title.textContent).toBe("Hub");
+    // one row: the link and the title share it, centred
+    expect(title.parentElement).toBe(back.parentElement);
+    const row = back.parentElement as HTMLElement;
+    expect(row.className).toContain("flex");
+    expect(row.className).toContain("items-center");
+    expect(row.className).not.toContain("flex-col");
+    expect(legacyClasses()).toEqual([]);
+  });
 });
 
 describe("the wide layouts' sidebar", () => {

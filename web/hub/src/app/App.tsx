@@ -815,7 +815,11 @@ export function App({
             ) : (
               <h1 class="text-[28px] font-semibold tracking-tight">{tabLabel(route.tab)}</h1>
             )}
-            {route.tab === "radar" ? <RadarRange /> : <MachinesLine live={liveOf} text={mline} />}
+            {route.tab === "settings" && route.sub[0] ? null : route.tab === "radar" ? (
+              <RadarRange />
+            ) : (
+              <MachinesLine live={liveOf} text={mline} />
+            )}
           </header>
         )}
         {main}

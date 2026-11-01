@@ -474,6 +474,13 @@ describe("routes and panes", () => {
     ]);
   });
 
+  it("leaves the machines line out of the header over a settings group page", () => {
+    nav("#/settings/appearance");
+    mountApp();
+    expect(screen.getAllByRole("link", { name: "Back to Settings" }).length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText("Machines")).toBeNull();
+  });
+
   it("renders Settings' sidebar with Appearance current when the address names no group", () => {
     stubMedia(DESKTOP);
     nav("#/settings");

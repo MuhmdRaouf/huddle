@@ -137,6 +137,26 @@ test.describe("at 390 px", () => {
     await expectGroupOpen(page, "Notifications");
     await expect(page.locator('[data-setting="notifications"]')).toBeVisible();
   });
+
+  test("a group page header is one row: chevron and title together, no machines line", async ({ page }) => {
+    await openSettings(page, "#/settings/appearance");
+    const header = page.locator(".ui-shell-phone > header");
+    const back = header.getByRole("link", { name: "Back to Settings" });
+    const title = header.getByRole("heading", { level: 1, name: "Appearance", exact: true });
+    await expect(back).toBeVisible();
+    await expect(title).toBeVisible();
+    const [b, t] = await Promise.all([back.boundingBox(), title.boundingBox()]);
+    expect(b).not.toBeNull();
+    expect(t).not.toBeNull();
+    // one row: the link's and the title's vertical centres meet
+    const centre = (r: { y: number; height: number }) => r.y + r.height / 2;
+    expect(Math.abs(centre(b!) - centre(t!))).toBeLessThanOrEqual(4);
+    // the chevron alone is a 44 px tap target
+    expect(b!.width).toBeGreaterThanOrEqual(44);
+    expect(b!.height).toBeGreaterThanOrEqual(44);
+    // the group page header carries no machines line
+    await expect(header.locator("[data-machines]")).toHaveCount(0);
+  });
 });
 
 test.describe("at 1024 px", () => {

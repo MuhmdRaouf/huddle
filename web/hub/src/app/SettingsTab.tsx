@@ -696,19 +696,19 @@ export function settingsSectionOf(named: string | undefined): SettingsSection {
   return group?.id ?? "appearance";
 }
 
-/** The phone's header over a group page: the back link to the list above the group's name. */
+/** The phone's header over a group page: the back link to the list and the group's name, one
+ *  row. */
 export function SettingsHead({ section }: { section: SettingsSection }): JSX.Element {
   return (
-    <div class="flex min-w-0 flex-col">
+    <div class="flex min-w-0 items-center gap-1">
       <a
         href="#/settings"
         aria-label="Back to Settings"
-        class="-ml-2 flex min-h-[var(--ui-tap)] min-w-[var(--ui-tap)] items-center gap-1 self-start rounded-[var(--ui-radius)] pr-2 text-sm font-semibold text-[var(--ui-accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+        class="flex min-h-[var(--ui-tap)] min-w-[var(--ui-tap)] items-center justify-center rounded-[var(--ui-radius)] text-[var(--ui-accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
       >
         <Icon name="left" class="size-5" />
-        Settings
       </a>
-      <h1 class="truncate text-[length:var(--ui-text-xl)] font-semibold tracking-tight">
+      <h1 class="min-w-0 truncate text-[length:var(--ui-text-lg)] font-semibold tracking-tight">
         {SETTINGS_GROUPS.find((g) => g.id === section)?.label}
       </h1>
     </div>
