@@ -96,7 +96,7 @@ func wantFixtureAgents() []Agent {
 	return []Agent{
 		{ID: MainAgent, Type: "main", Running: true, StartedAt: "2026-01-01T09:00:00.000Z"},
 		{ID: "a1", Type: "general-purpose", Description: "Fixture worker", Depth: 1, Model: "fixture-model",
-			StartedAt: "2026-01-01T09:00:20.000Z"},
+			StartedAt: "2026-01-01T09:00:20.000Z", ToolUseID: "toolu_fx1", Parent: MainAgent},
 	}
 }
 

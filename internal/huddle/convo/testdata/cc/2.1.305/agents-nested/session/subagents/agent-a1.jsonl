@@ -1,0 +1,2 @@
+{"type":"user","uuid":"au1","parentUuid":null,"timestamp":"2026-10-26T10:00:05.000Z","sessionId":"s-nested","version":"2.1.305","isSidechain":true,"isMeta":false,"message":{"role":"user","content":"scan the files"}}
+{"type":"assistant","uuid":"aa1","parentUuid":"au1","timestamp":"2026-10-26T10:00:06.000Z","sessionId":"s-nested","version":"2.1.305","isSidechain":true,"isMeta":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_9","name":"Agent","input":{"description":"tab work","subagent_type":"general-purpose"}}]}}

@@ -1,0 +1,1 @@
+{"agentType":"general-purpose","description":"Nested worker","toolUseId":"toolu_9","parentAgentId":"a1","spawnDepth":2,"requestShape":"background","requestNonInteractive":true,"model":"haiku","effort":"medium","finished":false}

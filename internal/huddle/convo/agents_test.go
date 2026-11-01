@@ -68,10 +68,10 @@ func TestAgentsListTheMainThenItsSubagentsThenItsForks(t *testing.T) {
 	}
 	want := []Agent{
 		{ID: MainAgent, Type: "main", Running: true, StartedAt: "2026-10-26T10:00:01.000Z"},
-		{ID: "a1", Type: "general-purpose", Description: "Worker A", Depth: 1, Running: false, Model: "opus", StartedAt: "2026-10-26T10:00:05.000Z"},
-		{ID: "c3", Type: "subagent", Depth: 1, Running: false, StartedAt: "2026-10-26T10:00:08.000Z"},
-		{ID: "b2", Type: "general-purpose", Description: "Worker B", Depth: 2, Running: true, Model: "haiku", StartedAt: "2026-10-26T10:00:07.000Z"},
-		{ID: "f4", Type: "fork", Depth: 1, Running: true, SideChat: true, StartedAt: "2026-10-26T10:00:09.000Z"},
+		{ID: "a1", Type: "general-purpose", Description: "Worker A", Depth: 1, Running: false, Model: "opus", StartedAt: "2026-10-26T10:00:05.000Z", ToolUseID: "toolu_1", Parent: MainAgent},
+		{ID: "c3", Type: "subagent", Depth: 1, Running: false, StartedAt: "2026-10-26T10:00:08.000Z", Parent: MainAgent},
+		{ID: "b2", Type: "general-purpose", Description: "Worker B", Depth: 2, Running: true, Model: "haiku", StartedAt: "2026-10-26T10:00:07.000Z", ToolUseID: "toolu_2", Parent: MainAgent},
+		{ID: "f4", Type: "fork", Depth: 1, Running: true, SideChat: true, StartedAt: "2026-10-26T10:00:09.000Z", Parent: MainAgent},
 	}
 	if len(agents) != len(want) {
 		t.Fatalf("got %d agents, want %d:\n%+v", len(agents), len(want), agents)
@@ -168,5 +168,123 @@ func TestAgentPathRefusesAnAgentOfNoTranscript(t *testing.T) {
 	t.Chdir(dir)
 	if got, ok := AgentPath("", "a1"); ok {
 		t.Fatalf("AgentPath(\"\", a1) answered %q, want false", got)
+	}
+}
+
+// writeMetaFixture writes one session with one subagent whose meta file holds body, and answers
+// the main transcript's path.
+func writeMetaFixture(t *testing.T, meta string) string {
+	t.Helper()
+	dir := t.TempDir()
+	main := filepath.Join(dir, "s.jsonl")
+	writeLines(t, main, []string{
+		`{"type":"user","uuid":"u1","timestamp":"2026-10-26T10:00:01.000Z","message":{"role":"user","content":"one helper"}}`,
+	})
+	sub := filepath.Join(dir, "s", "subagents")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeLines(t, filepath.Join(sub, "agent-a1.jsonl"), []string{
+		`{"type":"user","uuid":"au1","timestamp":"2026-10-26T10:00:02.000Z","isSidechain":true,"message":{"role":"user","content":"one subagent"}}`,
+	})
+	if err := os.WriteFile(filepath.Join(sub, "agent-a1.meta.json"), []byte(meta), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return main
+}
+
+// agentRowOf answers the one Agent tool call a page carries.
+func agentRowOf(t *testing.T, page Page, where string) Item {
+	t.Helper()
+	for _, item := range page.Items {
+		if item.Kind == KindToolUse && item.Tool == "Agent" {
+			return item
+		}
+	}
+	t.Fatalf("%s holds no Agent tool call", where)
+	return Item{}
+}
+
+// TestAgentsLinkToTheAgentRowThatStartedThem reads the version fixtures: a1 names the Agent call
+// the main's transcript holds, and the nested b2 names the Agent call inside a1's own transcript
+// and carries a1 as its parent.
+func TestAgentsLinkToTheAgentRowThatStartedThem(t *testing.T) {
+	for _, version := range []string{"2.1.303", "2.1.304", "2.1.305", "2.1.306", "2.1.307", "2.1.308", "2.1.309"} {
+		t.Run(version, func(t *testing.T) {
+			main := filepath.Join("testdata", "cc", version, "agents-nested", "session.jsonl")
+			agents, err := Agents(context.Background(), main)
+			if err != nil {
+				t.Fatalf("agents: %v", err)
+			}
+			var a1, b2 Agent
+			for _, agent := range agents {
+				switch agent.ID {
+				case "a1":
+					a1 = agent
+				case "b2":
+					b2 = agent
+				}
+			}
+			if a1.ID == "" || b2.ID == "" {
+				t.Fatalf("agents = %+v, want a1 and b2", agents)
+			}
+			mainPage, err := Read(context.Background(), main, 0)
+			if err != nil {
+				t.Fatalf("read the main transcript: %v", err)
+			}
+			row := agentRowOf(t, mainPage, "the main transcript")
+			if a1.ToolUseID != row.ToolUseID {
+				t.Errorf("a1's tool_use_id = %q, want the Agent call's %q", a1.ToolUseID, row.ToolUseID)
+			}
+			if b2.Parent != "a1" {
+				t.Errorf("b2's parent = %q, want a1", b2.Parent)
+			}
+			a1Path, ok := AgentPath(main, "a1")
+			if !ok {
+				t.Fatalf("AgentPath answered no transcript for a1")
+			}
+			a1Page, err := ReadAgent(context.Background(), a1Path, 0)
+			if err != nil {
+				t.Fatalf("read a1's transcript: %v", err)
+			}
+			nested := agentRowOf(t, a1Page, "a1's transcript")
+			if b2.ToolUseID != nested.ToolUseID {
+				t.Errorf("b2's tool_use_id = %q, want a1's Agent call's %q", b2.ToolUseID, nested.ToolUseID)
+			}
+		})
+	}
+}
+
+// A subagent the owner stopped lists as stopped and not running, even though its meta file names
+// no finished.
+func TestAStoppedSubagentIsNotRunning(t *testing.T) {
+	main := writeMetaFixture(t, `{"agentType":"general-purpose","description":"Stopped worker","toolUseId":"toolu_5","spawnDepth":1,"stoppedByUser":true}`)
+	agents, err := Agents(context.Background(), main)
+	if err != nil {
+		t.Fatalf("agents: %v", err)
+	}
+	if len(agents) != 2 {
+		t.Fatalf("got %d agents, want the main and one subagent:\n%+v", len(agents), agents)
+	}
+	sub := agents[1]
+	if !sub.StoppedByUser || sub.Running {
+		t.Errorf("the stopped subagent = %+v, want stopped_by_user and not running", sub)
+	}
+}
+
+// A meta file that names no Agent call still lists its subagent: an empty tool_use_id and the
+// main conversation as its parent, so the view groups it under main.
+func TestAMetaWithoutALinkStillLists(t *testing.T) {
+	main := writeMetaFixture(t, `{"agentType":"general-purpose","description":"A helper","spawnDepth":1,"finished":true}`)
+	agents, err := Agents(context.Background(), main)
+	if err != nil {
+		t.Fatalf("agents: %v", err)
+	}
+	if len(agents) != 2 {
+		t.Fatalf("got %d agents, want the main and one subagent:\n%+v", len(agents), agents)
+	}
+	sub := agents[1]
+	if sub.ToolUseID != "" || sub.Parent != MainAgent {
+		t.Errorf("the unlinked subagent = %+v, want an empty tool_use_id and the main as parent", sub)
 	}
 }

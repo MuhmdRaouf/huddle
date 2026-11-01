@@ -1,1 +1,1 @@
-{"agentType":"general-purpose","description":"Fixture worker","spawnDepth":1,"model":"fixture-model","finished":true,"isFork":false}
+{"agentType":"general-purpose","description":"Fixture worker","spawnDepth":1,"model":"fixture-model","finished":true,"isFork":false,"toolUseId":"toolu_fx1","parentAgentId":"","stoppedByUser":false}

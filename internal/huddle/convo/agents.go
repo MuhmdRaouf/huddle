@@ -27,24 +27,30 @@ var agentIDPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
 
 // Agent is one of a session's agents as its transcripts and meta files describe it.
 type Agent struct {
-	ID          string `json:"id"`   // "main", or the subagent's id
-	Type        string `json:"type"` // "main", or the meta file's agentType
-	Description string `json:"description,omitempty"`
-	Depth       int    `json:"depth"`   // 0 for the main, else spawnDepth
-	Running     bool   `json:"running"` // the main: true; a subagent: !finished
-	Model       string `json:"model,omitempty"`
-	SideChat    bool   `json:"side_chat,omitempty"`  // a /btw fork: meta agentType "fork" or isFork
-	StartedAt   string `json:"started_at,omitempty"` // the transcript's first line's timestamp
+	ID            string `json:"id"`   // "main", or the subagent's id
+	Type          string `json:"type"` // "main", or the meta file's agentType
+	Description   string `json:"description,omitempty"`
+	Depth         int    `json:"depth"`   // 0 for the main, else spawnDepth
+	Running       bool   `json:"running"` // the main: true; a subagent: !finished && !stoppedByUser
+	Model         string `json:"model,omitempty"`
+	SideChat      bool   `json:"side_chat,omitempty"`       // a /btw fork: meta agentType "fork" or isFork
+	StartedAt     string `json:"started_at,omitempty"`      // the transcript's first line's timestamp
+	ToolUseID     string `json:"tool_use_id,omitempty"`     // the Agent tool call that started the subagent
+	Parent        string `json:"parent,omitempty"`          // the meta's parentAgentId, else the main conversation
+	StoppedByUser bool   `json:"stopped_by_user,omitempty"` // the owner stopped it
 }
 
 // agentMeta is one meta file's shape.
 type agentMeta struct {
-	AgentType   string `json:"agentType"`
-	Description string `json:"description"`
-	SpawnDepth  int    `json:"spawnDepth"`
-	Model       string `json:"model"`
-	Finished    bool   `json:"finished"`
-	IsFork      bool   `json:"isFork"`
+	AgentType     string `json:"agentType"`
+	Description   string `json:"description"`
+	SpawnDepth    int    `json:"spawnDepth"`
+	Model         string `json:"model"`
+	Finished      bool   `json:"finished"`
+	IsFork        bool   `json:"isFork"`
+	ToolUseID     string `json:"toolUseId"`
+	ParentAgentID string `json:"parentAgentId"`
+	StoppedByUser bool   `json:"stoppedByUser"`
 }
 
 // Agents answers the session whose main transcript is at path: the main first, then every
@@ -81,14 +87,19 @@ func Agents(ctx context.Context, path string) ([]Agent, error) {
 		if !ok {
 			continue
 		}
-		agent := Agent{ID: id, Type: "subagent", Depth: 1}
+		agent := Agent{ID: id, Type: "subagent", Depth: 1, Parent: MainAgent}
 		if meta, err := readMeta(filepath.Join(SubagentsDir(path), "agent-"+id+".meta.json")); err == nil {
 			agent.Type = meta.AgentType
 			agent.Description = meta.Description
 			agent.Depth = meta.SpawnDepth
 			agent.Model = meta.Model
-			agent.Running = !meta.Finished
+			agent.Running = !meta.Finished && !meta.StoppedByUser
 			agent.SideChat = meta.AgentType == "fork" || meta.IsFork
+			agent.ToolUseID = meta.ToolUseID
+			if meta.ParentAgentID != "" {
+				agent.Parent = meta.ParentAgentID
+			}
+			agent.StoppedByUser = meta.StoppedByUser
 		}
 		agent.StartedAt = firstTimestamp(filepath.Join(SubagentsDir(path), entry.Name()))
 		subs = append(subs, agent)
