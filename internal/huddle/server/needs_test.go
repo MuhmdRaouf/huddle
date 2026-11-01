@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
@@ -590,6 +591,35 @@ func TestAMessageIsPushedToTheBridgeThatAcked(t *testing.T) {
 	rows := messageRows(t, srv)
 	if len(rows) != 1 || rows[0]["state"] != "delivered" || rows[0]["route"] != "now" {
 		t.Errorf("the pushed row = %v", rows)
+	}
+}
+
+// The hooks report the machine name the home's config holds, so the hub tells its own sessions
+// from another machine's by that same name, not by the raw hostname: a hostname with a dot
+// ("Mac-1.local") is cut to "Mac-1" in the config, and a hub that compared the raw one would
+// treat every session on its own machine as a stranger.
+func TestTheHubKnowsItsOwnSessionsByTheMachineNameTheHooksReport(t *testing.T) {
+	homeDir := tempDir("huddle-home-")
+	if err := home.SaveConfig(home.Home{Root: homeDir}, home.Config{Machine: "studio-one"}); err != nil {
+		t.Fatalf("write the home's config: %v", err)
+	}
+	srv := startServer(t, map[string]string{"HUDDLE_HOME": homeDir})
+	if code, out := srv.post(t, "/api/channels", `{"name":"reg"}`, nil); code != 200 {
+		t.Fatalf("create the channel: %d %s", code, out)
+	}
+	if code, out := srv.op(t, "reg", "join", "api", "{}"); code != 200 {
+		t.Fatalf("join: %d %v", code, out)
+	}
+	body := fmt.Sprintf(
+		`{"session_id":"s-live","machine":"studio-one","channel":"reg","member":"api","pid":%d,"last_event":"UserPromptSubmit","last_event_at":%q}`,
+		startClaudeLike(t, listeningArgs...), isoAgo(2*time.Second))
+	if code, out := srv.post(t, "/api/registry/report", body, nil); code != 200 {
+		t.Fatalf("report: %d %s", code, out)
+	}
+	ackPush(t, srv, "reg", "api")
+	code, _, out := srv.get(t, "/api/registry/sessions/s-live", nil)
+	if code != 200 || bodyMap(t, out)["delivery_route"] != "now" {
+		t.Fatalf("the row = %d %s, want delivery_route now: the hub must see its own machine's claude", code, out)
 	}
 }
 

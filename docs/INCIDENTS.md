@@ -377,7 +377,8 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 ## 2026-11-01, a hook event wrote two spool lines on macOS CI
 
 - **What happened:** `TestE2EOneSpoolLinePerHookEvent` failed on the macOS runner of run 41297396357 ("2 spool lines
-  for one hook event, want 1") and passed on Linux and on the owner's Mac.
+  for one hook event, want 1") and passed on Linux and on the owner's Mac. The same run's
+  `TestE2EAnOwnerMessageReachesOnlyItsSession` saw route "next_prompt" where it wants "now".
 - **Cause:** the hub skips its own spool write for a Claude Code report from its own machine, telling the machine
   by name. The hook reports the name from the home's `config.toml`, a hostname cut at its first dot and fitted to
   the device-name rule, while the hub compared it with the raw `os.Hostname()`. Wherever the hostname carries a
@@ -385,7 +386,9 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   took the report for another machine's and wrote the line a second time. The same mismatch sat under the needs
   list's own-machine check.
 - **Guard:** `TestTheHubTellsItsMachineByTheNameTheHomeConfigHolds` (internal/huddle/server) names the machine in
-  `config.toml` and posts a report under that name and under another; `TestE2EOneSpoolLinePerHookEvent`
-  (cmd/huddle) holds the whole path.
+  `config.toml` and posts a report under that name and under another;
+  `TestTheHubKnowsItsOwnSessionsByTheMachineNameTheHooksReport` (internal/huddle/server) wants the push route
+  for a session that reports that name; `TestE2EOneSpoolLinePerHookEvent` and
+  `TestE2EAnOwnerMessageReachesOnlyItsSession` (cmd/huddle) hold the whole paths.
 - **Rule:** one machine has one name: the hub reads it from the home's `config.toml`, the place every hook reads it
   from, never from the operating system's hostname.
