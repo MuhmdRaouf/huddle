@@ -780,7 +780,7 @@ describe("Composer keyboard and wiring", () => {
 
   it("shows a chip for a task the board no longer knows as missing", () => {
     const chip = (): HTMLElement =>
-      screen.getByRole("button", { name: "Remove zz" }).closest(".badge") as HTMLElement;
+      screen.getByRole("button", { name: "Remove zz" }).closest(".ui-badge") as HTMLElement;
     setup({ initial: { mode: "task", after: ["zz"] } });
     expect(chip().getAttribute("title")).toBe("No such task");
     expect(chip().textContent).toContain("missing");
@@ -802,7 +802,7 @@ describe("Composer keyboard and wiring", () => {
       byId: (id) => lean.steps.find((s) => s.id === id) ?? null,
       initial: { mode: "task", after: ["t9"] },
     });
-    const chip = screen.getByRole("button", { name: "Remove t9" }).closest(".badge") as HTMLElement;
+    const chip = screen.getByRole("button", { name: "Remove t9" }).closest(".ui-badge") as HTMLElement;
     expect(chip.textContent).toContain("t9");
     expect(fx().textContent).toContain("It waits on t9");
   });

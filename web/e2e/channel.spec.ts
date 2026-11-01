@@ -23,11 +23,10 @@ const KEYBOARD = 300;
  *  page on wide screens. */
 const SHELL = ["[data-sidebar]", "[data-nav]", "#side"] as const;
 
-/** The work page's colour-contrast debts that predate it, each named by its node: the work tab
- *  strip's quiet tabs (Work's own strip) and the status pill's tone ink, the same tinted-ink pair
- *  every status pill on the hub paints. Their cards retire these entries when they fix them. */
+/** The work page's colour-contrast debt that predates it, named by its node: the status pill's
+ *  tone ink, the same tinted-ink pair every status pill on the hub paints. Its card retires the
+ *  entry when it fixes it. */
 const WORK_KNOWN: readonly { rule: string; node: string }[] = [
-  { rule: "color-contrast", node: "#wt-" },
   { rule: "color-contrast", node: ".c-yellow" },
 ];
 
@@ -759,6 +758,173 @@ test("the settings page keeps its sheets, the link sheet and the toast inside th
       });
     }
   }
+});
+
+/** The work tab's views this spec drives, in the order the strip spells them. */
+const WORK_VIEWS = ["list", "board", "graph"] as const;
+
+test("the work list, board and graph keep their layers and controls at the pointer's size", async ({
+  page,
+}, info) => {
+  const ch = await freshChannel(info.project.name, ["alpha"]);
+  // one planned task, the one waiting on it, and one free task: three list rows, three board
+  // cards, a graph with an edge to trace, and a dependency left for the picker to offer
+  await api(`/api/c/${ch}/op/task_create?as=alpha`, { id: "wk-a", title: "First work task", phase: 1 });
+  await api(`/api/c/${ch}/op/task_create?as=alpha`, {
+    id: "wk-b",
+    title: "Second work task",
+    after: ["wk-a"],
+    phase: 1,
+  });
+  await api(`/api/c/${ch}/op/task_create?as=alpha`, { id: "wk-c", title: "Third work task", phase: 1 });
+
+  await openChannel(page, ch);
+
+  // the view strip, the page's own buttons and the filter bar ride every view
+  await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/work/list`);
+  await expect(page.locator("[data-tid]")).toHaveCount(3);
+  await expectNoSideScroll(page);
+  const strip = page.getByRole("tablist", { name: "View" });
+  const pageControls = [
+    strip,
+    page.getByRole("button", { name: "New task" }),
+    page.getByText("Import a plan"),
+    page.getByPlaceholder("Filter by id, title or owner"),
+    page.locator("#wown"),
+  ];
+  await expectTapTargets(pageControls);
+  await expectInsideViewport(page, pageControls);
+  // the filter chips keep 28 px of chip under the shared 44 px hit area on a touch screen (the
+  // same check the knowledge page's kind chips make)
+  if (test.info().project.use.hasTouch) {
+    const hits = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>("[data-f]")].every((el) => {
+        const r = el.getBoundingClientRect();
+        const before = getComputedStyle(el, "::before");
+        const p = before.position === "absolute" ? Math.abs(Number.parseFloat(before.top)) : 0;
+        return r.width > 0 && r.height + 2 * p >= 44 - 0.01;
+      }),
+    );
+    expect(hits, "each filter chip's hit stands at least 44 px tall").toBe(true);
+  }
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await expectWorkAccessible(page);
+
+  // the drawer over the list: the page's one layer, its picker inside it
+  await page.locator("[data-tid='wk-b']").click();
+  const drawer = page.locator("dialog[open]");
+  await expect(drawer.locator("[data-slide-over]")).toBeVisible();
+  expect(await drawer.count(), "one layer at a time").toBeLessThanOrEqual(1);
+  await expectInsideViewport(page, [drawer.first()]);
+  if ((await page.locator("[data-nav='bottom']").count()) > 0)
+    await expectClearOfTabBar(page, [drawer.first()]);
+
+  // the dependency picker's menu opens under its combobox, inside the drawer, and its rows and
+  // its box stand at the pointer's target; the drawer's own markup stays the TaskDrawer card's,
+  // so the axe read here covers the page and the picker alone
+  const picker = drawer.getByRole("combobox", { name: "Add a task it waits on" });
+  await expect(picker).toBeVisible();
+  await picker.focus();
+  // the drawer's own picker: the composer's closed dialog keeps one too, so the read scopes here
+  const options = drawer.locator("[role='option']");
+  await expect(options.filter({ hasText: "wk-c" })).toBeVisible();
+  expect(await drawer.count(), "one layer at a time").toBeLessThanOrEqual(1);
+  await expectInsideViewport(page, [options.first()]);
+  if (test.info().project.use.hasTouch) {
+    const small = await drawer.evaluate((root) =>
+      [...root.querySelectorAll<HTMLElement>("[data-picker] button, [data-picker] input")]
+        .filter((el) => el.getClientRects().length > 0)
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && (r.width < 44 || r.height < 44);
+        })
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          const label = el.getAttribute("aria-label") ?? el.textContent?.trim() ?? el.id;
+          return `${el.tagName} "${label}" ${r.width}x${r.height}`;
+        }),
+    );
+    expect(small, "picker controls under the 44 px target").toEqual([]);
+  }
+  await expectAccessible(page, [
+    ...SHELL,
+    "dialog[open] [data-slide-over] *:not([data-picker]):not([data-picker] *)",
+  ]);
+  // the picker's menu takes the first Escape; the second falls through to the drawer
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+
+  for (const view of WORK_VIEWS) {
+    await test.step(`the ${view} view`, async () => {
+      await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/work/${view}`);
+      if (view === "list") await expect(page.locator("[data-tid]")).toHaveCount(3);
+      if (view === "board") await expect(page.locator("section[data-col='todo'] [data-id]")).toHaveCount(3);
+      if (view === "graph") await expect(page.locator("svg.dgraph g[data-i]")).toHaveCount(3);
+      await expectNoSideScroll(page);
+      // the dependency graph is a horizontally scrollable drawing: on a narrow screen a box sits
+      // across the panel's clip edge, and axe's 2.5.3 check reads only that box's visible painted
+      // texts — a word sequence that cannot be contained by any one accessible name, since each
+      // scroll position exposes a different subset with different word gluing. Every box carries
+      // its full aria-label (asserted by unit tests), so the drawing itself stays out of this read.
+      await expectWorkAccessible(page, ["svg.dgraph"]);
+
+      // the board's move menu: the view's one popup layer, with the toast its pick raises
+      if (view === "board") {
+        const move = page.locator("button[data-mv='wk-a']");
+        await expectTapTargets([move]);
+        await move.click();
+        const menu = page.getByRole("menu");
+        await expect(menu).toBeVisible();
+        expect(await page.locator("dialog[open]").count(), "one layer at a time").toBeLessThanOrEqual(1);
+        await expectInsideViewport(page, [menu]);
+        if ((await page.locator("[data-nav='bottom']").count()) > 0)
+          await expectClearOfTabBar(page, [menu]);
+        await expectWorkAccessible(page);
+        await menu.getByRole("menuitem", { name: "Move to Done" }).click();
+        const toast = page.locator(".ui-toast");
+        await expect(toast).toBeVisible();
+        expect(await page.locator("dialog[open]").count(), "one layer at a time").toBeLessThanOrEqual(1);
+        await expectInsideViewport(page, [toast]);
+        if ((await page.locator("[data-nav='bottom']").count()) > 0)
+          await expectClearOfTabBar(page, [toast]);
+        await expectNoSideScroll(page);
+        await expectWorkAccessible(page);
+      }
+
+      // the graph's trace: a pick lights the river and offers the drawer at the pointer's size
+      if (view === "graph") {
+        await page.locator("svg.dgraph g[data-i='1']").click();
+        const open = page.getByRole("link", { name: "Open wk-b" });
+        await expect(open).toBeVisible();
+        await expectTapTargets([open]);
+        await expectInsideViewport(page, [open]);
+        await expectWorkAccessible(page, ["svg.dgraph"]);
+      }
+    });
+  }
+});
+
+test("the work board keeps its 250 px column scroll cap on the token scale", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop", "the cap is a md+ width rule");
+  const ch = await freshChannel(info.project.name, ["alpha"]);
+  // enough cards that the To do column's list clamps at the cap
+  for (let i = 0; i < 24; i++) {
+    await api(`/api/c/${ch}/op/task_create?as=alpha`, { id: `cap-${i}`, title: `Cap task ${i}`, phase: 1 });
+  }
+  await openChannel(page, ch);
+  await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/work/board`);
+  const list = page.locator("section[data-col='todo'] ul");
+  await expect(list).toBeVisible();
+  const h = await list.evaluate((el) => ({
+    rect: el.getBoundingClientRect().height,
+    max: Number.parseFloat(getComputedStyle(el).maxHeight),
+    dvh: window.innerHeight,
+  }));
+  // the cap is 100dvh minus the same 250 px the page always reserved: 250 px = 250/15 rem
+  console.log(`CAPMEASURE max=${h.max} rect=${h.rect} dvh=${h.dvh}`);
+  expect(Math.abs(h.max - (h.dvh - 250)), `computed cap ${h.max} at dvh ${h.dvh}`).toBeLessThanOrEqual(0.06);
+  expect(h.rect, "the list is clamped at the cap").toBeGreaterThan(h.max - 2);
 });
 
 test("the work map and the repo views keep their layers inside the viewport", async ({ page }, info) => {

@@ -61,15 +61,15 @@
   "app/SettingsTab.tsx": {
     "control": 1
   },
-  "app/session-parts.tsx": {
-    "px": 3
-  },
   "app/TopBar.tsx": {
     "control": 3,
     "px": 5
   },
   "app/layout.ts": {
     "px": 2
+  },
+  "app/session-parts.tsx": {
+    "px": 3
   },
   "chat/ChatComposer.tsx": {
     "control": 2
@@ -89,9 +89,6 @@
   "kanban/components/BoardPicker.tsx": {
     "control": 3
   },
-  "kanban/components/FeaturePicker.tsx": {
-    "control": 2
-  },
   "kanban/components/Card.tsx": {
     "control": 2,
     "daisy": 1
@@ -103,6 +100,9 @@
     "control": 2,
     "daisy": 1,
     "legacy": 3
+  },
+  "kanban/components/FeaturePicker.tsx": {
+    "control": 2
   },
   "kanban/components/FilterMenu.tsx": {
     "control": 3
@@ -147,9 +147,7 @@
     "daisy": 10
   },
   "picker.tsx": {
-    "control": 3,
-    "daisy": 12,
-    "legacy": 1
+    "control": 2
   },
   "radar/app/ActiveBlock.tsx": {
     "legacy": 2
@@ -283,20 +281,7 @@
     "px": 1
   },
   "work/Board.tsx": {
-    "control": 1,
-    "daisy": 20,
-    "legacy": 5,
-    "px": 1
-  },
-  "work/Graph.tsx": {
-    "daisy": 8,
-    "legacy": 2,
-    "px": 1
-  },
-  "work/List.tsx": {
-    "control": 1,
-    "daisy": 24,
-    "legacy": 8
+    "legacy": 1
   },
   "work/TaskDrawer.tsx": {
     "control": 28,
@@ -305,8 +290,6 @@
     "px": 3
   },
   "work/Work.tsx": {
-    "control": 7,
-    "daisy": 17,
-    "legacy": 1
+    "control": 3
   }
 }

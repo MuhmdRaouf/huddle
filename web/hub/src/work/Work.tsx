@@ -1,11 +1,15 @@
-// Work.tsx — the Work page's shell: the List/Board/Graph/Map strip, one import-a-plan label and
-// the New task button, and the shared filter bar under them (status segments with counts, the
-// query box, the owner and phase selects, and the segmented progress bar with its legend). The
-// views below read everything through their props; every filter interaction lands in site storage
-// and in this component's state. Port of work.js view/paintFilters/wireClear/importPlan and
-// app.js progressBar, with work.js setTaskStatus kept whole for the other views.
+// Work.tsx — the Work page's shell: the List/Board/Graph/Map strip, one import-a-plan button and
+// the New task button, and the shared filter bar under them (status chips with counts, the query
+// box, the owner and phase selects, and the segmented progress bar with its legend). The views
+// below read everything through their props; every filter interaction lands in site storage and
+// in this component's state. Port of work.js view/paintFilters/wireClear/importPlan and app.js
+// progressBar, with work.js setTaskStatus kept whole for the other views.
 
+import { Button } from "@huddle/ui/button.tsx";
+import { Chip } from "@huddle/ui/chip.tsx";
+import { Field } from "@huddle/ui/field.tsx";
 import { Panel } from "@huddle/ui/page.tsx";
+import { Tabs, type Tab } from "@huddle/ui/tabs.tsx";
 import type { ToastFn } from "@huddle/ui/toast.tsx";
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -52,7 +56,7 @@ import {
 import { Repo } from "./Repo.tsx";
 
 /** The strip's tabs, in the order the legacy file spelled them. */
-const VIEW_TABS: readonly ViewTab[] = [
+const VIEW_TABS: readonly Tab[] = [
   { id: "list", label: "List", icon: <Icon name="list" class="size-4.5" /> },
   { id: "board", label: "Board", icon: <Icon name="columns" class="size-4.5" /> },
   { id: "graph", label: "Graph", icon: <Icon name="graph" class="size-4.5" /> },
@@ -60,60 +64,7 @@ const VIEW_TABS: readonly ViewTab[] = [
 ];
 
 /** The Repo tab, joined on when the channel serves repo views (work.js view). */
-const REPO_TAB: ViewTab = { id: "repo", label: "Repo", icon: <Icon name="code" class="size-4.5" /> };
-
-/** One tab of the view strip. */
-export type ViewTab = { id: ViewId; label: string; icon: JSX.Element };
-
-/** The key a tab walk takes from `at`, wrapping at the ends; NaN for a key the strip ignores. */
-const tabKeyTo = (n: number, key: string, at: number): number => {
-  if (key === "ArrowRight") return (at + 1 + n) % n;
-  if (key === "ArrowLeft") return (at - 1 + n) % n;
-  if (key === "Home") return 0;
-  if (key === "End") return n - 1;
-  return Number.NaN;
-};
-
-/** The view strip: daisyUI `tabs tabs-box`, the selected tab the only tab stop, the arrows walk
- *  and select. Keeps the shared strip's contract: `wt-<id>` ids, `data-tab`, `#wpanel` target. */
-function ViewTabs({
-  tabs,
-  value,
-  onPick,
-}: {
-  tabs: readonly ViewTab[];
-  value: ViewId;
-  onPick: (id: ViewId) => void;
-}): JSX.Element {
-  const onKey = (id: ViewId, key: string): void => {
-    const at = tabs.findIndex((x) => x.id === id);
-    const to = tabKeyTo(tabs.length, key, at);
-    if (Number.isNaN(to)) return;
-    onPick(tabs[to]?.id ?? id);
-  };
-  return (
-    <div role="tablist" class="tabs tabs-box" aria-label="View">
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          role="tab"
-          id={`wt-${t.id}`}
-          data-tab={t.id}
-          aria-selected={t.id === value}
-          aria-controls="wpanel"
-          tabIndex={t.id === value ? 0 : -1}
-          class={`tab gap-2 h-10 px-4 text-[0.9375rem]${t.id === value ? " tab-active neon-text text-primary" : ""}`}
-          onClick={() => onPick(t.id)}
-          onKeyDown={(e) => onKey(t.id, e.key)}
-        >
-          {t.icon}
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+const REPO_TAB: Tab = { id: "repo", label: "Repo", icon: <Icon name="code" class="size-4.5" /> };
 
 /** The work views' props: the channel's data as the store holds it, the services, and the three
  *  ways out — a task's drawer, the composer, and a switch of sub-view. */
@@ -364,6 +315,8 @@ export function Work(props: WorkProps): JSX.Element {
   const raw = props.view;
   const view: ViewId = raw !== undefined && (VIEW_IDS as readonly string[]).includes(raw) ? raw : "map";
   const [filters, setFilters] = useState<Filters>(() => readFilters(store, ch));
+  // the plan file's input, opened by the Import button; it stays out of the page's own layout
+  const imp = useRef<HTMLInputElement>(null);
 
   // the view the browser kept, for the t/<id> alias that lands on the channel's last Work view
   // (the defaulted Map is not a choice, so it never overwrites the kept one)
@@ -401,39 +354,43 @@ export function Work(props: WorkProps): JSX.Element {
     <div class="flex min-h-full min-w-0 flex-col gap-5">
       {/* the page-wide controls ride the shell's PageIntro actions; the tests see the fallback row */}
       <IntroActions>
-        <label
-          class="btn btn-ghost cursor-pointer"
+        <Button
+          variant="ghost"
           title="Load a plan file (JSON). Status, edits and notes are kept by task id."
+          onClick={() => imp.current?.click()}
         >
           <Icon name="upload" class="size-4.5" />
           Import a plan
-          <input
-            id="imp"
-            type="file"
-            accept=".json,application/json"
-            class="sr-only"
-            onChange={(e) =>
-              void importPlan(api, ch, toast, props.reloadBoard, e.currentTarget as HTMLInputElement)
-            }
-          />
-        </label>
-        <button
-          id="wnew"
-          type="button"
-          class="btn btn-primary"
-          onClick={(e) =>
+        </Button>
+        <input
+          ref={imp}
+          id="imp"
+          type="file"
+          accept=".json,application/json"
+          class="hidden"
+          onChange={(e) =>
+            void importPlan(api, ch, toast, props.reloadBoard, e.currentTarget as HTMLInputElement)
+          }
+        />
+        <Button
+          variant="primary"
+          data-wnew=""
+          onClick={() =>
             props.onCompose(
               { phase: filters.phase !== "all" ? Number(filters.phase) : undefined },
-              e.currentTarget,
+              document.querySelector("[data-wnew]"),
             )
           }
         >
           <Icon name="plus" class="size-4.5" />
           New task
-        </button>
+        </Button>
       </IntroActions>
       <div class="flex flex-wrap items-center gap-3">
-        <ViewTabs
+        <Tabs
+          class="ui-tabs max-w-full"
+          label="View"
+          panel="wpanel"
           tabs={props.repoViews?.length ? [...VIEW_TABS, REPO_TAB] : VIEW_TABS}
           value={view}
           onPick={(id) => props.onNavigate(id as ViewId)}
@@ -502,38 +459,32 @@ function FiltersBar({
   return (
     <div class="flex flex-col gap-4">
       <div class="flex flex-wrap items-center gap-3">
-        {/* biome-ignore lint/a11y/useSemanticElements: the legacy filter strip's group role, kept word for word */}
-        <div class="join" role="group" aria-label="Filter">
+        {/* biome-ignore lint/a11y/useSemanticElements: the filter strip's group role, kept word for word */}
+        <div class="ui-chip-row" role="group" aria-label="Filter">
           {FILTERS.map(([k, l]) => {
             const n = k === "all" ? null : steps.filter((s) => matches(s, k, sc)).length;
             return (
-              <button
-                key={k}
-                type="button"
-                class={`btn join-item btn-sm${filters.f === k ? " btn-primary" : ""}`}
-                data-f={k}
-                aria-pressed={filters.f === k}
-                onClick={() => onFilter(k)}
-              >
+              <Chip key={k} pressed={filters.f === k} data-f={k} onClick={() => onFilter(k)}>
                 {l}
                 {n ? <span class="tnum text-xs opacity-60">{n}</span> : null}
-              </button>
+              </Chip>
             );
           })}
         </div>
         <span class="flex-1" />
-        <div class="relative w-full sm:w-64">
-          <span class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-base-content/50">
+        {/* the field's own label reads out with the input; the placeholder carries the visible
+            name, and the magnifier is painted over it from this wrapper, the way the sessions
+            list's search does */}
+        <div class="relative w-full sm:w-64 [&_.ui-field-label]:sr-only [&_.ui-input]:pr-4! [&_.ui-input]:pl-11!">
+          <span class="pointer-events-none absolute top-1/2 left-4 z-10 -translate-y-1/2 text-[var(--ui-muted)]">
             <Icon name="search" />
           </span>
-          <input
-            id="wq"
+          <Field
+            label="Filter tasks"
             type="search"
-            class="input w-full pl-9"
             placeholder="Filter by id, title or owner"
-            aria-label="Filter tasks"
             value={filters.q}
-            onInput={(e) => onQuery(e.currentTarget.value)}
+            onInput={onQuery}
           />
         </div>
         <label class="sr-only" for="wown">
@@ -541,7 +492,7 @@ function FiltersBar({
         </label>
         <select
           id="wown"
-          class="select w-auto"
+          class="ui-input w-auto!"
           value={filters.owner}
           onChange={(e) => onOwner(e.currentTarget.value)}
         >
@@ -563,7 +514,7 @@ function FiltersBar({
             </label>
             <select
               id="wph"
-              class="select w-auto max-w-56"
+              class="ui-input w-auto! max-w-56!"
               value={filters.phase}
               onChange={(e) => onPhase(e.currentTarget.value)}
             >
@@ -582,7 +533,7 @@ function FiltersBar({
           <div class="max-w-md flex-1">
             <SegBar steps={shown} />
           </div>
-          <span class="text-xs muted tnum">{legend(shown)}</span>
+          <span class="text-xs text-[var(--ui-muted)] tnum">{legend(shown)}</span>
         </div>
       ) : null}
     </div>

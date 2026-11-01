@@ -4,10 +4,10 @@
 // Port of core.js PICK/pickVal/pickSet/pickerHTML/wirePicker; the selection lives in the parent (the
 // `value` prop) instead of a module map, so a re-render of the surrounding view keeps it the same way.
 
+import { Button } from "@huddle/ui/button.tsx";
 import { fuzzy } from "@huddle/ui/fuzzy.ts";
 import type { JSX } from "preact";
 import { useState } from "preact/hooks";
-import { Icon } from "./icons.tsx";
 import { StatusIcon } from "./kit.tsx";
 import { FIN, type Task, taskState } from "./status.ts";
 
@@ -99,31 +99,33 @@ export function Picker({
 
   return (
     <div class="relative">
-      <div class="flex flex-wrap items-center gap-1 rounded-lg border hairline bg-base-200 p-1 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25">
+      <div
+        data-picker=""
+        class="flex flex-wrap items-center gap-1 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-surface-2)] p-1 focus-within:border-[var(--ui-accent)] focus-within:ring-2 focus-within:ring-[var(--ui-accent-soft)]"
+      >
         {value.map((t) => {
           const s = byId(t);
           return (
             <span
-              class="badge badge-ghost badge-sm h-7 max-w-full pr-0.5"
+              class="ui-badge ui-badge-neutral h-7 max-w-full pr-0.5"
               title={s ? s.title : "No such task"}
             >
               <StatusIcon status={s ? taskState(s) : "blocked"} class="size-3.5" />
               <span class="font-mono">{t}</span>
               <span class="max-w-40 truncate">{s ? s.title : "missing"}</span>
-              <button
-                type="button"
-                class="inline-flex size-6 items-center justify-center rounded hover:bg-base-content/10"
-                aria-label={`Remove ${t}`}
+              <Button
+                variant="ghost"
+                icon="x"
+                label={`Remove ${t}`}
+                class="size-6! min-h-6! min-w-6! shrink-0 -mr-0.5 pointer-coarse:size-11! pointer-coarse:min-h-11! pointer-coarse:min-w-11!"
                 onClick={() => set(value.filter((x) => x !== t))}
-              >
-                <Icon name="x" class="size-3" />
-              </button>
+              />
             </span>
           );
         })}
         <input
           id={`${id}-q`}
-          class={`h-7 min-w-28 flex-1 bg-transparent px-1.5 text-sm outline-none placeholder:text-base-content/50${full ? " hidden" : ""}`}
+          class={`min-h-[var(--ui-control-h)] min-w-28 flex-1 bg-transparent px-1.5 text-sm outline-none placeholder:text-[var(--ui-muted)]${full ? " hidden" : ""}`}
           placeholder={placeholder ?? "Search tasks by id or title"}
           autocomplete="off"
           role="combobox"
@@ -162,12 +164,14 @@ export function Picker({
       </div>
       <div
         id={`${id}-menu`}
-        class="menu absolute inset-x-0 top-full mt-1 max-h-72 overflow-y-auto"
+        class="absolute inset-x-0 top-full z-10 mt-1 max-h-72 overflow-y-auto rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface)] p-1 shadow-[var(--ui-shadow-2)]"
         role="listbox"
         hidden={!open}
       >
         {items.length === 0 ? (
-          <p class="text-xs muted px-2 py-1.5">{query ? "No task matches." : "No open tasks."}</p>
+          <p class="px-2 py-1.5 text-xs text-[var(--ui-muted)]">
+            {query ? "No task matches." : "No open tasks."}
+          </p>
         ) : (
           items.map((s, i) => (
             <button
@@ -176,7 +180,7 @@ export function Picker({
               role="option"
               id={`${id}-o${i}`}
               aria-selected={i === k}
-              class={i === k ? "bg-base-content/10" : ""}
+              class={`flex w-full min-h-10 items-center gap-2 rounded-[var(--ui-radius-sm)] px-2 text-left pointer-coarse:min-h-11${i === k ? " bg-[var(--ui-accent-soft)]" : ""}`}
               onMouseDown={(e) => {
                 // keep the input's focus: the click must not read as leaving the picker
                 e.preventDefault();
@@ -184,7 +188,7 @@ export function Picker({
               }}
             >
               <StatusIcon status={taskState(s)} class="size-3.5" />
-              <span class="badge badge-ghost badge-sm font-mono">{s.id}</span>
+              <span class="ui-badge ui-badge-neutral font-mono">{s.id}</span>
               <span class="truncate">{s.title}</span>
             </button>
           ))

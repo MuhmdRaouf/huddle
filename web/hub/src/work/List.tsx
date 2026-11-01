@@ -4,6 +4,7 @@
 // while a query of three or more characters runs — the tasks the server's search found in the task
 // text. Port of work.js THEAD/stHPill/taskRow/paintList and its search line.
 
+import { Button } from "@huddle/ui/button.tsx";
 import { Markdown } from "@huddle/ui/markdown.tsx";
 import { Panel } from "@huddle/ui/page.tsx";
 import type { JSX } from "preact";
@@ -31,21 +32,21 @@ export function EmptyTasks({
 }): JSX.Element {
   return (
     <div class="flex flex-col items-center gap-2 px-6 py-14 text-center">
-      <span class="text-base-content/40">
+      <span class="text-[var(--ui-muted)]">
         <Icon name="list" class="size-7" />
       </span>
       {anySteps ? (
         <>
           <p class="text-base font-medium">No task matches.</p>
-          <p class="max-w-sm text-sm muted">Clear the filters to see every task.</p>
-          <button type="button" class="btn btn-sm mt-2" data-clear onClick={onClear}>
+          <p class="max-w-sm text-sm text-[var(--ui-muted)]">Clear the filters to see every task.</p>
+          <Button variant="secondary" class="mt-2" data-clear onClick={onClear}>
             Clear filters
-          </button>
+          </Button>
         </>
       ) : (
         <>
           <p class="text-base font-medium">No tasks yet</p>
-          <p class="max-w-sm text-sm muted">
+          <p class="max-w-sm text-sm text-[var(--ui-muted)]">
             Sessions add tasks as they plan. Add one with New task, or import a plan file.
           </p>
         </>
@@ -84,7 +85,7 @@ export type ListProps = {
 
 /** One table header for every task table: Open · Status · Task · Owner · Notes · On it. */
 function Thead(): JSX.Element {
-  const h = "bg-base-200/60 text-sm font-medium text-base-content/70";
+  const h = "bg-[var(--ui-surface-2)]";
   return (
     <thead>
       <tr>
@@ -109,13 +110,13 @@ function RowExtra({ s, k }: { s: Step; k: string }): JSX.Element | null {
   return (
     <>
       {gated ? (
-        <span class="badge badge-ghost badge-sm" title="Needs your approval">
+        <span class="ui-badge ui-badge-neutral" title="Needs your approval">
           <Icon name="key" class="size-3.5" />
           <span class="max-sm:sr-only">Approval</span>
         </span>
       ) : null}
       {k === "waiting" ? (
-        <span class="hidden text-xs text-warning lg:inline">
+        <span class="hidden text-xs text-[var(--ui-warn-ink)] lg:inline">
           {`waits on ${(s.blocked_by ?? []).slice(0, 2).join(", ")}${(s.blocked_by?.length ?? 0) > 2 ? "…" : ""}`}
         </span>
       ) : null}
@@ -143,14 +144,14 @@ function TaskRow({
   const k = stepState(s);
   return (
     <tr
-      class={`row-open cursor-pointer hover:bg-base-200/50 ${cur ? "open bg-primary/8 [box-shadow:inset_3px_0_0_var(--color-primary)]" : ""}${hot.has(s.id) ? " flash" : ""}`}
+      class={`row-open cursor-pointer hover:bg-[var(--ui-surface-2)] ${cur ? "open bg-[var(--ui-accent-soft)] [box-shadow:inset_3px_0_0_var(--ui-accent)]" : ""}${hot.has(s.id) ? " flash" : ""}`}
       data-tid={s.id}
       onClick={(e) => {
         if (e.target instanceof Element && e.target.closest("a")) return;
         onOpenTask(s.id);
       }}
     >
-      <td class="w-9 text-base-content/50">
+      <td class="w-9 text-[var(--ui-muted)]">
         <Icon name="right" class="chev size-4" />
       </td>
       <td class="whitespace-nowrap">
@@ -165,18 +166,18 @@ function TaskRow({
             onOpenTask(s.id);
           }}
         >
-          <span class="badge badge-ghost badge-sm font-mono">{s.id}</span>
+          <span class="ui-badge ui-badge-neutral font-mono">{s.id}</span>
           <span class={`min-w-0 flex-1 truncate ${FIN.has(s.status ?? "todo") ? "muted" : ""}`}>
             {s.title}
           </span>
           <RowExtra s={s} k={k} />
         </a>
       </td>
-      <td class="hidden w-24 truncate text-sm muted md:table-cell">
-        {s.owner ? who(s.owner) : <span class="text-base-content/50">nobody</span>}
+      <td class="hidden w-24 truncate text-sm text-[var(--ui-muted)] md:table-cell">
+        {s.owner ? who(s.owner) : <span class="text-[var(--ui-muted)]">nobody</span>}
       </td>
       <td
-        class="text-right tnum hidden text-sm muted md:table-cell"
+        class="text-right tnum hidden text-sm text-[var(--ui-muted)] md:table-cell"
         title={s.comments?.open ? `${s.comments.open} open notes` : undefined}
       >
         {s.comments?.open || ""}
@@ -213,11 +214,7 @@ function DoneBar({ d, n }: { d: number; n: number }): JSX.Element {
 function PhaseBrief({ cur }: { cur: Phase }): JSX.Element {
   return (
     <Panel title={`Phase ${cur.n}`} meta={cur.title} icon={<Icon name="list" class="size-4.5" />}>
-      {cur.summary ? (
-        <div class="prose-h muted">
-          <Markdown text={cur.summary} />
-        </div>
-      ) : null}
+      {cur.summary ? <Markdown text={cur.summary} /> : null}
       {cur.diagram ? (
         <div class={cur.summary ? "mt-4" : ""}>
           <PhaseDiagram g={cur.diagram} />
@@ -242,9 +239,9 @@ function Group({
   const d = all.filter((s) => FIN.has(s.status ?? "todo")).length;
   return (
     <section class="panel min-w-0 overflow-hidden" aria-labelledby={`ph-${p.n}`}>
-      <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-base-content/8 px-5 py-3.5">
+      <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[var(--ui-line)] px-5 py-3.5">
         <h2 id={`ph-${p.n}`} class="flex min-w-0 items-baseline gap-2.5 text-base font-semibold">
-          <span class="shrink-0 text-sm font-medium whitespace-nowrap text-base-content/50 tnum">
+          <span class="shrink-0 text-sm font-medium whitespace-nowrap text-[var(--ui-muted)] tnum">
             {`Phase ${p.n}`}
           </span>
           <span class="truncate">{p.title}</span>
@@ -253,7 +250,7 @@ function Group({
           <span class="block w-14 sm:w-28">
             <DoneBar d={d} n={all.length} />
           </span>
-          <span class="text-sm whitespace-nowrap muted tnum">
+          <span class="text-sm whitespace-nowrap text-[var(--ui-muted)] tnum">
             {d} of {all.length} done
           </span>
         </span>
@@ -277,13 +274,13 @@ function Found({
 }): JSX.Element {
   return (
     <Panel title="Found in the task text" label="Found in the task text" flush>
-      <ul class="divide-y divide-base-content/10">
+      <ul class="divide-y divide-[var(--ui-line)]">
         {more.map((x) => {
           const t = byId.get(x.id) ?? null;
           return (
             <li key={x.id}>
               <a
-                class="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-base-200/50"
+                class="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-[var(--ui-surface-2)]"
                 href={href(x.id)}
                 onClick={(e) => {
                   e.preventDefault();
@@ -291,10 +288,12 @@ function Found({
                 }}
               >
                 <StatusIcon status={stepState(t)} />
-                <span class="badge badge-ghost badge-sm font-mono">{x.id}</span>
+                <span class="ui-badge ui-badge-neutral font-mono">{x.id}</span>
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-[0.9375rem]">{x.title}</span>
-                  <span class="hit block truncate text-sm muted">{x.hit ? <Marks text={x.hit} /> : ""}</span>
+                  <span class="hit block truncate text-sm text-[var(--ui-muted)]">
+                    {x.hit ? <Marks text={x.hit} /> : ""}
+                  </span>
                 </span>
               </a>
             </li>
@@ -337,7 +336,7 @@ export function List(props: ListProps): JSX.Element {
   const href = (id: string): string => taskHref(api, ch, id);
   const table = (list: readonly Step[]): JSX.Element => (
     <div class="overflow-x-auto">
-      <table class="table table-pin-rows text-row">
+      <table class="ui-table text-row">
         <Thead />
         <tbody>
           {list.map((s) => (

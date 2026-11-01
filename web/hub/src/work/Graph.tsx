@@ -202,7 +202,7 @@ export function Graph(props: GraphProps): JSX.Element {
         ch={ch}
         onOpenTask={onOpenTask}
       />
-      <div class="panel overflow-auto md:max-h-[calc(100dvh-300px)]">
+      <div class="panel overflow-auto md:max-h-[calc(100dvh-20rem)]">
         <Dgraph
           rows={rows}
           idx={idx}
@@ -370,6 +370,13 @@ function Node({
   onOpenTask: (id: string) => void;
 }): JSX.Element {
   const k = stepState(s);
+  // the svg text nodes concatenate without whitespace, so the accessible name repeats the same
+  // sequence before the status word (WCAG 2.5.3). The owner text paints last in the DOM: when the
+  // panel scrolls a box partly out of view, axe reads only a suffix of the painted texts, and a
+  // suffix of this order is always contained in the name.
+  const gid = `${GSYM[k] ?? GSYM.todo} ${s.id}`;
+  const gow = s.owner ? cut(who(s.owner), 14) : "nobody";
+  const gtitle = cut(s.title ?? "", 30);
   return (
     // biome-ignore lint/a11y/useSemanticElements: a box is an svg node, not an html button; the legacy graph read it the same way
     <g
@@ -378,7 +385,7 @@ function Node({
       transform={`translate(${x},${y})`}
       tabindex={0}
       role="button"
-      aria-label={`${s.id} ${s.title}, ${STATM[k].l}${s.owner ? `, owner ${s.owner}` : ""}${crit ? ", on the critical path" : ""}`}
+      aria-label={`${gid}${gtitle}${gow}${ext ? `+${ext} hidden` : ""}, ${STATM[k].l}${crit ? ", on the critical path" : ""}`}
       onClick={() => onSelect(i)}
       onDblClick={() => onOpenTask(s.id)}
       onKeyDown={(e) => {
@@ -392,13 +399,13 @@ function Node({
       <rect width={NW} height={NH} rx="8" />
       <rect class="bar" x="0" y="8" width="3" height={NH - 16} rx="1.5" />
       <text x="11" y="18" class="gid">
-        {`${GSYM[k] ?? GSYM.todo} ${s.id}`}
-      </text>
-      <text x={NW - 8} y="18" class="gow" text-anchor="end">
-        {s.owner ? cut(who(s.owner), 14) : "nobody"}
+        {gid}
       </text>
       <text x="11" y="37">
-        {cut(s.title ?? "", 30)}
+        {gtitle}
+      </text>
+      <text x={NW - 8} y="18" class="gow" text-anchor="end">
+        {gow}
       </text>
       {ext ? (
         <text x={NW - 8} y="47" class="gx" text-anchor="end">
@@ -427,10 +434,10 @@ function Info({
   return (
     <div
       id="ginfo"
-      class="panel flex min-h-12 flex-wrap items-center gap-2 px-5 py-3.5 text-sm muted"
+      class="panel flex min-h-12 flex-wrap items-center gap-2 px-5 py-3.5 text-sm text-[var(--ui-muted)]"
       aria-live="polite"
     >
-      <Icon name="graph" class="size-4 text-base-content/50" />
+      <Icon name="graph" class="size-4 text-[var(--ui-muted)]" />
       {selected ? (
         <Selected
           s={selected.s}
@@ -446,7 +453,7 @@ function Info({
           {"Left to right in the order tasks can run."}
           {crit.size ? (
             <span class="inline-flex items-center gap-1.5">
-              <i class="inline-block h-0.5 w-5 rounded bg-primary" />
+              <i class="inline-block h-0.5 w-5 rounded bg-[var(--ui-accent)]" />
               {`Critical path: ${[...crit].join(" → ")}`}
             </span>
           ) : null}
@@ -475,13 +482,13 @@ function Selected({
 }): JSX.Element {
   return (
     <>
-      <span class="badge badge-ghost badge-sm font-mono">{s.id}</span>
-      <b class="font-medium text-base-content">{s.title}</b>
+      <span class="ui-badge ui-badge-neutral font-mono">{s.id}</span>
+      <b class="font-medium text-[var(--ui-text)]">{s.title}</b>
       <Pill status={stepState(s)} />
-      <span class="text-sm muted">{`waits on ${up.size}, ${down.size} wait on it`}</span>
+      <span class="text-sm text-[var(--ui-muted)]">{`waits on ${up.size}, ${down.size} wait on it`}</span>
       <span class="flex-1" />
       <a
-        class="btn btn-primary"
+        class="ui-btn ui-btn-primary"
         href={taskHref(api, ch, s.id)}
         onClick={(e) => {
           e.preventDefault();

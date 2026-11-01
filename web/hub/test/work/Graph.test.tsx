@@ -53,8 +53,8 @@ describe("Graph layout", () => {
       const g = must([...groups].find((n) => n.getAttribute("aria-label")?.startsWith(label)));
       return Number(must(must(g.getAttribute("transform")).match(/translate\((\d+)/))?.[1]);
     };
-    expect(xOf("a")).toBeLessThan(xOf("b"));
-    expect(xOf("b")).toBeLessThan(xOf("c"));
+    expect(xOf("○ a")).toBeLessThan(xOf("○ b"));
+    expect(xOf("○ b")).toBeLessThan(xOf("◐ c"));
     expect(svg.querySelectorAll("path.ge")).toHaveLength(2);
   });
 
@@ -67,15 +67,15 @@ describe("Graph layout", () => {
           must(groups.find((n) => n.getAttribute("aria-label")?.startsWith(label))).getAttribute("transform"),
         ).match(/,\s*(\d+)/)?.[1] ?? 0,
       );
-    expect(yOf("c")).toBeLessThan(yOf("d"));
-    expect(yOf("a")).toBe(yOf("c"));
-    expect(yOf("b")).toBe(yOf("d"));
+    expect(yOf("○ c")).toBeLessThan(yOf("○ d"));
+    expect(yOf("○ a")).toBe(yOf("○ c"));
+    expect(yOf("○ b")).toBe(yOf("○ d"));
   });
 
   it("names the box for the screen: id, title, state, owner, critical", () => {
     const { container } = graph([s("t1", { owner: "owl", title: "Fix the thing" })], { crit: ["t1"] });
     const g = must(container.querySelector("g.gn"));
-    expect(g.getAttribute("aria-label")).toBe("t1 Fix the thing, To do, owner owl, on the critical path");
+    expect(g.getAttribute("aria-label")).toBe("○ t1Fix the thingowl, To do, on the critical path");
     expect(g.getAttribute("class")).toContain("crit");
     expect(g.getAttribute("class")).toContain("c-idle");
     expect(g.textContent).toContain("○ t1");
@@ -148,7 +148,7 @@ describe("Graph info panel", () => {
     expect(info.querySelector(".font-mono")?.textContent).toBe("mid");
     expect(info.textContent).toContain("Task mid");
     expect(info.textContent).toContain("waits on 1, 1 wait on it");
-    const open = must(info.querySelector("a.btn-primary"));
+    const open = must(info.querySelector("a.ui-btn-primary"));
     expect(open.getAttribute("href")).toBe("#/channels/ch/work?t=mid");
     fireEvent.click(open);
     expect(base.onOpenTask).toHaveBeenCalledWith("mid");

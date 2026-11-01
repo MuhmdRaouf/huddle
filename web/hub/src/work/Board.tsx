@@ -1,8 +1,9 @@
 // Board.tsx — the work Board: one column per status, the cards draggable between them, each card
 // with its move menu (every other status), its gate and notes tags, who is on it, and — while the
 // task waits — what it waits on. Empty Blocked and Skipped collapse to a rail. The card of the
-// task whose drawer is open wears the daisyUI aura. Port of work.js COLS/paintBoard.
+// task whose drawer is open wears the shared aura. Port of work.js COLS/paintBoard.
 
+import { Button } from "@huddle/ui/button.tsx";
 import { type MenuItem, PopMenu } from "@huddle/ui/menu.tsx";
 import { Panel } from "@huddle/ui/page.tsx";
 import type { JSX } from "preact";
@@ -46,12 +47,15 @@ function CardFace({
   s,
   on,
   href,
+  expanded,
   onOpenTask,
   onMove,
 }: {
   s: Step;
   on: Map<string, string[]>;
   href: string;
+  /** Whether this card's move menu is open; the trigger reads it out as aria-expanded. */
+  expanded: boolean;
   onOpenTask: (id: string) => void;
   onMove: (id: string, anchor: HTMLElement) => void;
 }): JSX.Element {
@@ -60,15 +64,15 @@ function CardFace({
   return (
     <div class="board-card flex flex-col gap-1.5 p-4">
       <div class="flex items-center gap-1.5">
-        <span class="badge badge-ghost badge-sm font-mono">{s.id}</span>
+        <span class="ui-badge ui-badge-neutral font-mono">{s.id}</span>
         {s.gate && s.gate !== "none" && !FIN.has(s.status ?? "todo") ? (
-          <span class="text-base-content/50" title="Needs your approval">
+          <span class="text-[var(--ui-muted)]" title="Needs your approval">
             <Icon name="key" class="size-4" />
             <span class="sr-only">Needs your approval</span>
           </span>
         ) : null}
         {s.comments?.open ? (
-          <span class="badge badge-ghost badge-sm h-5" title="Open notes">
+          <span class="ui-badge ui-badge-neutral" title="Open notes">
             <Icon name="note" class="size-3.5" />
             {s.comments.open}
           </span>
@@ -79,20 +83,20 @@ function CardFace({
             <Avatar name={n} small />
           </span>
         ))}
-        <button
-          type="button"
-          class="btn btn-ghost btn-square btn-sm -mr-1.5"
+        <Button
+          variant="ghost"
+          label={`Move ${s.id}`}
+          hasPopup="menu"
+          expanded={expanded}
+          class="ui-btn-icon -mr-1.5 shrink-0"
           data-mv={s.id}
-          aria-label={`Move ${s.id}`}
-          aria-haspopup="menu"
-          aria-expanded="false"
-          onClick={(e) => {
-            e.stopPropagation();
-            onMove(s.id, e.currentTarget);
+          onClick={() => {
+            const anchor = document.querySelector<HTMLButtonElement>(`button[data-mv='${s.id}']`);
+            if (anchor !== null) onMove(s.id, anchor);
           }}
         >
           <Icon name="more" class="size-4.5" />
-        </button>
+        </Button>
       </div>
       <a
         class="line-clamp-3 block text-base leading-snug font-medium hover:underline"
@@ -104,10 +108,10 @@ function CardFace({
       >
         {s.title}
       </a>
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm muted">
-        {s.owner ? who(s.owner) : <span class="text-base-content/50">nobody</span>}
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[var(--ui-muted)]">
+        {s.owner ? who(s.owner) : <span class="text-[var(--ui-muted)]">nobody</span>}
         {k === "waiting" ? (
-          <span class="inline-flex items-center gap-1 text-warning">
+          <span class="inline-flex items-center gap-1 text-[var(--ui-warn-ink)]">
             <Icon name="hourglass" class="size-4" />
             {`waits on ${waits}${(s.blocked_by?.length ?? 0) > 2 ? "…" : ""}`}
           </span>
@@ -124,6 +128,7 @@ function Card({
   hot,
   active,
   href,
+  expanded,
   onOpenTask,
   onMove,
 }: {
@@ -132,10 +137,14 @@ function Card({
   hot: ReadonlySet<string>;
   active: boolean;
   href: string;
+  /** Whether this card's move menu is open. */
+  expanded: boolean;
   onOpenTask: (id: string) => void;
   onMove: (id: string, anchor: HTMLElement) => void;
 }): JSX.Element {
-  const face = <CardFace s={s} on={on} href={href} onOpenTask={onOpenTask} onMove={onMove} />;
+  const face = (
+    <CardFace s={s} on={on} href={href} expanded={expanded} onOpenTask={onOpenTask} onMove={onMove} />
+  );
   return (
     <li
       class={hot.has(s.id) ? "flash" : ""}
@@ -150,7 +159,7 @@ function Card({
         (e.currentTarget.querySelector(".board-card") ?? e.currentTarget).classList.remove("drag");
       }}
     >
-      {active ? <div class="aura aura-glow aura-sm text-primary">{face}</div> : face}
+      {active ? <div class="aura aura-glow aura-sm text-[var(--ui-accent)]">{face}</div> : face}
     </li>
   );
 }
@@ -195,7 +204,7 @@ export function BoardView(props: BoardProps): JSX.Element {
     <>
       {rows.length || board.steps.length ? (
         <div
-          class="grid h-full items-start gap-4 overflow-x-auto max-md:grid-flow-col max-md:auto-cols-[80vw] max-md:snap-x"
+          class="grid h-full items-start gap-4 overflow-x-auto contain-paint max-md:grid-flow-col max-md:auto-cols-[80vw] max-md:snap-x"
           style={`grid-template-columns:${COLS.map((k) => (slim(k) ? "3rem" : "minmax(16rem,1fr)")).join(" ")}`}
         >
           {COLS.map((k) => {
@@ -203,7 +212,7 @@ export function BoardView(props: BoardProps): JSX.Element {
             return slim(k) ? (
               <section
                 key={k}
-                class="board-col flex min-h-40 flex-col items-center gap-2 rounded-box border border-dashed hairline py-3 max-md:hidden"
+                class="board-col flex min-h-40 flex-col items-center gap-2 rounded-lg border border-dashed hairline py-3 max-md:hidden"
                 data-col={k}
                 aria-label={`${STATM[k].l}: empty`}
                 onDragOver={drag.over}
@@ -211,13 +220,13 @@ export function BoardView(props: BoardProps): JSX.Element {
                 onDrop={drag.drop(onStatus, k)}
               >
                 <StatusIcon status={k} />
-                <span class="text-sm muted [writing-mode:vertical-rl]">{STATM[k].l}</span>
-                <span class="text-sm muted tnum">0</span>
+                <span class="text-sm text-[var(--ui-muted)] [writing-mode:vertical-rl]">{STATM[k].l}</span>
+                <span class="text-sm text-[var(--ui-muted)] tnum">0</span>
               </section>
             ) : (
               <section
                 key={k}
-                class="board-col flex min-w-0 snap-start flex-col rounded-box bg-base-200/60"
+                class="board-col flex min-w-0 snap-start flex-col rounded-lg bg-[var(--ui-surface-2)]"
                 data-col={k}
                 aria-labelledby={`kc-${k}`}
                 onDragOver={drag.over}
@@ -227,9 +236,9 @@ export function BoardView(props: BoardProps): JSX.Element {
                 <h2 class="flex items-center gap-2 px-4 pt-4 pb-2 text-sm font-semibold" id={`kc-${k}`}>
                   <StatusIcon status={k} />
                   {STATM[k].l}
-                  <span class="badge badge-ghost badge-sm tnum">{cards.length}</span>
+                  <span class="ui-badge ui-badge-neutral tnum">{cards.length}</span>
                 </h2>
-                <ul class="flex flex-col gap-3 px-3 pb-3 md:max-h-[calc(100dvh-250px)] md:overflow-y-auto">
+                <ul class="flex flex-col gap-3 px-3 pb-3 md:max-h-[calc(100dvh-16.667rem)] md:overflow-y-auto">
                   {cards.length
                     ? cards.map((s) => (
                         <Card
@@ -239,12 +248,13 @@ export function BoardView(props: BoardProps): JSX.Element {
                           hot={hot}
                           active={activeTaskId === s.id}
                           href={taskHref(api, ch, s.id)}
+                          expanded={menu?.id === s.id}
                           onOpenTask={onOpenTask}
                           onMove={(id, anchor) => setMenu({ id, anchor })}
                         />
                       ))
                     : [
-                        <li key={`none-${k}`} class="text-sm muted px-2 py-6 text-center">
+                        <li key={`none-${k}`} class="text-sm px-2 py-6 text-center text-[var(--ui-muted)]">
                           {`No ${STATM[k].l.toLowerCase()} tasks`}
                         </li>,
                       ]}

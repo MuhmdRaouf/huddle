@@ -168,11 +168,28 @@ describe("Board moves", () => {
     expect(onStatus).toHaveBeenCalledWith("t1", "skipped");
   });
 
+  it("reads the move trigger expanded only while its menu is open, entries as menuitem", async () => {
+    const { container } = view([s("t1")]);
+    const btn = must(container.querySelector("button[data-mv='t1']"));
+    expect(btn.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(btn);
+    const items = await vi.waitFor(() => {
+      const found = [...document.body.querySelectorAll("[role='menuitem']")].filter((b) =>
+        b.textContent?.includes("Move to "),
+      );
+      if (found.length === 0) throw new Error("no menu yet");
+      return found;
+    });
+    expect(items).toHaveLength(4);
+    expect(must(container.querySelector("button[data-mv='t1']")).getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("moves by the card's menu, every status but its own", async () => {
     const onStatus = vi.fn();
     const { container } = view([s("t1", { status: "todo" })], { onStatus });
     const btn = must(container.querySelector("button[data-mv='t1']"));
     expect(btn.getAttribute("aria-label")).toBe("Move t1");
+    expect(btn.getAttribute("aria-haspopup")).toBe("menu");
     fireEvent.click(btn);
     const items = await vi.waitFor(() => {
       const found = [...document.body.querySelectorAll("button")].filter((b) =>

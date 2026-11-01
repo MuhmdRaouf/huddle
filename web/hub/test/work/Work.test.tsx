@@ -154,6 +154,14 @@ describe("Work import", () => {
     return input;
   };
 
+  it("titles the Import button for the pointer", () => {
+    work([s("t1")]);
+    const btn = screen.getByText("Import a plan").closest("button");
+    expect(btn?.getAttribute("title")).toBe(
+      "Load a plan file (JSON). Status, edits and notes are kept by task id.",
+    );
+  });
+
   it("hands the plan file to import_plan, toasts the counts, reloads the board", async () => {
     const { props } = work([s("t1")]);
     const input = imp(plan);
@@ -292,8 +300,7 @@ describe("Work filters", () => {
 
   it("filters by the query box over id, title and owner", () => {
     work(steps);
-    const q = document.getElementById("wq") as HTMLInputElement;
-    expect(q.getAttribute("aria-label")).toBe("Filter tasks");
+    const q = screen.getByLabelText("Filter tasks") as HTMLInputElement;
     expect(q.getAttribute("placeholder")).toBe("Filter by id, title or owner");
     fireEvent.input(q, { target: { value: "owl" } });
     expect(rows()).toBe(1);
@@ -302,9 +309,7 @@ describe("Work filters", () => {
   it("shows the segmented bar and its legend over the scope the filters keep", () => {
     work(steps, { view: "list" });
     expect(screen.getByTitle("1 done, 1 doing, 1 blocked, 3 in all")).not.toBeNull();
-    expect(document.querySelector(".text-xs.muted.tnum")?.textContent).toBe(
-      "1 of 3 done, 1 doing, 1 blocked",
-    );
+    expect(screen.getByText("1 of 3 done, 1 doing, 1 blocked")).not.toBeNull();
   });
 
   it("clears every filter from the list's empty state", () => {

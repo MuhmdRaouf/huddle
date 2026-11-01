@@ -113,7 +113,9 @@ describe("List rows", () => {
 
   it("marks the open task's row and the rows changed since the last paint", () => {
     const { container } = list([s("t1"), s("t2")], { activeTaskId: "t1", hot: new Set(["t2"]) });
-    expect(container.querySelector("tr[data-tid='t1']")?.className).toContain("open bg-primary/8");
+    expect(container.querySelector("tr[data-tid='t1']")?.className).toContain(
+      "open bg-[var(--ui-accent-soft)]",
+    );
     expect(container.querySelector("tr[data-tid='t2']")?.className).toContain("flash");
   });
 

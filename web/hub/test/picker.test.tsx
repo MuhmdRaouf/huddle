@@ -37,7 +37,7 @@ describe("Picker", () => {
   it("renders a chip per chosen task with its status icon, title and remove button", () => {
     render(<Harness value={["t1"]} tasks={TASKS} byId={byId} />);
     const remove = screen.getByRole("button", { name: "Remove t1" });
-    const chip = remove.closest(".badge") as HTMLElement;
+    const chip = remove.closest(".ui-badge") as HTMLElement;
     expect(chip.getAttribute("title")).toBe("First task");
     expect(screen.getByText("First task")).toBeTruthy();
     expect(chip.querySelector("svg")).toBeTruthy();
@@ -50,7 +50,7 @@ describe("Picker", () => {
 
   it("marks a chosen id the board does not know as missing and blocked", () => {
     render(<Harness value={["zz"]} tasks={TASKS} byId={byId} />);
-    const chip = screen.getByRole("button", { name: "Remove zz" }).closest(".badge") as HTMLElement;
+    const chip = screen.getByRole("button", { name: "Remove zz" }).closest(".ui-badge") as HTMLElement;
     expect(chip.getAttribute("title")).toBe("No such task");
     expect(screen.getByText("missing")).toBeTruthy();
   });
