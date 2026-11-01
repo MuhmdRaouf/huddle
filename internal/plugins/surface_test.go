@@ -627,11 +627,13 @@ func (s *surface) checkLauncherReferences(provider domain.Provider) {
 	}
 }
 
-// hookEntry is one hook's command line and timeout.
+// hookEntry is one hook's command line, timeout and, for a background hook, its async flags.
 type hookEntry struct {
-	Type    string `json:"type"`
-	Command string `json:"command"`
-	Timeout int    `json:"timeout"`
+	Type        string `json:"type"`
+	Command     string `json:"command"`
+	Timeout     int    `json:"timeout"`
+	Async       bool   `json:"async"`
+	AsyncRewake bool   `json:"asyncRewake"`
 }
 
 // hookGroup is one matcher's hooks.

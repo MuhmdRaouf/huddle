@@ -58,10 +58,13 @@ type launcherHook struct {
 	Matcher string // "" when the group names none
 	Command string
 	Timeout int
+	// Async and AsyncRewake mark the idle waiter: it runs beside the session and wakes it.
+	Async, AsyncRewake bool
 }
 
 // launcherHooks reads every hook line out of the committed hooks.json. One line per event runs
-// one process for all three parts; approve and permit keep their own lines for their matchers.
+// one process for all three parts; approve and permit keep their own lines for their matchers,
+// and SessionStart and Stop add the idle waiter's async line.
 func launcherHooks(t *testing.T) []launcherHook {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(launcherPluginRoot(t), "hooks", "hooks.json"))
@@ -72,8 +75,10 @@ func launcherHooks(t *testing.T) []launcherHook {
 		Hooks map[string][]struct {
 			Matcher string `json:"matcher"`
 			Hooks   []struct {
-				Command string `json:"command"`
-				Timeout int    `json:"timeout"`
+				Command     string `json:"command"`
+				Timeout     int    `json:"timeout"`
+				Async       bool   `json:"async"`
+				AsyncRewake bool   `json:"asyncRewake"`
 			} `json:"hooks"`
 		} `json:"hooks"`
 	}
@@ -113,6 +118,7 @@ func launcherHooks(t *testing.T) []launcherHook {
 				Matcher: group.Matcher,
 				Command: group.Hooks[0].Command,
 				Timeout: group.Hooks[0].Timeout,
+				Async:   group.Hooks[0].Async, AsyncRewake: group.Hooks[0].AsyncRewake,
 			})
 		}
 	}
@@ -130,10 +136,12 @@ func launcherLine(name string) string {
 // TestHooksJSONRunsTheLauncher pins hooks.json whole: one launcher line per event, naming the
 // event, with the old matchers and the largest old timeout, one hook per group. PreToolUse keeps
 // the approve line for Bash and PermissionRequest the permit line: the two that answer Claude
-// Code, not only observe it.
+// Code, not only observe it. SessionStart and Stop each add the idle waiter, async with rewake,
+// on the 2,000,000 s timeout its keepalive runs inside.
 func TestHooksJSONRunsTheLauncher(t *testing.T) {
 	want := []launcherHook{
 		{Event: "SessionStart", Matcher: "startup|resume|clear|compact", Name: "session-start", Command: launcherLine("session-start"), Timeout: 15},
+		{Event: "SessionStart", Matcher: "startup|resume|clear|compact", Name: "idle-wait", Command: launcherLine("idle-wait"), Timeout: 2000000, Async: true, AsyncRewake: true},
 		{Event: "UserPromptSubmit", Name: "user-prompt-submit", Command: launcherLine("user-prompt-submit"), Timeout: 5},
 		{Event: "PreToolUse", Matcher: "Bash", Name: "approve", Command: launcherLine("approve"), Timeout: 5},
 		{Event: "PreToolUse", Name: "pre-tool-use", Command: launcherLine("pre-tool-use"), Timeout: 5},
@@ -142,6 +150,7 @@ func TestHooksJSONRunsTheLauncher(t *testing.T) {
 		{Event: "PermissionRequest", Name: "permit", Command: launcherLine("permit"), Timeout: 600},
 		{Event: "PermissionRequest", Name: "permission-request", Command: launcherLine("permission-request"), Timeout: 5},
 		{Event: "Stop", Name: "stop", Command: launcherLine("stop"), Timeout: 15},
+		{Event: "Stop", Name: "idle-wait", Command: launcherLine("idle-wait"), Timeout: 2000000, Async: true, AsyncRewake: true},
 		{Event: "SubagentStart", Name: "subagent-start", Command: launcherLine("subagent-start"), Timeout: 5},
 		{Event: "SubagentStop", Name: "subagent-stop", Command: launcherLine("subagent-stop"), Timeout: 7},
 		{Event: "SessionEnd", Name: "session-end", Command: launcherLine("session-end"), Timeout: 5},
@@ -167,6 +176,10 @@ func TestHooksJSONRunsTheLauncher(t *testing.T) {
 		}
 		if hook.Timeout != expected.Timeout {
 			t.Errorf("%s: timeout = %d, want %d", hook.Event, hook.Timeout, expected.Timeout)
+		}
+		if hook.Async != expected.Async || hook.AsyncRewake != expected.AsyncRewake {
+			t.Errorf("%s %s: async %t rewake %t, want async %t rewake %t", hook.Event, hook.Name,
+				hook.Async, hook.AsyncRewake, expected.Async, expected.AsyncRewake)
 		}
 	}
 }

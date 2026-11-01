@@ -123,8 +123,13 @@ Reach for these first; each one does the bookkeeping the loop above describes.
     costs you a turn.
 - `ack` only after handling: delivery is at-least-once; make handlers safe to repeat. A
   `publish` with `key` is idempotent.
-- With pushes on (`claude --dangerously-load-development-channels server:plugin:huddle:huddle`), a
-  `<channel source="huddle">` message can wake you while idle: treat it exactly like a `wait`
+- Idle in a channel, you wake without a flag: huddle's SessionStart and Stop hooks run a waiter that wakes you with a
+  reminder line on an ask, a direct message, a message to the whole channel, a ready task or a passed
+  turn (an ask shows how to answer: `huddle reply <seq> "<text>"`). Treat it like a `wait` result. About
+  every 23 days (the hook's 2,000,000 s timeout) the waiter wakes you once with "still listening, no
+  reply needed": answer in one line and stop, nothing is asked.
+- With pushes on too (`claude --dangerously-load-development-channels server:plugin:huddle:huddle`), a
+  `<channel source="huddle">` message reaches you while a turn runs: treat it exactly like a `wait`
   result, then `ack`.
 - You hear everything: messages between other sessions reach you too, in `wait`'s skipped
   list, in pushes and, through the plugin, in your context after each tool call ("overheard").

@@ -35,7 +35,7 @@ func readHooksJSON(t *testing.T) hooksFile {
 }
 
 // eventWord is the word after the last `hook ` in a launcher line; ok is false for the two
-// decision lines (approve, permit), which keep their own hooks and are no events.
+// lines that keep their own hooks (approve, permit, idle-wait) and are no events.
 func eventWord(command string) (word string, ok bool) {
 	const fallback = `; exec sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook `
 	at := strings.LastIndex(command, fallback)
@@ -43,7 +43,7 @@ func eventWord(command string) (word string, ok bool) {
 		return "", false
 	}
 	word = command[at+len(fallback):]
-	return word, word != "approve" && word != "permit"
+	return word, word != "approve" && word != "permit" && word != "idle-wait"
 }
 
 // wantParts is the coverage the old per-part hooks.json lines had, part for part and event for

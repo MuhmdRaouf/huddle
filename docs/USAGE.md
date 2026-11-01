@@ -226,18 +226,48 @@ The tips:
 
 ### Reach an idle session
 
-A message from the dashboard, a phone or the channel chat reaches an idle session at once only
-when its Claude Code was started with the development-channels flag:
+A session that has joined a channel wakes on what is meant for it with no launch flag. Huddle's
+`SessionStart` and `Stop` hooks start a background waiter, `huddle hook idle-wait`, an
+`asyncRewake` command hook: when a session starts, resumes or ends a turn, the waiter follows the
+session's channel, so a session nobody has prompted yet is covered too. A waiter started with the
+session waits up to 20 s for the session to join its channel. An event meant for the session
+makes the waiter exit with code 2 and the message on stderr. Claude Code shows that as a system reminder
+and starts a turn at once, also when the session is idle. The events that wake a session:
+
+- an ask, with the line to answer it (`huddle reply <seq> "<text>"`);
+- a direct message to it, and a reply to its ask;
+- a message to the whole channel;
+- a task of its own that became ready, and a turn passed to it.
+
+Messages between two other sessions, knowledge entries, joins and task updates never wake it. A
+session that never joins a channel is not listened for: the waiter gives up after its wait for a
+join and creates nothing.
+
+One waiter listens per session (`<home>/run/idle-wait/<session>.json`); a new one stops the one
+before it. An ask the `Stop` hook already blocked a stop for (`stop-raised.json`) does not wake
+the session a second time. A waiter lives for the hook's timeout, 2,000,000 s (about 23 days). At the end of that
+cycle it delivers anything it still finds; otherwise it wakes the session once with `huddle: still
+listening in <channel>; no new messages, no reply needed.`. The session answers in one line, its
+turn ends, the `Stop` hook starts the next waiter, and a session left idle for days keeps listening
+with nothing missed: the waiter starts after the last event the session's feed showed and the last
+one an earlier waiter delivered. The feed's own cursor stays where it is, so the next prompt still
+lists what the reminder said; the waiter's own files under `<home>/woken/` are removed after 30 days
+unused. A hub restart is no gap: the waiter reconnects and reads what it
+missed. `HUDDLE_IDLE_WAIT_SECONDS` shortens the cycle for a test.
+
+Channel pushes are a second, optional way in. Claude Code shows them only when it was started
+with the development-channels flag, and they also arrive while a turn runs:
 
 ```sh
 claude --dangerously-load-development-channels server:plugin:huddle:huddle
 ```
 
-Without the flag Claude Code drops channel pushes silently, so the hub holds the message and the
-session gets it on its next prompt. The hub reads each session's command line to tell: the
-composer says "Delivers now" for a session started with the flag, and "Delivers on the next
-prompt" for any other. Huddle never restarts a session or wraps `claude`; add the flag yourself
-when you want idle sessions to wake.
+While a session's pushes flow, the waiter skips the events the push delivers. Without the flag
+Claude Code drops channel pushes silently, so the hub holds the owner's message and the session
+gets it on its next prompt. The hub reads each session's command line to tell: the composer says
+"Delivers now" for a session started with the flag, and "Delivers on the next prompt" for any
+other. The label reads the flag alone and does not count the waiter. Huddle never restarts a
+session or wraps `claude`.
 
 A session on the hub's own machine gets the owner's message through its inbox socket first. Four
 routes answer an owner's message: `inbox` delivers at once through the session's inbox socket,

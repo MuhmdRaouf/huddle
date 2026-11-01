@@ -5,7 +5,8 @@
 // huddle's task line and kanban's task card (TaskCreated), huddle's report (TeammateIdle). Each part owns a deadline; the parts' deadlines of
 // one event sum inside the timeout hooks.json grants the event, so the merged process never
 // holds a session longer than the separate processes could. approve and permit keep their own
-// hook lines (they answer Claude Code, they do not only observe) and are no events here.
+// hook lines (they answer Claude Code, they do not only observe) and are no events here; the
+// idle-wait waiter keeps its own line too, because its exit code is its answer.
 package hookplan
 
 import "time"

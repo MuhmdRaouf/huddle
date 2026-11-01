@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"runtime/debug"
+	"syscall"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/cli"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
@@ -32,6 +34,9 @@ var entries = map[string]entry{
 	// stays silent and returns 0 whatever happens.
 	"hook approve": hookEntry(hooks.Approve),
 	"hook permit":  hookEntry(hooks.Permit),
+	// The waiter that keeps an idle session listening answers Claude Code with an exit code of
+	// its own (2 wakes the session), so it keeps its own line too.
+	"hook idle-wait": idleWaitEntry,
 	// One entry per event, one process per event: the parts run in plan order and the exit code
 	// is 0 whatever happened. The hidden word another agent's hook runs (`hook external`) is
 	// dispatched in run(), outside this table: it serves no hooks.json line.
@@ -115,6 +120,15 @@ func hookEntry(hook func(context.Context, *cli.World, io.Reader, io.Writer)) ent
 		hook(ctx, &cli.World{}, os.Stdin, stdout)
 		return 0
 	}
+}
+
+// idleWaitEntry runs the asyncRewake Stop hook: the exit code is 2 when the session should wake,
+// with the reminder on stderr, and 0 otherwise. A SIGTERM (a newer waiter for the same session,
+// or the session ending) ends it quietly.
+func idleWaitEntry(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	return hooks.IdleWait(ctx, &cli.World{}, os.Stdin, stderr)
 }
 
 // externalEntry runs the hidden word another agent's hook runs:
