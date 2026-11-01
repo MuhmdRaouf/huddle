@@ -153,8 +153,8 @@ describe("boardIo", () => {
     // the source's own callbacks and its four named events reach the store's handlers
     made[0]?.onopen?.();
     made[0]?.onerror?.();
-    listeners.get("snapshot")?.({ data: "{}" });
-    listeners.get("delta")?.({ data: "{}" });
+    listeners.get("snapshot")?.({ data: JSON.stringify(clone(snapshot)) });
+    listeners.get("delta")?.({ data: JSON.stringify({ rev: snapshot.rev + 1, upsert: [], remove: [] }) });
     listeners.get("reload")?.({ data: "" });
     listeners.get("ping")?.({ data: "{}" });
     // the error handler closes the source at once, then hands the decision to the store
@@ -170,6 +170,40 @@ describe("boardIo", () => {
     ]);
     stream.close();
     expect(seen[seen.length - 1]).toBe("closed");
+  });
+});
+
+describe("the event frames", () => {
+  /** The named-event listeners of one board stream, over a fake EventSource. */
+  function frameListeners(): Map<string, (event: { data: string }) => void> {
+    const listeners = new Map<string, (event: { data: string }) => void>();
+    class FakeSource {
+      onopen: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      addEventListener(name: string, fn: (event: { data: string }) => void): void {
+        listeners.set(name, fn);
+      }
+      close(): void {}
+    }
+    vi.stubGlobal("EventSource", FakeSource);
+    return listeners;
+  }
+
+  it("a delta without rev is refused", () => {
+    const listeners = frameListeners();
+    const seen: string[] = [];
+    boardIo("k").connectEvents({
+      onSnapshot: () => seen.push("snapshot"),
+      onDelta: () => seen.push("delta"),
+      onReload: () => seen.push("reload"),
+      onPing: () => seen.push("ping"),
+      onOpen: () => seen.push("open"),
+      onError: () => seen.push("error"),
+    });
+    expect(() => listeners.get("delta")?.({ data: JSON.stringify({ upsert: [], remove: [] }) })).toThrow(
+      "api/events delta: rev",
+    );
+    expect(seen).toEqual([]);
   });
 });
 

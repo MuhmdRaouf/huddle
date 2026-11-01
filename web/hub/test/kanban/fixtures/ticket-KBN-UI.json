@@ -29,6 +29,7 @@
     "movedByHand": "",
     "branch": "port/KBN-UI",
     "worktree": "/tmp/wt/KBN-UI",
+    "feature_closed": false,
     "updatedAt": "2026-10-15T20:26:00+03:00",
     "finishedAt": ""
   },

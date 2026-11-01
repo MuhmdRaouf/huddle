@@ -1,109 +1,30 @@
 /**
- * The wire shapes: the snapshot, its cards and the deltas the server pushes, exactly as the API sends
- * them. The body is never in the snapshot; it is fetched per ticket and cached by updatedAt.
+ * The kanban page's own vocabulary around the wire: the static payload an exported board boots
+ * from, the shapes of the stream a store follows, and the field values a ticket's front matter
+ * shows. The wire shapes themselves — the snapshot, its cards and the deltas the server pushes —
+ * decode through the schemas in api/schema/kanban.ts and are re-exported from there.
  */
 
-export const COLUMN_IDS = [
-  "backlog",
-  "ready",
-  "in-progress",
-  "review",
-  "testing",
-  "blocked",
-  "done",
-] as const;
+import type { Delta, Snapshot, Ticket } from "../api/schema/kanban.ts";
 
-export type ColumnId = (typeof COLUMN_IDS)[number];
-
-export type ColumnInfo = { id: ColumnId; title: string; count: number };
-
-export type StopLine = { epoch: number; actor: string; note: string; ts: string };
-
-/** One badge as the server derives it (SPEC §4.4 order); `kind` picks the colour, `label` is the text. */
-export type BadgeSpec = { kind: string; label: string };
-
-/** A dependency: `state` is the dependency's column, or "missing", or "text" for plain-text entries. */
-export type Dep = { id: string; state: string };
-
-export type Blocked = { reason: string; on: string[]; until: string; from: string };
-
-export type Lint = { failures: string[]; warnings: string[] };
-
-export type Card = {
-  id: string;
-  title: string;
-  column: ColumnId;
-  summary: string;
-  type: string;
-  priority: string;
-  est: string;
-  cluster: string;
-  tags: string[];
-  expedite: boolean;
-  holder: string;
-  author: string;
-  deps: Dep[];
-  blocked: Blocked | null;
-  badges: BadgeSpec[];
-  lint: Lint;
-  movedByHand: string;
-  branch: string;
-  worktree: string;
-  updatedAt: string;
-  /** when the ticket reached done, empty unless done; done orders by it, falling back to updatedAt */
-  finishedAt: string;
-  /** true when the card's feature is closed: the card is off the board until the feature reopens */
-  feature_closed?: boolean;
-};
-
-/** A feature the board has closed: its cards are gone from the board until it reopens. */
-export type ClosedFeature = {
-  name: string;
-  /** when the feature was closed, empty when unknown */
-  closedAt: string;
-  /** how many cards the feature holds, closed */
-  cards: number;
-};
-
-/** The closed features a snapshot or a delta meta carries. */
-export type Closed = { closed: ClosedFeature[] };
-
-export type Snapshot = {
-  rev: number;
-  board: string;
-  project: string;
-  epoch: number;
-  stopLine: StopLine | null;
-  columns: ColumnInfo[];
-  cards: Card[];
-  generatedAt: string;
-  /** the features the board has closed; absent on an older server, read as none */
-  features?: Closed;
-};
-
-export type DeltaMeta = {
-  epoch: number;
-  stopLine: StopLine | null;
-  columns: ColumnInfo[];
-  /** the closed features as the snapshot carries them; absent reads as none */
-  features?: Closed;
-};
-
-export type Delta = {
-  rev: number;
-  upsert: Card[];
-  remove: string[];
-  meta?: DeltaMeta;
-};
+export { COLUMN_IDS, type ColumnId } from "../api/schema/kanban.ts";
+export type {
+  BadgeSpec,
+  Blocked,
+  Card,
+  Closed,
+  ClosedFeature,
+  ColumnInfo,
+  Delta,
+  DeltaMeta,
+  Dep,
+  Lint,
+  Snapshot,
+  StopLine,
+  Ticket,
+} from "../api/schema/kanban.ts";
 
 export type FieldValue = string | string[] | boolean | null;
-
-export type Ticket = {
-  card: Card;
-  fields: Record<string, FieldValue>;
-  body: string;
-  path: string;
-};
 
 /** The export payload: a static board reads its snapshot and its ticket bodies from window.__KANBAN__. */
 export type StaticBoard = { snapshot: Snapshot; bodies: Record<string, Ticket> };

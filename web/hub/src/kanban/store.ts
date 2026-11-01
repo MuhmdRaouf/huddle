@@ -4,18 +4,19 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
+import { decode } from "../api/decode.ts";
+import {
+  BacklogViewSchema,
+  type BacklogView,
+  type Card,
+  type Closed,
+  type ColumnId,
+  type Delta,
+  type Snapshot,
+  type Ticket,
+} from "../api/schema/kanban.ts";
 import { silenceWatchdog, type Watchdog } from "../shared/watchdog.ts";
-import type {
-  Card,
-  Closed,
-  ColumnId,
-  Delta,
-  Snapshot,
-  StaticBoard,
-  Stream,
-  StreamHandlers,
-  Ticket,
-} from "./types.ts";
+import type { StaticBoard, Stream, StreamHandlers } from "./types.ts";
 
 export type BoardState = {
   mode: "live" | "static";
@@ -128,9 +129,6 @@ export function useDensity(): [Density, (density: Density) => void] {
 /** How the phone's backlog groups its cards. */
 export type Grouping = "priority" | "cluster";
 
-/** The phone backlog's grouping and the keys of its open groups. */
-export type BacklogView = { grouping: Grouping; open: string[] };
-
 /** The localStorage key prefix the backlog view lives under, one entry per board. */
 export const GROUPS_KEY = "kanban.groups";
 
@@ -148,12 +146,7 @@ export function readGroups(
   try {
     const raw = storage?.getItem(`${GROUPS_KEY}.${board}`);
     if (raw === null || raw === undefined) return defaultView("priority");
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return defaultView("priority");
-    const { grouping, open } = parsed as { grouping?: unknown; open?: unknown };
-    if (grouping !== "priority" && grouping !== "cluster") return defaultView("priority");
-    if (!Array.isArray(open) || !open.every((key) => typeof key === "string")) return defaultView("priority");
-    return { grouping, open: open as string[] };
+    return decode(BacklogViewSchema, JSON.parse(raw), `${GROUPS_KEY}.${board}`);
   } catch {
     return defaultView("priority");
   }
@@ -191,8 +184,9 @@ export type CardGroup = { key: string; label: string; cards: Card[] };
 /** The address word for the cards without a feature. */
 export const NO_FEATURE = "-";
 
-/** The closed features a snapshot carries, an older answer without the field read as none. */
-export function closedOf(features: Snapshot["features"]): Closed {
+/** The closed features a snapshot carries; the field the schema requires can still be absent on
+ *  the undecoded static payload an older export carried, and reads as none there. */
+export function closedOf(features: Snapshot["features"] | undefined): Closed {
   return features ?? { closed: [] };
 }
 

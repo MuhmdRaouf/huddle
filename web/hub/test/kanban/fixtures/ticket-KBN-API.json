@@ -23,6 +23,7 @@
     "movedByHand": "",
     "branch": "",
     "worktree": "",
+    "feature_closed": false,
     "updatedAt": "2026-10-14T10:00:00+03:00",
     "finishedAt": ""
   },

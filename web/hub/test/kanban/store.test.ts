@@ -100,8 +100,11 @@ describe("Feature: the board's closed features, held by the store", () => {
   });
 
   it("Scenario: a static board keeps its data as the page carried it, and its absence reads as none closed", () => {
-    // Given the page's own kanban data carries a plain snapshot without the field
-    const state = staticBoardState({ __KANBAN__: { snapshot, bodies: {} } });
+    // Given the page's own kanban data carries a plain snapshot without the field — an export
+    // from a board that predates it — passed through undecoded
+    const plain = JSON.parse(JSON.stringify(snapshot)) as Snapshot;
+    delete (plain as { features?: Snapshot["features"] }).features;
+    const state = staticBoardState({ __KANBAN__: { snapshot: plain, bodies: {} } });
     // Then the field stays as it came, and the reader reads none closed from its absence
     expect(state?.snapshot?.features).toBeUndefined();
     expect(closedOf(state?.snapshot?.features)).toEqual({ closed: [] });

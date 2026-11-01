@@ -4,6 +4,7 @@
   "project": "claude-code-plugins",
   "epoch": 3,
   "stopLine": null,
+  "features": { "closed": [] },
   "columns": [
     { "id": "backlog", "title": "Backlog", "count": 3 },
     { "id": "ready", "title": "Ready", "count": 1 },
@@ -44,6 +45,7 @@
       "movedByHand": "",
       "branch": "port/KBN-UI",
       "worktree": "/tmp/wt/KBN-UI",
+      "feature_closed": false,
       "updatedAt": "2026-10-15T20:26:00+03:00",
       "finishedAt": ""
     },
@@ -71,6 +73,7 @@
       "movedByHand": "",
       "branch": "",
       "worktree": "",
+      "feature_closed": false,
       "updatedAt": "2026-10-14T10:00:00+03:00",
       "finishedAt": ""
     },
@@ -99,6 +102,7 @@
       "movedByHand": "",
       "branch": "port/KBN-TICKET",
       "worktree": "/tmp/wt/KBN-TICKET",
+      "feature_closed": false,
       "updatedAt": "2026-10-15T18:40:00+03:00",
       "finishedAt": ""
     },
@@ -127,6 +131,7 @@
       "movedByHand": "",
       "branch": "port/KBN-SKILL",
       "worktree": "/tmp/wt/KBN-SKILL",
+      "feature_closed": false,
       "updatedAt": "2026-10-15T12:00:00+03:00",
       "finishedAt": ""
     },
@@ -156,6 +161,7 @@
       "movedByHand": "",
       "branch": "port/KBN-BOARD",
       "worktree": "/tmp/wt/KBN-BOARD",
+      "feature_closed": false,
       "updatedAt": "2026-10-15T09:30:00+03:00",
       "finishedAt": ""
     },
@@ -190,6 +196,7 @@
       "movedByHand": "",
       "branch": "",
       "worktree": "",
+      "feature_closed": false,
       "updatedAt": "2026-10-13T08:00:00+03:00",
       "finishedAt": ""
     },
@@ -217,6 +224,7 @@
       "movedByHand": "",
       "branch": "",
       "worktree": "",
+      "feature_closed": false,
       "updatedAt": "2026-10-12T16:00:00+03:00",
       "finishedAt": ""
     },
@@ -245,6 +253,7 @@
       "movedByHand": "",
       "branch": "",
       "worktree": "",
+      "feature_closed": false,
       "updatedAt": "2026-10-12T15:00:00+03:00",
       "finishedAt": ""
     },
@@ -277,6 +286,7 @@
       "movedByHand": "backlog -> ready at 2026-10-12T11:04:00+03:00",
       "branch": "",
       "worktree": "",
+      "feature_closed": false,
       "updatedAt": "2026-10-12T11:04:00+03:00",
       "finishedAt": ""
     },
@@ -304,6 +314,7 @@
       "movedByHand": "",
       "branch": "",
       "worktree": "",
+      "feature_closed": false,
       "updatedAt": "2026-10-12T10:00:00+03:00",
       "finishedAt": "2026-10-12T10:05:00+03:00"
     },
@@ -331,6 +342,7 @@
       "movedByHand": "",
       "branch": "",
       "worktree": "",
+      "feature_closed": false,
       "updatedAt": "2026-10-11T14:00:00+03:00",
       "finishedAt": "2026-10-11T14:10:00+03:00"
     },
@@ -358,6 +370,7 @@
       "movedByHand": "",
       "branch": "",
       "worktree": "",
+      "feature_closed": false,
       "updatedAt": "2026-10-10T09:00:00+03:00",
       "finishedAt": "2026-10-10T09:20:00+03:00"
     }

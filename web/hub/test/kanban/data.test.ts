@@ -68,7 +68,7 @@ describe("applyDelta", () => {
       rev: snapshot.rev + 1,
       upsert: [],
       remove: [],
-      meta: { epoch: 4, stopLine: stop, columns },
+      meta: { epoch: 4, stopLine: stop, columns, features: { closed: [] } },
     });
     expect(after.epoch).toBe(4);
     expect(after.stopLine).toEqual(stop);

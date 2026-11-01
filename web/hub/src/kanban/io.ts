@@ -5,11 +5,21 @@
  * a non-2xx is an Error carrying the status, except the feature action, which answers as a value.
  */
 
+import { decode } from "../api/decode.ts";
+import {
+  BoardsAnswerSchema,
+  DeltaSchema,
+  FeatureAnswerSchema,
+  SnapshotSchema,
+  TicketSchema,
+  type BoardRef,
+  type Snapshot,
+  type Ticket,
+} from "../api/schema/kanban.ts";
 import type { Io } from "./store.ts";
-import type { Snapshot, Stream, StreamHandlers, Ticket } from "./types.ts";
+import type { Stream, StreamHandlers } from "./types.ts";
 
-/** One board huddle knows: its key (the API's address for it), the repo root it lives under. */
-export type BoardRef = { key: string; root: string; name: string };
+export type { BoardRef } from "../api/schema/kanban.ts";
 
 /** The picker's label: the repo's name, disambiguated with its root once the name repeats. */
 export function optionLabel(boards: BoardRef[], board: BoardRef): string {
@@ -23,7 +33,7 @@ export function optionLabel(boards: BoardRef[], board: BoardRef): string {
 export async function fetchBoards(signal?: AbortSignal): Promise<BoardRef[]> {
   const response = await fetch("/api/kanban/boards", { signal: signal ?? null });
   if (!response.ok) throw new Error(`api/kanban/boards: ${response.status}`);
-  return ((await response.json()) as { boards: BoardRef[] }).boards;
+  return decode(BoardsAnswerSchema, await response.json(), "api/kanban/boards").boards;
 }
 
 /** The board's events under its key; otherwise the browser stream the kanban page runs. */
@@ -36,8 +46,10 @@ function connectEvents(url: string, handlers: StreamHandlers): Stream {
   };
   for (const name of ["snapshot", "delta", "reload", "ping"] as const) {
     source.addEventListener(name, (event: MessageEvent<string>) => {
-      if (name === "snapshot") handlers.onSnapshot(JSON.parse(event.data));
-      else if (name === "delta") handlers.onDelta(JSON.parse(event.data));
+      if (name === "snapshot")
+        handlers.onSnapshot(decode(SnapshotSchema, JSON.parse(event.data), "api/events snapshot"));
+      else if (name === "delta")
+        handlers.onDelta(decode(DeltaSchema, JSON.parse(event.data), "api/events delta"));
       else if (name === "reload") handlers.onReload();
       else handlers.onPing();
     });
@@ -51,12 +63,12 @@ export function ioAt(base: string): Io {
     fetchSnapshot: async () => {
       const response = await fetch(`${base}/api/board`);
       if (!response.ok) throw new Error(`api/board: ${response.status}`);
-      return (await response.json()) as Awaited<ReturnType<Io["fetchSnapshot"]>>;
+      return decode(SnapshotSchema, await response.json(), "api/board");
     },
     fetchTicket: async (id: string) => {
       const response = await fetch(`${base}/api/tickets/${id}`);
       if (!response.ok) throw new Error(`api/tickets/${id}: ${response.status}`);
-      return (await response.json()) as Awaited<ReturnType<Io["fetchTicket"]>>;
+      return decode(TicketSchema, await response.json(), `api/tickets/${id}`);
     },
     connectEvents: (handlers: StreamHandlers): Stream => connectEvents(`${base}/api/events`, handlers),
     setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
@@ -92,7 +104,7 @@ export async function featureAction(
       },
       body: JSON.stringify({ action, feature }),
     });
-    const body = (await response.json().catch(() => ({}))) as { lines?: string[]; error?: string };
+    const body = decode(FeatureAnswerSchema, await response.json().catch(() => ({})), "api/feature");
     if (!response.ok) {
       return { ok: false, status: response.status, error: body.error ?? `api/feature: ${response.status}` };
     }
