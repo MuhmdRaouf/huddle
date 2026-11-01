@@ -1,10 +1,11 @@
 // covergate runs the test suite with coverage and fails unless every gated
-// package reaches its statement-coverage threshold. With -profile it judges an
-// existing coverprofile instead and runs no test. A gated package with no
-// block in the profile fails too: a truncated profile must not pass. With
-// -present-only those absent packages are skipped instead: a shard's profile
-// holds only the shard's packages, and the sweep that no package falls between
-// the shards runs separately in the rest shard.
+// package reaches its statement-coverage threshold. With -profile it judges
+// existing coverprofiles instead and runs no test; a comma-separated list is
+// judged as one profile, the blocks they share merged, so a package whose
+// tests run in several shards is judged on what all the shards cover. A gated
+// package with no block in the profile fails too: a truncated profile must not
+// pass. With -present-only those absent packages are skipped instead; the sweep
+// that no package falls between the shards runs in its own test.
 package main
 
 import (
@@ -27,6 +28,7 @@ const modulePath = "github.com/MuhmdRaouf/huddle"
 const profileName = "coverage.out"
 
 type block struct {
+	Position   string // file:start,end, the block's identity across profiles
 	File       string
 	Statements int
 	Count      int
@@ -38,8 +40,8 @@ type coverage struct {
 }
 
 func main() {
-	profile := flag.String("profile", "", "judge this existing coverprofile instead of running the suite")
-	presentOnly := flag.Bool("present-only", false, "with -profile, skip gated packages absent from the profile: a shard judges only its own packages")
+	profile := flag.String("profile", "", "judge these existing coverprofiles (comma-separated, merged) instead of running the suite")
+	presentOnly := flag.Bool("present-only", false, "with -profile, skip gated packages absent from the profile")
 	flag.Parse()
 	os.Exit(run(".", *profile, *presentOnly, os.Stdout, os.Stderr))
 }
@@ -74,8 +76,8 @@ func run(dir string, profile string, presentOnly bool, stdout, stderr io.Writer)
 
 // judge is run with the package lister injected, so tests never run the go tool.
 func judge(dir string, profile string, presentOnly bool, listPackages packageLister, stdout, stderr io.Writer) int {
-	profilePath := profile
-	if profilePath == "" {
+	profiles := []string{profileName}
+	if profile == "" {
 		test := exec.Command("go", "test", "-coverprofile="+profileName, "-covermode=atomic", "./...")
 		test.Dir = dir
 		test.Stdout = stdout
@@ -87,22 +89,17 @@ func judge(dir string, profile string, presentOnly bool, listPackages packageLis
 			fmt.Fprintln(stderr, "covergate:", err)
 			return 1
 		}
-		profilePath = profileName
+	} else {
+		profiles = strings.Split(profile, ",")
 	}
-	if !filepath.IsAbs(profilePath) {
-		profilePath = filepath.Join(dir, profilePath)
-	}
-
-	file, err := os.Open(profilePath)
-	if err != nil {
-		fmt.Fprintln(stderr, "covergate:", err)
-		return 1
-	}
-	defer file.Close()
-	blocks, err := parseProfile(file)
-	if err != nil {
-		fmt.Fprintln(stderr, "covergate:", err)
-		return 1
+	var blocks []block
+	for _, name := range profiles {
+		more, err := readProfile(dir, name)
+		if err != nil {
+			fmt.Fprintln(stderr, "covergate:", err)
+			return 1
+		}
+		blocks = append(blocks, more...)
 	}
 
 	listed, err := listPackages(dir)
@@ -158,6 +155,19 @@ func judge(dir string, profile string, presentOnly bool, listPackages packageLis
 	return 0
 }
 
+// readProfile parses the coverprofile at name, relative to dir unless absolute.
+func readProfile(dir, name string) ([]block, error) {
+	if !filepath.IsAbs(name) {
+		name = filepath.Join(dir, name)
+	}
+	file, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return parseProfile(file)
+}
+
 // parseProfile reads a go test coverprofile: "mode: <mode>" then one
 // "<file>:<start>,<end> <statements> <count>" line per basic block.
 func parseProfile(r io.Reader) ([]block, error) {
@@ -196,7 +206,7 @@ func parseProfile(r io.Reader) ([]block, error) {
 		if err != nil {
 			return nil, fmt.Errorf("bad coverage profile execution count: %q", fields[2])
 		}
-		blocks = append(blocks, block{File: file, Statements: statements, Count: count})
+		blocks = append(blocks, block{Position: fields[0], File: file, Statements: statements, Count: count})
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
@@ -208,9 +218,20 @@ func parseProfile(r io.Reader) ([]block, error) {
 }
 
 // aggregate sums a package's statements and covered statements over its files.
+// A block that several profiles hold counts once, covered when any of them ran it.
 func aggregate(blocks []block) map[string]coverage {
-	packages := map[string]coverage{}
+	merged := make([]block, 0, len(blocks))
+	index := map[string]int{}
 	for _, b := range blocks {
+		if i, seen := index[b.Position]; seen {
+			merged[i].Count += b.Count
+			continue
+		}
+		index[b.Position] = len(merged)
+		merged = append(merged, b)
+	}
+	packages := map[string]coverage{}
+	for _, b := range merged {
 		pkg := path.Dir(b.File)
 		c := packages[pkg]
 		c.Statements += b.Statements

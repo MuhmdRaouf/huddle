@@ -374,7 +374,7 @@ From the repository root:
   offers, the launcher e2e, the fresh-install e2e and the sibling guard, all on the committed `dist/run` and the
   built binary;
 - `mise run check` is every gate CI runs.
-- CI runs the suite again on macOS in the same two shards, with a linux/amd64 rebuild whose sha256 must match
+- CI runs the suite again on macOS in the same six shards, with a linux/amd64 rebuild whose sha256 must match
   the ubuntu build's. The real Keychain round trip stays opt-in (`CORE_KEYCHAIN_ROUNDTRIP=1`, a throwaway item,
   removed again); CI never sets it.
 

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -425,58 +427,305 @@ func TestRunPresentOnlyStillFailsLowCoverage(t *testing.T) {
 	}
 }
 
-// shardFor mirrors the ci.yml shard selectors: the core shard runs
-// ./internal/core/..., the rest shard runs go list ./... minus every path
-// containing /internal/core/. A path matching the substring but not the
-// directory falls in neither shard: no shard runs it and no covergate pass
-// judges it.
-func shardFor(pkg string) string {
-	rel := strings.TrimPrefix(pkg, modulePath+"/")
-	if rel == "internal/core" || strings.HasPrefix(rel, "internal/core/") {
-		return "core"
+// writeNamedProfile writes a coverprofile named name into dir.
+func writeNamedProfile(t *testing.T, dir, name, profile string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(profile), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(pkg, "/internal/core/") {
-		return "rest"
-	}
-	return ""
 }
 
-func TestShardForMirrorsTheShardSelectors(t *testing.T) {
-	tests := []struct {
-		pkg  string
-		want string
-	}{
-		{mp + "/internal/core", "core"},
-		{mp + "/internal/core/domain", "core"},
-		{mp + "/internal/core/domain/brief", "core"},
-		{mp + "/internal/domain/brief", "rest"},
-		{mp + "/internal/radar/store", "rest"},
-		{mp + "/cmd/huddle", "rest"},
-		{mp, "rest"},
-		// The rest shard drops on the bare substring, so a nested package dir
-		// spelled internal/core under another package runs in neither shard.
-		{"example.com/other/internal/core/deep", ""},
-		{mp + "/internal/adapters/internal/core/deep", ""},
+const serverPkg = mp + "/internal/huddle/server"
+
+func TestRunMergesTheProfilesOfASplitPackage(t *testing.T) {
+	// Each half of a split package runs only some of its tests, so each profile alone is under the
+	// 90% floor; the blocks they share merge, a block covered by either half counts as covered.
+	dir := t.TempDir()
+	writeNamedProfile(t, dir, "a.out", "mode: atomic\n"+
+		serverPkg+"/s.go:1.1,2.2 4 1\n"+serverPkg+"/s.go:3.1,4.2 6 0\n")
+	writeNamedProfile(t, dir, "b.out", "mode: atomic\n"+
+		serverPkg+"/s.go:1.1,2.2 4 0\n"+serverPkg+"/s.go:3.1,4.2 6 3\n")
+	var stdout, stderr bytes.Buffer
+	if code := judge(dir, "a.out,b.out", false, listing(serverPkg), &stdout, &stderr); code != 0 {
+		t.Fatalf("judge exited %d, want 0; stdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
 	}
-	for _, tt := range tests {
-		if got := shardFor(tt.pkg); got != tt.want {
-			t.Errorf("shardFor(%s) = %q, want %q", tt.pkg, got, tt.want)
+	want := "ok   " + serverPkg + " 100.0% (min 90%)\n"
+	if stdout.String() != want {
+		t.Errorf("stdout = %q, want %q", stdout.String(), want)
+	}
+	for _, alone := range []string{"a.out", "b.out"} {
+		stdout.Reset()
+		if code := judge(dir, alone, false, listing(serverPkg), &stdout, &stderr); code != 1 {
+			t.Errorf("%s alone exited %d, want 1: one half does not clear the floor", alone, code)
 		}
 	}
 }
 
-func TestEveryModulePackageFallsInAShard(t *testing.T) {
-	pkgs, err := goListPackages("../..")
+func TestRunMergedProfilesStillFailBelowTheFloor(t *testing.T) {
+	dir := t.TempDir()
+	writeNamedProfile(t, dir, "a.out", "mode: atomic\n"+serverPkg+"/s.go:1.1,2.2 4 1\n"+serverPkg+"/s.go:3.1,4.2 6 0\n")
+	writeNamedProfile(t, dir, "b.out", "mode: atomic\n"+serverPkg+"/s.go:1.1,2.2 4 1\n"+serverPkg+"/s.go:3.1,4.2 6 0\n")
+	var stdout, stderr bytes.Buffer
+	if code := judge(dir, "a.out,b.out", false, listing(serverPkg), &stdout, &stderr); code != 1 {
+		t.Fatalf("judge exited %d, want 1; stdout:\n%s", code, stdout.String())
+	}
+	if want := "FAIL " + serverPkg + " 40.0% (min 90%)\n"; !strings.Contains(stdout.String(), want) {
+		t.Errorf("stdout = %q, want it to contain %q", stdout.String(), want)
+	}
+}
+
+func TestRunFailsWhenOneOfTheMergedProfilesIsMissing(t *testing.T) {
+	dir := t.TempDir()
+	writeNamedProfile(t, dir, "a.out", "mode: atomic\n"+serverPkg+"/s.go:1.1,2.2 4 1\n")
+	var stdout, stderr bytes.Buffer
+	if code := judge(dir, "a.out,gone.out", false, listing(serverPkg), &stdout, &stderr); code != 1 {
+		t.Fatalf("judge exited %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "gone.out") {
+		t.Errorf("stderr = %q, want it to name gone.out", stderr.String())
+	}
+}
+
+func TestCIGatesTheMergedProfileOfEveryShard(t *testing.T) {
+	ci := readCI(t)
+	if got := strings.Count(ci, "name: coverage-${{ matrix.shard }}"); got != 1 {
+		t.Errorf("ci.yml uploads a coverage profile named after the shard %d times, want 1", got)
+	}
+	if got := strings.Count(ci, "scripts/covergate -present-only -profile"); got != 1 {
+		t.Errorf("ci.yml gates profiles %d times, want 1: the floors are judged once, on every shard's profile merged", got)
+	}
+}
+
+// ciShards are the test shards ci.yml runs, in matrix order. Each is a list of packages that
+// scripts/shard-packages.sh prints.
+var ciShards = []string{"core", "server", "server-a", "cmd", "cmd-heavy", "rest"}
+
+// splitPairs maps a split package's shard, which skips the heavy tests, to its sibling, which runs
+// only them; both run the same package, told apart by the flags scripts/shard-flags.sh prints.
+var splitPairs = map[string]string{"server": "server-a", "cmd": "cmd-heavy"}
+
+// shardScript runs one of the shard selectors the CI jobs run, from the repo root.
+func shardScript(t *testing.T, script, shard string) string {
+	t.Helper()
+	cmd := exec.Command("sh", "scripts/"+script, shard)
+	cmd.Dir = "../.."
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("%s %s: %v: %s", script, shard, err, strings.TrimSpace(stderr.String()))
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// shardPackages returns the import paths a shard tests.
+func shardPackages(t *testing.T, shard string) []string {
+	t.Helper()
+	return strings.Fields(shardScript(t, "shard-packages.sh", shard))
+}
+
+func TestEveryModulePackageFallsInExactlyOneShard(t *testing.T) {
+	all, err := goListPackages("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pkgs) == 0 {
+	if len(all) == 0 {
 		t.Fatal("go list found no packages; the sweep would guard nothing")
 	}
-	for _, pkg := range pkgs {
-		if shardFor(pkg) == "" {
-			t.Errorf("%s falls in neither shard: core takes ./internal/core/..., rest drops every path containing /internal/core/", pkg)
+	owners := map[string][]string{}
+	for _, shard := range ciShards {
+		pkgs := shardPackages(t, shard)
+		if len(pkgs) == 0 {
+			t.Errorf("shard %s selects no package", shard)
 		}
+		for _, pkg := range pkgs {
+			owners[pkg] = append(owners[pkg], shard)
+		}
+	}
+	for _, pkg := range all {
+		shards := owners[pkg]
+		switch {
+		case len(shards) == 0:
+			t.Errorf("%s falls between the shards: no shard runs it and no covergate pass judges it", pkg)
+		case len(shards) == 2 && splitPairs[shards[0]] == shards[1]:
+		case len(shards) > 1:
+			t.Errorf("%s runs in the %s shards, which are not the two halves of a split package", pkg, strings.Join(shards, " and "))
+		}
+	}
+}
+
+func TestEachHeavyPackageHasShardsOfItsOwn(t *testing.T) {
+	tests := []struct {
+		shards []string
+		want   []string
+	}{
+		{[]string{"server", "server-a"}, []string{mp + "/internal/huddle/server"}},
+		{[]string{"cmd", "cmd-heavy"}, []string{mp + "/cmd/huddle"}},
+	}
+	for _, tt := range tests {
+		for _, shard := range tt.shards {
+			if got := shardPackages(t, shard); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("shard %s = %v, want %v", shard, got, tt.want)
+			}
+		}
+	}
+	for _, own := range []string{mp + "/internal/core", mp + "/internal/huddle/server", mp + "/cmd/huddle"} {
+		for _, pkg := range shardPackages(t, "rest") {
+			if pkg == own || strings.HasPrefix(pkg, own+"/") {
+				t.Errorf("the rest shard also runs %s", pkg)
+			}
+		}
+	}
+}
+
+// splitFlags returns the run and skip patterns of one split pair, failing unless the pair's flags
+// are -skip= on the shard and -run= on its sibling.
+func splitFlags(t *testing.T, shard, sibling string) (skip, run string) {
+	t.Helper()
+	skipFlag, runFlag := shardScript(t, "shard-flags.sh", shard), shardScript(t, "shard-flags.sh", sibling)
+	if !strings.HasPrefix(skipFlag, "-skip=") || !strings.HasPrefix(runFlag, "-run=") {
+		t.Fatalf("flags of %s = %q and of %s = %q, want -skip=<heavy> and -run=<heavy>", shard, skipFlag, sibling, runFlag)
+	}
+	return strings.TrimPrefix(skipFlag, "-skip="), strings.TrimPrefix(runFlag, "-run=")
+}
+
+func TestSplitShardsUseOneRegex(t *testing.T) {
+	for shard, sibling := range splitPairs {
+		skip, run := splitFlags(t, shard, sibling)
+		if skip != run {
+			t.Errorf("%s skips %q but %s runs %q: a test could fall between them", shard, skip, sibling, run)
+		}
+		if _, err := regexp.Compile(run); err != nil {
+			t.Errorf("the %s heavy pattern does not compile: %v", shard, err)
+		}
+	}
+}
+
+func TestUnsplitShardsPrintNoFlags(t *testing.T) {
+	for _, shard := range []string{"core", "rest"} {
+		if got := shardScript(t, "shard-flags.sh", shard); got != "" {
+			t.Errorf("shard %s prints flags %q, want none", shard, got)
+		}
+	}
+}
+
+// listTests returns the Test, Fuzz and Example names go test -list finds in pkg.
+func listTests(t *testing.T, pkg string) []string {
+	t.Helper()
+	cmd := exec.Command("go", "test", "-list", ".*", pkg)
+	cmd.Dir = "../.."
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go test -list %s: %v: %s", pkg, err, strings.TrimSpace(stderr.String()))
+	}
+	var names []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "Test") || strings.HasPrefix(line, "Fuzz") || strings.HasPrefix(line, "Example") {
+			names = append(names, strings.TrimSpace(line))
+		}
+	}
+	return names
+}
+
+func TestEveryTestRunsInExactlyOneHalfOfASplitPackage(t *testing.T) {
+	for shard, sibling := range splitPairs {
+		skip, run := splitFlags(t, shard, sibling)
+		pkg := shardPackages(t, shard)[0]
+		names := listTests(t, pkg)
+		if len(names) == 0 {
+			t.Fatalf("go test -list found no test in %s; the check would guard nothing", pkg)
+		}
+		skipRe, runRe := regexp.MustCompile(skip), regexp.MustCompile(run)
+		inShardCount, inSiblingCount := 0, 0
+		for _, name := range names {
+			inShard, inSibling := !skipRe.MatchString(name), runRe.MatchString(name)
+			if inShard == inSibling {
+				t.Errorf("%s runs in %d of the %s and %s shards, want exactly 1", name, btoi(inShard)+btoi(inSibling), shard, sibling)
+			}
+			inShardCount += btoi(inShard)
+			inSiblingCount += btoi(inSibling)
+		}
+		if inShardCount == 0 || inSiblingCount == 0 {
+			t.Errorf("%s runs %d tests of %s and %s runs %d: a half is empty", shard, inShardCount, pkg, sibling, inSiblingCount)
+		}
+	}
+}
+
+// A heavy pattern that lists test names names real ones, so a renamed test cannot drop out of the
+// heavy shard unseen; a pattern of another shape is held by the checks above.
+func TestHeavyPatternNamesRealTests(t *testing.T) {
+	for shard, sibling := range splitPairs {
+		_, run := splitFlags(t, shard, sibling)
+		inner, ok := strings.CutSuffix(strings.TrimPrefix(run, "^("), ")$")
+		if !ok || !strings.HasPrefix(run, "^(") {
+			continue
+		}
+		exists := map[string]bool{}
+		for _, name := range listTests(t, shardPackages(t, shard)[0]) {
+			exists[name] = true
+		}
+		for _, name := range strings.Split(inner, "|") {
+			if !exists[name] {
+				t.Errorf("the %s pattern names %s, which is not a test of its package", sibling, name)
+			}
+		}
+	}
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func TestShardSelectorRejectsAnUnknownShard(t *testing.T) {
+	cmd := exec.Command("sh", "scripts/shard-packages.sh", "everything")
+	cmd.Dir = "../.."
+	out, err := cmd.Output()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 || len(out) != 0 {
+		t.Errorf("an unknown shard printed %q with err %v, want no packages and exit 2", out, err)
+	}
+}
+
+func readCI(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile("../../.github/workflows/ci.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestCIRunsEveryShardOnLinuxAndMacOS(t *testing.T) {
+	matrices := regexp.MustCompile(`(?m)^\s+shard: \[(.*)\]$`).FindAllStringSubmatch(readCI(t), -1)
+	if len(matrices) != 2 {
+		t.Fatalf("ci.yml has %d shard matrices, want 2: the Linux job and the macOS job", len(matrices))
+	}
+	want := strings.Join(ciShards, ", ")
+	for _, m := range matrices {
+		if m[1] != want {
+			t.Errorf("a shard matrix lists [%s], want [%s]", m[1], want)
+		}
+	}
+}
+
+func TestCIJobsSelectShardPackagesWithTheScript(t *testing.T) {
+	ci := readCI(t)
+	if got := strings.Count(ci, "sh scripts/shard-packages.sh"); got != 2 {
+		t.Errorf("ci.yml calls scripts/shard-packages.sh %d times, want 2: the Linux job and the macOS job", got)
+	}
+	if got := strings.Count(ci, "sh scripts/shard-flags.sh"); got != 2 {
+		t.Errorf("ci.yml calls scripts/shard-flags.sh %d times, want 2: the Linux job and the macOS job", got)
+	}
+	if regexp.MustCompile(`-(run|skip)[ =]'?\^\(`).MatchString(ci) {
+		t.Error("ci.yml carries a test pattern inline; the heavy tests are listed once, in scripts/shard-flags.sh")
+	}
+	if strings.Contains(ci, "go list ./...") {
+		t.Error("ci.yml lists packages inline; the shard selector lives in scripts/shard-packages.sh")
 	}
 }
 
