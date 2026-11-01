@@ -261,6 +261,11 @@ lists what the reminder said; the waiter's own files under `<home>/woken/` are r
 unused. A hub restart is no gap: the waiter reconnects and reads what it
 missed. `HUDDLE_IDLE_WAIT_SECONDS` shortens the cycle for a test.
 
+Each waiter run writes two lines to `<home>/hooks.log`: `idle-wait: arm session=<id> pid=<pid>` when
+it starts and `idle-wait: exit session=<id> pid=<pid> reason=<reason> code=<0|2>` when it ends. The
+reason is `delivered`, `keepalive`, `terminated` (a newer waiter or the session ending),
+`no-join`, `no-session`, `subagent`, `left-channel` or `claim-failed`. The lines carry no hub content.
+
 Channel pushes are a second, optional way in. Claude Code shows them only when it was started
 with the development-channels flag, and they also arrive while a turn runs:
 

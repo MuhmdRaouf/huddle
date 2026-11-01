@@ -91,6 +91,11 @@ func Run(ctx context.Context, w *cli.World, hook string, body func() error) {
 // LogHookError appends one line for a hook that failed, capping hooks.log at 256 KB. The log is
 // a courtesy: when even it cannot be written, silence is right.
 func LogHookError(ctx context.Context, w *cli.World, hook string, err error) {
+	logHookLine(ctx, w, hook, err.Error())
+}
+
+// logHookLine appends one timestamped line for a hook to hooks.log; a failure to write is silent.
+func logHookLine(ctx context.Context, w *cli.World, hook, line string) {
 	dir := os.TempDir()
 	if home := cli.Home(ctx, w); home != "" {
 		if _, statErr := os.Stat(home); statErr == nil {
@@ -106,7 +111,7 @@ func LogHookError(ctx context.Context, w *cli.World, hook string, err error) {
 		return
 	}
 	defer log.Close()
-	_, _ = fmt.Fprintf(log, "%s %s: %s\n", jsscalar.ISOTime(nowOf(w)), hook, err.Error())
+	_, _ = fmt.Fprintf(log, "%s %s: %s\n", jsscalar.ISOTime(nowOf(w)), hook, line)
 }
 
 // hookInput is what Claude Code sends a hook on stdin; every field is optional and absent input

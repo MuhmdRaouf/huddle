@@ -17,6 +17,7 @@ package hooks
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -58,8 +59,9 @@ func IdleWait(ctx context.Context, w *cli.World, in io.Reader, errOut io.Writer)
 
 func idleWait(ctx context.Context, w *cli.World, in io.Reader, errOut io.Writer, run time.Duration) int {
 	code := 0
+	listening := &idleRun{reason: idleFailed}
 	Run(ctx, w, "idle-wait", func() error {
-		lines, err := listen(ctx, w, in, run)
+		lines, err := listen(ctx, w, in, run, listening)
 		if len(lines) > 0 {
 			for _, line := range lines {
 				_, _ = io.WriteString(errOut, line+"\n")
@@ -68,26 +70,69 @@ func idleWait(ctx context.Context, w *cli.World, in io.Reader, errOut io.Writer,
 		}
 		return err
 	})
+	// the exit is logged after a SIGTERM too, so the log's home is resolved without the cancelled ctx
+	listening.logExit(context.WithoutCancel(ctx), w, code)
 	return code
 }
 
+// The reasons a waiter's exit line gives.
+const (
+	idleDelivered   = "delivered"    // an event for the session woke it
+	idleCycleEnd    = "keepalive"    // the cycle ended with nothing to say but the keepalive
+	idleTerminated  = "terminated"   // SIGTERM: a newer waiter for the session, or the session ending
+	idleNoJoin      = "no-join"      // the session joined no channel in time
+	idleNoSession   = "no-session"   // the hook's input names no session
+	idleSubagent    = "subagent"     // a subagent's Stop: its parent listens
+	idleLeftChannel = "left-channel" // the session lost its channel or its name while listening
+	idleClaimFailed = "claim-failed" // the pid file could not be written
+	idleFailed      = "failed"       // anything else: a panic, or an error before a reason was known
+)
+
+// idleRun is what one waiter run reports about itself: the session it listens for and why it
+// ended. Its two hooks.log lines hold no hub content, only the session, the pid and the reason.
+type idleRun struct {
+	session string
+	reason  string
+}
+
+func (r *idleRun) logArm(ctx context.Context, w *cli.World) {
+	logHookLine(ctx, w, "idle-wait", fmt.Sprintf("arm session=%s pid=%d", r.session, os.Getpid()))
+}
+
+func (r *idleRun) logExit(ctx context.Context, w *cli.World, code int) {
+	logHookLine(ctx, w, "idle-wait", fmt.Sprintf("exit session=%s pid=%d reason=%s code=%d", r.session, os.Getpid(), r.reason, code))
+}
+
 // listen waits for what is meant for the session and answers the reminder lines: events, or the
-// keepalive at the end of the cycle; none when the session ends the wait or never joined.
-func listen(parent context.Context, w *cli.World, in io.Reader, run time.Duration) ([]string, error) {
+// keepalive at the end of the cycle; none when the session ends the wait or never joined. It
+// records the session and the reason the wait ended in listening.
+func listen(parent context.Context, w *cli.World, in io.Reader, run time.Duration, listening *idleRun) ([]string, error) {
 	var input hookInput
 	readInput(in, idleWaitStdinMS, &input)
 	session := input.SessionID
-	if session == "" || input.AgentID != "" {
+	listening.session = idleSessionKey(session)
+	listening.logArm(context.WithoutCancel(parent), w)
+	if session == "" {
+		listening.reason = idleNoSession
+		return nil, nil
+	}
+	if input.AgentID != "" {
+		listening.reason = idleSubagent
 		return nil, nil
 	}
 	home := cli.Home(parent, w)
 	id, joined := waitForJoin(parent, w, session, min(idleJoinWait, run))
 	if !joined || home == "" {
+		listening.reason = idleNoJoin
+		if parent.Err() != nil {
+			listening.reason = idleTerminated
+		}
 		return nil, nil
 	}
 	files := waiterFiles{dir: filepath.Join(home, "run", "idle-wait"), commandOf: procCommandOf, stop: stopWaiter}
 	pid := os.Getpid()
 	if err := files.claim(session, pid, nowOf(w)); err != nil {
+		listening.reason = idleClaimFailed
 		return nil, err
 	}
 	defer files.release(session, pid)
@@ -103,11 +148,13 @@ func listen(parent context.Context, w *cli.World, in io.Reader, run time.Duratio
 	for cycle.Err() == nil {
 		id = cli.Identify(cycle, w, session) // the hub's url is read again on every attempt
 		if id.Channel == "" || id.As == "" {
+			listening.reason = idleLeftChannel
 			return nil, nil
 		}
 		woken, connected, err := stream.follow(cycle, id, haveCursor)
 		haveCursor = haveCursor || connected
 		if len(woken) > 0 {
+			listening.reason = idleDelivered
 			return delivered(home, session, id, stream, woken), nil
 		}
 		if connected {
@@ -125,9 +172,12 @@ func listen(parent context.Context, w *cli.World, in io.Reader, run time.Duratio
 		}
 	}
 	if parent.Err() != nil {
+		listening.reason = idleTerminated
 		return nil, nil // the hook was stopped: a newer waiter took over, or the session ended
 	}
-	return endOfCycle(parent, home, session, id, stream, failure)
+	lines, reason, err := endOfCycle(parent, home, session, id, stream, failure)
+	listening.reason = reason
+	return lines, err
 }
 
 // waitForJoin resolves the session's identity, again every second for up to wait while it has no
@@ -170,12 +220,12 @@ func delivered(home, session string, id cli.Identity, stream *idleStream, woken 
 }
 
 // endOfCycle takes a last look at the channel, so a message that arrived at the edge of the
-// cycle is delivered, and otherwise answers the keepalive.
-func endOfCycle(parent context.Context, home, session string, id cli.Identity, stream *idleStream, failure error) ([]string, error) {
+// cycle is delivered, and otherwise answers the keepalive. It answers the reason the wait ended.
+func endOfCycle(parent context.Context, home, session string, id cli.Identity, stream *idleStream, failure error) ([]string, string, error) {
 	look, cancel := context.WithTimeout(parent, idleFinalLook)
 	defer cancel()
 	if woken, err := stream.catchUp(look, id); err == nil && len(woken) > 0 {
-		return delivered(home, session, id, stream, woken), nil
+		return delivered(home, session, id, stream, woken), idleDelivered, nil
 	}
-	return []string{idleKeepalive(id.Channel)}, failure
+	return []string{idleKeepalive(id.Channel)}, idleCycleEnd, failure
 }
