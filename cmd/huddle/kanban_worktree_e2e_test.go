@@ -53,6 +53,10 @@ func TestE2EKanbanListFromAWorktree(t *testing.T) {
 	if code, out, errOut := runBin(t, huddleBin, kanbanEnv, main, "kanban", "init"); code != 0 {
 		t.Fatalf("kanban init = %d, %q %q", code, out, errOut)
 	}
+	if code, out, errOut := runBin(t, huddleBin, kanbanEnv, main, "kanban", "board", "create", "homelab",
+		"--actor", "lead"); code != 0 {
+		t.Fatalf("kanban board create = %d, %q %q", code, out, errOut)
+	}
 	if code, out, errOut := runBin(t, huddleBin, kanbanEnv, main, "kanban", "new", "HOMELAB-DNS",
 		"--actor", "lead", "--cluster", "homelab", "--type", "docs",
 		"--title", "Document the homelab DNS records",

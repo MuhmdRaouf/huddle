@@ -39,6 +39,11 @@ func TestE2EKanbanFeatureCloseReopen(t *testing.T) {
 		{"SWR-3", "swr", "Alert when the swr probes miss two answers in a row"},
 		{"WEB-1", "web", "Move the probe pages under one layout"},
 	}
+	for _, name := range []string{"swr", "web"} {
+		if code, out, errOut := run("kanban", "board", "create", name, "--actor", "lead"); code != 0 {
+			t.Fatalf("kanban board create %s = %d, %q %q", name, code, out, errOut)
+		}
+	}
 	for _, n := range news {
 		summary := "The " + n.cluster + " area has grown without a written-down shape. " +
 			"Give it one page that names each part, who owns it and what done looks like."

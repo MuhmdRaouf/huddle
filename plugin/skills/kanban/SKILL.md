@@ -30,6 +30,7 @@ shows every change on the live board within half a second.
 |---|---|---|
 | See where things stand | `kanban status`, `kanban list [column]` | §Status and rundowns |
 | Read one ticket | `kanban show ID` | the whole file, with its column and badges |
+| Create a board (a feature) | `kanban board create NAME --actor A` | `kanban new --cluster NAME` is refused until the board exists |
 | Write tickets | `kanban new ...`, then edit the body, `kanban lint` | `references/tickets.md` |
 | Make a ticket workable | `kanban promote ID --actor A` | refused until the ticket meets the bar |
 | Take work | `kanban pull --actor A [--id ID --branch B --worktree W]` | §The worker loop |

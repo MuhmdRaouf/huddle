@@ -274,6 +274,17 @@ var commands = map[string]*command{
 			{name: "actor", kind: kindString, required: true, help: actorHelp},
 		},
 	},
+	"board": {
+		word: "board", use: "board VERB NAME", min: 1, max: -1,
+		short: "create a board: a registered feature of this repo's store (verbs: create)",
+		positionals: []positional{
+			{"VERB", "create registers the board, so cards can name it with --cluster"},
+			{"NAME", "the board's name, one short lowercase word or two (letters and digits)"},
+		},
+		defs: []flagDef{
+			{name: "actor", kind: kindString, required: true, help: actorHelp},
+		},
+	},
 	"list": {
 		word: "list", use: "list [COLUMN]", min: 0, max: 1,
 		short:       "one line per ticket: badges and dependency states",
@@ -418,6 +429,12 @@ func Run(ctx context.Context, w World, argv []string, stdout, stderr io.Writer) 
 		usageError(stderr, cmd, positional[0]+" is not a verb; use close or reopen")
 		return 2
 	}
+	if command == "board" {
+		if problem := boardUsage(positional); problem != "" {
+			usageError(stderr, cmd, problem)
+			return 2
+		}
+	}
 	if serverCommands[command] {
 		return runServerCommand(ctx, w, command, v, boardPath, stdout, stderr)
 	}
@@ -446,7 +463,13 @@ func Run(ctx context.Context, w World, argv []string, stdout, stderr io.Writer) 
 	}
 	defer closeBoard()
 	switch command {
+	case "board":
+		lines, err := runBoard(ctx, b, v.str("actor"), positional)
+		return answer(stdout, stderr, lines, err, false)
 	case "new":
+		if err := b.RequireBoard(v.str("cluster")); err != nil {
+			return answer(stdout, stderr, nil, err, false)
+		}
 		n := board.NewTicket{
 			Actor: v.str("actor"), ID: at(positional, 0), Title: v.str("title"),
 			Cluster: v.str("cluster"), Summary: v.str("summary"), Type: v.str("type"),

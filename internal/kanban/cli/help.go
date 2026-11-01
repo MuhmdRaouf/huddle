@@ -29,6 +29,7 @@ usage: kanban <command> [flags]
   move ID COLUMN         the lead's repair: any column to any column, always logged
   log ID                 append one entry to a ticket's Log section
   feature close|reopen FEATURE  close a merged feature (its cards leave every column and count) or reopen it
+  board create NAME      register a board (a feature of this repo's store); cards name it with --cluster
   list [COLUMN]          one line per ticket: badges and dependency states
   show ID                one ticket whole: its fields and its body
   status                 epoch, stop-line, the expedite lane, per-column counts

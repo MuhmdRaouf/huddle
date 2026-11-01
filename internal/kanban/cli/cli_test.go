@@ -48,6 +48,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	f.writeFile("EPOCH", "1\n")
 	f.writeFile("LOG", "")
+	f.writeFile("BOARDS", `{"boards":[{"name":"kanban"}]}`+"\n")
 	return f
 }
 
