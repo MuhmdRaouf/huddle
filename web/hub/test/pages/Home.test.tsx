@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import type { Api } from "../../src/api.ts";
 import { ConnectCard } from "../../src/app/ConnectCard.tsx";
 import { ChannelCard, type ChannelRow, Home, homeData, type PollTimers } from "../../src/pages/Home.tsx";
-import { flush, makeCtx, makeState, renderIn, settle, stubClipboard } from "../helpers.tsx";
+import { flush, makeCtx, makeState, renderIn, stubClipboard } from "../helpers.tsx";
 
 beforeEach(() => {
   location.hash = "";
@@ -207,8 +207,10 @@ describe("the page", () => {
     void act(() => {
       timers.tick();
     });
-    view.unmount();
-    await settle();
+    // Preact runs a passive cleanup after paint; act flushes that queue, so the stop has landed on return
+    void act(() => {
+      view.unmount();
+    });
     expect(timers.stopped()).toEqual(["h"]);
     hiddenSpy.mockRestore();
   });
