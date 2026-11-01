@@ -631,6 +631,75 @@ describe("the registry store", () => {
   });
 });
 
+describe("the registry stream's conversation.grew", () => {
+  it("counts a session's main conversation growing, one counter per session", async () => {
+    const api = fakeApi({ "/api/registry/sessions": { sessions: [] }, "/api/needs": { items: [] } });
+    const streams: ReturnType<typeof fakeSource>[] = [];
+    const reg = createRegistry({
+      api,
+      EventSource: () => {
+        const s = fakeSource();
+        streams.push(s);
+        return s.src;
+      },
+    });
+    reg.connect();
+    streams[0]?.open();
+    streams[0]?.send({ type: "hello" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reg.getState().convoGrew).toEqual({});
+
+    streams[0]?.send({ type: "conversation.grew", data: { session_id: "s-1", agent: "main", size: 900 } });
+    streams[0]?.send({ type: "conversation.grew", data: { session_id: "s-1", agent: "main", size: 1200 } });
+    streams[0]?.send({ type: "conversation.grew", data: { session_id: "s-2", agent: "main", size: 10 } });
+    expect(reg.getState().convoGrew).toEqual({ "s-1": 2, "s-2": 1 });
+
+    // a subagent's transcript growing is not the page's main conversation
+    streams[0]?.send({ type: "conversation.grew", data: { session_id: "s-1", agent: "a1", size: 40 } });
+    streams[0]?.send({ type: "conversation.grew", data: { agent: "main" } });
+    expect(reg.getState().convoGrew).toEqual({ "s-1": 2, "s-2": 1 });
+    reg.disconnect();
+  });
+});
+
+describe("the registry stream's reconnect", () => {
+  it("counts the open session's conversation as grown when the stream greets again", async () => {
+    const api = fakeApi({
+      "/api/registry/sessions": { sessions: [] },
+      "/api/needs": { items: [] },
+      "/api/registry/sessions/s-1": { session_id: "s-1", events: [] },
+    });
+    const streams: ReturnType<typeof fakeSource>[] = [];
+    const reg = createRegistry({
+      api,
+      EventSource: () => {
+        const s = fakeSource();
+        streams.push(s);
+        return s.src;
+      },
+    });
+    reg.connect();
+    streams[0]?.open();
+    streams[0]?.send({ type: "hello" });
+    await new Promise((r) => setTimeout(r, 0));
+    reg.setOpenId("s-1");
+    // the first greeting is the stream's start: nothing went by
+    expect(reg.getState().convoGrew).toEqual({});
+
+    // a second greeting says the stream was away: what the transcript gained then is read again
+    streams[0]?.send({ type: "hello" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reg.getState().convoGrew).toEqual({ "s-1": 1 });
+
+    // with no session open there is no page to tell
+    reg.setOpenId(null);
+    streams[0]?.send({ type: "hello" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reg.getState().convoGrew).toEqual({ "s-1": 1 });
+    reg.disconnect();
+  });
+});
+
 describe("the registry stream's watchdog", () => {
   afterEach(() => {
     vi.useRealTimers();

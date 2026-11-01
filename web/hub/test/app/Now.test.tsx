@@ -1,6 +1,8 @@
-// Now.test.tsx — the Session screen: the phone's two-row header (back link, title, state word,
-// where line) and the facts line at the pane's foot, the desktop's title, where line and status
-// line, the event stream with its bubbles, tool rows, day dividers and scroll follow, the
+// Now.test.tsx — the Session screen: the header block (the phone's title with its back link and
+// where line, the desktop's title and where line, the status line with its bypass word, the Now
+// card), the transcript of a Claude Code session (its prompts, replies and folded runs, read once
+// and again when the hub says it grew), the hook-event stream of a session whose transcript the
+// hub cannot read (bubbles, tool rows, day dividers, opens at the end and never follows), the
 // stale-hooks resume line, the desktop context pane, the small pieces (the mark), and the linked
 // session's brief and hand over with their step-up, session text always rendered as text, never
 // HTML.
@@ -12,12 +14,15 @@ import type { Api } from "../../src/api.ts";
 import type { Layout } from "../../src/app/layout.ts";
 import { NowContext, SessionScreen } from "../../src/app/Now.tsx";
 import { StateMark } from "../../src/app/session-parts.tsx";
-import type {
-  NeedItem,
-  RegistryDetail,
-  RegistryEvent,
-  RegistrySession,
-  RegistryStore,
+import type { ConvoItem } from "../../src/session/types.ts";
+import type { EventSourceLike } from "../../src/live.ts";
+import {
+  createRegistry,
+  type NeedItem,
+  type RegistryDetail,
+  type RegistryEvent,
+  type RegistrySession,
+  type RegistryStore,
 } from "../../src/registry.ts";
 import { flush, legacyClasses, makeCtx, makeRegistry, makeState, renderIn, stubMedia } from "../helpers.tsx";
 
@@ -180,32 +185,45 @@ const needItem = (): NeedItem => ({
 /** Mounts what `make` returns under a context whose registry repaints it on every change, the
  *  way the app's boot does — so a live row moves a row the moment it lands. `make` runs again on
  *  every repaint: one element held by reference would keep Preact from re-rendering it. */
-function followRender(make: () => ComponentChildren, registry: RegistryStore): ReturnType<typeof renderIn> {
+function followRender(
+  make: () => ComponentChildren,
+  registry: RegistryStore,
+  api?: Api,
+): ReturnType<typeof renderIn> {
   function Follow(): JSX.Element {
     const [, set] = useState(0);
     useEffect(() => registry.subscribe(() => set((n) => n + 1)), [registry]);
     return <>{make()}</>;
   }
-  return renderIn(<Follow />, makeCtx(makeState(), { registry }));
+  return renderIn(<Follow />, makeCtx(makeState(), api ? { registry, api } : { registry }));
 }
 
 describe("the Session screen", () => {
+  /** Mounts the session. Its harness is Codex unless the test names one, so the page reads the
+   *  stream of hook events a session without a transcript keeps; a Claude Code session reads its
+   *  transcript through `api`. */
   const mountSession = (
     layout: Layout = "phone",
     over: Partial<RegistryDetail> = {},
     needs: NeedItem[] | null = null,
+    api?: Api,
   ): RegistryStore => {
     stubMedia({
       "(min-width: 640px)": layout !== "phone",
       "(min-width: 1024px)": layout === "desktop",
     });
-    const registry = makeRegistry({ sessions: fixture(), open: detail(over), openId: "s-need-1", needs });
-    followRender(() => <SessionScreen id="s-need-1" layout={layout} />, registry);
+    const registry = makeRegistry({
+      sessions: fixture(),
+      open: detail({ harness: "codex", ...over }),
+      openId: "s-need-1",
+      needs,
+    });
+    followRender(() => <SessionScreen id="s-need-1" layout={layout} />, registry, api);
     return registry;
   };
 
   it("matches the mock's phone header: back, title, state word and the where line, no chips", () => {
-    mountSession("phone");
+    mountSession("phone", { harness: "claude" });
     const back = screen.getByRole("link", { name: "Back to Sessions" }) as HTMLElement;
     expect(back.getAttribute("href")).toBe("#/sessions");
     // the mock's back control: the chevron in the accent ink
@@ -228,48 +246,69 @@ describe("the Session screen", () => {
     expect(screen.queryByLabelText("Context 58 percent used")).toBeNull();
   });
 
-  it("reads the session's facts as one quiet line at the pane's foot", () => {
+  it("reads the session's facts in the status line under the header, the foot carrying none", () => {
     mountSession("phone", { harness: "claude" });
-    const facts = document.querySelector("[data-session-facts]") as HTMLElement;
-    expect(facts.textContent).toBe("glm-5.3 · 58% context · Claude Code");
-    expect(facts.className).toContain("text-xs");
-  });
-
-  it("draws no facts line when the session carries no model, context or harness", () => {
-    const { model: _model, context_percent: _pct, harness: _harness, ...bare } = detail();
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
-    const registry = makeRegistry({ sessions: fixture(), open: bare, openId: "s-need-1" });
-    followRender(() => <SessionScreen id="s-need-1" layout="phone" />, registry);
+    const status = document.querySelector("[data-session] header [data-status-line]") as HTMLElement;
+    expect(status.textContent).toBe("Needs you· glm-5.3 · 58% context");
+    expect(status.className).toContain("text-[13px]");
     expect(document.querySelector("[data-session-facts]")).toBeNull();
   });
 
-  it("names the session's harness: the desk header's badge, the phone's facts line", () => {
+  it("draws no model or context in the status line when the session carries none", () => {
+    const { model: _model, context_percent: _pct, ...bare } = detail();
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    const registry = makeRegistry({ sessions: fixture(), open: bare, openId: "s-need-1" });
+    followRender(() => <SessionScreen id="s-need-1" layout="phone" />, registry);
+    const status = document.querySelector("[data-status-line]") as HTMLElement;
+    expect(status.textContent).toBe("Needs you");
+  });
+
+  it("says bypass in the warn ink when the turn's permission mode runs without asking", async () => {
+    const asks = (mode: string) =>
+      apiFake((path) =>
+        path === "/api/sessions/s-need-1/turn" ? { ended: false, permission_mode: mode } : {},
+      ).api;
+    mountSession("phone", { harness: "claude" }, null, asks("bypassPermissions"));
+    await flush();
+    const word = screen.getByText("bypass") as HTMLElement;
+    expect(word.className).toContain("text-[var(--ui-warn-ink)]");
+    expect(word.closest("[data-status-line]")?.textContent).toBe("Needs you· glm-5.3 · 58% context · bypass");
+    cleanup();
+    mountSession("phone", { harness: "claude" }, null, asks("default"));
+    await flush();
+    expect(screen.queryByText("bypass")).toBeNull();
+  });
+
+  it("names the session's harness: the desk header's badge always, the phone's status line for any but Claude Code", () => {
     for (const [harness, id, name] of [
       ["claude", "claude", "Claude Code"],
       ["codex", "codex", "Codex"],
-      [undefined, "claude", "Claude Code"],
     ] as const) {
       cleanup();
-      mountSession("desktop", harness ? { harness } : {});
+      mountSession("desktop", { harness });
       const chip = document.querySelector("[data-session] header [data-harness]") as HTMLElement | null;
       expect(chip, `desktop ${harness}`).not.toBeNull();
       expect(chip?.dataset.harness).toBe(id);
       expect(chip?.textContent).toContain(name);
       expect(chip?.querySelector("[data-harness-mark]")).not.toBeNull();
     }
-    for (const [harness, name] of [
-      ["claude", "Claude Code"],
-      ["codex", "Codex"],
-    ] as const) {
-      cleanup();
-      mountSession("phone", { harness });
-      // the phone header carries no pill: the facts line names the harness the report feeds
-      expect(document.querySelector("[data-session] header [data-harness]"), `phone ${harness}`).toBeNull();
-      expect(
-        (document.querySelector("[data-session-facts]") as HTMLElement | null)?.textContent,
-        `phone ${harness}`,
-      ).toContain(name);
-    }
+    // a report that names no harness comes from Claude Code
+    cleanup();
+    const { harness: _harness, ...bare } = detail();
+    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    followRender(
+      () => <SessionScreen id="s-need-1" layout="desktop" />,
+      makeRegistry({ sessions: fixture(), open: bare, openId: "s-need-1" }),
+    );
+    expect((document.querySelector("[data-harness]") as HTMLElement).dataset.harness).toBe("claude");
+
+    cleanup();
+    mountSession("phone", { harness: "claude" });
+    expect(document.querySelector("[data-session] header [data-harness]")).toBeNull();
+    cleanup();
+    mountSession("phone", { harness: "codex" });
+    const chip = document.querySelector("[data-session] header [data-harness]") as HTMLElement | null;
+    expect(chip?.textContent).toContain("Codex");
   });
 
   it("paints the header, the stream and the resume line on the tokens, with no daisyUI or legacy class", () => {
@@ -303,8 +342,8 @@ describe("the Session screen", () => {
       const pill = document.querySelector("[data-session] header [data-state]") as HTMLElement;
       expect(pill.dataset.role, state).toBe(role);
       expect(pill.className, state).toContain(`text-[var(--ui-${role}-ink)]`);
-      // the phone's state reads at the mock's 12 px, not the title's size
-      expect(pill.className, state).toContain("text-xs");
+      // the state reads at the mock's 13 px, not the title's size
+      expect(pill.closest("[data-status-line]")?.className, state).toContain("text-[13px]");
       expect(pill.className, state).not.toContain("warning");
     }
   });
@@ -445,7 +484,7 @@ describe("the Session screen", () => {
     }
   });
 
-  it("follows new events while the reader is at the bottom, and leaves a reader who scrolled up", () => {
+  it("opens at the end once and never follows: new events leave the reader where they are", () => {
     const restore = stubStreamLayout();
     try {
       const registry = mountSession("phone", { events: fifty() });
@@ -460,8 +499,12 @@ describe("the Session screen", () => {
         ];
         void act(() => registry.setNeeds(registry.getState().needs));
       };
+      const end = stream.scrollHeight - stream.clientHeight;
+      expect(stream.scrollTop).toBe(end);
+      // at the bottom, five more events arrive: the page stays where it was
       more(51);
-      expect(stream.scrollTop).toBe(stream.scrollHeight - stream.clientHeight);
+      expect(stream.scrollHeight - stream.clientHeight).toBeGreaterThan(end);
+      expect(stream.scrollTop).toBe(end);
 
       stream.scrollTop = 100;
       void act(() => {
@@ -575,6 +618,121 @@ describe("the Session screen", () => {
     });
     expect(document.querySelector("[data-stream] img")).toBeNull();
     expect(screen.getByText("<img onerror=alert(1)>")).toBeDefined();
+  });
+
+  /** A hub that answers one transcript: `lines` is what the file holds, each line one item and 10
+   *  bytes; a read from a byte cursor answers the lines from there on. */
+  const transcriptHub = (lines: ConvoItem[]) => {
+    const hub = { lines, reads: [] as string[] };
+    const answer = (path: string): unknown => {
+      if (!path.startsWith("/api/sessions/s-need-1/agents/main/conversation")) return {};
+      hub.reads.push(path);
+      const after = Number(path.split("after=")[1] ?? 0);
+      return { items: hub.lines.slice(after / 10), next: hub.lines.length * 10 };
+    };
+    return { hub, api: apiFake(answer).api };
+  };
+  const said = (id: string, kind: "user" | "assistant", text: string): ConvoItem => ({
+    id,
+    kind,
+    at: "2026-10-08T11:55:00Z",
+    text,
+  });
+
+  it("paints a Claude Code session's transcript, not its hook events, once its first read answers", async () => {
+    const { hub, api } = transcriptHub([
+      said("p1", "user", "Move the backup job to pve2"),
+      said("r1", "assistant", "Looking at how the job runs today."),
+    ]);
+    mountSession("phone", { harness: "claude" }, null, api);
+    // before the first read answers the page paints neither pane's rows
+    expect(document.querySelector("[data-stream]")).toBeNull();
+    await flush();
+    const pane = document.querySelector("[data-block='transcript']") as HTMLElement;
+    expect(pane).not.toBeNull();
+    expect(screen.getByText("Move the backup job to pve2")).toBeDefined();
+    expect(screen.getByText("Looking at how the job runs today.")).toBeDefined();
+    expect(document.querySelector("[data-stream]")).toBeNull();
+    // the read followed its cursor until it stopped moving, and asked nothing again by itself
+    expect(hub.reads).toEqual([
+      "/api/sessions/s-need-1/agents/main/conversation?after=0",
+      "/api/sessions/s-need-1/agents/main/conversation?after=20",
+    ]);
+  });
+
+  it("reads on from its cursor when the hub says the conversation grew, and sets the news under a New pill", async () => {
+    const { hub, api } = transcriptHub([said("p1", "user", "Move the backup job to pve2")]);
+    const registry = mountSession("phone", { harness: "claude" }, null, api);
+    await flush();
+    expect(document.querySelector("[data-new]")).toBeNull();
+    hub.reads.length = 0;
+
+    hub.lines.push(said("r1", "assistant", "First run finished clean."));
+    registry.getState().convoGrew = { "s-need-1": 1 };
+    await act(async () => {
+      registry.setNeeds(registry.getState().needs);
+    });
+    await flush();
+    expect(hub.reads[0]).toBe("/api/sessions/s-need-1/agents/main/conversation?after=10");
+    expect(screen.getByText("First run finished clean.")).toBeDefined();
+    expect(screen.getByRole("button", { name: "New" })).toBeDefined();
+    // another session's growth is no read of this one
+    hub.reads.length = 0;
+    registry.getState().convoGrew = { "s-need-1": 1, "s-other": 4 };
+    await act(async () => {
+      registry.setNeeds(registry.getState().needs);
+    });
+    await flush();
+    expect(hub.reads).toEqual([]);
+  });
+
+  it("reads a transcript again after the registry stream reconnects: what grew while it was down appears", async () => {
+    const { hub, api } = transcriptHub([said("p1", "user", "Move the backup job to pve2")]);
+    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    const source = { onopen: null, onerror: null, onmessage: null, close: () => {} } as EventSourceLike;
+    const greet = (): void => source.onmessage?.({ data: JSON.stringify({ type: "hello" }) });
+    const registry = createRegistry({
+      api: apiFake((path) =>
+        path === "/api/registry/sessions/s-need-1" ? detail({ harness: "claude" }) : {},
+      ).api,
+      EventSource: () => source,
+    });
+    Object.assign(registry.getState(), {
+      sessions: fixture(),
+      open: detail({ harness: "claude" }),
+      openId: "s-need-1",
+    });
+    followRender(() => <SessionScreen id="s-need-1" layout="phone" />, registry, api);
+    registry.connect();
+    greet();
+    await flush();
+    expect(screen.getByText("Move the backup job to pve2")).toBeDefined();
+    expect(screen.queryByText("First run finished clean.")).toBeNull();
+
+    // the stream drops; the transcript grows with no event to say so; the stream greets again
+    hub.lines.push(said("r1", "assistant", "First run finished clean."));
+    greet();
+    await flush();
+    await flush();
+    expect(screen.getByText("First run finished clean.")).toBeDefined();
+    registry.disconnect();
+  });
+
+  it("keeps the hook-event stream for a Claude Code session whose transcript answers no items", async () => {
+    const { api } = transcriptHub([]);
+    mountSession("phone", { harness: "claude" }, null, api);
+    await flush();
+    expect(document.querySelector("[data-stream]")).not.toBeNull();
+    expect(document.querySelector("[data-block='transcript']")).toBeNull();
+    expect(screen.getByText("Add the e2e test")).toBeDefined();
+  });
+
+  it("shows the Now card with the ask's words and how long they have waited", () => {
+    mountSession("phone", {}, [needItem()]);
+    const card = document.querySelector("[data-session] header [data-now-card]") as HTMLElement;
+    expect(card.textContent).toBe("NowWaiting for you to allow a command: npm test -- --run e2e30 s");
+    const lead = within(card).getByText("Waiting for you");
+    expect(lead.className).toContain("text-[var(--ui-warn-ink)]");
   });
 
   it("waits quietly while the detail loads, and says when there is no such session", () => {
@@ -933,13 +1091,9 @@ describe("the session screen's link actions", () => {
   });
 
   it("TestHandOverToastsTheMovedTasks", async () => {
-    const h = mountActions((path, n) => {
+    const h = mountActions((path) => {
       if (path === "/api/links") return kanbanLinks;
-      if (path === "/api/handover") {
-        return n === 2
-          ? { moved: ["t-1", "t-2"] }
-          : Object.assign(new Error("hand over needs both sessions in one channel"), { status: 409 });
-      }
+      if (path === "/api/handover") return { moved: ["t-1", "t-2"] };
       return {};
     });
     await flush();

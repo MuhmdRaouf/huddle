@@ -314,6 +314,13 @@ const isSessionRow = (d: unknown): d is RegistrySession => !!d && typeof d === "
 const isNeedItem = (d: unknown): d is NeedItem =>
   !!d && typeof d === "object" && typeof (d as { id?: unknown }).id === "number";
 
+/** Does a stream message's data say one session's transcript grew? */
+const isGrew = (d: unknown): d is { session_id: string; agent: string } =>
+  !!d &&
+  typeof d === "object" &&
+  typeof (d as { session_id?: unknown }).session_id === "string" &&
+  typeof (d as { agent?: unknown }).agent === "string";
+
 /** The registry's own state in one object, mutated in place the way the channel store's is. */
 export type RegistryState = {
   /** Every reported session, newest activity first; null until the first read answered. */
@@ -326,6 +333,9 @@ export type RegistryState = {
   openId: string | null;
   /** The named session answered 404: the address names no session there is. */
   openMissing: boolean;
+  /** How often each session's main conversation grew since the page opened: a page reads from its
+   *  cursor again when its session's count moves. */
+  convoGrew: Record<string, number>;
   live: LiveStatus;
 };
 
@@ -368,6 +378,7 @@ export function createRegistry(deps: {
     open: null,
     openId: null,
     openMissing: false,
+    convoGrew: {},
     live: "connecting",
   };
   const subs = new Set<() => void>();
@@ -463,6 +474,19 @@ export function createRegistry(deps: {
     }
     if (m.type === "registry.session" && isSessionRow(m.data)) applyRow(m.data);
     if (m.type === "needs.item" && isNeedItem(m.data)) applyNeed(m.data);
+    if (m.type === "conversation.grew") applyGrew(m.data);
+  }
+
+  /** Counts one more growth of a session's main conversation: its page reads on from its cursor. */
+  function countGrew(session: string): void {
+    state.convoGrew = { ...state.convoGrew, [session]: (state.convoGrew[session] ?? 0) + 1 };
+    changed();
+  }
+
+  /** One conversation.grew event: the session's main transcript holds more. A subagent's growth
+   *  is not the page's conversation. */
+  function applyGrew(data: unknown): void {
+    if (isGrew(data) && data.agent === "main") countGrew(data.session_id);
   }
 
   /** A hello says the stream is live; any but the first also refills what went by while away,
@@ -471,7 +495,11 @@ export function createRegistry(deps: {
     state.live = "live";
     if (hellos++ > 0) {
       void load();
-      if (state.openId) void loadSession(state.openId);
+      if (state.openId) {
+        void loadSession(state.openId);
+        // the transcript may have grown while the stream was away, with no event to say so
+        countGrew(state.openId);
+      }
     } else if (state.sessions === null) void load();
   }
 

@@ -28,6 +28,7 @@ const PHONE_SPECS = [
   "ask-answers.spec.ts",
   "sessions-list.spec.ts",
   "session-feature.spec.ts",
+  "session-transcript.spec.ts",
   "insights.spec.ts",
   "totp.spec.ts",
 ];

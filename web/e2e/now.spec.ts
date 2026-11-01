@@ -4,9 +4,9 @@
 // the main pane), on the phone a
 // seeded ask's card sits above the fold under the set-up row that opens the checklist in its sheet,
 // every session
-// names its harness on its row and in the session it opens (the desk header's badge, the phone's facts
-// line; the seeded Claude Code one and a Codex one), the phone's two-row header fits 390 px with its
-// facts line above the tab bar, one whose
+// names its harness on its row and in the session it opens (the desk header's badge, the phone's status
+// line; the seeded Claude Code one and a Codex one), the phone's header fits 390 px with the model in its
+// status line, one whose
 // last event asks for permission waits in Needs you with its state word,
 // an agent-team teammate that went idle shows under its lead's row with the word idle, a seeded
 // permission ask is allowed with one tap at its card's foot on the phone and at the session's
@@ -124,7 +124,7 @@ test("every session names its harness: the seeded Claude Code one and a Codex on
   await expect(other).toContainText("Codex");
 
   // the open session names its harness too: the desk keeps the badge in its status line, and
-  // the phone carries the name its report feeds in the facts line at the pane's foot
+  // the phone's status line names any harness but Claude Code
   if (info.project.name === "desktop") {
     await page.locator("[data-row='e2e-seed']").click();
     const header = page.locator("[data-session] header [data-harness]");
@@ -132,13 +132,13 @@ test("every session names its harness: the seeded Claude Code one and a Codex on
     await expect(header).toContainText("Claude Code");
   } else {
     await page.locator(`a[href='#/sessions/${codex}']`).first().click();
-    await expect(page.locator("[data-session-facts]")).toContainText("Codex");
+    await expect(page.locator("[data-session] header [data-status-line] [data-harness]")).toContainText(
+      "Codex",
+    );
   }
 });
 
-test("the phone's session header fits 390 px and the facts line rides above the tab bar", async ({
-  page,
-}, info) => {
+test("the phone's session header fits 390 px and its status line names the model", async ({ page }, info) => {
   test.skip(info.project.name !== "iphone", "the phone header is the phone's");
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page);
@@ -146,8 +146,8 @@ test("the phone's session header fits 390 px and the facts line rides above the 
   await page.locator("a[href='#/sessions/e2e-seed']").first().click();
   await expect(page.locator("[data-session] header")).toBeVisible();
 
-  // the title row and the where line fit: the page scrolls nothing sideways and no header
-  // element ends past the 390 px edge
+  // the title row, the status line and the where line fit: the page scrolls nothing sideways and
+  // no header element ends past the 390 px edge
   const over = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
@@ -161,13 +161,9 @@ test("the phone's session header fits 390 px and the facts line rides above the 
   );
   expect(spill, "header elements past the viewport's edge").toBe(0);
 
-  // the facts line sits at the pane's foot: inside the viewport, above the tab bar
-  const facts = page.locator("[data-session-facts]");
-  await expect(facts).toHaveText("glm-5.3");
-  const box = await facts.boundingBox();
-  const tab = await page.locator("[data-nav='bottom']").boundingBox();
-  expect(box).not.toBeNull();
-  expect(box && box.y + box.height).toBeLessThanOrEqual(tab?.y ?? 844);
+  // the model rides in the status line under the title; no facts line sits at the pane's foot
+  await expect(page.locator("[data-session] header [data-status-line]")).toContainText("glm-5.3");
+  await expect(page.locator("[data-session-facts]")).toHaveCount(0);
 });
 
 test("a session whose last event asks for permission waits in Needs you first", async ({ page }, info) => {

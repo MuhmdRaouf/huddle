@@ -5,7 +5,9 @@
 import { expect, test, type CDPSession, type Locator, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { readSetup, repoRoot, runDir, type E2eSetup } from "./paths.ts";
+import fs from "node:fs";
+import { join } from "node:path";
+import { here, readSetup, repoRoot, runDir, type E2eSetup } from "./paths.ts";
 import { LOAD_REQUESTS, LOAD_TOKENS } from "./seed.ts";
 
 /** The fixture's token numbers, as the transcript and the spool both carry them: three glm-5.3
@@ -433,4 +435,45 @@ export async function returnAfter(page: Page, awayMs: number): Promise<void> {
     Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
     document.dispatchEvent(new Event("visibilitychange"));
   }, awayMs);
+}
+
+/** One session whose registry report names a transcript file the hub reads: the file's path and
+ *  the way to add lines to its end, the way a running session's transcript grows. */
+export type TranscriptSession = { id: string; path: string; append: (...lines: string[]) => void };
+
+/** Seeds a session over the hand-built transcript fixture (three prompts, replies and nine tool
+ *  calls, every line invented): the file lands under the run's own folder with its times counted
+ *  back from now, and the session reports a finished turn naming that file. */
+export async function seedTranscriptSession(id: string, title: string): Promise<TranscriptSession> {
+  const minutesAgo = (m: string): string => new Date(Date.now() - Number(m) * 60_000).toISOString();
+  const fixture = fs.readFileSync(join(here, "fixtures", "session-transcript.jsonl"), "utf8");
+  const text = fixture
+    .replaceAll("@@SESSION@@", id)
+    .replace(/@@MIN-(\d+)@@/g, (_all, m: string) => minutesAgo(m));
+  const dir = join(runDir, "transcripts");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${id}.jsonl`);
+  fs.writeFileSync(file, text);
+  await api("/api/registry/report", {
+    session_id: id,
+    machine: "e2e-machine",
+    project: "e2e",
+    title,
+    cwd: "/w",
+    transcript_path: file,
+    last_event: "Stop",
+    last_event_at: new Date().toISOString(),
+  });
+  return { id, path: file, append: (...lines) => fs.appendFileSync(file, `${lines.join("\n")}\n`) };
+}
+
+/** One transcript line the session says: an assistant reply with `text`, timed now. */
+export function replyLine(session: string, uuid: string, text: string): string {
+  return JSON.stringify({
+    type: "assistant",
+    uuid,
+    timestamp: new Date().toISOString(),
+    sessionId: session,
+    message: { role: "assistant", content: [{ type: "text", text }] },
+  });
 }

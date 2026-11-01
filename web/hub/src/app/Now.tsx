@@ -1,10 +1,11 @@
-// Now.tsx — the Session screen: the header (the phone's two rows — the title's row with the
-// state word at its right, the where line under it — the desktop's title, where line and status
-// line), the facts line at the phone pane's foot, the stream of the session's events, and the
-// action bar its open ask carries; and the desktop's right rail (the session's Now, the
-// teammates it runs, the linked sessions). One tree serves the three layouts: the phone paints
-// the session alone, the tablet and the desktop paint it beside the list, and the desktop adds
-// the rail. Session text is rendered as text, never HTML (SPEC 9).
+// Now.tsx — the Session screen: the header block (the title with its where line, the status
+// line "State · model · context · bypass", and the Now card), the ask its open needs-you item
+// carries, and the session's transcript — its own prompts, replies and folded tool runs — or,
+// for a session whose transcript the hub cannot read and whose harness is not Claude Code, the
+// stream of its hook events; and the desktop's right rail (the session's Now, the teammates it
+// runs, the linked sessions). One tree serves the three layouts: the phone paints the session
+// alone, the tablet and the desktop paint it beside the list, and the desktop adds the rail.
+// Session text is rendered as text, never HTML (SPEC 9).
 import { Button } from "@huddle/ui/button.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
 import { stampMs } from "@huddle/ui/time.ts";
@@ -17,6 +18,7 @@ import {
   ageText,
   harnessOf,
   openItemOf,
+  type NeedItem,
   type RegistryDetail,
   type RegistrySession,
   sessionName,
@@ -29,9 +31,13 @@ import {
   type StreamItem,
   type ToolCall,
 } from "../registry.ts";
+import { useConversation, useTurn } from "../session/conversation.ts";
+import { TranscriptPane } from "../session/TranscriptPane.tsx";
+import type { TurnFacts } from "../session/types.ts";
 import { errText, useHuddle } from "./context.tsx";
 import type { Layout } from "./layout.ts";
 import { NeedsBar, useStepUp } from "./Needs.tsx";
+import { nowLine } from "./now-line.ts";
 import { HarnessBadge, HooksStaleChip, LINE, MUTED, openHref, StateMark, whereOf } from "./session-parts.tsx";
 
 /** One timestamp's wall-clock time, always 24 h, whatever the browser's locale spells. */
@@ -148,29 +154,18 @@ function StreamPart({ item }: { item: StreamItem }): JSX.Element {
   return <div class="break-words whitespace-pre-wrap">{item.text}</div>;
 }
 
-/** How close to the end, in px, still counts as reading the latest event. */
-const BOTTOM_SLACK = 8;
-
-/** The session's stream with its day dividers. It opens at the latest event and follows new
- *  ones while the reader is at the bottom; a reader who scrolled up stays where they are. */
+/** The session's stream with its day dividers. It opens at the latest event and never moves by
+ *  itself afterwards: the reader keeps their place. */
 function StreamPane({ items, now }: { items: StreamItem[]; now: number }): JSX.Element {
   const pane = useRef<HTMLDivElement>(null);
-  const atBottom = useRef(true);
-  // one count per call, so a call that joins a group follows as a new item does
-  const size = items.reduce((n, item) => n + (item.kind === "tool" ? item.calls.length : 1), 0);
   useLayoutEffect(() => {
     const el = pane.current;
-    if (el && atBottom.current) el.scrollTop = el.scrollHeight;
-  }, [size]);
-  const onScroll = (): void => {
-    const el = pane.current;
-    if (el) atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_SLACK;
-  };
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
   let lastDay = "";
   return (
     <div
       ref={pane}
-      onScroll={onScroll}
       class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 sm:px-6"
       tabIndex={0}
       aria-label="Transcript"
@@ -424,7 +419,17 @@ const STATE_INK: Record<StateRole, string> = {
 
 /** A session's state as its mark and word in the role's ink, the facts that ride behind it
  *  muted: the desk header's status line and the rail's Now row draw the same lead. */
-function StateLead({ state, role, tails }: { state: string; role: StateRole; tails: string[] }): JSX.Element {
+function StateLead({
+  state,
+  role,
+  tails,
+  warnTail,
+}: {
+  state: string;
+  role: StateRole;
+  tails: string[];
+  warnTail?: string;
+}): JSX.Element {
   const tail = tails.filter(Boolean).join(" · ");
   // the word reads as the mock writes it — "Working", "Needs you" — while data-state keeps the
   // raw lowercase state
@@ -435,38 +440,165 @@ function StateLead({ state, role, tails }: { state: string; role: StateRole; tai
       <span data-state={state} data-role={role} class={`shrink-0 font-semibold ${STATE_INK[role]}`}>
         {word.charAt(0).toUpperCase() + word.slice(1)}
       </span>
-      {tail ? <span class={`min-w-0 truncate ${T13} ${MUTED}`}>· {tail}</span> : null}
+      {tail || warnTail ? (
+        <span class={`min-w-0 truncate ${T13} ${MUTED}`}>
+          · {tail}
+          {warnTail ? (
+            <>
+              {tail ? " · " : ""}
+              <span class="text-[var(--ui-warn-ink)]">{warnTail}</span>
+            </>
+          ) : null}
+        </span>
+      ) : null}
     </span>
   );
 }
 
-/** The session's facts as the phone's and tablet's one quiet line at the pane's foot: its model,
- *  how full its context window is, and the harness its report names — each left out when the
- *  session does not carry it, the line itself when none is known. */
-function SessionFacts({ d, pct }: { d: RegistryDetail; pct: number }): JSX.Element | null {
-  const parts = [
-    d.model ? shortModel(d.model) : "",
-    pct ? `${pct}% context` : "",
-    d.harness ? harnessOf(d).name : "",
-  ].filter(Boolean);
-  if (parts.length === 0) return null;
+/** The Now card's words: a line that opens "Waiting for you" (or "on you") leads with those
+ *  words in the warn ink, the rest in the text ink. */
+function NowWords({ line }: { line: string }): JSX.Element {
+  const m = /^(Waiting (?:for|on) you)([\s\S]*)$/.exec(line);
+  if (!m) return <>{line}</>;
   return (
-    <p data-session-facts="" class={`shrink-0 px-4 pb-2 text-xs ${MUTED}`}>
-      {parts.join(" · ")}
-    </p>
+    <>
+      <span class="font-semibold text-[var(--ui-warn-ink)]">{m[1]}</span>
+      {m[2]}
+    </>
   );
 }
 
-/** The Session screen: the header, the ask its open needs-you item carries (the page's second
- *  block on every layout), the line that says how to restart a session whose hooks stopped
- *  reporting, and the stream of the session's events. The phone and the tablet paint
- *  the mock's one-row header: the title's column — the phone's carries the accent back link, the
- *  where line rides under the title with the hooks-stale chip beside it — and the state as a
- *  small dot and word at the column's right; the facts line sits at the pane's foot. The desktop
- *  leads with the title alone, the where line and one status line under it, and the actions at
- *  its right. */
+/** The Now card: what the session is doing or waits on, and how long it has been so. */
+function NowCard({
+  d,
+  ask,
+  turn,
+  now,
+}: {
+  d: RegistryDetail;
+  ask: NeedItem | undefined;
+  turn: TurnFacts | undefined;
+  now: number;
+}): JSX.Element | null {
+  const line = nowLine(d, ask, turn, now);
+  if (!line) return null;
+  const age = ageText(ask?.created_at ?? d.last_event_at, now);
+  return (
+    <div
+      data-now-card=""
+      class="mt-2 flex min-h-[var(--ui-tap)] min-w-0 items-center gap-3 rounded-[var(--ui-radius)] bg-[var(--ui-surface)] px-4 py-2 shadow-[var(--ui-shadow-1)]"
+    >
+      <span class={`shrink-0 ${T13} font-semibold ${MUTED}`}>Now</span>
+      <span class="min-w-0 flex-1 truncate text-sm">
+        <NowWords line={line} />
+      </span>
+      {age ? <span class={`shrink-0 text-xs ${MUTED}`}>{age}</span> : null}
+    </div>
+  );
+}
+
+/** The session's status line: its state, model, how full its context window is, and "bypass"
+ *  when the turn's permission mode runs without asking; the chips ride behind it. */
+function StatusLine({
+  d,
+  state,
+  role,
+  turn,
+  layout,
+}: {
+  d: RegistryDetail;
+  state: string;
+  role: StateRole;
+  turn: TurnFacts | undefined;
+  layout: Layout;
+}): JSX.Element {
+  const pct = d.context_percent ? Math.round(d.context_percent) : 0;
+  const bypass = turn?.permission_mode === BYPASS_MODE;
+  return (
+    <div data-status-line="" class={`mt-2 flex min-w-0 items-center gap-2 ${T13}`}>
+      <StateLead
+        state={state}
+        role={role}
+        tails={[d.model ? shortModel(d.model) : "", pct ? `${pct}% context` : ""]}
+        {...(bypass ? { warnTail: "bypass" } : {})}
+      />
+      {layout === "desktop" ? <HooksStaleChip s={d} /> : null}
+      {layout === "desktop" || harnessOf(d).id !== "claude" ? <HarnessBadge s={d} pill /> : null}
+    </div>
+  );
+}
+
+/** The permission mode that runs every call without asking. */
+const BYPASS_MODE = "bypassPermissions";
+
+/** The session's header block: the title with its where line (the phone's carries the accent
+ *  back link and the hooks-stale chip), the status line and the Now card. */
+function SessionHeader({
+  d,
+  state,
+  role,
+  ask,
+  layout,
+}: {
+  d: RegistryDetail;
+  state: string;
+  role: StateRole;
+  ask: NeedItem | undefined;
+  layout: Layout;
+}): JSX.Element {
+  const { now } = useHuddle();
+  const turn = useTurn(d.session_id, state);
+  const title = (
+    <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+      <div data-session-title="" class="truncate text-lg font-semibold">
+        {sessionName(d)}
+      </div>
+      <div class="flex min-w-0 items-center gap-2">
+        <div class={`min-w-0 truncate ${layout === "desktop" ? T13 : "text-xs"} ${MUTED}`}>{whereOf(d)}</div>
+        {layout === "desktop" ? null : <HooksStaleChip s={d} />}
+      </div>
+    </div>
+  );
+  return (
+    <header data-block="header" class={`shrink-0 ${layout === "desktop" ? "px-6 pt-4" : "px-4 pt-3.5"} pb-1`}>
+      <div class="flex min-w-0 items-center gap-1 sm:gap-4">
+        {layout === "phone" ? (
+          <a
+            href="#/sessions"
+            aria-label="Back to Sessions"
+            class="-ml-2 flex size-[var(--ui-tap)] shrink-0 items-center justify-center rounded-[var(--ui-radius)] text-[var(--ui-accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+          >
+            <Icon name="left" class="size-[22px]" />
+          </a>
+        ) : null}
+        {title}
+        <SessionActions session={d} />
+      </div>
+      <StatusLine d={d} state={state} role={role} turn={turn} layout={layout} />
+      <NowCard d={d} ask={ask} turn={turn} now={now} />
+    </header>
+  );
+}
+
+/** What the page reads of the session's words: its transcript, or, when the hub reads none for a
+ *  harness other than Claude Code, the stream of its hook events. A Claude Code session waits
+ *  for its first read, so the page never paints one pane and then the other. */
+function SessionBody({ d }: { d: RegistryDetail }): JSX.Element {
+  const { now } = useHuddle();
+  const convo = useConversation(d.session_id);
+  const held = convo.state.items.length > 0;
+  if (held || (harnessOf(d).id === "claude" && !convo.settled)) {
+    return <TranscriptPane items={convo.state.items} now={now} />;
+  }
+  return <StreamPane items={streamItems(d.events ?? [])} now={now} />;
+}
+
+/** The Session screen: the header block, the ask its open needs-you item carries (the page's
+ *  second block on every layout), the line that says how to restart a session whose hooks
+ *  stopped reporting, and the session's transcript. The phone paints the accent back link in
+ *  the title's row; the desktop leads with the title alone and the actions at its right. */
 export function SessionScreen({ id, layout }: { id: string; layout: Layout }): JSX.Element {
-  const { registry, now } = useHuddle();
+  const { registry } = useHuddle();
   const st = registry.getState();
   const d = st.open;
 
@@ -481,67 +613,10 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
   const ask = openItemOf(st.needs, id);
   const state = shownState(d, st.needs);
   const role = stateRole(state, ask);
-  const word = stateWord(state);
-
-  const items = streamItems(d.events ?? []);
-  const pct = d.context_percent ? Math.round(d.context_percent) : 0;
 
   return (
     <div class="flex min-h-0 min-w-0 flex-1 flex-col" data-session="">
-      {layout !== "desktop" ? (
-        <header class={`shrink-0 border-b ${LINE} bg-[var(--ui-surface)] px-3 pt-3.5 pb-3`}>
-          <div class="flex min-w-0 items-center gap-1">
-            {layout === "phone" ? (
-              <a
-                href="#/sessions"
-                aria-label="Back to Sessions"
-                class="flex size-[var(--ui-tap)] shrink-0 items-center justify-center rounded-[var(--ui-radius)] text-[var(--ui-accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
-              >
-                <Icon name="left" class="size-[22px]" />
-              </a>
-            ) : null}
-            <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-              <div data-session-title="" class="truncate text-lg font-semibold">
-                {sessionName(d)}
-              </div>
-              <div class="flex min-w-0 items-center gap-2">
-                <div class={`min-w-0 truncate text-xs ${MUTED}`}>{whereOf(d)}</div>
-                <HooksStaleChip s={d} />
-              </div>
-            </div>
-            <span
-              data-state={state}
-              data-role={role}
-              class={`flex shrink-0 items-center gap-1.5 text-xs ${STATE_INK[role]}`}
-            >
-              <span aria-hidden="true" class="size-2 shrink-0 rounded-full bg-current" />
-              {word.charAt(0).toUpperCase() + word.slice(1)}
-            </span>
-            <SessionActions session={d} />
-          </div>
-        </header>
-      ) : (
-        <header class="shrink-0 px-6 pt-4">
-          <div class="flex min-w-0 items-start gap-4">
-            <div class="flex min-w-0 flex-1 flex-col">
-              <div data-session-title="" class="truncate text-lg font-semibold">
-                {sessionName(d)}
-              </div>
-              <div class={`mt-1 truncate ${T13} ${MUTED}`}>{whereOf(d)}</div>
-              <div data-status-line="" class="mt-2 flex min-w-0 items-center gap-2">
-                <StateLead
-                  state={state}
-                  role={role}
-                  tails={[d.model ? shortModel(d.model) : "", pct ? `${pct}% context` : ""]}
-                />
-                <HooksStaleChip s={d} />
-                <HarnessBadge s={d} pill />
-              </div>
-            </div>
-            <SessionActions session={d} />
-          </div>
-        </header>
-      )}
+      <SessionHeader d={d} state={state} role={role} ask={ask} layout={layout} />
       {ask ? <NeedsBar item={ask} session={d} layout={layout} /> : null}
       {d.hooks_stale ? (
         <p data-resume="" class={`shrink-0 border-b ${LINE} px-4 py-2.5 text-sm sm:px-6`}>
@@ -549,8 +624,7 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
           <code class="ui-mono">claude --resume {d.session_id}</code>
         </p>
       ) : null}
-      <StreamPane key={d.session_id} items={items} now={now} />
-      {layout !== "desktop" ? <SessionFacts d={d} pct={pct} /> : null}
+      <SessionBody key={d.session_id} d={d} />
     </div>
   );
 }

@@ -12,7 +12,7 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import path from "node:path";
 import { axeViolations } from "./axe.ts";
-import { api, expectTapTargets, n, SEEDED, signIn, theSetup } from "./helpers.ts";
+import { api, expectTapTargets, n, SEEDED, seedTranscriptSession, signIn, theSetup } from "./helpers.ts";
 
 /** Every page and drawer the suite shoots. */
 type PageId =
@@ -126,11 +126,12 @@ const SHELL_KNOWN: readonly { rule: AxeRule; node: string }[] = [
 
 /** The names a project's seeded rows go by: the project's name keeps the three projects' rows
  *  apart in one local run against one hub. */
-type Seeded = { permit: string; task: string };
+type Seeded = { permit: string; task: string; transcript: string };
 
 const seededFor = (project: string): Seeded => ({
   permit: `screens-permit-${project}`,
   task: `screens-task-${project}`,
+  transcript: `screens-transcript-${project}`,
 });
 
 /** One page the suite shoots: its id, and how a signed-in browser (a signed-out one for the
@@ -221,7 +222,14 @@ const SCREENS: readonly Screen[] = [
     },
   },
   { id: "now", signedIn: true, open: route(() => "#/sessions") },
-  { id: "session", signedIn: true, open: route(() => `#/sessions/${SEEDED.session}`) },
+  {
+    id: "session",
+    signedIn: true,
+    open: async (page, seeded) => {
+      await route((s) => `#/sessions/${s.transcript}`)(page, seeded);
+      await expect(page.locator("[data-block='transcript'] [data-run]").first()).toBeVisible();
+    },
+  },
   {
     id: "needs",
     signedIn: true,
@@ -380,6 +388,8 @@ test.describe("every page on this project's width", () => {
       tool_input: { command: "go run ./scripts/tmpguard -count=1 ./internal/huddle/... && bun run check" },
     });
     needs.push(id);
+    // a session over the transcript fixture: the session page's shots paint its prompts and runs
+    await seedTranscriptSession(seeded.transcript, "Move the nightly backup to pve2");
     // a task for the drawer; a worker that restarts after a failure finds it made already, and
     // the task drawer's own page is what proves it exists
     await api(`/api/c/e2e/op/task_create?as=alpha`, {
@@ -392,6 +402,14 @@ test.describe("every page on this project's width", () => {
   test.afterAll(async () => {
     // the other specs count the needs-you items, so this project's ask leaves with it
     for (const id of needs.splice(0)) await api(`/api/needs/${id}/dismiss`, {}).catch(() => {});
+    await api("/api/registry/report", {
+      session_id: seededFor(test.info().project.name).transcript,
+      machine: "e2e-machine",
+      project: "e2e",
+      title: "Move the nightly backup to pve2",
+      last_event: "SessionEnd",
+      last_event_at: new Date().toISOString(),
+    }).catch(() => {});
   });
 
   for (const screen of SCREENS) {
