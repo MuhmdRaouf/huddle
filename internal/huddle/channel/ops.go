@@ -141,6 +141,15 @@ func argIntPtr(a *jsfmt.Value, k string) *int64 {
 
 func argStrs(a *jsfmt.Value, k string) []string { return strsOf(argOf(a, k)) }
 
+// argRecipients reads "to" as one name or a list of names; absent, it is everyone.
+func argRecipients(a *jsfmt.Value) []string {
+	to := argOf(a, "to")
+	if to != nil && to.Kind() == jsfmt.KindString {
+		return []string{to.Text()}
+	}
+	return strsOf(to)
+}
+
 // argID reads one id argument as a number, 0 for anything that is not one.
 func argID(a *jsfmt.Value, k string) int64 {
 	if v := argIntPtr(a, k); v != nil {
@@ -294,7 +303,7 @@ var ops = map[string]opDef{
 		}),
 		required: []string{"msg"},
 		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
-			return c.ch.Send(ctx, c.me, argStrPtr(a, "to"), argStr(a, "msg"), SendOpts{
+			return c.ch.Send(ctx, c.me, argRecipients(a), argStr(a, "msg"), SendOpts{
 				Ask: jsTruthy(argOf(a, "ask")), Task: argStrPtr(a, "task"), Key: argStrPtr(a, "key"),
 			})
 		},
@@ -784,7 +793,7 @@ var ops = map[string]opDef{
 		required: []string{"to", "msg"},
 		blocks:   true,
 		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
-			q, err := c.ch.Send(ctx, c.me, sp(argStr(a, "to")), argStr(a, "msg"), SendOpts{Ask: true})
+			q, err := c.ch.Send(ctx, c.me, []string{argStr(a, "to")}, argStr(a, "msg"), SendOpts{Ask: true})
 			if err != nil {
 				return nil, err
 			}

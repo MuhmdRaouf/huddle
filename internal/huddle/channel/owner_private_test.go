@@ -22,10 +22,10 @@ func TestAnOwnerMessageToOneMemberIsItsAlone(t *testing.T) {
 				t.Fatalf("join %s: %v", member, err)
 			}
 		}
-		if _, err := ch.Send(bg, Owner, sp("lead"), "Pick the second option", SendOpts{}); err != nil {
+		if _, err := ch.Send(bg, Owner, []string{"lead"}, "Pick the second option", SendOpts{}); err != nil {
 			t.Fatalf("owner send: %v", err)
 		}
-		if _, err := ch.Send(bg, "lead", sp("dotfiles"), "done", SendOpts{}); err != nil {
+		if _, err := ch.Send(bg, "lead", []string{"dotfiles"}, "done", SendOpts{}); err != nil {
 			t.Fatalf("lead send: %v", err)
 		}
 
@@ -57,7 +57,7 @@ func TestAnOwnerMessageToOneMemberIsItsAlone(t *testing.T) {
 				t.Fatalf("join %s: %v", member, err)
 			}
 		}
-		if _, err := ch.Send(bg, Owner, sp("lead"), "Pick the second option", SendOpts{}); err != nil {
+		if _, err := ch.Send(bg, Owner, []string{"lead"}, "Pick the second option", SendOpts{}); err != nil {
 			t.Fatalf("owner send: %v", err)
 		}
 

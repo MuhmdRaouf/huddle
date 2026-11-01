@@ -138,7 +138,7 @@ func TestChannelRenders(t *testing.T) {
 		if _, err := ch.SetStatus(bg, "a", "dep", "done", ""); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ch.Send(bg, Owner, sp("b"), "your orders?", SendOpts{Ask: true}); err != nil {
+		if _, err := ch.Send(bg, Owner, []string{"b"}, "your orders?", SendOpts{Ask: true}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := ch.Brief(bg, Owner, "b", "start with rich"); err != nil {
@@ -343,7 +343,7 @@ func TestChannelRenders(t *testing.T) {
 		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "x.y", Msg: "m", To: sp("stranger")}); errStatus(err) != 404 {
 			t.Errorf("unknown recipient = %d (%v), want 404", errStatus(err), err)
 		}
-		if _, err := ch.Send(bg, "a", sp("stranger"), "m", SendOpts{}); errStatus(err) != 404 {
+		if _, err := ch.Send(bg, "a", []string{"stranger"}, "m", SendOpts{}); errStatus(err) != 404 {
 			t.Errorf("send to a stranger = %d (%v), want 404", errStatus(err), err)
 		}
 		if _, err := ch.Send(bg, "a", nil, "", SendOpts{}); errStatus(err) != 400 {

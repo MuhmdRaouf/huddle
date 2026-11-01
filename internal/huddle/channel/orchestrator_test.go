@@ -31,7 +31,7 @@ func TestOrchestrator(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if _, err := ch.Send(bg, "web", sp("api"), "which port?", SendOpts{Ask: true}); err != nil {
+		if _, err := ch.Send(bg, "web", []string{"api"}, "which port?", SendOpts{Ask: true}); err != nil {
 			t.Fatal(err)
 		}
 		f, err := ch.Join(bg, "api", JoinOpts{Context: sp("fresh")})
@@ -312,7 +312,7 @@ func TestOrchestrator(t *testing.T) {
 
 	t.Run("every start is on the timeline: joined or returned, with its context and what it skipped", func(t *testing.T) {
 		ch := newChannel(t)
-		if _, err := ch.Send(bg, "lead", sp("api"), "one", SendOpts{}); err != nil {
+		if _, err := ch.Send(bg, "lead", []string{"api"}, "one", SendOpts{}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := ch.Send(bg, "web", nil, "two", SendOpts{}); err != nil {

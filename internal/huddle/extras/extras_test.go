@@ -455,10 +455,10 @@ func TestExtrasNotifications(t *testing.T) {
 		notifier, log := notifyLog(t)
 		capture := outside.NewCapture(t.TempDir())
 		NewWatcher(notifier).Watch(ch)
-		if _, err := ch.Send(bg, "web", sp(channel.Owner), "may I deploy? password=hunter2", channel.SendOpts{Ask: true}); err != nil {
+		if _, err := ch.Send(bg, "web", []string{channel.Owner}, "may I deploy? password=hunter2", channel.SendOpts{Ask: true}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ch.Send(bg, "web", sp(channel.Owner), "and now?", channel.SendOpts{Ask: true}); err != nil {
+		if _, err := ch.Send(bg, "web", []string{channel.Owner}, "and now?", channel.SendOpts{Ask: true}); err != nil {
 			t.Fatal(err) // same session, same window: once
 		}
 		if _, err := ch.Control(bg, "web", "api", "pause", "wait"); err != nil {
@@ -737,7 +737,7 @@ func TestWatcher(t *testing.T) {
 		if _, err := ch.Join(bg, "web", channel.JoinOpts{}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ch.Send(bg, "web", sp(channel.Owner), "may I deploy?", channel.SendOpts{Ask: true}); err != nil {
+		if _, err := ch.Send(bg, "web", []string{channel.Owner}, "may I deploy?", channel.SendOpts{Ask: true}); err != nil {
 			t.Fatal(err)
 		}
 		notes := readNotes(t, log)

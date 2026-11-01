@@ -68,7 +68,7 @@ func TestChannel(t *testing.T) {
 		res := make(chan hit, 1)
 		go func() { h, err := ch.Wait(bg, "b", []string{"msg"}, 5); res <- hit{h, err} }()
 		until(t, "b waiting", waiting(t, ch, "b"))
-		if _, err := ch.Send(bg, "a", sp("c"), "for c only", SendOpts{}); err != nil {
+		if _, err := ch.Send(bg, "a", []string{"c"}, "for c only", SendOpts{}); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -77,7 +77,7 @@ func TestChannel(t *testing.T) {
 			t.Fatal("a message to another session woke the waiter")
 		default:
 		}
-		if _, err := ch.Send(bg, "a", sp("b"), "for b", SendOpts{}); err != nil {
+		if _, err := ch.Send(bg, "a", []string{"b"}, "for b", SendOpts{}); err != nil {
 			t.Fatal(err)
 		}
 		o := <-res
@@ -151,7 +151,7 @@ func TestChannel(t *testing.T) {
 
 	t.Run("an ask wakes the addressee's wait as a message until answered; answering twice is refused", func(t *testing.T) {
 		ch := joinedChannel(t)
-		ask, err := ch.Send(bg, "a", sp("b"), "ready?", SendOpts{Ask: true})
+		ask, err := ch.Send(bg, "a", []string{"b"}, "ready?", SendOpts{Ask: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -695,7 +695,7 @@ func TestChannel(t *testing.T) {
 		if _, err := ch.ImportPlan(bg, Owner, planValue(t, plan), ImportOpts{Owner: sp("a")}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ch.Send(bg, "b", sp(Owner), "which option?", SendOpts{Ask: true}); err != nil {
+		if _, err := ch.Send(bg, "b", []string{Owner}, "which option?", SendOpts{Ask: true}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := ch.Control(bg, Owner, "b", "pause", ""); err != nil {

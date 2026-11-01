@@ -221,7 +221,7 @@ func (s *server) linksOfRoute(w http.ResponseWriter, r *http.Request, path strin
 }
 
 // overhear fans one channel op's broadcast post out to the sessions linked to the channel at the
-// overhear level: a publish, or a send that names no recipient. The speaker's own session is
+// overhear level: a publish, or a send to everyone. The speaker's own session is
 // skipped — its channel already carries its words — and digest and on-request links hear no posts
 // here (HUB-DIGEST fills digest; on-request is what a brief targets). A failure is logged on one
 // line and never fails the op that fed it.
@@ -229,7 +229,7 @@ func (s *server) overhear(ctx context.Context, ch, from, op string, body *jsfmt.
 	if s.registry == nil {
 		return
 	}
-	if op != "publish" && (op != "send" || fieldOf(body, "to") != nil) {
+	if op != "publish" && (op != "send" || !channel.IsBroadcast(body)) {
 		return // no broadcast, nothing to overhear
 	}
 	text := textOf(fieldOf(body, "msg"))

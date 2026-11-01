@@ -104,7 +104,7 @@ func TestWaiterRaces(t *testing.T) {
 			err error
 		}
 		for i := range 100 {
-			q, err := ch.Send(bg, "a", sp("b"), "q"+strconv.Itoa(i), SendOpts{Ask: true})
+			q, err := ch.Send(bg, "a", []string{"b"}, "q"+strconv.Itoa(i), SendOpts{Ask: true})
 			if err != nil {
 				t.Fatal(err)
 			}

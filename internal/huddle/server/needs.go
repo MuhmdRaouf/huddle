@@ -331,7 +331,7 @@ func (s *server) pushMessage(ctx context.Context, id int64, in hub.MessageIn) st
 	if err != nil {
 		return hub.RouteNextPrompt
 	}
-	if _, err := ch.Send(ctx, channel.Owner, &row.Member, in.Header(), channel.SendOpts{}); err != nil {
+	if _, err := ch.Send(ctx, channel.Owner, []string{row.Member}, in.Header(), channel.SendOpts{}); err != nil {
 		return hub.RouteNextPrompt // the channel refused: the next prompt still reaches it
 	}
 	_ = s.registry.MarkDelivered(ctx, id, hub.RouteNow, jsscalar.ISOTime(s.now()))

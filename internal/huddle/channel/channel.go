@@ -2346,6 +2346,7 @@ type evIn struct {
 	needsReply bool
 	key        *string
 	ts         string
+	ownGroup   bool // store the new event's seq as its data.group
 }
 
 // insert writes one event inside a caller's transaction, and answers it (or the earlier one for
@@ -2381,6 +2382,11 @@ func (c *Channel) insert(ctx context.Context, q store.Q, from string, e evIn) (E
 		return Ev{}, err
 	}
 	ev := toEv(r)
+	if e.ownGroup {
+		if ev, err = c.tieToGroup(ctx, q, ev); err != nil {
+			return Ev{}, err
+		}
+	}
 	if err := c.advanceTurn(ctx, q, ev); err != nil {
 		return Ev{}, err
 	}
@@ -2488,15 +2494,20 @@ func (c *Channel) Publish(ctx context.Context, from string, a PublishArgs) (Ev, 
 	return ev, err
 }
 
-// Send messages one session (or everyone); an ask lands in their inbox until they reply.
-func (c *Channel) Send(ctx context.Context, from string, to *string, msg string, o SendOpts) (Ev, error) {
+// Send messages the sessions named in to, or everyone when to is empty or ["all"]; an ask lands
+// in each recipient's inbox until they reply. Several recipients get one event each (recipients.go).
+func (c *Channel) Send(ctx context.Context, from string, to []string, msg string, o SendOpts) (Ev, error) {
 	var ev Ev
 	err := c.serial(ctx, func(ctx context.Context) error {
 		if _, err := c.need(ctx, from); err != nil {
 			return err
 		}
-		if to != nil && *to != Owner {
-			if _, err := c.need(ctx, *to); err != nil {
+		names, err := resolveRecipients(to)
+		if err != nil {
+			return err
+		}
+		for _, name := range names {
+			if _, err := c.need(ctx, name); err != nil {
 				return err
 			}
 		}
@@ -2511,13 +2522,9 @@ func (c *Channel) Send(ctx context.Context, from string, to *string, msg string,
 		if o.Task != nil {
 			data = jsfmt.Object([]string{"task"}, []*jsfmt.Value{jstr(*o.Task)})
 		}
-		var key *string
-		if o.Key != nil {
-			key = o.Key
-		}
-		evIn := evIn{topic: topic, to: to, msg: sp(utf16Cut(msg, 20000)), data: data, needsReply: o.Ask, key: key}
-		var err error
-		ev, err = c.append(ctx, from, evIn)
+		ev, err = c.sendFanOut(ctx, from, names, evIn{
+			topic: topic, msg: sp(utf16Cut(msg, 20000)), data: data, needsReply: o.Ask, key: o.Key,
+		})
 		return err
 	})
 	return ev, err

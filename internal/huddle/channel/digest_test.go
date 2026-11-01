@@ -59,7 +59,7 @@ func TestDigest(t *testing.T) {
 		if _, err := ch.Note(bg, "web", "t1", "question", "is it paginated?"); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ch.Send(bg, "web", sp(Owner), "may I drop the old table?", SendOpts{Ask: true}); err != nil {
+		if _, err := ch.Send(bg, "web", []string{Owner}, "may I drop the old table?", SendOpts{Ask: true}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := ch.Append(bg, "api", evIn{
@@ -376,7 +376,7 @@ func TestDigestCostText(t *testing.T) {
 	if _, err := ch.Append(bg, "web", evIn{topic: "task.status", data: vv(t, `{"status": "skipped", "task": "unknown", "note": "gone"}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ch.Send(bg, "web", sp("api"), "which task?", SendOpts{Ask: true, Task: sp("t1")}); err != nil {
+	if _, err := ch.Send(bg, "web", []string{"api"}, "which task?", SendOpts{Ask: true, Task: sp("t1")}); err != nil {
 		t.Fatal(err)
 	}
 	at := isoNow(time.Now())

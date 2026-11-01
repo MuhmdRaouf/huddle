@@ -34,7 +34,7 @@ func TestChannelBranches(t *testing.T) {
 		if _, err := ch.Remember(bg, "lead", RememberInput{Kind: "fact", Title: "the build needs gcc", Body: "gcc 13"}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ch.Send(bg, "lead", sp("api"), "which gcc?", SendOpts{Ask: true, Task: sp("t2")}); err != nil {
+		if _, err := ch.Send(bg, "lead", []string{"api"}, "which gcc?", SendOpts{Ask: true, Task: sp("t2")}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := ch.Control(bg, "lead", "api", "pause", "wait"); err != nil {
@@ -539,11 +539,11 @@ func TestChannelEdges(t *testing.T) {
 
 	t.Run("a repeated send key answers the first event", func(t *testing.T) {
 		ch := joinedChannel(t)
-		e1, err := ch.Send(bg, "a", sp("b"), "m", SendOpts{Key: sp("k")})
+		e1, err := ch.Send(bg, "a", []string{"b"}, "m", SendOpts{Key: sp("k")})
 		if err != nil {
 			t.Fatal(err)
 		}
-		e2, err := ch.Send(bg, "a", sp("b"), "m", SendOpts{Key: sp("k")})
+		e2, err := ch.Send(bg, "a", []string{"b"}, "m", SendOpts{Key: sp("k")})
 		if err != nil {
 			t.Fatal(err)
 		}

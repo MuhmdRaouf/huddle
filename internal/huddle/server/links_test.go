@@ -210,6 +210,35 @@ func TestOverhearCarriesEveryBroadcastToLinkedSessions(t *testing.T) {
 	}
 }
 
+func TestOverhearTreatsAllAsABroadcastAndANameListAsAddressed(t *testing.T) {
+	srv := startServer(t, nil)
+	reportSession(t, srv, "s-a", "kanban-release", "api", "UserPromptSubmit")
+	reportSession(t, srv, "s-b", "kanban-release", "web", "UserPromptSubmit")
+	for _, member := range []string{"api", "web", "ops"} {
+		if code, out := srv.op(t, "kanban-release", "join", member, "{}"); code != 200 {
+			t.Fatalf("join %s = %d %s", member, code, out)
+		}
+	}
+	if code, out := srv.post(t, "/api/links", `{"sessions":["s-a","s-b"],"channel":"kanban-release","level":"overhear"}`, nil); code != 200 {
+		t.Fatalf("the link = %d %s", code, out)
+	}
+	// a send to two members is addressed: the linked session does not overhear it
+	if code, out := srv.op(t, "kanban-release", "send", "api", `{"to":["web","ops"],"msg":"just for you two"}`); code != 200 {
+		t.Fatalf("send to a list = %d %s", code, out)
+	}
+	if rows := linkedRows(t, srv); len(rows) != 0 {
+		t.Fatalf("a send to two members reached a linked session: %v", rows)
+	}
+	// a send to all is a broadcast, like a send that names no one
+	if code, out := srv.op(t, "kanban-release", "send", "api", `{"to":["all"],"msg":"all hands"}`); code != 200 {
+		t.Fatalf("send to all = %d %s", code, out)
+	}
+	rows := linkedRows(t, srv)
+	if len(rows) != 1 || rows[0]["session_id"] != "s-b" {
+		t.Fatalf("a send to all reached %v, want s-b alone", rows)
+	}
+}
+
 func TestDigestAndOnRequestLinksHearNoPosts(t *testing.T) {
 	srv := startServer(t, nil)
 	reportSession(t, srv, "s-a", "kanban-release", "api", "UserPromptSubmit")
