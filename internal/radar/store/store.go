@@ -99,6 +99,9 @@ type Change struct {
 	// Captures lists the distinct prompt captures the change brought (a spool capture
 	// line); only the history writer reads them, so the store holds none.
 	Captures []shared.CaptureRecord `json:"captures,omitempty"`
+	// Warm marks a change that reloads what history already holds; the history writer skips
+	// it.
+	Warm bool `json:"warm,omitempty"`
 }
 
 // RequestFilter narrows the request reads: a session, an agent, a model, a floor
@@ -442,6 +445,15 @@ type Store struct {
 	// utilization is the newest unified limits a route line carried, and the line's ts.
 	utilization   *domain.UnifiedUtilization
 	utilizationAt int64
+	// warmedEvents keys the timeline events a warm load reloaded by their content, and
+	// warmedUntil is the newest of their times: a line read again from the files that a key
+	// names is an event the store already holds. Bounded by the one load's events.
+	warmedEvents map[uint64]struct{}
+	warmedUntil  int64
+	// warmedCalls files the merged calls a warm load reloaded (a route line's facts with its
+	// transcript copy's) by session, model and match-window slot, so either side read again
+	// finds its call. An entry leaves with its request.
+	warmedCalls map[uint64][]string
 }
 
 // CreateStore builds an empty store; now is the clock its derived answers age by.
@@ -1261,6 +1273,9 @@ func (s *Store) placeRequestLocked(record shared.RequestRecord) shared.RequestRe
 		s.noteCallLocked(stored, FromRouter(record), !FromRouter(record))
 		return stored
 	}
+	if id, ok := s.warmedTwinLocked(record); ok {
+		return s.absorbIntoWarmedLocked(id, record)
+	}
 	stored, paired := s.pairLocked(record)
 	if existing, ok := s.requests[stored.ID]; ok {
 		if existing.record.SessionID != stored.SessionID {
@@ -1367,6 +1382,7 @@ func (s *Store) noteCallLocked(stored shared.RequestRecord, routed, copied bool)
 
 // forgetCallLocked drops the request id entry of a record leaving the store.
 func (s *Store) forgetCallLocked(record shared.RequestRecord) {
+	s.unfileWarmedCallLocked(record)
 	if slot, ok := s.calls[record.RequestID]; ok && slot.id == record.ID {
 		delete(s.calls, record.RequestID)
 	}
@@ -1481,6 +1497,16 @@ func (s *Store) pruneWaitingLocked(waiting WaitingIDs, atTs int64) {
 	})
 }
 
+// ContinueSeq numbers the timeline's next event after last, so events stay unique against
+// a history file an earlier run wrote; a last at or below the current seq changes nothing.
+func (s *Store) ContinueSeq(last int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if last > s.seq {
+		s.seq = last
+	}
+}
+
 // AddSpoolLine folds one spool line in: session and agent lifecycle, tool pairing, and
 // the timeline event itself.
 func (s *Store) AddSpoolLine(line shared.SpoolLine) {
@@ -1489,6 +1515,10 @@ func (s *Store) AddSpoolLine(line shared.SpoolLine) {
 	if !ok {
 		ts = s.nowMillis()
 	}
+	// a line the warm load already holds as an event still builds the state it builds on
+	// first sight (tool starts, subagent and session lifecycle, notice counts, session
+	// facts): none of that is reloaded, and the line is only left off the timeline
+	reread := s.warmedEventLocked(&line, ts)
 	change := Change{}
 	if line.SessionID != nil {
 		s.touchLocked(*line.SessionID, ts)
@@ -1501,20 +1531,23 @@ func (s *Store) AddSpoolLine(line shared.SpoolLine) {
 	}
 	s.applyLifecycleLocked(&line, ts, line.SessionID, line.AgentID)
 	s.applyToolEventLocked(&line, ts, line.SessionID, line.AgentID, &change)
-	s.seq++
-	record := shared.EventRecord{
-		Seq:       s.seq,
-		Ts:        ts,
-		Kind:      line.Event,
-		SessionID: line.SessionID,
-		AgentID:   line.AgentID,
-		Label:     labelFor(&line),
-		Payload:   line,
+	var pins []evictionPin
+	if !reread {
+		s.seq++
+		record := shared.EventRecord{
+			Seq:       s.seq,
+			Ts:        ts,
+			Kind:      line.Event,
+			SessionID: line.SessionID,
+			AgentID:   line.AgentID,
+			Label:     labelFor(&line),
+			Payload:   line,
+		}
+		s.events = append(s.events, record)
+		change.Events = append(change.Events, record)
+		pins = append(pins, evictionPin{source: 2, id: strconv.FormatInt(record.Seq, 10)})
 	}
-	s.events = append(s.events, record)
-	change.Events = append(change.Events, record)
 	s.evictSessionsLocked()
-	pins := []evictionPin{{source: 2, id: strconv.FormatInt(record.Seq, 10)}}
 	for _, tool := range change.Tools {
 		pins = append(pins, evictionPin{source: 1, id: tool.ID})
 	}

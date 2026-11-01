@@ -250,6 +250,7 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		IntervalMs: options.IntervalMs,
 		Now:        func() int64 { return now().UnixMilli() },
 		Log:        log,
+		Warm:       server.WarmFromHistory(st, hist, log),
 		HarnessCollectors: []ingest.HarnessCollector{
 			ingest.NewCodexCollector(env),
 			ingest.NewOpencodeCollector(env),

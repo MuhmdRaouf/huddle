@@ -330,6 +330,7 @@ func (panickingHistory) PutContent(string, ContentSides) error         { return 
 func (panickingHistory) PutTool(string, shared.ToolCallRecord) error   { return nil }
 func (panickingHistory) AddEvent(*string, shared.EventRecord) error    { return nil }
 func (panickingHistory) PutCapture(shared.CaptureRecord) error         { return nil }
+func (panickingHistory) LastEventSeq() (int64, error)                  { return 0, nil }
 func (panickingHistory) Close() error                                  { return nil }
 
 func (throwingHistory) Transaction(func() error) error                { return errors.New("disk gone") }
@@ -339,6 +340,7 @@ func (throwingHistory) PutContent(string, ContentSides) error         { return n
 func (throwingHistory) PutTool(string, shared.ToolCallRecord) error   { return nil }
 func (throwingHistory) AddEvent(*string, shared.EventRecord) error    { return nil }
 func (throwingHistory) PutCapture(shared.CaptureRecord) error         { return nil }
+func (throwingHistory) LastEventSeq() (int64, error)                  { return 0, nil }
 func (throwingHistory) Close() error                                  { return nil }
 
 // countingWriterHistory counts the transactions and node writes that reach the history.
@@ -1075,6 +1077,53 @@ func TestTheWriterReportsEachFlush(t *testing.T) {
 	})
 }
 
+// TestEventsAfterARestartAreKept: a fresh store against the same history file numbers its
+// events past the file's last seq, so the writer's duplicate-seq guard keeps every new
+// event instead of silently dropping it.
+func TestEventsAfterARestartAreKept(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "history.db")
+
+	// run 1: three events of three kinds land
+	run1Store := store.CreateStore(time.Now)
+	run1History, err := OpenHistory(file, nil)
+	if err != nil {
+		t.Fatalf("open history: %v", err)
+	}
+	run1 := AttachHistoryWriter(t.Context(), HistoryWriterOptions{Store: run1Store, History: run1History})
+	run1Store.AddSpoolLine(writerSpoolLine("UserPromptSubmit", "s1"))
+	run1Store.AddSpoolLine(writerSpoolLine("Notification", "s1"))
+	run1Store.AddSpoolLine(writerSpoolLine("PreCompact", "s1"))
+	run1.Flush()
+	run1.Stop()
+
+	// run 2: a fresh store reopens the same file and adds two new kinds
+	run2Store := store.CreateStore(time.Now)
+	run2History, err := OpenHistory(file, nil)
+	if err != nil {
+		t.Fatalf("reopen history: %v", err)
+	}
+	run2 := AttachHistoryWriter(t.Context(), HistoryWriterOptions{Store: run2Store, History: run2History})
+	run2Store.AddSpoolLine(writerSpoolLine("PostCompact", "s1"))
+	run2Store.AddSpoolLine(writerSpoolLine("SessionEnd", "s1"))
+	run2.Flush()
+	run2.Stop()
+
+	rows := eventRows(t, file)
+	if len(rows) != 5 {
+		t.Errorf("the events of both runs: got %d rows, want 5", len(rows))
+	}
+	kinds := make([]string, 0, len(rows))
+	for _, row := range rows {
+		kinds = append(kinds, row.kind)
+	}
+	for _, kind := range []string{"PostCompact", "SessionEnd"} {
+		if !slices.Contains(kinds, kind) {
+			t.Errorf("the second run's %s event: got kinds %v, want it kept", kind, kinds)
+		}
+	}
+}
+
 func TestWriterRouteCapture(t *testing.T) {
 	t.Run("links a route line's prompt hash and headers, and stores each capture once in the history", func(t *testing.T) {
 		env := writerEnv(t)
@@ -1168,4 +1217,33 @@ func TestWriterRouteCapture(t *testing.T) {
 			t.Errorf("the nowhere capture: got %+v, want none", nowhere)
 		}
 	})
+}
+
+// TestTheWriterSkipsWarmChanges: a change that reloads what the file already holds writes no
+// row, while a live change beside it still does.
+func TestTheWriterSkipsWarmChanges(t *testing.T) {
+	world := newWriterWorld(t)
+	world.attach(t)
+	file := filepath.Join(world.dir, "history.db")
+
+	world.writer.enqueue(store.Change{
+		Warm:     true,
+		Sessions: true,
+		Touched:  []string{"s1"},
+		Requests: []shared.RequestRecord{writerRequest(nil)},
+		Tools:    []shared.ToolCallRecord{writerTool(nil)},
+		Events:   []shared.EventRecord{{Seq: 1, Ts: writerT0, Kind: "Stop", SessionID: sp("s1")}},
+	})
+	world.writer.Flush()
+	for _, table := range []string{"nodes", "requests", "tools", "events"} {
+		if got := tableCount(t, file, table); got != 0 {
+			t.Errorf("%s after a warm change: got %d rows, want 0", table, got)
+		}
+	}
+
+	world.store.AddRequest(writerRequest(func(r *shared.RequestRecord) { r.ID = "live" }), nil)
+	world.writer.Flush()
+	if got := tableCount(t, file, "requests"); got != 1 {
+		t.Errorf("requests after a live change: got %d rows, want 1", got)
+	}
 }

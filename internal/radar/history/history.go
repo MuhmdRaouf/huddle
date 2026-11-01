@@ -1052,6 +1052,15 @@ func (h *History) AddEvent(nodeID *string, e shared.EventRecord) error {
 	return nil
 }
 
+// LastEventSeq answers the highest seq history.events holds, 0 when it holds none.
+func (h *History) LastEventSeq() (int64, error) {
+	row, err := h.db.Get("SELECT COALESCE(MAX(seq), 0) AS seq FROM events")
+	if err != nil {
+		return 0, fmt.Errorf("read the last event seq: %w", err)
+	}
+	return derep(rowInt64(row, "seq"), 0), nil
+}
+
 // payloadText renders an event's payload as the JSON the row stores: null when it says
 // nothing, an order-keeping value when it already is one.
 func payloadText(payload any) (string, error) {

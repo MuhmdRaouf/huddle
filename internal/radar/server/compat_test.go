@@ -414,10 +414,14 @@ func TestCompatLegacyHome(t *testing.T) {
 			NotifyRunner:      func(string, []string) {},
 			Log:               func(string) {},
 		})
+		// the warm load puts the kept requests in the store first; the answers are the settled
+		// ones, once the first pass over the files is done too
 		waitFor(t, "the fixture to ingest", 10*time.Second, func() bool {
 			return len(app.Store.Requests(store.RequestFilter{})) == 4 && app.Store.SessionCount() == 2 &&
-				len(app.Store.Tools(store.ToolsFilter{})) == 1
+				len(app.Store.Tools(store.ToolsFilter{})) == 1 && !app.Watcher.CatchingUp()
 		})
+		// the history file holds what the store holds before the history routes read it
+		app.Writer.Flush()
 		// while it runs, the one file only a live server owns is there (stop takes it back)
 		if !exists(filepath.Join(home, "server.json")) {
 			t.Fatalf("a running server publishes server.json")

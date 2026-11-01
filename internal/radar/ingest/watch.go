@@ -85,6 +85,10 @@ type WatcherOptions struct {
 	// registry says is live; nil keeps Claude's word alone.
 	Ended HubEnded
 	Log   func(line string)
+	// Warm reloads the store before the first pass; nil skips it. The load runs in the
+	// watcher's own goroutine and the watcher reads as catching up until the first pass after
+	// it ends. An error is logged and the first pass reads the files cold.
+	Warm func(ctx context.Context) error
 }
 
 // fileTail is one transcript file's read position and its parser.
@@ -206,9 +210,13 @@ type Watcher struct {
 	harnessCollectors []HarnessCollector
 	harnessMetas      map[string]string
 
+	warm func(ctx context.Context) error
+
 	mu      sync.Mutex
 	stopped bool
 	queued  bool
+	// warming is true from the start until the warm load ends: no pass runs meanwhile.
+	warming bool
 	pass    *passWork
 
 	spoolTails      map[string]*TailState
@@ -282,6 +290,7 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 		newTicker:           newTicker,
 		log:                 log,
 		harnessCollectors:   options.HarnessCollectors,
+		warm:                options.Warm,
 		harnessMetas:        make(map[string]string),
 		spoolTails:          make(map[string]*TailState),
 		sessionUpstreams:    make(map[string][]upstreamAt),
@@ -294,6 +303,7 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 	}
 	w.mu.Lock()
 	w.queued = true
+	w.warming = options.Warm != nil
 	w.mu.Unlock()
 	loopCtx, cancel := context.WithCancel(ctx)
 	w.cancel = cancel
@@ -302,10 +312,12 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 	return w
 }
 
-// run is the loop's goroutine: the first pass starts now, not on the first tick.
+// run is the loop's goroutine: the warm load, then the first pass, start now, not on the
+// first tick.
 func (w *Watcher) run(ctx context.Context, ticks <-chan time.Time, stopTicker func()) {
 	defer close(w.done)
 	defer stopTicker()
+	w.warmStore(ctx)
 	w.PollOnce()
 	for {
 		select {
@@ -317,8 +329,53 @@ func (w *Watcher) run(ctx context.Context, ticks <-chan time.Time, stopTicker fu
 	}
 }
 
+// warmStore runs the warm load and ends the warming; what the load brought, the watcher
+// learns the upstreams of from the changes it emits.
+func (w *Watcher) warmStore(ctx context.Context) {
+	if w.warm == nil {
+		return
+	}
+	unsubscribe := w.store.OnUpdate(w.learnFromWarm)
+	err := w.warm(ctx)
+	unsubscribe()
+	w.mu.Lock()
+	w.warming = false
+	w.mu.Unlock()
+	if err != nil && ctx.Err() == nil {
+		w.log(fmt.Sprintf("radar: the warm load failed, reading the files cold (%v)", err))
+	}
+}
+
+// learnFromWarm rebuilds the two upstream maps the files would have filled: a session's base
+// URLs from its reloaded hook events, and a plugin's router upstream from its reloaded route
+// requests, the newest of them standing.
+func (w *Watcher) learnFromWarm(change store.Change) {
+	if !change.Warm {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, event := range change.Events {
+		if line, ok := event.Payload.(shared.SpoolLine); ok && line.SessionID != nil && line.BaseURL != nil {
+			w.rememberUpstream(*line.SessionID, event.Ts, *line.BaseURL)
+		}
+	}
+	for _, request := range change.Requests {
+		if request.Route == nil || request.Via == nil || request.Upstream == "" {
+			continue
+		}
+		if served, known := cost.PluginOf(request.Model); !known || served != *request.Via {
+			continue
+		}
+		if _, learned := w.routerUpstreams[*request.Via]; !learned {
+			w.routerUpstreams[*request.Via] = request.Upstream
+		}
+	}
+}
+
 // PollOnce asks for a poll and drives it one slice at a time, the lock free between slices. A
-// poll asked for while a pass is running starts when that one ends, never during it.
+// poll asked for while a pass is running starts when that one ends, never during it, and a
+// poll asked for while the warm load runs waits for the first one after it.
 func (w *Watcher) PollOnce() {
 	w.mu.Lock()
 	if w.stopped {
@@ -326,6 +383,10 @@ func (w *Watcher) PollOnce() {
 		return
 	}
 	w.queued = true
+	if w.warming {
+		w.mu.Unlock()
+		return
+	}
 	w.mu.Unlock()
 	for {
 		w.mu.Lock()
@@ -390,12 +451,13 @@ func (w *Watcher) Stop() {
 // Done closes once the watcher's goroutine is out.
 func (w *Watcher) Done() <-chan struct{} { return w.done }
 
-// CatchingUp is true while a pass is running or queued: the first ingest is still draining its
-// backlog, so a dashboard that reconnects mid-way knows its lists are still filling in.
+// CatchingUp is true while the warm load runs or a pass is running or queued: the first ingest
+// is still draining its backlog, so a dashboard that reconnects mid-way knows its lists are
+// still filling in.
 func (w *Watcher) CatchingUp() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.pass != nil || w.queued
+	return w.warming || w.pass != nil || w.queued
 }
 
 // Tracked is how many transcript files the watcher still tails: eviction keeps this at the live

@@ -35,6 +35,7 @@ type HistorySink interface {
 	PutTool(nodeID string, t shared.ToolCallRecord) error
 	AddEvent(nodeID *string, e shared.EventRecord) error
 	PutCapture(c shared.CaptureRecord) error
+	LastEventSeq() (int64, error)
 	Close() error
 }
 
@@ -153,6 +154,13 @@ func AttachHistoryWriter(ctx context.Context, options HistoryWriterOptions) *His
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),
 	}
+	// a reused seq would be ignored against the file's earlier events: continue past its last
+	if last, err := options.History.LastEventSeq(); err != nil {
+		reportTo(w.health, WriterHealthName, err)
+		w.log(fmt.Sprintf("radar: history seq read failed, numbering from 0 (%v)", err))
+	} else {
+		options.Store.ContinueSeq(last)
+	}
 	w.unsubscribe = options.Store.OnUpdate(w.enqueue)
 	go w.run(ctx)
 	return w
@@ -253,6 +261,9 @@ func (w *HistoryWriter) shutdown() {
 
 // enqueue is the store update path: it only queues, never writes.
 func (w *HistoryWriter) enqueue(change store.Change) {
+	if change.Warm {
+		return // the rows a warm change reloads are already in the file
+	}
 	w.mu.Lock()
 	if w.broken || w.stopped {
 		w.mu.Unlock()

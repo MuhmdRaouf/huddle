@@ -330,6 +330,24 @@ func TestAddSpoolLine(t *testing.T) {
 	})
 }
 
+// TestContinueSeqNumbersAfterTheLastEvent: the numbering continues from the last event a
+// history file holds, and a last at or below the current seq changes nothing.
+func TestContinueSeqNumbersAfterTheLastEvent(t *testing.T) {
+	store := newTestStore()
+	store.ContinueSeq(41)
+	store.AddSpoolLine(line(nil))
+	events := store.Events(EventsFilter{})
+	if len(events) != 1 || events[0].Seq != 42 {
+		t.Errorf("the event after ContinueSeq(41): got %+v, want one at seq 42", events)
+	}
+	store.ContinueSeq(10)
+	store.AddSpoolLine(line(func(l *shared.SpoolLine) { l.Ts = isoTime(ts2); l.Event = "Notification" }))
+	events = store.Events(EventsFilter{})
+	if len(events) != 2 || events[0].Seq != 43 || events[1].Seq != 42 {
+		t.Errorf("the events after ContinueSeq(10): got %+v, want seqs 43 and 42", events)
+	}
+}
+
 func TestLifecycle(t *testing.T) {
 	t.Run("ends, restarts and re-parents sessions and subagents from hook events alone", func(t *testing.T) {
 		store := newTestStore()

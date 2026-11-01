@@ -201,6 +201,27 @@ type App struct {
 	stopped   chan struct{}
 }
 
+// WarmFromHistory is the watcher's warm load: it reloads the store from the history file and
+// logs what it brought and how long it took, when it brought anything. Without a history file
+// it is nil, and the first pass reads the files cold.
+func WarmFromHistory(st *store.Store, hist *history.History, log func(line string)) func(ctx context.Context) error {
+	if hist == nil {
+		return nil
+	}
+	return func(ctx context.Context) error {
+		stats, err := st.Warm(ctx, hist)
+		if err != nil {
+			return err
+		}
+		if stats.Requests+stats.Tools+stats.Events+stats.Sessions+stats.Agents == 0 {
+			return nil
+		}
+		log(fmt.Sprintf("radar: warmed %d requests, %d tools, %d events, %d sessions and %d agents from history in %s",
+			stats.Requests, stats.Tools, stats.Events, stats.Sessions, stats.Agents, stats.Took.Round(time.Millisecond)))
+		return nil
+	}
+}
+
 // StartApp wires the dashboard and serves. The store, the history file, the watcher and
 // insights come first; loopback binds with the saved port when one is there; then server.json
 // and the port file publish the address, and the removal watch and the SIGTERM handler own the
@@ -251,6 +272,7 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		IntervalMs: options.IntervalMs,
 		Now:        func() int64 { return now().UnixMilli() },
 		Log:        log,
+		Warm:       WarmFromHistory(st, hist, log),
 		HarnessCollectors: []ingest.HarnessCollector{
 			ingest.NewCodexCollector(options.Env),
 			ingest.NewOpencodeCollector(options.Env),

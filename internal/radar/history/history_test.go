@@ -866,6 +866,34 @@ func TestOffsetsToolsEvents(t *testing.T) {
 	})
 }
 
+// TestLastEventSeqAnswersTheHighestSeq: the read the writer seeds the store's event
+// numbering from — the file's highest seq, 0 while the file holds none.
+func TestLastEventSeqAnswersTheHighestSeq(t *testing.T) {
+	h := openHistoryAt(t)
+	seq, err := h.LastEventSeq()
+	if err != nil {
+		t.Fatalf("read the last seq of an empty file: %v", err)
+	}
+	if seq != 0 {
+		t.Errorf("an empty file's last seq: got %d, want 0", seq)
+	}
+	for _, event := range []shared.EventRecord{
+		{Seq: 3, Ts: nowMs, Kind: "UserPromptSubmit"},
+		{Seq: 7, Ts: nowMs, Kind: "Notification"},
+	} {
+		if err := h.AddEvent(nil, event); err != nil {
+			t.Fatalf("add event %d: %v", event.Seq, err)
+		}
+	}
+	seq, err = h.LastEventSeq()
+	if err != nil {
+		t.Fatalf("read the last seq: %v", err)
+	}
+	if seq != 7 {
+		t.Errorf("the last seq after events 3 and 7: got %d, want 7", seq)
+	}
+}
+
 func TestRoots(t *testing.T) {
 	t.Run("splits live trees from history: main sessions only, a job never a top-level root", func(t *testing.T) {
 		h := openHistoryAt(t)
