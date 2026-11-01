@@ -16,7 +16,10 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "e2e-leftovers-"));
 const runDir = path.join(tmp, "run");
 const binDir = path.join(runDir, "bin");
 fs.mkdirSync(binDir, { recursive: true });
-fs.symlinkSync("/bin/sleep", path.join(binDir, "sleeper"));
+// A multicall binary such as uutils coreutils (Ubuntu 26.04) refuses to run under a name it does not know, so the
+// stand-in for a hub is node itself: it runs under any name and shows that name as its command.
+fs.symlinkSync(process.execPath, path.join(binDir, "sleeper"));
+const sleeperArgs = ["-e", "setTimeout(() => {}, 300_000)"];
 
 const started: ChildProcess[] = [];
 
@@ -57,6 +60,7 @@ test("a run's processes are the executables under its bin folder, and nothing el
     `  105 (huddle)`,
     `  106 /usr/bin/sleep 300`,
     `  107 /usr/bin/grep ${run}/bin`,
+    `  108 [huddle] <defunct>`,
   ];
   const found = runProcessesOf(lines, run, 31337);
   assert.deepEqual(
@@ -67,7 +71,7 @@ test("a run's processes are the executables under its bin folder, and nothing el
 });
 
 test("stopping a run's processes ends a detached one under its bin folder", async () => {
-  const sleeper = launch(path.join(binDir, "sleeper"), ["300"], true);
+  const sleeper = launch(path.join(binDir, "sleeper"), sleeperArgs, true);
   const pid = sleeper.pid;
   assert.ok(pid !== undefined);
   assert.ok(alive(pid));
@@ -81,7 +85,7 @@ test("the reaper ends a killed run's processes", async () => {
   const runnerPid = runner.pid;
   assert.ok(runnerPid !== undefined);
   launch("/bin/sh", [reaper, String(runnerPid), binDir], true);
-  const sleeper = launch(path.join(binDir, "sleeper"), ["300"], true);
+  const sleeper = launch(path.join(binDir, "sleeper"), sleeperArgs, true);
   const pid = sleeper.pid;
   assert.ok(pid !== undefined);
   assert.ok(alive(pid));
