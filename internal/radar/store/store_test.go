@@ -1734,3 +1734,160 @@ func TestScale(t *testing.T) {
 		}
 	})
 }
+
+// requestIDsInOrder is the ids requestsInOrderLocked answers, read under the lock the way
+// a reader holds it.
+func requestIDsInOrder(s *Store) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var ids []string
+	for _, held := range s.requestsInOrderLocked() {
+		ids = append(ids, held.record.ID)
+	}
+	return ids
+}
+
+// toolIDsInOrder is the ids toolsInOrderLocked answers.
+func toolIDsInOrder(s *Store) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var ids []string
+	for _, held := range s.toolsInOrderLocked() {
+		ids = append(ids, held.record.ID)
+	}
+	return ids
+}
+
+// requireArrivalOrder fails unless the ids are exactly the held records, each once, with
+// their arrival numbers strictly rising.
+func requireArrivalOrder(t *testing.T, s *Store, ids []string, tools []string) {
+	t.Helper()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(ids) != len(s.requests) {
+		t.Fatalf("requests listed: got %d, want the %d held", len(ids), len(s.requests))
+	}
+	last := int64(0)
+	for _, id := range ids {
+		held, ok := s.requests[id]
+		if !ok {
+			t.Fatalf("request %s is listed but not held", id)
+		}
+		if held.seq <= last {
+			t.Fatalf("request %s has arrival %d after %d", id, held.seq, last)
+		}
+		last = held.seq
+	}
+	if len(tools) != len(s.tools) {
+		t.Fatalf("tools listed: got %d, want the %d held", len(tools), len(s.tools))
+	}
+	last = 0
+	for _, id := range tools {
+		held, ok := s.tools[id]
+		if !ok {
+			t.Fatalf("tool %s is listed but not held", id)
+		}
+		if held.seq <= last {
+			t.Fatalf("tool %s has arrival %d after %d", id, held.seq, last)
+		}
+		last = held.seq
+	}
+}
+
+func TestRequestsInOrderDoesNotSort(t *testing.T) {
+	t.Run("answers arrival order with no copy of the map and no sort", func(t *testing.T) {
+		const total = 20_000
+		store := newTestStore()
+		want := make([]string, 0, total)
+		wantTools := make([]string, 0, total)
+		for i := range total {
+			id := fmt.Sprintf("req-%05d", i)
+			want = append(want, id)
+			store.AddRequest(makeRequest(func(r *shared.RequestRecord) {
+				r.ID = id
+				r.SessionID = fmt.Sprintf("s%d", i%40)
+				r.Ts = ts0 + int64(total-i) // arrival runs against the timestamps
+			}), nil)
+			toolID := fmt.Sprintf("tool-%05d", i)
+			wantTools = append(wantTools, toolID)
+			store.AddToolCall(makeTool(func(tool *shared.ToolCallRecord) {
+				tool.ID = toolID
+				tool.SessionID = fmt.Sprintf("s%d", i%40)
+				tool.StartedAt = ts0 + int64(total-i)
+			}))
+		}
+		if got := requestIDsInOrder(store); !slices.Equal(got, want) {
+			t.Fatalf("requests are not in arrival order")
+		}
+		if got := toolIDsInOrder(store); !slices.Equal(got, wantTools) {
+			t.Fatalf("tools are not in arrival order")
+		}
+		store.mu.RLock()
+		defer store.mu.RUnlock()
+		if allocs := testing.AllocsPerRun(10, func() { _ = store.requestsInOrderLocked() }); allocs > 0 {
+			t.Errorf("requestsInOrderLocked allocates %.0f times per call, want none (the held slice is returned as it is)", allocs)
+		}
+		if allocs := testing.AllocsPerRun(10, func() { _ = store.toolsInOrderLocked() }); allocs > 0 {
+			t.Errorf("toolsInOrderLocked allocates %.0f times per call, want none (the held slice is returned as it is)", allocs)
+		}
+	})
+
+	t.Run("keeps arrival order through an eviction pass and a session drop", func(t *testing.T) {
+		store := newTestStore()
+		store.maxRecords, store.evictBatch = 200, 50
+		for i := range 400 {
+			store.AddRequest(makeRequest(func(r *shared.RequestRecord) {
+				r.ID = fmt.Sprintf("req-%03d", i)
+				r.SessionID = fmt.Sprintf("s%d", i%4)
+				r.Ts = ts0 + int64(i)
+			}), nil)
+			store.AddToolCall(makeTool(func(tool *shared.ToolCallRecord) {
+				tool.ID = fmt.Sprintf("tool-%03d", i)
+				tool.SessionID = fmt.Sprintf("s%d", i%4)
+				tool.StartedAt = ts0 + int64(i)
+			}))
+		}
+		requireArrivalOrder(t, store, requestIDsInOrder(store), toolIDsInOrder(store))
+		store.mu.Lock()
+		store.dropSessionLocked("s1")
+		store.mu.Unlock()
+		ids, tools := requestIDsInOrder(store), toolIDsInOrder(store)
+		requireArrivalOrder(t, store, ids, tools)
+		for _, id := range ids {
+			if store.requests[id].record.SessionID == "s1" {
+				t.Errorf("request %s of the dropped session is still listed", id)
+			}
+		}
+		store.AddRequest(makeRequest(func(r *shared.RequestRecord) { r.ID = "req-late" }), nil)
+		ids = requestIDsInOrder(store)
+		if ids[len(ids)-1] != "req-late" {
+			t.Errorf("the newest arrival is %s, want req-late last", ids[len(ids)-1])
+		}
+	})
+
+	t.Run("lists a warm load's requests by the position their file wrote them at", func(t *testing.T) {
+		store := newTestStore()
+		rows := warmRequests("s1", 2_500, ts1) // newest first, across three batches
+		written := make(map[string]int64, len(rows))
+		for _, row := range rows {
+			written[row.ID] = row.Ts - ts0 + 1_000_000 // positions run with the timestamps
+		}
+		source := &fakeWarmSource{nodes: []WarmNode{warmSession("s1", ts2)}, requests: rows, written: written}
+		if _, err := store.Warm(t.Context(), source); err != nil {
+			t.Fatalf("warm: %v", err)
+		}
+		store.AddRequest(makeRequest(func(r *shared.RequestRecord) {
+			r.ID = "req-live"
+			r.Ts = ts2
+		}), nil)
+		ids := requestIDsInOrder(store)
+		requireArrivalOrder(t, store, ids, nil)
+		wantOrder := make([]string, 0, len(rows))
+		for i := len(rows) - 1; i >= 0; i-- {
+			wantOrder = append(wantOrder, rows[i].ID)
+		}
+		if !slices.Equal(ids[:len(rows)], wantOrder) || ids[len(rows)] != "req-live" {
+			t.Errorf("the warm requests do not list oldest written first, the live one last")
+		}
+	})
+}

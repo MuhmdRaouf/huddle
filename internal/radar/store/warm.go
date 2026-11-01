@@ -209,6 +209,7 @@ func (l *warmLoad) flushRequests() error {
 			l.stats.Requests++
 		}
 		slices.Reverse(change.Requests)
+		s.requestOrder.settle()
 		s.evictSessionsLocked()
 		s.evictRecordsLocked(nil)
 	})
@@ -314,7 +315,9 @@ func (s *Store) placeWarmRequestLocked(record shared.RequestRecord, written int6
 		return false
 	}
 	fileUnder(s.requestsBySession, record.SessionID, record.ID)
-	s.requests[record.ID] = &storedRequest{record: record, seq: written}
+	held := &storedRequest{record: record, seq: written}
+	s.requests[record.ID] = held
+	s.requestOrder.add(held)
 	s.arrival = max(s.arrival, written)
 	s.fileWarmedCallLocked(record)
 	s.touchLocked(record.SessionID, record.Ts)

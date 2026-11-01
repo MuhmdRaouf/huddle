@@ -335,7 +335,7 @@ type sessionSlice struct {
 }
 
 // storedRequest is a request and its arrival number: the arrival order is the order a
-// JavaScript Map iterates, which the stable sorts below break ties with.
+// JavaScript Map iterates, which requestOrder keeps.
 type storedRequest struct {
 	record shared.RequestRecord
 	seq    int64
@@ -419,6 +419,10 @@ type Store struct {
 	sessionOrder orderedIDs
 	requests     map[string]*storedRequest
 	tools        map[string]*storedTool
+	// requestOrder and toolOrder hold the same records as requests and tools, in arrival
+	// order.
+	requestOrder arrivalList[*storedRequest]
+	toolOrder    arrivalList[*storedTool]
 	// requestsBySession and toolsBySession file each held record's id under its session,
 	// so a session drop touches its own records, not the whole store.
 	requestsBySession map[string]map[string]struct{}
@@ -469,6 +473,8 @@ func CreateStore(now func() time.Time) *Store {
 		sessions:          make(map[string]*sessionState),
 		requests:          make(map[string]*storedRequest),
 		tools:             make(map[string]*storedTool),
+		requestOrder:      newArrivalList[*storedRequest](),
+		toolOrder:         newArrivalList[*storedTool](),
 		notices:           make(map[string]map[string]int64),
 		requestsBySession: make(map[string]map[string]struct{}),
 		toolsBySession:    make(map[string]map[string]struct{}),
@@ -840,24 +846,23 @@ func (s *Store) sessionsInOrderLocked() []*sessionState {
 	return states
 }
 
-// requestsInOrderLocked lists the requests in arrival order.
+// requestsInOrderLocked lists the requests in arrival order: the slice the store keeps,
+// not a copy.
 func (s *Store) requestsInOrderLocked() []*storedRequest {
-	list := make([]*storedRequest, 0, len(s.requests))
-	for _, held := range s.requests {
-		list = append(list, held)
-	}
-	slices.SortStableFunc(list, func(a, b *storedRequest) int { return cmp.Compare(a.seq, b.seq) })
-	return list
+	return s.requestOrder.inOrder()
 }
 
-// toolsInOrderLocked lists the tool calls in arrival order.
+// toolsInOrderLocked lists the tool calls in arrival order: the slice the store keeps,
+// not a copy.
 func (s *Store) toolsInOrderLocked() []*storedTool {
-	list := make([]*storedTool, 0, len(s.tools))
-	for _, held := range s.tools {
-		list = append(list, held)
-	}
-	slices.SortStableFunc(list, func(a, b *storedTool) int { return cmp.Compare(a.seq, b.seq) })
-	return list
+	return s.toolOrder.inOrder()
+}
+
+// forgetOrderLocked drops the requests and tool calls the maps no longer hold from the
+// arrival lists. One pass over each list per eviction or session drop.
+func (s *Store) forgetOrderLocked() {
+	s.requestOrder.keepOnly(func(held *storedRequest) bool { return s.requests[held.record.ID] == held })
+	s.toolOrder.keepOnly(func(held *storedTool) bool { return s.tools[held.record.ID] == held })
 }
 
 func (s *Store) allRequestsLocked() []*shared.RequestRecord {
@@ -1146,6 +1151,7 @@ func (s *Store) applyEvictionsLocked(picks []evictionCandidate) {
 			gone[pick.id] = struct{}{}
 		}
 	}
+	s.forgetOrderLocked()
 	if !eventsGone {
 		return
 	}
@@ -1187,6 +1193,7 @@ func (s *Store) dropSessionLocked(sessionID string) {
 		delete(s.tools, id)
 	}
 	delete(s.toolsBySession, sessionID)
+	s.forgetOrderLocked()
 }
 
 // fileUnder adds a record id to its session's set in an index, making the set when the
@@ -1288,7 +1295,9 @@ func (s *Store) placeRequestLocked(record shared.RequestRecord) shared.RequestRe
 		existing.record = stored // the paired twin's slot, its arrival number kept
 	} else {
 		fileUnder(s.requestsBySession, stored.SessionID, stored.ID)
-		s.requests[stored.ID] = &storedRequest{record: stored, seq: s.nextArrivalLocked()}
+		held := &storedRequest{record: stored, seq: s.nextArrivalLocked()}
+		s.requests[stored.ID] = held
+		s.requestOrder.add(held)
 	}
 	s.noteCallLocked(stored, paired || FromRouter(record), paired || !FromRouter(record))
 	return stored
@@ -1634,7 +1643,9 @@ func (s *Store) storeToolLocked(record shared.ToolCallRecord) {
 		return
 	}
 	fileUnder(s.toolsBySession, record.SessionID, record.ID)
-	s.tools[record.ID] = &storedTool{record: record, seq: s.nextArrivalLocked()}
+	held := &storedTool{record: record, seq: s.nextArrivalLocked()}
+	s.tools[record.ID] = held
+	s.toolOrder.add(held)
 }
 
 // UpsertSession writes a session's facts; the first writer wins each fact.
