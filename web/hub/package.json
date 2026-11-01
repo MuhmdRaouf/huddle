@@ -16,7 +16,8 @@
     "check": "npm run check:static && npm run coverage && npm run dist:fresh"
   },
   "dependencies": {
-    "preact": "11.0.1"
+    "preact": "11.0.1",
+    "valibot": "1.5.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
