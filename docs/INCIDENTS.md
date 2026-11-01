@@ -325,3 +325,30 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   `TestBodyStoreRealShapedScenarios` (internal/radar/ledger).
 - **Rule:** a splitter or store test builds its body in the shape of the real request, object-valued members
   included; two consecutive turns of one conversation share every span but the last message.
+
+## 2026-11-01, CI red for a week while the local gates stayed green
+
+- **What happened:** the Go (rest) job hit its 10-minute cap on every main run from 2026-10-25 (runs 40228809970,
+  40395977951, 40829575260 and 41297396357) while deploys went out on local runs. The last main run, 41314513918
+  on d531913f, failed on more than the timeout: staticcheck U1000 (an unused field in
+  `internal/huddle/hooks/idle_wait_test.go`) and, in every web job, the e2e-leftovers test "stopping a run's
+  processes ends a detached one under its bin folder" on Linux. The macOS jobs were skipped.
+- **Cause:** the deploy gate ran the tests on the owner's Mac only. It ran neither staticcheck nor the Linux
+  runs, and it never read the CI result, so a red main was invisible to it. The rest shard had also grown past what
+  one 10-minute runner holds: `internal/huddle/server` and `cmd/huddle` alone took 5 to 10 minutes each.
+- **Guard:** `scripts/ci-green.mjs` reads the last completed `ci.yml` run on main with `gh run list` and refuses
+  on anything but success: `"passes when the last completed main CI run succeeded"`,
+  `"refuses when the last completed main CI run failed, naming the run"`,
+  `"refuses when the last completed main CI run was cancelled"`,
+  `"refuses when the last completed main CI run timed out"`,
+  `"asks gh only for the last completed ci.yml run on main, a read"`,
+  `"fails closed with one line when gh is not installed"`,
+  `"fails closed with one line when gh cannot reach GitHub"`,
+  `"fails closed when main has no completed ci.yml run"` and
+  `"fails closed when gh answers something that is not a run"` (scripts/ci-green.test.mjs). The shard split that
+  keeps every Go job under its cap is held by `TestEveryModulePackageFallsInExactlyOneShard`,
+  `TestEveryTestRunsInExactlyOneHalfOfASplitPackage` and `TestCIRunsEveryShardOnLinuxAndMacOS`
+  (scripts/covergate/main_test.go).
+- **Rule:** no deploy lands while the last main CI run is red: the deploy script calls
+  `node scripts/ci-green.mjs` first, and a gh that is missing or offline refuses too. The push that fixes main is
+  the owner's call.

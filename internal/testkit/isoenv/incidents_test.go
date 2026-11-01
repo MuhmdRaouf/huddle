@@ -5,8 +5,8 @@ package isoenv
 // that follows. A guard named there can be renamed or deleted like any other test, and nothing
 // else notices. This test reads the doc and requires every guard a **Guard:** bullet names to
 // exist: a backticked `Test…` name as a func in a *_test.go file of the module, a backticked
-// `"…"` title as that quoted string in a web test file (*.test.ts, *.test.tsx, *.spec.ts). A
-// renamed or deleted guard fails here naming the incident it stood for.
+// `"…"` title as that quoted string in a JS or web test file (*.test.mjs, *.test.ts, *.test.tsx,
+// *.spec.ts). A renamed or deleted guard fails here naming the incident it stood for.
 
 import (
 	"io/fs"
@@ -31,7 +31,7 @@ type guard struct {
 var guardNamePattern = regexp.MustCompile("`(Test[A-Za-z0-9_]+|\"[^\"`]+\")`")
 
 // webTestSuffixes are the file names a web test title lives in.
-var webTestSuffixes = []string{".test.ts", ".test.tsx", ".spec.ts"}
+var webTestSuffixes = []string{".test.mjs", ".test.ts", ".test.tsx", ".spec.ts"}
 
 // guardNames answers every guard a **Guard:** bullet of the doc names, in document order, each
 // with the nearest `## ` heading above it. The bullet runs on through its indented
@@ -116,7 +116,7 @@ func TestIncidentGuardsExist(t *testing.T) {
 	for _, g := range guards {
 		if !found[g.name] {
 			if g.title {
-				t.Errorf("%s names the guard `\"%s\"` and no web test file in the module holds that title: the guard was renamed or deleted; restore it or point the incident at the test that now stops it", g.heading, g.name)
+				t.Errorf("%s names the guard `\"%s\"` and no JS or web test file in the module holds that title: the guard was renamed or deleted; restore it or point the incident at the test that now stops it", g.heading, g.name)
 				continue
 			}
 			t.Errorf("%s names the guard `%s` and no *_test.go in the module holds func %s(: the guard was renamed or deleted; restore it or point the incident at the test that now stops it", g.heading, g.name, g.name)
