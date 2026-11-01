@@ -518,6 +518,9 @@ func Serve(ctx context.Context, o Options) error {
 	if o.Stderr == nil {
 		o.Stderr = os.Stderr
 	}
+	// the server's lines and its parts' logs come from several goroutines
+	o.Stdout = &lockedWriter{w: o.Stdout}
+	o.Stderr = &lockedWriter{w: o.Stderr}
 	// one server per home: the lock is taken before anything is bound or opened, so a second
 	// start for the same home never touches its files. A home that cannot hold the lock still
 	// serves, as it keeps serving without its owner key — the run directory is unusable, not
