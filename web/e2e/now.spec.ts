@@ -401,12 +401,12 @@ test("the passkey sheet an allow opens keeps the 16 px side gutter", async ({ pa
   await post(`/api/needs/${id}/dismiss`, {});
 });
 
-test("a long command's ask opens the phone sheet that wraps it and keeps Allow once in view", async (
+test("a long command's ask sits right under the phone's header, wraps its command and keeps Allow once in view", async (
   { page },
   info,
 ) => {
-  test.skip(info.project.name !== "iphone", "the sheet is the phone's");
-  // the session stopped, then its hook asked: the sheet holds the ask, and the denial at the end
+  test.skip(info.project.name !== "iphone", "the phone's card is the iphone project's");
+  // the session stopped, then its hook asked: the card holds the ask, and the denial at the end
   // leaves the other cases' counts as they were
   const session = "e2e-sheet-iphone";
   await api("/api/registry/report", {
@@ -427,9 +427,16 @@ test("a long command's ask opens the phone sheet that wraps it and keeps Allow o
   await openTab(page, "Sessions");
   await page.locator(`a[href='#/sessions/${session}']`).first().click();
 
-  const sheet = page.locator("dialog[open].ui-sheet");
+  const sheet = page.locator("[data-block='ask']");
   await expect(sheet).toBeVisible();
-  await expect(sheet.getByRole("heading", { name: /wants to run a command/ })).toBeVisible();
+  await expect(page.locator("dialog[open].ui-sheet")).toHaveCount(0);
+  await expect(sheet.getByRole("heading", { name: /Allow this command\?/ })).toBeVisible();
+  // the ask is the page's second block: its top edge is within one card of the header's foot
+  const headerBox = await page.locator("[data-session] header").boundingBox();
+  const askBox = await sheet.boundingBox();
+  expect(headerBox && askBox && askBox.y - (headerBox.y + headerBox.height)).toBeLessThanOrEqual(16);
+  // the phone's ask is the two answers alone
+  await expect(sheet.getByRole("button", { name: "Reply instead" })).toHaveCount(0);
   // the command wraps inside its code box: nothing scrolls sideways
   const code = sheet.locator("code").filter({ hasText: ASK_COMMAND.slice(0, 24) });
   await expect(code).toBeVisible();
@@ -438,19 +445,16 @@ test("a long command's ask opens the phone sheet that wraps it and keeps Allow o
     client: el.clientWidth,
   }));
   expect(scroll).toBeLessThanOrEqual(client);
-  // the body scrolls; at its end the footer's allow is still inside the viewport
-  await sheet.locator(".ui-sheet-body").evaluate((el) => (el.scrollTop = el.scrollHeight));
+  // Allow once stands inside the viewport with no scroll
   const box = await sheet.getByRole("button", { name: "Allow once" }).boundingBox();
   expect(box && box.y + box.height).toBeLessThanOrEqual(844.5);
-  // the tab bar stands down while the sheet holds the ask
-  await expect(page.locator("[data-nav='bottom']")).toHaveCount(0);
 
   await api(`/api/needs/${id}/decide`, { decision: "deny" });
   await expect(sheet).toHaveCount(0);
 });
 
-test("an Edit ask opens the phone sheet with the change as a line diff", async ({ page }, info) => {
-  test.skip(info.project.name !== "iphone", "the sheet is the phone's");
+test("an Edit ask shows the change as a line diff in the phone's card", async ({ page }, info) => {
+  test.skip(info.project.name !== "iphone", "the phone's card is the iphone project's");
   const session = "e2e-edit-iphone";
   await api("/api/registry/report", {
     session_id: session,
@@ -470,7 +474,7 @@ test("an Edit ask opens the phone sheet with the change as a line diff", async (
   await openTab(page, "Sessions");
   await page.locator(`a[href='#/sessions/${session}']`).first().click();
 
-  const sheet = page.locator("dialog[open].ui-sheet");
+  const sheet = page.locator("[data-block='ask']");
   await expect(sheet).toBeVisible();
   await expect(sheet.getByText(ASK_EDIT.file_path)).toBeVisible();
   await expect(sheet.locator("[data-sign='-']").filter({ hasText: "const rate = 1;" })).toBeVisible();
@@ -567,7 +571,7 @@ test("the phone's stream folds repeated calls into one row a tap opens, and open
   await expectAccessible(page);
 });
 
-test("a finished turn's sheet shows its digest line with Snooze and Dismiss, and no Answer", async ({
+test("a finished turn's box quotes its digest line and offers Reply, Mark read and Snooze, and no Answer", async ({
   page,
   isMobile,
 }, info) => {
@@ -589,11 +593,14 @@ test("a finished turn's sheet shows its digest line with Snooze and Dismiss, and
   // desk has opened this very row: a tab click here would rewind the address and drop the sheet
   await page.locator(`a[href='#/sessions/${session}']`).first().click();
 
-  const sheet = page.locator(isMobile ? "[data-needs-sheet]" : "[data-needs-bar]");
-  await expect(sheet.getByRole("heading", { name: "Goal: fix the login bug" })).toBeVisible();
+  const sheet = page.locator("[data-block='ask']");
+  await expect(sheet.getByRole("heading", { name: "Finished, waiting for you" })).toBeVisible();
+  await expect(sheet.getByText("Goal: fix the login bug")).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Reply", exact: true })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Copy terminal command" })).toBeVisible();
   await expect(sheet.getByText("Edited: internal/auth/login.go")).toHaveCount(0);
   await expect(sheet.getByRole("button", { name: "Answer" })).toHaveCount(0);
-  const dismiss = sheet.getByRole("button", { name: "Dismiss" });
+  const dismiss = sheet.getByRole("button", { name: "Mark read" });
   const more = sheet.getByRole("button", { name: "More actions" });
   // the thumb's 44 px floor is the phone's rule; under a mouse the design system's control
   // height is 40 px, so the desktop bar's buttons keep their pointer sizes

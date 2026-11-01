@@ -227,7 +227,7 @@ const SCREENS: readonly Screen[] = [
     signedIn: true,
     open: async (page, seeded) => {
       await route((s) => `#/sessions/${s.permit}`)(page, seeded);
-      await expect(page.locator("[data-needs-sheet], [data-needs-bar]")).toBeVisible();
+      await expect(page.locator("[data-block='ask']")).toBeVisible();
     },
   },
   { id: "channels", signedIn: true, open: route(() => "#/channels") },

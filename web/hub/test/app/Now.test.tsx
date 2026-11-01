@@ -316,6 +316,29 @@ describe("the Session screen", () => {
     expect(pill.dataset.role).toBe("needs-you");
   });
 
+  it("places the open ask as the page's second block, right under the header, on every layout", () => {
+    for (const layout of ["phone", "tablet", "desktop"] as const) {
+      cleanup();
+      mountSession(layout, {}, [needItem()]);
+      const screenEl = document.querySelector("[data-session]") as HTMLElement;
+      const kids = Array.from(screenEl.children);
+      expect(kids[0]?.tagName, layout).toBe("HEADER");
+      expect(kids[1]?.getAttribute("data-block"), layout).toBe("ask");
+      expect(screenEl.querySelectorAll("[data-block='ask']").length, layout).toBe(1);
+      expect(document.querySelector("dialog.ui-sheet"), layout).toBeNull();
+    }
+  });
+
+  it("offers Reply instead on the wide layouts' ask and not on the phone's", () => {
+    mountSession("phone", {}, [needItem()]);
+    expect(screen.queryByRole("button", { name: "Reply instead" })).toBeNull();
+    for (const layout of ["tablet", "desktop"] as const) {
+      cleanup();
+      mountSession(layout, {}, [needItem()]);
+      expect(screen.getByRole("button", { name: "Reply instead" }), layout).toBeDefined();
+    }
+  });
+
   it("streams the events: prompts as bubbles, tool events as one line, notes as paragraphs", () => {
     mountSession("phone");
     const stream = document.querySelector("[data-stream]") as HTMLElement;

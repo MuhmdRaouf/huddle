@@ -1,8 +1,8 @@
-// ask-answers.spec.ts — Claude's questions open as an answer sheet: one card per question, the
+// ask-answers.spec.ts — Claude's questions open as an answer card in the page's flow: one card per question, the
 // caption counts the answered ones, Send stays out of reach until every question has an answer,
 // and sending allows the ask with the answers keyed by each question's text — the session's wait
 // carries them back to the terminal. Nothing scrolls sideways at the phone's width and axe finds
-// nothing serious on the open sheet, on the phone and on the desktop.
+// nothing serious on the open card, on the phone and on the desktop.
 
 import { expect, test } from "@playwright/test";
 import { expectAccessible } from "./axe.ts";
@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
 });
 
-test("a two-question ask opens the answer sheet and the wait carries the owner's answers", async (
+test("a two-question ask opens the answer card and the wait carries the owner's answers", async (
   { page, isMobile },
   info,
 ) => {
@@ -46,19 +46,18 @@ test("a two-question ask opens the answer sheet and the wait carries the owner's
   await openTab(page, "Sessions");
   await page.locator(`a[href='#/sessions/${session}']`).first().click();
 
-  // the phone's sheet title lives in the dialog's head, above section[data-needs-sheet]
-  const ask = page.locator(isMobile ? "dialog[open].ui-sheet" : "[data-needs-bar]");
+  const ask = page.locator("[data-block='ask']");
   await expect(ask.getByRole("heading", { name: /asks 2 questions/ })).toBeVisible();
   await expect(ask.locator("[data-ask-card]")).toHaveCount(2);
   await expect(ask.getByText("0 of 2 answered")).toBeVisible();
   if (isMobile) {
-    // the page and the sheet body scroll nothing sideways at the phone's width
+    // the page and the card scroll nothing sideways at the phone's width
     const doc = await page.evaluate(() => ({
       scroll: document.documentElement.scrollWidth,
       client: document.documentElement.clientWidth,
     }));
     expect(doc.scroll).toBeLessThanOrEqual(doc.client);
-    const body = await page.locator("dialog[open].ui-sheet .ui-sheet-body").evaluate((el) => ({
+    const body = await ask.evaluate((el) => ({
       scroll: el.scrollWidth,
       client: el.clientWidth,
     }));
@@ -98,11 +97,11 @@ test("a two-question ask opens the answer sheet and the wait carries the owner's
   await expect(ask).toHaveCount(0);
 });
 
-test("the approval sheet fits its command: Copy clears the text, Allow once holds one line", async ({
+test("the approval card fits its command: Copy clears the text, Allow once holds one line", async ({
   page,
   isMobile,
 }, info) => {
-  test.skip(!isMobile, "the phone sheet is the iphone project's");
+  test.skip(!isMobile, "the phone card is the iphone project's");
   // a stopped session whose hook asked to run a ten-line command
   const session = `e2e-ask-bash-${info.project.name}`;
   await api("/api/registry/report", {
@@ -123,7 +122,7 @@ test("the approval sheet fits its command: Copy clears the text, Allow once hold
   await signIn(page);
   await openTab(page, "Sessions");
   await page.locator(`a[href='#/sessions/${session}']`).first().click();
-  const sheet = page.locator("dialog[open].ui-sheet");
+  const sheet = page.locator("[data-block='ask']");
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole("heading", { name: "Command", exact: true })).toBeVisible();
 
@@ -148,7 +147,7 @@ test("the approval sheet fits its command: Copy clears the text, Allow once hold
   });
   expect(labelHeight, "the Allow once label wraps").toBeLessThan(30);
 
-  // nothing in the sheet is wider than the viewport
+  // nothing in the card is wider than the viewport
   const widest = await sheet.evaluate((el) => {
     const limit = el.ownerDocument.documentElement.clientWidth;
     let over = 0;
@@ -158,7 +157,7 @@ test("the approval sheet fits its command: Copy clears the text, Allow once hold
     }
     return over;
   });
-  expect(widest, "a sheet element is wider than the viewport").toBeLessThanOrEqual(0.5);
+  expect(widest, "a card element is wider than the viewport").toBeLessThanOrEqual(0.5);
 
   // this project's ask leaves with the run: the other specs count the needs-you items
   await api(`/api/needs/${id}/dismiss`, {}).catch(() => null);

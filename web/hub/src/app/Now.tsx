@@ -440,9 +440,9 @@ function StateLead({ state, role, tails }: { state: string; role: StateRole; tai
   );
 }
 
-/** The session's facts as the phone's and tablet's one quiet line at the pane's foot, above the
- *  ask's action bar: its model, how full its context window is, and the harness its report
- *  names — each left out when the session does not carry it, the line itself when none is known. */
+/** The session's facts as the phone's and tablet's one quiet line at the pane's foot: its model,
+ *  how full its context window is, and the harness its report names — each left out when the
+ *  session does not carry it, the line itself when none is known. */
 function SessionFacts({ d, pct }: { d: RegistryDetail; pct: number }): JSX.Element | null {
   const parts = [
     d.model ? shortModel(d.model) : "",
@@ -457,9 +457,9 @@ function SessionFacts({ d, pct }: { d: RegistryDetail; pct: number }): JSX.Eleme
   );
 }
 
-/** The Session screen: the header, the line that says how to restart a session whose hooks
- *  stopped reporting, the stream of the session's events, and the action bar its open needs-you
- *  ask carries (the phone's sheet, the wide layouts' inline box). The phone and the tablet paint
+/** The Session screen: the header, the ask its open needs-you item carries (the page's second
+ *  block on every layout), the line that says how to restart a session whose hooks stopped
+ *  reporting, and the stream of the session's events. The phone and the tablet paint
  *  the mock's one-row header: the title's column — the phone's carries the accent back link, the
  *  where line rides under the title with the hooks-stale chip beside it — and the state as a
  *  small dot and word at the column's right; the facts line sits at the pane's foot. The desktop
@@ -542,6 +542,7 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
           </div>
         </header>
       )}
+      {ask ? <NeedsBar item={ask} session={d} layout={layout} /> : null}
       {d.hooks_stale ? (
         <p data-resume="" class={`shrink-0 border-b ${LINE} px-4 py-2.5 text-sm sm:px-6`}>
           Hooks stopped reporting: restart this session with{" "}
@@ -550,7 +551,6 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
       ) : null}
       <StreamPane key={d.session_id} items={items} now={now} />
       {layout !== "desktop" ? <SessionFacts d={d} pct={pct} /> : null}
-      {ask ? <NeedsBar item={ask} session={d} layout={layout} /> : null}
     </div>
   );
 }

@@ -7,7 +7,7 @@
 // own specs'), and the page names a theme colour per scheme beside a manifest with a maskable icon
 // and links a 180 px Apple Home Screen icon the hub serves as a PNG.
 // A button styled by Tailwind utilities alone keeps its fill and its border over Radar's legacy
-// button reset. A session's needs sheet shows a Bash ask's command, leaves "Runs in" out for a
+// button reset. A session's ask card shows a Bash ask's command, leaves "runs in" out for a
 // session with no branch, and fits at 390, 820 and 1440 px in both schemes with answers sized to
 // the pointer (44 px under a finger, 40 px under one).
 // An open app offers "Huddle updated" with one Reload once the hub's /health names another build.
@@ -508,13 +508,12 @@ test.describe("the utility layer", () => {
       tool_name: "Bash",
       tool_input: { command: "bun run build" },
     });
-    // the ask's own opening, not open(): the phone draws no tab bar while a dialog is up, and
-    // this session's ask opens its sheet as soon as the page loads
+    // the ask's own opening, not open(): this session's ask draws as soon as the page loads
     await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
     await signIn(page);
     await page.goto(`${theSetup().rootUrl}/#/sessions/${session}`);
-    // the session screen's ask: the phone's bottom sheet, or the wide layouts' inline box
-    const bar = page.locator("[data-needs-sheet], [data-needs-bar]");
+    // the session screen's ask: the page's second block on every layout
+    const bar = page.locator("[data-block='ask']");
     await expect(bar).toBeVisible();
     const allow = bar.locator("[data-act='allow']");
     const deny = bar.locator("[data-act='deny']");
@@ -532,11 +531,11 @@ test.describe("the utility layer", () => {
   });
 });
 
-test.describe("the needs sheet", () => {
-  /** The widths the sheet is drawn at: a phone, a tablet and a desktop. */
+test.describe("the ask card", () => {
+  /** The widths the card is drawn at: a phone, a tablet and a desktop. */
   const WIDTHS = [390, 820, 1440] as const;
 
-  test("shows the command, no Runs in without a branch, and fits every width in both schemes", async ({
+  test("shows the command, no runs in without a branch, and fits every width in both schemes", async ({
     page,
   }, info) => {
     const session = `e2e-needs-${info.project.name}`;
@@ -561,24 +560,19 @@ test.describe("the needs sheet", () => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(`${theSetup().rootUrl}/#/sessions/${session}`);
         await expect(page.locator("html"), at).toHaveAttribute("data-scheme", scheme);
-        const bar = page.locator("[data-needs-sheet], [data-needs-bar]");
+        const bar = page.locator("[data-block='ask']");
         await expect(bar, at).toBeVisible();
         await expect(bar.locator("code").filter({ hasText: "bun run build" }), at).toHaveText("bun run build");
         await expect(bar, at).not.toContainText('"command"');
-        await expect(bar, at).not.toContainText("Runs in");
-        if (width === 390) {
-          // the phone sheet's head carries the meta line: the tool, the where, the waited age
-          await expect(page.locator("dialog[open].ui-sheet"), at).toContainText(
-            "Bash · e2e · e2e-machine · waiting",
-          );
-        } else {
-          // the wide bar keeps the where sentence; with no branch it reads On <machine>
-          await expect(bar, at).toContainText("On e2e-machine. Waiting");
-        }
+        await expect(bar, at).not.toContainText(/runs in/i);
+        // the title row's meta line: the tool, the where, the waited age
+        await expect(bar, at).toContainText("Bash · on e2e-machine · waiting");
+        // Reply instead is the wide layouts' link alone
+        await expect(bar.getByRole("button", { name: "Reply instead" }), at).toHaveCount(width === 390 ? 0 : 1);
         for (const act of ["allow", "deny"]) {
           const button = bar.locator(`[data-act='${act}']`);
           expect(await button.evaluate((el) => el.tagName), `${at}: ${act}`).toBe("BUTTON");
-          // a list re-read can re-draw the sheet between the resolve and the measure, so the
+          // a list re-read can re-draw the card between the resolve and the measure, so the
           // target sizes are polled, not read once; the 44 px floor holds under a finger only
           const floor = info.project.use.hasTouch ? 44 : 40;
           await expect
@@ -596,15 +590,15 @@ test.describe("the needs sheet", () => {
           const r = el.getBoundingClientRect();
           return r.left < 0 || r.right > window.innerWidth + 0.5 || el.scrollWidth > el.clientWidth;
         });
-        expect(spill, `${at}: the sheet spills past its box`).toBe(false);
-        // axe runs over the whole page; the sheet answers only for the nodes inside it
+        expect(spill, `${at}: the card spills past its box`).toBe(false);
+        // axe runs over the whole page; the card answers only for the nodes inside it
         const found = await axeViolations(page);
         const inBar = await page.evaluate(
           (vs) =>
             vs.filter((v) =>
               v.nodes.some((sel) => {
                 try {
-                  return document.querySelector(sel)?.closest("[data-needs-sheet], [data-needs-bar]") != null;
+                  return document.querySelector(sel)?.closest("[data-block='ask']") != null;
                 } catch {
                   return false;
                 }
@@ -612,7 +606,7 @@ test.describe("the needs sheet", () => {
             ),
           found,
         );
-        expect(inBar, `${at}: axe on the sheet`).toEqual([]);
+        expect(inBar, `${at}: axe on the card`).toEqual([]);
       }
     }
     // the answer moves the session out of Needs you, so the Now spec's counts stay as seeded

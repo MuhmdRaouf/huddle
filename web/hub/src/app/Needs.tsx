@@ -5,10 +5,8 @@
 // item list lives in the registry store, whose needs.item rows keep it in step with the server.
 import { Button } from "@huddle/ui/button.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
-import { Sheet } from "@huddle/ui/sheet.tsx";
 import type { ToastFn } from "@huddle/ui/toast.tsx";
-import type { JSX } from "preact";
-import { Fragment } from "preact";
+import type { ComponentChildren, JSX } from "preact";
 import { useRef, useState } from "preact/hooks";
 import type { Api, ApiError } from "../api.ts";
 import { Icon } from "../icons.tsx";
@@ -21,12 +19,19 @@ import {
   type RegistryStore,
   sessionName,
 } from "../registry.ts";
+import {
+  type AskActionId,
+  type AskActions,
+  type AskButton,
+  type AskLink,
+  askActionsOf,
+  askTitleOf,
+} from "./ask/actions.ts";
 import { AskAnswers } from "./ask/answers.tsx";
-import { AskPreview, SECTION_LABEL } from "./ask/preview.tsx";
+import { AskPreview } from "./ask/preview.tsx";
 import { type AskQuestion, questionsOf } from "./ask/questions.ts";
 import { errText, useHuddle } from "./context.tsx";
 import type { Layout } from "./layout.ts";
-import { homeShort } from "../radar/shared/repo.ts";
 
 /** The spans a snooze offers (SPEC 6.3): a quarter, an hour, tomorrow at nine. */
 export type SnoozeSpan = "15m" | "1h" | "tomorrow";
@@ -511,34 +516,22 @@ export function askInput(item: NeedItem): string {
   return raw;
 }
 
-/** Where a permission ask runs and how long it has waited, for a session that reports a branch,
- *  a machine or both; "Runs in" stays out when it reports no branch. */
-function whereLine({ branch, machine }: RegistrySession, waited: string): string {
+/** Where a permission ask runs, for a session that reports a branch, a machine or both; empty
+ *  when it reports neither. */
+function whereMeta({ branch, machine }: RegistrySession): string {
   const onMachine = machine ? ` on ${machine}` : "";
-  const where = branch ? `Runs in ${branch}${onMachine}` : `On ${machine}`;
-  return `${where}. Waiting ${waited}.`;
+  if (branch) return `runs in ${branch}${onMachine}`;
+  return machine ? `on ${machine}` : "";
 }
 
-/** The where-and-waited note, hidden when the session reports neither branch nor machine. */
-function WhereNote({ session, waited }: { session: RegistrySession; waited: string }): JSX.Element | null {
-  if (!session.branch && !session.machine) return null;
-  return <p class={`m-0 text-xs ${MUTED}`}>{whereLine(session, waited)}</p>;
-}
+/** The parts of a meta line, in order, with the empty ones left out. */
+const metaLine = (parts: readonly string[]): string => parts.filter((part) => part !== "").join(" · ");
 
 /** The screen reader's label for one item's ask. */
 function askLabel(item: NeedItem, who: string): string {
   if (item.kind === "permission") return `Permission ask on ${who}`;
   if (item.kind === "turn") return `Finished turn on ${who}`;
   return `Ask from ${who}`;
-}
-
-/** The verb the ask's title names for its tool. */
-function askWhat(tool: string): string {
-  if (tool === "Bash") return "run a command";
-  if (tool === "Edit" || tool === "MultiEdit") return "edit a file";
-  if (tool === "Write") return "write a file";
-  if (tool === "WebFetch") return "fetch a page";
-  return `use ${tool}`;
 }
 
 /** The icon on a permission ask's title tile. */
@@ -564,55 +557,71 @@ function askTitleFor(who: string, questions: AskQuestion[] | null, title: string
   return `${who} asks ${questions.length} question${questions.length === 1 ? "" : "s"}`;
 }
 
-/** A non-permission item's facts: its summary and the input it carries, wrapped now that no box
- *  scrolls sideways. */
-function ItemFacts({ item }: { item: NeedItem }): JSX.Element {
-  const input = askInput(item);
+/** One button of an item's row, in the tone its kind gives it. */
+function ActionButton({
+  button,
+  size,
+  fill,
+  run,
+}: {
+  button: AskButton;
+  size: "md" | "lg";
+  fill: string | undefined;
+  run: (id: AskActionId) => void;
+}): JSX.Element {
   return (
-    <div class="flex min-w-0 flex-col gap-2">
-      <h2 class="m-0 text-base font-semibold">{item.summary}</h2>
-      {input ? (
-        <code class="ui-mono block whitespace-pre-wrap break-words rounded-[var(--ui-radius)] border border-[var(--ui-line)] bg-[var(--ui-surface-2)] px-3 py-2.5 text-sm text-[var(--ui-text)]">
-          {input}
-        </code>
-      ) : null}
-    </div>
+    <Button
+      variant={button.tone}
+      size={size}
+      data-act={button.id}
+      class={fill}
+      onClick={() => run(button.id)}
+    >
+      {button.id === "allow" ? <Icon name="key" class="size-4" /> : null}
+      {button.label}
+    </Button>
   );
 }
 
-/** The key a wide bar's answer names, in the ink of the button it sits on. */
-function Key({ k }: { k: string }): JSX.Element {
+/** The quiet link under an item's buttons. */
+function GhostLink({
+  link,
+  run,
+  class: c,
+}: {
+  link: AskLink;
+  run: (id: AskActionId) => void;
+  class?: string;
+}): JSX.Element {
   return (
-    <kbd class="ui-mono rounded-[var(--ui-radius-sm)] border border-current px-1 text-[0.7333rem] leading-4">
-      {k}
-    </kbd>
+    <Button variant="ghost" data-act={link.id} class={c} onClick={() => run(link.id)}>
+      {link.label}
+    </Button>
   );
 }
 
-/** A permission ask's two answers: Deny, and Allow once with the key its name carries. */
+/** A permission ask's two answers: 48 px and sharing the row on the phone, the wide card's
+ *  40 px beside the title. */
 function BarActions({
-  act,
-  item,
-  what,
+  buttons,
+  run,
   wide,
 }: {
-  act: NeedsAct;
-  item: NeedItem;
-  what?: StepUpWhat | undefined;
+  buttons: readonly AskButton[];
+  run: (id: AskActionId) => void;
   wide: boolean;
 }): JSX.Element {
-  // the phone's sheet raises its targets to 48 px, the inline bar keeps its 44 px
-  const size = wide ? "md" : "lg";
-  const fill = wide ? undefined : "flex-1";
   return (
-    <div class={`flex gap-2.5 ${wide ? "shrink-0" : ""}`}>
-      <Button variant="danger" size={size} data-act="deny" class={fill} onClick={() => act.deny(item)}>
-        Deny {wide ? <Key k="d" /> : null}
-      </Button>
-      <Button size={size} data-act="allow" class={fill} onClick={() => act.allow(item, what)}>
-        <Icon name="key" class="size-4" />
-        Allow once {wide ? <Key k="a" /> : null}
-      </Button>
+    <div class={`flex gap-3 ${wide ? "shrink-0" : ""}`}>
+      {buttons.map((button) => (
+        <ActionButton
+          key={button.id}
+          button={button}
+          size={wide ? "md" : "lg"}
+          fill={wide ? undefined : "flex-1"}
+          run={run}
+        />
+      ))}
     </div>
   );
 }
@@ -633,162 +642,212 @@ export function confirmWhat(
   };
 }
 
-/** Every other item's actions: the snooze menu, Dismiss, and the Answer that opens the composer
- *  for an item that asks something. A finished turn asks nothing, so it carries no Answer. */
-function ItemActions({
-  act,
-  item,
+/** The tile a non-permission item wears: its icon on the wash of its tone. */
+const ITEM_TILE: Record<string, { icon: "ask" | "check"; wash: string }> = {
+  turn: { icon: "check", wash: "bg-[var(--ui-ok-soft)] text-[var(--ui-ok-ink)]" },
+  question: { icon: "ask", wash: "bg-[var(--ui-accent-soft)] text-[var(--ui-accent)]" },
+};
+
+/** The meta line of a non-permission item: the project, and what a reader of this kind wants to
+ *  know next: how long a finished turn has waited, or the branch and wait of a question. */
+function itemMeta(item: NeedItem, session: RegistrySession, waited: string): string {
+  const project = projectName(session.project);
+  if (item.kind === "turn") return metaLine([project, waited === "" ? "" : `${waited} ago`]);
+  return metaLine([project, session.branch ?? "", waited === "" ? "" : `waiting ${waited}`]);
+}
+
+/** The ask's block in the session page's flow: a card on the surface, 8 px under the header,
+ *  with the page's side margins. A tall body scrolls inside it, so the transcript keeps room. */
+function AskCard({
   wide,
-  onAnswer,
+  label,
+  children,
 }: {
-  act: NeedsAct;
-  item: NeedItem;
   wide: boolean;
-  onAnswer: () => void;
+  label: string;
+  children: ComponentChildren;
 }): JSX.Element {
   return (
-    <div class="flex flex-wrap items-center gap-2">
-      <SnoozeMenu item={item} />
-      <Button
-        variant="secondary"
-        size={wide ? "md" : "lg"}
-        data-act="dismiss"
-        onClick={() => act.dismiss(item)}
-      >
-        Dismiss
-      </Button>
-      {item.kind === "turn" ? null : (
-        <Button variant="ghost" data-act="reply" onClick={onAnswer}>
-          Answer
-        </Button>
-      )}
-    </div>
-  );
-}
-
-/** The phone sheet's title row: the tool's tile, on the accent wash while the questions decode,
- *  the session's wants-to line at the mock's 17 px / 600, and the ask's meta under it. */
-function SheetTitle({
-  asking,
-  tool,
-  title,
-  meta,
-}: {
-  asking: boolean;
-  tool: string;
-  title: string;
-  meta: string;
-}): JSX.Element {
-  return (
-    <span class="flex min-w-0 items-center gap-3">
-      <span
-        class={`flex size-10 shrink-0 items-center justify-center rounded-[var(--ui-radius)] ${
-          asking
-            ? "bg-[var(--ui-accent-soft)] text-[var(--ui-accent)]"
-            : "bg-[var(--ui-warn-soft)] text-[var(--ui-warn-ink)]"
-        }`}
-      >
-        <Icon name={asking ? "sparkle" : toolIcon(tool)} class="size-5" />
-      </span>
-      <span class="flex min-w-0 flex-col">
-        <span class="text-lg font-semibold leading-[1.2]">{title}</span>
-        {meta === "" ? null : <span class={`text-sm ${MUTED}`}>{meta}</span>}
-      </span>
-    </span>
-  );
-}
-
-/** The sheet head's meta line: the tool, where the ask runs, and how long it has waited. */
-function sheetMeta(item: NeedItem, session: RegistrySession, waited: string): string {
-  return [
-    item.tool,
-    projectName(session.project),
-    session.branch ?? "",
-    session.machine,
-    waited === "" ? "" : `waiting ${waited}`,
-  ]
-    .filter((part) => part !== "")
-    .join(" · ");
-}
-
-/** The Where section: the folder and branch the ask runs in, as an inset grouped list. A row
- *  without a value stays out, and a section with no rows never draws. */
-function WhereSection({ session }: { session: RegistrySession }): JSX.Element | null {
-  const folder = session.cwd ?? session.project;
-  const rows = [
-    ...(folder ? [{ term: "Folder", value: homeShort(folder) }] : []),
-    ...(session.branch ? [{ term: "Branch", value: session.branch }] : []),
-  ];
-  if (rows.length === 0) return null;
-  return (
-    <section class="flex flex-col" data-ask-where="">
-      <h3 class={`${SECTION_LABEL} mb-2`}>Where</h3>
-      <div class="overflow-hidden rounded-[var(--ui-radius)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-1)]">
-        {rows.map(({ term, value }, i) => (
-          <Fragment key={term}>
-            {i > 0 ? <div class="ml-4 h-px bg-[var(--ui-line)]" aria-hidden="true" /> : null}
-            <div class="flex min-h-[var(--ui-tap)] items-center justify-between gap-3 px-4">
-              <span class={`shrink-0 text-sm ${MUTED}`}>{term}</span>
-              <span class="ui-mono min-w-0 break-words text-right text-[length:var(--ui-text-md)]">
-                {value}
-              </span>
-            </div>
-          </Fragment>
-        ))}
-      </div>
+    <section
+      data-block="ask"
+      data-needs-bar=""
+      aria-label={label}
+      class={`flex max-h-[60dvh] shrink-0 flex-col overflow-y-auto rounded-[var(--ui-radius)] bg-[var(--ui-surface)] text-[var(--ui-text)] shadow-[var(--ui-shadow-1)] ${
+        wide ? "mx-6 mt-2.5 gap-3 px-5 pt-3 pb-2" : "mx-4 mt-2 gap-2 px-4 py-3"
+      }`}
+    >
+      {children}
     </section>
   );
 }
 
-/** The sheet's body once the meta line is said: the answer sheet when the input decodes, the
- *  per-tool preview with Where and the Deny/Allow footer otherwise. */
-function SheetBody({
-  act,
-  item,
-  tool,
-  confirm,
-  asking,
-  session,
-  onSend,
-  onDock,
-  onReply,
+/** The card's title row: the tile (the tool's icon on the warn wash, the sparkle on the accent
+ *  wash while questions decode), the plain title, and the meta line under it. */
+function AskHead({
+  tile,
+  wash,
+  title,
+  meta,
 }: {
-  act: NeedsAct;
-  item: NeedItem;
-  tool: string;
-  confirm: StepUpWhat | undefined;
-  asking: boolean;
-  session: RegistrySession;
-  onSend: (answers: Record<string, string>) => void;
-  onDock: () => void;
-  onReply: () => void;
+  tile: "ask" | "check" | "sparkle" | ReturnType<typeof toolIcon>;
+  wash: string;
+  title: string;
+  meta: string;
 }): JSX.Element {
-  if (asking) return <AskAnswers item={item} onSend={onSend} onTerminal={onDock} />;
+  return (
+    <div class="flex min-w-0 flex-1 items-center gap-3">
+      <span class={`flex size-10 shrink-0 items-center justify-center rounded-[var(--ui-radius)] ${wash}`}>
+        <Icon name={tile} class="size-5" />
+      </span>
+      <div class="flex min-w-0 flex-col">
+        <h2 class="m-0 text-lg font-semibold leading-[1.3]">{title}</h2>
+        {meta === "" ? null : <span class={`text-sm ${MUTED}`}>{meta}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Every item that is not a permission ask: the tile and plain title with the project line, the
+ *  item's own words quoted, the input it carries, the kind's two buttons beside the snooze menu,
+ *  its note, and its quiet link. A kind with no plain title (a blocked task) heads the box with
+ *  its summary. */
+function ItemBox({
+  item,
+  session,
+  waited,
+  wide,
+  actions,
+  run,
+}: {
+  item: NeedItem;
+  session: RegistrySession;
+  waited: string;
+  wide: boolean;
+  actions: AskActions;
+  run: (id: AskActionId) => void;
+}): JSX.Element {
+  const title = askTitleOf(item.kind, "");
+  const tile = ITEM_TILE[item.kind] ?? ITEM_TILE["question"];
+  const input = askInput(item);
   return (
     <>
-      <AskPreview tool={tool} input={item.input ?? ""} truncated={item.truncated} />
-      <WhereSection session={session} />
-      <footer
-        data-needs-foot=""
-        class="sticky bottom-0 flex flex-col gap-2.5 border-t border-[var(--ui-line)] bg-[var(--ui-surface)] pt-3"
-      >
-        <BarActions act={act} item={item} what={confirm} wide={false} />
-        <Button variant="ghost" data-act="reply" class="self-center" onClick={onReply}>
-          Reply instead
-        </Button>
-      </footer>
+      <AskHead
+        tile={tile?.icon ?? "ask"}
+        wash={tile?.wash ?? ""}
+        title={title ?? item.summary}
+        meta={itemMeta(item, session, waited)}
+      />
+      {title === null ? null : <p class="m-0 text-[length:var(--ui-text-md)]">{item.summary}</p>}
+      {input ? (
+        <code class="ui-mono block whitespace-pre-wrap break-words rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] px-3.5 py-2.5 text-sm text-[var(--ui-text)]">
+          {input}
+        </code>
+      ) : null}
+      <div class="flex items-center gap-2.5">
+        <SnoozeMenu item={item} />
+        {actions.buttons.map((button) => (
+          <ActionButton key={button.id} button={button} size={wide ? "md" : "lg"} fill="flex-1" run={run} />
+        ))}
+      </div>
+      {actions.note === null ? null : <p class={`m-0 text-center text-sm ${MUTED}`}>{actions.note}</p>}
+      {actions.ghost === null ? null : <GhostLink link={actions.ghost} run={run} class="self-center" />}
     </>
   );
 }
 
-/** The session screen's action bar (SPEC 9): a permission ask as the phone's bottom sheet — the
- *  per-tool preview inside, Deny and Allow once on a footer that stays in reach, Reply instead
- *  under them — and the wide layouts' inline box with the same preview. An AskUserQuestion ask
- *  whose input decodes draws the answer sheet instead of the preview and its buttons: Send posts
- *  the allow with the owner's answers, Answer in terminal docks the ask undecided. Closing the
- *  sheet without deciding docks a one-line row that reopens it. Every other item keeps its
- *  summary with Snooze and Dismiss (and Answer when it asks something); the composer opens in
- *  place. */
+/** A permission ask's body. The answer form when the input decodes as questions; otherwise the
+ *  per-tool preview with the two answers: under it on the phone, beside the title on the wide
+ *  layouts, where Reply instead sits under the preview. */
+function PermissionBody({
+  item,
+  asking,
+  head,
+  actions,
+  wide,
+  onSend,
+  onDock,
+  run,
+}: {
+  item: NeedItem;
+  asking: boolean;
+  head: JSX.Element;
+  actions: AskActions;
+  wide: boolean;
+  onSend: (answers: Record<string, string>) => void;
+  onDock: () => void;
+  run: (id: AskActionId) => void;
+}): JSX.Element {
+  const ghost =
+    actions.ghost === null ? null : <GhostLink link={actions.ghost} run={run} class="self-start" />;
+  if (asking) {
+    return (
+      <>
+        {head}
+        <div class="min-h-0 overflow-y-auto">
+          <AskAnswers item={item} onSend={onSend} onTerminal={onDock} />
+        </div>
+        {ghost}
+      </>
+    );
+  }
+  const preview = (
+    <div class="min-h-0 overflow-y-auto">
+      <AskPreview tool={item.tool ?? ""} input={item.input ?? ""} truncated={item.truncated} />
+    </div>
+  );
+  const buttons = <BarActions buttons={actions.buttons} run={run} wide={wide} />;
+  if (!wide) {
+    return (
+      <>
+        {head}
+        {preview}
+        {buttons}
+      </>
+    );
+  }
+  return (
+    <>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {head}
+        {buttons}
+      </div>
+      {preview}
+      {ghost}
+    </>
+  );
+}
+
+/** The composer's placeholder: a permission ask and a finished turn are replied to, anything
+ *  else is answered. */
+function replyPlaceholder(item: NeedItem, who: string): string {
+  return item.kind === "permission" || item.kind === "turn" ? `Reply to ${who}…` : `Answer ${who}…`;
+}
+
+/** What each action id of an item's box does: the decisions, the dismissal, the copy of the
+ *  command that resumes the session in a terminal, and the composer for both kinds of reply. */
+function askRunner(d: {
+  act: NeedsAct;
+  item: NeedItem;
+  confirm: StepUpWhat | undefined;
+  copy: (text: string) => void;
+  sessionId: string;
+  reply: () => void;
+}): (id: AskActionId) => void {
+  return (id) => {
+    if (id === "deny") d.act.deny(d.item);
+    else if (id === "allow") d.act.allow(d.item, d.confirm);
+    else if (id === "dismiss") d.act.dismiss(d.item);
+    else if (id === "copy-terminal") d.copy(`claude --resume ${d.sessionId}`);
+    else d.reply();
+  };
+}
+
+/** The session page's ask, the page's second block under the header on every layout: a permission
+ *  ask with the per-tool preview, Deny and Allow once (and Reply instead on the wide layouts); an
+ *  AskUserQuestion ask whose input decodes draws the answer form instead, where Send posts the
+ *  allow with the owner's answers and Answer in terminal folds the ask to a one-line row that
+ *  reopens it. Every other item keeps its kind's box (a question: Dismiss and Answer; a finished
+ *  turn: Mark read and Reply) beside the snooze menu; the composer opens in place. */
 export function NeedsBar({
   item,
   session,
@@ -801,144 +860,86 @@ export function NeedsBar({
   const act = useNeedsAct();
   const [replying, setReplying] = useState(false);
   const [docked, setDocked] = useState(false);
-  const { now } = useHuddle();
+  const { now, copy } = useHuddle();
   const permission = item.kind === "permission" && item.tool !== "";
   const tool = item.tool ?? "";
   const wide = layout !== "phone";
   const who = sessionName(session);
   const confirm = confirmWhat(item, session, permission);
-  const ask = askLabel(item, who);
-  const replyWord = permission ? `Reply to ${who}…` : `Answer ${who}…`;
-  const title = `${who} wants to ${askWhat(tool)}`;
+  const label = askLabel(item, who);
+  const actions = askActionsOf(item.kind, layout);
   const askQuestions = askOf(item);
   const asking = askQuestions !== null;
-  const askTitle = askTitleFor(who, askQuestions, title);
-  const meta = sheetMeta(item, session, ageText(item.created_at, now));
-  const sendAnswers = (answers: Record<string, string>): void => act.allow(item, confirm, answers);
-  const panelClass = wide
-    ? "mx-4 mb-4 flex shrink-0 flex-col gap-3 rounded-[var(--ui-radius-lg)] border border-[var(--ui-needs-you)] bg-[var(--ui-surface)] p-4 text-[var(--ui-text)] sm:mx-6 sm:mb-5"
-    : "flex shrink-0 flex-col gap-3 rounded-t-[var(--ui-radius-lg)] border-t-2 border-[var(--ui-needs-you)] bg-[var(--ui-surface)] px-4 pt-4 pb-7 text-[var(--ui-text)]";
+  const title = askTitleFor(who, askQuestions, askTitleOf(item.kind, tool) ?? item.summary);
+  const waited = ageText(item.created_at, now);
+  const run = askRunner({
+    act,
+    item,
+    confirm,
+    copy,
+    sessionId: session.session_id,
+    reply: () => setReplying(true),
+  });
   const composer = (
     <ActComposer
       kind="answer"
       targets={[session.session_id]}
       routes={[session.delivery_route]}
-      placeholder={replyWord}
+      placeholder={replyPlaceholder(item, who)}
       onClose={() => setReplying(false)}
     />
   );
-  if (permission && wide && !(asking && docked)) {
+  if (permission && asking && docked) {
     return (
       <>
+        <AskCard wide={wide} label={label}>
+          <div class="flex items-center gap-3">
+            <p class="m-0 flex-1 text-sm">{`Needs you · ${title}`}</p>
+            <Button variant="ghost" onClick={() => setDocked(false)}>
+              Review
+            </Button>
+          </div>
+        </AskCard>
         {act.sheet}
-        <section data-needs-bar="" aria-label={ask} class={panelClass}>
-          {replying ? (
-            composer
-          ) : asking ? (
-            <>
-              <h2 class="m-0 text-base font-semibold">{askTitle}</h2>
-              <AskAnswers item={item} onSend={sendAnswers} onTerminal={() => setDocked(true)} />
-              <Button variant="ghost" data-act="reply" class="self-start" onClick={() => setReplying(true)}>
-                Reply instead
-              </Button>
-            </>
-          ) : (
-            <>
-              {/* the answers sit beside the facts, and under them once the pane leaves the facts
-                  less than 240 px */}
-              <div class="flex flex-wrap items-start gap-4">
-                <div class="flex min-w-0 flex-[1_1_240px] flex-col gap-2">
-                  <h2 class="m-0 text-base font-semibold">
-                    Allow <code class="ui-mono">{item.tool}</code>?
-                  </h2>
-                  <AskPreview tool={tool} input={item.input ?? ""} truncated={item.truncated} />
-                  <WhereNote session={session} waited={ageText(item.created_at, now)} />
-                </div>
-                <BarActions act={act} item={item} what={confirm} wide />
-              </div>
-              <Button variant="ghost" data-act="reply" class="self-start" onClick={() => setReplying(true)}>
-                Reply instead
-              </Button>
-            </>
-          )}
-        </section>
       </>
     );
   }
-  if (permission && !docked) {
-    return (
-      <>
-        {act.sheet}
-        <Sheet
-          open
-          onClose={() => setDocked(true)}
-          title={<SheetTitle asking={asking} tool={tool} title={askTitle} meta={meta} />}
-        >
-          {/* autofocus keeps the sheet's opening focus here instead of the close button, whose
-              ring would paint on every open that did not come from a pointer; the outline goes
-              with it, since this target only ever takes programmatic focus */}
-          <section
-            data-needs-sheet=""
-            aria-label={ask}
-            class="flex flex-col gap-4 focus-visible:outline-none"
-            autofocus
-            tabindex={-1}
-          >
-            {replying ? (
-              composer
-            ) : (
-              <SheetBody
-                act={act}
-                item={item}
-                tool={tool}
-                confirm={confirm}
-                asking={asking}
-                session={session}
-                onSend={sendAnswers}
-                onDock={() => setDocked(true)}
-                onReply={() => setReplying(true)}
-              />
-            )}
-          </section>
-        </Sheet>
-      </>
-    );
-  }
-  if (permission) {
-    return (
-      <>
-        {act.sheet}
-        <section
-          data-needs-sheet=""
-          aria-label={ask}
-          class="flex shrink-0 items-center gap-3 rounded-t-[var(--ui-radius-lg)] border-t-2 border-[var(--ui-needs-you)] bg-[var(--ui-surface)] px-4 py-3 text-[var(--ui-text)]"
-        >
-          <p class="m-0 flex-1 text-sm">{`Needs you · ${askTitle}`}</p>
-          <Button variant="ghost" onClick={() => setDocked(false)}>
-            Review
-          </Button>
-        </section>
-      </>
-    );
-  }
+  const meta = permission
+    ? metaLine([tool, whereMeta(session), waited === "" ? "" : `waiting ${waited}`])
+    : "";
+  const head = (
+    <AskHead
+      tile={asking ? "sparkle" : toolIcon(tool)}
+      wash={
+        asking
+          ? "bg-[var(--ui-accent-soft)] text-[var(--ui-accent)]"
+          : "bg-[var(--ui-warn-soft)] text-[var(--ui-warn-ink)]"
+      }
+      title={title}
+      meta={meta}
+    />
+  );
   return (
     <>
-      {act.sheet}
-      <section
-        data-needs-sheet={wide ? undefined : ""}
-        data-needs-bar={wide ? "" : undefined}
-        aria-label={ask}
-        class={panelClass}
-      >
+      <AskCard wide={wide} label={label}>
         {replying ? (
           composer
+        ) : permission ? (
+          <PermissionBody
+            item={item}
+            asking={asking}
+            head={head}
+            actions={actions}
+            wide={wide}
+            onSend={(answers) => act.allow(item, confirm, answers)}
+            onDock={() => setDocked(true)}
+            run={run}
+          />
         ) : (
-          <>
-            <ItemFacts item={item} />
-            <ItemActions act={act} item={item} wide={wide} onAnswer={() => setReplying(true)} />
-          </>
+          <ItemBox item={item} session={session} waited={waited} wide={wide} actions={actions} run={run} />
         )}
-      </section>
+      </AskCard>
+      {act.sheet}
     </>
   );
 }

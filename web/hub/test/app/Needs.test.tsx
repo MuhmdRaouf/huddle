@@ -139,6 +139,7 @@ type Mount = {
   /** The calls that changed something: the two reads the store refills with are left out. */
   writes(): { path: string; body: unknown }[];
   toast: ReturnType<typeof vi.fn>;
+  copy: ReturnType<typeof vi.fn>;
   canned: { sessions: RegistrySession[]; needs: NeedItem[] };
 };
 
@@ -168,6 +169,7 @@ function mount(
     return over.onWrite?.(path, n) ?? {};
   });
   const toast = vi.fn();
+  const copy = vi.fn();
   const registry = makeRegistry(
     { sessions: canned.sessions, needs: canned.needs },
     { api: (path) => call(path) },
@@ -178,6 +180,7 @@ function mount(
         registry,
         api,
         toast: toast as unknown as ToastFn,
+        copy,
         now: NOW,
       })}
     >
@@ -189,6 +192,7 @@ function mount(
     calls,
     writes: () => calls.filter((c) => c.path !== "/api/needs" && c.path !== "/api/registry/sessions"),
     toast,
+    copy,
     canned,
   };
 }
@@ -218,7 +222,7 @@ describe("the permission bar", () => {
       (registry) => {
         const s = registry.getState().sessions?.[0];
         const item = registry.getState().needs?.[0];
-        return s && item ? <NeedsBar item={item} session={s} layout={over.layout ?? "phone"} /> : null;
+        return s && item ? <NeedsBar item={item} session={s} layout={over.layout ?? "desktop"} /> : null;
       },
       {
         sessions: [
@@ -226,55 +230,40 @@ describe("the permission bar", () => {
           working(),
         ],
         needs: over.item ? [over.item] : [ask()],
-        ...(over.layout ? { layout: over.layout } : {}),
+        layout: over.layout ?? "desktop",
         ...(over.onWrite ? { onWrite: over.onWrite } : {}),
       },
     );
 
-  it("shows the tool ask, the input, where it runs and the two answers, as the phone sheet", () => {
-    mountBar();
-    const sheet = document.querySelector("dialog[open].ui-sheet");
-    expect(sheet).not.toBeNull();
-    expect(sheet?.querySelector("[data-needs-sheet]")).not.toBeNull();
-    expect(screen.getByRole("heading", { name: /kanban-e2e wants to run a command/ })).toBeDefined();
+  it("shows the tool ask, the input, where it runs and the two answers as a card in the page's flow", () => {
+    mountBar({ layout: "phone" });
+    const card = document.querySelector("[data-block='ask']");
+    expect(card).not.toBeNull();
+    expect(card?.hasAttribute("data-needs-bar")).toBe(true);
+    expect(document.querySelector("dialog.ui-sheet")).toBeNull();
+    expect(card?.querySelector("[data-act='deny']")).not.toBeNull();
+    expect(card?.querySelector("[data-act='allow']")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: /^Allow this command\?/ })).toBeDefined();
     expect(screen.getByText("npm test -- --run e2e").tagName).toBe("CODE");
-    expect(
-      screen.getByText(/Bash · claude-code-plugins · port\/KBN-E2E · laptop · waiting 30 s/),
-    ).toBeDefined();
-    // the close button never opens the sheet holding focus, so no ring paints on open by pointer
-    const body = sheet?.querySelector("[data-needs-sheet]");
-    expect(body?.hasAttribute("autofocus")).toBe(true);
-    expect(document.querySelector("[data-needs-bar]")).toBeNull();
-    const foot = sheet?.querySelector("[data-needs-foot]");
-    expect(foot?.querySelector("[data-act='deny']")).not.toBeNull();
-    expect(foot?.querySelector("[data-act='allow']")).not.toBeNull();
+    expect(screen.getByText("Bash · runs in port/KBN-E2E on laptop · waiting 30 s")).toBeDefined();
     expect(screen.getByRole("button", { name: "Deny" })).toBeDefined();
     expect(screen.getByRole("button", { name: /Allow once/ })).toBeDefined();
-    expect(screen.getByRole("button", { name: "Reply instead" })).toBeDefined();
   });
 
-  it("keeps the ask open, docked, when the owner closes the sheet without deciding", async () => {
-    const h = mountBar();
-    await act(async () => {
-      screen.getByRole("button", { name: "Close" }).click();
-    });
-    await flush();
-    expect(document.querySelector("dialog[open]")).toBeNull();
-    expect(h.registry.getState().needs?.[0]?.id).toBe(7);
-    expect(screen.getByText("Needs you · kanban-e2e wants to run a command")).toBeDefined();
-    await act(async () => {
-      screen.getByRole("button", { name: "Review" }).click();
-    });
-    await flush();
-    expect(document.querySelector("dialog[open].ui-sheet")).not.toBeNull();
-    expect(screen.getByRole("button", { name: /Allow once/ })).toBeDefined();
+  it("leaves Reply instead off the phone's ask and keeps it on the tablet's and the desktop's", () => {
+    mountBar({ layout: "phone" });
+    expect(screen.queryByRole("button", { name: "Reply instead" })).toBeNull();
+    for (const layout of ["tablet", "desktop"] as const) {
+      mountBar({ layout });
+      expect(screen.getByRole("button", { name: "Reply instead" }), layout).toBeDefined();
+    }
   });
 
-  it("lays the same ask out as the wide inline bar, with the keys named on the buttons", () => {
+  it("lays the same ask out on the wide layouts with no key chips on the buttons", () => {
     mountBar({ layout: "desktop" });
     expect(document.querySelector("[data-needs-bar]")).not.toBeNull();
-    expect(screen.getByRole("button", { name: /Deny/ }).textContent).toContain("d");
-    expect(screen.getByRole("button", { name: /Allow once/ }).textContent).toContain("a");
+    expect(screen.getByRole("button", { name: "Deny" }).textContent?.trim()).toBe("Deny");
+    expect(screen.getByRole("button", { name: /Allow once/ }).textContent?.trim()).toBe("Allow once");
   });
 
   it("posts deny at once and drops the item", async () => {
@@ -542,7 +531,7 @@ describe("the permission bar", () => {
     expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("answers a question from its summary, with no Deny and no Allow once", async () => {
+  it("names a question plainly, quotes it, and offers Dismiss and Answer with no Deny or Allow once", async () => {
     mountBar({
       item: ask({
         kind: "question",
@@ -551,7 +540,11 @@ describe("the permission bar", () => {
         input: "",
       }),
     });
-    expect(screen.getByRole("heading", { name: "Keep the 30 s upstream timeout?" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Claude asks you a question" })).toBeDefined();
+    expect(screen.getByText("Keep the 30 s upstream timeout?")).toBeDefined();
+    expect(screen.getByText("claude-code-plugins · port/KBN-E2E · waiting 30 s")).toBeDefined();
+    expect(screen.getByText("Your answer arrives on the session's next prompt.")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeDefined();
     expect(screen.queryByRole("button", { name: "Deny" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Allow once/ })).toBeNull();
     await act(async () => {
@@ -560,14 +553,18 @@ describe("the permission bar", () => {
     expect(screen.getByLabelText("Message")).toBeDefined();
   });
 
-  it("offers a finished turn Snooze and Dismiss under its digest line, and no Answer", async () => {
+  it("offers a finished turn Reply, Mark read and Snooze under its digest line, and no Answer", async () => {
     const h = mountBar({
+      layout: "phone",
       item: ask({ kind: "turn", summary: "Goal: fix the login bug", tool: "", input: "" }),
     });
-    expect(screen.getByRole("heading", { name: "Goal: fix the login bug" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Finished, waiting for you" })).toBeDefined();
+    expect(screen.getByText("Goal: fix the login bug")).toBeDefined();
+    expect(screen.getByText("claude-code-plugins · 30 s ago")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Answer" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Deny" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Dismiss" }).getAttribute("class")).toContain("ui-btn-lg");
+    expect(screen.getByRole("button", { name: "Reply" }).getAttribute("class")).toContain("ui-btn-primary");
+    expect(screen.getByRole("button", { name: "Mark read" }).getAttribute("class")).toContain("ui-btn-lg");
     await act(async () => {
       screen.getByRole("button", { name: "More actions" }).click();
     });
@@ -578,11 +575,38 @@ describe("the permission bar", () => {
     expect(h.writes()).toEqual([{ path: "/api/needs/7/snooze", body: { until: "1h" } }]);
     h.canned.needs = [];
     await act(async () => {
-      screen.getByRole("button", { name: "Dismiss" }).click();
+      screen.getByRole("button", { name: "Mark read" }).click();
     });
     await flush();
     expect(h.writes()[1]).toEqual({ path: "/api/needs/7/dismiss", body: {} });
     expect(legacyClasses()).toEqual([]);
+  });
+
+  it("opens the reply composer from a finished turn's Reply and posts to the session's answer route", async () => {
+    const h = mountBar({
+      item: ask({ kind: "turn", summary: "Goal: fix the login bug", tool: "", input: "" }),
+    });
+    await act(async () => {
+      screen.getByRole("button", { name: "Reply" }).click();
+    });
+    const box = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    expect(box.placeholder).toBe("Reply to kanban-e2e…");
+    fireEvent.input(box, { target: { value: "ship it" } });
+    await act(async () => {
+      screen.getByRole("button", { name: "Send" }).click();
+    });
+    await flush();
+    expect(h.writes()).toEqual([{ path: "/api/sessions/s-1/answer", body: { text: "ship it" } }]);
+  });
+
+  it("copies the resume command from a finished turn's Copy terminal command", async () => {
+    const h = mountBar({
+      item: ask({ kind: "turn", summary: "Goal: fix the login bug", tool: "", input: "" }),
+    });
+    await act(async () => {
+      screen.getByRole("button", { name: "Copy terminal command" }).click();
+    });
+    expect(h.copy).toHaveBeenCalledWith("claude --resume s-1");
   });
 });
 
@@ -910,27 +934,14 @@ describe("the needs sheet on the tokens", () => {
   const bash = (command: string): NeedItem =>
     ask({ input: JSON.stringify({ command, description: "Build the bundle" }) });
 
-  it("leads the sheet with the session's wants-to line and the ask's meta under it", () => {
+  it("leads the card with the plain title and the ask's meta under it", () => {
     mountAsk(bash("bun run build"), {
       session: { title: "lead", branch: "feat/one", machine: "mbp" },
     });
-    const head = document.querySelector(".ui-sheet-title") as HTMLElement;
-    expect(head).not.toBeNull();
-    expect(head.textContent).toContain("lead wants to run a command");
-    expect(
-      within(head).getByText("Bash · claude-code-plugins · feat/one · mbp · waiting 30 s"),
-    ).toBeDefined();
-  });
-
-  it("draws the Where section only from the rows the session reports", () => {
-    mountAsk(ask(), { session: { branch: "" } });
-    expect(screen.getByText("Where")).toBeDefined();
-    expect(screen.getByText("Folder")).toBeDefined();
-    expect(screen.getByText("/work/claude-code-plugins")).toBeDefined();
-    expect(screen.queryByText("Branch")).toBeNull();
-    mountAsk(ask(), { session: { project: "", branch: "", machine: "" } });
-    expect(screen.queryByText("Where")).toBeNull();
-    expect(screen.queryByText("Folder")).toBeNull();
+    const card = document.querySelector("[data-block='ask']") as HTMLElement;
+    expect(within(card).getByRole("heading", { level: 2 }).textContent).toBe("Allow this command?");
+    expect(within(card).getByText("Bash · runs in feat/one on mbp · waiting 30 s")).toBeDefined();
+    expect(within(card).queryByText("Where")).toBeNull();
   });
 
   it("shows a Bash ask's command, not its raw JSON", () => {
@@ -978,11 +989,11 @@ describe("the needs sheet on the tokens", () => {
 
   it("leaves the branch out of the meta when the session reports none", () => {
     mountAsk(ask(), { session: { branch: "" } });
-    expect(screen.queryByText(/Runs in/)).toBeNull();
-    expect(screen.getByText("Bash · claude-code-plugins · laptop · waiting 30 s")).toBeDefined();
+    expect(screen.queryByText(/runs in/)).toBeNull();
+    expect(screen.getByText("Bash · on laptop · waiting 30 s")).toBeDefined();
   });
 
-  it("paints the phone sheet with real 48 px buttons and no legacy class", () => {
+  it("paints the phone card with real 48 px buttons and no legacy class", () => {
     mountAsk(bash("bun run build"));
     expect(screen.getByRole("button", { name: "Deny" }).getAttribute("class")).toContain(
       "ui-btn ui-btn-danger ui-btn-lg",
@@ -990,13 +1001,13 @@ describe("the needs sheet on the tokens", () => {
     expect(screen.getByRole("button", { name: /Allow once/ }).getAttribute("class")).toContain(
       "ui-btn ui-btn-primary ui-btn-lg",
     );
-    expect(screen.getByRole("button", { name: "Reply instead" }).getAttribute("class")).toContain("ui-btn");
     expect(legacyClasses()).toEqual([]);
   });
 
-  it("paints the wide bar and its keys with no legacy class", () => {
+  it("paints the wide card and its Reply instead link with no legacy class", () => {
     mountAsk(bash("bun run build"), { layout: "desktop" });
-    expect(screen.getByRole("button", { name: /Deny/ }).getAttribute("class")).toContain(
+    expect(screen.getByRole("button", { name: "Reply instead" }).getAttribute("class")).toContain("ui-btn");
+    expect(screen.getByRole("button", { name: "Deny" }).getAttribute("class")).toContain(
       "ui-btn ui-btn-danger",
     );
     expect(screen.getByRole("button", { name: /Allow once/ }).getAttribute("class")).toContain(
@@ -1010,9 +1021,12 @@ describe("the needs sheet on the tokens", () => {
       (registry) => {
         const s = registry.getState().sessions?.[0];
         const it = registry.getState().needs?.[0];
-        return s && it ? <NeedsBar item={it} session={s} layout="phone" /> : null;
+        return s && it ? <NeedsBar item={it} session={s} layout="desktop" /> : null;
       },
-      { onWrite: (path) => (path === "/api/needs/7/decide" ? httpError(401, "step-up required") : {}) },
+      {
+        layout: "desktop",
+        onWrite: (path) => (path === "/api/needs/7/decide" ? httpError(401, "step-up required") : {}),
+      },
     );
     stubGet();
     await act(async () => {
@@ -1046,7 +1060,7 @@ describe("the needs sheet on the tokens", () => {
   });
 });
 
-describe("the AskUserQuestion answer sheet", () => {
+describe("the AskUserQuestion answer card", () => {
   /** The two questions as the ask's raw input: one single choice, one multi-select. */
   const askInput = JSON.stringify({
     questions: [
@@ -1125,6 +1139,21 @@ describe("the AskUserQuestion answer sheet", () => {
     ]);
   });
 
+  it("docks an AskUserQuestion ask the owner takes to the terminal, and opens it again from Review", async () => {
+    mountAsk(asks());
+    await act(async () => {
+      screen.getByRole("button", { name: "Answer in terminal" }).click();
+    });
+    await flush();
+    expect(screen.getByText(/^Needs you · /)).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Send answers" })).toBeNull();
+    await act(async () => {
+      screen.getByRole("button", { name: "Review" }).click();
+    });
+    await flush();
+    expect(screen.getByRole("button", { name: "Send answers" })).toBeDefined();
+  });
+
   it("a Bash ask still allows with no answers in the call", async () => {
     const h = mountAsk(
       ask({ input: JSON.stringify({ command: "bun test", description: "Run the unit tests" }) }),
@@ -1136,7 +1165,7 @@ describe("the AskUserQuestion answer sheet", () => {
     expect(h.calls).toEqual([{ path: "/api/needs/7/decide", body: { decision: "allow" } }]);
   });
 
-  it("a refusal speaks the server's line and keeps the sheet", async () => {
+  it("a refusal speaks the server's line and keeps the card", async () => {
     const h = mountAsk(asks(), {
       onWrite: (path) =>
         path === "/api/needs/7/decide" ? httpError(400, "answers: name an answer for each question") : {},
