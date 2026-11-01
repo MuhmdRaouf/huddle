@@ -33,12 +33,26 @@ const (
 	listenTouchMS  = 1000
 	listenFeedMS   = 1500
 	startStdinMS   = 500
-	startJoinMS    = 2500
 	startBudgetMS  = 3000
 	stopStdinMS    = 500
 	stopInboxMS    = 5000
 	taskStdinMS    = 500
 	taskSendMS     = 1000
+)
+
+// The session start's join is tried again inside startBudgetMS when the hub gives no answer: with
+// autostart the first try waits startAutostartTryMS, leaving room to start the server; otherwise
+// each try waits startJoinTryMS. A refused connection pauses startRefusedPauseMS before the next
+// try, and no try starts with less than startJoinMinMS left or after startJoinTries tries. The
+// joins and the feed after them end startSayMarginMS before the budget does, so the hook's word
+// about them is said inside the deadline the merged hook process grants the part.
+const (
+	startAutostartTryMS = 1000
+	startJoinTryMS      = 1200
+	startRefusedPauseMS = 200
+	startJoinMinMS      = 100
+	startJoinTries      = 12
+	startSayMarginMS    = 300
 )
 
 // hookLogCap caps hooks.log: a hook that fails on every event must not grow it without end.

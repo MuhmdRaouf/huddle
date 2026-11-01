@@ -45,7 +45,10 @@ Both usually come from `.agents/huddle/huddle.json` in your repo (`{"channel": "
    your context; call `status` to refresh it (call `join` again only to change your role or
    context: it resets your presence). Read it: inbox, unread events or a brief (see "Fresh
    context or sync"), next task, the latest knowledge, who holds the turn, who the orchestrator
-   is, whether you are paused. A subagent joins itself (see below).
+   is, whether you are paused. A subagent joins itself (see below). If the hub was too slow for the
+   session start, your context holds one line, `huddle: could not join <channel> as <name>: <reason>`:
+   the session's Huddle bridge keeps trying for 10 minutes and joins you in the background; call
+   `status` to see when you are in, or run `/huddle:join` to get in by hand.
 2. **Recall before you read.** `recall` with 2–4 words before opening files, searching the repo
    or re-deriving anything. Read a hit in full with `kb <id>`. A hit is cheaper than a re-read.
    Verified entries come first; a hit marked "may be stale" (old, or its files changed) is a

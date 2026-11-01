@@ -113,7 +113,7 @@ func TestTheSessionStartHookWithNoServerSaysSoAndNamesNoAddress(t *testing.T) {
 		t.Errorf("session-start took %s, want it inside its budget", elapsed)
 	}
 	neverBlocks(t, stdout)
-	if !strings.Contains(stdout, "does not answer") || !strings.Contains(stdout, "none yet") {
+	if !strings.Contains(stdout, "could not join hooks as me: no hub address yet;") {
 		t.Errorf("the hook said %q, want the no-address line", stdout)
 	}
 }
@@ -127,7 +127,7 @@ func TestTheSessionStartHookSaysAJoinFailureAndItsExtraChannels(t *testing.T) {
 		stdout, _, _ := runHook(t, "session-start", `{"source":"startup","session_id":"s-x"}`,
 			map[string]string{"HUDDLE_URL": s.URL, "HUDDLE_CHANNEL": "hooks", "HUDDLE_AS": "me"})
 		neverBlocks(t, stdout)
-		if !strings.Contains(stdout, "joining channel hooks as me failed: the channel is closed") {
+		if !strings.Contains(stdout, "could not join hooks as me: 200 the channel is closed;") {
 			t.Errorf("the hook said %q, want the join failure", stdout)
 		}
 	})

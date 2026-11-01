@@ -89,11 +89,18 @@ func McpStdio(ctx context.Context, w *World, version string, stdin io.Reader, st
 		wait:     id.Wait,
 		callMS:   int(jsNumber(firstNonEmpty(w.getenv("HUDDLE_CALL_TIMEOUT_MS"), "10000"))),
 		pushOff:  len(id.Push) > 0 && id.Push[0] == "off",
+		// a session in a channel is joined by its session start; this finishes that join when it
+		// did not land
+		startedAt: time.Now(),
+		joinWake:  make(chan struct{}, 1),
 	}
 	for _, glob := range id.Push {
 		b.pushGlobs = append(b.pushGlobs, regexp.MustCompile("^(?:"+mcpGlobExpr(glob)+")$"))
 	}
 	safego.Go(func(line string) { b.logf("%s", line) }, func() { b.watchList(runCtx) })
+	if id.Channel != "" && id.As != "" {
+		safego.Go(func(line string) { b.logf("%s", line) }, func() { b.keepJoined(runCtx) })
+	}
 	// The session's watchdog: while this bridge serves, a dead or hung huddle-router comes back
 	// on its own (HR-WATCHDOG-MCP). Its own goroutine, so no MCP reply ever waits on it;
 	// HUDDLE_ROUTER_WATCH=0 turns it off for a bridge that does not want it.
@@ -164,6 +171,9 @@ type mcpBridge struct {
 	pushOff   bool
 	wait      int
 	callMS    int
+	startedAt time.Time     // when this bridge began: the member rows seen before it are an earlier session's
+	joinSent  bool          // keepJoined's goroutine alone: a join call went out
+	joinWake  chan struct{} // a tool call arrived: the join check need not wait out its start delay
 }
 
 // what the last tools/list showed
@@ -273,6 +283,9 @@ func (b *mcpBridge) replyText(msg *jsfmt.Value, text string, isErr bool) {
 // forward serves one message: what is local or needs no service here, the rest at the service.
 func (b *mcpBridge) forward(ctx context.Context, msg *jsfmt.Value) {
 	b.refresh(ctx)
+	if mcpMethod(msg) == "tools/call" {
+		b.wakeJoin()
+	}
 	if s := b.state(); b.isInitialized() && s.url != "" && s.channelName != "" && s.me != "" {
 		b.startPush(ctx)
 	}
