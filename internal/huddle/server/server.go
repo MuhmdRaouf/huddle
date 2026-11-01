@@ -571,11 +571,12 @@ func Serve(ctx context.Context, o Options) error {
 	if err := writeOwnerKey(ctx, o.Home, root); err != nil {
 		fmt.Fprintf(o.Stderr, "owner key: %v\n", err)
 	}
-	// the machine's own name: what /health and the landing page call the hub by, and what the
-	// owner's authenticator app lists the hub as
+	// the machine's own name as the home's config.toml holds it: what /health and the landing
+	// page call the hub by, what the owner's authenticator app lists the hub as, and the name
+	// every hook on this machine reports, so a report's machine is told against this one
 	machine := "huddle"
-	if host, err := os.Hostname(); err == nil && host != "" {
-		machine = host
+	if cfg, _ := home.LoadConfig(home.Home{Root: o.Home}); cfg.Machine != "" {
+		machine = cfg.Machine
 	}
 	// the serving process's executable, symlinks resolved: the health answer names it, so a
 	// start from a newer binary can tell its hub from an older build's

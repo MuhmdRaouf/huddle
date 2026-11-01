@@ -373,3 +373,19 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   reads plain and JSON-escaped text alike. A new shape comes with a fake in `internal/testkit/fakesecret` and is
   held by a test in both stores. Rows written before this change keep their text until the history TTL removes
   them; nothing rewrites them.
+
+## 2026-11-01, a hook event wrote two spool lines on macOS CI
+
+- **What happened:** `TestE2EOneSpoolLinePerHookEvent` failed on the macOS runner of run 41297396357 ("2 spool lines
+  for one hook event, want 1") and passed on Linux and on the owner's Mac.
+- **Cause:** the hub skips its own spool write for a Claude Code report from its own machine, telling the machine
+  by name. The hook reports the name from the home's `config.toml`, a hostname cut at its first dot and fitted to
+  the device-name rule, while the hub compared it with the raw `os.Hostname()`. Wherever the hostname carries a
+  domain (a Mac runner's `host.local`) or the home names the machine something else, the names differed, the hub
+  took the report for another machine's and wrote the line a second time. The same mismatch sat under the needs
+  list's own-machine check.
+- **Guard:** `TestTheHubTellsItsMachineByTheNameTheHomeConfigHolds` (internal/huddle/server) names the machine in
+  `config.toml` and posts a report under that name and under another; `TestE2EOneSpoolLinePerHookEvent`
+  (cmd/huddle) holds the whole path.
+- **Rule:** one machine has one name: the hub reads it from the home's `config.toml`, the place every hook reads it
+  from, never from the operating system's hostname.
