@@ -2310,7 +2310,8 @@ func (s *server) channelRoute(w http.ResponseWriter, r *http.Request, ch *channe
 		}
 		if m[1] == "join" {
 			if cs := fieldOf(body, "claude_session"); cs != nil && cs.Kind() != jsfmt.KindNull {
-				channel.Link(ctx, ch, as, textOf(cs)) // Radar's session ids → Huddle names
+				// a join that landed keeps its link, even when the client that sent it is gone
+				channel.Link(context.WithoutCancel(ctx), ch, as, textOf(cs)) // Radar's session ids → Huddle names
 			}
 		}
 		s.overhear(ctx, ch.Name, as, m[1], body)
