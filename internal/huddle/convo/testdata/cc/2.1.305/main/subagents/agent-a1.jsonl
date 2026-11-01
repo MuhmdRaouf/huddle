@@ -1,0 +1,2 @@
+{"type":"user","uuid":"su-01","parentUuid":null,"timestamp":"2026-01-01T09:00:20.000Z","sessionId":"sess-fixture-0001","version":"2.1.305","isSidechain":true,"isMeta":false,"message":{"role":"user","content":"Scan the fixture folder."}}
+{"type":"assistant","uuid":"sa-01","parentUuid":"su-01","timestamp":"2026-01-01T09:00:21.000Z","sessionId":"sess-fixture-0001","version":"2.1.305","isSidechain":true,"isMeta":false,"message":{"role":"assistant","content":[{"type":"text","text":"Scanned."}]}}
