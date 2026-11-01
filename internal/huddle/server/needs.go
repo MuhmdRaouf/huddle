@@ -141,7 +141,7 @@ func (s *server) sessionActRoute(w http.ResponseWriter, r *http.Request, path st
 			return &channel.HuddleError{Status: 400, Msg: reason}
 		}
 		in := hub.MessageIn{SessionID: id, FromKind: hub.FromOwner, Text: text}
-		route, messageID, err := s.queueForSession(ctx, id, in)
+		sent, messageID, err := s.queueDelivery(ctx, id, in)
 		if err != nil {
 			return err
 		}
@@ -157,8 +157,9 @@ func (s *server) sessionActRoute(w http.ResponseWriter, r *http.Request, path st
 		s.writeJSON(w, 200, struct {
 			OK      bool   `json:"ok"`
 			Route   string `json:"route"`
+			Arrival string `json:"arrival"`
 			Message int64  `json:"message"`
-		}{true, route, messageID}, nil)
+		}{true, sent.Route, sent.Arrival, messageID}, nil)
 		return nil
 	case "messages":
 		taken, err := s.registry.TakeMessages(ctx, id, jsscalar.ISOTime(s.now()))
@@ -235,7 +236,7 @@ func (s *server) sendRoute(w http.ResponseWriter, r *http.Request, me auth.Who) 
 			return &channel.HuddleError{Status: 404, Msg: "no session " + id}
 		}
 		in := hub.MessageIn{SessionID: id, FromKind: hub.FromOwner, Text: text}
-		route, _, err := s.queueForSession(ctx, id, in)
+		took, _, err := s.queueDelivery(ctx, id, in)
 		if err != nil {
 			return err
 		}
@@ -243,7 +244,7 @@ func (s *server) sendRoute(w http.ResponseWriter, r *http.Request, me auth.Who) 
 		if _, err := s.audit(ctx, auditActor(me), "send", id, nil); err != nil {
 			return err
 		}
-		sent = append(sent, sentRoute{Session: id, Route: route})
+		sent = append(sent, sentRoute{Session: id, Route: took.Route, Arrival: took.Arrival})
 	}
 	s.writeJSON(w, 200, struct {
 		Sent []sentRoute `json:"sent"`
@@ -251,10 +252,12 @@ func (s *server) sendRoute(w http.ResponseWriter, r *http.Request, me auth.Who) 
 	return nil
 }
 
-// sentRoute names one send's target and the route its message took.
+// sentRoute names one send's target, the route its message took and, on the inbox route, how
+// it arrived: between_calls, started_turn or held.
 type sentRoute struct {
 	Session string `json:"session"`
 	Route   string `json:"route"`
+	Arrival string `json:"arrival"`
 }
 
 // pushAckRoute records a bridge's proof that its channel pushes flow, with the command
@@ -284,7 +287,7 @@ func (s *server) pushAckRoute(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	for _, message := range pending {
-		if s.pushMessage(ctx, message.ID, message.In) == hub.RouteNow {
+		if s.deliverMessage(ctx, message.ID, message.In).Route == hub.RouteNow {
 			pushed++
 		}
 	}
@@ -315,27 +318,34 @@ func (s *server) commandOfMember(ctx context.Context, channelName, member string
 	return info.Command
 }
 
-// pushMessage carries one queued message the last mile and answers the route it took: through
-// the session's inbox socket (inbox, and held while the claude keeps the words for the owner's
-// approval in its terminal), through a channel push while the session's bridge proves its pushes
-// flow (now), and through the next prompt otherwise (next_prompt).
+// pushMessage answers the route deliverMessage took; the satellite link hands it its queued
+// messages.
 func (s *server) pushMessage(ctx context.Context, id int64, in hub.MessageIn) string {
-	if route := s.postInbox(ctx, id, in); route != "" {
-		return route
+	return s.deliverMessage(ctx, id, in).Route
+}
+
+// deliverMessage carries one queued message the last mile and answers the delivery: through the
+// session's inbox socket (inbox, and held while the claude keeps the words for the owner's
+// approval in its terminal), through a channel push while the session's bridge proves its pushes
+// flow (now), and through the next prompt otherwise (next_prompt). Only the inbox routes carry
+// an arrival.
+func (s *server) deliverMessage(ctx context.Context, id int64, in hub.MessageIn) delivery {
+	if posted := s.postInbox(ctx, id, in); posted.Route != "" {
+		return posted
 	}
 	row, err := s.registry.SessionRow(ctx, in.SessionID, s.now())
 	if err != nil || row == nil || row.DeliveryRoute != hub.RouteNow || row.Channel == "" || row.Member == "" {
-		return hub.RouteNextPrompt
+		return delivery{Route: hub.RouteNextPrompt}
 	}
 	ch, err := s.hub.GetExisting(ctx, row.Channel)
 	if err != nil {
-		return hub.RouteNextPrompt
+		return delivery{Route: hub.RouteNextPrompt}
 	}
 	if _, err := ch.Send(ctx, channel.Owner, []string{row.Member}, in.Header(), channel.SendOpts{}); err != nil {
-		return hub.RouteNextPrompt // the channel refused: the next prompt still reaches it
+		return delivery{Route: hub.RouteNextPrompt} // the channel refused: the next prompt still reaches it
 	}
 	_ = s.registry.MarkDelivered(ctx, id, hub.RouteNow, jsscalar.ISOTime(s.now()))
-	return hub.RouteNow
+	return delivery{Route: hub.RouteNow}
 }
 
 // emitRow fans one session's computed row out to its channel's live stream, so an answer's

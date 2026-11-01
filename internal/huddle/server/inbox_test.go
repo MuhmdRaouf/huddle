@@ -165,6 +165,115 @@ func TestAnAnswerGoesThroughTheInboxWhenTheSessionHasOne(t *testing.T) {
 	}
 }
 
+// answerOnInbox reports a live session with an inbox socket and, when status is not empty, a
+// sessions file in that mood, then answers it and returns the answer's decoded body.
+func answerOnInbox(t *testing.T, srv *childServer, config, id, status, lastEvent string) map[string]any {
+	t.Helper()
+	sock, ln := inboxListener(t)
+	lines := inboxLines(t, ln)
+	pid := os.Getpid()
+	body := fmt.Sprintf(`{"session_id":%q,"channel":"shop","member":"api","pid":%d,"inbox_socket":%q,"last_event":%q,"last_event_at":%q}`,
+		id, pid, sock, lastEvent, isoAgo(2*time.Second))
+	if code, out := srv.post(t, "/api/registry/report", body, nil); code != 200 {
+		t.Fatalf("report %s: %d %s", id, code, out)
+	}
+	if status != "" {
+		writeInboxSessions(t, config, pid,
+			fmt.Sprintf(`{"sessionId":%q,"pid":%d,"messagingSocketPath":%q,"status":%q}`, id, pid, sock, status))
+	}
+	code, out := srv.post(t, "/api/sessions/"+id+"/answer", `{"text":"carry on"}`, nil)
+	if code != 200 {
+		t.Fatalf("answer = %d %s", code, out)
+	}
+	if data := <-lines; data == nil {
+		t.Fatal("nothing reached the inbox socket")
+	}
+	return bodyMap(t, out)
+}
+
+func TestAnAnswerToABusySessionArrivesBetweenToolCalls(t *testing.T) {
+	srv, config := inboxServer(t)
+	resp := answerOnInbox(t, srv, config, "aaaaaaaa-0000-4000-8000-000000000001", "busy", "UserPromptSubmit")
+	if resp["route"] != "inbox" || resp["arrival"] != "between_calls" {
+		t.Fatalf("the answer = %v, want route inbox and arrival between_calls", resp)
+	}
+}
+
+func TestAnAnswerToAnIdleSessionStartsATurn(t *testing.T) {
+	srv, config := inboxServer(t)
+	resp := answerOnInbox(t, srv, config, "aaaaaaaa-0000-4000-8000-000000000002", "idle", "Stop")
+	if resp["route"] != "inbox" || resp["arrival"] != "started_turn" {
+		t.Fatalf("the answer = %v, want route inbox and arrival started_turn", resp)
+	}
+}
+
+func TestNoSessionsFileFallsBackToTheRowState(t *testing.T) {
+	for _, tc := range []struct {
+		name, id, lastEvent, want string
+	}{
+		{"an idle row", "aaaaaaaa-0000-4000-8000-000000000003", "Stop", "started_turn"},
+		{"a working row", "aaaaaaaa-0000-4000-8000-000000000004", "UserPromptSubmit", "between_calls"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, config := inboxServer(t)
+			resp := answerOnInbox(t, srv, config, tc.id, "", tc.lastEvent)
+			if resp["route"] != "inbox" || resp["arrival"] != tc.want {
+				t.Fatalf("the answer = %v, want route inbox and arrival %s", resp, tc.want)
+			}
+		})
+	}
+}
+
+func TestSendReturnsTheArrivalPerSession(t *testing.T) {
+	srv, config := inboxServer(t)
+	// the sessions file is keyed by pid, so the two sessions take two pids of their own
+	sessions := []struct {
+		id, status string
+		pid        int
+	}{
+		{"aaaaaaaa-0000-4000-8000-000000000005", "busy", os.Getpid()},
+		{"aaaaaaaa-0000-4000-8000-000000000006", "idle", startClaudeLike(t)},
+	}
+	for _, one := range sessions {
+		sock, ln := inboxListener(t)
+		inboxLines(t, ln)
+		reportInboxSession(t, srv, one.id, sock, one.pid)
+		writeInboxSessions(t, config, one.pid,
+			fmt.Sprintf(`{"sessionId":%q,"pid":%d,"messagingSocketPath":%q,"status":%q}`, one.id, one.pid, sock, one.status))
+	}
+
+	body := fmt.Sprintf(`{"sessions":[%q,%q],"text":"run the release"}`, sessions[0].id, sessions[1].id)
+	code, out := srv.post(t, "/api/send", body, nil)
+	if code != 200 {
+		t.Fatalf("send = %d %s", code, out)
+	}
+	sent, _ := bodyMap(t, out)["sent"].([]any)
+	if len(sent) != 2 {
+		t.Fatalf("sent = %v, want both sessions", sent)
+	}
+	for i, want := range []string{"between_calls", "started_turn"} {
+		one, _ := sent[i].(map[string]any)
+		if one["session"] != sessions[i].id || one["route"] != "inbox" || one["arrival"] != want {
+			t.Errorf("sent[%d] = %v, want session %s on route inbox arriving %s", i, one, sessions[i].id, want)
+		}
+	}
+}
+
+func TestNonInboxRoutesCarryNoArrival(t *testing.T) {
+	srv, _ := inboxServer(t)
+	const id = "aaaaaaaa-0000-4000-8000-000000000007"
+	reportInboxSession(t, srv, id, filepath.Join(t.TempDir(), "gone.sock"), os.Getpid())
+	code, out := srv.post(t, "/api/sessions/"+id+"/answer", `{"text":"anyone?"}`, nil)
+	if code != 200 {
+		t.Fatalf("answer = %d %s", code, out)
+	}
+	resp := bodyMap(t, out)
+	arrival, present := resp["arrival"]
+	if resp["route"] != "next_prompt" || !present || arrival != "" {
+		t.Fatalf("the answer = %v, want route next_prompt and an empty arrival", resp)
+	}
+}
+
 func TestAHeldInboxMessageSaysApproveInTheTerminal(t *testing.T) {
 	srv, config := inboxServer(t)
 	sock, ln := inboxListener(t)
@@ -188,6 +297,9 @@ func TestAHeldInboxMessageSaysApproveInTheTerminal(t *testing.T) {
 	resp := bodyMap(t, out)
 	if resp["route"] != "held" {
 		t.Fatalf("the answer's route = %v (%s), want held", resp["route"], out)
+	}
+	if resp["arrival"] != "held" {
+		t.Errorf("the answer's arrival = %v (%s), want held", resp["arrival"], out)
 	}
 	if data := <-lines; data == nil || !strings.Contains(string(data), `"type":"auth"`) {
 		t.Errorf("the wire = %q, want the post that waits on the approval", data)
@@ -242,7 +354,7 @@ func TestTheHoldWindowEndsUnderAFixedClock(t *testing.T) {
 	}
 
 	route := make(chan string, 1)
-	go func() { route <- s.postInbox(bg, msgID, in) }()
+	go func() { route <- s.postInbox(bg, msgID, in).Route }()
 	select {
 	case got := <-route:
 		if got != hub.RouteInbox {

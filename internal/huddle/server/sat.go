@@ -396,29 +396,36 @@ func (s *server) satSessionMachine(ctx context.Context, session string) (string,
 	return machine, true
 }
 
-// queueForSession queues the owner's words for one session and answers the route they take: a
+// queueForSession queues the owner's words for one session and answers the route they take and
+// the message's id; queueDelivery has the whole delivery.
+func (s *server) queueForSession(ctx context.Context, session string, in hub.MessageIn) (string, int64, error) {
+	took, messageID, err := s.queueDelivery(ctx, session, in)
+	return took.Route, messageID, err
+}
+
+// queueDelivery queues the owner's words for one session and answers how they are delivered: a
 // session on a satellite waits in the sat queue for its machine's poll, every other session on
 // its own delivery route. The hub's row stays pending either way — delivered is what the
 // machine's result says, never the enqueue.
-func (s *server) queueForSession(ctx context.Context, session string, in hub.MessageIn) (string, int64, error) {
+func (s *server) queueDelivery(ctx context.Context, session string, in hub.MessageIn) (delivery, int64, error) {
 	at := jsscalar.ISOTime(s.now())
 	messageID, err := s.registry.QueueMessage(ctx, in, at)
 	if err != nil {
-		return "", 0, err
+		return delivery{}, 0, err
 	}
 	machine, ok := s.satSessionMachine(ctx, session)
 	if !ok {
-		return s.pushMessage(ctx, messageID, in), messageID, nil
+		return s.deliverMessage(ctx, messageID, in), messageID, nil
 	}
 	payload, err := hub.EncodeSatPayload(hub.SatMessageBody{SessionID: session, Text: in.Text})
 	if err != nil {
-		return "", messageID, err
+		return delivery{}, messageID, err
 	}
 	if _, err := s.registry.SatEnqueue(ctx, machine, hub.SatMessage, session, 0, messageID, payload, at); err != nil {
-		return "", messageID, err
+		return delivery{}, messageID, err
 	}
 	s.satQueue.wake(machine)
-	return satelliteRoute, messageID, nil
+	return delivery{Route: satelliteRoute}, messageID, nil
 }
 
 // offerDecision queues one decision for the machine whose session the item belongs to: the
