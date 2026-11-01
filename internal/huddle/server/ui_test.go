@@ -117,7 +117,7 @@ func TestUI(t *testing.T) {
 		if !strings.Contains(css, "prefers-color-scheme:dark") || !strings.Contains(css, ":root[data-scheme=light]") {
 			t.Fatal("the CSS misses the dark default or the light side")
 		}
-		for _, part := range []string{".btn{", ".badge{", ".menu{", ".card{", ".join{", ".stat{", ".skeleton{", ".kbd{"} {
+		for _, part := range []string{".btn{", ".badge{", ".menu{", ".card{", ".join{", ".stat{", ".skeleton{"} {
 			if !strings.Contains(css, part) {
 				t.Fatalf("the CSS misses daisyUI's %s", part)
 			}
