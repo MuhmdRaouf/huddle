@@ -35,7 +35,10 @@ func TestTheOwnersInsightsNameAFailingLane(t *testing.T) {
 					}
 					last = body
 					tip = laneTip(t, body)
-					return tip != nil
+					// the tip shows as soon as enough failures are read; the day is whole once
+					// all six are
+					count, _ := tip["count"].(float64)
+					return tip != nil && int(count) == 6
 				}) {
 					t.Fatalf("the owner's insights carry no lane tip, last answer: %s", last)
 				}
