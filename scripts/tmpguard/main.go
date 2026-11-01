@@ -4,10 +4,10 @@
 // cannot fill the machine's temp volume. The directory is removed after
 // the run, leaks listed or not.
 //
-// It also fails on the run's own processes that outlived it: an executable under the run's
-// temp dir — a *.test binary, or a binary the suite built there — started after the run began,
-// is the suite's work still running detached. One whose HOME is a temp dir is killed; one
-// whose HOME is not is reported and left alone.
+// It also fails on the run's own processes that outlived it (internal/testkit/leftover): an
+// executable under the run's temp dir — a *.test binary, or a binary the suite built there —
+// started after the run began is the suite's work still running detached. One whose HOME is a
+// temp dir is killed; one whose HOME is not is reported and left alone.
 //
 // The directory comes from the system's default temp location, never from
 // inside the module: the suite's "outside a repository" cases run git and
@@ -25,11 +25,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strconv"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/testkit/leftover"
 )
 
 func main() {
@@ -67,7 +66,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	left, listErr := leftovers(guardDir)
-	escaped := escapedTestBinaries(guardDir, began, stderr)
+	escaped := leftover.Sweep(guardDir, time.Since(began), stderr)
 	if rmErr := os.RemoveAll(guardDir); rmErr != nil {
 		fmt.Fprintf(stderr, "tmpguard: remove %s: %v\n", guardDir, rmErr)
 	}
@@ -86,128 +85,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return code
-}
-
-// leftover is one escaped test process: its pid and the command line ps printed.
-type leftover struct {
-	pid     string
-	command string
-}
-
-// escapedTestBinaries answers whether an executable of this run outlived it, saying which: only
-// an executable under the run's own temp dir (tmpguard sets TMPDIR to it, so a test binary go
-// test links and a binary the suite builds both live there), started after the run began, is
-// the run's to answer — never another run's, never one that was already running, never a
-// process ps cannot name. Each match's command line and HOME are printed; one whose HOME is a
-// temp dir is killed, one whose HOME is not is reported and left alone — a guard never signals
-// a process it cannot prove is this run's.
-func escapedTestBinaries(guardDir string, began time.Time, stderr io.Writer) bool {
-	out, err := exec.Command("ps", "-eo", "pid=,etime=,command=").Output()
-	if err != nil {
-		fmt.Fprintf(stderr, "tmpguard: list processes: %v\n", err)
-		return true
-	}
-	escaped := matchLeftovers(strings.Split(string(out), "\n"), guardDir, time.Since(began))
-	for _, proc := range escaped {
-		home := processHome(proc.pid)
-		fmt.Fprintf(stderr, "tmpguard: a process of this run outlived it: pid %s HOME %s\n  %s\n", proc.pid, home, proc.command)
-		if !tempHome(home) {
-			fmt.Fprintf(stderr, "tmpguard: pid %s stays: its HOME is not a temp dir, so it is not proven to be this run's; report it\n", proc.pid)
-			continue
-		}
-		pid, parseErr := strconv.Atoi(proc.pid)
-		if parseErr != nil || pid <= 1 {
-			fmt.Fprintf(stderr, "tmpguard: pid %s stays: no pid to signal\n", proc.pid)
-			continue
-		}
-		if killErr := syscall.Kill(pid, syscall.SIGKILL); killErr != nil {
-			fmt.Fprintf(stderr, "tmpguard: kill pid %d: %v\n", pid, killErr)
-			continue
-		}
-		fmt.Fprintf(stderr, "tmpguard: pid %d killed\n", pid)
-	}
-	return len(escaped) > 0
-}
-
-// matchLeftovers picks the executables under the run's guard dir whose ps etime says they
-// started after a run that began maxElapsed ago: started-since means elapsed < maxElapsed. It
-// reads ps's `pid=,etime=,command=` lines and nothing else; a line whose executable it cannot
-// read (a reaped process ps names in parentheses) is never a match.
-func matchLeftovers(lines []string, guardDir string, maxElapsed time.Duration) []leftover {
-	var found []leftover
-	for _, line := range lines {
-		fields := strings.Fields(strings.TrimSpace(line))
-		if len(fields) < 3 {
-			continue
-		}
-		pid, elapsedText := fields[0], fields[1]
-		command := strings.Join(fields[2:], " ")
-		executable := fields[2]
-		if strings.HasPrefix(executable, "(") || !underDir(executable, guardDir) {
-			continue
-		}
-		elapsed, ok := parseElapsed(elapsedText)
-		if !ok || elapsed >= maxElapsed {
-			continue
-		}
-		found = append(found, leftover{pid: pid, command: command})
-	}
-	return found
-}
-
-// underDir answers whether path is dir itself or a file inside it: a sibling whose name extends
-// dir's (tmpguard-12 beside tmpguard-1) is not inside it.
-func underDir(path, dir string) bool {
-	return path == dir || strings.HasPrefix(path, dir+string(filepath.Separator))
-}
-
-// parseElapsed reads ps's etime, [[dd-]hh:]mm:ss, into a duration; the days fold into the hours.
-func parseElapsed(text string) (time.Duration, bool) {
-	hours := int64(0)
-	rest := text
-	if before, after, found := strings.Cut(text, "-"); found {
-		days, err := strconv.ParseInt(before, 10, 64)
-		if err != nil || days < 0 {
-			return 0, false
-		}
-		hours, rest = days*24, after
-	}
-	parts := strings.Split(rest, ":")
-	if len(parts) < 2 || len(parts) > 3 {
-		return 0, false
-	}
-	var seconds int64
-	for i, part := range parts {
-		parsed, err := strconv.ParseInt(part, 10, 64)
-		if err != nil || parsed < 0 || part == "" {
-			return 0, false
-		}
-		if i == 0 {
-			parsed += hours
-		}
-		seconds = seconds*60 + parsed
-	}
-	return time.Duration(seconds) * time.Second, true
-}
-
-// processHome reads one process's HOME out of `ps eww`, "" when it cannot be read.
-func processHome(pid string) string {
-	out, err := exec.Command("ps", "eww", pid).Output()
-	if err != nil {
-		return ""
-	}
-	for _, field := range strings.Fields(string(out)) {
-		if strings.HasPrefix(field, "HOME=") {
-			return strings.TrimPrefix(field, "HOME=")
-		}
-	}
-	return ""
-}
-
-// tempHome answers whether home is a directory under the same temp root this run's throwaway
-// homes come from (os.MkdirTemp's base): the sandboxed suites' homes are, the owner's is not.
-func tempHome(home string) bool {
-	return home != "" && home != string(filepath.Separator) && strings.HasPrefix(home, os.TempDir())
 }
 
 // freshGuardDir makes the run's empty TMPDIR in the system's default temp location.

@@ -20,7 +20,7 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Cause:** an unsandboxed test binary became a daemon that took the owner's router over.
 - **Guard:** `TestTheProcessIsSandboxed` (cmd/huddle/sandbox_test.go, internal/core/cli/sandbox_test.go),
   `TestIsTestBinary` (internal/adapters/process/testbin_test.go), `TestLiveExecutableOnThisTestBinary`
-  (internal/adapters/process/live_test.go), `TestMatchLeftovers` (scripts/tmpguard/main_test.go)
+  (internal/adapters/process/live_test.go), `TestMatchLeftovers` (internal/testkit/leftover/leftover_test.go)
 - **Rule:** every test binary runs sandboxed, and a `.test` binary never starts a daemon.
 
 ## 2026-10-21, a test reached the live hub's port
@@ -46,8 +46,8 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   `-n` in its arguments, and the script sent SIGTERM to all of them.
 - **Cause:** macOS `pgrep -f` reads a second argument as another pattern, so `-n` matched far more than the
   script's own children.
-- **Guard:** `TestMatchLeftovers` (scripts/tmpguard/main_test.go) — tmpguard matches only processes under a
-  test's temp dir
+- **Guard:** `TestMatchLeftovers` (internal/testkit/leftover/leftover_test.go) — tmpguard matches only processes
+  under a test's temp dir
 - **Rule:** signal only a pid from `$!` or an isolated port, checked with `ps` first.
 
 ## 2026-10-21, the router split off the hub, and remove left our proxy values
@@ -273,12 +273,18 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **What happened:** eight `huddle serve` processes from one worktree's Playwright run folder ran for three days
   under launchd and loaded the machine, so later gates went flaky.
 - **Cause:** the teardown knew only the two hub pids the setup saved; a killed run never reached the teardown, and
-  the next run's setup emptied the run folder, losing the pids.
+  the next run's setup emptied the run folder, losing the pids. In the Go harness, `router start` runs
+  `router serve` with `Setsid`, so the router outlived the test binary that asked for it, and a killed `go test`
+  never reached any cleanup.
 - **Guard:** `"a run's processes are the executables under its bin folder, and nothing else"`,
   `"stopping a run's processes ends a detached one under its bin folder"`,
-  `"the reaper ends a killed run's processes"` (scripts/e2e-leftovers.test.ts)
+  `"the reaper ends a killed run's processes"` (scripts/e2e-leftovers.test.ts),
+  `TestSweepStopsADetachedProcessUnderTheRoot`, `TestSweepStopsAProcessWhoseWorkingDirectoryIsOutsideTheRoot`,
+  `TestStaleRootsOfDeadOwnersAreSwept` (internal/testkit/leftover/leftover_test.go)
 - **Rule:** an e2e harness stops every process under its run folder: at the teardown, at the next start, and through
-  a reaper when the runner is killed; a teardown that finds one still running fails the run.
+  a reaper when the runner is killed; a teardown that finds one still running fails the run. The Go e2e suite
+  (cmd/huddle) keeps everything in one run folder, sweeps it at the end, and sweeps a killed run's folder at the
+  next start.
 
 ## 2026-11-01, sessions stopped hearing their channel after the hub moved
 

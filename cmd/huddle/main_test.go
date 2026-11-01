@@ -26,40 +26,67 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/pki"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/leftover"
 )
 
 // huddleBin is the binary TestMain builds once: the replay suite runs it as a child, with a
 // server it starts from the same binary.
 var huddleBin string
 
+// runRootPrefix names the folder one run of this package keeps everything in: its built
+// binary, every t.TempDir and the files of every child. The folder holds the pid of the
+// process running the suite, so the next run can tell a dead run's folder from a live one's.
+const runRootPrefix = "huddle-cmd-run-"
+
 func TestMain(m *testing.M) {
 	// the binaries these tests build and run inherit this, so none reaches a real trust store
 	_ = os.Setenv(pki.StoreOffEnv, "1")
-	dir, err := os.MkdirTemp("", "huddle-cmd-bin-")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	suffix := ""
-	huddleBin = filepath.Join(dir, "huddle"+suffix)
-	build := exec.Command("go", "build", "-o", huddleBin, "github.com/MuhmdRaouf/huddle/cmd/huddle")
-	build.Dir = "../.." // the module root, from this package's directory
-	build.Stdout, build.Stderr = os.Stdout, os.Stderr
-	if err := build.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, "building the huddle binary:", err)
-		os.Exit(1)
-	}
-	// Run runs the suite and removes the fake claude binary's build dir (the provider e2e compiles
-	// it on first use); this suite's own build dir goes after it: os.Exit would skip a defer.
-	// Code these tests run in process reads os.Environ: the sandbox keeps it off the owner's home.
+	// Code these tests run in process reads os.Environ: the sandbox keeps it off the owner's
+	// home. It also drops TMPDIR, so the run folder sits in the short default temp dir: the
+	// routers' unix sockets live under it, and a socket path has a length limit.
 	unsandbox, err := isoenv.Sandbox()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "isoenv:", err)
 		os.Exit(1)
 	}
+	// A killed run never reaches the sweep below: the next run stops what the dead one left.
+	leftover.SweepStale(os.TempDir(), runRootPrefix, os.Stderr)
+	began := time.Now()
+	root, err := os.MkdirTemp("", runRootPrefix)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		unsandbox()
+		os.Exit(1)
+	}
+	if err := os.WriteFile(filepath.Join(root, "owner.pid"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		unsandbox()
+		os.Exit(1)
+	}
+	// TMPDIR points into the run folder, so every t.TempDir and child file sits under it and
+	// the sweep at the end finds whatever the run left running.
+	_ = os.Setenv("TMPDIR", root)
+	suffix := ""
+	huddleBin = filepath.Join(root, "huddle"+suffix)
+	build := exec.Command("go", "build", "-o", huddleBin, "github.com/MuhmdRaouf/huddle/cmd/huddle")
+	build.Dir = "../.." // the module root, from this package's directory
+	build.Stdout, build.Stderr = os.Stdout, os.Stderr
+	if err := build.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "building the huddle binary:", err)
+		unsandbox()
+		os.RemoveAll(root)
+		os.Exit(1)
+	}
+	// Run runs the suite and removes the fake claude binary's build dir (the provider e2e compiles
+	// it on first use); this suite's own run folder goes after it: os.Exit would skip a defer.
 	code := fakeclaude.Run(m)
+	_ = os.Unsetenv("TMPDIR")
 	unsandbox()
-	os.RemoveAll(dir)
+	if leftover.Sweep(root, time.Since(began), os.Stderr) {
+		fmt.Fprintln(os.Stderr, "cmd/huddle: a process this run started outlived it")
+		code = 1
+	}
+	os.RemoveAll(root)
 	os.Exit(code)
 }
 
