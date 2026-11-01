@@ -36,6 +36,20 @@ func joinedAB(t *testing.T, s *huddleServer) {
 	}
 }
 
+// startReserveHub starts the server and joins a and b, then has b ask the one lookup the hook
+// makes, so the server has answered it once before a hook's 150 ms fetch meets it: the first
+// answer of a fresh server pays for its cold paths, and the hook's deadline is not that cost's
+// to bear.
+func startReserveHub(t *testing.T) *huddleServer {
+	t.Helper()
+	s := startHuddle(t)
+	joinedAB(t, s)
+	if code, raw := op(t, s, "hooks", "reserved", "b", fmt.Sprintf(`{"path": %q}`, filepath.Join(t.TempDir(), "warm.ts"))); code != 200 {
+		t.Fatalf("reserved lookup: %d %s", code, raw)
+	}
+	return s
+}
+
 // reserveAs reserves paths as a session of the hooks channel, through the op the MCP tool runs.
 func reserveAs(t *testing.T, s *huddleServer, as, body string) {
 	t.Helper()
@@ -47,8 +61,7 @@ func reserveAs(t *testing.T, s *huddleServer, as, body string) {
 // TestTheReserveHookWarnsWhenAnotherLiveSessionHoldsThePath: the warning names the holder, the
 // moment it lapses and the way to coordinate; it is context, never a decision.
 func TestTheReserveHookWarnsWhenAnotherLiveSessionHoldsThePath(t *testing.T) {
-	s := startHuddle(t)
-	joinedAB(t, s)
+	s := startReserveHub(t)
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -82,8 +95,7 @@ func TestTheReserveHookWarnsWhenAnotherLiveSessionHoldsThePath(t *testing.T) {
 // Huddle that is down or never answers, and an answer of not held (what an expired reservation
 // becomes) — all silent, all fast.
 func TestTheReserveHookIsSilent(t *testing.T) {
-	s := startHuddle(t)
-	joinedAB(t, s)
+	s := startReserveHub(t)
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -136,8 +148,7 @@ func TestTheReserveHookIsSilent(t *testing.T) {
 // TestTheReserveHookDirectoryReservation: a reservation on a directory warns for a file under
 // it, never for one beside it.
 func TestTheReserveHookDirectoryReservation(t *testing.T) {
-	s := startHuddle(t)
-	joinedAB(t, s)
+	s := startReserveHub(t)
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -158,8 +169,7 @@ func TestTheReserveHookDirectoryReservation(t *testing.T) {
 // TestTheReserveHookNamesTheEventItServesWhenTheInputDidNot: a hook input without
 // hook_event_name still answers under PreToolUse.
 func TestTheReserveHookNamesTheEventItServesWhenTheInputDidNot(t *testing.T) {
-	s := startHuddle(t)
-	joinedAB(t, s)
+	s := startReserveHub(t)
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)
