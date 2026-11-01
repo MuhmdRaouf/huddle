@@ -12,7 +12,7 @@ import (
 // every open, WAL included, since the file is read while the server writes it.
 
 // SchemaVersion is the history schema's version, recorded in the meta table.
-const SchemaVersion = 11
+const SchemaVersion = 12
 
 // One row per main session, subagent or job; every node of a tree carries its root's id.
 const nodesDDL = `
@@ -90,7 +90,8 @@ CREATE INDEX IF NOT EXISTS requests_ts ON requests(ts)`
 
 // Request input/output text, gzipped; each side's plain text length sits beside it (in_len,
 // out_len), so a read that only weighs sides never decompresses them, and bytes keeps the sum
-// for the read-out.
+// for the read-out. Secrets are replaced before a side is stored; in_redactions and
+// out_redactions count the replacements in the stored text.
 const contentDDL = `
 CREATE TABLE IF NOT EXISTS content (
   request_id TEXT PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE,
@@ -98,7 +99,9 @@ CREATE TABLE IF NOT EXISTS content (
   output BLOB,
   bytes INTEGER NOT NULL,
   in_len INTEGER,
-  out_len INTEGER
+  out_len INTEGER,
+  in_redactions INTEGER,
+  out_redactions INTEGER
 )`
 
 const toolsDDL = `
@@ -191,6 +194,9 @@ var versionColumns = []columnBatch{
 	// ttfb_ms and ttft_ms are the streaming latencies the route line carried: time to the
 	// answer's head and to its first token.
 	{version: 11, tables: []tableColumns{{"requests", []string{"ttfb_ms INTEGER", "ttft_ms INTEGER"}}}},
+	// in_redactions and out_redactions are how many secrets each side had replaced before it
+	// was stored.
+	{version: 12, tables: []tableColumns{{"content", []string{"in_redactions INTEGER", "out_redactions INTEGER"}}}},
 }
 
 // NewerSchemaError names a database written by a newer radar: an older one refuses it.

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/testkit/fakesecret"
 )
 
 // The router body store's cases, run against a router.db in a temp directory only. The
@@ -601,6 +603,69 @@ func TestBodyStoreRedactsSecrets(t *testing.T) {
 			t.Fatalf("redactions = %d, want %d", count, len(fakes))
 		}
 	})
+}
+
+// TestBodyStoreRedactsEveryShape: each made-up secret of the shared shape list, planted in
+// a JSON body once between spaces and once after an escaped newline, never reaches the
+// stored body or any block; the body row counts the one replacement.
+func TestBodyStoreRedactsEveryShape(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	layouts := []struct{ name, before, after string }{
+		{"between spaces", "use ", " now"},
+		{"after an escaped newline", `first line\n`, `\nlast line`},
+	}
+	for _, fake := range fakesecret.All() {
+		for _, layout := range layouts {
+			t.Run(fake.Shape+" "+layout.name, func(t *testing.T) {
+				t.Parallel()
+				st := openBodies(t)
+				text, err := json.Marshal(fake.Text)
+				if err != nil {
+					t.Fatalf("encode the fake: %v", err)
+				}
+				want, err := json.Marshal(fake.Want)
+				if err != nil {
+					t.Fatalf("encode the label: %v", err)
+				}
+				body := `{"messages":[{"role":"user","content":"` + layout.before +
+					string(text[1:len(text)-1]) + layout.after + `"}]}`
+				wantBody := `{"messages":[{"role":"user","content":"` + layout.before +
+					string(want[1:len(want)-1]) + layout.after + `"}]}`
+				if err := st.PutBody(ctx, "req_shape", "input", []byte(body), at); err != nil {
+					t.Fatalf("put: %v", err)
+				}
+				got, ok, err := st.Body(ctx, "req_shape", "input")
+				if err != nil || !ok {
+					t.Fatalf("body = %q, %t, %v; want the redacted bytes", got, ok, err)
+				}
+				for _, secret := range fake.Secrets {
+					if bytes.Contains(got, []byte(secret)) {
+						t.Fatalf("the stored body holds %q verbatim: %s", secret, got)
+					}
+				}
+				if string(got) != wantBody {
+					t.Fatalf("body = %s, want %s", got, wantBody)
+				}
+				for _, hash := range blockHashes(t, st) {
+					block, err := st.readBlock(hash)
+					if err != nil {
+						t.Fatalf("read block %s: %v", hash, err)
+					}
+					for _, secret := range fake.Secrets {
+						if bytes.Contains(block, []byte(secret)) {
+							t.Fatalf("block %s holds %q verbatim", hash, secret)
+						}
+					}
+				}
+				count, ok, err := st.Redactions(ctx, "req_shape", "input")
+				if err != nil || !ok || count != 1 {
+					t.Fatalf("redactions = %d, %t, %v; want 1", count, ok, err)
+				}
+			})
+		}
+	}
 }
 
 // TestBodyStoreKeepsACleanBodyExact: a body with no secret shape in it reads back byte

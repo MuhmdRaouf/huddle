@@ -210,6 +210,9 @@ type Stats struct {
 type StoredSide struct {
 	Blob []byte
 	Len  *int64
+	// Redactions is how many secrets the stored text had replaced; nil when the row was
+	// written before the count was kept.
+	Redactions *int64
 }
 
 // SideOfNext decides one side of a rewrite by the stored length before anything
@@ -882,35 +885,50 @@ func gunzipBytes(blob []byte) (string, error) {
 	return string(text), nil
 }
 
-// freshSide gzips a side a first write carries.
-func freshSide(text *string) StoredSide {
-	if text == nil {
-		return StoredSide{}
+// nextSide merges one incoming side into the stored one, after its secrets are replaced:
+// the stored text and the redacted incoming text compete through SideOfNext, and the
+// replacement count follows whichever text stands.
+func nextSide(stored StoredSide, incoming *string) StoredSide {
+	if incoming == nil {
+		return stored
 	}
-	length := int64(len(*text))
-	return StoredSide{Blob: gzipBytes(*text), Len: &length}
+	redacted, count := shared.RedactSecrets([]byte(*incoming))
+	text := string(redacted)
+	next := SideOfNext(stored, &text)
+	if next.Len != stored.Len {
+		// SideOfNext hands back the stored length itself when the stored side stands
+		replaced := int64(count)
+		next.Redactions = &replaced
+	}
+	return next
 }
 
-// PutContent stores one request's sides, each merging on its own through SideOfNext: the
-// stored lengths decide before anything is decompressed, a kept side's blob goes back as
-// it stands, and only the side that grew is gzipped.
+// PutContent stores one request's sides, each merging on its own through nextSide: secrets
+// are replaced first, so no side of the row holds a known secret shape; the stored lengths
+// decide before anything is decompressed, a kept side's blob goes back as it stands, and
+// only the side that grew is gzipped.
 func (h *History) PutContent(requestID string, c ContentSides) error {
-	stored, err := h.db.Get("SELECT input, output, in_len, out_len FROM content WHERE request_id = ?", requestID)
+	stored, err := h.db.Get(
+		"SELECT input, output, in_len, out_len, in_redactions, out_redactions FROM content WHERE request_id = ?", requestID)
 	if err != nil {
 		return fmt.Errorf("read the content of %s: %w", requestID, err)
 	}
-	var in, out StoredSide
-	if stored == nil {
-		in = freshSide(c.Input)
-		out = freshSide(c.Output)
-	} else {
-		in = SideOfNext(StoredSide{Blob: rowBytes(stored, "input"), Len: rowInt64(stored, "in_len")}, c.Input)
-		out = SideOfNext(StoredSide{Blob: rowBytes(stored, "output"), Len: rowInt64(stored, "out_len")}, c.Output)
+	var storedIn, storedOut StoredSide
+	if stored != nil {
+		storedIn = StoredSide{
+			Blob: rowBytes(stored, "input"), Len: rowInt64(stored, "in_len"), Redactions: rowInt64(stored, "in_redactions"),
+		}
+		storedOut = StoredSide{
+			Blob: rowBytes(stored, "output"), Len: rowInt64(stored, "out_len"), Redactions: rowInt64(stored, "out_redactions"),
+		}
 	}
+	in := nextSide(storedIn, c.Input)
+	out := nextSide(storedOut, c.Output)
 	if _, err := h.db.Run(
-		"INSERT OR REPLACE INTO content (request_id, input, output, bytes, in_len, out_len) VALUES (?, ?, ?, ?, ?, ?)",
+		"INSERT OR REPLACE INTO content (request_id, input, output, bytes, in_len, out_len, in_redactions, out_redactions) "+
+			"VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 		requestID, sqlBytes(in.Blob), sqlBytes(out.Blob), derep(in.Len, 0)+derep(out.Len, 0),
-		sqlInt64(in.Len), sqlInt64(out.Len)); err != nil {
+		sqlInt64(in.Len), sqlInt64(out.Len), sqlInt64(in.Redactions), sqlInt64(out.Redactions)); err != nil {
 		return fmt.Errorf("put the content of %s: %w", requestID, err)
 	}
 	return nil

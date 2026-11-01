@@ -352,3 +352,24 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Rule:** no deploy lands while the last main CI run is red: the deploy script calls
   `node scripts/ci-green.mjs` first, and a gh that is missing or offline refuses too. The push that fixes main is
   the owner's call.
+
+## 2026-11-01, transcript secrets reached history.db in plain text
+
+- **What happened:** history.db's transcript `content` (245 MB: tool results, prompts, commands, thinking) was
+  stored with no redaction, so a `cat` of a config, an `env` dump or a pasted key sat in the file as typed. The
+  router's 6 secret shapes also missed a secret right after a JSON `\n` escape, so `...\nsk-...` in a stored
+  request body kept its key.
+- **Cause:** `internal/radar/ingest/transcript.go` called no redactor and `internal/radar/shared/redact.go` covers
+  hook events only; the one body redactor lived in the ledger package, out of the history writer's reach. Its
+  shapes started at a `\b`, and in JSON text the `n` of `\n` and the first letter of a token are one word, so no
+  boundary fell between them. Every fixture put its secret between spaces.
+- **Guard:** `TestPutContentRedactsEveryShape`, `TestPutContentKeepsOrdinaryTextExact`,
+  `TestPutContentCountsTheStandingSideOnly`, `TestPutContentGrowthCountsRedactedLength`,
+  `TestWriterIngestRedactsTranscriptSecrets` and `TestMigrationLeavesStoredContentAsItWas`
+  (internal/radar/history); `TestBodyStoreRedactsEveryShape` (internal/radar/ledger);
+  `TestRedactSecretsRedactsEveryFake`, `TestRedactSecretsCountsEveryMatch` and
+  `TestRedactSecretsLeavesOrdinaryTextAlone` (internal/radar/shared).
+- **Rule:** one shape list in `internal/radar/shared` (`RedactSecrets`), run before any store writes text; a shape
+  reads plain and JSON-escaped text alike. A new shape comes with a fake in `internal/testkit/fakesecret` and is
+  held by a test in both stores. Rows written before this change keep their text until the history TTL removes
+  them; nothing rewrites them.

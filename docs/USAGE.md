@@ -97,6 +97,12 @@ account's, as an agent's or a test's is), bodies stay off and nothing is written
 hub's settings turns body capture off, and huddle-router stops writing bodies within 2 seconds while the route
 metadata goes on.
 
+Both stores, the router's bodies and radar's `history.db` transcript text, replace known secret shapes with
+`[redacted:<kind>]` before they write: API keys (Anthropic and OpenAI style, Z.ai), Bearer tokens, AWS access
+keys and secret keys, GitHub and Slack tokens, JWTs, PEM private key blocks, huddle credentials and
+sign-in codes, and upper-case `NAME=value` lines whose name says secret, token, key, password or credential.
+Each stored body or content side records how many it replaced. Rows written before this stay as they were.
+
 A lane can fall back to another of its provider's models when one keeps failing. List them under the
 provider in `~/.agents/huddle-router/providers.json`:
 

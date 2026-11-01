@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
 // The router's body store. The router alone writes it, radar only reads it: full request
@@ -113,7 +115,7 @@ func (s *BodyStore) PutBody(ctx context.Context, requestID, side string, body []
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	redacted, count := redactBody(body)
+	redacted, count := shared.RedactSecrets(body)
 	spans := splitBody(redacted)
 	names := make([][]byte, 0, len(spans))
 	for _, span := range spans {
