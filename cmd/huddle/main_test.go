@@ -179,8 +179,8 @@ func TestSplitCommand(t *testing.T) {
 }
 
 // TestEntriesAreThePluginEntryPoints pins the table to the entry points the plugin runs itself:
-// the MCP server, the HTTP server, the two decision hooks (their own lines) and one hook entry
-// per event hooks.json serves. Every CLI word — a subcommand or an operation by name — goes to
+// the MCP server, the HTTP server, the two decision hooks and the idle waiter (their own lines)
+// and one hook entry per event hooks.json serves. Every CLI word — a subcommand or an operation by name — goes to
 // the CLI, which reads one argv.
 func TestEntriesAreThePluginEntryPoints(t *testing.T) {
 	want := []string{
@@ -188,6 +188,8 @@ func TestEntriesAreThePluginEntryPoints(t *testing.T) {
 		"mcp", "serve",
 		// The two decision hooks, still their own lines.
 		"hook approve", "hook permit",
+		// The idle waiter, its own async line.
+		"hook idle-wait",
 		// One entry per event, one process per event.
 		"hook session-start", "hook user-prompt-submit", "hook pre-tool-use", "hook post-tool-use",
 		"hook notification", "hook permission-request", "hook stop", "hook subagent-start",
