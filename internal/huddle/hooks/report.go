@@ -123,7 +123,8 @@ func Report(ctx context.Context, w *cli.World, in io.Reader, out io.Writer) {
 			rep.ToolTarget = toolTargetOf(input)
 		}
 		rep.Machine = machineOf(ctx, w)
-		rep.Project, rep.Branch = checkoutOf(input.Cwd)
+		at := projectOf(input.Cwd)
+		rep.Project, rep.Branch, rep.ProjectKey, rep.ProjectName = at.Root, at.Branch, at.Key, at.Name
 		rep.TranscriptPath = input.TranscriptPath
 		// text Claude Code injects — a task notification, a system reminder, `!` shell input,
 		// a slash-command wrapper — names nothing: only a prompt the person typed becomes the

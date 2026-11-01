@@ -144,8 +144,10 @@ Keys huddle does not know are kept on every rewrite; the file is written atomica
 `.agents/huddle/huddle.json`, kept out of git:
 
 ```json
-{ "channel": "shop", "as": "api", "role": "builds the API", "autostart": true }
+{ "channel": "shop", "as": "api", "role": "builds the API", "autostart": true, "name": "Shop" }
 ```
+
+`name` is what the Sessions tree calls the project; without it the tree uses the project folder's name.
 
 `HUDDLE_URL`, `HUDDLE_CHANNEL` and `HUDDLE_AS` override it. A git worktree shares its main checkout's file.
 

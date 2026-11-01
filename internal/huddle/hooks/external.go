@@ -58,7 +58,8 @@ func External(ctx context.Context, w *cli.World, name, event string, in io.Reade
 			LastEventAt: jsscalar.ISOTime(nowOf(w)),
 		}
 		rep.Machine = machineOf(ctx, w)
-		rep.Project, rep.Branch = checkoutOf(payload.Cwd)
+		at := projectOf(payload.Cwd)
+		rep.Project, rep.Branch, rep.ProjectKey, rep.ProjectName = at.Root, at.Branch, at.Key, at.Name
 		switch {
 		case payload.Prompt != "":
 			// the title is the first prompt cut to 80 runes and the task its first line, the

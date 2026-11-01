@@ -622,3 +622,37 @@ func TestMemberStateAnswersTheRegisteredSessionsState(t *testing.T) {
 		t.Fatalf("MemberState(lead) after the end = %q, %v, want ended, true", state, ok)
 	}
 }
+
+func TestAReportCarriesItsSessionsProjectKeyAndName(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	if err := db.Report(ctx, Report{
+		SessionID: "s-wt", Project: "/shop/.agents/worktrees/card", ProjectKey: "/shop", ProjectName: "homelab",
+		LastEvent: "SessionStart", LastEventAt: "2026-10-16T09:00:10.000Z",
+	}); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	// a report that names no project leaves the key and the name alone
+	if err := db.Report(ctx, Report{
+		SessionID: "s-wt", LastEvent: "Stop", LastEventAt: "2026-10-16T09:00:20.000Z",
+	}); err != nil {
+		t.Fatalf("second report: %v", err)
+	}
+	row, err := db.SessionRow(ctx, "s-wt", readNow)
+	if err != nil || row == nil {
+		t.Fatalf("row: %v (%v)", row, err)
+	}
+	if row.ProjectKey != "/shop" || row.ProjectName != "homelab" {
+		t.Errorf("project key/name = %q/%q, want /shop and homelab", row.ProjectKey, row.ProjectName)
+	}
+	if row.Project != "/shop/.agents/worktrees/card" {
+		t.Errorf("project = %q, want the worktree root untouched", row.Project)
+	}
+	rows, err := db.Sessions(ctx, SessionsFilter{}, readNow)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("sessions: %v (%v)", rows, err)
+	}
+	if rows[0].ProjectKey != "/shop" || rows[0].ProjectName != "homelab" {
+		t.Errorf("listed project key/name = %q/%q, want /shop and homelab", rows[0].ProjectKey, rows[0].ProjectName)
+	}
+}

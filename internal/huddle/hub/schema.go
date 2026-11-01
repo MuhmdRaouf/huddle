@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 25
+const SchemaVersion = 26
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -286,6 +286,11 @@ var migrations = []string{
 	`ALTER TABLE items ADD COLUMN answers TEXT NOT NULL DEFAULT '';`,
 	// 25: when the session's pid began, in unix milliseconds beside the pid, so a live pid the OS handed to a newer process no longer holds the session.
 	`ALTER TABLE sessions ADD COLUMN pid_start INTEGER;`,
+	// 26: the repository a session belongs to, so a repository's worktrees group under one header:
+	// project_key is its main checkout and project_name what the project is called. NULL is a
+	// session that reported before they existed; its next report fills them.
+	`ALTER TABLE sessions ADD COLUMN project_key TEXT;
+	 ALTER TABLE sessions ADD COLUMN project_name TEXT;`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

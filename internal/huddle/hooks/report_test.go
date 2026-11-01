@@ -290,6 +290,12 @@ func TestTheReportHookTakesItsProjectAndBranchFromGit(t *testing.T) {
 	if field(body, "branch") != "report-suite" {
 		t.Errorf("branch = %q, want report-suite", field(body, "branch"))
 	}
+	if field(body, "project_key") != repo {
+		t.Errorf("project_key = %q, want the checkout %q", field(body, "project_key"), repo)
+	}
+	if field(body, "project_name") != filepath.Base(repo) {
+		t.Errorf("project_name = %q, want %q", field(body, "project_name"), filepath.Base(repo))
+	}
 }
 
 func TestTheReportHookCutsTheTitleAndTaskToEightyRunes(t *testing.T) {

@@ -109,10 +109,14 @@ type SessionsFilter struct {
 // from the radar tab when the row is served, and stay null when radar knows nothing of the
 // session.
 type SessionRow struct {
-	SessionID      string  `json:"session_id"`
-	Machine        string  `json:"machine,omitempty"`
-	Project        string  `json:"project,omitempty"`
-	Branch         string  `json:"branch,omitempty"`
+	SessionID string `json:"session_id"`
+	Machine   string `json:"machine,omitempty"`
+	Project   string `json:"project,omitempty"`
+	Branch    string `json:"branch,omitempty"`
+	// ProjectKey is the repository's main checkout and ProjectName what the project is called;
+	// a session reported before they existed carries neither.
+	ProjectKey     string  `json:"project_key,omitempty"`
+	ProjectName    string  `json:"project_name,omitempty"`
 	Title          string  `json:"title,omitempty"`
 	Task           string  `json:"task,omitempty"`
 	Model          string  `json:"model,omitempty"`
@@ -190,7 +194,7 @@ type SessionDetail struct {
 }
 
 // sessionColumns is what a registry read selects, in the row's own order.
-const sessionColumns = `session_id, machine, project, branch, title, task, model, context_percent,
+const sessionColumns = `session_id, machine, project, branch, project_key, project_name, title, task, model, context_percent,
                         cwd, pid, channel, member, harness, last_event, last_event_at, ended_at, opened_at`
 
 // Sessions answers every registered session that passes the filter, newest activity first,
@@ -366,6 +370,8 @@ func (d *DB) rowOfSession(ctx context.Context, row store.Row, now time.Time, wai
 		Machine:     textOfRow(row, "machine"),
 		Project:     textOfRow(row, "project"),
 		Branch:      textOfRow(row, "branch"),
+		ProjectKey:  textOfRow(row, "project_key"),
+		ProjectName: textOfRow(row, "project_name"),
 		Title:       textOfRow(row, "title"),
 		Task:        textOfRow(row, "task"),
 		Model:       textOfRow(row, "model"),

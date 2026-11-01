@@ -82,7 +82,8 @@ func TestTheExternalWordReportsEachAgentUnderItsHarness(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read the fixture: %v", err)
 			}
-			payload := strings.ReplaceAll(string(raw), "__CWD__", t.TempDir())
+			cwd := t.TempDir()
+			payload := strings.ReplaceAll(string(raw), "__CWD__", cwd)
 			stdout := runExternalHook(t, payload, tc.name, tc.event, home,
 				map[string]string{"HUDDLE_URL": url, "HUDDLE_CHANNEL": "hooks", "HUDDLE_AS": "me"})
 			if stdout != "" {
@@ -119,6 +120,14 @@ func TestTheExternalWordReportsEachAgentUnderItsHarness(t *testing.T) {
 			}
 			if got := field(body, "task"); got != tc.task {
 				t.Errorf("task = %q, want %q", got, tc.task)
+			}
+			if strings.Contains(string(raw), "__CWD__") {
+				if got := field(body, "project_key"); got != cwd {
+					t.Errorf("project_key = %q, want the directory %q", got, cwd)
+				}
+				if got := field(body, "project_name"); got != filepath.Base(cwd) {
+					t.Errorf("project_name = %q, want %q", got, filepath.Base(cwd))
+				}
 			}
 		})
 	}

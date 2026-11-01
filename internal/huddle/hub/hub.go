@@ -14,10 +14,14 @@ import (
 // event and its time is optional: a report that does not carry one leaves the session's stored
 // value alone.
 type Report struct {
-	SessionID      string  `json:"session_id"`
-	Machine        string  `json:"machine,omitempty"`
-	Project        string  `json:"project,omitempty"`
-	Branch         string  `json:"branch,omitempty"`
+	SessionID string `json:"session_id"`
+	Machine   string `json:"machine,omitempty"`
+	Project   string `json:"project,omitempty"`
+	Branch    string `json:"branch,omitempty"`
+	// ProjectKey is the repository's main checkout, shared by its linked worktrees, and
+	// ProjectName is what the project is called: the sessions of one repository group on the key.
+	ProjectKey     string  `json:"project_key,omitempty"`
+	ProjectName    string  `json:"project_name,omitempty"`
 	Title          string  `json:"title,omitempty"`
 	Task           string  `json:"task,omitempty"`
 	Model          string  `json:"model,omitempty"`
@@ -98,13 +102,15 @@ func (d *DB) Close() error { return d.st.Close() }
 // and a SessionStart clears it, so an ended session stays ended under an older report replayed
 // after its end, and a resumed one comes back.
 const sessionUpsert = `
-INSERT INTO sessions (session_id, machine, project, branch, title, task, model, context_percent,
+INSERT INTO sessions (session_id, machine, project, branch, project_key, project_name, title, task, model, context_percent,
                       cwd, pid, pid_start, channel, member, harness, transcript_path, inbox_socket, last_event, last_event_at, ended_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(session_id) DO UPDATE SET
   machine = COALESCE(NULLIF(excluded.machine, ''), sessions.machine),
   project = COALESCE(NULLIF(excluded.project, ''), sessions.project),
   branch = COALESCE(NULLIF(excluded.branch, ''), sessions.branch),
+  project_key = COALESCE(NULLIF(excluded.project_key, ''), sessions.project_key),
+  project_name = COALESCE(NULLIF(excluded.project_name, ''), sessions.project_name),
   title = COALESCE(NULLIF(sessions.title, ''), excluded.title),
   task = COALESCE(NULLIF(excluded.task, ''), sessions.task),
   model = COALESCE(NULLIF(excluded.model, ''), sessions.model),
@@ -150,7 +156,7 @@ func (d *DB) Report(ctx context.Context, r Report) error {
 			r.SessionID, r.LastEventAt, r.LastEvent, string(raw)); err != nil {
 			return err
 		}
-		if err := q.Run(ctx, sessionUpsert, r.SessionID, r.Machine, r.Project, r.Branch, r.Title,
+		if err := q.Run(ctx, sessionUpsert, r.SessionID, r.Machine, r.Project, r.Branch, r.ProjectKey, r.ProjectName, r.Title,
 			r.Task, r.Model, r.ContextPercent, r.Cwd, r.Pid, r.PidStart, r.Channel, r.Member,
 			r.Harness, r.TranscriptPath, r.InboxSocket, r.LastEvent, r.LastEventAt, endedAt); err != nil {
 			return err
