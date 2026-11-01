@@ -19,11 +19,16 @@
 // it); a server that runs from the home without a saved port has its port read from the
 // process once and saved. No saved port and nothing running: no url yet, and the first
 // `huddle up` picks one (serve.go).
+//
+// A loopback address is the user's one hub: while the home's hub runs, the port it answers on
+// wins over the one a credential or the project's url recorded. HUDDLE_URL, HUDDLE_PORT and a
+// remote hub are taken as given.
 package cli
 
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -275,6 +280,38 @@ func homeURL(ctx context.Context, w *World, home string) (url, source string, ok
 	return Local(port), "running", true
 }
 
+// liveHubURL is the loopback url of the hub running from this home: the port in its run
+// directory while the pid there is alive, else the port that process listens on. The pid is
+// checked with a signal, not a process listing, because every message a bridge serves asks.
+// ok is false when no hub runs from this home.
+func liveHubURL(ctx context.Context, w *World, root string) (string, bool) {
+	raw, err := os.ReadFile(pidFile(root))
+	if err != nil {
+		return "", false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil || pid <= 0 || !processAlive(pid) {
+		return "", false
+	}
+	if port := savedRunPort(root); port > 0 {
+		return Local(port), true
+	}
+	if RunningPid(ctx, w, root) != pid {
+		return "", false
+	}
+	if port := ListeningPort(ctx, w, pid); port > 0 {
+		return Local(port), true
+	}
+	return "", false
+}
+
+// isLoopbackURL says whether rawURL is an http address on this machine: the one hub of this
+// user runs there, wherever it listens today.
+func isLoopbackURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	return err == nil && parsed.Scheme == "http" && loopbackHosts(strings.ToLower(parsed.Hostname()))
+}
+
 // Identify answers this session's identity. sid is the session id a hook knows its caller by;
 // what this session joined (creds.go) fills in what the environment and the settings leave
 // unset.
@@ -312,6 +349,14 @@ func Identify(ctx context.Context, w *World, sid string) Identity {
 		source = "credential"
 	case homeSource != "":
 		source = homeSource
+	}
+	// A loopback address is the user's one hub, wherever it listens today: a credential or a
+	// project file written before the hub moved gives way to the hub that runs now. An
+	// address from the environment, and a remote hub, stay as given.
+	if (source == "credential" || source == "config") && isLoopbackURL(finalURL) {
+		if live, running := liveHubURL(ctx, w, HomeOf(ctx, w)); running {
+			finalURL = live
+		}
 	}
 	channel := firstNonEmpty(w.getenv("HUDDLE_CHANNEL"),
 		memberField(joined, "channel"), cfgString(cfg, "channel"), joinedField(joined, "channel"))

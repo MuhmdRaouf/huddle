@@ -714,6 +714,7 @@ func (b *mcpBridge) pushLoop(ctx context.Context) {
 		if !mcpSleep(ctx, backoff) {
 			return
 		}
+		b.follow(ctx)
 		if backoff < 30*time.Second {
 			backoff *= 2
 			if backoff > 30*time.Second {
@@ -721,6 +722,23 @@ func (b *mcpBridge) pushLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// follow re-reads who this session is before a reconnect: the hub may have moved to another
+// port, and the session may be in another channel or under another name. A stream of another
+// channel or name starts from its own cursor.
+func (b *mcpBridge) follow(ctx context.Context) {
+	before := b.state()
+	b.refresh(ctx)
+	after := b.state()
+	if before.channelName == after.channelName && before.me == after.me {
+		return
+	}
+	b.mu.Lock()
+	b.lastSeq = 0
+	b.pushed = map[int64]bool{}
+	b.subBase, b.subBaseSet = 0, false
+	b.mu.Unlock()
 }
 
 // streamOnce reads the live stream until it ends or breaks; connected says it ever answered.

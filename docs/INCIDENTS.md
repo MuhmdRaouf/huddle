@@ -279,3 +279,16 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   `"the reaper ends a killed run's processes"` (scripts/e2e-leftovers.test.ts)
 - **Rule:** an e2e harness stops every process under its run folder: at the teardown, at the next start, and through
   a reaper when the runner is killed; a teardown that finds one still running fails the run.
+
+## 2026-11-01, sessions stopped hearing their channel after the hub moved
+
+- **What happened:** the hub restarted on another port; a message sent to the homelab session was never pushed to
+  it, and the session's `huddle mcp` held no connection to the hub, while the hub's own repo kept hearing it.
+- **Cause:** the bridge retried its live stream against the address it read once at start, never re-reading who
+  the session is; and `Identify` answered the address the join credential or the project file had recorded, which
+  carries the port the hub had at join time.
+- **Guard:** `TestE2ETwoReposFollowTheHub` (cmd/huddle/channel_two_repos_e2e_test.go),
+  `TestIdentifyFollowsTheLiveHubOnLoopback` and `TestFollowReadsTheSessionAgainBeforeAReconnect`
+  (internal/huddle/cli/identity_live_test.go)
+- **Rule:** a session re-resolves the hub before every reconnect, and a loopback address is the user's one hub:
+  the port it runs on now wins over the one a credential or a project file recorded.

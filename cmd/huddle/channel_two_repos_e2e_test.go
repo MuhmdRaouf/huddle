@@ -5,8 +5,9 @@ package main
 // bridge, on one hub. The test walks the path a user takes: setup in the first repo starts the
 // hub and the channel, the second repo joins with the join line, both sessions start, and each
 // sends the other one message. Each message reaches its addressee through the bridge's poll
-// tool and as the channel push Claude Code receives. Every process is this test's child and
-// every home a temp one.
+// tool and as the channel push Claude Code receives. A second test restarts the hub on its port,
+// then moves it to another, and expects the push streams to find it each time. Every process is
+// this test's child and every home a temp one.
 
 import (
 	"bufio"
@@ -325,10 +326,27 @@ func twoReposHubPid(home string) int {
 	return pid
 }
 
-// TestE2ETwoReposTalkThroughOneChannel is the guard for two repositories building one thing
-// together: the Homelab session and the ProxBeam session message each other through channel
-// homelab, and each message arrives by the poll tool and by the push Claude Code gets.
-func TestE2ETwoReposTalkThroughOneChannel(t *testing.T) {
+// twoReposWorld is two repositories on one hub, each with its bridge handshaken and its push
+// stream up.
+type twoReposWorld struct {
+	hubHome  string
+	hubURL   string
+	homelab  string
+	proxbeam string
+
+	homelabEnv  map[string]string
+	proxbeamEnv map[string]string
+
+	homelabBridge  *twoReposBridge
+	proxbeamBridge *twoReposBridge
+}
+
+// startTwoRepos walks the path a user takes up to the first message: setup in the first repo
+// starts the hub and the channel, the second repo joins with the join line, both sessions start,
+// and each session's bridge handshakes and gets its push stream up. The bridges run without
+// HUDDLE_PORT, as a Claude Code session does: they find the hub the way a session finds it.
+func startTwoRepos(t *testing.T) *twoReposWorld {
+	t.Helper()
 	// a short root: the homes and sockets under it stay inside the unix path bounds
 	root, err := os.MkdirTemp("", "hr-tr-")
 	if err != nil {
@@ -336,13 +354,15 @@ func TestE2ETwoReposTalkThroughOneChannel(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	user := filepath.Join(root, "user")
-	hubHome := filepath.Join(root, "huddle-home")
 	hubPort := ports.Free(t)
-	hubURL := fmt.Sprintf("http://127.0.0.1:%d", hubPort)
+	w := &twoReposWorld{
+		hubHome: filepath.Join(root, "huddle-home"),
+		hubURL:  fmt.Sprintf("http://127.0.0.1:%d", hubPort),
+	}
 	env := isoenv.Lookup(isoenv.Environ(t, user,
 		"RADAR_HOME="+filepath.Join(root, "radar"),
 		"RADAR_AUTOSTART=0",
-		"HUDDLE_HOME="+hubHome,
+		"HUDDLE_HOME="+w.hubHome,
 		"HUDDLE_DATA="+filepath.Join(root, "huddle-data"),
 		"HUDDLE_ROUTER_HOME="+filepath.Join(root, "router"),
 		"HUDDLE_ROUTER_WATCH=0",
@@ -350,22 +370,23 @@ func TestE2ETwoReposTalkThroughOneChannel(t *testing.T) {
 		"HUDDLE_PORT="+strconv.Itoa(hubPort),
 	))
 
-	homelab := twoReposRepo(t, user, root, "homelab")
-	proxbeam := twoReposRepo(t, user, root, "proxbeam")
+	w.homelab = twoReposRepo(t, user, root, "homelab")
+	w.proxbeam = twoReposRepo(t, user, root, "proxbeam")
 	// each Claude session names itself the way Claude Code does, and works in its own repo
 	sessionEnv := func(repo, sessionID string) map[string]string {
 		return argvLayer(env, map[string]string{"CLAUDE_PROJECT_DIR": repo, "CLAUDE_CODE_SESSION_ID": sessionID})
 	}
-	homelabEnv := sessionEnv(homelab, "sess-homelab")
-	proxbeamEnv := sessionEnv(proxbeam, "sess-proxbeam")
+	homelabEnv := sessionEnv(w.homelab, "sess-homelab")
+	proxbeamEnv := sessionEnv(w.proxbeam, "sess-proxbeam")
+	w.homelabEnv, w.proxbeamEnv = homelabEnv, proxbeamEnv
 
 	t.Cleanup(func() {
-		pid := twoReposHubPid(hubHome)
-		_, _, _ = runBin(t, huddleBin, homelabEnv, homelab, "down")
-		if !pollFor(5*time.Second, func() bool { return !argvHealthy(hubURL) }) && pid > 0 {
+		pid := twoReposHubPid(w.hubHome)
+		_, _, _ = runBin(t, huddleBin, homelabEnv, w.homelab, "down")
+		if !pollFor(5*time.Second, func() bool { return !argvHealthy(w.hubURL) }) && pid > 0 {
 			// `down` left the test's own hub running: end it the direct way
 			_ = syscall.Kill(pid, syscall.SIGTERM)
-			if !pollFor(3*time.Second, func() bool { return !argvHealthy(hubURL) }) {
+			if !pollFor(3*time.Second, func() bool { return !argvHealthy(w.hubURL) }) {
 				_ = syscall.Kill(pid, syscall.SIGKILL)
 			}
 		}
@@ -376,37 +397,37 @@ func TestE2ETwoReposTalkThroughOneChannel(t *testing.T) {
 
 	// 1. setup in the first repo starts the hub and creates channel homelab, with this session in
 	// it as homelab; it prints the join line for the next session
-	code, out, errOut := runBin(t, huddleBin, homelabEnv, homelab, "setup", "--channel", twoReposChannel, "--as", "homelab", "--start")
+	code, out, errOut := runBin(t, huddleBin, homelabEnv, w.homelab, "setup", "--channel", twoReposChannel, "--as", "homelab", "--start")
 	if code != 0 {
 		t.Fatalf("setup --start in the first repo = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
-	until(t, 20*time.Second, func() bool { return argvHealthy(hubURL) }, "the hub to answer its health path")
+	until(t, 20*time.Second, func() bool { return argvHealthy(w.hubURL) }, "the hub to answer its health path")
 	join := regexp.MustCompile(`/huddle:join (\S+) --token (\S+)`).FindStringSubmatch(out)
 	if join == nil {
 		t.Fatalf("setup printed no join line:\n%s", out)
 	}
-	first := twoReposSettings(t, homelab)
+	first := twoReposSettings(t, w.homelab)
 	if first != (twoReposSettingsFile{Channel: twoReposChannel, As: "homelab", Autostart: true}) {
 		t.Fatalf("the first repo's huddle.json = %+v, want channel homelab, as homelab, autostart true", first)
 	}
 
 	// 2. the second repo names the same channel as proxbeam and joins with that line
 	second := `{"channel":"` + twoReposChannel + `","as":"proxbeam","autostart":false}` + "\n"
-	if err := os.MkdirAll(filepath.Join(proxbeam, ".agents", "huddle"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(w.proxbeam, ".agents", "huddle"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(proxbeam, ".agents", "huddle", "huddle.json"), []byte(second), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(w.proxbeam, ".agents", "huddle", "huddle.json"), []byte(second), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	code, out, errOut = runBin(t, huddleBin, proxbeamEnv, proxbeam, "join", join[1], "--token", join[2], "--as", "proxbeam")
+	code, out, errOut = runBin(t, huddleBin, proxbeamEnv, w.proxbeam, "join", join[1], "--token", join[2], "--as", "proxbeam")
 	if code != 0 {
 		t.Fatalf("join in the second repo = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
 
 	// 3. both sessions start: the session-start hook of each puts it in the channel
 	for _, session := range []struct{ name, repo, id string }{
-		{"homelab", homelab, "sess-homelab"},
-		{"proxbeam", proxbeam, "sess-proxbeam"},
+		{"homelab", w.homelab, "sess-homelab"},
+		{"proxbeam", w.proxbeam, "sess-proxbeam"},
 	} {
 		stdin := `{"hook_event_name":"SessionStart","session_id":"` + session.id + `","source":"startup","cwd":` + strconv.Quote(session.repo) + `}`
 		code, out, errOut := hooksRun(t, sessionEnv(session.repo, session.id), session.repo, stdin, "hook", "session-start")
@@ -428,9 +449,14 @@ func TestE2ETwoReposTalkThroughOneChannel(t *testing.T) {
 	}
 
 	// 4. one bridge per session, each handshaking as Claude Code does
-	homelabBridge := startTwoReposBridge(t, "homelab", homelabEnv, homelab)
-	proxbeamBridge := startTwoReposBridge(t, "proxbeam", proxbeamEnv, proxbeam)
-	for _, bridge := range []*twoReposBridge{homelabBridge, proxbeamBridge} {
+	withoutPort := func(sessionEnv map[string]string) map[string]string {
+		bridgeEnv := argvLayer(sessionEnv, nil)
+		delete(bridgeEnv, "HUDDLE_PORT")
+		return bridgeEnv
+	}
+	w.homelabBridge = startTwoReposBridge(t, "homelab", withoutPort(homelabEnv), w.homelab)
+	w.proxbeamBridge = startTwoReposBridge(t, "proxbeam", withoutPort(proxbeamEnv), w.proxbeam)
+	for _, bridge := range []*twoReposBridge{w.homelabBridge, w.proxbeamBridge} {
 		want := `You are "` + bridge.name + `" in Huddle channel "homelab"`
 		if instructions := bridge.initialize(); !strings.Contains(instructions, want) {
 			t.Fatalf("the %s bridge's instructions = %q, want them to hold %q", bridge.name, instructions, want)
@@ -442,8 +468,8 @@ func TestE2ETwoReposTalkThroughOneChannel(t *testing.T) {
 	// directions, before the exchange below begins.
 	probes := 0
 	for _, direction := range []struct{ from, to *twoReposBridge }{
-		{homelabBridge, proxbeamBridge},
-		{proxbeamBridge, homelabBridge},
+		{w.homelabBridge, w.proxbeamBridge},
+		{w.proxbeamBridge, w.homelabBridge},
 	} {
 		until(t, 30*time.Second, func() bool {
 			probes++
@@ -453,6 +479,75 @@ func TestE2ETwoReposTalkThroughOneChannel(t *testing.T) {
 			return arrived
 		}, "the "+direction.to.name+" bridge's push stream to carry a probe")
 	}
+	return w
+}
+
+// restartHub stops the hub and starts it again: on its own port when port is 0, else on port.
+func (w *twoReposWorld) restartHub(t *testing.T, port int) {
+	t.Helper()
+	if code, out, errOut := runBin(t, huddleBin, w.homelabEnv, w.homelab, "down"); code != 0 {
+		t.Fatalf("down = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+	}
+	until(t, 10*time.Second, func() bool { return !argvHealthy(w.hubURL) }, "the hub to stop answering")
+	args := []string{"up"}
+	if port != 0 {
+		args = append(args, "--port", strconv.Itoa(port))
+		w.hubURL = fmt.Sprintf("http://127.0.0.1:%d", port)
+	}
+	if code, out, errOut := runBin(t, huddleBin, w.homelabEnv, w.homelab, args...); code != 0 {
+		t.Fatalf("%v = %d\nstdout:\n%s\nstderr:\n%s", args, code, out, errOut)
+	}
+	until(t, 20*time.Second, func() bool { return argvHealthy(w.hubURL) }, "the restarted hub to answer its health path")
+}
+
+// exchange sends one message each way and expects each to reach its addressee's push within
+// 5 s, once, and never the sender's.
+func (w *twoReposWorld) exchange(t *testing.T, label string) {
+	t.Helper()
+	type message struct {
+		from, to *twoReposBridge
+		text     string
+	}
+	var messages []message
+	for _, direction := range []struct{ from, to *twoReposBridge }{
+		{w.homelabBridge, w.proxbeamBridge},
+		{w.proxbeamBridge, w.homelabBridge},
+	} {
+		text := fmt.Sprintf("%s: %s to %s", label, direction.from.name, direction.to.name)
+		messages = append(messages, message{direction.from, direction.to, text})
+		direction.from.send(direction.to.name, text)
+		if _, ok := direction.to.push(5*time.Second, text); !ok {
+			t.Fatalf("%s: the %s bridge wrote no channel push for %q within 5 s; stderr:\n%s",
+				label, direction.to.name, text, direction.to.errText())
+		}
+	}
+	time.Sleep(time.Second) // a duplicate would land within this second
+	for _, m := range messages {
+		if got := m.to.pushes(m.text); got != 1 {
+			t.Errorf("%s: the %s bridge wrote %d pushes for %q, want 1", label, m.to.name, got, m.text)
+		}
+		if got := m.from.pushes(m.text); got != 0 {
+			t.Errorf("%s: the %s bridge was pushed its own message %q %d times, want 0", label, m.from.name, m.text, got)
+		}
+	}
+}
+
+// TestE2ETwoReposFollowTheHub is the guard for a hub that restarts, then moves to another port:
+// each session's push stream finds it again and delivers what was sent, once.
+func TestE2ETwoReposFollowTheHub(t *testing.T) {
+	w := startTwoRepos(t)
+	w.restartHub(t, 0)
+	w.exchange(t, "after a restart on the same port")
+	w.restartHub(t, ports.Free(t))
+	w.exchange(t, "after the hub moved to another port")
+}
+
+// TestE2ETwoReposTalkThroughOneChannel is the guard for two repositories building one thing
+// together: the Homelab session and the ProxBeam session message each other through channel
+// homelab, and each message arrives by the poll tool and by the push Claude Code gets.
+func TestE2ETwoReposTalkThroughOneChannel(t *testing.T) {
+	w := startTwoRepos(t)
+	homelabBridge, proxbeamBridge := w.homelabBridge, w.proxbeamBridge
 
 	// 5. each session sends the other one message
 	toProxbeam := "homelab to proxbeam: the NAS sits on VLAN 20, can ProxBeam reach it?"
