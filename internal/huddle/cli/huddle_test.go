@@ -594,7 +594,7 @@ func TestHuddleGateNoBlockAndBlockingRefusal(t *testing.T) {
 	}
 }
 
-// ask prints the answer, or times out; depend and handoff exit by what woke them.
+// ask prints one line per reply, or times out; depend and handoff exit by what woke them.
 func TestHuddleAskDependAndHandoffExits(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -603,8 +603,8 @@ func TestHuddleAskDependAndHandoffExits(t *testing.T) {
 		code   int
 		out    string
 	}{
-		{"ask answered", []string{"ask", "b", "ready?"}, `{"result":{"answer":"yes"}}`, 0, "yes\n"},
-		{"ask unanswered", []string{"ask", "b", "ready?", "--timeout", "1"}, `{"result":{"kind":"timeout"}}`, 124, `{"kind":"timeout"}` + "\n"},
+		{"ask answered", []string{"ask", "b", "ready?"}, `{"result":{"asked":7,"replies":[{"from":"b","seq":8,"answer":"yes"}],"pending":[],"closed":true}}`, 0, "b: yes\n"},
+		{"ask unanswered", []string{"ask", "b", "ready?", "--timeout", "1"}, `{"result":{"asked":7,"replies":[],"pending":["b"],"timeout":true}}`, 124, `{"asked":7,"replies":[],"pending":["b"],"timeout":true}` + "\n"},
 		{"depend woken by an event", []string{"depend", "b", "the task"}, `{"result":{"woke":{"kind":"event"}}}`, 0, `{"woke":{"kind":"event"}}` + "\n"},
 		{"depend timed out", []string{"depend", "b", "the task"}, `{"result":{"woke":{"kind":"timeout"}}}`, 124, `{"woke":{"kind":"timeout"}}` + "\n"},
 		{"depend not woken", []string{"depend", "b", "the task"}, `{"result":{}}`, 0, `{}` + "\n"},
@@ -646,8 +646,8 @@ func TestHuddleMissingArgumentsAreUsageErrors(t *testing.T) {
 		{[]string{"depend", "s"}, "huddle: depend <session> <title>"},
 		{[]string{"handoff"}, "huddle: handoff <to> <msg>"},
 		{[]string{"handoff", "to"}, "huddle: handoff <to> <msg>"},
-		{[]string{"ask"}, "huddle: ask <session> <question>"},
-		{[]string{"ask", "s"}, "huddle: ask <session> <question>"},
+		{[]string{"ask"}, "huddle: ask <session[,session…]> <question>"},
+		{[]string{"ask", "s"}, "huddle: ask <session[,session…]> <question>"},
 		{[]string{"remember", "fact"}, "huddle: remember <kind> <title> <body>"},
 		{[]string{"verify"}, "huddle: verify <id> [--undo]"},
 		{[]string{"share"}, "huddle: share <id>"},
@@ -829,4 +829,70 @@ func TestHuddleChannelRemove(t *testing.T) {
 			t.Errorf("%v = (%d, %q), want the usage line", argv, code, errOut)
 		}
 	}
+}
+
+// ask to several sessions prints a line per reply as each arrives, and keeps waiting with the ask's
+// seq and the last reply's seq until the ask closes.
+func TestHuddleAskPrintsOneLinePerReply(t *testing.T) {
+	fake := startFakeHuddle(t, func(call fakeCall) (int, string) {
+		if strings.Contains(call.Body, `"asked"`) {
+			return 200, `{"result":{"asked":7,"replies":[{"from":"b","seq":10,"answer":"no"}],"pending":[],"closed":true}}`
+		}
+		return 200, `{"result":{"asked":7,"replies":[{"from":"a","seq":9,"answer":"yes"}],"pending":["b"]}}`
+	})
+	w := huddleWorld(t, fake.server.URL, nil)
+	code, out, errOut := runH(t, w, "ask", "a,b", "ready?")
+	if code != 0 || errOut != "" || out != "a: yes\nb: no\n" {
+		t.Fatalf("huddle ask a,b = %d %q %q, want 0 and one line per reply", code, out, errOut)
+	}
+	calls := fake.asked()
+	if len(calls) != 2 {
+		t.Fatalf("calls = %+v, want the ask and one more wait", calls)
+	}
+	if want := `{"to":["a","b"],"msg":"ready?","timeout":600}`; calls[0].Body != want {
+		t.Errorf("first body %s, want %s", calls[0].Body, want)
+	}
+	if want := `{"asked":7,"after":9,"timeout":600}`; calls[1].Body != want {
+		t.Errorf("second body %s, want %s", calls[1].Body, want)
+	}
+}
+
+// --timeout bounds the whole ask: each next wait gets the seconds left, and an ask whose time ran
+// out between waits stops with the last result.
+func TestHuddleAskTimeoutBoundsTheWholeAsk(t *testing.T) {
+	first := `{"result":{"asked":7,"replies":[{"from":"a","seq":9,"answer":"yes"}],"pending":["b"]}}`
+	last := `{"result":{"asked":7,"replies":[],"pending":["b"],"timeout":true}}`
+	run := func(t *testing.T, timeout string) (code int, out string, calls []fakeCall) {
+		t.Helper()
+		fake := startFakeHuddle(t, func(call fakeCall) (int, string) {
+			if strings.Contains(call.Body, `"asked"`) {
+				return 200, last
+			}
+			time.Sleep(1100 * time.Millisecond)
+			return 200, first
+		})
+		w := huddleWorld(t, fake.server.URL, nil)
+		code, out, _ = runH(t, w, "ask", "a,b", "ready?", "--timeout", timeout)
+		return code, out, fake.asked()
+	}
+
+	t.Run("the next wait gets the seconds left", func(t *testing.T) {
+		code, out, calls := run(t, "3")
+		if code != 124 || out != "a: yes\n"+`{"asked":7,"replies":[],"pending":["b"],"timeout":true}`+"\n" {
+			t.Fatalf("exit %d out %q, want a: yes, then the last result and 124", code, out)
+		}
+		if len(calls) != 2 || !strings.HasSuffix(calls[0].Body, `"timeout":3}`) || !strings.HasSuffix(calls[1].Body, `"timeout":2}`) {
+			t.Errorf("calls %+v, want a second wait of 2 seconds after the first of 3", calls)
+		}
+	})
+
+	t.Run("an ask out of time makes no further wait", func(t *testing.T) {
+		code, out, calls := run(t, "1")
+		if code != 124 || out != "a: yes\n"+`{"asked":7,"replies":[{"from":"a","seq":9,"answer":"yes"}],"pending":["b"]}`+"\n" {
+			t.Fatalf("exit %d out %q, want a: yes, then the last result and 124", code, out)
+		}
+		if len(calls) != 1 {
+			t.Errorf("calls %+v, want the one wait", calls)
+		}
+	})
 }

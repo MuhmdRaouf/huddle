@@ -50,7 +50,7 @@ var helpLines = []string{
 	"  huddle finish <evidence…> [--id x] [--result \"…\"]   done + share its output + what it released",
 	"  huddle depend <session> <title…>        make a task for them, block yours on it, wait until released",
 	"  huddle handoff <to> <msg…> [--title t]  (task for them +) pass the turn + wait",
-	"  huddle ask <session> <question…>        ask and block until they answer (prints the answer)",
+	"  huddle ask <session[,session…]> <question…>  ask and block until they answer (one line per reply)",
 	"  huddle remember <kind> <title> <body…> [--tags a,b]   share knowledge",
 	"  huddle recall [words…] | kb <id>          verified entries first; each shows its age and \"may be stale\"",
 	"  huddle remember … [--scope server] [--force]   server: for every channel on this server; force: even if similar",
@@ -573,34 +573,7 @@ func Huddle(ctx context.Context, w *World, argv []string, stdout, stderr io.Writ
 		}
 		return 124
 	case "ask":
-		to, ok := c.shift()
-		if !ok {
-			return c.die("ask <session> <question>", 2)
-		}
-		msg := c.rest()
-		if msg == "" {
-			return c.die("ask <session> <question>", 2)
-		}
-		timeout := 600.0
-		if v, ok := c.opt.text("timeout"); ok {
-			timeout = jsNumber(v)
-		}
-		answer, code := c.call(ctx, "ask_wait", newBody().textAlways("to", to).textAlways("msg", msg).number("timeout", timeout))
-		if code != 0 {
-			return code
-		}
-		if reply, present := fieldOf(answer.result, "answer"); present {
-			if reply != nil && reply.Kind() == jsfmt.KindString {
-				c.say(reply.Text())
-			} else if reply == nil || reply.Kind() == jsfmt.KindNull {
-				c.say("null")
-			} else {
-				c.say(reply.EncodeJSON())
-			}
-			return 0
-		}
-		c.say(c.resultJSON(answer))
-		return 124
+		return c.ask(ctx)
 	case "remember":
 		kind, kindOK := c.shift()
 		title, titleOK := c.shift()

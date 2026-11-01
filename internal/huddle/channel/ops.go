@@ -70,15 +70,16 @@ type HandoffResult struct {
 	Woke   *WaitHit `json:"woke,omitempty"`
 }
 
-// AskWaitResult is the ask_wait workflow's answer.
+// AskWaitResult is the ask_wait workflow's answer: the replies that arrived, who is still
+// pending, and whether the ask is closed.
 type AskWaitResult struct {
-	Asked     int64  `json:"asked"`
-	Answer    string `json:"answer,omitempty"`
-	From      string `json:"from,omitempty"`
-	Seq       int64  `json:"seq,omitempty"`
-	Timeout   bool   `json:"timeout,omitempty"`
-	Cancelled bool   `json:"cancelled,omitempty"`
-	Hint      string `json:"hint,omitempty"`
+	Asked     int64      `json:"asked"`
+	Replies   []AskReply `json:"replies"`
+	Pending   []string   `json:"pending"`
+	Closed    bool       `json:"closed,omitempty"`
+	Timeout   bool       `json:"timeout,omitempty"`
+	Cancelled bool       `json:"cancelled,omitempty"`
+	Hint      string     `json:"hint,omitempty"`
 }
 
 // opCall is the op's channel and who it acts as.
@@ -220,7 +221,7 @@ var opsOrder = []string{
 	"join", "status", "leave", "remove", "sessions", "state", "publish", "send", "reply", "inbox", "events",
 	"wait", "ack", "gate", "pause", "resume", "turn", "pass", "take", "next", "task", "map",
 	"tasks", "task_create", "task_update", "task_status", "wait_task", "note",
-	"start", "finish", "depend", "handoff", "ask_wait",
+	"start", "finish", "depend", "handoff", "ask_wait", "ask_close",
 	"remember", "recall", "kb", "verify", "share", "digest",
 	"configure", "import_plan", "approve", "note_edit", "assign", "brief",
 	"reserve", "release", "reservations",
@@ -788,26 +789,49 @@ var ops = map[string]opDef{
 		},
 	},
 	"ask_wait": {
-		desc:     "Ask one session a question and block until it replies (the answer comes back as the result).",
-		props:    jsfmt.Object([]string{"to", "msg", "timeout"}, []*jsfmt.Value{sProp(""), sProp(""), iProp("seconds; omit it")}),
-		required: []string{"to", "msg"},
-		blocks:   true,
+		desc: "Ask sessions a question (to: the names) and block until a reply arrives; the result lists the replies and who is still pending. To keep waiting for the rest, call it again with asked (the seq it returned) and after (the seq of the last reply you have).",
+		props: jsfmt.Object([]string{"to", "msg", "asked", "after", "timeout"}, []*jsfmt.Value{
+			arrProp("the sessions to ask; one reply each"), sProp(""),
+			iProp("an earlier ask's seq: wait for its replies instead of asking again"),
+			iProp("with asked: only replies above this seq"), iProp("seconds; omit it"),
+		}),
+		blocks: true,
 		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
-			q, err := c.ch.Send(ctx, c.me, []string{argStr(a, "to")}, argStr(a, "msg"), SendOpts{Ask: true})
+			group := argIntPtr(a, "asked")
+			if group == nil {
+				if len(argRecipients(a)) == 0 || argStr(a, "msg") == "" {
+					return nil, httpErr(400, "ask_wait: missing to and msg, or asked")
+				}
+				q, err := c.ch.Send(ctx, c.me, argRecipients(a), argStr(a, "msg"), SendOpts{Ask: true})
+				if err != nil {
+					return nil, err
+				}
+				group = &q.Seq
+			}
+			after := int64(0)
+			if v := argIntPtr(a, "after"); v != nil {
+				after = *v
+			}
+			p, err := c.ch.WaitReplies(ctx, c.me, *group, after, opTimeout(c, a))
 			if err != nil {
 				return nil, err
 			}
-			h, err := c.ch.WaitReply(ctx, c.me, q.Seq, opTimeout(c, a))
-			if err != nil {
-				return nil, err
+			res := AskWaitResult{
+				Asked: p.View.Group, Replies: p.Replies, Pending: p.View.Waiting, Closed: p.View.Closed,
+				Timeout: p.Kind == "timeout", Cancelled: p.Kind == "cancelled",
 			}
-			if h.Kind == "event" {
-				return AskWaitResult{Asked: q.Seq, Answer: deref(h.Msg), From: h.From, Seq: h.Seq}, nil
+			if p.Kind != "event" {
+				res.Hint = "no reply yet: the ask stays open; call ask_wait again with asked and after to keep waiting"
 			}
-			return AskWaitResult{
-				Asked: q.Seq, Timeout: h.Kind == "timeout", Cancelled: h.Kind == "cancelled",
-				Hint: "no reply yet: the ask stays open; wait again later",
-			}, nil
+			return res, nil
+		},
+	},
+	"ask_close": {
+		desc:     "Owner only: close an ask early. It leaves the inbox of every session that has not replied, and a late reply is refused.",
+		props:    jsfmt.Object([]string{"asked"}, []*jsfmt.Value{iProp("the ask's seq, as ask_wait returned it")}),
+		required: []string{"asked"},
+		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
+			return c.ch.CloseAsk(ctx, c.me, argID(a, "asked"))
 		},
 	},
 

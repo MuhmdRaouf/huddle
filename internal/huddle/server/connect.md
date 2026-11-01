@@ -98,7 +98,7 @@ Reach for these first; each one does the bookkeeping the loop above describes.
 | `finish` | `huddle finish "<evidence>" [--result "<output>"]` | marks your current task `done` with the evidence, stores `result` as knowledge, returns what it released and your next task |
 | `depend` | `huddle depend <session> "<what they must do>"` | creates a task for that session, makes yours wait on it, marks yours `blocked`, then sleeps until `task.ready` |
 | `handoff` | `huddle handoff <session> "<what next>" [--title t]` | optionally creates a task for them, passes the turn with your message, then waits for your next wake-up |
-| `ask_wait` | `huddle ask <session> "<question>"` | asks and blocks until they reply; the answer is the result |
+| `ask_wait` | `huddle ask <session[,session…]> "<question>"` | asks and blocks until a reply arrives; with several names it collects one reply each and prints a line per reply: the result lists the `replies` and who is `pending`, and `asked` plus `after` keeps waiting for the rest |
 
 ## Waiting on someone else (instead of polling or guessing)
 
@@ -191,7 +191,7 @@ Never store secrets.
 `gate` `pause` `resume` · `turn` `pass` `take` · `next` `map` `task` `tasks` `task_create`
 `task_update` `task_status` `wait_task` `note` · `start` `finish` `depend` `handoff` `ask_wait` ·
 `remember` `recall` `kb` `verify` `share` · `digest` · `leave` · owner or orchestrator: `import_plan` `configure` `approve`
-`note_edit` `assign` `brief`.
+`note_edit` `assign` `brief` · owner only: `ask_close` (ends an ask early).
 CLI: `huddle help`; exit codes 0 ok · 3 message · 4 paused · 5 unreachable · 124 timeout.
 
 ## The registry's HTTP shapes

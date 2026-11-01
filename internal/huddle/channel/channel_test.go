@@ -853,8 +853,8 @@ func TestChannel(t *testing.T) {
 		if q.err != nil {
 			t.Fatal(q.err)
 		}
-		if ans := q.r.Result.(AskWaitResult); ans.Answer != "8080" {
-			t.Errorf("ask_wait answer = %q, want 8080", ans.Answer)
+		if ans := q.r.Result.(AskWaitResult); len(ans.Replies) != 1 || ans.Replies[0].Answer != "8080" {
+			t.Errorf("ask_wait replies = %+v, want b's 8080", ans.Replies)
 		}
 		r2, err := RunOp(bg, "handoff", ch, "a", vv(t, `{"to": "b", "msg": "your go", "title": "deploy", "wait": false}`))
 		if err != nil {

@@ -2184,8 +2184,10 @@ func (c *Channel) PresenceOf(ctx context.Context, name string) (*PresenceView, e
 }
 
 // openAsk is the query for messages that wait for a session's reply: asks, and owner directives.
+// A closed ask (ask.go) waits for no one.
 const openAsk = `e.needs_reply = 1 AND e.from_name != ? AND (e.to_name IS NULL OR e.to_name = ?)
-    AND NOT EXISTS (SELECT 1 FROM events r WHERE r.reply_to = e.seq AND r.from_name = ?)`
+    AND NOT EXISTS (SELECT 1 FROM events r WHERE r.reply_to = e.seq AND r.from_name = ?)
+    AND NOT ` + askClosed
 
 // Sessions lists every session with its unread counts.
 func (c *Channel) Sessions(ctx context.Context) ([]SessionView, error) {
@@ -2551,6 +2553,13 @@ func (c *Channel) Reply(ctx context.Context, from string, seq int64, msg string)
 			return httpErr(403, fmt.Sprintf("event %d is addressed to %s, not %s", seq, *to, from))
 		}
 		if rBool(q, "needs_reply") {
+			closed, err := c.dbGet(ctx, "SELECT 1 FROM events e WHERE e.seq=? AND "+askClosed, seq)
+			if err != nil {
+				return err
+			}
+			if closed != nil {
+				return httpErr(409, fmt.Sprintf("event %d is a closed ask", seq))
+			}
 			answered, err := c.dbGet(ctx, "SELECT 1 FROM events WHERE reply_to=? AND from_name=?", seq, from)
 			if err != nil {
 				return err
@@ -4623,7 +4632,7 @@ func (c *Channel) Stats(ctx context.Context) (Stats, error) {
 	if err != nil {
 		return Stats{}, err
 	}
-	openAsks, err := count(fmt.Sprintf("SELECT %s n FROM events e WHERE needs_reply=1 AND NOT EXISTS (SELECT 1 FROM events r WHERE r.reply_to=e.seq)", countInt))
+	openAsks, err := count(fmt.Sprintf("SELECT %s n FROM events e WHERE needs_reply=1 AND NOT EXISTS (SELECT 1 FROM events r WHERE r.reply_to=e.seq) AND NOT %s", countInt, askClosed))
 	if err != nil {
 		return Stats{}, err
 	}
