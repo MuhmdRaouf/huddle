@@ -267,3 +267,15 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   seeded with the live shape at quarter scale
 - **Rule:** the guard's seed is the live shape scaled down to keep the cold catch-up inside CI's 10-minute job,
   and its RSS ceilings only move down.
+
+## 2026-11-01, e2e runs left their hubs and routers running
+
+- **What happened:** eight `huddle serve` processes from one worktree's Playwright run folder ran for three days
+  under launchd and loaded the machine, so later gates went flaky.
+- **Cause:** the teardown knew only the two hub pids the setup saved; a killed run never reached the teardown, and
+  the next run's setup emptied the run folder, losing the pids.
+- **Guard:** `"a run's processes are the executables under its bin folder, and nothing else"`,
+  `"stopping a run's processes ends a detached one under its bin folder"`,
+  `"the reaper ends a killed run's processes"` (scripts/e2e-leftovers.test.ts)
+- **Rule:** an e2e harness stops every process under its run folder: at the teardown, at the next start, and through
+  a reaper when the runner is killed; a teardown that finds one still running fails the run.

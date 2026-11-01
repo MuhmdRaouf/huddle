@@ -5,8 +5,11 @@
 // https://hub.example.test under the run's own CA, its certificate imported before the server
 // starts. Fixtures land as files in both homes (a transcript with three requests, the matching
 // spool lines, a three-card board), the registry and one channel are seeded over each one's
-// loopback API, and the setup file the specs read is written once radar has ingested. The
-// teardown stops the two processes started here and removes the folder.
+// loopback API, and the setup file the specs read is written once radar has ingested. Before
+// the run folder is emptied, every process an earlier run left under its bin folder is stopped;
+// a detached reaper then stops everything under that folder if this runner is killed before its
+// teardown. The teardown stops the two hubs started here, then every other process still running
+// from the run's bin folder, and removes the folder.
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
@@ -24,6 +27,7 @@ import {
   setupPath,
   type E2eSetup,
 } from "./paths.ts";
+import { stopRunProcesses } from "./leftovers.ts";
 import { LOAD_REQUESTS } from "./seed.ts";
 import { HUB_HOST, hubPair } from "./tls.ts";
 
@@ -68,8 +72,15 @@ let serverHub: ChildProcess | null = null;
 let outsideProject = "";
 
 export default async function globalSetup(): Promise<void> {
+  // the pids an earlier run saved are lost once the folder is emptied, so its processes are found
+  // by the executable path instead
+  const left = await stopRunProcesses(runDir);
+  if (left.length > 0) {
+    console.log(`e2e: stopped ${left.length} processes an earlier run left: ${left.map((p) => p.pid).join(" ")}`);
+  }
   fs.rmSync(runDir, { recursive: true, force: true });
   fs.mkdirSync(runDir, { recursive: true });
+  startReaper();
   outsideProject = fs.mkdtempSync(path.join(os.tmpdir(), "huddle-e2e-project-"));
   fs.writeFileSync(outsideProjectPath, outsideProject);
   process.env.CLAUDE_PROJECT_DIR = outsideProject;
@@ -124,6 +135,20 @@ export default async function globalSetup(): Promise<void> {
     hubRouterPort,
   };
   fs.writeFileSync(setupPath, `${JSON.stringify(setup, null, 2)}\n`);
+}
+
+/** Starts the detached reaper that stops every process under the run's bin folder once this
+ *  runner is gone, however it went (SIGKILL, a crash). Playwright runs the global setup in the
+ *  runner process, so `process.pid` is the pid the reaper watches. Its pid goes into the run
+ *  folder for the teardown, which stops it on a clean exit. */
+function startReaper(): void {
+  const reaper = spawn(
+    "/bin/sh",
+    [path.join(here, "reaper.sh"), String(process.pid), path.join(runDir, "bin")],
+    { detached: true, stdio: "ignore" },
+  );
+  reaper.unref();
+  fs.writeFileSync(path.join(runDir, "reaper.json"), `${JSON.stringify({ pid: reaper.pid })}\n`);
 }
 
 /** Builds the binary the run serves and pairs with. */
