@@ -298,18 +298,10 @@ func TestRadarAnswerServesInProcess(t *testing.T) {
 	tab, client, base := mountMux(t, env, MountOptions{IntervalMs: 50, InsightsTickMs: 0})
 	RecordHook(context.Background(), env, nil,
 		`{"hook_event_name":"SessionStart","session_id":"sess-ip","cwd":"/w/ip"}`)
-	// a router's route line, the spool's own shape, so the window has a priced request
-	today := time.Now().UTC().Format("2006-01-02")
-	spoolLine := filepath.Join(env["RADAR_HOME"], "spool", today+".jsonl")
-	if err := os.MkdirAll(filepath.Dir(spoolLine), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	route := `{"ts":` + strconv.Quote(time.Now().UTC().Format("2006-01-02T15:04:05.000Z")) +
-		`,"event":"route","session_id":"sess-ip","agent_id":"main","model":"glm-5.3","upstream":"https://api.z.ai/api/anthropic","plugin":"zai","route":"direct","status":200,"latency_ms":900,"usage":{"input_tokens":50,"output_tokens":20,"cache_read_input_tokens":500,"cache_creation_input_tokens":100}}`
-	if err := os.WriteFile(spoolLine, []byte(route+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "the session in the store", 5*time.Second, func() bool {
+	// a router's route line appended after the hook's line: the ingester keeps a read offset, so
+	// rewriting the file under it would lose the route line
+	appendSpoolRoute(t, env["RADAR_HOME"], "sess-ip")
+	waitFor(t, "the session and its priced request in the store", 30*time.Second, func() bool {
 		detail := tab.Store.SessionDetail("sess-ip")
 		return detail != nil && len(tab.Store.Requests(store.RequestFilter{Session: strPtr("sess-ip")})) > 0
 	})
