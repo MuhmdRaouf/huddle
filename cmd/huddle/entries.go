@@ -78,6 +78,7 @@ func serveEntry(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		refreshInstalledService(ctx, options.Home)
 	}
 	options.Environ = os.Environ()
+	options.ProjectFiles = cli.ProjectFiles{W: &cli.World{}}
 	options.Signals = true
 	if err := server.Serve(ctx, options); err != nil {
 		var held *server.HeldError

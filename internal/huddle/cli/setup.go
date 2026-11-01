@@ -110,8 +110,7 @@ func setup(ctx context.Context, w *World, sub string, o *flags, url string, stdo
 	if o.truthy("channel") {
 		channel, _ := o.str("channel")
 		as, _ := o.str("as")
-		next.set("channel", jsfmt.String(channel))
-		next.set("as", jsfmt.String(as))
+		next.setChannel(channel, as)
 	} else if !next.hasText("channel") || !next.hasText("as") {
 		// nothing to ask a first setup: the channel and this session are named after the project
 		name := jsfmt.String(Slug(root, "huddle"))
@@ -138,8 +137,7 @@ func setup(ctx context.Context, w *World, sub string, o *flags, url string, stdo
 	if o.has("no_listen") {
 		next.remove("listen")
 	}
-	_ = os.MkdirAll(filepath.Dir(file), 0o755)
-	_ = os.WriteFile(file, []byte(indentJSON(next.value())+"\n"), 0o644)
+	_ = writeSettings(file, next)
 	say(file + ": " + next.value().EncodeJSON())
 	if excluded := KeepOutOfGit(ctx, w, filepath.Join(root, ".agents", "huddle")); excluded != "" {
 		say("kept .agents/huddle/ out of git (" + excluded + ")")

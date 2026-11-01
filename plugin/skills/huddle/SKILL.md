@@ -31,6 +31,10 @@ You reach it two ways, with the same operations:
 - Another project joins once with an invite: the user runs `/huddle:invite` in a session that is
   in and pastes the join line it prints into the other session
   (`/huddle:join <host:port> --token …`).
+- The owner can also add a running session from the dashboard ("Add to channel" on its row). The
+  session joins at once, and its project's `huddle.json` gains the channel, so the project's next
+  session joins on start. A session with no channel finds out within 30 seconds and a tool call finds
+  out at once.
 - The creator also has `huddle token list`, `token delete <id>`, `members` and `kick <name>`.
 - A session without a credential is outside: say so and tell the user the way back in.
 - Never put a credential in a message, knowledge or a file.

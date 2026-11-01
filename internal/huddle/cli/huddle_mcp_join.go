@@ -4,7 +4,8 @@
 // Once that join has ended, the bridge keeps the session on the list: the hub can lose the
 // member while the live stream stays up, so the list is read on every reconnect and every
 // bridgeMemberCheck, and a session the hub holds no row for joins again with the same call. A
-// session that left stays out.
+// session that left stays out. A session that started with no channel is watched too: when its
+// project's file comes to name one (the hub's "Add to channel" writes it), the bridge joins.
 package cli
 
 import (
@@ -34,6 +35,10 @@ const (
 	bridgeMemberCheck = 5 * time.Minute
 	bridgeJoinReadMS  = 1500
 	bridgeJoinCallMS  = 10000
+
+	// bridgeChannelCheck is the pause between looks at the project's file while the session
+	// names no channel.
+	bridgeChannelCheck = 30 * time.Second
 )
 
 // wakeJoin tells the join loop a tool call arrived: it checks now instead of waiting out the
@@ -71,6 +76,31 @@ func (b *mcpBridge) keepJoined(ctx context.Context) {
 		case <-time.After(pause):
 		}
 		pause = min(pause*2, bridgeJoinCap)
+	}
+}
+
+// watchForChannel looks at the project's file every channelCheckEvery for a session that started
+// in no channel, and joins the first channel and name it finds. Each look reads one file and
+// calls no hub, so a session that never gets a channel costs nothing.
+func (b *mcpBridge) watchForChannel(ctx context.Context) {
+	ticker := time.NewTicker(channelCheckEvery(b.w))
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		id := Identify(ctx, b.w, b.sessionID())
+		if id.Channel == "" || id.As == "" {
+			continue
+		}
+		b.memberMu.Lock()
+		joined := b.sendJoin(ctx, id, false)
+		b.memberMu.Unlock()
+		if joined {
+			return
+		}
 	}
 }
 
@@ -259,4 +289,14 @@ func memberCheckEvery(w *World) time.Duration {
 		return time.Duration(ms) * time.Millisecond
 	}
 	return bridgeMemberCheck
+}
+
+// channelCheckEvery is the pause between looks at the project's file: bridgeChannelCheck, unless
+// HUDDLE_TEST_MEMBER_CHECK_MS names a shorter one in milliseconds, the variable that shortens the
+// membership check for the tests.
+func channelCheckEvery(w *World) time.Duration {
+	if ms := int(jsNumber(w.getenv("HUDDLE_TEST_MEMBER_CHECK_MS"))); ms > 0 {
+		return time.Duration(ms) * time.Millisecond
+	}
+	return bridgeChannelCheck
 }

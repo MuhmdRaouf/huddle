@@ -181,12 +181,13 @@ func TestStepUpGatesTheDangerousRoutes(t *testing.T) {
 	// every case below runs against a session whose assertion has aged out
 	stepUpStamp(t, srv, cookie, time.Now().UnixMilli()-6*60*1000)
 
-	t.Run("without the assertion, allow, answer and send answer the one 401", func(t *testing.T) {
+	t.Run("without the assertion, allow, answer, send and add to channel answer the one 401", func(t *testing.T) {
 		allowID := permitPost(t, srv, "s-1", "Bash", `{"command":"npm test"}`)
 		for _, call := range []struct{ name, path, body string }{
 			{"allow", fmt.Sprintf("/api/needs/%d/decide", allowID), `{"decision":"allow"}`},
 			{"answer", "/api/sessions/s-1/answer", `{"text":"ship it"}`},
 			{"send", "/api/send", `{"sessions":["s-1"],"text":"run it"}`},
+			{"add to channel", "/api/registry/sessions/s-1/channel", `{"channel":"homelab"}`},
 		} {
 			code, out := srv.post(t, call.path, call.body, device)
 			if code != 401 || out != stepUpRequiredBody {

@@ -96,6 +96,9 @@ type Options struct {
 	// Env is the environment the presence checks read; Projects names the projects to check.
 	Env      map[string]string
 	Projects func() []string
+	// ProjectFiles answers for the settings file of the project a session works in; the owner's
+	// "Add to channel" saves the channel through it.
+	ProjectFiles ProjectFiles
 	// Signals installs the SIGTERM/SIGINT shutdown when true (a real process start).
 	Signals bool
 	// Environ is the process environment the radar tab reads (RADAR_HOME, HOME,
@@ -1396,6 +1399,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.pushFocusRoute(w, r, me)
 	case credentialed && sessionActPath.MatchString(path) && r.Method == http.MethodPost:
 		return s.sessionActRoute(w, r, path, me)
+	case credentialed && sessionChannelPath.MatchString(path) && r.Method == http.MethodPost:
+		return s.sessionChannelRoute(w, r, path, me)
 	case credentialed && conversationPath.MatchString(path) && r.Method == http.MethodGet:
 		return s.conversationRoute(w, r, path)
 	case credentialed && agentsPath.MatchString(path) && r.Method == http.MethodGet:

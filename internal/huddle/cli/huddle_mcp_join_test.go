@@ -231,3 +231,31 @@ func TestABridgeJoinKeepsTheHooksRoleAndContext(t *testing.T) {
 		t.Errorf("task = %v, want the session-start task", row["task"])
 	}
 }
+
+// TestTheBridgeOfASessionInNoChannelJoinsOnceTheProjectNamesOne: a session that started with no
+// channel is joined by the hub's "Add to channel" writing one into the project's file, and the
+// bridge finishes that join by itself, once, without waiting for a tool call.
+func TestTheBridgeOfASessionInNoChannelJoinsOnceTheProjectNamesOne(t *testing.T) {
+	hub := newMemberHub(t, "working", "2026-10-15T09:00:00.000Z")
+	proj := t.TempDir()
+	env := proxbeamEnv(hub.URL)
+	env["HUDDLE_CHANNEL"], env["HUDDLE_AS"] = "", ""
+	env["CLAUDE_PROJECT_DIR"] = proj
+	env["HUDDLE_TEST_MEMBER_CHECK_MS"] = "100"
+	runMcpBridge(t, "", env)
+
+	time.Sleep(400 * time.Millisecond)
+	if got := hub.joined(); len(got) != 0 {
+		t.Fatalf("the hub saw %d joins for a session in no channel, want none", len(got))
+	}
+	if _, err := WriteProjectChannel(proj, "homelab", "proxbeam"); err != nil {
+		t.Fatal(err)
+	}
+	if got := hub.waitJoins(1, 5000); len(got) != 1 {
+		t.Fatalf("the hub saw %d joins after the project named a channel, want 1", len(got))
+	}
+	time.Sleep(500 * time.Millisecond)
+	if n := len(hub.joined()); n != 1 {
+		t.Errorf("the hub saw %d joins, want the bridge to stop at 1", n)
+	}
+}

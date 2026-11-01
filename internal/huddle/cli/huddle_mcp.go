@@ -105,6 +105,7 @@ func McpStdio(ctx context.Context, w *World, version string, stdin io.Reader, st
 		safego.Go(func(line string) { b.logf("%s", line) }, func() { b.keepJoined(runCtx) })
 	} else {
 		close(b.joinDone) // no join to finish: the membership check has nothing to wait for
+		safego.Go(func(line string) { b.logf("%s", line) }, func() { b.watchForChannel(runCtx) })
 	}
 	// The session's watchdog: while this bridge serves, a dead or hung huddle-router comes back
 	// on its own (HR-WATCHDOG-MCP). Its own goroutine, so no MCP reply ever waits on it;

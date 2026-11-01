@@ -34,6 +34,7 @@ func runChildServer() {
 	}
 	o := OptionsFromEnv(version, os.Getenv, os.Stdout, os.Stderr, os.Stdin)
 	o.Environ = isoenv.Inherited() // the radar tab reads the environment the test pinned
+	o.ProjectFiles = fakeProjectFiles{}
 	o.Signals = true
 	_ = Serve(context.Background(), o)
 }
