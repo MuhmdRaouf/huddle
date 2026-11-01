@@ -56,7 +56,7 @@ describe("Team", () => {
       <Team />,
       makeCtx(
         state({
-          // a knowledge event naming the task: its feed badge is the button that opens the task
+          // a knowledge event naming the task: its feed chip is the button that opens the task
           timeline: [ev(1, "kb.added", { ref: "t1" })],
           extras: {
             ch: "ch",
@@ -78,12 +78,10 @@ describe("Team", () => {
       fireEvent.click(screen.getByLabelText(/api, Working/));
     });
     expect(location.hash).toBe("#/channels/ch/team?s=api");
-    // the feed's task badge (a button, not the roster's span) opens the task
-    const badge = screen
-      .getAllByText("t1")
-      .find((el) => el.tagName === "BUTTON" && el.className.includes("badge"));
+    // the feed's task chip (a button, not the roster's span) opens the task
+    const chip = screen.getAllByText("t1").find((el) => el.tagName === "BUTTON");
     void act(() => {
-      fireEvent.click(badge as HTMLElement);
+      fireEvent.click(chip as HTMLElement);
     });
     expect(location.hash).toBe("#/channels/ch/work?t=t1");
     // the session's estimated cost shows on its row
@@ -144,11 +142,11 @@ describe("Team", () => {
         <Team />
       </HuddleProvider>,
     );
-    expect(document.querySelector("#tlnew")?.textContent).toContain("1 new");
+    expect(document.querySelector("[data-tlnew]")?.textContent).toContain("1 new");
     // back at the bottom the count is gone
     log.scrollTop = 480;
     fireEvent.scroll(log);
-    expect(document.querySelector("#tlnew")).toBeNull();
+    expect(document.querySelector("[data-tlnew]")).toBeNull();
     view.unmount();
   });
 

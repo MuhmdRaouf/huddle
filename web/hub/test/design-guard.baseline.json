@@ -143,8 +143,7 @@
     "control": 3
   },
   "pages/Team.tsx": {
-    "control": 2,
-    "daisy": 10
+    "control": 1
   },
   "picker.tsx": {
     "control": 2
@@ -264,21 +263,10 @@
   "radar/radar.css": {
     "px": 1
   },
-  "team/Roster.tsx": {
-    "control": 1,
-    "daisy": 26,
-    "legacy": 6
-  },
   "team/SessionDrawer.tsx": {
     "control": 5,
     "daisy": 22,
     "legacy": 5
-  },
-  "team/Timeline.tsx": {
-    "control": 5,
-    "daisy": 26,
-    "legacy": 4,
-    "px": 1
   },
   "work/Board.tsx": {
     "legacy": 1

@@ -3,6 +3,8 @@
 // counts and its cost, subagents nested under their parent, the empty state before anyone joins,
 // and the sessions that left at the end.
 
+import { Button } from "@huddle/ui/button.tsx";
+import { Chip } from "@huddle/ui/chip.tsx";
 import type { ComponentChildren } from "preact";
 import { Fragment, type JSX } from "preact";
 import { Icon } from "../icons.tsx";
@@ -49,7 +51,9 @@ function doing(session: RosterSession, taskById: RosterTaskById): ComponentChild
   if (step)
     return (
       <>
-        <span class="badge badge-ghost badge-sm font-mono tnum">{step.id}</span>
+        <span class="font-mono tnum">
+          <Chip tone="neutral">{step.id}</Chip>
+        </span>
         <span class="truncate">{step.title}</span>
       </>
     );
@@ -57,19 +61,17 @@ function doing(session: RosterSession, taskById: RosterTaskById): ComponentChild
     ? ""
     : String(session.task ?? "").trim();
   if (own) return <span class="truncate">{own}</span>;
-  return <span class="truncate text-base-content/50">{session.role || "No task yet"}</span>;
+  return <span class="truncate text-[var(--ui-muted)]">{session.role || "No task yet"}</span>;
 }
 
 /** The orchestrator chip on a session whose name is the channel's orchestrator. */
 function orchMark(name: string, orchestrator: string | null | undefined): JSX.Element | null {
   if (name !== orchestrator) return null;
   return (
-    <span
-      class="badge badge-ghost badge-sm c-lavender ink gap-1"
-      title="Orchestrator: plans and assigns the work"
-    >
-      <Icon name="baton" class="size-3.5" />
-      orchestrator
+    <span class="inline-flex" title="Orchestrator: plans and assigns the work">
+      <Chip tone="accent" icon={<Icon name="baton" class="size-3.5" />}>
+        orchestrator
+      </Chip>
     </span>
   );
 }
@@ -77,8 +79,8 @@ function orchMark(name: string, orchestrator: string | null | undefined): JSX.El
 /** One count of a row: the number over its word. */
 function Count({ n, label, title }: { n: number; label: string; title: string }): JSX.Element {
   return (
-    <span class="flex items-baseline gap-1 text-xs muted" title={title}>
-      <span class="font-semibold text-base-content tabular-nums">{n}</span>
+    <span class="flex items-baseline gap-1 text-xs text-[var(--ui-muted)]" title={title}>
+      <span class="font-semibold text-[var(--ui-text)] tabular-nums">{n}</span>
       {label}
     </span>
   );
@@ -87,8 +89,11 @@ function Count({ n, label, title }: { n: number; label: string; title: string })
 /** A session's estimated cost today, from Radar: a count-like stat. */
 function CostChip({ cost }: { cost: number }): JSX.Element {
   return (
-    <span class="flex items-baseline gap-1 text-xs muted" title="Estimated cost today, from Radar">
-      <span class="font-semibold text-base-content tabular-nums">{usd(cost)}</span>today
+    <span
+      class="flex items-baseline gap-1 text-xs text-[var(--ui-muted)]"
+      title="Estimated cost today, from Radar"
+    >
+      <span class="font-semibold text-[var(--ui-text)] tabular-nums">{usd(cost)}</span>today
     </span>
   );
 }
@@ -141,19 +146,15 @@ function RosterRow({
   const status = sessionStatus(session, (id) => asTask(taskById(id)));
   const label = `${session.name}, ${SSTM[status].l}${session.name === orchestrator ? ", orchestrator" : ""}${session.holds_turn ? ", holds the turn" : ""}`;
   return (
-    <li class="list-row">
-      <button
-        type="button"
-        class={`flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-base-200/70 ${kid ? "gap-2.5" : ""}${active ? " bg-primary/10" : ""}`}
-        aria-label={label}
-        aria-pressed={active}
+    <li>
+      {/* the shared button paints its control down to the row: full width, left-set content, and
+          the open session's row pressed onto the accent tint */}
+      <Button
+        variant="ghost"
+        label={label}
+        pressed={active}
         onClick={() => onOpen(session.name)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onOpen(session.name);
-          }
-        }}
+        class={`w-full! justify-start! px-3! py-2.5! text-left! font-normal! aria-pressed:bg-[var(--ui-accent-soft)]! aria-pressed:text-[var(--ui-text)]! ${kid ? "gap-2.5!" : "gap-3!"}`}
       >
         <Avatar name={session.name} small={kid} />
         <span class="min-w-0 flex-1">
@@ -163,16 +164,18 @@ function RosterRow({
             </b>
             {orchMark(session.name, orchestrator)}
             {session.holds_turn ? (
-              <span class="text-base-content/50" title="Holds the turn">
+              <span class="text-[var(--ui-muted)]" title="Holds the turn">
                 <Icon name="turn" class="size-4" />
               </span>
             ) : null}
           </span>
-          <span class="mt-1 flex min-w-0 items-center gap-1.5 text-sm muted">{doing(session, taskById)}</span>
+          <span class="mt-1 flex min-w-0 items-center gap-1.5 text-sm text-[var(--ui-muted)]">
+            {doing(session, taskById)}
+          </span>
           <RowCounts session={session} kid={kid} costOf={costOf} />
         </span>
         <SessionPill session={session} taskById={(id) => asTask(taskById(id))} now={now} small={kid} />
-      </button>
+      </Button>
     </li>
   );
 }
@@ -180,11 +183,11 @@ function RosterRow({
 /** The turn banner: who holds the turn, or that nobody does when the channel starts with one. */
 function TurnBanner({ holder }: { holder: string | null }): JSX.Element {
   return (
-    <p class="flex items-center gap-2 border-b border-base-content/8 px-4 py-3 text-sm muted">
-      <Icon name="turn" class="size-4 text-base-content/50" />
+    <p class="flex items-center gap-2 border-b border-[var(--ui-line)] px-4 py-3 text-sm text-[var(--ui-muted)]">
+      <Icon name="turn" class="size-4 text-[var(--ui-muted)]" />
       {holder ? (
         <span>
-          <b class="text-base-content">{holder}</b> holds the turn: only it acts.
+          <b class="text-[var(--ui-text)]">{holder}</b> holds the turn: only it acts.
         </span>
       ) : (
         "Nobody holds the turn."
@@ -197,17 +200,17 @@ function TurnBanner({ holder }: { holder: string | null }): JSX.Element {
 function RosterEmpty({ connectHref }: { connectHref: string | undefined }): JSX.Element {
   return (
     <div class="flex flex-col items-center gap-2 px-6 py-12 text-center">
-      <span class="text-base-content/40">
+      <span class="text-[var(--ui-muted)]">
         <Icon name="users" class="size-7" />
       </span>
       <b class="text-base">Nobody has joined yet</b>
       <span class="text-sm">Connect a session to this channel in Settings.</span>
-      <span class="max-w-sm text-sm muted">It shows up here the moment it joins.</span>
+      <span class="max-w-sm text-sm text-[var(--ui-muted)]">It shows up here the moment it joins.</span>
       {connectHref ? (
-        <a class="btn btn-sm mt-2" href={connectHref}>
+        <Button href={connectHref} variant="secondary" class="mt-2">
           <Icon name="plug" class="size-4" />
           Connect a session
-        </a>
+        </Button>
       ) : null}
     </div>
   );
@@ -223,12 +226,13 @@ function RosterLeft({
 }): JSX.Element | null {
   if (!off.length) return null;
   return (
-    <details class="collapse collapse-arrow border-t border-base-content/8 rounded-none">
-      <summary class="collapse-title min-h-10 py-2 text-sm muted">
+    <details class="border-t border-[var(--ui-line)]">
+      <summary class="flex min-h-[var(--ui-tap)] cursor-pointer list-none items-center gap-1 py-2 text-sm text-[var(--ui-muted)] [&::-webkit-details-marker]:hidden">
+        <Icon name="right" class="size-3.5 transition-transform open:rotate-90" />
         <span class="flex items-center gap-1">{off.length} left</span>
       </summary>
-      <div class="collapse-content p-2 opacity-80">
-        <ul class="list">{off.map((s) => row(s, false))}</ul>
+      <div class="p-2">
+        <ul class="flex flex-col">{off.map((s) => row(s, false))}</ul>
       </div>
     </details>
   );
@@ -269,14 +273,14 @@ export function Roster({
     <>
       {turnHolder !== undefined ? <TurnBanner holder={turnHolder} /> : null}
       {on.length ? (
-        <ul class="list p-2">
+        <ul class="flex flex-col p-2">
           {on.map((s) => (
             <Fragment key={s.name}>
               {row(s, false)}
               {kids(s.name).length ? (
-                <li class="list-row">
+                <li>
                   <ul
-                    class="ml-6 flex flex-col border-l border-base-content/10 py-0.5 pl-2"
+                    class="ml-6 flex flex-col border-l border-[var(--ui-line)] py-0.5 pl-2"
                     aria-label={`Subagents of ${s.name}`}
                   >
                     {kids(s.name).map((k) => row(k, true))}

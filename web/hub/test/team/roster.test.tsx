@@ -96,8 +96,8 @@ describe("Roster", () => {
       />,
     );
     const chip = screen.getByTitle("Orchestrator: plans and assigns the work");
-    expect(chip.className).toBe("badge badge-ghost badge-sm c-lavender ink gap-1");
     expect(chip.textContent).toBe("orchestrator");
+    expect(chip.querySelector(".ui-chip-accent")).not.toBeNull();
     expect(rowNames(container)).toEqual(["alpha", "beta"]);
     expect(screen.getByTitle("Holds the turn")).not.toBeNull();
     expect(container.querySelector("button[aria-label]")?.getAttribute("aria-label")).toBe(
@@ -169,8 +169,10 @@ describe("Roster", () => {
     expect(row("own-words")?.textContent).toContain("Writing docs");
     expect(row("joined")?.textContent).toContain("Reviewer");
     expect(row("joined")?.textContent).not.toContain("joined joined");
-    expect(row("role-only")?.querySelector(".text-base-content\\/50")?.textContent).toBe("Watcher");
-    expect(row("nothing")?.querySelector(".text-base-content\\/50")?.textContent).toBe("No task yet");
+    expect(row("role-only")?.querySelector(".mt-1 > span")?.textContent).toBe("Watcher");
+    expect(row("role-only")?.innerHTML).toContain("text-[var(--ui-muted)]");
+    expect(row("nothing")?.querySelector(".mt-1 > span")?.textContent).toBe("No task yet");
+    expect(row("nothing")?.innerHTML).toContain("text-[var(--ui-muted)]");
     expect(row("off-board")?.textContent).toContain("Between steps");
   });
 
@@ -212,7 +214,7 @@ describe("Roster", () => {
     expect(screen.getByTitle("1 events it has not read yet")).not.toBeNull();
   });
 
-  it("opens a session on a click, on Enter and on Space", () => {
+  it("opens a session on a click, from the row's own button", () => {
     const onOpen = vi.fn();
     const { container } = render(
       <Roster sessions={[sess("alpha")]} taskById={taskById} now={NOW} onOpen={onOpen} />,
@@ -220,12 +222,8 @@ describe("Roster", () => {
     const row = screen.getByRole("button", { name: "alpha, Working" });
     fireEvent.click(row);
     expect(onOpen).toHaveBeenCalledWith("alpha");
-    fireEvent.keyDown(row, { key: "Enter" });
-    expect(onOpen).toHaveBeenCalledTimes(2);
-    fireEvent.keyDown(row, { key: " " });
-    expect(onOpen).toHaveBeenCalledTimes(3);
-    fireEvent.keyDown(row, { key: "a" });
-    expect(onOpen).toHaveBeenCalledTimes(3);
+    // the row's control is a real button, so Enter and Space reach it as clicks (the page's e2e
+    // presses both keys on the live page)
     expect(container.querySelector("button")).not.toBeNull();
   });
 
@@ -270,12 +268,14 @@ describe("Roster", () => {
       />,
     );
     const rows = [...container.querySelectorAll("button")];
-    expect(rows.find((b) => (b.getAttribute("aria-label") ?? "").startsWith("alpha"))?.className).not.toMatch(
-      /bg-primary\/10$/,
-    );
-    expect(rows.find((b) => (b.getAttribute("aria-label") ?? "").startsWith("beta"))?.className).toMatch(
-      /bg-primary\/10$/,
-    );
+    expect(
+      rows
+        .find((b) => (b.getAttribute("aria-label") ?? "").startsWith("alpha"))
+        ?.getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(
+      rows.find((b) => (b.getAttribute("aria-label") ?? "").startsWith("beta"))?.getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 
   it("gives subagent rows the small avatar, the short name and the small pill", () => {
@@ -289,12 +289,13 @@ describe("Roster", () => {
     );
     const nested = container.querySelector('ul[aria-label="Subagents of alpha"]');
     const kid = nested?.querySelector("button");
-    expect(kid?.className).toContain("gap-2.5");
+    expect(kid?.className).toContain("gap-2.5!");
     expect(kid?.querySelector(".avatar > div")?.className).toContain("size-6");
     expect(kid?.querySelector(".badge")?.className).toContain("badge-sm");
     expect(kid?.querySelector("b")?.textContent).toBe("one");
     const top = container.querySelector("ul:not([aria-label]) > li > button");
-    expect(top?.className).toContain("px-3 py-2.5");
+    expect(top?.className).toContain("px-3!");
+    expect(top?.className).toContain("py-2.5!");
     expect(top?.querySelector(".badge")?.className).not.toContain("badge-sm");
   });
 });

@@ -234,7 +234,7 @@ describe("SessionDrawer", () => {
     expect(document.querySelector(".badge-info, .badge-warning")).toBeNull();
     expect(document.querySelector("[data-scontrol]")).toBeNull();
     // the remembered note links through the channel's knowledge
-    const link = must(container.querySelector("[data-sess-events] .prose-h a"));
+    const link = must(container.querySelector("[data-sess-events] .md a"));
     expect(link.getAttribute("href")).toBe("#/channels/ch/knowledge/7");
   });
 

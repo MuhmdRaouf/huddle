@@ -3,6 +3,7 @@
 // the session — and the reply path into the composer. The filters stay per channel in this
 // browser's settings ("tlf:<ch>", "tls:<ch>").
 
+import { Chip } from "@huddle/ui/chip.tsx";
 import { Panel } from "@huddle/ui/page.tsx";
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -130,7 +131,9 @@ export function Team({ onCompose, onOlder, prefs = localStorage }: TeamProps = {
   return (
     <div class="flex min-w-0 flex-col gap-4">
       <IntroActions>
-        <span class="badge badge-ghost badge-sm tnum">{onlineCount(roster)} online</span>
+        <span class="tnum">
+          <Chip tone="neutral">{onlineCount(roster)} online</Chip>
+        </span>
       </IntroActions>
       {!state.sessions ? (
         <Skeleton rows={4} class="h-16" />
@@ -157,26 +160,25 @@ export function Team({ onCompose, onOlder, prefs = localStorage }: TeamProps = {
         actions={
           <>
             {/* biome-ignore lint/a11y/useSemanticElements: the filter strip's group role */}
-            <div class="join join-sm" role="group" aria-label="Filter the feed">
+            <div class="ui-chip-row items-center" role="group" aria-label="Filter the feed">
               {FAMILIES.map(([k, l]) => (
-                <button
+                <Chip
                   key={k}
-                  type="button"
-                  class={`btn join-item btn-sm${filter.family === k ? " btn-primary" : ""}`}
+                  pressed={filter.family === k}
                   data-f={k}
-                  aria-pressed={filter.family === k}
                   onClick={() => write({ ...filter, family: k })}
                 >
                   {l}
-                </button>
+                </Chip>
               ))}
             </div>
             <label class="sr-only" for="tls">
               Whose events
             </label>
+            {/* the one native control: web/ui carries no Select yet */}
             <select
               id="tls"
-              class="select select-sm w-auto"
+              class="h-[var(--ui-control-h)] rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] px-3 text-[var(--ui-text)]"
               value={filter.session}
               onChange={(e) => write({ ...filter, session: e.currentTarget.value })}
             >

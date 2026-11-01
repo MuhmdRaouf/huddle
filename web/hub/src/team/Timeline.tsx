@@ -1,7 +1,8 @@
 // Timeline.tsx — the Team page's activity feed: one row per event in human verbs, coloured by
-// topic family, with the task it is about as a badge badge-ghost badge-sm, an ask's state and the owner's Reply button
+// topic family, with the task it is about as a chip, an ask's state and the owner's Reply button
 // under it. Runs of task and knowledge updates from one sender fold into one burst row that
 // opens into the events themselves. The filters arrive as a prop; `pass` is the predicate.
+import { Button } from "@huddle/ui/button.tsx";
 import { Inline } from "@huddle/ui/markdown.tsx";
 import type { ComponentChild, ComponentChildren, JSX } from "preact";
 import { useEffect, useRef } from "preact/hooks";
@@ -126,12 +127,12 @@ export function AskState({
 }): JSX.Element {
   const by = replies.get(event.seq) ?? [];
   return by.length ? (
-    <span class="badge badge-sm badge-success badge-soft">
+    <span class="ui-badge ui-badge-ok gap-1">
       <Icon name="check" class="size-3" />
       Answered by {by.map(who).join(", ")}
     </span>
   ) : (
-    <span class="badge badge-sm badge-warning badge-soft">
+    <span class="ui-badge ui-badge-warn gap-1">
       <Icon name="hourglass" class="size-3" />
       Waiting for {event.to === "owner" ? "you" : event.to || "anyone"}
     </span>
@@ -160,13 +161,13 @@ function linkTask(
     const id = c.props.children as string | undefined;
     if (!id || c.props.class !== "font-medium text-[var(--ui-text)]" || !taskById(id)) return c;
     return (
-      <button
-        type="button"
-        class="font-medium text-[var(--ui-text)] underline-offset-2 hover:underline"
+      <Button
+        variant="ghost"
+        class="min-h-0! min-w-0! gap-0! rounded-none! px-0! font-medium! underline-offset-2 hover:underline"
         onClick={() => onOpenTask?.(id)}
       >
         {id}
-      </button>
+      </Button>
     );
   };
   return Array.isArray(children) ? children.map(swap) : swap(children);
@@ -193,14 +194,14 @@ function EventFoot({
   const foot: ComponentChildren[] = [];
   if (task && !/task\./.test(event.topic) && event.topic !== "msg")
     foot.push(
-      <button
-        type="button"
-        class="badge badge-ghost badge-sm hover:underline"
+      <Button
+        variant="secondary"
+        class="min-h-0! min-w-0! rounded-[var(--ui-radius-sm)]! px-2! py-0.5! text-xs! hover:underline"
         onClick={() => onOpenTask?.(task)}
       >
         <StatusIcon status={taskState(asTask(taskById(task)))} class="size-3" />
         {task}
-      </button>,
+      </Button>,
     );
   if (event.needs_reply)
     foot.push(
@@ -210,10 +211,10 @@ function EventFoot({
     );
   if (canReply(event, replies) && !compact)
     foot.push(
-      <button type="button" class="btn btn-ghost btn-sm" onClick={() => onReply?.(event.seq)}>
+      <Button variant="ghost" onClick={() => onReply?.(event.seq)}>
         <Icon name="undo" class="size-4.5" />
         Reply
-      </button>,
+      </Button>,
     );
   if (!foot.length) return null;
   return <div class="mt-1 flex flex-wrap items-center gap-1.5">{foot}</div>;
@@ -233,7 +234,7 @@ export type EventRowProps = {
   knowledgeHref?: ((n: string) => string) | undefined;
 };
 
-/** One row of the feed: the actor and its verb, the text under it, the task badge badge-ghost badge-sm, the ask's
+/** One row of the feed: the actor and its verb, the text under it, the task chip, the ask's
  *  state with its Reply button, and the time at the right. */
 export function EventRow({
   event,
@@ -263,14 +264,18 @@ export function EventRow({
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-baseline gap-x-1.5 text-sm">
           <b class={`font-semibold ${ink} ink`}>{who(event.from ?? "")}</b>
-          <span class="muted" title={`${event.topic} #${event.seq}`}>
+          <span class="text-[var(--ui-muted)]" title={`${event.topic} #${event.seq}`}>
             {linkTask(v.v, taskById, onOpenTask)}
           </span>
         </div>
         {txt ? (
-          <div class={`prose-h md mt-0.5 ${event.topic === "kb.added" && kb ? "" : "muted"}`}>
+          <div
+            class={`md mt-0.5 text-[length:var(--ui-text-sm)] leading-[var(--ui-leading)] break-words ${
+              event.topic === "kb.added" && kb ? "" : "text-[var(--ui-muted)]"
+            }`}
+          >
             {event.topic === "kb.added" && kb && knowledgeHref ? (
-              <a class="hover:underline" href={knowledgeHref(kb)}>
+              <a class="text-[var(--ui-accent)]! hover:underline" href={knowledgeHref(kb)}>
                 <Inline text={txt} />
               </a>
             ) : (
@@ -288,7 +293,7 @@ export function EventRow({
           onOpenTask={onOpenTask}
         />
       </div>
-      <span class="ml-auto shrink-0 pl-2 text-xs text-base-content/50 tnum">
+      <span class="ml-auto shrink-0 pl-2 text-xs text-[var(--ui-muted)] tnum">
         <Time ts={event.ts} now={now} />
       </span>
     </div>
@@ -349,18 +354,18 @@ function Burst({
       <summary>
         <Avatar name={a.from ?? ""} small />
         <span class="shrink-0 text-sm">
-          <b class="font-semibold text-base-content">{who(a.from ?? "")}</b>{" "}
-          <span class="muted" title={[...new Set(evs.map((e) => e.topic))].join(", ")}>
+          <b class="font-semibold text-[var(--ui-text)]">{who(a.from ?? "")}</b>{" "}
+          <span class="text-[var(--ui-muted)]" title={[...new Set(evs.map((e) => e.topic))].join(", ")}>
             {what}
           </span>
         </span>
-        <span class="min-w-0 flex-1 truncate text-base-content/50">{prev}</span>
-        <span class="ml-auto shrink-0 pl-2 text-xs text-base-content/50 tnum">
+        <span class="min-w-0 flex-1 truncate text-[var(--ui-muted)]">{prev}</span>
+        <span class="ml-auto shrink-0 pl-2 text-xs text-[var(--ui-muted)] tnum">
           <Time ts={evs.at(-1)?.ts} now={now} />
         </span>
         <Icon name="right" class="chev size-3.5 transition-transform" />
       </summary>
-      <div class="border-t hairline bg-base-200/40 pl-6">
+      <div class="border-t hairline bg-[color-mix(in_oklab,var(--ui-surface-2)_40%,transparent)] pl-6">
         {evs.map((e) => (
           <EventRow
             key={e.seq}
@@ -437,7 +442,7 @@ export function Timeline({
     <div class="relative">
       <div
         ref={feed}
-        class="max-h-[calc(100dvh-300px)] min-h-48 overflow-y-auto"
+        class="max-h-[calc(100dvh-20rem)] min-h-48 overflow-y-auto"
         id="tl"
         role="log"
         aria-label="Activity"
@@ -449,9 +454,9 @@ export function Timeline({
       >
         {showOlder ? (
           <div class="p-2 text-center">
-            <button type="button" class="btn btn-ghost btn-sm" id="older" onClick={onOlder}>
+            <Button variant="ghost" data-older="" onClick={onOlder}>
               Show older activity
-            </button>
+            </Button>
           </div>
         ) : null}
         {list.length ? (
@@ -464,11 +469,11 @@ export function Timeline({
           )
         ) : (
           <div class="flex flex-col items-center gap-2 px-6 py-12 text-center" data-empty>
-            <span class="text-base-content/40">
+            <span class="text-[var(--ui-muted)]">
               <Icon name="activity" class="size-7" />
             </span>
             <b class="text-base">{everything ? "No activity yet" : "Nothing matches"}</b>
-            <span class="max-w-sm text-sm muted">
+            <span class="max-w-sm text-sm text-[var(--ui-muted)]">
               {everything
                 ? "Events show up here the moment a session publishes them."
                 : "Pick another filter or Everyone."}
@@ -477,11 +482,11 @@ export function Timeline({
         )}
       </div>
       {newCount ? (
-        <button
-          type="button"
-          id="tlnew"
-          class="btn btn-primary btn-sm absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full shadow-2xl"
-          aria-label={`${newCount} new events: jump to the latest`}
+        <Button
+          variant="primary"
+          data-tlnew=""
+          label={`${newCount} new events: jump to the latest`}
+          class="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-[var(--ui-radius-full)]! shadow-[var(--ui-shadow-2)]"
           onClick={() => {
             // the count clears on the way home even where the smooth scroll fires no events
             atBottom.current = true;
@@ -491,7 +496,7 @@ export function Timeline({
         >
           <Icon name="arrowdown" class="size-3.5" />
           {newCount} new
-        </button>
+        </Button>
       ) : null}
     </div>
   );

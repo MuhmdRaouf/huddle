@@ -43,6 +43,35 @@ async function expectWorkAccessible(page: Page, extra: readonly string[] = []): 
   expect(found).toEqual([]);
 }
 
+/** The team page's axe debts that predate it: the status pills' tone ink (kit's tinted-ink pair,
+ *  the same one every hub pill paints) and the feed's tinted verb inks (app.css's hue carriers),
+ *  each named by its node; and the roster row's accessible name, which carries the session's
+ *  name and status word rather than the row's every visible word. HV-TOKENS-CHANNELS retires
+ *  these with the page's own token pass. */
+const TEAM_KNOWN: readonly { rule: string; node: string | RegExp }[] = [
+  { rule: "color-contrast", node: ".badge-ghost" },
+  { rule: "color-contrast", node: /\.c-(blue|lavender|idle)(\\\.|\b|$)/ },
+  { rule: "label-content-name-mismatch", node: /^button\[aria-label="[^"]+, [^"]+"\]$/ },
+];
+
+/** Axe over the team page, less the shell, `extra`'s parts and the known debts. */
+async function expectTeamAccessible(page: Page, extra: readonly string[] = []): Promise<void> {
+  const found = (await axeViolations(page, [...SHELL, ...extra]))
+    .map((v) => ({
+      ...v,
+      nodes: v.nodes.filter(
+        (node) =>
+          !TEAM_KNOWN.some(
+            (k) =>
+              k.rule === v.id &&
+              (typeof k.node === "string" ? node.startsWith(k.node) : k.node.test(node)),
+          ),
+      ),
+    }))
+    .filter((v) => v.nodes.length > 0);
+  expect(found).toEqual([]);
+}
+
 /** The channels this spec made, removed after each test so the specs after it see the run's one
  *  seeded channel alone. */
 const made: { name: string; sessions: readonly string[] }[] = [];
@@ -1132,6 +1161,120 @@ test("the Today digest keeps its controls and its toast inside the viewport", as
   await since.filter({ hasText: "3 days" }).click();
   await refetch;
   await expectNoSideScroll(page);
+});
+
+test("the team page keeps its roster, its filters and its drawer inside the viewport", async ({
+  page,
+}, info) => {
+  const ch = await freshChannel(info.project.name, ["alpha", "beta"]);
+  // a feed of more than one kind: a message, a remembered note and a task that finished
+  await api(`/api/c/${ch}/op/send?as=alpha`, { to: "beta", msg: "team layers ping" });
+  await api(`/api/c/${ch}/op/remember?as=beta`, {
+    kind: "fact",
+    title: `Team page (${ch})`,
+    body: "the roster and the feed keep their layers at every width.",
+  });
+  await api(`/api/c/${ch}/op/task_create?as=alpha`, { id: "team-1", title: "Layer check task" });
+  await api(`/api/c/${ch}/op/task_status?as=alpha`, { id: "team-1", status: "done" });
+  // one session that left: the roster's folded row of the sessions that are out
+  await api(`/api/c/${ch}/op/join?as=delta`, {});
+  await api(`/api/c/${ch}/op/leave?as=delta`, {});
+
+  await openChannel(page, ch);
+  await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/team`);
+  await expect(page.getByRole("region", { name: "Sessions", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Activity", exact: true })).toBeVisible();
+
+  // the roster names the sessions that are in, and folds the one that left away
+  const roster = page.getByRole("region", { name: "Sessions", exact: true });
+  await expect(roster.getByRole("button", { name: /^alpha,/ })).toBeVisible();
+  await expect(roster.getByRole("button", { name: /^beta,/ })).toBeVisible();
+  const left = roster.locator("details");
+  await expect(left.locator("summary")).toContainText("1 left");
+  const rows = [...(await roster.getByRole("button", { name: /^alpha,|^beta,/ }).all())];
+  await expectTapTargets([...rows, left.locator("summary")]);
+  await expectInsideViewport(page, [left.locator("summary"), ...rows]);
+  await left.locator("summary").click();
+  await expectInsideViewport(page, [left.getByRole("button", { name: /^delta,/ })]);
+  await expectNoSideScroll(page);
+
+  // the feed carries more than one kind: the two joins, the ping, the remembered note and the
+  // task run (the created and status updates fold into one burst row)
+  const feed = page.locator("#tl");
+  await expect(feed.locator("[data-seq]")).toHaveCount(8);
+  await expect(feed.locator("[data-seq]").filter({ hasText: "team layers ping" })).toHaveCount(1);
+  await expect(feed.locator("details[data-bkey]")).toHaveCount(1);
+  const chips = page.getByRole("group", { name: "Filter the feed" }).locator("[data-f]");
+  await expect(chips).toHaveCount(6);
+  await expectInsideViewport(page, [...(await chips.all())]);
+  const speaker = page.locator("#tls");
+  await expectTapTargets([speaker]);
+  if (test.info().project.use.hasTouch) {
+    const hits = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>("[data-f]")].map((el) => {
+        const r = el.getBoundingClientRect();
+        const before = getComputedStyle(el, "::before");
+        const p = before.position === "absolute" ? Math.abs(Number.parseFloat(before.top)) : 0;
+        return { l: r.left, r: r.right, t: r.top - p, b: r.bottom + p };
+      }),
+    );
+    expect(hits.length > 0 && hits.every((h) => h.b - h.t >= 44 - 0.01)).toBe(true);
+    expect(
+      hits.every((a, i) =>
+        hits.every(
+          (b, j) => i === j || a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t,
+        ),
+      ),
+    ).toBe(true);
+  }
+  await expectTeamAccessible(page, SHELL);
+
+  // a filter pick keeps working on the tokens: the message stays, every other kind goes
+  await chips.filter({ hasText: "Messages" }).click();
+  await expect(chips.filter({ hasText: "Messages" })).toHaveAttribute("aria-pressed", "true");
+  await expect(feed.locator("[data-seq]").filter({ hasText: "team layers ping" })).toHaveCount(1);
+  await expect(feed.locator("[data-seq]")).toHaveCount(1);
+  await chips.filter({ hasText: "All" }).click();
+  await expect(feed.locator("[data-seq]")).toHaveCount(8);
+  await expectNoSideScroll(page);
+
+  // a roster row opens the session drawer: the page's one layer, whole inside the viewport and
+  // clear of the tab bar (the drawer's markup is its own card's, so axe reads the page around it)
+  await roster.getByRole("button", { name: /^alpha,/ }).click();
+  const layer = page.locator("dialog[open]");
+  await expect(layer).toHaveCount(1);
+  await expectInsideViewport(page, [layer.first()]);
+  if ((await page.locator("[data-nav='bottom']").count()) > 0)
+    await expectClearOfTabBar(page, [layer.first()]);
+  await expectNoSideScroll(page);
+  await expectTeamAccessible(page, [...SHELL, "dialog[open]"]);
+  await page.keyboard.press("Escape");
+  await expect(layer).toHaveCount(0);
+  await expectTeamAccessible(page, SHELL);
+
+  // the row is a real button, so Enter and Space reach it as clicks
+  const alpha = roster.getByRole("button", { name: /^alpha,/ });
+  for (const key of ["Enter", "Space"] as const) {
+    await alpha.focus();
+    await page.keyboard.press(key);
+    await expect(layer).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(layer).toHaveCount(0);
+  }
+
+  // the feed's cap keeps its rendered value: 20rem at the 15 px root is 300 px
+  const cap = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.height = "calc(100dvh - 20rem)";
+    document.body.appendChild(probe);
+    const h = probe.getBoundingClientRect().height;
+    probe.remove();
+    return h;
+  });
+  expect(cap, "the feed cap's rendered value").toBe((page.viewportSize()?.height ?? 0) - 300);
+  const log = await feed.evaluate((el) => el.getBoundingClientRect().height);
+  expect(log).toBeGreaterThan(0);
+  expect(log).toBeLessThanOrEqual(cap);
 });
 
 test("the inbox page keeps its cards, its note row and its toast inside the viewport", async ({

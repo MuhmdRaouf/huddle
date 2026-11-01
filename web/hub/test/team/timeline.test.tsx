@@ -177,7 +177,7 @@ describe("Timeline", () => {
     expect(rowOf(container, 1).querySelector("b")?.className).toContain("c-green");
     expect(rowOf(container, 1).textContent).toContain("finished t1");
     expect(rowOf(container, 1).textContent).toContain("wrapped up");
-    expect(rowOf(container, 1).querySelector(".prose-h")?.className).toContain("muted");
+    expect(rowOf(container, 1).querySelector(".md")?.className).toContain("text-[var(--ui-muted)]");
     expect(icon(2)).toContain("c-red");
     expect(rowOf(container, 2).textContent).toContain("is blocked on t1");
     expect(icon(3)).toContain("c-yellow");
@@ -198,7 +198,7 @@ describe("Timeline", () => {
     expect(rowOf(container, 12).className).toContain("mine");
     expect(rowOf(container, 12).textContent).toContain("You");
     expect(icon(13)).toContain("c-yellow");
-    expect(rowOf(container, 13).querySelector(".prose-h")).toBeNull();
+    expect(rowOf(container, 13).querySelector(".md")).toBeNull();
     expect(icon(14)).toContain("c-yellow");
     expect(rowOf(container, 15).querySelector("b")?.textContent).toBe("");
     expect(rowOf(container, 15).textContent).toContain("from nobody");
@@ -225,14 +225,16 @@ describe("Timeline", () => {
       ],
       { onOpenTask },
     );
-    const tag = rowOf(container, 1).querySelector(".feed-row button.badge");
+    const foot = (n: number): HTMLElement[] =>
+      Array.from(rowOf(container, n).querySelectorAll<HTMLButtonElement>(".mt-1 button"));
+    const tag = foot(1).find((b) => b.textContent?.includes("t1"));
     expect(tag?.textContent).toContain("t1");
     expect(tag?.querySelector('[title="Doing"]')).not.toBeNull();
     if (tag) fireEvent.click(tag);
     expect(onOpenTask).toHaveBeenCalledWith("t1");
-    expect(rowOf(container, 2).querySelector(".feed-row button.badge")).toBeNull();
-    expect(rowOf(container, 3).querySelector(".feed-row button.badge")).toBeNull();
-    expect(rowOf(container, 4).querySelector(".feed-row button.badge")).toBeNull();
+    expect(foot(2).find((b) => b.textContent?.includes("t1"))).toBeUndefined();
+    expect(foot(3).find((b) => b.textContent?.includes("t1"))).toBeUndefined();
+    expect(foot(4).find((b) => b.textContent?.includes("t1"))).toBeUndefined();
     expect(rowOf(container, 5).querySelector('[title="Done"]')).not.toBeNull();
     expect(rowOf(container, 6).querySelector('[title="To do"]')).not.toBeNull();
   });
@@ -255,33 +257,33 @@ describe("Timeline", () => {
     const { container, unmount } = feed([ev(1, "kb.added", { ref: "kb:7", msg: "[note] Redis is up" })], {
       knowledgeHref: (n: string) => `#/channels/ch/knowledge/${n}`,
     });
-    const a = rowOf(container, 1).querySelector(".prose-h a");
+    const a = rowOf(container, 1).querySelector(".md a");
     expect(a?.getAttribute("href")).toBe("#/channels/ch/knowledge/7");
     expect(a?.textContent).toBe("Redis is up");
-    expect(rowOf(container, 1).querySelector(".prose-h")?.className).not.toContain("muted");
+    expect(rowOf(container, 1).querySelector(".md")?.className).not.toContain("text-[var(--ui-muted)]");
     unmount();
     const bare = feed([ev(1, "kb.added", { ref: "kb:7", msg: "[note] Redis is up" })]);
-    expect(bare.container.querySelector(".prose-h a")).toBeNull();
-    expect(bare.container.querySelector(".prose-h")?.className).not.toContain("muted");
+    expect(bare.container.querySelector(".md a")).toBeNull();
+    expect(bare.container.querySelector(".md")?.className).not.toContain("text-[var(--ui-muted)]");
   });
 
   it("shows an ask waiting, and who answered it", () => {
     const { container, unmount } = feed([ev(5, "ask", { to: "owner", needs_reply: true })]);
-    const pill = rowOf(container, 5).querySelector(".badge");
-    expect(pill?.className).toContain("badge-warning");
+    const pill = rowOf(container, 5).querySelector(".ui-badge");
+    expect(pill?.className).toContain("ui-badge-warn");
     expect(pill?.textContent).toBe("Waiting for you");
     unmount();
     const waiting = feed([ev(5, "ask", { to: "beta", needs_reply: true })]);
-    expect(waiting.container.querySelector(".badge")?.textContent).toBe("Waiting for beta");
+    expect(waiting.container.querySelector(".ui-badge")?.textContent).toBe("Waiting for beta");
     unmount();
     const anyone = feed([ev(5, "kb.added", { needs_reply: true })]);
-    expect(anyone.container.querySelector(".badge")?.textContent).toBe("Waiting for anyone");
+    expect(anyone.container.querySelector(".ui-badge")?.textContent).toBe("Waiting for anyone");
     unmount();
     const answered = feed([ev(5, "ask", { to: "owner", needs_reply: true })], {
       replies: new Map([[5, ["worker", "owner"]]]),
     });
-    const done = answered.container.querySelector(".badge");
-    expect(done?.className).toContain("badge-success");
+    const done = answered.container.querySelector(".ui-badge");
+    expect(done?.className).toContain("ui-badge-ok");
     expect(done?.textContent).toBe("Answered by worker, You");
   });
 
@@ -290,7 +292,7 @@ describe("Timeline", () => {
     const { container, unmount } = feed([ev(5, "ask", { to: "owner", needs_reply: true })], {
       onReply,
     });
-    const reply = rowOf(container, 5).querySelector("button.btn");
+    const reply = rowOf(container, 5).querySelector(".mt-1 button");
     expect(reply?.textContent).toContain("Reply");
     if (reply) fireEvent.click(reply);
     expect(onReply).toHaveBeenCalledWith(5);
@@ -299,7 +301,7 @@ describe("Timeline", () => {
       onReply,
       replies: new Map<number, string[]>([[5, ["owner"]]]),
     });
-    expect(answered.container.querySelector("button.btn")).toBeNull();
+    expect(answered.container.querySelector(".mt-1 button")).toBeNull();
   });
 
   it("drops the Reply button on the owner's own rows and on compact rows", () => {
@@ -311,7 +313,7 @@ describe("Timeline", () => {
         taskById={taskById}
       />,
     );
-    expect(container.querySelector("button.btn")).toBeNull();
+    expect(container.querySelector(".mt-1 button")).toBeNull();
   });
 
   it("drops the Reply button on compact rows", () => {
@@ -324,8 +326,8 @@ describe("Timeline", () => {
         compact
       />,
     );
-    expect(container.querySelector(".badge")).not.toBeNull();
-    expect(container.querySelector("button.btn")).toBeNull();
+    expect(container.querySelector(".ui-badge")).not.toBeNull();
+    expect(container.querySelector(".mt-1 button")).toBeNull();
   });
 
   it("folds a run of updates from one sender into a burst that opens", () => {
@@ -437,33 +439,33 @@ describe("Timeline", () => {
   it("offers 'Show older activity' when older pages exist and the wiring wants them", () => {
     const onOlder = vi.fn();
     const { container, unmount } = feed([ev(5, "msg"), ev(6, "msg")], { onOlder });
-    const older = container.querySelector("#older");
+    const older = container.querySelector("[data-older]");
     expect(older?.textContent).toContain("Show older activity");
     if (older) fireEvent.click(older);
     expect(onOlder).toHaveBeenCalledTimes(1);
     unmount();
     const firstPage = feed([ev(1, "msg"), ev(2, "msg")], { onOlder });
-    expect(firstPage.container.querySelector("#older")).toBeNull();
+    expect(firstPage.container.querySelector("[data-older]")).toBeNull();
     unmount();
     const unwired = feed([ev(5, "msg")]);
-    expect(unwired.container.querySelector("#older")).toBeNull();
+    expect(unwired.container.querySelector("[data-older]")).toBeNull();
     unmount();
     const nothing = feed([], { onOlder });
-    expect(nothing.container.querySelector("#older")).toBeNull();
+    expect(nothing.container.querySelector("[data-older]")).toBeNull();
   });
 
   it("shows the 'N new' jump only when events arrived below the fold", () => {
     const { container, unmount } = feed([ev(1, "msg")], { newCount: 3 });
-    const pill = container.querySelector("#tlnew");
+    const pill = container.querySelector("[data-tlnew]");
     expect(pill?.textContent).toContain("3 new");
     expect(pill?.getAttribute("aria-label")).toBe("3 new events: jump to the latest");
     if (pill) fireEvent.click(pill);
     unmount();
     const none = feed([ev(1, "msg")]);
-    expect(none.container.querySelector("#tlnew")).toBeNull();
+    expect(none.container.querySelector("[data-tlnew]")).toBeNull();
     unmount();
     const zero = feed([ev(1, "msg")], { newCount: 0 });
-    expect(zero.container.querySelector("#tlnew")).toBeNull();
+    expect(zero.container.querySelector("[data-tlnew]")).toBeNull();
   });
 
   it("keeps the feed pinned to the bottom while it is already there", () => {
@@ -503,7 +505,7 @@ describe("Timeline", () => {
     fireEvent.scroll(log);
     expect(onAtBottom).toHaveBeenLastCalledWith(true);
     // the jump pill says the reader is heading home, wherever scroll events reach
-    fireEvent.click(container.querySelector("#tlnew") as HTMLElement);
+    fireEvent.click(container.querySelector("[data-tlnew]") as HTMLElement);
     expect(onAtBottom).toHaveBeenLastCalledWith(true);
   });
 
