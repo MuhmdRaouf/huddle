@@ -103,7 +103,8 @@ func ownerGone(root string) bool {
 }
 
 // Match picks the executables under root whose ps etime says they started after a run that
-// began maxElapsed ago: started-since means elapsed < maxElapsed. It reads ps's
+// began maxElapsed ago: started-since means elapsed < maxElapsed, with ps's whole-second rounding
+// (up) allowed for. It reads ps's
 // `pid=,etime=,command=` lines and nothing else; a line whose executable it cannot read (a
 // reaped process ps names in parentheses) is never a match.
 func Match(lines []string, root string, maxElapsed time.Duration) []Process {
@@ -120,7 +121,7 @@ func Match(lines []string, root string, maxElapsed time.Duration) []Process {
 			continue
 		}
 		elapsed, ok := ParseElapsed(elapsedText)
-		if !ok || elapsed >= maxElapsed {
+		if !ok || elapsed-time.Second >= maxElapsed {
 			continue
 		}
 		found = append(found, Process{PID: pid, Command: command})

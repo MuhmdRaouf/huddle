@@ -418,3 +418,20 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   on the `PATH`, and tmpguard fails a run that spawned a notifier. Huddle never shows a notification without its
   icon: a missing applet is built first; the hub drops a notification whose build failed with one log line, and
   radar keeps an alert unnotified until the applet exists.
+
+## 2026-11-02, the launcher test left an idle waiter running and the leftover guard did not see it
+
+- **What happened:** an idle waiter with a 2,000,000 s timeout ran on, its binary under
+  `/tmp/TestLauncherFreshInstall*`, long after the suite that started it had passed.
+- **Cause:** `TestLauncherFreshInstall` runs each hook of the plugin before setup, and the session-start hook arms
+  an idle waiter that listens for the session's join. The test never stopped it. Tmpguard points `TMPDIR` at its
+  own folder and reports any process left running from under it, but `isoenv.Sandbox` dropped `TMPDIR`, so the
+  suite's temp dirs sat in the system temp dir, outside the folder the guard watches. A process that started
+  inside a run shorter than a second also fell through: `ps` rounds its elapsed time up to whole seconds, and the
+  match took 00:01 for older than the run.
+- **Guard:** `TestTheWorldStopsTheWaitersItsHomeRecorded` (internal/huddle/cli/launcher_test.go),
+  `TestTheGuardNamesAChildThatOutlivesASandboxedSuite` (scripts/tmpguard/main_test.go),
+  `TestMatchCountsAProcessStartedInsideARunShorterThanOneSecond` (internal/testkit/leftover/leftover_test.go)
+- **Rule:** a launcher world stops the idle waiters its home recorded when its test ends, and a hook run before a
+  join gives up on it after one second. `isoenv.Sandbox` keeps `TMPDIR` as the process got it, so tmpguard sees
+  every process a suite leaves running from a temp dir.

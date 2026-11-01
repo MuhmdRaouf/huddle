@@ -42,13 +42,15 @@ func TestMain(m *testing.M) {
 	// the binaries these tests build and run inherit this, so none reaches a real trust store
 	_ = os.Setenv(pki.StoreOffEnv, "1")
 	// Code these tests run in process reads os.Environ: the sandbox keeps it off the owner's
-	// home. It also drops TMPDIR, so the run folder sits in the short default temp dir: the
-	// routers' unix sockets live under it, and a socket path has a length limit.
+	// home.
 	unsandbox, err := isoenv.Sandbox()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "isoenv:", err)
 		os.Exit(1)
 	}
+	// TMPDIR goes, so the run folder sits in the short default temp dir: the routers' unix
+	// sockets live under it, and a socket path has a length limit.
+	_ = os.Unsetenv("TMPDIR")
 	// A killed run never reaches the sweep below: the next run stops what the dead one left.
 	leftover.SweepStale(os.TempDir(), runRootPrefix, os.Stderr)
 	began := time.Now()

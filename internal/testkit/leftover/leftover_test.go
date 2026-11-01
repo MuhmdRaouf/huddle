@@ -237,6 +237,20 @@ func TestMatchLeftovers(t *testing.T) {
 	}
 }
 
+// ps prints whole seconds, rounded up: a process that started inside a run shorter than a second
+// shows 00:01, and it is still the run's.
+func TestMatchCountsAProcessStartedInsideARunShorterThanOneSecond(t *testing.T) {
+	const root = "/var/folders/qm/T/tmpguard-1"
+	line := "  140    00:01 " + root + "/TestX1/001/leaker"
+	if got := Match([]string{line}, root, 900*time.Millisecond); len(got) != 1 {
+		t.Errorf("matched %v, want the process ps shows at 00:01 in a 900 ms run", got)
+	}
+	late := "  141    00:03 " + root + "/TestX1/001/leaker"
+	if got := Match([]string{late}, root, 900*time.Millisecond); len(got) != 0 {
+		t.Errorf("matched %v, want a process that ps shows at 00:03 to predate a 900 ms run", got)
+	}
+}
+
 // firstField is a line's first whitespace-separated word, its pid.
 func firstField(line string) string {
 	fields := strings.Fields(line)

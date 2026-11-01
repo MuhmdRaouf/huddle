@@ -13,7 +13,9 @@ import (
 // Sandbox roots this whole test process at a temp home, for a package's TestMain: code a test
 // runs in process (a hook, a CLI word, a wired provider) reads os.Environ, and on a developer
 // machine that is the owner's real home, settings and live routers. It drops every variable
-// Environ drops, sets HOME, the XDG roots, CLAUDE_CONFIG_DIR, HUDDLE_KEYS=files, a
+// Environ drops. TMPDIR stays as the process got it: a run that points TMPDIR at its own folder
+// (tmpguard) finds every t.TempDir of the suite there, and so every process the suite leaves
+// running from one. It sets HOME, the XDG roots, CLAUDE_CONFIG_DIR, HUDDLE_KEYS=files, a
 // HUDDLE_ROUTER_PORT nothing listens on, HUDDLE_NOTIFY_LOG=home/notify.log (a notifier writes a
 // line there instead of showing a banner on the owner's desktop) and CLAUDE_PROJECT_DIR=home/project
 // (made: the identity lookup walks up from it instead of from the test's cwd, a package directory

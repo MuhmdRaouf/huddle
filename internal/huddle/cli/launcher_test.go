@@ -319,6 +319,7 @@ func newLauncherWorld(t *testing.T, extras ...string) *launcherWorld {
 	// Registered after both TempDir calls so it runs before either removal: the fetch the wait
 	// is for still needs this PATH's mkdir, date and rm while it finishes.
 	t.Cleanup(func() { world.waitForDetachedDownloads(t) })
+	t.Cleanup(world.stopRecordedWaiters)
 	return world
 }
 
@@ -516,6 +517,75 @@ func (w *launcherWorld) stopRecordedServer(t *testing.T) {
 	stopProcess(pid)
 }
 
+// TestTheWorldStopsTheWaitersItsHomeRecorded: a world's hook run that armed an idle waiter leaves
+// its pid file under the world's huddle home, and the world stops that waiter by the recorded
+// pid, and no other process.
+func TestTheWorldStopsTheWaitersItsHomeRecorded(t *testing.T) {
+	world := newLauncherWorld(t)
+	// a stand-in waiter: its command line ends with the idle-wait hook words, as the real one's does
+	waiter := exec.Command("sh", "-c", "sleep 300; true", "hook", "idle-wait")
+	if err := waiter.Start(); err != nil {
+		t.Fatalf("start the stand-in waiter: %v", err)
+	}
+	waiterGone := make(chan struct{})
+	go func() { _ = waiter.Wait(); close(waiterGone) }()
+	t.Cleanup(func() { _ = waiter.Process.Kill(); <-waiterGone })
+	bystander := exec.Command("sleep", "300")
+	if err := bystander.Start(); err != nil {
+		t.Fatalf("start the bystander: %v", err)
+	}
+	bystanderGone := make(chan struct{})
+	go func() { _ = bystander.Wait(); close(bystanderGone) }()
+	t.Cleanup(func() { _ = bystander.Process.Kill(); <-bystanderGone })
+
+	files := filepath.Join(world.home, ".config", "huddle", "run", "idle-wait")
+	if err := os.MkdirAll(files, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(files, "e2e-1.json"), fmt.Sprintf(`{"pid":%d,"session":"e2e-1"}`, waiter.Process.Pid))
+	// a record that names a process that is no waiter is left alone
+	writeFile(t, filepath.Join(files, "e2e-2.json"), fmt.Sprintf(`{"pid":%d,"session":"e2e-2"}`, bystander.Process.Pid))
+
+	world.stopRecordedWaiters()
+
+	select {
+	case <-waiterGone:
+	case <-time.After(10 * time.Second):
+		t.Error("the recorded waiter is still running")
+	}
+	select {
+	case <-bystanderGone:
+		t.Error("the world stopped a process that is no waiter")
+	default:
+	}
+}
+
+// stopRecordedWaiters stops the idle waiters this world's hook runs armed: each waiter records
+// its pid in a file under the world's huddle home, and a pid is signalled only while its command
+// line is still an idle-wait hook, since a recorded pid may have been reused.
+func (w *launcherWorld) stopRecordedWaiters() {
+	records, err := filepath.Glob(filepath.Join(w.home, ".config", "huddle", "run", "idle-wait", "*.json"))
+	if err != nil {
+		return
+	}
+	for _, record := range records {
+		raw, err := os.ReadFile(record)
+		if err != nil {
+			continue
+		}
+		var waiter struct {
+			PID int `json:"pid"`
+		}
+		if json.Unmarshal(raw, &waiter) != nil || waiter.PID <= 1 {
+			continue
+		}
+		command, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(waiter.PID)).Output()
+		if err == nil && strings.HasSuffix(strings.TrimSpace(string(command)), "hook idle-wait") {
+			stopProcess(waiter.PID)
+		}
+	}
+}
+
 // TestTheHooksJsonCommandsExitZeroInSilenceWithNoBinaryAndNoRuntime: installed but nothing
 // downloaded yet, with no JavaScript runtime on the PATH either, every hook owes Claude Code
 // silence and exit 0 — a hook never blocks or fails the session it runs in.
@@ -665,8 +735,10 @@ func TestLauncherFreshInstall(t *testing.T) {
 			if hook.Event == "SessionStart" {
 				extra += `,"source":"startup"`
 			}
+			// a session that never joined is not listened for: the waiter gives up on the join after
+			// one second instead of twenty
 			code, stdout, stderr := world.run(t, time.Duration(hook.Timeout)*time.Second+15*time.Second,
-				hook.Command, hookInput(hook.Event, extra), world.env())
+				hook.Command, hookInput(hook.Event, extra), world.env("HUDDLE_IDLE_WAIT_SECONDS=1"))
 			if code != 0 || stdout != "" || stderr != "" {
 				t.Errorf("%s owes silence and exit 0 before setup, got code %d, stdout %q, stderr %q",
 					hook.Event, code, stdout, stderr)

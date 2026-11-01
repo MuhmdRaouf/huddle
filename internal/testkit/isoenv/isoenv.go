@@ -33,11 +33,10 @@ var dropPrefixes = func() []string {
 }()
 
 // dropNames names the rest of the owner's state: the proxies that would route a child's
-// requests through the owner's network, both spellings, and the temp dir the child gets its own
-// of.
+// requests through the owner's network, both spellings.
 var dropNames = []string{
 	"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy",
-	"ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy", "TMPDIR",
+	"ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy",
 }
 
 func dropped(name string) bool {
