@@ -97,6 +97,12 @@ const props = (over: Partial<Base> = {}): TaskDrawerProps => {
 
 const drawer = (over: Partial<Base> = {}) => render(<TaskDrawer {...props(over)} />);
 
+/** The gate's note field, at the id the drawer gives it. */
+const gateNote = (): HTMLInputElement => must(document.getElementById("gnote")) as HTMLInputElement;
+
+/** The open editor's text box, at the id the drawer gives it. */
+const editorBox = (): HTMLTextAreaElement => must(document.getElementById("edta")) as HTMLTextAreaElement;
+
 const GET = (p: Api): Mock => p.api as unknown as Mock;
 const OP = (p: Api): Mock => p.op as unknown as Mock;
 
@@ -187,7 +193,9 @@ describe("TaskDrawer status", () => {
     OP(p.api).mockResolvedValue({ result: detail({ status: "done" }) });
     drawer(p);
     await waitFor(() => expect(screen.getByText("Ship the thing")).not.toBeNull());
-    const note = must(document.getElementById("stnote")) as HTMLInputElement;
+    const note = must(
+      screen.getByLabelText("Evidence or reason for the next status change"),
+    ) as HTMLInputElement;
     fireEvent.input(note, { target: { value: "all green" } });
     fireEvent.click(must(document.querySelector('[data-st="done"]')));
     await waitFor(() =>
@@ -199,7 +207,12 @@ describe("TaskDrawer status", () => {
     );
     await waitFor(() => expect(toast).toHaveBeenCalledWith("t1 is done", expect.anything()));
     // the evidence line empties and the drawer refetches its own task
-    await waitFor(() => expect((must(document.getElementById("stnote")) as HTMLInputElement).value).toBe(""));
+    await waitFor(() =>
+      expect(
+        (must(screen.getByLabelText("Evidence or reason for the next status change")) as HTMLInputElement)
+          .value,
+      ).toBe(""),
+    );
     await waitFor(() => expect(GET(p.api)).toHaveBeenCalledTimes(2));
     expect(p.touchAttention).toHaveBeenCalled();
   });
@@ -300,7 +313,7 @@ describe("TaskDrawer owner and dependencies", () => {
     drawer(p);
     await waitFor(() => expect(screen.getByText(/waits for your go-ahead/)).not.toBeNull());
     fireEvent.click(screen.getByText("With a note"));
-    const note = must(document.getElementById("gnote")) as HTMLInputElement;
+    const note = gateNote();
     fireEvent.input(note, { target: { value: "looks good" } });
     fireEvent.click(screen.getByText("Approve"));
     await waitFor(() =>
@@ -342,7 +355,7 @@ describe("TaskDrawer sections", () => {
     drawer(p);
     await waitFor(() => expect(screen.getByText("Ship the thing")).not.toBeNull());
     fireEvent.click(must(document.querySelector('[data-edit="what"]')));
-    const ta = must(document.getElementById("edta")) as HTMLTextAreaElement;
+    const ta = editorBox();
     expect(ta.value).toBe("It is a thing");
     fireEvent.input(ta, { target: { value: "rewritten" } });
     fireEvent.keyDown(ta, { key: "Enter", metaKey: true });
@@ -363,9 +376,9 @@ describe("TaskDrawer sections", () => {
     drawer(p);
     await waitFor(() => expect(document.querySelector('[data-sec="verify"]')).not.toBeNull());
     fireEvent.click(must(document.querySelector('[data-edit="verify"]')));
-    const ta = must(document.getElementById("edta")) as HTMLTextAreaElement;
+    const ta = editorBox();
     fireEvent.input(ta, { target: { value: "{oops" } });
-    fireEvent.click(must(document.getElementById("edsave")));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.getByText(/That is not valid JSON:/)).not.toBeNull());
     expect(OP(p.api)).not.toHaveBeenCalled();
   });
@@ -538,7 +551,7 @@ describe("TaskDrawer notes", () => {
     fireEvent.click(screen.getByText("Question"));
     const ta = must(document.getElementById("cbody")) as HTMLTextAreaElement;
     fireEvent.input(ta, { target: { value: "which port?" } });
-    fireEvent.click(must(document.getElementById("csave")));
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
     await waitFor(() =>
       expect(OP(p.api)).toHaveBeenCalledWith("ch", "note", {
         id: "t1",
@@ -554,7 +567,7 @@ describe("TaskDrawer notes", () => {
     const p = props();
     drawer(p);
     await waitFor(() => expect(screen.getByText("Ship the thing")).not.toBeNull());
-    fireEvent.click(must(document.getElementById("csave")));
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
     expect(OP(p.api)).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(document.getElementById("cbody"));
   });
@@ -680,7 +693,8 @@ describe("TaskDrawer edges", () => {
     });
     drawer(p);
     await waitFor(() => expect(screen.getByText(/It waits on/)).not.toBeNull());
-    fireEvent.click(must(screen.getByText(/It waits on/).querySelector("button")));
+    // the wait's task id is a link to the other drawer, not a button
+    fireEvent.click(must(screen.getByText(/It waits on/).querySelector("a")));
     expect(onOpenTask).toHaveBeenCalledWith("t2");
     fireEvent.click(must(screen.getByLabelText("Edit the title")));
     expect(document.getElementById("edta")).not.toBeNull();
@@ -739,7 +753,7 @@ describe("TaskDrawer edges", () => {
     drawer(p);
     await waitFor(() => expect(screen.getByText(/waits for your go-ahead/)).not.toBeNull());
     fireEvent.click(screen.getByText("With a note"));
-    const note = must(document.getElementById("gnote")) as HTMLInputElement;
+    const note = gateNote();
     fireEvent.input(note, { target: { value: "hmm" } });
     fireEvent.click(screen.getByText("Approve"));
     await waitFor(() => expect(p.toast).toHaveBeenCalledWith("no", { bad: true }));
@@ -747,7 +761,7 @@ describe("TaskDrawer edges", () => {
       expect((must(screen.getByText("Approve")) as HTMLButtonElement).disabled).toBe(false),
     );
     fireEvent.keyDown(note, { key: "Escape" });
-    expect(document.getElementById("gnote")).toBeNull();
+    expect(document.querySelector("[data-gate] input")).toBeNull();
   });
 
   it("sends the gate note with Enter, and clears an editor error on typing", async () => {
@@ -756,15 +770,15 @@ describe("TaskDrawer edges", () => {
     drawer(p);
     await waitFor(() => expect(screen.getByText(/waits for your go-ahead/)).not.toBeNull());
     fireEvent.click(screen.getByText("With a note"));
-    const note = must(document.getElementById("gnote")) as HTMLInputElement;
+    const note = gateNote();
     fireEvent.input(note, { target: { value: "go" } });
     fireEvent.keyDown(note, { key: "Enter" });
     await waitFor(() => expect(OP(p.api)).toHaveBeenCalledWith("ch", "approve", { id: "t1", msg: "go" }));
     // the editor's error line clears as soon as the text moves
     fireEvent.click(must(document.querySelector('[data-edit="verify"]')));
-    const ta = must(document.getElementById("edta")) as HTMLTextAreaElement;
+    const ta = editorBox();
     fireEvent.input(ta, { target: { value: "{oops" } });
-    fireEvent.click(must(document.getElementById("edsave")));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.getByText(/That is not valid JSON:/)).not.toBeNull());
     fireEvent.input(ta, { target: { value: "[]" } });
     expect(screen.queryByText(/That is not valid JSON:/)).toBeNull();

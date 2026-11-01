@@ -1010,6 +1010,119 @@ test("the work map and the repo views keep their layers inside the viewport", as
   await expectWorkAccessible(page);
 });
 
+test("the task drawer holds its tabs, menu, excerpt dialog and toast at the pointer's size", async ({
+  page,
+}, info) => {
+  // a channel with a repo: the file chips open excerpts, and every body section is seeded
+  const ch = await freshChannel(info.project.name, ["alpha"], { repo: repoRoot });
+  await api(`/api/c/${ch}/op/task_create?as=alpha`, {
+    id: "drawer-1",
+    title: "The drawer carries every section",
+    owner: "alpha",
+    what: "The task drawer paints with web/ui only.",
+    how: ["Read the brief whole", "Swap section by section"],
+    verify: [{ cmd: "bun run check", expect: "green" }],
+  });
+  await api(`/api/c/${ch}/op/task_update?as=alpha`, {
+    id: "drawer-1",
+    field: "value",
+    value: "Done means the guard and the e2e run green.",
+  });
+  await api(`/api/c/${ch}/op/task_update?as=alpha`, {
+    id: "drawer-1",
+    field: "snippets",
+    value: [{ title: "Tabs", lang: "tsx", path: "web/hub/src/work/TaskDrawer.tsx", code: "<Tabs />" }],
+  });
+  await api(`/api/c/${ch}/op/task_update?as=alpha`, {
+    id: "drawer-1",
+    field: "files",
+    value: ["web/hub/src/work/TaskDrawer.tsx"],
+  });
+  await api(`/api/c/${ch}/op/task_update?as=alpha`, {
+    id: "drawer-1",
+    field: "refs",
+    value: ["ADR-4"],
+  });
+  await api(`/api/c/${ch}/op/note?as=alpha`, {
+    id: "drawer-1",
+    kind: "direction",
+    body: "The notes the sessions read.",
+  });
+
+  // the drawer over the work page: the one layer, whole inside the viewport, its controls at
+  // the pointer's full target, the drawer's own markup reading clean
+  await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/channels/${ch}/work?t=drawer-1`);
+  const drawer = page.getByRole("dialog", { name: "Task drawer-1" });
+  await expect(drawer.locator("[data-slide-over]")).toBeVisible();
+  expect(await page.locator("dialog[open]").count(), "one layer at a time").toBeLessThanOrEqual(1);
+  await expect(drawer.locator("#td-title")).toContainText("drawer-1");
+  await expect(drawer.locator('[data-sec="what"]')).toBeVisible();
+  // the dependency Picker's h-7 input is picker.tsx's own debt (the Work card's file); on a
+  // touch width every control of the drawer's own markup takes the pointer's full target
+  if (test.info().project.use.hasTouch) {
+    const small = await drawer.evaluate((root) =>
+      [...root.querySelectorAll<HTMLElement>("button, input, select, textarea, a")]
+        .filter((el) => el.getClientRects().length > 0)
+        .filter((el) => el.getAttribute("placeholder") !== "Add a task it waits on")
+        .map((el) => ({ el, r: (el.closest("label") ?? el).getBoundingClientRect() }))
+        .filter(({ r }) => r.width > 0 && (r.width < 44 || r.height < 44))
+        .map(
+          ({ el, r }) =>
+            `${el.tagName} "${el.textContent?.trim() || el.getAttribute("aria-label") || el.id}" ${r.width}x${r.height}`,
+        ),
+    );
+    expect(small, "controls under the 44 px target").toEqual([]);
+  }
+  await expectInsideViewport(page, [drawer.locator("[data-slide-over]")]);
+  if ((await page.locator("[data-nav='bottom']").count()) > 0)
+    await expectClearOfTabBar(page, [drawer.locator("[data-slide-over]")]);
+  await expectAccessible(page, SHELL);
+
+  // the Code tab: the snippet's tabs, the file chip and the refs, still one layer
+  await drawer.locator('[data-tab="code"]').click();
+  await expect(drawer.locator("#snip-body")).toBeVisible();
+  await expect(drawer.getByText("Tabs", { exact: true })).toBeVisible();
+  await expectLayerTargets(drawer);
+  await expectAccessible(page, SHELL);
+
+  // the file chip's excerpt dialog rides over the drawer: both stay inside the viewport, the
+  // excerpt on top, and closing it hands the one layer back
+  await drawer.locator('[data-sec="files"] [data-file]').click();
+  const excerpt = page.locator("dialog[open]").last();
+  await expect(excerpt.getByText("Lines 1 to")).toBeVisible();
+  expect(await page.locator("dialog[open]").count(), "drawer plus its excerpt").toBe(2);
+  await expectInsideViewport(page, [excerpt]);
+  await excerpt.getByRole("button", { name: "Close" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(1);
+
+  // the Add section menu opens over the drawer as its own popup, and a pick lands the field's
+  // editor straight away
+  await drawer.locator('[data-tab="overview"]').click();
+  await drawer.getByRole("button", { name: "Add section" }).click();
+  const menu = drawer.locator(".menu.fixed");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "How to use it" })).toBeVisible();
+  await expectInsideViewport(page, [menu]);
+  await expectAccessible(page, SHELL);
+  await menu.getByRole("menuitem", { name: "How to use it" }).click();
+  await expect(drawer.locator('[data-editor="use"] textarea')).toBeVisible();
+  await expect(menu).toHaveCount(0);
+  await drawer.getByRole("button", { name: "Cancel" }).click();
+  await expect(drawer.locator('[data-editor="use"] textarea')).toHaveCount(0);
+
+  // a status change with evidence lands the confirmation toast: alone, whole, above the tab bar
+  await drawer.getByPlaceholder("Evidence or reason for the next change (optional)").fill("looks right");
+  await drawer.locator('[data-st="doing"]').click();
+  const toast = page.locator(".ui-toast");
+  await expect(toast).toBeVisible();
+  await expectInsideViewport(page, [toast]);
+  if ((await page.locator("[data-nav='bottom']").count()) > 0)
+    await expectClearOfTabBar(page, [toast]);
+  await expectNoSideScroll(page);
+});
+
 test("the knowledge page keeps its export menu and toast inside the viewport", async ({
   page,
 }, info) => {

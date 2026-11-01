@@ -272,10 +272,7 @@
     "legacy": 1
   },
   "work/TaskDrawer.tsx": {
-    "control": 28,
-    "daisy": 123,
-    "legacy": 18,
-    "px": 3
+    "control": 4
   },
   "work/Work.tsx": {
     "control": 3

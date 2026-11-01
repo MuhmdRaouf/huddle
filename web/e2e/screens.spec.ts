@@ -78,7 +78,8 @@ type TokensCard =
   | "HV-TOKENS-RADAR-OVERVIEW"
   | "HV-TOKENS-RADAR-TABLES"
   | "HV-TOKENS-INSPECTOR"
-  | "HV-TOKENS-KANBAN";
+  | "HV-TOKENS-KANBAN"
+  | "HV-LEGACY-CSS-REMOVE";
 
 /** The serious axe rules today's pages break. */
 type AxeRule = "color-contrast" | "label-content-name-mismatch" | "scrollable-region-focusable";
@@ -104,7 +105,7 @@ const KNOWN: Partial<Record<PageId, Known>> = {
     smallTargets: true,
   },
   "session-drawer": { card: "HV-TOKENS-CHANNELS", axe: ["color-contrast"], smallTargets: true },
-  "task-drawer": { card: "HV-TOKENS-CHANNELS", smallTargets: true },
+  "task-drawer": { card: "HV-LEGACY-CSS-REMOVE", smallTargets: true },
   "settings-notifications": { card: "HV-TOKENS-SETTINGS", smallTargets: true },
   "radar-overview": { card: "HV-TOKENS-RADAR-OVERVIEW", smallTargets: true },
   "radar-costs": { card: "HV-TOKENS-RADAR-TABLES", smallTargets: true },

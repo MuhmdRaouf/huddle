@@ -1,17 +1,23 @@
 // TaskDrawer.tsx — the task drawer: the shared SlideOver, a big panel from the right that floats
 // over the whole UI (Escape, a click outside and the X close it), opened by the router's ?t=<id>
-// from every task link. Its sections sit under daisyUI tabs — Overview (status, owner, the two
+// from every task link. Its sections sit under the shared Tabs — Overview (status, owner, the two
 // dependency directions, the plan's body sections), Code (snippets, files, references) and Notes
 // (the notes the sessions read) — then only the filled sections with one "Add section" menu.
 // A status change goes through Work's setTaskStatus; every other change is a task_update / note /
 // note_edit / approve op. Port of work.js openDrawer/closeDrawer/refreshTask/renderTask/wireTask
 // and their render helpers.
 
+import { Badge } from "@huddle/ui/badge.tsx";
+import { Button } from "@huddle/ui/button.tsx";
+import { Chip } from "@huddle/ui/chip.tsx";
 import { CodeBlock, langOf } from "@huddle/ui/code.tsx";
 import { Dialog } from "@huddle/ui/dialog.tsx";
+import { Field } from "@huddle/ui/field.tsx";
 import { Inline, Paragraphs } from "@huddle/ui/markdown.tsx";
 import { type MenuItem, PopMenu } from "@huddle/ui/menu.tsx";
 import { SlideOver } from "@huddle/ui/slide-over.tsx";
+import { Switch } from "@huddle/ui/switch.tsx";
+import { Tabs } from "@huddle/ui/tabs.tsx";
 import type { ToastFn } from "@huddle/ui/toast.tsx";
 import type { ComponentChildren, JSX, RefObject } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -222,11 +228,11 @@ export function isApproved(t: TaskDetail): boolean {
 export type DriftRow = { step?: string; i?: number; state?: string; score?: number; path?: string };
 
 /** The pill a drift state wears: its word, its icon, its badge tone (work.js snipBody dState). */
-export function driftMeta(d: DriftRow): { word: string; icon: IconName; badge: string } {
-  if (d.state === "ok") return { word: "Matches the repo", icon: "check", badge: "badge-success" };
-  if (d.state === "partial") return { word: "Partly changed", icon: "alert", badge: "badge-warning" };
-  if (d.state === "missing") return { word: "File missing", icon: "x", badge: "badge-error" };
-  return { word: "Drifted from the repo", icon: "x", badge: "badge-error" };
+export function driftMeta(d: DriftRow): { word: string; icon: IconName; tone: "ok" | "warn" | "fail" } {
+  if (d.state === "ok") return { word: "Matches the repo", icon: "check", tone: "ok" };
+  if (d.state === "partial") return { word: "Partly changed", icon: "alert", tone: "warn" };
+  if (d.state === "missing") return { word: "File missing", icon: "x", tone: "fail" };
+  return { word: "Drifted from the repo", icon: "x", tone: "fail" };
 }
 
 /** The status model's view of a step, for the pills and the picker. GET /task/<id> sends no
@@ -316,6 +322,10 @@ export type TaskDrawerProps = {
   touchAttention?: (() => void) | undefined;
 };
 
+/** A keyboard chip: the mono face on a surface tile with a line edge, key-sized. */
+const KBD =
+  "ui-mono inline-flex h-[1.25rem] min-w-[1.3333rem] items-center justify-center rounded-[var(--ui-radius-sm)] border border-[var(--ui-line)] bg-[var(--ui-surface)] px-[0.375rem] text-[length:0.75rem] text-[var(--ui-muted)]";
+
 /** A file chip: a button into the excerpt when the channel serves the code view, else plain. */
 function FileChip({
   path,
@@ -327,18 +337,18 @@ function FileChip({
   onOpenFile: (p: string) => void;
 }): JSX.Element {
   return hasCode ? (
-    <button
-      type="button"
-      class="badge badge-ghost gap-1.5 font-mono hover:underline"
+    <Button
+      variant="secondary"
+      class="ui-mono"
       data-file={path}
       title={path}
       onClick={() => onOpenFile(path)}
     >
       <Icon name="file" class="size-3.5" />
       <span class="max-w-56 truncate">{path}</span>
-    </button>
+    </Button>
   ) : (
-    <span class="badge badge-ghost gap-1.5 font-mono" title={path}>
+    <span class="ui-chip ui-chip-neutral ui-mono gap-1.5" title={path}>
       <Icon name="file" class="size-3.5" />
       <span class="max-w-56 truncate">{path}</span>
     </span>
@@ -360,14 +370,16 @@ function EditedMark({
   const e = task.edited?.[f];
   if (!e) return null;
   return (
-    <span class="badge badge-ghost badge-sm gap-1" data-edited={f}>
-      <span>
-        Edited {e.at ? <Time ts={e.at} now={now} /> : ""}
-        {e.by && e.by !== "owner" ? ` by ${e.by}` : ""}
-      </span>
-      <button type="button" class="underline underline-offset-2" data-revert={f} onClick={() => onRevert(f)}>
+    <span class="flex items-center gap-1" data-edited={f}>
+      <Badge tone="neutral">
+        <span>
+          Edited {e.at ? <Time ts={e.at} now={now} /> : ""}
+          {e.by && e.by !== "owner" ? ` by ${e.by}` : ""}
+        </span>
+      </Badge>
+      <Button variant="ghost" data-revert={f} onClick={() => onRevert(f)}>
         Undo edit
-      </button>
+      </Button>
     </span>
   );
 }
@@ -410,50 +422,40 @@ function SnippetBody({
   return (
     <>
       {snips.length > 1 ? (
-        <div class="tabs tabs-box mx-4 mt-3 w-fit" role="tablist" aria-label="Snippets">
-          {snips.map((x, k) => (
-            <button
-              type="button"
-              key={k}
-              role="tab"
-              class={`tab ${k === at ? "tab-active" : ""}`}
-              data-tab={k}
-              aria-selected={k === at}
-              onClick={() => onPick(k)}
-            >
-              {x.title || x.path || `Snippet ${k + 1}`}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          class="ui-tabs mx-4 mt-3 w-fit"
+          label="Snippets"
+          panel="snip-body"
+          value={String(at)}
+          onPick={(k) => onPick(Number(k))}
+          tabs={snips.map((x, k) => ({
+            id: String(k),
+            label: x.title || x.path || `Snippet ${k + 1}`,
+          }))}
+        />
       ) : null}
-      <div class="flex flex-wrap items-center gap-2 px-4 py-2.5 text-meta">
+      <div id="snip-body" class="flex flex-wrap items-center gap-2 px-4 py-2.5 text-meta">
         {snips.length === 1 && s.title ? <b class="font-semibold">{s.title}</b> : null}
         {s.path ? <FileChip path={s.path} hasCode={hasCode} onOpenFile={onOpenFile} /> : null}
-        {s.proposed ? <span class="badge badge-warning badge-sm">Proposed: not in the repo yet</span> : null}
+        {s.proposed ? <Badge tone="warn">Proposed: not in the repo yet</Badge> : null}
         {dm ? (
-          <span
-            class={`badge badge-sm gap-1 ${dm.badge}`}
-            title={`${d?.score ?? ""}% of its lines are still in the file`}
-          >
-            <Icon name={dm.icon} class="size-3.5" />
-            {dm.word}
+          <span title={`${d?.score ?? ""}% of its lines are still in the file`}>
+            <Badge tone={dm.tone}>
+              <Icon name={dm.icon} class="size-3.5" />
+              {dm.word}
+            </Badge>
           </span>
         ) : null}
         <span class="flex-1" />
-        <button
-          type="button"
-          class="btn btn-ghost btn-sm"
-          data-copysnip={at}
-          onClick={() => onCopy(s.code ?? "")}
-        >
+        <Button variant="ghost" data-copysnip={String(at)} onClick={() => onCopy(s.code ?? "")}>
           <Icon name="copy" class="size-4.5" />
           Copy
-        </button>
+        </Button>
       </div>
       <CodeBlock
         code={s.code ?? ""}
         lang={s.lang ?? langOf(s.path ?? "")}
-        class="rounded-b-box border-t border-base-content/8"
+        class="rounded-b-[var(--ui-radius)] border-t border-[var(--ui-line)]"
       />
     </>
   );
@@ -475,27 +477,21 @@ function VerifyList({
     <ul class="flex flex-col gap-3">
       {items.map((x, i) => (
         <li key={i} class={`flex items-start gap-3 ${ticks.has(i) ? "opacity-70" : ""}`} data-ck={i}>
-          <input
-            type="checkbox"
-            class="checkbox mt-1"
-            checked={ticks.has(i)}
-            aria-label={`Checked: ${x.cmd ?? ""}`}
-            onChange={(e) => onTick(i, e.currentTarget.checked)}
-          />
+          <Switch checked={ticks.has(i)} label={`Checked: ${x.cmd ?? ""}`} onChange={(on) => onTick(i, on)} />
           <div class="min-w-0 flex-1">
-            <div class="flex items-stretch gap-1 rounded-lg bg-base-200">
+            <div class="flex items-stretch gap-1 rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)]">
               <code class="min-w-0 flex-1 overflow-x-auto px-3 py-2 text-sm whitespace-pre">{x.cmd}</code>
-              <button
-                type="button"
-                class="btn btn-ghost btn-square btn-sm my-1 mr-1"
-                aria-label="Copy the command"
+              <Button
+                variant="ghost"
+                class="ui-btn-icon my-1 mr-1"
+                label="Copy the command"
                 onClick={() => onCopy(x.cmd ?? "")}
               >
                 <Icon name="copy" class="size-4.5" />
-              </button>
+              </Button>
             </div>
             {x.expect ? (
-              <div class="mt-1.5 text-meta muted">
+              <div class="mt-1.5 text-meta text-[var(--ui-muted)]">
                 Expect: <Inline text={x.expect} />
               </div>
             ) : null}
@@ -527,7 +523,7 @@ function SectionBody({
   switch (f) {
     case "alternatives":
       return (
-        <div class="flex flex-col divide-y divide-base-content/10">
+        <div class="flex flex-col divide-y divide-[var(--ui-line)]">
           {(task.alternatives ?? []).map((a, i) => (
             <div
               key={i}
@@ -536,7 +532,7 @@ function SectionBody({
               <div class="font-medium">
                 <Inline text={a.option} />
               </div>
-              <div class="muted">
+              <div class="text-[var(--ui-muted)]">
                 <Inline text={a.why_not} />
               </div>
             </div>
@@ -567,9 +563,9 @@ function SectionBody({
       return (
         <div class="flex flex-wrap gap-1.5">
           {(task.refs ?? []).map((r, i) => (
-            <span key={`${i} ${r}`} class="badge badge-ghost">
+            <Badge key={`${i} ${r}`} tone="neutral">
               <Inline text={r} />
-            </span>
+            </Badge>
           ))}
         </div>
       );
@@ -599,27 +595,31 @@ function SectionCard({
   const label = LABEL_OF.get(f) ?? f;
   const icon = SECS.find((x) => x[0] === f)?.[2] ?? "file";
   return (
-    <section class="panel min-w-0" aria-labelledby={`sh-${f}`} data-sec={f}>
-      <div class="flex min-h-11 flex-wrap items-center gap-2 border-b border-base-content/8 px-4 py-2">
+    <section
+      class="min-w-0 overflow-hidden rounded-[var(--ui-radius)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-1)]"
+      aria-labelledby={`sh-${f}`}
+      data-sec={f}
+    >
+      <div class="flex min-h-11 flex-wrap items-center gap-2 border-b border-[var(--ui-line)] px-4 py-2">
         <h3 id={`sh-${f}`} class="flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold">
-          <span class="text-primary">
+          <span class="text-[var(--ui-accent)]">
             <Icon name={icon} class="size-4.5" />
           </span>
           {label}
         </h3>
         {editing ? null : <EditedMark f={f} task={task} now={now} onRevert={onRevert} />}
-        <button type="button" class="btn btn-ghost btn-sm" data-edit={f} onClick={() => onEdit(f)}>
+        <Button variant="ghost" data-edit={f} onClick={() => onEdit(f)}>
           <Icon name="pencil" class="size-4.5" />
           Edit
           <span class="sr-only"> {label}</span>
-        </button>
+        </Button>
       </div>
       {editing ? (
         <div class="p-4">{children}</div>
       ) : f === "snippets" ? (
         children
       ) : (
-        <div class="prose-h p-4">{children}</div>
+        <div class="md p-4">{children}</div>
       )}
     </section>
   );
@@ -627,17 +627,23 @@ function SectionCard({
 
 /** The wait's plain words: who owns what it waits on, and in which state it sits. */
 function UnmetBox({
+  ch,
   unmet,
   owner,
   onOpenTask,
 }: {
+  ch: string;
   unmet: TaskUnmet[];
   owner: string | null | undefined;
   onOpenTask: (id: string) => void;
 }): JSX.Element {
   return (
-    <div role="alert" class="alert alert-warning alert-soft items-start text-[0.9375rem]" data-unmet>
-      <span class="mt-0.5 shrink-0">
+    <div
+      role="alert"
+      class="flex items-start gap-3 rounded-[var(--ui-radius)] bg-[var(--ui-warn-soft)] p-[var(--ui-space-3)] text-[length:var(--ui-text-md)]"
+      data-unmet
+    >
+      <span class="mt-0.5 shrink-0 text-[var(--ui-warn-ink)]">
         <Icon name="hourglass" class="size-5" />
       </span>
       <span>
@@ -645,13 +651,16 @@ function UnmetBox({
         {unmet.map((u, i) => (
           <span key={u.id}>
             {i > 0 ? ", " : ""}
-            <button
-              type="button"
+            <a
               class="font-medium underline underline-offset-2"
-              onClick={() => onOpenTask(u.id)}
+              href={`#/channels/${ch}?t=${encodeURIComponent(u.id)}`}
+              onClick={(e) => {
+                e.preventDefault();
+                onOpenTask(u.id);
+              }}
             >
               {u.id}
-            </button>{" "}
+            </a>{" "}
             ({u.owner ? whoL(u.owner) : "nobody"},{" "}
             {STATM[u.status as TaskState]?.l?.toLowerCase() ?? u.status})
           </span>
@@ -687,8 +696,12 @@ function GateBox({
 }): JSX.Element {
   const owner = task.owner && task.owner !== "owner" ? task.owner : null;
   return (
-    <div role="alert" class="alert items-start sm:items-center" data-gate>
-      <span class="shrink-0">
+    <div
+      role="alert"
+      class="flex items-start gap-3 rounded-[var(--ui-radius)] bg-[var(--ui-accent-soft)] p-[var(--ui-space-3)] sm:items-center"
+      data-gate
+    >
+      <span class="mt-0.5 shrink-0 text-[var(--ui-accent)] sm:mt-0">
         <Icon name={approved ? "checkc" : "key"} class="size-5" />
       </span>
       <span class="min-w-0 flex-1 text-[0.9375rem]">
@@ -699,35 +712,31 @@ function GateBox({
       {approved ? null : (
         <div class="flex flex-wrap items-center gap-2">
           {noteOpen ? (
-            <>
-              <label class="sr-only" for="gnote">
-                Note
-              </label>
-              <input
-                id="gnote"
-                class="input w-52"
-                placeholder={`Note for ${owner ?? "the session"}`}
-                value={note}
-                onInput={(e) => onNoteText(e.currentTarget.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") onApprove();
-                  if (e.key === "Escape") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onNoteClose();
-                  }
-                }}
-              />
-            </>
+            <Field
+              label="Note"
+              labelHidden
+              id="gnote"
+              placeholder={`Note for ${owner ?? "the session"}`}
+              value={note}
+              onInput={onNoteText}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onApprove();
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onNoteClose();
+                }
+              }}
+            />
           ) : (
-            <button type="button" class="btn" data-approve-note onClick={onNote}>
+            <Button variant="secondary" data-approve-note onClick={onNote}>
               With a note
-            </button>
+            </Button>
           )}
-          <button type="button" class="btn btn-primary" data-approve disabled={busy} onClick={onApprove}>
+          <Button data-approve disabled={busy} onClick={onApprove}>
             <Icon name="check" class="size-4.5" />
             Approve
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -758,33 +767,39 @@ function NotesPanel({
   const open = notes.filter((c) => !c.resolved).length;
   const wordOf = (k: string | null | undefined): string => NOTE_KINDS.find((x) => x[0] === k)?.[1] ?? k ?? "";
   return (
-    <section class="panel min-w-0" aria-labelledby="nt-h">
-      <div class="flex flex-wrap items-center gap-2 border-b border-base-content/8 px-4 py-2.5">
+    <section
+      class="min-w-0 overflow-hidden rounded-[var(--ui-radius)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-1)]"
+      aria-labelledby="nt-h"
+    >
+      <div class="flex flex-wrap items-center gap-2 border-b border-[var(--ui-line)] px-4 py-2.5">
         <h3 id="nt-h" class="flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold">
-          <span class="text-primary">
+          <span class="text-[var(--ui-accent)]">
             <Icon name="note" class="size-4.5" />
           </span>
           Notes for the sessions
         </h3>
-        {open > 0 ? <span class="badge badge-sm badge-primary badge-soft">{open} open</span> : null}
+        {open > 0 ? <Badge tone="info">{open} open</Badge> : null}
       </div>
       <div class="flex flex-col gap-3 p-4">
-        <p class="text-meta muted">Sessions read open notes before the task text, and the notes win.</p>
+        <p class="text-meta text-[var(--ui-muted)]">
+          Sessions read open notes before the task text, and the notes win.
+        </p>
         {/* biome-ignore lint/a11y/useSemanticElements: the kind strip's group role */}
-        <div class="join flex-wrap" role="group" aria-label="Kind of note">
+        <div class="flex flex-wrap gap-1.5" role="group" aria-label="Kind of note">
           {NOTE_KINDS.map(([k, l]) => (
-            <button
-              type="button"
+            <Button
               key={k}
-              class={`btn join-item btn-sm${kind === k ? " btn-primary" : ""}`}
+              variant={kind === k ? "primary" : "secondary"}
+              pressed={kind === k}
               data-kind={k}
-              aria-pressed={kind === k}
               onClick={() => onKind(k)}
             >
               {l}
-            </button>
+            </Button>
           ))}
         </div>
+        {/* native textarea: it needs aria-keyshortcuts and the ref the Add action focuses and
+         *  clears, which the shared Field does not carry */}
         <label class="sr-only" for="cbody">
           Note
         </label>
@@ -792,7 +807,7 @@ function NotesPanel({
           id="cbody"
           ref={taRef}
           rows={3}
-          class="textarea"
+          class="ui-input ui-input-multi"
           placeholder="What should change, be checked or done differently?"
           aria-keyshortcuts="Meta+Enter Control+Enter"
           onKeyDown={(e) => {
@@ -803,16 +818,14 @@ function NotesPanel({
           }}
         />
         <div class="flex items-center gap-2">
-          <button type="button" id="csave" class="btn btn-primary" onClick={onAdd}>
-            Add note
-          </button>
-          <span class="text-meta muted">
-            <kbd class="kbd">⌘</kbd>
-            <kbd class="kbd">↵</kbd>
+          <Button onClick={onAdd}>Add note</Button>
+          <span class="text-meta text-[var(--ui-muted)]">
+            <kbd class={KBD}>⌘</kbd>
+            <kbd class={KBD}>↵</kbd>
           </span>
         </div>
         {notes.length > 0 ? (
-          <ul class="mt-1 divide-y divide-base-content/10">
+          <ul class="mt-1 divide-y divide-[var(--ui-line)]">
             {[...notes].reverse().map((c) => (
               <li
                 key={c.id}
@@ -820,23 +833,18 @@ function NotesPanel({
                 data-note={c.id}
               >
                 <div class="flex flex-wrap items-center gap-1.5 text-meta">
-                  <span class="badge badge-ghost badge-sm">{wordOf(c.kind)}</span>
-                  <span class="text-base-content/50">
+                  <Chip tone="neutral">{wordOf(c.kind)}</Chip>
+                  <span class="text-[var(--ui-muted)]">
                     {who(c.by ?? "")}, <Time ts={c.created_at} now={now} />
                   </span>
                   {c.resolved ? (
-                    <span class="badge badge-success badge-sm badge-soft gap-1">
+                    <Badge tone="ok">
                       <Icon name="check" class="size-3.5" />
                       Resolved
-                    </span>
+                    </Badge>
                   ) : null}
                   <span class="flex-1" />
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-sm"
-                    data-res={c.id}
-                    onClick={() => onResolve(c.id, !c.resolved)}
-                  >
+                  <Button variant="ghost" data-res={c.id} onClick={() => onResolve(c.id, !c.resolved)}>
                     {c.resolved ? (
                       "Reopen"
                     ) : (
@@ -845,16 +853,16 @@ function NotesPanel({
                         Resolve
                       </>
                     )}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-square btn-sm"
-                    aria-label="Delete this note"
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    class="ui-btn-icon"
+                    label="Delete this note"
                     data-del={c.id}
                     onClick={() => onDelete(c.id)}
                   >
                     <Icon name="trash" class="size-4.5" />
-                  </button>
+                  </Button>
                 </div>
                 <div class="text-[0.9375rem] whitespace-pre-wrap">{c.body}</div>
               </li>
@@ -876,25 +884,31 @@ function FileBody({ st }: { st: FileState }): JSX.Element {
     );
   if (st.phase === "error")
     return (
-      <div class="p-6 text-center text-sm text-error" role="alert">
+      <div class="p-6 text-center text-sm text-[var(--ui-fail-ink)]" role="alert">
         {st.error}
       </div>
     );
   const r = st.data;
-  if (r?.dir) return <p class="p-6 text-center text-sm muted">That is a folder; the repo views list it.</p>;
+  if (r?.dir)
+    return (
+      <p class="p-6 text-center text-sm text-[var(--ui-muted)]">That is a folder; the repo views list it.</p>
+    );
   if (r?.missing)
-    return <p class="p-6 text-center text-sm muted">Not in the repo yet: this task creates it.</p>;
+    return (
+      <p class="p-6 text-center text-sm text-[var(--ui-muted)]">Not in the repo yet: this task creates it.</p>
+    );
   if (r?.error)
     return (
-      <div class="p-6 text-center text-sm text-error" role="alert">
+      <div class="p-6 text-center text-sm text-[var(--ui-fail-ink)]" role="alert">
         {r.error}
       </div>
     );
-  if (r?.binary) return <p class="p-6 text-center text-sm muted">A binary file ({r.size ?? 0} bytes).</p>;
+  if (r?.binary)
+    return <p class="p-6 text-center text-sm text-[var(--ui-muted)]">A binary file ({r.size ?? 0} bytes).</p>;
   const from = r?.from ?? 1;
   return (
     <>
-      <div class="flex items-center gap-2 border-b border-base-content/8 px-4 py-2.5 text-meta muted">
+      <div class="flex items-center gap-2 border-b border-[var(--ui-line)] px-4 py-2.5 text-meta text-[var(--ui-muted)]">
         <span class="tnum">
           Lines {from} to {Math.min(from + 79, r?.total ?? 0)} of {r?.total ?? 0}
         </span>
@@ -904,19 +918,21 @@ function FileBody({ st }: { st: FileState }): JSX.Element {
   );
 }
 
-/** One editor over a field: the textarea, Save/Cancel, the help line and the error (work.js editor). */
+/** One editor over a field: the growing Field, Save/Cancel, the help line and the error (work.js
+ *  editor). The row grid of the shared field is 1.45 lines of the meta size, so the opening heights
+ *  land on the nearest row count of the legacy minimums. */
 function Editor({
   f,
-  task,
-  taRef,
+  draft,
+  write,
   error,
   onText,
   onSave,
   onCancel,
 }: {
   f: Field;
-  task: TaskDetail;
-  taRef: RefObject<HTMLTextAreaElement | null>;
+  draft: string;
+  write: (v: string) => void;
   error: string;
   /** The text moved: an editor's error line gives the reader a clean slate. */
   onText: () => void;
@@ -926,17 +942,15 @@ function Editor({
   const json = JSON_FIELDS.has(f);
   return (
     <div data-editor={f}>
-      <label class="sr-only" for="edta">
-        Edit {LABEL_OF.get(f) ?? f}
-      </label>
-      <textarea
+      <Field
+        label={`Edit ${LABEL_OF.get(f) ?? f}`}
+        labelHidden
         id="edta"
-        ref={taRef}
-        class={`textarea${json ? " font-mono text-sm" : ""}`}
-        spellcheck={!json}
-        defaultValue={editText(f, f === "title" ? task.title : task[f])}
-        style={`min-height:${f === "title" ? "52px" : json ? "240px" : "120px"}`}
-        aria-describedby="edh"
+        value={draft}
+        onInput={(v) => {
+          write(v);
+          onText();
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
@@ -948,25 +962,25 @@ function Editor({
             onCancel();
           }
         }}
-        onInput={onText}
+        multiline
+        mono={json}
+        spellCheck={!json}
+        minRows={f === "title" ? 2 : json ? 11 : 6}
+        maxRows={f === "title" ? 4 : json ? 14 : 8}
+        hint={
+          <>
+            {editHelp(f)} <kbd class={KBD}>⌘</kbd>
+            <kbd class={KBD}>↵</kbd> saves.
+          </>
+        }
+        error={error || undefined}
       />
       <div class="mt-2 flex flex-wrap items-center gap-2">
-        <button type="button" id="edsave" class="btn btn-primary" onClick={onSave}>
-          Save
-        </button>
-        <button type="button" id="edcancel" class="btn btn-ghost" onClick={onCancel}>
+        <Button onClick={onSave}>Save</Button>
+        <Button variant="ghost" onClick={onCancel}>
           Cancel
-        </button>
-        <span class="text-meta muted" id="edh">
-          {editHelp(f)} <kbd class="kbd">⌘</kbd>
-          <kbd class="kbd">↵</kbd> saves.
-        </span>
+        </Button>
       </div>
-      {error ? (
-        <p class="mt-1 text-sm text-error" id="ederr" role="alert">
-          {error}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -977,14 +991,16 @@ export type EditCtl = {
   field: Field | null;
   /** The editor's error line. */
   error: string;
+  /** The editor's draft text, typed before the save. */
+  draft: string;
+  /** Replaces the draft. */
+  write: (v: string) => void;
   open: (f: Field) => void;
   cancel: () => void;
   save: () => void;
   clear: () => void;
   /** Restores a field to the plan's text (work.js data-revert). */
   revert: (f: Field) => void;
-  /** The editor's textarea. */
-  ta: RefObject<HTMLTextAreaElement | null>;
 };
 
 /** The gate's approval box, handed down from the drawer. */
@@ -1050,7 +1066,7 @@ type TaskBodyProps = {
 const CODE_FIELDS: ReadonlySet<Field> = new Set<Field>(["snippets", "files", "refs"]);
 
 /** The drawer's body: the title and controls on Overview, the code sections on Code, the notes on
- *  Notes — one daisyUI tabpanel each, only the active one shown. */
+ *  Notes — one tabpanel each, only the active one shown. */
 function TaskBody({
   t,
   ch,
@@ -1066,7 +1082,7 @@ function TaskBody({
 }: TaskBodyProps): JSX.Element {
   // the "Add section" menu's state lives here: only this list knows what is missing
   const [addOpen, setAddOpen] = useState(false);
-  const [addBtn, setAddBtn] = useState<HTMLButtonElement | null>(null);
+  const [addBtn, setAddBtn] = useState<HTMLElement | null>(null);
   useEffect(() => {
     setAddOpen(false);
   }, [t.id]);
@@ -1086,7 +1102,7 @@ function TaskBody({
     <div
       role="tabpanel"
       id={`tp-${id}`}
-      aria-labelledby={`tt-${id}`}
+      aria-labelledby={`wt-${id}`}
       class={`flex flex-col gap-4${tab === id ? "" : " hidden"}`}
     >
       {children}
@@ -1095,16 +1111,17 @@ function TaskBody({
   const editFor = (f: Field): JSX.Element => (
     <Editor
       f={f}
-      task={t}
-      taRef={ctl.edit.ta}
+      draft={ctl.edit.draft}
+      write={ctl.edit.write}
       error={ctl.edit.error}
       onText={ctl.edit.clear}
       onSave={ctl.edit.save}
       onCancel={ctl.edit.cancel}
     />
   );
+  // one id for every tab's aria-controls: the body holds all three panels
   return (
-    <>
+    <div id="tp-body" class="contents">
       {panel(
         "overview",
         <>
@@ -1116,15 +1133,15 @@ function TaskBody({
                 {t.title}
               </h2>
               <EditedMark f="title" task={t} now={now} onRevert={ctl.edit.revert} />
-              <button
-                type="button"
-                class="btn btn-ghost btn-square btn-sm"
+              <Button
+                variant="ghost"
+                class="ui-btn-icon"
+                label="Edit the title"
                 data-edit="title"
-                aria-label="Edit the title"
                 onClick={() => ctl.edit.open("title")}
               >
                 <Icon name="pencil" class="size-4.5" />
-              </button>
+              </Button>
             </div>
           )}
           <ControlSection
@@ -1169,12 +1186,12 @@ function TaskBody({
                 type="button"
                 ref={setAddBtn}
                 id="addsec"
-                class="btn"
+                class="ui-btn ui-btn-secondary"
                 aria-haspopup="menu"
                 aria-expanded={addOpen}
                 onClick={() => setAddOpen(true)}
               >
-                <Icon name="plus" class="size-4.5" />
+                <Icon name="plus" class="ui-icon" />
                 Add section
               </button>
             </div>
@@ -1224,7 +1241,7 @@ function TaskBody({
             </SectionCard>
           ))
         ) : (
-          <p class="rounded-box border border-dashed border-base-content/20 px-6 py-10 text-center text-sm muted">
+          <p class="rounded-[var(--ui-radius)] border border-dashed border-[var(--ui-line-strong)] px-6 py-10 text-center text-sm text-[var(--ui-muted)]">
             No snippets, files or references yet. Add one with “Add section” on Overview.
           </p>
         ),
@@ -1242,7 +1259,7 @@ function TaskBody({
           onDelete={ctl.notes.remove}
         />,
       )}
-    </>
+    </div>
   );
 }
 
@@ -1267,12 +1284,12 @@ function StatusStrip({
     <>
       <div class="flex flex-wrap items-center gap-2">
         {/* biome-ignore lint/a11y/useSemanticElements: the status strip's group role */}
-        <div class="join" role="group" aria-label="Status">
+        <div class="flex flex-wrap gap-1.5" role="group" aria-label="Status">
           {STAT.map((x, n) => (
             <button
               type="button"
               key={x}
-              class={`btn join-item btn-sm${t.status === x ? " btn-primary" : ""}`}
+              class={`ui-btn ${t.status === x ? "ui-btn-primary" : "ui-btn-secondary"}`}
               data-st={x}
               aria-pressed={t.status === x}
               aria-keyshortcuts={String(n + 1)}
@@ -1288,18 +1305,16 @@ function StatusStrip({
         </div>
         {taskState(asTask(t)) === "waiting" ? <Pill status="waiting" /> : null}
       </div>
-      <label class="sr-only" for="stnote">
-        Evidence or reason for the next status change
-      </label>
-      <input
+      <Field
+        label="Evidence or reason for the next status change"
+        labelHidden
         id="stnote"
-        class="input"
         placeholder="Evidence or reason for the next change (optional)"
         value={note}
-        onInput={(e) => onNote(e.currentTarget.value)}
+        onInput={onNote}
       />
       {t.status_by ? (
-        <p class="text-meta muted" data-status-by>
+        <p class="text-meta text-[var(--ui-muted)]" data-status-by>
           {STATM[t.status as TaskState]?.l ?? t.status} by {whoL(t.status_by)}{" "}
           {t.status_at ? <Time ts={t.status_at} now={now} /> : null}
           {t.status_note ? `: “${t.status_note}”` : ""}
@@ -1314,16 +1329,15 @@ function DetailsTags({ t }: { t: TaskDetail }): JSX.Element | null {
   if (!t.kind && !t.risk && !(t.gate && t.gate !== "none")) return null;
   return (
     <>
-      <span class="text-sm font-medium muted sm:col-span-2 sm:text-left">Details</span>
+      <span class="text-sm font-medium text-[var(--ui-muted)] sm:col-span-2 sm:text-left">Details</span>
       <div class="flex flex-wrap gap-1.5 sm:col-span-2" data-details>
-        {t.kind ? <span class="badge badge-ghost">{t.kind}</span> : null}
+        {t.kind ? <Chip tone="neutral">{t.kind}</Chip> : null}
         {t.gate && t.gate !== "none" ? (
-          <span class="badge badge-ghost gap-1.5">
-            <Icon name="key" class="size-4" />
+          <Chip tone="neutral" icon={<Icon name="key" class="size-3.5" />}>
             {t.gate === "owner" ? "Needs your approval" : "Ask first"}
-          </span>
+          </Chip>
         ) : null}
-        {t.risk ? <span class="badge badge-ghost">{t.risk} risk</span> : null}
+        {t.risk ? <Chip tone="neutral">{t.risk} risk</Chip> : null}
       </div>
     </>
   );
@@ -1358,13 +1372,13 @@ function MetaGrid({
   const onIt = (sessions?.sessions ?? []).filter((x) => x.step === t.id && x.state !== "left");
   return (
     <div class="grid gap-x-4 gap-y-3 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center">
-      <label class="text-sm font-medium muted" for="owner-sel">
+      <label class="text-sm font-medium text-[var(--ui-muted)]" for="owner-sel">
         Owner
       </label>
       <div class="flex flex-wrap items-center gap-2">
         <select
           id="owner-sel"
-          class="select w-auto"
+          class="ui-input w-auto"
           value={t.owner ?? ""}
           onChange={(e) => onOwner(e.currentTarget.value)}
         >
@@ -1379,7 +1393,7 @@ function MetaGrid({
           return (
             <a
               key={x.name}
-              class="badge badge-ghost gap-1.5 hover:underline"
+              class="ui-chip ui-chip-neutral min-h-[var(--ui-tap)] gap-1.5 hover:underline"
               href={`#/channels/${ch}/team?s=${encodeURIComponent(x.name)}`}
               title={`${x.name} has this task: ${k}`}
               onClick={(e) => {
@@ -1393,7 +1407,7 @@ function MetaGrid({
           );
         })}
       </div>
-      <label class="text-sm font-medium muted" for={`dep-${t.id}-q`}>
+      <label class="text-sm font-medium text-[var(--ui-muted)]" for={`dep-${t.id}-q`}>
         Blocked by
       </label>
       <Picker
@@ -1411,22 +1425,17 @@ function MetaGrid({
       />
       {(t.needed_by?.length ?? 0) > 0 ? (
         <>
-          <span class="text-sm font-medium muted">Blocks</span>
-          <div class="flex flex-wrap gap-1.5" data-blocks>
+          <span class="text-sm font-medium text-[var(--ui-muted)]">Blocks</span>
+          <div class="flex flex-wrap items-center gap-1.5" data-blocks>
             {(t.needed_by ?? []).map((tid) => {
               const s = byId.get(tid);
               const k = s ? taskState(asTask(s)) : "todo";
               return (
-                <button
-                  type="button"
-                  key={tid}
-                  class="badge badge-ghost gap-1.5 hover:underline"
-                  onClick={() => onOpenTask(tid)}
-                >
+                <Button key={tid} variant="secondary" onClick={() => onOpenTask(tid)}>
                   <StatusIcon status={k} class="size-4" />
-                  <span class="font-mono">{tid}</span>
+                  <span class="ui-mono">{tid}</span>
                   <span class="max-w-40 truncate">{s?.title ?? ""}</span>
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -1465,7 +1474,7 @@ function ControlSection({
         onOpenTask={onOpenTask}
       />
       {(t.unmet?.length ?? 0) > 0 && !FIN.has(t.status ?? "todo") ? (
-        <UnmetBox unmet={t.unmet ?? []} owner={t.owner} onOpenTask={onOpenTask} />
+        <UnmetBox ch={ch} unmet={t.unmet ?? []} owner={t.owner} onOpenTask={onOpenTask} />
       ) : null}
       {gated ? (
         <GateBox
@@ -1500,10 +1509,10 @@ function DrawerHead({
     <div class="flex min-w-0 flex-col gap-1">
       <div class="flex min-w-0 flex-wrap items-center gap-2">
         <StatusIcon status={state} class="size-5" />
-        <span class="badge badge-ghost font-mono" id="td-title">
+        <span class="ui-chip ui-chip-neutral ui-mono" id="td-title">
           {id}
         </span>
-        <span class="min-w-0 truncate text-sm muted">
+        <span class="min-w-0 truncate text-sm text-[var(--ui-muted)]">
           {at >= 0 ? `${at + 1} of ${steps.length} in the plan` : ""}
         </span>
       </div>
@@ -1692,7 +1701,9 @@ function useTaskEdit(deps: ActionDeps & { setTask: (t: TaskDetail | null) => voi
   const { api, ch, toast, taskRef, refresh, reloadBoard, touchAttention, setTask } = deps;
   const [field, setField] = useState<Field | null>(null);
   const [error, setError] = useState("");
-  const ta = useRef<HTMLTextAreaElement>(null);
+  const [draft, setDraft] = useState("");
+  const draftRef = useRef("");
+  draftRef.current = draft;
   const fieldRef = useRef<Field | null>(null);
   fieldRef.current = field;
 
@@ -1744,11 +1755,11 @@ function useTaskEdit(deps: ActionDeps & { setTask: (t: TaskDetail | null) => voi
     return next;
   };
 
-  /** Saves the open editor's text back to the task (work.js saveEdit). */
+  /** Saves the open editor's draft back to the task (work.js saveEdit). */
   const save = async (): Promise<void> => {
     const f = fieldRef.current;
-    if (!f || !ta.current) return;
-    const parsed = parseEdit(f, ta.current.value);
+    if (!f) return;
+    const parsed = parseEdit(f, draftRef.current);
     if (!parsed.ok) {
       setError(`That is not valid JSON: ${parsed.error}`);
       return;
@@ -1763,15 +1774,17 @@ function useTaskEdit(deps: ActionDeps & { setTask: (t: TaskDetail | null) => voi
     edit: {
       field,
       error,
+      draft,
+      write: (v) => setDraft(v),
       open: (f) => {
         setField(f);
+        setDraft(editText(f, f === "title" ? (taskRef.current?.title ?? "") : taskRef.current?.[f]));
         setError("");
       },
       cancel: () => setField(null),
       save: () => void save(),
       clear: () => setError(""),
       revert: (f) => void update({ field: f, value: null }, "Back to the plan's text"),
-      ta,
     },
   };
 }
@@ -1972,17 +1985,8 @@ export function drawerTabs(t: TaskDetail | null | undefined): {
   ];
 }
 
-/** The key a tab walk takes from `at`, wrapping at the ends; NaN for a key the strip ignores. */
-const tabKeyTo = (n: number, key: string, at: number): number => {
-  if (key === "ArrowRight") return (at + 1 + n) % n;
-  if (key === "ArrowLeft") return (at - 1 + n) % n;
-  if (key === "Home") return 0;
-  if (key === "End") return n - 1;
-  return Number.NaN;
-};
-
-/** The drawer's tab strip: daisyUI `tabs tabs-box`, the selected tab the only tab stop, the arrows
- *  walk and select. */
+/** The drawer's tab strip: the shared Tabs (the selected tab the only tab stop, the arrows walk and
+ *  select), every tab pointing at the body that holds the three panels. */
 function TaskTabs({
   tabs,
   value,
@@ -1992,33 +1996,23 @@ function TaskTabs({
   value: DrawerTab;
   onPick: (t: DrawerTab) => void;
 }): JSX.Element {
-  const onKey = (id: DrawerTab, key: string): void => {
-    const at = tabs.findIndex((x) => x.id === id);
-    const to = tabKeyTo(tabs.length, key, at);
-    if (Number.isNaN(to)) return;
-    onPick(tabs[to]?.id ?? id);
-  };
   return (
-    <div role="tablist" class="tabs tabs-box" aria-label="Task sections">
-      {tabs.map((x) => (
-        <button
-          key={x.id}
-          type="button"
-          role="tab"
-          id={`tt-${x.id}`}
-          data-tab={x.id}
-          aria-selected={x.id === value}
-          aria-controls={`tp-${x.id}`}
-          tabIndex={x.id === value ? 0 : -1}
-          class={`tab gap-1.5${x.id === value ? " tab-active" : ""}`}
-          onClick={() => onPick(x.id)}
-          onKeyDown={(e) => onKey(x.id, e.key)}
-        >
-          {x.label}
-          {x.count ? <span class="badge badge-ghost badge-sm tnum">{x.count}</span> : null}
-        </button>
-      ))}
-    </div>
+    <Tabs
+      class="ui-tabs"
+      label="Task sections"
+      panel="tp-body"
+      value={value}
+      onPick={(id) => onPick(id as DrawerTab)}
+      tabs={tabs.map((x) => ({
+        id: x.id,
+        label: (
+          <>
+            {x.label}
+            {x.count ? <span class="ui-chip ui-chip-neutral tnum">{x.count}</span> : null}
+          </>
+        ),
+      }))}
+    />
   );
 }
 
@@ -2037,8 +2031,8 @@ function BodySlot({
 }): JSX.Element {
   if (!t) {
     return phase === "missing" ? (
-      <div class="flex flex-col items-center gap-1.5 rounded-box border border-dashed border-base-content/20 px-6 py-10 text-center text-sm muted">
-        <h2 class="text-base font-medium text-base-content">No task {id}</h2>
+      <div class="flex flex-col items-center gap-1.5 rounded-[var(--ui-radius)] border border-dashed border-[var(--ui-line-strong)] px-6 py-10 text-center text-sm text-[var(--ui-muted)]">
+        <h2 class="text-base font-medium text-[var(--ui-text)]">No task {id}</h2>
         <p>It may have been removed by a plan import.</p>
       </div>
     ) : (
@@ -2119,28 +2113,26 @@ function DrawerNav({
 }): JSX.Element {
   return (
     <>
-      <button
-        type="button"
-        class="btn btn-ghost btn-square"
+      <Button
+        variant="ghost"
+        label={prevId ? `Previous task: ${prevId}` : "Previous task"}
+        title="Previous task"
         data-nav={prevId ?? ""}
         disabled={!prevId}
-        aria-label={prevId ? `Previous task: ${prevId}` : "Previous task"}
-        title="Previous task"
         onClick={() => prevId && onOpenTask(prevId)}
       >
         <Icon name="up" class="size-4.5" />
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-square"
+      </Button>
+      <Button
+        variant="ghost"
+        label={nextId ? `Next task: ${nextId}` : "Next task"}
+        title="Next task"
         data-nav={nextId ?? ""}
         disabled={!nextId}
-        aria-label={nextId ? `Next task: ${nextId}` : "Next task"}
-        title="Next task"
         onClick={() => nextId && onOpenTask(nextId)}
       >
         <Icon name="down" class="size-4.5" />
-      </button>
+      </Button>
     </>
   );
 }
