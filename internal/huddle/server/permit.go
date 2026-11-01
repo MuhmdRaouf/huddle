@@ -402,6 +402,11 @@ func (s *server) withdrawPermissions(ctx context.Context, sessionID string) {
 	}
 	ids, err := s.registry.WithdrawPermissions(ctx, sessionID, jsscalar.ISOTime(s.now()))
 	if err != nil {
+		// a cancelled or expired context is its hook's request going away; the sweep
+		// withdraws the open items the cancelled call left open
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
 		fmt.Fprintf(s.o.Stderr, "permit: withdraw: %v\n", err)
 		return
 	}
