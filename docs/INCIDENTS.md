@@ -292,9 +292,23 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   it, and the session's `huddle mcp` held no connection to the hub, while the hub's own repo kept hearing it.
 - **Cause:** the bridge retried its live stream against the address it read once at start, never re-reading who
   the session is; and `Identify` answered the address the join credential or the project file had recorded, which
-  carries the port the hub had at join time.
+  carries the port the hub had at join time. A hub that lost the member (a restart on a store without it)
+  still answers the live stream 200, because the live route checks no member, so the bridge had no refusal to
+  react to and the session stayed off the channel's list.
 - **Guard:** `TestE2ETwoReposFollowTheHub` (cmd/huddle/channel_two_repos_e2e_test.go),
   `TestIdentifyFollowsTheLiveHubOnLoopback` and `TestFollowReadsTheSessionAgainBeforeAReconnect`
-  (internal/huddle/cli/identity_live_test.go)
+  (internal/huddle/cli/identity_live_test.go), `TestE2EASessionTheHubLostJoinsAgainAndHearsTheNextAsk` and
+  `TestE2EASessionThatLeftOnPurposeStaysLeft` (cmd/huddle/channel_rejoin_e2e_test.go),
+  `TestASessionTheHubHoldsNoRowForJoinsAgainAndTheMissedAskArrivesOnce`,
+  `TestAStreamThatStaysUpRejoinsWithinOneCheckAfterTheHubDropsTheMember`,
+  `TestASessionThatLeftOnPurposeStaysLeft`, `TestASessionThatLeavesThroughTheBridgeStaysLeft`,
+  `TestASessionThatJoinsAgainThroughTheBridgeIsKeptListedAgain`,
+  `TestAMissingChannelStopsRejoiningAndSaysHowToCreateIt`, `TestA401SaysToRunHuddleJoinAndNeverJoins`,
+  `TestACheckNeverRunsBesideTheBridgesOwnJoin` and `TestARefusedStreamAnswersTheStatusAsAValue`
+  (internal/huddle/cli/huddle_mcp_rejoin_test.go)
 - **Rule:** a session re-resolves the hub before every reconnect, and a loopback address is the user's one hub:
-  the port it runs on now wins over the one a credential or a project file recorded.
+  the port it runs on now wins over the one a credential or a project file recorded. The bridge also reads the
+  channel's list on every reconnect and every five minutes while its stream is up, and joins again with the hook's
+  join call when the hub holds no row for the session. A row in state left is a leave someone asked for and is
+  never joined again; a leave sent through the bridge ends the checks until a join through the bridge starts them
+  again. A 404 (no such channel) and a 401 (no credential) are said once and never joined.

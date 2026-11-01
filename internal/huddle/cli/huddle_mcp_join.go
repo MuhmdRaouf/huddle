@@ -1,11 +1,16 @@
 // The bridge finishes the join the SessionStart hook did not: a session whose channel does not
 // list it as joined gets the same join call the hook sends, tried again with a growing pause
 // until one lands or ten minutes pass. It runs beside the bridge's replies and never holds one.
+// Once that join has ended, the bridge keeps the session on the list: the hub can lose the
+// member while the live stream stays up, so the list is read on every reconnect and every
+// bridgeMemberCheck, and a session the hub holds no row for joins again with the same call. A
+// session that left stays out.
 package cli
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"time"
@@ -18,14 +23,17 @@ import (
 // whichever comes first; the pause between tries starts at bridgeJoinFirst, doubles up to
 // bridgeJoinCap, and the bridge stops after bridgeJoinGiveUp. A member row counts as this
 // session's when it is not left and was seen within bridgeJoinSlack before the bridge started.
+// While the live stream is up the channel's list is read every bridgeMemberCheck.
 const (
 	bridgeJoinSettle = 3500 * time.Millisecond
 	bridgeJoinFirst  = time.Second
 	bridgeJoinCap    = 30 * time.Second
 	bridgeJoinGiveUp = 10 * time.Minute
 	bridgeJoinSlack  = time.Minute
-	bridgeJoinReadMS = 1500
-	bridgeJoinCallMS = 10000
+
+	bridgeMemberCheck = 5 * time.Minute
+	bridgeJoinReadMS  = 1500
+	bridgeJoinCallMS  = 10000
 )
 
 // wakeJoin tells the join loop a tool call arrived: it checks now instead of waiting out the
@@ -40,6 +48,7 @@ func (b *mcpBridge) wakeJoin() {
 // keepJoined joins this session to its channel when the channel does not list it, until a join
 // lands, the session ends or bridgeJoinGiveUp passes.
 func (b *mcpBridge) keepJoined(ctx context.Context) {
+	defer close(b.joinDone)
 	select {
 	case <-ctx.Done():
 		return
@@ -81,6 +90,14 @@ func (b *mcpBridge) joinOnce(ctx context.Context) bool {
 	if !b.joinSent && b.listedAsJoined(ctx, id) {
 		return true
 	}
+	return b.sendJoin(ctx, id, false)
+}
+
+// sendJoin sends the join call the SessionStart hook sends and, when it lands, brings the
+// session's listen hook and live stream in. A rejoin leaves the hook's cursor where it is:
+// what the session has not been shown stays unseen, and the live stream's catch-up delivers it.
+func (b *mcpBridge) sendJoin(ctx context.Context, id Identity, rejoin bool) bool {
+	session := b.sessionID()
 	callURL, body, err := SessionJoinCall(id, id.URL, ContextFor("", id.Context), session)
 	if err != nil {
 		b.logf("join: %v", err)
@@ -100,7 +117,9 @@ func (b *mcpBridge) joinOnce(ctx context.Context) bool {
 	}
 	// from here on, the listen hook brings each new message into this session, as after the
 	// hook's own join
-	_ = Feed(ctx, b.w, id, Home(ctx, b.w), session, FeedOptions{Start: true, MS: bridgeJoinReadMS})
+	if !rejoin {
+		_ = Feed(ctx, b.w, id, Home(ctx, b.w), session, FeedOptions{Start: true, MS: bridgeJoinReadMS})
+	}
 	b.refresh(ctx)
 	if b.isInitialized() {
 		b.startPush(ctx)
@@ -108,18 +127,32 @@ func (b *mcpBridge) joinOnce(ctx context.Context) bool {
 	return true
 }
 
-// listedAsJoined reads the channel's members and says whether id.As is one that is in: not left,
-// and seen since just before this bridge started. Any failure to read says no, and the join
-// that follows is harmless for a member that is in (it keeps its role and context).
+// memberRow is what the channel's list shows of one session.
+type memberRow struct {
+	read  bool      // the list was read
+	found bool      // the list holds a row under the session's name
+	left  bool      // that row is in state left
+	seen  time.Time // when that row was last seen; zero when the row gives no readable time
+}
+
+// listedAsJoined says whether the channel lists id.As as in: not left, and seen since just
+// before this bridge started. Any failure to read says no, and the join that follows is harmless
+// for a member that is in (it keeps its role and context).
 func (b *mcpBridge) listedAsJoined(ctx context.Context, id Identity) bool {
+	row := b.readMember(ctx, id)
+	return row.read && row.found && !row.left && row.seen.After(b.startedAt.Add(-bridgeJoinSlack))
+}
+
+// readMember reads the channel's members and answers the row of id.As.
+func (b *mcpBridge) readMember(ctx context.Context, id Identity) memberRow {
 	callURL := id.URL + "/api/c/" + url.PathEscape(id.Channel) + "/sessions"
 	resp, err := HFetch(ctx, b.w, http.MethodGet, callURL, nil, nil, bridgeJoinReadMS*time.Millisecond, b.sessionID())
 	if err != nil {
-		return false
+		return memberRow{}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return false
+		return memberRow{}
 	}
 	var list struct {
 		Sessions []struct {
@@ -129,14 +162,101 @@ func (b *mcpBridge) listedAsJoined(ctx context.Context, id Identity) bool {
 		} `json:"sessions"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
-		return false
+		return memberRow{}
 	}
 	for _, member := range list.Sessions {
-		if member.Name != id.As || member.State == "left" {
+		if member.Name != id.As {
 			continue
 		}
-		seen, err := time.Parse(time.RFC3339Nano, jsscalar.Trim(member.LastSeen))
-		return err == nil && seen.After(b.startedAt.Add(-bridgeJoinSlack))
+		seen, _ := time.Parse(time.RFC3339Nano, jsscalar.Trim(member.LastSeen))
+		return memberRow{read: true, found: true, left: member.State == "left", seen: seen}
 	}
-	return false
+	return memberRow{read: true}
+}
+
+// watchMembership checks the list every memberEvery while the live stream is up. A stream that
+// is down is checked by the reconnect that follows it.
+func (b *mcpBridge) watchMembership(ctx context.Context) {
+	ticker := time.NewTicker(b.memberEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			b.mu.Lock()
+			up := b.streamUp
+			b.mu.Unlock()
+			if up {
+				b.keepListed(ctx)
+			}
+		}
+	}
+}
+
+// keepListed joins this session again when the hub holds no row for it, which is how a hub that
+// lost its member looks. A row in state left is a leave someone asked for and stays; a row that
+// is in is the hub's own member, however long ago it was seen; and a session that left through
+// this bridge stays out for the rest of the run. It waits for keepJoined to end, so the two never
+// send joins side by side, and one check runs at a time. A channel the hub says does not exist is
+// not joined (a join would make one), and nor is a session the hub holds no credential for (a
+// join would be refused).
+func (b *mcpBridge) keepListed(ctx context.Context) {
+	select {
+	case <-b.joinDone:
+	default:
+		return
+	}
+	b.memberMu.Lock()
+	defer b.memberMu.Unlock()
+	b.mu.Lock()
+	standDown := b.channelGone || b.credentialLost || b.leftThroughBridge
+	b.mu.Unlock()
+	if standDown || ctx.Err() != nil {
+		return
+	}
+	id := Identify(ctx, b.w, b.sessionID())
+	if id.Channel == "" || id.As == "" || id.URL == "" {
+		return
+	}
+	if row := b.readMember(ctx, id); !row.read || row.found {
+		return
+	}
+	b.logf("join: the channel holds no row for this session; joining again")
+	b.sendJoin(ctx, id, true)
+}
+
+// noteRefusal reads what the live stream's last try came to. A 404 means the channel does not
+// exist and a 401 that the hub holds no credential for this session; each is said once per run
+// of the same answer, and ends with the next answer that differs. A stream that connected ends
+// both.
+func (b *mcpBridge) noteRefusal(err error, connected bool) {
+	var refused *liveStatusError
+	b.mu.Lock()
+	gone, lost := false, false
+	if !connected && errors.As(err, &refused) {
+		gone, lost = refused.Code == http.StatusNotFound, refused.Code == http.StatusUnauthorized
+	} else if !connected {
+		gone, lost = b.channelGone, b.credentialLost // no answer from the hub: nothing new
+	}
+	sayGone, sayLost := gone && !b.channelGone, lost && !b.credentialLost
+	b.channelGone, b.credentialLost = gone, lost
+	channelName := b.channelName
+	b.mu.Unlock()
+	if sayGone {
+		b.logf("the channel %s does not exist on the hub, so this session does not join it; /huddle:setup creates one", channelName)
+	}
+	if sayLost {
+		b.logf("the hub holds no credential for this session; run /huddle:join with the join line /huddle:invite shows in a session that is in")
+	}
+}
+
+// memberCheckEvery is the pause between membership checks: bridgeMemberCheck, unless
+// HUDDLE_TEST_MEMBER_CHECK_MS names a shorter one in milliseconds. That variable exists for the
+// tests, which cannot wait five minutes.
+func memberCheckEvery(w *World) time.Duration {
+	if ms := int(jsNumber(w.getenv("HUDDLE_TEST_MEMBER_CHECK_MS"))); ms > 0 {
+		return time.Duration(ms) * time.Millisecond
+	}
+	return bridgeMemberCheck
 }

@@ -330,6 +330,7 @@ func twoReposHubPid(home string) int {
 // stream up.
 type twoReposWorld struct {
 	hubHome  string
+	hubData  string // the hub's data dir: one database file per channel under channels/
 	hubURL   string
 	homelab  string
 	proxbeam string
@@ -347,6 +348,12 @@ type twoReposWorld struct {
 // HUDDLE_PORT, as a Claude Code session does: they find the hub the way a session finds it.
 func startTwoRepos(t *testing.T) *twoReposWorld {
 	t.Helper()
+	return startTwoReposWith(t, nil)
+}
+
+// startTwoReposWith is startTwoRepos with extra variables in the bridges' environment.
+func startTwoReposWith(t *testing.T, bridgeEnv map[string]string) *twoReposWorld {
+	t.Helper()
 	// a short root: the homes and sockets under it stay inside the unix path bounds
 	root, err := os.MkdirTemp("", "hr-tr-")
 	if err != nil {
@@ -357,13 +364,14 @@ func startTwoRepos(t *testing.T) *twoReposWorld {
 	hubPort := ports.Free(t)
 	w := &twoReposWorld{
 		hubHome: filepath.Join(root, "huddle-home"),
+		hubData: filepath.Join(root, "huddle-data"),
 		hubURL:  fmt.Sprintf("http://127.0.0.1:%d", hubPort),
 	}
 	env := isoenv.Lookup(isoenv.Environ(t, user,
 		"RADAR_HOME="+filepath.Join(root, "radar"),
 		"RADAR_AUTOSTART=0",
 		"HUDDLE_HOME="+w.hubHome,
-		"HUDDLE_DATA="+filepath.Join(root, "huddle-data"),
+		"HUDDLE_DATA="+w.hubData,
 		"HUDDLE_ROUTER_HOME="+filepath.Join(root, "router"),
 		"HUDDLE_ROUTER_WATCH=0",
 		"HUDDLE_NOTIFY_LOG="+filepath.Join(root, "notify.log"),
@@ -450,9 +458,9 @@ func startTwoRepos(t *testing.T) *twoReposWorld {
 
 	// 4. one bridge per session, each handshaking as Claude Code does
 	withoutPort := func(sessionEnv map[string]string) map[string]string {
-		bridgeEnv := argvLayer(sessionEnv, nil)
-		delete(bridgeEnv, "HUDDLE_PORT")
-		return bridgeEnv
+		env := argvLayer(sessionEnv, bridgeEnv)
+		delete(env, "HUDDLE_PORT")
+		return env
 	}
 	w.homelabBridge = startTwoReposBridge(t, "homelab", withoutPort(homelabEnv), w.homelab)
 	w.proxbeamBridge = startTwoReposBridge(t, "proxbeam", withoutPort(proxbeamEnv), w.proxbeam)
@@ -485,10 +493,19 @@ func startTwoRepos(t *testing.T) *twoReposWorld {
 // restartHub stops the hub and starts it again: on its own port when port is 0, else on port.
 func (w *twoReposWorld) restartHub(t *testing.T, port int) {
 	t.Helper()
+	w.restartHubWith(t, port, nil)
+}
+
+// restartHubWith is restartHub with a step that runs while the hub is down.
+func (w *twoReposWorld) restartHubWith(t *testing.T, port int, whileDown func()) {
+	t.Helper()
 	if code, out, errOut := runBin(t, huddleBin, w.homelabEnv, w.homelab, "down"); code != 0 {
 		t.Fatalf("down = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
 	until(t, 10*time.Second, func() bool { return !argvHealthy(w.hubURL) }, "the hub to stop answering")
+	if whileDown != nil {
+		whileDown()
+	}
 	args := []string{"up"}
 	if port != 0 {
 		args = append(args, "--port", strconv.Itoa(port))

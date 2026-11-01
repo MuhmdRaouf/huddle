@@ -91,6 +91,7 @@ type mcpBridgeRun struct {
 	t      *testing.T
 	in     io.WriteCloser
 	out    *mcpLog
+	errs   *mcpLog // the bridge's diagnostics on stderr
 	cancel context.CancelFunc
 	done   chan int
 }
@@ -127,11 +128,11 @@ func runMcpBridge(t *testing.T, version string, env map[string]string) *mcpBridg
 		Now:     func() time.Time { return time.Now() },
 	}
 	reader, writer := io.Pipe()
-	out := &mcpLog{}
+	out, errs := &mcpLog{}, &mcpLog{}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
-	b := &mcpBridgeRun{t: t, in: writer, out: out, cancel: cancel, done: done}
-	go func() { done <- McpStdio(ctx, w, version, reader, out, io.Discard) }()
+	b := &mcpBridgeRun{t: t, in: writer, out: out, errs: errs, cancel: cancel, done: done}
+	go func() { done <- McpStdio(ctx, w, version, reader, out, errs) }()
 	t.Cleanup(func() {
 		cancel()
 		_ = writer.Close()

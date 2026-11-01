@@ -93,6 +93,9 @@ func McpStdio(ctx context.Context, w *World, version string, stdin io.Reader, st
 		// did not land
 		startedAt: time.Now(),
 		joinWake:  make(chan struct{}, 1),
+		joinDone:  make(chan struct{}),
+
+		memberEvery: memberCheckEvery(w),
 	}
 	for _, glob := range id.Push {
 		b.pushGlobs = append(b.pushGlobs, regexp.MustCompile("^(?:"+mcpGlobExpr(glob)+")$"))
@@ -100,6 +103,8 @@ func McpStdio(ctx context.Context, w *World, version string, stdin io.Reader, st
 	safego.Go(func(line string) { b.logf("%s", line) }, func() { b.watchList(runCtx) })
 	if id.Channel != "" && id.As != "" {
 		safego.Go(func(line string) { b.logf("%s", line) }, func() { b.keepJoined(runCtx) })
+	} else {
+		close(b.joinDone) // no join to finish: the membership check has nothing to wait for
 	}
 	// The session's watchdog: while this bridge serves, a dead or hung huddle-router comes back
 	// on its own (HR-WATCHDOG-MCP). Its own goroutine, so no MCP reply ever waits on it;
@@ -172,8 +177,15 @@ type mcpBridge struct {
 	wait      int
 	callMS    int
 	startedAt time.Time     // when this bridge began: the member rows seen before it are an earlier session's
-	joinSent  bool          // keepJoined's goroutine alone: a join call went out
+	joinSent  bool          // a join call went out; one join at a time reads and writes it
 	joinWake  chan struct{} // a tool call arrived: the join check need not wait out its start delay
+	joinDone  chan struct{} // closed when keepJoined has ended: the membership check may run
+
+	memberMu          sync.Mutex    // one membership check at a time
+	memberEvery       time.Duration // the pause between checks while the live stream is up
+	channelGone       bool          // the live stream's last answer was 404: the channel does not exist
+	credentialLost    bool          // the live stream's last answer was 401: the hub holds no credential
+	leftThroughBridge bool          // the session's last leave or join tool call through this bridge was a leave
 }
 
 // what the last tools/list showed
@@ -307,6 +319,11 @@ func (b *mcpBridge) forward(ctx context.Context, msg *jsfmt.Value) {
 	sent := msg
 	method := mcpMethod(msg)
 	name := mcpTextOf(mcpFieldOf(msg, "params"), "name")
+	if method == "tools/call" && (name == "leave" || name == "join") {
+		b.mu.Lock()
+		b.leftThroughBridge = name == "leave"
+		b.mu.Unlock()
+	}
 	if method == "tools/call" && name == "poll" {
 		params, _ := fieldOf(msg, "params")
 		args, _ := fieldOf(params, "arguments")
@@ -707,6 +724,7 @@ func (b *mcpBridge) startPush(ctx context.Context) {
 	}
 	b.pushing = true
 	safego.Go(func(line string) { b.logf("%s", line) }, func() { b.pushLoop(ctx) })
+	safego.Go(func(line string) { b.logf("%s", line) }, func() { b.watchMembership(ctx) })
 }
 
 // pushLoop follows the channel's live stream, reconnecting with backoff, until the session ends.
@@ -720,6 +738,7 @@ func (b *mcpBridge) pushLoop(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		b.noteRefusal(err, connected)
 		if connected {
 			backoff = time.Second
 		}
@@ -728,6 +747,7 @@ func (b *mcpBridge) pushLoop(ctx context.Context) {
 			return
 		}
 		b.follow(ctx)
+		b.keepListed(ctx)
 		if backoff < 30*time.Second {
 			backoff *= 2
 			if backoff > 30*time.Second {
@@ -751,8 +771,16 @@ func (b *mcpBridge) follow(ctx context.Context) {
 	b.lastSeq = 0
 	b.pushed = map[int64]bool{}
 	b.subBase, b.subBaseSet = 0, false
+	b.channelGone, b.credentialLost = false, false
 	b.mu.Unlock()
 }
+
+// liveStatusError is the live stream's refusal: the status the hub answered instead of the stream.
+type liveStatusError struct {
+	Code int
+}
+
+func (e *liveStatusError) Error() string { return fmt.Sprintf("HTTP %d", e.Code) }
 
 // streamOnce reads the live stream until it ends or breaks; connected says it ever answered.
 func (b *mcpBridge) streamOnce(ctx context.Context) (error, bool) {
@@ -765,7 +793,7 @@ func (b *mcpBridge) streamOnce(ctx context.Context) (error, bool) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("HTTP %d", resp.StatusCode), false
+		return &liveStatusError{Code: resp.StatusCode}, false
 	}
 	frameErr := error(nil)
 	connected := true
