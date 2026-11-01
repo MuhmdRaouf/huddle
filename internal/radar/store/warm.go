@@ -18,20 +18,29 @@ const warmBatch = 1_000
 // WarmSource is what an earlier run kept, which the store reloads at start: today
 // history.db; the store needs nothing else from it.
 type WarmSource interface {
-	// WarmRequests calls fn with the newest requests first, at most limit of them, until fn
-	// returns an error. written is the position the source's file first wrote the request
+	// WarmRequests calls fn with the newest requests first, those at or after since (unix
+	// ms), at most limit of them, until fn returns an error. written is the position the source's file first wrote the request
 	// at, which the store keeps as the request's arrival order: a view that names the last
 	// call of an agent reads the same after a restart.
-	WarmRequests(limit int, fn func(record shared.RequestRecord, written int64) error) error
-	// WarmTools calls fn with the tool calls that fall within the span of the requests
-	// WarmRequests names, until fn returns an error.
-	WarmTools(fn func(nodeID string, t shared.ToolCallRecord) error) error
-	// WarmEvents calls fn with the timeline events, oldest first, at most limit of them: the
-	// newest limit the source holds.
-	WarmEvents(limit int, fn func(shared.EventRecord) error) error
-	// WarmNodes calls fn with the sessions and agents, the sessions before their subagents,
-	// as the store's upsert inputs.
-	WarmNodes(fn func(WarmNode) error) error
+	WarmRequests(since int64, limit int, fn func(record shared.RequestRecord, written int64) error) error
+	// WarmTools calls fn with the tool calls that started at or after since and fall within
+	// the span of the requests WarmRequests names, until fn returns an error.
+	WarmTools(since int64, fn func(nodeID string, t shared.ToolCallRecord) error) error
+	// WarmEvents calls fn with the timeline events at or after since, oldest first, at most
+	// limit of them: the newest limit the source holds.
+	WarmEvents(since int64, limit int, fn func(shared.EventRecord) error) error
+	// WarmNodes calls fn with the sessions and agents that were active at or after since, the
+	// sessions before their subagents, as the store's upsert inputs.
+	WarmNodes(since int64, fn func(WarmNode) error) error
+	// WarmEnd answers the seq and time of the newest event the source holds, whatever its
+	// age, and zeros when it holds none: the live events number on from the seq, and a spool
+	// line older than the window and no newer than the time is one the source already saw.
+	WarmEnd() (WarmEnd, error)
+}
+
+// WarmEnd is the newest event a source holds.
+type WarmEnd struct {
+	Seq, Ts int64
 }
 
 // WarmNode is one node a source kept: an agent, and for a session's lead agent the session
@@ -49,13 +58,14 @@ type WarmStats struct {
 	Took                                      time.Duration
 }
 
-// Warm reloads what the source holds into the store: the sessions and agents first, then
-// the newest requests under the record cap, the tool calls and the room the cap leaves for
-// the timeline. It runs before the live feed starts. Every step places at most warmBatch
+// Warm reloads what the source holds from the last shared.StoreWindow into the store: the
+// sessions and agents first, then the newest requests under the record cap, the tool calls
+// and the room the cap leaves for the timeline. The window is cut once, from the store's
+// clock, and the live events number on from the source's last seq. It runs before the live feed starts. Every step places at most warmBatch
 // records under the lock and emits one Change marked Warm, which the history writer skips.
 func (s *Store) Warm(ctx context.Context, src WarmSource) (WarmStats, error) {
 	started := time.Now()
-	load := &warmLoad{ctx: ctx, store: s}
+	load := &warmLoad{ctx: ctx, store: s, since: s.nowMillis() - shared.StoreWindow.Milliseconds()}
 	err := load.run(src)
 	load.stats.Took = time.Since(started)
 	return load.stats, err
@@ -73,6 +83,8 @@ type warmLoad struct {
 	ctx   context.Context
 	store *Store
 	stats WarmStats
+	// since is the start of the window, in unix ms.
+	since int64
 
 	nodes    []WarmNode
 	requests []warmRequest
@@ -82,39 +94,42 @@ type warmLoad struct {
 	// newest is the timestamp of the first request the source handed over, the newest one.
 	newest int64
 	seen   bool
-	// maxSeq is the highest event seq reloaded.
-	maxSeq int64
 }
 
 func (l *warmLoad) run(src WarmSource) error {
-	if err := src.WarmNodes(l.addNode); err != nil {
+	if err := src.WarmNodes(l.since, l.addNode); err != nil {
 		return err
 	}
 	if err := l.flushNodes(); err != nil {
 		return err
 	}
 	limit := int(l.store.maxRecords)
-	if err := src.WarmRequests(limit, l.addRequest); err != nil {
+	if err := src.WarmRequests(l.since, limit, l.addRequest); err != nil {
 		return err
 	}
 	if err := l.flushRequests(); err != nil {
 		return err
 	}
-	if err := src.WarmTools(l.addTool); err != nil {
+	if err := src.WarmTools(l.since, l.addTool); err != nil {
 		return err
 	}
 	if err := l.flushTools(); err != nil {
 		return err
 	}
 	if room := l.store.room(); room > 0 {
-		if err := src.WarmEvents(room, l.addEvent); err != nil {
+		if err := src.WarmEvents(l.since, room, l.addEvent); err != nil {
 			return err
 		}
 	}
 	if err := l.flushEvents(); err != nil {
 		return err
 	}
-	l.store.ContinueSeq(l.maxSeq)
+	end, err := src.WarmEnd()
+	if err != nil {
+		return err
+	}
+	l.store.ContinueSeq(end.Seq)
+	l.store.keepWarmWindow(l.since, end.Ts)
 	return nil
 }
 
@@ -226,7 +241,6 @@ func (l *warmLoad) flushEvents() error {
 		for _, event := range batch {
 			s.events = append(s.events, event)
 			s.keepWarmedEventLocked(event)
-			l.maxSeq = max(l.maxSeq, event.Seq)
 			change.Events = append(change.Events, event)
 			l.stats.Events++
 		}
@@ -379,12 +393,30 @@ func (s *Store) keepWarmedEventLocked(event shared.EventRecord) {
 	s.warmedUntil = max(s.warmedUntil, event.Ts)
 }
 
-// warmedEventLocked says whether a line is one the warm load reloaded: files read again
+// keepWarmWindow remembers where the warm window starts and the time of the newest event
+// the source holds, which bound the spool lines read again that the store already counts as
+// seen.
+func (s *Store) keepWarmWindow(since, until int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.warmedSince = since
+	s.warmedUntil = max(s.warmedUntil, until)
+}
+
+// warmedEventLocked says whether a line is one the source already saw: files read again
 // after a restart, or after a crash that lost their saved position, bring their lines back,
-// and the timeline holds each only once. A line newer than every reloaded event cannot be
-// one of them, so a live line costs no hashing.
+// and the timeline holds each only once. A line older than the window and no newer than the
+// source's newest event was seen and left behind by the window; a line inside the window is
+// one when the warm load reloaded its content. A line newer than every event the source
+// holds cannot be one of them, so a live line costs no hashing.
 func (s *Store) warmedEventLocked(line *shared.SpoolLine, ts int64) bool {
-	if len(s.warmedEvents) == 0 || ts > s.warmedUntil {
+	if ts > s.warmedUntil {
+		return false
+	}
+	if ts < s.warmedSince {
+		return true
+	}
+	if len(s.warmedEvents) == 0 {
 		return false
 	}
 	key, ok := eventKey(*line)

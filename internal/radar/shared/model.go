@@ -9,6 +9,7 @@ import (
 	"math"
 	"reflect"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
@@ -97,6 +98,10 @@ const MaxSessions = 200
 
 // MaxRecords caps the records the store keeps.
 const MaxRecords = 200_000
+
+// StoreWindow is how far back the store reaches: a start reloads only the last 24 hours of
+// history. Raouf chose the day.
+const StoreWindow = 24 * time.Hour
 
 // USD is a dollar figure that serializes as JSON the way JavaScript prints the number.
 type USD float64

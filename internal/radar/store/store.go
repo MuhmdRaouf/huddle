@@ -445,10 +445,13 @@ type Store struct {
 	// utilization is the newest unified limits a route line carried, and the line's ts.
 	utilization   *domain.UnifiedUtilization
 	utilizationAt int64
-	// warmedEvents keys the timeline events a warm load reloaded by their content, and
-	// warmedUntil is the newest of their times: a line read again from the files that a key
-	// names is an event the store already holds. Bounded by the one load's events.
+	// warmedEvents keys the timeline events a warm load reloaded by their content,
+	// warmedSince is where the load's window starts, and warmedUntil is the time of the
+	// newest event its source holds: a line read again from the files that a key names, or
+	// one older than the window and no newer than warmedUntil, is an event the store has
+	// already seen. Bounded by the one load's events.
 	warmedEvents map[uint64]struct{}
+	warmedSince  int64
 	warmedUntil  int64
 	// warmedCalls files the merged calls a warm load reloaded (a route line's facts with its
 	// transcript copy's) by session, model and match-window slot, so either side read again

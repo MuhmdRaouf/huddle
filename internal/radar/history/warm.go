@@ -17,16 +17,16 @@ const warmPage = 1_000
 
 var _ store.WarmSource = (*History)(nil)
 
-// WarmRequests calls fn with the newest requests first, at most limit of them, until fn
-// returns an error. written is the row's position in the file: a row keeps it when it is
+// WarmRequests calls fn with the newest requests first, those at or after since (unix ms),
+// at most limit of them, until fn returns an error. written is the row's position in the file: a row keeps it when it is
 // rewritten, so it follows the order the writer first stored the calls in.
-func (h *History) WarmRequests(limit int, fn func(record shared.RequestRecord, written int64) error) error {
+func (h *History) WarmRequests(since int64, limit int, fn func(record shared.RequestRecord, written int64) error) error {
 	var before *RequestCursor
 	for limit > 0 {
 		page := min(limit, warmPage)
-		clause, params := "", []SqlValue{}
+		clause, params := "WHERE ts >= ? ", []SqlValue{since}
 		if before != nil {
-			clause = "WHERE (ts < ? OR (ts = ? AND id < ?)) "
+			clause = "WHERE ts >= ? AND (ts < ? OR (ts = ? AND id < ?)) "
 			params = append(params, before.Ts, before.Ts, before.ID)
 		}
 		params = append(params, int64(page))
@@ -50,16 +50,16 @@ func (h *History) WarmRequests(limit int, fn func(record shared.RequestRecord, w
 	return nil
 }
 
-// WarmTools calls fn with the tool calls that started within the span of the newest
-// shared.MaxRecords requests, the last written first, until fn returns an error.
-func (h *History) WarmTools(fn func(nodeID string, t shared.ToolCallRecord) error) error {
-	horizon := int64(math.MinInt64)
+// WarmTools calls fn with the tool calls that started at or after since, within the span of
+// the newest shared.MaxRecords requests, the last written first, until fn returns an error.
+func (h *History) WarmTools(since int64, fn func(nodeID string, t shared.ToolCallRecord) error) error {
+	horizon := since
 	row, err := h.db.Get("SELECT ts FROM requests ORDER BY ts DESC LIMIT 1 OFFSET ?", int64(shared.MaxRecords-1))
 	if err != nil {
 		return fmt.Errorf("read the tool horizon: %w", err)
 	}
 	if row != nil {
-		horizon = derep(rowInt64(row, "ts"), horizon)
+		horizon = max(horizon, derep(rowInt64(row, "ts"), horizon))
 	}
 	before := int64(math.MaxInt64)
 	for {
@@ -92,18 +92,20 @@ func (h *History) WarmTools(fn func(nodeID string, t shared.ToolCallRecord) erro
 	}
 }
 
-// WarmEvents calls fn with the newest limit timeline events, oldest first, until fn returns
-// an error. A payload reads back as the spool line it was written from.
-func (h *History) WarmEvents(limit int, fn func(shared.EventRecord) error) error {
-	row, err := h.db.Get("SELECT MIN(seq) AS seq FROM (SELECT seq FROM events ORDER BY seq DESC LIMIT ?)", int64(limit))
+// WarmEvents calls fn with the newest limit timeline events at or after since, oldest first,
+// until fn returns an error. A payload reads back as the spool line it was written from.
+func (h *History) WarmEvents(since int64, limit int, fn func(shared.EventRecord) error) error {
+	row, err := h.db.Get("SELECT MIN(seq) AS seq FROM (SELECT seq FROM events WHERE ts >= ? ORDER BY seq DESC LIMIT ?)",
+		since, int64(limit))
 	if err != nil {
 		return fmt.Errorf("read the first warm event: %w", err)
 	}
 	after := derep(rowInt64(row, "seq"), 0) - 1
 	for {
 		rows, err := h.db.All(
-			"SELECT seq, ts, kind, session_id, agent_id, label, payload FROM events WHERE seq > ? ORDER BY seq LIMIT ?",
-			after, int64(warmPage))
+			"SELECT seq, ts, kind, session_id, agent_id, label, payload FROM events "+
+				"WHERE seq > ? AND ts >= ? ORDER BY seq LIMIT ?",
+			after, since, int64(warmPage))
 		if err != nil {
 			return fmt.Errorf("read the events: %w", err)
 		}
@@ -138,17 +140,33 @@ func spoolLineOf(text string) any {
 	return line
 }
 
-// WarmNodes calls fn with the nodes of the newest shared.MaxSessions sessions, the sessions
-// before their subagents, until fn returns an error.
-func (h *History) WarmNodes(fn func(store.WarmNode) error) error {
+// WarmEnd answers the seq and time of the newest event in the file, or zeros for a file with
+// no events.
+func (h *History) WarmEnd() (store.WarmEnd, error) {
+	row, err := h.db.Get("SELECT seq, ts FROM events ORDER BY seq DESC LIMIT 1")
+	if err != nil {
+		return store.WarmEnd{}, fmt.Errorf("read the newest event: %w", err)
+	}
+	if row == nil {
+		return store.WarmEnd{}, nil
+	}
+	return store.WarmEnd{Seq: derep(rowInt64(row, "seq"), 0), Ts: derep(rowInt64(row, "ts"), 0)}, nil
+}
+
+// WarmNodes calls fn with the nodes of the newest shared.MaxSessions sessions that were
+// active at or after since, the sessions before their subagents, until fn returns an error.
+// A session with no recorded last activity counts when a request at or after since names it.
+func (h *History) WarmNodes(since int64, fn func(store.WarmNode) error) error {
 	rows, err := h.db.All(
 		"SELECT n.kind, n.session_id, n.agent_id, n.agent_type, n.description, n.cwd, n.model, n.repo, n.branch, "+
 			"n.name, n.parent_session_id, n.started_at, n.last_at, n.ended_at, p.agent_id AS parent_agent "+
 			"FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id "+
-			"WHERE n.session_id IN (SELECT session_id FROM nodes WHERE kind IN ('main', 'job') "+
-			"ORDER BY COALESCE(last_at, 0) DESC, id LIMIT ?) "+
+			"WHERE n.session_id IN (SELECT m.session_id FROM nodes m WHERE m.kind IN ('main', 'job') AND "+
+			"(m.last_at >= ? OR (m.last_at IS NULL AND EXISTS "+
+			"(SELECT 1 FROM requests r WHERE r.node_id = m.id AND r.ts >= ?))) "+
+			"ORDER BY COALESCE(m.last_at, 0) DESC, m.id LIMIT ?) "+
 			"ORDER BY CASE n.kind WHEN 'subagent' THEN 1 ELSE 0 END, COALESCE(n.started_at, n.last_at, 0), n.id",
-		int64(shared.MaxSessions))
+		since, since, int64(shared.MaxSessions))
 	if err != nil {
 		return fmt.Errorf("read the nodes: %w", err)
 	}

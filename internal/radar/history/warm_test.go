@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 	"github.com/MuhmdRaouf/huddle/internal/radar/store"
@@ -74,7 +76,7 @@ func warmFile(t *testing.T) *History {
 func TestWarmRequestsAnswerTheNewestFirstUnderTheLimit(t *testing.T) {
 	h := warmFile(t)
 	var ids []string
-	err := h.WarmRequests(5, func(r shared.RequestRecord, _ int64) error {
+	err := h.WarmRequests(0, 5, func(r shared.RequestRecord, _ int64) error {
 		ids = append(ids, r.ID)
 		return nil
 	})
@@ -103,7 +105,7 @@ func TestWarmRequestsReportTheOrderTheFileWroteThemIn(t *testing.T) {
 		}
 	}
 	written := map[string]int64{}
-	if err := h.WarmRequests(10, func(r shared.RequestRecord, at int64) error {
+	if err := h.WarmRequests(0, 10, func(r shared.RequestRecord, at int64) error {
 		written[r.ID] = at
 		return nil
 	}); err != nil {
@@ -129,7 +131,7 @@ func TestWarmRequestsPageThroughMoreRowsThanOneBatch(t *testing.T) {
 		}
 	}
 	var got []string
-	if err := h.WarmRequests(rows, func(r shared.RequestRecord, _ int64) error {
+	if err := h.WarmRequests(0, rows, func(r shared.RequestRecord, _ int64) error {
 		got = append(got, r.ID)
 		return nil
 	}); err != nil {
@@ -149,7 +151,7 @@ func TestWarmRequestsStopOnTheCallbacksError(t *testing.T) {
 	h := warmFile(t)
 	stop := errors.New("enough")
 	var seen int
-	err := h.WarmRequests(7, func(shared.RequestRecord, int64) error {
+	err := h.WarmRequests(0, 7, func(shared.RequestRecord, int64) error {
 		seen++
 		return stop
 	})
@@ -161,7 +163,7 @@ func TestWarmRequestsStopOnTheCallbacksError(t *testing.T) {
 func TestWarmToolsAnswerTheNewestFirst(t *testing.T) {
 	h := warmFile(t)
 	var ids, nodes []string
-	if err := h.WarmTools(func(nodeID string, tool shared.ToolCallRecord) error {
+	if err := h.WarmTools(0, func(nodeID string, tool shared.ToolCallRecord) error {
 		ids, nodes = append(ids, tool.ID), append(nodes, nodeID)
 		return nil
 	}); err != nil {
@@ -179,7 +181,7 @@ func TestWarmEventsAnswerTheNewestLimitOldestFirst(t *testing.T) {
 	h := warmFile(t)
 	var seqs []int64
 	var payloads []any
-	if err := h.WarmEvents(4, func(e shared.EventRecord) error {
+	if err := h.WarmEvents(0, 4, func(e shared.EventRecord) error {
 		seqs, payloads = append(seqs, e.Seq), append(payloads, e.Payload)
 		return nil
 	}); err != nil {
@@ -200,7 +202,7 @@ func TestWarmEventsAnswerTheNewestLimitOldestFirst(t *testing.T) {
 
 func TestWarmEventsWithNoEventsCallNothing(t *testing.T) {
 	h := openHistoryAt(t)
-	if err := h.WarmEvents(10, func(shared.EventRecord) error {
+	if err := h.WarmEvents(0, 10, func(shared.EventRecord) error {
 		t.Error("an empty file handed over an event")
 		return nil
 	}); err != nil {
@@ -211,7 +213,7 @@ func TestWarmEventsWithNoEventsCallNothing(t *testing.T) {
 func TestWarmNodesAnswerSessionsAndAgentsAsStoreInputs(t *testing.T) {
 	h := warmFile(t)
 	var nodes []store.WarmNode
-	if err := h.WarmNodes(func(n store.WarmNode) error {
+	if err := h.WarmNodes(0, func(n store.WarmNode) error {
 		nodes = append(nodes, n)
 		return nil
 	}); err != nil {
@@ -270,7 +272,150 @@ func TestWarmNodesAnswerSessionsAndAgentsAsStoreInputs(t *testing.T) {
 func TestWarmNodesStopOnTheCallbacksError(t *testing.T) {
 	h := warmFile(t)
 	stop := errors.New("enough")
-	if err := h.WarmNodes(func(store.WarmNode) error { return stop }); !errors.Is(err, stop) {
+	if err := h.WarmNodes(0, func(store.WarmNode) error { return stop }); !errors.Is(err, stop) {
 		t.Errorf("a callback error: got %v, want it back", err)
+	}
+}
+
+// windowFile is a history of three days that ends at now: a session with requests, tools
+// and events one hour, 23 hours, 25 hours and 50 hours back, and a session that went quiet
+// two days back. The events carry seqs 1 to 4, oldest first.
+func windowFile(t *testing.T, now time.Time) *History {
+	t.Helper()
+	h := openHistoryAt(t)
+	ago := func(d time.Duration) int64 { return now.Add(-d).UnixMilli() }
+	for _, node := range []NodeUpsert{
+		{ID: "live/main", Kind: shared.NodeMain, SessionID: "live", AgentID: "main", StartedAt: i64p(ago(50 * time.Hour)), LastAt: i64p(ago(time.Hour))},
+		{ID: "quiet/main", Kind: shared.NodeMain, SessionID: "quiet", AgentID: "main", StartedAt: i64p(ago(52 * time.Hour)), LastAt: i64p(ago(50 * time.Hour))},
+	} {
+		if err := h.UpsertNode(node); err != nil {
+			t.Fatalf("upsert %s: %v", node.ID, err)
+		}
+	}
+	for i, back := range []time.Duration{50 * time.Hour, 25 * time.Hour, 23 * time.Hour, time.Hour} {
+		request := requestRecord()
+		request.ID, request.SessionID, request.Ts = fmt.Sprintf("r%d", i+1), "live", ago(back)
+		if err := h.PutRequest("live/main", request); err != nil {
+			t.Fatalf("put %s: %v", request.ID, err)
+		}
+		tool := shared.ToolCallRecord{
+			ID: fmt.Sprintf("t%d", i+1), SessionID: "live", AgentID: sp("main"), Name: "Bash", StartedAt: ago(back),
+			DurationMs: i64p(5), Ok: true,
+		}
+		if err := h.PutTool("live/main", tool); err != nil {
+			t.Fatalf("put %s: %v", tool.ID, err)
+		}
+		event := shared.EventRecord{
+			Seq: int64(i + 1), Ts: ago(back), Kind: "UserPromptSubmit", SessionID: sp("live"),
+			Payload: shared.SpoolLine{Ts: "2026-01-01T00:00:00.000Z", Event: "UserPromptSubmit", SessionID: sp("live")},
+		}
+		if err := h.AddEvent(sp("live/main"), event); err != nil {
+			t.Fatalf("add event %d: %v", event.Seq, err)
+		}
+	}
+	quiet := requestRecord()
+	quiet.ID, quiet.SessionID, quiet.Ts = "rq", "quiet", ago(50*time.Hour)
+	if err := h.PutRequest("quiet/main", quiet); err != nil {
+		t.Fatalf("put %s: %v", quiet.ID, err)
+	}
+	return h
+}
+
+func TestAWarmStartLoadsOnlyTheStoreWindow(t *testing.T) {
+	now := time.Date(2026, 1, 4, 12, 0, 0, 0, time.UTC)
+	h := windowFile(t, now)
+	st := store.CreateStore(func() time.Time { return now })
+
+	stats, err := st.Warm(t.Context(), h)
+	if err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	if stats.Requests != 2 || stats.Tools != 2 || stats.Events != 2 || stats.Sessions != 1 {
+		t.Errorf("the warm stats: got %+v, want 2 requests, 2 tools, 2 events and 1 session", stats)
+	}
+	cut := now.Add(-shared.StoreWindow).UnixMilli()
+	for _, request := range st.RequestsFor(store.RequestFilter{}) {
+		if request.Ts < cut {
+			t.Errorf("request %s at %d is older than the window start %d", request.ID, request.Ts, cut)
+		}
+	}
+	for _, tool := range st.Tools(store.ToolsFilter{}) {
+		if tool.StartedAt < cut {
+			t.Errorf("tool %s at %d is older than the window start %d", tool.ID, tool.StartedAt, cut)
+		}
+	}
+	for _, event := range st.Events(store.EventsFilter{}) {
+		if event.Ts < cut {
+			t.Errorf("event %d at %d is older than the window start %d", event.Seq, event.Ts, cut)
+		}
+	}
+	list := st.SessionList()
+	if len(list) != 1 || list[0].ID != "live" || list[0].RequestCount != 2 {
+		t.Errorf("the sessions: got %+v, want only live with 2 requests", list)
+	}
+
+	st.AddSpoolLine(shared.SpoolLine{Ts: now.Format("2006-01-02T15:04:05.000Z07:00"), Event: "Stop", SessionID: sp("live")})
+	if next := st.Events(store.EventsFilter{Limit: i64p(1)}); len(next) != 1 || next[0].Seq != 5 {
+		t.Errorf("the next live event: got %+v, want seq 5 after the file's last seq 4", next)
+	}
+}
+
+func TestAWarmStartNumbersOnFromTheFilesLastSeqWhenTheWindowHoldsNoEvent(t *testing.T) {
+	now := time.Date(2026, 1, 4, 12, 0, 0, 0, time.UTC)
+	h := windowFile(t, now)
+	if _, err := h.db.Run("DELETE FROM events WHERE seq > 2"); err != nil {
+		t.Fatalf("drop the newer events: %v", err)
+	}
+	st := store.CreateStore(func() time.Time { return now })
+
+	if _, err := st.Warm(t.Context(), h); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	if held := st.Events(store.EventsFilter{}); len(held) != 0 {
+		t.Errorf("the events held: got %+v, want none, both are older than the window", held)
+	}
+	st.AddSpoolLine(shared.SpoolLine{Ts: now.Format("2006-01-02T15:04:05.000Z07:00"), Event: "Stop", SessionID: sp("live")})
+	if next := st.Events(store.EventsFilter{}); len(next) != 1 || next[0].Seq != 3 {
+		t.Errorf("the next live event: got %+v, want seq 3 after the file's last seq 2", next)
+	}
+}
+
+func TestWarmNodesKeepOnlySessionsActiveInTheWindow(t *testing.T) {
+	h := openHistoryAt(t)
+	for _, node := range []NodeUpsert{
+		{ID: "recent/main", Kind: shared.NodeMain, SessionID: "recent", AgentID: "main", LastAt: i64p(900)},
+		{ID: "old/main", Kind: shared.NodeMain, SessionID: "old", AgentID: "main", LastAt: i64p(100)},
+		{ID: "named/main", Kind: shared.NodeMain, SessionID: "named", AgentID: "main"},
+		{ID: "unnamed/main", Kind: shared.NodeMain, SessionID: "unnamed", AgentID: "main"},
+	} {
+		if err := h.UpsertNode(node); err != nil {
+			t.Fatalf("upsert %s: %v", node.ID, err)
+		}
+	}
+	request := requestRecord()
+	request.ID, request.SessionID, request.Ts = "r1", "named", 800
+	if err := h.PutRequest("named/main", request); err != nil {
+		t.Fatalf("put the request: %v", err)
+	}
+	var sessions []string
+	if err := h.WarmNodes(500, func(n store.WarmNode) error {
+		sessions = append(sessions, n.Agent.SessionID)
+		return nil
+	}); err != nil {
+		t.Fatalf("warm nodes: %v", err)
+	}
+	slices.Sort(sessions)
+	if want := []string{"named", "recent"}; !reflect.DeepEqual(sessions, want) {
+		t.Errorf("the sessions: got %v, want %v", sessions, want)
+	}
+}
+
+func TestWarmEndAnswersTheNewestEventWhateverItsAge(t *testing.T) {
+	h := warmFile(t)
+	if end, err := h.WarmEnd(); err != nil || end != (store.WarmEnd{Seq: 6, Ts: 600}) {
+		t.Errorf("the end: got %+v (%v), want seq 6 at 600", end, err)
+	}
+	if end, err := openHistoryAt(t).WarmEnd(); err != nil || end != (store.WarmEnd{}) {
+		t.Errorf("the end of an empty file: got %+v (%v), want zeros", end, err)
 	}
 }

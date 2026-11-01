@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -225,32 +224,25 @@ func compatRouteID(t *testing.T, home, session, agent, model string) string {
 	return ""
 }
 
-// compatFixtureNow pins the clock at the newest spool day's noon UTC: inside the spool window, past
-// every fixture timestamp, whatever day the fixture was recorded on.
+// compatFixtureNow pins the clock a minute past the newest spool line: inside the spool window, past
+// every fixture timestamp, and close enough that the store's window still reaches the oldest one,
+// whatever day the fixture was recorded on.
 func compatFixtureNow(t *testing.T, home string) time.Time {
 	t.Helper()
-	newest := ""
+	var newest time.Time
 	for _, line := range compatSpoolLines(t, home) {
-		if day := line.Ts[:10]; day > newest {
-			newest = day
+		at, err := time.Parse(time.RFC3339Nano, line.Ts)
+		if err != nil {
+			t.Fatalf("parse the spool line time %q: %v", line.Ts, err)
+		}
+		if at.After(newest) {
+			newest = at
 		}
 	}
-	if newest == "" {
+	if newest.IsZero() {
 		t.Fatalf("the fixture spool holds no lines")
 	}
-	year, err := strconv.Atoi(newest[0:4])
-	if err != nil {
-		t.Fatalf("parse the spool day %q: %v", newest, err)
-	}
-	month, err := strconv.Atoi(newest[5:7])
-	if err != nil {
-		t.Fatalf("parse the spool day %q: %v", newest, err)
-	}
-	day, err := strconv.Atoi(newest[8:10])
-	if err != nil {
-		t.Fatalf("parse the spool day %q: %v", newest, err)
-	}
-	return time.Date(year, time.Month(month), day, 12, 0, 0, 0, time.UTC)
+	return newest.Add(time.Minute)
 }
 
 // compatFetch reads one answer whole: status and body text.

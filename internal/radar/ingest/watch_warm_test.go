@@ -145,7 +145,7 @@ type warmSource struct {
 	requests []shared.RequestRecord
 }
 
-func (s warmSource) WarmRequests(limit int, fn func(shared.RequestRecord, int64) error) error {
+func (s warmSource) WarmRequests(_ int64, limit int, fn func(shared.RequestRecord, int64) error) error {
 	for _, request := range s.requests {
 		if err := fn(request, request.Ts); err != nil {
 			return err
@@ -154,9 +154,9 @@ func (s warmSource) WarmRequests(limit int, fn func(shared.RequestRecord, int64)
 	return nil
 }
 
-func (warmSource) WarmTools(func(string, shared.ToolCallRecord) error) error { return nil }
+func (warmSource) WarmTools(_ int64, _ func(string, shared.ToolCallRecord) error) error { return nil }
 
-func (s warmSource) WarmEvents(limit int, fn func(shared.EventRecord) error) error {
+func (s warmSource) WarmEvents(_ int64, limit int, fn func(shared.EventRecord) error) error {
 	for _, event := range s.events {
 		if err := fn(event); err != nil {
 			return err
@@ -165,7 +165,17 @@ func (s warmSource) WarmEvents(limit int, fn func(shared.EventRecord) error) err
 	return nil
 }
 
-func (warmSource) WarmNodes(func(store.WarmNode) error) error { return nil }
+func (warmSource) WarmNodes(_ int64, _ func(store.WarmNode) error) error { return nil }
+
+func (s warmSource) WarmEnd() (store.WarmEnd, error) {
+	var end store.WarmEnd
+	for _, event := range s.events {
+		if event.Seq > end.Seq {
+			end = store.WarmEnd{Seq: event.Seq, Ts: event.Ts}
+		}
+	}
+	return end, nil
+}
 
 func makeWarmRequest(id string) shared.RequestRecord {
 	return shared.RequestRecord{

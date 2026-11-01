@@ -30,7 +30,7 @@ type fakeWarmSource struct {
 	beforeRequest func(i int)
 }
 
-func (f *fakeWarmSource) WarmRequests(limit int, fn func(shared.RequestRecord, int64) error) error {
+func (f *fakeWarmSource) WarmRequests(_ int64, limit int, fn func(shared.RequestRecord, int64) error) error {
 	f.requestLimit = limit
 	for i, record := range f.requests {
 		if i >= limit {
@@ -50,7 +50,7 @@ func (f *fakeWarmSource) WarmRequests(limit int, fn func(shared.RequestRecord, i
 	return nil
 }
 
-func (f *fakeWarmSource) WarmTools(fn func(nodeID string, t shared.ToolCallRecord) error) error {
+func (f *fakeWarmSource) WarmTools(_ int64, fn func(nodeID string, t shared.ToolCallRecord) error) error {
 	for _, tool := range f.tools {
 		if err := fn(tool.SessionID+"/main", tool); err != nil {
 			return err
@@ -59,9 +59,9 @@ func (f *fakeWarmSource) WarmTools(fn func(nodeID string, t shared.ToolCallRecor
 	return nil
 }
 
-func (f *fakeWarmSource) WarmEvents(limit int, fn func(shared.EventRecord) error) error {
+func (f *fakeWarmSource) WarmEvents(since int64, limit int, fn func(shared.EventRecord) error) error {
 	f.eventLimit = limit
-	events := f.events
+	events := slices.DeleteFunc(slices.Clone(f.events), func(e shared.EventRecord) bool { return e.Ts < since })
 	if len(events) > limit {
 		events = events[len(events)-limit:]
 	}
@@ -73,13 +73,23 @@ func (f *fakeWarmSource) WarmEvents(limit int, fn func(shared.EventRecord) error
 	return nil
 }
 
-func (f *fakeWarmSource) WarmNodes(fn func(WarmNode) error) error {
+func (f *fakeWarmSource) WarmNodes(_ int64, fn func(WarmNode) error) error {
 	for _, node := range f.nodes {
 		if err := fn(node); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (f *fakeWarmSource) WarmEnd() (WarmEnd, error) {
+	var end WarmEnd
+	for _, event := range f.events {
+		if event.Seq > end.Seq {
+			end = WarmEnd{Seq: event.Seq, Ts: event.Ts}
+		}
+	}
+	return end, nil
 }
 
 // warmSession is a session's lead node, as a source hands it over.
@@ -441,6 +451,35 @@ func spoolLineFrom(t *testing.T, text string) shared.SpoolLine {
 		t.Fatalf("read the line %s: %v", text, err)
 	}
 	return l
+}
+
+func TestAReReadLineOlderThanTheWindowIsNotAddedAgain(t *testing.T) {
+	old := spoolLineFrom(t, fmt.Sprintf(`{"ts":%q,"event":"UserPromptSubmit","session_id":"s1","prompt":"a"}`, isoTime(ts0-2*dayMs)))
+	recent := spoolLineFrom(t, fmt.Sprintf(`{"ts":%q,"event":"Stop","session_id":"s1"}`, isoTime(ts1)))
+	source := &fakeWarmSource{
+		nodes: []WarmNode{warmSession("s1", ts1)},
+		events: []shared.EventRecord{
+			{Seq: 4, Ts: ts0 - 2*dayMs, Kind: old.Event, SessionID: old.SessionID, Payload: old},
+			{Seq: 9, Ts: ts1, Kind: recent.Event, SessionID: recent.SessionID, Payload: recent},
+		},
+	}
+	store := newTestStore()
+	if _, err := store.Warm(t.Context(), source); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	if held := store.Events(EventsFilter{}); len(held) != 1 || held[0].Seq != 9 {
+		t.Fatalf("the events held: got %+v, want only seq 9, the window leaves seq 4 out", held)
+	}
+
+	store.AddSpoolLine(old)
+	store.AddSpoolLine(recent)
+	if held := store.Events(EventsFilter{}); len(held) != 1 {
+		t.Errorf("the events after the lines are read again: got %+v, want only seq 9", held)
+	}
+	store.AddSpoolLine(spoolLineFrom(t, fmt.Sprintf(`{"ts":%q,"event":"Notification","session_id":"s1"}`, isoTime(ts2))))
+	if next := store.Events(EventsFilter{Limit: i64(1)}); len(next) != 1 || next[0].Seq != 10 {
+		t.Errorf("the next live event: got %+v, want seq 10", next)
+	}
 }
 
 func TestAReReadEventTheWarmLoadHoldsIsNotAddedAgain(t *testing.T) {
