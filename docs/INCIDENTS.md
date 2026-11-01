@@ -312,3 +312,16 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   join call when the hub holds no row for the session. A row in state left is a leave someone asked for and is
   never joined again; a leave sent through the bridge ends the checks until a join through the bridge starts them
   again. A 404 (no such channel) and a 401 (no credential) are said once and never joined.
+
+## 2026-11-01, the body store split no real request
+
+- **What happened:** 34,608 of 34,941 stored input bodies were one span, so the content-addressed store saved
+  nothing across turns of a conversation (only the deflate helped); the store grew 2.2 GB a day.
+- **Cause:** `splitBody` read a top-level member whose value is an object (`metadata`, `thinking`) as only its
+  opening brace. The closing-brace check then met a nested or later token instead of the end, and the whole body
+  stayed one span. Every fixture had only string, boolean and array members, so no test met a real request.
+- **Guard:** `TestSplitBody` (its subtests for an object-valued member, an object as the last member, and empty or
+  nested top-level values), `TestBodyStoreSplitsARealShapedBody`, `TestBodyStoreSharesTheConversationPrefix` and
+  `TestBodyStoreRealShapedScenarios` (internal/radar/ledger).
+- **Rule:** a splitter or store test builds its body in the shape of the real request, object-valued members
+  included; two consecutive turns of one conversation share every span but the last message.

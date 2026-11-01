@@ -10,7 +10,8 @@ import (
 // exactly the body. A JSON object is cut at its top-level members: one span from the start
 // up to the first member, one span per member. A member whose value is an array is cut
 // further into its key-and-opening-bracket span plus one span per element, so a resent
-// conversation's history lands span for span on earlier requests' spans. Separators and
+// conversation's history lands span for span on earlier requests' spans; a member whose
+// value is an object stays whole in its member's span. Separators and
 // whitespace ride along: each span starts where the previous one ends, and nothing is lost
 // or reordered. A body that is not a JSON object, or one that fails to parse, stays one
 // span. An empty body has no spans.
@@ -67,15 +68,14 @@ func memberCuts(dec *json.Decoder) ([]int, bool) {
 }
 
 // elementCuts consumes one member's value, adding the offset of each element of an array
-// value; nested values are consumed without further cuts.
+// value; object and nested values are consumed without further cuts.
 func elementCuts(dec *json.Decoder, cuts *[]int) bool {
 	token, err := dec.Token()
 	if err != nil {
 		return false
 	}
-	delim, ok := token.(json.Delim)
-	if !ok || delim != '[' {
-		return true
+	if delim, ok := token.(json.Delim); !ok || delim != '[' {
+		return skipRest(dec, token)
 	}
 	for dec.More() {
 		*cuts = append(*cuts, int(dec.InputOffset()))
@@ -95,6 +95,12 @@ func skipValue(dec *json.Decoder) bool {
 	if err != nil {
 		return false
 	}
+	return skipRest(dec, token)
+}
+
+// skipRest consumes what follows a value's first token: nothing for a scalar, the members
+// and the closing bracket for an array or an object.
+func skipRest(dec *json.Decoder, token json.Token) bool {
 	switch delim, ok := token.(json.Delim); {
 	case ok && delim == '[':
 		for dec.More() {

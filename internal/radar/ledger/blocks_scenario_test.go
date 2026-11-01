@@ -87,6 +87,53 @@ func TestBodyStoreScenarios(t *testing.T) {
 	})
 }
 
+// TestBodyStoreRealShapedScenarios pins the dedup on the request a Claude Code session really
+// sends, with object-valued members among the top-level ones.
+func TestBodyStoreRealShapedScenarios(t *testing.T) {
+	t.Parallel()
+	bdd.Feature(t, "A conversation turn stores only what is new", func(f *bdd.F) {
+		f.Scenario("two consecutive turns of one Claude Code session", func(s *bdd.S) {
+			ctx := context.Background()
+			at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+			st, err := OpenBodies(filepath.Join(s.T.TempDir(), "ledger", "router.db"), testBodyKey)
+			if err != nil {
+				s.T.Fatalf("open the body store: %v", err)
+			}
+			s.T.Cleanup(func() { _ = st.Close() })
+
+			order := claudeKeyOrders["messages first"]
+			first, second := claudeCodeBody(order, 6), claudeCodeBody(order, 7)
+			var rowsAfterFirst int64
+
+			s.Given("the first turn is stored", func(t *testing.T) {
+				if err := st.PutBody(ctx, "req_1", "input", first, at); err != nil {
+					t.Fatalf("put the first turn: %v", err)
+				}
+				rowsAfterFirst = countBlockRows(t, st)
+			})
+			s.When("the second turn is stored", func(t *testing.T) {
+				if err := st.PutBody(ctx, "req_2", "input", second, at); err != nil {
+					t.Fatalf("put the second turn: %v", err)
+				}
+			})
+			s.Then("it adds only its two new messages and the previous last message", func(t *testing.T) {
+				if grew := countBlockRows(t, st) - rowsAfterFirst; grew != 3 {
+					t.Fatalf("ledger_blocks grew by %d rows, want 3", grew)
+				}
+			})
+			s.And("both turns read back byte for byte", func(t *testing.T) {
+				for id, want := range map[string][]byte{"req_1": first, "req_2": second} {
+					got, ok, err := st.Body(ctx, id, "input")
+					if err != nil || !ok || !bytes.Equal(got, want) {
+						t.Fatalf("%s reads back %d bytes (found %t, error %v), want its exact %d bytes",
+							id, len(got), ok, err, len(want))
+					}
+				}
+			})
+		})
+	})
+}
+
 // scenarioBody builds one chat body: the shared system prompt and the conversation so
 // far, each message taken verbatim.
 func scenarioBody(system string, messages []string) []byte {

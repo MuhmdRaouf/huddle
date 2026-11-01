@@ -630,6 +630,94 @@ func TestBodyStoreKeepsACleanBodyExact(t *testing.T) {
 	}
 }
 
+// TestBodyStoreSplitsARealShapedBody: a Claude Code shaped request (object-valued metadata and
+// thinking among its members) splits into a span per system block, tool and message, and
+// reads back byte for byte.
+func TestBodyStoreSplitsARealShapedBody(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	for name, order := range claudeKeyOrders {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			st := openBodies(t)
+			body := claudeCodeBody(order, 3)
+			// 8 members, plus the opening brace; 7 elements of messages, 2 of system and 5 of tools.
+			const wantSpans = 1 + 8 + 7 + 2 + 5
+			if spans := splitBody(body); len(spans) != wantSpans {
+				t.Fatalf("split into %d spans, want %d", len(spans), wantSpans)
+			}
+			if err := st.PutBody(ctx, "req_real", "input", body, at); err != nil {
+				t.Fatalf("put: %v", err)
+			}
+			if rows := countBlockRows(t, st); rows != wantSpans {
+				t.Fatalf("ledger_blocks holds %d rows, want a block per span (%d)", rows, wantSpans)
+			}
+			got, ok, err := st.Body(ctx, "req_real", "input")
+			if err != nil || !ok {
+				t.Fatalf("body = %t, %v; want the body found", ok, err)
+			}
+			if !bytes.Equal(got, body) {
+				t.Fatalf("body reads back %d bytes, want its exact %d bytes", len(got), len(body))
+			}
+		})
+	}
+}
+
+// TestBodyStoreSharesTheConversationPrefix: the next turn of a conversation adds only its
+// new messages and the previous turn's last message, whose cache marker moved; every other
+// span of the earlier turn is already stored.
+func TestBodyStoreSharesTheConversationPrefix(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	for name, order := range claudeKeyOrders {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			st := openBodies(t)
+			first := claudeCodeBody(order, 3)
+			second := claudeCodeBody(order, 4)
+
+			spans := len(splitBody(first))
+			if spans < 20 {
+				t.Fatalf("the earlier turn split into %d spans, want a span per message, system block and tool", spans)
+			}
+			if unshared := spans - sharedSpanCount(first, second); unshared != 1 {
+				t.Fatalf("%d spans of the earlier turn are missing from the next turn, want only the last message", unshared)
+			}
+			if err := st.PutBody(ctx, "req_first", "input", first, at); err != nil {
+				t.Fatalf("put the first turn: %v", err)
+			}
+			rowsBefore, segmentBefore := countBlockRows(t, st), segmentBytes(t, st.dir)
+			if err := st.PutBody(ctx, "req_second", "input", second, at); err != nil {
+				t.Fatalf("put the second turn: %v", err)
+			}
+
+			newSpans := len(splitBody(second)) - sharedSpanCount(second, first)
+			if grew := countBlockRows(t, st) - rowsBefore; grew != int64(newSpans) {
+				t.Fatalf("ledger_blocks grew by %d rows, want the %d new spans only", grew, newSpans)
+			}
+			rawNew := 0
+			for _, span := range splitBody(second) {
+				if sharedSpanCount(first, span) == 0 {
+					rawNew += len(span)
+				}
+			}
+			if growth := segmentBytes(t, st.dir) - segmentBefore; growth >= int64(rawNew)+256 {
+				t.Fatalf("the segment grew by %d bytes, want less than the %d raw bytes of the new spans plus margin",
+					growth, rawNew)
+			}
+			for id, want := range map[string][]byte{"req_first": first, "req_second": second} {
+				got, ok, err := st.Body(ctx, id, "input")
+				if err != nil || !ok || !bytes.Equal(got, want) {
+					t.Fatalf("%s reads back %d bytes (found %t, error %v), want its exact %d bytes",
+						id, len(got), ok, err, len(want))
+				}
+			}
+		})
+	}
+}
+
 // segmentFiles answers the raw bytes of every segment file in the store's directory.
 func segmentFiles(t *testing.T, dir string) [][]byte {
 	t.Helper()
