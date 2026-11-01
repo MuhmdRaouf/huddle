@@ -1,10 +1,11 @@
 package main
 
 // The router's latency gate, end to end: a fake upstream streams 200 SSE chunks 10 ms apart, and
-// the same stream is read three ways at once — straight from the fake, through huddle-router's
-// provider lane, and through its decrypted CONNECT api.anthropic.com path. What the router adds
-// to the first byte and to each chunk's trip must stay under the budgets below, so a session
-// never feels the router. The daemon is this test's own child on a free port and a temp home.
+// the same stream is read four ways at once — straight from the fake, through a plain TCP relay
+// in front of the fake, through huddle-router's provider lane, and through its decrypted CONNECT
+// api.anthropic.com path. What the router adds to the first byte and to each chunk's trip must
+// stay under the budgets below, so a session never feels the router. The daemon is this test's
+// own child on a free port and a temp home.
 
 import (
 	"bufio"
@@ -15,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -38,7 +40,12 @@ import (
 const (
 	// firstByteBudget is the most the router may add to the first streamed byte: the median
 	// over overheadRuns of each run's paired first-byte delta, the routed path's first byte
-	// minus the direct path's in that same run.
+	// minus the relay path's in that same run. The relay is a plain TCP hop to the fake, so the
+	// delta holds the router's work over being a hop, and a router that adds 5 ms still fails.
+	// The hop is only logged, as the routed path's first byte minus the direct path's: a
+	// request's first byte comes after its whole body has gone out, so a 2 MiB body is timed
+	// through the loopback socket buffers, where any extra hop costs copy time (most on macOS,
+	// whose default buffers are small) that the router, a separate process, cannot avoid.
 	firstByteBudget = 5 * time.Millisecond
 	// chunkBudget is the most the router may add to one chunk's trip (the median over
 	// overheadRuns of each run's median chunk).
@@ -145,6 +152,39 @@ func median(values []time.Duration) time.Duration {
 	return sorted[len(sorted)/2]
 }
 
+// tcpRelay forwards every connection it accepts to upstream byte for byte, the cheapest hop
+// there is, and returns its address. Closing a side ends both directions.
+func tcpRelay(t *testing.T, upstream string) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	go func() {
+		for {
+			client, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				server, err := net.Dial("tcp", upstream)
+				if err != nil {
+					_ = client.Close()
+					return
+				}
+				go func() {
+					_, _ = io.Copy(server, client)
+					_ = server.Close()
+				}()
+				_, _ = io.Copy(client, server)
+				_ = client.Close()
+			}()
+		}
+	}()
+	return listener.Addr().String()
+}
+
 // medianInt64 is the median of a slice of counts, 0 when there is none.
 func medianInt64(values []int64) int64 {
 	if len(values) == 0 {
@@ -202,6 +242,7 @@ func TestE2ERouterOverhead(t *testing.T) {
 	caDir := filepath.Join(root, "ca")
 	base := time.Now()
 	fake := overheadFake(t, base)
+	relayAddr := tcpRelay(t, strings.TrimPrefix(fake.URL, "http://"))
 	routerPort := ports.Free(t)
 
 	// The CA the router decrypts api.anthropic.com with is the one the client trusts; the
@@ -277,7 +318,7 @@ func TestE2ERouterOverhead(t *testing.T) {
 		DisableCompression: true,
 	}}
 	// route is the route event name the daemon writes for a forwarded request on this path,
-	// "" for the direct path that never meets the router.
+	// "" for the direct and relay paths that never meet the router.
 	paths := []struct {
 		name   string
 		client *http.Client
@@ -286,9 +327,11 @@ func TestE2ERouterOverhead(t *testing.T) {
 		route  string
 	}{
 		{"direct", plain, fake.URL + "/v1/messages", "claude-opus-5-5", ""},
+		{"relay", plain, "http://" + relayAddr + "/v1/messages", "claude-opus-5-5", ""},
 		{"lane", plain, routerURL + "/v1/messages", "glm-5.3", "provider"},
 		{"connect", proxied, "https://" + pki.RouterHost + "/v1/messages", "claude-opus-5-5", "anthropic"},
 	}
+	const direct, relay = 0, 1
 	// Real Claude Code requests run from a small prompt to several MiB of context, and each size
 	// must hold the budgets.
 	sizes := []struct {
@@ -308,8 +351,8 @@ func TestE2ERouterOverhead(t *testing.T) {
 	own := map[string][]int64{}
 
 	for _, size := range sizes {
-		// The three paths of one run stream at the same moment, so each run's noise lands on all
-		// three alike and the gate takes 20 streams' time, not 60.
+		// The four paths of one run stream at the same moment, so each run's noise lands on all
+		// four alike and the gate takes 20 streams' time, not 80.
 		runs := make([][]streamTiming, overheadRuns)
 		for run := range overheadRuns {
 			timings := make([]streamTiming, len(paths))
@@ -343,8 +386,8 @@ func TestE2ERouterOverhead(t *testing.T) {
 				}
 			}
 			ready := true
-			for _, path := range paths[1:] {
-				if len(sized[path.route]) < overheadRuns {
+			for _, path := range paths {
+				if path.route != "" && len(sized[path.route]) < overheadRuns {
 					ready = false
 				}
 			}
@@ -353,20 +396,29 @@ func TestE2ERouterOverhead(t *testing.T) {
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
-		for _, path := range paths[1:] {
-			served[path.route] += len(sized[path.route])
+		for _, path := range paths {
+			if path.route != "" {
+				served[path.route] += len(sized[path.route])
+			}
 		}
 
-		for at := 1; at < len(paths); at++ {
-			path := paths[at]
+		for at, path := range paths {
+			if path.route == "" {
+				continue
+			}
 			t.Run(path.name+", "+size.name, func(t *testing.T) {
 				// The paired deltas come from the same run on both sides, so one moment's load
-				// lands on both and their median is what the router itself adds.
+				// lands on both and their median is what the router itself adds. The first byte
+				// is asserted against the relay's, which carries the cost of any hop, and logged
+				// against the direct path's; the chunks are asserted against the direct path,
+				// since a chunk's trip has no body to copy.
 				firstDeltas := make([]time.Duration, 0, overheadRuns)
+				directDeltas := make([]time.Duration, 0, overheadRuns)
 				chunkOverheads := make([]time.Duration, 0, overheadRuns)
 				for _, timings := range runs {
-					firstDeltas = append(firstDeltas, timings[at].firstByte-timings[0].firstByte)
-					chunkOverheads = append(chunkOverheads, timings[at].chunk-timings[0].chunk)
+					firstDeltas = append(firstDeltas, timings[at].firstByte-timings[relay].firstByte)
+					directDeltas = append(directDeltas, timings[at].firstByte-timings[direct].firstByte)
+					chunkOverheads = append(chunkOverheads, timings[at].chunk-timings[direct].chunk)
 				}
 				firstOverhead := median(firstDeltas)
 				chunkOverhead := median(chunkOverheads)
@@ -380,8 +432,8 @@ func TestE2ERouterOverhead(t *testing.T) {
 					ownUs = append(ownUs, *event.routerUs)
 				}
 				own[path.route] = append(own[path.route], ownUs...)
-				t.Logf("%s, %s: first byte overhead %v, median of %d paired deltas (budget %v); chunk overhead median %v (budget %v); router %d µs",
-					path.name, size.name, firstOverhead, overheadRuns, firstByteBudget,
+				t.Logf("%s, %s: first byte overhead %v over the relay, median of %d paired deltas (budget %v); over the direct path %v, the hop included (logged only); chunk overhead median %v (budget %v); router %d µs",
+					path.name, size.name, firstOverhead, overheadRuns, firstByteBudget, median(directDeltas),
 					chunkOverhead, chunkBudget, medianInt64(ownUs))
 				// the race detector slows the router's own work 5-20x and not the fake's, so a race
 				// build logs the numbers and holds the budgets to the plain build
@@ -389,7 +441,7 @@ func TestE2ERouterOverhead(t *testing.T) {
 					return
 				}
 				if firstOverhead >= firstByteBudget {
-					t.Errorf("%s, %s: the router adds %v to the first byte, budget %v", path.name, size.name, firstOverhead, firstByteBudget)
+					t.Errorf("%s, %s: the router adds %v to the first byte beyond a plain relay, budget %v", path.name, size.name, firstOverhead, firstByteBudget)
 				}
 				if chunkOverhead >= chunkBudget {
 					t.Errorf("%s, %s: the router adds %v to each chunk, budget %v", path.name, size.name, chunkOverhead, chunkBudget)
@@ -400,7 +452,10 @@ func TestE2ERouterOverhead(t *testing.T) {
 
 	// One closing line per routed path: the router's own median over every forwarded request of
 	// every size.
-	for _, path := range paths[1:] {
+	for _, path := range paths {
+		if path.route == "" {
+			continue
+		}
 		t.Logf("%s: router %d µs median over %d route events", path.name, medianInt64(own[path.route]), len(own[path.route]))
 	}
 }
