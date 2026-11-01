@@ -3,11 +3,13 @@
 
 import { waitFor } from "@testing-library/preact";
 import { afterEach, describe, expect, it } from "vite-plus/test";
-import { DayCard, type DayReport, fetchDay } from "../../../src/radar/app/DayCard.tsx";
+import { decode } from "../../../src/api/decode.ts";
+import { DayAnswer } from "../../../src/api/schema/radar-side.ts";
+import { DayCard, fetchDay } from "../../../src/radar/app/DayCard.tsx";
 import { setDisplayZone } from "../../../src/radar/fmt.ts";
 import { legacyClasses, makeCtx, makeState, renderIn } from "../../helpers.tsx";
 
-async function card(answer: DayReport | null) {
+async function card(answer: DayAnswer | null) {
   const view = renderIn(<DayCard read={() => Promise.resolve(answer)} />, makeCtx(makeState()));
   if (answer !== null)
     await waitFor(() => expect(view.container.querySelector("[data-day-card]")).not.toBeNull());
@@ -53,5 +55,16 @@ describe("DayCard", () => {
     expect(asked).toEqual(["/api/radar/api/day"]);
     expect(await fetchDay(() => Promise.resolve(new Response("{}", { status: 503 })))).toBeNull();
     expect(await fetchDay(() => Promise.reject(new Error("offline")))).toBeNull();
+  });
+
+  it("refuses a day answer whose counts are not numbers, naming the path", async () => {
+    expect(() => decode(DayAnswer, { peakSessions: "4", cardsDone: 1 }, "/api/radar/api/day")).toThrow(
+      "/api/radar/api/day: peakSessions: expected number",
+    );
+    expect(
+      await fetchDay(() =>
+        Promise.resolve(new Response(JSON.stringify({ peakSessions: "4", cardsDone: 1 }))),
+      ),
+    ).toBeNull();
   });
 });

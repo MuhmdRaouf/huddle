@@ -5,13 +5,14 @@
 // Radar, or none running) hides its two numbers and nothing else.
 import { Badge } from "@huddle/ui/badge.tsx";
 import { Card } from "@huddle/ui/card.tsx";
+import type * as v from "valibot";
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { Api } from "../api.ts";
+import { decode } from "../api/decode.ts";
+import { AlertsAnswer, DayAnswer, type Alert, UsageReport } from "../api/schema/radar-side.ts";
 import { fmtNum, fmtUsd } from "../radar/fmt.ts";
 import { alertLabel } from "../radar/palette.ts";
-import type { Alert } from "../radar/shared/api.ts";
-import type { UsageReport } from "../radar/shared/usage.ts";
 import { useHuddle } from "./context.tsx";
 
 const USAGE_PATH = "/api/radar/api/usage?days=7";
@@ -19,22 +20,24 @@ const ALERTS_PATH = "/api/radar/api/alerts";
 const DAY_PATH = "/api/radar/api/day";
 const REFRESH_MS = 60_000;
 
-/** The day's two counts as Radar's day route answers them. */
-type DayCounts = { peakSessions: number; cardsDone: number };
-
 /** What the card shows: today's money and requests, the loudest alert, and the day's counts
  *  (null when the day route cannot answer). */
 export type RadarDayData = {
   costUsd: number;
   requests: number;
   worst: Alert | null;
-  day: DayCounts | null;
+  day: DayAnswer | null;
 };
 
-/** One read through the API client; any refusal or network error reads as null. */
-async function readOr<T>(api: Api, path: string): Promise<T | null> {
+/** One read through the API client, checked against its schema; a refusal or an unreadable
+ *  answer reads as null. */
+async function readOr<const S extends v.GenericSchema>(
+  api: Api,
+  path: string,
+  schema: S,
+): Promise<v.InferOutput<S> | null> {
   try {
-    return (await api.api(path)) as T;
+    return decode(schema, await api.api(path), path);
   } catch {
     return null;
   }
@@ -45,26 +48,21 @@ export function worstAlert(alerts: readonly Alert[]): Alert | null {
   return alerts.find((a) => a.severity === "err") ?? alerts[0] ?? null;
 }
 
-const isCount = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
-
-/** Reads the three routes at once. Today is the usage report's last day; a report without days
- *  answers null, and so does the whole read. */
+/** Reads the three routes at once. Today is the usage report's last day; a report that cannot
+ *  be read answers null, and so does the whole read. */
 export async function readRadarDay(api: Api): Promise<RadarDayData | null> {
   const [usage, alerts, day] = await Promise.all([
-    readOr<UsageReport>(api, USAGE_PATH),
-    readOr<{ alerts?: Alert[] }>(api, ALERTS_PATH),
-    readOr<Partial<DayCounts>>(api, DAY_PATH),
+    readOr(api, USAGE_PATH, UsageReport),
+    readOr(api, ALERTS_PATH, AlertsAnswer),
+    readOr(api, DAY_PATH, DayAnswer),
   ]);
-  const today = Array.isArray(usage?.days) ? usage.days.at(-1) : undefined;
+  const today = usage?.days.at(-1);
   if (!today) return null;
   return {
     costUsd: today.costUsd,
     requests: today.requests,
-    worst: worstAlert(Array.isArray(alerts?.alerts) ? alerts.alerts : []),
-    day:
-      day && isCount(day.peakSessions) && isCount(day.cardsDone)
-        ? { peakSessions: day.peakSessions, cardsDone: day.cardsDone }
-        : null,
+    worst: worstAlert(alerts?.alerts ?? []),
+    day,
   };
 }
 

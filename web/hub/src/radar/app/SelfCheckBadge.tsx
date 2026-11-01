@@ -7,8 +7,9 @@
 
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import { decode } from "../../api/decode.ts";
+import { SelfCheck, type SelfCheckCounts } from "../../api/schema/radar-side.ts";
 import type { StatusTone } from "../palette.ts";
-import type { SelfCheck, SelfCheckCounts } from "../shared/api.ts";
 import { Badge } from "./kit.tsx";
 
 /** The drift a badge still reads as a match, in percent. */
@@ -18,23 +19,13 @@ export const DRIFT_OK_PCT = 1;
 export const SELFCHECK_PATH = "/api/radar/api/selfcheck";
 const REFRESH_MS = 60_000;
 
-const COUNTERS = ["requests", "input", "output", "cacheRead", "cacheWrite"] as const;
-
-/** One side's counters, checked at the edge. */
-function isCounts(value: unknown): value is SelfCheckCounts {
-  if (typeof value !== "object" || value === null) return false;
-  const side = value as Record<string, unknown>;
-  return COUNTERS.every((key) => typeof side[key] === "number");
-}
-
 /** The self-check an answer holds, or null when it is not one. */
 export function selfCheckOf(answer: unknown): SelfCheck | null {
-  if (typeof answer !== "object" || answer === null) return null;
-  const a = answer as Record<string, unknown>;
-  const drift = a.driftPct === null || typeof a.driftPct === "number";
-  return typeof a.day === "string" && drift && isCounts(a.radar) && isCounts(a.transcripts)
-    ? (answer as SelfCheck)
-    : null;
+  try {
+    return decode(SelfCheck, answer, SELFCHECK_PATH);
+  } catch {
+    return null;
+  }
 }
 
 /** Reads the self-check; null when the route cannot answer (no history, a network error). */

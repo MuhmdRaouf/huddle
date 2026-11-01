@@ -3,8 +3,14 @@
 
 import { render, waitFor } from "@testing-library/preact";
 import { describe, expect, it } from "vite-plus/test";
-import { fetchSelfCheck, SelfCheckBadge, selfCheckOf } from "../../../src/radar/app/SelfCheckBadge.tsx";
-import type { SelfCheck } from "../../../src/radar/shared/api.ts";
+import { decode } from "../../../src/api/decode.ts";
+import { SelfCheck } from "../../../src/api/schema/radar-side.ts";
+import {
+  fetchSelfCheck,
+  SELFCHECK_PATH,
+  SelfCheckBadge,
+  selfCheckOf,
+} from "../../../src/radar/app/SelfCheckBadge.tsx";
 
 const counts = { requests: 3, input: 2400, output: 600, cacheRead: 5000, cacheWrite: 2000 };
 
@@ -65,5 +71,13 @@ describe("SelfCheckBadge", () => {
     });
     expect(read).toEqual(body);
     expect(asked).toEqual(["/api/radar/api/selfcheck"]);
+  });
+
+  it("refuses an answer whose counter is not a number, naming the path", () => {
+    const bad = { ...check(1), transcripts: { ...counts, requests: "3" } };
+    expect(() => decode(SelfCheck, bad, SELFCHECK_PATH)).toThrow(
+      "/api/radar/api/selfcheck: transcripts.requests: expected number",
+    );
+    expect(selfCheckOf(bad)).toBeNull();
   });
 });

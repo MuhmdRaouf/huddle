@@ -5,6 +5,8 @@
 import { act, cleanup, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api, ApiError } from "../../src/api.ts";
+import { decode } from "../../src/api/decode.ts";
+import { AlertsAnswer } from "../../src/api/schema/radar-side.ts";
 import { RadarDayCard, readRadarDay, worstAlert } from "../../src/app/RadarDay.tsx";
 import type { Alert } from "../../src/radar/shared/api.ts";
 import { flush, makeCtx, makeState, renderIn } from "../helpers.tsx";
@@ -24,11 +26,23 @@ const alert = (over: Partial<Alert>): Alert => ({
   ...over,
 });
 
+const zero = { requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0, savingsUsd: 0 };
 const usage = {
+  from: "2026-10-19",
+  to: "2026-10-25",
   days: [
-    { date: "2026-10-24", requests: 9, costUsd: 1.5 },
-    { date: "2026-10-25", requests: 3, costUsd: 0.0073 },
+    { ...zero, date: "2026-10-24", requests: 9, costUsd: 1.5 },
+    { ...zero, date: "2026-10-25", requests: 3, costUsd: 0.0073 },
   ],
+  totals: zero,
+  byModel: [],
+  byProject: [],
+  byKind: [],
+  byHarness: [],
+  topSessions: {},
+  approximate: false,
+  unpriced: 0,
+  pricesRetrieved: "2026-10-08",
 };
 
 /** An API whose answers are a function of the path; a thrown Error is a refusal. */
@@ -84,6 +98,15 @@ describe("the Radar card", () => {
   it("answers nothing when the usage report cannot be read", async () => {
     expect(await readRadarDay(apiOf(() => refusal(503)))).toBeNull();
     expect(await readRadarDay(apiOf(() => ({})))).toBeNull();
+  });
+
+  it("refuses an alerts answer whose alert is missing its fields, naming the path", async () => {
+    expect(() => decode(AlertsAnswer, { alerts: [{ id: "x" }] }, "/api/radar/api/alerts")).toThrow(
+      "/api/radar/api/alerts: alerts[0].kind",
+    );
+    const data = await readRadarDay(apiOf(routes({ peakSessions: 4, cardsDone: 7 }, [{ id: "x" } as Alert])));
+    expect(data?.worst).toBeNull();
+    expect(data?.costUsd).toBe(0.0073);
   });
 
   it("names the loudest alert: an error before any warning", () => {

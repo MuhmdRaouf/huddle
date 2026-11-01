@@ -2,6 +2,8 @@
 // sentence a refusal leaves, the malformed entries dropped, and the stamps the merge sorts by.
 
 import { describe, expect, it, vi } from "vite-plus/test";
+import { decode } from "../../src/api/decode.ts";
+import { AuditRow } from "../../src/api/schema/radar-side.ts";
 import type { HttpResponse } from "../../src/radar/app/controller.ts";
 import { AUDIT_PAGE, auditTs, fetchAudit } from "../../src/radar/audit.ts";
 
@@ -69,6 +71,29 @@ describe("fetchAudit", () => {
     expect(page.rows).toHaveLength(1);
     expect(page.rows[0]?.id).toBe(1);
     expect((await fetchAudit(fetchOf(answer(200, { entries: "no" })))).rows).toEqual([]);
+  });
+
+  it("refuses an entry whose actor is missing, naming the path", async () => {
+    const noActor = {
+      id: 2,
+      at: "2026-10-16T09:01:00Z",
+      action: "signin",
+      target: "dashboard",
+      detail: null,
+    };
+    expect(() => decode(AuditRow, noActor, "entries[0]")).toThrow("entries[0]: actor: missing");
+    const page = await fetchAudit(
+      fetchOf(
+        answer(200, {
+          entries: [
+            { id: 1, at: "2026-10-16T09:00:00Z", actor: "a", action: "allow", target: "Bash", detail: null },
+            noActor,
+          ],
+        }),
+      ),
+    );
+    expect(page.rows).toHaveLength(1);
+    expect(page.rows[0]?.id).toBe(1);
   });
 });
 

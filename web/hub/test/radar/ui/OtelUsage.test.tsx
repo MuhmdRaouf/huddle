@@ -1,7 +1,9 @@
 import { screen, within } from "@testing-library/preact";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { OTEL_PATH, type OtelAnswer } from "../../../src/radar/app/views/OtelUsage.tsx";
+import { decode } from "../../../src/api/decode.ts";
+import { OtelAnswer } from "../../../src/api/schema/radar-side.ts";
+import { OTEL_PATH } from "../../../src/radar/app/views/OtelUsage.tsx";
 import { UsageView } from "../../../src/radar/app/views/Usage.tsx";
 import { fmtTokens, fmtUsd } from "../../../src/radar/fmt.ts";
 import { renderApp } from "./render.tsx";
@@ -95,6 +97,16 @@ describe("the usage view's source toggle", () => {
     renderApp(<UsageView />);
     await pickOtel();
     expect((await screen.findByRole("alert")).textContent).toContain("503");
+  });
+
+  it("refuses an answer whose points are not a number, naming the path", async () => {
+    answering({ ...ANSWER, points: "6" });
+    renderApp(<UsageView />);
+    await pickOtel();
+    expect(() => decode(OtelAnswer, { ...ANSWER, points: "6" }, OTEL_PATH)).toThrow(
+      "/api/radar/api/otel: points: expected number",
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain("points");
   });
 
   // an unmounted effect's cleanup runs after the next paint (a frame, or preact's 100 ms

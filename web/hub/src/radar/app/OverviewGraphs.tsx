@@ -9,13 +9,15 @@
 
 import { AreaChart, type ChartSeries } from "@huddle/ui/area-chart.tsx";
 import { ChartFrame } from "@huddle/ui/chart-frame.tsx";
+import type * as v from "valibot";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { useHuddle } from "../../app/context.tsx";
+import { decode } from "../../api/decode.ts";
+import { TodayReport, type UsageDay, UsageReport } from "../../api/schema/radar-side.ts";
 import { dayWords } from "../chart.ts";
 import { displayZone, fmtNum, fmtTokens, fmtUsd } from "../fmt.ts";
 import { SERIES, TOKEN_KINDS } from "../palette.ts";
-import type { TodayReport, UsageDay, UsageReport } from "../shared/usage.ts";
 
 const USAGE_PATH = "/api/radar/api/usage?days=30";
 const TODAY_PATH = "/api/radar/api/usage/today";
@@ -25,17 +27,21 @@ const CHART_H = 180;
 /** What the four graphs read: the thirty-day report and today's. */
 export type GraphsData = { usage: UsageReport; today: TodayReport };
 
-/** Reads both reports; null when either route cannot answer (no history, a network error). */
+/** Reads both reports; null when either route cannot answer (no history, a network error, an
+ *  answer that is no report). */
 export async function fetchGraphs(outer: typeof fetch = fetch): Promise<GraphsData | null> {
-  const read = async <T,>(path: string): Promise<T | null> => {
+  const read = async <S extends v.GenericSchema>(
+    path: string,
+    schema: S,
+  ): Promise<v.InferOutput<S> | null> => {
     try {
       const response = await outer(path, { headers: { Accept: "application/json" } });
-      return response.ok ? ((await response.json()) as T) : null;
+      return response.ok ? decode(schema, await response.json(), path) : null;
     } catch {
       return null;
     }
   };
-  const [usage, today] = await Promise.all([read<UsageReport>(USAGE_PATH), read<TodayReport>(TODAY_PATH)]);
+  const [usage, today] = await Promise.all([read(USAGE_PATH, UsageReport), read(TODAY_PATH, TodayReport)]);
   return usage === null || today === null ? null : { usage, today };
 }
 

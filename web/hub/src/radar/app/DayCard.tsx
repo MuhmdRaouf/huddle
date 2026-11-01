@@ -7,19 +7,19 @@
 
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import { decode } from "../../api/decode.ts";
+import { DayAnswer } from "../../api/schema/radar-side.ts";
 import { displayZone, fmtNum } from "../fmt.ts";
 
 const DAY_PATH = "/api/radar/api/day";
 const REFRESH_MS = 60_000;
 
-/** The day route's answer. */
-export type DayReport = { peakSessions: number; cardsDone: number };
-
-/** Reads the day; null when the route cannot answer (a standalone radar, a network error). */
-export async function fetchDay(outer: typeof fetch = fetch): Promise<DayReport | null> {
+/** Reads the day; null when the route cannot answer (a standalone radar, a network error, an
+ *  answer that is no day report). */
+export async function fetchDay(outer: typeof fetch = fetch): Promise<DayAnswer | null> {
   try {
     const response = await outer(DAY_PATH, { headers: { Accept: "application/json" } });
-    return response.ok ? ((await response.json()) as DayReport) : null;
+    return response.ok ? decode(DayAnswer, await response.json(), DAY_PATH) : null;
   } catch {
     return null;
   }
@@ -40,9 +40,9 @@ export function DayCard({
   read = fetchDay,
 }: {
   /** The day's read, injectable so tests answer it without a server. */
-  read?: () => Promise<DayReport | null>;
+  read?: () => Promise<DayAnswer | null>;
 }): JSX.Element | null {
-  const [day, setDay] = useState<DayReport | null>(null);
+  const [day, setDay] = useState<DayAnswer | null>(null);
 
   useEffect(() => {
     let live = true;

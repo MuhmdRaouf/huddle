@@ -4,6 +4,8 @@
 
 import { waitFor } from "@testing-library/preact";
 import { describe, expect, it } from "vite-plus/test";
+import { decode } from "../../../src/api/decode.ts";
+import { UsageReport } from "../../../src/api/schema/radar-side.ts";
 import { fetchGraphs, type GraphsData, OverviewGraphs } from "../../../src/radar/app/OverviewGraphs.tsx";
 import type { UsageDay, UsageSession } from "../../../src/radar/shared/usage.ts";
 import { TOKEN_KINDS } from "../../../src/radar/palette.ts";
@@ -150,5 +152,20 @@ describe("OverviewGraphs", () => {
     expect(asked.sort()).toEqual(["/api/radar/api/usage/today", "/api/radar/api/usage?days=30"]);
     expect(await fetchGraphs(() => Promise.resolve(new Response("{}", { status: 503 })))).toBeNull();
     expect(await fetchGraphs(() => Promise.reject(new Error("offline")))).toBeNull();
+  });
+
+  it("refuses a usage report whose days are not a list, naming the path", async () => {
+    const body = data();
+    expect(() => decode(UsageReport, { ...body.usage, days: "no" }, "/api/radar/api/usage?days=30")).toThrow(
+      "/api/radar/api/usage?days=30: days: expected Array",
+    );
+    expect(
+      await fetchGraphs((input) => {
+        const path = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
+        return Promise.resolve(
+          new Response(JSON.stringify(path.endsWith("/today") ? body.today : { ...body.usage, days: "no" })),
+        );
+      }),
+    ).toBeNull();
   });
 });

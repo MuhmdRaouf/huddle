@@ -5,6 +5,8 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
+import { decode } from "../../../api/decode.ts";
+import { OtelAnswer } from "../../../api/schema/radar-side.ts";
 import { fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { Icon } from "../Icon.tsx";
 import { EmptyState, ModelChip, Notice, Panel, SEGMENT, SEGMENT_GROUP } from "../kit.tsx";
@@ -12,33 +14,6 @@ import { Table, TableHeadStatic } from "../table.tsx";
 
 /** The read the hub answers with the rows Claude Code's export left. */
 export const OTEL_PATH = "/api/radar/api/otel";
-
-/** One model's totals as the export reported them. */
-export type OtelModelTotals = {
-  model: string;
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheCreation: number;
-  costUsd: number;
-  sessions: number;
-};
-
-/** One data point of the export. */
-export type OtelRow = {
-  source: "otel";
-  metric: string;
-  sessionId: string;
-  model: string;
-  type?: string;
-  value: number;
-  startTs: number;
-  ts: number;
-  cumulative: boolean;
-};
-
-/** The /api/otel answer. */
-export type OtelAnswer = { source: "otel"; points: number; byModel: OtelModelTotals[]; rows: OtelRow[] };
 
 /** Which source the usage view shows. */
 export type UsageSource = "transcripts" | "otel";
@@ -91,7 +66,7 @@ export function OtelUsage() {
       try {
         const response = await fetch(OTEL_PATH);
         if (!response.ok) throw new Error(`GET ${OTEL_PATH} → ${response.status}`);
-        const answer = (await response.json()) as OtelAnswer;
+        const answer = decode(OtelAnswer, await response.json(), OTEL_PATH);
         if (live) setLoad({ status: "ready", answer });
       } catch (error) {
         if (live) setLoad({ status: "error", error: error instanceof Error ? error.message : String(error) });
