@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"sync"
@@ -424,4 +425,60 @@ func TestStartMigrateReportsEachBatch(t *testing.T) {
 			t.Fatalf("StartMigrate without a store or a reader = %+v, want nil", run)
 		}
 	})
+}
+
+// TestAMigrateSweepTakesAtMostATenthOfACore: filing 10,500 settled history rows takes at
+// most 15% of a core, CPU time over wall time: between batches the sweep rests nine times
+// the batch's own time. The margin over the tenth covers the test's own goroutines and
+// SQLite's work outside the measured batches.
+func TestAMigrateSweepTakesAtMostATenthOfACore(t *testing.T) {
+	skipMeasuredShare(t)
+	const rows = measuredRows
+	records := make([]shared.RequestRecord, rows)
+	for at := range rows {
+		records[at] = shared.RequestRecord{
+			ID:        fmt.Sprintf("req_sweep_%06d", at),
+			SessionID: fmt.Sprintf("sess-big-%06d", at), AgentID: "main",
+			Model: "glm-5.3", Upstream: "api.z.ai",
+			Ts:     sweepNow().Add(-30 * day).UnixMilli(),
+			Tokens: shared.Tokens{Input: 10, Output: 5},
+		}
+	}
+	st, reader := openSweep(t, records)
+
+	batches, total := 0, 0
+	var once sync.Once
+	handled := make(chan struct{})
+	progress := func(step MigrateStep) {
+		batches++
+		total += step.Filed + step.Matched
+		if total >= rows {
+			once.Do(func() { close(handled) })
+		}
+	}
+	runtime.GC() // the fixture's garbage is collected before the window opens
+	cpuBefore := cpuTime(t)
+	wallStart := time.Now()
+	run := StartMigrate(context.Background(), st, reader, func() time.Time { return time.Now() },
+		time.Millisecond, time.Hour, nil, progress)
+	select {
+	case <-handled:
+	case <-time.After(5 * time.Minute):
+		run.Stop()
+		t.Fatal("the sweep never filed the settled rows")
+	}
+	run.Stop()
+	select {
+	case <-run.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("the sweep never stopped")
+	}
+	wall := time.Since(wallStart)
+	cpu := cpuTime(t) - cpuBefore
+
+	share := float64(cpu) / float64(wall)
+	t.Logf("migrate sweep %d rows: share %.3f, wall %s, batches %d", rows, share, wall, batches)
+	if share > 0.15 {
+		t.Errorf("the sweep held %.3f of a core over %s, want at most 0.15", share, wall)
+	}
 }

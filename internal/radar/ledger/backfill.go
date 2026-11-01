@@ -102,9 +102,11 @@ type BackfillRun struct {
 	done     chan struct{}
 }
 
-// StartBackfill rebuilds older rows in the background, one BackfillBatch per transaction
-// with pause between batches, reporting each batch to health; it ends when no older row is
-// left, or with ctx or Stop. Without a store it starts nothing and answers nil.
+// StartBackfill rebuilds older rows in the background, one BackfillBatch per transaction,
+// resting nine times the batch's own time, wall or CPU, whichever is longer, between
+// batches — pause at the least — so the run takes at most a tenth of one core on average;
+// it reports each batch to health and ends when no older row is left, or with ctx or Stop.
+// Without a store it starts nothing and answers nil.
 func StartBackfill(ctx context.Context, st *Store, pause time.Duration, health HealthReport) *BackfillRun {
 	if st == nil {
 		return nil
@@ -113,10 +115,13 @@ func StartBackfill(ctx context.Context, st *Store, pause time.Duration, health H
 		pause = 50 * time.Millisecond
 	}
 	run := &BackfillRun{stop: make(chan struct{}), done: make(chan struct{})}
+	meter := processMeter(time.Now)
 	go func() {
 		defer close(run.done)
 		for {
-			_, more, err := st.BackfillOnce(ctx, BackfillBatch)
+			var more bool
+			var err error
+			busy := meter.time(func() { _, more, err = st.BackfillOnce(ctx, BackfillBatch) })
 			if err != nil {
 				reportTo(health, BackfillHealthName, err)
 				select {
@@ -137,7 +142,7 @@ func StartBackfill(ctx context.Context, st *Store, pause time.Duration, health H
 				return
 			case <-run.stop:
 				return
-			case <-time.After(pause):
+			case <-time.After(restAfter(busy, pause)):
 			}
 		}
 	}()

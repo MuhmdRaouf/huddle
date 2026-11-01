@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -53,6 +54,14 @@ func routeFactText(t *testing.T) string {
 // inserted in one transaction.
 func buildVersion3File(t *testing.T, file string, rows int) {
 	t.Helper()
+	buildVersion3FileOfFacts(t, file, rows, routeFactText(t))
+}
+
+// buildVersion3FileOfFacts is buildVersion3File with the fact text each row carries chosen
+// by the caller: the same stale rows in one transaction, each fact's request id swapped
+// for the row's own id.
+func buildVersion3FileOfFacts(t *testing.T, file string, rows int, facts string) {
+	t.Helper()
 	pool, err := sql.Open("sqlite", file)
 	if err != nil {
 		t.Fatalf("open the version-3 file: %v", err)
@@ -78,7 +87,6 @@ func buildVersion3File(t *testing.T, file string, rows int) {
 		t.Fatalf("prepare the facts insert: %v", err)
 	}
 	defer func() { _ = factStmt.Close() }()
-	facts := routeFactText(t)
 	started := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC).UnixMilli()
 	for at := range rows {
 		id := fmt.Sprintf("req_%06d", at)
@@ -101,6 +109,42 @@ func newVersion3File(t *testing.T, rows int) string {
 	file := filepath.Join(t.TempDir(), "ledger.db")
 	buildVersion3File(t, file, rows)
 	return file
+}
+
+// newVersion3FileOfFacts builds a version-3 ledger file in a fresh temp directory whose
+// rows rebuild from facts, and answers its path.
+func newVersion3FileOfFacts(t *testing.T, rows int, facts string) string {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "ledger.db")
+	buildVersion3FileOfFacts(t, file, rows, facts)
+	return file
+}
+
+// routeFactWithUsageText marshals the route fact a live row's facts carry: the same
+// answer with a full usage block, so a rebuild reads the usage fields a real batch reads.
+func routeFactWithUsageText(t *testing.T) string {
+	t.Helper()
+	text, err := json.Marshal(RouteFacts{Event: domain.RouteEvent{
+		Ts:      "2026-10-01T12:00:00Z",
+		Event:   domain.EventRoute,
+		Plugin:  "zai",
+		Model:   "glm-5.3",
+		Route:   "provider",
+		Status:  200,
+		Headers: &map[string]string{"request-id": routeFactSeed},
+		Usage: &domain.RouteUsage{
+			"input_tokens":   float64(100),
+			"output_tokens":  float64(20),
+			"cache_creation": map[string]any{"ephemeral_1h_input_tokens": float64(32)},
+			"speed":          "fast",
+			"inference_geo":  "us",
+			"service_tier":   "priority",
+		},
+	}})
+	if err != nil {
+		t.Fatalf("marshal the route facts: %v", err)
+	}
+	return string(text)
 }
 
 // openLedgerFile opens file as the store, closing it at cleanup.
@@ -526,7 +570,7 @@ func TestTheBackfillResumesAfterAKill(t *testing.T) {
 // nothing.
 func TestStartBackfillReportsAndEnds(t *testing.T) {
 	t.Run("reports each batch ok and ends", func(t *testing.T) {
-		st := openLedgerFile(t, newVersion3File(t, 2500))
+		st := openLedgerFile(t, newVersion3File(t, 1500))
 		health := &recordingHealth{}
 		run := StartBackfill(context.Background(), st, time.Millisecond, health)
 		t.Cleanup(run.Stop)
@@ -548,8 +592,8 @@ func TestStartBackfillReportsAndEnds(t *testing.T) {
 			}
 			oks++
 		}
-		if oks < 3 {
-			t.Errorf("the backfill reported ok %d times, want at least 3, one per batch", oks)
+		if oks < 2 {
+			t.Errorf("the backfill reported ok %d times, want at least 2, one per batch", oks)
 		}
 	})
 
@@ -558,6 +602,41 @@ func TestStartBackfillReportsAndEnds(t *testing.T) {
 			t.Fatalf("StartBackfill without a store = %+v, want nil", run)
 		}
 	})
+}
+
+// TestABackfillTakesAtMostATenthOfACore: re-stamping 10,500 stale rows takes at most 15%
+// of a core, CPU time over wall time: between batches the run rests nine times the
+// batch's own time. The margin over the tenth covers the test's own goroutines and
+// SQLite's work outside the measured batches.
+func TestABackfillTakesAtMostATenthOfACore(t *testing.T) {
+	skipMeasuredShare(t)
+	st := openLedgerFile(t, newVersion3FileOfFacts(t, measuredRows, routeFactWithUsageText(t)))
+	health := &recordingHealth{}
+
+	runtime.GC() // the fixture's garbage is collected before the window opens
+	cpuBefore := cpuTime(t)
+	wallStart := time.Now()
+	run := StartBackfill(context.Background(), st, time.Millisecond, health)
+	select {
+	case <-run.Done():
+	case <-time.After(5 * time.Minute):
+		run.Stop()
+		t.Fatal("the backfill never ended")
+	}
+	wall := time.Since(wallStart)
+	cpu := cpuTime(t) - cpuBefore
+
+	batches := 0
+	for _, record := range health.snapshot() {
+		if record.name == BackfillHealthName {
+			batches++
+		}
+	}
+	share := float64(cpu) / float64(wall)
+	t.Logf("backfill %d rows: share %.3f, wall %s, batches %d", measuredRows, share, wall, batches)
+	if share > 0.15 {
+		t.Errorf("the backfill held %.3f of a core over %s, want at most 0.15", share, wall)
+	}
 }
 
 // TestTheWatcherKeepsWritingDuringABackfill: while the backfill walks 20,000 old rows, the

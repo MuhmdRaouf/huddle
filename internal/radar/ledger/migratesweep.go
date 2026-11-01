@@ -140,10 +140,12 @@ type MigrateRun struct {
 	done     chan struct{}
 }
 
-// StartMigrate runs the sweep in the background: a batch, pause, the next while More; when no
-// settled row waits it checks again every idle, so rows that settle later still file. Each
-// batch reports to health, and its step to progress when progress is set. It ends with ctx or
-// Stop. Without a store or a reader it starts nothing and answers nil.
+// StartMigrate runs the sweep in the background: a batch, then nine times the batch's own
+// time, wall or CPU, whichever is longer, of rest — pause at the least — while More, so
+// the sweep takes at most a tenth of one core on average; when no settled row waits it
+// checks again every idle, so rows that settle later still file. Each batch reports to
+// health, and its step to progress when progress is set. It ends with ctx or Stop. Without
+// a store or a reader it starts nothing and answers nil.
 func StartMigrate(ctx context.Context, st *Store, r *HistoryReader, now func() time.Time,
 	pause, idle time.Duration, health HealthReport, progress func(MigrateStep)) *MigrateRun {
 	if st == nil || r == nil {
@@ -156,10 +158,13 @@ func StartMigrate(ctx context.Context, st *Store, r *HistoryReader, now func() t
 		idle = time.Hour
 	}
 	run := &MigrateRun{stop: make(chan struct{}), done: make(chan struct{})}
+	meter := processMeter(now)
 	go func() {
 		defer close(run.done)
 		for {
-			step, err := st.MigrateOnce(ctx, r, now(), MigrateBatch)
+			var step MigrateStep
+			var err error
+			busy := meter.time(func() { step, err = st.MigrateOnce(ctx, r, now(), MigrateBatch) })
 			reportTo(health, MigrateHealthName, err)
 			if err != nil {
 				select {
@@ -176,7 +181,7 @@ func StartMigrate(ctx context.Context, st *Store, r *HistoryReader, now func() t
 			}
 			next := idle
 			if step.More {
-				next = pause
+				next = restAfter(busy, pause)
 			}
 			select {
 			case <-ctx.Done():
