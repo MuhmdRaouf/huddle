@@ -252,13 +252,12 @@ type fakeHub struct {
 	t      *testing.T
 	server *httptest.Server
 
-	mu        sync.Mutex
-	last      int64            // the hello's last seq
-	backlog   []map[string]any // what the events operation answers
-	after     []int64          // the cursors the events operation was asked for
-	live      chan string      // frames the stream writes after its hello
-	route     string           // the registry's delivery route for the session
-	streamEnd chan struct{}    // closes the stream when closed
+	mu      sync.Mutex
+	last    int64            // the hello's last seq
+	backlog []map[string]any // what the events operation answers
+	after   []int64          // the cursors the events operation was asked for
+	live    chan string      // frames the stream writes after its hello
+	route   string           // the registry's delivery route for the session
 }
 
 func newFakeHub(t *testing.T) *fakeHub {
