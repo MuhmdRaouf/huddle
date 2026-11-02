@@ -1650,7 +1650,8 @@ func (p *passWork) stepPhase() bool {
 	return false
 }
 
-// stepSpool tails the spool files, feeding one new line a step.
+// stepSpool tails the spool files, feeding one new line a step. A file is read again after each
+// chunk until a read finds nothing new, so a backlog of several chunks drains in this pass.
 func (p *passWork) stepSpool() bool {
 	if !p.spoolListed {
 		p.spoolListed = true
@@ -1670,9 +1671,9 @@ func (p *passWork) stepSpool() bool {
 	}
 	for p.spoolAt < len(p.spoolFiles) {
 		path := p.spoolFiles[p.spoolAt]
-		p.spoolAt++
 		result := p.w.tailFile(p.w.spoolTailOf(path))
 		if len(result.Lines) == 0 {
+			p.spoolAt++
 			continue
 		}
 		p.spoolLines = result.Lines
@@ -1872,7 +1873,9 @@ func (w *Watcher) noteTailRead(tail *fileTail, grew bool) {
 	tail.compacted = true
 }
 
-// stepTailing feeds every tailed transcript's new lines, in discovery order, one line a step.
+// stepTailing feeds every tailed transcript's new lines, in discovery order, one line a step. A
+// transcript is read again after each chunk until a read finds nothing new, so a backlog of
+// several chunks drains in this pass.
 func (p *passWork) stepTailing() bool {
 	if !p.tailsSnapshotted {
 		p.tailsSnapshotted = true
@@ -1893,13 +1896,13 @@ func (p *passWork) stepTailing() bool {
 	}
 	for p.tailAt < len(p.tailSnapshot) {
 		tail := p.tailSnapshot[p.tailAt]
-		p.tailAt++
 		result := p.w.tailFile(&tail.tail)
 		if result.ModMs > 0 {
 			tail.modMs = result.ModMs
 		}
 		p.w.noteTailRead(tail, len(result.Lines) > 0)
 		if len(result.Lines) == 0 {
+			p.tailAt++
 			continue
 		}
 		p.curTail = tail
