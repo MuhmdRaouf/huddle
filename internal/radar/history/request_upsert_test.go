@@ -1,7 +1,9 @@
 package history
 
 import (
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -157,5 +159,67 @@ func TestAWriteWithNoUsageFillsAStopReasonTheRowLacks(t *testing.T) {
 
 	if got.StopReason == nil || *got.StopReason != "502" {
 		t.Errorf("stop reason = %v, want the route line's 502 for a row that had none", got.StopReason)
+	}
+}
+
+// runRecordingDB wraps a database, remembering every statement Run executes.
+type runRecordingDB struct {
+	DB
+	statements []string
+}
+
+func (r *runRecordingDB) Run(query string, params ...SqlValue) (int64, error) {
+	r.statements = append(r.statements, query)
+	return r.DB.Run(query, params...)
+}
+
+// upsertStatements lists the statements a put of each record ran against the requests table.
+func upsertStatements(t *testing.T, records ...shared.RequestRecord) []string {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "history.db")
+	underlying, err := OpenDB(file)
+	if err != nil {
+		t.Fatalf("open the database: %v", err)
+	}
+	recording := &runRecordingDB{DB: underlying}
+	h, err := OpenHistory(file, recording)
+	if err != nil {
+		t.Fatalf("open history: %v", err)
+	}
+	t.Cleanup(func() { _ = h.Close() })
+	if err := h.UpsertNode(nodeUpsert()); err != nil {
+		t.Fatalf("upsert the node: %v", err)
+	}
+	recording.statements = nil
+	var upserts []string
+	for _, record := range records {
+		recording.statements = nil
+		if err := h.PutRequest("s1/main", record); err != nil {
+			t.Fatalf("put the request: %v", err)
+		}
+		for _, statement := range recording.statements {
+			if strings.HasPrefix(statement, "INSERT INTO requests") {
+				upserts = append(upserts, statement)
+			}
+		}
+	}
+	return upserts
+}
+
+// A statement is parsed on every Run, so the keeping CASE list costs a write that brings usage
+// for nothing: only a write with no usage runs it.
+func TestAWriteWithUsageRunsTheShortUpsert(t *testing.T) {
+	routeOnly := requestRecord()
+	routeOnly.Tokens = shared.Tokens{}
+
+	upserts := upsertStatements(t, pricedRequest(), pricedRequest(), routeOnly)
+
+	if len(upserts) != 3 {
+		t.Fatalf("the puts ran %d requests upserts, want 3", len(upserts))
+	}
+	for i, wantKeeping := range []bool{false, false, true} {
+		if got := strings.Contains(upserts[i], "CASE WHEN"); got != wantKeeping {
+			t.Errorf("put %d: the upsert keeps what the row holds = %v, want %v", i+1, got, wantKeeping)
+		}
 	}
 }

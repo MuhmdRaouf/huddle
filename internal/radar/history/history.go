@@ -606,9 +606,12 @@ const keepsTranscriptFacts = "CASE WHEN excluded.input + excluded.output + exclu
 	"AND COALESCE(requests.input, 0) + COALESCE(requests.output, 0) + COALESCE(requests.cache_read, 0) + " +
 	"COALESCE(requests.cache_write, 0) > 0 THEN COALESCE(requests."
 
-// upsertRequest is ON CONFLICT DO UPDATE, not REPLACE: re-putting a request must not
-// cascade-delete its content row.
-const upsertRequest = "INSERT INTO requests (id, node_id, session_id, agent_id, model, upstream, ts, latency_ms, " +
+// upsertRequestHead opens the upsert, which is ON CONFLICT DO UPDATE, not REPLACE: re-putting a request must not
+// cascade-delete its content row. The columns a route line sets update in both forms; a write
+// that brings usage replaces the transcript's columns (upsertReplacingFacts), and one that
+// brings none keeps the ones the row holds (upsertKeepingFacts). Every Run parses its statement,
+// so the long keeping form runs only for the write that needs it.
+const upsertRequestHead = "INSERT INTO requests (id, node_id, session_id, agent_id, model, upstream, ts, latency_ms, " +
 	"ttfb_ms, ttft_ms, " +
 	"input, output, cache_read, cache_write, cache_write_1h, speed, geo, service_tier, stop_reason, " +
 	"error, parent_agent_id, fallback, provider, route, via, status, harness, cost_usd, what, thinking, prompt_hash, headers, totals) " +
@@ -618,7 +621,18 @@ const upsertRequest = "INSERT INTO requests (id, node_id, session_id, agent_id, 
 	"latency_ms = excluded.latency_ms, ttfb_ms = excluded.ttfb_ms, ttft_ms = excluded.ttft_ms, " +
 	"error = excluded.error, parent_agent_id = excluded.parent_agent_id, fallback = excluded.fallback, " +
 	"provider = excluded.provider, route = excluded.route, via = excluded.via, status = excluded.status, " +
-	"prompt_hash = excluded.prompt_hash, headers = excluded.headers, " +
+	"prompt_hash = excluded.prompt_hash, headers = excluded.headers, "
+
+const upsertReplacingFacts = upsertRequestHead +
+	"node_id = excluded.node_id, agent_id = excluded.agent_id, " +
+	"input = excluded.input, output = excluded.output, " +
+	"cache_read = excluded.cache_read, cache_write = excluded.cache_write, " +
+	"cache_write_1h = excluded.cache_write_1h, speed = excluded.speed, geo = excluded.geo, " +
+	"service_tier = excluded.service_tier, stop_reason = excluded.stop_reason, " +
+	"harness = excluded.harness, cost_usd = excluded.cost_usd, what = excluded.what, " +
+	"thinking = excluded.thinking, totals = excluded.totals"
+
+const upsertKeepingFacts = upsertRequestHead +
 	"node_id = " + keepsTranscriptFacts + "node_id, excluded.node_id) ELSE excluded.node_id END, " +
 	"agent_id = " + keepsTranscriptFacts + "agent_id, excluded.agent_id) ELSE excluded.agent_id END, " +
 	"input = " + keepsTranscriptFacts + "input, excluded.input) ELSE excluded.input END, " +
@@ -762,7 +776,11 @@ func (h *History) PutRequest(nodeID string, r shared.RequestRecord) error {
 		totals = 1
 	}
 	params = append(params, totals)
-	if _, err := h.db.Run(upsertRequest, params...); err != nil {
+	upsert := upsertReplacingFacts
+	if r.Tokens.Input+r.Tokens.Output+r.Tokens.CacheRead+r.Tokens.CacheWrite == 0 {
+		upsert = upsertKeepingFacts
+	}
+	if _, err := h.db.Run(upsert, params...); err != nil {
 		return fmt.Errorf("put the request %s: %w", r.ID, err)
 	}
 	if _, err := h.db.Run(

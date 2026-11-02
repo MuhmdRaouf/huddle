@@ -491,3 +491,23 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   end to end (cmd/huddle/zai_interrupted_e2e_test.go) asserts the worker is gone once the board swept the job.
 - **Rule:** every worker records its group leader in `engine.pid` beside the attempt log while it runs and clears
   it when it exits, so the next command reaps the worker of a driver that died.
+
+## 2026-11-02, the fallback scan read one chunk per file and the hub caught up 30 s per 4 MiB
+
+- **What happened:** CI's Linux job failed `TestE2EHubStaysLight` with 14.53 s of hub CPU over the polled workload
+  against a 12.5 s budget. The test passed on macOS in the full gate. Locally the polled CPU was 5.1 s one
+  commit before the change feed (c4c2db55) and 8.0 s on the commit that added it (c40b7e94), a rise the
+  budget did not catch because CI runs about 1.8 times the local numbers.
+- **Cause:** a full pass read one 4 MiB chunk of each spool file and each transcript, then moved to the next file.
+  The old 1 s relist hid it: a backlog of four chunks drained in four seconds. The change feed moved the full
+  scan to 30 s, so the same backlog drained one chunk per scan, about two minutes for the test's seeded spool and
+  seven minutes for a real one. The test counts the hub as settled once the transcript requests are in, so the
+  spool chunks that were still to come landed inside the measured workload. A second cost sat in the catch-up
+  itself: the History upsert had grown a 15-column CASE list that SQLite parses on every statement, so each call
+  written to History cost about three times what it did, and the catch-up took about half as long again (26 s against 17 s to settle).
+- **Guard:** `TestWatcherDrainsAFileBiggerThanOneChunk` (internal/radar/ingest/watch_chunks_test.go) and
+  `TestAWriteWithUsageRunsTheShortUpsert` (internal/radar/history/request_upsert_test.go)
+- **Rule:** a pass drains every file it reads, and the long upsert that keeps a row's transcript facts runs only
+  for a write that brings no usage. Every change to the hub, radar or ingest reports `TestE2EHubStaysLight`'s polled
+  CPU and its catch-up and settled RSS peaks against the base commit on the same machine, three runs each, and a
+  rise of more than 10% blocks landing even under budget.
