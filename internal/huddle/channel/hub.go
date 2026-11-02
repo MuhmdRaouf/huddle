@@ -99,7 +99,9 @@ func (h *Hub) File(name string) string {
 // Remove takes a channel off the hub: the open channel closes with its WAL checkpointed first,
 // the file moves to channels/.removed/<name>-<UTC stamp>.db (a mistake is undone by moving it
 // back), and the name leaves the cache. The hub's lock is held throughout, so no Get reopens
-// the file midway. A channel without a file answers a not-found error.
+// the file midway. A caller that still holds the closed channel gets the closed store's error from
+// its next call, and a GetExisting after the remove answers not found (a Get may make a fresh
+// channel). A channel without a file answers a not-found error.
 func (h *Hub) Remove(ctx context.Context, name string, now time.Time) (string, error) {
 	if !ChannelRe.MatchString(name) {
 		return "", httpErr(400, "channel name must match /"+channelReSrc+"/")

@@ -4,9 +4,11 @@ package channel
 // first, the file moves under channels/.removed/ named with the UTC stamp, and the cache drops
 // the name, so the next Get makes a fresh channel or answers not found.
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -115,17 +117,39 @@ func TestHubRemove(t *testing.T) {
 		}
 	})
 
-	t.Run("a Get during the remove never reopens the old file", func(t *testing.T) {
+	t.Run("a channel a Get answered just before the remove is closed by it, and the next Get is not found", func(t *testing.T) {
 		dir := t.TempDir()
 		h := NewHub(dir, true)
 		t.Cleanup(func() { _ = h.Close(bg) })
-		ch, err := h.Get(bg, "shop")
+		if _, err := h.Get(bg, "shop"); err != nil {
+			t.Fatal(err)
+		}
+		h.OnGet(func(*Channel) {
+			if _, err := h.Remove(bg, "shop", rmNow); err != nil {
+				t.Error(err)
+			}
+		})
+		held, err := h.GetExisting(bg, "shop")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ch.Join(bg, "a", JoinOpts{}); err != nil {
+		if _, err := held.Stats(bg); err == nil {
+			t.Error("the channel the remove closed answered a read")
+		}
+		if _, err := h.GetExisting(bg, "shop"); err == nil || errStatus(err) != 404 {
+			t.Errorf("get after the remove = %v, want 404", err)
+		}
+	})
+
+	t.Run("a Get during the remove answers the channel before it or not found, never the removed one after it", func(t *testing.T) {
+		dir := t.TempDir()
+		h := NewHub(dir, true)
+		t.Cleanup(func() { _ = h.Close(bg) })
+		removedChannel, err := h.Get(bg, "shop")
+		if err != nil {
 			t.Fatal(err)
 		}
+		var removed atomic.Bool
 		stop := make(chan struct{})
 		errs := make(chan error, 1)
 		var wg sync.WaitGroup
@@ -136,16 +160,14 @@ func TestHubRemove(t *testing.T) {
 					return
 				default:
 				}
+				afterRemove := removed.Load()
 				c, err := h.GetExisting(bg, "shop")
-				if err != nil {
-					if errStatus(err) != 404 {
-						errs <- err
-						return
-					}
-					continue
-				}
-				if _, err := c.Stats(bg); err != nil {
+				switch {
+				case err != nil && errStatus(err) != 404:
 					errs <- err
+					return
+				case err == nil && afterRemove:
+					errs <- fmt.Errorf("a Get after the remove answered a channel (the removed one: %v)", c == removedChannel)
 					return
 				}
 			}
@@ -153,6 +175,7 @@ func TestHubRemove(t *testing.T) {
 		if _, err := h.Remove(bg, "shop", rmNow); err != nil {
 			t.Fatal(err)
 		}
+		removed.Store(true)
 		close(stop)
 		wg.Wait()
 		select {

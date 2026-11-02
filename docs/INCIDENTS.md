@@ -614,3 +614,22 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   `testkit.TempDir` fails the test when its temp root sits inside a git work tree; no test run starts with `TMPDIR`
   inside a repository; `testkit.TempDir` changes no environment variable, because parallel tests call it and
   share the process environment.
+
+## 2026-11-02, a hub test read through a channel the same test was removing, and CI turned red
+
+- **What happened:** CI's Linux race job failed `TestHubRemove/a_Get_during_the_remove_never_reopens_the_old_file`
+  with `sql: connection is already closed` on a push that did not touch the channel package. It passed in the
+  gates before it and on a quiet machine.
+- **Cause:** the test ran `GetExisting` in a loop and read `Stats` from each channel it got while `Hub.Remove` ran.
+  `Get` hands the channel out after it lets go of the hub's lock, and `Remove` closes the channel under that lock, so
+  a read that began after `Remove` closed it, on a handle `Get` had answered a moment before, got the closed
+  store's error. The product answers a closed channel with an error by design (`TestClosedChannel`); the test
+  asserted the opposite, and only the scheduler decided whether a run hit the gap. Setting the removal inside
+  `OnGet` hits it on every run.
+- **Guard:** `TestHubRemove` (internal/huddle/channel/hub_remove_test.go) runs the gap through `Hub.OnGet`
+  (a channel answered just before the remove is closed by it, the next Get is not found) and asserts the property
+  the loop can hold at any speed: a Get that starts after `Remove` returned never answers a channel, and a Get
+  during it answers a channel or not found.
+- **Rule:** a test that races a call against another asserts what the product promises at every interleaving, and
+  pins each interleaving the product answers differently through a seam; it never reads through a handle the
+  other call closes.
