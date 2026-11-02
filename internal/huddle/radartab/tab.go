@@ -84,6 +84,9 @@ type MountOptions struct {
 	NotifyRunner alerts.Runner
 	// Now is the clock everything here reads; nil is the real one.
 	Now func() time.Time
+	// RecordWindow is how far back the store keeps records in memory; 0 takes
+	// store.RecordWindow.
+	RecordWindow time.Duration
 	// Log receives the one line a proxying mount leaves; nil writes stderr.
 	Log func(line string)
 	// Client fetches a recorded owner; nil takes one with the probe timeout.
@@ -211,6 +214,11 @@ func Mount(ctx context.Context, mux *http.ServeMux, radarHome string, options Mo
 		since = cli.DefaultSinceMs
 	}
 	st := store.CreateStore(now)
+	window := options.RecordWindow
+	if window == 0 {
+		window = store.RecordWindow
+	}
+	st.KeepWindow(window)
 	var hist *history.History
 	var writer *history.HistoryWriter
 	if opened, err := history.OpenHistory(paths.HistoryPath(appCtx, env), nil); err != nil {

@@ -22,6 +22,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cli"
 	"github.com/MuhmdRaouf/huddle/internal/radar/server"
+	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 	"github.com/MuhmdRaouf/huddle/internal/radar/store"
 )
 
@@ -543,3 +544,22 @@ func TestStopReleasesTheLock(t *testing.T) {
 
 // strPtr lifts one string.
 func strPtr(text string) *string { return &text }
+
+// The mounted tab's store keeps 24 hours of records: a request older than that is not held.
+func TestTheTabsStoreKeepsOneDayOfRecords(t *testing.T) {
+	at := time.UnixMilli(1_900_000_000_000)
+	tab, _, _ := mountMux(t, tempEnv(t), MountOptions{
+		IntervalMs: quietMs, InsightsTickMs: quietMs, Now: func() time.Time { return at },
+	})
+	if !tab.Owns {
+		t.Fatal("the mount did not take the lock")
+	}
+	record := func(id string, age time.Duration) shared.RequestRecord {
+		return shared.RequestRecord{ID: id, SessionID: "s1", AgentID: "main", Model: "claude-sonnet-5-5", Ts: at.Add(-age).UnixMilli()}
+	}
+	tab.Store.AddRequest(record("req-old", store.RecordWindow+time.Second), nil)
+	tab.Store.AddRequest(record("req-new", time.Hour), nil)
+	if got := tab.Store.Summary().Requests; got != 1 {
+		t.Errorf("the store holds %d requests, want 1", got)
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -88,9 +89,17 @@ const (
 
 	// idleSeedRequests and polledSeedRequests are the request counts the two seeds carry
 	// and their settles wait for; the small sessions sit under the store's 200-session cap
-	// at this scale, so the polled seed's summary counts them beside the busy requests.
+	// at this scale, and inside its 24-hour window, so the polled seed's summary counts them
+	// beside the busy requests.
 	idleSeedRequests   = idleSeedBusy * busyLines
 	polledSeedRequests = polledSeedBusy*polledBusyLines + smallSessions
+
+	// agedFeedPairs is the transcript lines the aged feed appends, each with its route spool
+	// line, and agedFeedHooks the hook lines beside them: 2,000 pairs and 4,000 spool lines,
+	// all dated agedFeedAge back.
+	agedFeedPairs = 2_000
+	agedFeedHooks = 2_000
+	agedFeedAge   = 48 * time.Hour
 )
 
 // hubLightModels is the models the seeded requests rotate through.
@@ -150,6 +159,8 @@ func TestE2EHubStaysLight(t *testing.T) {
 	// wide window second so the store's growth works against the ratio, not for it
 	oneClientCPU := hubLightStreamWindowCPU(t, client, hubURL, transcripts, pidC, 1, 1)
 	wideCPU := hubLightStreamWindowCPU(t, client, hubURL, transcripts, pidC, hubStreamClientsWide, 2)
+	feedAgedRecords(t, client, hubURL, transcripts)
+	agedMB := processRSS(t, pidC) / (1024 * 1024)
 	cpuC := stopAndMeasure(t, logC)
 
 	catchUpMB := catchUpPeak / (1024 * 1024)
@@ -175,11 +186,109 @@ func TestE2EHubStaysLight(t *testing.T) {
 	if settledMB >= hubSettledRSSCeilingMB {
 		t.Errorf("settled peak rss %d MB is at or over the %d MB ceiling", settledMB, hubSettledRSSCeilingMB)
 	}
+	if agedMB >= hubSettledRSSCeilingMB {
+		t.Errorf("rss %d MB after the aged feed is at or over the %d MB ceiling", agedMB, hubSettledRSSCeilingMB)
+	}
+}
+
+// feedAgedRecords appends records dated agedFeedAge back to the settled hub, the way a late
+// flush would: agedFeedPairs transcript lines with their route spool lines, and agedFeedHooks
+// hook lines, then one line stamped now. The hub's summary counts the fresh line once it has
+// read the file in order, and the aged records, older than its window, never reach the count.
+func feedAgedRecords(t *testing.T, client *http.Client, hubURL, transcripts string) {
+	t.Helper()
+	before := stableSummaryRequests(t, client, hubURL)
+	now := time.Now()
+	at := now.Add(-agedFeedAge)
+	session := "light-aged"
+	var spool hubLightSpool
+	var transcript strings.Builder
+	for i := 0; i < agedFeedPairs; i++ {
+		when := at.Add(time.Duration(i) * time.Second)
+		model := hubLightModels[i%len(hubLightModels)]
+		line, err := hubLightAssistantLine(session, i, when, model)
+		if err != nil {
+			t.Fatal(err)
+		}
+		transcript.WriteString(line)
+		route, err := hubLightRouteLine(session, i, when, model)
+		if err != nil {
+			t.Fatal(err)
+		}
+		spool.add(when, route)
+	}
+	for i := 0; i < agedFeedHooks; i++ {
+		// numbered past the seed's hook lines, so no tool id repeats one the seed holds
+		line, err := hubLightHookLine(polledHookLines+i, at.Add(time.Duration(i)*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		spool.add(at.Add(time.Duration(i)*time.Second), line)
+	}
+	fresh, err := hubLightAssistantLine(session, agedFeedPairs, now, hubLightModels[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcript.WriteString(fresh)
+
+	spoolDir := paths.SpoolDir(t.Context(), domain.EnvLookup{
+		"RADAR_HOME": filepath.Join(transcripts, "..", "..", "..", "..", "hub-radar"),
+	})
+	appendHubLightSpool(t, spoolDir, &spool, now)
+	if err := os.WriteFile(filepath.Join(transcripts, session+".jsonl"), []byte(transcript.String()), 0o644); err != nil {
+		t.Fatalf("write the aged transcript: %v", err)
+	}
+	until(t, 60*time.Second, func() bool {
+		return hubLightSummaryRequests(t, client, hubURL) >= before+1
+	}, "the hub to count the fresh line that follows the aged feed")
+	time.Sleep(5 * time.Second)
+	if got := hubLightSummaryRequests(t, client, hubURL); got != before+1 {
+		t.Errorf("the summary counts %d requests after the aged feed, want %d: the fresh line only", got, before+1)
+	}
+}
+
+// stableSummaryRequests reads radar's request count until two reads 3 s apart agree.
+func stableSummaryRequests(t *testing.T, client *http.Client, hubURL string) int64 {
+	t.Helper()
+	last := hubLightSummaryRequests(t, client, hubURL)
+	for i := 0; i < 20; i++ {
+		time.Sleep(3 * time.Second)
+		next := hubLightSummaryRequests(t, client, hubURL)
+		if next == last {
+			return next
+		}
+		last = next
+	}
+	t.Fatalf("the summary's request count kept moving: %d", last)
+	return last
+}
+
+// appendHubLightSpool appends the spool's lines to today's spool file, where the hooks append
+// whatever their own timestamp says.
+func appendHubLightSpool(t *testing.T, dir string, spool *hubLightSpool, today time.Time) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("make %s: %v", dir, err)
+	}
+	slices.SortStableFunc(spool.lines, func(a, b hubLightSpoolLine) int { return a.at.Compare(b.at) })
+	var body strings.Builder
+	for _, line := range spool.lines {
+		body.WriteString(line.text)
+	}
+	path := filepath.Join(dir, today.UTC().Format("2006-01-02")+".jsonl")
+	if err := appendHubLightLine(path, body.String()); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body.String()), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
 }
 
 // seedHubLightTemplate writes the one home a phase's runs start from, under its user's
 // .claude/projects/-tmp-hub-light: busy sessions whose answers fill the last 6 hours at the
-// given lines per session, and smallSessions small sessions from 2 to 3 days ago, one request
+// given lines per session, and smallSessions small sessions from 2 to 20 hours ago, one request
 // each. With withSpool the busy sessions also feed the run's spool, one route line per seeded
 // call for the first polledRouteLines lines of every session plus polledHookLines hook
 // events, written into the RADAR_HOME the runs start with. The whole seed must land in under
@@ -244,7 +353,7 @@ func seedHubLightTemplate(t *testing.T, root string, busy, lines int, withSpool 
 	}
 	for s := 0; s < smallSessions; s++ {
 		session := fmt.Sprintf("light-small-%03d", s)
-		at := now.Add(-time.Duration(48+s%24) * time.Hour)
+		at := now.Add(-time.Duration(2+s%19) * time.Hour)
 		writeHubLightTranscript(t, filepath.Join(transcripts, session+".jsonl"), func(w *bufio.Writer) error {
 			return writeHubLightTurn(w, session, at, hubLightModels[s%len(hubLightModels)])
 		})

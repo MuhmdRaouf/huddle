@@ -5,6 +5,7 @@ package radartab
 
 import (
 	"testing"
+	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
@@ -39,7 +40,8 @@ func TestModelAdvice(t *testing.T) {
 	})
 	t.Run("the advisor's rows reach the owner, one advice per row, in the report's order", func(t *testing.T) {
 		env := tempEnv(t)
-		tab, _, _ := mountMux(t, env, MountOptions{IntervalMs: quietMs, InsightsTickMs: quietMs})
+		// the runs are dated 1970, whatever day the suite runs
+		tab, _, _ := mountMux(t, env, MountOptions{IntervalMs: quietMs, InsightsTickMs: quietMs, RecordWindow: 100 * 365 * 24 * time.Hour})
 		if !tab.Owns {
 			t.Fatal("the mount did not take the lock")
 		}

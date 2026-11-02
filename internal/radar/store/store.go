@@ -253,6 +253,14 @@ const (
 // deletes it where it stands.
 const pruneLookahead = 8
 
+// RecordWindow is how far back the hub keeps request, tool and event records in memory;
+// older ones belong to history.db alone.
+const RecordWindow = 24 * time.Hour
+
+// agePassEvery spaces the passes that shed the records past the window, so a burst of
+// writes walks the store once.
+const agePassEvery = time.Minute
+
 // sessionTitles is the names a session's transcript carries; the latest value of each
 // stands.
 type sessionTitles struct {
@@ -395,7 +403,7 @@ type listenerEntry struct {
 
 // Store is the in-memory model, rebuilt from disk on start and fed incrementally after
 // that. Bounded: at most shared.MaxSessions sessions and shared.MaxRecords request,
-// tool and event records, shed oldest-timestamp first in batches, a live session's live
+// tool and event records, none older than its window, shed oldest-timestamp first in batches, a live session's live
 // agents kept while anything less protected remains. Reads group records by session once
 // per version (cached), so a full projection costs one pass, not sessions × records.
 type Store struct {
@@ -409,6 +417,12 @@ type Store struct {
 	// cap by the same arithmetic.
 	maxRecords int64
 	evictBatch int64
+	// window is how far back records are kept; zero keeps every record until the cap sheds
+	// it.
+	window time.Duration
+	// agedAt is the clock reading, in milliseconds, of the last age pass; zero before the
+	// first.
+	agedAt int64
 
 	seq      int64 // the timeline events' own numbering
 	arrival  int64 // the arrival number of a stored record
@@ -1050,17 +1064,82 @@ func (s *Store) rankOfLocked(sessionID, agentID *string) int {
 	return s.rankOfAgentLocked(*sessionID, id)
 }
 
-// evictRecordsLocked sheds records past the cap, oldest by their own timestamps first —
-// request ts, tool startedAt, event ts — never by arrival order: catch-up feeds files in
-// no particular time order, so an arrival-order drain dropped a live session's newest
-// requests while day-old records survived. One pass per batch, and a live agent's
-// records rank behind everything less protected, however old they are.
+// evictRecordsLocked sheds the records past the window, then those past the cap, oldest by
+// their own timestamps first — request ts, tool startedAt, event ts — never by arrival
+// order: catch-up feeds files in no particular time order, so an arrival-order drain dropped
+// a live session's newest requests while day-old records survived. One pass per batch, and
+// a live agent's records rank behind everything less protected, however old they are.
 func (s *Store) evictRecordsLocked(pins []evictionPin) {
+	s.shedAgedLocked(pins)
 	excess := int64(len(s.requests)+len(s.tools)+len(s.events)) - s.maxRecords
 	if excess <= 0 {
 		return
 	}
 	s.applyEvictionsLocked(s.oldestRecordsLocked(max(excess, s.evictBatch), pins))
+}
+
+// KeepWindow sets how far back the store keeps records; the next write past the pass
+// interval sheds the older ones. Zero keeps every record until the cap sheds it.
+func (s *Store) KeepWindow(window time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.window = window
+}
+
+// shedAgedLocked drops the records older than the window. The records the write just placed
+// (the pins) are checked every time, so a late arrival never shows; the pass over every held
+// record runs at most once per agePassEvery, since it walks them all.
+func (s *Store) shedAgedLocked(pins []evictionPin) {
+	if s.window <= 0 {
+		return
+	}
+	now := s.nowMillis()
+	cutoff := now - s.window.Milliseconds()
+	if aged := s.agedPinsLocked(pins, cutoff); len(aged) > 0 {
+		s.applyEvictionsLocked(aged)
+	}
+	if s.agedAt != 0 && now-s.agedAt < agePassEvery.Milliseconds() {
+		return
+	}
+	s.agedAt = now
+	s.shedOlderThanLocked(cutoff)
+}
+
+// agedPinsLocked lists the pinned records whose own timestamp is before cutoff. A pinned
+// event is the newest one in the log.
+func (s *Store) agedPinsLocked(pins []evictionPin, cutoff int64) []evictionCandidate {
+	var aged []evictionCandidate
+	for _, pin := range pins {
+		switch pin.source {
+		case 0:
+			if held, ok := s.requests[pin.id]; ok && held.record.Ts < cutoff {
+				aged = append(aged, evictionCandidate{source: 0, id: pin.id})
+			}
+		case 1:
+			if held, ok := s.tools[pin.id]; ok && held.record.StartedAt < cutoff {
+				aged = append(aged, evictionCandidate{source: 1, id: pin.id})
+			}
+		default:
+			if last := len(s.events) - 1; last >= 0 && strconv.FormatInt(s.events[last].Seq, 10) == pin.id && s.events[last].Ts < cutoff {
+				aged = append(aged, evictionCandidate{source: 2, id: pin.id})
+			}
+		}
+	}
+	return aged
+}
+
+// shedOlderThanLocked drops every record whose own timestamp is before cutoff, wherever
+// it lives and whatever its owner's rank.
+func (s *Store) shedOlderThanLocked(cutoff int64) {
+	var aged []evictionCandidate
+	for _, candidate := range s.candidatesLocked(nil) {
+		if candidate.ts < cutoff {
+			aged = append(aged, candidate)
+		}
+	}
+	if len(aged) > 0 {
+		s.applyEvictionsLocked(aged)
+	}
 }
 
 // oldestRecordsLocked picks the batch records with the least claim on being kept. The
@@ -1071,6 +1150,16 @@ func (s *Store) oldestRecordsLocked(batch int64, pins []evictionPin) []evictionC
 	for _, pin := range pins {
 		pinned[pin] = struct{}{}
 	}
+	candidates := s.candidatesLocked(pinned)
+	slices.SortFunc(candidates, shedFirst)
+	if int64(len(candidates)) > batch {
+		candidates = candidates[:batch]
+	}
+	return candidates
+}
+
+// candidatesLocked lists every held record but the pinned ones as an eviction candidate.
+func (s *Store) candidatesLocked(pinned map[evictionPin]struct{}) []evictionCandidate {
 	candidates := make([]evictionCandidate, 0, len(s.requests)+len(s.tools)+len(s.events))
 	for id, held := range s.requests {
 		if _, skip := pinned[evictionPin{source: 0, id: id}]; skip {
@@ -1105,10 +1194,6 @@ func (s *Store) oldestRecordsLocked(batch int64, pins []evictionPin) []evictionC
 			source: 2,
 			id:     id,
 		})
-	}
-	slices.SortFunc(candidates, shedFirst)
-	if int64(len(candidates)) > batch {
-		candidates = candidates[:batch]
 	}
 	return candidates
 }

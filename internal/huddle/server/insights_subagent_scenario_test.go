@@ -60,6 +60,9 @@ func newSubagentFixture(t *testing.T) *subagentFixture {
 	t.Cleanup(func() { _ = listener.Close() })
 	port := listener.Addr().(*net.TCPAddr).Port
 	mux := http.NewServeMux()
+	f := &subagentFixture{t: t, home: homeRoot, reg: reg,
+		clock: time.Date(2026, 10, 25, 12, 30, 0, 0, time.UTC)}
+	// the tab's store reads the fixture's clock, so its records stay inside the window
 	tab := radartab.Mount(context.Background(), mux, env["RADAR_HOME"], radartab.MountOptions{
 		Env:            env,
 		Port:           port,
@@ -67,6 +70,7 @@ func newSubagentFixture(t *testing.T) *subagentFixture {
 		IntervalMs:     3_600_000,
 		InsightsTickMs: 3_600_000,
 		NotifyRunner:   func(string, []string) {},
+		Now:            func() time.Time { return f.clock },
 	})
 	if !tab.Owns {
 		t.Fatal("the mount did not take the lock")
@@ -76,8 +80,7 @@ func newSubagentFixture(t *testing.T) *subagentFixture {
 	serveDone := make(chan struct{})
 	go func() { defer close(serveDone); _ = httpSrv.Serve(listener) }()
 	t.Cleanup(func() { _ = httpSrv.Close(); <-serveDone })
-	f := &subagentFixture{t: t, home: homeRoot, reg: reg, tab: tab,
-		clock: time.Date(2026, 10, 25, 12, 30, 0, 0, time.UTC)}
+	f.tab = tab
 	f.srv = &server{registry: reg, now: func() time.Time { return f.clock }, radar: tab,
 		o: Options{Home: homeRoot}}
 	return f

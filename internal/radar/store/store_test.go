@@ -1891,3 +1891,131 @@ func TestRequestsInOrderDoesNotSort(t *testing.T) {
 		}
 	})
 }
+
+// A store sheds the requests, tool calls and events older than its window, and the arrival
+// lists the ordered reads walk follow the maps.
+func TestStoreShedsRecordsPastTheWindow(t *testing.T) {
+	window := RecordWindow
+	// The records go in while the clock still reads their own moment, then the clock moves
+	// on to the present of the case.
+	start := time.UnixMilli(ts0)
+	clock := start
+	store := CreateStore(func() time.Time { return clock })
+	store.KeepWindow(window)
+	present := start.Add(window + time.Second)
+	justPast := present.Add(-window - time.Second).UnixMilli()
+	justInside := present.Add(-23*time.Hour - 59*time.Minute).UnixMilli()
+
+	for _, at := range []struct {
+		name string
+		ts   int64
+	}{{"past", justPast}, {"inside", justInside}} {
+		store.AddRequest(makeRequest(func(r *shared.RequestRecord) {
+			r.ID, r.Ts = "req-"+at.name, at.ts
+		}), nil)
+		store.AddToolCall(makeTool(func(tool *shared.ToolCallRecord) {
+			tool.ID, tool.StartedAt = "tool-"+at.name, at.ts
+		}))
+		store.AddSpoolLine(line(func(l *shared.SpoolLine) { l.Ts = isoTime(at.ts) }))
+	}
+	if got := store.Summary(); got.Requests != 2 || got.ToolCalls != 2 {
+		t.Fatalf("before the pass: %d requests and %d tool calls, want 2 and 2", got.Requests, got.ToolCalls)
+	}
+
+	clock = present
+	store.AddRequest(makeRequest(func(r *shared.RequestRecord) {
+		r.ID, r.SessionID, r.Ts = "req-now", "s2", present.UnixMilli()
+	}), nil)
+
+	var requestIDs []string
+	for _, record := range store.RequestsFor(RequestFilter{}) {
+		requestIDs = append(requestIDs, record.ID)
+	}
+	slices.Sort(requestIDs)
+	if want := []string{"req-inside", "req-now"}; !slices.Equal(requestIDs, want) {
+		t.Errorf("requests after the pass: %v, want %v", requestIDs, want)
+	}
+	var toolIDs []string
+	for _, tool := range store.Tools(ToolsFilter{}) {
+		toolIDs = append(toolIDs, tool.ID)
+	}
+	if want := []string{"tool-inside"}; !slices.Equal(toolIDs, want) {
+		t.Errorf("tool calls after the pass: %v, want %v", toolIDs, want)
+	}
+	events := store.Events(EventsFilter{})
+	if len(events) != 1 || events[0].Ts != justInside {
+		t.Errorf("events after the pass: %d kept, want the one inside the window", len(events))
+	}
+	if got := store.Summary(); got.Requests != 2 || got.ToolCalls != 1 {
+		t.Errorf("summary after the pass: %d requests and %d tool calls, want 2 and 1", got.Requests, got.ToolCalls)
+	}
+
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if got := len(store.requestsInOrderLocked()); got != len(store.requests) {
+		t.Errorf("request arrival list holds %d, the map %d", got, len(store.requests))
+	}
+	if got := len(store.toolsInOrderLocked()); got != len(store.tools) {
+		t.Errorf("tool arrival list holds %d, the map %d", got, len(store.tools))
+	}
+	assertIndexed(t, store)
+}
+
+// The pass over the held records runs at most once a minute: a burst of writes inside the
+// minute does not walk the store again.
+func TestStoreShedsPastTheWindowOncePerInterval(t *testing.T) {
+	start := time.UnixMilli(ts0)
+	clock := start
+	store := CreateStore(func() time.Time { return clock })
+	store.KeepWindow(RecordWindow)
+	// held is 40 s into the window when it arrives
+	store.AddRequest(makeRequest(func(r *shared.RequestRecord) { r.ID, r.Ts = "req-held", ts0+40_000 }), nil)
+
+	write := func(id string) {
+		store.AddRequest(makeRequest(func(r *shared.RequestRecord) { r.ID, r.Ts = id, clock.UnixMilli() }), nil)
+	}
+	clock = start.Add(RecordWindow + 30*time.Second)
+	write("req-a") // the pass runs: held is still inside
+	clock = clock.Add(30 * time.Second)
+	write("req-b") // held is now past the window, the pass is 30 s old
+	if got := store.Summary().Requests; got != 3 {
+		t.Errorf("a write inside the interval: %d requests, want 3 (no second pass)", got)
+	}
+	clock = clock.Add(40 * time.Second)
+	write("req-c")
+	if got := store.Summary().Requests; got != 3 {
+		t.Errorf("after the interval: %d requests, want 3 (req-held shed)", got)
+	}
+}
+
+// A record that arrives past the window is shed with its write, whatever the interval.
+func TestStoreShedsAnArrivalPastTheWindowAtOnce(t *testing.T) {
+	clock := time.UnixMilli(ts0)
+	store := CreateStore(func() time.Time { return clock })
+	store.KeepWindow(RecordWindow)
+	past := clock.Add(-RecordWindow - time.Second).UnixMilli()
+
+	store.AddRequest(makeRequest(func(r *shared.RequestRecord) { r.ID, r.Ts = "req-now", ts0 }), nil) // runs the pass
+	store.AddRequest(makeRequest(func(r *shared.RequestRecord) { r.ID, r.Ts = "req-past", past }), nil)
+	store.AddToolCall(makeTool(func(tool *shared.ToolCallRecord) { tool.ID, tool.StartedAt = "tool-past", past }))
+	store.AddSpoolLine(line(func(l *shared.SpoolLine) { l.Ts = isoTime(past) }))
+
+	if got := store.Summary(); got.Requests != 1 || got.ToolCalls != 0 {
+		t.Errorf("%d requests and %d tool calls, want 1 and 0", got.Requests, got.ToolCalls)
+	}
+	if got := len(store.Events(EventsFilter{})); got != 0 {
+		t.Errorf("%d events, want 0", got)
+	}
+}
+
+// A store with no window keeps a record however old it is, until the cap sheds it.
+func TestStoreWithoutAWindowKeepsOldRecords(t *testing.T) {
+	clock := time.UnixMilli(ts0)
+	store := CreateStore(func() time.Time { return clock })
+	store.AddRequest(makeRequest(func(r *shared.RequestRecord) { r.ID, r.Ts = "req-old", ts0 }), nil)
+	clock = clock.Add(30 * 24 * time.Hour)
+	store.AddRequest(makeRequest(func(r *shared.RequestRecord) { r.ID, r.Ts = "req-new", clock.UnixMilli() }), nil)
+	if got := store.Summary().Requests; got != 2 {
+		t.Errorf("%d requests, want 2", got)
+	}
+}

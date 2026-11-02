@@ -239,6 +239,8 @@ func TestGoldenParity(t *testing.T) {
 		InsightsTickMs: quietMs,
 		NotifyRunner:   func(string, []string) {},
 		Log:            lines.record,
+		// the fixture's records are dated August 2026, whatever day the suite runs
+		RecordWindow: 100 * 365 * 24 * time.Hour,
 	})
 	t.Cleanup(tab.Stop)
 	if !tab.Owns {
