@@ -81,14 +81,67 @@ func makeTool() shared.ToolCallRecord {
 	}
 }
 
+// testInput is an AlertInput whose records the tests list flat; detect hands them to the
+// engine session by session, the way the store does.
+type testInput struct {
+	AlertInput
+	Requests []shared.RequestRecord
+	Tools    []shared.ToolCallRecord
+	Events   []shared.EventRecord
+}
+
 // input is one live session and nothing else happening.
-func input() AlertInput {
-	return AlertInput{Now: now, Sessions: []store.SessionListItem{session()}}
+func input() testInput {
+	return testInput{AlertInput: AlertInput{Now: now, Sessions: []store.SessionListItem{session()}}}
+}
+
+// alertInput is the engine's input with the listed records grouped by session, each list in
+// the order given.
+func (in testInput) alertInput() AlertInput {
+	grouped := map[string]*store.SessionRecords{}
+	var order []string
+	records := func(id string) *store.SessionRecords {
+		if _, ok := grouped[id]; !ok {
+			grouped[id] = &store.SessionRecords{}
+			order = append(order, id)
+		}
+		return grouped[id]
+	}
+	for at := range in.Requests {
+		mine := records(in.Requests[at].SessionID)
+		mine.Requests = append(mine.Requests, &in.Requests[at])
+	}
+	for at := range in.Tools {
+		mine := records(in.Tools[at].SessionID)
+		mine.Tools = append(mine.Tools, &in.Tools[at])
+	}
+	for at := range in.Events {
+		if in.Events[at].SessionID != nil {
+			mine := records(*in.Events[at].SessionID)
+			mine.Events = append(mine.Events, &in.Events[at])
+		}
+	}
+	out := in.AlertInput
+	out.EachSession = func(visit func(string, store.SessionRecords)) {
+		for _, id := range order {
+			visit(id, *grouped[id])
+		}
+	}
+	return out
+}
+
+// pointers points at a copy of each call.
+func pointers(calls ...shared.ToolCallRecord) []*shared.ToolCallRecord {
+	out := make([]*shared.ToolCallRecord, len(calls))
+	for at := range calls {
+		out[at] = &calls[at]
+	}
+	return out
 }
 
 // detect runs the engine at its default thresholds.
-func detect(in AlertInput) []shared.Alert {
-	return DetectAlerts(in, DefaultThresholds)
+func detect(in testInput) []shared.Alert {
+	return DetectAlerts(in.alertInput(), DefaultThresholds)
 }
 
 // kinds lists the alerts' kinds.
@@ -185,39 +238,39 @@ func TestStuck(t *testing.T) {
 		dead.Live = false
 		external := session()
 		external.External = true
-		cases := []func(in *AlertInput){
-			func(in *AlertInput) {
+		cases := []func(in *testInput){
+			func(in *testInput) {
 				in.Events = []shared.EventRecord{prompt, event("Stop", now-19*minMs)}
 				in.Requests = []shared.RequestRecord{quiet}
 			},
-			func(in *AlertInput) {
+			func(in *testInput) {
 				in.Events = []shared.EventRecord{prompt, event("Interrupted", now-19*minMs)}
 				in.Requests = []shared.RequestRecord{quiet}
 			},
-			func(in *AlertInput) {
+			func(in *testInput) {
 				in.Events = []shared.EventRecord{prompt, event("Notification", now-19*minMs)}
 				in.Requests = []shared.RequestRecord{quiet}
 			},
-			func(in *AlertInput) {
+			func(in *testInput) {
 				in.Events = []shared.EventRecord{prompt}
 				in.Requests = []shared.RequestRecord{ended}
 			},
-			func(in *AlertInput) { in.Requests = []shared.RequestRecord{quiet} },
-			func(in *AlertInput) {
+			func(in *testInput) { in.Requests = []shared.RequestRecord{quiet} },
+			func(in *testInput) {
 				in.Events = []shared.EventRecord{prompt}
 				in.Requests = []shared.RequestRecord{quiet}
 				in.Sessions = []store.SessionListItem{dead}
 			},
-			func(in *AlertInput) {
+			func(in *testInput) {
 				in.Events = []shared.EventRecord{prompt}
 				in.Requests = []shared.RequestRecord{quiet}
 				in.Sessions = []store.SessionListItem{external}
 			},
-			func(in *AlertInput) {
+			func(in *testInput) {
 				in.Events = []shared.EventRecord{event("UserPromptSubmit", now-7*60*minMs)}
 				in.Requests = []shared.RequestRecord{abandoned}
 			},
-			func(in *AlertInput) {
+			func(in *testInput) {
 				in.Events = []shared.EventRecord{prompt}
 				in.Requests = []shared.RequestRecord{recent}
 			},
@@ -254,6 +307,27 @@ func TestStuck(t *testing.T) {
 	})
 }
 
+func TestRecordsThatArrivedOutOfOrderAreReadOldestFirst(t *testing.T) {
+	newer := makeRequest()
+	newer.ID, newer.Ts = "newer", now-12*minMs
+	older := makeRequest()
+	older.ID, older.Ts, older.StopReason = "older", now-50*minMs, ptr("end_turn")
+	in := input()
+	in.Events = []shared.EventRecord{event("UserPromptSubmit", now-60*minMs)}
+	in.Requests = []shared.RequestRecord{newer, older}
+	given := in.alertInput()
+	var held []*shared.RequestRecord
+	given.EachSession(func(_ string, records store.SessionRecords) { held = records.Requests })
+
+	alerts := DetectAlerts(given, DefaultThresholds)
+	if len(alerts) != 1 || alerts[0].Kind != shared.AlertStuck || alerts[0].Since != now-12*minMs {
+		t.Errorf("alerts = %+v, want one stuck alert since the newer request", alerts)
+	}
+	if held[0].ID != "newer" || held[1].ID != "older" {
+		t.Errorf("the caller's list = [%s %s], want it left as it arrived", held[0].ID, held[1].ID)
+	}
+}
+
 func TestLoop(t *testing.T) {
 	// call is one tool call inputKey minutes ago; over mutates it further.
 	call := func(i int, key string, over func(*shared.ToolCallRecord)) shared.ToolCallRecord {
@@ -268,29 +342,25 @@ func TestLoop(t *testing.T) {
 	}
 
 	t.Run("finds the trailing run of identical calls", func(t *testing.T) {
-		ids := func(calls []shared.ToolCallRecord) []string {
-			out := make([]string, len(calls))
-			for i, call := range calls {
-				out[i] = call.ID
+		streakOf := func(calls ...shared.ToolCallRecord) string {
+			first, last, length := trailingStreak(pointers(calls...), "main")
+			if length == 0 {
+				return "none"
 			}
-			return out
+			return fmt.Sprintf("%s..%s x%d", first.ID, last.ID, length)
 		}
-		if streak := TrailingStreak(nil); len(streak) != 0 {
-			t.Errorf("TrailingStreak(nil) = %v, want empty", ids(streak))
+		if got := streakOf(); got != "none" {
+			t.Errorf("no calls: streak = %s, want none", got)
 		}
-		if streak := TrailingStreak([]shared.ToolCallRecord{makeTool()}); len(streak) != 0 {
-			t.Errorf("TrailingStreak(no input key) = %v, want empty", ids(streak))
+		if got := streakOf(makeTool()); got != "none" {
+			t.Errorf("no input key: streak = %s, want none", got)
 		}
-		streak := TrailingStreak([]shared.ToolCallRecord{call(1, "a", nil), call(2, "k", nil), call(3, "k", nil)})
-		if fmt.Sprint(ids(streak)) != fmt.Sprint([]string{"t2", "t3"}) {
-			t.Errorf("streak = %v, want [t2 t3]", ids(streak))
+		if got := streakOf(call(1, "a", nil), call(2, "k", nil), call(3, "k", nil)); got != "t2..t3 x2" {
+			t.Errorf("streak = %s, want t2..t3 x2", got)
 		}
-		mixed := TrailingStreak([]shared.ToolCallRecord{
-			call(1, "k", func(tool *shared.ToolCallRecord) { tool.Name = "Read" }),
-			call(2, "k", nil),
-		})
-		if fmt.Sprint(ids(mixed)) != fmt.Sprint([]string{"t2"}) {
-			t.Errorf("streak = %v, want [t2]", ids(mixed))
+		mixed := streakOf(call(1, "k", func(tool *shared.ToolCallRecord) { tool.Name = "Read" }), call(2, "k", nil))
+		if mixed != "t2..t2 x1" {
+			t.Errorf("a call of another tool: streak = %s, want t2..t2 x1", mixed)
 		}
 	})
 
@@ -645,7 +715,7 @@ func TestAlertJSONKeepsTheLiteralsOrder(t *testing.T) {
 	}
 	retryRouter := input()
 	retryRouter.APIErrors = retryRouterBurst
-	budgetInput := func(spent float64, pct float64, action budget.Action) AlertInput {
+	budgetInput := func(spent float64, pct float64, action budget.Action) testInput {
 		in := input()
 		in.Budgets = []budget.BudgetSpend{{
 			ID:          "b1",
@@ -661,7 +731,7 @@ func TestAlertJSONKeepsTheLiteralsOrder(t *testing.T) {
 	}
 	cases := []struct {
 		name string
-		in   AlertInput
+		in   testInput
 		want string
 	}{
 		{

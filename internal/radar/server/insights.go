@@ -44,14 +44,16 @@ const (
 // dayMs is one day in the epoch milliseconds every timestamp counts.
 const dayMs = 86_400_000
 
-// InsightsStore is the store insights reads: the whole record set for the detectors, the
-// session views for names, the side records for router health, and the change feed that
-// keeps the ledger current. *store.Store satisfies it; tests wrap it to count reads.
+// InsightsStore is the store insights reads: the whole record set for the advisor and the
+// metrics, each session's own records for the detectors, the session views for names, the
+// side records for router health, and the change feed that keeps the ledger current.
+// *store.Store satisfies it; tests wrap it to count reads.
 type InsightsStore interface {
 	RequestsFor(filter store.RequestFilter) []shared.RequestRecord
 	OnUpdate(listener func(store.Change)) func()
 	Version() int64
 	Raw() store.RawRecords
+	EachSession(visit func(sessionID string, records store.SessionRecords))
 	SessionList() []store.SessionListItem
 	SessionDetail(id string) *shared.SessionView
 	APIErrors() []shared.APIErrorRecord
@@ -257,7 +259,6 @@ func (i *Insights) allAlertsLocked() []shared.Alert {
 	if held := i.alertCache; held != nil && held.serves(at, version, i.ledger.Version(), quotaAt) {
 		return held.alerts
 	}
-	raw := i.store.Raw()
 	spend := []budget.BudgetSpend{}
 	if len(i.budgets) > 0 {
 		spend = i.statusLocked().Spend
@@ -265,9 +266,7 @@ func (i *Insights) allAlertsLocked() []shared.Alert {
 	detected := alerts.DetectAlerts(alerts.AlertInput{
 		Now:          at,
 		Sessions:     i.store.SessionList(),
-		Requests:     raw.Requests,
-		Tools:        raw.Tools,
-		Events:       raw.Events,
+		EachSession:  i.store.EachSession,
 		APIErrors:    i.store.APIErrors(),
 		Budgets:      spend,
 		RouterEvents: i.store.RouterEvents(),

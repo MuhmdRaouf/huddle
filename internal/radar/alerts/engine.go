@@ -91,11 +91,12 @@ var DefaultThresholds = Thresholds{
 
 // AlertInput is everything the detectors look at.
 type AlertInput struct {
-	Now          int64
-	Sessions     []store.SessionListItem
-	Requests     []shared.RequestRecord
-	Tools        []shared.ToolCallRecord
-	Events       []shared.EventRecord
+	Now      int64
+	Sessions []store.SessionListItem
+	// EachSession visits every session that holds a record with its requests, tool calls and
+	// events; the records are read inside the visit and not kept. A nil EachSession holds no
+	// records.
+	EachSession  func(visit func(sessionID string, records store.SessionRecords))
 	APIErrors    []shared.APIErrorRecord
 	Budgets      []budget.BudgetSpend
 	RouterEvents []shared.RouterEventRecord
@@ -116,9 +117,9 @@ type ClaudeWindow struct {
 
 // sessionData is one session's records, each list sorted oldest first.
 type sessionData struct {
-	requests []shared.RequestRecord
-	tools    []shared.ToolCallRecord
-	events   []shared.EventRecord
+	requests []*shared.RequestRecord
+	tools    []*shared.ToolCallRecord
+	events   []*shared.EventRecord
 }
 
 // endReasons are the stop reasons that end a turn; anything else (or no reason yet) leaves it
@@ -132,48 +133,30 @@ var (
 	}
 )
 
-// groupBySession buckets the records by session.
-func groupBySession(in AlertInput) map[string]*sessionData {
-	grouped := map[string]*sessionData{}
-	bucket := func(id string) *sessionData {
-		if entry, ok := grouped[id]; ok {
-			return entry
-		}
-		entry := &sessionData{}
-		grouped[id] = entry
-		return entry
+// sortedByTs is the records oldest first: the list itself when it already is, which the
+// store's arrival order nearly always is, else a sorted copy. The store's list is never
+// reordered in place.
+func sortedByTs[T any](records []*T, ts func(*T) int64) []*T {
+	byTs := func(a, b *T) int { return cmp.Compare(ts(a), ts(b)) }
+	if slices.IsSortedFunc(records, byTs) {
+		return records
 	}
-	for _, request := range in.Requests {
-		entry := bucket(request.SessionID)
-		entry.requests = append(entry.requests, request)
+	copied := slices.Clone(records)
+	slices.SortStableFunc(copied, byTs)
+	return copied
+}
+
+// dataOf is one session's records, oldest first.
+func dataOf(records store.SessionRecords) *sessionData {
+	return &sessionData{
+		requests: sortedByTs(records.Requests, func(r *shared.RequestRecord) int64 { return r.Ts }),
+		tools:    sortedByTs(records.Tools, func(t *shared.ToolCallRecord) int64 { return t.StartedAt }),
+		events:   sortedByTs(records.Events, func(e *shared.EventRecord) int64 { return e.Ts }),
 	}
-	for _, tool := range in.Tools {
-		entry := bucket(tool.SessionID)
-		entry.tools = append(entry.tools, tool)
-	}
-	for _, event := range in.Events {
-		if event.SessionID == nil {
-			continue
-		}
-		entry := bucket(*event.SessionID)
-		entry.events = append(entry.events, event)
-	}
-	for _, entry := range grouped {
-		slices.SortStableFunc(entry.requests, func(a, b shared.RequestRecord) int {
-			return cmp.Compare(a.Ts, b.Ts)
-		})
-		slices.SortStableFunc(entry.tools, func(a, b shared.ToolCallRecord) int {
-			return cmp.Compare(a.StartedAt, b.StartedAt)
-		})
-		slices.SortStableFunc(entry.events, func(a, b shared.EventRecord) int {
-			return cmp.Compare(a.Ts, b.Ts)
-		})
-	}
-	return grouped
 }
 
 // lastTs is the newest event of one of these kinds.
-func lastTs(events []shared.EventRecord, kinds ...string) (int64, bool) {
+func lastTs(events []*shared.EventRecord, kinds ...string) (int64, bool) {
 	set := make(map[string]bool, len(kinds))
 	for _, kind := range kinds {
 		set[kind] = true
@@ -191,11 +174,11 @@ func lastRequestOf(data *sessionData) *shared.RequestRecord {
 	if len(data.requests) == 0 {
 		return nil
 	}
-	return &data.requests[len(data.requests)-1]
+	return data.requests[len(data.requests)-1]
 }
 
 // toolEnd is when a tool call finished.
-func toolEnd(tool shared.ToolCallRecord) int64 {
+func toolEnd(tool *shared.ToolCallRecord) int64 {
 	if tool.DurationMs != nil {
 		return tool.StartedAt + *tool.DurationMs
 	}
@@ -325,23 +308,47 @@ func stuckAlert(session store.SessionListItem, data *sessionData, now int64, t T
 	return &alert
 }
 
-// TrailingStreak is the current run of identical calls at the end of one agent's tool calls.
-func TrailingStreak(calls []shared.ToolCallRecord) []shared.ToolCallRecord {
-	if len(calls) == 0 {
-		return nil
+// toolAgent is the agent that made a tool call; a call with no agent is the main agent's.
+func toolAgent(tool *shared.ToolCallRecord) string {
+	if tool.AgentID != nil {
+		return *tool.AgentID
 	}
-	last := calls[len(calls)-1]
-	if last.InputKey == nil {
-		return nil
+	return "main"
+}
+
+// toolAgents lists the agents that made the calls, in the order each first appears.
+func toolAgents(tools []*shared.ToolCallRecord) []string {
+	var agents []string
+	seen := map[string]bool{}
+	for _, tool := range tools {
+		if agent := toolAgent(tool); !seen[agent] {
+			seen[agent] = true
+			agents = append(agents, agent)
+		}
 	}
-	same := func(call *shared.ToolCallRecord) bool {
-		return call.InputKey != nil && *call.InputKey == *last.InputKey && call.Name == last.Name
+	return agents
+}
+
+// trailingStreak is the current run of identical calls at the end of one agent's tool calls:
+// its first call, its last call and its length; length 0 when the agent's last call has no
+// input key.
+func trailingStreak(tools []*shared.ToolCallRecord, agentID string) (first, last *shared.ToolCallRecord, length int) {
+	for at := len(tools) - 1; at >= 0; at-- {
+		call := tools[at]
+		if toolAgent(call) != agentID {
+			continue
+		}
+		if last == nil {
+			if call.InputKey == nil {
+				return nil, nil, 0
+			}
+			last = call
+		} else if call.InputKey == nil || *call.InputKey != *last.InputKey || call.Name != last.Name {
+			break
+		}
+		first, length = call, length+1
 	}
-	start := len(calls) - 1
-	for start > 0 && same(&calls[start-1]) {
-		start--
-	}
-	return calls[start:]
+	return first, last, length
 }
 
 // keyedGroup is every item that answered one key.
@@ -369,49 +376,30 @@ func groupByKey[T any](items []T, key func(T) string) []keyedGroup[T] {
 
 func loopAlerts(session store.SessionListItem, data *sessionData, now int64, t Thresholds) []shared.Alert {
 	var alerts []shared.Alert
-	for _, group := range groupByKey(data.tools, func(tool shared.ToolCallRecord) string {
-		if tool.AgentID != nil {
-			return *tool.AgentID
-		}
-		return "main"
-	}) {
-		streak := TrailingStreak(group.items)
-		if len(streak) < t.LoopRepeats {
+	for _, agentID := range toolAgents(data.tools) {
+		first, last, length := trailingStreak(data.tools, agentID)
+		if length < t.LoopRepeats || now-last.StartedAt > t.LoopFreshMs {
 			continue
 		}
-		first, last := streak[0], streak[len(streak)-1]
-		if now-last.StartedAt > t.LoopFreshMs {
-			continue
-		}
-		agentID := group.key
 		alerts = append(alerts, sessionAlert(shared.AlertLoop, session, &agentID, alertFields{
-			id:       fmt.Sprintf("loop:%s:%s:%s", session.ID, group.key, first.ID),
+			id:       fmt.Sprintf("loop:%s:%s:%s", session.ID, agentID, first.ID),
 			since:    first.StartedAt,
-			detail:   fmt.Sprintf("%s called %d times in a row with the same input", last.Name, len(streak)),
+			detail:   fmt.Sprintf("%s called %d times in a row with the same input", last.Name, length),
 			severity: shared.SeverityWarn,
 		}))
 	}
 	return alerts
 }
 
-// requestPtrs points at each request in order, the shape the context helpers read.
-func requestPtrs(requests []shared.RequestRecord) []*shared.RequestRecord {
-	ptrs := make([]*shared.RequestRecord, len(requests))
-	for i := range requests {
-		ptrs[i] = &requests[i]
-	}
-	return ptrs
-}
-
 func contextAlerts(session store.SessionListItem, data *sessionData, now int64, t Thresholds) []shared.Alert {
 	if !session.Live {
 		return nil
 	}
-	window := shared.ContextWindow(requestPtrs(data.requests))
+	window := shared.ContextWindow(data.requests)
 	// an agent's slot keeps its newest request and its first-seen position
 	var order []string
 	lastByAgent := map[string]*shared.RequestRecord{}
-	for _, request := range requestPtrs(data.requests) {
+	for _, request := range data.requests {
 		if _, ok := lastByAgent[request.AgentID]; !ok {
 			order = append(order, request.AgentID)
 		}
@@ -639,22 +627,24 @@ var severityOrder = map[shared.AlertSeverity]int{shared.SeverityErr: 0, shared.S
 
 // DetectAlerts returns every alert that holds right now, loudest and newest first.
 func DetectAlerts(in AlertInput, t Thresholds) []shared.Alert {
-	grouped := groupBySession(in)
-	sessions := map[string]store.SessionListItem{}
+	sessions := make(map[string]store.SessionListItem, len(in.Sessions))
 	for _, session := range in.Sessions {
 		sessions[session.ID] = session
 	}
 	var alerts []shared.Alert
-	for _, session := range in.Sessions {
-		data, ok := grouped[session.ID]
-		if !ok {
-			continue
-		}
-		if stuck := stuckAlert(session, data, in.Now, t); stuck != nil {
-			alerts = append(alerts, *stuck)
-		}
-		alerts = append(alerts, loopAlerts(session, data, in.Now, t)...)
-		alerts = append(alerts, contextAlerts(session, data, in.Now, t)...)
+	if in.EachSession != nil {
+		in.EachSession(func(sessionID string, records store.SessionRecords) {
+			session, ok := sessions[sessionID]
+			if !ok {
+				return
+			}
+			data := dataOf(records)
+			if stuck := stuckAlert(session, data, in.Now, t); stuck != nil {
+				alerts = append(alerts, *stuck)
+			}
+			alerts = append(alerts, loopAlerts(session, data, in.Now, t)...)
+			alerts = append(alerts, contextAlerts(session, data, in.Now, t)...)
+		})
 	}
 	alerts = append(alerts, retryAlerts(in, t, sessions)...)
 	alerts = append(alerts, budgetAlerts(in, t)...)

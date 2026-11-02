@@ -158,7 +158,8 @@ func seededInsights(t *testing.T) seeded {
 	return seeded{env: world, store: st, insights: created, calls: calls}
 }
 
-// countingStore counts the whole-record reads: the store copy the caches exist to avoid.
+// countingStore counts the whole-record reads, the store copy and the pass over every
+// session's records, that the caches exist to avoid.
 type countingStore struct {
 	*store.Store
 	rawCalls int
@@ -167,6 +168,11 @@ type countingStore struct {
 func (c *countingStore) Raw() store.RawRecords {
 	c.rawCalls++
 	return c.Store.Raw()
+}
+
+func (c *countingStore) EachSession(visit func(sessionID string, records store.SessionRecords)) {
+	c.rawCalls++
+	c.Store.EachSession(visit)
 }
 
 // seededCounting seeds a store behind a counting read, then builds insights on it.

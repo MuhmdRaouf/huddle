@@ -211,8 +211,8 @@ type AgentUpsert struct {
 	Title       **string
 }
 
-// RawRecords is every request, tool call and event held, unsorted — the alert engine's
-// input.
+// RawRecords is every request, tool call and event held, unsorted: the advisor's and the
+// metrics' input.
 type RawRecords struct {
 	Requests []shared.RequestRecord
 	Tools    []shared.ToolCallRecord
@@ -355,6 +355,21 @@ type storedTool struct {
 	seq    int64
 }
 
+// SessionRecords is one session's requests, tool calls and events in the order they
+// arrived, as the store holds them: the pointers are the store's own and read only inside
+// the EachSession visit that hands them out.
+type SessionRecords struct {
+	Requests []*shared.RequestRecord
+	Tools    []*shared.ToolCallRecord
+	Events   []*shared.EventRecord
+}
+
+// eventIndexCache is the events grouped by session, one build per version.
+type eventIndexCache struct {
+	version   int64
+	bySession map[string][]*shared.EventRecord
+}
+
 // projectionCache is the records grouped by session, one build per version.
 type projectionCache struct {
 	version    int64
@@ -449,6 +464,7 @@ type Store struct {
 	pendingStarts     map[string]int64
 
 	proj         *projectionCache
+	eventIndex   *eventIndexCache
 	views        *viewsCache
 	newest       *orderCache
 	listCache    *derived[[]SessionListItem]
@@ -930,6 +946,21 @@ func (s *Store) projectionLocked() map[string]*sessionSlice {
 	return proj
 }
 
+// eventIndexLocked groups the held events by session, rebuilt when the version moves.
+func (s *Store) eventIndexLocked() map[string][]*shared.EventRecord {
+	if s.eventIndex != nil && s.eventIndex.version == s.ver {
+		return s.eventIndex.bySession
+	}
+	bySession := make(map[string][]*shared.EventRecord)
+	for at := range s.events {
+		if id := s.events[at].SessionID; id != nil {
+			bySession[*id] = append(bySession[*id], &s.events[at])
+		}
+	}
+	s.eventIndex = &eventIndexCache{version: s.ver, bySession: bySession}
+	return bySession
+}
+
 func sliceOf(proj map[string]*sessionSlice, sessionID string) *sessionSlice {
 	slice, ok := proj[sessionID]
 	if !ok {
@@ -1310,6 +1341,7 @@ func unfile(index map[string]map[string]struct{}, sessionID, id string) {
 func (s *Store) notifyLocked(change Change) []*listenerEntry {
 	s.ver++
 	s.proj = nil
+	s.eventIndex = nil
 	s.views = nil
 	s.newest = nil
 	s.listCache = nil
@@ -2841,6 +2873,27 @@ func (s *Store) Raw() RawRecords {
 		Requests: requests,
 		Tools:    tools,
 		Events:   slices.Clone(s.events),
+	}
+}
+
+// EachSession hands visit every session that holds a record, in session order, with that
+// session's records as the store keeps them: nothing is copied. The store is locked for the
+// whole pass, so visit reads the records and returns; it never calls the store.
+func (s *Store) EachSession(visit func(sessionID string, records SessionRecords)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	proj := s.projectionLocked()
+	events := s.eventIndexLocked()
+	for _, state := range s.sessionsInOrderLocked() {
+		var records SessionRecords
+		if slice := proj[state.id]; slice != nil {
+			records.Requests, records.Tools = slice.requests, slice.tools
+		}
+		records.Events = events[state.id]
+		if len(records.Requests)+len(records.Tools)+len(records.Events) == 0 {
+			continue
+		}
+		visit(state.id, records)
 	}
 }
 
