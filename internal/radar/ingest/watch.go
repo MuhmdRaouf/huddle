@@ -1,9 +1,12 @@
-// The ingest loop: every tick it tails the spool (hook lines), the transcripts referenced there
-// plus anything recent under the projects dir, the provider plugins' job attempts and their real
-// transcripts, feeding the store. New files come in on a slower rescan cadence. A pass runs in
-// ~20 ms slices with the lock released between them, so a large first catch-up blocks nothing
-// for long and a stop lands within one slice. Failures are contained per file — one unreadable
-// transcript never stops the rest.
+// The ingest loop: a change the operating system reports in a watched folder (the spool, the
+// projects dir, the folders holding a transcript) reads the changed file; every tick of the
+// fallback scan tails the spool (hook lines), the transcripts referenced there plus anything
+// recent under the projects dir, the provider plugins' job attempts and their real transcripts,
+// feeding the store. The scan covers what the change feed cannot: a folder made before the
+// watch armed, an event the system dropped, the open-files limit. New files come in on the scan's
+// rescan cadence. A pass runs in ~20 ms slices with the lock released between them, so a large
+// first catch-up blocks nothing for long and a stop lands within one slice. Failures are
+// contained per file — one unreadable transcript never stops the rest.
 package ingest
 
 import (
@@ -36,8 +39,9 @@ import (
 // caller lands between slices, however large the first catch-up.
 const Slice = 20 * time.Millisecond
 
-// DefaultIntervalMs is the poll cadence a watcher without an explicit interval runs on.
-const DefaultIntervalMs int64 = 1_000
+// DefaultIntervalMs is the cadence of the fallback scan a watcher without an explicit interval
+// runs on: the change feed reads what changes, the scan reads what the feed missed.
+const DefaultIntervalMs int64 = 30_000
 
 // SpoolWindowDays is how many days of spool files one pass lists.
 const SpoolWindowDays = 7
@@ -64,7 +68,7 @@ const (
 
 // WatcherOptions configures the ingest loop. Now is the clock the cadences and windows read
 // (epoch ms); Alive decides who counts as a living pid in the session registry; NewTicker builds
-// the poll clock, so tests drive the interval by hand. Log receives the one line a failing
+// the fallback scan's clock, so tests drive the interval by hand. Log receives the one line a failing
 // harness collector leaves (stderr when nil).
 type WatcherOptions struct {
 	Env        domain.EnvLookup
@@ -89,6 +93,15 @@ type WatcherOptions struct {
 	// watcher's own goroutine and the watcher reads as catching up until the first pass after
 	// it ends. An error is logged and the first pass reads the files cold.
 	Warm func(ctx context.Context) error
+	// NewFolderWatch opens the operating system's change feed; nil opens fsnotify's.
+	NewFolderWatch func() (FolderWatch, error)
+	// OpenFilesLimit reads the process's soft open-files limit; nil asks the system.
+	OpenFilesLimit func() (uint64, error)
+	// NewRescanTicker builds the clock of the registry rescan; nil is the real clock when
+	// NewTicker is nil too, and no clock at all when a test supplies its own NewTicker.
+	NewRescanTicker func(interval time.Duration) (<-chan time.Time, func())
+	// Stat is the stat call the tail reads and the walk make; nil is os.Stat.
+	Stat StatFunc
 }
 
 // fileTail is one transcript file's read position and its parser.
@@ -99,6 +112,8 @@ type fileTail struct {
 	identity FileIdentity
 	// lastGrowthMs is when the tail last read new bytes: idle compaction counts from it.
 	lastGrowthMs int64
+	// modMs is the file's modified time at the tail's last read, 0 before the first.
+	modMs int64
 	// compacted is that the parser's windows were emptied since the last growth.
 	compacted bool
 }
@@ -203,6 +218,16 @@ type Watcher struct {
 	rescanMs  int64
 	newTicker func(interval time.Duration) (<-chan time.Time, func())
 	log       func(line string)
+	stat      StatFunc
+	// openFilesLimit reads the soft open-files limit the descriptor budget is a quarter of.
+	openFilesLimit func() (uint64, error)
+
+	// intervalMs is the fallback scan's cadence; projectsRoot and spoolDir are the two roots
+	// the change feed watches whatever the transcripts are.
+	intervalMs   int64
+	projectsRoot string
+	spoolDir     string
+	newFeed      func() (FolderWatch, error)
 
 	// harnessCollectors are the other agents' transcript stores, each read once per
 	// rescanning pass; harnessMetas remembers the cwd each harness session last filed, so
@@ -215,6 +240,8 @@ type Watcher struct {
 	mu      sync.Mutex
 	stopped bool
 	queued  bool
+	// queuedRegistry asks for a pass over the registry, the jobs and the harness collectors.
+	queuedRegistry bool
 	// warming is true from the start until the warm load ends: no pass runs meanwhile.
 	warming bool
 	pass    *passWork
@@ -242,6 +269,22 @@ type Watcher struct {
 	livePaths             map[string]struct{}
 	registryTranscripts   map[string]string
 	lastRescan            int64
+	// The change feed. watching is true while it is open and may still arm folders; armed
+	// holds the folders it watches and wantArm the ones passes asked for since the last arming;
+	// changed holds the files it reported that no pass has read yet. feed and feedFull belong
+	// to the run goroutine alone, as do the descriptor budget, the block a spent budget sets
+	// until the next scan, and the one-line log of a met limit.
+	watching      bool
+	armed         map[string]int
+	heldCost      int
+	wantArm       pathSet
+	changed       map[string]struct{}
+	feed          FolderWatch
+	feedFull      bool
+	fdBudget      int
+	armBlocked    bool
+	limitLogged   bool
+	failureLogged bool
 	// listings are the projects walk's directory listings from its last full walk: a
 	// directory whose modified time stands is not read again, so a quiet history of
 	// thousands of session folders costs one stat each per rescan.
@@ -277,6 +320,14 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 	if log == nil {
 		log = func(line string) { fmt.Fprintln(os.Stderr, line) }
 	}
+	stat := options.Stat
+	if stat == nil {
+		stat = os.Stat
+	}
+	newRescanTicker := options.NewRescanTicker
+	if newRescanTicker == nil && options.NewTicker == nil {
+		newRescanTicker = newTicker
+	}
 	w := &Watcher{
 		ctx:                 ctx,
 		env:                 options.Env,
@@ -289,6 +340,13 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 		rescanMs:            rescan,
 		newTicker:           newTicker,
 		log:                 log,
+		stat:                stat,
+		openFilesLimit:      options.OpenFilesLimit,
+		intervalMs:          interval,
+		projectsRoot:        filepath.Join(paths.ClaudeConfigDir(options.Env), "projects"),
+		spoolDir:            paths.SpoolDir(ctx, options.Env),
+		newFeed:             options.NewFolderWatch,
+		armed:               make(map[string]int),
 		harnessCollectors:   options.HarnessCollectors,
 		warm:                options.Warm,
 		harnessMetas:        make(map[string]string),
@@ -308,23 +366,50 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 	loopCtx, cancel := context.WithCancel(ctx)
 	w.cancel = cancel
 	ticks, stopTicker := newTicker(time.Duration(interval) * time.Millisecond)
-	go w.run(loopCtx, ticks, stopTicker)
+	var rescanTicks <-chan time.Time
+	stopRescan := func() {}
+	if newRescanTicker != nil {
+		rescanTicks, stopRescan = newRescanTicker(time.Duration(rescan) * time.Millisecond)
+	}
+	go w.run(loopCtx, ticks, stopTicker, rescanTicks, stopRescan)
 	return w
 }
 
-// run is the loop's goroutine: the warm load, then the first pass, start now, not on the
-// first tick.
-func (w *Watcher) run(ctx context.Context, ticks <-chan time.Time, stopTicker func()) {
+// run is the loop's goroutine: the change feed opens, then the warm load and the first pass,
+// start now, not on the first tick. After that a tick runs the fallback scan, a rescan tick
+// reads the registry, the jobs and the harness collectors, and a reported change reads the
+// changed file.
+func (w *Watcher) run(ctx context.Context, ticks <-chan time.Time, stopTicker func(),
+	rescanTicks <-chan time.Time, stopRescan func()) {
 	defer close(w.done)
 	defer stopTicker()
+	defer stopRescan()
+	events, failures := w.openFeed()
+	defer w.closeFeed()
 	w.warmStore(ctx)
 	w.PollOnce()
+	w.settleFeed()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticks:
 			w.PollOnce()
+			w.settleFeed()
+		case <-rescanTicks:
+			w.pollRegistry()
+		case event, open := <-events:
+			if !open {
+				events = nil
+				continue
+			}
+			w.readChanges(event, events)
+		case failure, open := <-failures:
+			if !open {
+				failures = nil
+				continue
+			}
+			w.noteFeedFailure(failure)
 		}
 	}
 }
@@ -373,9 +458,9 @@ func (w *Watcher) learnFromWarm(change store.Change) {
 	}
 }
 
-// PollOnce asks for a poll and drives it one slice at a time, the lock free between slices. A
-// poll asked for while a pass is running starts when that one ends, never during it, and a
-// poll asked for while the warm load runs waits for the first one after it.
+// PollOnce asks for a full poll and drives it one slice at a time, the lock free between
+// slices. A poll asked for while a pass is running starts when that one ends, never during it,
+// and a poll asked for while the warm load runs waits for the first one after it.
 func (w *Watcher) PollOnce() {
 	w.mu.Lock()
 	if w.stopped {
@@ -383,7 +468,30 @@ func (w *Watcher) PollOnce() {
 		return
 	}
 	w.queued = true
-	if w.warming {
+	w.mu.Unlock()
+	w.drive()
+}
+
+// pollChanged drives a pass over the files the change feed reported.
+func (w *Watcher) pollChanged() { w.drive() }
+
+// pollRegistry drives a pass over the registry, the jobs and the harness collectors alone: no
+// transcript is read and no folder walked.
+func (w *Watcher) pollRegistry() {
+	w.mu.Lock()
+	if w.stopped {
+		w.mu.Unlock()
+		return
+	}
+	w.queuedRegistry = true
+	w.mu.Unlock()
+	w.drive()
+}
+
+// drive runs the queued passes: a full poll first, else one over the changed files.
+func (w *Watcher) drive() {
+	w.mu.Lock()
+	if w.stopped || w.warming {
 		w.mu.Unlock()
 		return
 	}
@@ -396,12 +504,19 @@ func (w *Watcher) PollOnce() {
 			return
 		}
 		if w.pass == nil {
-			if !w.queued {
+			switch {
+			case w.queued:
+				w.queued = false
+				w.pass = newPassWork(w, passFull)
+			case w.queuedRegistry:
+				w.queuedRegistry = false
+				w.pass = newPassWork(w, passRegistry)
+			case len(w.changed) > 0:
+				w.pass = newPassWork(w, passChanged)
+			default:
 				w.mu.Unlock()
 				return
 			}
-			w.queued = false
-			w.pass = newPassWork(w)
 		}
 		finished := w.sliceStep()
 		w.mu.Unlock()
@@ -1375,7 +1490,10 @@ const (
 type passWork struct {
 	w      *Watcher
 	rescan bool
-	phase  int
+	kind   int
+	// changed is the set of files a pass over reported changes reads; nil for a full pass.
+	changed map[string]struct{}
+	phase   int
 
 	spoolListed bool
 	spoolFiles  []string
@@ -1450,13 +1568,34 @@ type dirListing struct {
 	dirs    []string
 }
 
-// newPassWork opens a pass, deciding whether this one rescans.
-func newPassWork(w *Watcher) *passWork {
+// The kinds of pass: a full pass reads every source and decides whether it rescans; a changed
+// pass reads only the files the change feed reported; a registry pass is the rescan's own
+// parts (registry, jobs, harness collectors) with no transcript read and no folder walk.
+const (
+	passFull = iota
+	passChanged
+	passRegistry
+)
+
+// newPassWork opens a pass of the given kind.
+func newPassWork(w *Watcher, kind int) *passWork {
+	switch kind {
+	case passChanged:
+		changed := w.changed
+		w.changed = nil
+		return &passWork{w: w, changed: changed, kind: kind}
+	case passRegistry:
+		return &passWork{w: w, rescan: true, kind: kind}
+	}
+	w.changed = nil
 	rescan := w.lastRescan == 0 || w.now()-w.lastRescan >= w.rescanMs
 	if rescan {
 		w.lastRescan = w.now()
+		w.queuedRegistry = false
+		w.wantWatch(w.spoolDir)
+		w.wantWatch(w.projectsRoot)
 	}
-	return &passWork{w: w, rescan: rescan}
+	return &passWork{w: w, rescan: rescan, kind: kind}
 }
 
 // step runs one unit of work; false when the pass is complete.
@@ -1471,6 +1610,9 @@ func (p *passWork) step() bool {
 }
 
 func (p *passWork) stepPhase() bool {
+	if p.kind == passRegistry && p.phase != phaseRegistry && p.phase != phaseJobs && p.phase != phaseHarness {
+		return false
+	}
 	switch p.phase {
 	case phaseSpool:
 		return p.stepSpool()
@@ -1494,7 +1636,11 @@ func (p *passWork) stepPhase() bool {
 func (p *passWork) stepSpool() bool {
 	if !p.spoolListed {
 		p.spoolListed = true
-		p.spoolFiles = ListSpoolFiles(p.w.ctx, p.w.env, p.w.now(), SpoolWindowDays)
+		if p.changed != nil {
+			p.spoolFiles = p.w.changedSpoolFiles(p.changed)
+		} else {
+			p.spoolFiles = ListSpoolFiles(p.w.ctx, p.w.env, p.w.now(), SpoolWindowDays)
+		}
 	}
 	if p.spoolLineAt < len(p.spoolLines) {
 		line := p.spoolLines[p.spoolLineAt]
@@ -1505,7 +1651,7 @@ func (p *passWork) stepSpool() bool {
 	for p.spoolAt < len(p.spoolFiles) {
 		path := p.spoolFiles[p.spoolAt]
 		p.spoolAt++
-		result := TailFile(p.w.spoolTailOf(path), TailChunkBytes)
+		result := p.w.tailFile(p.w.spoolTailOf(path))
 		if len(result.Lines) == 0 {
 			continue
 		}
@@ -1552,7 +1698,11 @@ func (p *passWork) stepRegistry() bool {
 			if p.w.transcriptTails.has(path) {
 				continue
 			}
-			p.w.transcriptTails.set(path, p.w.transcriptTail(path))
+			p.w.trackTranscript(path)
+			if p.kind == passRegistry {
+				// no tail read in this pass: the next one over changed files reads the new tail
+				p.w.noteChangedLocked(path)
+			}
 			return true
 		}
 		p.registryAt++
@@ -1577,9 +1727,7 @@ func (p *passWork) stepDiscovery() bool {
 	if p.discoverAt < len(p.discovered) {
 		path := p.discovered[p.discoverAt]
 		p.discoverAt++
-		if !p.w.transcriptTails.has(path) {
-			p.w.transcriptTails.set(path, p.w.transcriptTail(path))
-		}
+		p.w.trackTranscript(path)
 		return true
 	}
 	for {
@@ -1593,7 +1741,7 @@ func (p *passWork) stepDiscovery() bool {
 			p.walkStarted = true
 			p.walked = make(map[string]dirListing)
 			root := filepath.Join(paths.ClaudeConfigDir(p.w.env), "projects")
-			if mtime, ok := mtimeOf(root); ok {
+			if mtime, ok := p.w.mtimeOf(root); ok {
 				p.pushWalk(root, mtime, 0)
 			}
 			continue
@@ -1602,9 +1750,7 @@ func (p *passWork) stepDiscovery() bool {
 		if frame.fileAt < len(frame.files) {
 			path := frame.files[frame.fileAt]
 			frame.fileAt++
-			if !p.w.transcriptTails.has(path) {
-				p.w.transcriptTails.set(path, p.w.transcriptTail(path))
-			}
+			p.w.trackTranscript(path)
 			return true
 		}
 		if frame.dirAt < len(frame.dirs) {
@@ -1663,14 +1809,14 @@ func (w *Watcher) scanDir(listing dirListing) ([]string, []walkDir) {
 	}
 	var files, dirs []scanned
 	for _, path := range listing.dirs {
-		mtime, ok := mtimeOf(path)
+		mtime, ok := w.mtimeOf(path)
 		if !ok {
 			continue
 		}
 		dirs = append(dirs, scanned{path: path, mtimeMs: mtime})
 	}
 	for _, path := range listing.files {
-		mtime, ok := mtimeOf(path)
+		mtime, ok := w.mtimeOf(path)
 		if !ok || mtime < w.sinceCutoff() {
 			continue
 		}
@@ -1711,6 +1857,12 @@ func (p *passWork) stepTailing() bool {
 	if !p.tailsSnapshotted {
 		p.tailsSnapshotted = true
 		p.tailSnapshot = p.w.transcriptTails.snapshot()
+		if p.changed != nil {
+			p.tailSnapshot = slices.DeleteFunc(p.tailSnapshot, func(tail *fileTail) bool {
+				_, reported := p.changed[tail.path]
+				return !reported
+			})
+		}
 		p.tailAt = 0
 	}
 	if p.tailLineAt < len(p.tailLines) {
@@ -1722,7 +1874,10 @@ func (p *passWork) stepTailing() bool {
 	for p.tailAt < len(p.tailSnapshot) {
 		tail := p.tailSnapshot[p.tailAt]
 		p.tailAt++
-		result := TailFile(&tail.tail, TailChunkBytes)
+		result := p.w.tailFile(&tail.tail)
+		if result.ModMs > 0 {
+			tail.modMs = result.ModMs
+		}
 		p.w.noteTailRead(tail, len(result.Lines) > 0)
 		if len(result.Lines) == 0 {
 			continue
@@ -1736,9 +1891,9 @@ func (p *passWork) stepTailing() bool {
 }
 
 // stepEviction drops the tails nothing is waiting on: a file the registry no longer names and
-// whose last change is past the since window can only sit quiet — yet every tick would stat it.
-// Dropped with its referenced-transcript entry, so the rescan cannot re-open it from byte 0; a
-// fresh change or a fresh spool line re-discovers it as any new file.
+// whose last change is past the since window can only sit quiet — yet every fallback scan would
+// stat it. Dropped with its referenced-transcript entry, so the rescan cannot re-open it from
+// byte 0; a fresh change or a fresh spool line re-discovers it as any new file.
 func (p *passWork) stepEviction() bool {
 	if !p.rescan {
 		return false
@@ -1760,7 +1915,7 @@ func (p *passWork) stepEviction() bool {
 			continue
 		}
 		mtime := int64(-1)
-		if info, err := os.Stat(path); err == nil {
+		if info, err := p.w.stat(path); err == nil {
 			mtime = info.ModTime().UnixMilli()
 		}
 		if mtime >= p.w.sinceCutoff() {
@@ -1805,7 +1960,7 @@ func (p *passWork) stepJobs() bool {
 	for p.jobTailAt < len(p.jobTailSnapshot) {
 		tail := p.jobTailSnapshot[p.jobTailAt]
 		p.jobTailAt++
-		result := TailFile(&tail.tail, TailChunkBytes)
+		result := p.w.tailFile(&tail.tail)
 		if len(result.Lines) == 0 {
 			continue
 		}
@@ -1828,8 +1983,8 @@ func (p *passWork) stepJobs() bool {
 
 // mtimeOf is a path's modified time; false when it cannot be stat-ed (then it is not worth
 // reading).
-func mtimeOf(path string) (int64, bool) {
-	info, err := os.Stat(path)
+func (w *Watcher) mtimeOf(path string) (int64, bool) {
+	info, err := w.stat(path)
 	if err != nil {
 		return 0, false
 	}

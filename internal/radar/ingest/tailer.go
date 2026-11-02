@@ -26,6 +26,8 @@ type TailState struct {
 type TailResult struct {
 	Lines     []string
 	Restarted bool
+	// ModMs is the file's modified time (epoch ms) when the stat call found it, else 0.
+	ModMs int64
 }
 
 // SplitLines is the pure buffer math: carry plus chunk to the complete lines and the new
@@ -61,9 +63,18 @@ func OpenTail(path string) TailState {
 // quiet, gone or unreadable. A file that shrank since the last read (rotation, truncation) is
 // restarted from its first byte, which the result names.
 func TailFile(state *TailState, chunk int64) TailResult {
-	info, err := os.Stat(state.Path)
-	if err != nil || info.Size() == state.Offset {
+	return tailFileUsing(os.Stat, state, chunk)
+}
+
+// tailFileUsing is TailFile with the stat call chosen by the caller.
+func tailFileUsing(stat StatFunc, state *TailState, chunk int64) TailResult {
+	info, err := stat(state.Path)
+	if err != nil {
 		return TailResult{}
+	}
+	modMs := info.ModTime().UnixMilli()
+	if info.Size() == state.Offset {
+		return TailResult{ModMs: modMs}
 	}
 	restarted := false
 	if info.Size() < state.Offset {
@@ -74,14 +85,14 @@ func TailFile(state *TailState, chunk int64) TailResult {
 	}
 	file, err := os.Open(state.Path)
 	if err != nil {
-		return TailResult{Restarted: restarted}
+		return TailResult{Restarted: restarted, ModMs: modMs}
 	}
 	defer file.Close()
 	length := min(info.Size()-state.Offset, chunk)
 	buffer := make([]byte, length)
 	read, _ := file.ReadAt(buffer, state.Offset)
 	if read == 0 {
-		return TailResult{Restarted: true} // the read failed outright: treat the file as turned over
+		return TailResult{Restarted: true, ModMs: modMs} // the read failed outright: treat the file as turned over
 	}
 	state.Offset += int64(read)
 	lines, partial := SplitLines(state.Partial, string(buffer[:read]))
@@ -91,5 +102,5 @@ func TailFile(state *TailState, chunk int64) TailResult {
 		lines[i] = strings.Clone(lines[i])
 	}
 	state.Partial = strings.Clone(partial)
-	return TailResult{Lines: lines, Restarted: restarted}
+	return TailResult{Lines: lines, Restarted: restarted, ModMs: modMs}
 }

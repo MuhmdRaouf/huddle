@@ -149,11 +149,11 @@ type manualWatch struct {
 	tracked func() int
 }
 
-func manualWatcher(t *testing.T, env domain.EnvLookup, st *store.Store) manualWatch {
+func manualWatcher(t *testing.T, env domain.EnvLookup, st *store.Store, adjust ...func(*ingest.WatcherOptions)) manualWatch {
 	t.Helper()
 	var clock atomic.Int64
 	clock.Store(watchT0)
-	w := ingest.StartWatcher(t.Context(), ingest.WatcherOptions{
+	options := ingest.WatcherOptions{
 		Env:        env,
 		Store:      st,
 		SinceMs:    watchDay,
@@ -161,7 +161,11 @@ func manualWatcher(t *testing.T, env domain.EnvLookup, st *store.Store) manualWa
 		RescanMs:   5_000,
 		Now:        clock.Load,
 		Alive:      ownPidAlive,
-	})
+	}
+	for _, change := range adjust {
+		change(&options)
+	}
+	w := ingest.StartWatcher(t.Context(), options)
 	t.Cleanup(w.Stop)
 	waitFor(t, "initial ingest", 5*time.Second, func() bool { return !w.CatchingUp() })
 	return manualWatch{
@@ -769,12 +773,14 @@ func TestWatcherTranscripts(t *testing.T) {
 		}
 	})
 
-	t.Run("finds new transcripts only on the rescan cadence, never mid-window", func(t *testing.T) {
+	t.Run("without a change event finds new transcripts only on the rescan cadence, never mid-window", func(t *testing.T) {
 		e := makeEnv(t)
 		projects := filepath.Join(e.config, "projects", "p")
 		writeText(t, filepath.Join(projects, "a.jsonl"), jsonl(t, assistantLine(watchT1, "req-a")))
 		st := newStore()
-		w := manualWatcher(t, e.env, st)
+		w := manualWatcher(t, e.env, st, func(options *ingest.WatcherOptions) {
+			options.NewFolderWatch = newFakeFolderWatch(-1).open
+		})
 		if got := requestIDs(t, st, store.RequestFilter{}); len(got) != 1 {
 			t.Fatalf("requests = %v, want one", got)
 		}
