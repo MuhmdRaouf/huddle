@@ -523,3 +523,23 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   line answers its numeric status from the decode (`SpoolLine.StatusText`). Every change to the hub, radar or ingest reports `TestE2EHubStaysLight`'s polled
   CPU and its catch-up and settled RSS peaks against the base commit on the same machine, three runs each, and a
   rise of more than 10% blocks landing even under budget.
+
+## 2026-11-02, three tests timed their wait on the machine's speed, and one turned CI red
+
+- **What happened:** CI's Linux job failed `TestProcReadsAChildsCommandAndParent` on a commit whose local gate was
+  green, and the deploy waited for a new push. The local full gate before it had failed twice under load:
+  `TestHuddleRouterHandoverScenarios` read the router's log before the handover line was in it, and
+  `TestWatcherDrainsAFileBiggerThanOneChunk` missed its first-ingest wait on a 9.6 MiB file. All three passed
+  alone on a quiet machine.
+- **Cause:** each test assumed the machine would be done by a moment it picked. `cmd.Start` returns once the
+  child's exec is committed, and Linux fills the argument area a moment later, so `/proc/<pid>/cmdline` can read
+  empty right after Start. The handover scenario slept 150 ms and expected a 50 ms check to have run by then. The
+  drain test needed megabytes of input to hold more than two 4 MiB chunks, and reading them under load took
+  longer than the wait it shared with every other watcher test.
+- **Guard:** `TestProcReadsAChildsCommandAndParent` (internal/huddle/hooks/proc_test.go) reads the child only after
+  the child says it is ready; the handover scenario (internal/routerd/handover_scenario_test.go) waits for the
+  handover line; `TestWatcherDrainsAFileBiggerThanOneChunk` runs on 4 KiB chunks (`WatcherOptions.ChunkBytes`)
+  and a 40 KiB file, and still fails with the drain undone.
+- **Rule:** a test waits for the condition it asserts, under a hang guard, and never for a fixed delay; a test
+  that needs "more than one chunk" shrinks the chunk through a seam instead of growing the input. A flake under
+  load is a bug in the test or the product, never a reason to re-run or lengthen a deadline.
