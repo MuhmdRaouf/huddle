@@ -651,19 +651,22 @@ test.describe("the feature picker on a phone", () => {
 });
 
 /** Swipes the snap strip one thumb's stroke to the left, the way a finger moves to the next
- *  column: a touch scroll gesture Chromium synthesizes, so the snap settles as it would on the
- *  phone. */
+ *  column: a touch start, twelve moves and a touch end, so the strip scrolls and snaps as it
+ *  would on the phone. Chromium's synthesized scroll gesture does nothing in headless Linux, so
+ *  the touch points are sent one by one. */
 async function swipeLeft(page: Page): Promise<void> {
   const box = (await page.locator(".kanban-tab .lanes").boundingBox()) ?? expect.fail("no lanes");
+  const x = Math.round(box.x + box.width * 0.8);
+  const y = Math.round(box.y + 40);
+  const stroke = Math.round(box.width * 0.6);
+  const steps = 12;
   const cdp = await page.context().newCDPSession(page);
-  await cdp.send("Input.synthesizeScrollGesture", {
-    x: Math.round(box.x + box.width * 0.8),
-    y: Math.round(box.y + 40),
-    xDistance: -Math.round(box.width * 0.6),
-    yDistance: 0,
-    gestureSourceType: "touch",
-    speed: 1200,
-  });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+  for (let step = 1; step <= steps; step++) {
+    const moved = x - Math.round((stroke * step) / steps);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: moved, y }] });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   await cdp.detach();
 }
 
