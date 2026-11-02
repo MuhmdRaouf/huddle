@@ -465,7 +465,10 @@ type Store struct {
 	lonelyRoutes   map[string]*waitingMap
 	lonelyCopies   map[string]*waitingSet
 	aliases        *aliasMap
-	routedTotals   map[string]struct{}
+	// agedCalls holds the calls that arrived past the window, shed with their write, so a
+	// twin or a repeated sighting still finds them.
+	agedCalls    *agedCalls
+	routedTotals map[string]struct{}
 	// calls files each held call under its request id: the key the pairing tries first.
 	calls map[string]*callSlot
 	// utilization is the newest unified limits a route line carried, and the line's ts.
@@ -504,6 +507,7 @@ func CreateStore(now func() time.Time) *Store {
 		lonelyRoutes:      make(map[string]*waitingMap),
 		lonelyCopies:      make(map[string]*waitingSet),
 		aliases:           newAliasMap(),
+		agedCalls:         newAgedCalls(),
 		routedTotals:      make(map[string]struct{}),
 		calls:             make(map[string]*callSlot),
 	}
@@ -651,6 +655,12 @@ func newWaitingSet() *waitingSet { return &waitingSet{} }
 func (w *waitingSet) Add(id string)    { w.order.add(id) }
 func (w *waitingSet) IDs() []string    { return w.order.snapshot() }
 func (w *waitingSet) Delete(id string) { w.order.delete(id) }
+
+// Has says whether the id is waiting.
+func (w *waitingSet) Has(id string) bool {
+	_, ok := w.order.has[id]
+	return ok
+}
 
 // waitingMap pairs each waiting route id with the agent its line named, in arrival order.
 type waitingMap struct {
@@ -1222,6 +1232,7 @@ func (s *Store) shedAgedLocked(pins []evictionPin) {
 	now := s.nowMillis()
 	cutoff := now - s.window.Milliseconds()
 	if aged := s.agedPinsLocked(pins, cutoff); len(aged) > 0 {
+		s.holdAgedLocked(aged)
 		s.applyEvictionsLocked(aged)
 	}
 	if s.agedAt != 0 && now-s.agedAt < agePassEvery.Milliseconds() {
@@ -1515,14 +1526,19 @@ func (s *Store) placeRequestLocked(record shared.RequestRecord) shared.RequestRe
 	if existing, ok := s.requests[stored.ID]; ok {
 		s.refileRequestLocked(existing, stored) // the paired twin's slot, its arrival number kept
 	} else {
-		fileUnder(s.requestsBySession, stored.SessionID, stored.ID)
-		held := &storedRequest{record: stored, seq: s.nextArrivalLocked()}
-		s.requests[stored.ID] = held
-		s.requestOrder.add(held)
-		s.projectRequestLocked(held)
+		s.insertRequestLocked(stored)
 	}
 	s.noteCallLocked(stored, paired || FromRouter(record), paired || !FromRouter(record))
 	return stored
+}
+
+// insertRequestLocked holds a request no held record stands for, as the newest arrival.
+func (s *Store) insertRequestLocked(stored shared.RequestRecord) {
+	fileUnder(s.requestsBySession, stored.SessionID, stored.ID)
+	held := &storedRequest{record: stored, seq: s.nextArrivalLocked()}
+	s.requests[stored.ID] = held
+	s.requestOrder.add(held)
+	s.projectRequestLocked(held)
 }
 
 // refileRequestLocked replaces a held request's record, keeping its arrival number, and
@@ -1633,15 +1649,31 @@ func (s *Store) forgetCallLocked(record shared.RequestRecord) {
 	}
 }
 
-// waitRouteLocked leaves a spool line with no twin in reach waiting under its key, and
-// stores it alone (under the main agent when untagged).
-func (s *Store) waitRouteLocked(route shared.RequestRecord) shared.RequestRecord {
-	key := pairKey(route)
+// waitingRoutesLocked is the queue of waiting route lines under a key, made when there is none.
+func (s *Store) waitingRoutesLocked(key string) *waitingMap {
 	routes := s.lonelyRoutes[key]
 	if routes == nil {
 		routes = newWaitingMap()
 		s.lonelyRoutes[key] = routes
 	}
+	return routes
+}
+
+// waitingCopiesLocked is the queue of waiting transcript copies under a key, made when there
+// is none.
+func (s *Store) waitingCopiesLocked(key string) *waitingSet {
+	copies := s.lonelyCopies[key]
+	if copies == nil {
+		copies = newWaitingSet()
+		s.lonelyCopies[key] = copies
+	}
+	return copies
+}
+
+// waitRouteLocked leaves a spool line with no twin in reach waiting under its key, and
+// stores it alone (under the main agent when untagged).
+func (s *Store) waitRouteLocked(route shared.RequestRecord) shared.RequestRecord {
+	routes := s.waitingRoutesLocked(pairKey(route))
 	s.pruneWaitingLocked(routes, route.Ts)
 	routes.Set(route.ID, route.AgentID)
 	if route.AgentID == "" {
@@ -1718,11 +1750,7 @@ func (s *Store) closestRouteLocked(transcript shared.RequestRecord) string {
 // pruning against the arriving copy's own ts would evict the copy its line has not
 // passed yet, and the line would stand alone and store the call twice.
 func (s *Store) waitCopyLocked(key string, transcript shared.RequestRecord) shared.RequestRecord {
-	copies := s.lonelyCopies[key]
-	if copies == nil {
-		copies = newWaitingSet()
-		s.lonelyCopies[key] = copies
-	}
+	copies := s.waitingCopiesLocked(key)
 	s.pruneWaitingLocked(copies, copies.newest)
 	copies.Add(transcript.ID)
 	if transcript.Ts > copies.newest {
@@ -1808,13 +1836,14 @@ func (s *Store) AddSpoolLine(line shared.SpoolLine) {
 // request it belongs to.
 func (s *Store) AddRequest(record shared.RequestRecord, content *ContentPair) {
 	s.mu.Lock()
+	restored := s.restoreAgedLocked(record)
 	merged := s.placeRequestLocked(record)
 	s.touchLocked(merged.SessionID, merged.Ts)
 	agent := s.agentLocked(merged.SessionID, merged.AgentID)
 	if agent.model == nil {
 		agent.model = strPtr(merged.Model)
 	}
-	s.evictRecordsLocked([]evictionPin{{source: 0, id: merged.ID}})
+	s.evictRecordsLocked(append(restored, evictionPin{source: 0, id: merged.ID}))
 	change := Change{
 		Sessions: true,
 		Touched:  []string{merged.SessionID},

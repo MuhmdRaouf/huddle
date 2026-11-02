@@ -523,6 +523,11 @@ func (w *Watcher) drive() {
 		if finished {
 			// the pass drained; a still-queued poll starts the next one
 			w.mu.Lock()
+			if w.pass != nil && w.pass.kind == passFull {
+				// a full pass read the spool and the transcripts, so no twin of a call it set aside is
+				// still to come; a pass over the changed files leaves them for the full pass to release
+				w.store.ReleaseAgedCalls()
+			}
 			w.pass = nil
 			w.mu.Unlock()
 		}
