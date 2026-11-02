@@ -80,6 +80,7 @@ func wantFixtureItems() []Item {
 func wantFixtureShells() []Shell {
 	return []Shell{{
 		ID:          "bg1a2b3c",
+		Kind:        "bash",
 		Command:     "sleep 1",
 		Description: "A background wait",
 		State:       "ended",

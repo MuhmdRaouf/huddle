@@ -96,9 +96,9 @@ func fixtureShellOutput(t *testing.T, transcript, name, body string) string {
 // whose result named the session's own tasks folder carries one.
 func shellsFixture(dir string) []Shell {
 	return []Shell{
-		{ID: "b4io7vyqm", Command: "go test ./...", Description: "Run the gates", State: "ended", Status: "completed", ExitCode: intShellCode(1), StartedAt: "2026-10-26T10:00:01.000Z", EndedAt: "2026-10-26T10:00:20.000Z", output: filepath.Join(dir, "s1", "tasks", "b4io7vyqm.output")},
-		{ID: "k7w2n9x4d1", Command: "mise run check", Description: "Wait for the gates", State: "running", StartedAt: "2026-10-26T10:00:03.000Z", output: filepath.Join(dir, "s1", "tasks", "k7w2n9x4d1.output")},
-		{ID: "q5f8t3h6j0", Command: "sleep 30", Description: "Hold on", State: "running", StartedAt: "2026-10-26T10:00:07.000Z"},
+		{Kind: "bash", ID: "b4io7vyqm", Command: "go test ./...", Description: "Run the gates", State: "ended", Status: "completed", ExitCode: intShellCode(1), StartedAt: "2026-10-26T10:00:01.000Z", EndedAt: "2026-10-26T10:00:20.000Z", output: filepath.Join(dir, "s1", "tasks", "b4io7vyqm.output")},
+		{Kind: "bash", ID: "k7w2n9x4d1", Command: "mise run check", Description: "Wait for the gates", State: "running", StartedAt: "2026-10-26T10:00:03.000Z", output: filepath.Join(dir, "s1", "tasks", "k7w2n9x4d1.output")},
+		{Kind: "bash", ID: "q5f8t3h6j0", Command: "sleep 30", Description: "Hold on", State: "running", StartedAt: "2026-10-26T10:00:07.000Z"},
 	}
 }
 
@@ -324,9 +324,9 @@ func TestShellOutputAnswersAShellWithNoOutputFile(t *testing.T) {
 // line repeated it.
 func wantIdleShells() []Shell {
 	return []Shell{
-		{ID: "idl1a2b3c4", Command: "sleep 3", Description: "Idle fixture wait", State: "ended", Status: "completed", ExitCode: intShellCode(3), StartedAt: "2026-01-01T09:00:01.000Z", EndedAt: "2026-01-01T09:01:00.000Z", output: "/srv/fixture/sess-fixture-idle/tasks/idl1a2b3c4.output"},
-		{ID: "idl5d6e7f8", Command: "sleep 7", Description: "Killed fixture wait", State: "ended", Status: "killed", StartedAt: "2026-01-01T09:02:00.000Z", EndedAt: "2026-01-01T09:02:30.000Z", output: "/srv/fixture/sess-fixture-idle/tasks/idl5d6e7f8.output"},
-		{ID: "idl9g0h1i2", Command: "sleep 9", Description: "Both carriers fixture wait", State: "ended", Status: "completed", ExitCode: intShellCode(3), StartedAt: "2026-01-01T09:03:00.000Z", EndedAt: "2026-01-01T09:04:00.000Z", output: "/srv/fixture/sess-fixture-idle/tasks/idl9g0h1i2.output"},
+		{Kind: "bash", ID: "idl1a2b3c4", Command: "sleep 3", Description: "Idle fixture wait", State: "ended", Status: "completed", ExitCode: intShellCode(3), StartedAt: "2026-01-01T09:00:01.000Z", EndedAt: "2026-01-01T09:01:00.000Z", output: "/srv/fixture/sess-fixture-idle/tasks/idl1a2b3c4.output"},
+		{Kind: "bash", ID: "idl5d6e7f8", Command: "sleep 7", Description: "Killed fixture wait", State: "ended", Status: "killed", StartedAt: "2026-01-01T09:02:00.000Z", EndedAt: "2026-01-01T09:02:30.000Z", output: "/srv/fixture/sess-fixture-idle/tasks/idl5d6e7f8.output"},
+		{Kind: "bash", ID: "idl9g0h1i2", Command: "sleep 9", Description: "Both carriers fixture wait", State: "ended", Status: "completed", ExitCode: intShellCode(3), StartedAt: "2026-01-01T09:03:00.000Z", EndedAt: "2026-01-01T09:04:00.000Z", output: "/srv/fixture/sess-fixture-idle/tasks/idl9g0h1i2.output"},
 	}
 }
 
@@ -346,5 +346,94 @@ func TestShellsEndFromTheIdleUserLine(t *testing.T) {
 				t.Fatalf("shells:\ngot  %+v\nwant %+v", shells, wantIdleShells())
 			}
 		})
+	}
+}
+
+// wantMonitorShells is what every version's monitor fixture yields: one Monitor row that two
+// event notifications fed (one of them carried twice) and a final notification ended.
+func wantMonitorShells() []Shell {
+	return []Shell{
+		{ID: "mon7a8b9c0", Kind: "monitor", Command: "tail -f build.log", Description: "Watch the build log", State: "ended", Status: "completed", Events: 2, StartedAt: "2026-01-01T09:00:01.000Z", EndedAt: "2026-01-01T09:00:30.000Z"},
+	}
+}
+
+// TestShellsAMonitorCallIsABackgroundRow reads every version's monitor fixture: a Monitor call is
+// a row that runs from its call until the final notification naming it ends it; the event
+// notifications between count into Events once each, whichever carriers wrote them.
+func TestShellsAMonitorCallIsABackgroundRow(t *testing.T) {
+	ctx := context.Background()
+	for _, version := range fixtureVersions {
+		t.Run(version, func(t *testing.T) {
+			shells, err := Shells(ctx, filepath.Join("testdata", "cc", version, "monitor.jsonl"))
+			if err != nil {
+				t.Fatalf("shells: %v", err)
+			}
+			if !reflect.DeepEqual(shells, wantMonitorShells()) {
+				t.Fatalf("shells:\ngot  %+v\nwant %+v", shells, wantMonitorShells())
+			}
+		})
+	}
+}
+
+// monitorUseLine is one assistant line calling Monitor.
+func monitorUseLine(uuid, ts, toolUse, command, description string) string {
+	return fmt.Sprintf(`{"type":"assistant","uuid":%q,"timestamp":%q,"sessionId":"s1","message":{"role":"assistant","content":[{"type":"tool_use","id":%q,"name":"Monitor","input":{"command":%q,"description":%q,"timeout_ms":60000}}]}}`, uuid, ts, toolUse, command, description)
+}
+
+func TestShellsABashAndAMonitorListInCallOrder(t *testing.T) {
+	dir := t.TempDir()
+	lines := []string{
+		shellUseLine("a1", "2026-10-26T10:00:01.000Z", "toolu_1", "go test ./...", "Run the gates"),
+		shellResultLine("u1", "2026-10-26T10:00:02.000Z", "toolu_1", backgroundText(dir, "s1", "b4io7vyqm")),
+		monitorUseLine("a2", "2026-10-26T10:00:03.000Z", "toolu_2", "tail -f gates.log", "Watch the gates"),
+		shellResultLine("u2", "2026-10-26T10:00:04.000Z", "toolu_2", "Monitor started (task m5n6o7p8q9, 1m timeout). You will be notified on each event."),
+	}
+	path := filepath.Join(dir, "s1.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	shells, err := Shells(context.Background(), path)
+	if err != nil {
+		t.Fatalf("shells: %v", err)
+	}
+	want := []Shell{
+		{ID: "b4io7vyqm", Kind: "bash", Command: "go test ./...", Description: "Run the gates", State: "running", StartedAt: "2026-10-26T10:00:01.000Z", output: filepath.Join(dir, "s1", "tasks", "b4io7vyqm.output")},
+		{ID: "m5n6o7p8q9", Kind: "monitor", Command: "tail -f gates.log", Description: "Watch the gates", State: "running", StartedAt: "2026-10-26T10:00:03.000Z"},
+	}
+	if !reflect.DeepEqual(shells, want) {
+		t.Fatalf("shells:\ngot  %+v\nwant %+v", shells, want)
+	}
+}
+
+func TestShellOutputServesAMonitorOnlyWhenItsOutputFileIsNamed(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	tasks := filepath.Join(dir, "s1", "tasks")
+	if err := os.MkdirAll(tasks, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tasks, "m1a2b3c4d5.output"), []byte("first line\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lines := []string{
+		monitorUseLine("a1", "2026-10-26T10:00:01.000Z", "toolu_1", "tail -f a.log", "Named"),
+		shellResultLine("u1", "2026-10-26T10:00:02.000Z", "toolu_1", backgroundText(dir, "s1", "m1a2b3c4d5")),
+		monitorUseLine("a2", "2026-10-26T10:00:03.000Z", "toolu_2", "tail -f b.log", "Unnamed"),
+		shellResultLine("u2", "2026-10-26T10:00:04.000Z", "toolu_2", "Monitor started (task m6e7f8g9h0, 1m timeout)."),
+	}
+	path := filepath.Join(dir, "s1.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	shells, err := Shells(ctx, path)
+	if err != nil {
+		t.Fatalf("shells: %v", err)
+	}
+	page, ok, err := ShellOutput(ctx, shells, "m1a2b3c4d5", 0)
+	if err != nil || !ok || page.Text != "first line\n" {
+		t.Errorf("the named monitor output = %+v ok %v err %v, want its text", page, ok, err)
+	}
+	if _, ok, err := ShellOutput(ctx, shells, "m6e7f8g9h0", 0); ok || err != nil {
+		t.Errorf("the unnamed monitor output answered ok %v err %v, want not found and no error", ok, err)
 	}
 }

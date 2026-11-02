@@ -1,9 +1,9 @@
 package convo
 
-// The background shells of one session: the Bash calls its transcript runs in the background,
-// the notification that ends each one, and the output file Claude Code keeps for it under the
-// session's own tasks folder. The output file's path stays in this package; the routes hand out
-// only its pages.
+// The background shells of one session: the Bash calls its transcript runs in the background
+// and the Monitor calls it starts, the notification that ends each one, and the output file
+// Claude Code keeps for it under the session's own tasks folder. The output file's path stays in
+// this package; the routes hand out only its pages.
 
 import (
 	"bufio"
@@ -22,16 +22,24 @@ import (
 // MaxShellRead is the most bytes one output page takes.
 const MaxShellRead = 64 << 10
 
-// Shell is one background command a transcript ran, as its lines and its notification describe
-// it. State is running until a notification ends it; Status and ExitCode come from that
-// notification.
+// The kinds of background shell.
+const (
+	ShellKindBash    = "bash"
+	ShellKindMonitor = "monitor"
+)
+
+// Shell is one background command or Monitor a transcript ran, as its lines and its
+// notification describe it. State is running until a notification ends it; Status and ExitCode
+// come from that notification. Events counts the event notifications a Monitor streamed.
 type Shell struct {
 	ID          string `json:"id"`
+	Kind        string `json:"kind"`
 	Command     string `json:"command"`
 	Description string `json:"description,omitempty"`
 	State       string `json:"state"`
 	Status      string `json:"status,omitempty"`
 	ExitCode    *int   `json:"exit_code,omitempty"`
+	Events      int    `json:"events,omitempty"`
 	StartedAt   string `json:"started_at"`
 	EndedAt     string `json:"ended_at,omitempty"`
 	output      string
@@ -60,7 +68,7 @@ type shellLine struct {
 	} `json:"attachment"`
 }
 
-// shellUseInput is the input of a Bash tool call.
+// shellUseInput is the input of a Bash or Monitor tool call; only Bash carries Background.
 type shellUseInput struct {
 	Command     string `json:"command"`
 	Description string `json:"description"`
@@ -69,19 +77,24 @@ type shellUseInput struct {
 
 // A line without one of these marks holds no shell news, so the scan never decodes it.
 const (
-	shellMarkUse  = "run_in_background"
-	shellMarkID   = "Command running in background"
-	shellMarkDone = "task-notification"
+	shellMarkUse   = "run_in_background"
+	shellMarkMon   = `"Monitor"`
+	shellMarkMonID = "Monitor started"
+	shellMarkID    = "Command running in background"
+	shellMarkDone  = "task-notification"
 )
 
 // shellResultPattern takes the id and the output file's path from a result's text. The id is
 // Claude Code's own: lowercase letters and digits.
 var shellResultPattern = regexp.MustCompile(`Command running in background with ID: ([a-z0-9]{1,32})\. Output is being written to: (.+?)\. You will be notified`)
 
-// Shells answers the background commands the transcript at path ran, in transcript order: each
-// starts at its Bash call, takes its id and output file from the answer, and stays running
-// until a notification names its call. Only complete lines count, and a line without a shell's
-// marks is never decoded.
+// monitorResultPattern takes the task id from a Monitor call's result text.
+var monitorResultPattern = regexp.MustCompile(`Monitor started \(task ([a-z0-9]{1,32})[,)]`)
+
+// Shells answers the background commands and Monitors the transcript at path ran, in transcript
+// order: each starts at its call, takes its id and output file from the answer, and stays
+// running until a notification names its call. Only complete lines count, and a line without a
+// shell's marks is never decoded.
 func Shells(ctx context.Context, path string) ([]Shell, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -92,7 +105,7 @@ func Shells(ctx context.Context, path string) ([]Shell, error) {
 	}
 	defer file.Close()
 	shells := []Shell{}
-	at := map[string]int{}
+	scan := shellScan{at: map[string]int{}, heard: map[int]string{}}
 	reader := bufio.NewReader(file)
 	for {
 		if err := ctx.Err(); err != nil {
@@ -100,7 +113,7 @@ func Shells(ctx context.Context, path string) ([]Shell, error) {
 		}
 		raw, err := reader.ReadBytes('\n')
 		if len(raw) > 0 && raw[len(raw)-1] == '\n' {
-			scanShellLine(raw, &shells, at)
+			scan.line(raw, &shells)
 			if err == nil {
 				continue
 			}
@@ -113,10 +126,21 @@ func Shells(ctx context.Context, path string) ([]Shell, error) {
 	return shells, nil
 }
 
-// scanShellLine takes one complete transcript line into the shells: a background Bash call adds
-// one, its answer gives it the id and the output file, a notification ends it.
-func scanShellLine(raw []byte, shells *[]Shell, at map[string]int) {
+// shellScan is what a scan keeps between lines. at finds a shell's row by its call's id and,
+// once the answer names it, by its task id. heard holds, per Monitor row, the text of the event
+// an attachment delivered last, until the user line that repeats it is read.
+type shellScan struct {
+	at    map[string]int
+	heard map[int]string
+}
+
+// line takes one complete transcript line into the shells: a background Bash call or a Monitor
+// call adds one, its answer gives it the id and the output file, a notification ends it or, for
+// a Monitor's event, counts into it.
+func (scan shellScan) line(raw []byte, shells *[]Shell) {
 	if !bytes.Contains(raw, []byte(shellMarkUse)) &&
+		!bytes.Contains(raw, []byte(shellMarkMon)) &&
+		!bytes.Contains(raw, []byte(shellMarkMonID)) &&
 		!bytes.Contains(raw, []byte(shellMarkID)) &&
 		!bytes.Contains(raw, []byte(shellMarkDone)) {
 		return
@@ -132,20 +156,28 @@ func scanShellLine(raw []byte, shells *[]Shell, at map[string]int) {
 			return
 		}
 		for _, block := range blocks {
-			if block.Type != "tool_use" || block.Name != "Bash" {
+			if block.Type != "tool_use" || (block.Name != "Bash" && block.Name != "Monitor") {
 				continue
 			}
 			var input shellUseInput
-			if json.Unmarshal(block.Input, &input) != nil || !input.Background {
+			if json.Unmarshal(block.Input, &input) != nil {
 				continue
 			}
+			kind := ShellKindMonitor
+			if block.Name == "Bash" {
+				if !input.Background {
+					continue
+				}
+				kind = ShellKindBash
+			}
 			*shells = append(*shells, Shell{
+				Kind:        kind,
 				Command:     input.Command,
 				Description: input.Description,
 				State:       "running",
 				StartedAt:   line.Timestamp,
 			})
-			at[block.ID] = len(*shells) - 1
+			scan.at[block.ID] = len(*shells) - 1
 		}
 	case "user":
 		var text string
@@ -153,7 +185,7 @@ func scanShellLine(raw []byte, shells *[]Shell, at map[string]int) {
 			// a string content is a prompt or, while the session is idle, the task
 			// notification itself
 			if note, ok := parseNotification(text); ok {
-				endShell(note, line.Timestamp, shells, at)
+				scan.note(note, line.Timestamp, false, shells)
 			}
 			return
 		}
@@ -165,13 +197,18 @@ func scanShellLine(raw []byte, shells *[]Shell, at map[string]int) {
 			if block.Type != "tool_result" {
 				continue
 			}
-			i, ok := at[block.ToolUseID]
+			i, ok := scan.at[block.ToolUseID]
 			if !ok {
 				continue
 			}
-			if id, output, ok := shellOutputOf(resultText(block.Content), line.SessionID); ok {
+			text := resultText(block.Content)
+			if id, output, ok := shellOutputOf(text, line.SessionID); ok {
 				(*shells)[i].ID = id
 				(*shells)[i].output = output
+				scan.at[id] = i
+			} else if m := monitorResultPattern.FindStringSubmatch(text); m != nil {
+				(*shells)[i].ID = m[1]
+				scan.at[m[1]] = i
 			}
 		}
 	case "attachment":
@@ -179,20 +216,39 @@ func scanShellLine(raw []byte, shells *[]Shell, at map[string]int) {
 			return
 		}
 		if note, ok := parseNotification(line.Attachment.Prompt); ok {
-			endShell(note, line.Timestamp, shells, at)
+			scan.note(note, line.Timestamp, true, shells)
 		}
 	}
 }
 
-// endShell ends the shell the notification's tool use started, at the notification line's
-// timestamp, with the notification's status and exit code. A shell ends at the first
-// notification that names its call; a notification naming an unknown call, or none, ends
-// nothing.
-func endShell(note notification, endedAt string, shells *[]Shell, at map[string]int) {
-	i, ok := at[note.ToolUseID]
-	if !ok {
+// note applies one notification. A shell ends at the first notification that names its call
+// with a final status, at that line's timestamp, taking the notification's status and exit
+// code; a notification naming an unknown call, or none, ends nothing. A Monitor's event
+// notification, found by its task id, ends nothing and counts once: an attachment's event is
+// remembered so the user line that repeats it adds nothing.
+func (scan shellScan) note(note notification, endedAt string, attachment bool, shells *[]Shell) {
+	if i, ok := scan.at[note.ToolUseID]; ok && !(note.Status == "running" && (*shells)[i].Kind == ShellKindMonitor) {
+		endShell(i, note, endedAt, shells)
 		return
 	}
+	i, ok := scan.at[note.TaskID]
+	if !ok || note.Event == "" || (*shells)[i].Kind != ShellKindMonitor || (*shells)[i].State == "ended" {
+		return
+	}
+	if attachment {
+		scan.heard[i] = note.Event
+	} else {
+		repeat := scan.heard[i] == note.Event
+		delete(scan.heard, i)
+		if repeat {
+			return
+		}
+	}
+	(*shells)[i].Events++
+}
+
+// endShell ends shell i with the notification's status and exit code.
+func endShell(i int, note notification, endedAt string, shells *[]Shell) {
 	shell := &(*shells)[i]
 	if shell.State == "ended" {
 		return
@@ -237,11 +293,11 @@ func ShellOutput(ctx context.Context, shells []Shell, id string, after int64) (O
 	if id == "" {
 		return OutputPage{}, false, nil
 	}
-	var output string
+	var output, kind string
 	found := false
 	for _, shell := range shells {
 		if shell.ID == id {
-			output, found = shell.output, true
+			output, kind, found = shell.output, shell.Kind, true
 			break
 		}
 	}
@@ -249,7 +305,9 @@ func ShellOutput(ctx context.Context, shells []Shell, id string, after int64) (O
 		return OutputPage{}, false, nil
 	}
 	if output == "" {
-		return OutputPage{Next: after}, true, nil
+		// a Monitor streams events; its result never names an output file unless the
+		// transcript says so, and then there is nothing to page
+		return OutputPage{Next: after}, kind != ShellKindMonitor, nil
 	}
 	file, err := os.Open(output)
 	if err != nil {
