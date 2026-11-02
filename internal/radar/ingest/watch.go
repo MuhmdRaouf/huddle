@@ -101,6 +101,8 @@ type WatcherOptions struct {
 	NewRescanTicker func(interval time.Duration) (<-chan time.Time, func())
 	// Stat is the stat call the tail reads and the walk make; nil is os.Stat.
 	Stat StatFunc
+	// ChunkBytes is how many bytes one tail read may take; zero is TailChunkBytes.
+	ChunkBytes int64
 }
 
 // fileTail is one transcript file's read position and its parser.
@@ -218,6 +220,8 @@ type Watcher struct {
 	newTicker func(interval time.Duration) (<-chan time.Time, func())
 	log       func(line string)
 	stat      StatFunc
+	// chunkBytes is how many bytes one tail read may take.
+	chunkBytes int64
 	// openFilesLimit reads the soft open-files limit the descriptor budget is a quarter of.
 	openFilesLimit func() (uint64, error)
 
@@ -326,6 +330,10 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 	if stat == nil {
 		stat = os.Stat
 	}
+	chunkBytes := options.ChunkBytes
+	if chunkBytes <= 0 {
+		chunkBytes = TailChunkBytes
+	}
 	newRescanTicker := options.NewRescanTicker
 	if newRescanTicker == nil && options.NewTicker == nil {
 		newRescanTicker = newTicker
@@ -343,6 +351,7 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 		newTicker:           newTicker,
 		log:                 log,
 		stat:                stat,
+		chunkBytes:          chunkBytes,
 		openFilesLimit:      options.OpenFilesLimit,
 		intervalMs:          interval,
 		projectsRoot:        filepath.Join(paths.ClaudeConfigDir(options.Env), "projects"),

@@ -128,7 +128,7 @@ func (w *Watcher) trackTranscript(path string) {
 
 // tailFile reads a tail's new bytes through the watcher's stat call.
 func (w *Watcher) tailFile(state *TailState) TailResult {
-	return tailFileUsing(w.stat, state, TailChunkBytes)
+	return tailFileUsing(w.stat, state, w.chunkBytes)
 }
 
 // settleFeed follows a scan: it unwatches the folders that fell out of the window, asks for
