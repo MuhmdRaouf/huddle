@@ -18,9 +18,9 @@ concurrency:
 #   1. Plan: which parts changed (a manual run checks everything). A part whose folder does not exist yet is skipped.
 #   2. Repository rules on every push: secrets, AI attribution, the pre-commit hooks (Markdown, YAML, workflows, hygiene), the plugin catalogue.
 #   3. Tests: the Go checks (format, tidy, vet, staticcheck, govulncheck), the release build, the Go module (huddle, radar,
-#      kanban) split into ten shards with one merged coverage gate, and the web workspace in nine browser jobs: the desk
+#      kanban) split into eleven shards with one merged coverage gate, and the web workspace in nine browser jobs: the desk
 #      and iPhone suites in three shards each, the screenshot suites in one job each.
-#   4. Compatibility: the Go suite on macOS in the same ten shards and the cross-host reproducible-build proof.
+#   4. Compatibility: the Go suite on macOS in the same eleven shards and the cross-host reproducible-build proof.
 #   5. All checks passed: the one check branch protection requires; a skipped job counts as passed. It also sums the
 #      browser shards' test counts per project.
 # Runners are pinned so an image migration never changes the toolchain under a green build. Third-party actions are
@@ -251,8 +251,9 @@ jobs:
   # The suite splits so each shard fits its cap: core is the provider engine (internal/core/...),
   # rest is every other package except six slow ones that rest-heavy runs, and three packages split
   # over several shards that run the same package: the hub's server package (server, server-a), the
-  # binary's end-to-end package (cmd, cmd-heavy, cmd-hub) and the huddle CLI (cli, cli-a)
-  # (scripts/shard-packages.sh lists the packages, scripts/shard-flags.sh the tests). Each shard
+  # binary's end-to-end package (cmd, cmd-overhead, cmd-heavy, cmd-hub) and the huddle CLI (cli, cli-a)
+  # (scripts/shard-packages.sh lists the packages, scripts/shard-flags.sh the tests). cmd-overhead runs
+  # the router overhead guard alone on its runner, so no other test competes with its timings. Each shard
   # races and uploads its coverage profile and its JSON test events; go-coverage judges the merge.
   go-test:
     name: "Test: Go (${{ matrix.shard }})"
@@ -263,7 +264,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [core, server, server-a, cmd-heavy, cmd-hub, cmd, cli-a, cli, rest-heavy, rest]
+        shard: [core, server, server-a, cmd-overhead, cmd-heavy, cmd-hub, cmd, cli-a, cli, rest-heavy, rest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -438,7 +439,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [core, server, server-a, cmd-heavy, cmd-hub, cmd, cli-a, cli, rest-heavy, rest]
+        shard: [core, server, server-a, cmd-overhead, cmd-heavy, cmd-hub, cmd, cli-a, cli, rest-heavy, rest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

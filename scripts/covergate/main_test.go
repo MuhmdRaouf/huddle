@@ -499,13 +499,13 @@ func TestCIGatesTheMergedProfileOfEveryShard(t *testing.T) {
 
 // ciShards are the test shards ci.yml runs, in matrix order. Each is a list of packages that
 // scripts/shard-packages.sh prints.
-var ciShards = []string{"core", "server", "server-a", "cmd-heavy", "cmd-hub", "cmd", "cli-a", "cli", "rest-heavy", "rest"}
+var ciShards = []string{"core", "server", "server-a", "cmd-overhead", "cmd-heavy", "cmd-hub", "cmd", "cli-a", "cli", "rest-heavy", "rest"}
 
 // splitGroups are the shards that run one package between them, told apart by the flags
 // scripts/shard-flags.sh prints: every test of the package runs in exactly one shard of its group.
 var splitGroups = [][]string{
 	{"server", "server-a"},
-	{"cmd", "cmd-heavy", "cmd-hub"},
+	{"cmd", "cmd-overhead", "cmd-heavy", "cmd-hub"},
 	{"cli", "cli-a"},
 }
 
@@ -573,7 +573,7 @@ func TestEachHeavyPackageHasShardsOfItsOwn(t *testing.T) {
 		want   []string
 	}{
 		{[]string{"server", "server-a"}, []string{mp + "/internal/huddle/server"}},
-		{[]string{"cmd", "cmd-heavy", "cmd-hub"}, []string{mp + "/cmd/huddle"}},
+		{[]string{"cmd", "cmd-overhead", "cmd-heavy", "cmd-hub"}, []string{mp + "/cmd/huddle"}},
 		{[]string{"cli", "cli-a"}, []string{mp + "/internal/huddle/cli"}},
 		{[]string{"rest-heavy"}, []string{
 			mp + "/internal/huddle/hooks",
@@ -703,6 +703,27 @@ func TestShardPatternsNameRealTests(t *testing.T) {
 					t.Errorf("the %s pattern names %s, which is not a test of its package", shard, name)
 				}
 			}
+		}
+	}
+}
+
+// The router overhead guard compares timings against a same-run reference, which contention from
+// other tests in its shard still skews: it runs alone, in a shard whose only test it is.
+func TestRouterOverheadRunsAloneInItsOwnShard(t *testing.T) {
+	const test = "TestE2ERouterOverhead"
+	for _, shard := range []string{"cmd", "cmd-heavy", "cmd-hub"} {
+		if kind, pattern := shardFlag(t, shard); selects(kind, pattern, test) {
+			t.Errorf("the %s shard also runs %s", shard, test)
+		}
+	}
+	kind, pattern := shardFlag(t, "cmd-overhead")
+	if !selects(kind, pattern, test) {
+		t.Errorf("the cmd-overhead shard does not run %s", test)
+	}
+	pkg := shardPackages(t, "cmd-overhead")[0]
+	for _, name := range listTests(t, pkg) {
+		if name != test && selects(kind, pattern, name) {
+			t.Errorf("the cmd-overhead shard also runs %s, want %s alone", name, test)
 		}
 	}
 }
