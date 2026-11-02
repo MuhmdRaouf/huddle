@@ -30,8 +30,10 @@ type fakeFolderWatch struct {
 	cost     func(dir string) int
 	held     []string
 	attempts int
-	events   chan fsnotify.Event
-	errors   chan error
+	// onWatchFile runs inside WatchFile, the moment a write can race the watch of a new file
+	onWatchFile func(path string)
+	events      chan fsnotify.Event
+	errors      chan error
 }
 
 func newFakeFolderWatch(limit int) *fakeFolderWatch {
@@ -63,6 +65,13 @@ func (f *fakeFolderWatch) Cost(dir string) int {
 		return 1
 	}
 	return f.cost(dir)
+}
+
+func (f *fakeFolderWatch) WatchFile(path string) error {
+	if f.onWatchFile != nil {
+		f.onWatchFile(path)
+	}
+	return nil
 }
 
 func (f *fakeFolderWatch) names() []string {
@@ -569,5 +578,69 @@ func TestATranscriptASpoolLineNamesIsReadOnThePassThatReadsTheLine(t *testing.T)
 		writeText(t, filepath.Join(subagents, "agent-w1.meta.json"), `{"agentType":"Explore","description":"scan"}`)
 		appendText(t, spool, spoolLine("sess-new", transcript))
 		waitFor(t, "the subagent's line, no tick", time.Second, hasRequest(t, st, "sreq-1"))
+	})
+}
+
+func TestAWriteThatRacesTheWatchOfANewFileIsStillRead(t *testing.T) {
+	t.Run("a spool day file", func(t *testing.T) {
+		e := makeEnv(t)
+		seed := writeText(t, spoolFilePath(t, e.env), oneLine(t, map[string]any{
+			"ts": iso(watchT0), "event": "SessionStart", "session_id": "other",
+		}))
+		st := newStore()
+		feed := newFakeFolderWatch(-1)
+		startFolderWatcher(t, e, st, ingest.WatcherOptions{NewFolderWatch: feed.open})
+
+		day := filepath.Join(filepath.Dir(seed), "2026-01-16.jsonl")
+		line := func(session string) string {
+			return oneLine(t, map[string]any{"ts": iso(watchT1), "event": "UserPromptSubmit", "session_id": session})
+		}
+		writeText(t, day, line("first"))
+		feed.onWatchFile = func(path string) {
+			if path == day {
+				appendText(t, day, line("raced"))
+			}
+		}
+		feed.events <- fsnotify.Event{Name: day, Op: fsnotify.Create}
+
+		limit := int64(10)
+		count := func() int { return len(st.Events(store.EventsFilter{Limit: &limit})) }
+		waitFor(t, "the seed line and both new lines, no tick", time.Second, func() bool { return count() == 3 })
+	})
+
+	t.Run("a transcript", func(t *testing.T) {
+		e := makeEnv(t)
+		folder := filepath.Join(e.config, "projects", "-w-app")
+		writeText(t, filepath.Join(folder, "sess-a.jsonl"), jsonl(t, assistantLine(watchT0, "req-seed")))
+		st := newStore()
+		feed := newFakeFolderWatch(-1)
+		startFolderWatcher(t, e, st, ingest.WatcherOptions{NewFolderWatch: feed.open})
+		waitFor(t, "the seed line", 5*time.Second, hasRequest(t, st, "req-seed"))
+
+		late := filepath.Join(folder, "sess-late.jsonl")
+		writeText(t, late, jsonl(t, assistantLine(watchT1, "req-first")))
+		feed.onWatchFile = func(path string) {
+			if path == late {
+				appendText(t, late, oneLine(t, assistantLine(watchT1+1, "req-raced")))
+			}
+		}
+		feed.events <- fsnotify.Event{Name: late, Op: fsnotify.Create}
+
+		waitFor(t, "the first line, no tick", time.Second, hasRequest(t, st, "req-first"))
+		waitFor(t, "the raced line, no tick", time.Second, hasRequest(t, st, "req-raced"))
+	})
+}
+
+func TestTheSpoolFolderIsWatchedEvenWhenNothingHasWrittenToItYet(t *testing.T) {
+	e := makeEnv(t)
+	st := newStore()
+	startFolderWatcher(t, e, st, ingest.WatcherOptions{})
+
+	writeText(t, spoolFilePath(t, e.env), oneLine(t, map[string]any{
+		"ts": iso(watchT0), "event": "UserPromptSubmit", "session_id": "s1",
+	}))
+	limit := int64(10)
+	waitFor(t, "the first hook line, no tick", time.Second, func() bool {
+		return len(st.Events(store.EventsFilter{Limit: &limit})) == 1
 	})
 }

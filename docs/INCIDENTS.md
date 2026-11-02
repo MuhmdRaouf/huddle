@@ -452,3 +452,20 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Rule:** a change that makes a loop lighter keeps every latency the loop gave, with a test that proves it on an
   idle machine. A feed pass tails the transcript a spool line names the moment it reads the line, and the hub's
   spool line for a report carries the report's transcript path.
+
+## 2026-11-02, radar's first spool lines waited 30 s when the spool folder did not exist yet
+
+- **What happened:** `TestTheOwnersInsightsNameAFailingLane` failed in one run of about fifty (no lane tip in
+  20 s) and passed alone and on the rerun.
+- **Cause:** the hub makes radar's state and spool folders when it writes server.json, after the ingest has
+  started. The change feed arms the spool folder in the ingest's first moments; when that came first the folder
+  was not there, the arm failed, and the feed watched nothing in it until a later scan, up to 30 s. A fresh
+  install met the same gap for its first hook lines. A second gap sat beside it: on macOS the feed reports a new
+  file's creation before it watches the file, so a line written right after a spool or transcript file was
+  created, after the pass the creation raised had read it, raised no event and waited for the scan too. A probe
+  that created a spool day file and appended at once lost the second line in most runs.
+- **Guard:** `TestTheSpoolFolderIsWatchedEvenWhenNothingHasWrittenToItYet` and
+  `TestAWriteThatRacesTheWatchOfANewFileIsStillRead` (internal/radar/ingest/watch_folders_test.go)
+- **Rule:** the ingest makes the state and spool folders before the feed arms them, and the feed watches a created
+  spool or transcript file before anything reads it (`FolderWatch.WatchFile`), so a write that lands while the
+  watch is made is in what the read finds and a later one raises its own event.

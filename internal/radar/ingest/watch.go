@@ -384,6 +384,9 @@ func (w *Watcher) run(ctx context.Context, ticks <-chan time.Time, stopTicker fu
 	defer close(w.done)
 	defer stopTicker()
 	defer stopRescan()
+	// the feed cannot watch a folder that is not there, and the hub makes the spool folder
+	// only after the ingest starts
+	paths.EnsureStateDirs(ctx, w.env)
 	events, failures := w.openFeed()
 	defer w.closeFeed()
 	w.warmStore(ctx)

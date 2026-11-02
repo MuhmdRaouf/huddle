@@ -31,6 +31,9 @@ type FolderWatch interface {
 	Remove(dir string) error
 	// Cost is how many file descriptors watching dir takes.
 	Cost(dir string) int
+	// WatchFile holds a watch on a file just created in an armed folder, and answers once it
+	// holds: a write after that raises an event, a write before it is for the reader to find.
+	WatchFile(path string) error
 	Events() <-chan fsnotify.Event
 	Errors() <-chan error
 	Close() error
@@ -66,6 +69,16 @@ func (o osFolderWatch) Remove(dir string) error       { return o.inner.Remove(di
 func (o osFolderWatch) Events() <-chan fsnotify.Event { return o.inner.Events }
 func (o osFolderWatch) Errors() <-chan error          { return o.inner.Errors }
 func (o osFolderWatch) Close() error                  { return o.inner.Close() }
+
+// WatchFile is a kqueue watch of its own: kqueue reports a new file's creation before it watches
+// the file, so a write in between raises no event. inotify's folder watch reports every file's
+// writes from the moment the file exists.
+func (o osFolderWatch) WatchFile(path string) error {
+	if runtime.GOOS == "linux" {
+		return nil
+	}
+	return o.inner.Add(path)
+}
 
 // openFeed opens the change feed and answers its two channels; a feed that cannot open leaves
 // the fallback scan to read every folder, and the nil channels never fire.
@@ -350,12 +363,16 @@ func (w *Watcher) noteFeedFailure(err error) {
 
 // noteChange files one event: a spool or transcript file that changed is read by the next
 // pass, a transcript seen for the first time is tailed, a folder made under the projects dir
-// is armed and read.
+// is armed and read. A file created is watched before anything reads it, so a write that lands
+// while the watch is made is in what the read finds.
 func (w *Watcher) noteChange(event fsnotify.Event) {
 	if !event.Has(fsnotify.Create) && !event.Has(fsnotify.Write) && !event.Has(fsnotify.Rename) {
 		return
 	}
 	path := event.Name
+	if event.Has(fsnotify.Create) && (w.isSpoolFile(path) || strings.HasSuffix(path, ".jsonl")) {
+		_ = w.feed.WatchFile(path)
+	}
 	switch {
 	case w.isSpoolFile(path):
 		w.markChanged(path)
