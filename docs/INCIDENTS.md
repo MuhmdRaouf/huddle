@@ -505,9 +505,21 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   spool chunks that were still to come landed inside the measured workload. A second cost sat in the catch-up
   itself: the History upsert had grown a 15-column CASE list that SQLite parses on every statement, so each call
   written to History cost about three times what it did, and the catch-up took about half as long again (26 s against 17 s to settle).
-- **Guard:** `TestWatcherDrainsAFileBiggerThanOneChunk` (internal/radar/ingest/watch_chunks_test.go) and
-  `TestAWriteWithUsageRunsTheShortUpsert` (internal/radar/history/request_upsert_test.go)
+  A third cost sat in what the catch-up keeps. A pass that drains the whole backlog holds every request and event
+  of it at once, and the hub's resident peak is about twice the live heap. The same test then reached 166 to
+  168 MB against its 165 MB ceiling in one run of three. The live heap held a fresh copy of every repeated word
+  in each request record (session, upstream, route, via, status and the ten header names), tail-key lists and
+  header lists with room for twice their keys, and each hook line twice, as its bytes and as its parsed text.
+  A numeric route status also decoded the whole line again for every reader, 154 allocations a line.
+- **Guard:** `TestWatcherDrainsAFileBiggerThanOneChunk` (internal/radar/ingest/watch_chunks_test.go),
+  `TestAWriteWithUsageRunsTheShortUpsert` (internal/radar/history/request_upsert_test.go),
+  `TestJudgingASuccessfulRouteLineAllocatesNothing`, `TestARouteRecordsHeadersHoldNoSpareRoom` and
+  `TestRouteRecordsOfSeparateLinesShareTheirRepeatedStrings` (internal/radar/ingest/route_cost_test.go),
+  `TestAPairedRecordsTailKeysHoldNoSpareRoom` (internal/radar/store/merge_room_test.go) and
+  `TestTheTimelineHoldsAHookLinesTextOnce` (internal/radar/store/event_heap_test.go)
 - **Rule:** a pass drains every file it reads, and the long upsert that keeps a row's transcript facts runs only
-  for a write that brings no usage. Every change to the hub, radar or ingest reports `TestE2EHubStaysLight`'s polled
+  for a write that brings no usage. A record the store keeps holds one copy of each word its siblings repeat
+  (`interned`), lists sized to their keys, and a timeline line by its bytes alone (`SpoolLine.Slim`); a decoded
+  line answers its numeric status from the decode (`SpoolLine.StatusText`). Every change to the hub, radar or ingest reports `TestE2EHubStaysLight`'s polled
   CPU and its catch-up and settled RSS peaks against the base commit on the same machine, three runs each, and a
   rise of more than 10% blocks landing even under budget.
