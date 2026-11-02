@@ -218,7 +218,7 @@ function FlowPlot({ series, span }: { series: number[][] | null; span: Span }) {
 
 /** One figure that follows the fetch: its value once the series answers, a skeleton while it runs (never
  *  a zero, which would read as a quiet range), a dash when history did not answer. */
-function FlowFigure({
+export function FlowFigure({
   ready,
   failed,
   text,

@@ -436,6 +436,9 @@ export type ClientState = {
 };
 
 const MAX_REQUESTS = 2000;
+
+/** How many requests the backfill asks for; a held list shorter than this is every record the store has. */
+export const BACKFILL_LIMIT = 1000;
 const MAX_TOOLS = 2000;
 const MAX_EVENTS = 1000;
 /** how many session trees the agents tab shows when no session is selected */
@@ -850,8 +853,8 @@ export function rangeEqual(a: TimeRange, b: TimeRange): boolean {
   return a.preset === b.preset && a.from === b.from && a.to === b.to;
 }
 
-/** The oldest request in memory (null when there is none); the flow reads memory only while it reaches back
- *  far enough. Kept oldest-first by the backfill and the stream, but scanned anyway — one pass over the cap. */
+/** The oldest request in memory (null when there is none); the flow checks a full list's reach back with it.
+ *  Kept oldest-first by the backfill and the stream, but scanned anyway — one pass over the cap. */
 export function oldestRequest(requests: RequestRecord[]): number | null {
   let oldest: number | null = null;
   for (const request of requests) {
@@ -860,15 +863,24 @@ export function oldestRequest(requests: RequestRecord[]): number | null {
   return oldest;
 }
 
+/** The days the history store keeps unless its settings say otherwise. */
+const DEFAULT_RETENTION_DAYS = 30;
+
 /** The window the token-flow chart draws right now, and where its numbers come from: the requests in memory
- *  while the span is short, open-ended and memory reaches back far enough, else the history route. */
+ *  while the span is short, open-ended and memory holds every record of it, else the history route. The store
+ *  keeps MAX_MEMORY_SPAN, so a list shorter than the backfill limit holds every record of any span that short;
+ *  a full list may have been cut, and answers only a span its oldest request reaches back over. All time is
+ *  the history store's retention window, always the history route's. */
 export function flowSource(state: ClientState, now: number): { from: number; to: number; history: boolean } {
+  if (state.range.preset === "all") {
+    const days = state.historyStats?.retentionDays;
+    const kept = days !== undefined && days > 0 ? days : DEFAULT_RETENTION_DAYS;
+    return { from: now - kept * 86_400_000, to: now, history: true };
+  }
   const oldest = oldestRequest(state.requests);
   const resolved = resolveRange(state.range, now, oldest ?? undefined);
-  const history =
-    state.range.to !== null ||
-    resolved.to - resolved.from > MAX_MEMORY_SPAN ||
-    (oldest !== null && resolved.from < oldest);
+  const memoryCut = state.requests.length >= BACKFILL_LIMIT && oldest !== null && resolved.from < oldest;
+  const history = state.range.to !== null || resolved.to - resolved.from > MAX_MEMORY_SPAN || memoryCut;
   return { ...resolved, history };
 }
 

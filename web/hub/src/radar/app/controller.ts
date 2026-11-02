@@ -51,6 +51,7 @@ import {
   detailTargets,
   draftOf,
   drawerRequest,
+  BACKFILL_LIMIT,
   flowSource,
   type HistoryRoot,
   type HistoryScope,
@@ -1850,7 +1851,7 @@ export class RadarController {
     this.backfillInFlight = true;
     try {
       const [requests, events, tools] = await Promise.all([
-        this.fetchJson<{ requests: RequestRecord[] }>("/api/requests?limit=1000"),
+        this.fetchJson<{ requests: RequestRecord[] }>(`/api/requests?limit=${BACKFILL_LIMIT}`),
         this.fetchJson<{ events: EventRecord[] }>("/api/events?limit=500"),
         this.fetchJson<{ tools: ToolCallRecord[] }>("/api/tools?limit=1000"),
       ]);

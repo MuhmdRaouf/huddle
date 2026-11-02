@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { ModelsView } from "../../../src/radar/app/views/Models.tsx";
-import { ZERO_TOKENS } from "../../../src/radar/shared/model.ts";
-import type { ClientState } from "../../../src/radar/state.ts";
+import { type RequestRecord, ZERO_TOKENS } from "../../../src/radar/shared/model.ts";
+import { BACKFILL_LIMIT, type ClientState } from "../../../src/radar/state.ts";
 import { makeRequest } from "../helpers.ts";
 import { renderApp } from "./render.tsx";
 import { expectTokensOnly } from "./tokens.ts";
@@ -10,6 +10,15 @@ import { expectTokensOnly } from "./tokens.ts";
 afterEach(() => expectTokensOnly());
 
 const NOW = 1_790_000_000_000;
+
+/** A full backfill list: the given requests plus recent padding up to the backfill limit, so memory may be
+ *  cut and a start older than its oldest request is the history route's to answer. */
+function fullList(...requests: RequestRecord[]): RequestRecord[] {
+  const padding = Array.from({ length: BACKFILL_LIMIT - requests.length }, (_, index) =>
+    makeRequest({ id: `pad-${index}`, ts: NOW - 30_000 }),
+  );
+  return [...requests, ...padding];
+}
 
 const MODELS: ClientState["models"] = {
   models: [
@@ -139,13 +148,16 @@ describe("ModelsView", () => {
   });
 
   it("draws a skeleton, never the memory slice, while a history-only range waits for its answer", () => {
-    // memory holds only the last 90 seconds, so the 5m window is the history route's to answer
+    // a full list reaching back only 90 seconds may be cut, so the 5m window is the history route's to answer
     const { container } = renderApp(
       <ModelsView />,
       {
         range: { preset: "5m", from: 0, to: null },
         modelsScoped: { key: "range=5m|", data: { models: [], upstreams: [], tools: [] } },
-        requests: [makeRequest({ id: "a", ts: NOW - 30_000 }), makeRequest({ id: "b", ts: NOW - 90_000 })],
+        requests: fullList(
+          makeRequest({ id: "a", ts: NOW - 30_000 }),
+          makeRequest({ id: "b", ts: NOW - 90_000 }),
+        ),
       },
       NOW,
     );
@@ -161,7 +173,7 @@ describe("ModelsView", () => {
         range: { preset: "5m", from: 0, to: null },
         selected: ["s1"],
         modelsScoped: { key: "range=5m|s1", data: { models: [], upstreams: [], tools: [] } },
-        requests: [makeRequest({ id: "a", ts: NOW - 30_000 })],
+        requests: fullList(makeRequest({ id: "a", ts: NOW - 30_000 })),
       },
       NOW,
     );
@@ -186,8 +198,8 @@ describe("ModelsView", () => {
       {
         range: { preset: "5m", from: 0, to: null },
         modelsScoped: { key: "range=5m|", data: { models: [], upstreams: [], tools: [] } },
-        // a request only minutes old keeps memory from reaching the window's start, so the answer counts
-        requests: [makeRequest({ id: "a", ts: NOW - 30_000 })],
+        // a full list only seconds old keeps memory from reaching the window's start, so the answer counts
+        requests: fullList(makeRequest({ id: "a", ts: NOW - 30_000 })),
         flow: {
           key: "range=5m",
           series: {

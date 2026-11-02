@@ -9,6 +9,7 @@ import {
   applyContext,
   applyDetail,
   applyMessage,
+  BACKFILL_LIMIT,
   budgetFromDraft,
   type ClientState,
   clearSelected,
@@ -684,14 +685,31 @@ describe("flowSource", () => {
     );
   });
 
-  it("sends a start older than the oldest request in memory to history", () => {
-    const state = stateOver(preset("1h"), [NOW - 600_000]);
-    expect(flowSource(state, NOW)).toEqual({ from: NOW - 3_600_000, to: NOW, history: true });
+  it("answers a day from memory when the store holds only its own 24 hours and memory has them all", () => {
+    const state = stateOver(preset("24h"), [NOW - 3_600_000, NOW - 600_000, NOW - 5_000]);
+    expect(flowSource(state, NOW)).toEqual({ from: NOW - 24 * 3_600_000, to: NOW, history: false });
   });
 
-  it("reaches back to the oldest request for all time", () => {
+  it("sends a start older than the oldest request to history when memory is full", () => {
+    const full = Array.from({ length: BACKFILL_LIMIT }, (_, index) => NOW - 600_000 + index);
+    expect(flowSource(stateOver(preset("1h"), full), NOW)).toEqual({
+      from: NOW - 3_600_000,
+      to: NOW,
+      history: true,
+    });
+  });
+
+  it("answers all time from history over the retention window, never from memory", () => {
     const state = stateOver(preset("all"), [NOW - 5_000]);
-    expect(flowSource(state, NOW)).toEqual({ from: NOW - 5_000, to: NOW, history: false });
+    expect(flowSource(state, NOW)).toEqual({ from: NOW - 30 * 86_400_000, to: NOW, history: true });
+  });
+
+  it("reaches all time back over the retention days the history store reports", () => {
+    const state: ClientState = {
+      ...stateOver(preset("all"), []),
+      historyStats: { bytes: 0, nodes: 0, requests: 0, roots: 0, retentionDays: 90 },
+    };
+    expect(flowSource(state, NOW)).toEqual({ from: NOW - 90 * 86_400_000, to: NOW, history: true });
   });
 });
 

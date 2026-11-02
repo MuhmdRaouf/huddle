@@ -23,7 +23,7 @@ import { fmtNum, fmtTokens, fmtUsd } from "../../fmt.ts";
 import { SERIES, STATUS_COLOR } from "../../palette.ts";
 import type { RouterFacts } from "../../shared/api.ts";
 import type { UnifiedWindow } from "../../shared/model.ts";
-import { bucketPlan, rangeWords, stampOf } from "../../shared/time-range.ts";
+import { bucketPlan, rangeToHash, rangeWords, stampOf } from "../../shared/time-range.ts";
 import {
   type ClientState,
   flowSource,
@@ -38,7 +38,7 @@ import { ActiveBlock } from "../ActiveBlock.tsx";
 import { alertWhere } from "../AlertStrip.tsx";
 import { useApp } from "../context.ts";
 import { DayCard } from "../DayCard.tsx";
-import { Flow, requestsInRange } from "../Flow.tsx";
+import { Flow, FlowFigure, requestsInRange } from "../Flow.tsx";
 import { Icon } from "../Icon.tsx";
 import { EmptyState, ModelChip, Status, shortModelName } from "../kit.tsx";
 import { MoreViews } from "../MoreViews.tsx";
@@ -92,7 +92,7 @@ function Stat({
   oneLine = false,
 }: {
   title: string;
-  value: string;
+  value: ComponentChildren;
   subline: ComponentChildren;
   class?: string;
   stat?: string;
@@ -202,19 +202,32 @@ function LimitsStat({ class: cls = "" }: { class?: string }) {
 }
 
 /** The range's numbers the cards read: requests, the HTTP and connection failures among them, the
- *  calls their client cancelled, tokens and the cache's share. */
+ *  calls their client cancelled, tokens and the cache's share. A range on the history route reads the
+ *  fetched flow's totals: `tokens` and `cache` are null until it answers, and `failedToAnswer` says it
+ *  could not. */
 function rangeNumbers(state: ClientState, now: number) {
   const { from, to, history } = flowSource(state, now);
   const inRange = (ts: number): boolean => ts >= from && ts <= to;
   const requests = history ? [] : visibleRequests(state).filter((r) => inRange(r.ts));
   const failed = requests.filter(requestFailed).length;
   const cancelled = requests.filter(requestCancelled).length;
-  const tokens = requests.reduce(
-    (sum, r) => sum + r.tokens.input + r.tokens.output + r.tokens.cacheRead + r.tokens.cacheWrite,
-    0,
-  );
-  const cache = requests.reduce((sum, r) => sum + r.tokens.cacheRead, 0);
-  return { from, to, history, requests, failed, cancelled, tokens, cache };
+  const flow = history && state.flow?.key === rangeToHash(state.range) ? state.flow.series : null;
+  const sum = (values: number[]): number => values.reduce((total, value) => total + value, 0);
+  const tokens = flow
+    ? sum(Object.values(flow.kinds).flatMap((values) => values))
+    : history
+      ? null
+      : requests.reduce(
+          (total, r) => total + r.tokens.input + r.tokens.output + r.tokens.cacheRead + r.tokens.cacheWrite,
+          0,
+        );
+  const cache = flow
+    ? sum(flow.kinds.cacheRead)
+    : history
+      ? null
+      : requests.reduce((total, r) => total + r.tokens.cacheRead, 0);
+  const failedToAnswer = history && flow === null && state.flowError !== null;
+  return { from, to, history, requests, failed, cancelled, tokens, cache, failedToAnswer };
 }
 
 /** The chart's bands: the range's spend bucketed by hour, one band per top model plus "other". */
@@ -491,8 +504,8 @@ function SessionsStat() {
   );
 }
 
-/** The requests card: the range's count, the window named on the tile — all time, said plainly,
- *  when only the summary can answer — the failures in their tone and the cancelled calls apart. */
+/** The requests card: the range's count under the range's own words; a skeleton while the history
+ *  route has not answered it, the failures in their tone and the cancelled calls apart. */
 function RequestsStat({
   state,
   now,
@@ -505,11 +518,17 @@ function RequestsStat({
   const count = requestsInRange(state, now);
   return (
     <Stat
-      title={`Requests · ${count === null ? "all time" : rangeWords(state.range, now)}`}
+      title={`Requests · ${rangeWords(state.range, now)}`}
       stat="Requests"
-      value={count === null ? fmtNum(state.summary?.requests ?? 0) : fmtNum(count)}
+      value={
+        count === null ? (
+          <FlowFigure ready={false} failed={numbers.failedToAnswer} text="" skeleton="h-6 w-16" />
+        ) : (
+          fmtNum(count)
+        )
+      }
       subline={
-        numbers.history && numbers.failed === 0 ? null : (
+        numbers.history ? null : (
           <>
             <Status tone={numbers.failed > 0 ? "err" : "ok"} word={`${fmtNum(numbers.failed)} failed`} />
             {numbers.cancelled > 0 && <span class="num">{` · ${fmtNum(numbers.cancelled)} cancelled`}</span>}
@@ -520,8 +539,8 @@ function RequestsStat({
   );
 }
 
-/** The tokens card: the range's total and the share that came from the cache, the window named on
- *  the tile — all time, said plainly, when only the summary can answer. */
+/** The tokens card: the range's total and the share that came from the cache under the range's own
+ *  words; a skeleton while the history route has not answered it. */
 function TokensStat({
   state,
   now,
@@ -531,25 +550,20 @@ function TokensStat({
   now: number;
   numbers: ReturnType<typeof rangeNumbers>;
 }) {
-  const all = state.summary?.tokens;
-  const tokens = numbers.history
-    ? all === undefined
-      ? null
-      : all.input + all.output + all.cacheRead + all.cacheWrite
-    : numbers.tokens;
-  const share = tokens !== null && tokens > 0 ? Math.round((numbers.cache / tokens) * 100) : null;
+  const { tokens, cache } = numbers;
+  const share = tokens !== null && cache !== null && tokens > 0 ? Math.round((cache / tokens) * 100) : null;
   return (
     <Stat
-      title={`Tokens · ${numbers.history ? "all time" : rangeWords(state.range, now)}`}
+      title={`Tokens · ${rangeWords(state.range, now)}`}
       stat="Tokens"
-      value={fmtTokens(tokens ?? 0)}
-      subline={
+      value={
         tokens === null ? (
-          "nothing yet"
-        ) : !numbers.history && share !== null ? (
-          <span class="num">{`${share}% from cache`}</span>
-        ) : null
+          <FlowFigure ready={false} failed={numbers.failedToAnswer} text="" skeleton="h-6 w-16" />
+        ) : (
+          fmtTokens(tokens)
+        )
       }
+      subline={share === null ? null : <span class="num">{`${share}% from cache`}</span>}
     />
   );
 }
@@ -863,18 +877,11 @@ function PlanLimits() {
   );
 }
 
-/** The window the phone's tiles read: the range's requests and what they cost at list price, with
- *  the count nothing priced, while the requests in memory cover the range; the all-time summary
- *  when only it answers; a history range's own request count with no spend figure otherwise. */
+/** The window the phone's tiles read: the range's words, its requests and what they cost at list price,
+ *  with the count nothing priced, while the requests in memory cover the range; a history range's own
+ *  request count (null until it answers) with no spend figure. */
 function phoneWindow(state: ClientState, now: number, numbers: ReturnType<typeof rangeNumbers>) {
   const count = requestsInRange(state, now);
-  if (count === null)
-    return {
-      words: "All time",
-      requests: state.summary?.requests ?? 0,
-      spend: state.summary?.costUsd ?? null,
-      unpriced: 0,
-    };
   const costs = numbers.requests.map((request) => requestCost(request)?.usd);
   const words = rangeWords(state.range, now);
   return {
@@ -915,7 +922,13 @@ function PhoneTiles({ numbers }: { numbers: ReturnType<typeof rangeNumbers> }) {
           />
           <Stat
             title="Requests"
-            value={fmtNum(span.requests)}
+            value={
+              span.requests === null ? (
+                <FlowFigure ready={false} failed={numbers.failedToAnswer} text="" skeleton="h-6 w-16" />
+              ) : (
+                fmtNum(span.requests)
+              )
+            }
             subline={
               numbers.failed > 0 ? <Status tone="err" word={`${fmtNum(numbers.failed)} failed`} /> : null
             }

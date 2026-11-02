@@ -7,8 +7,7 @@ import { waitFor } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { AppContext, type AppValue } from "../../../src/radar/app/context.ts";
 import { OverviewView } from "../../../src/radar/app/views/Overview.tsx";
-import { fmtUsd } from "../../../src/radar/fmt.ts";
-import { type ClientState, initialClientState } from "../../../src/radar/state.ts";
+import { BACKFILL_LIMIT, type ClientState, initialClientState } from "../../../src/radar/state.ts";
 import { legacyClasses, makeCtx, makeRegistry, makeState, renderIn, stubMedia } from "../../helpers.tsx";
 import { uiFixtures } from "../helpers.ts";
 import { expectTokensOnly } from "./tokens.ts";
@@ -47,10 +46,20 @@ function overview(state: Partial<ClientState>, sessions = registrySessions, heal
   );
 }
 
-/** An unpriced request at the range's far edge, so the requests in memory cover the whole hour
- *  and the cards read them instead of falling back to the history route's all-time words. */
+/** An unpriced request at the range's far edge, so the hour's tiles and chart count one request
+ *  that sits outside the priced ones. */
 function oldEdge() {
   return priced("mystery-model", NOW - 3_700_000);
+}
+
+/** A full backfill list: the given requests plus recent padding up to the backfill limit, so memory
+ *  may be cut and a start older than its oldest request is the history route's to answer. */
+function fullList(...requests: ClientState["requests"]): ClientState["requests"] {
+  const padding = Array.from({ length: BACKFILL_LIMIT - requests.length }, (_, index) => ({
+    ...priced("mystery-model", NOW - 30_000),
+    id: `pad-${index}`,
+  }));
+  return [...requests, ...padding];
 }
 
 /** One request the shared price table answers with whole cents, in the default range, on the
@@ -302,7 +311,7 @@ describe("the radar Overview", () => {
   });
 
   it("names the Day window the memory-backed range reads", () => {
-    // a request older than the day keeps the range off the history route, so the tiles read it
+    // the store holds the day, so a list under the backfill limit answers it from memory
     const { container } = overview({
       summary: fixtures.summary,
       range: { preset: "24h", from: 0, to: null },
@@ -317,7 +326,7 @@ describe("the radar Overview", () => {
     expect(container.querySelector('[data-stat="tokens"]')?.textContent).toContain("Tokens · last 24 hours");
   });
 
-  it("reads a history range's counts from the fetched flow, and names the window it fetched", () => {
+  it("reads a history range's counts and tokens from the fetched flow, and names the window it fetched", () => {
     const { container } = overview({
       summary: fixtures.summary,
       range: { preset: "7d", from: 0, to: null },
@@ -328,37 +337,65 @@ describe("the radar Overview", () => {
           to: NOW,
           bucketMs: 10_800_000,
           requests: [4, 5, 3],
-          kinds: { input: [], output: [], cacheRead: [], cacheWrite: [] },
+          kinds: {
+            input: [100, 200, 300],
+            output: [10, 20, 30],
+            cacheRead: [0, 0, 0],
+            cacheWrite: [0, 0, 0],
+          },
         },
       },
       requests: [priced("claude-opus-5-5", NOW - 60_000)],
     });
     expect(container.querySelector('[data-stat="requests"] .num')?.textContent).toBe("12");
-    // the twelve are the week's own requests, so the tile says so; the tokens still come from the
-    // all-time summary, and that tile says all time
     expect(container.querySelector('[data-stat="requests"]')?.textContent).toContain("last 7 days");
-    expect(container.querySelector('[data-stat="tokens"]')?.textContent).toContain("all time");
+    // the week's own tokens, not the all-time summary's
+    expect(container.querySelector('[data-stat="tokens"]')?.textContent).toContain("Tokens · last 7 days");
+    expect(container.querySelector('[data-stat="tokens"] .num')?.textContent).toBe("660");
     expect(container.textContent).toContain("Token flow");
   });
 
-  it("says all time on the requests tile while a history range has no flow answer yet", () => {
-    // the count falls back to the summary's all-time total, so the tile names all time
+  it("keeps the range's words and a skeleton, never the all-time summary, while a history range waits", () => {
     const { container } = overview({
       summary: fixtures.summary,
       range: { preset: "7d", from: 0, to: null },
       requests: [priced("claude-opus-5-5", NOW - 60_000)],
     });
-    expect(container.querySelector('[data-stat="requests"] .num')?.textContent).toBe("412");
-    expect(container.querySelector('[data-stat="requests"]')?.textContent).toContain("Requests · all time");
+    for (const stat of ["requests", "tokens"]) {
+      const tile = container.querySelector(`[data-stat="${stat}"]`);
+      expect(tile?.textContent).toContain("last 7 days");
+      expect(tile?.textContent).not.toContain("all time");
+      expect(tile?.querySelector(".skeleton")).not.toBeNull();
+    }
+    expect(container.querySelector('[data-stat="requests"] .num')?.textContent).not.toBe("412");
   });
 
-  it("says nothing yet when a history range has no summary to read", () => {
+  it("reads the Day range as the last 24 hours on a busy day while history loads", () => {
     const { container } = overview({
-      summary: null,
+      summary: fixtures.summary,
+      range: { preset: "24h", from: 0, to: null },
+      requests: fullList(priced("claude-opus-5-5", NOW - 60_000)),
+    });
+    for (const stat of ["requests", "tokens"]) {
+      const tile = container.querySelector(`[data-stat="${stat}"]`);
+      expect(tile?.textContent).toContain("last 24 hours");
+      expect(tile?.textContent).not.toContain("all time");
+      expect(tile?.querySelector(".skeleton")).not.toBeNull();
+    }
+  });
+
+  it("shows a dash on the tiles when history did not answer the range", () => {
+    const { container } = overview({
+      summary: fixtures.summary,
       range: { preset: "7d", from: 0, to: null },
+      flowError: "GET /api/history/flow → 503",
       requests: [priced("claude-opus-5-5", NOW - 60_000)],
     });
-    expect(container.querySelector('[data-stat="tokens"]')?.textContent).toContain("nothing yet");
+    for (const stat of ["requests", "tokens"]) {
+      const tile = container.querySelector(`[data-stat="${stat}"]`);
+      expect(tile?.querySelector(".num")?.textContent).toBe("–");
+      expect(tile?.querySelector(".skeleton")).toBeNull();
+    }
   });
 
   it("joins the models past the top three into one other band", () => {
@@ -598,7 +635,7 @@ describe("the Overview on the phone", () => {
     if (tiles !== null) expectTokensOnly(tiles);
   });
 
-  it("names all time when only the summary answers the range, and every tile reads it", () => {
+  it("names the range, never all time, while a history range waits, and every tile holds its place", () => {
     stubMedia({});
     const { container } = overview({
       ...busyDay,
@@ -606,11 +643,10 @@ describe("the Overview on the phone", () => {
       requests: [priced("claude-opus-5-5", NOW - 60_000)],
     });
     const tiles = container.querySelector("[data-phone-tiles]");
-    expect(tiles?.querySelector("#ovw-window")?.textContent).toBe("All time");
-    expect(tiles?.querySelector('[data-stat="requests"] .num')?.textContent).toBe("412");
-    expect(tiles?.querySelector('[data-stat="spend"] .num')?.textContent).toBe(
-      fmtUsd(fixtures.summary.costUsd),
-    );
+    expect(tiles?.querySelector("#ovw-window")?.textContent).toBe("Last 7 days");
+    expect(tiles?.querySelector('[data-stat="requests"] .skeleton')).not.toBeNull();
+    expect(tiles?.querySelector('[data-stat="requests"] .num')?.textContent).not.toBe("412");
+    expect(tiles?.querySelector('[data-stat="spend"] .num')?.textContent).toBe("–");
   });
 
   it("keeps the cards on a desktop, Anthropic's limits first, the spend tile with today's ledger as it reads", () => {
