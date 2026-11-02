@@ -1,7 +1,8 @@
-// App.tsx — the shell: one component tree that draws its chrome per viewport (a header, the pane
-// and the five tabs in a bar pinned to the bottom edge under 768 px; a 72 px icon rail with a list
-// and a detail pane to 1199 px; a left sidebar beside a 52 px top bar over list, detail and
-// context panes from 1200 px) inside a frame as tall as the viewport, over the tab the address names — Sessions, Channels, Radar, Kanban or Settings. Every later tab fills its own panes; today's
+// App.tsx — the shell: one component tree that draws its chrome per viewport (a header with the
+// avatar, the pane and the five tabs in a bar pinned to the bottom edge under 768 px; from 768 px
+// the top bar with the five tabs and the avatar over a list, a detail and, from 1200 px, a context
+// pane) inside a frame as tall as the viewport, over the tab the address names — Home, Sessions,
+// Channels, Radar or Boards — or Settings, which the avatar opens. Every later tab fills its own panes; today's
 // channel pages stay reachable under Channels, with their destination tabs, their intro and the
 // session rail beside them. The landing and no-channel pages stand alone.
 
@@ -15,18 +16,20 @@ import { useHealth } from "../health.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Time } from "../kit.tsx";
 import { KanbanTab } from "../kanban/KanbanTab.tsx";
+import { Home, NeedsChip } from "../pages/Home.tsx";
 import { markPasskeyHere } from "../passkey.ts";
 import { PHONE_VIEWS } from "../radar/app/nav.ts";
 import { RadarTab } from "../radar/app/RadarTab.tsx";
 import { radarAct, useRadarState } from "../radar/mount.tsx";
-import { machinesLine, machinesOf, shownState } from "../registry.ts";
+import { shownState } from "../registry.ts";
 import { FIN } from "../status.ts";
 import { readPref, writePref } from "../storage.ts";
 import type { HuddleState } from "../store.ts";
+import { AccountMenu } from "./AccountMenu.tsx";
 import { useHuddle } from "./context.tsx";
 import { IntroCtx } from "./intro.tsx";
 import { type Layout, useLayout } from "./layout.ts";
-import { BottomNav, IconRail, type NeedsBadge, needsBadge, SideNav, TabBadge } from "./Nav.tsx";
+import { BottomNav, type NeedsBadge, needsBadge, TabBadge } from "./Nav.tsx";
 import { NowContext, SessionScreen } from "./Now.tsx";
 import { Pair } from "./Pair.tsx";
 import { deskRows, NoSessionsWelcome, SessionsPane } from "./Sessions.tsx";
@@ -44,7 +47,7 @@ import {
 } from "./router.ts";
 import { SettingsHead, SettingsTab, settingsSectionOf } from "./SettingsTab.tsx";
 import { PasskeyOffer } from "./Totp.tsx";
-import { DesktopBar, MachinesLine } from "./TopBar.tsx";
+import { TopBar } from "./TopBar.tsx";
 
 /** What a page registry holds: one component per channel page, picked by name. */
 export type Pages = Record<string, ComponentType>;
@@ -119,7 +122,7 @@ const NAV_GROUPS: { label: string; tabs: Exclude<Dest, "list">[] }[] = [
   { label: "System", tabs: ["settings"] },
 ];
 
-/** The g chords' destinations: g n, g c, g r, g b and g s open the five tabs. */
+/** The g chords' destinations: g n, g c, g r and g b open four tabs, g s opens Settings. */
 const CHORD: Readonly<Record<string, Tab>> = {
   n: "sessions",
   c: "channels",
@@ -734,7 +737,11 @@ export function App({
     route.tab === "sessions" && layout === "desktop" && nowId ? <NowContext /> : null;
 
   const detail: ComponentChildren =
-    route.tab === "sessions" ? (
+    route.tab === "home" ? (
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        <Home />
+      </div>
+    ) : route.tab === "sessions" ? (
       nowId ? (
         <SessionScreen id={nowId} layout={layout} />
       ) : layout === "phone" ? (
@@ -797,11 +804,6 @@ export function App({
     </main>
   );
 
-  // the machines line reads the registry; its live dot follows the stream the open tab runs on
-  // (the registry's on the sessions tab, the channel's everywhere else)
-  const mline = machinesLine(layout, machinesOf(reg.sessions));
-  const liveOf = route.tab === "sessions" ? reg.live : state.live;
-
   // the phone: a header over the pane, the tab bar pinned under it. A session's screen paints its
   // own header (the back link and the name), so the shell's steps aside there.
   const passkeyAsk = <PasskeyAsk />;
@@ -818,57 +820,44 @@ export function App({
             ) : (
               <h1 class="text-[28px] font-semibold tracking-tight">{tabLabel(route.tab)}</h1>
             )}
-            {route.tab === "settings" && route.sub[0] ? null : route.tab === "radar" ? (
-              <RadarRange />
-            ) : (
-              <MachinesLine live={liveOf} text={mline} />
+            {route.tab === "settings" && route.sub[0] ? null : (
+              <div class="flex shrink-0 items-center gap-2">
+                {route.tab === "radar" ? (
+                  <RadarRange />
+                ) : route.tab === "home" ? (
+                  <NeedsChip n={registry.needs()} />
+                ) : null}
+                <AccountMenu healthy={healthy} />
+              </div>
             )}
           </header>
         )}
         {main}
-        {dialogOpen ? null : <BottomNav tab={route.tab} needs={needs} healthy={healthy} />}
+        {dialogOpen ? null : <BottomNav tab={route.tab} needs={needs} />}
       </div>
     );
   }
 
-  // the tablet: the icon rail, then the list beside the detail when the tab has a list
-  if (layout === "tablet") {
-    return (
-      <div class="ui-shell">
-        {passkeyAsk}
-        <div class="grid min-h-0 min-w-0 flex-1 grid-cols-[72px_minmax(0,1fr)]">
-          <IconRail tab={route.tab} needs={needs} healthy={healthy} />
-          <div class={`grid min-h-0 min-w-0 ${list ? "grid-cols-[360px_minmax(0,1fr)]" : "grid-cols-1"}`}>
-            {list}
-            {main}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // the desktop: the sidebar, then the top bar over the list, the detail and the context pane
+  // the tablet and the desktop: the top bar over the list, the detail and, on the desktop, the
+  // context pane
   return (
     <div class="ui-shell">
       {passkeyAsk}
-      <div class="flex min-h-0 min-w-0 flex-1">
-        <SideNav tab={route.tab} needs={needs} healthy={healthy} />
-        <div class="grid min-h-0 min-w-0 flex-1 grid-rows-[52px_minmax(0,1fr)]">
-          <DesktopBar live={liveOf} machines={mline} onPalette={onPalette} onHelp={onHelp} />
-          <div
-            class={`grid min-h-0 min-w-0 ${
-              list && context
-                ? "grid-cols-[320px_minmax(0,1fr)_300px]"
-                : list
-                  ? "grid-cols-[320px_minmax(0,1fr)]"
-                  : "grid-cols-1"
-            }`}
-          >
-            {list}
-            {main}
-            {context}
-          </div>
-        </div>
+      <TopBar tab={route.tab} needs={needs} healthy={healthy} />
+      <div
+        class={`grid min-h-0 min-w-0 flex-1 ${
+          list && context
+            ? "grid-cols-[320px_minmax(0,1fr)_300px]"
+            : list
+              ? layout === "tablet"
+                ? "grid-cols-[360px_minmax(0,1fr)]"
+                : "grid-cols-[320px_minmax(0,1fr)]"
+              : "grid-cols-1"
+        }`}
+      >
+        {list}
+        {main}
+        {context}
       </div>
     </div>
   );

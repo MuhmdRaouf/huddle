@@ -1,15 +1,19 @@
-// router.ts — the hash routes, parsed and built: the five tabs (`#/sessions[/<session id>]`,
-// `#/channels[/<name>[/…]]`, `#/radar/<view>`, `#/kanban[/<board key>]`, `#/settings[/<section>]`),
+// router.ts — the hash routes, parsed and built: the five tabs (`#/home[/<session id>]`,
+// `#/sessions[/<session id>]`, `#/channels[/<name>[/…]]`, `#/radar/<view>`, `#/kanban[/<board key>]`)
+// and Settings (`#/settings[/<section>]`), which opens from the avatar and sits in no tab,
 // the channel pages that live under Channels (`overview, today, inbox, team, work/knowledge,
 // settings`), the two drawers (`?t=<task>`, `?s=<session>`), the alias redirects (bookmarks,
-// notifications, links in agents' context) and the old addresses (`#/now[/<id>]`, `#/c/…`, `#/`)
-// rewritten into the sessions and channels tabs. Pure: a hash goes in, a route comes out; the
-// shell applies what it says.
+// notifications, links in agents' context) and the old addresses (`#/now[/<id>]`, `#/c/…`)
+// rewritten into the sessions and channels tabs; the empty and unknown addresses open Home.
+// Pure: a hash goes in, a route comes out; the shell applies what it says.
 
 import type { IconName } from "../icons.tsx";
 
-/** The five tabs of the shell. */
-export type Tab = "sessions" | "channels" | "radar" | "kanban" | "settings";
+/** The shell's routes: the five tabs, and Settings behind the avatar. */
+export type Tab = "home" | "sessions" | "channels" | "radar" | "kanban" | "settings";
+
+/** The five tabs the nav lists; Settings is a route that is in none of them. */
+export type NavTab = Exclude<Tab, "settings">;
 
 /** Every page a channel serves under Channels; `list` is the channels list itself. */
 export type Dest = "list" | "overview" | "today" | "inbox" | "team" | "work" | "knowledge" | "settings";
@@ -50,20 +54,23 @@ const RADAR_LABEL: Record<RadarView, string> = {
 /** The sub-tab label of a radar view. */
 export const radarLabel = (view: RadarView): string => RADAR_LABEL[view];
 
-/** The five tabs, in nav order: id, label, address. */
-export const TABS: readonly (readonly [Tab, string, string])[] = [
+/** The five tabs, in nav order: id, label, address. The Boards tab keeps the route id `kanban`. */
+export const TABS: readonly (readonly [NavTab, string, string])[] = [
+  ["home", "Home", "#/home"],
   ["sessions", "Sessions", "#/sessions"],
   ["channels", "Channels", "#/channels"],
   ["radar", "Radar", "#/radar/overview"],
-  ["kanban", "Kanban", "#/kanban"],
-  ["settings", "Settings", "#/settings"],
+  ["kanban", "Boards", "#/kanban"],
 ];
 
-/** The address a tab opens. */
-export const tabHref = (tab: Tab): string => TABS.find((t) => t[0] === tab)?.[2] ?? "#/sessions";
+/** Settings' entry, the route the avatar menu opens. */
+const SETTINGS: readonly [Tab, string, string] = ["settings", "Settings", "#/settings"];
 
-/** The label a tab carries in the chrome. */
-export const tabLabel = (tab: Tab): string => TABS.find((t) => t[0] === tab)?.[1] ?? "";
+/** The address a route's tab opens. */
+export const tabHref = (tab: Tab): string => [...TABS, SETTINGS].find((t) => t[0] === tab)?.[2] ?? "#/home";
+
+/** The label a route carries in the chrome. */
+export const tabLabel = (tab: Tab): string => [...TABS, SETTINGS].find((t) => t[0] === tab)?.[1] ?? "";
 
 /** The channel nav's entries: name, label, icon and keyboard hint. */
 export const DESTS: readonly (readonly [
@@ -233,9 +240,13 @@ function parseLegacy(
   return { ...r, replace: r.replace ?? `#/channels/${enc(ch)}${tail}${qs ? `?${qs}` : ""}` };
 }
 
-/** Sessions', Kanban's and Settings' own route: the tab, its optional first segment (a session id,
- *  a board key, a section), both drawers. Both addresses are canonical as written. */
-function parsePlainTab(tab: "sessions" | "settings" | "kanban", parts: string[], q: URLSearchParams): Route {
+/** Home's, Sessions', Boards' and Settings' own route: the tab, its optional first segment (a
+ *  session id, a board key, a section), both drawers. Both addresses are canonical as written. */
+function parsePlainTab(
+  tab: "home" | "sessions" | "settings" | "kanban",
+  parts: string[],
+  q: URLSearchParams,
+): Route {
   const sub = parts.slice(1);
   return {
     tab,
@@ -269,14 +280,16 @@ function parseRadar(parts: string[], q: URLSearchParams): Route {
   };
 }
 
-/** Parses a hash into a route: the five tabs' own addresses, a channel's pages under Channels,
- *  the aliases through their canonical forms, the old addresses rewritten, and anything unknown
- *  as Sessions with the address to rewrite. */
+/** Parses a hash into a route: the five tabs' own addresses and Settings', a channel's pages under
+ *  Channels, the aliases through their canonical forms, the old addresses rewritten, and anything
+ *  unknown as Home with the address to rewrite. */
 export function parseHash(hash: string, readPref: PrefReader): Route {
   const [hp = "", qs] = hash.replace(/^#\/?/, "").split("?");
   const q = new URLSearchParams(qs ?? "");
   const parts = hp.split("/").filter(Boolean).map(safeDec);
   const head = parts[0];
+
+  if (head === "home") return parsePlainTab("home", parts, q);
 
   if (head === "sessions") return parsePlainTab("sessions", parts, q);
 
@@ -314,7 +327,6 @@ export function parseHash(hash: string, readPref: PrefReader): Route {
 
   if (head === "c" && parts[1] !== undefined) return parseLegacy(parts[1], parts, qs, q, readPref);
 
-  // the old home, and anything else the shell does not know: the sessions tab
-  if (head === undefined) return { ...parseHash("#/sessions", readPref), replace: "#/sessions" };
-  return { ...parseHash("#/sessions", readPref), replace: "#/sessions" };
+  // the empty address, and anything else the shell does not know: the home tab
+  return { ...parseHash("#/home", readPref), replace: "#/home" };
 }

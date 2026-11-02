@@ -121,6 +121,33 @@ async function pickRadarView(page: Page, label: string): Promise<void> {
   await expect(page.locator("[data-radar-view]")).toHaveAttribute("aria-label", label);
 }
 
+for (const [kind, width, height] of SIZES) {
+  test(`the tab bar lists five tabs and Settings opens from the avatar: ${kind}`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width, height } });
+    const page = await context.newPage();
+    await signIn(page);
+
+    const nav = page.getByRole("navigation", { name: "Main" });
+    await expect(nav.getByRole("link")).toHaveText([/^Home/, /^Sessions$/, /^Channels$/, /^Radar$/, /^Boards$/]);
+    await expect(nav.getByRole("link", { name: "Settings" })).toHaveCount(0);
+    await expect(page.locator("[data-tab='home']").first()).toHaveAttribute("aria-current", "page");
+
+    const avatar = page.getByRole("button", { name: "Account menu" });
+    await avatar.click();
+    const menu = page.getByRole("dialog", { name: "Account menu" });
+    await expect(menu).toBeVisible();
+
+    // the scrim closes the menu; the avatar opens it again
+    await page.locator("[data-scrim]").click({ position: { x: 4, y: height - 4 } });
+    await expect(menu).toHaveCount(0);
+    await avatar.click();
+    await menu.getByRole("link", { name: "Settings" }).click();
+    await expect(page).toHaveURL(/#\/settings/);
+    await expect(menu).toHaveCount(0);
+    await context.close();
+  });
+}
+
 for (const scheme of SCHEMES) {
   for (const [kind, width, height] of SIZES) {
     test(`every view lays out clean: ${scheme} ${kind}`, async ({ browser }, testInfo) => {
@@ -161,6 +188,7 @@ for (const scheme of SCHEMES) {
         await shot(view);
       };
 
+      await openAndShoot("Home");
       await openAndShoot("Sessions");
       await openAndShoot("Channels");
 
@@ -187,14 +215,22 @@ for (const scheme of SCHEMES) {
         await shot(`radar-${label.toLowerCase()}`);
       }
 
-      // Kanban: the toolbar is the one whose controls must not overlap
-      await openAndShoot("Kanban", async () => {
-        await page.locator(".kanban-tab .card").first().waitFor();
-        await expectToolbarClear(page, `kanban ${scheme} ${kind}`);
-      });
+      // Boards: the toolbar is the one whose controls must not overlap
+      await openAndShoot(
+        "Boards",
+        async () => {
+          await page.locator(".kanban-tab .card").first().waitFor();
+          await expectToolbarClear(page, `kanban ${scheme} ${kind}`);
+        },
+        "kanban",
+      );
 
-      // Settings, and its Radar section
-      await openAndShoot("Settings");
+      // Settings opens from the avatar's menu; then its Radar section
+      await openTab(page, "Settings");
+      await expect(page).toHaveURL(/#\/settings/);
+      await settled(page);
+      await expectNoPageScroll(page, "settings");
+      await shot("settings");
       await page.evaluate(() => {
         location.hash = "#/settings/radar";
       });

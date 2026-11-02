@@ -2,8 +2,8 @@
 // to the viewport's bottom, whatever scrolls, on the iPhone's own height and on a short one where
 // every page runs longer than the screen; every page's content ends above the bar, nothing
 // scrolls the page sideways, a code block scrolls inside its own box, and every control on every
-// page is a target of at least 44 px. On the desktop the same five items stand in a left sidebar
-// and no bottom bar is drawn. axe checks the shell's chrome on both (the pages' contents are their
+// page is a target of at least 44 px. On the desktop the same five items stand in the top bar
+// beside the avatar, and no bottom bar is drawn. axe checks the shell's chrome on both (the pages' contents are their
 // own specs'), and the page names a theme colour per scheme beside a manifest with a maskable icon
 // and links a 180 px Apple Home Screen icon the hub serves as a PNG.
 // A button styled by Tailwind utilities alone keeps its fill and its border over Radar's legacy
@@ -112,28 +112,30 @@ async function expectOneLayer(page: Page, at: string): Promise<void> {
   expect(inDialog, `${at}: axe on the open layer`).toEqual([]);
 }
 
-/** The five tabs, in the order the shell draws them; Sessions may carry its needs-you count after it. */
-const TABS = [/^Sessions\d*$/, /^Channels$/, /^Radar$/, /^Kanban$/, /^Settings$/];
+/** The five tabs, in the order the shell draws them; Home may carry its needs-you count after it. */
+const TABS = [/^Home\d*$/, /^Sessions$/, /^Channels$/, /^Radar$/, /^Boards$/];
 
 /** Every page the shell frames: the five tabs and a channel's own page under Channels. */
 const PAGES: readonly (readonly [name: string, hash: string])[] = [
+  ["Home", "#/home"],
   ["Sessions", "#/sessions"],
   ["Channels", "#/channels"],
   ["Channel overview", "#/c/e2e/overview"],
   ["Radar", "#/radar/overview"],
-  ["Kanban", "#/kanban"],
+  ["Boards", "#/kanban"],
   ["Settings", "#/settings"],
 ];
 
 /** The pages the tap check walks: the five tabs, a channel's page and a session's own page under
  *  Sessions (its Back to Sessions sits there). */
 const TAP_PAGES: readonly (readonly [name: string, hash: string])[] = [
+  ["Home", "#/home"],
   ["Sessions", "#/sessions"],
   ["A session", `#/sessions/${SEEDED.session}`],
   ["Channels", "#/channels"],
   ["Channel overview", "#/c/e2e/overview"],
   ["Radar", "#/radar/overview"],
-  ["Kanban", "#/kanban"],
+  ["Boards", "#/kanban"],
   ["Settings", "#/settings"],
 ];
 
@@ -311,13 +313,16 @@ test.describe("the phone shell", () => {
     }
   });
 
-  test("the old home and the old Now address land on the sessions tab", async ({ page }) => {
-    for (const hash of ["#/", "#/now"]) {
+  test("the empty address lands on Home and the old Now address on the sessions tab", async ({ page }) => {
+    for (const [hash, url, tab] of [
+      ["#/", /#\/home$/, /^Home/],
+      ["#/now", /#\/sessions(\/|$)/, /^Sessions/],
+    ] as const) {
       await open(page, hash);
-      // the desk then opens the row the list draws first, so the address may carry a session
-      await expect(page, hash).toHaveURL(/#\/sessions(\/|$)/);
+      // the desk then opens the row the sessions list draws first, so that address may carry a session
+      await expect(page, hash).toHaveURL(url);
       await expect(
-        page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /^Sessions/ }),
+        page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: tab }),
         hash,
       ).toHaveAttribute("aria-current", "page");
     }
@@ -345,21 +350,26 @@ test.describe("the phone shell", () => {
 });
 
 test.describe("the desktop shell", () => {
-  test.skip(({ isMobile }) => isMobile, "the sidebar is the desktop's");
+  test.skip(({ isMobile }) => isMobile, "the top bar is the desktop's");
 
-  test("the five tabs stand in a left sidebar and no bottom bar is drawn", async ({ page }) => {
+  test("the five tabs stand in the top bar with the avatar at its right end and no bottom bar is drawn", async ({
+    page,
+  }) => {
     await open(page, "#/sessions");
-    const side = page.locator("[data-nav='side']");
-    await expect(side).toBeVisible();
-    await expect(side.getByRole("link")).toHaveText(TABS);
+    const top = page.locator("[data-nav='top']");
+    await expect(top).toBeVisible();
+    await expect(top.getByRole("link")).toHaveText(TABS);
     await expect(page.locator("[data-nav='bottom']")).toHaveCount(0);
-    const box = await page.locator("[data-sidebar]").boundingBox();
+    const bar = await page.locator("[data-top-bar]").boundingBox();
+    const avatar = await page.getByRole("button", { name: "Account menu" }).boundingBox();
     const view = page.viewportSize();
-    expect(box?.x).toBe(0);
-    expect(box && view && box.height).toBeCloseTo(view?.height ?? 0, 0);
-    await side.getByRole("link", { name: "Kanban" }).click();
+    expect(bar?.y).toBe(0);
+    expect(bar && view && bar.width).toBeCloseTo(view?.width ?? 0, 0);
+    expect(bar?.height).toBe(56);
+    expect(avatar && bar && avatar.x + avatar.width).toBeGreaterThan((bar?.width ?? 0) - 32);
+    await top.getByRole("link", { name: "Boards" }).click();
     await expect(page).toHaveURL(/#\/kanban/);
-    await expect(side.getByRole("link", { name: "Kanban" })).toHaveAttribute("aria-current", "page");
+    await expect(top.getByRole("link", { name: "Boards" })).toHaveAttribute("aria-current", "page");
   });
 
   test("passes axe", async ({ page }) => {
@@ -721,11 +731,9 @@ test.describe("the channels page", () => {
 });
 
 test.describe("the command palette", () => {
-  /** Opens the palette the way the owner does: the jump field on the desk, the shell's / key
-   *  where the field is not. */
+  /** Opens the palette the way the owner does: the shell's / key. */
   async function openPalette(page: Page): Promise<void> {
-    if (await page.locator("#jump").count()) await page.locator("#jump").click();
-    else await page.keyboard.press("/");
+    await page.keyboard.press("/");
     await page.locator("#palq").waitFor();
   }
 

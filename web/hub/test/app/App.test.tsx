@@ -1,5 +1,5 @@
-// App.test.tsx — the shell: the three layouts' chrome (the phone bottom nav, the tablet icon
-// rail, the desktop top bar with the jump field and the machines line), the five tabs' placeholder
+// App.test.tsx — the shell: the layouts' chrome (the phone's header with the avatar and bottom
+// nav, the top bar of the tablet and the desktop with the five tabs and the avatar), the five tabs'
 // panes, today's pages reachable under Channels, the routes with their redirects, the shell's
 // keys, the no-channel page, and the first-run checklist the Now list carries.
 import { act, cleanup, fireEvent, screen } from "@testing-library/preact";
@@ -80,34 +80,35 @@ const paints = (el: Element, skip?: string): string[] => {
   return [...legacyClasses(one), ...legacyClasses(el, skip)];
 };
 
-/** The tab links of one chrome piece: the bottom bar, the icon rail or the sidebar. */
+/** The tab links of one chrome piece: the bottom bar or the top bar. */
 const linksOf = (nav: string): HTMLAnchorElement[] =>
   [...document.querySelectorAll(`[data-nav="${nav}"] a`)] as HTMLAnchorElement[];
 
 describe("the three layouts", () => {
-  it("under 640 px: a header with the tab's title, the pane, and the five tabs in a pinned bar", () => {
+  it("under 768 px: a header with the tab's title and the avatar, the pane, and the five tabs in a pinned bar", () => {
     stubMedia(PHONE);
     nav("#/sessions");
     mountApp();
     expect(document.querySelector("h1")?.textContent).toBe("Sessions");
-    expect(screen.getByLabelText("Machines")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Account menu" })).toBeDefined();
+    expect(screen.queryByLabelText("Machines")).toBeNull();
     expect(linksOf("bottom").map((a) => a.dataset.tab)).toEqual([
+      "home",
       "sessions",
       "channels",
       "radar",
       "kanban",
-      "settings",
     ]);
     expect(linksOf("bottom").map((a) => a.textContent)).toEqual([
+      "Home",
       "Sessions",
       "Channels",
       "Radar",
-      "Kanban",
-      "Settings",
+      "Boards",
     ]);
     expect(linksOf("bottom").map((a) => a.getAttribute("aria-current"))).toEqual([
-      "page",
       null,
+      "page",
       null,
       null,
       null,
@@ -116,41 +117,33 @@ describe("the three layouts", () => {
     for (const a of linksOf("bottom")) expect(a.className).toContain("min-h-[52px]");
     expect((document.querySelector("[data-nav='bottom']") as HTMLElement).className).toContain("ui-tabbar");
     expect(document.querySelector(".ui-shell.ui-shell-phone main.ui-shell-main")).not.toBeNull();
-    expect(linksOf("rail")).toEqual([]);
-    expect(linksOf("side")).toEqual([]);
+    expect(linksOf("top")).toEqual([]);
   });
 
-  it("from 640 px: an icon rail with the five tabs as labelled icons, the pane beside it", () => {
+  it("from 768 px: a top bar with the brand, the five tabs and the avatar, the pane under it", () => {
     stubMedia(TABLET);
     nav("#/radar/costs");
     mountApp();
-    expect(linksOf("side")).toEqual([]);
     expect(linksOf("bottom")).toEqual([]);
-    const rail = linksOf("rail");
-    expect(rail.map((a) => a.getAttribute("aria-label"))).toEqual([
-      "Sessions",
-      "Channels",
-      "Radar",
-      "Kanban",
-      "Settings",
-    ]);
-    expect(rail.map((a) => a.getAttribute("aria-current"))).toEqual([null, null, "page", null, null]);
-    for (const a of rail) expect(a.className).toContain("size-[52px]");
+    const top = linksOf("top");
+    expect(top.map((a) => a.textContent)).toEqual(["Home", "Sessions", "Channels", "Radar", "Boards"]);
+    expect(top.map((a) => a.getAttribute("aria-current"))).toEqual([null, null, null, "page", null]);
+    expect(screen.getByRole("button", { name: "Account menu" })).toBeDefined();
+    expect(document.querySelector("[data-sidebar], [data-nav='rail'], [data-nav='side']")).toBeNull();
   });
 
-  it("from 1024 px: a sidebar with the five tabs, a top bar with the jump field and the machines line", () => {
+  it("from 1200 px: the same top bar, with no jump field, no machines line and no theme menu", () => {
     stubMedia(DESKTOP);
     nav("#/sessions");
     mountApp();
     expect(linksOf("bottom")).toEqual([]);
-    expect(linksOf("rail")).toEqual([]);
-    const side = linksOf("side");
-    expect(side.map((a) => a.dataset.tab)).toEqual(["sessions", "channels", "radar", "kanban", "settings"]);
-    expect(side.map((a) => a.textContent)).toEqual(["Sessions", "Channels", "Radar", "Kanban", "Settings"]);
-    expect(side.map((a) => a.getAttribute("aria-current"))).toEqual(["page", null, null, null, null]);
-    expect(screen.getByRole("button", { name: "Jump to a session" })).toBeDefined();
-    expect(document.querySelector("#jump kbd")).not.toBeNull();
-    expect(screen.getByLabelText("Machines")).toBeDefined();
+    const top = linksOf("top");
+    expect(top.map((a) => a.dataset.tab)).toEqual(["home", "sessions", "channels", "radar", "kanban"]);
+    expect(top.map((a) => a.getAttribute("aria-current"))).toEqual([null, "page", null, null, null]);
+    expect(screen.queryByRole("button", { name: "Jump to a session" })).toBeNull();
+    expect(screen.queryByLabelText("Machines")).toBeNull();
+    expect(screen.queryByLabelText(/^Theme/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Account menu" })).toBeDefined();
   });
 
   it("follows a viewport that crosses a breakpoint", () => {
@@ -162,15 +155,10 @@ describe("the three layouts", () => {
       media.fire(TABLET_QUERY);
     });
     expect(linksOf("bottom")).toEqual([]);
-    expect(linksOf("rail")).toHaveLength(5);
-    void act(() => {
-      media.fire(DESKTOP_QUERY);
-    });
-    expect(linksOf("rail")).toEqual([]);
-    expect(linksOf("side")).toHaveLength(5);
+    expect(linksOf("top")).toHaveLength(5);
   });
 
-  it("carries the needs-you count on the Sessions tab in every layout", () => {
+  it("carries the needs-you count on the Home tab in every layout", () => {
     const needsYou = makeState({
       attention: attention({
         asks: [
@@ -181,18 +169,20 @@ describe("the three layouts", () => {
     });
     for (const [layout, name] of [
       [PHONE, "bottom"],
-      [TABLET, "rail"],
-      [DESKTOP, "side"],
+      [TABLET, "top"],
+      [DESKTOP, "top"],
     ] as const) {
       stubMedia(layout);
       nav("#/sessions");
-      mountApp({}, needsYou);
-      const tab = document.querySelector(`[data-nav="${name}"] a[data-tab="sessions"]`) as HTMLElement;
+      const { unmount } = mountApp({}, needsYou);
+      const tab = document.querySelector(`[data-nav="${name}"] a[data-tab="home"]`) as HTMLElement;
       expect(tab.querySelector(".ui-badge-needs-you")?.textContent, name).toBe("2");
+      expect(document.querySelectorAll(`[data-nav="${name}"] .ui-badge`), name).toHaveLength(1);
+      unmount();
     }
   });
 
-  it("paints the Sessions count orange when every session waits on a finished turn", () => {
+  it("paints the Home count orange when every session waits on a finished turn", () => {
     stubMedia(DESKTOP);
     nav("#/sessions");
     const row: RegistrySession = {
@@ -213,7 +203,7 @@ describe("the three layouts", () => {
       <App pages={{}} />,
       makeCtx(makeState(), { registry: makeRegistry({ sessions: [row], needs: [turn] }) }),
     );
-    const tab = document.querySelector("[data-nav='side'] a[data-tab='sessions']") as HTMLElement;
+    const tab = document.querySelector("[data-nav='top'] a[data-tab='home']") as HTMLElement;
     expect(tab.querySelector(".ui-badge-turn-done")?.textContent).toBe("1");
     expect(tab.querySelector(".ui-badge-needs-you")).toBeNull();
   });
@@ -222,11 +212,11 @@ describe("the three layouts", () => {
     stubMedia(DESKTOP);
     nav("#/sessions");
     mountApp();
-    expect(document.querySelector("[data-nav='side'] .ui-badge")).toBeNull();
+    expect(document.querySelector("[data-nav='top'] .ui-badge")).toBeNull();
   });
 
   it("paints the chrome of every layout with no daisyUI or legacy class", () => {
-    const chrome = "[data-nav], [data-sidebar], [data-desktop-bar], .ui-shell > header, [data-radar-views]";
+    const chrome = "[data-nav], [data-top-bar], .ui-shell > header, [data-radar-views]";
     for (const [layout, hash] of [
       [PHONE, "#/sessions"],
       [PHONE, "#/radar/overview"],
@@ -505,17 +495,17 @@ describe("routes and panes", () => {
     expect(screen.getByRole("radiogroup", { name: "Notifications" })).toBeDefined();
   });
 
-  it("sends an unknown address to Sessions with a rewrite", () => {
+  it("sends an unknown address to Home with a rewrite", () => {
     nav("#/nope");
     mountApp();
-    expect(location.hash).toBe("#/sessions");
-    expect(screen.getByText("No sessions yet")).toBeDefined();
+    expect(location.hash).toBe("#/home");
+    expect(screen.getByText("Nothing needs you")).toBeDefined();
   });
 
-  it("rewrites the old home into the sessions list", () => {
+  it("rewrites the empty address into Home", () => {
     nav("#/");
     mountApp();
-    expect(location.hash).toBe("#/sessions");
+    expect(location.hash).toBe("#/home");
   });
 
   it("leaves an address that moved on before the rewrite ran where it moved to", () => {
@@ -611,26 +601,18 @@ describe("the shell's keys", () => {
     expect(location.hash).toBe("#/sessions");
   });
 
-  it("focuses the jump field with ⌘K, Ctrl-K and /", () => {
-    stubMedia(DESKTOP);
-    nav("#/sessions");
-    mountApp();
-    press("k", { metaKey: true });
-    expect(document.activeElement?.id).toBe("jump");
-    press("k", { ctrlKey: true });
-    expect(document.activeElement?.id).toBe("jump");
-    press("/");
-    expect(document.activeElement?.id).toBe("jump");
-  });
-
-  it("opens the palette from ⌘K where no jump field is drawn", () => {
-    const onPalette = vi.fn();
-    nav("#/sessions");
-    renderIn(<App pages={{}} onPalette={onPalette} />, makeCtx(makeState()));
-    press("k", { metaKey: true });
-    expect(onPalette).toHaveBeenCalledTimes(1);
-    press("/");
-    expect(onPalette).toHaveBeenCalledTimes(2);
+  it("opens the palette from ⌘K, Ctrl-K and / in every layout", () => {
+    for (const layout of [PHONE, TABLET, DESKTOP]) {
+      stubMedia(layout);
+      const onPalette = vi.fn();
+      nav("#/sessions");
+      const { unmount } = renderIn(<App pages={{}} onPalette={onPalette} />, makeCtx(makeState()));
+      press("k", { metaKey: true });
+      press("k", { ctrlKey: true });
+      press("/");
+      expect(onPalette).toHaveBeenCalledTimes(3);
+      unmount();
+    }
   });
 
   it("keeps the chords and / out of text fields and dialogs", () => {
@@ -645,7 +627,6 @@ describe("the shell's keys", () => {
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true }));
     });
     expect(location.hash).toBe("#/sessions");
-    expect(document.activeElement?.id).not.toBe("jump");
     input.remove();
     const dlg = document.createElement("dialog");
     dlg.open = true;

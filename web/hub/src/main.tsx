@@ -15,7 +15,13 @@ import { boot } from "./boot.ts";
 import { App, NoChannel } from "./app/App.tsx";
 import { browserNotifications } from "./app/browser-notify.ts";
 import { Landing } from "./app/Landing.tsx";
-import { createAct, createCopy, type HuddleContextValue, HuddleProvider } from "./app/context.tsx";
+import {
+  createAct,
+  createCopy,
+  type HuddleContextValue,
+  HuddleProvider,
+  type WhoAmI,
+} from "./app/context.tsx";
 import { CmdKeys, CmdPalette, HelpDialog } from "./app/Palette.tsx";
 import { parseHash, pathOf } from "./app/router.ts";
 import { settingsSectionOf } from "./app/SettingsTab.tsx";
@@ -164,7 +170,7 @@ const act = createAct(
  *  owner's link session shows reads it, and a paired device's session keeps it hidden. The two
  *  facts beside it (an authenticator enrolment, this device's own passkey) drive the first-run
  *  set-up page and the biometrics offer. */
-const who = { kind: "" } as { kind: string; totp?: boolean; devicePasskey?: boolean };
+const who: WhoAmI = { kind: "" };
 
 /** The first-run gate: the link that just signed this browser in stands for the machine, so it
  *  may enrol the authenticator before the shell; a "Later" keeps it out of this browser until
@@ -601,6 +607,8 @@ function startShell(): void {
     .then((w) => {
       const kind = (w as { kind?: unknown }).kind;
       if (typeof kind === "string" && kind) who.kind = kind;
+      const name = (w as { name?: unknown }).name;
+      if (typeof name === "string" && name) who.name = name;
       if (who.kind === "owner" || who.kind === "device") startFocusReport();
       const totp = (w as { totp?: unknown }).totp;
       who.totp = totp === true;
@@ -610,7 +618,7 @@ function startShell(): void {
         // the gate stands between the link sign-in and the shell: a slow answer arriving after
         // this browser already moved must not pull it back onto the set-up. The sessions home
         // counts as unmoved: the shell rewrites an empty home onto it on the way (router.ts).
-        if (["", "#/", "#/channels", "#/sessions"].includes(location.hash)) totpGate.on = true;
+        if (["", "#/", "#/channels", "#/home", "#/sessions"].includes(location.hash)) totpGate.on = true;
       }
     })
     .catch(() => {})

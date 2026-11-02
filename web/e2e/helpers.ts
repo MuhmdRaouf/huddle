@@ -268,9 +268,16 @@ export async function pairThroughBanner(page: Page, name: string): Promise<void>
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 }
 
-/** Opens the tab the top bar names. */
+/** Opens the tab the Main navigation names (Home, Sessions, Channels, Radar or Boards), or
+ *  Settings, which opens from the avatar's menu. */
 export async function openTab(page: Page, name: string): Promise<void> {
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name }).click();
+  if (name === "Settings") {
+    await page.getByRole("button", { name: "Account menu" }).click();
+    await page.getByRole("dialog", { name: "Account menu" }).getByRole("link", { name: "Settings" }).click();
+    return;
+  }
+  // Home's name may carry its needs-you count after the label
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: new RegExp(`^${name}\\b`) }).click();
 }
 
 /** Collects the page's console errors and uncaught exceptions; `errors()` answers them. */

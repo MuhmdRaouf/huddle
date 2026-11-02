@@ -77,24 +77,38 @@ describe("parseHash: the five tabs", () => {
     });
   });
 
-  it("reads Kanban, with or without a board key, and lists five tabs in order", () => {
+  it("reads Home, with or without a session id", () => {
+    expect(parseHash("#/home", reader())).toMatchObject({ tab: "home", ch: null, sub: [], replace: null });
+    expect(parseHash("#/home/s-1", reader())).toMatchObject({ tab: "home", sub: ["s-1"], replace: null });
+  });
+
+  it("reads Kanban, with or without a board key", () => {
     expect(parseHash("#/kanban", reader())).toMatchObject({ tab: "kanban", ch: null, sub: [] });
     expect(parseHash("#/kanban/a1a1", reader())).toMatchObject({ tab: "kanban", sub: ["a1a1"] });
     for (const h of ["#/kanban", "#/kanban/a1a1"]) expect(parseHash(h, reader()).replace, h).toBeNull();
+  });
+
+  it("TABS is Home, Sessions, Channels, Radar, Boards", () => {
     expect(TABS).toEqual([
+      ["home", "Home", "#/home"],
       ["sessions", "Sessions", "#/sessions"],
       ["channels", "Channels", "#/channels"],
       ["radar", "Radar", "#/radar/overview"],
-      ["kanban", "Kanban", "#/kanban"],
-      ["settings", "Settings", "#/settings"],
+      ["kanban", "Boards", "#/kanban"],
     ]);
     expect(tabHref("kanban")).toBe("#/kanban");
-    expect(tabLabel("kanban")).toBe("Kanban");
+    expect(tabLabel("kanban")).toBe("Boards");
   });
 
-  it("sends an unknown address to Sessions with a rewrite", () => {
-    expect(parseHash("#/nope", reader())).toMatchObject({ tab: "sessions", replace: "#/sessions" });
-    expect(parseHash("#/nope/deep", reader()).replace).toBe("#/sessions");
+  it("keeps Settings a route that is in no tab", () => {
+    expect(TABS.map((t) => t[0] as string)).not.toContain("settings");
+    expect(tabHref("settings")).toBe("#/settings");
+    expect(tabLabel("settings")).toBe("Settings");
+  });
+
+  it("`#/` and an unknown hash open `#/home`", () => {
+    expect(parseHash("#/nope", reader())).toMatchObject({ tab: "home", replace: "#/home" });
+    expect(parseHash("#/nope/deep", reader()).replace).toBe("#/home");
   });
 });
 
@@ -226,9 +240,9 @@ describe("parseHash: the alias redirects", () => {
 });
 
 describe("parseHash: the old addresses", () => {
-  it("rewrites the old home into the sessions tab", () => {
+  it("rewrites the empty address into the home tab", () => {
     for (const hash of ["", "#", "#/"]) {
-      expect(parseHash(hash, reader()).replace, hash).toBe("#/sessions");
+      expect(parseHash(hash, reader()).replace, hash).toBe("#/home");
     }
   });
 

@@ -30,4 +30,19 @@ describe("Badge", () => {
     expect(screen.getByText("3").className).toBe("ui-badge ui-badge-needs-you");
     expect(screen.getByText("1").className).toBe("ui-badge ui-badge-turn-done");
   });
+
+  it("fills a count's disc when it is solid", () => {
+    render(
+      <>
+        <Badge tone="needs-you" solid>
+          3
+        </Badge>
+        <Badge tone="turn-done" solid>
+          1
+        </Badge>
+      </>,
+    );
+    expect(screen.getByText("3").className).toBe("ui-badge ui-badge-needs-you ui-badge-solid");
+    expect(screen.getByText("1").className).toBe("ui-badge ui-badge-turn-done ui-badge-solid");
+  });
 });

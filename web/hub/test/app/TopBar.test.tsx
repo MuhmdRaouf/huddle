@@ -1,54 +1,99 @@
-// TopBar.test.tsx — the desktop top bar: the jump field with its ⌘K hint, the machines line with
-// its live dot, the theme menu, the shortcuts key, and the server's version the sidebar's brand reads.
-import { act, render, screen } from "@testing-library/preact";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { DesktopBar, MachinesLine, ThemeMenu, useVersion } from "../../src/app/TopBar.tsx";
-import { flush, legacyClasses, stubMatchMedia } from "../helpers.tsx";
+// TopBar.test.tsx — the tablet's and the desktop's top bar: the brand, the five tabs as the Main
+// navigation with the needs-you count on Home, the avatar at the right end, and the machines line
+// the Sessions list draws.
+import { render, type RenderResult, screen } from "@testing-library/preact";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { NeedsBadge } from "../../src/app/Nav.tsx";
+import { MachinesLine, TopBar } from "../../src/app/TopBar.tsx";
+import { legacyClasses, makeCtx, makeState, renderIn, stubMatchMedia } from "../helpers.tsx";
+
+const NONE: NeedsBadge = { n: 0, tone: "needs-you" };
 
 beforeEach(() => {
-  localStorage.clear();
   stubMatchMedia(false);
   vi.stubGlobal(
     "fetch",
-    vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ version: "1.2.3" }) })),
+    vi.fn(() => Promise.resolve({ json: () => Promise.resolve({}) })),
   );
 });
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
-describe("the server's version", () => {
-  it("shows the server's version once /health answers, and the placeholder when it fails", async () => {
-    const probe = render(<VersionProbe />);
-    await flush();
-    expect(probe.container.textContent).toContain("1.2.3");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => Promise.reject(new Error("down"))),
-    );
-    const fallback = render(<VersionProbe />);
-    await flush();
-    expect(fallback.container.textContent).toContain("0.0.1");
-  });
-});
-
-/** The hook alone, so the /health read is testable without the whole bar. */
-function VersionProbe() {
-  return <span>{useVersion()}</span>;
+/** Renders the bar on `tab`. */
+function mount(
+  tab: Parameters<typeof TopBar>[0]["tab"],
+  needs: NeedsBadge = NONE,
+  healthy = true,
+): RenderResult {
+  return renderIn(
+    <TopBar tab={tab} needs={needs} healthy={healthy} />,
+    makeCtx(makeState(), { who: { kind: "owner" } }),
+  );
 }
 
-describe("the jump field", () => {
-  it("names what it does, spells the shortcut and opens the palette", () => {
-    const onPalette = vi.fn();
-    render(<DesktopBar live="live" onPalette={onPalette} />);
-    const jump = screen.getByRole("button", { name: "Jump to a session" });
-    expect(jump.getAttribute("aria-keyshortcuts")).toBe("Meta+K Control+K /");
-    expect(jump.querySelector("kbd")?.textContent).toMatch(/⌘K|Ctrl K/);
-    void act(() => {
-      (jump as HTMLElement).click();
-    });
-    expect(onPalette).toHaveBeenCalledTimes(1);
+const tabs = (): HTMLAnchorElement[] =>
+  [...document.querySelectorAll("[data-nav='top'] a")] as HTMLAnchorElement[];
+
+describe("the top bar", () => {
+  it("lists the five tabs in the Main navigation, the open one current", () => {
+    mount("radar");
+    expect(screen.getByRole("navigation", { name: "Main" })).toBe(document.querySelector("[data-nav='top']"));
+    expect(tabs().map((a) => a.dataset.tab)).toEqual(["home", "sessions", "channels", "radar", "kanban"]);
+    expect(tabs().map((a) => a.textContent)).toEqual(["Home", "Sessions", "Channels", "Radar", "Boards"]);
+    expect(tabs().map((a) => a.getAttribute("href"))).toEqual([
+      "#/home",
+      "#/sessions",
+      "#/channels",
+      "#/radar/overview",
+      "#/kanban",
+    ]);
+    expect(tabs().map((a) => a.getAttribute("aria-current"))).toEqual([null, null, null, "page", null]);
+    for (const a of tabs()) expect(a.className).toContain("min-h-[var(--ui-tap)]");
+  });
+
+  it("marks the tab the shell names, for each of the five", () => {
+    for (const tab of ["home", "sessions", "channels", "radar", "kanban"] as const) {
+      const { unmount } = mount(tab);
+      expect(
+        document.querySelector("[data-nav='top'] a[aria-current='page']")?.getAttribute("data-tab"),
+      ).toBe(tab);
+      unmount();
+    }
+  });
+
+  it("puts the brand, linked to Home, before the tabs and the avatar after them", () => {
+    mount("home");
+    const brand = screen.getByText("huddle").closest("a") as HTMLAnchorElement;
+    expect(brand.getAttribute("href")).toBe("#/home");
+    expect(brand.closest("nav")).toBeNull();
+    const avatar = screen.getByRole("button", { name: "Account menu" });
+    const bar = document.querySelector("[data-top-bar]") as HTMLElement;
+    const order = [...bar.querySelectorAll("a, button")];
+    expect(order[0]).toBe(brand);
+    expect(order.at(-1)).toBe(avatar);
+  });
+
+  it("carries the needs-you count on Home alone, in its tone, and none at zero", () => {
+    const { unmount } = mount("sessions", { n: 2, tone: "turn-done" });
+    expect(document.querySelectorAll("[data-nav='top'] .ui-badge")).toHaveLength(1);
+    expect(
+      document.querySelector("[data-nav='top'] a[data-tab='home'] .ui-badge-turn-done")?.textContent,
+    ).toBe("2");
+    unmount();
+    mount("sessions");
+    expect(document.querySelector("[data-nav='top'] .ui-badge")).toBeNull();
+  });
+
+  it("holds no Settings link, no jump field, no theme menu and no shortcuts key", () => {
+    mount("home");
+    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+    expect(document.querySelector("#jump")).toBeNull();
+    expect(screen.queryByLabelText(/^Theme/)).toBeNull();
+    expect(screen.queryByLabelText("Keyboard shortcuts")).toBeNull();
+    expect(screen.queryByLabelText("Machines")).toBeNull();
+  });
+
+  it("paints no daisyUI or legacy class", () => {
+    mount("home", { n: 1, tone: "needs-you" });
+    expect(legacyClasses()).toEqual([]);
   });
 });
 
@@ -63,80 +108,5 @@ describe("the machines line", () => {
     expect(dot()).toContain("bg-[var(--ui-warn)]");
     rerender(<MachinesLine live="connecting" />);
     expect(dot()).toContain("bg-[var(--ui-idle)]");
-  });
-});
-
-describe("the theme menu", () => {
-  it("opens with the three choices, checks the kept one, and keeps a pick", () => {
-    localStorage.setItem("huddle:scheme", "dark");
-    render(<ThemeMenu />);
-    void act(() => {
-      (screen.getByLabelText("Theme: Dark") as HTMLButtonElement).click();
-    });
-    const menu = document.querySelector('[role="menu"]') as HTMLElement;
-    expect(menu.textContent).toContain("System");
-    expect(menu.textContent).toContain("Dark");
-    expect(menu.textContent).toContain("Light");
-    expect(menu.querySelector('[aria-checked="true"]')?.textContent).toContain("Dark");
-    void act(() => {
-      [...menu.querySelectorAll("button")].find((b) => b.textContent?.includes("Light"))?.click();
-    });
-    expect(localStorage.getItem("huddle:scheme")).toBe("light");
-    expect(document.documentElement.dataset.scheme).toBe("light");
-    expect(document.documentElement.dataset.theme).toBe("huddle");
-    expect(screen.getByLabelText("Theme: Light")).toBeDefined();
-    expect(document.querySelector('[role="menu"]')).toBeNull();
-  });
-
-  it("shows System when nothing is kept, and a choice Settings made since on the next open", () => {
-    render(<ThemeMenu />);
-    expect(screen.getByLabelText("Theme: System")).toBeDefined();
-    localStorage.setItem("huddle:scheme", "light");
-    void act(() => {
-      (screen.getByLabelText("Theme: System") as HTMLButtonElement).click();
-    });
-    expect(screen.getByLabelText("Theme: Light")).toBeDefined();
-  });
-
-  it("paints System as the scheme the OS prefers", () => {
-    localStorage.setItem("huddle:scheme", "light");
-    stubMatchMedia(true);
-    render(<ThemeMenu />);
-    void act(() => {
-      (screen.getByLabelText("Theme: Light") as HTMLButtonElement).click();
-    });
-    void act(() => {
-      [...(document.querySelector('[role="menu"]')?.querySelectorAll("button") ?? [])]
-        .find((b) => b.textContent?.includes("System"))
-        ?.click();
-    });
-    expect(localStorage.getItem("huddle:scheme")).toBe("system");
-    expect(document.documentElement.dataset.scheme).toBe("dark");
-    expect(document.documentElement.dataset.theme).toBe("huddle");
-  });
-});
-
-describe("the bar's keys", () => {
-  it("runs the shortcuts key", () => {
-    const onHelp = vi.fn();
-    render(<DesktopBar live="live" onHelp={onHelp} />);
-    void act(() => {
-      screen.getByLabelText("Keyboard shortcuts").click();
-    });
-    expect(onHelp).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("the tokens", () => {
-  it("paints the bar with the ui buttons and no daisyUI or legacy class", () => {
-    render(<DesktopBar live="live" />);
-    const daisy = /^(status(-.+)?|kbd(-.+)?)$/;
-    const all = [...document.querySelectorAll("[class]")].flatMap((el) =>
-      (el.getAttribute("class") ?? "").split(/\s+/),
-    );
-    expect(legacyClasses()).toEqual([]);
-    expect(all.filter((c) => daisy.test(c))).toEqual([]);
-    for (const name of [/^Theme:/, "Keyboard shortcuts"])
-      expect(screen.getByRole("button", { name }).className).toContain("ui-btn ui-btn-ghost ui-btn-icon");
   });
 });

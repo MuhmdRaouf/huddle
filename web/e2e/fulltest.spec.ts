@@ -105,7 +105,7 @@ test("one signed-in walk over TLS covers every tab with no console error", async
   }
 
   // Kanban: the seeded board and its three columns
-  await openTab(page, "Kanban");
+  await openTab(page, "Boards");
   await expect(page.getByLabel("Board", { exact: true })).toContainText(theSetup().boardName);
   await expect(page.getByRole("heading", { name: "Backlog 1" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Ready 1" })).toBeVisible();

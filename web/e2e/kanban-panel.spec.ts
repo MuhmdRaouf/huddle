@@ -19,7 +19,7 @@ test.describe("the card detail panel on a desktop", () => {
   /** Signs in, opens the Kanban tab, opens the seeded backlog card's panel. */
   async function openPanel(page: Page, id: string): Promise<void> {
     await signIn(page);
-    await openTab(page, "Kanban");
+    await openTab(page, "Boards");
     const picker = page.getByLabel("Board", { exact: true });
     await expect(picker).toContainText(theSetup().boardName);
     await page.getByRole("button", { name: `${id}: First card` }).click();
@@ -45,12 +45,11 @@ test.describe("the card detail panel on a desktop", () => {
       const columns = page.locator(".kanban-tab .columns");
       await expect(columns).toBeVisible();
       const board = (await columns.boundingBox()) ?? expect.fail("the board has no box");
-      // 1440 minus the default 440 panel: the board gave the panel its column, and it starts
-      // right of the shell's sidebar
-      const sidebar = (await page.locator("[data-sidebar]").boundingBox()) ?? expect.fail("no sidebar");
+      // 1440 minus the default 440 panel: the board gave the panel its column, and it starts at
+      // the page's left edge under the top bar
       expect(board.width).toBeLessThanOrEqual(1001);
-      expect(board.x).toBeGreaterThanOrEqual(sidebar.x + sidebar.width - 1);
-      expect(board.x).toBeLessThan(sidebar.x + sidebar.width + 100);
+      expect(board.x).toBeGreaterThanOrEqual(0);
+      expect(board.x).toBeLessThan(100);
       const panel = page.getByRole("dialog", { name: "E2E-1: First card" });
       const side = (await panel.boundingBox()) ?? expect.fail("the panel has no box");
       expect(side.x).toBeGreaterThanOrEqual(board.x + board.width - 1);
@@ -97,7 +96,7 @@ test.describe("the card detail panel on a desktop", () => {
     await test.step("Then a reload reopens it at 600 px", async () => {
       await page.reload();
       await signIn(page);
-      await openTab(page, "Kanban");
+      await openTab(page, "Boards");
       await page.getByRole("button", { name: "E2E-1: First card" }).click();
       const panel = page.getByRole("dialog", { name: "E2E-1: First card" });
       await expect(panel).toHaveCSS("width", "600px");
@@ -132,7 +131,7 @@ test.describe("the card detail panel on a phone", () => {
   }) => {
     await test.step("Given the board at 390x844 with the backlog card tapped", async () => {
       await signIn(page);
-      await openTab(page, "Kanban");
+      await openTab(page, "Boards");
       // the phone's backlog groups by priority with P1 closed, so the card's group opens first
       const group = page.locator('.lanes section[data-column="backlog"]').getByRole("button", { name: /^P1 / });
       await group.tap();

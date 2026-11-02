@@ -1,23 +1,10 @@
-// Nav.test.tsx — the five tabs in each layout's chrome: the phone's pinned bar, the tablet's icon
-// rail and the desktop's sidebar with the brand over them, each the Main navigation with the
-// needs-you count on Sessions, painted from the tokens by the one badge rule.
+// Nav.test.tsx — the phone's pinned bar of five tabs, the Main navigation with the needs-you count
+// on Home, painted from the tokens by the one badge rule, and the health dot.
 import { render, screen } from "@testing-library/preact";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { HealthDot, BottomNav, IconRail, type NeedsBadge, needsBadge, SideNav } from "../../src/app/Nav.tsx";
-import type { Tab } from "../../src/app/router.ts";
+import { describe, expect, it } from "vite-plus/test";
+import { BottomNav, HealthDot, type NeedsBadge, needsBadge } from "../../src/app/Nav.tsx";
 import type { NeedItem } from "../../src/registry.ts";
-import { flush, legacyClasses } from "../helpers.tsx";
-
-beforeEach(() => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ version: "1.2.3" }) })),
-  );
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+import { legacyClasses } from "../helpers.tsx";
 
 /** Nothing waits on the owner. */
 const NONE: NeedsBadge = { n: 0, tone: "needs-you" };
@@ -34,43 +21,6 @@ const item = (kind: string, state = "open"): NeedItem => ({
 
 const links = (nav: string): HTMLAnchorElement[] =>
   [...document.querySelectorAll(`[data-nav='${nav}'] a`)] as HTMLAnchorElement[];
-
-describe("the sidebar", () => {
-  it("puts the brand with the server's version over the tabs, outside the Main navigation", async () => {
-    render(<SideNav tab="sessions" needs={NONE} healthy />);
-    const brand = screen.getByText("Huddle").closest("a") as HTMLAnchorElement;
-    expect(brand.getAttribute("href")).toBe("#/channels");
-    expect(brand.closest("nav")).toBeNull();
-    await flush();
-    expect(screen.getByText("v1.2.3")).toBeDefined();
-  });
-
-  it("lays the five tabs out with the active one current", () => {
-    render(<SideNav tab="radar" needs={NONE} healthy />);
-    const tabs = links("side");
-    expect(tabs.map((a) => a.dataset.tab)).toEqual(["sessions", "channels", "radar", "kanban", "settings"]);
-    expect(tabs.map((a) => a.getAttribute("aria-current"))).toEqual([null, null, "page", null, null]);
-    expect(tabs.map((a) => a.getAttribute("href"))).toEqual([
-      "#/sessions",
-      "#/channels",
-      "#/radar/overview",
-      "#/kanban",
-      "#/settings",
-    ]);
-    // rows at the tap token, 44 px whatever the root font size
-    for (const a of tabs) expect(a.className).toContain("min-h-[var(--ui-tap)]");
-  });
-
-  it("marks the tab the shell names, for each of the five", () => {
-    for (const tab of ["sessions", "channels", "radar", "kanban", "settings"] as const) {
-      const { unmount } = render(<SideNav tab={tab satisfies Tab} needs={NONE} healthy />);
-      expect(
-        (document.querySelector("[data-nav='side'] a[aria-current='page']") as HTMLElement).dataset.tab,
-      ).toBe(tab);
-      unmount();
-    }
-  });
-});
 
 describe("the one badge rule", () => {
   it("is red for a blocking ask: a channel's inbox item, a permission or a question", () => {
@@ -105,83 +55,73 @@ describe("the one badge rule", () => {
   });
 });
 
-describe("the needs-you count on Sessions", () => {
-  it("rides on Sessions in the bar, the rail and the sidebar in its tone, and is gone at zero", () => {
-    for (const [Nav, name] of [
-      [BottomNav, "bottom"],
-      [IconRail, "rail"],
-      [SideNav, "side"],
-    ] as const) {
-      const { rerender, unmount } = render(
-        <Nav tab="sessions" needs={{ n: 3, tone: "needs-you" }} healthy />,
-      );
-      expect(
-        document.querySelector(`[data-nav='${name}'] a[data-tab='sessions'] .ui-badge-needs-you`)
-          ?.textContent,
-      ).toBe("3");
-      rerender(<Nav tab="sessions" needs={{ n: 1, tone: "turn-done" }} healthy />);
-      expect(
-        document.querySelector(`[data-nav='${name}'] a[data-tab='sessions'] .ui-badge-turn-done`)
-          ?.textContent,
-      ).toBe("1");
-      rerender(<Nav tab="sessions" needs={NONE} healthy />);
-      expect(document.querySelector(`[data-nav='${name}'] .ui-badge`)).toBeNull();
-      unmount();
-    }
+describe("the needs-you count on Home", () => {
+  it("rides on Home in the bar in its tone, and is gone at zero", () => {
+    const { rerender } = render(<BottomNav tab="home" needs={{ n: 3, tone: "needs-you" }} />);
+    expect(
+      document.querySelector("[data-nav='bottom'] a[data-tab='home'] .ui-badge-needs-you")?.textContent,
+    ).toBe("3");
+    rerender(<BottomNav tab="home" needs={{ n: 1, tone: "turn-done" }} />);
+    expect(
+      document.querySelector("[data-nav='bottom'] a[data-tab='home'] .ui-badge-turn-done")?.textContent,
+    ).toBe("1");
+    rerender(<BottomNav tab="home" needs={NONE} />);
+    expect(document.querySelector("[data-nav='bottom'] .ui-badge")).toBeNull();
   });
 
-  it("names the rail's Sessions tab with its count, so the name holds the number the tab shows", () => {
-    const { rerender } = render(<IconRail tab="sessions" needs={{ n: 3, tone: "needs-you" }} healthy />);
-    const sessions = () => document.querySelector("[data-nav='rail'] a[data-tab='sessions']");
-    expect(sessions()?.getAttribute("aria-label")).toBe("Sessions, 3 need you");
-    rerender(<IconRail tab="sessions" needs={{ n: 1, tone: "turn-done" }} healthy />);
-    expect(sessions()?.getAttribute("aria-label")).toBe("Sessions, 1 turn done");
-    rerender(<IconRail tab="sessions" needs={NONE} healthy />);
-    expect(sessions()?.getAttribute("aria-label")).toBe("Sessions");
-    expect(
-      document.querySelector("[data-nav='rail'] a[data-tab='channels']")?.getAttribute("aria-label"),
-    ).toBe("Channels");
+  it("is on Home alone", () => {
+    render(<BottomNav tab="sessions" needs={{ n: 2, tone: "needs-you" }} />);
+    expect(document.querySelectorAll("[data-nav='bottom'] .ui-badge")).toHaveLength(1);
+    expect(document.querySelector("[data-nav='bottom'] a[data-tab='home'] .ui-badge")).not.toBeNull();
   });
 });
 
 describe("the tokens", () => {
-  it("paints the bar, the rail and the sidebar with no daisyUI or legacy class", async () => {
-    for (const Nav of [BottomNav, IconRail, SideNav]) {
-      const { unmount } = render(<Nav tab="sessions" needs={{ n: 2, tone: "needs-you" }} healthy />);
-      await flush();
-      expect(legacyClasses(), Nav.name).toEqual([]);
-      unmount();
-    }
-  });
-
-  it("keeps the sidebar's version as a neutral badge", async () => {
-    render(<SideNav tab="sessions" needs={NONE} healthy />);
-    await flush();
-    expect(screen.getByText("v1.2.3").className).toBe("ui-badge ui-badge-neutral");
+  it("paints the bar with no daisyUI or legacy class", () => {
+    render(<BottomNav tab="home" needs={{ n: 2, tone: "needs-you" }} />);
+    expect(legacyClasses()).toEqual([]);
   });
 });
 
 describe("the phone's bar", () => {
   it("is the pinned tab bar of five 52 px targets", () => {
-    render(<BottomNav tab="kanban" needs={NONE} healthy />);
+    render(<BottomNav tab="kanban" needs={NONE} />);
     const nav = document.querySelector("[data-nav='bottom']") as HTMLElement;
     expect(nav.className).toContain("ui-tabbar");
     expect(nav.getAttribute("aria-label")).toBe("Main");
+    expect(links("bottom").map((a) => a.dataset.tab)).toEqual([
+      "home",
+      "sessions",
+      "channels",
+      "radar",
+      "kanban",
+    ]);
     expect(links("bottom").map((a) => a.textContent)).toEqual([
+      "Home",
       "Sessions",
       "Channels",
       "Radar",
-      "Kanban",
-      "Settings",
+      "Boards",
     ]);
     expect(links("bottom").map((a) => a.getAttribute("aria-current"))).toEqual([
       null,
       null,
       null,
-      "page",
       null,
+      "page",
     ]);
     for (const a of links("bottom")) expect(a.className).toContain("min-h-[52px]");
+  });
+});
+
+describe("the phone bar's marks", () => {
+  it("draws the canvas glyph on each tab, one shape apiece", () => {
+    render(<BottomNav tab="home" needs={NONE} />);
+    const shapes = links("bottom").map((a) => a.querySelector("svg")?.innerHTML ?? "");
+    expect(new Set(shapes).size).toBe(5);
+    expect(shapes[0]).toContain("M3 11l9-8 9 8");
+    expect(shapes[1]).toContain("M4 5h16v11H8l-4 4z");
+    expect(shapes[4]).toContain("M4 4h5v16H4zM10 4h5v10h-5zM16 4h4v7h-4z");
   });
 });
 
@@ -198,17 +138,5 @@ describe("the health dot", () => {
     expect(dot.getAttribute("aria-hidden")).toBe("true");
     expect(dot.className).toContain("bg-[var(--ui-fail)]");
     expect(screen.getByText("A part of the hub is failing")).toBeDefined();
-  });
-
-  it("rides on the bar's settings tab, inside its link", () => {
-    render(<BottomNav tab="settings" needs={NONE} healthy={false} />);
-    const tab = document.querySelector("[data-nav='bottom'] a[data-tab='settings']");
-    expect(tab?.querySelector("[data-health-dot]")).not.toBeNull();
-    expect(tab?.textContent).toContain("A part of the hub is failing");
-  });
-
-  it("is gone from the bar's settings tab while the hub is well", () => {
-    render(<BottomNav tab="settings" needs={NONE} healthy />);
-    expect(document.querySelector("[data-nav='bottom'] [data-health-dot]")).toBeNull();
   });
 });

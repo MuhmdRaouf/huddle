@@ -561,13 +561,13 @@ describe("HelpDialog", () => {
   it("spells Ctrl on a non-Mac and ⌘ on a Mac", () => {
     expect(helpSections(true)[0]?.rows[0]?.[0]).toBe("⌘ K");
     expect(helpSections(false)[0]?.rows[0]?.[0]).toBe("Ctrl K");
-    // the tab chords list all five tabs, Kanban on g b, Knowledge kept on g k
+    // the tab chords list all five tabs, Boards on g b, Knowledge kept on g k
     const goTo = helpSections(true).find((s) => s.head === "Go to")?.rows ?? [];
     expect(goTo.slice(0, 5)).toEqual([
       ["g n", "Sessions"],
       ["g c", "Channels"],
       ["g r", "Radar"],
-      ["g b", "Kanban"],
+      ["g b", "Boards"],
       ["g s", "Settings"],
     ]);
     expect(goTo).toContainEqual(["g k", "Knowledge"]);

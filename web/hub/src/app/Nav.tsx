@@ -1,15 +1,13 @@
-// Nav.tsx — the five tabs (Sessions, Channels, Radar, Kanban, Settings) as each layout draws them:
-// the phone's bar pinned to the bottom edge, the tablet's 72 px icon rail, the desktop's left
-// sidebar with the brand on top. Every one is the `Main` navigation and carries the needs-you count
-// on Sessions, coloured by the one badge rule. Every colour comes from the tokens.
+// Nav.tsx — the phone's tab bar (Home, Sessions, Channels, Radar, Boards) pinned to the bottom
+// edge, the needs-you badge on Home coloured by the one badge rule, and the health dot the avatar
+// carries. The tablet and the desktop list the same five tabs in the top bar (TopBar.tsx). Every
+// colour comes from the tokens.
 
 import { Badge } from "@huddle/ui/badge.tsx";
-import { Icon as SharedIcon } from "@huddle/ui/icons.tsx";
 import type { JSX } from "preact";
-import { Icon } from "../icons.tsx";
+import { Icon, type IconName } from "../icons.tsx";
 import type { NeedItem } from "../registry.ts";
-import { TABS, type Tab } from "./router.ts";
-import { useVersion } from "./TopBar.tsx";
+import { type NavTab, TABS, type Tab } from "./router.ts";
 
 /** What a needs-you badge shows: how many wait on the owner, and the state its colour names. */
 export type NeedsBadge = { n: number; tone: "needs-you" | "turn-done" };
@@ -28,9 +26,13 @@ export function needsBadge({ inbox, sessions, items }: NeedsCount): NeedsBadge {
   return { n: inbox + sessions, tone: turnsOnly ? "turn-done" : "needs-you" };
 }
 
-/** The needs-you count in its state's colour; nothing when nobody needs the owner. */
+/** The needs-you count as a disc in its state's colour; nothing when nobody needs the owner. */
 export function TabBadge({ needs }: { needs: NeedsBadge }): JSX.Element | null {
-  return needs.n > 0 ? <Badge tone={needs.tone}>{needs.n}</Badge> : null;
+  return needs.n > 0 ? (
+    <Badge tone={needs.tone} solid>
+      {needs.n}
+    </Badge>
+  ) : null;
 }
 
 /** A red dot that says a part of the hub is failing; nothing while every part is well. */
@@ -40,7 +42,7 @@ export function HealthDot({ healthy }: { healthy: boolean }): JSX.Element | null
     <>
       <span
         data-health-dot=""
-        class="ms-2 inline-block size-2 shrink-0 rounded-full bg-[var(--ui-fail)]"
+        class="inline-block size-2.5 shrink-0 rounded-full border-2 border-[var(--ui-surface)] bg-[var(--ui-fail)]"
         aria-hidden="true"
       />
       <span class="sr-only">A part of the hub is failing</span>
@@ -51,34 +53,23 @@ export function HealthDot({ healthy }: { healthy: boolean }): JSX.Element | null
 /** A tab's focus ring, on the accent. */
 const RING = "outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]";
 
-/** A rail or sidebar tab's colours: the current one on the raised surface, the rest muted. */
-const tone = (on: boolean, current: string): string =>
-  on
-    ? `bg-[var(--ui-surface-2)] ${current}`
-    : "text-[var(--ui-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]";
+/** Each tab's mark as the phone canvas draws it: a house, a speech bubble, a hash, a gauge and
+ *  board columns. */
+const TAB_ICON: Readonly<Record<NavTab, IconName>> = {
+  home: "home",
+  sessions: "chat",
+  channels: "hash",
+  radar: "gauge",
+  kanban: "boards",
+};
 
-/** One tab's mark: the shared glyphs for the three the design draws (the shared set names the
- *  sessions glyph `now`), the settings sunburst and the kanban columns from the owner UI's own set. */
-function TabGlyph({ id, class: c }: { id: Tab; class?: string | undefined }): JSX.Element {
-  return id === "settings" ? (
-    <Icon name="sparkle" class={c} />
-  ) : id === "kanban" ? (
-    <Icon name="columns" class={c} />
-  ) : (
-    <SharedIcon name={id === "sessions" ? "now" : id} class={c} />
-  );
+/** One tab's mark. */
+function TabGlyph({ id, class: c }: { id: NavTab; class?: string | undefined }): JSX.Element {
+  return <Icon name={TAB_ICON[id]} class={c} />;
 }
 
 /** The phone's tab bar: five 52 px targets, pinned to the viewport's bottom over the inset. */
-export function BottomNav({
-  tab,
-  needs,
-  healthy,
-}: {
-  tab: Tab;
-  needs: NeedsBadge;
-  healthy: boolean;
-}): JSX.Element {
+export function BottomNav({ tab, needs }: { tab: Tab; needs: NeedsBadge }): JSX.Element {
   return (
     <nav
       data-nav="bottom"
@@ -97,124 +88,13 @@ export function BottomNav({
         >
           <TabGlyph id={id} class="size-[22px]" />
           <span>{label}</span>
-          {id === "sessions" ? (
+          {id === "home" ? (
             <span class="absolute top-1 left-[54%]">
               <TabBadge needs={needs} />
-            </span>
-          ) : null}
-          {id === "settings" ? (
-            <span class="absolute top-1 left-[54%]">
-              <HealthDot healthy={healthy} />
             </span>
           ) : null}
         </a>
       ))}
     </nav>
-  );
-}
-
-/** The rail's Sessions tab names its count too, so its accessible name holds the number it shows. */
-function nowName(label: string, needs: NeedsBadge): string {
-  if (needs.n === 0) return label;
-  const one = needs.n === 1;
-  const what =
-    needs.tone === "turn-done" ? (one ? "turn done" : "turns done") : one ? "needs you" : "need you";
-  return `${label}, ${needs.n} ${what}`;
-}
-
-/** The tablet's icon rail: the five tabs as 52 px labelled icons, Settings at the bottom. */
-export function IconRail({
-  tab,
-  needs,
-  healthy,
-}: {
-  tab: Tab;
-  needs: NeedsBadge;
-  healthy: boolean;
-}): JSX.Element {
-  return (
-    <nav
-      data-nav="rail"
-      aria-label="Main"
-      class="flex w-[72px] shrink-0 flex-col items-center gap-2 border-r border-[var(--ui-line)] bg-[var(--ui-surface)] py-[18px]"
-    >
-      {TABS.map(([id, label, href]) => (
-        <a
-          key={id}
-          href={href}
-          data-tab={id}
-          aria-label={id === "sessions" ? nowName(label, needs) : label}
-          title={label}
-          aria-current={tab === id ? "page" : undefined}
-          class={`relative flex size-[52px] items-center justify-center rounded-[14px] ${RING} ${
-            id === "settings" ? "mt-auto" : ""
-          } ${tone(tab === id, "text-[var(--ui-accent)]")}`}
-        >
-          <TabGlyph id={id} class="size-6" />
-          {id === "sessions" ? (
-            <span class="absolute top-1 right-1">
-              <TabBadge needs={needs} />
-            </span>
-          ) : null}
-          {id === "settings" ? (
-            <span class="absolute top-1 right-1">
-              <HealthDot healthy={healthy} />
-            </span>
-          ) : null}
-        </a>
-      ))}
-    </nav>
-  );
-}
-
-/** The desktop's sidebar: the brand with the server's version over the five tabs, as 44 px rows
- *  of icon and label, Settings at the bottom. */
-export function SideNav({
-  tab,
-  needs,
-  healthy,
-}: {
-  tab: Tab;
-  needs: NeedsBadge;
-  healthy: boolean;
-}): JSX.Element {
-  const v = useVersion();
-  return (
-    <aside
-      data-sidebar=""
-      class="ui-sidebar shrink-0 border-r border-[var(--ui-line)] bg-[var(--ui-surface)]"
-    >
-      <a
-        href="#/channels"
-        class={`mb-3 flex min-h-[var(--ui-tap)] shrink-0 items-center gap-2.5 rounded-[var(--ui-radius)] px-3 text-base font-semibold ${RING}`}
-      >
-        <SharedIcon name="channels" class="size-5 text-[var(--ui-accent)]" />
-        <span>
-          Huddle
-          <HealthDot healthy={healthy} />
-        </span>
-        <Badge>{`v${v}`}</Badge>
-      </a>
-      <nav data-nav="side" aria-label="Main" class="flex min-h-0 flex-1 flex-col gap-1">
-        {TABS.map(([id, label, href]) => (
-          <a
-            key={id}
-            href={href}
-            data-tab={id}
-            aria-current={tab === id ? "page" : undefined}
-            class={`flex min-h-[var(--ui-tap)] items-center gap-3 rounded-[var(--ui-radius)] px-3 text-sm ${RING} ${
-              id === "settings" ? "mt-auto" : ""
-            } ${tone(tab === id, "font-semibold text-[var(--ui-text)]")}`}
-          >
-            <TabGlyph id={id} class="size-5 shrink-0" />
-            <span class="min-w-0 flex-1 truncate">
-              {label}
-              {id === "settings" ? <HealthDot healthy={healthy} /> : null}
-            </span>
-            {id === "sessions" ? <TabBadge needs={needs} /> : null}
-          </a>
-        ))}
-      </nav>
-    </aside>
   );
 }

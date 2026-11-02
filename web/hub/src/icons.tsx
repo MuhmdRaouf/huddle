@@ -8,6 +8,11 @@ export type IconName =
   | "activity"
   | "list"
   | "columns"
+  | "home"
+  | "gear"
+  | "chat"
+  | "gauge"
+  | "boards"
   | "graph"
   | "map"
   | "book"
@@ -76,6 +81,14 @@ export const P: Record<IconName, readonly JSX.Element[]> = {
   activity: [<path d="M22 12h-4l-3 9L9 3l-3 9H2" />],
   list: [<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />],
   columns: [<rect x="3" y="3" width="18" height="18" rx="2" />, <path d="M9 3v18M15 3v18" />],
+  gear: [
+    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />,
+    <circle cx="12" cy="12" r="3" />,
+  ],
+  home: [<path d="M3 11l9-8 9 8M5 9v12h5v-6h4v6h5V9" />],
+  chat: [<path d="M4 5h16v11H8l-4 4z" />],
+  gauge: [<circle cx="12" cy="12" r="8" />, <path d="M12 12l5-5M12 8v4" />],
+  boards: [<path d="M4 4h5v16H4zM10 4h5v10h-5zM16 4h4v7h-4z" />],
   graph: [
     <rect x="3" y="3" width="7" height="7" rx="1.5" />,
     <rect x="14" y="14" width="7" height="7" rx="1.5" />,

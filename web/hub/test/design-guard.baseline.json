@@ -9,7 +9,7 @@
   "app/App.tsx": {
     "control": 3,
     "daisy": 1,
-    "px": 13
+    "px": 11
   },
   "app/CaptureSetting.tsx": {
     "px": 1
@@ -31,7 +31,7 @@
     "control": 1
   },
   "app/Nav.tsx": {
-    "px": 7
+    "px": 3
   },
   "app/Needs.tsx": {
     "control": 4
@@ -61,8 +61,7 @@
     "control": 1
   },
   "app/TopBar.tsx": {
-    "control": 3,
-    "px": 5
+    "px": 1
   },
   "app/session-parts.tsx": {
     "px": 3

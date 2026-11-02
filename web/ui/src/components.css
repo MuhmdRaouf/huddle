@@ -265,6 +265,27 @@
   color: var(--ui-turn-done-ink);
 }
 
+/* A waiting count as a filled disc: the state's mark under the on-accent ink, as the tab bars draw it */
+.ui-badge-solid {
+  justify-content: center;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 0.3125rem;
+  box-shadow: none;
+  color: var(--ui-on-accent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ui-badge-solid.ui-badge-needs-you {
+  background: var(--ui-needs-you);
+}
+
+.ui-badge-solid.ui-badge-turn-done {
+  background: var(--ui-turn-done);
+}
+
 /* Card */
 
 .ui-card {

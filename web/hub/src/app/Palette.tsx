@@ -895,7 +895,7 @@ export function helpSections(mac: boolean): readonly HelpSection[] {
         ["g n", "Sessions"],
         ["g c", "Channels"],
         ["g r", "Radar"],
-        ["g b", "Kanban"],
+        ["g b", "Boards"],
         ["g s", "Settings"],
         ["g i", "Inbox"],
         ["g t", "Team"],

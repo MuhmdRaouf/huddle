@@ -17,6 +17,8 @@ import { api, expectTapTargets, n, SEEDED, seedTranscriptSession, signIn, theSet
 /** Every page and drawer the suite shoots. */
 type PageId =
   | "landing"
+  | "home"
+  | "account-menu"
   | "now"
   | "session"
   | "needs"
@@ -117,12 +119,8 @@ const KNOWN: Partial<Record<PageId, Known>> = {
 };
 
 /** What the shell's own chrome fails on every page, by rule and the axe target its node starts
- *  with: the sidebar's channel switcher text in the dark scheme, and the tablet's Sessions tab whose
- *  name differs from its visible label. HV-TOKENS-SHELL fixes both and removes them. */
-const SHELL_KNOWN: readonly { rule: AxeRule; node: string }[] = [
-  { rule: "color-contrast", node: "#jump" },
-  { rule: "label-content-name-mismatch", node: 'a[href$="#/sessions"]' },
-];
+ *  with; the chrome fails nothing. */
+const SHELL_KNOWN: readonly { rule: AxeRule; node: string }[] = [];
 
 /** The names a project's seeded rows go by: the project's name keeps the three projects' rows
  *  apart in one local run against one hub. */
@@ -219,6 +217,16 @@ const SCREENS: readonly Screen[] = [
     open: async (page) => {
       await page.goto(at(""));
       await expect(page.locator("[data-landing]")).toBeVisible();
+    },
+  },
+  { id: "home", signedIn: true, open: route(() => "#/home") },
+  {
+    id: "account-menu",
+    signedIn: true,
+    open: async (page, seeded) => {
+      await route(() => "#/home")(page, seeded);
+      await page.getByRole("button", { name: "Account menu" }).click();
+      await expect(page.getByRole("dialog", { name: "Account menu" })).toBeVisible();
     },
   },
   { id: "now", signedIn: true, open: route(() => "#/sessions") },

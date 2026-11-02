@@ -15,10 +15,10 @@ import type { HuddleState } from "../store.ts";
 export type { ToastFn };
 
 /** Which credential this browser holds: "owner" (a sign-in link), "device" (a paired passkey),
- *  "member", "satellite", or "" while the boot's whoami has not answered — beside the two facts
- *  that credential carries: whether the hub holds an authenticator enrolment, and whether this
- *  session's device row holds a passkey. */
-export type WhoAmI = { kind: string; totp?: boolean; devicePasskey?: boolean };
+ *  "member", "satellite", or "" while the boot's whoami has not answered — beside the name the hub
+ *  gives it (the owner's is "owner") and the two facts that credential carries: whether the hub
+ *  holds an authenticator enrolment, and whether this session's device row holds a passkey. */
+export type WhoAmI = { kind: string; name?: string; totp?: boolean; devicePasskey?: boolean };
 
 /** The notification switch: is it on, and what turning it does (live.ts notifyOn/toggleNotify). */
 export type NotifySwitch = { on(): boolean; toggle(): Promise<void> };

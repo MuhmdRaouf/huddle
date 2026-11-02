@@ -21,7 +21,7 @@ const KEYBOARD = 300;
 
 /** The parts axe leaves to their own specs: the shell's chrome and the channel rail beside the
  *  page on wide screens. */
-const SHELL = ["[data-sidebar]", "[data-nav]", "#side"] as const;
+const SHELL = ["[data-top-bar]", "[data-nav]", "#side"] as const;
 
 /** The work page's colour-contrast debt that predates it, named by its node: the status pill's
  *  tone ink, the same tinted-ink pair every status pill on the hub paints. Its card retires the

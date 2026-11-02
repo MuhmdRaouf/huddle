@@ -321,8 +321,7 @@ test("a seeded permission ask is allowed with one tap at its card's foot", async
     const answer = await decided;
     expect(answer.status()).toBe(200);
     expect(((await answer.json()) as { decision?: string }).decision).toBe("allow");
-    // back on the list the ask has left: the session reads idle
-    await page.goBack();
+    // the desk keeps the list beside the session: the ask has left it and the session reads idle
     await expect(page.locator("[data-sessions-pane]")).toBeVisible();
   }
   await expect(page.locator(`[data-row='${session}'] [data-state='idle']`)).toHaveText("Idle");

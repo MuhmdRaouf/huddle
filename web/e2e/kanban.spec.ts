@@ -84,7 +84,7 @@ async function seedSecondBoard(): Promise<void> {
 async function kanbanAt(page: Page, width: number, height: number): Promise<void> {
   await page.setViewportSize({ width, height });
   await signIn(page);
-  await openTab(page, "Kanban");
+  await openTab(page, "Boards");
   await page.locator(".kanban-tab .card").first().waitFor();
 }
 
@@ -707,7 +707,7 @@ test("while the board list loads, its skeleton paints at full width", async ({ p
       await route.continue().catch(() => undefined);
     });
     await signIn(page);
-    await openTab(page, "Kanban");
+    await openTab(page, "Boards");
   });
 
   await test.step("Then the loading box spans the page and wears no spinner mask", async () => {

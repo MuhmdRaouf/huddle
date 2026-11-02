@@ -14,6 +14,7 @@ import {
   expectSheetGutter,
   expectTapTargets,
   loginCode,
+  openTab,
   signIn,
   theSetup,
   totpCode,
@@ -181,7 +182,7 @@ test("a link sign-in offers the set-up, Settings enrols it, and a code signs the
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 
   // Settings › Security's Sign-in pane enrols, and the recovery codes show this one time
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }).click();
+  await openTab(page, "Settings");
   await page.getByRole("link", { name: "Security" }).click();
   await enrolFromSettings(page);
 
@@ -256,7 +257,7 @@ test("a phone browser is offered its lock as a passkey after a code sign-in", as
   // machine waives the step-up on loopback), then set up again. The remove stands in the row's
   // sheet too, and the sheet closes before the enrolment below re-opens the row
   await signIn(page, pairOrigin);
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }).click();
+  await openTab(page, "Settings");
   await page.getByRole("link", { name: "Security" }).click();
   await page.getByRole("button", { name: "Authenticator app" }).click();
   const sheet = page.getByRole("dialog", { name: "Authenticator app" });
@@ -316,7 +317,7 @@ test("the Settings sheet holds its three widths with the enrolment's row, one di
     const context = await widthContext(browser, w);
     const page = await context.newPage();
     await signIn(page, pairOrigin);
-    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }).click();
+    await openTab(page, "Settings");
     await page.getByRole("navigation", { name: "Settings sections" }).getByRole("link", { name: "Security" }).click();
     await page.getByRole("button", { name: "Authenticator app" }).click();
     const sheet = page.getByRole("dialog", { name: "Authenticator app" });
@@ -341,7 +342,7 @@ test("the removal toast and the set-up hold their three widths in the sheet", as
     const context = await widthContext(browser, w);
     const page = await context.newPage();
     await signIn(page, pairOrigin);
-    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }).click();
+    await openTab(page, "Settings");
     await page.getByRole("navigation", { name: "Settings sections" }).getByRole("link", { name: "Security" }).click();
     if (!enrolled) {
       // enrolling leaves the row's sheet open, the enrolled row and its Remove inside it
