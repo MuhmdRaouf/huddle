@@ -9,9 +9,9 @@ import (
 	"time"
 )
 
-// The body sweep: bodies live BodyTTL, and one sweep removes the body rows past it, the
-// blocks whose last use is past it, and the day segments no remaining block names. Run
-// against a router.db in a temp directory only.
+// The body sweep: bodies live the days a sweep is given, and one sweep removes the body
+// rows past the cutoff, the blocks whose last use is past it, and the day segments no
+// remaining block names. Run against a router.db in a temp directory only.
 
 // TestBodyStoreSweepsPastTheTTL puts one body on each of day 1, day 5 and day 9, every
 // body built as the shared span plus a span of its own, then sweeps twice: once at
@@ -67,7 +67,7 @@ func TestBodyStoreSweepsPastTheTTL(t *testing.T) {
 	// The cutoff lands at day 2 + 1 h: the day-1 body row and its own block are past the
 	// TTL, the day-5 and day-9 bodies and the shared span are not. The shared span's
 	// block lives in the day-1 segment, so the file stays this sweep.
-	sweep, err := st.Sweep(ctx, day9.Add(time.Hour))
+	sweep, err := st.Sweep(ctx, day9.Add(time.Hour), 7)
 	if err != nil {
 		t.Fatalf("sweep at day 9 + 1 h: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestBodyStoreSweepsPastTheTTL(t *testing.T) {
 	// A week later every last use is past the cutoff: the remaining bodies and blocks go,
 	// and with no row left naming the day-1 and day-5 segments both files go too. The
 	// day-9 segment's day is the cutoff's own day, so it stays.
-	sweep, err = st.Sweep(ctx, time.Date(2026, 10, 16, 14, 0, 0, 0, time.UTC))
+	sweep, err = st.Sweep(ctx, time.Date(2026, 10, 16, 14, 0, 0, 0, time.UTC), 7)
 	if err != nil {
 		t.Fatalf("sweep a week later: %v", err)
 	}
@@ -119,5 +119,72 @@ func TestBodyStoreSweepsPastTheTTL(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Fatalf("%s should survive the second sweep: %v", name, err)
 		}
+	}
+}
+
+// TestSweepKeepsBodiesForTheGivenDays proves the sweep cuts at the days it is given: a
+// body 27 days old survives a 30-day sweep and goes, with its own blocks, when the same
+// sweep runs at 7 days. Which segment files survive is TestBodyStoreSweepsPastTheTTL's
+// subject.
+func TestSweepKeepsBodiesForTheGivenDays(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := OpenBodies(filepath.Join(dir, "router.db"), testBodyKey)
+	if err != nil {
+		t.Fatalf("open the body store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	day1 := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	day21 := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	puts := []struct {
+		id   string
+		at   time.Time
+		text string
+	}{
+		{"req_day1", day1, `{"older":["stored on day 1"]}`},
+		{"req_day21", day21, `{"newer":["stored on day 21"]}`},
+	}
+	for _, put := range puts {
+		if err := st.PutBody(ctx, put.id, "input", []byte(put.text), put.at); err != nil {
+			t.Fatalf("put %s: %v", put.id, err)
+		}
+	}
+
+	// At 30 days the cutoff sits before both bodies: nothing goes.
+	sweep, err := st.Sweep(ctx, now, 30)
+	if err != nil {
+		t.Fatalf("sweep at 30 days: %v", err)
+	}
+	if sweep.Bodies != 0 {
+		t.Fatalf("the 30-day sweep removed %d bodies, want none", sweep.Bodies)
+	}
+	for _, put := range puts {
+		if _, ok, err := st.Body(ctx, put.id, "input"); err != nil || !ok {
+			t.Fatalf("body of %s = found %t, %v; want it kept at 30 days", put.id, ok, err)
+		}
+	}
+
+	// The same sweep at 7 days: the day-1 body is past the cutoff and its own blocks go
+	// with it; the day-21 body sits on the cutoff's own instant and stays. The leading
+	// `{` span is one shared block whose last use moves to the day-21 body, so nothing
+	// else of the day-1 sweep is countable.
+	sweep, err = st.Sweep(ctx, now, 7)
+	if err != nil {
+		t.Fatalf("sweep at 7 days: %v", err)
+	}
+	if sweep.Bodies != 1 {
+		t.Fatalf("the 7-day sweep removed %d bodies, want the day-1 one", sweep.Bodies)
+	}
+	if sweep.Blocks != 2 {
+		t.Fatalf("the 7-day sweep removed %d blocks, want the day-1 body's own two", sweep.Blocks)
+	}
+	if _, ok, err := st.Body(ctx, "req_day21", "input"); err != nil || !ok {
+		t.Fatalf("body of req_day21 = found %t, %v; want it kept at 7 days", ok, err)
+	}
+	if _, ok, err := st.Body(ctx, "req_day1", "input"); err != nil || ok {
+		t.Fatalf("body of req_day1 = found %t, %v; want it gone at 7 days", ok, err)
 	}
 }

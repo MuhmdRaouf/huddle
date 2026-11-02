@@ -63,7 +63,7 @@ function open(side: "input" | "output", answer: BodiesState, over = {}) {
 describe("the bodies panes", () => {
   it("renders a kept input as the system text, the turns' role chips and folded tool rows that open", async () => {
     const { container } = open("input", { status: "kept", input: INPUT_BODY, output: "" });
-    expect(container.textContent).toContain("As sent to Anthropic · redacted · kept 7 days");
+    expect(container.textContent).toContain("As sent to Anthropic · redacted · kept 30 days");
     expect(container.textContent).toContain("You are terse.");
     expect(container.textContent).toContain("List the files");
     const roles = [...container.querySelectorAll("[data-role-chip]")].map((chip) => chip.textContent);
@@ -106,7 +106,7 @@ describe("the bodies panes", () => {
   it("says when the bodies are not kept, off, owner-only, being read or broken", () => {
     const missing = open("input", { status: "missing" });
     expect(missing.container.textContent).toContain(
-      "This request's bodies were not kept (the store was full or they are past 7 days).",
+      "This request's bodies were not kept (the store was full or they are past 30 days).",
     );
     missing.unmount();
     const off = open("input", { status: "off" });
@@ -163,7 +163,7 @@ describe("the bodies panes", () => {
 
   it("shows an input body that is not a messages body as its raw bytes", () => {
     const { container } = open("input", { status: "kept", input: "just words", output: "" });
-    expect(container.textContent).toContain("As sent to Anthropic · redacted · kept 7 days");
+    expect(container.textContent).toContain("As sent to Anthropic · redacted · kept 30 days");
     expect(container.querySelector("pre")?.textContent).toBe("just words");
   });
 
@@ -216,7 +216,7 @@ describe("the bodies panes", () => {
       { request: "a", requests: [REQUEST], drawerTab: "input", bodies },
       NOW,
     );
-    expect(input.container.textContent).toContain("As sent to Anthropic · redacted · kept 7 days");
+    expect(input.container.textContent).toContain("As sent to Anthropic · redacted · kept 30 days");
     expect(screen.getAllByRole("tab").find((tab) => tab.textContent === "Input")).toBeTruthy();
     input.unmount();
     const output = renderApp(

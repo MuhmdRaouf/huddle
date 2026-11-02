@@ -218,7 +218,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 	if kept.tap != nil && captureDir != "" {
 		kept.tap.SetCapturing(outside.CaptureOn(captureDir))
 	}
-	report("body-sweep", kept.sweep(ctx, log))
+	report("body-sweep", kept.sweep(ctx, env, log))
 	server, multi := router.CreateMulti(router.MultiOptions{
 		Port:      port,
 		Anthropic: anthropic,
@@ -309,7 +309,7 @@ func serve(ctx context.Context, o Options, env domain.EnvLookup, home string, lo
 			}
 			if !nextSweep.After(time.Now()) {
 				nextSweep = time.Now().Add(bodySweepEvery)
-				report("body-sweep", kept.sweep(ctx, log))
+				report("body-sweep", kept.sweep(ctx, env, log))
 			}
 		}
 	}

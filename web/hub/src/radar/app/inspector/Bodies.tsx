@@ -172,7 +172,7 @@ export function Bodies({ side, request }: { side: "input" | "output"; request: R
   }
   if (answer.status === "missing") {
     return (
-      <p class={QUIET}>This request's bodies were not kept (the store was full or they are past 7 days).</p>
+      <p class={QUIET}>This request's bodies were not kept (the store was full or they are past 30 days).</p>
     );
   }
   if (answer.status === "off") {
@@ -196,7 +196,7 @@ export function Bodies({ side, request }: { side: "input" | "output"; request: R
     const parsed = parseInput(answer.input);
     return (
       <div class="flex flex-col gap-2">
-        <p class={`m-0 text-xs ${MUTED}`}>As sent to {request.provider} · redacted · kept 7 days</p>
+        <p class={`m-0 text-xs ${MUTED}`}>As sent to {request.provider} · redacted · kept 30 days</p>
         <BodiesCard>
           {parsed === null ? (
             <div class="p-3">

@@ -15,6 +15,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
+	"github.com/MuhmdRaouf/huddle/internal/radar/settings"
 )
 
 // tapCloseBudget is how long a shutdown lets the tap write its queue before the store closes.
@@ -98,13 +99,15 @@ func (b *bodies) close(log func(line string)) {
 	}
 }
 
-// sweep prunes the bodies past their days; a failed sweep is one line and the error the loop
-// reports, and the router serves on.
-func (b *bodies) sweep(ctx context.Context, log func(line string)) error {
+// sweep prunes the bodies past the days the dashboard's retention setting gives, read fresh
+// on every sweep from the daemon's own environment; a failed sweep is one line and the error
+// the loop reports, and the router serves on.
+func (b *bodies) sweep(ctx context.Context, env domain.EnvLookup, log func(line string)) error {
 	if b == nil || b.store == nil {
 		return nil
 	}
-	_, err := b.store.Sweep(ctx, time.Now())
+	days := ledger.BodyDays(settings.ReadSettings(ctx, env).HistoryRetentionDays)
+	_, err := b.store.Sweep(ctx, time.Now(), days)
 	if err != nil {
 		log("huddle-router: bodies sweep: " + err.Error())
 	}

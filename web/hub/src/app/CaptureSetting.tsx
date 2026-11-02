@@ -1,9 +1,9 @@
 // CaptureSetting.tsx — Settings › Hub › Request bodies, the group's own member with the address
 // #/settings/capture: the owner's switch over huddle-router's keeping of request and answer
-// bodies. On, the router keeps each request and answer for 7 days, redacted and sealed with a key
-// in this Mac's keychain; off, it stops new ones within 2 seconds while the request list and the
-// costs keep working. The switch reads and writes the settings route; the Kept-now line reads the
-// bodies store.
+// bodies. On, the router keeps each request and answer as long as History, up to 30 days, redacted
+// and sealed with a key in this Mac's keychain; off, it stops new ones within 2 seconds while the
+// request list and the costs keep working. The switch reads and writes the settings route; the
+// Kept-now line reads the bodies store.
 
 import { List, ListItem } from "@huddle/ui/list.tsx";
 import { Switch } from "@huddle/ui/switch.tsx";
@@ -116,7 +116,7 @@ export function CaptureSetting(): JSX.Element {
             <span class={SMALL}>
               {failed
                 ? "Could not read the setting."
-                : "huddle-router keeps each request and answer for 7 days, redacted and sealed with a key in this Mac's keychain. Off stops new ones within 2 seconds; the request list and costs keep working."}
+                : "Request bodies kept as long as History, up to 30 days, redacted and sealed with a key in this Mac's keychain. Off stops new ones within 2 seconds; the request list and costs keep working."}
             </span>
           }
           trailing={

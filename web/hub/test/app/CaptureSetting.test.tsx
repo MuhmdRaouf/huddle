@@ -79,7 +79,7 @@ describe("the Request bodies pane", () => {
     expect(document.body.textContent).toContain("Request bodies");
     expect(document.body.textContent).toContain("Keep request bodies");
     expect(document.body.textContent).toContain(
-      "huddle-router keeps each request and answer for 7 days, redacted and sealed with a key in this Mac's keychain.",
+      "Request bodies kept as long as History, up to 30 days, redacted and sealed with a key in this Mac's keychain.",
     );
     expect(document.body.textContent).toContain("Kept now: 1,284 requests · 212 MB");
   });

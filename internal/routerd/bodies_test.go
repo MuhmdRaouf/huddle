@@ -15,6 +15,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
+	"github.com/MuhmdRaouf/huddle/internal/radar/settings"
 )
 
 // bodiesKey is a KeySource over one in-memory value; a refuse makes every Set fail after the
@@ -157,13 +158,56 @@ func TestSweepAnswersItsError(t *testing.T) {
 	kept := &bodies{store: store}
 	done, cancel := context.WithCancel(ctx)
 	cancel()
-	if err := kept.sweep(done, func(string) {}); err == nil {
+	if err := kept.sweep(done, env, func(string) {}); err == nil {
 		t.Error("sweep over a done context = nil error, want the sweep's own")
 	}
-	if err := (*bodies)(nil).sweep(ctx, func(string) {}); err != nil {
+	if err := (*bodies)(nil).sweep(ctx, env, func(string) {}); err != nil {
 		t.Errorf("a nil bodies sweep = %v, want nil", err)
 	}
-	if err := (&bodies{}).sweep(ctx, func(string) {}); err != nil {
+	if err := (&bodies{}).sweep(ctx, env, func(string) {}); err != nil {
 		t.Errorf("a storeless bodies sweep = %v, want nil", err)
+	}
+}
+
+// TestSweepReadsTheRetentionSetting proves the sweep cuts bodies at the days the dashboard's
+// retention setting gives, read fresh on every sweep: 7 keeps a week, and the keep-everything
+// 0 holds bodies 30 days.
+func TestSweepReadsTheRetentionSetting(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	env := domain.EnvLookup{"RADAR_HOME": t.TempDir()}
+	store, err := ledger.OpenBodies(paths.RouterBodiesPath(ctx, env), bodiesTestKey)
+	if err != nil {
+		t.Fatalf("open router.db: %v", err)
+	}
+	defer store.Close()
+	kept := &bodies{store: store}
+
+	twentyDaysAgo := time.Now().Add(-20 * 24 * time.Hour)
+	body := []byte(`{"messages":["an exchange twenty days old"]}`)
+	if err := store.PutBody(ctx, "req_old", "input", body, twentyDaysAgo); err != nil {
+		t.Fatalf("put the old body: %v", err)
+	}
+	if err := settings.WriteSettings(ctx, env, settings.Settings{HistoryRetentionDays: 7}); err != nil {
+		t.Fatalf("write the settings: %v", err)
+	}
+	if err := kept.sweep(ctx, env, func(string) {}); err != nil {
+		t.Fatalf("sweep at 7 days: %v", err)
+	}
+	if _, ok, err := store.Body(ctx, "req_old", "input"); err != nil || ok {
+		t.Fatalf("the old body = found %t, %v; want it gone at 7 days", ok, err)
+	}
+
+	if err := store.PutBody(ctx, "req_old", "input", body, twentyDaysAgo); err != nil {
+		t.Fatalf("put the old body again: %v", err)
+	}
+	if err := settings.WriteSettings(ctx, env, settings.Settings{HistoryRetentionDays: 0}); err != nil {
+		t.Fatalf("write the settings: %v", err)
+	}
+	if err := kept.sweep(ctx, env, func(string) {}); err != nil {
+		t.Fatalf("sweep at 0: %v", err)
+	}
+	if _, ok, err := store.Body(ctx, "req_old", "input"); err != nil || !ok {
+		t.Fatalf("the old body = found %t, %v; want it kept at 30 days", ok, err)
 	}
 }

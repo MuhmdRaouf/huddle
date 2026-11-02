@@ -12,9 +12,6 @@ import (
 // The sweeps: how long each file keeps what it stores, and the one call that cuts it
 // back. An hour beat drives both.
 
-// BodyTTL is how long a stored body stays in router.db.
-const BodyTTL = 7 * 24 * time.Hour
-
 // BodySweep answers what one body sweep removed.
 type BodySweep struct {
 	Bodies   int
@@ -22,18 +19,19 @@ type BodySweep struct {
 	Segments int
 }
 
-// Sweep cuts the body store back to the TTL: every ledger_body row stored before the
-// cutoff — now minus BodyTTL — goes, then every ledger_blocks row whose last use is
+// Sweep cuts the body store back to the days it is given: every ledger_body row stored
+// before the cutoff — now minus days — goes, then every ledger_blocks row whose last use is
 // before it, then the day segment files no remaining block row names. last_ts already
 // moves to the newest body that uses a block (putBlock), so a block stays exactly while
 // a kept body can still name it, and no read of the body rows is needed here. A segment
 // whose day is the cutoff's own day or later stays even with no row naming it: it may be
-// receiving an append. Files with any other name are not the sweep's to touch.
-func (s *BodyStore) Sweep(ctx context.Context, now time.Time) (BodySweep, error) {
+// receiving an append. Files with any other name are not the sweep's to touch. The days
+// come from BodyDays over the dashboard's retention setting.
+func (s *BodyStore) Sweep(ctx context.Context, now time.Time, days int) (BodySweep, error) {
 	if err := ctx.Err(); err != nil {
 		return BodySweep{}, err
 	}
-	cutoff := now.Add(-BodyTTL).UnixMilli()
+	cutoff := now.Add(-time.Duration(days) * 24 * time.Hour).UnixMilli()
 	sweep := BodySweep{}
 
 	bodies, err := countRows(s.db, "SELECT COUNT(*) AS n FROM ledger_body WHERE at < ?", cutoff)

@@ -23,6 +23,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/core/router"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
 	"github.com/MuhmdRaouf/huddle/internal/radar/paths"
+	"github.com/MuhmdRaouf/huddle/internal/radar/settings"
 	"github.com/MuhmdRaouf/huddle/internal/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/bdd"
 )
@@ -284,16 +285,62 @@ func TestTheRouterKeepsEveryBody(t *testing.T) {
 	})
 }
 
-// TestTheRouterSweepsOldBodiesAtStart seeds router.db with a body past its seven days and
-// proves the starting daemon takes it.
+// TestTheRouterSweepsOldBodiesAtStart seeds router.db with a body and proves the starting
+// daemon sweeps at the days the dashboard's retention setting gives: a 7-day setting takes
+// an eight-day body, and the default 30 keeps it.
 func TestTheRouterSweepsOldBodiesAtStart(t *testing.T) {
 	t.Parallel()
 	bdd.Feature(t, "the router's bodies", func(f *bdd.F) {
-		f.Scenario("a body eight days old is gone once the daemon has started", func(s *bdd.S) {
+		f.Scenario("a body eight days old is gone once the daemon has started with a 7-day setting", func(s *bdd.S) {
 			var rig *daemonRig
 			var path string
 			var daemon *bodiesDaemon
-			s.Given("router.db holds a body put eight days ago", func(t *testing.T) {
+			s.Given("router.db holds a body put eight days ago and the retention says 7 days", func(t *testing.T) {
+				rig = newDaemonRig(s.T)
+				if err := router.SetEnabled(rig.env, "zai", true); err != nil {
+					t.Fatal(err)
+				}
+				ctx := context.Background()
+				path = paths.RouterBodiesPath(ctx, rig.env)
+				seed, err := ledger.OpenBodies(path, bodiesTestKey)
+				if err != nil {
+					t.Fatalf("seed router.db: %v", err)
+				}
+				old := []byte(`{"model":"m","messages":[{"role":"user","content":"a body from last week"}]}`)
+				if err := seed.PutBody(ctx, "swept-body", "input", old, time.Now().Add(-8*24*time.Hour)); err != nil {
+					t.Fatalf("put the old body: %v", err)
+				}
+				if err := seed.Close(); err != nil {
+					t.Fatalf("close the seed store: %v", err)
+				}
+				if err := settings.WriteSettings(ctx, rig.env, settings.Settings{HistoryRetentionDays: 7}); err != nil {
+					t.Fatalf("write the settings: %v", err)
+				}
+			})
+			s.When("the daemon starts and serves", func(t *testing.T) {
+				daemon = startBodiesDaemon(s.T, rig, bodiesKeystoreOf(bodiesTestKey))
+				rig.awaitHealth(t, "zai")
+			})
+			s.Then("the eight-day body is gone", func(t *testing.T) {
+				daemon.stop(t)
+				ctx := context.Background()
+				store, err := ledger.OpenBodies(path, bodiesTestKey)
+				if err != nil {
+					t.Fatalf("open router.db: %v", err)
+				}
+				defer store.Close()
+				if _, ok, err := store.Body(ctx, "swept-body", "input"); err != nil {
+					t.Fatalf("read the old body: %v", err)
+				} else if ok {
+					t.Error("the eight-day body is still in router.db")
+				}
+			})
+		})
+		f.Scenario("a body eight days old stays under the default 30 days", func(s *bdd.S) {
+			var rig *daemonRig
+			var path string
+			var daemon *bodiesDaemon
+			s.Given("router.db holds a body put eight days ago and no settings file", func(t *testing.T) {
 				rig = newDaemonRig(s.T)
 				if err := router.SetEnabled(rig.env, "zai", true); err != nil {
 					t.Fatal(err)
@@ -316,7 +363,7 @@ func TestTheRouterSweepsOldBodiesAtStart(t *testing.T) {
 				daemon = startBodiesDaemon(s.T, rig, bodiesKeystoreOf(bodiesTestKey))
 				rig.awaitHealth(t, "zai")
 			})
-			s.Then("the eight-day body is gone", func(t *testing.T) {
+			s.Then("the eight-day body is still there", func(t *testing.T) {
 				daemon.stop(t)
 				ctx := context.Background()
 				store, err := ledger.OpenBodies(path, bodiesTestKey)
@@ -326,8 +373,8 @@ func TestTheRouterSweepsOldBodiesAtStart(t *testing.T) {
 				defer store.Close()
 				if _, ok, err := store.Body(ctx, "swept-body", "input"); err != nil {
 					t.Fatalf("read the old body: %v", err)
-				} else if ok {
-					t.Error("the eight-day body is still in router.db")
+				} else if !ok {
+					t.Error("the eight-day body is not in router.db")
 				}
 			})
 		})
