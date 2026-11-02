@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
-	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/ledger"
@@ -1143,7 +1142,7 @@ func NoticeLine(notice Notice) shared.SpoolLine {
 // RouteFailure reads a route line that came back 429/5xx as a retryable failure; ok is false for
 // anything else.
 func RouteFailure(line shared.SpoolLine, ts int64) (shared.APIErrorRecord, bool) {
-	status, _ := statusOf(line)
+	status, _ := line.StatusText()
 	code, ok := jsNumberOf(status)
 	if !ok || !(code == 429 || (code >= 500 && code <= 599)) {
 		return shared.APIErrorRecord{}, false
@@ -1164,25 +1163,6 @@ func RouteFailure(line shared.SpoolLine, ts int64) (shared.APIErrorRecord, bool)
 		Source:    shared.SourceRoute,
 		Plugin:    plugin,
 	}, true
-}
-
-// statusOf is the status a route line named, as the string a template literal would print it:
-// the routers write numbers, which the typed field reads as absent while the payload keeps
-// them as read — and EncodeJSON prints a number exactly as String(n) does.
-func statusOf(line shared.SpoolLine) (string, bool) {
-	if line.Status != nil {
-		return *line.Status, true
-	}
-	raw := line.Field("status")
-	switch {
-	case raw == nil, raw.Kind() == jsfmt.KindNull:
-		return "", false
-	case raw.Kind() == jsfmt.KindString:
-		return raw.Text(), true
-	case raw.Kind() == jsfmt.KindNumber, raw.Kind() == jsfmt.KindBool:
-		return raw.EncodeJSON(), true
-	}
-	return "", false
 }
 
 // routeStatus reads a failed status as the request's stop reason; a success leaves the stop
@@ -1273,7 +1253,7 @@ func RouteRequest(line shared.SpoolLine, model string, ts int64) shared.RequestR
 		route = "router"
 	}
 	via := routerOf(line)
-	status, statusPresent := statusOf(line)
+	status, statusPresent := line.StatusText()
 	// the agent and model sit in the id so parallel subagent calls that finish in the same
 	// millisecond stay the separate records they were
 	record := shared.RequestRecord{

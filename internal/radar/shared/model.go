@@ -782,6 +782,11 @@ type SpoolLine struct {
 	// as String(n). A line built in code carries none and marshals its declared fields
 	// instead.
 	encoded []byte
+	// numberStatus is the printed status a line named as a number or a boolean, which the
+	// typed Status reads as absent; read once at decode, it is what StatusText answers
+	// without decoding the line again.
+	numberStatus    string
+	hasNumberStatus bool
 }
 
 // RouteEvent is one request a router's route line recorded.
@@ -822,8 +827,36 @@ func (l *SpoolLine) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	line.encoded = []byte(value.EncodeJSON())
+	line.numberStatus, line.hasNumberStatus = numberStatusOf(value)
 	*l = line
 	return nil
+}
+
+// StatusText is the status a route line named, as the string a template literal would
+// print it: the routers write numbers, which the typed Status reads as absent while the
+// payload keeps them as read, and a number prints exactly as String(n) does. False when
+// the line named none, named null, or named an object or an array.
+func (l SpoolLine) StatusText() (string, bool) {
+	if l.Status != nil {
+		return *l.Status, true
+	}
+	return l.numberStatus, l.hasNumberStatus
+}
+
+// numberStatusOf is the printed text of the object's last "status" when it is a number or a
+// boolean, the value a JSON parse keeps.
+func numberStatusOf(object *jsfmt.Value) (string, bool) {
+	keys, fields := object.Keys(), object.Fields()
+	for i := len(keys) - 1; i >= 0; i-- {
+		if keys[i] != "status" {
+			continue
+		}
+		if kind := fields[i].Kind(); kind == jsfmt.KindNumber || kind == jsfmt.KindBool {
+			return fields[i].EncodeJSON(), true
+		}
+		return "", false
+	}
+	return "", false
 }
 
 // MarshalJSON returns the line's own bytes when it came off the spool — every key it
