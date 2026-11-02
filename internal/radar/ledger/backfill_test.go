@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -572,7 +573,9 @@ func TestStartBackfillReportsAndEnds(t *testing.T) {
 	t.Run("reports each batch ok and ends", func(t *testing.T) {
 		st := openLedgerFile(t, newVersion3File(t, 1500))
 		health := &recordingHealth{}
-		run := StartBackfill(context.Background(), st, time.Millisecond, health)
+		// a batch that measures no time rests only the pause: the rest between batches is the
+		// pacing's own test, and its length must not depend on how fast the runner is
+		run := startBackfill(context.Background(), st, time.Millisecond, health, fixedBusyMeter(0))
 		t.Cleanup(run.Stop)
 
 		select {
@@ -639,32 +642,88 @@ func TestABackfillTakesAtMostATenthOfACore(t *testing.T) {
 	}
 }
 
-// TestTheWatcherKeepsWritingDuringABackfill: while the backfill walks 20,000 old rows, the
-// watcher keeps writing — 50 AddRoute calls from its one goroutine, each back inside a
-// second and none lost — because a batch holds the file's one connection only for its own
-// transaction.
+// TestTheWatcherWritesBetweenBackfillBatches: a batch holds the file's one connection only
+// for its own transaction, so the watcher's write waits out at most the batch it meets and
+// lands before the next one starts. The first batch is held midway, the watcher's AddRoute
+// is issued, and the batch is let go; the run then rests for hours, so the write can only
+// land between the batches.
+func TestTheWatcherWritesBetweenBackfillBatches(t *testing.T) {
+	file := newVersion3File(t, 1500)
+	opened := openLedgerFile(t, file)
+	hold := &holdAtFactsDB{DB: opened.db, atID: "req_000500", reached: make(chan struct{}), release: make(chan struct{})}
+	st := &Store{db: hold}
+	health := &recordingHealth{}
+	run := startBackfill(context.Background(), st, time.Millisecond, health, fixedBusyMeter(time.Hour))
+	t.Cleanup(run.Stop)
+
+	<-hold.reached // the first batch is inside its transaction, 500 rows in
+	landed := make(chan error, 1)
+	go func() { landed <- st.AddRoute(context.Background(), routeFact("new_000")) }()
+	close(hold.release)
+
+	select {
+	case err := <-landed:
+		if err != nil {
+			t.Fatalf("AddRoute new_000: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("AddRoute new_000 never landed: the backfill holds the file's connection past its first batch")
+	}
+	if row, err := st.Get(context.Background(), "new_000"); err != nil || row == nil {
+		t.Fatalf("new_000 did not land: %+v, %v", row, err)
+	}
+	if waiting := oldRowCount(t, opened.db); waiting != 500 {
+		t.Errorf("%d old rows wait after the write, want the 500 the second batch has not reached", waiting)
+	}
+}
+
+// writeBound is how long the watcher's write may wait behind a backfill batch in a plain
+// build, the one the hub runs.
+const writeBound = time.Second
+
+// TestTheWatcherKeepsWritingDuringABackfill: while the backfill walks 20,000 old rows at its
+// real pace, the watcher keeps writing — 50 AddRoute calls from its one goroutine, none
+// lost. In a plain build each is back inside writeBound, because a batch holds the file's
+// one connection only for its own transaction; the race detector slows a batch some 25
+// times, so a race build logs the slowest wait and holds the bound to the plain build.
 func TestTheWatcherKeepsWritingDuringABackfill(t *testing.T) {
 	st := openLedgerFile(t, newVersion3File(t, 20_000))
 	run := StartBackfill(context.Background(), st, 0, nil)
 	t.Cleanup(run.Stop)
 
 	ctx := context.Background()
+	var slowest time.Duration
 	for at := range 50 {
 		id := fmt.Sprintf("new_%03d", at)
 		started := time.Now()
-		err := st.AddRoute(ctx, routeFact(id))
-		if err != nil {
+		if err := st.AddRoute(ctx, routeFact(id)); err != nil {
 			t.Fatalf("AddRoute %s: %v", id, err)
 		}
-		if took := time.Since(started); took > time.Second {
-			t.Fatalf("AddRoute %s took %s, want under 1s", id, took)
+		took := time.Since(started)
+		slowest = max(slowest, took)
+		if took > writeBound && !raceDetector {
+			t.Fatalf("AddRoute %s took %s, want under %s", id, took, writeBound)
 		}
 	}
+	t.Logf("the slowest AddRoute behind the backfill took %s (bound %s, held in a plain build)", slowest, writeBound)
 	for at := range 50 {
 		id := fmt.Sprintf("new_%03d", at)
 		if row, err := st.Get(ctx, id); err != nil || row == nil {
 			t.Fatalf("%s did not land: %+v, %v", id, row, err)
 		}
+	}
+}
+
+// fixedBusyMeter answers a meter that finds every batch busy for the given time, whatever
+// the batch really cost.
+func fixedBusyMeter(busy time.Duration) batchMeter {
+	var cpu time.Duration
+	return batchMeter{
+		now: func() time.Time { return time.Time{} },
+		cpu: func() time.Duration {
+			cpu += busy
+			return cpu
+		},
 	}
 }
 
@@ -721,4 +780,33 @@ func (d *cancelAtFactsDB) Get(query string, params ...any) (map[string]any, erro
 		d.atID = ""
 	}
 	return row, err
+}
+
+// holdAtFactsDB answers the database another DB serves, holding a batch midway: when a
+// transaction reads one chosen id's facts it signals reached and waits for release. A
+// transaction hands fn a holding copy, since the batch reads through the transaction's DB;
+// the statements outside a transaction pass straight through.
+type holdAtFactsDB struct {
+	DB
+	atID    string
+	reached chan struct{}
+	release chan struct{}
+	once    sync.Once
+	inTx    bool
+}
+
+func (d *holdAtFactsDB) Tx(fn func(tx DB) error) error {
+	return d.DB.Tx(func(tx DB) error {
+		return fn(&holdAtFactsDB{DB: tx, atID: d.atID, reached: d.reached, release: d.release, inTx: true})
+	})
+}
+
+func (d *holdAtFactsDB) Get(query string, params ...any) (map[string]any, error) {
+	if d.inTx && len(params) == 1 && params[0] == d.atID {
+		d.once.Do(func() {
+			close(d.reached)
+			<-d.release
+		})
+	}
+	return d.DB.Get(query, params...)
 }

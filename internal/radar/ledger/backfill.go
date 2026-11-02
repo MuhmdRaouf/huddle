@@ -108,6 +108,11 @@ type BackfillRun struct {
 // it reports each batch to health and ends when no older row is left, or with ctx or Stop.
 // Without a store it starts nothing and answers nil.
 func StartBackfill(ctx context.Context, st *Store, pause time.Duration, health HealthReport) *BackfillRun {
+	return startBackfill(ctx, st, pause, health, processMeter(time.Now))
+}
+
+// startBackfill is StartBackfill with the meter that times each batch.
+func startBackfill(ctx context.Context, st *Store, pause time.Duration, health HealthReport, meter batchMeter) *BackfillRun {
 	if st == nil {
 		return nil
 	}
@@ -115,7 +120,6 @@ func StartBackfill(ctx context.Context, st *Store, pause time.Duration, health H
 		pause = 50 * time.Millisecond
 	}
 	run := &BackfillRun{stop: make(chan struct{}), done: make(chan struct{})}
-	meter := processMeter(time.Now)
 	go func() {
 		defer close(run.done)
 		for {
