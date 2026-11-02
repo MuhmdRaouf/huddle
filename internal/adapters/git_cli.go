@@ -73,11 +73,17 @@ func (g *GitCli) CurrentBranch(ctx context.Context, repo string) (string, error)
 
 // AddWorktree checks out a new branch at baseSha in a linked worktree at path.
 func (g *GitCli) AddWorktree(ctx context.Context, repo, path, branch, baseSha string) error {
+	if err := gitRequireTop(ctx, repo); err != nil {
+		return err
+	}
 	return gitCliVoidError(ctx, repo, []string{"worktree", "add", "--quiet", "-b", branch, "--", path, baseSha}, GitRunOptions{})
 }
 
 // RemoveWorktree removes a linked worktree and its branch.
 func (g *GitCli) RemoveWorktree(ctx context.Context, repo, path, branch string) error {
+	if err := gitRequireTop(ctx, repo); err != nil {
+		return err
+	}
 	removed := GitVoid(ctx, repo, []string{"worktree", "remove", "--force", "--force", "--", path}, GitRunOptions{})
 	// Already gone (a retried discard, or deleted by hand): only the stale registration is left to prune.
 	if removed != nil {
@@ -159,6 +165,9 @@ func (g *GitCli) Diff(ctx context.Context, dir string, baseSha string, opts port
 
 // CommitAll stages everything in dir and commits it; it returns the commit's sha.
 func (g *GitCli) CommitAll(ctx context.Context, dir, message string, opts ports.CommitOptions) (string, error) {
+	if err := gitRequireTop(ctx, dir); err != nil {
+		return "", err
+	}
 	if err := gitCliVoidError(ctx, dir, []string{"add", "-A"}, GitRunOptions{}); err != nil {
 		return "", err
 	}

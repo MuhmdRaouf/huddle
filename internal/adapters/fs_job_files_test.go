@@ -233,8 +233,18 @@ func TestFsJobFilesCheckouts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(checkout, ".git"), []byte("gitdir: "+gitdir+"\n"), 0o600); err != nil {
 		t.Fatalf("write .git: %v", err)
 	}
-	if repo, ok := files.CheckoutRepo(checkout); !ok || repo != filepath.Dir(filepath.Dir(gitdir)) {
-		t.Fatalf("checkoutRepo = %q, %v, want %q", repo, ok, filepath.Dir(filepath.Dir(gitdir)))
+	if repo, ok := files.CheckoutRepo(checkout); !ok || repo != root {
+		t.Fatalf("checkoutRepo = %q, %v, want the repository's top %q", repo, ok, root)
+	}
+	bareGitdir := filepath.Join(root, "bare.git", "worktrees", "261006-files4")
+	if err := os.WriteFile(filepath.Join(checkout, ".git"), []byte("gitdir: "+bareGitdir+"\n"), 0o600); err != nil {
+		t.Fatalf("write .git: %v", err)
+	}
+	if repo, ok := files.CheckoutRepo(checkout); ok {
+		t.Fatalf("checkoutRepo = %q, true, want none for a registration outside a work tree's .git", repo)
+	}
+	if err := os.WriteFile(filepath.Join(checkout, ".git"), []byte("gitdir: "+gitdir+"\n"), 0o600); err != nil {
+		t.Fatalf("write .git: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(checkout, ".git"), []byte("not a gitdir"), 0o600); err != nil {
 		t.Fatalf("write .git: %v", err)

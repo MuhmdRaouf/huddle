@@ -148,7 +148,8 @@ func (f *fsJobFiles) CheckoutIds() []string {
 }
 
 // CheckoutRepo is the repository a detached checkout belongs to, read from its `.git` file: the
-// worktree registration it points at, `<repo>/.git/worktrees/<name>`.
+// work tree whose `.git` holds the worktree registration `<repo>/.git/worktrees/<name>`. A
+// registration in any other kind of git directory names no work tree.
 func (f *fsJobFiles) CheckoutRepo(checkout string) (string, bool) {
 	text, err := os.ReadFile(filepath.Join(checkout, ".git"))
 	if err != nil {
@@ -159,7 +160,11 @@ func (f *fsJobFiles) CheckoutRepo(checkout string) (string, bool) {
 		return "", false
 	}
 	gitdir := strings.TrimSpace(strings.TrimPrefix(git, "gitdir:"))
-	return filepath.Dir(filepath.Dir(gitdir)), true
+	commonDir := filepath.Dir(filepath.Dir(gitdir))
+	if filepath.Base(commonDir) != ".git" {
+		return "", false
+	}
+	return filepath.Dir(commonDir), true
 }
 
 func (f *fsJobFiles) Exists(path string) bool {

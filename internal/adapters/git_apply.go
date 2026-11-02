@@ -60,6 +60,9 @@ func gitWriteMerged(ctx context.Context, repo string, written, deleted []string,
 // index, so a conflict leaves repo untouched; the merged files are then written with
 // `checkout-index` from that copy, so repo's own index (what the user has staged) never changes.
 func ApplyToWorkingTree(ctx context.Context, repo, worktree, baseSha, provider string) *ports.GitError {
+	if err := gitRequireTop(ctx, repo); err != nil {
+		return err
+	}
 	tree, err := SnapshotTree(ctx, worktree, provider)
 	if err != nil {
 		return err

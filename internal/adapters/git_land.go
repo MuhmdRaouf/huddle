@@ -89,6 +89,9 @@ const (
 // regenerate globs aborts the rebase and reports every unmerged path; conflicts inside them take
 // onto's side (ours, mid-rebase) and carry on, since the file is regenerated before landing anyway.
 func RebaseJobBranch(ctx context.Context, worktree, onto string, regenerate []string) error {
+	if err := gitRequireTop(ctx, worktree); err != nil {
+		return err
+	}
 	args := []string{"rebase", "--quiet", "--end-of-options", onto}
 	isRegenerated := func(path string) bool { return domain.AnyGlob(regenerate, path) }
 	for round := 0; round < landMaxRebaseRounds; round++ {
@@ -198,6 +201,9 @@ func landTakeTipSide(ctx context.Context, worktree, path string) *ports.GitError
 
 // AmendAll stages everything in dir and amends it into HEAD; it returns the amended commit's sha.
 func AmendAll(ctx context.Context, dir string, opts ports.CommitOptions) (string, error) {
+	if err := gitRequireTop(ctx, dir); err != nil {
+		return "", err
+	}
 	if err := gitCliVoidError(ctx, dir, []string{"add", "-A"}, GitRunOptions{}); err != nil {
 		return "", err
 	}
@@ -224,6 +230,9 @@ func landHeadSha(ctx context.Context, dir string) (string, *ports.GitError) {
 // AddDetachedWorktree makes a detached temporary checkout of sha at path, for verifying a commit
 // exactly as it lands.
 func AddDetachedWorktree(ctx context.Context, repo, path, sha string) error {
+	if err := gitRequireTop(ctx, repo); err != nil {
+		return err
+	}
 	// Registrations of removed checkouts would make git refuse the path.
 	if err := gitCliVoidError(ctx, repo, []string{"worktree", "prune"}, GitRunOptions{}); err != nil {
 		return err
@@ -233,6 +242,9 @@ func AddDetachedWorktree(ctx context.Context, repo, path, sha string) error {
 
 // RemoveDetachedWorktree removes a detached checkout and its registration.
 func RemoveDetachedWorktree(ctx context.Context, repo, path string) error {
+	if err := gitRequireTop(ctx, repo); err != nil {
+		return err
+	}
 	removed := GitVoid(ctx, repo, []string{"worktree", "remove", "--force", "--force", "--", path}, GitRunOptions{})
 	// Already gone on disk: only the stale registration is left to prune.
 	if removed != nil {
@@ -247,6 +259,9 @@ func RemoveDetachedWorktree(ctx context.Context, repo, path string) error {
 // as expectedTip: the tip moving meanwhile is "moved", not a failure. Refuses up front (dirty) when
 // uncommitted files overlap the change set, since git would refuse too, less precisely.
 func FastForward(ctx context.Context, repo, sha, expectedTip string) (ports.FastForwardOutcome, error) {
+	if err := gitRequireTop(ctx, repo); err != nil {
+		return "", err
+	}
 	tip, err := landHeadSha(ctx, repo)
 	if err != nil {
 		return "", err
