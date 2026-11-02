@@ -318,3 +318,33 @@ func TestShellOutputAnswersAShellWithNoOutputFile(t *testing.T) {
 		t.Errorf("the rejected path answered %+v, want an empty page at 7", page)
 	}
 }
+
+// wantIdleShells is what every version's idle fixture yields, in order: one shell ended by its
+// plain user line, one killed with no exit code, and one the attachment ended before the user
+// line repeated it.
+func wantIdleShells() []Shell {
+	return []Shell{
+		{ID: "idl1a2b3c4", Command: "sleep 3", Description: "Idle fixture wait", State: "ended", Status: "completed", ExitCode: intShellCode(3), StartedAt: "2026-01-01T09:00:01.000Z", EndedAt: "2026-01-01T09:01:00.000Z", output: "/srv/fixture/sess-fixture-idle/tasks/idl1a2b3c4.output"},
+		{ID: "idl5d6e7f8", Command: "sleep 7", Description: "Killed fixture wait", State: "ended", Status: "killed", StartedAt: "2026-01-01T09:02:00.000Z", EndedAt: "2026-01-01T09:02:30.000Z", output: "/srv/fixture/sess-fixture-idle/tasks/idl5d6e7f8.output"},
+		{ID: "idl9g0h1i2", Command: "sleep 9", Description: "Both carriers fixture wait", State: "ended", Status: "completed", ExitCode: intShellCode(3), StartedAt: "2026-01-01T09:03:00.000Z", EndedAt: "2026-01-01T09:04:00.000Z", output: "/srv/fixture/sess-fixture-idle/tasks/idl9g0h1i2.output"},
+	}
+}
+
+// TestShellsEndFromTheIdleUserLine reads every version's idle fixture: a notification on a plain
+// user line ends its shell exactly as the queued_command attachment does, one naming no
+// background call — an Agent call's id, or a Monitor event with no tool use — ends nothing, a
+// killed status carries no exit code, and both carriers for one shell end it once.
+func TestShellsEndFromTheIdleUserLine(t *testing.T) {
+	ctx := context.Background()
+	for _, version := range fixtureVersions {
+		t.Run(version, func(t *testing.T) {
+			shells, err := Shells(ctx, filepath.Join("testdata", "cc", version, "shell-idle.jsonl"))
+			if err != nil {
+				t.Fatalf("shells: %v", err)
+			}
+			if !reflect.DeepEqual(shells, wantIdleShells()) {
+				t.Fatalf("shells:\ngot  %+v\nwant %+v", shells, wantIdleShells())
+			}
+		})
+	}
+}

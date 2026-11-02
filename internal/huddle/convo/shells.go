@@ -16,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"unicode/utf8"
 )
 
@@ -78,12 +77,6 @@ const (
 // shellResultPattern takes the id and the output file's path from a result's text. The id is
 // Claude Code's own: lowercase letters and digits.
 var shellResultPattern = regexp.MustCompile(`Command running in background with ID: ([a-z0-9]{1,32})\. Output is being written to: (.+?)\. You will be notified`)
-
-var (
-	shellNotificationUse    = regexp.MustCompile(`<tool-use-id>([^<]+)</tool-use-id>`)
-	shellNotificationStatus = regexp.MustCompile(`<status>([^<]+)</status>`)
-	shellExitCodePattern    = regexp.MustCompile(`\(exit code (\d+)\)`)
-)
 
 // Shells answers the background commands the transcript at path ran, in transcript order: each
 // starts at its Bash call, takes its id and output file from the answer, and stays running
@@ -155,6 +148,15 @@ func scanShellLine(raw []byte, shells *[]Shell, at map[string]int) {
 			at[block.ID] = len(*shells) - 1
 		}
 	case "user":
+		var text string
+		if json.Unmarshal(line.Message.Content, &text) == nil {
+			// a string content is a prompt or, while the session is idle, the task
+			// notification itself
+			if note, ok := parseNotification(text); ok {
+				endShell(note, line.Timestamp, shells, at)
+			}
+			return
+		}
 		var blocks []contentBlock
 		if json.Unmarshal(line.Message.Content, &blocks) != nil {
 			return
@@ -176,26 +178,32 @@ func scanShellLine(raw []byte, shells *[]Shell, at map[string]int) {
 		if line.Attachment.Type != "queued_command" {
 			return
 		}
-		prompt := line.Attachment.Prompt
-		if !bytes.Contains([]byte(prompt), []byte(shellMarkDone)) {
-			return
+		if note, ok := parseNotification(line.Attachment.Prompt); ok {
+			endShell(note, line.Timestamp, shells, at)
 		}
-		use := shellNotificationUse.FindStringSubmatch(prompt)
-		if use == nil {
-			return
-		}
-		i, ok := at[use[1]]
-		if !ok {
-			return
-		}
-		(*shells)[i].State = "ended"
-		(*shells)[i].EndedAt = line.Timestamp
-		if status := shellNotificationStatus.FindStringSubmatch(prompt); status != nil {
-			(*shells)[i].Status = status[1]
-		}
-		if code := shellExitCodePattern.FindStringSubmatch(prompt); code != nil {
-			(*shells)[i].ExitCode = shellCodeOf(code[1])
-		}
+	}
+}
+
+// endShell ends the shell the notification's tool use started, at the notification line's
+// timestamp, with the notification's status and exit code. A shell ends at the first
+// notification that names its call; a notification naming an unknown call, or none, ends
+// nothing.
+func endShell(note notification, endedAt string, shells *[]Shell, at map[string]int) {
+	i, ok := at[note.ToolUseID]
+	if !ok {
+		return
+	}
+	shell := &(*shells)[i]
+	if shell.State == "ended" {
+		return
+	}
+	shell.State = "ended"
+	shell.EndedAt = endedAt
+	if note.Status != "" {
+		shell.Status = note.Status
+	}
+	if note.ExitCode != nil {
+		shell.ExitCode = note.ExitCode
 	}
 }
 
@@ -216,15 +224,6 @@ func shellOutputOf(text, session string) (string, string, bool) {
 		return id, "", true
 	}
 	return id, path, true
-}
-
-// shellCodeOf answers one exit code's digits as a number.
-func shellCodeOf(digits string) *int {
-	code, err := strconv.Atoi(digits)
-	if err != nil {
-		return nil
-	}
-	return &code
 }
 
 // ShellOutput answers one page of a shell's output from its own file, after bytes read so far,
