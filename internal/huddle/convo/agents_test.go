@@ -67,8 +67,8 @@ func TestAgentsListTheMainThenItsSubagentsThenItsForks(t *testing.T) {
 		t.Fatalf("agents: %v", err)
 	}
 	want := []Agent{
-		{ID: MainAgent, Type: "main", Running: true, StartedAt: "2026-10-26T10:00:01.000Z"},
-		{ID: "a1", Type: "general-purpose", Description: "Worker A", Depth: 1, Running: false, Model: "opus", StartedAt: "2026-10-26T10:00:05.000Z", ToolUseID: "toolu_1", Parent: MainAgent},
+		{ID: MainAgent, Type: "main", Running: true, StartedAt: "2026-10-26T10:00:01.000Z", LastText: "Spawning workers."},
+		{ID: "a1", Type: "general-purpose", Description: "Worker A", Depth: 1, Running: false, Model: "opus", StartedAt: "2026-10-26T10:00:05.000Z", LastText: "Scanned.", ToolUseID: "toolu_1", Parent: MainAgent},
 		{ID: "c3", Type: "subagent", Depth: 1, Running: false, StartedAt: "2026-10-26T10:00:08.000Z", Parent: MainAgent},
 		{ID: "b2", Type: "general-purpose", Description: "Worker B", Depth: 2, Running: true, Model: "haiku", StartedAt: "2026-10-26T10:00:07.000Z", ToolUseID: "toolu_2", Parent: MainAgent},
 		{ID: "f4", Type: "fork", Depth: 1, Running: true, SideChat: true, StartedAt: "2026-10-26T10:00:09.000Z", Parent: MainAgent},
@@ -286,5 +286,147 @@ func TestAMetaWithoutALinkStillLists(t *testing.T) {
 	sub := agents[1]
 	if sub.ToolUseID != "" || sub.Parent != MainAgent {
 		t.Errorf("the unlinked subagent = %+v, want an empty tool_use_id and the main as parent", sub)
+	}
+}
+
+// lastTextOf answers the agents' last texts keyed by id.
+func lastTextOf(t *testing.T, agents []Agent) map[string]string {
+	t.Helper()
+	last := make(map[string]string, len(agents))
+	for _, agent := range agents {
+		last[agent.ID] = agent.LastText
+	}
+	return last
+}
+
+// TestAnAgentCarriesItsLastAssistantText: an agent's last text is the last assistant text its
+// transcript holds — the main's own, and a subagent's even though a tool call and its answer
+// come after the words. A text longer than the fold keeps is cut to 500 bytes on a rune
+// boundary, and an agent that has said nothing carries none.
+func TestAnAgentCarriesItsLastAssistantText(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "s.jsonl")
+	writeLines(t, main, []string{
+		`{"type":"user","uuid":"u1","timestamp":"2026-10-26T10:00:01.000Z","message":{"role":"user","content":"run the team"}}`,
+		`{"type":"assistant","uuid":"a0","timestamp":"2026-10-26T10:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Spawning the scan."}]}}`,
+	})
+	sub := filepath.Join(dir, "s", "subagents")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// the words, then a tool call and its answer after them: the words still win
+	writeLines(t, filepath.Join(sub, "agent-t1.jsonl"), []string{
+		`{"type":"user","uuid":"tu1","timestamp":"2026-10-26T10:00:03.000Z","isSidechain":true,"message":{"role":"user","content":"scan the files"}}`,
+		`{"type":"assistant","uuid":"ta1","timestamp":"2026-10-26T10:00:04.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"Report written."}]}}`,
+		`{"type":"assistant","uuid":"ta2","timestamp":"2026-10-26T10:00:05.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_9","name":"Agent","input":{"description":"tab work"}}}]}`,
+		`{"type":"user","uuid":"tu2","timestamp":"2026-10-26T10:00:06.000Z","isSidechain":true,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_9","content":"started tab work"}]}}`,
+	})
+	// a text of 504 bytes: the fold keeps its first 500
+	writeLines(t, filepath.Join(sub, "agent-t2.jsonl"), []string{
+		`{"type":"assistant","uuid":"tu3","timestamp":"2026-10-26T10:00:07.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"` + strings.Repeat("x", 504) + `"}]}}`,
+	})
+	// a three-byte rune the 500th byte would split: the cut keeps whole runes alone
+	writeLines(t, filepath.Join(sub, "agent-t3.jsonl"), []string{
+		`{"type":"assistant","uuid":"tu4","timestamp":"2026-10-26T10:00:08.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"` + strings.Repeat("x", 499) + "…" + `"}]}}`,
+	})
+	// nothing said yet
+	writeLines(t, filepath.Join(sub, "agent-t4.jsonl"), []string{
+		`{"type":"user","uuid":"tu5","timestamp":"2026-10-26T10:00:09.000Z","isSidechain":true,"message":{"role":"user","content":"only asked so far"}}`,
+	})
+
+	agents, err := Agents(context.Background(), main)
+	if err != nil {
+		t.Fatalf("agents: %v", err)
+	}
+	last := lastTextOf(t, agents)
+	if last[MainAgent] != "Spawning the scan." {
+		t.Errorf("the main's last text = %q, want Spawning the scan.", last[MainAgent])
+	}
+	if last["t1"] != "Report written." {
+		t.Errorf("t1's last text = %q, want Report written.", last["t1"])
+	}
+	if last["t2"] != strings.Repeat("x", 500) {
+		t.Errorf("t2's last text = %d bytes, want the first 500", len(last["t2"]))
+	}
+	if last["t3"] != strings.Repeat("x", 499) {
+		t.Errorf("t3's last text = %q, want the 499 whole bytes the rune boundary keeps", last["t3"])
+	}
+	if last["t4"] != "" {
+		t.Errorf("t4's last text = %q, want none", last["t4"])
+	}
+}
+
+// TestATornTailLineIsSkipped: a last line the writer has not ended yet — no newline behind it —
+// is no answer, whether it carries words or not; the complete lines before it stand.
+func TestATornTailLineIsSkipped(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "s.jsonl")
+	writeLines(t, main, []string{
+		`{"type":"user","uuid":"u1","timestamp":"2026-10-26T10:00:01.000Z","message":{"role":"user","content":"run the team"}}`,
+	})
+	sub := filepath.Join(dir, "s", "subagents")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// words first, then a torn line that would answer if it were whole
+	whole := `{"type":"assistant","uuid":"ta1","timestamp":"2026-10-26T10:00:02.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"Complete answer."}]}}` + "\n"
+	torn := `{"type":"assistant","uuid":"ta2","timestamp":"2026-10-26T10:00:03.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"Half an answ`
+	if err := os.WriteFile(filepath.Join(sub, "agent-t1.jsonl"), []byte(whole+torn), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// a torn line alone
+	tornAlone := `{"type":"assistant","uuid":"tu1","timestamp":"2026-10-26T10:00:04.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"Torn alone`
+	if err := os.WriteFile(filepath.Join(sub, "agent-t2.jsonl"), []byte(tornAlone), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	agents, err := Agents(context.Background(), main)
+	if err != nil {
+		t.Fatalf("agents: %v", err)
+	}
+	last := lastTextOf(t, agents)
+	if last["t1"] != "Complete answer." {
+		t.Errorf("t1's last text = %q, want Complete answer.", last["t1"])
+	}
+	if last["t2"] != "" {
+		t.Errorf("t2's last text = %q, want none", last["t2"])
+	}
+}
+
+// TestAHugeTranscriptIsReadByItsTailOnly: the last 64 KiB are all a last text reads, the same
+// window a StartedAt reads from the front. Words only a whole-file read would find are no
+// answer; the tail window's own words are.
+func TestAHugeTranscriptIsReadByItsTailOnly(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "s.jsonl")
+	writeLines(t, main, []string{
+		`{"type":"user","uuid":"u1","timestamp":"2026-10-26T10:00:01.000Z","message":{"role":"user","content":"run the team"}}`,
+	})
+	sub := filepath.Join(dir, "s", "subagents")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	huge := `{"type":"assistant","uuid":"ta1","timestamp":"2026-10-26T10:00:02.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"` + strings.Repeat("x", 2*64*1024) + `"}]}}`
+	// one huge line alone: the window's first line is its torn tail, and no complete line is left
+	if err := os.WriteFile(filepath.Join(sub, "agent-t1.jsonl"), []byte(huge+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// the same huge line, then lines the tail window holds whole
+	writeLines(t, filepath.Join(sub, "agent-t2.jsonl"), []string{
+		huge,
+		`{"type":"user","uuid":"tu1","timestamp":"2026-10-26T10:00:03.000Z","isSidechain":true,"message":{"role":"user","content":"and then?"}}`,
+		`{"type":"assistant","uuid":"ta2","timestamp":"2026-10-26T10:00:04.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"Tail words."}]}}`,
+	})
+
+	agents, err := Agents(context.Background(), main)
+	if err != nil {
+		t.Fatalf("agents: %v", err)
+	}
+	last := lastTextOf(t, agents)
+	if last["t1"] != "" {
+		t.Errorf("t1's last text = %q, want none: its words the window cannot hold whole", last["t1"])
+	}
+	if last["t2"] != "Tail words." {
+		t.Errorf("t2's last text = %q, want Tail words.", last["t2"])
 	}
 }

@@ -105,9 +105,9 @@ func wantFixtureShells() []Shell {
 // wantFixtureAgents are the agents every version's session lists.
 func wantFixtureAgents() []Agent {
 	return []Agent{
-		{ID: MainAgent, Type: "main", Running: true, StartedAt: "2026-01-01T09:00:00.000Z"},
+		{ID: MainAgent, Type: "main", Running: true, StartedAt: "2026-01-01T09:00:00.000Z", LastText: "All done."},
 		{ID: "a1", Type: "general-purpose", Description: "Fixture worker", Depth: 1, Model: "fixture-model",
-			StartedAt: "2026-01-01T09:00:20.000Z", ToolUseID: "toolu_fx1", Parent: MainAgent},
+			StartedAt: "2026-01-01T09:00:20.000Z", LastText: "Scanned.", ToolUseID: "toolu_fx1", Parent: MainAgent},
 	}
 }
 

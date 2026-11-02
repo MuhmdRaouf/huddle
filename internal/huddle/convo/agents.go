@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // MainAgent is the id of a session's own conversation.
@@ -35,6 +36,7 @@ type Agent struct {
 	Model         string `json:"model,omitempty"`
 	SideChat      bool   `json:"side_chat,omitempty"`       // a /btw fork: meta agentType "fork" or isFork
 	StartedAt     string `json:"started_at,omitempty"`      // the transcript's first line's timestamp
+	LastText      string `json:"last_text,omitempty"`       // the transcript's last assistant text, cut to 500 bytes
 	ToolUseID     string `json:"tool_use_id,omitempty"`     // the Agent tool call that started the subagent
 	Parent        string `json:"parent,omitempty"`          // the meta's parentAgentId, else the main conversation
 	StoppedByUser bool   `json:"stopped_by_user,omitempty"` // the owner stopped it
@@ -70,6 +72,7 @@ func Agents(ctx context.Context, path string) ([]Agent, error) {
 		Type:      "main",
 		Running:   true,
 		StartedAt: firstTimestamp(path),
+		LastText:  lastAssistantText(path),
 	}}
 	entries, err := os.ReadDir(SubagentsDir(path))
 	if err != nil {
@@ -101,7 +104,9 @@ func Agents(ctx context.Context, path string) ([]Agent, error) {
 			}
 			agent.StoppedByUser = meta.StoppedByUser
 		}
-		agent.StartedAt = firstTimestamp(filepath.Join(SubagentsDir(path), entry.Name()))
+		transcript := filepath.Join(SubagentsDir(path), entry.Name())
+		agent.StartedAt = firstTimestamp(transcript)
+		agent.LastText = lastAssistantText(transcript)
 		subs = append(subs, agent)
 	}
 	sort.SliceStable(subs, func(i, j int) bool {
@@ -193,4 +198,101 @@ func firstTimestamp(path string) string {
 		return ""
 	}
 	return first.Timestamp
+}
+
+// maxLastText is the most bytes of one agent's last text kept; a longer one is cut on a rune
+// boundary.
+const maxLastText = 500
+
+// lastAssistantText answers the text of a transcript's last assistant message: the last 64 KiB
+// read, the window's first line dropped when the window starts mid-file and the last line dropped
+// when the writer has not ended it yet, the complete lines scanned from the end for the newest one
+// that carries an assistant text block. A file the window cannot answer — unreadable, or a window
+// whose complete lines carry no assistant text — answers "".
+func lastAssistantText(path string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return ""
+	}
+	window := make([]byte, 64<<10)
+	start := info.Size() - int64(len(window))
+	if start < 0 {
+		start = 0
+	}
+	n, err := file.ReadAt(window, start)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return ""
+	}
+	body := window[:n]
+	// the window of a longer file starts inside a line: that first line is torn
+	if start > 0 {
+		i := bytes.IndexByte(body, '\n')
+		if i < 0 {
+			return ""
+		}
+		body = body[i+1:]
+	}
+	// the last line is the one the writer may still be writing: no newline behind it, no answer
+	if len(body) > 0 && body[len(body)-1] != '\n' {
+		i := bytes.LastIndexByte(body, '\n')
+		if i < 0 {
+			return ""
+		}
+		body = body[:i+1]
+	}
+	for end := len(body); end > 0; {
+		lineStart := bytes.LastIndexByte(body[:end-1], '\n') + 1
+		if text, ok := assistantText(body[lineStart : end-1]); ok {
+			return cutLastText(text)
+		}
+		end = lineStart
+	}
+	return ""
+}
+
+// assistantText answers one transcript line's assistant text: its last text block's words. A line
+// that is not an assistant turn, or one whose text blocks all hold nothing, answers false.
+func assistantText(line []byte) (string, bool) {
+	var decoded struct {
+		Type    string `json:"type"`
+		Message struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(line, &decoded); err != nil {
+		return "", false
+	}
+	if decoded.Type != KindAssistant {
+		return "", false
+	}
+	for i := len(decoded.Message.Content) - 1; i >= 0; i-- {
+		if block := decoded.Message.Content[i]; block.Type == "text" && block.Text != "" {
+			return block.Text, true
+		}
+	}
+	return "", false
+}
+
+// cutLastText cuts an agent's last text to maxLastText bytes on a rune boundary.
+func cutLastText(s string) string {
+	if len(s) <= maxLastText {
+		return s
+	}
+	kept := s[:maxLastText]
+	// back off the bytes of a rune the cut split
+	for len(kept) > 0 {
+		if r, size := utf8.DecodeLastRuneInString(kept); r != utf8.RuneError || size != 1 {
+			break
+		}
+		kept = kept[:len(kept)-1]
+	}
+	return kept
 }
