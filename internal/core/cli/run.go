@@ -24,6 +24,7 @@ var commands = []Command{
 	StopCommand{},
 	UsageCommand{},
 	SetupCommand{},
+	KeyCommand{},
 	BriefCommand{},
 	DriveCommand{},
 	AuthServeCommand{},

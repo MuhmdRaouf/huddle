@@ -60,7 +60,7 @@ var flagsTheHelpOmits = map[string][]string{
 
 // documentedCommands is the command set the CLI's help documents.
 var documentedCommands = []string{
-	"accept", "batch", "board", "brief", "discard", "return", "review",
+	"accept", "batch", "board", "brief", "discard", "key", "return", "review",
 	"run", "setup", "show", "stop", "usage", "wait",
 }
 
