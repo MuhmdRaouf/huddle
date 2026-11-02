@@ -107,6 +107,7 @@ func TestHandleApi(t *testing.T) {
 			"/api/tools",
 			"/api/models",
 			"/api/health",
+			"/api/requests/:id",
 			"/api/alerts",
 			"/api/attribution",
 			"/api/budgets",
@@ -2294,5 +2295,92 @@ func TestCostedRequestJSON(t *testing.T) {
 		`"cost":{"usd":0.25,"detail":["Z.ai list"]}}`
 	if string(encoded) != want {
 		t.Errorf("costed request = %s, want %s", encoded, want)
+	}
+}
+
+// TestOneRequestIsPricedLikeItsRow holds the one-request route to the price every row
+// carries: the same function prices the same record, live and in history.
+func TestOneRequestIsPricedLikeItsRow(t *testing.T) {
+	now := nowAt.UnixMilli()
+	record := historyReq(now, nil)
+	st := store.CreateStore(clock)
+	st.AddRequest(record, nil)
+	h := openTestHistory(t)
+	mustUpsert(t, h, historyNode(nil))
+	mustPutRequest(t, h, "s1/main", record)
+
+	want := cost.RequestCost(pricedOfRecord(record))
+	if want == nil {
+		t.Fatal("the fixture request has no price; the test would prove nothing")
+	}
+
+	var one struct {
+		ID   string `json:"id"`
+		Cost *struct {
+			Usd    float64  `json:"usd"`
+			Detail []string `json:"detail"`
+		} `json:"cost"`
+	}
+	answer := historyGet(t, h, "/api/requests/r1?session=s1", nil, st)
+	if answer.Status != 200 {
+		t.Fatalf("/api/requests/r1 status = %d, want 200", answer.Status)
+	}
+	decodeBody(t, answer, &one)
+	if one.ID != "r1" || one.Cost == nil {
+		t.Fatalf("the answer = %+v, want request r1 with a cost", one)
+	}
+	if one.Cost.Usd != float64(want.USD) || !slices.Equal(one.Cost.Detail, want.Detail) {
+		t.Errorf("cost = %+v, want %v %v from cost.RequestCost", one.Cost, want.USD, want.Detail)
+	}
+
+	var row struct {
+		Requests []struct {
+			Cost *struct {
+				Usd float64 `json:"usd"`
+			} `json:"cost"`
+		} `json:"requests"`
+	}
+	decodeBody(t, historyGet(t, h, "/api/history/requests?node=s1%2Fmain", nil, st), &row)
+	if len(row.Requests) != 1 || row.Requests[0].Cost == nil {
+		t.Fatalf("history rows = %+v, want r1 with a cost", row.Requests)
+	}
+	if row.Requests[0].Cost.Usd != one.Cost.Usd {
+		t.Errorf("history row cost = %v, route cost = %v, want the same", row.Requests[0].Cost.Usd, one.Cost.Usd)
+	}
+}
+
+// TestAnUnknownRequestIs404 refuses a request the session does not hold, the same id of
+// another session, and a read that names no session.
+func TestAnUnknownRequestIs404(t *testing.T) {
+	st := store.CreateStore(clock)
+	st.AddRequest(makeRequest(func(r *shared.RequestRecord) { r.ID, r.SessionID = "r1", "s1" }), nil)
+	st.AddRequest(makeRequest(func(r *shared.RequestRecord) { r.ID, r.SessionID = "r2", "s2" }), nil)
+
+	cases := []struct {
+		name   string
+		path   string
+		query  string
+		status int
+	}{
+		{"an unknown id", "/api/requests/nope", "session=s1", 404},
+		{"an id of another session", "/api/requests/r2", "session=s1", 404},
+		{"an unknown session", "/api/requests/r1", "session=nope", 404},
+		{"no id", "/api/requests/", "session=s1", 404},
+		{"no session", "/api/requests/r1", "", 400},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			answer := apiGet(t, st, c.path, c.query)
+			if answer.Status != c.status {
+				t.Errorf("%s?%s status = %d, want %d", c.path, c.query, answer.Status, c.status)
+			}
+			var body struct {
+				Error string `json:"error"`
+			}
+			decodeBody(t, answer, &body)
+			if body.Error == "" {
+				t.Errorf("%s?%s answered no error text", c.path, c.query)
+			}
+		})
 	}
 }

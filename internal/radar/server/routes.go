@@ -73,6 +73,7 @@ var Routes = []string{
 	"/api/tools",
 	"/api/models",
 	"/api/health",
+	"/api/requests/:id",
 	"/api/alerts",
 	"/api/attribution",
 	"/api/budgets",
@@ -425,6 +426,34 @@ func listRoute(st *store.Store, path string, query url.Values) (ApiResponse, boo
 		return jsonOf(200, toolsAnswer{Tools: st.Tools(filter)}), true
 	}
 	return ApiResponse{}, false
+}
+
+// requestRoute answers one request of one session with its estimated cost, priced by the
+// function the rows use, on this read alone; false when the path is not a request id.
+func requestRoute(st *store.Store, path string, query url.Values) (ApiResponse, bool) {
+	raw, ok := strings.CutPrefix(path, "/api/requests/")
+	if !ok {
+		return ApiResponse{}, false
+	}
+	id, err := url.PathUnescape(raw)
+	if err != nil {
+		// a malformed escape cannot name a request; the raw text answers for it
+		id = raw
+	}
+	if id == "" {
+		return errorOf(404, "missing request id"), true
+	}
+	session := queryText(query, "session")
+	if session == nil {
+		return errorOf(400, "session: name the request's session"), true
+	}
+	for _, request := range st.RequestsFor(store.RequestFilter{Session: session}) {
+		if request.ID != id {
+			continue
+		}
+		return jsonOf(200, costedRequest{RequestRecord: request, Cost: cost.RequestCost(pricedOfRecord(request))}), true
+	}
+	return errorOf(404, "unknown request: "+id), true
 }
 
 // modelsRoute answers the models tab's tables: without a scope the whole store's cached
@@ -1565,6 +1594,9 @@ func HandleApi(st *store.Store, info AppInfo, request ApiRequest, insights Insig
 	}
 	if session, ok := sessionRoute(st, path); ok {
 		return session, nil
+	}
+	if one, ok := requestRoute(st, path, query); ok {
+		return one, nil
 	}
 	if listed, ok := listRoute(st, path, query); ok {
 		return listed, nil
