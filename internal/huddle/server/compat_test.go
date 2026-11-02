@@ -847,7 +847,13 @@ func TestCompatLegacyHome(t *testing.T) {
 
 		before := compatHashTree(t, world)
 		run := compatServe(t, fixture.Root, home, data, now)
-		reads := []string{"/api/c/relay/sessions", "/api/c/relay/board"}
+		// a read per channel opens every channel file in this start, so each file's one-time
+		// change lands before the stop; the event sweep reaches the channels in the background
+		// and a stop can cut it short
+		reads := []string{"/api/c/relay/board"}
+		for _, ch := range compatChannels {
+			reads = append(reads, "/api/c/"+ch.name+"/sessions")
+		}
 		firstAnswers := map[string]string{}
 		for _, path := range reads {
 			status, body := compatFetch(t, run, path, fixture.Root, "")
