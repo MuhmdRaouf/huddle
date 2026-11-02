@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -498,11 +499,15 @@ func TestCIGatesTheMergedProfileOfEveryShard(t *testing.T) {
 
 // ciShards are the test shards ci.yml runs, in matrix order. Each is a list of packages that
 // scripts/shard-packages.sh prints.
-var ciShards = []string{"core", "server", "server-a", "cmd", "cmd-heavy", "rest"}
+var ciShards = []string{"core", "server", "server-a", "cmd-heavy", "cmd-hub", "cmd", "cli-a", "cli", "rest-heavy", "rest"}
 
-// splitPairs maps a split package's shard, which skips the heavy tests, to its sibling, which runs
-// only them; both run the same package, told apart by the flags scripts/shard-flags.sh prints.
-var splitPairs = map[string]string{"server": "server-a", "cmd": "cmd-heavy"}
+// splitGroups are the shards that run one package between them, told apart by the flags
+// scripts/shard-flags.sh prints: every test of the package runs in exactly one shard of its group.
+var splitGroups = [][]string{
+	{"server", "server-a"},
+	{"cmd", "cmd-heavy", "cmd-hub"},
+	{"cli", "cli-a"},
+}
 
 // shardScript runs one of the shard selectors the CI jobs run, from the repo root.
 func shardScript(t *testing.T, script, shard string) string {
@@ -522,6 +527,14 @@ func shardScript(t *testing.T, script, shard string) string {
 func shardPackages(t *testing.T, shard string) []string {
 	t.Helper()
 	return strings.Fields(shardScript(t, "shard-packages.sh", shard))
+}
+
+// sameShards reports whether two shard lists name the same shards, in any order.
+func sameShards(a, b []string) bool {
+	a, b = slices.Clone(a), slices.Clone(b)
+	slices.Sort(a)
+	slices.Sort(b)
+	return slices.Equal(a, b)
 }
 
 func TestEveryModulePackageFallsInExactlyOneShard(t *testing.T) {
@@ -547,9 +560,9 @@ func TestEveryModulePackageFallsInExactlyOneShard(t *testing.T) {
 		switch {
 		case len(shards) == 0:
 			t.Errorf("%s falls between the shards: no shard runs it and no covergate pass judges it", pkg)
-		case len(shards) == 2 && splitPairs[shards[0]] == shards[1]:
-		case len(shards) > 1:
-			t.Errorf("%s runs in the %s shards, which are not the two halves of a split package", pkg, strings.Join(shards, " and "))
+		case len(shards) == 1:
+		case !slices.ContainsFunc(splitGroups, func(group []string) bool { return sameShards(shards, group) }):
+			t.Errorf("%s runs in the %s shards, which are not the shards of one split package", pkg, strings.Join(shards, " and "))
 		}
 	}
 }
@@ -560,7 +573,16 @@ func TestEachHeavyPackageHasShardsOfItsOwn(t *testing.T) {
 		want   []string
 	}{
 		{[]string{"server", "server-a"}, []string{mp + "/internal/huddle/server"}},
-		{[]string{"cmd", "cmd-heavy"}, []string{mp + "/cmd/huddle"}},
+		{[]string{"cmd", "cmd-heavy", "cmd-hub"}, []string{mp + "/cmd/huddle"}},
+		{[]string{"cli", "cli-a"}, []string{mp + "/internal/huddle/cli"}},
+		{[]string{"rest-heavy"}, []string{
+			mp + "/internal/huddle/hooks",
+			mp + "/internal/huddle/channel",
+			mp + "/internal/huddle/hub",
+			mp + "/internal/plugins",
+			mp + "/internal/adapters",
+			mp + "/internal/radar/cost",
+		}},
 	}
 	for _, tt := range tests {
 		for _, shard := range tt.shards {
@@ -569,8 +591,15 @@ func TestEachHeavyPackageHasShardsOfItsOwn(t *testing.T) {
 			}
 		}
 	}
-	for _, own := range []string{mp + "/internal/core", mp + "/internal/huddle/server", mp + "/cmd/huddle"} {
-		for _, pkg := range shardPackages(t, "rest") {
+	// The subtrees core, server and cmd own are whole; the other packages are named one by one, so a
+	// subpackage of theirs stays in rest.
+	subtrees := []string{mp + "/internal/core", mp + "/internal/huddle/server", mp + "/cmd/huddle"}
+	named := slices.Concat(tests[2].want, tests[3].want)
+	for _, pkg := range shardPackages(t, "rest") {
+		if slices.Contains(named, pkg) {
+			t.Errorf("the rest shard also runs %s", pkg)
+		}
+		for _, own := range subtrees {
 			if pkg == own || strings.HasPrefix(pkg, own+"/") {
 				t.Errorf("the rest shard also runs %s", pkg)
 			}
@@ -578,31 +607,29 @@ func TestEachHeavyPackageHasShardsOfItsOwn(t *testing.T) {
 	}
 }
 
-// splitFlags returns the run and skip patterns of one split pair, failing unless the pair's flags
-// are -skip= on the shard and -run= on its sibling.
-func splitFlags(t *testing.T, shard, sibling string) (skip, run string) {
+// shardFlag returns the one test-selection flag a split shard prints, as its kind ("run" or
+// "skip") and its pattern, failing unless the flag is -run= or -skip= with a compiling pattern.
+func shardFlag(t *testing.T, shard string) (kind string, pattern *regexp.Regexp) {
 	t.Helper()
-	skipFlag, runFlag := shardScript(t, "shard-flags.sh", shard), shardScript(t, "shard-flags.sh", sibling)
-	if !strings.HasPrefix(skipFlag, "-skip=") || !strings.HasPrefix(runFlag, "-run=") {
-		t.Fatalf("flags of %s = %q and of %s = %q, want -skip=<heavy> and -run=<heavy>", shard, skipFlag, sibling, runFlag)
+	flag := shardScript(t, "shard-flags.sh", shard)
+	kind, expr, ok := strings.Cut(strings.TrimPrefix(flag, "-"), "=")
+	if !ok || (kind != "run" && kind != "skip") {
+		t.Fatalf("flags of %s = %q, want -run=<pattern> or -skip=<pattern>", shard, flag)
 	}
-	return strings.TrimPrefix(skipFlag, "-skip="), strings.TrimPrefix(runFlag, "-run=")
+	pattern, err := regexp.Compile(expr)
+	if err != nil {
+		t.Fatalf("the %s pattern %q does not compile: %v", shard, expr, err)
+	}
+	return kind, pattern
 }
 
-func TestSplitShardsUseOneRegex(t *testing.T) {
-	for shard, sibling := range splitPairs {
-		skip, run := splitFlags(t, shard, sibling)
-		if skip != run {
-			t.Errorf("%s skips %q but %s runs %q: a test could fall between them", shard, skip, sibling, run)
-		}
-		if _, err := regexp.Compile(run); err != nil {
-			t.Errorf("the %s heavy pattern does not compile: %v", shard, err)
-		}
-	}
+// selects reports whether a shard with this flag runs the test.
+func selects(kind string, pattern *regexp.Regexp, test string) bool {
+	return pattern.MatchString(test) == (kind == "run")
 }
 
 func TestUnsplitShardsPrintNoFlags(t *testing.T) {
-	for _, shard := range []string{"core", "rest"} {
+	for _, shard := range []string{"core", "rest-heavy", "rest"} {
 		if got := shardScript(t, "shard-flags.sh", shard); got != "" {
 			t.Errorf("shard %s prints flags %q, want none", shard, got)
 		}
@@ -629,56 +656,55 @@ func listTests(t *testing.T, pkg string) []string {
 	return names
 }
 
-func TestEveryTestRunsInExactlyOneHalfOfASplitPackage(t *testing.T) {
-	for shard, sibling := range splitPairs {
-		skip, run := splitFlags(t, shard, sibling)
-		pkg := shardPackages(t, shard)[0]
+func TestEveryTestRunsInExactlyOneShardOfASplitPackage(t *testing.T) {
+	for _, group := range splitGroups {
+		pkg := shardPackages(t, group[0])[0]
 		names := listTests(t, pkg)
 		if len(names) == 0 {
 			t.Fatalf("go test -list found no test in %s; the check would guard nothing", pkg)
 		}
-		skipRe, runRe := regexp.MustCompile(skip), regexp.MustCompile(run)
-		inShardCount, inSiblingCount := 0, 0
+		counts := map[string]int{}
 		for _, name := range names {
-			inShard, inSibling := !skipRe.MatchString(name), runRe.MatchString(name)
-			if inShard == inSibling {
-				t.Errorf("%s runs in %d of the %s and %s shards, want exactly 1", name, btoi(inShard)+btoi(inSibling), shard, sibling)
+			var runners []string
+			for _, shard := range group {
+				if kind, pattern := shardFlag(t, shard); selects(kind, pattern, name) {
+					runners = append(runners, shard)
+					counts[shard]++
+				}
 			}
-			inShardCount += btoi(inShard)
-			inSiblingCount += btoi(inSibling)
+			if len(runners) != 1 {
+				t.Errorf("%s runs in %d of the %s shards (%v), want exactly 1", name, len(runners), strings.Join(group, ", "), runners)
+			}
 		}
-		if inShardCount == 0 || inSiblingCount == 0 {
-			t.Errorf("%s runs %d tests of %s and %s runs %d: a half is empty", shard, inShardCount, pkg, sibling, inSiblingCount)
+		for _, shard := range group {
+			if counts[shard] == 0 {
+				t.Errorf("%s runs no test of %s: a shard is empty", shard, pkg)
+			}
 		}
 	}
 }
 
-// A heavy pattern that lists test names names real ones, so a renamed test cannot drop out of the
-// heavy shard unseen; a pattern of another shape is held by the checks above.
-func TestHeavyPatternNamesRealTests(t *testing.T) {
-	for shard, sibling := range splitPairs {
-		_, run := splitFlags(t, shard, sibling)
-		inner, ok := strings.CutSuffix(strings.TrimPrefix(run, "^("), ")$")
-		if !ok || !strings.HasPrefix(run, "^(") {
-			continue
-		}
+// A pattern that lists test names names real ones, so a renamed test cannot drop out of its
+// shard unseen; a pattern of another shape is held by the checks above.
+func TestShardPatternsNameRealTests(t *testing.T) {
+	for _, group := range splitGroups {
 		exists := map[string]bool{}
-		for _, name := range listTests(t, shardPackages(t, shard)[0]) {
+		for _, name := range listTests(t, shardPackages(t, group[0])[0]) {
 			exists[name] = true
 		}
-		for _, name := range strings.Split(inner, "|") {
-			if !exists[name] {
-				t.Errorf("the %s pattern names %s, which is not a test of its package", sibling, name)
+		for _, shard := range group {
+			_, pattern := shardFlag(t, shard)
+			inner, ok := strings.CutSuffix(strings.TrimPrefix(pattern.String(), "^("), ")$")
+			if !ok || !strings.HasPrefix(pattern.String(), "^(") {
+				continue
+			}
+			for _, name := range strings.Split(inner, "|") {
+				if !exists[name] {
+					t.Errorf("the %s pattern names %s, which is not a test of its package", shard, name)
+				}
 			}
 		}
 	}
-}
-
-func btoi(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 func TestShardSelectorRejectsAnUnknownShard(t *testing.T) {
@@ -726,6 +752,18 @@ func TestCIJobsSelectShardPackagesWithTheScript(t *testing.T) {
 	}
 	if strings.Contains(ci, "go list ./...") {
 		t.Error("ci.yml lists packages inline; the shard selector lives in scripts/shard-packages.sh")
+	}
+}
+
+func TestCIUploadsTheGoTestJSONOfEveryShard(t *testing.T) {
+	ci := readCI(t)
+	for _, name := range []string{"go-test-json-${{ matrix.shard }}", "go-test-json-macos-${{ matrix.shard }}"} {
+		if got := strings.Count(ci, "name: "+name); got != 1 {
+			t.Errorf("ci.yml uploads the artifact %s %d times, want 1", name, got)
+		}
+	}
+	if got := len(regexp.MustCompile(`\s-json\s`).FindAllString(ci, -1)); got != 2 {
+		t.Errorf("ci.yml runs go test with -json %d times, want 2: the Linux job and the macOS job", got)
 	}
 }
 
