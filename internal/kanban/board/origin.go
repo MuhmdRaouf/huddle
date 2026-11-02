@@ -15,11 +15,22 @@ const (
 	originReap = 100 * time.Millisecond
 )
 
-// OriginOf answers a repository's origin URL from git's own config: one read
-// that ends by originWait plus originReap, empty on any error, so a repo
-// without an origin — or a git that never answers, a child of it holding the
-// pipe included — keeps the path key and no caller waits on it.
+// OriginOf answers a repository's origin URL, the value of
+// `git -C repoRoot config --get remote.origin.url`, empty when the repository
+// has none. The repository's own config file answers it whenever it can, with
+// no process and no timing, so every caller gets the same board key; a shape
+// the file read leaves out goes to git (see originFromGit).
 func OriginOf(ctx context.Context, repoRoot string) string {
+	if url, ok := originFromConfigFile(repoRoot); ok {
+		return url
+	}
+	return originFromGit(ctx, repoRoot)
+}
+
+// originFromGit asks git: one read that ends by originWait plus originReap,
+// empty on any error, so a git that never answers — a child of it holding the
+// pipe included — keeps the path key and no caller waits on it.
+func originFromGit(ctx context.Context, repoRoot string) string {
 	callCtx, cancel := context.WithTimeout(ctx, originWait)
 	defer cancel()
 	cmd := exec.CommandContext(callCtx, "git", "-C", repoRoot, "config", "--get", "remote.origin.url")
