@@ -587,3 +587,30 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   zero value is the product's 18860 to 18869. A test that walks takes a run of ports from `ports.FreeRun` and sets it
   on its world or options; a test of the product's order uses `PortPrefs.Free` and a probe that record and touch
   nothing.
+
+## 2026-11-02, a test run with TMPDIR inside the checkout amended the owner's branch
+
+- **What happened:** at 19:15:51 a worker ran `internal/adapters`' tests with `TMPDIR` set to a folder under
+  `.agents/scratch/tmp/` in the main checkout. `git_land_test.go:123` failed with `error = nil, want not_a_repo`, and
+  the head of `feat/huddle-daily` had been amended: the same tree, no signature, and a committer taken from git's
+  fallback identity. It was found before any push.
+- **Cause:** the test made its "not a repo" folder under `TMPDIR`, which sat inside the checkout. Git walks up from a
+  folder with no repository of its own to the repository around it, so `AmendAll` (`git add -A`, then
+  `git commit --amend --no-edit`) ran against the checkout. The product has the same shape: a land path on a job
+  folder whose `.git` is gone, or that never was a repository, wrote into whatever repository contained it, which is
+  the owner's own branch. Every adapter that writes (commit, amend, rebase, fast-forward, worktree add and remove,
+  apply) trusted the folder it was given.
+- **Guard:** `TestAGitWriteRefusesAFolderThatIsNotItsOwnRepositoryTop` (internal/adapters/git_top_test.go) puts a
+  folder with no repository inside a real temp repository, calls each of the nine writes there and fails when one
+  answers anything but `not_a_repo` or when the repository around it changes (HEAD, reflog, branches, status,
+  worktrees, files); `TestFsJobFilesCheckouts` (internal/adapters/fs_job_files_test.go) pins that a checkout's
+  repository is the work tree's top, not its `.git` folder; `TestTempDirRefusesARootInsideAGitWorkTree`
+  (internal/core/testkit/tmp_test.go) fails when `testkit.TempDir` accepts a temp root inside a git work tree, and
+  `TestTempDirRunsInParallelTests` fails when it changes the environment;
+  `TestARunWhoseTmpdirIsInsideAGitWorkTreeIsRefused` (scripts/tmpguard/main_test.go) fails when tmpguard starts a
+  suite with `TMPDIR` inside a work tree.
+- **Rule:** a git write runs only in a folder that is its own repository's top (`git rev-parse --show-toplevel`
+  equals the folder after symlinks), and answers `not_a_repo` otherwise;
+  `testkit.TempDir` fails the test when its temp root sits inside a git work tree; no test run starts with `TMPDIR`
+  inside a repository; `testkit.TempDir` changes no environment variable, because parallel tests call it and
+  share the process environment.

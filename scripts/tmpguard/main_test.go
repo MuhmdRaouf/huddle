@@ -2,11 +2,15 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 )
 
 // spawner is the fixture package: a test whose child starts a notifier, and one that does not.
@@ -20,6 +24,34 @@ func TestARunWhoseChildStartsANotifierFailsNamingTheSpawn(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "notify-send Huddle blocked") {
 		t.Errorf("stderr = %q, want it to name the recorded spawn", &stderr)
+	}
+}
+
+// TestARunWhoseTmpdirIsInsideAGitWorkTreeIsRefused: the suite's "outside a repository" cases and any
+// git write a test aims at its own folder would reach the repository around a TMPDIR that points
+// into a checkout.
+func TestARunWhoseTmpdirIsInsideAGitWorkTreeIsRefused(t *testing.T) {
+	testkit.IsolateGitConfig(t)
+	repo := testkit.MakeRepo(t)
+	inside := filepath.Join(repo.Dir, "scratch", "tmp")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", inside)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-count=1", "-run", "^TestStartsNothing$", spawner}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1\nstdout: %s\nstderr: %s", code, &stdout, &stderr)
+	}
+	for _, want := range []string{"TMPDIR", repo.Dir, "git work tree"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("stderr = %q, want it to name %q", &stderr, want)
+		}
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("the suite ran (stdout %q), want it refused before any test", &stdout)
 	}
 }
 

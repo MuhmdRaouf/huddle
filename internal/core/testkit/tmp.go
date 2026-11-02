@@ -26,10 +26,16 @@ var ISOLATED_GIT_ENV = map[string]string{
 // TempDir returns a fresh directory named by prefix (a real path, so it compares equal to what git
 // reports), removed when the current test finishes together with every process still running from
 // inside it: a router a test removed retires and would otherwise wait for the developer's own
-// Claude Code sessions to close.
+// Claude Code sessions to close. It changes no environment variable, so parallel tests may call it,
+// and it fails the test when the temp root sits inside a git work tree: git run in a folder with no
+// repository of its own would resolve to that checkout and a write there would land in its branch.
 func TempDir(t testing.TB, prefix string) string {
 	t.Helper()
-	dir := filepath.Join(t.TempDir(), prefix)
+	root := t.TempDir()
+	if top, inside := workTreeAbove(filepath.Dir(root)); inside {
+		t.Fatalf("TMPDIR %s puts the test's temp dir inside the git work tree %s; point TMPDIR outside any checkout", os.TempDir(), top)
+	}
+	dir := filepath.Join(root, prefix)
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", dir, err)
 	}
@@ -42,6 +48,23 @@ func TempDir(t testing.TB, prefix string) string {
 		_ = os.RemoveAll(resolved)
 	})
 	return resolved
+}
+
+// workTreeAbove reports the nearest folder at or above dir that holds a .git entry (a folder, or
+// the file a linked worktree has), after symlinks. It reads the file system only and starts no git.
+func workTreeAbove(dir string) (string, bool) {
+	current, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		current = dir
+	}
+	for ; ; current = filepath.Dir(current) {
+		if _, err := os.Lstat(filepath.Join(current, ".git")); err == nil {
+			return current, true
+		}
+		if filepath.Dir(current) == current {
+			return "", false
+		}
+	}
 }
 
 // StopProcessesUnder SIGTERMs every process whose command line names a file under dir (only

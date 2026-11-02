@@ -14,6 +14,9 @@
 // PATH of every process and child it builds. Each shim records its argv and fails, and every
 // recorded spawn is named in the failure. A test never reaches the owner's desktop.
 //
+// It refuses to start when TMPDIR is inside a git work tree: the directory below would sit in that
+// repository too, and git run from it would find the repository around it.
+//
 // The directory comes from the system's default temp location, never from
 // inside the module: the suite's "outside a repository" cases run git and
 // the project detection in temp dirs, and a temp dir under the module
@@ -30,6 +33,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -50,6 +54,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if patterns == 0 {
 		args = append(args, "./...")
+	}
+	if tree, inside := workTreeAround(os.TempDir()); inside {
+		fmt.Fprintf(stderr, "tmpguard: TMPDIR (%s) is inside the git work tree %s: a git write a test aims at its own folder would land in that repository. Unset TMPDIR, or point it outside every repository.\n", os.TempDir(), tree)
+		return 1
 	}
 	guardDir, err := freshGuardDir()
 	if err != nil {
@@ -111,6 +119,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return code
+}
+
+// workTreeAround is the work tree that holds dir: the nearest folder above it (or itself) with a
+// `.git` entry, a directory or a linked worktree's file. dir's symlinks are resolved first.
+func workTreeAround(dir string) (string, bool) {
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		resolved = dir
+	}
+	for current := resolved; ; current = filepath.Dir(current) {
+		if _, err := os.Lstat(filepath.Join(current, ".git")); err == nil {
+			return current, true
+		}
+		if filepath.Dir(current) == current {
+			return "", false
+		}
+	}
 }
 
 // freshGuardDir makes the run's empty TMPDIR in the system's default temp location.
