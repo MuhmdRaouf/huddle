@@ -84,6 +84,10 @@ type RouterOptions struct {
 	Fallback []string
 	// Tap is the ledger tap that keeps each request's bodies for router.db; nil keeps no bodies.
 	Tap *LedgerTap
+
+	// afterAnswer runs with the upstream's status as a request's answer finishes, once its bytes
+	// are sent: the seam a test holds an answer's last step open with. Only tests set it.
+	afterAnswer func(status int)
 }
 
 // keyTimeoutDefault is the key lookup's budget: a keychain prompt or a hung store answers the
@@ -1855,6 +1859,23 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 	// What this answer's inspection decided (a provider route only): the client's status when the
 	// answer was rewritten, and why the upstream failed.
 	decided := inspection{}
+	// The lane counts an answer in Sending, before the client can read any of it, so the
+	// client's next request is routed by the count this answer made; the switch that count
+	// caused is logged once the answer is over (Finished) or failed.
+	var pending domain.FallbackSwitch
+	switched := false
+	// The run of failures a 2xx answer's count reset: an answer that then breaks or loses its
+	// client never finished, so Failed gives the run back.
+	var reset *domain.FallbackRun
+	// Whether Sending already counted this answer as a failure: a body that then breaks is the
+	// same failure, so Failed counts it no second time.
+	failureCounted := false
+	announce := func() {
+		if switched {
+			w.fellBack(pending, true)
+			switched = false
+		}
+	}
 	hooks := UpstreamHooks{
 		Answered: func(answer *http.Response) {
 			timing.headAt = time.Now().UnixMilli()
@@ -1888,7 +1909,20 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			}
 			return &promptRewriter{source: answer.Body, prompt: *prompt, estimator: w.estimator}
 		},
+		Sending: func(answer *http.Response) {
+			if route == "provider" {
+				var replaced domain.FallbackRun
+				pending, switched, replaced = w.fallback.answered(model, answer.StatusCode)
+				if answer.StatusCode >= 200 && answer.StatusCode < 300 {
+					reset = &replaced
+				}
+				failureCounted = domain.FallbackFailure(answer.StatusCode)
+			}
+		},
 		Finished: func(answer *http.Response) {
+			if w.opts.afterAnswer != nil {
+				w.opts.afterAnswer(answer.StatusCode)
+			}
 			// The final numbers are the real ones: remembered here, so the conversation's next
 			// turn can estimate the prompt size its provider will not report until the end.
 			if prompt != nil {
@@ -1897,9 +1931,7 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			if route == "anthropic" && w.opts.AnthropicOk != nil {
 				w.opts.AnthropicOk()
 			}
-			if route == "provider" {
-				w.fellBack(w.fallback.answered(model, answer.StatusCode))
-			}
+			announce()
 			// The bytes the client read are the output the tap keeps, offered whole or not at
 			// all; the note reads the tap's final state, so this runs first. The id guards the
 			// offer: kept is made whenever the tap is on, but an output never goes under an
@@ -1927,6 +1959,10 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 		},
 		Failed: func(failure UpstreamFailure) {
 			tracker.Close()
+			announce()
+			if reset != nil {
+				w.fallback.reinstate(model, *reset)
+			}
 			status := failureStatus(failure)
 			if failure.ClientClosed {
 				// A client that left ends its own call: that says nothing about the upstream or the
@@ -1942,7 +1978,7 @@ func (w *routerWorker) dispatch(req *http.Request, res *Response, body []byte, m
 			if route == "anthropic" && w.opts.AnthropicFail != nil {
 				w.opts.AnthropicFail(failure.Code, model)
 			}
-			if route == "provider" {
+			if route == "provider" && !failureCounted {
 				w.fellBack(w.fallback.dropped(model, failure.Code))
 			}
 			if !failure.AfterHeaders {

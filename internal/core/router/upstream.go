@@ -557,6 +557,10 @@ type UpstreamHooks struct {
 	// Never called when Inspect held the answer back.
 	Rewrite func(answer *http.Response) io.Reader
 	Failed  func(failure UpstreamFailure)
+	// Sending runs once per answer that arrived, with its head known and after Inspect's judge (if
+	// any) has decided, before the first byte of it goes to the client: whatever a client's next
+	// request must already see of this answer is recorded here.
+	Sending func(answer *http.Response)
 	// Finished runs when the answer has been sent.
 	Finished func(answer *http.Response)
 	// Inspect runs with each answer before anything is sent: return a judge to hold the (short)
@@ -772,10 +776,16 @@ func SendUpstream(ctx context.Context, call UpstreamCall, res *Response, hooks U
 		hooks.Answered(answer)
 	}
 	contentType = answer.Header.Get("Content-Type")
+	sending := func() {
+		if hooks.Sending != nil {
+			hooks.Sending(answer)
+		}
+	}
 
 	reader := io.Reader(answer.Body)
 	decided := false
 	if judge == nil {
+		sending()
 		writeHead(res, answer.StatusCode, ResponseHeaders(answer.Header))
 		if hooks.Rewrite != nil {
 			if rewritten := hooks.Rewrite(answer); rewritten != nil {
@@ -811,6 +821,7 @@ func SendUpstream(ctx context.Context, call UpstreamCall, res *Response, hooks U
 			if hooks.Oversize != nil {
 				hooks.Oversize(answer)
 			}
+			sending()
 			writeHead(res, answer.StatusCode, ResponseHeaders(answer.Header))
 			for _, chunk := range chunks {
 				if _, err := res.Write(chunk); err != nil {
@@ -821,9 +832,13 @@ func SendUpstream(ctx context.Context, call UpstreamCall, res *Response, hooks U
 			}
 		} else {
 			decided = true
-			if !res.Destroyed() {
+			if res.Destroyed() {
+				sending()
+			} else {
 				body := concatChunks(chunks)
-				if replacement, ok := judge(body); ok {
+				replacement, replaced := judge(body)
+				sending()
+				if replaced {
 					writeHead(res, replacement.Status, replacement.Headers)
 					res.End([]byte(replacement.Body))
 				} else {

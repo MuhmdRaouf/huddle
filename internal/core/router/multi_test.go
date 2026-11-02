@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -71,6 +72,8 @@ type multiLaneOpts struct {
 	upstream *url.URL
 	// fallback is the lane's fallback list.
 	fallback []string
+	// afterAnswer runs as each answer of the lane finishes; nil runs nothing.
+	afterAnswer func(status int)
 }
 
 // multiOpts is what a scenario changes about the rig.
@@ -123,6 +126,8 @@ func newMultiRig(t *testing.T, opts multiOpts) *multiRig {
 			},
 			Budget:   lane.budget,
 			Fallback: lane.fallback,
+
+			afterAnswer: lane.afterAnswer,
 		})
 	}
 	r.port = reservePort(t)
@@ -174,6 +179,31 @@ func (r *multiRig) postModel(t *testing.T, path, model string) answer {
 		t.Fatal(err)
 	}
 	return got
+}
+
+// postModelCut posts one request whose answer the router cuts: the client's read error is the
+// expected end, so it is not reported.
+func (r *multiRig) postModelCut(path, model string) {
+	body := fmt.Sprintf(`{"model":%q,"messages":[]}`, model)
+	_, _ = postRawBody(r.port, path, body, map[string]string{"Content-Type": "application/json"})
+}
+
+// postModelAbandon posts one request, waits for the answer's head and leaves: the client of an
+// answer it stops reading (Esc in Claude Code).
+func (r *multiRig) postModelAbandon(t *testing.T, path, model string) {
+	t.Helper()
+	body := fmt.Sprintf(`{"model":%q,"messages":[]}`, model)
+	request, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d%s", r.port, path), strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
 }
 
 // proxyClientAt is an HTTP client the way Claude Code runs in proxy mode: the router at

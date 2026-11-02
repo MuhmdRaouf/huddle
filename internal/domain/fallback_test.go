@@ -120,3 +120,28 @@ func TestFallbackTriesThePrimaryAfreshAfterTheWindow(t *testing.T) {
 		t.Errorf("Pick = %s", got)
 	}
 }
+
+func TestFallbackReinstateGivesBackWhatAnUnfinished2xxReset(t *testing.T) {
+	f := NewFallback([]string{"glm-5.3-flash"})
+	f.Answered("glm-5.3", 503, fallbackT0)
+	f.Answered("glm-5.3", 503, fallbackT0+1)
+	replaced := f.Run("glm-5.3")
+	f.Answered("glm-5.3", 200, fallbackT0+2)
+	f.Reinstate("glm-5.3", replaced)
+	change, switched := f.Dropped("glm-5.3", "EABORTED", fallbackT0+3)
+	if !switched || change.String() != "fallback glm-5.3 -> glm-5.3-flash (3 x EABORTED)" {
+		t.Fatalf("switch = %q, %v", change.String(), switched)
+	}
+}
+
+func TestFallbackReinstateAddsToTheFailuresCountedSince(t *testing.T) {
+	f := NewFallback([]string{"glm-5.3-flash"})
+	f.Answered("glm-5.3", 503, fallbackT0)
+	replaced := f.Run("glm-5.3")
+	f.Answered("glm-5.3", 200, fallbackT0+1)
+	f.Answered("glm-5.3", 503, fallbackT0+2)
+	f.Reinstate("glm-5.3", replaced)
+	if _, switched := f.Dropped("glm-5.3", "EABORTED", fallbackT0+3); !switched {
+		t.Fatal("the failure counted since and the reinstated one did not add up to three")
+	}
+}

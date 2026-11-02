@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -662,12 +663,18 @@ func (g *gatewayFake) pathsSeen() []string {
 	return append([]string(nil), g.paths...)
 }
 
-// modelUpstream is a fake provider that answers 503 for the models in failing and streams 200
+// modelUpstream is a fake provider that answers 503 for the models in failing, sends a 200 head
+// and then drops the connection for the models in breaking, sends a 503 head with a body over
+// the inspect limit and then drops the connection for the models in oversize, sends a 200 head
+// and one event and then waits for its client to leave for the models in hanging, and streams 200
 // for every other, recording the model each request named, in order.
 type modelUpstream struct {
-	mu      sync.Mutex
-	failing map[string]bool
-	models  []string
+	mu       sync.Mutex
+	failing  map[string]bool
+	breaking map[string]bool
+	oversize map[string]bool
+	hanging  map[string]bool
+	models   []string
 }
 
 func (u *modelUpstream) serve(t *testing.T) *url.URL {
@@ -681,7 +688,32 @@ func (u *modelUpstream) serve(t *testing.T) *url.URL {
 		u.mu.Lock()
 		u.models = append(u.models, named.Model)
 		failing := u.failing[named.Model]
+		breaking := u.breaking[named.Model]
+		oversize := u.oversize[named.Model]
+		hanging := u.hanging[named.Model]
 		u.mu.Unlock()
+		if oversize {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(503)
+			_, _ = w.Write(make([]byte, 2*InspectLimitBytes))
+			w.(http.Flusher).Flush()
+			panic(http.ErrAbortHandler)
+		}
+		if hanging {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+			_, _ = w.Write([]byte("data: " + named.Model + "\n\n"))
+			w.(http.Flusher).Flush()
+			<-req.Context().Done()
+			return
+		}
+		if breaking {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+			_, _ = w.Write([]byte("data: " + named.Model + "\n\n"))
+			w.(http.Flusher).Flush()
+			panic(http.ErrAbortHandler)
+		}
 		if failing {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(503)
@@ -693,6 +725,13 @@ func (u *modelUpstream) serve(t *testing.T) *url.URL {
 	}))
 	t.Cleanup(server.Close)
 	return mustURL(t, server.URL+"/api/anthropic")
+}
+
+// set changes how the upstream answers, between requests.
+func (u *modelUpstream) set(change func()) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	change()
 }
 
 func (u *modelUpstream) seen() []string {
@@ -801,5 +840,170 @@ func TestLaneFallbackScenarios(t *testing.T) {
 				}
 			})
 		})
+
+		f.Scenario("answers that send a 200 head and break mid-body count as failures", func(s *bdd.S) {
+			var rig *multiRig
+			upstream := &modelUpstream{breaking: map[string]bool{"glm-5.3": true}}
+			s.Given("a zai lane whose glm-5.3 sends a 200 head and drops the connection, and whose fallback list is glm-5.3-flash", func(t *testing.T) {
+				rig = newMultiRig(s.T, multiOpts{lanes: []multiLaneOpts{
+					{provider: routerProvider, key: "zai-secret", upstream: upstream.serve(s.T), fallback: []string{"glm-5.3-flash"}},
+				}})
+			})
+			s.When("three glm-5.3 answers break mid-body", func(t *testing.T) {
+				for range 3 {
+					rig.postModelCut("/v1/messages", "glm-5.3")
+				}
+			})
+			s.Then("the fourth glm-5.3 request reaches glm-5.3-flash", func(t *testing.T) {
+				if got := rig.postModel(t, "/v1/messages", "glm-5.3"); got.status != 200 {
+					t.Fatalf("fourth = %d %q", got.status, got.body)
+				}
+				want := []string{"glm-5.3", "glm-5.3", "glm-5.3", "glm-5.3-flash"}
+				if got := upstream.seen(); !slices.Equal(got, want) {
+					t.Errorf("upstream saw %v, want %v", got, want)
+				}
+			})
+		})
+
+		f.Scenario("a 503 over the inspect limit that breaks mid-body counts once", func(s *bdd.S) {
+			var rig *multiRig
+			upstream := &modelUpstream{oversize: map[string]bool{"glm-5.3": true}}
+			s.Given("a zai lane whose glm-5.3 sends a 503 head and a body over the inspect limit and drops the connection, and whose fallback list is glm-5.3-flash", func(t *testing.T) {
+				rig = newMultiRig(s.T, multiOpts{lanes: []multiLaneOpts{
+					{provider: routerProvider, key: "zai-secret", upstream: upstream.serve(s.T), fallback: []string{"glm-5.3-flash"}},
+				}})
+			})
+			s.When("three glm-5.3 answers break mid-body and a fourth request follows", func(t *testing.T) {
+				for range 3 {
+					rig.postModelCut("/v1/messages", "glm-5.3")
+				}
+				rig.postModelCut("/v1/messages", "glm-5.3")
+			})
+			s.Then("the switch happens on the third failure, so only the fourth reaches glm-5.3-flash", func(t *testing.T) {
+				want := []string{"glm-5.3", "glm-5.3", "glm-5.3", "glm-5.3-flash"}
+				if got := upstream.seen(); !slices.Equal(got, want) {
+					t.Errorf("upstream saw %v, want %v", got, want)
+				}
+			})
+		})
+
+		f.Scenario("a client that leaves a 200 mid-body leaves the count as it was", func(s *bdd.S) {
+			var rig *multiRig
+			upstream := &modelUpstream{failing: map[string]bool{"glm-5.3": true}, hanging: map[string]bool{}}
+			cancelled := make(chan struct{})
+			var cancelledOnce sync.Once
+			s.Given("a zai lane whose glm-5.3 answers 503 and whose fallback list is glm-5.3-flash", func(t *testing.T) {
+				rig = newMultiRig(s.T, multiOpts{
+					log: func(line string) {
+						if strings.HasSuffix(line, "cancelled") {
+							cancelledOnce.Do(func() { close(cancelled) })
+						}
+					},
+					lanes: []multiLaneOpts{
+						{provider: routerProvider, key: "zai-secret", upstream: upstream.serve(s.T), fallback: []string{"glm-5.3-flash"}},
+					},
+				})
+			})
+			s.When("two glm-5.3 requests fail and a third gets a 200 head and its client leaves", func(t *testing.T) {
+				for range 2 {
+					rig.postModel(t, "/v1/messages", "glm-5.3")
+				}
+				upstream.set(func() {
+					upstream.failing["glm-5.3"] = false
+					upstream.hanging["glm-5.3"] = true
+				})
+				rig.postModelAbandon(t, "/v1/messages", "glm-5.3")
+				select {
+				case <-cancelled:
+				case <-time.After(10 * time.Second):
+					t.Fatal("the router never logged the cancelled request")
+				}
+			})
+			s.And("one more request fails", func(t *testing.T) {
+				upstream.set(func() {
+					upstream.failing["glm-5.3"] = true
+					upstream.hanging["glm-5.3"] = false
+				})
+				rig.postModel(t, "/v1/messages", "glm-5.3")
+			})
+			s.Then("that failure is the third in a row, so the next request reaches glm-5.3-flash", func(t *testing.T) {
+				rig.postModel(t, "/v1/messages", "glm-5.3")
+				want := []string{"glm-5.3", "glm-5.3", "glm-5.3", "glm-5.3", "glm-5.3-flash"}
+				if got := upstream.seen(); !slices.Equal(got, want) {
+					t.Errorf("upstream saw %v, want %v", got, want)
+				}
+			})
+		})
+
+		f.Scenario("a request sent the moment a failed answer ends is routed by the count that answer made", func(s *bdd.S) {
+			var rig *multiRig
+			upstream := &modelUpstream{failing: map[string]bool{"glm-5.3": true}}
+			hold := newAnswerHold(s.T, 3)
+			s.Given("a zai lane whose glm-5.3 answers 503, whose fallback list is glm-5.3-flash, and whose third answer is held open after its bytes are sent", func(t *testing.T) {
+				rig = newMultiRig(s.T, multiOpts{lanes: []multiLaneOpts{
+					{provider: routerProvider, key: "zai-secret", upstream: upstream.serve(s.T), fallback: []string{"glm-5.3-flash"}, afterAnswer: hold.after},
+				}})
+			})
+			s.When("three glm-5.3 requests are answered 503 and a fourth follows the third's last byte", func(t *testing.T) {
+				for range 4 {
+					rig.postModel(t, "/v1/messages", "glm-5.3")
+				}
+			})
+			s.Then("the fourth reaches glm-5.3-flash", func(t *testing.T) {
+				want := []string{"glm-5.3", "glm-5.3", "glm-5.3", "glm-5.3-flash"}
+				if got := upstream.seen(); !slices.Equal(got, want) {
+					t.Errorf("upstream saw %v, want %v", got, want)
+				}
+			})
+		})
+
+		f.Scenario("a request sent the moment a 200 ends starts from the count that 200 reset", func(s *bdd.S) {
+			var rig *multiRig
+			upstream := &modelUpstream{failing: map[string]bool{"glm-5.3": true}}
+			hold := newAnswerHold(s.T, 3)
+			s.Given("a zai lane whose glm-5.3 answers 503, whose fallback list is glm-5.3-flash, and whose third answer is held open after its bytes are sent", func(t *testing.T) {
+				rig = newMultiRig(s.T, multiOpts{lanes: []multiLaneOpts{
+					{provider: routerProvider, key: "zai-secret", upstream: upstream.serve(s.T), fallback: []string{"glm-5.3-flash"}, afterAnswer: hold.after},
+				}})
+			})
+			s.When("two glm-5.3 requests fail, the third succeeds, and two more follow it at once and fail", func(t *testing.T) {
+				for _, ok := range []bool{false, false, true, false, false} {
+					upstream.mu.Lock()
+					upstream.failing["glm-5.3"] = !ok
+					upstream.mu.Unlock()
+					rig.postModel(t, "/v1/messages", "glm-5.3")
+				}
+			})
+			s.Then("the next glm-5.3 request still reaches glm-5.3", func(t *testing.T) {
+				rig.postModel(t, "/v1/messages", "glm-5.3")
+				if got := upstream.seen(); got[len(got)-1] != "glm-5.3" {
+					t.Errorf("upstream saw %v, want glm-5.3 last", got)
+				}
+			})
+		})
 	})
 }
+
+// answerHold keeps one lane answer's last step open: the nth answer to finish waits until the
+// test ends, so the next request meets the lane before that answer's own bookkeeping ran.
+type answerHold struct {
+	nth     int64
+	seen    atomic.Int64
+	release chan struct{}
+	once    sync.Once
+}
+
+func newAnswerHold(t *testing.T, nth int64) *answerHold {
+	t.Helper()
+	hold := &answerHold{nth: nth, release: make(chan struct{})}
+	t.Cleanup(hold.free)
+	return hold
+}
+
+func (h *answerHold) after(int) {
+	if h.seen.Add(1) == h.nth {
+		<-h.release
+	}
+}
+
+func (h *answerHold) free() { h.once.Do(func() { close(h.release) }) }

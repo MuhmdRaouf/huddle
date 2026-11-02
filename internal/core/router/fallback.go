@@ -33,14 +33,28 @@ func (f *laneFallback) pick(model string) string {
 	return f.decision.Pick(model, time.Now().UnixMilli())
 }
 
-// answered counts one upstream answer for model and returns the switch it caused, if any.
-func (f *laneFallback) answered(model string, status int) (domain.FallbackSwitch, bool) {
+// answered counts one upstream answer for model and returns the switch it caused, if any, and
+// the run of failures the count replaced.
+func (f *laneFallback) answered(model string, status int) (domain.FallbackSwitch, bool, domain.FallbackRun) {
 	if f == nil {
-		return domain.FallbackSwitch{}, false
+		return domain.FallbackSwitch{}, false, domain.FallbackRun{}
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.decision.Answered(model, status, time.Now().UnixMilli())
+	replaced := f.decision.Run(model)
+	change, switched := f.decision.Answered(model, status, time.Now().UnixMilli())
+	return change, switched, replaced
+}
+
+// reinstate gives model back the run an answer's count replaced, for an answer that did not
+// finish.
+func (f *laneFallback) reinstate(model string, replaced domain.FallbackRun) {
+	if f == nil {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.decision.Reinstate(model, replaced)
 }
 
 // dropped counts one failed upstream connection for model and returns the switch it caused, if

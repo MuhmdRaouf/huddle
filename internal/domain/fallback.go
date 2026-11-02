@@ -31,6 +31,12 @@ type modelRun struct {
 	downUntil int64
 }
 
+// FallbackRun is a model's run of failures as Run read it: how many in a row, the last one's
+// code, and when the model is back.
+type FallbackRun struct {
+	run modelRun
+}
+
 // FallbackSwitch is one model taken out: which model, the one its requests go to now, and the
 // failures that did it.
 type FallbackSwitch struct {
@@ -83,6 +89,27 @@ func (f *Fallback) Answered(model string, status int, now int64) (FallbackSwitch
 		return FallbackSwitch{}, false
 	}
 	return f.fail(model, strconv.Itoa(status), now)
+}
+
+// Run is model's run as it stands, to give back with Reinstate.
+func (f *Fallback) Run(model string) FallbackRun {
+	return FallbackRun{run: f.models[model]}
+}
+
+// Reinstate gives model back the run that a 2xx answer's reset took (read with Run just before
+// it), for an answer whose body then broke or whose client left: that answer never finished, so
+// it resets nothing. The failures counted since stay and add to it.
+func (f *Fallback) Reinstate(model string, replaced FallbackRun) {
+	run := f.models[model]
+	run.fails += replaced.run.fails
+	if run.code == "" {
+		run.code = replaced.run.code
+	}
+	run.downUntil = max(run.downUntil, replaced.run.downUntil)
+	if run == (modelRun{}) {
+		return
+	}
+	f.models[model] = run
 }
 
 // Dropped counts one connection that failed before or while answering, by its errno code.
