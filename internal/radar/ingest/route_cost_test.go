@@ -3,8 +3,10 @@ package ingest_test
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/MuhmdRaouf/huddle/internal/radar/ingest"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
@@ -71,5 +73,47 @@ func TestJudgingASuccessfulRouteLineAllocatesNothing(t *testing.T) {
 	t.Logf("judging a 200 route line allocates %.0f times", allocs)
 	if allocs != 0 {
 		t.Errorf("judging a 200 route line allocates %.0f times, want none", allocs)
+	}
+}
+
+// A route record keeps room for its headers and no more: the pairs are copied out of the
+// parse in one allocation of their own length, not grown by doubling past it.
+func TestARouteRecordsHeadersHoldNoSpareRoom(t *testing.T) {
+	for _, i := range []int{0, 2} { // all ten headers, then one
+		record := ingest.RouteRequest(parsedBusyRouteLine(t, i), "glm-5.3", 0)
+		if record.Headers == nil {
+			t.Fatalf("line %d: no headers on the record", i)
+		}
+		if got, want := cap(*record.Headers), len(*record.Headers); got != want {
+			t.Errorf("line %d: %d headers sit in room for %d", i, want, got)
+		}
+	}
+}
+
+// sameBytes reports whether two strings share one copy of their bytes.
+func sameBytes(a, b string) bool { return unsafe.StringData(a) == unsafe.StringData(b) }
+
+// Two route lines that name the same session, model, upstream and header names build two
+// records that hold one copy of each: the store keeps thousands of records, and a fresh copy
+// of every repeated word in each of them is a large part of the catch-up's resident size.
+func TestRouteRecordsOfSeparateLinesShareTheirRepeatedStrings(t *testing.T) {
+	first := ingest.RouteRequest(parsedBusyRouteLine(t, 0), strings.Clone("glm-5.3"), 0)
+	second := ingest.RouteRequest(parsedBusyRouteLine(t, 50), strings.Clone("glm-5.3"), 0) // the same session
+
+	same := map[string][2]string{
+		"session":  {first.SessionID, second.SessionID},
+		"model":    {first.Model, second.Model},
+		"upstream": {first.Upstream, second.Upstream},
+		"status":   {*first.Status, *second.Status},
+		"route":    {*first.Route, *second.Route},
+		"via":      {*first.Via, *second.Via},
+	}
+	for at, pair := range *first.Headers {
+		same["header name "+pair.Name] = [2]string{pair.Name, (*second.Headers)[at].Name}
+	}
+	for what, pair := range same {
+		if !sameBytes(pair[0], pair[1]) {
+			t.Errorf("the two records hold their %s %q in two copies", what, pair[0])
+		}
 	}
 }

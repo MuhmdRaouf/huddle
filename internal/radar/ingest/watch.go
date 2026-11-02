@@ -1217,16 +1217,22 @@ func routerOf(line shared.SpoolLine) string {
 // the order the line carried them; nil when none survived. The router already keeps only
 // these; the spool is data, so the allow-list is enforced again here, whatever wrote the line.
 func headersOf(line shared.SpoolLine) *shared.Headers {
-	var out shared.Headers
-	if line.Headers != nil {
-		for _, pair := range *line.Headers {
-			if domain.CapturedHeader(pair.Name) {
-				out = append(out, pair)
-			}
+	if line.Headers == nil {
+		return nil
+	}
+	// the router keeps only the allow-listed pairs, so the room for every pair is the room
+	// for the kept ones; a line that carried others is copied into room of its own length
+	out := make(shared.Headers, 0, len(*line.Headers))
+	for _, pair := range *line.Headers {
+		if domain.CapturedHeader(pair.Name) {
+			out = append(out, shared.HeaderPair{Name: interned(pair.Name), Value: pair.Value})
 		}
 	}
 	if len(out) == 0 {
 		return nil
+	}
+	if len(out) < cap(out) {
+		out = append(make(shared.Headers, 0, len(out)), out...)
 	}
 	return &out
 }
@@ -1238,29 +1244,31 @@ func headersOf(line shared.SpoolLine) *shared.Headers {
 func RouteRequest(line shared.SpoolLine, model string, ts int64) shared.RequestRecord {
 	sessionID := shared.OutsideSession
 	if line.SessionID != nil {
-		sessionID = *line.SessionID
+		sessionID = interned(*line.SessionID)
 	}
 	agentID := ""
 	if line.AgentID != nil {
-		agentID = *line.AgentID
+		agentID = interned(*line.AgentID)
 	}
 	upstream := shared.DefaultUpstream
 	if line.Upstream != nil {
-		upstream = *line.Upstream
+		upstream = interned(*line.Upstream)
 	}
 	route, isRoute := stringOfExtra(line, "route")
 	if !isRoute {
 		route = "router"
 	}
-	via := routerOf(line)
+	route = interned(route)
+	via := interned(routerOf(line))
 	status, statusPresent := line.StatusText()
+	status = interned(status)
 	// the agent and model sit in the id so parallel subagent calls that finish in the same
 	// millisecond stay the separate records they were
 	record := shared.RequestRecord{
 		ID:         fmt.Sprintf("route:%s:%s:%s:%d:%s", sessionID, agentID, model, ts, status),
 		SessionID:  sessionID,
 		AgentID:    agentID,
-		Model:      model,
+		Model:      interned(model),
 		Upstream:   upstream,
 		Ts:         ts,
 		LatencyMs:  line.LatencyMs,
