@@ -363,13 +363,6 @@ type SessionRecords struct {
 	Events   []*shared.EventRecord
 }
 
-// keptCaches marks the caches a write in progress has brought up to date with the records
-// it appended: notifyLocked keeps those and discards the rest.
-type keptCaches struct {
-	projection bool
-	eventIndex bool
-}
-
 // viewsCache is the built session views, one per (session, version): list, detail and
 // summary reads within one version are free.
 type viewsCache struct {
@@ -457,18 +450,22 @@ type Store struct {
 	notices           map[string]map[string]int64
 	pendingStarts     map[string]int64
 
-	proj         map[string]*sessionSlice
-	eventIndex   map[string][]*shared.EventRecord
-	kept         keptCaches
-	views        *viewsCache
-	newest       *orderCache
-	listCache    *derived[[]SessionListItem]
-	summaryCache *derived[shared.Summary]
-	modelsCache  *derived[ModelsAnswer]
-	lonelyRoutes map[string]*waitingMap
-	lonelyCopies map[string]*waitingSet
-	aliases      *aliasMap
-	routedTotals map[string]struct{}
+	proj       map[string]*sessionSlice
+	eventIndex map[string][]*shared.EventRecord
+	// staleSessions are the sessions whose slices in proj an update to a held record left out
+	// of date: the next read builds those again. Empty while proj is nil.
+	staleSessions map[string]struct{}
+	// eventIndexKept marks that the write in progress added its event to the built index.
+	eventIndexKept bool
+	views          *viewsCache
+	newest         *orderCache
+	listCache      *derived[[]SessionListItem]
+	summaryCache   *derived[shared.Summary]
+	modelsCache    *derived[ModelsAnswer]
+	lonelyRoutes   map[string]*waitingMap
+	lonelyCopies   map[string]*waitingSet
+	aliases        *aliasMap
+	routedTotals   map[string]struct{}
 	// calls files each held call under its request id: the key the pairing tries first.
 	calls map[string]*callSlot
 	// utilization is the newest unified limits a route line carried, and the line's ts.
@@ -914,12 +911,18 @@ func (s *Store) nextArrivalLocked() int64 {
 }
 
 // projectionLocked groups the store's records by session (and per agent inside). The first
-// read builds it; each record a write appends afterwards joins it as it lands, and a write
-// that replaces or drops records discards it for the next read to build again.
+// read builds it; each record a write appends afterwards joins it as it lands, an update to
+// a held record leaves the slices of its sessions for the next read to build again, and a
+// write that drops records discards the whole projection.
 func (s *Store) projectionLocked() map[string]*sessionSlice {
 	if s.proj == nil {
 		s.proj = s.buildProjectionLocked()
+		return s.proj
 	}
+	for sessionID := range s.staleSessions {
+		s.rebuildSessionLocked(sessionID)
+	}
+	s.staleSessions = nil
 	return s.proj
 }
 
@@ -938,6 +941,46 @@ func (s *Store) buildProjectionLocked() map[string]*sessionSlice {
 		rollUpSlice(slice)
 	}
 	return proj
+}
+
+// rebuildSessionLocked builds one session's slice again from its held records, in arrival
+// order, as buildProjectionLocked builds it; a session that holds none has no slice.
+func (s *Store) rebuildSessionLocked(sessionID string) {
+	delete(s.proj, sessionID)
+	requests := make([]*storedRequest, 0, len(s.requestsBySession[sessionID]))
+	for id := range s.requestsBySession[sessionID] {
+		requests = append(requests, s.requests[id])
+	}
+	s.requestOrder.sortHeld(requests)
+	tools := make([]*storedTool, 0, len(s.toolsBySession[sessionID]))
+	for id := range s.toolsBySession[sessionID] {
+		tools = append(tools, s.tools[id])
+	}
+	s.toolOrder.sortHeld(tools)
+	if len(requests)+len(tools) == 0 {
+		return
+	}
+	slice := sliceOf(s.proj, sessionID)
+	for _, held := range requests {
+		slice.requests = append(slice.requests, &held.record)
+	}
+	for _, held := range tools {
+		addToolToProjection(s.proj, &held.record)
+	}
+	rollUpSlice(slice)
+}
+
+// staleLocked marks sessions whose slices an update to a held record left out of date.
+func (s *Store) staleLocked(sessionIDs ...string) {
+	if s.proj == nil {
+		return
+	}
+	if s.staleSessions == nil {
+		s.staleSessions = make(map[string]struct{}, len(sessionIDs))
+	}
+	for _, sessionID := range sessionIDs {
+		s.staleSessions[sessionID] = struct{}{}
+	}
 }
 
 // eventIndexLocked groups the held events by session, built on the first read and then
@@ -987,7 +1030,6 @@ func (s *Store) projectRequestLocked(held *storedRequest) {
 	mine.lastRequest = record
 	mine.lastTs = max(mine.lastTs, record.Ts)
 	mine.tokens = shared.AddTokens(mine.tokens, record.Tokens)
-	s.kept.projection = true
 }
 
 // projectToolLocked adds a tool call just appended to the arrival list to the built
@@ -997,7 +1039,6 @@ func (s *Store) projectToolLocked(held *storedTool) {
 		return
 	}
 	addToolToProjection(s.proj, &held.record)
-	s.kept.projection = true
 }
 
 // appendEventLocked adds an event to the timeline and to the built event index. The index
@@ -1012,7 +1053,7 @@ func (s *Store) appendEventLocked(record shared.EventRecord) {
 	if id := record.SessionID; id != nil {
 		s.eventIndex[*id] = append(s.eventIndex[*id], &s.events[len(s.events)-1])
 	}
-	s.kept.eventIndex = true
+	s.eventIndexKept = true
 }
 
 func sliceOf(proj map[string]*sessionSlice, sessionID string) *sessionSlice {
@@ -1320,7 +1361,7 @@ func (s *Store) applyEvictionsLocked(picks []evictionCandidate) {
 			delete(s.tools, pick.id)
 		default:
 			eventsGone = true
-			s.eventIndex, s.kept.eventIndex = nil, false
+			s.eventIndex, s.eventIndexKept = nil, false
 			gone[pick.id] = struct{}{}
 		}
 	}
@@ -1372,7 +1413,7 @@ func (s *Store) dropSessionLocked(sessionID string) {
 
 // dropProjectionLocked discards the projection, for a write that removes records from it.
 func (s *Store) dropProjectionLocked() {
-	s.proj, s.kept.projection = nil, false
+	s.proj, s.staleSessions = nil, nil
 }
 
 // fileUnder adds a record id to its session's set in an index, making the set when the
@@ -1400,18 +1441,19 @@ func unfile(index map[string]map[string]struct{}, sessionID, id string) {
 }
 
 // notifyLocked bumps the version, drops every cached answer and lists the listeners to
-// call once the lock is open. The projection and the event index stay when the change
-// carries no request, tool call or event they could be missing, or when the write appended
-// those to them (kept).
+// call once the lock is open. The event index stays when the change carries no event it
+// could be missing, or when the write added that event to it. The projection stays unless a
+// warm load placed requests at their file's positions, which the arrival lists settle: the
+// other writes add to it, mark sessions stale or drop it themselves.
 func (s *Store) notifyLocked(change Change) []*listenerEntry {
 	s.ver++
-	if (len(change.Requests) > 0 || len(change.Tools) > 0) && !s.kept.projection {
-		s.proj = nil
+	if change.Warm && len(change.Requests) > 0 {
+		s.dropProjectionLocked()
 	}
-	if len(change.Events) > 0 && !s.kept.eventIndex {
+	if len(change.Events) > 0 && !s.eventIndexKept {
 		s.eventIndex = nil
 	}
-	s.kept = keptCaches{}
+	s.eventIndexKept = false
 	s.views = nil
 	s.newest = nil
 	s.listCache = nil
@@ -1462,11 +1504,7 @@ func (s *Store) placeRequestLocked(record shared.RequestRecord) shared.RequestRe
 			// call only repeats what the (possibly rewritten) stream opened with
 			stored.Tokens = existing.record.Tokens
 		}
-		if existing.record.SessionID != stored.SessionID {
-			unfile(s.requestsBySession, existing.record.SessionID, stored.ID)
-			fileUnder(s.requestsBySession, stored.SessionID, stored.ID)
-		}
-		existing.record = stored
+		s.refileRequestLocked(existing, stored)
 		s.noteCallLocked(stored, FromRouter(record), !FromRouter(record))
 		return stored
 	}
@@ -1475,11 +1513,7 @@ func (s *Store) placeRequestLocked(record shared.RequestRecord) shared.RequestRe
 	}
 	stored, paired := s.pairLocked(record)
 	if existing, ok := s.requests[stored.ID]; ok {
-		if existing.record.SessionID != stored.SessionID {
-			unfile(s.requestsBySession, existing.record.SessionID, stored.ID)
-			fileUnder(s.requestsBySession, stored.SessionID, stored.ID)
-		}
-		existing.record = stored // the paired twin's slot, its arrival number kept
+		s.refileRequestLocked(existing, stored) // the paired twin's slot, its arrival number kept
 	} else {
 		fileUnder(s.requestsBySession, stored.SessionID, stored.ID)
 		held := &storedRequest{record: stored, seq: s.nextArrivalLocked()}
@@ -1489,6 +1523,17 @@ func (s *Store) placeRequestLocked(record shared.RequestRecord) shared.RequestRe
 	}
 	s.noteCallLocked(stored, paired || FromRouter(record), paired || !FromRouter(record))
 	return stored
+}
+
+// refileRequestLocked replaces a held request's record, keeping its arrival number, and
+// leaves the slices of the session it left and the session it lands in to be built again.
+func (s *Store) refileRequestLocked(held *storedRequest, stored shared.RequestRecord) {
+	s.staleLocked(held.record.SessionID, stored.SessionID)
+	if held.record.SessionID != stored.SessionID {
+		unfile(s.requestsBySession, held.record.SessionID, stored.ID)
+		fileUnder(s.requestsBySession, stored.SessionID, stored.ID)
+	}
+	held.record = stored
 }
 
 // ownCopyLocked is the held record a later copy from the same source refreshes: the
@@ -1823,6 +1868,7 @@ func (s *Store) AddToolCall(record shared.ToolCallRecord) {
 // storeToolLocked places a tool call, keeping an existing slot's arrival number.
 func (s *Store) storeToolLocked(record shared.ToolCallRecord) {
 	if existing, ok := s.tools[record.ID]; ok {
+		s.staleLocked(existing.record.SessionID, record.SessionID)
 		if existing.record.SessionID != record.SessionID {
 			unfile(s.toolsBySession, existing.record.SessionID, record.ID)
 			fileUnder(s.toolsBySession, record.SessionID, record.ID)
