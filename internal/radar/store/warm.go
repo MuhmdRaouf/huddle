@@ -240,6 +240,9 @@ func (l *warmLoad) flushEvents() error {
 	return l.commit(len(batch), func(change *Change) {
 		s := l.store
 		for _, event := range batch {
+			if line, ok := event.Payload.(shared.SpoolLine); ok {
+				event.Payload = line.Slim()
+			}
 			s.events = append(s.events, event)
 			s.keepWarmedEventLocked(event)
 			change.Events = append(change.Events, event)

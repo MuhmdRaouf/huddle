@@ -832,6 +832,19 @@ func (l *SpoolLine) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// Slim is the line without the fields that carry its free text and its nested values —
+// message, prompt, tool input and response, model env and every undeclared key — for a
+// holder that serves the line by its bytes: MarshalJSON still prints each of them, from the
+// bytes the decode kept, and a hook line's text is then held once instead of twice. A line
+// built in code has no bytes to print them from and comes back whole.
+func (l SpoolLine) Slim() SpoolLine {
+	if l.encoded == nil {
+		return l
+	}
+	l.Message, l.Prompt, l.ToolInput, l.ToolResponse, l.ModelEnv, l.Extra = nil, nil, nil, nil, nil, nil
+	return l
+}
+
 // StatusText is the status a route line named, as the string a template literal would
 // print it: the routers write numbers, which the typed Status reads as absent while the
 // payload keeps them as read, and a number prints exactly as String(n) does. False when

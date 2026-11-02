@@ -1814,7 +1814,7 @@ func (s *Store) AddSpoolLine(line shared.SpoolLine) {
 			SessionID: line.SessionID,
 			AgentID:   line.AgentID,
 			Label:     labelFor(&line),
-			Payload:   line,
+			Payload:   line.Slim(),
 		}
 		s.appendEventLocked(record)
 		change.Events = append(change.Events, record)
