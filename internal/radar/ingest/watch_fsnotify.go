@@ -322,13 +322,20 @@ drain:
 			break drain
 		}
 	}
+	w.armAsked()
+	w.pollChanged()
+	// the pass itself asks for the folders of the transcripts a spool line named
+	w.armAsked()
+}
+
+// armAsked arms the folders asked for, when there are any.
+func (w *Watcher) armAsked() {
 	w.mu.Lock()
 	wantsArming := len(w.wantArm.order) > 0
 	w.mu.Unlock()
 	if wantsArming {
 		w.catchUpArmed()
 	}
-	w.pollChanged()
 }
 
 // noteFeedFailure answers an error the feed reports, an overflow of its event queue among
@@ -400,20 +407,43 @@ func (w *Watcher) noteChangedLocked(path string) {
 // the agent and is read once, when the tail opens: a subagent without one is the scan's.
 func (w *Watcher) noteTranscript(path string) {
 	w.mu.Lock()
-	tracked := w.transcriptTails.has(path)
-	w.mu.Unlock()
-	if !tracked {
+	defer w.mu.Unlock()
+	w.noteTranscriptLocked(path)
+}
+
+// noteTranscriptLocked is noteTranscript with the lock held.
+func (w *Watcher) noteTranscriptLocked(path string) {
+	if !w.transcriptTails.has(path) {
 		modMs, ok := w.openable(path)
 		if !ok {
 			return
 		}
-		w.mu.Lock()
 		w.trackTranscript(path)
 		w.transcriptTails.files[path].modMs = modMs
 		w.wantWatch(filepath.Dir(path))
-		w.mu.Unlock()
 	}
-	w.markChanged(path)
+	w.noteChangedLocked(path)
+}
+
+// tailNamedTranscript tails the transcript a spool line names, and the subagents its session
+// already has, the moment a feed pass reads the line: the hook that named the file wrote it
+// first, and the folder holding it may be one the feed does not watch yet. The line's folder is
+// asked for; one past the descriptor budget stays with the fallback scan. The lock is held.
+func (w *Watcher) tailNamedTranscript(line shared.SpoolLine) {
+	if !w.watching || line.TranscriptPath == nil || *line.TranscriptPath == "" {
+		return
+	}
+	path := *line.TranscriptPath
+	if !strings.HasSuffix(path, ".jsonl") || w.transcriptTails.has(path) {
+		return
+	}
+	w.noteTranscriptLocked(path)
+	if line.SessionID == nil || !w.transcriptTails.has(path) {
+		return
+	}
+	for _, subagent := range ListSubagents(filepath.Join(filepath.Dir(path), *line.SessionID, "subagents")) {
+		w.noteTranscriptLocked(subagent)
+	}
 }
 
 // openable answers a transcript's modified time when it exists and, for a subagent, its meta

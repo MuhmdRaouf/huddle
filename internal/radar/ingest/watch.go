@@ -743,11 +743,14 @@ func (w *Watcher) rememberUpstream(sessionID string, ts int64, url string) {
 	w.sessionUpstreams[sessionID] = entries
 }
 
-// ingestSpoolText parses one spool line and lands it; an unparseable one is skipped.
-func (w *Watcher) ingestSpoolText(text string) {
-	if line, ok := ParseSpoolLine(text); ok {
+// ingestSpoolText parses one spool line and lands it; an unparseable one is skipped and answers
+// false.
+func (w *Watcher) ingestSpoolText(text string) (shared.SpoolLine, bool) {
+	line, ok := ParseSpoolLine(text)
+	if ok {
 		w.ingestSpoolLine(text, line)
 	}
+	return line, ok
 }
 
 // ingestSpoolLine lands one spool line: the base URL and transcript a hook named, then the line
@@ -1650,7 +1653,9 @@ func (p *passWork) stepSpool() bool {
 	if p.spoolLineAt < len(p.spoolLines) {
 		line := p.spoolLines[p.spoolLineAt]
 		p.spoolLineAt++
-		p.w.ingestSpoolText(line)
+		if parsed, ok := p.w.ingestSpoolText(line); ok && p.kind == passChanged {
+			p.w.tailNamedTranscript(parsed)
+		}
 		return true
 	}
 	for p.spoolAt < len(p.spoolFiles) {

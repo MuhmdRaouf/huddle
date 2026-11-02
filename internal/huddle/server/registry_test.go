@@ -491,6 +491,23 @@ func TestAReportReachesTheRadarTabOnce(t *testing.T) {
 	}
 }
 
+func TestAReportNamesItsTranscriptInRadarsSpoolLine(t *testing.T) {
+	srv := startServer(t, nil)
+	if code, out := srv.post(t, "/api/registry/report",
+		`{"session_id":"s-named","cwd":"/w/one","transcript_path":"/w/one/s-named.jsonl",`+
+			`"last_event":"UserPromptSubmit","last_event_at":"`+isoAgo(time.Second)+`"}`, nil); code != 200 {
+		t.Fatalf("post a report: %d %s", code, out)
+	}
+	spool := filepath.Join(srv.radarHome, "spool", time.Now().UTC().Format("2006-01-02")+".jsonl")
+	raw, err := os.ReadFile(spool)
+	if err != nil {
+		t.Fatalf("read the spool: %v", err)
+	}
+	if !strings.Contains(string(raw), `"transcript_path":"/w/one/s-named.jsonl"`) {
+		t.Fatalf("the spool = %s, want the line to name the report's transcript", raw)
+	}
+}
+
 func TestTheRegistryRowsCarryTheCostAndProviderRadarKnows(t *testing.T) {
 	srv := startServer(t, nil)
 	spoolRouteLine(t, srv, "s-cost")

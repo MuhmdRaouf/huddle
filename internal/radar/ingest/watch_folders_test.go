@@ -523,3 +523,51 @@ func TestAFolderOlderThanTheWatchWindowIsUnwatchedWhateverItHolds(t *testing.T) 
 		t.Errorf("folders armed = %v, want the session folder made within the window kept", folderNames(feed))
 	}
 }
+
+func TestATranscriptASpoolLineNamesIsReadOnThePassThatReadsTheLine(t *testing.T) {
+	spoolLine := func(sessionID, transcript string) string {
+		return oneLine(t, map[string]any{
+			"ts": iso(watchT1), "event": "UserPromptSubmit", "session_id": sessionID, "transcript_path": transcript,
+		})
+	}
+
+	t.Run("in a folder that held no transcript at the first read", func(t *testing.T) {
+		e := makeEnv(t)
+		quiet := filepath.Join(e.config, "projects", "-w-quiet")
+		if err := os.MkdirAll(quiet, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		spool := writeText(t, spoolFilePath(t, e.env), oneLine(t, map[string]any{
+			"ts": iso(watchT0), "event": "SessionStart", "session_id": "other",
+		}))
+		st := newStore()
+		startFolderWatcher(t, e, st, ingest.WatcherOptions{})
+
+		transcript := writeText(t, filepath.Join(quiet, "sess-new.jsonl"), jsonl(t, assistantLine(watchT1, "req-new")))
+		appendText(t, spool, spoolLine("sess-new", transcript))
+		waitFor(t, "the named transcript's line, no tick", time.Second, hasRequest(t, st, "req-new"))
+
+		appendText(t, transcript, oneLine(t, assistantLine(watchT1+1, "req-newer")))
+		waitFor(t, "the named transcript's appended line, no tick", time.Second, hasRequest(t, st, "req-newer"))
+	})
+
+	t.Run("with the subagents its session already has", func(t *testing.T) {
+		e := makeEnv(t)
+		quiet := filepath.Join(e.config, "projects", "-w-quiet")
+		subagents := filepath.Join(quiet, "sess-new", "subagents")
+		if err := os.MkdirAll(subagents, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		spool := writeText(t, spoolFilePath(t, e.env), oneLine(t, map[string]any{
+			"ts": iso(watchT0), "event": "SessionStart", "session_id": "other",
+		}))
+		st := newStore()
+		startFolderWatcher(t, e, st, ingest.WatcherOptions{})
+
+		transcript := writeText(t, filepath.Join(quiet, "sess-new.jsonl"), jsonl(t, assistantLine(watchT1, "req-new")))
+		writeText(t, filepath.Join(subagents, "agent-w1.jsonl"), jsonl(t, assistantLine(watchT1, "sreq-1")))
+		writeText(t, filepath.Join(subagents, "agent-w1.meta.json"), `{"agentType":"Explore","description":"scan"}`)
+		appendText(t, spool, spoolLine("sess-new", transcript))
+		waitFor(t, "the subagent's line, no tick", time.Second, hasRequest(t, st, "sreq-1"))
+	})
+}

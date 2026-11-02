@@ -435,3 +435,20 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Rule:** a launcher world stops the idle waiters its home recorded when its test ends, and a hook run before a
   join gives up on it after one second. `isoenv.Sandbox` keeps `TMPDIR` as the process got it, so tmpguard sees
   every process a suite leaves running from a temp dir.
+
+## 2026-11-02, a transcript a hook named waited 30 s for radar, and the tests passed by luck
+
+- **What happened:** three hub tests that wait for radar's numbers failed on every run of an unchanged tree,
+  hours after a full gate had passed them.
+- **Cause:** the change feed watches a project folder only once it holds a recent transcript, and its fallback
+  scan runs every 30 s. A transcript created later in a folder the feed does not watch raises no event, so a
+  session that names it only through its hook (any harness without Claude Code's session registry) reached
+  radar at the next scan, up to 30 s after the hook, where the old 1 s relist read it within a second. The hub's
+  own spool line for another harness's report also left out the transcript path. The tests passed only when the
+  watcher's first read happened to run after they wrote the transcript, which a loaded machine made likely.
+- **Guard:** `TestATranscriptASpoolLineNamesIsReadOnThePassThatReadsTheLine`
+  (internal/radar/ingest/watch_folders_test.go) and `TestAReportNamesItsTranscriptInRadarsSpoolLine`
+  (internal/huddle/server/registry_test.go)
+- **Rule:** a change that makes a loop lighter keeps every latency the loop gave, with a test that proves it on an
+  idle machine. A feed pass tails the transcript a spool line names the moment it reads the line, and the hub's
+  spool line for a report carries the report's transcript path.

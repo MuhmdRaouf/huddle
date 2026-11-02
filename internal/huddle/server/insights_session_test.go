@@ -162,6 +162,9 @@ func TestTheSessionInsightsAnswerLeavesOutTheToolFailingTip(t *testing.T) {
 	if err := os.Rename(tmp, path); err != nil {
 		t.Fatalf("land the transcript: %v", err)
 	}
+	// the hook that reports the session names its transcript, which is how a live session
+	// reaches the tab's watcher
+	reportConvoSession(t, srv, "s1", path)
 
 	// the watcher's pass lands the runs in the tab's store within a few seconds; the
 	// same_command tip is the proof the four runs arrived

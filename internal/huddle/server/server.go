@@ -1759,11 +1759,12 @@ func (s *server) registrySessionRoute(w http.ResponseWriter, r *http.Request, pa
 }
 
 // reportHookPayload is one reported event shaped as the Claude Code hook payload the radar
-// spool records: the event, the session it belongs to and where it ran.
+// spool records: the event, the session it belongs to, where it ran and the transcript it writes.
 type reportHookPayload struct {
-	HookEventName string `json:"hook_event_name"`
-	SessionID     string `json:"session_id"`
-	Cwd           string `json:"cwd,omitempty"`
+	HookEventName  string `json:"hook_event_name"`
+	SessionID      string `json:"session_id"`
+	Cwd            string `json:"cwd,omitempty"`
+	TranscriptPath string `json:"transcript_path,omitempty"`
 }
 
 // warn writes one line of the server's own warnings to its stderr: the line a recovered
@@ -1805,7 +1806,7 @@ func (s *server) recordRadarHook(ctx context.Context, rep hub.Report) {
 		return
 	}
 	raw, err := domain.MarshalCompactJSON(reportHookPayload{
-		HookEventName: rep.LastEvent, SessionID: rep.SessionID, Cwd: rep.Cwd,
+		HookEventName: rep.LastEvent, SessionID: rep.SessionID, Cwd: rep.Cwd, TranscriptPath: rep.TranscriptPath,
 	})
 	if err != nil {
 		fmt.Fprintf(s.o.Stderr, "radar: the report of %s could not be shaped for the spool: %v\n", rep.SessionID, err)
