@@ -175,6 +175,12 @@ func TestHubIdleCPU(t *testing.T) {
 		held, settled = idleVerdict(shares, idleCPUBudget)
 	}
 	if !held {
+		// macOS CI records only until the same-job baseline lands; HV-PERF-GUARD-BASELINE removes
+		// this branch and its guard test (testkit.RecordOnly).
+		if testkit.RecordOnly() {
+			t.Log(testkit.RecordOnlyNotice)
+			return
+		}
 		named := make([]string, len(shares))
 		for i, share := range shares {
 			named[i] = fmt.Sprintf("window %d: %.3f%%", i+1, share*100)

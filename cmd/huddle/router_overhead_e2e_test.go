@@ -440,6 +440,12 @@ func TestE2ERouterOverhead(t *testing.T) {
 				if testkit.RaceEnabled {
 					return
 				}
+				// macOS CI records only until the same-job baseline lands; HV-PERF-GUARD-BASELINE removes
+				// this branch and its guard test (testkit.RecordOnly).
+				if testkit.RecordOnly() {
+					t.Log(testkit.RecordOnlyNotice)
+					return
+				}
 				if firstOverhead >= firstByteBudget {
 					t.Errorf("%s, %s: the router adds %v to the first byte beyond a plain relay, budget %v", path.name, size.name, firstOverhead, firstByteBudget)
 				}
