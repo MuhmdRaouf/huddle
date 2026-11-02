@@ -74,6 +74,7 @@ func TestARestartKeepsAnOldPairedCallAsOneRow(t *testing.T) {
 		{"its transcript read again", true, map[string]any{"input_tokens": 120, "output_tokens": 30}},
 		{"its transcript left alone", false, map[string]any{"input_tokens": 120, "output_tokens": 30}},
 		{"a route line with no usage, its transcript read again", true, nil},
+		{"a route line with no usage, its transcript left alone", false, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

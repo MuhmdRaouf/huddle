@@ -593,6 +593,19 @@ func (h *History) reRoot(id, root string) error {
 
 // The requests table.
 
+// keepsTranscriptFacts opens a CASE that keeps what a paired call's row already holds when
+// the write brings no usage: a spool line read again alone after a restart carries no
+// tokens, no agent tag and no transcript facts, and must not empty the row the transcript
+// copy filled. The kept columns are the ones only a transcript sets: the tokens and billing
+// facts, the agent and its node, the stop reason of a finished answer, the one-line what,
+// the harness and the totals mark. A write that brings tokens replaces them all, a first
+// write stores what it carries, and a kept column the row holds empty takes the write's
+// value. The route line's own columns (status, route, via, fallback, provider, latency,
+// first byte, first token, error, parent agent, upstream, prompt hash, headers) always update.
+const keepsTranscriptFacts = "CASE WHEN excluded.input + excluded.output + excluded.cache_read + excluded.cache_write = 0 " +
+	"AND COALESCE(requests.input, 0) + COALESCE(requests.output, 0) + COALESCE(requests.cache_read, 0) + " +
+	"COALESCE(requests.cache_write, 0) > 0 THEN COALESCE(requests."
+
 // upsertRequest is ON CONFLICT DO UPDATE, not REPLACE: re-putting a request must not
 // cascade-delete its content row.
 const upsertRequest = "INSERT INTO requests (id, node_id, session_id, agent_id, model, upstream, ts, latency_ms, " +
@@ -600,18 +613,28 @@ const upsertRequest = "INSERT INTO requests (id, node_id, session_id, agent_id, 
 	"input, output, cache_read, cache_write, cache_write_1h, speed, geo, service_tier, stop_reason, " +
 	"error, parent_agent_id, fallback, provider, route, via, status, harness, cost_usd, what, thinking, prompt_hash, headers, totals) " +
 	"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-	"ON CONFLICT(id) DO UPDATE SET node_id = excluded.node_id, session_id = excluded.session_id, " +
-	"agent_id = excluded.agent_id, model = excluded.model, upstream = excluded.upstream, ts = excluded.ts, " +
+	"ON CONFLICT(id) DO UPDATE SET session_id = excluded.session_id, " +
+	"model = excluded.model, upstream = excluded.upstream, ts = excluded.ts, " +
 	"latency_ms = excluded.latency_ms, ttfb_ms = excluded.ttfb_ms, ttft_ms = excluded.ttft_ms, " +
-	"input = excluded.input, output = excluded.output, " +
-	"cache_read = excluded.cache_read, cache_write = excluded.cache_write, " +
-	"cache_write_1h = excluded.cache_write_1h, speed = excluded.speed, geo = excluded.geo, " +
-	"service_tier = excluded.service_tier, stop_reason = excluded.stop_reason, error = excluded.error, " +
-	"parent_agent_id = excluded.parent_agent_id, fallback = excluded.fallback, provider = excluded.provider, " +
-	"route = excluded.route, via = excluded.via, status = excluded.status, harness = excluded.harness, " +
-	"cost_usd = excluded.cost_usd, what = excluded.what, " +
-	"thinking = excluded.thinking, prompt_hash = excluded.prompt_hash, headers = excluded.headers, " +
-	"totals = excluded.totals"
+	"error = excluded.error, parent_agent_id = excluded.parent_agent_id, fallback = excluded.fallback, " +
+	"provider = excluded.provider, route = excluded.route, via = excluded.via, status = excluded.status, " +
+	"prompt_hash = excluded.prompt_hash, headers = excluded.headers, " +
+	"node_id = " + keepsTranscriptFacts + "node_id, excluded.node_id) ELSE excluded.node_id END, " +
+	"agent_id = " + keepsTranscriptFacts + "agent_id, excluded.agent_id) ELSE excluded.agent_id END, " +
+	"input = " + keepsTranscriptFacts + "input, excluded.input) ELSE excluded.input END, " +
+	"output = " + keepsTranscriptFacts + "output, excluded.output) ELSE excluded.output END, " +
+	"cache_read = " + keepsTranscriptFacts + "cache_read, excluded.cache_read) ELSE excluded.cache_read END, " +
+	"cache_write = " + keepsTranscriptFacts + "cache_write, excluded.cache_write) ELSE excluded.cache_write END, " +
+	"cache_write_1h = " + keepsTranscriptFacts + "cache_write_1h, excluded.cache_write_1h) ELSE excluded.cache_write_1h END, " +
+	"speed = " + keepsTranscriptFacts + "speed, excluded.speed) ELSE excluded.speed END, " +
+	"geo = " + keepsTranscriptFacts + "geo, excluded.geo) ELSE excluded.geo END, " +
+	"service_tier = " + keepsTranscriptFacts + "service_tier, excluded.service_tier) ELSE excluded.service_tier END, " +
+	"stop_reason = " + keepsTranscriptFacts + "stop_reason, excluded.stop_reason) ELSE excluded.stop_reason END, " +
+	"harness = " + keepsTranscriptFacts + "harness, excluded.harness) ELSE excluded.harness END, " +
+	"cost_usd = " + keepsTranscriptFacts + "cost_usd, excluded.cost_usd) ELSE excluded.cost_usd END, " +
+	"what = " + keepsTranscriptFacts + "what, excluded.what) ELSE excluded.what END, " +
+	"thinking = " + keepsTranscriptFacts + "thinking, excluded.thinking) ELSE excluded.thinking END, " +
+	"totals = " + keepsTranscriptFacts + "totals, excluded.totals) ELSE excluded.totals END"
 
 const requestColumns = "id, node_id, session_id, agent_id, model, upstream, ts, latency_ms, ttfb_ms, ttft_ms, input, output, " +
 	"cache_read, cache_write, cache_write_1h, speed, geo, service_tier, stop_reason, error, " +
