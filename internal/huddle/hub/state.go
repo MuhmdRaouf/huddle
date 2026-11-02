@@ -126,11 +126,15 @@ type SessionRow struct {
 	Channel        string  `json:"channel,omitempty"`
 	Member         string  `json:"member,omitempty"`
 	// Harness names the coding agent the session runs in when it is not Claude Code.
-	Harness     string   `json:"harness,omitempty"`
-	LastEvent   string   `json:"last_event"`
-	LastEventAt string   `json:"last_event_at"`
-	CostUSD     *float64 `json:"cost_usd"`
-	Provider    *string  `json:"provider"`
+	Harness     string `json:"harness,omitempty"`
+	LastEvent   string `json:"last_event"`
+	LastEventAt string `json:"last_event_at"`
+	// StartedAt is the time of the session's earliest stored event: the moment it entered the
+	// registry. A session the registry only knows from its transcript has no stored event and
+	// carries none.
+	StartedAt string   `json:"started_at,omitempty"`
+	CostUSD   *float64 `json:"cost_usd"`
+	Provider  *string  `json:"provider"`
 	// Name is the session's name as radar's view carries it: the session's custom title,
 	// agent name or AI title.
 	Name  *string `json:"name"`
@@ -198,7 +202,7 @@ type SessionDetail struct {
 
 // sessionColumns is what a registry read selects, in the row's own order.
 const sessionColumns = `session_id, machine, project, branch, project_key, project_name, title, task, model, context_percent,
-                        cwd, pid, channel, member, harness, last_event, last_event_at, ended_at, opened_at`
+                        cwd, pid, channel, member, harness, last_event, last_event_at, started_at, ended_at, opened_at`
 
 // Sessions answers every registered session that passes the filter, newest activity first,
 // each with its state computed at now.
@@ -384,6 +388,7 @@ func (d *DB) rowOfSession(ctx context.Context, row store.Row, now time.Time, wai
 		Harness:     textOfRow(row, "harness"),
 		LastEvent:   textOfRow(row, "last_event"),
 		LastEventAt: textOfRow(row, "last_event_at"),
+		StartedAt:   textOfRow(row, "started_at"),
 	}
 	out.ContextPercent, _ = row["context_percent"].(float64)
 	pid, _ := row["pid"].(int64)

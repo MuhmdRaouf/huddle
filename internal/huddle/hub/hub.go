@@ -94,17 +94,18 @@ func Open(ctx context.Context, file string) (*DB, error) {
 // Close ends the session.
 func (d *DB) Close() error { return d.st.Close() }
 
-// sessionUpsert records one report's session fields: the title keeps the first value said (the
-// first prompt, until the session sets one), every other field keeps the newest said, and an
-// empty value never erases what an earlier report said. pid_start rides pid: a report that
-// carries a pid writes both (NULL when it could not tell the start time), and one that carries
-// none keeps both, so a pid never keeps an earlier pid's start time. A SessionEnd sets ended_at
-// and a SessionStart clears it, so an ended session stays ended under an older report replayed
-// after its end, and a resumed one comes back.
+// sessionUpsert records one report's session fields: the title and started_at keep the first
+// value said (the first prompt, until the session sets one; the moment the session entered
+// the registry), every other field keeps the newest said, and an empty value never erases what
+// an earlier report said. pid_start rides pid: a report that carries a pid writes both (NULL
+// when it could not tell the start time), and one that carries none keeps both, so a pid never
+// keeps an earlier pid's start time. A SessionEnd sets ended_at and a SessionStart clears it,
+// so an ended session stays ended under an older report replayed after its end, and a resumed
+// one comes back.
 const sessionUpsert = `
 INSERT INTO sessions (session_id, machine, project, branch, project_key, project_name, title, task, model, context_percent,
-                      cwd, pid, pid_start, channel, member, harness, transcript_path, inbox_socket, last_event, last_event_at, ended_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      cwd, pid, pid_start, channel, member, harness, transcript_path, inbox_socket, last_event, last_event_at, started_at, ended_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(session_id) DO UPDATE SET
   machine = COALESCE(NULLIF(excluded.machine, ''), sessions.machine),
   project = COALESCE(NULLIF(excluded.project, ''), sessions.project),
@@ -128,6 +129,7 @@ ON CONFLICT(session_id) DO UPDATE SET
   inbox_socket = COALESCE(NULLIF(excluded.inbox_socket, ''), sessions.inbox_socket),
   last_event = excluded.last_event,
   last_event_at = excluded.last_event_at,
+  started_at = COALESCE(sessions.started_at, excluded.started_at),
   ended_at = CASE
     WHEN excluded.last_event = 'SessionStart' THEN NULL
     WHEN excluded.last_event = 'SessionEnd' THEN excluded.last_event_at
@@ -158,7 +160,7 @@ func (d *DB) Report(ctx context.Context, r Report) error {
 		}
 		if err := q.Run(ctx, sessionUpsert, r.SessionID, r.Machine, r.Project, r.Branch, r.ProjectKey, r.ProjectName, r.Title,
 			r.Task, r.Model, r.ContextPercent, r.Cwd, r.Pid, r.PidStart, r.Channel, r.Member,
-			r.Harness, r.TranscriptPath, r.InboxSocket, r.LastEvent, r.LastEventAt, endedAt); err != nil {
+			r.Harness, r.TranscriptPath, r.InboxSocket, r.LastEvent, r.LastEventAt, r.LastEventAt, endedAt); err != nil {
 			return err
 		}
 		if r.Teammate != nil && r.Teammate.Name != "" {

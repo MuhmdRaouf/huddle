@@ -5,6 +5,9 @@ package hub
 // reads the wall.
 
 import (
+	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -102,5 +105,79 @@ func TestHooksStaleReadsTheTranscriptAgainstTheReports(t *testing.T) {
 				t.Errorf("HooksStale(%+v) = %v, want %v", tc.f, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestTheRowCarriesTheTimeOfItsFirstEvent: the row's StartedAt is its earliest stored event's
+// time, the moment the session entered the registry — not its last event's — and the json
+// names it started_at. A session the registry only knows from its transcript has no stored
+// event and carries none.
+func TestTheRowCarriesTheTimeOfItsFirstEvent(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	for _, rep := range []Report{
+		{SessionID: "s-live", LastEvent: "SessionStart", LastEventAt: "2026-10-16T08:55:00.000Z"},
+		{SessionID: "s-live", LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:20.000Z"},
+		{SessionID: "s-live", LastEvent: "Stop", LastEventAt: "2026-10-16T09:00:25.000Z"},
+	} {
+		if err := db.Report(ctx, rep); err != nil {
+			t.Fatalf("report %s: %v", rep.LastEvent, err)
+		}
+	}
+	const first = "2026-10-16T08:55:00.000Z"
+	rows, err := db.Sessions(ctx, SessionsFilter{}, readNow)
+	if err != nil {
+		t.Fatalf("sessions: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("sessions = %d rows, want 1", len(rows))
+	}
+	if got := rows[0].StartedAt; got != first {
+		t.Errorf("the listed row's StartedAt = %q, want the first event's time %q", got, first)
+	}
+	row, err := db.SessionRow(ctx, "s-live", readNow)
+	if err != nil || row == nil {
+		t.Fatalf("the session row: %v", err)
+	}
+	if row.StartedAt != first {
+		t.Errorf("the read row's StartedAt = %q, want %q", row.StartedAt, first)
+	}
+	encoded, err := json.Marshal(rows[0])
+	if err != nil {
+		t.Fatalf("encode the row: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"started_at":"`+first+`"`) {
+		t.Errorf("the row's json = %s, want started_at carrying %q", encoded, first)
+	}
+	ghost := TranscriptRow("s-ghost", "/shop", ago(time.Second), readNow)
+	ghostJSON, err := json.Marshal(ghost)
+	if err != nil {
+		t.Fatalf("encode the transcript row: %v", err)
+	}
+	if ghost.StartedAt != "" || strings.Contains(string(ghostJSON), "started_at") {
+		t.Errorf("a transcript-only row = %+v as %s, want no started_at", ghost, ghostJSON)
+	}
+}
+
+// TestALaterReportNeverMovesStartedAt: the start is the first report's stamp, and no later
+// report, however much later, moves it.
+func TestALaterReportNeverMovesStartedAt(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	for _, rep := range []Report{
+		{SessionID: "s-live", LastEvent: "SessionStart", LastEventAt: "2026-10-16T08:55:00.000Z"},
+		{SessionID: "s-live", LastEvent: "UserPromptSubmit", LastEventAt: "2026-10-16T09:00:20.000Z"},
+		{SessionID: "s-live", LastEvent: "Stop", LastEventAt: "2026-10-16T09:00:25.000Z"},
+	} {
+		if err := db.Report(ctx, rep); err != nil {
+			t.Fatalf("report %s: %v", rep.LastEvent, err)
+		}
+	}
+	row, err := db.SessionRow(ctx, "s-live", readNow)
+	if err != nil || row == nil {
+		t.Fatalf("the session row: %v", err)
+	}
+	if row.StartedAt != "2026-10-16T08:55:00.000Z" {
+		t.Errorf("StartedAt after two later reports = %q, want the first report's 2026-10-16T08:55:00.000Z", row.StartedAt)
 	}
 }

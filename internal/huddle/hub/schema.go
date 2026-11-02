@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 26
+const SchemaVersion = 27
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -291,6 +291,14 @@ var migrations = []string{
 	// session that reported before they existed; its next report fills them.
 	`ALTER TABLE sessions ADD COLUMN project_key TEXT;
 	 ALTER TABLE sessions ADD COLUMN project_name TEXT;`,
+	// 27: when the session entered the registry: started_at is its earliest stored event's
+	// time, backfilled once from the events at the migration and kept against later reports,
+	// so the list can order by session start without reading the events back. NULL is a
+	// session whose events the retention has shed and that has not reported since; its next
+	// report fills it.
+	`ALTER TABLE sessions ADD COLUMN started_at TEXT;
+	 UPDATE sessions SET started_at = (SELECT MIN(at) FROM events WHERE events.session_id = sessions.session_id)
+	   WHERE started_at IS NULL;`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

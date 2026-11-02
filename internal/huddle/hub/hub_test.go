@@ -462,6 +462,58 @@ func TestMigration24KeepsOldPermissionRowsAnswerless(t *testing.T) {
 	}
 }
 
+// TestMigration27BackfillsStartedAtFromTheFirstEvent pins migration 27 over a database an
+// older huddle wrote: brought to schema 26 with events on it, the file opens at 27 with the
+// session's started_at set to its earliest event's time.
+func TestMigration27BackfillsStartedAtFromTheFirstEvent(t *testing.T) {
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "hub.db")
+	st, err := store.Open(ctx, file)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	// the meta table migrate() itself makes first, then each of the first 26 migrations with
+	// its version mark: the file an older huddle leaves behind
+	if err := st.Run(ctx, "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"); err != nil {
+		t.Fatalf("the meta table: %v", err)
+	}
+	for n, migration := range migrations[:26] {
+		if err := st.Run(ctx, migration); err != nil {
+			t.Fatalf("migration %d: %v", n+1, err)
+		}
+	}
+	if err := st.Run(ctx, "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '26')"); err != nil {
+		t.Fatalf("mark schema 26: %v", err)
+	}
+	for _, ev := range []struct{ at, kind string }{
+		{"2026-10-16T08:55:00.000Z", "SessionStart"},
+		{"2026-10-16T09:00:20.000Z", "UserPromptSubmit"},
+	} {
+		if err := st.Run(ctx, "INSERT INTO events (session_id, at, kind, json) VALUES ('s-old', ?, ?, '{}')", ev.at, ev.kind); err != nil {
+			t.Fatalf("the old event at %s: %v", ev.at, err)
+		}
+	}
+	if err := st.Run(ctx,
+		"INSERT INTO sessions (session_id, last_event, last_event_at) VALUES ('s-old', 'Stop', '2026-10-16T09:00:25.000Z')"); err != nil {
+		t.Fatalf("the old session row: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	db, err := Open(ctx, file)
+	if err != nil {
+		t.Fatalf("open at schema 27: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	row, err := db.st.Get(ctx, "SELECT started_at FROM sessions WHERE session_id = 's-old'")
+	if err != nil {
+		t.Fatalf("the migrated row: %v", err)
+	}
+	if row["started_at"] != "2026-10-16T08:55:00.000Z" {
+		t.Errorf("the migrated row's started_at = %v, want the earliest event's 2026-10-16T08:55:00.000Z", row["started_at"])
+	}
+}
+
 func TestMarkHeldLeavesTheMessageOutOfTheNextPrompt(t *testing.T) {
 	db := openForTest(t)
 	ctx := context.Background()
