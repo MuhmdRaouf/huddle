@@ -347,7 +347,7 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   `"fails closed when main has no completed ci.yml run"` and
   `"fails closed when gh answers something that is not a run"` (scripts/ci-green.test.mjs). The shard split that
   keeps every Go job under its cap is held by `TestEveryModulePackageFallsInExactlyOneShard`,
-  `TestEveryTestRunsInExactlyOneHalfOfASplitPackage` and `TestCIRunsEveryShardOnLinuxAndMacOS`
+  `TestEveryTestRunsInExactlyOneShardOfASplitPackage` and `TestCIRunsEveryShardOnLinuxAndMacOS`
   (scripts/covergate/main_test.go).
 - **Rule:** no deploy lands while the last main CI run is red: the deploy script calls
   `node scripts/ci-green.mjs` first, and a gh that is missing or offline refuses too. The push that fixes main is
