@@ -6,9 +6,8 @@ import (
 	"time"
 )
 
-// EventTTL is how long a channel keeps its events: 90 days, the retention the hub's registry
-// holds its reported events under (the hub package's EventTTL). Declared here because the
-// hub imports this package, not the other way round.
+// EventTTL is how long a channel keeps its events: 90 days. The hub registry keeps its reported
+// events under its own, shorter retention (the hub package's EventTTL).
 const EventTTL = 90 * 24 * time.Hour
 
 // eventTSCut is the format a channel writes ts in — UTC, whole seconds, always "Z" (the

@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 27
+const SchemaVersion = 28
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -299,6 +299,21 @@ var migrations = []string{
 	`ALTER TABLE sessions ADD COLUMN started_at TEXT;
 	 UPDATE sessions SET started_at = (SELECT MIN(at) FROM events WHERE events.session_id = sessions.session_id)
 	   WHERE started_at IS NULL;`,
+	// 28: how many events of each kind a session reported on each UTC day, kept for ever
+	// beside the raw events, which the registry keeps for EventTTL. The migration counts the
+	// events past the TTL and deletes those same events in one transaction, against one cutoff
+	// taken once, so no event is counted twice or cut uncounted.
+	`CREATE TABLE event_counts (
+	   session_id TEXT NOT NULL,
+	   day TEXT NOT NULL,
+	   kind TEXT NOT NULL,
+	   n INTEGER NOT NULL,
+	   PRIMARY KEY (session_id, day, kind)
+	 );
+	 CREATE TEMP TABLE event_cut AS SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-` + strconv.Itoa(eventTTLDays) + ` days') AS at;
+	 ` + countEventsBefore("(SELECT at FROM event_cut)") + `;
+	 DELETE FROM events WHERE at < (SELECT at FROM event_cut);
+	 DROP TABLE event_cut;`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.
@@ -331,7 +346,7 @@ func migrate(ctx context.Context, st *store.Store) error {
 		return &NewerSchemaError{Version: version}
 	}
 	if version == SchemaVersion {
-		return nil // an up-to-date database is left byte for byte as it lays
+		return keepIncrementalVacuum(ctx, st) // an up-to-date database changes only its vacuum mode, once
 	}
 	// each migration lands with its own version mark in one transaction: a start stopped
 	// between two statements leaves a database the next start resumes, never one that says
@@ -351,5 +366,5 @@ func migrate(ctx context.Context, st *store.Store) error {
 			return err
 		}
 	}
-	return nil
+	return keepIncrementalVacuum(ctx, st)
 }

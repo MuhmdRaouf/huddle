@@ -39,3 +39,32 @@ func TestSessionSpansRunFromTheFirstEventToTheEnd(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionSpansKeepASessionWhoseEventsWereAllSwept(t *testing.T) {
+	db := openForTest(t)
+	ctx := context.Background()
+	for _, rep := range []Report{
+		{SessionID: "s-old", LastEvent: "SessionStart", LastEventAt: "2026-10-01T08:00:00.000Z"},
+		{SessionID: "s-old", LastEvent: "SessionEnd", LastEventAt: "2026-10-01T09:00:00.000Z"},
+	} {
+		if err := db.Report(ctx, rep); err != nil {
+			t.Fatalf("report: %v", err)
+		}
+	}
+	if n, err := db.PruneEvents(ctx, time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)); err != nil || n != 2 {
+		t.Fatalf("prune: %d rows (%v), want both events cut", n, err)
+	}
+	spans, err := db.SessionSpans(ctx)
+	if err != nil {
+		t.Fatalf("spans: %v", err)
+	}
+	if len(spans) != 1 {
+		t.Fatalf("spans = %+v, want the swept session's span", spans)
+	}
+	if want := parseEventTime("2026-10-01T08:00:00.000Z"); !spans[0].Start.Equal(want) {
+		t.Errorf("start = %s, want the stored start %s", spans[0].Start, want)
+	}
+	if want := parseEventTime("2026-10-01T09:00:00.000Z"); !spans[0].End.Equal(want) {
+		t.Errorf("end = %s, want %s", spans[0].End, want)
+	}
+}

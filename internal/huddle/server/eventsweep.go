@@ -11,8 +11,8 @@ import (
 // eventSweepEvery is the event sweep's beat: one hour, after the first sweep at start.
 const eventSweepEvery = time.Hour
 
-// watchEventSweep prunes the registry's reported events and every channel's events to their
-// 90-day retention once at start, then each beat. A failed half is one stderr line, and the
+// watchEventSweep prunes the registry's reported events to 7 days and every channel's events to
+// 90 days once at start, then each beat. A failed half is one stderr line, and the
 // join of the halves' errors marks the sweep failing; the next beat retries it. Serving never
 // depends on the sweep.
 func (s *server) watchEventSweep(ctx context.Context) {

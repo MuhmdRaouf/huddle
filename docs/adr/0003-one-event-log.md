@@ -50,7 +50,9 @@ The proposal fails here for three reasons:
 2. **Joins.** Readers join stores by session id, request id or a `seq` cursor, and never write another
    part's store.
 3. **Retention, each with the process that runs it:**
-   - `hub.db events` and channel events: 90 days, on the hub's hourly sweep, keeping an unanswered ask.
+   - `hub.db events`: 7 days, on the hub's hourly sweep. The sweep first adds the events it cuts to
+     `event_counts`, one row per session, UTC day and kind, which hub.db keeps for ever.
+   - channel events: 90 days, on the hub's hourly sweep, keeping an unanswered ask.
    - ledger.db: 90 days, hourly.
    - router.db bodies: 7 days, hourly, in the router.
    - the spool: 7 days, up to 64 MiB.
