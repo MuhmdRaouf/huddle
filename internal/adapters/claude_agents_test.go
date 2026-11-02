@@ -153,6 +153,38 @@ func TestSyncLeavesUnmarkedFilesAlone(t *testing.T) {
 	}
 }
 
+// TestSyncRewritesAnEmptyFileWithHuddlesName: a zero-length sonnet-5.5.md (a write a power loss
+// emptied) is rewritten with huddle's render, while a non-empty markerless opus-5.5.md of the
+// user's stays byte for byte.
+func TestSyncRewritesAnEmptyFileWithHuddlesName(t *testing.T) {
+	env, folder := agentsEnv(t)
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	usersOpus := []byte("# my own opus notes\n")
+	if err := os.WriteFile(filepath.Join(folder, "sonnet-5.5.md"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, "opus-5.5.md"), usersOpus, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncClaudeAgents(context.Background(), env); err != nil {
+		t.Fatalf("SyncClaudeAgents: %v", err)
+	}
+	files := readAgentFolder(t, folder)
+	for _, model := range wantedModels() {
+		if model.FileName() == "opus-5.5.md" {
+			continue
+		}
+		if !bytes.Equal(files[model.FileName()], agents.Render(model)) {
+			t.Errorf("%s = %q, want huddle's render", model.FileName(), files[model.FileName()])
+		}
+	}
+	if !bytes.Equal(files["opus-5.5.md"], usersOpus) {
+		t.Errorf("the user's opus-5.5.md = %q, want it untouched", files["opus-5.5.md"])
+	}
+}
+
 // TestSyncRemovesStaleManagedFile: a managed file whose name no family wants any more (an older
 // opus the table moved past) is gone after one pass.
 func TestSyncRemovesStaleManagedFile(t *testing.T) {

@@ -172,6 +172,13 @@ func Managed(body []byte) bool {
 	return false
 }
 
+// Rewritable reports whether huddle may replace a file that has one of its names: a managed file,
+// or an empty one — a write that never reached the disk leaves nothing of the marker, and no
+// user keeps an empty agent file.
+func Rewritable(body []byte) bool {
+	return len(body) == 0 || Managed(body)
+}
+
 // Plan is what one pass does. Write holds only files whose bytes differ from what is there;
 // Remove holds only managed files no family wants any more. Both sorted by name.
 type Plan struct {
@@ -187,8 +194,9 @@ type File struct {
 
 // Decide turns the wanted models and the folder's files into a plan:
 //   - a wanted name with no file: write it;
-//   - a wanted name whose file is managed and differs: write it; equal bytes: nothing;
-//   - a wanted name whose file is not managed: nothing (the user's file wins, huddle writes no copy);
+//   - a wanted name whose file is managed or empty and differs: write it; equal bytes: nothing;
+//   - a wanted name whose file is not managed and not empty: nothing (the user's file wins, huddle
+//     writes no copy);
 //   - a managed file whose name is not wanted: remove it;
 //   - a file that is not managed: never written, never removed.
 func Decide(models []Model, existing []Existing) Plan {
@@ -203,7 +211,7 @@ func Decide(models []Model, existing []Existing) Plan {
 		wanted[name] = true
 		body := Render(model)
 		there, ok := current[name]
-		if ok && (!Managed(there) || bytes.Equal(there, body)) {
+		if ok && (!Rewritable(there) || bytes.Equal(there, body)) {
 			continue
 		}
 		plan.Write = append(plan.Write, File{Name: name, Body: body})

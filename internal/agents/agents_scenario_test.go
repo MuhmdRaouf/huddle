@@ -135,6 +135,24 @@ func TestThePanelNamesEachSubagentsModel(t *testing.T) {
 			})
 		})
 
+		f.Scenario("an empty file with one of huddle's names is huddle's to rewrite", func(s *bdd.S) {
+			var plan Plan
+			s.Given("the folder holds an empty sonnet-5.5.md and the user's own opus-5.5.md", func(t *testing.T) {
+				plan = Decide(Newest(ClaudeIDs()), []Existing{{Name: "sonnet-5.5.md"}, userOpus})
+			})
+			s.When("the pass runs", func(t *testing.T) {})
+			s.Then("the plan writes sonnet-5.5.md among the families without a user file", func(t *testing.T) {
+				got := writeNames(plan)
+				want := []string{"fable-5.1.md", "haiku-5.5.md", "sonnet-5.5.md"}
+				if !slices.Equal(got, want) {
+					t.Errorf("Write = %v, want %v", got, want)
+				}
+			})
+			s.And("the user's non-empty opus-5.5.md stays untouched", func(t *testing.T) {
+				untouched(t, plan, "opus-5.5.md")
+			})
+		})
+
 		f.Scenario("a second pass over files huddle already wrote does nothing", func(s *bdd.S) {
 			var plan Plan
 			s.Given("the folder holds the four rendered files, plus a user's reviewer.md", func(t *testing.T) {
