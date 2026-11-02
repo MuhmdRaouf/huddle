@@ -332,8 +332,7 @@ type agentSlice struct {
 	tokens      shared.Tokens
 }
 
-// sessionSlice is one session's records, grouped per agent inside, rebuilt when the
-// version moves.
+// sessionSlice is one session's records, grouped per agent inside.
 type sessionSlice struct {
 	requests []*shared.RequestRecord
 	tools    []*shared.ToolCallRecord
@@ -364,16 +363,11 @@ type SessionRecords struct {
 	Events   []*shared.EventRecord
 }
 
-// eventIndexCache is the events grouped by session, one build per version.
-type eventIndexCache struct {
-	version   int64
-	bySession map[string][]*shared.EventRecord
-}
-
-// projectionCache is the records grouped by session, one build per version.
-type projectionCache struct {
-	version    int64
-	projection map[string]*sessionSlice
+// keptCaches marks the caches a write in progress has brought up to date with the records
+// it appended: notifyLocked keeps those and discards the rest.
+type keptCaches struct {
+	projection bool
+	eventIndex bool
 }
 
 // viewsCache is the built session views, one per (session, version): list, detail and
@@ -463,8 +457,9 @@ type Store struct {
 	notices           map[string]map[string]int64
 	pendingStarts     map[string]int64
 
-	proj         *projectionCache
-	eventIndex   *eventIndexCache
+	proj         map[string]*sessionSlice
+	eventIndex   map[string][]*shared.EventRecord
+	kept         keptCaches
 	views        *viewsCache
 	newest       *orderCache
 	listCache    *derived[[]SessionListItem]
@@ -918,47 +913,106 @@ func (s *Store) nextArrivalLocked() int64 {
 	return s.arrival
 }
 
-// projectionLocked groups the store's records by session (and per agent inside), rebuilt
-// when the version moves.
+// projectionLocked groups the store's records by session (and per agent inside). The first
+// read builds it; each record a write appends afterwards joins it as it lands, and a write
+// that replaces or drops records discards it for the next read to build again.
 func (s *Store) projectionLocked() map[string]*sessionSlice {
-	if s.proj != nil && s.proj.version == s.ver {
-		return s.proj.projection
+	if s.proj == nil {
+		s.proj = s.buildProjectionLocked()
 	}
+	return s.proj
+}
+
+// buildProjectionLocked groups every held request and tool call by session, from the
+// arrival lists.
+func (s *Store) buildProjectionLocked() map[string]*sessionSlice {
 	proj := make(map[string]*sessionSlice)
 	for _, held := range s.requestsInOrderLocked() {
 		slice := sliceOf(proj, held.record.SessionID)
 		slice.requests = append(slice.requests, &held.record)
 	}
 	for _, held := range s.toolsInOrderLocked() {
-		slice := sliceOf(proj, held.record.SessionID)
-		countTool(&slice.tools, &slice.failed, &held.record)
-		agentID := "main"
-		if held.record.AgentID != nil {
-			agentID = *held.record.AgentID
-		}
-		mine := agentSliceOf(slice, agentID)
-		countTool(&mine.tools, &mine.failed, &held.record)
+		addToolToProjection(proj, &held.record)
 	}
 	for _, slice := range proj {
 		rollUpSlice(slice)
 	}
-	s.proj = &projectionCache{version: s.ver, projection: proj}
 	return proj
 }
 
-// eventIndexLocked groups the held events by session, rebuilt when the version moves.
+// eventIndexLocked groups the held events by session, built on the first read and then
+// kept current by the events that land.
 func (s *Store) eventIndexLocked() map[string][]*shared.EventRecord {
-	if s.eventIndex != nil && s.eventIndex.version == s.ver {
-		return s.eventIndex.bySession
+	if s.eventIndex == nil {
+		s.eventIndex = s.buildEventIndexLocked()
 	}
+	return s.eventIndex
+}
+
+// buildEventIndexLocked groups every held event by session.
+func (s *Store) buildEventIndexLocked() map[string][]*shared.EventRecord {
 	bySession := make(map[string][]*shared.EventRecord)
 	for at := range s.events {
 		if id := s.events[at].SessionID; id != nil {
 			bySession[*id] = append(bySession[*id], &s.events[at])
 		}
 	}
-	s.eventIndex = &eventIndexCache{version: s.ver, bySession: bySession}
 	return bySession
+}
+
+// addToolToProjection files a tool call under its session and its agent.
+func addToolToProjection(proj map[string]*sessionSlice, tool *shared.ToolCallRecord) {
+	slice := sliceOf(proj, tool.SessionID)
+	countTool(&slice.tools, &slice.failed, tool)
+	agentID := "main"
+	if tool.AgentID != nil {
+		agentID = *tool.AgentID
+	}
+	mine := agentSliceOf(slice, agentID)
+	countTool(&mine.tools, &mine.failed, tool)
+}
+
+// projectRequestLocked adds a request just appended to the arrival list to the built
+// projection: the new tail of its session's and its agent's list, and their roll-ups.
+func (s *Store) projectRequestLocked(held *storedRequest) {
+	if s.proj == nil {
+		return
+	}
+	record := &held.record
+	slice := sliceOf(s.proj, record.SessionID)
+	slice.requests = append(slice.requests, record)
+	slice.tokens = shared.AddTokens(slice.tokens, record.Tokens)
+	mine := agentSliceOf(slice, record.AgentID)
+	mine.requests = append(mine.requests, record)
+	mine.lastRequest = record
+	mine.lastTs = max(mine.lastTs, record.Ts)
+	mine.tokens = shared.AddTokens(mine.tokens, record.Tokens)
+	s.kept.projection = true
+}
+
+// projectToolLocked adds a tool call just appended to the arrival list to the built
+// projection.
+func (s *Store) projectToolLocked(held *storedTool) {
+	if s.proj == nil {
+		return
+	}
+	addToolToProjection(s.proj, &held.record)
+	s.kept.projection = true
+}
+
+// appendEventLocked adds an event to the timeline and to the built event index. The index
+// holds addresses inside the events array, so a write that moves the array leaves the index
+// for the next read to build.
+func (s *Store) appendEventLocked(record shared.EventRecord) {
+	moves := len(s.events) == cap(s.events)
+	s.events = append(s.events, record)
+	if s.eventIndex == nil || moves {
+		return
+	}
+	if id := record.SessionID; id != nil {
+		s.eventIndex[*id] = append(s.eventIndex[*id], &s.events[len(s.events)-1])
+	}
+	s.kept.eventIndex = true
 }
 
 func sliceOf(proj map[string]*sessionSlice, sessionID string) *sessionSlice {
@@ -1252,18 +1306,21 @@ func (s *Store) applyEvictionsLocked(picks []evictionCandidate) {
 	for _, pick := range picks {
 		switch pick.source {
 		case 0:
+			s.dropProjectionLocked()
 			if held, ok := s.requests[pick.id]; ok {
 				s.forgetCallLocked(held.record)
 				unfile(s.requestsBySession, held.record.SessionID, pick.id)
 			}
 			delete(s.requests, pick.id)
 		case 1:
+			s.dropProjectionLocked()
 			if held, ok := s.tools[pick.id]; ok {
 				unfile(s.toolsBySession, held.record.SessionID, pick.id)
 			}
 			delete(s.tools, pick.id)
 		default:
 			eventsGone = true
+			s.eventIndex, s.kept.eventIndex = nil, false
 			gone[pick.id] = struct{}{}
 		}
 	}
@@ -1295,6 +1352,7 @@ func (s *Store) evictSessionsLocked() {
 
 // dropSessionLocked forgets a session and every record it owns.
 func (s *Store) dropSessionLocked(sessionID string) {
+	s.dropProjectionLocked()
 	delete(s.sessions, sessionID)
 	s.sessionOrder.delete(sessionID)
 	delete(s.notices, sessionID)
@@ -1310,6 +1368,11 @@ func (s *Store) dropSessionLocked(sessionID string) {
 	}
 	delete(s.toolsBySession, sessionID)
 	s.forgetOrderLocked()
+}
+
+// dropProjectionLocked discards the projection, for a write that removes records from it.
+func (s *Store) dropProjectionLocked() {
+	s.proj, s.kept.projection = nil, false
 }
 
 // fileUnder adds a record id to its session's set in an index, making the set when the
@@ -1337,11 +1400,18 @@ func unfile(index map[string]map[string]struct{}, sessionID, id string) {
 }
 
 // notifyLocked bumps the version, drops every cached answer and lists the listeners to
-// call once the lock is open.
+// call once the lock is open. The projection and the event index stay when the change
+// carries no request, tool call or event they could be missing, or when the write appended
+// those to them (kept).
 func (s *Store) notifyLocked(change Change) []*listenerEntry {
 	s.ver++
-	s.proj = nil
-	s.eventIndex = nil
+	if (len(change.Requests) > 0 || len(change.Tools) > 0) && !s.kept.projection {
+		s.proj = nil
+	}
+	if len(change.Events) > 0 && !s.kept.eventIndex {
+		s.eventIndex = nil
+	}
+	s.kept = keptCaches{}
 	s.views = nil
 	s.newest = nil
 	s.listCache = nil
@@ -1415,6 +1485,7 @@ func (s *Store) placeRequestLocked(record shared.RequestRecord) shared.RequestRe
 		held := &storedRequest{record: stored, seq: s.nextArrivalLocked()}
 		s.requests[stored.ID] = held
 		s.requestOrder.add(held)
+		s.projectRequestLocked(held)
 	}
 	s.noteCallLocked(stored, paired || FromRouter(record), paired || !FromRouter(record))
 	return stored
@@ -1672,7 +1743,7 @@ func (s *Store) AddSpoolLine(line shared.SpoolLine) {
 			Label:     labelFor(&line),
 			Payload:   line,
 		}
-		s.events = append(s.events, record)
+		s.appendEventLocked(record)
 		change.Events = append(change.Events, record)
 		pins = append(pins, evictionPin{source: 2, id: strconv.FormatInt(record.Seq, 10)})
 	}
@@ -1763,6 +1834,7 @@ func (s *Store) storeToolLocked(record shared.ToolCallRecord) {
 	held := &storedTool{record: record, seq: s.nextArrivalLocked()}
 	s.tools[record.ID] = held
 	s.toolOrder.add(held)
+	s.projectToolLocked(held)
 }
 
 // UpsertSession writes a session's facts; the first writer wins each fact.
