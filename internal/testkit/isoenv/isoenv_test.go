@@ -66,6 +66,7 @@ func TestEnvironDropsEveryVariableThatNamesTheOwnersState(t *testing.T) {
 func TestEnvironRootsTheChildUnderHomeAndKeepsTheMachinesPath(t *testing.T) {
 	home := t.TempDir()
 	ownerVars(t)
+	t.Setenv(ShimsEnv, "") // a run's shims put their own directory first on the PATH
 	t.Setenv("LANG", "en_US.UTF-8")
 	got := Lookup(Environ(t, home))
 	want := map[string]string{

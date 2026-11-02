@@ -13,6 +13,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
+	"github.com/MuhmdRaouf/huddle/internal/notifyicon"
 	"github.com/MuhmdRaouf/huddle/internal/radar/alerts"
 	"github.com/MuhmdRaouf/huddle/internal/radar/budget"
 	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
@@ -38,9 +39,14 @@ type testEnv struct {
 	zai    string
 }
 
+// makeEnv is one throwaway world. Its home holds a ready notification applet: on macOS the
+// applet's stub is the one command that shows a notification, and a world without it notifies
+// nothing.
 func makeEnv(t *testing.T) testEnv {
 	t.Helper()
 	home := t.TempDir()
+	writeText(t, notifyicon.AppletStub(home), "#!/bin/sh\n")
+	writeText(t, notifyicon.AppletDigestPath(home), notifyicon.AppletDigest())
 	return testEnv{
 		env: domain.EnvLookup{
 			"HOME":              home,

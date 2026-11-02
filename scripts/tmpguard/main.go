@@ -9,6 +9,11 @@
 // started after the run began is the suite's work still running detached. One whose HOME is a
 // temp dir is killed; one whose HOME is not is reported and left alone.
 //
+// It also fails on a notifier the suite started: the run gets a directory of osascript,
+// osacompile and notify-send shims (internal/testkit/isoenv) that the test kit puts first on the
+// PATH of every process and child it builds. Each shim records its argv and fails, and every
+// recorded spawn is named in the failure. A test never reaches the owner's desktop.
+//
 // The directory comes from the system's default temp location, never from
 // inside the module: the suite's "outside a repository" cases run git and
 // the project detection in temp dirs, and a temp dir under the module
@@ -28,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/leftover"
 )
 
@@ -50,11 +56,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "tmpguard: %v\n", err)
 		return 1
 	}
+	shimDir, err := freshShimDir()
+	if err != nil {
+		fmt.Fprintf(stderr, "tmpguard: %v\n", err)
+		_ = os.RemoveAll(guardDir)
+		return 1
+	}
 	began := time.Now()
 	test := exec.Command("go", append([]string{"test"}, args...)...)
 	test.Stdout = stdout
 	test.Stderr = stderr
-	test.Env = withTmpDir(os.Environ(), guardDir)
+	test.Env = withEnv(os.Environ(), "TMPDIR="+guardDir, isoenv.ShimsEnv+"="+shimDir)
 	code := 0
 	if err := test.Run(); err != nil {
 		var exitErr *exec.ExitError
@@ -67,8 +79,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	left, listErr := leftovers(guardDir)
 	escaped := leftover.Sweep(guardDir, time.Since(began), stderr)
-	if rmErr := os.RemoveAll(guardDir); rmErr != nil {
-		fmt.Fprintf(stderr, "tmpguard: remove %s: %v\n", guardDir, rmErr)
+	spawns, spawnsErr := isoenv.Spawns(shimDir)
+	for _, dir := range []string{guardDir, shimDir} {
+		if rmErr := os.RemoveAll(dir); rmErr != nil {
+			fmt.Fprintf(stderr, "tmpguard: remove %s: %v\n", dir, rmErr)
+		}
+	}
+	if spawnsErr != nil {
+		fmt.Fprintf(stderr, "tmpguard: read the notifier record: %v\n", spawnsErr)
+		return 1
+	}
+	if len(spawns) > 0 {
+		fmt.Fprintf(stderr, "tmpguard: the suite started %d desktop notifier programs (a test must never reach the owner's desktop; HUDDLE_NOTIFY_LOG is set by internal/testkit/isoenv for every test process and child):\n", len(spawns))
+		for _, spawn := range spawns {
+			fmt.Fprintf(stderr, "  %s\n", spawn)
+		}
+		return 1
 	}
 	if listErr != nil {
 		fmt.Fprintf(stderr, "tmpguard: %v\n", listErr)
@@ -92,16 +118,36 @@ func freshGuardDir() (string, error) {
 	return os.MkdirTemp("", "tmpguard-")
 }
 
-// withTmpDir replaces TMPDIR in the process env, so the suite's every throwaway lands in dir.
-func withTmpDir(entries []string, dir string) []string {
-	kept := make([]string, 0, len(entries)+1)
-	for _, entry := range entries {
-		if strings.HasPrefix(entry, "TMPDIR=") {
-			continue
-		}
-		kept = append(kept, entry)
+// freshShimDir makes the run's notifier shims, outside the run's TMPDIR so that stays empty.
+func freshShimDir() (string, error) {
+	dir, err := os.MkdirTemp("", "tmpguard-shims-")
+	if err != nil {
+		return "", err
 	}
-	return append(kept, "TMPDIR="+dir)
+	if err := isoenv.InstallShims(dir); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", err
+	}
+	return dir, nil
+}
+
+// withEnv replaces each named variable in the process env with the given NAME=value entry, so
+// the suite's every throwaway lands in the run's TMPDIR and its test kit finds the run's shims.
+func withEnv(entries []string, set ...string) []string {
+	kept := make([]string, 0, len(entries)+len(set))
+	for _, entry := range entries {
+		replaced := false
+		for _, with := range set {
+			name, _, _ := strings.Cut(with, "=")
+			if strings.HasPrefix(entry, name+"=") {
+				replaced = true
+			}
+		}
+		if !replaced {
+			kept = append(kept, entry)
+		}
+	}
+	return append(kept, set...)
 }
 
 // leftovers names the entries the suite left in the run's TMPDIR.

@@ -392,3 +392,29 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   `TestE2EAnOwnerMessageReachesOnlyItsSession` (cmd/huddle) hold the whole paths.
 - **Rule:** one machine has one name: the hub reads it from the home's `config.toml`, the place every hook reads it
   from, never from the operating system's hostname.
+
+## 2026-11-02, a test run showed a real notification with the Script Editor icon
+
+- **What happened:** the owner's Notification Center showed "Huddle · The golden channel / Task t-doc is blocked
+  (lead)" under the Script Editor icon. The channel and the task are the golden fixture, so a test run had posted
+  a real notification to the owner's desktop.
+- **Cause:** two bugs. The test kit gave a child no notification log, so a hub that reached `Notifier.Send` with
+  the switch on showed a real banner, because only `HUDDLE_NOTIFY=0` or `HUDDLE_NOTIFY_LOG` stops one and the kit
+  drops every inherited `HUDDLE_*` variable. And `Send` fell back to a bare `osascript` line whenever the
+  notification applet was not built under `HOME` (a temp home never has it), which shows Script Editor's icon;
+  radar's `NotifyCommand` had the same fallback for an empty icon. The hand-built environment maps of the cmd/huddle
+  e2e tests named no log either.
+- **Guard:** `TestEnvironSendsNotificationsToALogUnderHome` and `TestSandboxSendsNotificationsToALogUnderItsHome`
+  (internal/testkit/isoenv) want `HUDDLE_NOTIFY_LOG` under the home of every child and process the kit builds;
+  `TestAChildOfEnvironThatStartsANotifierIsRecorded` and `TestInstalledShimsRecordTheirArgvAndFail`
+  (internal/testkit/isoenv) hold the `osascript`, `osacompile` and `notify-send` shims;
+  `TestEveryHandBuiltEnvironmentNamesANotifyLogAndTheShims` (cmd/huddle) wants both renderers of the hand-built
+  environment maps to carry the log and the shims;
+  `TestARunWhoseChildStartsANotifierFailsNamingTheSpawn` (scripts/tmpguard) wants a run that spawned one to fail
+  naming it; `TestNotifier` (internal/huddle/outside) and `TestDesktopNotifications` (internal/radar/alerts)
+  want a notification on macOS to go out through the applet's stub or not at all, and an alert radar could not
+  show to stay unnotified until the applet is built.
+- **Rule:** a test never reaches the real desktop: the shared kit sets `HUDDLE_NOTIFY_LOG` and puts the shims first
+  on the `PATH`, and tmpguard fails a run that spawned a notifier. Huddle never shows a notification without its
+  icon: a missing applet is built first; the hub drops a notification whose build failed with one log line, and
+  radar keeps an alert unnotified until the applet exists.

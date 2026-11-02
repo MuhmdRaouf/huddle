@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // freshRoot is the repository root, two levels above this package's directory.
@@ -264,9 +266,11 @@ func freshHas(names []string, name string) bool {
 // env is the child's whole environment, built from scratch so nothing of the surrounding
 // shell — no PATH, no real home, no real plugin root — leaks into the run.
 func (w *freshWorld) env(overrides ...string) []string {
+	guarded := isoenv.Guard(map[string]string{"HOME": w.home, "PATH": w.path})
 	vars := []string{
 		"HOME=" + w.home,
-		"PATH=" + w.path,
+		"PATH=" + guarded["PATH"],
+		"HUDDLE_NOTIFY_LOG=" + guarded["HUDDLE_NOTIFY_LOG"],
 		"TMPDIR=" + w.home,
 		"XDG_CONFIG_HOME=" + filepath.Join(w.home, ".config"),
 		"XDG_STATE_HOME=" + filepath.Join(w.home, ".local", "state"),

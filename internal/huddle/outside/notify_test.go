@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,6 +43,22 @@ func logLines(t *testing.T, path string) []string {
 		}
 	}
 	return out
+}
+
+// installApplet writes a ready notification applet under home and answers its stub.
+func installApplet(t *testing.T, home string) string {
+	t.Helper()
+	stub := notifyicon.AppletStub(home)
+	if err := os.MkdirAll(filepath.Dir(stub), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(notifyicon.AppletDigestPath(home), []byte(notifyicon.AppletDigest()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return stub
 }
 
 func TestNotifier(t *testing.T) {
@@ -271,10 +288,14 @@ func TestNotifier(t *testing.T) {
 			return nil
 		}
 		n.Build = func(string) {} // a missing applet must not start a real build here
+		stub := ""
+		if how == "osascript" {
+			stub = installApplet(t, os.Getenv("HOME"))
+		}
 		if !n.Send("ask", "s", strings.Repeat("word ", 60), strings.Repeat("phrase ", 60)) {
 			t.Fatal("Send = false, want true")
 		}
-		if program == "" || len(args) < 3 {
+		if program == "" || len(args) < 2 {
 			t.Fatalf("spawned %q %v", program, args)
 		}
 		title, body := args[len(args)-2], args[len(args)-1]
@@ -288,17 +309,11 @@ func TestNotifier(t *testing.T) {
 			t.Errorf("body is %d units, want 160", got)
 		}
 		if how == "osascript" {
-			if program != "osascript" {
-				t.Errorf("program = %q, want osascript", program)
+			if program != stub {
+				t.Errorf("program = %q, want the applet's stub %q", program, stub)
 			}
-			want := []string{"-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run"}
-			if len(args) != len(want)+2 {
-				t.Fatalf("args = %v", args)
-			}
-			for i, w := range want {
-				if args[i] != w {
-					t.Errorf("args[%d] = %q, want %q", i, args[i], w)
-				}
+			if len(args) != 2 {
+				t.Fatalf("args = %v, want [title body]", args)
 			}
 		} else {
 			if program != "notify-send" {
@@ -310,78 +325,124 @@ func TestNotifier(t *testing.T) {
 		}
 	})
 
-	t.Run("on macOS a ready applet takes the send; an absent one falls back and starts its build once", func(t *testing.T) {
+	t.Run("on macOS a ready applet's stub takes the send and nothing builds", func(t *testing.T) {
 		if NotifierProgram() != "osascript" {
 			t.Skip("the applet branch runs where osascript is the program")
 		}
 		t.Setenv("HUDDLE_NOTIFY_LOG", "")
 		t.Setenv("HUDDLE_NOTIFY", "")
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		stub := installApplet(t, home)
 		var program string
 		var args []string
-		builds := make(chan string, 2)
+		builds := 0
 		n := NewNotifier(t.TempDir())
 		n.Spawn = func(p string, a []string) error {
 			program, args = p, a
 			return nil
 		}
-		n.Build = func(home string) { builds <- home }
-
-		// a ready applet: its stub takes the send, no build starts
-		home := t.TempDir()
-		t.Setenv("HOME", home)
-		stub := notifyicon.AppletStub(home)
-		if err := os.MkdirAll(filepath.Dir(stub), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(stub, []byte("#!/bin/sh\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(notifyicon.AppletDigestPath(home), []byte(notifyicon.AppletDigest()), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		n.Build = func(string) { builds++ }
 		if !n.Send("ask", "s", "T", "b") {
 			t.Fatal("Send = false, want true")
 		}
 		if program != stub || !slices.Equal(args, []string{"T", "b"}) {
 			t.Errorf("spawned %q %v, want the stub %q [T b]", program, args, stub)
 		}
-		select {
-		case started := <-builds:
-			t.Errorf("a ready applet started a build for %q, want none", started)
-		default:
+		if builds != 0 {
+			t.Errorf("a ready applet started %d builds, want none", builds)
 		}
+	})
 
-		// no applet: today's osascript line, and the build starts once across two sends
-		empty := t.TempDir()
-		t.Setenv("HOME", empty)
-		if !n.Send("ask", "s2", "T2", "b2") {
-			t.Fatal("Send = false, want true")
+	t.Run("on macOS with no applet the build runs once and the stub sends when it finishes", func(t *testing.T) {
+		if NotifierProgram() != "osascript" {
+			t.Skip("the applet branch runs where osascript is the program")
 		}
-		scriptWant := []string{"-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run", "T2", "b2"}
-		if program != "osascript" || !slices.Equal(args, scriptWant) {
-			t.Errorf("spawned %q %v, want osascript %v", program, args, scriptWant)
+		t.Setenv("HUDDLE_NOTIFY_LOG", "")
+		t.Setenv("HUDDLE_NOTIFY", "")
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		type spawned struct {
+			program string
+			args    []string
 		}
-		if !n.Send("ask", "s3", "T3", "b3") {
-			t.Fatal("second Send = false, want true")
+		spawns := make(chan spawned, 4)
+		var builds atomic.Int32
+		var stub string
+		n := NewNotifier(t.TempDir())
+		n.Spawn = func(p string, a []string) error {
+			spawns <- spawned{p, a}
+			return nil
 		}
-		select {
-		case started := <-builds:
-			if started != empty {
-				t.Errorf("the build ran for %q, want %q", started, empty)
+		n.Build = func(h string) {
+			builds.Add(1)
+			stub = installApplet(t, h)
+		}
+		for _, subject := range []string{"s1", "s2"} {
+			if !n.Send("ask", subject, "T "+subject, "b "+subject) {
+				t.Fatalf("Send %s = false, want true", subject)
 			}
-		case <-time.After(2 * time.Second):
-			t.Error("no build started for a missing applet")
+		}
+		var got []spawned
+		for range 2 {
+			select {
+			case sp := <-spawns:
+				got = append(got, sp)
+			case <-time.After(5 * time.Second):
+				t.Fatalf("only %d of 2 notifications reached a notifier: the stub should send once the build finishes", len(got))
+			}
+		}
+		for _, subject := range []string{"s1", "s2"} {
+			want := spawned{stub, []string{"T " + subject, "b " + subject}}
+			if !slices.ContainsFunc(got, func(sp spawned) bool { return sp.program == want.program && slices.Equal(sp.args, want.args) }) {
+				t.Errorf("no spawn of the stub %q with %v; spawned %v", want.program, want.args, got)
+			}
+		}
+		if got := builds.Load(); got != 1 {
+			t.Errorf("builds = %d, want 1 across two sends", got)
+		}
+	})
+
+	t.Run("on macOS a build that leaves no applet drops the notification with one log line", func(t *testing.T) {
+		if NotifierProgram() != "osascript" {
+			t.Skip("the applet branch runs where osascript is the program")
+		}
+		t.Setenv("HUDDLE_NOTIFY_LOG", "")
+		t.Setenv("HUDDLE_NOTIFY", "")
+		t.Setenv("HOME", t.TempDir())
+		var spawns, builds atomic.Int32
+		logs := make(chan string, 4)
+		n := NewNotifier(t.TempDir())
+		n.Spawn = func(string, []string) error {
+			spawns.Add(1)
+			return nil
+		}
+		n.Build = func(string) { builds.Add(1) }
+		n.Log = func(line string) { logs <- line }
+		for _, subject := range []string{"s1", "s2"} {
+			n.Send("ask", subject, "T", "secret body")
+			select {
+			case line := <-logs:
+				if !strings.Contains(line, "ask") || !strings.Contains(line, subject) {
+					t.Errorf("log line %q, want the kind and the subject", line)
+				}
+				if strings.Contains(line, "secret body") {
+					t.Errorf("log line %q holds the notification text", line)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("no log line for the dropped notification %s", subject)
+			}
 		}
 		select {
-		case started := <-builds:
-			t.Errorf("a second build started, for %q", started)
-		default:
+		case line := <-logs:
+			t.Errorf("an extra log line: %q", line)
+		case <-time.After(100 * time.Millisecond):
 		}
-
-		// a nil Build builds nothing and costs the send nothing
-		n.Build = nil
-		if !n.Send("ask", "s4", "T4", "b4") {
-			t.Fatal("Send with a nil Build = false, want true")
+		if got := spawns.Load(); got != 0 {
+			t.Errorf("%d programs spawned for an applet that never built, want none", got)
+		}
+		if got := builds.Load(); got != 1 {
+			t.Errorf("builds = %d, want 1 across two sends", got)
 		}
 	})
 

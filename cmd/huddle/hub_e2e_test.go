@@ -38,6 +38,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/webauthntest"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
 )
 
 // strippedPath is the PATH a fresh install lives on: the system directories alone, where no
@@ -463,8 +464,9 @@ func hookEnv(root, user, binHome, pluginCopy, project, url, token string, extra 
 	return machineEnv(root, user, binHome, pluginCopy, project, "http://127.0.0.1:1", merged)
 }
 
-// envList renders an env map for a child process.
+// envList renders an env map for a child process, guarded like argvEntries' output.
 func envList(env map[string]string) []string {
+	env = isoenv.Guard(env)
 	out := make([]string, 0, len(env))
 	for key, value := range env {
 		if value == "" {

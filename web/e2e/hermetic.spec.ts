@@ -19,3 +19,16 @@ test("each hub of the run carries its own router port, never the daemon's", () =
   }
   expect(routerPort).not.toBe(hubRouterPort);
 });
+
+test("each hub of the run writes its notifications to a log, never to the desktop", async () => {
+  const { rootUrl, token, hubRootUrl, hubToken } = theSetup();
+  for (const [url, root] of [
+    [rootUrl, token],
+    [hubRootUrl, hubToken],
+  ] as const) {
+    const answer = await fetch(`${url}/api/settings`, { headers: { "x-huddle-token": root } });
+    expect(answer.status, url).toBe(200);
+    const settings = (await answer.json()) as { notifier: string | null };
+    expect(settings.notifier, url).toBe("log");
+  }
+});

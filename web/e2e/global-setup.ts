@@ -68,7 +68,8 @@ let serverHub: ChildProcess | null = null;
  *  and the cwd both sit inside this repository, whose huddle.json is the owner's channel, so the
  *  project dir lives in the OS temp dir, outside it. The setup also puts it in its own
  *  process.env, which the test workers inherit, so a spec's child built from process.env gets it
- *  too. The teardown removes it. */
+ *  too, and does the same with HUDDLE_NOTIFY_LOG, the file a notifier writes to instead of
+ *  showing a banner. The teardown removes it. */
 let outsideProject = "";
 
 export default async function globalSetup(): Promise<void> {
@@ -84,6 +85,7 @@ export default async function globalSetup(): Promise<void> {
   outsideProject = fs.mkdtempSync(path.join(os.tmpdir(), "huddle-e2e-project-"));
   fs.writeFileSync(outsideProjectPath, outsideProject);
   process.env.CLAUDE_PROJECT_DIR = outsideProject;
+  process.env.HUDDLE_NOTIFY_LOG = path.join(runDir, "notify.log");
   for (const dir of [
     home,
     huddleHome,
@@ -306,6 +308,8 @@ function envFor(target: TempHome, port: number | null, token: string | null, rou
     RADAR_HOME: target.radarHome,
     CLAUDE_CONFIG_DIR: target.claudeConfig,
     CLAUDE_PROJECT_DIR: outsideProject,
+    // a notification lands in this file; none ever reaches the owner's desktop
+    HUDDLE_NOTIFY_LOG: path.join(target.home, "notify.log"),
     XDG_CONFIG_HOME: `${target.xdg}-config`,
     XDG_CACHE_HOME: `${target.xdg}-cache`,
     XDG_DATA_HOME: `${target.xdg}-data`,

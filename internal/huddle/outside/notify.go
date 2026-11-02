@@ -105,10 +105,11 @@ type enabledCache struct {
 // and ids only, then cleaned; the same kind and subject notify at most once per window.
 type Notifier struct {
 	// Now is the clock; Spawn starts the OS notifier program; Build builds the macOS
-	// notification applet in the background (tests replace all three).
+	// notification applet under home; Log writes one line to the hub's log (tests replace all four).
 	Now   func() time.Time
 	Spawn func(program string, args []string) error
 	Build func(home string)
+	Log   func(line string)
 
 	dir    string
 	getenv func(string) string
@@ -124,6 +125,7 @@ func NewNotifier(dir string) *Notifier {
 		Now:    time.Now,
 		Spawn:  spawnDetached,
 		Build:  buildApplet,
+		Log:    logToStderr,
 		dir:    dir,
 		getenv: os.Getenv,
 		last:   map[string]time.Time{},
@@ -206,7 +208,8 @@ type note struct {
 }
 
 // Send shows one notification: false when they are off, when this kind and subject showed
-// within the window, or when nothing here can show one. A failure anywhere is quiet.
+// within the window, or when nothing here can show one. A start failure is quiet; on macOS a
+// notification whose applet cannot be built is dropped with a log line.
 func (n *Notifier) Send(kind, subject, title, body string) bool {
 	if !n.Enabled() {
 		return false
@@ -242,30 +245,69 @@ func (n *Notifier) Send(kind, subject, title, body string) bool {
 	if how == "" {
 		return false
 	}
-	// the text goes in as arguments, never into the script: nothing in it can run
-	program, args := how, []string{"-a", "Huddle", cleanTitle, cleanBody}
 	if how == "osascript" {
-		if stub, ok := notifyicon.AppletReady(n.env("HOME")); ok {
-			program, args = stub, []string{cleanTitle, cleanBody}
-		} else {
-			program = "osascript"
-			args = []string{
-				"-e", "on run argv",
-				"-e", "display notification (item 2 of argv) with title (item 1 of argv)",
-				"-e", "end run",
-				cleanTitle, cleanBody,
-			}
-			n.startBuild()
-		}
-	} else if icon, err := notifyicon.EnsurePNG(n.env("HOME")); err == nil {
+		// osascript only tells that a macOS notifier exists: run on its own it shows Script
+		// Editor's icon, so the applet's stub, which carries the huddle icon, is the one way a
+		// notification goes out. The text goes in as the stub's arguments, never into a script.
+		n.sendThroughApplet(kind, subject, cleanTitle, cleanBody)
+		return true
+	}
+	// the text goes in as arguments, never into the script: nothing in it can run
+	args := []string{"-a", "Huddle", cleanTitle, cleanBody}
+	if icon, err := notifyicon.EnsurePNG(n.env("HOME")); err == nil {
 		args = notifySendArgs(icon, cleanTitle, cleanBody)
 	}
+	n.spawn(how, args)
+	return true
+}
+
+// spawn starts the notifier program; a start failure is the program's business, not the caller's.
+func (n *Notifier) spawn(program string, args []string) {
 	spawn := n.Spawn
 	if spawn == nil {
 		spawn = spawnDetached
 	}
-	_ = spawn(program, args) // a start failure is the program's business, not the caller's
-	return true
+	_ = spawn(program, args)
+}
+
+// sendThroughApplet runs the applet's stub with the title and the body. An applet that is not
+// built yet is built first, once per process, in the background: the notification waits for the
+// build and goes out through the stub when it finishes. A build that leaves no applet drops the
+// notification with one log line (its kind and subject, never its text).
+func (n *Notifier) sendThroughApplet(kind, subject, title, body string) {
+	home := n.env("HOME")
+	if stub, ok := notifyicon.AppletReady(home); ok {
+		n.spawn(stub, []string{title, body})
+		return
+	}
+	safego.Go(nil, func() {
+		n.build.Do(func() {
+			build := n.Build
+			if build == nil {
+				build = buildApplet
+			}
+			build(home)
+		})
+		stub, ok := notifyicon.AppletReady(home)
+		if !ok {
+			n.logLine(fmt.Sprintf("notification %q for %q dropped: the Huddle notification applet is not built", kind, subject))
+			return
+		}
+		n.spawn(stub, []string{title, body})
+	})
+}
+
+func (n *Notifier) logLine(line string) {
+	logTo := n.Log
+	if logTo == nil {
+		logTo = logToStderr
+	}
+	logTo(line)
+}
+
+// logToStderr writes one line to the hub's log.
+func logToStderr(line string) {
+	fmt.Fprintf(os.Stderr, "huddle: %s\n", line)
 }
 
 // notifySendArgs is the notify-send argv: the huddle icon in its file:// form when there is
@@ -277,25 +319,12 @@ func notifySendArgs(icon, title, body string) []string {
 	return []string{"-a", "Huddle", "-i", "file://" + icon, title, body}
 }
 
-// buildApplet builds the macOS notification applet once, in the background and with a minute
-// of its own; an error leaves the osascript line in place until the next process tries again.
+// buildApplet builds the macOS notification applet, with a minute of its own; an error leaves
+// the applet unbuilt, and the notifications waiting for it are dropped.
 func buildApplet(home string) {
 	ctx, cancel := context.WithTimeout(context.Background(), appletBuildTime)
 	defer cancel()
 	_, _ = notifyicon.EnsureApplet(ctx, home, notifyicon.ExecRunner)
-}
-
-// startBuild kicks the applet build off once per process, the first time a send finds no
-// ready applet.
-func (n *Notifier) startBuild() {
-	home := n.env("HOME")
-	n.build.Do(func() {
-		build := n.Build
-		if build == nil {
-			return
-		}
-		safego.Go(nil, func() { build(home) })
-	})
 }
 
 // window is how long one kind and subject stays quiet after a notification.

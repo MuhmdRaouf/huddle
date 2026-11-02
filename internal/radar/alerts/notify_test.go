@@ -38,6 +38,18 @@ func makeEnv(t *testing.T) testEnv {
 	}
 }
 
+// installApplet writes a ready notification applet under home and answers its stub.
+func installApplet(t *testing.T, home string) string {
+	t.Helper()
+	stub := notifyicon.AppletStub(home)
+	writeText(t, stub, "#!/bin/sh\n")
+	if err := os.Chmod(stub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeText(t, notifyicon.AppletDigestPath(home), notifyicon.AppletDigest())
+	return stub
+}
+
 // writeText mkdir -p's the parent, then writes with 0600.
 func writeText(t *testing.T, path, text string) {
 	t.Helper()
@@ -63,14 +75,9 @@ func notifyAlert() shared.Alert {
 }
 
 func TestDesktopNotifications(t *testing.T) {
-	t.Run("builds an osascript line on macOS and escapes the text", func(t *testing.T) {
-		if got := AppleScriptText("say \"hi\"\\\n"); got != "say \\\"hi\\\"\\\\ " {
-			t.Errorf("AppleScriptText = %q, want %q", got, "say \\\"hi\\\"\\\\ ")
-		}
-		line := NotifyCommand("darwin", domain.EnvLookup{}, "T", "b \"q\"", "")
-		if line == nil || line.Command != "osascript" || len(line.Args) != 2 || line.Args[0] != "-e" ||
-			line.Args[1] != "display notification \"b \\\"q\\\"\" with title \"T\"" {
-			t.Errorf("line = %+v", line)
+	t.Run("macOS without the applet's stub has no notifier, and linux without notify-send has none", func(t *testing.T) {
+		if line := NotifyCommand("darwin", domain.EnvLookup{}, "T", "b \"q\"", ""); line != nil {
+			t.Errorf("darwin line = %+v, want none without the applet's stub: osascript alone shows Script Editor's icon", line)
 		}
 		if NotifyCommand("linux", domain.EnvLookup{"PATH": "/nonexistent"}, "T", "b", "") != nil {
 			t.Error("linux without notify-send on PATH has no notifier")
@@ -111,25 +118,12 @@ func TestDesktopNotifications(t *testing.T) {
 		if stub == nil || stub.Command != "/x/applet" || !slices.Equal(stub.Args, []string{"T", "b"}) {
 			t.Errorf("darwin line = %+v, want the applet stub with the title and the body", stub)
 		}
-		script := NotifyCommand("darwin", domain.EnvLookup{}, "T", "b", "")
-		if script == nil || script.Command != "osascript" || slices.Contains(script.Args, "file:///x/huddle.png") {
-			t.Errorf("darwin line = %+v, want the osascript line with no icon", script)
-		}
 	})
 
 	t.Run("on darwin a ready applet's stub takes the alert, and nothing builds", func(t *testing.T) {
 		env := makeEnv(t)
 		ctx := context.Background()
-		stub := notifyicon.AppletStub(env.home)
-		if err := os.MkdirAll(filepath.Dir(stub), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(stub, []byte("#!/bin/sh\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(notifyicon.AppletDigestPath(env.home), []byte(notifyicon.AppletDigest()), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		stub := installApplet(t, env.home)
 		var calls [][]string
 		notifier := NewNotifier(ctx, NotifierOptions{
 			Env:      env.env,
@@ -180,6 +174,7 @@ func TestDesktopNotifications(t *testing.T) {
 	t.Run("notifies once per alert, at most once per subject in 10 minutes, and remembers across restarts", func(t *testing.T) {
 		env := makeEnv(t)
 		ctx := context.Background()
+		stub := installApplet(t, env.home)
 		var calls [][]string
 		at := int64(1_000)
 		clock := func() time.Time { return time.UnixMilli(at) }
@@ -199,7 +194,7 @@ func TestDesktopNotifications(t *testing.T) {
 		if got := notifier.Consider(ctx, []shared.Alert{notifyAlert(), retry}); got != 1 {
 			t.Fatalf("consider = %d, want 1", got)
 		}
-		if len(calls) != 1 || !strings.Contains(calls[0][2], "app: No activity") {
+		if len(calls) != 1 || calls[0][0] != stub || !strings.Contains(calls[0][2], "app: No activity") {
 			t.Errorf("calls = %v", calls)
 		}
 		if got := notifier.Consider(ctx, []shared.Alert{notifyAlert()}); got != 0 {
@@ -224,8 +219,8 @@ func TestDesktopNotifications(t *testing.T) {
 		if got := notifier.Consider(ctx, []shared.Alert{budgetAlert}); got != 1 {
 			t.Fatalf("budget = %d, want 1", got)
 		}
-		if !strings.HasPrefix(calls[2][2], `display notification "No activity"`) {
-			t.Errorf("script = %q", calls[2][2])
+		if want := []string{stub, "Radar: budget", "No activity"}; !slices.Equal(calls[2], want) {
+			t.Errorf("call = %v, want %v", calls[2], want)
 		}
 		data, err := os.ReadFile(NotifiedPath(ctx, env.env))
 		if err != nil {
@@ -248,6 +243,7 @@ func TestDesktopNotifications(t *testing.T) {
 	t.Run("notifies Claude's 5-hour window once, under its own title", func(t *testing.T) {
 		env := makeEnv(t)
 		ctx := context.Background()
+		stub := installApplet(t, env.home)
 		var calls [][]string
 		notifier := NewNotifier(ctx, NotifierOptions{
 			Env:      env.env,
@@ -266,9 +262,99 @@ func TestDesktopNotifications(t *testing.T) {
 		if got := notifier.Consider(ctx, []shared.Alert{window, window}); got != 1 {
 			t.Fatalf("consider = %d, want 1", got)
 		}
-		want := `display notification "Claude 5-hour window 80% used, resets 14:00 UTC" with title "Radar: Claude 5-hour window"`
-		if len(calls) != 1 || calls[0][2] != want {
-			t.Errorf("calls = %v, want one %q", calls, want)
+		want := []string{stub, "Radar: Claude 5-hour window", "Claude 5-hour window 80% used, resets 14:00 UTC"}
+		if len(calls) != 1 || !slices.Equal(calls[0], want) {
+			t.Errorf("calls = %v, want one %v", calls, want)
+		}
+	})
+
+	t.Run("on darwin with no applet built nothing goes out", func(t *testing.T) {
+		env := makeEnv(t)
+		ctx := context.Background()
+		var calls [][]string
+		notifier := NewNotifier(ctx, NotifierOptions{
+			Env:      env.env,
+			Enabled:  func() bool { return true },
+			Runner:   func(command string, args []string) { calls = append(calls, append([]string{command}, args...)) },
+			Platform: "darwin",
+			Now:      func() time.Time { return time.UnixMilli(1_000) },
+		})
+		if got := notifier.Consider(ctx, []shared.Alert{notifyAlert()}); got != 0 {
+			t.Errorf("consider = %d, want 0: osascript alone would show Script Editor's icon", got)
+		}
+		if len(calls) != 0 {
+			t.Errorf("calls = %v, want none", calls)
+		}
+	})
+
+	t.Run("on darwin an alert that finds no applet is not recorded, and goes out through the stub once it is built", func(t *testing.T) {
+		env := makeEnv(t)
+		ctx := context.Background()
+		var calls [][]string
+		notifier := NewNotifier(ctx, NotifierOptions{
+			Env:      env.env,
+			Enabled:  func() bool { return true },
+			Runner:   func(command string, args []string) { calls = append(calls, append([]string{command}, args...)) },
+			Platform: "darwin",
+			Now:      func() time.Time { return time.UnixMilli(1_000) },
+		})
+		if got := notifier.Consider(ctx, []shared.Alert{notifyAlert()}); got != 0 {
+			t.Fatalf("consider with no applet = %d, want 0", got)
+		}
+		if data, err := os.ReadFile(NotifiedPath(ctx, env.env)); err == nil && strings.Contains(string(data), "stuck:s1:1") {
+			t.Errorf("notified.json = %s, want the alert left out: it was never shown", data)
+		}
+		stub := installApplet(t, env.home)
+		if got := notifier.Consider(ctx, []shared.Alert{notifyAlert()}); got != 1 {
+			t.Fatalf("consider once the applet is ready = %d, want 1", got)
+		}
+		if want := []string{stub, "Radar: session looks stuck", "app: No activity"}; len(calls) != 1 || !slices.Equal(calls[0], want) {
+			t.Errorf("calls = %v, want one %v", calls, want)
+		}
+	})
+
+	t.Run("on darwin with no applet one build starts per process and each waiting alert logs one line", func(t *testing.T) {
+		env := makeEnv(t)
+		ctx := context.Background()
+		builds := make(chan string, 4)
+		var logs []string
+		notifier := NewNotifier(ctx, NotifierOptions{
+			Env:      env.env,
+			Enabled:  func() bool { return true },
+			Runner:   func(string, []string) { t.Error("a command ran with no applet") },
+			Platform: "darwin",
+			Now:      func() time.Time { return time.UnixMilli(1_000) },
+			Build:    func(home string) { builds <- home },
+			Log:      func(line string) { logs = append(logs, line) },
+		})
+		second := notifyAlert()
+		second.ID = "stuck:s2:1"
+		second.SessionID = "s2"
+		for _, alerts := range [][]shared.Alert{{notifyAlert()}, {notifyAlert()}, {second}} {
+			if got := notifier.Consider(ctx, alerts); got != 0 {
+				t.Fatalf("consider with no applet = %d, want 0", got)
+			}
+		}
+		select {
+		case home := <-builds:
+			if home != env.home {
+				t.Errorf("the build ran for %q, want %q", home, env.home)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("no applet build started")
+		}
+		select {
+		case home := <-builds:
+			t.Errorf("a second build started, for %q", home)
+		case <-time.After(100 * time.Millisecond):
+		}
+		if len(logs) != 2 {
+			t.Fatalf("log lines = %q, want one per waiting alert", logs)
+		}
+		for i, session := range []string{"s1", "s2"} {
+			if !strings.Contains(logs[i], string(shared.AlertStuck)) || !strings.Contains(logs[i], session) {
+				t.Errorf("log line %q, want the kind and the session %s", logs[i], session)
+			}
 		}
 	})
 
@@ -311,6 +397,7 @@ func TestDesktopNotifications(t *testing.T) {
 	t.Run("reads a broken memory file as empty", func(t *testing.T) {
 		env := makeEnv(t)
 		ctx := context.Background()
+		installApplet(t, env.home)
 		var calls [][]string
 		writeText(t, NotifiedPath(ctx, env.env), "{oops")
 		notifier := NewNotifier(ctx, NotifierOptions{

@@ -1,5 +1,5 @@
-// Desktop notifications: macOS `osascript -e 'display notification …'`, Linux `notify-send`
-// when it is on PATH, otherwise nothing at all. Each one is started detached with no stdio and
+// Desktop notifications: macOS through the huddle notification applet's stub (its bundle shows
+// the huddle icon), Linux `notify-send` when it is on PATH, otherwise nothing at all. Each one is started detached with no stdio and
 // killed after a few seconds if it hangs; nothing ever waits on it and nothing here fails a
 // caller. Each alert notifies once (its id is remembered in <state>/notified.json for a week),
 // and one kind + subject at most once per 10 minutes. The text is the alert's kind, project
@@ -79,20 +79,6 @@ func onPath(env domain.EnvLookup, name string) bool {
 	return false
 }
 
-// AppleScriptText is an AppleScript string literal body: backslashes and quotes escaped,
-// control characters gone.
-func AppleScriptText(text string) string {
-	var printable strings.Builder
-	for _, r := range text {
-		if r < 32 || r == 127 {
-			r = ' '
-		}
-		printable.WriteRune(r)
-	}
-	escaped := strings.ReplaceAll(printable.String(), `\`, `\\`)
-	return strings.ReplaceAll(escaped, `"`, `\"`)
-}
-
 // CommandLine is one notifier program and its arguments.
 type CommandLine struct {
 	Command string
@@ -102,14 +88,14 @@ type CommandLine struct {
 // NotifyCommand is the command line that shows one notification on this platform (GOOS name),
 // or nil where there is none. The icon carries the huddle icon: the applet's stub on darwin
 // (its bundle shows the icon) and the PNG on linux in its file:// form. An empty icon leaves
-// darwin on the osascript line and linux without one.
+// darwin without a command, since osascript alone shows Script Editor's icon, and linux on the
+// bare notify-send line.
 func NotifyCommand(platform string, env domain.EnvLookup, title, body, icon string) *CommandLine {
 	if platform == "darwin" {
-		if icon != "" {
-			return &CommandLine{Command: icon, Args: []string{title, body}}
+		if icon == "" {
+			return nil
 		}
-		script := fmt.Sprintf("display notification \"%s\" with title \"%s\"", AppleScriptText(body), AppleScriptText(title))
-		return &CommandLine{Command: "osascript", Args: []string{"-e", script}}
+		return &CommandLine{Command: icon, Args: []string{title, body}}
 	}
 	if platform == "linux" && onPath(env, "notify-send") {
 		args := []string{"--app-name=Radar", title, body}
@@ -132,13 +118,33 @@ var titles = map[shared.AlertKind]string{
 }
 
 // NotifierOptions shapes a Notifier: the environment, the switch read on every call (the
-// dashboard toggle can flip at any moment), and the seams tests replace.
+// dashboard toggle can flip at any moment), and the seams tests replace. Build builds the macOS
+// notification applet under home and Log writes one line to radar's log; a Notifier given its
+// own Runner builds nothing unless it is given a Build too.
 type NotifierOptions struct {
 	Env      domain.EnvLookup
 	Enabled  func() bool
 	Runner   Runner
 	Platform string
 	Now      func() time.Time
+	Build    func(home string)
+	Log      func(line string)
+}
+
+// appletBuildTime is the budget of one applet build.
+const appletBuildTime = 60 * time.Second
+
+// buildApplet builds the macOS notification applet, with a minute of its own; an error leaves
+// the applet unbuilt, and the alerts waiting for it stay unnotified.
+func buildApplet(home string) {
+	ctx, cancel := context.WithTimeout(context.Background(), appletBuildTime)
+	defer cancel()
+	_, _ = notifyicon.EnsureApplet(ctx, home, notifyicon.ExecRunner)
+}
+
+// logToStderr writes one line to radar's log.
+func logToStderr(line string) {
+	fmt.Fprintf(os.Stderr, "radar: %s\n", line)
 }
 
 // notifiedID is one alert id remembered as notified, and when.
@@ -154,11 +160,15 @@ type Notifier struct {
 	runner   Runner
 	platform string
 	now      func() time.Time
+	build    func(home string)
+	log      func(line string)
+	building sync.Once
 
 	mu            sync.Mutex
 	notified      []notifiedID // in arrival order, the order the file keeps
 	known         map[string]int
 	lastBySubject map[string]int64
+	waiting       map[string]bool // alerts already logged as waiting for the applet
 }
 
 // NewNotifier reads its notification memory once; each Consider updates it.
@@ -175,6 +185,14 @@ func NewNotifier(ctx context.Context, options NotifierOptions) *Notifier {
 	if now == nil {
 		now = time.Now
 	}
+	build := options.Build
+	if build == nil && options.Runner == nil {
+		build = buildApplet
+	}
+	logLine := options.Log
+	if logLine == nil {
+		logLine = logToStderr
+	}
 	notified := readNotified(NotifiedPath(ctx, options.Env))
 	known := make(map[string]int, len(notified))
 	for i, entry := range notified {
@@ -186,9 +204,12 @@ func NewNotifier(ctx context.Context, options NotifierOptions) *Notifier {
 		runner:        runner,
 		platform:      platform,
 		now:           now,
+		build:         build,
+		log:           logLine,
 		notified:      notified,
 		known:         known,
 		lastBySubject: map[string]int64{},
+		waiting:       map[string]bool{},
 	}
 }
 
@@ -214,13 +235,18 @@ func (n *Notifier) Consider(ctx context.Context, alerts []shared.Alert) int {
 	if len(fresh) == 0 {
 		return 0
 	}
+	icon := n.iconPath()
+	if n.platform == "darwin" && icon == "" {
+		n.waitForApplet(fresh)
+		return 0
+	}
 	for _, alert := range fresh {
 		n.known[alert.ID] = len(n.notified)
 		n.notified = append(n.notified, notifiedID{id: alert.ID, at: float64(now)})
 	}
 	sent := 0
 	for _, alert := range fresh {
-		if n.send(alert, now) {
+		if n.send(alert, icon, now) {
 			sent++
 		}
 	}
@@ -228,9 +254,26 @@ func (n *Notifier) Consider(ctx context.Context, alerts []shared.Alert) int {
 	return sent
 }
 
+// waitForApplet leaves the alerts unnotified while the macOS applet is missing: osascript alone
+// would show Script Editor's icon. The first call per process starts the applet build, each
+// alert is logged once, and the next Consider that finds the applet ready notifies them.
+func (n *Notifier) waitForApplet(alerts []shared.Alert) {
+	if n.build != nil {
+		home := n.env["HOME"]
+		n.building.Do(func() { go n.build(home) })
+	}
+	for _, alert := range alerts {
+		if n.waiting[alert.ID] {
+			continue
+		}
+		n.waiting[alert.ID] = true
+		n.log(fmt.Sprintf("alert %q for %q not notified yet: the Huddle notification applet is not built", alert.Kind, alert.SessionID))
+	}
+}
+
 // send shows one notification: false when this subject showed within the rate window or
 // nothing on this platform can show one.
-func (n *Notifier) send(alert shared.Alert, now int64) bool {
+func (n *Notifier) send(alert shared.Alert, icon string, now int64) bool {
 	subject := string(alert.Kind) + ":" + alert.SessionID
 	if alert.Kind == shared.AlertBudget {
 		who := "undefined"
@@ -247,7 +290,7 @@ func (n *Notifier) send(alert shared.Alert, now int64) bool {
 		text = alert.Project + ": " + alert.Detail
 	}
 	body := clip(text, 220)
-	line := NotifyCommand(n.platform, n.env, titles[alert.Kind], body, n.iconPath())
+	line := NotifyCommand(n.platform, n.env, titles[alert.Kind], body, icon)
 	n.lastBySubject[subject] = now
 	if line == nil {
 		return false
@@ -257,7 +300,7 @@ func (n *Notifier) send(alert shared.Alert, now int64) bool {
 }
 
 // iconPath is the huddle icon's file: on darwin the ready applet's stub, never building here
-// (the hub builds the applet); on linux the PNG, written under the home when needed.
+// (waitForApplet starts the build); on linux the PNG, written under the home when needed.
 // "" when there is none to point at.
 func (n *Notifier) iconPath() string {
 	if n.platform == "darwin" {

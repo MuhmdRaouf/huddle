@@ -361,8 +361,10 @@ func argvLayer(base map[string]string, extra map[string]string) map[string]strin
 	return t
 }
 
-// argvEntries renders an env map for a child process.
+// argvEntries renders an env map for a child process, guarded: the child writes its
+// notifications to a log under its home and finds the run's notifier shims first on its PATH.
 func argvEntries(env map[string]string) []string {
+	env = isoenv.Guard(env)
 	entries := make([]string, 0, len(env))
 	for key, value := range env {
 		entries = append(entries, key+"="+value)

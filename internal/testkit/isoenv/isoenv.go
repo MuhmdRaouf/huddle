@@ -58,13 +58,14 @@ func dropped(name string) bool {
 // variable that names the owner's state, then HOME=home, the XDG_CONFIG_HOME, XDG_STATE_HOME,
 // XDG_DATA_HOME and XDG_CACHE_HOME roots under home, TMPDIR=home/tmp (made), and
 // CLAUDE_CONFIG_DIR=home/.claude, HUDDLE_KEYS=files so keys stay in files under the home,
-// CLAUDE_PROJECT_DIR=home/project (made) — and finally extra, which wins over all of it. The
+// CLAUDE_PROJECT_DIR=home/project (made), HUDDLE_NOTIFY_LOG=home/notify.log so a notifier writes
+// a line there instead of showing a banner on the owner's desktop — and finally extra, which wins over all of it. The
 // project dir is the child's own because huddle's identity lookup walks up from it, else from the
 // cwd, to the nearest .agents/huddle/huddle.json: a test's cwd is its package directory inside
 // this repository, whose huddle.json is the owner's channel. Without an extra naming one, HUDDLE_ROUTER_PORT is
 // a free port: the default 18786 is the owner's live router, whose health answer would make a
 // child's probe report up and skip the start. The machine's own PATH, LANG and Go caches pass
-// through, so the child finds its tools.
+// through, so the child finds its tools, with the run's notifier shims first when it has them.
 func Environ(t testing.TB, home string, extra ...string) []string {
 	t.Helper()
 	env := make([]string, 0, 32+len(extra))
@@ -102,6 +103,10 @@ func Environ(t testing.TB, home string, extra ...string) []string {
 	set("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
 	set("HUDDLE_KEYS", "files")
 	set("CLAUDE_PROJECT_DIR", filepath.Join(home, "project"))
+	set("HUDDLE_NOTIFY_LOG", notifyLog(home))
+	if path, shimmed := shimmedPath(); shimmed {
+		set("PATH", path)
+	}
 	for _, entry := range extra {
 		name, value, _ := strings.Cut(entry, "=")
 		set(name, value)
@@ -110,6 +115,11 @@ func Environ(t testing.TB, home string, extra ...string) []string {
 		set("HUDDLE_ROUTER_PORT", strconv.Itoa(ports.Free(t)))
 	}
 	return env
+}
+
+// notifyLog is the file a notifier under home writes its notifications to.
+func notifyLog(home string) string {
+	return filepath.Join(home, "notify.log")
 }
 
 // Inherited is the environment this process inherited, as its parent handed it over. The child
