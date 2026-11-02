@@ -129,7 +129,13 @@ func Combine(transcript, route shared.RequestRecord, id string) shared.RequestRe
 // route line's status, route, via, fallback, prompt hash, headers and body keys, each only
 // when it is new to the tail.
 func tailKeysOf(transcript []string, status, route, via, fallback, promptHash, headers, bodyID, body bool) []string {
-	tail := make([]string, len(transcript), len(transcript)+8)
+	room := len(transcript)
+	for _, present := range []bool{status, route, via, fallback, promptHash, headers, bodyID, body} {
+		if present {
+			room++
+		}
+	}
+	tail := make([]string, len(transcript), room)
 	copy(tail, transcript)
 	add := func(key string, present bool) {
 		if !present || slices.Contains(tail, key) {
