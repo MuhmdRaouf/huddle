@@ -16,6 +16,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -349,4 +351,102 @@ func cleanShellWindow(window string) string {
 		window = window[:len(window)-1]
 	}
 	return window
+}
+
+// ShellTailLines is how many of an output file's last lines a shell keeps once it ends.
+const ShellTailLines = 200
+
+// ShellTailLineBytes is the most bytes of one line a tail keeps.
+const ShellTailLineBytes = 4 << 10
+
+// ShellTail answers the last lines lines of the file at path, read from its end.
+func ShellTail(path string, lines int) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	return tailFrom(file, info.Size(), lines)
+}
+
+// shellTailChunk is how many bytes one backward read takes.
+const shellTailChunk = 16 << 10
+
+// tailFrom is ShellTail over a file of size bytes. It reads chunks back from the end until it
+// has seen more newlines than lines asked for, and never reaches further back than lines lines
+// of ShellTailLineBytes each; a window that starts inside a line drops that partial line, and
+// keeps it only when it is the one line the window holds. A line is cut at ShellTailLineBytes, and the whole tail drops its
+// oldest lines until it fits MaxShellRead.
+func tailFrom(file io.ReaderAt, size int64, lines int) (string, error) {
+	start := max(0, size-int64(lines)*ShellTailLineBytes)
+	var chunks [][]byte
+	pos, newlines := size, 0
+	for pos > start && newlines <= lines {
+		chunk := make([]byte, min(shellTailChunk, pos-start))
+		pos -= int64(len(chunk))
+		if _, err := file.ReadAt(chunk, pos); err != nil && !errors.Is(err, io.EOF) {
+			return "", err
+		}
+		newlines += bytes.Count(chunk, []byte{'\n'})
+		chunks = append(chunks, chunk)
+	}
+	slices.Reverse(chunks)
+	window := bytes.Join(chunks, nil)
+	if pos > 0 {
+		// the window starts inside a line: drop that partial line, unless it is the only one
+		if cut := bytes.IndexByte(window[:max(0, len(window)-1)], '\n'); cut >= 0 {
+			window = window[cut+1:]
+		}
+		for len(window) > 0 && !utf8.RuneStart(window[0]) {
+			window = window[1:]
+		}
+	}
+	if len(window) == 0 {
+		return "", nil
+	}
+	text := strings.Split(strings.TrimSuffix(string(window), "\n"), "\n")
+	text = text[max(0, len(text)-lines):]
+	kept, total := 0, 0
+	for i := len(text) - 1; i >= 0; i-- {
+		text[i] = cutShellLine(text[i])
+		if total += len(text[i]) + 1; total > MaxShellRead {
+			break
+		}
+		kept++
+	}
+	return strings.Join(text[len(text)-kept:], "\n") + "\n", nil
+}
+
+// cutShellLine cuts a line at ShellTailLineBytes, backing off a rune the cut would split.
+func cutShellLine(line string) string {
+	if len(line) <= ShellTailLineBytes {
+		return line
+	}
+	cut := ShellTailLineBytes
+	for cut > 0 && !utf8.RuneStart(line[cut]) {
+		cut--
+	}
+	return line[:cut]
+}
+
+// OutputGone reports that the shell's output file was named and the disk lost it.
+func (shell Shell) OutputGone() bool {
+	if shell.output == "" {
+		return false
+	}
+	_, err := os.Stat(shell.output)
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// Tail answers the last ShellTailLines lines of the shell's output file. A shell with no output
+// file, and one whose file the disk lost, answer fs.ErrNotExist.
+func (shell Shell) Tail() (string, error) {
+	if shell.output == "" {
+		return "", fs.ErrNotExist
+	}
+	return ShellTail(shell.output, ShellTailLines)
 }

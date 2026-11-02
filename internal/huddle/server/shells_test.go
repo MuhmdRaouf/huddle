@@ -234,3 +234,117 @@ func TestTheShellsRoutesDemandACredential(t *testing.T) {
 		}
 	}
 }
+
+// writeTailSession lays out a session with one background shell whose output file holds 500
+// numbered lines. The shell ended when ended is true. It answers the transcript's path and the
+// output file's.
+func writeTailSession(t *testing.T, ended bool) (transcript, output string) {
+	t.Helper()
+	dir := t.TempDir()
+	tasks := filepath.Join(dir, "s1", "tasks")
+	if err := os.MkdirAll(tasks, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var body strings.Builder
+	for i := 1; i <= 500; i++ {
+		fmt.Fprintf(&body, "line %d\n", i)
+	}
+	output = filepath.Join(tasks, "b4io7vyqm.output")
+	if err := os.WriteFile(output, []byte(body.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lines := []string{
+		shellsUseLine("s1", false, "a1", "2026-10-26T10:00:01.000Z", "toolu_1", "go test ./...", "Run the gates"),
+		shellsResultLine("s1", false, "u1", "2026-10-26T10:00:02.000Z", "toolu_1", backgroundedText(dir, "s1", "b4io7vyqm")),
+	}
+	if ended {
+		lines = append(lines, shellsNotificationLine("s1", "2026-10-26T10:00:20.000Z", "b4io7vyqm", "toolu_1", "completed", `Background command "Run the gates" completed (exit code 0)`))
+	}
+	transcript = filepath.Join(dir, "s1.jsonl")
+	if err := os.WriteFile(transcript, []byte(joinLines(lines)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return transcript, output
+}
+
+func numberedTail(from, to int) string {
+	var out strings.Builder
+	for i := from; i <= to; i++ {
+		fmt.Fprintf(&out, "line %d\n", i)
+	}
+	return out.String()
+}
+
+func TestAnEndedShellKeepsItsLast200Lines(t *testing.T) {
+	srv := startServer(t, nil)
+	transcript, output := writeTailSession(t, true)
+	reportConvoSession(t, srv, "s-1", transcript)
+
+	// listing the shells stores the ended shell's tail while its file is there
+	if code, _, body := srv.get(t, "/api/sessions/s-1/agents/main/shells", nil); code != 200 {
+		t.Fatalf("shells: %d %s", code, body)
+	}
+	if err := os.Remove(output); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, body := srv.get(t, "/api/sessions/s-1/agents/main/shells/b4io7vyqm/output", nil)
+	if code != 200 {
+		t.Fatalf("output after the file went: %d %s", code, body)
+	}
+	if got, want := bodyMap(t, body)["text"], numberedTail(301, 500); got != want {
+		t.Errorf("output after the file went = %q, want lines 301 to 500", got)
+	}
+}
+
+func TestARunningShellStoresNothing(t *testing.T) {
+	srv := startServer(t, nil)
+	transcript, output := writeTailSession(t, false)
+	reportConvoSession(t, srv, "s-1", transcript)
+
+	if code, _, body := srv.get(t, "/api/sessions/s-1/agents/main/shells", nil); code != 200 {
+		t.Fatalf("shells: %d %s", code, body)
+	}
+	if err := os.Remove(output); err != nil {
+		t.Fatal(err)
+	}
+	code, _, body := srv.get(t, "/api/sessions/s-1/agents/main/shells/b4io7vyqm/output", nil)
+	if code != 200 {
+		t.Fatalf("output after the file went: %d %s", code, body)
+	}
+	if got := bodyMap(t, body)["text"]; got != "" {
+		t.Errorf("a running shell's output after its file went = %q, want an empty page", got)
+	}
+}
+
+func TestTheTailIsServedInTheOutputPageShape(t *testing.T) {
+	srv := startServer(t, nil)
+	transcript, output := writeTailSession(t, true)
+	reportConvoSession(t, srv, "s-1", transcript)
+	srv.get(t, "/api/sessions/s-1/agents/main/shells", nil)
+	if err := os.Remove(output); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, body := srv.get(t, "/api/sessions/s-1/agents/main/shells/b4io7vyqm/output", nil)
+	page := bodyMap(t, body)
+	tail := numberedTail(301, 500)
+	if len(page) != 3 {
+		t.Errorf("page = %s, want text, next and size only", body)
+	}
+	if next, _ := page["next"].(float64); int64(next) != int64(len(tail)) {
+		t.Errorf("next = %v, want %d", page["next"], len(tail))
+	}
+	if size, _ := page["size"].(float64); int64(size) != int64(len(tail)) {
+		t.Errorf("size = %v, want %d", page["size"], len(tail))
+	}
+	if strings.Contains(body, "tasks") || strings.Contains(body, ".output") {
+		t.Errorf("page leaks the output file's path: %s", body)
+	}
+
+	// the cursor the page gave resumes to an empty page, as the live output does
+	_, _, body = srv.get(t, fmt.Sprintf("/api/sessions/s-1/agents/main/shells/b4io7vyqm/output?after=%d", len(tail)), nil)
+	if page = bodyMap(t, body); page["text"] != "" || nextOf(t, body) != int64(len(tail)) {
+		t.Errorf("page after the cursor = %s, want an empty page at %d", body, len(tail))
+	}
+}

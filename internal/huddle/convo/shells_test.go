@@ -6,7 +6,10 @@ package convo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -435,5 +438,166 @@ func TestShellOutputServesAMonitorOnlyWhenItsOutputFileIsNamed(t *testing.T) {
 	}
 	if _, ok, err := ShellOutput(ctx, shells, "m6e7f8g9h0", 0); ok || err != nil {
 		t.Errorf("the unnamed monitor output answered ok %v err %v, want not found and no error", ok, err)
+	}
+}
+
+// numberedLines is "line 1\n" through "line n\n".
+func numberedLines(n int) string {
+	var out strings.Builder
+	for i := 1; i <= n; i++ {
+		fmt.Fprintf(&out, "line %d\n", i)
+	}
+	return out.String()
+}
+
+func writeTailFile(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "x.output")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestShellTailKeepsTheLastLines(t *testing.T) {
+	long := strings.Repeat("x", 10_000)
+	cases := []struct {
+		name, body, want string
+		lines            int
+	}{
+		{"more lines than asked", numberedLines(500), numberedLines(500)[len(numberedLines(300)):], 200},
+		{"fewer lines than asked", numberedLines(3), numberedLines(3), 200},
+		{"an empty file", "", "", 200},
+		{"a last line with no newline", "a\nb\nc", "b\nc\n", 2},
+		{"a line cut at 4 KB", "a\n" + long + "\nb\n", "a\n" + long[:ShellTailLineBytes] + "\nb\n", 3},
+		{"a rune the cut would split", "a\n" + strings.Repeat("é", 3000) + "\n", "a\n" + strings.Repeat("é", ShellTailLineBytes/2) + "\n", 2},
+	}
+	for _, c := range cases {
+		got, err := ShellTail(writeTailFile(t, c.body), c.lines)
+		if err != nil || got != c.want {
+			t.Errorf("%s: ShellTail = %q (%v), want %q", c.name, got, err, c.want)
+		}
+	}
+}
+
+func TestShellTailHoldsAtMost64KB(t *testing.T) {
+	// 200 lines of 1 KB each is 200 KB: the tail keeps the newest whole lines that fit
+	line := strings.Repeat("y", 1023) + "\n"
+	body := ""
+	for i := 0; i < 300; i++ {
+		body += fmt.Sprintf("%03d", i) + line[3:]
+	}
+	got, err := ShellTail(writeTailFile(t, body), ShellTailLines)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) > MaxShellRead || len(got) < MaxShellRead-len(line) {
+		t.Fatalf("tail is %d bytes, want the newest whole lines within %d", len(got), MaxShellRead)
+	}
+	if !strings.HasSuffix(got, "299"+line[3:]) || !strings.HasPrefix(got, "2") {
+		t.Errorf("tail = %q ... %q, want the newest lines up to 299", got[:8], got[len(got)-8:])
+	}
+	if strings.Count(got, "\n")*len(line) != len(got) {
+		t.Errorf("tail holds a partial line")
+	}
+}
+
+// countingFile is an io.ReaderAt over size bytes of numbered lines that counts the bytes read.
+type countingFile struct {
+	size int64
+	read int64
+}
+
+func (f *countingFile) ReadAt(p []byte, off int64) (int, error) {
+	if off >= f.size {
+		return 0, io.EOF
+	}
+	n := int(min(int64(len(p)), f.size-off))
+	for i := 0; i < n; i++ {
+		if (off+int64(i))%10 == 9 {
+			p[i] = '\n'
+		} else {
+			p[i] = 'z'
+		}
+	}
+	f.read += int64(n)
+	if n < len(p) {
+		return n, io.EOF
+	}
+	return n, nil
+}
+
+func TestShellTailReadsFromTheEnd(t *testing.T) {
+	file := &countingFile{size: 200 << 20}
+	got, err := tailFrom(file, file.size, ShellTailLines)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(got, "\n") != ShellTailLines {
+		t.Errorf("tail holds %d lines, want %d", strings.Count(got, "\n"), ShellTailLines)
+	}
+	if file.read > 64<<10 {
+		t.Errorf("read %d bytes of a 200 MB file for 200 short lines, want at most 64 KB", file.read)
+	}
+
+	// one line with no newline in 200 MB: the read stays bounded
+	file = &countingFile{size: 200 << 20}
+	got, err = tailFrom(&noNewlines{file}, file.size, ShellTailLines)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) > ShellTailLineBytes+1 || !utf8.ValidString(got) {
+		t.Errorf("the tail of one 200 MB line is %d bytes, want one valid line of at most %d", len(got), ShellTailLineBytes)
+	}
+	if bound := int64(ShellTailLines * ShellTailLineBytes); file.read > bound+(64<<10) {
+		t.Errorf("read %d bytes of a 200 MB line, want at most about %d", file.read, bound)
+	}
+}
+
+// noNewlines turns the counting file's newlines into letters.
+type noNewlines struct{ *countingFile }
+
+func (f *noNewlines) ReadAt(p []byte, off int64) (int, error) {
+	n, err := f.countingFile.ReadAt(p, off)
+	for i := 0; i < n; i++ {
+		if p[i] == '\n' {
+			p[i] = 'z'
+		}
+	}
+	return n, err
+}
+
+func TestShellTailOfASparseFileAnswersItsEnd(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "big.output")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(200 << 20); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteAt([]byte("\nlast\n"), 200<<20-6); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	got, err := ShellTail(path, 1)
+	if err != nil || got != "last\n" {
+		t.Errorf("ShellTail = %q (%v), want the last line", got, err)
+	}
+}
+
+func TestAShellsTailComesFromItsOwnOutputFile(t *testing.T) {
+	path := writeTailFile(t, numberedLines(500))
+	got, err := Shell{output: path}.Tail()
+	if err != nil || got != numberedLines(500)[len(numberedLines(300)):] {
+		t.Errorf("Tail = %q (%v), want lines 301 to 500", got, err)
+	}
+	for name, shell := range map[string]Shell{
+		"no output file":       {},
+		"a file the disk lost": {output: filepath.Join(t.TempDir(), "gone.output")},
+	} {
+		if _, err := shell.Tail(); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s: Tail error = %v, want fs.ErrNotExist", name, err)
+		}
 	}
 }

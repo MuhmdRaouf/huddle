@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 28
+const SchemaVersion = 29
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -314,6 +314,17 @@ var migrations = []string{
 	 ` + countEventsBefore("(SELECT at FROM event_cut)") + `;
 	 DELETE FROM events WHERE at < (SELECT at FROM event_cut);
 	 DROP TABLE event_cut;`,
+	// 29: the last lines of a background shell that has ended, copied from its output file
+	// before the OS clears the file: one row per session, agent and shell, taken once.
+	`CREATE TABLE shell_tails (
+	   session_id TEXT NOT NULL,
+	   agent TEXT NOT NULL,
+	   shell_id TEXT NOT NULL,
+	   tail TEXT NOT NULL,
+	   lines INTEGER NOT NULL,
+	   saved_at TEXT NOT NULL,
+	   PRIMARY KEY (session_id, agent, shell_id)
+	 );`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

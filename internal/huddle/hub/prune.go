@@ -28,8 +28,8 @@ ON CONFLICT(session_id, day, kind) DO UPDATE SET n = n + excluded.n`
 
 // PruneEvents deletes the reported events older than the TTL and answers how many went. The
 // events are counted into event_counts first, in the same transaction as the delete, so a
-// failed delete leaves both tables as they were. Once it commits, the pages the delete freed
-// go back to the file.
+// failed delete leaves both tables as they were. Shell tails older than ShellTailTTL go in that
+// transaction too. Once it commits, the pages the delete freed go back to the file.
 // `at` is written as jsscalar.ISOTime — UTC, milliseconds, always "Z" — so a cutoff in the
 // same format compares against it as text.
 func (d *DB) PruneEvents(ctx context.Context, now time.Time) (int, error) {
@@ -49,7 +49,10 @@ func (d *DB) PruneEvents(ctx context.Context, now time.Time) (int, error) {
 		if err := q.Run(ctx, countEventsBefore("?"), cutoff); err != nil {
 			return err
 		}
-		return q.Run(ctx, "DELETE FROM events WHERE at < ?", cutoff)
+		if err := q.Run(ctx, "DELETE FROM events WHERE at < ?", cutoff); err != nil {
+			return err
+		}
+		return q.Run(ctx, "DELETE FROM shell_tails WHERE saved_at < ?", jsscalar.ISOTime(now.Add(-ShellTailTTL)))
 	})
 	if err != nil {
 		return 0, fmt.Errorf("prune the registry's events: %w", err)
