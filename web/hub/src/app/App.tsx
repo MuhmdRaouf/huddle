@@ -52,9 +52,9 @@ export type Pages = Record<string, ComponentType>;
 /** What the composer needs from the shell: open it, with a prefill when the caller has one. */
 export type ComposeOpen = (prefill?: ComposeOptions) => void;
 
-/** The label a channel page shows when its page is missing (Home's is the channels list itself). */
+/** The label a channel page shows when its page is missing (the channels list's is the tab's own). */
 const LABELS: Record<Dest, string> = {
-  home: "Channels",
+  list: "Channels",
   overview: "Overview",
   today: "Today",
   inbox: "Inbox",
@@ -67,7 +67,7 @@ const LABELS: Record<Dest, string> = {
 /** What each channel page shows and does there: the intro the shell paints above every page, so
  *  a page starts with its panels and never paints a title of its own. */
 const DEST_INTRO: Record<Dest, { icon: IconName; label: string; description: ComponentChildren }> = {
-  home: {
+  list: {
     icon: "layers",
     label: "Channels",
     description: "Each channel is one team of sessions. The ones that need you come first.",
@@ -113,7 +113,7 @@ const DEST_INTRO: Record<Dest, { icon: IconName; label: string; description: Com
 };
 
 /** The three tab groups over a channel's pages: the channel's own, the work pages, the system's. */
-const NAV_GROUPS: { label: string; tabs: Exclude<Dest, "home">[] }[] = [
+const NAV_GROUPS: { label: string; tabs: Exclude<Dest, "list">[] }[] = [
   { label: "Channel", tabs: ["overview", "today", "inbox", "team"] },
   { label: "Work", tabs: ["work", "knowledge"] },
   { label: "System", tabs: ["settings"] },
@@ -159,7 +159,7 @@ function ViewTab({
   counts,
   active,
 }: {
-  dest: Exclude<Dest, "home">;
+  dest: Exclude<Dest, "list">;
   counts: NavCounts;
   active: boolean;
 }): JSX.Element {
@@ -698,7 +698,7 @@ export function App({
   const meta = DEST_INTRO[route.dest as Dest];
   const body = Page ? (
     <Page />
-  ) : route.dest === "home" ? null : (
+  ) : route.dest === "list" ? null : (
     <ComingSoon label={LABELS[route.dest as Dest]} />
   );
 
@@ -773,7 +773,7 @@ export function App({
       <div class="flex min-h-0 flex-1 flex-col">
         {ch ? <ViewTabs dest={route.dest as Dest} counts={counts} /> : null}
         <div class="min-h-0 flex-1 overflow-y-auto">
-          {body !== null || route.dest !== "home" ? (
+          {body !== null || route.dest !== "list" ? (
             <div
               class={`mx-auto flex w-full max-w-[1600px] min-w-0 flex-col px-4 pb-6 tablet:px-6 desk:px-8 ${ch ? "pt-4" : "pt-6"}`}
             >

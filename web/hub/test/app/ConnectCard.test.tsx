@@ -1,6 +1,6 @@
 // ConnectCard.test.tsx — the start-a-session card paints from the tokens: its card, the numbered
 // steps and their rail, each command box with its Copy button, the Invite button and its refusal,
-// and every harness tab. The card's behaviour lives in pages/Home.test.tsx.
+// and every harness tab. The card's behaviour lives in pages/Channels.test.tsx.
 
 import { act, cleanup, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it } from "vite-plus/test";

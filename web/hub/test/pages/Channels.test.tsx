@@ -1,10 +1,16 @@
-// Home.test.tsx — the channels page: the cards, the New channel dialog, the connect card and the
+// Channels.test.tsx — the channels page: the cards, the New channel dialog, the connect card and the
 // 10 s poll, all over an injected api and injected timers.
 import { act, fireEvent, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api } from "../../src/api.ts";
 import { ConnectCard } from "../../src/app/ConnectCard.tsx";
-import { ChannelCard, type ChannelRow, Home, homeData, type PollTimers } from "../../src/pages/Home.tsx";
+import {
+  ChannelCard,
+  type ChannelRow,
+  Channels,
+  homeData,
+  type PollTimers,
+} from "../../src/pages/Channels.tsx";
 import { flush, makeCtx, makeState, renderIn, stubClipboard } from "../helpers.tsx";
 
 beforeEach(() => {
@@ -33,7 +39,7 @@ function apiFake(routes: Record<string, unknown> | ((path: string, body?: unknow
 /** Renders the page over an explicit api; go really moves the address bar. */
 function ctxWith(api: Api, over: Partial<Parameters<typeof makeCtx>[1]> = {}, timers?: PollTimers) {
   return renderIn(
-    <Home {...(timers ? { timers } : {})} />,
+    <Channels {...(timers ? { timers } : {})} />,
     makeCtx(makeState({ ch: null }), { api, ...over }),
   );
 }

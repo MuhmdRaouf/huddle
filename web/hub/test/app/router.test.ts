@@ -101,7 +101,7 @@ describe("parseHash: the five tabs", () => {
 describe("parseHash: the channels tab and today's pages", () => {
   it("reads the channels list with no name", () => {
     const r = parseHash("#/channels", reader());
-    expect(r).toMatchObject({ tab: "channels", ch: null, dest: "home", sub: [] });
+    expect(r).toMatchObject({ tab: "channels", ch: null, dest: "list", sub: [] });
     expect(r.replace).toBeNull();
   });
 

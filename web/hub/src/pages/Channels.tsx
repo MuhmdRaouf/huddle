@@ -1,4 +1,4 @@
-// Home.tsx — the channels page: a card per channel with what needs the owner on top, the New
+// Channels.tsx — the channels page: a card per channel with what needs the owner on top, the New
 // channel dialog, and the start-a-session card. The list is read again every 10 s while the
 // page shows and the tab is visible (app.js homeView/homeData/paintChannels/newChannel); the
 // poll's timers are injected, so tests step it.
@@ -345,7 +345,7 @@ function NewChannel({ open, onClose }: { open: boolean; onClose: () => void }): 
 /** The channels page. The list loads at once and again every 10 s while the page shows and the
  *  tab is visible (app.js homeView + HOMEPOLL). The creator's browser (an owner link session)
  *  gets Remove channel on every card. */
-export function Home({ timers = realTimers }: { timers?: PollTimers }): JSX.Element {
+export function Channels({ timers = realTimers }: { timers?: PollTimers }): JSX.Element {
   const { api, who } = useHuddle();
   const [list, setList] = useState<readonly ChannelRow[]>([]);
   const [open, setOpen] = useState(false);

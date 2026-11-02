@@ -345,7 +345,7 @@ describe("routes and panes", () => {
 
   it("renders the channels page when no channel is named", () => {
     nav("#/channels");
-    mountApp({ home: () => <div>channels page</div> }, makeState({ ch: null }));
+    mountApp({ list: () => <div>channels page</div> }, makeState({ ch: null }));
     expect(screen.getByText("channels page")).toBeDefined();
     expect(document.querySelector("#side")).toBeNull();
     expect(document.querySelector("[data-view-tabs]")).toBeNull();
@@ -353,7 +353,7 @@ describe("routes and panes", () => {
 
   it("names the channels list once on the phone and keeps the intro's description", () => {
     nav("#/channels");
-    mountApp({ home: () => <div>channels page</div> });
+    mountApp({ list: () => <div>channels page</div> });
     expect(screen.getAllByRole("heading", { name: "Channels" })).toHaveLength(1);
     expect(
       screen.getByText("Each channel is one team of sessions. The ones that need you come first."),
@@ -363,7 +363,7 @@ describe("routes and panes", () => {
   it("keeps the channels intro's own heading on desktop", () => {
     stubMedia(DESKTOP);
     nav("#/channels");
-    mountApp({ home: () => <div>channels page</div> });
+    mountApp({ list: () => <div>channels page</div> });
     expect(screen.getAllByRole("heading", { name: "Channels" })).toHaveLength(1);
     expect(document.querySelector("[data-page-intro] h1")?.textContent).toBe("Channels");
   });

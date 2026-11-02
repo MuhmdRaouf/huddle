@@ -4,7 +4,7 @@
 import { act, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Api, ApiOptions } from "../../src/api.ts";
-import { ChannelCard, Home, type ChannelRow } from "../../src/pages/Home.tsx";
+import { ChannelCard, Channels, type ChannelRow } from "../../src/pages/Channels.tsx";
 import { flush, makeCtx, makeState, renderIn } from "../helpers.tsx";
 
 beforeEach(() => {
@@ -48,7 +48,7 @@ function trackingApi(
 
 /** Renders the page over an api, as the creator (kind owner) or a member. */
 function openAs(api: Api, kind: string): ReturnType<typeof renderIn> {
-  return renderIn(<Home />, makeCtx(makeState({ ch: null }), { api, who: { kind } }));
+  return renderIn(<Channels />, makeCtx(makeState({ ch: null }), { api, who: { kind } }));
 }
 
 /** The Remove channel dialog, beside the New channel one the page also carries. */

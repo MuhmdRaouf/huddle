@@ -11,8 +11,8 @@ import type { IconName } from "../icons.tsx";
 /** The five tabs of the shell. */
 export type Tab = "sessions" | "channels" | "radar" | "kanban" | "settings";
 
-/** Every page a channel serves under Channels; Home is the channels list itself. */
-export type Dest = "home" | "overview" | "today" | "inbox" | "team" | "work" | "knowledge" | "settings";
+/** Every page a channel serves under Channels; `list` is the channels list itself. */
+export type Dest = "list" | "overview" | "today" | "inbox" | "team" | "work" | "knowledge" | "settings";
 
 /** Radar's views, in sub-tab order. */
 export const RADAR_VIEWS = [
@@ -67,7 +67,7 @@ export const tabLabel = (tab: Tab): string => TABS.find((t) => t[0] === tab)?.[1
 
 /** The channel nav's entries: name, label, icon and keyboard hint. */
 export const DESTS: readonly (readonly [
-  name: Exclude<Dest, "home" | "overview" | "today">,
+  name: Exclude<Dest, "list" | "overview" | "today">,
   label: string,
   icon: IconName,
   key: string,
@@ -229,7 +229,7 @@ function parseLegacy(
 ): Route {
   const r = parseChannel(ch, ["", "", ...parts.slice(2)], qs, q, readPref);
   const tail =
-    r.dest !== "home" ? `/${enc(r.dest)}${r.sub.length ? `/${r.sub.map(enc).join("/")}` : ""}` : "";
+    r.dest !== "list" ? `/${enc(r.dest)}${r.sub.length ? `/${r.sub.map(enc).join("/")}` : ""}` : "";
   return { ...r, replace: r.replace ?? `#/channels/${enc(ch)}${tail}${qs ? `?${qs}` : ""}` };
 }
 
@@ -300,10 +300,10 @@ export function parseHash(hash: string, readPref: PrefReader): Route {
       return {
         tab: "channels",
         ch: null,
-        dest: "home",
+        dest: "list",
         sub: [],
         view: "overview",
-        key: "channels/home/",
+        key: "channels/list/",
         ...drawers(q),
         replace: null,
         prefs: {},

@@ -298,7 +298,7 @@ type TapExclusion = { selector: string; reason: string };
 /** The controls the tap check leaves out: each is sized by a page this check's card does not own,
  *  and its own card brings it to 44 px. */
 const TAP_EXCLUSIONS: readonly TapExclusion[] = [
-  { selector: "[data-remove]", reason: "the channel card's Remove button (pages/Home.tsx) is a 23 px btn-xs" },
+  { selector: "[data-remove]", reason: "the channel card's Remove button (pages/Channels.tsx) is a 23 px btn-xs" },
   { selector: "[aria-label='Activity window'] button", reason: "the channel Overview's window segment (pages/Overview.tsx) is a 30 px btn-sm" },
 ];
 

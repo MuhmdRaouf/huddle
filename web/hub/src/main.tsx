@@ -26,7 +26,7 @@ import type { ComposeOptions } from "./compose/drafts.ts";
 import { DEV_TOKENS_HASH, Tokens } from "./dev/Tokens.tsx";
 import { decodeHealth, setHealth } from "./health.ts";
 import { createLive } from "./live.ts";
-import { Home } from "./pages/Home.tsx";
+import { Channels } from "./pages/Channels.tsx";
 import { Inbox } from "./pages/Inbox.tsx";
 import { Knowledge } from "./pages/Knowledge.tsx";
 import { Overview } from "./pages/Overview.tsx";
@@ -285,7 +285,7 @@ function routeOf(): ReturnType<typeof parseHash> {
 /** One page per destination; the closures read the store fresh on every paint, so the pages stay
  *  pure props-in (main re-renders them on every change). */
 const pages: Record<string, ComponentType> = {
-  home: () => <Home />,
+  list: () => <Channels />,
   overview: () => <Overview onCompose={() => openCompose({ mode: "msg" })} store={store} />,
   today: () => <Today />,
   inbox: () => (
