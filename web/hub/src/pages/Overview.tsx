@@ -278,7 +278,7 @@ function PlanProgress({ v, steps }: { v: OverviewValues; steps: readonly PlanSte
     >
       <div class="flex flex-col gap-5">
         {steps.length > 0 && <ProgressBar steps={steps} label={false} />}
-        <div class="flex flex-col gap-6 md:flex-row md:items-center md:gap-8">
+        <div class="flex flex-col gap-6 tablet:flex-row tablet:items-center tablet:gap-8">
           <div class="flex items-center gap-5">
             <Ring pct={v.pct} />
             <p class="flex items-baseline gap-1.5">
@@ -294,7 +294,7 @@ function PlanProgress({ v, steps }: { v: OverviewValues; steps: readonly PlanSte
             </p>
           </div>
           <div
-            class="grid min-w-0 flex-1 gap-3 min-[60rem]:grid-cols-2 md:border-l md:border-[var(--ui-line)] md:pl-8"
+            class="grid min-w-0 flex-1 gap-3 desk:grid-cols-2 tablet:border-l tablet:border-[var(--ui-line)] tablet:pl-8"
             data-ovrows
           >
             {ovRows(v).map((r) => (
@@ -377,7 +377,10 @@ function ConflictsCard({ conf, now }: { conf: Conflicts | null; now: number }): 
           aria-label="Files edited by more than one session"
         >
           {list.map((c) => (
-            <li key={c.path} class="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:gap-4">
+            <li
+              key={c.path}
+              class="flex flex-col gap-2 py-3 first:pt-0 tablet:flex-row tablet:items-center tablet:gap-4"
+            >
               <div class="flex min-w-0 flex-1 items-center gap-2">
                 <span class="c-peach ink inline-flex">
                   <Icon name="file" class="size-4" />
@@ -441,7 +444,7 @@ function ReservationsCard({
         {reservations.map((r) => (
           <li
             key={r.path}
-            class="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:gap-4"
+            class="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 tablet:flex-row tablet:items-center tablet:gap-4"
           >
             <div class="flex min-w-0 flex-1 items-center gap-2">
               <span class="c-info ink inline-flex">
@@ -610,7 +613,7 @@ export function Overview({ onCompose, prefs = localStorage, store }: OverviewPro
       <Chat events={state.timeline ?? []} now={now} reservations={reservations} />
       <PlanProgress v={v} steps={state.board?.steps ?? []} />
       <section
-        class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4"
+        class="grid grid-cols-1 gap-5 tablet:grid-cols-2 desk:grid-cols-4"
         aria-label="Overview numbers"
         data-stat-cards=""
       >

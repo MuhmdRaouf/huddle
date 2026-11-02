@@ -1,7 +1,7 @@
 // App.tsx — the shell: one component tree that draws its chrome per viewport (a header, the pane
-// and the five tabs in a bar pinned to the bottom edge under 640 px; a 72 px icon rail with a list
-// and a detail pane to 1023 px; a left sidebar beside a 52 px top bar over list, detail and
-// context panes from 1024 px) inside a frame as tall as the viewport, over the tab the address names — Sessions, Channels, Radar, Kanban or Settings. Every later tab fills its own panes; today's
+// and the five tabs in a bar pinned to the bottom edge under 768 px; a 72 px icon rail with a list
+// and a detail pane to 1199 px; a left sidebar beside a 52 px top bar over list, detail and
+// context panes from 1200 px) inside a frame as tall as the viewport, over the tab the address names — Sessions, Channels, Radar, Kanban or Settings. Every later tab fills its own panes; today's
 // channel pages stay reachable under Channels, with their destination tabs, their intro and the
 // session rail beside them. The landing and no-channel pages stand alone.
 
@@ -190,16 +190,16 @@ function ViewTab({
 
 /** The tab groups over a channel's pages: three ui-tabs strips with a gap, on an opaque band that
  *  stays above the page's scroll pane, so no content shows behind or between the groups. Under
- *  640 px they sit in one row that scrolls sideways with no scrollbar; wider, they wrap into
+ *  768 px they sit in one row that scrolls sideways with no scrollbar; wider, they wrap into
  *  rows. The ids are the pages, the address moves by hash. */
 function ViewTabs({ dest, counts }: { dest: Dest; counts: NavCounts }): JSX.Element {
   return (
     <div
-      class="sticky top-0 z-[var(--ui-layer-sticky)] flex w-full shrink-0 flex-wrap gap-3 border-b border-[var(--ui-line)] bg-[var(--ui-bg)] px-4 pt-4 pb-3 max-sm:flex-nowrap max-sm:pt-1.5 max-sm:pb-0.5 max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden sm:px-6"
+      class="sticky top-0 z-[var(--ui-layer-sticky)] flex w-full shrink-0 flex-wrap gap-3 border-b border-[var(--ui-line)] bg-[var(--ui-bg)] px-4 pt-4 pb-3 max-tablet:flex-nowrap max-tablet:pt-1.5 max-tablet:pb-0.5 max-tablet:overflow-x-auto max-tablet:[scrollbar-width:none] max-tablet:[&::-webkit-scrollbar]:hidden tablet:px-6"
       data-view-tabs=""
     >
       {NAV_GROUPS.map((group) => (
-        <div key={group.label} role="tablist" aria-label={group.label} class="ui-tabs max-sm:shrink-0">
+        <div key={group.label} role="tablist" aria-label={group.label} class="ui-tabs max-tablet:shrink-0">
           {group.tabs.map((k) => (
             <ViewTab key={k} dest={k} counts={counts} active={dest === k} />
           ))}
@@ -266,7 +266,7 @@ function RadarRange(): JSX.Element {
           type="button"
           aria-pressed={preset === key ? "true" : "false"}
           data-range={key}
-          class={`min-h-8 min-w-13 rounded-[7px] max-sm:min-h-[var(--ui-tap)] px-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
+          class={`min-h-8 min-w-13 rounded-[7px] max-tablet:min-h-[var(--ui-tap)] px-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
             preset === key
               ? "bg-[var(--ui-surface-2)] font-semibold text-[var(--ui-text)]"
               : "text-[var(--ui-muted)]"
@@ -775,7 +775,7 @@ export function App({
         <div class="min-h-0 flex-1 overflow-y-auto">
           {body !== null || route.dest !== "home" ? (
             <div
-              class={`mx-auto flex w-full max-w-[1600px] min-w-0 flex-col px-4 pb-6 sm:px-6 lg:px-8 ${ch ? "pt-4" : "pt-6"}`}
+              class={`mx-auto flex w-full max-w-[1600px] min-w-0 flex-col px-4 pb-6 tablet:px-6 desk:px-8 ${ch ? "pt-4" : "pt-6"}`}
             >
               <PageIntro
                 icon={<Icon name={meta.icon} />}

@@ -26,11 +26,11 @@ function nameOfSession(state: ClientState, id: string | null): string {
 
 /** One entry of the list: on a desk the time, the spine and what happened; on the phone the spine and
  *  what happened, the time left to the tooltip. */
-const ROW = "grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 md:grid-cols-[6.5rem_2rem_minmax(0,1fr)]";
+const ROW = "grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 tablet:grid-cols-[6.5rem_2rem_minmax(0,1fr)]";
 
 /** The time an entry happened, in the desk's first column. */
 const WHEN =
-  "hidden pt-1.5 text-right text-xs whitespace-nowrap text-[var(--ui-muted)] md:order-first md:block";
+  "hidden pt-1.5 text-right text-xs whitespace-nowrap text-[var(--ui-muted)] tablet:order-first tablet:block";
 
 /** The spine at an entry: the line from the one above, the tinted icon tile, the line to the one below. */
 function Spine({

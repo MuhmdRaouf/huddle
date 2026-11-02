@@ -527,7 +527,7 @@ function SectionBody({
           {(task.alternatives ?? []).map((a, i) => (
             <div
               key={i}
-              class="grid gap-1 py-2 first:pt-0 last:pb-0 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] sm:gap-4"
+              class="grid gap-1 py-2 first:pt-0 last:pb-0 tablet:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] tablet:gap-4"
             >
               <div class="font-medium">
                 <Inline text={a.option} />
@@ -698,10 +698,10 @@ function GateBox({
   return (
     <div
       role="alert"
-      class="flex items-start gap-3 rounded-[var(--ui-radius)] bg-[var(--ui-accent-soft)] p-[var(--ui-space-3)] sm:items-center"
+      class="flex items-start gap-3 rounded-[var(--ui-radius)] bg-[var(--ui-accent-soft)] p-[var(--ui-space-3)] tablet:items-center"
       data-gate
     >
-      <span class="mt-0.5 shrink-0 text-[var(--ui-accent)] sm:mt-0">
+      <span class="mt-0.5 shrink-0 text-[var(--ui-accent)] tablet:mt-0">
         <Icon name={approved ? "checkc" : "key"} class="size-5" />
       </span>
       <span class="min-w-0 flex-1 text-[0.9375rem]">
@@ -1329,8 +1329,10 @@ function DetailsTags({ t }: { t: TaskDetail }): JSX.Element | null {
   if (!t.kind && !t.risk && !(t.gate && t.gate !== "none")) return null;
   return (
     <>
-      <span class="text-sm font-medium text-[var(--ui-muted)] sm:col-span-2 sm:text-left">Details</span>
-      <div class="flex flex-wrap gap-1.5 sm:col-span-2" data-details>
+      <span class="text-sm font-medium text-[var(--ui-muted)] tablet:col-span-2 tablet:text-left">
+        Details
+      </span>
+      <div class="flex flex-wrap gap-1.5 tablet:col-span-2" data-details>
         {t.kind ? <Chip tone="neutral">{t.kind}</Chip> : null}
         {t.gate && t.gate !== "none" ? (
           <Chip tone="neutral" icon={<Icon name="key" class="size-3.5" />}>
@@ -1371,7 +1373,7 @@ function MetaGrid({
   };
   const onIt = (sessions?.sessions ?? []).filter((x) => x.step === t.id && x.state !== "left");
   return (
-    <div class="grid gap-x-4 gap-y-3 sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center">
+    <div class="grid gap-x-4 gap-y-3 tablet:grid-cols-[8rem_minmax(0,1fr)] tablet:items-center">
       <label class="text-sm font-medium text-[var(--ui-muted)]" for="owner-sel">
         Owner
       </label>

@@ -128,7 +128,7 @@ function TourStrip({ onOpen }: { onOpen: (at: number) => void }): JSX.Element {
       <h2 id="tour-h" class="m-0 text-[length:var(--ui-text-lg)] font-semibold tracking-tight">
         See how it works
       </h2>
-      <ol class="m-0 grid list-none grid-cols-2 gap-4 p-0 lg:grid-cols-4">
+      <ol class="m-0 grid list-none grid-cols-2 gap-4 p-0 desk:grid-cols-4">
         {TOUR.map(([key, label, sentence], i) => (
           <li key={key} class="flex flex-col gap-2">
             <Button
@@ -541,7 +541,7 @@ function StartSession({ onOpen }: { onOpen: () => void }): JSX.Element {
         </h2>
         <p class={`m-0 text-sm ${MUTED}`}>Install Huddle, join, and the session reports here.</p>
       </div>
-      <Button variant="secondary" class="w-full sm:w-auto" onClick={onOpen}>
+      <Button variant="secondary" class="w-full tablet:w-auto" onClick={onOpen}>
         Start a session
       </Button>
     </section>

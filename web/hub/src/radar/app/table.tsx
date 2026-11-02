@@ -1,7 +1,7 @@
 /**
  * Pieces every table view shares, on the web/ui tokens: one table with two layouts — dense rows under a
  * pinned head on a desk (fixed widths for the columns that ask, so long cells truncate instead of pushing
- * the first columns out of view), and under 640 px a card per row whose cells say their column's name
+ * the first columns out of view), and under 768 px a card per row whose cells say their column's name
  * (each body cell carries `data-label`; `data-cell="title"` runs across the card) — focusable clickable
  * rows, sortable column headers, the CSV export button, and time cells in the reader's chosen mode.
  */
@@ -32,15 +32,15 @@ const headAlign = (numeric: boolean | undefined): string =>
 const TABLE = [
   "w-full border-collapse text-sm",
   "[&_td]:border-t [&_td]:border-[var(--ui-line)] [&_td]:px-3 [&_td]:py-2 [&_td]:align-middle",
-  "max-sm:block max-sm:[&_thead]:hidden",
-  "max-sm:[&_tbody]:grid max-sm:[&_tbody]:gap-2 max-sm:[&_tbody]:p-3",
-  "max-sm:[&_tr]:grid max-sm:[&_tr]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-sm:[&_tr]:gap-x-3 max-sm:[&_tr]:gap-y-2",
-  "max-sm:[&_tr]:rounded-[var(--ui-radius)] max-sm:[&_tr]:border max-sm:[&_tr]:border-[var(--ui-line)] max-sm:[&_tr]:p-3",
-  "max-sm:[&_td]:block max-sm:[&_td]:min-w-0 max-sm:[&_td]:border-0 max-sm:[&_td]:p-0 max-sm:[&_td]:text-left",
-  "max-sm:[&_tbody_th]:col-span-2 max-sm:[&_tbody_th]:block",
-  "max-sm:[&_td[data-cell=title]]:order-first max-sm:[&_td[data-cell=title]]:col-span-2 max-sm:[&_td[colspan]]:col-span-2",
-  "max-sm:[&_td[data-label]]:before:block max-sm:[&_td[data-label]]:before:text-xs max-sm:[&_td[data-label]]:before:text-[var(--ui-muted)] max-sm:[&_td[data-label]]:before:content-[attr(data-label)]",
-  "max-sm:[&_td[data-label][data-cell=title]]:before:hidden",
+  "max-tablet:block max-tablet:[&_thead]:hidden",
+  "max-tablet:[&_tbody]:grid max-tablet:[&_tbody]:gap-2 max-tablet:[&_tbody]:p-3",
+  "max-tablet:[&_tr]:grid max-tablet:[&_tr]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-tablet:[&_tr]:gap-x-3 max-tablet:[&_tr]:gap-y-2",
+  "max-tablet:[&_tr]:rounded-[var(--ui-radius)] max-tablet:[&_tr]:border max-tablet:[&_tr]:border-[var(--ui-line)] max-tablet:[&_tr]:p-3",
+  "max-tablet:[&_td]:block max-tablet:[&_td]:min-w-0 max-tablet:[&_td]:border-0 max-tablet:[&_td]:p-0 max-tablet:[&_td]:text-left",
+  "max-tablet:[&_tbody_th]:col-span-2 max-tablet:[&_tbody_th]:block",
+  "max-tablet:[&_td[data-cell=title]]:order-first max-tablet:[&_td[data-cell=title]]:col-span-2 max-tablet:[&_td[colspan]]:col-span-2",
+  "max-tablet:[&_td[data-label]]:before:block max-tablet:[&_td[data-label]]:before:text-xs max-tablet:[&_td[data-label]]:before:text-[var(--ui-muted)] max-tablet:[&_td[data-label]]:before:content-[attr(data-label)]",
+  "max-tablet:[&_td[data-label][data-cell=title]]:before:hidden",
 ].join(" ");
 
 export type Column<K extends string> = {
@@ -72,7 +72,7 @@ export function Table({
   return (
     <div
       {...(wrapRef === undefined ? {} : { ref: wrapRef })}
-      class="sm:max-h-[calc(100dvh-17rem)] sm:min-h-64 sm:overflow-auto"
+      class="tablet:max-h-[calc(100dvh-17rem)] tablet:min-h-64 tablet:overflow-auto"
       {...(dataKey === undefined ? {} : { "data-key": dataKey })}
     >
       <table

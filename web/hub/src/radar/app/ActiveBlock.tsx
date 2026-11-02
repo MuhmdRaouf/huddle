@@ -75,7 +75,7 @@ function LiveBlock({ block, approximate, now }: { block: UsageBlock; approximate
   const marks = approximate ? "~" : "";
   return (
     <div class="grid gap-4" data-active-block="">
-      <div class="grid items-baseline gap-x-4 sm:grid-cols-[auto_1fr]">
+      <div class="grid items-baseline gap-x-4 tablet:grid-cols-[auto_1fr]">
         <div class="num text-xl font-semibold" data-block-left="">
           {fmtDuration(left)}
           <span class="ml-1 text-sm font-normal text-[var(--ui-muted)]">left</span>
@@ -98,7 +98,7 @@ function LiveBlock({ block, approximate, now }: { block: UsageBlock; approximate
           <span>{fmtHour(block.end, "UTC")}</span>
         </div>
       </div>
-      <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div class="grid grid-cols-2 gap-4 tablet:grid-cols-4">
         <Figure
           label="Tokens so far"
           value={fmtTokens(blockTokens(block))}

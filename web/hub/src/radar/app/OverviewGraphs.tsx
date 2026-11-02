@@ -244,7 +244,7 @@ export function OverviewGraphs({
 
   if (data === null) return null;
   return (
-    <section class="grid gap-4 md:grid-cols-2" aria-label="Usage graphs" data-overview-graphs="">
+    <section class="grid gap-4 tablet:grid-cols-2" aria-label="Usage graphs" data-overview-graphs="">
       <RequestsGraph today={data.today} />
       <TokensGraph days={data.usage.days.slice(-7)} />
       <CostGraph days={data.usage.days} />

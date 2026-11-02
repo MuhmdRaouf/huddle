@@ -202,7 +202,7 @@ export function Graph(props: GraphProps): JSX.Element {
         ch={ch}
         onOpenTask={onOpenTask}
       />
-      <div class="panel overflow-auto md:max-h-[calc(100dvh-20rem)]">
+      <div class="panel overflow-auto tablet:max-h-[calc(100dvh-20rem)]">
         <Dgraph
           rows={rows}
           idx={idx}

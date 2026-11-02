@@ -245,7 +245,9 @@ export function Repo(props: RepoProps): JSX.Element {
           ))}
         </div>
         <span class="flex-1" />
-        <code class="hidden truncate text-meta text-[var(--ui-muted)] lg:block">{props.repoPath ?? ""}</code>
+        <code class="hidden truncate text-meta text-[var(--ui-muted)] desk:block">
+          {props.repoPath ?? ""}
+        </code>
       </nav>
       {!pick.view ? (
         <Empty
@@ -491,7 +493,7 @@ export function RepoCode({
   return (
     <>
       {crumbs}
-      <div class="grid items-start gap-5 lg:grid-cols-[18.6667rem_minmax(0,1fr)]">
+      <div class="grid items-start gap-5 tablet:grid-cols-[18.6667rem_minmax(0,1fr)]">
         <RepoListing ch={ch} tree={st.tree} dirPath={st.dirPath} path={st.path} />
         <div class="flex min-w-0 flex-col gap-5">
           <RepoRefs api={api} ch={ch} refs={st.refs} byId={byId} onOpenTask={onOpenTask} />

@@ -258,7 +258,7 @@ export function ModelsView() {
   return (
     <div class="grid gap-5">
       {modelCard}
-      <div class="grid gap-5 lg:grid-cols-2">
+      <div class="grid gap-5 desk:grid-cols-2">
         {upstreamCard}
         <RateCard />
       </div>

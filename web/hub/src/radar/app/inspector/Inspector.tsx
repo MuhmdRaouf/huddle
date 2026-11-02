@@ -89,8 +89,8 @@ function DrawerHeader({ request }: { request: RequestRecord }) {
   const streaming = isInFlight(request);
   return (
     <div class="flex min-w-0 items-start gap-2">
-      {/* the kit's button sets its own display, so the wrapper is what hides it from 640 px */}
-      <span class="-ml-2 shrink-0 sm:hidden">
+      {/* the kit's button sets its own display, so the wrapper is what hides it from 768 px */}
+      <span class="-ml-2 shrink-0 tablet:hidden">
         <button
           type="button"
           class="ui-btn ui-btn-ghost ui-btn-icon"
@@ -167,7 +167,7 @@ export function Inspector() {
       onClose={() => act("close-drawer")}
       label="Request details"
       header={<DrawerHeader request={request} />}
-      width="w-full sm:w-[min(68rem,94vw)]"
+      width="w-full tablet:w-[min(68rem,94vw)]"
       actions={
         <>
           <button

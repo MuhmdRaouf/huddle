@@ -128,18 +128,18 @@ describe("Table", () => {
       </Table>,
     );
     const wrap = container.querySelector("[data-key='things-table']");
-    expect(wrap?.className).toBe("sm:max-h-[calc(100dvh-17rem)] sm:min-h-64 sm:overflow-auto");
+    expect(wrap?.className).toBe("tablet:max-h-[calc(100dvh-17rem)] tablet:min-h-64 tablet:overflow-auto");
     const table = wrap?.querySelector("table");
     expect(table?.hasAttribute("data-radar-table")).toBe(true);
     const cls = table?.className ?? "";
     // the desk: dense rows on the line token
     expect(cls).toContain("[&_td]:border-t [&_td]:border-[var(--ui-line)] [&_td]:px-3 [&_td]:py-2");
     // the phone: no head, each row a bordered card of labelled cells, the title cell across it
-    expect(cls).toContain("max-sm:block max-sm:[&_thead]:hidden");
-    expect(cls).toContain("max-sm:[&_tr]:grid");
-    expect(cls).toContain("max-sm:[&_tr]:rounded-[var(--ui-radius)] max-sm:[&_tr]:border");
-    expect(cls).toContain("max-sm:[&_td[data-label]]:before:content-[attr(data-label)]");
-    expect(cls).toContain("max-sm:[&_td[data-cell=title]]:col-span-2");
+    expect(cls).toContain("max-tablet:block max-tablet:[&_thead]:hidden");
+    expect(cls).toContain("max-tablet:[&_tr]:grid");
+    expect(cls).toContain("max-tablet:[&_tr]:rounded-[var(--ui-radius)] max-tablet:[&_tr]:border");
+    expect(cls).toContain("max-tablet:[&_td[data-label]]:before:content-[attr(data-label)]");
+    expect(cls).toContain("max-tablet:[&_td[data-cell=title]]:col-span-2");
     expect(container.textContent).toContain("cell");
   });
 

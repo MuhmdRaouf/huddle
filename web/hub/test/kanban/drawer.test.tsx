@@ -548,7 +548,7 @@ describe("Feature: the placements follow the window", () => {
     // Given a PWA window under 640
     // When the panel opens
     // Then it stands in the ui sheet, titled with the id and title, and Close ends in onClose
-    stubMatchMedia((query) => query.includes("max-width: 39.9375rem"));
+    stubMatchMedia((query) => query.includes("max-width: 47.9375rem"));
     const { container, onClose } = renderDrawer();
     const sheet = container.querySelector("dialog.ui-sheet") as HTMLDialogElement;
     expect(sheet).not.toBeNull();
@@ -638,7 +638,7 @@ describe("Feature: the closed-feature badge", () => {
 
   it("Scenario: on a phone the badge leads the chips row in the sheet", async () => {
     // Given a phone window and a closed feature's card
-    stubMatchMedia((query) => query.includes("max-width: 39.9375rem"));
+    stubMatchMedia((query) => query.includes("max-width: 47.9375rem"));
     const ticket = closedTicket();
     const { container } = render(
       <Drawer

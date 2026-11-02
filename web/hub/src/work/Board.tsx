@@ -204,7 +204,7 @@ export function BoardView(props: BoardProps): JSX.Element {
     <>
       {rows.length || board.steps.length ? (
         <div
-          class="grid h-full items-start gap-4 overflow-x-auto contain-paint max-md:grid-flow-col max-md:auto-cols-[80vw] max-md:snap-x"
+          class="grid h-full items-start gap-4 overflow-x-auto contain-paint max-tablet:grid-flow-col max-tablet:auto-cols-[80vw] max-tablet:snap-x"
           style={`grid-template-columns:${COLS.map((k) => (slim(k) ? "3rem" : "minmax(16rem,1fr)")).join(" ")}`}
         >
           {COLS.map((k) => {
@@ -212,7 +212,7 @@ export function BoardView(props: BoardProps): JSX.Element {
             return slim(k) ? (
               <section
                 key={k}
-                class="board-col flex min-h-40 flex-col items-center gap-2 rounded-lg border border-dashed hairline py-3 max-md:hidden"
+                class="board-col flex min-h-40 flex-col items-center gap-2 rounded-lg border border-dashed hairline py-3 max-tablet:hidden"
                 data-col={k}
                 aria-label={`${STATM[k].l}: empty`}
                 onDragOver={drag.over}
@@ -238,7 +238,7 @@ export function BoardView(props: BoardProps): JSX.Element {
                   {STATM[k].l}
                   <span class="ui-badge ui-badge-neutral tnum">{cards.length}</span>
                 </h2>
-                <ul class="flex flex-col gap-3 px-3 pb-3 md:max-h-[calc(100dvh-16.667rem)] md:overflow-y-auto">
+                <ul class="flex flex-col gap-3 px-3 pb-3 tablet:max-h-[calc(100dvh-16.667rem)] tablet:overflow-y-auto">
                   {cards.length
                     ? cards.map((s) => (
                         <Card

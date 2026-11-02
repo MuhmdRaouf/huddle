@@ -1,19 +1,23 @@
-// layout.ts — the viewport seam: the three layouts the 640 and 1024 px lines cut (phone under
-// 640, tablet to 1023, desktop from 1024) and the hook that follows a viewport across them.
-// One component tree renders all three; only the chrome pieces the layout draws differ.
+// layout.ts — the viewport seam: the three layouts the 768 and 1200 px lines cut (phone under
+// 768, tablet to 1199, desktop from 1200) and the hook that follows a viewport across them.
+// One component tree renders all three; only the chrome pieces the layout draws differ. The two
+// lines are the theme's `tablet` and `desk` breakpoints (web/ui/src/theme.css), written in rem.
 
 import { useEffect, useState } from "preact/hooks";
 
-/** The three layouts: phone (< 640 px), tablet (640 to 1023), desktop (>= 1024). */
+/** The three layouts: phone (< 768 px), tablet (768 to 1199), desktop (>= 1200). */
 export type Layout = "phone" | "tablet" | "desktop";
 
-/** The query that answers true from 640 px up. */
-export const TABLET_QUERY = "(min-width: 640px)";
+/** The query that answers true from 768 px up. */
+export const TABLET_QUERY = "(min-width: 48rem)";
 
-/** The query that answers true from 1024 px up. */
-export const DESKTOP_QUERY = "(min-width: 1024px)";
+/** The query that answers true from 1200 px up. */
+export const DESKTOP_QUERY = "(min-width: 75rem)";
 
-/** The layout two breakpoint answers cut. A viewport past 1024 is past 640 too. */
+/** The query that answers true under 768 px, the phone. */
+export const PHONE_QUERY = "(max-width: 47.9375rem)";
+
+/** The layout two breakpoint answers cut. A viewport past 1200 is past 768 too. */
 export function layoutOf(tablet: boolean, desktop: boolean): Layout {
   return desktop ? "desktop" : tablet ? "tablet" : "phone";
 }

@@ -326,10 +326,10 @@ describe("the inspector on the tokens", () => {
     const { container, act } = renderApp(<Drawer />, { request: "a", requests: [REQUEST] }, NOW);
     const panel = container.querySelector("[data-slide-over]");
     expect(panel?.classList.contains("w-full")).toBe(true);
-    expect(panel?.classList.contains("sm:w-[min(68rem,94vw)]")).toBe(true);
+    expect(panel?.classList.contains("tablet:w-[min(68rem,94vw)]")).toBe(true);
     const back = screen.getByRole("button", { name: "Back to requests" });
     expect(back.classList.contains("ui-btn")).toBe(true);
-    expect(back.parentElement?.classList.contains("sm:hidden")).toBe(true);
+    expect(back.parentElement?.classList.contains("tablet:hidden")).toBe(true);
     await userEvent.click(back);
     expect(act).toHaveBeenCalledWith("close-drawer");
   });

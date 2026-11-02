@@ -126,7 +126,7 @@ function FactsCard({
 }): JSX.Element {
   return (
     <div
-      class="grid gap-x-4 gap-y-2 rounded-box border border-base-content/10 p-4 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-center"
+      class="grid gap-x-4 gap-y-2 rounded-box border border-base-content/10 p-4 tablet:grid-cols-[7rem_minmax(0,1fr)] tablet:items-center"
       data-sess-facts
     >
       <Fact label="Status">

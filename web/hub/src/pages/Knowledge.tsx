@@ -186,21 +186,21 @@ function EntryNote({ k, now }: { k: KbEntry; now: number }): JSX.Element {
   const age = kbAge(k);
   if (k.stale)
     return (
-      <p class="flex min-w-0 flex-1 basis-full items-center gap-2 text-sm text-[var(--ui-warn-ink)] sm:basis-auto">
+      <p class="flex min-w-0 flex-1 basis-full items-center gap-2 text-sm text-[var(--ui-warn-ink)] tablet:basis-auto">
         <Icon name="clock" class="size-4" />
         {`May be stale: ${k.stale}. Check it, then verify it or replace it.`}
       </p>
     );
   if (k.verified_at)
     return (
-      <p class="flex min-w-0 flex-1 basis-full items-center gap-2 text-sm text-[var(--ui-muted)] sm:basis-auto">
+      <p class="flex min-w-0 flex-1 basis-full items-center gap-2 text-sm text-[var(--ui-muted)] tablet:basis-auto">
         <Icon name="checkc" class="size-4 text-[var(--ui-ok-ink)]" />
         {`Verified by ${k.verified_by ?? ""} `}
         <Time ts={k.verified_at} now={now} />
       </p>
     );
   return (
-    <p class="min-w-0 flex-1 basis-full text-sm text-[var(--ui-muted)] sm:basis-auto">
+    <p class="min-w-0 flex-1 basis-full text-sm text-[var(--ui-muted)] tablet:basis-auto">
       {age ? `${age[0]?.toUpperCase()}${age.slice(1)}, not verified yet.` : "Not verified yet."}
     </p>
   );
@@ -228,7 +228,7 @@ function EntryExtras({
   const [busy, setBusy] = useState<"" | "v" | "s">("");
   if (k.moved_to)
     return (
-      <div class="flex flex-wrap items-center gap-2 border-b border-[var(--ui-line)] px-4 py-3 text-sm sm:px-5">
+      <div class="flex flex-wrap items-center gap-2 border-b border-[var(--ui-line)] px-4 py-3 text-sm tablet:px-5">
         <Icon name="layers" class="size-4 text-[var(--ui-muted)]" />
         <span class="text-[var(--ui-muted)]">This entry is now for every channel:</span>
         <a
@@ -270,7 +270,7 @@ function EntryExtras({
       });
   };
   return (
-    <div class="flex flex-wrap items-center gap-2 border-b border-[var(--ui-line)] px-4 py-3 sm:px-5">
+    <div class="flex flex-wrap items-center gap-2 border-b border-[var(--ui-line)] px-4 py-3 tablet:px-5">
       <EntryNote k={k} now={now} />
       <div class="flex flex-wrap gap-2">
         <Button variant="secondary" data-kbv={undo ? "undo" : "do"} disabled={busy === "v"} onClick={verify}>
@@ -310,7 +310,7 @@ function EntryView({
   return (
     <article class="overflow-hidden rounded-[var(--ui-radius)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-1)]">
       <div class="flex flex-col gap-2 border-b border-[var(--ui-line)] p-5">
-        <div class="-ml-2 w-fit lg:hidden">
+        <div class="-ml-2 w-fit tablet:hidden">
           <Button href={api.channelHref(ch, "/knowledge")} variant="ghost">
             <Icon name="left" class="ui-icon" />
             All entries
@@ -525,8 +525,11 @@ export function Knowledge({
           onClose={() => setExpOpen(false)}
         />
       ) : null}
-      <div class="grid items-start gap-5 lg:grid-cols-[minmax(0,25.3333rem)_minmax(0,1fr)]">
-        <section class={`${deep ? "max-lg:hidden " : ""}flex min-w-0 flex-col gap-3`} aria-labelledby="kb-h">
+      <div class="grid items-start gap-5 tablet:grid-cols-[minmax(0,25.3333rem)_minmax(0,1fr)]">
+        <section
+          class={`${deep ? "max-tablet:hidden " : ""}flex min-w-0 flex-col gap-3`}
+          aria-labelledby="kb-h"
+        >
           <Field
             label="Search knowledge"
             type="search"
@@ -571,7 +574,7 @@ export function Knowledge({
             )}
           </ul>
         </section>
-        <section id="kbr" class={`${deep ? "" : "max-lg:hidden "}min-w-0`} aria-label="Entry">
+        <section id="kbr" class={`${deep ? "" : "max-tablet:hidden "}min-w-0`} aria-label="Entry">
           {entry === undefined ? null : entry ? (
             <EntryView k={entry} ch={ch} api={api} now={now} go={go} reload={reload} toast={toast} />
           ) : (

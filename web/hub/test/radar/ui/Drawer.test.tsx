@@ -120,7 +120,7 @@ describe("Drawer", () => {
     expect(header?.textContent).toContain("30s ago");
     expect(header?.textContent).toContain("app");
     // the width is the brief's: most of a wide screen, all of a narrow one
-    expect(dlg.querySelector("[data-slide-over]")?.className).toContain("sm:w-[min(68rem,94vw)]");
+    expect(dlg.querySelector("[data-slide-over]")?.className).toContain("tablet:w-[min(68rem,94vw)]");
   });
 
   it("sizes the call up with four stats, the latency one judged against the view's p95", () => {

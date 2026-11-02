@@ -1,3 +1,5 @@
+@reference "@huddle/ui/theme.css"; /* the breakpoint tokens the width query below reads */
+
 /* radar.css — the Radar tab's place on the web/ui design system, unlayered so it wins over the
  * daisyUI components and the Tailwind utilities the views were drawn with: numbers read in the
  * system's mono face, and on the phone every control is a thumb's target of the system's 44 px. */
@@ -20,8 +22,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* the phone layout (layout.ts: under 640 px) */
-@media (max-width: 639px) {
+/* the phone layout (layout.ts: under 768 px) */
+@media (width < theme(--breakpoint-tablet)) {
   [data-radar-view] :is(button, a[href], [role="tab"], select) {
     min-width: var(--ui-tap);
     min-height: var(--ui-tap);

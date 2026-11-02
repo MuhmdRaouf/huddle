@@ -379,7 +379,7 @@ export function Home({ timers = realTimers }: { timers?: PollTimers }): JSX.Elem
       {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: the list region's label */}
       <div id="chlist" aria-label="Channels">
         {list.length ? (
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div class="grid grid-cols-1 gap-4 tablet:grid-cols-2">
             {list.map((c) => (
               <ChannelCard key={c.name} c={c} onRemove={who.kind === "owner" ? setRm : undefined} />
             ))}

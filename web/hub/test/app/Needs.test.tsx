@@ -156,8 +156,8 @@ function mount(
 ): Mount {
   cleanup();
   stubMedia({
-    "(min-width: 640px)": over.layout !== undefined && over.layout !== "phone",
-    "(min-width: 1024px)": over.layout === "desktop",
+    "(min-width: 48rem)": over.layout !== undefined && over.layout !== "phone",
+    "(min-width: 75rem)": over.layout === "desktop",
   });
   const canned: Mount["canned"] = {
     sessions: over.sessions ?? [sess({ session_id: "s-1" }), working()],

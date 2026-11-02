@@ -140,7 +140,7 @@ export function MapView(props: MapProps): JSX.Element {
   };
 
   return (
-    <div class="grid min-w-0 items-start gap-5 lg:grid-cols-2">
+    <div class="grid min-w-0 items-start gap-5 desk:grid-cols-2">
       <section class="flex min-w-0 flex-col gap-3" aria-labelledby="mp-ph">
         <h2 id="mp-ph" class="text-sm font-medium text-[var(--ui-muted)] px-1">
           Phases
@@ -179,7 +179,7 @@ export function MapView(props: MapProps): JSX.Element {
             Show in Graph
           </Button>
         }
-        class="min-w-0 lg:col-span-2"
+        class="min-w-0 desk:col-span-2"
       >
         {crit.length ? (
           <>

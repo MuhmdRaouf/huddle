@@ -61,7 +61,7 @@ function Connecting(): JSX.Element {
   return (
     <div class="grid gap-5" aria-live="polite">
       <p class="muted text-row">Connecting to radar. The first snapshot arrives in a moment.</p>
-      <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <div class="grid grid-cols-2 gap-3 tablet:grid-cols-3 desk:grid-cols-5">
         {[0, 1, 2, 3, 4].map((card) => (
           <div key={card} class="skeleton h-24" />
         ))}
@@ -125,7 +125,7 @@ export function RadarTab({ view }: { view: RadarView }): JSX.Element | null {
   if (state === null) return null;
   return (
     <section
-      class="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8"
+      class="mx-auto w-full max-w-[1600px] px-4 py-5 tablet:px-6 desk:px-8"
       data-radar-view=""
       aria-label={VIEW_LABEL[view]}
     >

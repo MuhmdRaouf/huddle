@@ -183,7 +183,7 @@ export function RouterView() {
         />
       </Panel>
     ) : (
-      <div class="grid gap-5 lg:grid-cols-2">
+      <div class="grid gap-5 desk:grid-cols-2">
         {providers.map((provider) => (
           <ProviderCard key={provider.plugin} provider={provider} />
         ))}

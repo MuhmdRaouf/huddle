@@ -623,7 +623,7 @@ export function CmdPalette(props: PaletteProps): JSX.Element {
           </Empty>
         )}
       </div>
-      <div class="hidden shrink-0 items-center gap-3 border-t hairline px-4 py-2 text-xs text-[var(--ui-muted)] sm:flex">
+      <div class="hidden shrink-0 items-center gap-3 border-t hairline px-4 py-2 text-xs text-[var(--ui-muted)] tablet:flex">
         <span class="flex items-center gap-1">
           <kbd class={KBD_XS}>↑</kbd>
           <kbd class={KBD_XS}>↓</kbd> move
@@ -928,7 +928,7 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
   return (
     <Dialog open={open} onClose={onClose} title="Keyboard shortcuts">
       <div
-        class="grid max-h-[min(70dvh,44rem)] gap-x-10 gap-y-6 overflow-y-auto overscroll-contain p-5 sm:grid-cols-2"
+        class="grid max-h-[min(70dvh,44rem)] gap-x-10 gap-y-6 overflow-y-auto overscroll-contain p-5 tablet:grid-cols-2"
         tabIndex={0}
       >
         {sections.map((s) => (

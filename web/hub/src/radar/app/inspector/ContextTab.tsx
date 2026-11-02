@@ -97,7 +97,7 @@ function Totals({ totals }: { totals: ContextTotals }) {
   const usage = totals.usage;
   const contextTokens = usage === null ? null : usage.input + usage.cacheRead + usage.cacheWrite;
   return (
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3" data-context-totals>
+    <div class="grid grid-cols-1 gap-3 tablet:grid-cols-3" data-context-totals>
       <Total title="Messages" value={fmtCount(totals.messages, "message")} />
       <Total
         title="From stored text"

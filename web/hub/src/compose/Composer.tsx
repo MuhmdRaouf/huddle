@@ -510,7 +510,7 @@ export function Composer(props: ComposerProps): JSX.Element {
         {rep ? `${rep.from} gets it as the answer, and the question closes.` : effect(d)}
       </p>
       <div class="flex items-center gap-2">
-        <span class="hidden items-center text-sm text-[var(--ui-muted)] sm:flex">
+        <span class="hidden items-center text-sm text-[var(--ui-muted)] tablet:flex">
           <kbd class="ui-mono rounded-[var(--ui-radius-sm)] border border-[var(--ui-line-strong)] px-1 text-xs text-[var(--ui-text)]">
             ⌘
           </kbd>

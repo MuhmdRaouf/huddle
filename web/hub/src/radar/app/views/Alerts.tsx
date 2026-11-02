@@ -70,7 +70,7 @@ export function AlertsView() {
         title="How alerts work"
         subtitle="Defaults chosen so an idle session never raises one"
       >
-        <dl class="grid gap-x-5 gap-y-3 max-sm:grid-cols-1 sm:grid-cols-[max-content_1fr]">
+        <dl class="grid gap-x-5 gap-y-3 max-tablet:grid-cols-1 tablet:grid-cols-[max-content_1fr]">
           {HOW_ALERTS_WORK.flatMap(([kind, text]) => [
             <dt class="flex items-center gap-2 text-sm font-semibold" key={`${kind}-term`}>
               <Icon name={ALERT_ICON[kind]} class="size-4 shrink-0 text-[var(--ui-muted)]" />

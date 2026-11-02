@@ -187,7 +187,7 @@ const press = (key: string): void => {
 
 describe("the Sessions list", () => {
   it("groups the sessions and counts each group, hiding the empty ones", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone");
     expect(headings()).toEqual(["Needs you · 2", "Working · 3", "Idle · 2", "Stuck · 1", "Ended · 1"]);
     cleanup();
@@ -199,7 +199,7 @@ describe("the Sessions list", () => {
   });
 
   it("shows a skeleton before the first read and the start-a-session card when nothing is registered", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     localStorage.clear(); // the machine chips' preference must not leak from this test
     mountNow("phone", null);
     expect(screen.getByRole("status", { name: "Reading the registry" })).toBeDefined();
@@ -235,7 +235,7 @@ describe("the Sessions list", () => {
   });
 
   it("draws the needs-you card: name, age, where, the summary, the ask, Deny beside Allow once, and the actions menu", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone", fixture(), [needItem()]);
     const card = screen.getByText("kanban-e2e").closest("article");
     expect(card).not.toBeNull();
@@ -257,7 +257,7 @@ describe("the Sessions list", () => {
   });
 
   it("draws the card's ask as the per-tool preview, folded at four lines, never the raw JSON", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     const command = Array.from({ length: 10 }, (_, i) => `echo step-${i + 1}`).join("\n");
     mountNow("phone", fixture(), [{ ...needItem(), input: JSON.stringify({ command }) }]);
     const card = screen.getByText("kanban-e2e").closest("article") as HTMLElement;
@@ -271,7 +271,7 @@ describe("the Sessions list", () => {
   });
 
   it("shows the card's summary line only when it differs from the title", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone", [
       row({
         session_id: "s-same",
@@ -290,7 +290,7 @@ describe("the Sessions list", () => {
   });
 
   it("offers Review alone when the session has no permission ask to answer", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone", fixture(), [
       {
         id: 8,
@@ -309,7 +309,7 @@ describe("the Sessions list", () => {
   });
 
   it("on the desk a needs-you row is one plain link to the session, and the open row is marked", () => {
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    stubMedia({ "(min-width: 48rem)": true, "(min-width: 75rem)": true });
     mountNow("desktop", fixture(), [needItem()], "s-need-1");
     const deskRow = document.querySelector('a[data-row="s-need-1"]') as HTMLAnchorElement;
     expect(deskRow.getAttribute("href")).toBe("#/sessions/s-need-1");
@@ -321,7 +321,7 @@ describe("the Sessions list", () => {
   });
 
   it("on the phone a permission ask still answers Allow and Deny at the card", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone", fixture(), [needItem()]);
     const card = document.querySelector('[data-row="s-need-1"]') as HTMLElement;
     expect(within(card).getByRole("button", { name: "Deny" })).toBeDefined();
@@ -329,7 +329,7 @@ describe("the Sessions list", () => {
   });
 
   it("splits a desk row into a title line and a meta line", () => {
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    stubMedia({ "(min-width: 48rem)": true, "(min-width: 75rem)": true });
     mountNow("desktop");
     const rowEl = document.querySelector('a[data-row="s-work-1"]') as HTMLElement;
     expect(rowEl).not.toBeNull();
@@ -353,7 +353,7 @@ describe("the Sessions list", () => {
   });
 
   it("draws the working row: harness chip, where, state chip, no model chip", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone");
     const rowEl = screen.getByText("lead").closest("[data-row]") as HTMLElement;
     const harness = rowEl.querySelector("[data-harness]") as HTMLElement;
@@ -371,7 +371,7 @@ describe("the Sessions list", () => {
   });
 
   it("carries the state as a word on every row, never colour alone", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone");
     for (const [title, word, state] of [
       ["lead", "Working", "working"],
@@ -388,7 +388,7 @@ describe("the Sessions list", () => {
   });
 
   it("writes the row chip's word the mock's way: a capital first letter, the raw state on data-state", () => {
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    stubMedia({ "(min-width: 48rem)": true, "(min-width: 75rem)": true });
     mountNow("desktop");
     for (const [id, word, state] of [
       ["s-need-1", "Needs you", "needs-you"],
@@ -404,7 +404,7 @@ describe("the Sessions list", () => {
   });
 
   it("keeps the search and the machine chips, with no group-by control and no needs filter", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     localStorage.clear();
     mountNow("phone", fixture(), [needItem()]);
     expect(screen.queryByText("Group by")).toBeNull();
@@ -417,7 +417,7 @@ describe("the Sessions list", () => {
   });
 
   it("narrows the list from the search box, across name, project, branch, machine and task", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     localStorage.clear();
     mountNow("phone");
     const box = screen.getByRole("searchbox", { name: "Search sessions" }) as HTMLInputElement;
@@ -458,7 +458,7 @@ describe("the Sessions list", () => {
   });
 
   it("filters by machine chip, clears with All, and keeps the pick across a remount", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     localStorage.clear();
     mountNow("phone");
     const chipRow = document.querySelector("[data-machine-chips]") as HTMLElement;
@@ -493,7 +493,7 @@ describe("the Sessions list", () => {
   });
 
   it("keeps each machine chip a 28 px pill in one inner span, the button the coarse pointer's tap target", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     localStorage.clear();
     mountNow("phone");
     const chips = (): HTMLButtonElement[] => [
@@ -536,7 +536,7 @@ describe("the Sessions list", () => {
   });
 
   it("carries the set-up row under the machine chips, its count the checklist's steps left", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     localStorage.clear();
     mountSetup();
     const row = screen.getByRole("button", { name: "Set up · 3 steps left" });
@@ -554,7 +554,7 @@ describe("the Sessions list", () => {
   });
 
   it("opens the checklist in a sheet from the set-up row, and leaves the row out when it is done or dismissed", async () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     localStorage.clear();
     mountSetup({ totp: true, channels: [{ name: "shop" }] });
     expect(document.querySelector("dialog[open]")).toBeNull();
@@ -575,7 +575,7 @@ describe("the Sessions list", () => {
   });
 
   it("names every session's harness on its row and its card, Claude Code included", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone", [
       row({ session_id: "s-cc", title: "lead", machine: "studio", harness: "claude", task: "Release" }),
       row({ session_id: "s-cx", title: "board-fix", machine: "studio", harness: "codex", task: "Fix" }),
@@ -613,7 +613,7 @@ describe("the Sessions list", () => {
   });
 
   it("draws the idle row: name, where, state chip, age", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone");
     const idle = screen.getByText("docs-sweep").closest("[data-row]") as HTMLElement;
     const state = idle.querySelector('[data-state="idle"]') as HTMLElement;
@@ -624,7 +624,7 @@ describe("the Sessions list", () => {
   });
 
   it("chips a session whose hooks stopped reporting on its working and its idle row, and no other", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone", [
       row({ session_id: "s-quiet", title: "quiet-hooks", hooks_stale: true }),
       row({ session_id: "s-rest", title: "resting", state: "idle", last_event: "Stop", hooks_stale: true }),
@@ -646,8 +646,8 @@ describe("the Sessions list", () => {
     const lent = "[data-machines], [data-needs-actions] > span, dialog";
     for (const layout of ["phone", "tablet", "desktop"] as const) {
       stubMedia({
-        "(min-width: 640px)": layout !== "phone",
-        "(min-width: 1024px)": layout === "desktop",
+        "(min-width: 48rem)": layout !== "phone",
+        "(min-width: 75rem)": layout === "desktop",
       });
       mountNow(layout, fixture(), [needItem()]);
       expect(legacyClasses(document.body, lent), layout).toEqual([]);
@@ -685,7 +685,7 @@ describe("the Sessions list", () => {
   });
 
   it("colours each row's state chip with its state's role token", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone", fixture(), [
       needItem(),
       {
@@ -718,7 +718,7 @@ describe("the Sessions list", () => {
   });
 
   it("reads a session with an open item as Needs you, not idle", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone", fixture(), [
       {
         id: 10,
@@ -739,7 +739,7 @@ describe("the Sessions list", () => {
   });
 
   it("moves a row between groups the moment its registry.session row lands", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     const { registry } = mountNow("phone");
     expect(headings()[1]).toBe("Working · 3");
     void act(() => {
@@ -755,7 +755,7 @@ describe("the Sessions list", () => {
   });
 
   it("opens a session from a row on the phone", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone");
     void act(() => {
       screen.getByText("lead").closest("a")?.click();
@@ -764,7 +764,7 @@ describe("the Sessions list", () => {
   });
 
   it("moves the selection with j and k and opens it with Enter on the desktop", () => {
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    stubMedia({ "(min-width: 48rem)": true, "(min-width: 75rem)": true });
     localStorage.clear();
     mountNow("desktop");
     const rows = () => [...document.querySelectorAll("[data-row]")] as HTMLElement[];
@@ -791,7 +791,7 @@ describe("the Sessions list", () => {
   });
 
   it("renders session text as text, never HTML", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     mountNow("phone", [
       row({ session_id: "s-evil", title: "<img onerror=alert(1) src=x>", task: "<b>bold</b> move" }),
     ]);
@@ -803,7 +803,7 @@ describe("the Sessions list", () => {
 
 describe("the small pieces", () => {
   it("does not hear the keys through a dialog", () => {
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    stubMedia({ "(min-width: 48rem)": true, "(min-width: 75rem)": true });
     localStorage.clear();
     mountNow("desktop");
     const dlg = document.createElement("dialog");
@@ -855,8 +855,8 @@ function mountNowOver(
 } {
   cleanup();
   stubMedia({
-    "(min-width: 640px)": layout !== "phone",
-    "(min-width: 1024px)": layout === "desktop",
+    "(min-width: 48rem)": layout !== "phone",
+    "(min-width: 75rem)": layout === "desktop",
   });
   const { api, calls } = apiFake(answer);
   const toast = vi.fn();

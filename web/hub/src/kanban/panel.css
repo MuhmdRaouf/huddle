@@ -354,7 +354,7 @@
   outline: none;
 }
 
-/* the sheet over a scrim (640–1199) and the full-screen sheet (< 640) */
+/* the sheet over a scrim (768–1199) and the full-screen sheet (< 768) */
 
 .kanban-tab .panel-scrim {
   position: fixed;

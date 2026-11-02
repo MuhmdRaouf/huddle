@@ -520,6 +520,12 @@
   --font-sans: var(--ui-font);
   --font-mono: var(--ui-font-mono);
 
+  /* the two breakpoints: phone under 768 px, tablet 768 to 1199 px, desk from 1200 px. A media query reads
+     rem at 16 px whatever the root font size is. app/layout.ts holds the same two lines for script. */
+  --breakpoint-*: initial;
+  --breakpoint-tablet: 48rem;
+  --breakpoint-desk: 75rem;
+
   /* the type scale: every Tailwind text step is a scale step, and the five steps are the whole
      scale, so utilities past xl never build. Tailwind's `base` step is the scale's md, and each
      step keeps Tailwind's own line height for it; meta and row are the named steps tables use. */

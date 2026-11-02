@@ -239,9 +239,9 @@ describe("the appearance section", () => {
 });
 
 /** The phone's viewport, then the tablet's and the desktop's. */
-const PHONE = { "(min-width: 640px)": false, "(min-width: 1024px)": false };
-const TABLET = { "(min-width: 640px)": true, "(min-width: 1024px)": false };
-const DESK = { "(min-width: 640px)": true, "(min-width: 1024px)": true };
+const PHONE = { "(min-width: 48rem)": false, "(min-width: 75rem)": false };
+const TABLET = { "(min-width: 48rem)": true, "(min-width: 75rem)": false };
+const DESK = { "(min-width: 48rem)": true, "(min-width: 75rem)": true };
 
 describe("the phone's grouped list", () => {
   afterEach(() => {

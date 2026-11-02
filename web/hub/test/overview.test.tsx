@@ -139,7 +139,7 @@ describe("Overview plan progress", () => {
     expect(panel.classList.contains("ui-card")).toBe(true);
     expect(legacyClasses(panel)).toEqual([]);
     const rows = panel.querySelector("[data-ovrows]") as HTMLElement;
-    expect(rows.classList.contains("min-[60rem]:grid-cols-2")).toBe(true);
+    expect(rows.classList.contains("desk:grid-cols-2")).toBe(true);
     expect([...rows.classList].filter((c) => /^(sm|md):grid-cols-/.test(c))).toEqual([]);
   });
 

@@ -64,9 +64,6 @@
     "control": 3,
     "px": 5
   },
-  "app/layout.ts": {
-    "px": 2
-  },
   "app/session-parts.tsx": {
     "px": 3
   },
@@ -116,7 +113,7 @@
     "colour": 2,
     "daisy": 24,
     "legacy": 1,
-    "px": 59
+    "px": 58
   },
   "kanban/panel.css": {
     "colour": 2,
@@ -258,9 +255,6 @@
   },
   "radar/logo.ts": {
     "colour": 39
-  },
-  "radar/radar.css": {
-    "px": 1
   },
   "team/SessionDrawer.tsx": {
     "control": 5,

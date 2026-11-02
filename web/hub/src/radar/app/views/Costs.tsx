@@ -168,12 +168,12 @@ function NodeRows({ node, depth }: { node: AttributionNode; depth: number }): Co
     <Fragment key={key}>
       <tr class="attr-row">
         <td
-          class="min-w-0 sm:min-w-[220px]"
+          class="min-w-0 tablet:min-w-[220px]"
           data-label="Breakdown"
           data-cell="title"
           style={`--depth:${depth}`}
         >
-          <div class="flex items-center gap-2 pl-[calc(var(--depth)*14px)] sm:pl-[calc(var(--depth)*22px)]">
+          <div class="flex items-center gap-2 pl-[calc(var(--depth)*14px)] tablet:pl-[calc(var(--depth)*22px)]">
             {node.children.length > 0 ? (
               <button
                 type="button"
@@ -189,7 +189,7 @@ function NodeRows({ node, depth }: { node: AttributionNode; depth: number }): Co
             ) : (
               <span class={`${TREE_TOGGLE} invisible`} data-leaf="" aria-hidden="true" />
             )}
-            <span class="attr-name min-w-0 truncate font-medium sm:max-w-[360px]" title={node.key}>
+            <span class="attr-name min-w-0 truncate font-medium tablet:max-w-[360px]" title={node.key}>
               {node.kind === "model" ? shortModelName(node.label) : node.label}
             </span>
             {node.note !== null && (

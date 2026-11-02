@@ -865,7 +865,7 @@ function GroupList(): JSX.Element {
 function GroupPage({ section }: { section: SettingsSection }): JSX.Element {
   return (
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <div class="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6" data-settings="" data-group={section}>
+      <div class="mx-auto w-full max-w-3xl px-4 py-6 tablet:px-6" data-settings="" data-group={section}>
         <div class="flex flex-col gap-8">
           {SETTINGS_GROUPS.find((g) => g.id === section)?.members.map(({ id, Pane }) => (
             <div key={id} data-setting={id}>

@@ -94,8 +94,8 @@ function Thead(): JSX.Element {
         </th>
         <th class={h}>Status</th>
         <th class={h}>Task</th>
-        <th class={`hidden md:table-cell ${h}`}>Owner</th>
-        <th class={`text-right tnum hidden md:table-cell ${h}`}>Notes</th>
+        <th class={`hidden tablet:table-cell ${h}`}>Owner</th>
+        <th class={`text-right tnum hidden tablet:table-cell ${h}`}>Notes</th>
         <th class={`text-right tnum ${h}`}>On it</th>
       </tr>
     </thead>
@@ -112,11 +112,11 @@ function RowExtra({ s, k }: { s: Step; k: string }): JSX.Element | null {
       {gated ? (
         <span class="ui-badge ui-badge-neutral" title="Needs your approval">
           <Icon name="key" class="size-3.5" />
-          <span class="max-sm:sr-only">Approval</span>
+          <span class="max-tablet:sr-only">Approval</span>
         </span>
       ) : null}
       {k === "waiting" ? (
-        <span class="hidden text-xs text-[var(--ui-warn-ink)] lg:inline">
+        <span class="hidden text-xs text-[var(--ui-warn-ink)] desk:inline">
           {`waits on ${(s.blocked_by ?? []).slice(0, 2).join(", ")}${(s.blocked_by?.length ?? 0) > 2 ? "…" : ""}`}
         </span>
       ) : null}
@@ -173,11 +173,11 @@ function TaskRow({
           <RowExtra s={s} k={k} />
         </a>
       </td>
-      <td class="hidden w-24 truncate text-sm text-[var(--ui-muted)] md:table-cell">
+      <td class="hidden w-24 truncate text-sm text-[var(--ui-muted)] tablet:table-cell">
         {s.owner ? who(s.owner) : <span class="text-[var(--ui-muted)]">nobody</span>}
       </td>
       <td
-        class="text-right tnum hidden text-sm text-[var(--ui-muted)] md:table-cell"
+        class="text-right tnum hidden text-sm text-[var(--ui-muted)] tablet:table-cell"
         title={s.comments?.open ? `${s.comments.open} open notes` : undefined}
       >
         {s.comments?.open || ""}
@@ -247,7 +247,7 @@ function Group({
           <span class="truncate">{p.title}</span>
         </h2>
         <span class="flex shrink-0 items-center gap-3">
-          <span class="block w-14 sm:w-28">
+          <span class="block w-14 tablet:w-28">
             <DoneBar d={d} n={all.length} />
           </span>
           <span class="text-sm whitespace-nowrap text-[var(--ui-muted)] tnum">

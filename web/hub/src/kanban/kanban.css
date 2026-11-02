@@ -1,3 +1,5 @@
+@reference "@huddle/ui/theme.css"; /* the breakpoint tokens the width query below reads */
+
 /* The kanban page inside huddle's Kanban tab. Everything is scoped under .kanban-tab, and every
    colour, space, radius and type size reads the design system's --ui-* tokens (tokens.css), which
    keep WCAG AA in light, dark, latte and mocha. Plain actions are the design system's Button and
@@ -1044,7 +1046,7 @@
 /* the phone: one row of picker, dot and the Filters button, the search box and every other
    control folded behind it, the picker opening as a full-width sheet */
 
-@media (max-width: 639px) {
+@media (width < theme(--breakpoint-tablet)) {
   .kanban-tab .toolbar {
     padding-bottom: var(--ui-space-1);
   }

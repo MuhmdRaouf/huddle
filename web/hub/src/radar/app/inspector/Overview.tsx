@@ -331,7 +331,7 @@ export function OverviewTab({ request }: { request: RequestRecord }) {
   return (
     <div class="flex flex-col gap-5">
       <div class="flex flex-col gap-3">
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid grid-cols-1 gap-3 tablet:grid-cols-2 desk:grid-cols-4">
           <Stat
             title="Latency"
             value={fmtDuration(request.latencyMs)}
@@ -358,7 +358,7 @@ export function OverviewTab({ request }: { request: RequestRecord }) {
         <FailedCard request={request} />
       </div>
       <Card title="Timing and result" icon="timer">
-        <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+        <dl class="grid grid-cols-1 gap-x-8 gap-y-4 tablet:grid-cols-2">
           <Fact label="TTFB">
             <span class="ui-mono">{fmtDuration(request.ttfbMs)}</span>
           </Fact>
@@ -377,7 +377,7 @@ export function OverviewTab({ request }: { request: RequestRecord }) {
       </Card>
       <TokensPanel request={request} />
       <Card title="Where it ran" icon="route">
-        <dl class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+        <dl class="grid grid-cols-1 gap-x-8 gap-y-4 tablet:grid-cols-2">
           <Fact label="Session">{session === undefined ? request.sessionId : cardName(session)}</Fact>
           <Fact label="Agent">
             <span class="flex flex-col items-start gap-1.5">

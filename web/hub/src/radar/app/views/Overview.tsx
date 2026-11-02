@@ -99,9 +99,11 @@ function Stat({
   oneLine?: boolean;
 }): JSX.Element {
   return (
-    <div class={`ui-card p-4 md:p-5 ${cls}`} data-stat={(stat ?? title).toLowerCase()}>
+    <div class={`ui-card p-4 tablet:p-5 ${cls}`} data-stat={(stat ?? title).toLowerCase()}>
       <div class="text-xs text-[var(--ui-muted)]">{title}</div>
-      <div class={`num mt-0.5 text-xl font-semibold md:text-[26px] ${oneLine ? "whitespace-nowrap" : ""}`}>
+      <div
+        class={`num mt-0.5 text-xl font-semibold tablet:text-[26px] ${oneLine ? "whitespace-nowrap" : ""}`}
+      >
         {value}
       </div>
       {subline !== null && <div class="mt-1 text-xs text-[var(--ui-muted)]">{subline}</div>}
@@ -159,7 +161,7 @@ function LimitWindow({ label, window, now }: { label: string; window: UnifiedWin
   const reset = resetWords(window.resets_at, now);
   return (
     <div class="min-w-0" data-limit-window={label}>
-      <div class="num text-xl font-semibold whitespace-nowrap md:text-[26px]">{`${pct}%`}</div>
+      <div class="num text-xl font-semibold whitespace-nowrap tablet:text-[26px]">{`${pct}%`}</div>
       <Bar
         pct={Math.min(100, pct)}
         color={STATUS_COLOR[quotaTone(pct)]}
@@ -188,7 +190,7 @@ function LimitsStat({ class: cls = "" }: { class?: string }) {
       <Stat title="Anthropic limits" stat="limits" value="–" subline="no Anthropic answer yet" class={cls} />
     );
   return (
-    <div class={`ui-card p-4 md:p-5 ${cls}`} data-stat="limits">
+    <div class={`ui-card p-4 tablet:p-5 ${cls}`} data-stat="limits">
       <div class="text-xs text-[var(--ui-muted)]">Anthropic limits</div>
       <div class="mt-0.5 grid grid-cols-2 gap-3">
         {windows.map((entry) => (
@@ -262,7 +264,7 @@ function SpendChart() {
   if (spent === null) {
     // the range runs on the history route, whose flow counts tokens: the token flow chart stands in
     return (
-      <section class="ui-card min-w-0 p-4 md:p-5" aria-labelledby="ovw-flow">
+      <section class="ui-card min-w-0 p-4 tablet:p-5" aria-labelledby="ovw-flow">
         <h2 id="ovw-flow" class="flex items-center gap-2 text-[15px] font-semibold">
           <Icon name="arrows" class="size-4 text-[var(--ui-accent)]" />
           Token flow
@@ -290,7 +292,7 @@ function SpendChart() {
     return { at, text: stampOf(ts, year).split(" ").slice(1).join(" ") };
   });
   return (
-    <section class="ui-card flex min-h-0 flex-col gap-3 p-4 md:p-5" aria-labelledby="ovw-chart">
+    <section class="ui-card flex min-h-0 flex-col gap-3 p-4 tablet:p-5" aria-labelledby="ovw-chart">
       <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 id="ovw-chart" class="text-[15px] font-semibold">
           Spend by hour, by model
@@ -389,7 +391,7 @@ function TopSessions() {
     .sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0))
     .slice(0, 5);
   return (
-    <section class="ui-card p-4 md:p-5" aria-labelledby="ovw-sessions">
+    <section class="ui-card p-4 tablet:p-5" aria-labelledby="ovw-sessions">
       <h2 id="ovw-sessions" class="mb-2 text-[15px] font-semibold">
         Top sessions by spend
       </h2>
@@ -409,7 +411,7 @@ function TopSessions() {
               </th>
               <th
                 scope="col"
-                class="hidden w-40 py-1 text-left font-normal text-[var(--ui-muted)] sm:table-cell"
+                class="hidden w-40 py-1 text-left font-normal text-[var(--ui-muted)] tablet:table-cell"
               >
                 Model
               </th>
@@ -441,7 +443,7 @@ function TopSessions() {
                       {row?.machine ? <span class="text-[var(--ui-muted)]"> · {row.machine}</span> : null}
                     </a>
                   </td>
-                  <td class="hidden truncate py-2 sm:table-cell">
+                  <td class="hidden truncate py-2 tablet:table-cell">
                     {item.model === null ? "–" : <ModelChip model={item.model} />}
                   </td>
                   <td class="num py-2 text-right">{fmtNum(item.requestCount)}</td>
@@ -685,7 +687,7 @@ function RoutersList({ facts }: { facts: RouterFacts | null }) {
   const stopped = stoppedScopes(state);
   const providers = facts?.providers ?? state.providers;
   return (
-    <section class="ui-card p-4 md:p-5" aria-labelledby="ovw-routers">
+    <section class="ui-card p-4 tablet:p-5" aria-labelledby="ovw-routers">
       <h2 id="ovw-routers" class="mb-1 text-[15px] font-semibold">
         Routers
       </h2>
@@ -723,7 +725,7 @@ function TopTools() {
   const tools = [...(state.models?.tools ?? [])].sort((a, b) => b.count - a.count).slice(0, 3);
   const max = Math.max(...tools.map((tool) => tool.count), 1);
   return (
-    <section class="ui-card p-4 md:p-5" aria-labelledby="ovw-tools">
+    <section class="ui-card p-4 tablet:p-5" aria-labelledby="ovw-tools">
       <h2 id="ovw-tools" class="mb-2 text-[15px] font-semibold">
         Top tools
       </h2>
@@ -753,7 +755,7 @@ function AlertCard() {
   const tone = alert.severity === "err" ? "err" : "warn";
   return (
     <section
-      class="ui-card flex flex-col gap-2 p-4 md:p-5"
+      class="ui-card flex flex-col gap-2 p-4 tablet:p-5"
       style={`border-color:color-mix(in oklab, ${STATUS_COLOR[tone]} 40%, transparent)`}
       aria-labelledby="ovw-alert"
       role="alert"
@@ -849,7 +851,7 @@ function PlanLimits() {
   const quota = liveQuota(state.quota, now);
   if (quota === null) return null;
   return (
-    <section class="ui-card p-4 md:p-5" aria-labelledby="ovw-quota" data-quota="">
+    <section class="ui-card p-4 tablet:p-5" aria-labelledby="ovw-quota" data-quota="">
       <h2 id="ovw-quota" class="mb-2 text-[15px] font-semibold">
         Plan limits
       </h2>
@@ -943,14 +945,14 @@ export function OverviewView(): JSX.Element {
   const routers = useRouterFacts();
   const phone = useLayout() === "phone";
   return (
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div class="min-w-0 xl:col-span-2">
+    <div class="grid gap-4 desk:grid-cols-[minmax(0,1fr)_360px]">
+      <div class="min-w-0 desk:col-span-2">
         <RadarDayCard />
       </div>
       {phone ? (
         <PhoneTiles numbers={numbers} />
       ) : (
-        <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:col-span-2" data-stat-cards="">
+        <div class="grid grid-cols-2 gap-3 tablet:grid-cols-3 desk:col-span-2" data-stat-cards="">
           <LimitsStat />
           <SpendStat />
           <RequestsStat state={state} now={now} numbers={numbers} />
@@ -959,13 +961,13 @@ export function OverviewView(): JSX.Element {
           <RoutersStat facts={routers} />
         </div>
       )}
-      <div class="grid min-w-0 gap-4 xl:col-span-2">
+      <div class="grid min-w-0 gap-4 desk:col-span-2">
         <ActiveBlock />
       </div>
-      <div class="min-w-0 xl:col-span-2">
+      <div class="min-w-0 desk:col-span-2">
         <DayCard />
       </div>
-      <div class="min-w-0 xl:col-span-2">
+      <div class="min-w-0 desk:col-span-2">
         <OverviewGraphs />
       </div>
       <div class="grid min-w-0 gap-4">
@@ -974,11 +976,11 @@ export function OverviewView(): JSX.Element {
       </div>
       <div class="grid content-start gap-4">
         <PlanLimits />
-        <div class="hidden md:block">
+        <div class="hidden tablet:block">
           <AlertCard />
         </div>
         <RoutersList facts={routers} />
-        <div class="hidden md:block">
+        <div class="hidden tablet:block">
           <TopTools />
         </div>
       </div>

@@ -59,7 +59,7 @@ export function ChatComposer({ members, initialTo, onSend, routeOf }: ChatCompos
       <label class="flex min-w-0 items-center gap-2 text-sm">
         <span class="text-[var(--ui-muted)]">To</span>
         <select
-          class="ui-input min-w-0 flex-1 sm:max-w-60"
+          class="ui-input min-w-0 flex-1 tablet:max-w-60"
           aria-label="To"
           value={to}
           onChange={(e) => setPicked(e.currentTarget.value)}

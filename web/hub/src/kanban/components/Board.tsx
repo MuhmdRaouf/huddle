@@ -1,6 +1,7 @@
 import { Button } from "@huddle/ui/button.tsx";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { type Density, type Filters, filterCards, hiddenDone, useMedia } from "../store.ts";
+import { PHONE_QUERY } from "../../app/layout.ts";
 import {
   type Card as CardData,
   COLUMN_IDS,
@@ -166,7 +167,7 @@ export function Board({
   sharedCluster = null,
   backlogGroups,
 }: BoardProps) {
-  const narrow = useMedia("(max-width: 39.9375rem)");
+  const narrow = useMedia(PHONE_QUERY);
   const reduced = useMedia("(prefers-reduced-motion: reduce)");
   const [showAllDone, setShowAllDone] = useState(false);
   const [tab, setTab] = useState<ColumnId | null>(null);

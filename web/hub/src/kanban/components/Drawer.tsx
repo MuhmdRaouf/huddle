@@ -2,6 +2,7 @@ import { Button } from "@huddle/ui/button.tsx";
 import { Sheet } from "@huddle/ui/sheet.tsx";
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { DESKTOP_QUERY, PHONE_QUERY } from "../../app/layout.ts";
 import { useMedia } from "../store.ts";
 import { renderMarkdown } from "../markdown.ts";
 import { COLUMN_IDS, type Card, type ColumnId, type FieldValue, type Ticket } from "../types.ts";
@@ -569,8 +570,8 @@ function PanelContent({
  *  markdown and the log collapsed — docked beside the board on a wide window, a sheet over a
  *  scrim on a tablet, and on a phone the design system's sheet rising from the bottom, read only. */
 export function Drawer({ card, cards, getTicket, onClose, onOpenDep }: DrawerProps) {
-  const docked = useMedia("(min-width: 75rem)");
-  const phone = useMedia("(max-width: 39.9375rem)");
+  const docked = useMedia(DESKTOP_QUERY);
+  const phone = useMedia(PHONE_QUERY);
   const [width, setWidth] = useState(readPanelWidth);
   const { ticket, loading, failed, retry } = useTicket(getTicket, card.id);
   const panel = useRef<HTMLDivElement>(null);

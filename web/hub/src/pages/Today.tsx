@@ -382,10 +382,9 @@ function DigestView({ d, ch, now }: { d: Digest; ch: string; now: number }) {
   const c = d.cost;
   return (
     <div class="flex flex-col gap-5">
-      {/* the stat cards pair up from 420 px: a media query reads rem at the 16 px initial root,
-          not this page's 15 px one, so the breakpoint is 26.25rem */}
+      {/* the stat cards pair up from the tablet line; a phone keeps one column */}
       <div
-        class={`grid grid-cols-1 gap-4 min-[26.25rem]:grid-cols-2 xl:grid-cols-4${c.available ? " xl:grid-cols-5" : ""}`}
+        class={`grid grid-cols-1 gap-4 tablet:grid-cols-2 desk:grid-cols-4${c.available ? " desk:grid-cols-5" : ""}`}
       >
         <Stat
           icon="checkc"
@@ -426,7 +425,7 @@ function DigestView({ d, ch, now }: { d: Digest; ch: string; now: number }) {
           <h2 class="text-sm font-semibold px-1" id="dgs-h">
             By session
           </h2>
-          <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div class="grid gap-4 tablet:grid-cols-2 desk:grid-cols-3">
             {d.sessions.map((s) => (
               <SessionCard
                 key={s.name}
@@ -447,7 +446,7 @@ function DigestView({ d, ch, now }: { d: Digest; ch: string; now: number }) {
           icon="users"
         />
       )}
-      <div class="grid gap-4 lg:grid-cols-2">
+      <div class="grid gap-4 desk:grid-cols-2">
         <BlockedCard d={d} byId={byId} ch={ch} api={api} />
         <QuestionsCard d={d} ch={ch} api={api} now={now} />
       </div>
@@ -477,7 +476,7 @@ function SinceSegment({ win, pick }: { win: string; pick: (k: string) => void })
     // biome-ignore lint/a11y/useSemanticElements: the chips are buttons under one group role
     // full width on the phone: the intro's actions row sizes to its one-line content and never
     // shrinks, so a segment-plus-button line overflows the page's 16 px gutter
-    <div class="ui-chip-row w-full sm:w-auto" role="group" aria-label="Since">
+    <div class="ui-chip-row w-full tablet:w-auto" role="group" aria-label="Since">
       {WINS.map(([k, l]) => (
         <Chip key={k} pressed={k === win} data-dgwin={k} onClick={() => pick(k)}>
           {l}

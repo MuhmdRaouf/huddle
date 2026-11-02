@@ -268,7 +268,7 @@ function AskCard({
           </div>
           {/* the field takes the row and the Reply button sits under its end on a phone, where
               the placeholder wraps; from sm the two share the row */}
-          <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div class="mt-2 flex flex-col gap-2 tablet:flex-row tablet:items-end">
             <label class="sr-only" for={`ar-${a.seq}`}>
               {`Your reply to ${a.from}`}
             </label>
@@ -276,7 +276,7 @@ function AskCard({
               id={`ar-${a.seq}`}
               ref={ta}
               rows={1}
-              class="min-h-[var(--ui-control-h)] max-sm:min-h-[calc(2*var(--ui-leading)*var(--ui-text-md)+2*var(--ui-space-2))] flex-1 resize-none rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] px-3 py-2 text-[length:var(--ui-text-md)] leading-[var(--ui-leading)] text-[var(--ui-text)] placeholder:text-[var(--ui-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-accent)]"
+              class="min-h-[var(--ui-control-h)] max-tablet:min-h-[calc(2*var(--ui-leading)*var(--ui-text-md)+2*var(--ui-space-2))] flex-1 resize-none rounded-[var(--ui-radius)] bg-[var(--ui-surface-2)] px-3 py-2 text-[length:var(--ui-text-md)] leading-[var(--ui-leading)] text-[var(--ui-text)] placeholder:text-[var(--ui-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-accent)]"
               placeholder="Write a reply (Enter sends, Shift+Enter adds a line)"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -335,7 +335,7 @@ function GateCard({
   const owner = g.owner || "the session";
   return (
     <Card k={k} hidden={hidden}>
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div class="flex flex-col gap-3 tablet:flex-row tablet:items-center">
         <div class="flex min-w-0 flex-1 items-start gap-3">
           <span class="tinted ink inline-flex size-7 shrink-0 items-center justify-center rounded-lg c-blue">
             <Icon name="key" />
@@ -351,7 +351,7 @@ function GateCard({
             </div>
           </div>
         </div>
-        <div class="flex flex-wrap gap-1.5 sm:justify-end">
+        <div class="flex flex-wrap gap-1.5 tablet:justify-end">
           <Button data-approve={g.id} disabled={busy} onClick={() => onApprove()}>
             <Icon name="check" class="size-4" />
             Approve
@@ -367,7 +367,7 @@ function GateCard({
         // Enter approves and Escape closes from the field inside; the wrapper carries the keys
         // because the field owns none, and data-note-for is where the focus lands when it opens
         <div
-          class="mt-3 flex items-end gap-2 sm:pl-9"
+          class="mt-3 flex items-end gap-2 tablet:pl-9"
           data-note-for={g.id}
           onKeyDown={(e) => {
             if (e.key === "Enter") onApprove();

@@ -53,7 +53,7 @@ export function AlertRow({ alert }: { alert: Alert }) {
     <li
       role="alert"
       data-alert={tone}
-      class={`grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-[var(--ui-radius)] border p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] ${alertClasses(tone)}`}
+      class={`grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-[var(--ui-radius)] border p-3 tablet:grid-cols-[auto_minmax(0,1fr)_auto] ${alertClasses(tone)}`}
     >
       <IconTile name={ALERT_ICON[alert.kind]} color={STATUS_COLOR[tone]} sm />
       <div class="min-w-0">
@@ -69,7 +69,7 @@ export function AlertRow({ alert }: { alert: Alert }) {
       </div>
       <button
         type="button"
-        class="ui-btn ui-btn-ghost col-span-2 justify-self-end sm:col-span-1"
+        class="ui-btn ui-btn-ghost col-span-2 justify-self-end tablet:col-span-1"
         data-action="dismiss-alert"
         data-value={alert.id}
         aria-label={`Dismiss: ${alert.detail}`}

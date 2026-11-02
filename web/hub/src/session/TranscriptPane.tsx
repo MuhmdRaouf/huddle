@@ -224,7 +224,7 @@ export function TranscriptPane({ items, now }: { items: ConvoItem[]; now: number
       data-block="transcript"
       aria-label="Transcript"
       tabIndex={0}
-      class="min-h-0 flex-1 overflow-y-auto px-4 pt-2 pb-3.5 sm:px-6"
+      class="min-h-0 flex-1 overflow-y-auto px-4 pt-2 pb-3.5 tablet:px-6"
     >
       <div class="mx-auto flex max-w-[51.25rem] flex-col gap-2 text-[0.9375rem] leading-[1.4]">
         {blocks.map((block, i) => (

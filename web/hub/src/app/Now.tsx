@@ -166,12 +166,12 @@ function StreamPane({ items, now }: { items: StreamItem[]; now: number }): JSX.E
   return (
     <div
       ref={pane}
-      class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 sm:px-6"
+      class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 tablet:px-6"
       tabIndex={0}
       aria-label="Transcript"
       data-stream=""
     >
-      <div class="mx-auto flex max-w-[51.25rem] flex-col gap-3 text-sm leading-relaxed sm:text-[15px]">
+      <div class="mx-auto flex max-w-[51.25rem] flex-col gap-3 text-sm leading-relaxed tablet:text-[15px]">
         {items.map((item, i) => {
           const parts: JSX.Element[] = [];
           const day = dayLabel(item.at, now);
@@ -561,7 +561,7 @@ function SessionHeader({
   );
   return (
     <header data-block="header" class={`shrink-0 ${layout === "desktop" ? "px-6 pt-4" : "px-4 pt-3.5"} pb-1`}>
-      <div class="flex min-w-0 items-center gap-1 sm:gap-4">
+      <div class="flex min-w-0 items-center gap-1 tablet:gap-4">
         {layout === "phone" ? (
           <a
             href="#/sessions"
@@ -619,7 +619,7 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
       <SessionHeader d={d} state={state} role={role} ask={ask} layout={layout} />
       {ask ? <NeedsBar item={ask} session={d} layout={layout} /> : null}
       {d.hooks_stale ? (
-        <p data-resume="" class={`shrink-0 border-b ${LINE} px-4 py-2.5 text-sm sm:px-6`}>
+        <p data-resume="" class={`shrink-0 border-b ${LINE} px-4 py-2.5 text-sm tablet:px-6`}>
           Hooks stopped reporting: restart this session with{" "}
           <code class="ui-mono">claude --resume {d.session_id}</code>
         </p>

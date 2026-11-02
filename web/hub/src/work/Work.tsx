@@ -475,7 +475,7 @@ function FiltersBar({
         {/* the field's own label reads out with the input; the placeholder carries the visible
             name, and the magnifier is painted over it from this wrapper, the way the sessions
             list's search does */}
-        <div class="relative w-full sm:w-64 [&_.ui-field-label]:sr-only [&_.ui-input]:pr-4! [&_.ui-input]:pl-11!">
+        <div class="relative w-full tablet:w-64 [&_.ui-field-label]:sr-only [&_.ui-input]:pr-4! [&_.ui-input]:pl-11!">
           <span class="pointer-events-none absolute top-1/2 left-4 z-10 -translate-y-1/2 text-[var(--ui-muted)]">
             <Icon name="search" />
           </span>

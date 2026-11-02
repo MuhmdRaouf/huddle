@@ -1,6 +1,6 @@
 // settings.spec.ts — the Settings tab on the phone and the desktop project: its six groups in
 // order (Appearance, Notifications, Security, Spending, Tips, Hub), at 390 px a grouped list that
-// leads with the hub card and shows each row's current value, at 1024 px a sidebar beside the
+// leads with the hub card and shows each row's current value, at 1200 px a sidebar beside the
 // page, the deep link to a group on both widths, each group page with its members, a member's own
 // address opening the group that holds it, the appearance switch that overrides the OS scheme and
 // keeps the choice across a reload, the push switch that says what the browser allows, the
@@ -54,7 +54,7 @@ const section = (page: Page, name: string) =>
 /** The group page that is open: its link current in the sidebar on a wide screen, its name the
  *  header's title under the back link on the phone. */
 async function expectGroupOpen(page: Page, name: string): Promise<void> {
-  if ((page.viewportSize()?.width ?? 0) < 640) {
+  if ((page.viewportSize()?.width ?? 0) < 768) {
     await expect(page.getByRole("heading", { level: 1, name, exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Back to Settings" })).toBeVisible();
   } else {
@@ -159,8 +159,8 @@ test.describe("at 390 px", () => {
   });
 });
 
-test.describe("at 1024 px", () => {
-  test.use({ viewport: { width: 1024, height: 768 } });
+test.describe("at 1200 px", () => {
+  test.use({ viewport: { width: 1200, height: 768 } });
 
   test("the groups are a sidebar beside the chosen group's page", async ({ page }) => {
     await openSettings(page);

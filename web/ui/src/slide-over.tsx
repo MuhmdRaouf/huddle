@@ -134,7 +134,7 @@ export function SlideOver({
     >
       <div class={`ui-slide-over-panel ${width}`} data-slide-over>
         <div class="ui-slide-over-head border-b border-[var(--ui-line)]">
-          <div class="ui-slide-over-bar px-4 pt-4 pb-3 sm:px-6 sm:pt-5 sm:pb-4">
+          <div class="ui-slide-over-bar px-4 pt-4 pb-3 tablet:px-6 tablet:pt-5 tablet:pb-4">
             {/* one DOM on the bar's grid areas: on a phone the close button keeps the header
              * company on the first row and the actions wrap on their own full-width row, so a
              * wide action group cannot push the close button past the sheet's edge */}
@@ -150,10 +150,10 @@ export function SlideOver({
               {X}
             </button>
           </div>
-          {tabs ? <div class="px-4 pb-3 sm:px-6">{tabs}</div> : null}
+          {tabs ? <div class="px-4 pb-3 tablet:px-6">{tabs}</div> : null}
         </div>
         <div
-          class="ui-slide-over-body px-4 pt-5 pb-[calc(var(--ui-space-1)*5+var(--ui-safe-bottom))] sm:px-6"
+          class="ui-slide-over-body px-4 pt-5 pb-[calc(var(--ui-space-1)*5+var(--ui-safe-bottom))] tablet:px-6"
           data-slide-over-body
         >
           {children}

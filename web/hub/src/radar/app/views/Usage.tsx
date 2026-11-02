@@ -199,7 +199,7 @@ function Stat({
   subline: ComponentChildren;
 }) {
   return (
-    <div class="ui-card w-full p-4 md:p-5">
+    <div class="ui-card w-full p-4 tablet:p-5">
       <div class="text-sm text-[var(--ui-muted)]">{title}</div>
       <div class="num mt-0.5 text-xl font-semibold">{value}</div>
       <div class="mt-1 text-xs text-[var(--ui-muted)]">{subline}</div>
@@ -216,7 +216,7 @@ function Tiles({ report, metric }: { report: UsageReport; metric: UsageMetric })
   const money = <Money usd={totals.costUsd} approximate={report.approximate} />;
   return (
     <section
-      class="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-5"
+      class="grid grid-cols-1 gap-5 tablet:grid-cols-2 desk:grid-cols-5"
       aria-label="Usage totals"
       data-usage-tiles=""
     >
@@ -718,7 +718,7 @@ function TranscriptUsage() {
     }
     return (
       <div class="grid gap-5" aria-live="polite">
-        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-5">
+        <div class="grid grid-cols-1 gap-5 tablet:grid-cols-2 desk:grid-cols-5">
           {[0, 1, 2, 3, 4].map((card) => (
             <div key={card} class="skeleton h-24" />
           ))}
@@ -773,7 +773,7 @@ function TranscriptUsage() {
           </>
         }
       >
-        <div class="grid grid-cols-1 items-start gap-6 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <div class="grid grid-cols-1 items-start gap-6 px-4 py-4 desk:grid-cols-[minmax(0,1fr)_20rem]">
           <UsagePlot data={data} metric={metric} mark={mark} />
           <aside class="grid min-w-0 grid-cols-1 content-start gap-4">
             <SeriesList report={report} metric={metric} hidden={state.usageHidden} />

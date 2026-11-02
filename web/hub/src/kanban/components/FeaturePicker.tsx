@@ -5,6 +5,7 @@ import { timeAgo } from "@huddle/ui/time.ts";
 import type { ToastFn } from "@huddle/ui/toast.tsx";
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { PHONE_QUERY } from "../../app/layout.ts";
 import { featureAction } from "../io.ts";
 import { NO_FEATURE, featureLabel, useMedia } from "../store.ts";
 import type { Card, ClosedFeature } from "../types.ts";
@@ -49,7 +50,7 @@ export function FeaturePicker({
   boardKey,
   toast,
 }: FeaturePickerProps): JSX.Element {
-  const phone = useMedia("(max-width: 39.9375rem)");
+  const phone = useMedia(PHONE_QUERY);
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLSpanElement>(null);

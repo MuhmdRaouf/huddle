@@ -1,4 +1,4 @@
-// layout.test.tsx — the viewport seam: the three layouts the 640 and 1024 px lines cut, and the
+// layout.test.tsx — the viewport seam: the three layouts the 768 and 1200 px lines cut, and the
 // hook that follows a viewport across them through matchMedia's change events.
 import { act } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -9,12 +9,29 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** Whether a "(min-width: N)" query in px or rem holds at a viewport width in px; a rem is 16 px in a media query. */
+function holdsAt(query: string, width: number): boolean {
+  const m = /^\(min-width: (\d+(?:\.\d+)?)(px|rem)\)$/.exec(query);
+  if (m === null) throw new Error(`want a min-width query in px or rem, got ${query}`);
+  return width >= Number(m[1]) * (m[2] === "rem" ? 16 : 1);
+}
+
+/** The layout a viewport width gets from the two queries. */
+const layoutAt = (width: number) => layoutOf(holdsAt(TABLET_QUERY, width), holdsAt(DESKTOP_QUERY, width));
+
 describe("layoutOf", () => {
-  it("cuts phone under 640, tablet to 1023, desktop from 1024", () => {
+  it("cuts phone under 768, tablet to 1199, desktop from 1200", () => {
     expect(layoutOf(false, false)).toBe("phone");
     expect(layoutOf(true, false)).toBe("tablet");
     expect(layoutOf(true, true)).toBe("desktop");
-    expect(layoutOf(false, true)).toBe("desktop"); // a viewport past 1024 is past 640 too
+    expect(layoutOf(false, true)).toBe("desktop"); // a viewport past 1200 is past 768 too
+  });
+
+  it("puts 767 on the phone, 768 and 1199 on the tablet, 1200 on the desk", () => {
+    expect(layoutAt(767)).toBe("phone");
+    expect(layoutAt(768)).toBe("tablet");
+    expect(layoutAt(1199)).toBe("tablet");
+    expect(layoutAt(1200)).toBe("desktop");
   });
 });
 

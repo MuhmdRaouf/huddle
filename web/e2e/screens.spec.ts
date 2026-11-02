@@ -292,7 +292,7 @@ const SCHEMES = ["light", "dark"] as const;
 type Scheme = (typeof SCHEMES)[number];
 
 /** The class names that mark daisyUI or legacy markup: the component classes and the theme's
- *  colour roles, after any variant prefix (`hover:`, `md:`) is stripped. */
+ *  colour roles, after any variant prefix (`hover:`, `tablet:`) is stripped. */
 const LEGACY_CLASS: readonly RegExp[] = [
   /^btn(-[\w-]+)?$/,
   /^tabs?(-[\w-]+)?$/,

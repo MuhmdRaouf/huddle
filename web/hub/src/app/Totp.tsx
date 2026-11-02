@@ -160,7 +160,7 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
             <Icon name="download" />
             Download .txt
           </Button>
-          <Button class="ml-auto w-full sm:w-auto" onClick={onDone}>
+          <Button class="ml-auto w-full tablet:w-auto" onClick={onDone}>
             I saved them, continue
           </Button>
         </div>
@@ -172,9 +172,9 @@ export function TotpSetup({ onDone }: { onDone: () => void }): JSX.Element {
   return (
     <div class="flex flex-col gap-4" data-totp-stage="code">
       {sheet}
-      <div class="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+      <div class="flex flex-col items-start gap-4 tablet:flex-row tablet:items-center">
         {begin ? <QRCode rows={qrRows(begin.qr)} label="Authenticator QR code" /> : null}
-        <div class="flex w-full min-w-0 flex-col gap-2 sm:flex-1">
+        <div class="flex w-full min-w-0 flex-col gap-2 tablet:flex-1">
           <p class="m-0 text-sm text-[var(--ui-muted)]">
             Scan the code with your authenticator app (Google Authenticator, 1Password, Authy), or type the
             secret by hand.
@@ -223,7 +223,7 @@ export function TotpFirstRun({ onDone, onLater }: { onDone: () => void; onLater:
             It takes a minute.
           </p>
         </div>
-        <div class="ui-card min-w-0 p-4 sm:p-6">
+        <div class="ui-card min-w-0 p-4 tablet:p-6">
           <TotpSetup onDone={onDone} />
         </div>
         <Button variant="ghost" class="mx-auto" data-totp-later="" onClick={onLater}>

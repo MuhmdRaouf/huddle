@@ -17,7 +17,7 @@
   line-height: var(--ui-leading);
 }
 
-@media (min-width: 768px) {
+@variant tablet {
   .ui-page {
     padding: var(--ui-space-6);
   }
@@ -762,7 +762,7 @@ button.ui-list-row:hover {
   padding: var(--ui-space-4);
 }
 
-@media (min-width: 768px) {
+@variant tablet {
   .ui-sheet-panel {
     inset: 0 0 0 auto;
     width: min(28rem, 100%);
@@ -783,7 +783,7 @@ dialog[data-ui-covered]::backdrop {
   background: transparent;
 }
 
-@media (min-width: 768px) {
+@variant tablet {
   dialog[data-ui-covered] {
     visibility: visible;
   }
@@ -844,7 +844,7 @@ dialog[data-ui-covered]::backdrop {
   overflow-y: auto;
 }
 
-@media (min-width: 768px) {
+@variant tablet {
   .ui-dialog {
     width: min(40rem, calc(100vw - 2 * var(--ui-space-4)));
     margin: auto;
@@ -947,7 +947,7 @@ dialog[data-ui-covered]::backdrop {
   grid-template-areas: "head close";
 }
 
-@media (min-width: 40rem) {
+@variant tablet {
   .ui-slide-over-bar {
     grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas: "head actions close";
@@ -985,7 +985,7 @@ dialog[data-ui-covered]::backdrop {
   pointer-events: none;
 }
 
-@media (min-width: 40rem) {
+@variant tablet {
   .ui-toast-stack {
     right: var(--ui-space-4);
     bottom: var(--ui-space-4);

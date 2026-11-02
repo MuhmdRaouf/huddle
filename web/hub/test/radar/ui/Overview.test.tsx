@@ -614,7 +614,7 @@ describe("the Overview on the phone", () => {
   });
 
   it("keeps the cards on a desktop, Anthropic's limits first, the spend tile with today's ledger as it reads", () => {
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    stubMedia({ "(min-width: 48rem)": true, "(min-width: 75rem)": true });
     const { container } = overview(busyDay);
     expect(container.querySelector("[data-phone-tiles]")).toBeNull();
     const stats = [...container.querySelectorAll("[data-stat-cards] [data-stat]")];
@@ -652,7 +652,7 @@ describe("the Overview on the phone", () => {
   }
 
   it("leads the desktop with 5 h and 7 d used as percentages and when each resets", () => {
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    stubMedia({ "(min-width: 48rem)": true, "(min-width: 75rem)": true });
     const { container } = overview({ ...busyDay, summary: { ...fixtures.summary, utilization: limits } });
     const first = container.querySelector("[data-stat-cards] [data-stat]");
     expect(first?.getAttribute("data-stat")).toBe("limits");
@@ -684,7 +684,7 @@ describe("the Overview on the phone", () => {
   });
 
   it("shows a dash and says no Anthropic answer yet while no claude-* answer carried the headers", () => {
-    for (const media of [{}, { "(min-width: 640px)": true, "(min-width: 1024px)": true }]) {
+    for (const media of [{}, { "(min-width: 48rem)": true, "(min-width: 75rem)": true }]) {
       stubMedia(media);
       const { container } = overview(busyDay);
       const tile = container.querySelector('[data-stat="limits"]');

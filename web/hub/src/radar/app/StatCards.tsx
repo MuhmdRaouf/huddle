@@ -50,7 +50,7 @@ function Stat({
 }
 
 /** The grid the stat cards sit in: one across on phones, two from md, four from xl. */
-const STAT_GRID = "grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4";
+const STAT_GRID = "grid grid-cols-1 gap-5 tablet:grid-cols-2 desk:grid-cols-4";
 
 /** The stop reasons the server's summary counts as errors (store/aggregate.ts), so the strip's range
  *  count — notices included, as the summary's own count is — matches the all-time count it replaces. */
@@ -337,8 +337,8 @@ export function SessionScopePanel() {
   const workspace = item.repo ?? item.cwd;
   const split = item.costSplitUsd ?? null;
   return (
-    <Panel title="Session" meta={item.live ? "Live" : "Ended"} class="md:col-span-2 xl:col-span-4">
-      <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <Panel title="Session" meta={item.live ? "Live" : "Ended"} class="tablet:col-span-2 desk:col-span-4">
+      <dl class="grid grid-cols-1 gap-4 tablet:grid-cols-2 desk:grid-cols-4">
         <ScopeFact label="Name" value={item.name ?? item.project ?? item.id.slice(0, 8)} title={item.id} />
         {workspace !== null && <ScopeFact label="Path" value={homeShort(workspace)} title={workspace} />}
         {item.branch !== null && <ScopeFact label="Branch" value={item.branch} />}

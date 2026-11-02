@@ -92,7 +92,7 @@ export function RadarDayView({ data }: { data: RadarDayData }): JSX.Element {
   return (
     <Card label="Today in Radar">
       <div class="flex flex-col gap-3">
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="grid grid-cols-2 gap-3 tablet:grid-cols-4">
           <Figure
             word="Cost today"
             value={fmtUsd(data.costUsd)}

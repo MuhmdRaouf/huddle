@@ -1,5 +1,6 @@
 import { Button } from "@huddle/ui/button.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { PHONE_QUERY } from "../../app/layout.ts";
 import type { Density, Grouping } from "../store.ts";
 import { type FilterKind, type Filters, clearPicks, hiddenDone, togglePick, useMedia } from "../store.ts";
 import type { Card } from "../types.ts";
@@ -307,7 +308,7 @@ export function Toolbar({
 }: ToolbarProps) {
   const search = useRef<HTMLInputElement>(null);
   const [openKind, setOpenKind] = useState<FilterKind | null>(null);
-  const narrow = useMedia("(max-width: 39.9375rem)");
+  const narrow = useMedia(PHONE_QUERY);
   // a touch screen has no / key to press, so its hint is the plain word
   const touch = useMedia("(pointer: coarse)");
   const [unfolded, setUnfolded] = useState(false);

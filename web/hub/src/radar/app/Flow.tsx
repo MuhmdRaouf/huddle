@@ -324,7 +324,7 @@ export function Flow() {
         </>
       }
     >
-      <div class="grid items-start gap-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
+      <div class="grid items-start gap-6 desk:grid-cols-[17rem_minmax(0,1fr)]">
         <FlowSummary
           series={series}
           failed={state.flowError !== null}

@@ -442,7 +442,7 @@ describe("Knowledge reader", () => {
       container.querySelector("#kbr section, #kbr article, #kbr .panel") ??
         container.querySelector("#kbr .panel"),
     ).toBeTruthy();
-    expect(container.querySelector("#kbr")?.className).not.toContain("max-lg:hidden");
+    expect(container.querySelector("#kbr")?.className).not.toContain("max-tablet:hidden");
   });
 
   it("answers a route-named entry the server does not know with the empty state", async () => {

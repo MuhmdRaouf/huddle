@@ -209,8 +209,8 @@ describe("the Session screen", () => {
     api?: Api,
   ): RegistryStore => {
     stubMedia({
-      "(min-width: 640px)": layout !== "phone",
-      "(min-width: 1024px)": layout === "desktop",
+      "(min-width: 48rem)": layout !== "phone",
+      "(min-width: 75rem)": layout === "desktop",
     });
     const registry = makeRegistry({
       sessions: fixture(),
@@ -256,7 +256,7 @@ describe("the Session screen", () => {
 
   it("draws no model or context in the status line when the session carries none", () => {
     const { model: _model, context_percent: _pct, ...bare } = detail();
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     const registry = makeRegistry({ sessions: fixture(), open: bare, openId: "s-need-1" });
     followRender(() => <SessionScreen id="s-need-1" layout="phone" />, registry);
     const status = document.querySelector("[data-status-line]") as HTMLElement;
@@ -295,7 +295,7 @@ describe("the Session screen", () => {
     // a report that names no harness comes from Claude Code
     cleanup();
     const { harness: _harness, ...bare } = detail();
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    stubMedia({ "(min-width: 48rem)": true, "(min-width: 75rem)": true });
     followRender(
       () => <SessionScreen id="s-need-1" layout="desktop" />,
       makeRegistry({ sessions: fixture(), open: bare, openId: "s-need-1" }),
@@ -688,7 +688,7 @@ describe("the Session screen", () => {
 
   it("reads a transcript again after the registry stream reconnects: what grew while it was down appears", async () => {
     const { hub, api } = transcriptHub([said("p1", "user", "Move the backup job to pve2")]);
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     const source = { onopen: null, onerror: null, onmessage: null, close: () => {} } as EventSourceLike;
     const greet = (): void => source.onmessage?.({ data: JSON.stringify({ type: "hello" }) });
     const registry = createRegistry({
@@ -736,7 +736,7 @@ describe("the Session screen", () => {
   });
 
   it("waits quietly while the detail loads, and says when there is no such session", () => {
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     const loading = makeRegistry({ sessions: [], open: null, openId: "s-x" });
     followRender(() => <SessionScreen id="s-x" layout="phone" />, loading);
     expect(screen.getByText("Reading the session…")).toBeDefined();
@@ -775,7 +775,7 @@ describe("the Session screen", () => {
 
   it("puts the desk title alone on its row and the facts in one status line under it", async () => {
     cleanup();
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    stubMedia({ "(min-width: 48rem)": true, "(min-width: 75rem)": true });
     // the actions read the channel links before they render, so the api answers them
     const { api } = apiFake((path) =>
       path === "/api/links"
@@ -831,7 +831,7 @@ describe("the Session screen", () => {
   });
 
   it("names the state as the mock does in the header's status line and the rail's Now row: first letter capitalised", () => {
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    stubMedia({ "(min-width: 48rem)": true, "(min-width: 75rem)": true });
     const registry = makeRegistry({ sessions: fixture(), open: detail(), openId: "s-need-1" });
     followRender(
       () => (
@@ -864,7 +864,7 @@ describe("the Session screen", () => {
 
 describe("the session rail", () => {
   const mountRail = (over: Partial<RegistryDetail> = {}, open: RegistryDetail = detail(over)): void => {
-    stubMedia({ "(min-width: 640px)": true, "(min-width: 1024px)": true });
+    stubMedia({ "(min-width: 48rem)": true, "(min-width: 75rem)": true });
     const registry = makeRegistry({ sessions: fixture(), open });
     followRender(() => <NowContext />, registry);
   };
@@ -1002,7 +1002,7 @@ describe("the session screen's link actions", () => {
     toast: ReturnType<typeof vi.fn>;
   } => {
     cleanup();
-    stubMedia({ "(min-width: 640px)": false, "(min-width: 1024px)": false });
+    stubMedia({ "(min-width: 48rem)": false, "(min-width: 75rem)": false });
     const { api, calls } = apiFake(answer);
     const toast = vi.fn();
     const registry = makeRegistry({ sessions: fixture(), open: detail(), openId: "s-need-1" });

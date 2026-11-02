@@ -152,8 +152,8 @@ test.describe("radar's view navigation", () => {
     );
   });
 
-  test("at 1024 px a sidebar lists every view beside the pane", async ({ page }) => {
-    await page.setViewportSize({ width: 1024, height: 768 });
+  test("at 1200 px a sidebar lists every view beside the pane", async ({ page }) => {
+    await page.setViewportSize({ width: 1200, height: 768 });
     await signIn(page);
     await page.goto(`${theSetup().rootUrl}/#/radar/models`);
     const nav = page.getByRole("navigation", { name: "Radar views" });

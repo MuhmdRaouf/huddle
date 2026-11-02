@@ -446,7 +446,7 @@ function RequestsCharts({ requests }: { requests: RequestRecord[] }) {
       subtitle={`${label}, ${bucketWord(data.bucketMs)} per bar`}
       flush
     >
-      <div class="grid gap-6 px-5 py-4 xl:grid-cols-2" data-requests-charts="">
+      <div class="grid gap-6 px-5 py-4 desk:grid-cols-2" data-requests-charts="">
         <RequestsChart data={data} from={from} to={to} now={now} label={label} />
         <TokensChart data={data} from={from} to={to} now={now} label={label} />
       </div>
