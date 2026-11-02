@@ -230,6 +230,61 @@ func TestSyncReportsUnwritableFolder(t *testing.T) {
 	}
 }
 
+// agentTempName is a temp file name in the shape fsutil.WriteFileAtomic gives one: the target,
+// ".tmp-", the writer's pid, a dash and 26 base32 characters.
+const agentTempName = "sonnet-5.5.md.tmp-4242-ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+// seedFile writes a file into the folder and sets its mtime.
+func seedFile(t *testing.T, folder, name string, modified time.Time) string {
+	t.Helper()
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(folder, name)
+	if err := os.WriteFile(path, []byte("---\npartial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, modified, modified); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestSyncSweepsStaleTempFiles: a temp file in WriteFileAtomic's shape that is older
+// than a minute is removed, a fresh one (a concurrent session start's live write) stays.
+func TestSyncSweepsStaleTempFiles(t *testing.T) {
+	env, folder := agentsEnv(t)
+	old := seedFile(t, folder, agentTempName, time.Now().Add(-2*time.Minute))
+	fresh := seedFile(t, folder, "opus-5.5.md.tmp-77-ZYXWVUTSRQPONMLKJIHGFEDCBA", time.Now().Add(-10*time.Second))
+	if err := SyncClaudeAgents(context.Background(), env); err != nil {
+		t.Fatalf("SyncClaudeAgents: %v", err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Errorf("the stale temp file survived: %v", err)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Errorf("a fresh temp file was removed: %v", err)
+	}
+}
+
+// TestSyncSweepKeepsFilesOutsideTheTempShape: names that only look alike stay, however old.
+func TestSyncSweepKeepsFilesOutsideTheTempShape(t *testing.T) {
+	env, folder := agentsEnv(t)
+	longAgo := time.Now().Add(-48 * time.Hour)
+	kept := []string{"notes.md.tmp", "x.tmp-1-a", "notes.md.tmp-12-short", "sonnet-5.5.md.tmp-4242-ABCDEFGHIJKLMNOPQRSTUVWXYZ.bak", "sonnet-5.5.tmp-4242-ABCDEFGHIJKLMNOPQRSTUVWXYZ"}
+	for _, name := range kept {
+		seedFile(t, folder, name, longAgo)
+	}
+	if err := SyncClaudeAgents(context.Background(), env); err != nil {
+		t.Fatalf("SyncClaudeAgents: %v", err)
+	}
+	for _, name := range kept {
+		if _, err := os.Stat(filepath.Join(folder, name)); err != nil {
+			t.Errorf("%s was removed: %v", name, err)
+		}
+	}
+}
+
 // keysOfFiles lists a name→bytes map's keys, sorted by the map read order.
 func keysOfFiles(files map[string][]byte) []string {
 	names := make([]string, 0, len(files))

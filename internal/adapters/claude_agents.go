@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/adapters/fsutil"
 	"github.com/MuhmdRaouf/huddle/internal/agents"
@@ -20,9 +21,11 @@ import (
 // SyncClaudeAgents keeps one agent file per Claude model family in Claude Code's agents folder
 // (ClaudeConfigDir(env)/agents), so the agent panel names the model each subagent runs on. It reads
 // the folder's .md files, applies agents.Decide, writes with fsutil.WriteFileAtomic and removes only
-// files that still carry the marker. It touches nothing else.
+// files that still carry the marker. It sweeps the stale temp files a killed write left behind
+// (sweepAgentTemps) and touches nothing else.
 func SyncClaudeAgents(ctx context.Context, env domain.EnvLookup) error {
 	folder := filepath.Join(ClaudeConfigDir(env), "agents")
+	sweepAgentTemps(folder, time.Now())
 	existing, firstErr := readAgentFiles(folder)
 	// Whatever read failed, the rest of the pass still runs: the guards below keep anything that
 	// could not be read from ever being replaced.

@@ -543,3 +543,25 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Rule:** a test waits for the condition it asserts, under a hang guard, and never for a fixed delay; a test
   that needs "more than one chunk" shrinks the chunk through a seam instead of growing the input. A flake under
   load is a bug in the test or the product, never a reason to re-run or lengthen a deadline.
+
+## 2026-11-02, the agents part overran its 100 ms on a busy disk and the killed hook left temp files
+
+- **What happened:** the full gate failed `TestAgentsHookE2E` once with `stat sonnet-5.5.md: no such file or
+  directory` while the 5-minute load stood near 90. It passed in the two gates before it. Under four processes
+  writing and fsyncing files, 5 of 5 runs of the test failed, and a built `huddle hook session-start` left 0 of the
+  4 agent files in 19 of 30 runs, each of those with a stray `<name>.md.tmp-<pid>-<rand>` file in the agents folder.
+- **Cause:** the agents part writes up to 4 files, each with a file fsync and a directory fsync, so 8 syncs; on
+  darwin Go's file sync is `F_FULLFSYNC`, about 5 ms each, so a cold start took 38 ms of the part's 100 ms. A busy
+  disk stretches each sync, the part overruns, `runPart` drops it and the next part runs. The dropped part's
+  goroutine kept writing, and the process exited as soon as the last part answered, in the middle of a write:
+  the temp file stayed, and nothing ever removed it. CPU load alone did not trigger it (0 of 6 runs).
+- **Guard:** `TestAgentsHookE2E` (cmd/huddle/agents_hook_e2e_test.go) passes 10 of 10 runs under the same disk
+  load; `TestWriteFileAtomic` (internal/adapters/fsutil/fsutil_test.go) pins that a write without sync lands whole
+  and leaves no temp file; `TestSyncRewritesAnEmptyFileWithHuddlesName` and `TestThePanelNamesEachSubagentsModel`
+  pin that an empty file with one of huddle's names is rewritten and a non-empty file without the marker stays the
+  user's; `TestSyncSweepsStaleTempFiles` and `TestSyncSweepKeepsFilesOutsideTheTempShape`
+  (internal/adapters/claude_agents_test.go) pin that only a temp file older than a minute in the writer's exact
+  shape is removed.
+- **Rule:** a file a hook part regenerates on every start is written without fsync, so its deadline never waits on
+  the disk; the atomic rename stays, and an empty file with one of the part's names is the part's to rewrite. A
+  part sweeps its own stale temp files, matched by the exact shape and an age beyond any live write.
