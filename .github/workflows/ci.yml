@@ -314,7 +314,10 @@ jobs:
           path: coverage.out
           retention-days: 1
           if-no-files-found: error
-      - if: always()
+      # Passing or failing, the shard's test events (every t.Log line, the perf guards' measured and reference
+      # numbers among them) stay readable for a day.
+      - name: Save the test events (the perf guards' numbers are in them)
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: go-test-json-${{ matrix.shard }}
@@ -482,7 +485,10 @@ jobs:
           # shellcheck disable=SC2086
           go test -json -timeout 6m $FLAGS $PKGS |
             tee go-test.json | jq -R -j 'fromjson? | select(.Action == "output" or .Action == "build-output") | .Output'
-      - if: always()
+      # Passing or failing, the shard's test events (every t.Log line, the perf guards' measured and reference
+      # numbers among them) stay readable for a day.
+      - name: Save the test events (the perf guards' numbers are in them)
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: go-test-json-macos-${{ matrix.shard }}

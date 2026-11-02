@@ -89,8 +89,10 @@ huddle-router is up at http://127.0.0.1:18786 · pid 41188
 
 The router stays out of the way of a session: it adds under 5 ms to the first byte of a streamed answer and
 under 1 ms to each chunk, on a provider lane and on the decrypted `api.anthropic.com` path alike, and with no
-request in flight it uses under 0.5% of one core. `TestE2ERouterOverhead` and `TestRouterIdleCPU` hold it to
-both budgets. Beside that, huddle-router keeps every request's and answer's body for the dashboard's
+request in flight it uses under 0.5% of one core. The overhead is measured beyond a reference child process
+(a plain TCP relay for the lane, a TLS twin for the decrypted path) running the same stream in the same test run,
+as the median of 20 paired deltas. `TestE2ERouterOverhead` and `TestRouterIdleCPU` hold it to both budgets.
+Beside that, huddle-router keeps every request's and answer's body for the dashboard's
 history-retention days, at most 30 (a keep-everything setting still holds bodies 30 days), in
 `~/.agents/radar/ledger/router.db` — redacted, and sealed under a key in the login account's keystore — so the
 dashboard can show a session's whole exchange afterwards; with no keystore (a home that is not the login
@@ -507,8 +509,9 @@ one that does not parse stops nothing — a broken radar never cuts you off, and
 requests are never read against it.
 
 An idle hub costs next to nothing: with no request and no page open, `huddle serve` uses under 0.5% of one
-core over a home holding 500 days-old sessions, because Radar's 5 s transcript rescan re-reads only the
-folders that changed. `TestHubIdleCPU` holds it to that budget.
+core beyond an idle reference child process in the same 10 s window, over a home holding 500 days-old sessions,
+because Radar's 5 s transcript rescan re-reads only the folders that changed. `TestHubIdleCPU` holds it to that
+budget.
 
 A budget warns at 80% of its limit and again at 100%. Claude's 5-hour plan window has no budget, so
 Radar raises a "Quota nearly used" alert when the newest status line snapshot shows it at 80% or more:

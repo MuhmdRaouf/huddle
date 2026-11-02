@@ -348,10 +348,17 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   `"fails closed when gh answers something that is not a run"` (scripts/ci-green.test.mjs). The shard split that
   keeps every Go job under its cap is held by `TestEveryModulePackageFallsInExactlyOneShard`,
   `TestEveryTestRunsInExactlyOneShardOfASplitPackage` and `TestCIRunsEveryShardOnLinuxAndMacOS`
-  (scripts/covergate/main_test.go).
+  (scripts/covergate/main_test.go). The two perf guards enforce on every runner against a reference measured in the
+  same run: `TestHubIdleCPU` holds the hub's idle CPU share beyond an idle reference process's in the same window
+  under 0.5% of one core, and `TestE2ERouterOverhead` holds the router's first-byte and per-chunk overhead beyond a
+  relay process (a TLS twin for the CONNECT path) under 5 ms and 1 ms. `TestIdleWindowVerdict`,
+  `TestIdleReferenceRunsInAnotherProcess` and `TestOverheadReferenceRunsInAnotherProcess` hold the verdict and the
+  reference processes.
 - **Rule:** no deploy lands while the last main CI run is red: the deploy script calls
   `node scripts/ci-green.mjs` first, and a gh that is missing or offline refuses too. The push that fixes main is
-  the owner's call.
+  the owner's call. A perf budget is never skipped or only recorded on a slower runner: the guard measures a
+  reference process in the same job and judges the difference, and it logs both numbers on every run, which the
+  job's `go-test-json` artifact keeps for one day.
 
 ## 2026-11-01, transcript secrets reached history.db in plain text
 

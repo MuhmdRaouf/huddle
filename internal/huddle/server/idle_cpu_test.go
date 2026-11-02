@@ -4,7 +4,9 @@ package server
 // timers must cost next to nothing. The whole hub runs in this process the way serve starts
 // it (the hub, the registry's watchers and the radar tab) over a temp home that holds days of
 // transcripts, and the process's own CPU time is sampled while
-// nothing talks to it. The gate is the best of three windows.
+// nothing talks to it. An idle reference process sits beside it through the same windows
+// (idle_cpu_baseline_test.go), and the gate is the best of three windows of the hub's share
+// beyond the reference's.
 
 import (
 	"context"
@@ -23,7 +25,8 @@ import (
 )
 
 const (
-	// idleCPUBudget is the most of one core the idle daemon may use.
+	// idleCPUBudget is the most of one core the idle daemon may use beyond an idle reference
+	// process in the same window.
 	idleCPUBudget = 0.005
 	idleSample    = 10 * time.Second
 	// idleWindows is how many windows the gate samples: noise lands in some windows, a
@@ -158,34 +161,31 @@ func TestHubIdleCPU(t *testing.T) {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
+	reference := startIdleReference(t, root)
 	// The start's own work (the registry, the radar tab's first ingest of today's transcripts)
-	// settles before the sample.
+	// settles before the sample, and so does the reference's own start.
 	time.Sleep(3 * time.Second)
 
-	var shares []float64
+	var hubShares, referenceShares []float64
 	held, settled := false, false
 	for window := 1; !settled && window <= idleWindows; window++ {
-		cpuBefore, wallBefore := cpuTime(t), time.Now()
+		hubBefore, referenceBefore, wallBefore := cpuTime(t), reference.cpuTime(t), time.Now()
 		time.Sleep(idleSample)
-		used, wall := cpuTime(t)-cpuBefore, time.Since(wallBefore)
-		share := float64(used) / float64(wall)
-		shares = append(shares, share)
-		t.Logf("window %d: idle hub: %v CPU over %v = %.3f%% of one core (budget %.1f%%)",
-			window, used, wall.Round(time.Millisecond), share*100, idleCPUBudget*100)
-		held, settled = idleVerdict(shares, idleCPUBudget)
+		hubUsed, referenceUsed, wall := cpuTime(t)-hubBefore, reference.cpuTime(t)-referenceBefore, time.Since(wallBefore)
+		hubShare, referenceShare := float64(hubUsed)/float64(wall), float64(referenceUsed)/float64(wall)
+		hubShares = append(hubShares, hubShare)
+		referenceShares = append(referenceShares, referenceShare)
+		t.Logf("window %d: idle hub: %v CPU over %v = %.3f%% of one core; idle reference process %d: %v = %.3f%%; hub beyond the reference %.3f%% (budget %.1f%%)",
+			window, hubUsed, wall.Round(time.Millisecond), hubShare*100, reference.pid, referenceUsed, referenceShare*100,
+			max(hubShare-referenceShare, 0)*100, idleCPUBudget*100)
+		held, settled = idleWindowVerdict(hubShares, referenceShares, idleCPUBudget)
 	}
 	if !held {
-		// macOS CI records only until the same-job baseline lands; HV-PERF-GUARD-BASELINE removes
-		// this branch and its guard test (testkit.RecordOnly).
-		if testkit.RecordOnly() {
-			t.Log(testkit.RecordOnlyNotice)
-			return
+		named := make([]string, len(hubShares))
+		for i := range hubShares {
+			named[i] = fmt.Sprintf("window %d: hub %.3f%%, reference %.3f%%", i+1, hubShares[i]*100, referenceShares[i]*100)
 		}
-		named := make([]string, len(shares))
-		for i, share := range shares {
-			named[i] = fmt.Sprintf("window %d: %.3f%%", i+1, share*100)
-		}
-		t.Errorf("the idle hub is at or over its %.1f%% budget in every window: %s",
+		t.Errorf("the idle hub is at or over its %.1f%% budget beyond an idle reference process in every window: %s",
 			idleCPUBudget*100, strings.Join(named, ", "))
 	}
 }

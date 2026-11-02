@@ -1,22 +1,22 @@
 package main
 
 // The router's latency gate, end to end: a fake upstream streams 200 SSE chunks 10 ms apart, and
-// the same stream is read four ways at once — straight from the fake, through a plain TCP relay
-// in front of the fake, through huddle-router's provider lane, and through its decrypted CONNECT
-// api.anthropic.com path. What the router adds to the first byte and to each chunk's trip must
-// stay under the budgets below, so a session never feels the router. The daemon is this test's
-// own child on a free port and a temp home.
+// the same stream is read five ways at once — straight from the fake, through a reference
+// process's plain TCP relay, through huddle-router's provider lane, through the reference's TLS
+// twin, and through the router's decrypted CONNECT api.anthropic.com path. What the router adds
+// to the first byte and to each chunk's trip, beyond the reference path that matches it, must
+// stay under the budgets below, so a session never feels the router. The reference process is
+// measured in the same run on the same machine, so the budgets hold on a slow runner as they
+// do on a fast one (router_overhead_baseline_test.go). The daemon is this test's own child on a
+// free port and a temp home.
 
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -40,7 +40,8 @@ import (
 const (
 	// firstByteBudget is the most the router may add to the first streamed byte: the median
 	// over overheadRuns of each run's paired first-byte delta, the routed path's first byte
-	// minus the relay path's in that same run. The relay is a plain TCP hop to the fake, so the
+	// minus its reference path's in that same run. The reference is a hop to the fake in
+	// another process (a plain relay for the lane, a TLS twin for the CONNECT path), so the
 	// delta holds the router's work over being a hop, and a router that adds 5 ms still fails.
 	// The hop is only logged, as the routed path's first byte minus the direct path's: a
 	// request's first byte comes after its whole body has gone out, so a 2 MiB body is timed
@@ -48,7 +49,8 @@ const (
 	// whose default buffers are small) that the router, a separate process, cannot avoid.
 	firstByteBudget = 5 * time.Millisecond
 	// chunkBudget is the most the router may add to one chunk's trip (the median over
-	// overheadRuns of each run's median chunk).
+	// overheadRuns of each run's median chunk, each less its reference path's from the same
+	// run).
 	chunkBudget = time.Millisecond
 
 	overheadChunks = 200
@@ -152,39 +154,6 @@ func median(values []time.Duration) time.Duration {
 	return sorted[len(sorted)/2]
 }
 
-// tcpRelay forwards every connection it accepts to upstream byte for byte, the cheapest hop
-// there is, and returns its address. Closing a side ends both directions.
-func tcpRelay(t *testing.T, upstream string) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = listener.Close() })
-	go func() {
-		for {
-			client, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				server, err := net.Dial("tcp", upstream)
-				if err != nil {
-					_ = client.Close()
-					return
-				}
-				go func() {
-					_, _ = io.Copy(server, client)
-					_ = server.Close()
-				}()
-				_, _ = io.Copy(client, server)
-				_ = client.Close()
-			}()
-		}
-	}()
-	return listener.Addr().String()
-}
-
 // medianInt64 is the median of a slice of counts, 0 when there is none.
 func medianInt64(values []int64) int64 {
 	if len(values) == 0 {
@@ -242,19 +211,13 @@ func TestE2ERouterOverhead(t *testing.T) {
 	caDir := filepath.Join(root, "ca")
 	base := time.Now()
 	fake := overheadFake(t, base)
-	relayAddr := tcpRelay(t, strings.TrimPrefix(fake.URL, "http://"))
 	routerPort := ports.Free(t)
 
 	// The CA the router decrypts api.anthropic.com with is the one the client trusts; the
-	// router loads this very one from the directory beside its home.
-	ca, err := pki.LoadOrCreateRouterCA(context.Background(), caDir, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(ca.CertPEM()) {
-		t.Fatal("the CA's PEM did not parse")
-	}
+	// router loads this very one from the directory beside its home, and the reference's TLS
+	// twin mints its certificate from it the same way.
+	pool := routerCAPool(t, caDir)
+	reference := startOverheadReference(t, strings.TrimPrefix(fake.URL, "http://"), caDir)
 	if err := os.MkdirAll(routerHome, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -303,6 +266,7 @@ func TestE2ERouterOverhead(t *testing.T) {
 	if daemonPID <= 0 {
 		t.Fatal("the daemon published no pid")
 	}
+	t.Logf("processes: the test %d, the router %d, the reference %d", os.Getpid(), daemonPID, reference.pid)
 	t.Cleanup(func() {
 		_ = syscall.Kill(daemonPID, syscall.SIGTERM)
 		if !pollFor(5*time.Second, func() bool { return !healthy() }) {
@@ -317,21 +281,25 @@ func TestE2ERouterOverhead(t *testing.T) {
 		TLSClientConfig:    &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
 		DisableCompression: true,
 	}}
+	// the indices of the paths the routed ones are measured against
+	const direct, relay, twin = 0, 1, 3
 	// route is the route event name the daemon writes for a forwarded request on this path,
-	// "" for the direct and relay paths that never meet the router.
+	// "" for the direct and reference paths that never meet the router. reference is the index
+	// of the reference path a routed path is measured against, -1 for a path that has none.
 	paths := []struct {
-		name   string
-		client *http.Client
-		target string
-		model  string
-		route  string
+		name      string
+		client    *http.Client
+		target    string
+		model     string
+		route     string
+		reference int
 	}{
-		{"direct", plain, fake.URL + "/v1/messages", "claude-opus-5-5", ""},
-		{"relay", plain, "http://" + relayAddr + "/v1/messages", "claude-opus-5-5", ""},
-		{"lane", plain, routerURL + "/v1/messages", "glm-5.3", "provider"},
-		{"connect", proxied, "https://" + pki.RouterHost + "/v1/messages", "claude-opus-5-5", "anthropic"},
+		{"direct", plain, fake.URL + "/v1/messages", "claude-opus-5-5", "", -1},
+		{"relay", plain, "http://" + reference.relayAddr + "/v1/messages", "claude-opus-5-5", "", -1},
+		{"lane", plain, routerURL + "/v1/messages", "glm-5.3", "provider", relay},
+		{"twin", twinClient(pool, reference.twinAddr), "https://" + pki.RouterHost + "/v1/messages", "claude-opus-5-5", "", -1},
+		{"connect", proxied, "https://" + pki.RouterHost + "/v1/messages", "claude-opus-5-5", "anthropic", twin},
 	}
-	const direct, relay = 0, 1
 	// Real Claude Code requests run from a small prompt to several MiB of context, and each size
 	// must hold the budgets.
 	sizes := []struct {
@@ -351,8 +319,8 @@ func TestE2ERouterOverhead(t *testing.T) {
 	own := map[string][]int64{}
 
 	for _, size := range sizes {
-		// The four paths of one run stream at the same moment, so each run's noise lands on all
-		// four alike and the gate takes 20 streams' time, not 80.
+		// The five paths of one run stream at the same moment, so each run's noise lands on all
+		// five alike and the gate takes 20 streams' time, not 100.
 		runs := make([][]streamTiming, overheadRuns)
 		for run := range overheadRuns {
 			timings := make([]streamTiming, len(paths))
@@ -408,17 +376,24 @@ func TestE2ERouterOverhead(t *testing.T) {
 			}
 			t.Run(path.name+", "+size.name, func(t *testing.T) {
 				// The paired deltas come from the same run on both sides, so one moment's load
-				// lands on both and their median is what the router itself adds. The first byte
-				// is asserted against the relay's, which carries the cost of any hop, and logged
-				// against the direct path's; the chunks are asserted against the direct path,
-				// since a chunk's trip has no body to copy.
+				// lands on both and their median is what the router itself adds beyond the
+				// reference process that does its job without the router's work. The direct
+				// path is logged beside them.
+				first := make([]time.Duration, 0, overheadRuns)
+				chunks := make([]time.Duration, 0, overheadRuns)
 				firstDeltas := make([]time.Duration, 0, overheadRuns)
 				directDeltas := make([]time.Duration, 0, overheadRuns)
 				chunkOverheads := make([]time.Duration, 0, overheadRuns)
+				referenceFirst := make([]time.Duration, 0, overheadRuns)
+				referenceChunks := make([]time.Duration, 0, overheadRuns)
 				for _, timings := range runs {
-					firstDeltas = append(firstDeltas, timings[at].firstByte-timings[relay].firstByte)
+					first = append(first, timings[at].firstByte)
+					chunks = append(chunks, timings[at].chunk)
+					referenceFirst = append(referenceFirst, timings[path.reference].firstByte)
+					referenceChunks = append(referenceChunks, timings[path.reference].chunk)
+					firstDeltas = append(firstDeltas, timings[at].firstByte-timings[path.reference].firstByte)
 					directDeltas = append(directDeltas, timings[at].firstByte-timings[direct].firstByte)
-					chunkOverheads = append(chunkOverheads, timings[at].chunk-timings[direct].chunk)
+					chunkOverheads = append(chunkOverheads, timings[at].chunk-timings[path.reference].chunk)
 				}
 				firstOverhead := median(firstDeltas)
 				chunkOverhead := median(chunkOverheads)
@@ -432,22 +407,17 @@ func TestE2ERouterOverhead(t *testing.T) {
 					ownUs = append(ownUs, *event.routerUs)
 				}
 				own[path.route] = append(own[path.route], ownUs...)
-				t.Logf("%s, %s: first byte overhead %v over the relay, median of %d paired deltas (budget %v); over the direct path %v, the hop included (logged only); chunk overhead median %v (budget %v); router %d µs",
-					path.name, size.name, firstOverhead, overheadRuns, firstByteBudget, median(directDeltas),
-					chunkOverhead, chunkBudget, medianInt64(ownUs))
+				t.Logf("%s, %s: first byte %v against the %s reference's %v, overhead %v median of %d paired deltas (budget %v), %v over the direct path, the hop included (logged only); chunk trip %v against the reference's %v, overhead %v (budget %v); router %d µs",
+					path.name, size.name, median(first), paths[path.reference].name, median(referenceFirst), firstOverhead, overheadRuns,
+					firstByteBudget, median(directDeltas), median(chunks), median(referenceChunks), chunkOverhead, chunkBudget,
+					medianInt64(ownUs))
 				// the race detector slows the router's own work 5-20x and not the fake's, so a race
 				// build logs the numbers and holds the budgets to the plain build
 				if testkit.RaceEnabled {
 					return
 				}
-				// macOS CI records only until the same-job baseline lands; HV-PERF-GUARD-BASELINE removes
-				// this branch and its guard test (testkit.RecordOnly).
-				if testkit.RecordOnly() {
-					t.Log(testkit.RecordOnlyNotice)
-					return
-				}
 				if firstOverhead >= firstByteBudget {
-					t.Errorf("%s, %s: the router adds %v to the first byte beyond a plain relay, budget %v", path.name, size.name, firstOverhead, firstByteBudget)
+					t.Errorf("%s, %s: the router adds %v to the first byte beyond its reference process, budget %v", path.name, size.name, firstOverhead, firstByteBudget)
 				}
 				if chunkOverhead >= chunkBudget {
 					t.Errorf("%s, %s: the router adds %v to each chunk, budget %v", path.name, size.name, chunkOverhead, chunkBudget)
