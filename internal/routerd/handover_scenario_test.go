@@ -133,6 +133,19 @@ func awaitReturn(t *testing.T, rig *daemonRig, what string) {
 	}
 }
 
+// awaitLog waits until the daemon's log holds line, with the window awaitHealth gives a busy
+// machine, and fails with the log when it never does.
+func awaitLog(t *testing.T, rig *daemonRig, line string) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for !strings.Contains(rig.logs.joined(), line) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the daemon never logged %q; its log:\n%s", line, rig.logs.joined())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestHuddleRouterHandoverScenarios(t *testing.T) {
 	t.Parallel()
 	bdd.Feature(t, "the router port never closes", func(f *bdd.F) {
@@ -219,7 +232,7 @@ func TestHuddleRouterHandoverScenarios(t *testing.T) {
 			s.When("the first rss checks pass", func(t *testing.T) {
 				rig.start()
 				rig.awaitHealth(t, "zai")
-				time.Sleep(150 * time.Millisecond)
+				awaitLog(t, rig, "over the ceiling; handing over")
 			})
 			s.Then("the log names the handover", func(t *testing.T) {
 				if joined := rig.logs.joined(); !strings.Contains(joined, "over the ceiling; handing over") {
