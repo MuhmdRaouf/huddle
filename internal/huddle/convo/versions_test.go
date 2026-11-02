@@ -72,8 +72,18 @@ func wantFixtureItems() []Item {
 			Text: "Command running in background with ID: bg1a2b3c. Output is being written to: " +
 				"/srv/fixture/sess-fixture-0001/tasks/bg1a2b3c.output. You will be notified when it completes.",
 			Result: &ToolFacts{BackgroundID: "bg1a2b3c"}},
+		{ID: "a-art:0", Kind: KindToolUse, At: "2026-01-01T09:00:13.200Z", Tool: "Artifact", ToolUseID: "toolu_art1",
+			Input: `{"file_path":"/srv/fixture/report.html","icon":"chart"}`},
+		{ID: "u-art:0", Kind: KindToolResult, At: "2026-01-01T09:00:13.400Z", ToolUseID: "toolu_art1",
+			Text: "Published https://claude.ai/artifact/fx-report"},
 		{ID: "a-05:0", Kind: KindAssistant, At: "2026-01-01T09:00:14.000Z", Text: "All done."},
 	}
+}
+
+// wantFixtureArtifacts is the artifact every version's main transcript published.
+func wantFixtureArtifacts() []Artifact {
+	return []Artifact{{ID: "fx-report", URL: "https://claude.ai/artifact/fx-report", Title: "Fixture report",
+		Version: "1", At: "2026-01-01T09:00:13.400Z"}}
 }
 
 // wantFixtureShells is the background command every version's main transcript ran.
@@ -131,6 +141,19 @@ func TestEveryVersionDecodesTheSameItems(t *testing.T) {
 				t.Errorf("shells differ:\n got %+v\nwant %+v", shells, wantFixtureShells())
 			}
 
+			mainFile, err := os.Open(main)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer mainFile.Close()
+			artifacts, err := Artifacts(mainFile)
+			if err != nil {
+				t.Fatalf("artifacts: %v", err)
+			}
+			if !reflect.DeepEqual(artifacts, wantFixtureArtifacts()) {
+				t.Errorf("artifacts differ:\n got %+v\nwant %+v", artifacts, wantFixtureArtifacts())
+			}
+
 			agents, err := Agents(ctx, main)
 			if err != nil {
 				t.Fatalf("agents: %v", err)
@@ -161,7 +184,8 @@ func decodedJSONTags() []string {
 		reflect.TypeOf(transcriptLine{}), reflect.TypeOf(contentBlock{}), reflect.TypeOf(imageSource{}),
 		reflect.TypeOf(toolUseResult{}), reflect.TypeOf(structuredHunk{}), reflect.TypeOf(askedQuestion{}),
 		reflect.TypeOf(attachment{}), reflect.TypeOf(attachedContent{}), reflect.TypeOf(attachedFile{}),
-		reflect.TypeOf(shellLine{}), reflect.TypeOf(agentMeta{}),
+		reflect.TypeOf(shellLine{}), reflect.TypeOf(agentMeta{}), reflect.TypeOf(artifactLine{}),
+		reflect.TypeOf(artifactResult{}),
 	}
 	seen := map[string]bool{}
 	var collect func(reflect.Type)
