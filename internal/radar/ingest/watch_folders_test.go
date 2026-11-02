@@ -32,8 +32,10 @@ type fakeFolderWatch struct {
 	attempts int
 	// onWatchFile runs inside WatchFile, the moment a write can race the watch of a new file
 	onWatchFile func(path string)
-	events      chan fsnotify.Event
-	errors      chan error
+	// onAdd runs at the start of Add, before the folder is armed
+	onAdd  func(dir string)
+	events chan fsnotify.Event
+	errors chan error
 }
 
 func newFakeFolderWatch(limit int) *fakeFolderWatch {
@@ -43,6 +45,9 @@ func newFakeFolderWatch(limit int) *fakeFolderWatch {
 func (f *fakeFolderWatch) open() (ingest.FolderWatch, error) { return f, nil }
 
 func (f *fakeFolderWatch) Add(dir string) error {
+	if f.onAdd != nil {
+		f.onAdd(dir)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.attempts++
@@ -116,6 +121,42 @@ func startFolderWatcher(t *testing.T, e testEnv, st *store.Store, options ingest
 	t.Cleanup(w.Stop)
 	waitFor(t, "initial ingest", 5*time.Second, func() bool { return !w.CatchingUp() })
 	return w
+}
+
+// The first ingest ends with the full poll that follows the first arming, which reads what was
+// written between the pass that found the folders and the watch on them: the watcher is catching
+// up until then.
+func TestTheFirstIngestIsCatchingUpUntilTheFolderArmingsPollEnds(t *testing.T) {
+	e := makeEnv(t)
+	writeText(t, filepath.Join(e.config, "projects", "-w-app", "sess-a.jsonl"),
+		jsonl(t, assistantLine(watchT1, "req-1")))
+	feed := newFakeFolderWatch(-1)
+	arming := make(chan struct{})
+	release := make(chan struct{})
+	var armingOnce, releaseOnce sync.Once
+	feed.onAdd = func(string) {
+		armingOnce.Do(func() { close(arming) })
+		<-release
+	}
+	w := ingest.StartWatcher(t.Context(), ingest.WatcherOptions{
+		Env: e.env, Store: newStore(), SinceMs: watchDay, IntervalMs: 3_600_000, RescanMs: 5_000,
+		Alive: ownPidAlive, NewFolderWatch: feed.open, Now: func() int64 { return watchT0 },
+		OpenFilesLimit: func() (uint64, error) { return 1 << 20, nil },
+	})
+	t.Cleanup(w.Stop)
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+
+	select {
+	case <-arming:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the first folder to be armed")
+	}
+	if !w.CatchingUp() {
+		t.Error("CatchingUp while the first arming is still to end: got false, want true")
+	}
+
+	releaseOnce.Do(func() { close(release) })
+	waitFor(t, "the first ingest", 5*time.Second, func() bool { return !w.CatchingUp() })
 }
 
 func hasRequest(t *testing.T, st *store.Store, id string) func() bool {

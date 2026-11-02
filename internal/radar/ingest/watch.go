@@ -244,7 +244,10 @@ type Watcher struct {
 	queuedRegistry bool
 	// warming is true from the start until the warm load ends: no pass runs meanwhile.
 	warming bool
-	pass    *passWork
+	// settling is true from the start until the first pass and the arming of the folders it
+	// found, with the full poll that arming asks for, have ended.
+	settling bool
+	pass     *passWork
 
 	spoolTails      map[string]*TailState
 	transcriptTails tailSet
@@ -361,6 +364,7 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 	}
 	w.mu.Lock()
 	w.queued = true
+	w.settling = true
 	w.warming = options.Warm != nil
 	w.mu.Unlock()
 	loopCtx, cancel := context.WithCancel(ctx)
@@ -392,6 +396,9 @@ func (w *Watcher) run(ctx context.Context, ticks <-chan time.Time, stopTicker fu
 	w.warmStore(ctx)
 	w.PollOnce()
 	w.settleFeed()
+	w.mu.Lock()
+	w.settling = false
+	w.mu.Unlock()
 	for {
 		select {
 		case <-ctx.Done():
@@ -574,13 +581,13 @@ func (w *Watcher) Stop() {
 // Done closes once the watcher's goroutine is out.
 func (w *Watcher) Done() <-chan struct{} { return w.done }
 
-// CatchingUp is true while the warm load runs or a pass is running or queued: the first ingest
-// is still draining its backlog, so a dashboard that reconnects mid-way knows its lists are
-// still filling in.
+// CatchingUp is true while the warm load runs, a pass is running or queued, or the first pass's
+// folders are still being armed: the first ingest is still draining its backlog, so a dashboard
+// that reconnects mid-way knows its lists are still filling in.
 func (w *Watcher) CatchingUp() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.warming || w.pass != nil || w.queued
+	return w.warming || w.settling || w.pass != nil || w.queued
 }
 
 // Tracked is how many transcript files the watcher still tails: eviction keeps this at the live
