@@ -415,14 +415,7 @@ test("the blocks view counts the seeded block once the scope includes the provid
 
 test("the requests table lists the seeded rows and the inspector opens one", async ({ page }) => {
   await signIn(page);
-  // the Requests view by its own address: the Week range brings yesterday's timed call in, and
-  // the model chip narrows it to the three seeded calls and that call
   await page.goto(`${theSetup().rootUrl}/#/radar/requests`);
-  await page.getByRole("group", { name: "Range" }).getByRole("button", { name: "Week" }).click();
-  await page
-    .getByRole("group", { name: "Filter by model" })
-    .getByRole("button", { name: /^GLM 5\.3 \d+$/ })
-    .click();
 
   // each seeded call is one row; its input and output cells are exact
   for (const r of SEEDED.requests) {
@@ -435,20 +428,6 @@ test("the requests table lists the seeded rows and the inspector opens one", asy
     await expect(tr).toContainText(n(r.cacheWrite));
   }
 
-  // yesterday's router-only call is the row that measured its streaming latencies; the second
-  // seeded call's route line said none
-  const timed = page
-    .getByRole("row")
-    .filter({ hasText: n(TIMED.input) })
-    .filter({ hasText: n(TIMED.output) });
-  await expect(timed.locator("td[data-label='First byte']")).toHaveText("180ms");
-  await expect(timed.locator("td[data-label='First token']")).toHaveText("420ms");
-  const plain = page
-    .getByRole("row")
-    .filter({ hasText: n(SEEDED.requests[1]!.input) })
-    .filter({ hasText: n(SEEDED.requests[1]!.output) });
-  await expect(plain.locator("td[data-label='First byte']")).toHaveText("–");
-
   // the inspector: the first call's own numbers, input and output exact
   const first = SEEDED.requests[0];
   const firstTotal = first.input + first.output + first.cacheRead + first.cacheWrite;
@@ -460,6 +439,43 @@ test("the requests table lists the seeded rows and the inspector opens one", asy
   await expect(page.getByText(`${n(firstTotal)} total`)).toBeVisible();
   await expect(page.getByRole("row", { name: /^Input/ })).toContainText(n(first.input));
   await expect(page.getByRole("row", { name: /^Output/ })).toContainText(n(first.output));
+});
+
+/** Opens the Requests view on the seeded session's History tree, which keeps what the live table's
+ *  24-hour window has shed: the calls twenty-five hours back. */
+async function openSeededHistoryRequests(page: Page): Promise<Locator> {
+  await signIn(page);
+  await page.goto(`${theSetup().rootUrl}/#/radar/overview`);
+  const rootId = await page.evaluate(async (session) => {
+    const r = await fetch("/api/radar/api/history/roots?scope=history&limit=100");
+    const body = (await r.json()) as { roots: { id: string; sessionId: string }[] };
+    return body.roots.find((root) => root.sessionId === session)?.id ?? null;
+  }, SEEDED.session);
+  if (rootId === null) throw new Error("the seeded session has no History root");
+  await page.goto(`${theSetup().rootUrl}/#/radar/requests?panel=history&root=${encodeURIComponent(rootId)}`);
+  const table = page.locator("[data-key='history-requests']");
+  await expect(table).toBeVisible();
+  return table;
+}
+
+test("the History requests table shows the streaming latencies of the call older than the live window", async ({
+  page,
+}) => {
+  const table = await openSeededHistoryRequests(page);
+
+  // the router-only call twenty-five hours back is the row that measured its streams; the second
+  // seeded call's route line said none
+  const timed = table
+    .getByRole("row")
+    .filter({ hasText: n(TIMED.input) })
+    .filter({ hasText: n(TIMED.output) });
+  await expect(timed.locator("td[data-label='First byte']")).toHaveText("180ms");
+  await expect(timed.locator("td[data-label='First token']")).toHaveText("420ms");
+  const plain = table
+    .getByRole("row")
+    .filter({ hasText: n(SEEDED.requests[1]!.input) })
+    .filter({ hasText: n(SEEDED.requests[1]!.output) });
+  await expect(plain.locator("td[data-label='First byte']")).toHaveText("–");
 });
 
 test("the request sheet paints an opaque background over the table", async ({ page }) => {
@@ -503,12 +519,9 @@ test("the requests view opens with its two charts and the statuses the spool car
   await expect(table.locator(".ui-badge-fail")).toHaveCount(0);
 });
 
-test("the requests table marks the call a router sent to its fallback model", async ({ page }) => {
-  await signIn(page);
-  await page.goto(`${theSetup().rootUrl}/#/radar/requests`);
-  // yesterday's flash call is the one the seeded spool line says fell back from glm-5.3
-  await page.getByRole("group", { name: "Range" }).getByRole("button", { name: "Week" }).click();
-  const table = page.locator("[data-key='requests-table']");
+test("the History requests table marks the call a router sent to its fallback model", async ({ page }) => {
+  // the flash call twenty-five hours back is the one the seeded spool line says fell back from glm-5.3
+  const table = await openSeededHistoryRequests(page);
   const marks = table.locator(".model-fallback");
   await expect(marks).toHaveCount(1);
   await expect(marks).toHaveText("from glm-5.3");
@@ -864,7 +877,7 @@ test("the inspector reads a kept request's bodies: the ask's words and a Bash ca
   const sheet = page.locator("dialog[open] [data-slide-over]");
   await expect(sheet).toBeVisible();
   await sheet.getByRole("tab", { name: /Input/ }).click();
-  await expect(sheet.getByText(/As sent to .* · redacted · kept 7 days/)).toBeVisible();
+  await expect(sheet.getByText(/As sent to .* · redacted · kept 30 days/)).toBeVisible();
   await expect(sheet.getByText("List the files")).toBeVisible();
   const call = sheet.getByRole("button", { name: /Bash/ });
   await expect(call).toContainText("ls -la");

@@ -437,19 +437,19 @@ async function channelOp(
   await rootCall(`/api/c/${CHANNEL}/op/${op}?as=${as}`, body, port, token);
 }
 
-/** Waits until radar's ingest has landed the six seeded requests (five Claude, one Codex), so
- *  the first view a test opens already carries them. */
+/** Waits until radar's ingest has landed the six seeded requests (five Claude, one Codex) and the
+ *  usage load. Most of them are twenty-five hours old, past the 24 hours the store holds, so
+ *  the wait reads the 7-day usage report, which history answers and keeps them in. */
 async function waitIngested(port: number, token: string): Promise<void> {
   const deadline = Date.now() + 30_000;
   for (;;) {
     try {
-      const r = await fetch(`http://127.0.0.1:${port}/api/radar/api/requests`, {
+      const r = await fetch(`http://127.0.0.1:${port}/api/radar/api/usage?days=7`, {
         headers: { "x-huddle-token": token },
       });
       if (r.ok) {
-        const body = (await r.json()) as { requests?: unknown[] };
-        // the seeded six plus the usage load, clamped to the requests list's own 200-row cap
-        if ((body.requests?.length ?? 0) >= Math.min(6 + LOAD_REQUESTS, 200)) return;
+        const body = (await r.json()) as { totals?: { requests?: number } };
+        if ((body.totals?.requests ?? 0) >= 6 + LOAD_REQUESTS) return;
       }
     } catch {
       // not ingested yet
