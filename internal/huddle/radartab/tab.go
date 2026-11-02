@@ -583,7 +583,8 @@ type SessionFacts struct {
 // the same answer the dashboard reads. The cost is the sum over the session's agents, so a
 // session whose requests are all unpriced answers nil; the provider comes from the session's
 // model, so a session with no model answers nil; the name is radar's view name, the custom
-// title, agent name or AI title the session carries.
+// title, agent name or AI title the session carries, and nil while radar only has the id's
+// placeholder for it.
 func (t *Tab) FactsOf(ctx context.Context, id string) SessionFacts {
 	body, ok := t.RadarAnswer(ctx, "/api/sessions/"+url.PathEscape(id))
 	if !ok {
@@ -617,7 +618,7 @@ func (t *Tab) FactsOf(ctx context.Context, id string) SessionFacts {
 		provider := shared.ProviderOf(*model)
 		facts.Provider = &provider
 	}
-	if name := answer.Session.Name; name != nil && *name != "" {
+	if name := answer.Session.Name; name != nil && *name != "" && *name != shared.PlaceholderName(id) {
 		facts.Name = name
 	}
 	return facts

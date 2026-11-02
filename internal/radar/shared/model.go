@@ -57,6 +57,12 @@ const OutsideSession = "outside-a-session"
 // its History group.
 const UnattachedName = "Unattached"
 
+// PlaceholderName is the name radar's view gives a session nobody named and no repo places:
+// "Session " and the id's first eight characters. It stands in for a name; it is not one.
+func PlaceholderName(sessionID string) string {
+	return "Session " + jsscalar.UTF16Slice(sessionID, 0, 8)
+}
+
 // RegistrySession is one entry of Claude Code's own session registry: a running
 // interactive session, one file per pid.
 type RegistrySession struct {

@@ -483,6 +483,21 @@ func TestFactsOfCarriesTheSessionsCustomTitleOverItsAiTitle(t *testing.T) {
 	}
 }
 
+// TestFactsOfLeavesTheNameNullForASessionRadarSawButNobodyNamed: radar's view names a session
+// it holds no title for after its id ("Session 13fbb7a3"); that placeholder is no name, so the
+// facts answer none.
+func TestFactsOfLeavesTheNameNullForASessionRadarSawButNobodyNamed(t *testing.T) {
+	env := tempEnv(t)
+	tab, _, _ := mountMux(t, env, MountOptions{IntervalMs: quietMs, InsightsTickMs: quietMs})
+	if !tab.Owns {
+		t.Fatal("the mount did not take the lock")
+	}
+	tab.Store.UpsertSession(store.SessionUpsert{ID: "13fbb7a3-aaaa-bbbb"})
+	if facts := tab.FactsOf(context.Background(), "13fbb7a3-aaaa-bbbb"); facts.Name != nil {
+		t.Fatalf("the name of a session radar saw but nobody named = %q, want nil", *facts.Name)
+	}
+}
+
 // TestAProxyingTabRecordsNothing: while a standalone radar owns the lock, the mount records no
 // hook line of its own (the owner's hook does) and answers the facts through the owner.
 func TestAProxyingTabRecordsNothing(t *testing.T) {

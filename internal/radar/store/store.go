@@ -2461,7 +2461,7 @@ func (s *Store) viewNameLocked(state *sessionState) *string {
 	if repo := s.repoForLocked(state); repo != nil {
 		return strPtr(shared.RepoName(*repo))
 	}
-	return strPtr("Session " + jsscalar.UTF16Slice(state.id, 0, 8))
+	return strPtr(shared.PlaceholderName(state.id))
 }
 
 // repoForLocked is the repo a session works in: a job's own workspace repo, else the
