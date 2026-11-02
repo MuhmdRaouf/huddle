@@ -48,15 +48,20 @@ type WriteOptions struct {
 	Mode FileMode
 	// Mkdir creates the parent directory (0700) when it is missing.
 	Mkdir bool
-	// CommitIf is checked between the fsync and the rename: false leaves the target as it is
-	// and the write reports false (a compare-and-swap for a file someone else may have changed
-	// meanwhile).
+	// CommitIf is checked after the temp file is written and before the rename: false leaves
+	// the target as it is and the write reports false (a compare-and-swap for a file someone
+	// else may have changed meanwhile).
 	CommitIf func() bool
+	// NoSync skips the file sync and the directory sync. The temp file and the rename stay, so a
+	// reader still sees the old file or the new one whole; only a power loss can lose the write.
+	// For a file its owner regenerates on its next run.
+	NoSync bool
 }
 
 // WriteFileAtomic writes data to a temp file beside the target, fsyncs it and renames it over
 // the target, then fsyncs the directory: a reader sees the old file or the new one, never a
-// torn one, and a crash after the rename does not lose it. False only when CommitIf said no.
+// torn one, and a crash after the rename does not lose it. With NoSync both fsyncs are skipped.
+// False only when CommitIf said no.
 func WriteFileAtomic(ctx context.Context, path string, data []byte, options WriteOptions) (bool, error) {
 	mode := resolveMode(path, options.Mode)
 	if options.Mkdir {
@@ -65,7 +70,7 @@ func WriteFileAtomic(ctx context.Context, path string, data []byte, options Writ
 		}
 	}
 	tmp := tempName(path)
-	err := writeTemp(tmp, data, mode)
+	err := writeTemp(tmp, data, mode, !options.NoSync)
 	if err == nil {
 		// The umask may have narrowed the mode the file was created with.
 		err = os.Chmod(tmp, mode)
@@ -81,7 +86,9 @@ func WriteFileAtomic(ctx context.Context, path string, data []byte, options Writ
 		removeTemp(tmp)
 		return false, err
 	}
-	syncDirectory(filepath.Dir(path))
+	if !options.NoSync {
+		syncDirectory(filepath.Dir(path))
+	}
 	return true, nil
 }
 
@@ -125,12 +132,13 @@ func resolveMode(path string, mode FileMode) fs.FileMode {
 	return mode(path)
 }
 
-// writeTemp writes data to a fresh temp file with the target's mode, fsyncs it and closes it.
-func writeTemp(tmp string, data []byte, mode fs.FileMode) error {
+// writeTemp writes data to a fresh temp file with the target's mode, fsyncs it when sync is set
+// and closes it.
+func writeTemp(tmp string, data []byte, mode fs.FileMode, sync bool) error {
 	file, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err == nil {
 		_, err = file.Write(data)
-		if err == nil {
+		if err == nil && sync {
 			err = file.Sync()
 		}
 		err = errors.Join(err, file.Close())

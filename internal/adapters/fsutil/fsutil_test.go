@@ -77,6 +77,23 @@ func TestWriteFileAtomic(t *testing.T) {
 		noTempLeft(t, path)
 	})
 
+	t.Run("lands whole and leaves no temp file with NoSync", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "agent.md")
+		if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+			t.Fatalf("seed %s: %v", path, err)
+		}
+		committed, err := WriteFileAtomic(t.Context(), path, []byte("new body\n"), WriteOptions{Mode: Perm(0o644), NoSync: true})
+		if err != nil || !committed {
+			t.Fatalf("write = (%v, %v), want (true, nil)", committed, err)
+		}
+		text, _ := os.ReadFile(path)
+		if string(text) != "new body\n" {
+			t.Fatalf("content = %q, want %q", text, "new body\n")
+		}
+		assertPerm(t, path, 0o644)
+		noTempLeft(t, path)
+	})
+
 	t.Run("keeps the target's own mode with Preserve", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "settings.json")
 		if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {

@@ -82,12 +82,15 @@ func readAgentFiles(folder string) ([]agents.Existing, error) {
 // writeAgentFile writes one planned file atomically with mode 0644 (a plain readable file, not a
 // state file), creating the folder on the first write. The commit is guarded: between the read and
 // the rename, the target must be absent or still carry the marker — a file that turned into the
-// user's is never replaced.
+// user's is never replaced. The write skips fsync: every session start regenerates these files,
+// so durability buys nothing, and the agents part owns a 100 ms deadline that a busy disk's
+// syncs would overrun.
 func writeAgentFile(ctx context.Context, folder string, file agents.File) error {
 	path := filepath.Join(folder, file.Name)
 	_, err := fsutil.WriteFileAtomic(ctx, path, file.Body, fsutil.WriteOptions{
-		Mode:  fsutil.Perm(0o644),
-		Mkdir: true,
+		Mode:   fsutil.Perm(0o644),
+		Mkdir:  true,
+		NoSync: true,
 		CommitIf: func() bool {
 			raw, err := os.ReadFile(path)
 			if err != nil {
