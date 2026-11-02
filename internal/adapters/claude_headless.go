@@ -295,6 +295,9 @@ func (w *ClaudeHeadlessWorker) Start(ctx context.Context, spec ports.WorkerSpec)
 	if err != nil {
 		return nil, &ports.WorkerError{Kind: ports.WorkerErrorSpawnFailed, Message: err.Error()}
 	}
+	// The worker leads a group of its own, so a killed driver does not take it along: the record
+	// lets the next command reap it.
+	WriteEnginePid(domain.EnginePidBeside(spec.LogPath), proc.Pid)
 	run := &headlessClaudeRun{
 		proc:        proc,
 		spec:        spec,
@@ -355,6 +358,7 @@ func (r *headlessClaudeRun) Events() <-chan domain.WorkerEvent { return r.events
 func (r *headlessClaudeRun) Wait() ports.WorkerExit {
 	r.waitOnce.Do(func() {
 		ended := <-r.proc.Exit
+		ClearEnginePid(domain.EnginePidBeside(r.spec.LogPath))
 		exit := ports.WorkerExit{StderrTail: ended.StderrTail}
 		if ended.Code != nil {
 			code := int64(*ended.Code)

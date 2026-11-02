@@ -2,11 +2,12 @@ package main
 
 // The interrupted path's end to end, on the built binary: a job whose driver died mid-run reads
 // as interrupted, not as running forever. The board and the review sweep the dead driver first,
-// move the job to interrupted through the lifecycle, and nothing is signalled beyond the death
-// the test itself dealt and nothing reruns: the worktree keeps its untouched file, the lock keeps
-// its dead pid, and only the owner's return runs the job again. Runs in the same world as
-// TestProviderCliE2E; every home, state root and repository is the test's own, and the only
-// process it signals is the driver its own run started.
+// move the job to interrupted through the lifecycle, and the only process they end is the dead
+// driver's worker, which runs in a group of its own and would otherwise outlive the job. Nothing
+// reruns: the worktree keeps its untouched file, the lock keeps its dead pid, and only the owner's
+// return runs the job again. Runs in the same world as TestProviderCliE2E; every home, state root
+// and repository is the test's own, and the only process the test signals is the driver its own
+// run started.
 
 import (
 	"errors"
@@ -16,12 +17,13 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/MuhmdRaouf/huddle/internal/adapters"
 	"github.com/MuhmdRaouf/huddle/internal/core/testkit"
 	"github.com/MuhmdRaouf/huddle/internal/domain"
 )
 
 // TestZaiInterruptedE2E kills a running job's driver and reads the board and the review after:
-// interrupted, the four ways out named, the worktree and lock untouched.
+// interrupted, the four ways out named, the worker reaped, the worktree and lock untouched.
 func TestZaiInterruptedE2E(t *testing.T) {
 	job := newProviderJob(t, "src/value.txt:right\n", "src/value.txt:right\n", "sleep")
 	brief := job.brief("timeout: 30s", "retries: { fix: 0, infra: 0 }")
@@ -32,9 +34,10 @@ func TestZaiInterruptedE2E(t *testing.T) {
 	}
 	id := startedID(t, strings.SplitN(stdout, "\n", 2)[0])
 	job.waitForState(id, "running")
+	worker := waitForWorkerPid(t, job, id)
 
 	// The driver dies the way a reboot takes it: SIGKILL, its whole group, no verdict, no lock
-	// removal. The group is the driver's own, so the lingering worker goes with it.
+	// removal. The worker leads a group of its own, so it outlives the driver.
 	driver := lockPid(t, job, id)
 	if !testkit.IsPidAlive(driver) {
 		t.Fatalf("the driver %d died before the test reached it", driver)
@@ -61,6 +64,9 @@ func TestZaiInterruptedE2E(t *testing.T) {
 		t.Fatalf("the board never shows job %s:\n%s", id, board)
 	}
 	job.waitForState(id, "interrupted")
+	if testkit.IsPidAlive(worker) {
+		t.Fatalf("the worker %d of the dead driver is still running after the board swept the job", worker)
+	}
 
 	review, stderr, code := job.run("review", id[:9])
 	if code != 0 {
@@ -88,6 +94,21 @@ func TestZaiInterruptedE2E(t *testing.T) {
 	if testkit.IsPidAlive(driver) {
 		t.Fatalf("the dead pid %d is alive: a driver took it", driver)
 	}
+}
+
+// waitForWorkerPid is the pid of the job's running worker, once the engine record names it.
+func waitForWorkerPid(t *testing.T, job *providerJob, id string) int {
+	t.Helper()
+	file := domain.NewStateLayout(job.stateRoot).Job(id).EnginePid
+	var worker int64
+	if err := testkit.Until(t, func() bool {
+		pid, ok := adapters.ReadEnginePid(file)
+		worker = pid
+		return ok
+	}, testkit.UntilOptions{TimeoutMs: 10_000, Message: "the job never recorded its worker"}); err != nil {
+		t.Fatal(err)
+	}
+	return int(worker)
 }
 
 // lockPid is the pid a job's driver lock names, whatever format the lock holds.

@@ -833,6 +833,27 @@ func TestClaudeHeadlessWorkerIntegration(t *testing.T) {
 			}
 		}
 	})
+	t.Run("records the worker's group leader in engine.pid beside the log while it runs and forgets it at its exit", func(t *testing.T) {
+		dir := testkit.TempDir(t, "core-worker-")
+		pidFile := filepath.Join(dir, "pids")
+		sleeper := fakeSpec(dir, map[string]string{"FAKE_CLAUDE_SCENARIO": "sleep", "FAKE_CLAUDE_PIDFILE": pidFile})
+		enginePid := domain.EnginePidBeside(sleeper.LogPath)
+
+		run := started(newWorker(dir).Start(context.Background(), sleeper))
+		pids := headlessGroupPids(pidFile)
+		if recorded, ok := ReadEnginePid(enginePid); !ok || recorded != pids[0] {
+			t.Fatalf("engine.pid = %d (%t), want the worker's pid %d", recorded, ok, pids[0])
+		}
+		if err := run.Interrupt(context.Background(), ports.InterruptStopped); err != nil {
+			t.Fatalf("interrupt = %v", err)
+		}
+		headlessCollect(run)
+		run.Wait()
+
+		if recorded, ok := ReadEnginePid(enginePid); ok {
+			t.Fatalf("engine.pid still names %d after the worker exited", recorded)
+		}
+	})
 	t.Run("returns no_key / insecure_key_file from loadKey without spawning", func(t *testing.T) {
 		dir := testkit.TempDir(t, "core-worker-")
 		noKey := &ports.WorkerError{Kind: ports.WorkerErrorNoKey, Message: "no key"}

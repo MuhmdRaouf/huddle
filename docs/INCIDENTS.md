@@ -469,3 +469,18 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Rule:** the ingest makes the state and spool folders before the feed arms them, and the feed watches a created
   spool or transcript file before anything reads it (`FolderWatch.WatchFile`), so a write that lands while the
   watch is made is in what the read finds and a later one raises its own event.
+
+## 2026-11-02, a killed driver left its claude worker running and the next command did not reap it
+
+- **What happened:** `TestZaiInterruptedE2E` passed, then tmpguard failed the Go (cmd) job on Linux: a `fakeclaude`
+  worker of the killed driver was still running under the run's temp dir. On a user's machine the same gap leaves
+  a model process running, and spending tokens, after its driver died.
+- **Cause:** the driver and the claude worker lead process groups of their own, so killing the driver (an OOM
+  kill, a crash) does not reach the worker. The cleanup every command runs reaps an engine whose driver is gone,
+  but it finds the engine through `engine.pid`, which the pi, omp, opencode and zcode workers write and the claude
+  headless worker did not. The test also assumed the driver's group held the worker.
+- **Guard:** `TestClaudeHeadlessWorkerIntegration` (internal/adapters/claude_headless_test.go), the case "records the
+  worker's group leader in engine.pid beside the log while it runs and forgets it at its exit"; the interrupted
+  end to end (cmd/huddle/zai_interrupted_e2e_test.go) asserts the worker is gone once the board swept the job.
+- **Rule:** every worker records its group leader in `engine.pid` beside the attempt log while it runs and clears
+  it when it exits, so the next command reaps the worker of a driver that died.
