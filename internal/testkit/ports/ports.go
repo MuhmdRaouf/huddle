@@ -47,6 +47,79 @@ func Free(t testing.TB) int {
 	return freeIn(t, answered.ports, leaseDir(), portFirst, portLast)
 }
 
+// FreeRun answers the first and last of count neighbouring ports nothing listens on, for a test
+// that walks a range of its own: the walk probes and binds only these, never a range someone
+// else serves on. Each port comes from Free's range and carries Free's lease, so no other
+// test, in this binary or another, takes one.
+func FreeRun(t testing.TB, count int) (first, last int) {
+	t.Helper()
+	answered.Lock()
+	defer answered.Unlock()
+	return freeRunIn(t, answered.ports, leaseDir(), portFirst, portLast, count)
+}
+
+// freeRunIn answers the first and last of the first run of count neighbouring ports in
+// first-last that freeIn would answer one by one. A run that breaks part-way gives its leases
+// back before the search moves on.
+func freeRunIn(t testing.TB, answered map[int]bool, dir string, first, last, count int) (int, int) {
+	t.Helper()
+	span := last - first + 1
+	start := rand.IntN(span)
+	for i := 0; i < span; i++ {
+		low := first + (start+i)%span
+		if low+count-1 > last {
+			continue
+		}
+		var held []int
+		for port := low; port < low+count; port++ {
+			if !takeable(t, answered, dir, port) {
+				break
+			}
+			held = append(held, port)
+		}
+		if len(held) == count {
+			t.Cleanup(func() {
+				for _, port := range held {
+					release(nil, dir, port)
+				}
+			})
+			return low, low + count - 1
+		}
+		for _, port := range held {
+			release(answered, dir, port)
+		}
+	}
+	t.Fatalf("no %d neighbouring free ports in %d-%d", count, first, last)
+	return 0, 0
+}
+
+// takeable answers whether a port is the caller's now: not answered before, not leased by
+// another binary, bindable. A taken port is marked answered and leased.
+func takeable(t testing.TB, answered map[int]bool, dir string, port int) bool {
+	t.Helper()
+	if answered[port] || !leaseFree(dir, port) {
+		return false
+	}
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return false
+	}
+	_ = listener.Close()
+	if !lease(t, dir, port) {
+		return false
+	}
+	answered[port] = true
+	return true
+}
+
+// release gives a port back: its answered mark and its lease file, then the lease directory when
+// it is empty.
+func release(answered map[int]bool, dir string, port int) {
+	delete(answered, port)
+	_ = os.Remove(filepath.Join(dir, strconv.Itoa(port)))
+	_ = os.Remove(dir) // another binary may still hold a lease in it
+}
+
 // freeIn answers the first port in first-last that no answered mark and no live lease file
 // holds and that binds. An answered port gets a lease file in dir and a cleanup that removes
 // the file and then the directory, so a run whose every test ended leaves no TMPDIR entry.

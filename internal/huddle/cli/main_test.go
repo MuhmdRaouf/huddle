@@ -80,11 +80,12 @@ func world(t *testing.T, dir string, env map[string]string) *World {
 		entries = append(entries, key+"="+value)
 	}
 	return &World{
-		Getenv:  func(key string) string { return vars[key] },
-		Environ: func() []string { return append([]string{}, entries...) },
-		Dir:     dir,
-		Now:     func() time.Time { return time.Now() },
-		Bin:     huddleBin,
+		Getenv:    func(key string) string { return vars[key] },
+		Environ:   func() []string { return append([]string{}, entries...) },
+		Dir:       dir,
+		Now:       func() time.Time { return time.Now() },
+		Bin:       huddleBin,
+		PortRange: ownPortRange(t),
 	}
 }
 

@@ -199,8 +199,9 @@ func TestChoosePortTakesTheWalkWhenTheProbeSaysNothing(t *testing.T) {
 	held := freePort(t)
 	release := hold(t, held)
 	defer release()
+	r := ownRange(t)
 	// no probe at all: a held chosen port moves on, never hangs
-	chosen, err := ChoosePort(bg, PortPrefs{Port: held, Auto: true}, nil)
+	chosen, err := ChoosePort(bg, PortPrefs{Port: held, Auto: true, Range: r}, nil)
 	if err != nil {
 		t.Fatalf("ChoosePort with no probe: %v", err)
 	}
@@ -210,7 +211,7 @@ func TestChoosePortTakesTheWalkWhenTheProbeSaysNothing(t *testing.T) {
 	// a cancelled context answers no to every probe, so nothing is reused
 	cancelled, cancel := context.WithCancel(bg)
 	cancel()
-	chosen, err = ChoosePort(cancelled, PortPrefs{Port: held, Auto: true},
+	chosen, err = ChoosePort(cancelled, PortPrefs{Port: held, Auto: true, Range: r},
 		func(context.Context, int) bool { return true })
 	if err != nil {
 		t.Fatalf("ChoosePort on a cancelled context: %v", err)

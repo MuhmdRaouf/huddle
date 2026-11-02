@@ -340,9 +340,9 @@ func place(ctx context.Context, w *World, rawURL, sid string) placement {
 		if pid := PidOf(ctx, w); pid > 0 {
 			return placement{err: fmt.Sprintf("a Huddle server (pid %d) runs from %s but its port is unknown: save it with huddle setup --port <its port>", pid, h)}
 		}
-		prefs := server.PortPrefs{}
+		prefs := server.PortPrefs{Range: w.portRange()}
 		if saved, has := SavedPort(h); has {
-			prefs = server.PortPrefs{Port: saved.Port, Auto: saved.Auto}
+			prefs.Port, prefs.Auto = saved.Port, saved.Auto
 		}
 		chosen, err := server.ChoosePort(ctx, prefs, probe)
 		if err != nil {
@@ -378,7 +378,7 @@ func place(ctx context.Context, w *World, rawURL, sid string) placement {
 		return placement{err: fmt.Sprintf("Huddle (pid %d) runs from %s but does not answer at %s yet; try again, or see %s", pid, h, rawURL, logFile(h))}
 	}
 	if me.URL == rawURL && me.Source == "saved" && saved != nil && saved.Auto && saved.Port == port {
-		chosen, err := server.ChoosePort(ctx, server.PortPrefs{Port: port, Auto: true}, probe)
+		chosen, err := server.ChoosePort(ctx, server.PortPrefs{Port: port, Auto: true, Range: w.portRange()}, probe)
 		if err != nil {
 			return placement{err: err.Error()}
 		}

@@ -54,20 +54,19 @@ func serveOnce(t *testing.T, o Options) (int, func()) {
 }
 
 // TestServeWithNoPortChoosesAndSavesIt pins the service start's port: with no PORT named, serve
-// takes the range's first free port and writes it to the home's config.toml, and the next serve
+// takes the first port of the range it is given and writes it to the home's config.toml, and the next serve
 // of that home takes the saved port again.
 func TestServeWithNoPortChoosesAndSavesIt(t *testing.T) {
 	homeDir := t.TempDir()
 	if err := (home.Home{Root: homeDir}).Ensure(context.Background()); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
-	_, firstFree := rangeState()
-	if firstFree == 0 {
-		t.Skip("every port in 18860-18869 is busy on this machine")
-	}
+	r := ownRange(t)
+	firstFree := r.First
 	noPort := func(string) string { return "" }
 	o := OptionsFromEnv("t", noPort, nil, nil, nil)
 	o.Home = homeDir
+	o.PortRange = r
 	port, stop := serveOnce(t, o)
 	if port != firstFree {
 		stop()
@@ -87,6 +86,7 @@ func TestServeWithNoPortChoosesAndSavesIt(t *testing.T) {
 	// the second serve of the same home takes the saved port again
 	again := OptionsFromEnv("t", noPort, nil, nil, nil)
 	again.Home = homeDir
+	again.PortRange = r
 	port2, stop2 := serveOnce(t, again)
 	defer stop2()
 	if port2 != port {

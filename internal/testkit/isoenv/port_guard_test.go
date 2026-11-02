@@ -58,8 +58,6 @@ var hubLiteralAllowed = map[string]string{
 	"internal/huddle/home/satsecret_test.go":     "the literal is a hub url the satellite secret's account name is derived from, never dialled",
 	"internal/huddle/hooks/hooks_test.go":        "a comment names the shared 18860-18869 range to say why the test names its own port",
 	"internal/huddle/outside/lifecycle_test.go":  "the literals are run-file and config content a temp home round-trips",
-	"internal/huddle/server/port_test.go":        "the literals are the port walk's own range: the tests hold only what the range leaves free and skip when it is all busy",
-	"internal/huddle/server/serve_port_test.go":  "the literal is a skip message naming the range the test found fully busy",
 }
 
 // startPattern matches the code that starts or probes the huddle router: the routerd entries,

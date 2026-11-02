@@ -169,3 +169,61 @@ func TestAFreshSearchSkipsThePortAnotherBinaryAnswered(t *testing.T) {
 		t.Fatalf("the fresh search refused %q, want %q", search.refusal, want)
 	}
 }
+
+// FreeRun answers neighbouring ports that bind, each leased: a second run never overlaps the
+// first, and a lease another binary holds in the middle of a candidate run moves the search on.
+func TestFreeRunAnswersNeighbouringLeasedPorts(t *testing.T) {
+	dir := t.TempDir()
+	marks := map[int]bool{}
+	first, last := freeRunIn(t, marks, dir, 30000, 30019, 4)
+	if last-first != 3 {
+		t.Fatalf("freeRunIn = %d-%d, want 4 neighbouring ports", first, last)
+	}
+	for port := first; port <= last; port++ {
+		if !marks[port] {
+			t.Errorf("port %d is not marked answered", port)
+		}
+		if _, err := os.Stat(filepath.Join(dir, strconv.Itoa(port))); err != nil {
+			t.Errorf("port %d has no lease file: %v", port, err)
+		}
+	}
+	nextFirst, nextLast := freeRunIn(t, marks, dir, 30000, 30019, 4)
+	if nextFirst <= last && nextLast >= first {
+		t.Errorf("a second run %d-%d overlaps the first %d-%d", nextFirst, nextLast, first, last)
+	}
+}
+
+func TestFreeRunGivesBackTheLeasesOfARunThatBreaks(t *testing.T) {
+	dir := t.TempDir()
+	marks := map[int]bool{}
+	// ports 30001 and 30003 are leased by another binary: no run of 3 fits in 30000-30004
+	leaseAt(t, dir, 30001, time.Now())
+	leaseAt(t, dir, 30003, time.Now())
+	probe := &recorder{TB: t}
+	func() {
+		defer func() { _ = recover() }()
+		freeRunIn(probe, marks, dir, 30000, 30004, 3)
+	}()
+	if !probe.failed {
+		t.Fatal("freeRunIn found a run of 3 where the leases leave none")
+	}
+	if len(marks) != 0 {
+		t.Errorf("answered marks left behind: %v", marks)
+	}
+	for _, port := range []int{30000, 30002, 30004} {
+		if _, err := os.Stat(filepath.Join(dir, strconv.Itoa(port))); err == nil {
+			t.Errorf("a lease file for %d was left behind", port)
+		}
+	}
+}
+
+// recorder is a testing.TB whose Fatalf records the failure and stops the goroutine's search.
+type recorder struct {
+	testing.TB
+	failed bool
+}
+
+func (r *recorder) Fatalf(string, ...any) {
+	r.failed = true
+	panic("fatal")
+}

@@ -64,6 +64,9 @@ type Options struct {
 	// set, the server chooses one the way huddle up does and saves it (port.go), so a service
 	// restart comes back on the same address.
 	PortNamed bool
+	// PortRange is the ports the walk goes through when no port is named; the zero value is
+	// PortFirst to PortLast.
+	PortRange PortRange
 	// Home is the huddle home (run files, the left-behind note); Data holds the channels.
 	Home string
 	Data string

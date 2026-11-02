@@ -22,6 +22,20 @@ const PortFirst = 18860
 
 const PortLast = 18869
 
+// PortRange is the run of ports the walk goes through. The zero value is the product's range,
+// PortFirst to PortLast; a test names a range of its own so the walk never probes or binds a
+// port the owner's hub serves on.
+type PortRange struct{ First, Last int }
+
+// bounds answers the first and last port of the walk: the range's own, or the product's when the
+// range is the zero value.
+func (r PortRange) bounds() (first, last int) {
+	if r == (PortRange{}) {
+		return PortFirst, PortLast
+	}
+	return r.First, r.Last
+}
+
 // bindable answers whether a server could bind port on host right now.
 func bindable(port int, host string) bool {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
@@ -43,6 +57,10 @@ func PortFree(port int) bool {
 type PortPrefs struct {
 	Port int
 	Auto bool
+	// Range is the walk's ports; the zero value is PortFirst to PortLast.
+	Range PortRange
+	// Free answers whether a port can be bound; nil is PortFree.
+	Free func(port int) bool
 }
 
 // PortProbe says whether a huddle answers its health path on port: a busy port one of our servers
@@ -70,8 +88,13 @@ func (e PortTakenError) Error() string {
 // still free it is kept; held by a huddle it is reused; held by another program it moves (Auto) or
 // is refused (a choice). Then a huddle already answering somewhere in the range is reused (one
 // server per home, never a second beside the first), else the walk takes the first free port in
-// 18860 to 18869, else the OS picks.
+// 18860 to 18869 (or the range in cfg), else the OS picks.
 func ChoosePort(ctx context.Context, cfg PortPrefs, probe PortProbe) (ChosenPort, error) {
+	first, last := cfg.Range.bounds()
+	free := cfg.Free
+	if free == nil {
+		free = PortFree
+	}
 	huddle := func(port int) bool {
 		if probe == nil {
 			return false
@@ -83,7 +106,7 @@ func ChoosePort(ctx context.Context, cfg PortPrefs, probe PortProbe) (ChosenPort
 	}
 	if cfg.Port > 0 {
 		switch {
-		case PortFree(cfg.Port):
+		case free(cfg.Port):
 			return ChosenPort{Port: cfg.Port, Auto: cfg.Auto}, nil
 		case huddle(cfg.Port):
 			return ChosenPort{Port: cfg.Port, Huddle: true}, nil
@@ -91,13 +114,13 @@ func ChoosePort(ctx context.Context, cfg PortPrefs, probe PortProbe) (ChosenPort
 			return ChosenPort{}, PortTakenError{Port: cfg.Port}
 		}
 	}
-	for port := PortFirst; port <= PortLast; port++ {
+	for port := first; port <= last; port++ {
 		if huddle(port) {
 			return ChosenPort{Port: port, Huddle: true}, nil
 		}
 	}
-	for port := PortFirst; port <= PortLast; port++ {
-		if PortFree(port) {
+	for port := first; port <= last; port++ {
+		if free(port) {
 			return ChosenPort{Port: port, Auto: true}, nil
 		}
 	}
@@ -115,10 +138,10 @@ func ChoosePort(ctx context.Context, cfg PortPrefs, probe PortProbe) (ChosenPort
 // a stranger took it), else the first free port in the range — saved back the same way, so a
 // service restart comes back on the same address.
 func chooseAndServePort(ctx context.Context, o Options) (int, error) {
-	prefs := PortPrefs{}
+	prefs := PortPrefs{Range: o.PortRange}
 	if o.Home != "" {
 		if cfg, err := home.LoadConfig(home.Home{Root: o.Home}); err == nil {
-			prefs = PortPrefs{Port: cfg.Port, Auto: cfg.PortAuto}
+			prefs.Port, prefs.Auto = cfg.Port, cfg.PortAuto
 		}
 	}
 	chosen, err := ChoosePort(ctx, prefs, func(ctx context.Context, port int) bool {

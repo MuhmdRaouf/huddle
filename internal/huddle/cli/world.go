@@ -17,6 +17,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/outside"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/phone"
+	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 	"github.com/MuhmdRaouf/huddle/internal/pki"
 )
 
@@ -28,6 +29,9 @@ type World struct {
 	Environ func() []string
 	// Dir is the working directory; "" is the process's.
 	Dir string
+	// PortRange is the ports huddle up walks when it picks a port; the zero value is the
+	// product's range.
+	PortRange server.PortRange
 	// Now is the clock; nil is the wall clock.
 	Now func() time.Time
 	// Proc holds the process lookups; the zero value reads the running machine.
@@ -182,6 +186,14 @@ func (w *World) now() time.Time {
 		return w.Now()
 	}
 	return time.Now()
+}
+
+// portRange is the ports the walk goes through.
+func (w *World) portRange() server.PortRange {
+	if w == nil {
+		return server.PortRange{}
+	}
+	return w.PortRange
 }
 
 // bin is the binary a detached server runs.

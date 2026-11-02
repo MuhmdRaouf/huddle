@@ -565,3 +565,25 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Rule:** a file a hook part regenerates on every start is written without fsync, so its deadline never waits on
   the disk; the atomic rename stays, and an empty file with one of the part's names is the part's to rewrite. A
   part sweeps its own stale temp files, matched by the exact shape and an age beyond any live write.
+
+## 2026-11-02, the tests' port walk went through the ports the owner's live hub serves on
+
+- **What happened:** the full gate failed `TestASavedPortAnotherProgramTookHuddleUpMovesToANewOneAndSaysSoAChosenOneIsNeverMoved`
+  on a machine whose own hub held 18860: the walk moved to 18861 and the test reported a start that did not come up
+  there. Behind the failure, every run of the test, and of `TestServeWithNoPortChoosesAndSavesIt`, sent a health
+  request to each of the hub's ports 18860 to 18869, the owner's live hub among them, and the port tests bound the
+  range's free ports for a moment.
+- **Cause:** `ChoosePort` walked the product's range, 18860 to 18869, with nothing to name another. Each port in the
+  walk is asked "is a huddle here?" with a `GET /health` before any is bound, and the walk binds the first free one,
+  so a test that exercised the walk probed and bound the range a real hub uses. The probe only answers true for a
+  huddle whose health names the test's own home, so the live hub was never taken for the test's server; the breach
+  was the contact itself, and a test that asserted "a port from the range" failed whenever the hub held the first one.
+- **Guard:** `TestTheWalkProbesAndBindsOnlyTheRangeItIsGiven` (internal/huddle/server/port_test.go) records every
+  port a walk asks about or tries and fails on one outside the range it was given;
+  `TestTheDefaultWalkGoesFromPortFirstToPortLastThenTheOS` pins the product's order with fakes that never listen on or
+  dial the range; `TestEveryTestWorldWalksARangeOfItsOwn` (internal/huddle/cli/port_walk_test.go) fails when a test
+  world has no range of its own or one that holds a port of the owner's live servers.
+- **Rule:** the walk's range rides on `PortPrefs.Range`, `server.Options.PortRange` and `cli.World.PortRange`, and the
+  zero value is the product's 18860 to 18869. A test that walks takes a run of ports from `ports.FreeRun` and sets it
+  on its world or options; a test of the product's order uses `PortPrefs.Free` and a probe that record and touch
+  nothing.

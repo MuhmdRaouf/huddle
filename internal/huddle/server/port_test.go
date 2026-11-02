@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"testing"
 
@@ -40,45 +41,27 @@ func freePort(t *testing.T) int {
 	return ports.Free(t)
 }
 
-// rangeState answers the range's busy ports and the first free one (0 when a stranger holds all
-// ten).
-func rangeState() (busy []int, firstFree int) {
-	for p := PortFirst; p <= PortLast; p++ {
-		if PortFree(p) {
-			if firstFree == 0 {
-				firstFree = p
-			}
-		} else {
-			busy = append(busy, p)
-		}
-	}
-	return busy, firstFree
+// ownRange answers a run of four neighbouring ports no other test holds: the range a test walks
+// instead of the product's PortFirst to PortLast, where the owner's hub serves.
+func ownRange(t *testing.T) PortRange {
+	t.Helper()
+	first, last := ports.FreeRun(t, 4)
+	return PortRange{First: first, Last: last}
 }
 
-// holdRange pins the whole range busy — binding what is free, counting what a stranger already
-// holds — and answers how to let the bindings go.
-func holdRange(t *testing.T) (close func()) {
+// holdRange binds every port of r and answers how to let them go: strangers holding the whole
+// range.
+func holdRange(t *testing.T, r PortRange) (close func()) {
 	t.Helper()
-	var free []int
-	for p := PortFirst; p <= PortLast; p++ {
-		if PortFree(p) {
-			free = append(free, p)
-		}
+	var all []int
+	for p := r.First; p <= r.Last; p++ {
+		all = append(all, p)
 	}
-	return hold(t, free...)
+	return hold(t, all...)
 }
 
 func TestPortFreeKnowsATakenOne(t *testing.T) {
-	port := 0
-	for _, candidate := range []int{18860, 18861, 28888} {
-		if PortFree(candidate) {
-			port = candidate
-			break
-		}
-	}
-	if port == 0 {
-		t.Skip("no port around 18860 is free on this machine")
-	}
+	port := freePort(t)
 	defer hold(t, port)()
 	if PortFree(port) {
 		t.Fatalf("portFree says a taken port (%d) is free", port)
@@ -123,28 +106,30 @@ func TestChoosePortKeepsAPortTheOwnerSetEvenWhenItIsBusy(t *testing.T) {
 func TestChoosePortWalksTheRangeThenTheOS(t *testing.T) {
 	ctx := context.Background()
 	noHuddle := func(context.Context, int) bool { return false }
-	// nothing to keep: the walk answers the first free port in the range, marked auto — or an
-	// OS-picked one when a stranger holds all ten
-	_, firstFree := rangeState()
-	chosen, err := ChoosePort(ctx, PortPrefs{}, noHuddle)
+	r := ownRange(t)
+	// nothing to keep: the walk answers the range's first free port, marked auto
+	chosen, err := ChoosePort(ctx, PortPrefs{Range: r}, noHuddle)
 	if err != nil {
 		t.Fatalf("ChoosePort: %v", err)
 	}
-	if firstFree == 0 {
-		if chosen.Port >= PortFirst && chosen.Port <= PortLast {
-			t.Errorf("chosen = %+v, want an OS pick outside the range", chosen)
-		}
-	} else if chosen.Port != firstFree || !chosen.Auto {
-		t.Errorf("chosen = %+v, want the first free port %d", chosen, firstFree)
+	if chosen.Port != r.First || !chosen.Auto {
+		t.Errorf("chosen = %+v, want the range's first port %d", chosen, r.First)
+	}
+	// a stranger on the first port moves the walk to the next
+	release := hold(t, r.First)
+	chosen, err = ChoosePort(ctx, PortPrefs{Range: r}, noHuddle)
+	release()
+	if err != nil {
+		t.Fatalf("ChoosePort: %v", err)
+	}
+	if chosen.Port != r.First+1 || !chosen.Auto {
+		t.Errorf("chosen = %+v, want the second port %d", chosen, r.First+1)
 	}
 	// a huddle answering in the range is reused before a free port is taken: one server per
 	// home, never a second beside the first
-	held := PortFirst + 2
-	release := func() {}
-	if PortFree(held) {
-		release = hold(t, held)
-	}
-	chosen, err = ChoosePort(ctx, PortPrefs{}, func(_ context.Context, port int) bool { return port == held })
+	held := r.First + 2
+	release = hold(t, held)
+	chosen, err = ChoosePort(ctx, PortPrefs{Range: r}, func(_ context.Context, port int) bool { return port == held })
 	release()
 	if err != nil {
 		t.Fatalf("ChoosePort: %v", err)
@@ -155,7 +140,7 @@ func TestChoosePortWalksTheRangeThenTheOS(t *testing.T) {
 	// a saved auto port that is still free is kept, not walked past; one another program took
 	// moves to the walk's answer
 	saved := freePort(t)
-	chosen, err = ChoosePort(ctx, PortPrefs{Port: saved, Auto: true}, noHuddle)
+	chosen, err = ChoosePort(ctx, PortPrefs{Port: saved, Auto: true, Range: r}, noHuddle)
 	if err != nil {
 		t.Fatalf("ChoosePort: %v", err)
 	}
@@ -163,35 +148,28 @@ func TestChoosePortWalksTheRangeThenTheOS(t *testing.T) {
 		t.Errorf("chosen = %+v, want the saved %d kept", chosen, saved)
 	}
 	release = hold(t, saved)
-	_, firstFree = rangeState()
-	chosen, err = ChoosePort(ctx, PortPrefs{Port: saved, Auto: true}, noHuddle)
+	chosen, err = ChoosePort(ctx, PortPrefs{Port: saved, Auto: true, Range: r}, noHuddle)
 	release()
 	if err != nil {
 		t.Fatalf("ChoosePort: %v", err)
 	}
-	if chosen.Port == saved {
-		t.Errorf("chosen = %+v, want the taken %d moved past", chosen, saved)
-	}
-	if firstFree != 0 && (chosen.Port != firstFree || !chosen.Auto) {
-		t.Errorf("chosen = %+v, want the walk's first free %d", chosen, firstFree)
-	}
-	if firstFree == 0 && chosen.Port >= PortFirst && chosen.Port <= PortLast {
-		t.Errorf("chosen = %+v, want an OS pick outside the range", chosen)
+	if chosen.Port != r.First || !chosen.Auto {
+		t.Errorf("chosen = %+v, want the taken %d moved to the walk's first %d", chosen, saved, r.First)
 	}
 }
 
-// TestChoosePortAsksTheOSWhenTheWholeRangeIsHeld pins the walk's last step: with 18860 to 18869
-// all held (by this test or by strangers), the OS picks — a free port outside the range, still
-// marked auto.
+// TestChoosePortAsksTheOSWhenTheWholeRangeIsHeld pins the walk's last step: with the range all
+// held, the OS picks a free port outside it, still marked auto.
 func TestChoosePortAsksTheOSWhenTheWholeRangeIsHeld(t *testing.T) {
-	release := holdRange(t)
-	chosen, err := ChoosePort(context.Background(), PortPrefs{}, func(context.Context, int) bool { return false })
+	r := ownRange(t)
+	release := holdRange(t, r)
+	chosen, err := ChoosePort(context.Background(), PortPrefs{Range: r}, func(context.Context, int) bool { return false })
 	release()
 	if err != nil {
 		t.Fatalf("ChoosePort: %v", err)
 	}
-	if chosen.Port >= PortFirst && chosen.Port <= PortLast {
-		t.Errorf("chosen = %+v, want a port outside %d-%d", chosen, PortFirst, PortLast)
+	if chosen.Port >= r.First && chosen.Port <= r.Last {
+		t.Errorf("chosen = %+v, want a port outside %d-%d", chosen, r.First, r.Last)
 	}
 	if !chosen.Auto || chosen.Huddle {
 		t.Errorf("chosen = %+v, want an OS-picked auto port", chosen)
@@ -200,5 +178,95 @@ func TestChoosePortAsksTheOSWhenTheWholeRangeIsHeld(t *testing.T) {
 		// the walk closed its probe listener moments ago; a lingering socket would fail the
 		// next holder, so the port it answers must be free right away
 		t.Errorf("the OS-picked port %d is not free", chosen.Port)
+	}
+}
+
+// walkTrace is what a walk touched: the ports it asked a huddle about and the ports it asked
+// whether they bind, in order. Neither fake dials or binds anything.
+type walkTrace struct {
+	probed []int
+	tried  []int
+}
+
+// prefs answers PortPrefs whose probe and Free only record, with the given ports busy.
+func (w *walkTrace) prefs(r PortRange, busy ...int) (PortPrefs, PortProbe) {
+	taken := map[int]bool{}
+	for _, port := range busy {
+		taken[port] = true
+	}
+	free := func(port int) bool {
+		w.tried = append(w.tried, port)
+		return !taken[port]
+	}
+	probe := func(_ context.Context, port int) bool {
+		w.probed = append(w.probed, port)
+		return false
+	}
+	return PortPrefs{Range: r, Free: free}, probe
+}
+
+// TestTheDefaultWalkGoesFromPortFirstToPortLastThenTheOS pins the product's order with fakes
+// that never listen on or dial the range: every port is asked about before any is bound, the
+// first free one in order wins, and a full range hands the choice to the OS.
+func TestTheDefaultWalkGoesFromPortFirstToPortLastThenTheOS(t *testing.T) {
+	var trace walkTrace
+	prefs, probe := trace.prefs(PortRange{}, PortFirst, PortFirst+1)
+	chosen, err := ChoosePort(context.Background(), prefs, probe)
+	if err != nil {
+		t.Fatalf("ChoosePort: %v", err)
+	}
+	if chosen.Port != PortFirst+2 || !chosen.Auto || chosen.Huddle {
+		t.Errorf("chosen = %+v, want %d, auto", chosen, PortFirst+2)
+	}
+	var wantProbed []int
+	for p := PortFirst; p <= PortLast; p++ {
+		wantProbed = append(wantProbed, p)
+	}
+	if !slices.Equal(trace.probed, wantProbed) {
+		t.Errorf("probed = %v, want %v", trace.probed, wantProbed)
+	}
+	if want := []int{PortFirst, PortFirst + 1, PortFirst + 2}; !slices.Equal(trace.tried, want) {
+		t.Errorf("tried = %v, want %v", trace.tried, want)
+	}
+
+	var all []int
+	for p := PortFirst; p <= PortLast; p++ {
+		all = append(all, p)
+	}
+	trace = walkTrace{}
+	prefs, probe = trace.prefs(PortRange{}, all...)
+	chosen, err = ChoosePort(context.Background(), prefs, probe)
+	if err != nil {
+		t.Fatalf("ChoosePort: %v", err)
+	}
+	if chosen.Port >= PortFirst && chosen.Port <= PortLast || !chosen.Auto {
+		t.Errorf("chosen = %+v, want an OS pick outside %d-%d", chosen, PortFirst, PortLast)
+	}
+	if !slices.Equal(trace.tried, all) {
+		t.Errorf("tried = %v, want every port of the range once", trace.tried)
+	}
+}
+
+// TestTheWalkProbesAndBindsOnlyTheRangeItIsGiven pins the test seam: a walk over a range of a
+// test's own asks about and tries those ports and no others. The ports the product's walk and
+// the owner's router use belong to the owner's live huddle, and a test run must never reach them.
+func TestTheWalkProbesAndBindsOnlyTheRangeItIsGiven(t *testing.T) {
+	r := PortRange{First: 40100, Last: 40103}
+	var trace walkTrace
+	prefs, probe := trace.prefs(r, 40100)
+	chosen, err := ChoosePort(context.Background(), prefs, probe)
+	if err != nil {
+		t.Fatalf("ChoosePort: %v", err)
+	}
+	if chosen.Port != 40101 {
+		t.Errorf("chosen = %+v, want 40101", chosen)
+	}
+	for _, port := range append(slices.Clone(trace.probed), trace.tried...) {
+		if port < r.First || port > r.Last {
+			t.Errorf("the walk touched %d, outside its range %d-%d (probed %v, tried %v)", port, r.First, r.Last, trace.probed, trace.tried)
+		}
+	}
+	if len(trace.probed) != 4 {
+		t.Errorf("probed = %v, want the range's four ports", trace.probed)
 	}
 }

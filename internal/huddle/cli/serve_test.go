@@ -20,6 +20,7 @@ import (
 	"github.com/MuhmdRaouf/huddle/internal/huddle/home"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/server"
 	"github.com/MuhmdRaouf/huddle/internal/testkit/isoenv"
+	"github.com/MuhmdRaouf/huddle/internal/testkit/ports"
 )
 
 // cliWorld is the environment of one throwaway project whose huddle home is home: no url from
@@ -48,11 +49,12 @@ func cliWorld(t *testing.T, home, state string, env map[string]string) *World {
 		entries = append(entries, key+"="+value)
 	}
 	w := &World{
-		Getenv:  func(key string) string { return vars[key] },
-		Environ: func() []string { return append([]string{}, entries...) },
-		Dir:     home,
-		Now:     func() time.Time { return time.Now() },
-		Bin:     huddleBin,
+		Getenv:    func(key string) string { return vars[key] },
+		Environ:   func() []string { return append([]string{}, entries...) },
+		Dir:       home,
+		Now:       func() time.Time { return time.Now() },
+		Bin:       huddleBin,
+		PortRange: ownPortRange(t),
 	}
 	t.Cleanup(func() { stopHome(t, w, home) })
 	return w
@@ -81,8 +83,16 @@ func savedText(t *testing.T, root string) string {
 	return readFile(t, filepath.Join(root, "config.toml"))
 }
 
-// inWalk answers whether p is one of the ports huddle walks through: 18860 to 18869.
-func inWalk(p int) bool { return p >= server.PortFirst && p <= server.PortLast }
+// ownPortRange answers a run of neighbouring ports no other test holds: the range a world's
+// port walk goes through, so no test run probes or binds the ports the owner's hub serves on.
+func ownPortRange(t *testing.T) server.PortRange {
+	t.Helper()
+	first, last := ports.FreeRun(t, 3)
+	return server.PortRange{First: first, Last: last}
+}
+
+// inWalk answers whether p is one of the ports the world's walk goes through.
+func inWalk(w *World, p int) bool { return p >= w.PortRange.First && p <= w.PortRange.Last }
 
 func TestTheFirstHuddleUpKeepsTheSavedPortAndTheNextStartReusesIt(t *testing.T) {
 	home, w := oneHome(t)
@@ -156,7 +166,7 @@ func TestASavedPortAnotherProgramTookHuddleUpMovesToANewOneAndSaysSoAChosenOneIs
 		t.Fatalf("up = (%d, %q)", code, out)
 	}
 	moved := savedCfg(t, home).Port
-	if moved == taken || !inWalk(moved) || !savedCfg(t, home).PortAuto {
+	if moved == taken || !inWalk(w, moved) || !savedCfg(t, home).PortAuto {
 		t.Errorf("saved = %+v, want a new port from the walk", savedCfg(t, home))
 	}
 	if !strings.Contains(out, fmt.Sprintf("port %d is taken by another program: Huddle moved to port %d", taken, moved)) ||
